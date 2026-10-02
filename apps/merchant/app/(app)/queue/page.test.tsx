@@ -6,7 +6,7 @@ import QueuePage from "./page";
 import { ToastProvider } from "../../components/m/Toast";
 import { ApiError, getMyMerchant } from "../../lib/api-client";
 import { setBusyMode, setOpen } from "../../lib/menu-api";
-import { acceptOrder, getTodaySummary, rejectOrder } from "../../lib/orders-api";
+import { acceptOrder, cancelPreparing, confirmKitchen, getTodaySummary, rejectOrder } from "../../lib/orders-api";
 import { merchantOrder, merchantProfile, RIDER } from "../../testing/fixtures";
 
 vi.mock("../../lib/api-client", async () => {
@@ -14,7 +14,14 @@ vi.mock("../../lib/api-client", async () => {
   return { ...actual, getMyMerchant: vi.fn() };
 });
 vi.mock("../../lib/menu-api", () => ({ setOpen: vi.fn(), setBusyMode: vi.fn() }));
-vi.mock("../../lib/orders-api", () => ({ acceptOrder: vi.fn(async () => ({})), rejectOrder: vi.fn(async () => ({})), getTodaySummary: vi.fn() }));
+vi.mock("../../lib/orders-api", () => ({
+  acceptOrder: vi.fn(async () => ({})),
+  rejectOrder: vi.fn(async () => ({})),
+  confirmKitchen: vi.fn(async () => ({})),
+  cancelPreparing: vi.fn(async () => ({})),
+  editOrderItems: vi.fn(async () => ({})),
+  getTodaySummary: vi.fn(),
+}));
 vi.mock("../../lib/business", () => ({ primeBusiness: vi.fn() }));
 
 // One router object for the whole run: the page's load callback depends on it.
@@ -180,6 +187,49 @@ describe("B2 · a ringing order takes over, and the alarm rings until it's answe
     await screen.findByText("Sadza Republic");
     expect(alarm.silence).toHaveBeenCalled();
     expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+});
+
+describe("M1a · an auto-accepted order rings until the kitchen confirms it (Order flow v2, D-59)", () => {
+  const auto = () =>
+    merchantOrder({
+      merchantPhase: "preparing",
+      autoAccepted: true,
+      kitchenConfirmedAt: null,
+      prepMinutes: 20,
+      prepStartedAt: new Date().toISOString(),
+      createdAt: new Date(Date.now() - 2 * 60_000).toISOString(),
+    });
+
+  it("takes over with 'LyniaGo accepted this for you', the time left, the total and 'Ready in 20 min'; 'Got it' confirms", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
+    poll.orders = [auto()];
+    render(<Page />);
+    const takeover = await screen.findByRole("alertdialog", { name: "New order #A111" });
+    expect(alarm.ring).toHaveBeenCalled();
+    expect(within(takeover).getByText("NEW ORDER")).toBeTruthy();
+    expect(within(takeover).getByText("LyniaGo accepted this for you")).toBeTruthy();
+    expect(within(takeover).getByText("Ready in 20 min")).toBeTruthy();
+    expect(within(takeover).getByLabelText("Time left to confirm").textContent).toMatch(/^5[78]:\d\d$/);
+    fireEvent.click(within(takeover).getByRole("button", { name: "Got it, we’re making it" }));
+    await vi.waitFor(() => expect(confirmKitchen).toHaveBeenCalledWith("a1110000-0000-4000-8000-000000000001"));
+  });
+
+  it("'Can’t take it' cancels behind the confirm sheet", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
+    poll.orders = [auto()];
+    render(<Page />);
+    fireEvent.click(await screen.findByRole("button", { name: "Can’t take it" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel order" }));
+    await vi.waitFor(() => expect(cancelPreparing).toHaveBeenCalledWith("a1110000-0000-4000-8000-000000000001"));
+  });
+
+  it("a new order still rings first", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
+    poll.orders = [auto(), merchantOrder({ id: "a2220000-0000-4000-8000-000000000000" })];
+    render(<Page />);
+    const takeover = await screen.findByRole("alertdialog", { name: "New order #A222" });
+    expect(within(takeover).queryByText("LyniaGo accepted this for you")).toBeNull();
   });
 });
 

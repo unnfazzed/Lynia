@@ -3,26 +3,25 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { formatPhoneDisplay, type MerchantOrderResponse, type MerchantProfileResponse } from "@lynia/shared";
+import type { MerchantOrderResponse, MerchantProfileResponse } from "@lynia/shared";
 import { Icon } from "../../../components/icons";
 import { Kitchen } from "../../../components/Kitchen";
 import { useKitchenConnection } from "../../../components/KitchenConnectionProvider";
 import { AppBar } from "../../../components/m/AppBar";
 import { ConfirmSheet } from "../../../components/m/ConfirmSheet";
 import { StaticMap } from "../../../components/m/StaticMap";
-import { Stepper } from "../../../components/m/Stepper";
 import { useToast } from "../../../components/m/Toast";
 import { OrderCard } from "../../../components/queue/OrderCard";
+import { ChangeItemsSheet, editableLines, MerchantTrack, OrderLines, RiderRow } from "../../../components/queue/order-parts";
 import { RetryableError } from "../../../components/RetryableError";
 import { ApiError, redirectIfSessionExpired } from "../../../lib/api-client";
 import { useBusiness } from "../../../lib/business";
 import { formatCountdown } from "../../../lib/countdown";
-import { isNoRiderHold, needsKitchenConfirm } from "../../../lib/order-groups";
+import { isNoRiderHold } from "../../../lib/order-groups";
 import {
   cancelPreparing,
   closeOrder,
   confirmGoodsReturned,
-  confirmKitchen,
   confirmPayment,
   confirmReturnedCash,
   dispatchCancel,
@@ -37,8 +36,9 @@ import {
   requestPayment,
   revealPickupCode,
 } from "../../../lib/orders-api";
-import { detailView, isAfterPickup, itemsEditedLabel, money, orderLabel, riderFirstName, steps } from "../../../lib/orders-view";
+import { detailView, groupCode, isAfterPickup, money, orderLabel, riderFirstName } from "../../../lib/orders-view";
 import { useNow } from "../../../lib/use-now";
+import { countOf, ORDER_FLOW as OF, vocabulary, type Vocabulary } from "../../../lib/vocabulary";
 
 const POLL_MS = 5_000;
 
@@ -54,6 +54,7 @@ interface Ctx {
   setConfirm: (c: Confirm) => void;
   toast: (m: string) => void;
   business: MerchantProfileResponse | null;
+  v: Vocabulary;
   legacyHandlers: LegacyHandlers;
   setHandedOver: (v: boolean) => void;
 }
@@ -66,17 +67,28 @@ function hm(iso: string | null | undefined): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
+/** The rider's name as the handoff writes it ("Tendai M."), or "The rider" before one is known. */
+function riderName(order: MerchantOrderResponse): string {
+  return riderFirstName(order) ?? "The rider";
+}
+
 /**
- * One order, pushed from the Orders home (fixed parent `/queue`, README "Navigation model"), on the
- * screen its state calls for (packages/design/handoff/merchant-mobile, ledger D-48):
+ * One order, pushed from the Orders home (fixed parent `/queue`), on the screen its state calls for.
+ * Order flow v2 (packages/design/handoff/order-flow-v2, ledger D-59) over merchant mobile (D-48):
  *
- * - B3 Cooking ticket — the prep ring, the lines, "Food is ready", "Can't finish this order". Dispatch
- *   stays at "Food is ready" (owner decision), so no rider shows here yet.
- * - B4 Handover — the rider, the four-digit pickup code the rider types in their app (owner decision:
- *   today's direction), "✓ Code matches" once they have, then "Hand over". Before a rider accepts it
- *   says so, and a no-rider hold offers "Keep searching" or cancelling.
- * - B6 Tracking — the map, the rider, the eight-step stepper, "Mark ride completed" (after pickup only).
- * - B7 Delivered + cash back — "I got $12.00", or "No cash on this one · mark completed".
+ * - M3a/M3b ticket — the prep ring with "Cooking · ready 12:36" (shops: Packing), the priced lines,
+ *   "Change items", the customer's four-step track, "Can't finish this order", then "Food is ready"
+ *   (shops: "Order is packed").
+ * - M4 hand-over — the rider, the six-digit pickup code read out 3+3 ("731 604"), "Tendai entered the
+ *   code" once it matched, the order total, then "Hand over". Before a rider accepts it says so, and a
+ *   no-rider hold offers "Keep searching" or cancelling.
+ * - M5 tracking — the map, "#A1B2 on the way", the rider, the four-step track and the merchant-only
+ *   "Cash back to you" row (B6's eight-step stepper is retired), "Mark ride completed" (after pickup).
+ * - M6a cash back / M6b goods back — the hero, then "I got $15.00" or "I got the food back".
+ *
+ * An auto-accepted order the kitchen hasn't confirmed rings on the Orders home (M1a), like a new one.
+ * The sealed-bag photo (M4b), the door photo (M5b) and the ETA pill wait on the backend (README "NEEDS
+ * BACKEND"), so they are not drawn here.
  */
 export default function OrderPage() {
   const { id } = useParams<{ id: string }>();
@@ -88,7 +100,7 @@ export default function OrderPage() {
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // "Hand over" is the merchant's own step after the rider's code matched (B4 → B6).
+  // "Hand over" is the merchant's own step after the rider's code matched (M4 → M5).
   const [handedOver, setHandedOver] = useState(false);
   const busyRef = useRef(false);
 
@@ -148,11 +160,12 @@ export default function OrderPage() {
 
   const order = load.order;
   let view = detailView(order);
-  // B4 stays up once the code matched, until the merchant taps "Hand over".
+  // M4 stays up once the code matched, until the merchant taps "Hand over".
   if (view === "tracking" && order.status === "picked_up" && !handedOver) view = "handover";
   const disabled = actionsDisabled || busy;
+  const v = vocabulary(business?.businessType, business?.shopKind);
   const confirmSheet = renderConfirm();
-  const ctx: Ctx = { order, act, disabled, error, setConfirm, toast, business, legacyHandlers: legacyHandlers(), setHandedOver };
+  const ctx: Ctx = { order, act, disabled, error, setConfirm, toast, business, v, legacyHandlers: legacyHandlers(), setHandedOver };
 
   if (view === "ringing") return null;
 
@@ -267,9 +280,17 @@ export default function OrderPage() {
   }
 }
 
-// ── B3 ─────────────────────────────────────────────────────────────────────────────────────────
-function Cooking({ order, act, disabled, error, setConfirm, legacyHandlers }: Ctx) {
-  const unconfirmed = needsKitchenConfirm(order);
+/** The pinned CTA bar: one primary (52), optionally a hint line above it. */
+function Bar({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="m-foot" style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: "auto" }}>
+      {children}
+    </div>
+  );
+}
+
+// ── M3a / M3b ──────────────────────────────────────────────────────────────────────────────────
+function Cooking({ order, act, disabled, error, setConfirm, legacyHandlers, v }: Ctx) {
   const now = useNow();
   const startMs = order.prepStartedAt ? new Date(order.prepStartedAt).getTime() : now;
   const totalMs = (order.prepMinutes ?? 15) * 60_000;
@@ -277,73 +298,59 @@ function Cooking({ order, act, disabled, error, setConfirm, legacyHandlers }: Ct
   const pct = Math.min(100, Math.round(((totalMs - leftMs) / totalMs) * 100));
   const readyBy = hm(new Date(startMs + totalMs).toISOString());
   const wallet = order.paymentMethod === "wallet";
+  const canChange = editableLines(order).length > 0;
   return (
     <>
-      <AppBar back="/queue" title={orderLabel(order)} right={<b className="m-num">{money(order.merchantGoodsTotal)}</b>} />
-      <div className="m-bd" style={{ flex: 1 }}>
-        {unconfirmed && (
-          <div className="m-card" style={{ background: "var(--highlight-wash)", borderColor: "var(--highlight-border)" }}>
-            <b style={{ fontSize: 15 }}>LyniaGo accepted this for you</b>
-            <span className="m-hint" style={{ fontSize: 13 }}>
-              Confirm you’re making it so we can send a rider.
-            </span>
-            <button type="button" className="m-btn m-sm" disabled={disabled} onClick={() => void act(() => confirmKitchen(order.id), "Confirmed · we’ll send a rider when it’s nearly ready")}>
-              Got it, we’re making it
-            </button>
-          </div>
-        )}
-        <div style={{ display: "flex", alignItems: "center", gap: 14, background: "var(--accent-wash)", borderRadius: 16, padding: 14 }}>
-          <div className="m-ring" style={{ background: `conic-gradient(var(--accent) 0 ${pct}%, #cdeeda ${pct}% 100%)` }}>
+      <AppBar back="/queue" title={orderLabel(order)} right={<b className="m-num" style={{ fontSize: 15 }}>{money(order.merchantGoodsTotal)}</b>} />
+      <div className="m-bd" style={{ flex: 1, paddingTop: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--accent-wash)", borderRadius: 12, padding: "10px 12px" }}>
+          <div className="m-ring" style={{ width: 56, height: 56, background: `conic-gradient(var(--accent) 0 ${pct}%, #cdeeda ${pct}% 100%)` }}>
             <b>{formatCountdown(leftMs)}</b>
           </div>
-          <div style={{ flex: 1 }}>
-            <b style={{ fontSize: 15, display: "block" }}>{leftMs > 0 ? "Cooking" : "Time’s up"}</b>
-            <span style={{ fontSize: 13, color: "var(--muted)" }}>Ready by {readyBy} · a rider is found when it’s ready</span>
+          <div style={{ flex: 1, fontSize: 13 }}>
+            <b style={{ fontSize: 15, display: "block" }}>
+              {v.making} · ready {readyBy}
+            </b>
+            {OF.riderFound}
           </div>
         </div>
-        <Lines order={order} />
-        <ItemsFooter order={order} disabled={disabled} setConfirm={setConfirm} />
-        <CustomerRow order={order} />
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 13.5, marginTop: 4 }}>
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <Icon name="circle-check" size={18} color="var(--accent-text)" />
-            Accepted {hm(order.prepStartedAt)}
-          </div>
-          <div style={{ display: "flex", gap: 10, alignItems: "center", color: "var(--muted)" }}>
-            <Icon name="clock" size={18} />
-            Food is ready
-          </div>
-          <div style={{ display: "flex", gap: 10, alignItems: "center", color: "var(--muted)" }}>
-            <Icon name="bike" size={18} />
-            Rider at your counter
-          </div>
+        <div className="m-card" style={{ gap: 0, padding: "4px 12px" }}>
+          <OrderLines order={order} />
         </div>
+        {canChange && (
+          <button type="button" className="m-sec" disabled={disabled} onClick={() => setConfirm("items")}>
+            <Icon name="pencil" size={15} />
+            {OF.changeItems}
+          </button>
+        )}
+        <MerchantTrack order={order} v={v} />
         {error && <div className="m-alert" role="alert">{error}</div>}
-        <div style={{ flex: 1 }} />
-        <button type="button" className="m-btn" disabled={disabled} onClick={() => void act(() => markReady(order.id), "Marked ready · finding a rider")}>
-          Food is ready
-        </button>
         {wallet ? (
           // A paid WALLET order is refunded with the merchant's own reference (legacy lane).
           <OrderCard order={order} bucket="preparing" {...legacyHandlers} />
         ) : (
-          <button type="button" className="m-lnk m-red" style={{ minHeight: 36, fontSize: 13 }} disabled={disabled} onClick={() => setConfirm("cancel")}>
-            Can’t finish this order
+          <button type="button" className="m-lnk m-red" style={{ minHeight: "var(--target-min)", fontSize: 14 }} disabled={disabled} onClick={() => setConfirm("cancel")}>
+            {OF.cantFinish}
           </button>
         )}
       </div>
+      <Bar>
+        <button type="button" className="m-btn" disabled={disabled} onClick={() => void act(() => markReady(order.id), "Marked ready · finding a rider")}>
+          {v.readyCta}
+        </button>
+      </Bar>
     </>
   );
 }
 
-// ── B4 ─────────────────────────────────────────────────────────────────────────────────────────
+// ── M4 ─────────────────────────────────────────────────────────────────────────────────────────
 function Handover({ order, act, disabled, error, setConfirm, toast, setHandedOver }: Ctx) {
   const matched = isAfterPickup(order);
   const hold = isNoRiderHold(order);
   return (
     <>
-      <AppBar back="/queue" title={`${orderLabel(order)} · hand over`} />
-      <div className="m-bd" style={{ flex: 1 }}>
+      <AppBar back="/queue" title={OF.handTitle(orderLabel(order))} />
+      <div className="m-bd" style={{ flex: 1, paddingTop: 12 }}>
         {order.rider ? (
           <RiderRow order={order} />
         ) : hold ? (
@@ -373,16 +380,15 @@ function Handover({ order, act, disabled, error, setConfirm, toast, setHandedOve
           </div>
         )}
         <PickupCode key={order.riderId ?? "none"} order={order} matched={matched} />
-        <div className="m-card" style={{ flexDirection: "row", alignItems: "baseline", justifyContent: "space-between" }}>
-          <span style={{ fontSize: 13.5, color: "var(--muted)" }}>Order total</span>
-          <b className="m-num" style={{ fontSize: 22 }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", borderTop: "1px solid var(--line)", paddingTop: 10 }}>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>{OF.total}</span>
+          <b className="m-num" style={{ fontSize: 20 }}>
             {money(order.merchantGoodsTotal)}
           </b>
         </div>
-        <ItemsFooter order={order} disabled={disabled} setConfirm={setConfirm} />
-        <CustomerRow order={order} />
         {error && <div className="m-alert" role="alert">{error}</div>}
-        <div style={{ flex: 1 }} />
+      </div>
+      <Bar>
         <button
           type="button"
           className="m-btn"
@@ -392,33 +398,33 @@ function Handover({ order, act, disabled, error, setConfirm, toast, setHandedOve
             toast("Handed over · tracking the delivery");
           }}
         >
-          Hand over
+          {OF.handBtn}
         </button>
-      </div>
+      </Bar>
     </>
   );
 }
 
-// ── B6 ─────────────────────────────────────────────────────────────────────────────────────────
-function Tracking({ order, disabled, error, setConfirm, business }: Ctx) {
+// ── M5 ─────────────────────────────────────────────────────────────────────────────────────────
+function Tracking({ order, disabled, error, setConfirm, business, v }: Ctx) {
   return (
     <>
-      <StaticMap center={business?.location?.point ?? null} height={170}>
-        <Link href="/queue" className="m-gh" aria-label="Back" style={{ position: "absolute", top: "calc(12px + env(safe-area-inset-top))", left: 12, width: 44, padding: 0, borderRadius: "50%" }}>
-          <Icon name="chevron-left" size={20} />
+      <StaticMap center={business?.location?.point ?? null} height={200}>
+        <Link href="/queue" className="m-gh" aria-label="Back" style={{ position: "absolute", top: "calc(8px + env(safe-area-inset-top))", left: 10, width: 44, padding: 0, borderRadius: "50%", border: "none" }}>
+          <Icon name="chevron-left" size={22} />
         </Link>
       </StaticMap>
-      <div style={{ flex: 1, marginTop: -20, background: "var(--bg)", borderRadius: "20px 20px 0 0", position: "relative", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ flex: 1, marginTop: -20, background: "var(--bg)", borderRadius: "20px 20px 0 0", position: "relative", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
         <div>
-          <b style={{ fontSize: 18 }}>{orderLabel(order)} on the way</b>
-          <div className="m-hint" style={{ fontSize: 13, marginTop: 2 }}>
-            {order.items.length} item{order.items.length === 1 ? "" : "s"} · {money(order.merchantGoodsTotal)}
+          <b style={{ fontSize: 22, display: "block" }}>{OF.trackT(orderLabel(order))}</b>
+          <div className="m-hint" style={{ fontSize: 13, marginTop: 4 }}>
+            {countOf(order.items.length, v)} · {money(order.merchantGoodsTotal)}
           </div>
         </div>
         {order.rider && <RiderRow order={order} />}
-        <Stepper steps={steps(order)} />
+        <MerchantTrack order={order} v={v} />
         {error && <div className="m-alert" role="alert">{error}</div>}
-        <button type="button" className="m-lnk" style={{ minHeight: 32, fontSize: 13, marginTop: "auto" }} disabled={disabled} onClick={() => setConfirm("force")}>
+        <button type="button" className="m-lnk" style={{ minHeight: "var(--target-min)", fontSize: 13, marginTop: "auto" }} disabled={disabled} onClick={() => setConfirm("force")}>
           Mark ride completed
         </button>
       </div>
@@ -426,78 +432,72 @@ function Tracking({ order, disabled, error, setConfirm, business }: Ctx) {
   );
 }
 
-// ── B7 ─────────────────────────────────────────────────────────────────────────────────────────
-function Delivered({ order, act, disabled, error, setConfirm }: Ctx) {
+// ── M6a / M6b ──────────────────────────────────────────────────────────────────────────────────
+function Delivered({ order, act, disabled, error, setConfirm, v }: Ctx) {
   const now = useNow(30_000);
-  const [showSteps, setShowSteps] = useState(false);
   const delivered = order.status === "delivered" || order.status === "completed";
   const amount = order.debtAmount ?? order.merchantGoodsTotal ?? 0;
   const dueMin = order.cashDueAt ? Math.round((new Date(order.cashDueAt).getTime() - now) / 60_000) : null;
-  const all = steps(order);
-  const done = all.filter((s) => s.state === "done").length;
-  const rider = riderFirstName(order) ?? "The rider";
+  const rider = riderName(order);
   return (
     <>
-      <AppBar back="/queue" title={orderLabel(order)} />
-      <div className="m-bd">
-        <div style={{ display: "flex", alignItems: "center", gap: 12, background: delivered ? "var(--accent-wash)" : "var(--highlight-wash)", borderRadius: 16, padding: 14 }}>
-          <Icon name={delivered ? "circle-check" : "circle-alert"} size={32} color={delivered ? "var(--accent-text)" : "var(--highlight-ink)"} />
-          <div style={{ flex: 1 }}>
-            <b style={{ fontSize: 16, display: "block" }}>{delivered ? `Delivered ${hm(order.deliveredAt)}` : "Not delivered"}</b>
-            <span style={{ fontSize: 13, color: "var(--muted)" }}>{delivered ? "Buyer confirmed with the code" : "The rider brings the food back to you"}</span>
-          </div>
+      <div className="m-bd" style={{ paddingTop: 0 }}>
+        <div className="m-hero" data-tone={delivered ? undefined : "calm"} style={{ position: "relative" }}>
+          {/* M6 draws no bar; the way back to the Orders home sits on the hero, as M5's does on the map. */}
+          <Link href="/queue" className="m-back" aria-label="Back" style={{ position: "absolute", top: 8, left: 6 }}>
+            <Icon name="chevron-left" size={22} />
+          </Link>
+          <span>
+            <Icon name={delivered ? "circle-check" : "package"} size={30} color={delivered ? "var(--accent-text)" : "var(--muted)"} />
+          </span>
+          <b>{delivered ? OF.delivered(hm(order.deliveredAt)) : OF.notDelivered}</b>
+          {/* M6a's "Rudo confirmed with the code" names the customer, whom a merchant order never carries:
+              the merchant-mobile B7 line stands in. */}
+          <p>{delivered ? "Buyer confirmed with the code" : OF.backS}</p>
         </div>
 
         {delivered ? (
           <div className="m-card" style={{ border: "2px solid var(--highlight)", gap: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", color: "var(--highlight-ink)" }}>CASH BACK TO YOU</span>
-            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-              <span style={{ fontSize: 14 }}>{rider} is bringing</span>
-              <b className="m-num" style={{ fontSize: 24 }}>
-                {money(amount)}
-              </b>
-            </div>
+            <span className="m-cap" style={{ color: "var(--highlight-ink)" }}>
+              {OF.cashT}
+            </span>
+            <b style={{ fontSize: 17 }}>{OF.cashS(rider, money(amount))}</b>
             {order.cashDueAt && dueMin !== null && (
               <span className="m-hint" style={dueMin < 0 ? { color: "var(--danger-ink)" } : undefined}>
-                Due by {hm(order.cashDueAt)} · {dueMin < 0 ? `${-dueMin} min overdue` : `${dueMin} min left`}
+                {dueMin < 0 ? `Due by ${hm(order.cashDueAt)} · ${-dueMin} min overdue` : OF.cashDue(hm(order.cashDueAt), dueMin)}
               </span>
             )}
             {error && <div className="m-alert" role="alert">{error}</div>}
             <button type="button" className="m-btn m-sm" disabled={disabled} onClick={() => void act(() => confirmReturnedCash(order.id, amount), "Cash confirmed · order closed", true)}>
-              I got {money(amount)}
+              <Icon name="banknote" size={18} />
+              {OF.cashBtn(money(amount))}
             </button>
-            <button type="button" className="m-gh" style={{ minHeight: 40, fontSize: 13.5 }} disabled={disabled} onClick={() => setConfirm("no_cash")}>
-              No cash on this one · mark completed
+            <button type="button" className="m-sec" disabled={disabled} onClick={() => setConfirm("no_cash")}>
+              {OF.noCash}
             </button>
           </div>
         ) : (
           <div className="m-card" style={{ border: "2px solid var(--highlight)", gap: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", color: "var(--highlight-ink)" }}>FOOD BACK TO YOU</span>
-            <span style={{ fontSize: 14 }}>{rider} is bringing the order back.</span>
+            <span className="m-cap" style={{ color: "var(--highlight-ink)" }}>
+              {OF.goodsBackT}
+            </span>
+            <b style={{ fontSize: 17 }}>{OF.backT(rider)}</b>
+            <span className="m-hint">
+              {[countOf(order.items.length, v), money(order.merchantGoodsTotal), order.cashDueAt ? OF.goodsDue(hm(order.cashDueAt)) : null].filter(Boolean).join(" · ")}
+            </span>
             {error && <div className="m-alert" role="alert">{error}</div>}
             <button type="button" className="m-btn m-sm" disabled={disabled} onClick={() => void act(() => confirmGoodsReturned(order.id), "Food back · order closed", true)}>
-              I got the food back
+              <Icon name="package" size={18} />
+              {v.goodsBack}
             </button>
-            <button type="button" className="m-gh" style={{ minHeight: 40, fontSize: 13.5, color: "var(--danger-ink)" }} disabled={disabled} onClick={() => setConfirm("not_returned")}>
+            {/* R-07: the merchant's only way to flag goods that never came back (merchant-mobile B7). */}
+            <button type="button" className="m-lnk m-red" style={{ minHeight: "var(--target-min)", fontSize: 13.5 }} disabled={disabled} onClick={() => setConfirm("not_returned")}>
               It wasn’t returned
             </button>
           </div>
         )}
 
-        <button type="button" className="m-li" style={{ border: "1px solid var(--line)", borderRadius: 14, padding: "0 14px" }} aria-expanded={showSteps} onClick={() => setShowSteps((s) => !s)}>
-          <Icon name="circle-check" size={18} color="var(--accent-text)" />
-          <div className="m-t">
-            <b>
-              {done} of {all.length} steps done
-            </b>
-            <span>
-              Accepted {hm(order.prepStartedAt)}
-              {order.deliveredAt ? ` · delivered ${hm(order.deliveredAt)}` : ""}
-            </span>
-          </div>
-          <Icon name={showSteps ? "chevron-up" : "chevron-right"} size={18} color="var(--muted)" />
-        </button>
-        {showSteps && <Stepper steps={all} />}
+        {delivered && <MerchantTrack order={order} v={v} />}
       </div>
     </>
   );
@@ -535,203 +535,41 @@ function Closed({ order }: Pick<Ctx, "order">) {
   );
 }
 
-// ── Shared pieces ──────────────────────────────────────────────────────────────────────────────
-
-/** Lines the merchant can change: each needs its own id for the edit (older APIs don't send one). */
-function editableLines(order: MerchantOrderResponse) {
-  return order.items.filter((i): i is typeof i & { itemId: string } => !!i.itemId);
-}
-
-/** Under the items: "Items changed 12:10" once they were, and "Change items" until the rider has the food. */
-function ItemsFooter({ order, disabled, setConfirm }: Pick<Ctx, "order" | "disabled" | "setConfirm">) {
-  const edited = itemsEditedLabel(order);
-  const canChange = !isAfterPickup(order) && editableLines(order).length > 0;
-  if (!edited && !canChange) return null;
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: -4 }}>
-      {edited && <span className="m-hint m-num" style={{ flex: 1 }}>{edited}</span>}
-      {canChange && (
-        <button type="button" className="m-lnk" style={{ marginLeft: "auto", fontSize: 13 }} disabled={disabled} onClick={() => setConfirm("items")}>
-          Change items
-        </button>
-      )}
-    </div>
-  );
-}
-
-/** The customer's number with a call button — only when the order carries one. */
-function CustomerRow({ order }: Pick<Ctx, "order">) {
-  const phone = order.customerPhone;
-  if (!phone) return null;
-  const shown = formatPhoneDisplay(phone);
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-      <div className="m-av">
-        <Icon name="user" size={18} />
-      </div>
-      <div style={{ flex: 1 }}>
-        <b style={{ fontSize: 15 }}>Customer</b>
-        <div className="m-hint m-num" style={{ fontSize: 13 }}>
-          {shown}
-        </div>
-      </div>
-      <a href={`tel:${phone}`} className="m-gh" aria-label={`Call the customer on ${shown}`} style={{ width: "var(--target-min)", padding: 0, borderRadius: "50%" }}>
-        <Icon name="phone" size={18} />
-      </a>
-    </div>
-  );
-}
-
-/** "Change items": every line with − qty + (0 removes it); lines the kitchen didn't have show struck
- *  at 0. Saving sends every line's quantity; a refusal (not editable any more, nothing left) shows here. */
-function ChangeItemsSheet({
-  order,
-  busy,
-  error,
-  onSave,
-  onCancel,
-}: {
-  order: MerchantOrderResponse;
-  busy: boolean;
-  error: string | null;
-  onSave: (lines: { itemId: string; quantity: number }[]) => void;
-  onCancel: () => void;
-}) {
-  const [lines, setLines] = useState(() =>
-    editableLines(order).map((i) => ({ itemId: i.itemId, name: i.name, gone: i.available === false, quantity: i.available === false ? 0 : i.quantity })),
-  );
-  const saveRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    saveRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onCancel]);
-
-  const step = (itemId: string, by: number) =>
-    setLines((ls) => ls.map((l) => (l.itemId === itemId ? { ...l, quantity: Math.max(0, Math.min(99, l.quantity + by)) } : l)));
-
-  return (
-    <div className="m-overlay" style={{ zIndex: 70 }}>
-      <div className="m-overlay-frame">
-        <button type="button" className="m-scrim" aria-label="Keep as is" onClick={onCancel} />
-        <div className="m-sheet" role="dialog" aria-modal="true" aria-labelledby="m-items-title">
-          <div className="m-grab" />
-          <b id="m-items-title" style={{ fontSize: 18 }}>
-            Change items
-          </b>
-          <p className="m-sub">Agree it with the customer first. They’ll get the new total.</p>
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            {lines.map((l) => (
-              <div key={l.itemId} className="m-li" style={{ cursor: "default" }}>
-                <div className="m-t">
-                  <b style={l.gone || l.quantity === 0 ? { textDecoration: "line-through", color: "var(--muted)" } : undefined}>{l.name}</b>
-                </div>
-                <button
-                  type="button"
-                  className="m-gh"
-                  aria-label={`One less ${l.name}`}
-                  style={{ width: "var(--target-min)", padding: 0, borderRadius: "50%" }}
-                  disabled={busy || l.gone || l.quantity === 0}
-                  onClick={() => step(l.itemId, -1)}
-                >
-                  <Icon name="minus" size={18} />
-                </button>
-                <b className="m-num" style={{ width: 24, textAlign: "center" }} aria-label={`${l.name} quantity`}>
-                  {l.quantity}
-                </b>
-                <button
-                  type="button"
-                  className="m-gh"
-                  aria-label={`One more ${l.name}`}
-                  style={{ width: "var(--target-min)", padding: 0, borderRadius: "50%" }}
-                  disabled={busy || l.gone || l.quantity >= 99}
-                  onClick={() => step(l.itemId, 1)}
-                >
-                  <Icon name="plus" size={18} />
-                </button>
-              </div>
-            ))}
-          </div>
-          {error && (
-            <div className="m-alert" role="alert">
-              {error}
-            </div>
-          )}
-          <button ref={saveRef} type="button" className="m-btn" disabled={busy} onClick={() => onSave(lines.map((l) => ({ itemId: l.itemId, quantity: l.quantity })))}>
-            Save changes
-          </button>
-          <button type="button" className="m-lnk" onClick={onCancel}>
-            Keep as is
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-function Lines({ order }: Pick<Ctx, "order">) {
-  return (
-    <div className="m-card" style={{ gap: 0, padding: "4px 14px" }}>
-      {order.items.map((item, i) => (
-        <div key={`${item.dishId ?? "i"}-${i}`} className="m-li" style={{ cursor: "default" }}>
-          <b style={{ width: 26 }}>{item.quantity}×</b>
-          <div className="m-t">
-            <b>{item.name}</b>
-            {item.note && <span style={{ color: "var(--highlight-ink)" }}>“{item.note}”</span>}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function RiderRow({ order }: Pick<Ctx, "order">) {
-  const r = order.rider!;
-  const name = riderFirstName(order) ?? r.firstName;
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-      <div className="m-av" style={{ background: "var(--accent-wash)", color: "var(--accent-text)" }}>
-        {r.firstName.charAt(0)}
-      </div>
-      <div style={{ flex: 1 }}>
-        <b style={{ fontSize: 15 }}>{name}</b>
-        <div className="m-hint" style={{ fontSize: 13 }}>
-          {[r.plate, r.ratingCount > 0 ? `★ ${r.ratingAvg.toFixed(1)}` : null].filter(Boolean).join(" · ")}
-        </div>
-      </div>
-    </div>
-  );
-}
-
+/**
+ * M4's code card: "READ THIS PICKUP CODE TO TENDAI", the six digits 3+3 at 36/800, then "Tendai entered
+ * the code" once it matched. Revealing rotates the code (N-16), so it is asked for once per rider, never
+ * on every render; a code the screen never saw (opened after the match) isn't shown.
+ */
 function PickupCode({ order, matched }: Pick<Ctx, "order"> & { matched: boolean }) {
-  // Revealing rotates the code (N-16), so it is asked for once per rider, never on every render.
   const [code, setCode] = useState<string | null>(null);
   const askedFor = useRef<string | null>(null);
+  // An auto-accepted order is collected without a code ("Collected" at the restaurant's pin).
+  const codeless = order.autoAccepted === true;
   useEffect(() => {
-    if (!order.riderId || matched || askedFor.current === order.riderId) return;
+    if (codeless || !order.riderId || matched || askedFor.current === order.riderId) return;
     askedFor.current = order.riderId;
     revealPickupCode(order.id)
       .then((res) => setCode(res.pickupCode))
       .catch(() => setCode(null));
   }, [matched]);
-  const digits = (code ?? "").padEnd(4, " ").slice(0, 4).split("");
+  if (!order.riderId || codeless) return null;
+  const rider = riderName(order);
+  const groups = code ? groupCode(code) : null;
   return (
-    <div className="m-fld">
-      <span className="m-label">Rider’s pickup code</span>
-      <div className="m-code" aria-label={code ? `Pickup code ${code.split("").join(" ")}` : "No pickup code yet"}>
-        {digits.map((d, i) => (
-          <span key={i}>{d.trim()}</span>
-        ))}
-      </div>
-      {matched ? (
-        <span className="m-hint" style={{ color: "var(--accent-text)", fontWeight: 600 }}>
-          ✓ Code matches
+    <div className="m-card" style={{ alignItems: "center", textAlign: "center" }}>
+      <span className="m-cap">{OF.code(rider)}</span>
+      {groups && (
+        <div className="m-pcode" aria-label={`Pickup code ${code!.split("").join(" ")}`}>
+          {groups.map((g, i) => (
+            <span key={i}>{g}</span>
+          ))}
+        </div>
+      )}
+      {matched && (
+        <span style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--accent-text)", fontSize: 13, fontWeight: 600 }}>
+          <Icon name="circle-check" size={16} />
+          {OF.codeOk(rider)}
         </span>
-      ) : (
-        order.riderId && <span className="m-hint">The rider types this code in their app</span>
       )}
     </div>
   );

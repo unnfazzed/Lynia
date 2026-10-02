@@ -11,6 +11,7 @@ import { Segmented } from "../../components/m/Segmented";
 import { NotLiveHome } from "../../components/branches/NotLiveHome";
 import { OrdersHeader, useOpenSwitch } from "../../components/m/OrdersHeader";
 import { useToast } from "../../components/m/Toast";
+import { KitchenConfirmTakeover } from "../../components/queue/KitchenConfirmTakeover";
 import { NewOrderTakeover } from "../../components/queue/NewOrderTakeover";
 import { RetryableError } from "../../components/RetryableError";
 import { showNotLiveHome, useBranches } from "../../lib/branches";
@@ -19,7 +20,7 @@ import { homePath } from "../../lib/booking";
 import { primeBusiness } from "../../lib/business";
 import { alarmOrders } from "../../lib/alarm";
 import { needsKitchenConfirm } from "../../lib/order-groups";
-import { acceptOrder, confirmKitchen, rejectOrder } from "../../lib/orders-api";
+import { acceptOrder, cancelPreparing, confirmKitchen, editOrderItems, rejectOrder } from "../../lib/orders-api";
 import { homeSections, itemsLine, money, orderLabel, riderFirstName, rowSub } from "../../lib/orders-view";
 import { useNow } from "../../lib/use-now";
 import { useQueuePoll } from "../../lib/use-queue-poll";
@@ -81,8 +82,10 @@ export default function QueuePage() {
   const branches = useBranches(ready && state.merchant.myRole === "owner");
 
   // D-05: rings the whole time any order is unanswered — or auto-accepted and not yet confirmed by the
-  // kitchen — and stops the instant none are. Only a ringing order takes over the screen.
+  // kitchen — and stops the instant none are. Both take over the screen: a new order (B2) first, then
+  // an auto-accepted one waiting for the kitchen (Order flow v2 M1a, ledger D-59).
   const ringing = orders.filter((o) => o.merchantPhase === "awaiting_accept");
+  const confirming = orders.filter(needsKitchenConfirm);
   const alarmCount = alarmOrders(orders).length;
   useEffect(() => {
     if (alarmCount > 0) alarm.ring();
@@ -113,6 +116,27 @@ export default function QueuePage() {
       await refetch();
     },
     [refetch, toast],
+  );
+  const handleTakeoverConfirm = useCallback(
+    async (orderId: string) => {
+      await confirmKitchen(orderId);
+      await refetch();
+    },
+    [refetch],
+  );
+  const handleTakeoverCancel = useCallback(
+    async (orderId: string) => {
+      await cancelPreparing(orderId);
+      await refetch();
+    },
+    [refetch],
+  );
+  const handleEditItems = useCallback(
+    async (orderId: string, lines: { itemId: string; quantity: number }[]) => {
+      await editOrderItems(orderId, { lines });
+      await refetch();
+    },
+    [refetch],
   );
   const handleReject = useCallback(
     async (orderId: string, reason: Parameters<typeof rejectOrder>[1]) => {
@@ -196,9 +220,19 @@ export default function QueuePage() {
         </div>
       )}
 
-      {ringing[0] && (
+      {ringing[0] ? (
         <NewOrderTakeover key={ringing[0].id} active={ringing[0]} disabled={actionsDisabled} onAccept={handleAccept} onReject={handleReject} refetch={refetch} />
-      )}
+      ) : confirming[0] ? (
+        <KitchenConfirmTakeover
+          key={confirming[0].id}
+          active={confirming[0]}
+          disabled={actionsDisabled}
+          onConfirm={handleTakeoverConfirm}
+          onCancel={handleTakeoverCancel}
+          onEditItems={handleEditItems}
+          refetch={refetch}
+        />
+      ) : null}
     </Kitchen>
   );
 }

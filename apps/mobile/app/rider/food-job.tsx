@@ -1,4 +1,4 @@
-import { DELIVERY_OTP_MAX_ATTEMPTS, haversineKm, SOS_POLICY, type AdvanceStatusRequest, type MerchantOrderResponse } from "@lynia/shared";
+import { DELIVERY_OTP_MAX_ATTEMPTS, haversineKm, PICKUP_CODE_DIGITS, SOS_POLICY, type AdvanceStatusRequest, type MerchantOrderResponse } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
@@ -37,7 +37,7 @@ import { ORDER_COPY as A } from "../../src/ui/order/copy";
 import { IconDisc, Stars } from "../../src/ui/order/kit";
 import { OrderMap } from "../../src/ui/order/OrderMap";
 import { Notice } from "../../src/ui/send/kit";
-import { RIDER_COPY as R, RF, usd } from "../../src/ui/rider/copy";
+import { hhmm, RIDER_COPY as R, RF, usd } from "../../src/ui/rider/copy";
 import { CashLine, CashSplit, MSheet } from "../../src/ui/rider/kit";
 import {
   CodeBoxes,
@@ -58,6 +58,7 @@ import {
   WaitLine,
 } from "../../src/ui/rider/job-kit";
 import { ReturnToRestaurantCard } from "../../src/ui/rider/ReturnToRestaurantCard";
+import { type DoorRow, RiderDoorCard } from "../../src/ui/rider/RiderDoorCard";
 import { RiderErrorState } from "../../src/ui/rider/RiderErrorState";
 import { wasJobRestored } from "../../src/ui/rider/job-resume";
 import { clearLastActiveJob, loadLastActiveJob, saveLastActiveJob } from "../../src/net/last-active-store";
@@ -305,6 +306,8 @@ export default function RiderFoodJob(): React.ReactElement {
     },
   });
   const [nowMs, setNowMs] = useState(() => Date.now());
+  // RD4a ①: "Hand over the order" is the rider's own tap, kept on this phone (the server has no mark for it).
+  const [handedOver, setHandedOver] = useState<{ orderId: string; at: string } | null>(null);
 
   // ── Delivery code (6-digit, generic — reused verbatim) ─────────────────────────────────────────
   const [deliveryCode, setDeliveryCode] = useState("");
@@ -359,6 +362,18 @@ export default function RiderFoodJob(): React.ReactElement {
       refresh();
     },
   });
+  // RD4b draws no button under the boxes: the sixth digit sends the code. Only once the code may be used
+  // (both cash confirms, or a non-cash order) and the order is on its way to the door; a wrong code
+  // waits for the rider to change a digit, which sends it again.
+  useEffect(() => {
+    const o = orderRef.current;
+    const fo = foodOrderRef.current;
+    if (deliveryCode.length !== 6 || deliverM.isPending || otpTries >= DELIVERY_OTP_MAX_ATTEMPTS) return;
+    if (!o || !fo || o.status !== "en_route_dropoff") return;
+    if (!codeEligible({ paymentMethod: fo.paymentMethod, customerCashConfirmedAt: fo.customerCashConfirmedAt, riderCashConfirmedAt: fo.riderCashConfirmedAt, cashHandshakeFrozenAt: fo.cashHandshakeFrozenAt })) return;
+    deliverM.mutate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires on the typed code only.
+  }, [deliveryCode]);
   // Poll the return-leg state directly against the frozen order id — `delivered` drops out of
   // activeForRider, so this is a second, independent source of truth, not the `foodQ` above.
   const returnLegQ = useQuery({
@@ -737,12 +752,6 @@ export default function RiderFoodJob(): React.ReactElement {
     riderCashConfirmedAt: foodOrder.riderCashConfirmedAt,
     cashHandshakeFrozenAt: foodOrder.cashHandshakeFrozenAt,
   });
-  const codeReady = codeEligible({
-    paymentMethod: foodOrder.paymentMethod,
-    customerCashConfirmedAt: foodOrder.customerCashConfirmedAt,
-    riderCashConfirmedAt: foodOrder.riderCashConfirmedAt,
-    cashHandshakeFrozenAt: foodOrder.cashHandshakeFrozenAt,
-  });
   const goods = foodOrder.merchantGoodsTotal ?? 0;
   const fee = foodOrder.deliveryFee ?? 0;
   const total = foodOrder.merchantGoodsTotal != null && foodOrder.deliveryFee != null ? foodOrder.merchantGoodsTotal + foodOrder.deliveryFee : null;
@@ -830,37 +839,35 @@ export default function RiderFoodJob(): React.ReactElement {
     </>
   );
 
-  // B4 — at the door: the cash handshake first (cash orders), then the delivery code.
+  // RD4a / RD4b (Order flow v2, ledger D-59) — at the door: the rider's mirror of the customer's door
+  // card (① hand over the order · ② collect the cash · ③ enter the delivery code), then the code itself.
+  let content: React.ReactNode;
+  let bar: React.ReactNode;
   if (stage === "code") {
     const left = DELIVERY_OTP_MAX_ATTEMPTS - otpTries;
     const locked = left <= 0;
     const wrong = otpTries > 0 && deliveryCode.length === 6 && !deliverM.isPending && !locked;
     const queued = pendingOrQueued(deliverM) === "queued";
     const handshake = cashOrder && hState !== "confirmed";
-    return (
-      <JobPage
-        title={R.tArriving}
-        help
-        onBack={() => router.replace("/rider")}
-        onHelp={() => setSheet("problem")}
-        overlays={overlays}
-        toast={jobToast}
-        bar={
-          handshake ? null : locked ? (
-            <CtaBar hint={RF.newCodeWait(customer)}>
-              <CtaButton icon="phone" label={RF.callName(customer)} onPress={() => dial(order.counterpartyPhone)} />
-            </CtaBar>
-          ) : (
-            <CtaBar>
-              <CtaButton label={R.confirmCta} disabled={!codeReady || deliveryCode.length < 6 || order.status !== "en_route_dropoff"} loading={!!pendingOrQueued(deliverM) && !queued} onPress={() => deliverM.mutate()} />
-            </CtaBar>
-          )
-        }
-      >
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 12 }} showsVerticalScrollIndicator={false}>
+    if (handshake) {
+      // ① ticks once the rider taps "Hand over the order" (this phone only — the server has no hand-over
+      // mark yet) or the customer has already confirmed paying, which can only follow the hand-over.
+      const handed = handedOver?.orderId === order.id || hState !== "pending";
+      const rows: DoorRow[] = [
+        { title: R.door1, state: handed ? "done" : "now", sub: handed && handedOver?.orderId === order.id ? RF.handedOver(handedOver.at) : null },
+        {
+          title: RF.door2(collectAtDoor),
+          state: handed ? "now" : "todo",
+          body: handed ? <CashSplit title={RF.collectFood(collectAtDoor)} yours={collectAtDoor - owedToKitchen} owed={owedToKitchen} /> : null,
+        },
+        { title: R.door3, sub: RF.door3Sub(customer), state: "todo" },
+      ];
+      content = (
+        <>
           {notices}
           <RSteps cur={2} />
-          {handshake ? (
+          <StopCard drop food name={order.dropoff.landmark} here who={order.customerFirstName ? RF.who(order.customerFirstName, "customer") : null} />
+          {hState === "frozen" ? (
             <RiderCashHandshakeCard
               state={hState}
               amount={collectAtDoor}
@@ -871,31 +878,97 @@ export default function RiderFoodJob(): React.ReactElement {
               busy={pendingOrQueued(confirmCashM, disputeCashM)}
             />
           ) : (
-            <>
-              <JobTitle title={locked ? R.lockedT : RF.codeT(customer)} body={locked ? undefined : RF.codeB} />
-              <CodeBoxes value={deliveryCode} onChange={setDeliveryCode} error={wrong} locked={locked} />
-              {wrong ? <CodeError text={left === 1 ? RF.triesLast(customer) : RF.triesLeft(left)} /> : null}
-              {queued ? (
-                <View style={{ flexDirection: "row", gap: 6, justifyContent: "center", alignItems: "center" }}>
-                  <Icon name="wifi-off" size={14} color={tokens.color.muted} />
-                  <Text style={{ fontSize: 13, color: tokens.color.muted }}>{R.offlineCode}</Text>
-                </View>
-              ) : null}
-            </>
+            <RiderDoorCard rows={rows} />
           )}
-          {cashOrder ? <CashSplit title={RF.collectFood(collectAtDoor)} yours={collectAtDoor - owedToKitchen} owed={owedToKitchen} /> : null}
-        </ScrollView>
-      </JobPage>
+          <ProblemLink onPress={() => setSheet("problem")} />
+        </>
+      );
+      bar =
+        hState === "frozen" ? null : handed ? (
+          <CtaBar>
+            <CtaButton icon="banknote" label={RF.door2Btn(collectAtDoor)} loading={!!pendingOrQueued(confirmCashM)} onPress={() => confirmCashM.mutate()} />
+          </CtaBar>
+        ) : (
+          <CtaBar>
+            <CtaButton
+              label={R.door1}
+              onPress={() => {
+                haptic("tap");
+                setHandedOver({ orderId: order.id, at: hhmm(new Date()) });
+              }}
+            />
+          </CtaBar>
+        );
+    } else {
+      // RD4b: the six boxes; a full code sends itself (no button drawn).
+      content = (
+        <>
+          {notices}
+          <RSteps cur={2} />
+          {locked ? (
+            <JobTitle title={R.lockedT} />
+          ) : cashOrder ? (
+            <View style={{ gap: 4 }}>
+              <Text accessibilityRole="header" style={{ fontSize: 17, lineHeight: 22, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, textAlign: "center" }}>
+                {R.door3}
+              </Text>
+              <Text style={{ fontSize: 13, lineHeight: 18, color: tokens.color.muted, textAlign: "center" }}>{`${RF.door3Sub(customer)} · ${R.codeTries}`}</Text>
+            </View>
+          ) : (
+            <JobTitle title={RF.codeT(customer)} body={RF.codeB} />
+          )}
+          <CodeBoxes value={deliveryCode} onChange={setDeliveryCode} error={wrong} locked={locked} />
+          {wrong ? <CodeError text={left === 1 ? RF.triesLast(customer) : RF.triesLeft(left)} /> : null}
+          {queued ? (
+            <View style={{ flexDirection: "row", gap: 6, justifyContent: "center", alignItems: "center" }}>
+              <Icon name="wifi-off" size={14} color={tokens.color.muted} />
+              <Text style={{ fontSize: 13, color: tokens.color.muted }}>{R.offlineCode}</Text>
+            </View>
+          ) : null}
+          <ProblemLink onPress={() => setSheet("problem")} />
+        </>
+      );
+      bar = locked ? (
+        <CtaBar hint={RF.newCodeWait(customer)}>
+          <CtaButton icon="phone" label={RF.callName(customer)} onPress={() => dial(order.counterpartyPhone)} />
+        </CtaBar>
+      ) : null;
+    }
+    return (
+      <JobShell
+        title={R.tAtDrop}
+        onBack={() => router.replace("/rider")}
+        onHelp={() => setSheet("problem")}
+        contentKey={`code|${handshake ? hState : "code"}|${liveReconnecting ? "o" : ""}`}
+        toast={jobToast}
+        map={(padBottom) => (
+          <OrderMap
+            pickup={order.pickup.point}
+            dropoff={order.dropoff.point}
+            rider={riderPoint}
+            riderLabel={R.you}
+            riderPaused={liveReconnecting}
+            showRider
+            toPickupLine={false}
+            rings={false}
+            dim={false}
+            frame="riderDrop"
+            padBottom={padBottom}
+            reduceMotion={reduceMotion}
+          />
+        )}
+        content={content}
+        bar={bar}
+        overlays={overlays}
+      />
     );
   }
 
   // B1 / B2 / B3 — the map and the stage sheet.
-  let content: React.ReactNode;
-  let bar: React.ReactNode;
   if (stage === "atKitchen") {
     const auto = foodOrder.autoAccepted === true;
     const pickupLocked = pickupAttempts >= DELIVERY_OTP_MAX_ATTEMPTS;
-    const canCollect = order.status === "en_route_pickup" && (auto || (pickupCode.trim().length === 4 && !pickupLocked));
+    const canCollect = order.status === "en_route_pickup" && (auto || (pickupCode.trim().length === PICKUP_CODE_DIGITS && !pickupLocked));
     content = (
       <>
         {notices}
@@ -912,9 +985,9 @@ export default function RiderFoodJob(): React.ReactElement {
         ) : null}
         {auto ? null : (
           <>
-            <Text style={{ fontSize: 15, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>{R.pickupCodeL}</Text>
-            <CodeBoxes length={4} label={R.pickupCodeL} autoFocus={false} value={pickupCode} onChange={setPickupCode} error={pickupAttempts > 0 && pickupCode.length === 4 && !confirmPickupM.isPending} locked={pickupLocked} />
-            {pickupAttempts > 0 && !pickupLocked && pickupCode.length === 4 && !confirmPickupM.isPending ? <CodeError text={RF.triesLeft(DELIVERY_OTP_MAX_ATTEMPTS - pickupAttempts)} /> : null}
+            <Text style={{ fontSize: 14, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink, textAlign: "center" }}>{R.pickupCodeL}</Text>
+            <CodeBoxes length={PICKUP_CODE_DIGITS} label={R.pickupCodeL} autoFocus={false} value={pickupCode} onChange={setPickupCode} error={pickupAttempts > 0 && pickupCode.length === PICKUP_CODE_DIGITS && !confirmPickupM.isPending} locked={pickupLocked} />
+            {pickupAttempts > 0 && !pickupLocked && pickupCode.length === PICKUP_CODE_DIGITS && !confirmPickupM.isPending ? <CodeError text={RF.triesLeft(DELIVERY_OTP_MAX_ATTEMPTS - pickupAttempts)} /> : null}
           </>
         )}
         {collectedError ? <Notice icon="map-pin" tone="warn" text={collectedError} /> : null}

@@ -697,7 +697,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     return this.toResponse(await this.mustFindWithItems(orderId));
   }
 
-  /** N-16: mints the 4-digit pickup code (hashed, mirrors otpHash) so it exists by the time C3's
+  /** N-16: mints the 6-digit pickup code (hashed, mirrors otpHash) so it exists by the time C3's
    *  dispatch assigns a rider and confirmPickup can verify it. */
   async markReady(profileId: string, orderId: string): Promise<MerchantOrderResponse> {
     const order = await this.findOwnAsMerchant(profileId, orderId);
@@ -807,7 +807,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       if (o.rider_id !== riderId) throw new ForbiddenException("Not the assigned rider");
       if (o.status !== "en_route_pickup") throw new ConflictException("Order is not ready for pickup");
       if (!o.auto_accepted) {
-        throw new ConflictException({ reason: "code_required", message: "Ask the kitchen for the 4-digit pickup code." });
+        throw new ConflictException({ reason: "code_required", message: "Ask the kitchen for the pickup code." });
       }
       const merchant = o.merchant_id ? await tx.merchant.findUnique({ where: { id: o.merchant_id }, select: { location: true } }) : null;
       const pin = (merchant?.location as Waypoint | null)?.point;
@@ -1224,7 +1224,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       dispatchAttempt: order.dispatchAttempt,
       dispatchOfferExpiresAt: order.dispatchOfferExpiresAt?.toISOString() ?? null,
       noRiderHoldAt: order.noRiderHoldAt?.toISOString() ?? null,
-      // N-16: mirrors deliveryOtpAttempts's resync purpose for the 4-digit pickup code (D5).
+      // N-16: mirrors deliveryOtpAttempts's resync purpose for the pickup code (D5).
       pickupCodeAttempts: order.pickupCodeAttempts,
       // C4: doorstep handshake (R-04/R-05/N-19).
       cashHandshakeAmount: order.cashHandshakeAmount != null ? Number(order.cashHandshakeAmount) : null,

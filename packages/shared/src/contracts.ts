@@ -1480,8 +1480,13 @@ export type SubmitMerchantPaymentReferenceRequest = z.infer<typeof SubmitMerchan
 export const MerchantRequestPaymentRequest = z.object({ overrideCallLog: z.boolean().optional() }).strict();
 export type MerchantRequestPaymentRequest = z.infer<typeof MerchantRequestPaymentRequest>;
 
-/** N-16: the rider's 4-digit pickup code, checked by the merchant at the counter. */
-export const ConfirmMerchantPickupRequest = z.object({ code: z.string().regex(/^\d{4}$/) }).strict();
+/** N-16: the rider's pickup code, checked against the one the merchant reads out at the counter. Six
+ *  digits since Order flow v2 (ledger D-59, BRIEF §16, `PICKUP_CODE_DIGITS`). The wire still accepts
+ *  the legacy four (`LEGACY_PICKUP_CODE_DIGITS`) so an installed rider app's four-digit attempt reaches
+ *  the service and gets the ordinary "That code doesn't match" (400) instead of a validation error,
+ *  and a code minted before the switch still verifies (additive widening, LAUNCH-DEPLOYMENT-STRATEGY
+ *  §1c). */
+export const ConfirmMerchantPickupRequest = z.object({ code: z.string().regex(/^(?:\d{4}|\d{6})$/) }).strict();
 export type ConfirmMerchantPickupRequest = z.infer<typeof ConfirmMerchantPickupRequest>;
 
 /** D-11: a merchant's no-penalty release of an unpaid (awaiting_payment) order (R-17 zombie mitigation). */
