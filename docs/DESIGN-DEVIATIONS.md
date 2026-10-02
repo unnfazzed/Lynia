@@ -3657,3 +3657,83 @@ frame + `app/splash.view.tsx`). Those gallery screens are SUPERSEDED and not ali
 | 4 | Card shadow `0 18px 40px -12px rgba(0,0,0,.3)` | One-layer RN shadow (offset 18, radius 20, opacity .3, elevation 12) | The app runs the old architecture: no `boxShadow`, no spread. |
 | 5 | Orbit's CSS dashed border | SVG circle, `strokeDasharray 6 6` | Dashed rounded borders aren't reliable on Android. |
 | 6 | Splash starts on plain green | The native launch frame still shows the old dove + wordmark lockup until the JS splash draws | Changing it needs a new store build (native assets). **Follow-up:** a plain-green native launch frame, so the cold start reads as one screen. |
+
+## D-65 · Notifications v1: the shared Notifications screen follows the notifications-v1 handoff — handoff APPROVED (2026-10-02); deviations 1–9 PENDING OWNER REVIEW
+
+**Owner instruction, this session (2026-10-02):** *"lets implement the notification changes now to the app"*,
+with the design export attached (`Lynia_Design_System.zip` → `handoff/notifications-v1/`). Vendored
+verbatim as `packages/design/handoff/notifications-v1/` (README, BRIEF, CLAUDE-CODE-PROMPT, `n-kit.jsx`
+with the `N` copy object, `n-screens.jsx`, `n-stickers.js`, the copied Rider v2 kits under `kit/`, and both
+HTML pages; `Notifications v1 (standalone).html?only=N1&w=320` is the pixel reference).
+
+### 1 · Authority (a scope rule)
+
+From this PR, `app/notifications/index.tsx` — both sides, one screen — aligns to
+`packages/design/handoff/notifications-v1/` (N1–N10). Strings come from `src/ui/notifications/copy.ts`
+(the handoff's `N`, verbatim, plus the `NF` sentence shapes and the `NX` block below). The gallery
+`LJ notifications` / `LJ notif_empty` (the August screen) and `RJM notifications` are **superseded and not
+aligned to**: `app/notifications/notifications.view.tsx` (the generated LJ.notifications view) is deleted, the
+two LJ targets leave `tools/parity/app-targets.mjs` / `codegen/adopted.mjs` / `expected/`, and all three
+keys are PENDING-with-SUPERSEDED-reason in `parity-status.mjs`. The rendered-conformance floor drops from
+six asserted screens to five (LJ.notif_empty was one of them).
+
+### 2 · What the app does
+
+- **Page:** the pushed-screen header (Rider v2 `PushHeader`), a `--surface` page, padding 16 (12 under
+  340px), white r16 cards with 1px `--line` dividers, day labels TODAY · YESTERDAY · "MON 28 SEP".
+- **One row per order** (`src/ui/notifications/model.ts`): the feed rows are grouped by order id in the
+  app; the row shows the order's latest update, titled "Parcel to <drop-off area>" / the venue (customer) or
+  "<pickup> → <drop-off>" (rider). The order's earlier updates (its status beats plus its offer / fare /
+  SOS / review / swap rows) are the timeline behind the bead line ("4 earlier updates"), with Hide updates /
+  Open order (Open job). Account, money and safety rows stay single rows.
+- **Disc + tone:** order rows wear the v2 service sticker on its tile tint with the tone as the 18px corner
+  mark; other rows a Lucide icon on a tone-filled disc. Gold is the unread dot only.
+- **Danger pin:** an SOS on a running trip, or a pause / block / hold still in force, pins above the day
+  groups in a `--danger` card; lifted, it drops into its day as neutral.
+- **Needs you:** See offer (offers still open) · Review swap (an open swap round) · Try again (ID check
+  declined → `/rider/become`).
+- **Read state:** focus stamps the read watermark; the dots of rows that were new stay until the user
+  leaves (collected per visit, so a refetch can't clear them early).
+- **Side:** `?side=rider` (the rider tabs' bell and the rider Account row now pass it). Order rows follow
+  the side; account and safety rows show on both. Dual-role users get the other side's row when it has
+  unread order updates.
+- **Notifications off:** the J8 row while the permission isn't granted (re-checked on focus and foreground).
+- **Swipe:** either way; past 35% of the width removes the whole order's row, the toast "Notification
+  removed" + Undo stays 5s, and the dismissals are sent only when it expires (or the user leaves).
+- **States:** skeleton rows; "Slow connection. Still loading…" after 6s; couldn't-refresh keeps the feed
+  with the stale notice; couldn't-load with nothing cached is N10 with a 52px Try again; empty is the mint
+  card with trust-tracking (customers: Send a parcel → `/send`).
+
+### 3 · Server (`notifications-feed.service.ts`, additive)
+
+The README's "Outside the design" asks are done in the same PR, additively (old clients keep `title` /
+`message`, which are unchanged):
+
+- **Merchant orders are in the feed** for their customer (the A-7 skip is lifted): the four stage beats in
+  the stage push's own words (`merchantCustomerCopy`, `O.g.push.c`), `accepted` / `preparing` synthesized
+  from `kitchenConfirmedAt` / `prepStartedAt`, and a swap row per swap round (`merchantOrderSubstitution`).
+  A rider's merchant job reads as a job (rider voice, gated like a parcel).
+- **Structured fields on every row:** `type`, `beat`, `action`, `service`, `pickupArea` / `dropoffArea`
+  (first landmark segment), `venue`, `riderName`, `customerName`, `amount`, `count`, `prepMinutes`, `swap`,
+  `steps` (the viewer's beats on the order, latest first) and `active` (in force).
+
+### 4 · App strings with no drawn string (`NX`, `NF`)
+
+- `NX.tlFare` "Fare updated" and `NX.tlRebroadcast` "Your rider had to cancel" — timeline steps the
+  handoff has no label for (the server rows' own titles).
+- `NF.otherSub` builds "1 update · …" / "2 updates · …" from the other side's order titles.
+- `NF.mSwap` with a price difference reads "…instead, +$0.10." (the handoff draws only "same price").
+
+### 5 · Where the app differs from the handoff, and why (PENDING OWNER REVIEW)
+
+| # | Handoff | App | Why |
+|---|---|---|---|
+| 1 | Day groups back to "MON 28 SEP" | The feed keeps one day (STREAMLINE-01, owner 2026-08-17), so in practice only TODAY / YESTERDAY appear | The grouping supports older days; widening retention is an owner call. |
+| 2 | Rider timeline: got the job → heading to pickup → collected → delivered | Only the beats the rider is pushed (got the job, delivered / cancelled); no "Posted" step on either side | The feed mirrors the pushes (FEED_AUDIENCE); `requested` has no push. |
+| 3 | Sample lines that state a reason or an amount: aIdB, aPausedB, aRestoredB, aWalletR/C, sResolvedB, rCancelled, sUpdate | The server's own line (the push the user got) | The feed doesn't carry the decline reason, the pause reason, the credited amount / balance, the refund kind or who cancelled; the drawn sentence would be false. |
+| 4 | Merchant "Tendai collected your food. On the way." | Restaurants only; shops and pharmacies keep the stage push's line | "food" is wrong for a shop or pharmacy order. |
+| 5 | Trash2 | Lucide `trash` | lucide-react-native 1.45 ships no `trash-2` (see `src/ui/Icon.tsx`). |
+| 6 | Gesture Handler pan + Reanimated | Core `PanResponder` + `Animated` (native driver) | Neither library is installed; the app's sheets use the same pair. |
+| 7 | OtherSide opens the C4/C5 switch sheet | Rider side: the C4/C5 sheet. Customer side: switches straight to the rider app | The customer side has no switch sheet (its Account toggle switches directly). |
+| 8 | Stale notice "Showing updates from 09:41" | The time of the last successful fetch on this phone | The feed has no server timestamp of its own. |
+| 9 | `--skeleton` | `SKELETON` (#EEF1F3, the browse-v2 literal) | No skeleton token exists in `packages/design/tokens/`. |

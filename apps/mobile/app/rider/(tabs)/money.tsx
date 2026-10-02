@@ -108,7 +108,7 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
   const router = useRouter();
   const { scrollRef, bottomPad } = useTabRoot<ScrollView>("money");
   const qc = useQueryClient();
-  const top = useTabTop();
+  const top = useTabTop("rider");
   const now = useNow();
   const { merchantDispatchAutoEnabled: foodOn } = useFeatureFlags();
   const { config } = useWalletConfig();

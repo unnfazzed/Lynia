@@ -73,7 +73,7 @@ export default function RiderHome(): React.ReactElement {
   const router = useRouter();
   const pathname = usePathname();
   const qc = useQueryClient();
-  const top = useTabTop();
+  const top = useTabTop("rider");
   const reduceMotion = useReduceMotion();
   const { height: winH } = useWindowDimensions();
   const { merchantDispatchAutoEnabled: foodOn } = useFeatureFlags();

@@ -201,8 +201,8 @@ target, an `index.json` that matches the directory, and no expectation outliving
 |---|---|---|---|---|---|
 | ⏭ | C8·1 | `LJ profile` | Account | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 C6–C11 (customer Account) | aligns to the RIDER grammar (`RJM account`), not this older `Profile` mock — owner decision 2026-08-16. Four rows, role-separated: Notifications · Help & support · Settings · one bridge row. The mock's ID + verification detail lives on `/profile` (unmasked, D-23), which has had no in-app entry point since D-26 |
 | ⏭ | C8·2 | `LJ history` | Orders · all services  [BOTH] | SUPERSEDED by Orders v2 (ledger D-63): the customer trips list redirects to the Orders tab, which this key now renders | not aligned to the gallery mock |
-| 👁 | C8·3 | `LJ notifications` | Notifications | account cluster align (`docs/parity/PHASE3-account.md`, `tools/parity/out/phase3_account.png`) | |
-| ⬜ | C8·4 | `LJ notif_empty` | Notifications · empty | | |
+| ⏭ | C8·3 | `LJ notifications` | Notifications | SUPERSEDED by the Notifications v1 handoff (`packages/design/handoff/notifications-v1`, ledger D-65) | not aligned to the gallery mock |
+| ⏭ | C8·4 | `LJ notif_empty` | Notifications · empty | SUPERSEDED by Notifications v1 N8 (ledger D-65) | not aligned to the gallery mock |
 | ⊘ | C8·5 | `LJ help` | Help & support | SUPERSEDED (D-60, owner 2026-10-02): Help & support opens WhatsApp `wa.me/263778831938` directly; `app/help` deleted | |
 | ⏭ | C8·6 | `LJ settings` | Settings | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 S4 (sectioned Settings, customer) | copy stays mock-verbatim; `settings_perms` / `settings_perms_ok` still assert green. Role-independent — the rider-only "Bike & documents" swap is gone, which moves this screen *closer* to the mock. The mock's "Edit profile" row is **not rendered** as of D-26 (owner, 2026-08-17), recorded as an `undrawn` entry in `tools/parity/expected/LJ.settings.json`; the identity card above it is inert |
 | ⏭ | C8·7 | `LJ settings_perms` | Settings · real permissions | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 S1/S3 (permissions read from the phone) | |
@@ -315,7 +315,7 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | ⏭ | R3·1 | `RJM offline` | Offline  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 J6 (always online; Reconnecting in the top card, the list dims — there is no offline screen) | |
 | ⏭ | R3·2 | `RJM board` | Jobs · one list  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 J1/J3 (map + busy zones + sheet of job cards) | white "Jobs near you" bar + bell (green BrandHeader removed), compact online pill, primary card actions; honest inert-socket "Reconnecting" + flag-off copy |
 | ⏭ | R3·3 | `RJM board_empty` | Online · nothing in range  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 J4 (empty sheet over the map, why-is-it-quiet, busy-zone pointer) | Card wrapper kept; omission recorded as `undrawn` on `tools/parity/expected/RJM.board_empty.json`; deferral baseline 76 → 77, reversible once an export redraws `board_empty` without the button |
-| ⬜ | R3·4 | `RJM notifications` | One inbox  [BOTH] | | |
+| ⏭ | R3·4 | `RJM notifications` | One inbox  [BOTH] | SUPERSEDED by Notifications v1 (one screen, both sides; ledger D-65) | not aligned to the gallery mock |
 | ⏭ | R3·5 | `RJM board_food_off` | Jobs · food dispatch off  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 J3 (food line hidden with dispatch off) | |
 | ⏭ | R3·6 | `RJM board_empty_food_off` | Food off · nothing in range  [PARCEL] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 J5 (food sentence hidden with dispatch off) | |
 

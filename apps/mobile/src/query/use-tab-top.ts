@@ -16,7 +16,7 @@ export const NARROW_DP = 340;
  * one-line time-aware greeting with the first name, sun/moon, unread dot, bell route, narrow flag and
  * the honest connection state (reachability; the Jobs board passes its own socket state instead).
  */
-export function useTabTop(): {
+export function useTabTop(side: "customer" | "rider" = "customer"): {
   greeting: string;
   evening: boolean;
   unread: boolean;
@@ -36,7 +36,8 @@ export function useTabTop(): {
     greeting: RF.greeting(g.phrase, first),
     evening: g.evening,
     unread: unreadCount > 0,
-    onBell: () => router.push("/notifications"),
+    // Notifications v1 (D-65): the feed follows the side the bell was tapped on.
+    onBell: () => router.push(side === "rider" ? "/notifications?side=rider" : "/notifications"),
     narrow: width < NARROW_DP,
     online: reachable,
   };
