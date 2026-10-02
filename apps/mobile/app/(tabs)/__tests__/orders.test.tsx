@@ -1,10 +1,8 @@
 /**
- * A4 (five-states + retirement sweep) — the Orders tab's own states. `useHistoryFeed` already
- * carries a documented five-state contract (loading/empty/error/offline paint), exercised here via
- * a mock so this test focuses on the gap A4 closes: the tab's OWN `["activeCustomerOrders"]` query
- * (for the pinned live-order card) had no error state — an error there silently fell through to the
- * earlier list with zero indication a live order might exist, the same UX20-01 dead-end send.tsx's
- * compose screen already fixed for its own copy of this exact query.
+ * The Orders tab — Orders v2 (packages/design/handoff/orders-v2, ledger D-63). `useHistoryFeed` carries
+ * its own documented contract (loading / empty / error / offline paint) and is mocked here, so these
+ * cases pin the tab's own states: NOW cards, the day-grouped customer history, outcomes and amounts,
+ * chips, search, and the empty / offline / error cards.
  */
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -44,9 +42,14 @@ jest.mock("../../../src/query/use-history-feed", () => ({
   useHistoryFeed: () => mockUseHistoryFeed(),
   invalidateCustomerOrderHistory: jest.fn(),
 }));
-jest.mock("../../../src/net/use-feature-flags", () => ({
-  useFeatureFlags: () => ({ restaurantsEnabled: false, merchantDispatchAutoEnabled: false, merchantWalletEnabled: false }),
-}));
+let mockFlags = { restaurantsEnabled: false, merchantDispatchAutoEnabled: false, merchantWalletEnabled: false };
+let mockServiceFlags = { shopsEnabled: false, pharmacyEnabled: false };
+let mockOnline = true;
+jest.mock("../../../src/net/use-feature-flags", () => ({ useFeatureFlags: () => mockFlags }));
+jest.mock("../../../src/net/use-service-flags", () => ({ useServiceFlags: () => mockServiceFlags }));
+jest.mock("../../../src/net/use-reachable", () => ({ useReachable: () => mockOnline }));
+jest.mock("../../../src/query/use-notifications-unread", () => ({ useNotificationsUnreadCount: () => 0 }));
+jest.mock("../../../src/query/use-food-order", () => ({ useFoodOrdersPeek: () => ({}) }));
 
 import OrdersTabScreen from "../orders";
 
@@ -72,184 +75,286 @@ async function settle(): Promise<void> {
   });
 }
 
-function has(tree: renderer.ReactTestRenderer, text: string | RegExp): boolean {
-  return (
-    tree.root.findAll((n) => {
-      const c = n.props.children;
-      const flat = Array.isArray(c) ? c.join("") : typeof c === "string" ? c : "";
-      return typeof text === "string" ? flat.includes(text) : text.test(flat);
-    }).length > 0
-  );
+function flat(n: renderer.ReactTestInstance): string {
+  const c = n.props.children;
+  return Array.isArray(c) ? c.filter((x) => typeof x === "string" || typeof x === "number").join("") : typeof c === "string" ? c : "";
 }
 
-const emptyHistory = { rows: [], isFetching: false, isError: false, hasLiveData: true, showingStale: false, refetch: jest.fn() };
+function has(tree: renderer.ReactTestRenderer, text: string | RegExp): boolean {
+  return tree.root.findAll((n) => (typeof text === "string" ? flat(n).includes(text) : text.test(flat(n)))).length > 0;
+}
+
+/** Host nodes (one per drawn element — composite wrappers repeat their props). */
+function hosts(tree: renderer.ReactTestRenderer, pred: (n: renderer.ReactTestInstance) => boolean): renderer.ReactTestInstance[] {
+  return tree.root.findAll((n) => typeof n.type === "string" && pred(n));
+}
+
+/** The pressable whose accessibilityLabel starts with `label`. */
+function press(tree: renderer.ReactTestRenderer, label: string): void {
+  const [node] = tree.root.findAll((n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith(label) && typeof n.props.onPress === "function");
+  if (!node) throw new Error(`no control labelled "${label}"`);
+  act(() => node.props.onPress());
+}
+
+const emptyHistory = { rows: [], isFetching: false, isError: false, hasLiveData: true, showingStale: false, savedAt: null, refetch: jest.fn() };
+const history = (rows: unknown[], over: Record<string, unknown> = {}) => ({ ...emptyHistory, rows, ...over });
+
+const histRow = (id: string, over: Record<string, unknown> = {}) => ({
+  id,
+  orderType: "parcel",
+  merchantName: null,
+  role: "customer",
+  pickup: { point: { lat: 0, lng: 0 }, landmark: "Avondale Shops, Avondale" },
+  dropoff: { point: { lat: 0, lng: 0 }, landmark: "Borrowdale, Harare" },
+  itemDesc: "Documents",
+  note: null,
+  proposedFare: "4.00",
+  agreedFare: "4.50",
+  status: "delivered",
+  createdAt: "2026-09-28T10:00:00.000Z",
+  rating: null,
+  counterpartyName: "Tendai Moyo",
+  ...over,
+});
+
+const parcel = {
+  id: "order-1",
+  status: "en_route_pickup",
+  orderType: "parcel",
+  agreedFare: null,
+  proposedFare: "12.00",
+  pickup: { point: { lat: 0, lng: 0 }, landmark: "Home" },
+  dropoff: { point: { lat: 0, lng: 0 }, landmark: "Office" },
+  rider: null,
+  riderCard: { firstName: "Tendai", lastName: "Moyo", photoUrl: null, ratingAvg: 4.8, ratingCount: 10, tripsCount: 20, plate: null, verified: true },
+  expiresAt: null,
+};
 
 let activeTree: renderer.ReactTestRenderer | null = null;
 afterEach(() => {
   if (activeTree) act(() => activeTree!.unmount());
   activeTree = null;
   mockSecureStore = {};
+  mockFlags = { restaurantsEnabled: false, merchantDispatchAutoEnabled: false, merchantWalletEnabled: false };
+  mockServiceFlags = { shopsEnabled: false, pharmacyEnabled: false };
+  mockOnline = true;
   jest.clearAllMocks();
 });
 
-describe("(tabs)/orders.tsx — Orders tab states", () => {
-  it("empty: no history and no active order shows the cross-service empty state", async () => {
-    mockGetActiveCustomerOrders.mockResolvedValue([]);
-    mockUseHistoryFeed.mockReturnValue(emptyHistory);
-    activeTree = renderOrders();
-    await settle();
-    expect(has(activeTree, /Nothing here yet/)).toBe(true);
-  });
+async function open(feed: unknown, active: unknown = []): Promise<renderer.ReactTestRenderer> {
+  mockGetActiveCustomerOrders.mockResolvedValue(active);
+  mockUseHistoryFeed.mockReturnValue(feed);
+  activeTree = renderOrders();
+  await settle();
+  return activeTree;
+}
 
-  // P1 (navigation review 2026-08-12): from a tab root, router.replace('/send') swaps out the whole
-  // (tabs) group — the tab bar vanishes and Android hardware-back exits the app from a screen that
-  // draws no back. The empty-state CTA must push so the tab shell stays beneath.
-  it("empty-state 'Send a parcel' routes via push, NOT replace (keeps the tab shell reachable)", async () => {
-    mockGetActiveCustomerOrders.mockResolvedValue([]);
-    mockUseHistoryFeed.mockReturnValue(emptyHistory);
-    activeTree = renderOrders();
-    await settle();
-    const [btn] = activeTree.root.findAll((n) => n.props.label === "Send a parcel");
-    if (!btn) throw new Error("empty-state 'Send a parcel' button not found");
-    act(() => btn.props.onPress());
-    expect(mockPush).toHaveBeenCalledWith("/send");
-    expect(mockReplace).not.toHaveBeenCalledWith("/send");
-  });
-
-  it("error (history): a fetch error with no cache shows the retry state, per useHistoryFeed's own contract", async () => {
-    mockGetActiveCustomerOrders.mockResolvedValue([]);
-    mockUseHistoryFeed.mockReturnValue({ rows: null, isFetching: false, isError: true, hasLiveData: false, showingStale: false, refetch: jest.fn() });
-    activeTree = renderOrders();
-    await settle();
-    expect(has(activeTree, /Couldn.t load your orders/)).toBe(true);
-  });
-
-  // Owner instruction 2026-08-12: a background poll the customer never triggered must NOT raise an
-  // error card. This used to be evidence-gated (UX-2026-08-05) — now it never renders at all, so the
-  // stale hint a pre-removal build may have left in SecureStore can't resurrect it either.
-  it("error (active-order check): stays quiet, with or without a leftover order hint", async () => {
-    mockGetActiveCustomerOrders.mockRejectedValue(new Error("network down"));
-    mockUseHistoryFeed.mockReturnValue(emptyHistory);
-    activeTree = renderOrders();
-    await settle();
-    expect(has(activeTree, /Couldn.t check for an active order/)).toBe(false);
-
-    act(() => activeTree!.unmount());
-    mockSecureStore["lynia.activeOrderHint"] = "order-1";
-    activeTree = renderOrders();
-    await settle();
-    expect(has(activeTree, /Couldn.t check for an active order/)).toBe(false);
-  });
-
-  it("default: an active order pins the compact live-order card above the earlier list", async () => {
-    mockGetActiveCustomerOrders.mockResolvedValue([{
-      id: "order-1",
-      status: "en_route_pickup",
-      orderType: "parcel",
-      agreedFare: null,
-      proposedFare: "12.00",
-      pickup: { point: { lat: 0, lng: 0 }, landmark: "Home" },
-      dropoff: { point: { lat: 0, lng: 0 }, landmark: "Office" },
-    }]);
-    mockUseHistoryFeed.mockReturnValue(emptyHistory);
-    activeTree = renderOrders();
-    await settle();
-    // Kit RC.orders compact card: route headline, accent-green status line, and the fare — no stepper.
-    expect(has(activeTree, /Home/)).toBe(true);
-    expect(has(activeTree, /Heading to pickup/)).toBe(true);
-    expect(has(activeTree, /\$12\.00/)).toBe(true);
-  });
-
-  // CF-04 (crash-fuzz 2026-08-23): a malformed 200 body from getActiveCustomerOrders is a truthy
-  // non-array that `?? []` used to let through into `.map()` (liveIds), crashing the whole tab with
-  // no error boundary in the render tree — live-reproduced via the tools/parity mobile harness.
-  it("does not crash when getActiveCustomerOrders resolves a non-array body — degrades to no pinned card", async () => {
-    mockGetActiveCustomerOrders.mockResolvedValue({ orders: [] } as unknown);
-    mockUseHistoryFeed.mockReturnValue(emptyHistory);
-    activeTree = renderOrders();
-    await settle();
-    expect(has(activeTree, /Nothing here yet/)).toBe(true);
-  });
-
-  it("pins EVERY live order (a food job and a parcel side-by-side), the food one titled by its restaurant", async () => {
-    const parcel = {
-      id: "order-1",
-      status: "en_route_pickup",
-      orderType: "parcel",
-      agreedFare: null,
-      proposedFare: "12.00",
-      pickup: { point: { lat: 0, lng: 0 }, landmark: "Home" },
-      dropoff: { point: { lat: 0, lng: 0 }, landmark: "Office" },
-    };
-    mockGetActiveCustomerOrders.mockResolvedValue([
-      { ...parcel, id: "order-food", orderType: "merchant", merchantName: "Sadza Republic", status: "picked_up", agreedFare: "15.50" },
-      parcel,
-    ]);
-    mockUseHistoryFeed.mockReturnValue(emptyHistory);
-    activeTree = renderOrders();
-    await settle();
-    // Kit RC.orders: a food job's headline is the RESTAURANT, not its kitchen/customer landmarks.
-    expect(has(activeTree, /Sadza Republic/)).toBe(true);
-    // The parcel keeps its own pinned card — two running jobs never collapse to one row.
-    expect(has(activeTree, /Home → Office/)).toBe(true);
-  });
-
-  describe("EARLIER list", () => {
-    const histRow = (id: string, over: Record<string, unknown> = {}) => ({
-      id,
-      orderType: "parcel",
-      merchantName: null,
-      role: "customer",
-      pickup: { point: { lat: 0, lng: 0 }, landmark: "Avondale" },
-      dropoff: { point: { lat: 0, lng: 0 }, landmark: "Borrowdale" },
-      itemDesc: "Documents",
-      note: null,
-      proposedFare: "4.00",
-      agreedFare: "4.50",
-      status: "delivered",
-      createdAt: "2026-09-28T10:00:00.000Z",
-      rating: null,
-      counterpartyName: null,
-      ...over,
+describe("(tabs)/orders.tsx — Orders v2", () => {
+  describe("empty, error and offline cards", () => {
+    it("O17: parcels only — 'No orders yet' with one 'Send a parcel', no food or shop promise", async () => {
+      const tree = await open(emptyHistory);
+      expect(has(tree, "No orders yet")).toBe(true);
+      expect(has(tree, /^Parcels you send land here/)).toBe(true);
+      expect(has(tree, "Find food or shops")).toBe(false);
+      // No search field: there is nothing to search.
+      expect(has(tree, "Search your orders")).toBe(false);
     });
-    const history = (rows: unknown[]) => ({ ...emptyHistory, rows });
-    const rowPress = (tree: renderer.ReactTestRenderer, title: string): (() => void) => {
-      const [row] = tree.root.findAll((n) => n.props.accessibilityLabel === `Open order ${title}` && typeof n.props.onPress === "function");
-      if (!row) throw new Error(`row "${title}" not found`);
-      return row.props.onPress;
-    };
 
-    it("a past food order opens the one order screen, like a past parcel (D-59)", async () => {
-      mockGetActiveCustomerOrders.mockResolvedValue([]);
-      mockUseHistoryFeed.mockReturnValue(
-        history([histRow("food-1", { orderType: "merchant", merchantName: "Sadza Republic" }), histRow("parcel-1")]),
-      );
+    it("O16: with food on, the body names every service and offers 'Find food or shops'", async () => {
+      mockFlags = { ...mockFlags, restaurantsEnabled: true };
+      const tree = await open(emptyHistory);
+      expect(has(tree, /^Parcels, food and shop orders all land here/)).toBe(true);
+      press(tree, "Find food or shops");
+      expect(mockPush).toHaveBeenCalledWith("/food");
+    });
+
+    // P1 (navigation review 2026-08-12): router.replace('/send') from a tab root swaps out the (tabs) group.
+    it("'Send a parcel' routes via push, NOT replace (keeps the tab shell reachable)", async () => {
+      const tree = await open(emptyHistory);
+      press(tree, "Send a parcel");
+      expect(mockPush).toHaveBeenCalledWith("/send");
+      expect(mockReplace).not.toHaveBeenCalled();
+    });
+
+    it("O21: a failed load with no saved copy offers 'Try again', which refetches", async () => {
+      const refetch = jest.fn();
+      const tree = await open({ ...emptyHistory, rows: null, isError: true, hasLiveData: false, refetch });
+      expect(has(tree, /Couldn.t load your orders/)).toBe(true);
+      press(tree, "Try again");
+      expect(refetch).toHaveBeenCalled();
+    });
+
+    it("O20: offline with nothing saved says so, with no button", async () => {
+      mockOnline = false;
+      const tree = await open({ ...emptyHistory, rows: null, hasLiveData: false });
+      expect(has(tree, /You.re offline/)).toBe(true);
+      expect(has(tree, "Try again")).toBe(false);
+    });
+
+    it("O15: a genuine first load paints the skeleton under the real header", async () => {
+      const tree = await open({ ...emptyHistory, rows: null, isFetching: true, hasLiveData: false });
+      expect(has(tree, "Your orders")).toBe(true);
+      expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Loading your orders").length).toBeGreaterThan(0);
+    });
+
+    // Owner instruction 2026-08-12: a background poll the customer never triggered never raises an error card.
+    it("a failed active-order check stays quiet, with or without a leftover order hint", async () => {
+      mockGetActiveCustomerOrders.mockRejectedValue(new Error("network down"));
+      mockUseHistoryFeed.mockReturnValue(emptyHistory);
       activeTree = renderOrders();
       await settle();
-      act(() => rowPress(activeTree!, "Sadza Republic")());
-      expect(mockPush).toHaveBeenLastCalledWith("/order/food-1");
-      act(() => rowPress(activeTree!, "Avondale → Borrowdale")());
+      expect(has(activeTree, /Couldn.t check for an active order/)).toBe(false);
+      act(() => activeTree!.unmount());
+      mockSecureStore["lynia.activeOrderHint"] = "order-1";
+      activeTree = renderOrders();
+      await settle();
+      expect(has(activeTree, /Couldn.t check for an active order/)).toBe(false);
+    });
+
+    // CF-04 (crash-fuzz 2026-08-23): a malformed 200 body is a truthy non-array.
+    it("does not crash when the active-orders body isn't an array — degrades to no Now card", async () => {
+      const tree = await open(emptyHistory, { orders: [] });
+      expect(has(tree, "No orders yet")).toBe(true);
+      expect(has(tree, "NOW")).toBe(false);
+    });
+  });
+
+  describe("NOW", () => {
+    it("a running parcel is a Now card that says who is doing what, and opens the order", async () => {
+      const tree = await open(emptyHistory, [parcel]);
+      expect(has(tree, "NOW")).toBe(true);
+      expect(has(tree, "Tendai is heading to pickup")).toBe(true);
+      expect(has(tree, "Home → Office")).toBe(true);
+      press(tree, "Tendai is heading to pickup");
+      expect(mockPush).toHaveBeenCalledWith("/order/order-1");
+    });
+
+    it("O18: a running order with nothing earlier shows the note, not the empty card", async () => {
+      const tree = await open(emptyHistory, [parcel]);
+      expect(has(tree, /^Past orders show here once this one/)).toBe(true);
+      expect(has(tree, "No orders yet")).toBe(false);
+    });
+
+    it("O2: every running order pins (a food order and a parcel) under 'NOW · 2' with the helper", async () => {
+      const tree = await open(emptyHistory, [{ ...parcel, id: "order-food", orderType: "merchant", merchantName: "Sadza Republic", status: "picked_up", agreedFare: "15.50" }, parcel]);
+      expect(has(tree, "NOW · 2")).toBe(true);
+      expect(has(tree, "Tap an order to open it")).toBe(true);
+      expect(has(tree, /Sadza Republic/)).toBe(true);
+      expect(has(tree, "Tendai is heading to pickup")).toBe(true);
+    });
+
+    it("a parcel still finding a rider reads 'Finding a rider' with the asking price", async () => {
+      const tree = await open(emptyHistory, [{ ...parcel, status: "open_for_offers", riderCard: null, dropoff: { point: { lat: 0, lng: 0 }, landmark: "Belgravia, Harare" } }]);
+      expect(has(tree, "Finding a rider")).toBe(true);
+      expect(has(tree, "Parcel to Belgravia · asking $12.00")).toBe(true);
+    });
+
+    it("a running order is not repeated in the history", async () => {
+      const tree = await open(history([histRow("order-1"), histRow("parcel-2")]), [parcel]);
+      expect(hosts(tree, (n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("Parcel to Borrowdale")).length).toBe(1);
+    });
+  });
+
+  describe("history rows", () => {
+    it("a parcel row: 'Parcel to <area>', '<item> · from <pickup>', the outcome, the rider and what was paid", async () => {
+      const tree = await open(history([histRow("parcel-1")]));
+      expect(has(tree, "Parcel to Borrowdale")).toBe(true);
+      expect(has(tree, "Documents · from Avondale Shops")).toBe(true);
+      expect(has(tree, "Delivered")).toBe(true);
+      expect(has(tree, "Tendai M.")).toBe(true);
+      expect(has(tree, "$4.50")).toBe(true);
+      press(tree, "Parcel to Borrowdale");
       expect(mockPush).toHaveBeenLastCalledWith("/order/parcel-1");
     });
 
-    it("drops jobs the user carried as a rider", async () => {
-      mockGetActiveCustomerOrders.mockResolvedValue([]);
-      mockUseHistoryFeed.mockReturnValue(
-        history([histRow("parcel-1"), histRow("rider-1", { role: "rider", pickup: { point: { lat: 0, lng: 0 }, landmark: "Mbare" } })]),
-      );
-      activeTree = renderOrders();
-      await settle();
-      expect(has(activeTree, /Avondale → Borrowdale/)).toBe(true);
-      expect(has(activeTree, /Mbare/)).toBe(false);
+    it("a food row is titled by its restaurant and opens the one order screen (D-59)", async () => {
+      const tree = await open(history([histRow("food-1", { orderType: "merchant", merchantName: "Sadza Republic", itemDesc: "Sadza & beef stew" })]));
+      expect(has(tree, "Sadza Republic")).toBe(true);
+      expect(has(tree, "Sadza & beef stew")).toBe(true);
+      press(tree, "Sadza Republic");
+      expect(mockPush).toHaveBeenLastCalledWith("/order/food-1");
     });
 
-    it("a rider-only history shows the empty state, not a blank screen", async () => {
-      mockGetActiveCustomerOrders.mockResolvedValue([]);
-      mockUseHistoryFeed.mockReturnValue(history([histRow("rider-1", { role: "rider" })]));
-      activeTree = renderOrders();
-      await settle();
-      expect(has(activeTree, /EARLIER/)).toBe(false);
-      expect(has(activeTree, /Nothing here yet/)).toBe(true);
+    it("every unpaid outcome reads 'No charge' (owner 2026-10-02: Not delivered too)", async () => {
+      const tree = await open(history([histRow("a", { status: "expired" }), histRow("b", { status: "undelivered" })]));
+      expect(has(tree, "No rider found")).toBe(true);
+      expect(has(tree, "Not delivered")).toBe(true);
+      expect(hosts(tree, (n) => flat(n) === "No charge").length).toBe(2);
+      expect(has(tree, "$4.50")).toBe(false);
+    });
+
+    it("a rated row shows filled stars only; an unrated one shows none", async () => {
+      const tree = await open(history([histRow("a", { rating: { score: 4, comment: null } }), histRow("b")]));
+      expect(hosts(tree, (n) => n.props.accessibilityLabel === "4 stars").length).toBe(1);
+      expect(hosts(tree, (n) => typeof n.props.accessibilityLabel === "string" && / stars$/.test(n.props.accessibilityLabel)).length).toBe(1);
+    });
+
+    it("drops jobs the user carried as a rider; a rider-only history is the empty card", async () => {
+      let tree = await open(history([histRow("parcel-1"), histRow("rider-1", { role: "rider", dropoff: { point: { lat: 0, lng: 0 }, landmark: "Mbare" } })]));
+      expect(has(tree, "Parcel to Borrowdale")).toBe(true);
+      expect(has(tree, "Parcel to Mbare")).toBe(false);
+      act(() => activeTree!.unmount());
+      tree = await open(history([histRow("rider-1", { role: "rider" })]));
+      expect(has(tree, "No orders yet")).toBe(true);
+    });
+
+    it("rows group under a day label, and a short history ends with 'That’s everything'", async () => {
+      const today = new Date();
+      today.setHours(9, 5, 0, 0);
+      const tree = await open(history([histRow("a", { createdAt: today.toISOString() })]));
+      expect(has(tree, "TODAY")).toBe(true);
+      expect(has(tree, "09:05")).toBe(true);
+      expect(has(tree, "That’s everything")).toBe(true);
+    });
+
+    it("offline with a saved list: the banner says when it was saved", async () => {
+      mockOnline = false;
+      const at = new Date();
+      at.setHours(9, 24, 0, 0);
+      const tree = await open(history([histRow("a")], { savedAt: at.toISOString(), showingStale: true }));
+      expect(has(tree, "You’re offline. Showing your orders as of 09:24.")).toBe(true);
+    });
+  });
+
+  describe("chips", () => {
+    const mixed = () => history([histRow("p"), histRow("f", { orderType: "merchant", merchantName: "Sadza Republic" })]);
+
+    it("no chips with only one service on", async () => {
+      const tree = await open(mixed());
+      expect(has(tree, "Parcels")).toBe(false);
+    });
+
+    it("a chip filters the history only; a chip with no matches offers 'Show all orders'", async () => {
+      mockFlags = { ...mockFlags, restaurantsEnabled: true };
+      mockServiceFlags = { shopsEnabled: false, pharmacyEnabled: true };
+      const tree = await open(mixed(), [parcel]);
+      press(tree, "Food");
+      expect(has(tree, "Sadza Republic")).toBe(true);
+      expect(has(tree, "Parcel to Borrowdale")).toBe(false);
+      expect(has(tree, "Tendai is heading to pickup")).toBe(true);
+      press(tree, "Pharmacy");
+      expect(has(tree, "No pharmacy orders yet")).toBe(true);
+      press(tree, "Show all orders");
+      expect(has(tree, "Parcel to Borrowdale")).toBe(true);
+    });
+  });
+
+  describe("search", () => {
+    it("matches the area and the rider, marks the count, and says when nothing matches", async () => {
+      const tree = await open(history([histRow("a"), histRow("b", { dropoff: { point: { lat: 0, lng: 0 }, landmark: "Belgravia" }, counterpartyName: null })]), [parcel]);
+      press(tree, "Search your orders");
+      const [input] = tree.root.findAll((n) => n.props.accessibilityLabel === "Search your orders" && typeof n.props.onChangeText === "function");
+      expect(input).toBeDefined();
+      // The running order stays visible as a strip while searching.
+      expect(has(tree, "Tendai is heading to pickup")).toBe(true);
+      act(() => input!.props.onChangeText("borrow"));
+      expect(has(tree, "1 order match “borrow”")).toBe(true);
+      act(() => input!.props.onChangeText("Tendai"));
+      expect(has(tree, "1 order match “Tendai”")).toBe(true);
+      act(() => input!.props.onChangeText("Msasa"));
+      expect(has(tree, "No orders match “Msasa”")).toBe(true);
+      press(tree, "Cancel");
+      expect(has(tree, "Your orders")).toBe(true);
     });
   });
 });

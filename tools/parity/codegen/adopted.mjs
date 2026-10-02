@@ -308,8 +308,7 @@ export const ADOPTED = [
     ],
   },
   {
-    // RC.orders — the Orders tab (app/(tabs)/orders.tsx). orders_empty exists as its own key; the composite
-    // DATA state defers. Defer-only registration.
+    // RC.orders — the Orders tab (app/(tabs)/orders.tsx). Superseded by the Orders v2 handoff (D-63).
     key: "RC.orders",
     container: "apps/mobile/app/(tabs)/orders.tsx",
     mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
@@ -320,7 +319,7 @@ export const ADOPTED = [
         state: "data",
         key: "RC.orders",
         reason:
-          "NOT a Foundation-D primitive-gap screen — the mock uses no EtaLine/ShopLogo/FoodThumb/footer, so Foundation-D does not unblock it. The wall is live-vs-static: the mock is one frozen composite — title + one accent active-order Card + an EARLIER label + three history rows (each ending in `<Money>`). The app Orders tab is a live container that interleaves, in ONE scroll: the active-order card, an active-order-check-FAILED banner, a stale-cache 'showing your last saved orders' retry line, a first-load skeleton, the empty state (its own RC.orders_empty mock) and a fetch-error state — none of which the mock's data composite draws. There is no clean 'data' boundary to swap a generated whole-screen composite in without regressing those live sub-states (and the app's history rows render the fare as `<Text>`, not the mock's `<Money>`). Deferred as a live-vs-static case with no lossless mock-wins restructure; rather than regress the stale/failed/skeleton behaviour.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-63, owner instruction 2026-10-02): the Orders tab now follows the Orders v2 handoff (packages/design/handoff/orders-v2, O1–O22) — the Calm Mint v2 mint header with search, a pinned NOW section of forest cards (Order flow v2's four-step track and stage copy), All · Parcels · Food · Shops · Pharmacy chips, day-grouped history rows (service sticker, 'Parcel to <area>' / venue, item summary, outcome tag, rider + filled stars, amount or 'No charge'), and the O15–O21 skeleton / empty / offline / error cards. It is the customer's only history (Rider v2 C13 Trip history retired). The gallery `RC.orders` draws the retired title + accent card + EARLIER list; a structural snapshot against it would assert the screen D-63 retired. Re-adoptable when a gallery export draws Orders v2.",
       },
     ],
   },
@@ -875,10 +874,9 @@ export const ADOPTED = [
     ],
   },
   {
-    // LJ.history — the customer Orders/trips history (app/history/index.tsx). DEFER-only: a per-row
-    // 'Send again' reorder superset + live states the static History mock never drew. See the reason.
+    // LJ.history — the customer trips history, retired into the Orders tab by Orders v2 (D-63).
     key: "LJ.history",
-    container: "apps/mobile/app/history/index.tsx",
+    container: "apps/mobile/app/(tabs)/orders.tsx",
     mockFile: "packages/design/explorations/journey/screens.jsx",
     uiImport: "../../src/ui",
     states: [],
@@ -887,7 +885,7 @@ export const ADOPTED = [
         state: "data",
         key: "LJ.history",
         reason:
-          "SUPERSET + live-vs-static, not a primitive/backend gap. The mock `History` is `Pad(Heading 'Your trips' [in-body, no AppBar], Sub, TRIPS.map(Card(route, date·role·★, Money + StatusPill)))`. The app history screen (a) uses a pushed-screen `AppBar` (title+sub) instead of the mock's in-body `Heading`; (b) adds a load-bearing per-row 'Send again' reorder `Pressable` (a `COND` on `onReorder`, customer trips only) the mock's static row never drew — the repeat-order shortcut; (c) adds a stale-cache `ListHeaderComponent` banner ('Showing your last saved trips…' + Retry); and (d) interleaves live loading/empty/error states with none of a mock key. The whole-screen codegen model gates a view ≡ the mock and cannot host the per-row reorder COND, the AppBar-vs-Heading divergence, or the stale/loading/empty/error branches without regressing reorder/stale-paint or adding undrawn nodes. Adoptable once the row reorder affordance + stale/empty/error each earn their own drawn state/mock, or a sanctioned composite lands.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-63, owner instruction 2026-10-02): the Orders tab now follows the Orders v2 handoff (packages/design/handoff/orders-v2, O1–O22) — the Calm Mint v2 mint header with search, a pinned NOW section of forest cards (Order flow v2's four-step track and stage copy), All · Parcels · Food · Shops · Pharmacy chips, day-grouped history rows (service sticker, 'Parcel to <area>' / venue, item summary, outcome tag, rider + filled stars, amount or 'No charge'), and the O15–O21 skeleton / empty / offline / error cards. It is the customer's only history (Rider v2 C13 Trip history retired). The customer trips list (`app/history/index.tsx?side=customer`) now redirects to the Orders tab, so this key renders the tab. The gallery `History` draws the retired 'Your trips' card list; a structural snapshot against it would assert the screen D-63 retired. Re-adoptable when a gallery export draws Orders v2.",
       },
     ],
   },

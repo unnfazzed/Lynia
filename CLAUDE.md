@@ -117,10 +117,17 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
   (ledger D-53 and its v2 round, owner 2026-10-01; `after-send/` is the v1 record): one screen, a full-bleed map and a sheet that follows the order's stage. The
   gallery's `LJ` auction / tracking / delivered / cancelled / undelivered screens are superseded and not aligned to.
 - **The rider app follows its own handoff (`handoff/rider-v2/`).** `app/rider/**`, `app/wallet/top-up.tsx`,
-  BOTH Account tabs, `app/settings/index.tsx` and `app/history/index.tsx` align to
+  BOTH Account tabs, `app/settings/index.tsx` and `app/history/index.tsx` (the rider's Job history) align to
   `packages/design/handoff/rider-v2/` (ledger D-54, owner 2026-10-01; it retires D-15/16/17/22/25/26). The
   gallery `RJM`/`RJ` rider screens and the `LJ` Account/Settings screens it replaces are superseded and not
-  aligned to. Strings come from `src/ui/rider/copy.ts` (the handoff's `R`, verbatim).
+  aligned to. Strings come from `src/ui/rider/copy.ts` (the handoff's `R`, verbatim). Its C13 Trip history
+  is retired by Orders v2 (D-63).
+- **The Orders tab follows its own handoff (`handoff/orders-v2/`).** `app/(tabs)/orders.tsx` aligns to
+  `packages/design/handoff/orders-v2/` (ledger D-63, owner 2026-10-02): mint header + search, a NOW section of
+  forest cards (on Order flow v2's four-step track and stage copy), service chips (incl. Pharmacy), a
+  day-grouped history of the customer's own orders. It is the customer's only order history. The gallery
+  `RC orders` / `RC orders_empty` and Rider v2 C13 are superseded and not aligned to. Strings come from
+  `src/ui/orders/copy.ts` (the handoff's `copy.ts`, verbatim, plus `OX`).
 - **The tab bar follows its own handoff (`handoff/tab-bar-v1/`).** Both sides' bottom bar
   (`src/ui/shell/TabBar.tsx`, the `(tabs)` layouts) aligns to `packages/design/handoff/tab-bar-v1/`
   (ledger D-56, owner 2026-10-01): a floating illustrated pill, a 72 + inset reserve that tab roots pad by

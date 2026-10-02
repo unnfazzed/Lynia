@@ -93,15 +93,16 @@ describe("becomeStateFor", () => {
 });
 
 describe("customer Account (Rider v2 C6–C11)", () => {
-  it("draws the four customer rows, routed to the customer side", async () => {
+  it("draws the three customer rows, routed to the customer side (Trip history retired, D-63)", async () => {
     mockGetMe.mockResolvedValue(me(null));
     tree = renderScreen();
     await settle();
-    for (const row of ["Trip history", "Notifications", "Help & support", "Settings"]) expect(has(tree, row)).toBe(true);
-    press(tree, "Trip history");
+    for (const row of ["Notifications", "Help & support", "Settings"]) expect(has(tree, row)).toBe(true);
+    // Orders v2 (D-63): Orders is the customer's only history, so the Trip history row is gone.
+    expect(has(tree, "Trip history")).toBe(false);
     press(tree, "Settings");
     press(tree, "Help & support");
-    expect(mockPush.mock.calls.map((c) => c[0])).toEqual(["/history?side=customer", "/settings?side=customer"]);
+    expect(mockPush.mock.calls.map((c) => c[0])).toEqual(["/settings?side=customer"]);
     // D-60: Help & support is the support WhatsApp chat itself — no in-app help screen.
     expect(openURL).toHaveBeenCalledWith("https://wa.me/263778831938");
   });

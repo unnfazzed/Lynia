@@ -1,7 +1,8 @@
 /**
- * Job history / Trip history (Rider v2 C12/C13, ledger D-54). Pins the split by side — the rider sees
- * only jobs they carried (with the fare, or "No fare"), the customer only orders they placed — and that
- * the list stays virtualized (B-O1: a ScrollView + `.map()` over 50 rows mounted every row at once).
+ * Job history (Rider v2 C12, ledger D-54). Pins that the rider sees only jobs they carried (with the
+ * fare, or "No fare"), that the list stays virtualized (B-O1: a ScrollView + `.map()` over 50 rows
+ * mounted every row at once), and that the customer's Trip history (C13) is retired — Orders is the
+ * customer's only history (Orders v2, ledger D-63).
  */
 import renderer, { act } from "react-test-renderer";
 import { SectionList } from "react-native";
@@ -28,13 +29,19 @@ const row = (i: number, role: "customer" | "rider", status: OrderHistoryRow["sta
 });
 const food = (r: OrderHistoryRow): OrderHistoryRow => ({ ...r, id: `${r.id}-food`, orderType: "merchant", merchantName: "Sadza Republic" });
 const baseRows = [...Array.from({ length: 30 }, (_, i) => row(i, "customer")), row(1, "rider"), row(2, "rider", "cancelled")];
+const manyRiderRows = Array.from({ length: 30 }, (_, i) => row(100 + i, "rider"));
 let mockRows = baseRows;
 
 let mockSide = "rider";
 const mockPush = jest.fn();
+const mockRedirect = jest.fn();
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: mockPush, back: jest.fn(), replace: jest.fn() }),
   useLocalSearchParams: () => ({ side: mockSide }),
+  Redirect: ({ href }: { href: string }) => {
+    mockRedirect(href);
+    return null;
+  },
 }));
 jest.mock("../../../src/query/use-history-feed", () => ({
   useHistoryFeed: () => ({ rows: mockRows, showingStale: false, isFetching: false, isError: false, hasLiveData: true, refetch: jest.fn() }),
@@ -78,28 +85,33 @@ describe("history split by side", () => {
     expect(s).toContain("No fare");
   });
 
-  it("customer: only the orders they placed, virtualized", () => {
-    mockSide = "customer";
+  it("rider: a long list stays virtualized", () => {
+    mockSide = "rider";
+    mockRows = [...baseRows, ...manyRiderRows];
     const t = render();
-    expect(ids(t)).toHaveLength(30);
-    expect(ids(t).every((id) => id.startsWith("customer-"))).toBe(true);
-    expect(text(t)).toContain("Trip history");
+    expect(ids(t)).toHaveLength(32);
+    expect(ids(t).every((id) => id.startsWith("rider-"))).toBe(true);
+    mockRows = baseRows;
   });
 
-  it("a placed food order and a carried food job both open the one order screen (D-59)", () => {
+  it("customer: Trip history is retired — any other side lands on the Orders tab (D-63)", () => {
+    mockSide = "customer";
+    const t = render();
+    expect(mockRedirect).toHaveBeenCalledWith("/orders");
+    expect(t.root.findAllByType(SectionList)).toHaveLength(0);
+  });
+
+  it("a carried food job opens the one order screen (D-59)", () => {
     const press = (t: renderer.ReactTestRenderer, id: string): void => {
       const list = t.root.findByType(SectionList);
       const item = (list.props.sections as { data: OrderHistoryRow[] }[]).flatMap((s) => s.data).find((r) => r.id === id)!;
       const el = list.props.renderItem({ item, index: 0 });
       act(() => el.props.onPress());
     };
-    mockRows = [...baseRows, food(row(99, "customer")), food(row(98, "rider"))];
-    mockSide = "customer";
-    press(render(), "customer-99-food");
-    expect(mockPush).toHaveBeenLastCalledWith("/order/customer-99-food");
-    press(render(), "customer-0");
-    expect(mockPush).toHaveBeenLastCalledWith("/order/customer-0");
+    mockRows = [...baseRows, food(row(98, "rider"))];
     mockSide = "rider";
+    press(render(), "rider-1");
+    expect(mockPush).toHaveBeenLastCalledWith("/order/rider-1");
     press(render(), "rider-98-food");
     expect(mockPush).toHaveBeenLastCalledWith("/order/rider-98-food");
     mockRows = baseRows;
