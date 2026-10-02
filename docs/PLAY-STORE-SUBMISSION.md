@@ -1952,6 +1952,29 @@ landmarks, declared value and the pre-broadcast disclaimer (ledger D-52).
 - **Not in it.** The tab bar (#1018) merged after `f642e55`, so it is not in vc 41.
 - **Play's review.** Testers see the release once Play approves it, as with vc 40.
 
+**Sixth OTA — 2026-10-02 (Order flow v2 on vc 40/41).** Built from `main` at `c53f894` (#1035) and published
+to `preview` for runtime `db601ead…` (vc 40 and vc 41). It carries Order flow v2 (ledger D-59, #1026 to #1035):
+Review & place, one order screen for restaurant, shop and pharmacy orders, substitution, proof photos,
+scheduled orders, the merchant/rider hand-over and the 6-digit pickup code.
+
+| Run | Result | Why |
+|---|---|---|
+| 36981989091 | **published** | the preflight passed with no override; Android group `a2418855-93ea-404c-b012-63176cf3a55b` (update `01a0fba6-b22a-7307…`) on runtime `db601ead…` |
+
+- **Delivered** to vc 40/41 on the next launch, applied on the one after.
+- **Needs the API.** Shop/pharmacy ordering, substitution, proof photos, scheduled orders and venue rating
+  call the Order flow v2 endpoints (migrations 0066/0067). Release (Azure) shipped them before the OTA
+  (runs 36975348133 to 36979101968 green); #1035's push copy followed in run 36980647029.
+
+**Build vc 42 — 2026-10-02 (Order flow v2).**
+
+- **Build.** `mobile-release.yml` run 36982094907 (`profile: closed`, `main` at `c53f894`, #1035) queued
+  EAS build `ef1e91d4` (v0.51.0 / vc 42, runtime `db601ead…`, unchanged from vc 41). It FINISHED.
+- **Submission.** Submission `fc123e9d` **FINISHED on track `Closed testing`** (`eas-build-status.yml` run
+  36983465504).
+- **What it carries.** Everything in vc 41 plus the tab bar (#1018) and Order flow v2 (D-59, #1026 to #1035).
+- **Play's review.** Testers see the release once Play approves it, as with vc 40 and vc 41.
+
 ---
 
 ## 9. Pre-submission checklist
