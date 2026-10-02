@@ -44,6 +44,13 @@ export interface Vocabulary {
   itemCropSub: string;
   itemPreviewLabel: string;
   itemPreviewSub: string;
+  /** Order flow v2 (ledger D-59, the handoff's `O.svc`): the second step of the order's track and the
+   *  ticket's stage word (`making`), the ticket's primary (`ready`), the four-step track (`st`) and the
+   *  goods-back button (`back`). A pharmacy speaks the shop's words. */
+  making: string;
+  readyCta: string;
+  track: readonly [string, string, string, string];
+  goodsBack: string;
 }
 
 const RESTAURANT: Vocabulary = {
@@ -66,6 +73,10 @@ const RESTAURANT: Vocabulary = {
   itemCropSub: "Square crop. Fill the frame with the food, not the table.",
   itemPreviewLabel: "HOW IT LOOKS ON THE MENU",
   itemPreviewSub: "How the photo reads at menu size",
+  making: "Cooking", // O.svc.food.making
+  readyCta: "Food is ready", // O.svc.food.ready
+  track: ["Confirmed", "Cooking", "On the way", "Delivered"], // O.svc.food.st
+  goodsBack: "I got the food back", // O.svc.food.back
 };
 
 /** Starting points per kind of shop: the aisles such a shop already has. Pharmacies get over-the-counter
@@ -107,8 +118,52 @@ function shopVocabulary(kind: MerchantShopKind | null | undefined): Vocabulary {
     itemCropSub: "Square crop. Fill the frame with the item, not the table.",
     itemPreviewLabel: "HOW IT LOOKS IN YOUR SHOP",
     itemPreviewSub: "How the photo reads at list size",
+    making: "Packing", // O.svc.shops.making = O.svc.pharmacy.making
+    readyCta: "Order is packed", // O.svc.shops.ready = O.svc.pharmacy.ready
+    track: ["Confirmed", "Packing", "On the way", "Delivered"], // O.svc.shops.st = O.svc.pharmacy.st
+    goodsBack: "I got the order back", // O.svc.shops.back = O.svc.pharmacy.back
   };
 }
+
+/**
+ * Order flow v2's merchant strings (packages/design/handoff/order-flow-v2/code/copy.ts, ledger D-59),
+ * verbatim, keyed as the handoff keys them (`O.m.*`, `O.u.mEdit`, `O.c.view`). `{x}` placeholders are
+ * filled by the formatters below. The handoff's sample names (Tendai, Rudo) are the rider / customer;
+ * a merchant order carries the rider's name but never the customer's, so no line here names the customer.
+ */
+export const ORDER_FLOW = {
+  newOrder: "NEW ORDER", // O.m.newOrder
+  auto: "LyniaGo accepted this for you", // O.m.auto
+  autoSub: "Confirm you’re making it so we can send a rider.", // O.m.autoSub
+  confirm: "Got it, we’re making it", // O.m.confirm
+  decline: "Can’t take it", // O.m.decline
+  total: "Order total", // O.m.total
+  riderFound: "Rider found 8 min before ready", // O.m.riderFound
+  cantFinish: "Can’t finish this order", // O.m.cantFinish
+  codeOk: (rider: string) => `${rider} entered the code`, // O.m.codeOk
+  code: (rider: string) => `Read this pickup code to ${rider}`, // O.m.code
+  handBtn: "Hand over", // O.m.handBtn
+  trackT: (id: string) => `${id} on the way`, // O.m.trackT ("#{id} on the way"; the id carries its #)
+  cashStep: "Cash back to you", // O.m.cashStep
+  cashT: "CASH BACK TO YOU", // O.m.cashT
+  cashS: (rider: string, p: string) => `${rider} is bringing ${p}`, // O.m.cashS
+  cashDue: (t: string, m: number) => `Due by ${t} · ${m} min left`, // O.m.cashDue
+  cashBtn: (p: string) => `I got ${p}`, // O.m.cashBtn
+  noCash: "No cash on this one · mark completed", // O.m.noCash
+  backT: (rider: string) => `${rider} is bringing the order back`, // O.m.backT
+  /** O.m.backS without its first sentence ("Rudo wasn’t at the address."), which names the customer. */
+  backS: "Check the bag is still sealed.",
+  changeItems: "Change items", // O.u.mEdit
+  /** Drawn in of-screens-mrg.js (M1a / M4 / M5 / M6), not keyed in `O`. */
+  readyIn: (m: number) => `Ready in ${m} min`,
+  handTitle: (id: string) => `Hand over ${id}`,
+  cashAfter: "after delivery",
+  cashDueAt: (t: string) => `due ${t}`,
+  goodsBackT: "GOODS BACK TO YOU",
+  goodsDue: (t: string) => `due back by ${t}`,
+  delivered: (t: string) => `Delivered ${t}`,
+  notDelivered: "Not delivered",
+} as const;
 
 /** The words for a business. Restaurants are the default, so a screen that doesn't know yet speaks the
  *  drawn copy rather than guessing. */

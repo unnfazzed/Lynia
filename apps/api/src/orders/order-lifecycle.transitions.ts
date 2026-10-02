@@ -102,7 +102,7 @@ export const ORDER_EVENTS = [
   "cancel_unpaid", // FoodOrderService.cancelUnpaid (R-17, customer free-cancel any time before paying)
   "release_unpaid", // FoodOrderService.releaseUnpaid (R-17, no-penalty merchant release)
   "expire_end_of_day", // FoodOrderService.sweepEndOfDayClose (N-23, shop closes with payment unconfirmed)
-  "confirm_pickup", // FoodOrderService.confirmPickup (N-16, 4-digit code — wired for C3 dispatch to reach)
+  "confirm_pickup", // FoodOrderService.confirmPickup (N-16, 6-digit code since D-59 — wired for C3 dispatch to reach)
   // ── C3 (food dispatch) ──────────────────────────────────────────────────────────────────────────
   "dispatch_offer", // FoodDispatchService.tick (N-08, a candidate rider found — single-rider auto-offer)
   "dispatch_search", // FoodDispatchService.tick (self-loop: no candidate this attempt, budget remains)
@@ -262,7 +262,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     orderType: "both",
   },
 
-  // ── C2: merchant pickup (N-16, 4-digit code) — mirrors confirm_delivery's shape one hop earlier.
+  // ── C2: merchant pickup (N-16, 6-digit code since D-59; legacy 4-digit accepted on the wire) — mirrors confirm_delivery's shape one hop earlier.
   // Wired now so the mechanic exists; unreachable via HTTP until C3's dispatch assigns a rider and
   // mints pickupCodeHash (this PR mints it at markReady — see MERCHANT_PHASE_TRANSITIONS below).
   {
@@ -271,7 +271,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     to: "picked_up",
     actor: "rider",
     guard:
-      "SELECT ... FOR UPDATE row lock; caller === order.riderId; status=en_route_pickup; pickup_code_attempts < DELIVERY_OTP_MAX_ATTEMPTS (5); constant-time hash compare of the rider's 4-digit code === stored pickupCodeHash",
+      "SELECT ... FOR UPDATE row lock; caller === order.riderId; status=en_route_pickup; pickup_code_attempts < DELIVERY_OTP_MAX_ATTEMPTS (5); constant-time hash compare of the rider's code (6 digits; a legacy 4-digit attempt is a wrong code) === stored pickupCodeHash",
     sideEffect: "stamp collectedAt; OrderEvent(picked_up); best-effort WS + FCM push",
     compensation:
       "a wrong code is COMMITTED as pickupCodeAttempts += 1 (persists, the 401 tells the merchant how many tries remain)",
@@ -690,7 +690,7 @@ export const MERCHANT_PHASE_TRANSITIONS: readonly MerchantPhaseTransition[] = [
     actor: "merchant",
     guard: "caller owns the merchant; guarded CAS on merchantPhase=preparing",
     sideEffect:
-      "readyAt=now; mint pickupCodeHash (N-16, 4-digit, hashed like otpHash) so it exists by the time C3's dispatch assigns a rider and confirmPickup can verify it. Hand-off point to C3: broadcasting this order (status requested -> open_for_offers) is dispatch's job, not this method's.",
+      "readyAt=now; mint pickupCodeHash (N-16, 6-digit since D-59, hashed like otpHash) so it exists by the time C3's dispatch assigns a rider and confirmPickup can verify it. Hand-off point to C3: broadcasting this order (status requested -> open_for_offers) is dispatch's job, not this method's.",
     source: "merchant/food-order.service.ts:markReady",
   },
 ];

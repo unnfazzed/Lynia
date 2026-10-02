@@ -1,7 +1,7 @@
 /**
- * Auto-accept (docs/plans/2026-09-30-restaurant-auto-accept.md): at a restaurant that skipped the
- * accept window, the rider confirms pickup with "Collected" instead of the kitchen's 6-digit code, and
- * the server only accepts it near the restaurant. Harness copied from food-job.test.tsx.
+ * Order flow v2 (ledger D-59): the door card that
+ * mirrors the customer's (RD4a: hand over → collect the cash) and the delivery code that sends itself on
+ * the sixth digit (RD4b). Harness copied from food-job-collected.test.tsx.
  */
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -16,6 +16,8 @@ const mockGetFoodOrderAsRider = jest.fn<Promise<MerchantOrderResponse>, unknown[
 const mockConfirmFoodCollected = jest.fn();
 const mockGetLastFix = jest.fn<{ lat: number; lng: number } | null, []>();
 const mockConfirmFoodPickup = jest.fn();
+const mockConfirmFoodRiderCash = jest.fn();
+const mockConfirmDelivery = jest.fn();
 
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
@@ -27,7 +29,7 @@ jest.mock("expo-secure-store", () => ({
 }));
 jest.mock("../../../src/api/orders", () => ({
   getActiveOrder: () => mockGetActiveOrder(),
-  confirmDelivery: jest.fn(),
+  confirmDelivery: (...args: unknown[]) => mockConfirmDelivery(...args),
   advanceStatus: jest.fn(),
   rateSender: jest.fn(),
 }));
@@ -35,7 +37,7 @@ jest.mock("../../../src/api/food-rider", () => ({
   getFoodOrderAsRider: (...args: unknown[]) => mockGetFoodOrderAsRider(...args),
   confirmFoodPickup: (...args: unknown[]) => mockConfirmFoodPickup(...args),
   confirmFoodCollected: (...args: unknown[]) => mockConfirmFoodCollected(...args),
-  confirmFoodRiderCash: jest.fn(),
+  confirmFoodRiderCash: (...args: unknown[]) => mockConfirmFoodRiderCash(...args),
   disputeFoodCash: jest.fn(),
   dropFoodDispatch: jest.fn(),
   logFoodDoorstepCall: jest.fn(),
@@ -150,7 +152,6 @@ const BASE_FOOD_ORDER: MerchantOrderResponse = {
 };
 
 
-const ARRIVED = "I'm at the kitchen";
 
 function textOf(tree: renderer.ReactTestRenderer): string {
   return tree.root
@@ -176,19 +177,14 @@ async function press(tree: renderer.ReactTestRenderer, label: string): Promise<v
   await settle();
 }
 
-async function atRestaurant(autoAccepted: boolean): Promise<renderer.ReactTestRenderer> {
-  mockGetActiveOrder.mockResolvedValue({ ...BASE_ORDER, status: "en_route_pickup" });
-  mockGetFoodOrderAsRider.mockResolvedValue({ ...BASE_FOOD_ORDER, status: "en_route_pickup", autoAccepted });
-  const tree = await render();
-  await press(tree, ARRIVED);
-  return tree;
-}
-
 beforeEach(() => {
   mockGetActiveOrder.mockReset();
   mockGetFoodOrderAsRider.mockReset();
   mockConfirmFoodCollected.mockReset();
   mockGetLastFix.mockReset();
+  mockConfirmFoodPickup.mockReset();
+  mockConfirmFoodRiderCash.mockReset();
+  mockConfirmDelivery.mockReset();
 });
 
 afterEach(() => {
@@ -198,50 +194,80 @@ afterEach(() => {
   activeTree = null;
 });
 
-describe("food job — auto-accept Collected pickup", () => {
-  it("replaces the pickup-code entry with Collected at an auto-accept restaurant", async () => {
-    const tree = await atRestaurant(true);
+
+function typeCode(tree: renderer.ReactTestRenderer, label: string, code: string): Promise<void> {
+  const input = tree.root.findAll((n) => n.props.accessibilityLabel === label && typeof n.props.onChangeText === "function")[0];
+  if (!input) throw new Error(`no input labelled ${label}`);
+  return act(async () => {
+    input.props.onChangeText(code);
+  }).then(settle);
+}
+
+async function pressCta(tree: renderer.ReactTestRenderer, label: string): Promise<void> {
+  const node = tree.root.findAll((n) => n.props.label === label && typeof n.props.onPress === "function")[0];
+  if (!node) throw new Error(`no button labelled ${label}`);
+  await act(async () => {
+    node.props.onPress();
+  });
+  await settle();
+}
+
+const CASH = {
+  paymentMethod: "cash",
+  merchantCashRule: "collect_and_return",
+  cashHandshakeAmount: 17.5,
+  merchantPaymentConfirmedAt: null,
+} as const;
+
+async function atDoor(food: Partial<MerchantOrderResponse>): Promise<renderer.ReactTestRenderer> {
+  mockGetActiveOrder.mockResolvedValue({ ...BASE_ORDER, customerFirstName: "Rudo" } as OrderSnapshot);
+  mockGetFoodOrderAsRider.mockResolvedValue({ ...BASE_FOOD_ORDER, ...food });
+  const tree = await render();
+  // The screen can still be on its skeleton for a beat after a previous test's queries wind down.
+  // and the stored arrival read must land before the tap, or it overwrites it.
+  for (let i = 0; i < 20 && !textOf(tree).includes("I'm at the drop-off"); i++) await settle();
+  for (let i = 0; i < 5; i++) await settle();
+  await press(tree, "I'm at the drop-off");
+  return tree;
+}
+
+describe("RD4a · the door card", () => {
+  it("hands over first, then collects the cash with the split under (2)", async () => {
+    mockConfirmFoodRiderCash.mockResolvedValue({ orderId: "order-1", riderCashConfirmedAt: new Date().toISOString() });
+    const tree = await atDoor(CASH);
+    let text = textOf(tree);
+    expect(text).toContain("At the drop-off");
+    expect(text).toContain("Hand over the order");
+    expect(text).toContain("Collect $17.50 cash");
+    expect(text).toContain("Enter the delivery code");
+    expect(text).toContain("Rudo says it after you both confirm the cash");
+    expect(text).not.toContain("I received $17.50");
+    await pressCta(tree, "Hand over the order");
+    text = textOf(tree);
+    expect(text).toMatch(/Handed over \d\d:\d\d/);
+    expect(text).toContain("Collect $17.50 cash at the door");
+    await pressCta(tree, "I received $17.50");
+    expect(mockConfirmFoodRiderCash).toHaveBeenCalledWith("order-1");
+  });
+
+  it("ticks (1) by itself once the customer has confirmed paying", async () => {
+    const tree = await atDoor({ ...CASH, customerCashConfirmedAt: new Date().toISOString() });
+    expect(textOf(tree)).toContain("I received $17.50");
+  });
+});
+
+describe("RD4b · the delivery code", () => {
+  it("sends itself on the sixth digit once both cash confirms are in", async () => {
+    mockConfirmDelivery.mockResolvedValue({});
+    const both = { ...CASH, customerCashConfirmedAt: new Date().toISOString(), riderCashConfirmedAt: new Date().toISOString() };
+    const tree = await atDoor(both);
     const text = textOf(tree);
-    expect(text).toContain("I've collected the food");
-    expect(text).not.toContain("Ask the kitchen for the pickup code");
-  });
-
-  it("keeps the pickup code everywhere else", async () => {
-    const tree = await atRestaurant(false);
-    expect(textOf(tree)).toContain("Ask the kitchen for the pickup code");
-  });
-
-  // Order flow v2 RD2a (ledger D-59, BRIEF §16): the code the kitchen reads out is six digits.
-  it("takes the six-digit pickup code in six boxes and sends all six", async () => {
-    mockConfirmFoodPickup.mockResolvedValue({ orderId: "order-1", status: "picked_up" });
-    const tree = await atRestaurant(false);
-    const input = () => tree.root.findAll((n) => n.props.accessibilityLabel === "Ask the kitchen for the pickup code" && typeof n.props.onChangeText === "function")[0]!;
-    expect(input().props.maxLength).toBe(6);
-    const cta = () => tree.root.findAll((n) => n.props.label === "I've collected the food")[0]!;
-    await act(async () => input().props.onChangeText("7316"));
-    await settle();
-    expect(cta().props.disabled).toBe(true);
-    await act(async () => input().props.onChangeText("731604"));
-    await settle();
-    expect(cta().props.disabled).toBe(false);
-    await press(tree, "I've collected the food");
-    expect(mockConfirmFoodPickup).toHaveBeenCalledWith("order-1", "731604");
-  });
-
-  it("sends the rider's current position", async () => {
-    mockGetLastFix.mockReturnValue({ lat: -17.8201, lng: 31.0502 });
-    mockConfirmFoodCollected.mockResolvedValue({ orderId: "order-1", status: "picked_up" });
-    const tree = await atRestaurant(true);
-    await press(tree, "I've collected the food");
-    expect(mockConfirmFoodCollected).toHaveBeenCalledWith("order-1", { lat: -17.8201, lng: 31.0502 });
-  });
-
-  it("says so when the rider isn't at the restaurant yet", async () => {
-    const { ApiError } = jest.requireActual("../../../src/api/client");
-    mockGetLastFix.mockReturnValue({ lat: -17.9, lng: 31.1 });
-    mockConfirmFoodCollected.mockRejectedValue(new ApiError(409, "You're not at the restaurant yet. Move closer and try again.", "not_at_restaurant"));
-    const tree = await atRestaurant(true);
-    await press(tree, "I've collected the food");
-    expect(textOf(tree)).toContain("You're not at the restaurant yet. Move closer and try again.");
+    expect(text).toContain("Enter the delivery code");
+    expect(text).toContain("Rudo says it after you both confirm the cash · 5 tries");
+    await typeCode(tree, "DELIVERY CODE", "41829");
+    expect(mockConfirmDelivery).not.toHaveBeenCalled();
+    await typeCode(tree, "DELIVERY CODE", "418290");
+    for (let i = 0; i < 5 && mockConfirmDelivery.mock.calls.length === 0; i++) await settle();
+    expect(mockConfirmDelivery).toHaveBeenCalledWith("order-1", "418290");
   });
 });

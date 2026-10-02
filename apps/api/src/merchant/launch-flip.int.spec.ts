@@ -306,7 +306,7 @@ describe("X2 · flags ON — food golden pass", () => {
 
     await foodOrders.markReady(kitchen.ownerId, orderId);
     const { pickupCode } = await foodOrders.revealPickupCode(kitchen.ownerId, orderId);
-    expect(pickupCode).toMatch(/^\d{4}$/);
+    expect(pickupCode).toMatch(/^\d{6}$/);
     expect((await orderRow(orderId)).merchantPhase).toBe("ready_for_pickup");
 
     // C3 hand-off: one dispatch tick offers the single nearest candidate (N-08), who accepts.
@@ -320,7 +320,7 @@ describe("X2 · flags ON — food golden pass", () => {
     await lifecycleOn.advance(orderId, rider, "en_route_pickup");
 
     // N-16: a wrong code at the counter is counted, never collected on.
-    await expect(foodOrders.confirmPickup(orderId, rider, pickupCode === "0000" ? "1111" : "0000")).rejects.toThrow(/attempts left/i);
+    await expect(foodOrders.confirmPickup(orderId, rider, pickupCode === "000000" ? "111111" : "000000")).rejects.toThrow(/attempts left/i);
     expect(await foodOrders.confirmPickup(orderId, rider, pickupCode)).toEqual({ orderId, status: "picked_up" });
 
     // R-01: the debt opens IN the pickup transaction — the goods left the counter unpaid.

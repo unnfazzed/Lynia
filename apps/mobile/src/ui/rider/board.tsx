@@ -21,17 +21,18 @@ type Pt = { lat: number; lng: number };
 const ll = (p: Pt): LatLng => ({ latitude: p.lat, longitude: p.lng });
 
 /** 20px tag, radius 6, 11/700, .04em: PARCEL accent-wash / accent-text; FOOD surface + line / ink. */
-export type JobKind = "parcel" | "food" | "shop";
+export type JobKind = "parcel" | "food" | "shop" | "pharmacy";
 
 /**
- * The job tag: PARCEL (accent wash) · FOOD (surface + line) as drawn; SHOP (owner 2026-10-01: food, shop
- * and parcel jobs all show on the board, tagged) in the highlight wash, the board's third tone.
+ * The job tag: PARCEL (accent wash) · FOOD (surface + line) as Rider v2 draws them; SHOP and PHARMACY on
+ * their service tiles (Order flow v2 RD1a/RD1b, ledger D-59: #DDD5FF / #C5E9DF, ink text, no border).
+ * SHOP also tags a business's booking on the board (owner 2026-10-01), so it wears the drawn shop tile.
  */
 export function JTag({ food, kind }: { food?: boolean; kind?: JobKind }): React.ReactElement {
   const k: JobKind = kind ?? (food ? "food" : "parcel");
-  const bg = k === "food" ? tokens.color.surface : k === "shop" ? tokens.color.highlightWash : tokens.color.accentWash;
-  const fg = k === "food" ? tokens.color.ink : k === "shop" ? tokens.color.highlightInk : tokens.color.accentText;
-  const label = k === "food" ? R.food : k === "shop" ? R.shop : R.parcel;
+  const bg = k === "food" ? tokens.color.surface : k === "shop" ? tokens.color.tileShops : k === "pharmacy" ? tokens.color.tilePharmacy : tokens.color.accentWash;
+  const fg = k === "parcel" ? tokens.color.accentText : tokens.color.ink;
+  const label = k === "food" ? R.food : k === "shop" ? R.shop : k === "pharmacy" ? R.pharmacy : R.parcel;
   return (
     <View
       style={{
@@ -40,8 +41,8 @@ export function JTag({ food, kind }: { food?: boolean; kind?: JobKind }): React.
         paddingHorizontal: 7,
         borderRadius: 6,
         backgroundColor: bg,
-        borderWidth: k === "parcel" ? 0 : 1,
-        borderColor: k === "shop" ? tokens.color.highlightBorder : tokens.color.line,
+        borderWidth: k === "food" ? 1 : 0,
+        borderColor: tokens.color.line,
         alignSelf: "flex-start",
       }}
     >
@@ -94,7 +95,7 @@ export const BoardJobCard = React.memo(function BoardJobCard({
     <Tappable
       onPress={onSelect}
       disabled={!onSelect}
-      accessibilityLabel={`${job.kind === "food" ? R.food : job.kind === "shop" ? R.shop : R.parcel}, ${job.pickup.landmark} to ${job.dropoff.landmark}, ${usd(offer ? offer.fare : job.asking)}`}
+      accessibilityLabel={`${job.kind === "food" ? R.food : job.kind === "shop" ? R.shop : job.kind === "pharmacy" ? R.pharmacy : R.parcel}, ${job.pickup.landmark} to ${job.dropoff.landmark}, ${usd(offer ? offer.fare : job.asking)}`}
       style={{
         borderWidth: selected ? 2 : 1,
         borderColor: selected ? tokens.color.accentText : tokens.color.line,
