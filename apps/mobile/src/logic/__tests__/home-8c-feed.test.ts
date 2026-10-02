@@ -118,6 +118,11 @@ describe("popularNearYou (home 8c venue grid)", () => {
     } as RestaurantListItem;
   };
 
+  it("D-71: carries the venue's free-delivery flag for the purple tag — only when the venue funds it", () => {
+    expect(popularNearYou([venue({ freeDelivery: true })], NOW, CUSTOMER)[0]?.freeDelivery).toBe(true);
+    expect(popularNearYou([venue()], NOW, CUSTOMER)[0]?.freeDelivery).toBe(false);
+  });
+
   it("formats the rating to one decimal, as drawn", () => {
     expect(popularNearYou([venue()], NOW, CUSTOMER)[0]?.rating).toBe("4.9");
   });

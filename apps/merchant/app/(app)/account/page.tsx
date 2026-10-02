@@ -92,8 +92,9 @@ export default function AccountPage() {
         <Row href="/hours" icon="clock" label="Opening hours" />
         {/* Branches (ledger D-51): owner only, the count once there are 2+; opens C7. */}
         {owner && <Row href="/branches/new" icon="map-pin" label="Branches" count={branches.length >= 2 ? String(branches.length) : undefined} />}
-        {/* Auto-accept and the customer-facing number are the owner's, and only a restaurant takes orders. */}
-        {owner && !shop && <Row href="/ordering" icon="inbox" label="Taking orders" />}
+        {/* Auto-accept, the customer-facing number and free delivery (D-71) are the owner's. A shop gets
+            only the free-delivery switch there (shops are never auto-accept). */}
+        {owner && <Row href="/ordering" icon="inbox" label="Taking orders" />}
         <Row href="/riders" icon="bike" label="Preferred riders" />
         {owner && <Row href="/team" icon="user" label="Team" badge={pendingInvites > 0 ? String(pendingInvites) : undefined} />}
         {help && <Row href={help} external icon="phone" label="Help" />}

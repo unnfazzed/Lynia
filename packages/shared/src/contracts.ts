@@ -497,6 +497,9 @@ export const FoodOfferEvent = z
     itemDesc: z.string(),
     merchantGoodsTotal: z.number().nullable(),
     deliveryFee: z.number().nullable(),
+    /** D-71: the part of `deliveryFee` the venue pays (free delivery). The rider still earns all of
+     *  `deliveryFee`; the venue's cash (pay first / hand back) is goods less this. Absent = none. */
+    merchantDeliveryShare: z.number().nullable().optional(),
     distanceKm: z.number().nullable(),
     expiresAt: z.string(),
     // D5: R-01/R-03/R-10/R-12 — the offer variant (collect-and-return CASH / pay-upfront CASH /
@@ -965,9 +968,11 @@ export type SetMerchantBusyModeRequest = z.infer<typeof SetMerchantBusyModeReque
 /** `PATCH /merchant/order-settings` (owner) and `PATCH /admin/merchants/:id/order-settings` (ops):
  *  how the restaurant takes orders. Both fields optional; at least one must be sent. */
 export const UpdateMerchantOrderSettingsRequest = z
-  .object({ autoAccept: z.boolean().optional(), showPhoneToCustomers: z.boolean().optional() })
+  .object({ autoAccept: z.boolean().optional(), showPhoneToCustomers: z.boolean().optional(), freeDelivery: z.boolean().optional() })
   .strict()
-  .refine((v) => v.autoAccept !== undefined || v.showPhoneToCustomers !== undefined, { message: "Nothing to change" });
+  .refine((v) => v.autoAccept !== undefined || v.showPhoneToCustomers !== undefined || v.freeDelivery !== undefined, {
+    message: "Nothing to change",
+  });
 export type UpdateMerchantOrderSettingsRequest = z.infer<typeof UpdateMerchantOrderSettingsRequest>;
 
 /** Change an order's items after placement (agreed with the customer by phone): the new quantity per
@@ -1026,6 +1031,8 @@ export const MerchantProfileResponse = z
     autoAccept: z.boolean().optional(),
     /** The restaurant agreed to show its phone number to customers with a live order. */
     showPhoneToCustomers: z.boolean().optional(),
+    /** D-71: the venue pays the delivery fee on new cash orders (customers pay $0 delivery). */
+    freeDelivery: z.boolean().optional(),
     /** Order flow v2 (BRIEF §13): the CALLER may approve or decline prescriptions. Optional/additive. */
     myIsPharmacist: z.boolean().optional(),
   })
@@ -1157,6 +1164,9 @@ export const RestaurantListItem = z
     // above). Null until the merchant sets it → the client falls back to a default prep. All three
     // fields are additive (C1 shipped this response without them; an old client ignores them).
     prepBaselineMinutes: z.number().int().nullable(),
+    // D-71: the venue pays the delivery fee (handoffs calm-mint-v2 §5, browse-v2 §7 — "Free delivery"
+    // only when the venue funds it). Optional/additive: absent on an older server = not free.
+    freeDelivery: z.boolean().optional(),
   })
   .strict();
 export type RestaurantListItem = z.infer<typeof RestaurantListItem>;
@@ -1660,6 +1670,11 @@ export const MerchantOrderResponse = z
     merchantGoodsTotal: z.number().nullable(),
     deliveryFee: z.number().nullable(),
     total: z.number().nullable(),
+    /** D-71: the part of `deliveryFee` the venue pays (free delivery); null/absent = the customer pays it
+     *  all. `deliveryFee` stays what the rider earns; `total` already has the share taken off. */
+    merchantDeliveryShare: z.number().nullable().optional(),
+    /** D-71: what the customer pays for delivery (`deliveryFee` less the venue's share; 0 = free). */
+    customerDeliveryFee: z.number().nullable().optional(),
     acceptDeadlineAt: z.string().nullable(),
     itemApprovalDeadlineAt: z.string().nullable(),
     prepMinutes: z.number().int().nullable(),

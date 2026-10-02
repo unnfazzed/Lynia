@@ -12,7 +12,7 @@ import {
   type ScheduleSlot,
   type ScheduleSlotsResponse,
 } from "@lynia/shared";
-import { RESTAURANTS_PRICING, smallOrderFeeForSubtotal } from "@lynia/shared/restaurants-order";
+import { foodOrderMoney, merchantDeliveryShareAtPlacement, RESTAURANTS_PRICING, smallOrderFeeForSubtotal } from "@lynia/shared/restaurants-order";
 import { cartSubtotal, type FoodCartLine } from "./food-cart";
 import { zwNationalDigits } from "./zw-mobile";
 
@@ -21,8 +21,12 @@ import { zwNationalDigits } from "./zw-mobile";
 export interface ReviewBreakdown {
   /** "Food" — the dishes. */
   food: number;
-  /** "Delivery fee" — null until a drop-off exists (R9b draws no fee without an address). */
+  /** "Delivery fee" — what the CUSTOMER pays for delivery: null until a drop-off exists (R9b draws no
+   *  fee without an address), 0 when the venue pays for it (D-71). */
   deliveryFee: number | null;
+  /** D-71: the venue pays the rider's fee on this order — the row reads "Free, paid by {venue}". Same rule
+   *  the server prices with (`merchantDeliveryShareAtPlacement`): cash, venue flag on, goods cover the fee. */
+  freeDelivery: boolean;
   /** "Small-order fee" — $1.00 under the $4.00 minimum, else 0 (the row is not rendered). */
   smallOrderFee: number;
   /** BRIEF D3f: owed from an earlier cancel after collection, carried on this order (0 = no row). */
@@ -41,14 +45,26 @@ function cents(n: number): number {
   return Math.round(n * 100);
 }
 
-export function reviewBreakdown(lines: readonly FoodCartLine[], deliveryFee: number | null, owed = 0): ReviewBreakdown {
+export function reviewBreakdown(
+  lines: readonly FoodCartLine[],
+  deliveryFee: number | null,
+  owed = 0,
+  /** D-71: the venue's "Free delivery" flag (`RestaurantListItem.freeDelivery`). */
+  venueFreeDelivery = false,
+): ReviewBreakdown {
   const food = cents(cartSubtotal(lines as FoodCartLine[])) / 100;
   const smallOrderFee = lines.length > 0 ? smallOrderFeeForSubtotal(food) : 0;
   const belowMinimum = lines.length > 0 && food < RESTAURANTS_PRICING.minOrderSubtotal;
   const carried = owed > 0 ? cents(owed) / 100 : 0;
-  const total = (cents(food) + cents(smallOrderFee) + cents(deliveryFee ?? 0) + cents(carried)) / 100;
+  const goods = (cents(food) + cents(smallOrderFee)) / 100;
+  const share =
+    deliveryFee != null && lines.length > 0
+      ? merchantDeliveryShareAtPlacement({ freeDelivery: venueFreeDelivery, paymentMethod: "cash", goodsTotal: goods, deliveryFee })
+      : null;
+  const customerFee = deliveryFee == null ? null : foodOrderMoney({ goodsTotal: goods, deliveryFee, merchantDeliveryShare: share }).customerDeliveryFee;
+  const total = (cents(goods) + cents(customerFee ?? 0) + cents(carried)) / 100;
   const shortfall = belowMinimum ? (cents(RESTAURANTS_PRICING.minOrderSubtotal) - cents(food)) / 100 : 0;
-  return { food, deliveryFee, smallOrderFee, owed: carried, total, belowMinimum, shortfall };
+  return { food, deliveryFee: customerFee, freeDelivery: share != null, smallOrderFee, owed: carried, total, belowMinimum, shortfall };
 }
 
 /**

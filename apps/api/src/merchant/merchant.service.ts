@@ -39,6 +39,8 @@ import type {
 } from "@lynia/shared";
 import {
   addMoney,
+  foodOrderMoney,
+  subMoney,
   effectiveMerchantHours,
   merchantWaypoint,
   RESTAURANTS_COMMISSION,
@@ -373,6 +375,8 @@ export class MerchantService {
       data: {
         ...(body.autoAccept !== undefined ? { autoAccept: body.autoAccept } : {}),
         ...(body.showPhoneToCustomers !== undefined ? { showPhoneToCustomers: body.showPhoneToCustomers } : {}),
+        // D-71: free delivery paid by the venue — applies to orders placed from now on, never in flight.
+        ...(body.freeDelivery !== undefined ? { freeDelivery: body.freeDelivery } : {}),
       },
       include: { ownerProfile: { select: { phone: true } } },
     });
@@ -819,7 +823,7 @@ export class MerchantService {
 
     const delivered = await this.prisma.order.findMany({
       where: { merchantId, orderType: "merchant", status: "delivered", deliveredAt: { gte: rangeStart, lte: rangeEnd } },
-      select: { id: true, deliveredAt: true, merchantPaymentMethod: true, merchantGoodsTotal: true },
+      select: { id: true, deliveredAt: true, merchantPaymentMethod: true, merchantGoodsTotal: true, deliveryFee: true, merchantDeliveryShare: true },
       orderBy: { deliveredAt: "desc" },
       take: 200,
     });
@@ -836,7 +840,8 @@ export class MerchantService {
 
     const ratePct = RESTAURANTS_COMMISSION.currentRatePct;
     const lineItems: MerchantStatementLineItem[] = delivered.map((o) => {
-      const amount = roundToCents(Number(o.merchantGoodsTotal ?? 0));
+      // D-71: the venue's money on the order — goods less any delivery it paid for (free delivery).
+      const amount = roundToCents(foodOrderMoney({ goodsTotal: o.merchantGoodsTotal, deliveryFee: o.deliveryFee, merchantDeliveryShare: o.merchantDeliveryShare }).merchantNet);
       return {
         orderId: o.id,
         deliveredAt: (o.deliveredAt ?? new Date()).toISOString(),
@@ -901,7 +906,8 @@ export class MerchantService {
       this.prisma.order.aggregate({
         where: { merchantId, orderType: "merchant", createdAt: { gte: start, lte: end }, prepStartedAt: { not: null }, status: { not: "cancelled" } },
         _count: { _all: true },
-        _sum: { merchantGoodsTotal: true },
+        // D-71: sales are the venue's money — goods less the delivery it paid for.
+        _sum: { merchantGoodsTotal: true, merchantDeliveryShare: true },
       }),
       // D-48: cash a rider still owes back past its due time (delivered + the return window), neither
       // counted nor closed by the merchant. Any day's, not just today's: overdue is overdue.
@@ -914,7 +920,17 @@ export class MerchantService {
       // D-48 C3: today's orders for Money's list.
       this.prisma.order.findMany({
         where: { merchantId, orderType: "merchant", createdAt: { gte: start, lte: end } },
-        select: { id: true, status: true, prepStartedAt: true, createdAt: true, deliveredAt: true, cancelledAt: true, merchantGoodsTotal: true },
+        select: {
+          id: true,
+          status: true,
+          prepStartedAt: true,
+          createdAt: true,
+          deliveredAt: true,
+          cancelledAt: true,
+          merchantGoodsTotal: true,
+          deliveryFee: true,
+          merchantDeliveryShare: true,
+        },
         orderBy: { createdAt: "desc" },
         take: 100,
       }),
@@ -945,7 +961,7 @@ export class MerchantService {
       walletTaken: roundToCents(Number(walletTaken._sum.merchantGoodsTotal ?? 0)),
       averagePrepMinutes,
       orders: placed._count._all,
-      sales: roundToCents(Number(placed._sum.merchantGoodsTotal ?? 0)),
+      sales: subMoney(Number(placed._sum.merchantGoodsTotal ?? 0), Number(placed._sum.merchantDeliveryShare ?? 0)),
       cashOverdue: addMoney(0, ...[...overdueRows, ...bookingOverdue].map((o) => Number(o.debtAmount ?? 0))),
       overdue: [
         ...overdueRows.map((o) => ({ o, kind: "order" as const })),
@@ -964,7 +980,9 @@ export class MerchantService {
           orderId: o.id,
           at: (o.deliveredAt ?? o.cancelledAt ?? o.createdAt).toISOString(),
           outcome,
-          amount: earns ? roundToCents(Number(o.merchantGoodsTotal ?? 0)) : 0,
+          amount: earns
+            ? roundToCents(foodOrderMoney({ goodsTotal: o.merchantGoodsTotal, deliveryFee: o.deliveryFee, merchantDeliveryShare: o.merchantDeliveryShare }).merchantNet)
+            : 0,
         };
       }),
     };
@@ -1048,6 +1066,7 @@ export class MerchantService {
       closedUntil: merchant.closedUntil && merchant.closedUntil.getTime() > Date.now() ? merchant.closedUntil.toISOString() : null,
       autoAccept: merchant.autoAccept,
       showPhoneToCustomers: merchant.showPhoneToCustomers,
+      freeDelivery: merchant.freeDelivery,
       // Order flow v2 (BRIEF §13): whether the caller may approve/decline prescriptions.
       ...(me.myIsPharmacist !== undefined ? { myIsPharmacist: me.myIsPharmacist } : {}),
     };
@@ -1088,7 +1107,7 @@ export class MerchantService {
     merchant: Pick<
       MerchantWithOwner,
       "id" | "name" | "coverPhotoUrl" | "logoUrl" | "cuisineTags" | "priceLevel" | "hours" | "location" | "foodRatingAvg" | "foodRatingCount" | "prepBaselineMinutes" | "closedUntil"
-    >,
+    > & { freeDelivery?: boolean },
   ): Promise<RestaurantListItem> {
     const location = (merchant.location as Waypoint | null) ?? null;
     const [coverPhotoUrl, logoUrl] = await Promise.all([this.signPhoto(merchant.coverPhotoUrl), this.signPhoto(merchant.logoUrl)]);
@@ -1109,6 +1128,8 @@ export class MerchantService {
       ratingAvg: merchant.foodRatingCount > 0 ? merchant.foodRatingAvg : null,
       ratingCount: merchant.foodRatingCount,
       prepBaselineMinutes: merchant.prepBaselineMinutes,
+      // D-71: sent only when the venue funds delivery, so every other venue's payload is unchanged.
+      ...(merchant.freeDelivery ? { freeDelivery: true } : {}),
     };
   }
 

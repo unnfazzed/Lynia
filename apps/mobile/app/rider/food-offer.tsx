@@ -5,7 +5,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { acceptFoodDispatch, declineFoodDispatch, type FoodOfferJob, getFoodDispatchOfferWithJob } from "../../src/api/food-rider";
-import { foodOfferVariant } from "../../src/logic/food-rider-job";
+import { foodCashBreakdown, foodOfferVariant } from "../../src/logic/food-rider-job";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { pendingOrQueued } from "../../src/query/client";
 import { EmptyState, haptic, Icon, Screen, SkeletonList, useActionErrorEffect } from "../../src/ui";
@@ -124,9 +124,12 @@ export default function FoodOffer(): React.ReactElement {
   }
 
   const upfront = foodOfferVariant(offer) === "cash_upfront";
-  const pay = offer.merchantGoodsTotal ?? 0;
-  const fee = offer.deliveryFee ?? 0;
-  const collect = pay + fee;
+  // D-71: on a free-delivery order the venue's cash is goods less the fee and the customer pays only the
+  // goods; the rider's fee is the same either way.
+  const cash = foodCashBreakdown(offer);
+  const pay = cash.owed;
+  const fee = cash.kept;
+  const collect = cash.collected;
   const pending = acceptM.isPending || declineM.isPending;
   // Peek: 40% of the screen (26% upfront, 20% under 700dp), measured from the top of the screen.
   const share = upfront ? (winH < 700 ? 0.2 : 0.26) : 0.4;

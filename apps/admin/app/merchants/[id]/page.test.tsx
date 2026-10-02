@@ -70,17 +70,21 @@ describe("Merchant profile: holding a business's bookings (merchant web upgrade 
 });
 
 describe("Merchant profile: Taking orders (auto-accept)", () => {
-  it("a restaurant shows both switches with their current state", async () => {
-    await open(detail({ businessType: "restaurant", shopKind: null, autoAccept: true, showPhoneToCustomers: false }));
+  it("a restaurant shows its three switches with their current state", async () => {
+    await open(detail({ businessType: "restaurant", shopKind: null, autoAccept: true, showPhoneToCustomers: false, freeDelivery: false }));
     const card = screen.getByRole("region", { name: "Taking orders" });
     expect(card.textContent).toContain("Accept orders automatically");
     expect(card.textContent).toContain("Show the restaurant's number to customers");
+    expect(card.textContent).toContain("Free delivery");
     expect(screen.getByRole("button", { name: "Turn off…" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Turn on…" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Turn on…" })).toHaveLength(2);
   });
 
-  it("a shop has no Taking orders card (shops can't take in-app orders)", async () => {
-    await open(detail());
-    expect(screen.queryByRole("region", { name: "Taking orders" })).toBeNull();
+  it("D-71: a shop's Taking orders card has only the free-delivery switch (shops never auto-accept)", async () => {
+    await open(detail({ freeDelivery: true }));
+    const card = screen.getByRole("region", { name: "Taking orders" });
+    expect(card.textContent).toContain("Free delivery");
+    expect(card.textContent).not.toContain("Accept orders automatically");
+    expect(screen.getByRole("button", { name: "Turn off…" })).toBeTruthy();
   });
 });

@@ -3759,6 +3759,51 @@ that number when the account has none on file. It stays **editable**: the handof
 and its README says "prefill or confirm", so the rider confirms rather than retypes. The IR26-04 fraud
 checks (typed vs vendor number, collisions) are unchanged.
 
+## D-71 · Free delivery, paid by the restaurant or shop — the flag the handoffs asked for is built — PENDING OWNER REVIEW (2026-10-02)
+
+**Owner decision, this session (2026-10-02):** build free delivery paid by the restaurant or shop. The
+designs draw it but it was never built (D-55 table "Free delivery tag: Never shown"; D-57 table "Free
+delivery pill and tag: Never shown"). This entry retires both of those rows: the tag, the pill and the
+filter now show whenever the venue's flag is on.
+
+**What the designs settle, and where**
+
+| Rule | Source |
+|---|---|
+| A merchant-funded `free_delivery` boolean per venue | calm-mint-v2 README §5, browse-v2 README §7, browse-v2 CLAUDE-CODE-PROMPT ("`freeDelivery` per venue") |
+| The venue pays; the rider is paid in full | D-55 owner decision 2 |
+| "Free delivery" only when the venue funds it (honest data) | browse-v2 README §2, order-flow-v2 PROMPT ("Honest data only") |
+| The purple `free` token: tag on full cards, bold purple text in compact rows, the Free delivery pill shown only when a venue offers it | browse-v2 BRIEF §4/§7, calm-mint-v2 README §2 |
+| "Checkout reads 'Delivery: Free, paid by <venue>'" | calm-mint-v2 README §5 |
+
+**What the app does (cash only)**
+
+- **Customer pays $0 delivery.** Review & place's Delivery fee row reads "Free, paid by {venue}" (bold,
+  `free` token) and the cash total is the goods (+ small-order fee, + any owed balance). The order screen
+  and receipt read the same, and every later total (edits, swaps, a declined prescription) keeps it free.
+- **The rider earns the full fee**, unchanged: the offer's fare, the board's asking figure and the
+  delivered screen all show `deliveryFee`.
+- **The venue's money is the goods less the fee.** Nobody carries a separate fare in a cash world: the
+  rider keeps the fee out of the cash the customer paid and hands back the rest. The collect-and-return
+  debt opens at goods − fee; the merchant's Money lines, today's sales and the weekly statement (and its
+  commission line) use the same net. This follows the current D-48 collect-and-return model, not the
+  retired weekly-15% settlement in `ui_kits/admin/cash.html`.
+- Server: `merchants.free_delivery`, `orders.merchant_delivery_share` (migration
+  `0072_merchant_funded_free_delivery`, expand-only); one split for every surface,
+  `foodOrderMoney` in `packages/shared/src/restaurants-order.ts`.
+
+**What the designs don't settle: the simplest safe choice (owner to confirm)**
+
+| # | Question | Choice |
+|---|---|---|
+| 1 | How a venue turns it on | A third switch, **"Free delivery"**, on the existing app-only *Account → Taking orders* page (owner only), and the same switch on the admin merchant profile's Taking orders card (reason-coded, audited). Neither handoff draws it. A shop or pharmacy now reaches Taking orders too and sees only this switch (shops never auto-accept). |
+| 2 | Minimum order / radius | None. The only floor is that the goods (with the small-order fee) must cover the fee at placement; below it the customer pays delivery as usual, so a venue never pays to give food away. No radius: the fee is per km inside the service area, as for every order. |
+| 3 | An edit drops the goods below the fee | The order stays funded; the venue's share is capped at the goods total, the customer pays only the uncovered part. The rider is never short and the venue never goes below $0. |
+| 4 | The switch changes mid-order | The share is snapshotted at placement; only new orders change. |
+| 5 | Wallet orders | Never funded (cash only). |
+| 6 | Customer cancels after collection | They owe what they would have paid (goods, $0 delivery) — the existing D3f rule on the order's total. |
+| 7 | Copy not in any handoff | "Free, paid by {v}" (`O_ADDED.r.freePaidBy`, the README §5 sentence); the merchant switch's line "Customers pay $0 delivery on new orders. You pay the rider's delivery fee: it comes off the cash for each order."; the admin card's lines and two audit reasons. |
+
 ## D-72 · "Popular" is a real ranking: recent delivered orders, not the nearest open venues — APPROVED (2026-10-02)
 
 **Owner decision (2026-10-02):** "Popular restaurants" / "Popular shops" on Home and the browse lists'

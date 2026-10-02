@@ -13,7 +13,9 @@ import {
   BUSY_MODE_EXTRA_MIN,
   type ConfirmSubstitutionRequest,
   deriveMerchantOrderTrack,
+  foodOrderMoney,
   fromCents,
+  recomputeMerchantDeliveryShare,
   merchantGoodsForSubtotal,
   type ProposeSubstitutionRequest,
   RESTAURANTS_TIMING,
@@ -220,7 +222,10 @@ export class OrderSubstitutionService implements OnModuleInit, OnModuleDestroy {
       // stored total is the delivery fee alone rather than a lone small-order fee on an empty basket.
       const goods = keptLines === 0 ? { itemsSubtotal: 0, smallOrderFee: 0, goodsTotal: 0 } : merchantGoodsForSubtotal(keptSubtotal);
       const deliveryFee = Number(order.deliveryFee ?? 0);
-      const wasTotal = addMoney(Number(order.merchantGoodsTotal ?? 0), deliveryFee);
+      // D-71: totals are the customer's — a free-delivery venue's share comes off, capped by the goods.
+      const wasTotal = foodOrderMoney({ goodsTotal: order.merchantGoodsTotal, deliveryFee, merchantDeliveryShare: order.merchantDeliveryShare }).customerTotal;
+      const merchantDeliveryShare = recomputeMerchantDeliveryShare(order.merchantDeliveryShare, goods.goodsTotal, deliveryFee);
+      const newTotal = foodOrderMoney({ goodsTotal: goods.goodsTotal, deliveryFee, merchantDeliveryShare }).customerTotal;
       const hasSwaps = swapLines.length > 0;
       const allGone = !hasSwaps && keptLines === 0;
       const deadlineAt = hasSwaps ? new Date(now.getTime() + RESTAURANTS_TIMING.substitutionWindowMs) : null;
@@ -276,7 +281,8 @@ export class OrderSubstitutionService implements OnModuleInit, OnModuleDestroy {
       const prepMinutes = body.prepMinutes !== undefined ? body.prepMinutes + (order.merchant?.busyMode ? BUSY_MODE_EXTRA_MIN : 0) : undefined;
       let data: Prisma.OrderUpdateManyMutationInput = {
         merchantGoodsTotal: goods.goodsTotal,
-        agreedFare: addMoney(goods.goodsTotal, deliveryFee),
+        merchantDeliveryShare,
+        agreedFare: newTotal,
         itemsEditedAt: now,
       };
       if (allGone) {
@@ -302,7 +308,7 @@ export class OrderSubstitutionService implements OnModuleInit, OnModuleDestroy {
         hasSwaps,
         allGone,
         atAccept,
-        total: addMoney(goods.goodsTotal, deliveryFee),
+        total: newTotal,
         status: allGone ? "cancelled" : "requested",
         merchantPhase: allGone ? null : ((data.merchantPhase as string | undefined) ?? order.merchantPhase),
         removedNames: body.lines
@@ -481,6 +487,9 @@ export class OrderSubstitutionService implements OnModuleInit, OnModuleDestroy {
     const nothingLeft = keptCents + addedCents === 0;
     const goods = merchantGoodsForSubtotal(itemsSubtotal);
     const deliveryFee = Number(order.deliveryFee ?? 0);
+    // D-71: a free-delivery order stays free once the swaps land (share back up to the fee if goods allow).
+    const merchantDeliveryShare = recomputeMerchantDeliveryShare(order.merchantDeliveryShare, goods.goodsTotal, deliveryFee);
+    const newTotal = foodOrderMoney({ goodsTotal: goods.goodsTotal, deliveryFee, merchantDeliveryShare }).customerTotal;
 
     let data: Prisma.OrderUpdateManyMutationInput;
     let nextPhase = order.merchantPhase as string | null;
@@ -488,7 +497,7 @@ export class OrderSubstitutionService implements OnModuleInit, OnModuleDestroy {
       data = { status: "cancelled", cancelledAt: now, rejectionReason: "all_out_of_stock", merchantPhase: null, itemApprovalDeadlineAt: null };
       nextPhase = null;
     } else {
-      data = { merchantGoodsTotal: goods.goodsTotal, agreedFare: addMoney(goods.goodsTotal, deliveryFee), itemsEditedAt: now };
+      data = { merchantGoodsTotal: goods.goodsTotal, merchantDeliveryShare, agreedFare: newTotal, itemsEditedAt: now };
       if (order.merchantPhase === "awaiting_item_approval") {
         nextPhase = order.merchantPaymentMethod === "cash" ? "preparing" : "awaiting_payment";
         data = {
@@ -511,7 +520,7 @@ export class OrderSubstitutionService implements OnModuleInit, OnModuleDestroy {
       customerId: order.customerId,
       venue: order.merchant?.name ?? "The restaurant",
       cancelled,
-      total: addMoney(goods.goodsTotal, deliveryFee),
+      total: newTotal,
       status: cancelled ? "cancelled" : order.status,
       merchantPhase: nextPhase,
       removedNames,

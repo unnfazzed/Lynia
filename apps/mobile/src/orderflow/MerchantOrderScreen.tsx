@@ -69,7 +69,7 @@ import { BlankMap } from "../ui/order/OrderMap";
 import { OrderSheet, type OrderSheetHandle, PeekMark } from "../ui/order/OrderSheet";
 import { OrderHeader } from "../ui/order/panels";
 import { useReduceMotion } from "../ui/useReduceMotion";
-import { O, ofFmt } from "../ui/orderflow/copy";
+import { O, O_ADDED, ofFmt } from "../ui/orderflow/copy";
 import { doorWhere, OX, OXS, rxReasonLabel, svcCopy, trackLabels, withRider } from "../ui/orderflow/kit-copy";
 import {
   AnswerHead,
@@ -145,6 +145,12 @@ const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 type Toast = { text: string; icon?: "circle-alert" | "circle-check" | "timer" | "bike"; action?: string; onAction?: () => void; ttl?: number };
 type Panel = null | "help" | "report" | "cancel" | "schedule";
+
+/** D-71: what the customer pays for delivery — the fee less the venue's share (0 on free delivery). */
+const customerFeeOf = (o: MerchantOrderResponse): number => o.customerDeliveryFee ?? o.deliveryFee ?? 0;
+/** D-71: the receipt's Delivery fee value — "Free, paid by {venue}" when the venue paid it. */
+const feeTextOf = (o: MerchantOrderResponse, venue: string): string =>
+  o.merchantDeliveryShare != null && customerFeeOf(o) === 0 ? ofFmt(O_ADDED.r.freePaidBy, { v: venue }) : usd(customerFeeOf(o));
 
 /** The four cash-handshake fields, explicit (the response omits them when empty). */
 const cashOf = (o: MerchantOrderResponse): { paymentMethod: string | null; customerCashConfirmedAt: string | null; riderCashConfirmedAt: string | null; cashHandshakeFrozenAt: string | null } => ({
@@ -696,7 +702,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   const freeCancel = !!order && (canCancelFreely(order.merchantPhase) || awaitingKitchenConfirm(order));
   // T15b: after the rider collects, the customer can still cancel — it costs the full total (D3f).
   const afterPickup = !!order && (order.status === "picked_up" || order.status === "en_route_dropoff");
-  const orderTotal = order ? (order.total ?? (order.merchantGoodsTotal ?? 0) + (order.deliveryFee ?? 0)) : 0;
+  const orderTotal = order ? (order.total ?? (order.merchantGoodsTotal ?? 0) + customerFeeOf(order)) : 0;
   const riderCancel = !!order && order.riderId != null && (order.status === "assigned" || order.status === "confirmed" || order.status === "en_route_pickup");
   const panels = (
     <>
@@ -772,7 +778,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   }
 
   // ── view model ──
-  const total = order.total ?? (order.merchantGoodsTotal ?? 0) + (order.deliveryFee ?? 0);
+  const total = order.total ?? (order.merchantGoodsTotal ?? 0) + customerFeeOf(order);
   const keptItems = order.items.filter((i) => i.available !== false);
   const lines: LineView[] = keptItems.map((i) => ({ qty: i.quantity, name: i.name, price: i.priceUsd * i.quantity, note: i.note }));
   const count = keptItems.reduce((a, i) => a + i.quantity, 0);
@@ -864,7 +870,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
         ...lines.map((l) => `${l.qty}× ${l.name} ${usd(l.price)}`),
         `${O.r.food} ${usd(goods)}`,
         small > 0 ? `${O.r.small} ${usd(small)}` : null,
-        `${O.r.fee} ${usd(order.deliveryFee ?? 0)}`,
+        `${O.r.fee} ${feeTextOf(order, venueName)}`,
         `${O.r.total} ${usd(total)}`,
         withRider(O.d.paidCash, rFirst),
         `${O.d.venue} ${venueName}`,
@@ -950,7 +956,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
               ))}
               <KV k={O.r.food} v={usd(goods)} />
               {small > 0 ? <KV k={O.r.small} v={usd(small)} /> : null}
-              <KV k={O.r.fee} v={usd(order.deliveryFee ?? 0)} />
+              <KV k={O.r.fee} v={feeTextOf(order, venueName)} />
               <KV k={O.r.total} v={usd(total)} total />
               {rFirst ? (
                 <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 6, paddingTop: 4, paddingBottom: 8 }}>
@@ -1186,7 +1192,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   const openRound = round && isOpenRound(round) && !AFTER_PICKUP.has(order.status) ? round : null;
   if (openRound) {
     const { leftMs, pct } = roundClock(openRound, nowMs);
-    const st = substitutionState(openRound, order.deliveryFee ?? 0, answers);
+    const st = substitutionState(openRound, customerFeeOf(order), answers);
     const subLines = substitutionLines(openRound);
     const mid = openRound.kind === "mid_prep";
     const answerIn = `${Math.round(RESTAURANTS_TIMING.substitutionWindowMs / 60_000)} ${O.c.min}`;
@@ -1276,7 +1282,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       const end = order.itemApprovalDeadlineAt ? Date.parse(order.itemApprovalDeadlineAt) : NaN;
       const leftMs = Number.isFinite(end) ? Math.max(0, end - nowMs) : 0;
       const removed = order.items.filter((i) => i.available === false);
-      const was = order.items.reduce((a, i) => a + i.priceUsd * i.quantity, 0) + (order.deliveryFee ?? 0);
+      const was = order.items.reduce((a, i) => a + i.priceUsd * i.quantity, 0) + customerFeeOf(order);
       tall = true;
       content = (
         <>

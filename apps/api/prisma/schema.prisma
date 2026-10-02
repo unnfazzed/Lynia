@@ -667,6 +667,11 @@ model Order {
   // N-01: computed via packages/shared/restaurants-pricing (config, not a constant), never re-derived
   // client-side.
   deliveryFee                Decimal?               @map("delivery_fee") @db.Decimal(10, 2)
+  // D-71: the part of deliveryFee the venue pays (free delivery), snapshotted at placement and capped
+  // by the goods total on every edit (packages/shared restaurants-order foodOrderMoney). Null = the
+  // venue doesn't fund this order. The rider keeps the full deliveryFee either way; agreedFare is
+  // goods + fee - share; the venue's cash (debtAmount / pay-upfront) is goods - share.
+  merchantDeliveryShare      Decimal?               @map("merchant_delivery_share") @db.Decimal(10, 2)
 
   // ── C3: food dispatch (orderType=merchant only) ─────────────────────────────────────────────────
   // Candidate rider currently holding a live single-rider auto-offer (N-08, 60s); null once
@@ -1034,6 +1039,10 @@ model Merchant {
   // The restaurant's number is shown to customers with a live order. On for every restaurant (0064,
   // owner decision 2026-10-01); a restaurant can turn it off in Account → Taking orders.
   showPhoneToCustomers Boolean    @default(true) @map("show_phone_to_customers")
+  // D-71: free delivery paid by the venue. The customer pays $0 delivery, the rider still earns the
+  // full fee, and the venue's cash on the order is the goods total less the fee. Off until the venue
+  // (Account → Taking orders) or ops turn it on. Snapshotted per order as Order.merchantDeliveryShare.
+  freeDelivery   Boolean          @default(false) @map("free_delivery")
   // #673 discovery: the restaurant's star rating — a denormalised aggregate of customers' food
   // scores (Rating.foodScore, #672), maintained on rate() like the rider's ratingAvg/ratingCount.
   // The list card reads it directly (avg is meaningless while count is 0 → the card shows no rating).

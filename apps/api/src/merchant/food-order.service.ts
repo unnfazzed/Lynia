@@ -18,6 +18,9 @@ import {
   DELIVERY_OTP_MAX_ATTEMPTS,
   deliveryFeeForDistance,
   deriveMerchantOrderTrack,
+  foodOrderMoney,
+  merchantDeliveryShareAtPlacement,
+  recomputeMerchantDeliveryShare,
   type EditMerchantOrderItemsRequest,
   merchantGoodsForSubtotal,
   orderShortId,
@@ -280,6 +283,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         prepBaselineMinutes: true,
         businessType: true,
         shopKind: true,
+        freeDelivery: true,
       },
     });
     if (!merchant) throw new NotFoundException("Restaurant not found");
@@ -335,7 +339,15 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     const smallOrderFee = smallOrderFeeForSubtotal(rawSubtotal);
     const merchantGoodsTotal = addMoney(rawSubtotal, smallOrderFee);
     const deliveryFee = deliveryFeeForDistance(distanceKm);
-    const agreedFare = addMoney(merchantGoodsTotal, deliveryFee);
+    // D-71: a free-delivery venue pays the rider's fee out of its own cash; the customer pays $0 delivery.
+    // Snapshotted here so flipping the switch later never reprices this order.
+    const merchantDeliveryShare = merchantDeliveryShareAtPlacement({
+      freeDelivery: merchant.freeDelivery,
+      paymentMethod: body.paymentMethod,
+      goodsTotal: merchantGoodsTotal,
+      deliveryFee,
+    });
+    const agreedFare = foodOrderMoney({ goodsTotal: merchantGoodsTotal, deliveryFee, merchantDeliveryShare }).customerTotal;
     const itemDesc = summarizeMerchantItems(body.items.map((i) => ({ name: dishById.get(i.dishId)!.name, quantity: i.quantity })));
     // Auto-accept: a cash order at an auto-accept restaurant skips the accept window and goes straight
     // to cooking at the restaurant's usual prep time. No rider is sent until the kitchen is confirmed
@@ -382,6 +394,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
           merchantCashRule: body.paymentMethod === "cash" ? "collect_and_return" : null,
           merchantGoodsTotal,
           deliveryFee,
+          merchantDeliveryShare,
           idempotencyKey: body.idempotencyKey ?? null,
           // Order flow v2 (BRIEF §7): null = never chosen = ask.
           outOfStockPref: body.outOfStockPref ?? null,
@@ -735,7 +748,10 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       const rawSubtotal = addMoney(...remaining.map((it) => lineTotal(it.priceUsd, it.quantity)));
       const smallOrderFee = smallOrderFeeForSubtotal(rawSubtotal);
       const merchantGoodsTotal = addMoney(rawSubtotal, smallOrderFee);
-      const agreedFare = addMoney(merchantGoodsTotal, Number(order.deliveryFee ?? 0));
+      const deliveryFee = Number(order.deliveryFee ?? 0);
+      // D-71: a funded order stays funded, capped by the smaller goods total.
+      const merchantDeliveryShare = recomputeMerchantDeliveryShare(order.merchantDeliveryShare, merchantGoodsTotal, deliveryFee);
+      const agreedFare = foodOrderMoney({ goodsTotal: merchantGoodsTotal, deliveryFee, merchantDeliveryShare }).customerTotal;
 
       await this.prisma.$transaction(async (tx) => {
         const claimed = await tx.order.updateMany({
@@ -745,6 +761,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
             itemApprovalDeadlineAt: new Date(Date.now() + RESTAURANTS_TIMING.itemApprovalWindowMs),
             prepMinutes,
             merchantGoodsTotal,
+            merchantDeliveryShare,
             agreedFare,
           },
         });
@@ -930,8 +947,10 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
           merchant_payment_method: string | null;
           merchant_cash_rule: string | null;
           merchant_goods_total: Prisma.Decimal | null;
+          delivery_fee: Prisma.Decimal | null;
+          merchant_delivery_share: Prisma.Decimal | null;
         }>
-      >`SELECT status, rider_id, pickup_code_hash, pickup_code_attempts, merchant_id, merchant_payment_method, merchant_cash_rule, merchant_goods_total FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
+      >`SELECT status, rider_id, pickup_code_hash, pickup_code_attempts, merchant_id, merchant_payment_method, merchant_cash_rule, merchant_goods_total, delivery_fee, merchant_delivery_share FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
       const o = rows[0];
       if (!o) throw new NotFoundException("Order not found");
       if (o.rider_id !== riderId) throw new ForbiddenException("Not the assigned rider");
@@ -974,8 +993,10 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
           merchant_payment_method: string | null;
           merchant_cash_rule: string | null;
           merchant_goods_total: Prisma.Decimal | null;
+          delivery_fee: Prisma.Decimal | null;
+          merchant_delivery_share: Prisma.Decimal | null;
         }>
-      >`SELECT status, rider_id, auto_accepted, merchant_id, merchant_payment_method, merchant_cash_rule, merchant_goods_total FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
+      >`SELECT status, rider_id, auto_accepted, merchant_id, merchant_payment_method, merchant_cash_rule, merchant_goods_total, delivery_fee, merchant_delivery_share FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
       const o = rows[0];
       if (!o) throw new NotFoundException("Order not found");
       if (o.rider_id !== riderId) throw new ForbiddenException("Not the assigned rider");
@@ -1013,6 +1034,8 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       merchant_payment_method: string | null;
       merchant_cash_rule: string | null;
       merchant_goods_total: Prisma.Decimal | null;
+      delivery_fee?: Prisma.Decimal | null;
+      merchant_delivery_share?: Prisma.Decimal | null;
     },
   ): Promise<void> {
     // Order flow v2 (BRIEF §9): shops and pharmacies need the sealed-bag photo before pickup completes.
@@ -1026,6 +1049,9 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       merchantPaymentMethod: o.merchant_payment_method,
       merchantCashRule: o.merchant_cash_rule,
       merchantGoodsTotal: o.merchant_goods_total,
+      // D-71: the debt is the venue's net (goods less its delivery share), never the goods alone.
+      deliveryFee: o.delivery_fee ?? null,
+      merchantDeliveryShare: o.merchant_delivery_share ?? null,
     });
   }
 
@@ -1445,6 +1471,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     }));
     const merchantGoodsTotal = order.merchantGoodsTotal != null ? Number(order.merchantGoodsTotal) : null;
     const deliveryFee = order.deliveryFee != null ? Number(order.deliveryFee) : null;
+    const money = foodOrderMoney({ goodsTotal: merchantGoodsTotal, deliveryFee, merchantDeliveryShare: order.merchantDeliveryShare });
     const merchantLocation = order.merchant?.location as Waypoint | null;
     const shopPhone = merchantLocation?.contactPhone ?? order.merchant?.ownerProfile?.phone ?? null;
     // Safeguard 5: the shop's number is only for paying it directly (legacy WALLET orders), or when the
@@ -1463,7 +1490,11 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       merchantPaymentPhone,
       merchantGoodsTotal,
       deliveryFee,
-      total: merchantGoodsTotal != null && deliveryFee != null ? addMoney(merchantGoodsTotal, deliveryFee) : null,
+      // D-71: the customer's total has the venue's delivery share taken off; the rider's fee doesn't.
+      total: merchantGoodsTotal != null && deliveryFee != null ? money.customerTotal : null,
+      // Both omitted (A-O14) on an order the venue doesn't fund — the customer then pays `deliveryFee`.
+      merchantDeliveryShare: order.merchantDeliveryShare != null ? Number(order.merchantDeliveryShare) : null,
+      customerDeliveryFee: order.merchantDeliveryShare != null && deliveryFee != null ? money.customerDeliveryFee : null,
       acceptDeadlineAt: order.acceptDeadlineAt?.toISOString() ?? null,
       itemApprovalDeadlineAt: order.itemApprovalDeadlineAt?.toISOString() ?? null,
       prepMinutes: order.prepMinutes,
@@ -1585,6 +1616,9 @@ const RESPONSE_NULL_OMIT_FIELDS = [
   "kitchenConfirmedBy",
   "itemsEditedAt",
   "restaurantPhone",
+  // D-71: absent unless the venue funds this order's delivery.
+  "merchantDeliveryShare",
+  "customerDeliveryFee",
   // Order flow v2: absent unless the order is scheduled / has a prescription / owes or carries a balance.
   "scheduledFor",
   "ringsAt",

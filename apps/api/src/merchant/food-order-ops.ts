@@ -1,6 +1,14 @@
 import { ConflictException, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { addMoney, fromCents, smallOrderFeeForSubtotal, toCents, type EditMerchantOrderItemsRequest } from "@lynia/shared";
+import {
+  addMoney,
+  foodOrderMoney,
+  fromCents,
+  recomputeMerchantDeliveryShare,
+  smallOrderFeeForSubtotal,
+  toCents,
+  type EditMerchantOrderItemsRequest,
+} from "@lynia/shared";
 import type { NotificationsService } from "../notifications/notifications.service";
 import type { PrismaService } from "../prisma/prisma.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
@@ -98,7 +106,10 @@ export async function editOrderItems(
 
   const rawSubtotal = addMoney(...kept.map((n) => fromCents(toCents(Number(n.it.priceUsd)) * n.quantity)));
   const merchantGoodsTotal = addMoney(rawSubtotal, smallOrderFeeForSubtotal(rawSubtotal));
-  const agreedFare = addMoney(merchantGoodsTotal, Number(order.deliveryFee ?? 0));
+  const deliveryFee = Number(order.deliveryFee ?? 0);
+  // D-71: a free-delivery order stays free, the venue's share capped by the new goods total.
+  const merchantDeliveryShare = recomputeMerchantDeliveryShare(order.merchantDeliveryShare, merchantGoodsTotal, deliveryFee);
+  const agreedFare = foodOrderMoney({ goodsTotal: merchantGoodsTotal, deliveryFee, merchantDeliveryShare }).customerTotal;
   const now = new Date();
 
   await prisma.$transaction(async (tx) => {
@@ -106,6 +117,7 @@ export async function editOrderItems(
       where: { id: orderId, status: order.status, merchantPhase: order.merchantPhase },
       data: {
         merchantGoodsTotal,
+        merchantDeliveryShare,
         agreedFare,
         itemsEditedAt: now,
         ...(body.prepMinutes !== undefined && order.merchantPhase === "preparing" ? { prepMinutes: body.prepMinutes } : {}),
@@ -122,7 +134,7 @@ export async function editOrderItems(
   notifyFoodQueueChanged(gateway, order.merchantId, orderId);
   await notifications.notifyProfiles([order.customerId], {
     title: `${order.merchant?.name ?? "The restaurant"} updated your order`,
-    body: `New total $${addMoney(merchantGoodsTotal, Number(order.deliveryFee ?? 0)).toFixed(2)}, cash at the door.`,
+    body: `New total $${agreedFare.toFixed(2)}, cash at the door.`,
     data: { orderId, status: order.status, to: "customer", orderType: "merchant", kind: "food_items_edited" },
   });
 }

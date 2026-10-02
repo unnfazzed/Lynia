@@ -170,6 +170,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
         itemDesc: true,
         merchantGoodsTotal: true,
         deliveryFee: true,
+        merchantDeliveryShare: true,
         distanceKm: true,
         merchantPaymentMethod: true,
         merchantCashRule: true,
@@ -310,6 +311,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       itemDesc: string;
       merchantGoodsTotal: Prisma.Decimal | null;
       deliveryFee: Prisma.Decimal | null;
+      merchantDeliveryShare?: Prisma.Decimal | null;
       distanceKm: Prisma.Decimal | number | null;
       merchantPaymentMethod?: string | null;
       merchantCashRule?: string | null;
@@ -324,6 +326,8 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       itemDesc: order.itemDesc,
       merchantGoodsTotal: order.merchantGoodsTotal != null ? Number(order.merchantGoodsTotal) : null,
       deliveryFee: order.deliveryFee != null ? Number(order.deliveryFee) : null,
+      // D-71: only on a free-delivery order (the rider's fee is unchanged; the venue's cash is goods − share).
+      ...(order.merchantDeliveryShare != null ? { merchantDeliveryShare: Number(order.merchantDeliveryShare) } : {}),
       distanceKm: order.distanceKm != null ? Number(order.distanceKm) : null,
       expiresAt: expiresAt.toISOString(),
       // D5: the offer variant the rider decides accept/decline against (R-01/R-03/R-10/R-12).
@@ -397,6 +401,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
             itemDesc: true,
             merchantGoodsTotal: true,
             deliveryFee: true,
+            merchantDeliveryShare: true,
             distanceKm: true,
             merchantPaymentMethod: true,
             merchantCashRule: true,

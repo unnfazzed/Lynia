@@ -11,7 +11,9 @@ import { Prisma } from "@prisma/client";
 import {
   addMoney,
   type DeclinePrescriptionRequest,
+  foodOrderMoney,
   fromCents,
+  recomputeMerchantDeliveryShare,
   type PrescriptionInput,
   type PrescriptionPhotosResponse,
   rejectionCopy,
@@ -138,7 +140,15 @@ export class PrescriptionService {
     if (rx.status !== "pending") throw new ConflictException({ reason: "prescription_checked", message: "This prescription was already checked." });
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      select: { customerId: true, status: true, merchantPhase: true, deliveryFee: true, merchantItems: true, merchant: { select: { name: true } } },
+      select: {
+        customerId: true,
+        status: true,
+        merchantPhase: true,
+        deliveryFee: true,
+        merchantDeliveryShare: true,
+        merchantItems: true,
+        merchant: { select: { name: true } },
+      },
     });
     if (!order) throw new NotFoundException("Order not found");
     const kept = order.merchantItems.filter((it) => it.available !== false && !it.rxRequired);
@@ -163,10 +173,13 @@ export class PrescriptionService {
       }
       const rawSubtotal = addMoney(...kept.map((it) => fromCents(toCents(Number(it.priceUsd)) * it.quantity)));
       const merchantGoodsTotal = addMoney(rawSubtotal, smallOrderFeeForSubtotal(rawSubtotal));
-      const agreedFare = addMoney(merchantGoodsTotal, Number(order.deliveryFee ?? 0));
+      const deliveryFee = Number(order.deliveryFee ?? 0);
+      // D-71: a free-delivery order stays free, the venue's share capped by the smaller goods total.
+      const merchantDeliveryShare = recomputeMerchantDeliveryShare(order.merchantDeliveryShare, merchantGoodsTotal, deliveryFee);
+      const agreedFare = foodOrderMoney({ goodsTotal: merchantGoodsTotal, deliveryFee, merchantDeliveryShare }).customerTotal;
       const u = await tx.order.updateMany({
         where: { id: orderId, status: "requested", merchantPhase: order.merchantPhase },
-        data: { merchantGoodsTotal, agreedFare, itemsEditedAt: now },
+        data: { merchantGoodsTotal, merchantDeliveryShare, agreedFare, itemsEditedAt: now },
       });
       if (u.count === 0) throw new ConflictException("Order changed, retry");
     });
