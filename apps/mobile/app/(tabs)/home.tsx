@@ -22,6 +22,8 @@ import { useNotificationsUnreadCount } from "../../src/query/use-notifications-u
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { enqueueBoot } from "../../src/telemetry/rum";
+import { reportBootReady } from "../../src/boot/boot-readiness";
+import { BootEntrance } from "../../src/boot/splash/BootEntrance";
 import { statusPillLabel, useTabRoot } from "../../src/ui";
 import { StatusBar } from "expo-status-bar";
 import { H } from "../../src/ui/home/copy";
@@ -288,6 +290,21 @@ export default function LauncherHomeScreen(): React.ReactElement {
     (restaurantsEnabled && feed.restaurants == null && feed.isFetching) ||
     (shopsEnabled && shopsFeed.shops == null && shopsFeed.isFetching) ||
     (pharmacyEnabled && pharmacyFeed.shops == null && pharmacyFeed.isFetching);
+  // The cold-start splash's steps 2 and 3 (src/boot/boot-readiness.ts, ledger D-63): it stays up until
+  // Home has its profile ("Loading your saved places") and its first content ("Finding riders near
+  // you") — so Home arrives drawn, not as skeletons. A read that failed counts as settled (Home shows
+  // its own empty state); a read paused offline does not, so the splash shows its offline panel.
+  const profileSettled = meQ.data !== undefined || meQ.isError;
+  const railsSettled =
+    (!restaurantsEnabled || feed.restaurants != null || feed.isError) &&
+    (!shopsEnabled || shopsFeed.shops != null || shopsFeed.isError) &&
+    (!pharmacyEnabled || pharmacyFeed.shops != null || pharmacyFeed.isError);
+  useEffect(() => {
+    if (profileSettled) reportBootReady("profile");
+  }, [profileSettled]);
+  useEffect(() => {
+    if (profileSettled && railsSettled) reportBootReady("home");
+  }, [profileSettled, railsSettled]);
 
   const onTile = (id: ServiceId): void => {
     if (id === "send") router.push("/send");
@@ -313,72 +330,79 @@ export default function LauncherHomeScreen(): React.ReactElement {
         contentContainerStyle={{ paddingBottom: bottomPad + (bar ? 72 : 0) }}
         showsVerticalScrollIndicator={false}
       >
-        <HomeTop
-          narrow={narrow}
-          address={location.label}
-          noAddress={noAddress}
-          phrase={greeting.phrase}
-          firstName={firstName}
-          unread={unreadCount > 0}
-          onAddress={() => openLocation(false)}
-          onBell={() => router.push("/notifications")}
-          onSearch={() => router.push("/food/search?scope=all")}
-        />
+        {/* BootEntrance: the cold-start rise-in after the splash (ledger D-63); a no-op on every other mount. */}
+        <BootEntrance index={0}>
+          <HomeTop
+            narrow={narrow}
+            address={location.label}
+            noAddress={noAddress}
+            phrase={greeting.phrase}
+            firstName={firstName}
+            unread={unreadCount > 0}
+            onAddress={() => openLocation(false)}
+            onBell={() => router.push("/notifications")}
+            onSearch={() => router.push("/food/search?scope=all")}
+          />
+        </BootEntrance>
         {riderJob && riderJobStage ? (
           // Rider v2 C5 (D-54): a rider in customer view mid-job — the way back to the job.
           <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
             <SmBtn kind="fill" icon="package" label={RF.swJobBar(riderJobStage)} onPress={() => router.push(riderJob.orderType === "merchant" ? "/rider/food-job" : "/rider/job")} />
           </View>
         ) : null}
-        <ServiceGrid narrow={narrow} onTile={onTile} />
-        {noAddress ? (
-          <NoLocationCard title={H.noLocTitle} onUseLocation={() => void location.useCurrentLocation()} onTypeAddress={() => openLocation(true)} />
-        ) : showRestaurants || showShops ? (
-          <View>
-            {showRestaurants ? (
-              <VenueRail title={H.popularRestaurants} sub={H.popularRestaurantsSub} sticker="food" onSeeAll={() => router.push("/food")}>
-                {venues.map((v) => (
-                  <VenueCard
-                    key={v.id}
-                    name={v.name}
-                    photoUrl={v.photoUrl}
-                    rating={v.rating}
-                    etaMinutes={v.etaMinutes}
-                    deliveryFee={v.deliveryFee}
-                    closed={v.closed}
-                    onPress={() => router.push(`/food/${v.id}`)}
-                  />
-                ))}
-              </VenueRail>
-            ) : null}
-            {showShops ? (
-              // "See all" opens Shops (the larger section); a pharmacy card opens its Pharmacy storefront.
-              <VenueRail title={H.popularShops} sub={H.popularShopsSub} sticker="shops" onSeeAll={() => router.push(shopsEnabled ? "/shops" : "/pharmacy")}>
-                {shopVenues.map((v) => (
-                  <VenueCard
-                    key={v.id}
-                    name={v.name}
-                    photoUrl={v.photoUrl}
-                    kind={SHOP_KIND_LABEL[v.shopKind]}
-                    rating={v.rating}
-                    etaMinutes={v.etaMinutes}
-                    deliveryFee={v.deliveryFee}
-                    closed={v.closed}
-                    onPress={() => router.push(v.shopKind === "pharmacy" ? `/pharmacy/${v.id}` : `/shops/${v.id}`)}
-                  />
-                ))}
-              </VenueRail>
-            ) : null}
-          </View>
-        ) : firstLoad ? (
-          <View>
-            <RailSkeleton />
-            <RailSkeleton />
-          </View>
-        ) : (
-          // Both rails empty → the H6 card, reworded: merchants coming, parcels now (owner 2026-10-02, D-60).
-          <ComingSoonCard onSend={() => router.push("/send")} />
-        )}
+        <BootEntrance index={1}>
+          <ServiceGrid narrow={narrow} onTile={onTile} />
+        </BootEntrance>
+        <BootEntrance index={2}>
+          {noAddress ? (
+            <NoLocationCard title={H.noLocTitle} onUseLocation={() => void location.useCurrentLocation()} onTypeAddress={() => openLocation(true)} />
+          ) : showRestaurants || showShops ? (
+            <View>
+              {showRestaurants ? (
+                <VenueRail title={H.popularRestaurants} sub={H.popularRestaurantsSub} sticker="food" onSeeAll={() => router.push("/food")}>
+                  {venues.map((v) => (
+                    <VenueCard
+                      key={v.id}
+                      name={v.name}
+                      photoUrl={v.photoUrl}
+                      rating={v.rating}
+                      etaMinutes={v.etaMinutes}
+                      deliveryFee={v.deliveryFee}
+                      closed={v.closed}
+                      onPress={() => router.push(`/food/${v.id}`)}
+                    />
+                  ))}
+                </VenueRail>
+              ) : null}
+              {showShops ? (
+                // "See all" opens Shops (the larger section); a pharmacy card opens its Pharmacy storefront.
+                <VenueRail title={H.popularShops} sub={H.popularShopsSub} sticker="shops" onSeeAll={() => router.push(shopsEnabled ? "/shops" : "/pharmacy")}>
+                  {shopVenues.map((v) => (
+                    <VenueCard
+                      key={v.id}
+                      name={v.name}
+                      photoUrl={v.photoUrl}
+                      kind={SHOP_KIND_LABEL[v.shopKind]}
+                      rating={v.rating}
+                      etaMinutes={v.etaMinutes}
+                      deliveryFee={v.deliveryFee}
+                      closed={v.closed}
+                      onPress={() => router.push(v.shopKind === "pharmacy" ? `/pharmacy/${v.id}` : `/shops/${v.id}`)}
+                    />
+                  ))}
+                </VenueRail>
+              ) : null}
+            </View>
+          ) : firstLoad ? (
+            <View>
+              <RailSkeleton />
+              <RailSkeleton />
+            </View>
+          ) : (
+            // Both rails empty → the H6 card, reworded: merchants coming, parcels now (owner 2026-10-02, D-60).
+            <ComingSoonCard onSend={() => router.push("/send")} />
+          )}
+        </BootEntrance>
       </ScrollView>
       {bar ? (
         <LiveOrderBar

@@ -143,6 +143,10 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
   top of D-54) align to `packages/design/handoff/order-flow-v2/` (ledger D-59, owner 2026-10-01/02). The gallery
   `RC` cart / checkout / order-tracking screens are superseded and not aligned to. Strings come from the handoff's `O`
   (`code/copy.ts`, verbatim). Cash only; **every code is 6 digits shown 3+3**, the pickup code included.
+- **The splash follows its own handoff (`handoff/splash-v1/`).** The cold-start splash
+  (`src/boot/splash/BootSplash.tsx`) aligns to `packages/design/handoff/splash-v1/` (ledger D-63, owner
+  2026-10-02): "1a Sun & orbit", up for exactly as long as the boot takes (real steps from
+  `src/boot/boot-readiness.ts`), then Home rises over it. The gallery `LJ splash` / `RJ splash` are superseded.
 - **Never align to a retired screen.** Retired ids are listed in `packages/design/EXPORT-README.md`
   and the `gallery-map.js` header — chiefly `LJ home_launcher` and nine `RJ` rider screens.
 - **The interactive mobile kit is stale for RIDER.** `ui_kits/mobile/app.js` still runs the pre-July

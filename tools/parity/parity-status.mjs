@@ -33,6 +33,10 @@
 export const PARITY_STATUS = {
   // ── LJ ──────────────────────────────────────────────────────────
   "LJ.home_flag_off": { status: "PENDING" }, // Home · Food tile soon
+  "LJ.splash": {
+    status: "PENDING",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-63 (owner, 2026-10-02): the splash-v1 handoff (packages/design/handoff/splash-v1, '1a Sun & orbit') replaces the static green dove splash with an animated sun-and-orbit splash and a live steps card that stays up until the boot is ready (src/boot/splash/BootSplash.tsx). app/splash.view.tsx was deleted. Not aligned to.",
+  }, // Splash
   "LJ.role_select": {
     status: "PENDING",
     reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-55 (owner, 2026-10-01): the Calm Mint v2 handoff (packages/design/handoff/calm-mint-v2-2026-10) removes the role choice screen — every account starts as a customer, and the rider path is 'Want to earn? Ride with LyniaGo' on C1 or the Account card. app/role.tsx was deleted; there is no screen to wire. Not aligned to.",
@@ -200,7 +204,10 @@ export const PARITY_STATUS = {
   "RC.resume": { status: "PENDING" }, // App resumed mid-order
 
   // ── RJ ──────────────────────────────────────────────────────────
-  "RJ.splash": { status: "PENDING" }, // Splash
+  "RJ.splash": {
+    status: "PENDING",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-63 (owner, 2026-10-02): the splash-v1 handoff (packages/design/handoff/splash-v1, '1a Sun & orbit') replaces the static green dove splash with an animated sun-and-orbit splash and a live steps card that stays up until the boot is ready (src/boot/splash/BootSplash.tsx). app/splash.view.tsx was deleted. Not aligned to.",
+  }, // Splash
   "RJ.onboard": { status: "PENDING" }, // Onboarding · rider
   "RJ.login": { status: "PENDING" }, // Phone sign-in
   "RJ.otp": { status: "PENDING" }, // SMS OTP

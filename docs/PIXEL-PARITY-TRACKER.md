@@ -104,7 +104,7 @@ target, an `index.json` that matches the directory, and no expectation outliving
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | C1·1 | `LJ splash` | Splash | | |
+| ⏭ | C1·1 | `LJ splash` | Splash | **SUPERSEDED by D-63 (Splash v1, 2026-10-02)** — "1a Sun & orbit" (`packages/design/handoff/splash-v1`), built in `src/boot/splash/BootSplash.tsx`. Not aligned to the gallery mock. | SUPERSEDED (D-63) |
 | ⏭ | C1·2 | `LJ onboard` | Onboarding · food  [FOOD] | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — C1 Welcome (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
 | ⏭ | C1·3 | `LJ onboard_send` | Onboarding · send  [PARCEL] | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — C1 Welcome (carousel retired) (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
 | ⏭ | C1·4 | `LJ onboard_shared` | Onboarding · one app  [BOTH] | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — C1 Welcome (carousel retired) (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
@@ -279,7 +279,7 @@ target, an `index.json` that matches the directory, and no expectation outliving
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | R1·1 | `RJ splash` | Splash | | |
+| ⏭ | R1·1 | `RJ splash` | Splash | **SUPERSEDED by D-63 (Splash v1, 2026-10-02)** — the one app splash (`packages/design/handoff/splash-v1`). Not aligned to the gallery mock. | SUPERSEDED (D-63) |
 | ⬜ | R1·2 | `RJ onboard` | Onboarding · rider | | |
 | ⬜ | R1·3 | `RJ login` | Phone sign-in | | |
 | ⬜ | R1·4 | `RJ otp` | SMS OTP | | |

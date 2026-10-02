@@ -1,11 +1,13 @@
 import { Redirect } from "expo-router";
+import { tokens } from "@lynia/shared/tokens";
 import React, { useEffect, useState } from "react";
+import { View } from "react-native";
 import { useAuth } from "../src/auth/auth-context";
 import { type StartRole } from "../src/auth/session";
+import { reportBootDestination } from "../src/boot/boot-readiness";
 import { prewarmBootReads } from "../src/boot/prewarm";
 import { bootRedirectTarget } from "../src/logic/boot-route";
 import { enqueueBoot } from "../src/telemetry/rum";
-import { SplashView } from "./splash.view";
 
 export default function Index(): React.ReactElement {
   const { session, loading } = useAuth();
@@ -39,22 +41,24 @@ export default function Index(): React.ReactElement {
   // screen. `boot_home - boot_paint` isolates the device-read segment (see rum.ts). In an effect, not
   // inline in the render below, so a double-invoked render can't enqueue telemetry as a side effect —
   // `enqueueBoot` is idempotent per process anyway, but a render that reports is a render that lies.
+  const target = bootResolved ? bootRedirectTarget({ session, onboardingSeen, rolePref: rolePref ?? null, coldStartData }) : null;
   useEffect(() => {
-    if (bootResolved) enqueueBoot("boot_home");
-  }, [bootResolved]);
+    if (!target) return;
+    enqueueBoot("boot_home");
+    // Step 1 of the splash ("Checking it's you") is this decision; the destination tells the splash
+    // whether to wait for Home's steps or hand off now (src/boot/boot-readiness.ts, ledger D-63).
+    reportBootDestination(target);
+  }, [target]);
 
-  if (!bootResolved) {
-    // Pre-auth boot IS the splash (customer/rider 0·1): the brand-green dove moment, not a spinner
-    // (skeletons need a screen shape we don't have yet, and the DS bans bare page-level spinners).
-    // On a production cold start this frame stays UNDER the held native splash (MOB-BOOT-05 — the
-    // boot is one screen, released by src/boot/boot-splash-hold.tsx); it is what shows on dev
-    // reloads, where the native splash is already gone. The drawn tree lives in ./splash.view.
-    return <SplashView />;
+  if (!target) {
+    // The splash (src/boot/splash/BootSplash.tsx) is what the user sees while the boot reads settle;
+    // this route sits off-screen under it, so it only needs to be the same green.
+    return <View style={{ flex: 1, backgroundColor: tokens.color.accent }} />;
   }
   // A brand-new user (no session, onboarding not yet seen) meets the carousel first; it saves the flag
   // and hands off to /phone once done or skipped.
   // A signed-in user with the rider role saved goes straight to their rider home — mirrors verify.tsx's
   // post-OTP routing so a warm relaunch doesn't dump a rider onto the customer compose screen (R3).
   // A cold-start push-tap deep link takes priority over both — see bootRedirectTarget (LC-D-T3).
-  return <Redirect href={bootRedirectTarget({ session, onboardingSeen, rolePref: rolePref ?? null, coldStartData })} />;
+  return <Redirect href={target} />;
 }

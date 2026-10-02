@@ -5,7 +5,7 @@ import { Stack, type ErrorBoundaryProps } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect } from "react";
-import { View } from "react-native";
+import { Animated, View, useWindowDimensions } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "../src/auth/auth-context";
 import { SessionGate } from "../src/auth/session-gate";
@@ -25,7 +25,8 @@ import { enqueueBoot, start as startRum } from "../src/telemetry/rum";
 import { captureException, initSentry, wrap } from "../src/telemetry/sentry";
 import { Button, EmptyState, OfflineBanner, Screen, ToastProvider } from "../src/ui";
 import { prewarmFonts, useAppFonts } from "../src/ui/fonts";
-import { BootSplashHold, useBootSplashRelease } from "../src/boot/boot-splash-hold";
+import { useBootSplashRelease } from "../src/boot/boot-splash-hold";
+import { BootSplash } from "../src/boot/splash/BootSplash";
 import { RiderRouteGate } from "../src/rider-route-gate";
 import ForceUpdateScreen from "./force-update";
 
@@ -70,17 +71,15 @@ function bootStep(step: () => unknown): void {
 // through bootStep, because this is the statement that must not be the one that kills the launch.
 bootStep(initSentry);
 
-// Keep the native splash up until the DESTINATION screen has presented (MOB-BOOT-05: the cold start
-// is ONE screen — the native splash — released by src/boot/boot-splash-hold.tsx, not by the font
-// gate). Rejects if already prevented (e.g. Fast Refresh).
+// Keep the native launch screen up until the JS splash (src/boot/splash/BootSplash.tsx, ledger D-63)
+// has drawn its first frame — it drops the native screen from its onLayout, onto the same green.
+// Rejects if already prevented (e.g. Fast Refresh).
 bootStep(() => SplashScreen.preventAutoHideAsync().catch(() => {}));
-// The cold start is ONE screen and it does not animate (owner instructions 2026-08-18/2026-08-24).
-// `duration: 0` is the half that actually matters on Android: SplashScreenManager.kt (verified at
-// expo-splash-screen@0.29.24) IGNORES `fade` and always runs its exit as an alpha animation over
-// `duration` — default 400ms. With the splash now released onto the destination screen (not onto an
-// identical green frame), a 400ms fade would render as the destination fading in, i.e. an animation
-// in a boot sequence that is supposed to have none. `fade: false` stays for the platforms/versions
-// that do read it.
+// The native→JS drop is a straight cut. `duration: 0` is the half that actually matters on Android:
+// SplashScreenManager.kt (verified at expo-splash-screen@0.29.24) IGNORES `fade` and always runs its
+// exit as an alpha animation over `duration` — default 400ms, which would cross-fade the native frame
+// into the JS splash's intro. All the boot's motion belongs to the JS splash. `fade: false` stays for
+// the platforms/versions that do read it.
 bootStep(() => SplashScreen.setOptions({ fade: false, duration: 0 }));
 
 // Start the fonts and every device-local boot read NOW, at module evaluation, so the native side works
@@ -150,9 +149,8 @@ export const stackScreenOptions = {
  * route (including a push-tap deep link), so scoping by route name would be a list that rots. Scoping
  * by PHASE covers every destination and expires on its own — see src/boot/boot-phase.tsx.
  *
- * The native splash (held by `BootSplashHold` until the destination presents) covers this handoff;
- * the suppression is what makes it deterministic rather than a race between the splash release and a
- * transition still in flight.
+ * The JS splash covers this handoff (the navigator sits off-screen under it until its exit — see
+ * `AppStage`); the suppression is what keeps the redirect beneath it from animating.
  */
 export const bootStackScreenOptions = {
   ...stackScreenOptions,
@@ -176,6 +174,41 @@ function AppNavigator(): React.ReactElement {
   return <Stack screenOptions={booting ? bootStackScreenOptions : stackScreenOptions} />;
 }
 
+/** The cold-start splash, mounted only while the process is booting. */
+function SplashWhileBooting(): React.ReactElement | null {
+  return useBootPhase().booting ? <BootSplash /> : null;
+}
+
+/**
+ * The app's frame during the cold start (ledger D-63, `handoff/splash-v1` § Exit). While booting it
+ * holds the navigator 105% of a screen below the splash — mounted, fetching and laying out, but off
+ * screen and hidden from accessibility — and the splash's exit slides it up with its top corners
+ * rounding off (40 → 0). After the boot it is a plain full-size view: `endBoot` snaps the reveal into
+ * place, and the clip/background only apply while booting.
+ */
+function AppStage({ children }: { children: React.ReactNode }): React.ReactElement {
+  const { booting, reveal } = useBootPhase();
+  const { height } = useWindowDimensions();
+  const translateY = reveal.y.interpolate({ inputRange: [0, 1], outputRange: [height * 1.05, 0] });
+  return (
+    <Animated.View
+      style={{ flex: 1, opacity: reveal.opacity, transform: [{ translateY }] }}
+      importantForAccessibility={booting ? "no-hide-descendants" : "auto"}
+      accessibilityElementsHidden={booting}
+    >
+      <Animated.View
+        style={
+          booting
+            ? { flex: 1, overflow: "hidden", backgroundColor: tokens.color.bg, borderTopLeftRadius: reveal.radius, borderTopRightRadius: reveal.radius }
+            : { flex: 1 }
+        }
+      >
+        {children}
+      </Animated.View>
+    </Animated.View>
+  );
+}
+
 /**
  * App-wide render-error safety net. expo-router (v4) auto-mounts an `ErrorBoundary` export from a
  * layout/route file, catching render-time exceptions in its subtree that would otherwise be an
@@ -191,9 +224,9 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps): React.React
   useEffect(() => {
     captureException(error);
   }, [error]);
-  // Belt-and-braces: BootSplashHold's release never fires when the throw happens on the mount pass
-  // that would have mounted it, so this screen would otherwise render UNDER a splash still held up by
-  // the module-scope preventAutoHideAsync() above — a frozen icon instead of a recoverable error. Today
+  // Belt-and-braces: when the throw happens on the mount pass that would have mounted the JS splash,
+  // nothing else drops the native launch screen held by the module-scope preventAutoHideAsync() above,
+  // so this screen would render UNDER it — a frozen icon instead of a recoverable error. Today
   // expo-router's own boundary also force-hides (views/Try.tsx), but the invariant "whatever renders
   // first drops the splash" belongs next to the code that holds it, not in a framework internal.
   // Goes through the ONE shared release (native hide + window-background reset + boot-phase end);
@@ -221,8 +254,8 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps): React.React
 }
 
 function RootLayout(): React.ReactElement | null {
-  // Self-hosted Inter — the native splash covers the whole boot (held by BootSplashHold), so no
-  // Text is ever VISIBLE before its family is available. Font assets are bundled (no network), so on
+  // Self-hosted Inter — fonts load during the native launch screen and the JS splash's intro, so Text
+  // is very rarely visible before its family is available (and self-heals when it registers). Font assets are bundled (no network), so on
   // the rare load error we fall through to the system-font fallback rather than block the app.
   // `useAppFonts` is TIME-BOUNDED (src/ui/fonts.ts): it reports an error rather than pending past
   // FONT_LOAD_TIMEOUT_MS — since MOB-BOOT-05 the splash release no longer waits on fonts at all
@@ -243,9 +276,9 @@ function RootLayout(): React.ReactElement | null {
   // Record the first half of the cold start once fonts resolve (loaded or errored): bundle
   // evaluation started → the tree is fully paintable. The splash is deliberately NOT dropped here
   // any more (MOB-BOOT-05): hiding on this commit raced RN's first PRESENTED frame, and losing that
-  // race exposed the window background for a few frames — the intermittent white flash. The one
-  // release now lives in src/boot/boot-splash-hold.tsx, after the destination has settled. The font
-  // gate's own timeout (src/ui/fonts.ts) still bounds this mark; the splash no longer depends on it.
+  // race exposed the window background for a few frames — the intermittent white flash. The JS splash
+  // drops it from its own first layout (ledger D-63). The font gate's own timeout (src/ui/fonts.ts)
+  // still bounds this mark; the splash does not depend on it.
   useEffect(() => {
     if (!fontsReady) return;
     enqueueBoot("boot_paint");
@@ -297,19 +330,20 @@ function RootLayout(): React.ReactElement | null {
                 over the connectivity ink bar for the toast's few seconds, then clears itself. */}
             <ToastProvider>
               {/* Scopes the no-transition rule to the cold start: AppNavigator reads `booting` for
-                  its screenOptions and BootSplashHold ends the phase when it releases, so in-app
+                  its screenOptions and the splash ends the phase when it hands off, so in-app
                   navigation keeps its animation. */}
               <BootPhaseProvider>
                 <View style={{ flex: 1 }}>
-                  <ConnectivityBanner />
-                  <View style={{ flex: 1 }}>
-                    <AppNavigator />
-                  </View>
-                  {/* Cold-start splash hold (MOB-BOOT-05): holds the NATIVE splash — the boot's one
-                      and only screen — until the first REAL screen's frame is presented, then hides
-                      it, ends the boot phase and schedules the window-background reset. Renders
-                      nothing. Dismisses on ANY route + a hard cap — see the component's header. */}
-                  <BootSplashHold />
+                  {/* The cold-start splash (ledger D-63): on screen for exactly as long as the boot
+                      takes, then Home rises over it. Drawn UNDER the app, which waits off-screen
+                      (AppStage) until the splash's exit raises it. Unmounts when the boot ends. */}
+                  <SplashWhileBooting />
+                  <AppStage>
+                    <ConnectivityBanner />
+                    <View style={{ flex: 1 }}>
+                      <AppNavigator />
+                    </View>
+                  </AppStage>
                 </View>
               </BootPhaseProvider>
             </ToastProvider>
