@@ -483,7 +483,26 @@ export type FoodOfferEvent = z.infer<typeof FoodOfferEvent>;
  *  round-trips as the well-formed JSON `{ offer: null }`, not an ambiguous empty response body (Nest
  *  sends NO body at all for a bare `null`/`undefined` controller return — `isNil` short-circuits
  *  straight to `response.send()`). */
-export const FoodOfferResponse = z.object({ offer: FoodOfferEvent.nullable() }).strict();
+export const FoodOfferResponse = z
+  .object({
+    offer: FoodOfferEvent.nullable(),
+    // Order flow v2 (ledger D-59, RD1a–d): what the offer card tags — SHOP / PHARMACY, "Scheduled", "Rx".
+    // A sibling of `offer`, never a key inside it: `FoodOfferEvent` is the strict `food:offer` socket
+    // payload installed rider apps safeParse, so a new key there would make them drop every food offer.
+    // Optional; omitted when there is no live offer. Inlined enums for the same TDZ reason as above.
+    job: z
+      .object({
+        businessType: z.enum(["restaurant", "shop"]),
+        shopKind: z.enum(["pharmacy", "grocery", "butchery", "fashion", "auto_parts", "hardware", "electronics", "other"]).nullable(),
+        /** The customer's slot start (ISO) when the order was scheduled; null for an ASAP order. */
+        scheduledFor: z.string().nullable(),
+        /** A prescription order: the rider must see the original at the door (RD3). */
+        rx: z.boolean(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
 export type FoodOfferResponse = z.infer<typeof FoodOfferResponse>;
 
 /** `food:offer-closed` payload (C5) — the recipient's live food-dispatch offer stopped being live
@@ -663,6 +682,13 @@ export type MerchantFeatureFlagsResponse = z.infer<typeof MerchantFeatureFlagsRe
  *  client's parse and drop all of their flags to defaults (the rider food board among them). */
 export const ServiceFlagsResponse = z.object({ shopsEnabled: z.boolean(), pharmacyEnabled: z.boolean() }).strict();
 export type ServiceFlagsResponse = z.infer<typeof ServiceFlagsResponse>;
+
+/** `GET /app/order-flags` — Order flow v2's switches (ledger D-59): `rxEnabled` is the prescription
+ *  flag (BRIEF §13, env `RX_ENABLED`, default off). Its own body, not a key on `ServiceFlagsResponse`:
+ *  that body is strict and installed apps parse it strictly, so a third key would fail their parse and
+ *  drop them to their defaults. Deliberately NOT strict, so a later switch is an additive key here. */
+export const OrderFlagsResponse = z.object({ rxEnabled: z.boolean() });
+export type OrderFlagsResponse = z.infer<typeof OrderFlagsResponse>;
 
 // ---------------------------------------------------------------------------
 // Rider prepaid commission wallet (docs/plans/2026-rider-wallet-design.md)
@@ -965,6 +991,8 @@ export const MerchantProfileResponse = z
     autoAccept: z.boolean().optional(),
     /** The restaurant agreed to show its phone number to customers with a live order. */
     showPhoneToCustomers: z.boolean().optional(),
+    /** Order flow v2 (BRIEF §13): the CALLER may approve or decline prescriptions. Optional/additive. */
+    myIsPharmacist: z.boolean().optional(),
   })
   .strict();
 export type MerchantProfileResponse = z.infer<typeof MerchantProfileResponse>;
@@ -1014,6 +1042,8 @@ export const MerchantDishRequest = z
     description: z.string().trim().max(300).optional(),
     priceUsd: z.number().positive().multipleOf(0.01).max(1000),
     photoUrl: z.string().min(1).max(256).optional(),
+    /** Order flow v2 (BRIEF §13): "Prescription needed". Pharmacies only; default false. */
+    rxRequired: z.boolean().optional(),
   })
   .strict();
 export type MerchantDishRequest = z.infer<typeof MerchantDishRequest>;
@@ -1026,6 +1056,8 @@ export const UpdateMerchantDishRequest = z
     priceUsd: z.number().positive().multipleOf(0.01).max(1000).optional(),
     photoUrl: z.string().min(1).max(256).optional(),
     sortOrder: z.number().int().min(0).optional(),
+    /** Order flow v2 (BRIEF §13): "Prescription needed". Pharmacies only. */
+    rxRequired: z.boolean().optional(),
   })
   .strict();
 export type UpdateMerchantDishRequest = z.infer<typeof UpdateMerchantDishRequest>;
@@ -1053,6 +1085,8 @@ export const MerchantDishResponse = z
      *  Year 9999 means "until I turn it back on". */
     outOfStockUntil: z.string().nullable().optional(),
     sortOrder: z.number().int(),
+    /** Order flow v2 (BRIEF §13): "Prescription needed". Absent on older servers. */
+    rxRequired: z.boolean().optional(),
   })
   .strict();
 export type MerchantDishResponse = z.infer<typeof MerchantDishResponse>;
@@ -1135,6 +1169,9 @@ export const RestaurantMenuDish = z
     priceUsd: z.number(),
     photoUrl: z.string().nullable(),
     outOfStock: z.boolean(),
+    /** Order flow v2 (BRIEF §13): sent (true) only on a pharmacy item that needs a prescription, and only
+     *  while RX_ENABLED is on — with it off such items are not listed at all. Absent = no. */
+    rxRequired: z.boolean().optional(),
   })
   .strict();
 export type RestaurantMenuDish = z.infer<typeof RestaurantMenuDish>;
@@ -1241,9 +1278,22 @@ export const PlaceMerchantOrderItem = z
   .strict();
 export type PlaceMerchantOrderItem = z.infer<typeof PlaceMerchantOrderItem>;
 
+/** Order flow v2 (BRIEF §13, behind `rxEnabled`): the prescription a pharmacy order with "Prescription
+ *  needed" items carries. `photoKeys` are keys minted by `POST /uploads/prescription-photo` (1–3 pages);
+ *  `consent` is the "I'll show the original prescription to the rider" tick, which must be ticked. */
+export const PrescriptionInput = z
+  .object({
+    photoKeys: z.array(z.string().min(1).max(256)).min(1).max(3),
+    patientName: z.string().trim().min(1).max(80),
+    consent: z.literal(true),
+  })
+  .strict();
+export type PrescriptionInput = z.infer<typeof PrescriptionInput>;
+
 /** `POST /restaurants/:merchantId/orders`. Price is ALWAYS server-computed from the dish price
  *  snapshot + N-01/N-15 config (D-35 "a note can never alter the price") — the client sends the
- *  basket, never a total. */
+ *  basket, never a total. The same endpoint takes shop and pharmacy orders (ledger D-59): `merchantId`
+ *  is any customer-visible venue, restaurant or shop. */
 export const PlaceMerchantOrderRequest = z
   .object({
     items: z.array(PlaceMerchantOrderItem).min(1).max(30),
@@ -1252,6 +1302,11 @@ export const PlaceMerchantOrderRequest = z
     dropoff: Waypoint,
     paymentMethod: MerchantPaymentMethod,
     idempotencyKey: z.string().uuid().optional(),
+    /** Order flow v2 (BRIEF §12): the chosen slot's START (ISO), exactly as `GET .../schedule-slots`
+     *  returned it. Omitted = ASAP. A closed venue takes only a scheduled order. */
+    scheduledFor: z.string().datetime({ offset: true }).optional(),
+    /** Order flow v2 (BRIEF §13): required when any line is "Prescription needed" (and `rxEnabled`). */
+    prescription: PrescriptionInput.optional(),
   })
   .strict();
 export type PlaceMerchantOrderRequest = z.infer<typeof PlaceMerchantOrderRequest>;
@@ -1267,6 +1322,8 @@ export const MerchantOrderItemView = z
     note: z.string().nullable(),
     // D-23: null = merchant hasn't decided yet, true = kept, false = "don't have it".
     available: z.boolean().nullable(),
+    /** Order flow v2 (BRIEF §13): a "Prescription needed" line. Sent only when true. */
+    rxRequired: z.boolean().optional(),
   })
   .strict();
 export type MerchantOrderItemView = z.infer<typeof MerchantOrderItemView>;
@@ -1320,6 +1377,29 @@ export const FoodOrderRiderIdentity = z
   })
   .strict();
 export type FoodOrderRiderIdentity = z.infer<typeof FoodOrderRiderIdentity>;
+
+/** Order flow v2 (BRIEF §13): a prescription's check state. */
+export const RxStatus = z.enum(["pending", "approved", "declined"]);
+export type RxStatus = z.infer<typeof RxStatus>;
+
+/** BRIEF §13: the pharmacist's decline chips — Unreadable · Expired · Not valid for this medicine · Other. */
+export const RxDeclineReason = z.enum(["unreadable", "expired", "not_valid", "other"]);
+export type RxDeclineReason = z.infer<typeof RxDeclineReason>;
+
+/** BRIEF §13: the prescription as an order read shows it (customer, pharmacy, rider). */
+export const MerchantOrderPrescriptionView = z
+  .object({
+    status: RxStatus,
+    patientName: z.string(),
+    pageCount: z.number().int(),
+    declineReason: RxDeclineReason.nullable().optional(),
+    declineNote: z.string().nullable().optional(),
+    checkedAt: z.string().nullable().optional(),
+    /** RD3: the rider ticked "I saw the original prescription". Required before delivery completes. */
+    riderSawOriginalAt: z.string().nullable().optional(),
+  })
+  .strict();
+export type MerchantOrderPrescriptionView = z.infer<typeof MerchantOrderPrescriptionView>;
 
 /** Shared shape both the customer's order view and the merchant's queue card render. Every
  *  timestamp is an ISO-8601 string (server-authoritative; the client never computes one). */
@@ -1421,9 +1501,93 @@ export const MerchantOrderResponse = z
     restaurantPhone: z.string().nullable().optional(),
     /** The customer's contact number — on the restaurant's own views only. */
     customerPhone: z.string().nullable().optional(),
+    // ── Order flow v2 (ledger D-59, backend B). All optional and additive: an installed app ignores them.
+    /** Which kind of venue: picks Cooking vs Packing, "Food is ready" vs "Order is packed", the tile colour. */
+    businessType: MerchantBusinessType.optional(),
+    /** The shop's kind (`pharmacy` = the Pharmacy service); null for a restaurant. */
+    shopKind: MerchantShopKind.nullable().optional(),
+    /** BRIEF §12: the slot's start (ISO) of a scheduled order; omitted for an ASAP order. */
+    scheduledFor: z.string().nullable().optional(),
+    /** When the order rings the merchant ("Rings at 12:05 like a new order") = slot − prep − delivery. */
+    ringsAt: z.string().nullable().optional(),
+    /** When it actually rang. A scheduled order with this unset is in the Scheduled state (T13a, free
+     *  cancel, Change time); once set it runs like any new order (T13b). */
+    scheduleStartedAt: z.string().nullable().optional(),
+    /** BRIEF §13: the prescription on a pharmacy order (no photo URLs here — see the prescription read). */
+    prescription: MerchantOrderPrescriptionView.nullable().optional(),
+    /** BRIEF D3f: on a merchant order the customer cancelled after the rider collected it — what they owe
+     *  for it ("You owe $16.50 — pay it on your next order"). */
+    owedUsd: z.number().nullable().optional(),
+    /** BRIEF D3f: an earlier owed balance this order collects, as its own line. Already inside `total`
+     *  (and the doorstep cash amount); NOT inside `merchantGoodsTotal` / `deliveryFee`. */
+    previousBalanceUsd: z.number().nullable().optional(),
   })
   .strict();
 export type MerchantOrderResponse = z.infer<typeof MerchantOrderResponse>;
+
+/** BRIEF §12: `GET /restaurants/:merchantId/schedule-slots` (any customer-visible venue). Slots are
+ *  ORDER_SCHEDULE.slotMinutes long; `start`/`end` are ISO instants and `label` is the venue's local
+ *  "12:30–13:00". Only slots the venue can meet are listed (inside its hours, starting no earlier than now
+ *  + prep + delivery); a slot at ORDER_SCHEDULE.slotCapacity scheduled orders is listed with `full`. */
+export const ScheduleSlot = z
+  .object({ start: z.string(), end: z.string(), label: z.string(), full: z.boolean() })
+  .strict();
+export type ScheduleSlot = z.infer<typeof ScheduleSlot>;
+
+export const ScheduleSlotsResponse = z
+  .object({
+    slotMinutes: z.number().int(),
+    /** Open right now (an ASAP order is possible). A closed venue still lists its first slots. */
+    openNow: z.boolean(),
+    /** The minutes the venue needs before a slot starts (prep + delivery estimate) — "{v} starts {making}". */
+    leadMinutes: z.number().int(),
+    today: z.object({ date: z.string(), slots: z.array(ScheduleSlot) }).strict(),
+    tomorrow: z.object({ date: z.string(), slots: z.array(ScheduleSlot) }).strict(),
+    /** The earliest slot that isn't full — the closed venue's "Order for when they open · 10:30–11:00". */
+    firstAvailable: ScheduleSlot.nullable(),
+  })
+  .strict();
+export type ScheduleSlotsResponse = z.infer<typeof ScheduleSlotsResponse>;
+
+/** BRIEF §12 "Change time": `POST /restaurants/orders/:orderId/schedule`, before the order rings. */
+export const ChangeOrderScheduleRequest = z.object({ scheduledFor: z.string().datetime({ offset: true }) }).strict();
+export type ChangeOrderScheduleRequest = z.infer<typeof ChangeOrderScheduleRequest>;
+
+/** BRIEF §13: `POST /merchant/orders/:orderId/prescription/decline` — the reason chips + an optional note. */
+export const DeclinePrescriptionRequest = z
+  .object({ reason: RxDeclineReason, note: z.string().trim().max(300).optional() })
+  .strict();
+export type DeclinePrescriptionRequest = z.infer<typeof DeclinePrescriptionRequest>;
+
+/** BRIEF §13: the prescription's photos, as short-lived signed read URLs, page order. Served only to the
+ *  order's customer (`GET /restaurants/orders/:id/prescription`), its pharmacy
+ *  (`GET /merchant/orders/:id/prescription`) and admin (`GET /admin/orders/:id/prescription`). */
+export const PrescriptionPhotosResponse = z
+  .object({
+    photos: z.array(z.object({ page: z.number().int(), url: z.string() }).strict()),
+    expiresInSeconds: z.number().int(),
+  })
+  .strict();
+export type PrescriptionPhotosResponse = z.infer<typeof PrescriptionPhotosResponse>;
+
+/** BRIEF D3f: `GET /restaurants/balance` — what the customer owes from cancels after collection. A line
+ *  carried on a live order (`carriedOnOrderId`) still counts until that order is delivered. */
+export const CustomerBalanceResponse = z
+  .object({
+    owedUsd: z.number(),
+    lines: z.array(
+      z
+        .object({
+          orderId: z.string().uuid(),
+          amount: z.number(),
+          createdAt: z.string(),
+          carriedOnOrderId: z.string().uuid().nullable(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+export type CustomerBalanceResponse = z.infer<typeof CustomerBalanceResponse>;
 
 /** D-23: merchant's accept — full accept when `unavailableDishIds` is omitted/empty, item-level
  *  accept otherwise (the customer then gets N-18's 60s approval window on the shortened order). */
@@ -1878,6 +2042,8 @@ export const MerchantTeamMemberResponse = z
     /** The signed-in person themselves. */
     you: z.boolean(),
     joinedAt: z.string(),
+    /** Order flow v2 (BRIEF §13): may approve or decline prescriptions. Absent on older servers. */
+    isPharmacist: z.boolean().optional(),
   })
   .strict();
 export type MerchantTeamMemberResponse = z.infer<typeof MerchantTeamMemberResponse>;
@@ -1903,6 +2069,10 @@ export const MerchantTeamResponse = z
   })
   .strict();
 export type MerchantTeamResponse = z.infer<typeof MerchantTeamResponse>;
+
+/** `POST /merchant/team/members/:profileId/pharmacist` (owner only, BRIEF §13). */
+export const SetMerchantPharmacistRequest = z.object({ isPharmacist: z.boolean() }).strict();
+export type SetMerchantPharmacistRequest = z.infer<typeof SetMerchantPharmacistRequest>;
 
 /** `POST /merchant/team/invites` (owner only). Never reveals whether the number works elsewhere. */
 export const CreateMerchantInviteRequest = z

@@ -88,6 +88,8 @@ export const MERCHANT_REJECTION_REASONS = {
   no_rider: "We couldn't find a rider for your order in time — nothing was charged, sorry about that.",
   // Auto-accept: nobody confirmed the kitchen within RESTAURANTS_AUTO_ACCEPT.autoCancelAfterMs.
   kitchen_unconfirmed: "The restaurant didn't confirm your order in time — nothing was charged, sorry about that.",
+  // Order flow v2 (BRIEF §13): every line needed the prescription the pharmacist declined.
+  rx_declined: "Your prescription wasn't approved, so there was nothing left to pack. Nothing was charged.",
   other: "The restaurant couldn't take this order.",
 } as const;
 
@@ -161,3 +163,32 @@ export const RESTAURANTS_DEBT = {
    *  RESTAURANTS_TIMING/RESTAURANTS_DISPATCH's sweeps, for the same sub-minute-precision reasoning. */
   sweepIntervalMs: 20 * 1000,
 } as const;
+
+/**
+ * Order flow v2 (ledger D-59, BRIEF §12) — scheduled orders, as config not constants. A slot is
+ * `slotMinutes` long; the customer picks its start. The venue starts making it (the order rings, like a
+ * new order) `prep + delivery` minutes before the slot starts, so it arrives inside the slot.
+ */
+export const ORDER_SCHEDULE = {
+  slotMinutes: 30,
+  /** "Full": scheduled orders a venue takes per slot. Generous on purpose — one busy kitchen's half
+   *  hour — so it only bites on a genuine pile-up; a per-venue setting is a later tuning pass. */
+  slotCapacity: 12,
+  /** Prep when the venue hasn't set its usual one (`prepBaselineMinutes`). */
+  defaultPrepMinutes: 20,
+  /** Delivery leg when there's no drop-off to measure (the slots read before an address is known). */
+  defaultDeliveryMinutes: 15,
+  /** Same rough urban-motorbike model the app's ETA uses (apps/mobile/src/logic/eta.ts). */
+  speedKmh: 22,
+  roadWindingFactor: 1.3,
+  /** Time for a rider to be found and reach the counter, on top of the ride itself. */
+  riderLeadMinutes: 5,
+} as const;
+
+/** BRIEF §12: the delivery-leg estimate a slot is planned with — straight-line km, inflated for roads,
+ *  at ORDER_SCHEDULE.speedKmh, plus the rider's lead time. Unknown distance → the default. */
+export function deliveryMinutesForKm(distanceKm: number | null | undefined): number {
+  if (distanceKm == null || !Number.isFinite(distanceKm)) return ORDER_SCHEDULE.defaultDeliveryMinutes;
+  const ride = Math.ceil(((Math.max(0, distanceKm) * ORDER_SCHEDULE.roadWindingFactor) / ORDER_SCHEDULE.speedKmh) * 60);
+  return Math.max(1, ride) + ORDER_SCHEDULE.riderLeadMinutes;
+}

@@ -243,6 +243,8 @@ model Profile {
   deviceTokens    DeviceToken[]
   reopenReminders RestaurantReopenReminder[]
   notificationDismissals NotificationDismissal[]
+  // Order flow v2 (ledger D-59, BRIEF D3f): what this customer owes from a cancel after collection.
+  balanceEntries  CustomerBalanceEntry[]
 
   @@index([idNumberHash])
   @@map("profiles")
@@ -746,6 +748,10 @@ model Order {
   commissionLedger CommissionLedger[]
   // Merchant web upgrade L2: set only on a business's booking (who booked, picked and cancelled it).
   merchantBooking  MerchantBooking?
+  // Order flow v2 (ledger D-59, backend B): a scheduled order's slot (BRIEF §12) and a pharmacy order's
+  // prescription (BRIEF §13). Own tables, so the order row itself carries nothing new for them.
+  schedule         OrderSchedule?
+  prescription     OrderPrescription?
 
   @@index([status])
   @@index([rebroadcastOfId])
@@ -1083,6 +1089,10 @@ model MerchantMember {
   // Multi-branch owners: when this person last switched to this business. The one they're working on
   // is the row with the latest value (null = never switched; the oldest row wins among those).
   activeAt         DateTime?          @map("active_at")
+  // Order flow v2 (ledger D-59, BRIEF §13): this person may approve or decline a prescription. Set by
+  // the owner (Team) or ops. The pharmacist role is this flag, not a separate account (plan P6's
+  // PharmacistAccount is deferred: a pharmacy's pharmacist is already on its team).
+  isPharmacist     Boolean            @default(false) @map("is_pharmacist")
   createdAt        DateTime           @default(now()) @map("created_at")
 
   @@unique([profileId, merchantId])
@@ -1227,6 +1237,9 @@ model MerchantDish {
   isDraft         Boolean          @default(true) @map("is_draft")
   outOfStockUntil DateTime?        @map("out_of_stock_until")
   sortOrder       Int              @default(0) @map("sort_order")
+  // Order flow v2 (ledger D-59, BRIEF §13): "Prescription needed" — a pharmacy item that can only be
+  // ordered with a prescription photo, and only while RX_ENABLED is on.
+  rxRequired      Boolean          @default(false) @map("rx_required")
   createdAt       DateTime         @default(now()) @map("created_at")
   updatedAt       DateTime         @updatedAt @map("updated_at")
 
@@ -1253,6 +1266,9 @@ model MerchantOrderItem {
   quantity     Int
   note         String?
   available    Boolean?
+  // Order flow v2 (BRIEF §13): the dish's "Prescription needed" flag, snapshotted at placement. A
+  // declined prescription takes exactly these lines off (available = false).
+  rxRequired   Boolean       @default(false) @map("rx_required")
   createdAt    DateTime      @default(now()) @map("created_at")
 
   @@index([orderId])
@@ -1327,4 +1343,76 @@ model Address {
 
   @@index([profileId])
   @@map("addresses")
+}
+
+// ── Order flow v2 (ledger D-59, backend B) ─────────────────────────────────────────────────────────
+
+/// BRIEF §12: a scheduled restaurant / shop / pharmacy order. The order itself waits in
+/// `merchantPhase = awaiting_accept` with no accept deadline (so every installed app reads it as a
+/// placed order, and no sweep touches it) and stays off the merchant's live queue until `ringsAt`, when
+/// the schedule sweep rings it like a new order (`rungAt`). `scheduledFor` is the slot's start; the slot
+/// is ORDER_SCHEDULE.slotMinutes long. `ringsAt` = slot start − prep − delivery estimate.
+model OrderSchedule {
+  orderId      String    @id @map("order_id") @db.Uuid
+  order        Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  // Denormalised for the per-slot "Full" count without a join through orders.
+  merchantId   String    @map("merchant_id") @db.Uuid
+  scheduledFor DateTime  @map("scheduled_for")
+  ringsAt      DateTime  @map("rings_at")
+  rungAt       DateTime? @map("rung_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@index([rungAt, ringsAt])
+  @@index([merchantId, scheduledFor])
+  @@map("order_schedules")
+}
+
+/// BRIEF §13 (behind RX_ENABLED): the prescription ("Script", plan P6) attached to a pharmacy order with
+/// "Prescription needed" lines. Photos are object KEYS under `rx/<customerId>/` (read URLs are minted on
+/// demand for the order's customer, its pharmacy and admin only). `status` is pending | approved |
+/// declined (text, validated at the wire: RxStatus). A decline takes the Rx lines off the order.
+model OrderPrescription {
+  orderId            String    @id @map("order_id") @db.Uuid
+  order              Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  photoKeys          String[]  @map("photo_keys")
+  patientName        String    @map("patient_name")
+  // "I'll show the original prescription to the rider" — the customer's tick, when it was given.
+  consentAt          DateTime  @map("consent_at")
+  status             String    @default("pending")
+  // RxDeclineReason: unreadable | expired | not_valid | other.
+  declineReason      String?   @map("decline_reason")
+  declineNote        String?   @map("decline_note")
+  checkedAt          DateTime? @map("checked_at")
+  checkedByProfileId String?   @map("checked_by_profile_id") @db.Uuid
+  // RD3: the rider ticked "I saw the original prescription" at the door. Required before delivery.
+  riderSawOriginalAt DateTime? @map("rider_saw_original_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  @@map("order_prescriptions")
+}
+
+/// BRIEF §14 / D3f: money a customer owes after cancelling a merchant order the rider had already
+/// collected ("You owe $16.50 — pay it on your next order"). One row per cancelled order. It is carried
+/// on the customer's next restaurant / shop / pharmacy order as its own line (`appliedOrderId`), collected
+/// in cash at that door, and counts as paid once that order is delivered. If the carrying order ends
+/// without delivery, the row is free to carry again.
+model CustomerBalanceEntry {
+  id             String    @id @default(uuid()) @db.Uuid
+  profileId      String    @map("profile_id") @db.Uuid
+  profile        Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  // The cancelled order the money is owed for (plain pointer, one row per order).
+  sourceOrderId  String    @unique @map("source_order_id") @db.Uuid
+  merchantId     String?   @map("merchant_id") @db.Uuid
+  amount         Decimal   @db.Decimal(10, 2)
+  reason         String    @default("cancel_after_pickup")
+  // The order carrying it now (plain pointer); null = not carried yet.
+  appliedOrderId String?   @map("applied_order_id") @db.Uuid
+  appliedAt      DateTime? @map("applied_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([profileId])
+  @@index([appliedOrderId])
+  @@map("customer_balance_entries")
 }
