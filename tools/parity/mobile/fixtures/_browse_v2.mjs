@@ -64,3 +64,33 @@ export function menuFor(restaurant) {
     popularDishIds: [D.stew.id, D.roast.id, D.rice.id],
   };
 }
+
+// ── Part 3: Search (X1–X4). The query arrives as the route's `q` param (what the storefront's "Search all"
+// passes), so a fixture needs no typing; the screen's 300 ms debounce runs before the settle. The harness
+// routes by path, not query string, so `/shops/search` answers one section: these fixtures switch
+// Pharmacy off (the X2a mock draws no PHARMACY group either). ──
+export const FLAGS_SHOPS_ONLY = { match: "/app/service-flags", json: { shopsEnabled: true, pharmacyEnabled: false } };
+const shopId = (n) => `0b2c3d4e-0000-4000-8000-0000000003${pad(n)}`;
+const BORROW = { ...venue(14, "Borrowdale Butchery", [], null, 5.0, 4.8, 92, null), id: shopId(14), prepBaselineMinutes: 10, shopKind: "butchery" };
+const hit = (id, name, priceUsd, photoUrl, v) => ({ dishId: id, name, priceUsd, photoUrl, merchantId: v.id, merchantName: v.name });
+const SEARCH = {
+  chicken: {
+    food: {
+      restaurants: [VENUES[4]],
+      dishes: [hit(D.roast.id, D.roast.name, D.roast.priceUsd, D.roast.photoUrl, GAVA), hit(D.rice.id, D.rice.name, D.rice.priceUsd, D.rice.photoUrl, GAVA), hit(dishId(80), "Roast chicken (quarter)", 3.5, null, VENUES[2]), hit(dishId(81), "Chicken & rice", 4.8, null, VENUES[1])],
+    },
+    shops: { shops: [BORROW], items: [hit(dishId(82), "Chicken pieces (1 kg)", 5.2, null, BORROW), hit(dishId(83), "Whole chicken (1.5kg)", 7.5, null, BORROW), hit(dishId(84), "Chicken livers (500g)", 2.4, null, BORROW)] },
+  },
+  sadza: { food: { restaurants: [VENUES[3]], dishes: [hit(D.stew.id, D.stew.name, D.stew.priceUsd, D.stew.photoUrl, GAVA), hit(D.tbone.id, D.tbone.name, D.tbone.priceUsd, D.tbone.photoUrl, GAVA)] } },
+};
+export const RECENT = ["sadza", "brake pads", "paracetamol"];
+/** Route the search endpoints for one staged query. */
+export function searchRoutes(q) {
+  const s = SEARCH[q] ?? {};
+  return [
+    FLAGS_SHOPS_ONLY,
+    { match: "/restaurants/search/popular", json: { terms: ["Roast chicken", "Pizza", "Bread", "Plasters", "Brake pads"] } },
+    { match: "/restaurants/search", json: s.food ?? { restaurants: [], dishes: [] } },
+    { match: "/shops/search", json: s.shops ?? { shops: [], items: [] } },
+  ];
+}

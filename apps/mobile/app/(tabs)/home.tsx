@@ -309,7 +309,7 @@ export default function LauncherHomeScreen(): React.ReactElement {
           unread={unreadCount > 0}
           onAddress={() => openLocation(false)}
           onBell={() => router.push("/notifications")}
-          onSearch={() => router.push("/food/search")}
+          onSearch={() => router.push("/food/search?scope=all")}
         />
         {riderJob && riderJobStage ? (
           // Rider v2 C5 (D-54): a rider in customer view mid-job — the way back to the job.
