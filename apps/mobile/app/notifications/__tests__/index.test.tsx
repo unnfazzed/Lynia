@@ -28,10 +28,11 @@ jest.mock("expo-router", () => ({
     React_.useEffect(cb, []);
   },
 }));
-jest.mock("expo-notifications", () => ({
-  ...jest.requireActual("expo-notifications"),
-  setNotificationHandler: jest.fn(),
-  getPermissionsAsync: () => Promise.resolve(mockPermission),
+// Only the permission read. The real module (pulled in through src/push/push) registers native listeners
+// that keep a single-process (--runInBand, as on the 2-core CI runner) jest run from ever finishing.
+jest.mock("expo-notifications", () => ({ getPermissionsAsync: () => Promise.resolve(mockPermission) }));
+jest.mock("../../../src/push/push", () => ({
+  notificationRowDestination: (r: { orderId: string | null }) => (r.orderId ? `/order/${r.orderId}` : "/home"),
 }));
 jest.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }), SafeAreaView: ({ children }: { children: unknown }) => children }));
 jest.mock("../../../src/api/notifications", () => ({
@@ -158,7 +159,6 @@ describe("Notifications v1 screen", () => {
   it("pins an account pause in force above the day groups", async () => {
     mockGetNotificationsFeed.mockResolvedValue([row({ id: "a1", type: "account", action: "rider.suspend", active: true, message: "Your account was paused." })]);
     mockParams = { side: "rider" };
-    act(() => tree.unmount());
     await renderScreen();
     expect(has(N.aPausedT)).toBe(true);
     expect(has(N.dToday)).toBe(false);
@@ -179,7 +179,8 @@ describe("Notifications v1 screen", () => {
   it("swipe-remove hides the order at once, offers Undo, and dismisses only when the toast expires", async () => {
     mockGetNotificationsFeed.mockResolvedValue([PARCEL("s1", 5), row({ id: "f1", orderId: "o1", to: "customer", type: "fare", service: "send", at: ago(30) })]);
     await renderScreen();
-    jest.useFakeTimers();
+    // Real timers, not jest.useFakeTimers(): faked timers leaked into the rest of a single-process
+    // (--runInBand) run — as on the 2-core CI runner — and the run never finished.
     const swipe = tree.root.findAll((n) => typeof n.props.onAccessibilityAction === "function")[0]!;
     act(() => swipe.props.onAccessibilityAction({ nativeEvent: { actionName: "delete" } }));
     expect(has("Parcel to Glenara Ave")).toBe(false);
@@ -190,15 +191,20 @@ describe("Notifications v1 screen", () => {
     const undo = tree.root.findAll((n) => n.props.accessibilityLabel === N.undo && typeof n.props.onPress === "function")[0]!;
     act(() => undo.props.onPress());
     expect(has("Parcel to Glenara Ave")).toBe(true);
-    act(() => jest.advanceTimersByTime(6_000));
     expect(mockDismissNotification).not.toHaveBeenCalled();
 
     // Remove again and let the toast run out: every row of the order is dismissed.
     const swipe2 = tree.root.findAll((n) => typeof n.props.onAccessibilityAction === "function")[0]!;
     act(() => swipe2.props.onAccessibilityAction({ nativeEvent: { actionName: "delete" } }));
-    act(() => jest.advanceTimersByTime(5_000));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 4_000));
+    });
+    expect(mockDismissNotification).not.toHaveBeenCalled();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1_300));
+    });
     expect(mockDismissNotification.mock.calls.map((c) => c[0]).sort()).toEqual(["f1", "s1"]);
-  });
+  }, 15_000);
 
   it("shows the notifications-off row when the permission isn't granted", async () => {
     mockPermission = { granted: false };
