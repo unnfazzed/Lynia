@@ -27,6 +27,7 @@ export async function loadFoodCart(): Promise<FoodCartState | null> {
       restaurantName: parsed.restaurantName ?? null,
       lines: parsed.lines,
       orderNote: parsed.orderNote ?? "",
+      venue: parsed.venue ?? null,
     };
   } catch {
     return null;

@@ -1429,3 +1429,234 @@
 .m-c7-offline {
   font-size: 13px;
 }
+
+/* ── Order flow v2 merchant deltas (handoff order-flow-v2, ledger D-59): M1a, M3, M4, M5, M6 ─────── */
+
+/* The customer's four-step track (of-kit `track` + of-polish): a surface panel, 24px circles, 4px
+ * connectors, labels 12/600. The current step pulses unless motion is reduced. */
+.m-trk {
+  display: flex;
+  background: var(--surface);
+  border-radius: var(--radius-card);
+  padding: 12px 2px 10px;
+  list-style: none;
+  margin: 0;
+}
+.m-trk li {
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.m-trk .m-ln {
+  position: absolute;
+  top: 10px;
+  height: 4px;
+  background: var(--line);
+}
+.m-trk .m-ln[data-on] {
+  background: var(--accent);
+}
+.m-trk .m-c {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--bg);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  box-sizing: border-box;
+}
+.m-trk li[data-s] .m-c {
+  background: var(--accent-text);
+  color: var(--on-accent);
+  border: 0;
+}
+.m-trk li[data-s="now"] .m-c {
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 18%, transparent);
+  animation: m-pulse 1.8s ease-out infinite;
+}
+.m-trk .m-l {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--muted);
+  text-align: center;
+  padding: 0 2px;
+  margin-top: 3px;
+}
+.m-trk li[data-s="done"] .m-l {
+  color: var(--accent-text);
+}
+.m-trk li[data-s="now"] .m-l {
+  color: var(--ink);
+  font-weight: 700;
+}
+@keyframes m-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 9px color-mix(in srgb, var(--accent) 0%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .m-trk li[data-s="now"] .m-c {
+    animation: none;
+  }
+}
+
+/* The merchant-only "Cash back to you" row under the track: surface, or highlight wash once due. */
+.m-cashrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13px;
+}
+.m-cashrow b {
+  flex: 1;
+  font-weight: 600;
+}
+.m-cashrow span {
+  color: var(--muted);
+}
+.m-cashrow[data-due] {
+  background: var(--highlight-wash);
+  color: var(--highlight-ink);
+}
+
+/* Order lines with their price (M1a / M3): qty 15/700, name 15/600, the note in a highlight wash. */
+.m-ol {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.m-ol:first-child {
+  border-top: none;
+}
+.m-ol > b {
+  font-size: 15px;
+  font-weight: 700;
+  min-width: 24px;
+}
+.m-ol > div {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.m-ol q {
+  display: block;
+  margin-top: 4px;
+  background: var(--highlight-wash);
+  color: var(--highlight-ink);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 13px;
+  font-weight: 400;
+}
+.m-ol > span {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A secondary button: surface-filled, no border (Order flow v2 README "Reuse"). */
+.m-sec {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--target-min);
+  border-radius: var(--radius-button);
+  border: none;
+  background: var(--surface);
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 0 16px;
+  cursor: pointer;
+}
+.m-sec:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The rider row's 52px avatar with a 2px accent ring (of-polish `.av`). */
+.m-av.m-av-ring {
+  width: 52px;
+  height: 52px;
+  font-size: 17px;
+  background: var(--accent-wash);
+  color: var(--accent-text);
+  box-shadow:
+    0 0 0 2px var(--bg),
+    0 0 0 4px var(--accent);
+}
+
+/* M4: the pickup code read out at the counter, 3+3 at 36/800. */
+.m-pcode {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+.m-cap {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* M6a / M6b: the full-width hero at the top of a delivered (mint) or not-delivered (surface) order. */
+.m-hero {
+  margin: 0 -16px;
+  padding: 24px 16px 20px;
+  text-align: center;
+  background: var(--accent-wash);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.m-hero[data-tone="calm"] {
+  background: var(--surface);
+}
+.m-hero > span {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--bg);
+  display: grid;
+  place-items: center;
+  margin-bottom: 6px;
+}
+.m-hero b {
+  font-size: 22px;
+  font-weight: 700;
+}
+.m-hero p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}

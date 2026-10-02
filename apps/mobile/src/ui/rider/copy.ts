@@ -55,7 +55,14 @@ export const RIDER_COPY = {
   /** Undrawn (ledger D-54 §4): the collect label at a kitchen that is not paid up front (B2 draws only
    *  the upfront "I've paid and collected the food"), and the pickup code the kitchen reads out. */
   collectedFood: "I've collected the food",
-  pickupCodeL: "Ask the kitchen for the 4-digit pickup code",
+  /** Order flow v2 RD2a (ledger D-59): `O.rd.code` at a kitchen; the code is six digits since BRIEF §16. */
+  pickupCodeL: "Ask the kitchen for the pickup code",
+  /** Order flow v2 RD1b (ledger D-59, README "JobTag adds SHOP and PHARMACY"). */
+  pharmacy: "PHARMACY",
+  /** Order flow v2 RD4a/RD4b, the door card (`O.rd.door1`, `O.rd.door3`, `O.rd.codeTries`). */
+  door1: "Hand over the order",
+  door3: "Enter the delivery code",
+  codeTries: "5 tries",
   tOffer: "Make an offer",
   yourFare: "Your fare",
   tapType: "Tap the fare to type an amount",
@@ -131,6 +138,8 @@ export const RIDER_COPY = {
   tPhoto: "Pickup photo",
   tToDrop: "Heading to drop-off",
   tArriving: "Arriving now",
+  /** Order flow v2 RD4a/RD4b (ledger D-59): the door stage's header, as of-screens-mrg.js draws it. */
+  tAtDrop: "At the drop-off",
   tDone: "Job done",
   tToKitchen: "Heading to the kitchen",
   tAtKitchen: "At the kitchen",
@@ -196,9 +205,10 @@ export const RIDER_COPY = {
   sosS: "Police, ambulance or fire. We'll tell our safety team.",
   close: "Close",
   /* exceptions */
-  reachB: "Try twice more. If there's still no answer after 10 minutes, you can mark it undelivered.",
+  /** D-59 (order-flow-v2 README "Rider v2 … no-show wait copy 10 → 8 min"): the server's no-show window. */
+  reachB: "Try twice more. If there's still no answer after 8 minutes, you can mark it undelivered.",
   markUndel: "Mark undelivered",
-  undelHint: "Available after 10 minutes of trying.",
+  undelHint: "Available after 8 minutes of trying.",
   undelT: "Why can't you deliver?",
   undelReasons: ["Recipient didn't answer", "Recipient refused it", "Wrong address", "Bike broke down", "Other"],
   undelSend: "Send",
@@ -446,10 +456,17 @@ export const RF = {
   collectFood: (collect: number): string => `Collect ${usd(collect)} cash at the door`,
   collectFoodB: (yours: number, owed: number): string => `${usd(yours)} is yours. ${usd(owed)} goes back to the kitchen.`,
   returnT: (owed: number, kitchen: string): string => `Return ${usd(owed)} to ${kitchen}`,
+  /** Order flow v2 RD4a/RD4b (ledger D-59): `O.rd.door2`, `O.rd.door2Btn`, `O.rd.door3Sub`, and the door
+   *  card's drawn sub-lines ("Handed over 12:46", "Both confirmed 12:47" in of-screens-mrg.js `rdDoor`). */
+  door2: (collect: number): string => `Collect ${usd(collect)} cash`,
+  door2Btn: (collect: number): string => `I received ${usd(collect)}`,
+  door3Sub: (customer: string): string => `${customer} says it after you both confirm the cash`,
+  handedOver: (at: string): string => `Handed over ${at}`,
+  bothConfirmed: (at: string): string => `Both confirmed ${at}`,
   kitchenReady: (orderNo: string, mins: number | null): string => (mins != null && mins > 0 ? `Order #${orderNo} · ready in about ${mins} min` : `Order #${orderNo}`),
   /* exceptions */
   reachT: (name: string): string => `${name} isn't answering`,
-  reachWait: (elapsedS: number): string => `Waited ${Math.floor(elapsedS / 60)}:${String(elapsedS % 60).padStart(2, "0")} of 10:00`,
+  reachWait: (elapsedS: number): string => `Waited ${Math.floor(elapsedS / 60)}:${String(elapsedS % 60).padStart(2, "0")} of 8:00`,
   reachCalls: (calls: number, wa: number): string => `${plural(calls, "call", "calls")} · ${wa} WhatsApp`,
   undelNext: (sender: string): string => `Keep the parcel safe. We'll tell ${sender} and help you agree how to return it.`,
   undelDoneB: (sender: string): string => `${sender} has been told. Call to agree how to get the parcel back to them.`,

@@ -3179,14 +3179,13 @@ is now only the flag-off state (B13), as the handoff's §8 retires it. Home's "P
 
 | Where | Handoff | App | Why |
 |---|---|---|---|
-| + on tiles / rows, the stepper, the cart bar, S5/S6, I3 | Drawn | Not rendered | Owner decision 1: no shop ordering until Order flow v2. A + that led nowhere would be a dead control. |
-| Item sheet (I1b / I1c) | Quantity, note, "Add · $x" | Photo, name, price, description (+ the OTC line for pharmacy) | Same. |
-| Closed strip | "Closed · opens 10:00" + Remind me | The strip without Remind me | The reminder push says "They're taking orders again"; a shop can't take app orders yet. |
-| Closing strip (S7) | "Closes in 15 min · order by 17:45" | Not shown; the open line says "Open until …" | "order by" promises an order the customer can't place yet. |
-| Just-closed modal (S9) | Drawn | Not shown | Its purpose is protecting a cart; there is none. |
-| Search (X3) | PLACES + ITEMS, item hit adds | PLACES + ITEMS, an item hit opens its shop | Browse only. |
+| Closed strip | "Closed · opens 10:00" + Remind me | The strip without Remind me (and no Remind me row in the closed item sheet) | The reopen reminder is a restaurants-only API (`/restaurants/:id/reopen-reminder` answers only customer-visible restaurants); a closed shop holding a basket offers "Order for when they open" (R5c) instead. |
+| Search (X3) | PLACES + ITEMS, item hit adds | PLACES + ITEMS, an item hit opens its shop | Search-side adding is not in Order flow v2 part 5 (storefront ordering only). |
 
-These rows close when Order flow v2 lands; that PR removes them.
+**Closed by Order flow v2 part 5 (ledger D-59 §3, 2026-10-02):** the + on tiles / rows, the stepper,
+the cart bar, S5/S6 and I3 ("Start a new cart?" across every venue — one cart); the item sheet's
+Quantity, "Note for the shop / pharmacy" and "Add · $x" (I1b/I1c); the closing strip S7 ("order by …");
+the just-closed modal S9. The section's kill switch off ⇒ the storefront falls back to browse only.
 
 ## D-59 · Order flow v2: Restaurants, Shops and Pharmacy from checkout to done follow the order-flow-v2 handoff — APPROVED (2026-10-02)
 
@@ -3280,6 +3279,7 @@ Each PR of the build order appends its line here.
     inside goods/delivery. Paid once that order is delivered; freed again if it isn't. Where the collected
     money goes is ops reconciliation from the ledger row (open question 2 stays open).
 - **PR 1 (2026-10-02):** the customer order screen for restaurant orders — `app/order/[id].tsx` hands a merchant order to `src/orderflow/MerchantOrderScreen.tsx` (venue header, full-bleed map with the VenuePin / drop square / dashed → cased accent route, stage title → ETA hero → four-step track derived on the phone, `src/logic/merchant-order.ts`): T2–T4, T6, T7, T9, T11a/b, T12a/b, T14a–d, T15a/c/d, T16a/b, U2 (removals), P1/P1b/P2/P2b/P3a/P3b, D1/D1b, D2a/b, D3a–e (D3f without the owed line), D4. `app/food/order/[orderId].tsx` only redirects; the `src/ui/food/*` order views are deleted; `RC.await_accept`, `RC.item_removed`, `RC.pay_now`, `RC.pay_confirmed`, `RC.track_prep`, `RC.track_way`, `RC.no_rider`, `RC.delivered_rate`, `RC.rejected`, `RC.refunded` are SUPERSEDED deferrals (with PR 2's cart / checkout keys the baseline goes 81 → 75). Not built here (server or later PRs): T1 (placing, with Review & place), T5/T13 (shops, pharmacy, scheduled), T8 photo row and T15b (no pickup photo / no cancel entry after collection), the venue rating row (D1/D2), U2 swaps, the cancel link while cooking (the server takes no customer cancel once the kitchen has confirmed). Evidence: `docs/parity/ORDER-FLOW-V2-CUSTOMER-2026-10-02.png` (`tools/parity/shoot-order-flow-customer.mjs`).
+- **PR 5 (shops & pharmacy ordering, scheduled, Rx on Review; 2026-10-02):** the shop and pharmacy storefronts order like the restaurant one (Browse v2 S3–S7, S9, I1b/I1c, I3 — closes D-58's rows above); ONE cart across every venue (`src/food/cart-context.tsx` is a shared store that `/food`, `/shops` and `/pharmacy` each provide), carrying the venue's `businessType`/`shopKind` and each line's `rxRequired`; the cart bar opens the same Review (`app/food/checkout.tsx`, the venue read from `GET /shops/:id/catalogue` for a shop) and places through `POST /restaurants/:merchantId/orders`. Review: R2a "If something's out of stock" (Ask me · Remove it → `outOfStockPref`, shops + pharmacy only; "Items" in the breakdown), R2b the pharmacy OTC notice, R5a the schedule sheet (`GET …/schedule-slots?lat&lng` with the drop-off; Full disabled; a day with nothing shows one "Closed" chip), R5b the scheduled WHEN row (✎ Edit reopens the sheet; `scheduledFor`), R5c the closed venue's cart bar "Order for when they open · {first slot}" on restaurant AND shop storefronts (Review opens on that slot, `?schedule=first`), R6b's "Schedule for …" restored, and behind `GET /app/order-flags` → `rxEnabled` (fails closed) R8a/R8b (the "Prescription needed" pill on pharmacy rows and Review lines; the RX block above Items while empty, placing blocked with "Add a photo of your prescription to place this order"; pages uploaded through `POST /uploads/prescription-photo` + the signed PUT; patient name + consent → `prescription`). D3f: `GET /restaurants/balance` lines not yet carried show as a breakdown row inside the total and the cash. **Copy added outside `O`** (listed here per CLAUDE-CODE-PROMPT.md, in `src/ui/orderflow/copy.ts` `O_ADDED`): "Owed from a cancelled order" (the D3f breakdown row — no R frame draws it) and "Review" (the R5c bar's button, drawn in the frame but not a key). Interpretations: switching back to ASAP after scheduling is by leaving Review (the drawn sheet has no ASAP); a missing patient name or consent is said once in the ink toast (only the Rx photo blocks, per README); an Rx page can't be removed once added (not drawn). Not built: search-side adding (X3), the order screen's shop/pharmacy/scheduled/Rx stages (T5/T13, other PRs). Evidence: `docs/parity/ORDER-FLOW-V2-SHOPS-2026-10-02.png` (`tools/parity/shoot-order-flow-shops.mjs`).
 - **Backend A (API + shared contracts, no UI):** substitution (BRIEF §8, U1–U5/M2), proof at hand-over
   (§9, RD2b–d/RD4c–d/M4b/M5b/P5), venue rating + receipt fields (§11, D1/D1b) and the four-step track
   (§4). Migration `0066_order_flow_v2` (expand-only: five nullable `orders` columns,
@@ -3298,6 +3298,22 @@ Each PR of the build order appends its line here.
   app still sees a coherent at-accept round (legacy `awaiting_item_approval`, swapped lines as removed;
   its approve = swaps declined, decline = free cancel). Not in this PR: merchant-side push for answers
   (socket queue refresh only), "finish delivery without the code" (the door photo is evidence only).
+- **PR 3 (merchant + rider deltas, 2026-10-02):** the pickup code is minted as **6 digits** (BRIEF §16;
+  the wire also accepts a legacy 4 so an installed rider app gets a clean "wrong code" 400). Merchant:
+  **M1a** (an auto-accepted order rings full screen until the kitchen confirms), **M3a/M3b** (ticket with
+  "Cooking/Packing · ready HH:MM", priced lines, Change items, the customer's 4-step track), **M4** (code
+  read out 3+3, "{rider} entered the code"), **M5** (4-step track + "Cash back to you" row replacing B6's
+  8-step stepper), **M6a/M6b**. Rider: **RD1** tag variants (SHOP #DDD5FF, PHARMACY #C5E9DF — no shop or
+  pharmacy offer reaches a rider until build step 5), **RD2a** (6 CodeBoxes), **RD4a/RD4b** (door card
+  mirror; the code sends itself on the 6th digit). **Rider no-show wait copy 10 → 8 min** (rider-v2 `R`
+  `reachB` / `undelHint` / `reachWait`), sanctioned here; the parcel reach timer follows to 8 min so copy
+  and timer agree. Not drawn because they need the backend: M4b/M5b photos, the M5 ETA pill, the rider
+  call button (no rider number on the merchant read), RD1 seal note, RD4c "Can't use the code?". No
+  customer name on a merchant order, so "· Rudo" (M1a/M3 header), "Rudo confirmed with the code" (M6a,
+  B7's "Buyer confirmed with the code" stands in) and the first sentence of `O.m.backS` are left out.
+  Kept although not drawn (functional, from D-48/D-50): "Mark ride completed" (M5), "It wasn't returned"
+  (M6b), the customer's number (moved into the Change items sheet). Merchant `--highlight-*` tokens stay
+  the merchant face's values (no parallel tokens).
 - **PR 4 (2026-10-02, customer order screen round 2):** on Backend A's API. Substitution U2a/U2b/U3/U4a/U4b/U5:
   an open round is the sheet's first block (SubCard per line; the 3-min countdown pill + bar from
   `deadlineAt`; the U2 sub-line, now true since the server carries on after a timeout; "Was / New total"
@@ -3323,8 +3339,8 @@ Each PR of the build order appends its line here.
   `/shops` or `/pharmacy`): T3 for shops (never auto-accept), T5a, T5b (+ the drawn seal note), P1s (door row ①
   "Check the seal is unbroken before you pay" for a pharmacy, or a shop whose rider ticked "Bag is sealed").
   Scheduled (Backend B read fields): T13a while `scheduledFor` is set and `scheduleStartedAt` isn't (free cancel,
-  the track with no step started, "Change time" → a ChangeTimeSheet drawn as R5a on `GET …/schedule-slots` +
-  `POST …/schedule` — the shops-ordering PR's ScheduleSheet was not merged yet), T13b ("{v} started cooking", the
+  the track with no step started, "Change time" → Review's R5a ScheduleSheet (part 5) on the venue's slots for this
+  drop-off, then `POST …/schedule`), T13b ("{v} started cooking", the
   slot as the arrival range). Rx (by order data, so it renders only when the flag let an Rx order exist): T5c
   while the check is pending after accept (T3 holds during the accept window), D5a after a decline (reason chip +
   note, the Rx lines named in `O.d.rxNoGo`, "Cancel the rest — free" → the unpaid cancel), D5b (customer cancel

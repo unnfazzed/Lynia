@@ -647,3 +647,18 @@ export const O = {
   }
 } as const;
 export const ofFmt = (s: string, o: Record<string, string | number>) => s.replace(/\{(\w+)\}/g, (m, k) => (o[k] ?? m) as string);
+
+/**
+ * Strings the screens need that the handoff's `O` does not carry as keys (CLAUDE-CODE-PROMPT.md: "If a
+ * string is missing, add it … in the same style and list it in your PR"). Each is listed in ledger D-59
+ * §3. `review` is DRAWN — the R5c frame's cart-bar button (of-screens-rt.js), not a key in `O`.
+ */
+export const O_ADDED = {
+  r: {
+    /** BRIEF D3f — the breakdown row for a balance owed from a cancel after collection, carried on this
+     *  order (the server adds it to the total and to the cash at the door). Not drawn in any R frame. */
+    owed: "Owed from a cancelled order",
+    /** R5c — the closed venue's cart bar button. */
+    review: "Review",
+  },
+} as const;

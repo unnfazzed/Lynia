@@ -1,6 +1,6 @@
 /**
  * Auto-accept (docs/plans/2026-09-30-restaurant-auto-accept.md): at a restaurant that skipped the
- * accept window, the rider confirms pickup with "Collected" instead of the kitchen's 4-digit code, and
+ * accept window, the rider confirms pickup with "Collected" instead of the kitchen's 6-digit code, and
  * the server only accepts it near the restaurant. Harness copied from food-job.test.tsx.
  */
 import renderer, { act } from "react-test-renderer";
@@ -15,6 +15,7 @@ const mockGetActiveOrder = jest.fn<Promise<OrderSnapshot | null>, []>();
 const mockGetFoodOrderAsRider = jest.fn<Promise<MerchantOrderResponse>, unknown[]>();
 const mockConfirmFoodCollected = jest.fn();
 const mockGetLastFix = jest.fn<{ lat: number; lng: number } | null, []>();
+const mockConfirmFoodPickup = jest.fn();
 
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
@@ -32,7 +33,7 @@ jest.mock("../../../src/api/orders", () => ({
 }));
 jest.mock("../../../src/api/food-rider", () => ({
   getFoodOrderAsRider: (...args: unknown[]) => mockGetFoodOrderAsRider(...args),
-  confirmFoodPickup: jest.fn(),
+  confirmFoodPickup: (...args: unknown[]) => mockConfirmFoodPickup(...args),
   confirmFoodCollected: (...args: unknown[]) => mockConfirmFoodCollected(...args),
   confirmFoodRiderCash: jest.fn(),
   disputeFoodCash: jest.fn(),
@@ -202,12 +203,29 @@ describe("food job — auto-accept Collected pickup", () => {
     const tree = await atRestaurant(true);
     const text = textOf(tree);
     expect(text).toContain("I've collected the food");
-    expect(text).not.toContain("Ask the kitchen for the 4-digit pickup code");
+    expect(text).not.toContain("Ask the kitchen for the pickup code");
   });
 
   it("keeps the pickup code everywhere else", async () => {
     const tree = await atRestaurant(false);
-    expect(textOf(tree)).toContain("Ask the kitchen for the 4-digit pickup code");
+    expect(textOf(tree)).toContain("Ask the kitchen for the pickup code");
+  });
+
+  // Order flow v2 RD2a (ledger D-59, BRIEF §16): the code the kitchen reads out is six digits.
+  it("takes the six-digit pickup code in six boxes and sends all six", async () => {
+    mockConfirmFoodPickup.mockResolvedValue({ orderId: "order-1", status: "picked_up" });
+    const tree = await atRestaurant(false);
+    const input = () => tree.root.findAll((n) => n.props.accessibilityLabel === "Ask the kitchen for the pickup code" && typeof n.props.onChangeText === "function")[0]!;
+    expect(input().props.maxLength).toBe(6);
+    const cta = () => tree.root.findAll((n) => n.props.label === "I've collected the food")[0]!;
+    await act(async () => input().props.onChangeText("7316"));
+    await settle();
+    expect(cta().props.disabled).toBe(true);
+    await act(async () => input().props.onChangeText("731604"));
+    await settle();
+    expect(cta().props.disabled).toBe(false);
+    await press(tree, "I've collected the food");
+    expect(mockConfirmFoodPickup).toHaveBeenCalledWith("order-1", "731604");
   });
 
   it("sends the rider's current position", async () => {

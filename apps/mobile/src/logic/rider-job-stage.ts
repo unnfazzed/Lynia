@@ -32,8 +32,9 @@ export function stepFor(stage: ParcelStage | FoodStage): number {
   return stage === "toPickup" || stage === "atPickup" || stage === "toKitchen" || stage === "atKitchen" ? 0 : 2;
 }
 
-/** The 10-minute wait before "Mark undelivered" unlocks (X3). */
-export const REACH_WAIT_MS = 10 * 60_000;
+/** The wait before "Mark undelivered" unlocks (X3): 8 minutes, the server's food no-show window
+ *  (`RESTAURANTS_DEBT.noShowWindowMs`), for parcels too since D-59 changed the copy 10 → 8 min. */
+export const REACH_WAIT_MS = 8 * 60_000;
 
 export interface ArrivalMark {
   orderId: string;

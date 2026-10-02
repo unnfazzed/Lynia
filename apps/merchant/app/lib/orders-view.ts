@@ -62,7 +62,8 @@ export type DetailView = "ringing" | "legacy" | "cooking" | "handover" | "tracki
 /** Which screen an order opens on: B3 cooking, B4 handover, B6 tracking or B7 delivered. */
 export function detailView(o: MerchantOrderResponse): DetailView {
   if (o.merchantClosedAt || o.status === "cancelled" || o.status === "expired") return "closed";
-  if (o.merchantPhase === "awaiting_accept") return "ringing";
+  // An auto-accepted order the kitchen hasn't confirmed rings too (M1a), on the Orders home.
+  if (o.merchantPhase === "awaiting_accept" || needsKitchenConfirm(o)) return "ringing";
   if (o.merchantPhase === "awaiting_item_approval" || o.merchantPhase === "awaiting_payment") return "legacy";
   if (o.merchantPhase === "preparing") return "cooking";
   if (isReadyBucket(o)) return "handover";
@@ -101,6 +102,7 @@ export function itemsEditedLabel(o: Pick<MerchantOrderResponse, "itemsEditedAt">
   return o.itemsEditedAt ? `Items changed ${hm(o.itemsEditedAt)}` : null;
 }
 
+/** A row of the vertical stepper (the shop's booking tracking, D5/D7). */
 export interface Step {
   label: string;
   state: "done" | "now" | "todo";
@@ -115,28 +117,41 @@ function hm(iso: string | null | undefined): string {
 }
 
 /**
- * B6's stepper: the seven delivery steps in the customer app's restaurant grammar, told from the
- * merchant's side, plus the merchant-only "Cash back to you". Times come from the order's timeline.
+ * Order flow v2 (ledger D-59, README "Merchant track"): the merchant sees the customer's own four-step
+ * track — Confirmed → Cooking/Packing → On the way → Delivered — instead of B6's eight-step stepper.
+ * Returns the current step, 0–3, or 4 once delivered (every step done). Rider found, at the counter and
+ * collected are content inside steps 2–3, not steps of their own (BRIEF §4).
  */
-export function steps(o: MerchantOrderResponse): Step[] {
-  const at = (status: string) => o.timeline?.find((e) => e.status === status)?.at ?? null;
-  const reached: [string, boolean, string | null][] = [
-    ["Order placed", true, o.createdAt ?? at("requested")],
-    ["You accepted", o.prepStartedAt != null || o.merchantPhase !== "awaiting_accept", o.prepStartedAt],
-    ["Rider secured", o.riderId != null, at("assigned")],
-    // Reached when the rider types the pickup code at the counter — the picked-up moment.
-    ["Rider at your counter", isAfterPickup(o), at("picked_up")],
-    ["Picked up", isAfterPickup(o), at("picked_up")],
-    ["On the way", isAfterPickup(o) && o.status !== "picked_up", at("en_route_dropoff")],
-    ["Delivered", o.status === "delivered" || o.status === "completed", o.deliveredAt ?? at("delivered")],
-    ["Cash back to you", o.debtStatus === "settled_cash" || o.debtStatus === "settled_goods" || o.merchantClosedAt != null, o.debtSettledAt ?? o.merchantClosedAt ?? null],
-  ];
-  const firstTodo = reached.findIndex(([, done]) => !done);
-  return reached.map(([label, done, time], i) => ({
-    label,
-    state: done ? "done" : i === firstTodo ? "now" : "todo",
-    time: done ? hm(time) : i === firstTodo ? "live" : "",
-  }));
+export function trackStep(o: MerchantOrderResponse): number {
+  if (o.status === "delivered" || o.status === "completed") return 4;
+  if (isAfterPickup(o)) return 2;
+  if (o.merchantPhase === "awaiting_accept" || needsKitchenConfirm(o)) return 0;
+  return 1;
+}
+
+export interface CashBackRow {
+  /** "after" until the order is delivered, "due" while the rider owes it, "done" once settled. */
+  state: "after" | "due" | "done";
+  /** "13:17" when the cash is due back, or null. */
+  dueAt: string | null;
+}
+
+/**
+ * The merchant-only "Cash back to you" row under the track (README "Merchant track", M5/M6a): surface
+ * until delivery, highlight wash once the cash is due. Only an order whose rider brings the food money
+ * back (cash, collect-and-return) has one.
+ */
+export function cashBackRow(o: MerchantOrderResponse): CashBackRow | null {
+  if (o.paymentMethod !== "cash" || o.merchantCashRule !== "collect_and_return") return null;
+  const settled = o.debtStatus === "settled_cash" || o.debtStatus === "settled_goods" || o.merchantClosedAt != null;
+  if (settled) return { state: "done", dueAt: null };
+  const delivered = o.status === "delivered" || o.status === "completed";
+  return delivered ? { state: "due", dueAt: o.cashDueAt ? hm(o.cashDueAt) : null } : { state: "after", dueAt: null };
+}
+
+/** BRIEF §16: every code is shown 3+3 — "731 604". A legacy four-digit code shows as it is. */
+export function groupCode(code: string): string[] {
+  return code.length === 6 ? [code.slice(0, 3), code.slice(3)] : [code];
 }
 
 /** When the next opening window starts, "HH:MM", looking a week ahead from `from`. */

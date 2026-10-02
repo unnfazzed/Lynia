@@ -17,6 +17,22 @@ export interface FoodCartLine {
   quantity: number;
   /** D-35: a note on this single line — travels with it on the kitchen ticket. Never changes price. */
   note: string;
+  /** Order flow v2 R8 (BRIEF §13): a pharmacy item that needs a prescription (only ever true while the
+   *  `rxEnabled` flag is on — the server hides such items otherwise). */
+  rxRequired?: boolean;
+}
+
+/** Order flow v2 (ledger D-59): which kind of venue the one cart belongs to. Restaurants and shops
+ *  share the same merchant row (`businessType`), and Pharmacy is the shop kind `pharmacy`. */
+export interface FoodCartVenue {
+  businessType: "restaurant" | "shop";
+  shopKind: string | null;
+}
+
+/** The customer section a cart's venue belongs to (picks the copy, the sticker and the storefront). */
+export function cartService(venue: FoodCartVenue | null | undefined): "food" | "shops" | "pharmacy" {
+  if (!venue || venue.businessType !== "shop") return "food";
+  return venue.shopKind === "pharmacy" ? "pharmacy" : "shops";
 }
 
 export interface FoodCartState {
@@ -25,6 +41,8 @@ export interface FoodCartState {
   lines: FoodCartLine[];
   /** D-35: one note for the whole order, distinct from a per-line note. */
   orderNote: string;
+  /** The venue's kind; absent on a cart saved before shop ordering (a restaurant cart). */
+  venue?: FoodCartVenue | null;
 }
 
 export const EMPTY_CART: FoodCartState = { restaurantId: null, restaurantName: null, lines: [], orderNote: "" };

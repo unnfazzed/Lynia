@@ -37,7 +37,7 @@ export function getFoodOrderAsRider(orderId: string): Promise<MerchantOrderRespo
   return apiFetch(`/merchant/orders/${orderId}/mine`);
 }
 
-/** N-16: the 4-digit pickup code the kitchen reads out at the counter. */
+/** N-16: the pickup code the kitchen reads out at the counter (6 digits since D-59). */
 export function confirmFoodPickup(orderId: string, code: string): Promise<{ orderId: string; status: "picked_up" }> {
   return apiFetch(`/merchant/orders/${orderId}/confirm-pickup`, { method: "POST", body: { code } });
 }

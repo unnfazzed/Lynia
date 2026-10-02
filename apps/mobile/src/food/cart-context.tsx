@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
 import {
   addLine,
   cartItemCount,
@@ -8,6 +8,7 @@ import {
   EMPTY_CART,
   type FoodCartLine,
   type FoodCartState,
+  type FoodCartVenue,
   isBelowMinimumOrder,
   removeLine,
   setLineQuantity,
@@ -24,10 +25,10 @@ export interface FoodCartApi {
   /** True once the persisted draft has been read (or found absent) — screens can wait on this
    *  before deciding "cart is empty" vs "still loading the restart-survival snapshot". */
   ready: boolean;
-  /** Adds a line for `restaurantId`. Switching to a DIFFERENT restaurant than the one already in the
-   *  cart replaces it outright (one kitchen's basket at a time — matches the menu screen only ever
-   *  showing one restaurant); returns `true` when that happened, so the caller can toast about it. */
-  addItem: (restaurantId: string, restaurantName: string, line: FoodCartLine) => boolean;
+  /** Adds a line for `restaurantId` (any venue: restaurant, shop or pharmacy — `venue` records which).
+   *  Switching to a DIFFERENT venue than the one already in the cart replaces it outright (one basket at
+   *  a time; the storefront asks first, I3); returns `true` when that happened. */
+  addItem: (restaurantId: string, restaurantName: string, line: FoodCartLine, venue?: FoodCartVenue | null) => boolean;
   setQuantity: (dishId: string, note: string, quantity: number) => void;
   removeItem: (dishId: string, note: string) => void;
   setOrderNote: (note: string) => void;
@@ -43,92 +44,142 @@ export const CART_PERSIST_DEBOUNCE_MS = 600;
 
 const FoodCartContext = createContext<FoodCartApi | null>(null);
 
-export function FoodCartProvider({ children }: { children: React.ReactNode }): React.ReactElement {
-  const [cart, setCart] = useState<FoodCartState>(EMPTY_CART);
-  const [ready, setReady] = useState(false);
+/**
+ * ONE cart across every venue (Order flow v2, ledger D-59: "Start a new cart?" spans restaurants, shops
+ * and pharmacies). `/food`, `/shops` and `/pharmacy` each mount a FoodCartProvider in their layout, so the
+ * state lives here, outside React, and every mounted provider reads the same snapshot: a shop storefront
+ * pushing the Review route (which lives under `/food`) sees the basket it just built, with no SecureStore
+ * round trip in between. The snapshot is loaded when the first provider mounts and dropped (after a
+ * final flush) when the last one unmounts, so a later visit re-reads what was persisted.
+ */
+interface SharedCart {
+  cart: FoodCartState;
+  ready: boolean;
+  mounts: number;
+  /** Bumped on every reset so a load that started before it can't land on the next session. */
+  epoch: number;
+  timer: ReturnType<typeof setTimeout> | null;
+  listeners: Set<() => void>;
+}
 
-  useEffect(() => {
-    let cancelled = false;
-    void loadFoodCart().then((saved) => {
-      if (cancelled) return;
-      if (saved) setCart(saved);
-      setReady(true);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+const shared: SharedCart = { cart: EMPTY_CART, ready: false, mounts: 0, epoch: 0, timer: null, listeners: new Set() };
 
-  // Persist every change once the initial load has landed (so a load-in-progress can't be clobbered
-  // by writing the still-default EMPTY_CART over a just-restored draft).
+function emit(): void {
+  for (const l of shared.listeners) l();
+}
+
+function flush(): void {
+  if (shared.timer) {
+    clearTimeout(shared.timer);
+    shared.timer = null;
+  }
+  if (shared.ready) void saveFoodCart(shared.cart);
+}
+
+function update(next: (prev: FoodCartState) => FoodCartState): void {
+  shared.cart = next(shared.cart);
+  emit();
+  // Persist once the initial load has landed (so a load-in-progress can't be clobbered by writing the
+  // still-default EMPTY_CART over a just-restored draft).
   //
-  // DEBOUNCED (docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.5). `saveFoodCart` is a
-  // SecureStore write — AndroidKeyStore AES encryption plus a SharedPreferences commit — and this
-  // effect used to fire it on EVERY cart mutation: each `+`/`-` on the quantity stepper, and each
-  // keystroke of the order note (`setOrderNote` writes the same state). The write is async and never
-  // blocked the render, but it queues on the native-modules thread that every other native call
-  // shares, so a burst of them lands squarely on the tap path. Coalescing a burst into one write
-  // costs nothing the contract cares about: the snapshot exists to survive a RESTART, and the flush
-  // on unmount below closes the only window that could lose (the last few hundred ms before the
-  // provider goes away). A tap-and-quit inside that window loses at most the final keystroke.
+  // DEBOUNCED (docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.5). `saveFoodCart` is a SecureStore
+  // write — AndroidKeyStore AES encryption plus a SharedPreferences commit — and it used to fire on EVERY
+  // cart mutation: each `+`/`-` on the quantity stepper, and each keystroke of the order note. The write
+  // is async, but it queues on the native-modules thread every other native call shares, so a burst of
+  // them landed squarely on the tap path. Coalescing a burst into one write costs nothing the contract
+  // cares about: the snapshot exists to survive a RESTART, and the flush when a provider unmounts closes
+  // the only window that could lose (the last few hundred ms before it goes away).
+  if (!shared.ready) return;
+  if (shared.timer) clearTimeout(shared.timer);
+  shared.timer = setTimeout(() => {
+    shared.timer = null;
+    void saveFoodCart(shared.cart);
+  }, CART_PERSIST_DEBOUNCE_MS);
+}
+
+function subscribe(listener: () => void): () => void {
+  shared.listeners.add(listener);
+  return () => {
+    shared.listeners.delete(listener);
+  };
+}
+
+/** The snapshot `useSyncExternalStore` reads — a new object only when the cart or `ready` changes. */
+let snap = { cart: shared.cart, ready: shared.ready };
+function getSnapshot(): { cart: FoodCartState; ready: boolean } {
+  if (snap.cart !== shared.cart || snap.ready !== shared.ready) snap = { cart: shared.cart, ready: shared.ready };
+  return snap;
+}
+
+function mount(): void {
+  shared.mounts += 1;
+  if (shared.mounts > 1) return;
+  const epoch = shared.epoch;
+  void loadFoodCart().then((saved) => {
+    if (epoch !== shared.epoch) return;
+    if (saved) shared.cart = saved;
+    shared.ready = true;
+    emit();
+  });
+}
+
+function unmount(): void {
+  // Unmount flush: a pending debounced write is cancelled and written now, so a customer who edits the
+  // cart and immediately leaves the section can't lose the edit.
+  flush();
+  shared.mounts = Math.max(0, shared.mounts - 1);
+  if (shared.mounts > 0) return;
+  shared.epoch += 1;
+  shared.cart = EMPTY_CART;
+  shared.ready = false;
+}
+
+const addItem = (restaurantId: string, restaurantName: string, line: FoodCartLine, venue?: FoodCartVenue | null): boolean => {
+  let switched = false;
+  update((prev) => {
+    if (prev.restaurantId && prev.restaurantId !== restaurantId) {
+      switched = true;
+      return { restaurantId, restaurantName, lines: [line], orderNote: "", venue: venue ?? null };
+    }
+    return { restaurantId, restaurantName, lines: addLine(prev.lines, line), orderNote: prev.orderNote, venue: venue ?? prev.venue ?? null };
+  });
+  return switched;
+};
+
+const setQuantity = (dishId: string, note: string, quantity: number): void => {
+  update((prev) => {
+    const lines = setLineQuantity(prev.lines, dishId, note, quantity);
+    return lines.length ? { ...prev, lines } : EMPTY_CART;
+  });
+};
+
+const removeItem = (dishId: string, note: string): void => {
+  update((prev) => {
+    const lines = removeLine(prev.lines, dishId, note);
+    return lines.length ? { ...prev, lines } : EMPTY_CART;
+  });
+};
+
+const setOrderNote = (note: string): void => update((prev) => ({ ...prev, orderNote: note }));
+
+const replaceLines = (lines: FoodCartLine[]): void => update((prev) => (lines.length ? { ...prev, lines } : EMPTY_CART));
+
+const clear = (): void => {
+  if (shared.timer) {
+    clearTimeout(shared.timer);
+    shared.timer = null;
+  }
+  shared.cart = EMPTY_CART;
+  emit();
+  void clearFoodCart();
+};
+
+export function FoodCartProvider({ children }: { children: React.ReactNode }): React.ReactElement {
+  const { cart, ready } = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+
   useEffect(() => {
-    if (!ready) return;
-    const t = setTimeout(() => void saveFoodCart(cart), CART_PERSIST_DEBOUNCE_MS);
-    return () => clearTimeout(t);
-  }, [cart, ready]);
-
-  // Unmount flush: the debounce above cancels its pending write on every cart change AND on unmount,
-  // so without this a customer who edits the cart and immediately leaves the tab would lose the edit.
-  // Reads the latest cart from a ref so this effect stays mount-scoped (a `[cart]` dependency would
-  // make it fire on every change, which is the behaviour being removed).
-  const latest = useRef(cart);
-  latest.current = cart;
-  const readyRef = useRef(ready);
-  readyRef.current = ready;
-  useEffect(
-    () => () => {
-      if (readyRef.current) void saveFoodCart(latest.current);
-    },
-    [],
-  );
-
-  const addItem = useCallback((restaurantId: string, restaurantName: string, line: FoodCartLine): boolean => {
-    let switched = false;
-    setCart((prev) => {
-      if (prev.restaurantId && prev.restaurantId !== restaurantId) {
-        switched = true;
-        return { restaurantId, restaurantName, lines: [line], orderNote: "" };
-      }
-      return { restaurantId, restaurantName, lines: addLine(prev.lines, line), orderNote: prev.orderNote };
-    });
-    return switched;
-  }, []);
-
-  const setQuantity = useCallback((dishId: string, note: string, quantity: number): void => {
-    setCart((prev) => {
-      const lines = setLineQuantity(prev.lines, dishId, note, quantity);
-      return lines.length ? { ...prev, lines } : EMPTY_CART;
-    });
-  }, []);
-
-  const removeItem = useCallback((dishId: string, note: string): void => {
-    setCart((prev) => {
-      const lines = removeLine(prev.lines, dishId, note);
-      return lines.length ? { ...prev, lines } : EMPTY_CART;
-    });
-  }, []);
-
-  const setOrderNote = useCallback((note: string): void => {
-    setCart((prev) => ({ ...prev, orderNote: note }));
-  }, []);
-
-  const replaceLines = useCallback((lines: FoodCartLine[]): void => {
-    setCart((prev) => (lines.length ? { ...prev, lines } : EMPTY_CART));
-  }, []);
-
-  const clear = useCallback((): void => {
-    setCart(EMPTY_CART);
-    void clearFoodCart();
+    mount();
+    return unmount;
   }, []);
 
   const value = useMemo<FoodCartApi>(
@@ -147,7 +198,7 @@ export function FoodCartProvider({ children }: { children: React.ReactNode }): R
       replaceLines,
       clear,
     }),
-    [cart, ready, addItem, setQuantity, removeItem, setOrderNote, replaceLines, clear],
+    [cart, ready],
   );
 
   return <FoodCartContext.Provider value={value}>{children}</FoodCartContext.Provider>;

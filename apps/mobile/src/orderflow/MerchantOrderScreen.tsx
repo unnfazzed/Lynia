@@ -3,11 +3,11 @@ import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import * as Location from "expo-location";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, ActivityIndicator, BackHandler, Linking, ScrollView, Share, Text, useWindowDimensions, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { ApiError } from "../api/client";
-import { cancelUnpaidFoodOrder, changeFoodOrderSchedule, confirmFoodCustomerCash, confirmFoodSubstitution, getVenueScheduleSlots, rateFoodVenue, respondToFoodOrderItems } from "../api/food-orders";
+import { cancelUnpaidFoodOrder, changeFoodOrderSchedule, confirmFoodCustomerCash, confirmFoodSubstitution, rateFoodVenue, respondToFoodOrderItems } from "../api/food-orders";
 import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../api/orders";
 import { raiseIssue, raiseSos } from "../api/safety";
 import {
@@ -50,6 +50,7 @@ import {
   substitutionState,
 } from "../logic/merchant-order";
 import { goHomeClearingStack } from "../logic/nav";
+import type { ChosenSlot } from "../logic/review";
 import { minutesSince } from "../logic/order-stage";
 import { reconcileDeliveryCode, reconcilePendingRating } from "../logic/order-tracking";
 import { loadFoodOrderSnapshot, saveFoodOrderSnapshot } from "../net/food-order-store";
@@ -57,6 +58,7 @@ import { useClaimOfflineBanner } from "../net/offline-banner-owner";
 import { useReachability } from "../net/use-reachability";
 import { orderKey } from "../query/client";
 import { foodOrderKey, useFoodOrder } from "../query/use-food-order";
+import { useScheduleSlots } from "../query/use-order-flow";
 import { useForegroundRefetch } from "../realtime/use-foreground-refetch";
 import { useOrderSocket } from "../realtime/use-order-socket";
 import { haptic, useDial } from "../ui/index";
@@ -103,7 +105,8 @@ import {
   VenueRow,
 } from "../ui/orderflow/kit";
 import { MerchantMap } from "../ui/orderflow/MerchantMap";
-import { CancelSheet, ChangeTimeSheet, HelpSheet, REPORT_ISSUE_TYPES, ReportSheet } from "../ui/orderflow/panels";
+import { CancelSheet, HelpSheet, REPORT_ISSUE_TYPES, ReportSheet } from "../ui/orderflow/panels";
+import { ScheduleSheet } from "../ui/orderflow/review";
 import { uuidV4FromSeed } from "../util";
 
 /**
@@ -353,16 +356,21 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     onError: () => showToast({ text: O.t.cxFail }),
   });
 
-  // ── T13a "Change time": the venue's slots for this drop-off, read only while the sheet is open ──
-  const dropPoint = snap?.dropoff.point ?? null;
-  const slotsQ = useQuery({
-    queryKey: ["orderflow", "slots", order?.merchantId ?? "", dropPoint?.lat ?? null, dropPoint?.lng ?? null],
-    queryFn: () => getVenueScheduleSlots(order?.merchantId as string, dropPoint),
-    enabled: panel === "schedule" && !!order?.merchantId,
-    staleTime: 60_000,
-  });
-  const slotsOk = slotsQ.data != null && Array.isArray(slotsQ.data.today?.slots) && Array.isArray(slotsQ.data.tomorrow?.slots);
-  const slotsFailed = panel === "schedule" && (slotsQ.isError || (slotsQ.data != null && !slotsOk));
+  // ── T13a "Change time": Review's R5a schedule sheet on the venue's slots for this drop-off, read
+  //    only while the sheet is open ──
+  const slotsQ = useScheduleSlots(order?.merchantId, snap?.dropoff.point ?? null, panel === "schedule");
+  const slotsFailed = panel === "schedule" && slotsQ.isError;
+  const insets = useSafeAreaInsets();
+  const scheduledFor = order?.scheduledFor ?? null;
+  const currentSlot = useMemo((): ChosenSlot | null => {
+    const s = slotsQ.slots;
+    if (!s || !scheduledFor) return null;
+    const at = Date.parse(scheduledFor);
+    const today = s.today.slots.find((x) => Date.parse(x.start) === at);
+    if (today) return { day: "today", slot: today };
+    const tomorrow = s.tomorrow.slots.find((x) => Date.parse(x.start) === at);
+    return tomorrow ? { day: "tomorrow", slot: tomorrow } : null;
+  }, [slotsQ.slots, scheduledFor]);
   useEffect(() => {
     if (!slotsFailed) return;
     setPanel(null);
@@ -378,7 +386,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     },
     onError: (e) => {
       showToast({ text: failText(e, O.c.noData) });
-      void slotsQ.refetch();
+      void qc.invalidateQueries({ queryKey: ["orderflow", "slots"] });
     },
   });
 
@@ -702,19 +710,16 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
         onClose={() => setPanel(null)}
       />
       <ReportSheet visible={panel === "report"} items={itemNames} onSend={report} onClose={() => setPanel(null)} />
-      {panel === "schedule" && slotsOk && slotsQ.data ? (
-        <ChangeTimeSheet
-          visible
-          venue={venueName}
-          making={S.making.toLowerCase()}
-          today={slotsQ.data.today.slots}
-          tomorrow={slotsQ.data.tomorrow.slots}
-          current={[...slotsQ.data.today.slots, ...slotsQ.data.tomorrow.slots].find((s) => order?.scheduledFor != null && Date.parse(s.start) === Date.parse(order.scheduledFor))?.start ?? null}
-          busy={scheduleM.isPending}
-          onSave={(s) => scheduleM.mutate(s.start)}
-          onClose={() => setPanel(null)}
-        />
-      ) : null}
+      <ScheduleSheet
+        visible={panel === "schedule" && slotsQ.slots != null}
+        venue={venueName}
+        making={S.making.toLowerCase()}
+        slots={slotsQ.slots ?? null}
+        initial={currentSlot}
+        bottomInset={insets.bottom}
+        onPick={(c) => (c.slot.start === currentSlot?.slot.start || scheduleM.isPending ? setPanel(null) : scheduleM.mutate(c.slot.start))}
+        onClose={() => setPanel(null)}
+      />
       <PhotoViewer visible={viewer != null} title={viewer?.title ?? ""} uri={viewer?.uri ?? null} caption={viewer?.caption ?? ""} onClose={() => setViewer(null)} />
       <CancelSheet
         visible={panel === "cancel"}
