@@ -5,7 +5,7 @@
  * pure functions), so a future tuning pass or per-corridor override touches this file, not a sweep
  * through the service. Money math goes through ./money (roundToCents) — the one arithmetic seam.
  */
-import { roundToCents } from "./money";
+import { addMoney, fromCents, roundToCents, toCents } from "./money";
 
 export const RESTAURANTS_PRICING = {
   /** N-01: $0.80/km, rounded to the nearest $0.50, minimum $1.50. */
@@ -43,6 +43,9 @@ export const RESTAURANTS_TIMING = {
   /** N-22: one soft reminder push if a payment request goes unanswered this long — not a clock (R-17
    *  retired those), just a nudge; the order itself never expires from this. */
   paymentReminderWindowMs: 15 * 60 * 1000,
+  /** Order flow v2 (BRIEF §8): the customer's window to answer a substitution round (swaps). No answer
+   *  by then ⇒ swaps declined, those lines removed, the order carries on. Swept on `sweepIntervalMs`. */
+  substitutionWindowMs: 3 * 60 * 1000,
 } as const;
 
 /**
@@ -88,6 +91,8 @@ export const MERCHANT_REJECTION_REASONS = {
   no_rider: "We couldn't find a rider for your order in time — nothing was charged, sorry about that.",
   // Auto-accept: nobody confirmed the kitchen within RESTAURANTS_AUTO_ACCEPT.autoCancelAfterMs.
   kitchen_unconfirmed: "The restaurant didn't confirm your order in time — nothing was charged, sorry about that.",
+  // Order flow v2 U5: every line ended up removed (out of stock, or every swap declined).
+  all_out_of_stock: "They're out of every item. Your order is cancelled and nothing was charged.",
   other: "The restaurant couldn't take this order.",
 } as const;
 
@@ -161,3 +166,96 @@ export const RESTAURANTS_DEBT = {
    *  RESTAURANTS_TIMING/RESTAURANTS_DISPATCH's sweeps, for the same sub-minute-precision reasoning. */
   sweepIntervalMs: 20 * 1000,
 } as const;
+
+// ── Order flow v2 (packages/design/handoff/order-flow-v2, ledger D-59) ───────────────────────────────
+// Pure, zod-free helpers the API and the phones share, so a phone draws exactly what the server
+// computes (reachable through the zod-free `@lynia/shared/restaurants-order` entry).
+
+/** N-15 applied to an items subtotal: the merchant's goods total (items + small-order fee). */
+export function merchantGoodsForSubtotal(itemsSubtotal: number): { itemsSubtotal: number; smallOrderFee: number; goodsTotal: number } {
+  const smallOrderFee = smallOrderFeeForSubtotal(itemsSubtotal);
+  return { itemsSubtotal, smallOrderFee, goodsTotal: addMoney(itemsSubtotal, smallOrderFee) };
+}
+
+/** BRIEF §4: the four-step track every merchant order shows. */
+export const MERCHANT_ORDER_TRACK_STEPS = ["confirmed", "making", "on_the_way", "delivered"] as const;
+export type MerchantOrderTrackStep = (typeof MERCHANT_ORDER_TRACK_STEPS)[number];
+
+/** The track's current step. Steps before `index` are done; `step` itself is in progress, except
+ *  `delivered`, which is done. `rxChecked` (pharmacy step 1 reads "Prescription checked") stays false
+ *  until the prescription flow (BRIEF §13) lands. */
+export interface MerchantOrderTrack {
+  step: MerchantOrderTrackStep;
+  index: 0 | 1 | 2 | 3;
+  rxChecked: boolean;
+}
+
+export interface MerchantOrderTrackInput {
+  status: string;
+  merchantPhase: string | null | undefined;
+  autoAccepted?: boolean | null;
+  kitchenConfirmedAt?: string | Date | null;
+}
+
+const TRACK_MAKING_STATUSES: ReadonlySet<string> = new Set(["open_for_offers", "assigned", "confirmed", "en_route_pickup"]);
+const TRACK_ON_THE_WAY_STATUSES: ReadonlySet<string> = new Set(["picked_up", "en_route_dropoff"]);
+const TRACK_DELIVERED_STATUSES: ReadonlySet<string> = new Set(["delivered", "completed"]);
+
+/**
+ * BRIEF §4 derivation, from the order's status + kitchen phase. Rider found / at the venue / collected
+ * are sheet content inside steps 2–3, not steps of their own. Returns null for an order that ended
+ * without being delivered (cancelled, expired, undelivered) — those screens draw no track.
+ *  - confirmed: waiting for the venue (accept window, a substitution answer at accept, legacy payment,
+ *    or an auto-accepted order the kitchen hasn't confirmed yet)
+ *  - making: cooking/packing, through to the rider collecting it
+ *  - on_the_way: collected
+ *  - delivered
+ */
+export function deriveMerchantOrderTrack(o: MerchantOrderTrackInput): MerchantOrderTrack | null {
+  const at = (step: MerchantOrderTrackStep): MerchantOrderTrack => ({
+    step,
+    index: MERCHANT_ORDER_TRACK_STEPS.indexOf(step) as MerchantOrderTrack["index"],
+    rxChecked: false,
+  });
+  if (TRACK_DELIVERED_STATUSES.has(o.status)) return at("delivered");
+  if (TRACK_ON_THE_WAY_STATUSES.has(o.status)) return at("on_the_way");
+  if (TRACK_MAKING_STATUSES.has(o.status)) return at("making");
+  if (o.status !== "requested") return null;
+  if (o.merchantPhase === "ready_for_pickup") return at("making");
+  if (o.merchantPhase === "preparing") return o.autoAccepted && !o.kitchenConfirmedAt ? at("confirmed") : at("making");
+  return at("confirmed");
+}
+
+/** "Order #A1B2": the short id the handoff draws on the customer, merchant and rider phones. */
+export function orderShortId(orderId: string): string {
+  return orderId.replace(/-/g, "").slice(0, 4).toUpperCase();
+}
+
+/** One swap a substitution round asks the customer about. */
+export interface SubstitutionSwapPrice {
+  lineId: string;
+  swapPriceUsd: number;
+  quantity: number;
+}
+
+/**
+ * BRIEF §8 totals for a substitution round, given which swaps the customer accepts. `keptSubtotal` is
+ * the items subtotal of every line the round doesn't ask about (removals and quantity drops are already
+ * applied); each accepted swap adds its price × quantity; the small-order fee is re-applied; the
+ * delivery fee never changes. While a round is open the server stores the "every swap declined"
+ * outcome (the no-answer default) and commits this on confirm.
+ */
+export function substitutionTotals(input: {
+  keptSubtotal: number;
+  deliveryFee: number;
+  swaps: readonly SubstitutionSwapPrice[];
+  acceptedLineIds: Iterable<string>;
+}): { itemsSubtotal: number; smallOrderFee: number; goodsTotal: number; total: number } {
+  const accepted = new Set(input.acceptedLineIds);
+  const swapCents = input.swaps
+    .filter((sw) => accepted.has(sw.lineId))
+    .reduce((cents, sw) => cents + toCents(sw.swapPriceUsd) * sw.quantity, 0);
+  const itemsSubtotal = addMoney(input.keptSubtotal, fromCents(swapCents));
+  const goods = merchantGoodsForSubtotal(itemsSubtotal);
+  return { ...goods, total: addMoney(goods.goodsTotal, input.deliveryFee) };
+}

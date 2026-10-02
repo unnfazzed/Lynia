@@ -733,7 +733,22 @@ model Order {
   refundAmount            Decimal?            @map("refund_amount") @db.Decimal(10, 2)
   refundedAt              DateTime?           @map("refunded_at")
 
+  // ── Order flow v2 (ledger D-59, migration 0066) — all nullable, additive ─────────────────────────
+  // BRIEF §7: "If something's out of stock" — "ask" | "remove" (validated at the wire, OutOfStockPref).
+  // Null = never chosen = ask. With "remove" the server refuses swap proposals.
+  outOfStockPref          String?             @map("out_of_stock_pref")
+  // BRIEF §9 pickup proof on merchant orders: when the rider's photo (pickupPhotoKey, shared with the
+  // parcel flow) was attached, and the rider's "Bag is sealed" tick. Null = not taken / not ticked.
+  pickupPhotoAt           DateTime?           @map("pickup_photo_at")
+  pickupBagSealed         Boolean?            @map("pickup_bag_sealed")
+  // BRIEF §9 door proof (RD4c/d): why the code couldn't be used (DoorProofReason) and who the order was
+  // handed to. The photo itself reuses deliveryProofKey/deliveryProofAt above.
+  deliveryProofReason     String?             @map("delivery_proof_reason")
+  deliveryProofHandedTo   String?             @map("delivery_proof_handed_to")
+
   merchantDebtLedger MerchantDebtLedger[]
+  substitutionRounds MerchantOrderSubstitution[]
+  venueRating        VenueRating?
 
   offers           Offer[]
   events           OrderEvent[]
@@ -1253,10 +1268,83 @@ model MerchantOrderItem {
   quantity     Int
   note         String?
   available    Boolean?
+  // Order flow v2 (BRIEF §8): on a line an accepted swap added, the line it replaced (which is then
+  // available=false). Plain column, a lineage pointer (like orders.rebroadcast_of_id).
+  replacesItemId String?     @map("replaces_item_id") @db.Uuid
   createdAt    DateTime      @default(now()) @map("created_at")
 
   @@index([orderId])
   @@map("merchant_order_items")
+}
+
+// Order flow v2 (BRIEF §8, ledger D-59): one substitution round the venue sent the customer — at accept
+// (`at_accept`) or mid-prep "Change items" (`mid_prep`). `status`: open | confirmed | timed_out | applied
+// | cancelled (SubstitutionRoundStatus at the wire). At most one OPEN round per order — a partial unique
+// index (migration 0066), since Prisma's DSL can't express one. `deadlineAt` is set only on a round that
+// asks about a swap; the reconciler times it out (swaps declined) past it.
+model MerchantOrderSubstitution {
+  id                 String                              @id @default(uuid()) @db.Uuid
+  orderId            String                              @map("order_id") @db.Uuid
+  order              Order                               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  kind               String
+  status             String
+  deadlineAt         DateTime?                           @map("deadline_at")
+  // The order's total before the round (U2 "Was").
+  wasTotal           Decimal                             @map("was_total") @db.Decimal(10, 2)
+  createdByProfileId String?                             @map("created_by_profile_id") @db.Uuid
+  createdAt          DateTime                            @default(now()) @map("created_at")
+  resolvedAt         DateTime?                           @map("resolved_at")
+  lines              MerchantOrderSubstitutionLine[]
+
+  @@index([orderId, createdAt])
+  @@index([status, deadlineAt])
+  @@map("merchant_order_substitutions")
+}
+
+// One line of a substitution round: what the venue proposed for one order line, snapshotted (name,
+// price, quantity as ordered), and — for a swap — the replacement and the customer's answer.
+model MerchantOrderSubstitutionLine {
+  id               String                    @id @default(uuid()) @db.Uuid
+  roundId          String                    @map("round_id") @db.Uuid
+  round            MerchantOrderSubstitution @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  orderItemId      String                    @map("order_item_id") @db.Uuid
+  // remove | swap | reduce (SubstitutionAction at the wire).
+  action           String
+  nameSnapshot     String                    @map("name_snapshot")
+  priceUsd         Decimal                   @map("price_usd") @db.Decimal(10, 2)
+  fromQuantity     Int                       @map("from_quantity")
+  toQuantity       Int?                      @map("to_quantity")
+  swapDishId       String?                   @map("swap_dish_id") @db.Uuid
+  swapNameSnapshot String?                   @map("swap_name_snapshot")
+  swapPriceUsd     Decimal?                  @map("swap_price_usd") @db.Decimal(10, 2)
+  swapQuantity     Int?                      @map("swap_quantity")
+  // accept | remove; null until the customer answers (a swap) — always null on remove/reduce.
+  answer           String?
+  // The order line an accepted swap created.
+  resultItemId     String?                   @map("result_item_id") @db.Uuid
+  createdAt        DateTime                  @default(now()) @map("created_at")
+
+  @@index([roundId])
+  @@map("merchant_order_substitution_lines")
+}
+
+// Order flow v2 (BRIEF §11): the customer's rating of the venue on one order — the single source of the
+// venue's star aggregate (merchants.food_rating_avg/count). One per order: the venue-rating endpoint and
+// the older RateRequest.foodScore path both write here, and only the write that creates the row moves
+// the aggregate, so the two can never double-count. Plain merchant/customer ids (no relation), like Issue.
+model VenueRating {
+  id         String   @id @default(uuid()) @db.Uuid
+  orderId    String   @unique @map("order_id") @db.Uuid
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  merchantId String   @map("merchant_id") @db.Uuid
+  customerId String   @map("customer_id") @db.Uuid
+  score      Int
+  // VenueRatingTag at the wire.
+  tags       String[] @default([])
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([merchantId])
+  @@map("venue_ratings")
 }
 
 // C3: one row per dispatch tick that produced a live offer to a candidate rider — the "DispatchDecision

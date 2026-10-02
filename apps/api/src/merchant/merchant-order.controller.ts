@@ -1,5 +1,7 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
 import {
+  AttachMerchantDoorProofRequest,
+  AttachMerchantPickupProofRequest,
   CloseMerchantOrderRequest,
   ConfirmCollectedRequest,
   ConfirmMerchantPickupRequest,
@@ -11,6 +13,7 @@ import {
   MerchantRejectOrderRequest,
   MerchantReleaseUnpaidRequest,
   MerchantRequestPaymentRequest,
+  ProposeSubstitutionRequest,
   RefundMerchantOrderRequest,
   ReportMerchantNonReturnRequest,
 } from "@lynia/shared";
@@ -22,6 +25,8 @@ import { FoodDebtService } from "./food-debt.service";
 import { FoodDispatchService } from "./food-dispatch.service";
 import { FoodOrderService } from "./food-order.service";
 import { MerchantGuard } from "./merchant.guard";
+import { MerchantOrderProofService } from "./merchant-order-proof.service";
+import { OrderSubstitutionService } from "./order-substitution.service";
 import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
 
 /**
@@ -39,6 +44,8 @@ export class MerchantOrderController {
     private readonly foodOrders: FoodOrderService,
     private readonly dispatch: FoodDispatchService,
     private readonly debt: FoodDebtService,
+    private readonly substitutions: OrderSubstitutionService,
+    private readonly proof: MerchantOrderProofService,
   ) {}
 
   @Get()
@@ -131,6 +138,43 @@ export class MerchantOrderController {
     @CurrentUser() profileId: string,
   ) {
     return this.foodOrders.editItems(profileId, orderId, body);
+  }
+
+  /** Order flow v2 U1a/U4a (BRIEF §8): per-line changes — remove, quantity drop, or swap. At accept on a
+   *  manual-accept venue this is the accept (`prepMinutes` required). Returns the order. */
+  @Post(":orderId/substitution")
+  @UseGuards(MerchantGuard)
+  async proposeSubstitution(
+    @Param("orderId", ParseUUIDPipe) orderId: string,
+    @Body(new ZodBody(ProposeSubstitutionRequest)) body: ProposeSubstitutionRequest,
+    @CurrentUser() profileId: string,
+  ) {
+    await this.substitutions.propose(profileId, orderId, body);
+    return this.foodOrders.getQueueOrder(profileId, orderId);
+  }
+
+  /** Order flow v2 RD2b (BRIEF §9): the assigned RIDER's sealed-bag photo key and/or the sealed tick
+   *  (no MerchantGuard — party-checked in the service). */
+  @Post(":orderId/pickup-proof")
+  @Throttle({ limit: 20, windowSec: 60, keyPrefix: "food-pickup-proof" })
+  attachPickupProof(
+    @Param("orderId", ParseUUIDPipe) orderId: string,
+    @Body(new ZodBody(AttachMerchantPickupProofRequest)) body: AttachMerchantPickupProofRequest,
+    @CurrentUser() profileId: string,
+  ) {
+    return this.proof.attachPickupProof(orderId, profileId, body);
+  }
+
+  /** Order flow v2 RD4c/d (BRIEF §9): the assigned RIDER's door photo when the code can't be used, with
+   *  the reason and who it was handed to. Evidence only — never changes the order's status. */
+  @Post(":orderId/door-proof")
+  @Throttle({ limit: 20, windowSec: 60, keyPrefix: "food-door-proof" })
+  attachDoorProof(
+    @Param("orderId", ParseUUIDPipe) orderId: string,
+    @Body(new ZodBody(AttachMerchantDoorProofRequest)) body: AttachMerchantDoorProofRequest,
+    @CurrentUser() profileId: string,
+  ) {
+    return this.proof.attachDoorProof(orderId, profileId, body);
   }
 
   // N-16: re-reveals the current pickup code (markReady's own mint is hashed-then-discarded) — the
