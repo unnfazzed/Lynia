@@ -99,6 +99,8 @@ export const MERCHANT_REJECTION_REASONS = {
   no_rider: "We couldn't find a rider for your order in time — nothing was charged, sorry about that.",
   // Auto-accept: nobody confirmed the kitchen within RESTAURANTS_AUTO_ACCEPT.autoCancelAfterMs.
   kitchen_unconfirmed: "The restaurant didn't confirm your order in time — nothing was charged, sorry about that.",
+  // Order flow v2 (BRIEF §13): every line needed the prescription the pharmacist declined.
+  rx_declined: "Your prescription wasn't approved, so there was nothing left to pack. Nothing was charged.",
   // Order flow v2 U5: every line ended up removed (out of stock, or every swap declined).
   all_out_of_stock: "They're out of every item. Your order is cancelled and nothing was charged.",
   other: "The restaurant couldn't take this order.",
@@ -175,6 +177,35 @@ export const RESTAURANTS_DEBT = {
   sweepIntervalMs: 20 * 1000,
 } as const;
 
+/**
+ * Order flow v2 (ledger D-59, BRIEF §12) — scheduled orders, as config not constants. A slot is
+ * `slotMinutes` long; the customer picks its start. The venue starts making it (the order rings, like a
+ * new order) `prep + delivery` minutes before the slot starts, so it arrives inside the slot.
+ */
+export const ORDER_SCHEDULE = {
+  slotMinutes: 30,
+  /** "Full": scheduled orders a venue takes per slot. Generous on purpose — one busy kitchen's half
+   *  hour — so it only bites on a genuine pile-up; a per-venue setting is a later tuning pass. */
+  slotCapacity: 12,
+  /** Prep when the venue hasn't set its usual one (`prepBaselineMinutes`). */
+  defaultPrepMinutes: 20,
+  /** Delivery leg when there's no drop-off to measure (the slots read before an address is known). */
+  defaultDeliveryMinutes: 15,
+  /** Same rough urban-motorbike model the app's ETA uses (apps/mobile/src/logic/eta.ts). */
+  speedKmh: 22,
+  roadWindingFactor: 1.3,
+  /** Time for a rider to be found and reach the counter, on top of the ride itself. */
+  riderLeadMinutes: 5,
+} as const;
+
+/** BRIEF §12: the delivery-leg estimate a slot is planned with — straight-line km, inflated for roads,
+ *  at ORDER_SCHEDULE.speedKmh, plus the rider's lead time. Unknown distance → the default. */
+export function deliveryMinutesForKm(distanceKm: number | null | undefined): number {
+  if (distanceKm == null || !Number.isFinite(distanceKm)) return ORDER_SCHEDULE.defaultDeliveryMinutes;
+  const ride = Math.ceil(((Math.max(0, distanceKm) * ORDER_SCHEDULE.roadWindingFactor) / ORDER_SCHEDULE.speedKmh) * 60);
+  return Math.max(1, ride) + ORDER_SCHEDULE.riderLeadMinutes;
+}
+
 // ── Order flow v2 (packages/design/handoff/order-flow-v2, ledger D-59) ───────────────────────────────
 // Pure, zod-free helpers the API and the phones share, so a phone draws exactly what the server
 // computes (reachable through the zod-free `@lynia/shared/restaurants-order` entry).
@@ -190,8 +221,8 @@ export const MERCHANT_ORDER_TRACK_STEPS = ["confirmed", "making", "on_the_way", 
 export type MerchantOrderTrackStep = (typeof MERCHANT_ORDER_TRACK_STEPS)[number];
 
 /** The track's current step. Steps before `index` are done; `step` itself is in progress, except
- *  `delivered`, which is done. `rxChecked` (pharmacy step 1 reads "Prescription checked") stays false
- *  until the prescription flow (BRIEF §13) lands. */
+ *  `delivered`, which is done. `rxChecked` (pharmacy step 1 reads "Prescription checked") is true once a
+ *  prescription on the order was approved (BRIEF §13, backend B). */
 export interface MerchantOrderTrack {
   step: MerchantOrderTrackStep;
   index: 0 | 1 | 2 | 3;
@@ -203,6 +234,8 @@ export interface MerchantOrderTrackInput {
   merchantPhase: string | null | undefined;
   autoAccepted?: boolean | null;
   kitchenConfirmedAt?: string | Date | null;
+  /** BRIEF §13: the order's prescription check (pending | approved | declined); absent = no prescription. */
+  rxStatus?: string | null;
 }
 
 const TRACK_MAKING_STATUSES: ReadonlySet<string> = new Set(["open_for_offers", "assigned", "confirmed", "en_route_pickup"]);
@@ -223,12 +256,14 @@ export function deriveMerchantOrderTrack(o: MerchantOrderTrackInput): MerchantOr
   const at = (step: MerchantOrderTrackStep): MerchantOrderTrack => ({
     step,
     index: MERCHANT_ORDER_TRACK_STEPS.indexOf(step) as MerchantOrderTrack["index"],
-    rxChecked: false,
+    rxChecked: o.rxStatus === "approved",
   });
   if (TRACK_DELIVERED_STATUSES.has(o.status)) return at("delivered");
   if (TRACK_ON_THE_WAY_STATUSES.has(o.status)) return at("on_the_way");
   if (TRACK_MAKING_STATUSES.has(o.status)) return at("making");
   if (o.status !== "requested") return null;
+  // BRIEF §13: "Pharmacist is checking your prescription" comes before Packing.
+  if (o.rxStatus === "pending") return at("confirmed");
   if (o.merchantPhase === "ready_for_pickup") return at("making");
   if (o.merchantPhase === "preparing") return o.autoAccepted && !o.kitchenConfirmedAt ? at("confirmed") : at("making");
   return at("confirmed");

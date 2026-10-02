@@ -44,7 +44,7 @@ export class MerchantTeamService {
       this.prisma.merchantMember.findMany({
         where: { merchantId: access.merchantId },
         orderBy: { createdAt: "asc" },
-        select: { profileId: true, role: true, displayName: true, createdAt: true, profile: { select: { phone: true } } },
+        select: { profileId: true, role: true, displayName: true, createdAt: true, isPharmacist: true, profile: { select: { phone: true } } },
       }),
       this.prisma.merchantInvite.findMany({
         where: { merchantId: access.merchantId, expiresAt: { gt: new Date() } },
@@ -61,9 +61,27 @@ export class MerchantTeamService {
         role: m.role,
         you: m.profileId === profileId,
         joinedAt: m.createdAt.toISOString(),
+        isPharmacist: m.isPharmacist,
       })),
       invites: invites.map(toInvite),
     };
+  }
+
+  /**
+   * Order flow v2 (BRIEF §13): the owner says who on the team may approve or decline prescriptions —
+   * themselves included. Pharmacies only. Idempotent.
+   */
+  async setPharmacist(access: MerchantAccess, memberProfileId: string, isPharmacist: boolean): Promise<{ ok: true }> {
+    const merchant = await this.prisma.merchant.findUnique({ where: { id: access.merchantId }, select: { shopKind: true } });
+    if (isPharmacist && merchant?.shopKind !== "pharmacy") {
+      throw new BadRequestException({ reason: "rx_pharmacy_only", message: "Only a pharmacy has pharmacists." });
+    }
+    const updated = await this.prisma.merchantMember.updateMany({
+      where: { merchantId: access.merchantId, profileId: memberProfileId },
+      data: { isPharmacist },
+    });
+    if (updated.count === 0) throw new NotFoundException("Not on your team");
+    return { ok: true };
   }
 
   async invite(access: MerchantAccess, profileId: string, body: CreateMerchantInviteRequest): Promise<MerchantTeamInviteResponse> {

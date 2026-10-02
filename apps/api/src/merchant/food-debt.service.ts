@@ -95,13 +95,21 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
   async confirmCustomerCash(orderId: string, customerId: string): Promise<{ orderId: string; customerCashConfirmedAt: string }> {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, customerId, orderType: "merchant" },
-      select: { status: true, merchantPaymentMethod: true, agreedFare: true, customerCashConfirmedAt: true, riderId: true },
+      select: {
+        status: true,
+        merchantPaymentMethod: true,
+        agreedFare: true,
+        customerCashConfirmedAt: true,
+        riderId: true,
+        // Order flow v2 (BRIEF D3f): an earlier owed balance this order collects at the door, on top.
+        carriedBalance: { select: { amount: true } },
+      },
     });
     if (!order) throw new NotFoundException("Order not found");
     if (order.merchantPaymentMethod !== "cash") throw new ConflictException("This order isn't a cash order");
     if (order.status !== "en_route_dropoff") throw new ConflictException("The rider hasn't reached you yet");
     if (order.customerCashConfirmedAt) throw new ConflictException("Already confirmed");
-    const amount = roundToCents(Number(order.agreedFare ?? 0));
+    const amount = roundToCents(Number(order.agreedFare ?? 0) + (order.carriedBalance ?? []).reduce((sum, b) => sum + Number(b.amount), 0));
     const now = new Date();
     const claimed = await this.prisma.order.updateMany({
       where: { id: orderId, status: "en_route_dropoff", customerCashConfirmedAt: null },

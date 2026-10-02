@@ -54,7 +54,7 @@ function build(methods: Record<string, unknown>, gateway: TrackingGateway = fake
   queueChanges.length = 0;
   // placeOrder's account-standing read (FOOD-STANDING-01): a customer in good standing unless a test
   // overrides `profile`.
-  const prisma = withMembershipShim({ profile: { findUnique: async () => ({ onHold: false, cashBanned: false, rider: null }) }, ...methods } as Record<string, unknown>);
+  const prisma = withMembershipShim({ profile: { findUnique: async () => ({ onHold: false, cashBanned: false, rider: null }) }, customerBalanceEntry: { findMany: async () => [] }, ...methods } as Record<string, unknown>);
   prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
   const svc = new FoodOrderService(prisma as unknown as PrismaService, tokens, notifications, debt, gateway, rail);
   return { svc, prisma };
@@ -610,6 +610,8 @@ describe("FoodOrderService.listQueue — E2/E3 board visibility", () => {
       merchantId: "m1",
       orderType: "merchant",
       OR: [{ status: { in: ["requested", "open_for_offers", "assigned", "confirmed", "en_route_pickup"] } }, { debtStatus: "open", merchantClosedAt: null }],
+      // Order flow v2: a scheduled order joins the board when it rings.
+      NOT: { schedule: { is: { rungAt: null } } },
     });
   });
 

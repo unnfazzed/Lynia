@@ -193,6 +193,17 @@ export const LEGAL_DATA_CATEGORIES: readonly LegalDataCategory[] = [
     manifestKeys: ["item_photo_url", "pickup_photo_key", "delivery_proof_key", "pickup_photo_at", "delivery_proof_reason", "delivery_proof_handed_to"],
   },
   {
+    label: "Prescriptions (pharmacy orders)",
+    collected:
+      "When you order a medicine that needs a prescription: photos of the prescription, the patient's name, your agreement to show the original to the rider, and the pharmacist's decision and note.",
+    purpose:
+      "So the pharmacy's pharmacist can check the prescription before packing the medicine, and the rider can confirm the original at your door.",
+    basis:
+      "Your explicit consent, given when you add the prescription. A prescription is health information — SENSITIVE personal information under the Cyber and Data Protection Act — so only you, the pharmacy you ordered from and LyniaGo support can open the photos, through links that expire after a few minutes.",
+    retention: "Held with the order as a dispute record; the photos, the patient's name and the pharmacist's note are deleted when you delete your account.",
+    manifestKeys: ["rx_photo_keys", "rx_patient_name", "rx_decline_note"],
+  },
+  {
     label: "App activity and order history",
     collected:
       "Your orders, prices offered and accepted, ratings and free-text comments, support issues and reports you file.",

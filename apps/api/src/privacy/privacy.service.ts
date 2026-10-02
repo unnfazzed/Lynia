@@ -429,6 +429,19 @@ export class PrivacyService {
         where: { orderId: { in: placed.map((o) => o.id) }, note: { not: null } },
         data: { note: null },
       });
+      // Order flow v2 (BRIEF §13): a prescription on the erasing customer's own pharmacy orders — the photo
+      // pages, the patient's name and the pharmacist's note are all health data about them. The whole
+      // row goes (orderPrescription.deleteMany), its photo_keys objects are deleted post-commit with the
+      // other photos, and the order itself stays as the ledger.
+      const scripts = await tx.orderPrescription.findMany({
+        where: { orderId: { in: placed.map((o) => o.id) } },
+        select: { photoKeys: true },
+      });
+      for (const r of scripts) itemPhotoKeys.push(...r.photoKeys);
+      if (scripts.length > 0) {
+        // patient_name / decline_note / photo_keys go with the row.
+        await tx.orderPrescription.deleteMany({ where: { orderId: { in: placed.map((o) => o.id) } } });
+      }
     }
   }
 
