@@ -1,5 +1,5 @@
 import type { MerchantOrderResponse } from "@lynia/shared";
-import { useQuery, type QueryClient } from "@tanstack/react-query";
+import { useQueries, useQuery, type QueryClient } from "@tanstack/react-query";
 import { getFoodOrder } from "../api/food-orders";
 
 export const foodOrderKey = (orderId: string): readonly ["food-order", string] => ["food-order", orderId];
@@ -44,6 +44,29 @@ export function useFoodOrder(orderId: string | undefined, enabled: boolean): Foo
     refetchInterval: (query) => pollIntervalFor(query.state.data),
   });
   return { order: q.data, isLoading: q.isLoading, isFetching: q.isFetching, isError: q.isError, refetch: () => void q.refetch() };
+}
+
+const PEEK_POLL_MS = 30_000;
+
+/**
+ * Order flow v2 G1/G2 (ledger D-59): the food reads behind Home's live bar and the Orders tab's Now cards
+ * — the venue's service, the schedule, the prescription and an open substitution round live on the food
+ * order, not on the generic active-orders snapshot. Same cache entry as the order screen; polled gently,
+ * and only while the list is on screen.
+ */
+export function useFoodOrdersPeek(orderIds: readonly string[], focused: boolean): Record<string, MerchantOrderResponse | undefined> {
+  const qs = useQueries({
+    queries: orderIds.map((id) => ({
+      queryKey: foodOrderKey(id),
+      queryFn: () => getFoodOrder(id),
+      refetchInterval: focused ? PEEK_POLL_MS : (false as const),
+    })),
+  });
+  const out: Record<string, MerchantOrderResponse | undefined> = {};
+  orderIds.forEach((id, i) => {
+    out[id] = qs[i]?.data;
+  });
+  return out;
 }
 
 /** Seed the query cache with a just-created order (from `placeOrder`'s response) so the order

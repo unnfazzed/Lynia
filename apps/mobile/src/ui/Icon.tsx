@@ -80,6 +80,7 @@ import House from "lucide-react-native/dist/cjs/icons/house";
 import ImageIcon from "lucide-react-native/dist/cjs/icons/image";
 import Download from "lucide-react-native/dist/cjs/icons/download";
 import Calendar from "lucide-react-native/dist/cjs/icons/calendar";
+import Pill from "lucide-react-native/dist/cjs/icons/pill";
 import type { LucideIcon } from "lucide-react-native";
 import React from "react";
 import type { StyleProp, ViewStyle } from "react-native";
@@ -164,6 +165,8 @@ const ICONS = {
   "download": Download,
   // Order flow v2 (ledger D-59): WHEN → Schedule, the scheduled row and the closed venue's cart bar (R5a–c).
   calendar: Calendar,
+  // Order flow v2 G1/G2 (ledger D-59): the pharmacy order's glyph on the live bar and the Now card.
+  pill: Pill,
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;

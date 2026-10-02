@@ -6,6 +6,9 @@ import { usePrewarmRoutes, type PrewarmRoute } from "../../src/boot/prewarm-rout
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { getActiveCustomerOrders, type OrderHistoryRow, type OrderSnapshot } from "../../src/api/orders";
 import { formatMoney } from "../../src/logic/money";
+import { useNow } from "../../src/logic/use-now";
+import { useFoodOrdersPeek } from "../../src/query/use-food-order";
+import { merchantLive, type MerchantLiveView } from "../../src/ui/orderflow/live-copy";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { invalidateCustomerOrderHistory, useHistoryFeed } from "../../src/query/use-history-feed";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
@@ -57,6 +60,40 @@ function OrderRow({ o, onPress }: { o: OrderHistoryRow; onPress: () => void }): 
       </View>
       <Text style={{ fontSize: 13, fontWeight: "600", color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>{formatMoney(fare)}</Text>
     </Pressable>
+  );
+}
+
+/** The unlit segment on forest (`.segs i`: white at 22 %, the live bar's own off colour). */
+const NOW_SEG_OFF = "rgba(255,255,255,0.22)";
+
+/**
+ * Order flow v2 G2 (`of-screens-mrg.js` G2, ledger D-59): a running MERCHANT order is a forest "Now" card —
+ * the 40 accent disc with the service glyph, the stage title 14/700, "{venue} · {ETA / next action}"
+ * 12.5 on forest-sub, four segments for the four-step track and a chevron. Same family as Home's live bar.
+ */
+function NowCard({ v, onPress }: { v: MerchantLiveView; onPress: () => void }): React.ReactElement {
+  return (
+    <Tappable
+      onPress={onPress}
+      tone="onDark"
+      accessibilityRole="button"
+      accessibilityLabel={`${v.title}. ${v.line}`}
+      style={{ marginBottom: 10, borderRadius: 20, backgroundColor: tokens.color.forest, paddingVertical: 10, paddingHorizontal: 12, minHeight: 64, flexDirection: "row", alignItems: "center", gap: 10 }}
+    >
+      <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: tokens.color.accent, alignItems: "center", justifyContent: "center" }}>
+        <Icon name={v.icon} size={20} color={tokens.color.onAccent} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={{ fontSize: 14, lineHeight: 18, fontWeight: "700", color: tokens.color.onAccent }}>{v.title}</Text>
+        <Text style={{ fontSize: 12.5, marginTop: 1, color: tokens.color.onForestMuted }}>{v.line}</Text>
+        <View style={{ flexDirection: "row", gap: 3, marginTop: 6 }}>
+          {[0, 1, 2, 3].map((k) => (
+            <View key={k} style={{ flex: 1, height: 3, borderRadius: 2, backgroundColor: k < v.lit ? tokens.color.accent : NOW_SEG_OFF }} />
+          ))}
+        </View>
+      </View>
+      <Icon name="chevron-right" size={18} color={tokens.color.onForestMuted} />
+    </Tappable>
   );
 }
 
@@ -131,6 +168,12 @@ export default function OrdersTabScreen(): React.ReactElement {
   // parse can't catch) is a truthy non-array that `?? []` lets straight through into `.map()` below
   // (CF-04 — confirmed live, matches UIP-02's fixture-level repro of the identical crash).
   const activeOrders = Array.isArray(activeOrdersQ.data) ? activeOrdersQ.data : [];
+  // G2: each running merchant order's stage comes from its food read (service, schedule, Rx, swaps).
+  const foodReads = useFoodOrdersPeek(
+    activeOrders.filter((o) => o.orderType === "merchant").map((o) => o.id),
+    focused,
+  );
+  const nowMs = useNow(15_000).getTime();
   // No failed-check banner here (owner instruction 2026-08-12) — a background poll must not raise an
   // error card. A failed check just shows no live cards; the poll and reconnect refetch self-heal.
 
@@ -160,15 +203,15 @@ export default function OrdersTabScreen(): React.ReactElement {
         <Text style={{ fontSize: 19, fontWeight: "700", color: tokens.color.ink, marginBottom: 10 }}>Your orders</Text>
 
         {activeOrders.length > 0 ? (
-          activeOrders.map((o) => (
-            <ActiveOrderCard
-              key={o.id}
-              o={o}
-              // Every order opens the one order screen (D-59): a food order draws the Order flow v2
-              // stages there, a parcel After Send.
-              onPress={() => router.push(`/order/${o.id}`)}
-            />
-          ))
+          activeOrders.map((o) =>
+            // Every order opens the one order screen (D-59): a merchant order is a G2 Now card and draws
+            // the Order flow v2 stages there, a parcel After Send.
+            o.orderType === "merchant" ? (
+              <NowCard key={o.id} v={merchantLive(o, foodReads[o.id], foodReads[o.id]?.rider?.firstName ?? null, nowMs)} onPress={() => router.push(`/order/${o.id}`)} />
+            ) : (
+              <ActiveOrderCard key={o.id} o={o} onPress={() => router.push(`/order/${o.id}`)} />
+            ),
+          )
         ) : null}
 
         {earlier.length > 0 ? (
