@@ -87,6 +87,7 @@ function setCart(restaurantId: string | null, name: string | null, lines: Line[]
   mockCart.itemCount = lines.reduce((n, l) => n + l.quantity, 0);
   mockCart.subtotal = lines.reduce((n, l) => n + l.quantity * l.priceUsd, 0);
 }
+jest.mock("../../../query/use-popularity", () => ({ usePopularity: () => new Map() }));
 jest.mock("../../../food/cart-context", () => ({ useFoodCart: () => mockCart }));
 let mockSlots: unknown = undefined;
 jest.mock("../../../query/use-order-flow", () => ({ useScheduleSlots: () => ({ slots: mockSlots, isLoading: false, isError: false }) }));

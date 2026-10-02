@@ -16,6 +16,8 @@ import { merchantLive } from "../../src/ui/orderflow/live-copy";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { useServiceFlags } from "../../src/net/use-service-flags";
 import { useShopListFeed } from "../../src/query/use-shops";
+import { usePopularity } from "../../src/query/use-popularity";
+import { mergePopularity, rankedVenueMissing } from "../../src/logic/popularity";
 import { SHOP_KIND_LABEL } from "../../src/logic/browse";
 import { invalidateIfStale, orderKey } from "../../src/query/client";
 import { useNotificationsUnreadCount } from "../../src/query/use-notifications-unread";
@@ -180,7 +182,7 @@ const RAIL_MIN = 2;
  * Data the handoff marks NEEDS BACKEND renders nothing until it exists (its work order §8): the
  * "Free delivery" tag (no venue flag yet). Shops and Pharmacy open their sections (ledger D-58); a
  * section switched off by its server flag opens the notify-me sheet instead, so no tile is ever inert.
- * "Popular shops" mixes both sections' nearest open shops.
+ * "Popular shops" mixes both sections' shops. Both rails rank by recent delivered orders (ledger D-72).
  */
 export default function LauncherHomeScreen(): React.ReactElement {
   const router = useRouter();
@@ -268,23 +270,42 @@ export default function LauncherHomeScreen(): React.ReactElement {
       : R.tToDrop
     : null;
 
-  // ── "Popular restaurants" — the nearest open venues from the same feed /food browses ──
-  // NEEDS BACKEND (handoff §5): a real popularity ranking; until then "popular" is nearest-open.
+  // ── "Popular restaurants" — the most-ordered open venues that deliver here (ledger D-72: delivered
+  // orders over 30 days, time-decayed), then the nearest open ones; nearest-open alone until the
+  // corridor has enough order history to rank (cold start). Same feed /food browses.
   const feed = useRestaurantListFeed(restaurantsEnabled);
+  const restaurantPopularity = usePopularity("restaurants", restaurantsEnabled);
   const venues = useMemo(
-    () => (restaurantsEnabled ? popularNearYou(feed.restaurants ?? [], now, location.point, RAIL_LIMIT) : []),
-    [restaurantsEnabled, feed.restaurants, now, location.point],
+    () => (restaurantsEnabled ? popularNearYou(feed.restaurants ?? [], now, location.point, RAIL_LIMIT, restaurantPopularity) : []),
+    [restaurantsEnabled, feed.restaurants, now, location.point, restaurantPopularity],
   );
+  // D-72: a ranked venue past the first page is fetched, so the rail can lead with it.
+  const restaurantsMissing = restaurantsEnabled && rankedVenueMissing(restaurantPopularity, feed.restaurants);
+  useEffect(() => {
+    if (restaurantsMissing && feed.hasMore && !feed.isLoadingMore) feed.loadMore();
+  }, [restaurantsMissing, feed.hasMore, feed.isLoadingMore, feed.loadMore]);
   const showRestaurants = venues.length >= RAIL_MIN;
 
-  // ── "Popular shops" — both sections' nearest open shops (Calm Mint v2 §2.5; ledger D-58) ──
+  // ── "Popular shops" — both sections' most-ordered open shops, then nearest open (Calm Mint v2 §2.5;
+  // ledgers D-58, D-72) ──
   const shopsFeed = useShopListFeed("shops", shopsEnabled);
   const pharmacyFeed = useShopListFeed("pharmacy", pharmacyEnabled);
+  const shopsPopularity = usePopularity("shops", shopsEnabled);
+  const pharmacyPopularity = usePopularity("pharmacy", pharmacyEnabled);
   const shopVenues = useMemo(() => {
     const all = [...(shopsEnabled ? (shopsFeed.shops ?? []) : []), ...(pharmacyEnabled ? (pharmacyFeed.shops ?? []) : [])];
     const kindOf = new Map(all.map((x) => [x.id, x.shopKind] as const));
-    return popularNearYou(all, now, location.point, RAIL_LIMIT).map((v) => ({ ...v, shopKind: kindOf.get(v.id) ?? "other" }));
-  }, [shopsEnabled, pharmacyEnabled, shopsFeed.shops, pharmacyFeed.shops, now, location.point]);
+    const popularity = mergePopularity(shopsPopularity, pharmacyPopularity);
+    return popularNearYou(all, now, location.point, RAIL_LIMIT, popularity).map((v) => ({ ...v, shopKind: kindOf.get(v.id) ?? "other" }));
+  }, [shopsEnabled, pharmacyEnabled, shopsFeed.shops, pharmacyFeed.shops, now, location.point, shopsPopularity, pharmacyPopularity]);
+  const shopsMissing = shopsEnabled && rankedVenueMissing(shopsPopularity, shopsFeed.shops);
+  const pharmacyMissing = pharmacyEnabled && rankedVenueMissing(pharmacyPopularity, pharmacyFeed.shops);
+  useEffect(() => {
+    if (shopsMissing && shopsFeed.hasMore && !shopsFeed.isLoadingMore) shopsFeed.loadMore();
+  }, [shopsMissing, shopsFeed.hasMore, shopsFeed.isLoadingMore, shopsFeed.loadMore]);
+  useEffect(() => {
+    if (pharmacyMissing && pharmacyFeed.hasMore && !pharmacyFeed.isLoadingMore) pharmacyFeed.loadMore();
+  }, [pharmacyMissing, pharmacyFeed.hasMore, pharmacyFeed.isLoadingMore, pharmacyFeed.loadMore]);
   const showShops = shopVenues.length >= RAIL_MIN;
   const firstLoad =
     (restaurantsEnabled && feed.restaurants == null && feed.isFetching) ||

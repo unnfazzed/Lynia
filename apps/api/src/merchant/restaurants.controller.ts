@@ -1,6 +1,7 @@
 import { Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
+import { CUSTOMER_VISIBLE_RESTAURANT } from "./merchant-lookup.util";
 import { MerchantService } from "./merchant.service";
 import { RestaurantReopenService } from "./restaurant-reopen.service";
 import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
@@ -37,6 +38,13 @@ export class RestaurantsController {
   @Get("search/popular")
   searchPopular() {
     return this.merchant.searchPopular();
+  }
+
+  /** Ledger D-72: the live restaurants ranked by recent delivered orders ("Popular restaurants" on Home,
+   *  the "Recommended" sort in browse). Empty on a thin corridor — the phone keeps nearest-open then. */
+  @Get("popular")
+  popular() {
+    return this.merchant.popularVenues(CUSTOMER_VISIBLE_RESTAURANT, "restaurants");
   }
 
   @Get(":id/menu")

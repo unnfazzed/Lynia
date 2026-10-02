@@ -15,7 +15,7 @@ import { ShopsEnabledGuard } from "./shops-enabled.guard";
  * a section that is off answers 503 too, the same "dead means dead" shape as RestaurantsEnabledGuard.
  * The per-shop `pilotEnabled` go-live switch is applied by `customerVisibleShop`.
  *
- * Browse only: shop ordering waits for the Order flow v2 handoff (placeOrder still refuses shops).
+ * Orders are placed through the food order path since Order flow v2 (ledger D-59), on the same rule.
  */
 @Controller("shops")
 @UseGuards(ShopsEnabledGuard, JwtAuthGuard)
@@ -34,6 +34,14 @@ export class ShopsController {
   @Get("search")
   search(@Query("service") service?: string, @Query("q") q?: string) {
     return this.merchant.searchShops(this.visible(service), q);
+  }
+
+  /** Ledger D-72: one section's live shops ranked by recent delivered orders ("Popular shops" on Home, the
+   *  "Recommended" sort). Empty on a thin section — the phone keeps nearest-open then. */
+  @Get("popular")
+  popular(@Query("service") service?: string) {
+    const where = this.visible(service);
+    return this.merchant.popularVenues(where, `shops:${service}`);
   }
 
   /** Either section's shop, while its section is on. */
