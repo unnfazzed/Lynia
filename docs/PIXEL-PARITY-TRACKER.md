@@ -429,6 +429,12 @@ target, an `index.json` that matches the directory, and no expectation outliving
 
 ## MERCHANT (All Screens Gallery ← RGD.MERCHANT; trailing (RV …) = Restaurants Vertical badge)
 
+> **Order flow v2 (D-59) — merchant + rider handoff states, outside the gallery registry.** Round 1
+> (M1a, M3a/b, M4, M5, M6a/b; RD2a, RD4a/b): `docs/parity/ORDER-FLOW-V2-MERCHANT-RIDER-2026-10-02.png`.
+> Round 2 (U1a, U1b, M1c, M2, M3b seal, M4b + M4 photo, M5b, M7a, M7b, M8a, M8b; RD1b–d, RD2b, RD3,
+> RD4c): `docs/parity/ORDER-FLOW-V2-MERCHANT-RIDER-2-2026-10-02.png`
+> (`node tools/parity/shoot-order-flow-merchant.mjs --set all2`). Still to shoot: RD2c/RD2d (need a real
+> shot from the phone's camera) and RD4d (the door camera after the why sheet).
 
 ### M1 · Get on shift
 

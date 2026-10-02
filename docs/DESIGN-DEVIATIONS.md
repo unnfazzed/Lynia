@@ -3314,6 +3314,38 @@ Each PR of the build order appends its line here.
   Kept although not drawn (functional, from D-48/D-50): "Mark ride completed" (M5), "It wasn't returned"
   (M6b), the customer's number (moved into the Change items sheet). Merchant `--highlight-*` tokens stay
   the merchant face's values (no parallel tokens).
+- **Part 6 (merchant + rider round 2, 2026-10-02, on Backend A/B):** Merchant: **U1a/U1b** — the ringing
+  sheet is the proposer (tap a line → "Remove it" / "Swap for…"; the swap picker lists the venue's own live
+  items with the price difference; a removed line strikes with "Removing", a swap shows the green ⇄ line;
+  "Send n changes to customer" is the accept, `POST …/substitution` with `prepMinutes`; only "Remove it"
+  when the customer chose "Remove it" for missing items); **U4a** — mid-prep "Change items" opens the same
+  proposer (the quantity-stepper sheet and `edit-items` are no longer used by the app); **M2** — the
+  ticket waits with the round's countdown, "Swap asked" / "Removing" and "Order is packed" held (an accept
+  that asked about a swap opens here too); **M1c** — a scheduled order rings with "SCHEDULED · START NOW"
+  and the slot ("Start cooking · ready HH:MM" for an auto-accepting kitchen); **M7a/M7b** — the 4th
+  segment "Scheduled n" from `GET /merchant/scheduled-orders`, its cards, and the scheduled ticket (decline
+  behind the confirm sheet); **M3b** — the seal reminder for shops; **M4b/M4** — a shop's "Hand over"
+  waits for the rider's sealed-bag photo (photo row + viewer); **M5b/M6b** — the door photo row; **M8a/M8b**
+  — Prescription check (pharmacists only, only for an order that carries a prescription): the zoomable
+  photo with its page pill, patient, items that need it, Approve / Decline with the reason chips + note.
+  Owner's pharmacist switch per team member and the dish editor's "Prescription needed" render only for
+  a pharmacy while `GET /app/order-flags` says `rxEnabled`. A shop **live to customers** (`pilotEnabled`)
+  now has its Orders home on `/queue` (Deliveries stays one tap away via the header's "Book a rider").
+  Rider: **RD1b–d** (the offer reads `job` from `GET …/dispatch/offer`: shop/pharmacy header and tag,
+  "Sealed bag · photo at pickup", "Scheduled · customer expects …", the Rx note), **RD2a–d** ("At the
+  shop", "Ask the shop for the pickup code"; a shop's code leads to the camera step — TickRow "Bag is
+  sealed", the 72 shutter, Retake, "I've collected the order", the offline "Photo saved on your phone…"
+  note; the photo uploads via `POST /uploads/pickup-photo` + `POST …/pickup-proof {key, bagSealed}` before
+  the code is sent, since the server won't complete a shop pickup without it; optional at a restaurant via
+  a secondary "Photo of the sealed bag"), **RD3** (the Rx note + "I saw the original prescription", "Name
+  on it: …"; hand-over and the code wait for it), **RD4c/RD4d** ("Can't use the code?" → why → who + the
+  door photo → `POST /uploads/delivery-proof` + `POST …/door-proof`; "Finish delivery" also raises a help
+  issue, since the photo is evidence only and our team finishes the delivery). The handoff's "Rudo" in
+  merchant copy reads "the customer" (no customer name on a merchant order); the rider's door-photo line
+  names the customer's first name. Drawn-not-keyed strings used: U1a/M2 bar hints, "Swap for {item}",
+  M1c's note and CTA, M3b's seal note, "Delivery attempt photo" (M6b), RD1a/b headers, "Next · take a
+  photo", "Name on it: …". The camera is the phone's own (the shutter opens it; the viewfinder is the
+  frame, then the shot). Sheet: `docs/parity/ORDER-FLOW-V2-MERCHANT-RIDER-2-2026-10-02.png`.
 
 ### 4 · Open questions, implemented as drawn (owner to confirm)
 
