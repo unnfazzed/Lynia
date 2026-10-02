@@ -121,6 +121,27 @@ export const PII_MANIFEST: Readonly<Record<string, PiiEntry>> = {
     disposition: "null",
     note: "C2: free-text per-dish note (D-35, e.g. 'leg portion, not breast') on a food order the erasing customer placed — same DS15-07 class as orders.note, distinct table-qualified entry per this file's own false-positive lesson (DS18-02).",
   },
+  rx_photo_keys: {
+    column: "photo_keys",
+    where: "order_prescriptions",
+    tables: ["order_prescriptions"],
+    disposition: "delete-row",
+    note: "Order flow v2 (BRIEF §13): the customer's prescription pages (GCS keys under `rx/<customerId>/`). The row is deleted (orderPrescription.deleteMany) on the erasing customer's own orders and every page object is deleted post-commit.",
+  },
+  rx_patient_name: {
+    column: "patient_name",
+    where: "order_prescriptions",
+    tables: ["order_prescriptions"],
+    disposition: "delete-row",
+    note: "Order flow v2 (BRIEF §13): the patient's name on a prescription — health data; goes with the row (orderPrescription.deleteMany).",
+  },
+  rx_decline_note: {
+    column: "decline_note",
+    where: "order_prescriptions",
+    tables: ["order_prescriptions"],
+    disposition: "delete-row",
+    note: "Order flow v2 (BRIEF §13): the pharmacist's free-text note about the customer's prescription; goes with the row (orderPrescription.deleteMany).",
+  },
   merchant_payment_reference: {
     column: "merchant_payment_reference",
     where: "orders",

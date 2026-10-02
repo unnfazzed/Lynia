@@ -77,6 +77,16 @@ riders are given at pickup, plus the pin.
   are on unless the repo Variable of the same name is `"false"`. Setting one to `"false"` and releasing
   hides that section in the app (the tile opens the coming-soon sheet instead). The merchant web is
   unaffected.
+- **`RX_ENABLED` switches pharmacy prescriptions** (Order flow v2, D-59, BRIEF §13). It is **off** unless
+  the API's env sets it to `"true"` (no workflow Variable feeds it yet). While off, items a pharmacy marked
+  "Prescription needed" aren't listed and an order with one is refused (`rx_unavailable`). Before turning it
+  on for a pharmacy, ops confirm on the go-live call that the pharmacy has a pharmacist on its team and
+  that the owner has ticked them as pharmacist (`POST /merchant/team/members/:profileId/pharmacist`, or the
+  `merchant_members.is_pharmacist` column) — only a pharmacist can approve or decline a prescription, and
+  an Rx order can't be marked packed until one does. The app reads the switch from `GET /app/order-flags`.
+- **Shops and pharmacies take orders like restaurants** (D-59): the same `POST /restaurants/:id/orders`
+  and `/merchant/orders` endpoints, never auto-accept (3 minutes to accept, then it auto-cancels), cash
+  only. A switched-on shop in a switched-on section is orderable as soon as this API is deployed.
 - **Sign-up refuses** a held account, a banned or suspended rider, and a pin outside the area LyniaGo
   covers (the 25 km Send corridor).
 

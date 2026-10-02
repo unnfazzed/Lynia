@@ -29,6 +29,9 @@ import { RestaurantsController } from "./restaurants.controller";
 import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
 import { ShopsController } from "./shops.controller";
 import { ShopsEnabledGuard } from "./shops-enabled.guard";
+import { OrderFlowCustomerController, OrderFlowMerchantController } from "./order-flow-v2-b.controller";
+import { OrderScheduleService } from "./order-schedule.service";
+import { PrescriptionService } from "./prescription.service";
 
 /**
  * Restaurants vertical (Lane C). Registered unconditionally in AppModule — the fail-safe-OFF
@@ -63,6 +66,9 @@ import { ShopsEnabledGuard } from "./shops-enabled.guard";
  *
  * Multi-branch owners (docs/plans/2026-09-30-multi-branch-owners.md) add MerchantBranchesService: list,
  * switch and open branches. It needs nothing new: a branch is an ordinary business row.
+ *
+ * Order flow v2 (ledger D-59, backend B) adds OrderScheduleService (slots + the ring sweep),
+ * PrescriptionService (Rx behind RX_ENABLED) and their two controllers (order-flow-v2-b.controller.ts).
  */
 @Module({
   imports: [TrackingModule, OrdersModule, MatchingModule, OffersModule],
@@ -77,6 +83,8 @@ import { ShopsEnabledGuard } from "./shops-enabled.guard";
     MerchantTeamController,
     MerchantInvitesController,
     MerchantBranchesController,
+    OrderFlowCustomerController,
+    OrderFlowMerchantController,
   ],
   providers: [
     MerchantService,
@@ -92,6 +100,8 @@ import { ShopsEnabledGuard } from "./shops-enabled.guard";
     FoodDispatchService,
     FoodDebtService,
     RestaurantReopenService,
+    OrderScheduleService,
+    PrescriptionService,
     // Order flow v2 (ledger D-59): substitution rounds, proof at hand-over, venue rating.
     OrderSubstitutionService,
     MerchantOrderProofService,

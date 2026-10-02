@@ -389,6 +389,11 @@ export const envSchema = z.object({
   // to mobile via GET /app/service-flags (ServiceFlagsResponse). Same fail-safe-OFF default.
   SHOPS_ENABLED: z.enum(["true", "false"]).default("false"),
   PHARMACY_ENABLED: z.enum(["true", "false"]).default("false"),
+  // Order flow v2 (ledger D-59, BRIEF §13): pharmacy prescriptions — "Prescription needed" items, the
+  // prescription upload, the pharmacist check and the rider's "saw the original" tick. Served to mobile via
+  // GET /app/order-flags (OrderFlagsResponse). Fail-safe OFF: while off, Rx items are not listed and an
+  // order containing one is refused.
+  RX_ENABLED: z.enum(["true", "false"]).default("false"),
   // Per-entry cap (USD) on an ops manual credit — an abuse backstop on the admin credit path
   // (design OV-3A). Default $50 (= COMMISSION.maxTopUp).
   WALLET_MANUAL_CREDIT_CAP_USD: z.coerce.number().positive().default(50),
