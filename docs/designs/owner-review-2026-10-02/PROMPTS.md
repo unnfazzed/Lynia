@@ -7,85 +7,69 @@ keeps the current screen (ledger D-60 §5).
 
 | # | Prompt | Replaces in the app | Priority |
 |---|---|---|---|
-| 1 | Become a rider: rider photo | `app/rider/become.tsx` photo step (old UI, see the owner's screenshot) | High: every new rider sees it |
+| 1 | Rider photo: add it later | The add/change photo flow from Bike & documents (the sign-up photo step was removed, D-62) | Medium |
 | 2 | Orders tab, empty states | `app/(tabs)/orders.tsx` empty card (old `RC orders_empty`) | Medium |
 | 3 | Send a parcel: when the map won't load | `src/ui/ComposeMap.tsx` "The map didn't load" card inside Send step 1 | Medium |
 
 ---
 
-## Prompt 1 · Become a rider: the rider photo step (R4)
+## Prompt 1 · Rider photo: add it later, from Bike & documents
+
+**Owner decision, 2026-10-02 (ledger D-62):** the rider photo is **optional** and **not part of
+sign-up**. R1's checklist lost its photo row; R1/R3 now say *"Your photo, licence and bike papers can
+wait"* / *"Add your photo, licence and bike papers later in Account"*. A rider with no photo works
+normally, with no reminder; customers see initials. The only place to add or change it is **Settings →
+Bike & documents** (Rider v2 S5), whose "Rider photo" row currently reads **"Not added yet"**.
 
 **Paste this:**
 
-> You're extending the **Calm Mint v2** rider onboarding for **LyniaGo**, a cash delivery app in Harare,
-> Zimbabwe (one Android app, Expo / React Native). Calm Mint v2 already draws rider onboarding **R1 Why
-> ride → R2 Pending → R3 Verified**. R1's checklist has three steps: *Your account (Done) · ID check with
-> Didit ~2 min · Rider photo for your profile ~30 sec*. **The third step was never drawn.** The app still
-> shows a screen from an older design generation (screenshot attached): a plain white page titled "Rider
-> photo for your profile" with grey cards, two outlined buttons ("Take photo", "Choose from gallery"), a
-> privacy card and a pale-green "Submit for verification" button. It also contradicts itself: the title
-> asks for a **face** photo ("Face the light, no hat or sunglasses") while the hint box describes an **ID
-> page** ("Photo page of your ID, all four corners in frame…"). The ID document is handled by the Didit
-> check; **this step is the rider's face only.** Customers see it when the rider picks up their parcel or
-> food, and our team uses it to match the rider to their ID.
+> You're extending **Rider v2** for **LyniaGo**, a cash delivery app in Harare, Zimbabwe (one Android
+> app, Expo / React Native). The rider photo is **optional**: riders can skip it at sign-up. Customers
+> see it when the rider picks up their parcel or food. **Draw the screens a rider uses to add or change
+> it later**, starting from **S5 Bike & documents** (attached), in the Rider v2 / Calm Mint v2 visual
+> language. Draw every state at **360×720**, and check each one at **320×640**.
 >
-> **Design the rider photo step as R4, in the Calm Mint v2 + Rider v2 visual language** (mint washes,
-> white cards r16–r20, Inter, the green CTA pill, the illustrated stickers). Draw every state at
-> **360×720**, and check each one at **320×640**.
+> **P0 · S5 entry points.**
+> - No photo yet: the "Rider photo" row reads "Not added yet", plus an **"Add photo"** affordance.
+> - With a photo: a 40px avatar on the row, plus **"Change photo"**.
 >
-> **R4a · Intro.** C-style header (44px Back + title). Title "Add your rider photo". One mint illustration
-> card showing a face-in-oval motif. Three short rules with icons: face the light · no hat or sunglasses
-> · just you in the photo. One privacy line: we keep it to keep deliveries safe, and customers see it
-> only on their active order. Primary **"Take photo"**. Ghost **"Choose from gallery"**, only if you
-> think a gallery photo is acceptable for a face check. If not, leave it out and tell me why.
+> No other screen nags the rider about it.
 >
-> **R4b · Camera.** Full-bleed dark camera, our own screen, not the phone's. The current spec
-> (`kyc-2026-08` §4):
-> - a **44×44 Close ✕** top-left, the only way out;
+> **P1 · Camera.** A full-bleed dark camera, our own screen, not the phone's:
+> - a **44×44 Close ✕** top-left;
 > - header "Rider photo";
-> - a **portrait oval** guide, ~72% of the width, 0.78:1, 2.5px dashed white at 75%;
-> - "Put your face inside the oval" inside the oval;
+> - a **portrait oval** guide (~72% of the width, 0.78:1, 2.5px dashed white at 75%);
+> - "Put your face inside the oval" inside it;
 > - "Face the light · no hat or sunglasses · look straight ahead" below it;
-> - a **68–72px white shutter** with a 5px translucent ring.
+> - a **68–72px white shutter**.
 >
-> Use the **front camera by default**, with a labelled flip control. Every icon needs a visible text
-> label: users are often low-literacy.
+> The **front camera is the default**, with a labelled flip control. Every icon needs a visible text
+> label. Match the A3 pickup camera (`rv-job.jsx`) so both cameras feel like one app.
 >
-> **R4c · Preview.** The shot in the oval (or full frame) on ink. "Is your face clear and well lit?"
-> Primary **"Use this photo"**, ghost **"Retake"**.
+> **P2 · Preview.** "Is your face clear and well lit?" Primary **"Use this photo"**, ghost **"Retake"**.
 >
-> **R4d · Uploading.** The same preview, the CTA reading "Saving photo…" with a spinner, and Retake
-> disabled. Patchy 2G/3G is normal, so expect this state to last 5–20 s.
+> **P3 · Saving.** The CTA reads "Saving photo…" with a spinner. Patchy 2G/3G is normal.
 >
-> **R4e · Upload failed.** A calm inline notice: "Couldn't save your photo. Check your data and try
-> again." Primary **"Try again"** keeps the same photo, ghost "Retake".
+> **P4 · Save failed.** A calm notice: "Couldn't save your photo. Check your data and try again."
+> Primary **"Try again"** reuses the same photo.
 >
-> **R4f · Camera permission denied.** Explain why we need the camera. Primary **"Open settings"**, plus
-> the gallery fallback if R4a has one.
+> **P5 · Camera permission denied.** Explain why, with **"Open settings"**. Should "Choose from
+> gallery" be offered here as the fallback? Say yes or no and why.
 >
-> **R4g · Done.** Back on R2 Pending (or R3 Verified if Didit already passed), with the checklist's third
-> row ticked and the rider's photo as a 40px avatar on that row.
->
-> **R4h · Change photo later.** Rider v2 **S5 Bike & documents** has a "Rider photo · Update photo" row.
-> Show that the same R4b–R4e screens open from there, with the header Back returning to S5.
+> **P6 · Saved.** Back on S5 with the avatar and a brief confirmation toast.
 >
 > **Rules:**
-> - Copy is final once you draw it (the app ships it verbatim), so write every string, including
->   accessibility labels, into one `R4` copy object.
+> - Write every string into one `RP` copy object. It ships verbatim.
 > - Tap targets ≥ 44px, primary 52px.
 > - Use only Calm Mint v2 tokens.
-> - No confetti, no extra badges.
-> - Explain in the README which file each frame belongs to and what it replaces.
+> - No confetti, no badges.
 
 **Attach:**
-1. The owner's screenshot of the current screen (the 2026-10-02 photo, the one titled "Rider photo for
-   your profile").
-2. `packages/design/handoff/calm-mint-v2-2026-10/`: `README.md` (§4 Rider onboarding), `shared.js`,
-   `mint2.js`, the `assets/` art.
-3. `packages/design/handoff/kyc-2026-08/README.md` (§4 `photo_capture`).
-4. `packages/design/handoff/rider-v2/README.md` (§ S5, A3–A6 pickup-photo camera for consistency) and
-   `design/rv-job.jsx` (the drawn A3 camera, so both cameras match).
-5. `packages/design/tokens/*.css`.
+1. `packages/design/handoff/rider-v2/`: `README.md` (§ S5 Bike & documents, A3–A6), `design/rv-account.jsx`
+   (`BikeDocs`), `design/rv-job.jsx` (the A3 camera), `design/rv-kit.jsx`.
+2. `packages/design/handoff/kyc-2026-08/README.md` (§4 `photo_capture`, the oval spec).
+3. `packages/design/handoff/calm-mint-v2-2026-10/README.md` (§4 rider onboarding, for the "can wait" wording).
+4. `packages/design/tokens/*.css`.
 
 ---
 

@@ -185,7 +185,7 @@ export class RiderService {
   /** Upgrade a customer to a rider; submit to KYC (auto) or leave pending for review (manual). */
   async becomeRider(
     profileId: string,
-    data: { bikeReg?: string; photoUrl: string },
+    data: { bikeReg?: string; photoUrl?: string },
   ): Promise<{ kycStatus: Kyc; mode: Env["KYC_MODE"]; verificationUrl?: string; sessionToken?: string }> {
     const existing = await this.prisma.rider.findUnique({
       where: { profileId },
@@ -199,7 +199,9 @@ export class RiderService {
     // The photo key must live under this caller's own KYC namespace — POST /uploads/kyc-photo mints
     // keys as `kyc/<callerId>/<uuid>` — so a rider can't persist a key that points at another user's
     // KYC object (harmless until the reviewer console mints a signed read URL from the stored key).
-    if (!data.photoUrl.startsWith(`kyc/${profileId}/`)) {
+    // The photo itself is optional (owner 2026-10-02): sign-up no longer asks for it; when a client sends
+    // one, it is still checked here.
+    if (data.photoUrl !== undefined && !data.photoUrl.startsWith(`kyc/${profileId}/`)) {
       throw new BadRequestException("Invalid photo key");
     }
 
@@ -229,7 +231,7 @@ export class RiderService {
     // C1/E8: the photo must really be there, in budget, and really a JPEG/PNG before it is recorded (an
     // Azure SAS binds neither type nor size). Runs after the namespace check above — a rejection deletes
     // the object — and before vendor.submit, so a bad photo never bills a paid Didit session.
-    await this.uploads?.verify(data.photoUrl, "kyc");
+    if (data.photoUrl !== undefined) await this.uploads?.verify(data.photoUrl, "kyc");
 
     const duplicateIdFlag = (await this.duplicateIdAccountCount(profileId, profile.idNumberHash)) > 0;
     if (duplicateIdFlag) {
@@ -273,7 +275,7 @@ export class RiderService {
           data: {
             profileId,
             bikeReg: data.bikeReg || null,
-            photoUrl: data.photoUrl,
+            photoUrl: data.photoUrl ?? null,
             kycStatus: initialKyc,
             idVerified: stubAutoPass,
             kycRef,

@@ -371,6 +371,8 @@ export const RIDER_COPY = {
   tBike: "Bike & documents",
   docId: "National ID",
   docPhoto: "Rider photo",
+  /** D-62 (owner 2026-10-02): the photo is optional; app-authored until the add-photo screen is drawn. */
+  docPhotoNone: "Not added yet",
   docBike: "Bike",
   bikeChange: "Changed bikes? Re-verify with the new plate.",
   reverifyBike: "Re-verify my bike",

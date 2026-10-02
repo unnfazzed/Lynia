@@ -43,7 +43,8 @@ export default function DocumentsScreen(): React.ReactElement {
           <>
             <RCard>
               <RRow first icon="id-card" label={R.docId} value={value} tone={tone} />
-              <RRow icon="user" label={R.docPhoto} value={value} tone={tone} />
+              {/* D-62: the photo is optional since 2026-10-02, so a rider can have none yet. */}
+              <RRow icon="user" label={R.docPhoto} value={rider?.hasPhoto === false ? R.docPhotoNone : value} tone={rider?.hasPhoto === false ? null : tone} />
               <RRow icon="bike" label={R.docBike} sub={rider?.bikeReg ?? null} value={value} tone={tone} />
             </RCard>
             <Text style={{ fontSize: 13, lineHeight: 19, color: tokens.color.muted }}>{R.bikeChange}</Text>

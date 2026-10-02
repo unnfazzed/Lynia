@@ -295,7 +295,8 @@ model Rider {
   profile           Profile                                @relation(fields: [profileId], references: [id], onDelete: Cascade)
   vehicleInfo       String?                                @map("vehicle_info")
   bikeReg           String?                                @map("bike_reg")
-  photoUrl          String                                 @map("photo_url")
+  /// Optional since 2026-10-02 (owner): the rider photo is no longer a sign-up step.
+  photoUrl          String?                                @map("photo_url")
   idVerified        Boolean                                @default(false) @map("id_verified")
   kycStatus         KycStatus                              @default(pending) @map("kyc_status")
   // Unique so a Didit Approved/Declined webhook (keyed by session_id == kycRef) resolves exactly one

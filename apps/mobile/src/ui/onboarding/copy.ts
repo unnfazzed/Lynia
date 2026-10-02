@@ -67,12 +67,11 @@ export const RO = {
   /** D-55 (D-38 stands): the handoff draws "ID check with Didit"; the app never names the vendor. */
   stepId: "ID check",
   stepIdTime: "~2 min",
-  stepPhoto: "Rider photo for your profile",
-  stepPhotoTime: "~30 sec",
   done: "Done",
   /** The full drawn note; the first two sentences wait on the free-jobs rule (NEEDS BACKEND, D-55). */
   noteFree: "No top-up to start. Your first jobs are commission-free.",
-  notePapers: "Licence and bike papers can wait.",
+  /** Owner 2026-10-02 (D-62): the photo is optional and waits with the papers. Drawn: "Licence and bike papers can wait." */
+  notePapers: "Your photo, licence and bike papers can wait.",
   startIdCheck: "Start ID check",
 
   // R2 · ID pending
@@ -81,7 +80,6 @@ export const RO = {
   /** D-55 (D-38 stands): the handoff draws "Didit is checking your ID". */
   diditChecking: "We\u2019re checking your ID",
   diditCheckingB: "Usually under a minute. We’ll notify you, so you can leave this screen.",
-  stepPhotoShort: "Rider photo",
   stepIdShort: "ID check",
   inReview: "In review",
   stepGoOnline: "Go online",
@@ -93,11 +91,17 @@ export const RO = {
   verifiedTitle: (first: string | null): string => (first ? `You’re verified, ${first}` : "You’re verified"),
   verifiedSub: "You can go online and take jobs now.",
   goOnline: "Go online",
-  papersLater: "Add licence and bike papers later in Account",
+  /** Owner 2026-10-02 (D-62). Drawn: "Add licence and bike papers later in Account". */
+  papersLater: "Add your photo, licence and bike papers later in Account",
 
-  /** D-55: the R1 photo step (the handoff draws R1's checklist row, not the capture page itself). */
-  photoTitle: "Rider photo for your profile",
-  photoSub: "Customers see it when you pick up. Face the light, no hat or sunglasses.",
+  /**
+   * The details step, shown only when the account is missing its name or national ID (D-62: it replaced
+   * the photo step; app-authored, the handoff draws no such page).
+   */
+  detailsTitle: "A few details first",
+  detailsSub: "We need these on your account before your ID check.",
+  privacy: "We verify your national ID with an ID photo and a quick selfie check. We store your ID number to keep deliveries safe; we don't share it with customers.",
+  privacyTest: "Test build: ID verification is bypassed — submit and you'll be verified straight away so you can go online.",
   idNeeded: "Your national ID number",
   idNeededHint: "The 8–12 digits on your national ID card.",
 } as const;

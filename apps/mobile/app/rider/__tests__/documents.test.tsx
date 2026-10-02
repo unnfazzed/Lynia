@@ -10,8 +10,9 @@ const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: 
 
 jest.mock("expo-router", () => ({ useRouter: () => ({ back: jest.fn(), push: jest.fn(), replace: jest.fn() }) }));
 jest.mock("../../../src/config", () => ({ supportWhatsAppUrl: () => "https://wa.me/263770000000" }));
+let mockHasPhoto: boolean | undefined;
 jest.mock("../../../src/api/auth", () => ({
-  getMe: async () => ({ profileId: "p1", role: "rider", firstName: "Tendai", rider: { kycStatus: "verified", bikeReg: "ABH 4721" } }),
+  getMe: async () => ({ profileId: "p1", role: "rider", firstName: "Tendai", rider: { kycStatus: "verified", bikeReg: "ABH 4721", hasPhoto: mockHasPhoto } }),
 }));
 
 import DocumentsScreen from "../documents";
@@ -45,6 +46,7 @@ async function loaded(tree: renderer.ReactTestRenderer): Promise<void> {
 
 let openURL: jest.SpyInstance;
 beforeEach(() => {
+  mockHasPhoto = undefined;
   openURL = jest.spyOn(Linking, "openURL").mockResolvedValue(true);
 });
 afterEach(() => openURL.mockRestore());
@@ -55,6 +57,13 @@ describe("S5 Bike & documents", () => {
     await loaded(tree);
     const t = text(tree);
     for (const s of ["Bike & documents", "National ID", "Rider photo", "Bike", "ABH 4721", "Verified", "Changed bikes? Re-verify with the new plate."]) expect(t).toContain(s);
+  });
+
+  it("a rider who skipped the optional photo sees 'Not added yet' on its row (D-62)", async () => {
+    mockHasPhoto = false;
+    const tree = render("docs");
+    await loaded(tree);
+    expect(text(tree)).toContain("Not added yet");
   });
 
   it("Re-verify my bike asks support on WhatsApp, with the plate written out", async () => {

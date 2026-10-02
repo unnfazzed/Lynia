@@ -1,124 +1,118 @@
 import React from "react";
 /**
- * B-O11 (LC lane B, Go-class runtime perf): the KYC photo preview must render the already-
- * downscaled upload asset (`downscaleForUpload`'s ~1280px/0.7 JPEG output), not the original
- * 3000-4000px camera capture — this preview stays mounted for the rest of the multi-field KYC
- * form, and the full-resolution bitmap is real avoidable peak-memory pressure on a 1-2GB device
- * (this screen's own OOM-kill comment already flags camera capture as the risk here).
+ * Become a rider — Calm Mint v2 R1 (D-55), with the photo step removed (owner 2026-10-02, D-62): the
+ * photo is optional and added later from Bike & documents, so "Start ID check" opens the check directly
+ * unless the account is missing its name or national ID.
  */
 import renderer, { act } from "react-test-renderer";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
 const mockReplace = jest.fn();
+let mockSecureStore: Record<string, string> = {};
 
-let secureStore: Record<string, string> = {};
-const mockSetItemAsync = jest.fn(async (key: string, value: string) => {
-  secureStore[key] = value;
-});
-const mockGetItemAsync = jest.fn(async (key: string) => secureStore[key] ?? null);
-const mockDeleteItemAsync = jest.fn(async (key: string) => {
-  delete secureStore[key];
-});
-
-jest.mock("expo-router", () => ({
-  useRouter: () => ({ replace: mockReplace }),
-}));
+jest.mock("expo-router", () => ({ useRouter: () => ({ replace: mockReplace, back: jest.fn(), canGoBack: () => true }) }));
 jest.mock("expo-secure-store", () => ({
-  getItemAsync: (...args: [string]) => mockGetItemAsync(...args),
-  setItemAsync: (...args: [string, string]) => mockSetItemAsync(...args),
-  deleteItemAsync: (...args: [string]) => mockDeleteItemAsync(...args),
+  getItemAsync: async (key: string) => mockSecureStore[key] ?? null,
+  setItemAsync: async (key: string, value: string) => {
+    mockSecureStore[key] = value;
+  },
+  deleteItemAsync: async (key: string) => {
+    delete mockSecureStore[key];
+  },
 }));
-jest.mock("expo-image-picker", () => ({
-  requestCameraPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),
-  requestMediaLibraryPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),
-  launchCameraAsync: jest.fn().mockResolvedValue({
-    canceled: false,
-    assets: [{ uri: "file://original-4000px-capture.jpg", width: 4000, height: 3000, mimeType: "image/jpeg" }],
-  }),
-  launchImageLibraryAsync: jest.fn(),
-  MediaTypeOptions: { Images: "Images" },
-}));
-jest.mock("../../../src/logic/image-downscale", () => ({
-  downscaleForUpload: jest.fn().mockResolvedValue({ uri: "file://downscaled-1280px.jpg", contentType: "image/jpeg" }),
-}));
-jest.mock("../../../src/api/uploads", () => ({
-  requestKycPhotoUpload: jest.fn().mockResolvedValue({ uploadUrl: "https://gcs.example/put", key: "obj-key-1" }),
-  uploadImage: jest.fn().mockResolvedValue(undefined),
-}));
+const mockBecomeRider = jest.fn();
+const mockCompleteProfile = jest.fn();
 jest.mock("../../../src/api/riders", () => ({
-  becomeRider: jest.fn(),
-  completeProfile: jest.fn(),
+  becomeRider: (...a: unknown[]) => mockBecomeRider(...a),
+  completeProfile: (...a: unknown[]) => mockCompleteProfile(...a),
 }));
+jest.mock("../../../src/kyc/verify", () => ({ runKycVerification: jest.fn().mockResolvedValue({ outcome: "completed" }) }));
+jest.mock("../../../src/kyc/KycCheckHost", () => ({ KycCheckHost: () => null }));
+let mockMe: Record<string, unknown> = {};
+jest.mock("../../../src/api/auth", () => ({ getMe: jest.fn(async () => mockMe) }));
 
 import BecomeRiderScreen from "../become";
 
-// Calm Mint v2 (D-55): the screen opens on R1 "Why ride" unless a draft is restored; it reads the
-// account through react-query and lays out inside a SafeAreaView.
-jest.mock("../../../src/api/auth", () => ({
-  getMe: jest.fn().mockResolvedValue({ profileId: "p1", role: "customer", firstName: "Tendai", lastName: "Moyo", idNumber: null, rider: null }),
-}));
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { SafeAreaProvider } from "react-native-safe-area-context";
-const BECOME_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 360, height: 720 } };
+const METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 360, height: 720 } };
 function becomeEl(): React.ReactElement {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return (
-    <SafeAreaProvider initialMetrics={BECOME_METRICS}>
+    <SafeAreaProvider initialMetrics={METRICS}>
       <QueryClientProvider client={qc}>
         <BecomeRiderScreen />
       </QueryClientProvider>
     </SafeAreaProvider>
   );
 }
-/** Tap past R1 when the screen opened on it. */
-async function passIntro(tree: renderer.ReactTestRenderer): Promise<void> {
-  const start = tree.root.findAll((n) => n.props.accessibilityLabel === "Start ID check" && typeof n.props.onPress === "function")[0];
-  if (!start) return;
+/** Real macrotask ticks, so the `getMe` query has resolved even under a loaded full-suite run. */
+async function flush(): Promise<void> {
+  for (let i = 0; i < 10; i++) {
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  }
+}
+async function tapStart(tree: renderer.ReactTestRenderer): Promise<void> {
+  const start = tree.root.findAll((n) => n.props.accessibilityLabel === "Start ID check" && typeof n.props.onPress === "function")[0]!;
   await act(async () => {
     start.props.onPress();
-    await Promise.resolve();
-    await Promise.resolve();
   });
+  await flush();
 }
 
-
-
-
 beforeEach(() => {
-  secureStore = {};
+  mockSecureStore = {};
   mockReplace.mockClear();
-  mockSetItemAsync.mockClear();
-  mockGetItemAsync.mockClear();
-  mockDeleteItemAsync.mockClear();
+  mockBecomeRider.mockReset().mockResolvedValue({ kycStatus: "pending", mode: "auto", sessionToken: "tok" });
+  mockCompleteProfile.mockReset().mockResolvedValue({});
 });
 
-
-describe("BecomeRiderScreen — Calm Mint v2 R1 (D-55)", () => {
-  it("opens on R1 'Why ride' with the checklist, then the photo step asks only for what is missing", async () => {
+describe("BecomeRiderScreen — R1, no photo step (D-55, D-62)", () => {
+  it("R1's checklist has no photo row and says the photo can wait", async () => {
+    mockMe = { profileId: "p1", role: "customer", firstName: "Tendai", lastName: "Moyo", idNumber: "63123456A42", rider: null };
     let tree!: renderer.ReactTestRenderer;
     act(() => {
       tree = renderer.create(becomeEl());
     });
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await flush();
     const r1 = JSON.stringify(tree.toJSON());
-    for (const s of ["Ride with LyniaGo.", "Earn on your terms.", "You set your fare", "Cash on delivery", "Ride when you want", "Your account", "ID check", "Rider photo for your profile", "Licence and bike papers can wait.", "Start ID check"]) {
-      expect(r1).toContain(s);
-    }
+    for (const s of ["Ride with LyniaGo.", "Your account", "ID check", "Your photo, licence and bike papers can wait.", "Start ID check"]) expect(r1).toContain(s);
+    expect(r1).not.toContain("Rider photo for your profile");
     // The vendor is never named (D-38), and the free-jobs promise waits on the backend.
     expect(r1).not.toContain("Didit");
     expect(r1).not.toContain("commission-free");
+    act(() => tree.unmount());
+  });
 
-    await passIntro(tree);
+  it("with name and ID on file, Start ID check submits straight away — no photo sent", async () => {
+    mockMe = { profileId: "p1", role: "customer", firstName: "Tendai", lastName: "Moyo", idNumber: "63123456A42", rider: null };
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(becomeEl());
+    });
+    await flush();
+    await tapStart(tree);
+    expect(mockBecomeRider).toHaveBeenCalledWith({});
+    expect(mockCompleteProfile).not.toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledWith("/rider");
+    act(() => tree.unmount());
+  });
+
+  it("missing the national ID: the details step asks only for it, with no photo controls", async () => {
+    mockMe = { profileId: "p1", role: "customer", firstName: "Tendai", lastName: "Moyo", idNumber: null, rider: null };
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(becomeEl());
+    });
+    await flush();
+    await tapStart(tree);
     const step = JSON.stringify(tree.toJSON());
-    // The account has a name but no national ID on file: only the ID is asked for, and no bike plate.
+    expect(step).toContain("A few details first");
     expect(step).toContain("Your national ID number");
     expect(step).not.toContain("First name");
-    expect(step).not.toContain("Bike registration");
-    expect(step).toContain("Take photo");
-    act(() => {
-      tree.unmount();
-    });
+    for (const gone of ["Take photo", "Choose from gallery", "Rider photo"]) expect(step).not.toContain(gone);
+    expect(mockBecomeRider).not.toHaveBeenCalled();
+    act(() => tree.unmount());
   });
 });

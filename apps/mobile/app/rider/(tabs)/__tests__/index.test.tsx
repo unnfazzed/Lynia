@@ -1351,7 +1351,7 @@ describe("rider board — R3 'You're verified' (Calm Mint v2)", () => {
     await settle();
     await settle();
     expect(treeText(activeTree)).toContain("You’re verified");
-    expect(treeText(activeTree)).toContain("Add licence and bike papers later in Account");
+    expect(treeText(activeTree)).toContain("Add your photo, licence and bike papers later in Account");
     // No free-jobs rule on the server yet (NEEDS BACKEND), so the meter card is not drawn.
     expect(treeText(activeTree)).not.toContain("Commission-free jobs");
     const tree = activeTree;

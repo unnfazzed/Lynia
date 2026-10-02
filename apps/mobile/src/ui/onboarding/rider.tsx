@@ -88,7 +88,6 @@ export function RiderIntro({ onStart, busy = false, freeJobs = false }: { onStar
           steps={[
             { label: RO.stepAccount, meta: RO.done, state: "done" },
             { label: RO.stepId, meta: RO.stepIdTime, state: "todo", n: 2 },
-            { label: RO.stepPhoto, meta: RO.stepPhotoTime, state: "todo", n: 3 },
           ]}
         />
         <Note icon="wallet">{freeJobs ? `${RO.noteFree} ${RO.notePapers}` : RO.notePapers}</Note>
@@ -123,9 +122,8 @@ export function RiderSetupPending({ onSendParcel }: { onSendParcel: () => void }
         <Checklist
           steps={[
             { label: RO.stepAccount, meta: RO.done, state: "done" },
-            { label: RO.stepPhotoShort, meta: RO.done, state: "done" },
             { label: RO.stepIdShort, meta: RO.inReview, state: "now" },
-            { label: RO.stepGoOnline, meta: RO.next, state: "todo", n: 4 },
+            { label: RO.stepGoOnline, meta: RO.next, state: "todo", n: 3 },
           ]}
         />
         <Text style={{ fontSize: 13, lineHeight: 18.85, color: tokens.color.muted }}>{RO.fixNote}</Text>
