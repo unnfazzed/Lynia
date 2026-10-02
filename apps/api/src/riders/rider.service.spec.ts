@@ -1242,7 +1242,7 @@ describe("RiderService.setOnline", () => {
       { rider: { findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null }) } },
       {},
     );
-    // Null Island — far outside the Harare corridor.
+    // Null Island — far outside the service area.
     await expect(s.setOnline("p1", true, { lat: 0, lng: 0 })).rejects.toThrow(/service area/i);
   });
 
@@ -1255,6 +1255,17 @@ describe("RiderService.setOnline", () => {
     };
     const s = svc(prisma, {});
     expect(await s.setOnline("p1", true, { lat: -17.8292, lng: 31.0522 })).toEqual({ online: true });
+  });
+
+  it("allows going online in a satellite town (Norton, outside the old 25 km disc)", async () => {
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null }),
+        updateMany: async () => ({ count: 1 }),
+      },
+    };
+    const s = svc(prisma, {});
+    expect(await s.setOnline("p1", true, { lat: -17.8833, lng: 30.7 })).toEqual({ online: true });
   });
 
   it("refuses (reason: suspended) when the admin has suspended the account — read-only here", async () => {

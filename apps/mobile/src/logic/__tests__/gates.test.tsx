@@ -139,8 +139,15 @@ describe("service-corridor gate (Q1)", () => {
   it("pre-check: a Harare point is inside, a far point is outside", () => {
     // Harare CBD ≈ the corridor centre → inside.
     expect(isWithinServiceCorridor({ lat: -17.8292, lng: 31.0522 })).toBe(true);
-    // Bulawayo (~370km away) → outside the 25km disc.
+    // Bulawayo (~370km away) → outside every town disc.
     expect(isWithinServiceCorridor({ lat: -20.15, lng: 28.58 })).toBe(false);
+  });
+
+  it("pre-check: the satellite towns are inside (owner 2026-10-02), Marondera is not", () => {
+    expect(isWithinServiceCorridor({ lat: -17.8833, lng: 30.7 })).toBe(true); // Norton, ~38 km out
+    expect(isWithinServiceCorridor({ lat: -18.0127, lng: 31.0756 })).toBe(true); // Chitungwiza
+    expect(isWithinServiceCorridor({ lat: -17.8897, lng: 31.2447 })).toBe(true); // Ruwa
+    expect(isWithinServiceCorridor({ lat: -18.185, lng: 31.55 })).toBe(false); // Marondera
   });
 });
 

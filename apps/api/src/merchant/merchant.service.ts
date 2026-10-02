@@ -39,12 +39,11 @@ import type {
 import {
   addMoney,
   effectiveMerchantHours,
-  haversineKm,
   merchantWaypoint,
   RESTAURANTS_COMMISSION,
   RESTAURANTS_DEBT,
   roundToCents,
-  SERVICE_CORRIDOR,
+  isInServiceArea,
   startOfNextDay,
 } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
@@ -220,7 +219,7 @@ export class MerchantService {
     if (profile.rider && profile.rider.accountStatus !== "active") {
       throw new ForbiddenException({ reason: "account_restricted", message: "This number can't set up a business. Message LyniaGo on WhatsApp." });
     }
-    if (haversineKm(body.location.point, { lat: SERVICE_CORRIDOR.centerLat, lng: SERVICE_CORRIDOR.centerLng }) > SERVICE_CORRIDOR.radiusKm) {
+    if (!isInServiceArea(body.location.point)) {
       throw new BadRequestException({ reason: "outside_service_area", message: "That pin is outside the area LyniaGo covers for now." });
     }
     if (await resolveMerchantAccess(this.prisma, profileId)) throw alreadyMember();

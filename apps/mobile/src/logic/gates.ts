@@ -1,4 +1,4 @@
-import { KYC_DECLINE_REASON_LABELS, type KycDeclineReason, SERVICE_CORRIDOR, haversineKm, type LatLng } from "@lynia/shared";
+import { isInServiceArea, KYC_DECLINE_REASON_LABELS, type KycDeclineReason, type LatLng, serviceTownsLabel } from "@lynia/shared";
 
 /**
  * Pure decision helpers for the rider online-gate and the customer service-corridor gate. Both read a
@@ -114,7 +114,7 @@ export const ONLINE_GATE_COPY: Record<OnlineGateReason, GateCopy> = {
   },
   out_of_area: {
     title: "You're outside the service area",
-    message: "You can only go online inside the Harare service area for now. Head back toward the city, then refresh.",
+    message: `You can only go online inside the service area: ${serviceTownsLabel()}. Head back inside, then refresh.`,
   },
   // Calm, specific, actionable — and explicitly not punitive. The go-online screen deep-links the CTA
   // into the wallet's top-up flow.
@@ -187,12 +187,11 @@ export const ACCOUNT_ON_HOLD_COPY: GateCopy = {
 };
 
 /**
- * Optional client-side pre-check (server is authority): is a point inside the launch service corridor?
- * Uses the same SERVICE_CORRIDOR constant the server enforces, so a match here can't diverge from it.
+ * Optional client-side pre-check (server is authority): is a point inside the service area (Harare metro
+ * + the satellite towns)? The same `isInServiceArea` the server enforces, so a match here can't diverge.
  */
 export function isWithinServiceCorridor(point: LatLng): boolean {
-  const center: LatLng = { lat: SERVICE_CORRIDOR.centerLat, lng: SERVICE_CORRIDOR.centerLng };
-  return haversineKm(center, point) <= SERVICE_CORRIDOR.radiusKm;
+  return isInServiceArea(point);
 }
 
 /** The credentials a launchable retry hands to `runKycVerification` — never both fields absent. */

@@ -492,7 +492,7 @@ describe("OrdersService.create service-corridor gate (Q1)", () => {
       noNotifications,
       noGateway,
     );
-  // Far outside the Harare corridor (SERVICE_CORRIDOR radius 25km) — the Gulf of Guinea (0,0).
+  // Far outside the service area (Harare metro + towns, packages/shared service-area.ts) — the Gulf of Guinea (0,0).
   const farPoint = { lat: 0, lng: 0 };
   const wp = (point: { lat: number; lng: number }) => ({ point, landmark: "X", contactPhone: "+263771111111" });
 
@@ -506,6 +506,23 @@ describe("OrdersService.create service-corridor gate (Q1)", () => {
   it("rejects an out-of-area DROP-OFF with a 4xx", async () => {
     const s = svc(() => ({}));
     await expect(s.create({ ...orderInput, dropoff: wp(farPoint) }, "cust-1")).rejects.toThrow(/service area/i);
+  });
+
+  it("serves the satellite towns: a Norton pickup to a Chitungwiza drop-off is allowed (owner 2026-10-02)", async () => {
+    let created = false;
+    const s = svc(() => {
+      created = true;
+      return { id: "ord-2", status: "open_for_offers", itemDesc: "Documents", proposedFare: { toString: () => "9.00" }, suggestedFare: { toString: () => "9.00" }, distanceKm: 40, createdAt: new Date("2026-10-02T00:00:00Z") };
+    });
+    await expect(
+      s.create({ ...orderInput, pickup: wp({ lat: -17.8833, lng: 30.7 }), dropoff: wp({ lat: -18.0127, lng: 31.0756 }) }, "cust-1"),
+    ).resolves.toMatchObject({ id: "ord-2" });
+    expect(created).toBe(true);
+  });
+
+  it("the out-of-area message names the towns we serve", async () => {
+    const s = svc(() => ({}));
+    await expect(s.create({ ...orderInput, dropoff: wp(farPoint) }, "cust-1")).rejects.toThrow(/We deliver across Harare, Chitungwiza, Norton/);
   });
 
   it("allows an order with both waypoints inside the corridor", async () => {

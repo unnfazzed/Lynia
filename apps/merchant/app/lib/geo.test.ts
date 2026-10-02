@@ -56,7 +56,13 @@ describe("Web Mercator (the sign-up map pin)", () => {
   });
 });
 
-describe("insideServiceArea — the same 25 km corridor POST /merchant/become checks", () => {
+describe("insideServiceArea — the same service area POST /merchant/become checks", () => {
+  it("accepts the satellite towns (Norton, Chitungwiza, Goromonzi)", () => {
+    expect(insideServiceArea({ lat: -17.8833, lng: 30.7 })).toBe(true);
+    expect(insideServiceArea({ lat: -18.0127, lng: 31.0756 })).toBe(true);
+    expect(insideServiceArea({ lat: -17.87, lng: 31.37 })).toBe(true);
+  });
+
   it("accepts Harare CBD and a pin in Mbare", () => {
     expect(insideServiceArea(HARARE_CBD)).toBe(true);
     expect(insideServiceArea({ lat: -17.861, lng: 31.036 })).toBe(true);

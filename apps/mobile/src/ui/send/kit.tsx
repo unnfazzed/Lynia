@@ -1,3 +1,4 @@
+import { serviceTownsLabel } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import React from "react";
 import { ActivityIndicator, Text, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
@@ -33,8 +34,8 @@ export const SEND_COPY = {
   slow: "Searching… Slow connection, hang on.",
   limited: "Search is limited right now. Type the street and area, or use the map.",
   next: "Next",
-  outArea:
-    "We don't cover that pickup or drop-off yet. Move your pins closer to Harare to send your parcel, or check back as we expand.",
+  // Owner 2026-10-02 (ledger D-61): the served towns are named, replacing "Move your pins closer to Harare…".
+  outArea: `We don't cover that pickup or drop-off yet. We deliver across ${serviceTownsLabel()}.`,
   outTag: "Outside our area",
   whatSend: "What are you sending?",
   itemPh: "e.g. Documents envelope",

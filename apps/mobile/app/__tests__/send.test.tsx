@@ -337,7 +337,7 @@ describe("send.tsx — step 1 · Where", () => {
     pressTestId(active, "test-set-pickup");
     pressTestId(active, "test-set-drop-out");
     expect(has(active, "Outside our area")).toBe(true);
-    expect(has(active, "We don't cover that pickup or drop-off yet. Move your pins closer to Harare to send your parcel, or check back as we expand.")).toBe(true);
+    expect(has(active, "We don't cover that pickup or drop-off yet. We deliver across Harare, Chitungwiza, Norton, Ruwa, Epworth, Domboshava, Mt Hampden and Goromonzi.")).toBe(true);
     expect(isDisabled(active, "Next")).toBe(true);
     expect(testText(active, "map-distance")).toBe("");
     pressTestId(active, "test-set-drop");
@@ -625,7 +625,7 @@ describe("send.tsx — step 4 · Review and send", () => {
     press(t, "Send to riders");
     await settle();
     expect(has(t, "Couldn't send. Check your data and try again.")).toBe(false);
-    expect(has(t, "We don't cover that pickup or drop-off yet. Move your pins closer to Harare to send your parcel, or check back as we expand.")).toBe(true);
+    expect(has(t, "We don't cover that pickup or drop-off yet. We deliver across Harare, Chitungwiza, Norton, Ruwa, Epworth, Domboshava, Mt Hampden and Goromonzi.")).toBe(true);
     expect(isDisabled(t, "Next")).toBe(true);
   });
 

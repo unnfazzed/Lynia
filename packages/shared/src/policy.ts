@@ -86,9 +86,10 @@ export const KYC_THRESHOLDS = {
 } as const;
 
 /**
- * Q1 — Launch service corridor. A single coverage disc for the Harare pilot: an order whose pickup OR
- * drop-off falls outside {@link SERVICE_CORRIDOR.radiusKm} of the centre is out of area. NOTE
- * (product Q1): replace with the real coverage boundary (likely a polygon) before launch.
+ * Q1 — Harare's centre and the old pilot disc. **Not the service-area rule any more:** where we serve is
+ * `isInServiceArea` (service-area.ts: Harare metro + Chitungwiza, Norton, Ruwa, Epworth, Domboshava,
+ * Mt Hampden, Goromonzi — owner 2026-10-02), whose Harare disc reuses this radius. This constant remains the
+ * map/search centre and the broadcast hard cap below.
  */
 export const SERVICE_CORRIDOR = {
   centerLat: -17.8292,

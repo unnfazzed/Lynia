@@ -9,7 +9,7 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { isCommissionActive, resolveCommissionRatePct, SERVICE_CORRIDOR, haversineKm } from "@lynia/shared";
+import { isCommissionActive, isInServiceArea, resolveCommissionRatePct } from "@lynia/shared";
 import { UploadVerifier } from "../adapters/storage/upload-verifier";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
@@ -512,12 +512,11 @@ export class RiderService {
     if (online) {
       const reason = onlineRefusalReason({ ...rider, ...commissionGate });
       if (reason) throw new ForbiddenException({ reason, message: REFUSAL_MESSAGE[reason] });
-      // Q1 service corridor: when the client sends its position, refuse going online outside the launch
-      // area so a rider can't take jobs we can't route. Location-optional (skipped if not sent) since an
-      // older client may not carry it; the same SERVICE_CORRIDOR the customer order-create gate uses.
+      // Service area: when the client sends its position, refuse going online outside it so a rider can't
+      // take jobs we can't route. Location-optional (skipped if not sent) since an older client may not
+      // carry it; the same isInServiceArea the customer order-create gate uses (Harare metro + towns).
       if (location) {
-        const center = { lat: SERVICE_CORRIDOR.centerLat, lng: SERVICE_CORRIDOR.centerLng };
-        if (haversineKm(center, location) > SERVICE_CORRIDOR.radiusKm) {
+        if (!isInServiceArea(location)) {
           throw new ForbiddenException({ reason: "out_of_area", message: REFUSAL_MESSAGE.out_of_area });
         }
       }
