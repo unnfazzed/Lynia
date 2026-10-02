@@ -49,6 +49,11 @@ jest.mock("expo-router", () => ({
     }, []);
   },
 }));
+// Order flow v2 G1: a merchant lead order reads its food order for the stage copy — mocked for the same
+// reason as the reads below (an unmocked fetch flips the process-wide onlineManager offline).
+jest.mock("../../../src/api/food-orders", () => ({
+  getFoodOrder: async () => undefined,
+}));
 const mockGetActiveOrder = jest.fn(async () => null as unknown);
 jest.mock("../../../src/api/orders", () => ({
   getActiveCustomerOrders: (...args: unknown[]) => mockGetActiveCustomerOrders(...args),
