@@ -1158,6 +1158,10 @@ export const RestaurantSearchResponse = z
   .strict();
 export type RestaurantSearchResponse = z.infer<typeof RestaurantSearchResponse>;
 
+/** Browse v2 X1 (ledger D-57): "Popular near you" — the most-ordered dish names, most popular first. */
+export const SearchPopularResponse = z.object({ terms: z.array(z.string()) }).strict();
+export type SearchPopularResponse = z.infer<typeof SearchPopularResponse>;
+
 /** A single customer-facing menu item. `outOfStock` is derived server-side from `outOfStockUntil`
  *  (N-14 daily auto-reset — a past timestamp reads as back in stock, no reset job needed). Draft
  *  (photoless) dishes never appear here at all (D-31). */

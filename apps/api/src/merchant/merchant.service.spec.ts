@@ -830,6 +830,29 @@ describe("MerchantService customer read API (flag + pilotEnabled allowlist)", ()
     ]);
   });
 
+  it("searchPopular names the most-ordered dishes at live restaurants, deduped, at most five", async () => {
+    const s = svc({
+      merchant: { findMany: async () => [{ id: "m1" }] },
+      merchantOrderItem: {
+        groupBy: async () => [
+          { dishId: "d1", _count: { orderId: 9 } },
+          { dishId: "d2", _count: { orderId: 7 } },
+          { dishId: "d3", _count: { orderId: 5 } },
+          { dishId: "d4", _count: { orderId: 1 } },
+        ],
+      },
+      merchantDish: { findMany: async () => [{ id: "d1", name: "Roast chicken" }, { id: "d2", name: "roast chicken" }, { id: "d3", name: "Pizza" }] },
+    });
+    expect(await s.searchPopular()).toEqual({ terms: ["Roast chicken", "Pizza"] });
+  });
+
+  it("searchPopular answers no terms when no restaurant is live", async () => {
+    let grouped = false;
+    const s = svc({ merchant: { findMany: async () => [] }, merchantOrderItem: { groupBy: async () => { grouped = true; return []; } } });
+    expect(await s.searchPopular()).toEqual({ terms: [] });
+    expect(grouped).toBe(false);
+  });
+
   it("searchRestaurants ignores a blank / 1-char query — never dumps the corridor", async () => {
     let queried = false;
     const s = svc({ merchant: { findMany: async () => { queried = true; return []; } } });

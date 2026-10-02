@@ -19,6 +19,7 @@ import type {
   RestaurantMenuDish,
   RestaurantMenuResponse,
   RestaurantSearchDish,
+  SearchPopularResponse,
   RestaurantSearchResponse,
   ShopCatalogueResponse,
   ShopListItem,
@@ -111,6 +112,8 @@ const RESTAURANTS_SEARCH_LIMIT = 20;
 const POPULAR_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 /** A dish needs this many delivered orders in the window to count as popular — one lucky order isn't. */
 const POPULAR_MIN_ORDERS = 3;
+/** X1 "Popular near you" shows at most this many search chips. */
+const SEARCH_POPULAR_MAX = 5;
 /** The rail holds at most this many dishes, and is dropped below two (a rail of one is not a rail). */
 const POPULAR_MAX = 6;
 const POPULAR_MIN_DISHES = 2;
@@ -631,6 +634,40 @@ export class MerchantService {
       shops: await Promise.all(page.map((m) => this.toShopItem(m))),
       nextCursor: hasMore ? page[page.length - 1]!.id : undefined,
     };
+  }
+
+  /** Browse v2 X1 (D-57) "Popular near you": the names of the dishes that delivered orders at live
+   *  restaurants picked most over the last 30 days — at most five, most popular first, each needing
+   *  three orders or more. Restaurants only: shops take no app orders until Order flow v2 (D-58). A
+   *  quiet corridor answers no terms, and the screen draws no chips rather than invented ones. */
+  async searchPopular(): Promise<SearchPopularResponse> {
+    const venues = await this.prisma.merchant.findMany({ where: CUSTOMER_VISIBLE_RESTAURANT, select: { id: true } });
+    if (venues.length === 0) return { terms: [] };
+    const rows = await this.prisma.merchantOrderItem.groupBy({
+      by: ["dishId"],
+      where: {
+        dishId: { not: null },
+        order: { merchantId: { in: venues.map((v) => v.id) }, status: { in: ["delivered", "completed"] }, createdAt: { gte: new Date(Date.now() - POPULAR_WINDOW_MS) } },
+      },
+      _count: { orderId: true },
+    });
+    const top = rows
+      .filter((r): r is typeof r & { dishId: string } => r.dishId != null && r._count.orderId >= POPULAR_MIN_ORDERS)
+      .sort((a, b) => b._count.orderId - a._count.orderId)
+      .slice(0, SEARCH_POPULAR_MAX * 2);
+    if (top.length === 0) return { terms: [] };
+    const dishes = await this.prisma.merchantDish.findMany({ where: { id: { in: top.map((r) => r.dishId) }, isDraft: false }, select: { id: true, name: true } });
+    const nameOf = new Map(dishes.map((d) => [d.id, d.name] as const));
+    const seen = new Set<string>();
+    const terms: string[] = [];
+    for (const r of top) {
+      const name = nameOf.get(r.dishId);
+      if (!name || seen.has(name.toLowerCase())) continue;
+      seen.add(name.toLowerCase());
+      terms.push(name);
+      if (terms.length === SEARCH_POPULAR_MAX) break;
+    }
+    return { terms };
   }
 
   /** PLACES (shop name) + ITEMS (live catalogue items across the visible shops), as restaurant search. */
