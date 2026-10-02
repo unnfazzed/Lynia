@@ -560,9 +560,36 @@ describe("OrderLifecycleService.confirmDelivery", () => {
         }),
       order: { update: async () => ({}) },
       orderEvent: { create: async () => ({}) },
+      orderPrescription: { findUnique: async () => null },
     });
     expect(await svc.confirmDelivery("o1", "r1", "123456")).toEqual({ orderId: "o1", status: "delivered" });
     expect(emits).toEqual([["o1", "delivered"]]);
+  });
+
+  // Order flow v2 (BRIEF §13, RD3): an approved prescription needs the rider's "saw the original" tick.
+  const paidRx = () =>
+    row({ order_type: "merchant", merchant_payment_method: "cash", customer_cash_confirmed_at: new Date(), rider_cash_confirmed_at: new Date() });
+
+  it("refuses an approved-prescription order until the rider ticked “I saw the original prescription”", async () => {
+    const { svc } = build({
+      $queryRaw: async () => paidRx(),
+      order: { update: async () => ({}) },
+      orderEvent: { create: async () => ({}) },
+      orderPrescription: { findUnique: async () => ({ status: "approved", riderSawOriginalAt: null }) },
+    });
+    await expect(svc.confirmDelivery("o1", "r1", "123456")).rejects.toMatchObject({ response: { reason: "rx_original_not_seen" } });
+  });
+
+  it("completes an approved-prescription order once the tick is in (a declined one never needed it)", async () => {
+    for (const rx of [{ status: "approved", riderSawOriginalAt: new Date() }, { status: "declined", riderSawOriginalAt: null }]) {
+      const { svc } = build({
+        $queryRaw: async () => paidRx(),
+        order: { update: async () => ({}) },
+        orderEvent: { create: async () => ({}) },
+        orderPrescription: { findUnique: async () => rx },
+      });
+      expect(await svc.confirmDelivery("o1", "r1", "123456")).toEqual({ orderId: "o1", status: "delivered" });
+    }
   });
 
   it("a parcel order is unaffected (order_type isn't merchant, the gate is vacuously false)", async () => {
