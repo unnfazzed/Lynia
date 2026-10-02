@@ -232,7 +232,7 @@ async function atDoor(food: Partial<MerchantOrderResponse>): Promise<renderer.Re
 }
 
 describe("RD4a · the door card", () => {
-  it("hands over first, then collects the cash with the split under ②", async () => {
+  it("hands over first, then collects the cash with the split under (2)", async () => {
     mockConfirmFoodRiderCash.mockResolvedValue({ orderId: "order-1", riderCashConfirmedAt: new Date().toISOString() });
     const tree = await atDoor(CASH);
     let text = textOf(tree);
@@ -250,7 +250,7 @@ describe("RD4a · the door card", () => {
     expect(mockConfirmFoodRiderCash).toHaveBeenCalledWith("order-1");
   });
 
-  it("ticks ① by itself once the customer has confirmed paying", async () => {
+  it("ticks (1) by itself once the customer has confirmed paying", async () => {
     const tree = await atDoor({ ...CASH, customerCashConfirmedAt: new Date().toISOString() });
     expect(textOf(tree)).toContain("I received $17.50");
   });

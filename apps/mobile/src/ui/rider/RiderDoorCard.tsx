@@ -6,9 +6,9 @@ import { Icon } from "../Icon";
 /**
  * RD4a · the rider's door card (packages/design/handoff/order-flow-v2, of-screens-mrg.js `rdDoor`, ledger
  * D-59): the mirror of the customer's DoorCard. One card (1px line, radius 20), three numbered rows —
- * ① Hand over the order · ② Collect $X cash · ③ Enter the delivery code. A done row has a filled
+ * (1) Hand over the order · (2) Collect $X cash · (3) Enter the delivery code. A done row has a filled
  * accent-text disc with a check, the current one a ringed disc on a mint wash, an upcoming one a surface
- * disc with a muted title. The current row can carry a body (the cash split under ②).
+ * disc with a muted title. The current row can carry a body (the cash split under (2)).
  */
 export type DoorRowState = "done" | "now" | "todo";
 

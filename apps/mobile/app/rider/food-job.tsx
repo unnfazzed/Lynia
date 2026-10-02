@@ -306,7 +306,7 @@ export default function RiderFoodJob(): React.ReactElement {
     },
   });
   const [nowMs, setNowMs] = useState(() => Date.now());
-  // RD4a ①: "Hand over the order" is the rider's own tap, kept on this phone (the server has no mark for it).
+  // RD4a (1): "Hand over the order" is the rider's own tap, kept on this phone (the server has no mark for it).
   const [handedOver, setHandedOver] = useState<{ orderId: string; at: string } | null>(null);
 
   // ── Delivery code (6-digit, generic — reused verbatim) ─────────────────────────────────────────
@@ -840,7 +840,7 @@ export default function RiderFoodJob(): React.ReactElement {
   );
 
   // RD4a / RD4b (Order flow v2, ledger D-59) — at the door: the rider's mirror of the customer's door
-  // card (① hand over the order · ② collect the cash · ③ enter the delivery code), then the code itself.
+  // card ((1) hand over the order · (2) collect the cash · (3) enter the delivery code), then the code itself.
   let content: React.ReactNode;
   let bar: React.ReactNode;
   if (stage === "code") {
@@ -850,7 +850,7 @@ export default function RiderFoodJob(): React.ReactElement {
     const queued = pendingOrQueued(deliverM) === "queued";
     const handshake = cashOrder && hState !== "confirmed";
     if (handshake) {
-      // ① ticks once the rider taps "Hand over the order" (this phone only — the server has no hand-over
+      // (1) ticks once the rider taps "Hand over the order" (this phone only — the server has no hand-over
       // mark yet) or the customer has already confirmed paying, which can only follow the hand-over.
       const handed = handedOver?.orderId === order.id || hState !== "pending";
       const rows: DoorRow[] = [
