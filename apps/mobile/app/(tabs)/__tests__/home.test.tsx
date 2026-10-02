@@ -164,7 +164,7 @@ describe("(tabs)/home.tsx — Home tab states", () => {
     expect(has(activeTree, "Use my location")).toBe(true);
     expect(has(activeTree, "Type an address")).toBe(true);
     // The four service tiles are live — no SOON chip is drawn.
-    for (const label of ["Send", "Restaurants", "Shops", "Pharmacy"]) expect(has(activeTree, label)).toBe(true);
+    for (const label of ["Send", "Food", "Shops", "Pharmacy"]) expect(has(activeTree, label)).toBe(true);
     expect(has(activeTree, "SOON")).toBe(false);
   });
 

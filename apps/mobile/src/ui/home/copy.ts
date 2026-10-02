@@ -12,7 +12,8 @@ export const H = {
   /** The 320px variant (H3). */
   searchNarrow: "Search food or shops",
 
-  tiles: { send: "Send", food: "Restaurants", foodNarrow: "Food", shops: "Shops", pharmacy: "Pharmacy" },
+  /** `food` is "Food", not the handoff's "Restaurants": the Home tile only (D-65). */
+  tiles: { send: "Send", food: "Food", foodNarrow: "Food", shops: "Shops", pharmacy: "Pharmacy" },
 
   popularRestaurants: "Popular restaurants",
   popularRestaurantsSub: "Most ordered near you",
