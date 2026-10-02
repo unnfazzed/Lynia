@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { BadRequestException } from "@nestjs/common";
 import type { Env } from "../config/env";
 import type { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -484,22 +485,22 @@ describe("FoodOrderService.rejectOrder — D-11", () => {
 
 describe("FoodOrderService.confirmPickup — N-16, mirrors confirmDelivery one hop earlier", () => {
   const row = (over: Record<string, unknown> = {}) => [
-    { status: "en_route_pickup", rider_id: "r1", pickup_code_hash: tokens.hash("4242"), pickup_code_attempts: 0, ...over },
+    { status: "en_route_pickup", rider_id: "r1", pickup_code_hash: tokens.hash("424242"), pickup_code_attempts: 0, ...over },
   ];
 
   it("404s a missing order", async () => {
     const { svc } = build({ $queryRaw: async () => [] });
-    await expect(svc.confirmPickup("o1", "r1", "4242")).rejects.toThrow(/not found/i);
+    await expect(svc.confirmPickup("o1", "r1", "424242")).rejects.toThrow(/not found/i);
   });
 
   it("403s a caller who isn't the assigned rider", async () => {
     const { svc } = build({ $queryRaw: async () => row() });
-    await expect(svc.confirmPickup("o1", "other", "4242")).rejects.toThrow(/assigned rider/i);
+    await expect(svc.confirmPickup("o1", "other", "424242")).rejects.toThrow(/assigned rider/i);
   });
 
   it("409s outside en_route_pickup", async () => {
     const { svc } = build({ $queryRaw: async () => row({ status: "picked_up" }) });
-    await expect(svc.confirmPickup("o1", "r1", "4242")).rejects.toThrow(/not ready for pickup/i);
+    await expect(svc.confirmPickup("o1", "r1", "424242")).rejects.toThrow(/not ready for pickup/i);
   });
 
   it("a wrong code increments attempts and is COMMITTED (persists across calls)", async () => {
@@ -512,13 +513,40 @@ describe("FoodOrderService.confirmPickup — N-16, mirrors confirmDelivery one h
         },
       },
     });
-    await expect(svc.confirmPickup("o1", "r1", "0000")).rejects.toThrow(/4 attempt/);
+    await expect(svc.confirmPickup("o1", "r1", "000000")).rejects.toThrow(/4 attempt/);
     expect(attempts).toBe(1);
+  });
+
+  // D-59 (BRIEF §16): the pickup code is six digits now. An installed rider app still types four; that
+  // attempt must come back as an ordinary wrong code (400, attempts counted), never a 500.
+  it("a legacy 4-digit attempt against a 6-digit code is a clean wrong-code 400", async () => {
+    let attempts = 0;
+    const { svc } = build({
+      $queryRaw: async () => row({ pickup_code_attempts: attempts }),
+      order: {
+        update: async ({ data }: { data: { pickupCodeAttempts?: { increment: number } } }) => {
+          if (data.pickupCodeAttempts) attempts += data.pickupCodeAttempts.increment;
+        },
+      },
+    });
+    const err = await svc.confirmPickup("o1", "r1", "4242").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect((err as Error).message).toMatch(/doesn't match/);
+    expect(attempts).toBe(1);
+  });
+
+  it("a code minted as 4 digits before the switch still verifies (in-flight orders at deploy)", async () => {
+    const { svc } = build({
+      $queryRaw: async () => row({ pickup_code_hash: tokens.hash("4242") }),
+      order: { update: async () => ({}) },
+      orderEvent: { create: async () => ({}) },
+    });
+    expect(await svc.confirmPickup("o1", "r1", "4242")).toEqual({ orderId: "o1", status: "picked_up" });
   });
 
   it("locks out after DELIVERY_OTP_MAX_ATTEMPTS (5) wrong tries", async () => {
     const { svc } = build({ $queryRaw: async () => row({ pickup_code_attempts: 5 }) });
-    await expect(svc.confirmPickup("o1", "r1", "4242")).rejects.toThrow(/too many attempts/i);
+    await expect(svc.confirmPickup("o1", "r1", "424242")).rejects.toThrow(/too many attempts/i);
   });
 
   it("the right code flips to picked_up and stamps collectedAt", async () => {
@@ -528,7 +556,7 @@ describe("FoodOrderService.confirmPickup — N-16, mirrors confirmDelivery one h
       order: { update: async ({ data }: { data: Record<string, unknown> }) => (updateData = data) },
       orderEvent: { create: async () => ({}) },
     });
-    const res = await svc.confirmPickup("o1", "r1", "4242");
+    const res = await svc.confirmPickup("o1", "r1", "424242");
     expect(res).toEqual({ orderId: "o1", status: "picked_up" });
     expect(updateData).toEqual({ status: "picked_up", collectedAt: expect.any(Date) });
   });
@@ -552,7 +580,7 @@ describe("FoodOrderService.confirmPickup — N-16, mirrors confirmDelivery one h
     const spyDebt = { openDebtIfNeeded: async (_tx: unknown, order: Record<string, unknown>) => (opened = order) } as unknown as FoodDebtService;
     const svc = new FoodOrderService(prisma as unknown as PrismaService, tokens, notifications, spyDebt, fakeGateway(), fakeRail());
 
-    await svc.confirmPickup("o1", "r1", "4242");
+    await svc.confirmPickup("o1", "r1", "424242");
     expect(opened).toEqual({
       id: "o1",
       merchantId: "m1",
@@ -625,7 +653,7 @@ describe("FoodOrderService.revealPickupCode — N-16 reveal-by-rotation", () => 
       },
     });
     const res = await svc.revealPickupCode("p1", "o1");
-    expect(res.pickupCode).toMatch(/^\d{4}$/);
+    expect(res.pickupCode).toMatch(/^\d{6}$/);
     expect(updateArgs).toEqual({
       where: { id: "o1", merchantPhase: "ready_for_pickup" },
       data: { pickupCodeHash: tokens.hash(res.pickupCode), pickupCodeAttempts: 0 },

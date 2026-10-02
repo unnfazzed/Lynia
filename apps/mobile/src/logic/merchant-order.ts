@@ -1,4 +1,4 @@
-import { haversineKm } from "@lynia/shared";
+import { haversineKm, type MerchantOrderTrackView, RESTAURANTS_TIMING, substitutionTotals, type SubstitutionRoundView } from "@lynia/shared";
 import { ETA_SPEED_KMH, ROAD_WINDING_FACTOR } from "./eta";
 import { ARRIVING_M, GPS_PAUSED_MS } from "./order-stage";
 
@@ -9,8 +9,9 @@ import { ARRIVING_M, GPS_PAUSED_MS } from "./order-stage";
  * to draw from the server's own fields (`status` + `merchantPhase` on the food order, events / rider fix
  * on the generic snapshot).
  *
- * NEEDS BACKEND (README): there is no merchant-order step track on the customer socket yet, so the
- * four-step track is derived here on the phone from `status` + `merchantPhase`.
+ * The four-step track comes from the server (`track` on the order read and the `order:status` socket,
+ * Backend A); `trackStep` derives it on the phone from `status` + `merchantPhase` only when the server
+ * sent none (an older API).
  */
 
 /** The README's T/P/D states this screen can be in (T10 "at your door" = P). */
@@ -65,6 +66,13 @@ export function trackStep(i: TrackInput): TrackStep {
       // awaiting_accept / awaiting_item_approval / awaiting_payment / not yet phased
       return 0;
   }
+}
+
+/** The server's track (BRIEF §4) when it sent one, else the phone's derivation. `delivered` is done ⇒ 4. */
+export function serverTrackStep(i: TrackInput, track: MerchantOrderTrackView | null | undefined): TrackStep {
+  if (!track) return trackStep(i);
+  if (track.step === "delivered") return 4;
+  return Math.max(0, Math.min(3, track.index)) as TrackStep;
 }
 
 export interface StageInput extends TrackInput {
@@ -235,4 +243,109 @@ export function codeCopied(code: string): string {
 /** "Order #A1B2" id — the first four hex digits of the order id, upper case. */
 export function shortOrderId(orderId: string): string {
   return orderId.replace(/-/g, "").slice(0, 4).toUpperCase();
+}
+
+// ── substitution (BRIEF §8: per line, a 3-minute window, any swap needs a yes) ─────────────────────────
+
+export type SubAnswer = "accept" | "remove";
+
+export interface SubLine {
+  id: string;
+  action: "remove" | "swap" | "reduce";
+  /** The line as ordered ("Out of {name}"). */
+  name: string;
+  /** What the line cost as ordered (price × quantity) — the struck-through price. */
+  was: number;
+  /** `reduce`: the new quantity. */
+  newQuantity: number | null;
+  /** `swap`: the replacement and what it costs (price × quantity). */
+  swapName: string | null;
+  now: number | null;
+  /** The change to the total if this line goes the proposed way (a swap: if accepted). */
+  diff: number;
+  photoUrl: string | null;
+  /** The server's answer (`swap` only, once resolved). */
+  answer: SubAnswer | null;
+}
+
+const cents = (n: number): number => Math.round(n * 100);
+const usdOf = (c: number): number => c / 100;
+
+export function substitutionLines(round: Pick<SubstitutionRoundView, "lines">): SubLine[] {
+  return round.lines.map((l) => {
+    const wasC = cents(l.priceUsd) * l.quantity;
+    const nowC = l.action === "swap" ? cents(l.swapPriceUsd ?? l.priceUsd) * (l.swapQuantity ?? l.quantity) : null;
+    const diffC = l.action === "swap" ? (nowC ?? 0) - wasC : l.action === "reduce" ? -cents(l.priceUsd) * (l.quantity - (l.newQuantity ?? l.quantity)) : -wasC;
+    return {
+      id: l.id,
+      action: l.action,
+      name: l.name,
+      was: usdOf(wasC),
+      newQuantity: l.newQuantity,
+      swapName: l.action === "swap" ? (l.swapName ?? null) : null,
+      now: nowC == null ? null : usdOf(nowC),
+      diff: usdOf(diffC),
+      photoUrl: l.swapPhotoUrl ?? null,
+      answer: l.answer,
+    };
+  });
+}
+
+/** An open round the customer can still answer. */
+export function isOpenRound(round: Pick<SubstitutionRoundView, "status"> | null | undefined): boolean {
+  return round?.status === "open";
+}
+
+/** Milliseconds left to answer and the share of the window left (0–100). */
+export function roundClock(round: Pick<SubstitutionRoundView, "deadlineAt">, nowMs: number): { leftMs: number; pct: number } {
+  const end = round.deadlineAt ? Date.parse(round.deadlineAt) : NaN;
+  const leftMs = Number.isFinite(end) ? Math.max(0, end - nowMs) : 0;
+  return { leftMs, pct: Math.max(0, Math.min(100, (leftMs / RESTAURANTS_TIMING.substitutionWindowMs) * 100)) };
+}
+
+/**
+ * The live totals for a set of answers: "Was" (the round's `wasTotal`) and "New total" (the shared
+ * `substitutionTotals` — kept lines + each swap not removed (an unanswered one counts as offered, as U2a
+ * draws it), the small-order fee re-applied, the delivery
+ * fee unchanged), and how many swaps are still unanswered.
+ */
+export function substitutionState(
+  round: Pick<SubstitutionRoundView, "lines" | "wasTotal" | "keptSubtotal">,
+  deliveryFee: number,
+  answers: Readonly<Record<string, SubAnswer>>,
+): { was: number; newTotal: number; unanswered: number } {
+  const swaps = round.lines.filter((l) => l.action === "swap");
+  const answerOf = (l: { id: string; answer: SubAnswer | null }): SubAnswer | null => answers[l.id] ?? l.answer;
+  // U2a draws the proposal's total before an answer (the swap as offered); a "Remove it" takes it out.
+  const accepted = swaps.filter((l) => answerOf(l) !== "remove").map((l) => l.id);
+  const t = substitutionTotals({
+    keptSubtotal: round.keptSubtotal,
+    deliveryFee,
+    swaps: swaps.map((l) => ({ lineId: l.id, swapPriceUsd: l.swapPriceUsd ?? l.priceUsd, quantity: l.swapQuantity ?? l.quantity })),
+    acceptedLineIds: accepted,
+  });
+  const unanswered = swaps.filter((l) => answerOf(l) == null).length;
+  return { was: round.wasTotal, newTotal: t.total, unanswered };
+}
+
+/**
+ * What a resolved round took off the order (U3's "Changes" note and timeout toast, U4b's announcement):
+ * the removed lines plus every declined swap, the quantity drops, and what that saved.
+ */
+export function roundTakenOff(round: Pick<SubstitutionRoundView, "lines">): { removed: string[]; declinedSwaps: string[]; reduced: string[]; saved: number } {
+  const removed: string[] = [];
+  const declinedSwaps: string[] = [];
+  const reduced: string[] = [];
+  let savedC = 0;
+  for (const l of round.lines) {
+    if (l.action === "remove" || (l.action === "swap" && l.answer !== "accept")) {
+      removed.push(l.name);
+      if (l.action === "swap") declinedSwaps.push(l.name);
+      savedC += cents(l.priceUsd) * l.quantity;
+    } else if (l.action === "reduce") {
+      reduced.push(l.name);
+      savedC += cents(l.priceUsd) * (l.quantity - (l.newQuantity ?? l.quantity));
+    }
+  }
+  return { removed, declinedSwaps, reduced, saved: usdOf(savedC) };
 }

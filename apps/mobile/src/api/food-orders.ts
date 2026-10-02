@@ -1,4 +1,11 @@
-import type { MerchantOrderResponse, PaymentPromptRail, PlaceMerchantOrderRequest } from "@lynia/shared";
+import type {
+  ConfirmSubstitutionRequest,
+  MerchantOrderResponse,
+  PaymentPromptRail,
+  PlaceMerchantOrderRequest,
+  RateVenueRequest,
+  VenueRatingView,
+} from "@lynia/shared";
 import { apiFetch } from "./client";
 
 /** D2 (checkout + kitchen-confirms). Price is always server-computed (D-35) — the client sends the
@@ -14,6 +21,16 @@ export function getFoodOrder(orderId: string): Promise<MerchantOrderResponse> {
 /** D-23: the customer's response to a shortened (item-level accept) order. */
 export function respondToFoodOrderItems(orderId: string, approve: boolean): Promise<MerchantOrderResponse> {
   return apiFetch(`/restaurants/orders/${orderId}/items-response`, { method: "POST", body: { approve } });
+}
+
+/** Order flow v2 U2 (BRIEF §8): answer every swap of the open substitution round; returns the order. */
+export function confirmFoodSubstitution(orderId: string, body: ConfirmSubstitutionRequest): Promise<MerchantOrderResponse> {
+  return apiFetch(`/restaurants/orders/${orderId}/substitution/confirm`, { method: "POST", body });
+}
+
+/** Order flow v2 D1 (BRIEF §11): rate the venue once, after delivery (idempotent). */
+export function rateFoodVenue(orderId: string, body: RateVenueRequest): Promise<VenueRatingView> {
+  return apiFetch(`/restaurants/orders/${orderId}/venue-rating`, { method: "POST", body });
 }
 
 /** R-17: free, any time before the kitchen starts cooking. */

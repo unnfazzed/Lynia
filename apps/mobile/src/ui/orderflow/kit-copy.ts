@@ -31,14 +31,35 @@ export const OX = {
   droppedToast: "{n} had to cancel. Finding another rider — same price.",
   /** of-screens-rt.js T7 sub. */
   atVenue: "{n} is at {v}.",
-  /** of-screens-rt.js T14d sub. */
-  lastUpdate: "Last update {t}",
   /** of-screens-rt.js T11a — the ready line. */
   readyAt: "{ready} · {t}",
+  /** of-screens-upd.js U2a / U4a — the bar hint while a swap is unanswered. */
+  answerHint: "Answer the swap to confirm",
+  /** of-screens-upd.js U3 — the note under the track after a timeout. */
+  changes: "Changes: {i} taken off · {d}",
+  /** of-screens-mrg.js P5 / M5b — the door-photo sub ("Left with Chipo at the gate · 12:47") and hero. */
+  leftWith: "Left with {w}",
+  leftWithAtGate: "Left with {w} at the gate",
+  leftAtGate: "Left at the gate",
+  doorSub: "{where} · {t}",
+  doorAgreed: "{where} — you agreed with {n}.",
+  /** of-screens-upd.js D3f — the ending card's amount. */
+  owed: "{p} owed",
+  /** of-screens-upd.js D4 — the photo of the delivery attempt. */
+  attemptPhoto: "Delivery attempt photo",
+  attemptSub: "At {a} · {t}",
 } as const;
 
-/** `ofFmt` for the kit strings. */
-export const oxFmt = ofFmt;
+/**
+ * Where the rider left the order when the code couldn't be used (P5): "Left with Chipo at the gate",
+ * "Left with Chipo", "Left at the gate"; null when the reason doesn't say (customer unreachable).
+ */
+export function doorWhere(p: { reason: string | null; handedTo: string | null }): string | null {
+  const who = p.handedTo?.trim() || null;
+  if (p.reason === "left_at_gate") return who ? ofFmt(OX.leftWithAtGate, { w: who }) : OX.leftAtGate;
+  if (p.reason === "handed_to_someone_else" && who) return ofFmt(OX.leftWith, { w: who });
+  return null;
+}
 
 /**
  * The handoff's sample rider is "Tendai" and its sample customer "Rudo"; `O` bakes those names into a

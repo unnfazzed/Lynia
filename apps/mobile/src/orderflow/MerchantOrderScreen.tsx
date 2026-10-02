@@ -1,4 +1,4 @@
-import { type MerchantOrderResponse, type RatingTag, SOS_POLICY } from "@lynia/shared";
+import { type MerchantOrderResponse, type MerchantOrderTrackView, type OrderStatusEvent, type RatingTag, RESTAURANTS_TIMING, SOS_POLICY, type VenueRatingTag } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -7,7 +7,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, ActivityIndicator, BackHandler, Linking, ScrollView, Share, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ApiError } from "../api/client";
-import { cancelUnpaidFoodOrder, confirmFoodCustomerCash, respondToFoodOrderItems } from "../api/food-orders";
+import { cancelUnpaidFoodOrder, confirmFoodCustomerCash, confirmFoodSubstitution, rateFoodVenue, respondToFoodOrderItems } from "../api/food-orders";
 import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../api/orders";
 import { raiseIssue, raiseSos } from "../api/safety";
 import {
@@ -30,14 +30,20 @@ import {
   awaitingKitchenConfirm,
   codeCopied,
   type Eta,
+  isOpenRound,
   isRiderStage,
   merchantEta,
   type MerchantStage,
   prepProgress,
   readyAtMs,
   resolveMerchantStage,
+  roundClock,
+  roundTakenOff,
+  serverTrackStep,
   shortOrderId,
-  trackStep,
+  type SubAnswer,
+  substitutionLines,
+  substitutionState,
 } from "../logic/merchant-order";
 import { goHomeClearingStack } from "../logic/nav";
 import { minutesSince } from "../logic/order-stage";
@@ -58,13 +64,12 @@ import { OrderSheet, type OrderSheetHandle, PeekMark } from "../ui/order/OrderSh
 import { OrderHeader } from "../ui/order/panels";
 import { useReduceMotion } from "../ui/useReduceMotion";
 import { O, ofFmt } from "../ui/orderflow/copy";
-import { OX, SVC, withRider } from "../ui/orderflow/kit-copy";
+import { doorWhere, OX, SVC, withRider } from "../ui/orderflow/kit-copy";
 import {
   AnswerHead,
   Bar,
   Btn,
   Card,
-  Chips,
   CodeBig,
   Disc,
   DoorCard,
@@ -77,13 +82,16 @@ import {
   Mut,
   Note,
   OrderSummary,
+  PhotoRow,
+  PhotoViewer,
   PrepBar,
-  RemovalCard,
+  RateRow,
   RiderCard,
   type RiderCardView,
   SmallStars,
   StageTitle,
   StageTop,
+  SubCard,
   TAB,
   Track,
   usd,
@@ -113,7 +121,16 @@ const RATE_LATE_MS = 7 * 24 * 60 * 60 * 1000;
 const ACCEPT_WINDOW_MS = 3 * 60_000;
 const ITEM_WINDOW_MS = 60_000;
 /** The rider tags, index-aligned with `O.d.tagsR` (On time · Friendly · Careful with food · Easy to reach). */
-const RIDER_TAGS: readonly RatingTag[] = ["on_time", "friendly", "careful", "communication"];
+const RIDER_TAGS: readonly RatingTag[] = ["on_time", "friendly", "careful_with_food", "easy_to_reach"];
+/** The venue tags, index-aligned with `O.d.tagsV` (4–5 stars) and `O.d.tagsVbad` (1–3 stars). */
+const VENUE_TAGS: readonly VenueRatingTag[] = ["tasty", "hot", "well_packed", "right_order"];
+const VENUE_TAGS_BAD: readonly VenueRatingTag[] = ["cold", "missing_item", "spilled", "wrong_item"];
+const venueTagsFor = (stars: number): readonly VenueRatingTag[] => (stars >= 4 ? VENUE_TAGS : VENUE_TAGS_BAD);
+/** T8 → T9: the pickup-photo row leads the sheet while the photo is this fresh, then follows the rider card. */
+const FRESH_PHOTO_MS = 5 * 60_000;
+/** U3: the timeout toast is said once, and only while the timeout is news. */
+const TIMEOUT_NEWS_MS = 5 * 60_000;
+const AFTER_PICKUP = new Set(["picked_up", "en_route_dropoff", "delivered", "completed", "undelivered"]);
 const LIVE_STATUS = new Set(["assigned", "confirmed", "en_route_pickup", "picked_up", "en_route_dropoff"]);
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -152,7 +169,20 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   const status = order?.status;
   const socketExpected = !!order && (order.riderId != null || LIVE_STATUS.has(order.status));
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const { connected } = useOrderSocket(socketExpected ? orderId : null, undefined, () => setNowMs(Date.now()));
+  // The server's track (BRIEF §4) from the `order:status` push, until the refetch it triggers lands.
+  const [socketTrack, setSocketTrack] = useState<MerchantOrderTrackView | null>(null);
+  const onStatus = useCallback(
+    (e: OrderStatusEvent) => {
+      if (e.track) setSocketTrack(e.track);
+      void qc.invalidateQueries({ queryKey: foodOrderKey(orderId) });
+    },
+    [qc, orderId],
+  );
+  const { connected } = useOrderSocket(socketExpected ? orderId : null, undefined, () => setNowMs(Date.now()), onStatus);
+  const foodUpdatedAt = qc.getQueryState(foodOrderKey(orderId))?.dataUpdatedAt ?? 0;
+  useEffect(() => {
+    setSocketTrack(null);
+  }, [foodUpdatedAt]);
   const snapQ = useQuery({
     queryKey: orderKey(orderId),
     queryFn: () => getOrder(orderId),
@@ -312,10 +342,53 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     onError: () => showToast({ text: O.t.cxFail }),
   });
 
-  // ── rating (rider row; 10 s Undo; a rating armed before an app kill is re-sent on the next start) ──
+  // ── substitution (U2/U4a: answer every swap; Confirm sends them all; Cancel the whole order — free) ──
+  const round = food.order?.substitution ?? null;
+  const [answers, setAnswers] = useState<Record<string, SubAnswer>>({});
+  const roundId = round?.id ?? null;
+  useEffect(() => {
+    setAnswers({});
+  }, [roundId]);
+  const subM = useMutation({
+    mutationFn: (p: { roundId: string; answers: { lineId: string; accept: boolean }[] }) => confirmFoodSubstitution(orderId, p),
+    onSuccess: (o) => {
+      haptic("tap");
+      qc.setQueryData(foodOrderKey(orderId), o);
+      invalidate();
+    },
+    onError: (e) => {
+      // round_expired / round_closed: the server already settled it — say so and show what it did.
+      showToast({ text: failText(e, O.c.noData) });
+      invalidate();
+    },
+  });
+  // U3: a round that ran out is said once, while it is news.
+  const timeoutSaid = useRef<string | null>(null);
+  const roundStatus = round?.status;
+  const roundResolvedAt = round?.resolvedAt ?? null;
+  const orderTotalNow = food.order?.total ?? null;
+  useEffect(() => {
+    if (!round || roundStatus !== "timed_out" || timeoutSaid.current === round.id) return;
+    const at = roundResolvedAt ? Date.parse(roundResolvedAt) : NaN;
+    if (!Number.isFinite(at) || Date.now() - at > TIMEOUT_NEWS_MS) return;
+    timeoutSaid.current = round.id;
+    const off = roundTakenOff(round);
+    const names = off.declinedSwaps.length ? off.declinedSwaps : off.removed;
+    showToast({ text: ofFmt(O.u.timeout, { i: names.join(", "), p: usd(orderTotalNow ?? round.wasTotal - off.saved) }), icon: "timer" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per round id
+  }, [round?.id, roundStatus, roundResolvedAt]);
+
+  // ── photos (T8b pickup photo, P5 door photo) ──
+  const [viewer, setViewer] = useState<{ title: string; uri: string | null; caption: string } | null>(null);
+
+  // ── rating (D1: one card, two rows — the venue, then the rider; 10 s Undo; a rider rating armed
+  //    before an app kill is re-sent on the next start) ──
   const [stars, setStars] = useState(0);
   const [tagIdx, setTagIdx] = useState<number[]>([]);
+  const [vStars, setVStars] = useState(0);
+  const [vTagIdx, setVTagIdx] = useState<number[]>([]);
   const [rated, setRated] = useState<number | null>(null);
+  const [vRated, setVRated] = useState<number | null>(null);
   const [skipped, setSkipped] = useState(false);
   const [undoLeft, setUndoLeft] = useState(0);
   const [pendingRating, setPendingRating] = useState<PendingRating | null>(null);
@@ -348,6 +421,14 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       showToast({ text: O.c.noData });
     },
   });
+  const venueM = useMutation({
+    mutationFn: (r: { score: number; tags: VenueRatingTag[] }) => rateFoodVenue(orderId, { score: r.score, ...(r.tags.length ? { tags: r.tags } : {}) }),
+    onSuccess: () => invalidate(),
+    onError: () => {
+      setVRated(null);
+      showToast({ text: O.c.noData });
+    },
+  });
   useEffect(() => {
     const decision = reconcilePendingRating({ pending: pendingRating, order: snap ? { id: snap.id, status: snap.status } : null });
     if (decision === "clear") {
@@ -370,31 +451,47 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-run on a new snapshot or marker only
   }, [snap, pendingRating]);
+  type Armed = { rider: { score: number; tags: RatingTag[] } | null; venue: { score: number; tags: VenueRatingTag[] } | null };
   const undoTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const armed = useRef<{ score: number; tags: RatingTag[] } | null>(null);
+  const armed = useRef<Armed | null>(null);
   const rateMutate = rateM.mutate;
+  const venueMutate = venueM.mutate;
+  const sendArmed = useCallback(
+    (r: Armed | null) => {
+      if (r?.venue) venueMutate(r.venue);
+      if (r?.rider) rateMutate(r.rider);
+    },
+    [rateMutate, venueMutate],
+  );
   const commitRating = useCallback(() => {
     if (undoTimer.current) clearInterval(undoTimer.current);
     undoTimer.current = null;
     const r = armed.current;
     armed.current = null;
     setUndoLeft(0);
-    if (r) rateMutate(r);
-  }, [rateMutate]);
+    sendArmed(r);
+  }, [sendArmed]);
   useEffect(
     () => () => {
       if (undoTimer.current) clearInterval(undoTimer.current);
-      if (armed.current) rateMutate(armed.current);
+      if (armed.current) sendArmed(armed.current);
     },
-    [rateMutate],
+    [sendArmed],
   );
-  const submitRating = (): void => {
-    const r = { score: stars, tags: tagIdx.map((i) => RIDER_TAGS[i]).filter((t): t is RatingTag => t != null) };
-    armed.current = r;
+  const submitRating = (canRider: boolean, canVenue: boolean): void => {
+    const rider = canRider && stars ? { score: stars, tags: tagIdx.map((i) => RIDER_TAGS[i]).filter((t): t is RatingTag => t != null) } : null;
+    const vt = venueTagsFor(vStars);
+    const venue = canVenue && vStars ? { score: vStars, tags: vTagIdx.map((i) => vt[i]).filter((t): t is VenueRatingTag => t != null) } : null;
+    if (!rider && !venue) return;
+    armed.current = { rider, venue };
     ratingFromStorage.current = false;
-    setPendingRating({ orderId, score: r.score, tags: r.tags });
-    void savePendingRating(orderId, r.score, r.tags);
-    setRated(r.score);
+    if (rider) {
+      setPendingRating({ orderId, score: rider.score, tags: rider.tags });
+      void savePendingRating(orderId, rider.score, rider.tags);
+      setRated(rider.score);
+    }
+    if (venue) setVRated(venue.score);
+    setSkipped(true);
     setUndoLeft(RATE_UNDO_S);
     let left = RATE_UNDO_S;
     if (undoTimer.current) clearInterval(undoTimer.current);
@@ -410,6 +507,8 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     armed.current = null;
     setUndoLeft(0);
     setRated(null);
+    setVRated(null);
+    setSkipped(false);
     setPendingRating(null);
     void clearPendingRating();
   };
@@ -439,7 +538,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   const stage: MerchantStage | null = res?.stage ?? null;
 
   // Clocks: a 1 s tick for the countdowns, 15 s to re-check the GPS-paused rule.
-  const needsSecond = stage === "waiting" || stage === "itemApproval" || (stage === "door" && handshake === "waiting_rider");
+  const needsSecond = stage === "waiting" || stage === "itemApproval" || isOpenRound(round) || (stage === "door" && handshake === "waiting_rider");
   const needsSlow = stage != null && (isRiderStage(stage) || stage === "cooking" || stage === "confirming");
   useEffect(() => {
     if (!needsSecond && !needsSlow) return;
@@ -468,6 +567,10 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   // ── Back: close a panel → collapse a full sheet → leave ──
   const leave = useCallback(() => (router.canGoBack() ? router.back() : goHomeClearingStack(router)), [router]);
   const onBack = useCallback((): boolean => {
+    if (viewer) {
+      setViewer(null);
+      return true;
+    }
     if (panel) {
       setPanel(null);
       return true;
@@ -478,7 +581,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     }
     leave();
     return true;
-  }, [panel, leave]);
+  }, [panel, viewer, leave]);
   useFocusEffect(
     useCallback(() => {
       const sub = BackHandler.addEventListener("hardwareBackPress", onBack);
@@ -486,7 +589,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     }, [onBack]),
   );
 
-  const venueName = snap?.merchantName || snap?.pickup.landmark || "";
+  const venueName = order?.venue?.name || snap?.merchantName || snap?.pickup.landmark || "";
   const area = areaH || Math.max(0, height - 80);
   // T14d: offline keeps the last state under an ink banner with the time of the last update.
   const lastUpdateMs = Math.max(snapQ.dataUpdatedAt || 0, qc.getQueryState(foodOrderKey(orderId))?.dataUpdatedAt || 0);
@@ -494,10 +597,20 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
 
   const header = (help: boolean): React.ReactElement => <OrderHeader heavy title={venueName} help={help} onBack={() => onBack()} onHelp={() => setPanel("help")} />;
   const toastView = (bottom: number): React.ReactNode =>
-    toast || (rated != null && undoLeft > 0) ? (
+    toast || ((rated != null || vRated != null) && undoLeft > 0) ? (
       <View style={{ position: "absolute", left: 12, right: 12, bottom, zIndex: 35 }}>
-        {rated != null && undoLeft > 0 ? (
-          <OrderToast text={`${O.d.youRated} ${riderFirst} ★${rated}`} icon="circle-check" action={`${O.c.undo} · ${undoLeft}`} actionIcon="undo-2" onAction={undoRating} />
+        {(rated != null || vRated != null) && undoLeft > 0 ? (
+          <OrderToast
+            text={
+              rated != null && vRated != null
+                ? ofFmt(withRider(O.d.rated, riderFirst), { v: venueName, a: `★${vRated}`, b: `★${rated}` })
+                : `${O.d.youRated} ${rated != null ? riderFirst : venueName} ★${rated ?? vRated}`
+            }
+            icon="circle-check"
+            action={`${O.c.undo} · ${undoLeft}`}
+            actionIcon="undo-2"
+            onAction={undoRating}
+          />
         ) : toast ? (
           <OrderToast text={toast.text} icon={toast.icon} action={toast.action} onAction={toast.onAction} />
         ) : null}
@@ -530,6 +643,9 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     }
   };
   const freeCancel = !!order && (canCancelFreely(order.merchantPhase) || awaitingKitchenConfirm(order));
+  // T15b: after the rider collects, the customer can still cancel — it costs the full total (D3f).
+  const afterPickup = !!order && (order.status === "picked_up" || order.status === "en_route_dropoff");
+  const orderTotal = order ? (order.total ?? (order.merchantGoodsTotal ?? 0) + (order.deliveryFee ?? 0)) : 0;
   const riderCancel = !!order && order.riderId != null && (order.status === "assigned" || order.status === "confirmed" || order.status === "en_route_pickup");
   const panels = (
     <>
@@ -544,12 +660,14 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
         onClose={() => setPanel(null)}
       />
       <ReportSheet visible={panel === "report"} items={itemNames} onSend={report} onClose={() => setPanel(null)} />
+      <PhotoViewer visible={viewer != null} title={viewer?.title ?? ""} uri={viewer?.uri ?? null} caption={viewer?.caption ?? ""} onClose={() => setViewer(null)} />
       <CancelSheet
         visible={panel === "cancel"}
         venue={venueName}
         busy={cancelM.isPending}
         onKeep={() => setPanel(null)}
-        onCancel={(reason) => cancelM.mutate({ free: freeCancel, reason })}
+        onCancel={(reason) => cancelM.mutate({ free: freeCancel && !afterPickup, reason })}
+        full={afterPickup ? { text: withRider(ofFmt(O.t.cxFull, { p: usd(orderTotal), place: SVC.place }), riderFirst), amount: usd(orderTotal) } : null}
       />
     </>
   );
@@ -597,7 +715,8 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   const keptItems = order.items.filter((i) => i.available !== false);
   const lines: LineView[] = keptItems.map((i) => ({ qty: i.quantity, name: i.name, price: i.priceUsd * i.quantity, note: i.note }));
   const count = keptItems.reduce((a, i) => a + i.quantity, 0);
-  const orderNo = ofFmt(O.c.orderNo, { id: shortOrderId(order.id) });
+  const shortId = order.shortId || shortOrderId(order.id);
+  const orderNo = ofFmt(O.c.orderNo, { id: shortId });
   const card = snap?.riderCard ?? null;
   const fr = order.rider ?? null;
   const rider: RiderCardView | null = card
@@ -630,7 +749,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   const riderCard = rider ? <RiderCard r={rider} onCall={phone ? () => dial(phone) : null} onWhatsApp={phone ? whatsapp : null} /> : null;
   const venueRow = <VenueRow name={venueName} sub={orderNo} onCall={order.restaurantPhone ? () => dial(order.restaurantPhone) : null} />;
   const summary = <OrderSummary count={count} total={total} lines={lines} open={summaryOpen} onToggle={() => setSummaryOpen((o) => !o)} />;
-  const step = trackStep(order);
+  const step = serverTrackStep(order, socketTrack ?? order.track);
   const track = <Track labels={SVC.st} current={step} reduceMotion={reduceMotion} />;
   const prep = prepProgress(order, nowMs);
   const etaRaw = stage ? merchantEta({ stage, noFix: res?.noFix ?? false, nowMs, readyMs: readyAtMs(order), venue, dropoff, rider: riderFix }) : null;
@@ -645,18 +764,34 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   const deliveredAt = order.deliveredAt ?? snap?.events.find((e) => e.status === "delivered")?.createdAt ?? null;
   const placedAt = order.createdAt ?? snap?.events[0]?.createdAt ?? null;
 
-  // ── D1 / D2 — Done (a full page: hero, the rider rating, the receipt, Order again) ──
+  // ── D1 / D2 — Done (a full page: hero, the two-row rating — venue + rider —, the receipt, Order again) ──
   if (stage === "delivered" || stage === "completed") {
     const snapRated = snap?.rating?.score ?? null;
     const shownRated = rated ?? snapRated;
+    const shownVenue = vRated ?? order.venueRating?.score ?? null;
     const deliveredMs = deliveredAt ? Date.parse(deliveredAt) : NaN;
-    const canRate = !shownRated && !skipped && (stage === "delivered" || (Number.isFinite(deliveredMs) && nowMs - deliveredMs < RATE_LATE_MS));
+    const inWindow = stage === "delivered" || (Number.isFinite(deliveredMs) && nowMs - deliveredMs < RATE_LATE_MS);
+    const canRider = !!rider && !shownRated;
+    const canVenue = !!venueName && !shownVenue;
+    const canRate = !skipped && inWindow && (canRider || canVenue);
     const later = stage === "completed";
+    const ratedRows = [
+      shownVenue ? { name: venueName, v: shownVenue } : null,
+      shownRated && rider ? { name: rFirst, v: shownRated } : null,
+    ].filter((r): r is { name: string; v: number } => r != null);
+    const goods = order.itemsSubtotal ?? order.merchantGoodsTotal ?? lines.reduce((a, l) => a + l.price, 0);
+    const small = order.smallOrderFee ?? 0;
+    // P5: the door photo, when the code couldn't be used.
+    const door = order.doorProof ?? null;
+    const where = door ? doorWhere(door) : null;
+    const doorSub = door ? (where ? (door.takenAt ? ofFmt(OX.doorSub, { where, t: hhmm(door.takenAt) }) : where) : hhmm(door.takenAt)) : "";
+    const heroSub = door && door.reason === "left_at_gate" && where ? ofFmt(OX.doorAgreed, { where, n: rFirst }) : ofFmt(O.d.deliveredSub, { p: usd(total), v: venueName });
     const shareReceipt = (): void => {
       const text = [
         `${O.d.receipt} · ${orderNo}`,
         ...lines.map((l) => `${l.qty}× ${l.name} ${usd(l.price)}`),
-        `${O.r.food} ${usd(order.merchantGoodsTotal ?? 0)}`,
+        `${O.r.food} ${usd(goods)}`,
+        small > 0 ? `${O.r.small} ${usd(small)}` : null,
         `${O.r.fee} ${usd(order.deliveryFee ?? 0)}`,
         `${O.r.total} ${usd(total)}`,
         withRider(O.d.paidCash, rFirst),
@@ -668,6 +803,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
         .join("\n");
       void Share.share({ message: text }).catch(() => undefined);
     };
+    const compact = later && !stars && !vStars;
     return (
       <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1, backgroundColor: C.bg }}>
         {header(false)}
@@ -679,42 +815,69 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
                 {ofFmt(O.d.delivered, { t: later ? dayTime(deliveredAt, nowMs) : hhmm(deliveredAt) })}
               </Text>
               <Mut size={14} style={{ textAlign: "center" }}>
-                {ofFmt(O.d.deliveredSub, { p: usd(total), v: venueName })}
+                {heroSub}
               </Mut>
             </View>
-            {shownRated && rider ? (
+            {door?.photoUrl ? <PhotoRow title={O.p.doorPhoto} sub={doorSub} uri={door.photoUrl} onView={() => setViewer({ title: O.p.doorPhoto, uri: door.photoUrl, caption: doorSub })} /> : null}
+            {ratedRows.length ? (
               <Card style={{ gap: 6 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  <Mut>{O.d.youRated}</Mut>
-                  <Text style={{ fontSize: 14, fontWeight: "700", color: C.ink }}>{rFirst}</Text>
-                  <SmallStars value={shownRated} />
-                </View>
-              </Card>
-            ) : canRate && rider ? (
-              <Card style={{ gap: 14, padding: 14 }}>
-                <View style={{ gap: 6 }}>
-                  <Text style={{ fontSize: 15, fontWeight: "700", color: C.ink }}>{later ? O.d.rateLater : withRider(O.d.rateR, rFirst)}</Text>
-                  <GoldStars value={stars} onChange={setStars} labelFor={(n) => O.d.rl[n] ?? ""} />
-                  {later && !stars ? <Mut>{O.d.rateLaterSub}</Mut> : null}
-                  {stars ? <Chips list={O.d.tagsR} on={tagIdx} onToggle={(i) => setTagIdx((c) => (c.includes(i) ? c.filter((x) => x !== i) : [...c, i]))} /> : null}
-                </View>
-                {stars || !later ? (
-                  <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
-                    <Btn flex={1} label={O.d.submit} onPress={submitRating} disabled={!stars} />
-                    <LinkRow label={O.d.skip} onPress={() => setSkipped(true)} />
+                {ratedRows.map((r) => (
+                  <View key={r.name} style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <Mut>{O.d.youRated}</Mut>
+                    <Text style={{ fontSize: 14, fontWeight: "700", color: C.ink }}>{r.name}</Text>
+                    <SmallStars value={r.v} />
                   </View>
+                ))}
+              </Card>
+            ) : null}
+            {canRate && compact ? (
+              <Card style={{ gap: 6, padding: 14 }}>
+                <Text style={{ fontSize: 15, fontWeight: "700", color: C.ink }}>{O.d.rateLater}</Text>
+                <GoldStars value={0} onChange={canVenue ? setVStars : setStars} labelFor={(n) => O.d.rl[n] ?? ""} />
+                <Mut>{O.d.rateLaterSub}</Mut>
+              </Card>
+            ) : canRate ? (
+              <Card style={{ gap: 14, padding: 14 }}>
+                {canVenue ? (
+                  <RateRow
+                    title={ofFmt(O.d.rateV, { v: venueName })}
+                    value={vStars}
+                    onChange={(n) => {
+                      if (n >= 4 !== vStars >= 4) setVTagIdx([]);
+                      setVStars(n);
+                    }}
+                    tags={vStars >= 4 ? O.d.tagsV : O.d.tagsVbad}
+                    on={vTagIdx}
+                    onToggle={(i) => setVTagIdx((c) => (c.includes(i) ? c.filter((x) => x !== i) : [...c, i]))}
+                  />
                 ) : null}
+                {canVenue && canRider ? <View style={{ borderTopWidth: 1, borderTopColor: C.line }} /> : null}
+                {canRider ? (
+                  <RateRow
+                    title={withRider(O.d.rateR, rFirst)}
+                    value={stars}
+                    onChange={setStars}
+                    tags={O.d.tagsR}
+                    on={tagIdx}
+                    onToggle={(i) => setTagIdx((c) => (c.includes(i) ? c.filter((x) => x !== i) : [...c, i]))}
+                  />
+                ) : null}
+                <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+                  <Btn flex={1} label={O.d.submit} onPress={() => submitRating(canRider, canVenue)} disabled={!stars && !vStars} />
+                  <LinkRow label={O.d.skip} onPress={() => setSkipped(true)} />
+                </View>
               </Card>
             ) : null}
             <Card style={{ gap: 0, paddingVertical: 12, paddingHorizontal: 14 }}>
               <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
                 <Text style={{ flex: 1, fontSize: 15, fontWeight: "700", color: C.ink }}>{O.d.receipt}</Text>
-                <Mut>{`${O.d.orderNo} #${shortOrderId(order.id)}`}</Mut>
+                <Mut>{`${O.d.orderNo} #${shortId}`}</Mut>
               </View>
               {lines.map((l, i) => (
                 <KV key={`${l.name}-${i}`} k={`${l.qty}× ${l.name}`} v={usd(l.price)} />
               ))}
-              <KV k={O.r.food} v={usd(order.merchantGoodsTotal ?? lines.reduce((a, l) => a + l.price, 0))} />
+              <KV k={O.r.food} v={usd(goods)} />
+              {small > 0 ? <KV k={O.r.small} v={usd(small)} /> : null}
               <KV k={O.r.fee} v={usd(order.deliveryFee ?? 0)} />
               <KV k={O.r.total} v={usd(total)} total />
               {rFirst ? (
@@ -757,19 +920,41 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     const others = { label: O.d.others, go: (): void => router.push("/food") };
     const whatsApp = waUrl ? { label: O.t.hWa, go: (): void => void Linking.openURL(waUrl).catch(() => undefined) } : null;
     let more: React.ReactNode = null;
+    let owedAmt: string | null = null;
     if (stage === "undelivered") {
       icon = "package";
       title = O.d.notDel;
       const unreachable = snap?.undeliveredReason === "unreachable";
       sub = unreachable ? withRider(ofFmt(O.d.notDelSub, { v: venueName }), rFirst) : "";
-      more = unreachable ? <Note icon="banknote">{O.d.notDelCash}</Note> : null;
+      const attempt = order.doorProof ?? null;
+      const attemptSub = attempt ? ofFmt(OX.attemptSub, { a: snap?.dropoff.landmark ?? "", t: hhmm(attempt.takenAt) }) : "";
+      more = (
+        <>
+          {unreachable ? <Note icon="banknote">{O.d.notDelCash}</Note> : null}
+          {attempt?.photoUrl ? (
+            <PhotoRow title={OX.attemptPhoto} sub={attemptSub} uri={attempt.photoUrl} onView={() => setViewer({ title: OX.attemptPhoto, uri: attempt.photoUrl, caption: attemptSub })} />
+          ) : null}
+        </>
+      );
       primary = { label: OX.helpWithOrder, go: () => setPanel("report") };
       secondary = { label: O.t.home, go: () => goHomeClearingStack(router) };
+    } else if (reason === "all_out_of_stock") {
+      // U5 — the venue couldn't supply anything: cancelled, nothing charged.
+      icon = "package";
+      title = ofFmt(O.u.allOut, { v: venueName });
+      sub = O.u.allOutSub;
+      primary = others;
     } else if (byYou && collected) {
       // D3f — the owed balance needs a ledger line on the customer account (NEEDS BACKEND): the owed
       // sentence and the "owed" amount are not rendered until it exists.
       title = O.d.cxPaid;
-      sub = withRider(ofFmt(O.d.cxPaidSub, { p: usd(total), v: venueName }), rFirst).split(" You owe")[0] ?? "";
+      const owed = order.owedUsd ?? null;
+      const full = withRider(ofFmt(O.d.cxPaidSub, { p: usd(owed ?? total), v: venueName }), rFirst);
+      // The owed sentence and amount only with the server's ledger line (Backend B `owedUsd`).
+      // Without the rider's name the "{rider} is bringing …" sentence is dropped rather than left headless.
+      const [bringing = "", owes = ""] = full.split(/ (?=You owe)/);
+      sub = [rFirst ? bringing : null, owed != null ? owes : null].filter(Boolean).join(" ");
+      owedAmt = owed != null ? ofFmt(OX.owed, { p: usd(owed) }) : null;
       primary = whatsApp ?? others;
     } else if (byYou) {
       title = O.d.cxYou;
@@ -818,7 +1003,11 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
                   <Text style={{ fontSize: 15, fontWeight: "700", color: C.ink }}>{venueName}</Text>
                   <Mut style={TAB}>{placedAt ? ofFmt(OX.orderAt, { order: orderNo, t: hhmm(placedAt) }) : orderNo}</Mut>
                 </View>
-                {stage === "cancelled" && !(byYou && collected) ? <Text style={{ fontSize: 15, fontWeight: "700", color: C.ink }}>{OX.noCharge}</Text> : null}
+                {owedAmt ? (
+                  <Text style={{ fontSize: 15, fontWeight: "700", color: C.ink, ...TAB }}>{owedAmt}</Text>
+                ) : stage === "cancelled" && !(byYou && collected) ? (
+                  <Text style={{ fontSize: 15, fontWeight: "700", color: C.ink }}>{OX.noCharge}</Text>
+                ) : null}
               </View>
             </Card>
             {more}
@@ -843,6 +1032,30 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   const noFix = res?.noFix ?? false;
   const paused = res?.gpsPaused ?? false;
   const awaitingDoor = order.status === "en_route_dropoff" && (noFix || paused);
+
+  // U3 (no answer in time) and U4b (a removal / quantity drop, nothing to answer): said under the track.
+  let roundNote: React.ReactNode = null;
+  if (round && (round.status === "timed_out" || round.status === "applied")) {
+    const off = roundTakenOff(round);
+    if (round.status === "timed_out" && off.removed.length) {
+      roundNote = <Note icon="circle-alert">{ofFmt(OX.changes, { i: off.removed.join(", "), d: `−${usd(off.saved)}` })}</Note>;
+    } else if (round.status === "applied" && (off.removed.length || off.reduced.length)) {
+      roundNote = (
+        <Note tone="hi" icon="circle-alert">
+          {ofFmt(O.u.reduce, { v: venueName, i: [...off.removed, ...off.reduced].join(", "), p: usd(total) })}
+        </Note>
+      );
+    }
+  }
+  // T8 / T8b: "Collected · sealed bag photo · View" — first while it's fresh (T8), then under the rider card (T9).
+  const pickup = order.pickupProof ?? null;
+  const pickupCaption = pickup ? ofFmt(O.t.collectedAt, { n: rFirst, t: hhmm(pickup.takenAt), v: venueName }) : "";
+  const viewerTitle = (O.t.collected.split(" · ")[1] ?? "").replace(/^./, (c) => c.toUpperCase());
+  const pickupRow = pickup?.photoUrl ? (
+    <PhotoRow title={O.t.collected} sub={pickupCaption} uri={pickup.photoUrl} onView={() => setViewer({ title: viewerTitle, uri: pickup.photoUrl, caption: pickupCaption })} />
+  ) : null;
+  const pickedMs = pickup?.takenAt ? Date.parse(pickup.takenAt) : NaN;
+  const photoFresh = Number.isFinite(pickedMs) && nowMs - pickedMs < FRESH_PHOTO_MS;
 
   const doorRows = (): DoorRow[] => {
     const paid = handshake === "waiting_rider" || handshake === "confirmed" || handshake === "frozen";
@@ -885,7 +1098,59 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     void Share.share({ message: msg }).catch(() => undefined);
   };
 
-  switch (stage) {
+  // U2a/U2b (at accept) and U4a (mid-prep): an open substitution round is the sheet's first block until it
+  // is answered or runs out — a v2 round only; the legacy 60 s approval keeps its own case below.
+  const openRound = round && isOpenRound(round) && !AFTER_PICKUP.has(order.status) ? round : null;
+  if (openRound) {
+    const { leftMs, pct } = roundClock(openRound, nowMs);
+    const st = substitutionState(openRound, order.deliveryFee ?? 0, answers);
+    const subLines = substitutionLines(openRound);
+    const mid = openRound.kind === "mid_prep";
+    const answerIn = `${Math.round(RESTAURANTS_TIMING.substitutionWindowMs / 60_000)} ${O.c.min}`;
+    const out = leftMs <= 0;
+    tall = true;
+    content = (
+      <>
+        <AnswerHead
+          title={ofFmt(mid ? O.u.mid : O.u.t, { v: venueName })}
+          left={clock(leftMs)}
+          pct={pct}
+          sub={mid ? ofFmt(O.u.midSub, { making: SVC.making.toLowerCase(), t: answerIn }) : ofFmt(O.u.sub, { t: answerIn })}
+        />
+        {subLines.map((l, k) => (
+          <React.Fragment key={l.id}>
+            <SubCard
+              line={l}
+              answer={answers[l.id] ?? l.answer}
+              onAnswer={l.action === "swap" ? (a) => setAnswers((c) => ({ ...c, [l.id]: a })) : undefined}
+              disabled={out || subM.isPending}
+            />
+            {k === 0 ? <PeekMark /> : null}
+          </React.Fragment>
+        ))}
+        <View style={{ paddingHorizontal: 2 }}>
+          <KV k={OX.was} v={usd(st.was)} />
+          <KV k={O.u.newTotal} v={usd(st.newTotal)} total />
+        </View>
+        <LinkRow label={O.u.cancelAll} onPress={() => cancelM.mutate({ free: true })} loading={cancelM.isPending} />
+      </>
+    );
+    bar = (
+      <Bar hint={st.unanswered > 0 ? OX.answerHint : null}>
+        <Btn
+          label={ofFmt(O.u.confirm, { p: usd(st.newTotal) })}
+          disabled={st.unanswered > 0 || out}
+          loading={subM.isPending}
+          onPress={() =>
+            subM.mutate({
+              roundId: openRound.id,
+              answers: openRound.lines.filter((l) => l.action === "swap").map((l) => ({ lineId: l.id, accept: (answers[l.id] ?? l.answer) === "accept" })),
+            })
+          }
+        />
+      </Bar>
+    );
+  } else switch (stage) {
     case "confirming":
       content = (
         <>
@@ -935,7 +1200,10 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
           <AnswerHead title={ofFmt(O.u.t, { v: venueName })} left={clock(leftMs)} pct={(leftMs / ITEM_WINDOW_MS) * 100} />
           {removed.map((i, k) => (
             <React.Fragment key={`${i.name}-${k}`}>
-              <RemovalCard name={i.name} was={i.priceUsd * i.quantity} />
+              <SubCard
+                line={{ action: "remove", name: i.name, was: i.priceUsd * i.quantity, newQuantity: null, swapName: null, now: null, diff: -(i.priceUsd * i.quantity), photoUrl: null }}
+                answer={null}
+              />
               {k === 0 ? <PeekMark /> : null}
             </React.Fragment>
           ))}
@@ -958,6 +1226,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
         <>
           <StageTop title={SVC.makingT} eta={eta} />
           {track}
+          {roundNote}
           {prep ? <PrepBar making={SVC.making} minutesLeft={prep.minutesLeft} pct={prep.pct} note /> : null}
           <PeekMark />
           {venueRow}
@@ -1020,7 +1289,10 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
           <StageTop title={O.t.onWay} eta={noFix ? null : eta} sub={noFix ? O.t.etaNone : null} />
           {paused ? <Note icon="clock">{withRider(O.t.paused, rFirst)}</Note> : null}
           {track}
+          {photoFresh ? pickupRow : null}
           {riderCard}
+          {photoFresh ? null : pickupRow}
+          {awaitingDoor ? null : cancelLink(O.t.cancelFull)}
           <PeekMark />
           {/* No fix at the door: the customer must still be able to pay, so the door card follows. */}
           {awaitingDoor ? <DoorCard rows={doorRows()} /> : null}
@@ -1108,7 +1380,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
             fallbackShare={0.45}
             floor={tall ? Math.max(0, area - 100) : 0}
             bottomInset={bar ? ctaH : 0}
-            contentKey={`${stage}|${handshake}|${noFix ? "n" : ""}|${paused ? "p" : ""}|${code ? "c" : ""}`}
+            contentKey={`${stage}|${handshake}|${noFix ? "n" : ""}|${paused ? "p" : ""}|${code ? "c" : ""}|${openRound ? `u${openRound.id}` : ""}|${roundNote ? "r" : ""}|${pickupRow ? (photoFresh ? "pf" : "p") : ""}`}
             reduceMotion={reduceMotion}
             onVisibleHeight={setSheetVisible}
             radius={24}
