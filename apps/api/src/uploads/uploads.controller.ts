@@ -110,6 +110,21 @@ export class UploadsController {
     return this.mint(`banner/${profileId}/${randomUUID()}.${EXT[body.contentType]}`, body.contentType, MAX_BANNER_PHOTO_BYTES);
   }
 
+  /**
+   * Order flow v2 (BRIEF §13): a page of the customer's prescription, before placing a pharmacy order with
+   * "Prescription needed" items. Same flow as the pickup photo: PUT the bytes, then send the returned
+   * `key` in the order's `prescription.photoKeys`; placement checks the key sits under the caller's own
+   * `rx/<userId>/` namespace and verifies the object. Mintable while RX_ENABLED is off (it's only a URL);
+   * placement is what the flag refuses.
+   */
+  @Post("prescription-photo")
+  prescriptionPhoto(
+    @Body(new ZodBody(PhotoUpload)) body: z.infer<typeof PhotoUpload>,
+    @CurrentUser() userId: string,
+  ): Promise<MintedUpload> {
+    return this.mint(`rx/${userId}/${randomUUID()}.${EXT[body.contentType]}`, body.contentType);
+  }
+
   /** One minting path for every photo upload — same TTL + adapter-owned header contract; the size cap
    *  is per-call so merchant photos (D-32) can carry a tighter budget than the 8 MiB default. */
   private async mint(

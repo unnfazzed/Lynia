@@ -15,7 +15,7 @@ export const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 export const MAX_DISH_PHOTO_BYTES = 300 * 1024;
 export const MAX_BANNER_PHOTO_BYTES = 250 * 1024;
 
-export type UploadKind = "kyc" | "pickup" | "delivery-proof" | "dish" | "banner";
+export type UploadKind = "kyc" | "pickup" | "delivery-proof" | "dish" | "banner" | "rx";
 
 export interface UploadKindSpec {
   /** Top-level key prefix, including the trailing slash. Keys are `<prefix><ownerId>/<uuid>.<ext>`. */
@@ -30,6 +30,9 @@ export const UPLOAD_KINDS: Readonly<Record<UploadKind, UploadKindSpec>> = {
   dish: { prefix: "dish/", maxBytes: MAX_DISH_PHOTO_BYTES },
   // The shop's cover banner AND its logo share this namespace (apps/merchant/app/lib/menu-api.ts).
   banner: { prefix: "banner/", maxBytes: MAX_BANNER_PHOTO_BYTES },
+  // Order flow v2 (BRIEF §13): a customer's prescription page, `rx/<customerId>/…`. Read URLs are minted
+  // only for the order's customer, its pharmacy and admin (PrescriptionService.photos).
+  rx: { prefix: "rx/", maxBytes: MAX_PHOTO_BYTES },
 };
 
 /** The caller-owned namespace for a kind: `<prefix><ownerId>/`. */

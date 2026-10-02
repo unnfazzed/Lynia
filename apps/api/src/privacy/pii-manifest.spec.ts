@@ -126,6 +126,9 @@ describe("PII erasure manifest — eraseAccount references every scrub (reverse 
     merchant_invite_name: "merchantInvite.deleteMany",
     merchant_member_name: "merchantMember.deleteMany",
     "kyc-object": "deleteObject",
+    rx_photo_keys: "orderPrescription.deleteMany",
+    rx_patient_name: "orderPrescription.deleteMany",
+    rx_decline_note: "orderPrescription.deleteMany",
   };
 
   function toCamel(snake: string): string {

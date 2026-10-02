@@ -58,6 +58,7 @@ function eraseHarness(
     // Merchant web upgrade L4: the name of a business this person owns, or the business they're staff at.
     ownsBusiness?: string;
     staffAt?: string;
+    prescriptions?: Array<{ photoKeys: string[] }>;
   } = {},
 ) {
   const preflightRider = profile ? buildRider(profile.rider) : null;
@@ -117,6 +118,11 @@ function eraseHarness(
     // C2: per-dish note scrub on the erasing customer's own placed food orders (same DS15-07 class as
     // orders.note).
     merchantOrderItem: { updateMany: vi.fn(async (a: unknown) => ((calls.merchantOrderItemUpdate = a), { count: 0 })) },
+    // Order flow v2 (BRIEF §13): prescriptions on the erasing customer's own pharmacy orders.
+    orderPrescription: {
+      findMany: vi.fn(async () => extras.prescriptions ?? []),
+      deleteMany: vi.fn(async (a: unknown) => ((calls.rxDel = a), { count: (extras.prescriptions ?? []).length })),
+    },
   };
   const prisma = {
     profile: { findUnique: async () => preflightProfile },
@@ -459,6 +465,21 @@ describe("PrivacyService.eraseAccount", () => {
     expect(upd?.data).toMatchObject({ itemPhotoUrl: null });
     // …and the underlying object is purged post-commit alongside the KYC/profile photos.
     expect(deleted).toContain("items/o9/parcel.jpg");
+  });
+
+  it("Order flow v2: deletes the prescription rows on the customer's own orders AND every page object", async () => {
+    const deleted: string[] = [];
+    const storage = { deleteObject: vi.fn(async (key: string) => { deleted.push(key); }) } as unknown as StorageAdapter;
+    const { svc, calls } = eraseHarness(
+      { phone: "+263771234567", rider: {} },
+      false,
+      [{ id: "o7", pickup: {}, dropoff: {}, note: null, itemPhotoUrl: null }],
+      false,
+      { storage, prescriptions: [{ photoKeys: ["rx/p1/a.jpg", "rx/p1/b.jpg"] }] },
+    );
+    await expect(svc.eraseAccount("p1")).resolves.toEqual({ erased: true });
+    expect(calls.rxDel).toEqual({ where: { orderId: { in: ["o7"] } } });
+    expect(deleted).toEqual(expect.arrayContaining(["rx/p1/a.jpg", "rx/p1/b.jpg"]));
   });
 
   it("skips the storage purge cleanly when the profile has no stored objects", async () => {

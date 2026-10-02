@@ -280,6 +280,8 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
       "MerchantOrderController",
       "MerchantRidersController",
       "MerchantTeamController",
+      "OrderFlowCustomerController",
+      "OrderFlowMerchantController",
       "RestaurantsController",
     ]);
 

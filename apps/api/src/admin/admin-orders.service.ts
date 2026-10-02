@@ -1,5 +1,9 @@
 import { ConflictException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
+import type { PrescriptionPhotosResponse } from "@lynia/shared";
+
+/** Order flow v2 (BRIEF §13): prescription page read URLs for support. */
+const ADMIN_RX_READ_URL_TTL_SECONDS = 300;
 import {
   ACTIVE_RIDE_STATUSES,
   commissionBasis,
@@ -478,6 +482,16 @@ export class AdminOrdersService {
    * parties of one order; the admin console is a third party and must not see closed-order PII.
    * Otherwise both are masked. Returns null when not found.
    */
+  /** Order flow v2 (BRIEF §13): a pharmacy order's prescription pages for support — short-lived signed
+   *  read URLs (the same 5 minutes the customer and pharmacy get). 404 when the order has none. */
+  async getPrescriptionPhotos(orderId: string): Promise<PrescriptionPhotosResponse> {
+    const rx = await this.prisma.orderPrescription.findUnique({ where: { orderId }, select: { photoKeys: true } });
+    if (!rx || !this.storage) throw new NotFoundException("No prescription on this order");
+    const storage = this.storage;
+    const photos = await Promise.all(rx.photoKeys.map(async (key, i) => ({ page: i + 1, url: await storage.createReadUrl(key, ADMIN_RX_READ_URL_TTL_SECONDS) })));
+    return { photos, expiresInSeconds: ADMIN_RX_READ_URL_TTL_SECONDS };
+  }
+
   async getOrderDetail(id: string) {
     const order = await this.prisma.order.findUnique({
       where: { id },
