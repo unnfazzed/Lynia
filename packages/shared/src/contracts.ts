@@ -1195,6 +1195,18 @@ export type RestaurantSearchResponse = z.infer<typeof RestaurantSearchResponse>;
 export const SearchPopularResponse = z.object({ terms: z.array(z.string()) }).strict();
 export type SearchPopularResponse = z.infer<typeof SearchPopularResponse>;
 
+/** Ledger D-72: one venue's place in the "Popular" ranking — its delivered orders over the window and
+ *  their time-decayed weight (a fresh order counts 1, one a half-life old counts 0.5). */
+export const PopularVenueRank = z.object({ id: z.string().uuid(), orders: z.number().int().nonnegative(), score: z.number().nonnegative() }).strict();
+export type PopularVenueRank = z.infer<typeof PopularVenueRank>;
+
+/** Ledger D-72: `GET /restaurants/popular` and `GET /shops/popular` — the live venues of that list ranked
+ *  by recent delivered orders, most popular first. EMPTY while the corridor's order history is too thin
+ *  to rank (cold start): the client then keeps its nearest-open order. Open-now and "delivers to you"
+ *  are applied on the phone, which already owns the clock and the customer's location. */
+export const PopularVenuesResponse = z.object({ venues: z.array(PopularVenueRank) }).strict();
+export type PopularVenuesResponse = z.infer<typeof PopularVenuesResponse>;
+
 /** A single customer-facing menu item. `outOfStock` is derived server-side from `outOfStockUntil`
  *  (N-14 daily auto-reset — a past timestamp reads as back in stock, no reset job needed). Draft
  *  (photoless) dishes never appear here at all (D-31). */

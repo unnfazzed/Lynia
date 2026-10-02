@@ -853,6 +853,84 @@ describe("MerchantService customer read API (flag + pilotEnabled allowlist)", ()
     expect(grouped).toBe(false);
   });
 
+  it("searchPopular counts only delivered orders inside the 30-day window (the shared D-72 predicate)", async () => {
+    let where: Record<string, unknown> | undefined;
+    const s = svc({
+      merchant: { findMany: async () => [{ id: "m1" }] },
+      merchantOrderItem: { groupBy: async (args: { where: Record<string, unknown> }) => { where = args.where; return []; } },
+    });
+    await s.searchPopular();
+    const order = where?.order as { merchantId: unknown; status: unknown; createdAt: { gte: Date } };
+    expect(order.merchantId).toEqual({ in: ["m1"] });
+    expect(order.status).toEqual({ in: ["delivered", "completed"] });
+    expect(Date.now() - order.createdAt.gte.getTime()).toBeGreaterThanOrEqual(30 * 24 * 60 * 60 * 1000 - 1000);
+  });
+
+  describe("popularVenues (ledger D-72)", () => {
+    function popular(visible: string[], rows: Array<{ merchantId: string; orders: number | bigint; score: number }>) {
+      const calls = { findMany: [] as unknown[], raw: 0, sql: "" , values: [] as unknown[] };
+      const s = svc({
+        merchant: { findMany: async (args: unknown) => { calls.findMany.push(args); return visible.map((id) => ({ id })); } },
+        $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+          calls.raw += 1;
+          calls.sql = strings.join("?");
+          calls.values = values;
+          return rows;
+        },
+      });
+      return { s, calls };
+    }
+
+    it("ranks the list's visible venues by their time-decayed delivered orders", async () => {
+      const { s, calls } = popular(["a", "b", "c"], [
+        { merchantId: "a", orders: 4, score: 1.2 },
+        { merchantId: "b", orders: BigInt(9), score: 6.5 },
+        { merchantId: "c", orders: 3, score: 2.25 },
+      ]);
+      expect(await s.popularVenues({ pilotEnabled: true, businessType: "restaurant" }, "restaurants")).toEqual({
+        venues: [
+          { id: "b", orders: 9, score: 6.5 },
+          { id: "c", orders: 3, score: 2.25 },
+          { id: "a", orders: 4, score: 1.2 },
+        ],
+      });
+      // One aggregate, bounded to the visible set, delivered merchant orders only, inside the window.
+      expect(calls.findMany[0]).toEqual({ where: { pilotEnabled: true, businessType: "restaurant" }, select: { id: true } });
+      expect(calls.raw).toBe(1);
+      expect(calls.sql).toMatch(/merchant_id = ANY\(/);
+      expect(calls.sql).toMatch(/order_type = 'merchant'/);
+      expect(calls.sql).toMatch(/status IN \('delivered', 'completed'\)/);
+      expect(calls.sql).toMatch(/GROUP BY o\.merchant_id/);
+      expect(calls.values).toContainEqual(["a", "b", "c"]);
+    });
+
+    it("cold start: a thin corridor answers no ranking (the phone keeps nearest-open)", async () => {
+      const { s } = popular(["a", "b"], [
+        { merchantId: "a", orders: 7, score: 5 },
+        { merchantId: "b", orders: 1, score: 1 },
+      ]);
+      expect(await s.popularVenues({}, "restaurants")).toEqual({ venues: [] });
+    });
+
+    it("no visible venue: answers empty without touching orders", async () => {
+      const { s, calls } = popular([], []);
+      expect(await s.popularVenues({}, "shops:pharmacy")).toEqual({ venues: [] });
+      expect(calls.raw).toBe(0);
+    });
+
+    it("is cached per list — a second read in the TTL costs no query", async () => {
+      const { s, calls } = popular(["a", "b"], [
+        { merchantId: "a", orders: 3, score: 2 },
+        { merchantId: "b", orders: 3, score: 1 },
+      ]);
+      await s.popularVenues({}, "restaurants");
+      await s.popularVenues({}, "restaurants");
+      expect(calls.raw).toBe(1);
+      await s.popularVenues({}, "shops:shops");
+      expect(calls.raw).toBe(2);
+    });
+  });
+
   it("searchRestaurants ignores a blank / 1-char query — never dumps the corridor", async () => {
     let queried = false;
     const s = svc({ merchant: { findMany: async () => { queried = true; return []; } } });

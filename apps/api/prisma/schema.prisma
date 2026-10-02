@@ -780,6 +780,9 @@ model Order {
   // single-column index served (leftmost-prefix), so it replaces it.
   @@index([customerId, createdAt])
   @@index([riderId, createdAt])
+  // D-72: the "Popular" venue ranking (delivered orders per venue over 30 days) and the merchant's
+  // day/week money reads filter on merchant_id + a created_at range (migration 0069).
+  @@index([merchantId, createdAt])
   @@map("orders")
 }
 

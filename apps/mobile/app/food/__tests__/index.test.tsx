@@ -97,6 +97,11 @@ const resetFeedStub = () => {
 jest.mock("../../../src/query/use-restaurants", () => ({
   useRestaurantListFeed: () => mockFeedStub,
 }));
+// D-72: the "Popular" ranking. Empty (cold start) unless a test sets one.
+let mockPopularity: Map<string, { score: number; orders: number }> = new Map();
+jest.mock("../../../src/query/use-popularity", () => ({
+  usePopularity: () => mockPopularity,
+}));
 
 import RestaurantListScreen from "../index";
 
@@ -122,6 +127,7 @@ function renderRow(tree: renderer.ReactTestRenderer, index: number): renderer.Re
 beforeEach(() => {
   resetFeedStub();
   resetLocation();
+  mockPopularity = new Map();
   for (const r of mockRestaurants) r.hours = null;
 });
 
@@ -137,8 +143,25 @@ describe("RestaurantListScreen — B1 data", () => {
     const tree = mount();
     const data = tree.root.findByType(FlatList).props.data as Array<{ kind: string; v?: { id: string } }>;
     expect(data.slice(0, 3).map((e) => e.kind)).toEqual(["full", "full", "row"]);
-    // Recommended falls back to nearest-open (no ranking yet, README §7): r-0 is the closest.
+    // Recommended with no ranking (cold start) is nearest-open: r-0 is the closest.
     expect(data[0]!.v!.id).toBe("r-0");
+  });
+
+  it("D-72: Recommended leads with the most popular open venues, then nearest first", () => {
+    mockPopularity = new Map([
+      ["r-30", { score: 2, orders: 4 }],
+      ["r-12", { score: 5, orders: 9 }],
+    ]);
+    const tree = mount();
+    const data = tree.root.findByType(FlatList).props.data as Array<{ kind: string; v?: { id: string } }>;
+    expect(data.slice(0, 4).map((e) => e.v!.id)).toEqual(["r-12", "r-30", "r-0", "r-1"]);
+  });
+
+  it("D-72: a ranked venue on a page not loaded yet drains the next page", () => {
+    mockFeedStub.hasMore = true;
+    mockPopularity = new Map([["r-99", { score: 3, orders: 5 }]]);
+    mount();
+    expect(mockFeedStub.loadMore).toHaveBeenCalled();
   });
 
   it("puts closed venues in a 'Closed now' group at the end instead of hiding them", () => {

@@ -20,6 +20,7 @@ import type {
   RestaurantMenuResponse,
   RestaurantSearchDish,
   SearchPopularResponse,
+  PopularVenuesResponse,
   RestaurantSearchResponse,
   ShopCatalogueResponse,
   ShopListItem,
@@ -59,6 +60,20 @@ import { PrismaService } from "../prisma/prisma.service";
 import { lockMembershipsTx, resolveMerchantAccess } from "./merchant-access";
 import { findBookingAccountId } from "./booking-account";
 import { CUSTOMER_VISIBLE_RESTAURANT, isDishOutOfStock as isOutOfStock, resolveOwnMerchantId } from "./merchant-lookup.util";
+import {
+  POPULAR_MIN_ORDERS,
+  POPULAR_ORDER_STATUSES,
+  popularSince,
+  rankVenuesByPopularity,
+  VENUE_POPULARITY_HALF_LIFE_MS,
+  type VenueOrderAggregate,
+} from "./venue-popularity";
+
+/** D-72: the delivered orders inside the popularity window at these venues — the one predicate every
+ *  popularity read (dish rail, search chips) filters on. The venue ranking's SQL mirrors it. */
+function deliveredOrdersAt(merchantId: string | { in: string[] }, now = new Date()): Prisma.OrderWhereInput {
+  return { merchantId, status: { in: [...POPULAR_ORDER_STATUSES] }, createdAt: { gte: popularSince(now) } };
+}
 
 type MerchantWithOwner = Prisma.MerchantGetPayload<{ include: { ownerProfile: { select: { phone: true } } } }>;
 /** The caller's own business, plus the caller's role on it (L1: `MerchantProfileResponse.myRole`) and
@@ -107,10 +122,10 @@ const RESTAURANTS_PAGE_SIZE = 20;
 // #673 search: cap each of the PLACES / DISHES result sets, and ignore blank/1-char queries so a
 // stray keystroke never dumps the corridor (the search screen shows results only once typing).
 const RESTAURANTS_SEARCH_LIMIT = 20;
-/** Browse v2 (D-57) "Popular" rail: a kitchen's most-ordered dishes over this window. */
-const POPULAR_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
-/** A dish needs this many delivered orders in the window to count as popular — one lucky order isn't. */
-const POPULAR_MIN_ORDERS = 3;
+// The popularity window, statuses and minimum live in venue-popularity.ts (ledger D-72): one
+// definition of "popular" for the dish rail, the X1 search chips and the venue ranking.
+/** Venue ranking (D-72): served from cache this long — it moves by the day, not by the minute. */
+const VENUE_POPULARITY_CACHE_TTL_MS = 10 * 60 * 1000;
 /** X1 "Popular near you" shows at most this many search chips. */
 const SEARCH_POPULAR_MAX = 5;
 /** The rail holds at most this many dishes, and is dropped below two (a rail of one is not a rail). */
@@ -161,6 +176,11 @@ export class MerchantService {
     l2: () => this.l2?.resolve() ?? null,
     l2KeyPrefix: "mc:mphoto:",
   });
+
+  // D-72: the venue ranking, per list (restaurants / each shop section). L1 only: a few minutes of
+  // staleness is invisible in a ranking that moves by the day, and it bounds the read to one aggregate
+  // per list per instance per TTL.
+  private readonly popularityCache = new MicroCache<PopularVenuesResponse>(8);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -635,6 +655,37 @@ export class MerchantService {
     };
   }
 
+  /**
+   * Ledger D-72: the venues of one customer list (`where` — the restaurant rule, or a shop section's)
+   * ranked by their delivered orders over the last 30 days, each order weighted 0.5^(age / 7 days).
+   * ONE aggregate over `orders`, served by the (merchant_id, created_at) index, cached per list. Empty
+   * while fewer than two venues have three delivered orders (cold start) — the phone then keeps its
+   * nearest-open order. Open-now and "delivers to you" are the phone's to apply: it owns the clock and
+   * the customer's location, and the list it ranks already carries both.
+   */
+  async popularVenues(where: Prisma.MerchantWhereInput, cacheKey: string): Promise<PopularVenuesResponse> {
+    return this.popularityCache.getOrLoad(cacheKey, VENUE_POPULARITY_CACHE_TTL_MS, async () => {
+      const visible = await this.prisma.merchant.findMany({ where, select: { id: true } });
+      if (visible.length === 0) return { venues: [] };
+      const now = new Date();
+      // Ages in seconds against the epoch: `created_at` is a UTC `timestamp`, whose EXTRACT(EPOCH) is
+      // the same clock as JS's getTime(). GREATEST(0, …) keeps a clock-skewed future row at weight 1.
+      const nowSec = now.getTime() / 1000;
+      const halfLifeSec = VENUE_POPULARITY_HALF_LIFE_MS / 1000;
+      const rows = await this.prisma.$queryRaw<VenueOrderAggregate[]>`
+        SELECT o.merchant_id::text AS "merchantId",
+               COUNT(*)::int AS "orders",
+               SUM(POWER(0.5, GREATEST(0, ${nowSec}::float8 - EXTRACT(EPOCH FROM o.created_at)::float8) / ${halfLifeSec}::float8))::float8 AS "score"
+          FROM orders o
+         WHERE o.merchant_id = ANY(${visible.map((v) => v.id)}::uuid[])
+           AND o.order_type = 'merchant'
+           AND o.status IN ('delivered', 'completed')
+           AND o.created_at >= ${popularSince(now)}
+         GROUP BY o.merchant_id`;
+      return { venues: rankVenuesByPopularity(rows.map((r) => ({ merchantId: r.merchantId, orders: Number(r.orders), score: Number(r.score) }))) };
+    });
+  }
+
   /** Browse v2 X1 (D-57) "Popular near you": the names of the dishes that delivered orders at live
    *  restaurants picked most over the last 30 days — at most five, most popular first, each needing
    *  three orders or more. Restaurants only: shops take no app orders until Order flow v2 (D-58). A
@@ -646,7 +697,7 @@ export class MerchantService {
       by: ["dishId"],
       where: {
         dishId: { not: null },
-        order: { merchantId: { in: venues.map((v) => v.id) }, status: { in: ["delivered", "completed"] }, createdAt: { gte: new Date(Date.now() - POPULAR_WINDOW_MS) } },
+        order: deliveredOrdersAt({ in: venues.map((v) => v.id) }),
       },
       _count: { orderId: true },
     });
@@ -740,7 +791,7 @@ export class MerchantService {
       by: ["dishId"],
       where: {
         dishId: { in: menuDishIds },
-        order: { merchantId, status: { in: ["delivered", "completed"] }, createdAt: { gte: new Date(Date.now() - POPULAR_WINDOW_MS) } },
+        order: deliveredOrdersAt(merchantId),
       },
       _count: { orderId: true },
     });

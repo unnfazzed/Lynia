@@ -3696,3 +3696,34 @@ everything named restaurants like that."*
 Scope is the Home tile label only. Everything else keeps "Restaurants" verbatim: the "Popular
 restaurants" rail, the "Restaurants are coming soon" sheet, the Browse v2 list, search, storefront and
 order screens (`src/ui/browse/copy.ts`), and code names (`RestaurantsSticker`, routes).
+
+## D-72 · "Popular" is a real ranking: recent delivered orders, not the nearest open venues — APPROVED (2026-10-02)
+
+**Owner decision (2026-10-02):** "Popular restaurants" / "Popular shops" on Home and the browse lists'
+default "Recommended" sort meant "the nearest open venues". Both handoffs list a real ranking as NEEDS
+BACKEND (Calm Mint v2 README §5 "Popular ranking"; Browse v2 README §7 "A Recommended ranking"). This
+builds it. **No drawn element, string or geometry changes**; only the order of the cards.
+
+**The formula.** For each venue the customer's list can see (the restaurant rule, or one shop section's):
+
+    score = Σ over its delivered orders in the last 30 days of 0.5 ^ (age / 7 days)
+
+- "Delivered" = `delivered` or `completed`. Cancelled and undelivered orders don't count.
+- A venue needs **3 or more** such orders to rank. The ranking engages only when **2 or more** venues
+  qualify. Below that (cold start, which is today's closed test) the server answers no ranking.
+- Tie-break: score, then the raw order count, then distance on the phone.
+- On the phone, only **open** venues that **deliver to the customer** rank: the venue has its pin, and the
+  customer is inside the service area (or not located yet; D-61, no distance cap). Ranked venues lead.
+  Every other open venue follows **nearest first**, then the closed group, as before. With no ranking the
+  order is exactly the old nearest-open order. A closed venue never ranks, however popular.
+- The explicit **Nearest**, **Top rated** and **Lowest fee** sorts are unchanged.
+
+**Where.** `GET /restaurants/popular` and `GET /shops/popular?service=` (`MerchantService.popularVenues`).
+Each is one aggregate over `orders`, served by the new `(merchant_id, created_at)` index (migration
+`0069_orders_merchant_created_at_popularity_index`, expand-only, `CONCURRENTLY`). It is cached for 10
+minutes per list. The 30-day window, the delivered statuses and the 3-order minimum are shared with the
+X1 "Popular near you" search chips and the storefront "Popular" dish rail (D-57) in
+`apps/api/src/merchant/venue-popularity.ts`, so "popular" has one definition. Phone:
+`src/logic/popularity.ts`, `popularNearYou(…, popularity)`, `browseList(…, popularity)`. A failed or
+malformed read means no ranking. A list whose ranking names a venue on a page it hasn't loaded fetches
+the next page, so a popular venue on page 2 can still lead.

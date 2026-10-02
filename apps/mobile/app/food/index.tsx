@@ -10,6 +10,8 @@ import { useClaimOfflineBanner } from "../../src/net/offline-banner-owner";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { useReachable } from "../../src/net/use-reachable";
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
+import { usePopularity } from "../../src/query/use-popularity";
+import { rankedVenueMissing } from "../../src/logic/popularity";
 import { B, fmt } from "../../src/ui/browse/copy";
 import {
   BrowseButton,
@@ -49,6 +51,8 @@ export default function RestaurantListScreen(): React.ReactElement {
   const router = useRouter();
   const { restaurantsEnabled } = useFeatureFlags();
   const feed = useRestaurantListFeed(restaurantsEnabled);
+  // D-72: "Recommended" is the popularity ranking (nearest-open until there's enough history to rank).
+  const popularity = usePopularity("restaurants", restaurantsEnabled);
   const location = useHomeLocation();
   const now = useNow();
   const reachable = useReachable();
@@ -72,15 +76,17 @@ export default function RestaurantListScreen(): React.ReactElement {
   }, [hasLocation, filters.sort]);
 
   // A filter runs over the pages loaded so far; drain the rest while one is set so the list never
-  // under-reports (B-O10). The idle list keeps paging lazily on scroll.
-  const narrowing = filters.category != null || filters.free || filters.sort !== "recommended";
+  // under-reports (B-O10) — and while the ranking names a venue not loaded yet, so it can lead (D-72).
+  // The idle list keeps paging lazily on scroll.
+  const narrowing =
+    filters.category != null || filters.free || filters.sort !== "recommended" || rankedVenueMissing(popularity, feed.restaurants);
   useEffect(() => {
     if (narrowing && feed.hasMore && !feed.isLoadingMore) feed.loadMore();
   }, [narrowing, feed.hasMore, feed.isLoadingMore, feed.loadMore]);
 
   const venues = useMemo(() => (feed.restaurants ?? []).map((r) => restaurantVenue(r, location.point, now)), [feed.restaurants, location.point, now]);
   const categories = useMemo(() => browseCategories(venues), [venues]);
-  const list = useMemo(() => browseList(venues, filters), [venues, filters]);
+  const list = useMemo(() => browseList(venues, filters, popularity), [venues, filters, popularity]);
   const showFree = anyFreeDelivery(venues);
   const total = list.open.length + list.closed.length;
   const range = browseRange(list.open);
