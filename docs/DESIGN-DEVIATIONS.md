@@ -3657,3 +3657,17 @@ frame + `app/splash.view.tsx`). Those gallery screens are SUPERSEDED and not ali
 | 4 | Card shadow `0 18px 40px -12px rgba(0,0,0,.3)` | One-layer RN shadow (offset 18, radius 20, opacity .3, elevation 12) | The app runs the old architecture: no `boxShadow`, no spread. |
 | 5 | Orbit's CSS dashed border | SVG circle, `strokeDasharray 6 6` | Dashed rounded borders aren't reliable on Android. |
 | 6 | Splash starts on plain green | ~~The native launch frame still shows the old dove + wordmark lockup~~ **Resolved (owner, 2026-10-02: "remove it entirely the old dove and wordmark"):** the native launch screen is now plain green (`assets/splash-blank.xml` / `splash-blank.png`); the lockup generator (`src/ui/splash-lockup.ts`, `scripts/build-splash-icon.mjs`) and its assets are deleted. | Native config: reaches devices only in the next store build (none dispatched — owner: "dont build an expo"). Until then installed binaries keep the old frame. |
+
+## D-65 · The Home service tile reads "Food", not "Restaurants" — APPROVED (2026-10-02)
+
+**Owner instruction, this session (2026-10-02):** *"Rename restaurants on home to Food but keep
+everything named restaurants like that."*
+
+| Where | Handoff (Calm Mint v2 `H.tiles.food`) | App |
+|---|---|---|
+| Home service tile (H1–H5, 360px) | "Restaurants" | "Food" (and its accessibility label) |
+| Home service tile (H3, 320px) | "Food" | "Food" (unchanged) |
+
+Scope is the Home tile label only. Everything else keeps "Restaurants" verbatim: the "Popular
+restaurants" rail, the "Restaurants are coming soon" sheet, the Browse v2 list, search, storefront and
+order screens (`src/ui/browse/copy.ts`), and code names (`RestaurantsSticker`, routes).
