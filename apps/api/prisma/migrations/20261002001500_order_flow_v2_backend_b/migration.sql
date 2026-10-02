@@ -59,7 +59,9 @@ CREATE TABLE IF NOT EXISTS "customer_balance_entries" (
   "applied_at" TIMESTAMP(3),
   "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "customer_balance_entries_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "customer_balance_entries_profile_id_fkey" FOREIGN KEY ("profile_id") REFERENCES "profiles"("id") ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT "customer_balance_entries_profile_id_fkey" FOREIGN KEY ("profile_id") REFERENCES "profiles"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "customer_balance_entries_source_order_id_fkey" FOREIGN KEY ("source_order_id") REFERENCES "orders"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "customer_balance_entries_applied_order_id_fkey" FOREIGN KEY ("applied_order_id") REFERENCES "orders"("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "customer_balance_entries_source_order_id_key" ON "customer_balance_entries" ("source_order_id");
 CREATE INDEX IF NOT EXISTS "customer_balance_entries_profile_id_idx" ON "customer_balance_entries" ("profile_id");

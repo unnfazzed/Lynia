@@ -8,6 +8,7 @@ import {
   NotFoundException,
   type OnModuleDestroy,
   type OnModuleInit,
+  Optional,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import {
@@ -38,6 +39,9 @@ import {
   smallOrderFeeForSubtotal,
   toCents,
   type Waypoint,
+  type CustomerBalanceResponse,
+  type MerchantOrderPrescriptionView,
+  type RxDeclineReason,
 } from "@lynia/shared";
 import { PAYMENT_RAIL, type PaymentRail } from "../adapters/payments/payment-rail.interface";
 import { TokenService } from "../auth/token.service";
@@ -47,7 +51,12 @@ import { TrackingGateway } from "../tracking/tracking.gateway";
 import { FoodDebtService } from "./food-debt.service";
 import { confirmKitchen, editOrderItems } from "./food-order-ops";
 import { harareWallClock } from "./harare-clock";
-import { CUSTOMER_VISIBLE_RESTAURANT, isDishOutOfStock, notifyFoodQueueChanged, resolveOwnMerchantId } from "./merchant-lookup.util";
+import { ENV } from "../config/config.module";
+import type { Env } from "../config/env";
+import { carryBalance, customerBalance, openBalance } from "./customer-balance";
+import { CUSTOMER_VISIBLE_RESTAURANT, customerVisibleShop, isDishOutOfStock, notifyFoodQueueChanged, resolveOwnMerchantId } from "./merchant-lookup.util";
+import { OrderScheduleService } from "./order-schedule.service";
+import { PrescriptionService } from "./prescription.service";
 
 // D-24 manual rail: the customer needs the shop's OWN payment-receiving number to send mobile
 // money to (never masked — D-17's masking is for a THIRD PARTY's view of the merchant, e.g. a
@@ -56,7 +65,14 @@ import { CUSTOMER_VISIBLE_RESTAURANT, isDishOutOfStock, notifyFoodQueueChanged, 
 // merchant account's own registered phone when no pickup-point contactPhone is set yet (toResponse).
 const ORDER_WITH_ITEMS_INCLUDE = {
   merchantItems: true,
-  merchant: { select: { location: true, showPhoneToCustomers: true, ownerProfile: { select: { phone: true } } } },
+  // Order flow v2: businessType/shopKind tell every UI Cooking vs Packing and the venue tile colour.
+  merchant: { select: { location: true, showPhoneToCustomers: true, businessType: true, shopKind: true, ownerProfile: { select: { phone: true } } } },
+  // Order flow v2 (ledger D-59): the scheduled slot, the prescription, and the D3f owed balance (what this
+  // order left owed, and what earlier balance it carries).
+  schedule: true,
+  prescription: true,
+  owedBalance: { select: { amount: true } },
+  carriedBalance: { select: { amount: true } },
   // #671: the assigned rider's public identity for the food live tracker's "rider secured" card.
   // Name lives on the Profile, everything else (plate=bike_reg, vehicle, rating, trips, KYC, photo)
   // on the Rider. Null until dispatch assigns a rider — toResponse omits the whole block then.
@@ -75,6 +91,9 @@ const ORDER_WITH_ITEMS_INCLUDE = {
   },
 } satisfies Prisma.OrderInclude;
 type OrderWithItems = Prisma.OrderGetPayload<{ include: typeof ORDER_WITH_ITEMS_INCLUDE }>;
+
+/** No env injected (hand-built unit harnesses): both shop sections read as off. */
+const SECTIONS_OFF = { SHOPS_ENABLED: "false", PHARMACY_ENABLED: "false" } as const;
 
 /** D-48: the statuses after the rider has the food — when the merchant may close its side. */
 const AFTER_PICKUP_STATUSES: ReadonlySet<string> = new Set(["picked_up", "en_route_dropoff", "delivered", "completed", "undelivered"]);
@@ -111,6 +130,12 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     // it returns `pending` and never fabricates a `confirmed`, so wiring it here can never mark an
     // order paid without a real rail. The idempotency anchor is the order id (topUpId param).
     @Inject(PAYMENT_RAIL) private readonly paymentRail: PaymentRail,
+    // Order flow v2 (ledger D-59). Optional so the hand-built unit harnesses stay valid: without an env the
+    // shop sections and RX_ENABLED read as off; without the two services, a placement that needs them
+    // (a scheduled or prescription order) is refused.
+    @Optional() @Inject(ENV) private readonly env?: Env,
+    @Optional() private readonly schedule?: OrderScheduleService,
+    @Optional() private readonly prescriptions?: PrescriptionService,
   ) {}
 
   /** C5 kitchen socket queue: best-effort push telling the merchant's tablet(s) something on their
@@ -196,27 +221,43 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       if (existing) return this.toResponse(existing);
     }
 
-    // Shops never take food orders (plan 2026-09-29 D8) — same visibility rule as the restaurant list.
+    // Order flow v2 (ledger D-59): restaurants AND shops/pharmacies take orders here — a live restaurant,
+    // or a live shop whose section (SHOPS_ENABLED / PHARMACY_ENABLED) is on. Same rule as the browse lists.
     const merchant = await this.prisma.merchant.findFirst({
-      where: { id: merchantId, ...CUSTOMER_VISIBLE_RESTAURANT },
-      select: { id: true, location: true, closedUntil: true, hours: true, autoAccept: true, busyMode: true, prepBaselineMinutes: true },
+      where: { id: merchantId, OR: [CUSTOMER_VISIBLE_RESTAURANT, customerVisibleShop(this.env ?? SECTIONS_OFF)] },
+      select: {
+        id: true,
+        location: true,
+        closedUntil: true,
+        hours: true,
+        autoAccept: true,
+        busyMode: true,
+        prepBaselineMinutes: true,
+        businessType: true,
+        shopKind: true,
+      },
     });
     if (!merchant) throw new NotFoundException("Restaurant not found");
+    const noun = merchant.businessType === "shop" ? (merchant.shopKind === "pharmacy" ? "pharmacy" : "shop") : "restaurant";
+    const location = merchant.location as Waypoint | null;
+    if (!location) throw new ConflictException(`This ${noun} isn't ready to take orders yet`);
+    const distanceKm = roundToCents(haversineKm(location.point, body.dropoff.point));
+    // BRIEF §12: a scheduled order names one of the venue's offered slots. It may be placed while the venue
+    // is closed ("Order for when they open") — the slot itself is inside its hours.
+    const slot = body.scheduledFor ? await this.scheduleService().resolveSlot(merchant, body.scheduledFor, distanceKm) : null;
     // D-48: closed by hand from the merchant's Orders header. Auto-accept safeguard 3: the weekly hours
     // are enforced here too, in Harare time — the app's own check is advisory and an auto-accepted order
     // at a closed kitchen would be cooked by nobody. No hours set at all reads as open (same fail-open
     // rule as every client, packages/shared restaurant-hours.ts).
     const nowWall = harareWallClock(new Date());
     const hours = effectiveMerchantHours((merchant.hours as MerchantHours | null) ?? null, merchant.closedUntil, new Date());
-    if ((merchant.closedUntil && merchant.closedUntil.getTime() > Date.now()) || !isMerchantOpenNow(hours, nowWall)) {
+    if (!slot && ((merchant.closedUntil && merchant.closedUntil.getTime() > Date.now()) || !isMerchantOpenNow(hours, nowWall))) {
       const next = nextOpenDescription(hours, nowWall);
       throw new ConflictException({
         reason: "restaurant_closed",
-        message: next ? `This restaurant is closed right now. ${next}.` : "This restaurant is closed right now.",
+        message: next ? `This ${noun} is closed right now. ${next}.` : `This ${noun} is closed right now.`,
       });
     }
-    const location = merchant.location as Waypoint | null;
-    if (!location) throw new ConflictException("This restaurant isn't ready to take orders yet");
 
     const dishIds = [...new Set(body.items.map((i) => i.dishId))];
     const dishes = await this.prisma.merchantDish.findMany({ where: { id: { in: dishIds }, merchantId } });
@@ -227,20 +268,32 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       if (dish.isDraft) throw new ConflictException(`${dish.name} isn't available yet`);
       if (isDishOutOfStock(dish)) throw new ConflictException(`${dish.name} is out of stock right now`);
     }
+    // BRIEF §13: "Prescription needed" lines need RX_ENABLED, a pharmacy and a prescription.
+    const rxLines = body.items.filter((i) => dishById.get(i.dishId)!.rxRequired).length;
+    const prescription =
+      rxLines > 0 || body.prescription
+        ? await this.prescriptionService().prepareForPlacement(customerId, merchant.shopKind, rxLines, body.prescription)
+        : null;
+    // BRIEF D3f: an earlier cancel-after-collection balance rides on this order as its own line.
+    const owed = await openBalance(this.prisma, customerId);
 
     const rawSubtotal = addMoney(...body.items.map((i) => lineTotal(dishById.get(i.dishId)!.priceUsd, i.quantity)));
     const smallOrderFee = smallOrderFeeForSubtotal(rawSubtotal);
     const merchantGoodsTotal = addMoney(rawSubtotal, smallOrderFee);
-    const distanceKm = roundToCents(haversineKm(location.point, body.dropoff.point));
     const deliveryFee = deliveryFeeForDistance(distanceKm);
     const agreedFare = addMoney(merchantGoodsTotal, deliveryFee);
     const itemDesc = summarizeMerchantItems(body.items.map((i) => ({ name: dishById.get(i.dishId)!.name, quantity: i.quantity })));
     // Auto-accept: a cash order at an auto-accept restaurant skips the accept window and goes straight
     // to cooking at the restaurant's usual prep time. No rider is sent until the kitchen is confirmed
     // (sweepAutoAccepted). A legacy WALLET order still takes the normal accept → payment path.
-    const autoAccept = merchant.autoAccept && body.paymentMethod === "cash";
+    // Order flow v2 (README per-service table): shops and pharmacies are never auto-accept — 3 minutes to
+    // accept, like a manual restaurant. A scheduled order waits (awaiting_accept, no deadline) until the
+    // schedule sweep rings it at `ringsAt` (OrderScheduleService), which applies this same rule then.
+    const autoAccept = merchant.businessType !== "shop" && merchant.autoAccept && body.paymentMethod === "cash" && !slot;
     const now = new Date();
-    const phase = autoAccept
+    const phase = slot
+      ? { merchantPhase: "awaiting_accept" as const, acceptDeadlineAt: null }
+      : autoAccept
       ? {
           merchantPhase: "preparing" as const,
           acceptDeadlineAt: null,
@@ -251,7 +304,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       : { merchantPhase: "awaiting_accept" as const, acceptDeadlineAt: new Date(now.getTime() + RESTAURANTS_TIMING.acceptWindowMs) };
 
     try {
-      const created = await this.prisma.order.create({
+      const create = (db: Pick<Prisma.TransactionClient, "order">) => db.order.create({
         data: {
           orderType: "merchant",
           customerId,
@@ -288,13 +341,25 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
                 note: i.note ?? null,
                 // Auto-accepted lines are kept as ordered until the restaurant changes them by phone.
                 ...(autoAccept ? { available: true } : {}),
+                ...(dish.rxRequired ? { rxRequired: true } : {}),
               };
             }),
           },
+          ...(slot ? { schedule: { create: { merchantId, scheduledFor: slot.scheduledFor, ringsAt: slot.ringsAt } } } : {}),
+          ...(prescription ? { prescription: { create: prescription } } : {}),
         },
         include: ORDER_WITH_ITEMS_INCLUDE,
       });
-      this.notifyQueue(merchantId, created.id);
+      const created =
+        owed.entries.length === 0
+          ? await create(this.prisma)
+          : await this.prisma.$transaction(async (tx) => {
+              const order = await create(tx);
+              await carryBalance(tx, owed.entries, order.id);
+              return { ...order, carriedBalance: [{ amount: new Prisma.Decimal(owed.amount) }] };
+            });
+      // A scheduled order stays off the merchant's live queue until it rings — nothing to push yet.
+      if (!slot) this.notifyQueue(merchantId, created.id);
       return this.toResponse(created);
     } catch (err) {
       // The idempotencyKey pre-check above races a concurrent duplicate submit; the
@@ -361,7 +426,10 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     // Auto-accept: until the kitchen is confirmed, "cooking" hasn't really started — the customer may
     // still cancel free, exactly as they could while waiting for a manual accept.
     const unconfirmedAuto = order.autoAccepted && !order.kitchenConfirmedAt && order.merchantPhase === "preparing";
-    if (!unconfirmedAuto && (!order.merchantPhase || !cancellable.has(order.merchantPhase))) {
+    // BRIEF §13 "Cancel the rest — free": after the pharmacist declined the prescription, the customer may
+    // drop what's left while it's still being packed.
+    const rxDeclinedRest = order.prescription?.status === "declined" && order.merchantPhase === "preparing";
+    if (!unconfirmedAuto && !rxDeclinedRest && (!order.merchantPhase || !cancellable.has(order.merchantPhase))) {
       throw new ConflictException("This order can't be cancelled anymore — the kitchen has started");
     }
     const claimed = await this.prisma.order.updateMany({
@@ -369,7 +437,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         id: orderId,
         status: "requested",
         merchantPhase: order.merchantPhase,
-        ...(unconfirmedAuto ? { kitchenConfirmedAt: null } : {}),
+        ...(unconfirmedAuto && !rxDeclinedRest ? { kitchenConfirmedAt: null } : {}),
       },
       data: { status: "cancelled", cancelledAt: new Date(), cancelledBy: customerId, merchantPhase: null },
     });
@@ -471,6 +539,9 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         orderType: "merchant",
         // D-48: an order the merchant closed its side of (no cash / mark completed) leaves the board.
         OR: [{ status: { in: [...QUEUE_VISIBLE_STATUSES] } }, { debtStatus: "open", merchantClosedAt: null }],
+        // Order flow v2 (BRIEF §12): a scheduled order joins the live board when it rings, like a new
+        // order. Until then it's on the Scheduled list (listScheduled).
+        NOT: { schedule: { is: { rungAt: null } } },
       },
       orderBy: { createdAt: "asc" },
       include: ORDER_WITH_ITEMS_INCLUDE,
@@ -552,6 +623,9 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
 
     const order = await this.findOwnAsMerchant(profileId, orderId);
     if (order.merchantPhase !== "awaiting_accept") throw new ConflictException("This order can no longer be accepted");
+    if (order.schedule && !order.schedule.rungAt) {
+      throw new ConflictException({ reason: "scheduled_not_started", message: "This scheduled order rings when it's time to start it." });
+    }
 
     const unavailable = new Set(body.unavailableDishIds ?? []);
     if (unavailable.size > 0) {
@@ -702,6 +776,10 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
   async markReady(profileId: string, orderId: string): Promise<MerchantOrderResponse> {
     const order = await this.findOwnAsMerchant(profileId, orderId);
     if (order.merchantPhase !== "preparing") throw new ConflictException("This order isn't in prep");
+    // BRIEF §13: the pharmacist checks the prescription before packing ends.
+    if (order.prescription?.status === "pending") {
+      throw new ConflictException({ reason: "prescription_pending", message: "Check the prescription before marking the order packed." });
+    }
     const pickupCode = this.tokens.randomPickupCode();
     const claimed = await this.prisma.order.updateMany({
       where: { id: orderId, status: "requested", merchantPhase: "preparing" },
@@ -1042,7 +1120,9 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         autoAccepted: true,
         kitchenConfirmedAt: null,
         kitchenEscalatedAt: null,
-        createdAt: { lt: new Date(now.getTime() - RESTAURANTS_AUTO_ACCEPT.escalateAfterMs) },
+        // prepStartedAt, not createdAt: the same instant for an ASAP order, but a scheduled order starts
+        // cooking when it rings (OrderScheduleService), maybe a day after it was placed.
+        prepStartedAt: { lt: new Date(now.getTime() - RESTAURANTS_AUTO_ACCEPT.escalateAfterMs) },
       },
       data: { kitchenEscalatedAt: now },
     });
@@ -1055,7 +1135,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         status: "requested",
         autoAccepted: true,
         kitchenConfirmedAt: null,
-        createdAt: { lt: new Date(now.getTime() - RESTAURANTS_AUTO_ACCEPT.autoCancelAfterMs) },
+        prepStartedAt: { lt: new Date(now.getTime() - RESTAURANTS_AUTO_ACCEPT.autoCancelAfterMs) },
       },
       select: { id: true, merchantId: true },
       take: 200,
@@ -1095,6 +1175,56 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       }
     }
     return { escalated: escalated.count, released, cancelled };
+  }
+
+  // ── Order flow v2 (ledger D-59, backend B) ──────────────────────────────────────────────────────────
+
+  private scheduleService(): OrderScheduleService {
+    if (!this.schedule) throw new ConflictException({ reason: "slot_unavailable", message: "Scheduled orders aren't available." });
+    return this.schedule;
+  }
+
+  private prescriptionService(): PrescriptionService {
+    if (!this.prescriptions) throw new ConflictException({ reason: "rx_unavailable", message: "Prescription medicines can't be ordered in the app yet." });
+    return this.prescriptions;
+  }
+
+  /** BRIEF §12 "Change time" (T13a): move a scheduled order to another offered slot, before it rings. */
+  async changeSchedule(orderId: string, customerId: string, scheduledFor: string): Promise<MerchantOrderResponse> {
+    const order = await this.findOwnAsCustomer(orderId, customerId);
+    if (!order.schedule) throw new ConflictException({ reason: "not_scheduled", message: "This order isn't scheduled." });
+    if (order.schedule.rungAt || order.status !== "requested" || order.merchantPhase !== "awaiting_accept") {
+      throw new ConflictException({ reason: "scheduled_started", message: "The order has started — its time can't change now." });
+    }
+    const venue = await this.prisma.merchant.findUnique({
+      where: { id: order.merchantId! },
+      select: { id: true, hours: true, closedUntil: true, prepBaselineMinutes: true, location: true },
+    });
+    if (!venue) throw new NotFoundException("Order not found");
+    const slot = await this.scheduleService().resolveSlot(venue, scheduledFor, order.distanceKm, orderId);
+    const moved = await this.prisma.orderSchedule.updateMany({
+      where: { orderId, rungAt: null },
+      data: { scheduledFor: slot.scheduledFor, ringsAt: slot.ringsAt },
+    });
+    if (moved.count === 0) throw new ConflictException({ reason: "scheduled_started", message: "The order has started — its time can't change now." });
+    return this.toResponse(await this.mustFindWithItems(orderId));
+  }
+
+  /** M7a: the merchant's Scheduled list — orders waiting for their ring time, soonest first. */
+  async listScheduled(profileId: string): Promise<MerchantOrderResponse[]> {
+    const merchantId = await this.ownMerchantId(profileId);
+    const orders = await this.prisma.order.findMany({
+      where: { merchantId, orderType: "merchant", status: "requested", schedule: { is: { rungAt: null } } },
+      orderBy: { schedule: { scheduledFor: "asc" } },
+      include: ORDER_WITH_ITEMS_INCLUDE,
+      take: 200,
+    });
+    return orders.map((o) => this.forMerchant(o));
+  }
+
+  /** BRIEF D3f: the customer's owed balance (`GET /restaurants/balance`). */
+  async myBalance(customerId: string): Promise<CustomerBalanceResponse> {
+    return customerBalance(this.prisma, customerId);
   }
 
   // ── Shared lookups + mapping ─────────────────────────────────────────────────────────────────────
@@ -1166,6 +1296,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       quantity: it.quantity,
       note: it.note,
       available: it.available,
+      ...(it.rxRequired ? { rxRequired: true } : {}),
     }));
     const merchantGoodsTotal = order.merchantGoodsTotal != null ? Number(order.merchantGoodsTotal) : null;
     const deliveryFee = order.deliveryFee != null ? Number(order.deliveryFee) : null;
@@ -1175,6 +1306,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     // restaurant agreed to show it to its customers.
     const merchantPaymentPhone = order.merchantPaymentMethod === "wallet" ? shopPhone : null;
     const restaurantPhone = order.merchant?.showPhoneToCustomers ? shopPhone : null;
+    const previousBalanceUsd = addMoney(0, ...(order.carriedBalance ?? []).map((b) => Number(b.amount)));
     const response: MerchantOrderResponse = {
       id: order.id,
       merchantId: order.merchantId!,
@@ -1259,7 +1391,9 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       kitchenConfirmedBy: (order.kitchenConfirmedBy as MerchantOrderResponse["kitchenConfirmedBy"]) ?? null,
       itemsEditedAt: order.itemsEditedAt?.toISOString() ?? null,
       restaurantPhone,
+      ...orderFlowV2Fields(order),
     };
+    if (previousBalanceUsd > 0 && response.total != null) response.total = addMoney(response.total, previousBalanceUsd);
     // A-O14 (LC-A06): the doorstep-handshake/debt-ledger/refund fields above are `null` on the
     // overwhelming majority of polls (wallet orders never touch the handshake/debt fields at all;
     // refund fields only ever populate on a merchant-issued refund) — omit rather than send an
@@ -1305,7 +1439,41 @@ const RESPONSE_NULL_OMIT_FIELDS = [
   "kitchenConfirmedBy",
   "itemsEditedAt",
   "restaurantPhone",
+  // Order flow v2: absent unless the order is scheduled / has a prescription / owes or carries a balance.
+  "scheduledFor",
+  "ringsAt",
+  "scheduleStartedAt",
+  "prescription",
+  "owedUsd",
+  "previousBalanceUsd",
 ] as const satisfies readonly (keyof MerchantOrderResponse)[];
+
+/** Order flow v2 (ledger D-59, backend B): the additive order-read fields. Nulls are omitted by the
+ *  A-O14 pass in toResponse. Tolerates a row read without the v2 includes (older test fixtures). */
+function orderFlowV2Fields(order: Partial<Pick<OrderWithItems, "merchant" | "schedule" | "prescription" | "owedBalance" | "carriedBalance">>): Partial<MerchantOrderResponse> {
+  const rx = order.prescription;
+  const carried = addMoney(0, ...(order.carriedBalance ?? []).map((b) => Number(b.amount)));
+  const prescription: MerchantOrderPrescriptionView | null = rx
+    ? {
+        status: rx.status as MerchantOrderPrescriptionView["status"],
+        patientName: rx.patientName,
+        pageCount: rx.photoKeys.length,
+        declineReason: (rx.declineReason as RxDeclineReason | null) ?? null,
+        declineNote: rx.declineNote,
+        checkedAt: rx.checkedAt?.toISOString() ?? null,
+        riderSawOriginalAt: rx.riderSawOriginalAt?.toISOString() ?? null,
+      }
+    : null;
+  return {
+    ...(order.merchant?.businessType ? { businessType: order.merchant.businessType, shopKind: order.merchant.shopKind ?? null } : {}),
+    scheduledFor: order.schedule?.scheduledFor.toISOString() ?? null,
+    ringsAt: order.schedule?.ringsAt.toISOString() ?? null,
+    scheduleStartedAt: order.schedule?.rungAt?.toISOString() ?? null,
+    prescription,
+    owedUsd: order.owedBalance ? Number(order.owedBalance.amount) : null,
+    previousBalanceUsd: carried > 0 ? carried : null,
+  };
+}
 
 /** Compact one-line rendering of a food basket — "2x Sadza · 1x Chicken" — mirrors
  *  packages/shared summarizeItems' grammar for the generic `itemDesc` column every order carries. */

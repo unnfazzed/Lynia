@@ -752,6 +752,9 @@ model Order {
   // prescription (BRIEF §13). Own tables, so the order row itself carries nothing new for them.
   schedule         OrderSchedule?
   prescription     OrderPrescription?
+  // BRIEF D3f: what this order left owed (cancelled after collection) / earlier balance it carries.
+  owedBalance      CustomerBalanceEntry?  @relation("balanceSource")
+  carriedBalance   CustomerBalanceEntry[] @relation("balanceCarried")
 
   @@index([status])
   @@index([rebroadcastOfId])
@@ -1402,13 +1405,15 @@ model CustomerBalanceEntry {
   id             String    @id @default(uuid()) @db.Uuid
   profileId      String    @map("profile_id") @db.Uuid
   profile        Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  // The cancelled order the money is owed for (plain pointer, one row per order).
+  // The cancelled order the money is owed for (one row per order).
   sourceOrderId  String    @unique @map("source_order_id") @db.Uuid
+  sourceOrder    Order     @relation("balanceSource", fields: [sourceOrderId], references: [id], onDelete: Cascade)
   merchantId     String?   @map("merchant_id") @db.Uuid
   amount         Decimal   @db.Decimal(10, 2)
   reason         String    @default("cancel_after_pickup")
-  // The order carrying it now (plain pointer); null = not carried yet.
+  // The order carrying it now; null = not carried yet.
   appliedOrderId String?   @map("applied_order_id") @db.Uuid
+  appliedOrder   Order?    @relation("balanceCarried", fields: [appliedOrderId], references: [id], onDelete: SetNull)
   appliedAt      DateTime? @map("applied_at")
   createdAt      DateTime  @default(now()) @map("created_at")
 
