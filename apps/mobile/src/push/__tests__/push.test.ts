@@ -74,9 +74,9 @@ describe("pushDestination", () => {
   it("routes the auto-accept 'restaurant changed your order' push to the food tracker", () => {
     // food-order-ops.ts sends { orderId, status, to: "customer", orderType: "merchant", kind: "food_items_edited" }.
     const data = { orderId: "o1", status: "requested", to: "customer", orderType: "merchant", kind: "food_items_edited" };
-    expect(pushDestination(data, false)).toBe("/food/order/o1");
+    expect(pushDestination(data, false)).toBe("/order/o1");
     // Even on a device whose account is also a rider, `to: "customer"` keeps it on the tracker.
-    expect(pushDestination(data, true)).toBe("/food/order/o1");
+    expect(pushDestination(data, true)).toBe("/order/o1");
   });
 
   it("routes the 'a rider's online near you' push home so the customer can re-broadcast", () => {
@@ -121,30 +121,30 @@ describe("pushDestination", () => {
   });
 
   // P0-2 (navigation review 2026-08-12): a food (merchant) order's customer-facing tracker is
-  // /food/order/:id, not the parcel-voiced /order/:id. The server now stamps orderType:"merchant";
+  // the one order screen /order/:id (D-59; it was /food/order/:id). The server stamps orderType:"merchant";
   // before this, every food status push opened the parcel screen — and the "Rider secured" (`assigned`)
   // push even sent the customer to /rider/job (the parcel rider's job screen), a dead end.
-  it("routes a food order's customer-facing status pushes to the food tracker, whatever the status", () => {
+  it("routes a food order's customer-facing status pushes to the one order screen, whatever the status", () => {
     for (const status of ["requested", "awaiting_payment", "en_route_dropoff", "cancelled"]) {
-      expect(pushDestination({ orderId: "o1", status, to: "customer", orderType: "merchant" }, false)).toBe("/food/order/o1");
+      expect(pushDestination({ orderId: "o1", status, to: "customer", orderType: "merchant" }, false)).toBe("/order/o1");
     }
   });
 
   it("routes a food 'Rider secured' (assigned) push to the food tracker for the customer, NOT /rider/job", () => {
     // The customer-targeted food `assigned` push carries to:"customer" + orderType:"merchant".
-    expect(pushDestination({ orderId: "o1", status: "assigned", to: "customer", orderType: "merchant" }, false)).toBe("/food/order/o1");
+    expect(pushDestination({ orderId: "o1", status: "assigned", to: "customer", orderType: "merchant" }, false)).toBe("/order/o1");
     // Even for a dual-role account currently in rider mode — `to` is per-push authoritative.
-    expect(pushDestination({ orderId: "o1", status: "assigned", to: "customer", orderType: "merchant" }, true)).toBe("/food/order/o1");
+    expect(pushDestination({ orderId: "o1", status: "assigned", to: "customer", orderType: "merchant" }, true)).toBe("/order/o1");
   });
 
   it("routes a food pay-now (kind:food_pay_now) push to the food tracker", () => {
     expect(pushDestination({ orderId: "o1", status: "awaiting_payment", to: "customer", kind: "food_pay_now", orderType: "merchant" }, false)).toBe(
-      "/food/order/o1",
+      "/order/o1",
     );
   });
 
   it("routes SOS on a food order to the food tracker for the customer, and to /rider/job for the rider", () => {
-    expect(pushDestination({ orderId: "o1", kind: "sos", to: "customer", orderType: "merchant" }, false)).toBe("/food/order/o1");
+    expect(pushDestination({ orderId: "o1", kind: "sos", to: "customer", orderType: "merchant" }, false)).toBe("/order/o1");
     expect(pushDestination({ orderId: "o1", kind: "sos", to: "rider", orderType: "merchant" }, true)).toBe("/rider/job");
   });
 
@@ -249,7 +249,7 @@ describe("push routing on the customer-only iPhone app (D-41)", () => {
 
   it("leaves customer destinations exactly as they are", () => {
     expect(pushDestination({ orderId: "o1", status: "delivered" }, false)).toBe("/order/o1");
-    expect(pushDestination({ orderId: "o1", status: "cancelled", orderType: "merchant", to: "customer" }, false)).toBe("/food/order/o1");
+    expect(pushDestination({ orderId: "o1", status: "cancelled", orderType: "merchant", to: "customer" }, false)).toBe("/order/o1");
     expect(pushDestination({ kind: "riders_available" }, false)).toBe("/home");
     expect(pushDestination("not an object", false)).toBeNull();
     expect(notificationRowDestination({ orderId: "o1", to: "customer" })).toBe("/order/o1");

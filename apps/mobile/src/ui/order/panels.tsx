@@ -20,7 +20,20 @@ import { CtaButton, H2, IconDisc, Muted, Tags } from "./kit";
  * "‹ Back · Title · [Help]" — 52px row, 1px line under it. v2: the title ellipsises before Back or Help
  * would shrink (large font scale); no title while an order is opening or failed to load (2.1–2.3).
  */
-export function OrderHeader({ title, help, onBack, onHelp }: { title: string; help: boolean; onBack: () => void; onHelp: () => void }): React.ReactElement {
+export function OrderHeader({
+  title,
+  help,
+  onBack,
+  onHelp,
+  heavy,
+}: {
+  title: string;
+  help: boolean;
+  onBack: () => void;
+  onHelp: () => void;
+  /** Order flow v2.1: the venue-name title is 16/800 (After Send's is 16/700). */
+  heavy?: boolean;
+}): React.ReactElement {
   return (
     <View style={{ minHeight: 53, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 8, backgroundColor: tokens.color.bg, borderBottomWidth: 1, borderBottomColor: tokens.color.line, zIndex: 20 }}>
       <View style={{ flexGrow: 1, flexBasis: 0, flexShrink: 0, alignItems: "flex-start" }}>
@@ -37,7 +50,7 @@ export function OrderHeader({ title, help, onBack, onHelp }: { title: string; he
           <Text style={{ fontSize: 15, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>{A.back}</Text>
         </Tappable>
       </View>
-      <Text accessibilityRole="header" numberOfLines={1} style={{ flexShrink: 1, textAlign: "center", fontSize: 16, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
+      <Text accessibilityRole="header" numberOfLines={1} style={{ flexShrink: 1, textAlign: "center", fontSize: 16, fontWeight: heavy ? "800" : tokens.font.weight.bold, letterSpacing: heavy ? -0.2 : 0, color: tokens.color.ink }}>
         {title}
       </Text>
       <View style={{ flexGrow: 1, flexBasis: 0, flexShrink: 0, alignItems: "flex-end" }}>

@@ -4,9 +4,10 @@
 // set (so the refunded branch wins over both the refund-pending and generic-cancel branches) plus the
 // refundAmount and refundReference the card draws.
 import { installRouter, setParams } from "./_harness.mjs";
-import { MENU, OID, foodOrder, withOrder } from "./_food.mjs";
+import { MENU, OID, foodOrder, withOrder, orderSnapshot } from "./_food.mjs";
 
-setParams({ orderId: OID });
+// D-59: the restaurant order renders on the one order screen, app/order/[id].tsx.
+setParams({ id: OID });
 
 installRouter([
   {
@@ -25,6 +26,7 @@ installRouter([
     }),
   },
   { match: /^\/restaurants\/[^/]+\/menu$/, json: MENU },
+  { match: /^\/orders\/[^/]+$/, json: orderSnapshot({ status: "cancelled", rider: null, events: [], counterpartyPhone: null, cancelledBy: null }) },
 ]);
 
 export default { wrap: withOrder() };
