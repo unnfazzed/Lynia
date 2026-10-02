@@ -84,6 +84,8 @@ export const color = {
   illusIdleLight: "#DDE1E5",
   illusIdleMid: "#AEB6BD",
   illusIdleDark: "#7D8790",
+  /** Splash v1 (ledger D-64): the website's pink blob — decorative only. */
+  illusPink: "#FF8AC5",
 
   /**
    * Home (Calm Mint v2) surfaces shared with the tab bar (`handoff/tab-bar-v1`): the active tab pill
@@ -122,6 +124,12 @@ export const color = {
   tilePharmacy: "#C5E9DF",
   /** The rider intro's hero panel. */
   riderWash: "#ECE8FF",
+  /**
+   * Splash v1 (`packages/design/handoff/splash-v1`, ledger D-64). `onAccentSoft` is the wordmark's "Go"
+   * on the brand green (logotype only); `onInkMuted` is body text on an `ink` panel.
+   */
+  onAccentSoft: "#D6F5E2",
+  onInkMuted: "#C9D0D6",
   /** The pale gold "Checking" pill (text: highlightChipInk). */
   highlightChipWash: "#FFF6D6",
   /** Shop-kind tints for a card with no photo, and their inks. */

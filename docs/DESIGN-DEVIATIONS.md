@@ -3611,3 +3611,49 @@ Each is marked `NEEDS BACKEND (orders-v2)` in `src/ui/orders/model.ts` / `app/(t
 
 **Evidence:** `docs/parity/ORDERS-V2-2026-10-02.png` (`tools/parity/shoot-orders-v2.mjs`, the `ov2_*`
 fixtures) — O1, O2, O5, O9a, O16, O17, O18, O21, handoff left, app right.
+
+## D-64 · Splash v1 — "1a Sun & orbit": the splash stays up until the app is ready — handoff APPROVED (2026-10-02); deviations 1–6 PENDING OWNER REVIEW
+
+**Owner instruction, this session (2026-10-02):** *"lets implement a new splash screen. It should open
+with the time it takes to be ready to show the home screen."*, with the design handoff attached
+(`Lynia_Design_System.zip` → `design_handoff_splash/`). Vendored verbatim as
+`packages/design/handoff/splash-v1/` (README, `Splash.html`, the mark, the fonts). It replaces the
+static green dove splash (journey node 0·1, gallery `LJ splash` / `RJ splash`, MOB-BOOT-05's held native
+frame + `app/splash.view.tsx`). Those gallery screens are SUPERSEDED and not aligned to.
+
+**What the app does** (`src/boot/splash/BootSplash.tsx`, timing rules in `src/boot/splash/timeline.ts`):
+
+- **On screen for exactly as long as the boot takes.** The brand intro plays (1300ms), then the steps
+  card ticks off three REAL tasks (`src/boot/boot-readiness.ts`), each active for at least 400ms:
+  1. *Checking it's you* — the boot decision in `app/index.tsx` (session, onboarding flag, saved role,
+     cold-start push).
+  2. *Loading your saved places* — Home's `["me"]` read settles (seeded by the boot aggregate).
+  3. *Finding riders near you* — Home has its first content (each enabled rail has data, or failed).
+  When the last one is done the sun floods the screen and Home slides up over it, its sections rising
+  in turn (`src/boot/splash/BootEntrance.tsx`). Home therefore arrives drawn, not as skeletons.
+- **Not Home** (onboarding, sign-in, profile setup, the rider app, a push-tap deep link): hands off
+  straight after step 1 with no exit, as the handoff says.
+- **Slow** (4s into loading): the yellow pill. **Offline** (the API unreachable, `src/net/reachability.ts`):
+  the orbit pauses, the dot greys, the offline panel slides up; "Try again" probes at once
+  (`probeNow`) and shows loading for 3s before the panel can return. Retrying in the background is the
+  existing reachability probe.
+- **Reduced motion:** no pops, drift, spin, breathing or bob; state changes cross-fade (200ms); Home
+  cross-fades in.
+- **Layering:** the splash is drawn under the app, and the navigator waits off-screen (105% down,
+  hidden from accessibility) until the exit raises it (`AppStage` in `app/_layout.tsx`, BootPhase
+  `reveal`). The force-update gate and the ErrorBoundary still end the boot themselves.
+- **Native launch screen:** held only until the JS splash's first layout, then dropped onto it.
+- **Tokens:** three new values the handoff names, added to `packages/design/tokens/colors.css` and the
+  mobile face: `--illus-pink` (#ff8ac5, the README's own ask), `--on-accent-soft` (#d6f5e2, "Go" on
+  green), `--on-ink-muted` (#c9d0d6, the offline body).
+
+**Where the app differs from the handoff, and why**
+
+| # | Handoff | App | Why |
+|---|---|---|---|
+| 1 | Step 3 = "nearby-rider or zone availability call" | Home's first content (the rails) | No customer-side nearby-rider or zone endpoint exists. Home's content is what "ready to show the home screen" means. |
+| 2 | Loading keeps going indefinitely on a slow network | Hands off after 20s (`GIVE_UP_MS`) unless offline | Never strand the app on a hung request; Home has its own loading and empty states. |
+| 3 | Steps card / panels at 16 / 14px from the bottom, pill at top 44 | Plus the device's bottom inset; pill at max(44, top inset + 8) | The mock frame has no system bars; this keeps them clear of gesture/nav bars and notches. |
+| 4 | Card shadow `0 18px 40px -12px rgba(0,0,0,.3)` | One-layer RN shadow (offset 18, radius 20, opacity .3, elevation 12) | The app runs the old architecture: no `boxShadow`, no spread. |
+| 5 | Orbit's CSS dashed border | SVG circle, `strokeDasharray 6 6` | Dashed rounded borders aren't reliable on Android. |
+| 6 | Splash starts on plain green | The native launch frame still shows the old dove + wordmark lockup until the JS splash draws | Changing it needs a new store build (native assets). **Follow-up:** a plain-green native launch frame, so the cold start reads as one screen. |

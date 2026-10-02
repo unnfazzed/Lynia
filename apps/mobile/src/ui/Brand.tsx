@@ -41,13 +41,14 @@ export function DoveMark({ size = 28, on = "white" }: { size?: number; on?: "whi
 /**
  * The "LyniaGo" wordmark — Fredoka 600 letterforms shipped as OUTLINED vector paths (kerned), so
  * the logo never depends on a font file loading. "Go" carries the deep brand green in the standard
- * lockup; passing an explicit `color` renders the whole mark one-colour (e.g. white on a dark bar).
+ * lockup; passing an explicit `color` renders the whole mark one-colour (e.g. white on a dark bar),
+ * and `goColor` gives "Go" its own colour on top of that (the splash's white "Lynia" + mint "Go").
  */
-export function Wordmark({ size = 22, color }: { size?: number; color?: string }): React.ReactElement {
+export function Wordmark({ size = 22, color, goColor }: { size?: number; color?: string; goColor?: string }): React.ReactElement {
   return (
     <Svg width={size * WORDMARK_ASPECT} height={size} viewBox={WORDMARK_VIEWBOX} accessibilityLabel="LyniaGo">
       <Path d={WORDMARK_LYNIA_D} fill={color ?? tokens.color.ink} />
-      <Path d={WORDMARK_GO_D} fill={color ?? tokens.color.accentPressed} />
+      <Path d={WORDMARK_GO_D} fill={goColor ?? color ?? tokens.color.accentPressed} />
     </Svg>
   );
 }
