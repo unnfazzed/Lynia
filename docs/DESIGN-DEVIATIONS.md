@@ -2940,8 +2940,8 @@ this bar and lands with that work.
 | C5 exit | None drawn | None — the kyc-2026-08 "Use a different number" ghost is gone with `Register` | A mistyped number is fixed with C4's "Change" before the code is accepted |
 | Rider path after sign-in | Permissions in context | Riders still see the location + job-alert priming screens (`/permissions?next=/rider`) before the rider app | A rider without location and job alerts cannot take work; the handoff's in-context rule is written for customers |
 | R1 / R2 vendor name | "ID check with Didit", "Didit is checking your ID" | "ID check", "We're checking your ID" | D-38 (owner, 2026-08-22) stands: the app never names the verification partner; the handoff's brief named it by mistake |
-| R1 note | "No top-up to start. Your first jobs are commission-free. Licence and bike papers can wait." | "Licence and bike papers can wait." | The free-jobs rule doesn't exist on the server yet (README §5); the first two sentences would be false. They render once it does |
-| R3 meter | "Commission-free jobs · 5 of 5 left" card | Not drawn | Same: NEEDS BACKEND · free-jobs rule. Until then a new rider at a $0 balance still meets the top-up gate after "Go online" |
+| R1 note | "No top-up to start. Your first jobs are commission-free. Licence and bike papers can wait." | "Licence and bike papers can wait." | The free-jobs rule doesn't exist on the server yet (README §5); the first two sentences would be false. They render once it does. **Resolved by D-70 (2026-10-02):** drawn in full against a server that serves the rule |
+| R3 meter | "Commission-free jobs · 5 of 5 left" card | Not drawn | Same: NEEDS BACKEND · free-jobs rule. Until then a new rider at a $0 balance still meets the top-up gate after "Go online". **Resolved by D-70 (2026-10-02):** drawn from `/auth/me` `rider.freeJobs` |
 | R1 → ID check | "Start ID check" opens the check | "Start ID check" opens the rider photo step first (the existing capture + review), then the check | The rider photo is uploaded before the vendor session is opened (`POST /riders/become` needs it); R2 draws the photo as done before the check, so this is the handoff's own order |
 | Photo step | Not drawn | "Rider photo for your profile", the capture/review card, and — only when the account has none on file — the name and national-ID fields | Rider onboarding needs a national ID on the profile (one-ID-one-account) and C5 no longer collects it; Didit prefill is NEEDS BACKEND |
 | R2 | Every pending check | Only while the automated check is with the vendor; manual (ops) review keeps the Rider v2 wall | "Usually under a minute" is false for an ops review |
@@ -3696,3 +3696,36 @@ everything named restaurants like that."*
 Scope is the Home tile label only. Everything else keeps "Restaurants" verbatim: the "Popular
 restaurants" rail, the "Restaurants are coming soon" sheet, the Browse v2 list, search, storefront and
 order screens (`src/ui/browse/copy.ts`), and code names (`RestaurantsSticker`, routes).
+
+## D-70 · Calm Mint v2 "NEEDS BACKEND": commission-free first jobs and the Didit ID prefill — APPROVED (2026-10-02)
+
+**Owner decision, 2026-10-02:** build the two rider items the Calm Mint v2 README §5 (D-55) left as
+NEEDS BACKEND. No design change — this entry records the rule the server now implements and the
+assumptions the handoff left open.
+
+**Free-jobs rule.** The handoff draws R3 "Commission-free jobs · 5 of 5 left" with the caption "After
+these, commission comes off a prepaid balance. We'll remind you before you need to top up.", R1's note
+"No top-up to start. Your first jobs are commission-free.", and §6 "the $2 gate at first go-online …
+now shows only after the free jobs run out". README §5 leaves the rule open ("N jobs or $X of
+commission"). Implemented:
+
+| Question | Rule | Source |
+|---|---|---|
+| How many | **5 jobs** (`COMMISSION.freeFirstJobs`) | The drawn "5 of 5" meter (the README leaves N open) |
+| What is free | No `ride_commission` debit and no ledger row on the rider's 1st–5th completed job | "Commission-free jobs" |
+| The gate | While any free job is left, the low-balance (`commission_low_balance`) go-online gate is waived; it returns after the 5th completed job | §6 "shows only after the free jobs run out" |
+| What counts | A **completed** job (`Rider.tripsCount`, incremented once per completion on every completion path, parcel or merchant). A cancelled or undelivered job never consumes one | "jobs"; nothing in the handoff counts a cancel |
+| Who | Every rider by completed-job count, so riders with 5+ completed jobs are unaffected; a rider with fewer than 5 gets the remainder. Every completion so far ran at the 0% launch rate, so no rider is short-changed or double-served | "Your first jobs" |
+| Shown | R1 note in full when `/wallet/config` serves `freeFirstJobs`; R3 meter from `/auth/me` `rider.freeJobs {left,total}` | — |
+
+No schema change: the count is derived from `tripsCount`, which the completion transaction increments
+under the rider row lock before the debit runs.
+
+**Didit ID prefill.** The vendor-verified document number (already extracted from the decision webhook
+for IR26-04 dedupe, which kept only its hash) is now also stored ENCRYPTED on `riders.verified_id_number`
+(migration `0069_rider_verified_id_number`, expand-only), nulled on erasure, and returned to its owner
+only as `/auth/me` `kycIdNumber` once the check is verified (memory-only on the phone, like `idNumber`).
+The become-a-rider details step ("A few details first", app-authored) starts its national-ID field with
+that number when the account has none on file. It stays **editable**: the handoff draws no such field
+and its README says "prefill or confirm", so the rider confirms rather than retypes. The IR26-04 fraud
+checks (typed vs vendor number, collisions) are unchanged.

@@ -545,6 +545,11 @@
           "minimum": 0,
           "type": "number"
         },
+        "freeFirstJobs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
         "graceCredit": {
           "minimum": 0,
           "type": "number"

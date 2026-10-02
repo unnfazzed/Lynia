@@ -31,6 +31,14 @@ jest.mock("../../../src/kyc/verify", () => ({ runKycVerification: jest.fn().mock
 jest.mock("../../../src/kyc/KycCheckHost", () => ({ KycCheckHost: () => null }));
 let mockMe: Record<string, unknown> = {};
 jest.mock("../../../src/api/auth", () => ({ getMe: jest.fn(async () => mockMe) }));
+// D-70: `/wallet/config` serves `freeFirstJobs` on a server with the free-jobs rule; null = older server.
+let mockWalletConfig: Record<string, unknown> | null = null;
+jest.mock("../../../src/api/wallet", () => ({
+  getWalletConfig: jest.fn(async () => {
+    if (!mockWalletConfig) throw new Error("offline");
+    return mockWalletConfig;
+  }),
+}));
 
 import BecomeRiderScreen from "../become";
 
@@ -63,6 +71,7 @@ async function tapStart(tree: renderer.ReactTestRenderer): Promise<void> {
 
 beforeEach(() => {
   mockSecureStore = {};
+  mockWalletConfig = null;
   mockReplace.mockClear();
   mockBecomeRider.mockReset().mockResolvedValue({ kycStatus: "pending", mode: "auto", sessionToken: "tok" });
   mockCompleteProfile.mockReset().mockResolvedValue({});
@@ -79,9 +88,54 @@ describe("BecomeRiderScreen — R1, no photo step (D-55, D-62)", () => {
     const r1 = JSON.stringify(tree.toJSON());
     for (const s of ["Ride with LyniaGo.", "Your account", "ID check", "Your photo, licence and bike papers can wait.", "Start ID check"]) expect(r1).toContain(s);
     expect(r1).not.toContain("Rider photo for your profile");
-    // The vendor is never named (D-38), and the free-jobs promise waits on the backend.
+    // The vendor is never named (D-38), and an older server without the free-jobs rule gets no promise.
     expect(r1).not.toContain("Didit");
     expect(r1).not.toContain("commission-free");
+    act(() => tree.unmount());
+  });
+
+  it("D-70: on a server with the free-jobs rule, R1's note reads in full", async () => {
+    mockWalletConfig = { ratePct: 10, floor: 2, graceCredit: 5, minTopUp: 5, maxTopUp: 50, freeFirstJobs: 5 };
+    mockMe = { profileId: "p1", role: "customer", firstName: "Tendai", lastName: "Moyo", idNumber: "63123456A42", rider: null };
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(becomeEl());
+    });
+    await flush();
+    const r1 = JSON.stringify(tree.toJSON());
+    expect(r1).toContain("No top-up to start. Your first jobs are commission-free. Your photo, licence and bike papers can wait.");
+    act(() => tree.unmount());
+  });
+
+  it("D-70 Didit ID prefill: a verified ID-check number fills the national ID field, editable", async () => {
+    mockMe = { profileId: "p1", role: "customer", firstName: "Tendai", lastName: "Moyo", idNumber: null, kycIdNumber: "63123456A42", rider: null };
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(becomeEl());
+    });
+    await flush();
+    await tapStart(tree);
+    const field = tree.root.findAll((n) => n.props.label === "Your national ID number" && typeof n.props.onChangeText === "function")[0]!;
+    expect(field.props.value).toBe("63123456A42");
+    // Still editable: the rider can correct it, and what they type is what is submitted.
+    await act(async () => {
+      field.props.onChangeText("63999999Z99");
+    });
+    const after = tree.root.findAll((n) => n.props.label === "Your national ID number" && typeof n.props.onChangeText === "function")[0]!;
+    expect(after.props.value).toBe("63999999Z99");
+    act(() => tree.unmount());
+  });
+
+  it("D-70: with no verified ID-check number, the field starts empty", async () => {
+    mockMe = { profileId: "p1", role: "customer", firstName: "Tendai", lastName: "Moyo", idNumber: null, rider: null };
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(becomeEl());
+    });
+    await flush();
+    await tapStart(tree);
+    const field = tree.root.findAll((n) => n.props.label === "Your national ID number" && typeof n.props.onChangeText === "function")[0]!;
+    expect(field.props.value).toBe("");
     act(() => tree.unmount());
   });
 

@@ -762,6 +762,8 @@ export const CommissionConfig = z
     graceCredit: z.number().nonnegative(),
     minTopUp: z.number().positive(),
     maxTopUp: z.number().positive(),
+    /** D-70: commission-free first jobs a new rider gets (Calm Mint v2 R1/R3). Optional — older servers omit it. */
+    freeFirstJobs: z.number().int().nonnegative().optional(),
   })
   .strict();
 export type CommissionConfig = z.infer<typeof CommissionConfig>;

@@ -11,7 +11,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { normalizePhone, RiderAccountStatus, type UpdateProfileRequest } from "@lynia/shared";
+import { COMMISSION, freeJobsLeft, normalizePhone, RiderAccountStatus, type UpdateProfileRequest } from "@lynia/shared";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService, type OtpVerifyResult } from "../observability/metrics.service";
@@ -141,6 +141,8 @@ export class AuthService {
             // joins the token as the liveness signal for it (see the derivation below).
             kycRef: true,
             kycSessionUrl: true,
+            // D-70: the vendor-verified ID number (ciphertext) — decrypted below for its OWNER only.
+            verifiedIdNumber: true,
             // So the cancel-confirm sheet can warn "this is strike N of LIMIT" before a cancel lands,
             // instead of the rider only learning their count at the moment they get locked out.
             cancelStrikes: true,
@@ -188,6 +190,11 @@ export class AuthService {
       // `null` for an account that never supplied one (a customer can register name-only) — the
       // Account screen simply draws no ID line rather than an empty field.
       idNumber: this.pii.decryptId(p.idNumber),
+      // D-70 "Didit ID prefill": the national ID number the ID check verified, so the app can prefill
+      // (and the rider confirm) the ID field instead of retyping it. Only once the check is VERIFIED
+      // (a held/pending result is not yet "the verified KYC result"); null otherwise. Like `idNumber`,
+      // returned only on this owner-scoped endpoint and never persisted to the app's disk cache.
+      kycIdNumber: p.rider?.kycStatus === "verified" ? this.pii.decryptId(p.rider.verifiedIdNumber) : null,
       // S·2: customer account standing — true blocks new broadcasts (the app shows the on-hold screen).
       onHold: p.onHold,
       rider: p.rider
@@ -200,6 +207,9 @@ export class AuthService {
             ratingAvg: p.rider.ratingAvg,
             ratingCount: p.rider.ratingCount,
             tripsCount: p.rider.tripsCount,
+            // D-70: the commission-free first jobs (Calm Mint v2 R3 "Commission-free jobs · N of 5
+            // left"), derived from completed jobs — the same count the debit and the online-gate use.
+            freeJobs: { left: freeJobsLeft(p.rider.tripsCount), total: COMMISSION.freeFirstJobs },
             isOnline: p.rider.isOnline,
             kycDeclineReason: p.rider.kycDeclineReason,
             kycAttempts: p.rider.kycAttempts,

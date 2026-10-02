@@ -1,3 +1,4 @@
+import { COMMISSION, freeJobsLeft } from "@lynia/shared";
 import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
@@ -1479,6 +1480,52 @@ describe("onlineRefusalReason (pure online-gate, Q2)", () => {
   });
 });
 
+describe("onlineRefusalReason — D-70 commission-free first jobs", () => {
+  const base = { kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null };
+  it("a new rider with free jobs left is NOT top-up gated at a $0 balance, even with commission live", () => {
+    expect(onlineRefusalReason({ ...base, commissionActive: true, commissionBalance: 0, freeJobsLeft: COMMISSION.freeFirstJobs })).toBeNull();
+    expect(onlineRefusalReason({ ...base, commissionActive: true, commissionBalance: 0, freeJobsLeft: 1 })).toBeNull();
+  });
+  it("the gate returns once the free jobs are used up", () => {
+    expect(onlineRefusalReason({ ...base, commissionActive: true, commissionBalance: 0, freeJobsLeft: 0 })).toBe("commission_low_balance");
+    expect(onlineRefusalReason({ ...base, commissionActive: true, commissionBalance: 2, freeJobsLeft: 0 })).toBeNull();
+  });
+  it("free jobs never waive a STANDING reason", () => {
+    expect(onlineRefusalReason({ ...base, accountStatus: "suspended", commissionActive: true, commissionBalance: 0, freeJobsLeft: 5 })).toBe("suspended");
+    expect(onlineRefusalReason({ ...base, kycStatus: "pending", freeJobsLeft: 5 })).toBe("kyc");
+  });
+  it("freeJobsLeft derives from completed jobs: 0 trips → 5, 4 → 1, 5+ → 0 (cancels never count — tripsCount only moves on completion)", () => {
+    expect(freeJobsLeft(0)).toBe(5);
+    expect(freeJobsLeft(null)).toBe(5);
+    expect(freeJobsLeft(4)).toBe(1);
+    expect(freeJobsLeft(5)).toBe(0);
+    expect(freeJobsLeft(312)).toBe(0);
+  });
+});
+
+describe("RiderService.setOnline — D-70 commission-free first jobs", () => {
+  function onlineSvc(tripsCount: number, balance: number) {
+    const prisma = {
+      rider: { findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null, tripsCount }) },
+      commissionAccount: { findUnique: async () => ({ balance }) },
+    };
+    return svc(prisma, { COMMISSION_RATE_PCT: 10 } as Partial<Env>);
+  }
+  it("a newly verified rider (0 jobs, $0 balance) goes online with commission live", async () => {
+    expect(await onlineSvc(0, 0).setOnline("p1", true)).toEqual({ online: true });
+  });
+  it("a rider on their 5th free job (4 completed) still goes online at $0", async () => {
+    expect(await onlineSvc(4, 0).setOnline("p1", true)).toEqual({ online: true });
+  });
+  it("after the 5th completed job a $0 rider meets the top-up gate again", async () => {
+    await expect(onlineSvc(5, 0).setOnline("p1", true)).rejects.toMatchObject({ response: { reason: "commission_low_balance" } });
+  });
+  it("an existing rider past the allowance is gated exactly as before", async () => {
+    await expect(onlineSvc(80, 1.5).setOnline("p1", true)).rejects.toMatchObject({ response: { reason: "commission_low_balance" } });
+    expect(await onlineSvc(80, 2).setOnline("p1", true)).toEqual({ online: true });
+  });
+});
+
 describe("RiderService.applyKycResult", () => {
   it("applies the status, records the event time, and guards monotonically", async () => {
     let where: Record<string, unknown> | undefined;
@@ -1754,6 +1801,22 @@ describe("RiderService.applyKycResult", () => {
     // Vendor returns the same physical number unpunctuated — pii.hashId normalizes, so they collide.
     await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42");
     expect(rec.data).toMatchObject({ kycStatus: "verified", idVerified: true, verifiedIdHash: pii.hashId("63-123456-A-42") });
+  });
+
+  it("D-70: a verified doc number is ALSO stored encrypted (normalised) for the ID prefill — never in plaintext", async () => {
+    const { prisma, rec } = docPrisma();
+    await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63-123456-a-42");
+    const stored = rec.data?.verifiedIdNumber as string;
+    expect(typeof stored).toBe("string");
+    expect(stored).not.toContain("63123456");
+    expect(stored.startsWith("v1:")).toBe(true);
+    expect(pii.decryptId(stored)).toBe("63123456A42");
+  });
+
+  it("D-70: no document number → nothing stored for the prefill", async () => {
+    const { prisma, rec } = docPrisma();
+    await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, null);
+    expect(rec.data).not.toHaveProperty("verifiedIdNumber");
   });
 
   it("IR26-04: a verified doc number that DISAGREES with the typed ID is held for review (typed fake, showed real)", async () => {

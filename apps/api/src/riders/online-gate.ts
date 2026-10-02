@@ -35,6 +35,12 @@ export interface CommissionGateInput {
   commissionActive?: boolean;
   /** The rider's prepaid commission balance (USD); undefined when not loaded by this call site. */
   commissionBalance?: number;
+  /**
+   * D-70: commission-free first jobs the rider still has (`freeJobsLeft(tripsCount)`). While > 0 the
+   * low-balance branch is waived — a new rider at $0 goes online and works their free jobs; the gate
+   * returns once they run out. Undefined (a call site that didn't load it) keeps the pre-D-70 behavior.
+   */
+  freeJobsLeft?: number;
 }
 
 /**
@@ -69,7 +75,13 @@ export function onlineRefusalReason(
   // Prepaid commission floor (design Flow 2): only once commission is switched on AND this call site
   // loaded the balance. Literal guard — at ratePct 0 `commissionActive` is false, so a $0 launch
   // balance below the floor never blocks the pilot.
-  if (rider.commissionActive && rider.commissionBalance != null && rider.commissionBalance < COMMISSION.lowBalanceBlockBelow) {
+  // D-70: the rider's commission-free first jobs waive the floor until they are used up.
+  if (
+    rider.commissionActive &&
+    rider.commissionBalance != null &&
+    rider.commissionBalance < COMMISSION.lowBalanceBlockBelow &&
+    !(rider.freeJobsLeft != null && rider.freeJobsLeft > 0)
+  ) {
     return "commission_low_balance";
   }
   return null;

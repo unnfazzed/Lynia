@@ -68,7 +68,7 @@ export const RO = {
   stepId: "ID check",
   stepIdTime: "~2 min",
   done: "Done",
-  /** The full drawn note; the first two sentences wait on the free-jobs rule (NEEDS BACKEND, D-55). */
+  /** The full drawn note's first two sentences — shown once the server serves the free-jobs rule (D-70). */
   noteFree: "No top-up to start. Your first jobs are commission-free.",
   /** Owner 2026-10-02 (D-62): the photo is optional and waits with the papers. Drawn: "Licence and bike papers can wait." */
   notePapers: "Your photo, licence and bike papers can wait.",
