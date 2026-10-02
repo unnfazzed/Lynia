@@ -643,6 +643,9 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     }
   };
   const freeCancel = !!order && (canCancelFreely(order.merchantPhase) || awaitingKitchenConfirm(order));
+  // T15b: after the rider collects, the customer can still cancel — it costs the full total (D3f).
+  const afterPickup = !!order && (order.status === "picked_up" || order.status === "en_route_dropoff");
+  const orderTotal = order ? (order.total ?? (order.merchantGoodsTotal ?? 0) + (order.deliveryFee ?? 0)) : 0;
   const riderCancel = !!order && order.riderId != null && (order.status === "assigned" || order.status === "confirmed" || order.status === "en_route_pickup");
   const panels = (
     <>
@@ -663,7 +666,8 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
         venue={venueName}
         busy={cancelM.isPending}
         onKeep={() => setPanel(null)}
-        onCancel={(reason) => cancelM.mutate({ free: freeCancel, reason })}
+        onCancel={(reason) => cancelM.mutate({ free: freeCancel && !afterPickup, reason })}
+        full={afterPickup ? { text: withRider(ofFmt(O.t.cxFull, { p: usd(orderTotal), place: SVC.place }), riderFirst), amount: usd(orderTotal) } : null}
       />
     </>
   );
@@ -916,6 +920,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     const others = { label: O.d.others, go: (): void => router.push("/food") };
     const whatsApp = waUrl ? { label: O.t.hWa, go: (): void => void Linking.openURL(waUrl).catch(() => undefined) } : null;
     let more: React.ReactNode = null;
+    let owedAmt: string | null = null;
     if (stage === "undelivered") {
       icon = "package";
       title = O.d.notDel;
@@ -943,7 +948,13 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       // D3f — the owed balance needs a ledger line on the customer account (NEEDS BACKEND): the owed
       // sentence and the "owed" amount are not rendered until it exists.
       title = O.d.cxPaid;
-      sub = withRider(ofFmt(O.d.cxPaidSub, { p: usd(total), v: venueName }), rFirst).split(" You owe")[0] ?? "";
+      const owed = order.owedUsd ?? null;
+      const full = withRider(ofFmt(O.d.cxPaidSub, { p: usd(owed ?? total), v: venueName }), rFirst);
+      // The owed sentence and amount only with the server's ledger line (Backend B `owedUsd`).
+      // Without the rider's name the "{rider} is bringing …" sentence is dropped rather than left headless.
+      const [bringing = "", owes = ""] = full.split(/ (?=You owe)/);
+      sub = [rFirst ? bringing : null, owed != null ? owes : null].filter(Boolean).join(" ");
+      owedAmt = owed != null ? ofFmt(OX.owed, { p: usd(owed) }) : null;
       primary = whatsApp ?? others;
     } else if (byYou) {
       title = O.d.cxYou;
@@ -992,7 +1003,11 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
                   <Text style={{ fontSize: 15, fontWeight: "700", color: C.ink }}>{venueName}</Text>
                   <Mut style={TAB}>{placedAt ? ofFmt(OX.orderAt, { order: orderNo, t: hhmm(placedAt) }) : orderNo}</Mut>
                 </View>
-                {stage === "cancelled" && !(byYou && collected) ? <Text style={{ fontSize: 15, fontWeight: "700", color: C.ink }}>{OX.noCharge}</Text> : null}
+                {owedAmt ? (
+                  <Text style={{ fontSize: 15, fontWeight: "700", color: C.ink, ...TAB }}>{owedAmt}</Text>
+                ) : stage === "cancelled" && !(byYou && collected) ? (
+                  <Text style={{ fontSize: 15, fontWeight: "700", color: C.ink }}>{OX.noCharge}</Text>
+                ) : null}
               </View>
             </Card>
             {more}
@@ -1277,6 +1292,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
           {photoFresh ? pickupRow : null}
           {riderCard}
           {photoFresh ? null : pickupRow}
+          {awaitingDoor ? null : cancelLink(O.t.cancelFull)}
           <PeekMark />
           {/* No fix at the door: the customer must still be able to pay, so the door card follows. */}
           {awaitingDoor ? <DoorCard rows={doorRows()} /> : null}

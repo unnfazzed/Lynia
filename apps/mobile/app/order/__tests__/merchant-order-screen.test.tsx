@@ -468,6 +468,30 @@ describe("merchant order — one order screen (D-59)", () => {
     expect(t.root.findAll((n) => n.props.visible === true && n.props.animationType === "fade").length).toBeGreaterThan(0);
   });
 
+  it("T15b: after collection the cancel costs the full total — through the generic cancel", async () => {
+    const t = await render(
+      foodOrder({ status: "en_route_dropoff", merchantPhase: null, riderId: "r" }),
+      snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, rider: { profileId: "r", currentLat: -17.83, currentLng: 31.05, updatedAt: iso(-2_000) } }),
+    );
+    press(t, "Cancel order");
+    expect(has(t, "Tendai already has your order. Cancelling now costs the full $16.50 — the kitchen has made it and the rider has carried it.")).toBe(true);
+    press(t, "Cancel and pay $16.50");
+    await act(async () => undefined);
+    expect(mockCancelOrder).toHaveBeenCalledWith("order-1", {});
+    expect(mockCancelUnpaid).not.toHaveBeenCalled();
+  });
+
+  it("D3f: cancelled after pickup — the owed line from the server", async () => {
+    const t = await render(
+      foodOrder({ status: "cancelled", merchantPhase: null, riderId: "r", owedUsd: 16.5 }),
+      snapshot({ status: "cancelled", cancelledBy: "customer", riderCard: RIDER_CARD, events: [{ status: "requested", createdAt: iso(-60_000) }, { status: "picked_up", createdAt: iso(-30_000) }] }),
+    );
+    expect(has(t, "You cancelled after pickup")).toBe(true);
+    expect(has(t, "You owe $16.50 — pay it on your next order.")).toBe(true);
+    expect(has(t, "$16.50 owed")).toBe(true);
+    expect(has(t, "No charge")).toBe(false);
+  });
+
   it("U5: everything out of stock — cancelled, nothing charged", async () => {
     const t = await render(foodOrder({ status: "cancelled", merchantPhase: null, rejectionReason: "all_out_of_stock" }), snapshot({ status: "cancelled", cancelledBy: null }));
     expect(has(t, "Gava’s Kitchen couldn’t supply anything in your order")).toBe(true);

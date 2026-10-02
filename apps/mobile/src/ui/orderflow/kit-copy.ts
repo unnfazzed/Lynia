@@ -43,6 +43,8 @@ export const OX = {
   leftAtGate: "Left at the gate",
   doorSub: "{where} · {t}",
   doorAgreed: "{where} — you agreed with {n}.",
+  /** of-screens-upd.js D3f — the ending card's amount. */
+  owed: "{p} owed",
   /** of-screens-upd.js D4 — the photo of the delivery attempt. */
   attemptPhoto: "Delivery attempt photo",
   attemptSub: "At {a} · {t}",

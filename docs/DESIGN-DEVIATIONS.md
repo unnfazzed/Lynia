@@ -3312,14 +3312,17 @@ Each PR of the build order appends its line here.
   phone's derivation only as a fallback. D1/D1b/D2: the two-row rating (venue: `POST …/venue-rating`,
   4–5★ `O.d.tagsV`, 1–3★ `O.d.tagsVbad`; rider as before, tags now `careful_with_food`/`easy_to_reach`),
   one Send + Skip, 10 s Undo for both, the D1b toast is `O.d.rated`; receipt from `shortId`, `itemsSubtotal`,
-  `smallOrderFee`. Not here: T15b / D3f owed line (Backend B not merged), shops/pharmacy/scheduled/Rx.
+  `smallOrderFee`. T15b (Backend B): after collection a "Cancel order" link under the rider card (the
+  handoff draws the sheet, not its entry) opens the full-cost sheet, "Cancel and pay $X" → the generic
+  cancel, which records the owed line; D3f renders the owed sentence + "$X owed" from `owedUsd`. Not here:
+  shops/pharmacy/scheduled/Rx, the `previousBalanceUsd` receipt line (no copy in `O`).
   Evidence: `docs/parity/ORDER-FLOW-V2-CUSTOMER-2026-10-02-ROUND2.png`.
 
 ### 4 · Open questions, implemented as drawn (owner to confirm)
 
 1. A swap that lowers the price still needs a yes (drawn: "any swap needs a yes").
 2. Cancel after collection: "You owe $X — pay it on your next order" (D3f) needs a customer ledger line;
-   until that lands D3f's owed line is not rendered (NEEDS BACKEND).
+   the ledger landed with Backend B (`owedUsd`, `GET /restaurants/balance`) and D3f renders it (PR 4).
 3. Restaurant pickup photos stay optional.
 4. Same-day slots a venue can't meet are hidden (no "Too late for today").
 5. No limit on merchant "Change items" rounds.
