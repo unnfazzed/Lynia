@@ -14,7 +14,7 @@
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { contextDefaults, launch } from "./lib/browser.mjs";
 import { buildSheet } from "./lib/sheet.mjs";
 import { bundleScreen } from "./mobile/bundle.mjs";
@@ -40,9 +40,30 @@ html,body{margin:0;padding:0;background:#fff;}
 }
 
 const bundles = new Map();
-async function bundleFor(fixture) {
-  if (!bundles.has(fixture)) bundles.set(fixture, await bundleScreen({ component: SCREEN, fixture: join(FIXTURES, `${fixture}.mjs`) }));
-  return bundles.get(fixture);
+async function bundleFor(fixture, component = SCREEN) {
+  const key = `${component}|${fixture}`;
+  if (!bundles.has(key)) bundles.set(key, await bundleScreen({ component, fixture: join(FIXTURES, `${fixture}.mjs`) }));
+  return bundles.get(key);
+}
+
+/**
+ * G1 / G2 / G3 have no rendered PNG in design/screens: render the handoff's own frame live from
+ * `Order flow v2.1 - all screens.html?screen=<ID>` (the panel at its natural size) into the shots dir.
+ */
+const HANDOFF = join(REPO, "packages/design/handoff/order-flow-v2/Order flow v2.1 - all screens.html");
+async function shootMock(browser, id) {
+  const ctx = await browser.newContext(contextDefaults({ viewport: { width: 400, height: 900 }, deviceScaleFactor: 1 }));
+  const page = await ctx.newPage();
+  try {
+    await page.goto(`${pathToFileURL(HANDOFF).href}?screen=${id}`, { waitUntil: "load" });
+    await page.evaluate(() => (document.fonts ? document.fonts.ready : null));
+    await page.waitForTimeout(600);
+    const file = join(SHOTS, `mock-${id}.png`);
+    await page.locator("body > *").first().screenshot({ path: file });
+    return file;
+  } finally {
+    await ctx.close();
+  }
 }
 
 const tap = (name) => async (page) => {
@@ -58,11 +79,11 @@ const seq = (...steps) => async (page) => {
 };
 const wait = (ms) => async (p) => p.waitForTimeout(ms);
 
-async function shootApp(browser, { name, fixture, before, phone }) {
+async function shootApp(browser, { name, fixture, before, phone, component }) {
   const ctx = await browser.newContext(contextDefaults({ viewport: phone, deviceScaleFactor: 1 }));
   const page = await ctx.newPage();
   try {
-    await page.setContent(harnessHtml(await bundleFor(fixture), await interFontCss(), phone), { waitUntil: "load" });
+    await page.setContent(harnessHtml(await bundleFor(fixture, component), await interFontCss(), phone), { waitUntil: "load" });
     await page.waitForFunction(() => window.__PARITY_READY === true || typeof window.__PARITY_ERROR === "string", { timeout: 20000 });
     const err = await page.evaluate(() => window.__PARITY_ERROR || null);
     if (err) throw new Error(err);
@@ -130,29 +151,61 @@ const ROWS = [
   { id: "D1", label: "D1 · Delivered at 320×640", fixture: "of_d1", phone: P320 },
 ];
 
+// Round 3 (`--round 3`): shops, pharmacy, scheduled, Rx; G1 Home's live bar and G2 the Orders tab's Now
+// cards (their frames render live from the handoff — design/screens has no G PNGs).
+const HOME = join(REPO, "apps/mobile/app/(tabs)/home.tsx");
+const ORDERS = join(REPO, "apps/mobile/app/(tabs)/orders.tsx");
+const ROUND3 = [
+  { id: "T3", label: "T3 · Waiting for a shop to accept", sub: "shops never auto-accept: the 3-minute window", fixture: "of_t3s" },
+  { id: "T5a", label: "T5a · Packing · shop", fixture: "of_t5a" },
+  { id: "T5b", label: "T5b · Packing · pharmacy", sub: "+ the seal note under the prep bar", fixture: "of_t5b" },
+  { id: "T5c", label: "T5c · Pharmacist checking the prescription", fixture: "of_t5c" },
+  { id: "T13a", label: "T13a · Scheduled", fixture: "of_t13a" },
+  { id: "R5a", label: "T13a → Change time (the R5a schedule sheet)", sub: "frame: R5a, the same sheet on Review", fixture: "of_t13a", before: tap("Change time") },
+  { id: "T13b", label: "T13b · Scheduled → started", sub: "slot = the fixture's today 23:00", fixture: "of_t13b" },
+  { id: "P1s", label: "P1s · At your door · pharmacy (check the seal)", fixture: "of_p1s" },
+  { id: "D5a", label: "D5a · Prescription declined · the rest continues", fixture: "of_d5a" },
+  { id: "D5b", label: "D5b · Prescription declined · cancelled", fixture: "of_d5b" },
+  { id: "G1", label: "G1 · Home live bar · restaurant cooking", sub: "frame: every G1 bar; app: one bar per lead order (+6 orders)", fixture: "of_g1", component: HOME, live: true },
+  { id: "G1", label: "G1 · Home live bar · shop needs your answer", fixture: "of_g1a", component: HOME, live: true },
+  { id: "G1", label: "G1 · Home live bar · pharmacy at the door", fixture: "of_g1d", component: HOME, live: true },
+  { id: "G1", label: "G1 · Home live bar · scheduled", fixture: "of_g1s", component: HOME, live: true },
+  { id: "G2", label: "G2 · Orders tab · Now cards", fixture: "of_g2", component: ORDERS, live: true },
+];
+
 await mkdir(SHOTS, { recursive: true });
 const only = process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1].split(",") : null;
+const round3 = process.argv.includes("--round") && process.argv[process.argv.indexOf("--round") + 1] === "3";
+const mocks = new Map();
 const browser = await launch();
 const rows = [];
 try {
-  for (const r of ROWS) {
+  for (const r of round3 ? ROUND3 : ROWS) {
     if (only && !only.includes(r.id)) continue;
     const phone = r.phone ?? P360;
     const narrow = phone.width < 360;
     const name = `${r.id}${narrow ? "-320" : ""}-${r.fixture}`;
     let app = null;
     try {
-      app = await shootApp(browser, { name, fixture: r.fixture, before: r.before, phone });
+      app = await shootApp(browser, { name, fixture: r.fixture, before: r.before, phone, component: r.component });
     } catch (e) {
       console.log(`app ${r.label}: ${String(e?.message || e).slice(0, 300)}`);
     }
-    rows.push({ label: r.label, sub: r.sub, mock: join(FRAMES, `${r.id}${narrow ? "_320" : ""}.png`), app, logicalW: phone.width });
+    let mock = join(FRAMES, `${r.id}${narrow ? "_320" : ""}.png`);
+    if (r.live) {
+      if (!mocks.has(r.id)) mocks.set(r.id, await shootMock(browser, r.id).catch((e) => (console.log(`mock ${r.id}: ${String(e?.message || e).slice(0, 200)}`), null)));
+      mock = mocks.get(r.id);
+    }
+    rows.push({ label: r.label, sub: r.sub, mock, app, logicalW: phone.width });
     console.log(`ok ${r.label}`);
   }
 } finally {
   await browser.close();
 }
 
-await buildSheet({ title: "Order flow v2 · the customer order screen for restaurant orders, round 2 (D-59): handoff (left) vs app (right)", out: OUT, rows });
+const TITLE = round3
+  ? "Order flow v2 · round 3 (D-59): shop / pharmacy / scheduled / Rx order states, G1 live bar, G2 Now cards — handoff (left) vs app (right)"
+  : "Order flow v2 · the customer order screen for restaurant orders, round 2 (D-59): handoff (left) vs app (right)";
+await buildSheet({ title: TITLE, out: OUT, rows });
 await writeFile(`${SHOTS}/README.txt`, "Generated by tools/parity/shoot-order-flow-customer.mjs\n");
 console.log(`sheet: ${OUT}.png (+ .html); shots in ${SHOTS}`);

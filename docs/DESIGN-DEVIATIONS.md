@@ -3317,6 +3317,30 @@ Each PR of the build order appends its line here.
   cancel, which records the owed line; D3f renders the owed sentence + "$X owed" from `owedUsd`. Not here:
   shops/pharmacy/scheduled/Rx, the `previousBalanceUsd` receipt line (no copy in `O`).
   Evidence: `docs/parity/ORDER-FLOW-V2-CUSTOMER-2026-10-02-ROUND2.png`.
+- **PR 7 (2026-10-02, customer round 3 — shops, pharmacy, scheduled, Rx, G1–G3):** the order screen speaks per
+  service off `venue.businessType/shopKind` (README "Per service": the VenuePin / venue tile in #DDD5FF / #C5E9DF
+  with the shop / pharmacy sticker, Packing and items vocabulary, the track's labels, Order again / Try again into
+  `/shops` or `/pharmacy`): T3 for shops (never auto-accept), T5a, T5b (+ the drawn seal note), P1s (door row ①
+  "Check the seal is unbroken before you pay" for a pharmacy, or a shop whose rider ticked "Bag is sealed").
+  Scheduled (Backend B read fields): T13a while `scheduledFor` is set and `scheduleStartedAt` isn't (free cancel,
+  the track with no step started, "Change time" → a ChangeTimeSheet drawn as R5a on `GET …/schedule-slots` +
+  `POST …/schedule` — the shops-ordering PR's ScheduleSheet was not merged yet), T13b ("{v} started cooking", the
+  slot as the arrival range). Rx (by order data, so it renders only when the flag let an Rx order exist): T5c
+  while the check is pending after accept (T3 holds during the accept window), D5a after a decline (reason chip +
+  note, the Rx lines named in `O.d.rxNoGo`, "Cancel the rest — free" → the unpaid cancel), D5b (customer cancel
+  after a decline; a pharmacy-side all-Rx `rx_declined` cancel reads `O.d.rxNo` / "Nothing was charged." — the
+  drawn "you cancelled the rest" wouldn't be true), track step 1 "Prescription checked" from `track.rxChecked`.
+  **G1:** Home's live bar keeps its Calm Mint look and takes the merchant order's stage copy (`O.g.bar` as
+  templates, the order screen's own stage + ETA honesty) and four segments; the service sticker is drawn as a
+  white glyph (utensils / shopping-bag / pill) because the sticker can't be whitened in RN. **G2:** the Orders tab
+  pins a running merchant order as the forest Now card (no "Now" heading — the tab keeps its title). **G3:**
+  `apps/api/src/notifications/merchant-order-push.ts` holds `O.g.push` c/m/r as templates (spec: filled with the
+  samples they equal the handoff's strings byte for byte); wired: customer collected / at the door / delivered /
+  not delivered (new merchant status notices), rider heading to the venue, swap to answer, venue couldn't take
+  it, no rider, Rx declined, scheduled order started, and the rider's new food / shop job. No server ETA exists,
+  so ETA sentences are dropped, never invented. Not wired (no merchant push channel exists; rider ready / cancel
+  / return pushes have no call site yet): `m` and `r[2–4]`. Markup strings added: `OXS` (kit-copy.ts), `OG`
+  (live-copy.ts). Evidence: `docs/parity/ORDER-FLOW-V2-CUSTOMER-2026-10-02-ROUND3.png`.
 
 ### 4 · Open questions, implemented as drawn (owner to confirm)
 

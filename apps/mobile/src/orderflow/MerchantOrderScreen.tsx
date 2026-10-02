@@ -1359,6 +1359,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       break;
     case "rxDeclined": {
       // D5a: the prescription wasn't approved — its lines are off, the rest is packed; "Cancel the rest — free".
+      tall = true;
       const rxLines = order.items.filter((i) => i.rxRequired === true).map((i) => i.name);
       const goes = rxLines.length ? O.d.rxNoGo.replace("Amoxicillin 500mg", rxLines.join(", ")) : null;
       content = (

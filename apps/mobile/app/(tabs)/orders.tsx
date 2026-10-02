@@ -1,3 +1,4 @@
+import type { MerchantOrderResponse } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -9,6 +10,7 @@ import { formatMoney } from "../../src/logic/money";
 import { useNow } from "../../src/logic/use-now";
 import { useFoodOrdersPeek } from "../../src/query/use-food-order";
 import { merchantLive, type MerchantLiveView } from "../../src/ui/orderflow/live-copy";
+import { riderShortName } from "../../src/ui/order/copy";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { invalidateCustomerOrderHistory, useHistoryFeed } from "../../src/query/use-history-feed";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
@@ -62,6 +64,9 @@ function OrderRow({ o, onPress }: { o: OrderHistoryRow; onPress: () => void }): 
     </Pressable>
   );
 }
+
+/** G2 names the rider as the rider card does ("Tendai M."). */
+const riderNameOf = (o: MerchantOrderResponse | undefined): string | null => (o?.rider ? riderShortName(o.rider.firstName, o.rider.lastName) : null);
 
 /** The unlit segment on forest (`.segs i`: white at 22 %, the live bar's own off colour). */
 const NOW_SEG_OFF = "rgba(255,255,255,0.22)";
@@ -207,7 +212,7 @@ export default function OrdersTabScreen(): React.ReactElement {
             // Every order opens the one order screen (D-59): a merchant order is a G2 Now card and draws
             // the Order flow v2 stages there, a parcel After Send.
             o.orderType === "merchant" ? (
-              <NowCard key={o.id} v={merchantLive(o, foodReads[o.id], foodReads[o.id]?.rider?.firstName ?? null, nowMs)} onPress={() => router.push(`/order/${o.id}`)} />
+              <NowCard key={o.id} v={merchantLive(o, foodReads[o.id], riderNameOf(foodReads[o.id]), nowMs)} onPress={() => router.push(`/order/${o.id}`)} />
             ) : (
               <ActiveOrderCard key={o.id} o={o} onPress={() => router.push(`/order/${o.id}`)} />
             ),
