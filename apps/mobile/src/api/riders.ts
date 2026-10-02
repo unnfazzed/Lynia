@@ -24,7 +24,8 @@ export function completeProfile(body: { firstName: string; lastName: string; idN
 }
 
 /** `photoUrl` carries the storage key returned by requestKycPhotoUpload (not a URL). */
-export function becomeRider(body: { bikeReg?: string; photoUrl: string }): Promise<BecomeResult> {
+/** The photo is optional since 2026-10-02 (D-62): sign-up sends none; it is added later. */
+export function becomeRider(body: { bikeReg?: string; photoUrl?: string }): Promise<BecomeResult> {
   return apiFetch("/riders/become", { method: "POST", body });
 }
 

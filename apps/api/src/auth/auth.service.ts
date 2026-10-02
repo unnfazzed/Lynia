@@ -124,6 +124,8 @@ export class AuthService {
         rider: {
           select: {
             bikeReg: true,
+            // Only its presence leaves this endpoint (`hasPhoto`), never the storage key itself.
+            photoUrl: true,
             kycStatus: true,
             ratingAvg: true,
             ratingCount: true,
@@ -191,6 +193,9 @@ export class AuthService {
       rider: p.rider
         ? {
             bikeReg: p.rider.bikeReg,
+            // D-62: the rider photo is optional since 2026-10-02 — Bike & documents reads this to draw
+            // "Not added yet". Additive; older apps ignore it.
+            hasPhoto: p.rider.photoUrl != null,
             kycStatus: p.rider.kycStatus,
             ratingAvg: p.rider.ratingAvg,
             ratingCount: p.rider.ratingCount,

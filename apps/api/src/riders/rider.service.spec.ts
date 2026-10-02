@@ -113,6 +113,17 @@ describe("RiderService.becomeRider", () => {
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
+    it("no photo (optional since 2026-10-02): nothing to verify, the vendor session still opens and the row stores null", async () => {
+      const verify = vi.fn(async () => ({}));
+      const prisma = livePrisma();
+      const submit = vi.fn(async () => ({ ref: "s", status: "pending" as const, url: "u" }));
+      const s = withVerifier(prisma, verify, { submit } as unknown as KycVendor);
+      await s.becomeRider("p1", {});
+      expect(verify).not.toHaveBeenCalled();
+      expect(submit).toHaveBeenCalledTimes(1);
+      expect(prisma.rider.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ photoUrl: null }) }));
+    });
+
     it("never verifies (and so never deletes) a key outside the caller's namespace", async () => {
       const verify = vi.fn(async () => ({}));
       const s = withVerifier(livePrisma(), verify, new StubKycVendor());

@@ -22,7 +22,8 @@ const BecomeRider = z.object({
     .refine((v) => !v || v.length >= 3, "Bike registration must be at least 3 characters"),
   // The storage key returned by POST /uploads/kyc-photo (not a URL anymore — read URLs are minted on
   // demand). Kept the column/field name `photoUrl`; the value it carries is now the object key.
-  photoUrl: z.string().min(1).max(256),
+  // OPTIONAL since 2026-10-02 (owner): the rider photo is no longer a sign-up step — it can be added later.
+  photoUrl: z.string().min(1).max(256).optional(),
 });
 // lat/lng are optional — when the going-online request carries the rider's position we corridor-check it
 // (Q1 out-of-area gate); an older client that omits them just skips the check.

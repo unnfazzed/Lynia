@@ -208,8 +208,14 @@ export const PARITY_STATUS = {
   "RJ.perm_loc": { status: "PENDING" }, // Permission · location
   "RJ.perm_notif": { status: "PENDING" }, // Permission · notifications
   "RJ.kyc_form": { status: "PENDING" }, // KYC form + consent
-  "RJ.photo_capture": { status: "PENDING" }, // Rider photo · capture
-  "RJ.photo_preview": { status: "PENDING" }, // Rider photo · preview
+  "RJ.photo_capture": {
+    status: "PENDING",
+    reason: "Not a sign-up step since docs/DESIGN-DEVIATIONS.md D-62 (owner, 2026-10-02): the rider photo is optional and added later from Settings → Bike & documents. The add-photo camera waits on Claude Design (docs/designs/owner-review-2026-10-02/PROMPTS.md, prompt 1); nothing to wire until it lands.",
+  }, // Rider photo · capture
+  "RJ.photo_preview": {
+    status: "PENDING",
+    reason: "Not a sign-up step since docs/DESIGN-DEVIATIONS.md D-62 (owner, 2026-10-02): see RJ.photo_capture.",
+  }, // Rider photo · preview
   "RJ.photo_uploading": { status: "PENDING" }, // Rider photo · uploading
   "RJ.kyc_pending": { status: "PENDING" }, // Verification pending
   // The two new pending states (P0-1). Adopted into the kit here; the app side is PR 3 of

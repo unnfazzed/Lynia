@@ -19,7 +19,10 @@ export function mapFallbackHint(canLocate: boolean): string {
   // Kit copy (screens-shipped.jsx `ComposerState variant="mapfail"`): "You can still send — search
   // both addresses below. The pin is optional once an address is set." Adapted only where the mock's
   // wording would be wrong here: the search sits ABOVE the compose fields on this screen, and the
-  // locate shortcut exists for the pickup slot, which the static mock has no way to express.
-  const search = "You can still send — search the address above and confirm the pin.";
+  // locate shortcut exists for the pickup slot, which the static mock has no way to express. Since
+  // send-compose-v2 (D-52) there is no confirm-pin step — a picked address commits straight to the row —
+  // so the old "and confirm the pin" sent a customer looking for a step that doesn't exist; the mock's
+  // own second sentence is restored instead (owner review 2026-10-02: Send must work without the map).
+  const search = "You can still send — search the address above. The pin is optional once an address is set.";
   return canLocate ? `${search} Or tap "Use my location" for the pickup.` : search;
 }

@@ -1005,7 +1005,7 @@ export const ADOPTED = [
         state: "intro",
         key: "RJ.kyc_intro",
         reason:
-          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-55, owner instruction 2026-10-01): the rider's first page is the Calm Mint v2 handoff's R1 'Why ride' (app/rider/become.tsx opens on it) — the rider-wash hero with the scooter art, 'Ride with LyniaGo. / Earn on your terms.', three chips, the three-step checklist and 'Start ID check'. The gallery `KycIntro` draws an id-card disc, 'Set up as a rider' and one button; a structural snapshot against it would assert the structure D-55 retired. Re-adoptable when a gallery export draws Calm Mint v2.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-55, owner instruction 2026-10-01): the rider's first page is the Calm Mint v2 handoff's R1 'Why ride' (app/rider/become.tsx opens on it) — the rider-wash hero with the scooter art, 'Ride with LyniaGo. / Earn on your terms.', three chips, the two-step checklist (Your account · ID check; the photo row went with D-62) and 'Start ID check'. The gallery `KycIntro` draws an id-card disc, 'Set up as a rider' and one button; a structural snapshot against it would assert the structure D-55 retired. Re-adoptable when a gallery export draws Calm Mint v2.",
       },
     ],
   },
@@ -1020,7 +1020,7 @@ export const ADOPTED = [
         state: "form",
         key: "RJ.kyc_form",
         reason:
-          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-55, owner instruction 2026-10-01): after R1 the form asks only for the rider photo — the name and national ID only when the account has none on file, and no bike registration (owner decision: papers are optional, added later in Account). The gallery `KycForm` (names, ID, bike reg, photo, consent card) is the structure D-55 retired. Re-adoptable when a gallery export draws Calm Mint v2.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-55, owner instruction 2026-10-01): after R1 'Start ID check' opens the check directly; a details step appears only when the account has no name or national ID on file, and asks for just that — no bike registration and, since D-62 (owner 2026-10-02), no rider photo (both optional, added later in Account → Bike & documents). The gallery `KycForm` (names, ID, bike reg, photo, consent card) is the structure D-55 retired. Re-adoptable when a gallery export draws Calm Mint v2.",
       },
     ],
   },
@@ -1035,7 +1035,7 @@ export const ADOPTED = [
         state: "pending",
         key: "RJ.kyc_pending",
         reason:
-          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-55, owner instruction 2026-10-01): while the automated check is with the vendor the board shows the Calm Mint v2 handoff's R2 'Rider setup' (Checking pill, the mint card, the four-step checklist, 'Send a parcel while you wait'); manual review keeps the Rider v2 wall (D-54). The gallery `KycPending` is the structure both retired. Re-adoptable when a gallery export draws Calm Mint v2.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-55, owner instruction 2026-10-01): while the automated check is with the vendor the board shows the Calm Mint v2 handoff's R2 'Rider setup' (Checking pill, the mint card, the three-step checklist — the photo row went with D-62 — 'Send a parcel while you wait'); manual review keeps the Rider v2 wall (D-54). The gallery `KycPending` is the structure both retired. Re-adoptable when a gallery export draws Calm Mint v2.",
       },
     ],
   },

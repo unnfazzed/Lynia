@@ -3514,3 +3514,34 @@ Merchants were never filtered by distance and still aren't. The broadcast hard c
 | Rider online-gate message (`ONLINE_GATE_COPY.out_of_area`, API `REFUSAL_MESSAGE`) | "…inside the Harare service area / corridor…" | names the towns |
 
 The checkout's per-venue `O.r.outArea` ("{v} doesn't deliver to {a}…") is unchanged.
+
+## D-62 · The rider photo is optional and not a sign-up step — APPROVED (2026-10-02)
+
+**Owner instruction, this session (2026-10-02),** after seeing the old-UI "Rider photo for your profile"
+screen: *"taking a photo is not mandatory, it's optional, and mention that they can do it later in the
+flow. Remove that at KYC or onboarding. Put it where you said licensing and bike details can wait."*
+Clarified:
+- a rider with no photo works normally, with **no reminder**;
+- the add-later home is **Settings → Bike & documents**;
+- **Didit's own selfie + ID check is enough**: no admin review for a missing photo;
+- the add-photo screen **waits for its design**.
+
+**What changes**
+
+| Where | Handoff (Calm Mint v2 / Rider v2) | App |
+|---|---|---|
+| R1 checklist | Your account · ID check · Rider photo for your profile ~30 sec | Your account · ID check |
+| R1 note | "Licence and bike papers can wait." | "Your photo, licence and bike papers can wait." |
+| R2 checklist | Your account · Rider photo (Done) · ID check · Go online | Your account · ID check · Go online (3) |
+| R3 link | "Add licence and bike papers later in Account" | "Add your photo, licence and bike papers later in Account" |
+| After R1 | the photo page (undrawn; old-UI capture + preview) | **"Start ID check" opens the check directly.** Only when the account lacks its name or national ID does an app-authored "A few details first" step ask for just that. |
+| S5 Bike & documents, "Rider photo" row | "Verified" | "Not added yet" when the rider has none (`me.rider.hasPhoto === false`) |
+
+- **API:** `POST /riders/become` takes `photoUrl` as **optional**. When one is sent, it is still
+  namespace-checked and verified. `riders.photo_url` becomes nullable (migration
+  `0068_rider_photo_optional`, expand-only: `DROP NOT NULL`). `/auth/me` adds `rider.hasPhoto`, which is
+  additive.
+- **Removed:** the photo capture, review and resume code in `app/rider/become.tsx`,
+  `src/ui/rider/PhotoReviewCard.tsx`, and their tests.
+- **Parity:** `RJ.photo_capture` and `RJ.photo_preview` stay PENDING with this reason. The add/change
+  photo flow from S5 is Claude Design prompt 1 in `docs/designs/owner-review-2026-10-02/PROMPTS.md`.
