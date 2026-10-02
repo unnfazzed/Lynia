@@ -30,7 +30,7 @@ function makeDeps() {
     sosEvent: {
       findMany: vi.fn().mockResolvedValue([]),
     },
-    // Notifications v1 (D-65): swap rounds on the customer's merchant orders.
+    // Notifications v1 (D-66): swap rounds on the customer's merchant orders.
     merchantOrderSubstitution: {
       findMany: vi.fn().mockResolvedValue([]),
     },
@@ -900,7 +900,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     });
   });
 
-  // ── Notifications v1 (ledger D-65) ─────────────────────────────────────────────────────────────
+  // ── Notifications v1 (ledger D-66) ─────────────────────────────────────────────────────────────
   describe("Notifications v1 — structured row data", () => {
     const t = (hhmm: string) => new Date(`2026-07-06T${hhmm}:00.000Z`);
 

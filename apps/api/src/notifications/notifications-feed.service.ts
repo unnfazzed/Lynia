@@ -29,7 +29,7 @@ export interface NotificationRow {
   message: string;
   at: string;
   unread: boolean;
-  // ── Notifications v1 (ledger D-65): structured fields the app builds the handoff's `N` copy from.
+  // ── Notifications v1 (ledger D-66): structured fields the app builds the handoff's `N` copy from.
   // All additive and optional: older clients keep rendering `title`/`message`, which are unchanged.
   /** What kind of row this is (the `id` prefix, as data). */
   type?: FeedRowType;
@@ -240,7 +240,7 @@ const FEED_ORDER_SCAN_CAP = 50;
 const FEED_ROW_CAP = 50;
 
 /**
- * Notifications v1 (ledger D-65): a merchant (restaurant / shop / pharmacy) order's beats as feed rows,
+ * Notifications v1 (ledger D-66): a merchant (restaurant / shop / pharmacy) order's beats as feed rows,
  * customer voice. Before v1 the feed skipped every merchant order (A-7). The four delivery beats mirror
  * the stage pushes (MERCHANT_STATUS_NOTICES / `O.g.push.c`, named by merchantCustomerCopy); `accepted`
  * and `preparing` are not OrderEvents — they are synthesized from `kitchenConfirmedAt` / `prepStartedAt`
@@ -356,7 +356,7 @@ export class NotificationsFeedService {
           // UX20-04: the current agreed fare, so a fare-adjust feed row can quote the corrected amount
           // exactly like the push does.
           agreedFare: true,
-          // Notifications v1 (D-65): the names and places the app builds the row's title and line from,
+          // Notifications v1 (D-66): the names and places the app builds the row's title and line from,
           // and the kitchen beats of a merchant order (not OrderEvents, see MERCHANT_FEED_NOTICES).
           customerId: true,
           pickup: true,
@@ -396,7 +396,7 @@ export class NotificationsFeedService {
       }),
       // STREAMLINE-01 read watermark: the last time this profile OPENED the notifications centre.
       // `unread` is derived from it below.
-      // Notifications v1 (D-65): plus the current standings, so an account row knows whether it is still
+      // Notifications v1 (D-66): plus the current standings, so an account row knows whether it is still
       // in force (`active` — pinned above the day groups while it is).
       this.prisma.profile.findUnique({
         where: { id: userId },
@@ -465,7 +465,7 @@ export class NotificationsFeedService {
       customerViewOrderIds.length > 0
         ? this.prisma.offer.findMany({
             where: { orderId: { in: customerViewOrderIds }, createdAt: { gte: cutoff } },
-            // Notifications v1 (D-65): the newest offer's fare and rider, for "Farai offered $3.20 to carry it."
+            // Notifications v1 (D-66): the newest offer's fare and rider, for "Farai offered $3.20 to carry it."
             select: { id: true, orderId: true, createdAt: true, offeredFare: true, rider: { select: { profile: { select: { firstName: true } } } } },
           })
         : [],
@@ -507,7 +507,7 @@ export class NotificationsFeedService {
             select: { id: true, target: true, createdAt: true },
           })
         : [],
-      // Notifications v1 (D-65): a merchant swap round ("Panado 24s is out …") on the customer's own
+      // Notifications v1 (D-66): a merchant swap round ("Panado 24s is out …") on the customer's own
       // merchant orders — the needs-you "Review swap" row while it is open, a timeline step after.
       merchantCustomerOrderIds.length > 0
         ? this.prisma.merchantOrderSubstitution.findMany({
@@ -534,7 +534,7 @@ export class NotificationsFeedService {
     const orderById = new Map(orders.map((o) => [o.id, o]));
 
     /**
-     * Notifications v1 (D-65): the order data every order row carries, so the app can title it
+     * Notifications v1 (D-66): the order data every order row carries, so the app can title it
      * ("Parcel to Glenara Ave", the venue, "Eastgate → Glenara Ave") and fill the handoff's sentence
      * shapes ("Tendai is heading to pickup.") without a second request.
      */
@@ -559,7 +559,7 @@ export class NotificationsFeedService {
       // ("Your rider had to cancel", "raise your price"). Type-aware feed notices + deep links are a
       // C5 deliverable — until then, skip a food order's events entirely rather than render wrong
       // copy (mirrors notifications.service.ts's notifyOrderStatus guard, A-6).
-      // Notifications v1 (D-65) lifts that skip for the CUSTOMER of a merchant order: their beats now
+      // Notifications v1 (D-66) lifts that skip for the CUSTOMER of a merchant order: their beats now
       // have their own copy (MERCHANT_FEED_NOTICES). A rider's merchant job reads as a job, so the rider
       // voice is shared with parcels.
       const isMerchant = order.orderType === "merchant";
@@ -820,7 +820,7 @@ export class NotificationsFeedService {
     // admin path and the automated KYC webhook write an AuditLog row keyed by target=profileId, so
     // synthesize from those (prefetched in the user-scoped level) — no Notification table.
     // Account-level, so orderId is null.
-    // Notifications v1 (D-65): a pause / block / hold row is `active` while it is still the account's
+    // Notifications v1 (D-66): a pause / block / hold row is `active` while it is still the account's
     // newest standing change AND the standing it set still holds — that is what pins it in a danger card.
     const newestRiderStanding = accountAudits.find((a) => RIDER_STANDING_ACTIONS.has(a.action))?.id;
     const newestCustomerStanding = accountAudits.find((a) => CUSTOMER_STANDING_ACTIONS.has(a.action))?.id;
@@ -948,7 +948,7 @@ export class NotificationsFeedService {
       });
     }
 
-    // Notifications v1 (D-65): a merchant swap round. Customer voice, in the swap push's own words.
+    // Notifications v1 (D-66): a merchant swap round. Customer voice, in the swap push's own words.
     for (const round of swapRounds) {
       const line = round.lines[0];
       const order = orderById.get(round.orderId);

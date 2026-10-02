@@ -325,7 +325,7 @@ describe("rendered conformance — coverage ledger", () => {
 
   // RC.home was the first screen this lane asserted. Since D-55 (2026-10-01) it follows the Calm Mint
   // v2 handoff, not the gallery's home-8c mock, so it sits in the pending ledger as a SUPERSEDED
-  // target until an export redraws it; the floor on asserted screens stays. D-65 (2026-10-02) retired
+  // target until an export redraws it; the floor on asserted screens stays. D-66 (2026-10-02) retired
   // the asserted LJ.notif_empty with the August Notifications screen (Notifications v1 handoff), so the
   // floor drops by exactly that one screen.
   it("asserts at least five wired screens", () => {

@@ -25,8 +25,11 @@ import { S } from "../copy";
 const metrics = { frame: { x: 0, y: 0, width: 360, height: 720 }, insets: { top: 24, left: 0, right: 0, bottom: 0 } };
 
 let booting: boolean[] = [];
+let mountable: boolean[] = [];
 function Probe(): null {
-  booting.push(useBootPhase().booting);
+  const phase = useBootPhase();
+  booting.push(phase.booting);
+  mountable.push(phase.appMountable);
   return null;
 }
 function Splash(): React.ReactElement | null {
@@ -62,6 +65,7 @@ const texts = (tree: renderer.ReactTestRenderer): string[] => tree.root.findAllB
 beforeEach(() => {
   jest.useFakeTimers();
   booting = [];
+  mountable = [];
   mockHideAsync.mockClear();
   mockScheduleReset.mockClear();
   resetBootReadinessForTest();
@@ -79,6 +83,26 @@ describe("BootSplash", () => {
     act(() => root.props.onLayout({ nativeEvent: { layout: { x: 0, y: 0, width: 360, height: 720 } } }));
     expect(mockHideAsync).toHaveBeenCalledTimes(1);
     expect(released()).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it("draws alone first: the app underneath mounts only on the frame after the splash's first layout", () => {
+    const tree = mount();
+    expect(mountable.at(-1)).toBe(false);
+    const root = tree.root.findAll((n) => typeof n.props.onLayout === "function")[0]!;
+    act(() => root.props.onLayout({ nativeEvent: { layout: { x: 0, y: 0, width: 360, height: 720 } } }));
+    expect(mountable.at(-1)).toBe(false); // same frame — still the splash alone
+    act(() => {
+      jest.advanceTimersByTime(20); // next animation frame
+    });
+    expect(mountable.at(-1)).toBe(true);
+    act(() => tree.unmount());
+  });
+
+  it("never holds the app back if the splash never lays out", () => {
+    const tree = mount();
+    advance(1100);
+    expect(mountable.at(-1)).toBe(true);
     act(() => tree.unmount());
   });
 

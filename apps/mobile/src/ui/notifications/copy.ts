@@ -1,5 +1,5 @@
 /**
- * Notifications v1 (`packages/design/handoff/notifications-v1/`, ledger D-65) — every user-facing string.
+ * Notifications v1 (`packages/design/handoff/notifications-v1/`, ledger D-66) — every user-facing string.
  *
  * `N` is the handoff's `N` (n-kit.jsx), VERBATIM: it ships as drawn. Names, prices, places and times in it
  * are the design's sample data — `src/ui/notifications/model.ts` builds the real strings from the feed in
@@ -102,7 +102,7 @@ export const NF = {
   otherSub: (n: number, what: string) => `${n} ${n === 1 ? "update" : "updates"} · ${what}`,
 };
 
-/** App strings the handoff never drew (ledger D-65 §4). */
+/** App strings the handoff never drew (ledger D-66 §4). */
 export const NX = {
   /** Timeline step for a fare correction (the server row's own title). */
   tlFare: "Fare updated",

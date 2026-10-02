@@ -36,7 +36,7 @@ export function useTabTop(side: "customer" | "rider" = "customer"): {
     greeting: RF.greeting(g.phrase, first),
     evening: g.evening,
     unread: unreadCount > 0,
-    // Notifications v1 (D-65): the feed follows the side the bell was tapped on.
+    // Notifications v1 (D-66): the feed follows the side the bell was tapped on.
     onBell: () => router.push(side === "rider" ? "/notifications?side=rider" : "/notifications"),
     narrow: width < NARROW_DP,
     online: reachable,

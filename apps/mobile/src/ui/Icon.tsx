@@ -126,7 +126,7 @@ const ICONS = {
   "shopping-bag": ShoppingBag, // role select — "Use LyniaGo" (order food, send parcels)
   trash: Trash, // delete account (settings)
   bell: Bell, // BrandHeader notifications
-  "bell-off": BellOff, // Notifications v1 N6 — notifications are off (D-65)
+  "bell-off": BellOff, // Notifications v1 N6 — notifications are off (D-66)
   store: Store, // root tab bar — Home
   receipt: Receipt, // root tab bar — Orders
   utensils: Utensils, // Food service tile

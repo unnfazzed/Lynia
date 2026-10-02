@@ -11,7 +11,7 @@ import { earlier, N } from "./copy";
 import type { NItem, Service, Tone } from "./model";
 
 /**
- * Notifications v1 parts (`packages/design/handoff/notifications-v1/n-kit.jsx`, ledger D-65): `NDisc`,
+ * Notifications v1 parts (`packages/design/handoff/notifications-v1/n-kit.jsx`, ledger D-66): `NDisc`,
  * `NCard`, `Day`, `Beads`, `Timeline`, `NRow`, `SwipeRow`, `OffRow`, `OtherSide`, `SkelRow`, plus the N8
  * empty card and the N10 couldn't-load body. Every measurement is the handoff's.
  */

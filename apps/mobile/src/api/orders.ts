@@ -211,6 +211,36 @@ export function getHistory(): Promise<OrderHistoryRow[]> {
   return apiFetch<OrderHistoryRow[]>("/orders/history");
 }
 
+/** How a customer order ended (Orders v2, ledger D-63) — who cancelled, or why the venue let it go. */
+export type CustomerOrderOutcome =
+  | "delivered"
+  | "cancelled_by_you"
+  | "cancelled_by_rider"
+  | "cancelled_by_lynia"
+  | "kitchen_timeout"
+  | "venue_declined"
+  | "no_rider"
+  | "not_delivered";
+
+/** A row of the customer Orders tab: a history row plus what the tab draws (GET /orders/mine/history). */
+export interface CustomerOrderRow extends OrderHistoryRow {
+  service: "parcel" | "food" | "shops" | "pharmacy";
+  outcome: CustomerOrderOutcome;
+  /** What the customer paid; null = no charge. */
+  chargedTotal: string | null;
+}
+
+export interface CustomerOrdersPage {
+  rows: CustomerOrderRow[];
+  /** Pass back as `cursor` for the next (older) page; null at the end of the history. */
+  nextCursor: string | null;
+}
+
+/** The customer's own orders in every outcome, newest first, 50 a page (Orders v2, ledger D-63). */
+export function getCustomerOrders(cursor?: string | null): Promise<CustomerOrdersPage> {
+  return apiFetch<CustomerOrdersPage>(`/orders/mine/history${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
+}
+
 // WD-004: the rider's true lifetime earnings total + trip count, independent of the 50-row history cap.
 export interface EarningsSummary {
   total: string;

@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { StatusBar } from "expo-status-bar";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Keyboard, Platform, ScrollView, useWindowDimensions, View } from "react-native";
+import { Keyboard, type NativeScrollEvent, type NativeSyntheticEvent, Platform, ScrollView, useWindowDimensions, View } from "react-native";
 import { usePrewarmRoutes, type PrewarmRoute } from "../../src/boot/prewarm-routes";
 import { getActiveCustomerOrders } from "../../src/api/orders";
 import { useNow } from "../../src/logic/use-now";
@@ -12,10 +12,11 @@ import { useClaimOfflineBanner } from "../../src/net/offline-banner-owner";
 import { useReachable } from "../../src/net/use-reachable";
 import { useServiceFlags } from "../../src/net/use-service-flags";
 import { useFoodOrdersPeek } from "../../src/query/use-food-order";
-import { invalidateCustomerOrderHistory, useHistoryFeed } from "../../src/query/use-history-feed";
+import { useCustomerOrders } from "../../src/query/use-customer-orders";
+import { invalidateCustomerOrderHistory } from "../../src/query/use-history-feed";
 import { useNotificationsUnreadCount } from "../../src/query/use-notifications-unread";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
-import { useTabRoot } from "../../src/ui";
+import { useActionError, useTabRoot } from "../../src/ui";
 import { hhmm } from "../../src/ui/order/copy";
 import { ordersCopy as C, OX } from "../../src/ui/orders/copy";
 import {
@@ -24,6 +25,7 @@ import {
   EndRow,
   HistoryRow,
   IconDisc,
+  LoadingOlderRow,
   InfoCard,
   NoteRow,
   NowCard,
@@ -32,6 +34,7 @@ import {
   OrdersButton,
   OrdersHeader,
   OrdersSkeleton,
+  PageFailedRow,
   SearchBar,
   SearchField,
   SectionLabel,
@@ -56,9 +59,8 @@ const ACTIVE_ORDERS_KEY = ["activeCustomerOrders"] as const;
 /** Every row on this tab opens the one order screen; warm it from the list's idle time (prewarm-routes.ts). */
 const ORDERS_PREWARM: readonly PrewarmRoute[] = ["order"];
 
-/** The history endpoint's page size: a shorter page is the whole history. NEEDS BACKEND (orders-v2): a
- *  cursor (`/orders/history?cursor=`) for "Loading older orders…" past it. */
-const HISTORY_PAGE = 50;
+/** Load the next older page when the list is within about one screen of the bottom (README §5). */
+const PAGE_AHEAD_PX = 720;
 
 /** Phones narrower than this draw the 320 header circles (Calm Mint v2's H3 breakpoint). */
 const NARROW_MAX = 340;
@@ -98,7 +100,7 @@ export default function OrdersTabScreen(): React.ReactElement {
     activeOrders.filter((o) => o.orderType === "merchant").map((o) => o.id),
     focused,
   );
-  const { rows, isFetching, refetch, savedAt } = useHistoryFeed();
+  const { rows, isFetching, refetch, savedAt, hasMore, isLoadingMore, loadMoreFailed, loadMore } = useCustomerOrders();
   useForegroundRefetch(() => {
     void qc.invalidateQueries({ queryKey: ACTIVE_ORDERS_KEY });
     invalidateCustomerOrderHistory(qc);
@@ -114,6 +116,19 @@ export default function OrdersTabScreen(): React.ReactElement {
   // ── History: the customer's own orders (carried jobs live in the rider's Job history), minus the running ones ──
   const liveIds = useMemo(() => new Set(activeOrders.map((o) => o.id)), [activeOrders]);
   const history = useMemo(() => (rows ?? []).filter((r) => r.role === "customer" && !liveIds.has(r.id)).map(historyRowVM), [rows, liveIds]);
+  // Paging (README §5): the next page loads by itself near the bottom; a failed page shows its own row,
+  // and a second failure on the same page also speaks once as the ink toast (O14t).
+  const speak = useActionError();
+  const failures = useRef(0);
+  const older = useCallback(async (): Promise<void> => {
+    if (!hasMore || isLoadingMore) return;
+    if (await loadMore()) failures.current = 0;
+    else if (++failures.current >= 2) speak(C.toast);
+  }, [hasMore, isLoadingMore, loadMore, speak]);
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>): void => {
+    const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+    if (!loadMoreFailed && layoutMeasurement.height + contentOffset.y >= contentSize.height - PAGE_AHEAD_PX) void older();
+  };
   const services: OrdersService[] = [
     "send",
     ...(restaurantsEnabled ? (["restaurants"] as const) : []),
@@ -123,6 +138,10 @@ export default function OrdersTabScreen(): React.ReactElement {
   const [filter, setFilter] = useState<OrdersFilter>("all");
   const shownFilter: OrdersFilter = filter === "all" || services.includes(filter) ? filter : "all";
   const filtered = shownFilter === "all" ? history : history.filter((r) => r.service === shownFilter);
+  // A chip with no matches in the pages held keeps paging until the end (README §5) before it says "none".
+  useEffect(() => {
+    if (shownFilter !== "all" && filtered.length === 0 && hasMore && !isLoadingMore && !loadMoreFailed) void older();
+  }, [shownFilter, filtered.length, hasMore, isLoadingMore, loadMoreFailed, older]);
 
   // ── Search ──
   const [query, setQuery] = useState("");
@@ -249,6 +268,8 @@ export default function OrdersTabScreen(): React.ReactElement {
         {q ? (
           // O10d — results with the keyboard down; the search ignores the chip filter.
           results()
+        ) : none && filtered.length === 0 && (hasMore || isLoadingMore) && !loadMoreFailed ? (
+          <LoadingOlderRow />
         ) : none && filtered.length === 0 ? (
           <InfoCard art={<ServiceArt service={none} />} title={none === "pharmacy" ? OX.pharmacyNone : C.filterNone[none]} body={C.filterNoneSub}>
             <OrdersButton kind="ghost" label={C.showAll} onPress={() => setFilter("all")} />
@@ -263,7 +284,13 @@ export default function OrdersTabScreen(): React.ReactElement {
                 ))}
               </View>
             ))}
-            {(rows?.length ?? 0) < HISTORY_PAGE && shownFilter === "all" ? <EndRow since={monthYear(history[history.length - 1]!.createdAt)} /> : null}
+            {loadMoreFailed ? (
+              <PageFailedRow onRetry={() => void older()} />
+            ) : isLoadingMore ? (
+              <LoadingOlderRow />
+            ) : !hasMore && shownFilter === "all" ? (
+              <EndRow since={monthYear(history[history.length - 1]!.createdAt)} />
+            ) : null}
           </>
         )}
       </>
@@ -279,6 +306,8 @@ export default function OrdersTabScreen(): React.ReactElement {
         style={{ backgroundColor: tokens.color.bg }}
         contentContainerStyle={{ paddingBottom: bottomPad }}
         keyboardShouldPersistTaps="handled"
+        onScroll={onScroll}
+        scrollEventThrottle={200}
         showsVerticalScrollIndicator={false}
       >
         {body}

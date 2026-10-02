@@ -3,7 +3,7 @@ import type { IconName } from "../Icon";
 import { N, NF, NX } from "./copy";
 
 /**
- * Notifications v1 (`packages/design/handoff/notifications-v1/`, ledger D-65) — the feed as the screen
+ * Notifications v1 (`packages/design/handoff/notifications-v1/`, ledger D-66) — the feed as the screen
  * draws it. Pure: no React, no clock of its own (`now` is passed in), so every rule here is unit-tested.
  *
  * - **Grouping** (README "Behaviour"): one row per order, showing its latest update; the order's earlier
@@ -13,7 +13,7 @@ import { N, NF, NX } from "./copy";
  * - **Danger pin** (N1c / N3): an SOS, a pause or a block still in force pins above the day groups.
  * - **Copy**: the handoff's `N`, filled from the row data in the same sentence shapes (`NF`). Where `N`
  *   states something the feed doesn't know (a reason, an amount), the row keeps the server's own copy —
- *   the push the user got (ledger D-65 §4).
+ *   the push the user got (ledger D-66 §4).
  */
 
 export type Side = "customer" | "rider";

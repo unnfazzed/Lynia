@@ -108,6 +108,12 @@ export const OX = {
   toPickupNoName: 'Heading to pickup',
   collectedNoName: 'Parcel collected',
   onWayNoName: 'On the way',
+  /** Outcomes the handoff's table has no label for (D-63 §6): a venue that turned the order down, and an
+   *  ops cancel (README §9 lists the `lynia` reason). Neutral tone — neither cost the customer money. */
+  venueDeclinedFood: 'Restaurant couldn’t take it',
+  venueDeclinedShop: 'Shop couldn’t take it',
+  venueDeclinedPharmacy: 'Pharmacy couldn’t take it',
+  cancelledByLynia: 'Cancelled by LyniaGo',
   /** The ETA chip — Calm Mint v2's live-bar chip format. */
   eta: (min: number) => `${min} min`,
 } as const;

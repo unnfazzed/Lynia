@@ -35,6 +35,13 @@ export interface BootPhase {
    * "in place", so a boot that ends any other way never strands the app off-screen.
    */
   reveal: BootReveal;
+  /**
+   * Whether the app under the splash may mount yet. False only for the very first frames of a cold
+   * start: the splash draws ALONE first, so its first frame is not held up by the navigator's mount
+   * (which commits one frame later, still off-screen). `markSplashDrawn` flips it; `endBoot` too.
+   */
+  appMountable: boolean;
+  markSplashDrawn: () => void;
 }
 
 export interface BootReveal {
@@ -50,10 +57,12 @@ const inPlace = (): BootReveal => ({ y: new Animated.Value(1), radius: new Anima
 
 /** Default is "not booting": a subtree mounted without the provider (tests, the parity lane, the
  *  error boundary's own tree) should behave like the ordinary app, not like a permanent cold start. */
-const BootPhaseContext = createContext<BootPhase>({ booting: false, endBoot: () => {}, reveal: inPlace() });
+const BootPhaseContext = createContext<BootPhase>({ booting: false, endBoot: () => {}, reveal: inPlace(), appMountable: true, markSplashDrawn: () => {} });
 
 export function BootPhaseProvider({ children }: { children: React.ReactNode }): React.ReactElement {
   const [booting, setBooting] = useState(true);
+  const [splashDrawn, setSplashDrawn] = useState(false);
+  const markSplashDrawn = useCallback(() => setSplashDrawn(true), []);
   const reveal = useRef<BootReveal>({
     y: new Animated.Value(0),
     radius: new Animated.Value(REVEAL_RADIUS),
@@ -66,7 +75,8 @@ export function BootPhaseProvider({ children }: { children: React.ReactNode }): 
     reveal.opacity.setValue(1);
     setBooting(false);
   }, [reveal]);
-  const value = useMemo(() => ({ booting, endBoot, reveal }), [booting, endBoot, reveal]);
+  const appMountable = splashDrawn || !booting;
+  const value = useMemo(() => ({ booting, endBoot, reveal, appMountable, markSplashDrawn }), [booting, endBoot, reveal, appMountable, markSplashDrawn]);
   return <BootPhaseContext.Provider value={value}>{children}</BootPhaseContext.Provider>;
 }
 

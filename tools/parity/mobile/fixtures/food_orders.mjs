@@ -78,6 +78,8 @@ installRouter([
   // plural match right; this fixture just hadn't been updated to match.
   { match: /^\/orders\/mine\/active-orders$/, json: [activeOrder] },
   { match: "/orders/history", json: history },
+  // Orders v2 (D-63): the tab reads the customer feed.
+  { match: "/orders/mine/history", json: { rows: history.filter((r) => r.role === "customer"), nextCursor: null } },
 ]);
 
 export default { wrap: withQuery() };

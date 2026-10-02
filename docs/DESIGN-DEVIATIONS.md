@@ -3603,7 +3603,7 @@ Each is marked `NEEDS BACKEND (orders-v2)` in `src/ui/orders/model.ts` / `app/(t
   returns those rows. The cancel reason is not on the row yet: a cancel reads "Cancelled by you".
 - **Service:** the row has no venue type, so every merchant row files under Food (the Shops / Pharmacy
   chips match only once it does).
-- **Amount:** the row's agreed fare (a merchant row's delivery fare, not its food total).
+- **Amount:** the row's agreed fare (for a merchant row this is already the grand total).
 - **Area:** "Parcel to <area>" uses the first comma segment of the drop-off address.
 - **Paging:** no cursor yet. The End row shows only when the feed returned fewer than 50 rows; "Loading
   older" (O12) and the page-failed row (O14/O14t) wait for `/orders/history?cursor=`.
@@ -3611,6 +3611,31 @@ Each is marked `NEEDS BACKEND (orders-v2)` in `src/ui/orders/model.ts` / `app/(t
 
 **Evidence:** `docs/parity/ORDERS-V2-2026-10-02.png` (`tools/parity/shoot-orders-v2.mjs`, the `ov2_*`
 fixtures) — O1, O2, O5, O9a, O16, O17, O18, O21, handoff left, app right.
+
+### 6 · The backend round (2026-10-02, the owner's "backend after")
+
+`GET /orders/mine/history` (`OrdersService.customerOrders`) now feeds the tab: the customer's own orders
+in **every** terminal outcome, newest first, 50 a page behind a `createdAt|id` cursor, each row carrying
+`service` (parcel / food / shops / pharmacy), `outcome` and `chargedTotal` (null = no charge; a merchant
+row's grand total, which `agreedFare` already holds). `/orders/history` is unchanged — the rider's Job
+history, Money and earnings keep reading completed trips across both roles. The mobile feed
+(`useCustomerOrders`, key `["history", "customer"]`) pages automatically near the bottom (O12), shows the
+page-failed row (O14) and the End row only when the server has no next page (O13), keeps paging under a
+chip with no matches (README §5), and warm-paints through the persisted query cache. An API without the
+endpoint (404) falls back to the legacy feed as one page. §5's fallbacks for service, outcome, amount and
+paging are retired.
+
+Outcomes the handoff's table doesn't label, with their copy in `OX` (neutral tone, `ban` icon):
+
+| Outcome (server) | When | Label |
+|---|---|---|
+| `venue_declined` | the venue turned the order down (out of stock, prescription declined) | "Restaurant couldn’t take it" · "Shop couldn’t take it" · "Pharmacy couldn’t take it" |
+| `cancelled_by_lynia` | an ops cancel (README §9's `lynia` reason) | "Cancelled by LyniaGo" |
+
+**Still open:** search matches the pages already loaded (no server search yet); the area in "Parcel to
+<area>" is still the drop-off's first address segment (no suburb field); and the O14t toast speaks the
+handoff's text once but carries no "Try again" action (the app's toast has none) — the page-failed row
+right above it offers the retry.
 
 ## D-64 · Splash v1 — "1a Sun & orbit": the splash stays up until the app is ready — handoff APPROVED (2026-10-02); deviations 1–6 PENDING OWNER REVIEW
 
@@ -3656,9 +3681,25 @@ frame + `app/splash.view.tsx`). Those gallery screens are SUPERSEDED and not ali
 | 3 | Steps card / panels at 16 / 14px from the bottom, pill at top 44 | Plus the device's bottom inset; pill at max(44, top inset + 8) | The mock frame has no system bars; this keeps them clear of gesture/nav bars and notches. |
 | 4 | Card shadow `0 18px 40px -12px rgba(0,0,0,.3)` | One-layer RN shadow (offset 18, radius 20, opacity .3, elevation 12) | The app runs the old architecture: no `boxShadow`, no spread. |
 | 5 | Orbit's CSS dashed border | SVG circle, `strokeDasharray 6 6` | Dashed rounded borders aren't reliable on Android. |
+| 6 | Splash starts on plain green | ~~The native launch frame still shows the old dove + wordmark lockup~~ **Resolved (owner, 2026-10-02: "remove it entirely the old dove and wordmark"):** the native launch screen is now plain green (`assets/splash-blank.xml` / `splash-blank.png`); the lockup generator (`src/ui/splash-lockup.ts`, `scripts/build-splash-icon.mjs`) and its assets are deleted. | Native config: reaches devices only in the next store build (none dispatched — owner: "dont build an expo"). Until then installed binaries keep the old frame. |
+
+## D-65 · The Home service tile reads "Food", not "Restaurants" — APPROVED (2026-10-02)
+
+**Owner instruction, this session (2026-10-02):** *"Rename restaurants on home to Food but keep
+everything named restaurants like that."*
+
+| Where | Handoff (Calm Mint v2 `H.tiles.food`) | App |
+|---|---|---|
+| Home service tile (H1–H5, 360px) | "Restaurants" | "Food" (and its accessibility label) |
+| Home service tile (H3, 320px) | "Food" | "Food" (unchanged) |
+
+Scope is the Home tile label only. Everything else keeps "Restaurants" verbatim: the "Popular
+restaurants" rail, the "Restaurants are coming soon" sheet, the Browse v2 list, search, storefront and
+order screens (`src/ui/browse/copy.ts`), and code names (`RestaurantsSticker`, routes).
+
 | 6 | Splash starts on plain green | The native launch frame still shows the old dove + wordmark lockup until the JS splash draws | Changing it needs a new store build (native assets). **Follow-up:** a plain-green native launch frame, so the cold start reads as one screen. |
 
-## D-65 · Notifications v1: the shared Notifications screen follows the notifications-v1 handoff — handoff APPROVED (2026-10-02); deviations 1–9 PENDING OWNER REVIEW
+## D-66 · Notifications v1: the shared Notifications screen follows the notifications-v1 handoff — handoff APPROVED (2026-10-02); deviations 1–9 PENDING OWNER REVIEW
 
 **Owner instruction, this session (2026-10-02):** *"lets implement the notification changes now to the app"*,
 with the design export attached (`Lynia_Design_System.zip` → `handoff/notifications-v1/`). Vendored

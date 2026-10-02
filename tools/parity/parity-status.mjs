@@ -35,11 +35,11 @@ export const PARITY_STATUS = {
   "LJ.home_flag_off": { status: "PENDING" }, // Home · Food tile soon
   "LJ.notifications": {
     status: "PENDING",
-    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-65 (owner, 2026-10-02): the Notifications v1 handoff (packages/design/handoff/notifications-v1, N1–N10) redraws the shared Notifications screen for both sides — one row per order with its timeline, tone discs, a danger pin, needs-you buttons, swipe + Undo, the notifications-off row, the dual-role side row, and skeleton / slow / empty / couldn’t-load states (app/notifications/index.tsx, src/ui/notifications/*). app/notifications/notifications.view.tsx was deleted. Not aligned to.",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-66 (owner, 2026-10-02): the Notifications v1 handoff (packages/design/handoff/notifications-v1, N1–N10) redraws the shared Notifications screen for both sides — one row per order with its timeline, tone discs, a danger pin, needs-you buttons, swipe + Undo, the notifications-off row, the dual-role side row, and skeleton / slow / empty / couldn’t-load states (app/notifications/index.tsx, src/ui/notifications/*). app/notifications/notifications.view.tsx was deleted. Not aligned to.",
   }, // Notifications
   "LJ.notif_empty": {
     status: "PENDING",
-    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-65 (owner, 2026-10-02): the Notifications v1 handoff (packages/design/handoff/notifications-v1, N1–N10) redraws the shared Notifications screen for both sides — one row per order with its timeline, tone discs, a danger pin, needs-you buttons, swipe + Undo, the notifications-off row, the dual-role side row, and skeleton / slow / empty / couldn’t-load states (app/notifications/index.tsx, src/ui/notifications/*). app/notifications/notifications.view.tsx was deleted. Not aligned to.",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-66 (owner, 2026-10-02): the Notifications v1 handoff (packages/design/handoff/notifications-v1, N1–N10) redraws the shared Notifications screen for both sides — one row per order with its timeline, tone discs, a danger pin, needs-you buttons, swipe + Undo, the notifications-off row, the dual-role side row, and skeleton / slow / empty / couldn’t-load states (app/notifications/index.tsx, src/ui/notifications/*). app/notifications/notifications.view.tsx was deleted. Not aligned to.",
   }, // Notifications · empty
   "LJ.splash": {
     status: "PENDING",
@@ -285,7 +285,7 @@ export const PARITY_STATUS = {
   "RJM.offline": { status: "PENDING" }, // Offline
   "RJM.notifications": {
     status: "PENDING",
-    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-65 (owner, 2026-10-02): the Notifications v1 handoff (packages/design/handoff/notifications-v1, N1–N10) redraws the shared Notifications screen for both sides — one row per order with its timeline, tone discs, a danger pin, needs-you buttons, swipe + Undo, the notifications-off row, the dual-role side row, and skeleton / slow / empty / couldn’t-load states (app/notifications/index.tsx, src/ui/notifications/*). app/notifications/notifications.view.tsx was deleted. Not aligned to.",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-66 (owner, 2026-10-02): the Notifications v1 handoff (packages/design/handoff/notifications-v1, N1–N10) redraws the shared Notifications screen for both sides — one row per order with its timeline, tone discs, a danger pin, needs-you buttons, swipe + Undo, the notifications-off row, the dual-role side row, and skeleton / slow / empty / couldn’t-load states (app/notifications/index.tsx, src/ui/notifications/*). app/notifications/notifications.view.tsx was deleted. Not aligned to.",
   }, // One inbox
   "RJM.board_food_off": { status: "PENDING" }, // Jobs · food dispatch off
   "RJM.board_empty_food_off": { status: "PENDING" }, // Food off · nothing in range

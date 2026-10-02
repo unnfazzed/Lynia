@@ -1,6 +1,6 @@
 import { tokens } from "@lynia/shared/tokens";
-import React from "react";
-import { ScrollView, Text, TextInput, useWindowDimensions, View, type TextStyle, type ViewStyle } from "react-native";
+import React, { useEffect, useRef } from "react";
+import { Animated, Easing, ScrollView, Text, TextInput, useWindowDimensions, View, type TextStyle, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { TrustTrackingArt } from "../art/TrustTrackingArt";
 import { PharmacyStickerV2, RestaurantsSticker, SendStickerV2, ShopsSticker } from "../art/stickers";
@@ -354,7 +354,9 @@ const OUTCOME: Record<Outcome, { tone: Tone; icon: IconName }> = {
   delivered: { tone: "ok", icon: "check" },
   cancelledByYou: { tone: "neutral", icon: "ban" },
   cancelledByRider: { tone: "neutral", icon: "ban" },
+  cancelledByLynia: { tone: "neutral", icon: "ban" },
   kitchenTimeout: { tone: "neutral", icon: "clock" },
+  venueDeclined: { tone: "neutral", icon: "ban" },
   noRider: { tone: "neutral", icon: "bike" },
   notDelivered: { tone: "bad", icon: "triangle-alert" },
 };
@@ -365,6 +367,8 @@ const TONE: Record<Tone, { bg: string; ink: string }> = {
 };
 
 function outcomeLabel(outcome: Outcome, service: OrdersService): string {
+  if (outcome === "cancelledByLynia") return OX.cancelledByLynia;
+  if (outcome === "venueDeclined") return service === "pharmacy" ? OX.venueDeclinedPharmacy : service === "shops" ? OX.venueDeclinedShop : OX.venueDeclinedFood;
   if (outcome === "kitchenTimeout") return service === "pharmacy" ? OX.pharmacyTimeout : service === "shops" ? C.outcome.shopTimeout : C.outcome.kitchenTimeout;
   return C.outcome[outcome];
 }
@@ -454,6 +458,42 @@ export function HistoryRow({ r, when, q = "", last, onPress }: { r: HistoryRowVM
 }
 
 // ── Footers, banners, cards ─────────────────────────────────────────────────────────────────────
+
+/** The 18px ring (2.5px tile-send track, brand top arc, 0.8 s linear turn) the handoff draws. */
+function Spinner(): React.ReactElement {
+  const turn = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(Animated.timing(turn, { toValue: 1, duration: 800, easing: Easing.linear, useNativeDriver: true }));
+    loop.start();
+    return () => loop.stop();
+  }, [turn]);
+  const rotate = turn.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
+  return (
+    <Animated.View
+      style={{ width: 18, height: 18, borderRadius: 9, borderWidth: 2.5, borderColor: tokens.color.tileSend, borderTopColor: tokens.color.accent, transform: [{ rotate }] }}
+    />
+  );
+}
+
+/** Loading older orders (O12): an 18px ring (track tile-send, brand arc) + "Loading older orders…". */
+export function LoadingOlderRow(): React.ReactElement {
+  return (
+    <View accessibilityRole="progressbar" accessibilityLabel={C.loadingOlder} style={{ minHeight: 56, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 8, paddingHorizontal: 16 }}>
+      <Spinner />
+      <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.semibold, color: tokens.color.muted }}>{C.loadingOlder}</Text>
+    </View>
+  );
+}
+
+/** An older page failed (O14): the list above stays; this row offers "Try again". */
+export function PageFailedRow({ onRetry }: { onRetry: () => void }): React.ReactElement {
+  return (
+    <View style={{ marginTop: 8, marginHorizontal: 16, marginBottom: 16, backgroundColor: tokens.color.surface, borderRadius: 14, paddingVertical: 6, paddingRight: 6, paddingLeft: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+      <Text style={{ flexShrink: 1, fontSize: 13, fontWeight: tokens.font.weight.semibold, color: tokens.color.muted }}>{C.olderFail}</Text>
+      <OrdersButton kind="ghost" icon="refresh-cw" label={C.tryAgain} onPress={onRetry} />
+    </View>
+  );
+}
 
 /** End of history (O13): ✓ "That's everything" over "Your orders since Mar 2025". */
 export function EndRow({ since }: { since: string }): React.ReactElement {

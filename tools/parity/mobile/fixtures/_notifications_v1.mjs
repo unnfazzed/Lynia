@@ -1,4 +1,4 @@
-// Notifications v1 staging (ledger D-65; tools/parity/shoot-notifications-v1.mjs): the feed rows of the
+// Notifications v1 staging (ledger D-66; tools/parity/shoot-notifications-v1.mjs): the feed rows of the
 // handoff's own sample (packages/design/handoff/notifications-v1/n-screens.jsx CF / RF), in the shape the
 // API now sends (type / beat / service / places / names / steps / active), so the app column reads like the
 // handoff column beside it.

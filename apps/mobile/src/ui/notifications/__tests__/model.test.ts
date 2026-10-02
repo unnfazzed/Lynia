@@ -2,7 +2,7 @@ import type { NotificationRow } from "../../../api/notifications";
 import { earlier, N, NF } from "../copy";
 import { buildFeed, dayLabel, timeLabel } from "../model";
 
-/** Notifications v1 (ledger D-65): the view-model rules, README "Behaviour" / "Tones" / "Time". */
+/** Notifications v1 (ledger D-66): the view-model rules, README "Behaviour" / "Tones" / "Time". */
 
 const NOW = new Date(2026, 9, 2, 12, 30); // Fri 2 Oct 2026, 12:30 local
 const at = (d: number, h: number, m = 0): string => new Date(2026, 9, d, h, m).toISOString();

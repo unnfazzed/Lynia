@@ -187,7 +187,7 @@ function SplashWhileBooting(): React.ReactElement | null {
  * place, and the clip/background only apply while booting.
  */
 function AppStage({ children }: { children: React.ReactNode }): React.ReactElement {
-  const { booting, reveal } = useBootPhase();
+  const { booting, reveal, appMountable } = useBootPhase();
   const { height } = useWindowDimensions();
   const translateY = reveal.y.interpolate({ inputRange: [0, 1], outputRange: [height * 1.05, 0] });
   return (
@@ -203,7 +203,7 @@ function AppStage({ children }: { children: React.ReactNode }): React.ReactEleme
             : { flex: 1 }
         }
       >
-        {children}
+        {appMountable ? children : null}
       </Animated.View>
     </Animated.View>
   );

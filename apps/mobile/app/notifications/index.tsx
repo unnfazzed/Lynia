@@ -25,7 +25,7 @@ import { Notice } from "../../src/ui/send/kit";
 
 /**
  * Notifications (customer + rider, one screen) — Notifications v1, `packages/design/handoff/notifications-v1/`
- * (ledger D-65). Replaces the August screen (gallery `LJ.notifications` / `LJ.notif_empty`, retired).
+ * (ledger D-66). Replaces the August screen (gallery `LJ.notifications` / `LJ.notif_empty`, retired).
  *
  * The pushed-screen header, then a surface page of white r16 cards: an optional notifications-off row
  * (N6), the other side's row for dual-role users (N4), danger items in force pinned in a danger card

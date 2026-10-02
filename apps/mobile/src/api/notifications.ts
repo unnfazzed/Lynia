@@ -25,7 +25,7 @@ export interface NotificationRow {
   message: string;
   at: string;
   unread: boolean;
-  // Notifications v1 (ledger D-65): structured data the screen builds the handoff's copy from. All
+  // Notifications v1 (ledger D-66): structured data the screen builds the handoff's copy from. All
   // optional — an older API omits them and the screen falls back to `title` / `message`.
   type?: "status" | "offer" | "fare" | "riders_available" | "account" | "sos" | "standing" | "standing_resolved" | "issue" | "swap";
   beat?: string;
