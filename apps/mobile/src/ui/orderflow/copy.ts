@@ -660,5 +660,9 @@ export const O_ADDED = {
     owed: "Owed from a cancelled order",
     /** R5c — the closed venue's cart bar button. */
     review: "Review",
+    /** Ledger D-71 — the Delivery fee row's value when the venue pays for delivery. Verbatim from the
+     *  calm-mint-v2 handoff README §5: "Checkout reads 'Delivery: Free, paid by <venue>'". No R frame
+     *  draws it (the handoff predates the flag). */
+    freePaidBy: "Free, paid by {v}",
   },
 } as const;

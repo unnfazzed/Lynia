@@ -27,6 +27,7 @@ const mockMenu = {
     ratingAvg: 4.7,
     ratingCount: 210,
     prepBaselineMinutes: 20,
+    freeDelivery: false as boolean,
   },
   categories: [{ id: "c1", name: "Mains", dishes: [dish("d1", "Sadza & beef stew", 4.5), dish("d2", "Roast chicken (half)", 6)] }],
 };
@@ -128,6 +129,7 @@ beforeEach(() => {
   mockOnline = true;
   mockHome = { label: "12 Lanark Rd", point: { lat: -17.8, lng: 31.05 }, area: "Belgravia" };
   mockMenu.restaurant.hours = null;
+  mockMenu.restaurant.freeDelivery = false;
   mockMenu.categories[0]!.dishes = [dish("d1", "Sadza & beef stew", 4.5), dish("d2", "Roast chicken (half)", 6)];
   mockCart.cart = { restaurantId: "m1", restaurantName: "Gava’s Kitchen", lines: GAVA.map((l) => ({ ...l })), orderNote: "", venue: null };
   mockParams = {};
@@ -163,6 +165,25 @@ describe("R1 — Review · restaurant", () => {
     expect(all).not.toContain("PRESCRIPTION");
     // Cash only (BRIEF §14).
     expect(all.join(" ")).not.toMatch(/wallet|mobile money|ecocash|innbucks/i);
+  });
+
+  // D-71: free delivery paid by the venue — "Delivery: Free, paid by <venue>" (calm-mint-v2 README §5).
+  it("D-71: a free-delivery venue reads “Free, paid by …” and the cash total is the food alone", async () => {
+    mockMenu.restaurant.freeDelivery = true;
+    const t = render();
+    await flush();
+    const all = texts(t);
+    expect(all).toContain("Free, paid by Gava’s Kitchen");
+    // $9.00 + $6.00 food, $0 delivery.
+    expect(all).toContain("Place order · $15.00 cash");
+  });
+
+  it("D-71: without the venue's flag the fee is charged as before", async () => {
+    const t = render();
+    await flush();
+    const all = texts(t);
+    expect(all.some((s) => s.startsWith("Free, paid by"))).toBe(false);
+    expect(all).not.toContain("Place order · $15.00 cash");
   });
 
   it("edits quantities in place — − lowers, the bin at 1 removes, + adds", () => {

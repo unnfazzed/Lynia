@@ -240,6 +240,8 @@ export interface PopularVenue {
   etaMinutes: number | null;
   /** Formatted ("$1.50"), or null when the distance cannot be computed. */
   deliveryFee: string | null;
+  /** D-71: the venue pays the delivery fee — the card shows the purple "Free delivery" tag instead. */
+  freeDelivery: boolean;
   closed: boolean;
   /** Straight-line km to the customer; null when unknown. Ordering key, not drawn. */
   distanceKm: number | null;
@@ -277,6 +279,7 @@ export function popularNearYou(
       rating: r.ratingCount > 0 && r.ratingAvg != null ? r.ratingAvg.toFixed(1) : null,
       etaMinutes: roadKm == null ? null : prep + Math.max(1, Math.ceil((roadKm / ETA_SPEED_KMH) * 60)),
       deliveryFee: distanceKm == null ? null : formatMoney(deliveryFeeForDistance(distanceKm)),
+      freeDelivery: r.freeDelivery === true,
       closed: !isMerchantOpenNow(r.hours, now),
       distanceKm,
     };

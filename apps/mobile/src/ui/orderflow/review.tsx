@@ -594,11 +594,21 @@ export function ReviewField({ icon, style, ...input }: TextInputProps & { icon?:
 }
 
 /** `.kv`: 13 muted label, 600 value; the Total row is ink 700 + 17/700. */
-function Kv({ k, v, total, first }: { k: string; v: number; total?: boolean; first?: boolean }): React.ReactElement {
+function Kv({ k, v, text, total, first }: { k: string; v: number; text?: string; total?: boolean; first?: boolean }): React.ReactElement {
   return (
     <View style={{ flexDirection: "row", alignItems: "baseline", gap: 12, paddingVertical: 7, borderTopWidth: first ? 0 : 1, borderTopColor: tokens.color.line }}>
       <Text style={{ flex: 1, fontSize: 13, color: total ? tokens.color.ink : tokens.color.muted, fontWeight: total ? tokens.font.weight.bold : tokens.font.weight.regular }}>{k}</Text>
-      <Text style={{ fontSize: total ? 17 : 13, fontWeight: total ? tokens.font.weight.bold : tokens.font.weight.semibold, color: tokens.color.ink, ...TABULAR }}>{formatMoney(v)}</Text>
+      {/* D-71: free delivery reads bold in the purple `free` token — browse-v2's rule for "Free delivery" text. */}
+      <Text
+        style={{
+          fontSize: total ? 17 : 13,
+          fontWeight: total || text ? tokens.font.weight.bold : tokens.font.weight.semibold,
+          color: text ? tokens.color.free : tokens.color.ink,
+          ...TABULAR,
+        }}
+      >
+        {text ?? formatMoney(v)}
+      </Text>
     </View>
   );
 }
@@ -612,6 +622,7 @@ export function Breakdown({
   total,
   goodsLabel = O.r.food,
   owed = 0,
+  freeDeliveryBy = null,
 }: {
   food: number;
   deliveryFee: number | null;
@@ -620,11 +631,15 @@ export function Breakdown({
   /** "Food" for a kitchen, "Items" for a shop or pharmacy (of-screens-rt.js `brk`). */
   goodsLabel?: string;
   owed?: number;
+  /** D-71: the venue paying for delivery — the fee row reads "Free, paid by {venue}" (deliveryFee is 0). */
+  freeDeliveryBy?: string | null;
 }): React.ReactElement {
   return (
     <View style={{ backgroundColor: tokens.color.bg, borderRadius: 16, paddingTop: 6, paddingHorizontal: 16, paddingBottom: 14 }}>
       <Kv k={goodsLabel} v={food} first />
-      {deliveryFee != null ? <Kv k={O.r.fee} v={deliveryFee} /> : null}
+      {deliveryFee != null ? (
+        <Kv k={O.r.fee} v={deliveryFee} text={freeDeliveryBy != null && deliveryFee === 0 ? ofFmt(O_ADDED.r.freePaidBy, { v: freeDeliveryBy }) : undefined} />
+      ) : null}
       {smallOrderFee > 0 ? <Kv k={O.r.small} v={smallOrderFee} /> : null}
       {owed > 0 ? <Kv k={O_ADDED.r.owed} v={owed} /> : null}
       <Kv k={O.r.total} v={total} total />

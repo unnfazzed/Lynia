@@ -51,6 +51,11 @@ describe("foodCashBreakdown", () => {
   it("treats a missing figure as zero rather than throwing", () => {
     expect(foodCashBreakdown({ merchantGoodsTotal: null, deliveryFee: null })).toEqual({ collected: 0, kept: 0, owed: 0 });
   });
+
+  it("D-71: free delivery paid by the venue — the rider still keeps the full fee, less goes back", () => {
+    // $13.00 goods, $0 delivery for the customer → $13.00 collected, rider keeps $2.50, owes $10.50 back.
+    expect(foodCashBreakdown({ merchantGoodsTotal: 13.0, deliveryFee: 2.5, merchantDeliveryShare: 2.5 })).toEqual({ collected: 13, kept: 2.5, owed: 10.5 });
+  });
 });
 
 describe("returnLegNeeded", () => {

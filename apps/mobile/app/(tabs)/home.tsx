@@ -177,8 +177,8 @@ const RAIL_MIN = 2;
  * docs/DESIGN-DEVIATIONS.md D-55, which replaces the 8c home): the address-first mint header, four
  * service tiles, "Popular restaurants" and "Popular shops" rails, and ONE floating live-order bar.
  *
- * Data the handoff marks NEEDS BACKEND renders nothing until it exists (its work order §8): the
- * "Free delivery" tag (no venue flag yet). Shops and Pharmacy open their sections (ledger D-58); a
+ * The "Free delivery" tag shows on a card whose venue pays for delivery (the venue's flag, ledger D-71).
+ * Shops and Pharmacy open their sections (ledger D-58); a
  * section switched off by its server flag opens the notify-me sheet instead, so no tile is ever inert.
  * "Popular shops" mixes both sections' nearest open shops.
  */
@@ -368,6 +368,7 @@ export default function LauncherHomeScreen(): React.ReactElement {
                       rating={v.rating}
                       etaMinutes={v.etaMinutes}
                       deliveryFee={v.deliveryFee}
+                      freeDelivery={v.freeDelivery}
                       closed={v.closed}
                       onPress={() => router.push(`/food/${v.id}`)}
                     />
@@ -386,6 +387,7 @@ export default function LauncherHomeScreen(): React.ReactElement {
                       rating={v.rating}
                       etaMinutes={v.etaMinutes}
                       deliveryFee={v.deliveryFee}
+                      freeDelivery={v.freeDelivery}
                       closed={v.closed}
                       onPress={() => router.push(v.shopKind === "pharmacy" ? `/pharmacy/${v.id}` : `/shops/${v.id}`)}
                     />

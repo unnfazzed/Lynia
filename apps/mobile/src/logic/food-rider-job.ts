@@ -6,7 +6,7 @@
  * food-specific: the pre-pickup step labels, the D-33 drop window, the offer variant a rider decides
  * accept/decline against, the R-06 cash-collected breakdown, and N-10's wait+call-log gate.
  */
-import { RESTAURANTS_DEBT, type AdvanceStatusRequest } from "@lynia/shared";
+import { foodOrderMoney, RESTAURANTS_DEBT, type AdvanceStatusRequest } from "@lynia/shared";
 
 /** Mirrors rider-job.ts's NEXT map, but only the two edges the rider drives with a plain "advance"
  *  tap — en_route_pickup→picked_up is N-16 code-gated (confirmFoodPickup), and en_route_dropoff→
@@ -34,15 +34,16 @@ export function foodOfferVariant(offer: { merchantPaymentMethod: string | null; 
 
 /** R-06/D-06: what the rider collects at the door vs. keeps vs. owes back, for a CASH collect-and-
  *  return order — "$15.50 collected → $2.50 kept (the delivery fee) → $13.00 owed to the kitchen".
- *  Only meaningful when {@link foodOfferVariant} (or the live order's own fields) is "cash_collect". */
-export function foodCashBreakdown(order: { merchantGoodsTotal: number | null; deliveryFee: number | null }): {
+ *  Only meaningful when {@link foodOfferVariant} (or the live order's own fields) is "cash_collect".
+ *  D-71: on a free-delivery order the customer pays only the goods; the rider still keeps the whole fee,
+ *  so less goes back to the venue ("$13.00 collected → $2.50 kept → $10.50 owed"). */
+export function foodCashBreakdown(order: { merchantGoodsTotal: number | null; deliveryFee: number | null; merchantDeliveryShare?: number | null }): {
   collected: number;
   kept: number;
   owed: number;
 } {
-  const goods = order.merchantGoodsTotal ?? 0;
-  const fee = order.deliveryFee ?? 0;
-  return { collected: goods + fee, kept: fee, owed: goods };
+  const m = foodOrderMoney({ goodsTotal: order.merchantGoodsTotal, deliveryFee: order.deliveryFee, merchantDeliveryShare: order.merchantDeliveryShare });
+  return { collected: m.customerTotal, kept: m.riderFare, owed: m.merchantNet };
 }
 
 /** True once a delivered CASH collect-and-return order still has cash riding back to the kitchen —

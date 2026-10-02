@@ -1,4 +1,4 @@
-import { browseCategories, browseList, browseRange, categoryServedNow, DEFAULT_FILTERS, type VenueView, windowLaterToday } from "../browse";
+import { browseCategories, browseList, browseRange, categoryServedNow, DEFAULT_FILTERS, restaurantVenue, shopVenue, type VenueView, windowLaterToday } from "../browse";
 
 /** Browse v2 (ledger D-57) — the venue list's ordering, grouping and serving windows. */
 function venue(id: string, over: Partial<VenueView> = {}): VenueView {
@@ -71,5 +71,30 @@ describe("category serving windows", () => {
   it("knows whether the window is still ahead today", () => {
     expect(windowLaterToday("07:00", at(6, 30))).toBe(true);
     expect(windowLaterToday("07:00", at(12))).toBe(false);
+  });
+});
+
+describe("restaurantVenue / shopVenue — D-71 free delivery", () => {
+  const item = (over: Record<string, unknown> = {}) =>
+    ({
+      id: "r1",
+      name: "Golden Bao",
+      coverPhotoUrl: null,
+      logoUrl: null,
+      cuisineTags: ["Chinese"],
+      priceLevel: 2,
+      hours: null,
+      location: null,
+      ratingAvg: null,
+      ratingCount: 0,
+      prepBaselineMinutes: null,
+      ...over,
+    }) as unknown as Parameters<typeof restaurantVenue>[0];
+
+  it("reads the venue's flag — the purple tag and the Free delivery pill show only when it funds delivery", () => {
+    const now = new Date(2026, 9, 2, 12, 0, 0);
+    expect(restaurantVenue(item({ freeDelivery: true }), null, now).freeDelivery).toBe(true);
+    expect(restaurantVenue(item(), null, now).freeDelivery).toBe(false);
+    expect(shopVenue({ ...item({ freeDelivery: true }), shopKind: "grocery" } as Parameters<typeof shopVenue>[0], null, now).freeDelivery).toBe(true);
   });
 });

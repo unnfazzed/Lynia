@@ -1287,6 +1287,12 @@
             }
           ]
         },
+        "merchantDeliveryShare": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
         "merchantGoodsTotal": {
           "type": [
             "number",
@@ -1483,6 +1489,12 @@
                     {
                       "type": "null"
                     }
+                  ]
+                },
+                "merchantDeliveryShare": {
+                  "type": [
+                    "number",
+                    "null"
                   ]
                 },
                 "merchantGoodsTotal": {
@@ -3031,6 +3043,12 @@
             "null"
           ]
         },
+        "customerDeliveryFee": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
         "customerPhone": {
           "type": [
             "string",
@@ -3292,6 +3310,12 @@
         "merchantClosedAt": {
           "type": [
             "string",
+            "null"
+          ]
+        },
+        "merchantDeliveryShare": {
+          "type": [
+            "number",
             "null"
           ]
         },
@@ -4295,6 +4319,9 @@
             "string",
             "null"
           ]
+        },
+        "freeDelivery": {
+          "type": "boolean"
         },
         "hours": {
           "anyOf": [
@@ -6433,6 +6460,9 @@
           },
           "type": "array"
         },
+        "freeDelivery": {
+          "type": "boolean"
+        },
         "hours": {
           "anyOf": [
             {
@@ -6594,6 +6624,9 @@
                   "type": "string"
                 },
                 "type": "array"
+              },
+              "freeDelivery": {
+                "type": "boolean"
               },
               "hours": {
                 "anyOf": [
@@ -6969,6 +7002,9 @@
               },
               "type": "array"
             },
+            "freeDelivery": {
+              "type": "boolean"
+            },
             "hours": {
               "anyOf": [
                 {
@@ -7230,6 +7266,9 @@
                   "type": "string"
                 },
                 "type": "array"
+              },
+              "freeDelivery": {
+                "type": "boolean"
               },
               "hours": {
                 "anyOf": [
@@ -7830,6 +7869,9 @@
               },
               "type": "array"
             },
+            "freeDelivery": {
+              "type": "boolean"
+            },
             "hours": {
               "anyOf": [
                 {
@@ -8006,6 +8048,9 @@
           },
           "type": "array"
         },
+        "freeDelivery": {
+          "type": "boolean"
+        },
         "hours": {
           "anyOf": [
             {
@@ -8181,6 +8226,9 @@
                   "type": "string"
                 },
                 "type": "array"
+              },
+              "freeDelivery": {
+                "type": "boolean"
               },
               "hours": {
                 "anyOf": [
@@ -8404,6 +8452,9 @@
                   "type": "string"
                 },
                 "type": "array"
+              },
+              "freeDelivery": {
+                "type": "boolean"
               },
               "hours": {
                 "anyOf": [
@@ -9294,6 +9345,9 @@
       "additionalProperties": false,
       "properties": {
         "autoAccept": {
+          "type": "boolean"
+        },
+        "freeDelivery": {
           "type": "boolean"
         },
         "showPhoneToCustomers": {
