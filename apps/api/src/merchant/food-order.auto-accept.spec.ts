@@ -31,7 +31,7 @@ const rail = { initiate: async () => ({ status: "pending" }), confirm: async () 
 function build(methods: Record<string, unknown>, debt: Partial<FoodDebtService> = {}) {
   pushes.length = 0;
   queueChanges.length = 0;
-  const prisma = withMembershipShim({ profile: { findUnique: async () => ({ onHold: false, cashBanned: false, rider: null }) }, ...methods } as Record<string, unknown>);
+  const prisma = withMembershipShim({ profile: { findUnique: async () => ({ onHold: false, cashBanned: false, rider: null }) }, customerBalanceEntry: { findMany: async () => [] }, ...methods } as Record<string, unknown>);
   prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
   const svc = new FoodOrderService(
     prisma as unknown as PrismaService,
@@ -148,7 +148,7 @@ describe("sweepAutoAccepted — no rider until the kitchen is confirmed (safegua
     const res = await svc.sweepAutoAccepted(NOW);
     expect(res.escalated).toBe(2);
     expect(escalateWhere).toMatchObject({ autoAccepted: true, kitchenConfirmedAt: null, kitchenEscalatedAt: null, status: "requested" });
-    expect((escalateWhere!.createdAt as { lt: Date }).lt.getTime()).toBe(NOW.getTime() - RESTAURANTS_AUTO_ACCEPT.escalateAfterMs);
+    expect((escalateWhere!.prepStartedAt as { lt: Date }).lt.getTime()).toBe(NOW.getTime() - RESTAURANTS_AUTO_ACCEPT.escalateAfterMs);
   });
 
   it("cancels orders nobody confirmed within an hour and tells the customer nothing was charged", async () => {
@@ -176,7 +176,7 @@ describe("sweepAutoAccepted — no rider until the kitchen is confirmed (safegua
     });
     const res = await svc.sweepAutoAccepted(NOW);
     expect(res.cancelled).toBe(1);
-    expect((abandonedWhere!.createdAt as { lt: Date }).lt.getTime()).toBe(NOW.getTime() - RESTAURANTS_AUTO_ACCEPT.autoCancelAfterMs);
+    expect((abandonedWhere!.prepStartedAt as { lt: Date }).lt.getTime()).toBe(NOW.getTime() - RESTAURANTS_AUTO_ACCEPT.autoCancelAfterMs);
     // Guarded on still-unconfirmed, so a confirm racing the sweep wins.
     expect(cancels[0]!.where).toMatchObject({ id: "stale", status: "requested", autoAccepted: true, kitchenConfirmedAt: null });
     expect(cancels[0]!.data).toMatchObject({ status: "cancelled", rejectionReason: "kitchen_unconfirmed" });

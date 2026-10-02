@@ -3241,6 +3241,44 @@ Each PR of the build order appends its line here.
 
 - **PR 0 (this entry):** the package sync above; CLAUDE.md pointer.
 - **PR 2 (Review & place):** `app/food/checkout.tsx` is the one Review screen (R1, R3a/b, R4, R6a/b, R7a–c, R9a/b; `/food/cart` redirects to it, the storefront cart bar pushes it); Place → `dismissAll` + `replace` into the order, so Back goes Home. WHEN draws the ASAP state only and R6b omits 'Schedule for …' until the slots API (R5) lands — a control that does nothing is not rendered. The payload is unchanged (cash; the rider note, else the address line, is the drop-off landmark). `RC.cart*`, `RC.checkout_*`, `RC.placing` are SUPERSEDED deferrals (baseline 81 → 78); evidence `docs/parity/ORDER-FLOW-V2-REVIEW-2026-10-02.png` (`tools/parity/shoot-order-flow-review.mjs`).
+- **Backend B (API + shared contracts only, no UI):** shop & pharmacy ordering, scheduled orders, Rx behind
+  a flag, the D3f owed balance. Every wire change is additive (contract snapshot: additive only).
+  - *Shops & pharmacy:* `POST /restaurants/:merchantId/orders` takes any customer-visible venue (a live
+    restaurant, or a live shop whose section flag is on) — reused, no `/shops/:id/orders`. Shops never
+    auto-accept (3-minute window → auto-cancel). Same pricing (delivery fee, < $4.00 → $1.00 fee), cash
+    only. Backend A's `MerchantOrderResponse.venue {name, businessType, shopKind}` picks Cooking vs Packing
+    and the tile colour; the merchant's "Order is packed" is the existing `mark-ready`. Migration
+    `0067_order_flow_v2_shops_scheduled_rx` (expand-only: three `BOOLEAN NOT NULL DEFAULT false` columns —
+    `merchant_dishes.rx_required`, `merchant_order_items.rx_required`, `merchant_members.is_pharmacist` —
+    and three new tables `order_schedules`, `order_prescriptions`, `customer_balance_entries`). Rider offer
+    tags (RD1a–d) come as `FoodOfferResponse.job {businessType, shopKind, scheduledFor, rx}` on
+    `GET /merchant/orders/dispatch/offer` — never inside the strict `food:offer` socket payload.
+  - *Scheduled (§12):* `GET /restaurants/:merchantId/schedule-slots?lat&lng` (`ScheduleSlotsResponse`:
+    today/tomorrow 30-minute slots, `full` at `ORDER_SCHEDULE.slotCapacity` = 12, `firstAvailable` for
+    "Order for when they open", `leadMinutes`); `scheduledFor` on the place body (a closed venue takes only
+    a scheduled order); `POST /restaurants/orders/:orderId/schedule` (Change time); `GET
+    /merchant/scheduled-orders` (M7a). Model: no new `MerchantPhase` value (strict zod enum on installed
+    apps) — the order waits in `awaiting_accept` with no deadline plus an `order_schedules` row, off the
+    live queue; a sweep rings it at `ringsAt` (= slot − prep − delivery) exactly like a new order.
+    Read fields `scheduledFor` / `ringsAt` / `scheduleStartedAt`. Free cancel until the kitchen starts.
+  - *Rx (§13), `RX_ENABLED` default off, served by `GET /app/order-flags` (`OrderFlagsResponse
+    {rxEnabled}` — its own body because `ServiceFlagsResponse` is strict on installed apps):* dish
+    `rxRequired` (pharmacies only; hidden from customer reads while off); `POST /uploads/prescription-photo`;
+    `prescription {photoKeys 1–3, patientName, consent:true}` on the place body (required with Rx lines;
+    refused while off); pharmacist = a team member with `isPharmacist` (`POST
+    /merchant/team/members/:profileId/pharmacist`, owner only; `myIsPharmacist` on `/merchant/me`) —
+    `POST /merchant/orders/:id/prescription/approve|decline {reason: unreadable|expired|not_valid|other,
+    note?}`; decline takes the Rx lines off and re-prices (all-Rx → cancelled, `rx_declined`), the customer
+    may then cancel the rest free; `mark-ready` waits for the check; rider `POST
+    /merchant/orders/:id/prescription/saw-original`, required before delivery completes. The track holds at
+    Confirmed while the check is pending and sets `track.rxChecked` once approved. Photos as 5-minute
+    signed URLs only for the customer (`GET /restaurants/orders/:id/prescription`), the pharmacy (`GET
+    /merchant/orders/:id/prescription`) and admin (`GET /admin/orders/:id/prescription`).
+  - *Owed balance (D3f, open question 2):* a customer cancel after collection records the full total
+    (`customer_balance_entries`); the order read shows `owedUsd`; `GET /restaurants/balance`; the next
+    merchant order carries it as `previousBalanceUsd`, inside `total` and the doorstep cash amount, never
+    inside goods/delivery. Paid once that order is delivered; freed again if it isn't. Where the collected
+    money goes is ops reconciliation from the ledger row (open question 2 stays open).
 - **Backend A (API + shared contracts, no UI):** substitution (BRIEF §8, U1–U5/M2), proof at hand-over
   (§9, RD2b–d/RD4c–d/M4b/M5b/P5), venue rating + receipt fields (§11, D1/D1b) and the four-step track
   (§4). Migration `0066_order_flow_v2` (expand-only: five nullable `orders` columns,
