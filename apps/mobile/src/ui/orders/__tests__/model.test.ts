@@ -1,4 +1,4 @@
-import type { OrderHistoryRow, OrderSnapshot } from "../../../api/orders";
+import type { CustomerOrderRow, OrderHistoryRow, OrderSnapshot } from "../../../api/orders";
 import { dayLabel, firstSegment, historyRowVM, matchesQuery, monthYear, parcelNowVM, searchDate, sortNow, type NowCardVM } from "../model";
 
 /** Orders v2 view-models (packages/design/handoff/orders-v2 README §4–§6, ledger D-63). */
@@ -89,6 +89,15 @@ describe("history rows", () => {
     const v = historyRowVM(row({ status }));
     expect(v.outcome).toBe(outcome);
     expect(v.chargedUsd).toBe(outcome === "delivered" ? 3.36 : 0);
+  });
+
+  it("a GET /orders/mine/history row: the server's service, outcome and charged amount win", () => {
+    const full = (over: Partial<CustomerOrderRow>): CustomerOrderRow => ({ ...row(), service: "parcel", outcome: "delivered", chargedTotal: "3.36", ...over });
+    expect(historyRowVM(full({ orderType: "merchant", merchantName: "Avondale Pharmacy", service: "pharmacy", chargedTotal: "8.40" }))).toMatchObject({ service: "pharmacy", chargedUsd: 8.4, outcome: "delivered" });
+    expect(historyRowVM(full({ status: "cancelled", outcome: "venue_declined", chargedTotal: null }))).toMatchObject({ outcome: "venueDeclined", chargedUsd: 0 });
+    expect(historyRowVM(full({ status: "cancelled", outcome: "cancelled_by_rider", chargedTotal: null })).outcome).toBe("cancelledByRider");
+    expect(historyRowVM(full({ status: "cancelled", outcome: "cancelled_by_lynia", chargedTotal: null })).outcome).toBe("cancelledByLynia");
+    expect(historyRowVM(full({ status: "cancelled", outcome: "kitchen_timeout", chargedTotal: null })).outcome).toBe("kitchenTimeout");
   });
 
   it("search matches the title, the drop-off area and the rider, case-insensitively", () => {

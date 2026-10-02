@@ -56,6 +56,10 @@ const rows = [
   },
 ];
 
-installRouter([{ match: "/orders/history", json: rows }]);
+installRouter([
+  { match: "/orders/history", json: rows },
+  // LJ.history renders the Orders tab now (D-63), which reads the customer feed.
+  { match: "/orders/mine/history", json: { rows: rows.filter((r) => r.role === "customer"), nextCursor: null } },
+]);
 
 export default { wrap: withQuery() };

@@ -8,6 +8,7 @@ import { installRouter, withQuery } from "./_harness.mjs";
 installRouter([
   { match: /^\/orders\/mine\/active-orders$/, json: [] },
   { match: "/orders/history", json: [] },
+  { match: "/orders/mine/history", json: { rows: [], nextCursor: null } },
 ]);
 
 export default { wrap: withQuery() };
