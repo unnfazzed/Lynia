@@ -172,7 +172,7 @@ describe("Storefront — cart bar", () => {
     expect(texts(tree)).toContain("Add $0.70 to skip the $1.00 small-order fee");
     expect(texts(tree)).toContain("1 item · $3.30");
     press(tree, /View cart$/);
-    expect(mockPush).toHaveBeenCalledWith("/food/cart");
+    expect(mockPush).toHaveBeenCalledWith("/food/checkout");
   });
 
   it("a dish in the cart shows its count and a stepper; − at one removes it", () => {

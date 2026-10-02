@@ -22,22 +22,21 @@ export function estimateDeliveryFee(merchantLocation: LatLng | null, dropoff: La
  *  helper below is unit-testable with a plain spy object. */
 export interface StackNav {
   dismissAll: () => void;
-  push: (href: string) => void;
+  replace: (href: string) => void;
 }
 
 /**
- * P0-1 (navigation review 2026-08-12): where to send the customer the instant a food order is placed.
+ * Where to send the customer the instant a food order is placed (Order flow v2 README "Navigation":
+ * "Place order → T1, replaces R in the stack; Back from T goes Home").
  *
- * A plain `router.replace('/food/order/:id')` left `/food/cart` — which checkout clears one line
- * earlier — directly beneath the live order, so Android hardware-back landed the customer on the
- * "Your cart is empty" screen with no route back to their order. Instead reset the food stack to its
- * root first (`dismissAll` pops to the first food route regardless of how checkout was reached: the
- * restaurant list, or a menu opened straight from a home card), then push the order on top — so back
- * from a live order returns to a real browsable screen, never the dead cart.
+ * A bare `router.replace` would leave the storefront (and list) under the order, so Back would land on a
+ * menu, not Home. Instead pop the food stack to its first route (`dismissAll`) and REPLACE that with the
+ * order: the order is then the food stack's only route, and Back from it leaves `/food` for Home. The
+ * just-cleared Review is never under the live order (P0-1).
  */
 export function goToPlacedFoodOrder(router: StackNav, orderId: string): void {
   router.dismissAll();
-  router.push(`/food/order/${orderId}`);
+  router.replace(`/food/order/${orderId}`);
 }
 
 /** R-17: free, any time before the kitchen has committed to cooking — mirrors
