@@ -105,6 +105,65 @@ describe("FoodOrderService.placeOrder", () => {
     expect(created!.acceptDeadlineAt).toBeInstanceOf(Date);
   });
 
+  // D-71: free delivery paid by the restaurant or shop — the totals the customer sees, the rider's fee.
+  describe("free delivery paid by the venue (D-71)", () => {
+    function placeWith(merchantOver: Record<string, unknown>, priceUsd: number, paymentMethod: "cash" | "wallet" = "cash") {
+      let created: Record<string, unknown> | undefined;
+      const { svc } = build({
+        order: {
+          findFirst: async () => null,
+          create: async ({ data }: { data: Record<string, unknown> }) => {
+            created = data;
+            return { ...data, id: "o1", merchantItems: [], pickupCodeAttempts: 0, noShowCallTimestamps: [] };
+          },
+        },
+        merchant: {
+          findFirst: async () => ({ id: "m1", location: { point: HARARE_CBD, landmark: "CBD", contactPhone: "+263771234567" }, ...merchantOver }),
+        },
+        merchantDish: { findMany: async () => [dish({ priceUsd })] },
+      });
+      const run = svc.placeOrder("c1", "m1", {
+        items: [{ dishId: "d1", quantity: 1 }],
+        dropoff: { point: AVONDALE, landmark: "Avondale", contactPhone: "+263779999999" },
+        paymentMethod,
+      });
+      return run.then((res) => ({ res, created: created! }));
+    }
+
+    it("customer pays $0 delivery: total = goods, rider's deliveryFee unchanged, venue's share = the fee", async () => {
+      const { res, created } = await placeWith({ freeDelivery: true }, 12);
+      const fee = res.deliveryFee!;
+      expect(fee).toBeGreaterThan(0);
+      expect(created.deliveryFee).toBe(fee); // the rider's earning is the full fee
+      expect(created.merchantDeliveryShare).toBe(fee);
+      expect(created.agreedFare).toBe(12); // what the customer pays at the door
+      expect(res.total).toBe(12);
+      expect(res.customerDeliveryFee).toBe(0);
+      expect(res.merchantDeliveryShare).toBe(fee);
+    });
+
+    it("a venue without the switch: customer pays goods + fee, no share stored", async () => {
+      const { res, created } = await placeWith({ freeDelivery: false }, 12);
+      expect(created.merchantDeliveryShare).toBeNull();
+      expect(created.agreedFare).toBe(12 + res.deliveryFee!);
+      expect(res).not.toHaveProperty("merchantDeliveryShare");
+      expect(res).not.toHaveProperty("customerDeliveryFee");
+    });
+
+    it("goods that don't cover the fee are not funded (the venue never pays to give food away)", async () => {
+      // $0.50 dish + $1.00 small-order fee = $1.50 goods, below any CBD→Avondale fee.
+      const { res, created } = await placeWith({ freeDelivery: true }, 0.5);
+      expect(res.deliveryFee!).toBeGreaterThan(1.5);
+      expect(created.merchantDeliveryShare).toBeNull();
+      expect(created.agreedFare).toBe(1.5 + res.deliveryFee!);
+    });
+
+    it("a legacy wallet order is never funded (cash only)", async () => {
+      const { created } = await placeWith({ freeDelivery: true }, 12, "wallet");
+      expect(created.merchantDeliveryShare).toBeNull();
+    });
+  });
+
   it("rejects a drop-off outside the service area server-side, naming the towns we serve (owner 2026-10-02)", async () => {
     let created = false;
     const { svc } = build({
@@ -607,6 +666,9 @@ describe("FoodOrderService.confirmPickup — N-16, mirrors confirmDelivery one h
         merchant_payment_method: "cash",
         merchant_cash_rule: "collect_and_return",
         merchant_goods_total: 13,
+        // D-71: a free-delivery order — the fee and the venue's share ride along to the debt.
+        delivery_fee: 2.5,
+        merchant_delivery_share: 2.5,
       });
     prisma.order = { update: async () => ({}) };
     prisma.orderEvent = { create: async () => ({}) };
@@ -621,6 +683,8 @@ describe("FoodOrderService.confirmPickup — N-16, mirrors confirmDelivery one h
       merchantPaymentMethod: "cash",
       merchantCashRule: "collect_and_return",
       merchantGoodsTotal: 13,
+      deliveryFee: 2.5,
+      merchantDeliveryShare: 2.5,
     });
     expect(queueChanges).toEqual([{ merchantId: "m1", orderId: "o1" }]);
   });
