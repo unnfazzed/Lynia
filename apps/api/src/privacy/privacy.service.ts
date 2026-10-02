@@ -320,6 +320,11 @@ export class PrivacyService {
           deliveryProofLng: null,
           deliveryProofAt: null,
           pickupPhotoKey: null,
+          // Order flow v2 (D-59): the capture time of the rider's sealed-bag photo, and the door-proof
+          // context the rider typed (why the code couldn't be used, who it was handed to).
+          pickupPhotoAt: null,
+          deliveryProofReason: null,
+          deliveryProofHandedTo: null,
         },
       });
     }
@@ -348,6 +353,13 @@ export class PrivacyService {
     await tx.order.updateMany({
       where: { customerId: profileId, NOT: { merchantPaymentReference: null } },
       data: { merchantPaymentReference: null },
+    });
+    //   • orders.deliveryProofHandedTo — Order flow v2 (D-59): the name of the person at the CUSTOMER's
+    //     door the rider handed the order to ("Chipo"). A third party in the customer's household, so it is
+    //     also nulled on the customer's erasure (the rider-scoped pass above covers the rider's).
+    await tx.order.updateMany({
+      where: { customerId: profileId, NOT: { deliveryProofHandedTo: null } },
+      data: { deliveryProofHandedTo: null },
     });
 
     // Remove the standalone PII stores + log every device out.

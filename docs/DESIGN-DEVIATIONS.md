@@ -3240,6 +3240,24 @@ ordering for shops) close when shop ordering lands here.
 Each PR of the build order appends its line here.
 
 - **PR 0 (this entry):** the package sync above; CLAUDE.md pointer.
+- **Backend A (API + shared contracts, no UI):** substitution (BRIEF §8, U1–U5/M2), proof at hand-over
+  (§9, RD2b–d/RD4c–d/M4b/M5b/P5), venue rating + receipt fields (§11, D1/D1b) and the four-step track
+  (§4). Migration `0066_order_flow_v2` (expand-only: five nullable `orders` columns,
+  `merchant_order_items.replaces_item_id`, new `merchant_order_substitutions`(+`_lines`) with a one-open-
+  round partial unique index, new `venue_ratings`). Endpoints: `POST /merchant/orders/:id/substitution`
+  (merchant: remove / reduce / swap lines; at accept it is the accept), `POST
+  /restaurants/orders/:id/substitution/confirm` (customer answers every swap), `POST
+  /merchant/orders/:id/pickup-proof` and `/door-proof` (rider), `POST /restaurants/orders/:id/venue-rating`
+  (customer). `PlaceMerchantOrderRequest.outOfStockPref` (ask | remove; remove ⇒ swaps refused). The
+  merchant-order read (`MerchantOrderResponse`) gains optional `shortId`, `venue`, `itemsSubtotal`,
+  `smallOrderFee`, `track`, `outOfStockPref`, `substitution`, `pickupProofRequired`, `pickupProof`,
+  `doorProof`, `venueRating`; `order:status` and the generic `GET /orders/:id` snapshot carry `track`.
+  Shared pure helpers: `deriveMerchantOrderTrack`, `substitutionTotals`, `merchantGoodsForSubtotal`,
+  `orderShortId`, `RESTAURANTS_TIMING.substitutionWindowMs` (3 min). Swap window timeouts run on the
+  existing 20 s DB sweep. Shop (incl. pharmacy) pickups require the photo; restaurants don't. The pre-v2
+  app still sees a coherent at-accept round (legacy `awaiting_item_approval`, swapped lines as removed;
+  its approve = swaps declined, decline = free cancel). Not in this PR: merchant-side push for answers
+  (socket queue refresh only), "finish delivery without the code" (the door photo is evidence only).
 
 ### 4 · Open questions, implemented as drawn (owner to confirm)
 

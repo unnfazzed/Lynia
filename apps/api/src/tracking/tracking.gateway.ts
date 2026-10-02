@@ -23,6 +23,7 @@ import {
   type FoodQueueChangedEvent,
   type JobCancelledEvent,
   type OrderRebroadcastEvent,
+  type OrderStatusEvent,
   type OrderTakenEvent,
   PRESENCE_ESCALATION_MS,
   type PresenceRecoveredEvent,
@@ -428,12 +429,11 @@ export class TrackingGateway
    * Push an order's status change to everyone watching it (ET4). Best-effort PUSH — the REST
    * snapshot stays the source of truth, so this never throws into a caller's transaction.
    */
-  emitOrderStatus(orderId: string, status: string): void {
-    this.server?.to(orderRoom(orderId)).emit(WS_EVENTS.orderStatus, {
-      orderId,
-      status,
-      at: new Date().toISOString(),
-    });
+  emitOrderStatus(orderId: string, status: string, extra?: Pick<OrderStatusEvent, "merchantPhase" | "track">): void {
+    // Order flow v2 (D-59): a merchant order's kitchen-phase change also carries the phase and the
+    // four-step track (optional keys — an installed app only refetches on this event).
+    const payload: OrderStatusEvent = { orderId, status, at: new Date().toISOString(), ...extra };
+    this.server?.to(orderRoom(orderId)).emit(WS_EVENTS.orderStatus, payload);
   }
 
   /**

@@ -60,7 +60,12 @@ export async function editOrderItems(
 ): Promise<void> {
   const order = await prisma.order.findFirst({
     where: { id: orderId, orderType: "merchant", ...(merchantId ? { merchantId } : {}) },
-    include: { merchantItems: true, merchant: { select: { name: true } } },
+    include: {
+      merchantItems: true,
+      merchant: { select: { name: true } },
+      // Order flow v2 (BRIEF §8): an open substitution round blocks a second change.
+      substitutionRounds: { where: { status: "open" }, select: { id: true } },
+    },
   });
   if (!order) throw new NotFoundException("Order not found");
   if (!(EDITABLE_STATUSES as readonly string[]).includes(order.status)) {
@@ -68,6 +73,10 @@ export async function editOrderItems(
   }
   if (order.status === "requested" && (!order.merchantPhase || !EDITABLE_PHASES.has(order.merchantPhase))) {
     throw new ConflictException({ reason: "not_editable", message: "Accept the order first, then change the items." });
+  }
+  // Order flow v2 (BRIEF §8): one change at a time — not while the customer is answering a substitution.
+  if ((order.substitutionRounds?.length ?? 0) > 0) {
+    throw new ConflictException({ reason: "substitution_open", message: "The customer is still answering your last changes." });
   }
 
   const byId = new Map(order.merchantItems.map((it) => [it.id, it]));
