@@ -129,20 +129,21 @@ const loop = (v: Animated.Value, duration: number, easing: (x: number) => number
 const swing = (v: Animated.Value, half: number): Animated.CompositeAnimation =>
   Animated.loop(Animated.sequence([timing(v, 1, half, EASE_IN_OUT), timing(v, 0, half, EASE_IN_OUT)]));
 
-/** Resolves the OS reduce-motion setting; `null` until known (the intro waits on it, briefly). */
-function useReduceMotionSetting(): boolean | null {
-  const [reduce, setReduce] = useState<boolean | null>(null);
+/**
+ * The OS reduce-motion setting. Starts `false` so the intro begins on the very first frame instead of
+ * waiting on the async read; if the read says reduce, every animation snaps to its final state (the
+ * effects below re-run on the change), which is what reduced motion draws anyway.
+ */
+function useReduceMotionSetting(): boolean {
+  const [reduce, setReduce] = useState(false);
   useEffect(() => {
     let alive = true;
     void AccessibilityInfo.isReduceMotionEnabled()
       .then((r) => alive && setReduce(r))
-      .catch(() => alive && setReduce(false));
-    // Never hold the intro on a slow answer.
-    const t = setTimeout(() => alive && setReduce((r) => r ?? false), 150);
+      .catch(() => {});
     const sub = AccessibilityInfo.addEventListener("reduceMotionChanged", (r) => setReduce(r));
     return () => {
       alive = false;
-      clearTimeout(t);
       sub.remove();
     };
   }, []);
@@ -161,7 +162,7 @@ export function BootSplash(): React.ReactElement {
   const reduce = useReduceMotionSetting();
   const reachable = useReachability();
   const readiness = useBootReadiness();
-  const { reveal } = useBootPhase();
+  const { reveal, markSplashDrawn } = useBootPhase();
   const release = useBootSplashRelease();
 
   // ── The clock: ms since the splash first drew. Re-rendered only at the moments something changes. ──
@@ -221,7 +222,6 @@ export function BootSplash(): React.ReactElement {
 
   // Boot: the intro timeline.
   useEffect(() => {
-    if (reduce == null) return;
     if (reduce) {
       for (const x of [v.sun, v.crease, v.wordmark, ...v.facets, ...v.blobs]) x.setValue(1);
       return;
@@ -252,7 +252,7 @@ export function BootSplash(): React.ReactElement {
   // Loading: orbit, breathing sun, bobbing dove — paused (orbit) or stopped while offline / done.
   const looping = phase === "loading" || phase === "offline";
   useEffect(() => {
-    if (reduce == null || !looping) return;
+    if (!looping) return;
     const fade = reduce ? EXIT.fadeMs : 500;
     const shown = Animated.parallel([
       timing(v.orbitIn, 1, fade, SETTLE),
@@ -263,7 +263,7 @@ export function BootSplash(): React.ReactElement {
   }, [reduce, looping, phase, v]);
 
   useEffect(() => {
-    if (reduce !== false || phase !== "loading") return;
+    if (reduce || phase !== "loading") return;
     // Resume the orbit from wherever it paused: finish this lap, then loop full laps.
     let current = 0;
     v.spin.stopAnimation((x) => (current = x % 1));
@@ -306,7 +306,6 @@ export function BootSplash(): React.ReactElement {
 
   // Offline panel, idle dot and the lift that keeps the brand clear of the panel.
   useEffect(() => {
-    if (reduce == null) return;
     const on = phase === "offline" ? 1 : 0;
     const a = Animated.parallel([
       timing(v.offline, on, reduce ? EXIT.fadeMs : 450, SETTLE),
@@ -317,7 +316,6 @@ export function BootSplash(): React.ReactElement {
   }, [reduce, phase, v]);
 
   useEffect(() => {
-    if (reduce == null) return;
     const a = timing(v.slow, slow ? 1 : 0, reduce ? EXIT.fadeMs : 400, SPRING_OUT);
     a.start();
     return () => a.stop();
@@ -326,7 +324,7 @@ export function BootSplash(): React.ReactElement {
   // ── Exit ──
   const [homeRising, setHomeRising] = useState(false);
   useEffect(() => {
-    if (!done || reduce == null) return;
+    if (!done) return;
     if (!toHome) {
       // Not Home: no exit — the destination simply replaces the splash.
       release();
@@ -391,14 +389,19 @@ export function BootSplash(): React.ReactElement {
   const onLayout = useCallback((e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
     setSize((s) => (s.W === width && s.H === height ? s : { W: width, H: height }));
-    // The JS splash has drawn: drop the native launch screen onto it (same green, no visible seam).
+    // The JS splash has drawn: drop the native launch screen onto it (same green, no visible seam),
+    // then let the app mount underneath on the NEXT frame, so this first frame was the splash alone.
     releaseNativeSplash();
-  }, []);
+    requestAnimationFrame(markSplashDrawn);
+  }, [markSplashDrawn]);
   // Belt and braces: if layout never reports (it always should), don't keep the native screen up.
   useEffect(() => {
-    const h = setTimeout(releaseNativeSplash, 1000);
+    const h = setTimeout(() => {
+      releaseNativeSplash();
+      markSplashDrawn();
+    }, 1000);
     return () => clearTimeout(h);
-  }, []);
+  }, [markSplashDrawn]);
 
   const onRetry = useCallback(() => {
     probeNow();
@@ -406,7 +409,7 @@ export function BootSplash(): React.ReactElement {
   }, [t0]);
 
   // ── Interpolations ──
-  const still = reduce !== false;
+  const still = reduce;
   const lift = v.offline.interpolate({
     inputRange: [0, 1],
     outputRange: [0, still ? 0 : -OFFLINE_LIFT],
