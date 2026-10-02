@@ -3752,7 +3752,7 @@ under the rider row lock before the debit runs.
 
 **Didit ID prefill.** The vendor-verified document number (already extracted from the decision webhook
 for IR26-04 dedupe, which kept only its hash) is now also stored ENCRYPTED on `riders.verified_id_number`
-(migration `0069_rider_verified_id_number`, expand-only), nulled on erasure, and returned to its owner
+(migration `0070_rider_verified_id_number`, expand-only), nulled on erasure, and returned to its owner
 only as `/auth/me` `kycIdNumber` once the check is verified (memory-only on the phone, like `idNumber`).
 The become-a-rider details step ("A few details first", app-authored) starts its national-ID field with
 that number when the account has none on file. It stays **editable**: the handoff draws no such field
@@ -3782,7 +3782,7 @@ builds it. **No drawn element, string or geometry changes**; only the order of t
 
 **Where.** `GET /restaurants/popular` and `GET /shops/popular?service=` (`MerchantService.popularVenues`).
 Each is one aggregate over `orders`, served by the new `(merchant_id, created_at)` index (migration
-`0069_orders_merchant_created_at_popularity_index`, expand-only, `CONCURRENTLY`). It is cached for 10
+`0071_orders_merchant_created_at_popularity_index`, expand-only, `CONCURRENTLY`). It is cached for 10
 minutes per list. The 30-day window, the delivered statuses and the 3-order minimum are shared with the
 X1 "Popular near you" search chips and the storefront "Popular" dish rail (D-57) in
 `apps/api/src/merchant/venue-popularity.ts`, so "popular" has one definition. Phone:
