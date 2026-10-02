@@ -5,7 +5,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import * as Location from "expo-location";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, ActivityIndicator, BackHandler, Linking, ScrollView, Share, Text, useWindowDimensions, View } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaInsetsContext, SafeAreaView } from "react-native-safe-area-context";
 import { ApiError } from "../api/client";
 import { cancelUnpaidFoodOrder, changeFoodOrderSchedule, confirmFoodCustomerCash, confirmFoodSubstitution, rateFoodVenue, respondToFoodOrderItems } from "../api/food-orders";
 import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../api/orders";
@@ -360,7 +360,8 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   //    only while the sheet is open ──
   const slotsQ = useScheduleSlots(order?.merchantId, snap?.dropoff.point ?? null, panel === "schedule");
   const slotsFailed = panel === "schedule" && slotsQ.isError;
-  const insets = useSafeAreaInsets();
+  // The context (not the hook): a host without a SafeAreaProvider (tests) reads no inset rather than throw.
+  const insets = React.useContext(SafeAreaInsetsContext) ?? { bottom: 0 };
   const scheduledFor = order?.scheduledFor ?? null;
   const currentSlot = useMemo((): ChosenSlot | null => {
     const s = slotsQ.slots;
