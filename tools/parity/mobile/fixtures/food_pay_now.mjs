@@ -4,9 +4,10 @@
 // (riderId null → no live tracker read). paymentRequestedAt is recent so the R5·b1 "still waiting"
 // reminder isn't due yet, and no reference has been submitted, which is exactly the pay-now state.
 import { installRouter, setParams } from "./_harness.mjs";
-import { MENU, OID, foodOrder , withOrder } from "./_food.mjs";
+import { MENU, OID, foodOrder , withOrder, orderSnapshot } from "./_food.mjs";
 
-setParams({ orderId: OID });
+// D-59: the restaurant order renders on the one order screen, app/order/[id].tsx.
+setParams({ id: OID });
 
 installRouter([
   {
@@ -24,6 +25,7 @@ installRouter([
     }),
   },
   { match: /^\/restaurants\/[^/]+\/menu$/, json: MENU },
+  { match: /^\/orders\/[^/]+$/, json: orderSnapshot({ status: "requested", rider: null, events: [], counterpartyPhone: null }) },
 ]);
 
 export default { wrap: withOrder() };

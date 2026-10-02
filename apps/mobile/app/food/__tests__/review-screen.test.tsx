@@ -204,7 +204,7 @@ describe("Place order", () => {
     expect(typeof body.idempotencyKey).toBe("string");
     expect(mockCart.clear).toHaveBeenCalled();
     expect(mockRouter.dismissAll).toHaveBeenCalled();
-    expect(mockRouter.replace).toHaveBeenCalledWith("/food/order/fo-9");
+    expect(mockRouter.replace).toHaveBeenCalledWith("/order/fo-9");
   });
 
   it("R7b — a failure is an ink toast with ↻ Try again, staying on Review", async () => {

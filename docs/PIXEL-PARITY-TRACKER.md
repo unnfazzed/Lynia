@@ -165,21 +165,21 @@ target, an `index.json` that matches the directory, and no expectation outliving
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | C5·1 | `RC await_accept` | Waiting on the kitchen  [FOOD] | | |
+| ⏭ | C5·1 | `RC await_accept` | Waiting on the kitchen  [FOOD] | **SUPERSEDED by D-59 (Order flow v2, 2026-10-02)** — T2 / T3 on the one order screen `app/order/[id].tsx` (`packages/design/handoff/order-flow-v2`). Not aligned to the gallery mock. Evidence: `docs/parity/ORDER-FLOW-V2-CUSTOMER-2026-10-02.png` | structure snapshot + rendered conformance SUPERSEDED (D-59) |
 | ⬜ | C5·2 | `RC confirm_call` | They call to confirm  [FOOD] | | |
 | ⬜ | C5·3 | `RC pay_push` | Push · payment requested  [FOOD] | | |
-| 👁 | C5·4 | `RC pay_now` | Pay the restaurant  [FOOD] | food order tracker cluster align (`docs/parity/PHASE4-foodtrack.md`, `tools/parity/out/phase4_foodtrack.png`) | |
+| ⏭ | C5·4 | `RC pay_now` | Pay the restaurant  [FOOD] | **SUPERSEDED by D-59 (Order flow v2, 2026-10-02)** — retired (cash only) on the one order screen `app/order/[id].tsx` (`packages/design/handoff/order-flow-v2`). Not aligned to the gallery mock. Evidence: `docs/parity/ORDER-FLOW-V2-CUSTOMER-2026-10-02.png` | structure snapshot + rendered conformance SUPERSEDED (D-59) |
 | ⛔ | C5·5 | `RC pay_wait` | Prompt sent  [FOOD] | | |
 | ⬜ | C5·6 | `RC pay_manual` | Paid another way  [FOOD] | | |
-| ⬜ | C5·7 | `RC pay_confirmed` | Waiting to be confirmed  [FOOD] | | |
+| ⏭ | C5·7 | `RC pay_confirmed` | Waiting to be confirmed  [FOOD] | **SUPERSEDED by D-59 (Order flow v2, 2026-10-02)** — retired (cash only) on the one order screen `app/order/[id].tsx` (`packages/design/handoff/order-flow-v2`). Not aligned to the gallery mock. Evidence: `docs/parity/ORDER-FLOW-V2-CUSTOMER-2026-10-02.png` | structure snapshot + rendered conformance SUPERSEDED (D-59) |
 
 ### C6 · Track
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⬜ | C6·1 | `RC track_prep` | Prep countdown  [FOOD] | | |
+| ⏭ | C6·1 | `RC track_prep` | Prep countdown  [FOOD] | **SUPERSEDED by D-59 (Order flow v2, 2026-10-02)** — T4 on the one order screen `app/order/[id].tsx` (`packages/design/handoff/order-flow-v2`). Not aligned to the gallery mock. Evidence: `docs/parity/ORDER-FLOW-V2-CUSTOMER-2026-10-02.png` | structure snapshot + rendered conformance SUPERSEDED (D-59) |
 | ⬜ | C6·2 | `RC track_secured` | Rider secured  [FOOD] | | |
-| 👁 | C6·3 | `RC track_way` | On the way  [FOOD] | food order tracker cluster align (`docs/parity/PHASE4-foodtrack.md`, `tools/parity/out/phase4_foodtrack.png`) | map-bg+sheet + RiderCard are honest deviations (gray-map stub, no rider identity in food API) — see doc. UIP-05 (`docs/KNOWN_BUGS.md`, 2026-08-23): the status timeline + "Follow route in Google Maps" row the mock never draws on this screen are now removed (food + `en_route_dropoff` only). PARTIALLY open still: the mock's full-bleed map + bottom-sheet layout vs. the app's AppBar + contained map box + linear scroll is unchanged — deferred as a dedicated restructure (touches `LiveTrackingCard`, shared with the parcel tracker) |
+| ⏭ | C6·3 | `RC track_way` | On the way  [FOOD] | **SUPERSEDED by D-59 (Order flow v2, 2026-10-02)** — T9 on the one order screen `app/order/[id].tsx` (`packages/design/handoff/order-flow-v2`). Not aligned to the gallery mock. Evidence: `docs/parity/ORDER-FLOW-V2-CUSTOMER-2026-10-02.png` | structure snapshot + rendered conformance SUPERSEDED (D-59) |
 | ⏭ | C6·4 | `LJ track_code` | Tracking · code issued  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
 | ⏭ | C6·5 | `LJ track_active` | Tracking · live  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
 
@@ -190,7 +190,7 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | ⬜ | C7·1 | `RC handoff` | Pay at the door  [FOOD] | | |
 | ⬜ | C7·2 | `RC handoff_wait` | Waiting for rider confirm  [FOOD] | | |
 | ⬜ | C7·3 | `RC handoff_code` | Both confirmed · code  [FOOD] | | |
-| 👁 | C7·4 | `RC delivered_rate` | Delivered · rate the food  [FOOD] | food order tracker cluster align (`docs/parity/PHASE4-foodtrack.md`, `tools/parity/out/phase4_foodtrack.png`) | single rider rating vs mock's food+rider+chips is an honest deviation (API carries one score) — see doc |
+| ⏭ | C7·4 | `RC delivered_rate` | Delivered · rate the food  [FOOD] | **SUPERSEDED by D-59 (Order flow v2, 2026-10-02)** — D1 on the one order screen `app/order/[id].tsx` (`packages/design/handoff/order-flow-v2`). Not aligned to the gallery mock. Evidence: `docs/parity/ORDER-FLOW-V2-CUSTOMER-2026-10-02.png` | structure snapshot + rendered conformance SUPERSEDED (D-59) |
 | ⏭ | C7·5 | `LJ delivered_rate` | Delivered · rate the rider  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
 | ⏭ | C7·6 | `LJ completed` | Completed  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
 | ⏭ | C7·7 | `LJ rate_undo` | Rating sent · undo  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
@@ -240,11 +240,11 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | ⏭ | C10·9 | `RC checkout_offline` | Offline mid-checkout  [FOOD] | **SUPERSEDED by D-59** — Review R7c. Evidence: `docs/parity/ORDER-FLOW-V2-REVIEW-2026-10-02.png` | structure snapshot + rendered conformance SUPERSEDED (D-59) |
 | ⬜ | C10·10 | `RC pay_open` | Still unpaid · reminder  [FOOD] | | |
 | ⛔ | C10·11 | `RC pay_failed` | Payment declined  [FOOD] | | |
-| ⬜ | C10·12 | `RC item_removed` | One item unavailable  [FOOD] | | |
-| ⬜ | C10·13 | `RC no_rider` | NO_RIDER  [FOOD] | | |
+| ⏭ | C10·12 | `RC item_removed` | One item unavailable  [FOOD] | **SUPERSEDED by D-59 (Order flow v2, 2026-10-02)** — U2 (removals) on the one order screen `app/order/[id].tsx` (`packages/design/handoff/order-flow-v2`). Not aligned to the gallery mock. Evidence: `docs/parity/ORDER-FLOW-V2-CUSTOMER-2026-10-02.png` | structure snapshot + rendered conformance SUPERSEDED (D-59) |
+| ⏭ | C10·13 | `RC no_rider` | NO_RIDER  [FOOD] | **SUPERSEDED by D-59 (Order flow v2, 2026-10-02)** — T11a / D3d on the one order screen `app/order/[id].tsx` (`packages/design/handoff/order-flow-v2`). Not aligned to the gallery mock. Evidence: `docs/parity/ORDER-FLOW-V2-CUSTOMER-2026-10-02.png` | structure snapshot + rendered conformance SUPERSEDED (D-59) |
 | ⬜ | C10·14 | `RC track_paused` | Live paused  [FOOD] | | |
-| ⛔ | C10·15 | `RC rejected` | Rejected · refund pending  [FOOD] | | |
-| ⬜ | C10·16 | `RC refunded` | Refunded  [FOOD] | | |
+| ⏭ | C10·15 | `RC rejected` | Rejected · refund pending  [FOOD] | **SUPERSEDED by D-59 (Order flow v2, 2026-10-02)** — D3b (cash copy) on the one order screen `app/order/[id].tsx` (`packages/design/handoff/order-flow-v2`). Not aligned to the gallery mock. Evidence: `docs/parity/ORDER-FLOW-V2-CUSTOMER-2026-10-02.png` | structure snapshot + rendered conformance SUPERSEDED (D-59) |
+| ⏭ | C10·16 | `RC refunded` | Refunded  [FOOD] | **SUPERSEDED by D-59 (Order flow v2, 2026-10-02)** — retired (no prepaid orders) on the one order screen `app/order/[id].tsx` (`packages/design/handoff/order-flow-v2`). Not aligned to the gallery mock. Evidence: `docs/parity/ORDER-FLOW-V2-CUSTOMER-2026-10-02.png` | structure snapshot + rendered conformance SUPERSEDED (D-59) |
 | ⬜ | C10·17 | `RC cancel_sheet` | Cancel pre-pickup  [FOOD] | | |
 | ⛔ | C10·18 | `RC rider_cancelled` | Rider cancelled · re-finding  [FOOD] | | |
 | ⬜ | C10·19 | `RC handoff_dispute` | Rider didn't confirm  [FOOD] | | |

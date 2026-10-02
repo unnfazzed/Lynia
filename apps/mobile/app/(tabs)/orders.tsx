@@ -164,9 +164,9 @@ export default function OrdersTabScreen(): React.ReactElement {
             <ActiveOrderCard
               key={o.id}
               o={o}
-              // A food job opens the food live tracker (its screen reads the MerchantOrderResponse
-              // feed); a parcel opens the generic tracking screen.
-              onPress={() => router.push(o.orderType === "merchant" ? `/food/order/${o.id}` : `/order/${o.id}`)}
+              // Every order opens the one order screen (D-59): a food order draws the Order flow v2
+              // stages there, a parcel After Send.
+              onPress={() => router.push(`/order/${o.id}`)}
             />
           ))
         ) : null}
@@ -188,8 +188,8 @@ export default function OrdersTabScreen(): React.ReactElement {
               <OrderRow
                 key={o.id}
                 o={o}
-                // Same split as the live card: `app/order/[id].tsx` has no food handling.
-                onPress={() => router.push(o.orderType === "merchant" ? `/food/order/${o.id}` : `/order/${o.id}`)}
+                // One order screen for every service (D-59).
+                onPress={() => router.push(`/order/${o.id}`)}
               />
             ))}
           </>

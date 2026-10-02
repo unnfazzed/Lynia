@@ -3,7 +3,7 @@
   "src": "RC",
   "id": "pay_now",
   "mode": "phone",
-  "component": "app/food/order/[orderId].tsx",
+  "component": "app/order/[id].tsx",
   "fixture": "food_pay_now",
   "generator": "tools/parity/extract-expected.mjs",
   "chromeDropped": [

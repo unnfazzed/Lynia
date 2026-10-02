@@ -86,7 +86,7 @@ describe("history split by side", () => {
     expect(text(t)).toContain("Trip history");
   });
 
-  it("a placed food order opens the food tracker; a carried food job stays on the order screen", () => {
+  it("a placed food order and a carried food job both open the one order screen (D-59)", () => {
     const press = (t: renderer.ReactTestRenderer, id: string): void => {
       const list = t.root.findByType(SectionList);
       const item = (list.props.sections as { data: OrderHistoryRow[] }[]).flatMap((s) => s.data).find((r) => r.id === id)!;
@@ -96,7 +96,7 @@ describe("history split by side", () => {
     mockRows = [...baseRows, food(row(99, "customer")), food(row(98, "rider"))];
     mockSide = "customer";
     press(render(), "customer-99-food");
-    expect(mockPush).toHaveBeenLastCalledWith("/food/order/customer-99-food");
+    expect(mockPush).toHaveBeenLastCalledWith("/order/customer-99-food");
     press(render(), "customer-0");
     expect(mockPush).toHaveBeenLastCalledWith("/order/customer-0");
     mockSide = "rider";

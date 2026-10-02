@@ -176,12 +176,12 @@ function pushRoute(data: unknown, isRider: boolean): string | null {
   };
   // Per-order recipient relationship when the backend stamped it; otherwise the global account role.
   const toRider = to === "rider" ? true : to === "customer" ? false : isRider;
-  // P0-2: a food (merchant) order's customer-facing tracker is /food/order/:id, NOT the parcel-voiced
-  // /order/:id — and a food "assigned" ("Rider secured") push would otherwise route the customer to
+  // P0-2 / D-59: every customer order (food or parcel) opens the one order screen /order/:id; a food
+  // "assigned" ("Rider secured") push must still not route the customer to
   // /rider/job. The server now stamps `orderType`; when it's absent (older in-flight pushes) this is
   // false and routing falls back to the prior /order/:id behaviour.
   const merchant = orderType === "merchant";
-  const customerOrderScreen = (id: string): string => (merchant ? `/food/order/${id}` : `/order/${id}`);
+  const customerOrderScreen = (id: string): string => `/order/${id}`;
   if (kind === "broadcast") return "/rider";
   // D5: a food-dispatch offer push (`food-dispatch.service.ts` `tick()`) lands the rider on the offer
   // intake screen, which reads the live offer straight off the poll-fallback GET rather than trusting
@@ -215,7 +215,7 @@ function pushRoute(data: unknown, isRider: boolean): string | null {
   // food-voiced statuses (assigned "Rider secured", requested "re-dispatching", awaiting_payment
   // "pay now", cancelled, en_route_dropoff) must not fall through to the parcel status routing below,
   // which would send "assigned" to /rider/job and everything else to /order/:id.
-  if (merchant && !toRider) return `/food/order/${orderId}`;
+  if (merchant && !toRider) return `/order/${orderId}`;
   if (typeof status === "string" && RIDER_JOB_SCREEN_STATUSES.has(status)) return "/rider/job";
   if (typeof status === "string" && RIDER_BOARD_STATUSES.has(status)) return "/rider";
   if (status === "cancelled") return toRider ? "/rider/job" : customerOrderScreen(orderId);

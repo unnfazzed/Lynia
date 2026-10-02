@@ -113,6 +113,7 @@ export function orderSnapshot(over = {}) {
     id: OID,
     status: "en_route_dropoff",
     orderType: "merchant",
+    merchantName: "Gava's Kitchen",
     viewerRole: "customer",
     agreedFare: "18.00",
     proposedFare: "18.00",

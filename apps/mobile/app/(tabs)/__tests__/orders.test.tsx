@@ -219,7 +219,7 @@ describe("(tabs)/orders.tsx — Orders tab states", () => {
       return row.props.onPress;
     };
 
-    it("a past food order opens the food tracker, a past parcel the parcel tracker", async () => {
+    it("a past food order opens the one order screen, like a past parcel (D-59)", async () => {
       mockGetActiveCustomerOrders.mockResolvedValue([]);
       mockUseHistoryFeed.mockReturnValue(
         history([histRow("food-1", { orderType: "merchant", merchantName: "Sadza Republic" }), histRow("parcel-1")]),
@@ -227,7 +227,7 @@ describe("(tabs)/orders.tsx — Orders tab states", () => {
       activeTree = renderOrders();
       await settle();
       act(() => rowPress(activeTree!, "Sadza Republic")());
-      expect(mockPush).toHaveBeenLastCalledWith("/food/order/food-1");
+      expect(mockPush).toHaveBeenLastCalledWith("/order/food-1");
       act(() => rowPress(activeTree!, "Avondale → Borrowdale")());
       expect(mockPush).toHaveBeenLastCalledWith("/order/parcel-1");
     });
