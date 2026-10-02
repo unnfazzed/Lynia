@@ -3240,6 +3240,7 @@ ordering for shops) close when shop ordering lands here.
 Each PR of the build order appends its line here.
 
 - **PR 0 (this entry):** the package sync above; CLAUDE.md pointer.
+- **PR 2 (Review & place):** `app/food/checkout.tsx` is the one Review screen (R1, R3a/b, R4, R6a/b, R7a–c, R9a/b; `/food/cart` redirects to it, the storefront cart bar pushes it); Place → `dismissAll` + `replace` into the order, so Back goes Home. WHEN draws the ASAP state only and R6b omits 'Schedule for …' until the slots API (R5) lands — a control that does nothing is not rendered. The payload is unchanged (cash; the rider note, else the address line, is the drop-off landmark). `RC.cart*`, `RC.checkout_*`, `RC.placing` are SUPERSEDED deferrals (baseline 81 → 78); evidence `docs/parity/ORDER-FLOW-V2-REVIEW-2026-10-02.png` (`tools/parity/shoot-order-flow-review.mjs`).
 - **Backend A (API + shared contracts, no UI):** substitution (BRIEF §8, U1–U5/M2), proof at hand-over
   (§9, RD2b–d/RD4c–d/M4b/M5b/P5), venue rating + receipt fields (§11, D1/D1b) and the four-step track
   (§4). Migration `0066_order_flow_v2` (expand-only: five nullable `orders` columns,

@@ -3,7 +3,7 @@
   "src": "RC",
   "id": "cart",
   "mode": "phone",
-  "component": "app/food/cart.tsx",
+  "component": "app/food/checkout.tsx",
   "fixture": "food_cart",
   "generator": "tools/parity/extract-expected.mjs",
   "chromeDropped": [

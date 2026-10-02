@@ -146,8 +146,14 @@ export const PARITY_STATUS = {
 
   // ── RC ──────────────────────────────────────────────────────────
   "RC.item": { status: "PENDING" }, // Item sheet
-  "RC.cart_note": { status: "PENDING" }, // Note for the kitchen
-  "RC.placing": { status: "PENDING" }, // Placing
+  "RC.cart_note": {
+    status: "PENDING",
+    reason: "SUPERSEDED (docs/DESIGN-DEVIATIONS.md D-59, owner 2026-10-02): a line note is edited in place under the line on the Order flow v2 Review & place screen (R1, app/food/checkout.tsx) — '✎ Add a note' becomes a field; there is no note sheet. Recorded as a SUPERSEDED deferral in codegen/adopted.mjs. Not aligned to.",
+  }, // Note for the kitchen
+  "RC.placing": {
+    status: "PENDING",
+    reason: "SUPERSEDED (docs/DESIGN-DEVIATIONS.md D-59, owner 2026-10-02): placing is the Order flow v2 R7a — the Review stays under a white veil, the CTA reads 'Placing your order…' over the 'Don’t close the app…' hint. Recorded as a SUPERSEDED deferral in codegen/adopted.mjs. Not aligned to.",
+  }, // Placing
   "RC.confirm_call": { status: "PENDING" }, // They call to confirm
   "RC.pay_push": { status: "PENDING" }, // Push · payment requested — #670 lifted the gate: the payment-prompt lifecycle is now a plain order field (MerchantOrderResponse.paymentPromptStatus), so a static fixture can stand up each state. Adopted; parity wiring pending.
   "RC.pay_wait": { status: "PENDING" }, // Prompt sent — #670: paymentPromptStatus="pending" renders this; renderable from a fixture now.
@@ -164,10 +170,22 @@ export const PARITY_STATUS = {
     status: "PENDING",
     reason: "SUPERSEDED (docs/DESIGN-DEVIATIONS.md D-57, owner 2026-10-01): the 'just closed' interrupt is the Browse v2 handoff's S9 (a centred card, 'See open places' / 'OK'), drawn by app/food/[id].tsx. Recorded as a SUPERSEDED deferral in codegen/adopted.mjs. Not aligned to.",
   }, // Closes while browsing
-  "RC.cart_oos": { status: "PENDING" }, // Item sold out
-  "RC.cart_price": { status: "PENDING" }, // Price changed
-  "RC.cart_min": { status: "PENDING" }, // Under the minimum
-  "RC.checkout_offline": { status: "PENDING" }, // Offline mid-checkout
+  "RC.cart_oos": {
+    status: "PENDING",
+    reason: "SUPERSEDED (docs/DESIGN-DEVIATIONS.md D-59, owner 2026-10-02): sold out is the Order flow v2 R6a — 'Some things changed since you added them', the gone line struck through with 'Sold out now — taken off'. Recorded as a SUPERSEDED deferral in codegen/adopted.mjs. Not aligned to.",
+  }, // Item sold out
+  "RC.cart_price": {
+    status: "PENDING",
+    reason: "SUPERSEDED (docs/DESIGN-DEVIATIONS.md D-59, owner 2026-10-02): a price change is the Order flow v2 R6a — the new price with the old one struck and 'Price went up $a → $b'. Recorded as a SUPERSEDED deferral in codegen/adopted.mjs. Not aligned to.",
+  }, // Price changed
+  "RC.cart_min": {
+    status: "PENDING",
+    reason: "SUPERSEDED (docs/DESIGN-DEVIATIONS.md D-59, owner 2026-10-02): under the minimum is the Order flow v2 R4 — the 'Add $d more to skip the $1.00 small-order fee.' hint and a Small-order fee row. Recorded as a SUPERSEDED deferral in codegen/adopted.mjs. Not aligned to.",
+  }, // Under the minimum
+  "RC.checkout_offline": {
+    status: "PENDING",
+    reason: "SUPERSEDED (docs/DESIGN-DEVIATIONS.md D-59, owner 2026-10-02): offline is the Order flow v2 R7c — 'You’re offline · last update 12:19' over the Review and the CTA disabled with 'You’re offline. Connect to place your order — your cart is saved.' Not aligned to.",
+  }, // Offline mid-checkout
   "RC.pay_open": { status: "PENDING" }, // Still unpaid · reminder
   "RC.pay_failed": { status: "PENDING" }, // Payment declined
   "RC.track_paused": { status: "PENDING" }, // Live paused
