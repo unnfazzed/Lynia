@@ -188,3 +188,107 @@ export function ReportSheet({
     </ModalSheet>
   );
 }
+
+/** One schedule slot as the sheet draws it (the API's `ScheduleSlot`). */
+export interface SlotView {
+  start: string;
+  label: string;
+  full: boolean;
+}
+
+/**
+ * T13a "Change time" → the R5a schedule sheet (`of-screens-rt.js` `schedSheet`): "When should it
+ * arrive?" · the Today / Tomorrow segmented control · 2-column 44 slot chips (selected = mint + check,
+ * full = surface + "· Full", not pickable) · the muted lead line · "Arrive {slot}". Only the slots the
+ * venue can still meet are listed (the server's answer); a day with none draws no chips.
+ */
+export function ChangeTimeSheet({
+  visible,
+  venue,
+  making,
+  today,
+  tomorrow,
+  current,
+  busy,
+  onSave,
+  onClose,
+}: {
+  visible: boolean;
+  venue: string;
+  /** `O.svc[s].making`, lower case ("cooking" / "packing"). */
+  making: string;
+  today: readonly SlotView[];
+  tomorrow: readonly SlotView[];
+  /** The order's slot start — preselected. */
+  current: string | null;
+  busy: boolean;
+  onSave: (slot: SlotView, day: string) => void;
+  onClose: () => void;
+}): React.ReactElement {
+  const inTomorrow = current != null && tomorrow.some((s) => s.start === current);
+  const [day, setDay] = useState<"today" | "tomorrow">(inTomorrow || today.length === 0 ? "tomorrow" : "today");
+  const [picked, setPicked] = useState<string | null>(current);
+  const list = day === "today" ? today : tomorrow;
+  const sel = [...today, ...tomorrow].find((s) => s.start === picked) ?? null;
+  const selDay = sel && tomorrow.some((s) => s.start === sel.start) ? O.r.tomorrow : O.r.today;
+  return (
+    <ModalSheet visible={visible} onClose={onClose}>
+      <StageTitle>{O.r.schT}</StageTitle>
+      <View accessibilityRole="tablist" style={{ flexDirection: "row", backgroundColor: C.surface, borderRadius: tokens.radius.pill, padding: 3, gap: 3 }}>
+        {(["today", "tomorrow"] as const).map((d) => {
+          const on = day === d;
+          return (
+            <Tappable
+              key={d}
+              onPress={() => setDay(d)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: on }}
+              style={{ flex: 1, minHeight: tokens.touchTargetMin, borderRadius: tokens.radius.pill, alignItems: "center", justifyContent: "center", backgroundColor: on ? C.cta : "transparent" }}
+            >
+              <Text style={{ fontSize: 14, fontWeight: on ? "800" : "600", color: on ? C.onAccent : C.ink }}>{d === "today" ? O.r.today : O.r.tomorrow}</Text>
+            </Tappable>
+          );
+        })}
+      </View>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        {list.map((s) => {
+          const on = s.start === picked;
+          return (
+            <Tappable
+              key={s.start}
+              onPress={() => setPicked(s.start)}
+              disabled={s.full}
+              accessibilityRole="radio"
+              accessibilityLabel={s.full ? `${s.label} · ${O.r.slotFull}` : s.label}
+              accessibilityState={{ checked: on, disabled: s.full }}
+              style={{
+                width: "48.5%",
+                minHeight: tokens.touchTargetMin,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+                borderRadius: tokens.radius.pill,
+                borderWidth: on ? 1.5 : 1,
+                borderColor: on ? C.accentText : s.full ? C.surface : C.line,
+                backgroundColor: on ? C.accentWash : s.full ? C.surface : C.bg,
+              }}
+            >
+              {on ? <Icon name="check" size={14} color={C.accentText} /> : null}
+              <Text style={{ fontSize: 13, fontWeight: on ? "700" : "600", color: on ? C.accentText : s.full ? C.muted : C.ink, fontVariant: ["tabular-nums"] }}>
+                {s.full ? `${s.label} · ${O.r.slotFull}` : s.label}
+              </Text>
+            </Tappable>
+          );
+        })}
+      </View>
+      <Mut>{ofFmt(O.r.schNote, { v: venue, making })}</Mut>
+      <Btn
+        label={ofFmt(O.r.schSave, { s: sel ? `${selDay.toLowerCase()} ${sel.label}` : "" }).trim()}
+        disabled={!sel || sel.start === current}
+        loading={busy}
+        onPress={() => (sel ? onSave(sel, selDay) : undefined)}
+      />
+    </ModalSheet>
+  );
+}

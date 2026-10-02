@@ -4,9 +4,20 @@ import type {
   PaymentPromptRail,
   PlaceMerchantOrderRequest,
   RateVenueRequest,
+  ScheduleSlotsResponse,
   VenueRatingView,
 } from "@lynia/shared";
 import { apiFetch } from "./client";
+
+/** Order flow v2 T13a "Change time" (BRIEF §12): the venue's Today / Tomorrow slots for this drop-off. */
+export function getVenueScheduleSlots(merchantId: string, at: { lat: number; lng: number } | null): Promise<ScheduleSlotsResponse> {
+  return apiFetch(`/restaurants/${merchantId}/schedule-slots${at ? `?lat=${at.lat}&lng=${at.lng}` : ""}`);
+}
+
+/** T13a "Change time": move a scheduled order to another slot before the venue starts it. */
+export function changeFoodOrderSchedule(orderId: string, scheduledFor: string): Promise<MerchantOrderResponse> {
+  return apiFetch(`/restaurants/orders/${orderId}/schedule`, { method: "POST", body: { scheduledFor } });
+}
 
 /** D2 (checkout + kitchen-confirms). Price is always server-computed (D-35) — the client sends the
  *  basket + dropoff + payment method, never a total. */

@@ -2,10 +2,10 @@ import { tokens } from "@lynia/shared/tokens";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Easing, Text, View } from "react-native";
 import MapView, { AnimatedRegion, type LatLng, Marker, MarkerAnimated, Polyline, type Region } from "react-native-maps";
-import { RestaurantsSticker } from "../art/stickers";
+import type { MerchantService } from "../../logic/merchant-order";
 import { Icon } from "../Icon";
 import type { MapPoint } from "../LiveMap";
-import { ALPHA } from "./kit";
+import { ALPHA, SVC_TILE, SvcSticker } from "./kit";
 import { O } from "./copy";
 
 /**
@@ -22,11 +22,11 @@ const HARARE: Region = { latitude: -17.8292, longitude: 31.0522, latitudeDelta: 
 const RIDER_DELTA = { latitudeDelta: 0.01, longitudeDelta: 0.01 } as const;
 const ll = (p: MapPoint): LatLng => ({ latitude: p.lat, longitude: p.lng });
 
-function VenuePin({ name }: { name: string }): React.ReactElement {
+function VenuePin({ name, svc }: { name: string; svc: MerchantService }): React.ReactElement {
   return (
     <View style={{ alignItems: "center", gap: 3, padding: 6 }}>
-      <View style={{ width: 48, height: 48, borderRadius: 24, borderWidth: 3, borderColor: C.bg, backgroundColor: C.tileFood, alignItems: "center", justifyContent: "center", ...tokens.shadow.menu }}>
-        <RestaurantsSticker width={30} />
+      <View style={{ width: 48, height: 48, borderRadius: 24, borderWidth: 3, borderColor: C.bg, backgroundColor: SVC_TILE[svc], alignItems: "center", justifyContent: "center", ...tokens.shadow.menu }}>
+        <SvcSticker svc={svc} width={30} />
       </View>
       <View style={{ backgroundColor: C.bg, borderRadius: tokens.radius.pill, paddingHorizontal: 9, paddingVertical: 3, ...tokens.shadow.card }}>
         <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: "700", color: C.ink, maxWidth: 160 }}>{name}</Text>
@@ -66,6 +66,8 @@ function RiderPin({ label, paused }: { label: string; paused: boolean }): React.
 export const MerchantMap = React.memo(function MerchantMap(props: {
   venue: MapPoint | null;
   venueName: string;
+  /** The service — the pin's tile colour and sticker. */
+  svc: MerchantService;
   dropoff: MapPoint | null;
   rider: MapPoint | null;
   riderLabel: string;
@@ -123,8 +125,8 @@ export const MerchantMap = React.memo(function MerchantMap(props: {
           <Polyline coordinates={[ll(rider), ll(venue)]} strokeColor={C.ink} strokeWidth={3.5} lineDashPattern={[1, 7]} lineCap="round" />
         ) : null}
         {venue ? (
-          <Marker coordinate={ll(venue)} anchor={{ x: 0.5, y: 0.3 }} tracksViewChanges={false}>
-            <VenuePin name={props.venueName} />
+          <Marker key={`venue-${props.svc}`} coordinate={ll(venue)} anchor={{ x: 0.5, y: 0.3 }} tracksViewChanges={false}>
+            <VenuePin name={props.venueName} svc={props.svc} />
           </Marker>
         ) : null}
         {dropoff ? (

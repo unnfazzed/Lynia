@@ -2,12 +2,12 @@ import { tokens } from "@lynia/shared/tokens";
 import React, { useEffect, useRef } from "react";
 import { ActivityIndicator, Animated, Easing, Modal, PixelRatio, Text, type TextStyle, View, type ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { RestaurantsSticker } from "../art/stickers";
+import { PharmacyStickerV2, RestaurantsSticker, ShopsSticker } from "../art/stickers";
 import { Icon, type IconName } from "../Icon";
 import { RemoteImage } from "../RemoteImage";
 import { Tappable } from "../Tappable";
 import { RiderAvatar, VerifiedTag } from "../order/kit";
-import { codeGroups } from "../../logic/merchant-order";
+import { codeGroups, type MerchantService } from "../../logic/merchant-order";
 import { O, ofFmt } from "./copy";
 import { OX } from "./kit-copy";
 
@@ -98,13 +98,14 @@ function PulseRing({ reduceMotion }: { reduceMotion: boolean }): React.ReactElem
   );
 }
 
-/** The four-step track in a surface panel: 24 circles, 4 connectors, the current one pulses. `current` 4 = all done. */
+/** The four-step track in a surface panel: 24 circles, 4 connectors, the current one pulses. `current` 4 = all
+ *  done; −1 = nothing started yet (T13a, a scheduled order before the venue starts). */
 export function Track({ labels, current, reduceMotion }: { labels: readonly string[]; current: number; reduceMotion: boolean }): React.ReactElement {
   const now = Math.min(current, labels.length - 1);
   return (
     <View
       accessible
-      accessibilityLabel={current >= labels.length ? labels[labels.length - 1] : `Step ${current + 1} of ${labels.length}, ${labels[now]}`}
+      accessibilityLabel={current < 0 ? labels.join(", ") : current >= labels.length ? labels[labels.length - 1] : `Step ${current + 1} of ${labels.length}, ${labels[now]}`}
       style={{ flexDirection: "row", backgroundColor: C.surface, borderRadius: 16, paddingTop: 12, paddingBottom: 10, paddingHorizontal: 2 }}
     >
       {labels.map((label, k) => {
@@ -255,20 +256,30 @@ export function LinkRow({ label, onPress, loading }: { label: string; onPress: (
   );
 }
 
-/** The venue's sticker on its tile colour (restaurants: tileFood). */
-export function VenueDisc({ size = 48, radius = 14 }: { size?: number; radius?: number }): React.ReactElement {
+/** README "Per service": the venue pin / tile colour — food #FFD9CC, shops #DDD5FF, pharmacy #C5E9DF. */
+export const SVC_TILE: Record<MerchantService, string> = { food: C.tileFood, shops: C.tileShops, pharmacy: C.tilePharmacy };
+
+/** The service sticker (`assets/service-icons/v2`). */
+export function SvcSticker({ svc, width }: { svc: MerchantService; width: number }): React.ReactElement {
+  if (svc === "shops") return <ShopsSticker width={width} />;
+  if (svc === "pharmacy") return <PharmacyStickerV2 width={width} />;
+  return <RestaurantsSticker width={width} />;
+}
+
+/** The venue's sticker on its service's tile colour. */
+export function VenueDisc({ size = 48, radius = 14, svc = "food" }: { size?: number; radius?: number; svc?: MerchantService }): React.ReactElement {
   return (
-    <View accessibilityElementsHidden importantForAccessibility="no" style={{ width: size, height: size, borderRadius: radius, backgroundColor: C.tileFood, alignItems: "center", justifyContent: "center" }}>
-      <RestaurantsSticker width={Math.round(size * 0.72)} />
+    <View accessibilityElementsHidden importantForAccessibility="no" style={{ width: size, height: size, borderRadius: radius, backgroundColor: SVC_TILE[svc], alignItems: "center", justifyContent: "center" }}>
+      <SvcSticker svc={svc} width={Math.round(size * 0.72)} />
     </View>
   );
 }
 
 /** Polish `K.venueRow`: 48 tile · name 16/800 · "Order #A1B2" · Call. */
-export function VenueRow({ name, sub, onCall }: { name: string; sub: string; onCall?: (() => void) | null }): React.ReactElement {
+export function VenueRow({ name, sub, onCall, svc = "food" }: { name: string; sub: string; onCall?: (() => void) | null; svc?: MerchantService }): React.ReactElement {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-      <VenueDisc />
+      <VenueDisc svc={svc} />
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={{ fontSize: 16, fontWeight: "800", letterSpacing: -0.2, color: C.ink }}>{name}</Text>
         <Mut>{sub}</Mut>
@@ -304,13 +315,15 @@ export function Lines({ lines }: { lines: LineView[] }): React.ReactElement {
 }
 
 /** ★ OrderSummary: the 44 row "Your order · 3 dishes · $16.50 cash · See order ⌄", expanding to the lines. */
-export function OrderSummary({ count, total, lines, open, onToggle }: { count: number; total: number; lines: LineView[]; open: boolean; onToggle: () => void }): React.ReactElement {
+export function OrderSummary({ count, total, lines, open, onToggle, svc = "food" }: { count: number; total: number; lines: LineView[]; open: boolean; onToggle: () => void; svc?: MerchantService }): React.ReactElement {
+  const words = O.svc[svc];
+  const what = `${count} ${count === 1 ? words.item : words.items} · ${usdOf(total)} cash`;
   return (
     <View style={{ borderWidth: 1, borderColor: C.line, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 4 }}>
-      <Tappable onPress={onToggle} accessibilityRole="button" accessibilityState={{ expanded: open }} accessibilityLabel={`${O.t.order}. ${count} ${count === 1 ? O.svc.food.item : O.svc.food.items} · ${usdOf(total)} cash`} style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: 10 }}>
+      <Tappable onPress={onToggle} accessibilityRole="button" accessibilityState={{ expanded: open }} accessibilityLabel={`${O.t.order}. ${what}`} style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: 10 }}>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={{ fontSize: 14, fontWeight: "700", color: C.ink }}>{O.t.order}</Text>
-          <Mut style={TAB}>{`${count} ${count === 1 ? O.svc.food.item : O.svc.food.items} · ${usdOf(total)} cash`}</Mut>
+          <Mut style={TAB}>{what}</Mut>
         </View>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 2, minHeight: tokens.touchTargetMin }}>
           <Text style={{ fontSize: 13, fontWeight: "600", color: C.accentText }}>{open ? O.t.hideOrder : O.t.viewOrder}</Text>

@@ -1,4 +1,4 @@
-import { type MerchantOrderResponse, type MerchantOrderTrackView, type OrderStatusEvent, type RatingTag, RESTAURANTS_TIMING, SOS_POLICY, type VenueRatingTag } from "@lynia/shared";
+import { type MerchantOrderResponse, type MerchantOrderTrackView, ORDER_SCHEDULE, type OrderStatusEvent, type RatingTag, RESTAURANTS_TIMING, SOS_POLICY, type VenueRatingTag } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -7,7 +7,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, ActivityIndicator, BackHandler, Linking, ScrollView, Share, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ApiError } from "../api/client";
-import { cancelUnpaidFoodOrder, confirmFoodCustomerCash, confirmFoodSubstitution, rateFoodVenue, respondToFoodOrderItems } from "../api/food-orders";
+import { cancelUnpaidFoodOrder, changeFoodOrderSchedule, confirmFoodCustomerCash, confirmFoodSubstitution, getVenueScheduleSlots, rateFoodVenue, respondToFoodOrderItems } from "../api/food-orders";
 import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../api/orders";
 import { raiseIssue, raiseSos } from "../api/safety";
 import {
@@ -32,7 +32,10 @@ import {
   type Eta,
   isOpenRound,
   isRiderStage,
+  isScheduledWaiting,
   merchantEta,
+  merchantService,
+  type MerchantService,
   type MerchantStage,
   prepProgress,
   readyAtMs,
@@ -41,6 +44,7 @@ import {
   roundTakenOff,
   serverTrackStep,
   shortOrderId,
+  slotDay,
   type SubAnswer,
   substitutionLines,
   substitutionState,
@@ -64,7 +68,7 @@ import { OrderSheet, type OrderSheetHandle, PeekMark } from "../ui/order/OrderSh
 import { OrderHeader } from "../ui/order/panels";
 import { useReduceMotion } from "../ui/useReduceMotion";
 import { O, ofFmt } from "../ui/orderflow/copy";
-import { doorWhere, OX, SVC, withRider } from "../ui/orderflow/kit-copy";
+import { doorWhere, OX, OXS, rxReasonLabel, svcCopy, trackLabels, withRider } from "../ui/orderflow/kit-copy";
 import {
   AnswerHead,
   Bar,
@@ -99,7 +103,7 @@ import {
   VenueRow,
 } from "../ui/orderflow/kit";
 import { MerchantMap } from "../ui/orderflow/MerchantMap";
-import { CancelSheet, HelpSheet, REPORT_ISSUE_TYPES, ReportSheet } from "../ui/orderflow/panels";
+import { CancelSheet, ChangeTimeSheet, HelpSheet, REPORT_ISSUE_TYPES, ReportSheet } from "../ui/orderflow/panels";
 import { uuidV4FromSeed } from "../util";
 
 /**
@@ -107,8 +111,10 @@ import { uuidV4FromSeed } from "../util";
  * (`packages/design/handoff/order-flow-v2/`, ledger D-59), on the After Send v2 shell: ‹ Back · venue
  * name · red Help, a full-bleed map from the first second, and a sheet whose order never changes —
  * stage title → ETA hero → four-step track → the stage's block → the rest. Done and the endings are
- * full pages (no map). README states: T2–T4, T6, T7, T9, T11a/b, T12a/b, T14a–d, T15a/c/d, T16a/b,
- * U2 (removals), P1/P1b/P2/P2b/P3a/P3b, D1/D1b, D2a/b, D3a–f, D4.
+ * full pages (no map). README states: T2–T4, T5a/b/c, T6, T7, T9, T11a/b, T12a/b, T13a/b, T14a–d,
+ * T15a/c/d, T16a/b, U2 (removals), P1/P1s/P1b/P2/P2b/P3a/P3b, D1/D1b, D2a/b, D3a–f, D4, D5a/b — for
+ * restaurant, shop and pharmacy orders alike (README "Per service": `venue.businessType/shopKind` picks
+ * Cooking vs Packing, dishes vs items, the pin's tile and sticker).
  *
  * Server rules stay as they are: the delivery code only after both cash confirms (2-minute ring), the
  * free cancel only where the server accepts one, the item approval's 60 s window.
@@ -135,7 +141,7 @@ const LIVE_STATUS = new Set(["assigned", "confirmed", "en_route_pickup", "picked
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 type Toast = { text: string; icon?: "circle-alert" | "circle-check" | "timer" | "bike"; action?: string; onAction?: () => void; ttl?: number };
-type Panel = null | "help" | "report" | "cancel";
+type Panel = null | "help" | "report" | "cancel" | "schedule";
 
 /** The four cash-handshake fields, explicit (the response omits them when empty). */
 const cashOf = (o: MerchantOrderResponse): { paymentMethod: string | null; customerCashConfirmedAt: string | null; riderCashConfirmedAt: string | null; cashHandshakeFrozenAt: string | null } => ({
@@ -167,6 +173,11 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   const food = useFoodOrder(orderId, orderId !== "");
   const order = food.order;
   const status = order?.status;
+  // README "Per service": Cooking vs Packing, dishes vs items, the pin's tile and sticker.
+  const svc: MerchantService = merchantService(order?.venue);
+  const S = svcCopy(svc);
+  /** The venue's own section — Order again, Try again and "See other places" go back there. */
+  const section = svc === "food" ? "/food" : svc === "shops" ? "/shops" : "/pharmacy";
   const socketExpected = !!order && (order.riderId != null || LIVE_STATUS.has(order.status));
   const [nowMs, setNowMs] = useState(() => Date.now());
   // The server's track (BRIEF §4) from the `order:status` push, until the refetch it triggers lands.
@@ -340,6 +351,35 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       void qc.invalidateQueries({ queryKey: ["history"] });
     },
     onError: () => showToast({ text: O.t.cxFail }),
+  });
+
+  // ── T13a "Change time": the venue's slots for this drop-off, read only while the sheet is open ──
+  const dropPoint = snap?.dropoff.point ?? null;
+  const slotsQ = useQuery({
+    queryKey: ["orderflow", "slots", order?.merchantId ?? "", dropPoint?.lat ?? null, dropPoint?.lng ?? null],
+    queryFn: () => getVenueScheduleSlots(order?.merchantId as string, dropPoint),
+    enabled: panel === "schedule" && !!order?.merchantId,
+    staleTime: 60_000,
+  });
+  const slotsOk = slotsQ.data != null && Array.isArray(slotsQ.data.today?.slots) && Array.isArray(slotsQ.data.tomorrow?.slots);
+  const slotsFailed = panel === "schedule" && (slotsQ.isError || (slotsQ.data != null && !slotsOk));
+  useEffect(() => {
+    if (!slotsFailed) return;
+    setPanel(null);
+    showToast({ text: online ? O.t.loadFailSub : O.c.noData });
+  }, [slotsFailed, online, showToast]);
+  const scheduleM = useMutation({
+    mutationFn: (scheduledFor: string) => changeFoodOrderSchedule(orderId, scheduledFor),
+    onSuccess: (o) => {
+      haptic("tap");
+      setPanel(null);
+      qc.setQueryData(foodOrderKey(orderId), o);
+      invalidate();
+    },
+    onError: (e) => {
+      showToast({ text: failText(e, O.c.noData) });
+      void slotsQ.refetch();
+    },
   });
 
   // ── substitution (U2/U4a: answer every swap; Confirm sends them all; Cancel the whole order — free) ──
@@ -525,6 +565,8 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
         merchantPhase: order.merchantPhase,
         autoAccepted: order.autoAccepted,
         kitchenConfirmedAt: order.kitchenConfirmedAt,
+        scheduled: isScheduledWaiting(order),
+        rxStatus: order.prescription?.status ?? null,
         riderId: order.riderId,
         sawRider,
         rider: riderFix,
@@ -539,7 +581,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
 
   // Clocks: a 1 s tick for the countdowns, 15 s to re-check the GPS-paused rule.
   const needsSecond = stage === "waiting" || stage === "itemApproval" || isOpenRound(round) || (stage === "door" && handshake === "waiting_rider");
-  const needsSlow = stage != null && (isRiderStage(stage) || stage === "cooking" || stage === "confirming");
+  const needsSlow = stage != null && (isRiderStage(stage) || stage === "cooking" || stage === "confirming" || stage === "rxCheck" || stage === "rxDeclined");
   useEffect(() => {
     if (!needsSecond && !needsSlow) return;
     const iv = setInterval(() => setNowMs(Date.now()), needsSecond ? 1000 : 15_000);
@@ -660,6 +702,19 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
         onClose={() => setPanel(null)}
       />
       <ReportSheet visible={panel === "report"} items={itemNames} onSend={report} onClose={() => setPanel(null)} />
+      {panel === "schedule" && slotsOk && slotsQ.data ? (
+        <ChangeTimeSheet
+          visible
+          venue={venueName}
+          making={S.making.toLowerCase()}
+          today={slotsQ.data.today.slots}
+          tomorrow={slotsQ.data.tomorrow.slots}
+          current={[...slotsQ.data.today.slots, ...slotsQ.data.tomorrow.slots].find((s) => order?.scheduledFor != null && Date.parse(s.start) === Date.parse(order.scheduledFor))?.start ?? null}
+          busy={scheduleM.isPending}
+          onSave={(s) => scheduleM.mutate(s.start)}
+          onClose={() => setPanel(null)}
+        />
+      ) : null}
       <PhotoViewer visible={viewer != null} title={viewer?.title ?? ""} uri={viewer?.uri ?? null} caption={viewer?.caption ?? ""} onClose={() => setViewer(null)} />
       <CancelSheet
         visible={panel === "cancel"}
@@ -667,7 +722,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
         busy={cancelM.isPending}
         onKeep={() => setPanel(null)}
         onCancel={(reason) => cancelM.mutate({ free: freeCancel && !afterPickup, reason })}
-        full={afterPickup ? { text: withRider(ofFmt(O.t.cxFull, { p: usd(orderTotal), place: SVC.place }), riderFirst), amount: usd(orderTotal) } : null}
+        full={afterPickup ? { text: withRider(ofFmt(O.t.cxFull, { p: usd(orderTotal), place: S.place }), riderFirst), amount: usd(orderTotal) } : null}
       />
     </>
   );
@@ -747,10 +802,21 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     if (digits) void Linking.openURL(`https://wa.me/${digits}`).catch(() => undefined);
   };
   const riderCard = rider ? <RiderCard r={rider} onCall={phone ? () => dial(phone) : null} onWhatsApp={phone ? whatsapp : null} /> : null;
-  const venueRow = <VenueRow name={venueName} sub={orderNo} onCall={order.restaurantPhone ? () => dial(order.restaurantPhone) : null} />;
-  const summary = <OrderSummary count={count} total={total} lines={lines} open={summaryOpen} onToggle={() => setSummaryOpen((o) => !o)} />;
-  const step = serverTrackStep(order, socketTrack ?? order.track);
-  const track = <Track labels={SVC.st} current={step} reduceMotion={reduceMotion} />;
+  const venueRow = <VenueRow svc={svc} name={venueName} sub={orderNo} onCall={order.restaurantPhone ? () => dial(order.restaurantPhone) : null} />;
+  const summary = <OrderSummary svc={svc} count={count} total={total} lines={lines} open={summaryOpen} onToggle={() => setSummaryOpen((o) => !o)} />;
+  const trackView = socketTrack ?? order.track;
+  const step = serverTrackStep(order, trackView);
+  // BRIEF §4: pharmacy step 1 reads "Prescription checked" once the Rx was approved.
+  const rxChecked = trackView?.rxChecked ?? order.prescription?.status === "approved";
+  const labels = trackLabels(svc, rxChecked);
+  const track = <Track labels={labels} current={stage === "scheduled" ? -1 : step} reduceMotion={reduceMotion} />;
+  // BRIEF §12: the slot ("12:30–13:00") and its day ("tomorrow") for a scheduled order.
+  const slot = order.scheduledFor
+    ? {
+        day: slotDay(order.scheduledFor, nowMs, { today: O.r.today.toLowerCase(), tomorrow: O.r.tomorrow.toLowerCase() }, DAYS),
+        range: `${hhmm(order.scheduledFor)}–${hhmm(new Date(Date.parse(order.scheduledFor) + ORDER_SCHEDULE.slotMinutes * 60_000).toISOString())}`,
+      }
+    : null;
   const prep = prepProgress(order, nowMs);
   const etaRaw = stage ? merchantEta({ stage, noFix: res?.noFix ?? false, nowMs, readyMs: readyAtMs(order), venue, dropoff, rider: riderFix }) : null;
   const eta: EtaView | null = !etaRaw
@@ -897,7 +963,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
           </ScrollView>
           <View style={{ position: "absolute", left: 0, right: 0, bottom: 0 }} onLayout={(e) => setCtaH(e.nativeEvent.layout.height)}>
             <Bar>
-              <Btn kind="ghost" icon="refresh-cw" label={O.d.orderAgain} onPress={() => router.push(`/food/${order.merchantId}`)} />
+              <Btn kind="ghost" icon="refresh-cw" label={O.d.orderAgain} onPress={() => router.push(`${section}/${order.merchantId}` as never)} />
             </Bar>
           </View>
           {toastView(ctaH + 10)}
@@ -912,12 +978,12 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     const reason = order.rejectionReason;
     const collected = snap?.events.some((e) => e.status === "picked_up") ?? false;
     const byYou = snap?.cancelledBy === "customer";
-    let icon: "ban" | "store" | "clock" | "bike" | "shield-check" | "package" = "ban";
+    let icon: "ban" | "store" | "clock" | "bike" | "shield-check" | "package" | "file-text" = "ban";
     let title: string = O.d.cxYou;
     let sub: string = O.d.cxYouSub;
-    let primary = { label: ofFmt(O.d.tryAgain, { v: venueName }), go: (): void => router.push(`/food/${order.merchantId}`) };
+    let primary = { label: ofFmt(O.d.tryAgain, { v: venueName }), go: (): void => router.push(`${section}/${order.merchantId}` as never) };
     let secondary: { label: string; go: () => void } | null = null;
-    const others = { label: O.d.others, go: (): void => router.push("/food") };
+    const others = { label: O.d.others, go: (): void => router.push(section as never) };
     const whatsApp = waUrl ? { label: O.t.hWa, go: (): void => void Linking.openURL(waUrl).catch(() => undefined) } : null;
     let more: React.ReactNode = null;
     let owedAmt: string | null = null;
@@ -944,6 +1010,14 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       title = ofFmt(O.u.allOut, { v: venueName });
       sub = O.u.allOutSub;
       primary = others;
+    } else if (order.prescription?.status === "declined" && (reason === "rx_declined" || (byYou && !collected))) {
+      // D5b — the prescription was declined and the customer cancelled the rest (free). With nothing
+      // left to pack the pharmacy's decline cancelled it (`rx_declined`): the same ending, without the
+      // "you cancelled the rest" sentence that wouldn't be true.
+      icon = "file-text";
+      title = reason === "rx_declined" ? O.d.rxNo : O.d.rxNoCx;
+      sub = reason === "rx_declined" ? O.d.cxYouSub : O.d.rxNoCxSub;
+      primary = { label: OXS.otherPharmacies, go: () => router.push(section as never) };
     } else if (byYou && collected) {
       // D3f — the owed balance needs a ledger line on the customer account (NEEDS BACKEND): the owed
       // sentence and the "owed" amount are not rendered until it exists.
@@ -969,7 +1043,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       title = ofFmt(O.d.cxKitchen, { v: venueName });
       sub = O.d.cxKitchenSub;
       primary = others;
-      secondary = { label: ofFmt(O.d.tryAgain, { v: venueName }), go: () => router.push(`/food/${order.merchantId}`) };
+      secondary = { label: ofFmt(O.d.tryAgain, { v: venueName }), go: () => router.push(`${section}/${order.merchantId}` as never) };
     } else if (reason) {
       icon = "store";
       title = ofFmt(O.d.cxVenue, { v: venueName });
@@ -978,7 +1052,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     } else {
       icon = "shield-check";
       title = O.d.cxLynia;
-      sub = ofFmt(O.d.cxLyniaSub, { place: SVC.place });
+      sub = ofFmt(O.d.cxLyniaSub, { place: S.place });
       primary = whatsApp ?? others;
       secondary = whatsApp ? others : null;
     }
@@ -998,7 +1072,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
             </View>
             <Card style={{ gap: 4 }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                <VenueDisc size={40} radius={12} />
+                <VenueDisc svc={svc} size={40} radius={12} />
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={{ fontSize: 15, fontWeight: "700", color: C.ink }}>{venueName}</Text>
                   <Mut style={TAB}>{placedAt ? ofFmt(OX.orderAt, { order: orderNo, t: hhmm(placedAt) }) : orderNo}</Mut>
@@ -1057,13 +1131,16 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   const pickedMs = pickup?.takenAt ? Date.parse(pickup.takenAt) : NaN;
   const photoFresh = Number.isFinite(pickedMs) && nowMs - pickedMs < FRESH_PHOTO_MS;
 
+  // P1s / BRIEF §10: pharmacies (always sealed) and shops whose rider ticked "Bag is sealed" say to
+  // check the seal before paying.
+  const sealed = svc === "pharmacy" || (svc === "shops" && pickup?.bagSealed === true);
   const doorRows = (): DoorRow[] => {
     const paid = handshake === "waiting_rider" || handshake === "confirmed" || handshake === "frozen";
     const both = handshake === "confirmed";
     const p = usd(order.cashHandshakeAmount ?? total);
     const left = order.cashHandshakeDeadlineAt ? clock(Date.parse(order.cashHandshakeDeadlineAt) - nowMs) : null;
     return [
-      { state: paid ? "done" : "current", title: O.p.s1, sub: paid ? null : withRider(O.p.s1Sub, rFirst) },
+      { state: paid ? "done" : "current", title: O.p.s1, sub: paid ? null : sealed ? O.p.s1Seal : withRider(O.p.s1Sub, rFirst) },
       {
         state: both ? "done" : paid ? "current" : "upcoming",
         title: ofFmt(O.p.s2, { p }),
@@ -1115,7 +1192,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
           title={ofFmt(mid ? O.u.mid : O.u.t, { v: venueName })}
           left={clock(leftMs)}
           pct={pct}
-          sub={mid ? ofFmt(O.u.midSub, { making: SVC.making.toLowerCase(), t: answerIn }) : ofFmt(O.u.sub, { t: answerIn })}
+          sub={mid ? ofFmt(O.u.midSub, { making: S.making.toLowerCase(), t: answerIn }) : ofFmt(O.u.sub, { t: answerIn })}
         />
         {subLines.map((l, k) => (
           <React.Fragment key={l.id}>
@@ -1221,19 +1298,85 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       );
       break;
     }
-    case "cooking":
+    case "cooking": {
+      // T13b: a scheduled order the venue started — "{v} started cooking", and the slot is the promise.
+      const started = !!order.scheduleStartedAt && slot != null;
       content = (
         <>
-          <StageTop title={SVC.makingT} eta={eta} />
+          <StageTop
+            title={started ? ofFmt(O.t.schedStarted, { v: venueName, making: S.making.toLowerCase() }) : S.makingT}
+            eta={started && slot ? { kind: "range", text: slot.range } : eta}
+          />
           {track}
           {roundNote}
-          {prep ? <PrepBar making={SVC.making} minutesLeft={prep.minutesLeft} pct={prep.pct} note /> : null}
+          {prep ? <PrepBar making={S.making} minutesLeft={prep.minutesLeft} pct={prep.pct} note /> : null}
+          {/* T5b: the pharmacy seals the bag. */}
+          {svc === "pharmacy" ? (
+            <Note tone="ok" icon="shield-check">
+              {OXS.sealNote}
+            </Note>
+          ) : null}
           <PeekMark />
           {venueRow}
           {summary}
         </>
       );
       break;
+    }
+    case "scheduled": {
+      // T13a: Scheduled — free cancel and "Change time" until the venue starts.
+      content = (
+        <>
+          <StageTop
+            title={slot ? ofFmt(O.t.sched, { d: slot.day, s: slot.range }) : S.makingT}
+            eta={null}
+            sub={order.ringsAt ? ofFmt(O.t.schedSub, { v: venueName, making: S.making.toLowerCase(), t: hhmm(order.ringsAt) }) : null}
+          />
+          {track}
+          {summary}
+          <PeekMark />
+          {freeCancel ? cancelLink(O.t.cancelFree) : null}
+        </>
+      );
+      bar = (
+        <Bar>
+          <Btn kind="ghost" icon="calendar" label={O.t.schedChange} onPress={() => setPanel("schedule")} />
+        </Bar>
+      );
+      break;
+    }
+    case "rxCheck":
+      // T5c: the pharmacist checks the prescription before packing.
+      content = (
+        <>
+          <StageTop title={O.t.rxCheck} eta={eta} sub={O.t.rxCheckSub} />
+          {track}
+          {venueRow}
+          <PeekMark />
+          {summary}
+        </>
+      );
+      break;
+    case "rxDeclined": {
+      // D5a: the prescription wasn't approved — its lines are off, the rest is packed; "Cancel the rest — free".
+      const rxLines = order.items.filter((i) => i.rxRequired === true).map((i) => i.name);
+      const goes = rxLines.length ? O.d.rxNoGo.replace("Amoxicillin 500mg", rxLines.join(", ")) : null;
+      content = (
+        <>
+          <StageTop title={O.d.rxNo} eta={eta} />
+          <Card style={{ gap: 4 }}>
+            <Text style={{ fontSize: 12, fontWeight: "600", letterSpacing: 0.4, textTransform: "uppercase", color: C.muted }}>{O.d.rxNoReason}</Text>
+            <Text style={{ fontSize: 15, fontWeight: "700", color: C.ink }}>{rxReasonLabel(order.prescription?.declineReason, order.prescription?.declineNote)}</Text>
+          </Card>
+          {goes ? <Note icon="circle-alert">{ofFmt(goes, { p: usd(total) })}</Note> : null}
+          {track}
+          <PeekMark />
+          {summary}
+          <LinkRow label={O.d.rxCancel} onPress={() => cancelM.mutate({ free: true })} loading={cancelM.isPending} />
+        </>
+      );
+      break;
+    }
     case "slowRider":
       content = (
         <>
@@ -1242,7 +1385,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
           {order.readyAt ? (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
               <Icon name="circle-check" size={18} color={C.accentText} />
-              <Text style={{ fontSize: 14, fontWeight: "600", color: C.ink, ...TAB }}>{ofFmt(OX.readyAt, { ready: SVC.ready, t: hhmm(order.readyAt) })}</Text>
+              <Text style={{ fontSize: 14, fontWeight: "600", color: C.ink, ...TAB }}>{ofFmt(OX.readyAt, { ready: S.ready, t: hhmm(order.readyAt) })}</Text>
             </View>
           ) : null}
           <PeekMark />
@@ -1275,7 +1418,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
           <StageTop title={title} eta={noFix ? null : eta} sub={sub} />
           {paused ? <Note icon="clock">{withRider(O.t.paused, rFirst)}</Note> : null}
           {track}
-          {cooking ? <PrepBar making={SVC.making} minutesLeft={prep.minutesLeft} pct={prep.pct} note={false} /> : riderCard}
+          {cooking ? <PrepBar making={S.making} minutesLeft={prep.minutesLeft} pct={prep.pct} note={false} /> : riderCard}
           <PeekMark />
           {cooking ? riderCard : null}
           {riderCancel ? cancelLink(O.t.cancelFree) : null}
@@ -1342,7 +1485,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     default:
       content = (
         <>
-          <StageTop title={SVC.makingT} eta={null} />
+          <StageTop title={S.makingT} eta={null} />
           {track}
         </>
       );
@@ -1356,6 +1499,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
         <MerchantMap
           venue={venue}
           venueName={venueName}
+          svc={svc}
           dropoff={dropoff}
           rider={riderFix}
           riderLabel={paused ? O.t.lastSeen.replace(/\d+ min/, `${minutesSince(riderFix?.at, nowMs)} min`) : rFirst}
