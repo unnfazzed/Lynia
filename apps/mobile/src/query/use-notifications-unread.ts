@@ -10,7 +10,7 @@ export const NOTIFICATIONS_UNREAD_COUNT_KEY = ["notifications-unread-count"] as 
  * was the only affordance, so the one screen that could tell you there was something to read was the
  * screen you had to guess to open. This is the count that fixes that.
  *
- * Read-only and cheap by construction: the feed behind it is bounded to one day of activity, and the
+ * Read-only and cheap by construction: the feed behind it is bounded to seven days of activity, and the
  * notifications screen invalidates this key when it stamps the read watermark, so the hint clears in the
  * same beat as the dots rather than lagging a screen behind. Failure is silent (0) — a missing hint is a
  * strictly better outcome than an error on the Account screen for a non-core surface.

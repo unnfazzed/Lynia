@@ -327,6 +327,10 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
                   },
                   { label: "Goods total", value: o.food.goodsTotal ? `$${o.food.goodsTotal}` : "—" },
                   { label: "Delivery fee", value: o.food.deliveryFee ? `$${o.food.deliveryFee}` : "—" },
+                  // D-71: free delivery — the business paid this part of the rider's fee, the customer didn't.
+                  ...(o.food.merchantDeliveryShare
+                    ? [{ label: "Paid by the business", value: `$${o.food.merchantDeliveryShare} (free delivery)` }]
+                    : []),
                 ]}
               />
 

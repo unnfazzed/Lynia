@@ -6,6 +6,7 @@ import {
   commissionBasis,
   type CreateTopupRequest,
   isCommissionActive,
+  isFreeJob,
   perRideCommission,
   resolveCommissionRatePct,
   roundToCents,
@@ -85,6 +86,7 @@ export class WalletService {
       graceCredit: COMMISSION.graceCredit,
       minTopUp: COMMISSION.minTopUp,
       maxTopUp: COMMISSION.maxTopUp,
+      freeFirstJobs: COMMISSION.freeFirstJobs,
     };
   }
 
@@ -228,6 +230,21 @@ export class WalletService {
     // only the commission CALCULATION is floored. suggestedFare unset/invalid falls back to the raw fare.
     const amount = perRideCommission(commissionBasis(fare, suggestedFare), rate);
     if (amount <= 0) return;
+
+    // D-70 commission-free first jobs (Calm Mint v2 R1/R3): every completion path increments
+    // `tripsCount` for THIS order earlier in the same transaction, under the rider row lock, so the
+    // value read here is the post-increment count — this job's ordinal. Jobs 1…COMMISSION.freeFirstJobs
+    // carry no debit and write no ledger row (so a later admin fare-adjust, which only corrects an
+    // existing ride_commission row, has nothing to correct). A cancelled/undelivered job never increments
+    // `tripsCount`, so it never consumes the allowance. Idempotent: a replayed completion never reaches
+    // here (the completion CAS claims once), and the count only grows, so a job judged paid stays paid.
+    const tripsRow = await tx.rider.findUnique({ where: { profileId: riderId }, select: { tripsCount: true } });
+    if (tripsRow && isFreeJob(tripsRow.tripsCount)) {
+      this.logger.log(
+        `commission_free_job orderId=${orderId} riderId=${riderId} job=${tripsRow.tripsCount}/${COMMISSION.freeFirstJobs} waived=${amount}`,
+      );
+      return;
+    }
 
     // Lazy-upsert the account, then lock its row so a concurrent debit/credit serialises (balance and
     // balanceAfter stay consistent). Lock order is rider → account: the completion paths already hold
@@ -530,6 +547,9 @@ export class WalletService {
             target: args.riderId,
             reasonCode: args.rail,
             note,
+            // Owner 2026-10-02: the feed row says how much landed and what the balance is now.
+            amount,
+            balanceAfter,
           },
         });
         return { balance: balanceAfter };

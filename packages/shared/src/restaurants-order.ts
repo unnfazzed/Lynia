@@ -31,6 +31,72 @@ export function smallOrderFeeForSubtotal(subtotal: number): number {
   return subtotal < RESTAURANTS_PRICING.minOrderSubtotal ? RESTAURANTS_PRICING.smallOrderFee : 0;
 }
 
+/**
+ * Free delivery, paid by the restaurant or shop (ledger D-71; handoffs calm-mint-v2 README §5 and
+ * browse-v2 README §7: "a merchant-funded `free_delivery` flag per venue"; D-55 decision 2: "the venue
+ * pays, the rider is paid in full"). Cash only, so nobody hands the rider a separate fare: the customer
+ * pays $0 delivery at the door, the rider keeps the full `deliveryFee` out of that cash as always, and
+ * the venue's money (what the rider returns, or pays first at a pay-upfront counter) is the goods
+ * total LESS the fee.
+ *
+ * `merchantDeliveryShare` is the part of the rider's fee the venue pays. It is null on every order the
+ * venue does not fund (and on every order placed before D-71), so all the formulas below collapse to
+ * the old ones: customer total = goods + fee, venue's money = goods.
+ *
+ * It is never more than the goods total: the venue's money can't go below $0 and the rider is never
+ * short. A venue funds delivery only when the goods cover the whole fee at placement
+ * ({@link merchantDeliveryShareAtPlacement}); a later edit that drops the goods below the fee
+ * ({@link recomputeMerchantDeliveryShare}) leaves the customer paying only the uncovered part.
+ */
+export function merchantDeliveryShareAtPlacement(input: {
+  freeDelivery: boolean;
+  paymentMethod: "cash" | "wallet";
+  goodsTotal: number;
+  deliveryFee: number;
+}): number | null {
+  if (!input.freeDelivery || input.paymentMethod !== "cash") return null;
+  if (!(input.deliveryFee > 0) || toCents(input.goodsTotal) < toCents(input.deliveryFee)) return null;
+  return roundToCents(input.deliveryFee);
+}
+
+/** The share after the goods total changed (an edit, a swap, a declined prescription). A funded order
+ *  stays funded, capped by the new goods total; an unfunded one stays unfunded. */
+export function recomputeMerchantDeliveryShare(
+  previousShare: number | { toString(): string } | null | undefined,
+  goodsTotal: number,
+  deliveryFee: number,
+): number | null {
+  if (previousShare == null) return null;
+  return fromCents(Math.max(0, Math.min(toCents(deliveryFee), toCents(goodsTotal))));
+}
+
+export interface FoodOrderMoney {
+  /** What the customer pays for delivery: the fee less the venue's share ($0 on a free-delivery order). */
+  customerDeliveryFee: number;
+  /** What the customer pays in all (before any carried balance): goods + their delivery part. */
+  customerTotal: number;
+  /** What the rider earns: always the full fee. */
+  riderFare: number;
+  /** The venue's money: goods less its share — what the rider returns, or pays first at the counter. */
+  merchantNet: number;
+}
+
+type MoneyLike = number | { toString(): string } | null | undefined;
+
+/** The one split of a merchant order's money. Every total the customer, the rider and the venue see
+ *  comes from here, so the three always add up: customerTotal = merchantNet + riderFare. */
+export function foodOrderMoney(input: { goodsTotal: MoneyLike; deliveryFee: MoneyLike; merchantDeliveryShare?: MoneyLike }): FoodOrderMoney {
+  const goods = toCents(Number(input.goodsTotal ?? 0));
+  const fee = toCents(Number(input.deliveryFee ?? 0));
+  const share = Math.max(0, Math.min(fee, goods, toCents(Number(input.merchantDeliveryShare ?? 0))));
+  return {
+    customerDeliveryFee: fromCents(fee - share),
+    customerTotal: fromCents(goods + fee - share),
+    riderFare: fromCents(fee),
+    merchantNet: fromCents(goods - share),
+  };
+}
+
 export const RESTAURANTS_TIMING = {
   /** N-03: unanswered merchant accept auto-cancels. */
   acceptWindowMs: 3 * 60 * 1000,

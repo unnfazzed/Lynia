@@ -11,9 +11,10 @@ import { N, NF, NX } from "./copy";
  *   money and safety rows stay single rows.
  * - **Side** (N4): order rows follow the side the user is on; account and safety rows show on both.
  * - **Danger pin** (N1c / N3): an SOS, a pause or a block still in force pins above the day groups.
- * - **Copy**: the handoff's `N`, filled from the row data in the same sentence shapes (`NF`). Where `N`
- *   states something the feed doesn't know (a reason, an amount), the row keeps the server's own copy —
- *   the push the user got (ledger D-66 §4).
+ * - **Copy**: the handoff's `N`, filled from the row data in the same sentence shapes (`NF`). The feed
+ *   carries the detail the sentences state (a decline or pause reason, a credited amount and balance, who
+ *   cancelled — owner 2026-10-02); where a row doesn't have it (recorded before it was) or the drawn
+ *   sentence would be false for its value, the row keeps the server's own copy — the push the user got.
  */
 
 export type Side = "customer" | "rider";
@@ -156,6 +157,8 @@ function lineOf(r: NotificationRow, rider: boolean): string {
   if (rider) {
     if (beat === "assigned") return p ? NF.rGot(p) : r.message;
     if (beat === "completed") return p ? NF.rDelivered(p) : r.message;
+    // "Nyasha cancelled the order. This doesn't count against you." — only when it was the customer.
+    if (beat === "cancelled") return r.cancelledBy === "customer" && r.customerName ? NF.rCancelled(r.customerName) : r.message;
     return r.message;
   }
   if (merchant) {
@@ -203,10 +206,23 @@ function lineOf(r: NotificationRow, rider: boolean): string {
   }
 }
 
-/** A status beat's timeline label. */
+/**
+ * A status beat's timeline label. The server sends every stage the handoff draws for the service and side
+ * (owner 2026-10-02, "every order step"); a beat with no drawn label keeps the server's title, which is
+ * the same named copy the row headline uses.
+ */
 function beatLabel(beat: string, fallback: string, rider: boolean, merchant: boolean): string {
   if (rider) {
-    return ({ assigned: N.trGot, completed: N.trDelivered, cancelled: N.trCancelled } as Record<string, string>)[beat] ?? fallback;
+    return (
+      ({
+        assigned: N.trGot,
+        en_route_pickup: N.trToPickup,
+        picked_up: N.trCollected,
+        delivered: N.trDelivered,
+        completed: N.trDelivered,
+        cancelled: N.trCancelled,
+      } as Record<string, string>)[beat] ?? fallback
+    );
   }
   if (merchant) {
     return (
@@ -216,12 +232,15 @@ function beatLabel(beat: string, fallback: string, rider: boolean, merchant: boo
         picked_up: N.tmCollected,
         en_route_dropoff: N.tmDoor,
         delivered: N.tmDelivered,
+        completed: N.tmDelivered,
         cancelled: N.tlCancelled,
       } as Record<string, string>)[beat] ?? fallback
     );
   }
   return (
     ({
+      requested: N.tlPosted,
+      assigned: N.tlAssigned,
       confirmed: N.tlAssigned,
       en_route_pickup: N.tlOnWay,
       picked_up: N.tlCollected,
@@ -281,24 +300,35 @@ function toneOf(r: NotificationRow): Tone {
   return beat === "delivered" || beat === "completed" ? "good" : "neutral";
 }
 
+/**
+ * The KYC decline reasons the handoff draws a sentence for (`KycDeclineReason` keys). Only the unreadable
+ * photo has one ("Your ID photo was blurry. Take it again in good light."); every other reason keeps the
+ * push's line rather than claim a blurry photo.
+ */
+const KYC_LINES: Record<string, string> = { id_unreadable: N.aIdB };
+
 /** An account row's disc, title, line, tone and needs-you action. */
 function accountOf(r: NotificationRow): { icon: IconName; tone: Tone; title: string; line: string; action?: NItem["action"] } {
   switch (r.action) {
     case "rider.kyc_approve":
       return { icon: "shield-check", tone: "good", title: N.aVerifiedT, line: N.aVerifiedB };
     case "rider.kyc_decline":
-      return { icon: "id-card", tone: "warn", title: N.aIdT, line: r.message, action: { label: N.tryAgain, to: "/rider/become" } };
+      return { icon: "id-card", tone: "warn", title: N.aIdT, line: KYC_LINES[r.reason ?? ""] ?? r.message, action: { label: N.tryAgain, to: "/rider/become" } };
     case "rider.suspend":
+      return { icon: "ban", tone: r.active ? "danger" : "neutral", title: N.aPausedT, line: r.reason === "customer_report" ? N.aPausedB : r.message };
     case "customer.hold":
+      // aPausedB is the rider's sentence ("You can't take jobs"), so a held customer keeps the push's line.
       return { icon: "ban", tone: r.active ? "danger" : "neutral", title: N.aPausedT, line: r.message };
     case "rider.ban":
       return { icon: "ban", tone: r.active ? "danger" : "neutral", title: N.aBlockedT, line: N.aBlockedB };
     case "rider.lift":
+      // "The report is cleared." — true when the pause this restore lifted was for a customer report.
+      return { icon: "shield-check", tone: "good", title: N.aRestoredT, line: r.reason === "customer_report" ? N.aRestoredB : r.message };
     case "rider.clear_hold":
     case "customer.lift":
       return { icon: "shield-check", tone: "good", title: N.aRestoredT, line: r.message };
     case "wallet.credit":
-      return { icon: "banknote", tone: "money", title: N.aWalletT, line: r.message };
+      return { icon: "banknote", tone: "money", title: N.aWalletT, line: r.amount && r.balance ? NF.aWalletR(r.amount, r.balance) : r.message };
     default:
       return { icon: r.icon, tone: "neutral", title: r.title, line: r.message };
   }

@@ -11,6 +11,8 @@ import { useClaimOfflineBanner } from "../../net/offline-banner-owner";
 import { useReachable } from "../../net/use-reachable";
 import { useServiceFlags } from "../../net/use-service-flags";
 import { useShopListFeed } from "../../query/use-shops";
+import { usePopularity } from "../../query/use-popularity";
+import { rankedVenueMissing } from "../../logic/popularity";
 // Not from the ui barrel: LocationSheet reaches AddressSearch, which imports the barrel back (a cycle).
 import { LocationSheet } from "../home/LocationSheet";
 import { ServiceSoonSheet } from "../home/ServiceSoonSheet";
@@ -53,6 +55,8 @@ export function ShopListScreen({ service }: { service: ShopService }): React.Rea
   const flags = useServiceFlags();
   const enabled = service === "pharmacy" ? flags.pharmacyEnabled : flags.shopsEnabled;
   const feed = useShopListFeed(service, enabled);
+  // D-72: "Recommended" is the popularity ranking (nearest-open until there's enough history to rank).
+  const popularity = usePopularity(service, enabled);
   const location = useHomeLocation();
   const now = useNow();
   const reachable = useReachable();
@@ -76,14 +80,16 @@ export function ShopListScreen({ service }: { service: ShopService }): React.Rea
     if (!hasLocation && (filters.sort === "nearest" || filters.sort === "lowest_fee")) setFilters((f) => ({ ...f, sort: "recommended" }));
   }, [hasLocation, filters.sort]);
 
-  // A filter runs over the pages loaded so far; drain the rest while one is set (B-O10).
-  const narrowing = filters.category != null || filters.free || filters.sort !== "recommended";
+  // A filter runs over the pages loaded so far; drain the rest while one is set (B-O10), and while the
+  // ranking names a shop not loaded yet, so it can lead (D-72).
+  const narrowing =
+    filters.category != null || filters.free || filters.sort !== "recommended" || rankedVenueMissing(popularity, feed.shops);
   useEffect(() => {
     if (narrowing && feed.hasMore && !feed.isLoadingMore) feed.loadMore();
   }, [narrowing, feed.hasMore, feed.isLoadingMore, feed.loadMore]);
 
   const venues = useMemo(() => (feed.shops ?? []).map((r) => shopVenue(r, location.point, now)), [feed.shops, location.point, now]);
-  const list = useMemo(() => browseList(venues, filters), [venues, filters]);
+  const list = useMemo(() => browseList(venues, filters, popularity), [venues, filters, popularity]);
   const showFree = anyFreeDelivery(venues);
   const total = list.open.length + list.closed.length;
   const range = browseRange(list.open);

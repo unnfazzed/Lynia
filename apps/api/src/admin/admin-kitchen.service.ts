@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, NotFoundException, Optional } from "@nestjs/common";
-import { addMoney, RESTAURANTS_AUTO_ACCEPT, type EditMerchantOrderItemsRequest, type Waypoint } from "@lynia/shared";
+import { foodOrderMoney, RESTAURANTS_AUTO_ACCEPT, type EditMerchantOrderItemsRequest, type Waypoint } from "@lynia/shared";
 import { confirmKitchen, editOrderItems } from "../merchant/food-order-ops";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -37,6 +37,7 @@ export class AdminKitchenService {
         prepMinutes: true,
         merchantGoodsTotal: true,
         deliveryFee: true,
+        merchantDeliveryShare: true,
         kitchenEscalatedAt: true,
         opsNoAnswerAt: true,
         itemsEditedAt: true,
@@ -68,7 +69,8 @@ export class AdminKitchenService {
         })),
         goodsTotal: goods,
         deliveryFee: Number(o.deliveryFee ?? 0),
-        total: addMoney(goods, Number(o.deliveryFee ?? 0)),
+        // D-71: what the customer pays — a free-delivery venue's share is taken off.
+        total: foodOrderMoney({ goodsTotal: goods, deliveryFee: o.deliveryFee, merchantDeliveryShare: o.merchantDeliveryShare }).customerTotal,
         prepMinutes: o.prepMinutes,
         noAnswerCalls: o.opsNoAnswerAt.map((t) => t.toISOString()),
         itemsEdited: o.itemsEditedAt != null,
@@ -110,7 +112,7 @@ export class AdminKitchenService {
   }
 
   /** Ops sets how a restaurant takes orders, on its behalf (it may never open the app). */
-  async setOrderSettings(actor: string, merchantId: string, input: { autoAccept?: boolean; showPhoneToCustomers?: boolean; note?: string | null }) {
+  async setOrderSettings(actor: string, merchantId: string, input: { autoAccept?: boolean; showPhoneToCustomers?: boolean; freeDelivery?: boolean; note?: string | null }) {
     return this.prisma.$transaction(async (tx) => {
       const merchant = await tx.merchant.findUnique({ where: { id: merchantId }, select: { id: true } });
       if (!merchant) throw new NotFoundException("Merchant not found");
@@ -119,8 +121,9 @@ export class AdminKitchenService {
         data: {
           ...(input.autoAccept !== undefined ? { autoAccept: input.autoAccept } : {}),
           ...(input.showPhoneToCustomers !== undefined ? { showPhoneToCustomers: input.showPhoneToCustomers } : {}),
+          ...(input.freeDelivery !== undefined ? { freeDelivery: input.freeDelivery } : {}),
         },
-        select: { autoAccept: true, showPhoneToCustomers: true },
+        select: { autoAccept: true, showPhoneToCustomers: true, freeDelivery: true },
       });
       const audit = await tx.auditLog.create({
         data: auditData(actor, "merchant.order_settings", merchantId, null, [JSON.stringify(updated), input.note].filter(Boolean).join(" · ")),

@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { KYC_DECLINE_REASON_LABELS } from "@lynia/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { MERCHANT_STATUS_NOTICES, merchantCustomerCopy } from "./notifications.service";
 import { pushCopy, pushMoney, PUSH_C } from "./merchant-order-push";
@@ -55,11 +56,87 @@ export interface NotificationRow {
   prepMinutes?: number;
   /** Swap rows: the first swapped line ("Panado 24s" → "Paracetamol 24s", "same price" | "+$0.10"). */
   swap?: { item: string; sub: string; diff: string };
-  /** Status rows: every beat of this order addressed to the viewer inside the window, latest first
-   *  (the row's own beat is steps[0]). The app draws them as the row's inline timeline. */
+  /** Status rows: the order's stage history inside the window in the viewer's own voice, latest first —
+   *  every stage the handoff draws for that service and side, whether or not it was pushed to the viewer
+   *  (owner 2026-10-02). The row's headline beat is always among them. The app draws them as the row's
+   *  inline timeline; `title` is the same named copy the row headline would use for that beat. */
   steps?: FeedStep[];
   /** Danger rows (SOS, account paused / blocked): true while it is still in force. */
   active?: boolean;
+  // ── Detail fields (owner 2026-10-02): so a row can say what the handoff's sentence says. Optional —
+  // rows written before the data was recorded omit them and the app keeps the push's own line.
+  /** Account rows: why. A KYC decline's `KycDeclineReason` key (@lynia/shared), or a pause / block / hold's
+   *  {@link StandingReason} (on a restore: the reason of the pause it lifted). */
+  reason?: string;
+  /** `wallet.credit`: the balance after the credit ("12.60"); the credit itself is `amount`. */
+  balance?: string;
+  /** Cancelled status rows: who ended the order. */
+  cancelledBy?: CancelledBy;
+}
+
+/** Who cancelled an order, as the feed tells it. `lynia` = ops, or the system (timeouts, no rider). */
+export type CancelledBy = "customer" | "rider" | "merchant" | "lynia";
+
+/**
+ * Why an account was paused, blocked or held — the admin console's reason labels (`REASONS` in
+ * apps/admin/app/lib/reasons.ts, stored verbatim on `AuditLog.reasonCode`) as stable keys. The feed sends
+ * the key, never the ops label itself: the label is staff wording, and a free-text code must not reach
+ * the user. Anything unrecognised is `other`.
+ */
+export type StandingReason =
+  | "customer_report"
+  | "cancellations"
+  | "fare_fraud"
+  | "reverification"
+  | "fraud"
+  | "safety_incident"
+  | "repeat_offences"
+  | "fraud_review"
+  | "payment_dispute"
+  | "identity_check"
+  | "other";
+const STANDING_REASONS: Record<string, StandingReason> = {
+  // riderSuspend
+  "Safety report from a customer": "customer_report",
+  "Repeated cancellations after accepting": "cancellations",
+  "Suspected fare fraud": "fare_fraud",
+  "Failed re-verification": "reverification",
+  // riderBan
+  "Confirmed fraud": "fraud",
+  "Serious safety incident": "safety_incident",
+  "Repeat offences after suspension": "repeat_offences",
+  // customerHold
+  "Cancel pattern hurting riders": "cancellations",
+  "Suspected fraud — under review": "fraud_review",
+  "Payment dispute open": "payment_dispute",
+  "Awaiting identity check": "identity_check",
+};
+export function standingReasonOf(code: string | null | undefined): StandingReason | undefined {
+  if (!code) return undefined;
+  return STANDING_REASONS[code.trim()] ?? "other";
+}
+
+/** A KYC decline's reason key — only the canonical keys pass; a vendor's free text does not. */
+function kycReasonOf(code: string | null | undefined): string | undefined {
+  return code && code in KYC_DECLINE_REASON_LABELS ? code : undefined;
+}
+
+/**
+ * Who ended a cancelled order. Same reading as Orders v2's `customerOrderOutcome`
+ * (orders.service.ts): a customer or rider cancel stamps their profile id on `cancelledBy`; a venue
+ * declining stamps a `rejectionReason`; ops and the system leave `cancelledBy` null.
+ */
+export function cancelledByOf(o: {
+  cancelledBy?: string | null;
+  customerId?: string | null;
+  riderId?: string | null;
+  rejectionReason?: string | null;
+}): CancelledBy {
+  if (o.cancelledBy && o.cancelledBy === o.customerId) return "customer";
+  if (o.cancelledBy && o.cancelledBy === o.riderId) return "rider";
+  const r = o.rejectionReason;
+  if (r && r !== "other" && r !== "no_rider" && r !== "kitchen_unconfirmed") return "merchant";
+  return "lynia";
 }
 
 export type FeedRowType = "status" | "offer" | "fare" | "riders_available" | "account" | "sos" | "standing" | "standing_resolved" | "issue" | "swap";
@@ -212,32 +289,33 @@ const ISSUE_RESOLUTION_FEED_COPY: Record<"refund" | "rider_strike" | "close_no_a
 };
 
 /**
- * STREAMLINE-01 (owner decision 2026-08-17): **notifications live for exactly one day.**
+ * **Notifications live for seven days** (owner decision 2026-10-02, Notifications v1 follow-up; it
+ * replaces STREAMLINE-01's one day of 2026-08-17).
  *
- * The previous model had no time-based retention at all — a row's life was implied by two COUNT caps
- * (30 most recent orders, 30 merged rows), which made retention a function of the viewer's own order
- * volume rather than of time: a busy rider saw five days, a once-a-year customer saw rows from last
- * January, and neither could predict which. This is the single window that replaces both reaches, and
- * it is applied UNIFORMLY — there are deliberately no long-lived carve-outs, so an account-standing or
- * resolved-issue row ages out at 24h like everything else. Those states all have a durable home of
- * their own (account standing on the Account/rider screens, KYC on Bike & documents, money in Money,
- * trips in Orders); the feed is the "what happened since yesterday" inbox, not the archive.
+ * The Notifications v1 handoff draws day groups back to "MON 28 SEP" and times back to "28 Sep"; under a
+ * one-day window only TODAY / YESTERDAY could ever appear, which was D-66's first deviation. A week is the
+ * owner's answer. It is still a single wall-clock window applied UNIFORMLY to every row source (no
+ * long-lived carve-outs): STREAMLINE-01's reason for a time window rather than count caps stands — a
+ * row's life must not depend on the viewer's own order volume. Account standing, KYC, money and trips
+ * all still have durable homes of their own; the feed is "what happened this week", not the archive.
  *
  * Because nothing in the feed outlives the window, a dismissal never has to outlive it either — see
  * {@link NotificationsFeedService.dismiss}, which prunes on write against this same constant.
  */
-const FEED_RETENTION_MS = 24 * 60 * 60 * 1000;
+export const FEED_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * How many of the caller's recent orders the synthesizer scans, and the cap on rows returned.
  *
- * The order scan is now a SAFETY bound, not the retention mechanism: the query also requires at least
- * one in-window event, so on real data it returns far fewer than this. The row cap rises from 30 to 50
- * because the collapse rules below (one status row per order, one offer row per order) cut rows per
- * order from as many as ten to two — the visible list gets shorter, not longer, despite the bigger cap.
+ * The order scan is a SAFETY bound, not the retention mechanism: the query also requires at least one
+ * in-window event. Sized for the seven-day window: the app shows one row per order, and an order
+ * contributes one status row plus at most an offer / fare / swap row, so 100 covers a week of about 14
+ * jobs a day — every customer and all but the busiest riders see the whole week. Past that the newest
+ * orders win, which is the right failure for an inbox. Kept at 100 rather than higher because the screen
+ * is read over 2G/3G and each status row now carries its order's full step list.
  */
-const FEED_ORDER_SCAN_CAP = 50;
-const FEED_ROW_CAP = 50;
+const FEED_ORDER_SCAN_CAP = 100;
+const FEED_ROW_CAP = 100;
 
 /**
  * Notifications v1 (ledger D-66): a merchant (restaurant / shop / pharmacy) order's beats as feed rows,
@@ -258,6 +336,55 @@ const MERCHANT_FEED_NOTICES: Record<string, { icon: string; title: string; messa
 
 /** Order statuses that are still running — an SOS on such an order is still in force. */
 const LIVE_STATUSES = new Set(["requested", "open_for_offers", "assigned", "confirmed", "en_route_pickup", "picked_up", "en_route_dropoff"]);
+
+/**
+ * Notifications v1 follow-up (owner 2026-10-02, "every order step"): which order stages make a row's
+ * timeline, per voice — exactly the stages the handoff draws (`n-screens.jsx` CF / RF steps):
+ *  - customer, parcel: Posted · Rider assigned · Rider on the way · Parcel collected · On the way to
+ *    drop-off · Delivered (plus the outcomes: No riders yet, Order cancelled, not delivered);
+ *  - customer, restaurant / shop / pharmacy: Accepted · Being prepared · Rider collected · At your door ·
+ *    Delivered (plus cancelled / not delivered);
+ *  - rider, any job: You got the job · Heading to pickup · Parcel collected · Delivered · Order cancelled.
+ * Unlike the row itself, a step does not have to be a beat the viewer was PUSHED (FEED_AUDIENCE): the
+ * timeline is the order's history, the row is the latest news. The value is the stage a status counts
+ * as — two statuses on one stage (assigned + confirmed, delivered + completed) are one step.
+ */
+const STEP_STAGES: Record<"customer" | "merchantCustomer" | "rider", Record<string, string>> = {
+  customer: {
+    requested: "posted",
+    assigned: "assigned",
+    confirmed: "assigned",
+    en_route_pickup: "en_route_pickup",
+    picked_up: "picked_up",
+    en_route_dropoff: "en_route_dropoff",
+    delivered: "delivered",
+    completed: "delivered",
+    undelivered: "undelivered",
+    expired: "expired",
+    cancelled: "cancelled",
+  },
+  merchantCustomer: {
+    accepted: "accepted",
+    preparing: "preparing",
+    picked_up: "picked_up",
+    en_route_dropoff: "en_route_dropoff",
+    delivered: "delivered",
+    completed: "delivered",
+    undelivered: "undelivered",
+    cancelled: "cancelled",
+  },
+  rider: {
+    assigned: "assigned",
+    en_route_pickup: "en_route_pickup",
+    picked_up: "picked_up",
+    delivered: "delivered",
+    completed: "delivered",
+    cancelled: "cancelled",
+  },
+};
+
+/** Step titles for stages that never headline a row (no push, so no row copy): the handoff's words. */
+const STEP_ONLY_TITLES: Record<string, string> = { requested: "Posted" };
 
 /** The account actions that set or lift a standing, newest one wins (see `active` on account rows). */
 const RIDER_STANDING_ACTIONS = new Set(["rider.suspend", "rider.ban", "rider.lift", "rider.clear_hold"]);
@@ -306,7 +433,7 @@ export class NotificationsFeedService {
    * the user was pushed. `now` is injectable so the retention cutoff is deterministic under test.
    *
    * STREAMLINE-01 shapes the output three ways on top of the synthesis itself:
-   *  - **retention** — every row SOURCE is bounded to {@link FEED_RETENTION_MS} (one day). Reads that
+   *  - **retention** — every row SOURCE is bounded to {@link FEED_RETENTION_MS} (seven days). Reads that
    *    merely look a FACT up about an in-window row (did this expired order have offers? was this
    *    completion an ops adjudication?) are deliberately NOT time-bounded: they qualify a row that is
    *    already in window rather than producing one.
@@ -353,6 +480,8 @@ export class NotificationsFeedService {
           rebroadcastOfId: true,
           expiryNoSupply: true,
           cancelledBy: true,
+          // Who cancelled (owner 2026-10-02): a venue's decline is a `rejectionReason`, not a `cancelledBy`.
+          rejectionReason: true,
           // UX20-04: the current agreed fare, so a fare-adjust feed row can quote the corrected amount
           // exactly like the push does.
           agreedFare: true,
@@ -381,12 +510,14 @@ export class NotificationsFeedService {
         where: { target: userId, action: { in: ACCOUNT_FEED_ACTIONS }, createdAt: { gte: cutoff } },
         orderBy: { createdAt: "desc" },
         take: FEED_ROW_CAP,
-        select: { id: true, action: true, createdAt: true },
+        // Detail fields (owner 2026-10-02): why (a KYC decline key or a standing reason label), and a
+        // wallet credit's amount + resulting balance (recorded since migration 0073).
+        select: { id: true, action: true, createdAt: true, reasonCode: true, amount: true, balanceAfter: true },
       }),
       // UX-2026-07-16 resolved-issue rows — consumed by the issues loop below; also user-scoped.
       // STREAMLINE-01: this read used to be deliberately UNBOUNDED by the order lookback so a late
       // resolution still surfaced. Under a wall-clock window that special case disappears — the row is
-      // in view for a day after `resolvedAt` however old the order is, which is what that exemption was
+      // in view for the window after `resolvedAt` however old the order is, which is what that exemption was
       // reaching for in the first place.
       this.prisma.issue.findMany({
         where: { openedByProfileId: userId, status: "resolved", resolvedAt: { gte: cutoff } },
@@ -432,8 +563,12 @@ export class NotificationsFeedService {
     const orderIds = orders.map((o) => o.id);
     const customerViewOrderIds = orders.filter((o) => o.riderId !== userId).map((o) => o.id);
     const merchantCustomerOrderIds = orders.filter((o) => o.riderId !== userId && o.orderType === "merchant").map((o) => o.id);
+    // A restore's line says what was cleared ("The report is cleared."), which is the reason of the pause
+    // it lifted — usually older than the window, so it is looked up rather than found among accountAudits.
+    const lifts = accountAudits.filter((a) => a.action === "rider.lift");
+    const newestLiftAt = lifts.reduce<Date | null>((m, a) => (m === null || a.createdAt > m ? a.createdAt : m), null);
 
-    const [withOffers, adjudicated, offers, sosEvents, standingNotices, standingResolved, fareAdjustments, ridersAvailableNotices, swapRounds] = await Promise.all([
+    const [withOffers, adjudicated, offers, sosEvents, standingNotices, standingResolved, fareAdjustments, ridersAvailableNotices, swapRounds, liftedPauses] = await Promise.all([
       // Fix 1: for expired orders the customer is viewing, distinguish "riders bid but you didn't pick
       // in time" from the default "raise your price" nudge. Offer rows are never deleted on expiry
       // (only flipped to `expired`), so a plain count over the durable rows recovers "did any rider
@@ -526,6 +661,16 @@ export class NotificationsFeedService {
             },
           })
         : [],
+      // The pauses the in-window restores lifted (see `lifts` above). A qualifier, not a row source, so it
+      // is bounded by the newest restore rather than by the window.
+      newestLiftAt
+        ? this.prisma.auditLog.findMany({
+            where: { target: userId, action: "rider.suspend", createdAt: { lt: newestLiftAt } },
+            orderBy: { createdAt: "desc" },
+            take: FEED_ROW_CAP,
+            select: { createdAt: true, reasonCode: true },
+          })
+        : [],
     ]);
     const orderIdsWithOffers = new Set<string>(withOffers.map((o) => o.orderId));
     const adjudicatedOrderIds = new Set<string>(adjudicated.map((a) => a.target));
@@ -613,10 +758,20 @@ export class NotificationsFeedService {
       // cancellation therefore suppresses the ORDER's row entirely, which is what "not news to you"
       // meant in the first place. `cancelled` is terminal, so it is always the last event when present.
       const event = latest && latest.status === "cancelled" && order.cancelledBy === userId ? undefined : latest;
-      if (event) {
-        let notice = notices[event.status]!;
+      /**
+       * How one beat of this order reads to this viewer: its copy, the beat the app keys off (the status,
+       * or an override), and where a tap goes. Shared by the row headline and by every timeline step, so
+       * a step's title is the same named copy the row would carry for that beat (owner 2026-10-02 — the
+       * steps used to fall back to the generic table titles while the headline was named).
+       */
+      const present = (status: string): { notice: { icon: string; title: string; message: string }; beat: string; orderId: string } | null => {
+        let notice = notices[status] ?? (merchantCustomer && status === "completed" ? notices.delivered : undefined);
+        if (!notice) {
+          const title = STEP_ONLY_TITLES[status];
+          return title ? { notice: { icon: "check", title, message: "" }, beat: status, orderId: order.id } : null;
+        }
         // Notifications v1: the beat the app's copy keys off — the status, or the override below.
-        let beat = event.status;
+        let beat = status;
 
         // The order id this row navigates to on tap (mobile routes every row to /order/<orderId>).
         // Only the rider-bail rebroadcast below redirects it to the live clone.
@@ -627,7 +782,7 @@ export class NotificationsFeedService {
           // "Order cancelled" for the honest "your rider had to cancel — we've re-sent it" copy, and
           // point the tap at the LIVE clone so the customer lands on the running auction, not a dead
           // terminal. (The row's stable `id` still keys off the ORIGINAL order, as before.)
-          if (event.status === "cancelled") {
+          if (status === "cancelled") {
             const cloneId = cloneByOriginal.get(order.id);
             if (cloneId) {
               notice = {
@@ -639,7 +794,7 @@ export class NotificationsFeedService {
               orderId = cloneId;
               beat = "rebroadcast";
             }
-          } else if (event.status === "expired" && order.expiryNoSupply) {
+          } else if (status === "expired" && order.expiryNoSupply) {
             // No-supply expiry: nobody was online near the pickup, so "raise your price" would be a lie.
             notice = {
               icon: "bike",
@@ -648,7 +803,7 @@ export class NotificationsFeedService {
                 "Nobody was online near your pickup when the window closed — raising the price wasn't the problem. Try sending again in a bit.",
             };
             beat = "no_supply";
-          } else if (event.status === "expired" && orderIdsWithOffers.has(order.id)) {
+          } else if (status === "expired" && orderIdsWithOffers.has(order.id)) {
             // Riders DID bid but the window closed before the customer picked — "raise your price" is
             // dishonest here (riders offered at this price), so nudge them to just re-send it (Fix 1).
             notice = {
@@ -667,7 +822,7 @@ export class NotificationsFeedService {
         // adjudicateDelivered's pushes — UX19-02 dropped the fabricated "48h contest window" (`IssuesService.raise`
         // has no time-based gating) and UX19-04 dropped the unconditional "reviewed your proof"/"adding the
         // evidence" claim (proof-of-drop capture is optional; adjudicateDelivered has no evidence precondition).
-        if (event.status === "completed" && adjudicatedOrderIds.has(order.id)) {
+        if (status === "completed" && isAdjudicated) {
           notice = isCustomerView
             ? {
                 icon: "check",
@@ -684,12 +839,41 @@ export class NotificationsFeedService {
 
         // Order flow v2 G3a: a merchant customer's beat reads as the stage push they got, named.
         if (merchantCustomer) {
-          const named = merchantCustomerCopy(event.status, order);
+          const named = merchantCustomerCopy(status, order);
           if (named) notice = { ...notice, title: named.title, message: named.body };
-          else if (event.status === "preparing" && order.merchant?.name) {
+          else if (status === "preparing" && order.merchant?.name) {
             const making = pushCopy(PUSH_C.making, { v: order.merchant.name.trim(), making: order.merchant.businessType === "shop" ? "packing" : "cooking" });
             notice = { ...notice, title: making.title, message: making.body };
           }
+        }
+        return { notice, beat, orderId };
+      };
+
+      if (event) {
+        const head = present(event.status)!;
+        const { notice, beat, orderId } = head;
+
+        // "Every order step" (owner 2026-10-02): the timeline is the order's stage history in this
+        // viewer's voice — every stage STEP_STAGES draws for the service and side, pushed or not — and
+        // always the headline beat itself. Two statuses on one stage collapse to one step (the earlier
+        // one, unless the later one is the headline). The viewer's own cancellation stays out, exactly as
+        // it stays out of the headline.
+        const stages = isCustomerView ? (merchantCustomer ? STEP_STAGES.merchantCustomer : STEP_STAGES.customer) : STEP_STAGES.rider;
+        const chrono: { stage: string; step: FeedStep }[] = [];
+        for (const e of beats) {
+          const isHead = e === event;
+          if (!isHead && stages[e.status] === undefined) continue;
+          if (e.status === "cancelled" && order.cancelledBy === userId) continue;
+          const p = isHead ? head : present(e.status);
+          if (!p) continue;
+          const stage = stages[e.status] ?? e.status;
+          const step = { beat: p.beat, title: p.notice.title, at: e.createdAt.toISOString() };
+          const prev = chrono.at(-1);
+          if (prev && prev.stage === stage) {
+            if (isHead) prev.step = step;
+            continue;
+          }
+          chrono.push({ stage, step });
         }
 
         const at = event.createdAt.toISOString();
@@ -715,10 +899,9 @@ export class NotificationsFeedService {
           ...orderData(order.id),
           type: "status",
           beat,
-          steps: addressed
-            .filter((e) => !(e.status === "cancelled" && order.cancelledBy === userId))
-            .reverse()
-            .map((e) => ({ beat: e === event ? beat : e.status, title: notices[e.status]!.title, at: e.createdAt.toISOString() })),
+          steps: chrono.map((c) => c.step).reverse(),
+          // Who ended it (owner 2026-10-02): "Nyasha cancelled the order." needs to know it was Nyasha.
+          ...(event.status === "cancelled" ? { cancelledBy: cancelledByOf(order) } : {}),
         });
       }
     }
@@ -831,10 +1014,22 @@ export class NotificationsFeedService {
       if (a.action === "customer.hold") return a.id === newestCustomerStanding && profile?.onHold === true;
       return undefined;
     };
+    /** Why this account row happened, as a key the app can word (never the ops label itself). */
+    const reasonOf = (a: { action: string; createdAt: Date; reasonCode?: string | null }): string | undefined => {
+      if (a.action === "rider.kyc_decline") return kycReasonOf(a.reasonCode);
+      if (a.action === "rider.suspend" || a.action === "rider.ban" || a.action === "customer.hold") return standingReasonOf(a.reasonCode);
+      if (a.action === "rider.lift") {
+        // liftedPauses is newest first: the first pause older than this restore is the one it lifted.
+        const lifted = liftedPauses.find((p) => p.createdAt < a.createdAt);
+        return lifted ? standingReasonOf(lifted.reasonCode) : undefined;
+      }
+      return undefined;
+    };
     for (const a of accountAudits) {
       const copy = ACCOUNT_FEED_COPY[a.action];
       if (!copy) continue; // defensive: only the mapped actions were queried
       const at = a.createdAt.toISOString();
+      const reason = reasonOf(a);
       rows.push({
         id: `account:${a.id}`,
         orderId: null,
@@ -850,6 +1045,10 @@ export class NotificationsFeedService {
         type: a.action === "customer.riders_available_notify" ? "riders_available" : "account",
         action: a.action,
         active: inForce(a),
+        ...(reason ? { reason } : {}),
+        // A wallet credit written since 0073 carries its amount and the balance it left.
+        ...(a.action === "wallet.credit" && a.amount != null ? { amount: amountOf(a.amount) } : {}),
+        ...(a.action === "wallet.credit" && a.balanceAfter != null ? { balance: amountOf(a.balanceAfter) } : {}),
       });
     }
 
@@ -925,7 +1124,7 @@ export class NotificationsFeedService {
 
     // UX-2026-07-16: resolved-issue rows, mirroring the KB-FEED-SYNTH pattern above. `notifyIssueResolved`
     // is best-effort and can be missed; this is the durable fallback so "did anyone act on my problem" is
-    // answerable from the feed for a day after the resolution, whatever the age of the order itself.
+    // answerable from the feed for the retention window after the resolution, whatever the age of the order.
     for (const issue of resolvedIssues) {
       if (!issue.resolution || !issue.resolvedAt) continue; // defensive: resolved rows always carry both
       const copy = ISSUE_RESOLUTION_FEED_COPY[issue.resolution];
@@ -989,8 +1188,8 @@ export class NotificationsFeedService {
    * already inside, since the only unread affordance was the per-row dot).
    *
    * Deliberately derived from {@link feedForUser} rather than counted with a second, cheaper query: a
-   * count that disagrees with the list it summarises is worse than no count, and the synthesis is now
-   * bounded to a single day of activity. Dismissed rows are already gone from that list, so a swipe
+   * count that disagrees with the list it summarises is worse than no count, and the synthesis is
+   * bounded to the seven-day window and {@link FEED_ROW_CAP}. Dismissed rows are already gone from that list, so a swipe
    * lowers the count exactly as a reader would expect.
    */
   async unreadCountForUser(userId: string, now: Date = new Date()): Promise<number> {

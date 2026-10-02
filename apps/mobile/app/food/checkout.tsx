@@ -236,7 +236,7 @@ export default function FoodReviewScreen(): React.ReactElement {
   );
 
   const deliveryFee = drop && restaurant ? estimateDeliveryFee(restaurant.location, drop) : null;
-  const money = reviewBreakdown(cart.cart.lines, deliveryFee, owed);
+  const money = reviewBreakdown(cart.cart.lines, deliveryFee, owed, restaurant?.freeDelivery === true);
   const eta = drop && restaurant ? arrivalWindow(etaRange([restaurantMeta(restaurant, drop)]), now) : null;
   const closed = restaurant != null && !isMerchantOpenNow(restaurant.hours, now);
   const phoneOk = normalizePhone(phone) !== null;
@@ -611,6 +611,7 @@ export default function FoodReviewScreen(): React.ReactElement {
                 food={money.food}
                 goodsLabel={isShop ? O.r.itemsK : O.r.food}
                 deliveryFee={money.deliveryFee}
+                freeDeliveryBy={money.freeDelivery ? venue : null}
                 smallOrderFee={money.smallOrderFee}
                 owed={money.owed}
                 total={money.total}

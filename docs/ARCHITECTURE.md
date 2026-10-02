@@ -698,7 +698,13 @@ Rules encoded around the transitions:
   prior completed orders — anti-sock-puppet). A low rating from an established customer still applies
   its reliability penalty even on a repeat pair; an untrusted customer's rating moves neither direction.
   If the customer never rates, the auto-close backstop still completes the order so metrics don't stall
-  ([§14](#14-background-jobs--self-healing)).
+  ([§14](#14-background-jobs--self-healing)); it credits the clean-completion recovery and records the
+  points it actually credited (post-clamp) on `orders.auto_close_reliability_credit`. A **late rating**
+  (within `RATE_LATE_WINDOW_MS`, 7 days of the delivery) **replaces** that credit (owner 2026-10-02):
+  it reverses exactly the recorded points, then applies the rating's normal on-time effect, and nulls
+  the column under a CAS in the same transaction so the reversal happens once. An order completed with
+  no recorded credit (ops adjudication, or a pre-0069 auto-close) keeps the older late rule: only a
+  low rating's penalty applies.
 - Every transition writes an `order_event` row (the audit/tracker trail) and best-effort emits a WS
   `order:status` event plus an FCM push.
 

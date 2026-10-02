@@ -57,9 +57,9 @@ const R1_HERO_H = 210;
 const R1_ART = 170;
 
 /**
- * R1 · Why ride + what you need. `freeJobs` shows the note's "No top-up to start…" sentences — only
- * once the backend has a free-jobs rule (D-55: the handoff marks it NEEDS BACKEND); until then the note
- * says what is true today.
+ * R1 · Why ride + what you need. `freeJobs` shows the note's "No top-up to start…" sentences — set
+ * when the server serves the free-jobs rule (`/wallet/config` `freeFirstJobs`, D-70); an older server
+ * without it gets the note that is true there.
  */
 export function RiderIntro({ onStart, busy = false, freeJobs = false }: { onStart: () => void; busy?: boolean; freeJobs?: boolean }): React.ReactElement {
   return (
@@ -133,8 +133,8 @@ export function RiderSetupPending({ onSendParcel }: { onSendParcel: () => void }
 }
 
 /**
- * R3 · Verified — shown once. The "Commission-free jobs N of 5 left" card is drawn only when the
- * backend reports a free-jobs allowance (`freeJobs`; D-55, NEEDS BACKEND · free-jobs rule).
+ * R3 · Verified — shown once. The "Commission-free jobs N of 5 left" card is drawn when the server
+ * reports the free-jobs allowance (`/auth/me` `rider.freeJobs`, D-70); an older server omits it.
  */
 export function RiderVerified({
   firstName,

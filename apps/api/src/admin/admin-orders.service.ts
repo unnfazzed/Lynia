@@ -531,6 +531,7 @@ export class AdminOrdersService {
         merchantCashRule: true,
         merchantGoodsTotal: true,
         deliveryFee: true,
+        merchantDeliveryShare: true,
         rejectionReason: true,
         debtStatus: true,
         debtAmount: true,
@@ -675,6 +676,8 @@ export class AdminOrdersService {
             cashRule: order.merchantCashRule,
             goodsTotal: order.merchantGoodsTotal?.toString() ?? null,
             deliveryFee: order.deliveryFee?.toString() ?? null,
+            // D-71: the part of the rider's fee the venue paid (free delivery); null = the customer paid it.
+            merchantDeliveryShare: order.merchantDeliveryShare?.toString() ?? null,
             debt: order.debtStatus
               ? {
                   status: order.debtStatus,

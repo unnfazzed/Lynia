@@ -6,6 +6,7 @@ import type { LatLng, MerchantHours, RestaurantListItem } from "@lynia/shared";
 import { deliveryFeeForDistance, haversineKm, isMerchantOpenNow, nextOpenDescription } from "@lynia/shared";
 import { ETA_SPEED_KMH, liveEta, ROAD_WINDING_FACTOR } from "./eta";
 import { formatMoney } from "./money";
+import { comparePopularity, deliversTo, NO_POPULARITY, type PopularityIndex } from "./popularity";
 
 // Mirrors the customer-view step order in `src/ui/index.tsx`'s Stepper (STEP_ORDER) — the same
 // 7-step Express-tracker grammar the home LiveOrderCard's progress strip echoes. Kept as an
@@ -240,13 +241,19 @@ export interface PopularVenue {
   etaMinutes: number | null;
   /** Formatted ("$1.50"), or null when the distance cannot be computed. */
   deliveryFee: string | null;
+  /** D-71: the venue pays the delivery fee — the card shows the purple "Free delivery" tag instead. */
+  freeDelivery: boolean;
   closed: boolean;
   /** Straight-line km to the customer; null when unknown. Ordering key, not drawn. */
   distanceKm: number | null;
 }
 
 /**
- * The home's venue grid: the nearest OPEN venues first, then the rest, capped at `POPULAR_LIMIT`.
+ * The home's venue rail: the most POPULAR open venues that deliver to the customer first (ledger D-72 —
+ * ranked by delivered orders over 30 days, time-decayed, `popularity`), nearer first on a tie; then the
+ * remaining open venues nearest first; then the closed ones. Capped at `limit`. With no ranking (cold
+ * start: the server answers none while the corridor's order history is thin, or the read failed) this is
+ * exactly the old nearest-open order. A closed venue never ranks, however popular.
  *
  * Everything the card draws beyond the name and the photo is derived here from the customer read
  * API plus the customer's own detected location — which is exactly what 8c's header made available:
@@ -265,6 +272,7 @@ export function popularNearYou(
   now: Date,
   customer: LatLng | null,
   limit: number = POPULAR_LIMIT,
+  popularity: PopularityIndex = NO_POPULARITY,
 ): PopularVenue[] {
   const venues = restaurants.map((r) => {
     const distanceKm = customer && r.location ? haversineKm(r.location, customer) : null;
@@ -277,18 +285,28 @@ export function popularNearYou(
       rating: r.ratingCount > 0 && r.ratingAvg != null ? r.ratingAvg.toFixed(1) : null,
       etaMinutes: roadKm == null ? null : prep + Math.max(1, Math.ceil((roadKm / ETA_SPEED_KMH) * 60)),
       deliveryFee: distanceKm == null ? null : formatMoney(deliveryFeeForDistance(distanceKm)),
+      freeDelivery: r.freeDelivery === true,
       closed: !isMerchantOpenNow(r.hours, now),
       distanceKm,
     };
   });
+  // The popular tier: open, deliverable here, and ranked by the server. Everyone else is unranked.
+  const ranked = new Set(
+    restaurants.filter((r, i) => !venues[i]!.closed && popularity.has(r.id) && deliversTo(r.location, customer)).map((r) => r.id),
+  );
 
-  // Open before closed, then nearest first. A venue with no distance (no merchant location, or no
-  // customer fix) keeps its feed order behind the ones that can be ranked — `sort` is stable in
-  // every engine the app runs on, so equal keys never shuffle between renders.
+  // Open before closed, popular before not, then nearest first. A venue with no distance (no merchant
+  // location, or no customer fix) keeps its feed order behind the ones that can be ranked — `sort` is
+  // stable in every engine the app runs on, so equal keys never shuffle between renders.
   return venues
     .slice()
     .sort((a, b) => {
       if (a.closed !== b.closed) return a.closed ? 1 : -1;
+      const inA = ranked.has(a.id);
+      const inB = ranked.has(b.id);
+      if (inA !== inB) return inA ? -1 : 1;
+      const pop = inA ? comparePopularity(a.id, b.id, popularity) : 0;
+      if (pop !== 0) return pop;
       if (a.distanceKm == null || b.distanceKm == null) return (a.distanceKm == null ? 1 : 0) - (b.distanceKm == null ? 1 : 0);
       return a.distanceKm - b.distanceKm;
     })

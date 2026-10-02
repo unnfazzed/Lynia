@@ -1,4 +1,4 @@
-import type { RestaurantListResponse, RestaurantMenuResponse, RestaurantReopenReminderResponse, RestaurantSearchResponse, SearchPopularResponse } from "@lynia/shared";
+import type { PopularVenuesResponse, RestaurantListResponse, RestaurantMenuResponse, RestaurantReopenReminderResponse, RestaurantSearchResponse, SearchPopularResponse } from "@lynia/shared";
 import { apiFetch } from "./client";
 
 /** D1 (browse): corridor-wide restaurant list, `pilotEnabled` + `RESTAURANTS_ENABLED`-gated
@@ -39,4 +39,9 @@ export function clearReopenReminder(id: string): Promise<RestaurantReopenReminde
 /** Browse v2 X1 (D-57): the "Popular near you" search chips — the most-ordered dish names. */
 export function getSearchPopular(): Promise<SearchPopularResponse> {
   return apiFetch("/restaurants/search/popular");
+}
+
+/** Ledger D-72: the live restaurants ranked by recent delivered orders (empty on a thin corridor). */
+export function getPopularRestaurants(): Promise<PopularVenuesResponse> {
+  return apiFetch("/restaurants/popular");
 }

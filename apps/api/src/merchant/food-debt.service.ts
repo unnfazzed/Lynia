@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { RESTAURANTS_DEBT, RiderAccountStatus, roundToCents } from "@lynia/shared";
+import { foodOrderMoney, RESTAURANTS_DEBT, RiderAccountStatus, roundToCents } from "@lynia/shared";
 import { NotificationsService } from "../notifications/notifications.service";
 import { OrderLifecycleService } from "../orders/order-lifecycle.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -65,11 +65,17 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
       merchantPaymentMethod: string | null;
       merchantCashRule: string | null;
       merchantGoodsTotal: Prisma.Decimal | number | null;
+      deliveryFee?: Prisma.Decimal | number | null;
+      merchantDeliveryShare?: Prisma.Decimal | number | null;
     },
   ): Promise<void> {
     if (order.merchantPaymentMethod !== "cash" || order.merchantCashRule !== "collect_and_return") return;
     if (!order.merchantId || !order.riderId) return;
-    const amount = roundToCents(Number(order.merchantGoodsTotal ?? 0));
+    // D-71: on a free-delivery order the rider keeps the fee out of the goods money the customer paid, so
+    // what comes back to the venue is the goods total less the venue's delivery share.
+    const amount = roundToCents(
+      foodOrderMoney({ goodsTotal: order.merchantGoodsTotal, deliveryFee: order.deliveryFee, merchantDeliveryShare: order.merchantDeliveryShare }).merchantNet,
+    );
     if (amount <= 0) return;
     const claimed = await tx.order.updateMany({
       where: { id: order.id, debtStatus: null },

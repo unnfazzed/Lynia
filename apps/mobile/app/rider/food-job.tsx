@@ -425,6 +425,7 @@ export default function RiderFoodJob(): React.ReactElement {
     paymentMethod: string | null;
     merchantGoodsTotal: number | null;
     deliveryFee: number | null;
+    merchantDeliveryShare: number | null;
   } | null>(null);
   const deliverM = useMutation({
     mutationFn: () => confirmDelivery(orderId!, deliveryCode.trim()),
@@ -442,6 +443,7 @@ export default function RiderFoodJob(): React.ReactElement {
           paymentMethod: fo?.paymentMethod ?? null,
           merchantGoodsTotal: fo?.merchantGoodsTotal ?? null,
           deliveryFee: fo?.deliveryFee ?? null,
+          merchantDeliveryShare: fo?.merchantDeliveryShare ?? null,
         });
       }
       refresh();
@@ -853,9 +855,12 @@ export default function RiderFoodJob(): React.ReactElement {
     riderCashConfirmedAt: foodOrder.riderCashConfirmedAt,
     cashHandshakeFrozenAt: foodOrder.cashHandshakeFrozenAt,
   });
-  const goods = foodOrder.merchantGoodsTotal ?? 0;
-  const fee = foodOrder.deliveryFee ?? 0;
-  const total = foodOrder.merchantGoodsTotal != null && foodOrder.deliveryFee != null ? foodOrder.merchantGoodsTotal + foodOrder.deliveryFee : null;
+  // D-71: `goods` is the venue's cash (goods less any delivery it pays for), `total` what the customer
+  // pays; the rider's `fee` is the full delivery fee either way.
+  const cashSplit = foodCashBreakdown(foodOrder);
+  const goods = cashSplit.owed;
+  const fee = cashSplit.kept;
+  const total = foodOrder.merchantGoodsTotal != null && foodOrder.deliveryFee != null ? cashSplit.collected : null;
   const collectAtDoor = foodOrder.cashHandshakeAmount ?? total ?? 0;
   const noShow = noShowStatus(foodOrder.noShowCallTimestamps, nowMs);
   const upfront = cashOrder && foodOrder.merchantCashRule === "pay_upfront";

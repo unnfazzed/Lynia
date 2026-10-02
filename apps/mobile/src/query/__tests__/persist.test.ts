@@ -89,6 +89,14 @@ describe("redactBeforePersist — the national ID never reaches the disk", () =>
     expect(data).not.toHaveProperty("idNumber");
   });
 
+  it("D-70: drops the ID-check's verified number (kycIdNumber) too", () => {
+    const out = redactBeforePersist(clientWith([meEntry({ ...me, kycIdNumber: "63123456A42" })]));
+    const data = out.clientState.queries[0]?.state.data as Record<string, unknown>;
+    expect(data).not.toHaveProperty("kycIdNumber");
+    expect(data).not.toHaveProperty("idNumber");
+    expect(data.firstName).toBe("Chipo");
+  });
+
   // The whole point is a WARM boot minus one field — dropping the entry (or any other field) to
   // protect the ID would cost every account screen its instant first paint.
   it("keeps every other field of the profile", () => {

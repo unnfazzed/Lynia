@@ -13,7 +13,7 @@ import { primeBusiness } from "../../lib/business";
 import { getMerchantProfile, updateOrderSettings } from "../../lib/menu-api";
 
 type LoadState = { status: "loading" } | { status: "ready"; profile: MerchantProfileResponse } | { status: "error"; message: string };
-type Setting = "autoAccept" | "showPhoneToCustomers";
+type Setting = "autoAccept" | "showPhoneToCustomers" | "freeDelivery";
 
 const SETTINGS: { key: Setting; title: string; body: string }[] = [
   {
@@ -25,6 +25,13 @@ const SETTINGS: { key: Setting; title: string; body: string }[] = [
     key: "showPhoneToCustomers",
     title: "Show our number to customers",
     body: "Customers with a live order can call you.",
+  },
+  // D-71: free delivery paid by the business. The customer app draws the "Free delivery" tag; this
+  // switch is how the business turns it on (not drawn in the merchant handoff — ledger D-71).
+  {
+    key: "freeDelivery",
+    title: "Free delivery",
+    body: "Customers pay $0 delivery on new orders. You pay the rider's delivery fee: it comes off the cash for each order.",
   },
 ];
 
@@ -73,6 +80,9 @@ export default function OrderingPage() {
   }
 
   const staff = state.status === "ready" && state.profile.myRole === "staff";
+  // D-71: a shop or pharmacy never auto-accepts (Order flow v2), so it sees only the free-delivery switch.
+  const shop = state.status === "ready" && state.profile.businessType === "shop";
+  const settings = shop ? SETTINGS.filter((s) => s.key === "freeDelivery") : SETTINGS;
 
   return (
     <Kitchen active="account" tabs={false}>
@@ -84,7 +94,7 @@ export default function OrderingPage() {
           {staff && <p className="m-sub">Only the owner changes how you take orders.</p>}
           {state.status === "ready" &&
             !staff &&
-            SETTINGS.map((s) => (
+            settings.map((s) => (
               <div key={s.key} className="m-card" style={{ flexDirection: "row", alignItems: "center", padding: "10px 14px" }}>
                 <div style={{ flex: 1 }}>
                   <b style={{ display: "block", fontSize: 15 }}>{s.title}</b>

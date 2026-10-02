@@ -259,6 +259,9 @@ export class PrivacyService {
         kycSessionUrl: null,
         // Not a secret, but it is an activity timestamp tied to a person — a tombstone carries none.
         kycForcedAt: null,
+        // D-70: the vendor-verified ID number is recoverable PII (ciphertext) — scrubbed, unlike its
+        // retained one-way hash verifiedIdHash.
+        verifiedIdNumber: null,
         kycDeclineReason: null,
         suspendReason: null,
         currentLat: null,

@@ -55,7 +55,7 @@ export function shouldPersistQuery(query: Query): boolean {
 }
 
 /** Fields that may live in memory but must never be written to `rq-cache.json`. */
-const NEVER_PERSISTED_ME_FIELDS = ["idNumber"] as const;
+const NEVER_PERSISTED_ME_FIELDS = ["idNumber", "kycIdNumber"] as const;
 
 /**
  * Strip the caller's national ID out of the `["me"]` entry on its way to disk.

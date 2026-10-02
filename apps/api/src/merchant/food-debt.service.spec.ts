@@ -70,6 +70,54 @@ describe("FoodDebtService.openDebtIfNeeded — R-01", () => {
     });
   });
 
+  // D-71 regression: free delivery paid by the venue. The customer paid $13 (goods, $0 delivery); the
+  // rider keeps the $2.50 fee out of it; the venue is owed back $10.50 — its settlement is reduced by the fare.
+  it("D-71: on a free-delivery order the venue is owed goods − its delivery share, and the rider keeps the fee", async () => {
+    const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
+    const ledgerCreate = vi.fn(async () => ({}));
+    const { svc } = build({});
+    await svc.openDebtIfNeeded(
+      { order: { updateMany: orderUpdateMany }, merchantDebtLedger: { create: ledgerCreate } } as unknown as Parameters<typeof svc.openDebtIfNeeded>[0],
+      {
+        id: orderId,
+        merchantId: "m1",
+        riderId: "r1",
+        merchantPaymentMethod: "cash",
+        merchantCashRule: "collect_and_return",
+        merchantGoodsTotal: 13,
+        deliveryFee: 2.5,
+        merchantDeliveryShare: 2.5,
+      },
+    );
+    expect(orderUpdateMany).toHaveBeenCalledWith({
+      where: { id: orderId, debtStatus: null },
+      data: { debtStatus: "open", debtAmount: 10.5, debtOpenedAt: expect.any(Date) },
+    });
+    expect(ledgerCreate).toHaveBeenCalledWith({
+      data: { orderId, merchantId: "m1", riderId: "r1", type: "opened", amount: 10.5, actor: "system" },
+    });
+  });
+
+  it("D-71: an unfunded order (share null) still owes the full goods total", async () => {
+    const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
+    const ledgerCreate = vi.fn(async () => ({}));
+    const { svc } = build({});
+    await svc.openDebtIfNeeded(
+      { order: { updateMany: orderUpdateMany }, merchantDebtLedger: { create: ledgerCreate } } as unknown as Parameters<typeof svc.openDebtIfNeeded>[0],
+      {
+        id: orderId,
+        merchantId: "m1",
+        riderId: "r1",
+        merchantPaymentMethod: "cash",
+        merchantCashRule: "collect_and_return",
+        merchantGoodsTotal: 13,
+        deliveryFee: 2.5,
+        merchantDeliveryShare: null,
+      },
+    );
+    expect(ledgerCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ amount: 13 }) });
+  });
+
   it("is idempotent — a CAS miss (already opened) skips the ledger write entirely", async () => {
     const orderUpdateMany = vi.fn(async () => ({ count: 0 }));
     const ledgerCreate = vi.fn();

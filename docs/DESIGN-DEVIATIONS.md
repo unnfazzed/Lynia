@@ -982,7 +982,7 @@ structural deviation, not a text one), and with a one-day retention window and h
 own entry — not this one.
 
 **The retention half needs no deviation.** How long a row lives (now one day — see
-`FEED_RETENTION_MS`) and what makes it unread (now a real `Profile.notificationsReadAt` watermark rather
+`FEED_RETENTION_MS`; widened to seven days on 2026-10-02, D-66 §6) and what makes it unread (now a real `Profile.notificationsReadAt` watermark rather
 than a "younger than 24h" proxy) are invisible to the mocks: the kit draws a row **with** and
 **without** the unread dot and says nothing about either lifetime or read semantics. Same for the row
 collapse — the mock's own sample data is already one status row and one offer row per order, so
@@ -2627,10 +2627,10 @@ the README table (never the delivery code). The order screen keeps its last snap
 
 | Where | v2 | App | Why |
 |---|---|---|---|
-| 2.33 Home live-order bar | A 60px white card per stage; "Rider at the drop-off · Code 418290" | Home keeps the home-8c mint pill (no code) | It contradicts the approved home-8c handoff, which removed the code from the pill on purpose — **owner to choose**; not changed until then |
+| 2.33 Home live-order bar | A 60px white card per stage; "Rider at the drop-off · Code 418290" | Home keeps Calm Mint v2's live-order bar (no code) | **Settled (owner 2026-10-02): superseded by Calm Mint v2 — see D-67.** Not built |
 | 2.34 "Arriving" push | "Tendai is at the drop-off" | Not sent; the `en_route_dropoff` push stays "On the way to drop-off" | The server has no arrival signal — `en_route_dropoff` fires when the rider leaves the pickup |
 | 2.34 ETAs in pushes | "Arriving in about 6 min", "About 12 min" | Dropped (the offer push keeps the bid's ETA) | The server has no live ETA |
-| 2.34 LyniaGo-cancelled push | "Open to see why. Nothing to pay." | As drawn | Note: screen 18c leaves "Nothing to pay." out — **upstream**: confirm which |
+| 2.34 LyniaGo-cancelled push · 18c / 2.31 | Push: "Open to see why. Nothing to pay."; screens 18c / 2.31 leave "Nothing to pay." out | Push as drawn; the LyniaGo-cancelled sheet (18c, 2.31a/b) also shows "Nothing to pay." (`A.nothingOwed`, the 18a row) | **Settled (owner 2026-10-02): say it in both.** The push and the screen share the sentence verbatim; `cancelled-nothing-to-pay.test.tsx` pins both |
 | 2.4 saved copy | Any stage | Saved per status change while the order is live; the code card still works from SecureStore | — |
 | 2.17 Report a problem | "Tell us more · Optional" | When left empty, the picked type is sent as the description | The support case requires a description |
 | 2.18 | The note shows when the app becomes active again | Shows as soon as Emergency is tapped (the dialer is in front) | Same outcome without an AppState listener |
@@ -2640,8 +2640,15 @@ the README table (never the delivery code). The order screen keeps its last snap
 
 Evidence: `docs/parity/AFTER-SEND-V2-2026-10-01.png` (v2 handoff left, app right).
 
-**Upstream asks (v2):** export the gallery with the v2 ids; settle 2.33 against home-8c; confirm
-"Nothing to pay" for LyniaGo cancels; confirm the 999 number and support hours with ops.
+**Upstream asks (v2):** export the gallery with the v2 ids; ~~settle 2.33 against home-8c~~ (settled,
+D-67); ~~confirm "Nothing to pay" for LyniaGo cancels~~ (settled 2026-10-02: on the screen and in the push
+— redraw 18c / 2.31 with the line); confirm the 999 number and support hours with ops.
+
+**Owner decisions 2026-10-02 on the v2 round's open items:** (1) "Nothing to pay." in both the
+LyniaGo-cancelled push and screen (row above); (2) a late rating within the 7-day window **replaces** the
+auto-close's +2 reliability credit — reversed once, then the rating's normal effect (API only:
+`orders.auto_close_reliability_credit`, migration 0069; `docs/ARCHITECTURE.md` § order lifecycle);
+(3) 2.33 superseded by Calm Mint v2 (D-67).
 
 ---
 
@@ -2940,8 +2947,8 @@ this bar and lands with that work.
 | C5 exit | None drawn | None — the kyc-2026-08 "Use a different number" ghost is gone with `Register` | A mistyped number is fixed with C4's "Change" before the code is accepted |
 | Rider path after sign-in | Permissions in context | Riders still see the location + job-alert priming screens (`/permissions?next=/rider`) before the rider app | A rider without location and job alerts cannot take work; the handoff's in-context rule is written for customers |
 | R1 / R2 vendor name | "ID check with Didit", "Didit is checking your ID" | "ID check", "We're checking your ID" | D-38 (owner, 2026-08-22) stands: the app never names the verification partner; the handoff's brief named it by mistake |
-| R1 note | "No top-up to start. Your first jobs are commission-free. Licence and bike papers can wait." | "Licence and bike papers can wait." | The free-jobs rule doesn't exist on the server yet (README §5); the first two sentences would be false. They render once it does |
-| R3 meter | "Commission-free jobs · 5 of 5 left" card | Not drawn | Same: NEEDS BACKEND · free-jobs rule. Until then a new rider at a $0 balance still meets the top-up gate after "Go online" |
+| R1 note | "No top-up to start. Your first jobs are commission-free. Licence and bike papers can wait." | "Licence and bike papers can wait." | The free-jobs rule doesn't exist on the server yet (README §5); the first two sentences would be false. They render once it does. **Resolved by D-70 (2026-10-02):** drawn in full against a server that serves the rule |
+| R3 meter | "Commission-free jobs · 5 of 5 left" card | Not drawn | Same: NEEDS BACKEND · free-jobs rule. Until then a new rider at a $0 balance still meets the top-up gate after "Go online". **Resolved by D-70 (2026-10-02):** drawn from `/auth/me` `rider.freeJobs` |
 | R1 → ID check | "Start ID check" opens the check | "Start ID check" opens the rider photo step first (the existing capture + review), then the check | The rider photo is uploaded before the vendor session is opened (`POST /riders/become` needs it); R2 draws the photo as done before the check, so this is the handoff's own order |
 | Photo step | Not drawn | "Rider photo for your profile", the capture/review card, and — only when the account has none on file — the name and national-ID fields | Rider onboarding needs a national ID on the profile (one-ID-one-account) and C5 no longer collects it; Didit prefill is NEEDS BACKEND |
 | R2 | Every pending check | Only while the automated check is with the vendor; manual (ops) review keeps the Rider v2 wall | "Usually under a minute" is false for an ops review |
@@ -3699,7 +3706,7 @@ order screens (`src/ui/browse/copy.ts`), and code names (`RestaurantsSticker`, r
 
 | 6 | Splash starts on plain green | The native launch frame still shows the old dove + wordmark lockup until the JS splash draws | Changing it needs a new store build (native assets). **Follow-up:** a plain-green native launch frame, so the cold start reads as one screen. |
 
-## D-66 · Notifications v1: the shared Notifications screen follows the notifications-v1 handoff — handoff APPROVED (2026-10-02); deviations 1–9 PENDING OWNER REVIEW
+## D-66 · Notifications v1: the shared Notifications screen follows the notifications-v1 handoff — handoff APPROVED (2026-10-02); deviations 1–3 SETTLED by the owner (2026-10-02, §6); deviations 4–9 PENDING OWNER REVIEW
 
 **Owner instruction, this session (2026-10-02):** *"lets implement the notification changes now to the app"*,
 with the design export attached (`Lynia_Design_System.zip` → `handoff/notifications-v1/`). Vendored
@@ -3756,7 +3763,8 @@ The README's "Outside the design" asks are done in the same PR, additively (old 
   A rider's merchant job reads as a job (rider voice, gated like a parcel).
 - **Structured fields on every row:** `type`, `beat`, `action`, `service`, `pickupArea` / `dropoffArea`
   (first landmark segment), `venue`, `riderName`, `customerName`, `amount`, `count`, `prepMinutes`, `swap`,
-  `steps` (the viewer's beats on the order, latest first) and `active` (in force).
+  `steps` (the order's stage history, latest first — see §6) and `active` (in force); since §6 also
+  `reason`, `balance` and `cancelledBy`.
 
 ### 4 · App strings with no drawn string (`NX`, `NF`)
 
@@ -3769,12 +3777,178 @@ The README's "Outside the design" asks are done in the same PR, additively (old 
 
 | # | Handoff | App | Why |
 |---|---|---|---|
-| 1 | Day groups back to "MON 28 SEP" | The feed keeps one day (STREAMLINE-01, owner 2026-08-17), so in practice only TODAY / YESTERDAY appear | The grouping supports older days; widening retention is an owner call. |
-| 2 | Rider timeline: got the job → heading to pickup → collected → delivered | Only the beats the rider is pushed (got the job, delivered / cancelled); no "Posted" step on either side | The feed mirrors the pushes (FEED_AUDIENCE); `requested` has no push. |
-| 3 | Sample lines that state a reason or an amount: aIdB, aPausedB, aRestoredB, aWalletR/C, sResolvedB, rCancelled, sUpdate | The server's own line (the push the user got) | The feed doesn't carry the decline reason, the pause reason, the credited amount / balance, the refund kind or who cancelled; the drawn sentence would be false. |
 | 4 | Merchant "Tendai collected your food. On the way." | Restaurants only; shops and pharmacies keep the stage push's line | "food" is wrong for a shop or pharmacy order. |
 | 5 | Trash2 | Lucide `trash` | lucide-react-native 1.45 ships no `trash-2` (see `src/ui/Icon.tsx`). |
 | 6 | Gesture Handler pan + Reanimated | Core `PanResponder` + `Animated` (native driver) | Neither library is installed; the app's sheets use the same pair. |
 | 7 | OtherSide opens the C4/C5 switch sheet | Rider side: the C4/C5 sheet. Customer side: switches straight to the rider app | The customer side has no switch sheet (its Account toggle switches directly). |
 | 8 | Stale notice "Showing updates from 09:41" | The time of the last successful fetch on this phone | The feed has no server timestamp of its own. |
 | 9 | `--skeleton` | `SKELETON` (#EEF1F3, the browse-v2 literal) | No skeleton token exists in `packages/design/tokens/`. |
+
+Rows 1–3 of this table were settled by the owner on 2026-10-02 and are no longer deviations — see §6.
+
+### 6 · Settled by the owner (2026-10-02): retention, the timeline, the detail fields
+
+The three questions rows 1–3 left open, answered by the owner and built (no longer deviations):
+
+1. **Retention is seven days.** `FEED_RETENTION_MS` = 7 days (`notifications-feed.service.ts`), replacing
+   STREAMLINE-01's one day for every row source, the dismissal read and the dismissal prune alike. The order
+   scan and row caps rise from 50 to 100 (a week at about 14 jobs a day). The day groups now reach back a
+   week: TODAY · YESTERDAY · "WED 30 SEP" … , and rows older than yesterday read "28 Sep".
+2. **The timeline is every order step.** A row's `steps` is the order's stage history in the viewer's own
+   voice — every stage the handoff draws for that service and side, pushed to the viewer or not: customer
+   parcel Posted · Rider assigned · Rider on the way · Parcel collected · On the way to drop-off · Delivered;
+   restaurant / shop / pharmacy Accepted · Being prepared · Rider collected · At your door · Delivered; rider
+   You got the job · Heading to pickup · Parcel collected · Delivered (plus the outcomes each side draws).
+   Two statuses on one stage (assigned + confirmed, delivered + completed) are one step. The row's headline
+   is still the latest beat addressed to the viewer (FEED_AUDIENCE). A step's server `title` is the same
+   named copy the headline would use for that beat (e.g. "Tendai has your order"), no longer the generic
+   table title.
+3. **The detail is stored, and the rows read as the handoff's sentences.** Additive optional fields:
+   - `reason` — a KYC decline's `KycDeclineReason` key (from `AuditLog.reasonCode`; the vendor webhook's
+     free text never passes), and a pause / block / hold's reason as a key mapped from the admin console's
+     reason label (`StandingReason`); on a restore, the reason of the pause it lifted. The ops label itself
+     is never sent.
+   - `amount` + `balance` on `wallet.credit` — recorded on the audit row since migration
+     `0073_audit_log_amount` (expand-only: two nullable `DECIMAL(10,2)` columns on `audit_logs`).
+   - `cancelledBy` (`customer` · `rider` · `merchant` · `lynia`) on cancelled rows — derived from the
+     order's `cancelledBy` / `rejectionReason`, the same reading as Orders v2's `customerOrderOutcome`, so
+     it needs no new data and old orders have it too.
+
+   The app (`src/ui/notifications/model.ts`) uses them: aIdB for an unreadable-photo decline, aPausedB /
+   aRestoredB for a pause for (or a restore after) a customer report, aWalletR ("$5.00 top-up added. Your
+   balance is $12.60.") for a credit, rCancelled ("Nyasha cancelled the order. …") when the customer
+   cancelled. Rows recorded before the data was, and rows whose value the drawn sentence doesn't describe
+   (another decline reason, a pause for fare fraud, a held customer — aPausedB says "You can't take jobs"),
+   keep the push's own line rather than state something false. Not covered by the owner's decision and
+   unchanged: sResolvedB (the refund kind), sUpdate, aWalletC (customers have no wallet-credit path).
+
+---
+
+## D-67 · After Send v2 state 2.33 (Home live-order bar) is superseded by Calm Mint v2's live-order bar — APPROVED (2026-10-02)
+
+**Owner decision, 2026-10-02:** the question D-53 left open ("2.33 … **owner to choose**") is settled —
+keep Home's existing live-order bar; Calm Mint v2 is the authority for Home; do **not** build 2.33.
+
+| Where | After Send v2 (2.33) | App |
+|---|---|---|
+| Home, while an order is running | A 60px white card per stage: icon disc + one line + chevron (Finding · Choose · On the way · Arriving with the delivery code · Delivered, not rated) | Calm Mint v2's single forest live-order bar (`packages/design/handoff/calm-mint-v2-2026-10/README.md` §6, ledger D-55): 40px brand disc, "Tendai is on the way", sub line + "+1 order", 7-segment progress, ETA chip. No delivery code on Home. |
+
+**Why:** two handoffs drew the same element. Calm Mint v2 (D-55) owns `app/(tabs)/home.tsx`; After Send v2
+(D-53) owns `app/order/[id].tsx`, and its 2.33 frame reached outside that screen. The Home bar keeps the
+code off Home on purpose (home-8c removed it; Calm Mint v2 kept it off).
+
+**Scope:** `app/(tabs)/home.tsx` and `LiveOrderBar` are unchanged by this entry. 2.33 is not a gallery
+screen, so `tools/parity/parity-status.mjs` has nothing to mark; the After Send sheet
+(`tools/parity/shoot-after-send.mjs`) does not shoot 2.33 and now says why. D-53's "Still different
+from v2" row for 2.33 points here.
+
+**Upstream ask:** drop 2.33 from the After Send handoff, or redraw it as Calm Mint v2's bar.
+
+## D-70 · Calm Mint v2 "NEEDS BACKEND": commission-free first jobs and the Didit ID prefill — APPROVED (2026-10-02)
+
+**Owner decision, 2026-10-02:** build the two rider items the Calm Mint v2 README §5 (D-55) left as
+NEEDS BACKEND. No design change — this entry records the rule the server now implements and the
+assumptions the handoff left open.
+
+**Free-jobs rule.** The handoff draws R3 "Commission-free jobs · 5 of 5 left" with the caption "After
+these, commission comes off a prepaid balance. We'll remind you before you need to top up.", R1's note
+"No top-up to start. Your first jobs are commission-free.", and §6 "the $2 gate at first go-online …
+now shows only after the free jobs run out". README §5 leaves the rule open ("N jobs or $X of
+commission"). Implemented:
+
+| Question | Rule | Source |
+|---|---|---|
+| How many | **5 jobs** (`COMMISSION.freeFirstJobs`) | The drawn "5 of 5" meter (the README leaves N open) |
+| What is free | No `ride_commission` debit and no ledger row on the rider's 1st–5th completed job | "Commission-free jobs" |
+| The gate | While any free job is left, the low-balance (`commission_low_balance`) go-online gate is waived; it returns after the 5th completed job | §6 "shows only after the free jobs run out" |
+| What counts | A **completed** job (`Rider.tripsCount`, incremented once per completion on every completion path, parcel or merchant). A cancelled or undelivered job never consumes one | "jobs"; nothing in the handoff counts a cancel |
+| Who | Every rider by completed-job count, so riders with 5+ completed jobs are unaffected; a rider with fewer than 5 gets the remainder. Every completion so far ran at the 0% launch rate, so no rider is short-changed or double-served | "Your first jobs" |
+| Shown | R1 note in full when `/wallet/config` serves `freeFirstJobs`; R3 meter from `/auth/me` `rider.freeJobs {left,total}` | — |
+
+No schema change: the count is derived from `tripsCount`, which the completion transaction increments
+under the rider row lock before the debit runs.
+
+**Didit ID prefill.** The vendor-verified document number (already extracted from the decision webhook
+for IR26-04 dedupe, which kept only its hash) is now also stored ENCRYPTED on `riders.verified_id_number`
+(migration `0070_rider_verified_id_number`, expand-only), nulled on erasure, and returned to its owner
+only as `/auth/me` `kycIdNumber` once the check is verified (memory-only on the phone, like `idNumber`).
+The become-a-rider details step ("A few details first", app-authored) starts its national-ID field with
+that number when the account has none on file. It stays **editable**: the handoff draws no such field
+and its README says "prefill or confirm", so the rider confirms rather than retypes. The IR26-04 fraud
+checks (typed vs vendor number, collisions) are unchanged.
+
+## D-71 · Free delivery, paid by the restaurant or shop — the flag the handoffs asked for is built — PENDING OWNER REVIEW (2026-10-02)
+
+**Owner decision, this session (2026-10-02):** build free delivery paid by the restaurant or shop. The
+designs draw it but it was never built (D-55 table "Free delivery tag: Never shown"; D-57 table "Free
+delivery pill and tag: Never shown"). This entry retires both of those rows: the tag, the pill and the
+filter now show whenever the venue's flag is on.
+
+**What the designs settle, and where**
+
+| Rule | Source |
+|---|---|
+| A merchant-funded `free_delivery` boolean per venue | calm-mint-v2 README §5, browse-v2 README §7, browse-v2 CLAUDE-CODE-PROMPT ("`freeDelivery` per venue") |
+| The venue pays; the rider is paid in full | D-55 owner decision 2 |
+| "Free delivery" only when the venue funds it (honest data) | browse-v2 README §2, order-flow-v2 PROMPT ("Honest data only") |
+| The purple `free` token: tag on full cards, bold purple text in compact rows, the Free delivery pill shown only when a venue offers it | browse-v2 BRIEF §4/§7, calm-mint-v2 README §2 |
+| "Checkout reads 'Delivery: Free, paid by <venue>'" | calm-mint-v2 README §5 |
+
+**What the app does (cash only)**
+
+- **Customer pays $0 delivery.** Review & place's Delivery fee row reads "Free, paid by {venue}" (bold,
+  `free` token) and the cash total is the goods (+ small-order fee, + any owed balance). The order screen
+  and receipt read the same, and every later total (edits, swaps, a declined prescription) keeps it free.
+- **The rider earns the full fee**, unchanged: the offer's fare, the board's asking figure and the
+  delivered screen all show `deliveryFee`.
+- **The venue's money is the goods less the fee.** Nobody carries a separate fare in a cash world: the
+  rider keeps the fee out of the cash the customer paid and hands back the rest. The collect-and-return
+  debt opens at goods − fee; the merchant's Money lines, today's sales and the weekly statement (and its
+  commission line) use the same net. This follows the current D-48 collect-and-return model, not the
+  retired weekly-15% settlement in `ui_kits/admin/cash.html`.
+- Server: `merchants.free_delivery`, `orders.merchant_delivery_share` (migration
+  `0072_merchant_funded_free_delivery`, expand-only); one split for every surface,
+  `foodOrderMoney` in `packages/shared/src/restaurants-order.ts`.
+
+**What the designs don't settle: the simplest safe choice (owner to confirm)**
+
+| # | Question | Choice |
+|---|---|---|
+| 1 | How a venue turns it on | A third switch, **"Free delivery"**, on the existing app-only *Account → Taking orders* page (owner only), and the same switch on the admin merchant profile's Taking orders card (reason-coded, audited). Neither handoff draws it. A shop or pharmacy now reaches Taking orders too and sees only this switch (shops never auto-accept). |
+| 2 | Minimum order / radius | None. The only floor is that the goods (with the small-order fee) must cover the fee at placement; below it the customer pays delivery as usual, so a venue never pays to give food away. No radius: the fee is per km inside the service area, as for every order. |
+| 3 | An edit drops the goods below the fee | The order stays funded; the venue's share is capped at the goods total, the customer pays only the uncovered part. The rider is never short and the venue never goes below $0. |
+| 4 | The switch changes mid-order | The share is snapshotted at placement; only new orders change. |
+| 5 | Wallet orders | Never funded (cash only). |
+| 6 | Customer cancels after collection | They owe what they would have paid (goods, $0 delivery) — the existing D3f rule on the order's total. |
+| 7 | Copy not in any handoff | "Free, paid by {v}" (`O_ADDED.r.freePaidBy`, the README §5 sentence); the merchant switch's line "Customers pay $0 delivery on new orders. You pay the rider's delivery fee: it comes off the cash for each order."; the admin card's lines and two audit reasons. |
+
+## D-72 · "Popular" is a real ranking: recent delivered orders, not the nearest open venues — APPROVED (2026-10-02)
+
+**Owner decision (2026-10-02):** "Popular restaurants" / "Popular shops" on Home and the browse lists'
+default "Recommended" sort meant "the nearest open venues". Both handoffs list a real ranking as NEEDS
+BACKEND (Calm Mint v2 README §5 "Popular ranking"; Browse v2 README §7 "A Recommended ranking"). This
+builds it. **No drawn element, string or geometry changes**; only the order of the cards.
+
+**The formula.** For each venue the customer's list can see (the restaurant rule, or one shop section's):
+
+    score = Σ over its delivered orders in the last 30 days of 0.5 ^ (age / 7 days)
+
+- "Delivered" = `delivered` or `completed`. Cancelled and undelivered orders don't count.
+- A venue needs **3 or more** such orders to rank. The ranking engages only when **2 or more** venues
+  qualify. Below that (cold start, which is today's closed test) the server answers no ranking.
+- Tie-break: score, then the raw order count, then distance on the phone.
+- On the phone, only **open** venues that **deliver to the customer** rank: the venue has its pin, and the
+  customer is inside the service area (or not located yet; D-61, no distance cap). Ranked venues lead.
+  Every other open venue follows **nearest first**, then the closed group, as before. With no ranking the
+  order is exactly the old nearest-open order. A closed venue never ranks, however popular.
+- The explicit **Nearest**, **Top rated** and **Lowest fee** sorts are unchanged.
+
+**Where.** `GET /restaurants/popular` and `GET /shops/popular?service=` (`MerchantService.popularVenues`).
+Each is one aggregate over `orders`, served by the new `(merchant_id, created_at)` index (migration
+`0071_orders_merchant_created_at_popularity_index`, expand-only, `CONCURRENTLY`). It is cached for 10
+minutes per list. The 30-day window, the delivered statuses and the 3-order minimum are shared with the
+X1 "Popular near you" search chips and the storefront "Popular" dish rail (D-57) in
+`apps/api/src/merchant/venue-popularity.ts`, so "popular" has one definition. Phone:
+`src/logic/popularity.ts`, `popularNearYou(…, popularity)`, `browseList(…, popularity)`. A failed or
+malformed read means no ranking. A list whose ranking names a venue on a page it hasn't loaded fetches
+the next page, so a popular venue on page 2 can still lead.

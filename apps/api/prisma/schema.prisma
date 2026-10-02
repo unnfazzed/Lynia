@@ -331,6 +331,12 @@ model Rider {
   // directly comparable to Profile.idNumberHash. Retained on erasure like idNumberHash (DS15-02b).
   // Partial index managed via raw SQL (migration 0038).
   verifiedIdHash    String?                                @map("verified_id_hash")
+  // D-70 (Calm Mint v2 "Didit ID prefill"): the same vendor-verified document number, ENCRYPTED
+  // (pii.encryptId, AES-256-GCM — the Profile.idNumber regime, never plaintext, never logged). Written
+  // with verifiedIdHash from the `verified` decision webhook so the app can prefill/confirm the
+  // rider's national ID from the check instead of making them retype it. Returned ONLY to its owner
+  // (/auth/me `kycIdNumber`); NULLED on erasure (recoverable PII, unlike the retained hash).
+  verifiedIdNumber  String?                                @map("verified_id_number")
   isOnline          Boolean                                @default(false) @map("is_online")
   lastHeartbeatAt   DateTime?                              @map("last_heartbeat_at")
   currentLat        Float?                                 @map("current_lat")
@@ -566,6 +572,12 @@ model Order {
   pickupPhotoKey        String?                                @map("pickup_photo_key")
   deliveredAt           DateTime?                              @map("delivered_at")
   completedAt           DateTime?                              @map("completed_at")
+  // The reliability points the unrated auto-close (completeOrder) actually credited the rider — the
+  // post-clamp delta, so 0 when the score was already at MAX. A late rating within RATE_LATE_WINDOW_MS
+  // REPLACES that credit (owner 2026-10-02): it reverses exactly this many points, then applies the
+  // rating's normal effect, and nulls the column in the same transaction so it is reversed once.
+  // Null = no auto-close credit outstanding (rated on time, adjudicated, already reversed, or pre-0069).
+  autoCloseCredit       Int?                                   @map("auto_close_reliability_credit")
   cancelledAt           DateTime?                              @map("cancelled_at")
   cancelledBy           String?                                @map("cancelled_by") @db.Uuid
   // FK → profiles(id). Nullable pointer to whoever cancelled; ON DELETE SET NULL so deleting a
@@ -655,6 +667,11 @@ model Order {
   // N-01: computed via packages/shared/restaurants-pricing (config, not a constant), never re-derived
   // client-side.
   deliveryFee                Decimal?               @map("delivery_fee") @db.Decimal(10, 2)
+  // D-71: the part of deliveryFee the venue pays (free delivery), snapshotted at placement and capped
+  // by the goods total on every edit (packages/shared restaurants-order foodOrderMoney). Null = the
+  // venue doesn't fund this order. The rider keeps the full deliveryFee either way; agreedFare is
+  // goods + fee - share; the venue's cash (debtAmount / pay-upfront) is goods - share.
+  merchantDeliveryShare      Decimal?               @map("merchant_delivery_share") @db.Decimal(10, 2)
 
   // ── C3: food dispatch (orderType=merchant only) ─────────────────────────────────────────────────
   // Candidate rider currently holding a live single-rider auto-offer (N-08, 60s); null once
@@ -780,6 +797,9 @@ model Order {
   // single-column index served (leftmost-prefix), so it replaces it.
   @@index([customerId, createdAt])
   @@index([riderId, createdAt])
+  // D-72: the "Popular" venue ranking (delivered orders per venue over 30 days) and the merchant's
+  // day/week money reads filter on merchant_id + a created_at range (migration 0069).
+  @@index([merchantId, createdAt])
   @@map("orders")
 }
 
@@ -977,6 +997,11 @@ model AuditLog {
   target     String
   reasonCode String?  @map("reason_code")
   note       String?
+  // Money actions only (`wallet.credit`, owner 2026-10-02): the amount moved and the balance it left, so
+  // the notifications feed can say "$5.00 top-up added. Your balance is $12.60." Null on every other
+  // action and on rows written before 0069.
+  amount       Decimal? @db.Decimal(10, 2)
+  balanceAfter Decimal? @map("balance_after") @db.Decimal(10, 2)
   createdAt  DateTime @default(now()) @map("created_at")
 
   @@index([createdAt])
@@ -1019,6 +1044,10 @@ model Merchant {
   // The restaurant's number is shown to customers with a live order. On for every restaurant (0064,
   // owner decision 2026-10-01); a restaurant can turn it off in Account → Taking orders.
   showPhoneToCustomers Boolean    @default(true) @map("show_phone_to_customers")
+  // D-71: free delivery paid by the venue. The customer pays $0 delivery, the rider still earns the
+  // full fee, and the venue's cash on the order is the goods total less the fee. Off until the venue
+  // (Account → Taking orders) or ops turn it on. Snapshotted per order as Order.merchantDeliveryShare.
+  freeDelivery   Boolean          @default(false) @map("free_delivery")
   // #673 discovery: the restaurant's star rating — a denormalised aggregate of customers' food
   // scores (Rating.foodScore, #672), maintained on rate() like the rider's ratingAvg/ratingCount.
   // The list card reads it directly (avg is meaningless while count is 0 → the card shows no rating).

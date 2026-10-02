@@ -767,6 +767,37 @@ describe("MerchantService customer read API (flag + pilotEnabled allowlist)", ()
     expect(JSON.stringify(res.restaurants[0])).not.toContain("Corner of X and Y");
   });
 
+  it("D-71: listRestaurants flags only the venues that fund delivery (absent for everyone else)", async () => {
+    const base = { coverPhotoUrl: null, logoUrl: null, cuisineTags: [], priceLevel: 2, hours: null, location: null };
+    const s = svc({
+      merchant: {
+        findMany: async () => [
+          { id: "m1", name: "Golden Bao", freeDelivery: true, ...base },
+          { id: "m2", name: "Nandos", freeDelivery: false, ...base },
+        ],
+      },
+    });
+    const res = await s.listRestaurants();
+    expect(res.restaurants[0]!.freeDelivery).toBe(true);
+    expect(res.restaurants[1]).not.toHaveProperty("freeDelivery");
+  });
+
+  it("D-71: the owner turns free delivery on from Taking orders", async () => {
+    let data: Record<string, unknown> | undefined;
+    const s = svc({
+      merchant: {
+        findUnique: async () => ({ id: "m1", ownerProfileId: "p1", ownerProfile: { phone: "+263771234567" }, members: [] }),
+        update: async (args: { data: Record<string, unknown> }) => {
+          data = args.data;
+          return { id: "m1", name: "Golden Bao", cuisineTags: [], hours: null, location: null, freeDelivery: true, ownerProfile: { phone: "+263771234567" } };
+        },
+      },
+    });
+    const res = await s.updateOrderSettings("p1", { freeDelivery: true });
+    expect(data).toEqual({ freeDelivery: true });
+    expect(res.freeDelivery).toBe(true);
+  });
+
   it("listRestaurants defaults location to null when the merchant hasn't set one", async () => {
     const s = svc({
       merchant: {
@@ -851,6 +882,84 @@ describe("MerchantService customer read API (flag + pilotEnabled allowlist)", ()
     const s = svc({ merchant: { findMany: async () => [] }, merchantOrderItem: { groupBy: async () => { grouped = true; return []; } } });
     expect(await s.searchPopular()).toEqual({ terms: [] });
     expect(grouped).toBe(false);
+  });
+
+  it("searchPopular counts only delivered orders inside the 30-day window (the shared D-72 predicate)", async () => {
+    let where: Record<string, unknown> | undefined;
+    const s = svc({
+      merchant: { findMany: async () => [{ id: "m1" }] },
+      merchantOrderItem: { groupBy: async (args: { where: Record<string, unknown> }) => { where = args.where; return []; } },
+    });
+    await s.searchPopular();
+    const order = where?.order as { merchantId: unknown; status: unknown; createdAt: { gte: Date } };
+    expect(order.merchantId).toEqual({ in: ["m1"] });
+    expect(order.status).toEqual({ in: ["delivered", "completed"] });
+    expect(Date.now() - order.createdAt.gte.getTime()).toBeGreaterThanOrEqual(30 * 24 * 60 * 60 * 1000 - 1000);
+  });
+
+  describe("popularVenues (ledger D-72)", () => {
+    function popular(visible: string[], rows: Array<{ merchantId: string; orders: number | bigint; score: number }>) {
+      const calls = { findMany: [] as unknown[], raw: 0, sql: "" , values: [] as unknown[] };
+      const s = svc({
+        merchant: { findMany: async (args: unknown) => { calls.findMany.push(args); return visible.map((id) => ({ id })); } },
+        $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+          calls.raw += 1;
+          calls.sql = strings.join("?");
+          calls.values = values;
+          return rows;
+        },
+      });
+      return { s, calls };
+    }
+
+    it("ranks the list's visible venues by their time-decayed delivered orders", async () => {
+      const { s, calls } = popular(["a", "b", "c"], [
+        { merchantId: "a", orders: 4, score: 1.2 },
+        { merchantId: "b", orders: BigInt(9), score: 6.5 },
+        { merchantId: "c", orders: 3, score: 2.25 },
+      ]);
+      expect(await s.popularVenues({ pilotEnabled: true, businessType: "restaurant" }, "restaurants")).toEqual({
+        venues: [
+          { id: "b", orders: 9, score: 6.5 },
+          { id: "c", orders: 3, score: 2.25 },
+          { id: "a", orders: 4, score: 1.2 },
+        ],
+      });
+      // One aggregate, bounded to the visible set, delivered merchant orders only, inside the window.
+      expect(calls.findMany[0]).toEqual({ where: { pilotEnabled: true, businessType: "restaurant" }, select: { id: true } });
+      expect(calls.raw).toBe(1);
+      expect(calls.sql).toMatch(/merchant_id = ANY\(/);
+      expect(calls.sql).toMatch(/order_type = 'merchant'/);
+      expect(calls.sql).toMatch(/status IN \('delivered', 'completed'\)/);
+      expect(calls.sql).toMatch(/GROUP BY o\.merchant_id/);
+      expect(calls.values).toContainEqual(["a", "b", "c"]);
+    });
+
+    it("cold start: a thin corridor answers no ranking (the phone keeps nearest-open)", async () => {
+      const { s } = popular(["a", "b"], [
+        { merchantId: "a", orders: 7, score: 5 },
+        { merchantId: "b", orders: 1, score: 1 },
+      ]);
+      expect(await s.popularVenues({}, "restaurants")).toEqual({ venues: [] });
+    });
+
+    it("no visible venue: answers empty without touching orders", async () => {
+      const { s, calls } = popular([], []);
+      expect(await s.popularVenues({}, "shops:pharmacy")).toEqual({ venues: [] });
+      expect(calls.raw).toBe(0);
+    });
+
+    it("is cached per list — a second read in the TTL costs no query", async () => {
+      const { s, calls } = popular(["a", "b"], [
+        { merchantId: "a", orders: 3, score: 2 },
+        { merchantId: "b", orders: 3, score: 1 },
+      ]);
+      await s.popularVenues({}, "restaurants");
+      await s.popularVenues({}, "restaurants");
+      expect(calls.raw).toBe(1);
+      await s.popularVenues({}, "shops:shops");
+      expect(calls.raw).toBe(2);
+    });
   });
 
   it("searchRestaurants ignores a blank / 1-char query — never dumps the corridor", async () => {
@@ -1036,6 +1145,27 @@ describe("MerchantService.getWeeklyStatement (E3, N-13)", () => {
     expect(res.lineItems[0]).toMatchObject({ orderId: "o1", paymentMethod: "cash", amount: 13, commission: 0 });
   });
 
+  it("D-71: a free-delivery order's line is the venue's money — goods less the delivery it paid the rider", async () => {
+    const s = svc({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: {
+        findMany: async () => [
+          // Free delivery: $13 goods, the venue paid the rider's $2.50 → its money is $10.50.
+          { id: "o1", deliveredAt: new Date("2026-10-02T10:00:00.000Z"), merchantPaymentMethod: "cash", merchantGoodsTotal: 13, deliveryFee: 2.5, merchantDeliveryShare: 2.5 },
+          // Customer paid delivery: the venue's money is the goods total.
+          { id: "o2", deliveredAt: new Date("2026-10-02T11:00:00.000Z"), merchantPaymentMethod: "cash", merchantGoodsTotal: 6, deliveryFee: 2, merchantDeliveryShare: null },
+        ],
+        aggregate: async () => ({ _sum: { merchantGoodsTotal: 0 } }),
+      },
+    });
+    const res = await s.getWeeklyStatement("p1");
+    expect(res.lineItems.map((l) => [l.orderId, l.amount])).toEqual([
+      ["o1", 10.5],
+      ["o2", 6],
+    ]);
+    expect(res.foodSalesTotal).toBe(16.5);
+  });
+
   it("returns zeros with no delivered orders", async () => {
     const s = svc({
       merchant: { findUnique: async () => ({ id: "m1" }) },
@@ -1137,6 +1267,30 @@ describe("MerchantService.getTodaySummary (E3, M4·6; D-48 header tiles)", () =>
       ["in_progress", 12, at(9).toISOString()],
       ["not_delivered", 0, at(9).toISOString()],
     ]);
+  });
+
+  it("D-71: today's sales and money lines take off the delivery the venue paid for", async () => {
+    const prisma = summaryPrisma({
+      today: [
+        {
+          id: "f0000000-0000-4000-8000-000000000000",
+          status: "delivered",
+          prepStartedAt: new Date(),
+          createdAt: new Date(),
+          deliveredAt: new Date(),
+          cancelledAt: null,
+          merchantGoodsTotal: 12,
+          deliveryFee: 3,
+          merchantDeliveryShare: 3,
+        },
+      ],
+    });
+    const aggregate = prisma.order.aggregate;
+    prisma.order.aggregate = async (args: { where: Record<string, unknown> }) =>
+      args.where.prepStartedAt ? { _count: { _all: 2 }, _sum: { merchantGoodsTotal: 20, merchantDeliveryShare: 3 } } : aggregate(args);
+    const res = await svc(prisma).getTodaySummary("p1");
+    expect(res.sales).toBe(17);
+    expect(res.lines!.map((l) => l.amount)).toEqual([9]);
   });
 
   it("D-48 PR 4b: a shop booking's overdue cash on delivery counts too, marked as a booking", async () => {

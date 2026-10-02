@@ -5,7 +5,7 @@ import { ConfirmModal } from "../components/ConfirmModal";
 import { Pill } from "../components/StatusPill";
 import { setMerchantOrderSettings } from "./actions";
 
-type Setting = "autoAccept" | "showPhoneToCustomers";
+type Setting = "autoAccept" | "showPhoneToCustomers" | "freeDelivery";
 
 const COPY: Record<Setting, { label: string; line: string; onConsequence: string; offConsequence: string }> = {
   autoAccept: {
@@ -21,32 +21,46 @@ const COPY: Record<Setting, { label: string; line: string; onConsequence: string
     onConsequence: "Customers with a live order see the restaurant's number and can call it.",
     offConsequence: "Customers stop seeing the restaurant's number.",
   },
+  // D-71: free delivery paid by the business.
+  freeDelivery: {
+    label: "Free delivery",
+    line: "The business pays the rider's delivery fee. Only switch on if the business agreed.",
+    onConsequence:
+      "New cash orders show Free delivery and the customer pays $0 delivery. The rider still earns the full fee: it comes off the cash the business gets back for each order.",
+    offConsequence: "New orders charge the customer the delivery fee again. Orders already placed keep the price they were placed at.",
+  },
 };
 
 /**
  * Auto-accept (docs/plans/2026-09-30-restaurant-auto-accept.md): how a restaurant takes orders, set by
  * ops on its behalf — most auto-accept restaurants never open the merchant app. Each switch goes through
- * the reason-coded ConfirmModal; the endpoint writes the audit row (A-01).
+ * the reason-coded ConfirmModal; the endpoint writes the audit row (A-01). A shop gets only the
+ * free-delivery switch (D-71; shops never auto-accept).
  */
 export function OrderSettingsCard({
   merchantId,
   name,
   autoAccept,
   showPhoneToCustomers,
+  freeDelivery = false,
+  shop = false,
   connected,
 }: {
   merchantId: string;
   name: string;
   autoAccept: boolean;
   showPhoneToCustomers: boolean;
+  freeDelivery?: boolean;
+  shop?: boolean;
   connected: boolean;
 }) {
-  const current: Record<Setting, boolean> = { autoAccept, showPhoneToCustomers };
+  const current: Record<Setting, boolean> = { autoAccept, showPhoneToCustomers, freeDelivery };
+  const keys: Setting[] = shop ? ["freeDelivery"] : (Object.keys(COPY) as Setting[]);
   return (
     <section className="card" aria-label="Taking orders">
       <div className="block-title">Taking orders</div>
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-md)" }}>
-        {(Object.keys(COPY) as Setting[]).map((key) => {
+        {keys.map((key) => {
           const on = current[key];
           const c = COPY[key];
           return (

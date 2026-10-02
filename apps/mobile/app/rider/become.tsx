@@ -13,6 +13,7 @@ import { clearKycDraft, kycDraftHasContent, loadKycDraft, saveKycDraft } from ".
 import { AppBar, Button, Card, Field, Heading, Icon, isTestBuild, Screen, Sub, useActionError } from "../../src/ui";
 import { RO } from "../../src/ui/onboarding/copy";
 import { RiderIntro } from "../../src/ui/onboarding/rider";
+import { useWalletConfig } from "../../src/query/use-wallet";
 
 /**
  * Become a rider: Calm Mint v2 R1 "Why ride", then straight to the ID check.
@@ -46,6 +47,9 @@ export default function BecomeRiderScreen(): React.ReactElement {
   const me = meQ.data;
   const needName = !!me && (!me.firstName?.trim() || !me.lastName?.trim());
   const needId = !!me && !me.idNumber;
+  // D-70: the commission-free first jobs exist on this server, so R1's note can say so in full.
+  const { config: walletConfig } = useWalletConfig();
+  const freeJobs = (walletConfig?.freeFirstJobs ?? 0) > 0;
   // Gate persistence until the initial load runs, so we don't clobber a stored draft with empty state.
   const hydrated = useRef(false);
 
@@ -69,6 +73,15 @@ export default function BecomeRiderScreen(): React.ReactElement {
       cancelled = true;
     };
   }, []);
+
+  // D-70 "Didit ID prefill" (Calm Mint v2 §5): when the account has no ID on file but an ID check has
+  // already verified one, the field starts with that number for the rider to confirm — editable, never
+  // retyped. A restored draft (what the rider typed last time) or anything already typed wins.
+  const kycIdNumber = me?.kycIdNumber ?? null;
+  useEffect(() => {
+    if (!needId || !kycIdNumber) return;
+    setIdNumber((cur) => (cur.trim().length > 0 ? cur : kycIdNumber));
+  }, [needId, kycIdNumber]);
 
   // Persist the draft (encrypted, on-device only) as fields change, after initial hydration.
   useEffect(() => {
@@ -146,7 +159,7 @@ export default function BecomeRiderScreen(): React.ReactElement {
   if (step === "intro" && !pending) {
     // Nothing missing on the account → "Start ID check" opens the check right here. Anything missing
     // (or the account not loaded yet) → the details step, which asks only for that.
-    return <RiderIntro busy={busy} onStart={() => (canSubmit && !needName && !needId ? void submit() : setStep("details"))} />;
+    return <RiderIntro busy={busy} freeJobs={freeJobs} onStart={() => (canSubmit && !needName && !needId ? void submit() : setStep("details"))} />;
   }
 
   return (

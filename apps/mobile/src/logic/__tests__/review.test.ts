@@ -7,7 +7,28 @@ const line = (dishId: string, priceUsd: number, quantity: number, note = ""): Fo
 describe("reviewBreakdown — Food · Delivery fee · Small-order fee · Total (R1/R4)", () => {
   it("R1 Gava's Kitchen: $15.00 food + $1.50 delivery = $16.50, no small-order fee", () => {
     const b = reviewBreakdown([line("sadza", 4.5, 2), line("chicken", 6, 1)], 1.5);
-    expect(b).toEqual({ food: 15, deliveryFee: 1.5, smallOrderFee: 0, owed: 0, total: 16.5, belowMinimum: false, shortfall: 0 });
+    expect(b).toEqual({ food: 15, deliveryFee: 1.5, freeDelivery: false, smallOrderFee: 0, owed: 0, total: 16.5, belowMinimum: false, shortfall: 0 });
+  });
+
+  // D-71: free delivery paid by the venue — the totals the customer sees.
+  it("D-71: a free-delivery venue — $15.00 food, $0 delivery, total $15.00", () => {
+    const b = reviewBreakdown([line("sadza", 4.5, 2), line("chicken", 6, 1)], 1.5, 0, true);
+    expect(b).toMatchObject({ food: 15, deliveryFee: 0, freeDelivery: true, total: 15 });
+  });
+
+  it("D-71: free delivery still carries the small-order fee and any owed balance", () => {
+    const b = reviewBreakdown([line("a", 3, 1)], 1.5, 2, true);
+    // $3 food + $1 small-order fee = $4 goods ≥ $1.50 fee → free; + $2 owed.
+    expect(b).toMatchObject({ deliveryFee: 0, freeDelivery: true, smallOrderFee: 1, owed: 2, total: 6 });
+  });
+
+  it("D-71: goods that don't cover the fee pay delivery as usual (same rule as the server)", () => {
+    const b = reviewBreakdown([line("a", 0.5, 1)], 2, 0, true);
+    expect(b).toMatchObject({ deliveryFee: 2, freeDelivery: false, total: 3.5 });
+  });
+
+  it("D-71: no address yet → no fee row even at a free-delivery venue", () => {
+    expect(reviewBreakdown([line("a", 9, 1)], null, 0, true)).toMatchObject({ deliveryFee: null, freeDelivery: false, total: 9 });
   });
 
   it("R4: under $4.00 adds the $1.00 small-order fee — $3.30 + $1.00 + $1.50 = $5.80, $0.70 short", () => {

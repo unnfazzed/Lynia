@@ -45,9 +45,13 @@ const SetMerchantOrderSettings = z
   .object({
     autoAccept: z.boolean().optional(),
     showPhoneToCustomers: z.boolean().optional(),
+    // D-71: free delivery paid by the venue.
+    freeDelivery: z.boolean().optional(),
     note: z.string().max(2000).nullish(),
   })
-  .refine((v) => v.autoAccept !== undefined || v.showPhoneToCustomers !== undefined, { message: "Nothing to change" });
+  .refine((v) => v.autoAccept !== undefined || v.showPhoneToCustomers !== undefined || v.freeDelivery !== undefined, {
+    message: "Nothing to change",
+  });
 
 const OptionalNote = z.object({ note: z.string().max(2000).nullish() });
 

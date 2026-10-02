@@ -1,4 +1,4 @@
-import type { ShopCatalogueResponse, ShopListResponse, ShopSearchResponse, ShopService } from "@lynia/shared";
+import type { PopularVenuesResponse, ShopCatalogueResponse, ShopListResponse, ShopSearchResponse, ShopService } from "@lynia/shared";
 import { apiFetch } from "./client";
 
 /** Customer Shops / Pharmacy list (ledger D-58), `pilotEnabled` + SHOPS_ENABLED / PHARMACY_ENABLED
@@ -16,4 +16,9 @@ export function getShopCatalogue(id: string): Promise<ShopCatalogueResponse> {
 /** PLACES + ITEMS inside one section. A blank / too-short query returns empty arrays server-side. */
 export function searchShops(service: ShopService, q: string): Promise<ShopSearchResponse> {
   return apiFetch(`/shops/search?service=${service}&q=${encodeURIComponent(q)}`);
+}
+
+/** Ledger D-72: one section's live shops ranked by recent delivered orders (empty on a thin section). */
+export function getPopularShops(service: ShopService): Promise<PopularVenuesResponse> {
+  return apiFetch(`/shops/popular?service=${service}`);
 }

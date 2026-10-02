@@ -35,6 +35,18 @@ describe("OrderSettingsCard (auto-accept)", () => {
     );
   });
 
+  it("D-71: turns free delivery on for a shop — the only switch a shop gets", async () => {
+    vi.mocked(setMerchantOrderSettings).mockResolvedValue({ ok: true });
+    render(<OrderSettingsCard merchantId="m-1" name="Gava Grocers" autoAccept={false} showPhoneToCustomers={false} shop connected />);
+    expect(screen.getAllByRole("button", { name: "Turn on…" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Turn on…" }));
+    fireEvent.click(screen.getByRole("radio", { name: "The business asked to pay for delivery" }));
+    fireEvent.click(screen.getByRole("button", { name: "Turn on" }));
+    await vi.waitFor(() =>
+      expect(setMerchantOrderSettings).toHaveBeenCalledWith("m-1", { freeDelivery: true }, "The business asked to pay for delivery", ""),
+    );
+  });
+
   it("is inert while the console is offline", () => {
     render(<OrderSettingsCard merchantId="m-1" name="Mama's Kitchen" autoAccept={false} showPhoneToCustomers={false} connected={false} />);
     for (const b of screen.getAllByRole("button", { name: "Turn on…" })) expect(b).toHaveProperty("disabled", true);

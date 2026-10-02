@@ -103,6 +103,8 @@ const P320 = { width: 320, height: 640 };
 
 const wait = (ms) => async (p) => p.waitForTimeout(ms);
 
+// Not shot: 2.33 (Home live-order bar). It is superseded by Calm Mint v2's live-order bar on Home
+// (ledger D-67, owner 2026-10-02) and is not built, so there is no app frame to pair it with.
 const ROWS = [
   { id: "2.1", label: "2.1 · Opening an order", app: { fixture: "as2_1" } },
   { id: "2.2", label: "2.2 · Couldn't load", app: { fixture: "as2_2", before: wait(1500) } },

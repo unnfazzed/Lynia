@@ -2,6 +2,7 @@ import type { LatLng, MerchantShopKind, RestaurantListItem, ShopListItem } from 
 import { closingTimeToday, isMerchantOpenNow, minutesUntilClose, nextOpening } from "@lynia/shared";
 import { DEFAULT_PREP_MINUTES } from "./home-feed";
 import { ETA_BAND_MINUTES, restaurantMeta } from "./food-list";
+import { comparePopularity, NO_POPULARITY, type PopularityIndex } from "./popularity";
 
 /**
  * Browse v2 (`packages/design/handoff/browse-v2`, ledger D-57) — the venue list's view model, shared
@@ -15,7 +16,9 @@ export type BrowseService = "food" | "shops" | "pharmacy";
 /**
  * The Sort sheet's rows (README §4 "Sort sheet"). "Fastest" is drawn but needs a live prep/queue
  * signal the backend doesn't send yet, so the work order (CLAUDE-CODE-PROMPT §5) hides it until it
- * exists. "Recommended" has no ranking yet either; it falls back to nearest-open (README §7).
+ * exists. "Recommended" is the popularity ranking (ledger D-72: delivered orders over 30 days,
+ * time-decayed), nearest first among equals and for every venue the ranking doesn't cover — so with no
+ * ranking yet (cold start) it is nearest-open, as before.
  */
 export type BrowseSort = "recommended" | "nearest" | "top_rated" | "lowest_fee";
 export const BROWSE_SORTS: readonly BrowseSort[] = ["recommended", "nearest", "top_rated", "lowest_fee"];
@@ -79,7 +82,8 @@ export function restaurantVenue(r: RestaurantListItem, customer: LatLng | null, 
     feeUsd: meta.feeUsd,
     etaLow: meta.etaMinutes,
     etaHigh: meta.etaMinutes == null ? null : meta.etaMinutes + ETA_BAND_MINUTES,
-    freeDelivery: false,
+    // D-71: "Free delivery" only when the venue funds it (browse-v2 README §7).
+    freeDelivery: r.freeDelivery === true,
     open,
     closesInMin: open ? minutesUntilClose(r.hours, now) : null,
     closeTime: closingTimeToday(r.hours, now),
@@ -122,14 +126,16 @@ function byKnown(a: number | null, b: number | null, dir: 1 | -1): number {
   return (a - b) * dir;
 }
 
-function compare(sort: BrowseSort, a: VenueView, b: VenueView): number {
+function compare(sort: BrowseSort, a: VenueView, b: VenueView, popularity: PopularityIndex): number {
   switch (sort) {
     case "top_rated":
       return byKnown(a.rating, b.rating, -1) || b.ratingCount - a.ratingCount;
     case "lowest_fee":
       return byKnown(a.freeDelivery ? 0 : a.feeUsd, b.freeDelivery ? 0 : b.feeUsd, 1) || byKnown(a.km, b.km, 1);
-    // "Recommended" has no ranking yet (README §7): nearest-open is the documented fallback.
+    // D-72: popular first (the server ranks only live venues; `browseList` hands this open ones only),
+    // then nearest — which is the whole order while there's no ranking (cold start).
     case "recommended":
+      return comparePopularity(a.id, b.id, popularity) || byKnown(a.km, b.km, 1);
     case "nearest":
       return byKnown(a.km, b.km, 1);
   }
@@ -149,10 +155,10 @@ export interface BrowseList {
 }
 
 /** Filter, then order: open venues by the chosen sort, then the closed group by who opens first. */
-export function browseList(venues: readonly VenueView[], filters: BrowseFilters): BrowseList {
+export function browseList(venues: readonly VenueView[], filters: BrowseFilters, popularity: PopularityIndex = NO_POPULARITY): BrowseList {
   const kept = venues.filter((v) => (filters.category == null || v.categories.includes(filters.category)) && (!filters.free || v.freeDelivery));
   // Array.prototype.sort is stable, so equal keys keep the feed order between renders.
-  const open = kept.filter((v) => v.open).sort((a, b) => compare(filters.sort, a, b));
+  const open = kept.filter((v) => v.open).sort((a, b) => compare(filters.sort, a, b, popularity));
   const closed = kept.filter((v) => !v.open).sort((a, b) => openingKey(a) - openingKey(b));
   return { open, closed };
 }

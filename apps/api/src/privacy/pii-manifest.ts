@@ -88,6 +88,13 @@ export const PII_MANIFEST: Readonly<Record<string, PiiEntry>> = {
   // --- Rider ---
   bike_reg: { column: "bike_reg", where: "riders", tables: ["riders"], disposition: "null", note: "Emptied on erase (NOT NULL column)." },
   vehicle_info: { column: "vehicle_info", where: "riders", tables: ["riders"], disposition: "null", note: "Nulled on erase." },
+  verified_id_number: {
+    column: "verified_id_number",
+    where: "riders",
+    tables: ["riders"],
+    disposition: "null",
+    note: "D-70: encrypted vendor-verified national-ID ciphertext (the Didit ID prefill) nulled on erase; its hash verified_id_hash is retained.",
+  },
   kyc_ref: { column: "kyc_ref", where: "riders", tables: ["riders"], disposition: "null", note: "Nulled on erase." },
   kyc_decline_reason: { column: "kyc_decline_reason", where: "riders", tables: ["riders"], disposition: "null", note: "Nulled on erase." },
   suspend_reason: { column: "suspend_reason", where: "riders", tables: ["riders"], disposition: "null", note: "Nulled on erase." },

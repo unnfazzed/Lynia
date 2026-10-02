@@ -158,7 +158,36 @@ export const COMMISSION = {
    * penalized — tune before the flip.
    */
   basisFloorPct: 0.5,
+  /**
+   * Commission-free first jobs (Calm Mint v2 R1/R3, ledger D-55 → D-70; owner decision 2026-10-02).
+   * A rider's first `freeFirstJobs` COMPLETED jobs carry no commission debit, and while any remain the
+   * low-balance top-up gate does not apply — so a newly verified rider at a $0 balance can go online and
+   * work straight away ("No top-up to start. Your first jobs are commission-free." / "Commission-free
+   * jobs · 5 of 5 left"). The number is the handoff's drawn "5 of 5" (the README leaves N open).
+   * Derived from `Rider.tripsCount` (incremented once per completed job, never on a cancel/undelivered),
+   * so it needs no extra state — see {@link freeJobsLeft}.
+   */
+  freeFirstJobs: 5,
 } as const;
+
+/**
+ * Commission-free jobs the rider still has, from their completed-job count. Never negative; a
+ * non-finite/negative count (data anomaly) reads as 0 trips — i.e. the full allowance — only for the
+ * DISPLAY/gate; the debit path re-reads `tripsCount` under the rider row lock.
+ */
+export function freeJobsLeft(tripsCount: number | null | undefined): number {
+  const n = typeof tripsCount === "number" && Number.isFinite(tripsCount) && tripsCount > 0 ? Math.floor(tripsCount) : 0;
+  return Math.max(0, COMMISSION.freeFirstJobs - n);
+}
+
+/**
+ * Whether the job that just brought the rider's completed count to `tripsCountAfter` is one of their
+ * commission-free first jobs (the 1st…`freeFirstJobs`th completion). Called by the per-ride debit with
+ * the POST-increment count read inside the completion transaction.
+ */
+export function isFreeJob(tripsCountAfter: number): boolean {
+  return Number.isFinite(tripsCountAfter) && tripsCountAfter >= 1 && tripsCountAfter <= COMMISSION.freeFirstJobs;
+}
 
 /** Env var a deploy sets to override {@link COMMISSION.ratePct} at runtime — the "flip" operation. */
 export const COMMISSION_RATE_PCT_ENV = "COMMISSION_RATE_PCT";

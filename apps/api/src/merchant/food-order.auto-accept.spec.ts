@@ -388,6 +388,21 @@ describe("food-order-ops — shared by the restaurant and ops (safeguards 1 and 
     expect(pushes[0]).toMatchObject({ profileIds: ["c1"], title: "Mama's Kitchen updated your order", body: expect.stringContaining("$12.50") });
   });
 
+  it("D-71: a free-delivery order stays free after an edit — customer total is the goods, the share stays the fee", async () => {
+    pushes.length = 0;
+    const { prisma, orderData } = prismaFor(order({ merchantDeliveryShare: 2.5 }));
+    await editOrderItems(prisma, notifications, gateway, "o1", { lines: [{ itemId: "i2", quantity: 0 }] });
+    expect(orderData()).toMatchObject({ merchantGoodsTotal: 10, merchantDeliveryShare: 2.5, agreedFare: 10 });
+    expect(pushes[0]).toMatchObject({ body: expect.stringContaining("$10.00") });
+  });
+
+  it("D-71: an edit that drops the goods below the fee caps the venue's share (the rider is never short)", async () => {
+    // Keep 1 × $3 → $3 goods + $1 small-order fee = $4 goods; fee $5 → share capped at $4, customer pays $1 delivery.
+    const { prisma, orderData } = prismaFor(order({ deliveryFee: 5, merchantDeliveryShare: 5 }));
+    await editOrderItems(prisma, notifications, gateway, "o1", { lines: [{ itemId: "i1", quantity: 0 }] });
+    expect(orderData()).toMatchObject({ merchantGoodsTotal: 4, merchantDeliveryShare: 4, agreedFare: 5 });
+  });
+
   it("won't remove every line — that's a cancel", async () => {
     const { prisma } = prismaFor(order());
     await expect(

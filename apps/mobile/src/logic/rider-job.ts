@@ -32,7 +32,6 @@ export const UNDELIVERED_OPTIONS: { reason: UndeliveredReason; label: string; ic
   { reason: UndeliveredReason.WRONG_ADDRESS, label: "Wrong address", icon: "map-pin" },
   { reason: UndeliveredReason.BREAKDOWN, label: "Couldn't complete (breakdown)", icon: "bike" },
 ];
-export const UNDELIVERED_LABEL = Object.fromEntries(UNDELIVERED_OPTIONS.map((o) => [o.reason, o.label])) as Record<UndeliveredReason, string>;
 
 /**
  * KB-OTP-COUNT-SYNC: reconcile the locally-shown delivery-OTP attempt count against the server's

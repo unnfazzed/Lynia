@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaService } from "../prisma/prisma.service";
-import { FEED_STATUS_AUDIENCE, NotificationsFeedService } from "./notifications-feed.service";
+import { cancelledByOf, FEED_RETENTION_MS, FEED_STATUS_AUDIENCE, NotificationsFeedService, standingReasonOf } from "./notifications-feed.service";
 import { STATUS_NOTICES } from "./notifications.service";
 
 /** Decimal-like stub — Prisma returns Decimal objects the service reads via Number(). */
@@ -170,10 +170,15 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     expect(arg.take).toBeGreaterThan(0);
   });
 
-  // STREAMLINE-01: retention is ONE DAY of wall-clock, replacing the old count-based reach (30 most recent
+  // STREAMLINE-01: retention is a wall-clock window, replacing the old count-based reach (30 most recent
   // orders / 30 rows). The old model made a row's lifetime a function of the viewer's own order volume: a
-  // busy rider saw days, a once-a-year customer saw rows from last January, neither predictably.
-  it("STREAMLINE-01: bounds every row SOURCE to the one-day retention window", async () => {
+  // busy rider saw days, a once-a-year customer saw rows from last January, neither predictably. The window
+  // was one day (2026-08-17); since the Notifications v1 follow-up (owner 2026-10-02) it is seven.
+  it("retention is seven days (owner 2026-10-02)", () => {
+    expect(FEED_RETENTION_MS).toBe(7 * 24 * 60 * 60 * 1000);
+  });
+
+  it("STREAMLINE-01: bounds every row SOURCE to the seven-day retention window", async () => {
     const { prisma, service } = makeDeps();
     prisma.order.findMany.mockResolvedValue([
       {
@@ -188,7 +193,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       },
     ]);
     await service.feedForUser("me", NOW);
-    const cutoff = new Date(NOW.getTime() - 24 * 60 * 60 * 1000);
+    const cutoff = new Date(NOW.getTime() - 7 * 24 * 60 * 60 * 1000);
 
     // Orders are in view only if something HAPPENED on them inside the window (event time, not order age —
     // a week-old order delivered an hour ago is correctly still in view), and events are filtered to it.
@@ -291,7 +296,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     // Nothing in the feed outlives the window, so a dismissal older than it can never match again —
     // pruning on write is what keeps the table self-maintaining with no sweeper to own.
     expect(prisma.notificationDismissal.deleteMany).toHaveBeenCalledWith({
-      where: { profileId: "me", createdAt: { lt: new Date(NOW.getTime() - 24 * 60 * 60 * 1000) } },
+      where: { profileId: "me", createdAt: { lt: new Date(NOW.getTime() - 7 * 24 * 60 * 60 * 1000) } },
     });
   });
 
@@ -300,11 +305,11 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     await expect(service.feedForUser("me", NOW)).resolves.toEqual([]);
   });
 
-  it("caps the feed at 50 rows", async () => {
+  it("caps the feed at 100 rows", async () => {
     const { prisma, service } = makeDeps();
-    // 60 distinct orders, each with one customer-addressed event → 60 candidate rows, capped to 50.
+    // 120 distinct orders, each with one customer-addressed event → 120 candidate rows, capped to 100.
     prisma.order.findMany.mockResolvedValue(
-      Array.from({ length: 60 }, (_, i) => ({
+      Array.from({ length: 120 }, (_, i) => ({
         id: `o${i}`,
         orderType: "parcel",
         status: "delivered",
@@ -312,7 +317,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       })),
     );
     const feed = await service.feedForUser("me", NOW);
-    expect(feed).toHaveLength(50);
+    expect(feed).toHaveLength(100);
   });
 
   // STREAMLINE-01: the volume fix. One completed parcel order with three bids used to emit TEN rows (three
@@ -904,7 +909,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
   describe("Notifications v1 — structured row data", () => {
     const t = (hhmm: string) => new Date(`2026-07-06T${hhmm}:00.000Z`);
 
-    it("titles a parcel row with its places and names, and carries its addressed beats as steps (latest first)", async () => {
+    it("titles a parcel row with its places and names, and carries the order's stages as steps (latest first)", async () => {
       const { prisma, service } = makeDeps();
       prisma.order.findMany.mockResolvedValue([
         {
@@ -937,8 +942,9 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
         customerName: "Nyasha",
         amount: "3.20",
       });
-      // `assigned` is the rider's push, so it is not one of the customer's steps.
-      expect(row!.steps!.map((s) => s.beat)).toEqual(["delivered", "picked_up", "en_route_pickup"]);
+      // Every order step (owner 2026-10-02): `assigned` is the rider's push, so it is not the customer's
+      // ROW, but it is a stage of their order, so it is one of their steps.
+      expect(row!.steps!.map((s) => s.beat)).toEqual(["delivered", "picked_up", "en_route_pickup", "assigned"]);
       expect(row!.steps![0]!.at).toBe(row!.at);
     });
 
@@ -999,7 +1005,8 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       ]);
       const [row] = await service.feedForUser("rider", NOW);
       expect(row).toMatchObject({ title: "Delivery complete", to: "rider", service: "restaurants", venue: "Mama's Kitchen", dropoffArea: "Avondale" });
-      expect(row!.steps!.map((s) => s.beat)).toEqual(["completed", "assigned"]);
+      // The rider's headline is still the latest beat they were pushed; the timeline is every stage.
+      expect(row!.steps!.map((s) => s.beat)).toEqual(["completed", "picked_up", "assigned"]);
     });
 
     it("marks a status override's beat (rider bail → rebroadcast)", async () => {
@@ -1077,6 +1084,199 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
         title: "Healthwise Pharmacy needs your answer",
       });
       expect(prisma.merchantOrderSubstitution.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ orderId: { in: ["m1"] } }) }));
+    });
+
+    // ── Owner decisions 2026-10-02: every order step, and the detail fields ───────────────────────
+    it("every order step: a parcel's full stage history in the customer's voice, one step per stage", async () => {
+      const { prisma, service } = makeDeps();
+      prisma.order.findMany.mockResolvedValue([
+        {
+          id: "o1",
+          riderId: "rider",
+          orderType: "parcel",
+          status: "completed",
+          events: [
+            { status: "requested", createdAt: t("09:40") },
+            { status: "open_for_offers", createdAt: t("09:41") },
+            { status: "assigned", createdAt: t("09:52") },
+            { status: "confirmed", createdAt: t("09:53") },
+            { status: "en_route_pickup", createdAt: t("09:58") },
+            { status: "picked_up", createdAt: t("10:05") },
+            { status: "en_route_dropoff", createdAt: t("10:12") },
+            { status: "delivered", createdAt: t("10:31") },
+            { status: "completed", createdAt: t("10:40") },
+          ],
+        },
+      ]);
+      const [row] = await service.feedForUser("cust", NOW);
+      // The headline is still the latest beat pushed to the customer.
+      expect(row).toMatchObject({ beat: "delivered", at: t("10:31").toISOString() });
+      // Posted · Rider assigned (assigned + confirmed are one stage) · … · Delivered (delivered + completed).
+      expect(row!.steps!.map((s) => [s.beat, s.at])).toEqual([
+        ["delivered", t("10:31").toISOString()],
+        ["en_route_dropoff", t("10:12").toISOString()],
+        ["picked_up", t("10:05").toISOString()],
+        ["en_route_pickup", t("09:58").toISOString()],
+        ["assigned", t("09:52").toISOString()],
+        ["requested", t("09:40").toISOString()],
+      ]);
+      expect(row!.steps!.at(-1)!.title).toBe("Posted");
+
+      // The rider sees the stages the rider timeline draws: got the job · heading to pickup · collected · delivered.
+      const [job] = await service.feedForUser("rider", NOW);
+      expect(job).toMatchObject({ beat: "completed" });
+      expect(job!.steps!.map((s) => s.beat)).toEqual(["completed", "picked_up", "en_route_pickup", "assigned"]);
+      expect(job!.steps!.map((s) => s.title)).toEqual(["Delivery complete", "Parcel collected", "Heading to pickup", "You got the job"]);
+    });
+
+    it("every order step: a merchant order's step titles are the same named copy as its headline", async () => {
+      const { prisma, service } = makeDeps();
+      prisma.order.findMany.mockResolvedValue([
+        {
+          id: "m1",
+          riderId: "rider",
+          customerId: "cust",
+          orderType: "merchant",
+          status: "delivered",
+          agreedFare: dec("16.5"),
+          kitchenConfirmedAt: t("18:38"),
+          prepStartedAt: t("18:41"),
+          merchant: { name: "Mama's Kitchen", businessType: "restaurant", shopKind: null },
+          rider: { profile: { firstName: "Tendai" } },
+          events: [
+            { status: "requested", createdAt: t("18:30") },
+            { status: "assigned", createdAt: t("18:45") },
+            { status: "picked_up", createdAt: t("18:55") },
+            { status: "en_route_dropoff", createdAt: t("19:12") },
+            { status: "delivered", createdAt: t("19:14") },
+          ],
+        },
+      ]);
+      const [row] = await service.feedForUser("cust", NOW);
+      // Accepted · Being prepared · Rider collected · At your door · Delivered — no Posted, no assigned.
+      expect(row!.steps!.map((s) => s.beat)).toEqual(["delivered", "en_route_dropoff", "picked_up", "preparing", "accepted"]);
+      // The collected step reads like the headline would have ("Tendai has your order"), not the generic
+      // "Your rider has your order" fallback of the table.
+      expect(row!.steps!.find((s) => s.beat === "picked_up")!.title).toBe("Tendai has your order");
+      expect(row!.steps![0]!.title).toBe(row!.title);
+    });
+
+    it("every order step: an override beat keeps its override in the steps (rider bail → rebroadcast)", async () => {
+      const { prisma, service } = makeDeps();
+      prisma.order.findMany.mockResolvedValue([
+        {
+          id: "orig",
+          riderId: "r",
+          cancelledBy: "r",
+          orderType: "parcel",
+          status: "cancelled",
+          events: [
+            { status: "assigned", createdAt: t("09:00") },
+            { status: "cancelled", createdAt: t("10:00") },
+          ],
+        },
+        { id: "clone", rebroadcastOfId: "orig", riderId: null, orderType: "parcel", status: "open_for_offers", events: [{ status: "open_for_offers", createdAt: t("10:00") }] },
+      ]);
+      const row = (await service.feedForUser("cust", NOW)).find((r) => r.beat === "rebroadcast")!;
+      expect(row.steps!.map((s) => [s.beat, s.title])).toEqual([
+        ["rebroadcast", "Your rider had to cancel"],
+        ["assigned", "Rider assigned"],
+      ]);
+      expect(row.cancelledBy).toBe("rider");
+    });
+
+    it("who cancelled: customer, rider, merchant or LyniaGo", async () => {
+      expect(cancelledByOf({ cancelledBy: "c", customerId: "c", riderId: "r" })).toBe("customer");
+      expect(cancelledByOf({ cancelledBy: "r", customerId: "c", riderId: "r" })).toBe("rider");
+      expect(cancelledByOf({ cancelledBy: null, rejectionReason: "out_of_stock" })).toBe("merchant");
+      expect(cancelledByOf({ cancelledBy: null, rejectionReason: "rx_declined" })).toBe("merchant");
+      expect(cancelledByOf({ cancelledBy: null, rejectionReason: "kitchen_unconfirmed" })).toBe("lynia");
+      expect(cancelledByOf({ cancelledBy: null, rejectionReason: "no_rider" })).toBe("lynia");
+      expect(cancelledByOf({ cancelledBy: null, rejectionReason: "other" })).toBe("lynia");
+      expect(cancelledByOf({ cancelledBy: null })).toBe("lynia");
+
+      // On the row: the rider whose customer cancelled is told it was the customer.
+      const { prisma, service } = makeDeps();
+      prisma.order.findMany.mockResolvedValue([
+        {
+          id: "o1",
+          riderId: "rider",
+          customerId: "cust",
+          cancelledBy: "cust",
+          orderType: "parcel",
+          status: "cancelled",
+          customer: { firstName: "Nyasha" },
+          events: [
+            { status: "assigned", createdAt: t("18:01") },
+            { status: "en_route_pickup", createdAt: t("18:02") },
+            { status: "cancelled", createdAt: t("18:10") },
+          ],
+        },
+      ]);
+      const [row] = await service.feedForUser("rider", NOW);
+      expect(row).toMatchObject({ beat: "cancelled", cancelledBy: "customer", customerName: "Nyasha" });
+      expect(row!.steps!.map((s) => s.beat)).toEqual(["cancelled", "en_route_pickup", "assigned"]);
+    });
+
+    it("detail fields: a KYC decline carries its reason key, never a vendor's free text", async () => {
+      const { prisma, service } = makeDeps();
+      prisma.auditLog.findMany.mockImplementation(async ({ where }: { where: { action?: unknown } }) =>
+        typeof where.action === "object"
+          ? [
+              { id: "k2", action: "rider.kyc_decline", createdAt: t("11:00"), reasonCode: "id_unreadable" },
+              { id: "k1", action: "rider.kyc_decline", createdAt: t("10:00"), reasonCode: "Face score 0.41 below threshold" },
+            ]
+          : [],
+      );
+      const feed = await service.feedForUser("rider", NOW);
+      expect(feed.map((r) => r.reason)).toEqual(["id_unreadable", undefined]);
+    });
+
+    it("detail fields: a pause / block / hold carries its standing reason as a key; a restore the reason it lifted", async () => {
+      expect(standingReasonOf("Safety report from a customer")).toBe("customer_report");
+      expect(standingReasonOf("Confirmed fraud")).toBe("fraud");
+      expect(standingReasonOf("Payment dispute open")).toBe("payment_dispute");
+      expect(standingReasonOf("something ops typed")).toBe("other");
+      expect(standingReasonOf(null)).toBeUndefined();
+
+      const { prisma, service } = makeDeps();
+      prisma.auditLog.findMany.mockImplementation(async ({ where }: { where: { action?: unknown } }) => {
+        if (typeof where.action === "object") {
+          return [
+            { id: "l1", action: "rider.lift", createdAt: t("11:00"), reasonCode: "Report not substantiated" },
+            { id: "b1", action: "rider.ban", createdAt: t("08:00"), reasonCode: "Serious safety incident" },
+          ];
+        }
+        // The pause the restore lifted — from before the window.
+        if (where.action === "rider.suspend") return [{ createdAt: new Date("2026-06-20T09:00:00.000Z"), reasonCode: "Safety report from a customer" }];
+        return [];
+      });
+      const feed = await service.feedForUser("rider", NOW);
+      expect(feed.map((r) => [r.action, r.reason])).toEqual([
+        ["rider.lift", "customer_report"],
+        ["rider.ban", "safety_incident"],
+      ]);
+      // The lookup is bounded by the restore, not by the window, and targets this account's pauses.
+      const lookup = prisma.auditLog.findMany.mock.calls.map((c: unknown[]) => c[0] as { where: Record<string, unknown> }).find((a) => a.where.action === "rider.suspend");
+      expect(lookup!.where).toEqual({ target: "rider", action: "rider.suspend", createdAt: { lt: t("11:00") } });
+    });
+
+    it("detail fields: a wallet credit carries its amount and balance; an old row without them doesn't", async () => {
+      const { prisma, service } = makeDeps();
+      prisma.auditLog.findMany.mockImplementation(async ({ where }: { where: { action?: unknown } }) =>
+        typeof where.action === "object"
+          ? [
+              { id: "w2", action: "wallet.credit", createdAt: t("11:00"), reasonCode: "ecocash", amount: dec("5"), balanceAfter: dec("12.6") },
+              { id: "w1", action: "wallet.credit", createdAt: t("10:00"), reasonCode: "ecocash", amount: null, balanceAfter: null },
+            ]
+          : [],
+      );
+      const feed = await service.feedForUser("rider", NOW);
+      expect(feed[0]).toMatchObject({ action: "wallet.credit", amount: "5.00", balance: "12.60" });
+      expect(feed[1]!.amount).toBeUndefined();
+      expect(feed[1]!.balance).toBeUndefined();
+      // No restore in view → no lifted-pause lookup at all.
+      expect(prisma.auditLog.findMany.mock.calls.some((c: unknown[]) => (c[0] as { where: { action?: unknown } }).where.action === "rider.suspend")).toBe(false);
     });
   });
 });
