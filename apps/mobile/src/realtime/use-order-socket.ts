@@ -1,5 +1,6 @@
 import {
   OrderRebroadcastEvent,
+  OrderStatusEvent,
   PresenceRecoveredEvent,
   PresenceStaleEvent,
   WS_EVENTS,
@@ -31,6 +32,8 @@ export function useOrderSocket(
   orderId: string | null,
   onRebroadcast?: (newOrderId: string) => void,
   onRiderStale?: () => void,
+  /** Order flow v2: the parsed `order:status` payload (merchant orders carry `merchantPhase` + `track`). */
+  onStatus?: (e: OrderStatusEvent) => void,
 ): { connected: boolean } {
   const { session } = useAuth();
   const token = session?.accessToken;
@@ -41,6 +44,8 @@ export function useOrderSocket(
   rebroadcastRef.current = onRebroadcast;
   const riderStaleRef = useRef(onRiderStale);
   riderStaleRef.current = onRiderStale;
+  const statusRef = useRef(onStatus);
+  statusRef.current = onStatus;
   // The freshest live "position" push we've applied, so a REST refetch that resolves AFTER it (a
   // slow response racing a fast WS push — the exact profile of a flaky connection) can't clobber the
   // cache with an older fix. invalidateQueries replaces the cached rider position outright; nothing
@@ -98,7 +103,14 @@ export function useOrderSocket(
     };
     socket.on("connect_error", onConnectError);
 
-    socket.on(WS_EVENTS.orderStatus, refetchOrder); // invalidate is authoritative — no optimistic write needed
+    // invalidate is authoritative — no optimistic write needed; the parsed payload is handed on so a
+    // merchant order can move its track (and refetch its own read) on a phase-only change.
+    const onOrderStatus = (raw: unknown) => {
+      refetchOrder();
+      const parsed = OrderStatusEvent.safeParse(raw);
+      if (parsed.success && parsed.data.orderId === orderId) statusRef.current?.(parsed.data);
+    };
+    socket.on(WS_EVENTS.orderStatus, onOrderStatus);
 
     // F-01: the assigned rider bailed and the job was auto re-broadcast at the same price as a NEW
     // order. The server pushes this to THIS (now cancelled) order's room; move the customer to the
@@ -169,7 +181,7 @@ export function useOrderSocket(
       socket.off("connect", onConnect);
       socket.off("disconnect", onDisconnect);
       socket.off("connect_error", onConnectError);
-      socket.off(WS_EVENTS.orderStatus, refetchOrder);
+      socket.off(WS_EVENTS.orderStatus, onOrderStatus);
       socket.off(WS_EVENTS.orderRebroadcast, onOrderRebroadcast);
       socket.off(WS_EVENTS.presenceStale, onPresenceStale);
       socket.off(WS_EVENTS.presenceRecovered, onPresenceRecovered);

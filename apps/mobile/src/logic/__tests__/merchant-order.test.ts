@@ -1,4 +1,21 @@
-import { codeCopied, codeGroups, codeShown, merchantEta, prepProgress, readyAtMs, resolveMerchantStage, shortOrderId, type StageInput, trackStep } from "../merchant-order";
+import type { SubstitutionRoundView } from "@lynia/shared";
+import {
+  codeCopied,
+  codeGroups,
+  codeShown,
+  merchantEta,
+  prepProgress,
+  readyAtMs,
+  resolveMerchantStage,
+  roundClock,
+  roundTakenOff,
+  serverTrackStep,
+  shortOrderId,
+  type StageInput,
+  substitutionLines,
+  substitutionState,
+  trackStep,
+} from "../merchant-order";
 
 /** Order flow v2 (ledger D-59): the customer's merchant-order stage machine, track, ETA and codes. */
 
@@ -136,5 +153,85 @@ describe("codes — 6 digits shown 3+3, copied without the space (BRIEF §16)", 
   });
   it("the order number", () => {
     expect(shortOrderId("a1b2c3d4-0000-4000-8000-000000000001")).toBe("A1B2");
+  });
+});
+
+// ── round 2: server track, substitution ─────────────────────────────────────────────────────────────
+
+const line = (over: Partial<SubstitutionRoundView["lines"][number]>): SubstitutionRoundView["lines"][number] => ({
+  id: "l1",
+  itemId: "i1",
+  action: "remove",
+  name: "x",
+  priceUsd: 1,
+  quantity: 1,
+  newQuantity: null,
+  swapDishId: null,
+  swapName: null,
+  swapPriceUsd: null,
+  swapQuantity: null,
+  swapPhotoUrl: null,
+  answer: null,
+  ...over,
+});
+/** The handoff's Avondale Fresh sample: $14.60 + $1.50 = $16.10; bread / Mazoe / oil. */
+const U2B: SubstitutionRoundView = {
+  id: "r1",
+  kind: "at_accept",
+  status: "open",
+  createdAt: new Date(NOW - 19_000).toISOString(),
+  deadlineAt: new Date(NOW + 161_000).toISOString(),
+  resolvedAt: null,
+  wasTotal: 16.1,
+  keptSubtotal: 5.5,
+  lines: [
+    line({ id: "bread", name: "Bread (Lobels 700g)", action: "swap", priceUsd: 1.1, swapName: "Bakers Inn 700g", swapPriceUsd: 1.2, swapQuantity: 1 }),
+    line({ id: "mazoe", name: "Mazoe orange 2L", action: "remove", priceUsd: 3.2 }),
+    line({ id: "oil", name: "Cooking oil 2L", action: "swap", priceUsd: 4.8, swapName: "Olivine cooking oil 2L", swapPriceUsd: 5, swapQuantity: 1 }),
+  ],
+};
+
+describe("server track (Backend A)", () => {
+  it("prefers the server's track; delivered is every step done; falls back to the phone", () => {
+    expect(serverTrackStep({ status: "requested", merchantPhase: "awaiting_accept" }, { step: "making", index: 1, rxChecked: false })).toBe(1);
+    expect(serverTrackStep({ status: "delivered", merchantPhase: null }, { step: "delivered", index: 3, rxChecked: false })).toBe(4);
+    expect(serverTrackStep({ status: "picked_up", merchantPhase: null }, null)).toBe(2);
+    expect(serverTrackStep({ status: "requested", merchantPhase: "awaiting_accept" }, undefined)).toBe(0);
+  });
+});
+
+describe("substitution (BRIEF §8)", () => {
+  it("U2b: bread swap accepted, Mazoe removed, oil declined → $16.10 → $8.20", () => {
+    expect(substitutionState(U2B, 1.5, { bread: "accept", oil: "remove" })).toEqual({ was: 16.1, newTotal: 8.2, unanswered: 0 });
+  });
+  it("U2a: an unanswered swap blocks Confirm; the total is the no-answer default until answered", () => {
+    const s = substitutionState(U2B, 1.5, {});
+    expect(s.unanswered).toBe(2);
+    expect(s.newTotal).toBe(7);
+  });
+  it("the small-order fee comes back when the kept items fall under the minimum", () => {
+    expect(substitutionState({ ...U2B, keptSubtotal: 2 }, 1.5, { bread: "remove", oil: "remove" }).newTotal).toBe(4.5);
+  });
+  it("lines: the struck price, the swap price and the ± pill", () => {
+    const [bread, mazoe, oil] = substitutionLines(U2B);
+    expect(bread).toMatchObject({ was: 1.1, now: 1.2, diff: 0.1, swapName: "Bakers Inn 700g" });
+    expect(mazoe).toMatchObject({ was: 3.2, now: null, diff: -3.2, swapName: null });
+    expect(oil!.diff).toBeCloseTo(0.2);
+    const [reduce] = substitutionLines({ lines: [line({ action: "reduce", priceUsd: 2.5, quantity: 3, newQuantity: 1 })] });
+    expect(reduce).toMatchObject({ was: 7.5, diff: -5 });
+  });
+  it("the 3-minute clock", () => {
+    expect(roundClock(U2B, NOW)).toEqual({ leftMs: 161_000, pct: (161_000 / 180_000) * 100 });
+    expect(roundClock(U2B, NOW + 999_999).leftMs).toBe(0);
+  });
+  it("U3 / U4b: what a resolved round took off", () => {
+    const timedOut = { lines: U2B.lines.map((l) => (l.action === "swap" ? { ...l, answer: "remove" as const } : l)) };
+    expect(roundTakenOff(timedOut)).toEqual({
+      removed: ["Bread (Lobels 700g)", "Mazoe orange 2L", "Cooking oil 2L"],
+      declinedSwaps: ["Bread (Lobels 700g)", "Cooking oil 2L"],
+      reduced: [],
+      saved: 9.1,
+    });
+    expect(roundTakenOff({ lines: [line({ action: "reduce", name: "Eggs", priceUsd: 0.5, quantity: 6, newQuantity: 2 })] })).toEqual({ removed: [], declinedSwaps: [], reduced: ["Eggs"], saved: 2 });
   });
 });
