@@ -70,11 +70,10 @@ export default function BecomeRiderScreen(): React.ReactElement {
     };
   }, []);
 
-  // Persist the draft (encrypted, on-device only) as fields change, after initial hydration. The photo
-  // fields stay in the draft shape for older drafts but are never written now.
+  // Persist the draft (encrypted, on-device only) as fields change, after initial hydration.
   useEffect(() => {
     if (!hydrated.current) return;
-    void saveKycDraft({ firstName, lastName, idNumber, bikeReg, photoKey: null, photoUri: null, pendingPhoto: null });
+    void saveKycDraft({ firstName, lastName, idNumber, bikeReg });
   }, [firstName, lastName, idNumber, bikeReg]);
 
   // The bike plate and the photo are optional (added later in Account → Bike & documents); only a missing
