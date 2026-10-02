@@ -69,14 +69,14 @@ describe("liveOrderCardModel (RC.home per-service card copy)", () => {
     expect(m.step).toBe(-1);
   });
 
-  it("food card: '{Restaurant} · N min away', payment + total meta, utensils icon, food tracker route", () => {
+  it("food card: '{Restaurant} · N min away', payment + total meta, utensils icon, order screen route", () => {
     const m = liveOrderCardModel(food({ status: "picked_up", rider: riderAtDropoff }), "Parcel collected", null);
     expect(m.title).toBe("Sadza Republic · 1 min away");
     expect(m.meta).toBe("Cash at the door · $15.50");
     expect(m.icon).toBe("utensils");
     expect(m.step).toBe(4);
     expect(m.steps).toBe(7);
-    expect(m.route).toBe("/food/order/o-food");
+    expect(m.route).toBe("/order/o-food");
   });
 
   it("food card never shows kitchen-leg minutes as a doorstep promise — pre-pickup it reads the step label", () => {

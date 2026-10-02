@@ -4,9 +4,10 @@
 // renders its "Payment sent — waiting for the restaurant" sub-state (the clock hero + amount/reference
 // rows). Driven by GET /restaurants/orders/:id alone (riderId null → no live tracker read).
 import { installRouter, setParams } from "./_harness.mjs";
-import { MENU, OID, foodOrder, withOrder } from "./_food.mjs";
+import { MENU, OID, foodOrder, withOrder, orderSnapshot } from "./_food.mjs";
 
-setParams({ orderId: OID });
+// D-59: the restaurant order renders on the one order screen, app/order/[id].tsx.
+setParams({ id: OID });
 
 installRouter([
   {
@@ -24,6 +25,7 @@ installRouter([
     }),
   },
   { match: /^\/restaurants\/[^/]+\/menu$/, json: MENU },
+  { match: /^\/orders\/[^/]+$/, json: orderSnapshot({ status: "requested", rider: null, events: [], counterpartyPhone: null }) },
 ]);
 
 export default { wrap: withOrder() };

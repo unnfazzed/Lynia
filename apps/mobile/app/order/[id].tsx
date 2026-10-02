@@ -1,4 +1,4 @@
-import { OFFER_WINDOW_MS, type RatingTag, SOS_POLICY } from "@lynia/shared";
+import { type MerchantOrderResponse, OFFER_WINDOW_MS, type RatingTag, SOS_POLICY } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -59,6 +59,7 @@ import {
   type TrackVM,
   TwoButtonBar,
 } from "../../src/ui/order/stages";
+import { isCachedMerchantOrder, MerchantOrderScreen } from "../../src/orderflow/MerchantOrderScreen";
 import { useReduceMotion } from "../../src/ui/useReduceMotion";
 import { uuidV4FromSeed } from "../../src/util";
 
@@ -98,7 +99,29 @@ const REPORT_TYPES = ["wrong_item", "damaged", "rider_conduct", "payment_dispute
 type Panel = null | "cancelRequest" | "cancel" | "help" | "photo" | "report";
 type Toast = { text: string; icon?: "circle-alert" | "circle-check"; action?: string; actionIcon?: "refresh-cw" | "undo-2"; onAction?: () => void; ttl?: number };
 
-export default function OrderScreen(): React.ReactElement {
+/**
+ * One order screen for every service (Order flow v2, BRIEF §1, ledger D-59): a merchant (restaurant)
+ * order renders the Order flow v2.1 stages (`src/orderflow/MerchantOrderScreen.tsx`) on the same
+ * shell; a parcel renders After Send v2 below. The type comes from the cached food order (seeded at
+ * checkout) or the snapshot's `orderType`; until it is known the parcel screen's opening state shows.
+ */
+export default function OrderRoute(): React.ReactElement {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const orderId = typeof id === "string" ? id : "";
+  const qc = useQueryClient();
+  const cachedFood = isCachedMerchantOrder((k) => qc.getQueryData<MerchantOrderResponse>(k), orderId);
+  const typeQ = useQuery({
+    queryKey: orderKey(orderId),
+    queryFn: () => getOrder(orderId),
+    enabled: orderId !== "" && !cachedFood,
+    // A rider viewing a food job they carried keeps the After Send rider view.
+    select: (s: OrderSnapshot) => (s.orderType === "merchant" && s.viewerRole !== "rider" ? "merchant" : "parcel"),
+  });
+  if (cachedFood || typeQ.data === "merchant") return <MerchantOrderScreen key={orderId} orderId={orderId} />;
+  return <ParcelOrderScreen />;
+}
+
+function ParcelOrderScreen(): React.ReactElement {
   const { id, riderCx } = useLocalSearchParams<{ id: string; riderCx?: string }>();
   const orderId = typeof id === "string" ? id : "";
   // Set when this auction is the re-broadcast opened because the customer's rider cancelled before
@@ -573,10 +596,12 @@ export default function OrderScreen(): React.ReactElement {
   const rotatedOnce = useRef(false);
   const rotate = rotateM.mutate;
   useEffect(() => {
-    if (!live || isRiderViewer || saved || !codeRestored || deliveryCode || rotatedOnce.current || !online) return;
+    // A restaurant order (the route hands it to MerchantOrderScreen as soon as its type is known) never
+    // gets a code from here: its code waits for both cash confirms (R-09).
+    if (!live || isRiderViewer || saved || !codeRestored || deliveryCode || rotatedOnce.current || !online || order?.orderType === "merchant") return;
     rotatedOnce.current = true;
     rotate();
-  }, [live, isRiderViewer, saved, codeRestored, deliveryCode, online, rotate]);
+  }, [live, isRiderViewer, saved, codeRestored, deliveryCode, online, rotate, order?.orderType]);
 
   // ── Back: close a panel → collapse a full sheet → leave ──
   const leave = useCallback(() => (router.canGoBack() ? router.back() : goHomeClearingStack(router)), [router]);

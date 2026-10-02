@@ -5,9 +5,10 @@
 // (paidOut = wallet && reference set), refundedAt still null so the pending — not the refunded —
 // branch wins. rejectionReason "out_of_ingredient" states why (the mock: "ran out of beef stew").
 import { installRouter, setParams } from "./_harness.mjs";
-import { MENU, OID, foodOrder, withOrder } from "./_food.mjs";
+import { MENU, OID, foodOrder, withOrder, orderSnapshot } from "./_food.mjs";
 
-setParams({ orderId: OID });
+// D-59: the restaurant order renders on the one order screen, app/order/[id].tsx.
+setParams({ id: OID });
 
 installRouter([
   {
@@ -26,6 +27,7 @@ installRouter([
     }),
   },
   { match: /^\/restaurants\/[^/]+\/menu$/, json: MENU },
+  { match: /^\/orders\/[^/]+$/, json: orderSnapshot({ status: "cancelled", rider: null, events: [], counterpartyPhone: null, cancelledBy: null }) },
 ]);
 
 export default { wrap: withOrder() };
