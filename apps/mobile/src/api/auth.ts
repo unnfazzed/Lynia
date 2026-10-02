@@ -50,7 +50,8 @@ export interface Me {
    * The account record's national ID, in FULL — this is the caller's own record (owner instruction
    * 2026-08-16). `null` for an account that never supplied one; a customer can register name-only.
    *
-   * Rendered ONLY on `/profile`, and deliberately excluded from the persisted query cache — see
+   * Never rendered (its display screen, `/profile`, went with D-60); become-a-rider reads it only to
+   * decide whether to ask for it. Deliberately excluded from the persisted query cache — see
    * `redactBeforePersist` in `src/query/persist.ts`. Anything new that reads this field should
    * assume it is absent after a cold start until `/auth/me` revalidates.
    */
