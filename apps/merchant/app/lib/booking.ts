@@ -38,8 +38,9 @@ export function bookingsAvailable(profile: Pick<MerchantProfileResponse, "locati
 /** Where a signed-in business lands: its Orders home — the board for a restaurant, Deliveries for a shop
  *  until shops take customer orders. The setup checklist is gone (merchant mobile redesign, D-48).
  *  Shared by sign-in, sign-up and Orders. */
-export function homePath(merchant: Pick<MerchantProfileResponse, "businessType">): string {
-  return merchant.businessType === "shop" ? "/deliveries" : "/queue";
+export function homePath(merchant: Pick<MerchantProfileResponse, "businessType"> & { pilotEnabled?: boolean }): string {
+  // Order flow v2 (ledger D-59): a shop live to customers takes orders like a restaurant.
+  return merchant.businessType === "shop" && !merchant.pilotEnabled ? "/deliveries" : "/queue";
 }
 
 export const STATE_LABEL: Record<MerchantBookingState, string> = {

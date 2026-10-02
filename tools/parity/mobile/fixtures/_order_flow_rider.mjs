@@ -9,7 +9,7 @@ const ORDER_ID = "0a1b2c3d-0000-4000-8000-00000000a1b2";
 const RIDER_ID = "0a1b2c3d-0000-4000-8000-00000000me01";
 const now = () => new Date().toISOString();
 
-export function stageFoodJob({ status, at, cash = {} }) {
+export function stageFoodJob({ status, at, cash = {}, snap = {} }) {
   if (typeof window !== "undefined") window.__PARITY_SETTLE_MS = 1600;
   void SecureStore.setItemAsync("lynia.riderJobArrival", JSON.stringify({ orderId: ORDER_ID, at }));
   const order = {
@@ -29,6 +29,7 @@ export function stageFoodJob({ status, at, cash = {} }) {
     counterpartyPhone: "+263771234567",
     expiresAt: null,
     deliveryOtpAttempts: 0,
+    ...snap,
   };
   const foodOrder = {
     id: ORDER_ID,
@@ -75,6 +76,7 @@ export function stageFoodJob({ status, at, cash = {} }) {
   installRouter([
     { match: "/orders/mine/active", json: order },
     { match: /\/merchant\/orders\/[^/]+\/mine$/, json: foodOrder },
+    { match: /\/(pickup-proof|saw-original)$/, json: {} },
   ]);
 }
 

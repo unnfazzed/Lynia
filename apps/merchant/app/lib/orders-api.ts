@@ -1,4 +1,8 @@
 import type {
+  DeclinePrescriptionRequest,
+  OrderFlagsResponse,
+  PrescriptionPhotosResponse,
+  ProposeSubstitutionRequest,
   EditMerchantOrderItemsRequest,
   MerchantAcceptOrderRequest,
   MerchantConfirmPaymentRequest,
@@ -126,4 +130,38 @@ export function confirmKitchen(orderId: string): Promise<MerchantOrderResponse> 
  *  removes it. A 409 (`not_editable` / `no_items_left`) carries a message to show as-is. */
 export function editOrderItems(orderId: string, body: EditMerchantOrderItemsRequest): Promise<MerchantOrderResponse> {
   return authedFetch<MerchantOrderResponse>(`/merchant/orders/${orderId}/edit-items`, { method: "POST", body });
+}
+
+// ── Order flow v2 (ledger D-59): substitution, scheduled orders, prescription check ─────────────────
+
+/** U1a / U4a: per-line Remove it / Swap for… At `awaiting_accept` this IS the accept (`prepMinutes`
+ *  required); mid-prep it opens a 3-minute round. 409s (`not_changeable`, `substitution_open`,
+ *  `swaps_off`) carry a message to show as-is. */
+export function proposeSubstitution(orderId: string, body: ProposeSubstitutionRequest): Promise<MerchantOrderResponse> {
+  return authedFetch<MerchantOrderResponse>(`/merchant/orders/${orderId}/substitution`, { method: "POST", body });
+}
+
+/** M7a: scheduled orders that haven't rung yet ("Rings at 12:05 like a new order"). */
+export function listScheduledOrders(): Promise<MerchantOrderResponse[]> {
+  return authedFetch<MerchantOrderResponse[]>("/merchant/scheduled-orders");
+}
+
+/** M8a: the prescription's pages as short-lived signed URLs (pharmacists only). */
+export function getPrescriptionPhotos(orderId: string): Promise<PrescriptionPhotosResponse> {
+  return authedFetch<PrescriptionPhotosResponse>(`/merchant/orders/${orderId}/prescription`);
+}
+
+/** M8a "Approve prescription". */
+export function approvePrescription(orderId: string): Promise<MerchantOrderResponse> {
+  return authedFetch<MerchantOrderResponse>(`/merchant/orders/${orderId}/prescription/approve`, { method: "POST" });
+}
+
+/** M8b "Decline and tell the customer": the reason chip and an optional note. */
+export function declinePrescription(orderId: string, body: DeclinePrescriptionRequest): Promise<MerchantOrderResponse> {
+  return authedFetch<MerchantOrderResponse>(`/merchant/orders/${orderId}/prescription/decline`, { method: "POST", body });
+}
+
+/** Order flow v2's switches: `rxEnabled` (prescriptions, BRIEF §13), off by default. Public. */
+export function getOrderFlags(): Promise<OrderFlagsResponse> {
+  return authedFetch<OrderFlagsResponse>("/app/order-flags");
 }

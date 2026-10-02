@@ -22,7 +22,9 @@ import {
   teamInviteMessage,
   validateInvite,
 } from "../../lib/team";
-import { cancelInvite, getTeam, invitePerson, removeMember } from "../../lib/team-api";
+import { cancelInvite, getTeam, invitePerson, removeMember, setPharmacist } from "../../lib/team-api";
+import { useRxEnabled } from "../../lib/order-flags";
+import { Switch } from "../../components/m/Switch";
 
 type LoadState =
   | { status: "loading" }
@@ -53,6 +55,7 @@ export default function TeamPage() {
   const [made, setMade] = useState<MerchantTeamInviteResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const actingRef = useRef(false);
+  const rxOn = useRxEnabled(state.status === "ready" && state.business?.shopKind === "pharmacy");
 
   const load = useCallback(async () => {
     setState({ status: "loading" });
@@ -166,6 +169,19 @@ export default function TeamPage() {
                   </div>
                 );
               })}
+              {state.business?.businessType === "shop" && state.business.shopKind === "pharmacy" && rxOn && (
+                <PharmacistRows
+                  members={state.members}
+                  disabled={disabled}
+                  onToggle={(member, next) =>
+                    void act(async () => {
+                      await setPharmacist(member.profileId, next);
+                      setState((s) => (s.status === "ready" ? { ...s, members: s.members.map((x) => (x.profileId === member.profileId ? { ...x, isPharmacist: next } : x)) } : s));
+                      toast(next ? `${member.name} can check prescriptions` : `${member.name} can't check prescriptions`);
+                    }, "Couldn't change that. Try again.").then(() => undefined)
+                  }
+                />
+              )}
               {state.invites.map((i) => (
                 <div key={i.id} className="m-li">
                   <span className="m-av m-av-gold">{i.name.charAt(0).toUpperCase()}</span>
@@ -338,5 +354,36 @@ export default function TeamPage() {
         </div>
       )}
     </Kitchen>
+  );
+}
+
+/** Order flow v2 (BRIEF §13, ledger D-59): the owner marks who on a pharmacy's team may approve or decline
+ *  prescriptions (M8a is theirs only). Shown only while Rx is switched on, and only to a pharmacy. */
+function PharmacistRows({
+  members,
+  disabled,
+  onToggle,
+}: {
+  members: MerchantTeamMemberResponse[];
+  disabled: boolean;
+  onToggle: (member: MerchantTeamMemberResponse, next: boolean) => void;
+}) {
+  return (
+    <>
+      <div className="m-sec" style={{ justifyContent: "flex-start", background: "none", padding: "12px 0 0", minHeight: 0, color: "var(--ink)" }}>
+        Pharmacists
+      </div>
+      <p className="m-sub" style={{ fontSize: 13 }}>
+        Only a pharmacist can approve or decline a prescription.
+      </p>
+      {members.map((m) => (
+        <div key={m.profileId} className="m-li">
+          <div className="m-t">
+            <b>{m.you ? `${m.name} (you)` : m.name}</b>
+          </div>
+          <Switch checked={m.isPharmacist === true} label={`${m.name} is a pharmacist`} disabled={disabled} onChange={(next) => onToggle(m, next)} />
+        </div>
+      ))}
+    </>
   );
 }

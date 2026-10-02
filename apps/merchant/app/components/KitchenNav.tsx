@@ -23,11 +23,12 @@ interface TabItem {
  *
  * Restaurants are the default until the business is known, so a kitchen never sees its tabs flicker.
  */
-export function tabItems(business: Pick<MerchantProfileResponse, "businessType" | "myRole"> | null): TabItem[] {
+export function tabItems(business: (Pick<MerchantProfileResponse, "businessType" | "myRole"> & { pilotEnabled?: boolean }) | null): TabItem[] {
   const shop = business?.businessType === "shop";
   const staff = business?.myRole === "staff";
   const items: TabItem[] = [
-    { id: "orders", label: "Orders", href: shop ? "/deliveries" : "/queue", icon: "inbox" },
+    // Order flow v2 (ledger D-59): a shop live to customers takes its orders on /queue.
+    { id: "orders", label: "Orders", href: shop && !business?.pilotEnabled ? "/deliveries" : "/queue", icon: "inbox" },
     shop
       ? { id: "catalog", label: "Items", href: "/menu", icon: "package" }
       : { id: "catalog", label: "Menu", href: "/menu", icon: "utensils" },

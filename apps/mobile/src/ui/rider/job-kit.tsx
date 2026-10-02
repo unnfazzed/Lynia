@@ -176,6 +176,7 @@ export function RSteps({ cur, labels = [R.stPickup, R.stCollected, R.stDrop, R.s
 export function StopCard({
   drop,
   food,
+  tag,
   name,
   line,
   here,
@@ -186,6 +187,8 @@ export function StopCard({
 }: {
   drop?: boolean;
   food?: boolean;
+  /** Order flow v2 (D-59): the stop's service word when it isn't food — "SHOP", "PHARMACY". */
+  tag?: string;
   name: string;
   line?: string | null;
   here?: boolean;
@@ -194,7 +197,7 @@ export function StopCard({
   onWhatsApp?: (() => void) | null;
   onNavigate?: (() => void) | null;
 }): React.ReactElement {
-  const label = `${drop ? R.dropL : R.pickupL}${food ? ` · ${R.food}` : ""}`;
+  const label = `${drop ? R.dropL : R.pickupL}${tag ? ` · ${tag}` : food ? ` · ${R.food}` : ""}`;
   return (
     <View style={{ gap: 6 }}>
       <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>

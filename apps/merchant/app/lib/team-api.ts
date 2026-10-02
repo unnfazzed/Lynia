@@ -29,6 +29,11 @@ export function removeMember(profileId: string): Promise<{ ok: true }> {
   return authedFetch<{ ok: true }>(`/merchant/team/members/${profileId}`, { method: "DELETE" });
 }
 
+/** Order flow v2 (BRIEF §13, ledger D-59): the owner marks who may approve or decline prescriptions. */
+export function setPharmacist(profileId: string, isPharmacist: boolean): Promise<{ ok: true }> {
+  return authedFetch<{ ok: true }>(`/merchant/team/members/${profileId}/pharmacist`, { method: "POST", body: { isPharmacist } });
+}
+
 /** "Leave this business" (Staff). */
 export function leaveBusiness(): Promise<{ ok: true }> {
   return authedFetch<{ ok: true }>("/merchant/team/leave", { method: "POST" });

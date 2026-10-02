@@ -1,4 +1,11 @@
-import type { ConfirmCollectedRequest, FoodOfferEvent, MerchantOrderResponse } from "@lynia/shared";
+import type {
+  AttachMerchantDoorProofRequest,
+  AttachMerchantPickupProofRequest,
+  ConfirmCollectedRequest,
+  FoodOfferEvent,
+  FoodOfferResponse,
+  MerchantOrderResponse,
+} from "@lynia/shared";
 import { apiFetch } from "./client";
 
 /**
@@ -14,6 +21,14 @@ import { apiFetch } from "./client";
 
 export function getFoodDispatchOffer(): Promise<FoodOfferEvent | null> {
   return apiFetch<{ offer: FoodOfferEvent | null }>("/merchant/orders/dispatch/offer").then((r) => r.offer);
+}
+
+/** Order flow v2 RD1a–d (ledger D-59): the same read with the offer card's tags — the venue kind (SHOP /
+ *  PHARMACY), a scheduled slot, a prescription order. `job` is a sibling of `offer`, absent on an older
+ *  API, and never on the `food:offer` socket payload. */
+export type FoodOfferJob = NonNullable<FoodOfferResponse["job"]>;
+export function getFoodDispatchOfferWithJob(): Promise<{ offer: FoodOfferEvent | null; job: FoodOfferJob | null }> {
+  return apiFetch<FoodOfferResponse>("/merchant/orders/dispatch/offer").then((r) => ({ offer: r.offer, job: r.job ?? null }));
 }
 
 export function acceptFoodDispatch(orderId: string): Promise<{ orderId: string; status: "assigned" }> {
@@ -77,4 +92,23 @@ export function reportFoodNoShow(orderId: string): Promise<{ orderId: string; st
  *  (cash-banned from here on). Blocked once the customer has already confirmed cash. */
 export function reportFoodCustomerRefused(orderId: string): Promise<{ orderId: string; status: "undelivered" }> {
   return apiFetch(`/merchant/orders/${orderId}/doorstep/refused`, { method: "POST" });
+}
+
+// ── Order flow v2 (ledger D-59): proof at hand-over, the prescription tick ─────────────────────────
+
+/** RD2b: the sealed-bag photo (key from `POST /uploads/pickup-photo`) and/or the "Bag is sealed" tick.
+ *  Shops and pharmacies need the photo before the pickup completes (409 `pickup_photo_required`). */
+export function attachFoodPickupProof(orderId: string, body: AttachMerchantPickupProofRequest): Promise<{ orderId: string; photoAttached: boolean; bagSealed: boolean }> {
+  return apiFetch(`/merchant/orders/${orderId}/pickup-proof`, { method: "POST", body });
+}
+
+/** RD4c/RD4d: why the delivery code couldn't be used, who took it, and the photo of where it was left
+ *  (key from `POST /uploads/delivery-proof`). Evidence only — it never finishes the delivery. */
+export function attachFoodDoorProof(orderId: string, body: AttachMerchantDoorProofRequest): Promise<{ orderId: string; reason: string; handedTo: string | null }> {
+  return apiFetch(`/merchant/orders/${orderId}/door-proof`, { method: "POST", body });
+}
+
+/** RD3: "I saw the original prescription" — required before an approved prescription order is delivered. */
+export function confirmRxSawOriginal(orderId: string): Promise<unknown> {
+  return apiFetch(`/merchant/orders/${orderId}/prescription/saw-original`, { method: "POST" });
 }
