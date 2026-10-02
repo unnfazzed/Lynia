@@ -7,7 +7,7 @@
  *
  * TWO SHAPES of entry — a screen is either a single view, or a MULTI-STATE container:
  *
- * ── single-view screen ── (LJ.help, RC.cart_empty): one mock, one `.view.tsx`.
+ * ── single-view screen ── (formerly LJ.help, RC.cart_empty): one mock, one `.view.tsx`.
  *   key            parity key (matches screens.generated.json)
  *   mockFile       path (from repo root) of the mock bundle
  *   component      the mock component name to extract
@@ -75,75 +75,22 @@ export const ADOPTED = [
     ],
   },
   {
+    // LJ.help — until 2026-10-02 a whole-screen view generated from screens.jsx `Help` (help.view.tsx); D-60
+    // made Help & support a straight WhatsApp link, so the screen and its view were deleted and the key is a
+    // SUPERSEDED deferral. Its container is now the Account tab whose row opens the chat.
     key: "LJ.help",
+    container: "apps/mobile/app/(tabs)/account.tsx",
     mockFile: "packages/design/explorations/journey/screens.jsx",
-    component: "Help",
-    componentName: "HelpView",
-    viewFile: "apps/mobile/app/help/help.view.tsx",
-    container: "apps/mobile/app/help/index.tsx",
     uiImport: "../../src/ui",
-    propsParam: "{ topics, query, onChangeQuery, onBack, onTopicPress, onWhatsApp }: HelpViewProps",
-    propsType: [
-      "/** A help topic, tuple-shaped to mirror the mock's `[icon, title, sub]` rows verbatim. */",
-      "export type HelpTopicRow = [IconName, string, string];",
-      "export type HelpViewProps = {",
-      "  topics: HelpTopicRow[];",
-      "  query: string;",
-      "  onChangeQuery: (v: string) => void;",
-      "  onBack: () => void;",
-      "  onTopicPress: (index: number) => void;",
-      "  onWhatsApp: () => void;",
-      "};",
-    ].join("\n"),
-    bind: ({ t, expr, wrap }) => ({
-      JSXOpeningElement(path) {
-        const name = path.node.name.name;
-        if (name === "Field") {
-          const keep = path.node.attributes.filter(
-            (a) => !(a.type === "JSXAttribute" && ["value", "onChange"].includes(a.name.name)),
-          );
-          keep.push(t.jsxAttribute(t.jsxIdentifier("value"), t.jsxExpressionContainer(expr("query"))));
-          keep.push(t.jsxAttribute(t.jsxIdentifier("onChangeText"), t.jsxExpressionContainer(expr("onChangeQuery"))));
-          path.node.attributes = keep;
-        }
-        if (name === "AppBar") {
-          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onBack"), t.jsxExpressionContainer(expr("onBack"))));
-        }
+    states: [],
+    deferred: [
+      {
+        state: "help",
+        key: "LJ.help",
+        reason:
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-60, owner instruction 2026-10-02): 'When i click help and support on new UI it shows old UI. Replace that with a link to whatsapp number 0778831938 .. no thing else.' The Help & support row on both Account tabs opens wa.me/263778831938 directly; there is no help screen. The gallery `Help` draws an AppBar, a search Field, three topic cards and a WhatsApp card; a structural snapshot against it would assert a screen D-60 removed. Re-adoptable only if a gallery export redraws an in-app help screen and the owner asks for it back.",
       },
-      // Topic cards: give the .map callback an index and wrap each Card in a Tappable (transparent
-      // to the structural guardrail) so a tap fires onTopicPress(i). The React key moves to the wrap.
-      CallExpression(path) {
-        const callee = path.node.callee;
-        if (callee.type !== "MemberExpression" || callee.property.name !== "map") return;
-        const arrow = path.node.arguments[0];
-        if (!arrow || (arrow.type !== "ArrowFunctionExpression" && arrow.type !== "FunctionExpression")) return;
-        if (arrow.params.length < 2) arrow.params.push(t.identifier("i"));
-        const card = arrow.body.type === "JSXElement" ? arrow.body : null;
-        if (!card || card.openingElement.name.name !== "Card") return;
-        // move key off the Card onto the Tappable
-        const keyAttr = card.openingElement.attributes.find((a) => a.type === "JSXAttribute" && a.name.name === "key");
-        card.openingElement.attributes = card.openingElement.attributes.filter((a) => a !== keyAttr);
-        const wrapped = wrap(card, "Tappable", `onPress={() => onTopicPress(i)} accessibilityRole="button"`);
-        if (keyAttr) wrapped.openingElement.attributes.unshift(keyAttr);
-        wrapped.openingElement.attributes.push(t.jsxAttribute(t.jsxIdentifier("accessibilityLabel"), t.jsxExpressionContainer(expr("t"))));
-        arrow.body = wrapped;
-      },
-      // The WhatsApp card (the one with the accent-wash fill) → tappable, opens WhatsApp.
-      JSXElement(path) {
-        const open = path.node.openingElement;
-        if (open.name.name !== "Card") return;
-        const style = open.attributes.find((a) => a.type === "JSXAttribute" && a.name.name === "style");
-        const obj = style?.value?.expression;
-        const isWash = obj?.type === "ObjectExpression" && obj.properties.some(
-          (p) => p.type === "ObjectProperty" && (p.key.name || p.key.value) === "backgroundColor",
-        );
-        if (!isWash) return;
-        if (path.parentPath.node.type === "JSXElement" && path.parentPath.node.openingElement.name.name === "Tappable") return;
-        path.replaceWith(wrap(path.node, "Tappable", `onPress={onWhatsApp} accessibilityRole="button" accessibilityLabel="Chat with us on WhatsApp"`));
-        path.skip();
-      },
-    }),
-    hoist: ["topics"],
+    ],
   },
   {
     // RC.cart_empty — until 2026-10-02 a whole-screen view generated from `cart_empty` (cart-empty.view.tsx); D-59 made the Order flow v2 handoff the authority (R9a), so the view was deleted and the key is a SUPERSEDED deferral.

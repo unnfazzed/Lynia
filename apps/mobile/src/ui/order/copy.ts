@@ -32,7 +32,8 @@ export const ORDER_COPY = {
   keepLooking: "Keep looking",
   yesCancel: "Yes, cancel",
   noOnline: "No riders are online near you right now.",
-  noOnlineHint: "Most riders are online 7–9am and 5–7pm. We'll keep looking until the timer ends.",
+  // Owner 2026-10-02 (ledger D-60): the handoff's "Most riders are online 7–9am and 5–7pm." is cut.
+  noOnlineHint: "We'll keep looking until the timer ends.",
   notify: "Notify me when a rider's online",
   /* offers */
   bestMatch: "Best match",

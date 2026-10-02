@@ -32,8 +32,13 @@ export const H = {
   noLocBody: "Set your area to see restaurants and shops that deliver to you.",
   useMyLocation: "Use my location",
   typeAddress: "Type an address",
-  /** README §2 rules: both rails empty → the H6 card with this title. */
-  nothingHere: "Nothing delivers here yet",
+  /**
+   * Both rails empty → the H6 card, reworded (owner 2026-10-02, ledger D-60): we're still onboarding
+   * merchants here, but parcels work today. Replaces the handoff's "Nothing delivers here yet" + set-your-area.
+   */
+  comingSoonTitle: "Coming soon near you",
+  comingSoonBody: "We're bringing local restaurants and shops on board. Need something moved now? Send a parcel.",
+  sendParcel: "Send a parcel",
 
   /** H5 — the location sheet. */
   deliverTo: "Deliver to",

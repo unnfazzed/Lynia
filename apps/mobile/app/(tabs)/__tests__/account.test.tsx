@@ -22,7 +22,10 @@ jest.mock("expo-secure-store", () => ({ getItemAsync: async () => null, setItemA
 jest.mock("../../../src/api/auth", () => ({ getMe: () => mockGetMe() }));
 jest.mock("../../../src/api/notifications", () => ({ getNotificationsUnreadCount: () => Promise.resolve({ count: 0 }) }));
 
+import { Linking } from "react-native";
 import AccountTabScreen from "../account";
+
+const openURL = jest.spyOn(Linking, "openURL").mockResolvedValue(true);
 
 function me(rider: Partial<NonNullable<Me["rider"]>> | null): Me {
   return {
@@ -97,7 +100,10 @@ describe("customer Account (Rider v2 C6–C11)", () => {
     for (const row of ["Trip history", "Notifications", "Help & support", "Settings"]) expect(has(tree, row)).toBe(true);
     press(tree, "Trip history");
     press(tree, "Settings");
+    press(tree, "Help & support");
     expect(mockPush.mock.calls.map((c) => c[0])).toEqual(["/history?side=customer", "/settings?side=customer"]);
+    // D-60: Help & support is the support WhatsApp chat itself — no in-app help screen.
+    expect(openURL).toHaveBeenCalledWith("https://wa.me/263778831938");
   });
 
   it("a customer-only user gets the Become-a-rider card, which starts KYC", async () => {

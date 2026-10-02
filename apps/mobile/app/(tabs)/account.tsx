@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { ScrollView, Text, View } from "react-native";
 import { getMe } from "../../src/api/auth";
+import { openSupportWhatsApp } from "../../src/config";
 import { becomeStateFor } from "../../src/logic/become-state";
 import { useHomeLocation } from "../../src/logic/home-location";
 import { useNotificationsUnreadCount } from "../../src/query/use-notifications-unread";
@@ -17,9 +18,9 @@ import { useTabTop } from "../../src/query/use-tab-top";
 
 /**
  * Customer Account (Rider v2 C6–C11, ledger D-54) — the rider Account's sibling: mint top card with the
- * deliver-to street, a tappable identity card, then either the **Customer | Rider** toggle (Customer
+ * deliver-to street, the identity card (not tappable — owner 2026-10-02, D-60), then either the **Customer | Rider** toggle (Customer
  * selected) for someone who rides, or the Become-a-rider card for someone who doesn't yet — then
- * Trip history · Notifications · Help & support · Settings. iPhone builds are customer-only (D-41), so
+ * Trip history · Notifications · Help & support (straight to WhatsApp, D-60) · Settings. iPhone builds are customer-only (D-41), so
  * neither the toggle nor the card is drawn there.
  */
 export default function AccountTabScreen(): React.ReactElement {
@@ -49,7 +50,6 @@ export default function AccountTabScreen(): React.ReactElement {
             name={name}
             line={me?.phone ? formatPhoneDisplay(me.phone) : ""}
             photoUrl={me?.photoUrl}
-            onPress={() => router.push("/profile?side=customer")}
           />
           {become === "toggle" ? (
             <>
@@ -70,7 +70,7 @@ export default function AccountTabScreen(): React.ReactElement {
           <RCard>
             <RRow first icon="receipt" label={R.rTripHist} sub={R.rTripHistS} onPress={() => router.push("/history?side=customer")} />
             <RRow icon="bell" label={R.rNotif} value={RF.rNotifS(unreadCount)} tone={unreadCount > 0 ? "ok" : null} onPress={() => router.push("/notifications")} />
-            <RRow icon="message-circle" label={R.rHelp} sub={R.rHelpS} onPress={() => router.push("/help")} />
+            <RRow icon="message-circle" label={R.rHelp} sub={R.hWa} onPress={openSupportWhatsApp} />
             <RRow icon="settings" label={R.rSettings} sub={R.rSettingsC} onPress={() => router.push("/settings?side=customer")} />
           </RCard>
         </ScrollView>

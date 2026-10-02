@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { Pressable, Text, View } from "react-native";
 import { AppBar, Card, Icon, type IconName, Screen } from "../../src/ui";
+import { openSupportWhatsApp } from "../../src/config";
 
 /**
  * LJ.privacy — the in-app privacy screen (mock screens-shipped.jsx :: `Privacy`, SH7).
@@ -88,7 +89,7 @@ export default function PrivacyScreen(): React.ReactElement {
       ))}
       {/* The data-copy request is a support conversation today (no self-serve export endpoint), so it
           routes into help rather than pretending to produce a file. */}
-      <ActionRow icon="inbox" label="Request a copy of my data" onPress={() => router.push("/help")} />
+      <ActionRow icon="inbox" label="Request a copy of my data" onPress={openSupportWhatsApp} />
       <ActionRow icon="trash" label="Delete my account" danger last onPress={() => router.push("/settings/delete-account")} />
     </Screen>
   );

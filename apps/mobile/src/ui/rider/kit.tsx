@@ -194,6 +194,28 @@ export function RRow({
 }
 
 /** Uppercase section label above a card (Settings). */
+/**
+ * The rider's 24-hour safety line: the Rider v2 S6 danger-wash row, lifted onto the rider Account when
+ * Help & support became a straight WhatsApp link (owner 2026-10-02, ledger D-60).
+ */
+export function SafetyLineRow({ onPress }: { onPress: () => void }): React.ReactElement {
+  return (
+    <Tappable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${R.hSafety}, ${R.hSafetyS}`}
+      style={{ flexDirection: "row", alignItems: "center", gap: 12, minHeight: 64, backgroundColor: tokens.color.dangerWash, borderRadius: 16, paddingVertical: 8, paddingHorizontal: 14 }}
+    >
+      <Icon name="siren" size={22} color={tokens.color.dangerInk} />
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontSize: 15, fontWeight: tokens.font.weight.bold, color: tokens.color.dangerInk }}>{R.hSafety}</Text>
+        <Text style={{ fontSize: 12, color: tokens.color.dangerInk }}>{R.hSafetyS}</Text>
+      </View>
+      <Icon name="phone" size={18} color={tokens.color.dangerInk} />
+    </Tappable>
+  );
+}
+
 export function SectionLabel({ children }: { children: string }): React.ReactElement {
   return <RLabel style={{ marginTop: 6, marginHorizontal: 4, marginBottom: -4 }}>{children}</RLabel>;
 }
@@ -275,11 +297,10 @@ export function IdentityCard({
   verified?: boolean;
   /** Prefix line 2 with a filled ink star (the rider's rating line). */
   star?: boolean;
-  onPress: () => void;
+  /** Omitted on both Account tabs: the card is not tappable and draws no chevron (owner 2026-10-02, D-60). */
+  onPress?: () => void;
 }): React.ReactElement {
-  return (
-    <RCard>
-      <Tappable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${name}, ${line}`}>
+  const body = (
         <View style={{ minHeight: 96, flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, paddingRight: 12, paddingLeft: 14 }}>
           <RiderAvatar photoUrl={photoUrl} initials={initials} size={52} />
           <View style={{ flex: 1, minWidth: 0 }}>
@@ -292,9 +313,20 @@ export function IdentityCard({
               <Text style={{ fontSize: 13, color: tokens.color.muted, ...TABULAR }}>{line}</Text>
             </View>
           </View>
-          <Icon name="chevron-right" size={18} color={tokens.color.muted} />
+          {onPress ? <Icon name="chevron-right" size={18} color={tokens.color.muted} /> : null}
         </View>
-      </Tappable>
+  );
+  return (
+    <RCard>
+      {onPress ? (
+        <Tappable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${name}, ${line}`}>
+          {body}
+        </Tappable>
+      ) : (
+        <View accessible accessibilityLabel={`${name}, ${line}`}>
+          {body}
+        </View>
+      )}
     </RCard>
   );
 }

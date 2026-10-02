@@ -1,24 +1,26 @@
-import { RIDER_STRIKE_LIMIT } from "@lynia/shared";
+import { RIDER_STRIKE_LIMIT, SOS_POLICY } from "@lynia/shared";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { Linking, ScrollView, Text, View } from "react-native";
 import { tokens } from "@lynia/shared/tokens";
 import { getMe } from "../../../src/api/auth";
 import { getActiveOrder } from "../../../src/api/orders";
+import { openSupportWhatsApp } from "../../../src/config";
 import { setOnline } from "../../../src/api/riders";
 import { getRiderStanding } from "../../../src/api/rider-v2";
 import { useNotificationsUnreadCount } from "../../../src/query/use-notifications-unread";
 import { AppScreen, SkeletonList, useTabRoot } from "../../../src/ui";
 import { CtaButton } from "../../../src/ui/order/kit";
 import { RIDER_COPY as R, RF } from "../../../src/ui/rider/copy";
-import { IdentityCard, MintTop, MSheet, RCard, RoleToggle, RRow, Standing } from "../../../src/ui/rider/kit";
+import { IdentityCard, MintTop, MSheet, RCard, RoleToggle, RRow, SafetyLineRow, Standing } from "../../../src/ui/rider/kit";
 import { useTabTop } from "../../../src/query/use-tab-top";
 
 /**
  * Rider Account (Rider v2 C1–C5, `packages/design/handoff/rider-v2/`, ledger D-54): the mint top card,
- * a tappable identity card, the **Customer | Rider** toggle (Rider selected), the standing card and four
- * rows — Job history · Notifications · Help & support · Settings. The Money, Bike & documents and
+ * the identity card (not tappable — owner 2026-10-02, D-60), the **Customer | Rider** toggle (Rider
+ * selected), the standing card and four rows — Job history · Notifications · Help & support (straight to
+ * WhatsApp, D-60) · Settings — then the 24-hour safety line row that used to sit on the S6 Help screen. The Money, Bike & documents and
  * Switch-to-customer rows are gone: Money is a tab, Bike & documents lives in Settings, and the toggle
  * replaces the switch row.
  *
@@ -69,7 +71,6 @@ export default function RiderAccountTabScreen(): React.ReactElement {
             star={rating != null}
             photoUrl={me?.photoUrl}
             verified={rider?.kycStatus === "verified"}
-            onPress={() => router.push("/profile?side=rider")}
           />
           <RoleToggle side="rider" onChange={(s) => (s === "customer" ? setConfirm(true) : undefined)} />
           <Text style={{ fontSize: 12, lineHeight: 16, color: tokens.color.muted, textAlign: "center", marginTop: -4 }}>{R.switchHint}</Text>
@@ -83,9 +84,10 @@ export default function RiderAccountTabScreen(): React.ReactElement {
           <RCard>
             <RRow first icon="history" label={R.rJobHist} sub={R.rJobHistS} onPress={() => router.push("/history?side=rider")} />
             <RRow icon="bell" label={R.rNotif} value={RF.rNotifS(unreadCount)} tone={unreadCount > 0 ? "ok" : null} onPress={() => router.push("/notifications")} />
-            <RRow icon="message-circle" label={R.rHelp} sub={R.rHelpS} onPress={() => router.push("/rider/help")} />
+            <RRow icon="message-circle" label={R.rHelp} sub={R.hWa} onPress={openSupportWhatsApp} />
             <RRow icon="settings" label={R.rSettings} sub={R.rSettingsS} onPress={() => router.push("/settings?side=rider")} />
           </RCard>
+          <SafetyLineRow onPress={() => void Linking.openURL(`tel:${SOS_POLICY.safetyLine.replace(/\s/g, "")}`).catch(() => undefined)} />
         </ScrollView>
       )}
       <MSheet

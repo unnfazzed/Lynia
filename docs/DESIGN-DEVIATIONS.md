@@ -3399,3 +3399,75 @@ Each PR of the build order appends its line here.
 3. Restaurant pickup photos stay optional.
 4. Same-day slots a venue can't meet are hidden (no "Too late for today").
 5. No limit on merchant "Change items" rounds.
+
+## D-60 · Owner UI review 2026-10-02: no hour hints, no profile page, Help is WhatsApp, Home "Coming soon" — APPROVED (2026-10-02)
+
+**Owner instruction, this session (2026-10-02),** after testing the Order flow v2 build on the Closed
+testing track. The owner listed seven comments, then answered a set of clarifying questions; the four
+below change drawn copy or drawn structure, so they are recorded here. The rest (Send map, service area,
+the rider KYC photo screen, the Orders empty state) are not deviations: see §5.
+
+### 1 · No time-of-day hints (After Send v2 `A.noOnlineHint`, Rider v2 `whyQuietB`)
+
+*"remove the statement that riders are usually available around 7 to 9"*, and yes to the rider side too.
+
+| Where | Handoff | App |
+|---|---|---|
+| Customer, no riders online (`src/ui/order/copy.ts`) | "Most riders are online 7–9am and 5–7pm. We'll keep looking until the timer ends." | "We'll keep looking until the timer ends." |
+| Rider board, quiet (`src/ui/rider/copy.ts` `RF.whyQuietB`) | "It's quiet around {place} right now. Most jobs come in 7–9am and 5–7pm." | "It's quiet around {place} right now." |
+
+### 2 · The identity card is not tappable; `/profile` is deleted (Rider v2 C1/C6)
+
+*"On Account when i click my name it shows old UI settings. Remove them."* Rider v2 draws the card with a
+chevron and calls it "Tappable → profile sheet", but draws no profile sheet; the tap opened the old
+`app/profile/index.tsx` (old `AppBar` + a duplicate row list). Both Account tabs now draw the card with
+**no chevron and no tap**, and `app/profile/index.tsx` is deleted (`app/profile/setup.tsx`, the sign-up
+name step, stays). Settings S1 already draws its identity row as not tappable.
+
+### 3 · Help & support is the WhatsApp chat itself (Rider v2 S6, gallery `LJ help`)
+
+*"When i click help and support on new UI it shows old UI. Replace that with a link to whatsapp number
+0778831938 .. no thing else."* — both sides.
+
+- The **Help & support** row on both Account tabs opens `https://wa.me/263778831938` directly. Its sub
+  line reads "Message us on WhatsApp" (`R.hWa`) instead of "WhatsApp or call the safety line".
+- `app/help/` (the gallery `Help` hub) and `app/rider/help.tsx` (Rider v2 S6) are deleted. Settings →
+  Privacy → "Request a copy of my data", which pushed `/help`, opens the same chat.
+- `src/config.ts` defaults `SUPPORT_WHATSAPP` to `263778831938` (a build may still override it). The
+  number was never set in any build, so every other "Message support on WhatsApp" button (KYC gates G4,
+  G5, G7; Bike & documents) was hidden or fell back to dialling; they now reach this chat.
+- **The rider's 24-hour safety line stays** (owner: "Move to rider Account"). S6's `--danger-wash` row,
+  "Call the safety line · 24 hours, for riders in danger", sits under the rider Account's rows card
+  (`SafetyLineRow`, `src/ui/rider/kit.tsx`).
+- S6's "Call LyniaGo support" (a placeholder number in the design) and COMMON QUESTIONS rows go with the
+  screen.
+- Parity: `LJ.help` leaves `app-targets.mjs`, is recorded SUPERSEDED in `parity-status.mjs` and as a
+  SUPERSEDED deferral in `codegen/adopted.mjs` (baseline 75 → 76); its expectation and fixture are deleted.
+  `shoot-rider-v2.mjs` drops its S6 row.
+
+### 4 · Home with both rails empty says "Coming soon near you" (Calm Mint v2 README §2)
+
+*"Home empty state should not tell you to update address but should tell you that we are onboarding
+merchants in your area but you can send packages now."* The owner picked option B of three drafts.
+
+| | Handoff (H6 card, "both rails empty" rule) | App |
+|---|---|---|
+| Title | "Nothing delivers here yet" | "Coming soon near you" |
+| Body | "Set your area to see restaurants and shops that deliver to you." | "We're bringing local restaurants and shops on board. Need something moved now? Send a parcel." |
+| Buttons | "Use my location" + "Type an address" | one **"Send a parcel"** (`package` icon) → `/send` |
+
+The card keeps the H6 geometry and art (mint wash, r20, the TrustTracking art, `PillButton`).
+`NoLocationCard` and `ComingSoonCard` share it (`MintEmptyCard`, `src/ui/home/kit.tsx`). The **no-address**
+H6 card ("Where should we deliver?") is unchanged (owner: keep).
+
+### 5 · Not deviations, recorded so the next session finds them
+
+- **Send map never loads (Closed testing, ends on "The map didn't load").** No map code changed in D-52 or
+  D-53. On a Play-signed build the signature points to the Android Maps key rejecting the app (the
+  Play App Signing SHA-1 is not on the key, or Maps SDK for Android / billing is off). This is a Google
+  Cloud console fix, and the owner asked that Send also work fully without the map. Tracked separately.
+- **Service area** (Harare metro, Chitungwiza, Norton, Ruwa, Epworth, Domboshava, Mt Hampden,
+  Goromonzi; no merchant distance cap, fee stays per km): a policy change, not a design deviation.
+- **Become-a-rider photo** (`app/rider/become.tsx`) and the **Orders empty state** have no drawn design.
+  They wait for Claude Design, using the prompts in `docs/designs/owner-review-2026-10-02/PROMPTS.md`.
+  The app does not improvise them.

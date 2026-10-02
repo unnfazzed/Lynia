@@ -5,7 +5,6 @@
     "LJ.delete_account",
     "LJ.delete_final",
     "LJ.force_update",
-    "LJ.help",
     "LJ.history",
     "LJ.home_empty",
     "LJ.home_pins",

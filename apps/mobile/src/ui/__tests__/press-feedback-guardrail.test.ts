@@ -103,8 +103,9 @@ export function hasFeedback(tag: string): boolean {
 describe("press-feedback guardrail", () => {
   const files = SCAN_ROOTS.flatMap((r) => tsxFiles(join(MOBILE_ROOT, r)));
 
+  // Floor lowered 150 → 140 when D-60 deleted app/help, app/rider/help.tsx and app/profile/index.tsx.
   it("scans a realistic number of component files (the walker itself still works)", () => {
-    expect(files.length).toBeGreaterThan(150);
+    expect(files.length).toBeGreaterThan(140);
   });
 
   it("has no <Pressable> that leaves a touch unacknowledged", () => {
