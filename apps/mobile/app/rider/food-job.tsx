@@ -1,14 +1,17 @@
-import { DELIVERY_OTP_MAX_ATTEMPTS, haversineKm, PICKUP_CODE_DIGITS, SOS_POLICY, type AdvanceStatusRequest, type MerchantOrderResponse } from "@lynia/shared";
+import { DELIVERY_OTP_MAX_ATTEMPTS, haversineKm, PICKUP_CODE_DIGITS, SOS_POLICY, type AdvanceStatusRequest, type DoorProofReason, type MerchantOrderResponse } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
+import * as ImagePicker from "expo-image-picker";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Linking, ScrollView, Text, View } from "react-native";
+import { Linking, ScrollView, Text, TextInput, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import {
+  attachFoodPickupProof,
   confirmFoodCollected,
   confirmFoodPickup,
   confirmFoodRiderCash,
+  confirmRxSawOriginal,
   disputeFoodCash,
   dropFoodDispatch,
   getFoodOrderAsRider,
@@ -20,6 +23,9 @@ import { advanceStatus, confirmDelivery, getActiveOrder, rateSender, type OrderS
 import { raiseIssue, raiseSos } from "../../src/api/safety";
 import { acknowledgeHandback, loadAcknowledgedHandbacks } from "../../src/auth/session";
 import { pendingOrQueued } from "../../src/query/client";
+import { usePickupPhoto } from "../../src/query/use-pickup-photo";
+import { uploadFoodDoorProof } from "../../src/logic/delivery-proof";
+import type { UploadImageSource } from "../../src/logic/image-downscale";
 import { useWalletConfig } from "../../src/query/use-wallet";
 import { handshakeState, codeEligible } from "../../src/logic/food-doorstep";
 import { FOOD_DROPPABLE, foodCashBreakdown, noShowStatus, returnLegNeeded } from "../../src/logic/food-rider-job";
@@ -31,7 +37,9 @@ import { invalidateRiderJobQueries } from "../../src/query/use-history-feed";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
-import { AppBar, haptic, Heading, Icon, Screen, SkeletonList, Sub, useActionError, useToast } from "../../src/ui";
+import { AppBar, haptic, Heading, Icon, Screen, SkeletonList, Sub, Tappable, useActionError, useToast } from "../../src/ui";
+import { O, ofFmt } from "../../src/ui/orderflow/copy";
+import { CameraStep, OfNote, Shutter, TickRow } from "../../src/ui/rider/proof-kit";
 import { useReduceMotion } from "../../src/ui/useReduceMotion";
 import { ORDER_COPY as A } from "../../src/ui/order/copy";
 import { IconDisc, Stars } from "../../src/ui/order/kit";
@@ -84,6 +92,13 @@ import { ReportSheet } from "../../src/ui/safety";
  * (kitchen/cash-handshake fields) and the cash-return-leg poll stay poll-only — deliberately left alone
  * this run since they carry the cash-handshake/debt-ledger state and the lane rules bar trading
  * correctness for bytes on a money-adjacent path.
+ *
+ * Order flow v2 round 2 (ledger D-59): at the venue the rider ticks "Bag is sealed" and photographs the
+ * bag (RD2b–RD2d) — required for shops and pharmacies (the server won't complete their pickup without
+ * it, so the code waits on the photo), optional for restaurants; at a pharmacy order's door the rider
+ * ticks "I saw the original prescription" before handing over (RD3); and when the code can't be used,
+ * "Can't use the code?" asks why and who, then takes the door photo (RD4c/RD4d) — evidence for our team,
+ * who then finish the delivery.
  */
 export default function RiderFoodJob(): React.ReactElement {
   const router = useRouter();
@@ -232,6 +247,7 @@ export default function RiderFoodJob(): React.ReactElement {
       setPickupCode("");
       setPickupAttempts(0);
       setError(null);
+      setCamera(null);
       refresh();
     },
     onError: (e) => {
@@ -239,9 +255,11 @@ export default function RiderFoodJob(): React.ReactElement {
       // (BadRequestException), the lockout is 403 (ForbiddenException) — not 401/403.
       if (e instanceof ApiError && e.status === 403) {
         haptic("warning");
+        setCamera(null);
         setPickupAttempts(DELIVERY_OTP_MAX_ATTEMPTS);
       } else if (e instanceof ApiError && e.status === 400) {
         haptic("warning");
+        setCamera(null);
         setPickupAttempts((n) => n + 1);
       } else {
         fail(e);
@@ -260,10 +278,12 @@ export default function RiderFoodJob(): React.ReactElement {
       haptic("success");
       setCollectedError(null);
       setError(null);
+      setCamera(null);
       refresh();
     },
     onError: (e) => {
       haptic("warning");
+      setCamera(null);
       if (e instanceof ApiError && e.status === 409 && e.code === "not_at_restaurant") {
         setCollectedError("You're not at the restaurant yet. Move closer and try again.");
       } else {
@@ -283,6 +303,85 @@ export default function RiderFoodJob(): React.ReactElement {
     setCollectedError(null);
     collectedM.mutate(point);
   };
+
+  // ── Order flow v2 RD2b–RD2d: "Bag is sealed" + the sealed-bag photo at the counter ───────────────
+  const [camera, setCamera] = useState<null | "bag" | "door">(null);
+  const [bagSealed, setBagSealed] = useState(false);
+  const bagSealedRef = useRef(false);
+  bagSealedRef.current = bagSealed;
+  useEffect(() => {
+    if (foodOrder?.pickupProof?.bagSealed) setBagSealed(true);
+  }, [foodOrder?.pickupProof?.bagSealed]);
+  const bagPhoto = usePickupPhoto(order?.orderType === "merchant" ? orderId : null, foodOrder?.pickupProof?.photoUrl, (id, key) =>
+    attachFoodPickupProof(id, { key, bagSealed: bagSealedRef.current }),
+  );
+  const [photoQueued, setPhotoQueued] = useState(false);
+  // The phone's camera hands the shot back as a preview; on the camera step it is used straight away.
+  useEffect(() => {
+    if (camera === "bag" && bagPhoto.preview && !bagPhoto.saving) bagPhoto.use();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires on a fresh shot only.
+  }, [camera, bagPhoto.preview]);
+  const tickBag = (next: boolean): void => {
+    haptic("tap");
+    setBagSealed(next);
+    if (orderId) void attachFoodPickupProof(orderId, { bagSealed: next }).catch(() => undefined);
+  };
+  // "I've collected the order": the photo goes up first (a shop's pickup needs it), then the code.
+  const collectAfterPhoto = async (): Promise<void> => {
+    const ok = await bagPhoto.flush();
+    if (!ok && foodOrderRef.current?.pickupProofRequired) {
+      setPhotoQueued(true);
+      return;
+    }
+    setPhotoQueued(false);
+    if (foodOrderRef.current?.autoAccepted) onCollected();
+    else confirmPickupM.mutate();
+  };
+
+  // ── Order flow v2 RD3: "I saw the original prescription" at a prescription order's door ─────────
+  const rxM = useMutation({
+    mutationFn: () => confirmRxSawOriginal(orderId!),
+    onSuccess: () => {
+      haptic("success");
+      refresh();
+    },
+    onError: (e) => fail(e),
+  });
+
+  // ── Order flow v2 RD4c/RD4d: the code can't be used — why, who, and the door photo ───────────────
+  const [why, setWhy] = useState<DoorProofReason | null>(null);
+  const [handedTo, setHandedTo] = useState("");
+  const [doorShot, setDoorShot] = useState<UploadImageSource | null>(null);
+  const takeDoorPhoto = (): void => {
+    void (async () => {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) return;
+      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.6 });
+      const a = result.canceled ? null : result.assets[0];
+      if (a) setDoorShot({ uri: a.uri, width: a.width, height: a.height, contentType: a.mimeType === "image/png" ? "image/png" : "image/jpeg" });
+    })();
+  };
+  const doorM = useMutation({
+    mutationFn: async () => {
+      const reason = why!;
+      const name = handedTo.trim();
+      await uploadFoodDoorProof(orderId!, doorShot!, { reason, handedTo: name || undefined }, (getLastFix() ?? riderPoint) ?? undefined);
+      // Evidence only: our team finishes a delivery made without the code, so they are told now.
+      await raiseIssue(orderId!, {
+        type: "other",
+        description: [O.rd.whyT, O.rd.why[DOOR_REASONS.indexOf(reason)], name ? `${O.rd.whoT} ${name}` : null].filter(Boolean).join(" · "),
+        idempotencyKey: uuidV4FromSeed(`${orderId}|door-proof|${reason}`),
+      });
+    },
+    onSuccess: () => {
+      haptic("success");
+      setCamera(null);
+      setDoorShot(null);
+      setJobToast({ text: R.helpSent, icon: "circle-check" });
+      refresh();
+    },
+    onError: (e) => fail(e),
+  });
 
   // ── Doorstep dual-confirm handshake (R-04/R-05) ────────────────────────────────────────────────
   const confirmCashM = useMutation({
@@ -371,6 +470,8 @@ export default function RiderFoodJob(): React.ReactElement {
     if (deliveryCode.length !== 6 || deliverM.isPending || otpTries >= DELIVERY_OTP_MAX_ATTEMPTS) return;
     if (!o || !fo || o.status !== "en_route_dropoff") return;
     if (!codeEligible({ paymentMethod: fo.paymentMethod, customerCashConfirmedAt: fo.customerCashConfirmedAt, riderCashConfirmedAt: fo.riderCashConfirmedAt, cashHandshakeFrozenAt: fo.cashHandshakeFrozenAt })) return;
+    // RD3: an approved prescription order is handed over only after the rider saw the original.
+    if (fo.prescription?.status === "approved" && !fo.prescription.riderSawOriginalAt) return;
     deliverM.mutate();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fires on the typed code only.
   }, [deliveryCode]);
@@ -506,7 +607,7 @@ export default function RiderFoodJob(): React.ReactElement {
     setRestoreDismissed(true);
     haptic("tap");
   };
-  const [sheet, setSheet] = useState<null | "problem" | "drop" | "reach" | "report" | "sos">(null);
+  const [sheet, setSheet] = useState<null | "problem" | "drop" | "reach" | "report" | "sos" | "why">(null);
   const [jobToast, setJobToast] = useState<JobToast | null>(null);
   useEffect(() => {
     if (!jobToast) return;
@@ -765,6 +866,25 @@ export default function RiderFoodJob(): React.ReactElement {
   const kitchenPhone = (order.pickup as { contactPhone?: string | null }).contactPhone ?? null;
   const restored = restoredJobId != null && restoredJobId === order.id && !restoreDismissed && isActive;
   const kitchen = kitchenName(order);
+  // Order flow v2 (D-59): the venue's word ("kitchen", "shop", "pharmacy"), the sealed-bag rule, the Rx tick.
+  const venueKind = foodOrder.venue?.businessType === "shop" ? (foodOrder.venue.shopKind === "pharmacy" ? "pharmacy" : "shops") : "food";
+  const venuePlace = O.svc[venueKind].place;
+  const photoRequired = foodOrder.pickupProofRequired === true;
+  const codeReady = foodOrder.autoAccepted === true || (pickupCode.trim().length === PICKUP_CODE_DIGITS && pickupAttempts < DELIVERY_OTP_MAX_ATTEMPTS);
+  const canCollectNow = order.status === "en_route_pickup" && codeReady;
+  const rx = foodOrder.prescription?.status === "approved" ? foodOrder.prescription : null;
+  const rxSeen = !!rx?.riderSawOriginalAt;
+  const rxBlock = rx ? (
+    <>
+      <OfNote tone="hi" icon="file-text" bold text={O.rd.rxStop} />
+      <TickRow title={O.rd.rxTick} sub={RF.rxName(rx.patientName)} on={rxSeen} disabled={rxSeen || rxM.isPending} onPress={() => rxM.mutate()} />
+    </>
+  ) : null;
+  const cantCode = (
+    <Tappable accessibilityRole="button" onPress={() => setSheet("why")} style={{ minHeight: 44, alignItems: "center", justifyContent: "center" }}>
+      <Text style={{ fontSize: 14, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>{O.rd.cantCode}</Text>
+    </Tappable>
+  );
   const orderNo = order.id.slice(0, 8).toUpperCase();
   const readyIn =
     foodOrder.readyAt != null
@@ -778,7 +898,11 @@ export default function RiderFoodJob(): React.ReactElement {
     return RF.away(kmAway, Math.max(1, Math.round(kmAway * 5)));
   };
   const nav = (to: { lat: number; lng: number }): void => void Linking.openURL(navUrl(prefs.navApp, to)).catch(() => undefined);
-  const stageLine = stage === "toKitchen" ? R.tToKitchen : stage === "atKitchen" ? R.tAtKitchen : R.tToDrop;
+  // RD2a: "At the shop" / "Ask the shop for the pickup code" (`O.rd.atVenue`, `O.rd.code`); a kitchen keeps
+  // Rider v2's own words.
+  const atVenueT = venueKind === "food" ? R.tAtKitchen : ofFmt(O.rd.atVenue, { place: venuePlace });
+  const pickupCodeL = venueKind === "food" ? R.pickupCodeL : ofFmt(O.rd.code, { place: venuePlace });
+  const stageLine = stage === "toKitchen" ? R.tToKitchen : stage === "atKitchen" ? atVenueT : R.tToDrop;
   const notices = (
     <>
       {restored ? <Notice icon="history" tone="wash" text={RF.restored(stageLine.toLowerCase())} /> : null}
@@ -836,6 +960,87 @@ export default function RiderFoodJob(): React.ReactElement {
       </MSheet>
       <ReportSheet orderId={order.id} counterpartyNoun="customer" visible={sheet === "report"} onClose={() => setSheet(null)} />
       <SosSheet visible={sheet === "sos"} onClose={() => setSheet(null)} onCall={sos} />
+      <MSheet
+        visible={sheet === "why"}
+        onClose={() => setSheet(null)}
+        title={O.rd.whyT}
+        buttons={
+          <CtaButton
+            icon="camera"
+            label={R.nextPhoto}
+            disabled={!why}
+            onPress={() => {
+              setSheet(null);
+              setCamera("door");
+            }}
+          />
+        }
+      >
+        <View accessibilityRole="radiogroup">
+          {DOOR_REASONS.map((r, k) => (
+            <Tappable
+              key={r}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: why === r }}
+              onPress={() => setWhy(r)}
+              style={{ minHeight: 56, flexDirection: "row", alignItems: "center", gap: 12, borderTopWidth: 1, borderTopColor: tokens.color.surface }}
+            >
+              <Text style={{ flex: 1, fontSize: 15, lineHeight: 20, color: tokens.color.ink }}>{O.rd.why[k]}</Text>
+              <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: why === r ? 7 : 2, borderColor: why === r ? tokens.color.accent : tokens.color.line }} />
+            </Tappable>
+          ))}
+        </View>
+      </MSheet>
+      <CameraStep visible={camera === "bag"} title={O.rd.photoT} photoUri={bagPhoto.uri} onClose={() => setCamera(null)}>
+        <TickRow title={O.rd.sealed} sub={bagPhoto.uri ? null : O.rd.sealedSub} on={bagSealed} onPress={() => tickBag(!bagSealed)} />
+        {bagPhoto.uri ? (
+          <>
+            {photoQueued || (!bagPhoto.uploaded && liveReconnecting) ? <OfNote icon="clock" text={O.rd.queued} /> : null}
+            <CtaButton ghost icon="camera" label={O.rd.retake} onPress={bagPhoto.retake} />
+            <CtaButton
+              label={O.rd.collected}
+              disabled={!canCollectNow}
+              loading={!!pendingOrQueued(foodOrder.autoAccepted ? collectedM : confirmPickupM)}
+              onPress={() => void collectAfterPhoto()}
+            />
+          </>
+        ) : (
+          <>
+            <Text style={{ fontSize: 13, lineHeight: 18, color: tokens.color.muted, textAlign: "center" }}>{photoRequired ? O.rd.photoReq : O.rd.photoOpt}</Text>
+            <Shutter label={O.rd.photoT} disabled={(photoRequired && !bagSealed) || bagPhoto.saving} onPress={bagPhoto.take} />
+          </>
+        )}
+      </CameraStep>
+      <CameraStep visible={camera === "door"} title={O.rd.doorPhotoT} photoUri={doorShot?.uri ?? null} onClose={() => setCamera(null)}>
+        {why === "handed_to_someone_else" || why === "left_at_gate" ? (
+          <View style={{ gap: 6 }}>
+            <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.semibold, color: tokens.color.muted }}>{O.rd.whoT}</Text>
+            <TextInput
+              value={handedTo}
+              onChangeText={setHandedTo}
+              placeholder={O.rd.whoPh}
+              placeholderTextColor={tokens.color.muted}
+              maxLength={60}
+              accessibilityLabel={O.rd.whoT}
+              style={{ minHeight: 48, borderRadius: 12, borderWidth: 1.5, borderColor: tokens.color.accent, paddingHorizontal: 12, fontSize: 15, color: tokens.color.ink }}
+            />
+          </View>
+        ) : null}
+        <Text style={{ fontSize: 13, lineHeight: 18, color: tokens.color.muted }}>{ofFmt(O.rd.doorPhotoSub, { place: venuePlace }).replace("Rudo", customer)}</Text>
+        {doorShot ? (
+          <>
+            <CtaButton ghost icon="camera" label={O.rd.retake} onPress={takeDoorPhoto} />
+            <CtaButton
+              label={O.rd.finish}
+              disabled={why === "handed_to_someone_else" && !handedTo.trim()}
+              loading={!!pendingOrQueued(doorM)}
+              onPress={() => doorM.mutate()}
+            />
+          </>
+        ) : (
+          <Shutter label={O.rd.doorPhotoT} onPress={takeDoorPhoto} />
+        )}
+      </CameraStep>
     </>
   );
 
@@ -878,7 +1083,10 @@ export default function RiderFoodJob(): React.ReactElement {
               busy={pendingOrQueued(confirmCashM, disputeCashM)}
             />
           ) : (
-            <RiderDoorCard rows={rows} />
+            <>
+              {handed ? null : rxBlock}
+              <RiderDoorCard rows={rows} />
+            </>
           )}
           <ProblemLink onPress={() => setSheet("problem")} />
         </>
@@ -892,6 +1100,7 @@ export default function RiderFoodJob(): React.ReactElement {
           <CtaBar>
             <CtaButton
               label={R.door1}
+              disabled={!!rx && !rxSeen}
               onPress={() => {
                 haptic("tap");
                 setHandedOver({ orderId: order.id, at: hhmm(new Date()) });
@@ -917,8 +1126,10 @@ export default function RiderFoodJob(): React.ReactElement {
           ) : (
             <JobTitle title={RF.codeT(customer)} body={RF.codeB} />
           )}
+          {rxSeen ? null : rxBlock}
           <CodeBoxes value={deliveryCode} onChange={setDeliveryCode} error={wrong} locked={locked} />
           {wrong ? <CodeError text={left === 1 ? RF.triesLast(customer) : RF.triesLeft(left)} /> : null}
+          {cantCode}
           {queued ? (
             <View style={{ flexDirection: "row", gap: 6, justifyContent: "center", alignItems: "center" }}>
               <Icon name="wifi-off" size={14} color={tokens.color.muted} />
@@ -985,8 +1196,8 @@ export default function RiderFoodJob(): React.ReactElement {
         ) : null}
         {auto ? null : (
           <>
-            <Text style={{ fontSize: 14, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink, textAlign: "center" }}>{R.pickupCodeL}</Text>
-            <CodeBoxes length={PICKUP_CODE_DIGITS} label={R.pickupCodeL} autoFocus={false} value={pickupCode} onChange={setPickupCode} error={pickupAttempts > 0 && pickupCode.length === PICKUP_CODE_DIGITS && !confirmPickupM.isPending} locked={pickupLocked} />
+            <Text style={{ fontSize: 14, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink, textAlign: "center" }}>{pickupCodeL}</Text>
+            <CodeBoxes length={PICKUP_CODE_DIGITS} label={pickupCodeL} autoFocus={false} value={pickupCode} onChange={setPickupCode} error={pickupAttempts > 0 && pickupCode.length === PICKUP_CODE_DIGITS && !confirmPickupM.isPending} locked={pickupLocked} />
             {pickupAttempts > 0 && !pickupLocked && pickupCode.length === PICKUP_CODE_DIGITS && !confirmPickupM.isPending ? <CodeError text={RF.triesLeft(DELIVERY_OTP_MAX_ATTEMPTS - pickupAttempts)} /> : null}
           </>
         )}
@@ -994,17 +1205,26 @@ export default function RiderFoodJob(): React.ReactElement {
         <ProblemLink onPress={() => setSheet("problem")} />
       </>
     );
+    // RD2b: a shop's pickup waits on the sealed-bag photo, so its code leads to the camera; a restaurant
+    // may add one (optional) before collecting.
+    const needPhoto = photoRequired && !bagPhoto.uri;
     bar = (
       <CtaBar>
-        <CtaButton
-          label={upfront ? R.paidCta : R.collectedFood}
-          disabled={!canCollect}
-          loading={!!pendingOrQueued(auto ? collectedM : confirmPickupM)}
-          onPress={() => {
-            if (auto) onCollected();
-            else confirmPickupM.mutate();
-          }}
-        />
+        {needPhoto ? (
+          <CtaButton icon="camera" label={O.rd.photoT} disabled={!canCollect} onPress={() => setCamera("bag")} />
+        ) : (
+          <CtaButton
+            label={upfront ? R.paidCta : photoRequired ? O.rd.collected : R.collectedFood}
+            disabled={!canCollect}
+            loading={!!pendingOrQueued(auto ? collectedM : confirmPickupM)}
+            onPress={() => {
+              if (bagPhoto.uri) void collectAfterPhoto();
+              else if (auto) onCollected();
+              else confirmPickupM.mutate();
+            }}
+          />
+        )}
+        {!photoRequired && !bagPhoto.uri ? <CtaButton ghost icon="camera" label={O.rd.photoT} onPress={() => setCamera("bag")} /> : null}
       </CtaBar>
     );
   } else {
@@ -1041,7 +1261,7 @@ export default function RiderFoodJob(): React.ReactElement {
 
   return (
     <JobShell
-      title={stage === "toKitchen" ? R.tToKitchen : stage === "atKitchen" ? R.tAtKitchen : R.tToDrop}
+      title={stage === "toKitchen" ? R.tToKitchen : stage === "atKitchen" ? atVenueT : R.tToDrop}
       onBack={() => router.replace("/rider")}
       onHelp={() => setSheet("problem")}
       contentKey={`${stage}|${liveReconnecting ? "o" : ""}|${upfront ? "u" : ""}`}
@@ -1075,3 +1295,6 @@ export default function RiderFoodJob(): React.ReactElement {
       .catch((e: unknown) => fail(e));
   }
 }
+
+/** RD4c's three answers, in `O.rd.why`'s order. */
+const DOOR_REASONS: readonly DoorProofReason[] = ["customer_unreachable", "handed_to_someone_else", "left_at_gate"];

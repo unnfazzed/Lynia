@@ -18,6 +18,7 @@ import type { FoodOfferEvent } from "@lynia/shared";
 jest.useFakeTimers();
 
 const mockGetOffer = jest.fn<Promise<FoodOfferEvent | null>, []>();
+let mockJob: Record<string, unknown> | null = null;
 const mockAccept = jest.fn<Promise<unknown>, [string]>();
 const mockDecline = jest.fn<Promise<unknown>, [string]>();
 
@@ -30,7 +31,7 @@ jest.mock("expo-secure-store", () => ({
   deleteItemAsync: async () => undefined,
 }));
 jest.mock("../../../src/api/food-rider", () => ({
-  getFoodDispatchOffer: () => mockGetOffer(),
+  getFoodDispatchOfferWithJob: () => mockGetOffer().then((o) => ({ offer: o, job: mockJob })),
   acceptFoodDispatch: (orderId: string) => mockAccept(orderId),
   declineFoodDispatch: (orderId: string) => mockDecline(orderId),
 }));
@@ -97,6 +98,7 @@ async function press(tree: renderer.ReactTestRenderer, label: string): Promise<v
 }
 
 beforeEach(() => {
+  mockJob = null;
   mockGetOffer.mockReset();
   mockAccept.mockReset();
   mockDecline.mockReset();
@@ -173,5 +175,33 @@ describe("FoodOffer (Rider v2 F1–F4)", () => {
     expect(text).toContain("That one went to another rider");
     expect(tree.root.findAll((n) => n.props.label === "Back to jobs" && typeof n.props.onPress === "function").length).toBe(1);
     expect(tree.root.findAll((n) => n.props.label === "Accept this job")).toHaveLength(0);
+  });
+
+  it("RD1b: a pharmacy job wears the PHARMACY tag and the sealed-bag note (Order flow v2, D-59)", async () => {
+    mockJob = { businessType: "shop", shopKind: "pharmacy", scheduledFor: null, rx: false };
+    mockGetOffer.mockResolvedValue(offer());
+    const text = textOf(await render());
+    expect(text).toContain("New pharmacy job");
+    expect(text).toContain("PHARMACY");
+    expect(text).toContain("Sealed bag · photo at pickup");
+  });
+
+  it("RD1a: a shop job says SHOP; RD1c: a scheduled one says the customer's slot", async () => {
+    const at = new Date();
+    at.setHours(12, 30, 0, 0);
+    mockJob = { businessType: "shop", shopKind: "grocery", scheduledFor: at.toISOString(), rx: false };
+    mockGetOffer.mockResolvedValue(offer());
+    const text = textOf(await render());
+    expect(text).toContain("New shop job");
+    expect(text).toContain("SHOP");
+    expect(text).toContain("Scheduled · customer expects 12:30–13:00");
+  });
+
+  it("RD1d: a prescription order says to see the original at the door instead of the seal", async () => {
+    mockJob = { businessType: "shop", shopKind: "pharmacy", scheduledFor: null, rx: true };
+    mockGetOffer.mockResolvedValue(offer());
+    const text = textOf(await render());
+    expect(text).toContain("Prescription order · see the original at the door");
+    expect(text).not.toContain("Sealed bag · photo at pickup");
   });
 });
