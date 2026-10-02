@@ -13,13 +13,9 @@ export interface UploadTarget {
   headers?: Record<string, string>;
 }
 
-/** Ask the backend for a short-lived signed PUT URL + the object key to persist (the rider's KYC photo). */
-export function requestKycPhotoUpload(contentType: ImageContentType): Promise<UploadTarget> {
-  return apiFetch("/uploads/kyc-photo", { method: "POST", body: { contentType } });
-}
-
-/** Same mint for the rider's proof-of-pickup photo (§5c): PUT the bytes to `uploadUrl`, then attach
- *  the returned `key` via attachPickupPhoto (orders.ts). */
+/** Ask the backend for a short-lived signed PUT URL + the object key for the rider's proof-of-pickup
+ *  photo (§5c): PUT the bytes to `uploadUrl`, then attach the returned `key` via attachPickupPhoto
+ *  (orders.ts). */
 export function requestPickupPhotoUpload(contentType: ImageContentType): Promise<UploadTarget> {
   return apiFetch("/uploads/pickup-photo", { method: "POST", body: { contentType } });
 }
