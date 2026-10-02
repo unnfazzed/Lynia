@@ -68,6 +68,14 @@ export const RESTAURANTS_AUTO_ACCEPT = {
   pickupGeofenceM: 150,
 } as const;
 
+/** N-16 / Order flow v2 (ledger D-59, BRIEF §16): every code is six digits, the pickup code included,
+ *  shown 3+3 ("731 604") and typed into six boxes. The handoff's `ofCode.pickup`. */
+export const PICKUP_CODE_DIGITS = 6;
+/** The pickup code's length before Order flow v2. Still accepted on the wire (never minted) so an
+ *  installed rider app's attempt fails cleanly as a wrong code, and a code minted before the switch
+ *  still verifies. */
+export const LEGACY_PICKUP_CODE_DIGITS = 4;
+
 /** N-04: five prep-time chips, minutes. Free text is deliberately not offered (design rationale:
  *  invites "5 min" fiction). */
 export const PREP_CHIPS_MIN = [10, 15, 20, 30, 45] as const;

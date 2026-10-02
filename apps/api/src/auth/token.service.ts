@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { createHmac, hkdfSync, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
+import { PICKUP_CODE_DIGITS } from "@lynia/shared";
 import jwt from "jsonwebtoken";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
@@ -88,10 +89,12 @@ export class TokenService {
     return randomInt(0, 1_000_000).toString().padStart(6, "0");
   }
 
-  /** N-16: cryptographically-random 4-digit pickup code — same grammar as the 6-digit delivery code,
-   *  shorter because it's read by the merchant across a counter, not typed by a recipient at the door. */
+  /** N-16: cryptographically-random pickup code, six digits like the delivery code since Order flow v2
+   *  (ledger D-59, BRIEF §16 "every code is 6 digits"). The merchant reads it out 3+3 at the counter. */
   randomPickupCode(): string {
-    return randomInt(0, 10_000).toString().padStart(4, "0");
+    return randomInt(0, 10 ** PICKUP_CODE_DIGITS)
+      .toString()
+      .padStart(PICKUP_CODE_DIGITS, "0");
   }
 
   safeEqualHex(a: string, b: string): boolean {

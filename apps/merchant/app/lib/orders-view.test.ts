@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MerchantProfileResponse } from "@lynia/shared";
 import { merchantOrder, merchantProfile, RIDER } from "../testing/fixtures";
-import { detailView, homeSections, itemsEditedLabel, itemsLine, openStatus, orderLabel, rowSub, steps } from "./orders-view";
+import { detailView, homeSections, itemsEditedLabel, itemsLine, openStatus, orderLabel, rowSub, trackStep, cashBackRow, groupCode } from "./orders-view";
 import { alarmOrders } from "./alarm";
 
 const o = merchantOrder;
@@ -45,6 +45,8 @@ describe("which screen an order opens on", () => {
     expect(detailView(o())).toBe("ringing");
     expect(detailView(o({ merchantPhase: "awaiting_payment" }))).toBe("legacy");
     expect(detailView(o({ merchantPhase: "preparing" }))).toBe("cooking");
+    // M1a: an auto-accepted order the kitchen hasn't confirmed rings on the Orders home.
+    expect(detailView(o({ merchantPhase: "preparing", autoAccepted: true, kitchenConfirmedAt: null }))).toBe("ringing");
     expect(detailView(o({ merchantPhase: "ready_for_pickup", status: "open_for_offers" }))).toBe("handover");
     expect(detailView(o({ merchantPhase: null, status: "en_route_pickup", riderId: RIDER.profileId }))).toBe("handover");
     expect(detailView(o({ merchantPhase: null, status: "en_route_dropoff" }))).toBe("tracking");
@@ -56,43 +58,31 @@ describe("which screen an order opens on", () => {
   });
 });
 
-describe("the tracking stepper (B6)", () => {
-  it("is the eight steps, done with their times, the current one live, the rest to come", () => {
-    const order = o({
-      merchantPhase: null,
-      status: "en_route_dropoff",
-      riderId: RIDER.profileId,
-      prepStartedAt: "2026-09-30T12:04:30.000Z",
-      debtStatus: "open",
-      timeline: [
-        { status: "requested", at: "2026-09-30T12:04:00.000Z" },
-        { status: "assigned", at: "2026-09-30T12:15:00.000Z" },
-        { status: "picked_up", at: "2026-09-30T12:18:00.000Z" },
-        { status: "en_route_dropoff", at: "2026-09-30T12:19:00.000Z" },
-      ],
-    });
-    const s = steps(order);
-    expect(s.map((x) => x.label)).toEqual([
-      "Order placed",
-      "You accepted",
-      "Rider secured",
-      "Rider at your counter",
-      "Picked up",
-      "On the way",
-      "Delivered",
-      "Cash back to you",
-    ]);
-    expect(s.map((x) => x.state)).toEqual(["done", "done", "done", "done", "done", "done", "now", "todo"]);
-    expect(s[6]!.time).toBe("live");
-    expect(s[7]!.time).toBe("");
-    expect(s[0]!.time).toMatch(/^\d\d:\d\d$/);
+describe("the merchant track (Order flow v2 M3–M6, D-59)", () => {
+  it("is the customer's four steps: confirmed, cooking until the rider has it, on the way, then all done", () => {
+    expect(trackStep(o())).toBe(0);
+    expect(trackStep(o({ merchantPhase: "preparing", autoAccepted: true, kitchenConfirmedAt: null }))).toBe(0);
+    expect(trackStep(o({ merchantPhase: "preparing" }))).toBe(1);
+    expect(trackStep(o({ merchantPhase: "ready_for_pickup", status: "open_for_offers" }))).toBe(1);
+    expect(trackStep(o({ merchantPhase: null, status: "en_route_pickup", riderId: RIDER.profileId }))).toBe(1);
+    expect(trackStep(o({ merchantPhase: null, status: "picked_up" }))).toBe(2);
+    expect(trackStep(o({ merchantPhase: null, status: "en_route_dropoff" }))).toBe(2);
+    expect(trackStep(o({ merchantPhase: null, status: "delivered" }))).toBe(4);
   });
 
-  it("completes the last step once the cash is counted or the merchant closed without it", () => {
-    const delivered = { merchantPhase: null, status: "delivered", riderId: RIDER.profileId, prepStartedAt: "2026-09-30T12:04:00Z" } as const;
-    expect(steps(o({ ...delivered, debtStatus: "settled_cash" })).every((x) => x.state === "done")).toBe(true);
-    expect(steps(o({ ...delivered, debtStatus: "open" })).at(-1)!.state).toBe("now");
-    expect(steps(o({ ...delivered, debtStatus: "open", merchantClosedAt: "2026-09-30T13:00:00Z" })).at(-1)!.state).toBe("done");
+  it("adds 'Cash back to you' only when the rider brings the money back: after delivery, then due, then done", () => {
+    const cash = { paymentMethod: "cash", merchantCashRule: "collect_and_return", merchantPhase: null } as const;
+    expect(cashBackRow(o({ ...cash, status: "en_route_dropoff", debtStatus: "open" }))).toEqual({ state: "after", dueAt: null });
+    const due = new Date(2026, 9, 2, 13, 17).toISOString();
+    expect(cashBackRow(o({ ...cash, status: "delivered", debtStatus: "open", cashDueAt: due }))).toEqual({ state: "due", dueAt: "13:17" });
+    expect(cashBackRow(o({ ...cash, status: "delivered", debtStatus: "settled_cash" }))!.state).toBe("done");
+    expect(cashBackRow(o({ ...cash, merchantCashRule: "pay_upfront", status: "en_route_dropoff" }))).toBeNull();
+    expect(cashBackRow(o({ ...cash, paymentMethod: "wallet", status: "en_route_dropoff" }))).toBeNull();
+  });
+
+  it("groups a six-digit code 3+3 and leaves a legacy four-digit one whole", () => {
+    expect(groupCode("731604")).toEqual(["731", "604"]);
+    expect(groupCode("7316")).toEqual(["7316"]);
   });
 });
 

@@ -633,7 +633,7 @@
       "additionalProperties": false,
       "properties": {
         "code": {
-          "pattern": "^\\d{4}$",
+          "pattern": "^(?:\\d{4}|\\d{6})$",
           "type": "string"
         }
       },

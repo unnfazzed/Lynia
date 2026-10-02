@@ -3298,6 +3298,22 @@ Each PR of the build order appends its line here.
   app still sees a coherent at-accept round (legacy `awaiting_item_approval`, swapped lines as removed;
   its approve = swaps declined, decline = free cancel). Not in this PR: merchant-side push for answers
   (socket queue refresh only), "finish delivery without the code" (the door photo is evidence only).
+- **PR 3 (merchant + rider deltas, 2026-10-02):** the pickup code is minted as **6 digits** (BRIEF §16;
+  the wire also accepts a legacy 4 so an installed rider app gets a clean "wrong code" 400). Merchant:
+  **M1a** (an auto-accepted order rings full screen until the kitchen confirms), **M3a/M3b** (ticket with
+  "Cooking/Packing · ready HH:MM", priced lines, Change items, the customer's 4-step track), **M4** (code
+  read out 3+3, "{rider} entered the code"), **M5** (4-step track + "Cash back to you" row replacing B6's
+  8-step stepper), **M6a/M6b**. Rider: **RD1** tag variants (SHOP #DDD5FF, PHARMACY #C5E9DF — no shop or
+  pharmacy offer reaches a rider until build step 5), **RD2a** (6 CodeBoxes), **RD4a/RD4b** (door card
+  mirror; the code sends itself on the 6th digit). **Rider no-show wait copy 10 → 8 min** (rider-v2 `R`
+  `reachB` / `undelHint` / `reachWait`), sanctioned here; the parcel reach timer follows to 8 min so copy
+  and timer agree. Not drawn because they need the backend: M4b/M5b photos, the M5 ETA pill, the rider
+  call button (no rider number on the merchant read), RD1 seal note, RD4c "Can't use the code?". No
+  customer name on a merchant order, so "· Rudo" (M1a/M3 header), "Rudo confirmed with the code" (M6a,
+  B7's "Buyer confirmed with the code" stands in) and the first sentence of `O.m.backS` are left out.
+  Kept although not drawn (functional, from D-48/D-50): "Mark ride completed" (M5), "It wasn't returned"
+  (M6b), the customer's number (moved into the Change items sheet). Merchant `--highlight-*` tokens stay
+  the merchant face's values (no parallel tokens).
 
 ### 4 · Open questions, implemented as drawn (owner to confirm)
 

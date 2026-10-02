@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BecomeMerchantRequest, MarkUndeliveredRequest, MerchantLocationInput, merchantWaypoint, UpdateMerchantLocationRequest, Waypoint } from "./contracts";
+import { BecomeMerchantRequest, ConfirmMerchantPickupRequest, MarkUndeliveredRequest, MerchantLocationInput, merchantWaypoint, UpdateMerchantLocationRequest, Waypoint } from "./contracts";
 
 describe("MarkUndeliveredRequest (UNDELIVERED-NOTE-01)", () => {
   it("carries only the reason — no free-text note the API would silently throw away", () => {
@@ -42,5 +42,19 @@ describe("a merchant's own location (merchant mobile redesign, D-48)", () => {
     const base = { ownerName: "Farai", name: "Mbare Auto Spares", location: at, termsAccepted: true as const };
     expect(BecomeMerchantRequest.safeParse({ ...base, businessType: "shop" }).success).toBe(true);
     expect(BecomeMerchantRequest.safeParse({ ...base, businessType: "restaurant", shopKind: "grocery" }).success).toBe(false);
+  });
+});
+
+describe("ConfirmMerchantPickupRequest (N-16, six digits since D-59)", () => {
+  it("takes the six-digit pickup code", () => {
+    expect(ConfirmMerchantPickupRequest.safeParse({ code: "731604" }).success).toBe(true);
+  });
+  it("still parses an installed rider app's four digits, so the service answers it as a wrong code", () => {
+    expect(ConfirmMerchantPickupRequest.safeParse({ code: "7316" }).success).toBe(true);
+  });
+  it("refuses any other shape", () => {
+    for (const code of ["", "731", "73160", "7316040", "731 604", "abcdef"]) {
+      expect(ConfirmMerchantPickupRequest.safeParse({ code }).success).toBe(false);
+    }
   });
 });
