@@ -50,6 +50,7 @@ import {
 import { PAYMENT_RAIL, type PaymentRail } from "../adapters/payments/payment-rail.interface";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { TokenService } from "../auth/token.service";
+import { pushCopy, PUSH_C } from "../notifications/merchant-order-push";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
@@ -116,6 +117,8 @@ const SECTIONS_OFF = { SHOPS_ENABLED: "false", PHARMACY_ENABLED: "false" } as co
 
 /** D-48: the statuses after the rider has the food — when the merchant may close its side. */
 const AFTER_PICKUP_STATUSES: ReadonlySet<string> = new Set(["picked_up", "en_route_dropoff", "delivered", "completed", "undelivered"]);
+/** The reasons a venue itself turned the order down (G3a "{v} couldn’t take your order"). */
+const VENUE_DECLINED: ReadonlySet<string> = new Set(["out_of_ingredient", "too_busy", "closing_soon", "shop_closed", "other"]);
 
 /** E2 listQueue visibility — see the doc comment on the call site. */
 const QUEUE_VISIBLE_STATUSES = ["requested", "open_for_offers", "assigned", "confirmed", "en_route_pickup"] as const;
@@ -1387,11 +1390,19 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async notifyCancelledCustomer(orderId: string, reason: MerchantRejectionReasonCode): Promise<void> {
-    const order = await this.prisma.order.findUnique({ where: { id: orderId }, select: { customerId: true } });
+    const order = await this.prisma.order.findUnique({ where: { id: orderId }, select: { customerId: true, merchant: { select: { name: true } } } });
     if (!order) return;
+    // Order flow v2 G3a (O.g.push.c[8]/[9]): the venue declined → "{v} couldn’t take your order"; no
+    // rider → "We couldn’t find a rider". Every other reason keeps its own sentence.
+    const venue = order.merchant?.name?.trim() || null;
+    const copy =
+      reason === "no_rider"
+        ? pushCopy(PUSH_C.noRider, {})
+        : venue && VENUE_DECLINED.has(reason)
+          ? pushCopy(PUSH_C.venueCouldnt, { v: venue })
+          : { title: "Your order was cancelled", body: rejectionCopy(reason) };
     await this.notifications.notifyProfiles([order.customerId], {
-      title: "Your order was cancelled",
-      body: rejectionCopy(reason),
+      ...copy,
       // to+orderType so the tap opens the food tracker, not the parcel /order/:id. Additive.
       data: { orderId, status: "cancelled", to: "customer", orderType: "merchant" },
     });

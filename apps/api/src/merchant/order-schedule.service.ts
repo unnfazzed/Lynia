@@ -16,6 +16,7 @@ import {
 } from "@lynia/shared";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
+import { makingWord, pushCopy, PUSH_C, pushTime } from "../notifications/merchant-order-push";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
@@ -221,11 +222,16 @@ export class OrderScheduleService implements OnModuleInit, OnModuleDestroy {
         if (autoAccept) await this.prisma.merchantOrderItem.updateMany({ where: { orderId: s.orderId }, data: { available: true } });
         rung++;
         notifyFoodQueueChanged(this.gateway, o.merchantId, s.orderId);
-        const venue = o.merchant?.name ?? "The restaurant";
-        const making = o.merchant?.businessType === "shop" ? "packing" : "cooking";
+        // Order flow v2 G3a (O.g.push.c[11]): "Gava’s Kitchen is cooking. Arrives 12:30–13:00." A venue
+        // that still has to accept isn't cooking yet — only the slot is said then.
+        const venue = o.merchant?.name?.trim() || null;
+        const slotEnd = new Date(s.scheduledFor.getTime() + ORDER_SCHEDULE.slotMinutes * 60_000);
         void this.notifications.notifyProfiles([o.customerId], {
-          title: "Your scheduled order has started",
-          body: `${venue} is ${autoAccept ? making : "confirming it"} now.`,
+          ...pushCopy(PUSH_C.schedStarted, {
+            v: autoAccept ? venue : null,
+            making: makingWord(o.merchant?.businessType),
+            s: `${pushTime(s.scheduledFor)}–${pushTime(slotEnd)}`,
+          }),
           data: { orderId: s.orderId, status: "requested", to: "customer", orderType: "merchant", kind: "food_scheduled_started" },
         });
       } catch (err) {

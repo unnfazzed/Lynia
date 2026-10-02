@@ -11,6 +11,7 @@ import {
 } from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
 import { CANCEL_STRIKE_LIMIT } from "../orders/order-lifecycle.constants";
+import { pushCopy, PUSH_C, pushMoney, riderJobTemplate } from "../notifications/merchant-order-push";
 import { NotificationsService } from "../notifications/notifications.service";
 import { publicWaypoint } from "../orders/waypoints";
 import { PrismaService } from "../prisma/prisma.service";
@@ -191,7 +192,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     }
 
     const merchant = order.merchantId
-      ? await this.prisma.merchant.findUnique({ where: { id: order.merchantId }, select: { location: true } })
+      ? await this.prisma.merchant.findUnique({ where: { id: order.merchantId }, select: { location: true, name: true, businessType: true } })
       : null;
     const point = (merchant?.location as Waypoint | null)?.point;
     if (!point) {
@@ -260,9 +261,15 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       await this.closeRound(orderId, expiresAt);
       return "skipped";
     }
+    // Order flow v2 G3c (O.g.push.r): "New food job · $1.50" / "Gava’s Kitchen → 12 Lanark Rd. 60 s to
+    // accept." — a shop job asks for the sealed-bag photo instead. The fare is the delivery fee the rider
+    // keeps; the place is the drop-off landmark the offer card already shows.
+    const dropLandmark = (order.dropoff as Waypoint | null)?.landmark?.trim() || null;
     void this.notifications.notifyProfiles(riderIds, {
-      title: "New food pickup",
-      body: "A kitchen order is ready nearby — tap to accept before another rider takes it.",
+      ...pushCopy(
+        riderJobTemplate(merchant?.businessType),
+        { f: order.deliveryFee == null ? null : pushMoney(order.deliveryFee), v: merchant?.name ?? null, a: dropLandmark },
+      ),
       data: { orderId, kind: "food_offer" },
     });
     // C5 rider offer alarm channel: the live-app signal alongside the push above — GET
@@ -454,11 +461,18 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       body: "Head to the kitchen — you're the confirmed rider for this order.",
       data: { orderId, status: "assigned" },
     });
-    const fresh = await this.prisma.order.findUnique({ where: { id: orderId }, select: { customerId: true } });
+    const fresh = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { customerId: true, merchant: { select: { name: true } }, rider: { select: { profile: { select: { firstName: true } } } } },
+    });
     if (fresh) {
+      // Order flow v2 G3a (O.g.push.c[3]): "Tendai is heading to Gava’s Kitchen" / "He’ll collect your order soon."
       void this.notifications.notifyProfiles([fresh.customerId], {
-        title: "Rider secured",
-        body: "A rider is on the way to collect your order from the kitchen.",
+        ...pushCopy(
+          PUSH_C.riderToVenue,
+          { n: fresh.rider?.profile?.firstName?.trim() || null, v: fresh.merchant?.name?.trim() || null },
+          { n: "Your rider", v: "the venue" },
+        ),
         // to+orderType so the tap opens the food tracker: "assigned" alone routes to /rider/job (the
         // parcel rider's job screen) — a dead end for a food customer. Additive on the wire.
         data: { orderId, status: "assigned", to: "customer", orderType: "merchant" },
@@ -608,9 +622,9 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
     const order = await this.prisma.order.findUnique({ where: { id: orderId }, select: { customerId: true } });
     if (order) {
+      // Order flow v2 G3a (O.g.push.c[9]).
       void this.notifications.notifyProfiles([order.customerId], {
-        title: "Your order was cancelled",
-        body: "We couldn't find a rider for your order in time — nothing was charged, sorry about that.",
+        ...pushCopy(PUSH_C.noRider, {}),
         // to+orderType so the tap opens the food tracker, not the parcel /order/:id. Additive.
         data: { orderId, status: "cancelled", to: "customer", orderType: "merchant" },
       });

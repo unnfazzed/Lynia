@@ -101,6 +101,8 @@ export function stage({ status, phase = null, food = {}, snap = {}, pos, fixAgoM
     ...snap,
   };
   installRouter([
+    // T13a "Change time": the schedule sheet's slots (R5a's sample — 11:00 and 13:00 tomorrow are full).
+    { match: /^\/restaurants\/[^/]+\/schedule-slots/, json: () => scheduleSlots() },
     { match: /^\/restaurants\/orders\/[^/]+\/cash\/customer-confirm$/, method: "POST", json: { orderId: ORDER_ID, customerCashConfirmedAt: at(0) } },
     { match: /^\/orders\/[^/]+\/delivery-code\/rotate$/, method: "POST", json: { deliveryCode: "418290" } },
     { match: /^\/restaurants\/orders\/[^/]+$/, status: loadStatus ?? 200, json: () => (loadStatus ? { message: "x" } : order) },
@@ -125,3 +127,69 @@ export function stage({ status, phase = null, food = {}, snap = {}, pos, fixAgoM
 }
 
 export const T = at;
+
+// ── Round 3 (shops, pharmacy, scheduled, Rx): the handoff's other two sample venues (of-kit.js `V` / `ORD`) ──
+const item = (n, name, priceUsd, over = {}) => ({
+  itemId: `0a1b2c3d-0000-4000-8000-0000000004${String(n).padStart(2, "0")}`,
+  dishId: `0a1b2c3d-0000-4000-8000-0000000005${String(n).padStart(2, "0")}`,
+  name,
+  priceUsd,
+  quantity: 1,
+  note: null,
+  available: true,
+  ...over,
+});
+
+/** Avondale Fresh (a grocery shop): Bread, Eggs, Mazoe, oil — $14.60 + $1.50 = $16.10. */
+export const AVF = {
+  food: {
+    venue: { name: "Avondale Fresh", businessType: "shop", shopKind: "grocery" },
+    items: [item(1, "Bread (Lobels 700g)", 1.1), item(2, "Eggs (tray of 30)", 5.5), item(3, "Mazoe orange 2L", 3.2), item(4, "Cooking oil 2L", 4.8)],
+    merchantGoodsTotal: 14.6,
+    total: 16.1,
+    restaurantPhone: "0242 333 210",
+  },
+  snap: { merchantName: "Avondale Fresh", pickup: { point: VENUE, landmark: "Avondale Fresh" } },
+};
+
+/** Avondale Pharmacy: Paracetamol, ORS, Plasters — $5.30 + $1.50 = $6.80 (the Rx order adds Amoxicillin). */
+export const AVP = {
+  food: {
+    venue: { name: "Avondale Pharmacy", businessType: "shop", shopKind: "pharmacy" },
+    items: [item(11, "Paracetamol 500mg (20 tabs)", 1.5), item(12, "ORS sachets (x5)", 2), item(13, "Plasters (20)", 1.8)],
+    merchantGoodsTotal: 5.3,
+    total: 6.8,
+    restaurantPhone: "0242 335 090",
+  },
+  snap: { merchantName: "Avondale Pharmacy", pickup: { point: VENUE, landmark: "Avondale Pharmacy" } },
+};
+
+/** The pharmacy's Rx order: Amoxicillin (needs the prescription) + the three OTC lines. */
+export const rxItems = (amoxAvailable = true) => [item(10, "Amoxicillin 500mg (21 caps)", 4.2, { rxRequired: true, available: amoxAvailable }), ...AVP.food.items];
+
+/** A device-local clock time `days` from today (the slot pickers speak the phone's day). */
+export const localAt = (days, h, m) => {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  d.setHours(h, m, 0, 0);
+  return d.toISOString();
+};
+
+/** R5a's slot grid, tomorrow 11:00–15:00 (11:00 and 13:00 full); today has none left. */
+function scheduleSlots() {
+  const pad = (n) => String(n).padStart(2, "0");
+  const slot = (h, m, full = false) => {
+    const eh = m === 30 ? h + 1 : h;
+    const em = m === 30 ? 0 : 30;
+    return { start: localAt(1, h, m), end: localAt(1, eh, em), label: `${pad(h)}:${pad(m)}–${pad(eh)}:${pad(em)}`, full };
+  };
+  const tomorrow = [slot(11, 0, true), slot(11, 30), slot(12, 0), slot(12, 30), slot(13, 0, true), slot(13, 30), slot(14, 0), slot(14, 30)];
+  return {
+    slotMinutes: 30,
+    openNow: true,
+    leadMinutes: 25,
+    today: { date: localAt(0, 0, 0).slice(0, 10), slots: [] },
+    tomorrow: { date: localAt(1, 0, 0).slice(0, 10), slots: tomorrow },
+    firstAvailable: tomorrow[1],
+  };
+}

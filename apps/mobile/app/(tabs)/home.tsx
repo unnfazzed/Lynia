@@ -11,6 +11,8 @@ import { useHomeLocation } from "../../src/logic/home-location";
 import { liveBarModel, popularNearYou } from "../../src/logic/home-feed";
 import { loadRiderIdentity } from "../../src/logic/rider-identity";
 import { useNow } from "../../src/logic/use-now";
+import { useFoodOrdersPeek } from "../../src/query/use-food-order";
+import { merchantLive } from "../../src/ui/orderflow/live-copy";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { useServiceFlags } from "../../src/net/use-service-flags";
 import { useShopListFeed } from "../../src/query/use-shops";
@@ -238,7 +240,17 @@ export default function LauncherHomeScreen(): React.ReactElement {
       if (o.orderType !== "merchant") qc.setQueryData<OrderSnapshot>(orderKey(o.id), o);
     }
   }, [homeFocused, activeOrders, qc]);
-  const bar = liveBarModel(activeOrders, statusPillLabel, (id) => riderNames[id] ?? null);
+  // Order flow v2 G1 (ledger D-59): a merchant order leads with its stage's own copy (O.g.bar), read off
+  // the food order — the same stage the order screen shows.
+  const lead = activeOrders[0];
+  const leadFood = useFoodOrdersPeek(lead?.orderType === "merchant" ? [lead.id] : [], homeFocused);
+  const baseBar = liveBarModel(activeOrders, statusPillLabel, (id) => riderNames[id] ?? null);
+  const leadRead = lead ? leadFood[lead.id] : undefined;
+  const merchantBar = lead && baseBar && lead.orderType === "merchant" ? merchantLive(lead, leadRead, riderNames[lead.id] ?? leadRead?.rider?.firstName ?? null, now.getTime()) : null;
+  const bar =
+    baseBar && merchantBar
+      ? { ...baseBar, icon: merchantBar.icon, title: merchantBar.title, sub: merchantBar.sub, step: merchantBar.lit - 1, steps: 4, etaMinutes: merchantBar.etaMinutes }
+      : baseBar;
 
   // ── Rider v2 C5 (ledger D-54): a rider who switched to the customer side mid-job keeps the job — Home
   // carries a live-job bar that returns to it. Only read for a verified rider; nothing renders otherwise.

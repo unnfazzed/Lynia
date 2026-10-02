@@ -3,6 +3,9 @@ import {
   codeCopied,
   codeGroups,
   codeShown,
+  isScheduledWaiting,
+  merchantService,
+  slotDay,
   merchantEta,
   prepProgress,
   readyAtMs,
@@ -233,5 +236,42 @@ describe("substitution (BRIEF §8)", () => {
       saved: 9.1,
     });
     expect(roundTakenOff({ lines: [line({ action: "reduce", name: "Eggs", priceUsd: 0.5, quantity: 6, newQuantity: 2 })] })).toEqual({ removed: [], declinedSwaps: [], reduced: ["Eggs"], saved: 2 });
+  });
+});
+
+describe("per service, scheduled and Rx stages (README 'Per service', BRIEF §12–13)", () => {
+  it("speaks food for restaurants and older APIs, shops for shops, pharmacy for pharmacies", () => {
+    expect(merchantService(undefined)).toBe("food");
+    expect(merchantService({ businessType: "restaurant", shopKind: null })).toBe("food");
+    expect(merchantService({ businessType: "shop", shopKind: "grocery" })).toBe("shops");
+    expect(merchantService({ businessType: "shop", shopKind: null })).toBe("shops");
+    expect(merchantService({ businessType: "shop", shopKind: "pharmacy" })).toBe("pharmacy");
+  });
+
+  it("T13a: a scheduled order the venue hasn't started is Scheduled; once it rings it runs as usual", () => {
+    expect(isScheduledWaiting({ scheduledFor: "2026-10-03T10:30:00Z", scheduleStartedAt: null })).toBe(true);
+    expect(isScheduledWaiting({ scheduledFor: "2026-10-03T10:30:00Z", scheduleStartedAt: "2026-10-03T10:05:00Z" })).toBe(false);
+    expect(isScheduledWaiting({ scheduledFor: null })).toBe(false);
+    expect(resolveMerchantStage(base({ merchantPhase: "awaiting_accept", scheduled: true })).stage).toBe("scheduled");
+    expect(resolveMerchantStage(base({ merchantPhase: "awaiting_accept", scheduled: false })).stage).toBe("waiting");
+    // A cancelled scheduled order is an ending, not Scheduled.
+    expect(resolveMerchantStage(base({ status: "cancelled", merchantPhase: null, scheduled: true })).stage).toBe("cancelled");
+  });
+
+  it("T5c / D5a: the pharmacist's check comes after accept and before packing; a decline carries on", () => {
+    expect(resolveMerchantStage(base({ merchantPhase: "awaiting_accept", rxStatus: "pending" })).stage).toBe("waiting");
+    expect(resolveMerchantStage(base({ merchantPhase: "preparing", rxStatus: "pending" })).stage).toBe("rxCheck");
+    expect(resolveMerchantStage(base({ merchantPhase: "preparing", rxStatus: "approved" })).stage).toBe("cooking");
+    expect(resolveMerchantStage(base({ merchantPhase: "preparing", rxStatus: "declined" })).stage).toBe("rxDeclined");
+    expect(resolveMerchantStage(base({ status: "assigned", merchantPhase: null, riderId: "r", rxStatus: "declined" })).stage).toBe("toVenue");
+  });
+
+  it("slotDay: today / tomorrow / the weekday, on the device's calendar", () => {
+    const now = new Date(2026, 9, 2, 12, 0).getTime();
+    const words = { today: "today", tomorrow: "tomorrow" };
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    expect(slotDay(new Date(2026, 9, 2, 18, 30).toISOString(), now, words, days)).toBe("today");
+    expect(slotDay(new Date(2026, 9, 3, 0, 30).toISOString(), now, words, days)).toBe("tomorrow");
+    expect(slotDay(new Date(2026, 9, 5, 12, 30).toISOString(), now, words, days)).toBe("Mon");
   });
 });

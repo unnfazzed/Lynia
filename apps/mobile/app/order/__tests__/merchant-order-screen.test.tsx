@@ -395,6 +395,85 @@ describe("merchant order — one order screen (D-59)", () => {
     expect(has(t, "Share code")).toBe(true);
   });
 
+  // ── round 3: per service, scheduled, Rx (README "Per service", BRIEF §12–13) ──
+  const SHOP = { name: "Avondale Fresh", businessType: "shop" as const, shopKind: "grocery" };
+  const PHARMACY = { name: "Avondale Pharmacy", businessType: "shop" as const, shopKind: "pharmacy" };
+
+  it("T3 / T5a: a shop speaks Packing and items — waiting for the 3-minute accept, then packing", async () => {
+    const t = await render(foodOrder({ venue: SHOP, merchantPhase: "awaiting_accept", acceptDeadlineAt: iso(150_000), prepStartedAt: null }), snapshot());
+    expect(has(t, "Waiting for Avondale Fresh to accept")).toBe(true);
+    expect(has(t, "Packing")).toBe(true);
+    expect(has(t, "Cooking")).toBe(false);
+    act(() => t.unmount());
+    active = null;
+    const p = await render(foodOrder({ venue: SHOP }), snapshot());
+    expect(has(p, "Packing your order")).toBe(true);
+    expect(has(p, /3 items · \$16\.50 cash/)).toBe(true);
+  });
+
+  it("T5b / P1s: a pharmacy notes the seal while packing and asks to check it at the door", async () => {
+    const t = await render(foodOrder({ venue: PHARMACY }), snapshot());
+    expect(has(t, "Packing your order")).toBe(true);
+    expect(has(t, "The pharmacy seals the bag. Check the seal before you pay.")).toBe(true);
+    act(() => t.unmount());
+    active = null;
+    const d = await render(
+      foodOrder({ venue: PHARMACY, status: "en_route_dropoff", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003" }),
+      snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, rider: { profileId: "r", currentLat: -17.8105, currentLng: 31.0705, updatedAt: iso(-3000) } }),
+    );
+    expect(has(d, "Check the seal is unbroken before you pay")).toBe(true);
+  });
+
+  it("T13a: Scheduled — the slot, when the venue starts, a free cancel and Change time", async () => {
+    const slot = new Date(NOW + 86_400_000);
+    slot.setHours(12, 30, 0, 0);
+    const rings = new Date(slot.getTime() - 25 * 60_000);
+    const t = await render(foodOrder({ merchantPhase: "awaiting_accept", prepStartedAt: null, scheduledFor: slot.toISOString(), ringsAt: rings.toISOString(), scheduleStartedAt: null }), snapshot());
+    expect(has(t, "Scheduled for tomorrow 12:30–13:00")).toBe(true);
+    expect(has(t, "Gava’s Kitchen starts cooking at 12:05. Free to cancel until then.")).toBe(true);
+    expect(has(t, "Cancel order · free")).toBe(true);
+    expect(has(t, "Change time")).toBe(true);
+  });
+
+  it("T13b: a scheduled order the venue started — '{v} started cooking' and the slot as the arrival", async () => {
+    const slot = new Date(NOW + 30 * 60_000);
+    const t = await render(foodOrder({ scheduledFor: slot.toISOString(), scheduleStartedAt: iso(-60_000), ringsAt: iso(-60_000) }), snapshot());
+    expect(has(t, "Gava’s Kitchen started cooking")).toBe(true);
+  });
+
+  it("T5c / D5a / D5b: the pharmacist's check, a decline that carries on (cancel the rest free), the cancelled ending", async () => {
+    const rxLine = { itemId: "0a1b2c3d-0000-4000-8000-0000000004a0", dishId: "0a1b2c3d-0000-4000-8000-0000000005a0", name: "Amoxicillin 500mg (21 caps)", priceUsd: 4.2, quantity: 1, note: null, available: false, rxRequired: true };
+    const t = await render(foodOrder({ venue: PHARMACY, prescription: { status: "pending", patientName: "Rudo", pageCount: 1 } }), snapshot());
+    expect(has(t, "Pharmacist is checking your prescription")).toBe(true);
+    act(() => t.unmount());
+    active = null;
+    const base = foodOrder({ venue: PHARMACY });
+    const d = await render(
+      foodOrder({ venue: PHARMACY, items: [rxLine, ...base.items], prescription: { status: "declined", patientName: "Rudo", pageCount: 1, declineReason: "expired", declineNote: "dated March 2026" } }),
+      snapshot(),
+    );
+    expect(has(d, "Your prescription wasn’t approved")).toBe(true);
+    expect(has(d, "Expired · dated March 2026")).toBe(true);
+    expect(has(d, "Amoxicillin 500mg (21 caps) is taken off. The rest of your order is being packed — new total $16.50.")).toBe(true);
+    press(d, "Cancel the rest — free");
+    await act(async () => undefined);
+    expect(mockCancelUnpaid).toHaveBeenCalledWith("order-1");
+    act(() => d.unmount());
+    active = null;
+    const e = await render(
+      foodOrder({ venue: PHARMACY, status: "cancelled", merchantPhase: null, prescription: { status: "declined", patientName: "Rudo", pageCount: 1, declineReason: "expired" } }),
+      snapshot({ status: "cancelled", cancelledBy: "customer" }),
+    );
+    expect(has(e, "Order cancelled")).toBe(true);
+    expect(has(e, "See other pharmacies")).toBe(true);
+    expect(has(e, "Prescription checked")).toBe(false);
+  });
+
+  it("track: pharmacy step 1 reads 'Prescription checked' once the Rx was approved", async () => {
+    const t = await render(foodOrder({ venue: PHARMACY, prescription: { status: "approved", patientName: "Rudo", pageCount: 1 } }), snapshot());
+    expect(has(t, "Prescription checked")).toBe(true);
+  });
+
   it("D1: delivered — hero, the two-row rating (venue + rider), the receipt, Order again; D1b toast + Undo", async () => {
     const t = await render(
       foodOrder({ status: "delivered", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003", deliveredAt: iso(-60_000), shortId: "A1B2", itemsSubtotal: 15, smallOrderFee: 0 }),

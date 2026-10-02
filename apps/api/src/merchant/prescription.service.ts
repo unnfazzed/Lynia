@@ -23,6 +23,7 @@ import { ownNamespace } from "../adapters/storage/upload-kinds";
 import { UploadVerifier } from "../adapters/storage/upload-verifier";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
+import { pushCopy, PUSH_C } from "../notifications/merchant-order-push";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
@@ -170,9 +171,11 @@ export class PrescriptionService {
       if (u.count === 0) throw new ConflictException("Order changed, retry");
     });
     notifyFoodQueueChanged(this.gateway, merchantId, orderId);
+    // Order flow v2 G3a (O.g.push.c[10]); with nothing left to pack, the cancellation's own sentence.
+    const drawn = pushCopy(PUSH_C.rxDeclined, {});
     void this.notifications.notifyProfiles([order.customerId], {
-      title: "Your prescription wasn't approved",
-      body: cancelled ? rejectionCopy("rx_declined") : "Tap to see why. The rest of your order carries on.",
+      title: drawn.title,
+      body: cancelled ? rejectionCopy("rx_declined") : drawn.body,
       data: { orderId, status: cancelled ? "cancelled" : "requested", to: "customer", orderType: "merchant", kind: "food_rx_declined" },
     });
   }

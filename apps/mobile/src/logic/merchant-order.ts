@@ -16,8 +16,11 @@ import { ARRIVING_M, GPS_PAUSED_MS } from "./order-stage";
 
 /** The README's T/P/D states this screen can be in (T10 "at your door" = P). */
 export type MerchantStage =
+  | "scheduled" // T13a — a scheduled order the venue hasn't started yet
   | "confirming" // T2 — auto-accepted, the kitchen hasn't said yes yet
   | "waiting" // T3 — waiting for the venue to accept
+  | "rxCheck" // T5c — the pharmacist is checking the prescription
+  | "rxDeclined" // D5a — the prescription was declined; the rest carries on
   | "itemApproval" // U2 — the venue took a line off at accept; the customer answers
   | "cooking" // T4
   | "slowRider" // T11a — food ready, no rider yet
@@ -76,6 +79,10 @@ export function serverTrackStep(i: TrackInput, track: MerchantOrderTrackView | n
 }
 
 export interface StageInput extends TrackInput {
+  /** BRIEF §12: a scheduled order the venue hasn't started (`scheduledFor` set, `scheduleStartedAt` not). */
+  scheduled?: boolean;
+  /** BRIEF §13: the order's prescription check, when it has one. */
+  rxStatus?: "pending" | "approved" | "declined" | null;
   riderId: string | null | undefined;
   /** A rider was seen on this order earlier (the drop latch). */
   sawRider: boolean;
@@ -125,6 +132,11 @@ function baseStage(i: StageInput): MerchantStage {
     if (i.status === "en_route_dropoff" && i.rider && i.dropoff && metres(i.rider, i.dropoff) <= ARRIVING_M) return "door";
     return "onWay";
   }
+  if (i.status === "requested" && i.scheduled) return "scheduled";
+  // BRIEF §13: the check comes before Packing (a shop accepts first — T3 holds until then); a decline
+  // takes the Rx lines off and the rest carries on (D5a) until the order moves on.
+  if (i.status === "requested" && i.rxStatus === "declined" && (i.merchantPhase === "preparing" || i.merchantPhase === "awaiting_accept")) return "rxDeclined";
+  if (i.status === "requested" && i.rxStatus === "pending" && i.merchantPhase === "preparing") return "rxCheck";
   switch (i.merchantPhase) {
     case "awaiting_accept":
     case "awaiting_payment":
@@ -200,7 +212,7 @@ export function merchantEta(i: {
     const minutes = rideMinutes(rider, dropoff);
     return { kind: "one", minutes, atMs: nowMs + minutes * MIN_MS };
   }
-  const preCollect: ReadonlySet<MerchantStage> = new Set(["confirming", "cooking", "slowRider", "riderDropped", "toVenue", "collecting"]);
+  const preCollect: ReadonlySet<MerchantStage> = new Set(["confirming", "cooking", "rxCheck", "rxDeclined", "slowRider", "riderDropped", "toVenue", "collecting"]);
   if (!preCollect.has(stage)) return null;
   if ((stage === "toVenue" || stage === "collecting") && (i.noFix || !rider)) return null;
   if (i.readyMs == null && stage !== "slowRider" && stage !== "riderDropped") return null;
@@ -348,4 +360,33 @@ export function roundTakenOff(round: Pick<SubstitutionRoundView, "lines">): { re
     }
   }
   return { removed, declinedSwaps, reduced, saved: usdOf(savedC) };
+}
+
+// ── per service (README "Per service": Restaurant · Shop · Pharmacy) ─────────────────────────────────
+
+/** The `O.svc` key a merchant order speaks in. */
+export type MerchantService = "food" | "shops" | "pharmacy";
+
+/** Restaurants cook; shops and pharmacies pack. An older API without `venue` reads as a restaurant. */
+export function merchantService(venue: { businessType?: string | null; shopKind?: string | null } | null | undefined): MerchantService {
+  if (venue?.businessType !== "shop") return "food";
+  return venue.shopKind === "pharmacy" ? "pharmacy" : "shops";
+}
+
+// ── scheduled (BRIEF §12) ───────────────────────────────────────────────────────────────────────────
+
+/** The Scheduled state (T13a): a slot is set and the venue hasn't started it. */
+export function isScheduledWaiting(o: { scheduledFor?: string | null; scheduleStartedAt?: string | null }): boolean {
+  return !!o.scheduledFor && !o.scheduleStartedAt;
+}
+
+/** The slot's day relative to `nowMs` on the device: `today`, `tomorrow`, else the weekday name. */
+export function slotDay(iso: string, nowMs: number, words: { today: string; tomorrow: string }, days: readonly string[]): string {
+  const d = new Date(iso);
+  const start = new Date(nowMs);
+  start.setHours(0, 0, 0, 0);
+  const diff = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - start.getTime()) / 86_400_000);
+  if (diff === 0) return words.today;
+  if (diff === 1) return words.tomorrow;
+  return days[d.getDay()] ?? "";
 }

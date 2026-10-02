@@ -8,6 +8,11 @@ import type {
 } from "@lynia/shared";
 import { apiFetch } from "./client";
 
+/** T13a "Change time": move a scheduled order to another slot before the venue starts it. */
+export function changeFoodOrderSchedule(orderId: string, scheduledFor: string): Promise<MerchantOrderResponse> {
+  return apiFetch(`/restaurants/orders/${orderId}/schedule`, { method: "POST", body: { scheduledFor } });
+}
+
 /** D2 (checkout + kitchen-confirms). Price is always server-computed (D-35) — the client sends the
  *  basket + dropoff + payment method, never a total. */
 export function placeFoodOrder(merchantId: string, body: PlaceMerchantOrderRequest): Promise<MerchantOrderResponse> {

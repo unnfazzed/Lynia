@@ -1,3 +1,4 @@
+import type { MerchantService } from "../../logic/merchant-order";
 import { ofFmt, O } from "./copy";
 
 /**
@@ -69,5 +70,35 @@ export function withRider(s: string, riderFirst: string): string {
   return s.replace(/Tendai/g, riderFirst);
 }
 
-/** The service vocabulary for a merchant order. Restaurants are the only merchant orders today. */
+/** The restaurant vocabulary (`O.svc.food`) — the default where no order is in hand. */
 export const SVC = O.svc.food;
+
+/** One service's vocabulary (`O.svc.food` / `.shops` / `.pharmacy`): Cooking vs Packing, dishes vs items. */
+export type SvcCopy = (typeof O.svc)[MerchantService];
+export function svcCopy(s: MerchantService): SvcCopy {
+  return O.svc[s];
+}
+
+/** The four track labels; pharmacy step 1 reads "Prescription checked" once an Rx was approved (BRIEF §4). */
+export function trackLabels(s: MerchantService, rxChecked: boolean): readonly string[] {
+  if (s === "pharmacy" && rxChecked) return [O.svc.pharmacy.stRx, ...O.svc.pharmacy.st.slice(1)];
+  return O.svc[s].st;
+}
+
+/** Markup strings for the shop / pharmacy / Rx states (of-screens-rt.js T5b, of-screens-upd.js D5b). */
+export const OXS = {
+  /** T5b — the pharmacy's seal note under the prep bar. */
+  sealNote: "The pharmacy seals the bag. Check the seal before you pay.",
+  /** D5b — the ending's button. */
+  otherPharmacies: "See other pharmacies",
+  /** D5a — "Expired · dated March 2026": the pharmacist's reason chip, then their note. */
+  rxReason: "{r} · {n}",
+} as const;
+
+/** The pharmacist's decline reason in the chip's words (`O.m.rxR`, index-aligned with the API enum). */
+export function rxReasonLabel(reason: string | null | undefined, note: string | null | undefined): string {
+  const i = ["unreadable", "expired", "not_valid", "other"].indexOf(reason ?? "other");
+  const r = O.m.rxR[i < 0 ? 3 : i] ?? O.m.rxR[3];
+  const n = note?.trim();
+  return n ? ofFmt(OXS.rxReason, { r, n }) : r;
+}
