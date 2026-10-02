@@ -1,4 +1,4 @@
-import type { RestaurantListResponse, RestaurantMenuResponse, RestaurantReopenReminderResponse, RestaurantSearchResponse } from "@lynia/shared";
+import type { RestaurantListResponse, RestaurantMenuResponse, RestaurantReopenReminderResponse, RestaurantSearchResponse, SearchPopularResponse } from "@lynia/shared";
 import { apiFetch } from "./client";
 
 /** D1 (browse): corridor-wide restaurant list, `pilotEnabled` + `RESTAURANTS_ENABLED`-gated
@@ -34,4 +34,9 @@ export function setReopenReminder(id: string): Promise<RestaurantReopenReminderR
 /** Stop waiting. Idempotent — clearing one that isn't set is a no-op, not an error. */
 export function clearReopenReminder(id: string): Promise<RestaurantReopenReminderResponse> {
   return apiFetch(`/restaurants/${id}/reopen-reminder`, { method: "DELETE" });
+}
+
+/** Browse v2 X1 (D-57): the "Popular near you" search chips — the most-ordered dish names. */
+export function getSearchPopular(): Promise<SearchPopularResponse> {
+  return apiFetch("/restaurants/search/popular");
 }

@@ -232,14 +232,14 @@ export default function RestaurantMenuScreen(): React.ReactElement {
               placeholder={fmt(B.store.searchIn, { v: name })}
               placeholderTextColor={tokens.color.muted}
               accessibilityLabel={fmt(B.store.searchIn, { v: name })}
-              style={{ flex: 1, fontSize: 15, color: tokens.color.ink, paddingVertical: 0 }}
+              style={{ flex: 1, minWidth: 0, fontSize: 15, color: tokens.color.ink, paddingVertical: 0 }}
             />
             {query ? <IconButton icon="x" size={18} label="Clear" onPress={() => setQuery("")} /> : null}
           </View>
         </View>
         {q.length >= 2 && hits.length === 0 ? (
           <BrowseEmpty title={fmt(B.store.noHits.t, { q, v: name })} body={fmt(B.store.noHits.s, { noun: B.svc.food.noun })}>
-            <BrowseButton label={fmt(B.store.noHits.cta, { noun: B.svc.food.noun })} variant="ghost" onPress={() => router.push("/food/search")} />
+            <BrowseButton label={fmt(B.store.noHits.cta, { noun: B.svc.food.noun })} variant="ghost" onPress={() => router.push(`/food/search?q=${encodeURIComponent(q)}` as never)} />
           </BrowseEmpty>
         ) : (
           <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: hasCart ? 96 : 24 }}>

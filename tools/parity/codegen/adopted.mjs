@@ -288,8 +288,7 @@ export const ADOPTED = [
     ],
   },
   {
-    // ── RC.search — restaurant/dish search (app/food/search.tsx). DEFER-only: the same RestRow backend
-    // gate as RC.list#data, PLUS a dish-index the API lacks, PLUS a live-vs-static multi-state superset.
+    // ── RC.search — search (app/food/search.tsx). SUPERSEDED by D-57's X1–X4.
     key: "RC.search",
     container: "apps/mobile/app/food/search.tsx",
     mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
@@ -300,7 +299,8 @@ export const ADOPTED = [
         state: "data",
         key: "RC.search",
         reason:
-          "THREE walls, none a missing primitive. (1) BACKEND gate — the mock's PLACES section is `<RestRow r={REST[0]}/>`, whose meta line draws `★ rating (n) · km · eta min` + `$fee delivery`; rating, geo-distance (km), per-restaurant ETA and delivery fee are ALL absent from the `RestaurantListItem` wire contract and the app has no customer geolocation (issue #673 / task #24 — the SAME gate that defers RC.list#data). The app's shared RestaurantRow already honest-empties this (cuisine tags + an open/closing-now line instead of the fabricated rating/km/eta), so its meta STRUCTURE diverges from the mock's RestRow by design; rendering the mock's rating/km/eta nodes would ship fabricated figures (CLAUDE.md forbids). (2) DISH INDEX — the mock's second `DISHES` section lists cross-restaurant dish matches (`Sadza & beef stew · Sadza Republic · $4.50`), which needs a cross-restaurant menu/dish search index the C1 customer read API does not expose; the app search runs client-side over the already-fetched restaurant list (name + cuisine only) and honestly omits the DISHES section rather than fake it. (3) LIVE-vs-STATIC multi-state — the static mock draws only the populated 'sadza' result; the app screen interleaves an empty-query hint, a 'still searching more kitchens…' pagination line, the results list and a no-matches EmptyState, none of which the one frozen mock draws. Adoptable once the customer read API carries rating/distance/fee + a cross-restaurant dish index, and the search states earn their own mock keys.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-57, owner instruction 2026-10-01): search is now the Browse v2 handoff's X1–X4 (packages/design/handoff/browse-v2) — a bordered field beside a back disc; recent searches and 'Popular near you' chips before typing; results grouped RESTAURANTS · SHOPS · PHARMACY · DISHES & ITEMS (three each, 'See all n') from Home, PLACES + DISHES from Restaurants; a 'Send a parcel' row when the words sound like a parcel; an offline note. The gallery `search` draws a restaurants-only PLACES + DISHES list under a plain app bar; a structural snapshot against it would assert the structure D-57 retired. Re-adoptable when a gallery export draws Browse v2.",
+
       },
     ],
   },
