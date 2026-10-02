@@ -3809,7 +3809,7 @@ The three questions rows 1–3 left open, answered by the owner and built (no lo
      reason label (`StandingReason`); on a restore, the reason of the pause it lifted. The ops label itself
      is never sent.
    - `amount` + `balance` on `wallet.credit` — recorded on the audit row since migration
-     `0069_audit_log_amount` (expand-only: two nullable `DECIMAL(10,2)` columns on `audit_logs`).
+     `0073_audit_log_amount` (expand-only: two nullable `DECIMAL(10,2)` columns on `audit_logs`).
    - `cancelledBy` (`customer` · `rider` · `merchant` · `lynia`) on cancelled rows — derived from the
      order's `cancelledBy` / `rejectionReason`, the same reading as Orders v2's `customerOrderOutcome`, so
      it needs no new data and old orders have it too.

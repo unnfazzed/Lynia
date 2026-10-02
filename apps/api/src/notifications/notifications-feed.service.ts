@@ -511,7 +511,7 @@ export class NotificationsFeedService {
         orderBy: { createdAt: "desc" },
         take: FEED_ROW_CAP,
         // Detail fields (owner 2026-10-02): why (a KYC decline key or a standing reason label), and a
-        // wallet credit's amount + resulting balance (recorded since migration 0069).
+        // wallet credit's amount + resulting balance (recorded since migration 0073).
         select: { id: true, action: true, createdAt: true, reasonCode: true, amount: true, balanceAfter: true },
       }),
       // UX-2026-07-16 resolved-issue rows — consumed by the issues loop below; also user-scoped.
@@ -1046,7 +1046,7 @@ export class NotificationsFeedService {
         action: a.action,
         active: inForce(a),
         ...(reason ? { reason } : {}),
-        // A wallet credit written since 0069 carries its amount and the balance it left.
+        // A wallet credit written since 0073 carries its amount and the balance it left.
         ...(a.action === "wallet.credit" && a.amount != null ? { amount: amountOf(a.amount) } : {}),
         ...(a.action === "wallet.credit" && a.balanceAfter != null ? { balance: amountOf(a.balanceAfter) } : {}),
       });
