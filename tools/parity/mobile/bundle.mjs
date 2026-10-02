@@ -28,7 +28,7 @@ const SHIMS = join(HERE, "shims");
 // Native-only modules with no bearing on a static screenshot → the generic empty shim.
 // (expo-secure-store gets a real in-memory shim instead — fixtures seed device state through it.)
 const EMPTY_MODULES = [
-  "expo-linking", "expo-image-picker",
+  "expo-linking",
   "expo-clipboard", "expo-web-browser", "expo-device", "expo-application",
   "expo-splash-screen", "expo-updates", "expo-asset", "expo-file-system",
   // Exact subpath (src/query/persist.ts, since Expo SDK 54): the package alias above would otherwise
@@ -87,6 +87,7 @@ export function aliasMap() {
     "react-native-maps": join(SHIMS, "react-native-maps.js"),
     "expo-image": join(SHIMS, "expo-image.js"),
     "expo-image-manipulator": join(SHIMS, "expo-image-manipulator.js"),
+    "expo-image-picker": join(SHIMS, "expo-image-picker.js"),
     "socket.io-client": join(SHIMS, "socket-io.js"),
     "@sentry/react-native": join(SHIMS, "sentry.js"),
     "expo-secure-store": join(SHIMS, "expo-secure-store.js"),

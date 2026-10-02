@@ -140,7 +140,7 @@ function Seeder({ lines, venue, children }) {
   React.useEffect(() => {
     if (done.current || lines.length === 0) return;
     done.current = true;
-    for (const l of lines) cart.addItem(venue.restaurantId, venue.restaurantName, l);
+    for (const l of lines) cart.addItem(venue.restaurantId, venue.restaurantName, l, venue.kind);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return children;

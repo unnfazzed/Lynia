@@ -9,7 +9,7 @@
  *   node tools/parity/shoot-order-flow-review.mjs --out docs/parity/ORDER-FLOW-V2-REVIEW-2026-10-02
  *
  * The native map is the react-native-maps web shim (a grey field). Out of scope for this PR and so not
- * shot: R2a/R2b (shop/pharmacy ordering), R5a–c (scheduled), R8a/b (Rx).
+ * shot here: R2a/R2b, R5a–c and R8a/b — those are tools/parity/shoot-order-flow-shops.mjs (part 5).
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -83,7 +83,7 @@ const ROWS = [
   { id: "R3b", label: "R3b · Address out of area", sub: "hint, never a red line", app: { name: "R3b", fixture: "of_r3b", before: editAddress } },
   { id: "R4", label: "R4 · Under the $4.00 minimum", sub: "the mock draws a pharmacy cart; restaurants share the rule", app: { name: "R4", fixture: "of_r4" } },
   { id: "R6a", label: "R6a · Changed since the cart", sub: "sold out + price change", app: { name: "R6a", fixture: "of_r6a" } },
-  { id: "R6b", label: "R6b · Venue just closed", sub: "'Schedule for …' waits for the slots API (R5) — not rendered", app: { name: "R6b", fixture: "of_r6b" } },
+  { id: "R6b", label: "R6b · Venue just closed", sub: "'Schedule for …' offers the first slot (part 5)", app: { name: "R6b", fixture: "of_r6b" } },
   { id: "R7a", label: "R7a · Placing", app: { name: "R7a", fixture: "of_r7a", before: place } },
   { id: "R7b", label: "R7b · Couldn’t place", sub: "toast + Try again, staying on Review", app: { name: "R7b", fixture: "of_r7b", before: place } },
   { id: "R7c", label: "R7c · Offline", app: { name: "R7c", fixture: "of_r7c" } },

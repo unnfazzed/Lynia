@@ -30,7 +30,9 @@ export function useScheduleSlots(
     enabled: enabled && !!merchantId,
     staleTime: 60_000,
   });
-  return { slots: q.data, isLoading: q.isLoading, isError: q.isError };
+  // A malformed 200 reads as no slots, never as a half-object every consumer would crash on (CF-04).
+  const ok = q.data != null && Array.isArray(q.data.today?.slots) && Array.isArray(q.data.tomorrow?.slots);
+  return { slots: ok ? q.data : undefined, isLoading: q.isLoading, isError: q.isError || (q.data != null && !ok) };
 }
 
 /**
@@ -40,5 +42,5 @@ export function useScheduleSlots(
  */
 export function useCarriedBalance(enabled: boolean): number {
   const q = useQuery({ queryKey: ["orderflow", "balance"], queryFn: getCustomerBalance, enabled, staleTime: 0 });
-  return q.data ? carriedBalance(q.data) : 0;
+  return q.data && Array.isArray(q.data.lines) ? carriedBalance(q.data) : 0;
 }
