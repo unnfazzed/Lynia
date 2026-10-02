@@ -100,6 +100,11 @@ export class StorageSweeper {
         found.push(...rows.flatMap((r) => [r.coverPhotoUrl, r.logoUrl]));
         break;
       }
+      case "rx": {
+        const rows = await this.prisma.orderPrescription.findMany({ where: { photoKeys: { hasSome: keys } }, select: { photoKeys: true } });
+        found.push(...rows.flatMap((r) => r.photoKeys));
+        break;
+      }
     }
     return new Set(found.filter((k): k is string => typeof k === "string"));
   }

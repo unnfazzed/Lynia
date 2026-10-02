@@ -217,7 +217,11 @@ export class MerchantOrderController {
   // null}` JSON body — a bare `null` return sends NO body at all (Nest's isNil short-circuit).
   @Get("dispatch/offer")
   async getMyDispatchOffer(@CurrentUser() profileId: string): Promise<FoodOfferResponse> {
-    return { offer: await this.dispatch.getOfferForRider(profileId) };
+    const offer = await this.dispatch.getOfferForRider(profileId);
+    if (!offer) return { offer: null };
+    // Order flow v2 (RD1a–d): the SHOP / PHARMACY / Scheduled / Rx tags, beside the strict socket payload.
+    const job = await this.foodOrders.offerJobInfo(offer.orderId);
+    return job ? { offer, job } : { offer };
   }
 
   @Post(":orderId/dispatch/accept")

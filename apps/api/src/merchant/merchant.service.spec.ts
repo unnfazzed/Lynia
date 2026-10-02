@@ -1299,7 +1299,8 @@ describe("MerchantService customer Shops & Pharmacy reads (D-58)", () => {
       merchant: { findFirst: async (a: { where: unknown }) => ((where = a.where), SHOP) },
       merchantCategory: {
         findMany: async ({ include }: { include: { dishes: { where: unknown } } }) => {
-          expect(include.dishes.where).toEqual({ isDraft: false });
+          // Order flow v2: with RX_ENABLED off, "Prescription needed" items aren't listed.
+          expect(include.dishes.where).toEqual({ isDraft: false, rxRequired: false });
           return [{ id: "c1", name: "Pain & fever", availableFrom: null, availableTo: null, dishes: [{ id: "d1", name: "Paracetamol 500mg (20 tabs)", description: null, priceUsd: 1.5, photoUrl: "d/p.jpg", outOfStockUntil: null }] }];
         },
       },

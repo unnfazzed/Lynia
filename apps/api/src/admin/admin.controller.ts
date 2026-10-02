@@ -169,6 +169,12 @@ export class AdminController {
     return order;
   }
 
+  /** Order flow v2 (BRIEF §13): the prescription pages on a pharmacy order (signed read URLs). */
+  @Get("orders/:id/prescription")
+  orderPrescription(@Param("id", ParseUUIDPipe) id: string) {
+    return this.ordersService.getPrescriptionPhotos(id);
+  }
+
   /** Rider detail (D-2): stats, strikes, cooldown, bike, recent trips; phone masked off a live order. */
   @Get("riders/:profileId")
   async riderDetail(@Param("profileId", ParseUUIDPipe) profileId: string) {

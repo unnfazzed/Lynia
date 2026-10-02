@@ -1,5 +1,5 @@
 import { Controller, Get, Header, Inject, Query, ServiceUnavailableException } from "@nestjs/common";
-import type { MerchantFeatureFlagsResponse, ServiceFlagsResponse, VersionGateResponse } from "@lynia/shared";
+import type { MerchantFeatureFlagsResponse, OrderFlagsResponse, ServiceFlagsResponse, VersionGateResponse } from "@lynia/shared";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { HealthService, type HealthReport } from "./health.service";
@@ -71,5 +71,13 @@ export class HealthController {
       shopsEnabled: this.env.SHOPS_ENABLED === "true",
       pharmacyEnabled: this.env.PHARMACY_ENABLED === "true",
     };
+  }
+
+  // Order flow v2's switches (ledger D-59): `rxEnabled` = pharmacy prescriptions (BRIEF §13). Public like
+  // the two above. Its own body because ServiceFlagsResponse is strict and installed apps parse it strictly.
+  @Get("app/order-flags")
+  @Header("Cache-Control", "public, max-age=60")
+  orderFlags(): OrderFlagsResponse {
+    return { rxEnabled: this.env.RX_ENABLED === "true" };
   }
 }
