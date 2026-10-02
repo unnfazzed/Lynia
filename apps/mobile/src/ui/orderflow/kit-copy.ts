@@ -70,9 +70,6 @@ export function withRider(s: string, riderFirst: string): string {
   return s.replace(/Tendai/g, riderFirst);
 }
 
-/** The restaurant vocabulary (`O.svc.food`) — the default where no order is in hand. */
-export const SVC = O.svc.food;
-
 /** One service's vocabulary (`O.svc.food` / `.shops` / `.pharmacy`): Cooking vs Packing, dishes vs items. */
 export type SvcCopy = (typeof O.svc)[MerchantService];
 export function svcCopy(s: MerchantService): SvcCopy {

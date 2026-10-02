@@ -1,7 +1,6 @@
 import type {
   ConfirmSubstitutionRequest,
   MerchantOrderResponse,
-  PaymentPromptRail,
   PlaceMerchantOrderRequest,
   RateVenueRequest,
   VenueRatingView,
@@ -41,21 +40,6 @@ export function rateFoodVenue(orderId: string, body: RateVenueRequest): Promise<
 /** R-17: free, any time before the kitchen starts cooking. */
 export function cancelUnpaidFoodOrder(orderId: string): Promise<MerchantOrderResponse> {
   return apiFetch(`/restaurants/orders/${orderId}/cancel`, { method: "POST" });
-}
-
-/** D-24 "I paid another way" manual rail — the customer's own submitted reference. */
-export function submitFoodPaymentReference(orderId: string, reference: string): Promise<MerchantOrderResponse> {
-  return apiFetch(`/restaurants/orders/${orderId}/payment-reference`, { method: "POST", body: { reference } });
-}
-
-/** #670: push a mobile-money prompt to the customer's phone (RC.pay_now "Send payment prompt"). */
-export function sendFoodPaymentPrompt(orderId: string, rail: PaymentPromptRail): Promise<MerchantOrderResponse> {
-  return apiFetch(`/restaurants/orders/${orderId}/payment-prompt`, { method: "POST", body: { rail } });
-}
-
-/** #670: poll the rail to settle a pending prompt (RC.pay_wait → pay_confirmed). */
-export function checkFoodPaymentPrompt(orderId: string): Promise<MerchantOrderResponse> {
-  return apiFetch(`/restaurants/orders/${orderId}/payment-prompt/check`, { method: "POST" });
 }
 
 /** D4/C4: the customer's half of the doorstep dual-confirm handshake (R-04 "food first" — always

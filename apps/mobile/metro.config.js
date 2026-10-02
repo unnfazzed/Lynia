@@ -33,6 +33,9 @@ const zodLocalesRedirect = require("./metro-shims/zod-locales-redirect");
 // MOB-BOOT-03-SIB-1: stub Sentry's browser-only session-replay/feedback subtree (~195 KB evaluated
 // at every launch, none of it runnable on a phone). Scope + safety notes live in the shim files.
 const sentryBrowserRedirect = require("./metro-shims/sentry-browser-redirect");
+// Bundle trim (2026-10-02): `assert` under @ide/backoff, PostHog's survey UI, zod's fromJSONSchema —
+// dependency-internal weight the app never runs. Scope + safety notes live in the shim files.
+const bundleTrimRedirect = require("./metro-shims/bundle-trim-redirect");
 
 const defaultResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
@@ -49,6 +52,10 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   }
   if (sentryBrowserRedirect.shouldRedirect(moduleName, context.originModulePath)) {
     return { type: "sourceFile", filePath: sentryBrowserRedirect.stubPath };
+  }
+  const trimmedStub = bundleTrimRedirect.redirectFor(moduleName, context.originModulePath);
+  if (trimmedStub) {
+    return { type: "sourceFile", filePath: trimmedStub };
   }
   return defaultResolveRequest
     ? defaultResolveRequest(context, moduleName, platform)

@@ -13,22 +13,18 @@ export { fontFamilies, interFamily } from "./fonts";
 export { OfflineBanner, type ConnectivityState } from "./OfflineBanner";
 export { AppBar } from "./shell/AppBar";
 export { AppScreen } from "./shell/AppScreen";
-export { BrandHeader } from "./shell/BrandHeader";
 export { APP_TABS, RIDER_TABS, TAB_BAR_GAP, TAB_BAR_H, TAB_BAR_SPACE, TabBar, TabIllus, tabA11yLabel, type AppTab, type TabArt, type TabBadge } from "./shell/TabBar";
 export { ShellTabBar, TabBarSpaceProvider, useCustomerTabBadges, useKeyboardVisible, useRiderTabBadges, useTabBarSpace, useTabReselect, useTabRoot, useTabScrollToTop } from "./shell/TabShell";
-// The 8c home members still used elsewhere: the rider board's mint header (HomeHeader/HomeStatusRow),
-// the Orders tab's live cards (LiveOrderCard) and the rider's restaurant card. The customer Home itself
-// is Calm Mint v2 (src/ui/home/kit.tsx, D-55). The two sheets Home opens (LocationSheet,
+// The 8c home header/cards (HomeHeader, HomeStatusRow, LiveOrderCard, RestaurantCard), BrandHeader,
+// CodeInput, Avatar/RiderMini and Celebrate were deleted in the 2026-10-02 bundle trim: no live route
+// rendered them any more (the rider board, Orders tab and Home moved to their v2 handoffs). The
+// customer Home is Calm Mint v2 (src/ui/home/kit.tsx, D-55). The two sheets Home opens (LocationSheet,
 // ServiceSoonSheet) are deliberately NOT re-exported here, for the same reason ComposeMap /
 // BottomSheet / MapPicker are not (see the note below): LocationSheet imports AddressSearch, which
 // imports this barrel back, so re-exporting it forms a `no-circular` dependency-cruiser violation.
 // The home screen imports both from their own modules.
-export { HomeAddressRow, HomeHeader, HomeStatusRow } from "./home/HomeHeader";
-export { LiveOrderCard } from "./home/LiveOrderCard";
-export { RestaurantCard } from "./home/RestaurantCard";
 export { FoodSticker, MoonSticker, PharmacySticker, SendSticker, SunSticker } from "./home/ServiceStickers";
 
-export { CodeInput } from "./CodeInput";
 export { Money } from "./Money";
 export { SystemState } from "./SystemState";
 
@@ -50,9 +46,6 @@ export { isTestBuild } from "./test-build";
 export { haptic, hapticPattern, setHapticsEnabled, type HapticKind } from "./haptics";
 export { DismissKeyboardArea } from "./DismissKeyboardArea";
 export { useDial } from "./useDial";
-export { Avatar } from "./Avatar";
-export { RiderMini } from "./RiderMini";
-export { Celebrate } from "./Celebrate";
 export { ToastProvider, useToast, useActionError, useActionErrorEffect, pushToast, TOAST_DURATION_MS, type ToastTone } from "./Toast";
 export { Tappable, RIPPLE, RIPPLE_INK, RIPPLE_ON_DARK, PRESSED_OPACITY, type PressTone, type TappableProps } from "./Tappable";
 
