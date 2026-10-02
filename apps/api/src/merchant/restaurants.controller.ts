@@ -33,6 +33,12 @@ export class RestaurantsController {
     return this.merchant.searchRestaurants(q);
   }
 
+  /** Browse v2 X1 (D-57): the "Popular near you" search chips. Before `:id/*`, like `search`. */
+  @Get("search/popular")
+  searchPopular() {
+    return this.merchant.searchPopular();
+  }
+
   @Get(":id/menu")
   menu(@Param("id", ParseUUIDPipe) id: string) {
     return this.merchant.getRestaurantMenu(id);
