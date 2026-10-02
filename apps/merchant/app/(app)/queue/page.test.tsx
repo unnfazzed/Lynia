@@ -6,7 +6,7 @@ import QueuePage from "./page";
 import { ToastProvider } from "../../components/m/Toast";
 import { ApiError, getMyMerchant } from "../../lib/api-client";
 import { setBusyMode, setOpen } from "../../lib/menu-api";
-import { acceptOrder, cancelPreparing, confirmKitchen, getTodaySummary, rejectOrder } from "../../lib/orders-api";
+import { acceptOrder, cancelPreparing, confirmKitchen, getTodaySummary, listScheduledOrders, proposeSubstitution, rejectOrder } from "../../lib/orders-api";
 import { merchantOrder, merchantProfile, RIDER } from "../../testing/fixtures";
 
 vi.mock("../../lib/api-client", async () => {
@@ -19,7 +19,8 @@ vi.mock("../../lib/orders-api", () => ({
   rejectOrder: vi.fn(async () => ({})),
   confirmKitchen: vi.fn(async () => ({})),
   cancelPreparing: vi.fn(async () => ({})),
-  editOrderItems: vi.fn(async () => ({})),
+  proposeSubstitution: vi.fn(async () => ({})),
+  listScheduledOrders: vi.fn(async () => []),
   getTodaySummary: vi.fn(),
 }));
 vi.mock("../../lib/business", () => ({ primeBusiness: vi.fn() }));
@@ -107,6 +108,14 @@ describe("loading the Orders home", () => {
     render(<Page />);
     await vi.waitFor(() => expect(replace).toHaveBeenCalledWith("/deliveries"));
   });
+
+  it("keeps a shop live to customers on its Orders home (Order flow v2, D-59), with Book a rider one tap away", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValueOnce(merchantProfile({ name: "Avondale Fresh", businessType: "shop", shopKind: "grocery", pilotEnabled: true, hours: WEEK }));
+    render(<Page />);
+    expect(await screen.findByText("Avondale Fresh")).toBeTruthy();
+    expect(replace).not.toHaveBeenCalledWith("/deliveries");
+    expect(screen.getByRole("link", { name: /Book a rider/ }).getAttribute("href")).toBe("/deliveries");
+  });
 });
 
 describe("B1 · Orders home (merchant mobile, D-48)", () => {
@@ -181,12 +190,79 @@ describe("B2 · a ringing order takes over, and the alarm rings until it's answe
     await vi.waitFor(() => expect(rejectOrder).toHaveBeenCalledWith("a1110000-0000-4000-8000-000000000001", "other"));
   });
 
+  it("U1a: tapping a line offers Remove it / Swap for…; 'Send 1 change to customer' accepts with the change", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
+    const BREAD = "b0000001-0000-4000-8000-000000000000";
+    poll.orders = [
+      merchantOrder({
+        items: [
+          { itemId: BREAD, dishId: "d0000001-0000-4000-8000-000000000000", name: "Bread (Lobels 700g)", priceUsd: 1.1, quantity: 1, note: null, available: null },
+          { itemId: "b0000002-0000-4000-8000-000000000000", dishId: null, name: "Eggs (tray of 30)", priceUsd: 5.5, quantity: 1, note: null, available: null },
+        ],
+      }),
+    ];
+    render(<Page />);
+    const takeover = await screen.findByRole("alertdialog", { name: "New order #A111" });
+    expect(within(takeover).getByText("Tap an item you can’t supply.")).toBeTruthy();
+    fireEvent.click(within(takeover).getByRole("button", { name: /Bread/ }));
+    expect(within(takeover).getByRole("button", { name: "Swap for…" })).toBeTruthy();
+    fireEvent.click(within(takeover).getByRole("button", { name: "Remove it" }));
+    expect(within(takeover).getByText("$6.60 → $5.50")).toBeTruthy();
+    fireEvent.click(within(takeover).getByRole("button", { name: "Send 1 change to customer" }));
+    await vi.waitFor(() =>
+      expect(proposeSubstitution).toHaveBeenCalledWith("a1110000-0000-4000-8000-000000000001", { lines: [{ action: "remove", itemId: BREAD }], prepMinutes: 15 }),
+    );
+  });
+
+  it("a customer who chose 'Remove it' for missing items gets no swaps", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
+    poll.orders = [
+      merchantOrder({
+        outOfStockPref: "remove",
+        items: [{ itemId: "b0000001-0000-4000-8000-000000000000", dishId: null, name: "Bread (Lobels 700g)", priceUsd: 1.1, quantity: 1, note: null, available: null }],
+      }),
+    ];
+    render(<Page />);
+    const takeover = await screen.findByRole("alertdialog", { name: "New order #A111" });
+    fireEvent.click(within(takeover).getByRole("button", { name: /Bread/ }));
+    expect(within(takeover).getByRole("button", { name: "Remove it" })).toBeTruthy();
+    expect(within(takeover).queryByRole("button", { name: "Swap for…" })).toBeNull();
+  });
+
+  it("M1c: a scheduled order rings at its start with 'SCHEDULED · START NOW'", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
+    poll.orders = [merchantOrder({ scheduledFor: new Date(Date.now() + 40 * 60_000).toISOString(), scheduleStartedAt: new Date().toISOString() })];
+    render(<Page />);
+    const takeover = await screen.findByRole("alertdialog", { name: "New order #A111" });
+    expect(within(takeover).getByText("SCHEDULED · START NOW")).toBeTruthy();
+    expect(within(takeover).getByText(/^Scheduled for \d\d:\d\d–\d\d:\d\d today$/)).toBeTruthy();
+  });
+
   it("goes quiet when nothing is waiting", async () => {
     vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
     render(<Page />);
     await screen.findByText("Sadza Republic");
     expect(alarm.silence).toHaveBeenCalled();
     expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+});
+
+describe("M7a · the Scheduled segment (Order flow v2, D-59)", () => {
+  it("adds 'Scheduled n' with each order's slot and ring time", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
+    const at = new Date();
+    at.setDate(at.getDate() + 1);
+    at.setHours(12, 30, 0, 0);
+    vi.mocked(listScheduledOrders).mockResolvedValue([
+      merchantOrder({ id: "a1b20000-0000-4000-8000-000000000000", merchantGoodsTotal: 15, scheduledFor: at.toISOString(), ringsAt: new Date(at.getTime() - 25 * 60_000).toISOString(), scheduleStartedAt: null }),
+    ]);
+    poll.orders = [merchantOrder({ id: "a2220000-0000-4000-8000-000000000000", merchantPhase: "preparing", prepMinutes: 15, prepStartedAt: new Date().toISOString() })];
+    render(<Page />);
+    const tab = await screen.findByRole("tab", { name: /Scheduled/ });
+    fireEvent.click(tab);
+    expect(screen.getByText("Tomorrow 12:30–13:00")).toBeTruthy();
+    expect(screen.getByText("1 dish · Rings at 12:05 like a new order")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /#A1B2/ }).getAttribute("href")).toBe("/queue/a1b20000-0000-4000-8000-000000000000");
   });
 });
 

@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import { Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { acceptFoodDispatch, declineFoodDispatch, getFoodDispatchOffer } from "../../src/api/food-rider";
+import { acceptFoodDispatch, declineFoodDispatch, type FoodOfferJob, getFoodDispatchOfferWithJob } from "../../src/api/food-rider";
 import { foodOfferVariant } from "../../src/logic/food-rider-job";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { pendingOrQueued } from "../../src/query/client";
@@ -14,6 +14,9 @@ import { CtaBar, CtaButton } from "../../src/ui/order/kit";
 import { OrderMap } from "../../src/ui/order/OrderMap";
 import { OrderSheet, PeekMark } from "../../src/ui/order/OrderSheet";
 import { JTag, StopLine } from "../../src/ui/rider/board";
+import { O, ofFmt } from "../../src/ui/orderflow/copy";
+import { OfNote } from "../../src/ui/rider/proof-kit";
+import type { IconName } from "../../src/ui";
 import { RIDER_COPY as R, RF, usd } from "../../src/ui/rider/copy";
 import { TerminalBody } from "../../src/ui/rider/job-kit";
 
@@ -27,6 +30,11 @@ const OFFER_WINDOW_S = 60;
  * no live socket. FoodHeader (no Back) · the pickup-stage map · a sheet with the countdown, the FOOD tag,
  * the kitchen, "Your fare", the stops (or, at a kitchen paid up front, the two money tiles) · "Accept this
  * job" / "Not this one". The countdown runs off the server's `expiresAt`.
+ *
+ * Order flow v2 (RD1a–d, ledger D-59): the same read carries the job's tags — a shop or pharmacy gets its
+ * own header and JobTag (SHOP #DDD5FF, PHARMACY #C5E9DF) and the "Sealed bag · photo at pickup" note, a
+ * scheduled order "Scheduled · customer expects 12:30–13:00", a prescription order "Prescription order ·
+ * see the original at the door". An older API sends no tags: the food offer as before.
  */
 export default function FoodOffer(): React.ReactElement {
   const router = useRouter();
@@ -34,8 +42,11 @@ export default function FoodOffer(): React.ReactElement {
   const reduceMotion = useReduceMotion();
   const { height: winH } = useWindowDimensions();
   const { restaurantsEnabled } = useFeatureFlags();
-  const offerQ = useQuery({ queryKey: ["foodOffer"], queryFn: getFoodDispatchOffer, refetchInterval: 3000, enabled: restaurantsEnabled });
-  const offer = offerQ.data ?? null;
+  // Its own key: the board's ["foodOffer"] caches the bare offer, this read carries the job's tags too.
+  const offerQ = useQuery({ queryKey: ["foodOfferJob"], queryFn: getFoodDispatchOfferWithJob, refetchInterval: 3000, enabled: restaurantsEnabled });
+  const offer = offerQ.data?.offer ?? null;
+  const job = offerQ.data?.job ?? null;
+  const kind = jobKind(job);
   const [now, setNow] = useState(() => Date.now());
   const [areaH, setAreaH] = useState(0);
   const [ctaH, setCtaH] = useState(0);
@@ -95,7 +106,7 @@ export default function FoodOffer(): React.ReactElement {
     );
   }
 
-  const header = <FoodHeader />;
+  const header = <FoodHeader kind={kind} />;
 
   // F4 — the offer timed out or another rider took it.
   if (!offer || !live) {
@@ -153,7 +164,7 @@ export default function FoodOffer(): React.ReactElement {
             </View>
             <View style={{ flexDirection: "row", gap: 10 }}>
               <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-                <JTag food />
+                <JTag kind={kind} />
                 <Text style={{ fontSize: 20, lineHeight: 26, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{offer.pickup.landmark}</Text>
                 <Text style={{ fontSize: 13, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>{RF.foodMeta(null, offer.distanceKm)}</Text>
               </View>
@@ -165,6 +176,7 @@ export default function FoodOffer(): React.ReactElement {
             {upfront ? (
               <>
                 <StopLine drop name={offer.dropoff.landmark} />
+                <JobNotes job={job} />
                 <View style={{ flexDirection: "row", gap: 8 }}>
                   <MoneyTile label={R.payKitchen} value={pay} />
                   <MoneyTile label={R.collectDoor} value={collect} />
@@ -178,6 +190,7 @@ export default function FoodOffer(): React.ReactElement {
                   <StopLine name={offer.pickup.landmark} />
                   <StopLine drop name={offer.dropoff.landmark} />
                 </View>
+                <JobNotes job={job} />
                 <PeekMark />
               </>
             )}
@@ -194,14 +207,50 @@ export default function FoodOffer(): React.ReactElement {
   );
 }
 
-/** FoodHeader: the After Send bar with no Back — Utensils + "New food job", centred. */
-function FoodHeader(): React.ReactElement {
+type OfferKind = "food" | "shop" | "pharmacy";
+
+/** RD1a/RD1b: which tag and header the offer wears. */
+function jobKind(job: FoodOfferJob | null): OfferKind {
+  if (job?.businessType !== "shop") return "food";
+  return job.shopKind === "pharmacy" ? "pharmacy" : "shop";
+}
+
+const HEADER: Record<OfferKind, { icon: IconName; title: string }> = {
+  food: { icon: "utensils", title: R.tFoodOffer },
+  shop: { icon: "shopping-bag", title: R.tShopOffer },
+  pharmacy: { icon: "shield-check", title: R.tPharmacyOffer },
+};
+
+/** FoodHeader: the After Send bar with no Back — the service's icon + "New food job", centred. */
+function FoodHeader({ kind }: { kind: OfferKind }): React.ReactElement {
+  const h = HEADER[kind];
   return (
     <View style={{ minHeight: 53, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderBottomWidth: 1, borderBottomColor: tokens.color.line, backgroundColor: tokens.color.bg }}>
-      <Icon name="utensils" size={17} color={tokens.color.accentText} />
-      <Text accessibilityRole="header" style={{ fontSize: 16, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{R.tFoodOffer}</Text>
+      <Icon name={h.icon} size={17} color={tokens.color.accentText} />
+      <Text accessibilityRole="header" style={{ fontSize: 16, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{h.title}</Text>
     </View>
   );
+}
+
+/** RD1a–d's one note under the stops: a prescription order outranks the sealed bag (RD1d draws only
+ *  the Rx line); a scheduled order says the customer's slot. */
+function JobNotes({ job }: { job: FoodOfferJob | null }): React.ReactElement | null {
+  if (!job) return null;
+  const slot = job.scheduledFor ? slotLabel(job.scheduledFor) : null;
+  return (
+    <>
+      {job.rx ? <OfNote tone="hi" icon="file-text" text={O.rd.rxNote} /> : job.businessType === "shop" ? <OfNote icon={job.shopKind === "pharmacy" ? "shield-check" : "camera"} text={O.rd.sealNote} /> : null}
+      {slot ? <OfNote icon="calendar" text={ofFmt(O.rd.schedNote, { s: slot })} /> : null}
+    </>
+  );
+}
+
+/** "12:30–13:00" for a 30-minute slot starting at `iso` (BRIEF §12), in the phone's own time. */
+function slotLabel(iso: string): string {
+  const start = new Date(iso);
+  const end = new Date(start.getTime() + 30 * 60_000);
+  const hm = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return `${hm(start)}–${hm(end)}`;
 }
 
 function MoneyTile({ label, value }: { label: string; value: number }): React.ReactElement {

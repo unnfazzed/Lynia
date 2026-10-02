@@ -26,34 +26,48 @@ export interface PickupPhoto {
   use: () => void;
   retake: () => void;
   cancelPreview: () => void;
+  /** Sends a used shot that hasn't gone up yet, now; resolves whether the photo is on the server. */
+  flush: () => Promise<boolean>;
 }
 
-export function usePickupPhoto(orderId: string | null, serverUrl: string | null | undefined): PickupPhoto {
+/** Order flow v2 (ledger D-59): a merchant order attaches its sealed-bag photo through its own route
+ *  (`POST /merchant/orders/:id/pickup-proof`); a parcel keeps `attachPickupPhoto`. */
+export type AttachPhoto = (orderId: string, key: string) => Promise<unknown>;
+
+export function usePickupPhoto(orderId: string | null, serverUrl: string | null | undefined, attach: AttachPhoto = attachPickupPhoto): PickupPhoto {
   const [uri, setUri] = useState<string | null>(null);
   const [preview, setPreview] = useState<UploadImageSource | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploaded, setUploaded] = useState(false);
   const [denied, setDenied] = useState(false);
   const queued = useRef<UploadImageSource | null>(null);
-  const busy = useRef(false);
+  const busy = useRef<Promise<boolean> | null>(null);
+  const attachRef = useRef(attach);
+  attachRef.current = attach;
 
   const upload = useCallback(
-    async (asset: UploadImageSource): Promise<void> => {
-      if (!orderId || busy.current) return;
-      busy.current = true;
-      try {
-        const { uploadUrl, key, headers } = await requestPickupPhotoUpload(asset.contentType);
-        await uploadImage(uploadUrl, asset.uri, headers ?? { "Content-Type": asset.contentType });
-        await attachPickupPhoto(orderId, key);
-        queued.current = null;
-        setUploaded(true);
-        void clearPickupPhotoDraft();
-      } catch {
-        // Kept on the phone (the draft written on use) — retried on the next foreground.
-        queued.current = asset;
-      } finally {
-        busy.current = false;
-      }
+    (asset: UploadImageSource): Promise<boolean> => {
+      if (!orderId) return Promise.resolve(false);
+      if (busy.current) return busy.current;
+      const run = (async () => {
+        try {
+          const { uploadUrl, key, headers } = await requestPickupPhotoUpload(asset.contentType);
+          await uploadImage(uploadUrl, asset.uri, headers ?? { "Content-Type": asset.contentType });
+          await attachRef.current(orderId, key);
+          queued.current = null;
+          setUploaded(true);
+          void clearPickupPhotoDraft();
+          return true;
+        } catch {
+          // Kept on the phone (the draft written on use) — retried on the next foreground.
+          queued.current = asset;
+          return false;
+        } finally {
+          busy.current = null;
+        }
+      })();
+      busy.current = run;
+      return run;
     },
     [orderId],
   );
@@ -131,5 +145,11 @@ export function usePickupPhoto(orderId: string | null, serverUrl: string | null 
     take();
   }, [take]);
 
-  return { uri, preview, saving, uploaded, denied, take, use, retake, cancelPreview: () => setPreview(null) };
+  const flush = useCallback(async (): Promise<boolean> => {
+    if (busy.current) return busy.current;
+    if (queued.current) return upload(queued.current);
+    return uploaded;
+  }, [upload, uploaded]);
+
+  return { uri, preview, saving, uploaded, denied, take, use, retake, cancelPreview: () => setPreview(null), flush };
 }

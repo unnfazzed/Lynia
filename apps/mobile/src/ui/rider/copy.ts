@@ -123,6 +123,11 @@ export const RIDER_COPY = {
   customerBridge: "Order food and send parcels",
   /* food offer */
   tFoodOffer: "New food job",
+  /** Order flow v2 RD1a/RD1b (ledger D-59): the offer header per service, as of-screens-mrg.js `offer` draws it. */
+  tShopOffer: "New shop job",
+  tPharmacyOffer: "New pharmacy job",
+  /** Order flow v2 RD4c's drawn CTA (of-screens-mrg.js), not keyed in `O`. */
+  nextPhoto: "Next · take a photo",
   foodFare: "Your fare",
   payKitchen: "Pay the kitchen",
   collectDoor: "Collect at the door",
@@ -463,6 +468,8 @@ export const RF = {
   door3Sub: (customer: string): string => `${customer} says it after you both confirm the cash`,
   handedOver: (at: string): string => `Handed over ${at}`,
   bothConfirmed: (at: string): string => `Both confirmed ${at}`,
+  /** Order flow v2 RD3's drawn sub-line under "I saw the original prescription" (of-screens-mrg.js). */
+  rxName: (name: string): string => `Name on it: ${name}`,
   kitchenReady: (orderNo: string, mins: number | null): string => (mins != null && mins > 0 ? `Order #${orderNo} · ready in about ${mins} min` : `Order #${orderNo}`),
   /* exceptions */
   reachT: (name: string): string => `${name} isn't answering`,

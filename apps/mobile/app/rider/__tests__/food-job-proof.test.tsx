@@ -1,7 +1,7 @@
 /**
- * Order flow v2 (ledger D-59): the door card that
- * mirrors the customer's (RD4a: hand over → collect the cash) and the delivery code that sends itself on
- * the sixth digit (RD4b). Harness copied from food-job-collected.test.tsx.
+ * Order flow v2 round 2 (ledger D-59): the prescription tick at a pharmacy order's door (RD3) and
+ * "Can't use the code?" → why → the door photo (RD4c/RD4d). Harness copied from food-job-door.test.tsx
+ * (its own file: these screens mount after that file's delivered-terminal tests wind down).
  */
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -199,13 +199,6 @@ afterEach(() => {
 });
 
 
-function typeCode(tree: renderer.ReactTestRenderer, label: string, code: string): Promise<void> {
-  const input = tree.root.findAll((n) => n.props.accessibilityLabel === label && typeof n.props.onChangeText === "function")[0];
-  if (!input) throw new Error(`no input labelled ${label}`);
-  return act(async () => {
-    input.props.onChangeText(code);
-  }).then(settle);
-}
 
 async function pressCta(tree: renderer.ReactTestRenderer, label: string): Promise<void> {
   const node = tree.root.findAll((n) => n.props.label === label && typeof n.props.onPress === "function")[0];
@@ -237,43 +230,46 @@ async function atDoor(food: Partial<MerchantOrderResponse>): Promise<renderer.Re
   return tree;
 }
 
-describe("RD4a · the door card", () => {
-  it("hands over first, then collects the cash with the split under (2)", async () => {
-    mockConfirmFoodRiderCash.mockResolvedValue({ orderId: "order-1", riderCashConfirmedAt: new Date().toISOString() });
-    const tree = await atDoor(CASH);
-    let text = textOf(tree);
-    expect(text).toContain("At the drop-off");
-    expect(text).toContain("Hand over the order");
-    expect(text).toContain("Collect $17.50 cash");
-    expect(text).toContain("Enter the delivery code");
-    expect(text).toContain("Rudo says it after you both confirm the cash");
-    expect(text).not.toContain("I received $17.50");
-    await pressCta(tree, "Hand over the order");
-    text = textOf(tree);
-    expect(text).toMatch(/Handed over \d\d:\d\d/);
-    expect(text).toContain("Collect $17.50 cash at the door");
-    await pressCta(tree, "I received $17.50");
-    expect(mockConfirmFoodRiderCash).toHaveBeenCalledWith("order-1");
+describe("RD3 · a prescription order's door (Order flow v2, D-59)", () => {
+  const RX = { prescription: { status: "approved" as const, patientName: "Rudo Moyo", pageCount: 1, riderSawOriginalAt: null } };
+
+  it("asks to see the original before handing over, and ticks it on the server", async () => {
+    mockRxSaw.mockResolvedValue({});
+    const tree = await atDoor({ ...CASH, ...RX });
+    const text = textOf(tree);
+    expect(text).toContain("Prescription order · see the original script");
+    expect(text).toContain("I saw the original prescription");
+    expect(text).toContain("Name on it: Rudo Moyo");
+    const handOver = tree.root.findAll((n) => n.props.label === "Hand over the order" && typeof n.props.onPress === "function")[0]!;
+    expect(handOver.props.disabled).toBe(true);
+    await press(tree, "I saw the original prescription");
+    expect(mockRxSaw).toHaveBeenCalledWith("order-1");
   });
 
-  it("ticks (1) by itself once the customer has confirmed paying", async () => {
-    const tree = await atDoor({ ...CASH, customerCashConfirmedAt: new Date().toISOString() });
-    expect(textOf(tree)).toContain("I received $17.50");
+  it("once seen, the hand-over is open", async () => {
+    const tree = await atDoor({ ...CASH, prescription: { ...RX.prescription, riderSawOriginalAt: new Date().toISOString() } });
+    const handOver = tree.root.findAll((n) => n.props.label === "Hand over the order" && typeof n.props.onPress === "function")[0]!;
+    expect(handOver.props.disabled).toBeFalsy();
   });
 });
 
-describe("RD4b · the delivery code", () => {
-  it("sends itself on the sixth digit once both cash confirms are in", async () => {
-    mockConfirmDelivery.mockResolvedValue({});
+describe("RD4c / RD4d · the code can't be used (Order flow v2, D-59)", () => {
+  it("'Can't use the code?' asks why, then opens the door photo with who took it", async () => {
     const both = { ...CASH, customerCashConfirmedAt: new Date().toISOString(), riderCashConfirmedAt: new Date().toISOString() };
     const tree = await atDoor(both);
-    const text = textOf(tree);
-    expect(text).toContain("Enter the delivery code");
-    expect(text).toContain("Rudo says it after you both confirm the cash · 5 tries");
-    await typeCode(tree, "DELIVERY CODE", "41829");
-    expect(mockConfirmDelivery).not.toHaveBeenCalled();
-    await typeCode(tree, "DELIVERY CODE", "418290");
-    for (let i = 0; i < 5 && mockConfirmDelivery.mock.calls.length === 0; i++) await settle();
-    expect(mockConfirmDelivery).toHaveBeenCalledWith("order-1", "418290");
+    expect(textOf(tree)).toContain("Can’t use the code?");
+    await press(tree, "Can’t use the code?");
+    let text = textOf(tree);
+    expect(text).toContain("Why can’t you use the code?");
+    expect(text).toContain("Customer not reachable (waited 8 min, called twice)");
+    const next = () => tree.root.findAll((n) => n.props.label === "Next · take a photo" && typeof n.props.onPress === "function")[0]!;
+    expect(next().props.disabled).toBe(true);
+    await press(tree, "Left at the gate — the customer agreed");
+    expect(next().props.disabled).toBe(false);
+    await pressCta(tree, "Next · take a photo");
+    text = textOf(tree);
+    expect(text).toContain("Photo of where you left it");
+    expect(text).toContain("Who did you hand it to?");
+    expect(text).toContain("Rudo, the kitchen and LyniaGo see this photo.");
   });
 });

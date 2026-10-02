@@ -163,7 +163,80 @@ export const ORDER_FLOW = {
   goodsDue: (t: string) => `due back by ${t}`,
   delivered: (t: string) => `Delivered ${t}`,
   notDelivered: "Not delivered",
+
+  // ── Round 2: the proposer (U1a/U1b/U4a), the wait (M2), photos (M4b/M5b), Scheduled (M1c/M7), Rx (M8) ──
+  // `O.u.m*`, `O.m.*`, `O.c.*` verbatim. The handoff's "Rudo" (the customer) becomes "the customer": a
+  // merchant order never carries the customer's name (see the note above).
+  mHint: "Tap an item you can’t supply.", // O.u.mHint
+  mRemove: "Remove it", // O.u.mRemove
+  mSwap: "Swap for…", // O.u.mSwap
+  mPick: (i: string) => `Swap ${i} for`, // O.u.mPick
+  mSearch: "Search your items", // O.u.mSearch
+  mSame: "Same price", // O.u.mSame
+  mSend: (n: number) => (n === 1 ? "Send 1 change to customer" : `Send ${n} changes to customer`), // O.u.mSend / O.u.mSendN
+  mWait: "Waiting for the customer to answer", // O.u.mWait
+  mWaitSub: (making: string) => `Start ${making} the rest — the order goes ahead either way. If the customer doesn’t answer in 3 minutes, swaps are declined.`, // O.u.mWaitSub
+  mAsked: "Swap asked", // O.u.mAsked
+  mRemoved: "Removing", // O.u.mRemoved
+  /** Drawn in of-screens-mrg.js (U1a's bar hint, M2's bar hint, U1b's CTA), not keyed in `O`. */
+  mSendHint: (making: string) => `The customer has 3 minutes to answer. You can start ${making}.`,
+  mWaitHint: (t: string) => `Waiting for the customer’s answer · ${t}`,
+  mSwapTo: (name: string) => `Swap for ${name}`,
+  scheduled: "SCHEDULED · START NOW", // O.m.scheduled
+  segSched: "Scheduled", // O.m.segSched
+  schedRing: (t: string) => `Rings at ${t} like a new order`, // O.m.schedRing
+  schedT: (d: string) => `Scheduled for ${d}`, // O.m.schedT
+  schedBody: (t: string) => `This order rings at ${t}. Have the items ready to pack by then.`, // O.m.schedBody
+  /** M1c's drawn sub-line and CTA (of-screens-mrg.js `M1c`), without the customer's name. */
+  schedNow: "The customer expects it in the slot — start now.",
+  startCta: (making: string, t: string) => `Start ${making} · ready ${t}`,
+  photo: "Sealed bag photo", // O.m.photo
+  photoWait: (rider: string) => `Waiting for ${rider}’s photo of the sealed bag`, // O.m.photoWait
+  photoReq: "Shops and pharmacies: wait for the photo before you hand over.", // O.m.photoReq
+  photoAt: (rider: string, t: string) => `${rider} took this at ${t}`, // O.m.photoAt
+  view: "View", // O.c.view
+  close: "Close", // O.c.close
+  keep: "Keep", // O.c.keep
+  doorPhoto: "Delivery photo", // O.p.doorPhoto (M5b's photo row)
+  /** M6b's drawn row (of-screens-mrg.js `M6b`). */
+  attemptPhoto: "Delivery attempt photo",
+  /** M3b's drawn seal reminder (of-screens-mrg.js `M3b`). */
+  sealT: "Seal the bag",
+  sealS: (rider: string) => ` with a sticker or a stapled receipt. ${rider} photographs it at the counter.`,
+  rxT: "Prescription check", // O.m.rxT
+  rxPatient: "Patient", // O.m.rxPatient
+  rxItems: "Needs a prescription", // O.m.rxItems
+  rxConsent: "Customer will show the original to the rider", // O.m.rxConsent
+  rxApprove: "Approve prescription", // O.m.rxApprove
+  rxDecline: "Decline", // O.m.rxDecline
+  rxWhy: "Why are you declining?", // O.m.rxWhy
+  rxR: [
+    ["unreadable", "Unreadable"],
+    ["expired", "Expired"],
+    ["not_valid", "Not valid for this medicine"],
+    ["other", "Other"],
+  ] as const, // O.m.rxR
+  rxSend: "Decline and tell the customer", // O.m.rxSend
+  rxRest: "The rest of the order carries on unless the customer cancels.", // O.m.rxRest
+  /** The Packing ticket's way into M8a (the check's own title, `O.m.rxT`) and the page pill / zoom. */
+  rxPage: (n: number, of: number) => `${n} / ${of}`,
+  zoom: "Zoom",
 } as const;
+
+/** M5b / M6b: the door photo's sub-line — "Left with Chipo at the gate · 12:47" (`O.p.doorPhotoSub`). */
+export function doorProofLine(p: { reason: "customer_unreachable" | "handed_to_someone_else" | "left_at_gate" | null; handedTo: string | null }, at: string): string {
+  const where =
+    p.handedTo && p.reason === "left_at_gate"
+      ? `Left with ${p.handedTo} at the gate`
+      : p.handedTo
+        ? `Left with ${p.handedTo}`
+        : p.reason === "left_at_gate"
+          ? "Left at the gate"
+          : p.reason === "customer_unreachable"
+            ? "Customer not reachable"
+            : null;
+  return [where, at || null].filter(Boolean).join(" · ");
+}
 
 /** The words for a business. Restaurants are the default, so a screen that doesn't know yet speaks the
  *  drawn copy rather than guessing. */

@@ -1,7 +1,6 @@
 /**
- * Order flow v2 (ledger D-59): the door card that
- * mirrors the customer's (RD4a: hand over → collect the cash) and the delivery code that sends itself on
- * the sixth digit (RD4b). Harness copied from food-job-collected.test.tsx.
+ * Order flow v2 round 2 (ledger D-59): a shop's sealed-bag tick + photo at the counter (RD2a/RD2b). Harness copied from food-job-door.test.tsx
+ * (its own file: these screens mount after that file's delivered-terminal tests wind down).
  */
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -19,6 +18,7 @@ const mockConfirmFoodPickup = jest.fn();
 const mockConfirmFoodRiderCash = jest.fn();
 const mockConfirmDelivery = jest.fn();
 const mockRxSaw = jest.fn();
+const mockAttachProof = jest.fn(async (..._args: unknown[]) => ({}));
 
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
@@ -40,7 +40,7 @@ jest.mock("../../../src/api/food-rider", () => ({
   confirmFoodCollected: (...args: unknown[]) => mockConfirmFoodCollected(...args),
   confirmFoodRiderCash: (...args: unknown[]) => mockConfirmFoodRiderCash(...args),
   confirmRxSawOriginal: (...args: unknown[]) => mockRxSaw(...args),
-  attachFoodPickupProof: jest.fn(async () => ({})),
+  attachFoodPickupProof: (...args: unknown[]) => mockAttachProof(...args),
   disputeFoodCash: jest.fn(),
   dropFoodDispatch: jest.fn(),
   logFoodDoorstepCall: jest.fn(),
@@ -223,57 +223,38 @@ const CASH = {
   merchantPaymentConfirmedAt: null,
 } as const;
 
-async function atDoor(food: Partial<MerchantOrderResponse>): Promise<renderer.ReactTestRenderer> {
-  mockGetActiveOrder.mockResolvedValue({ ...BASE_ORDER, customerFirstName: "Rudo" } as OrderSnapshot);
-  mockGetFoodOrderAsRider.mockResolvedValue({ ...BASE_FOOD_ORDER, ...food });
-  const tree = await render();
-  // The screen can still be on its skeleton for a beat after a previous test's queries wind down.
-  // and the stored arrival read must land before the tap, or it overwrites it.
-  for (let i = 0; i < 20 && !textOf(tree).includes("I'm at the drop-off"); i++) await settle();
-  for (let i = 0; i < 5; i++) await settle();
-  await press(tree, "I'm at the drop-off");
-  // A late stored-arrival read can still undo the tap: tap again until the door shows.
-  for (let i = 0; i < 5 && textOf(tree).includes("I'm at the drop-off"); i++) await press(tree, "I'm at the drop-off");
-  return tree;
-}
 
-describe("RD4a · the door card", () => {
-  it("hands over first, then collects the cash with the split under (2)", async () => {
-    mockConfirmFoodRiderCash.mockResolvedValue({ orderId: "order-1", riderCashConfirmedAt: new Date().toISOString() });
-    const tree = await atDoor(CASH);
+describe("RD2a / RD2b · a shop's pickup waits on the sealed-bag photo (Order flow v2, D-59)", () => {
+  it("speaks the shop's words, and the full code leads to the camera with the sealed tick", async () => {
+    mockGetActiveOrder.mockResolvedValue({ ...BASE_ORDER, status: "en_route_pickup", customerFirstName: "Rudo" } as OrderSnapshot);
+    mockGetFoodOrderAsRider.mockResolvedValue({
+      ...BASE_FOOD_ORDER,
+      ...CASH,
+      status: "en_route_pickup",
+      pickupProofRequired: true,
+      venue: { name: "Avondale Fresh", businessType: "shop", shopKind: "grocery", kycVerified: false },
+    } as MerchantOrderResponse);
+    const tree = await render();
+    for (let i = 0; i < 20 && !textOf(tree).includes("I'm at the kitchen"); i++) await settle();
+    for (let i = 0; i < 5; i++) await settle();
+    await press(tree, "I'm at the kitchen");
+    for (let i = 0; i < 5 && textOf(tree).includes("I'm at the kitchen"); i++) await press(tree, "I'm at the kitchen");
     let text = textOf(tree);
-    expect(text).toContain("At the drop-off");
-    expect(text).toContain("Hand over the order");
-    expect(text).toContain("Collect $17.50 cash");
-    expect(text).toContain("Enter the delivery code");
-    expect(text).toContain("Rudo says it after you both confirm the cash");
-    expect(text).not.toContain("I received $17.50");
-    await pressCta(tree, "Hand over the order");
+    expect(text).toContain("At the shop");
+    expect(text).toContain("Ask the shop for the pickup code");
+    await typeCode(tree, "Ask the shop for the pickup code", "731604");
+    await pressCta(tree, "Photo of the sealed bag");
     text = textOf(tree);
-    expect(text).toMatch(/Handed over \d\d:\d\d/);
-    expect(text).toContain("Collect $17.50 cash at the door");
-    await pressCta(tree, "I received $17.50");
-    expect(mockConfirmFoodRiderCash).toHaveBeenCalledWith("order-1");
-  });
-
-  it("ticks (1) by itself once the customer has confirmed paying", async () => {
-    const tree = await atDoor({ ...CASH, customerCashConfirmedAt: new Date().toISOString() });
-    expect(textOf(tree)).toContain("I received $17.50");
-  });
-});
-
-describe("RD4b · the delivery code", () => {
-  it("sends itself on the sixth digit once both cash confirms are in", async () => {
-    mockConfirmDelivery.mockResolvedValue({});
-    const both = { ...CASH, customerCashConfirmedAt: new Date().toISOString(), riderCashConfirmedAt: new Date().toISOString() };
-    const tree = await atDoor(both);
-    const text = textOf(tree);
-    expect(text).toContain("Enter the delivery code");
-    expect(text).toContain("Rudo says it after you both confirm the cash · 5 tries");
-    await typeCode(tree, "DELIVERY CODE", "41829");
-    expect(mockConfirmDelivery).not.toHaveBeenCalled();
-    await typeCode(tree, "DELIVERY CODE", "418290");
-    for (let i = 0; i < 5 && mockConfirmDelivery.mock.calls.length === 0; i++) await settle();
-    expect(mockConfirmDelivery).toHaveBeenCalledWith("order-1", "418290");
+    expect(text).toContain("Bag is sealed");
+    expect(text).toContain("Sticker or stapled receipt across the opening");
+    expect(text).toContain("Needed for shops and pharmacies");
+    const shutterOff = () => tree.root.findAll((n) => n.props.testID === "shutter" && typeof n.props.onPress === "function").some((n) => n.props.disabled === true);
+    expect(shutterOff()).toBe(true);
+    const tick = tree.root.findAll((n) => n.props.accessibilityRole === "checkbox" && n.props.accessibilityLabel === "Bag is sealed" && typeof n.props.onPress === "function")[0]!;
+    await act(async () => {
+      tick.props.onPress();
+    });
+    // The tick is told to the server straight away (the bag can be ticked before the photo).
+    expect(mockAttachProof).toHaveBeenCalledWith("order-1", { bagSealed: true });
   });
 });

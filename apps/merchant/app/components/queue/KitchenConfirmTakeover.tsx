@@ -1,16 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { RESTAURANTS_AUTO_ACCEPT, type MerchantOrderResponse } from "@lynia/shared";
+import { RESTAURANTS_AUTO_ACCEPT, type MerchantOrderResponse, type SubstitutionProposalLine } from "@lynia/shared";
+import type { MerchantShopKind } from "@lynia/shared";
 import { ApiError } from "../../lib/api-client";
 import { formatCountdown } from "../../lib/countdown";
-import { money, orderLabel } from "../../lib/orders-view";
+import { hm, money, orderLabel, slotLabel } from "../../lib/orders-view";
+import { changeableLines, proposalLines } from "../../lib/substitution";
 import { useNow } from "../../lib/use-now";
-import { ORDER_FLOW as OF } from "../../lib/vocabulary";
+import { ORDER_FLOW as OF, vocabulary } from "../../lib/vocabulary";
 import { Icon } from "../icons";
 import { ConfirmSheet } from "../m/ConfirmSheet";
 import { useToast } from "../m/Toast";
-import { ChangeItemsSheet, editableLines, OrderLines } from "./order-parts";
+import { OrderLines } from "./order-parts";
+import { Note } from "./proof-parts";
+import { ProposerSheet } from "./proposer";
 
 /**
  * M1a · Ringing, auto-accepted (packages/design/handoff/order-flow-v2, of-screens-mrg.js `M1a`, ledger
@@ -21,6 +25,9 @@ import { ChangeItemsSheet, editableLines, OrderLines } from "./order-parts";
  * the priced lines, the total, "Change items" and "Ready in 20 min", then "Got it, we're making it" and
  * "Can't take it" behind the confirm sheet. The handoff's "· Rudo" after the number is the customer's
  * name, which a merchant order doesn't carry, so it is left out.
+ *
+ * M1c: a scheduled order rings at its start time the same way, with "SCHEDULED · START NOW" on the strip,
+ * the slot in a note, and "Start cooking · ready 12:25". "Change items" opens the proposer (U4a).
  */
 export function KitchenConfirmTakeover({
   active,
@@ -34,11 +41,13 @@ export function KitchenConfirmTakeover({
   disabled: boolean;
   onConfirm: (orderId: string) => Promise<void>;
   onCancel: (orderId: string) => Promise<void>;
-  onEditItems: (orderId: string, lines: { itemId: string; quantity: number }[]) => Promise<void>;
+  onEditItems: (orderId: string, lines: SubstitutionProposalLine[]) => Promise<void>;
   refetch: () => Promise<void>;
 }) {
   const now = useNow();
   const toast = useToast();
+  // The order's own venue speaks its words (Cooking / Packing); a restaurant's by default.
+  const v = vocabulary(active.venue?.businessType, active.venue?.shopKind as MerchantShopKind | null | undefined);
   const [sheet, setSheet] = useState<null | "cancel" | "items">(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,6 +85,9 @@ export function KitchenConfirmTakeover({
   const busy = disabled || submitting;
   const cancelAt = active.createdAt ? new Date(active.createdAt).getTime() + RESTAURANTS_AUTO_ACCEPT.autoCancelAfterMs : null;
   const total = active.merchantGoodsTotal ?? active.items.reduce((s, i) => s + i.priceUsd * i.quantity, 0);
+  const scheduled = active.scheduledFor ? slotLabel(active.scheduledFor, new Date(now)) : null;
+  const readyBy =
+    active.prepStartedAt && active.prepMinutes != null ? hm(new Date(new Date(active.prepStartedAt).getTime() + active.prepMinutes * 60_000).toISOString()) : null;
 
   return (
     <div className="m-overlay" style={{ zIndex: 60 }}>
@@ -94,7 +106,7 @@ export function KitchenConfirmTakeover({
           <Icon name="volume-2" size={22} color="var(--accent-text)" />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="m-cap" style={{ color: "var(--accent-text)" }}>
-              {OF.newOrder}
+              {scheduled ? OF.scheduled : OF.newOrder}
             </div>
             <b style={{ fontSize: 17 }}>{orderLabel(active)}</b>
           </div>
@@ -118,14 +130,17 @@ export function KitchenConfirmTakeover({
             gap: 10,
           }}
         >
-          <div style={{ display: "flex", gap: 10, alignItems: "flex-start", background: "var(--accent-wash)", borderRadius: 12, padding: "10px 12px", fontSize: 13, lineHeight: 1.45 }}>
-            <Icon name="circle-check" size={18} color="var(--accent-text)" style={{ marginTop: 1, flexShrink: 0 }} />
-            <span style={{ flex: 1 }}>
-              <b style={{ fontSize: 14 }}>{OF.auto}</b>
+          {scheduled ? (
+            <Note icon="calendar" title={OF.schedT(`${scheduled.slot} ${scheduled.day}`)}>
+              <br />
+              {OF.schedNow}
+            </Note>
+          ) : (
+            <Note tone="ok" icon="circle-check" title={OF.auto}>
               <br />
               {OF.autoSub}
-            </span>
-          </div>
+            </Note>
+          )}
           <OrderLines order={active} />
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", borderTop: "1px solid var(--line)", paddingTop: 10 }}>
             <span style={{ fontSize: 13, fontWeight: 600 }}>{OF.total}</span>
@@ -134,7 +149,7 @@ export function KitchenConfirmTakeover({
             </b>
           </div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-            {editableLines(active).length > 0 ? (
+            {!scheduled && changeableLines(active).length > 0 ? (
               <button type="button" className="m-sec" style={{ paddingLeft: 0, background: "none" }} disabled={busy} onClick={() => setSheet("items")}>
                 <Icon name="pencil" size={15} />
                 {OF.changeItems}
@@ -142,7 +157,7 @@ export function KitchenConfirmTakeover({
             ) : (
               <span />
             )}
-            {active.prepMinutes != null && <span className="m-hint">{OF.readyIn(active.prepMinutes)}</span>}
+            {!scheduled && active.prepMinutes != null && <span className="m-hint">{OF.readyIn(active.prepMinutes)}</span>}
           </div>
 
           <div style={{ flex: 1 }} />
@@ -158,7 +173,7 @@ export function KitchenConfirmTakeover({
             disabled={busy}
             onClick={() => void run(() => onConfirm(active.id), "Confirmed · we’ll send a rider when it’s nearly ready", "Couldn't confirm the order. Try again.")}
           >
-            {OF.confirm}
+            {scheduled && readyBy ? OF.startCta(v.making.toLowerCase(), readyBy) : OF.confirm}
           </button>
           <button type="button" className="m-lnk m-red" style={{ minHeight: "var(--target-min)", fontSize: 14 }} disabled={busy} onClick={() => setSheet("cancel")}>
             {OF.decline}
@@ -178,11 +193,12 @@ export function KitchenConfirmTakeover({
         />
       )}
       {sheet === "items" && (
-        <ChangeItemsSheet
+        <ProposerSheet
           order={active}
           busy={submitting}
           error={error}
-          onSave={(lines) => void run(() => onEditItems(active.id, lines), "Items changed · customer told the new total", "Couldn't change the items. Try again.")}
+          making={v.making.toLowerCase()}
+          onSend={(p) => void run(() => onEditItems(active.id, proposalLines(active, p.changes)), "Changes sent · the customer has 3 minutes", "Couldn't send the changes. Try again.")}
           onCancel={() => setSheet(null)}
         />
       )}
