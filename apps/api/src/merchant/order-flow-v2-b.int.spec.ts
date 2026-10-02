@@ -53,7 +53,7 @@ const lifecycle = new OrderLifecycleService(ENV, prisma, tokens, gateway, notifi
 const debt = new FoodDebtService(prisma, notifications, lifecycle);
 const schedule = new OrderScheduleService(prisma, notifications, gateway, ENV);
 const prescriptions = new PrescriptionService(prisma, notifications, gateway, storage, ENV);
-const foodOrders = new FoodOrderService(prisma, tokens, notifications, debt, gateway, new StubPaymentRail(), ENV, schedule, prescriptions);
+const foodOrders = new FoodOrderService(prisma, tokens, notifications, debt, gateway, new StubPaymentRail(), undefined, storage, ENV, schedule, prescriptions);
 
 const VENUE = { point: { lat: -17.8292, lng: 31.0522 }, landmark: "Venue", contactPhone: "+263771111111" };
 const DROPOFF = { point: { lat: -17.8016, lng: 31.0431 }, landmark: "Avondale", contactPhone: "+263772222222" };
@@ -142,8 +142,8 @@ describe("shop & pharmacy ordering (ledger D-59)", () => {
     expect(placed.merchantPhase).toBe("awaiting_accept");
     expect(placed.autoAccepted).toBeFalsy();
     expect(placed.acceptDeadlineAt).toBeTruthy();
-    expect(placed.businessType).toBe("shop");
-    expect(placed.shopKind).toBe("grocery");
+    expect(placed.venue?.businessType).toBe("shop");
+    expect(placed.venue?.shopKind).toBe("grocery");
     expect(placed.merchantGoodsTotal).toBe(14.6);
     // Merchant side: same endpoints — it rings, accept with ready-in, "Order is packed" = markReady.
     expect((await foodOrders.listQueue(shop.ownerId)).map((o) => o.id)).toEqual([placed.id]);
@@ -155,11 +155,11 @@ describe("shop & pharmacy ordering (ledger D-59)", () => {
   it("a shop in a section that's switched off can't be ordered from; a pharmacy under $4 pays the small-order fee", async () => {
     const pharmacy = await makeVenue({ businessType: "shop", shopKind: "pharmacy", price: 1.65 });
     const customer = await makeProfile("cust");
-    const off = new FoodOrderService(prisma, tokens, notifications, debt, gateway, new StubPaymentRail(), { ...ENV, PHARMACY_ENABLED: "false" } as Env, schedule, prescriptions);
+    const off = new FoodOrderService(prisma, tokens, notifications, debt, gateway, new StubPaymentRail(), undefined, storage, { ...ENV, PHARMACY_ENABLED: "false" } as Env, schedule, prescriptions);
     await expect(off.placeOrder(customer, pharmacy.merchantId, body(pharmacy.dishId))).rejects.toThrow(/not found/i);
     const placed = await foodOrders.placeOrder(customer, pharmacy.merchantId, body(pharmacy.dishId));
     expect(placed.merchantGoodsTotal).toBe(4.3); // $3.30 + $1.00 small-order fee
-    expect(placed.shopKind).toBe("pharmacy");
+    expect(placed.venue?.shopKind).toBe("pharmacy");
   });
 });
 
@@ -240,7 +240,7 @@ describe("prescriptions (BRIEF §13)", () => {
     const pharmacy = await makeVenue({ businessType: "shop", shopKind: "pharmacy" });
     const customer = await makeProfile("cust");
     const offPrescriptions = new PrescriptionService(prisma, notifications, gateway, storage, { ...ENV, RX_ENABLED: "false" } as Env);
-    const off = new FoodOrderService(prisma, tokens, notifications, debt, gateway, new StubPaymentRail(), ENV, schedule, offPrescriptions);
+    const off = new FoodOrderService(prisma, tokens, notifications, debt, gateway, new StubPaymentRail(), undefined, storage, ENV, schedule, offPrescriptions);
     await expect(off.placeOrder(customer, pharmacy.merchantId, body(pharmacy.rxDishId, { prescription: script(customer) }))).rejects.toMatchObject({ response: { reason: "rx_unavailable" } });
     await expect(foodOrders.placeOrder(customer, pharmacy.merchantId, body(pharmacy.rxDishId))).rejects.toMatchObject({ response: { reason: "prescription_required" } });
     // Someone else's photo key is refused.

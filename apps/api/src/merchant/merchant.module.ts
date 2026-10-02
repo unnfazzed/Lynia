@@ -16,6 +16,9 @@ import { MerchantBookingService } from "./merchant-booking.service";
 import { MerchantGuard } from "./merchant.guard";
 import { MerchantInvitesService } from "./merchant-invites.service";
 import { MerchantOrderController } from "./merchant-order.controller";
+import { MerchantOrderProofService } from "./merchant-order-proof.service";
+import { OrderSubstitutionService } from "./order-substitution.service";
+import { VenueRatingService } from "./venue-rating.service";
 import { MerchantRidersController } from "./merchant-riders.controller";
 import { MerchantRidersService } from "./merchant-riders.service";
 import { MerchantService } from "./merchant.service";
@@ -99,6 +102,10 @@ import { PrescriptionService } from "./prescription.service";
     RestaurantReopenService,
     OrderScheduleService,
     PrescriptionService,
+    // Order flow v2 (ledger D-59): substitution rounds, proof at hand-over, venue rating.
+    OrderSubstitutionService,
+    MerchantOrderProofService,
+    VenueRatingService,
     { provide: DISPATCH_STRATEGY, useClass: NearestRiderDispatchStrategy },
   ],
   // Exported so UploadsModule can gate the merchant dish/banner photo mints (D-32) behind the same

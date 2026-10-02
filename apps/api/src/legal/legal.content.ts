@@ -186,11 +186,11 @@ export const LEGAL_DATA_CATEGORIES: readonly LegalDataCategory[] = [
   {
     label: "Photos",
     collected:
-      "Photos you choose to attach — an item photo on a delivery request, a pickup or proof-of-delivery photo, and a rider profile photo.",
+      "Photos you choose to attach — an item photo on a delivery request, a pickup or proof-of-delivery photo (with when it was taken, why the delivery code couldn't be used, and the name of the person an order was handed to), and a rider profile photo.",
     purpose: "To describe the parcel, evidence hand-over, and resolve disputes about what was delivered.",
     basis: "Performance of your contract with us; you choose whether to attach one.",
     retention: "Held for the life of the order; the stored images are deleted when you delete your account.",
-    manifestKeys: ["item_photo_url", "pickup_photo_key", "delivery_proof_key"],
+    manifestKeys: ["item_photo_url", "pickup_photo_key", "delivery_proof_key", "pickup_photo_at", "delivery_proof_reason", "delivery_proof_handed_to"],
   },
   {
     label: "Prescriptions (pharmacy orders)",

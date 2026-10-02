@@ -3245,8 +3245,11 @@ Each PR of the build order appends its line here.
   - *Shops & pharmacy:* `POST /restaurants/:merchantId/orders` takes any customer-visible venue (a live
     restaurant, or a live shop whose section flag is on) — reused, no `/shops/:id/orders`. Shops never
     auto-accept (3-minute window → auto-cancel). Same pricing (delivery fee, < $4.00 → $1.00 fee), cash
-    only. `MerchantOrderResponse.businessType` / `shopKind` (customer, merchant, rider reads) pick Cooking vs
-    Packing and the tile colour; the merchant's "Order is packed" is the existing `mark-ready`. Rider offer
+    only. Backend A's `MerchantOrderResponse.venue {name, businessType, shopKind}` picks Cooking vs Packing
+    and the tile colour; the merchant's "Order is packed" is the existing `mark-ready`. Migration
+    `0067_order_flow_v2_shops_scheduled_rx` (expand-only: three `BOOLEAN NOT NULL DEFAULT false` columns —
+    `merchant_dishes.rx_required`, `merchant_order_items.rx_required`, `merchant_members.is_pharmacist` —
+    and three new tables `order_schedules`, `order_prescriptions`, `customer_balance_entries`). Rider offer
     tags (RD1a–d) come as `FoodOfferResponse.job {businessType, shopKind, scheduledFor, rx}` on
     `GET /merchant/orders/dispatch/offer` — never inside the strict `food:offer` socket payload.
   - *Scheduled (§12):* `GET /restaurants/:merchantId/schedule-slots?lat&lng` (`ScheduleSlotsResponse`:
@@ -3266,7 +3269,8 @@ Each PR of the build order appends its line here.
     `POST /merchant/orders/:id/prescription/approve|decline {reason: unreadable|expired|not_valid|other,
     note?}`; decline takes the Rx lines off and re-prices (all-Rx → cancelled, `rx_declined`), the customer
     may then cancel the rest free; `mark-ready` waits for the check; rider `POST
-    /merchant/orders/:id/prescription/saw-original`, required before delivery completes. Photos as 5-minute
+    /merchant/orders/:id/prescription/saw-original`, required before delivery completes. The track holds at
+    Confirmed while the check is pending and sets `track.rxChecked` once approved. Photos as 5-minute
     signed URLs only for the customer (`GET /restaurants/orders/:id/prescription`), the pharmacy (`GET
     /merchant/orders/:id/prescription`) and admin (`GET /admin/orders/:id/prescription`).
   - *Owed balance (D3f, open question 2):* a customer cancel after collection records the full total
@@ -3274,6 +3278,24 @@ Each PR of the build order appends its line here.
     merchant order carries it as `previousBalanceUsd`, inside `total` and the doorstep cash amount, never
     inside goods/delivery. Paid once that order is delivered; freed again if it isn't. Where the collected
     money goes is ops reconciliation from the ledger row (open question 2 stays open).
+- **Backend A (API + shared contracts, no UI):** substitution (BRIEF §8, U1–U5/M2), proof at hand-over
+  (§9, RD2b–d/RD4c–d/M4b/M5b/P5), venue rating + receipt fields (§11, D1/D1b) and the four-step track
+  (§4). Migration `0066_order_flow_v2` (expand-only: five nullable `orders` columns,
+  `merchant_order_items.replaces_item_id`, new `merchant_order_substitutions`(+`_lines`) with a one-open-
+  round partial unique index, new `venue_ratings`). Endpoints: `POST /merchant/orders/:id/substitution`
+  (merchant: remove / reduce / swap lines; at accept it is the accept), `POST
+  /restaurants/orders/:id/substitution/confirm` (customer answers every swap), `POST
+  /merchant/orders/:id/pickup-proof` and `/door-proof` (rider), `POST /restaurants/orders/:id/venue-rating`
+  (customer). `PlaceMerchantOrderRequest.outOfStockPref` (ask | remove; remove ⇒ swaps refused). The
+  merchant-order read (`MerchantOrderResponse`) gains optional `shortId`, `venue`, `itemsSubtotal`,
+  `smallOrderFee`, `track`, `outOfStockPref`, `substitution`, `pickupProofRequired`, `pickupProof`,
+  `doorProof`, `venueRating`; `order:status` and the generic `GET /orders/:id` snapshot carry `track`.
+  Shared pure helpers: `deriveMerchantOrderTrack`, `substitutionTotals`, `merchantGoodsForSubtotal`,
+  `orderShortId`, `RESTAURANTS_TIMING.substitutionWindowMs` (3 min). Swap window timeouts run on the
+  existing 20 s DB sweep. Shop (incl. pharmacy) pickups require the photo; restaurants don't. The pre-v2
+  app still sees a coherent at-accept round (legacy `awaiting_item_approval`, swapped lines as removed;
+  its approve = swaps declined, decline = free cancel). Not in this PR: merchant-side push for answers
+  (socket queue refresh only), "finish delivery without the code" (the door photo is evidence only).
 
 ### 4 · Open questions, implemented as drawn (owner to confirm)
 

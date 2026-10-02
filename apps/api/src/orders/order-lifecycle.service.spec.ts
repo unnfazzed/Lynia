@@ -641,8 +641,9 @@ describe("OrderLifecycleService.rate", () => {
   it("#672/#673: a food order persists foodScore + tags, moves the RESTAURANT rating by foodScore, and the rider aggregate by the rider score — independently", async () => {
     let riderData: Record<string, unknown> | undefined;
     let ratingData: Record<string, unknown> | undefined;
-    let merchantData: Record<string, unknown> | undefined;
-    const { svc } = build({
+    const venueRows: Array<Record<string, unknown>> = [];
+    const merchantSql: Array<{ sql: string; values: unknown[] }> = [];
+    const { svc, prisma } = build({
       order: {
         // orderType "merchant" = a food order; foodScore/tags come from the delivered mock.
         findUnique: async () => ({ status: "delivered", orderType: "merchant", customerId: "c1", riderId: "r1", merchantId: "m1" }),
@@ -654,25 +655,55 @@ describe("OrderLifecycleService.rate", () => {
         count: async () => 0, // distinct customer→rider pair
       },
       orderEvent: { create: async () => ({}) },
-      // #673: the restaurant rating aggregate, moved by the FOOD score (3), not the rider score.
-      merchant: {
-        findUnique: async () => ({ foodRatingAvg: 4.0, foodRatingCount: 1 }),
-        update: async (args: { data: Record<string, unknown> }) => { merchantData = args.data; return {}; },
+      // Order flow v2 (D-59): the food score is recorded as the order's venue rating (one row per order)…
+      venueRating: {
+        createMany: async (args: { data: Array<Record<string, unknown>> }) => { venueRows.push(...args.data); return { count: 1 }; },
       },
       rider: {
         findUnique: async () => ({ ratingAvg: 4.0, ratingCount: 2, tripsCount: 5, reliabilityScore: 90, onHold: false, heldReason: null }),
         update: async (args: { data: Record<string, unknown> }) => { riderData = args.data; return {}; },
       },
     });
+    // …and #673's restaurant aggregate moves by the FOOD score (3), not the rider score, in one atomic UPDATE.
+    (prisma as unknown as Record<string, unknown>).$executeRaw = async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const sql = strings.join("?");
+      if (/UPDATE merchants/.test(sql)) merchantSql.push({ sql, values });
+      return 1;
+    };
     // rider score 5, food score a DIFFERENT 3 — proves the two are independent.
     await svc.rate("o1", "c1", 5, undefined, 3, ["hot_food", "on_time"]);
     expect(ratingData).toMatchObject({ orderId: "o1", byProfileId: "c1", score: 5, foodScore: 3, tags: ["hot_food", "on_time"] });
     // The rider aggregate moves by the rider score (4.0*2 + 5)/3 = 4.333 — the food score never touches it.
     expect(riderData!.ratingAvg).toBeCloseTo(4.3333, 3);
     expect(riderData).toMatchObject({ ratingCount: 3, tripsCount: 6 });
-    // #673: the restaurant aggregate moves by the FOOD score (4.0*1 + 3)/2 = 3.5, count 1 → 2.
-    expect(merchantData!.foodRatingAvg).toBeCloseTo(3.5, 3);
-    expect(merchantData).toMatchObject({ foodRatingCount: 2 });
+    expect(venueRows).toEqual([{ orderId: "o1", merchantId: "m1", customerId: "c1", score: 3, tags: [] }]);
+    expect(merchantSql).toHaveLength(1);
+    expect(merchantSql[0]!.sql).toMatch(/UPDATE merchants SET food_rating_avg/);
+    expect(merchantSql[0]!.values).toEqual([3, "m1"]);
+  });
+
+  it("D-59: a food score on an order whose venue was already rated never moves the restaurant aggregate twice", async () => {
+    let executed = 0;
+    const { svc, prisma } = build({
+      order: {
+        findUnique: async () => ({ status: "delivered", orderType: "merchant", customerId: "c1", riderId: "r1", merchantId: "m1" }),
+        updateMany: async () => ({ count: 1 }),
+        count: async () => 5,
+      },
+      rating: { create: async () => ({}), count: async () => 0 },
+      orderEvent: { create: async () => ({}) },
+      venueRating: { createMany: async () => ({ count: 0 }) }, // the venue-rating endpoint got there first
+      rider: {
+        findUnique: async () => ({ ratingAvg: 4.0, ratingCount: 2, tripsCount: 5, reliabilityScore: 90, onHold: false, heldReason: null }),
+        update: async () => ({}),
+      },
+    });
+    (prisma as unknown as Record<string, unknown>).$executeRaw = async (strings: TemplateStringsArray) => {
+      if (/UPDATE merchants/.test(strings.join("?"))) executed++;
+      return 1;
+    };
+    await svc.rate("o1", "c1", 5, undefined, 4);
+    expect(executed).toBe(0);
   });
 
   it("#673: a food order with NO food score leaves the restaurant rating untouched", async () => {

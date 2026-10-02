@@ -690,15 +690,21 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         // food score was given. Deliberately simpler than the rider aggregate: a restaurant rating has
         // no reliability-hold / auto-suspend consequence, so it carries no P1-6 collusion weighting —
         // it is a display average, not a supply gate.
+        //
+        // Order flow v2 (D-59): the venue rating now has its own row (`venue_ratings`, one per order) and
+        // its own endpoint (POST /restaurants/orders/:id/venue-rating). This older path records its food
+        // score there too, and only the write that CREATES the row moves the aggregate — so a customer
+        // who rated the venue first (or a retry) can never count twice. ON CONFLICT DO NOTHING rather than
+        // catching the unique violation, which would abort this transaction. Mirrors the merchant side's
+        // recordVenueRating (merchant/venue-rating.service.ts) — inlined because orders must not import
+        // merchant (depcruise express-no-merchant-coupling).
         if (order.orderType === "merchant" && order.merchantId && foodScore != null) {
-          const merchant = await tx.merchant.findUnique({
-            where: { id: order.merchantId },
-            select: { foodRatingAvg: true, foodRatingCount: true },
+          const { count } = await tx.venueRating.createMany({
+            data: [{ orderId, merchantId: order.merchantId, customerId, score: foodScore, tags: [] }],
+            skipDuplicates: true,
           });
-          if (merchant) {
-            const foodRatingCount = merchant.foodRatingCount + 1;
-            const foodRatingAvg = (merchant.foodRatingAvg * merchant.foodRatingCount + foodScore) / foodRatingCount;
-            await tx.merchant.update({ where: { id: order.merchantId }, data: { foodRatingAvg, foodRatingCount } });
+          if (count > 0) {
+            await tx.$executeRaw`UPDATE merchants SET food_rating_avg = (food_rating_avg * food_rating_count + ${foodScore}) / (food_rating_count + 1), food_rating_count = food_rating_count + 1 WHERE id = ${order.merchantId}::uuid`;
           }
         }
 

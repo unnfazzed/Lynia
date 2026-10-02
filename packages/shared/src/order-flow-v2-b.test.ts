@@ -7,7 +7,7 @@ import {
   PlaceMerchantOrderRequest,
   ServiceFlagsResponse,
 } from "./contracts";
-import { deliveryMinutesForKm, ORDER_SCHEDULE, rejectionCopy } from "./restaurants-order";
+import { deliveryMinutesForKm, deriveMerchantOrderTrack, ORDER_SCHEDULE, rejectionCopy } from "./restaurants-order";
 
 /**
  * Order flow v2, backend B (ledger D-59): every wire change is additive. These pin the back-compat
@@ -52,8 +52,7 @@ describe("Order flow v2 wire contracts — additive only", () => {
   it("a scheduled pharmacy order with a prescription and a carried balance parses, and no new MerchantPhase is needed", () => {
     const v2 = {
       ...BASE_ORDER,
-      businessType: "shop",
-      shopKind: "pharmacy",
+      venue: { name: "Avondale Pharmacy", businessType: "shop", shopKind: "pharmacy" },
       scheduledFor: "2026-10-02T10:30:00.000Z",
       ringsAt: "2026-10-02T09:58:00.000Z",
       scheduleStartedAt: null,
@@ -107,6 +106,12 @@ describe("ORDER_SCHEDULE (BRIEF §12)", () => {
     // 3.2 km × 1.3 / 22 km/h = 11.35 min → 12, + 5 lead.
     expect(deliveryMinutesForKm(3.2)).toBe(17);
     expect(deliveryMinutesForKm(0)).toBe(6);
+  });
+
+  it("the track holds at Confirmed while the pharmacist checks, then reads 'Prescription checked'", () => {
+    expect(deriveMerchantOrderTrack({ status: "requested", merchantPhase: "preparing", rxStatus: "pending" })).toMatchObject({ step: "confirmed", rxChecked: false });
+    expect(deriveMerchantOrderTrack({ status: "requested", merchantPhase: "preparing", rxStatus: "approved" })).toMatchObject({ step: "making", rxChecked: true });
+    expect(deriveMerchantOrderTrack({ status: "requested", merchantPhase: "preparing" })).toMatchObject({ step: "making", rxChecked: false });
   });
 
   it("an Rx decline that empties the order has its own customer copy", () => {
