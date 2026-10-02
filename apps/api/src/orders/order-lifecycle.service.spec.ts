@@ -1004,10 +1004,12 @@ describe("OrderLifecycleService.rateSender", () => {
 describe("OrderLifecycleService.completeOrder (auto-close)", () => {
   it("completes a delivered order and recovers reliability (clean unrated completion, Q2)", async () => {
     let riderData: Record<string, unknown> | undefined;
+    let orderData: Record<string, unknown> | undefined;
     const { svc, emits } = build({
       order: {
         updateMany: async () => ({ count: 1 }),
         findUnique: async () => ({ riderId: "r1" }),
+        update: async (a: { data: Record<string, unknown> }) => { orderData = a.data; return {}; },
       },
       orderEvent: { create: async () => ({}) },
       rider: {
@@ -1018,6 +1020,8 @@ describe("OrderLifecycleService.completeOrder (auto-close)", () => {
     expect(await svc.completeOrder("o1")).toEqual({ completed: true });
     // +RECOVER_PER_COMPLETION (95 → 97), alongside the trips increment; clamps at MAX(100) elsewhere.
     expect(riderData).toMatchObject({ tripsCount: { increment: 1 }, reliabilityScore: 97, onHold: false });
+    // The credit is recorded on the order so a late rating can replace it (owner 2026-10-02).
+    expect(orderData).toEqual({ autoCloseCredit: 2 });
     expect(emits).toEqual([["o1", "completed"]]);
   });
 
@@ -1035,6 +1039,7 @@ describe("OrderLifecycleService.reconcileStaleDeliveries", () => {
         findMany: async () => [{ id: "o1" }, { id: "o2" }],
         updateMany: async () => ({ count: 1 }),
         findUnique: async () => ({ riderId: "r1" }),
+        update: async () => ({}),
       },
       orderEvent: { create: async () => ({}) },
       rider: { findUnique: async () => ({ reliabilityScore: 100, onHold: false, heldReason: null }), update: async () => ({}) },
@@ -1610,6 +1615,7 @@ describe("OrderLifecycleService RH-01 — a velocity/fraud hold survives a recov
       order: {
         updateMany: async () => ({ count: 1 }),
         findUnique: async () => ({ riderId: "r1" }),
+        update: async () => ({}),
       },
       orderEvent: { create: async () => ({}) },
       rider: {
@@ -1675,7 +1681,7 @@ describe("OrderLifecycleService.rate — late rating after the auto-close (after
    * then the customer's late rate(). Tracks the order's status, its rating rows, the rider row and
    * every commission debit / status push, so the test can assert each side effect happened exactly once.
    */
-  function lateHarness(opts: { deliveredAgoMs: number; rider?: Record<string, unknown>; deliveredAt?: "column" | "event" | "none" }) {
+  function lateHarness(opts: { deliveredAgoMs: number; rider?: Record<string, unknown>; deliveredAt?: "column" | "event" | "none"; priorPairRatings?: number }) {
     const deliveredAt = new Date(Date.now() - opts.deliveredAgoMs);
     const row = {
       status: "delivered",
@@ -1687,6 +1693,7 @@ describe("OrderLifecycleService.rate — late rating after the auto-close (after
       suggestedFare: 3,
       deliveredAt: (opts.deliveredAt ?? "column") === "column" ? deliveredAt : null,
       completedAt: null as Date | null,
+      autoCloseCredit: null as number | null,
     };
     const rider: Record<string, unknown> = { ratingAvg: 4, ratingCount: 2, tripsCount: 5, reliabilityScore: 90, onHold: false, heldReason: null, ...opts.rider };
     const ratings: Array<Record<string, unknown>> = [];
@@ -1695,11 +1702,18 @@ describe("OrderLifecycleService.rate — late rating after the auto-close (after
     const h = build({
       order: {
         findUnique: async () => ({ ...row }),
-        updateMany: async (args: { where: { status: string }; data: Record<string, unknown> }) => {
+        updateMany: async (args: { where: { status?: string; autoCloseCredit?: unknown }; data: Record<string, unknown> }) => {
           updateManyCalls.push(args);
-          if (row.status !== args.where.status) return { count: 0 };
+          // The late rating's credit claim: `autoCloseCredit: { not: null }` — matches only while a credit is outstanding.
+          if ("autoCloseCredit" in args.where) {
+            if (row.autoCloseCredit == null) return { count: 0 };
+          } else if (row.status !== args.where.status) return { count: 0 };
           Object.assign(row, args.data);
           return { count: 1 };
+        },
+        update: async (args: { data: Record<string, unknown> }) => {
+          Object.assign(row, args.data);
+          return {};
         },
       },
       orderEvent: {
@@ -1709,7 +1723,7 @@ describe("OrderLifecycleService.rate — late rating after the auto-close (after
       rating: {
         findUnique: async () => ratings[0] ?? null,
         create: async (args: { data: Record<string, unknown> }) => { ratings.push(args.data); return {}; },
-        count: async () => 0,
+        count: async () => opts.priorPairRatings ?? 0,
       },
       rider: {
         findUnique: async () => ({ ...rider }),
@@ -1740,26 +1754,96 @@ describe("OrderLifecycleService.rate — late rating after the auto-close (after
     // (4*2 + 5) / 3 — the rating still moves the public aggregate…
     expect(h.rider.ratingAvg as number).toBeCloseTo(4.3333, 3);
     expect(h.rider.ratingCount).toBe(3);
-    // …but the trip, the recovery and the commission were the auto-close's, and stay single.
+    // …the trip and the commission were the auto-close's and stay single; the rating REPLACED the
+    // auto-close's +2 (reversed, then this good rating's own +2), so the score nets out at 92.
     expect(h.rider).toMatchObject({ tripsCount: 6, reliabilityScore: 92 });
+    expect(h.row.autoCloseCredit).toBeNull();
     expect(h.wallet.chargeCommission).toHaveBeenCalledOnce();
     expect(h.events).toEqual(["completed"]);
     // Only a WS refetch nudge for the late rating — never a second "Delivery complete" push to the rider.
     expect(h.emits).toEqual([["o1", "completed"], ["o1", "completed"]]);
     expect(notifyOrderStatus).not.toHaveBeenCalled();
     // The late path's CAS is on the observed `completed` status (a row-lock no-op write, no status change).
-    expect(h.updateManyCalls.at(-1)).toMatchObject({ where: { id: "o1", status: "completed", customerId: "c1" } });
-    expect(h.updateManyCalls.at(-1)!.data).not.toHaveProperty("status");
+    const lateCas = h.updateManyCalls.find((c) => (c.where as { status?: string }).status === "completed");
+    expect(lateCas).toMatchObject({ where: { id: "o1", status: "completed", customerId: "c1" } });
+    expect(lateCas!.data).not.toHaveProperty("status");
     notifyOrderStatus.mockRestore();
   });
 
-  it("a LOW late rating still costs the rider its reliability penalty (once), on top of the auto-close recovery", async () => {
+  // Owner 2026-10-02: a late rating REPLACES the auto-close's +2 — reverse it, then the rating's normal effect.
+  it("a LOW late rating reverses the auto-close's +2, then applies the low-rating penalty", async () => {
+    const h = lateHarness({ deliveredAgoMs: 3 * 24 * HOUR });
+    await h.svc.completeOrder("o1"); // 90 → 92, credit recorded
+    expect(h.row.autoCloseCredit).toBe(2);
+    await h.svc.rate("o1", "c1", 2);
+    // 92 − 2 (reversal) − 10 (lowRating) = 80 — where an on-time low rating would have left the rider.
+    expect(h.rider).toMatchObject({ reliabilityScore: 80, tripsCount: 6, ratingCount: 3 });
+    expect(h.row.autoCloseCredit).toBeNull();
+    expect(h.wallet.chargeCommission).toHaveBeenCalledOnce();
+  });
+
+  it("a HIGH late rating reverses the +2 and re-applies the completion recovery — net unchanged", async () => {
     const h = lateHarness({ deliveredAgoMs: 3 * 24 * HOUR });
     await h.svc.completeOrder("o1"); // 90 → 92
+    await h.svc.rate("o1", "c1", 5);
+    expect(h.rider).toMatchObject({ reliabilityScore: 92, tripsCount: 6 });
+    expect(h.row.autoCloseCredit).toBeNull();
+  });
+
+  it("a late rating carrying no recovery weight (repeat pair) still removes the +2 — the same end state as rating on time", async () => {
+    const h = lateHarness({ deliveredAgoMs: 3 * 24 * HOUR, priorPairRatings: 1 });
+    await h.svc.completeOrder("o1"); // 90 → 92
+    await h.svc.rate("o1", "c1", 5);
+    // An on-time repeat-pair 5★ would have recovered nothing, so the auto-close's +2 goes back.
+    expect(h.rider).toMatchObject({ reliabilityScore: 90 });
+  });
+
+  it("reverses only the CLAMPED credit: an auto-close at MAX recorded 0, so a late low rating costs exactly the penalty", async () => {
+    const h = lateHarness({ deliveredAgoMs: 3 * 24 * HOUR, rider: { reliabilityScore: 100 } });
+    await h.svc.completeOrder("o1"); // 100 → 100 (clamped), credit 0
+    expect(h.row.autoCloseCredit).toBe(0);
+    await h.svc.rate("o1", "c1", 1);
+    expect(h.rider).toMatchObject({ reliabilityScore: 90 });
+    expect(h.row.autoCloseCredit).toBeNull();
+  });
+
+  it("reverses the credit at most once — a credit already claimed is never reversed again", async () => {
+    const h = lateHarness({ deliveredAgoMs: 3 * 24 * HOUR });
+    await h.svc.completeOrder("o1"); // 90 → 92
+    // A racing writer claimed the credit between this rate's read and its CAS: the read still sees 2,
+    // but the CAS finds nothing outstanding, so no reversal — only the penalty, as with no credit.
+    const orderStub = h.prisma.order as Record<string, unknown>;
+    const realFind = orderStub.findUnique as () => Promise<Record<string, unknown>>;
+    orderStub.findUnique = async () => {
+      const snap = await realFind();
+      h.row.autoCloseCredit = null;
+      return snap;
+    };
     await h.svc.rate("o1", "c1", 2);
-    // -lowRating (10): 92 → 82. No second +RECOVER, no second trip.
-    expect(h.rider).toMatchObject({ reliabilityScore: 82, tripsCount: 6, ratingCount: 3 });
-    expect(h.wallet.chargeCommission).toHaveBeenCalledOnce();
+    expect(h.rider).toMatchObject({ reliabilityScore: 82 });
+  });
+
+  it("a late rating with NO recorded credit (ops-adjudicated / pre-0069 close) keeps the old rule: penalty only, no reversal", async () => {
+    const low = lateHarness({ deliveredAgoMs: 3 * 24 * HOUR });
+    await low.svc.completeOrder("o1"); // 90 → 92
+    low.row.autoCloseCredit = null; // as if the close recorded nothing
+    await low.svc.rate("o1", "c1", 2);
+    expect(low.rider).toMatchObject({ reliabilityScore: 82 });
+    const high = lateHarness({ deliveredAgoMs: 3 * 24 * HOUR });
+    await high.svc.completeOrder("o1");
+    high.row.autoCloseCredit = null;
+    await high.svc.rate("o1", "c1", 5);
+    expect(high.rider).toMatchObject({ reliabilityScore: 92 }); // no second recovery
+  });
+
+  it("an on-time rating (no auto-close) is unchanged: no credit to reverse, the rating's effect alone", async () => {
+    const low = lateHarness({ deliveredAgoMs: HOUR });
+    await low.svc.rate("o1", "c1", 2);
+    expect(low.rider).toMatchObject({ reliabilityScore: 80, tripsCount: 6 });
+    expect(low.updateManyCalls.some((c) => "autoCloseCredit" in (c.where as object))).toBe(false);
+    const high = lateHarness({ deliveredAgoMs: HOUR });
+    await high.svc.rate("o1", "c1", 5);
+    expect(high.rider).toMatchObject({ reliabilityScore: 92, tripsCount: 6 });
   });
 
   it("409s after the 7-day window, writing nothing", async () => {

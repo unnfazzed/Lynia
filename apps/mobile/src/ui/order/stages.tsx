@@ -552,7 +552,9 @@ export function TwoButtonBar(p: {
 
 /* ───────────────────────── cancelled (18a · 18b · 18c · 2.30 · 2.31) ───────────────────────── */
 
-export function CancelledSheet({ headline, reason, extra, nothingOwed }: { headline: string; reason: string | null; extra: string | null; nothingOwed: boolean }): React.ReactElement {
+/** "Nothing to pay." shows on EVERY cancel, LyniaGo's included: owner decision 2026-10-02 says it on the
+ *  screen and in the push alike, though 18c / 2.31 leave it out (ledger D-53, 2.34 row). */
+export function CancelledSheet({ headline, reason, extra }: { headline: string; reason: string | null; extra: string | null }): React.ReactElement {
   return (
     <>
       <View style={{ alignItems: "center", gap: 8, paddingTop: 4 }}>
@@ -570,12 +572,10 @@ export function CancelledSheet({ headline, reason, extra, nothingOwed }: { headl
         ) : null}
       </View>
       <PeekMark />
-      {nothingOwed ? (
-        <Row gap={6} style={{ justifyContent: "center" }}>
-          <Icon name="banknote" size={15} color={tokens.color.muted} />
-          <Muted>{A.nothingOwed}</Muted>
-        </Row>
-      ) : null}
+      <Row gap={6} style={{ justifyContent: "center" }}>
+        <Icon name="banknote" size={15} color={tokens.color.muted} />
+        <Muted>{A.nothingOwed}</Muted>
+      </Row>
     </>
   );
 }

@@ -1032,7 +1032,7 @@ function ParcelOrderScreen(): React.ReactElement {
     const by = order.cancelledBy;
     const lynia = by !== "customer" && by !== "rider";
     const headline = by === "customer" ? A.cxYou : by === "rider" ? orderText.cxRider(riderFirst) : A.cxLynia;
-    content = <CancelledSheet headline={headline} reason={order.cancelReason ?? null} extra={lynia ? A.cxLyniaGeneric : null} nothingOwed={!lynia} />;
+    content = <CancelledSheet headline={headline} reason={order.cancelReason ?? null} extra={lynia ? A.cxLyniaGeneric : null} />;
     bar = isRiderViewer ? null : lynia ? (
       <TwoButtonBar primary={{ label: A.sendAgain, icon: "refresh-cw", onPress: () => sendFlow(order.proposedFare) }} secondary={{ label: A.callSupport, icon: "phone", onPress: () => dial(SOS_POLICY.safetyLine) }} />
     ) : (

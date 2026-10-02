@@ -600,8 +600,10 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
    * {@link completeOrder} (or ops' adjudicateDelivered), and the customer may still rate it within
    * RATE_LATE_WINDOW_MS of the delivery, once. That close already did the completion's side effects —
    * the trip count, the clean-completion reliability recovery and the commission debit — so the late
-   * path does only what a rating adds on top: the rating row, the rider's star aggregate, a low
-   * rating's reliability penalty, and the restaurant's food score. The status stays `completed`.
+   * path does only what a rating adds on top: the rating row, the rider's star aggregate, the rating's
+   * reliability effect, and the restaurant's food score. The status stays `completed`. Reliability: the
+   * rating REPLACES the auto-close's recorded credit (`autoCloseCredit`, owner 2026-10-02) — reversed
+   * once, then the rating's normal effect applied; see the rider block below.
    */
   async rate(orderId: string, customerId: string, score: number, comment?: string, foodScore?: number, tags?: string[]): Promise<LifecycleResult> {
     // DS19-01: set when a low rating's reliability penalty NEWLY trips the hold below, so we can evict the
@@ -624,6 +626,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
             orderType: true,
             deliveredAt: true,
             completedAt: true,
+            autoCloseCredit: true,
           },
         });
         if (!order) throw new NotFoundException("Order not found");
@@ -757,15 +760,29 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
             // can't silently clear a velocity/fraud hold. Weighting: an UNTRUSTED customer moves reliability
             // in NEITHER direction (no Sybil up- or down-vote of a rider's hold gate). For a trusted customer,
             // P1-6 applies — a penalty always counts, positive recovery only on a distinct pair.
-            // Late path: the auto-close already granted this completion's recovery, so only a penalty applies
-            // (a low late rating still counts against the rider; a good one can't recover twice).
-            const reliability =
-              customerTrusted && (isPenalty || (countsTowardAggregate && !late))
-                ? applyReliabilityDelta(
-                    { ...rider, heldReason: rider.heldReason as HeldReason },
-                    isPenalty ? -RELIABILITY.PENALTY.lowRating : RELIABILITY.RECOVER_PER_COMPLETION,
-                  )
-                : {};
+            const carriesWeight = customerTrusted && (isPenalty || countsTowardAggregate);
+            const ratingDelta = carriesWeight ? (isPenalty ? -RELIABILITY.PENALTY.lowRating : RELIABILITY.RECOVER_PER_COMPLETION) : 0;
+            // Late path (owner 2026-10-02): the rating REPLACES the unrated auto-close's credit — reverse
+            // exactly the points completeOrder recorded (post-clamp), then apply this rating's normal
+            // on-time effect, so the rider ends where an on-time rating would have left them. The credit
+            // is claimed by a CAS that nulls it, so it is reversed at most once (the one-rating-per-order
+            // unique is the second guard). No recorded credit — an ops-adjudicated completion, or an
+            // auto-close from before migration 0069 — keeps the old late rule: only a penalty applies,
+            // since that close's recovery is already in and can't be told apart to reverse.
+            let reversal = 0;
+            let reversed = false;
+            if (late && order.autoCloseCredit != null) {
+              const cleared = await tx.order.updateMany({
+                where: { id: orderId, autoCloseCredit: { not: null } },
+                data: { autoCloseCredit: null },
+              });
+              if (cleared.count === 1) {
+                reversal = order.autoCloseCredit;
+                reversed = true;
+              }
+            }
+            const delta = reversed ? ratingDelta - reversal : late ? Math.min(0, ratingDelta) : ratingDelta;
+            const reliability = delta !== 0 ? applyReliabilityDelta({ ...rider, heldReason: rider.heldReason as HeldReason }, delta) : {};
             // DS19-01: a low rating's -lowRating penalty can push reliabilityScore below ON_HOLD_BELOW and
             // flip onHold:true — the same standing demotion markUndelivered (velocity) and cancel() (strike
             // limit) perform. Those paths force isOnline:false in the same write and evict the rider from the
@@ -1295,13 +1312,18 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         });
         // RH-01: recovery runs applyReliabilityDelta, which now preserves a velocity/fraud hold — a
         // clean auto-close no longer silently un-holds a velocity-flagged rider via the score clear.
-        const reliability = rider
+        const next = rider
           ? applyReliabilityDelta({ ...rider, heldReason: rider.heldReason as HeldReason }, RELIABILITY.RECOVER_PER_COMPLETION)
-          : {};
+          : null;
         await tx.rider.update({
           where: { profileId: order.riderId },
-          data: { tripsCount: { increment: 1 }, ...reliability },
+          data: { tripsCount: { increment: 1 }, ...next },
         });
+        // Owner 2026-10-02: a late rating REPLACES this credit, so record what it actually was — the
+        // post-clamp delta (0 at MAX), never the nominal +RECOVER_PER_COMPLETION — for rate() to reverse.
+        if (rider && next) {
+          await tx.order.update({ where: { id: orderId }, data: { autoCloseCredit: next.reliabilityScore - rider.reliabilityScore } });
+        }
         // Prepaid commission debit (design Flow 1) — the auto-close counterpart to rate()'s debit. The
         // two completion edges are mutually exclusive (both CAS on status=delivered), so it fires once
         // per order. No-op at ratePct 0; idempotent (unique (riderId, orderId, ride_commission)).
