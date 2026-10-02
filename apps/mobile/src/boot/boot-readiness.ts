@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 
 /**
  * "How far has the cold start got?" — the three real signals the splash's steps card reports
- * (`packages/design/handoff/splash-v1`, ledger D-63). The splash is ON SCREEN for exactly as long as
+ * (`packages/design/handoff/splash-v1`, ledger D-64). The splash is ON SCREEN for exactly as long as
  * these take (plus the handoff's minimums), so each one has to be the real thing, not a timer:
  *
  * - `session`  — the boot decision is made (app/index.tsx): session read, onboarding flag, saved role

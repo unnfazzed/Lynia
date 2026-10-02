@@ -15,7 +15,7 @@ import { S } from "./copy";
 import { EXIT, GIVE_UP_MS, INTRO_MS, SLOW_AFTER_MS, type StepState, nextStepChange, splashDoneAt, stepStates, stepTimes } from "./timeline";
 
 /**
- * The cold-start splash — "1a Sun & orbit" (`packages/design/handoff/splash-v1`, ledger D-63; it
+ * The cold-start splash — "1a Sun & orbit" (`packages/design/handoff/splash-v1`, ledger D-64; it
  * replaces the static green dove frame, journey node 0·1).
  *
  * It is on screen for exactly as long as the app takes to be ready: the brand intro plays (1300ms),

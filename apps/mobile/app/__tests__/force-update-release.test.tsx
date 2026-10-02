@@ -2,7 +2,7 @@
  * The force-update gate replaces the whole Stack, so the boot route never reports a destination and
  * the splash would never hand off — the gate must end the cold start ITSELF, through the one shared
  * release (native hide + window-background reset + boot-phase end), or the user stares at the splash
- * instead of the gate (CodeRabbit review on PR #887, re-pinned for ledger D-63). Pinned here:
+ * instead of the gate (CodeRabbit review on PR #887, re-pinned for ledger D-64). Pinned here:
  * mounting the screen runs the full release once, ends the boot phase, and a second release is a no-op.
  */
 import renderer, { act } from "react-test-renderer";

@@ -22,7 +22,7 @@ import { ForceUpdateView } from "./force-update.view";
  */
 export default function ForceUpdateScreen(): React.ReactElement {
   // This screen REPLACES the Stack, so the boot route never reports a destination and the splash
-  // (ledger D-63) would play on over a navigator that is gone. Whatever renders in place of the
+  // (ledger D-64) would play on over a navigator that is gone. Whatever renders in place of the
   // navigator ends the boot itself, through the ONE shared release (native hide + window-background
   // reset + boot-phase end — which unmounts the splash and brings this screen on-screen; idempotent).
   // No-op when the boot is already over (warm version trip).

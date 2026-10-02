@@ -104,7 +104,7 @@ target, an `index.json` that matches the directory, and no expectation outliving
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⏭ | C1·1 | `LJ splash` | Splash | **SUPERSEDED by D-63 (Splash v1, 2026-10-02)** — "1a Sun & orbit" (`packages/design/handoff/splash-v1`), built in `src/boot/splash/BootSplash.tsx`. Not aligned to the gallery mock. | SUPERSEDED (D-63) |
+| ⏭ | C1·1 | `LJ splash` | Splash | **SUPERSEDED by D-64 (Splash v1, 2026-10-02)** — "1a Sun & orbit" (`packages/design/handoff/splash-v1`), built in `src/boot/splash/BootSplash.tsx`. Not aligned to the gallery mock. | SUPERSEDED (D-64) |
 | ⏭ | C1·2 | `LJ onboard` | Onboarding · food  [FOOD] | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — C1 Welcome (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
 | ⏭ | C1·3 | `LJ onboard_send` | Onboarding · send  [PARCEL] | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — C1 Welcome (carousel retired) (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
 | ⏭ | C1·4 | `LJ onboard_shared` | Onboarding · one app  [BOTH] | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — C1 Welcome (carousel retired) (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
@@ -122,8 +122,8 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
 | ⏭ | C2·1 | `RC home` | Home · service tiles  [BOTH] | **Calm Mint v2 (2026-10-01, D-55)** — rebuilt to `packages/design/handoff/calm-mint-v2-2026-10` H1–H6: address-first mint header, four service tiles, the Popular restaurants rail (Popular shops + Free delivery tag wait on backend), one floating live-order bar; the location and notify-me sheets as drawn. The gallery home-8c target is SUPERSEDED (structure-snapshot deferral + rendered-conformance pending). Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png`. Earlier: home 8c (2026-08-17) | guardrails: token-conformance · screen-inventory · reverse-drift freeze, green; structure snapshot + rendered conformance SUPERSEDED (D-55) |
-| 👁 | C2·2 | `RC orders` | Orders · all services  [BOTH] | food browse cluster align (`docs/parity/PHASE4-browse.md`, `tools/parity/out/phase4_browse.png`); every live order now pins (not just the newest), food rows titled by restaurant. **Order flow v2 G2 (2026-10-02, D-59):** a running restaurant / shop / pharmacy order pins as the forest "Now" card (stage title, "{venue} · {ETA / next action}", four track segments); G1: Home's live bar leads with the merchant order's stage copy (`O.g.bar`). Evidence: `docs/parity/ORDER-FLOW-V2-CUSTOMER-2026-10-02-ROUND3.png` | compact accent live-order card replaces the stepper LiveOrderCard per the mock (parcels); merchant orders follow order-flow-v2 G2 |
-| ⬜ | C2·3 | `RC orders_empty` | Orders · empty  [BOTH] | | |
+| ⏭ | C2·2 | `RC orders` | Orders · all services  [BOTH] | SUPERSEDED by the Orders v2 handoff (`packages/design/handoff/orders-v2`, ledger D-63); evidence `docs/parity/ORDERS-V2-2026-10-02.png` | not aligned to the gallery mock |
+| ⏭ | C2·3 | `RC orders_empty` | Orders · empty  [BOTH] | SUPERSEDED by Orders v2 O16/O17 (ledger D-63); evidence `docs/parity/ORDERS-V2-2026-10-02.png` | not aligned to the gallery mock |
 | ⬜ | C2·4 | `LJ home_flag_off` | Home · Food tile soon  [BOTH] | | |
 | ⬜ | C2·5 | `LJ order_restore` | Cold start · order running  [BOTH] | | |
 | ⬜ | C2·6 | `LJ stale_cache` | Orders · saved copy  [BOTH] | | |
@@ -200,7 +200,7 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
 | ⏭ | C8·1 | `LJ profile` | Account | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 C6–C11 (customer Account) | aligns to the RIDER grammar (`RJM account`), not this older `Profile` mock — owner decision 2026-08-16. Four rows, role-separated: Notifications · Help & support · Settings · one bridge row. The mock's ID + verification detail lives on `/profile` (unmasked, D-23), which has had no in-app entry point since D-26 |
-| 👁 | C8·2 | `LJ history` | Orders · all services  [BOTH] | account cluster align (`docs/parity/PHASE3-account.md`, `tools/parity/out/phase3_account.png`) | mock key resolves to `RC.orders`; app target is standalone `/history` trips list — see doc |
+| ⏭ | C8·2 | `LJ history` | Orders · all services  [BOTH] | SUPERSEDED by Orders v2 (ledger D-63): the customer trips list redirects to the Orders tab, which this key now renders | not aligned to the gallery mock |
 | 👁 | C8·3 | `LJ notifications` | Notifications | account cluster align (`docs/parity/PHASE3-account.md`, `tools/parity/out/phase3_account.png`) | |
 | ⬜ | C8·4 | `LJ notif_empty` | Notifications · empty | | |
 | ⊘ | C8·5 | `LJ help` | Help & support | SUPERSEDED (D-60, owner 2026-10-02): Help & support opens WhatsApp `wa.me/263778831938` directly; `app/help` deleted | |
@@ -279,7 +279,7 @@ target, an `index.json` that matches the directory, and no expectation outliving
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| ⏭ | R1·1 | `RJ splash` | Splash | **SUPERSEDED by D-63 (Splash v1, 2026-10-02)** — the one app splash (`packages/design/handoff/splash-v1`). Not aligned to the gallery mock. | SUPERSEDED (D-63) |
+| ⏭ | R1·1 | `RJ splash` | Splash | **SUPERSEDED by D-64 (Splash v1, 2026-10-02)** — the one app splash (`packages/design/handoff/splash-v1`). Not aligned to the gallery mock. | SUPERSEDED (D-64) |
 | ⬜ | R1·2 | `RJ onboard` | Onboarding · rider | | |
 | ⬜ | R1·3 | `RJ login` | Phone sign-in | | |
 | ⬜ | R1·4 | `RJ otp` | SMS OTP | | |

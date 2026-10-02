@@ -1,5 +1,5 @@
 /**
- * Splash v1 timing (ledger D-63, packages/design/handoff/splash-v1 § Interactions & behaviour). The
+ * Splash v1 timing (ledger D-64, packages/design/handoff/splash-v1 § Interactions & behaviour). The
  * contract the owner asked for — the splash is up for exactly as long as the boot takes — lives in
  * these rules, bounded below by the handoff's two minimums (1300ms intro, 400ms per active step).
  */

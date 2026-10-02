@@ -1,5 +1,5 @@
 /**
- * The cold-start splash (ledger D-63). Pinned: it drops the native launch screen as soon as it has
+ * The cold-start splash (ledger D-64). Pinned: it drops the native launch screen as soon as it has
  * drawn; it stays up exactly until the boot is ready (Home: all three steps; anywhere else: step 1),
  * never shorter than the handoff's minimums; it shows the offline panel (and never gives up) when the
  * API can't be reached; and it can never strand the app on a hung request.

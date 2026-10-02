@@ -290,7 +290,7 @@ export default function LauncherHomeScreen(): React.ReactElement {
     (restaurantsEnabled && feed.restaurants == null && feed.isFetching) ||
     (shopsEnabled && shopsFeed.shops == null && shopsFeed.isFetching) ||
     (pharmacyEnabled && pharmacyFeed.shops == null && pharmacyFeed.isFetching);
-  // The cold-start splash's steps 2 and 3 (src/boot/boot-readiness.ts, ledger D-63): it stays up until
+  // The cold-start splash's steps 2 and 3 (src/boot/boot-readiness.ts, ledger D-64): it stays up until
   // Home has its profile ("Loading your saved places") and its first content ("Finding riders near
   // you") — so Home arrives drawn, not as skeletons. A read that failed counts as settled (Home shows
   // its own empty state); a read paused offline does not, so the splash shows its offline panel.
@@ -330,7 +330,7 @@ export default function LauncherHomeScreen(): React.ReactElement {
         contentContainerStyle={{ paddingBottom: bottomPad + (bar ? 72 : 0) }}
         showsVerticalScrollIndicator={false}
       >
-        {/* BootEntrance: the cold-start rise-in after the splash (ledger D-63); a no-op on every other mount. */}
+        {/* BootEntrance: the cold-start rise-in after the splash (ledger D-64); a no-op on every other mount. */}
         <BootEntrance index={0}>
           <HomeTop
             narrow={narrow}

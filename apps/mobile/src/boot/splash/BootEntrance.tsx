@@ -5,7 +5,7 @@ import { useBootPhase } from "../boot-phase";
 import { useBootReadiness } from "../boot-readiness";
 
 /**
- * Home's content entrance at the end of the splash (`handoff/splash-v1` § Exit, ledger D-63): once
+ * Home's content entrance at the end of the splash (`handoff/splash-v1` § Exit, ledger D-64): once
  * Home has risen into place its sections rise in turn — translateY 14 → 0 and opacity 0 → 1, 450ms
  * ease-out, starting 800ms into the exit and 70–90ms apart.
  *

@@ -4,7 +4,7 @@ import { useBootPhase } from "./boot-phase";
 import { scheduleWindowBackgroundReset } from "./window-background";
 
 /**
- * The two ends of the cold-start splash (ledger D-63, `packages/design/handoff/splash-v1`).
+ * The two ends of the cold-start splash (ledger D-64, `packages/design/handoff/splash-v1`).
  *
  * The cold start is the JS splash (src/boot/splash/BootSplash.tsx): an animated brand intro, then a
  * live steps card that stays up for exactly as long as the boot takes, then a handoff into Home. The

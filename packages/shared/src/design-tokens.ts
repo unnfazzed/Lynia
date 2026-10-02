@@ -84,7 +84,7 @@ export const color = {
   illusIdleLight: "#DDE1E5",
   illusIdleMid: "#AEB6BD",
   illusIdleDark: "#7D8790",
-  /** Splash v1 (ledger D-63): the website's pink blob — decorative only. */
+  /** Splash v1 (ledger D-64): the website's pink blob — decorative only. */
   illusPink: "#FF8AC5",
 
   /**
@@ -125,7 +125,7 @@ export const color = {
   /** The rider intro's hero panel. */
   riderWash: "#ECE8FF",
   /**
-   * Splash v1 (`packages/design/handoff/splash-v1`, ledger D-63). `onAccentSoft` is the wordmark's "Go"
+   * Splash v1 (`packages/design/handoff/splash-v1`, ledger D-64). `onAccentSoft` is the wordmark's "Go"
    * on the brand green (logotype only); `onInkMuted` is body text on an `ink` panel.
    */
   onAccentSoft: "#D6F5E2",

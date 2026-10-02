@@ -1,5 +1,5 @@
 import { tokens } from "@lynia/shared/tokens";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { SectionList, Text, View } from "react-native";
 import type { OrderHistoryRow } from "../../src/api/orders";
@@ -9,7 +9,7 @@ import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { useHistoryFeed } from "../../src/query/use-history-feed";
 import { AppScreen, Button, SkeletonRows, Tappable } from "../../src/ui";
 import { Notice } from "../../src/ui/send/kit";
-import { hhmm, RIDER_COPY as R, RF, usd } from "../../src/ui/rider/copy";
+import { hhmm, RIDER_COPY as R, RF } from "../../src/ui/rider/copy";
 import { CentreState, Chips, LRow, PushHeader, RLabel } from "../../src/ui/rider/kit";
 
 function title(o: OrderHistoryRow): string {
@@ -32,32 +32,34 @@ function outcome(o: OrderHistoryRow): string {
 }
 
 /**
- * Job history (Rider v2 C12) and Trip history (C13), split by side (ledger D-54): `?side=rider` lists
- * only jobs the rider carried, with the fare (green) and a this-week summary; `?side=customer` lists
- * only orders the customer placed, with the price in ink. Rows group by day; a row opens its order.
+ * Job history (Rider v2 C12, ledger D-54): only jobs the rider carried, with the fare (green) and a
+ * this-week summary. Rows group by day; a row opens its order. The customer's Trip history (C13) is
+ * retired — Orders is the customer's only history (Orders v2, D-63) — so any other `side` lands there.
  */
-export default function HistoryScreen(): React.ReactElement {
-  const router = useRouter();
+export default function HistoryRoute(): React.ReactElement {
   const { side } = useLocalSearchParams<{ side?: string }>();
-  const rider = side === "rider";
+  return side === "rider" ? <JobHistoryScreen /> : <Redirect href="/orders" />;
+}
+
+function JobHistoryScreen(): React.ReactElement {
+  const router = useRouter();
   const now = useNow();
   const { merchantDispatchAutoEnabled } = useFeatureFlags();
-  const { rows, showingStale, isFetching, hasLiveData, refetch } = useHistoryFeed();
+  const { rows, showingStale, isFetching, refetch } = useHistoryFeed();
   const [filter, setFilter] = useState<ServiceFilter>("all");
 
-  const mine = useMemo(() => (rows ?? []).filter((r) => (rider ? isRiderRow(r) : r.role === "customer")), [rows, rider]);
-  const shown = useMemo(() => (rider ? mine.filter((r) => matchesService(r, filter)) : mine), [mine, rider, filter]);
+  const mine = useMemo(() => (rows ?? []).filter(isRiderRow), [rows]);
+  const shown = useMemo(() => mine.filter((r) => matchesService(r, filter)), [mine, filter]);
   const sections = useMemo(
     () => groupByDay(shown, (r) => new Date(r.createdAt), now, R.todayH, R.yesterday).map((g) => ({ title: g.label, data: g.items })),
     [shown, now],
   );
-  const week = rider ? summarise(mine, "week", now) : null;
+  const week = summarise(mine, "week", now);
 
   const renderRow = (o: OrderHistoryRow, first: boolean): React.ReactElement => {
     const at = new Date(o.createdAt);
-    const time = Number.isNaN(at.getTime()) ? "" : rider ? hhmm(at) : at.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+    const time = Number.isNaN(at.getTime()) ? "" : hhmm(at);
     const fare = paidFare(o);
-    const price = Number(o.agreedFare ?? o.proposedFare);
     return (
       <Tappable onPress={() => router.push(orderHref(o))} accessibilityRole="button">
         <LRow
@@ -65,15 +67,15 @@ export default function HistoryScreen(): React.ReactElement {
           icon={o.orderType === "merchant" ? "utensils" : "package"}
           title={title(o)}
           meta={RF.lMeta(outcome(o), time)}
-          amount={rider && fare != null ? fare : undefined}
-          text={rider ? (fare == null ? R.noFare : undefined) : usd(Number.isFinite(price) ? price : 0)}
+          amount={fare != null ? fare : undefined}
+          text={fare == null ? R.noFare : undefined}
         />
       </Tappable>
     );
   };
 
   return (
-    <AppScreen banner={<PushHeader title={rider ? R.tJobHist : R.tTripHist} onBack={() => router.back()} />}>
+    <AppScreen banner={<PushHeader title={R.tJobHist} onBack={() => router.back()} />}>
       {rows ? (
         <SectionList
           sections={sections}
@@ -91,7 +93,7 @@ export default function HistoryScreen(): React.ReactElement {
                   </Text>
                 </View>
               ) : null}
-              {rider && merchantDispatchAutoEnabled ? (
+              {merchantDispatchAutoEnabled ? (
                 <Chips
                   list={[
                     { id: "all", label: R.all },
@@ -102,7 +104,6 @@ export default function HistoryScreen(): React.ReactElement {
                   onChange={setFilter}
                 />
               ) : null}
-              {!rider && shown.length === 0 && hasLiveData ? <Text style={{ fontSize: 14, color: tokens.color.muted }}>{R.tripsEmpty}</Text> : null}
             </View>
           }
           renderSectionHeader={({ section }) => <RLabel style={{ fontSize: 11, marginTop: 8 }}>{section.title}</RLabel>}

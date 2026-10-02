@@ -68,7 +68,7 @@
   --illus-idle-light: #dde1e5;
   --illus-idle-mid: #aeb6bd;
   --illus-idle-dark: #7d8790;
-  /* Splash v1 (handoff/splash-v1, ledger D-63): the website's pink blob — decorative only, never text. */
+  /* Splash v1 (handoff/splash-v1, ledger D-64): the website's pink blob — decorative only, never text. */
   --illus-pink: #ff8ac5;
 
   /* Home (Calm Mint v2) surfaces, shared with the tab bar so both read as one family (handoff/tab-bar-v1).
@@ -96,7 +96,7 @@
   --tile-pharmacy: #c5e9df;
   --rider-wash: #ece8ff;          /* rider intro hero panel */
 
-  /* ── Splash v1 (handoff/splash-v1, ledger D-63) ── */
+  /* ── Splash v1 (handoff/splash-v1, ledger D-64) ── */
   --on-accent-soft: #d6f5e2;      /* the wordmark's "Go" on the brand green (logotype only, ≈2.3:1) */
   --on-ink-muted: #c9d0d6;        /* body text on an --ink panel (the splash offline panel) */
   --highlight-chip-wash: #fff6d6; /* the pale gold "Checking" pill */

@@ -1,5 +1,5 @@
 /**
- * The splash's strings — verbatim from `packages/design/handoff/splash-v1/README.md` (ledger D-63).
+ * The splash's strings — verbatim from `packages/design/handoff/splash-v1/README.md` (ledger D-64).
  * Mock copy is verbatim (CLAUDE.md "Pixel parity"); change them only with a new handoff.
  */
 export const S = {

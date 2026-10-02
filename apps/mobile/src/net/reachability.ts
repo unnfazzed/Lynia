@@ -120,7 +120,7 @@ function scheduleProbe(): void {
 }
 
 /**
- * A user asked to retry (the splash's "Try again", ledger D-63): skip whatever backoff is pending and
+ * A user asked to retry (the splash's "Try again", ledger D-64): skip whatever backoff is pending and
  * probe now, restarting the backoff from its first step. A no-op while reachable or mid-probe.
  */
 export function probeNow(): void {

@@ -68,8 +68,8 @@ export default function AccountTabScreen(): React.ReactElement {
             />
           ) : null}
           <RCard>
-            <RRow first icon="receipt" label={R.rTripHist} sub={R.rTripHistS} onPress={() => router.push("/history?side=customer")} />
-            <RRow icon="bell" label={R.rNotif} value={RF.rNotifS(unreadCount)} tone={unreadCount > 0 ? "ok" : null} onPress={() => router.push("/notifications")} />
+            {/* Trip history (Rider v2 C13) is retired: Orders is the customer's only history (Orders v2, D-63). */}
+            <RRow first icon="bell" label={R.rNotif} value={RF.rNotifS(unreadCount)} tone={unreadCount > 0 ? "ok" : null} onPress={() => router.push("/notifications")} />
             <RRow icon="message-circle" label={R.rHelp} sub={R.hWa} onPress={openSupportWhatsApp} />
             <RRow icon="settings" label={R.rSettings} sub={R.rSettingsC} onPress={() => router.push("/settings?side=customer")} />
           </RCard>

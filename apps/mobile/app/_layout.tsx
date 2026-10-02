@@ -71,7 +71,7 @@ function bootStep(step: () => unknown): void {
 // through bootStep, because this is the statement that must not be the one that kills the launch.
 bootStep(initSentry);
 
-// Keep the native launch screen up until the JS splash (src/boot/splash/BootSplash.tsx, ledger D-63)
+// Keep the native launch screen up until the JS splash (src/boot/splash/BootSplash.tsx, ledger D-64)
 // has drawn its first frame — it drops the native screen from its onLayout, onto the same green.
 // Rejects if already prevented (e.g. Fast Refresh).
 bootStep(() => SplashScreen.preventAutoHideAsync().catch(() => {}));
@@ -180,7 +180,7 @@ function SplashWhileBooting(): React.ReactElement | null {
 }
 
 /**
- * The app's frame during the cold start (ledger D-63, `handoff/splash-v1` § Exit). While booting it
+ * The app's frame during the cold start (ledger D-64, `handoff/splash-v1` § Exit). While booting it
  * holds the navigator 105% of a screen below the splash — mounted, fetching and laying out, but off
  * screen and hidden from accessibility — and the splash's exit slides it up with its top corners
  * rounding off (40 → 0). After the boot it is a plain full-size view: `endBoot` snaps the reveal into
@@ -277,7 +277,7 @@ function RootLayout(): React.ReactElement | null {
   // evaluation started → the tree is fully paintable. The splash is deliberately NOT dropped here
   // any more (MOB-BOOT-05): hiding on this commit raced RN's first PRESENTED frame, and losing that
   // race exposed the window background for a few frames — the intermittent white flash. The JS splash
-  // drops it from its own first layout (ledger D-63). The font gate's own timeout (src/ui/fonts.ts)
+  // drops it from its own first layout (ledger D-64). The font gate's own timeout (src/ui/fonts.ts)
   // still bounds this mark; the splash does not depend on it.
   useEffect(() => {
     if (!fontsReady) return;
@@ -334,7 +334,7 @@ function RootLayout(): React.ReactElement | null {
                   navigation keeps its animation. */}
               <BootPhaseProvider>
                 <View style={{ flex: 1 }}>
-                  {/* The cold-start splash (ledger D-63): on screen for exactly as long as the boot
+                  {/* The cold-start splash (ledger D-64): on screen for exactly as long as the boot
                       takes, then Home rises over it. Drawn UNDER the app, which waits off-screen
                       (AppStage) until the splash's exit raises it. Unmounts when the boot ends. */}
                   <SplashWhileBooting />

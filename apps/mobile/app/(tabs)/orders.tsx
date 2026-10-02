@@ -1,161 +1,88 @@
-import type { MerchantOrderResponse } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { StatusBar } from "expo-status-bar";
 import { useFocusEffect, useRouter } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Keyboard, Platform, ScrollView, useWindowDimensions, View } from "react-native";
 import { usePrewarmRoutes, type PrewarmRoute } from "../../src/boot/prewarm-routes";
-import { Pressable, ScrollView, Text, View } from "react-native";
-import { getActiveCustomerOrders, type OrderHistoryRow, type OrderSnapshot } from "../../src/api/orders";
-import { formatMoney } from "../../src/logic/money";
+import { getActiveCustomerOrders } from "../../src/api/orders";
 import { useNow } from "../../src/logic/use-now";
-import { useFoodOrdersPeek } from "../../src/query/use-food-order";
-import { merchantLive, type MerchantLiveView } from "../../src/ui/orderflow/live-copy";
-import { riderShortName } from "../../src/ui/order/copy";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
+import { useClaimOfflineBanner } from "../../src/net/offline-banner-owner";
+import { useReachable } from "../../src/net/use-reachable";
+import { useServiceFlags } from "../../src/net/use-service-flags";
+import { useFoodOrdersPeek } from "../../src/query/use-food-order";
 import { invalidateCustomerOrderHistory, useHistoryFeed } from "../../src/query/use-history-feed";
+import { useNotificationsUnreadCount } from "../../src/query/use-notifications-unread";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
-import { AppScreen, Button, Card, EmptyState, Icon, Money, SkeletonRows, statusPillLabel, Tappable, useTabRoot } from "../../src/ui";
+import { useTabRoot } from "../../src/ui";
+import { hhmm } from "../../src/ui/order/copy";
+import { ordersCopy as C, OX } from "../../src/ui/orders/copy";
+import {
+  DayLabel,
+  EmptyArt,
+  EndRow,
+  HistoryRow,
+  IconDisc,
+  InfoCard,
+  NoteRow,
+  NowCard,
+  NowStrip,
+  OfflineBanner,
+  OrdersButton,
+  OrdersHeader,
+  OrdersSkeleton,
+  SearchBar,
+  SearchField,
+  SectionLabel,
+  ServiceArt,
+  ServiceChips,
+} from "../../src/ui/orders/kit";
+import {
+  groupByDay,
+  historyRowVM,
+  matchesQuery,
+  merchantNowVM,
+  monthYear,
+  parcelNowVM,
+  searchDate,
+  sortNow,
+  type OrdersFilter,
+  type OrdersService,
+} from "../../src/ui/orders/model";
 
 const ACTIVE_ORDERS_KEY = ["activeCustomerOrders"] as const;
 
-function fmtDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
-}
+/** Every row on this tab opens the one order screen; warm it from the list's idle time (prewarm-routes.ts). */
+const ORDERS_PREWARM: readonly PrewarmRoute[] = ["order"];
 
-// One row anatomy for both services (plan §5 A3 "one cross-service list"), matching
-// `packages/design/explorations/restaurants/r-customer-a.jsx`'s `RC.orders`: an icon avatar keyed
-// off `orderType`, the restaurant name for a food order (its pickup/dropoff are the kitchen/customer
-// address, not a title a customer recognizes), the route for a parcel.
-function OrderRow({ o, onPress }: { o: OrderHistoryRow; onPress: () => void }): React.ReactElement {
-  const isFood = o.orderType === "merchant";
-  const title = isFood ? o.merchantName || "Restaurant order" : `${o.pickup.landmark || "Pickup"} → ${o.dropoff.landmark || "Drop-off"}`;
-  const fare = o.agreedFare ?? o.proposedFare;
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={`Open order ${title}`}
-      style={({ pressed }) => ({
-        flexDirection: "row",
-        alignItems: "center",
-        gap: tokens.space.sm,
-        minHeight: tokens.touchTargetMin,
-        paddingVertical: 11,
-        borderBottomWidth: 1,
-        borderBottomColor: tokens.color.line,
-        backgroundColor: pressed ? tokens.color.accentWash : "transparent",
-      })}
-    >
-      <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: tokens.color.surface, alignItems: "center", justifyContent: "center" }}>
-        <Icon name={isFood ? "utensils" : "package"} size={16} color={tokens.color.muted} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 13.5, fontWeight: "600", color: tokens.color.ink }} numberOfLines={1}>
-          {title}
-        </Text>
-        <Text style={{ fontSize: 12, color: tokens.color.muted, marginTop: 2 }} numberOfLines={1}>
-          {fmtDate(o.createdAt)} · Sent
-          {o.counterpartyName ? ` · ${o.counterpartyName}` : ""}
-        </Text>
-      </View>
-      <Text style={{ fontSize: 13, fontWeight: "600", color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>{formatMoney(fare)}</Text>
-    </Pressable>
-  );
-}
+/** The history endpoint's page size: a shorter page is the whole history. NEEDS BACKEND (orders-v2): a
+ *  cursor (`/orders/history?cursor=`) for "Loading older orders…" past it. */
+const HISTORY_PAGE = 50;
 
-/** G2 names the rider as the rider card does ("Tendai M."). */
-const riderNameOf = (o: MerchantOrderResponse | undefined): string | null => (o?.rider ? riderShortName(o.rider.firstName, o.rider.lastName) : null);
-
-/** The unlit segment on forest (`.segs i`: white at 22 %, the live bar's own off colour). */
-const NOW_SEG_OFF = "rgba(255,255,255,0.22)";
+/** Phones narrower than this draw the 320 header circles (Calm Mint v2's H3 breakpoint). */
+const NARROW_MAX = 340;
 
 /**
- * Order flow v2 G2 (`of-screens-mrg.js` G2, ledger D-59): a running MERCHANT order is a forest "Now" card —
- * the 40 accent disc with the service glyph, the stage title 14/700, "{venue} · {ETA / next action}"
- * 12.5 on forest-sub, four segments for the four-step track and a chevron. Same family as Home's live bar.
+ * Orders tab — the Orders v2 handoff (packages/design/handoff/orders-v2, ledger D-63): a mint header with
+ * search, a pinned NOW section (one forest card per running order), service chips, and a day-grouped
+ * history of the customer's own orders. It is the customer's only order history (Trip history retired).
+ * No pull-to-refresh: the tab refreshes on focus, every 30 s while visible, on reconnect and on resume, and
+ * a failed background refresh stays silent.
  */
-function NowCard({ v, onPress }: { v: MerchantLiveView; onPress: () => void }): React.ReactElement {
-  return (
-    <Tappable
-      onPress={onPress}
-      tone="onDark"
-      accessibilityRole="button"
-      accessibilityLabel={`${v.title}. ${v.line}`}
-      style={{ marginBottom: 10, borderRadius: 20, backgroundColor: tokens.color.forest, paddingVertical: 10, paddingHorizontal: 12, minHeight: 64, flexDirection: "row", alignItems: "center", gap: 10 }}
-    >
-      <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: tokens.color.accent, alignItems: "center", justifyContent: "center" }}>
-        <Icon name={v.icon} size={20} color={tokens.color.onAccent} />
-      </View>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={{ fontSize: 14, lineHeight: 18, fontWeight: "700", color: tokens.color.onAccent }}>{v.title}</Text>
-        <Text style={{ fontSize: 12.5, marginTop: 1, color: tokens.color.onForestMuted }}>{v.line}</Text>
-        <View style={{ flexDirection: "row", gap: 3, marginTop: 6 }}>
-          {[0, 1, 2, 3].map((k) => (
-            <View key={k} style={{ flex: 1, height: 3, borderRadius: 2, backgroundColor: k < v.lit ? tokens.color.accent : NOW_SEG_OFF }} />
-          ))}
-        </View>
-      </View>
-      <Icon name="chevron-right" size={18} color={tokens.color.onForestMuted} />
-    </Tappable>
-  );
-}
-
-// Kit RC.orders (r-customer-a.jsx:48-57): the pinned live order is a compact accent card — a round
-// icon avatar keyed off `orderType`, the order's headline, its status line in accent-green, and the
-// fare. Not the home tab's stepper LiveOrderCard: the mock draws no progress strip here.
-function ActiveOrderCard({ o, onPress }: { o: OrderSnapshot; onPress: () => void }): React.ReactElement {
-  const isFood = o.orderType === "merchant";
-  // Kit RC.orders draws the RESTAURANT as a food job's headline ("Sadza Republic") — the snapshot
-  // carries `merchantName` for exactly this; a parcel reads as its route (matching the EARLIER
-  // OrderRow anatomy).
-  const title = isFood ? o.merchantName || "Restaurant order" : `${o.pickup.landmark || "Pickup"} → ${o.dropoff.landmark || "Drop-off"}`;
-  const fare = o.agreedFare ?? o.proposedFare;
-  return (
-    <Tappable onPress={onPress} accessibilityRole="button" accessibilityLabel={`Open live order ${title}`} style={{ marginBottom: tokens.space.md }}>
-      <Card accent style={{ padding: 12, marginBottom: 0 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-          <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: tokens.color.accentWash, alignItems: "center", justifyContent: "center" }}>
-            <Icon name={isFood ? "utensils" : "package"} size={17} color={tokens.color.accentText} />
-          </View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text numberOfLines={1} style={{ fontSize: 13.5, fontWeight: "700", color: tokens.color.ink }}>
-              {title}
-            </Text>
-            <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: "600", color: tokens.color.accentText, marginTop: 1 }}>
-              {statusPillLabel(o.status)}
-            </Text>
-          </View>
-          <Money v={fare} size={14} />
-        </View>
-      </Card>
-    </Tappable>
-  );
-}
-
-/**
- * Orders tab (plan §5 A3) — absorbs `app/history/`'s content directly instead of bridging out to
- * it: one cross-service list, live order pinned on top. `app/history/index.tsx` itself is left
- * running unchanged (the rider Account tab still bridges to it, out of this lane's scope), so this
- * screen owns its own copy of the row anatomy rather than reaching into that route's internals.
- */
-/** Every row on this tab links to one of the two trackers, and both are heavy (29 and 44 new
- *  modules, plus react-native-maps and socket.io-client). Warm them from the list's idle time so the
- *  first "open my order" tap of a session isn't the slow one — see src/boot/prewarm-routes.ts. */
-const ORDERS_PREWARM: readonly PrewarmRoute[] = ["order", "foodOrder"];
-
 export default function OrdersTabScreen(): React.ReactElement {
   const { scrollRef, bottomPad } = useTabRoot<ScrollView>("orders");
   usePrewarmRoutes(ORDERS_PREWARM);
   const router = useRouter();
   const qc = useQueryClient();
+  const narrow = useWindowDimensions().width < NARROW_MAX;
+  const online = useReachable();
+  const unread = useNotificationsUnreadCount() > 0;
   const { restaurantsEnabled } = useFeatureFlags();
+  const { shopsEnabled, pharmacyEnabled } = useServiceFlags();
+  const now = useNow(15_000);
 
-  // Mirrors `(tabs)/home.tsx`'s own live-orders query: focus-gated polling, same
-  // `["activeCustomerOrders"]` cache entry both screens share. The LIST endpoint — one pinned card
-  // per running job (a food order and a parcel running side-by-side both pin), matching home's
-  // one-card-per-job rule; `send.tsx`'s restore banner keeps its own single-order key.
+  // Focus-gated polling over the `["activeCustomerOrders"]` entry Home shares (one card per running job).
   const [focused, setFocused] = useState(true);
   useFocusEffect(
     useCallback(() => {
@@ -164,113 +91,198 @@ export default function OrdersTabScreen(): React.ReactElement {
       return () => setFocused(false);
     }, [qc]),
   );
-  const activeOrdersQ = useQuery({
-    queryKey: ACTIVE_ORDERS_KEY,
-    queryFn: getActiveCustomerOrders,
-    refetchInterval: focused ? 30_000 : false,
-  });
-  // Array.isArray, not `?? []`: a malformed 200 body (any shape drift the untyped `apiFetch` JSON
-  // parse can't catch) is a truthy non-array that `?? []` lets straight through into `.map()` below
-  // (CF-04 — confirmed live, matches UIP-02's fixture-level repro of the identical crash).
+  const activeOrdersQ = useQuery({ queryKey: ACTIVE_ORDERS_KEY, queryFn: getActiveCustomerOrders, refetchInterval: focused ? 30_000 : false });
+  // Array.isArray, not `?? []`: a malformed 200 body is a truthy non-array (CF-04 / UIP-02).
   const activeOrders = Array.isArray(activeOrdersQ.data) ? activeOrdersQ.data : [];
-  // G2: each running merchant order's stage comes from its food read (service, schedule, Rx, swaps).
   const foodReads = useFoodOrdersPeek(
     activeOrders.filter((o) => o.orderType === "merchant").map((o) => o.id),
     focused,
   );
-  const nowMs = useNow(15_000).getTime();
-  // No failed-check banner here (owner instruction 2026-08-12) — a background poll must not raise an
-  // error card. A failed check just shows no live cards; the poll and reconnect refetch self-heal.
-
-  const { rows, showingStale, isFetching, isError, hasLiveData, refetch } = useHistoryFeed();
+  const { rows, isFetching, refetch, savedAt } = useHistoryFeed();
   useForegroundRefetch(() => {
     void qc.invalidateQueries({ queryKey: ACTIVE_ORDERS_KEY });
     invalidateCustomerOrderHistory(qc);
   });
 
-  // `GET /orders/history` returns BOTH roles — this is the customer's tab, so jobs the user carried
-  // as a rider are dropped (same split `app/history/index.tsx` applies for `?side=customer`). Live
-  // orders also appear in the same feed (their status hasn't reached a terminal one yet) — excluded
-  // from "earlier" so they aren't shown twice. A rider-only history leaves `earlier` empty and falls
-  // through to the empty state below, keyed on `hasLiveData`, not on `rows` being empty.
-  const liveIds = new Set(activeOrders.map((o) => o.id));
-  const earlier = (rows ?? []).filter((r) => r.role === "customer" && !liveIds.has(r.id));
+  // ── NOW ──
+  const asOf = !online && activeOrdersQ.dataUpdatedAt ? hhmm(new Date(activeOrdersQ.dataUpdatedAt).toISOString()) : null;
+  const nowCards = sortNow(
+    activeOrders.map((o) => (o.orderType === "merchant" ? merchantNowVM(o, foodReads[o.id], now.getTime(), asOf) : parcelNowVM(o, now.getTime(), asOf))),
+  );
+  const open = (id: string): void => router.push(`/order/${id}`);
+
+  // ── History: the customer's own orders (carried jobs live in the rider's Job history), minus the running ones ──
+  const liveIds = useMemo(() => new Set(activeOrders.map((o) => o.id)), [activeOrders]);
+  const history = useMemo(() => (rows ?? []).filter((r) => r.role === "customer" && !liveIds.has(r.id)).map(historyRowVM), [rows, liveIds]);
+  const services: OrdersService[] = [
+    "send",
+    ...(restaurantsEnabled ? (["restaurants"] as const) : []),
+    ...(shopsEnabled ? (["shops"] as const) : []),
+    ...(pharmacyEnabled ? (["pharmacy"] as const) : []),
+  ];
+  const [filter, setFilter] = useState<OrdersFilter>("all");
+  const shownFilter: OrdersFilter = filter === "all" || services.includes(filter) ? filter : "all";
+  const filtered = shownFilter === "all" ? history : history.filter((r) => r.service === shownFilter);
+
+  // ── Search ──
+  const [query, setQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const q = query.trim();
+  const matches = useMemo(() => (q ? history.filter((r) => matchesQuery(r, q)) : []), [history, q]);
+  const matchCount = useRef(0);
+  matchCount.current = matches.length;
+  // Keyboard down with results (O10d): back to the full header, the query kept in the field.
+  useEffect(() => {
+    const sub = Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide", () => {
+      if (matchCount.current > 0) setSearching(false);
+    });
+    return () => sub.remove();
+  }, []);
+  const cancelSearch = (): void => {
+    Keyboard.dismiss();
+    setQuery("");
+    setSearching(false);
+  };
+
+  const anyFood = restaurantsEnabled || shopsEnabled || pharmacyEnabled;
+  const findFood = (): void => router.push(restaurantsEnabled ? "/food" : shopsEnabled ? "/shops" : "/pharmacy");
+  const header = (search: boolean, dim = false): React.ReactElement => (
+    <OrdersHeader narrow={narrow} unread={unread} onBell={() => router.push("/notifications")}>
+      {search ? <SearchField query={query} dim={dim} onPress={() => setSearching(true)} onClear={() => setQuery("")} /> : null}
+    </OrdersHeader>
+  );
+  const nowSection = (): React.ReactElement | null =>
+    nowCards.length === 0 ? null : (
+      <>
+        <SectionLabel text={nowCards.length > 1 ? C.nowCount(nowCards.length) : C.now} helper={nowCards.length > 1 && online ? C.nowMany : null} />
+        <View style={{ gap: 8, paddingHorizontal: 16 }}>
+          {nowCards.map((v) => (
+            <NowCard key={v.id} v={v} onPress={() => open(v.id)} />
+          ))}
+        </View>
+      </>
+    );
+  const results = (): React.ReactElement =>
+    matches.length > 0 ? (
+      <>
+        <SectionLabel text={C.matches(matches.length, q)} />
+        {matches.map((r, i) => (
+          <HistoryRow key={r.id} r={r} q={q} when={searchDate(r.createdAt, now)} last={i === matches.length - 1} onPress={() => open(r.id)} />
+        ))}
+      </>
+    ) : (
+      <InfoCard title={C.noMatch(q)} body={C.noMatchSub}>
+        <OrdersButton kind="ghost" label={C.clearSearch} onPress={() => setQuery("")} />
+      </InfoCard>
+    );
+
+  // The tab draws its own offline message (the banner, the search note, the O20 card), so the app-wide
+  // strip stands down while it does — one offline bar, not two (the order screen's rule, D-53 state 19).
+  useClaimOfflineBanner(focused && !online && (searching || (rows === null && !isFetching) || (history.length > 0 && savedAt != null)));
+
+  let body: React.ReactElement;
+  if (searching) {
+    // O10a–c / O11: the compact search header; running orders stay as slim strips.
+    body = (
+      <>
+        <SearchBar value={query} onChange={setQuery} onCancel={cancelSearch} />
+        {!online ? <OfflineBanner text={C.offlineSearch} /> : null}
+        {nowCards.map((v) => (
+          <NowStrip key={v.id} v={v} onPress={() => open(v.id)} />
+        ))}
+        {q ? results() : <NoteRow icon="search" text={C.searchHint} />}
+        {q && !online ? <NoteRow center text={C.noMatchOff} /> : null}
+      </>
+    );
+  } else if (rows === null && isFetching) {
+    // O15 — a genuine first load: the real header, skeleton chips and rows.
+    body = (
+      <>
+        {header(true, true)}
+        <OrdersSkeleton />
+      </>
+    );
+  } else if (rows === null) {
+    // O20 (offline, nothing saved) / O21 (couldn't load). Nothing to search, so no search field.
+    body = (
+      <>
+        {header(false)}
+        {nowSection()}
+        {!online ? (
+          <InfoCard art={<IconDisc icon="wifi-off" bg={tokens.color.surface} ink={tokens.color.muted} />} title={C.offT} body={C.offB} />
+        ) : (
+          <InfoCard art={<IconDisc icon="circle-alert" bg={tokens.color.dangerWash} ink={tokens.color.dangerInk} />} title={C.errT} body={C.errB}>
+            <OrdersButton kind="primary" icon="refresh-cw" label={C.tryAgain} onPress={refetch} />
+          </InfoCard>
+        )}
+      </>
+    );
+  } else if (history.length === 0) {
+    // O18 (a running order, nothing earlier) / O16–O17 (no orders at all).
+    body =
+      nowCards.length > 0 ? (
+        <>
+          {header(false)}
+          {nowSection()}
+          <View style={{ marginTop: 8 }}>
+            <NoteRow center icon="receipt" text={C.onlyNow} />
+          </View>
+        </>
+      ) : (
+        <>
+          {header(false)}
+          <InfoCard mint art={<EmptyArt />} title={C.emptyT} body={anyFood ? C.emptyB : C.emptyBParcels}>
+            <OrdersButton kind="primary" icon="package" label={C.sendParcel} onPress={() => router.push("/send")} />
+            {anyFood ? <OrdersButton kind="text" label={C.findFood} onPress={findFood} /> : null}
+          </InfoCard>
+        </>
+      );
+  } else {
+    const groups = groupByDay(filtered, now);
+    const none = shownFilter === "all" ? null : shownFilter;
+    body = (
+      <>
+        {header(true)}
+        {!online && savedAt ? <OfflineBanner text={C.offline(hhmm(savedAt))} /> : null}
+        {nowSection()}
+        {services.length > 1 ? <ServiceChips services={services} value={shownFilter} onChange={setFilter} /> : null}
+        {q ? (
+          // O10d — results with the keyboard down; the search ignores the chip filter.
+          results()
+        ) : none && filtered.length === 0 ? (
+          <InfoCard art={<ServiceArt service={none} />} title={none === "pharmacy" ? OX.pharmacyNone : C.filterNone[none]} body={C.filterNoneSub}>
+            <OrdersButton kind="ghost" label={C.showAll} onPress={() => setFilter("all")} />
+          </InfoCard>
+        ) : (
+          <>
+            {groups.map((g) => (
+              <View key={g.label}>
+                <DayLabel label={g.label} />
+                {g.rows.map((r, i) => (
+                  <HistoryRow key={r.id} r={r} when={hhmm(r.createdAt)} last={i === g.rows.length - 1} onPress={() => open(r.id)} />
+                ))}
+              </View>
+            ))}
+            {(rows?.length ?? 0) < HISTORY_PAGE && shownFilter === "all" ? <EndRow since={monthYear(history[history.length - 1]!.createdAt)} /> : null}
+          </>
+        )}
+      </>
+    );
+  }
 
   return (
-    <AppScreen>
+    // A plain root, not AppScreen: the mint header owns the top inset (it paints behind the status bar).
+    <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+      <StatusBar style="dark" />
       <ScrollView
         ref={scrollRef}
-        style={{ flex: 1 }}
-        contentContainerStyle={{ padding: tokens.space.screen, paddingBottom: bottomPad }}
+        style={{ backgroundColor: tokens.color.bg }}
+        contentContainerStyle={{ paddingBottom: bottomPad }}
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Kit RC.orders: the screen title is 19px/700, not the 24px shared Heading. */}
-        <Text style={{ fontSize: 19, fontWeight: "700", color: tokens.color.ink, marginBottom: 10 }}>Your orders</Text>
-
-        {activeOrders.length > 0 ? (
-          activeOrders.map((o) =>
-            // Every order opens the one order screen (D-59): a merchant order is a G2 Now card and draws
-            // the Order flow v2 stages there, a parcel After Send.
-            o.orderType === "merchant" ? (
-              <NowCard key={o.id} v={merchantLive(o, foodReads[o.id], riderNameOf(foodReads[o.id]), nowMs)} onPress={() => router.push(`/order/${o.id}`)} />
-            ) : (
-              <ActiveOrderCard key={o.id} o={o} onPress={() => router.push(`/order/${o.id}`)} />
-            ),
-          )
-        ) : null}
-
-        {earlier.length > 0 ? (
-          <>
-            <Text style={{ fontSize: 12, fontWeight: "700", color: tokens.color.muted, marginBottom: 6 }}>EARLIER</Text>
-            {/* Painting the cached list because live data is absent — same stale/retry rule
-                `app/history/index.tsx` uses (offline-paused vs a genuine fetch error). */}
-            {showingStale ? (
-              <View style={{ marginBottom: tokens.space.sm }}>
-                <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, marginBottom: tokens.space.sm }}>
-                  Showing your last saved orders — we&apos;ll refresh when you&apos;re back online.
-                </Text>
-                {isError ? <Button label="Retry" variant="ghost" onPress={refetch} loading={isFetching} /> : null}
-              </View>
-            ) : null}
-            {earlier.map((o) => (
-              <OrderRow
-                key={o.id}
-                o={o}
-                // One order screen for every service (D-59).
-                onPress={() => router.push(`/order/${o.id}`)}
-              />
-            ))}
-          </>
-        ) : rows === null && isFetching ? (
-          // A genuine first load is in flight — skeleton (NOT shown for the offline paused state below).
-          <SkeletonRows />
-        ) : hasLiveData ? (
-          // Live data arrived with no earlier orders. With a live order already pinned above, that's
-          // an unremarkable "nothing before this one yet" — not the true empty state.
-          activeOrders.length > 0 ? null : (
-            // Kit R0·b1 `orders_empty` (r-customer-a.jsx:565): the empty state sits inside a Card (the
-            // owner-decided empty-state wrapper), not bare on the page.
-            <Card style={{ paddingTop: 10, paddingRight: 16, paddingBottom: 18, paddingLeft: 16, marginTop: 24 }}>
-              <EmptyState
-                icon="receipt"
-                title="Nothing here yet"
-                message="Parcels and food orders both land on this screen — you'll be able to reorder from here in one tap."
-              >
-                {restaurantsEnabled ? <Button label="Find food near you" onPress={() => router.push("/food")} /> : null}
-                {/* push, not replace: from a tab root, router.replace('/send') swaps out the whole
-                    (tabs) group — the tab bar vanishes and Android back exits the app from a screen
-                    that draws no back. push keeps the tab shell beneath so back returns to Orders. */}
-                <Button label="Send a parcel" variant={restaurantsEnabled ? "ghost" : "primary"} onPress={() => router.push("/send")} />
-              </EmptyState>
-            </Card>
-          )
-        ) : (
-          // No data and NOT fetching — an errored fetch or the offline paused state with no cache.
-          <EmptyState icon="wifi-off" title="Couldn't load your orders" message="Check your connection and try again.">
-            <Button label="Retry" onPress={refetch} loading={isFetching} />
-          </EmptyState>
-        )}
+        {body}
       </ScrollView>
-    </AppScreen>
+    </View>
   );
 }
