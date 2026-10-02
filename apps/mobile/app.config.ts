@@ -180,8 +180,8 @@ const config: ExpoConfig = {
    */
   newArchEnabled: false,
   // Launcher icon copied from packages/design/assets/brand/icon/ (the design system owns the
-  // artwork); splash-icon.png is the bare Paper Dove (Brand.tsx geometry) rendered white for the
-  // green splash below. Light UI only — the design defers dark mode.
+  // artwork); the native launch screen below draws no mark at all (plain green, ledger D-64).
+  // Light UI only — the design defers dark mode.
   icon: "./assets/icon.png",
   plugins: [
     "expo-router",
@@ -217,43 +217,26 @@ const config: ExpoConfig = {
     ],
     [
       "expo-splash-screen",
-      // The native splash IS the design's splash (journey 0·1, screens.jsx `Splash`): full-bleed
-      // brand green with the white dove AND the LyniaGo wordmark under it — the identical picture
-      // app/splash.view.tsx paints, so the native frame and the JS tree are one design.
+      // The native launch screen is PLAIN BRAND GREEN — no dove, no wordmark (owner, 2026-10-02,
+      // ledger D-64). The splash is the JS one (src/boot/splash/BootSplash.tsx, splash-v1 "1a Sun &
+      // orbit"), whose first frame is plain green before the sun pops in; the native screen only
+      // covers the time before JS can draw and is dropped at the JS splash's first layout, so it must
+      // be that same empty green or the cold start shows a logo that vanishes and redraws.
       //
-      // It did not used to be. splash-icon.png was the bare dove, so the wordmark APPEARED at the
-      // handoff and the (vertically centred) mark jumped up by half the wordmark block — an
-      // animation in a boot sequence that is supposed to have none. Both assets are generated from
-      // the same geometry the RN tree renders (src/ui/splash-lockup.ts →
-      // scripts/build-splash-icon.mjs), with a test failing on drift.
-      //
-      // ANDROID RENDERS A VECTOR, NOT THE PNG (MOB-BOOT-05). The PNG lane was resampled twice
-      // between the committed asset and the screen — prebuild's density-bucket resize
-      // (@expo/image-utils falls back to Jimp bilinear without sharp-cli, the EAS-worker case) and
-      // Android 12+'s display-time icon scaling — so the boot's first frame rendered visibly softer
-      // than the vector JS frame (reported 2026-08-24). `android.drawable` hands the plugin a
-      // VectorDrawable copied VERBATIM to res/drawable/splashscreen_logo.xml, skipping PNG
-      // generation entirely (verified against @expo/prebuild-config@8.2.0 withAndroidSplashImages —
-      // the `config.drawable` early return): the OS rasterises the same paths react-native-svg
-      // draws, at the screen's own resolution. With `drawable` set the plugin ignores `imageWidth`
-      // on Android; size comes from the drawable's intrinsic 288dp canvas (the same canvas the PNG
-      // pipeline composed, so on-screen geometry is unchanged — see splashLogoVectorDrawableXml).
-      //
-      // iOS has no drawable seam (the storyboard wants an image), so `image` + `imageWidth` stay
-      // for it. imageWidth is the lockup's HEIGHT (154), not its width, and that is not a typo: the
-      // storyboard lane fits the image `contain` into a SQUARE imageWidth×imageWidth box. The
-      // lockup is taller than it is wide, so its height is what the box side has to be; passing the
-      // width would render every element ~22% small against the JS frame that replaces it. Keep it
-      // equal to SPLASH_IMAGE_WIDTH — the splash-lockup test pins the pair.
+      // Android 12+ always reserves an icon slot, so `android.drawable` hands the plugin an EMPTY
+      // VectorDrawable (copied verbatim to res/drawable/splashscreen_logo.xml — the `config.drawable`
+      // early return in @expo/prebuild-config withAndroidSplashImages, so no PNG lane runs). iOS's
+      // storyboard wants an image, so it gets a 1×1 fully transparent PNG.
       //
       // #00B14F = tokens.color.accent (native config can't read the TS tokens; same literal
-      // convention as expo-notifications' color below).
+      // convention as expo-notifications' color below). NATIVE: reaches devices only in a new store
+      // build; an OTA cannot change it.
       {
-        image: "./assets/splash-icon.png",
-        imageWidth: 154,
+        image: "./assets/splash-blank.png",
+        imageWidth: 1,
         resizeMode: "contain",
         backgroundColor: "#00B14F",
-        android: { drawable: { icon: "./assets/splashscreen_logo.xml" } },
+        android: { drawable: { icon: "./assets/splash-blank.xml" } },
       },
     ],
     [
