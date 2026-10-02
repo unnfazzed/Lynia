@@ -61,7 +61,6 @@ import User from "lucide-react-native/dist/cjs/icons/user";
 import Volume2 from "lucide-react-native/dist/cjs/icons/volume-2";
 import Wallet from "lucide-react-native/dist/cjs/icons/wallet";
 import WifiOff from "lucide-react-native/dist/cjs/icons/wifi-off";
-import Calendar from "lucide-react-native/dist/cjs/icons/calendar";
 import Camera from "lucide-react-native/dist/cjs/icons/camera";
 import MessageCircle from "lucide-react-native/dist/cjs/icons/message-circle";
 import Share2 from "lucide-react-native/dist/cjs/icons/share-2";
@@ -146,7 +145,6 @@ const ICONS = {
   // The After Send order screen (ledger D-53): Call / WhatsApp, the Verified tag, Share code / receipt /
   // trip, the pickup-photo View button and the rating Undo.
   camera: Camera,
-  calendar: Calendar, // Order flow v2 scheduled offer (RD1c)
   "message-circle": MessageCircle,
   "share-2": Share2,
   "shield-check": ShieldCheck,

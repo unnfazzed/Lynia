@@ -18,6 +18,7 @@ const mockConfirmFoodPickup = jest.fn();
 const mockConfirmFoodRiderCash = jest.fn();
 const mockConfirmDelivery = jest.fn();
 const mockRxSaw = jest.fn();
+const mockAttachProof = jest.fn(async (..._args: unknown[]) => ({}));
 
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
@@ -39,7 +40,7 @@ jest.mock("../../../src/api/food-rider", () => ({
   confirmFoodCollected: (...args: unknown[]) => mockConfirmFoodCollected(...args),
   confirmFoodRiderCash: (...args: unknown[]) => mockConfirmFoodRiderCash(...args),
   confirmRxSawOriginal: (...args: unknown[]) => mockRxSaw(...args),
-  attachFoodPickupProof: jest.fn(async () => ({})),
+  attachFoodPickupProof: (...args: unknown[]) => mockAttachProof(...args),
   disputeFoodCash: jest.fn(),
   dropFoodDispatch: jest.fn(),
   logFoodDoorstepCall: jest.fn(),
@@ -249,8 +250,11 @@ describe("RD2a / RD2b · a shop's pickup waits on the sealed-bag photo (Order fl
     expect(text).toContain("Needed for shops and pharmacies");
     const shutterOff = () => tree.root.findAll((n) => n.props.testID === "shutter" && typeof n.props.onPress === "function").some((n) => n.props.disabled === true);
     expect(shutterOff()).toBe(true);
-    await press(tree, "Bag is sealed");
-    for (let i = 0; i < 5 && shutterOff(); i++) await settle();
-    expect(shutterOff()).toBe(false);
+    const tick = tree.root.findAll((n) => n.props.accessibilityRole === "checkbox" && n.props.accessibilityLabel === "Bag is sealed" && typeof n.props.onPress === "function")[0]!;
+    await act(async () => {
+      tick.props.onPress();
+    });
+    // The tick is told to the server straight away (the bag can be ticked before the photo).
+    expect(mockAttachProof).toHaveBeenCalledWith("order-1", { bagSealed: true });
   });
 });
