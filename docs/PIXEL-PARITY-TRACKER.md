@@ -134,7 +134,7 @@ target, an `index.json` that matches the directory, and no expectation outliving
 |---|---|---|---|---|---|
 | ⏭ | C3·1 | `RC list` | Restaurant list  [FOOD] | **Browse v2 (2026-10-01, D-57)** — rebuilt to `packages/design/handoff/browse-v2` B1/B5–B7/B12/B14: mint header with the shared address control, one Sort pill + Free delivery, two full cards then compact rows, a 'Closed now' group. The gallery target is SUPERSEDED. Evidence: `docs/parity/BROWSE-V2-RESTAURANTS-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-57) |
 | ⏭ | C3·2 | `RC list_loading` | List loading  [FOOD] | **SUPERSEDED by D-57** — Browse v2 B8 (real header, skeleton body). Evidence: `docs/parity/BROWSE-V2-RESTAURANTS-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-57) |
-| 👁 | C3·3 | `RC search` | Search  [FOOD] | food browse cluster align (`docs/parity/PHASE4-browse.md`, `tools/parity/out/phase4_browse.png`) | PLACES aligned; DISHES section deferred (no cross-restaurant dish index) — see doc |
+| ⏭ | C3·3 | `RC search` | Search  [FOOD] | **Browse v2 (2026-10-02, D-57 part 3)** — rebuilt to `packages/design/handoff/browse-v2` X1–X4: recent searches + Popular near you, Home results grouped by service (three each, 'See all n'), the Send a parcel row, Restaurants' PLACES + DISHES, no-results and offline states. The gallery target is SUPERSEDED. Evidence: `docs/parity/BROWSE-V2-RESTAURANTS-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-57) |
 | ⏭ | C3·4 | `RC menu` | Menu  [FOOD] | **Browse v2 (2026-10-01, D-57)** — rebuilt to `packages/design/handoff/browse-v2` S1–S7/S10–S13 + I1–I3: cover, logo, info strip, one scrolling menu under sticky scroll-spy tabs (Popular first), + inside the photo, the forest cart bar, the new-cart sheet. The Foundation-E regions were deleted; the gallery target is SUPERSEDED. Evidence: `docs/parity/BROWSE-V2-RESTAURANTS-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-57) |
 | ⬜ | C3·5 | `RC item` | Item sheet  [FOOD] | | |
 | ⏭ | C3·6 | `LJ home_empty` | Send composer · no address  [PARCEL] | superseded by D-52 (send-compose-v2 handoff; `docs/parity/SEND-COMPOSE-V2-2026-10-01.png`) — not aligned to; app = v2 step 1 | |
@@ -152,11 +152,11 @@ target, an `index.json` that matches the directory, and no expectation outliving
 
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
-| 👁 | C4·1 | `RC cart` | Cart  [FOOD] | food cart & checkout cluster align (`docs/parity/PHASE4-checkout.md`, `tools/parity/out/phase4_checkout.png`) | header → shared AppBar; summary → shared PriceMath. EtaLine + ADD-A-DRINK upsell omitted (un-backed at cart stage) |
-| ⛔ | C4·2 | `RC cart_note` | Note for the kitchen  [FOOD] | | |
-| 👁 | C4·3 | `RC checkout_cash` | Checkout · CASH  [FOOD] | food cart & checkout cluster align (`docs/parity/PHASE4-checkout.md`, `tools/parity/out/phase4_checkout.png`) | header → shared AppBar; cash-consequence names the full total. Live address-entry block stands in for the mock's static summary row |
-| 👁 | C4·4 | `RC checkout_wallet` | Checkout · WALLET  [FOOD] | food cart & checkout cluster align (`docs/parity/PHASE4-checkout.md`, `tools/parity/out/phase4_checkout.png`) | wallet-selected subtitle → provider list; verbatim note copy, ink type, lead bold |
-| ⬜ | C4·5 | `RC placing` | Placing  [FOOD] | | |
+| ⏭ | C4·1 | `RC cart` | Cart  [FOOD] | **Order flow v2 (2026-10-02, D-59)** — cart + checkout merged into ONE Review & place screen (`app/food/checkout.tsx`; `/food/cart` redirects), `packages/design/handoff/order-flow-v2` R1: white blocks on grey, inline − n + steppers, inline address card, pinned 'Place order · $X cash'. The Foundation-E footer region was deleted; the gallery target is SUPERSEDED. Evidence: `docs/parity/ORDER-FLOW-V2-REVIEW-2026-10-02.png` | structure snapshot + rendered conformance SUPERSEDED (D-59) |
+| ⏭ | C4·2 | `RC cart_note` | Note for the kitchen  [FOOD] | **SUPERSEDED by D-59** — the line note is edited in place on Review (R1). Evidence: `docs/parity/ORDER-FLOW-V2-REVIEW-2026-10-02.png` | structure snapshot + rendered conformance SUPERSEDED (D-59) |
+| ⏭ | C4·3 | `RC checkout_cash` | Checkout · CASH  [FOOD] | **SUPERSEDED by D-59** — Review & place R1 (the summary/footer regions were deleted). Evidence: `docs/parity/ORDER-FLOW-V2-REVIEW-2026-10-02.png` | structure snapshot + rendered conformance SUPERSEDED (D-59) |
+| ⏭ | C4·4 | `RC checkout_wallet` | Checkout · WALLET  [FOOD] | **SUPERSEDED by D-59** — retired outright (cash only, BRIEF §14). Evidence: `docs/parity/ORDER-FLOW-V2-REVIEW-2026-10-02.png` | structure snapshot + rendered conformance SUPERSEDED (D-59) |
+| ⏭ | C4·5 | `RC placing` | Placing  [FOOD] | **SUPERSEDED by D-59** — Review R7a (veil + 'Placing your order…'). Evidence: `docs/parity/ORDER-FLOW-V2-REVIEW-2026-10-02.png` | structure snapshot + rendered conformance SUPERSEDED (D-59) |
 | ⏭ | C4·6 | `LJ auction_finding` | Auction · finding  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
 | ⏭ | C4·7 | `LJ auction_live` | Auction · offers live  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
 | ⏭ | C4·8 | `LJ auction_counter` | Counter-offer review  [PARCEL] | superseded by D-53 (after-send handoff; `docs/parity/AFTER-SEND-2026-10-01.png`) — not aligned to; app = the one order screen | |
@@ -233,11 +233,11 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | ⏭ | C10·2 | `RC list_error` | Offline list  [FOOD] | **SUPERSEDED by D-57** — Browse v2 B10/B11. Evidence: `docs/parity/BROWSE-V2-RESTAURANTS-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-57) |
 | ⏭ | C10·3 | `RC menu_closed` | Closed restaurant  [FOOD] | **SUPERSEDED by D-57** — Browse v2 S8a/S8b (no + anywhere, Remind me). Evidence: `docs/parity/BROWSE-V2-RESTAURANTS-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-57) |
 | ⏭ | C10·4 | `RC closed_interrupt` | Closes while browsing  [FOOD] | **SUPERSEDED by D-57** — Browse v2 S9. Evidence: `docs/parity/BROWSE-V2-RESTAURANTS-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-57) |
-| ⬜ | C10·5 | `RC cart_oos` | Item sold out  [FOOD] | | |
-| ⬜ | C10·6 | `RC cart_price` | Price changed  [FOOD] | | |
-| ⬜ | C10·7 | `RC cart_empty` | Empty cart  [FOOD] | | |
-| ⬜ | C10·8 | `RC cart_min` | Under the minimum  [FOOD] | | |
-| ⬜ | C10·9 | `RC checkout_offline` | Offline mid-checkout  [FOOD] | | |
+| ⏭ | C10·5 | `RC cart_oos` | Item sold out  [FOOD] | **SUPERSEDED by D-59** — Review R6a (sold out, struck through). Evidence: `docs/parity/ORDER-FLOW-V2-REVIEW-2026-10-02.png` | structure snapshot + rendered conformance SUPERSEDED (D-59) |
+| ⏭ | C10·6 | `RC cart_price` | Price changed  [FOOD] | **SUPERSEDED by D-59** — Review R6a (price went up). Evidence: `docs/parity/ORDER-FLOW-V2-REVIEW-2026-10-02.png` | structure snapshot + rendered conformance SUPERSEDED (D-59) |
+| ⏭ | C10·7 | `RC cart_empty` | Empty cart  [FOOD] | **SUPERSEDED by D-59** — Review R9a. Evidence: `docs/parity/ORDER-FLOW-V2-REVIEW-2026-10-02.png` | structure snapshot + rendered conformance SUPERSEDED (D-59) |
+| ⏭ | C10·8 | `RC cart_min` | Under the minimum  [FOOD] | **SUPERSEDED by D-59** — Review R4 (small-order hint + fee row). Evidence: `docs/parity/ORDER-FLOW-V2-REVIEW-2026-10-02.png` | structure snapshot + rendered conformance SUPERSEDED (D-59) |
+| ⏭ | C10·9 | `RC checkout_offline` | Offline mid-checkout  [FOOD] | **SUPERSEDED by D-59** — Review R7c. Evidence: `docs/parity/ORDER-FLOW-V2-REVIEW-2026-10-02.png` | structure snapshot + rendered conformance SUPERSEDED (D-59) |
 | ⬜ | C10·10 | `RC pay_open` | Still unpaid · reminder  [FOOD] | | |
 | ⛔ | C10·11 | `RC pay_failed` | Payment declined  [FOOD] | | |
 | ⬜ | C10·12 | `RC item_removed` | One item unavailable  [FOOD] | | |

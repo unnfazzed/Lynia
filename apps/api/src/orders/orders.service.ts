@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, haversineKm, isBusinessBookingAccountPhone, type LatLng, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, quoteFare, SERVICE_CORRIDOR, summarizeItems } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, deriveMerchantOrderTrack, haversineKm, isBusinessBookingAccountPhone, type LatLng, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, quoteFare, SERVICE_CORRIDOR, summarizeItems } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush, maxBroadcastRadiusM } from "../common/broadcast-policy";
 import { MicroCache } from "../common/micro-cache";
@@ -917,6 +917,9 @@ export class OrdersService {
         orderType: true,
         merchantPhase: true,
         merchantPaymentMethod: true,
+        // Order flow v2 (D-59): the four-step track's inputs (BRIEF §4).
+        autoAccepted: true,
+        kitchenConfirmedAt: true,
         merchant: { select: { name: true } },
         agreedFare: true,
         proposedFare: true,
@@ -1104,6 +1107,10 @@ export class OrdersService {
       merchantName: order.merchant?.name ?? null,
       merchantPhase: order.merchantPhase ?? null,
       merchantPaymentMethod: order.merchantPaymentMethod ?? null,
+      // Order flow v2 (BRIEF §4, D-59): a merchant order's four-step track, derived server-side with the
+      // same shared function the phones use. Null on parcels and on merchant orders that ended undelivered.
+      // Additive: old clients ignore it.
+      track: order.orderType === "merchant" ? deriveMerchantOrderTrack(order) : null,
       // Which party is looking — derived from the same customer/rider check that gates this snapshot
       // above (never a new auth path). Lets the tracking screen voice customer-only copy correctly for
       // a rider viewing their own trip (rating card, cancel-blame line, counterparty-phone label).

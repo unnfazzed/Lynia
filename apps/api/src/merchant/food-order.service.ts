@@ -8,13 +8,17 @@ import {
   NotFoundException,
   type OnModuleDestroy,
   type OnModuleInit,
+  Optional,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import {
   addMoney,
   DELIVERY_OTP_MAX_ATTEMPTS,
   deliveryFeeForDistance,
+  deriveMerchantOrderTrack,
   type EditMerchantOrderItemsRequest,
+  merchantGoodsForSubtotal,
+  orderShortId,
   effectiveMerchantHours,
   isMerchantOpenNow,
   type LatLng,
@@ -40,6 +44,7 @@ import {
   type Waypoint,
 } from "@lynia/shared";
 import { PAYMENT_RAIL, type PaymentRail } from "../adapters/payments/payment-rail.interface";
+import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { TokenService } from "../auth/token.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -48,6 +53,8 @@ import { FoodDebtService } from "./food-debt.service";
 import { confirmKitchen, editOrderItems } from "./food-order-ops";
 import { harareWallClock } from "./harare-clock";
 import { CUSTOMER_VISIBLE_RESTAURANT, isDishOutOfStock, notifyFoodQueueChanged, resolveOwnMerchantId } from "./merchant-lookup.util";
+import { assertPickupProofIfRequired, proofViews } from "./merchant-order-proof.service";
+import { OrderSubstitutionService, SUBSTITUTION_ROUND_INCLUDE, toSubstitutionRoundView } from "./order-substitution.service";
 
 // D-24 manual rail: the customer needs the shop's OWN payment-receiving number to send mobile
 // money to (never masked — D-17's masking is for a THIRD PARTY's view of the merchant, e.g. a
@@ -56,7 +63,20 @@ import { CUSTOMER_VISIBLE_RESTAURANT, isDishOutOfStock, notifyFoodQueueChanged, 
 // merchant account's own registered phone when no pickup-point contactPhone is set yet (toResponse).
 const ORDER_WITH_ITEMS_INCLUDE = {
   merchantItems: true,
-  merchant: { select: { location: true, showPhoneToCustomers: true, ownerProfile: { select: { phone: true } } } },
+  merchant: {
+    select: {
+      location: true,
+      showPhoneToCustomers: true,
+      ownerProfile: { select: { phone: true } },
+      // Order flow v2 (D-59): the venue block (header, receipt "From", per-service copy).
+      name: true,
+      businessType: true,
+      shopKind: true,
+    },
+  },
+  // Order flow v2 (D-59): the latest substitution round (BRIEF §8) and the customer's venue rating (§11).
+  substitutionRounds: { orderBy: { createdAt: "desc" }, take: 1, include: SUBSTITUTION_ROUND_INCLUDE },
+  venueRating: { select: { score: true, tags: true, createdAt: true } },
   // #671: the assigned rider's public identity for the food live tracker's "rider secured" card.
   // Name lives on the Profile, everything else (plate=bike_reg, vehicle, rating, trips, KYC, photo)
   // on the Rider. Null until dispatch assigns a rider — toResponse omits the whole block then.
@@ -111,6 +131,10 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     // it returns `pending` and never fabricates a `confirmed`, so wiring it here can never mark an
     // order paid without a real rail. The idempotency anchor is the order id (topUpId param).
     @Inject(PAYMENT_RAIL) private readonly paymentRail: PaymentRail,
+    // Order flow v2 (D-59). @Optional so the existing positional unit harnesses keep constructing the
+    // service; Nest always injects both in production (StorageModule is @Global).
+    @Optional() private readonly substitutions?: OrderSubstitutionService,
+    @Optional() @Inject(STORAGE) private readonly storage?: StorageAdapter,
   ) {}
 
   /** C5 kitchen socket queue: best-effort push telling the merchant's tablet(s) something on their
@@ -119,6 +143,23 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
    *  never load-bearing for the mutation that already committed. */
   private notifyQueue(merchantId: string | null | undefined, orderId: string): void {
     notifyFoodQueueChanged(this.gateway, merchantId, orderId);
+    void this.emitTrack(orderId);
+  }
+
+  /** Order flow v2 (BRIEF §4, D-59): every kitchen-side change also reaches the customer's order room as
+   *  `order:status` carrying the phase and the derived four-step track (an installed app just refetches
+   *  on it). Best-effort and post-commit: a failed read or emit never touches the mutation. */
+  private async emitTrack(orderId: string): Promise<void> {
+    try {
+      const o = await this.prisma.order.findUnique({
+        where: { id: orderId },
+        select: { status: true, merchantPhase: true, autoAccepted: true, kitchenConfirmedAt: true },
+      });
+      if (!o) return;
+      this.gateway.emitOrderStatus(orderId, o.status, { merchantPhase: o.merchantPhase, track: deriveMerchantOrderTrack(o) });
+    } catch (err) {
+      this.logger.debug?.(`track emit skipped for order ${orderId}: ${(err as Error).message}`);
+    }
   }
 
   onModuleInit(): void {
@@ -276,6 +317,8 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
           merchantGoodsTotal,
           deliveryFee,
           idempotencyKey: body.idempotencyKey ?? null,
+          // Order flow v2 (BRIEF §7): null = never chosen = ask.
+          outOfStockPref: body.outOfStockPref ?? null,
           events: { create: { status: "requested" } },
           merchantItems: {
             create: body.items.map((i) => {
@@ -317,7 +360,33 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
 
   async getMyOrder(orderId: string, customerId: string): Promise<MerchantOrderResponse> {
     const order = await this.findOwnAsCustomer(orderId, customerId);
-    return this.toResponse(order);
+    return this.withDetail(order, this.toResponse(order));
+  }
+
+  /** Order flow v2 (D-59): what only single-order reads carry — the pickup/door proof with signed read
+   *  URLs, and the swap photos of the substitution round. Never on the queue poll. Best-effort. */
+  private async withDetail(order: OrderWithItems, response: MerchantOrderResponse): Promise<MerchantOrderResponse> {
+    const { pickupProof, doorProof } = await proofViews(this.storage, order);
+    const out: MerchantOrderResponse = { ...response };
+    if (pickupProof) out.pickupProof = pickupProof;
+    if (doorProof) out.doorProof = doorProof;
+    const round = order.substitutionRounds?.[0];
+    const swapDishIds = round ? [...new Set(round.lines.map((l) => l.swapDishId).filter((id): id is string => !!id))] : [];
+    if (round && swapDishIds.length > 0 && this.storage) {
+      const storage = this.storage;
+      try {
+        const dishes = await this.prisma.merchantDish.findMany({ where: { id: { in: swapDishIds } }, select: { id: true, photoUrl: true } });
+        const photos = new Map<string, string | null>(
+          await Promise.all(
+            dishes.map(async (d) => [d.id, d.photoUrl ? await storage.createReadUrl(d.photoUrl, 24 * 60 * 60).catch(() => null) : null] as const),
+          ),
+        );
+        out.substitution = toSubstitutionRoundView(round, { keptSubtotal: keptSubtotalOf(order), swapPhotos: photos });
+      } catch (err) {
+        this.logger.warn(`swap photos skipped for order ${order.id}: ${(err as Error).message}`);
+      }
+    }
+    return out;
   }
 
   /** D-23: the customer's response to a shortened (item-level accept) order. */
@@ -329,6 +398,11 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     if (order.itemApprovalDeadlineAt && order.itemApprovalDeadlineAt.getTime() < Date.now()) {
       throw new ConflictException("The approval window has closed");
     }
+    // Order flow v2 (D-59): an installed app answering a substitution round it can only see as a
+    // shortened order — approve keeps it with every swap declined (OrderSubstitutionService).
+    if (approve && (await this.substitutions?.handleLegacyApproval(orderId, customerId, true))) {
+      return this.toResponse(await this.mustFindWithItems(orderId));
+    }
 
     if (!approve) {
       const claimed = await this.prisma.order.updateMany({
@@ -337,6 +411,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       });
       if (claimed.count === 0) throw new ConflictException("Order changed, retry");
       await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
+      await this.substitutions?.closeRoundsForCancelledOrder(orderId);
       this.notifyQueue(order.merchantId, orderId);
       return this.toResponse(await this.mustFindWithItems(orderId));
     }
@@ -361,7 +436,10 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     // Auto-accept: until the kitchen is confirmed, "cooking" hasn't really started — the customer may
     // still cancel free, exactly as they could while waiting for a manual accept.
     const unconfirmedAuto = order.autoAccepted && !order.kitchenConfirmedAt && order.merchantPhase === "preparing";
-    if (!unconfirmedAuto && (!order.merchantPhase || !cancellable.has(order.merchantPhase))) {
+    // Order flow v2 (BRIEF §8): while a substitution round is open, "Cancel the whole order — free" is
+    // always there, mid-prep included.
+    const openRound = order.merchantPhase === "preparing" && (await this.substitutions?.hasOpenRound(orderId)) === true;
+    if (!unconfirmedAuto && !openRound && (!order.merchantPhase || !cancellable.has(order.merchantPhase))) {
       throw new ConflictException("This order can't be cancelled anymore — the kitchen has started");
     }
     const claimed = await this.prisma.order.updateMany({
@@ -369,12 +447,13 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         id: orderId,
         status: "requested",
         merchantPhase: order.merchantPhase,
-        ...(unconfirmedAuto ? { kitchenConfirmedAt: null } : {}),
+        ...(unconfirmedAuto && !openRound ? { kitchenConfirmedAt: null } : {}),
       },
       data: { status: "cancelled", cancelledAt: new Date(), cancelledBy: customerId, merchantPhase: null },
     });
     if (claimed.count === 0) throw new ConflictException("Order changed, retry");
     await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
+    await this.substitutions?.closeRoundsForCancelledOrder(orderId);
     this.notifyQueue(order.merchantId, orderId);
     return this.toResponse(await this.mustFindWithItems(orderId));
   }
@@ -487,7 +566,8 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       select: { status: true, createdAt: true },
       take: 50,
     });
-    return { ...this.forMerchant(order), timeline: events.map((e) => ({ status: e.status, at: e.createdAt.toISOString() })) };
+    const detail = await this.withDetail(order, this.forMerchant(order));
+    return { ...detail, timeline: events.map((e) => ({ status: e.status, at: e.createdAt.toISOString() })) };
   }
 
   /** Auto-accept: "Got it, we're making it" — the restaurant confirms an auto-accepted order in the
@@ -540,7 +620,8 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       include: ORDER_WITH_ITEMS_INCLUDE,
     });
     if (!order) throw new NotFoundException("Order not found");
-    return this.toResponse(order);
+    const { venueRating: _venueRating, ...forRider } = await this.withDetail(order, this.toResponse(order));
+    return forRider;
   }
 
   /** D-23: full accept when `unavailableDishIds` is empty, item-level accept otherwise. */
@@ -702,6 +783,8 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
   async markReady(profileId: string, orderId: string): Promise<MerchantOrderResponse> {
     const order = await this.findOwnAsMerchant(profileId, orderId);
     if (order.merchantPhase !== "preparing") throw new ConflictException("This order isn't in prep");
+    // Order flow v2 (BRIEF §8): the order can't go to a rider while the customer is answering changes.
+    await this.substitutions?.assertNoOpenRound(orderId);
     const pickupCode = this.tokens.randomPickupCode();
     const claimed = await this.prisma.order.updateMany({
       where: { id: orderId, status: "requested", merchantPhase: "preparing" },
@@ -841,6 +924,8 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       merchant_goods_total: Prisma.Decimal | null;
     },
   ): Promise<void> {
+    // Order flow v2 (BRIEF §9): shops and pharmacies need the sealed-bag photo before pickup completes.
+    await assertPickupProofIfRequired(tx, orderId);
     await tx.order.update({ where: { id: orderId }, data: { status: "picked_up", collectedAt: new Date() } });
     await tx.orderEvent.create({ data: { orderId, status: "picked_up" } });
     await this.debt.openDebtIfNeeded(tx, {
@@ -918,7 +1003,15 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
   ): Promise<{ cancelled: number }> {
     let cancelled = 0;
     const stale = await this.prisma.order.findMany({
-      where: { orderType: "merchant", status: "requested", merchantPhase: phase, [deadlineField]: { lt: new Date() } },
+      where: {
+        orderType: "merchant",
+        status: "requested",
+        merchantPhase: phase,
+        [deadlineField]: { lt: new Date() },
+        // Order flow v2 (D-59): a substitution round's no-answer outcome is "carry on", not cancel — its
+        // own sweep (OrderSubstitutionService.sweepExpiredRounds) resolves it.
+        ...(phase === "awaiting_item_approval" ? { substitutionRounds: { none: { status: "open" } } } : {}),
+      },
       select: { id: true, merchantId: true },
       take: 200,
     });
@@ -1073,7 +1166,15 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
 
     let released = 0;
     const cooking = await this.prisma.order.findMany({
-      where: { orderType: "merchant", status: "requested", merchantPhase: "preparing", autoAccepted: true, kitchenConfirmedAt: { not: null } },
+      where: {
+        orderType: "merchant",
+        status: "requested",
+        merchantPhase: "preparing",
+        autoAccepted: true,
+        kitchenConfirmedAt: { not: null },
+        // Order flow v2 (BRIEF §8): never to a rider while the customer is answering changes.
+        substitutionRounds: { none: { status: "open" } },
+      },
       select: { id: true, merchantId: true, prepStartedAt: true, prepMinutes: true },
       take: 200,
     });
@@ -1132,7 +1233,9 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
    *  (auto-accept safeguard 5). Never on the rider's or the customer's view. */
   private forMerchant(order: OrderWithItems): MerchantOrderResponse {
     const dropoff = order.dropoff as Waypoint | null;
-    return { ...this.toResponse(order), customerPhone: dropoff?.contactPhone ?? null };
+    // The customer's own venue rating stays on the customer's read.
+    const { venueRating: _venueRating, ...rest } = this.toResponse(order);
+    return { ...rest, customerPhone: dropoff?.contactPhone ?? null };
   }
 
   private async notifyCancelledCustomer(orderId: string, reason: MerchantRejectionReasonCode): Promise<void> {
@@ -1166,6 +1269,8 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       quantity: it.quantity,
       note: it.note,
       available: it.available,
+      // Order flow v2: the line an accepted swap replaced — only on swap lines.
+      ...(it.replacesItemId ? { replacesItemId: it.replacesItemId } : {}),
     }));
     const merchantGoodsTotal = order.merchantGoodsTotal != null ? Number(order.merchantGoodsTotal) : null;
     const deliveryFee = order.deliveryFee != null ? Number(order.deliveryFee) : null;
@@ -1259,6 +1364,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       kitchenConfirmedBy: (order.kitchenConfirmedBy as MerchantOrderResponse["kitchenConfirmedBy"]) ?? null,
       itemsEditedAt: order.itemsEditedAt?.toISOString() ?? null,
       restaurantPhone,
+      ...orderFlowV2Fields(order),
     };
     // A-O14 (LC-A06): the doorstep-handshake/debt-ledger/refund fields above are `null` on the
     // overwhelming majority of polls (wallet orders never touch the handshake/debt fields at all;
@@ -1327,4 +1433,41 @@ function isPastClosingTime(hours: Record<string, { open: string; close: string }
   const closeAt = new Date(now);
   closeAt.setHours(closeH ?? 23, closeM ?? 59, 59, 999);
   return now >= closeAt;
+}
+
+/** Items subtotal of the lines still on the order (`available !== false`), exact in cents. */
+function keptSubtotalOf(order: Pick<OrderWithItems, "merchantItems">): number {
+  return fromCents(order.merchantItems.filter((it) => it.available !== false).reduce((c, it) => c + toCents(Number(it.priceUsd)) * it.quantity, 0));
+}
+
+/**
+ * Order flow v2 (ledger D-59) additive response fields — the receipt (D1), the venue, the four-step track
+ * (BRIEF §4), the out-of-stock preference (§7), the substitution round (§8), the shop proof rule (§9) and
+ * the customer's venue rating (§11). Every key is optional in the contract; an installed app ignores them.
+ */
+function orderFlowV2Fields(order: OrderWithItems): Partial<MerchantOrderResponse> {
+  const out: Partial<MerchantOrderResponse> = {
+    shortId: orderShortId(order.id),
+    track: deriveMerchantOrderTrack(order),
+    outOfStockPref: order.outOfStockPref === "remove" ? "remove" : "ask",
+    pickupProofRequired: order.merchant?.businessType === "shop",
+  };
+  if (order.merchant?.name) {
+    out.venue = { name: order.merchant.name, businessType: order.merchant.businessType, shopKind: order.merchant.shopKind ?? null };
+  }
+  const kept = keptSubtotalOf(order);
+  if (order.merchantItems.length > 0) {
+    const goods = merchantGoodsForSubtotal(kept);
+    out.itemsSubtotal = goods.itemsSubtotal;
+    // The fee actually charged: whatever the goods total carries above the items (a cancelled order's
+    // stored total may predate its last change, so derive from the stored goods total when present).
+    out.smallOrderFee =
+      order.merchantGoodsTotal != null ? Math.max(0, roundToCents(Number(order.merchantGoodsTotal) - kept)) : goods.smallOrderFee;
+  }
+  const round = order.substitutionRounds?.[0];
+  if (round) out.substitution = toSubstitutionRoundView(round, { keptSubtotal: kept });
+  if (order.venueRating) {
+    out.venueRating = { score: order.venueRating.score, tags: order.venueRating.tags, at: order.venueRating.createdAt.toISOString() };
+  }
+  return out;
 }

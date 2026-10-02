@@ -93,7 +93,8 @@ const scroll = (px) => async (p) => {
   await p.waitForTimeout(700);
 };
 
-const ROWS = [
+const ONLY = process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1].split(",") : null;
+const ALL_ROWS = [
   { id: "B1", label: "B1 · Restaurants list", vp: PHONE, app: { name: "B1", component: app("food/index.tsx"), fixture: "bv2_list" } },
   { id: "B1·320", label: "B1 · at 320×640", vp: NARROW, app: { name: "B1-320", component: app("food/index.tsx"), fixture: "bv2_list" } },
   { id: "B5a", label: "B5 · Sort sheet", vp: PHONE, app: { name: "B5a", component: app("food/index.tsx"), fixture: "bv2_list", before: tap(/^Sort: /) } },
@@ -105,11 +106,20 @@ const ROWS = [
   { id: "S8a", label: "S8a · Closed", vp: PHONE, app: { name: "S8a", component: app("food/[id].tsx"), fixture: "bv2_store_closed" } },
   { id: "I1a", label: "I1 · Item sheet", vp: PHONE, app: { name: "I1a", component: app("food/[id].tsx"), fixture: "bv2_store", before: tap(/^Sadza & beef stew, \$4\.50/) } },
   { id: "I3", label: "I3 · Start a new cart?", vp: PHONE, app: { name: "I3", component: app("food/[id].tsx"), fixture: "bv2_store_switch", before: tap("Add Roast chicken (half)") } },
+  // Part 3 — Search.
+  { id: "X1", label: "X1 · Home search, before typing", vp: PHONE, app: { name: "X1", component: app("food/search.tsx"), fixture: "bv2_search_home" } },
+  { id: "X2a", label: "X2a · Home search results", vp: PHONE, app: { name: "X2a", component: app("food/search.tsx"), fixture: "bv2_search_results" } },
+  { id: "X2·320", label: "X2 · at 320×640", vp: NARROW, app: { name: "X2-320", component: app("food/search.tsx"), fixture: "bv2_search_results" } },
+  { id: "X2b", label: "X2b · Parcel words", vp: PHONE, app: { name: "X2b", component: app("food/search.tsx"), fixture: "bv2_search_parcel" } },
+  { id: "X3", label: "X3 · Search in Restaurants", vp: PHONE, app: { name: "X3", component: app("food/search.tsx"), fixture: "bv2_search_food" } },
+  { id: "X4a", label: "X4a · No results", vp: PHONE, app: { name: "X4a", component: app("food/search.tsx"), fixture: "bv2_search_none" } },
+  { id: "X4b", label: "X4b · Offline", vp: PHONE, app: { name: "X4b", component: app("food/search.tsx"), fixture: "bv2_search_offline" } },
 ];
 
 await mkdir(SHOTS, { recursive: true });
 const browser = await launch();
 const rows = [];
+const ROWS = ONLY ? ALL_ROWS.filter((r) => ONLY.includes(r.id)) : ALL_ROWS;
 try {
   for (const r of ROWS) {
     const mock = await shootMock(browser, r.id, r.vp);

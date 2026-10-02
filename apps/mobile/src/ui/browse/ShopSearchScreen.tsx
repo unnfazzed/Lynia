@@ -75,7 +75,7 @@ export function ShopSearchScreen({ service }: { service: ShopService }): React.R
             placeholder={s.search}
             placeholderTextColor={tokens.color.muted}
             accessibilityLabel={s.search}
-            style={{ flex: 1, fontSize: 15, color: tokens.color.ink, paddingVertical: 0 }}
+            style={{ flex: 1, minWidth: 0, fontSize: 15, color: tokens.color.ink, paddingVertical: 0 }}
           />
           {query ? <IconButton icon="x" size={18} label="Clear" onPress={() => setQuery("")} /> : null}
         </View>

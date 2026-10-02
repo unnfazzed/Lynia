@@ -13,7 +13,6 @@ import { Keyboard, KeyboardAvoidingView, Platform, Text } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import renderer, { act } from "react-test-renderer";
 import { DismissKeyboardArea } from "../DismissKeyboardArea";
-import { CartNoteSheet } from "../food/CartNoteSheet";
 import { ItemSheet } from "../browse/sheets";
 import { GetHelpControl } from "../safety";
 
@@ -45,7 +44,6 @@ const SHEETS: [string, () => renderer.ReactTestRenderer][] = [
           <ItemSheet item={item} service="food" closedAt={null} remindOn={false} remindBusy={false} onRemind={() => undefined} onAdd={() => undefined} onClose={() => undefined} />
         </SafeAreaProvider>,
       )],
-  ["cart note sheet", () => mount(<CartNoteSheet dishName="Sadza and beef stew" orderNote="" onSave={() => undefined} onClose={() => undefined} />)],
   [
     "get-help sheet",
     () => {

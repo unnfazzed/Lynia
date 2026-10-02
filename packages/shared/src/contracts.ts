@@ -172,8 +172,41 @@ export type ParcelRatingTag = z.infer<typeof ParcelRatingTag>;
 /** Every rating chip `RateRequest.tags` accepts: the food set plus the parcel set (`on_time` once). One
  *  flat enum rather than a z.union so the wire contract is a pure enum WIDENING of the food-only list
  *  (the contract-snapshot gate reads new enum values as additive; a union would read as a retype). */
-export const RatingTag = z.enum([...FoodRatingTag.options, ...ParcelRatingTag.exclude(["on_time"]).options]);
+export const RatingTag = z.enum([
+  ...FoodRatingTag.options,
+  ...ParcelRatingTag.exclude(["on_time"]).options,
+  // Order flow v2 D1 (O.d.tagsR): the merchant-order rider chips "Careful with food" and "Easy to reach"
+  // ("On time" and "Friendly" already exist). A pure enum widening — additive for every installed app.
+  "careful_with_food",
+  "easy_to_reach",
+]);
 export type RatingTag = z.infer<typeof RatingTag>;
+
+/** Order flow v2 D1 (O.d.tagsV / tagsVbad): the venue-rating chips — four positive, four negative, in
+ *  the order the handoff draws them. Same controlled-vocabulary rule as {@link FoodRatingTag}. */
+export const VenueRatingTag = z.enum(["tasty", "hot", "well_packed", "right_order", "cold", "missing_item", "spilled", "wrong_item"]);
+export type VenueRatingTag = z.infer<typeof VenueRatingTag>;
+
+/** `POST /restaurants/orders/:orderId/venue-rating` — the customer rates the venue (BRIEF §11's first
+ *  rating row), alongside the rider rating (`RateRequest`). Only after delivery; idempotent (the first
+ *  rating stands, a repeat returns it). Feeds the venue's star rating (`ratingAvg`/`ratingCount`). */
+export const RateVenueRequest = z
+  .object({
+    score: z.number().int().min(1).max(5),
+    tags: z.array(VenueRatingTag).max(8).optional(),
+  })
+  .strict();
+export type RateVenueRequest = z.infer<typeof RateVenueRequest>;
+
+/** The customer's own venue rating, on their merchant-order read (D1b "You rated"). */
+export const VenueRatingView = z
+  .object({
+    score: z.number().int().min(1).max(5),
+    tags: z.array(z.string()),
+    at: z.string(),
+  })
+  .strict();
+export type VenueRatingView = z.infer<typeof VenueRatingView>;
 
 /** Customer rates the rider after delivery; this also closes the order (`completed`). For a food
  *  order the same call also carries the food score + feedback tags the delivered mock draws (#672);
@@ -1124,6 +1157,10 @@ export const RestaurantSearchResponse = z
   .strict();
 export type RestaurantSearchResponse = z.infer<typeof RestaurantSearchResponse>;
 
+/** Browse v2 X1 (ledger D-57): "Popular near you" — the most-ordered dish names, most popular first. */
+export const SearchPopularResponse = z.object({ terms: z.array(z.string()) }).strict();
+export type SearchPopularResponse = z.infer<typeof SearchPopularResponse>;
+
 /** A single customer-facing menu item. `outOfStock` is derived server-side from `outOfStockUntil`
  *  (N-14 daily auto-reset — a past timestamp reads as back in stock, no reset job needed). Draft
  *  (photoless) dishes never appear here at all (D-31). */
@@ -1231,6 +1268,12 @@ export type MerchantPaymentMethod = z.infer<typeof MerchantPaymentMethod>;
 export const UpdateMerchantLocationRequest = z.object({ location: MerchantLocationInput }).strict();
 export type UpdateMerchantLocationRequest = z.infer<typeof UpdateMerchantLocationRequest>;
 
+/** Order flow v2 (BRIEF §7/§8): what the customer wants when an item is out of stock. `ask` = the venue
+ *  may propose swaps the customer answers; `remove` = missing items are just taken off (the server
+ *  refuses swap proposals on such an order). */
+export const OutOfStockPref = z.enum(["ask", "remove"]);
+export type OutOfStockPref = z.infer<typeof OutOfStockPref>;
+
 export const PlaceMerchantOrderItem = z
   .object({
     dishId: z.string().uuid(),
@@ -1252,6 +1295,9 @@ export const PlaceMerchantOrderRequest = z
     dropoff: Waypoint,
     paymentMethod: MerchantPaymentMethod,
     idempotencyKey: z.string().uuid().optional(),
+    // Order flow v2 R2 (BRIEF §7): "If something's out of stock" — Ask me (default) / Remove it. Optional
+    // and additive: an installed app that never sends it gets "ask".
+    outOfStockPref: OutOfStockPref.optional(),
   })
   .strict();
 export type PlaceMerchantOrderRequest = z.infer<typeof PlaceMerchantOrderRequest>;
@@ -1267,9 +1313,188 @@ export const MerchantOrderItemView = z
     note: z.string().nullable(),
     // D-23: null = merchant hasn't decided yet, true = kept, false = "don't have it".
     available: z.boolean().nullable(),
+    /** Order flow v2 (BRIEF §8): set on a line an accepted swap added — the line it replaced (which is
+     *  then `available: false`). Omitted on every other line. */
+    replacesItemId: z.string().uuid().nullable().optional(),
   })
   .strict();
 export type MerchantOrderItemView = z.infer<typeof MerchantOrderItemView>;
+
+// ── Order flow v2 (packages/design/handoff/order-flow-v2, ledger D-59) — wire shapes ─────────────
+
+/** BRIEF §8: what the venue proposes for one line. `remove` and `reduce` (a quantity drop) apply at once
+ *  and are announced; `swap` (another item from the same venue's catalogue) needs the customer's yes. */
+export const SubstitutionAction = z.enum(["remove", "swap", "reduce"]);
+export type SubstitutionAction = z.infer<typeof SubstitutionAction>;
+
+export const SubstitutionProposalLine = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("remove"), itemId: z.string().uuid() }).strict(),
+  z
+    .object({
+      action: z.literal("swap"),
+      itemId: z.string().uuid(),
+      /** The replacement, from the venue's own catalogue (a `MerchantDish` id). Priced server-side. */
+      dishId: z.string().uuid(),
+      /** Defaults to the line's quantity. */
+      quantity: z.number().int().min(1).max(20).optional(),
+    })
+    .strict(),
+  z.object({ action: z.literal("reduce"), itemId: z.string().uuid(), quantity: z.number().int().min(1).max(98) }).strict(),
+]);
+export type SubstitutionProposalLine = z.infer<typeof SubstitutionProposalLine>;
+
+/** `POST /merchant/orders/:orderId/substitution` — U1a (at accept, from the ringing sheet) and U4a (mid-
+ *  prep "Change items"). At accept on a manual-accept venue (`merchantPhase: awaiting_accept`) this IS the
+ *  accept, so `prepMinutes` is required there and ignored otherwise. One open round per order. */
+export const ProposeSubstitutionRequest = z
+  .object({
+    lines: z.array(SubstitutionProposalLine).min(1).max(30),
+    prepMinutes: z.union([z.literal(10), z.literal(15), z.literal(20), z.literal(30), z.literal(45)]).optional(),
+  })
+  .strict();
+export type ProposeSubstitutionRequest = z.infer<typeof ProposeSubstitutionRequest>;
+
+/** `POST /restaurants/orders/:orderId/substitution/confirm` — U2 "Confirm changes": the customer's answer
+ *  for EVERY swap line of the open round (`accept: true` = Accept swap, false = Remove it). */
+export const ConfirmSubstitutionRequest = z
+  .object({
+    roundId: z.string().uuid(),
+    answers: z.array(z.object({ lineId: z.string().uuid(), accept: z.boolean() }).strict()).min(1).max(30),
+  })
+  .strict();
+export type ConfirmSubstitutionRequest = z.infer<typeof ConfirmSubstitutionRequest>;
+
+/** A round's state. `open` = waiting for the customer; `confirmed` = answered; `timed_out` = no answer
+ *  in time (swaps declined); `applied` = removals/quantity drops only, nothing to answer (U4b);
+ *  `cancelled` = the order was cancelled while it was open. */
+export const SubstitutionRoundStatus = z.enum(["open", "confirmed", "timed_out", "applied", "cancelled"]);
+export type SubstitutionRoundStatus = z.infer<typeof SubstitutionRoundStatus>;
+
+export const SubstitutionLineView = z
+  .object({
+    id: z.string().uuid(),
+    /** The order line this proposal is about (`MerchantOrderItemView.itemId`). */
+    itemId: z.string().uuid(),
+    action: SubstitutionAction,
+    /** The original line, as ordered: "Out of {name} · ~~$price~~". */
+    name: z.string(),
+    priceUsd: z.number(),
+    quantity: z.number().int(),
+    /** `reduce`: the new quantity. */
+    newQuantity: z.number().int().nullable(),
+    /** `swap`: the replacement and its unit price; `quantity` of it replaces the line. */
+    swapDishId: z.string().uuid().nullable(),
+    swapName: z.string().nullable(),
+    swapPriceUsd: z.number().nullable(),
+    swapQuantity: z.number().int().nullable(),
+    swapPhotoUrl: z.string().nullable(),
+    /** `swap` only: null until answered; `accept` = Swap accepted, `remove` = declined/removed. */
+    answer: z.enum(["accept", "remove"]).nullable(),
+  })
+  .strict();
+export type SubstitutionLineView = z.infer<typeof SubstitutionLineView>;
+
+/** The order's latest substitution round (open, or the last one resolved, for M2's "Rudo accepted" and
+ *  U3's timeout line). Totals: `wasTotal` before the round; while open, `keptSubtotal` + the shared
+ *  `substitutionTotals()` give the live "New total" for any set of answers. */
+export const SubstitutionRoundView = z
+  .object({
+    id: z.string().uuid(),
+    /** `at_accept` (the ringing sheet, before cooking) or `mid_prep` ("Change items"). */
+    kind: z.enum(["at_accept", "mid_prep"]),
+    status: SubstitutionRoundStatus,
+    createdAt: z.string(),
+    deadlineAt: z.string().nullable(),
+    resolvedAt: z.string().nullable(),
+    lines: z.array(SubstitutionLineView),
+    wasTotal: z.number(),
+    keptSubtotal: z.number(),
+  })
+  .strict();
+export type SubstitutionRoundView = z.infer<typeof SubstitutionRoundView>;
+
+/** BRIEF §4: the merchant order's four-step track (`deriveMerchantOrderTrack` in ./restaurants-order). */
+export const MerchantOrderTrackView = z
+  .object({
+    step: z.enum(["confirmed", "making", "on_the_way", "delivered"]),
+    index: z.number().int().min(0).max(3),
+    rxChecked: z.boolean(),
+  })
+  .strict();
+export type MerchantOrderTrackView = z.infer<typeof MerchantOrderTrackView>;
+
+/** BRIEF §9 pickup proof: the rider's photo of the bag at the counter + the "Bag is sealed" tick. */
+export const MerchantPickupProofView = z
+  .object({
+    /** Short-lived signed read URL; null when no photo was taken (or on a storage blip). */
+    photoUrl: z.string().nullable(),
+    takenAt: z.string().nullable(),
+    bagSealed: z.boolean(),
+  })
+  .strict();
+export type MerchantPickupProofView = z.infer<typeof MerchantPickupProofView>;
+
+/** RD4c (O.rd.why): why the rider couldn't use the delivery code. */
+export const DoorProofReason = z.enum(["customer_unreachable", "handed_to_someone_else", "left_at_gate"]);
+export type DoorProofReason = z.infer<typeof DoorProofReason>;
+
+/** BRIEF §9 door proof (P5, M5b): the photo the rider took because the code couldn't be used. */
+export const MerchantDoorProofView = z
+  .object({
+    photoUrl: z.string().nullable(),
+    takenAt: z.string().nullable(),
+    reason: DoorProofReason.nullable(),
+    /** RD4c "Who did you hand it to?" — e.g. "Chipo". */
+    handedTo: z.string().nullable(),
+  })
+  .strict();
+export type MerchantDoorProofView = z.infer<typeof MerchantDoorProofView>;
+
+/** `POST /merchant/orders/:orderId/pickup-proof` (the assigned rider, RD2b): the photo key from
+ *  `POST /uploads/pickup-photo` and/or the "Bag is sealed" tick. Required for shops and pharmacies before
+ *  pickup completes, optional for restaurants. */
+export const AttachMerchantPickupProofRequest = z
+  .object({
+    key: z.string().min(1).max(256).optional(),
+    bagSealed: z.boolean().optional(),
+  })
+  .strict()
+  .refine((b) => b.key !== undefined || b.bagSealed !== undefined, { message: "Send a photo key or the bag-sealed tick" });
+export type AttachMerchantPickupProofRequest = z.infer<typeof AttachMerchantPickupProofRequest>;
+
+/** `POST /merchant/orders/:orderId/door-proof` (the assigned rider, RD4c/RD4d): the photo key from
+ *  `POST /uploads/delivery-proof`, why the code couldn't be used, and who it was handed to. */
+export const AttachMerchantDoorProofRequest = z
+  .object({
+    key: z.string().min(1).max(256),
+    reason: DoorProofReason,
+    handedTo: z.string().trim().min(1).max(60).optional(),
+    lat: z.number().min(-90).max(90).optional(),
+    lng: z.number().min(-180).max(180).optional(),
+  })
+  .strict();
+export type AttachMerchantDoorProofRequest = z.infer<typeof AttachMerchantDoorProofRequest>;
+
+/** The venue block on a merchant order (D1 receipt "From", the header's venue name, per-service copy). */
+export const MerchantOrderVenueView = z
+  .object({
+    name: z.string(),
+    businessType: z.enum(["restaurant", "shop"]),
+    shopKind: z.string().nullable(),
+  })
+  .strict();
+export type MerchantOrderVenueView = z.infer<typeof MerchantOrderVenueView>;
+
+/** WS `order:status` payload. `merchantPhase` and `track` are added (optional) on merchant orders, so a
+ *  phone can move the track without waiting for the refetch the event also triggers. */
+export const OrderStatusEvent = z.object({
+  orderId: z.string().uuid(),
+  status: z.string(),
+  at: z.string(),
+  merchantPhase: z.string().nullable().optional(),
+  track: MerchantOrderTrackView.nullable().optional(),
+});
+export type OrderStatusEvent = z.infer<typeof OrderStatusEvent>;
 
 /** C4: the collect-and-return merchant-debt ledger's derived state (R-01/R-06/N-20/N-21). Null on
  *  any order the debt model doesn't apply to (parcels, WALLET food orders, pay_upfront kitchens). */
@@ -1421,6 +1646,28 @@ export const MerchantOrderResponse = z
     restaurantPhone: z.string().nullable().optional(),
     /** The customer's contact number — on the restaurant's own views only. */
     customerPhone: z.string().nullable().optional(),
+    // ── Order flow v2 (ledger D-59). All optional/additive: an installed app never reads them. ──
+    /** "Order #A1B2" (`orderShortId`). */
+    shortId: z.string().optional(),
+    /** The venue: name for the header and receipt, type/kind for per-service copy. */
+    venue: MerchantOrderVenueView.optional(),
+    /** D1 receipt: the items subtotal and the N-15 small-order fee (they add up to `merchantGoodsTotal`). */
+    itemsSubtotal: z.number().nullable().optional(),
+    smallOrderFee: z.number().nullable().optional(),
+    /** BRIEF §4: the four-step track; null once the order ended without delivery. */
+    track: MerchantOrderTrackView.nullable().optional(),
+    /** BRIEF §7: the customer's out-of-stock preference ("ask" when they never chose). */
+    outOfStockPref: OutOfStockPref.optional(),
+    /** BRIEF §8: the latest substitution round (omitted when the order never had one). */
+    substitution: SubstitutionRoundView.nullable().optional(),
+    /** BRIEF §9: shops and pharmacies need the pickup photo before pickup completes. */
+    pickupProofRequired: z.boolean().optional(),
+    /** BRIEF §9: the pickup photo + sealed tick (single-order reads; omitted until there is one). */
+    pickupProof: MerchantPickupProofView.nullable().optional(),
+    /** BRIEF §9: the door photo when the code couldn't be used (single-order reads; omitted otherwise). */
+    doorProof: MerchantDoorProofView.nullable().optional(),
+    /** BRIEF §11: the customer's own venue rating (customer reads only; omitted until rated). */
+    venueRating: VenueRatingView.nullable().optional(),
   })
   .strict();
 export type MerchantOrderResponse = z.infer<typeof MerchantOrderResponse>;
@@ -1447,6 +1694,8 @@ export const MerchantRejectionReasonCode = z.enum([
   "no_rider",
   // Auto-accept: the kitchen was never confirmed (RESTAURANTS_AUTO_ACCEPT.autoCancelAfterMs).
   "kitchen_unconfirmed",
+  // Order flow v2 U5: every line ended up removed (substitution). Set by the server, never by a merchant.
+  "all_out_of_stock",
   "other",
 ]);
 export type MerchantRejectionReasonCode = z.infer<typeof MerchantRejectionReasonCode>;

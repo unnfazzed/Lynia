@@ -2947,6 +2947,31 @@ this bar and lands with that work.
 | R2 | Every pending check | Only while the automated check is with the vendor; manual (ops) review keeps the Rider v2 wall | "Usually under a minute" is false for an ops review |
 | R3 | After verification | Once per account per phone, and only for a rider with no trips yet | No verified-at date is served; a rider with trips is not "just verified" |
 
+### 3c · What has landed (part 3: Search, 2026-10-02)
+
+- **App.** `app/food/search.tsx` is the shared `BrowseSearchScreen`, scoped by the route: `?scope=all`
+  from Home's search bar searches every switched-on section; anything else searches Restaurants (X3).
+  Shops and Pharmacy keep their own scoped search (`ShopSearchScreen`, D-58). The storefront's
+  "Search all restaurants" carries its query as `?q=`. X1 recent searches (kept on the device, at most
+  six) and the popular chips; X2a groups RESTAURANTS · SHOPS · PHARMACY · DISHES & ITEMS, three each with
+  "See all n"; X2b the "Send a parcel" row for parcel words; X3 PLACES + DISHES; X4a no results; X4b the
+  offline note over the recent searches. 300 ms debounce, two characters minimum (work order §3). A hit
+  opens its storefront in its own section; a shop item only browses until Order flow v2 (D-58).
+- **API.** Home composes the existing searches — `GET /restaurants/search` and each switched-on
+  section's `GET /shops/search` in parallel; a section that fails answers empty rather than failing the
+  rest. New `GET /restaurants/search/popular` backs "Popular near you": the five dishes most ordered at
+  live restaurants over 30 days (three orders or more). Restaurants only — shops take no app orders yet.
+- The old `RestaurantRow` / food `FoodThumb` the previous search used are deleted.
+- **Evidence:** the same sheet, rows X1, X2a, X2·320, X2b, X3, X4a, X4b.
+
+### 4c · Still different from the handoff (part 3)
+
+| Where | Handoff | App | Why |
+|---|---|---|---|
+| X2b's line under the Send row | Drawn as a literal in the screen (`No restaurants, shops or items match “documents”.`), not in `B` | The same words, with the query | Mock copy verbatim; it lives in the screen because the handoff's `copy.ts` has no key for it. |
+| Popular chips | Five sample terms, across services | The live five most-ordered restaurant dishes, or none | README §3 "honest data": no chips beat invented ones, and shops have no orders to rank until Order flow v2. |
+| An item hit | Adds to the cart | Opens its storefront | Restaurants: the storefront is where the item sheet and + live. Shops: D-58, browse only. |
+
 ### 5 · Still to land (follow-up PRs, same handoff)
 
 Bike & documents (S5), Help & support (S6), and the customer Home live-job bar (C5).
@@ -3056,10 +3081,10 @@ The LOOK for `app/food/index.tsx` (the restaurants list) and `app/food/[id].tsx`
 item sheet, the new-cart sheet, the just-closed modal and the in-venue search) is now this handoff. The
 Shops and Pharmacy routes and the Home / service search (`X1–X4`, `app/food/search.tsx`) align to it as
 those parts land. The gallery `RC list`, `RC list_loading`, `RC list_error`, `RC list_empty`,
-`RC menu`, `RC menu_closed` and `RC closed_interrupt` stay in the gallery until an export redraws them
+`RC menu`, `RC menu_closed`, `RC closed_interrupt` and `RC search` stay in the gallery until an export redraws them
 and are **not aligned to** (each is a SUPERSEDED deferral in `tools/parity/codegen/adopted.mjs`; the
 generated `food-list.*.view.tsx`, `menu-*.view.tsx` and `closed-interrupt.view.tsx` were deleted).
-`RC search` stays the target for `app/food/search.tsx` until the search part lands. Cart and checkout
+`RC search` was the target for `app/food/search.tsx` until part 3 landed; it is now SUPERSEDED too. Cart and checkout
 (`RC cart*`, `RC checkout*`) are out of scope and unchanged. The Calm Mint v2 notify-me sheet (D-55)
 now uses this handoff's drawn Pharmacy and Restaurants copy (`B.svc.*.off`) in place of the two strings
 D-55 had to write for it.
@@ -3103,15 +3128,10 @@ D-55 had to write for it.
 | Popular rail | Always drawn for restaurants | Shown only with two or more dishes that three or more delivered orders picked in 30 days | A thin rail would claim popularity the kitchen has no history for. |
 | Info strip without a location | Four cells | Rating cell only | No km, time or fee without a location (README §3 "honest data"); the strip keeps the cells it can stand behind. |
 | "Busy · +10 min" | In `B.store.busy`, not drawn on a frame (open question) | Not shown | Not drawn ⇒ not rendered. |
-| Shops, Pharmacy, Home search | B2–B4, S3/S4, I1b/I1c, X1–X4 | Still the D-55 notify-me sheet / the old search | Part 2 (needs the customer shop list + catalogue APIs and `SHOPS_ENABLED` / `PHARMACY_ENABLED`) and part 3. |
 
 ### 5 · Still to land (follow-up PRs, same handoff)
 
-- **Part 2 — Shops and Pharmacy:** the customer shop list API with `kind`, the shop catalogue read API,
-  the two flags, `app/shops/*` and `app/pharmacy/*` on the same components (item grid, item rows, the
-  OTC notice), and the Home tiles opening them.
-- **Part 3 — Search:** `X1–X4` (Home search across services with the "Send a parcel" row; in-service
-  PLACES + DISHES/ITEMS), replacing `app/food/search.tsx` and the `RC search` target.
+- Parts 2 and 3 have landed: Shops and Pharmacy as D-58 (browse only), search as §3c below.
 - **Backend (README §7):** the free-delivery flag, a Recommended ranking, a live prep signal for Fastest.
 
 Open questions (`BRIEF.md`): a 16:9 cover upload for merchants; promoting the Fashion / Auto parts
@@ -3165,7 +3185,6 @@ is now only the flag-off state (B13), as the handoff's §8 retires it. Home's "P
 | Closing strip (S7) | "Closes in 15 min · order by 17:45" | Not shown; the open line says "Open until …" | "order by" promises an order the customer can't place yet. |
 | Just-closed modal (S9) | Drawn | Not shown | Its purpose is protecting a cart; there is none. |
 | Search (X3) | PLACES + ITEMS, item hit adds | PLACES + ITEMS, an item hit opens its shop | Browse only. |
-| Home search / X1–X2 | Cross-service | Unchanged (part 3) | Out of scope here. |
 
 These rows close when Order flow v2 lands; that PR removes them.
 
@@ -3221,6 +3240,25 @@ ordering for shops) close when shop ordering lands here.
 Each PR of the build order appends its line here.
 
 - **PR 0 (this entry):** the package sync above; CLAUDE.md pointer.
+- **PR 2 (Review & place):** `app/food/checkout.tsx` is the one Review screen (R1, R3a/b, R4, R6a/b, R7a–c, R9a/b; `/food/cart` redirects to it, the storefront cart bar pushes it); Place → `dismissAll` + `replace` into the order, so Back goes Home. WHEN draws the ASAP state only and R6b omits 'Schedule for …' until the slots API (R5) lands — a control that does nothing is not rendered. The payload is unchanged (cash; the rider note, else the address line, is the drop-off landmark). `RC.cart*`, `RC.checkout_*`, `RC.placing` are SUPERSEDED deferrals (baseline 81 → 78); evidence `docs/parity/ORDER-FLOW-V2-REVIEW-2026-10-02.png` (`tools/parity/shoot-order-flow-review.mjs`).
+- **Backend A (API + shared contracts, no UI):** substitution (BRIEF §8, U1–U5/M2), proof at hand-over
+  (§9, RD2b–d/RD4c–d/M4b/M5b/P5), venue rating + receipt fields (§11, D1/D1b) and the four-step track
+  (§4). Migration `0066_order_flow_v2` (expand-only: five nullable `orders` columns,
+  `merchant_order_items.replaces_item_id`, new `merchant_order_substitutions`(+`_lines`) with a one-open-
+  round partial unique index, new `venue_ratings`). Endpoints: `POST /merchant/orders/:id/substitution`
+  (merchant: remove / reduce / swap lines; at accept it is the accept), `POST
+  /restaurants/orders/:id/substitution/confirm` (customer answers every swap), `POST
+  /merchant/orders/:id/pickup-proof` and `/door-proof` (rider), `POST /restaurants/orders/:id/venue-rating`
+  (customer). `PlaceMerchantOrderRequest.outOfStockPref` (ask | remove; remove ⇒ swaps refused). The
+  merchant-order read (`MerchantOrderResponse`) gains optional `shortId`, `venue`, `itemsSubtotal`,
+  `smallOrderFee`, `track`, `outOfStockPref`, `substitution`, `pickupProofRequired`, `pickupProof`,
+  `doorProof`, `venueRating`; `order:status` and the generic `GET /orders/:id` snapshot carry `track`.
+  Shared pure helpers: `deriveMerchantOrderTrack`, `substitutionTotals`, `merchantGoodsForSubtotal`,
+  `orderShortId`, `RESTAURANTS_TIMING.substitutionWindowMs` (3 min). Swap window timeouts run on the
+  existing 20 s DB sweep. Shop (incl. pharmacy) pickups require the photo; restaurants don't. The pre-v2
+  app still sees a coherent at-accept round (legacy `awaiting_item_approval`, swapped lines as removed;
+  its approve = swaps declined, decline = free cancel). Not in this PR: merchant-side push for answers
+  (socket queue refresh only), "finish delivery without the code" (the door photo is evidence only).
 - **PR 3 (merchant + rider deltas, 2026-10-02):** the pickup code is minted as **6 digits** (BRIEF §16;
   the wire also accepts a legacy 4 so an installed rider app gets a clean "wrong code" 400). Merchant:
   **M1a** (an auto-accepted order rings full screen until the kitchen confirms), **M3a/M3b** (ticket with

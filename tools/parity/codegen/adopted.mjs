@@ -146,37 +146,20 @@ export const ADOPTED = [
     hoist: ["topics"],
   },
   {
-    // RC.cart_empty — the empty-cart early-return of app/food/cart.tsx. The mock draws the empty state
-    // inside a `Pad > Card` (the owner-decided empty-state wrapper), so the generated view carries that
-    // Screen > AppBar > Pad(View) > Card > EmptyState > Button tree by construction.
+    // RC.cart_empty — until 2026-10-02 a whole-screen view generated from `cart_empty` (cart-empty.view.tsx); D-59 made the Order flow v2 handoff the authority (R9a), so the view was deleted and the key is a SUPERSEDED deferral.
     key: "RC.cart_empty",
+    container: "apps/mobile/app/food/checkout.tsx",
     mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
-    component: "cart_empty",
-    componentName: "CartEmptyView",
-    viewFile: "apps/mobile/app/food/cart-empty.view.tsx",
-    container: "apps/mobile/app/food/cart.tsx",
     uiImport: "../../src/ui",
-    propsParam: "{ onBack, onBrowse }: CartEmptyViewProps",
-    propsType: [
-      "export type CartEmptyViewProps = {",
-      "  onBack: () => void;",
-      "  onBrowse: () => void;",
-      "};",
-    ].join("\n"),
-    bind: ({ t, expr }) => ({
-      JSXOpeningElement(path) {
-        const name = path.node.name.name;
-        if (name === "AppBar") {
-          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onBack"), t.jsxExpressionContainer(expr("onBack"))));
-        }
-        if (name === "Button") {
-          // The kit's web Button uses `onClick={nop}`; the app Button takes `onPress`. Drop the web
-          // handler (and its `nop` reference) and wire the container's browse action.
-          path.node.attributes = path.node.attributes.filter((a) => !(a.type === "JSXAttribute" && a.name.name === "onClick"));
-          path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPress"), t.jsxExpressionContainer(expr("onBrowse"))));
-        }
+    states: [],
+    deferred: [
+      {
+        state: "empty",
+        key: "RC.cart_empty",
+        reason:
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-59, owner instruction 2026-10-02): the food cart and checkout are now ONE Review & place screen, the Order flow v2 handoff's R1–R9 (packages/design/handoff/order-flow-v2) — white blocks on a grey page: the venue line, ITEMS with inline − n + steppers and a per-line note, DELIVER TO ✎ (an inline address card with a map), WHEN (ASAP), YOUR PHONE ✎, NOTE FOR THE RIDER ✎, PAY (one fixed cash row), the Food · Delivery fee · Small-order fee · Total card and the pinned 'Place order · $X cash'. Its empty state is R9a — the Review header over a centred 72px bag disc, 'Your cart is empty', 'Add dishes or items from a restaurant, shop or pharmacy.' and 'Browse places'. The gallery `cart_empty` draws an AppBar over a Pad > Card > EmptyState; a structural snapshot against it would assert the structure D-59 retired. Re-adoptable when a gallery export draws Order flow v2.",
       },
-    }),
+    ],
   },
   {
     // RC.list — until 2026-10-01 its loading and error states were generated whole-screen views (food-list.loading/.error.view.tsx); D-57 made the Browse v2 handoff the authority, so both views were deleted and every RC.list* key is a SUPERSEDED deferral.
@@ -213,155 +196,40 @@ export const ADOPTED = [
     ],
   },
   {
-    // RC.checkout — the food checkout flow (app/food/checkout.tsx). Multi-state: cart-empty / loading /
-    // placing(busy) / data(cash|wallet). The PLACING state adopts as a whole-screen state view here; the
-    // interactive DATA screen (drop-off capture, payment select, live totals, place-order) is region-
-    // adopted PIECE-BY-PIECE under the RC.checkout_cash entry below (Foundation-E) — two entries on the one
-    // container, exactly like RC.menu + RC.closed_interrupt share app/food/[id].tsx.
+    // RC.checkout — until 2026-10-02 its placing beat was a generated whole-screen view (checkout-placing.view.tsx); D-59 made the Order flow v2 handoff the authority (R7a), so the view was deleted and the key is a SUPERSEDED deferral.
     key: "RC.checkout",
     container: "apps/mobile/app/food/checkout.tsx",
     mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
     uiImport: "../../src/ui",
-    states: [
+    states: [],
+    deferred: [
       {
-        // R4·b2 placing — the one-beat "Sending your order to the kitchen…" state the checkout renders
-        // while the placeFoodOrder mutation is in flight (`busy`). A pure content skeleton (centred
-        // receipt glyph + two lines + two skeleton bars, its own Screen), no data seam — the copy is
-        // fixed in the mock, so the generated view is 0-residual and needs no `bind`. The container
-        // early-returns it (like list_loading), replacing the whole screen for the placing beat.
         state: "placing",
         key: "RC.placing",
-        component: "placing",
-        componentName: "CheckoutPlacingView",
-        viewFile: "apps/mobile/app/food/checkout-placing.view.tsx",
+        reason:
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-59, owner instruction 2026-10-02): the food cart and checkout are now ONE Review & place screen, the Order flow v2 handoff's R1–R9 (packages/design/handoff/order-flow-v2) — white blocks on a grey page: the venue line, ITEMS with inline − n + steppers and a per-line note, DELIVER TO ✎ (an inline address card with a map), WHEN (ASAP), YOUR PHONE ✎, NOTE FOR THE RIDER ✎, PAY (one fixed cash row), the Food · Delivery fee · Small-order fee · Total card and the pinned 'Place order · $X cash'. Placing is R7a — the Review stays on screen under a white veil while the CTA reads 'Placing your order…' with the 'Don’t close the app…' hint. The gallery `placing` draws a separate full-screen receipt glyph with skeleton bars; a structural snapshot against it would assert the structure D-59 retired. Re-adoptable when a gallery export draws Order flow v2.",
       },
     ],
   },
   {
-    // ── RC.checkout_cash — the food checkout DATA screen (app/food/checkout.tsx). The FOURTH region-adopted
-    // INTERACTIVE container (Foundation-E), after RC.menu + RC.closed_interrupt + RC.cart. A whole-screen
-    // generated view cannot host this screen's live behaviour (the load-bearing drop-off CAPTURE —
-    // MapPicker + AddressSearch + landmark/phone Fields + AddressConfirmSheet, ledgered D-11 — plus live
-    // payment-select, a live delivery-fee estimate, and place-order with idempotency) without regressing
-    // it, so it adopts PIECE-BY-PIECE. TWO regions are cleanly congruent and composed by the container:
-    //   • summary — the kit `<PriceMath goods/fee/km/total/note>` totals card. Unlike RC.cart#summary
-    //     (deferred: the cart collects no drop-off, so fee/km would be fabricated), CHECKOUT has a real
-    //     drop-off, so the delivery fee AND the distance are HONEST here — `estimateDeliveryFee` already
-    //     computes both from `haversineKm(merchant, dropPoint)`. The app therefore adopts the kit PriceMath
-    //     (goods/fee/km/total), NOT the {rows,total,footnote} food variant. The under-minimum small-order
-    //     fee — which the kit PriceMath has no row for — folds into the `note` exactly as the design's own
-    //     `cart_min` mock does it (`note="Includes a $1.00 small-order fee."`), so no money is hidden or
-    //     fabricated; goods + delivery + the note reconcile to the total.
-    //   • footer (place-bar) — the pinned "Place order · pay $X" Button in the kit's `<Screen footer=…>`
-    //     slot (Foundation-D). Mirrors RC.cart#footer / RC.menu#footer; label + disabled + loading + onPress
-    //     are the data seam.
-    // The composition check reduces BOTH mock and container to `SCREEN( REGION:summary, REGION:footer )`.
-    // The wallet variant (RC.checkout_wallet) is served by the SAME container + the SAME two regions
-    // (structurally identical); it differs only in the deferred payment region's selected state/copy.
+    // RC.checkout_cash — until 2026-10-02 region-adopted (summary / footer → checkout-summary/checkout-place-bar.view.tsx, plus dropoff/eta/payment deferrals); D-59 made the Order flow v2 handoff the authority, so the regions were deleted and both checkout keys are SUPERSEDED deferrals.
     key: "RC.checkout_cash",
     container: "apps/mobile/app/food/checkout.tsx",
     mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
-    mockComponent: "checkout_cash",
     uiImport: "../../src/ui",
-    regions: [
-      {
-        // Summary region — the totals card `<Card><PriceMath goods fee km total note/></Card>`. Locator
-        // {el:"PriceMath"} anchors the kit PriceMath (the first, only, PriceMath in checkout_cash); the
-        // wrapping Card is container glue (bubbled through in the composition, like RC.cart's summary would
-        // be). The bind swaps the mock's frozen figures for the live seam: goods = food subtotal, fee = the
-        // honest delivery estimate, km = the honest drop distance, total, and the note.
-        region: "summary",
-        locator: { el: "PriceMath" },
-        componentName: "CheckoutSummaryView",
-        viewFile: "apps/mobile/app/food/checkout-summary.view.tsx",
-        propsParam: "{ goods, fee, km, total, note }: CheckoutSummaryViewProps",
-        propsType: [
-          "export type CheckoutSummaryViewProps = {",
-          "  /** Food subtotal (the kit PriceMath's 'Food' row). */",
-          "  goods: number;",
-          "  /** Honest delivery-fee estimate from the drop pin (0 before a drop-off is set). */",
-          "  fee: number;",
-          "  /** Honest drop distance in km (drives the delivery row's per-km sub-line). */",
-          "  km: number;",
-          "  total: number;",
-          "  /** Cash/wallet consequence copy, with any small-order fee folded in (cart_min convention). */",
-          "  note?: string;",
-          "};",
-        ].join("\n"),
-        bind: ({ t, expr }) => ({
-          JSXOpeningElement(path) {
-            if (path.node.name.name !== "PriceMath") return;
-            // Drop the mock's frozen goods/fee/km/total/note literals; wire the live seam.
-            path.node.attributes = path.node.attributes.filter(
-              (a) => !(a.type === "JSXAttribute" && ["goods", "fee", "km", "total", "note"].includes(a.name.name)),
-            );
-            for (const k of ["goods", "fee", "km", "total", "note"]) {
-              path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier(k), t.jsxExpressionContainer(expr(k))));
-            }
-          },
-        }),
-      },
-      {
-        // Footer region — the pinned "Place order · pay $X" bar the kit draws in <Screen footer=…>
-        // (Foundation-D slot). Locator {slot:"footer"} folds the slot value; the fragment is the lone
-        // Button. Mirrors RC.cart#footer / RC.menu#footer. The label is computed by the container (the pay
-        // method + live total drive the copy), and disabled/loading reflect the submit gate + in-flight
-        // placeFoodOrder mutation — the money-sensitive place-order logic is unchanged.
-        region: "footer",
-        locator: { slot: "footer" },
-        componentName: "CheckoutPlaceBarView",
-        viewFile: "apps/mobile/app/food/checkout-place-bar.view.tsx",
-        propsParam: "{ label, onPlace, disabled, loading }: CheckoutPlaceBarViewProps",
-        propsType: [
-          "export type CheckoutPlaceBarViewProps = {",
-          "  label: string;",
-          "  onPlace: () => void;",
-          "  disabled?: boolean;",
-          "  loading?: boolean;",
-          "};",
-        ].join("\n"),
-        bind: ({ t, expr }) => ({
-          JSXOpeningElement(path) {
-            if (path.node.name.name !== "Button") return;
-            // Kit-only props (web onClick, style, the frozen label string) → drop; wire the app Button's
-            // label + onPress + disabled + loading.
-            path.node.attributes = path.node.attributes.filter(
-              (a) => !(a.type === "JSXAttribute" && ["onClick", "style", "label"].includes(a.name.name)),
-            );
-            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("label"), t.jsxExpressionContainer(expr("label"))));
-            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPress"), t.jsxExpressionContainer(expr("onPlace"))));
-            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("disabled"), t.jsxExpressionContainer(expr("disabled"))));
-            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("loading"), t.jsxExpressionContainer(expr("loading"))));
-          },
-        }),
-      },
-    ],
-    // Deferred regions — genuine walls, recorded honestly and pruned from the composition check (CLAUDE.md
-    // "Pixel parity": honesty over volume; never ship a dead or fabricated control).
+    states: [],
     deferred: [
       {
-        state: "dropoff",
-        key: "RC.checkout#dropoff",
-        reason:
-          "the mock draws a STATIC address-summary Card (map-pin + '12 Lanark Rd, Belgravia · Gate 2, ask for Rufaro · 3.1 km away' + chevron) — a display of an already-known address. The app collects the drop-off LIVE on this screen (MapPicker + AddressSearch + landmark Field + contact-phone Field + the drag-to-adjust AddressConfirmSheet) because a food delivery has nowhere else in the flow to capture where the food is going (the cart defers drop-off to here). This load-bearing capture is a sanctioned SUPERSET ledgered as DESIGN-DEVIATIONS D-11: the static mock draws no capture surface to wire it into (CLAUDE.md live-vs-static 'wire the behaviour INTO the drawn elements' has no +/− control to target — the mock's element is a read-only summary row, not a picker). Kept as container glue (pruned from the composition); adoptable once the capture earns a drawn picker in the checkout mock, or the summary-row is redrawn as an address-picker entry.",
-      },
-      {
-        state: "eta",
-        key: "RC.checkout#eta",
-        reason:
-          "the mock's <EtaLine range='30–40 min' arrive='10:11–10:21'/> (r-customer-a.jsx:428) promises a delivery ETA + arrival window, but there is no ETA estimator behind it — the app has an honest drop distance/fee but no honest arrival-time model, and wiring a figure would fabricate an arrival window (CLAUDE.md forbids). The EtaLine primitive exists (Foundation-D) but stays un-wired, per D-11. Not rendered; not a region (pruned from the composition). Adoptable once an ETA estimator backs it.",
-      },
-      {
-        state: "payment",
-        key: "RC.checkout#payment",
-        reason:
-          "the 'HOW YOU'LL PAY' cash/wallet rows are a live-vs-static VARIANT switch, not a clean single fragment. The two mock keys draw structurally-DIFFERENT payment blocks: checkout_cash's wallet row is a bare row, while checkout_wallet's selected wallet row carries an EXTRA child — a clock-glyph + 'You pay only after the restaurant accepts…' disclosure note (r-customer-a.jsx:491-494) that appears only while wallet is selected. A single static generated fragment (from ONE mock key) can therefore not guard both variants: it would either freeze one selected state or add/drop the wallet-only note child, diverging from whichever mock it wasn't generated from. The app already realizes BOTH faithfully with the live PaymentMethodRow (accent-selected border/wash + filled check, and the disclosure note wired as its selected-only `children`) — kept as container glue (pruned from the composition). Adoptable once the payment rows earn a variant-neutral drawn structure (or the selected-note becomes a per-row region boundary).",
-      },
-      {
         state: "data",
+        key: "RC.checkout_cash",
+        reason:
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-59, owner instruction 2026-10-02): the food cart and checkout are now ONE Review & place screen, the Order flow v2 handoff's R1–R9 (packages/design/handoff/order-flow-v2) — white blocks on a grey page: the venue line, ITEMS with inline − n + steppers and a per-line note, DELIVER TO ✎ (an inline address card with a map), WHEN (ASAP), YOUR PHONE ✎, NOTE FOR THE RIDER ✎, PAY (one fixed cash row), the Food · Delivery fee · Small-order fee · Total card and the pinned 'Place order · $X cash'. The gallery `checkout_cash` draws a separate Checkout screen — an AppBar, an EtaLine, a static address Card, 'HOW YOU’LL PAY' cash/wallet rows and the kit PriceMath; a structural snapshot against it would assert the structure D-59 retired. Re-adoptable when a gallery export draws Order flow v2.",
+      },
+      {
+        state: "wallet",
         key: "RC.checkout_wallet",
         reason:
-          "the mobile-money variant of the checkout DATA screen — served by the SAME container and the SAME two adopted regions (summary + place-bar footer are structurally identical to the cash variant: the footer label and the note copy differ only as leaf data the container computes). It differs from checkout_cash ONLY in the deferred payment region's selected state + the wallet disclosure note (see RC.checkout#payment). No separate regions entry is needed; recorded here so the ledger is explicit.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-59, owner instruction 2026-10-02): the food cart and checkout are now ONE Review & place screen, the Order flow v2 handoff's R1–R9 (packages/design/handoff/order-flow-v2) — white blocks on a grey page: the venue line, ITEMS with inline − n + steppers and a per-line note, DELIVER TO ✎ (an inline address card with a map), WHEN (ASAP), YOUR PHONE ✎, NOTE FOR THE RIDER ✎, PAY (one fixed cash row), the Food · Delivery fee · Small-order fee · Total card and the pinned 'Place order · $X cash'. The mobile-money variant is retired outright (cash only, BRIEF §14): the gallery `checkout_wallet` draws a selected wallet row and its 'You pay only after the restaurant accepts' note, which Review never renders. Re-adoptable when a gallery export draws Order flow v2.",
       },
     ],
   },
@@ -420,8 +288,7 @@ export const ADOPTED = [
     ],
   },
   {
-    // ── RC.search — restaurant/dish search (app/food/search.tsx). DEFER-only: the same RestRow backend
-    // gate as RC.list#data, PLUS a dish-index the API lacks, PLUS a live-vs-static multi-state superset.
+    // ── RC.search — search (app/food/search.tsx). SUPERSEDED by D-57's X1–X4.
     key: "RC.search",
     container: "apps/mobile/app/food/search.tsx",
     mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
@@ -432,7 +299,8 @@ export const ADOPTED = [
         state: "data",
         key: "RC.search",
         reason:
-          "THREE walls, none a missing primitive. (1) BACKEND gate — the mock's PLACES section is `<RestRow r={REST[0]}/>`, whose meta line draws `★ rating (n) · km · eta min` + `$fee delivery`; rating, geo-distance (km), per-restaurant ETA and delivery fee are ALL absent from the `RestaurantListItem` wire contract and the app has no customer geolocation (issue #673 / task #24 — the SAME gate that defers RC.list#data). The app's shared RestaurantRow already honest-empties this (cuisine tags + an open/closing-now line instead of the fabricated rating/km/eta), so its meta STRUCTURE diverges from the mock's RestRow by design; rendering the mock's rating/km/eta nodes would ship fabricated figures (CLAUDE.md forbids). (2) DISH INDEX — the mock's second `DISHES` section lists cross-restaurant dish matches (`Sadza & beef stew · Sadza Republic · $4.50`), which needs a cross-restaurant menu/dish search index the C1 customer read API does not expose; the app search runs client-side over the already-fetched restaurant list (name + cuisine only) and honestly omits the DISHES section rather than fake it. (3) LIVE-vs-STATIC multi-state — the static mock draws only the populated 'sadza' result; the app screen interleaves an empty-query hint, a 'still searching more kitchens…' pagination line, the results list and a no-matches EmptyState, none of which the one frozen mock draws. Adoptable once the customer read API carries rating/distance/fee + a cross-restaurant dish index, and the search states earn their own mock keys.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-57, owner instruction 2026-10-01): search is now the Browse v2 handoff's X1–X4 (packages/design/handoff/browse-v2) — a bordered field beside a back disc; recent searches and 'Popular near you' chips before typing; results grouped RESTAURANTS · SHOPS · PHARMACY · DISHES & ITEMS (three each, 'See all n') from Home, PLACES + DISHES from Restaurants; a 'Send a parcel' row when the words sound like a parcel; an offline note. The gallery `search` draws a restaurants-only PLACES + DISHES list under a plain app bar; a structural snapshot against it would assert the structure D-57 retired. Re-adoptable when a gallery export draws Browse v2.",
+
       },
     ],
   },
@@ -453,101 +321,42 @@ export const ADOPTED = [
     ],
   },
   {
-    // ── RC.cart — the populated food cart (app/food/cart.tsx). The THIRD region-adopted INTERACTIVE
-    // container (Foundation-E), after RC.menu + RC.closed_interrupt. cart_empty is adopted separately as a
-    // whole-screen state view (above); the POPULATED cart cannot be a whole-screen generated view — its
-    // live behaviour (per-line QtyStepper quantity editing, editable per-line notes, the menu-reconcile
-    // OOS/price notices, the CartNoteSheet overlay) would be regressed by a single static tree. So it
-    // adopts PIECE-BY-PIECE: the Screen.footer CHECKOUT bar is a cleanly congruent region the container
-    // composes while keeping all interactive glue. The guardrail asserts BOTH (a) the fragment ≡ its mock
-    // sub-tree, AND (b) the container mounts it in the mock's region position (the pinned slot →
-    // SCREEN(REGION:footer) on both sides). The interactive line-items Card, the un-wireable EtaLine, the
-    // delivery-bearing PriceMath summary, the un-backed upsell rail, and the live OOS/price/min/note states
-    // are honestly DEFERRED (below), each pruned from the composition check as container glue.
+    // RC.cart — until 2026-10-02 region-adopted (footer → cart-checkout-bar.view.tsx, plus eight deferrals); D-59 made the Order flow v2 handoff the authority, so the region was deleted and the cart keys are SUPERSEDED deferrals.
     key: "RC.cart",
-    container: "apps/mobile/app/food/cart.tsx",
+    container: "apps/mobile/app/food/checkout.tsx",
     mockFile: "packages/design/explorations/restaurants/r-customer-a.jsx",
-    mockComponent: "cart",
     uiImport: "../../src/ui",
-    regions: [
-      {
-        // Footer region — the pinned "Go to checkout · $X" bar the kit draws in <Screen footer=…>
-        // (Foundation-D slot). Locator {slot:"footer"} folds the slot value; the fragment is the lone
-        // Button. Mirrors RC.menu's footer region. The label is computed by the container (the live total).
-        region: "footer",
-        locator: { slot: "footer" },
-        componentName: "CartCheckoutBarView",
-        viewFile: "apps/mobile/app/food/cart-checkout-bar.view.tsx",
-        propsParam: "{ label, onCheckout }: CartCheckoutBarViewProps",
-        propsType: [
-          "export type CartCheckoutBarViewProps = {",
-          "  label: string;",
-          "  onCheckout: () => void;",
-          "};",
-        ].join("\n"),
-        bind: ({ t, expr }) => ({
-          JSXOpeningElement(path) {
-            if (path.node.name.name !== "Button") return;
-            // Kit-only props (web onClick, style, the frozen label string) → drop; wire onPress + label.
-            path.node.attributes = path.node.attributes.filter(
-              (a) => !(a.type === "JSXAttribute" && ["onClick", "style", "label"].includes(a.name.name)),
-            );
-            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("label"), t.jsxExpressionContainer(expr("label"))));
-            path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPress"), t.jsxExpressionContainer(expr("onCheckout"))));
-          },
-        }),
-      },
-    ],
-    // Deferred — each a genuine wall, recorded honestly and pruned from the composition check (CLAUDE.md
-    // "Pixel parity": honesty over volume; never ship a dead or fabricated control).
+    states: [],
     deferred: [
       {
-        state: "lines",
-        key: "RC.cart#lines",
+        state: "data",
+        key: "RC.cart",
         reason:
-          "the line-items Card is a live INTERACTIVE superset the static mock never drew, not a missing primitive. The mock draws each line's quantity as a READ-ONLY 28px tab badge (a bare number) and the per-dish note as static text; the app renders a live per-line QtyStepper (increment / decrement / remove-at-1 — the ONLY place quantity is editable after the menu ItemSheet), an editable note Pressable that opens the CartNoteSheet, an inline order-note row, and an 'Add more items' link back to the menu. Generating the mock's static badge as a fragment and mounting it would REGRESS inline quantity editing — the mock draws no +/− control to wire increment/decrement into, so CLAUDE.md's live-vs-static 'wire the behaviour INTO the drawn elements' has no element to target here. Kept as container glue (pruned from the composition); adoptable once quantity editing earns a drawn stepper in the cart mock.",
-      },
-      {
-        state: "eta",
-        key: "RC.cart#eta",
-        reason:
-          "the mock's <EtaLine range='30–40 min' arrive='10:11–10:21'/> promises a delivery ETA + arrival window BEFORE payment, but the cart deliberately does NOT collect a drop-off (that is checkout's job), so there is no honest distance/ETA to feed it — wiring a figure here would fabricate an arrival window (CLAUDE.md forbids). Not rendered; not a region (pruned from the composition). Adoptable once an ETA estimator + a cart-time destination back it.",
-      },
-      {
-        state: "upsell",
-        key: "RC.cart#upsell",
-        reason:
-          "the mock's 'ADD A DRINK?' FoodThumb rail is an upsell with no upsell/cross-sell backend to populate it; omitted per ledgered DESIGN-DEVIATIONS D-12. Not rendered; not a region (pruned from the composition).",
-      },
-      {
-        state: "summary",
-        key: "RC.cart#summary",
-        reason:
-          "the mock's <PriceMath goods='13.00' fee='2.50' km='3.1' total='15.50'/> DRAWS a Delivery(fee · km) breakdown row — and the codegen-target DS PriceMath (src/ui/PriceMath.tsx, the kit-faithful mirror the transpiler resolves off src/ui) REQUIRES goods/fee/km/total and renders that Delivery row. But the cart deliberately collects NO drop-off (that is checkout's job), so there is no honest delivery distance/fee to feed it — the SAME no-drop-off wall as the EtaLine region. The app therefore renders the food-cart PriceMath (src/ui/food/PriceMath.tsx, a {rows,total,footnote} variant) showing only Food + optional small-order fee + Total with a 'delivery added at checkout' footnote — an honest omission, but one that means a faithful mock-mirror fragment (kit PriceMath with a delivery row) is not expressible without fabricating fee/km (CLAUDE.md forbids). Kept as container glue (pruned from the composition); adoptable once the cart carries a drop-off + delivery-fee estimate, or the mock draws a delivery-free cart summary.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-59, owner instruction 2026-10-02): the food cart and checkout are now ONE Review & place screen, the Order flow v2 handoff's R1–R9 (packages/design/handoff/order-flow-v2) — white blocks on a grey page: the venue line, ITEMS with inline − n + steppers and a per-line note, DELIVER TO ✎ (an inline address card with a map), WHEN (ASAP), YOUR PHONE ✎, NOTE FOR THE RIDER ✎, PAY (one fixed cash row), the Food · Delivery fee · Small-order fee · Total card and the pinned 'Place order · $X cash'. The gallery `cart` draws a separate 'Your cart' screen — qty badges, an EtaLine, an upsell rail, a delivery-bearing PriceMath and 'Go to checkout'; a structural snapshot against it would assert the structure D-59 retired. Re-adoptable when a gallery export draws Order flow v2.",
       },
       {
         state: "oos",
         key: "RC.cart_oos",
         reason:
-          "the item-sold-out state — the mock frames it as its OWN whole `<Screen banner={<Banner warn/>}>` with a struck-through 'Removed' line and a re-totalled PriceMath. The app realizes it LIVE inside the one cart container as a dismissible inline notice Card (highlight-wash + circle-alert + 'Got it') driven by the menu-reconciliation pass, NOT as a Screen.banner, and DROPS the removed line rather than showing a struck-through row. Live-vs-static structural divergence (same class as RC.menu_closed); no lossless mock-wins restructure without regressing reconcile-on-open. Deferred.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-59, owner instruction 2026-10-02): the food cart and checkout are now ONE Review & place screen, the Order flow v2 handoff's R1–R9 (packages/design/handoff/order-flow-v2) — white blocks on a grey page: the venue line, ITEMS with inline − n + steppers and a per-line note, DELIVER TO ✎ (an inline address card with a map), WHEN (ASAP), YOUR PHONE ✎, NOTE FOR THE RIDER ✎, PAY (one fixed cash row), the Food · Delivery fee · Small-order fee · Total card and the pinned 'Place order · $X cash'. Sold out is R6a — 'Some things changed since you added them' over the Items block, the gone line struck through with 'Sold out now — taken off'. The gallery `cart_oos` draws a Banner screen with a 'Removed' row. Re-adoptable when a gallery export draws Order flow v2.",
       },
       {
         state: "price",
         key: "RC.cart_price",
         reason:
-          "the price-changed state — the mock is a whole `<Screen>` whose footer swaps to 'Accept the new total' + 'Remove that item' and whose body shows an old→new struck-price row. The app realizes it LIVE as the same dismissible reconciliation notice Card (the reconcile pass applies the new price to the line and surfaces a 'price changed … from → to' notice), keeping the single 'Go to checkout' footer — it never presents a separate accept/remove footer screen. Live-vs-static; deferred.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-59, owner instruction 2026-10-02): the food cart and checkout are now ONE Review & place screen, the Order flow v2 handoff's R1–R9 (packages/design/handoff/order-flow-v2) — white blocks on a grey page: the venue line, ITEMS with inline − n + steppers and a per-line note, DELIVER TO ✎ (an inline address card with a map), WHEN (ASAP), YOUR PHONE ✎, NOTE FOR THE RIDER ✎, PAY (one fixed cash row), the Food · Delivery fee · Small-order fee · Total card and the pinned 'Place order · $X cash'. A price change is R6a — the line shows the new price, the old one struck, and 'Price went up $a → $b'. The gallery `cart_price` draws an 'Accept the new total' / 'Remove that item' footer. Re-adoptable when a gallery export draws Order flow v2.",
       },
       {
         state: "min",
         key: "RC.cart_min",
         reason:
-          "the under-minimum state — the mock draws a whole `<Screen>` with a helper line ABOVE the checkout button IN THE FOOTER ('Add $1.50 more, or pay the $1 small-order fee'). The app realizes belowMinimum LIVE in the base cart container as a highlight-wash warning Card in the body (structurally faithful to the mock's body warning Card) but keeps the plain 'Go to checkout · $X' footer (the small-order fee flows through the PriceMath rows), and the body also carries the note/disclaimer chrome the frozen cart_min mock omits. The footer helper-line variant is a per-STATE footer the base RC.cart region does not host. Live-vs-static; deferred.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-59, owner instruction 2026-10-02): the food cart and checkout are now ONE Review & place screen, the Order flow v2 handoff's R1–R9 (packages/design/handoff/order-flow-v2) — white blocks on a grey page: the venue line, ITEMS with inline − n + steppers and a per-line note, DELIVER TO ✎ (an inline address card with a map), WHEN (ASAP), YOUR PHONE ✎, NOTE FOR THE RIDER ✎, PAY (one fixed cash row), the Food · Delivery fee · Small-order fee · Total card and the pinned 'Place order · $X cash'. Under the minimum is R4 — the 'Add $d more to skip the $1.00 small-order fee.' hint under Items and a Small-order fee row. The gallery `cart_min` draws a footer helper line. Re-adoptable when a gallery export draws Order flow v2.",
       },
       {
         state: "note",
         key: "RC.cart_note",
         reason:
-          "the note-for-the-kitchen bottom sheet — the mock draws it as a whole `<Screen pad={false}>` with a dimmed skeleton backdrop and an absolutely-positioned sheet + quick-chip suggestions. The app realizes it LIVE as the CartNoteSheet MODAL opened from a line's note Pressable (not a routed screen), over the live cart. Same overlay-vs-whole-screen disposition as RC.closed_interrupt's backdrop; the sheet has no standalone container to point a whole-screen view at, and its quick-chip suggestions are a superset. Deferred as a live sheet overlay.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-59, owner instruction 2026-10-02): the food cart and checkout are now ONE Review & place screen, the Order flow v2 handoff's R1–R9 (packages/design/handoff/order-flow-v2) — white blocks on a grey page: the venue line, ITEMS with inline − n + steppers and a per-line note, DELIVER TO ✎ (an inline address card with a map), WHEN (ASAP), YOUR PHONE ✎, NOTE FOR THE RIDER ✎, PAY (one fixed cash row), the Food · Delivery fee · Small-order fee · Total card and the pinned 'Place order · $X cash'. A line note is edited in place under the line ('✎ Add a note' becomes a field). The gallery `cart_note` draws a bottom sheet with quick chips. Re-adoptable when a gallery export draws Order flow v2.",
       },
     ],
   },

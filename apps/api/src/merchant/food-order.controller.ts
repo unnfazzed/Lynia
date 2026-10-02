@@ -1,7 +1,9 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
 import {
   ApproveMerchantOrderItemsRequest,
+  ConfirmSubstitutionRequest,
   PlaceMerchantOrderRequest,
+  RateVenueRequest,
   SendPaymentPromptRequest,
   SubmitMerchantPaymentReferenceRequest,
 } from "@lynia/shared";
@@ -10,6 +12,8 @@ import { CurrentUser } from "../common/current-user.decorator";
 import { ZodBody } from "../common/zod.pipe";
 import { FoodDebtService } from "./food-debt.service";
 import { FoodOrderService } from "./food-order.service";
+import { OrderSubstitutionService } from "./order-substitution.service";
+import { VenueRatingService } from "./venue-rating.service";
 import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
 
 /**
@@ -24,6 +28,8 @@ export class FoodOrderController {
   constructor(
     private readonly foodOrders: FoodOrderService,
     private readonly debt: FoodDebtService,
+    private readonly substitutions: OrderSubstitutionService,
+    private readonly venueRatings: VenueRatingService,
   ) {}
 
   @Post(":merchantId/orders")
@@ -49,6 +55,28 @@ export class FoodOrderController {
     @CurrentUser() profileId: string,
   ) {
     return this.foodOrders.approveItems(orderId, profileId, body.approve);
+  }
+
+  /** Order flow v2 U2 (BRIEF §8): the customer's answer to every swap of the open round — commits it,
+   *  recomputes the totals, and returns the order. */
+  @Post("orders/:orderId/substitution/confirm")
+  async confirmSubstitution(
+    @Param("orderId", ParseUUIDPipe) orderId: string,
+    @Body(new ZodBody(ConfirmSubstitutionRequest)) body: ConfirmSubstitutionRequest,
+    @CurrentUser() profileId: string,
+  ) {
+    await this.substitutions.confirm(profileId, orderId, body);
+    return this.foodOrders.getMyOrder(orderId, profileId);
+  }
+
+  /** Order flow v2 D1 (BRIEF §11): rate the venue (stars + tags), once, after delivery. Idempotent. */
+  @Post("orders/:orderId/venue-rating")
+  rateVenue(
+    @Param("orderId", ParseUUIDPipe) orderId: string,
+    @Body(new ZodBody(RateVenueRequest)) body: RateVenueRequest,
+    @CurrentUser() profileId: string,
+  ) {
+    return this.venueRatings.rate(orderId, profileId, body);
   }
 
   @Post("orders/:orderId/cancel")

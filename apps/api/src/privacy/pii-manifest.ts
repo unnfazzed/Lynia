@@ -199,6 +199,27 @@ export const PII_MANIFEST: Readonly<Record<string, PiiEntry>> = {
     disposition: "null",
     note: "Timestamp of the proof-of-drop capture; nulled alongside the GPS/photo on rider erasure so no residual capture record survives.",
   },
+  pickup_photo_at: {
+    column: "pickup_photo_at",
+    where: "orders",
+    tables: ["orders"],
+    disposition: "null",
+    note: "Order flow v2 (D-59): when the rider took the sealed-bag pickup photo — nulled with pickup_photo_key on rider erasure, scoped to riderId, so no residual capture record survives.",
+  },
+  delivery_proof_reason: {
+    column: "delivery_proof_reason",
+    where: "orders",
+    tables: ["orders"],
+    disposition: "null",
+    note: "Order flow v2 (D-59): why the rider couldn't use the delivery code (a controlled code, no free text) — nulled alongside the rest of the proof-of-drop evidence on rider erasure.",
+  },
+  delivery_proof_handed_to: {
+    column: "delivery_proof_handed_to",
+    where: "orders",
+    tables: ["orders"],
+    disposition: "null",
+    note: "Order flow v2 (D-59): the name of the person the rider handed the order to at the customer's door — a third party's name. Nulled on rider erasure (with the proof) AND on customer erasure (it is a member of the customer's household).",
+  },
   pickup: { column: "pickup", where: "orders", tables: ["orders"], disposition: "scrub-json", note: "Dialable contactPhone inside the waypoint JSON stripped per row on orders the user placed." },
   dropoff: { column: "dropoff", where: "orders", tables: ["orders"], disposition: "scrub-json", note: "Dialable contactPhone inside the waypoint JSON stripped per row on orders the user placed." },
 
