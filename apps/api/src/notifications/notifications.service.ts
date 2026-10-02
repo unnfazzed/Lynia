@@ -3,6 +3,7 @@ import { OFFER_WINDOW_MS } from "@lynia/shared";
 import { PUSH, type PushAdapter } from "../adapters/push/push.interface";
 import { PrismaService } from "../prisma/prisma.service";
 import { auditData } from "../admin/admin.shared";
+import { pushCopy, pushMoney, PUSH_C } from "./merchant-order-push";
 
 /**
  * TTL (seconds) for time-critical broadcast/rebroadcast/riders-available pushes: the offer window. A
@@ -113,12 +114,46 @@ function parcelCustomerCopy(status: string, order: ParcelCopyOrder): { title: st
  * order rides the same `en_route_dropoff` edge with different words for a different audience.
  */
 const MERCHANT_STATUS_NOTICES: Partial<Record<string, Notice>> = {
-  en_route_dropoff: {
-    to: ["customer"],
-    title: "Your rider is at the door",
-    body: "Head down to meet them and confirm your order.",
-  },
+  // Order flow v2 G3a (ledger D-59, BRIEF §15 "push follows the stage"): collected, at the door,
+  // delivered and not delivered, in `O.g.push.c`'s words (merchantCustomerCopy fills the names). The
+  // static title/body here is the no-name fallback.
+  picked_up: { to: ["customer"], title: "Your rider has your order", body: "On the way." },
+  // A food order's `en_route_dropoff` is the rider ARRIVING at the door (the cash handshake opens on it).
+  en_route_dropoff: { to: ["customer"], title: "Your rider is at your door", body: "Have your cash ready." },
+  delivered: { to: ["customer"], title: "Delivered", body: "Enjoy!" },
+  undelivered: { to: ["customer"], title: "Your order wasn’t delivered", body: "Nothing was charged." },
 };
+
+interface MerchantCopyOrder {
+  agreedFare?: unknown;
+  undeliveredReason?: string | null;
+  merchant?: { name?: string | null } | null;
+  rider?: { profile?: { firstName?: string | null } | null } | null;
+}
+
+/**
+ * Order flow v2 G3a: a merchant order's customer stage push, named (`O.g.push.c` via merchant-order-push).
+ * Never a code; the server has no arrival estimate, so the ETA sentence is dropped.
+ */
+function merchantCustomerCopy(status: string, order: MerchantCopyOrder): { title: string; body: string } | null {
+  const n = order.rider?.profile?.firstName?.trim() || null;
+  const v = order.merchant?.name?.trim() || null;
+  const fallback = { n: "Your rider" };
+  switch (status) {
+    case "picked_up":
+      return pushCopy(PUSH_C.collected, { n }, fallback);
+    case "en_route_dropoff":
+      return pushCopy(PUSH_C.atDoor, { n, p: order.agreedFare == null ? null : pushMoney(order.agreedFare) }, fallback);
+    case "delivered":
+      // "Tap to rate {v} and {n}." needs both names; without them the push is just "Delivered · Enjoy!".
+      return pushCopy(PUSH_C.delivered, v && n ? { v, n } : {});
+    case "undelivered":
+      // "{n} couldn’t reach you." only when that is why.
+      return pushCopy(PUSH_C.notDelivered, order.undeliveredReason === "unreachable" ? { n } : {});
+    default:
+      return null;
+  }
+}
 
 /**
  * Sends push notifications and manages device tokens. Every public `notify*` method is best-effort and
@@ -184,6 +219,9 @@ export class NotificationsService {
           deliveredAt: true,
           undeliveredReason: true,
           rider: { select: { profile: { select: { firstName: true } } } },
+          // Order flow v2 G3a: the venue and the cash amount for a merchant order's stage push.
+          agreedFare: true,
+          merchant: { select: { name: true } },
         },
       });
       if (!order) return;
@@ -202,7 +240,10 @@ export class NotificationsService {
         const id = aud === "customer" ? order.customerId : order.riderId;
         if (!id || id === excludeProfileId) continue;
         // After-send v2: a parcel customer's stage pushes name the rider and the place/time.
-        const copy = (aud === "customer" && order.orderType === "parcel" && parcelCustomerCopy(status, order)) || notice;
+        const copy =
+          (aud === "customer" && order.orderType === "parcel" && parcelCustomerCopy(status, order)) ||
+          (aud === "customer" && order.orderType === "merchant" && merchantCustomerCopy(status, order)) ||
+          notice;
         // D-O3: a caller retrying/duplicating the same order+status transition (no idempotency key
         // upstream) must replace this recipient's still-undelivered tray entry, not stack a second one.
         await this.send([id], {

@@ -181,7 +181,7 @@ describe("NotificationsService — order-status notices", () => {
     });
     expect(push.sendEach).toHaveBeenCalledWith([
       // P0-2: the food order stamps orderType:"merchant" so the tap opens /food/order/:id, not the parcel tracker.
-      expect.objectContaining({ token: "c1", title: "Your rider is at the door", data: { orderId: "o1", status: "en_route_dropoff", to: "customer", orderType: "merchant" } }),
+      expect.objectContaining({ token: "c1", title: "Your rider is at your door", data: { orderId: "o1", status: "en_route_dropoff", to: "customer", orderType: "merchant" } }),
     ]);
   });
 
@@ -532,9 +532,31 @@ describe("NotificationsService — parcel customer stage copy (after-send v2)", 
     }
   });
 
-  it("leaves the food-order copy alone", async () => {
-    const [sent] = await sentFor("en_route_dropoff", parcel({ orderType: "merchant" }));
-    expect(sent).toMatchObject({ title: "Your rider is at the door" });
+  it("leaves the food-order copy alone (a merchant order speaks O.g.push, not the parcel copy)", async () => {
+    const [sent] = await sentFor("en_route_dropoff", parcel({ orderType: "merchant", agreedFare: "16.50", merchant: { name: "Gava’s Kitchen" } }));
+    expect(sent).toMatchObject({ title: "Tendai is at your door", body: "Have $16.50 cash ready." });
+  });
+
+  // Order flow v2 G3a (ledger D-59): a merchant order's customer stage pushes, O.g.push.c verbatim with the
+  // order's own names. No ETA exists server-side, so the "Arrives …" sentence is dropped, never invented.
+  it.each([
+    ["picked_up", "Tendai has your order", "On the way."],
+    ["en_route_dropoff", "Tendai is at your door", "Have $16.50 cash ready."],
+    ["delivered", "Delivered", "Enjoy! Tap to rate Gava’s Kitchen and Tendai."],
+    ["undelivered", "Your order wasn’t delivered", "Tendai couldn’t reach you. Nothing was charged."],
+  ])("merchant %s → O.g.push.c", async (status, title, body) => {
+    const [sent] = await sentFor(status, parcel({ orderType: "merchant", agreedFare: "16.50", merchant: { name: "Gava’s Kitchen" } }));
+    expect(sent).toMatchObject({ token: "cust-tok", title, body, data: { orderId: "o1", status, to: "customer", orderType: "merchant" } });
+  });
+
+  it("merchant: an undelivered order not caused by an unreachable customer doesn't say so; no code in any push", async () => {
+    const [sent] = await sentFor("undelivered", parcel({ orderType: "merchant", undeliveredReason: "breakdown", merchant: { name: "Gava’s Kitchen" } }));
+    expect(sent).toMatchObject({ title: "Your order wasn’t delivered", body: "Nothing was charged." });
+    for (const status of ["picked_up", "en_route_dropoff", "delivered", "undelivered"]) {
+      for (const m of await sentFor(status, parcel({ orderType: "merchant", agreedFare: "16.50", merchant: { name: "Gava’s Kitchen" } }))) {
+        expect(`${m.title} ${m.body}`).not.toMatch(/\b\d{3}\s?\d{3}\b/);
+      }
+    }
   });
 });
 

@@ -19,6 +19,7 @@ import {
   RESTAURANTS_TIMING,
   toCents,
 } from "@lynia/shared";
+import { pushCopy, PUSH_C } from "../notifications/merchant-order-push";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
@@ -327,12 +328,11 @@ export class OrderSubstitutionService implements OnModuleInit, OnModuleDestroy {
     } else if (result.hasSwaps) {
       const first = result.swaps[0]!;
       const diff = first.diff === 0 ? "same price" : `${first.diff > 0 ? "+" : "−"}${money(Math.abs(first.diff))}`;
+      // Order flow v2 G3a (O.g.push.c[2]): "{v} needs your answer" / "{i} is out. Swap for {s} ({d})? Answer in 3 min."
+      const drawn = pushCopy(PUSH_C.answer, { v: venue, i: first.from, s: first.to, d: diff });
       await this.notifications.notifyProfiles([result.order.customerId], {
-        title: result.atAccept ? `${venue} needs your answer` : `${venue} wants to change your order`,
-        body:
-          result.swaps.length === 1
-            ? `${first.from} is out. Swap for ${first.to} (${diff})? Answer in 3 min.`
-            : `${result.swaps.length} swaps to answer. Answer in 3 min.`,
+        title: result.atAccept ? drawn.title : `${venue} wants to change your order`,
+        body: result.swaps.length === 1 ? drawn.body : `${result.swaps.length} swaps to answer. Answer in 3 min.`,
         data,
       });
     } else {
