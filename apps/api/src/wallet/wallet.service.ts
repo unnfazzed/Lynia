@@ -547,6 +547,9 @@ export class WalletService {
             target: args.riderId,
             reasonCode: args.rail,
             note,
+            // Owner 2026-10-02: the feed row says how much landed and what the balance is now.
+            amount,
+            balanceAfter,
           },
         });
         return { balance: balanceAfter };

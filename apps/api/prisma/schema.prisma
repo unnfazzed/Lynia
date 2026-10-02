@@ -997,6 +997,11 @@ model AuditLog {
   target     String
   reasonCode String?  @map("reason_code")
   note       String?
+  // Money actions only (`wallet.credit`, owner 2026-10-02): the amount moved and the balance it left, so
+  // the notifications feed can say "$5.00 top-up added. Your balance is $12.60." Null on every other
+  // action and on rows written before 0069.
+  amount       Decimal? @db.Decimal(10, 2)
+  balanceAfter Decimal? @map("balance_after") @db.Decimal(10, 2)
   createdAt  DateTime @default(now()) @map("created_at")
 
   @@index([createdAt])
