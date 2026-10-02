@@ -3,7 +3,7 @@
   "src": "RC",
   "id": "no_rider",
   "mode": "phone",
-  "component": "app/food/order/[orderId].tsx",
+  "component": "app/order/[id].tsx",
   "fixture": "food_no_rider",
   "generator": "tools/parity/extract-expected.mjs",
   "chromeDropped": [

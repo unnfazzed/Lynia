@@ -64,7 +64,7 @@ describe("goToPlacedFoodOrder (Order flow v2: the order replaces Review, Back go
     goToPlacedFoodOrder(router, "fo-1");
     // dismissAll pops the food stack (list/menu/review) to its first route; replacing THAT leaves the
     // order as the stack's only route, so Back from the live order goes Home — never to the emptied cart.
-    expect(calls).toEqual(["dismissAll", "replace:/food/order/fo-1"]);
+    expect(calls).toEqual(["dismissAll", "replace:/order/fo-1"]);
     expect(router.dismissAll).toHaveBeenCalledTimes(1);
   });
 });

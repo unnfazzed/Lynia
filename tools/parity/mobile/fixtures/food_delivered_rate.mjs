@@ -6,7 +6,8 @@
 import { installRouter, setParams } from "./_harness.mjs";
 import { MENU, OID, foodOrder, orderSnapshot , withOrder } from "./_food.mjs";
 
-setParams({ orderId: OID });
+// D-59: the restaurant order renders on the one order screen, app/order/[id].tsx.
+setParams({ id: OID });
 
 const deliveredAt = new Date(Date.now() - 90_000).toISOString();
 

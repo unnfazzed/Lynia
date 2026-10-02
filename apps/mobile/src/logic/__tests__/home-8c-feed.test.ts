@@ -87,8 +87,8 @@ describe("liveOrderPillModel (home 8c tracker pill)", () => {
     expect(liveOrderPillModel({ ...withRider, status: "delivered" }, "x", null).etaMinutes).toBeNull();
   });
 
-  it("routes a food job to the food tracker and a parcel to the parcel tracker", () => {
-    expect(liveOrderPillModel(parcel({ id: "a", orderType: "merchant" }), "x", null).route).toBe("/food/order/a");
+  it("routes a food job and a parcel to the one order screen (D-59)", () => {
+    expect(liveOrderPillModel(parcel({ id: "a", orderType: "merchant" }), "x", null).route).toBe("/order/a");
     expect(liveOrderPillModel(parcel({ id: "b" }), "x", null).route).toBe("/order/b");
   });
 });

@@ -3,7 +3,7 @@
   "src": "RC",
   "id": "await_accept",
   "mode": "phone",
-  "component": "app/food/order/[orderId].tsx",
+  "component": "app/order/[id].tsx",
   "fixture": "food_await_accept",
   "generator": "tools/parity/extract-expected.mjs",
   "chromeDropped": [

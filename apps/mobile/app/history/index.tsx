@@ -17,11 +17,11 @@ function title(o: OrderHistoryRow): string {
   return `${from || R.stPickup} → ${o.dropoff.landmark || R.stDrop}`;
 }
 
-// A placed food order opens the food tracker (`app/order/[id].tsx` has no food handling). That
-// tracker is customer-only, so a food job the rider CARRIED stays on `/order/:id`, which renders the
+// Every order opens the one order screen (`app/order/[id].tsx`, D-59): it draws a placed food order
+// with the Order flow v2 stages, and a food job the rider CARRIED with the After Send
 // rider viewer.
 function orderHref(o: OrderHistoryRow): string {
-  return o.role === "customer" && o.orderType === "merchant" ? `/food/order/${o.id}` : `/order/${o.id}`;
+  return `/order/${o.id}`;
 }
 
 function outcome(o: OrderHistoryRow): string {

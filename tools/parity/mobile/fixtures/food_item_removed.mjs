@@ -4,9 +4,10 @@
 // re-totals — driven by GET /restaurants/orders/:id alone (riderId null). itemApprovalDeadlineAt is a
 // fresh future stamp so the "answer within m:ss" countdown shows time remaining.
 import { installRouter, setParams } from "./_harness.mjs";
-import { MENU, OID, DISHES, foodOrder, withOrder } from "./_food.mjs";
+import { MENU, OID, DISHES, foodOrder, withOrder, orderSnapshot } from "./_food.mjs";
 
-setParams({ orderId: OID });
+// D-59: the restaurant order renders on the one order screen, app/order/[id].tsx.
+setParams({ id: OID });
 
 installRouter([
   {
@@ -25,6 +26,7 @@ installRouter([
     }),
   },
   { match: /^\/restaurants\/[^/]+\/menu$/, json: MENU },
+  { match: /^\/orders\/[^/]+$/, json: orderSnapshot({ status: "requested", rider: null, events: [], counterpartyPhone: null }) },
 ]);
 
 export default { wrap: withOrder() };
