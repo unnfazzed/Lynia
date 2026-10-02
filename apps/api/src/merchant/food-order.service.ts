@@ -40,6 +40,7 @@ import {
   toCents,
   type Waypoint,
   type CustomerBalanceResponse,
+  type FoodOfferResponse,
   type MerchantOrderPrescriptionView,
   type RxDeclineReason,
 } from "@lynia/shared";
@@ -1220,6 +1221,25 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       take: 200,
     });
     return orders.map((o) => this.forMerchant(o));
+  }
+
+  /** RD1a–d: what the rider's offer card tags — venue kind, a scheduled slot, a prescription order. */
+  async offerJobInfo(orderId: string): Promise<NonNullable<FoodOfferResponse["job"]> | null> {
+    const o = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        merchant: { select: { businessType: true, shopKind: true } },
+        schedule: { select: { scheduledFor: true } },
+        prescription: { select: { status: true } },
+      },
+    });
+    if (!o?.merchant) return null;
+    return {
+      businessType: o.merchant.businessType,
+      shopKind: o.merchant.shopKind ?? null,
+      scheduledFor: o.schedule?.scheduledFor.toISOString() ?? null,
+      rx: o.prescription?.status === "approved",
+    };
   }
 
   /** BRIEF D3f: the customer's owed balance (`GET /restaurants/balance`). */

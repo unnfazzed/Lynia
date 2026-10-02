@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
 import {
   CreateMerchantInviteRequest,
+  SetMerchantPharmacistRequest,
   JoinMerchantInviteRequest,
   type MerchantProfileResponse,
   type MerchantTeamInviteResponse,
@@ -60,6 +61,18 @@ export class MerchantTeamController {
     @CurrentUser() profileId: string,
   ): Promise<{ ok: true }> {
     return this.team.removeMember(access, profileId, memberProfileId);
+  }
+
+  /** Order flow v2 (BRIEF §13): who may approve or decline prescriptions (pharmacies). */
+  @Post("members/:profileId/pharmacist")
+  @OwnerOnly()
+  @HttpCode(200)
+  setPharmacist(
+    @Param("profileId", ParseUUIDPipe) memberProfileId: string,
+    @Body(new ZodBody(SetMerchantPharmacistRequest)) body: SetMerchantPharmacistRequest,
+    @CurrentMerchantAccess() access: MerchantAccess,
+  ): Promise<{ ok: true }> {
+    return this.team.setPharmacist(access, memberProfileId, body.isPharmacist);
   }
 
   /** "Leave this business" (Staff). */

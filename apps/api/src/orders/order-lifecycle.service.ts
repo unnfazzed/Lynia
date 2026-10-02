@@ -11,7 +11,7 @@ import {
   Optional,
   UnauthorizedException,
 } from "@nestjs/common";
-import { codAmount, customerRatingCarriesWeight, DELIVERY_OTP_MAX_ATTEMPTS, HeldReason, OFFER_WINDOW_MS, RELIABILITY, RIDER_STRIKE_COOLDOWN_MS, UNDELIVERED_ABUSE } from "@lynia/shared";
+import { codAmount, customerRatingCarriesWeight, DELIVERY_OTP_MAX_ATTEMPTS, HeldReason, OFFER_WINDOW_MS, RELIABILITY, RIDER_STRIKE_COOLDOWN_MS, roundToCents, UNDELIVERED_ABUSE } from "@lynia/shared";
 import { type OrderStatus, Prisma } from "@prisma/client";
 import { applyReliabilityDelta, shouldFlagUndeliveredVelocity, undeliveredPenalty } from "../riders/reliability";
 import { Queue, Worker } from "bullmq";
@@ -414,6 +414,14 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       // with a valid code first — this re-checks server-side rather than trusting that alone.
       if (o.order_type === "merchant" && o.merchant_payment_method === "cash" && !(o.customer_cash_confirmed_at && o.rider_cash_confirmed_at)) {
         throw new ConflictException("Confirm the cash exchange with the customer before entering the code");
+      }
+      // Order flow v2 (BRIEF §13, RD3): an approved prescription order completes only after the rider ticked
+      // "I saw the original prescription" (PrescriptionService.riderSawOriginal).
+      if (o.order_type === "merchant") {
+        const rx = await tx.orderPrescription.findUnique({ where: { orderId }, select: { status: true, riderSawOriginalAt: true } });
+        if (rx?.status === "approved" && !rx.riderSawOriginalAt) {
+          throw new ConflictException({ reason: "rx_original_not_seen", message: "Tick “I saw the original prescription” before handing it over." });
+        }
       }
       if (o.delivery_otp_attempts >= DELIVERY_OTP_MAX_ATTEMPTS) {
         throw new ForbiddenException("Too many attempts — ask the customer to re-issue the code");
@@ -912,7 +920,18 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     const result = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        select: { status: true, customerId: true, riderId: true, collectedAt: true, pickup: true, proposedFare: true },
+        select: {
+          status: true,
+          customerId: true,
+          riderId: true,
+          collectedAt: true,
+          pickup: true,
+          proposedFare: true,
+          // Order flow v2 (BRIEF D3f): a merchant order cancelled after collection leaves its total owed.
+          orderType: true,
+          merchantId: true,
+          agreedFare: true,
+        },
       });
       if (!order) throw new NotFoundException("Order not found");
       customerId = order.customerId;
@@ -1001,6 +1020,20 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       } else if (isCustomer && order.riderId) {
         // C3: a rider was already working this job — signal them the customer pulled out.
         jobCancelledCollected = collected;
+      }
+      // Order flow v2 (ledger D-59, BRIEF §14 / D3f): the customer cancelled a restaurant / shop / pharmacy
+      // order the rider had already collected — the venue made it and the rider carried it, so the full
+      // total is owed: "You owe $X — pay it on your next order". Recorded in the same commit as the cancel;
+      // the next merchant order carries it as its own line (merchant/customer-balance.ts). `agreedFare` is
+      // goods + delivery only, so a balance this order was itself carrying is not counted twice (it simply
+      // becomes free to carry again).
+      if (isCustomer && collected && order.orderType === "merchant") {
+        const owed = roundToCents(Number(order.agreedFare ?? 0));
+        if (owed > 0) {
+          await tx.customerBalanceEntry.create({
+            data: { profileId: order.customerId, sourceOrderId: orderId, merchantId: order.merchantId, amount: owed },
+          });
+        }
       }
 
       return {

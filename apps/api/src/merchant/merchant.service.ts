@@ -63,7 +63,7 @@ import { CUSTOMER_VISIBLE_RESTAURANT, isDishOutOfStock as isOutOfStock, resolveO
 type MerchantWithOwner = Prisma.MerchantGetPayload<{ include: { ownerProfile: { select: { phone: true } } } }>;
 /** The caller's own business, plus the caller's role on it (L1: `MerchantProfileResponse.myRole`) and
  *  their name on its team (L4: `myName`). */
-type OwnMerchant = MerchantWithOwner & { myRole: MerchantMemberRole; myName: string | null };
+type OwnMerchant = MerchantWithOwner & { myRole: MerchantMemberRole; myName: string | null; myIsPharmacist?: boolean };
 
 type DishRow = Prisma.MerchantDishGetPayload<Record<string, never>>;
 type CategoryRow = Prisma.MerchantCategoryGetPayload<{ include: { _count: { select: { dishes: true } } } }>;
@@ -466,6 +466,7 @@ export class MerchantService {
         photoUrl: body.photoUrl ?? null,
         // D-31: no photo at save time => draft, visible to the kitchen only. Never client-supplied.
         isDraft: !body.photoUrl,
+        ...(body.rxRequired ? { rxRequired: await this.assertRxAllowed(merchantId) } : {}),
       },
     });
     return await this.toDishResponse(created);
@@ -484,6 +485,8 @@ export class MerchantService {
     if (body.description !== undefined) data.description = body.description;
     if (body.priceUsd !== undefined) data.priceUsd = body.priceUsd;
     if (body.sortOrder !== undefined) data.sortOrder = body.sortOrder;
+    // Order flow v2 (BRIEF §13): "Prescription needed" — pharmacies only (turning it off is always allowed).
+    if (body.rxRequired !== undefined) data.rxRequired = body.rxRequired ? await this.assertRxAllowed(merchantId) : false;
     // D-31: a photo landing clears the draft flag; omitting photoUrl on an edit never re-drafts a
     // dish that already has one.
     if (body.photoUrl !== undefined) {
@@ -648,6 +651,7 @@ export class MerchantService {
           where: {
             merchantId: { in: visible.map((p) => p.id) },
             isDraft: false,
+            ...this.rxVisible(),
             OR: [{ name: { contains: q, mode: "insensitive" } }, { description: { contains: q, mode: "insensitive" } }],
           },
           orderBy: [{ name: "asc" }, { id: "asc" }],
@@ -674,7 +678,7 @@ export class MerchantService {
       where: { merchantId: merchant.id, hidden: false },
       orderBy: { sortOrder: "asc" },
       // D-31: draft (photoless) items are excluded entirely from the customer read API.
-      include: { dishes: { where: { isDraft: false }, orderBy: { sortOrder: "asc" } } },
+      include: { dishes: { where: { isDraft: false, ...this.rxVisible() }, orderBy: { sortOrder: "asc" } } },
     });
     return {
       shop: await this.toShopItem(merchant),
@@ -885,11 +889,20 @@ export class MerchantService {
     if (!access) throw new NotFoundException("Merchant not found");
     const merchant = await this.prisma.merchant.findUnique({
       where: { id: access.merchantId },
-      include: { ownerProfile: { select: { phone: true } }, members: { where: { profileId }, select: { displayName: true } } },
+      include: { ownerProfile: { select: { phone: true } }, members: { where: { profileId }, select: { displayName: true, isPharmacist: true } } },
     });
     if (!merchant) throw new NotFoundException("Merchant not found");
     const { members, ...rest } = merchant;
-    return { ...rest, myRole: access.role, myName: members?.[0]?.displayName ?? null };
+    return { ...rest, myRole: access.role, myName: members?.[0]?.displayName ?? null, myIsPharmacist: members?.[0]?.isPharmacist ?? false };
+  }
+
+  /** Order flow v2 (BRIEF §13): only a pharmacy can mark an item "Prescription needed". */
+  private async assertRxAllowed(merchantId: string): Promise<true> {
+    const m = await this.prisma.merchant.findUnique({ where: { id: merchantId }, select: { shopKind: true } });
+    if (m?.shopKind !== "pharmacy") {
+      throw new BadRequestException({ reason: "rx_pharmacy_only", message: "Only a pharmacy can mark an item as needing a prescription." });
+    }
+    return true;
   }
 
   private async findOwnMerchantIdOrThrow(profileId: string): Promise<string> {
@@ -922,7 +935,7 @@ export class MerchantService {
     return (this.microCacheBypassed(ttlMs) ? mint() : this.photoUrlCache.getOrLoad(key, ttlMs, mint)).catch(() => null);
   }
 
-  private async toProfileResponse(merchant: MerchantWithOwner, me: Pick<OwnMerchant, "myRole" | "myName">): Promise<MerchantProfileResponse> {
+  private async toProfileResponse(merchant: MerchantWithOwner, me: Pick<OwnMerchant, "myRole" | "myName" | "myIsPharmacist">): Promise<MerchantProfileResponse> {
     const [coverPhotoUrl, logoUrl] = await Promise.all([this.signPhoto(merchant.coverPhotoUrl), this.signPhoto(merchant.logoUrl)]);
     return {
       id: merchant.id,
@@ -948,6 +961,8 @@ export class MerchantService {
       closedUntil: merchant.closedUntil && merchant.closedUntil.getTime() > Date.now() ? merchant.closedUntil.toISOString() : null,
       autoAccept: merchant.autoAccept,
       showPhoneToCustomers: merchant.showPhoneToCustomers,
+      // Order flow v2 (BRIEF §13): whether the caller may approve/decline prescriptions.
+      ...(me.myIsPharmacist !== undefined ? { myIsPharmacist: me.myIsPharmacist } : {}),
     };
   }
 
@@ -975,6 +990,7 @@ export class MerchantService {
       outOfStock: isOutOfStock(dish),
       outOfStockUntil: isOutOfStock(dish) ? (dish.outOfStockUntil?.toISOString() ?? null) : null,
       sortOrder: dish.sortOrder,
+      rxRequired: dish.rxRequired ?? false,
     };
   }
 
@@ -1022,7 +1038,14 @@ export class MerchantService {
       priceUsd: Number(dish.priceUsd),
       photoUrl: await this.signPhoto(dish.photoUrl),
       outOfStock: isOutOfStock(dish),
+      // Only ever true here: with RX_ENABLED off, Rx items never reach the customer read (rxVisible).
+      ...(dish.rxRequired ? { rxRequired: true } : {}),
     };
+  }
+
+  /** Order flow v2 (BRIEF §13): while RX_ENABLED is off, "Prescription needed" items are not listed. */
+  private rxVisible(): Prisma.MerchantDishWhereInput {
+    return this.env?.RX_ENABLED === "true" ? {} : { rxRequired: false };
   }
 }
 
