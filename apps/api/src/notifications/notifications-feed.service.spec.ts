@@ -30,6 +30,10 @@ function makeDeps() {
     sosEvent: {
       findMany: vi.fn().mockResolvedValue([]),
     },
+    // Notifications v1 (D-66): swap rounds on the customer's merchant orders.
+    merchantOrderSubstitution: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
     // STREAMLINE-01: `unread` is now a real per-user watermark read off the Profile, not a recency proxy.
     // Default: never opened the centre (null) → everything still in the window reads as unread.
     profile: {
@@ -893,6 +897,186 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       title: "A rider's online near you",
       message: "Riders are back near your pickup — send your parcel again to get offers.",
       unread: true,
+    });
+  });
+
+  // ── Notifications v1 (ledger D-66) ─────────────────────────────────────────────────────────────
+  describe("Notifications v1 — structured row data", () => {
+    const t = (hhmm: string) => new Date(`2026-07-06T${hhmm}:00.000Z`);
+
+    it("titles a parcel row with its places and names, and carries its addressed beats as steps (latest first)", async () => {
+      const { prisma, service } = makeDeps();
+      prisma.order.findMany.mockResolvedValue([
+        {
+          id: "o1",
+          riderId: "rider",
+          customerId: "cust",
+          orderType: "parcel",
+          status: "delivered",
+          agreedFare: dec("3.2"),
+          pickup: { landmark: "Eastgate Mall, Harare" },
+          dropoff: { landmark: "Glenara Ave, Highlands" },
+          rider: { profile: { firstName: "Tendai" } },
+          customer: { firstName: "Nyasha" },
+          events: [
+            { status: "assigned", createdAt: t("09:52") },
+            { status: "en_route_pickup", createdAt: t("09:58") },
+            { status: "picked_up", createdAt: t("10:05") },
+            { status: "delivered", createdAt: t("10:31") },
+          ],
+        },
+      ]);
+      const [row] = await service.feedForUser("cust", NOW);
+      expect(row).toMatchObject({
+        type: "status",
+        beat: "delivered",
+        service: "send",
+        pickupArea: "Eastgate Mall",
+        dropoffArea: "Glenara Ave",
+        riderName: "Tendai",
+        customerName: "Nyasha",
+        amount: "3.20",
+      });
+      // `assigned` is the rider's push, so it is not one of the customer's steps.
+      expect(row!.steps!.map((s) => s.beat)).toEqual(["delivered", "picked_up", "en_route_pickup"]);
+      expect(row!.steps![0]!.at).toBe(row!.at);
+    });
+
+    it("includes a merchant order for its customer: kitchen beats synthesized, venue + service named", async () => {
+      const { prisma, service } = makeDeps();
+      prisma.order.findMany.mockResolvedValue([
+        {
+          id: "m1",
+          riderId: "rider",
+          customerId: "cust",
+          orderType: "merchant",
+          status: "picked_up",
+          agreedFare: dec("16.5"),
+          kitchenConfirmedAt: t("12:02"),
+          prepStartedAt: t("12:05"),
+          prepMinutes: 15,
+          merchant: { name: "Sadza Republic", businessType: "restaurant", shopKind: null },
+          rider: { profile: { firstName: "Tendai" } },
+          pickup: {},
+          dropoff: { landmark: "Avondale" },
+          events: [
+            { status: "requested", createdAt: t("12:00") },
+            { status: "assigned", createdAt: t("12:10") },
+            { status: "picked_up", createdAt: t("12:21") },
+          ],
+        },
+      ]);
+      const [row] = await service.feedForUser("cust", NOW);
+      expect(row).toMatchObject({ type: "status", beat: "picked_up", service: "restaurants", venue: "Sadza Republic", orderId: "m1", to: "customer" });
+      // The stage push's own words (Order flow v2 G3a), so old clients read the push they got.
+      expect(row!.title).toBe("Tendai has your order");
+      expect(row!.steps!.map((s) => s.beat)).toEqual(["picked_up", "preparing", "accepted"]);
+
+      // A pharmacy wears the pharmacy sticker; a shop the shops one.
+      prisma.order.findMany.mockResolvedValue([
+        { id: "m2", riderId: null, orderType: "merchant", status: "requested", merchant: { name: "Healthwise", businessType: "shop", shopKind: "pharmacy" }, kitchenConfirmedAt: t("08:31"), events: [] },
+      ]);
+      expect((await service.feedForUser("cust", NOW))[0]).toMatchObject({ service: "pharmacy", beat: "accepted", status: "requested" });
+    });
+
+    it("a rider's merchant job reads in rider voice, gated like a parcel job", async () => {
+      const { prisma, service } = makeDeps();
+      prisma.order.findMany.mockResolvedValue([
+        {
+          id: "m1",
+          riderId: "rider",
+          orderType: "merchant",
+          status: "completed",
+          merchant: { name: "Mama's Kitchen", businessType: "restaurant" },
+          dropoff: { landmark: "Avondale, Harare" },
+          kitchenConfirmedAt: t("18:00"),
+          events: [
+            { status: "assigned", createdAt: t("18:01") },
+            { status: "picked_up", createdAt: t("18:20") },
+            { status: "completed", createdAt: t("18:40") },
+          ],
+        },
+      ]);
+      const [row] = await service.feedForUser("rider", NOW);
+      expect(row).toMatchObject({ title: "Delivery complete", to: "rider", service: "restaurants", venue: "Mama's Kitchen", dropoffArea: "Avondale" });
+      expect(row!.steps!.map((s) => s.beat)).toEqual(["completed", "assigned"]);
+    });
+
+    it("marks a status override's beat (rider bail → rebroadcast)", async () => {
+      const { prisma, service } = makeDeps();
+      prisma.order.findMany.mockResolvedValue([
+        { id: "orig", riderId: "r", orderType: "parcel", status: "cancelled", events: [{ status: "cancelled", createdAt: t("10:00") }] },
+        { id: "clone", rebroadcastOfId: "orig", riderId: null, orderType: "parcel", status: "open_for_offers", events: [{ status: "open_for_offers", createdAt: t("10:00") }] },
+      ]);
+      const feed = await service.feedForUser("cust", NOW);
+      expect(feed.find((r) => r.title === "Your rider had to cancel")).toMatchObject({ beat: "rebroadcast", orderId: "clone" });
+    });
+
+    it("an offer row quotes the newest offer's rider and fare, and is active only while offers are open", async () => {
+      const { prisma, service } = makeDeps();
+      prisma.order.findMany.mockResolvedValue([{ id: "o1", riderId: null, orderType: "parcel", status: "open_for_offers", events: [] }]);
+      prisma.offer.findMany.mockResolvedValue([
+        { id: "f1", orderId: "o1", createdAt: t("11:00"), offeredFare: dec("3"), rider: { profile: { firstName: "Chipo" } } },
+        { id: "f2", orderId: "o1", createdAt: t("11:05"), offeredFare: dec("3.2"), rider: { profile: { firstName: "Farai" } } },
+      ]);
+      const [row] = await service.feedForUser("cust", NOW);
+      expect(row).toMatchObject({ type: "offer", riderName: "Farai", amount: "3.20", count: 2, active: true });
+    });
+
+    it("an account pause is active only while it is the newest standing change and still holds", async () => {
+      const { prisma, service } = makeDeps();
+      prisma.auditLog.findMany.mockImplementation(async ({ where }: { where: { action?: unknown } }) =>
+        typeof where.action === "object"
+          ? [
+              { id: "a2", action: "rider.suspend", createdAt: t("11:00") },
+              { id: "a1", action: "rider.suspend", createdAt: t("09:00") },
+            ]
+          : [],
+      );
+      prisma.profile.findUnique.mockResolvedValue({ notificationsReadAt: null, onHold: false, rider: { accountStatus: "suspended" } });
+      const feed = await service.feedForUser("rider", NOW);
+      expect(feed.map((r) => [r.id, r.type, r.action, r.active])).toEqual([
+        ["account:a2", "account", "rider.suspend", true],
+        ["account:a1", "account", "rider.suspend", false],
+      ]);
+
+      prisma.profile.findUnique.mockResolvedValue({ notificationsReadAt: null, onHold: false, rider: { accountStatus: "active" } });
+      expect((await service.feedForUser("rider", NOW)).every((r) => r.active === false)).toBe(true);
+    });
+
+    it("an SOS is active while its trip is running, and carries the viewer's side", async () => {
+      const { prisma, service } = makeDeps();
+      prisma.order.findMany.mockResolvedValue([{ id: "o1", riderId: "rider", orderType: "parcel", status: "picked_up", events: [] }]);
+      prisma.sosEvent.findMany.mockResolvedValue([{ id: "s1", orderId: "o1", createdAt: t("11:00") }]);
+      expect((await service.feedForUser("cust", NOW))[0]).toMatchObject({ type: "sos", to: "customer", active: true });
+      prisma.order.findMany.mockResolvedValue([{ id: "o1", riderId: "rider", orderType: "parcel", status: "delivered", events: [] }]);
+      expect((await service.feedForUser("cust", NOW))[0]).toMatchObject({ type: "sos", active: false });
+    });
+
+    it("a merchant swap round is a needs-you row while open, quoting the first swapped line", async () => {
+      const { prisma, service } = makeDeps();
+      prisma.order.findMany.mockResolvedValue([
+        { id: "m1", riderId: null, orderType: "merchant", status: "requested", merchant: { name: "Healthwise Pharmacy", businessType: "shop", shopKind: "pharmacy" }, events: [] },
+      ]);
+      prisma.merchantOrderSubstitution.findMany.mockResolvedValue([
+        {
+          id: "sw1",
+          orderId: "m1",
+          status: "open",
+          createdAt: t("08:40"),
+          lines: [{ nameSnapshot: "Panado 24s", priceUsd: dec("2"), fromQuantity: 1, swapNameSnapshot: "Paracetamol 24s", swapPriceUsd: dec("2"), swapQuantity: 1 }],
+        },
+      ]);
+      const [row] = await service.feedForUser("cust", NOW);
+      expect(row).toMatchObject({
+        id: "swap:sw1",
+        type: "swap",
+        active: true,
+        service: "pharmacy",
+        swap: { item: "Panado 24s", sub: "Paracetamol 24s", diff: "same price" },
+        title: "Healthwise Pharmacy needs your answer",
+      });
+      expect(prisma.merchantOrderSubstitution.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ orderId: { in: ["m1"] } }) }));
     });
   });
 });

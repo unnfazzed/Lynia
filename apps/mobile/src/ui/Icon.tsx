@@ -15,6 +15,7 @@ import ArrowRight from "lucide-react-native/dist/cjs/icons/arrow-right";
 import Ban from "lucide-react-native/dist/cjs/icons/ban";
 import Banknote from "lucide-react-native/dist/cjs/icons/banknote";
 import Bell from "lucide-react-native/dist/cjs/icons/bell";
+import BellOff from "lucide-react-native/dist/cjs/icons/bell-off";
 import Bike from "lucide-react-native/dist/cjs/icons/bike";
 import Check from "lucide-react-native/dist/cjs/icons/check";
 import ChevronDown from "lucide-react-native/dist/cjs/icons/chevron-down";
@@ -125,6 +126,7 @@ const ICONS = {
   "shopping-bag": ShoppingBag, // role select — "Use LyniaGo" (order food, send parcels)
   trash: Trash, // delete account (settings)
   bell: Bell, // BrandHeader notifications
+  "bell-off": BellOff, // Notifications v1 N6 — notifications are off (D-66)
   store: Store, // root tab bar — Home
   receipt: Receipt, // root tab bar — Orders
   utensils: Utensils, // Food service tile

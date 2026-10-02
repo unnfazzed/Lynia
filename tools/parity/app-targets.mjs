@@ -62,8 +62,6 @@ export const APP_TARGETS = {
   "LJ.track_active": { kind: "mobile", component: "app/order/[id].tsx", fixture: "parcel_track_active" },
   "LJ.track_code": { kind: "mobile", component: "app/order/[id].tsx", fixture: "parcel_track_code" },
   "LJ.profile": { kind: "mobile", component: "app/(tabs)/account.tsx", fixture: "account_home" },
-  "LJ.notifications": { kind: "mobile", component: "app/notifications/index.tsx", fixture: "notifications" },
-  "LJ.notif_empty": { kind: "mobile", component: "app/notifications/index.tsx", fixture: "notifications_empty" },
   "LJ.privacy": { kind: "mobile", component: "app/settings/privacy.tsx", fixture: "privacy" },
   "LJ.delete_account": { kind: "mobile", component: "app/settings/delete-account.tsx", fixture: "delete_account" },
   "LJ.delete_final": { kind: "mobile", component: "app/settings/delete-account.tsx", fixture: "delete_final" },
