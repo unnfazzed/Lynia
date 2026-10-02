@@ -982,7 +982,7 @@ structural deviation, not a text one), and with a one-day retention window and h
 own entry — not this one.
 
 **The retention half needs no deviation.** How long a row lives (now one day — see
-`FEED_RETENTION_MS`) and what makes it unread (now a real `Profile.notificationsReadAt` watermark rather
+`FEED_RETENTION_MS`; widened to seven days on 2026-10-02, D-66 §6) and what makes it unread (now a real `Profile.notificationsReadAt` watermark rather
 than a "younger than 24h" proxy) are invisible to the mocks: the kit draws a row **with** and
 **without** the unread dot and says nothing about either lifetime or read semantics. Same for the row
 collapse — the mock's own sample data is already one status row and one offer row per order, so
@@ -3706,7 +3706,7 @@ order screens (`src/ui/browse/copy.ts`), and code names (`RestaurantsSticker`, r
 
 | 6 | Splash starts on plain green | The native launch frame still shows the old dove + wordmark lockup until the JS splash draws | Changing it needs a new store build (native assets). **Follow-up:** a plain-green native launch frame, so the cold start reads as one screen. |
 
-## D-66 · Notifications v1: the shared Notifications screen follows the notifications-v1 handoff — handoff APPROVED (2026-10-02); deviations 1–9 PENDING OWNER REVIEW
+## D-66 · Notifications v1: the shared Notifications screen follows the notifications-v1 handoff — handoff APPROVED (2026-10-02); deviations 1–3 SETTLED by the owner (2026-10-02, §6); deviations 4–9 PENDING OWNER REVIEW
 
 **Owner instruction, this session (2026-10-02):** *"lets implement the notification changes now to the app"*,
 with the design export attached (`Lynia_Design_System.zip` → `handoff/notifications-v1/`). Vendored
@@ -3763,7 +3763,8 @@ The README's "Outside the design" asks are done in the same PR, additively (old 
   A rider's merchant job reads as a job (rider voice, gated like a parcel).
 - **Structured fields on every row:** `type`, `beat`, `action`, `service`, `pickupArea` / `dropoffArea`
   (first landmark segment), `venue`, `riderName`, `customerName`, `amount`, `count`, `prepMinutes`, `swap`,
-  `steps` (the viewer's beats on the order, latest first) and `active` (in force).
+  `steps` (the order's stage history, latest first — see §6) and `active` (in force); since §6 also
+  `reason`, `balance` and `cancelledBy`.
 
 ### 4 · App strings with no drawn string (`NX`, `NF`)
 
@@ -3776,15 +3777,50 @@ The README's "Outside the design" asks are done in the same PR, additively (old 
 
 | # | Handoff | App | Why |
 |---|---|---|---|
-| 1 | Day groups back to "MON 28 SEP" | The feed keeps one day (STREAMLINE-01, owner 2026-08-17), so in practice only TODAY / YESTERDAY appear | The grouping supports older days; widening retention is an owner call. |
-| 2 | Rider timeline: got the job → heading to pickup → collected → delivered | Only the beats the rider is pushed (got the job, delivered / cancelled); no "Posted" step on either side | The feed mirrors the pushes (FEED_AUDIENCE); `requested` has no push. |
-| 3 | Sample lines that state a reason or an amount: aIdB, aPausedB, aRestoredB, aWalletR/C, sResolvedB, rCancelled, sUpdate | The server's own line (the push the user got) | The feed doesn't carry the decline reason, the pause reason, the credited amount / balance, the refund kind or who cancelled; the drawn sentence would be false. |
 | 4 | Merchant "Tendai collected your food. On the way." | Restaurants only; shops and pharmacies keep the stage push's line | "food" is wrong for a shop or pharmacy order. |
 | 5 | Trash2 | Lucide `trash` | lucide-react-native 1.45 ships no `trash-2` (see `src/ui/Icon.tsx`). |
 | 6 | Gesture Handler pan + Reanimated | Core `PanResponder` + `Animated` (native driver) | Neither library is installed; the app's sheets use the same pair. |
 | 7 | OtherSide opens the C4/C5 switch sheet | Rider side: the C4/C5 sheet. Customer side: switches straight to the rider app | The customer side has no switch sheet (its Account toggle switches directly). |
 | 8 | Stale notice "Showing updates from 09:41" | The time of the last successful fetch on this phone | The feed has no server timestamp of its own. |
 | 9 | `--skeleton` | `SKELETON` (#EEF1F3, the browse-v2 literal) | No skeleton token exists in `packages/design/tokens/`. |
+
+Rows 1–3 of this table were settled by the owner on 2026-10-02 and are no longer deviations — see §6.
+
+### 6 · Settled by the owner (2026-10-02): retention, the timeline, the detail fields
+
+The three questions rows 1–3 left open, answered by the owner and built (no longer deviations):
+
+1. **Retention is seven days.** `FEED_RETENTION_MS` = 7 days (`notifications-feed.service.ts`), replacing
+   STREAMLINE-01's one day for every row source, the dismissal read and the dismissal prune alike. The order
+   scan and row caps rise from 50 to 100 (a week at about 14 jobs a day). The day groups now reach back a
+   week: TODAY · YESTERDAY · "WED 30 SEP" … , and rows older than yesterday read "28 Sep".
+2. **The timeline is every order step.** A row's `steps` is the order's stage history in the viewer's own
+   voice — every stage the handoff draws for that service and side, pushed to the viewer or not: customer
+   parcel Posted · Rider assigned · Rider on the way · Parcel collected · On the way to drop-off · Delivered;
+   restaurant / shop / pharmacy Accepted · Being prepared · Rider collected · At your door · Delivered; rider
+   You got the job · Heading to pickup · Parcel collected · Delivered (plus the outcomes each side draws).
+   Two statuses on one stage (assigned + confirmed, delivered + completed) are one step. The row's headline
+   is still the latest beat addressed to the viewer (FEED_AUDIENCE). A step's server `title` is the same
+   named copy the headline would use for that beat (e.g. "Tendai has your order"), no longer the generic
+   table title.
+3. **The detail is stored, and the rows read as the handoff's sentences.** Additive optional fields:
+   - `reason` — a KYC decline's `KycDeclineReason` key (from `AuditLog.reasonCode`; the vendor webhook's
+     free text never passes), and a pause / block / hold's reason as a key mapped from the admin console's
+     reason label (`StandingReason`); on a restore, the reason of the pause it lifted. The ops label itself
+     is never sent.
+   - `amount` + `balance` on `wallet.credit` — recorded on the audit row since migration
+     `0069_audit_log_amount` (expand-only: two nullable `DECIMAL(10,2)` columns on `audit_logs`).
+   - `cancelledBy` (`customer` · `rider` · `merchant` · `lynia`) on cancelled rows — derived from the
+     order's `cancelledBy` / `rejectionReason`, the same reading as Orders v2's `customerOrderOutcome`, so
+     it needs no new data and old orders have it too.
+
+   The app (`src/ui/notifications/model.ts`) uses them: aIdB for an unreadable-photo decline, aPausedB /
+   aRestoredB for a pause for (or a restore after) a customer report, aWalletR ("$5.00 top-up added. Your
+   balance is $12.60.") for a credit, rCancelled ("Nyasha cancelled the order. …") when the customer
+   cancelled. Rows recorded before the data was, and rows whose value the drawn sentence doesn't describe
+   (another decline reason, a pause for fare fraud, a held customer — aPausedB says "You can't take jobs"),
+   keep the push's own line rather than state something false. Not covered by the owner's decision and
+   unchanged: sResolvedB (the refund kind), sUpdate, aWalletC (customers have no wallet-credit path).
 
 ---
 
