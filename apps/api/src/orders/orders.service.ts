@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, deriveMerchantOrderTrack, haversineKm, isBusinessBookingAccountPhone, type LatLng, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, quoteFare, SERVICE_CORRIDOR, summarizeItems } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, deriveMerchantOrderTrack, isBusinessBookingAccountPhone, type LatLng, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, isInServiceArea, quoteFare, serviceTownsLabel, summarizeItems } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush, maxBroadcastRadiusM } from "../common/broadcast-policy";
 import { MicroCache } from "../common/micro-cache";
@@ -22,19 +22,16 @@ const REVEAL = new Set<string>(PHONE_REVEAL_STATUSES);
  *  state on reopen (a job the rider still physically holds after a missed `job:cancelled`). One day. */
 const HANDBACK_LOOKBACK_MS = 24 * 60 * 60 * 1_000;
 
-/** Q1 — Launch service corridor: the coverage disc's centre (from policy.ts SERVICE_CORRIDOR). */
-const CORRIDOR_CENTRE: LatLng = { lat: SERVICE_CORRIDOR.centerLat, lng: SERVICE_CORRIDOR.centerLng };
-
 /**
- * Q1 — reject an order whose pickup OR drop-off falls outside the launch service corridor (a single
- * coverage disc, {@link SERVICE_CORRIDOR.radiusKm} of the centre — no magic numbers). ONE check reused
- * for both waypoints via {@link haversineKm}. Throws a clear 4xx so the customer sees "outside our
- * service area" rather than a silent failure downstream.
+ * Reject an order whose pickup OR drop-off falls outside the service area — Harare metro and the
+ * satellite towns (`isInServiceArea`, packages/shared service-area.ts; owner 2026-10-02). ONE check
+ * reused for both waypoints. Throws a clear 4xx that names the towns we serve, so the customer sees
+ * "outside our service area" rather than a silent failure downstream.
  */
 export function assertWithinServiceCorridor(pickup: LatLng, dropoff: LatLng): void {
   for (const [label, point] of [["pickup", pickup], ["drop-off", dropoff]] as const) {
-    if (haversineKm(point, CORRIDOR_CENTRE) > SERVICE_CORRIDOR.radiusKm) {
-      throw new BadRequestException(`That ${label} is outside our service area.`);
+    if (!isInServiceArea(point)) {
+      throw new BadRequestException(`That ${label} is outside our service area. We deliver across ${serviceTownsLabel()}.`);
     }
   }
 }

@@ -3,12 +3,11 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { Prisma } from "@prisma/client";
 import {
   type CreateMerchantBranchRequest,
-  haversineKm,
   MERCHANT_BRANCHES_MAX,
   type MerchantBranchesResponse,
   type MerchantProfileResponse,
   merchantWaypoint,
-  SERVICE_CORRIDOR,
+  isInServiceArea,
   type SwitchMerchantBranchRequest,
 } from "@lynia/shared";
 import { PrismaService } from "../prisma/prisma.service";
@@ -75,7 +74,7 @@ export class MerchantBranchesService {
     if (profile.onHold) {
       throw new ForbiddenException({ reason: "on_hold", message: "This account is on hold. Message LyniaGo on WhatsApp to sort it out." });
     }
-    if (haversineKm(body.location.point, { lat: SERVICE_CORRIDOR.centerLat, lng: SERVICE_CORRIDOR.centerLng }) > SERVICE_CORRIDOR.radiusKm) {
+    if (!isInServiceArea(body.location.point)) {
       throw new BadRequestException({ reason: "outside_service_area", message: "That address is outside the area LyniaGo covers for now." });
     }
 

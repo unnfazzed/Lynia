@@ -1,4 +1,4 @@
-import { COMMISSION, KycStatus, RiderAccountStatus } from "@lynia/shared";
+import { COMMISSION, KycStatus, RiderAccountStatus, serviceTownsLabel } from "@lynia/shared";
 
 /**
  * The rider online-gate — pure functions, NO Nest/service dependencies. Extracted from rider.service so
@@ -83,6 +83,6 @@ export const REFUSAL_MESSAGE: Record<OnlineRefusal, string> = {
   suspended: "Your rider account is suspended",
   on_hold: "Your account is on hold — contact support to get back on the road",
   cooldown: "On cooldown after repeated cancellations — try again later",
-  out_of_area: "You're outside the service area — go online from inside the Harare corridor",
+  out_of_area: `You're outside the service area — go online from ${serviceTownsLabel()}`,
   commission_low_balance: "Top up your commission balance to keep riding",
 };

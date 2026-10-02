@@ -105,6 +105,39 @@ describe("FoodOrderService.placeOrder", () => {
     expect(created!.acceptDeadlineAt).toBeInstanceOf(Date);
   });
 
+  it("rejects a drop-off outside the service area server-side, naming the towns we serve (owner 2026-10-02)", async () => {
+    let created = false;
+    const { svc } = build({
+      order: { findFirst: async () => null, create: async () => { created = true; return {}; } },
+      merchant: { findFirst: async () => ({ id: "m1", location: { point: HARARE_CBD } }) },
+      merchantDish: { findMany: async () => [dish()] },
+    });
+    // Marondera, ~66 km out — beyond every town disc.
+    const threw = await svc
+      .placeOrder("c1", "m1", { items: [{ dishId: "d1", quantity: 1 }], dropoff: { point: { lat: -18.185, lng: 31.55 } }, paymentMethod: "cash" } as never)
+      .then(() => null)
+      .catch((e: unknown) => e);
+    const body = (threw as { getResponse: () => { reason: string; message: string } }).getResponse();
+    expect(body.reason).toBe("outside_service_area");
+    expect(body.message).toMatch(/Chitungwiza, Norton, Ruwa/);
+    expect(created).toBe(false);
+  });
+
+  it("has no distance cap inside the area: a CBD kitchen delivers to Norton, ~38 km away, at the per-km fee", async () => {
+    const NORTON = { lat: -17.8833, lng: 30.7 };
+    const { svc } = build({
+      order: { findFirst: async () => null, create: async ({ data }: { data: Record<string, unknown> }) => ({ ...data, id: "o1", merchantItems: [], pickupCodeAttempts: 0, noShowCallTimestamps: [] }) },
+      merchant: { findFirst: async () => ({ id: "m1", location: { point: HARARE_CBD, landmark: "CBD", contactPhone: "+263771234567" } }) },
+      merchantDish: { findMany: async () => [dish()] },
+    });
+    const res = await svc.placeOrder("c1", "m1", {
+      items: [{ dishId: "d1", quantity: 1 }],
+      dropoff: { point: NORTON, landmark: "Norton", contactPhone: "+263779999999" },
+      paymentMethod: "cash",
+    });
+    expect(res.deliveryFee).toBeGreaterThan(0);
+  });
+
   it("rejects a draft (photoless) dish — never orderable, mirrors the customer read API's exclusion", async () => {
     const { svc } = build({
       merchant: { findFirst: async () => ({ id: "m1", location: { point: HARARE_CBD } }) },

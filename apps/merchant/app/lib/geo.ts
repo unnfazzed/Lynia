@@ -1,4 +1,4 @@
-import { haversineKm, type LatLng, SERVICE_CORRIDOR } from "@lynia/shared";
+import { isInServiceArea, type LatLng, SERVICE_CORRIDOR } from "@lynia/shared";
 
 /**
  * The map maths behind `LocationPin` (merchant web upgrade L1: the sign-up's confirmed map pin). Plain
@@ -104,8 +104,9 @@ export function tileUrl(tile: Pick<VisibleTile, "x" | "y" | "zoom">): string {
   return `https://tile.openstreetmap.org/${tile.zoom}/${tile.x}/${tile.y}.png`;
 }
 
-/** The same corridor rule `POST /merchant/become` applies (SERVICE_CORRIDOR, 25 km from Harare CBD), so
- *  the form can say so while the pin is still being placed. The API stays the authority. */
+/** The same service-area rule `POST /merchant/become` applies (Harare metro + the satellite towns,
+ *  `isInServiceArea` in @lynia/shared), so the form can say so while the pin is still being placed. The API
+ *  stays the authority. */
 export function insideServiceArea(point: LatLng): boolean {
-  return haversineKm(point, HARARE_CBD) <= SERVICE_CORRIDOR.radiusKm;
+  return isInServiceArea(point);
 }

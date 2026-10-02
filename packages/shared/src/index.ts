@@ -4,6 +4,7 @@ export * from "./money";
 export * from "./policy";
 export * from "./geo";
 export * from "./pricing";
+export * from "./service-area";
 export * from "./restaurants-order";
 export * from "./restaurant-hours";
 export * from "./booking-cod";

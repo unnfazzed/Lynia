@@ -13,6 +13,8 @@ import {
 import { Prisma } from "@prisma/client";
 import {
   addMoney,
+  isInServiceArea,
+  serviceTownsLabel,
   DELIVERY_OTP_MAX_ATTEMPTS,
   deliveryFeeForDistance,
   deriveMerchantOrderTrack,
@@ -284,6 +286,15 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     const noun = merchant.businessType === "shop" ? (merchant.shopKind === "pharmacy" ? "pharmacy" : "shop") : "restaurant";
     const location = merchant.location as Waypoint | null;
     if (!location) throw new ConflictException(`This ${noun} isn't ready to take orders yet`);
+    // The service area (owner 2026-10-02): the app checks the drop-off before Place, but the server is the
+    // authority — a stale or older client must not book a delivery outside the towns we serve. There is NO
+    // merchant-to-customer distance cap inside the area; the fee stays per km.
+    if (!isInServiceArea(body.dropoff.point)) {
+      throw new BadRequestException({
+        reason: "outside_service_area",
+        message: `That delivery address is outside our service area. We deliver across ${serviceTownsLabel()}.`,
+      });
+    }
     const distanceKm = roundToCents(haversineKm(location.point, body.dropoff.point));
     // BRIEF §12: a scheduled order names one of the venue's offered slots. It may be placed while the venue
     // is closed ("Order for when they open") — the slot itself is inside its hours.

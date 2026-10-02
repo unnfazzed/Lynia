@@ -3471,3 +3471,46 @@ H6 card ("Where should we deliver?") is unchanged (owner: keep).
 - **Become-a-rider photo** (`app/rider/become.tsx`) and the **Orders empty state** have no drawn design.
   They wait for Claude Design, using the prompts in `docs/designs/owner-review-2026-10-02/PROMPTS.md`.
   The app does not improvise them.
+
+## D-61 · The service area names its towns in the out-of-area copy — APPROVED (2026-10-02)
+
+**Owner instruction, this session (2026-10-02):** *"Chitungwiza, Norton, Ruwa people should always be
+visible and Harare metro even outside CBD should get access to restaurants and merchants even if they are
+far. Don't put a distance limit."* Clarified: add Epworth, Domboshava, Mt Hampden and Goromonzi. "Visible"
+means **both** that people there can use everything **and** that the app names these towns as served.
+The delivery fee stays per km with no cap. Riders may go online anywhere in the area.
+
+**The rule (not a design change).** The single 25 km disc around Harare CBD is replaced by
+`isInServiceArea` (`packages/shared/src/service-area.ts`), a union of town discs:
+
+| Town | Radius |
+|---|---|
+| Harare (the old 25 km disc) | 25 km |
+| Chitungwiza | 10 km |
+| Norton | 10 km |
+| Ruwa | 10 km |
+| Epworth | 6 km |
+| Domboshava | 10 km |
+| Mt Hampden | 8 km |
+| Goromonzi | 10 km |
+
+It is enforced everywhere a location is checked:
+
+- parcel create and resend (API);
+- **restaurant / shop / pharmacy order placement (API)**, which had no server check before;
+- rider go-online (API);
+- merchant sign-up and new branch (API + merchant web pre-check);
+- the app's Send and checkout pre-checks.
+
+Merchants were never filtered by distance and still aren't. The broadcast hard cap (`BROADCAST.maxRadiusM`,
+25 km around the pickup) is unchanged.
+
+**The copy deviations.** Each one names the towns via `serviceTownsLabel()`:
+
+| Where | Handoff | App |
+|---|---|---|
+| Send step 1 out-of-area notice (send-compose-v2 `S.outArea`) | "We don't cover that pickup or drop-off yet. Move your pins closer to Harare to send your parcel, or check back as we expand." | "We don't cover that pickup or drop-off yet. We deliver across Harare, Chitungwiza, Norton, Ruwa, Epworth, Domboshava, Mt Hampden and Goromonzi." |
+| Rider gate, outside the area (Rider v2 `R.gAreaB`) | "LyniaGo works in Harare for now. Jobs show again as soon as you're back inside." | "LyniaGo works in Harare, Chitungwiza, …, Mt Hampden and Goromonzi. Jobs show again as soon as you're back inside." |
+| Rider online-gate message (`ONLINE_GATE_COPY.out_of_area`, API `REFUSAL_MESSAGE`) | "…inside the Harare service area / corridor…" | names the towns |
+
+The checkout's per-venue `O.r.outArea` ("{v} doesn't deliver to {a}…") is unchanged.

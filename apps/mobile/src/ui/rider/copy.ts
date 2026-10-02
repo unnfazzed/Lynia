@@ -4,6 +4,8 @@
  * The handoff's sample values (Tendai, Rudo, Chipo, $3.20, 0.8 km, 14:20 …) become the formatters in
  * `RF` below; the wording around them is unchanged. Components read strings from here only.
  */
+import { serviceTownsLabel } from "@lynia/shared";
+
 export const RIDER_COPY = {
   /* shell */
   tabJobs: "Jobs",
@@ -99,7 +101,8 @@ export const RIDER_COPY = {
   openLoc: "Open location settings",
   gpsOn: "I've turned it on",
   gAreaT: "You're outside the service area",
-  gAreaB: "LyniaGo works in Harare for now. Jobs show again as soon as you're back inside.",
+  // Owner 2026-10-02 (ledger D-61): the served towns are named, replacing "LyniaGo works in Harare for now."
+  gAreaB: `LyniaGo works in ${serviceTownsLabel()}. Jobs show again as soon as you're back inside.`,
   gAreaK: "Nearest edge",
   gCoolT: "You're on a cooldown",
   gCoolB: "You cancelled 3 jobs in 30 days. You can take jobs again when the timer ends.",
