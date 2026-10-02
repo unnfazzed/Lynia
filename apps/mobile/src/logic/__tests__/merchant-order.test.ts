@@ -204,10 +204,10 @@ describe("substitution (BRIEF §8)", () => {
   it("U2b: bread swap accepted, Mazoe removed, oil declined → $16.10 → $8.20", () => {
     expect(substitutionState(U2B, 1.5, { bread: "accept", oil: "remove" })).toEqual({ was: 16.1, newTotal: 8.2, unanswered: 0 });
   });
-  it("U2a: an unanswered swap blocks Confirm; the total is the no-answer default until answered", () => {
+  it("U2a: an unanswered swap blocks Confirm; the total shows the swaps as offered until answered", () => {
     const s = substitutionState(U2B, 1.5, {});
     expect(s.unanswered).toBe(2);
-    expect(s.newTotal).toBe(7);
+    expect(s.newTotal).toBe(13.2);
   });
   it("the small-order fee comes back when the kept items fall under the minimum", () => {
     expect(substitutionState({ ...U2B, keptSubtotal: 2 }, 1.5, { bread: "remove", oil: "remove" }).newTotal).toBe(4.5);

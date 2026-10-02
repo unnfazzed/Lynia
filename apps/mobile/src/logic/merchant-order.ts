@@ -305,7 +305,8 @@ export function roundClock(round: Pick<SubstitutionRoundView, "deadlineAt">, now
 
 /**
  * The live totals for a set of answers: "Was" (the round's `wasTotal`) and "New total" (the shared
- * `substitutionTotals` — kept lines + each accepted swap, the small-order fee re-applied, the delivery
+ * `substitutionTotals` — kept lines + each swap not removed (an unanswered one counts as offered, as U2a
+ * draws it), the small-order fee re-applied, the delivery
  * fee unchanged), and how many swaps are still unanswered.
  */
 export function substitutionState(
@@ -315,7 +316,8 @@ export function substitutionState(
 ): { was: number; newTotal: number; unanswered: number } {
   const swaps = round.lines.filter((l) => l.action === "swap");
   const answerOf = (l: { id: string; answer: SubAnswer | null }): SubAnswer | null => answers[l.id] ?? l.answer;
-  const accepted = swaps.filter((l) => answerOf(l) === "accept").map((l) => l.id);
+  // U2a draws the proposal's total before an answer (the swap as offered); a "Remove it" takes it out.
+  const accepted = swaps.filter((l) => answerOf(l) !== "remove").map((l) => l.id);
   const t = substitutionTotals({
     keptSubtotal: round.keptSubtotal,
     deliveryFee,

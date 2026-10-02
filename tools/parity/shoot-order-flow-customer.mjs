@@ -49,6 +49,10 @@ const tap = (name) => async (page) => {
   await page.getByRole("button", { name }).first().click();
   await page.waitForTimeout(700);
 };
+const check = (name) => async (page) => {
+  await page.getByRole("checkbox", { name }).first().click();
+  await page.waitForTimeout(500);
+};
 const seq = (...steps) => async (page) => {
   for (const s of steps) await s(page);
 };
@@ -107,7 +111,7 @@ const ROWS = [
   { id: "P1b", label: "P1b · Waiting for the rider", fixture: "of_p1b" },
   { id: "P2", label: "P2 · Code revealed", fixture: "of_p2", before: wait(800) },
   { id: "P3a", label: "P3a · Ring lapsed", fixture: "of_p3a" },
-  { id: "D1", label: "D1 · Delivered · rate + receipt", sub: "venue rated 5 + Tasty / Well packed, rider not yet", fixture: "of_d1", before: seq(tap(/^5 stars/), tap("Tasty"), tap("Well packed")) },
+  { id: "D1", label: "D1 · Delivered · rate + receipt", sub: "venue rated 5 + Tasty / Well packed, rider not yet", fixture: "of_d1", before: seq(tap(/^5 stars/), check("Tasty"), check("Well packed")) },
   { id: "D1b", label: "D1b · Rated + Undo", fixture: "of_d1", before: seq(tap(/^5 stars/), async (page) => { await page.getByRole("button", { name: /^4 stars/ }).nth(1).click(); await page.waitForTimeout(400); }, tap("Send rating")) },
   { id: "P5", label: "P5 · Customer door photo", fixture: "of_p5" },
   { id: "D2a", label: "D2a · Completed later · rated", fixture: "of_d2a" },

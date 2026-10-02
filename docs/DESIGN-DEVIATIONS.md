@@ -3260,6 +3260,22 @@ Each PR of the build order appends its line here.
   app still sees a coherent at-accept round (legacy `awaiting_item_approval`, swapped lines as removed;
   its approve = swaps declined, decline = free cancel). Not in this PR: merchant-side push for answers
   (socket queue refresh only), "finish delivery without the code" (the door photo is evidence only).
+- **PR 4 (2026-10-02, customer order screen round 2):** on Backend A's API. Substitution U2a/U2b/U3/U4a/U4b/U5:
+  an open round is the sheet's first block (SubCard per line; the 3-min countdown pill + bar from
+  `deadlineAt`; the U2 sub-line, now true since the server carries on after a timeout; "Was / New total"
+  live through the shared `substitutionTotals` — an unanswered swap counts as offered, as U2a draws it;
+  "Confirm changes · New total $X" disabled with the "Answer the swap to confirm" hint until every swap is
+  answered → `POST …/substitution/confirm`; "Cancel the whole order — free" → the unpaid cancel). U3 = the
+  "Changes: … taken off" note + the timeout toast once; U4b = the highlight announcement; U5 = the
+  `all_out_of_stock` ending. The legacy 60 s item approval still runs for orders without a v2 round.
+  Photos: T8 "Collected · sealed bag photo · View" (leads while < 5 min old, then under the rider card) +
+  the T8b ink viewer; P5 door-photo row + hero line ("Left with … at the gate — you agreed with …"); D4's
+  delivery-attempt photo. The four-step track is the server's (`track` on the read / `order:status`), the
+  phone's derivation only as a fallback. D1/D1b/D2: the two-row rating (venue: `POST …/venue-rating`,
+  4–5★ `O.d.tagsV`, 1–3★ `O.d.tagsVbad`; rider as before, tags now `careful_with_food`/`easy_to_reach`),
+  one Send + Skip, 10 s Undo for both, the D1b toast is `O.d.rated`; receipt from `shortId`, `itemsSubtotal`,
+  `smallOrderFee`. Not here: T15b / D3f owed line (Backend B not merged), shops/pharmacy/scheduled/Rx.
+  Evidence: `docs/parity/ORDER-FLOW-V2-CUSTOMER-2026-10-02-ROUND2.png`.
 
 ### 4 · Open questions, implemented as drawn (owner to confirm)
 

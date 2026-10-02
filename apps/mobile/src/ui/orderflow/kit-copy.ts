@@ -31,8 +31,6 @@ export const OX = {
   droppedToast: "{n} had to cancel. Finding another rider — same price.",
   /** of-screens-rt.js T7 sub. */
   atVenue: "{n} is at {v}.",
-  /** of-screens-rt.js T14d sub. */
-  lastUpdate: "Last update {t}",
   /** of-screens-rt.js T11a — the ready line. */
   readyAt: "{ready} · {t}",
   /** of-screens-upd.js U2a / U4a — the bar hint while a swap is unanswered. */
@@ -60,9 +58,6 @@ export function doorWhere(p: { reason: string | null; handedTo: string | null })
   if (p.reason === "handed_to_someone_else" && who) return ofFmt(OX.leftWith, { w: who });
   return null;
 }
-
-/** `ofFmt` for the kit strings. */
-export const oxFmt = ofFmt;
 
 /**
  * The handoff's sample rider is "Tendai" and its sample customer "Rudo"; `O` bakes those names into a
