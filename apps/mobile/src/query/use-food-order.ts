@@ -17,6 +17,8 @@ function pollIntervalFor(order: MerchantOrderResponse | undefined): number | fal
   if (!order) return TIGHT_POLL_MS;
   if (order.status === "cancelled") return false; // terminal — nothing left to observe
   if (order.merchantPhase === "awaiting_accept" || order.merchantPhase === "awaiting_item_approval") return TIGHT_POLL_MS;
+  // Order flow v2 (BRIEF §8): a mid-prep substitution round has a 3-minute answer window too.
+  if (order.substitution?.status === "open") return TIGHT_POLL_MS;
   if (order.merchantPhase === "awaiting_payment") return RELAXED_POLL_MS;
   // preparing / ready_for_pickup / null (handed off to C3 dispatch): D3's job from here — stop
   // tightening the poll, a relaxed cadence is enough to notice the hand-off.

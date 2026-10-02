@@ -7,12 +7,14 @@
  */
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { MerchantOrderResponse } from "@lynia/shared";
+import type { MerchantOrderResponse, SubstitutionRoundView } from "@lynia/shared";
 import type { OrderSnapshot } from "../../../src/api/orders";
 
 const mockGetFoodOrder = jest.fn();
 const mockRespondToItems = jest.fn(async (..._a: unknown[]) => ({}));
 const mockCancelUnpaid = jest.fn(async (..._a: unknown[]) => ({}));
+const mockConfirmSub = jest.fn(async (..._a: unknown[]) => ({}));
+const mockRateVenue = jest.fn(async (..._a: unknown[]) => ({ score: 5, tags: [], at: new Date().toISOString() }));
 const mockConfirmCash = jest.fn(async (..._a: unknown[]) => ({ orderId: "order-1", customerCashConfirmedAt: new Date().toISOString() }));
 const mockGetOrder = jest.fn();
 const mockCancelOrder = jest.fn(async (..._a: unknown[]) => ({ orderId: "order-1", status: "cancelled", cancelledBy: "customer", cooldownUntil: null }));
@@ -35,6 +37,8 @@ jest.mock("../../../src/api/food-orders", () => ({
   respondToFoodOrderItems: (...a: unknown[]) => mockRespondToItems(...a),
   cancelUnpaidFoodOrder: (...a: unknown[]) => mockCancelUnpaid(...a),
   confirmFoodCustomerCash: (...a: unknown[]) => mockConfirmCash(...a),
+  confirmFoodSubstitution: (...a: unknown[]) => mockConfirmSub(...a),
+  rateFoodVenue: (...a: unknown[]) => mockRateVenue(...a),
 }));
 jest.mock("../../../src/api/orders", () => ({
   getOrder: (...a: unknown[]) => mockGetOrder(...a),
@@ -115,6 +119,39 @@ function snapshot(over: Partial<OrderSnapshot> = {}): OrderSnapshot {
   };
 }
 
+function subLine(over: Partial<SubstitutionRoundView["lines"][number]> = {}): SubstitutionRoundView["lines"][number] {
+  return {
+    id: "b0000000-0000-4000-8000-000000000001",
+    itemId: "c0000000-0000-4000-8000-000000000001",
+    action: "swap",
+    name: "Bread (Lobels 700g)",
+    priceUsd: 1.1,
+    quantity: 1,
+    newQuantity: null,
+    swapDishId: "d0000000-0000-4000-8000-000000000001",
+    swapName: "Bakers Inn 700g",
+    swapPriceUsd: 1.2,
+    swapQuantity: 1,
+    swapPhotoUrl: null,
+    answer: null,
+    ...over,
+  };
+}
+function round(over: Partial<SubstitutionRoundView> = {}): SubstitutionRoundView {
+  return {
+    id: "a0000000-0000-4000-8000-000000000001",
+    kind: "at_accept",
+    status: "open",
+    createdAt: iso(-19_000),
+    deadlineAt: iso(161_000),
+    resolvedAt: null,
+    lines: [subLine()],
+    wasTotal: 16.1,
+    keptSubtotal: 13.5,
+    ...over,
+  };
+}
+
 const RIDER_CARD = { firstName: "Tendai", lastName: "Moyo", photoUrl: null, ratingAvg: 4.8, ratingCount: 40, tripsCount: 132, plate: "ABH 4721", verified: true };
 
 function flatten(children: unknown): string {
@@ -140,7 +177,7 @@ let active: renderer.ReactTestRenderer | null = null;
 async function render(food: MerchantOrderResponse, snap: OrderSnapshot): Promise<renderer.ReactTestRenderer> {
   mockGetFoodOrder.mockResolvedValue(food);
   mockGetOrder.mockResolvedValue(snap);
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false, gcTime: 0 } } });
   let tree!: renderer.ReactTestRenderer;
   await act(async () => {
     tree = renderer.create(
@@ -210,6 +247,104 @@ describe("merchant order — one order screen (D-59)", () => {
     expect(mockRespondToItems).toHaveBeenCalledWith("order-1", false);
   });
 
+  it("U2a: a v2 swap round — the countdown, the sub-line, Confirm disabled until the swap is answered, then the live total", async () => {
+    const t = await render(foodOrder({ merchantPhase: "awaiting_item_approval", itemApprovalDeadlineAt: iso(161_000), total: 15, substitution: round() }), snapshot());
+    expect(has(t, "Gava’s Kitchen needs your answer")).toBe(true);
+    expect(has(t, "Answer in 3 min. If you don’t, swaps are declined, those items are taken off and the order carries on.")).toBe(true);
+    expect(has(t, "Swap for Bakers Inn 700g")).toBe(true);
+    expect(has(t, "+$0.10")).toBe(true);
+    expect(has(t, "Answer the swap to confirm")).toBe(true);
+    const confirm = (): renderer.ReactTestInstance => t.root.findAll((n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("Confirm changes") && typeof n.props.onPress === "function")[0]!;
+    expect(confirm().props.disabled).toBe(true);
+    press(t, "Accept swap");
+    expect(has(t, "Answer the swap to confirm")).toBe(false);
+    expect(confirm().props.accessibilityLabel).toBe("Confirm changes · New total $16.20");
+    press(t, "Confirm changes · New total $16.20");
+    await act(async () => undefined);
+    expect(mockConfirmSub).toHaveBeenCalledWith("order-1", { roundId: "a0000000-0000-4000-8000-000000000001", answers: [{ lineId: "b0000000-0000-4000-8000-000000000001", accept: true }] });
+    expect(mockRespondToItems).not.toHaveBeenCalled();
+  });
+
+  it("U2b: three lines — a removal is announced, each swap answered, New total $8.20; Cancel the whole order is free", async () => {
+    const lines = [
+      subLine({ id: "b0000000-0000-4000-8000-000000000001" }),
+      subLine({ id: "b0000000-0000-4000-8000-000000000002", action: "remove", name: "Mazoe orange 2L", priceUsd: 3.2, swapName: null, swapPriceUsd: null, swapQuantity: null }),
+      subLine({ id: "b0000000-0000-4000-8000-000000000003", name: "Cooking oil 2L", priceUsd: 4.8, swapName: "Olivine cooking oil 2L", swapPriceUsd: 5 }),
+    ];
+    const t = await render(foodOrder({ merchantPhase: "awaiting_item_approval", substitution: round({ lines, keptSubtotal: 5.5 }) }), snapshot());
+    expect(has(t, "Will be removed")).toBe(true);
+    expect(has(t, "−$3.20")).toBe(true);
+    // One press handler per button (the composite and its host node share it).
+    const buttons = (label: string): (() => void)[] => [...new Set(t.root.findAll((n) => n.props.accessibilityLabel === label && typeof n.props.onPress === "function").map((n) => n.props.onPress as () => void))];
+    const accepts = buttons("Accept swap");
+    const removes = buttons("Remove it");
+    expect(accepts.length).toBe(2);
+    act(() => accepts[0]!());
+    act(() => removes[1]!());
+    expect(has(t, "$8.20")).toBe(true);
+    press(t, "Confirm changes · New total $8.20");
+    await act(async () => undefined);
+    expect(mockConfirmSub).toHaveBeenCalledWith("order-1", {
+      roundId: "a0000000-0000-4000-8000-000000000001",
+      answers: [
+        { lineId: "b0000000-0000-4000-8000-000000000001", accept: true },
+        { lineId: "b0000000-0000-4000-8000-000000000003", accept: false },
+      ],
+    });
+    press(t, "Cancel the whole order — free");
+    await act(async () => undefined);
+    expect(mockCancelUnpaid).toHaveBeenCalledWith("order-1");
+  });
+
+  it("U4a: a mid-prep change uses the same card", async () => {
+    const t = await render(foodOrder({ substitution: round({ kind: "mid_prep" }) }), snapshot());
+    expect(has(t, "Gava’s Kitchen wants to change your order")).toBe(true);
+    expect(has(t, "It’s already cooking. Answer in 3 min — no answer keeps your order as it was, minus anything they can’t supply.")).toBe(true);
+    expect(has(t, "Accept swap")).toBe(true);
+  });
+
+  it("U3: no answer in time — the order carries on, the change is said under the track", async () => {
+    const t = await render(
+      foodOrder({ total: 15.4, substitution: round({ status: "timed_out", resolvedAt: iso(-5_000), lines: [subLine({ answer: "remove" })] }) }),
+      snapshot(),
+    );
+    expect(has(t, "Cooking your order")).toBe(true);
+    expect(has(t, "Changes: Bread (Lobels 700g) taken off · −$1.10")).toBe(true);
+    expect(has(t, "No answer in time. Bread (Lobels 700g) taken off — your order carries on. New total $15.40.")).toBe(true);
+  });
+
+  it("U4b: a reduce-only change is announced — nothing to answer", async () => {
+    const t = await render(
+      foodOrder({ total: 12.9, substitution: round({ status: "applied", deadlineAt: null, resolvedAt: iso(-5_000), lines: [subLine({ action: "remove", name: "Mazoe orange 2L", priceUsd: 3.2, swapName: null, swapPriceUsd: null, swapQuantity: null })] }) }),
+      snapshot(),
+    );
+    expect(has(t, "Gava’s Kitchen took off Mazoe orange 2L — they ran out. New total $12.90. Nothing to answer.")).toBe(true);
+    expect(has(t, "Accept swap")).toBe(false);
+  });
+
+  it("legacy: an item approval without a v2 round keeps the 60 s path", async () => {
+    const items = [...foodOrder().items, { dishId: "d3", name: "Mazoe orange 2L", priceUsd: 3.2, quantity: 1, note: null, available: false }];
+    const t = await render(foodOrder({ merchantPhase: "awaiting_item_approval", itemApprovalDeadlineAt: iso(50_000), items }), snapshot());
+    expect(has(t, "Answer in 3 min. If you don’t, swaps are declined, those items are taken off and the order carries on.")).toBe(false);
+    expect(has(t, "Will be removed")).toBe(true);
+  });
+
+  it("T8: collected — the sealed-bag photo row leads while fresh; View opens the viewer (T8b)", async () => {
+    const t = await render(
+      foodOrder({ status: "picked_up", merchantPhase: null, riderId: "r", pickupProof: { photoUrl: "https://example.invalid/bag.jpg", takenAt: iso(-60_000), bagSealed: true } }),
+      snapshot({ status: "picked_up", riderCard: RIDER_CARD, rider: { profileId: "r", currentLat: -17.82, currentLng: 31.06, updatedAt: iso(-2_000) } }),
+    );
+    expect(has(t, "Collected · sealed bag photo")).toBe(true);
+    expect(has(t, /^Tendai took this at \d\d:\d\d at Gava’s Kitchen$/m)).toBe(true);
+    press(t, "View");
+    expect(has(t, "Sealed bag photo")).toBe(true);
+  });
+
+  it("server track: the step comes from the read's track when present", async () => {
+    const t = await render(foodOrder({ merchantPhase: "awaiting_accept", acceptDeadlineAt: iso(150_000), track: { step: "making", index: 1, rxChecked: false } }), snapshot());
+    expect(t.root.findAll((n) => n.props.accessibilityLabel === "Step 2 of 4, Cooking").length).toBeGreaterThan(0);
+  });
+
   it("T6: a rider heading to the venue — the rider card, no delivery code yet (cash: code only after both confirms)", async () => {
     const t = await render(
       foodOrder({ status: "en_route_pickup", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003" }),
@@ -260,22 +395,108 @@ describe("merchant order — one order screen (D-59)", () => {
     expect(has(t, "Share code")).toBe(true);
   });
 
-  it("D1: delivered — hero, the rider rating (no venue row until the backend has one), the receipt, Order again", async () => {
+  it("D1: delivered — hero, the two-row rating (venue + rider), the receipt, Order again; D1b toast + Undo", async () => {
     const t = await render(
-      foodOrder({ status: "delivered", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003", deliveredAt: iso(-60_000) }),
+      foodOrder({ status: "delivered", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003", deliveredAt: iso(-60_000), shortId: "A1B2", itemsSubtotal: 15, smallOrderFee: 0 }),
       snapshot({ status: "delivered", riderCard: RIDER_CARD }),
     );
     expect(has(t, /^Delivered \d\d:\d\d$/m)).toBe(true);
     expect(has(t, "$16.50 paid in cash · Gava’s Kitchen")).toBe(true);
     expect(has(t, "How was Tendai?")).toBe(true);
-    expect(has(t, "How was Gava’s Kitchen?")).toBe(false);
+    expect(has(t, "How was Gava’s Kitchen?")).toBe(true);
     expect(has(t, "Receipt")).toBe(true);
+    expect(has(t, "Order #A1B2")).toBe(true);
     expect(has(t, "Paid in cash to Tendai")).toBe(true);
-    press(t, "4 stars, Good");
+    const fives = t.root.findAll((n) => n.props.accessibilityLabel === "5 stars, Great" && typeof n.props.onPress === "function");
+    act(() => fives[0]!.props.onPress());
+    expect(has(t, "Tasty")).toBe(true);
+    press(t, "Tasty");
+    const fours = t.root.findAll((n) => n.props.accessibilityLabel === "4 stars, Good" && typeof n.props.onPress === "function");
+    act(() => fours[fours.length - 1]!.props.onPress());
     press(t, "Send rating");
+    expect(has(t, "Thanks — you rated Gava’s Kitchen ★5 and Tendai ★4.")).toBe(true);
     expect(has(t, "You rated")).toBe(true);
+    // Undo: nothing is sent.
+    press(t, /^Undo/);
+    expect(has(t, "How was Gava’s Kitchen?")).toBe(true);
+    // Rate again and leave: the armed rating is sent on the way out.
+    act(() => t.root.findAll((n) => n.props.accessibilityLabel === "5 stars, Great" && typeof n.props.onPress === "function")[0]!.props.onPress());
+    press(t, "Send rating");
     press(t, "Order again");
     expect(mockPush).toHaveBeenCalledWith("/food/m1");
+    act(() => t.unmount());
+    active = null;
+    await act(async () => undefined);
+    expect(mockRateVenue).toHaveBeenCalledWith("order-1", { score: 5, tags: ["tasty"] });
+    expect(mockRate).toHaveBeenCalledWith("order-1", { score: 4 });
+  });
+
+  it("D1 low stars: the venue row offers the problem tags", async () => {
+    const t = await render(
+      foodOrder({ status: "delivered", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003", deliveredAt: iso(-60_000) }),
+      snapshot({ status: "delivered", riderCard: RIDER_CARD }),
+    );
+    act(() => t.root.findAll((n) => n.props.accessibilityLabel === "2 stars, Poor" && typeof n.props.onPress === "function")[0]!.props.onPress());
+    expect(has(t, "Cold")).toBe(true);
+    expect(has(t, "Tasty")).toBe(false);
+  });
+
+  it("D1b: both already rated on the server — two \"You rated\" rows, no rating card", async () => {
+    const t = await render(
+      foodOrder({ status: "completed", merchantPhase: null, riderId: "r", deliveredAt: iso(-60_000), venueRating: { score: 5, tags: [], at: iso(-1000) } }),
+      snapshot({ status: "completed", riderCard: RIDER_CARD, rating: { score: 4 } as OrderSnapshot["rating"] }),
+    );
+    expect(allText(t).match(/You rated/g)?.length).toBe(2);
+    expect(has(t, "How was Gava’s Kitchen?")).toBe(false);
+  });
+
+  it("P5: the door photo when the code couldn't be used — row, hero line, viewer", async () => {
+    const t = await render(
+      foodOrder({
+        status: "delivered",
+        merchantPhase: null,
+        riderId: "r",
+        deliveredAt: iso(-60_000),
+        doorProof: { photoUrl: "https://example.invalid/door.jpg", takenAt: iso(-90_000), reason: "left_at_gate", handedTo: "Chipo" },
+      }),
+      snapshot({ status: "delivered", riderCard: RIDER_CARD }),
+    );
+    expect(has(t, "Delivery photo")).toBe(true);
+    expect(has(t, /^Left with Chipo at the gate · \d\d:\d\d$/m)).toBe(true);
+    expect(has(t, "Left with Chipo at the gate — you agreed with Tendai.")).toBe(true);
+    press(t, "View");
+    expect(t.root.findAll((n) => n.props.visible === true && n.props.animationType === "fade").length).toBeGreaterThan(0);
+  });
+
+  it("T15b: after collection the cancel costs the full total — through the generic cancel", async () => {
+    const t = await render(
+      foodOrder({ status: "en_route_dropoff", merchantPhase: null, riderId: "r" }),
+      snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, rider: { profileId: "r", currentLat: -17.83, currentLng: 31.05, updatedAt: iso(-2_000) } }),
+    );
+    press(t, "Cancel order");
+    expect(has(t, "Tendai already has your order. Cancelling now costs the full $16.50 — the kitchen has made it and the rider has carried it.")).toBe(true);
+    press(t, "Cancel and pay $16.50");
+    await act(async () => undefined);
+    expect(mockCancelOrder).toHaveBeenCalledWith("order-1", {});
+    expect(mockCancelUnpaid).not.toHaveBeenCalled();
+  });
+
+  it("D3f: cancelled after pickup — the owed line from the server", async () => {
+    const t = await render(
+      foodOrder({ status: "cancelled", merchantPhase: null, riderId: "r", owedUsd: 16.5 }),
+      snapshot({ status: "cancelled", cancelledBy: "customer", riderCard: RIDER_CARD, events: [{ status: "requested", createdAt: iso(-60_000) }, { status: "picked_up", createdAt: iso(-30_000) }] }),
+    );
+    expect(has(t, "You cancelled after pickup")).toBe(true);
+    expect(has(t, "You owe $16.50 — pay it on your next order.")).toBe(true);
+    expect(has(t, "$16.50 owed")).toBe(true);
+    expect(has(t, "No charge")).toBe(false);
+  });
+
+  it("U5: everything out of stock — cancelled, nothing charged", async () => {
+    const t = await render(foodOrder({ status: "cancelled", merchantPhase: null, rejectionReason: "all_out_of_stock" }), snapshot({ status: "cancelled", cancelledBy: null }));
+    expect(has(t, "Gava’s Kitchen couldn’t supply anything in your order")).toBe(true);
+    expect(has(t, "They’re out of every item. Your order is cancelled and nothing was charged.")).toBe(true);
+    expect(has(t, "No charge")).toBe(true);
   });
 
   it("D3d: no rider found — the apology ending, nothing charged", async () => {

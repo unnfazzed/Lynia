@@ -1,8 +1,10 @@
 import { tokens } from "@lynia/shared/tokens";
 import React, { useEffect, useRef } from "react";
-import { ActivityIndicator, Animated, Easing, PixelRatio, Text, type TextStyle, View, type ViewStyle } from "react-native";
+import { ActivityIndicator, Animated, Easing, Modal, PixelRatio, Text, type TextStyle, View, type ViewStyle } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { RestaurantsSticker } from "../art/stickers";
 import { Icon, type IconName } from "../Icon";
+import { RemoteImage } from "../RemoteImage";
 import { Tappable } from "../Tappable";
 import { RiderAvatar, VerifiedTag } from "../order/kit";
 import { codeGroups } from "../../logic/merchant-order";
@@ -171,7 +173,7 @@ export function SmallBtn({
 }: {
   label: string;
   icon?: IconName;
-  kind?: "surface" | "fill" | "white";
+  kind?: "surface" | "fill" | "white" | "picked";
   flex?: number;
   onPress: () => void;
   disabled?: boolean;
@@ -179,7 +181,7 @@ export function SmallBtn({
   selected?: boolean;
 }): React.ReactElement {
   const bg = kind === "fill" ? C.cta : kind === "white" ? C.bg : C.surface;
-  const fg = disabled ? C.muted : kind === "fill" ? C.onAccent : C.accentText;
+  const fg = disabled && kind !== "fill" && kind !== "picked" ? C.muted : kind === "fill" ? C.onAccent : kind === "picked" ? C.ink : C.accentText;
   return (
     <Tappable
       tone={kind === "fill" ? "onDark" : "row"}
@@ -188,7 +190,7 @@ export function SmallBtn({
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled: !!(disabled || loading), busy: !!loading, selected: !!selected }}
-      style={{ flex, minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 4, borderRadius: tokens.radius.pill, backgroundColor: bg }}
+      style={{ flex, minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 4, borderRadius: tokens.radius.pill, backgroundColor: bg, borderWidth: kind === "picked" ? 1.5 : 0, borderColor: C.ink }}
     >
       {loading ? <ActivityIndicator size="small" color={fg} /> : icon ? <Icon name={icon} size={16} color={fg} /> : null}
       <Text style={{ fontSize: 14, fontWeight: "800", color: fg, textAlign: "center", flexShrink: 1 }}>{label}</Text>
@@ -564,24 +566,114 @@ export function Disc({ icon, ok }: { icon: IconName; ok?: boolean }): React.Reac
   );
 }
 
-/** ★ SubCard for a removal (U2): photo slot · "Out of X · ~~$1.10~~" · "Will be removed" · the −$ pill. */
-export function RemovalCard({ name, was }: { name: string; was: number }): React.ReactElement {
+/** A photo tile (44 / 48, r10): the photo when there is one, else the surface placeholder. */
+function PhotoTile({ uri, size, icon }: { uri: string | null; size: number; icon: IconName }): React.ReactElement {
   return (
-    <View style={{ borderWidth: 1, borderColor: C.line, borderRadius: 16, padding: 12, flexDirection: "row", gap: 10, alignItems: "flex-start" }}>
-      <View style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: C.surface, alignItems: "center", justifyContent: "center" }}>
-        <Icon name="utensils" size={18} color={C.muted} />
-      </View>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={{ fontSize: 13, lineHeight: 18, fontWeight: "600", color: C.muted }}>
-          {ofFmt(O.u.outOf, { i: name })} · <Text style={{ textDecorationLine: "line-through", ...TAB }}>{usdOf(was)}</Text>
-        </Text>
-        <Text style={{ fontSize: 15, lineHeight: 20, fontWeight: "700", marginTop: 2, color: C.ink }}>{O.u.removed}</Text>
-        <View style={{ flexDirection: "row", marginTop: 4 }}>
-          <View style={{ height: 20, borderRadius: tokens.radius.pill, paddingHorizontal: 9, justifyContent: "center", backgroundColor: C.accentWash }}>
-            <Text style={{ fontSize: 11, fontWeight: "700", color: C.accentText, ...TAB }}>{ofFmt(O.u.diff, { d: `−${usdOf(was)}` })}</Text>
+    <View accessibilityElementsHidden importantForAccessibility="no" style={{ width: size, height: size, borderRadius: 10, overflow: "hidden", backgroundColor: C.surface, alignItems: "center", justifyContent: "center" }}>
+      {uri ? <RemoteImage source={{ uri }} cachePolicy="memory" style={{ width: size, height: size }} /> : <Icon name={icon} size={18} color={C.muted} />}
+    </View>
+  );
+}
+
+/** The ± pill: up = highlight wash + highlight ink, down = mint + accent text (11/700, 20 high). */
+function DiffPill({ d }: { d: number }): React.ReactElement {
+  const up = d > 0;
+  const text = `${up ? "+" : d < 0 ? "−" : ""}${usdOf(Math.abs(d))}`;
+  return (
+    <View style={{ height: 20, borderRadius: tokens.radius.pill, paddingHorizontal: 9, justifyContent: "center", backgroundColor: up ? C.highlightChipWash : C.accentWash }}>
+      <Text style={{ fontSize: 11, fontWeight: "700", color: up ? C.highlightChipInk : C.accentText, ...TAB }}>{ofFmt(O.u.diff, { d: text })}</Text>
+    </View>
+  );
+}
+
+export interface SubCardView {
+  action: "remove" | "swap" | "reduce";
+  name: string;
+  was: number;
+  newQuantity: number | null;
+  swapName: string | null;
+  now: number | null;
+  diff: number;
+  photoUrl: string | null;
+}
+
+/**
+ * ★ SubCard (of-screens-upd.js `subLine`): 44 photo · "Out of X · ~~$1.10~~" 13/600 muted · "Swap for Y"
+ * (or "Will be removed") 15/700 · the new price + the ± pill · for a swap, two 44 buttons (Accept swap /
+ * Remove it — the picked one filled, or ink-ringed). An unanswered swap has the 1.5 green border.
+ */
+export function SubCard({ line, answer, onAnswer, disabled }: { line: SubCardView; answer: "accept" | "remove" | null; onAnswer?: (a: "accept" | "remove") => void; disabled?: boolean }): React.ReactElement {
+  const swap = line.action === "swap";
+  const need = swap && answer == null && !!onAnswer;
+  const title = swap ? ofFmt(O.u.swapFor, { i: line.swapName ?? line.name }) : line.action === "reduce" ? `${line.newQuantity ?? 0}× ${line.name}` : O.u.removed;
+  return (
+    <View style={{ borderWidth: need ? 1.5 : 1, borderColor: need ? C.accentText : C.line, borderRadius: 16, padding: 12, gap: 8, backgroundColor: C.bg }}>
+      <View style={{ flexDirection: "row", gap: 10, alignItems: "flex-start" }}>
+        <PhotoTile uri={swap ? line.photoUrl : null} size={44} icon="package" />
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={{ fontSize: 13, lineHeight: 18, fontWeight: "600", color: C.muted }}>
+            {ofFmt(O.u.outOf, { i: line.name })} · <Text style={{ textDecorationLine: "line-through", ...TAB }}>{usdOf(line.was)}</Text>
+          </Text>
+          <Text style={{ fontSize: 15, lineHeight: 20, fontWeight: "700", marginTop: 2, color: C.ink }}>{title}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 }}>
+            {swap && line.now != null ? <Text style={{ fontSize: 14, fontWeight: "600", color: C.ink, ...TAB }}>{usdOf(line.now)}</Text> : null}
+            <DiffPill d={line.diff} />
           </View>
         </View>
       </View>
+      {swap && onAnswer ? (
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <SmallBtn flex={1} kind={answer === "accept" ? "fill" : "surface"} icon={answer === "accept" ? "check" : undefined} selected={answer === "accept"} label={O.u.acceptSwap} onPress={() => onAnswer("accept")} disabled={disabled} />
+          <SmallBtn flex={1} kind={answer === "remove" ? "picked" : "surface"} icon={answer === "remove" ? "check" : undefined} selected={answer === "remove"} label={O.u.removeIt} onPress={() => onAnswer("remove")} disabled={disabled} />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/** ★ PhotoRow (of-kit.js `photoRow`): card · 48 thumb · title 14/700 · sub 13 muted · View SmallBtn. */
+export function PhotoRow({ title, sub, uri, onView }: { title: string; sub: string; uri: string | null; onView: () => void }): React.ReactElement {
+  return (
+    <View style={{ borderWidth: 1, borderColor: C.line, borderRadius: 16, paddingVertical: 10, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: C.bg }}>
+      <PhotoTile uri={uri} size={48} icon="image" />
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={{ fontSize: 14, lineHeight: 19, fontWeight: "700", color: C.ink }}>{title}</Text>
+        <Mut>{sub}</Mut>
+      </View>
+      <SmallBtn label={O.c.view} icon="image" onPress={onView} />
+    </View>
+  );
+}
+
+/** ★ PhotoViewer (T8b): ink full screen · title 16/700 white + white Close · the photo r16 · caption 13 forest-sub. */
+export function PhotoViewer({ visible, title, uri, caption, onClose }: { visible: boolean; title: string; uri: string | null; caption: string; onClose: () => void }): React.ReactElement {
+  return (
+    <Modal visible={visible} transparent={false} animationType="fade" onRequestClose={onClose}>
+      <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1, backgroundColor: C.ink }}>
+        <View style={{ flex: 1, paddingTop: 32, paddingHorizontal: 16, paddingBottom: 16, gap: 12 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Text accessibilityRole="header" style={{ flex: 1, fontSize: 16, fontWeight: "700", color: C.onAccent }}>
+              {title}
+            </Text>
+            <SmallBtn kind="white" icon="x" label={O.c.close} onPress={onClose} />
+          </View>
+          <View style={{ flex: 1, borderRadius: 16, overflow: "hidden", backgroundColor: C.surface, alignItems: "center", justifyContent: "center" }}>
+            {uri ? <RemoteImage source={{ uri }} cachePolicy="memory" resizeMode="contain" accessible accessibilityLabel={title} style={{ width: "100%", height: "100%" }} /> : <Icon name="image" size={28} color={C.muted} />}
+          </View>
+          <Text style={{ fontSize: 13, lineHeight: 18, color: C.onForestMuted }}>{caption}</Text>
+        </View>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+/** One row of the two-row rating card: "How was …?" 15/700 · five 44 stars · the chips once starred. */
+export function RateRow({ title, value, onChange, tags, on, onToggle }: { title: string; value: number; onChange: (n: number) => void; tags: readonly string[] | null; on: readonly number[]; onToggle: (i: number) => void }): React.ReactElement {
+  return (
+    <View style={{ gap: 6 }}>
+      <Text style={{ fontSize: 15, fontWeight: "700", color: C.ink }}>{title}</Text>
+      <GoldStars value={value} onChange={onChange} labelFor={(n) => O.d.rl[n] ?? ""} />
+      {value && tags ? <Chips list={tags} on={on} onToggle={onToggle} /> : null}
     </View>
   );
 }

@@ -3314,6 +3314,26 @@ Each PR of the build order appends its line here.
   Kept although not drawn (functional, from D-48/D-50): "Mark ride completed" (M5), "It wasn't returned"
   (M6b), the customer's number (moved into the Change items sheet). Merchant `--highlight-*` tokens stay
   the merchant face's values (no parallel tokens).
+- **PR 4 (2026-10-02, customer order screen round 2):** on Backend A's API. Substitution U2a/U2b/U3/U4a/U4b/U5:
+  an open round is the sheet's first block (SubCard per line; the 3-min countdown pill + bar from
+  `deadlineAt`; the U2 sub-line, now true since the server carries on after a timeout; "Was / New total"
+  live through the shared `substitutionTotals` — an unanswered swap counts as offered, as U2a draws it;
+  "Confirm changes · New total $X" disabled with the "Answer the swap to confirm" hint until every swap is
+  answered → `POST …/substitution/confirm`; "Cancel the whole order — free" → the unpaid cancel). U3 = the
+  "Changes: … taken off" note + the timeout toast once; U4b = the highlight announcement; U5 = the
+  `all_out_of_stock` ending. The legacy 60 s item approval still runs for orders without a v2 round.
+  Photos: T8 "Collected · sealed bag photo · View" (leads while < 5 min old, then under the rider card) +
+  the T8b ink viewer; P5 door-photo row + hero line ("Left with … at the gate — you agreed with …"); D4's
+  delivery-attempt photo. The four-step track is the server's (`track` on the read / `order:status`), the
+  phone's derivation only as a fallback. D1/D1b/D2: the two-row rating (venue: `POST …/venue-rating`,
+  4–5★ `O.d.tagsV`, 1–3★ `O.d.tagsVbad`; rider as before, tags now `careful_with_food`/`easy_to_reach`),
+  one Send + Skip, 10 s Undo for both, the D1b toast is `O.d.rated`; receipt from `shortId`, `itemsSubtotal`,
+  `smallOrderFee`. T15b (Backend B): after collection a "Cancel order" link under the rider card (the
+  handoff draws the sheet, not its entry) opens the full-cost sheet, "Cancel and pay $X" → the generic
+  cancel, which records the owed line; D3f renders the owed sentence + "$X owed" from `owedUsd`. Not here:
+  shops/pharmacy/scheduled/Rx, the `previousBalanceUsd` receipt line (no copy in `O`).
+  Evidence: `docs/parity/ORDER-FLOW-V2-CUSTOMER-2026-10-02-ROUND2.png`.
+
 - **Part 6 (merchant + rider round 2, 2026-10-02, on Backend A/B):** Merchant: **U1a/U1b** — the ringing
   sheet is the proposer (tap a line → "Remove it" / "Swap for…"; the swap picker lists the venue's own live
   items with the price difference; a removed line strikes with "Removing", a swap shows the green ⇄ line;
@@ -3351,7 +3371,7 @@ Each PR of the build order appends its line here.
 
 1. A swap that lowers the price still needs a yes (drawn: "any swap needs a yes").
 2. Cancel after collection: "You owe $X — pay it on your next order" (D3f) needs a customer ledger line;
-   until that lands D3f's owed line is not rendered (NEEDS BACKEND).
+   the ledger landed with Backend B (`owedUsd`, `GET /restaurants/balance`) and D3f renders it (PR 4).
 3. Restaurant pickup photos stay optional.
 4. Same-day slots a venue can't meet are hidden (no "Too late for today").
 5. No limit on merchant "Change items" rounds.

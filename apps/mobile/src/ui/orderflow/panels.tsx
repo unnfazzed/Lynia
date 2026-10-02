@@ -31,17 +31,23 @@ function ModalSheet({ visible, onClose, children }: { visible: boolean; onClose:
   );
 }
 
-/** T15a/c — "Cancel this order?": free before the rider collects; a reason (optional); Cancel order / Keep order. */
+/**
+ * T15a/c — "Cancel this order?": free before the rider collects; a reason (optional); Cancel order / Keep
+ * order. T15b — after collection (`full`): the full-cost line and "Cancel and pay $X".
+ */
 export function CancelSheet({
   visible,
   venue,
   busy,
   onCancel,
   onKeep,
+  full,
 }: {
   visible: boolean;
   venue: string;
   busy: boolean;
+  /** After collection: the full-cost sentence and the amount. */
+  full?: { text: string; amount: string } | null;
   onCancel: (reason: string | undefined) => void;
   onKeep: () => void;
 }): React.ReactElement {
@@ -49,10 +55,10 @@ export function CancelSheet({
   return (
     <ModalSheet visible={visible} onClose={onKeep}>
       <StageTitle>{O.t.cxT}</StageTitle>
-      <Mut size={14}>{ofFmt(O.t.cxFree, { v: venue })}</Mut>
+      <Mut size={14}>{full ? full.text : ofFmt(O.t.cxFree, { v: venue })}</Mut>
       <Text style={{ fontSize: 13, fontWeight: "600", color: C.muted }}>{O.t.cxReason}</Text>
       <Chips list={O.t.cxR} on={reason == null ? [] : [reason]} onToggle={(i) => setReason((c) => (c === i ? null : i))} />
-      <Btn kind="danger" label={busy ? O.t.cxBusy : O.t.cxYes} loading={busy} onPress={() => onCancel(reason == null ? undefined : O.t.cxR[reason])} />
+      <Btn kind="danger" label={busy ? O.t.cxBusy : full ? ofFmt(O.t.cxYesFull, { p: full.amount }) : O.t.cxYes} loading={busy} onPress={() => onCancel(reason == null ? undefined : O.t.cxR[reason])} />
       <Btn kind="ghost" label={O.t.cxKeep} onPress={onKeep} disabled={busy} />
     </ModalSheet>
   );
