@@ -869,6 +869,7 @@ export default function RiderFoodJob(): React.ReactElement {
   // Order flow v2 (D-59): the venue's word ("kitchen", "shop", "pharmacy"), the sealed-bag rule, the Rx tick.
   const venueKind = foodOrder.venue?.businessType === "shop" ? (foodOrder.venue.shopKind === "pharmacy" ? "pharmacy" : "shops") : "food";
   const venuePlace = O.svc[venueKind].place;
+  const venueTag = venueKind === "pharmacy" ? R.pharmacy : venueKind === "shops" ? R.shop : undefined;
   const photoRequired = foodOrder.pickupProofRequired === true;
   const codeReady = foodOrder.autoAccepted === true || (pickupCode.trim().length === PICKUP_CODE_DIGITS && pickupAttempts < DELIVERY_OTP_MAX_ATTEMPTS);
   const canCollectNow = order.status === "en_route_pickup" && codeReady;
@@ -1071,7 +1072,7 @@ export default function RiderFoodJob(): React.ReactElement {
         <>
           {notices}
           <RSteps cur={2} />
-          <StopCard drop food name={order.dropoff.landmark} here who={order.customerFirstName ? RF.who(order.customerFirstName, "customer") : null} />
+          <StopCard drop food tag={venueTag} name={order.dropoff.landmark} here who={order.customerFirstName ? RF.who(order.customerFirstName, "customer") : null} />
           {hState === "frozen" ? (
             <RiderCashHandshakeCard
               state={hState}
@@ -1184,7 +1185,7 @@ export default function RiderFoodJob(): React.ReactElement {
       <>
         {notices}
         <RSteps cur={0} />
-        <StopCard food name={kitchen} here who={RF.kitchenReady(orderNo, readyIn)} onCall={kitchenPhone ? () => dial(kitchenPhone) : null} />
+        <StopCard food tag={venueTag} name={kitchen} here who={RF.kitchenReady(orderNo, readyIn)} onCall={kitchenPhone ? () => dial(kitchenPhone) : null} />
         {upfront ? (
           <>
             <View style={{ borderWidth: 1.5, borderColor: tokens.color.ink, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", gap: 10 }}>
@@ -1236,6 +1237,7 @@ export default function RiderFoodJob(): React.ReactElement {
         <RSteps cur={stepFor(stage)} />
         <StopCard
           food
+          tag={venueTag}
           drop={!kit}
           name={kit ? kitchen : target.landmark}
           line={away(target.point)}
