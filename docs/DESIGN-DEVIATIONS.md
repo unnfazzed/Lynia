@@ -2627,10 +2627,10 @@ the README table (never the delivery code). The order screen keeps its last snap
 
 | Where | v2 | App | Why |
 |---|---|---|---|
-| 2.33 Home live-order bar | A 60px white card per stage; "Rider at the drop-off · Code 418290" | Home keeps the home-8c mint pill (no code) | It contradicts the approved home-8c handoff, which removed the code from the pill on purpose — **owner to choose**; not changed until then |
+| 2.33 Home live-order bar | A 60px white card per stage; "Rider at the drop-off · Code 418290" | Home keeps Calm Mint v2's live-order bar (no code) | **Settled (owner 2026-10-02): superseded by Calm Mint v2 — see D-67.** Not built |
 | 2.34 "Arriving" push | "Tendai is at the drop-off" | Not sent; the `en_route_dropoff` push stays "On the way to drop-off" | The server has no arrival signal — `en_route_dropoff` fires when the rider leaves the pickup |
 | 2.34 ETAs in pushes | "Arriving in about 6 min", "About 12 min" | Dropped (the offer push keeps the bid's ETA) | The server has no live ETA |
-| 2.34 LyniaGo-cancelled push | "Open to see why. Nothing to pay." | As drawn | Note: screen 18c leaves "Nothing to pay." out — **upstream**: confirm which |
+| 2.34 LyniaGo-cancelled push · 18c / 2.31 | Push: "Open to see why. Nothing to pay."; screens 18c / 2.31 leave "Nothing to pay." out | Push as drawn; the LyniaGo-cancelled sheet (18c, 2.31a/b) also shows "Nothing to pay." (`A.nothingOwed`, the 18a row) | **Settled (owner 2026-10-02): say it in both.** The push and the screen share the sentence verbatim; `cancelled-nothing-to-pay.test.tsx` pins both |
 | 2.4 saved copy | Any stage | Saved per status change while the order is live; the code card still works from SecureStore | — |
 | 2.17 Report a problem | "Tell us more · Optional" | When left empty, the picked type is sent as the description | The support case requires a description |
 | 2.18 | The note shows when the app becomes active again | Shows as soon as Emergency is tapped (the dialer is in front) | Same outcome without an AppState listener |
@@ -2640,8 +2640,15 @@ the README table (never the delivery code). The order screen keeps its last snap
 
 Evidence: `docs/parity/AFTER-SEND-V2-2026-10-01.png` (v2 handoff left, app right).
 
-**Upstream asks (v2):** export the gallery with the v2 ids; settle 2.33 against home-8c; confirm
-"Nothing to pay" for LyniaGo cancels; confirm the 999 number and support hours with ops.
+**Upstream asks (v2):** export the gallery with the v2 ids; ~~settle 2.33 against home-8c~~ (settled,
+D-67); ~~confirm "Nothing to pay" for LyniaGo cancels~~ (settled 2026-10-02: on the screen and in the push
+— redraw 18c / 2.31 with the line); confirm the 999 number and support hours with ops.
+
+**Owner decisions 2026-10-02 on the v2 round's open items:** (1) "Nothing to pay." in both the
+LyniaGo-cancelled push and screen (row above); (2) a late rating within the 7-day window **replaces** the
+auto-close's +2 reliability credit — reversed once, then the rating's normal effect (API only:
+`orders.auto_close_reliability_credit`, migration 0069; `docs/ARCHITECTURE.md` § order lifecycle);
+(3) 2.33 superseded by Calm Mint v2 (D-67).
 
 ---
 
@@ -3696,3 +3703,25 @@ everything named restaurants like that."*
 Scope is the Home tile label only. Everything else keeps "Restaurants" verbatim: the "Popular
 restaurants" rail, the "Restaurants are coming soon" sheet, the Browse v2 list, search, storefront and
 order screens (`src/ui/browse/copy.ts`), and code names (`RestaurantsSticker`, routes).
+
+---
+
+## D-67 · After Send v2 state 2.33 (Home live-order bar) is superseded by Calm Mint v2's live-order bar — APPROVED (2026-10-02)
+
+**Owner decision, 2026-10-02:** the question D-53 left open ("2.33 … **owner to choose**") is settled —
+keep Home's existing live-order bar; Calm Mint v2 is the authority for Home; do **not** build 2.33.
+
+| Where | After Send v2 (2.33) | App |
+|---|---|---|
+| Home, while an order is running | A 60px white card per stage: icon disc + one line + chevron (Finding · Choose · On the way · Arriving with the delivery code · Delivered, not rated) | Calm Mint v2's single forest live-order bar (`packages/design/handoff/calm-mint-v2-2026-10/README.md` §6, ledger D-55): 40px brand disc, "Tendai is on the way", sub line + "+1 order", 7-segment progress, ETA chip. No delivery code on Home. |
+
+**Why:** two handoffs drew the same element. Calm Mint v2 (D-55) owns `app/(tabs)/home.tsx`; After Send v2
+(D-53) owns `app/order/[id].tsx`, and its 2.33 frame reached outside that screen. The Home bar keeps the
+code off Home on purpose (home-8c removed it; Calm Mint v2 kept it off).
+
+**Scope:** `app/(tabs)/home.tsx` and `LiveOrderBar` are unchanged by this entry. 2.33 is not a gallery
+screen, so `tools/parity/parity-status.mjs` has nothing to mark; the After Send sheet
+(`tools/parity/shoot-after-send.mjs`) does not shoot 2.33 and now says why. D-53's "Still different
+from v2" row for 2.33 points here.
+
+**Upstream ask:** drop 2.33 from the After Send handoff, or redraw it as Calm Mint v2's bar.
