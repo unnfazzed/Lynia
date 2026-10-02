@@ -3240,6 +3240,7 @@ ordering for shops) close when shop ordering lands here.
 Each PR of the build order appends its line here.
 
 - **PR 0 (this entry):** the package sync above; CLAUDE.md pointer.
+- **PR 2 (Review & place):** `app/food/checkout.tsx` is the one Review screen (R1, R3a/b, R4, R6a/b, R7a–c, R9a/b; `/food/cart` redirects to it, the storefront cart bar pushes it); Place → `dismissAll` + `replace` into the order, so Back goes Home. WHEN draws the ASAP state only and R6b omits 'Schedule for …' until the slots API (R5) lands — a control that does nothing is not rendered. The payload is unchanged (cash; the rider note, else the address line, is the drop-off landmark). `RC.cart*`, `RC.checkout_*`, `RC.placing` are SUPERSEDED deferrals (baseline 81 → 78); evidence `docs/parity/ORDER-FLOW-V2-REVIEW-2026-10-02.png` (`tools/parity/shoot-order-flow-review.mjs`).
 - **Backend B (API + shared contracts only, no UI):** shop & pharmacy ordering, scheduled orders, Rx behind
   a flag, the D3f owed balance. Every wire change is additive (contract snapshot: additive only).
   - *Shops & pharmacy:* `POST /restaurants/:merchantId/orders` takes any customer-visible venue (a live
