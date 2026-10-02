@@ -282,6 +282,8 @@ export interface FoodOrderPanel {
   cashRule: "collect_and_return" | "pay_upfront" | null;
   goodsTotal: string | null;
   deliveryFee: string | null;
+  /** D-71: the part of the rider's fee the business paid (free delivery); null = the customer paid it. */
+  merchantDeliveryShare?: string | null;
   debt: {
     status: "open" | "settled_cash" | "settled_goods" | "written_off";
     amount: string | null;
@@ -352,6 +354,8 @@ export interface MerchantDetail extends Merchant {
   autoAccept?: boolean;
   /** Auto-accept: customers see the restaurant's number (only once the restaurant agreed). */
   showPhoneToCustomers?: boolean;
+  /** D-71: the business pays the delivery fee on new cash orders (customers pay $0 delivery). */
+  freeDelivery?: boolean;
 }
 
 /* ── Orders to confirm (auto-accept: GET /admin/kitchen-confirmations) ── */

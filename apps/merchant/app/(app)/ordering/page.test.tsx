@@ -50,6 +50,24 @@ describe("Taking orders (auto-accept, owner only)", () => {
     expect(sw.getAttribute("aria-checked")).toBe("true");
   });
 
+  it("D-71: turns free delivery on (the business pays the rider's fee)", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ freeDelivery: false }));
+    vi.mocked(updateOrderSettings).mockResolvedValue(profile({ freeDelivery: true }));
+    open();
+    const sw = await screen.findByRole("switch", { name: "Free delivery" });
+    expect(sw.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(sw);
+    await vi.waitFor(() => expect(updateOrderSettings).toHaveBeenCalledWith({ freeDelivery: true }));
+    expect(await screen.findByText("Saved")).toBeTruthy();
+  });
+
+  it("D-71: a shop sees only the free-delivery switch (shops never auto-accept)", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ businessType: "shop", shopKind: "grocery" }));
+    open();
+    expect(await screen.findByRole("switch", { name: "Free delivery" })).toBeTruthy();
+    expect(screen.getAllByRole("switch")).toHaveLength(1);
+  });
+
   it("staff see one plain line and no switches", async () => {
     vi.mocked(getMerchantProfile).mockResolvedValue(profile({ myRole: "staff" }));
     open();

@@ -32,6 +32,9 @@ export const REASONS = {
     "The restaurant now uses the merchant app",
     "The restaurant agreed to show its number",
     "The restaurant asked to hide its number",
+    // D-71: free delivery paid by the business.
+    "The business asked to pay for delivery",
+    "The business asked to stop paying for delivery",
   ],
   // KB-POD-DISPUTE Phase B — why ops is overturning an `undelivered` outcome to `delivered`.
   orderAdjudicateDelivered: [

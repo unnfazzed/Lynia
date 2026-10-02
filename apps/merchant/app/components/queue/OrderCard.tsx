@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useRef, useState } from "react";
-import type { MerchantOrderResponse } from "@lynia/shared";
+import { foodOrderMoney, type MerchantOrderResponse } from "@lynia/shared";
 import { formatCountdown, msUntil } from "../../lib/countdown";
 import { formatMoney } from "../../lib/money-input";
 import { isNoRiderHold, isRiderSecured, isSearchingForRider } from "../../lib/order-groups";
@@ -211,6 +211,12 @@ function RefundAction({
   );
 }
 
+/** D-71: the business's cash on a cash order — the goods total less any delivery it pays for (free
+ *  delivery). Equals the goods total on every order the business doesn't fund. */
+function venueCash(order: MerchantOrderResponse): number {
+  return foodOrderMoney({ goodsTotal: order.merchantGoodsTotal, deliveryFee: order.deliveryFee, merchantDeliveryShare: order.merchantDeliveryShare }).merchantNet;
+}
+
 /** D-06/D-08: what to expect when the rider is at the counter. The `collect_and_return` rule is
  *  informational (the debt opens automatically when the rider enters the pickup code, R-01). The
  *  `pay_upfront` rule is NOT just a note — the rider hands physical cash across the counter — so it
@@ -218,7 +224,8 @@ function RefundAction({
  *  caption. This note therefore renders for `collect_and_return` only. */
 function CashRuleNote({ order }: { order: MerchantOrderResponse }) {
   if (order.paymentMethod !== "cash" || order.merchantCashRule === "pay_upfront") return null;
-  const amount = Number(order.merchantGoodsTotal ?? 0);
+  // D-71: on a free-delivery order the rider keeps the fee out of the cash, so less comes back.
+  const amount = venueCash(order);
   return (
     <div style={{ fontSize: 12, color: "var(--muted)", background: "var(--surface)", borderRadius: 10, padding: "8px 10px" }}>
       {`Release unpaid — the rider owes you $${formatMoney(amount)} back after the drop.`}
@@ -443,7 +450,7 @@ function OrderCardImpl({
                   {/* Pay-upfront CASH: count-and-acknowledge the cash BEFORE the reveal (= releasing the
                       food). The reveal stays disabled until the box is ticked. */}
                   {payUpfrontCash && (
-                    <CashPickupHero amount={Number(order.merchantGoodsTotal ?? 0)} counted={cashCounted} onToggle={() => setCashCounted((v) => !v)} />
+                    <CashPickupHero amount={venueCash(order)} counted={cashCounted} onToggle={() => setCashCounted((v) => !v)} />
                   )}
                   <button
                     type="button"

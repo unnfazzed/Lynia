@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { MerchantOrderResponse, MerchantProfileResponse } from "@lynia/shared";
+import { foodOrderMoney, type MerchantOrderResponse, type MerchantProfileResponse } from "@lynia/shared";
 import { Icon } from "../../../components/icons";
 import { Kitchen } from "../../../components/Kitchen";
 import { useKitchenConnection } from "../../../components/KitchenConnectionProvider";
@@ -529,7 +529,10 @@ function Tracking({ order, disabled, error, setConfirm, business, v }: Ctx) {
 function Delivered({ order, act, disabled, error, setConfirm, v }: Ctx) {
   const now = useNow(30_000);
   const delivered = order.status === "delivered" || order.status === "completed";
-  const amount = order.debtAmount ?? order.merchantGoodsTotal ?? 0;
+  // D-71: the debt is already the business's net; before it opens, the same net (goods less any delivery it pays).
+  const amount =
+    order.debtAmount ??
+    foodOrderMoney({ goodsTotal: order.merchantGoodsTotal, deliveryFee: order.deliveryFee, merchantDeliveryShare: order.merchantDeliveryShare }).merchantNet;
   const dueMin = order.cashDueAt ? Math.round((new Date(order.cashDueAt).getTime() - now) / 60_000) : null;
   const rider = riderName(order);
   return (

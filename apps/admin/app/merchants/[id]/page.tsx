@@ -170,15 +170,15 @@ export default async function MerchantProfilePage({
         </section>
 
         <div style={{ display: "flex", flexDirection: "column", gap: tokens.space.lg }}>
-          {isShop ? null : (
-            <OrderSettingsCard
-              merchantId={m.id}
-              name={m.name}
-              autoAccept={m.autoAccept ?? false}
-              showPhoneToCustomers={m.showPhoneToCustomers ?? false}
-              connected={connected}
-            />
-          )}
+          <OrderSettingsCard
+            merchantId={m.id}
+            name={m.name}
+            autoAccept={m.autoAccept ?? false}
+            showPhoneToCustomers={m.showPhoneToCustomers ?? false}
+            freeDelivery={m.freeDelivery ?? false}
+            shop={isShop}
+            connected={connected}
+          />
           <section className="card">
             <div className="block-title">Details</div>
             <KeyValue

@@ -71,7 +71,7 @@ export async function transferMerchantOwner(
  */
 export async function setMerchantOrderSettings(
   merchantId: string,
-  settings: { autoAccept?: boolean; showPhoneToCustomers?: boolean },
+  settings: { autoAccept?: boolean; showPhoneToCustomers?: boolean; freeDelivery?: boolean },
   reasonCode: string | null,
   note: string,
 ): Promise<{ ok: true } | { ok: false; message: string }> {
