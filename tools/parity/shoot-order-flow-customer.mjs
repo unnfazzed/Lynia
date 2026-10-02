@@ -49,6 +49,10 @@ const tap = (name) => async (page) => {
   await page.getByRole("button", { name }).first().click();
   await page.waitForTimeout(700);
 };
+const check = (name) => async (page) => {
+  await page.getByRole("checkbox", { name }).first().click();
+  await page.waitForTimeout(500);
+};
 const seq = (...steps) => async (page) => {
   for (const s of steps) await s(page);
 };
@@ -83,7 +87,9 @@ const ROWS = [
   { id: "T4", label: "T4 · Cooking", fixture: "of_t4" },
   { id: "T6", label: "T6 · Rider heading to the venue", fixture: "of_t6" },
   { id: "T7", label: "T7 · Rider collecting", fixture: "of_t7" },
-  { id: "T9", label: "T9 · On the way", sub: "T8's photo row: no pickup photo on merchant orders yet", fixture: "of_t9" },
+  { id: "T8", label: "T8 · Collected", sub: "sealed-bag photo row (placeholder tile: no image bytes in the harness)", fixture: "of_t8" },
+  { id: "T8b", label: "T8b · Pickup-photo viewer", fixture: "of_t8", before: tap("View") },
+  { id: "T9", label: "T9 · On the way", fixture: "of_t9" },
   { id: "T11a", label: "T11a · Finding a rider is slow", fixture: "of_t11a" },
   { id: "T11b", label: "T11b · Rider dropped", fixture: "of_t11b" },
   { id: "T12a", label: "T12a · No location fix", fixture: "of_t12a" },
@@ -93,15 +99,22 @@ const ROWS = [
   { id: "T14c", label: "T14c · Not found", fixture: "of_t14c", before: wait(1500) },
   { id: "T14d", label: "T14d · Offline", fixture: "of_t14d", before: wait(800) },
   { id: "T15a", label: "T15a · Cancel · free", sub: "before the rider collects", fixture: "of_t6", before: tap("Cancel order · free") },
+  { id: "T15b", label: "T15b · Cancel · after collection", sub: "entry: a 'Cancel order' link under the rider card (the handoff draws the sheet, not its entry)", fixture: "of_t9", before: tap("Cancel order") },
   { id: "T16a", label: "T16a · Get help", fixture: "of_t9", before: tap(/^Get help$/) },
   { id: "T16b", label: "T16b · Report a problem", fixture: "of_t9", before: seq(tap(/^Get help$/), tap(/^Report a problem/)) },
-  { id: "U2a", label: "U2 · The kitchen took a line off", sub: "removals only — swaps arrive with the substitution backend", fixture: "of_u2" },
+  { id: "U2a", label: "U2a · One swap that raises the total", sub: "restaurant sample names; the frame is a shop", fixture: "of_u2a" },
+  { id: "U2b", label: "U2b · Three lines, answered", fixture: "of_u2b", before: seq(tap("Accept swap"), async (page) => { await page.getByRole("button", { name: "Remove it" }).nth(1).click(); await page.waitForTimeout(500); }) },
+  { id: "U3", label: "U3 · No answer in time", fixture: "of_u3" },
+  { id: "U4a", label: "U4a · Mid-prep change", fixture: "of_u4a" },
+  { id: "U4b", label: "U4b · Reduce-only change", fixture: "of_u4b" },
+  { id: "U5", label: "U5 · Everything out of stock", fixture: "of_u5" },
   { id: "P1", label: "P1 · At your door · pay", fixture: "of_p1" },
   { id: "P1b", label: "P1b · Waiting for the rider", fixture: "of_p1b" },
   { id: "P2", label: "P2 · Code revealed", fixture: "of_p2", before: wait(800) },
   { id: "P3a", label: "P3a · Ring lapsed", fixture: "of_p3a" },
-  { id: "D1", label: "D1 · Delivered · rate + receipt", sub: "the venue row waits on a venue-rating backend", fixture: "of_d1", before: tap(/^4 stars/) },
-  { id: "D1b", label: "D1b · Rated + Undo", fixture: "of_d1", before: seq(tap(/^4 stars/), tap("Send rating")) },
+  { id: "D1", label: "D1 · Delivered · rate + receipt", sub: "venue rated 5 + Tasty / Well packed, rider not yet", fixture: "of_d1", before: seq(tap(/^5 stars/), check("Tasty"), check("Well packed")) },
+  { id: "D1b", label: "D1b · Rated + Undo", fixture: "of_d1", before: seq(tap(/^5 stars/), async (page) => { await page.getByRole("button", { name: /^4 stars/ }).nth(1).click(); await page.waitForTimeout(400); }, tap("Send rating")) },
+  { id: "P5", label: "P5 · Customer door photo", fixture: "of_p5" },
   { id: "D2a", label: "D2a · Completed later · rated", fixture: "of_d2a" },
   { id: "D2b", label: "D2b · Completed later · not rated", fixture: "of_d2b" },
   { id: "D3a", label: "D3a · Cancelled by you", fixture: "of_d3a" },
@@ -109,6 +122,7 @@ const ROWS = [
   { id: "D3c", label: "D3c · Kitchen didn't confirm in 1 h", fixture: "of_d3c" },
   { id: "D3d", label: "D3d · No rider found", fixture: "of_d3d" },
   { id: "D3e", label: "D3e · Cancelled by LyniaGo", fixture: "of_d3e" },
+  { id: "D3f", label: "D3f · Cancelled after pickup", fixture: "of_d3f" },
   { id: "D4", label: "D4 · Not delivered", fixture: "of_d4" },
   { id: "T4", label: "T4 · Cooking at 320×640", fixture: "of_t4", phone: P320 },
   { id: "T9", label: "T9 · On the way at 320×640", fixture: "of_t9", phone: P320 },
@@ -139,6 +153,6 @@ try {
   await browser.close();
 }
 
-await buildSheet({ title: "Order flow v2 · the customer order screen for restaurant orders (D-59): handoff (left) vs app (right)", out: OUT, rows });
+await buildSheet({ title: "Order flow v2 · the customer order screen for restaurant orders, round 2 (D-59): handoff (left) vs app (right)", out: OUT, rows });
 await writeFile(`${SHOTS}/README.txt`, "Generated by tools/parity/shoot-order-flow-customer.mjs\n");
 console.log(`sheet: ${OUT}.png (+ .html); shots in ${SHOTS}`);
