@@ -2,10 +2,9 @@ import { tokens } from "@lynia/shared/tokens";
 
 /**
  * The Paper Dove — the LyniaGo mark as raw geometry, mirroring
- * packages/design/assets/brand/lyniago-mark.svg. Kept as a pure data module (no react-native-svg
- * import) for the same reason `wordmark-paths.ts` is: the splash lockup that expo-splash-screen
- * bakes into the NATIVE launch screen is generated from these numbers by a plain Node script
- * (scripts/build-splash-icon.mjs), which cannot load a module that pulls in React Native.
+ * packages/design/assets/brand/lyniago-mark.svg. A pure data module (no react-native-svg import),
+ * shared by `<DoveMark/>` (src/ui/Brand.tsx) and the splash's facet-by-facet dove
+ * (src/boot/splash/BootSplash.tsx).
  *
  * A folded paper dart that is also a dove; the crease lines cross at the upper third (the hidden
  * cross). Brand rule: the creases only render at >= 32px — below that use the silhouette alone.
@@ -26,11 +25,9 @@ export const DOVE_KEEL_POLYGON = "90,26 48,60 42,84";
 export const DOVE_CREASE_PATHS = ["M90 26 L48 60", "M70.5 30.2 L81.5 43.8"] as const;
 
 /**
- * The mark's three fills for a given ground. On the brand-green splash the mark inverts (DS Dove
- * `on="green"`): white body, translucent-white keel, and the crease switches to the accent green so
- * it stays visible against the white body. Lives here rather than in `Brand.tsx` so the native
- * splash lockup (src/ui/splash-lockup.ts) resolves the SAME colours the JS frame renders — the two
- * pictures have to be identical or the native→JS handoff shows a colour pop.
+ * The mark's three fills for a given ground. On brand green the mark inverts (DS Dove `on="green"`,
+ * e.g. the force-update screen): white body, translucent-white keel, and the crease switches to the
+ * accent green so it stays visible against the white body.
  */
 export function doveFills(on: "white" | "green"): { body: string; keel: string; crease: string } {
   return on === "green"

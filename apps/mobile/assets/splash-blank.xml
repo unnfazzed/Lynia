@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The native launch screen draws NO mark (ledger D-64): plain brand green until the JS splash
+     (src/boot/splash/BootSplash.tsx) draws its first frame. Android 12+ always reserves an icon slot,
+     so this is an intentionally empty 288dp drawable — one fully transparent path. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="288dp"
+    android:height="288dp"
+    android:viewportWidth="288"
+    android:viewportHeight="288">
+  <path android:fillColor="#00000000" android:pathData="M0,0h1v1h-1z" />
+</vector>

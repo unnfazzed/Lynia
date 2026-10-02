@@ -20,9 +20,9 @@ import { WORDMARK_ASPECT, WORDMARK_GO_D, WORDMARK_LYNIA_D, WORDMARK_VIEWBOX } fr
  */
 export function DoveMark({ size = 28, on = "white" }: { size?: number; on?: "white" | "green" }): React.ReactElement {
   const showCrease = size >= DOVE_CREASE_MIN_SIZE;
-  // On the brand-green splash the mark inverts (DS Dove `on="green"`): white body, translucent-white
+  // On brand green the mark inverts (DS Dove `on="green"`): white body, translucent-white
   // keel, and the crease switches to the accent green so it stays visible against the white body.
-  // `doveFills` is the same helper the native splash lockup is generated from (src/ui/splash-lockup.ts),
+  // Colours come from `doveFills` (./dove-paths).
   // so the JS frame and the baked launch-screen image can never disagree about the mark's colours.
   const { body, keel, crease } = doveFills(on);
   return (
