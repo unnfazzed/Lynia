@@ -59,7 +59,7 @@ import {
   type TrackVM,
   TwoButtonBar,
 } from "../../src/ui/order/stages";
-import { isCachedMerchantOrder, MerchantOrderScreen } from "../../src/ui/orderflow/MerchantOrderScreen";
+import { isCachedMerchantOrder, MerchantOrderScreen } from "../../src/orderflow/MerchantOrderScreen";
 import { useReduceMotion } from "../../src/ui/useReduceMotion";
 import { uuidV4FromSeed } from "../../src/util";
 
@@ -101,7 +101,7 @@ type Toast = { text: string; icon?: "circle-alert" | "circle-check"; action?: st
 
 /**
  * One order screen for every service (Order flow v2, BRIEF §1, ledger D-59): a merchant (restaurant)
- * order renders the Order flow v2.1 stages (`src/ui/orderflow/MerchantOrderScreen.tsx`) on the same
+ * order renders the Order flow v2.1 stages (`src/orderflow/MerchantOrderScreen.tsx`) on the same
  * shell; a parcel renders After Send v2 below. The type comes from the cached food order (seeded at
  * checkout) or the snapshot's `orderType`; until it is known the parcel screen's opening state shows.
  */

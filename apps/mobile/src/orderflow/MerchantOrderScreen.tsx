@@ -6,10 +6,10 @@ import * as Location from "expo-location";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, ActivityIndicator, BackHandler, Linking, ScrollView, Share, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { ApiError } from "../../api/client";
-import { cancelUnpaidFoodOrder, confirmFoodCustomerCash, respondToFoodOrderItems } from "../../api/food-orders";
-import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../../api/orders";
-import { raiseIssue, raiseSos } from "../../api/safety";
+import { ApiError } from "../api/client";
+import { cancelUnpaidFoodOrder, confirmFoodCustomerCash, respondToFoodOrderItems } from "../api/food-orders";
+import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../api/orders";
+import { raiseIssue, raiseSos } from "../api/safety";
 import {
   clearDeliveryCode,
   clearPendingRating,
@@ -22,10 +22,10 @@ import {
   saveDeliveryCodeAttempts,
   saveDeliveryCodeRotatedAt,
   savePendingRating,
-} from "../../auth/session";
-import { supportWhatsAppUrl } from "../../config";
-import { canCancelFreely } from "../../logic/food-checkout";
-import { codeEligible, handshakeState } from "../../logic/food-doorstep";
+} from "../auth/session";
+import { supportWhatsAppUrl } from "../config";
+import { canCancelFreely } from "../logic/food-checkout";
+import { codeEligible, handshakeState } from "../logic/food-doorstep";
 import {
   awaitingKitchenConfirm,
   codeCopied,
@@ -38,27 +38,27 @@ import {
   resolveMerchantStage,
   shortOrderId,
   trackStep,
-} from "../../logic/merchant-order";
-import { goHomeClearingStack } from "../../logic/nav";
-import { minutesSince } from "../../logic/order-stage";
-import { reconcileDeliveryCode, reconcilePendingRating } from "../../logic/order-tracking";
-import { loadFoodOrderSnapshot, saveFoodOrderSnapshot } from "../../net/food-order-store";
-import { useClaimOfflineBanner } from "../../net/offline-banner-owner";
-import { useReachability } from "../../net/use-reachability";
-import { orderKey } from "../../query/client";
-import { foodOrderKey, useFoodOrder } from "../../query/use-food-order";
-import { useForegroundRefetch } from "../../realtime/use-foreground-refetch";
-import { useOrderSocket } from "../../realtime/use-order-socket";
-import { haptic, useDial } from "../index";
-import { Icon } from "../Icon";
-import { clock, hhmm, initials, riderShortName } from "../order/copy";
-import { OrderToast } from "../order/kit";
-import { BlankMap } from "../order/OrderMap";
-import { OrderSheet, type OrderSheetHandle, PeekMark } from "../order/OrderSheet";
-import { OrderHeader } from "../order/panels";
-import { useReduceMotion } from "../useReduceMotion";
-import { O, ofFmt } from "./copy";
-import { OX, SVC, withRider } from "./kit-copy";
+} from "../logic/merchant-order";
+import { goHomeClearingStack } from "../logic/nav";
+import { minutesSince } from "../logic/order-stage";
+import { reconcileDeliveryCode, reconcilePendingRating } from "../logic/order-tracking";
+import { loadFoodOrderSnapshot, saveFoodOrderSnapshot } from "../net/food-order-store";
+import { useClaimOfflineBanner } from "../net/offline-banner-owner";
+import { useReachability } from "../net/use-reachability";
+import { orderKey } from "../query/client";
+import { foodOrderKey, useFoodOrder } from "../query/use-food-order";
+import { useForegroundRefetch } from "../realtime/use-foreground-refetch";
+import { useOrderSocket } from "../realtime/use-order-socket";
+import { haptic, useDial } from "../ui/index";
+import { Icon } from "../ui/Icon";
+import { clock, hhmm, initials, riderShortName } from "../ui/order/copy";
+import { OrderToast } from "../ui/order/kit";
+import { BlankMap } from "../ui/order/OrderMap";
+import { OrderSheet, type OrderSheetHandle, PeekMark } from "../ui/order/OrderSheet";
+import { OrderHeader } from "../ui/order/panels";
+import { useReduceMotion } from "../ui/useReduceMotion";
+import { O, ofFmt } from "../ui/orderflow/copy";
+import { OX, SVC, withRider } from "../ui/orderflow/kit-copy";
 import {
   AnswerHead,
   Bar,
@@ -89,10 +89,10 @@ import {
   usd,
   VenueDisc,
   VenueRow,
-} from "./kit";
-import { MerchantMap } from "./MerchantMap";
-import { CancelSheet, HelpSheet, REPORT_ISSUE_TYPES, ReportSheet } from "./panels";
-import { uuidV4FromSeed } from "../../util";
+} from "../ui/orderflow/kit";
+import { MerchantMap } from "../ui/orderflow/MerchantMap";
+import { CancelSheet, HelpSheet, REPORT_ISSUE_TYPES, ReportSheet } from "../ui/orderflow/panels";
+import { uuidV4FromSeed } from "../util";
 
 /**
  * The customer's order screen for a MERCHANT (restaurant) order — Order flow v2.1
