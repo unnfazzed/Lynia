@@ -30,6 +30,12 @@ export function requestDeliveryProofUpload(contentType: ImageContentType): Promi
   return apiFetch("/uploads/delivery-proof", { method: "POST", body: { contentType } });
 }
 
+/** Order flow v2 R8 (BRIEF §13, behind `rxEnabled`): one page of the customer's prescription. PUT the
+ *  bytes, then send the returned `key` in the place-order body's `prescription.photoKeys`. */
+export function requestPrescriptionPhotoUpload(contentType: ImageContentType): Promise<UploadTarget> {
+  return apiFetch("/uploads/prescription-photo", { method: "POST", body: { contentType } });
+}
+
 /**
  * PUT the local image file straight to the signed URL — NOT via apiFetch: this is a raw binary upload
  * to GCS with no bearer token. The signature is minted over an exact header set (Content-Type, and now

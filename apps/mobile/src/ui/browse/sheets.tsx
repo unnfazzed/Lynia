@@ -189,10 +189,13 @@ export function ItemSheet({
   onAdd,
   onClose,
   browseOnly = false,
+  remind = true,
 }: {
   item: StoreItem | null;
   service: BrowseService;
   browseOnly?: boolean;
+  /** The closed sheet's Remind me row (I1d). Off for shops: the reopen reminder is a restaurants API (D-58). */
+  remind?: boolean;
   /** Non-null when the venue is closed: the time it next opens ("10:00"). */
   closedAt: string | null;
   remindOn: boolean;
@@ -292,9 +295,11 @@ export function ItemSheet({
             {browseOnly ? null : closedAt != null ? (
               <>
                 <BrowseButton label={fmt(B.item.closedCta, { t: closedAt })} variant="muted" disabled onPress={() => undefined} />
-                <View style={{ marginTop: 4 }}>
-                  <RemindRow on={remindOn} busy={remindBusy} onToggle={onRemind} bordered={false} />
-                </View>
+                {remind ? (
+                  <View style={{ marginTop: 4 }}>
+                    <RemindRow on={remindOn} busy={remindBusy} onToggle={onRemind} bordered={false} />
+                  </View>
+                ) : null}
               </>
             ) : readOnly ? null : (
               <BrowseButton

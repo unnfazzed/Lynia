@@ -69,6 +69,8 @@ function setCart(restaurantId: string | null, name: string | null, lines: Line[]
   mockCart.subtotal = lines.reduce((s, l) => s + l.quantity * l.priceUsd, 0);
 }
 jest.mock("../../../src/food/cart-context", () => ({ useFoodCart: () => mockCart }));
+let mockSlots: unknown = undefined;
+jest.mock("../../../src/query/use-order-flow", () => ({ useScheduleSlots: () => ({ slots: mockSlots, isLoading: false, isError: false }) }));
 
 import RestaurantMenuScreen from "../[id]";
 
@@ -100,6 +102,7 @@ beforeEach(() => {
   mockCart.clear.mockClear();
   mockMenu.restaurant.hours = null;
   setCart("m1", "Gava’s Kitchen", []);
+  mockSlots = undefined;
 });
 
 describe("Storefront — S1", () => {
@@ -129,7 +132,7 @@ describe("Storefront — adding", () => {
   it("+ adds one straight away, no sheet", () => {
     const tree = render();
     press(tree, "Add Roast chicken (half)");
-    expect(mockCart.addItem).toHaveBeenCalledWith("m1", "Gava’s Kitchen", { dishId: "d2", name: "Roast chicken (half)", priceUsd: 6, quantity: 1, note: "" });
+    expect(mockCart.addItem).toHaveBeenCalledWith("m1", "Gava’s Kitchen", { dishId: "d2", name: "Roast chicken (half)", priceUsd: 6, quantity: 1, note: "" }, { businessType: "restaurant", shopKind: null });
     expect(tree.root.findByType(ItemSheet).props.item).toBeNull();
   });
 
@@ -192,5 +195,28 @@ describe("Storefront — closed (S8)", () => {
     expect(all).toContain("Closed now");
     expect(all).toContain("Remind me when they open");
     expect(all).toContain("$4.50");
+  });
+});
+
+describe("Storefront — closed with a basket (R5c, Order flow v2)", () => {
+  const slot = (start: string, label: string, full = false) => ({ start, end: start, label, full });
+  it("the cart bar orders for when they open — the first slot — and opens Review on it", () => {
+    mockMenu.restaurant.hours = {};
+    setCart("m1", "Gava’s Kitchen", [{ dishId: "d1", name: "Sadza & beef stew", priceUsd: 7.5, quantity: 1, note: "" }, { dishId: "d2", name: "Roast chicken (half)", priceUsd: 6, quantity: 1, note: "" }]);
+    const first = slot("2026-10-03T08:30:00.000Z", "10:30–11:00");
+    mockSlots = { slotMinutes: 30, openNow: false, leadMinutes: 35, today: { date: "2026-10-02", slots: [] }, tomorrow: { date: "2026-10-03", slots: [first] }, firstAvailable: first };
+    const tree = render();
+    const all = texts(tree);
+    expect(all).toContain("2 items · $13.50");
+    expect(all).toContain("Order for when they open · 10:30–11:00");
+    expect(all).toContain("Review");
+    press(tree, /Order for when they open/);
+    expect(mockPush).toHaveBeenCalledWith("/food/checkout?schedule=first");
+  });
+
+  it("adds carry the venue kind, so Review knows it's a kitchen", () => {
+    const tree = render();
+    press(tree, "Add Roast chicken (half)");
+    expect(mockCart.addItem).toHaveBeenCalledWith("m1", "Gava’s Kitchen", expect.objectContaining({ dishId: "d2" }), { businessType: "restaurant", shopKind: null });
   });
 });
