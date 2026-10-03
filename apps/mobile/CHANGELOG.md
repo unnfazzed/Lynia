@@ -1,5 +1,62 @@
 # Changelog
 
+## [0.52.0](https://github.com/unnfazzed/Lynia/compare/v0.51.0...v0.52.0) (2026-10-03)
+
+
+### Features
+
+* **api:** Order flow v2 backend — substitution, proof photos, venue rating, step track (D-59) ([#1028](https://github.com/unnfazzed/Lynia/issues/1028)) ([e103f40](https://github.com/unnfazzed/Lynia/commit/e103f401a54d5eb2e1a7da437769f64fdf7941f4))
+* **browse:** Browse v2 part 3 — search across services (X1–X4, D-57) ([#1024](https://github.com/unnfazzed/Lynia/issues/1024)) ([acb05df](https://github.com/unnfazzed/Lynia/commit/acb05df3f677dd73faf4c8fbfb2f426e40b64590))
+* **home:** label the food service tile "Food" instead of "Restaurants" ([#1047](https://github.com/unnfazzed/Lynia/issues/1047)) ([9147242](https://github.com/unnfazzed/Lynia/commit/91472428680902071ad07ae08f8980ed8f80c714))
+* **legal:** terms & conditions for customers, riders and businesses; link from website and apps ([#996](https://github.com/unnfazzed/Lynia/issues/996)) ([6e595af](https://github.com/unnfazzed/Lynia/commit/6e595af99a9f6a387cf7b06a7ad395af381687bb))
+* **merchant:** mobile redesign PR 2a — open switch, closing an order, cash only (backend) ([#991](https://github.com/unnfazzed/Lynia/issues/991)) ([b980c5d](https://github.com/unnfazzed/Lynia/commit/b980c5d9f8a7b2581bac96e1afc62735d4eee154))
+* **mobile:** After Send v2 — 6-digit code, measured peek, the 2.x states (D-53 v2) ([#1008](https://github.com/unnfazzed/Lynia/issues/1008)) ([ed87635](https://github.com/unnfazzed/Lynia/commit/ed876355042e1de5d10af8d05f72cddd12a61313))
+* **mobile:** Browse v2 part 1 — Restaurants list and storefront (D-57) ([#1023](https://github.com/unnfazzed/Lynia/issues/1023)) ([087ebe9](https://github.com/unnfazzed/Lynia/commit/087ebe943f219b791045edab93c4676398017d94))
+* **mobile:** Calm Mint v2 — Home, customer onboarding, rider onboarding (D-55) ([#1013](https://github.com/unnfazzed/Lynia/issues/1013)) ([178a6aa](https://github.com/unnfazzed/Lynia/commit/178a6aa7d4d9d668eb3aa17e27122ec9f4f48f4d))
+* **mobile:** Notifications v1 — the Notifications screen follows the notifications-v1 handoff (D-66) ([#1045](https://github.com/unnfazzed/Lynia/issues/1045)) ([7c01e35](https://github.com/unnfazzed/Lynia/commit/7c01e35caad6b174b964ca98c30abcd58068cd87))
+* **mobile:** one order screen after Send — map + stage sheet (D-53) ([#1007](https://github.com/unnfazzed/Lynia/issues/1007)) ([d641e20](https://github.com/unnfazzed/Lynia/commit/d641e208e710296a65abf95f1037a8c06997a37a))
+* **mobile:** Order flow v2 part 1 — one order screen for restaurant orders (D-59) ([#1030](https://github.com/unnfazzed/Lynia/issues/1030)) ([f7d964b](https://github.com/unnfazzed/Lynia/commit/f7d964b5ad91a0f551e278a88a0840c46a8f62fa))
+* **mobile:** Order flow v2 part 2 — Review & place replaces cart + checkout (D-59) ([87e6a67](https://github.com/unnfazzed/Lynia/commit/87e6a67e525b89178e9c5523a3f24c28b477a37d))
+* **mobile:** Order flow v2 part 4 — substitution, proof photos, venue rating on the order screen (D-59) ([#1032](https://github.com/unnfazzed/Lynia/issues/1032)) ([9429f9e](https://github.com/unnfazzed/Lynia/commit/9429f9ead3cc542c8825b8240dcc1e128129e301))
+* **mobile:** Order flow v2 part 5 — shop & pharmacy ordering, scheduled orders, Rx on Review (D-59) ([#1033](https://github.com/unnfazzed/Lynia/issues/1033)) ([cbcc9f3](https://github.com/unnfazzed/Lynia/commit/cbcc9f3e9c2050ed43126dfa55a101fde19c4cd3))
+* **mobile:** Orders v2 — the customer Orders tab follows the orders-v2 handoff (D-63) ([#1041](https://github.com/unnfazzed/Lynia/issues/1041)) ([e701486](https://github.com/unnfazzed/Lynia/commit/e701486b16d6e5b64c85228de06b38acfdbe7713))
+* **mobile:** owner review fixes: Help is WhatsApp, no profile page, no hour hints, Home "Coming soon" (D-60) ([#1037](https://github.com/unnfazzed/Lynia/issues/1037)) ([4ec2453](https://github.com/unnfazzed/Lynia/commit/4ec2453faef8e23bbcde996c6e37bb3eb753450b))
+* **mobile:** plain-green native launch screen — remove the old dove + wordmark (D-64) ([#1043](https://github.com/unnfazzed/Lynia/issues/1043)) ([7788c2e](https://github.com/unnfazzed/Lynia/commit/7788c2e9503186ec05386d789db4101b68113f2b))
+* **mobile:** Rider v2 part 1 — Money, Top up, both Account tabs, Settings, split histories (D-54) ([#1009](https://github.com/unnfazzed/Lynia/issues/1009)) ([2c77ea1](https://github.com/unnfazzed/Lynia/commit/2c77ea1fa102f36871567dc4b5ac4b3692f28119))
+* **mobile:** Rider v2 part 2 — Jobs board, Make an offer, gates, withdraw (D-54) ([#1010](https://github.com/unnfazzed/Lynia/issues/1010)) ([1f8a4d1](https://github.com/unnfazzed/Lynia/commit/1f8a4d1eb9a1689373c6080a3d17c86141990240))
+* **mobile:** Rider v2 part 3 — active job, exceptions, food offer (D-54) ([#1015](https://github.com/unnfazzed/Lynia/issues/1015)) ([728fd34](https://github.com/unnfazzed/Lynia/commit/728fd347633d197cef219dfea8b1b9d007a80bfb))
+* **mobile:** Rider v2 part 4 — Bike & documents, Help & support, Home live-job bar (D-54) ([#1016](https://github.com/unnfazzed/Lynia/issues/1016)) ([25fd84b](https://github.com/unnfazzed/Lynia/commit/25fd84b94f662b14340b28ff7dbffbf61c0b1ffd))
+* **mobile:** Splash v1 "1a Sun & orbit" — the splash stays up until the app is ready (D-63) ([#1042](https://github.com/unnfazzed/Lynia/issues/1042)) ([ca9f7a3](https://github.com/unnfazzed/Lynia/commit/ca9f7a37de18a3308399b0eac2ab719ff5c23b67))
+* **mobile:** stepped Send a parcel flow with inline address editing (D-52) ([#1005](https://github.com/unnfazzed/Lynia/issues/1005)) ([60c04d9](https://github.com/unnfazzed/Lynia/commit/60c04d9fb2f56ea2b94bfa7433aec8c5659042a2))
+* **mobile:** tab bar v1 — floating illustrated pill on both sides (D-56) ([#1018](https://github.com/unnfazzed/Lynia/issues/1018)) ([2151812](https://github.com/unnfazzed/Lynia/commit/2151812abadee24f0dcb5bc6178ff7211bf79d6b))
+* **mobile:** tab bar v1.4 — flat pill, one mint indicator, smooth motion (D-56) ([#1051](https://github.com/unnfazzed/Lynia/issues/1051)) ([3dbd7b5](https://github.com/unnfazzed/Lynia/commit/3dbd7b5dd000039e368ca6935f0646b20656e77a))
+* open Shops and Pharmacy — browse-only sections, shop go-live, flags on (D-58) ([#1025](https://github.com/unnfazzed/Lynia/issues/1025)) ([ac13091](https://github.com/unnfazzed/Lynia/commit/ac130918030dae63aa9cc4f7cef15ef43ea4244e))
+* optional cash on delivery for shop bookings (D-48, PR 4b) ([#997](https://github.com/unnfazzed/Lynia/issues/997)) ([388a892](https://github.com/unnfazzed/Lynia/commit/388a892c679f499646dc47f90ad7eaf106418c80))
+* Order flow v2 part 3 — merchant + rider hand-over, 6-digit pickup code (D-59) ([#1031](https://github.com/unnfazzed/Lynia/issues/1031)) ([272cd37](https://github.com/unnfazzed/Lynia/commit/272cd37bf3be3718156927c576e42d425d382c68))
+* Order flow v2 part 6 — merchant proposer, photos, scheduled, Rx check; rider photo + door proof (D-59) ([#1034](https://github.com/unnfazzed/Lynia/issues/1034)) ([2f8f77c](https://github.com/unnfazzed/Lynia/commit/2f8f77c867622441af68df6c4b7ce7510c17b373))
+* Order flow v2 part 7 — shop/pharmacy/scheduled/Rx order states, live bar, Orders cards, push copy (D-59) ([#1035](https://github.com/unnfazzed/Lynia/issues/1035)) ([c53f894](https://github.com/unnfazzed/Lynia/commit/c53f89463df51889e92024951f5b96fcab34fc06))
+* Orders v2 backend — every outcome, the service, the charge and paging on the Orders tab (D-63) ([#1044](https://github.com/unnfazzed/Lynia/issues/1044)) ([81f0244](https://github.com/unnfazzed/Lynia/commit/81f0244c9ea261674778f19e8d52a4e9027b66f2))
+* owner decisions 2026-10-02 — notifications follow-up, free first jobs, merchant-paid free delivery, real Popular, late-rating fix, bundle trim (D-66/67/70/71/72) ([#1048](https://github.com/unnfazzed/Lynia/issues/1048)) ([f7f3d4e](https://github.com/unnfazzed/Lynia/commit/f7f3d4e0b7e88871f4ce32ef6972ce5ac43eae38))
+* restaurant auto-accept — orders skip the 3-minute accept, ops confirm by phone ([#1000](https://github.com/unnfazzed/Lynia/issues/1000)) ([b13df18](https://github.com/unnfazzed/Lynia/commit/b13df18e1a589c8e5066b73dc041c2f72abdbbd6))
+* rider board shows food, shop and parcel jobs tagged; demand zones from live orders (D-54) ([#1017](https://github.com/unnfazzed/Lynia/issues/1017)) ([86cbe03](https://github.com/unnfazzed/Lynia/commit/86cbe0332bf25fd59291addee98c9449cea1358e))
+* rider photo optional, out of sign-up (D-62) + Send map-failed hint fix ([#1039](https://github.com/unnfazzed/Lynia/issues/1039)) ([c1c5eb0](https://github.com/unnfazzed/Lynia/commit/c1c5eb06c02c28e0955a83b23fecfcd3e33aad80))
+* serve Harare metro + Chitungwiza, Norton, Ruwa, Epworth, Domboshava, Mt Hampden, Goromonzi (D-61) ([#1038](https://github.com/unnfazzed/Lynia/issues/1038)) ([e50b894](https://github.com/unnfazzed/Lynia/commit/e50b894befea3d9c06284e26bab59bf7f0a30f4e))
+
+
+### Bug Fixes
+
+* **mobile:** a place chosen while a search is pending stays chosen (MOB-MAP-03-SIB-2) ([#977](https://github.com/unnfazzed/Lynia/issues/977)) ([2e1e1d9](https://github.com/unnfazzed/Lynia/commit/2e1e1d9520a21ace873e21ee3bfd2b880ae4cb69))
+* **mobile:** keep the device-geocoder fallback inside Zimbabwe (MOB-MAP-03-SIB-3) ([#976](https://github.com/unnfazzed/Lynia/issues/976)) ([d41227f](https://github.com/unnfazzed/Lynia/commit/d41227f92d8077bd11a31b0d06af3cf48ae7c43c))
+* **mobile:** move address search to Places API (New) so a lyniago-app key works (MOB-MAP-03) ([#974](https://github.com/unnfazzed/Lynia/issues/974)) ([9774f3a](https://github.com/unnfazzed/Lynia/commit/9774f3a2d4b6db49b9fa1b77ebf7e489a62eb337))
+* **mobile:** Orders tab routes past food orders correctly and hides rider jobs ([#1012](https://github.com/unnfazzed/Lynia/issues/1012)) ([e923db4](https://github.com/unnfazzed/Lynia/commit/e923db4375fe42b9763d2e67f634b7668e094f7b))
+* **mobile:** run the splash motion on the UI thread only (D-64) ([#1049](https://github.com/unnfazzed/Lynia/issues/1049)) ([d08e415](https://github.com/unnfazzed/Lynia/commit/d08e415588380cf8ad94e7d580d1596cfbb6a68e))
+* **rider:** false "ID under review" in onboarding; rider screens that clip and won't scroll ([#1050](https://github.com/unnfazzed/Lynia/issues/1050)) ([5f38ec1](https://github.com/unnfazzed/Lynia/commit/5f38ec1c4f01e364a4ba452b338319ac14864b47))
+
+
+### Performance Improvements
+
+* **mobile:** show the animated splash sooner after the launch screen (D-64) ([#1046](https://github.com/unnfazzed/Lynia/issues/1046)) ([2cbc9c5](https://github.com/unnfazzed/Lynia/commit/2cbc9c5b73d21b48cd5bbb2a206f424180eb9850))
+
 ## [0.51.0](https://github.com/unnfazzed/Lynia/compare/v0.50.1...v0.51.0) (2026-09-28)
 
 
