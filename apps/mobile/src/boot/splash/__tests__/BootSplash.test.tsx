@@ -62,8 +62,21 @@ const advance = (ms: number): void => {
 const released = (): boolean => booting.at(-1) === false;
 const texts = (tree: renderer.ReactTestRenderer): string[] => tree.root.findAllByType(Text).map((t) => String(t.props.children));
 
+// RN's jest mock ends every native-driven animation after 16ms whatever its length. The splash runs
+// everything on the native driver (delays folded into the curve — see ../motion.ts), so give the mock
+// the animation's real length: a timing's precomputed frames, at 60fps.
+function nativeAnimationsTakeTheirDuration(): void {
+  const { NativeModules } = jest.requireActual<typeof import("react-native")>("react-native");
+  (NativeModules.NativeAnimatedModule.startAnimatingNode as jest.Mock).mockImplementation(
+    (_id: number, _tag: number, config: { frames?: number[] }, end: (r: { finished: boolean }) => void) => {
+      setTimeout(() => end({ finished: true }), config.frames ? (config.frames.length * 1000) / 60 : 16);
+    },
+  );
+}
+
 beforeEach(() => {
   jest.useFakeTimers();
+  nativeAnimationsTakeTheirDuration();
   booting = [];
   mountable = [];
   mockHideAsync.mockClear();
