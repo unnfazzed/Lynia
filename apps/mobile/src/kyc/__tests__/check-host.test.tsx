@@ -11,7 +11,7 @@
  * (navigation, load, error) directly.
  */
 import React from "react";
-import { Alert } from "react-native";
+import { Alert, Linking } from "react-native";
 import renderer, { act, type ReactTestRenderer } from "react-test-renderer";
 
 import { SystemState } from "../../ui";
@@ -114,6 +114,26 @@ describe("KycCheckSheet outcomes", () => {
       webViewProps(tree).onNavigationStateChange!({ url: "https://lyniago.lyniafinance.com/kyc/return" } as never);
     });
     await expect(pending).resolves.toBe("completed");
+  });
+
+  // Regression: a policy link on the vendor's first screen used to close the sheet as "completed", and
+  // the board then said "We're checking your ID" to a rider who had submitted nothing.
+  it("an off-vendor link opens outside the app and keeps the check open — it is not completion", () => {
+    const openSpy = jest.spyOn(Linking, "openURL").mockResolvedValue(true);
+    const { tree } = openSheet();
+    let allowed!: unknown;
+    act(() => {
+      allowed = webViewProps(tree).onShouldStartLoadWithRequest!({ url: "https://www.lyniago.com/privacy", isTopFrame: true } as never);
+    });
+    expect(allowed).toBe(false);
+    expect(openSpy).toHaveBeenCalledWith("https://www.lyniago.com/privacy");
+    // The committed-state backup never opens it a second time.
+    act(() => {
+      webViewProps(tree).onNavigationStateChange!({ url: "https://www.lyniago.com/privacy" } as never);
+    });
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    expect(tree.root.findAllByType(MockWebView)).toHaveLength(1);
+    openSpy.mockRestore();
   });
 
   it("iframe loads never complete the check (isTopFrame false is allowed through)", () => {

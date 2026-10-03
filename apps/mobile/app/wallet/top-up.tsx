@@ -1,15 +1,17 @@
 import { COMMISSION, formatPhoneLocal, SOS_POLICY } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 import React, { useCallback, useMemo } from "react";
-import { Linking } from "react-native";
+import { KeyboardAvoidingView, Linking, Platform } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { getMe } from "../../src/api/auth";
 import { isRiderRow, paidFare } from "../../src/logic/rider-earnings";
 import { useRiderPrefs } from "../../src/logic/rider-prefs";
 import { telUri } from "../../src/logic/safety";
 import { useHistoryFeed } from "../../src/query/use-history-feed";
 import { useWallet, useWalletConfig } from "../../src/query/use-wallet";
-import { AppScreen } from "../../src/ui";
 import { TopUpFlow } from "../../src/ui/rider/TopUpFlow";
 
 /**
@@ -37,21 +39,27 @@ export default function TopUpScreen(): React.ReactElement {
   }, [router]);
 
   return (
-    <AppScreen>
-      <TopUpFlow
-        minTopUp={config?.minTopUp ?? COMMISSION.minTopUp}
-        maxTopUp={config?.maxTopUp ?? COMMISSION.maxTopUp}
-        ratePct={config?.ratePct ?? 0}
-        avgFare={avgFare}
-        defaultProvider={prefs.topupProvider}
-        defaultPhone={prefs.topupPhone ?? (me?.phone ? formatPhoneLocal(me.phone) : "")}
-        balance={wallet?.balance ?? null}
-        onExit={exit}
-        onCallSupport={() => {
-          const uri = telUri(SOS_POLICY.safetyLine);
-          if (uri) void Linking.openURL(uri);
-        }}
-      />
-    </AppScreen>
+    // TopUpFlow's header owns the top inset; this root owns the bottom one, so the CTA bar clears the
+    // Android navigation bar (edge-to-edge is enforced at targetSdk 36). AppScreen's top-edge SafeAreaView
+    // padded the top twice and left the bottom bare. The amount and phone fields lift with the keyboard.
+    <SafeAreaView edges={["bottom"]} style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+      <StatusBar style="dark" />
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <TopUpFlow
+          minTopUp={config?.minTopUp ?? COMMISSION.minTopUp}
+          maxTopUp={config?.maxTopUp ?? COMMISSION.maxTopUp}
+          ratePct={config?.ratePct ?? 0}
+          avgFare={avgFare}
+          defaultProvider={prefs.topupProvider}
+          defaultPhone={prefs.topupPhone ?? (me?.phone ? formatPhoneLocal(me.phone) : "")}
+          balance={wallet?.balance ?? null}
+          onExit={exit}
+          onCallSupport={() => {
+            const uri = telUri(SOS_POLICY.safetyLine);
+            if (uri) void Linking.openURL(uri);
+          }}
+        />
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }

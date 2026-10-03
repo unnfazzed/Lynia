@@ -29,8 +29,9 @@
  */
 import { tokens } from "@lynia/shared/tokens";
 import React, { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Modal, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Linking, Modal, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { API_URL } from "../config";
 import type { KycSdkResult } from "../logic/gates";
 import { Icon, SystemState, Tappable } from "../ui";
 import { resolveKycWebNavigation } from "./navigation";
@@ -211,10 +212,20 @@ function KycCheckSheet({
     ]);
   };
 
-  /** True → let the WebView load it; false → blocked (completion detected, sheet closes). */
-  const onNavigate = (navUrl: string): boolean => {
-    if (resolveKycWebNavigation(url, navUrl) === "completed") {
+  /**
+   * True → let the WebView load it; false → blocked. Completion closes the sheet; an external link (a
+   * policy page, mailto:, a support chat) opens outside the app and the check stays open — it is NOT a
+   * finished check. Only a load request (`fromRequest`) hands a link to the OS: the committed-state
+   * backup below would otherwise open it a second time.
+   */
+  const onNavigate = (navUrl: string, fromRequest: boolean): boolean => {
+    const decision = resolveKycWebNavigation(url, navUrl, API_URL);
+    if (decision === "completed") {
       done("completed");
+      return false;
+    }
+    if (decision === "external") {
+      if (fromRequest) void Linking.openURL(navUrl).catch(() => undefined);
       return false;
     }
     return true;
@@ -294,12 +305,12 @@ function KycCheckSheet({
               originWhitelist={["*"]}
               onShouldStartLoadWithRequest={(req: { url: string; isTopFrame?: boolean }) =>
                 // iOS reports iframe loads too; only the top frame can be the completion redirect.
-                req.isTopFrame === false ? true : onNavigate(req.url)
+                req.isTopFrame === false ? true : onNavigate(req.url, true)
               }
               // Backup detection: Android server-side redirect chains don't always consult
               // onShouldStartLoadWithRequest, but the committed navigation state names the URL.
               onNavigationStateChange={(nav: { url?: string }) => {
-                if (nav.url) onNavigate(nav.url);
+                if (nav.url) onNavigate(nav.url, false);
               }}
               onLoadEnd={() => setPhase((p) => (p === "loading" ? "ready" : p))}
               onError={() => setPhase("error")}

@@ -36,10 +36,14 @@ export function mapDiditStatus(status: string): RiderKyc {
  * kyc_status should be. This one only ever runs while that answer is already `pending`, and asks
  * whether the rider owes the next action:
  *
- *   In Progress / In Review / Resubmitted   the vendor holds it            → in_flight
+ *   In Review / Resubmitted                 the vendor holds it            → in_flight
  *   Approved / Declined                     terminal; the webhook that flips kycStatus is in flight,
  *                                           so while the row still says pending, so is the check → in_flight
- *   Not Started / Awaiting User             never opened, or opened and backed out → unfinished
+ *   Not Started / In Progress / Awaiting User  never opened, opened and not finished, or backed out → unfinished
+ *
+ * "In Progress" is the rider's move, not the vendor's: Didit sets it the moment the hosted page OPENS,
+ * before a single document is captured. Reading it as in flight told a rider who opened the check and
+ * backed out that "your ID is under review" — with no way to resume (the review states draw no action).
  *   Abandoned / Expired / Kyc Expired       session dead; a resume mints a fresh one → unfinished
  *
  * Unknown ⇒ `unfinished`, the safe default: offering a resume to a rider genuinely mid-check costs
@@ -53,7 +57,6 @@ export function mapDiditStatus(status: string): RiderKyc {
  */
 export function mapDiditPendingState(status: string): ServerKycPendingState {
   switch (status.trim().toLowerCase().replace(/[\s_-]+/g, " ")) {
-    case "in progress":
     case "in review":
     case "resubmitted":
     case "approved":

@@ -1,9 +1,9 @@
 /**
  * The in-app ID-check sheet's navigation policy (src/kyc/navigation.ts) — the completion detector.
- * These pin the two real completion shapes (app-scheme deep link, off-vendor https callback), that
- * the vendor's own hosts and page-internal pseudo-schemes never close the sheet, and the
- * completion-biased default for anything else off-vendor (a false "completed" self-corrects on the
- * board's next poll; a missed completion strands a finished rider — see the module header).
+ * These pin the real completion shapes (app-scheme deep link, the API's /kyc/return landing, the API's
+ * own host), that the vendor's own hosts and page-internal pseudo-schemes never close the sheet, and
+ * that any OTHER off-vendor link is `external` — opened outside, never read as a finished check (a
+ * policy link used to land a rider on "We're checking your ID" for a check they never did).
  */
 import { resolveKycWebNavigation } from "../navigation";
 
@@ -22,7 +22,7 @@ describe("resolveKycWebNavigation", () => {
   it("does NOT allow a didit.me lookalike host (evil-didit.me)", () => {
     // `.didit.me` suffix matching must not accept a registrable domain that merely ends with the
     // string — completion here is the safe reading (the sheet closes; the server corrects).
-    expect(resolveKycWebNavigation(INITIAL, "https://evildidit.me/phish")).toBe("completed");
+    expect(resolveKycWebNavigation(INITIAL, "https://evildidit.me/phish")).toBe("external");
   });
 
   it("treats an app-scheme redirect as completion (the deep-link callback)", () => {
@@ -30,10 +30,27 @@ describe("resolveKycWebNavigation", () => {
     expect(resolveKycWebNavigation(INITIAL, "intent://verify#Intent;scheme=lynia;end")).toBe("completed");
   });
 
-  it("treats an off-vendor https redirect as completion (the hosted-callback shape)", () => {
+  it("treats the /kyc/return landing as completion, on whatever host the callback names", () => {
     expect(resolveKycWebNavigation(INITIAL, "https://lyniago.lyniafinance.com/kyc/return?session_id=abc")).toBe(
       "completed",
     );
+    expect(resolveKycWebNavigation(INITIAL, "https://api.lyniago.com/kyc/return")).toBe("completed");
+    expect(resolveKycWebNavigation(INITIAL, "https://api.lyniago.com/kyc/return/")).toBe("completed");
+  });
+
+  it("treats any page on the API's own host as completion", () => {
+    expect(resolveKycWebNavigation(INITIAL, "https://api.lyniago.com/done", "https://api.lyniago.com")).toBe("completed");
+  });
+
+  // Regression: a privacy/terms link on Didit's first screen closed the sheet as "completed", and the
+  // board then told a rider who had submitted nothing that their ID was being checked.
+  it("treats any other off-vendor link as external — never as a finished check", () => {
+    expect(resolveKycWebNavigation(INITIAL, "https://www.lyniago.com/privacy", "https://api.lyniago.com")).toBe("external");
+    expect(resolveKycWebNavigation(INITIAL, "https://example.com/terms")).toBe("external");
+    expect(resolveKycWebNavigation(INITIAL, "https://example.com/kyc/returned")).toBe("external");
+    expect(resolveKycWebNavigation(INITIAL, "mailto:support@didit.me")).toBe("external");
+    expect(resolveKycWebNavigation(INITIAL, "tel:+263000000")).toBe("external");
+    expect(resolveKycWebNavigation(INITIAL, "intent://chat#Intent;scheme=whatsapp;end")).toBe("external");
   });
 
   it("allows page-internal pseudo-schemes — they are never a callback", () => {
@@ -55,8 +72,8 @@ describe("resolveKycWebNavigation", () => {
   it("a backslash-delimited authority cannot spoof the vendor host (WHATWG: \\ ends the authority)", () => {
     // A browser/WebView navigates these to evil.example (backslash acts like a slash), so the
     // policy must NOT read the didit.me part after it as the host and keep the page in the sheet.
-    expect(resolveKycWebNavigation(INITIAL, "https://evil.example\\@verify.didit.me/x")).toBe("completed");
-    expect(resolveKycWebNavigation(INITIAL, "https://evil.example\\.didit.me/x")).toBe("completed");
+    expect(resolveKycWebNavigation(INITIAL, "https://evil.example\\@verify.didit.me/x")).toBe("external");
+    expect(resolveKycWebNavigation(INITIAL, "https://evil.example\\.didit.me/x")).toBe("external");
   });
 
   it("lets an unparseable http URL through to the WebView (its error state owns the failure)", () => {

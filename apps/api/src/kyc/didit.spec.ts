@@ -34,7 +34,6 @@ describe("mapDiditStatus", () => {
 
 describe("mapDiditPendingState", () => {
   it("treats the statuses where the vendor holds the check as in flight", () => {
-    expect(mapDiditPendingState("In Progress")).toBe("in_flight");
     expect(mapDiditPendingState("In Review")).toBe("in_flight");
     expect(mapDiditPendingState("Resubmitted")).toBe("in_flight");
   });
@@ -49,6 +48,10 @@ describe("mapDiditPendingState", () => {
 
   it("treats never-opened and backed-out sessions as unfinished", () => {
     expect(mapDiditPendingState("Not Started")).toBe("unfinished");
+    // Regression: Didit sets "In Progress" as soon as the hosted page opens, before anything is
+    // captured. Reading it as in flight told a rider who backed out that their ID was under review.
+    expect(mapDiditPendingState("In Progress")).toBe("unfinished");
+    expect(mapDiditPendingState("IN_PROGRESS")).toBe("unfinished");
     expect(mapDiditPendingState("Awaiting User")).toBe("unfinished");
   });
 
