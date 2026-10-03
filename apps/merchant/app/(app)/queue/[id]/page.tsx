@@ -391,7 +391,7 @@ function Cooking(ctx: Ctx) {
           </Note>
         )}
         {canChange && (
-          <button type="button" className="m-sec" disabled={disabled} onClick={() => setConfirm("items")}>
+          <button type="button" className="m-btn-sec" disabled={disabled} onClick={() => setConfirm("items")}>
             <Icon name="pencil" size={15} />
             {OF.changeItems}
           </button>
@@ -568,7 +568,7 @@ function Delivered({ order, act, disabled, error, setConfirm, v }: Ctx) {
               <Icon name="banknote" size={18} />
               {OF.cashBtn(money(amount))}
             </button>
-            <button type="button" className="m-sec" disabled={disabled} onClick={() => setConfirm("no_cash")}>
+            <button type="button" className="m-btn-sec" disabled={disabled} onClick={() => setConfirm("no_cash")}>
               {OF.noCash}
             </button>
           </div>

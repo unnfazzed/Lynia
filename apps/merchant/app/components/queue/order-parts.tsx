@@ -19,7 +19,7 @@ export function MerchantTrack({ order, v, cashRow = true }: { order: MerchantOrd
   const cash = cashRow ? cashBackRow(order) : null;
   return (
     <>
-      <ol className="m-trk" aria-label={`Step ${Math.min(cur + 1, 4)} of 4: ${v.track[Math.min(cur, 3)]}`}>
+      <ol className="m-track" aria-label={`Step ${Math.min(cur + 1, 4)} of 4: ${v.track[Math.min(cur, 3)]}`}>
         {v.track.map((label, k) => {
           const state = k < cur ? "done" : k === cur ? "now" : undefined;
           return (

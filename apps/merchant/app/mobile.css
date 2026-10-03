@@ -1440,8 +1440,9 @@
 /* ── Order flow v2 merchant deltas (handoff order-flow-v2, ledger D-59): M1a, M3, M4, M5, M6 ─────── */
 
 /* The customer's four-step track (of-kit `track` + of-polish): a surface panel, 24px circles, 4px
- * connectors, labels 12/600. The current step pulses unless motion is reduced. */
-.m-trk {
+ * connectors, labels 12/600. The current step pulses unless motion is reduced. Its own class: `.m-trk`
+ * is D1's mint pill tracker, and sharing the name painted those grey (and gapped this track). */
+.m-track {
   display: flex;
   background: var(--surface);
   border-radius: var(--radius-card);
@@ -1449,7 +1450,7 @@
   list-style: none;
   margin: 0;
 }
-.m-trk li {
+.m-track li {
   flex: 1;
   position: relative;
   display: flex;
@@ -1458,16 +1459,16 @@
   gap: 4px;
   min-width: 0;
 }
-.m-trk .m-ln {
+.m-track .m-ln {
   position: absolute;
   top: 10px;
   height: 4px;
   background: var(--line);
 }
-.m-trk .m-ln[data-on] {
+.m-track .m-ln[data-on] {
   background: var(--accent);
 }
-.m-trk .m-c {
+.m-track .m-c {
   position: relative;
   width: 24px;
   height: 24px;
@@ -1481,16 +1482,16 @@
   border: 1px solid var(--line);
   box-sizing: border-box;
 }
-.m-trk li[data-s] .m-c {
+.m-track li[data-s] .m-c {
   background: var(--accent-text);
   color: var(--on-accent);
   border: 0;
 }
-.m-trk li[data-s="now"] .m-c {
+.m-track li[data-s="now"] .m-c {
   box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 18%, transparent);
   animation: m-pulse 1.8s ease-out infinite;
 }
-.m-trk .m-l {
+.m-track .m-l {
   font-size: 12px;
   font-weight: 600;
   line-height: 1.3;
@@ -1499,10 +1500,10 @@
   padding: 0 2px;
   margin-top: 3px;
 }
-.m-trk li[data-s="done"] .m-l {
+.m-track li[data-s="done"] .m-l {
   color: var(--accent-text);
 }
-.m-trk li[data-s="now"] .m-l {
+.m-track li[data-s="now"] .m-l {
   color: var(--ink);
   font-weight: 700;
 }
@@ -1515,7 +1516,7 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .m-trk li[data-s="now"] .m-c {
+  .m-track li[data-s="now"] .m-c {
     animation: none;
   }
 }
@@ -1582,8 +1583,9 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* A secondary button: surface-filled, no border (Order flow v2 README "Reuse"). */
-.m-sec {
+/* A secondary button: surface-filled, no border (Order flow v2 README "Reuse"). Its own class: `.m-sec`
+ * is the section label (B1 "Waiting for rider", D1, C3), and sharing the name made every label a pill. */
+.m-btn-sec {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1599,7 +1601,7 @@
   padding: 0 16px;
   cursor: pointer;
 }
-.m-sec:disabled {
+.m-btn-sec:disabled {
   opacity: 0.5;
   cursor: default;
 }

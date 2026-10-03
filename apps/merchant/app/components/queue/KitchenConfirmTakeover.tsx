@@ -150,7 +150,7 @@ export function KitchenConfirmTakeover({
           </div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
             {!scheduled && changeableLines(active).length > 0 ? (
-              <button type="button" className="m-sec" style={{ paddingLeft: 0, background: "none" }} disabled={busy} onClick={() => setSheet("items")}>
+              <button type="button" className="m-btn-sec" style={{ paddingLeft: 0, background: "none" }} disabled={busy} onClick={() => setSheet("items")}>
                 <Icon name="pencil" size={15} />
                 {OF.changeItems}
               </button>
