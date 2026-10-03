@@ -268,12 +268,16 @@ function Cell({
           </Animated.View>
         </Animated.View>
         <View>
-          <Animated.Text numberOfLines={1} style={[styles.label, styles.labelOff, { opacity: offOpacity }]}>
-            {tab.label}
-          </Animated.Text>
-          <Animated.Text numberOfLines={1} style={[styles.label, styles.labelOn, styles.labelOver, { opacity: tone }]}>
-            {tab.label}
-          </Animated.Text>
+          <Animated.View style={{ opacity: offOpacity }}>
+            <Text numberOfLines={1} style={[styles.label, styles.labelOff]}>
+              {tab.label}
+            </Text>
+          </Animated.View>
+          <Animated.View style={[styles.labelOver, { opacity: tone }]}>
+            <Text numberOfLines={1} style={[styles.label, styles.labelOn, styles.labelCentre]}>
+              {tab.label}
+            </Text>
+          </Animated.View>
         </View>
       </Animated.View>
       {badge && width > 0 ? <Badge key={badgeKey} b={badge} centre={width / 2} animate={mounted && !reduceMotion} /> : null}
@@ -401,7 +405,8 @@ const styles = StyleSheet.create({
   label: { fontSize: 12, lineHeight: 16, letterSpacing: 0, fontWeight: tokens.font.weight.bold },
   labelOn: { color: c.ink },
   labelOff: { color: c.muted },
-  labelOver: { position: "absolute", top: 0, left: 0, right: 0, textAlign: "center" },
+  labelOver: { position: "absolute", top: 0, left: 0, right: 0 },
+  labelCentre: { textAlign: "center" },
   badge: { position: "absolute", borderWidth: 2, borderColor: c.bg, borderRadius: tokens.radius.pill, transformOrigin: "0% 100%", ...tokens.shadow.badge },
   dot: { top: 4, width: 12, height: 12, backgroundColor: c.highlight },
   box: { top: 0, height: 20, minWidth: 20, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, paddingHorizontal: 4 },
