@@ -37,6 +37,8 @@ export interface TabBarProps {
   reduceMotion?: boolean;
   /** "illustrated" (default, signed off) = faux-3D colour illustrations on a Home-tile-tinted pill. "solid" = single-colour vector glyphs on a --cta-fill pill (fallback). */
   glyphStyle?: "solid" | "illustrated";
+  /** "glass" (default) = 72% --bg tint + 24px backdrop blur; auto-falls back to solid under prefers-reduced-transparency, prefers-contrast: more, forced-colors, or no backdrop-filter support. "solid" = opaque --bg. */
+  material?: "glass" | "solid";
   /** Spec boards only: force the pressed look on a tab id. */
   previewPressed?: string;
   /** Spec boards only: force the keyboard focus ring on a tab id. */

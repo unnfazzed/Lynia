@@ -8,7 +8,7 @@ import { Tappable } from "../Tappable";
 import { useReduceMotion } from "../useReduceMotion";
 
 /*
- * Tab bar v1 — floating pill (`packages/design/handoff/tab-bar-v1/`, ledger D-56). A port of the kit's
+ * Tab bar v1.4 — floating pill (`packages/design/handoff/tab-bar-v1/`, ledger D-56). A port of the kit's
  * `components/shell/TabBar.jsx` (the handoff's source of truth): geometry, art, badge logic and the
  * screen-reader strings come from there verbatim. Change a value here only together with the handoff.
  */
@@ -102,15 +102,6 @@ const c = tokens.color;
 const ILLUS_ON: Record<string, string> = { L: c.illusLight, M: c.illusMid, D: c.illusDark, G: c.illusGold, C: c.illusCoral, N: c.illusMint, S: c.illusSky, W: c.bg };
 const ILLUS_IDLE: Record<string, string> = { L: c.illusIdleLight, M: c.illusIdleMid, D: c.illusIdleDark, G: c.illusIdleLight, C: c.illusIdleMid, N: c.illusIdleLight, S: c.illusIdleLight, W: c.bg };
 
-/** Illustrated variant: the active pill takes the matching Home tile tint, ringed in its ink. */
-export const TAB_TINT: Record<TabArt, [fill: string, ring: string]> = {
-  home: [c.tileMint, c.accentIllus],
-  orders: [c.tilePeach, c.coralInk],
-  account: [c.tileLilac, c.riderAccent],
-  jobs: [c.tileMint, c.accentIllus],
-  money: [c.tileSun, c.sunInk],
-};
-
 const SVG_TAG = { path: Path, rect: Rect, circle: Circle, polygon: Polygon } as const;
 
 /** Faux-3D tab illustration (32 grid). Full colour when active, the neutral set when idle. */
@@ -156,8 +147,12 @@ export function badgeCount(n: number): string {
   return n > 9 ? "9+" : String(n);
 }
 
+/** Badge pop only (0.4 → 1.15 → 1, unchanged in v1.4). */
 const POP_EASE = Easing.bezier(0.2, 0, 0, 1);
-const SPRING_EASE = Easing.bezier(0.34, 1.36, 0.64, 1);
+/** v1.4: one curve for every other move — no overshoot, no keyframes. */
+const EASE = Easing.bezier(0.32, 0.72, 0, 1);
+/** CSS `ease`, for the 300ms colour changes. */
+const COLOUR_EASE = Easing.bezier(0.25, 0.1, 0.25, 1);
 
 /** Anchored to the cell (left edge at cell centre + 4, dot + 6), overlapping the art's top-right corner. */
 function Badge({ b, centre, animate }: { b: TabBadge; centre: number; animate: boolean }): React.ReactElement {
@@ -218,32 +213,35 @@ function Cell({
   const [pressed, setPressed] = useState(false);
   const [focused, setFocused] = useState(false);
   const press = useRef(new Animated.Value(1)).current;
-  // Activation pop for the illustration: 0 → 1 drives 0.86 → 1.16 (−4) → 1.08 (−2). Starts at rest.
-  const pop = useRef(new Animated.Value(1)).current;
-  const wasOn = useRef(on);
+  // v1.4: `lift` eases the art to its raised rest (−2, 1.08) over 420ms and back on deselect; `tone`
+  // cross-fades the idle → active art and the muted → ink label over 300ms. Both start at rest, so
+  // nothing animates on first mount.
+  const lift = useRef(new Animated.Value(on ? 1 : 0)).current;
+  const tone = useRef(new Animated.Value(on ? 1 : 0)).current;
   useEffect(() => {
-    if (on && !wasOn.current && mounted && !reduceMotion) {
-      pop.setValue(0);
-      Animated.timing(pop, { toValue: 1, duration: 200, easing: POP_EASE, useNativeDriver: true }).start();
-    } else {
-      pop.setValue(1);
+    const to = on ? 1 : 0;
+    if (!mounted || reduceMotion) {
+      lift.setValue(to);
+      tone.setValue(to);
+      return;
     }
-    wasOn.current = on;
-  }, [on, mounted, reduceMotion, pop]);
+    Animated.timing(lift, { toValue: to, duration: 420, easing: EASE, useNativeDriver: true }).start();
+    Animated.timing(tone, { toValue: to, duration: 300, easing: COLOUR_EASE, useNativeDriver: true }).start();
+  }, [on, mounted, reduceMotion, lift, tone]);
 
   const setDown = (down: boolean): void => {
     setPressed(down);
     if (reduceMotion) return;
-    Animated.timing(press, { toValue: down ? 0.94 : 1, duration: down ? 100 : 160, easing: down ? Easing.out(Easing.ease) : SPRING_EASE, useNativeDriver: true }).start();
+    Animated.timing(press, { toValue: down ? 0.97 : 1, duration: down ? 160 : 360, easing: EASE, useNativeDriver: true }).start();
   };
 
-  // Active art rests raised (−2, 1.08) and pops on activation; idle art sits flat.
-  const artTransform = on
-    ? [
-        { translateY: pop.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0, -4, -2] }) },
-        { scale: pop.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0.86, 1.16, 1.08] }) },
-      ]
-    : [];
+  const artTransform = [
+    { translateY: lift.interpolate({ inputRange: [0, 1], outputRange: [0, -2] }) },
+    { scale: lift.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] }) },
+  ];
+  const offOpacity = tone.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
+  // The idle cell's `surface` press fill fades with the press scale; under reduce motion it is instant.
+  const fillOpacity = on ? 0 : reduceMotion ? (pressed ? 1 : 0) : press.interpolate({ inputRange: [0.97, 1], outputRange: [1, 0], extrapolate: "clamp" });
   // Re-key on kind/count so a change re-pops; never on first mount.
   const badgeKey = badge ? `${badge.kind}${"n" in badge ? (badge.n ?? "") : ""}` : "none";
 
@@ -259,13 +257,24 @@ function Cell({
       accessibilityState={{ selected: on }}
       style={styles.cell}
     >
-      <Animated.View style={[styles.cellInner, { gap: 2, transform: [{ scale: press }] }, pressed && !on ? styles.pressFill : null, focused ? styles.focus : null]}>
+      <Animated.View style={[styles.cellInner, { gap: 2, transform: [{ scale: press }] }, focused ? styles.focus : null]}>
+        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.pressFill, { opacity: fillOpacity }]} />
         <Animated.View style={{ transform: artTransform }}>
-          <TabIllus name={tab.glyph} idle={!on} />
+          <Animated.View style={{ opacity: offOpacity }}>
+            <TabIllus name={tab.glyph} idle />
+          </Animated.View>
+          <Animated.View style={[StyleSheet.absoluteFill, { opacity: tone }]}>
+            <TabIllus name={tab.glyph} />
+          </Animated.View>
         </Animated.View>
-        <Text numberOfLines={1} style={on ? styles.labelOn : styles.labelOff}>
-          {tab.label}
-        </Text>
+        <View>
+          <Animated.Text numberOfLines={1} style={[styles.label, styles.labelOff, { opacity: offOpacity }]}>
+            {tab.label}
+          </Animated.Text>
+          <Animated.Text numberOfLines={1} style={[styles.label, styles.labelOn, styles.labelOver, { opacity: tone }]}>
+            {tab.label}
+          </Animated.Text>
+        </View>
       </Animated.View>
       {badge && width > 0 ? <Badge key={badgeKey} b={badge} centre={width / 2} animate={mounted && !reduceMotion} /> : null}
     </Tappable>
@@ -308,28 +317,18 @@ export function TabBar({
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  // One shared indicator: translateX slides (native driver); the tint + ring cross-fade (JS driver,
-  // on a nested view — the two drivers can't share a node).
+  // One shared indicator, `tileMint` on every tab (v1.4): only its translateX moves, 420ms on EASE.
   const slide = useRef(new Animated.Value(idx)).current;
-  const fade = useRef(new Animated.Value(1)).current;
-  const tint = useRef<{ from: [string, string]; to: [string, string] }>({ from: TAB_TINT[cur.glyph], to: TAB_TINT[cur.glyph] });
   const lastIdx = useRef(idx);
-  if (lastIdx.current !== idx) {
-    const prev = tabs[lastIdx.current];
-    tint.current = { from: prev ? TAB_TINT[prev.glyph] : TAB_TINT[cur.glyph], to: TAB_TINT[cur.glyph] };
-  }
   useEffect(() => {
     if (lastIdx.current === idx) return;
     lastIdx.current = idx;
     if (reduceMotion) {
       slide.setValue(idx);
-      fade.setValue(1);
       return;
     }
-    fade.setValue(0);
-    Animated.timing(slide, { toValue: idx, duration: 200, easing: SPRING_EASE, useNativeDriver: true }).start();
-    Animated.timing(fade, { toValue: 1, duration: 160, easing: Easing.linear, useNativeDriver: false }).start();
-  }, [idx, reduceMotion, slide, fade]);
+    Animated.timing(slide, { toValue: idx, duration: 420, easing: EASE, useNativeDriver: true }).start();
+  }, [idx, reduceMotion, slide]);
 
   if (hidden) return null;
 
@@ -342,12 +341,6 @@ export function TabBar({
     onTab?.(t.id);
   };
 
-  const indicatorFill = {
-    backgroundColor: fade.interpolate({ inputRange: [0, 1], outputRange: [tint.current.from[0], tint.current.to[0]] }),
-    borderWidth: 2,
-    borderColor: fade.interpolate({ inputRange: [0, 1], outputRange: [tint.current.from[1], tint.current.to[1]] }),
-  };
-
   return (
     <View
       accessibilityRole="tablist"
@@ -356,9 +349,7 @@ export function TabBar({
       style={[styles.bar, { bottom: TAB_BAR_GAP + insets.bottom }]}
     >
       {cellW > 0 ? (
-        <Animated.View pointerEvents="none" style={[styles.indicator, { width: cellW, transform: [{ translateX: Animated.multiply(slide, cellW) }] }]}>
-          <Animated.View style={[styles.indicatorFill, indicatorFill]} />
-        </Animated.View>
+        <Animated.View pointerEvents="none" style={[styles.indicator, { width: cellW, transform: [{ translateX: Animated.multiply(slide, cellW) }] }]} />
       ) : null}
       {tabs.map((t, i) => (
         <Cell
@@ -381,8 +372,9 @@ export function TabBar({
 /**
  * Hoisted out of render (docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.2): the bar is on screen
  * for the whole session and re-renders on every route change, so its static styles are created once.
- * The 1px `line` edge is a real border (RN has no inset ring), so the padding is 3 — the cells and the
- * indicator still sit 4 in from the outer edge, exactly as the handoff draws them.
+ * v1.4: no edge and no shadow. The fill is the handoff's solid fallback (opaque `bg`), not the glass —
+ * the app ships no backdrop-blur module, and the handoff forbids a translucent bar without blur
+ * (ledger D-56 §5).
  */
 const styles = StyleSheet.create({
   bar: {
@@ -390,27 +382,26 @@ const styles = StyleSheet.create({
     left: TAB_BAR_GAP,
     right: TAB_BAR_GAP,
     height: TAB_BAR_H,
-    padding: 3,
+    padding: 4,
     flexDirection: "row",
     backgroundColor: c.bg,
     borderRadius: tokens.radius.pill,
-    borderWidth: 1,
-    borderColor: c.line,
     zIndex: 20,
-    ...tokens.shadow.float,
   },
-  indicator: { position: "absolute", top: 3, left: 3, height: 52 },
-  indicatorFill: { flex: 1, borderRadius: tokens.radius.pill },
+  indicator: { position: "absolute", top: 4, left: 4, height: 52, borderRadius: tokens.radius.pill, backgroundColor: c.tileMint },
   cell: { flex: 1, minWidth: 0, height: 52, borderRadius: tokens.radius.pill },
   cellInner: { flex: 1, alignItems: "center", justifyContent: "center", borderRadius: tokens.radius.pill },
-  pressFill: { backgroundColor: c.surface },
-  // Focus (keyboard / D-pad only — Android never focuses a Pressable in touch mode): a 2px ink ring.
-  // Drawn on the cell's inner pill rather than 2px outside it: the bar's border + padding leave no
-  // room for an outside ring in RN, which has no box-shadow spread.
+  pressFill: { borderRadius: tokens.radius.pill, backgroundColor: c.surface },
+  // Focus (keyboard / D-pad only — Android never focuses a Pressable in touch mode): a 2px ink ring,
+  // drawn on the cell's inner pill — RN on the old architecture has no box-shadow spread for the
+  // handoff's outside `bg` + `ink` ring.
   focus: { borderWidth: 2, borderColor: c.ink },
   overhang: { overflow: "visible" },
-  labelOn: { fontSize: 12, lineHeight: 16, letterSpacing: 0, fontWeight: tokens.font.weight.bold, color: c.ink },
-  labelOff: { fontSize: 12, lineHeight: 16, letterSpacing: 0, fontWeight: tokens.font.weight.semibold, color: c.muted },
+  // v1.4: always 700, so nothing reflows; only the colour cross-fades (two stacked layers).
+  label: { fontSize: 12, lineHeight: 16, letterSpacing: 0, fontWeight: tokens.font.weight.bold },
+  labelOn: { color: c.ink },
+  labelOff: { color: c.muted },
+  labelOver: { position: "absolute", top: 0, left: 0, right: 0, textAlign: "center" },
   badge: { position: "absolute", borderWidth: 2, borderColor: c.bg, borderRadius: tokens.radius.pill, transformOrigin: "0% 100%", ...tokens.shadow.badge },
   dot: { top: 4, width: 12, height: 12, backgroundColor: c.highlight },
   box: { top: 0, height: 20, minWidth: 20, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, paddingHorizontal: 4 },

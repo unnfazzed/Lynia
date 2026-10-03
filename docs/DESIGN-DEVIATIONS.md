@@ -2988,7 +2988,7 @@ Until each lands, its current screen stays as it is.
 limit; auto-opening the "picked you" sheet.
 
 
-## D-56 · Tab bar v1: the floating pill bar replaces the flat bar on both sides — APPROVED (2026-10-01)
+## D-56 · Tab bar v1: the floating pill bar replaces the flat bar on both sides — APPROVED (2026-10-01); v1.4 update (2026-10-03) — glass deferral §5 PENDING OWNER REVIEW
 
 **Owner instruction, this session (2026-10-01):** the owner asked for a prompt to redesign the bottom
 menu bar for both the rider and customer sides, took a detailed brief to Claude Design, and uploaded the
@@ -3055,6 +3055,38 @@ the old bar; those drawings are superseded wherever they show it.
 | Customer Account `dot` | Verification / KYC needs attention | Not shown | Customers have no verification step, so there is no source. It appears the day one exists. |
 | Solid-vector fallback | `glyphStyle="solid"` kept behind a flag, not wired by default | Not ported; the drawings stay in the kit's `TabBar.jsx` | The handoff says to build it only if asked, and unused code is still downloaded over metered data: the merged bundle went 2.4 KB over its Hermes budget (`size-budget.json`) with it in. |
 | Board sheet behind the bar | Content scrolls behind the bar | The sheet's white runs behind the bar; its list ends at the bar's top | `OrderSheet` measures its peek against its scroll area; the list stays fully reachable. |
+
+### 5 · v1.4 update (2026-10-03)
+
+**Owner instruction, this session (2026-10-03):** *"i want to redesign the menu bar . here is the
+handoff"*, with a new `Lynia_Design_System.zip` holding `handoff/tab-bar-v1` at **v1.4** (glass, flat,
+smooth motion). Its `README.md` "v1.4 overrides" block wins over every older line, §3 and §4 above
+included.
+
+**Design-package sync (a record):** `packages/design/handoff/tab-bar-v1/` takes the export verbatim
+(`README.md`, `CHANGES.md`, `CLAUDE_CODE_PROMPT.md`, the standalone prototype, `reference/TabBar.jsx.txt`
++ `.d.ts.txt`; the other files are byte-identical). `packages/design/components/shell/TabBar.jsx` + `.d.ts`
+are replaced by the new reference again. Tokens are unchanged: `--shadow-float` / `--shadow-active` stay
+defined; the bar just stops using them.
+
+**What changed in the app (`src/ui/shell/TabBar.tsx`):**
+- No edge and no shadow: the 1px `line` border and `shadow.float` are gone, and the padding is back to
+  the handoff's 4. This retires the "Bar edge" and "Shadows" (bar part) rows in §4.
+- The indicator is `tileMint` on every tab with no ring. `TAB_TINT` and the tint cross-fade are removed.
+- Motion is all on `cubic-bezier(0.32, 0.72, 0, 1)`: the indicator slides in 420ms. The active art eases
+  to −2 / 1.08 over 420ms and eases back when it is deselected, with no pop. Press is 0.97 over 160ms and
+  releases over 360ms. The badge pop is unchanged.
+- Labels are always 700. The muted → ink change and the idle → active art now **fade over 300ms**, as
+  two stacked layers whose opacity cross-fades on the native driver. This retires the "Label colour
+  change" row in §4.
+- Reduce motion still makes every change instant, and the press fill stays.
+
+**Deviations (v1.4):**
+
+| What | Handoff | App | Why |
+|---|---|---|---|
+| **Glass material** (PENDING OWNER REVIEW) | `bg` at 72% over a 24dp backdrop blur + 180% saturate, solid only as a fallback | Always the solid fallback (opaque `bg`) | The app ships no backdrop-blur module. The handoff says to **ask before adding a dependency** (`expo-blur` or Haze) and **never to show a translucent bar without blur**. Adding a native module also needs a new EAS binary, since an OTA can't deliver it. Solid is the handoff's own fallback, and on API < 31 and low-RAM phones it is what most riders would see anyway. Glass ships once the owner approves the dependency. |
+| Press-fill release | `surface` fill fades out over 300ms | Fades with the 360ms press release | The fill rides the press scale's native-driven value, so there's no second animation. |
 Backend, per README §5: popularity ranking, the
 merchant-funded free-delivery flag (and "Delivery: Free, paid by <venue>" at checkout), the customer
 shop list with `kind`, the new-rider free-jobs rule, Didit ID prefill.

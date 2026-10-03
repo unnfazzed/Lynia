@@ -119,7 +119,7 @@ export function TabIllus({ name, size = 28, idle = false, style }) {
       {parts.map(([t, tone, a], i) => {
         const p = { key: i, ...a };
         if (a.stroke) { p.stroke = pal[a.stroke]; } else { p.fill = pal[tone]; }
-        return React.createElement(t, { ...p, style: { transition: "fill 120ms linear, stroke 120ms linear" } });
+        return React.createElement(t, { ...p, style: { transition: "fill 300ms ease, stroke 300ms ease" } });
       })}
     </svg>
   );
@@ -137,9 +137,9 @@ export function TabGlyph({ name, size = 24, color = "currentColor", detail, styl
   return (
     <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" style={{ display: "block", flexShrink: 0, ...style }}>
       {cuts.length ? <defs><mask id={id} maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" />{cuts}</mask></defs> : null}
-      <g fill={color} mask={cuts.length ? `url(#${id})` : undefined} style={{ transition: "fill 120ms linear" }}>{fills}</g>
+      <g fill={color} mask={cuts.length ? `url(#${id})` : undefined} style={{ transition: "fill 300ms ease" }}>{fills}</g>
       {details ? <g fill={detail}>{details}</g> : null}
-      {tops.length ? <g fill={color} style={{ transition: "fill 120ms linear" }}>{tops}</g> : null}
+      {tops.length ? <g fill={color} style={{ transition: "fill 300ms ease" }}>{tops}</g> : null}
     </svg>
   );
 }
@@ -153,7 +153,7 @@ function ensureKeyframes() {
   _kf = true;
   const el = document.createElement("style");
   el.setAttribute("data-tabbar-v1", "");
-  el.textContent = "@keyframes tbGlyphPop{0%{transform:scale(.82)}60%{transform:scale(1.12)}100%{transform:scale(1)}}@keyframes tbIllusPop{0%{transform:translateY(0) scale(.86)}60%{transform:translateY(-4px) scale(1.16)}100%{transform:translateY(-2px) scale(1.08)}}@keyframes tbBadgePop{0%{transform:scale(.4)}65%{transform:scale(1.15)}100%{transform:scale(1)}}";
+  el.textContent = "@keyframes tbGlyphPop{0%{transform:scale(.92)}100%{transform:scale(1)}}@keyframes tbIllusPop{0%{transform:translateY(0) scale(.94)}100%{transform:translateY(-2px) scale(1.08)}}@keyframes tbBadgePop{0%{transform:scale(.4)}65%{transform:scale(1.15)}100%{transform:scale(1)}}";
   document.head.appendChild(el);
 }
 
@@ -180,11 +180,35 @@ function srBadge(tabId, b) {
   return "";
 }
 
+/* Glass material: 72% --bg + 24px blur + 180% saturate. Label/glyph contrast is computed against the
+   tint alone, so 72% keeps --muted ≥ 4.5:1 over any backdrop. Falls back to solid --bg when the user
+   asks for reduced transparency or more contrast, or the platform has no backdrop-filter. */
+const GLASS_BG = "color-mix(in srgb, var(--bg) 72%, transparent)";
+const GLASS_FX = "blur(24px) saturate(180%)";
+function useGlass(want) {
+  const q = () => {
+    if (!want || typeof window === "undefined") return false;
+    const css = window.CSS && CSS.supports && (CSS.supports("backdrop-filter", "blur(1px)") || CSS.supports("-webkit-backdrop-filter", "blur(1px)")) && CSS.supports("background", GLASS_BG);
+    const mm = (s) => window.matchMedia && window.matchMedia(s).matches;
+    return !!css && !mm("(prefers-reduced-transparency: reduce)") && !mm("(prefers-contrast: more)") && !mm("(forced-colors: active)");
+  };
+  const [ok, setOk] = React.useState(q);
+  React.useEffect(() => {
+    if (!want || !window.matchMedia) { setOk(q()); return; }
+    const ms = ["(prefers-reduced-transparency: reduce)", "(prefers-contrast: more)", "(forced-colors: active)"].map((s) => window.matchMedia(s));
+    const on = () => setOk(q());
+    ms.forEach((m) => m.addEventListener && m.addEventListener("change", on));
+    on();
+    return () => ms.forEach((m) => m.removeEventListener && m.removeEventListener("change", on));
+  }, [want]);
+  return ok;
+}
+
 /**
  * Bottom tab bar — floating pill, three tabs, the app root (never a product switcher).
  * Customer: Home · Orders · Account. Rider: Jobs · Money · Account. Hidden when the keyboard is open.
  */
-export function TabBar({ active, role = "customer", tabs, badges = {}, dot, onTab, onReselect, inset = 0, hidden = false, reduceMotion = false, glyphStyle = "illustrated", previewPressed, previewFocus, style, ...rest }) {
+export function TabBar({ active, role = "customer", tabs, badges = {}, dot, onTab, onReselect, inset = 0, hidden = false, reduceMotion = false, glyphStyle = "illustrated", material = "glass", previewPressed, previewFocus, style, ...rest }) {
   const list = tabs || (role === "rider" ? RIDER_TABS : APP_TABS);
   const cur = active ?? list[0].id;
   const idx = Math.max(0, list.findIndex((t) => t.id === cur));
@@ -196,18 +220,19 @@ export function TabBar({ active, role = "customer", tabs, badges = {}, dot, onTa
   const mounted = React.useRef(false);
   React.useEffect(() => { mounted.current = true; }, []);
   ensureKeyframes();
+  const glass = useGlass(material === "glass");
   const anim = !reduceMotion && mounted.current;
   const all = { ...(dot ? { [dot]: { kind: "dot" } } : null), ...badges };
   if (hidden) return null;
   const n = list.length;
-  const move = reduceMotion ? "none" : "transform 200ms cubic-bezier(0.34, 1.36, 0.64, 1), background-color 160ms linear, box-shadow 160ms linear";
+  const move = reduceMotion ? "none" : "transform 420ms cubic-bezier(0.32, 0.72, 0, 1), background-color 300ms ease";
   const ill = glyphStyle === "illustrated";
   const tint = TAB_TINT[(list[idx] || {}).glyph] || TAB_TINT.home;
   const tap = (t) => { if (t.id === cur) { onReselect && onReselect(t.id); return; } onTab && onTab(t.id); };
   return (
-    <div role="tablist" aria-label="Main" style={{ position: "absolute", left: TAB_BAR_GAP, right: TAB_BAR_GAP, bottom: TAB_BAR_GAP + inset, height: TAB_BAR_H, boxSizing: "border-box", padding: 4, display: "flex", background: "var(--bg)", borderRadius: "var(--radius-pill)", boxShadow: "inset 0 0 0 1px var(--line), var(--shadow-float)", zIndex: 20, fontFamily: "var(--font-sans)", ...style }}
+    <div role="tablist" aria-label="Main" style={{ position: "absolute", left: TAB_BAR_GAP, right: TAB_BAR_GAP, bottom: TAB_BAR_GAP + inset, height: TAB_BAR_H, boxSizing: "border-box", padding: 4, display: "flex", background: glass ? GLASS_BG : "var(--bg)", backdropFilter: glass ? GLASS_FX : undefined, WebkitBackdropFilter: glass ? GLASS_FX : undefined, borderRadius: "var(--radius-pill)", zIndex: 20, fontFamily: "var(--font-sans)", ...style }}
       onKeyDown={() => { kbRef.current = true; }} onPointerDown={() => { kbRef.current = false; }} {...rest}>
-      <span aria-hidden="true" style={{ position: "absolute", top: 4, left: 4, width: `calc((100% - 8px) / ${n})`, height: 52, borderRadius: "var(--radius-pill)", background: ill ? tint[0] : (pressed === cur ? "var(--cta-fill-pressed)" : "var(--cta-fill)"), boxShadow: ill ? `inset 0 0 0 2px ${tint[1]}` : "var(--shadow-active)", transform: `translateX(${idx * 100}%)`, transition: move }} />
+      <span aria-hidden="true" style={{ position: "absolute", top: 4, left: 4, width: `calc((100% - 8px) / ${n})`, height: 52, borderRadius: "var(--radius-pill)", background: ill ? "var(--tile-mint)" : (pressed === cur ? "var(--cta-fill-pressed)" : "var(--cta-fill)"), transform: `translateX(${idx * 100}%)`, transition: move }} />
       {list.map((t, i) => {
         const on = t.id === cur;
         const b = all[t.id];
@@ -222,9 +247,9 @@ export function TabBar({ active, role = "customer", tabs, badges = {}, dot, onTa
               if (e.key === "Enter" || e.key === " ") { e.preventDefault(); tap(t); }
               if (e.key === "ArrowRight" || e.key === "ArrowLeft") { const j = (i + (e.key === "ArrowRight" ? 1 : n - 1)) % n; const el = e.currentTarget.parentNode.querySelectorAll('[role="tab"]')[j]; el && el.focus(); }
             }}
-            style={{ flex: 1, minWidth: 0, height: 52, position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: ill ? 2 : 4, borderRadius: "var(--radius-pill)", cursor: "pointer", outline: "none", WebkitTapHighlightColor: "transparent", userSelect: "none", background: pressed === t.id && !on ? "var(--surface)" : "transparent", transform: pressed === t.id ? "scale(0.94)" : "none", transition: reduceMotion ? "none" : (pressed === t.id ? "transform 100ms ease-out" : "transform 160ms cubic-bezier(0.34, 1.36, 0.64, 1)"), boxShadow: kbFocus === t.id ? "0 0 0 2px var(--bg), 0 0 0 4px var(--ink)" : "none" }}>
-            <span key={on ? "on" : "off"} style={{ display: "block", animation: on && anim ? (ill ? "tbIllusPop 200ms cubic-bezier(0.2, 0, 0, 1) both" : "tbGlyphPop 200ms cubic-bezier(0.2, 0, 0, 1) both") : "none", transform: ill && on ? "translateY(-2px) scale(1.08)" : "none" }}>{ill ? <TabIllus name={t.glyph} idle={!on} /> : <TabGlyph name={t.glyph} color={ink} detail={on ? "var(--accent)" : undefined} />}</span>
-            <span style={{ fontSize: 12, lineHeight: "16px", letterSpacing: 0, fontWeight: on ? 700 : 600, color: ink, whiteSpace: "nowrap", transition: reduceMotion ? "none" : "color 120ms linear" }}>{t.label}</span>
+            style={{ flex: 1, minWidth: 0, height: 52, position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: ill ? 2 : 4, borderRadius: "var(--radius-pill)", cursor: "pointer", outline: "none", WebkitTapHighlightColor: "transparent", userSelect: "none", background: pressed === t.id && !on ? "var(--surface)" : "transparent", transform: pressed === t.id ? "scale(0.97)" : "none", transition: reduceMotion ? "none" : (pressed === t.id ? "transform 160ms cubic-bezier(0.32, 0.72, 0, 1), background-color 160ms ease" : "transform 360ms cubic-bezier(0.32, 0.72, 0, 1), background-color 300ms ease"), boxShadow: kbFocus === t.id ? "0 0 0 2px var(--bg), 0 0 0 4px var(--ink)" : "none" }}>
+            <span style={{ display: "block", willChange: "transform", transform: on ? (ill ? "translateY(-2px) scale(1.08)" : "scale(1)") : (ill ? "none" : "scale(0.96)"), transition: reduceMotion ? "none" : "transform 420ms cubic-bezier(0.32, 0.72, 0, 1)" }}>{ill ? <TabIllus name={t.glyph} idle={!on} /> : <TabGlyph name={t.glyph} color={ink} detail={on ? "var(--accent)" : undefined} />}</span>
+            <span style={{ fontSize: 12, lineHeight: "16px", letterSpacing: 0, fontWeight: 700, color: ink, whiteSpace: "nowrap", transition: reduceMotion ? "none" : "color 300ms ease" }}>{t.label}</span>
             <Badge key={b ? b.kind + (b.n || "") : "none"} b={b} motion={anim} />
           </div>
         );
