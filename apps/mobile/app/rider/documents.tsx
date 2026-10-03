@@ -2,7 +2,8 @@ import { tokens } from "@lynia/shared/tokens";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React from "react";
-import { Linking, ScrollView, Text, View } from "react-native";
+import { Linking, ScrollView, Text } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { getMe } from "../../src/api/auth";
 import { supportWhatsAppUrl } from "../../src/config";
 import { SkeletonList } from "../../src/ui";
@@ -32,7 +33,8 @@ export default function DocumentsScreen(): React.ReactElement {
   const tone = verified ? ("ok" as const) : null;
 
   return (
-    <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+    // PushHeader owns the top inset; the bottom edge keeps the CTA bar clear of the Android navigation bar.
+    <SafeAreaView edges={["bottom"]} style={{ flex: 1, backgroundColor: tokens.color.bg }}>
       <PushHeader title={R.tBike} onBack={() => router.back()} />
       <ScrollView contentContainerStyle={{ paddingTop: 14, paddingHorizontal: 16, paddingBottom: 24, gap: 12 }} showsVerticalScrollIndicator={false}>
         {meQ.isLoading ? (
@@ -54,6 +56,6 @@ export default function DocumentsScreen(): React.ReactElement {
       <CtaBar>
         <CtaButton ghost icon="camera" label={R.reverifyBike} disabled={!wa || !rider} onPress={reverify} />
       </CtaBar>
-    </View>
+    </SafeAreaView>
   );
 }

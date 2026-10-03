@@ -3,6 +3,7 @@ import React, { createContext, useContext, useEffect, useImperativeHandle, useMe
 import { Animated, Easing, PanResponder, ScrollView, View } from "react-native";
 import { chooseSnap } from "../BottomSheet";
 import { Tappable } from "../Tappable";
+import { useKeyboardVisible } from "../shell/TabShell";
 import { ORDER_COPY as A } from "./copy";
 
 /**
@@ -30,13 +31,15 @@ const GRAB = 28;
 const DRAG_CLAIM_PX = 6;
 const GAP = 12;
 
-const PeekContext = createContext<{ set: (y: number) => void; gap: number } | null>(null);
+const PeekContext = createContext<{ set: (y: number) => void; gap: number; stage: string } | null>(null);
 
 /** Marks where the must-see block of a stage ends (put it right after that block). */
 export function PeekMark(): React.ReactElement {
   const ctx = useContext(PeekContext);
   // The mark sits one column gap below the block it follows.
-  return <View pointerEvents="none" style={{ height: 0, marginTop: -(ctx?.gap ?? GAP) }} onLayout={(e) => ctx?.set(e.nativeEvent.layout.y)} />;
+  // Keyed by the stage: a stage change clears the measured mark, and a mark that lands at the same y would
+  // never fire onLayout again — leaving the peek stuck on the fallback share. Remounting re-measures.
+  return <View key={ctx?.stage} pointerEvents="none" style={{ height: 0, marginTop: -(ctx?.gap ?? GAP) }} onLayout={(e) => ctx?.set(e.nativeEvent.layout.y)} />;
 }
 
 export interface OrderSheetHandle {
@@ -71,7 +74,7 @@ export const OrderSheet = React.forwardRef<
   const radius = props.radius ?? 16;
   const gap = props.gap ?? GAP;
   const [mark, setMark] = useState<number | null>(null);
-  const peekCtx = useMemo(() => ({ set: setMark, gap }), [gap]);
+  const peekCtx = useMemo(() => ({ set: setMark, gap, stage: contentKey }), [gap, contentKey]);
   // A new stage re-measures.
   useEffect(() => setMark(null), [contentKey]);
 
@@ -95,12 +98,16 @@ export const OrderSheet = React.forwardRef<
     else Animated.timing(top, { toValue: to, duration: 250, easing: Easing.out(Easing.quad), useNativeDriver: false }).start();
   };
 
-  // A stage change (new peek) or a resize returns the sheet to the stage's peek.
+  // A stage change (new peek) or a resize returns the sheet to the stage's peek — except while the keyboard
+  // is up: Android shrinks the window for it, and snapping back to peek in the smaller area left the
+  // focused field (a 6-digit code box) below the fold. Typing opens the sheet to FULL instead.
+  const keyboard = useKeyboardVisible();
   useEffect(() => {
     if (areaHeight <= 0) return;
-    animateTo(peekTop, false);
+    if (keyboard) animateTo(fullTop, fullTop !== peekTop);
+    else animateTo(peekTop, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-snap only when the peek geometry changes.
-  }, [peekTop, areaHeight]);
+  }, [peekTop, fullTop, areaHeight, keyboard]);
 
   useImperativeHandle(ref, () => ({
     isFull: () => fullRef.current,

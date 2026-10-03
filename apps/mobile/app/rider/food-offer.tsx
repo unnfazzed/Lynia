@@ -2,7 +2,7 @@ import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
-import { Text, useWindowDimensions, View } from "react-native";
+import { ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { acceptFoodDispatch, declineFoodDispatch, type FoodOfferJob, getFoodDispatchOfferWithJob } from "../../src/api/food-rider";
 import { foodCashBreakdown, foodOfferVariant } from "../../src/logic/food-rider-job";
@@ -113,9 +113,9 @@ export default function FoodOffer(): React.ReactElement {
     return (
       <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1, backgroundColor: tokens.color.bg }}>
         {header}
-        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 24 }}>
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 24, paddingVertical: 16 }} showsVerticalScrollIndicator={false}>
           <TerminalBody icon="clock" title={R.expT} body={R.expB} />
-        </View>
+        </ScrollView>
         <CtaBar>
           <CtaButton label={R.backBoard} onPress={() => router.replace("/rider")} />
         </CtaBar>
