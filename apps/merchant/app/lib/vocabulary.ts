@@ -69,7 +69,7 @@ const RESTAURANT: Vocabulary = {
   bannerPhotoTip: "A real photo of your food beats a logo on the banner. Shoot in daylight, no flash — and keep the left edge clear, your logo sits there.",
   profileSub: "This is your shop front. Changes go live straight away.",
   itemPhotoNote:
-    "Every dish needs one photo before it goes live — dishes with photos are ordered about twice as often. Pick the file from this tablet; we shrink it for you.",
+    "Every dish needs one photo before it goes live — dishes with photos are ordered about twice as often. Pick the file from this phone; we shrink it for you.",
   itemCropSub: "Square crop. Fill the frame with the food, not the table.",
   itemPreviewLabel: "HOW IT LOOKS ON THE MENU",
   itemPreviewSub: "How the photo reads at menu size",
