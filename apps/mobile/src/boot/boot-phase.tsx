@@ -30,9 +30,9 @@ export interface BootPhase {
   /**
    * The app's entrance from under the splash (`handoff/splash-v1` § Exit, ledger D-64). While booting the
    * navigator sits off-screen BELOW the splash overlay, and the splash's exit slides it up over itself:
-   * `y` 0 → 1 is that rise (native-driven), `radius` the top corners (40 → 0, JS-driven — border radius
-   * isn't native-animatable), `opacity` the reduced-motion cross-fade. `endBoot` snaps all three to
-   * "in place", so a boot that ends any other way never strands the app off-screen.
+   * `y` 0 → 1 is that rise (native-driven), `radius` the top corners (40 → 0, native-driven — drawn by
+   * `RevealCorners` as scaled corner cut-outs, since border radius isn't native-animatable), `opacity`
+   * the reduced-motion cross-fade. `endBoot` snaps all three to "in place", so a boot that ends any other way never strands the app off-screen.
    */
   reveal: BootReveal;
   /**

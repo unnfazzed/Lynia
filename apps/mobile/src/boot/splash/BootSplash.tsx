@@ -1,6 +1,6 @@
 import { tokens } from "@lynia/shared/tokens";
 import { StatusBar } from "expo-status-bar";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, Easing, type LayoutChangeEvent, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Path, Polygon } from "react-native-svg";
@@ -12,6 +12,7 @@ import { useBootPhase } from "../boot-phase";
 import { reportSplashExit, useBootReadiness } from "../boot-readiness";
 import { releaseNativeSplash, useBootSplashRelease } from "../boot-splash-hold";
 import { S } from "./copy";
+import { held, keyframesEasing, keyframesInput, popEasing } from "./motion";
 import { EXIT, GIVE_UP_MS, INTRO_MS, SLOW_AFTER_MS, type StepState, nextStepChange, splashDoneAt, stepStates, stepTimes } from "./timeline";
 
 /**
@@ -29,9 +30,18 @@ import { EXIT, GIVE_UP_MS, INTRO_MS, SLOW_AFTER_MS, type StepState, nextStepChan
  * off-screen (BootPhase `reveal`) until the exit raises it, so Home mounts, fetches and lays out
  * underneath the splash and arrives fully drawn.
  *
- * Built on RN `Animated` with the native driver for every transform/opacity (the handoff's low-end
- * Android note); only the rising app's corner radius is JS-driven. Reduced motion: no pops, drift,
- * spin, breathing or bob — everything sits in its final place and state changes cross-fade (200ms).
+ * MOTION RUNS ON THE UI THREAD ONLY. Home mounts and fetches underneath during the whole splash, so
+ * the JS thread is busy exactly when the motion plays. Every animation is therefore ONE native-driven
+ * `Animated.timing` — delays, pop overshoots and multi-keyframe loops are folded into the easing
+ * (./motion.ts), loops are native `Animated.loop`s of a single timing, and nothing waits on a JS
+ * timer or completion callback between frames. (`Animated.delay`/`delay:` are JS `setTimeout`s and an
+ * `Animated.sequence` is chained from JS, which is what made the intro bunch up, the loops hitch and
+ * the pops stall on real devices.) The brand art is a memoised component with stable animated nodes,
+ * so the step clock's re-renders never rebuild a native-driven transform mid-animation (a rebuild
+ * re-applies the stale JS-side value for a frame — the sun flashing back to size mid-exit).
+ *
+ * Reduced motion: no pops, drift, spin, breathing or bob — everything sits in its final place and
+ * state changes cross-fade (200ms).
  */
 
 const C = tokens.color;
@@ -44,6 +54,11 @@ const WORDMARK = 40;
 const OFFLINE_LIFT = 64;
 /** How long "Try again" shows loading before the offline panel can come back. */
 const RETRY_GRACE_MS = 3000;
+/** One orbit lap, and the breathe / bob cycle (handoff § Loading loops). */
+const ORBIT_LAP_MS = 2600;
+const BREATHE_MS = 2400;
+/** Blob drift: three 2000ms keyframe segments (handoff: 6s). */
+const DRIFT_MS = 6000;
 
 const POP = Easing.bezier(0.3, 1.5, 0.5, 1);
 const TICK_POP = Easing.bezier(0.3, 1.6, 0.5, 1);
@@ -54,6 +69,12 @@ const SPRING_OUT = Easing.bezier(0.2, 0.9, 0.3, 1.2);
 const SETTLE = Easing.bezier(0.2, 0.9, 0.3, 1);
 const SUN_FLOOD = Easing.bezier(0.6, 0, 0.2, 1);
 const HOME_UP = Easing.bezier(0.2, 0.8, 0.2, 1);
+const POP_CURVE = popEasing(POP);
+const TICK_CURVE = popEasing(TICK_POP);
+const SWING_CURVE = keyframesEasing(2, EASE_IN_OUT);
+const DRIFT_CURVE = keyframesEasing(3, EASE_IN_OUT);
+const SWING_IN = keyframesInput(2);
+const DRIFT_IN = keyframesInput(3);
 
 /** The dove's three facets, each folding in about its own centre (CSS `transform-box: fill-box`). */
 const FACETS = [
@@ -109,25 +130,17 @@ const BLOBS = [
   },
 ] as const;
 
+/** One native-driven timing; `delay` is folded into the easing (no JS timer). */
 const timing = (v: Animated.Value, toValue: number, duration: number, easing: (x: number) => number, delay = 0): Animated.CompositeAnimation =>
   Animated.timing(v, {
     toValue,
-    duration,
-    easing,
-    delay,
+    ...held(delay, duration, easing),
     useNativeDriver: true,
   });
 
-/** CSS `pop` keyframes: 0 → 1.08 (70%) → 1, the easing applied per segment. */
-const pop = (v: Animated.Value, duration: number, delay: number): Animated.CompositeAnimation =>
-  Animated.sequence([Animated.delay(delay), timing(v, 1.08, duration * 0.7, POP), timing(v, 1, duration * 0.3, POP)]);
-
+/** A native loop of one 0 → 1 timing — `Animated.loop` only loops on the UI thread around a single timing. */
 const loop = (v: Animated.Value, duration: number, easing: (x: number) => number): Animated.CompositeAnimation =>
   Animated.loop(Animated.timing(v, { toValue: 1, duration, easing, useNativeDriver: true }));
-
-/** A 0 → 1 → 0 swing (CSS `alternate`-style breathe/bob), as one looping value. */
-const swing = (v: Animated.Value, half: number): Animated.CompositeAnimation =>
-  Animated.loop(Animated.sequence([timing(v, 1, half, EASE_IN_OUT), timing(v, 0, half, EASE_IN_OUT)]));
 
 /**
  * The OS reduce-motion setting. Starts `false` so the intro begins on the very first frame instead of
@@ -152,12 +165,33 @@ function useReduceMotionSetting(): boolean {
 
 type Phase = "boot" | "loading" | "offline" | "done";
 
+interface SplashValues {
+  sun: Animated.Value;
+  facets: Animated.Value[];
+  crease: Animated.Value;
+  blobs: Animated.Value[];
+  drift: Animated.Value[];
+  wordmark: Animated.Value;
+  orbitIn: Animated.Value;
+  spin: Animated.Value;
+  spinOffset: Animated.Value;
+  breathe: Animated.Value;
+  bob: Animated.Value;
+  card: Animated.Value;
+  slow: Animated.Value;
+  offline: Animated.Value;
+  idle: Animated.Value;
+  exitOrbit: Animated.Value;
+  exitDove: Animated.Value;
+  exitSun: Animated.Value;
+  ringSpin: Animated.Value;
+}
+
 export function BootSplash(): React.ReactElement {
   const window = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [size, setSize] = useState({ W: window.width, H: window.height });
   const { W, H } = size;
-  const A = 0.44 * H;
 
   const reduce = useReduceMotionSetting();
   const reachable = useReachability();
@@ -199,7 +233,7 @@ export function BootSplash(): React.ReactElement {
   }, [t, t0, times, doneAt, retryAt, done]);
 
   // ── Animated values ──
-  const v = useRef({
+  const v = useRef<SplashValues>({
     sun: new Animated.Value(0),
     facets: FACETS.map(() => new Animated.Value(0)),
     crease: new Animated.Value(0),
@@ -208,6 +242,7 @@ export function BootSplash(): React.ReactElement {
     wordmark: new Animated.Value(0),
     orbitIn: new Animated.Value(0),
     spin: new Animated.Value(0),
+    spinOffset: new Animated.Value(0),
     breathe: new Animated.Value(0),
     bob: new Animated.Value(0),
     card: new Animated.Value(0),
@@ -220,25 +255,24 @@ export function BootSplash(): React.ReactElement {
     ringSpin: new Animated.Value(0),
   }).current;
 
-  // Boot: the intro timeline.
+  // Boot: the intro timeline. Every element starts on the first frame; its handoff delay is held
+  // inside its own curve, so the stagger keeps time even while JS is busy mounting Home.
   useEffect(() => {
     if (reduce) {
       for (const x of [v.sun, v.crease, v.wordmark, ...v.facets, ...v.blobs]) x.setValue(1);
       return;
     }
     const intro = Animated.parallel([
-      pop(v.sun, 700, 100),
+      timing(v.sun, 1, 700, POP_CURVE, 100),
       ...FACETS.map((f, i) => timing(v.facets[i]!, 1, 500, EASE_OUT, f.delay)),
       timing(v.crease, 1, 300, EASE_OUT, 950),
-      ...BLOBS.map((b, i) => pop(v.blobs[i]!, 600, b.pop)),
+      ...BLOBS.map((b, i) => timing(v.blobs[i]!, 1, 600, POP_CURVE, b.pop)),
       timing(v.wordmark, 1, 550, RISE, 1000),
     ]);
     intro.start();
-    const drifts = BLOBS.map((b, i) =>
-      // CSS `drift` keyframes (0 → 33% → 66% → 100%), ease-in-out per segment; the loop's reset to 0
-      // lands where segment 3 ends, at rest.
-      Animated.sequence([Animated.delay(b.drift), Animated.loop(Animated.sequence([1, 2, 3].map((k) => timing(v.drift[i]!, k, 2000, EASE_IN_OUT))))]),
-    );
+    // Drift: CSS `drift` keyframes (0 → 33% → 66% → 100%), ease-in-out per segment, as one native loop.
+    // Only its START waits on a JS timer — the blob is at rest then, so a late start is invisible.
+    const drifts = BLOBS.map((b, i) => Animated.sequence([Animated.delay(b.drift), loop(v.drift[i]!, DRIFT_MS, DRIFT_CURVE)]));
     drifts.forEach((d) => d.start());
     const ring = loop(v.ringSpin, 800, Easing.linear);
     ring.start();
@@ -253,64 +287,63 @@ export function BootSplash(): React.ReactElement {
   const looping = phase === "loading" || phase === "offline";
   useEffect(() => {
     if (!looping) return;
-    const fade = reduce ? EXIT.fadeMs : 500;
-    const shown = Animated.parallel([
-      timing(v.orbitIn, 1, fade, SETTLE),
-      timing(v.card, phase === "loading" ? 1 : 0, reduce ? EXIT.fadeMs : 500, SPRING_OUT),
-    ]);
+    const fade = reduce ? EXIT.fadeMs : 400;
+    const shown = Animated.parallel([timing(v.orbitIn, 1, fade, SETTLE), timing(v.card, phase === "loading" ? 1 : 0, reduce ? EXIT.fadeMs : 500, SPRING_OUT)]);
     shown.start();
     return () => shown.stop();
   }, [reduce, looping, phase, v]);
 
+  // The orbit pauses where it is (offline) and resumes from there. The lap itself is a native loop
+  // from 0; the paused angle lives in `spinOffset` (rotation = (offset + spin) mod 1), so resuming
+  // never needs a JS-chained "finish this lap" step. A pause reads the native angle asynchronously, so
+  // a resume waits for the last pause to land.
+  const mounted = useRef(true);
+  useEffect(
+    () => () => {
+      mounted.current = false;
+    },
+    [],
+  );
+  const spinPaused = useRef<Promise<void>>(Promise.resolve());
+  const spinPhase = useRef(0);
   useEffect(() => {
     if (reduce || phase !== "loading") return;
-    // Resume the orbit from wherever it paused: finish this lap, then loop full laps.
-    let current = 0;
-    v.spin.stopAnimation((x) => (current = x % 1));
-    v.spin.setValue(current);
-    const lap = 2600;
-    const spin = Animated.sequence([
-      Animated.timing(v.spin, {
-        toValue: 1,
-        duration: lap * (1 - current),
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(v.spin, {
-            toValue: 0,
-            duration: 0,
-            useNativeDriver: true,
-          }),
-          Animated.timing(v.spin, {
-            toValue: 1,
-            duration: lap,
-            easing: Easing.linear,
-            useNativeDriver: true,
-          }),
-        ]),
-      ),
-    ]);
-    const breathe = swing(v.breathe, 1200);
-    const bob = swing(v.bob, 1200);
-    spin.start();
+    let alive = true;
+    void spinPaused.current.then(() => {
+      if (!alive) return;
+      v.spin.setValue(0);
+      loop(v.spin, ORBIT_LAP_MS, Easing.linear).start();
+    });
+    const breathe = loop(v.breathe, BREATHE_MS, SWING_CURVE);
+    const bob = loop(v.bob, BREATHE_MS, SWING_CURVE);
+    v.breathe.setValue(0);
+    v.bob.setValue(0);
     breathe.start();
     bob.start();
     return () => {
-      v.spin.stopAnimation();
+      alive = false;
+      spinPaused.current = new Promise((resolve) => {
+        v.spin.stopAnimation((x) => {
+          spinPhase.current = (spinPhase.current + x) % 1;
+          v.spinOffset.setValue(spinPhase.current);
+          v.spin.setValue(0);
+          resolve();
+        });
+      });
       breathe.stop();
       bob.stop();
+      // Settle the breathe/bob back to rest instead of freezing mid-swing (not on unmount).
+      if (mounted.current) {
+        timing(v.breathe, 0, 300, EASE_OUT).start();
+        timing(v.bob, 0, 300, EASE_OUT).start();
+      }
     };
   }, [reduce, phase, v]);
 
   // Offline panel, idle dot and the lift that keeps the brand clear of the panel.
   useEffect(() => {
     const on = phase === "offline" ? 1 : 0;
-    const a = Animated.parallel([
-      timing(v.offline, on, reduce ? EXIT.fadeMs : 450, SETTLE),
-      timing(v.idle, on, reduce ? EXIT.fadeMs : 300, EASE_OUT),
-    ]);
+    const a = Animated.parallel([timing(v.offline, on, reduce ? EXIT.fadeMs : 450, SETTLE), timing(v.idle, on, reduce ? EXIT.fadeMs : 300, EASE_OUT)]);
     a.start();
     return () => a.stop();
   }, [reduce, phase, v]);
@@ -344,34 +377,21 @@ export function BootSplash(): React.ReactElement {
       fadeIn.start(() => release());
       return () => fadeIn.stop();
     }
-    const brand = Animated.parallel([
+    // Everything in the exit — the brand clearing, the sun flood, Home's rise and its corners rounding
+    // off — starts now on the UI thread; Home's 450ms offset is held inside its curves.
+    const exit = Animated.parallel([
       timing(v.exitOrbit, 1, EXIT.orbitMs, EASE_OUT),
       timing(v.exitDove, 1, EXIT.doveMs, EASE_OUT),
       timing(v.exitSun, 1, EXIT.sunMs, SUN_FLOOD),
+      timing(reveal.y, 1, EXIT.homeMs, HOME_UP, EXIT.homeDelayMs),
+      timing(reveal.radius, 0, EXIT.homeMs, HOME_UP, EXIT.homeDelayMs),
     ]);
-    brand.start();
+    // The status bar flips as Home starts rising; only the bar re-renders (the art is memoised).
     const rise = setTimeout(() => setHomeRising(true), EXIT.homeDelayMs);
-    const home = Animated.parallel([
-      Animated.timing(reveal.y, {
-        toValue: 1,
-        duration: EXIT.homeMs,
-        delay: EXIT.homeDelayMs,
-        easing: HOME_UP,
-        useNativeDriver: true,
-      }),
-      Animated.timing(reveal.radius, {
-        toValue: 0,
-        duration: EXIT.homeMs,
-        delay: EXIT.homeDelayMs,
-        easing: HOME_UP,
-        useNativeDriver: false,
-      }),
-    ]);
     // Stopped early only when the boot already ended some other way — releasing again is a no-op.
-    home.start(() => release());
+    exit.start(() => release());
     return () => {
-      brand.stop();
-      home.stop();
+      exit.stop();
       clearTimeout(rise);
     };
   }, [done, toHome, reduce, release, reveal, v]);
@@ -386,14 +406,17 @@ export function BootSplash(): React.ReactElement {
     }
   }, [doneCount]);
 
-  const onLayout = useCallback((e: LayoutChangeEvent) => {
-    const { width, height } = e.nativeEvent.layout;
-    setSize((s) => (s.W === width && s.H === height ? s : { W: width, H: height }));
-    // The JS splash has drawn: drop the native launch screen onto it (same green, no visible seam),
-    // then let the app mount underneath on the NEXT frame, so this first frame was the splash alone.
-    releaseNativeSplash();
-    requestAnimationFrame(markSplashDrawn);
-  }, [markSplashDrawn]);
+  const onLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      const { width, height } = e.nativeEvent.layout;
+      setSize((s) => (s.W === width && s.H === height ? s : { W: width, H: height }));
+      // The JS splash has drawn: drop the native launch screen onto it (same green, no visible seam),
+      // then let the app mount underneath on the NEXT frame, so this first frame was the splash alone.
+      releaseNativeSplash();
+      requestAnimationFrame(markSplashDrawn);
+    },
+    [markSplashDrawn],
+  );
   // Belt and braces: if layout never reports (it always should), don't keep the native screen up.
   useEffect(() => {
     const h = setTimeout(() => {
@@ -408,194 +431,21 @@ export function BootSplash(): React.ReactElement {
     setRetryAt(Date.now() - t0);
   }, [t0]);
 
-  // ── Interpolations ──
   const still = reduce;
-  const lift = v.offline.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, still ? 0 : -OFFLINE_LIFT],
-  });
-  const sunScale = Animated.multiply(
-    Animated.multiply(v.sun, still ? 1 : v.breathe.interpolate({ inputRange: [0, 1], outputRange: [1, 1.04] })),
-    v.exitSun.interpolate({
-      inputRange: [0, 1],
-      outputRange: [1, still ? 1 : 6],
+  const motion = useMemo(
+    () => ({
+      cardY: still ? 0 : v.card.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }),
+      slowY: still ? 0 : v.slow.interpolate({ inputRange: [0, 1], outputRange: [-110, 0] }),
+      panelY: still ? 0 : v.offline.interpolate({ inputRange: [0, 1], outputRange: [320, 0] }),
     }),
+    [still, v],
   );
-  const orbitOpacity = Animated.multiply(v.orbitIn, v.exitOrbit.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }));
-  const orbitScale = still
-    ? 1
-    : Animated.multiply(
-        v.orbitIn.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] }),
-        v.exitOrbit.interpolate({ inputRange: [0, 1], outputRange: [1, 0.3] }),
-      );
-  const orbitRotate = v.spin.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["0deg", "360deg"],
-  });
-  const doveOpacity = v.exitDove.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 0],
-  });
-  const bobY = still ? 0 : v.bob.interpolate({ inputRange: [0, 1], outputRange: [0, -8] });
-  const bobR = still ? "0deg" : v.bob.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "-3deg"] });
-  const cardY = still ? 0 : v.card.interpolate({ inputRange: [0, 1], outputRange: [24, 0] });
-  const slowY = still ? 0 : v.slow.interpolate({ inputRange: [0, 1], outputRange: [-110, 0] });
-  const panelY = still ? 0 : v.offline.interpolate({ inputRange: [0, 1], outputRange: [320, 0] });
 
   return (
     <View style={[StyleSheet.absoluteFill, styles.screen]} onLayout={onLayout}>
       <StatusBar style={homeRising ? "dark" : "light"} />
 
-      {/* Blobs — decorative, hidden from accessibility. */}
-      <View style={StyleSheet.absoluteFill} pointerEvents="none" importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
-        {BLOBS.map((b, i) => {
-          const d = v.drift[i]!;
-          const tx = still
-            ? 0
-            : d.interpolate({
-                inputRange: [0, 1, 2, 3],
-                outputRange: [0, 8, -6, 0],
-              });
-          const ty = still
-            ? 0
-            : d.interpolate({
-                inputRange: [0, 1, 2, 3],
-                outputRange: [0, -10, 6, 0],
-              });
-          return (
-            <Animated.View
-              key={b.color}
-              style={[
-                {
-                  position: "absolute",
-                  width: b.size,
-                  height: b.size,
-                  borderRadius: b.size / 2,
-                  backgroundColor: b.color,
-                },
-                b.pos(H),
-                {
-                  transform: [{ translateX: tx }, { translateY: ty }, { scale: v.blobs[i]! }],
-                },
-              ]}
-            />
-          );
-        })}
-      </View>
-
-      {/* The anchor group: orbit, sun, dove — centred at 44% of the height. */}
-      <Animated.View style={[styles.anchor, { left: W / 2, top: A, transform: [{ translateY: lift }] }]}>
-        <Animated.View
-          pointerEvents="none"
-          importantForAccessibility="no-hide-descendants"
-          accessibilityElementsHidden
-          style={[
-            styles.orbit,
-            {
-              opacity: orbitOpacity,
-              transform: [{ scale: orbitScale }, { rotate: orbitRotate }],
-            },
-          ]}
-        >
-          <Svg width={ORBIT} height={ORBIT}>
-            <Circle
-              cx={ORBIT / 2}
-              cy={ORBIT / 2}
-              r={ORBIT / 2 - 1}
-              stroke="rgba(255,255,255,0.5)"
-              strokeWidth={2}
-              strokeDasharray="6 6"
-              fill="none"
-            />
-          </Svg>
-          <View style={styles.dotRing}>
-            <View style={[styles.dot, { backgroundColor: C.coral }]} />
-            <Animated.View style={[styles.dot, styles.dotOver, { backgroundColor: C.illusIdleMid, opacity: v.idle }]} />
-          </View>
-        </Animated.View>
-        <Animated.View style={[styles.sun, { transform: [{ scale: sunScale }] }]} />
-        <Animated.View
-          accessible
-          accessibilityRole="image"
-          accessibilityLabel={S.brand}
-          style={[
-            styles.dove,
-            {
-              opacity: doveOpacity,
-              transform: [{ translateY: bobY }, { rotate: bobR }],
-            },
-          ]}
-        >
-          {FACETS.map((f, i) => {
-            const p = v.facets[i]!;
-            return (
-              <Animated.View
-                key={f.points}
-                style={[
-                  StyleSheet.absoluteFill,
-                  {
-                    transformOrigin: f.origin,
-                    opacity: p,
-                    transform: [
-                      {
-                        scale: p.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [0.3, 1],
-                        }),
-                      },
-                      {
-                        rotate: p.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: ["-14deg", "0deg"],
-                        }),
-                      },
-                    ],
-                  },
-                ]}
-              >
-                <Svg width={DOVE} height={DOVE} viewBox={DOVE_VIEWBOX}>
-                  <Polygon points={f.points} fill={f.fill} />
-                </Svg>
-              </Animated.View>
-            );
-          })}
-          <Animated.View style={[StyleSheet.absoluteFill, { opacity: v.crease }]}>
-            <Svg width={DOVE} height={DOVE} viewBox={DOVE_VIEWBOX}>
-              {DOVE_CREASE_PATHS.map((d) => (
-                <Path key={d} d={d} stroke={C.highlight} strokeWidth={DOVE_CREASE_WIDTH} fill="none" />
-              ))}
-            </Svg>
-          </Animated.View>
-        </Animated.View>
-      </Animated.View>
-
-      {/* Wordmark — hidden from screen readers (the dove already says "LyniaGo"). */}
-      <Animated.View
-        importantForAccessibility="no-hide-descendants"
-        accessibilityElementsHidden
-        style={[
-          styles.wordmark,
-          {
-            top: A + 152,
-            opacity: v.wordmark,
-            transform: [
-              {
-                translateY: Animated.add(
-                  lift,
-                  still
-                    ? 0
-                    : v.wordmark.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [14, 0],
-                      }),
-                ),
-              },
-            ],
-          },
-        ]}
-      >
-        <Wordmark size={WORDMARK} color={C.onAccent} goColor={C.onAccentSoft} />
-      </Animated.View>
+      <SplashArt v={v} W={W} H={H} still={still} />
 
       {/* Steps card — real progress, a polite live region. */}
       <Animated.View
@@ -605,7 +455,7 @@ export function BootSplash(): React.ReactElement {
           {
             bottom: 16 + insets.bottom,
             opacity: v.card,
-            transform: [{ translateY: cardY }],
+            transform: [{ translateY: motion.cardY }],
           },
         ]}
       >
@@ -622,7 +472,7 @@ export function BootSplash(): React.ReactElement {
           {
             top: Math.max(44, insets.top + 8),
             opacity: still ? v.slow : 1,
-            transform: [{ translateY: slowY }],
+            transform: [{ translateY: motion.slowY }],
           },
         ]}
       >
@@ -643,7 +493,7 @@ export function BootSplash(): React.ReactElement {
           {
             bottom: 14 + insets.bottom,
             opacity: still ? v.offline : 1,
-            transform: [{ translateY: panelY }],
+            transform: [{ translateY: motion.panelY }],
           },
         ]}
       >
@@ -657,7 +507,216 @@ export function BootSplash(): React.ReactElement {
   );
 }
 
-function StepRow({ label, state, spin, still }: { label: string; state: StepState; spin: Animated.Value; still: boolean }): React.ReactElement {
+/**
+ * The brand art — blobs, orbit, sun, dove, wordmark. Memoised on props that only change with the
+ * screen size or the reduce-motion setting, with every animated node built once: the step clock's
+ * re-renders never reach it, so no native-driven transform is ever rebuilt mid-animation.
+ */
+const SplashArt = memo(function SplashArt({ v, W, H, still }: { v: SplashValues; W: number; H: number; still: boolean }): React.ReactElement {
+  const A = 0.44 * H;
+  const n = useMemo(() => {
+    const lift = v.offline.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0, still ? 0 : -OFFLINE_LIFT],
+    });
+    return {
+      lift,
+      blobs: BLOBS.map((_, i) => ({
+        tx: still
+          ? 0
+          : v.drift[i]!.interpolate({
+              inputRange: DRIFT_IN,
+              outputRange: [0, 8, -6, 0],
+            }),
+        ty: still
+          ? 0
+          : v.drift[i]!.interpolate({
+              inputRange: DRIFT_IN,
+              outputRange: [0, -10, 6, 0],
+            }),
+      })),
+      sunScale: Animated.multiply(
+        Animated.multiply(
+          v.sun,
+          still
+            ? 1
+            : v.breathe.interpolate({
+                inputRange: SWING_IN,
+                outputRange: [1, 1.04, 1],
+              }),
+        ),
+        v.exitSun.interpolate({
+          inputRange: [0, 1],
+          outputRange: [1, still ? 1 : 6],
+        }),
+      ),
+      orbitOpacity: Animated.multiply(v.orbitIn, v.exitOrbit.interpolate({ inputRange: [0, 1], outputRange: [1, 0] })),
+      orbitScale: still
+        ? 1
+        : Animated.multiply(
+            v.orbitIn.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0.85, 1],
+            }),
+            v.exitOrbit.interpolate({
+              inputRange: [0, 1],
+              outputRange: [1, 0.3],
+            }),
+          ),
+      orbitRotate: Animated.modulo(Animated.add(v.spinOffset, v.spin), 1).interpolate({
+        inputRange: [0, 1],
+        outputRange: ["0deg", "360deg"],
+      }),
+      doveOpacity: v.exitDove.interpolate({
+        inputRange: [0, 1],
+        outputRange: [1, 0],
+      }),
+      bobY: still ? 0 : v.bob.interpolate({ inputRange: SWING_IN, outputRange: [0, -8, 0] }),
+      bobR: still
+        ? "0deg"
+        : v.bob.interpolate({
+            inputRange: SWING_IN,
+            outputRange: ["0deg", "-3deg", "0deg"],
+          }),
+      facets: FACETS.map((_, i) => ({
+        scale: v.facets[i]!.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0.3, 1],
+        }),
+        rotate: v.facets[i]!.interpolate({
+          inputRange: [0, 1],
+          outputRange: ["-14deg", "0deg"],
+        }),
+      })),
+      wordmarkY: Animated.add(
+        lift,
+        still
+          ? 0
+          : v.wordmark.interpolate({
+              inputRange: [0, 1],
+              outputRange: [14, 0],
+            }),
+      ),
+    };
+  }, [v, still]);
+
+  return (
+    <>
+      {/* Blobs — decorative, hidden from accessibility. */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="none" importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
+        {BLOBS.map((b, i) => (
+          <Animated.View
+            key={b.color}
+            style={[
+              {
+                position: "absolute",
+                width: b.size,
+                height: b.size,
+                borderRadius: b.size / 2,
+                backgroundColor: b.color,
+              },
+              b.pos(H),
+              {
+                transform: [{ translateX: n.blobs[i]!.tx }, { translateY: n.blobs[i]!.ty }, { scale: v.blobs[i]! }],
+              },
+            ]}
+          />
+        ))}
+      </View>
+
+      {/* The anchor group: orbit, sun, dove — centred at 44% of the height. */}
+      <Animated.View style={[styles.anchor, { left: W / 2, top: A, transform: [{ translateY: n.lift }] }]}>
+        <Animated.View
+          pointerEvents="none"
+          importantForAccessibility="no-hide-descendants"
+          accessibilityElementsHidden
+          style={[
+            styles.orbit,
+            {
+              opacity: n.orbitOpacity,
+              transform: [{ scale: n.orbitScale }, { rotate: n.orbitRotate }],
+            },
+          ]}
+        >
+          <Svg width={ORBIT} height={ORBIT}>
+            <Circle cx={ORBIT / 2} cy={ORBIT / 2} r={ORBIT / 2 - 1} stroke="rgba(255,255,255,0.5)" strokeWidth={2} strokeDasharray="6 6" fill="none" />
+          </Svg>
+          <View style={styles.dotRing}>
+            <View style={[styles.dot, { backgroundColor: C.coral }]} />
+            <Animated.View style={[styles.dot, styles.dotOver, { backgroundColor: C.illusIdleMid, opacity: v.idle }]} />
+          </View>
+        </Animated.View>
+        <Animated.View style={[styles.sun, { transform: [{ scale: n.sunScale }] }]} />
+        <Animated.View
+          accessible
+          accessibilityRole="image"
+          accessibilityLabel={S.brand}
+          style={[
+            styles.dove,
+            {
+              opacity: n.doveOpacity,
+              transform: [{ translateY: n.bobY }, { rotate: n.bobR }],
+            },
+          ]}
+        >
+          {FACETS.map((f, i) => (
+            <Animated.View
+              key={f.points}
+              style={[
+                StyleSheet.absoluteFill,
+                {
+                  transformOrigin: f.origin,
+                  opacity: v.facets[i]!,
+                  transform: [{ scale: n.facets[i]!.scale }, { rotate: n.facets[i]!.rotate }],
+                },
+              ]}
+            >
+              <Svg width={DOVE} height={DOVE} viewBox={DOVE_VIEWBOX}>
+                <Polygon points={f.points} fill={f.fill} />
+              </Svg>
+            </Animated.View>
+          ))}
+          <Animated.View style={[StyleSheet.absoluteFill, { opacity: v.crease }]}>
+            <Svg width={DOVE} height={DOVE} viewBox={DOVE_VIEWBOX}>
+              {DOVE_CREASE_PATHS.map((d) => (
+                <Path key={d} d={d} stroke={C.highlight} strokeWidth={DOVE_CREASE_WIDTH} fill="none" />
+              ))}
+            </Svg>
+          </Animated.View>
+        </Animated.View>
+      </Animated.View>
+
+      {/* Wordmark — hidden from screen readers (the dove already says "LyniaGo"). */}
+      <Animated.View
+        importantForAccessibility="no-hide-descendants"
+        accessibilityElementsHidden
+        style={[
+          styles.wordmark,
+          {
+            top: A + 152,
+            opacity: v.wordmark,
+            transform: [{ translateY: n.wordmarkY }],
+          },
+        ]}
+      >
+        <Wordmark size={WORDMARK} color={C.onAccent} goColor={C.onAccentSoft} />
+      </Animated.View>
+    </>
+  );
+});
+
+/** One step row. Memoised: it re-renders only when its own state changes, not on every clock tick. */
+const StepRow = memo(function StepRow({
+  label,
+  state,
+  spin,
+  still,
+}: {
+  label: string;
+  state: StepState;
+  spin: Animated.Value;
+  still: boolean;
+}): React.ReactElement {
   const tick = useRef(new Animated.Value(state === "done" ? 1 : 0)).current;
   useEffect(() => {
     if (state !== "done") return;
@@ -665,14 +724,12 @@ function StepRow({ label, state, spin, still }: { label: string; state: StepStat
       tick.setValue(1);
       return;
     }
-    const a = Animated.sequence([timing(tick, 1.08, 210, TICK_POP), timing(tick, 1, 90, TICK_POP)]);
+    // 0 → 1.08 → 1 over 300ms, as one native timing.
+    const a = timing(tick, 1, 300, TICK_CURVE);
     a.start();
     return () => a.stop();
   }, [state, still, tick]);
-  const rotate = spin.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["0deg", "360deg"],
-  });
+  const rotate = useMemo(() => spin.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] }), [spin]);
   return (
     <View
       style={styles.row}
@@ -695,7 +752,7 @@ function StepRow({ label, state, spin, still }: { label: string; state: StepStat
       <Text style={[styles.rowText, { color: state === "pending" ? C.muted : C.ink }]}>{label}</Text>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   screen: { backgroundColor: C.accent, overflow: "hidden" },

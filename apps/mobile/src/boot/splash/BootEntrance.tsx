@@ -3,6 +3,7 @@ import { Animated, Easing } from "react-native";
 import { useReduceMotion } from "../../ui/useReduceMotion";
 import { useBootPhase } from "../boot-phase";
 import { useBootReadiness } from "../boot-readiness";
+import { held } from "./motion";
 
 /**
  * Home's content entrance at the end of the splash (`handoff/splash-v1` § Exit, ledger D-64): once
@@ -33,11 +34,11 @@ export function BootEntrance({ index, children }: { index: number; children: Rea
     }
     if (exitAt == null) return;
     const delay = Math.max(0, ENTRANCE_DELAYS_MS[Math.min(index, ENTRANCE_DELAYS_MS.length - 1)]! - (Date.now() - exitAt));
+    // The stagger is held inside the curve, not a JS `delay` timer: Home is still rendering on the JS
+    // thread here, and a late timer is what bunched the sections up on devices.
     const a = Animated.timing(p, {
       toValue: 1,
-      duration: RISE_MS,
-      delay,
-      easing: EASE_OUT,
+      ...held(delay, RISE_MS, EASE_OUT),
       useNativeDriver: true,
     });
     a.start();

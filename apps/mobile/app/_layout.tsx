@@ -27,6 +27,7 @@ import { Button, EmptyState, OfflineBanner, Screen, ToastProvider } from "../src
 import { prewarmFonts, useAppFonts } from "../src/ui/fonts";
 import { useBootSplashRelease } from "../src/boot/boot-splash-hold";
 import { BootSplash } from "../src/boot/splash/BootSplash";
+import { RevealCorners } from "../src/boot/RevealCorners";
 import { RiderRouteGate } from "../src/rider-route-gate";
 import ForceUpdateScreen from "./force-update";
 
@@ -183,8 +184,9 @@ function SplashWhileBooting(): React.ReactElement | null {
  * The app's frame during the cold start (ledger D-64, `handoff/splash-v1` § Exit). While booting it
  * holds the navigator 105% of a screen below the splash — mounted, fetching and laying out, but off
  * screen and hidden from accessibility — and the splash's exit slides it up with its top corners
- * rounding off (40 → 0). After the boot it is a plain full-size view: `endBoot` snaps the reveal into
- * place, and the clip/background only apply while booting.
+ * rounding off (40 → 0, {@link RevealCorners}). Everything in that rise is native-driven: no JS-driven
+ * border radius or clip over the Home tree. After the boot it is a plain full-size view: `endBoot`
+ * snaps the reveal into place, and the corners/background only apply while booting.
  */
 function AppStage({ children }: { children: React.ReactNode }): React.ReactElement {
   const { booting, reveal, appMountable } = useBootPhase();
@@ -196,15 +198,8 @@ function AppStage({ children }: { children: React.ReactNode }): React.ReactEleme
       importantForAccessibility={booting ? "no-hide-descendants" : "auto"}
       accessibilityElementsHidden={booting}
     >
-      <Animated.View
-        style={
-          booting
-            ? { flex: 1, overflow: "hidden", backgroundColor: tokens.color.bg, borderTopLeftRadius: reveal.radius, borderTopRightRadius: reveal.radius }
-            : { flex: 1 }
-        }
-      >
-        {appMountable ? children : null}
-      </Animated.View>
+      <View style={booting ? { flex: 1, backgroundColor: tokens.color.bg } : { flex: 1 }}>{appMountable ? children : null}</View>
+      {booting ? <RevealCorners radius={reveal.radius} /> : null}
     </Animated.View>
   );
 }
