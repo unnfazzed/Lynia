@@ -93,15 +93,4 @@ export const RO = {
   goOnline: "Go online",
   /** Owner 2026-10-02 (D-62). Drawn: "Add licence and bike papers later in Account". */
   papersLater: "Add your photo, licence and bike papers later in Account",
-
-  /**
-   * The details step, shown only when the account is missing its name or national ID (D-62: it replaced
-   * the photo step; app-authored, the handoff draws no such page).
-   */
-  detailsTitle: "A few details first",
-  detailsSub: "We need these on your account before your ID check.",
-  privacy: "We verify your national ID with an ID photo and a quick selfie check. We store your ID number to keep deliveries safe; we don't share it with customers.",
-  privacyTest: "Test build: ID verification is bypassed — submit and you'll be verified straight away so you can go online.",
-  idNeeded: "Your national ID number",
-  idNeededHint: "The 8–12 digits on your national ID card.",
 } as const;
