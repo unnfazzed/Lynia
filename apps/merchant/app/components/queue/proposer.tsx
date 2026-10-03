@@ -77,7 +77,7 @@ export function ProposerLine({
       )}
       {selected && (
         <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-          <button type="button" className="m-sec" style={{ flex: 1 }} disabled={disabled} onClick={onRemove}>
+          <button type="button" className="m-btn-sec" style={{ flex: 1 }} disabled={disabled} onClick={onRemove}>
             <Icon name="trash-2" size={16} />
             {OF.mRemove}
           </button>

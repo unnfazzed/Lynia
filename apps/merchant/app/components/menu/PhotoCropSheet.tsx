@@ -219,7 +219,7 @@ export function PhotoCropSheet({
 
         {failed && (
           <div style={{ fontSize: 13.5, color: "var(--danger-ink)", background: "var(--danger-wash)", borderRadius: 12, padding: "12px 14px", marginBottom: 14, fontWeight: 700 }}>
-            That file couldn&apos;t be opened as a photo. Pick a JPEG or PNG from this tablet.
+            That file couldn&apos;t be opened as a photo. Pick a JPEG or PNG from this phone.
           </div>
         )}
 

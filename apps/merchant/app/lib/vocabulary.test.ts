@@ -29,6 +29,12 @@ describe("vocabulary (merchant web upgrade plan D6)", () => {
     expect(vocabulary("shop", null).starterCategories).toEqual(vocabulary("shop", "other").starterCategories);
   });
 
+  it("speaks of the phone the app runs on, never a tablet (ledger D-48: the merchant app is phone-first)", () => {
+    expect(vocabulary("restaurant").itemPhotoNote).toContain("Pick the file from this phone;");
+    for (const kind of MerchantShopKind.options) expect(JSON.stringify(vocabulary("shop", kind))).not.toMatch(/tablet/i);
+    expect(JSON.stringify(vocabulary("restaurant"))).not.toMatch(/tablet/i);
+  });
+
   it("counts in the business's words", () => {
     expect(countOf(1, vocabulary("restaurant"))).toBe("1 dish");
     expect(countOf(3, vocabulary("shop"))).toBe("3 items");

@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MerchantOrderResponse } from "@lynia/shared";
 import QueuePage from "./page";
-import { ToastProvider } from "../../components/m/Toast";
+import { TOAST_MS, ToastProvider } from "../../components/m/Toast";
 import { ApiError, getMyMerchant } from "../../lib/api-client";
 import { setBusyMode, setOpen } from "../../lib/menu-api";
 import { acceptOrder, cancelPreparing, confirmKitchen, getTodaySummary, listScheduledOrders, proposeSubstitution, rejectOrder } from "../../lib/orders-api";
@@ -32,9 +32,14 @@ vi.mock("next/navigation", () => {
   return { useRouter: () => router };
 });
 
-const poll = vi.hoisted(() => ({ orders: [] as MerchantOrderResponse[], refetch: vi.fn(async () => {}) }));
+const poll = vi.hoisted(() => ({
+  orders: [] as MerchantOrderResponse[],
+  loaded: true,
+  error: null as { status: number; message: string } | null,
+  refetch: vi.fn(async () => {}),
+}));
 vi.mock("../../lib/use-queue-poll", () => ({
-  useQueuePoll: () => ({ orders: poll.orders, loading: false, error: null, refetch: poll.refetch }),
+  useQueuePoll: () => ({ orders: poll.orders, loading: false, loaded: poll.loaded, error: poll.error, refetch: poll.refetch }),
 }));
 
 const alarm = vi.hoisted(() => ({ ring: vi.fn(), silence: vi.fn(), testRing: vi.fn() }));
@@ -60,6 +65,8 @@ const kitchen = (over = {}) => merchantProfile({ name: "Sadza Republic", hours: 
 
 beforeEach(() => {
   poll.orders = [];
+  poll.loaded = true;
+  poll.error = null;
   vi.mocked(getTodaySummary).mockResolvedValue({
     date: "2026-09-30",
     delivered: 6,
@@ -84,7 +91,7 @@ describe("loading the Orders home", () => {
   it("shows a Retry on a failed load, and recovers", async () => {
     vi.mocked(getMyMerchant).mockRejectedValueOnce(new ApiError(0, "Couldn't reach the server.")).mockResolvedValueOnce(kitchen());
     render(<Page />);
-    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
     expect(await screen.findByText("Sadza Republic")).toBeTruthy();
   });
 
@@ -115,6 +122,54 @@ describe("loading the Orders home", () => {
     expect(await screen.findByText("Avondale Fresh")).toBeTruthy();
     expect(replace).not.toHaveBeenCalledWith("/deliveries");
     expect(screen.getByRole("link", { name: /Book a rider/ }).getAttribute("href")).toBe("/deliveries");
+  });
+});
+
+describe("a failed queue poll is never a lasting red line (Order flow v2's rule, ledger D-74)", () => {
+  const SERVER = "Something went wrong on our side.";
+
+  it("before the first load: the calm '↻ Try again', not a false 'No orders yet'", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
+    poll.loaded = false;
+    poll.error = new ApiError(500, SERVER);
+    const { container } = render(<Page />);
+    fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+    expect(poll.refetch).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Check your data connection and try again.")).toBeTruthy();
+    expect(screen.queryByText("No orders yet")).toBeNull();
+    expect(container.querySelector(".m-err")).toBeNull();
+  });
+
+  it("after it: the board keeps its orders and the failure is said once, in the ink toast", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
+      poll.orders = [merchantOrder({ merchantPhase: "ready_for_pickup", status: "open_for_offers" })];
+      poll.error = new ApiError(500, SERVER);
+      const { container, rerender } = render(<Page />);
+      expect((await screen.findByRole("status")).textContent).toBe(SERVER);
+      expect(screen.getAllByText(SERVER)).toHaveLength(1);
+      expect(screen.getByText("Finding a rider")).toBeTruthy();
+      expect(container.querySelector(".m-err")).toBeNull();
+
+      act(() => vi.advanceTimersByTime(TOAST_MS + 100));
+      expect(screen.queryByRole("status")).toBeNull();
+      // The next poll fails too: still nothing new to say.
+      poll.error = new ApiError(500, SERVER);
+      rerender(<Page />);
+      expect(screen.queryByRole("status")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a lost connection is the shell's offline bar to say, not a toast or a line", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
+    poll.orders = [merchantOrder({ merchantPhase: "ready_for_pickup", status: "open_for_offers" })];
+    poll.error = new ApiError(0, "Couldn't reach the server.");
+    render(<Page />);
+    expect(await screen.findByText("Finding a rider")).toBeTruthy();
+    expect(screen.queryByText("Couldn't reach the server.")).toBeNull();
   });
 });
 

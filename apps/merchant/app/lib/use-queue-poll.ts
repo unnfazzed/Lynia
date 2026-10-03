@@ -19,6 +19,8 @@ const INFLIGHT_STALE_MS = 25_000;
 export interface QueuePollState {
   orders: MerchantOrderResponse[];
   loading: boolean;
+  /** At least one round trip has succeeded — `orders` is the real queue, not the empty start. */
+  loaded: boolean;
   error: ApiError | null;
   refetch: () => Promise<void>;
 }
@@ -34,6 +36,7 @@ export interface QueuePollState {
 export function useQueuePoll(enabled: boolean): QueuePollState {
   const [orders, setOrders] = useState<MerchantOrderResponse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const latch = useRef(new InflightLatch(INFLIGHT_STALE_MS)).current;
   // LC-C05: the latest generation to have started a request. Only that generation's response is
@@ -66,9 +69,10 @@ export function useQueuePoll(enabled: boolean): QueuePollState {
       const result = await listQueue();
       reachability.reportReachable();
       if (generation === generationRef.current) {
-        // B-O17: reuse an unchanged order's previous object reference so OrderCard's memo
-        // boundary can actually skip re-rendering it (see mergeOrders' own doc comment).
+        // B-O17: reuse an unchanged order's previous object reference so a memoized row can
+        // actually skip re-rendering it (see mergeOrders' own doc comment).
         setOrders((prevOrders) => mergeOrders(prevOrders, result));
+        setLoaded(true);
         setError(null);
       }
     } catch (err) {
@@ -109,5 +113,5 @@ export function useQueuePoll(enabled: boolean): QueuePollState {
     };
   }, [enabled, fetchOnce]);
 
-  return { orders, loading, error, refetch: fetchOnce };
+  return { orders, loading, loaded, error, refetch: fetchOnce };
 }

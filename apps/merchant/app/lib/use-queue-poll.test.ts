@@ -2,6 +2,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MerchantOrderResponse } from "@lynia/shared";
+import { ApiError } from "./api-client";
 import { useQueuePoll } from "./use-queue-poll";
 
 const listQueueMock = vi.fn();
@@ -165,7 +166,7 @@ describe("useQueuePoll", () => {
     expect(result.current.orders).toEqual(orders("fresh"));
   });
 
-  // B-O17: OrderCard's new React.memo boundary only pays off if an order whose content is
+  // B-O17: a React.memo boundary on a row only pays off if an order whose content is
   // unchanged between two polls keeps the SAME object reference — otherwise every card still
   // "changes" on every 5s tick regardless of memoization. Confirmed to FAIL against the pre-fix
   // code (a bare `setOrders(result)`, always a fresh reference) before landing.
@@ -197,5 +198,23 @@ describe("useQueuePoll", () => {
     expect(secondStable).not.toBe(unchangedOrderV2);
     // Changed content -> the new reference is used, not the stale one.
     expect(secondMoving).toBe(changedOrderV2);
+  });
+
+  it("says when its orders are real: loaded stays false through a failed first fetch and turns true on the first success", async () => {
+    listQueueMock.mockRejectedValueOnce(new ApiError(500, "Something went wrong on our side.")).mockResolvedValueOnce(orders("a"));
+    const { result } = renderHook(() => useQueuePoll(true));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(result.current.loaded).toBe(false);
+    expect(result.current.error?.status).toBe(500);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(result.current.loaded).toBe(true);
+    expect(result.current.error).toBeNull();
+    expect(result.current.orders).toEqual(orders("a"));
   });
 });

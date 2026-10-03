@@ -378,22 +378,26 @@ describe("X2 · flags ON — food golden pass", () => {
     expect(await hasOpenMerchantObligation(prisma, rider)).toBe(false);
   });
 
-  it("a WALLET order completes with NO debt ledger row at all (C4's documented scope cut)", async () => {
+  it("a WALLET order placed before D-74 completes with NO debt ledger row at all (C4's documented scope cut)", async () => {
     const kitchen = await makeKitchen("collect_and_return");
     const customer = await makeCustomer();
     const rider = await makeRider();
+    const basket = { items: [{ dishId: kitchen.dishId, quantity: 2 }], dropoff: DROPOFF };
 
-    const placed = await foodOrders.placeOrder(customer, kitchen.merchantId, {
-      items: [{ dishId: kitchen.dishId, quantity: 2 }],
-      dropoff: DROPOFF,
-      paymentMethod: "wallet",
+    // D-74: a NEW wallet order is refused — cash only.
+    await expect(foodOrders.placeOrder(customer, kitchen.merchantId, { ...basket, paymentMethod: "wallet" })).rejects.toMatchObject({
+      response: { reason: "wallet_not_accepted" },
     });
+    // The wallet orders older installs placed before then must still finish. placeOrder wrote them as
+    // this kitchen's cash order is written (manual accept, no free delivery) with the wallet rail and no
+    // cash rule, so that is the row made here.
+    const placed = await foodOrders.placeOrder(customer, kitchen.merchantId, { ...basket, paymentMethod: "cash" });
     const orderId = placed.id;
+    await prisma.order.update({ where: { id: orderId }, data: { merchantPaymentMethod: "wallet", merchantCashRule: null } });
     // R-03: the cash rule is snapshotted only when it can apply — a WALLET order never carries one,
-    // which is precisely why openDebtIfNeeded no-ops for it later. A-O14: omitted from the response
-    // (not an explicit `null`) since it never applies to a WALLET order — `?? null` treats both the
-    // same way.
-    expect(placed.merchantCashRule ?? null).toBeNull();
+    // which is precisely why openDebtIfNeeded no-ops for it later.
+    const legacy = await prisma.order.findUniqueOrThrow({ where: { id: orderId }, select: { merchantPaymentMethod: true, merchantCashRule: true, merchantPhase: true } });
+    expect(legacy).toEqual({ merchantPaymentMethod: "wallet", merchantCashRule: null, merchantPhase: "awaiting_accept" });
 
     // R-11: WALLET is the pay-before-cook rail, so accept parks at `awaiting_payment`, not `preparing`.
     const accepted = await foodOrders.acceptOrder(kitchen.ownerId, orderId, { prepMinutes: 15 });

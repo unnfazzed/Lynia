@@ -93,10 +93,10 @@ describe("placeOrder — auto-accept", () => {
     expect(created()!.autoAccepted).toBeUndefined();
   });
 
-  it("a legacy WALLET order still takes the accept → payment path", async () => {
+  it("a WALLET order is refused before auto-accept is weighed — wallet is retired for new orders (D-74)", async () => {
     const { svc, created } = placeWith({ autoAccept: true });
-    await svc.placeOrder("c1", "m1", { ...ORDER_BODY, paymentMethod: "wallet" });
-    expect(created()).toMatchObject({ merchantPhase: "awaiting_accept" });
+    await expect(svc.placeOrder("c1", "m1", { ...ORDER_BODY, paymentMethod: "wallet" })).rejects.toMatchObject({ response: { reason: "wallet_not_accepted" } });
+    expect(created()).toBeUndefined();
   });
 });
 

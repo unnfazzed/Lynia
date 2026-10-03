@@ -436,6 +436,14 @@ target, an `index.json` that matches the directory, and no expectation outliving
 > (`node tools/parity/shoot-order-flow-merchant.mjs --set all2`). Still to shoot: RD2c/RD2d (need a real
 > shot from the phone's camera) and RD4d (the door camera after the why sheet).
 
+> **D-74 (2026-10-03): merchant leftovers aligned.** Section labels (B1 / D1 / C3) and D1's booked-rider
+> trackers draw as the handoff again (a `.m-sec` / `.m-trk` class clash from #1031). Deleting a dish or a
+> category confirms first. Failed loads show the calm "↻ Try again". The old wallet lane is retired: `RM
+> call_confirm`, `awaiting_payment`, `pickup_wallet`, `wallet_mismatch`, `refund_exec` and the second
+> `mark_ready` no longer render; a wallet order placed before D-74 is finished from a ticket built from the
+> M3/M7b parts. The editors (`item_edit`, `dish_photo`, `category_edit`, `category_rename`) and the Shop
+> front (`shop*`) are still the old look and wait for Claude Design.
+
 ### M1 · Get on shift
 
 | | Badge | Registry id | Screen | PR | Signed off |

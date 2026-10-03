@@ -1,16 +1,21 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MerchantOrderResponse } from "@lynia/shared";
 import OrderPage from "./page";
 import { ToastProvider } from "../../../components/m/Toast";
+import { ApiError } from "../../../lib/api-client";
 import {
   cancelPreparing,
   closeOrder,
   confirmGoodsReturned,
+  confirmPayment,
   confirmReturnedCash,
   proposeSubstitution,
+  refundOrder,
   rejectOrder,
+  releaseUnpaid,
+  requestPayment,
   dispatchCancel,
   dispatchResume,
   getOrder,
@@ -39,11 +44,10 @@ vi.mock("../../../lib/orders-api", () => ({
   dispatchResume: vi.fn(async () => ({})),
   dispatchCancel: vi.fn(async () => ({})),
   revealPickupCode: vi.fn(async () => ({ pickupCode: "731604" })),
-  logCall: vi.fn(),
-  requestPayment: vi.fn(),
-  confirmPayment: vi.fn(),
-  releaseUnpaid: vi.fn(),
-  refundOrder: vi.fn(),
+  requestPayment: vi.fn(async () => ({})),
+  confirmPayment: vi.fn(async () => ({})),
+  releaseUnpaid: vi.fn(async () => ({})),
+  refundOrder: vi.fn(async () => ({})),
 }));
 const business = vi.hoisted(() => ({ current: null as unknown }));
 vi.mock("../../../lib/business", () => ({ useBusiness: () => business.current ?? merchantProfile() }));
@@ -256,6 +260,106 @@ describe("Auto-accept: the Cooking ticket once the kitchen confirmed", () => {
     await vi.waitFor(() =>
       expect(proposeSubstitution).toHaveBeenCalledWith(ID, { lines: [{ action: "remove", itemId: "b0000002-0000-4000-8000-000000000000" }] }),
     );
+  });
+});
+
+describe("cash only (BRIEF §14, ledger D-74): what is left of the old wallet lane", () => {
+  const unpaid = (over: Partial<MerchantOrderResponse> = {}) =>
+    merchantOrder({ id: ID, merchantPhase: "awaiting_payment", paymentMethod: "wallet", merchantGoodsTotal: 9.5, prepMinutes: 15, ...over });
+
+  it("an unpaid wallet order placed before D-74 waits on its ticket: no payment tag, no old card", async () => {
+    show(unpaid());
+    expect(await screen.findByText("Waiting for payment")).toBeTruthy();
+    expect(screen.getByText("Start once it’s in your own statement.")).toBeTruthy();
+    expect(screen.getByText("Sadza & beef stew")).toBeTruthy();
+    expect(screen.queryByText(/^(WALLET|CASH)$/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Log the call|They confirmed another way|It landed/ })).toBeNull();
+  });
+
+  it("'Ask for payment' asks the customer (an older app shows its pay screen only once asked), then goes", async () => {
+    show(unpaid());
+    fireEvent.click(await screen.findByRole("button", { name: "Ask for payment" }));
+    await vi.waitFor(() => expect(requestPayment).toHaveBeenCalledWith(ID, true));
+    expect(await screen.findByText("Payment asked for · customer told")).toBeTruthy();
+
+    cleanup();
+    show(unpaid({ paymentRequestedAt: new Date().toISOString() }));
+    expect(await screen.findByText("Waiting for payment")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Ask for payment" })).toBeNull();
+  });
+
+  it("'I got $9.50' asks for the reference from the business's own statement before it confirms", async () => {
+    show(unpaid());
+    fireEvent.click(await screen.findByRole("button", { name: "I got $9.50" }));
+    const sheet = screen.getByRole("dialog", { name: "Is $9.50 in your statement?" });
+    expect(within(sheet).getByText("Check your own statement, not a screen someone shows you.")).toBeTruthy();
+    const confirmButton = within(sheet).getByRole("button", { name: "I got $9.50" }) as HTMLButtonElement;
+    expect(confirmButton.disabled).toBe(true);
+    fireEvent.change(within(sheet).getByLabelText("Reference"), { target: { value: "  MM-99001 " } });
+    expect(confirmButton.disabled).toBe(false);
+    fireEvent.click(confirmButton);
+    await vi.waitFor(() => expect(confirmPayment).toHaveBeenCalledWith(ID, { reference: "MM-99001", amount: 9.5 }));
+    expect(await screen.findByText("Payment confirmed · start cooking")).toBeTruthy();
+  });
+
+  it("the API's amount check is said on the sheet, which stays open", async () => {
+    vi.mocked(confirmPayment).mockRejectedValueOnce(new ApiError(409, "Amount doesn't match — expected $9.50, got $9.00"));
+    show(unpaid());
+    fireEvent.click(await screen.findByRole("button", { name: "I got $9.50" }));
+    const sheet = screen.getByRole("dialog", { name: "Is $9.50 in your statement?" });
+    fireEvent.change(within(sheet).getByLabelText("Reference"), { target: { value: "MM-1" } });
+    fireEvent.click(within(sheet).getByRole("button", { name: "I got $9.50" }));
+    expect(await within(sheet).findByText("Amount doesn't match — expected $9.50, got $9.00")).toBeTruthy();
+  });
+
+  it("'Cancel order' releases an order that was never paid, behind the confirm sheet", async () => {
+    show(unpaid());
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel order" }));
+    const sheet = screen.getByRole("dialog", { name: "Cancel this order?" });
+    expect(within(sheet).getByText("Only if they never paid. The customer is told.")).toBeTruthy();
+    expect(releaseUnpaid).not.toHaveBeenCalled();
+    fireEvent.click(within(sheet).getByRole("button", { name: "Cancel order" }));
+    await vi.waitFor(() => expect(releaseUnpaid).toHaveBeenCalledWith(ID, "other"));
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith("/queue"));
+  });
+
+  it("paid, it cooks like any other order; 'Can't finish this order' refunds with the business's reference", async () => {
+    show({ ...cooking(), paymentMethod: "wallet", merchantGoodsTotal: 9.5, merchantPaymentConfirmedAt: new Date().toISOString() });
+    expect(await screen.findByText(/^Cooking · ready \d\d:\d\d$/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Food is ready" })).toBeTruthy();
+    expect(screen.queryByText(/^(WALLET|CASH)$/)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Can’t finish this order" }));
+    const sheet = screen.getByRole("dialog", { name: "Cancel this order?" });
+    expect(within(sheet).getByText("Refund the customer $9.50 first, then add the refund reference.")).toBeTruthy();
+    const cancel = within(sheet).getByRole("button", { name: "Cancel order" }) as HTMLButtonElement;
+    expect(cancel.disabled).toBe(true);
+    fireEvent.change(within(sheet).getByLabelText("Refund reference"), { target: { value: "RF-1" } });
+    fireEvent.click(cancel);
+    await vi.waitFor(() => expect(refundOrder).toHaveBeenCalledWith(ID, "RF-1", 9.5));
+    expect(cancelPreparing).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith("/queue"));
+  });
+
+  it("a shortened order sent before Order flow v2 waits on M2 with its own countdown, with nothing to mark ready", async () => {
+    show(
+      merchantOrder({
+        id: ID,
+        merchantPhase: "awaiting_item_approval",
+        itemApprovalDeadlineAt: new Date(Date.now() + 42_000).toISOString(),
+        items: [
+          { itemId: "e0000001-0000-4000-8000-000000000000", dishId: "d1", name: "Mazondo", priceUsd: 5, quantity: 1, note: null, available: true },
+          { itemId: "e0000002-0000-4000-8000-000000000000", dishId: "d2", name: "Road-runner", priceUsd: 6, quantity: 1, note: null, available: false },
+        ],
+      }),
+    );
+    expect(await screen.findByText("Waiting for the customer to answer")).toBeTruthy();
+    expect(screen.getByText("Removing")).toBeTruthy();
+    expect(screen.getByText(/^Waiting for the customer’s answer · 0:4/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Food is ready" }) as HTMLButtonElement).disabled).toBe(true);
+    // No swaps, and it doesn't carry on by itself, so M2's swap line isn't said.
+    expect(screen.queryByText(/swaps are declined/)).toBeNull();
+    expect(screen.queryByText(/shorter order/)).toBeNull();
   });
 });
 

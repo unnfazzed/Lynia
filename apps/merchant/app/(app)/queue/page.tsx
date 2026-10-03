@@ -79,7 +79,7 @@ export default function QueuePage() {
 
   const ready = state.status === "ready";
   const open = useOpenSwitch(ready ? state.merchant : null, (merchant) => setState({ status: "ready", merchant }));
-  const { orders, error: queueError, refetch } = useQueuePoll(ready);
+  const { orders, loaded, error: queueError, refetch } = useQueuePoll(ready);
   const branches = useBranches(ready && state.merchant.myRole === "owner");
 
   // D-05: rings the whole time any order is unanswered — or auto-accepted and not yet confirmed by the
@@ -96,6 +96,22 @@ export default function QueuePage() {
   useEffect(() => {
     if (queueError?.status === 401) signOut();
   }, [queueError, signOut]);
+
+  // Order flow v2's rule for every merchant screen (ledger D-74): a failed poll is never a lasting red
+  // line. Before the first load lands it is the calm "↻ Try again" below; after that the board keeps its
+  // last state. A lost connection already shows the shell's offline bar; any other failure is said once
+  // in the ink toast, and again only after a poll has worked in between.
+  const pollFailed = queueError !== null && queueError.status !== 401;
+  const failureToldRef = useRef(false);
+  useEffect(() => {
+    if (!pollFailed) {
+      failureToldRef.current = false;
+      return;
+    }
+    if (!loaded || failureToldRef.current || queueError.status === 0) return;
+    failureToldRef.current = true;
+    toast(queueError.message);
+  }, [pollFailed, loaded, queueError, toast]);
 
   useOrderToasts(orders, toast);
 
@@ -202,8 +218,9 @@ export default function QueuePage() {
         </div>
       ) : (
         <div className="m-bd" style={{ paddingTop: 12 }}>
-          {queueError && queueError.status !== 401 && <div className="m-err">{queueError.message}</div>}
-          {nothing ? (
+          {pollFailed && !loaded ? (
+            <RetryableError message={queueError.message} onRetry={() => void refetch()} />
+          ) : nothing ? (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, textAlign: "center", paddingTop: 40 }}>
               <div style={{ width: 72, height: 72, borderRadius: "50%", background: "var(--surface)", display: "grid", placeItems: "center" }}>
                 <Icon name="inbox" size={30} color="var(--muted)" />

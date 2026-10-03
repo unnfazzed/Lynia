@@ -3984,3 +3984,72 @@ X1 "Popular near you" search chips and the storefront "Popular" dish rail (D-57)
 `src/logic/popularity.ts`, `popularNearYou(…, popularity)`, `browseList(…, popularity)`. A failed or
 malformed read means no ranking. A list whose ranking names a venue on a page it hasn't loaded fetches
 the next page, so a popular venue on page 2 can still lead.
+
+## D-74 · Merchant: section labels as drawn, deletes confirm, calm "Try again", and wallet orders retired — APPROVED (2026-10-03)
+
+**Owner instruction (2026-10-03):** an audit of every screen still on the pre-October design (waves 1–2,
+see D-73) found four old-UI leftovers in the merchant app. The owner approved the plan: *"execute wave 1
+and wave 2"*. This entry covers the merchant app and the API change behind it.
+
+**1 · Section labels and trackers look as drawn again (a regression, not a deviation).** Order flow v2
+(#1031) added a secondary button under the class name `.m-sec`, which merchant-mobile B1, D1 and C3 already
+used for plain 15/700 section labels. The later rule won, so "Waiting for rider", "Out for delivery",
+"Riders you booked" and "Orders" drew as grey centred pills. #1031 also reused `.m-trk` (D1's mint tracker
+pill) for its four-step track, so every booked-rider tracker drew grey. The button is now `.m-btn-sec` and
+the track `.m-track`; the labels and trackers match the handoff again. A guard test
+(`apps/merchant/app/mobile-css.test.ts`) fails when a class gets a second top-level rule.
+
+**2 · Destructive actions confirm (merchant-mobile's own rule).** "Delete dish" (a shop's "Delete item")
+and a category's "Delete" deleted at once. Both now open `m/ConfirmSheet` over the editor; "Keep" returns
+to the editor unchanged.
+
+**3 · "this phone", not "this tablet".** The merchant app is phone-first (D-48); the dish-photo help and
+its error said "this tablet".
+
+**4 · Errors follow Order flow v2's rule on every merchant screen.** Its global rule: a failed first load
+shows a calm "↻ Try again", and there are no lasting red error lines. `RetryableError` (an old 16px red box
+with an outline Retry) is now the merchant-mobile centred state: a 72px disc with the wifi-off glyph, the
+error at 18/700, "Check your data connection and try again." and a primary "↻ Try again". The Orders home
+no longer shows a red line while its poll fails: a failed first poll shows "Try again"; after the first
+load the board keeps its last state, a lost connection is left to the shell's offline bar, and any other
+poll error is said once in the ink toast. Staff who open an owner page from an old link get the muted hint
+line Team already uses, not the old shadowed card.
+
+**5 · Wallet orders are retired (this supersedes D-48's "The API keeps accepting wallet from installed
+apps until they update").** Order flow v2 is cash only (its BRIEF §14), and the customer app has sent only
+cash since D-48.
+- **API.** A new restaurant, shop or pharmacy order with `paymentMethod: "wallet"` is refused with HTTP 400,
+  reason `wallet_not_accepted`: "Orders are cash on delivery now. Choose cash to place your order." The
+  check runs after the idempotency replay, so a retry of an order placed before the change still returns
+  that order. The `MerchantPaymentMethod` enum is unchanged (legacy rows still parse); parcel orders,
+  wallet top-ups and the legacy accept, payment and refund endpoints are untouched.
+- **Merchant order screen.** The old wallet lane (the order card with its WALLET tag and second "Mark
+  ready", the "Confirm the payment landed" sheet, `PayTag`, the rider no-show sheet) is deleted, with
+  ~450 lines of tablet-era CSS no screen used. Wallet checkout did reach customers before D-48, so a wallet
+  order placed before this change may still be open. It stays finishable in the new screen's parts:
+
+| Where | Handoff draws | App does | Why |
+|---|---|---|---|
+| Order screen, an unpaid wallet order placed before D-74 | nothing (cash only; no payment-type tags anywhere) | a ticket from the M3/M7b parts: a "Waiting for payment" note, the lines, "Ask for payment", a red "Cancel order" behind a confirm, and "I got $X" with a reference sheet | such an order must be finishable or cancellable; the old card is retired |
+| M3a "Can't finish this order", on a paid wallet order | a confirm, then cancel | the confirm holds a "Refund reference" field, then refunds | LyniaGo never held the money; the refund endpoint needs the business's reference |
+| M2 for a shortened order from before Order flow v2 | the swap line ("…swaps are declined") | that line is left out | no swaps exist on such an order, and a timeout cancels it |
+| `ConfirmSheet` | a title, one line, confirm and Keep | can hold one field | the payment and refund endpoints need a reference |
+| Failed first load, every screen | T14b: 21/800 title, full-width button, "Back to home" | the merchant-mobile centred state (72 disc, 18/700, auto-width primary), no "Back to home" | one shared component; every screen already has its back or tabs |
+| Orders home, poll failure | not drawn | "Try again" before the first load; afterwards one ink toast, or the offline bar | no lasting red line |
+| Menu delete confirm | not drawn | `ConfirmSheet` | merchant-mobile: destructive actions confirm |
+| Staff on an owner page | not drawn | a muted hint line, as on Team | consistency |
+
+**New app-authored strings.** Menu: "Delete {name}?", "It comes off your menu. You can’t undo this."
+(shop: "…off your shop…"), "Delete category", toast "{name} deleted". Photo help: "…Pick the file from
+this phone; we shrink it for you.", "That file couldn't be opened as a photo. Pick a JPEG or PNG from
+this phone." Wallet ticket: "Start once it’s in your own statement.", "Ask for payment", "Payment asked
+for · customer told", "Only if they never paid. The customer is told.", "Is {p} in your statement?",
+"Check your own statement, not a screen someone shows you.", "Reference", "Payment confirmed · start
+cooking" (shops: "start packing"), "Refund the customer {p} first, then add the refund reference.",
+"Refund reference". API: "Orders are cash on delivery now. Choose cash to place your order."
+
+**Open for the owner.** (a) Raise the minimum app version (`MIN_SUPPORTED_APP_VERSION` on the API) past
+every build that still offers wallet checkout, so no customer meets the refusal; until then an old install
+that picks mobile money is told to choose cash. (b) Once ops confirms no wallet order is open, the payment
+ticket, the refund branch and the legacy payment endpoints can go. (c) Pre-existing: the old customer app
+asked for goods + delivery, while `confirmPayment` checks the goods total; left as it was.

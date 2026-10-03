@@ -7,6 +7,8 @@ import { useEffect, useRef } from "react";
  * line, the confirm button and "Keep"; tapping the scrim or pressing Escape keeps things as they are.
  * Every destructive or closing action goes through it. `danger` paints the confirm red (decline,
  * cancel, sign out, remove); a neutral close ("Mark completed", "Close order") stays the CTA green.
+ * `children` is a field the answer needs (a payment reference), under the line; `confirmDisabled` holds
+ * the confirm until it is filled in.
  */
 export function ConfirmSheet({
   title,
@@ -14,18 +16,22 @@ export function ConfirmSheet({
   confirmLabel,
   danger = true,
   busy = false,
+  confirmDisabled = false,
   error,
   onConfirm,
   onCancel,
+  children,
 }: {
   title: string;
   body: string;
   confirmLabel: string;
   danger?: boolean;
   busy?: boolean;
+  confirmDisabled?: boolean;
   error?: string | null;
   onConfirm: () => void;
   onCancel: () => void;
+  children?: React.ReactNode;
 }) {
   const confirmRef = useRef<HTMLButtonElement>(null);
 
@@ -49,6 +55,7 @@ export function ConfirmSheet({
             {title}
           </b>
           <p className="m-sub">{body}</p>
+          {children}
           {error && (
             <div className="m-alert" role="alert">
               {error}
@@ -58,7 +65,7 @@ export function ConfirmSheet({
             ref={confirmRef}
             type="button"
             className={`m-btn${danger ? " m-danger" : ""}`}
-            disabled={busy}
+            disabled={busy || confirmDisabled}
             onClick={onConfirm}
           >
             {confirmLabel}

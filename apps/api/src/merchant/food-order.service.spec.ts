@@ -158,9 +158,8 @@ describe("FoodOrderService.placeOrder", () => {
       expect(created.agreedFare).toBe(1.5 + res.deliveryFee!);
     });
 
-    it("a legacy wallet order is never funded (cash only)", async () => {
-      const { created } = await placeWith({ freeDelivery: true }, 12, "wallet");
-      expect(created.merchantDeliveryShare).toBeNull();
+    it("a wallet order is never funded: it isn't placed at all (cash only, D-74)", async () => {
+      await expect(placeWith({ freeDelivery: true }, 12, "wallet")).rejects.toMatchObject({ response: { reason: "wallet_not_accepted" }, status: 400 });
     });
   });
 
@@ -296,12 +295,11 @@ describe("FoodOrderService.placeOrder — account standing (FOOD-STANDING-01)", 
     expect(create).not.toHaveBeenCalled();
   });
 
-  it("a cash-banned customer paying by wallet still orders — a cash ban narrows the method, it never blocks ordering", async () => {
-    const { svc, create } = standingHarness({ onHold: false, cashBanned: true, rider: null });
-    const res = await svc.placeOrder("c1", "m1", walletOrder);
-    expect(res.id).toBe("o1");
-    expect(create).toHaveBeenCalledTimes(1);
-    expect(create.mock.calls[0]![0].data.merchantPaymentMethod).toBe("wallet");
+  it("a cash-banned customer paying by wallet is refused too — wallet is retired for every new order (D-74)", async () => {
+    const { svc, create, merchantFind } = standingHarness({ onHold: false, cashBanned: true, rider: null });
+    await expect(svc.placeOrder("c1", "m1", walletOrder)).rejects.toMatchObject({ response: { reason: "wallet_not_accepted" }, status: 400 });
+    expect(merchantFind).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
   });
 
   it("a customer in good standing (and an active rider ordering food) is unchanged", async () => {
@@ -311,6 +309,49 @@ describe("FoodOrderService.placeOrder — account standing (FOOD-STANDING-01)", 
       expect(res.id).toBe("o1");
       expect(create).toHaveBeenCalledTimes(1);
     }
+  });
+});
+
+describe("FoodOrderService.placeOrder — cash only, a new wallet order is refused (D-74)", () => {
+  const body = { items: [{ dishId: "d1", quantity: 1 }], dropoff: { point: AVONDALE, landmark: "Avondale", contactPhone: "+263779999999" } };
+
+  function harness(existing: Record<string, unknown> | null = null) {
+    const create = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ ...data, id: "o-new", merchantItems: [], pickupCodeAttempts: 0, noShowCallTimestamps: [] }));
+    const merchantFind = vi.fn(async () => ({ id: "m1", location: { point: HARARE_CBD, landmark: "CBD", contactPhone: "+263771234567" } }));
+    const { svc } = build({
+      profile: { findUnique: async () => ({ onHold: false, cashBanned: false, rider: null }) },
+      order: { findFirst: async () => existing, create },
+      merchant: { findFirst: merchantFind },
+      merchantDish: { findMany: async () => [dish()] },
+    });
+    return { svc, create, merchantFind };
+  }
+
+  it("refuses a wallet order with a 400 and a reason code, before the venue or menu is read or anything written", async () => {
+    const { svc, create, merchantFind } = harness();
+    await expect(svc.placeOrder("c1", "m1", { ...body, paymentMethod: "wallet" })).rejects.toMatchObject({
+      response: { reason: "wallet_not_accepted", message: "Orders are cash on delivery now. Choose cash to place your order." },
+      status: 400,
+    });
+    expect(merchantFind).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("still takes the same order paid in cash, as collect-and-return", async () => {
+    const { svc, create } = harness();
+    const res = await svc.placeOrder("c1", "m1", { ...body, paymentMethod: "cash" });
+    expect(res.id).toBe("o-new");
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create.mock.calls[0]![0].data).toMatchObject({ merchantPaymentMethod: "cash", merchantCashRule: "collect_and_return" });
+  });
+
+  it("a retry of a wallet order an older install placed before the change gets that order back, not a refusal", async () => {
+    const placedBefore = { id: "o-old", merchantId: "m1", status: "requested", merchantPaymentMethod: "wallet", merchantItems: [], pickupCodeAttempts: 0, noShowCallTimestamps: [] };
+    const { svc, create } = harness(placedBefore);
+    const res = await svc.placeOrder("c1", "m1", { ...body, paymentMethod: "wallet", idempotencyKey: "11111111-1111-1111-1111-111111111111" });
+    expect(res.id).toBe("o-old");
+    expect(res.paymentMethod).toBe("wallet");
+    expect(create).not.toHaveBeenCalled();
   });
 });
 

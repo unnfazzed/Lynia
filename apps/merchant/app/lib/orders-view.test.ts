@@ -43,7 +43,10 @@ describe("the Orders home's lists (merchant mobile B1, D-48)", () => {
 describe("which screen an order opens on", () => {
   it("B3 cooking, B4 handover (until and just after pickup), B6 tracking, B7 delivered with cash back, else closed", () => {
     expect(detailView(o())).toBe("ringing");
-    expect(detailView(o({ merchantPhase: "awaiting_payment" }))).toBe("legacy");
+    // D-74: a wallet order placed before cash-only waits on its own payment ticket, not the old card.
+    expect(detailView(o({ merchantPhase: "awaiting_payment", paymentMethod: "wallet" }))).toBe("payment");
+    // M2 holds every order waiting on the customer: a v2 round, or a shortened order sent before v2.
+    expect(detailView(o({ merchantPhase: "awaiting_item_approval" }))).toBe("cooking");
     expect(detailView(o({ merchantPhase: "preparing" }))).toBe("cooking");
     // M1a: an auto-accepted order the kitchen hasn't confirmed rings on the Orders home.
     expect(detailView(o({ merchantPhase: "preparing", autoAccepted: true, kitchenConfirmedAt: null }))).toBe("ringing");

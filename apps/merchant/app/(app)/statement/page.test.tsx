@@ -78,7 +78,7 @@ describe("StatementPage initial-load failure has a way out (LC-D##)", () => {
     render(<MoneyPage />);
     await screen.findByText("Couldn't reach the server — check the connection and try again.");
 
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
 
     await screen.findByText("$59.50");
     expect(getTodaySummary).toHaveBeenCalledTimes(2);

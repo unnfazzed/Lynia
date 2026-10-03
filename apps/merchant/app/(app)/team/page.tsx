@@ -370,7 +370,7 @@ function PharmacistRows({
 }) {
   return (
     <>
-      <div className="m-sec" style={{ justifyContent: "flex-start", background: "none", padding: "12px 0 0", minHeight: 0, color: "var(--ink)" }}>
+      <div className="m-sec" style={{ paddingTop: 12 }}>
         Pharmacists
       </div>
       <p className="m-sub" style={{ fontSize: 13 }}>
