@@ -771,7 +771,7 @@ export class RiderService {
       // a legacy pre-IR26-02 rider and was held as a mismatch.) The vendor's number is adopted onto it
       // below; docCollision is the one-ID-one-account check against that number.
       // Absent doc number (null) → both false → exactly the pre-IR26-04 behavior for an account that has
-      // an ID on file (D-75 holds one that doesn't — see `idMissing`). The raw number is never persisted
+      // an ID on file (D-75 verifies one that doesn't and audit-flags it — see `idMissing`). The raw number is never persisted
       // or logged — only the HMAC hash (LR8) and, for D-70/D-75, the AES-GCM ciphertext.
       const docHash = vendorHash && current ? vendorHash : null;
       const idOnFile = current?.profile?.idNumberHash ?? null;
@@ -795,17 +795,19 @@ export class RiderService {
         this.logger.log(`KYC ${kycRef}: verified webhook carried no document number — vendor-doc dedupe skipped`);
       }
       // D-75: no national ID on file AND no document number in the decision leaves the one-ID-one-account
-      // check nothing to run against. Before D-75 that couldn't happen to a new rider (becomeRider
-      // required a typed ID and deduped it before the check); now it would verify someone undeduped, so
-      // hold for a human instead. An account WITH an ID on file keeps the fail-open IR26-04 behavior.
+      // check nothing to run against. The extraction stays FAIL-OPEN, as extractDiditDocumentNumber
+      // promises ("a verify is never held hostage to a field we couldn't find"): holding here would park
+      // every new rider in review whenever the payload lacks the number, and a held rider's only way
+      // forward is another paid session. The verify applies, and its approval audit row carries
+      // `verified_id_missing` so ops can see and follow up on every rider verified without a number.
       const idMissing = status === "verified" && !!current && idOnFile === null && docHash === null;
       // D-75: the vendor-verified number becomes the account's national ID when the account has none.
       const needsAdoption = status === "verified" && !!current && idOnFile === null && docHash !== null;
       let holdForReview =
         status === "verified" &&
-        (current?.duplicateIdFlag === true || docMismatch || docCollision || idMissing || (needsAdoption && adoptionBlocked));
+        (current?.duplicateIdFlag === true || docMismatch || docCollision || (needsAdoption && adoptionBlocked));
       if (idMissing) {
-        this.logger.warn(`KYC ${kycRef}: verified with no national ID on file and no document number in the decision — held for review (D-75)`);
+        this.logger.warn(`KYC ${kycRef}: verified with no national ID on file and no document number in the decision — verified, audit-flagged verified_id_missing (D-75)`);
       }
       // D-75 adoption: "the number is confirmed from the check afterwards". Only for a decision that will
       // VERIFY the rider in this transaction — not held, and newer than the last applied one (the same
@@ -904,13 +906,11 @@ export class RiderService {
         if (rider) {
           // The audit reason names every condition that held the verify (IR26-04 widened this beyond
           // the original duplicate_id_flag), so the review trail says WHY without exposing any hash.
-          // D-75: a re-run after the live-ID unique index refused the adoption is a collision too, and
-          // `verified_id_missing` is the decision that had no number to dedupe on.
+          // D-75: a re-run after the live-ID unique index refused the adoption is a collision too.
           const holdReason = [
             current?.duplicateIdFlag ? "duplicate_id_flag" : null,
             docMismatch ? "verified_id_mismatch" : null,
             docCollision || (needsAdoption && adoptionBlocked) ? "verified_id_collision" : null,
-            idMissing ? "verified_id_missing" : null,
           ]
             .filter(Boolean)
             .join("+");
@@ -929,8 +929,10 @@ export class RiderService {
           // mark the actor as automated ("system:kyc-webhook") so admin audit views can still tell manual
           // from automated decisions. Same transaction as the status write — never one without the other.
           const action = status === "verified" ? "rider.kyc_approve" : "rider.kyc_decline";
+          // D-75: an approval with no number to dedupe on is flagged here rather than held (see idMissing).
+          const auditReason = reason ?? (idMissing ? "verified_id_missing" : null);
           await tx.auditLog.create({
-            data: auditData("system:kyc-webhook", action, rider.profileId, reason ?? null, null),
+            data: auditData("system:kyc-webhook", action, rider.profileId, auditReason, null),
           });
           resolvedProfileId = rider.profileId;
         }

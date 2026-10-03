@@ -1974,12 +1974,13 @@ describe("RiderService.applyKycResult", () => {
     expect(rec.adopt).toHaveLength(0);
   });
 
-  it("D-75: no ID on file AND no document number in the decision → held (verified_id_missing), never verified undeduped", async () => {
+  it("D-75: no ID on file AND no document number in the decision → verified fail-open, audit-flagged verified_id_missing (never held hostage)", async () => {
+    // extractDiditDocumentNumber is fail-open by design: a verify must not be parked in review because a
+    // payload lacked the number — a held rider's only way forward is another paid session.
     const { prisma, rec } = docPrisma({ typedHash: null });
     await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, null);
-    expect(rec.data).not.toHaveProperty("kycStatus");
-    expect(rec.data).not.toHaveProperty("idVerified");
-    expect(rec.audit).toMatchObject({ action: "rider.kyc_review_required", reasonCode: "verified_id_missing" });
+    expect(rec.data).toMatchObject({ kycStatus: "verified", idVerified: true });
+    expect(rec.audit).toMatchObject({ action: "rider.kyc_approve", reasonCode: "verified_id_missing" });
     expect(rec.adopt).toHaveLength(0);
     // No number → no advisory lock to take.
     expect(rec.raw.some((r) => r.sql.includes("pg_advisory_xact_lock"))).toBe(false);
