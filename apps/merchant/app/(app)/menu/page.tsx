@@ -8,6 +8,7 @@ import { useKitchenConnection } from "../../components/KitchenConnectionProvider
 import { CategoryEditorSheet, type CategorySave } from "../../components/menu/CategoryEditorSheet";
 import { DishEditorSheet, type DishSave } from "../../components/menu/DishEditorSheet";
 import { OosSheet } from "../../components/menu/OosSheet";
+import { ConfirmSheet } from "../../components/m/ConfirmSheet";
 import { Switch } from "../../components/m/Switch";
 import { useToast } from "../../components/m/Toast";
 import { RetryableError } from "../../components/RetryableError";
@@ -42,6 +43,10 @@ type Sheet =
   | { kind: "dish"; dish: MerchantDishResponse | null; defaultCategoryId?: string }
   | { kind: "oos"; dish: MerchantDishResponse };
 
+/** What "Delete" asks about, over the editor it was tapped in (README: destructive actions are always
+ *  behind a confirm sheet). */
+type Deleting = { kind: "dish"; dish: MerchantDishResponse } | { kind: "category"; category: MerchantCategoryResponse };
+
 const LONG_PRESS_MS = 500;
 
 /**
@@ -61,6 +66,7 @@ export default function MenuPage() {
   const toast = useToast();
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [sheet, setSheet] = useState<Sheet>({ kind: "none" });
+  const [deleting, setDeleting] = useState<Deleting | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -115,12 +121,24 @@ export default function MenuPage() {
     }
   }
 
-  async function withSheet(fn: () => Promise<void>, done?: string) {
+  async function withSheet(fn: () => Promise<void>, done?: string): Promise<boolean> {
     const ok = await guarded(fn, "Something went wrong — try again.", (m) => setSheetError(m || null));
-    if (!ok) return;
+    if (!ok) return false;
     setSheet({ kind: "none" });
     if (done) toast(done);
     refresh();
+    return true;
+  }
+
+  async function onDelete() {
+    if (!deleting) return;
+    const target = deleting;
+    const name = target.kind === "dish" ? target.dish.name : target.category.name;
+    const ok = await withSheet(
+      () => (target.kind === "dish" ? deleteDish(target.dish.id) : deleteCategory(target.category.id)).then(() => undefined),
+      `${name} deleted`,
+    );
+    if (ok) setDeleting(null);
   }
 
   async function onStarter(name: string) {
@@ -266,7 +284,7 @@ export default function MenuPage() {
               else await createCategory(body);
             })
           }
-          onDelete={sheet.category ? () => void withSheet(() => deleteCategory(sheet.category!.id).then(() => undefined)) : undefined}
+          onDelete={sheet.category ? () => setDeleting({ kind: "category", category: sheet.category! }) : undefined}
           onMove={(d) => void onMove(d)}
           position={sheet.category ? { index: categories.findIndex((c) => c.id === sheet.category!.id), count: categories.length } : undefined}
           onCancel={() => setSheet({ kind: "none" })}
@@ -287,7 +305,7 @@ export default function MenuPage() {
               else await createDish(body);
             })
           }
-          onDelete={sheet.dish ? () => void withSheet(() => deleteDish(sheet.dish!.id).then(() => undefined)) : undefined}
+          onDelete={sheet.dish ? () => setDeleting({ kind: "dish", dish: sheet.dish! }) : undefined}
           onCancel={() => setSheet({ kind: "none" })}
         />
       )}
@@ -300,6 +318,22 @@ export default function MenuPage() {
           submitting={submitting}
           onConfirm={(f) => void onTurnOff(f)}
           onCancel={() => setSheet({ kind: "none" })}
+        />
+      )}
+
+      {/* Over the editor it came from, so "Keep" leaves the editor exactly as it was. */}
+      {deleting && (
+        <ConfirmSheet
+          title={`Delete ${deleting.kind === "dish" ? deleting.dish.name : deleting.category.name}?`}
+          body={`It comes off ${v.storefront}. You can’t undo this.`}
+          confirmLabel={deleting.kind === "dish" ? `Delete ${v.item}` : "Delete category"}
+          busy={submitting}
+          error={sheetError}
+          onConfirm={() => void onDelete()}
+          onCancel={() => {
+            setDeleting(null);
+            setSheetError(null);
+          }}
         />
       )}
     </Kitchen>

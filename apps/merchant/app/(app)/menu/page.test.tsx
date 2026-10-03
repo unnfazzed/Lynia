@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MerchantCategoryResponse, MerchantDishResponse } from "@lynia/shared";
 import MenuPage from "./page";
 import { ToastProvider } from "../../components/m/Toast";
 import { ApiError } from "../../lib/api-client";
 import { clearBusinessCache, primeBusiness } from "../../lib/business";
-import { clearDishOutOfStock, createCategory, deleteCategory, listCategories, listDishes, setDishOutOfStock, updateCategory } from "../../lib/menu-api";
+import { clearDishOutOfStock, createCategory, deleteCategory, deleteDish, listCategories, listDishes, setDishOutOfStock, updateCategory } from "../../lib/menu-api";
 import { merchantProfile } from "../../testing/fixtures";
 
 vi.mock("../../lib/menu-api", () => ({
@@ -209,8 +209,72 @@ describe("a dead session on a change signs out (LC-D##)", () => {
     render(<Page />);
     fireEvent.contextMenu(await screen.findByRole("tab", { name: "Mains 0" }));
     fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Delete Mains?" })).getByRole("button", { name: "Delete category" }));
     await waitFor(() => expect(signOut).toHaveBeenCalledTimes(1));
     expect(screen.queryByText("Your session expired — sign in again.")).toBeNull();
+  });
+});
+
+describe("deleting asks first (merchant-mobile README: destructive actions are behind a confirm sheet)", () => {
+  it("Delete dish opens the confirm sheet; Keep leaves the dish and its editor as they were", async () => {
+    vi.mocked(listCategories).mockResolvedValue([category()]);
+    vi.mocked(listDishes).mockResolvedValue([dish({ outOfStock: false })]);
+    vi.mocked(deleteDish).mockResolvedValue({ ok: true });
+    render(<Page />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Sadza" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete dish" }));
+    const sheet = screen.getByRole("dialog", { name: "Delete Sadza?" });
+    expect(within(sheet).getByText("It comes off your menu. You can’t undo this.")).toBeTruthy();
+    expect(deleteDish).not.toHaveBeenCalled();
+
+    fireEvent.click(within(sheet).getAllByRole("button", { name: "Keep" }).at(-1)!);
+    expect(screen.queryByRole("dialog", { name: "Delete Sadza?" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Delete dish" })).toBeTruthy();
+    expect(deleteDish).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete dish" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Delete Sadza?" })).getByRole("button", { name: "Delete dish" }));
+    await waitFor(() => expect(deleteDish).toHaveBeenCalledWith("d1"));
+    expect(await screen.findByText("Sadza deleted")).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "Delete Sadza?" })).toBeNull();
+  });
+
+  it("Delete on an empty category's sheet asks before deleting it", async () => {
+    vi.mocked(listCategories).mockResolvedValue([category({ dishCount: 0 })]);
+    vi.mocked(listDishes).mockResolvedValue([]);
+    vi.mocked(deleteCategory).mockResolvedValue({ ok: true });
+    render(<Page />);
+    fireEvent.contextMenu(await screen.findByRole("tab", { name: "Mains 0" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    expect(deleteCategory).not.toHaveBeenCalled();
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Delete Mains?" })).getByRole("button", { name: "Delete category" }));
+    await waitFor(() => expect(deleteCategory).toHaveBeenCalledWith("c1"));
+    expect(await screen.findByText("Mains deleted")).toBeTruthy();
+  });
+
+  it("a failed delete says why on the confirm sheet, and deletes nothing more", async () => {
+    vi.mocked(listCategories).mockResolvedValue([category()]);
+    vi.mocked(listDishes).mockResolvedValue([dish({ outOfStock: false })]);
+    vi.mocked(deleteDish).mockRejectedValue(new ApiError(0, "Couldn't reach the server — check the connection and try again."));
+    render(<Page />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Sadza" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete dish" }));
+    const sheet = screen.getByRole("dialog", { name: "Delete Sadza?" });
+    fireEvent.click(within(sheet).getByRole("button", { name: "Delete dish" }));
+    expect(await within(sheet).findByText("Couldn't reach the server — check the connection and try again.")).toBeTruthy();
+    expect(deleteDish).toHaveBeenCalledTimes(1);
+  });
+
+  it("a shop's sheet speaks of items and the shop", async () => {
+    primeBusiness(merchantProfile({ businessType: "shop", shopKind: "auto_parts" }));
+    vi.mocked(listCategories).mockResolvedValue([category({ name: "Brakes" })]);
+    vi.mocked(listDishes).mockResolvedValue([dish({ name: "Brake pads", outOfStock: false })]);
+    render(<Page />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Brake pads" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete item" }));
+    const sheet = screen.getByRole("dialog", { name: "Delete Brake pads?" });
+    expect(within(sheet).getByText("It comes off your shop. You can’t undo this.")).toBeTruthy();
+    expect(within(sheet).getByRole("button", { name: "Delete item" })).toBeTruthy();
   });
 });
 
