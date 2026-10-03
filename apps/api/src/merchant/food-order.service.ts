@@ -269,6 +269,15 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       if (existing) return this.toResponse(existing);
     }
 
+    // D-74 (owner, 2026-10-03): Order flow v2 is cash only (BRIEF §14), and the app has placed only cash
+    // since D-48. An install from before then can still offer wallet, so a NEW order paying by wallet is
+    // refused — restaurant, shop or pharmacy alike. `MerchantPaymentMethod` keeps "wallet" so the orders
+    // those installs already placed still parse and can be finished; checked after the idempotency
+    // replay, so a retry of one of them still gets it back.
+    if (body.paymentMethod === "wallet") {
+      throw new BadRequestException({ reason: "wallet_not_accepted", message: "Orders are cash on delivery now. Choose cash to place your order." });
+    }
+
     // Order flow v2 (ledger D-59): restaurants AND shops/pharmacies take orders here — a live restaurant,
     // or a live shop whose section (SHOPS_ENABLED / PHARMACY_ENABLED) is on. Same rule as the browse lists.
     const merchant = await this.prisma.merchant.findFirst({
@@ -351,7 +360,8 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     const itemDesc = summarizeMerchantItems(body.items.map((i) => ({ name: dishById.get(i.dishId)!.name, quantity: i.quantity })));
     // Auto-accept: a cash order at an auto-accept restaurant skips the accept window and goes straight
     // to cooking at the restaurant's usual prep time. No rider is sent until the kitchen is confirmed
-    // (sweepAutoAccepted). A legacy WALLET order still takes the normal accept → payment path.
+    // (sweepAutoAccepted). Wallet is refused above (D-74); the wallet orders placed before that keep
+    // their accept → payment path.
     // Order flow v2 (README per-service table): shops and pharmacies are never auto-accept — 3 minutes to
     // accept, like a manual restaurant. A scheduled order waits (awaiting_accept, no deadline) until the
     // schedule sweep rings it at `ringsAt` (OrderScheduleService), which applies this same rule then.
@@ -390,7 +400,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
           merchantPaymentMethod: body.paymentMethod,
           // R-03 snapshot, fixed at placement (C4). D-48: every cash food order is collect-and-return —
           // the rider collects at the door and brings the cash back ("Cash back to you") — whatever the
-          // older per-shop rule says. Null when an installed app still sent WALLET: the rule never applies.
+          // older per-shop rule says. Null only on the wallet orders placed before D-74: it never applied.
           merchantCashRule: body.paymentMethod === "cash" ? "collect_and_return" : null,
           merchantGoodsTotal,
           deliveryFee,
