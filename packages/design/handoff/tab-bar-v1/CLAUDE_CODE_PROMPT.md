@@ -1,79 +1,110 @@
-# Prompt for Claude Code: implement the LyniaGo tab bar v1.3
+# Prompt for Claude Code — LyniaGo tab bar v1.4
 
-Paste everything below the line into Claude Code, run from the root of the LyniaGo app repo, with this `tab-bar-v1/` folder copied into the repo (e.g. `docs/handoff/tab-bar-v1/`).
+How to use it: copy this `tab-bar-v1/` folder into the app repo at `docs/handoff/tab-bar-v1/`. Then run Claude Code from the repo root and paste in everything below the line.
 
 ---
 
-You're implementing the redesigned bottom tab bar for the LyniaGo Android app (customer + rider roles). The design is signed off. Your job is a pixel- and behaviour-faithful native implementation, not a redesign.
+You're implementing the redesigned bottom tab bar for the LyniaGo Android app, for both the customer and rider roles. The design is signed off. Build a pixel- and behaviour-faithful native implementation. Don't redesign it.
 
-> The files in `reference/` end in `.txt` so the design-system build skips them. They are plain JSX and TypeScript; drop the `.txt` to read them with highlighting.
+## Read first, in order
+1. `docs/handoff/tab-bar-v1/README.md`. Start with its **"v1.4 overrides"** block: it wins over every conflicting line below it.
+2. `CHANGES.md`. v1.4 is the current version.
+3. `reference/TabBar.jsx.txt`. This is the web reference implementation: exact geometry, SVG paths for every illustration and glyph, badge logic, screen-reader strings, the glass fallback logic (`useGlass`) and the motion values. Port from it; don't redraw anything. (The `.txt` suffix only keeps it out of the design-system build.)
+4. `reference/AppScreen.jsx.txt` shows the content reserve and the CTA dock stacking.
+5. `reference/colors.css` and `reference/spacing.css` hold the token values.
+6. `Tab Bar Prototype (standalone).html` works offline. Its side panel toggles every state.
 
-## Read first, in this order
-1. `docs/handoff/tab-bar-v1/README.md`: the spec. Every number in it is final. Where this prompt and the README disagree, the README wins.
-2. `docs/handoff/tab-bar-v1/CHANGES.md`: what this supersedes.
-3. `docs/handoff/tab-bar-v1/reference/TabBar.jsx.txt`: the web reference implementation. It's the exact geometry, the SVG paths for all illustrations and glyphs, the badge logic and the screen-reader strings. Port from it; don't redraw anything.
-4. `reference/AppScreen.jsx.txt`: how screens reserve space and how the CTA "dock" stacks with the bar.
-5. `reference/colors.css` and `reference/spacing.css`: the token values. Only the tokens named in the README are needed.
-6. Open `Tab Bar Prototype (standalone).html` in a browser. It works offline and shows every state via the side panel (role, width, nav mode, badges, CTA dock, keyboard, reduce motion).
-
-Before writing code, explore the app repo: find the current bottom navigation, the theme/colour resources, how screens pad for the bar, where order/job/wallet/KYC state lives, and whether the UI is Jetpack Compose or Views. Match the repo's existing patterns, naming and architecture. Tell me what you found and your plan (files to add or change) before making large edits.
+Before writing code, explore the repo. Find the current bottom nav, the theme and colour resources, how screens pad for the bar, where order/job/wallet/KYC state lives, and whether the UI is Compose or Views. Match the existing patterns. **Report what you found and your file plan before making large edits.**
 
 ## What to build
-**1. Tokens.** Add the new colours and shadows from the README "New tokens" section and `CHANGES.md` v1.1–v1.3 to the app theme, under the same names:
-- `illus-*`, `illus-idle-*`, `illus-sky`
-- `tile-mint/peach/lilac/sun`, `coral-ink`, `sun-ink`
-- `live-bar`, `rider-accent`
-- `shadow-float/active/badge`
 
-Don't hard-code hex values in components.
+### 1. Tokens
+Add the README tokens to the theme under the same names: `illus-*`, `illus-idle-*`, `illus-sky`, `tile-mint`, `live-bar`, `rider-accent` and `shadow-badge`. Don't hard-code hex values in components. `shadow-float` and `shadow-active` are **not** used any more.
 
-**2. Tab art as vector drawables.** Use the `ILLUS` table in `TabBar.jsx` (32×32 viewBox). Make one active and one idle drawable per name: home, orders, account, jobs, money (10 total). Map tones with `ILLUS_ON` / `ILLUS_IDLE`. The polygon, rect, circle and path coordinates convert 1:1 to `pathData`. The bag handle is a 2-unit stroke with round caps. Keep the solid `GLYPHS` set (24×24, mask knockouts) as a fallback behind a flag, but don't wire it into the UI by default.
+### 2. Tab art
+Build 10 vector drawables from the `ILLUS` table (32×32 viewBox): an active and an idle version of home, orders, account, jobs and money. Map the tones with `ILLUS_ON` and `ILLUS_IDLE`. The coordinates convert 1:1 to `pathData`. The bag handle is a 2-unit round-cap stroke. Keep the solid `GLYPHS` set behind a flag, off by default.
 
-**3. The TabBar component.**
-- Floating pill: 60 tall, 12 from the left, right and bottom, plus the system bottom inset. 4 padding, full radius.
-- White, with a 1px `line` stroke and `shadow-float` elevation.
-- Three equal cells, each 52 tall.
-- Cell content: 28 illustration, 2 gap, 16 label (Inter 12, 600 idle `muted` / 700 active `ink`).
-- One shared indicator slides between cells:
-  - Its fill is the active tab's tile tint, with a 2px inset ring in that tint's ink (table in the README "Variant" section).
-  - Slide: 200ms `cubic-bezier(0.34, 1.36, 0.64, 1)`.
-  - Tint and ring cross-fade over 160ms.
-- The active illustration rests at translateY −2 and scale 1.08. On activation it pops: 0.86 → 1.16 → 1.08 over 200ms. It does not pop on first composition.
-- Customer tabs: Home, Orders, Account. Rider tabs: Jobs, Money, Account. Labels are exactly these.
+### 3. The bar (v1.4)
+**Geometry**
+- Floating pill: 60 tall, 12 in from the left, right and bottom, plus the system bottom inset.
+- Padding 4, full radius.
+- Three equal cells, 52 tall.
 
-**4. Badges.** Implement the four kinds exactly as in the README table:
-- `dot`: Account, KYC/verification.
-- `count`: Rider Jobs, new jobs, capped at "9+". Clears when Jobs is opened.
-- `live`: Customer Orders, active orders. `live-bar` fill, gold dot, white count.
-- `warn`: Rider Money, below the balance floor.
+**Glass material**
+- `bg` at **72% alpha**, with a **24dp backdrop blur** and 180% saturation over the content scrolling behind it.
+- Compose: real backdrop blur needs either `RenderEffect.createBlurEffect` on API 31+ applied to a captured backdrop layer, or a library such as Haze. **Ask me before adding a dependency.**
+- **No shadow, no elevation, no outline** on the bar.
 
-Every badge has a 2px white ring, `shadow-badge`, is anchored to the cell (not the icon), and pops 0.4 → 1.15 → 1 over 160ms when it appears or changes. Wire them to the real app state you found in the repo. If a source doesn't exist yet, expose a parameter and leave a clear TODO. Don't fake data.
+**Solid fallback (opaque `bg`)** — use it when any of these is true:
+- API < 31,
+- `ActivityManager.isLowRamDevice()`,
+- power-save mode is on,
+- high-contrast text is enabled,
+- the blur can't be rendered.
 
-**5. Interaction.**
-- Press: the cell scales to 0.94 over 100ms, then springs back over 160ms. Idle cells also get a `surface` fill while pressed.
-- Tab change: a light haptic (`CLOCK_TICK`).
+Never ship a translucent bar without blur.
+
+**Indicator**
+- One shared element that slides between cells.
+- Fill `tile-mint` for every tab.
+- No ring, no shadow.
+
+**Cell content**
+- 28 illustration, 2 gap, 16 label.
+- Label: Inter 12, **always weight 700**. Colour is `muted` when idle and `ink` when active.
+- The active illustration rests at translateY −2dp and scale 1.08.
+
+**Tabs**
+- Customer: Home, Orders, Account.
+- Rider: Jobs, Money, Account.
+
+### 4. Motion — smooth, no springs, no keyframes
+- One easing everywhere: `cubic-bezier(0.32, 0.72, 0, 1)`. In Compose that's `CubicBezierEasing(0.32f, 0.72f, 0f, 1f)`.
+- Indicator: translateX over 420ms; colour over 300ms.
+- Icon: the new active icon eases to its rest transform over 420ms, and the old one eases back over 420ms at the same time. No pop, and no animation on first composition.
+- Label and glyph colour: 300ms.
+- Press: scale 0.97 over 160ms, release over 360ms. Idle cells get a `surface` fill while pressed.
+- Badge pop: 0.4 → 1.15 → 1 over 160ms when a badge appears or changes.
+- Animator scale 0 (reduce motion): all of the above is instant. The press fill stays.
+
+### 5. Badges
+Build the four kinds from the README table:
+- `dot`: Account, KYC.
+- `count`: rider Jobs; shows "9+" above 9 and clears when Jobs is opened.
+- `live`: customer Orders; `live-bar` fill with a gold dot.
+- `warn`: rider Money, below the balance floor.
+
+Every badge has a 2px `bg` ring and `shadow-badge`, and is anchored to the cell. Wire badges to real app state. If a source doesn't exist yet, expose a parameter and leave a TODO. No fake data.
+
+### 6. Interaction
+- Changing tabs plays a light haptic (`CLOCK_TICK`).
 - Re-tapping the active tab scrolls that tab's root list to the top, with no haptic. It does nothing if the list is already at the top.
 
-**6. Layout contract.**
-- Content on tab roots pads its bottom by 72 + inset + 16.
-- Screens with a pinned CTA use the dock: one white panel with `shadow-sheet`, holding the CTA (52), a 12 gap, the bar, then 12 + inset. Content never shows between the CTA and the bar.
-- Hide the bar while the soft keyboard is open.
-- No bar on the screens listed in the README "Hidden on" section.
+### 7. Layout contract
+- Tab-root content pads its bottom by 72 + inset + 16, and scrolls *behind* the glass bar.
+- On screens with a pinned CTA, use the dock: one solid `bg` panel with `shadow-sheet`, containing the CTA (52), a 12 gap, the bar, then 12 + inset.
+- Hide the bar while the keyboard is open.
+- No bar on the screens listed under "Hidden on".
 
-**7. Accessibility.**
-- The bar is a tab list; each cell is a tab with `selected` state and touch target ≥ 48dp.
-- Content descriptions use the exact strings in the README "Screen-reader strings" section (format `{Label}, tab, {i} of 3[, {badge}]`).
-- The focus ring is shown for D-pad/keyboard only: 2px white + 2px `ink`.
-- When the system animator scale is 0 (reduce motion): no slide, pops, press scale or fades. State changes are instant. The press fill stays.
+### 8. Accessibility
+- The bar is a tab list. Each cell is a tab with a `selected` state and a touch target of at least 48dp.
+- Content descriptions are exactly `{Label}, tab, {i} of 3[, {badge}]`, using the README strings.
+- Show a focus ring (2px `bg` + 2px `ink`) for D-pad/keyboard focus only.
+- The solid fallback rules in section 3 are an accessibility requirement, not an optimisation.
 
-**8. Performance.** Must stay smooth on low-end Android (2–3GB RAM, Android 8+). No blur, no Lottie, no runtime bitmap work. Animate only transform, alpha and colour, and avoid recomposing the whole screen on a tab change.
+### 9. Performance
+Must stay smooth on 2–3GB Android 8+ devices, which get the solid fallback.
+- Animate only transform, alpha and colour.
+- Don't recompose the whole screen on a tab change.
+- Use only one blur layer.
 
 ## Done means
-- Side-by-side with the standalone prototype at 360dp and 320dp widths, gesture nav (inset 24) and 3-button nav (inset 0): geometry, colours and badge positions match.
-- Every state from the prototype panel renders in the app: each tab active (both roles), each badge kind, two badges at once, pressed, focus, the CTA dock, keyboard hidden, reduce motion.
-- "Account" at 700 doesn't truncate at 320dp.
+- Side-by-side with the standalone prototype at 360dp and 320dp, with both gesture nav (inset 24) and 3-button nav (inset 0), geometry, colours and badge positions match.
+- The glass bar visibly blurs content scrolling behind it on API 31+. It's solid on API < 31, on low-RAM devices and with high-contrast text on.
+- Every prototype state renders: each tab active in both roles, each badge kind, two badges at once, pressed, focus, the dock, keyboard hidden and reduce motion.
+- Tab changes feel continuous: no overshoot, no snap-back on the deselected icon, and labels don't reflow.
 - TalkBack reads the exact strings.
-- Add screenshot/preview tests for those states if the repo has a screenshot-testing setup. Otherwise, add Compose previews (or the Views equivalent) for each.
-- Remove the old bottom bar, its pill/wash styles and its `dot`-only API once everything is migrated. List what you removed.
+- Add screenshot or preview tests for those states, using the repo's setup or Compose previews.
+- Once everything is migrated, remove the old bottom bar and its styles, plus the `dot`-only API. List what you removed.
 
-Ask me before changing navigation architecture, adding dependencies, or touching screens outside the tab roots and the dock.
+Ask me before changing the navigation architecture, adding dependencies, or touching screens outside the tab roots and the dock.

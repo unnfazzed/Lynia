@@ -6,6 +6,50 @@ Implementation brief for Claude Code: **`CLAUDE_CODE_PROMPT.md`**.
 **Signed off (v1.3):** a floating pill bar with **3D illustrated** tab art (`glyphStyle="illustrated"`, now the default). The active pill uses the Home tile tints (Calm Mint v2), and the live badge matches the Home live bar.
 The solid-vector variant is documented below as a fallback for low-end or high-glare builds. Build it only if asked.
 
+## v1.4 overrides (read first — these win over any conflicting line below)
+**Default build: the illustrated variant with the glass material.**
+
+### Bar
+- Fill: `--bg` at **72%** opacity (`color-mix(in srgb, var(--bg) 72%, transparent)`), with a backdrop filter of `blur(24px) saturate(180%)`.
+- **No** `--shadow-float` and **no** 1px `--line` ring. The bar has no edge treatment.
+- Geometry is unchanged: 60 tall, 12 from the sides and bottom (+ inset), padding 4, pill radius.
+
+### Accessibility fallback
+Switch to solid `--bg` when **any** of these is true:
+- reduced transparency is requested,
+- increased contrast or high-contrast text is on,
+- forced colours are active,
+- backdrop blur isn't supported,
+- (Android) the API level is below 31, `isLowRamDevice()` is true, or power-save mode is on.
+
+Never show a translucent bar without blur. Without blur, the 72% fill fails label contrast over busy content.
+
+### Contrast rationale
+Label and icon contrast is judged against the tint, not the backdrop. The blur flattens what's behind into soft colour, and the 72% `--bg` tint keeps the 700-weight `--muted` labels legible. The bar's shape is read from its fill alone. On solid-white screens the solid bar has no visible edge, which is intended.
+
+### Active indicator
+- Fill: `--tile-mint` for **every** tab, both roles.
+- No ring and no shadow.
+- Pressed (solid-glyph fallback only): `--cta-fill-pressed`.
+
+### Label
+Always 700, so the text doesn't reflow. Colour: idle `--muted`, active `--ink`.
+
+### Motion
+One curve everywhere: `cubic-bezier(0.32, 0.72, 0, 1)`. No overshoot and no keyframes.
+- **Indicator:** translateX over 420ms; background over 300ms.
+- **Icon:** the active icon transitions to `translateY(-2px) scale(1.08)` over 420ms, and back to rest when deselected. There's no pop sequence.
+- **Colour:** label and glyph fills, 300ms ease.
+- **Press:** scale 0.97 over 160ms. Release over 360ms. Idle cells get a `--surface` fill while pressed.
+- **Badge pop:** unchanged.
+- **Reduce motion:** all of the above becomes instant.
+
+### Badges
+Unchanged, including the 2px `--bg` ring and `--shadow-badge`.
+
+### Dock
+The bar inside the CTA dock is the same glass bar. The dock panel itself is solid `--bg`, so the glass just reads as white there.
+
 ## Layout contract
 **Bar reserve = 72px** (60 bar + 12 float gap), plus the bottom safe-area inset. Scroll content pads by **72 + inset + 16**.
 With a CTA dock: reserve = **148px** + inset (12 + 52 + 12 + 60 + 12); content pads by 148 + inset + 16.

@@ -8,7 +8,9 @@
  *   floor, verification not done; the customer's live orders.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { tokens } from "@lynia/shared/tokens";
 import React from "react";
+import { StyleSheet } from "react-native";
 import renderer, { act } from "react-test-renderer";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
@@ -79,6 +81,22 @@ describe("TabBar", () => {
       "Account, tab, 3 of 3, action needed",
     ]);
     expect(cells.map((c) => c.props.accessibilityState.selected)).toEqual([false, true, false]);
+  });
+
+  // v1.4: no edge or shadow on the bar, one `tileMint` pill for every tab, labels always 700.
+  it("draws the v1.4 bar: flat, one mint indicator, every label bold", () => {
+    const flat = (n: renderer.ReactTestInstance) => StyleSheet.flatten(n.props.style) ?? {};
+    for (const active of ["index", "money", "account"]) {
+      const r = mount(<TabBar tabs={RIDER_TABS} active={active} reduceMotion />);
+      const bar = flat(r.root.findAll((n) => n.props.accessibilityRole === "tablist" && typeof n.type === "string")[0]!);
+      expect([bar.borderWidth, bar.shadowOpacity, bar.elevation, bar.padding]).toEqual([undefined, undefined, undefined, 4]);
+      const host = r.root.findAll((n) => n.props.accessibilityRole === "tablist" && typeof n.props.onLayout === "function")[0]!;
+      act(() => host.props.onLayout({ nativeEvent: { layout: { width: 336, height: 60, x: 12, y: 0 } } }));
+      const mint = r.root.findAll((n) => typeof n.type === "string" && flat(n).backgroundColor === tokens.color.tileMint);
+      expect(mint).toHaveLength(1);
+      const labels = r.root.findAll((n) => typeof n.type === "string" && ["Jobs", "Money", "Account"].includes(n.props.children));
+      expect(new Set(labels.map((n) => flat(n).fontWeight))).toEqual(new Set([tokens.font.weight.bold]));
+    }
   });
 });
 
