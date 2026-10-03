@@ -166,7 +166,7 @@ describe("useQueuePoll", () => {
     expect(result.current.orders).toEqual(orders("fresh"));
   });
 
-  // B-O17: OrderCard's new React.memo boundary only pays off if an order whose content is
+  // B-O17: a React.memo boundary on a row only pays off if an order whose content is
   // unchanged between two polls keeps the SAME object reference — otherwise every card still
   // "changes" on every 5s tick regardless of memoization. Confirmed to FAIL against the pre-fix
   // code (a bare `setOrders(result)`, always a fresh reference) before landing.

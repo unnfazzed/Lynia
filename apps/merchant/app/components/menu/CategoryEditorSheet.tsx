@@ -18,7 +18,7 @@ export interface CategorySave {
  * "Breakfast 07:00–11:00"), hide toggle, and delete (only once empty — the server 409s otherwise and
  * that message is surfaced verbatim). Consolidates the gallery's separate M4·7 "manage categories" list
  * screen and M4·8 create/rename dialog into one sheet per category, matching this app's existing
- * sheet-over-list convention (PaymentConfirmSheet) rather than adding a second full page.
+ * sheet-over-list convention rather than adding a second full page.
  */
 export function CategoryEditorSheet({
   category,

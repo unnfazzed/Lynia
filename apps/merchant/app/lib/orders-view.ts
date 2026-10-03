@@ -36,8 +36,8 @@ export function isAfterPickup(o: Pick<MerchantOrderResponse, "status">): boolean
 }
 
 export interface HomeSections {
-  /** New: the ringing orders, the auto-accepted ones waiting for the kitchen to confirm, then the older
-   *  undecided lanes (item approval, legacy wallet payment). */
+  /** New: the ringing orders, the auto-accepted ones waiting for the kitchen to confirm, then the ones
+   *  waiting on the customer (changes to answer, or a wallet order placed before D-74 to pay for). */
   new: MerchantOrderResponse[];
   cooking: MerchantOrderResponse[];
   /** Ready and waiting for a rider — searching, holding, or a rider coming to the counter. */
@@ -57,7 +57,7 @@ export function homeSections(orders: readonly MerchantOrderResponse[]): HomeSect
   };
 }
 
-export type DetailView = "ringing" | "scheduled" | "legacy" | "cooking" | "handover" | "tracking" | "delivered" | "closed";
+export type DetailView = "ringing" | "scheduled" | "payment" | "cooking" | "handover" | "tracking" | "delivered" | "closed";
 
 /** Order flow v2 (BRIEF §12): a scheduled order that hasn't rung yet (M7a/M7b). */
 export function isScheduledWaiting(o: Pick<MerchantOrderResponse, "scheduledFor" | "scheduleStartedAt">): boolean {
@@ -84,11 +84,13 @@ export function detailView(o: MerchantOrderResponse): DetailView {
   if (o.merchantClosedAt || o.status === "cancelled" || o.status === "expired") return "closed";
   // M7b: a scheduled order waits on its ticket until it rings (then it rings like a new one, M1c).
   if (o.merchantPhase === "awaiting_accept" && isScheduledWaiting(o)) return "scheduled";
-  // M2: an accept that asked about a swap parks the order until the customer answers — keep packing.
-  if (o.merchantPhase === "awaiting_item_approval" && o.substitution?.status === "open") return "cooking";
+  // M2: the order waits on the customer's answer — to an accept that asked about a swap, or to a
+  // shortened order a merchant screen from before Order flow v2 sent. Either way it is M2's wait.
+  if (o.merchantPhase === "awaiting_item_approval") return "cooking";
   // An auto-accepted order the kitchen hasn't confirmed rings too (M1a), on the Orders home.
   if (o.merchantPhase === "awaiting_accept" || needsKitchenConfirm(o)) return "ringing";
-  if (o.merchantPhase === "awaiting_item_approval" || o.merchantPhase === "awaiting_payment") return "legacy";
+  // A wallet order placed before D-74 (cash only) still waits for its payment before cooking.
+  if (o.merchantPhase === "awaiting_payment") return "payment";
   if (o.merchantPhase === "preparing") return "cooking";
   if (isReadyBucket(o)) return "handover";
   if (o.status === "delivered" || o.status === "completed" || o.status === "undelivered") {

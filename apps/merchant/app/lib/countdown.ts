@@ -13,9 +13,3 @@ export function formatCountdown(ms: number): string {
   const s = totalSeconds % 60;
   return `${m}:${String(s).padStart(2, "0")}`;
 }
-
-/** Elapsed-since style for the D-34 "searching for 0:38" copy. */
-export function msSince(startIso: string | null, nowMs: number): number {
-  if (!startIso) return 0;
-  return Math.max(0, nowMs - new Date(startIso).getTime());
-}

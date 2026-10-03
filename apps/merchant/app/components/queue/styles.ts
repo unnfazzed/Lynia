@@ -63,7 +63,3 @@ export const cardStyle: CSSProperties = {
   boxShadow: "var(--shadow-card)",
   padding: 16,
 };
-
-export function disabledStyle(disabled: boolean): CSSProperties {
-  return disabled ? { opacity: 0.5, cursor: "not-allowed", pointerEvents: "none" } : {};
-}

@@ -69,8 +69,8 @@ export function useQueuePoll(enabled: boolean): QueuePollState {
       const result = await listQueue();
       reachability.reportReachable();
       if (generation === generationRef.current) {
-        // B-O17: reuse an unchanged order's previous object reference so OrderCard's memo
-        // boundary can actually skip re-rendering it (see mergeOrders' own doc comment).
+        // B-O17: reuse an unchanged order's previous object reference so a memoized row can
+        // actually skip re-rendering it (see mergeOrders' own doc comment).
         setOrders((prevOrders) => mergeOrders(prevOrders, result));
         setLoaded(true);
         setError(null);

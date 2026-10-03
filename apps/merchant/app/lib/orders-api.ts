@@ -34,11 +34,8 @@ export function rejectOrder(orderId: string, reason: MerchantRejectionReasonCode
   return authedFetch<MerchantOrderResponse>(`/merchant/orders/${orderId}/reject`, { method: "POST", body: { reason } });
 }
 
-/** R-16: unlocks the request-payment button. */
-export function logCall(orderId: string): Promise<MerchantOrderResponse> {
-  return authedFetch<MerchantOrderResponse>(`/merchant/orders/${orderId}/log-call`, { method: "POST" });
-}
-
+/** R-16: asks a wallet order's customer to pay (a wallet order placed before D-74 only). The API wants a
+ *  logged call first unless `overrideCallLog` says the customer confirmed another way. */
 export function requestPayment(orderId: string, overrideCallLog = false): Promise<MerchantOrderResponse> {
   return authedFetch<MerchantOrderResponse>(`/merchant/orders/${orderId}/request-payment`, {
     method: "POST",

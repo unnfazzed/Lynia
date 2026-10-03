@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MerchantOrderResponse } from "@lynia/shared";
-import { groupQueue, isNoRiderHold, isReadyBucket, isRiderSecured, isSearchingForRider, shouldUseBoard } from "./order-groups";
+import { groupQueue, isNoRiderHold, isReadyBucket, shouldUseBoard } from "./order-groups";
 
 function order(over: Partial<MerchantOrderResponse> = {}): MerchantOrderResponse {
   return {
@@ -118,26 +118,11 @@ describe("shouldUseBoard (D-26)", () => {
   });
 });
 
-describe("isRiderSecured (D-04)", () => {
-  it("true once a rider is assigned and the order is still in the ready bucket", () => {
-    expect(isRiderSecured(order({ merchantPhase: null, status: "assigned", riderId: "r1" }))).toBe(true);
-  });
-  it("false while still searching (no rider yet)", () => {
-    expect(isRiderSecured(order({ merchantPhase: "ready_for_pickup", status: "requested", riderId: null }))).toBe(false);
-  });
-});
-
-describe("isNoRiderHold / isSearchingForRider (D-34)", () => {
+describe("isNoRiderHold (D-34)", () => {
   it("hold is true only once noRiderHoldAt is stamped", () => {
     const held = order({ merchantPhase: "ready_for_pickup", noRiderHoldAt: "2026-07-30T12:00:00.000Z" });
     const searching = order({ merchantPhase: "ready_for_pickup", noRiderHoldAt: null });
     expect(isNoRiderHold(held)).toBe(true);
     expect(isNoRiderHold(searching)).toBe(false);
-    expect(isSearchingForRider(held)).toBe(false);
-    expect(isSearchingForRider(searching)).toBe(true);
-  });
-  it("searching is false once a rider is secured", () => {
-    const secured = order({ merchantPhase: "ready_for_pickup", riderId: "r1" });
-    expect(isSearchingForRider(secured)).toBe(false);
   });
 });

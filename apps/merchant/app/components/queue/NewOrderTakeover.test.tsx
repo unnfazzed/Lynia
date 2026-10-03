@@ -76,7 +76,7 @@ describe("NewOrderTakeover — CF-01 double-submit guard (sensitive lane: order 
     // Two native clicks inside ONE act() call reproduce a genuine fast double-tap on a kitchen
     // tablet: both onClick handlers run against the same pre-update `submitting === false` render,
     // since React only commits after the act() callback returns (mirrors ConfirmModal's CF-02 test
-    // and OrderCard's CF-01 sibling test). Accepting is order assignment — a CLAUDE.md sensitive
+    // test). Accepting is order assignment — a CLAUDE.md sensitive
     // lane — so a double-fire here means the order gets accepted twice, not a cosmetic re-render.
     const acceptButton = screen.getByRole("button", { name: /^Accept/ });
     act(() => {

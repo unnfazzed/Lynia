@@ -11,7 +11,6 @@ import { AppBar } from "../../../components/m/AppBar";
 import { ConfirmSheet } from "../../../components/m/ConfirmSheet";
 import { StaticMap } from "../../../components/m/StaticMap";
 import { useToast } from "../../../components/m/Toast";
-import { OrderCard } from "../../../components/queue/OrderCard";
 import { MerchantTrack, OrderLines, RiderRow } from "../../../components/queue/order-parts";
 import { Note, PhotoRow, RoundLines } from "../../../components/queue/proof-parts";
 import { ProposerSheet } from "../../../components/queue/proposer";
@@ -29,7 +28,6 @@ import {
   dispatchCancel,
   dispatchResume,
   getOrder,
-  logCall,
   markReady,
   proposeSubstitution,
   refundOrder,
@@ -47,7 +45,19 @@ import { countOf, doorProofLine, ORDER_FLOW as OF, vocabulary, type Vocabulary }
 const POLL_MS = 5_000;
 
 type Load = { status: "loading" } | { status: "ready"; order: MerchantOrderResponse } | { status: "error"; message: string };
-type Confirm = null | "cancel" | "force" | "no_cash" | "not_returned" | "hold_cancel" | "items" | "decline_scheduled";
+type Confirm =
+  | null
+  | "cancel"
+  | "force"
+  | "no_cash"
+  | "not_returned"
+  | "hold_cancel"
+  | "items"
+  | "decline_scheduled"
+  // A wallet order placed before D-74: cancel it unpaid, confirm its payment, or refund and cancel it.
+  | "release"
+  | "paid"
+  | "refund";
 
 /** What every order screen below needs from the page. */
 interface Ctx {
@@ -59,11 +69,14 @@ interface Ctx {
   toast: (m: string) => void;
   business: MerchantProfileResponse | null;
   v: Vocabulary;
-  legacyHandlers: LegacyHandlers;
   setHandedOver: (v: boolean) => void;
 }
 
-type LegacyHandlers = Omit<React.ComponentProps<typeof OrderCard>, "order" | "bucket">;
+/** A wallet order placed before D-74 that the customer paid for, which LyniaGo never held: cancelling it
+ *  means the business sends the money back first and records its own reference (D-12). */
+function isPaidWallet(order: MerchantOrderResponse): boolean {
+  return order.paymentMethod === "wallet" && !!order.merchantPaymentConfirmedAt;
+}
 
 function hm(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -98,6 +111,11 @@ function riderName(order: MerchantOrderResponse): string {
  * back (M6b). A scheduled order that hasn't rung opens on its ticket (M7b). A pharmacy order with a
  * prescription to check offers the pharmacist the Prescription check (M8a). The ETA pill on M5 is not on
  * the merchant read, so it is not drawn.
+ *
+ * Cash only (BRIEF §14, ledger D-74): the API takes no new wallet order, and the old wallet lane (the
+ * order card, its payment sheets, the CASH / WALLET tag) is gone. A wallet order an older install placed
+ * before then still finishes on these parts: it waits for its payment on its own ticket, and once paid
+ * it cooks like any other, its "Can't finish this order" asking for the refund reference.
  */
 export default function OrderPage() {
   const { id } = useParams<{ id: string }>();
@@ -109,6 +127,9 @@ export default function OrderPage() {
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The payment or refund reference a wallet order's confirm sheet asks for; a fresh one per sheet.
+  const [reference, setReference] = useState("");
+  useEffect(() => setReference(""), [confirm]);
   // "Hand over" is the merchant's own step after the rider's code matched (M4 → M5).
   const [handedOver, setHandedOver] = useState(false);
   const busyRef = useRef(false);
@@ -174,36 +195,33 @@ export default function OrderPage() {
   const disabled = actionsDisabled || busy;
   const v = vocabulary(business?.businessType, business?.shopKind);
   const confirmSheet = renderConfirm();
-  const ctx: Ctx = { order, act, disabled, error, setConfirm, toast, business, v, legacyHandlers: legacyHandlers(), setHandedOver };
+  const ctx: Ctx = { order, act, disabled, error, setConfirm, toast, business, v, setHandedOver };
 
   if (view === "ringing") return null;
 
   return (
     <Kitchen active="queue" tabs={false}>
       {view === "scheduled" && <Scheduled {...ctx} />}
+      {view === "payment" && <Payment {...ctx} />}
       {view === "cooking" && <Cooking {...ctx} />}
       {view === "handover" && <Handover {...ctx} />}
       {view === "tracking" && <Tracking {...ctx} />}
       {view === "delivered" && <Delivered key={order.id} {...ctx} />}
-      {view === "legacy" && <Legacy {...ctx} />}
       {view === "closed" && <Closed order={order} />}
       {confirmSheet}
     </Kitchen>
   );
 
-  function legacyHandlers(): LegacyHandlers {
-    const after = (p: Promise<unknown>) => p.then(() => refresh());
-    return {
-      disabled,
-      onMarkReady: (orderId: string) => after(markReady(orderId)),
-      onRevealPickupCode: async (orderId: string) => (await revealPickupCode(orderId)).pickupCode,
-      onOpenHold: () => {},
-      onLogCall: (orderId: string) => after(logCall(orderId)),
-      onRequestPayment: (orderId: string, overrideCallLog: boolean) => after(requestPayment(orderId, overrideCallLog)),
-      onConfirmPayment: (orderId: string, body: { reference: string; amount: number }) => after(confirmPayment(orderId, body)),
-      onReleaseUnpaid: (orderId: string) => after(releaseUnpaid(orderId, "other")),
-      onRefund: (orderId: string, body: { reference: string; amount: number }) => after(refundOrder(orderId, body.reference, body.amount)),
-    };
+  /** The reference field a wallet order's payment or refund confirm needs (the API keeps up to 80). */
+  function referenceField(label: string) {
+    return (
+      <div className="m-fld">
+        <label htmlFor="m-ref">{label}</label>
+        <span className="m-in">
+          <input id="m-ref" value={reference} maxLength={80} autoComplete="off" onChange={(e) => setReference(e.target.value)} />
+        </span>
+      </div>
+    );
   }
 
   function renderConfirm() {
@@ -247,6 +265,54 @@ export default function OrderPage() {
             onCancel={close}
           />
         );
+      case "release":
+        return (
+          <ConfirmSheet
+            title="Cancel this order?"
+            body="Only if they never paid. The customer is told."
+            confirmLabel="Cancel order"
+            busy={busy}
+            error={error}
+            onConfirm={() => void act(() => releaseUnpaid(order.id, "other"), "Order cancelled · customer told", true)}
+            onCancel={close}
+          />
+        );
+      case "paid": {
+        // The API checks the amount against the order (D-06); the merchant checks their own statement.
+        const amount = order.merchantGoodsTotal ?? 0;
+        return (
+          <ConfirmSheet
+            title={`Is ${money(amount)} in your statement?`}
+            body="Check your own statement, not a screen someone shows you."
+            confirmLabel={OF.cashBtn(money(amount))}
+            danger={false}
+            busy={busy}
+            confirmDisabled={!reference.trim()}
+            error={error}
+            onConfirm={() => void act(() => confirmPayment(order.id, { reference: reference.trim(), amount }), `Payment confirmed · start ${v.making.toLowerCase()}`)}
+            onCancel={close}
+          >
+            {referenceField("Reference")}
+          </ConfirmSheet>
+        );
+      }
+      case "refund": {
+        const amount = order.merchantGoodsTotal ?? 0;
+        return (
+          <ConfirmSheet
+            title="Cancel this order?"
+            body={`Refund the customer ${money(amount)} first, then add the refund reference.`}
+            confirmLabel="Cancel order"
+            busy={busy}
+            confirmDisabled={!reference.trim()}
+            error={error}
+            onConfirm={() => void act(() => refundOrder(order.id, reference.trim(), amount), "Order cancelled · customer told", true)}
+            onCancel={close}
+          >
+            {referenceField("Refund reference")}
+          </ConfirmSheet>
+        );
+      }
       case "hold_cancel":
         return (
           <ConfirmSheet
@@ -348,16 +414,19 @@ function Scheduled({ order, disabled, setConfirm }: Ctx) {
 
 // ── M3a / M3b / M2 ─────────────────────────────────────────────────────────────────────────────
 function Cooking(ctx: Ctx) {
-  const { order, act, disabled, error, setConfirm, legacyHandlers, v, business } = ctx;
+  const { order, act, disabled, error, setConfirm, v, business } = ctx;
   const now = useNow();
   const round = openRound(order);
-  if (round) return <Waiting {...ctx} deadlineAt={round.deadlineAt} now={now} />;
+  // M2 also stands in for a shortened order sent before Order flow v2 (the 60-second approval): the
+  // customer is answering, so nothing here is marked ready until they have.
+  if (round || order.merchantPhase === "awaiting_item_approval") {
+    return <Waiting {...ctx} deadlineAt={round ? round.deadlineAt : order.itemApprovalDeadlineAt} swaps={!!round} now={now} />;
+  }
   const startMs = order.prepStartedAt ? new Date(order.prepStartedAt).getTime() : now;
   const totalMs = (order.prepMinutes ?? 15) * 60_000;
   const leftMs = Math.max(0, startMs + totalMs - now);
   const pct = Math.min(100, Math.round(((totalMs - leftMs) / totalMs) * 100));
   const readyBy = hm(new Date(startMs + totalMs).toISOString());
-  const wallet = order.paymentMethod === "wallet";
   const canChange = changeableLines(order).length > 0;
   const shop = (order.venue?.businessType ?? business?.businessType) === "shop";
   const rxToCheck = order.prescription?.status === "pending" && business?.myIsPharmacist === true;
@@ -398,14 +467,15 @@ function Cooking(ctx: Ctx) {
         )}
         <MerchantTrack order={order} v={v} cashRow={false} />
         {error && <div className="m-alert" role="alert">{error}</div>}
-        {wallet ? (
-          // A paid WALLET order is refunded with the merchant's own reference (legacy lane).
-          <OrderCard order={order} bucket="preparing" {...legacyHandlers} />
-        ) : (
-          <button type="button" className="m-lnk m-red" style={{ minHeight: "var(--target-min)", fontSize: 14 }} disabled={disabled} onClick={() => setConfirm("cancel")}>
-            {OF.cantFinish}
-          </button>
-        )}
+        <button
+          type="button"
+          className="m-lnk m-red"
+          style={{ minHeight: "var(--target-min)", fontSize: 14 }}
+          disabled={disabled}
+          onClick={() => setConfirm(isPaidWallet(order) ? "refund" : "cancel")}
+        >
+          {OF.cantFinish}
+        </button>
       </div>
       <Bar>
         <button type="button" className="m-btn" disabled={disabled} onClick={() => void act(() => markReady(order.id), "Marked ready · finding a rider")}>
@@ -604,8 +674,10 @@ function Delivered({ order, act, disabled, error, setConfirm, v }: Ctx) {
 
 // ── M2 ─────────────────────────────────────────────────────────────────────────────────────────
 /** M2 · waiting for the customer: the round's countdown, "Start packing the rest…", the lines with
- *  "Swap asked" / "Removing", and "Order is packed" held until the customer answers (or time runs out). */
-function Waiting({ order, v, deadlineAt, now }: Ctx & { deadlineAt: string | null; now: number }) {
+ *  "Swap asked" / "Removing", and "Order is packed" held until the customer answers (or time runs out).
+ *  A shortened order from before Order flow v2 (`swaps` false) has no swaps and doesn't carry on by
+ *  itself when time runs out, so it leaves out the line that says so. */
+function Waiting({ order, v, deadlineAt, swaps, now }: Ctx & { deadlineAt: string | null; swaps: boolean; now: number }) {
   const left = deadlineAt ? formatCountdown(Math.max(0, new Date(deadlineAt).getTime() - now)) : null;
   return (
     <Fill>
@@ -616,7 +688,7 @@ function Waiting({ order, v, deadlineAt, now }: Ctx & { deadlineAt: string | nul
             <b style={{ flex: 1, fontSize: 15 }}>{OF.mWait}</b>
             {left && <span className="m-pl m-gold m-num">{left}</span>}
           </div>
-          <span>{OF.mWaitSub(v.making.toLowerCase())}</span>
+          {swaps && <span>{OF.mWaitSub(v.making.toLowerCase())}</span>}
         </div>
         <div className="m-card" style={{ gap: 0, padding: "4px 12px" }}>
           <RoundLines order={order} />
@@ -636,14 +708,43 @@ function Waiting({ order, v, deadlineAt, now }: Ctx & { deadlineAt: string | nul
   );
 }
 
-function Legacy({ order, legacyHandlers }: Ctx) {
+// ── A wallet order placed before D-74 ─────────────────────────────────────────────────────────────
+/**
+ * Not drawn: Order flow v2 is cash only (BRIEF §14) and the API refuses new wallet orders (ledger
+ * D-74), but a wallet order an older install placed before then still waits here for the customer to
+ * pay the business's own number. It is the ticket's parts with no payment tag: the note, the lines,
+ * "Ask for payment" (an older app shows its pay screen only once asked), the red "Cancel order" for an
+ * order that was never paid, and "I got $9.50" once the money is in the business's own statement — its
+ * sheet asks for the reference. Paid, the order cooks like any other.
+ */
+function Payment({ order, act, disabled, error, setConfirm }: Ctx) {
   return (
-    <>
-      <AppBar back="/queue" title={orderLabel(order)} />
-      <div className="m-bd">
-        <OrderCard order={order} bucket={order.merchantPhase === "awaiting_payment" ? "payment" : "waiting"} {...legacyHandlers} />
+    <Fill>
+      <AppBar back="/queue" title={orderLabel(order)} right={<span className="m-num" style={{ fontSize: 15, fontWeight: 700 }}>{money(order.merchantGoodsTotal)}</span>} />
+      <div className="m-bd" style={{ flex: 1, paddingTop: 12 }}>
+        <Note tone="hi" icon="clock" title="Waiting for payment">
+          <br />
+          Start once it’s in your own statement.
+        </Note>
+        <div className="m-card" style={{ gap: 0, padding: "4px 12px" }}>
+          <OrderLines order={order} />
+        </div>
+        {!order.paymentRequestedAt && (
+          <button type="button" className="m-btn-sec" disabled={disabled} onClick={() => void act(() => requestPayment(order.id, true), "Payment asked for · customer told")}>
+            Ask for payment
+          </button>
+        )}
+        {error && <div className="m-alert" role="alert">{error}</div>}
+        <button type="button" className="m-lnk m-red" style={{ minHeight: "var(--target-min)", fontSize: 14 }} disabled={disabled} onClick={() => setConfirm("release")}>
+          Cancel order
+        </button>
       </div>
-    </>
+      <Bar>
+        <button type="button" className="m-btn" disabled={disabled} onClick={() => setConfirm("paid")}>
+          {OF.cashBtn(money(order.merchantGoodsTotal))}
+        </button>
+      </Bar>
+    </Fill>
   );
 }
 

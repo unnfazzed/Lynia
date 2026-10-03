@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatCountdown, msSince, msUntil } from "./countdown";
+import { formatCountdown, msUntil } from "./countdown";
 
 describe("msUntil", () => {
   it("0 for a null deadline", () => {
@@ -21,14 +21,5 @@ describe("formatCountdown", () => {
   });
   it("clamps negative input to 0:00", () => {
     expect(formatCountdown(-500)).toBe("0:00");
-  });
-});
-
-describe("msSince", () => {
-  it("0 for a null start", () => {
-    expect(msSince(null, Date.now())).toBe(0);
-  });
-  it("elapsed time since start", () => {
-    expect(msSince("2026-07-30T12:00:00.000Z", new Date("2026-07-30T12:00:38.000Z").getTime())).toBe(38 * 1000);
   });
 });
