@@ -1,6 +1,6 @@
 import { tokens } from "@lynia/shared/tokens";
 import React, { useEffect, useMemo, useRef } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { ActivityIndicator, ScrollView, Text, View } from "react-native";
 import MapView, { Circle, type LatLng, Marker, Polyline, type Region } from "react-native-maps";
 import { Icon, type IconName } from "../Icon";
 import { Tappable } from "../Tappable";
@@ -349,7 +349,14 @@ export function Gate({
   const tabSpace = useTabBarSpace();
   return (
     <View style={{ flex: 1 }}>
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 24, paddingBottom: hasBar ? 0 : tabSpace }}>
+      {/* Scrollable body: under the mint top card, above up to three CTAs and the tab bar reserve, a 320×640
+          phone (or a large font scale) has no room for disc + title + body + facts — a plain centred View
+          clipped them with no way to scroll. */}
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ flexGrow: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 24, paddingTop: 16, paddingBottom: hasBar ? 16 : tabSpace + 16 }}
+        showsVerticalScrollIndicator={false}
+      >
         <IconDisc name={icon} tone={tone} size={72} />
         <Text accessibilityRole="header" style={{ fontSize: 22, lineHeight: 28, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, textAlign: "center" }}>
           {title}
@@ -365,7 +372,7 @@ export function Gate({
             ))}
           </View>
         ) : null}
-      </View>
+      </ScrollView>
       {hasBar ? (
         <CtaBar dock={tabSpace}>
           {primary ? <CtaButton label={primary.label} icon={primary.icon} onPress={primary.onPress} loading={primary.loading} /> : null}

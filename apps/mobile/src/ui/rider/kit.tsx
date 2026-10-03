@@ -629,8 +629,9 @@ export function PushHeader({ title, onBack }: { title: string; onBack: () => voi
 
 /** A centred blocking/terminal body: 72 disc, 22/700 title, 15/22 body, optional children. */
 export function CentreState({ icon, tone, title, body, children, spinner }: { icon?: IconName; tone?: "calm" | "ok" | "danger"; title: string; body?: string; children?: React.ReactNode; spinner?: boolean }): React.ReactElement {
+  // Scrollable so a small phone / large font scale never clips the title or body (it has no other way out).
   return (
-    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 24 }}>
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 24, paddingVertical: 16 }} showsVerticalScrollIndicator={false}>
       {spinner ? (
         <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: tokens.color.surface, alignItems: "center", justifyContent: "center" }}>
           <ActivityIndicator size="large" color={tokens.color.accentText} />
@@ -641,7 +642,7 @@ export function CentreState({ icon, tone, title, body, children, spinner }: { ic
       <Text accessibilityRole="header" style={{ fontSize: 22, lineHeight: 28, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, textAlign: "center" }}>{title}</Text>
       {body ? <Text style={{ fontSize: 15, lineHeight: 22, color: tokens.color.muted, textAlign: "center" }}>{body}</Text> : null}
       {children}
-    </View>
+    </ScrollView>
   );
 }
 

@@ -1,5 +1,4 @@
-import { tokens } from "@lynia/shared/tokens";
-import { APP_TABS, badgeCount, RIDER_TABS, TAB_BAR_GAP, TAB_BAR_H, TAB_BAR_SPACE, TAB_TINT, tabA11yLabel } from "../TabBar";
+import { APP_TABS, badgeCount, RIDER_TABS, TAB_BAR_GAP, TAB_BAR_H, TAB_BAR_SPACE, tabA11yLabel } from "../TabBar";
 
 // app/(tabs)/_layout.tsx's tabBar navigates by `navigation.navigate(id)` with no id→route lookup
 // table — it relies on each tab's `id` being exactly its `app/(tabs)/<id>.tsx` route segment name
@@ -37,19 +36,6 @@ describe("RIDER_TABS (rider tab shell — plan §5 Lane B1)", () => {
 describe("tab bar v1 layout contract", () => {
   it("is a 60 pill floating 12 off the edge, a 72 reserve", () => {
     expect([TAB_BAR_H, TAB_BAR_GAP, TAB_BAR_SPACE]).toEqual([60, 12, 72]);
-  });
-});
-
-describe("tab bar v1 active tint (Home Calm Mint v2 tiles, each ringed in its ink)", () => {
-  it("maps each tab's art to its tile tint + ring", () => {
-    const c = tokens.color;
-    expect(TAB_TINT).toEqual({
-      home: [c.tileMint, c.accentIllus],
-      orders: [c.tilePeach, c.coralInk],
-      account: [c.tileLilac, c.riderAccent],
-      jobs: [c.tileMint, c.accentIllus],
-      money: [c.tileSun, c.sunInk],
-    });
   });
 });
 

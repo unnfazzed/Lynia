@@ -97,3 +97,26 @@ reason = "ICNS infinite-loop DoS in image-size. Same package, same single build-
 id = "GHSA-86w9-cpqp-85rv"
 ignoreUntil = 2026-10-31
 reason = "node-forge RSA PKCS#1 v1.5 signature-verification forgery. No fixed version exists (OSV last_affected 1.4.0 = npm latest). Build/dev tooling only: importers are @expo/cli and @expo/code-signing-certificates, run on dev/CI/EAS machines, never shipped to devices or used by apps/api; the app configures no expo-updates code signing, so no third-party signature is ever verified with it."
+
+# ── braces (2026-10-03) ──────────────────────────────────────────────────────────────────────────
+# GHSA-vfj7-8cjw-p6xm (CVE-2026-93687, CVSS 8.7, availability only): the recursive AST walkers in
+# braces <= 3.0.3 have no depth guard, so a deeply nested brace pattern exhausts the stack and throws
+# an uncaught RangeError. GitHub reviewed it at 2026-10-02T22:36Z, turning the gate red on every PR.
+# Owner approved this time-boxed acceptance on 2026-10-03 (PR #1050).
+#
+# Accepted, time-boxed, because THERE IS NO FIXED VERSION: OSV records `last_affected: 3.0.3`, and
+# 3.0.3 is npm's `latest`. A bump cannot clear it.
+#
+# REACHABILITY — why this is acceptable rather than merely unavoidable:
+#   • Build/test tooling only. The importers are `micromatch` (jest, metro, @expo/cli) and `chokidar`
+#     (ts-node-dev). `pnpm why braces --prod` in apps/api is empty, and nothing in the device bundle
+#     expands globs.
+#   • No untrusted patterns. Every glob these tools expand comes from the repo's own config (jest
+#     testMatch, metro watchFolders, tsconfig), never from a request or a user.
+#
+# Re-check on or before ignoreUntil: drop this entry the day a fixed braces ships (add a
+# `pnpm.overrides` bump if micromatch has not moved to it yet).
+[[IgnoredVulns]]
+id = "GHSA-vfj7-8cjw-p6xm"
+ignoreUntil = 2026-11-03
+reason = "braces stack-exhaustion DoS via deeply nested patterns. No fixed version exists (OSV last_affected 3.0.3 = npm latest). Build/test tooling only: importers are micromatch (jest, metro, @expo/cli) and chokidar (ts-node-dev); not in apps/api's production tree or the mobile bundle, and every pattern comes from repo config, never attacker input."

@@ -1,6 +1,6 @@
 import { tokens } from "@lynia/shared/tokens";
 import React from "react";
-import { Image, Modal, Text, View } from "react-native";
+import { Image, KeyboardAvoidingView, Modal, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Icon, type IconName } from "../Icon";
 import { Tappable } from "../Tappable";
@@ -98,24 +98,32 @@ export function CameraStep({
   return (
     <Modal visible={visible} animationType="slide" statusBarTranslucent onRequestClose={onClose}>
       <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: tokens.color.ink }}>
-        <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingTop: 4 }}>
-          <Tappable accessibilityRole="button" accessibilityLabel={R.close} onPress={onClose} style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}>
-            <Icon name="x" size={22} color={tokens.color.onAccent} />
-          </Tappable>
-          <Text accessibilityRole="header" style={{ flex: 1, marginRight: 44, textAlign: "center", fontSize: 16, fontWeight: tokens.font.weight.bold, color: tokens.color.onAccent }}>
-            {title}
-          </Text>
-        </View>
-        <View style={{ flex: 1, marginHorizontal: 16, marginTop: 12, marginBottom: 16, borderRadius: 16, overflow: "hidden", backgroundColor: "rgba(255,255,255,0.08)" }}>
-          {photoUri ? (
-            <Image source={{ uri: photoUri }} resizeMode="cover" style={{ flex: 1 }} accessibilityLabel={title} />
-          ) : (
-            <View style={{ position: "absolute", top: 24, left: 24, right: 24, bottom: 24, borderRadius: 12, borderWidth: 2, borderStyle: "dashed", borderColor: tokens.color.line }} />
-          )}
-        </View>
-        <SafeAreaView edges={["bottom"]} style={{ backgroundColor: tokens.color.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, gap: 12 }}>
-          {children}
-        </SafeAreaView>
+        {/* A Modal is its own window, so Android's adjustResize never reaches it: lift the panel with
+            padding instead, or the keyboard covers the "who took it" field and the shutter. */}
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+          <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingTop: 4 }}>
+            <Tappable accessibilityRole="button" accessibilityLabel={R.close} onPress={onClose} style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}>
+              <Icon name="x" size={22} color={tokens.color.onAccent} />
+            </Tappable>
+            <Text accessibilityRole="header" style={{ flex: 1, marginRight: 44, textAlign: "center", fontSize: 16, fontWeight: tokens.font.weight.bold, color: tokens.color.onAccent }}>
+              {title}
+            </Text>
+          </View>
+          <View style={{ flex: 1, minHeight: 96, marginHorizontal: 16, marginTop: 12, marginBottom: 16, borderRadius: 16, overflow: "hidden", backgroundColor: "rgba(255,255,255,0.08)" }}>
+            {photoUri ? (
+              <Image source={{ uri: photoUri }} resizeMode="cover" style={{ flex: 1 }} accessibilityLabel={title} />
+            ) : (
+              <View style={{ position: "absolute", top: 24, left: 24, right: 24, bottom: 24, borderRadius: 12, borderWidth: 2, borderStyle: "dashed", borderColor: tokens.color.line }} />
+            )}
+          </View>
+          {/* The panel scrolls past ~two thirds of the screen, so a large font scale can't push the shutter
+              off the bottom or squeeze the viewfinder to nothing. */}
+          <SafeAreaView edges={["bottom"]} style={{ maxHeight: "68%", backgroundColor: tokens.color.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20 }}>
+            <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, gap: 12 }}>
+              {children}
+            </ScrollView>
+          </SafeAreaView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
   );

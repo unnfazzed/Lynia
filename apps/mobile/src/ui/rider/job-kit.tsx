@@ -1,6 +1,6 @@
 import { tokens } from "@lynia/shared/tokens";
 import React, { useRef, useState } from "react";
-import { ActivityIndicator, Image, Modal, Text, TextInput, useWindowDimensions, View, type ViewStyle } from "react-native";
+import { ActivityIndicator, Image, Modal, ScrollView, Text, TextInput, useWindowDimensions, View, type ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Icon, type IconName } from "../Icon";
 import { Tappable } from "../Tappable";
@@ -112,7 +112,12 @@ export function JobPage({
       <OrderHeader title={title} help={!!help} onBack={onBack} onHelp={onHelp ?? (() => undefined)} />
       <View style={{ flex: 1 }}>
         {centred ? (
-          <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 24 }}>{children}</View>
+          // Centred, but scrollable: on a 320×640 phone or a large font scale the disc + title + body (+ the
+          // cash split on "return the cash") outgrow the space above the CTA bar, and a plain centred View
+          // clipped them at both ends with no way to reach them.
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 24, paddingVertical: 16 }} showsVerticalScrollIndicator={false}>
+            {children}
+          </ScrollView>
         ) : (
           <View style={{ flex: 1, paddingTop: 14, paddingHorizontal: 16, paddingBottom: 16, gap: 12 }}>{children}</View>
         )}

@@ -4,6 +4,7 @@ import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-na
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Icon, type IconName } from "../Icon";
 import { Tappable } from "../Tappable";
+import { useTabBarSpace } from "../shell/TabShell";
 
 /**
  * The Calm Mint v2 onboarding kit (`packages/design/handoff/calm-mint-v2-2026-10`, `shared.js` — the
@@ -21,12 +22,16 @@ export function OnbScreen({
   footer?: React.ReactNode;
   padTop?: number;
 }): React.ReactElement {
+  // R2/R3 render inside the rider tab shell, whose floating bar sits over the bottom of the screen. Its
+  // reserve (0 outside a tab shell) keeps the footer CTA — R3's "Go online" — clear of the bar.
+  const tabSpace = useTabBarSpace();
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: tokens.color.bg }} edges={["top", "bottom"]}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: tokens.color.bg }} edges={tabSpace ? ["top"] : ["top", "bottom"]}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
           <View style={{ flex: 1, paddingTop: padTop }}>{children}</View>
-          {footer ? <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 24, gap: 12 }}>{footer}</View> : null}
+          {footer ? <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 24 + tabSpace, gap: 12 }}>{footer}</View> : null}
+          {!footer && tabSpace ? <View style={{ height: tabSpace }} /> : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
