@@ -209,8 +209,9 @@ export class RiderService {
     // before the ID check — the number is confirmed from the check afterwards (Calm Mint v2 §5 "Didit
     // ID prefill"): applyKycResult adopts the vendor-verified number onto the profile, and runs the
     // one-ID-one-account dedupe against THAT number before it verifies anyone (a collision holds the
-    // rider for review; with no number to dedupe on at all, the rider is held too). So an ID-less
-    // signup is deduped after the check rather than before it, and never verified undeduped.
+    // rider for review). So an ID-less signup is deduped after the check rather than before it. A
+    // decision that carries no number at all still verifies (the extraction is fail-open), and its
+    // approval audit row carries `verified_id_missing` so ops can follow every such rider up.
     //
     // One-ID-one-account guard (2026-07-26, supersedes the flag-only A-04 for LIVE accounts), for an
     // account that already carries a typed ID (added in Account, or a pre-D-75 sign-up): refuse one
