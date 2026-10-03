@@ -1385,6 +1385,39 @@
   }
 }
 
+/* A failed first load (Order flow v2 "Global rules" + T14b, ledger D-74): the disc, what didn't load, one
+ * muted line and "↻ Try again" — calm, never red. Centred like B5 "You're closed". */
+.m-retry {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 48px 12px 0;
+}
+.m-retry-ic {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--surface);
+  display: grid;
+  place-items: center;
+}
+.m-retry b {
+  font-size: 18px;
+  font-weight: 700;
+}
+.m-retry p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+.m-retry .m-btn {
+  width: auto;
+  padding: 0 28px;
+  margin-top: 6px;
+}
+
 /* B1 / D1 not live yet (README §5). */
 .m-notlive {
   flex: 1;

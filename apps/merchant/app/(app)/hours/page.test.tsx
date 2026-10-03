@@ -134,7 +134,7 @@ describe("a failed load has a way out (LC-D##)", () => {
       .mockRejectedValueOnce(new ApiError(0, "Couldn't reach the server — check the connection and try again."))
       .mockResolvedValueOnce(profile());
     render(<Page />);
-    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
     expect(await screen.findByRole("button", { name: "Save hours" })).toBeTruthy();
     expect(getMerchantProfile).toHaveBeenCalledTimes(2);
   });

@@ -285,7 +285,7 @@ describe("a failed load has a way out (LC-D##)", () => {
       .mockResolvedValueOnce([category()]);
     vi.mocked(listDishes).mockResolvedValue([dish()]);
     render(<Page />);
-    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
     expect(await screen.findByRole("tab", { name: "Mains 1" })).toBeTruthy();
     expect(listCategories).toHaveBeenCalledTimes(2);
   });
