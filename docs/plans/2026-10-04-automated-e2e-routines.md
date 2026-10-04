@@ -92,11 +92,12 @@ overlap and usage has time to recover.
 | # | When (UTC) | Run |
 |---|---|---|
 | 1 | 2026-10-05 06:00 (08:00 Harare) | Bootstrap harness + J1 Rider |
-| 2 | 2026-10-05 10:00 (12:00 Harare) | J2 Send a parcel |
-| 3 | 2026-10-05 14:00 (16:00 Harare) | J3 Business sign-up (merchant web + admin API) |
-| 4 | 2026-10-05 18:00 (20:00 Harare) | J4 Restaurant order + money checks |
-| 5 | 2026-10-05 22:00 (00:00 Harare) | gstack review of results: `/plan-eng-review` (backend) + `/plan-design-review` (web UX findings), report only |
-| 6 | 2026-10-06 02:00 (04:00 Harare) | Consolidated report + draft PR (reports only) |
+| 2 | 2026-10-05 09:20 (11:20 Harare) | J2 Send a parcel |
+| 3 | 2026-10-05 12:40 (14:40 Harare) | J3 Business sign-up (merchant web + admin API) |
+| 4 | 2026-10-05 16:00 (18:00 Harare) | J4 Restaurant order + money checks |
+| 5 | 2026-10-05 19:20 (21:20 Harare) | J5 Shops end to end (owner 2026-10-04: shops are launched — test them): shop sign-up + items, go-live, Shops list, cash shop order with sealed-bag photo, auto-cancel, SHOPS_ENABLED off/on |
+| 6 | 2026-10-05 22:40 (00:40 Harare) | gstack review of results: eng + design lenses, report only |
+| 7 | 2026-10-06 02:00 (04:00 Harare) | Consolidated report + draft PR (reports only) |
 
 How each run is kept within usage limits:
 - At most 2 subagents per run, and no workflows.
