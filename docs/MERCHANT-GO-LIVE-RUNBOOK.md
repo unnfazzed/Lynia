@@ -43,9 +43,10 @@ riders are given at pickup, plus the pin.
 3. **It sells what it signed up as.** A restaurant sells cooked food; a shop sells the kind it picked
    (a pharmacy is a pharmacy). A wrong type or kind can't be changed in the app; note it and escalate.
    It's a support fix.
-   - **A pharmacy:** check its pharmacy licence (a photo from the owner, or a visit) and that it lists
-     over-the-counter items only. Customers see "Over-the-counter only. No prescription medicine yet."
-     Switch it off if it lists prescription medicine.
+   - **A pharmacy** (signs up with the Pharmacy card, D-76): check its pharmacy licence (a photo from the
+     owner, or a visit). Prescription medicine must be marked "Prescription needed", never listed as a
+     plain item. Switch it off if it isn't. A pharmacy that will take prescriptions needs a pharmacist on
+     its team, ticked as pharmacist by the owner (below).
 4. **At least one dish or item has a photo and a price.** The switch enforces this (`no_live_dishes`). A photoless
    dish is a draft that customers never see.
 5. **Opening hours are set.** Without hours the restaurant reads as closed.
@@ -77,10 +78,10 @@ riders are given at pickup, plus the pin.
   are on unless the repo Variable of the same name is `"false"`. Setting one to `"false"` and releasing
   hides that section in the app (the tile opens the coming-soon sheet instead). The merchant web is
   unaffected.
-- **`RX_ENABLED` switches pharmacy prescriptions** (Order flow v2, D-59, BRIEF §13). It is **off** unless
-  the API's env sets it to `"true"` (no workflow Variable feeds it yet). While off, items a pharmacy marked
-  "Prescription needed" aren't listed and an order with one is refused (`rx_unavailable`). Before turning it
-  on for a pharmacy, ops confirm on the go-live call that the pharmacy has a pharmacist on its team and
+- **`RX_ENABLED` switches pharmacy prescriptions** (Order flow v2, D-59, BRIEF §13). Since D-76 it is
+  **on** unless the repo Variable `RX_ENABLED` (staging: `STAGING_RX_ENABLED`) is `"false"`. While off, items a pharmacy marked
+  "Prescription needed" aren't listed and an order with one is refused (`rx_unavailable`). Before a pharmacy
+  goes live, ops confirm on the go-live call that the pharmacy has a pharmacist on its team and
   that the owner has ticked them as pharmacist (`POST /merchant/team/members/:profileId/pharmacist`, or the
   `merchant_members.is_pharmacist` column) — only a pharmacist can approve or decline a prescription, and
   an Rx order can't be marked packed until one does. The app reads the switch from `GET /app/order-flags`.
