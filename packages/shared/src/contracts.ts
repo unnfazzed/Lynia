@@ -1831,8 +1831,27 @@ export const ChangeOrderScheduleRequest = z.object({ scheduledFor: z.string().da
 export type ChangeOrderScheduleRequest = z.infer<typeof ChangeOrderScheduleRequest>;
 
 /** BRIEF §13: `POST /merchant/orders/:orderId/prescription/decline` — the reason chips + an optional note. */
+/** Merchant v2 P1 (ledger D-77): the pharmacist's three ticks, all needed before Approve. Stored on the
+ *  prescription for the audit trail. Optional, so an installed merchant screen without it still approves. */
+export const RX_CHECKLIST = ["nameMatches", "signedStamped", "recentDate"] as const;
+export const ApprovePrescriptionRequest = z
+  .object({
+    checklist: z
+      .object({ nameMatches: z.literal(true), signedStamped: z.literal(true), recentDate: z.literal(true) })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .optional();
+export type ApprovePrescriptionRequest = z.infer<typeof ApprovePrescriptionRequest>;
+
 export const DeclinePrescriptionRequest = z
-  .object({ reason: RxDeclineReason, note: z.string().trim().max(300).optional() })
+  .object({
+    reason: RxDeclineReason,
+    note: z.string().trim().max(300).optional(),
+    /** Merchant v2 P1 (D-77): which of the three boxes were ticked when the pharmacist declined. */
+    checklist: z.object({ nameMatches: z.boolean(), signedStamped: z.boolean(), recentDate: z.boolean() }).strict().optional(),
+  })
   .strict();
 export type DeclinePrescriptionRequest = z.infer<typeof DeclinePrescriptionRequest>;
 

@@ -41,7 +41,7 @@ afterEach(() => {
 async function openForm(overrides: Parameters<typeof merchantProfile>[0] = {}) {
   vi.mocked(getMerchantProfile).mockResolvedValue(merchantProfile({ businessType: "shop", shopKind: "auto_parts", location: PIN, ...overrides }));
   render(<NewBookingPage />);
-  await screen.findByText("Where is it going?");
+  await screen.findByText("Going to");
 }
 
 const search = () => screen.getByLabelText("Search street or area, or paste the buyer's location");
@@ -49,23 +49,32 @@ function type(el: HTMLElement, value: string) {
   fireEvent.change(el, { target: { value } });
 }
 
-/** Step 1 by a pasted location and a number, then Next. */
-async function toStep2(where = "-17.8, 31.05") {
+/** "Going to" by a pasted location, and the buyer's number (S4 is one screen). */
+async function fillWhere(where = "-17.8, 31.05") {
   type(search(), where);
   type(screen.getByLabelText("Buyer’s phone"), "0779982210");
-  fireEvent.click(screen.getByRole("button", { name: "Next" }));
-  await screen.findByText("What’s going?");
+  await screen.findByText("Pin the buyer sent");
 }
 
-describe("D2 · Book · where (merchant mobile, D-48)", () => {
-  it("won't go on without somewhere to go and the buyer's number", async () => {
+/** "+ Add" → "Type one" → the typed item. */
+function addTyped(name: string, price: string) {
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Your items" })).getByRole("button", { name: "Type one" }));
+  const sheet = screen.getByRole("dialog", { name: "Type an item" });
+  type(within(sheet).getByLabelText("What it is"), name);
+  type(within(sheet).getByLabelText("Price of one ($)"), price);
+  fireEvent.click(within(sheet).getByRole("button", { name: "Add" }));
+}
+
+describe("S4 · Book a rider, one screen (Merchant v2, D-77) — where", () => {
+  it("won't book without somewhere to go and the buyer's number", async () => {
     await openForm();
-    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Find a rider/ }));
     expect(await screen.findByText("Search for the buyer's street, or paste the location they sent.")).toBeTruthy();
     expect(screen.getByText("Enter the buyer's number, like 77 123 4567.")).toBeTruthy();
   });
 
-  it("searches places, and the picked row turns mint with a check", async () => {
+  it("searches places, and the picked place becomes the mint 'Going to' pill", async () => {
     vi.mocked(searchPlaces).mockResolvedValue([
       { placeId: "p1", primary: "12 Fife Ave", secondary: "Avondale, Harare" },
       { placeId: "p2", primary: "Fife Ave", secondary: "Harare CBD" },
@@ -74,8 +83,10 @@ describe("D2 · Book · where (merchant mobile, D-48)", () => {
     await openForm();
     type(search(), "Fife Ave");
     fireEvent.click(await screen.findByRole("button", { name: /12 Fife Ave/ }));
-    await waitFor(() => expect(screen.getByRole("button", { name: /12 Fife Ave/ }).getAttribute("aria-current")).toBe("true"));
+    const pill = await screen.findByRole("button", { name: "Going to 12 Fife Ave, Avondale, Harare. Change it" });
     expect(screen.getByLabelText("Buyer’s phone")).toBeTruthy();
+    fireEvent.click(pill);
+    expect(search()).toBeTruthy();
   });
 
   it("asks the API to follow a Google Maps short link, and says so plainly when it can't", async () => {
@@ -83,9 +94,10 @@ describe("D2 · Book · where (merchant mobile, D-48)", () => {
     await openForm();
     type(search(), "Here: https://maps.app.goo.gl/AbC123");
     expect(screen.getByText("Reading the link…")).toBeTruthy();
-    expect(await screen.findByText("The location the buyer sent")).toBeTruthy();
+    expect(await screen.findByText("Pin the buyer sent")).toBeTruthy();
     expect(resolveMapLink).toHaveBeenCalledWith("https://maps.app.goo.gl/AbC123");
 
+    fireEvent.click(screen.getByRole("button", { name: "Going to Pin the buyer sent. Change it" }));
     vi.mocked(resolveMapLink).mockRejectedValueOnce(new ApiError(422, "We couldn't read a location from that link.", "unreadable_link"));
     type(search(), "https://maps.app.goo.gl/Nope");
     expect(await screen.findByText("We couldn't read a location from that link.")).toBeTruthy();
@@ -97,12 +109,9 @@ describe("D2 · Book · where (merchant mobile, D-48)", () => {
     await openForm();
     type(search(), "https://maps.app.goo.gl/Old");
     await waitFor(() => expect(resolveMapLink).toHaveBeenCalledTimes(1));
-    await toStep2("-17.8, 31.05");
+    await fillWhere("-17.8, 31.05");
     answerOld({ lat: -17.7, lng: 30.9 });
-    fireEvent.click(screen.getByRole("button", { name: "Type one" }));
-    type(screen.getByLabelText("What it is"), "Oil filter");
-    type(screen.getByLabelText("Price of one ($)"), "7");
-    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    addTyped("Oil filter", "7");
     vi.mocked(createBooking).mockResolvedValue(merchantBooking());
     fireEvent.click(screen.getByRole("button", { name: /^Find a rider/ }));
     await waitFor(() => expect(createBooking).toHaveBeenCalled());
@@ -110,25 +119,21 @@ describe("D2 · Book · where (merchant mobile, D-48)", () => {
   });
 });
 
-describe("D3 · Book · what + fare", () => {
+describe("S4 · what's going + fare", () => {
   it("adds from your items and typed ones, sums the worth, steps the fare and books once with it all", async () => {
     vi.mocked(listDishes).mockResolvedValue([DISH]);
     vi.mocked(createBooking).mockResolvedValue(merchantBooking({ id: "b1" }));
     await openForm();
-    await toStep2();
-    fireEvent.click(screen.getByRole("button", { name: "From your items" }));
-    fireEvent.click(await within(await screen.findByRole("dialog", { name: "Your items" })).findByRole("button", { name: /Brake pads \(front\)/ }));
-    fireEvent.click(screen.getByRole("button", { name: "From your items" }));
-    fireEvent.click(await within(await screen.findByRole("dialog", { name: "Your items" })).findByRole("button", { name: /Brake pads \(front\)/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Type one" }));
-    type(screen.getByLabelText("What it is"), "Oil filter");
-    type(screen.getByLabelText("Price of one ($)"), "7");
+    await fillWhere();
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.click(await within(await screen.findByRole("dialog", { name: "Your items" })).findByRole("button", { name: /Brake pads \(front\)/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.click(await within(await screen.findByRole("dialog", { name: "Your items" })).findByRole("button", { name: /Brake pads \(front\)/ }));
+    addTyped("Oil filter", "7");
 
-    expect(screen.getByText("Items · 2")).toBeTruthy();
-    expect(screen.getByText("2×")).toBeTruthy();
-    expect(screen.getByText("$44.00")).toBeTruthy();
-    expect(screen.getByText("$51.00")).toBeTruthy();
+    expect(screen.getByText("What’s going · $51.00")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Remove 2× Brake pads (front)" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Remove 1× Oil filter" })).toBeTruthy();
     const find = screen.getByRole("button", { name: /^Find a rider · \$\d+\.\d\d$/ });
     const before = Number(find.textContent!.split("$")[1]);
     fireEvent.click(screen.getByRole("button", { name: "Offer $0.50 more" }));
@@ -152,14 +157,12 @@ describe("D3 · Book · what + fare", () => {
   it("the buyer can pay cash on delivery: the booking asks the rider to bring the worth back", async () => {
     vi.mocked(createBooking).mockResolvedValue(merchantBooking({ id: "b2" }));
     await openForm();
-    await toStep2();
-    fireEvent.click(screen.getByRole("button", { name: "Type one" }));
-    type(screen.getByLabelText("What it is"), "Oil filter");
-    type(screen.getByLabelText("Price of one ($)"), "7");
-    fireEvent.click(screen.getByRole("button", { name: "Add" }));
-    expect(screen.getByText("Off: the buyer pays you as they do today")).toBeTruthy();
-    fireEvent.click(screen.getByRole("switch", { name: "Buyer pays cash on delivery" }));
-    expect(screen.getByText("The rider collects $7.00 and brings it back to you")).toBeTruthy();
+    await fillWhere();
+    addTyped("Oil filter", "7");
+    expect(screen.getByText("and brings it back to you")).toBeTruthy();
+    const sw = screen.getByRole("switch", { name: "Rider collects $7.00" });
+    expect(sw.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(sw);
     fireEvent.click(screen.getByRole("button", { name: /^Find a rider/ }));
     await waitFor(() => expect(createBooking).toHaveBeenCalled());
     expect(vi.mocked(createBooking).mock.calls[0]![0]).toMatchObject({ collectCash: true, declaredValue: 7 });
@@ -167,13 +170,10 @@ describe("D3 · Book · what + fare", () => {
 
   it("books nothing without items, and blocks goods over $150", async () => {
     await openForm();
-    await toStep2();
+    await fillWhere();
     fireEvent.click(screen.getByRole("button", { name: /^Find a rider/ }));
     expect(await screen.findByText("Add what's going: from your items, or type one.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Type one" }));
-    type(screen.getByLabelText("What it is"), "Engine");
-    type(screen.getByLabelText("Price of one ($)"), "200");
-    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    addTyped("Engine", "200");
     fireEvent.click(screen.getByRole("button", { name: /^Find a rider/ }));
     expect(await screen.findByText(VALUE_CAP_MESSAGE)).toBeTruthy();
     expect(createBooking).not.toHaveBeenCalled();
@@ -182,11 +182,8 @@ describe("D3 · Book · what + fare", () => {
   it("shows the API's refusal, like a business on hold, without leaving the form", async () => {
     vi.mocked(createBooking).mockRejectedValue(new ApiError(403, "Bookings for this business are on hold. Message LyniaGo.", "business_on_hold"));
     await openForm();
-    await toStep2();
-    fireEvent.click(screen.getByRole("button", { name: "Type one" }));
-    type(screen.getByLabelText("What it is"), "Oil filter");
-    type(screen.getByLabelText("Price of one ($)"), "7");
-    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    await fillWhere();
+    addTyped("Oil filter", "7");
     fireEvent.click(screen.getByRole("button", { name: /^Find a rider/ }));
     expect((await screen.findByRole("alert")).textContent).toBe("Bookings for this business are on hold. Message LyniaGo.");
     expect(nav.replace).not.toHaveBeenCalled();
@@ -194,7 +191,6 @@ describe("D3 · Book · what + fare", () => {
 
   it("Booking terms: a pharmacy is told over-the-counter only, everyone about prohibited goods and no cash-on-delivery", async () => {
     await openForm({ shopKind: "pharmacy" });
-    await toStep2();
     fireEvent.click(screen.getByRole("button", { name: "Booking terms" }));
     expect(screen.getByText("No prescription medicine, weapons, drugs or cash. Over-the-counter items only.")).toBeTruthy();
     expect(screen.getByText("No cash-on-delivery: the rider collects nothing from the buyer. The buyer pays you as they do today.")).toBeTruthy();
@@ -206,7 +202,7 @@ describe("the gate", () => {
     vi.mocked(getMerchantProfile).mockResolvedValue(merchantProfile({ location: null }));
     render(<NewBookingPage />);
     expect(await screen.findByText("Set your shop's location first, so riders know where to collect.")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Find a rider/ })).toBeNull();
 
     cleanup();
     vi.mocked(getMerchantProfile).mockResolvedValue(merchantProfile());

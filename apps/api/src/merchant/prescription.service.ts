@@ -115,14 +115,14 @@ export class PrescriptionService {
   }
 
   /** M8a "Approve prescription". Idempotent on an already-approved one. */
-  async approve(profileId: string, orderId: string): Promise<void> {
+  async approve(profileId: string, orderId: string, checklist?: { nameMatches: true; signedStamped: true; recentDate: true }): Promise<void> {
     const { merchantId } = await this.requirePharmacist(profileId, orderId);
     const rx = await this.loadCheckable(orderId);
     if (rx.status === "approved") return;
     if (rx.status !== "pending") throw new ConflictException({ reason: "prescription_checked", message: "This prescription was already declined." });
     const claimed = await this.prisma.orderPrescription.updateMany({
       where: { orderId, status: "pending" },
-      data: { status: "approved", checkedAt: new Date(), checkedByProfileId: profileId },
+      data: { status: "approved", checkedAt: new Date(), checkedByProfileId: profileId, ...(checklist ? { checklist } : {}) },
     });
     if (claimed.count === 0) throw new ConflictException("Order changed, retry");
     notifyFoodQueueChanged(this.gateway, merchantId, orderId);
@@ -157,7 +157,14 @@ export class PrescriptionService {
     await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.orderPrescription.updateMany({
         where: { orderId, status: "pending" },
-        data: { status: "declined", declineReason: body.reason, declineNote: body.note ?? null, checkedAt: now, checkedByProfileId: profileId },
+        data: {
+          status: "declined",
+          declineReason: body.reason,
+          declineNote: body.note ?? null,
+          checkedAt: now,
+          checkedByProfileId: profileId,
+          ...(body.checklist ? { checklist: body.checklist } : {}),
+        },
       });
       if (claimed.count === 0) throw new ConflictException("Order changed, retry");
       await tx.merchantOrderItem.updateMany({ where: { orderId, rxRequired: true }, data: { available: false } });

@@ -103,6 +103,7 @@ function apiRoute(route, scenario) {
   if (one) return json(200, (scenario.orders ?? []).find((o) => o.id === one[1]) ?? {});
   if (path === "/merchant/scheduled-orders") return json(200, []);
   if (/\/pickup-code\/reveal$/.test(path)) return json(200, { pickupCode: scenario.code ?? "720518" });
+  if (/\/prescription$/.test(path)) return json(200, { photos: [{ page: 1, url: RX_PHOTO }, { page: 2, url: RX_PHOTO }], expiresInSeconds: 300 });
   if (path === "/merchant/bookings") return json(200, scenario.bookings ?? []);
   const bk = path.match(/^\/merchant\/bookings\/([0-9a-f-]+)$/);
   if (bk) return json(200, (scenario.bookings ?? []).find((b) => b.id === bk[1]) ?? {});
@@ -189,7 +190,43 @@ const handS3 = order("a1b20000-0000-4000-8000-000000000000", {
   pickupProof: { photoUrl: null, takenAt: ago(1), bagSealed: true }, items: [line("Bread", 1.1), line("Eggs", 5.5), line("Oil", 4.8)], merchantGoodsTotal: 11.4,
 });
 
+const RX_PHOTO = `data:image/svg+xml;utf8,${encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' width='640' height='400'><rect width='640' height='400' fill='#f6f7f8'/><text x='320' y='205' font-family='monospace' font-size='22' fill='#5b6670' text-anchor='middle'>prescription photo</text></svg>")}`;
+const PHARMACY_ME = { ...SHOP, name: "Avondale Pharmacy", shopKind: "pharmacy", pilotEnabled: true, myIsPharmacist: true };
+const rxOrder = order("f7c10000-0000-4000-8000-000000000000", {
+  venue: { name: "Avondale Pharmacy", businessType: "shop", shopKind: "pharmacy" },
+  items: [{ ...item("i9000000-0000-4000-8000-000000000000", "Amoxicillin 500mg · 21 caps", 6), rxRequired: true }],
+  prescription: { status: "pending", patientName: "Rudo Moyo", pageCount: 2 },
+});
+const fillS4 = async (p) => {
+  await p.getByLabel("Search street or area, or paste the buyer's location").fill("-17.83, 31.05");
+  await p.getByLabel("Buyer’s phone").fill("779982210");
+  for (const [name, price] of [["Brake pads", "22"], ["Brake pads", "0"], ["Oil filter", "7"]].slice(0, 1)) {
+    await p.getByRole("button", { name: "Add" }).click();
+    await p.getByRole("dialog", { name: "Your items" }).getByRole("button", { name: "Type one" }).click();
+    const d = p.getByRole("dialog", { name: "Type an item" });
+    await d.getByLabel("What it is").fill(name);
+    await d.getByLabel("How many").fill("2");
+    await d.getByLabel("Price of one ($)").fill(price);
+    await d.getByRole("button", { name: "Add" }).click();
+  }
+  await p.getByRole("button", { name: "Add" }).click();
+  await p.getByRole("dialog", { name: "Your items" }).getByRole("button", { name: "Type one" }).click();
+  const d = p.getByRole("dialog", { name: "Type an item" });
+  await d.getByLabel("What it is").fill("Oil filter");
+  await d.getByLabel("Price of one ($)").fill("7");
+  await d.getByRole("button", { name: "Add" }).click();
+  await p.getByRole("switch").click();
+};
+const tickTwo = async (p) => {
+  await p.getByRole("checkbox", { name: "Name matches the patient" }).click();
+  await p.getByRole("checkbox", { name: "Signed and stamped" }).click();
+};
+
 const SETS = {
+  book: [
+    { mock: "S4 Book a rider", label: "S4 · Book a rider, one screen", sub: "keyless run: a pasted location reads “Pin the buyer sent”; the fare follows the distance", app: { name: "S4", path: "/deliveries/new", scenario: { me: { ...SHOP, hours: week("00:00", "23:59") } }, before: fillS4 } },
+    { mock: "P1 Prescription check", label: "P1 · Check the prescription", sub: "photo stand-in", app: { name: "P1", path: `/queue/${rxOrder.id}/rx`, scenario: { me: PHARMACY_ME, orders: [rxOrder] }, before: tickTwo } },
+  ],
   ticket: [
     { mock: "K3 Cooking ticket", label: "K3 · Cooking ticket", sub: "rider line: no arrival time on the read yet (D-77 §4)", app: { name: "K3", path: `/queue/${cookingK3.id}`, scenario: { me: KITCHEN, orders: [cookingK3] } } },
     { mock: "K4 Hand over", label: "K4 · Hand over", sub: "no “at your counter”: no arrival signal yet", app: { name: "K4", path: `/queue/${handK4.id}`, scenario: { me: KITCHEN, orders: [handK4] } } },

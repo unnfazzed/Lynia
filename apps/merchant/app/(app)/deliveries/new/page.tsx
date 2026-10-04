@@ -47,19 +47,18 @@ const SEND_TERMS = [
 ];
 
 /**
- * D2 · Book · where and D3 · Book · what + fare (packages/design/handoff/merchant-mobile, ledger D-48).
- * Step 1: "Where is it going?" — an address search whose results are rows (the picked one mint, with a
- * check); a location the buyer sent (a Google Maps or WhatsApp link) pasted into the same field works
- * too — and the buyer's phone. Step 2: the items (from the shop's own list or typed), "Worth" summed
- * from them, the fare stepper (± $0.50, from $1.50) with "Typical $3–4", "Booking terms" and "Find a
- * rider · $3.50". The pickup is always the business's own pin; everything is set before the broadcast,
- * because riders have 90 seconds to offer.
+ * S4 · Book a rider, one screen (Merchant v2, packages/design/handoff/merchant-v2, ledger D-77; it
+ * replaces D-48's two steps D2/D3). "Going to": an address search, or the location the buyer sent (a
+ * Google Maps or WhatsApp link pasted into the same field), shown once picked as a mint pill; the
+ * buyer's phone; "What's going · $51.00" as item chips with "+ Add" (from the shop's own items, or typed);
+ * "Rider collects $51.00 · and brings it back to you"; the fare stepper with "Riders usually get $6–7";
+ * then "Find a rider · $6.00". Riders' offers then use the Send v2 list, unchanged. The pickup is always
+ * the business's own pin; everything is set before the broadcast, because riders have 90 seconds to offer.
  */
 export default function NewBookingPage() {
   const router = useRouter();
   const { signOut, actionsDisabled } = useKitchenConnection();
   const [gate, setGate] = useState<Gate>({ status: "loading" });
-  const [step, setStep] = useState<1 | 2>(1);
   const [where, setWhere] = useState<Where | null>(null);
   const [phone, setPhone] = useState("");
   const [whereErrors, setWhereErrors] = useState<WhereErrors>({});
@@ -104,18 +103,14 @@ export default function NewBookingPage() {
   const shownFare = fare ?? (suggested !== null ? startFare(suggested) : null);
   const pharmacy = gate.status === "ready" && gate.business.businessType === "shop" && gate.business.shopKind === "pharmacy";
 
-  function next() {
+  async function book() {
+    if (submittingRef.current) return;
     const found = validateWhere(where, phone);
     setWhereErrors(found);
-    if (Object.keys(found).length === 0) setStep(2);
-  }
-
-  async function book() {
-    if (submittingRef.current || !where || shownFare === null) return;
     const problem = validateWhat(lines, collectCash);
     setWhatError(problem);
     setBanner(null);
-    if (problem) return;
+    if (Object.keys(found).length > 0 || problem || !where || shownFare === null) return;
     submittingRef.current = true;
     setBusy(true);
     try {
@@ -135,29 +130,29 @@ export default function NewBookingPage() {
   return (
     <Kitchen active={shop ? "deliveries" : "queue"} tabs={false}>
       <div className="m-page">
-        {step === 1 ? (
-          <AppBar back="/deliveries" title="Book a rider" right={<span className="m-hint">1 of 2</span>} />
-        ) : (
-          <AppBar onBack={() => setStep(1)} title="What’s going?" right={<span className="m-hint">2 of 2</span>} />
-        )}
+        <AppBar back="/deliveries" title="Book a rider" />
 
-        <div className="m-bd" style={{ gap: 14 }}>
+        <div className="m-bd m-s4" style={{ gap: 14, paddingTop: 4 }}>
           {gate.status === "loading" && <div className="m-hint">Loading…</div>}
           {gate.status === "error" && <RetryableError message={gate.message} onRetry={() => void load()} />}
           {gate.status === "no_pin" && <p className="m-sub">Set your shop&apos;s location first, so riders know where to collect.</p>}
 
-          {gate.status === "ready" && step === 1 && (
+          {gate.status === "ready" && (
             <>
-              <h1 className="m-h1">Where is it going?</h1>
-              <WhereSearch value={where} error={whereErrors.where} signOut={signOut} onChange={(w) => {
-                setWhere(w);
-                setFare(null);
-                setWhereErrors((e) => ({ ...e, where: undefined }));
-              }} />
+              <WhereSearch
+                value={where}
+                error={whereErrors.where}
+                signOut={signOut}
+                onChange={(w) => {
+                  setWhere(w);
+                  setFare(null);
+                  setWhereErrors((e) => ({ ...e, where: undefined }));
+                }}
+              />
               <div className="m-fld">
                 <label htmlFor="buyer-phone">Buyer’s phone</label>
                 <span className="m-in" data-invalid={!!whereErrors.phone}>
-                  <b style={{ fontSize: 16 }}>+263</b>
+                  <b style={{ fontSize: 15 }}>+263</b>
                   <input
                     id="buyer-phone"
                     type="tel"
@@ -177,62 +172,41 @@ export default function NewBookingPage() {
                   </span>
                 )}
               </div>
-            </>
-          )}
 
-          {gate.status === "ready" && step === 2 && (
-            <>
               <div className="m-fld">
-                <span className="m-label">Items · {lines.length}</span>
-                {lines.length > 0 && (
-                  <div className="m-card" style={{ padding: "0 14px", gap: 0 }}>
-                    {lines.map((l, i) => (
-                      <div key={`${l.name}-${i}`} className="m-li" style={{ minHeight: 56 }}>
-                        <b className="m-num" style={{ width: 28, fontSize: 15 }}>
-                          {l.qty}×
-                        </b>
-                        <div className="m-t">
-                          <b>{l.name}</b>
-                          <span className="m-num">{money(l.qty * l.unitPrice)}</span>
-                        </div>
-                        <button type="button" className="m-back" aria-label={`Remove ${l.name}`} onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>
-                          <Icon name="x" size={18} color="var(--muted)" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button type="button" className="m-gh" style={{ flex: 1 }} onClick={() => setSheet("items")}>
-                    <Icon name="package" size={18} /> From your items
-                  </button>
-                  <button type="button" className="m-gh" style={{ flex: 1 }} onClick={() => setSheet("type")}>
-                    <Icon name="plus" size={18} /> Type one
+                <span className="m-label">
+                  What’s going{lines.length > 0 ? ` · ${money(worth(lines))}` : ""}
+                </span>
+                <div className="m-ichips">
+                  {lines.map((l, i) => (
+                    <button
+                      key={`${l.name}-${i}`}
+                      type="button"
+                      className="m-ichip"
+                      aria-label={`Remove ${l.qty}× ${l.name}`}
+                      onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}
+                    >
+                      {l.qty}× {l.name}
+                    </button>
+                  ))}
+                  <button type="button" className="m-ichip m-add" onClick={() => setSheet("items")}>
+                    <Icon name="plus" size={16} /> Add
                   </button>
                 </div>
               </div>
 
-              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-                <b style={{ fontSize: 15 }}>Worth</b>
-                <b className="m-num" style={{ fontSize: 18 }}>
-                  {money(worth(lines))}
-                </b>
-              </div>
-
-              <div className="m-card" style={{ flexDirection: "row", alignItems: "center", padding: "10px 14px" }}>
-                <div style={{ flex: 1 }}>
-                  <b style={{ display: "block", fontSize: 15 }}>Buyer pays cash on delivery</b>
-                  <span className="m-hint" style={{ display: "block", lineHeight: 1.35, marginTop: 2 }}>
-                    {collectCash ? `The rider collects ${money(worth(lines))} and brings it back to you` : "Off: the buyer pays you as they do today"}
-                  </span>
+              <div className="m-collect">
+                <div>
+                  <b>Rider collects {money(worth(lines))}</b>
+                  <span>and brings it back to you</span>
                 </div>
-                <Switch checked={collectCash} label="Buyer pays cash on delivery" onChange={setCollectCash} />
+                <Switch checked={collectCash} label={`Rider collects ${money(worth(lines))}`} onChange={setCollectCash} />
               </div>
 
               {shownFare !== null && (
                 <div className="m-fld">
                   <span className="m-label">Fare you offer</span>
-                  <div className="m-card m-fare">
+                  <div className="m-fare2">
                     <button type="button" aria-label="Offer $0.50 less" disabled={shownFare <= 1.5} onClick={() => setFare(stepFare(shownFare, -1))}>
                       <Icon name="minus" size={20} />
                     </button>
@@ -262,21 +236,13 @@ export default function NewBookingPage() {
         </div>
 
         {gate.status === "ready" && (
-          <div className="m-foot" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {step === 1 ? (
-              <button type="button" className="m-btn" onClick={next}>
-                Next
-              </button>
-            ) : (
-              <>
-                <button type="button" className="m-lnk m-muted" style={{ textDecoration: "underline", fontWeight: 400 }} onClick={() => setSheet("terms")}>
-                  Booking terms
-                </button>
-                <button type="button" className="m-btn" disabled={busy || actionsDisabled} onClick={() => void book()}>
-                  {busy ? "Booking…" : `Find a rider · ${money(shownFare)}`}
-                </button>
-              </>
-            )}
+          <div className="m-cta m-cta-pin">
+            <button type="button" className="m-lnk m-muted" style={{ textDecoration: "underline", fontWeight: 400, fontSize: 13 }} onClick={() => setSheet("terms")}>
+              Booking terms
+            </button>
+            <button type="button" className="m-btn" disabled={busy || actionsDisabled} onClick={() => void book()}>
+              {busy ? "Booking…" : shownFare !== null ? `Find a rider · ${money(shownFare)}` : "Find a rider"}
+            </button>
           </div>
         )}
       </div>
@@ -294,6 +260,7 @@ export default function NewBookingPage() {
                     setWhatError(null);
                     setSheet(null);
                   }}
+                  onType={() => setSheet("type")}
                   onDone={() => setSheet(null)}
                 />
               )}
@@ -339,7 +306,6 @@ export default function NewBookingPage() {
 function WhereSearch({ value, error, signOut, onChange }: { value: Where | null; error?: string; signOut: () => void; onChange: (w: Where | null) => void }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PlaceSuggestion[]>([]);
-  const [picked, setPicked] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const session = useRef(newSessionToken());
   // Only the latest link counts: an older short link's answer arriving late never moves the location.
@@ -367,8 +333,7 @@ function WhereSearch({ value, error, signOut, onChange }: { value: Where | null;
     const direct = parseMapLocation(text);
     if (direct) {
       setResults([]);
-      setPicked("link");
-      onChange({ point: direct, address: "The location the buyer sent" });
+      onChange({ point: direct, address: "Pin the buyer sent" });
       return;
     }
     const url = /https:\/\/\S+/i.exec(text)?.[0];
@@ -380,8 +345,7 @@ function WhereSearch({ value, error, signOut, onChange }: { value: Where | null;
           (point) => {
             if (seq !== linkSeq.current) return;
             setNote(null);
-            setPicked("link");
-            onChange({ point, address: "The location the buyer sent" });
+            onChange({ point, address: "Pin the buyer sent" });
           },
           (err: unknown) => {
             if (seq !== linkSeq.current || redirectIfSessionExpired(err, signOut)) return;
@@ -401,15 +365,46 @@ function WhereSearch({ value, error, signOut, onChange }: { value: Where | null;
       setNote("Couldn't find that place. Try another search.");
       return;
     }
-    setPicked(s.placeId);
     onChange({ point: place.point, address: [s.primary, s.secondary].filter(Boolean).join(", ") || place.address });
+  }
+
+  // S4: once picked, "Going to" is one mint pill; tapping it searches again.
+  if (value) {
+    return (
+      <div className="m-fld">
+        <span className="m-label">Going to</span>
+        <button
+          type="button"
+          className="m-goto"
+          aria-label={`Going to ${value.address}. Change it`}
+          onClick={() => {
+            setQuery("");
+            setResults([]);
+            onChange(null);
+          }}
+        >
+          <Icon name="map-pin" size={16} />
+          <span>{value.address}</span>
+          <Icon name="check" size={16} />
+        </button>
+        {error && (
+          <span className="m-err" role="alert">
+            {error}
+          </span>
+        )}
+      </div>
+    );
   }
 
   return (
     <div className="m-fld">
+      <label className="m-label" htmlFor="going-to">
+        Going to
+      </label>
       <label className="m-in m-srch-g" data-invalid={!!error}>
         <Icon name="search" size={20} color="var(--muted)" />
         <input
+          id="going-to"
           aria-label="Search street or area, or paste the buyer's location"
           placeholder="Search street or area"
           value={query}
@@ -418,31 +413,15 @@ function WhereSearch({ value, error, signOut, onChange }: { value: Where | null;
       </label>
       {note && <span className="m-hint">{note}</span>}
       <div>
-        {picked === "link" && value && (
-          <div className="m-res" aria-current="true">
-            <Icon name="map-pin" size={20} color="var(--accent-text)" />
+        {results.map((s) => (
+          <button key={s.placeId} type="button" className="m-res" onClick={() => void pick(s)}>
+            <Icon name="map-pin" size={20} color="var(--muted)" />
             <div className="m-t">
-              <b>{value.address}</b>
-              <span className="m-num">
-                {value.point.lat.toFixed(5)}, {value.point.lng.toFixed(5)}
-              </span>
+              <b>{s.primary}</b>
+              {s.secondary && <span>{s.secondary}</span>}
             </div>
-            <Icon name="check" size={20} color="var(--accent-text)" />
-          </div>
-        )}
-        {results.map((s) => {
-          const on = picked === s.placeId;
-          return (
-            <button key={s.placeId} type="button" className="m-res" aria-current={on || undefined} onClick={() => void pick(s)}>
-              <Icon name="map-pin" size={20} color={on ? "var(--accent-text)" : "var(--muted)"} />
-              <div className="m-t">
-                <b>{s.primary}</b>
-                {s.secondary && <span>{s.secondary}</span>}
-              </div>
-              {on && <Icon name="check" size={20} color="var(--accent-text)" />}
-            </button>
-          );
-        })}
+          </button>
+        ))}
       </div>
       {error && (
         <span className="m-err" role="alert">
@@ -453,7 +432,7 @@ function WhereSearch({ value, error, signOut, onChange }: { value: Where | null;
   );
 }
 
-function ItemsPicker({ onPick, onDone }: { onPick: (d: MerchantDishResponse) => void; onDone: () => void }) {
+function ItemsPicker({ onPick, onType, onDone }: { onPick: (d: MerchantDishResponse) => void; onType: () => void; onDone: () => void }) {
   const [dishes, setDishes] = useState<MerchantDishResponse[] | null>(null);
   useEffect(() => {
     listDishes()
@@ -465,7 +444,7 @@ function ItemsPicker({ onPick, onDone }: { onPick: (d: MerchantDishResponse) => 
       <b style={{ fontSize: 18 }}>Your items</b>
       <div style={{ maxHeight: "50dvh", overflowY: "auto" }}>
         {dishes === null && <div className="m-hint">Loading…</div>}
-        {dishes?.length === 0 && <div className="m-hint">No items yet. Type one instead.</div>}
+        {dishes?.length === 0 && <div className="m-hint">No items yet.</div>}
         {dishes?.map((d) => (
           <button key={d.id} type="button" className="m-li" onClick={() => onPick(d)}>
             <div className="m-t">
@@ -475,6 +454,9 @@ function ItemsPicker({ onPick, onDone }: { onPick: (d: MerchantDishResponse) => 
           </button>
         ))}
       </div>
+      <button type="button" className="m-gh" onClick={onType}>
+        <Icon name="plus" size={18} /> Type one
+      </button>
       <button type="button" className="m-lnk" onClick={onDone}>
         Done
       </button>

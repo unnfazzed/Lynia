@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
   PREP_CHIPS_MIN,
@@ -10,6 +11,7 @@ import {
   type MerchantShopKind,
   type SubstitutionProposalLine,
 } from "@lynia/shared";
+import { useBusiness } from "../../lib/business";
 import { formatCountdown, msUntil } from "../../lib/countdown";
 import { needsKitchenConfirm } from "../../lib/order-groups";
 import { hm, money, orderLabel } from "../../lib/orders-view";
@@ -63,6 +65,9 @@ export function RingingScreen({
   const auto = needsKitchenConfirm(active);
   const scheduled = !!active.scheduledFor;
   const p = useProposer(active);
+  // README "Navigation": an Rx order's prescription check (P1) comes before it is accepted (S2).
+  const business = useBusiness();
+  const rxFirst = active.prescription?.status === "pending" && business?.myIsPharmacist === true;
   const [prepMinutes, setPrepMinutes] = useState<Prep>(15);
   const [reasons, setReasons] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -167,7 +172,8 @@ export function RingingScreen({
         </div>
 
         <div className="m-rings">
-          {shop && <p className="m-hint m-ringhint">Missing something? Tap it to swap or remove.</p>}
+          {rxFirst && <p className="m-hint m-ringhint">This order needs a prescription. Check it first, then accept.</p>}
+          {shop && !rxFirst && <p className="m-hint m-ringhint">Missing something? Tap it to swap or remove.</p>}
           <RingLines order={active} p={p} shop={shop} disabled={busy} />
           {active.note && <q className="m-notechip">{active.note}</q>}
           {changing && (
@@ -210,9 +216,16 @@ export function RingingScreen({
               {who ?? "The customer"} has 3 min to OK the changes. Start {making} now.
             </span>
           )}
-          <button type="button" className="m-btn" disabled={busy} onClick={() => void accept()}>
-            {acceptLabel}
-          </button>
+          {rxFirst ? (
+            <Link href={`/queue/${active.id}/rx`} className="m-btn">
+              <Icon name="file-text" size={18} />
+              Check the prescription
+            </Link>
+          ) : (
+            <button type="button" className="m-btn" disabled={busy} onClick={() => void accept()}>
+              {acceptLabel}
+            </button>
+          )}
           <button type="button" className="m-btn2" disabled={busy} onClick={() => setReasons(true)}>
             {OF.decline}
           </button>
