@@ -39,8 +39,8 @@ describe("D3 fare stepper", () => {
     expect(startFare(0.9)).toBe(1.5);
     expect(stepFare(3.5, 1)).toBe(4);
     expect(stepFare(1.5, -1)).toBe(1.5);
-    expect(typicalLine(3.37)).toBe("Typical $3–4");
-    expect(typicalLine(3)).toBe("Typical $3–4");
+    expect(typicalLine(3.37)).toBe("Riders usually get $3–4");
+    expect(typicalLine(3)).toBe("Riders usually get $3–4");
   });
 });
 

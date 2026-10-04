@@ -4,6 +4,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MerchantOrderResponse } from "@lynia/shared";
 import { RingingScreen } from "./RingingScreen";
 
+const business = vi.hoisted(() => ({ current: null as unknown }));
+vi.mock("../../lib/business", () => ({ useBusiness: () => business.current }));
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -93,5 +96,19 @@ describe("RingingScreen — CF-01 double-submit guard (sensitive lane: order ass
 
     expect(onAccept).toHaveBeenCalledTimes(1);
     resolveAccept();
+  });
+});
+
+describe("RingingScreen — an Rx order is checked before it's accepted (Merchant v2 P1 → S2, D-77)", () => {
+  it("a pharmacist gets 'Check the prescription' instead of Accept until it's approved", () => {
+    business.current = { myIsPharmacist: true };
+    const props = { disabled: false, onAccept: vi.fn(), onPropose: vi.fn(), onReject: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn(), onEditItems: vi.fn(), refetch: vi.fn() };
+    render(<RingingScreen active={order({ prescription: { status: "pending", patientName: "Rudo Moyo", pageCount: 1 } })} {...props} />);
+    expect(screen.getByRole("link", { name: "Check the prescription" }).getAttribute("href")).toBe("/queue/o1/rx");
+    expect(screen.queryByRole("button", { name: /^Accept/ })).toBeNull();
+    cleanup();
+    render(<RingingScreen active={order({ prescription: { status: "approved", patientName: "Rudo Moyo", pageCount: 1 } })} {...props} />);
+    expect(screen.getByRole("button", { name: /^Accept/ })).toBeTruthy();
+    business.current = null;
   });
 });

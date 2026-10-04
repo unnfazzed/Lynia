@@ -48,11 +48,11 @@ export function stepFare(fare: number, direction: -1 | 1): number {
   return Math.max(FARE_MIN, Math.round((fare + direction * FARE_STEP) * 100) / 100);
 }
 
-/** "Typical $3–4": the whole dollars either side of Send's suggestion. */
+/** "Riders usually get $6–7" (Merchant v2 S4): the whole dollars either side of Send's suggestion. */
 export function typicalLine(suggested: number): string {
   const low = Math.max(1, Math.floor(suggested));
   const high = Math.max(low + 1, Math.ceil(suggested));
-  return `Typical $${low}–${high}`;
+  return `Riders usually get $${low}–${high}`;
 }
 
 export type WhereErrors = Partial<Record<"where" | "phone", string>>;

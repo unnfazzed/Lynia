@@ -54,34 +54,52 @@ function show() {
   );
 }
 
-describe("M8a / M8b · Prescription check (Order flow v2, D-59)", () => {
-  it("shows page 1 of 2, the patient and the items that need a prescription; Approve goes back to the ticket", async () => {
+describe("P1 · Check the prescription (Merchant v2, D-77, over Order flow v2's M8a/M8b)", () => {
+  it("shows page 1 of 2, the patient and the medicine; Approve stays off until every box is ticked, and sends the ticks", async () => {
     show();
     expect(await screen.findByText("Rudo Moyo")).toBeTruthy();
     expect(screen.getByText("Amoxicillin 500mg (21 caps)")).toBeTruthy();
     expect((screen.getByRole("img", { name: "Prescription page 1" }) as HTMLImageElement).src).toBe("https://storage.example/rx-1.jpg");
-    expect(screen.getByRole("button", { name: "Next page" }).textContent).toBe("1 / 2");
-    fireEvent.click(screen.getByRole("button", { name: "Approve prescription" }));
-    await vi.waitFor(() => expect(approvePrescription).toHaveBeenCalledWith(ID));
+    expect(screen.getByRole("button", { name: "Next page" }).textContent).toBe("1 of 2");
+    expect(screen.getByText("The customer shows the original to the rider")).toBeTruthy();
+    const approve = screen.getByRole("button", { name: "Approve" }) as HTMLButtonElement;
+    expect(approve.disabled).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Name matches the patient" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Signed and stamped" }));
+    expect(approve.disabled).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Dated in the last 6 months" }));
+    expect(approve.disabled).toBe(false);
+    fireEvent.click(approve);
+    await vi.waitFor(() =>
+      expect(approvePrescription).toHaveBeenCalledWith(ID, { checklist: { nameMatches: true, signedStamped: true, recentDate: true } }),
+    );
     expect(replace).toHaveBeenCalledWith(`/queue/${ID}`);
   });
 
-  it("Decline asks why, then tells the customer with the reason and the note", async () => {
+  it("Decline arrives filled in from the unticked box, then tells the customer", async () => {
     show();
-    fireEvent.click(await screen.findByRole("button", { name: "Decline" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Name matches the patient" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Signed and stamped" }));
+    fireEvent.click(screen.getByRole("button", { name: "Decline" }));
     expect(screen.getByText("The rest of the order carries on unless the customer cancels.")).toBeTruthy();
-    const send = screen.getByRole("button", { name: "Decline and tell the customer" }) as HTMLButtonElement;
-    expect(send.disabled).toBe(true);
-    fireEvent.click(screen.getByRole("radio", { name: "Expired" }));
+    expect(screen.getByRole("radio", { name: "Expired" }).getAttribute("aria-checked")).toBe("true");
+    expect((screen.getByLabelText("Note for the customer") as HTMLInputElement).value).toBe("It’s more than 6 months old.");
     fireEvent.change(screen.getByLabelText("Note for the customer"), { target: { value: "Dated March 2026" } });
-    fireEvent.click(send);
-    await vi.waitFor(() => expect(declinePrescription).toHaveBeenCalledWith(ID, { reason: "expired", note: "Dated March 2026" }));
+    fireEvent.click(screen.getByRole("button", { name: "Decline and tell the customer" }));
+    await vi.waitFor(() =>
+      expect(declinePrescription).toHaveBeenCalledWith(ID, {
+        reason: "expired",
+        note: "Dated March 2026",
+        checklist: { nameMatches: true, signedStamped: true, recentDate: false },
+      }),
+    );
   });
 
   it("someone who isn't a pharmacist can look but not answer", async () => {
     business.pharmacist = false;
     show();
     expect(await screen.findByText("Rudo Moyo")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Approve prescription" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+    expect(screen.queryByRole("checkbox")).toBeNull();
   });
 });

@@ -1511,6 +1511,9 @@ model OrderPrescription {
   checkedByProfileId String?   @map("checked_by_profile_id") @db.Uuid
   // RD3: the rider ticked "I saw the original prescription" at the door. Required before delivery.
   riderSawOriginalAt DateTime? @map("rider_saw_original_at")
+  // Merchant v2 P1 (ledger D-77): the pharmacist's checklist at the check, for the audit trail —
+  // { nameMatches, signedStamped, recentDate }. Null on a check from before it (or an older screen).
+  checklist          Json?     @map("checklist")
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")
 

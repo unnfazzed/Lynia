@@ -2,6 +2,7 @@ import { BadRequestException, Body, Controller, Get, Param, ParseUUIDPipe, Post,
 import {
   ChangeOrderScheduleRequest,
   type CustomerBalanceResponse,
+  ApprovePrescriptionRequest,
   DeclinePrescriptionRequest,
   type MerchantOrderResponse,
   type PrescriptionPhotosResponse,
@@ -95,8 +96,13 @@ export class OrderFlowMerchantController {
   /** M8a "Approve prescription" — a team member with isPharmacist. */
   @Post("orders/:orderId/prescription/approve")
   @UseGuards(MerchantGuard)
-  async approve(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string): Promise<MerchantOrderResponse> {
-    await this.prescriptions.approve(profileId, orderId);
+  async approve(
+    @Param("orderId", ParseUUIDPipe) orderId: string,
+    @Body(new ZodBody(ApprovePrescriptionRequest)) body: ApprovePrescriptionRequest,
+    @CurrentUser() profileId: string,
+  ): Promise<MerchantOrderResponse> {
+    // Merchant v2 P1 (D-77): the checklist rides along for the audit trail when the screen sends it.
+    await this.prescriptions.approve(profileId, orderId, body?.checklist);
     return this.foodOrders.getQueueOrder(profileId, orderId);
   }
 

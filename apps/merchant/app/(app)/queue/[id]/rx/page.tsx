@@ -18,14 +18,26 @@ import { ORDER_FLOW as OF } from "../../../../lib/vocabulary";
 type Load = { status: "loading" } | { status: "ready"; order: MerchantOrderResponse; photos: PrescriptionPhotosResponse["photos"] } | { status: "error"; message: string };
 
 /**
- * M8a · Prescription check and M8b · Decline (packages/design/handoff/order-flow-v2, of-screens-mrg.js
- * `M8a`/`M8b`, BRIEF §13, ledger D-59). Pharmacists only, and only for an order that carries a
- * prescription (the `rxEnabled` flag off means none exists). The 250 photo with its page pill and Zoom,
- * the patient, the items that need a prescription and the consent line, then Decline / Approve. Decline
- * opens the sheet: "Why are you declining?", the four reason chips, a note, "The rest of the order carries
- * on unless the customer cancels.", "Decline and tell the customer" and "Keep". Either answer goes back to
- * the ticket.
+ * P1 · Check the prescription (Merchant v2, packages/design/handoff/merchant-v2, ledger D-77) over Order
+ * flow v2's M8a/M8b (D-59). Pharmacists only, and only for an order that carries a prescription. The
+ * 200 photo with Zoom (and paging over several pages), the patient and the medicine, then the checklist —
+ * Name matches the patient · Signed and stamped · Dated in the last 6 months — and the line that the
+ * customer shows the original to the rider. Approve stays disabled until every box is ticked; the ticks
+ * are stored with the check. Decline opens M8b's sheet, already filled in from the unticked box. Either
+ * answer goes back to the ticket.
  */
+type Checks = { nameMatches: boolean; signedStamped: boolean; recentDate: boolean };
+const CHECKS: readonly [keyof Checks, string][] = [
+  ["nameMatches", "Name matches the patient"],
+  ["signedStamped", "Signed and stamped"],
+  ["recentDate", "Dated in the last 6 months"],
+];
+/** BRIEF §8: Decline arrives filled in from the first unticked box. */
+const PREFILL: Record<keyof Checks, { reason: RxDeclineReason; note: string }> = {
+  nameMatches: { reason: "not_valid", note: "The name doesn’t match the patient." },
+  signedStamped: { reason: "not_valid", note: "It isn’t signed and stamped." },
+  recentDate: { reason: "expired", note: "It’s more than 6 months old." },
+};
 export default function PrescriptionCheckPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -36,6 +48,7 @@ export default function PrescriptionCheckPage() {
   const [page, setPage] = useState(0);
   const [zoom, setZoom] = useState(false);
   const [declining, setDeclining] = useState(false);
+  const [checks, setChecks] = useState<Checks>({ nameMatches: false, signedStamped: false, recentDate: false });
   const [reason, setReason] = useState<RxDeclineReason | null>(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -85,57 +98,73 @@ export default function PrescriptionCheckPage() {
   const { order, photos } = load;
   const rx = order.prescription;
   const shown = photos[Math.min(page, photos.length - 1)];
-  const rxItems = order.items.filter((i) => i.rxRequired).map((i) => i.name);
+  const rxItems = order.items.filter((i) => i.rxRequired).map((i) => `${i.name}${i.quantity > 1 ? ` · ${i.quantity}` : ""}`);
   const canCheck = rx?.status === "pending" && business?.myIsPharmacist === true;
   const disabled = actionsDisabled || busy;
+  const allTicked = checks.nameMatches && checks.signedStamped && checks.recentDate;
+
+  function openDecline() {
+    const first = CHECKS.find(([k]) => !checks[k]);
+    if (first) {
+      setReason(PREFILL[first[0]].reason);
+      setNote(PREFILL[first[0]].note);
+    }
+    setDeclining(true);
+  }
 
   return (
     <Kitchen active="queue" tabs={false}>
       <div style={{ minHeight: "100%", display: "flex", flexDirection: "column" }}>
-        <AppBar back={back} title={OF.rxT} right={<span className="m-hint m-num" style={{ flex: "none" }}>{orderLabel(order)}</span>} />
-        <div className="m-bd" style={{ flex: 1, paddingTop: 12 }}>
-          <div style={{ position: "relative" }}>
-            <div className="m-rx" data-zoom={zoom ? "" : undefined}>
-              {shown ? (
-                // eslint-disable-next-line @next/next/no-img-element -- a 5-minute signed URL, never cached
-                <img src={shown.url} alt={`Prescription page ${shown.page}`} />
-              ) : null}
-            </div>
-            {photos.length > 1 ? (
-              <button
-                type="button"
-                className="m-pl m-num"
-                aria-label="Next page"
-                style={{ position: "absolute", left: 8, bottom: 14, background: "var(--bg)", border: "none", font: "inherit", fontWeight: 700, fontSize: 11.5 }}
-                onClick={() => setPage((p) => (p + 1) % photos.length)}
-              >
-                {OF.rxPage(Math.min(page, photos.length - 1) + 1, photos.length)}
-              </button>
-            ) : photos.length === 1 ? (
-              <span className="m-pl m-num" style={{ position: "absolute", left: 8, bottom: 14, background: "var(--bg)" }}>
-                {OF.rxPage(1, 1)}
-              </span>
+        <AppBar back={back} title="Check the prescription" right={<span className="m-num" style={{ flex: "none", fontSize: 14, fontWeight: 400, color: "var(--muted)" }}>{orderLabel(order)}</span>} />
+        <div className="m-bd" style={{ flex: 1, paddingTop: 4 }}>
+          <div className="m-rxphoto" data-zoom={zoom ? "" : undefined}>
+            {shown ? (
+              // eslint-disable-next-line @next/next/no-img-element -- a 5-minute signed URL, never cached
+              <img src={shown.url} alt={`Prescription page ${shown.page}`} />
             ) : null}
-            <button type="button" className="m-gh" aria-pressed={zoom} style={{ position: "absolute", right: 8, bottom: 8 }} onClick={() => setZoom((z) => !z)}>
+            {photos.length > 1 && (
+              <button type="button" className="m-rxpage m-num" aria-label="Next page" onClick={() => setPage((p) => (p + 1) % photos.length)}>
+                {Math.min(page, photos.length - 1) + 1} of {photos.length}
+              </button>
+            )}
+            <button type="button" className="m-rxzoom" aria-pressed={zoom} onClick={() => setZoom((z) => !z)}>
               <Icon name="zoom-in" size={16} />
               {OF.zoom}
             </button>
           </div>
-          {rx && (
-            <div className="m-kv">
-              <span>{OF.rxPatient}</span>
-              <b>{rx.patientName}</b>
+          <div className="m-rxkv">
+            {rx && (
+              <div>
+                <span>{OF.rxPatient}</span>
+                <b>{rx.patientName}</b>
+              </div>
+            )}
+            {rxItems.length > 0 && (
+              <div>
+                <span>Medicine</span>
+                <b>{rxItems.join(", ")}</b>
+              </div>
+            )}
+          </div>
+          {canCheck && (
+            <div className="m-rxlist" role="group" aria-label="Checklist">
+              {CHECKS.map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="checkbox"
+                  aria-checked={checks[key]}
+                  onClick={() => setChecks((c) => ({ ...c, [key]: !c[key] }))}
+                >
+                  <i>{checks[key] && <Icon name="check" size={16} />}</i>
+                  {label}
+                </button>
+              ))}
             </div>
           )}
-          {rxItems.length > 0 && (
-            <div className="m-kv">
-              <span>{OF.rxItems}</span>
-              <b>{rxItems.join(", ")}</b>
-            </div>
-          )}
-          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-            <Icon name="circle-check" size={16} color="var(--accent-text)" />
-            {OF.rxConsent}
+          <div className="m-rxnote">
+            <Icon name="shield-check" size={16} />
+            The customer shows the original to the rider
           </div>
           {error && !declining && (
             <div className="m-alert" role="alert">
@@ -144,12 +173,23 @@ export default function PrescriptionCheckPage() {
           )}
         </div>
         {canCheck && (
-          <div className="m-foot" style={{ display: "flex", gap: 8, marginTop: "auto" }}>
-            <button type="button" className="m-gh" style={{ flex: 1, minHeight: 52 }} disabled={disabled} onClick={() => setDeclining(true)}>
+          <div className="m-cta m-cta-pin" style={{ flexDirection: "row" }}>
+            <button type="button" className="m-btn2" style={{ flex: 1, minHeight: 52, fontSize: 16 }} disabled={disabled} onClick={openDecline}>
               {OF.rxDecline}
             </button>
-            <button type="button" className="m-btn" style={{ flex: 1 }} disabled={disabled} onClick={() => void act(() => approvePrescription(order.id), "Prescription approved · start packing")}>
-              {OF.rxApprove}
+            <button
+              type="button"
+              className={`m-btn${allTicked ? "" : " m-off"}`}
+              style={{ flex: 1.4, width: "auto" }}
+              disabled={disabled || !allTicked}
+              onClick={() =>
+                void act(
+                  () => approvePrescription(order.id, { checklist: { nameMatches: true, signedStamped: true, recentDate: true } }),
+                  "Prescription approved · start packing",
+                )
+              }
+            >
+              Approve
             </button>
           </div>
         )}
@@ -187,7 +227,7 @@ export default function PrescriptionCheckPage() {
                 type="button"
                 className="m-btn m-danger"
                 disabled={disabled || !reason}
-                onClick={() => reason && void act(() => declinePrescription(order.id, { reason, note: note.trim() || undefined }), "Declined · the customer was told")}
+                onClick={() => reason && void act(() => declinePrescription(order.id, { reason, note: note.trim() || undefined, checklist: checks }), "Declined · the customer was told")}
               >
                 {OF.rxSend}
               </button>

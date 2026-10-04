@@ -1,4 +1,5 @@
 import type {
+  ApprovePrescriptionRequest,
   DeclinePrescriptionRequest,
   OrderFlagsResponse,
   PrescriptionPhotosResponse,
@@ -148,9 +149,9 @@ export function getPrescriptionPhotos(orderId: string): Promise<PrescriptionPhot
   return authedFetch<PrescriptionPhotosResponse>(`/merchant/orders/${orderId}/prescription`);
 }
 
-/** M8a "Approve prescription". */
-export function approvePrescription(orderId: string): Promise<MerchantOrderResponse> {
-  return authedFetch<MerchantOrderResponse>(`/merchant/orders/${orderId}/prescription/approve`, { method: "POST" });
+/** M8a / P1 "Approve": with Merchant v2's checklist (D-77), every box ticked, for the audit trail. */
+export function approvePrescription(orderId: string, body?: ApprovePrescriptionRequest): Promise<MerchantOrderResponse> {
+  return authedFetch<MerchantOrderResponse>(`/merchant/orders/${orderId}/prescription/approve`, { method: "POST", ...(body ? { body } : {}) });
 }
 
 /** M8b "Decline and tell the customer": the reason chip and an optional note. */

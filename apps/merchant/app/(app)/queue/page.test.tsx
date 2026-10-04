@@ -23,7 +23,7 @@ vi.mock("../../lib/orders-api", () => ({
   listScheduledOrders: vi.fn(async () => []),
   getTodaySummary: vi.fn(),
 }));
-vi.mock("../../lib/business", () => ({ primeBusiness: vi.fn() }));
+vi.mock("../../lib/business", () => ({ primeBusiness: vi.fn(), useBusiness: () => null }));
 
 // One router object for the whole run: the page's load callback depends on it.
 const { replace } = vi.hoisted(() => ({ replace: vi.fn() }));

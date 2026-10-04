@@ -4283,4 +4283,12 @@ any string Merchant v2 doesn't draw. Viewport unchanged: 360×720 with the 320px
 | Shop's ready button | "Order is packed" (Order flow v2) | "Packed" | BRIEF §4. |
 | Back header | merchant-mobile's 16/700 bar | 52 tall, 44 back target in accent text, title 17/700 — on every pushed screen | Merchant v2 spec ("restyle only" for settings sub-screens). |
 
+| S4 "Going to" from a pasted link | "Pin the buyer sent · Copacabana" | "Pin the buyer sent" (a Places pick reads its street and area) | A pasted location has no area name without a reverse lookup. |
+| S4 "+ Add" | A chip | Opens the shop's items, with "Type one" at the bottom; a chip taps to remove its line | The two ways in from D-48's D3, in one sheet. |
+| S4 "Booking terms" | Not drawn | A small "Booking terms" link above the CTA | Send's liability terms; the booking records their version, so the merchant keeps a way to read them. **Upstream ask:** draw it, or say where the terms live. |
+| S4 item chips, 36 tall | Drawn at 36px | Drawn at 36px, hit area padded to 44 | As K3's pill (UPSTREAM). |
+| P1 checklist storage | — | The three ticks are stored with the check (`order_prescriptions.checklist`, JSONB, nullable — migration 0074, expand-only) on approve and on decline | BRIEF "Needs backend": stored for the audit trail. An older screen still approves without them. |
+| P1 → S2 | README: "P1 comes before S2. Approving P1 continues into S2." | A pharmacist's ringing screen shows "Check the prescription" in place of Accept until it's approved; the check returns to the ring | The API already allowed the check while the order rings. |
+| P1 decline prefill | "Already filled in from the unticked box" | The first unticked box picks the reason (name / stamp → Not valid; date → Expired) and a one-line note | The note text isn't drawn; it is plain and editable. |
+
 *Further rows are added PR by PR as the screens land.*
