@@ -15,7 +15,7 @@ describe("vocabulary (merchant web upgrade plan D6)", () => {
 
   it("gives a shop its own words", () => {
     const v = vocabulary("shop", "auto_parts");
-    expect(v.catalog).toBe("Items");
+    expect(v.catalog).toBe("Inventory");
     expect([v.item, v.items, v.anItem]).toEqual(["item", "items", "an item"]);
     expect(v.whatYouOffer).toBe("What you sell");
     expect(v.onStorefront).toBe("in your shop");

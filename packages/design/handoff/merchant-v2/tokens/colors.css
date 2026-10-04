@@ -1,0 +1,102 @@
+/* Lynia colour system — light theme, Grab-style green.
+   Fills/CTAs use bright Grab green #00B14F; text and small icons use the darker text-green
+   (#006630, ≈7:1 on white) so sunlight legibility holds on cheap Android screens.
+   Neutrals stay the clean utility greys. Dark mode deferred. */
+:root {
+  /* ── Base palette ─────────────────────────────────────────── */
+  --ink: #14181b;         /* body text (≥4.5:1) */
+  --muted: #5b6670;       /* secondary text, captions */
+  --bg: #ffffff;          /* page background */
+  --surface: #f6f7f8;     /* sheets, chips, sunken areas */
+  --line: #e2e6ea;        /* borders, dividers */
+
+  --accent: #00b14f;      /* Grab green — fills, CTAs, big graphics ONLY (≈2.9:1 on white) */
+  --accent-700: #009d3b;  /* pressed / hover-deep fill */
+  --accent-text: #006630; /* text & small icons in green (≈7:1 on white) */
+  --accent-wash: #e9f8ef; /* light mint wash — selected states, chips */
+  /* Illustration mid-tone — the ONLY second tone allowed in two-tone service illustrations.
+     Sits between --accent-text and --accent (NOT between --accent and --accent-wash: #00b14f is
+     only 2.59:1 on the wash, so anything lighter than the brand green fails the 3:1 floor for
+     meaningful graphics). #009947 = 3.39:1 on --accent-wash, 1.92:1 against --accent-text. */
+  --accent-illus: #009947;
+
+  /* Primary-CTA FILL — sunlight contrast decision APPLIED (2026-07-03).
+     Set to #00812f so white CTA labels clear ≈4.7:1 (WCAG AA large) — legible on cheap phones in
+     bright sun, per the spec. Kept separate from --accent so the brand green stays vibrant on
+     non-text fills (map graphics, chips, icon tiles). To re-tune, change ONLY these two lines:
+       #00b14f = brand-true (≈2.9:1, too low for sunlight)
+       #009d3b = 1 shade down (≈3.4:1)
+       #00812f = white-on-green ≈4.7:1 (AA large) — CURRENT
+       #006b27 = ≈6.3:1 if a darker press is wanted */
+  --cta-fill: #00812f;
+  --cta-fill-pressed: #006b27;
+  --highlight: #f2b705;   /* 'recommended' marker only (gold, sparing) */
+  --danger: #c0392b;      /* errors, destructive */
+  --danger-wash: #faedeb; /* soft red wash — negative-balance hero, below-floor chip (never red text on white) */
+  --danger-ink: #8f2418;  /* darker danger text on --danger-wash (≈6:1) — owed labels, gate reason */
+  --success: #00b14f;     /* confirmation fills (== accent); use --accent-text for success TEXT */
+  --on-accent: #ffffff;   /* text/icons on an accent (or danger) fill — the one inverse */
+
+  /* Tints used in-product: earnings disclaimer card (gold wash), highlight border alpha. */
+  --highlight-wash: #fffcf2;
+  --highlight-ink: #6b5600;
+  --highlight-border: #f2b70566;
+
+  /* Faux-3D illustration palette — same three-face recipe as assets/service-icons/v2 (top = light,
+     left = mid, right = dark) + gold/coral/mint details. Illustrations ONLY, never text or UI chrome.
+     The idle set is the same recipe in neutrals (dark face ≥3:1 on white for meaningful graphics). */
+  --illus-light: #3ccb74;
+  --illus-mid: #00b14f;
+  --illus-dark: #00913c;
+  --illus-gold: #ffd23f;
+  --illus-coral: #ff6b4a;
+  --illus-mint: #b9e8cc;
+  --illus-sky: #3ec1f3;
+  --illus-idle-light: #dde1e5;
+  --illus-idle-mid: #aeb6bd;
+  --illus-idle-dark: #7d8790;
+
+  /* Home (Calm Mint v2) surfaces, shared with the tab bar so both read as one family.
+     Tile tints = the service-tile backgrounds; each pairs with an ink that clears 3:1 on it (ring) and
+     --ink for text. --live-bar = the dark floating live-order bar. --rider-* = rider identity. */
+  --tile-mint: #cdeeda;      /* Send tile */
+  --tile-peach: #ffd9cc;     /* Restaurants tile */
+  --tile-lilac: #ddd5ff;     /* Shops tile */
+  --tile-sun: #fff6d6;
+  --coral-ink: #c2412a;      /* ≈3.6:1 on --tile-peach */
+  --sun-ink: #8a6a00;        /* ≈4.6:1 on --tile-sun */
+  --live-bar: #063b22;
+  --live-bar-ink: #bfe6cd;
+  --rider-accent: #4b2fbf;   /* ≈5.6:1 on --tile-lilac */
+  --rider-wash: #ece8ff;
+
+  /* 2026-10 handoffs (Calm Mint v2 · After Send v2 · Browse v2 · Order flow v2.1 · Rider v2).
+     Additive — the handoffs specify the sun highlight REPLACES gold --highlight (#f2b705) on
+     customer/rider screens (ETA chip, unread dot, star fill). Pending sign-off before aliasing. */
+  --highlight-sun: #ffd23f;      /* ETA chip, unread dot, star fill */
+  --highlight-sun-ink: #3d3100;  /* text on --highlight-sun (≈11:1) */
+  --star-stroke: #c99500;        /* star outline */
+  --tile-pharmacy: #c5e9df;      /* Pharmacy tile + venue pin */
+  --skeleton: #eef1f3;           /* skeleton blocks */
+  --free-tag: var(--rider-accent); /* 'Free delivery' tag fill, white text (7.9:1) */
+
+  /* ── Semantic aliases ─────────────────────────────────────── */
+  --text-body: var(--ink);
+  --text-secondary: var(--muted);
+  --text-on-accent: var(--on-accent);
+  --text-accent: var(--accent-text);
+
+  --surface-page: var(--bg);
+  --surface-card: var(--bg);
+  --surface-sunken: var(--surface);
+  --surface-selected: var(--accent-wash);
+
+  --border-default: var(--line);
+  --border-strong: var(--muted);
+
+  --action-primary: var(--cta-fill);
+  --action-primary-pressed: var(--accent-700);
+  --marker-recommended: var(--highlight);
+  --state-error: var(--danger);
+  --state-success: var(--success);
+}

@@ -16,7 +16,7 @@ afterEach(() => {
 });
 
 const branch = (id: string): MerchantBranchResponse => ({ id, name: id, landmark: null, role: "owner", active: id === "m1", pilotEnabled: true });
-const open = { status: { open: true, closedByHand: false, label: "Open until 22:00" }, switching: false, toggleOpen: vi.fn() } as unknown as ReturnType<typeof useOpenSwitch>;
+const open = { status: { open: true, closedByHand: false, label: "Open · until 22:00" }, switching: false, toggleOpen: vi.fn() } as unknown as ReturnType<typeof useOpenSwitch>;
 const merchant = (over: Partial<MerchantProfileResponse> = {}) =>
   ({ id: "m1", name: "Sadza Republic", myRole: "owner", businessType: "restaurant", pilotEnabled: true, ...over }) as MerchantProfileResponse;
 
@@ -25,7 +25,7 @@ describe("B1 / D1 header · branches (ledger D-51)", () => {
     list.branches = [branch("m1")];
     render(<OrdersHeader merchant={merchant()} open={open} disabled={false} />);
     expect(screen.queryByRole("button", { name: /Sadza Republic/ })).toBeNull();
-    expect(screen.getByText("● Open until 22:00")).toBeTruthy();
+    expect(screen.getByText("Open · until 22:00")).toBeTruthy();
   });
 
   it("2+ branches: the name and chevron are one button that opens C6", () => {
@@ -39,7 +39,7 @@ describe("B1 / D1 header · branches (ledger D-51)", () => {
     list.branches = [branch("m1"), branch("m2")];
     render(<OrdersHeader merchant={merchant({ pilotEnabled: false })} open={open} disabled={false} />);
     expect(screen.getByText("Not live yet")).toBeTruthy();
-    expect(screen.queryByText("● Open until 22:00")).toBeNull();
+    expect(screen.queryByText("Open · until 22:00")).toBeNull();
     expect(screen.queryByRole("switch")).toBeNull();
     expect(screen.queryByText("Orders")).toBeNull();
   });

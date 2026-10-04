@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MerchantProfileResponse } from "@lynia/shared";
 import { merchantOrder, merchantProfile, RIDER } from "../testing/fixtures";
-import { detailView, homeSections, itemsEditedLabel, itemsLine, openStatus, orderLabel, rowSub, trackStep, cashBackRow, groupCode } from "./orders-view";
+import { detailView, homeSections, itemsEditedLabel, itemsLine, liveBar, openStatus, orderLabel, rowSub, trackStep, cashBackRow, groupCode } from "./orders-view";
 import { alarmOrders } from "./alarm";
 
 const o = merchantOrder;
@@ -95,7 +95,7 @@ describe("the header's open/closed line and switch (B1/B5)", () => {
   const hours = { wed: { open: "08:00", close: "22:00" }, thu: { open: "08:00", close: "22:00" } } as MerchantProfileResponse["hours"];
 
   it("open inside hours", () => {
-    expect(openStatus(merchantProfile({ hours }), WED_NOON)).toEqual({ open: true, closedByHand: false, label: "Open until 22:00" });
+    expect(openStatus(merchantProfile({ hours }), WED_NOON)).toEqual({ open: true, closedByHand: false, label: "Open · until 22:00" });
   });
 
   it("closed by hand says when it opens next", () => {
@@ -131,5 +131,37 @@ describe("auto-accept on the Orders home", () => {
   it("says when the items were changed", () => {
     expect(itemsEditedLabel(o({ itemsEditedAt: new Date(2026, 8, 30, 12, 10).toISOString() }))).toBe("Items changed 12:10");
     expect(itemsEditedLabel(o({}))).toBeNull();
+  });
+});
+
+describe("T1's live bar (Merchant v2, D-77)", () => {
+  const cooking = (id: string) => o({ id, merchantPhase: "preparing", status: "requested" });
+  const onTheWay = o({ id: "a0000009-0000-4000-8000-000000000000", merchantPhase: null, status: "en_route_dropoff", riderId: RIDER.profileId, rider: RIDER });
+
+  it("is hidden when nothing is live", () => {
+    expect(liveBar([], "Cooking")).toBeNull();
+  });
+
+  it("leads with a rider heading to the counter, and counts the rest", () => {
+    const counter = o({ id: "a0000004-0000-4000-8000-000000000000", merchantPhase: null, status: "assigned", riderId: RIDER.profileId, rider: RIDER });
+    const view = liveBar([counter, cooking("a0000001-0000-4000-8000-000000000000"), cooking("a0000002-0000-4000-8000-000000000000"), onTheWay], "Cooking");
+    expect(view).toEqual({
+      title: `${RIDER.firstName} is coming to your counter`,
+      sub: "2 cooking · 1 ready · 1 on the way",
+      href: "/queue/a0000004-0000-4000-8000-000000000000",
+    });
+  });
+
+  it("a ringing order comes first and opens the Orders home", () => {
+    const view = liveBar([o({ id: "a1b20000-0000-4000-8000-000000000000" }), cooking("a0000001-0000-4000-8000-000000000000")], "Packing");
+    expect(view).toEqual({ title: "New order · #A1B2", sub: "1 packing", href: "/queue" });
+  });
+
+  it("with nothing that needs the merchant, the counts are the line", () => {
+    expect(liveBar([cooking("a0000001-0000-4000-8000-000000000000"), onTheWay], "Cooking")).toEqual({
+      title: "1 cooking · 1 on the way",
+      sub: null,
+      href: "/queue/a0000001-0000-4000-8000-000000000000",
+    });
   });
 });

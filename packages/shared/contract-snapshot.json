@@ -2629,6 +2629,9 @@
             "null"
           ]
         },
+        "cashDue": {
+          "type": "number"
+        },
         "cashOverdue": {
           "type": "number"
         },

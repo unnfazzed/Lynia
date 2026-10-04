@@ -159,6 +159,12 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
   owner 2026-10-02): one row per order with its timeline, tone discs, a danger pin, swipe + Undo. The gallery
   `LJ notifications` / `LJ notif_empty` and `RJM notifications` are superseded. Strings come from
   `src/ui/notifications/copy.ts` (the handoff's `N`, verbatim).
+- **The merchant app follows its own handoff (`handoff/merchant-v2/`).** Kitchens, shops and pharmacies
+  (`apps/merchant`) align to `packages/design/handoff/merchant-v2/` (ledger D-77, owner 2026-10-04): one
+  shell (4 tabs, the mint top card with a labelled open pill and one KPI strip, the dark live bar on the
+  other tabs), one five-step lifecycle (Accept → Cook / Pack → Hand over → On the way → Cash back) on one
+  urgency-sorted board. Its `BRIEF.md` wins over the drawings. Screens it doesn't redraw (sign-in,
+  onboarding, settings sub-screens) keep D-48's flow, restyled only.
 - **Never align to a retired screen.** Retired ids are listed in `packages/design/EXPORT-README.md`
   and the `gallery-map.js` header — chiefly `LJ home_launcher` and nine `RJ` rider screens.
 - **The interactive mobile kit is stale for RIDER.** `ui_kits/mobile/app.js` still runs the pre-July

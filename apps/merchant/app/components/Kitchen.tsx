@@ -1,4 +1,8 @@
+"use client";
+
+import { useState } from "react";
 import { KitchenNav, type MerchantTab } from "./KitchenNav";
+import { LiveBar } from "./m/LiveBar";
 import { ReconnectBanner } from "./ReconnectBanner";
 
 /** Which tab each older screen id belongs to, while the account pages still render inside the tab
@@ -36,11 +40,16 @@ export function Kitchen({
   tabs?: boolean;
   children: React.ReactNode;
 }) {
+  const tab = TAB_FOR[active] ?? "orders";
+  // Merchant v2 T1 (ledger D-77): every tab but Orders carries the live bar while an order is live.
+  const live = tabs && tab !== "orders";
+  const [liveShown, setLiveShown] = useState(false);
   return (
     <div className="m-app">
       <ReconnectBanner backfillCount={backfillCount} />
-      <main className="m-scroll">{children}</main>
-      {tabs && <KitchenNav active={TAB_FOR[active] ?? "orders"} />}
+      <main className={`m-scroll${live && liveShown ? " m-has-live" : ""}`}>{children}</main>
+      {live && <LiveBar onShown={setLiveShown} />}
+      {tabs && <KitchenNav active={tab} />}
     </div>
   );
 }

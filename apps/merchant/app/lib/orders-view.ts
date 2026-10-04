@@ -199,7 +199,7 @@ export interface OpenStatus {
   open: boolean;
   /** Closed by hand from the switch (B5), as opposed to outside hours. */
   closedByHand: boolean;
-  /** "● Open until 22:00" / "● Closed · opens 08:00". */
+  /** "Open · until 22:00" / "Closed · opens 08:00" (Merchant v2 K1/T4, D-77). */
   label: string;
 }
 
@@ -211,9 +211,44 @@ export function openStatus(business: Pick<MerchantProfileResponse, "hours" | "cl
   const nowHm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
   const inHours = !hours || (!!today && nowHm >= today.open && nowHm < today.close);
   if (inHours && !closedByHand) {
-    return { open: true, closedByHand: false, label: today ? `Open until ${today.close}` : "Open" };
+    return { open: true, closedByHand: false, label: today ? `Open · until ${today.close}` : "Open" };
   }
   const from = closedByHand ? new Date(business!.closedUntil!) : now;
   const next = nextOpenTime(hours, from) ?? (closedByHand && !hours ? hm(business!.closedUntil) : null);
   return { open: false, closedByHand, label: next ? `Closed · opens ${next}` : "Closed" };
+}
+
+export interface LiveBarView {
+  /** The bar's bold line: the one thing that needs the merchant, else what's under way. */
+  title: string;
+  /** "2 cooking · 1 on the way", or null when the title already says it. */
+  sub: string | null;
+  /** The order it opens (a ringing order opens the Orders home, where it rings). */
+  href: string;
+}
+
+/**
+ * T1's dark live bar (Merchant v2, ledger D-77) for the tabs that aren't Orders: shown while any order
+ * needs the merchant or is live, e.g. "Blessing is at your counter · 2 cooking · 1 on the way". The
+ * API has no "rider arrived" signal yet, so a rider heading to the counter reads "is coming to your
+ * counter" (ledgered). `making` is the vocabulary's "Cooking" / "Packing".
+ */
+export function liveBar(orders: readonly MerchantOrderResponse[], making: string): LiveBarView | null {
+  const s = homeSections(orders);
+  const ringing = s.new.find((o) => o.merchantPhase === "awaiting_accept" || needsKitchenConfirm(o));
+  const answering = s.new.find((o) => o.merchantPhase === "awaiting_item_approval");
+  const counter = s.ready.find((o) => o.riderId && riderFirstName(o));
+  const onTheWay = s.outForDelivery.filter((o) => o.status !== "delivered" && o.status !== "completed" && o.status !== "undelivered");
+  const counts = [
+    s.cooking.length > 0 ? `${s.cooking.length} ${making.toLowerCase()}` : null,
+    s.ready.length > 0 ? `${s.ready.length} ready` : null,
+    onTheWay.length > 0 ? `${onTheWay.length} on the way` : null,
+  ].filter((c): c is string => c !== null);
+  const sub = counts.length > 0 ? counts.join(" · ") : null;
+  if (ringing) return { title: `New order · ${orderLabel(ringing)}`, sub, href: "/queue" };
+  if (counter) return { title: `${counter.rider!.firstName} is coming to your counter`, sub, href: `/queue/${counter.id}` };
+  if (answering) return { title: "Waiting for the customer to answer", sub, href: `/queue/${answering.id}` };
+  if (!sub) return null;
+  const first = s.cooking[0] ?? s.ready[0] ?? onTheWay[0];
+  return { title: sub, sub: null, href: first ? `/queue/${first.id}` : "/queue" };
 }

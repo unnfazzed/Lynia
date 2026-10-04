@@ -1241,9 +1241,23 @@ describe("MerchantService.getTodaySummary (E3, M4·6; D-48 header tiles)", () =>
       { orderId: "11111111-1111-4111-8111-111111111111", amount: 9.5, riderName: "Tino", dueAt: "2026-09-30T11:40:00.000Z", kind: "order" },
       { orderId: "22222222-2222-4222-8222-222222222222", amount: 4, riderName: null, dueAt: "2026-09-30T11:40:00.000Z", kind: "order" },
     ]);
-    // Open, not closed by the merchant, and delivered more than the 30-minute return window ago.
-    expect(overdueWhere).toMatchObject({ debtStatus: "open", merchantClosedAt: null });
-    expect((overdueWhere!.deliveredAt as { lt: Date }).lt.getTime()).toBeLessThanOrEqual(Date.now() - 30 * 60_000 + 1000);
+    // Open, delivered, and not closed by the merchant; overdue once past the 30-minute return window.
+    expect(overdueWhere).toMatchObject({ debtStatus: "open", merchantClosedAt: null, deliveredAt: { not: null } });
+    expect(res.cashDue).toBe(13.5);
+  });
+
+  it("D-77: cash due counts every open debt; only the ones past the return window are overdue", async () => {
+    const res = await svc(
+      summaryPrisma({
+        overdue: [
+          { id: "11111111-1111-4111-8111-111111111111", debtAmount: 9.5, deliveredAt: new Date(Date.now() - 45 * 60_000), rider: null },
+          { id: "22222222-2222-4222-8222-222222222222", debtAmount: 12, deliveredAt: new Date(Date.now() - 5 * 60_000), rider: null },
+        ],
+      }),
+    ).getTodaySummary("p1");
+    expect(res.cashDue).toBe(21.5);
+    expect(res.cashOverdue).toBe(9.5);
+    expect(res.overdue!.map((o) => o.orderId)).toEqual(["11111111-1111-4111-8111-111111111111"]);
   });
 
   it("D-48 C3: lists today's orders with how each ended, earning only when delivered or still on", async () => {
@@ -1319,6 +1333,7 @@ describe("MerchantService.getTodaySummary (E3, M4·6; D-48 header tiles)", () =>
     expect(res.orders).toBe(0);
     expect(res.sales).toBe(0);
     expect(res.cashOverdue).toBe(0);
+    expect(res.cashDue).toBe(0);
     expect(res.overdue).toEqual([]);
   });
 });

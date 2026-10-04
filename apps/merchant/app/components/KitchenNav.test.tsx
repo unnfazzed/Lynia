@@ -20,9 +20,9 @@ describe("the bottom tab bar (merchant mobile redesign, D-48)", () => {
     expect(labels(tabItems(merchantProfile({ businessType: "restaurant" })))).toEqual(["Orders", "Menu", "Money", "Account"]);
   });
 
-  it("a shop gets the same bar with Items, and its Orders home is Deliveries", () => {
+  it("a shop gets the same bar with Inventory (Merchant v2, D-77), and its Orders home is Deliveries", () => {
     const items = tabItems(merchantProfile({ businessType: "shop" }));
-    expect(labels(items)).toEqual(["Orders", "Items", "Money", "Account"]);
+    expect(labels(items)).toEqual(["Orders", "Inventory", "Money", "Account"]);
     expect(items.map((i) => i.href)).toEqual(["/deliveries", "/menu", "/statement", "/account"]);
   });
 

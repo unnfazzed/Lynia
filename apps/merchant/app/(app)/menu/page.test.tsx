@@ -301,12 +301,12 @@ describe("E1 · a shop's Items speak its own words (D-44)", () => {
     expect(screen.queryByText("+ Mains")).toBeNull();
   });
 
-  it("titles the list Items, searches items and adds an item", async () => {
+  it("titles the list Inventory (Merchant v2, D-77), searches items and adds an item", async () => {
     primeBusiness(merchantProfile({ businessType: "shop", shopKind: "auto_parts" }));
     vi.mocked(listCategories).mockResolvedValue([category({ name: "Brakes" })]);
     vi.mocked(listDishes).mockResolvedValue([dish({ name: "Brake pads", outOfStock: false })]);
     render(<Page />);
-    expect(await screen.findByText("Items")).toBeTruthy();
+    expect((await screen.findAllByText("Inventory")).length).toBeGreaterThan(0);
     expect(screen.getByRole("searchbox", { name: "Search items" })).toBeTruthy();
     // E1 draws "All" first, chosen to start with.
     expect(screen.getByRole("tab", { name: "All" }).getAttribute("aria-selected")).toBe("true");

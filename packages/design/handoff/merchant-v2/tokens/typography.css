@@ -1,0 +1,43 @@
+/* Lynia type system — Inter everywhere (Grab's in-app typeface). Tabular numerals for fares,
+   ETAs and ratings. Grab-dense scale: 14px body, 12px captions, bold 18–24px titles.
+   Line-heights land on a 4px grid. */
+:root {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-family: var(--font-sans);
+  /* Brand WORDMARK face (LyniaGo lockup only, never body/UI). Rounded-sans fallback so the
+     lockup still reads if Fredoka is slow to load. */
+  --font-wordmark: "Fredoka", "Baloo 2", "Trebuchet MS", var(--font-sans);
+
+  /* Weights — only 400/600/700 webfont files ship (data budget). 500 falls back to 400’s
+     file via synthesis-free mapping below; 800 is intentionally aliased to 700. */
+  --weight-regular: 400;
+  --weight-medium: 400;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --weight-extrabold: 700; /* wordmark / monogram — aliased, no extra font file */
+
+  /* Type scale (px) — Grab-dense. */
+  --text-display: 28px;   /* delivery code, earnings total, admin metric */
+  --text-h1: 24px;        /* screen title (bold) */
+  --text-h2: 20px;        /* section title, offer price emphasis */
+  --text-title: 18px;     /* empty-state title, card title */
+  --text-price: 20px;     /* offer card fare (tabular) */
+  --text-body-lg: 16px;   /* inputs, primary button labels */
+  --text-body: 14px;      /* body, card meta */
+  --text-caption: 12px;   /* hints, disclaimers */
+  --text-label: 12px;     /* field labels, pills, meta */
+  --text-micro: 10px;     /* RECOMMENDED marker overline */
+
+  /* Line heights (≈4px grid at the scale sizes) */
+  --leading-tight: 1.15;
+  --leading-snug: 1.35;
+  --leading-body: 1.45;
+
+  /* Tabular numerals — apply to any numeric run (fares/ETAs/ratings/counts). */
+  --numeric-tabular: tabular-nums; /* @kind other */
+}
+
+/* Utility: opt any element into lining tabular figures (money, timers, ratings). */
+.lynia-tabular {
+  font-variant-numeric: tabular-nums;
+}

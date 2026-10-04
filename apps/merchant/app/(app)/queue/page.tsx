@@ -3,30 +3,58 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { MerchantOrderResponse, PREP_CHIPS_MIN, SubstitutionProposalLine } from "@lynia/shared";
+import type {
+  MerchantOrderResponse,
+  PREP_CHIPS_MIN,
+  SubstitutionProposalLine,
+} from "@lynia/shared";
 import { Icon } from "../../components/icons";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
 import { Segmented } from "../../components/m/Segmented";
 import { NotLiveHome } from "../../components/branches/NotLiveHome";
+import { BookRiderCard, ClosedBody } from "../../components/m/ClosedBody";
 import { OrdersHeader, useOpenSwitch } from "../../components/m/OrdersHeader";
 import { useToast } from "../../components/m/Toast";
 import { KitchenConfirmTakeover } from "../../components/queue/KitchenConfirmTakeover";
 import { NewOrderTakeover } from "../../components/queue/NewOrderTakeover";
 import { RetryableError } from "../../components/RetryableError";
 import { showNotLiveHome, useBranches } from "../../lib/branches";
-import { ApiError, getMyMerchant, type MerchantProfile } from "../../lib/api-client";
+import {
+  ApiError,
+  getMyMerchant,
+  type MerchantProfile,
+} from "../../lib/api-client";
 import { homePath } from "../../lib/booking";
 import { primeBusiness } from "../../lib/business";
 import { alarmOrders } from "../../lib/alarm";
 import { needsKitchenConfirm } from "../../lib/order-groups";
-import { acceptOrder, cancelPreparing, confirmKitchen, listScheduledOrders, proposeSubstitution, rejectOrder } from "../../lib/orders-api";
-import { hm, homeSections, itemsLine, money, orderLabel, riderFirstName, rowSub, slotLabel } from "../../lib/orders-view";
+import {
+  acceptOrder,
+  cancelPreparing,
+  confirmKitchen,
+  listScheduledOrders,
+  proposeSubstitution,
+  rejectOrder,
+} from "../../lib/orders-api";
+import {
+  hm,
+  homeSections,
+  itemsLine,
+  money,
+  orderLabel,
+  riderFirstName,
+  rowSub,
+  slotLabel,
+} from "../../lib/orders-view";
 import { countOf, ORDER_FLOW as OF, vocabulary } from "../../lib/vocabulary";
 import { useNow } from "../../lib/use-now";
 import { useQueuePoll } from "../../lib/use-queue-poll";
 
-type LoadState = { status: "loading" } | { status: "ready"; merchant: MerchantProfile } | { status: "error"; message: string };
+type LoadState =
+  | { status: "loading" }
+  | { status: "ready"; merchant: MerchantProfile }
+  | { status: "error"; message: string };
 type Segment = "new" | "cooking" | "ready" | "scheduled";
 
 /**
@@ -38,7 +66,8 @@ type Segment = "new" | "cooking" | "ready" | "scheduled";
  * whole screen until it is answered, and the alarm rings for as long as one is waiting.
  */
 export default function QueuePage() {
-  const { alarm, actionsDisabled, reachability, signOut } = useKitchenConnection();
+  const { alarm, actionsDisabled, reachability, signOut } =
+    useKitchenConnection();
   const router = useRouter();
   const toast = useToast();
   const [state, setState] = useState<LoadState>({ status: "loading" });
@@ -60,8 +89,16 @@ export default function QueuePage() {
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        if (err instanceof ApiError && err.status === 403) router.replace("/onboarding");
-        else setState({ status: "error", message: err instanceof ApiError ? err.message : "Something went wrong loading your orders." });
+        if (err instanceof ApiError && err.status === 403)
+          router.replace("/onboarding");
+        else
+          setState({
+            status: "error",
+            message:
+              err instanceof ApiError
+                ? err.message
+                : "Something went wrong loading your orders.",
+          });
       });
     return () => {
       cancelled = true;
@@ -78,7 +115,9 @@ export default function QueuePage() {
   }, [reachability.reachable]);
 
   const ready = state.status === "ready";
-  const open = useOpenSwitch(ready ? state.merchant : null, (merchant) => setState({ status: "ready", merchant }));
+  const open = useOpenSwitch(ready ? state.merchant : null, (merchant) =>
+    setState({ status: "ready", merchant }),
+  );
   const { orders, loaded, error: queueError, refetch } = useQueuePoll(ready);
   const branches = useBranches(ready && state.merchant.myRole === "owner");
 
@@ -121,8 +160,16 @@ export default function QueuePage() {
   const sections = useMemo(() => homeSections(orders), [orders]);
   const scheduled = useScheduled(ready, orders.length);
   const handleAccept = useCallback(
-    async (orderId: string, prepMinutes: (typeof PREP_CHIPS_MIN)[number], unavailableDishIds: string[]) => {
-      await acceptOrder(orderId, { prepMinutes, unavailableDishIds: unavailableDishIds.length > 0 ? unavailableDishIds : undefined });
+    async (
+      orderId: string,
+      prepMinutes: (typeof PREP_CHIPS_MIN)[number],
+      unavailableDishIds: string[],
+    ) => {
+      await acceptOrder(orderId, {
+        prepMinutes,
+        unavailableDishIds:
+          unavailableDishIds.length > 0 ? unavailableDishIds : undefined,
+      });
       await refetch();
     },
     [refetch],
@@ -150,7 +197,11 @@ export default function QueuePage() {
     [refetch],
   );
   const handlePropose = useCallback(
-    async (orderId: string, prepMinutes: (typeof PREP_CHIPS_MIN)[number], lines: SubstitutionProposalLine[]) => {
+    async (
+      orderId: string,
+      prepMinutes: (typeof PREP_CHIPS_MIN)[number],
+      lines: SubstitutionProposalLine[],
+    ) => {
       await proposeSubstitution(orderId, { lines, prepMinutes });
       await refetch();
     },
@@ -175,7 +226,11 @@ export default function QueuePage() {
     return (
       <Kitchen active="queue">
         <div className="m-bd" style={{ paddingTop: 24 }}>
-          {state.status === "loading" ? <div className="m-hint">Loading your orders…</div> : <RetryableError message={state.message} onRetry={loadMerchant} />}
+          {state.status === "loading" ? (
+            <div className="m-hint">Loading your orders…</div>
+          ) : (
+            <RetryableError message={state.message} onRetry={loadMerchant} />
+          )}
         </div>
       </Kitchen>
     );
@@ -190,39 +245,61 @@ export default function QueuePage() {
 
   return (
     <Kitchen active="queue" backfillCount={backfillCount}>
-      <OrdersHeader merchant={state.merchant} open={open} disabled={actionsDisabled} refreshKey={orders.length}>
+      <OrdersHeader
+        merchant={state.merchant}
+        open={open}
+        disabled={actionsDisabled}
+        refreshKey={orders.length}
+      >
         {/* A live shop takes customer orders here; its rider bookings (D-48 D1) stay one tap away. */}
         {state.merchant.businessType === "shop" && (
-          <Link href="/deliveries" className="m-hdbtn">
-            <Icon name="bike" size={20} /> Book a rider
-          </Link>
+          <BookRiderCard href="/deliveries" />
         )}
       </OrdersHeader>
 
       {notLive ? (
         <NotLiveHome businessType={state.merchant.businessType} />
       ) : closed ? (
-        <div className="m-bd" style={{ alignItems: "center", textAlign: "center", gap: 10, paddingTop: 48 }}>
-          <div style={{ width: 72, height: 72, borderRadius: "50%", background: "var(--surface)", display: "grid", placeItems: "center" }}>
-            <Icon name="power" size={30} color="var(--muted)" />
-          </div>
-          <b style={{ fontSize: 18 }}>You’re closed</b>
-          <button type="button" className="m-btn" style={{ width: "auto", padding: "0 28px", marginTop: 6 }} disabled={open.switching || actionsDisabled} onClick={() => void open.toggleOpen(true)}>
-            Open now
-          </button>
-          <button type="button" className="m-lnk" style={{ fontSize: 13 }} disabled={open.switching || actionsDisabled} onClick={() => void open.toggleOpen(true, true)}>
-            Open in busy mode (+10 min)
-          </button>
+        <ClosedBody
+          merchant={state.merchant}
+          open={open}
+          disabled={actionsDisabled}
+        >
           {/* Orders already in progress still need finishing while closed. */}
-          {!nothing && <OrderSections sections={sections} alongside="all" />}
-        </div>
+          {!nothing && (
+            <div className="m-bd">
+              <OrderSections sections={sections} alongside="all" />
+            </div>
+          )}
+        </ClosedBody>
       ) : (
         <div className="m-bd" style={{ paddingTop: 12 }}>
           {pollFailed && !loaded ? (
-            <RetryableError message={queueError.message} onRetry={() => void refetch()} />
+            <RetryableError
+              message={queueError.message}
+              onRetry={() => void refetch()}
+            />
           ) : nothing ? (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, textAlign: "center", paddingTop: 40 }}>
-              <div style={{ width: 72, height: 72, borderRadius: "50%", background: "var(--surface)", display: "grid", placeItems: "center" }}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 10,
+                textAlign: "center",
+                paddingTop: 40,
+              }}
+            >
+              <div
+                style={{
+                  width: 72,
+                  height: 72,
+                  borderRadius: "50%",
+                  background: "var(--surface)",
+                  display: "grid",
+                  placeItems: "center",
+                }}
+              >
                 <Icon name="inbox" size={30} color="var(--muted)" />
               </div>
               <b style={{ fontSize: 18 }}>No orders yet</b>
@@ -235,22 +312,57 @@ export default function QueuePage() {
                 onChange={setSegment}
                 options={[
                   { value: "new", label: "New", count: sections.new.length },
-                  { value: "cooking", label: v.making, count: sections.cooking.length },
-                  { value: "ready", label: "Ready", count: sections.ready.length },
-                  ...(scheduled && scheduled.length > 0 ? [{ value: "scheduled" as const, label: OF.segSched, count: scheduled.length }] : []),
+                  {
+                    value: "cooking",
+                    label: v.making,
+                    count: sections.cooking.length,
+                  },
+                  {
+                    value: "ready",
+                    label: "Ready",
+                    count: sections.ready.length,
+                  },
+                  ...(scheduled && scheduled.length > 0
+                    ? [
+                        {
+                          value: "scheduled" as const,
+                          label: OF.segSched,
+                          count: scheduled.length,
+                        },
+                      ]
+                    : []),
                 ]}
               />
-              {segment === "scheduled" && <ScheduledList orders={scheduled ?? []} v={v} />}
-              {segmentOrders.length === 0 && segment !== "scheduled" && <div className="m-hint" style={{ padding: "8px 0" }}>Nothing here</div>}
+              {segment === "scheduled" && (
+                <ScheduledList orders={scheduled ?? []} v={v} />
+              )}
+              {segmentOrders.length === 0 && segment !== "scheduled" && (
+                <div className="m-hint" style={{ padding: "8px 0" }}>
+                  Nothing here
+                </div>
+              )}
               {segmentOrders.map((o) =>
                 o.merchantPhase === "awaiting_accept" ? (
                   <NewOrderCard key={o.id} order={o} />
                 ) : needsKitchenConfirm(o) ? (
-                  <AutoAcceptedCard key={o.id} order={o} disabled={actionsDisabled} onConfirm={handleConfirmKitchen} />
+                  <AutoAcceptedCard
+                    key={o.id}
+                    order={o}
+                    disabled={actionsDisabled}
+                    onConfirm={handleConfirmKitchen}
+                  />
                 ) : null,
               )}
-              <Rows orders={segmentOrders.filter((o) => o.merchantPhase !== "awaiting_accept" && !needsKitchenConfirm(o))} />
-              {segment !== "scheduled" && <OrderSections sections={sections} alongside={segment} />}
+              <Rows
+                orders={segmentOrders.filter(
+                  (o) =>
+                    o.merchantPhase !== "awaiting_accept" &&
+                    !needsKitchenConfirm(o),
+                )}
+              />
+              {segment !== "scheduled" && (
+                <OrderSections sections={sections} alongside={segment} />
+              )}
             </>
           )}
         </div>
@@ -284,7 +396,10 @@ export default function QueuePage() {
 /** M7a: scheduled orders that haven't rung, polled beside the queue (null until the first read lands,
  *  or when the API has no Scheduled list). Re-read whenever the queue's size changes — a scheduled order
  *  ringing leaves this list for the queue. */
-function useScheduled(enabled: boolean, queueSize: number): MerchantOrderResponse[] | null {
+function useScheduled(
+  enabled: boolean,
+  queueSize: number,
+): MerchantOrderResponse[] | null {
   const [list, setList] = useState<MerchantOrderResponse[] | null>(null);
   useEffect(() => {
     if (!enabled) return;
@@ -307,15 +422,28 @@ function useScheduled(enabled: boolean, queueSize: number): MerchantOrderRespons
 
 /** M7a · the Scheduled segment: per order "#A1B2 · $15.00", the slot with a calendar, then "2 dishes ·
  *  Rings at 12:05 like a new order". Each opens its ticket (M7b). */
-function ScheduledList({ orders, v }: { orders: readonly MerchantOrderResponse[]; v: ReturnType<typeof vocabulary> }) {
+function ScheduledList({
+  orders,
+  v,
+}: {
+  orders: readonly MerchantOrderResponse[];
+  v: ReturnType<typeof vocabulary>;
+}) {
   const now = useNow(60_000);
   return (
     <>
       {orders.map((o) => {
-        const s = o.scheduledFor ? slotLabel(o.scheduledFor, new Date(now)) : null;
+        const s = o.scheduledFor
+          ? slotLabel(o.scheduledFor, new Date(now))
+          : null;
         const day = s ? s.day.charAt(0).toUpperCase() + s.day.slice(1) : "";
         return (
-          <Link key={o.id} href={`/queue/${o.id}`} className="m-card" style={{ gap: 6, color: "inherit", textDecoration: "none" }}>
+          <Link
+            key={o.id}
+            href={`/queue/${o.id}`}
+            className="m-card"
+            style={{ gap: 6, color: "inherit", textDecoration: "none" }}
+          >
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <b className="m-num" style={{ fontSize: 15, flex: 1 }}>
                 {orderLabel(o)}
@@ -323,13 +451,26 @@ function ScheduledList({ orders, v }: { orders: readonly MerchantOrderResponse[]
               <b className="m-num">{money(o.merchantGoodsTotal)}</b>
             </div>
             {s && (
-              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 13,
+                  fontWeight: 600,
+                }}
+              >
                 <Icon name="calendar" size={15} color="var(--accent-text)" />
                 {day} {s.slot}
               </div>
             )}
             <span className="m-hint" style={{ fontSize: 13 }}>
-              {[countOf(o.items.length, v), o.ringsAt ? OF.schedRing(hm(o.ringsAt)) : null].filter(Boolean).join(" · ")}
+              {[
+                countOf(o.items.length, v),
+                o.ringsAt ? OF.schedRing(hm(o.ringsAt)) : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </span>
           </Link>
         );
@@ -350,7 +491,9 @@ function NewOrderCard({ order }: { order: MerchantOrderResponse }) {
           {money(order.merchantGoodsTotal)}
         </b>
       </div>
-      <div style={{ fontSize: 13.5, color: "var(--muted)" }}>{itemsLine(order)}</div>
+      <div style={{ fontSize: 13.5, color: "var(--muted)" }}>
+        {itemsLine(order)}
+      </div>
       {/* The ringing takeover is already over this screen; the card is what's left beneath it. */}
       <Link href={`/queue/${order.id}`} className="m-btn m-sm">
         View &amp; accept
@@ -361,7 +504,15 @@ function NewOrderCard({ order }: { order: MerchantOrderResponse }) {
 
 /** Auto-accept: the new-order card for an order LyniaGo already accepted — the kitchen confirms it is
  *  making it, which is what lets a rider be sent. */
-function AutoAcceptedCard({ order, disabled, onConfirm }: { order: MerchantOrderResponse; disabled: boolean; onConfirm: (orderId: string) => Promise<void> }) {
+function AutoAcceptedCard({
+  order,
+  disabled,
+  onConfirm,
+}: {
+  order: MerchantOrderResponse;
+  disabled: boolean;
+  onConfirm: (orderId: string) => Promise<void>;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   async function confirm() {
@@ -370,7 +521,9 @@ function AutoAcceptedCard({ order, disabled, onConfirm }: { order: MerchantOrder
     try {
       await onConfirm(order.id);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "That didn’t work. Try again.");
+      setError(
+        err instanceof ApiError ? err.message : "That didn’t work. Try again.",
+      );
     } finally {
       setBusy(false);
     }
@@ -378,7 +531,16 @@ function AutoAcceptedCard({ order, disabled, onConfirm }: { order: MerchantOrder
   return (
     <div className="m-card" style={{ border: "2px solid var(--accent)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <Link href={`/queue/${order.id}`} className="m-num" style={{ fontSize: 15, fontWeight: 700, color: "inherit", textDecoration: "none" }}>
+        <Link
+          href={`/queue/${order.id}`}
+          className="m-num"
+          style={{
+            fontSize: 15,
+            fontWeight: 700,
+            color: "inherit",
+            textDecoration: "none",
+          }}
+        >
           {orderLabel(order)}
         </Link>
         <span className="m-pl m-wal">Accepted for you</span>
@@ -387,13 +549,20 @@ function AutoAcceptedCard({ order, disabled, onConfirm }: { order: MerchantOrder
           {money(order.merchantGoodsTotal)}
         </b>
       </div>
-      <div style={{ fontSize: 13.5, color: "var(--muted)" }}>{itemsLine(order)}</div>
+      <div style={{ fontSize: 13.5, color: "var(--muted)" }}>
+        {itemsLine(order)}
+      </div>
       {error && (
         <div className="m-alert" role="alert">
           {error}
         </div>
       )}
-      <button type="button" className="m-btn m-sm" disabled={disabled || busy} onClick={() => void confirm()}>
+      <button
+        type="button"
+        className="m-btn m-sm"
+        disabled={disabled || busy}
+        onClick={() => void confirm()}
+      >
         Got it, we’re making it
       </button>
     </div>
@@ -401,20 +570,33 @@ function AutoAcceptedCard({ order, disabled, onConfirm }: { order: MerchantOrder
 }
 
 /** "Waiting for rider" and "Out for delivery", under whichever segment is showing. */
-function OrderSections({ sections, alongside }: { sections: ReturnType<typeof homeSections>; alongside: Segment | "all" }) {
+function OrderSections({
+  sections,
+  alongside,
+}: {
+  sections: ReturnType<typeof homeSections>;
+  alongside: Segment | "all";
+}) {
   return (
     <>
-      {alongside === "all" && [...sections.new, ...sections.cooking].length > 0 && (
-        <>
-          <div className="m-sec" style={{ alignSelf: "stretch", textAlign: "left" }}>
-            In the kitchen
-          </div>
-          <Rows orders={[...sections.new, ...sections.cooking]} />
-        </>
-      )}
+      {alongside === "all" &&
+        [...sections.new, ...sections.cooking].length > 0 && (
+          <>
+            <div
+              className="m-sec"
+              style={{ alignSelf: "stretch", textAlign: "left" }}
+            >
+              In the kitchen
+            </div>
+            <Rows orders={[...sections.new, ...sections.cooking]} />
+          </>
+        )}
       {alongside !== "ready" && sections.ready.length > 0 && (
         <>
-          <div className="m-sec" style={{ alignSelf: "stretch", textAlign: "left" }}>
+          <div
+            className="m-sec"
+            style={{ alignSelf: "stretch", textAlign: "left" }}
+          >
             Waiting for rider
           </div>
           <Rows orders={sections.ready} />
@@ -422,7 +604,10 @@ function OrderSections({ sections, alongside }: { sections: ReturnType<typeof ho
       )}
       {sections.outForDelivery.length > 0 && (
         <>
-          <div className="m-sec" style={{ alignSelf: "stretch", textAlign: "left" }}>
+          <div
+            className="m-sec"
+            style={{ alignSelf: "stretch", textAlign: "left" }}
+          >
             Out for delivery
           </div>
           <Rows orders={sections.outForDelivery} />
@@ -439,9 +624,19 @@ function Rows({ orders }: { orders: readonly MerchantOrderResponse[] }) {
     <div style={{ marginTop: -6, alignSelf: "stretch", textAlign: "left" }}>
       {orders.map((o) => {
         const rider = riderFirstName(o);
-        const out = o.status === "picked_up" || o.status === "en_route_dropoff" || o.status === "delivered" || o.status === "undelivered" || o.status === "completed";
-        const title = out && rider ? `${orderLabel(o)} · ${rider}` : `${orderLabel(o)} · ${itemsLine(o)}`;
-        const dueMin = o.cashDueAt ? Math.round((new Date(o.cashDueAt).getTime() - now) / 60_000) : null;
+        const out =
+          o.status === "picked_up" ||
+          o.status === "en_route_dropoff" ||
+          o.status === "delivered" ||
+          o.status === "undelivered" ||
+          o.status === "completed";
+        const title =
+          out && rider
+            ? `${orderLabel(o)} · ${rider}`
+            : `${orderLabel(o)} · ${itemsLine(o)}`;
+        const dueMin = o.cashDueAt
+          ? Math.round((new Date(o.cashDueAt).getTime() - now) / 60_000)
+          : null;
         return (
           <Link key={o.id} href={`/queue/${o.id}`} className="m-li">
             <div className="m-t">
@@ -449,7 +644,9 @@ function Rows({ orders }: { orders: readonly MerchantOrderResponse[] }) {
               <span>{rowSub(o)}</span>
             </div>
             {dueMin !== null ? (
-              <span className={`m-pl m-num ${dueMin < 0 ? "m-red" : "m-gold"}`}>{dueMin < 0 ? "Overdue" : `${dueMin} min`}</span>
+              <span className={`m-pl m-num ${dueMin < 0 ? "m-red" : "m-gold"}`}>
+                {dueMin < 0 ? "Overdue" : `${dueMin} min`}
+              </span>
             ) : (
               !out && (
                 <b className="m-num" style={{ fontSize: 14.5 }}>
@@ -466,7 +663,10 @@ function Rows({ orders }: { orders: readonly MerchantOrderResponse[] }) {
 }
 
 /** One-line toasts for the moments the old full-screen takeovers used to announce. */
-function useOrderToasts(orders: readonly MerchantOrderResponse[], toast: (m: string) => void) {
+function useOrderToasts(
+  orders: readonly MerchantOrderResponse[],
+  toast: (m: string) => void,
+) {
   const prev = useRef<Map<string, MerchantOrderResponse> | null>(null);
   useEffect(() => {
     const before = prev.current;
@@ -475,18 +675,24 @@ function useOrderToasts(orders: readonly MerchantOrderResponse[], toast: (m: str
     for (const o of orders) {
       const was = before.get(o.id);
       if (!was) continue;
-      if (!was.riderId && o.riderId) toast(`Rider secured · ${riderFirstName(o) ?? "on the way"}`);
-      else if (was.status !== "picked_up" && o.status === "picked_up") toast(`Handed over · ${orderLabel(o)}`);
+      if (!was.riderId && o.riderId)
+        toast(`Rider secured · ${riderFirstName(o) ?? "on the way"}`);
+      else if (was.status !== "picked_up" && o.status === "picked_up")
+        toast(`Handed over · ${orderLabel(o)}`);
     }
   }, [orders, toast]);
 }
 
-function useBackfillCount(orders: readonly MerchantOrderResponse[], reachable: boolean): number {
+function useBackfillCount(
+  orders: readonly MerchantOrderResponse[],
+  reachable: boolean,
+): number {
   const preOutageIds = useRef<Set<string> | null>(null);
   const wasReachable = useRef(true);
   const [count, setCount] = useState(0);
   useEffect(() => {
-    if (wasReachable.current && !reachable) preOutageIds.current = new Set(orders.map((o) => o.id));
+    if (wasReachable.current && !reachable)
+      preOutageIds.current = new Set(orders.map((o) => o.id));
     if (!wasReachable.current && reachable) {
       const before = preOutageIds.current;
       setCount(before ? orders.filter((o) => !before.has(o.id)).length : 0);

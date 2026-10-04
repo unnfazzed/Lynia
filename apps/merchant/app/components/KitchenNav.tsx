@@ -16,10 +16,10 @@ interface TabItem {
 }
 
 /**
- * The bottom tab bar (merchant-mobile README, global changes 2–3): one 4-tab bar for both kinds of
- * business. A restaurant gets Orders · Menu · Money · Account; a shop gets Orders · **Items** · Money
- * · Account, and its Orders home is Deliveries until shops take customer orders. Staff don't see Money
- * (README C4: "Staff should not see Money or Team").
+ * The bottom tab bar (Merchant v2, packages/design/handoff/merchant-v2, ledger D-77): one 4-tab bar for
+ * every business. A restaurant gets Orders · Menu · Money · Account; a shop or pharmacy gets Orders ·
+ * **Inventory** · Money · Account, and its Orders home is Deliveries until shops take customer orders.
+ * Staff don't see Money (merchant-mobile README C4: "Staff should not see Money or Team").
  *
  * Restaurants are the default until the business is known, so a kitchen never sees its tabs flicker.
  */
@@ -30,7 +30,7 @@ export function tabItems(business: (Pick<MerchantProfileResponse, "businessType"
     // Order flow v2 (ledger D-59): a shop live to customers takes its orders on /queue.
     { id: "orders", label: "Orders", href: shop && !business?.pilotEnabled ? "/deliveries" : "/queue", icon: "inbox" },
     shop
-      ? { id: "catalog", label: "Items", href: "/menu", icon: "package" }
+      ? { id: "catalog", label: "Inventory", href: "/menu", icon: "package" }
       : { id: "catalog", label: "Menu", href: "/menu", icon: "utensils" },
   ];
   if (!staff) items.push({ id: "money", label: "Money", href: "/statement", icon: "wallet" });
@@ -44,7 +44,9 @@ export function KitchenNav({ active }: { active: MerchantTab }) {
     <nav className="m-tb" aria-label="Sections">
       {tabItems(business).map((item) => (
         <Link key={item.id} href={item.href} className="m-tab" aria-current={item.id === active ? "page" : undefined}>
-          <Icon name={item.icon} size={21} />
+          <i>
+            <Icon name={item.icon} size={20} />
+          </i>
           {item.label}
         </Link>
       ))}

@@ -2014,6 +2014,9 @@ export const MerchantEndOfDaySummaryResponse = z
     orders: z.number().int().optional(),
     sales: z.number().optional(),
     cashOverdue: z.number().optional(),
+    /** Merchant v2 (D-77): all the cash riders still owe back — delivered, neither counted nor closed —
+     *  overdue or not. The Orders top card's "Cash due". */
+    cashDue: z.number().optional(),
     overdue: z
       .array(
         z.object({
