@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   Logger,
   NotFoundException,
   ServiceUnavailableException,
@@ -39,6 +40,24 @@ const FORCED_KYC_REPLACEMENT_WINDOW_MS = 60 * 60 * 1000;
 export { canGoOnline, onlineRefusalReason, type OnlineRefusal };
 
 type Kyc = "pending" | "verified" | "failed" | "expired";
+
+/**
+ * D-75: a hand approval refuses, rather than verifying the rider with nothing adopted, when the number
+ * their ID check verified is already on another live account. Structured like `id_in_use` so the admin
+ * console shows the message as is.
+ */
+const verifiedIdInUse = () =>
+  new ConflictException({
+    reason: "verified_id_in_use",
+    message: "Can't approve: the national ID from this rider's ID check is already on another live account. Resolve that account first.",
+  });
+
+/** D-75: the rider's ID facts moved while the approval ran, so the reviewer hasn't seen what it would decide. */
+const reviewStale = () =>
+  new ConflictException({
+    reason: "review_stale",
+    message: "This rider's ID details changed while you were approving. Reload the page and review again.",
+  });
 
 @Injectable()
 export class RiderService {
@@ -89,6 +108,70 @@ export class RiderService {
     return db.profile.count({
       where: { idNumberHash, id: { not: profileId }, NOT: { phone: { startsWith: "erased:" } } },
     });
+  }
+
+  /**
+   * A national ID's advisory lock: `pg_advisory_xact_lock(hashtext(<HMAC hash>))`, the key
+   * `completeProfile` and `auth.updateProfile` take before they claim a number. Every writer of one
+   * number queues on it, so a collision count taken under it can't be raced: those routes, the KYC
+   * webhook and a hand approval (D-75). Take it before any row lock, as they all do.
+   */
+  private async lockNationalId(tx: Prisma.TransactionClient, idNumberHash: string): Promise<void> {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${idNumberHash}))`;
+  }
+
+  /**
+   * IR26-04 / D-75: how many OTHER accounts already carry this vendor-verified number, either as the
+   * national ID on their profile (typed, or adopted from a check) or as another rider's vendor-verified
+   * document. `any` counts erased tombstones too (DS15-02b keeps both hashes): the webhook holds every
+   * such match for a human. `live` leaves them out. It is the one-ID-one-account test a hand approval
+   * applies: there the human is deciding, and a tombstone match is a returning user they may approve
+   * (see liveDuplicateIdAccountCount).
+   */
+  private async verifiedIdCollisionCount(
+    db: Prisma.TransactionClient,
+    profileId: string,
+    hash: string,
+    scope: "any" | "live",
+  ): Promise<number> {
+    const live = { NOT: { phone: { startsWith: "erased:" } } };
+    const [profileHits, riderHits] = await Promise.all([
+      db.profile.count({ where: { idNumberHash: hash, id: { not: profileId }, ...(scope === "live" ? live : {}) } }),
+      db.rider.count({ where: { verifiedIdHash: hash, profileId: { not: profileId }, ...(scope === "live" ? { profile: live } : {}) } }),
+    ]);
+    return profileHits + riderHits;
+  }
+
+  /**
+   * D-75: make the vendor-verified number the account's national ID when it has none. Shared by the two
+   * decisions that can verify a rider: the KYC webhook (`applyKycResult`) and a hand approval
+   * (`adminSetKyc`). It uses the same normalisation, AES-GCM encryption and HMAC hash as a typed ID.
+   *
+   * The write is a CAS on an EMPTY slot (`idNumberHash: null`), so it never overwrites an ID that landed
+   * meanwhile. A lost CAS re-reads the slot:
+   *  - `adopted`: the slot was empty and now holds the number;
+   *  - `same`: an ID landed meanwhile, and it is this number;
+   *  - `different`: an ID landed meanwhile, and it is another number. The webhook holds that as a
+   *    mismatch; an approval refuses it.
+   *
+   * The caller must already hold the number's advisory lock (lockNationalId, taken before its row lock)
+   * and have run the collision count in the same transaction. The live-ID unique index (IR26-05) stays
+   * the backstop for a writer that skips the lock: its P2002 aborts the caller's transaction, and each
+   * caller maps it.
+   */
+  private async adoptVerifiedId(
+    tx: Prisma.TransactionClient,
+    profileId: string,
+    verifiedNumber: string,
+  ): Promise<"adopted" | "same" | "different"> {
+    const idNumberHash = this.pii.hashId(verifiedNumber);
+    const adopted = await tx.profile.updateMany({
+      where: { id: profileId, idNumberHash: null },
+      data: { idNumber: this.pii.encryptId(normalizeNationalId(verifiedNumber)), idNumberHash },
+    });
+    if (adopted.count > 0) return "adopted";
+    const onFile = await tx.profile.findUnique({ where: { id: profileId }, select: { idNumberHash: true } });
+    return onFile?.idNumberHash === idNumberHash ? "same" : "different";
   }
 
   /** Low-friction signup completion: name + national ID (CONCEPT §5d). */
@@ -723,7 +806,7 @@ export class RiderService {
       // mid-check) instead of racing it; and like those routes it is taken before any row lock, so two
       // claimers of one number queue on the lock rather than on each other's rows.
       const vendorHash = status === "verified" && verifiedDocNumber ? this.pii.hashId(verifiedDocNumber) : null;
-      if (vendorHash) await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${vendorHash}))`;
+      if (vendorHash) await this.lockNationalId(tx, vendorHash);
       // DOC-16-05: a `verified` outcome for a rider already flagged `duplicateIdFlag` (A-04 — their
       // national ID collides with another account, e.g. a banned/suspended one under a new SIM) must NOT
       // auto-verify — that's exactly the auto-mode gap that let a ban-evader re-registering with the same
@@ -780,11 +863,7 @@ export class RiderService {
       let docCollision = false;
       if (docHash && current) {
         docMismatch = idOnFile !== null && idOnFile !== docHash;
-        const [profileHits, riderHits] = await Promise.all([
-          tx.profile.count({ where: { idNumberHash: docHash, id: { not: current.profileId } } }),
-          tx.rider.count({ where: { verifiedIdHash: docHash, profileId: { not: current.profileId } } }),
-        ]);
-        docCollision = profileHits > 0 || riderHits > 0;
+        docCollision = (await this.verifiedIdCollisionCount(tx, current.profileId, docHash, "any")) > 0;
         if (docMismatch || docCollision) {
           this.logger.warn(
             `KYC ${kycRef}: vendor-verified document ${docMismatch ? "does not match the national ID on file" : ""}${docMismatch && docCollision ? " and " : ""}${docCollision ? "collides with another account" : ""} — held for review (IR26-04)`,
@@ -815,26 +894,20 @@ export class RiderService {
       // predicate as the CAS `where` below, read under the row lock, so it can't change before that
       // write) — and only when nothing collides: `docCollision` is false, so no other profile, live or
       // erased, carries this number and the live-ID unique index can't fire (the advisory lock above
-      // keeps it that way until commit). Same normalisation, encryption and hash as a typed ID.
-      // The CAS on `idNumberHash: null` never overwrites an ID that landed meanwhile (the rider adding
-      // one in Account mid-check takes a different number's lock); re-read it, and a number that is not
-      // the document's is a mismatch, held like any other.
+      // keeps it that way until commit). The write itself is adoptVerifiedId, shared with a hand approval.
+      // Its CAS never overwrites an ID that landed meanwhile (the rider adding one in Account mid-check
+      // takes a different number's lock); a number that is not the document's is a mismatch, held like
+      // any other.
       const decisionApplies = !!current && (current.kycResolvedAt == null || current.kycResolvedAt < eventAt);
-      if (needsAdoption && !holdForReview && decisionApplies && current && docHash && verifiedDocNumber) {
+      if (needsAdoption && !holdForReview && decisionApplies && current && verifiedDocNumber) {
         adoption.attempted = true;
-        const adopted = await tx.profile.updateMany({
-          where: { id: current.profileId, idNumberHash: null },
-          data: { idNumber: this.pii.encryptId(normalizeNationalId(verifiedDocNumber)), idNumberHash: docHash },
-        });
-        if (adopted.count > 0) {
+        const adopted = await this.adoptVerifiedId(tx, current.profileId, verifiedDocNumber);
+        if (adopted === "adopted") {
           this.logger.log(`KYC ${kycRef}: no national ID on file — adopted the vendor-verified number (D-75)`);
-        } else {
-          const onFile = await tx.profile.findUnique({ where: { id: current.profileId }, select: { idNumberHash: true } });
-          if (onFile?.idNumberHash !== docHash) {
-            docMismatch = true;
-            holdForReview = true;
-            this.logger.warn(`KYC ${kycRef}: a national ID landed on the account during the check and does not match the document — held for review (D-75)`);
-          }
+        } else if (adopted === "different") {
+          docMismatch = true;
+          holdForReview = true;
+          this.logger.warn(`KYC ${kycRef}: a national ID landed on the account during the check and does not match the document — held for review (D-75)`);
         }
       }
       const res = await tx.rider.updateMany({
@@ -983,9 +1056,94 @@ export class RiderService {
   }
 
   /**
+   * D-75: before a hand approval takes the rider row lock, find the number it may adopt (the account has
+   * no national ID and the ID check verified one) and take that number's advisory lock. The approval then
+   * queues behind the number's other claimers in the order they all lock. Returns the locked hash, or
+   * null when there is nothing to adopt and nothing was locked. This read takes no lock;
+   * settleNationalIdOnApproval re-reads under the row lock and refuses when the number moved.
+   */
+  private async lockIdForApproval(tx: Prisma.TransactionClient, profileId: string): Promise<string | null> {
+    const found = await tx.rider.findUnique({
+      where: { profileId },
+      select: { verifiedIdHash: true, profile: { select: { idNumberHash: true } } },
+    });
+    const hash = found && !found.profile?.idNumberHash ? (found.verifiedIdHash ?? null) : null;
+    if (hash) await this.lockNationalId(tx, hash);
+    return hash;
+  }
+
+  /**
+   * D-75 for a hand approval (an admin's, and so every approval in manual mode): settle the account's
+   * national ID as a verified webhook does, before the approval writes. Returns what the approval leaves
+   * on file:
+   *  - `on_file`: the account already had a national ID. Nothing changes, exactly as before D-75; the
+   *    review screen flags one that disagrees with the check (IR26-04);
+   *  - `adopted`: it had none, and the number the ID check verified is now its national ID. The webhook's
+   *    guards apply: the number's advisory lock, the collision count on both hash axes, the CAS on an
+   *    empty slot, and the unique-index backstop (mapped by adminSetKyc);
+   *  - `missing`: it had none, and there is no vendor number to adopt (manual mode, a decision that
+   *    carried none, or a number since scrubbed). The approval goes ahead, as the webhook's fail-open
+   *    does, and its audit row is flagged.
+   *
+   * It throws a 409 the console shows, instead of approving with nothing adopted:
+   *  - `verified_id_in_use` when the number is on another LIVE account. An erased tombstone does not
+   *    refuse: the webhook holds such a match precisely so that a human can approve a returning user, and
+   *    this is that human (liveDuplicateIdAccountCount draws the same line);
+   *  - `review_stale` when the ID facts moved during the approval: the number is not the one locked
+   *    before the row lock, or a different national ID landed on the account.
+   */
+  private async settleNationalIdOnApproval(
+    tx: Prisma.TransactionClient,
+    rider: {
+      profileId: string;
+      verifiedIdHash: string | null;
+      verifiedIdNumber: string | null;
+      profile: { idNumberHash: string | null } | null;
+    },
+    lockedIdHash: string | null,
+    adoption: { attempted: boolean },
+  ): Promise<{ outcome: "on_file" | "missing" } | { outcome: "adopted"; duplicateIdFlag: boolean }> {
+    const onFile = rider.profile?.idNumberHash ?? null;
+    if (onFile) {
+      // An ID that landed after the read that took the lock, and is not the number locked, is something
+      // the reviewer hasn't seen: an IR26-04 mismatch.
+      if (lockedIdHash && onFile !== lockedIdHash) throw reviewStale();
+      return { outcome: "on_file" };
+    }
+    const hash = rider.verifiedIdHash ?? null;
+    if (!hash) return { outcome: "missing" };
+    if (hash !== lockedIdHash) throw reviewStale();
+    if ((await this.verifiedIdCollisionCount(tx, rider.profileId, hash, "live")) > 0) {
+      this.logger.warn(`Rider ${rider.profileId}: approval refused — the vendor-verified number is on another live account (D-75)`);
+      throw verifiedIdInUse();
+    }
+    // Erasure scrubs the encrypted number and keeps its hash (DS15-02b), and a decision from before D-70
+    // stored only the hash. Either way there is nothing to write, so the account stays without an ID.
+    const number = this.pii.decryptId(rider.verifiedIdNumber);
+    if (!number) return { outcome: "missing" };
+    // One decision writes the number and its hash together. Never adopt a number other than the one just
+    // locked and counted.
+    if (this.pii.hashId(number) !== hash) {
+      throw new InternalServerErrorException("The ID check's stored number doesn't match its fingerprint. Approval stopped; contact engineering.");
+    }
+    adoption.attempted = true;
+    const adopted = await this.adoptVerifiedId(tx, rider.profileId, number);
+    if (adopted === "different") throw reviewStale();
+    if (adopted === "same") return { outcome: "on_file" };
+    this.logger.log(`Rider ${rider.profileId}: no national ID on file — the approval adopted the vendor-verified number (D-75)`);
+    // IR26-03 parity: an ID write recomputes the A-04 reviewer flag. Only an erased tombstone can still
+    // carry this number; a live one was refused above.
+    const others = await tx.profile.count({ where: { idNumberHash: hash, id: { not: rider.profileId } } });
+    return { outcome: "adopted", duplicateIdFlag: others > 0 };
+  }
+
+  /**
    * Admin KYC decision write-back (A-02 state machine) + manual-review backstop (T7).
    *
-   * - **approve** (`verified`) → rider can go online; clear any prior decline reason.
+   * - **approve** (`verified`) → rider can go online; clear any prior decline reason. D-75: an account
+   *   with no national ID adopts the number its ID check verified, as a verified webhook does (a 409 when
+   *   that number is on another live account), and an approval with no number to adopt is audit-flagged
+   *   `verified_id_missing`. See settleNationalIdOnApproval.
    * - **decline** (`failed`) → record the `reasonCode` (surfaced to the rider app + the audit log) and
    *   increment `kycAttempts`. The second decline pushes the counter to >= 2, which locks resubmission
    *   in `retryKyc` (one resubmit allowed → then support).
@@ -1016,7 +1174,14 @@ export class RiderService {
             ? "rider.kyc_expire"
             : "rider.kyc_reset";
 
+    // D-75: an approval may write the profile (it adopts the vendor-verified number). The live-ID unique
+    // index can still refuse that write; this records that it was attempted, so only THAT P2002 becomes
+    // the operator-facing 409 below.
+    const adoption = { attempted: false };
     const decision = await this.prisma.$transaction(async (tx) => {
+      // D-75: the number an approval may adopt is locked like every other claimer of it: its advisory
+      // lock is taken before the row lock below, the order the webhook and the ID-writing routes use.
+      const lockedIdHash = status === "verified" ? await this.lockIdForApproval(tx, profileId) : null;
       // Row-lock the rider before the read (mirrors order-lifecycle.service's lockRiderRow). The
       // findUnique below takes no lock on its own, so a concurrent vendor-webhook decline
       // (applyKycResult, which bumps kycAttempts) landing between this read and the update would let one
@@ -1025,9 +1190,21 @@ export class RiderService {
       await tx.$executeRaw`SELECT 1 FROM riders WHERE profile_id = ${profileId}::uuid FOR UPDATE`;
       const rider = await tx.rider.findUnique({
         where: { profileId },
-        select: { profileId: true, kycAttempts: true, kycStatus: true, kycResolvedAt: true },
+        select: {
+          profileId: true,
+          kycAttempts: true,
+          kycStatus: true,
+          kycResolvedAt: true,
+          // D-75: what an approval settles the national ID from.
+          verifiedIdHash: true,
+          verifiedIdNumber: true,
+          profile: { select: { idNumberHash: true } },
+        },
       });
       if (!rider) throw new NotFoundException("Rider not found");
+      // D-75: an approval settles the national ID first (adopts, or refuses with a 409). Every other
+      // decision leaves the profile alone.
+      const nationalId = status === "verified" ? await this.settleNationalIdOnApproval(tx, rider, lockedIdHash, adoption) : null;
 
       let result: { profileId: string; kycStatus: Kyc; kycAttempts: number; locked: boolean };
       if (status === "failed") {
@@ -1090,6 +1267,8 @@ export class RiderService {
             // rider can no longer bid (onlineRefusalReason gates on verified), so pull them offline in the
             // same write. A verified APPROVE is the one status that keeps them online-eligible.
             ...(status === "verified" ? {} : { isOnline: false }),
+            // D-75 (IR26-03 parity): an adopted ID recomputes the A-04 reviewer flag, as every ID write does.
+            ...(nationalId?.outcome === "adopted" ? { duplicateIdFlag: nationalId.duplicateIdFlag } : {}),
           },
         });
         const nextAttempts = status === "expired" ? 0 : rider.kycAttempts;
@@ -1099,9 +1278,22 @@ export class RiderService {
       // Same transaction as the decision — never one without the other. `actor` is absent only in older
       // callers/tests; skip the row then rather than attribute the action to no one.
       if (actor) {
-        await tx.auditLog.create({ data: auditData(actor, action, profileId, reasonCode ?? null, note ?? null) });
+        // D-75: an approval that leaves the account with no national ID is flagged `verified_id_missing`,
+        // exactly as the webhook's is, so ops can follow up every rider verified without one.
+        const auditReason = reasonCode ?? (nationalId?.outcome === "missing" ? "verified_id_missing" : null);
+        await tx.auditLog.create({ data: auditData(actor, action, profileId, auditReason, note ?? null) });
       }
       return result;
+    }).catch((err: unknown) => {
+      // IR26-05: the live-ID unique index refusing the adoption (a writer that skipped the advisory lock
+      // claimed the number between the count and the write) rolls the whole approval back, and the
+      // operator gets the collision count's answer. Anything else, including a P2002 raised before the
+      // adoption, propagates unchanged.
+      if (adoption.attempted && err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        this.logger.warn(`Rider ${profileId}: approval refused — the live-ID unique index rejected the vendor-verified number (D-75)`);
+        throw verifiedIdInUse();
+      }
+      throw err;
     });
     // Class-B eviction: any non-verified decision pulled the rider offline above (isOnline:false); evict
     // them from the board rooms + geo index through the standing-demotion funnel too. Best-effort,

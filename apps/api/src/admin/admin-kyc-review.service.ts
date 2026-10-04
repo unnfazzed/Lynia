@@ -39,6 +39,7 @@ export class AdminKycReviewService {
         idVerified: true,
         duplicateIdFlag: true,
         verifiedIdHash: true,
+        verifiedIdNumber: true,
         updatedAt: true,
         photoUrl: true,
         profile: { select: { firstName: true, lastName: true, phone: true, idNumber: true, idNumberHash: true } },
@@ -64,32 +65,39 @@ export class AdminKycReviewService {
     // showed the real document collides through `verifiedIdHash` where the typed hashes disagree.
     // Phones are masked (A-03) — the reviewer matches on the ID, not the phone.
     const idHashes = [...new Set([rider.profile.idNumberHash, rider.verifiedIdHash].filter((h): h is string => !!h))];
-    const duplicateIdAccounts = idHashes.length
-      ? (
-          await this.prisma.profile.findMany({
-            where: {
-              id: { not: rider.profileId },
-              OR: [{ idNumberHash: { in: idHashes } }, { rider: { verifiedIdHash: { in: idHashes } } }],
-            },
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              phone: true,
-              role: true,
-              rider: { select: { kycStatus: true, accountStatus: true } },
-            },
-            orderBy: { createdAt: "asc" },
-          })
-        ).map((p) => ({
-          id: p.id,
-          name: `${p.firstName} ${p.lastName}`.trim(),
-          phone: maskPhone(p.phone),
-          role: p.role,
-          kycStatus: p.rider?.kycStatus ?? null,
-          accountStatus: p.rider?.accountStatus ?? null,
-        }))
+    const duplicates = idHashes.length
+      ? await this.prisma.profile.findMany({
+          where: {
+            id: { not: rider.profileId },
+            OR: [{ idNumberHash: { in: idHashes } }, { rider: { verifiedIdHash: { in: idHashes } } }],
+          },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+            role: true,
+            rider: { select: { kycStatus: true, accountStatus: true } },
+          },
+          orderBy: { createdAt: "asc" },
+        })
       : [];
+    const duplicateIdAccounts = duplicates.map((p) => ({
+      id: p.id,
+      name: `${p.firstName} ${p.lastName}`.trim(),
+      phone: maskPhone(p.phone),
+      role: p.role,
+      kycStatus: p.rider?.kycStatus ?? null,
+      accountStatus: p.rider?.accountStatus ?? null,
+    }));
+
+    // D-75: a rider can reach review with no national ID on file. New riders type none; the ID check
+    // supplies it, and an approval adopts the number it verified (RiderService.settleNationalIdOnApproval).
+    // The reviewer sees all of that before approving. With no ID on file, the duplicate set above is
+    // exactly the accounts carrying the vendor-verified number; any LIVE one among them (not an erased:<id>
+    // tombstone) is what makes the approval refuse.
+    const idOnFile = !!rider.profile.idNumberHash;
+    const verifiedIdInUse = !idOnFile && !!rider.verifiedIdHash && duplicates.some((p) => !p.phone.startsWith("erased:"));
 
     // kycAttempts counts declines. The current attempt number is declines + 1 (1 on first review, 2 on
     // the single allowed resubmit). >= 2 declines = locked → support, no further attempts.
@@ -121,6 +129,13 @@ export class AdminKycReviewService {
       // persisted yet, or no typed ID to compare against), so the console can render tri-state honestly.
       verifiedIdMismatch:
         rider.verifiedIdHash && rider.profile.idNumberHash ? rider.verifiedIdHash !== rider.profile.idNumberHash : null,
+      // D-75: false when the account has no national ID on file.
+      idOnFile,
+      // D-75: the number the ID check verified (D-70 stores it encrypted), decrypted for the reviewer like
+      // idNumber above; null when none was stored. With no ID on file, approving adopts it.
+      verifiedIdNumber: this.pii.decryptId(rider.verifiedIdNumber),
+      // D-75: approving is refused (409 verified_id_in_use) because that number is on another live account.
+      verifiedIdInUse,
     };
   }
 }

@@ -3,16 +3,27 @@
 import { revalidatePath } from "next/cache";
 import { adminPostResult, describeAdminPostFailure } from "../lib/api";
 
+/**
+ * A KYC write's outcome. The failure is RETURNED, not thrown: Next redacts a server action's thrown
+ * message in production, and a refused decision has to reach the operator in the API's own words (D-75:
+ * "Can't approve: the national ID from this rider's ID check is already on another live account…").
+ * Callers re-throw it client-side for <ConfirmModal>, or show it inline.
+ */
+export type KycWriteResult = { ok: true } | { ok: false; message: string };
+
 /** Approve/decline a rider's KYC from the review queue (the manual T7 backstop). */
-export async function setKyc(formData: FormData): Promise<void> {
+export async function setKyc(formData: FormData): Promise<KycWriteResult> {
   const profileId = String(formData.get("profileId") ?? "");
   const status = String(formData.get("status") ?? "");
-  if (!profileId || !(status === "verified" || status === "failed" || status === "pending")) return;
+  if (!profileId || !(status === "verified" || status === "failed" || status === "pending")) {
+    return { ok: false, message: "That KYC decision isn't valid — reload the page and try again." };
+  }
 
   // Surface a failed compliance write — silently failing-open on a KYC decision is unacceptable.
   const res = await adminPostResult(`/admin/riders/${profileId}/kyc`, { status });
-  if (!res.ok) throw new Error(`Failed to set KYC=${status} for rider ${profileId}: ${describeAdminPostFailure(res)}`);
+  if (!res.ok) return { ok: false, message: describeAdminPostFailure(res) };
   revalidatePath("/riders");
+  return { ok: true };
 }
 
 /**
@@ -21,22 +32,24 @@ export async function setKyc(formData: FormData): Promise<void> {
  * `kycAttempts` to the lock (>= 2) → resubmission is blocked in the api. Called from <KycDecision>'s
  * <ConfirmModal> onConfirm. The endpoint now writes the audit row in the SAME transaction as the
  * decision (A-01), so <KycDecision> sets `auditInEndpoint` and does NOT also POST a standalone row —
- * this forwards the `note` so it lands on that in-transaction audit row.
+ * this forwards the `note` so it lands on that in-transaction audit row. A refusal comes back as a
+ * failed `KycWriteResult` (see above) that <KycDecision> re-throws for the modal to show.
  */
 export async function decideKyc(
   profileId: string,
   status: "verified" | "failed",
   reasonCode: string | null,
   note?: string,
-): Promise<void> {
+): Promise<KycWriteResult> {
   const body =
     status === "failed" ? { status, reasonCode, note: note || null } : { status, note: note || null };
   const res = await adminPostResult(`/admin/riders/${profileId}/kyc`, body);
-  if (!res.ok) throw new Error(`Failed to record KYC ${status} for rider ${profileId}: ${describeAdminPostFailure(res)}`);
+  if (!res.ok) return { ok: false, message: describeAdminPostFailure(res) };
   revalidatePath(`/riders/${profileId}/kyc`);
   // Also refresh the rider-detail page — it renders the KYC status pill this decision changes.
   revalidatePath(`/riders/${profileId}`);
   revalidatePath("/riders");
+  return { ok: true };
 }
 
 /**

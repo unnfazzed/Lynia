@@ -8,12 +8,13 @@ import { setKyc } from "./actions";
  * UX-2026-07-15: every other admin action (ConfirmModal-based, or AcknowledgeButton-style for a
  * reason-less one-tap action) already disables its trigger while in flight AND surfaces a failed
  * write inline so it's never mistaken for success — this quick KYC approve button was a plain
- * `<form action={setKyc}>` submit with no client-side error handling at all. `setKyc` deliberately
- * throws on a failed API write (a KYC decision must never silently fail-open), and with zero
- * `error.tsx` anywhere in this app, that throw escaped past this row straight to Next's generic
- * unstyled crash screen instead of the console's own inline, retryable error text (UX21-01).
- * Calling the server action directly (not via `<form action>`) lets this component catch that
- * throw itself, mirroring `AcknowledgeButton`'s `useTransition` + inline-error pattern.
+ * `<form action={setKyc}>` submit with no client-side error handling at all. A failed API write must
+ * never silently fail-open on a KYC decision, and with zero `error.tsx` anywhere in this app, the throw
+ * `setKyc` used to raise escaped past this row straight to Next's generic unstyled crash screen instead
+ * of the console's own inline, retryable error text (UX21-01). Calling the server action directly (not
+ * via `<form action>`) lets this component show the failure itself, mirroring `AcknowledgeButton`'s
+ * `useTransition` + inline-error pattern. `setKyc` now RETURNS the failure (D-75), because production
+ * redacts a thrown server-action message and a refused approval needs the API's own words.
  */
 export function KycApproveButton({ profileId }: { profileId: string }): React.ReactElement {
   const [pending, startTransition] = useTransition();
@@ -33,7 +34,10 @@ export function KycApproveButton({ profileId }: { profileId: string }): React.Re
         const fd = new FormData();
         fd.set("profileId", profileId);
         fd.set("status", "verified");
-        await setKyc(fd);
+        // A refusal comes back in the API's own words (e.g. a D-75 approval refused because the ID-check
+        // number is on another live account), not as a throw that production would redact.
+        const res = await setKyc(fd);
+        if (!res.ok) setError(res.message);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Couldn't approve — try again.");
       } finally {

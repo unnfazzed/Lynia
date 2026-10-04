@@ -23,7 +23,7 @@ function deferred<T>() {
 describe("KycApproveButton — CF-02-SIB-4 (crash-fuzz 2026-08-23, KYC gating — sensitive lane)", () => {
   it("a same-tick double-click approves only once", async () => {
     const { setKyc } = await import("./actions");
-    const gate = deferred<void>();
+    const gate = deferred<{ ok: true }>();
     vi.mocked(setKyc).mockReturnValue(gate.promise);
 
     render(<KycApproveButton profileId="rider-1" />);
@@ -36,8 +36,24 @@ describe("KycApproveButton — CF-02-SIB-4 (crash-fuzz 2026-08-23, KYC gating �
 
     expect(setKyc).toHaveBeenCalledTimes(1);
 
-    gate.resolve();
+    gate.resolve({ ok: true });
     await screen.findByRole("button", { name: "Approve" });
     expect(setKyc).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("D-75: a refused approval shows the API's own words inline", async () => {
+    const { setKyc } = await import("./actions");
+    vi.mocked(setKyc).mockResolvedValue({
+      ok: false,
+      message: "Can't approve: the national ID from this rider's ID check is already on another live account. Resolve that account first.",
+    });
+
+    render(<KycApproveButton profileId="rider-1" />);
+    act(() => {
+      screen.getByRole("button", { name: "Approve" }).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect((await screen.findByRole("alert")).textContent).toContain("already on another live account");
   });
 });

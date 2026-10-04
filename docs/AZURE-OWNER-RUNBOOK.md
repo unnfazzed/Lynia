@@ -162,6 +162,8 @@ the API runs `KYC_MODE=manual`: sign-up and "retry" create **no** Didit session,
 4. In the **admin console → Riders → the rider → KYC**, press **Approve** and paste the old Didit
    session id into the note. That calls `POST /admin/riders/:profileId/kyc` (`kyc.controller.ts`),
    which writes the decision and its audit row in one transaction and notifies the rider. If there is
-   no earlier approved session, **Decline** with a reason instead.
+   no earlier approved session, **Decline** with a reason instead. Since D-75 a new sign-up types no
+   national ID and manual mode runs no check, so the page shows **No national ID on file**. Approving
+   then verifies the rider without one, and the audit row is flagged `verified_id_missing` (IR26-08).
 5. **When the returning riders are done**: `gh variable delete KYC_MODE -R unnfazzed/Lynia` (back to
    `auto`) and ask Claude to redeploy, so brand-new riders go through Didit again.
