@@ -26,20 +26,23 @@ function signV2(raw: string): string {
 const freshTs = (): string => String(Math.floor(Date.now() / 1000));
 
 /** Records applyKycResult calls so we can assert it fires only for terminal statuses, plus the
- *  last event time passed (for the monotonic guard) and the vendor document number (IR26-04). */
+ *  last event time passed (for the monotonic guard), the decline reason (IR26-07 score bands) and the
+ *  vendor document number (IR26-04). */
 function fakeRiders(updated = 1) {
   const calls: Array<[string, string]> = [];
   let lastEventAt: Date | undefined;
+  let lastReason: string | null | undefined;
   let lastDocNumber: string | null | undefined;
   const riders = {
-    applyKycResult: async (ref: string, status: string, eventAt: Date, _reason?: string | null, docNumber?: string | null) => {
+    applyKycResult: async (ref: string, status: string, eventAt: Date, reason?: string | null, docNumber?: string | null) => {
       calls.push([ref, status]);
       lastEventAt = eventAt;
+      lastReason = reason;
       lastDocNumber = docNumber;
       return { updated };
     },
   } as unknown as RiderService;
-  return { riders, calls, eventAt: () => lastEventAt, docNumber: () => lastDocNumber };
+  return { riders, calls, eventAt: () => lastEventAt, reason: () => lastReason, docNumber: () => lastDocNumber };
 }
 
 const ctl = (riders: RiderService, env: Partial<Env>) => new KycController(riders, env as Env);
@@ -157,6 +160,48 @@ describe("KycController.callback", () => {
       ctl(riders, { NODE_ENV: "production", KYC_PROVIDER: "stub", DIDIT_WEBHOOK_SECRET: undefined }).callback(req(raw)),
     ).rejects.toThrow(/not configured/i);
     expect(calls).toEqual([]);
+  });
+
+  // IR26-07: our destination is V3, so the face match arrives as decision.face_matches[] on a 0–100
+  // scale. These pin the KYC_THRESHOLDS bands on that shape end to end (sample data — no real session).
+  const v3 = (session_id: string, status: string, score: number) =>
+    JSON.stringify({
+      session_id,
+      status,
+      webhook_type: "status.updated",
+      decision: { status, face_matches: [{ node_id: "face_match_1", status, score, warnings: [] }] },
+    });
+
+  it("verifies a V3 Didit approval whose face match clears autoApprove", async () => {
+    const { riders, calls } = fakeRiders();
+    await ctl(riders, {}).callback(req(v3("s_v3a", "Approved", 96.1)));
+    expect(calls).toEqual([["s_v3a", "verified"]]);
+  });
+
+  it("holds a V3 Didit approval whose face match is in the review band — no write, never verified", async () => {
+    const { riders, calls } = fakeRiders();
+    const res = await ctl(riders, {}).callback(req(v3("s_v3b", "Approved", 72)));
+    expect(res).toEqual({ ignored: true, status: "pending" });
+    expect(calls).toEqual([]);
+  });
+
+  it("declines a V3 Didit approval whose face match is below needsReview, with the face-mismatch reason", async () => {
+    const { riders, calls, reason } = fakeRiders();
+    await ctl(riders, {}).callback(req(v3("s_v3c", "Approved", 45)));
+    expect(calls).toEqual([["s_v3c", "failed"]]);
+    expect(reason()).toBe("face_mismatch");
+  });
+
+  it("never verifies a V3 Didit decline or abandoned session, however well the face matched", async () => {
+    const declined = fakeRiders();
+    await ctl(declined.riders, {}).callback(req(v3("s_v3d", "Declined", 97)));
+    expect(declined.calls).toEqual([["s_v3d", "failed"]]);
+    expect(declined.reason()).toBeNull();
+
+    const abandoned = fakeRiders();
+    const res = await ctl(abandoned.riders, {}).callback(req(v3("s_v3e", "Abandoned", 97)));
+    expect(res).toEqual({ ignored: true, status: "pending" });
+    expect(abandoned.calls).toEqual([]);
   });
 
   it("passes the signed event timestamp through as the monotonic-guard event time", async () => {
