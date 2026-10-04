@@ -86,7 +86,7 @@ excerpt and the database check, with screenshots for web steps.
 
 ## 4. Schedule over 24 hours (usage-aware)
 
-There are six one-shot routines, each starting a **fresh session** about 4 hours apart, so no two runs
+There are seven one-shot routines, each starting a **fresh session** about 3 hours 20 minutes apart, so no two runs
 overlap and usage has time to recover.
 
 | # | When (UTC) | Run |
@@ -95,7 +95,7 @@ overlap and usage has time to recover.
 | 2 | 2026-10-05 09:20 (11:20 Harare) | J2 Send a parcel |
 | 3 | 2026-10-05 12:40 (14:40 Harare) | J3 Business sign-up (merchant web + admin API) |
 | 4 | 2026-10-05 16:00 (18:00 Harare) | J4 Restaurant order + money checks |
-| 5 | 2026-10-05 19:20 (21:20 Harare) | J5 Shops end to end (owner 2026-10-04: shops are launched — test them): shop sign-up + items, go-live, Shops list, cash shop order with sealed-bag photo, auto-cancel, SHOPS_ENABLED off/on |
+| 5 | 2026-10-05 19:20 (21:20 Harare) | J5 Shops and pharmacies end to end (owner 2026-10-04: shops are launched, and pharmacies "must be launched too in full", D-76): shop sign-up + items, go-live, Shops list, cash shop order with sealed-bag photo, auto-cancel, SHOPS_ENABLED off/on; then Pharmacy sign-up, Pharmacy list, pharmacist tick, an over-the-counter order and a prescription order (approve and decline) with RX_ENABLED on |
 | 6 | 2026-10-05 22:40 (00:40 Harare) | gstack review of results: eng + design lenses, report only |
 | 7 | 2026-10-06 02:00 (04:00 Harare) | Consolidated report + draft PR (reports only) |
 
@@ -118,7 +118,7 @@ containers don't share state.
 
 ## 6. Engineering review (gstack /plan-eng-review, 2026-10-04)
 
-**Scope Challenge:** accepted as-is. The plan adds no app code: one plan doc, six routine prompts and
+**Scope Challenge:** accepted as-is. The plan adds no app code: one plan doc, seven routine prompts and
 report files. Complexity gate not tripped (fewer than 8 files, no new services).
 **Owner direction (2026-10-04):** tests must cost nothing, and there are no existing users to protect.
 So production stays off-limits *because of cost* (real OTP sends and billed Didit checks), not data.
@@ -135,7 +135,7 @@ Findings and dispositions (auto-decided as recommended, per the owner's "make se
 | E5 | P2 | 9/10 | `apps/merchant/app/lib/config.ts`: `process.env.NEXT_PUBLIC_API_BASE_URL … ?? "http://localhost:3000"` | The merchant web defaults to the local API. | **Accepted.** Run 3 uses `next dev --port 3100` with no env change. CORS for :3100 is set through `CORS_ALLOWED_ORIGINS=http://localhost:3100`. |
 | E6 | P2 | 7/10 | Shared contracts: 90 s auction window, 3-minute merchant accept | The timeout checks need real waits. | **Accepted.** Budget about 5 minutes of wall-clock per run, with no polling faster than 5 s. |
 | E7 | P2 | 9/10 | Probe output: `docker.sock` refused until `dockerd` was started | Docker isn't running at session start. | **Accepted.** The bootstrap starts `dockerd` first, then `pnpm install --frozen-lockfile`, the shared build, `migrate:deploy`, and boots the API. |
-| E8 | P3 | 8/10 | Owner: "strictly Opus 5.5" | Model pinning. | **Accepted.** `update_trigger model=claude-opus-5-5` on all six routines. Fresh-session routines pick it up. |
+| E8 | P3 | 8/10 | Owner: "strictly Opus 5.5" | Model pinning. | **Accepted.** `update_trigger model=claude-opus-5-5` on all seven routines. Fresh-session routines pick it up. |
 
 Architecture (one run):
 
