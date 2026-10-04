@@ -2,16 +2,9 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import type {
-  MerchantEndOfDaySummaryResponse,
-  MerchantProfileResponse,
-} from "@lynia/shared";
+import type { MerchantEndOfDaySummaryResponse, MerchantProfileResponse } from "@lynia/shared";
 import { ApiError } from "../../lib/api-client";
-import {
-  showBranchChevron,
-  showNotLiveHome,
-  useBranches,
-} from "../../lib/branches";
+import { showBranchChevron, showNotLiveHome, useBranches } from "../../lib/branches";
 import { primeBusiness } from "../../lib/business";
 import { setBusyMode, setOpen } from "../../lib/menu-api";
 import { getTodaySummary } from "../../lib/orders-api";
@@ -24,10 +17,7 @@ import { useToast } from "./Toast";
 const SUMMARY_POLL_MS = 30_000;
 
 /** B1's open/closed switch, shared with B5's "Open now" / busy-mode buttons below the header. */
-export function useOpenSwitch(
-  merchant: MerchantProfileResponse | null,
-  onMerchant: (m: MerchantProfileResponse) => void,
-) {
+export function useOpenSwitch(merchant: MerchantProfileResponse | null, onMerchant: (m: MerchantProfileResponse) => void) {
   const toast = useToast();
   const now = useNow(30_000);
   const [switching, setSwitching] = useState(false);
@@ -45,19 +35,9 @@ export function useOpenSwitch(
       if (busy) m = await setBusyMode({ active: true });
       primeBusiness(m);
       onMerchant(m);
-      toast(
-        next
-          ? busy
-            ? "Open · busy mode +10 min"
-            : "You’re open"
-          : "Closed · new orders won’t come in",
-      );
+      toast(next ? (busy ? "Open · busy mode +10 min" : "You’re open") : "Closed · new orders won’t come in");
     } catch (err) {
-      toast(
-        err instanceof ApiError
-          ? err.message
-          : "Couldn't change that. Try again.",
-      );
+      toast(err instanceof ApiError ? err.message : "Couldn't change that. Try again.");
     } finally {
       setSwitching(false);
     }
@@ -92,8 +72,7 @@ export function OrdersHeader({
 }) {
   const owner = merchant.myRole === "owner";
   const shop = merchant.businessType === "shop";
-  const [summary, setSummary] =
-    useState<MerchantEndOfDaySummaryResponse | null>(null);
+  const [summary, setSummary] = useState<MerchantEndOfDaySummaryResponse | null>(null);
   const [sheet, setSheet] = useState(false);
   const branches = useBranches(owner);
   const chevron = showBranchChevron(merchant, branches.length);
@@ -115,21 +94,14 @@ export function OrdersHeader({
   }, [kpis, notLive, loadSummary, refreshKey]);
 
   // "Cash due" is all the cash riders still owe back; an API from before D-77 only knows the overdue part.
-  const cashDue = summary
-    ? (summary.cashDue ?? summary.cashOverdue ?? 0)
-    : null;
+  const cashDue = summary ? (summary.cashDue ?? summary.cashOverdue ?? 0) : null;
 
   return (
     <div className={`m-hd${closed ? " m-hd-off" : ""}`}>
       <div className="m-hdt">
         <div className="m-biz">
           {chevron ? (
-            <button
-              type="button"
-              className="m-biz-switch"
-              aria-haspopup="dialog"
-              onClick={() => setSheet(true)}
-            >
+            <button type="button" className="m-biz-switch" aria-haspopup="dialog" onClick={() => setSheet(true)}>
               <b>{merchant.name}</b>
               <Icon name="chevron-down" size={20} color="var(--muted)" />
             </button>
@@ -139,9 +111,7 @@ export function OrdersHeader({
           {notLive ? (
             <span className="m-pl m-grey">Not live yet</span>
           ) : (
-            <span className={`m-state${open.status.open ? "" : " m-off"}`}>
-              {open.status.label}
-            </span>
+            <span className={`m-state${open.status.open ? "" : " m-off"}`}>{open.status.label}</span>
           )}
         </div>
         {!notLive && (
@@ -166,11 +136,7 @@ export function OrdersHeader({
           </div>
           <div>
             <span>Sales</span>
-            <b>
-              {summary?.sales !== undefined && summary
-                ? money(summary.sales)
-                : "–"}
-            </b>
+            <b>{summary?.sales !== undefined && summary ? money(summary.sales) : "–"}</b>
           </div>
           <Link href="/statement" className={cashDue ? "m-due" : undefined}>
             <span>Cash due</span>
@@ -179,13 +145,7 @@ export function OrdersHeader({
         </div>
       )}
       {!notLive && !closed && children}
-      {sheet && (
-        <BranchSheet
-          business={merchant}
-          branches={branches}
-          onClose={() => setSheet(false)}
-        />
-      )}
+      {sheet && <BranchSheet business={merchant} branches={branches} onClose={() => setSheet(false)} />}
     </div>
   );
 }

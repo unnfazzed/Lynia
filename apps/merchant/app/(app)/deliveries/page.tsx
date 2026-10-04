@@ -1,11 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import type {
-  MerchantBookingResponse,
-  MerchantProfileResponse,
-} from "@lynia/shared";
+import type { MerchantBookingResponse, MerchantProfileResponse } from "@lynia/shared";
 import { Icon } from "../../components/icons";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
@@ -13,15 +9,13 @@ import { BookRiderCard, ClosedBody } from "../../components/m/ClosedBody";
 import { OrdersHeader, useOpenSwitch } from "../../components/m/OrdersHeader";
 import { RetryableError } from "../../components/RetryableError";
 import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
-import {
-  bookingsAvailable,
-  isFinding,
-  pollIntervalMs,
-} from "../../lib/booking";
-import { tracker, trackedBookings } from "../../lib/booking-view";
+import { bookingsAvailable, pollIntervalMs } from "../../lib/booking";
+import { trackedBookings } from "../../lib/booking-view";
+import { buildBoard } from "../../lib/board";
+import { vocabulary } from "../../lib/vocabulary";
+import { Board } from "../../components/queue/Board";
 import { listBookings } from "../../lib/bookings-api";
 import { primeBusiness } from "../../lib/business";
-import { formatCountdown, msUntil } from "../../lib/countdown";
 import { getMerchantProfile } from "../../lib/menu-api";
 import { useNow } from "../../lib/use-now";
 
@@ -46,17 +40,8 @@ type LoadState =
 export default function DeliveriesPage() {
   const { signOut, actionsDisabled } = useKitchenConnection();
   const [state, setState] = useState<LoadState>({ status: "loading" });
-  const business =
-    state.status === "ready" || state.status === "unavailable"
-      ? state.business
-      : null;
-  const open = useOpenSwitch(business, (b) =>
-    setState((s) =>
-      s.status === "ready" || s.status === "unavailable"
-        ? { ...s, business: b }
-        : s,
-    ),
-  );
+  const business = state.status === "ready" || state.status === "unavailable" ? state.business : null;
+  const open = useOpenSwitch(business, (b) => setState((s) => (s.status === "ready" || s.status === "unavailable" ? { ...s, business: b } : s)));
 
   const load = useCallback(
     async (quiet = false) => {
@@ -78,10 +63,7 @@ export default function DeliveriesPage() {
         if (!quiet)
           setState({
             status: "error",
-            message:
-              err instanceof ApiError
-                ? err.message
-                : "Couldn't load your deliveries.",
+            message: err instanceof ApiError ? err.message : "Couldn't load your deliveries.",
           });
       }
     },
@@ -98,11 +80,7 @@ export default function DeliveriesPage() {
       ? state.bookings
           .filter((b) => !b.rebroadcastedToId)
           .map((b) => pollIntervalMs(b.state))
-          .reduce<number | null>(
-            (min, ms) =>
-              ms == null ? min : min == null ? ms : Math.min(min, ms),
-            null,
-          )
+          .reduce<number | null>((min, ms) => (ms == null ? min : min == null ? ms : Math.min(min, ms)), null)
       : null;
   useEffect(() => {
     if (!interval) return undefined;
@@ -111,45 +89,30 @@ export default function DeliveriesPage() {
   }, [interval, load]);
 
   const shop = business?.businessType === "shop";
-  const shown =
-    state.status === "ready" ? trackedBookings(state.bookings, Date.now()) : [];
+  const shown = state.status === "ready" ? trackedBookings(state.bookings, Date.now()) : [];
+  const now = useNow(15_000);
+  // S1 (Merchant v2, D-77): the same urgency board the kitchen has, with the shop's BOOKED riders.
+  const board = buildBoard({ orders: [], bookings: shown, v: vocabulary("shop", business?.shopKind), shop: true, now });
 
   return (
     <Kitchen active={shop ? "deliveries" : "queue"}>
       {business ? (
-        <OrdersHeader
-          merchant={business}
-          open={open}
-          disabled={actionsDisabled}
-          refreshKey={shown.length}
-        >
+        <OrdersHeader merchant={business} open={open} disabled={actionsDisabled} refreshKey={shown.length}>
           {state.status === "ready" && <BookRiderCard href="/deliveries/new" />}
         </OrdersHeader>
       ) : null}
 
       {business && open.status.closedByHand ? (
         <ClosedBody merchant={business} open={open} disabled={actionsDisabled}>
-          {shown.length > 0 && (
-            <div className="m-bd">
-              <BookedList bookings={shown} />
-            </div>
-          )}
+          {board.length > 0 && <Board sections={board} />}
         </ClosedBody>
       ) : (
         <div className="m-bd" style={{ paddingTop: 16 }}>
-          {state.status === "loading" && (
-            <div className="m-hint">Loading your deliveries…</div>
-          )}
-          {state.status === "error" && (
-            <RetryableError
-              message={state.message}
-              onRetry={() => void load()}
-            />
-          )}
+          {state.status === "loading" && <div className="m-hint">Loading your deliveries…</div>}
+          {state.status === "error" && <RetryableError message={state.message} onRetry={() => void load()} />}
           {state.status === "unavailable" && (
             <p className="m-sub">
-              <b>Booking riders is on its way.</b> You&apos;ll book LyniaGo
-              riders for your customers from here.
+              <b>Booking riders is on its way.</b> You&apos;ll book LyniaGo riders for your customers from here.
             </p>
           )}
 
@@ -177,76 +140,12 @@ export default function DeliveriesPage() {
                 <Icon name="bike" size={30} color="var(--muted)" />
               </div>
               <b style={{ fontSize: 18 }}>No riders booked yet</b>
-              <p className="m-sub">
-                Tell us where it&apos;s going and what&apos;s in it. Riders
-                nearby offer a fare, and you pick one.
-              </p>
+              <p className="m-sub">Tell us where it&apos;s going and what&apos;s in it. Riders nearby offer a fare, and you pick one.</p>
             </div>
           )}
-
-          {shown.length > 0 && <BookedList bookings={shown} />}
         </div>
       )}
+      {!(business && open.status.closedByHand) && board.length > 0 && <Board sections={board} />}
     </Kitchen>
-  );
-}
-
-function BookedList({
-  bookings,
-}: {
-  bookings: readonly MerchantBookingResponse[];
-}) {
-  return (
-    <section
-      aria-label="Riders you booked"
-      style={{ display: "flex", flexDirection: "column", gap: 10 }}
-    >
-      <div className="m-sec">Riders you booked</div>
-      {bookings.map((b) => (
-        <TrackerRow key={b.id} booking={b} />
-      ))}
-    </section>
-  );
-}
-
-function TrackerRow({ booking }: { booking: MerchantBookingResponse }) {
-  const finding = isFinding(booking.state);
-  const now = useNow(1000, finding);
-  const t = tracker(booking);
-  const done = t.icon === "circle-check" || t.icon === "ban";
-  const left =
-    finding && booking.expiresAt ? msUntil(booking.expiresAt, now) : null;
-  return (
-    <Link
-      href={`/deliveries/${booking.id}`}
-      className={`m-trk${done ? " m-done" : ""}`}
-    >
-      <i>
-        <Icon
-          name={t.icon}
-          size={20}
-          color={done ? "var(--muted)" : "var(--on-accent)"}
-        />
-      </i>
-      <div className="m-t">
-        <b>{t.title}</b>
-        {t.sub && <span>{t.sub}</span>}
-        {t.progress !== null && (
-          <div className="m-bar" aria-label={`${t.progress} of 5 steps`}>
-            {[0, 1, 2, 3, 4].map((i) => (
-              <i key={i} className={i < t.progress! ? "m-on" : undefined} />
-            ))}
-          </div>
-        )}
-      </div>
-      {left !== null && (
-        <span
-          className="m-pl m-gold m-num"
-          style={{ height: 26, fontSize: 13 }}
-        >
-          {formatCountdown(left)}
-        </span>
-      )}
-    </Link>
   );
 }

@@ -143,7 +143,46 @@ async function shootMock(page, label) {
 }
 
 const closed = { ...KITCHEN, closedUntil: ahead(600), hours: week("08:00", "22:00") };
+const LIVE_SHOP = { ...SHOP, pilotEnabled: true };
+const item = (itemId, name, priceUsd, quantity = 1, note = null) => ({ itemId, dishId: `d-${itemId}`, name, priceUsd, quantity, note, available: null });
+const SHOP_VENUE = { name: "Mbare Auto Spares", businessType: "shop", shopKind: "grocery" };
+const ringingKitchen = order("a1b20000-0000-4000-8000-000000000000", {
+  merchantPhase: "awaiting_accept", prepMinutes: null, prepStartedAt: null, acceptDeadlineAt: ahead(0.8),
+  items: [item("i1000000-0000-4000-8000-000000000000", "Sadza & beef stew", 4.5, 2, "Extra gravy"), item("i2000000-0000-4000-8000-000000000000", "Roast chicken (half)", 6)],
+  merchantGoodsTotal: 15,
+});
+const ringingShop = order("a1b20000-0000-4000-8000-000000000000", {
+  merchantPhase: "awaiting_accept", prepMinutes: null, prepStartedAt: null, acceptDeadlineAt: ahead(1.15), venue: SHOP_VENUE, customerFirstName: "Rudo",
+  items: [
+    item("i1000000-0000-4000-8000-000000000000", "Bread (Lobels 700g)", 1.1),
+    item("i2000000-0000-4000-8000-000000000000", "Eggs (tray of 30)", 5.5),
+    item("i3000000-0000-4000-8000-000000000000", "Mazoe orange 2L", 3.2),
+    item("i4000000-0000-4000-8000-000000000000", "Cooking oil 2L", 4.8),
+  ],
+  merchantGoodsTotal: 14.6,
+});
+const waitingShop = order("a1b20000-0000-4000-8000-000000000000", {
+  merchantPhase: "awaiting_item_approval", venue: SHOP_VENUE, customerFirstName: "Rudo", itemApprovalDeadlineAt: ahead(2.47),
+  items: [item("i1", "Bread", 1.1), item("i2", "Eggs", 5.5), item("i3", "Mazoe", 3.2), item("i4", "Oil", 4.8)],
+  substitution: { id: "51000000-0000-4000-8000-000000000000", kind: "at_accept", status: "open", createdAt: ago(0.5), deadlineAt: ahead(2.47), resolvedAt: null, lines: [{}, {}], wasTotal: 14.6, keptSubtotal: 11.5 },
+});
+const removeItem = (name) => async (p) => {
+  const d = p.getByRole("alertdialog");
+  await d.getByRole("button", { name }).first().click();
+  await d.getByRole("button", { name: "Remove it" }).click();
+};
 const SETS = {
+  board: [
+    { mock: "K1 Orders home", label: "K1 · Orders board", sub: "“coming to your counter” (no arrival signal yet); no arrival ETA on the way (D-77 §4)", app: { name: "K1", path: "/queue", scenario: { me: KITCHEN, orders: BOARD } } },
+    { mock: "S1 Shop home", label: "S1 · Shop board (APP + BOOKED)", app: { name: "S1", path: "/queue", scenario: { me: LIVE_SHOP, orders: [waitingShop], bookings: BOOKINGS } } },
+    { mock: "K2 New order rings", label: "K2 · New order rings", sub: "the countdown is the server's 3-minute window (owner decision)", app: { name: "K2", path: "/queue", scenario: { me: KITCHEN, orders: [ringingKitchen] } } },
+    {
+      mock: "S2 Shop ringing",
+      label: "S2 · Shop rings, with item changes",
+      sub: "keyless run: the swap picker needs the shop's items, so this shows a removal",
+      app: { name: "S2", path: "/queue", scenario: { me: LIVE_SHOP, orders: [ringingShop] }, before: removeItem(/Mazoe/) },
+    },
+  ],
   shell: [
     { mock: "K1 Orders home", label: "K1 · Orders home — top card, open pill, KPI strip, tab bar", sub: "the board below is still B1's segments until PR 2", app: { name: "K1", path: "/queue", scenario: { me: KITCHEN, orders: BOARD } } },
     { mock: "S1 Shop home", label: "S1 · Shop home — top card with Book a rider, no strip", sub: "the board below is still D1's list until PR 2", app: { name: "S1", path: "/deliveries", scenario: { me: SHOP, bookings: BOOKINGS } } },

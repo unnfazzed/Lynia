@@ -2073,3 +2073,398 @@
 .m-kv b {
   text-align: right;
 }
+
+/* ── Merchant v2 · the Orders board (K1/S1, ledger D-77) ───────────────────────────────────── */
+.m-board {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.m-board-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.m-bh {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.m-bc {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--ink);
+  text-decoration: none;
+  min-height: var(--target-min);
+}
+.m-bc.m-urgent {
+  border: 2px solid var(--accent);
+  padding: 11px 13px;
+}
+.m-bc.m-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+.m-btop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.m-btop > b,
+.m-bt > b {
+  font-size: 15px;
+  font-weight: 700;
+}
+.m-btop > b:first-of-type {
+  flex: 1;
+  min-width: 0;
+}
+.m-btop > b.m-num {
+  flex: none;
+  white-space: nowrap;
+}
+.m-bt {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.m-bsub {
+  font-size: 13px;
+  color: var(--muted);
+}
+.m-bt .m-bsub {
+  margin-top: 2px;
+}
+.m-bsub.m-gold-ink {
+  color: var(--highlight-ink);
+  font-weight: 600;
+}
+.m-bc .m-disc {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--accent-wash);
+  color: var(--accent-text);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.m-pillbtn {
+  height: 40px;
+  padding: 0 14px;
+  border-radius: var(--radius-pill);
+  background: var(--cta-fill);
+  color: var(--on-accent);
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+.m-pbar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+}
+.m-pbar i {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.m-steps {
+  display: flex;
+  gap: 4px;
+}
+.m-steps i {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+}
+.m-steps i.m-on {
+  background: var(--accent);
+}
+.m-tag {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--rider-wash);
+  color: var(--rider-accent);
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+.m-tag.m-booked {
+  background: var(--surface);
+  color: var(--muted);
+}
+.m-cchip {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
+  background: var(--highlight);
+  color: var(--highlight-chip-ink);
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+/* ── Merchant v2 · K2/S2 the ringing screen (ledger D-77) ─────────────────────────────────── */
+.m-ringf {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+.m-ringb {
+  background: var(--cta-fill);
+  color: var(--on-accent);
+  padding: calc(20px + env(safe-area-inset-top)) 16px 28px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.m-ringb > i {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.m-ringt {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.m-ringt > b {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.m-ringt > span {
+  font-size: 15px;
+  margin-top: 2px;
+}
+.m-ringc {
+  text-align: right;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+}
+.m-ringc b {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1;
+}
+.m-ringc span {
+  font-size: 12px;
+  margin-top: 2px;
+}
+.m-rings {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin-top: -14px;
+  background: var(--bg);
+  border-radius: 20px 20px 0 0;
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.m-ringhint {
+  font-size: 14px;
+  margin: -2px 0 -2px;
+}
+.m-rlines {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+}
+.m-rl + .m-rl {
+  border-top: 1px solid var(--line);
+}
+.m-rl > button {
+  width: 100%;
+  display: flex;
+  gap: 10px;
+  padding: 12px 14px;
+  min-height: var(--target-min);
+  background: none;
+  border: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.m-rl > button:disabled {
+  cursor: default;
+}
+.m-rl > button > b {
+  width: 24px;
+  font-weight: 700;
+  flex: none;
+}
+.m-rl > button > div {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.m-rl > button > span {
+  font-weight: 600;
+}
+.m-rln {
+  font-size: 15px;
+  font-weight: 600;
+}
+.m-rl.m-removed {
+  background: var(--surface);
+}
+.m-rl.m-removed > button > b,
+.m-rl.m-removed .m-rln,
+.m-rl.m-removed > button > span {
+  color: var(--muted);
+}
+.m-rl.m-removed .m-rln,
+.m-rl.m-removed > button > span {
+  text-decoration: line-through;
+}
+.m-undo {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
+  margin-top: 4px;
+}
+.m-notechip {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: var(--highlight-wash);
+  color: var(--highlight-ink);
+  font-size: 13px;
+}
+.m-rlacts {
+  display: flex;
+  gap: 8px;
+  padding: 0 14px 12px 48px;
+}
+.m-rlacts .m-gh {
+  flex: 1;
+}
+.m-newtotal {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.m-newtotal > span {
+  font-size: 15px;
+  font-weight: 600;
+}
+.m-newtotal b {
+  font-size: 20px;
+  font-weight: 700;
+}
+.m-newtotal s {
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 600;
+}
+.m-readyin {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.m-readyin > b {
+  font-size: 14px;
+  font-weight: 700;
+}
+.m-readyin > div {
+  display: flex;
+  gap: 6px;
+}
+.m-readyin button {
+  flex: 1;
+  height: var(--target-min);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  border: none;
+  font: inherit;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+}
+.m-readyin button[aria-checked="true"] {
+  background: var(--ink);
+  color: var(--bg);
+}
+.m-readyin > span {
+  font-size: 13px;
+  color: var(--muted);
+}
+.m-tiprow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: 14px;
+}
+
+/* The pinned CTA bar (Merchant v2 spec: 12/16/16, primary 52, secondary 48 outline, both pills). */
+.m-cta {
+  flex-shrink: 0;
+  padding: 12px 16px calc(16px + env(safe-area-inset-bottom));
+  background: var(--bg);
+  box-shadow: 0 -4px 16px rgba(20, 24, 27, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.m-ctahint {
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+}
+.m-btn2 {
+  min-height: 48px;
+  border-radius: var(--radius-button);
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  width: 100%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.m-btn2:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.m-opt.m-optsm {
+  min-height: var(--target-min);
+}

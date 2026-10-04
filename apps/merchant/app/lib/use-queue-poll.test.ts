@@ -125,7 +125,7 @@ describe("useQueuePoll", () => {
 
   // LC-D##: before this fix, a caller unable to acquire the latch (the common case: QueueBoard's
   // post-accept/reject refetch() landing mid-poll) resolved immediately — well before the
-  // coalesced follow-up fetch it folds into ever completed. That let NewOrderTakeover's
+  // coalesced follow-up fetch it folds into ever completed. That let RingingScreen's
   // submitAccept re-enable the Accept button on a screen that still showed the just-accepted
   // order, inviting a same-order double-tap. refetch() must not settle until its own coalesced
   // round actually lands.

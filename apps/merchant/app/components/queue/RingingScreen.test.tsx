@@ -2,7 +2,7 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MerchantOrderResponse } from "@lynia/shared";
-import { NewOrderTakeover } from "./NewOrderTakeover";
+import { RingingScreen } from "./RingingScreen";
 
 afterEach(() => {
   cleanup();
@@ -55,20 +55,27 @@ function order(over: Partial<MerchantOrderResponse> = {}): MerchantOrderResponse
   };
 }
 
-describe("NewOrderTakeover — CF-01 double-submit guard (sensitive lane: order assignment)", () => {
+describe("RingingScreen — CF-01 double-submit guard (sensitive lane: order assignment)", () => {
   it("a same-tick double-tap on Accept calls onAccept only once", () => {
     let resolveAccept!: () => void;
-    const onAccept = vi.fn().mockReturnValueOnce(new Promise<void>((res) => { resolveAccept = res; }));
+    const onAccept = vi.fn().mockReturnValueOnce(
+      new Promise<void>((res) => {
+        resolveAccept = res;
+      }),
+    );
     const onReject = vi.fn().mockResolvedValue(undefined);
     const refetch = vi.fn().mockResolvedValue(undefined);
 
     render(
-      <NewOrderTakeover
+      <RingingScreen
         active={order()}
-        queued={[]}
         disabled={false}
         onAccept={onAccept}
+        onPropose={vi.fn()}
         onReject={onReject}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+        onEditItems={vi.fn()}
         refetch={refetch}
       />,
     );

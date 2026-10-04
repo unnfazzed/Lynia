@@ -1755,6 +1755,8 @@ export const MerchantOrderResponse = z
     restaurantPhone: z.string().nullable().optional(),
     /** The customer's contact number — on the restaurant's own views only. */
     customerPhone: z.string().nullable().optional(),
+    /** Merchant v2 (ledger D-77): the customer's first name — on the merchant's own views only. */
+    customerFirstName: z.string().optional(),
     // ── Order flow v2 (ledger D-59, backend B). All optional and additive: an installed app ignores them.
     // (The venue kind — Cooking vs Packing, the tile colour — is backend A's `venue.businessType/shopKind`.)
     /** BRIEF §12: the slot's start (ISO) of a scheduled order; omitted for an ASAP order. */
