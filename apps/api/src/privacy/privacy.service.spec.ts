@@ -177,6 +177,17 @@ describe("PrivacyService.eraseAccount", () => {
     expect(calls.topUpUpdate).toEqual({ where: { riderId: "p1", NOT: { phone: null } }, data: { phone: null } });
   });
 
+  // D-70 / D-75 item 2: the ID check's number (ciphertext) is stored for more riders now, held ones included.
+  // Erasure scrubs it and nulls kycRef, which is what keeps a held result delivered after the erasure from
+  // writing it back (recordHeldVerifiedId matches on kycRef). The one-way hash stays (DS15-02b).
+  it("scrubs the ID check's stored number and nulls kycRef, but keeps its one-way hash", async () => {
+    const { svc, calls } = eraseHarness({ phone: "+263771234567", rider: {} }, false);
+    await svc.eraseAccount("p1");
+    const data = (calls.riderUpdate as { data: Record<string, unknown> }).data;
+    expect(data).toMatchObject({ verifiedIdNumber: null, kycRef: null, kycSessionToken: null, kycSessionUrl: null });
+    expect(data).not.toHaveProperty("verifiedIdHash");
+  });
+
   it("KB-POD-DISPUTE Phase A: nulls the rider's delivery-proof columns (photo/GPS/time) on erasure, scoped to riderId", async () => {
     const { svc, orderUpdateManys } = eraseHarness({ phone: "+263771234567", rider: {} }, false);
     await svc.eraseAccount("p1");

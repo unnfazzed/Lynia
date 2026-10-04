@@ -326,16 +326,19 @@ model Rider {
   kycForcedAt       DateTime?                              @map("kyc_forced_at")
   // IR26-04 vendor-document dedupe: the HMAC hash (LR8 — never the raw number) of the document number
   // the KYC VENDOR actually verified, persisted from the Didit decision webhook on a `verified`
-  // outcome. The dedupe axis the typed idNumberHash can't cover — a ban-evader can TYPE a different
-  // number but must SHOW the same physical document. pii.hashId normalizes before hashing, so this is
-  // directly comparable to Profile.idNumberHash. Retained on erasure like idNumberHash (DS15-02b).
-  // Partial index managed via raw SQL (migration 0038).
+  // outcome, and (D-75 item 2) from a result held for review while the check is undecided
+  // (RiderService.recordHeldVerifiedId). The dedupe axis the typed idNumberHash can't cover — a
+  // ban-evader can TYPE a different number but must SHOW the same physical document. pii.hashId
+  // normalizes before hashing, so this is directly comparable to Profile.idNumberHash. Retained on
+  // erasure like idNumberHash (DS15-02b). Partial index managed via raw SQL (migration 0038).
   verifiedIdHash    String?                                @map("verified_id_hash")
   // D-70 (Calm Mint v2 "Didit ID prefill"): the same vendor-verified document number, ENCRYPTED
   // (pii.encryptId, AES-256-GCM — the Profile.idNumber regime, never plaintext, never logged). Written
   // with verifiedIdHash from the `verified` decision webhook so the app can prefill/confirm the
-  // rider's national ID from the check instead of making them retype it. Returned ONLY to its owner
-  // (/auth/me `kycIdNumber`); NULLED on erasure (recoverable PII, unlike the retained hash).
+  // rider's national ID from the check instead of making them retype it, and with it from a held
+  // result (D-75 item 2) so a hand approval can adopt it. Returned ONLY to its owner once verified
+  // (/auth/me `kycIdNumber`) and to the KYC reviewer; NULLED on erasure (recoverable PII, unlike the
+  // retained hash).
   verifiedIdNumber  String?                                @map("verified_id_number")
   isOnline          Boolean                                @default(false) @map("is_online")
   lastHeartbeatAt   DateTime?                              @map("last_heartbeat_at")

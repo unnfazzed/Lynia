@@ -134,8 +134,7 @@ function percentToUnit(v: unknown): number | null {
  */
 export function decideDiditKyc(status: string, score: number | null): { status: RiderKyc; reason?: string } {
   const vendor = mapDiditStatus(status);
-  // Same separator-tolerant normalisation as mapDiditPendingState: Didit has also spelled it IN_REVIEW.
-  const inReview = status.trim().toLowerCase().replace(/[\s_-]+/g, " ") === "in review";
+  const inReview = isDiditInReview(status);
   if (score === null || !(vendor === "verified" || vendor === "failed" || inReview)) return { status: vendor };
   if (score < KYC_THRESHOLDS.needsReview) {
     // Store a canonical KycDeclineReason KEY (not a sentence) so the rider app resolves it via
@@ -145,6 +144,28 @@ export function decideDiditKyc(status: string, score: number | null): { status: 
   if (vendor === "failed") return { status: "failed" };
   if (vendor === "verified" && score >= KYC_THRESHOLDS.autoApprove) return { status: "verified" };
   return { status: "pending" }; // needs human review — held for the admin backstop, no auto-verify
+}
+
+/** Didit's "In Review", with the same separator-tolerant normalisation as mapDiditPendingState: Didit has
+ *  also spelled it `in_review` and `IN_REVIEW`. */
+function isDiditInReview(status: string): boolean {
+  return status.trim().toLowerCase().replace(/[\s_-]+/g, " ") === "in review";
+}
+
+/**
+ * D-75 item 2 (IR26-09): is this a result Didit JUDGED that {@link decideDiditKyc} holds for a human? That
+ * is Didit's In Review, or a Didit approval whose face match fell in the review band. Both carry the
+ * number Didit read from the document, which the reviewer checks and a hand approval adopts, so the webhook
+ * stores it (RiderService.recordHeldVerifiedId). The band-held approval is final at Didit: no later webhook
+ * brings the number.
+ *
+ * Every other `pending` is a session Didit never finished judging: Abandoned, Expired, In Progress, or
+ * Resubmitted (its reviewer asked for the document again). A number in that partial data verified nothing,
+ * so it is not stored.
+ */
+export function isDiditReviewHold(status: string, score: number | null): boolean {
+  if (decideDiditKyc(status, score).status !== "pending") return false;
+  return mapDiditStatus(status) === "verified" || isDiditInReview(status);
 }
 
 /**

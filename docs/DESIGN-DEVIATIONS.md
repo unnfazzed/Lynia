@@ -4128,9 +4128,9 @@ manual mode. It now settles the national ID as the verified webhook does, throug
   Resolve that account first." Nothing is adopted and nothing is approved. An erased tombstone does not
   refuse. The webhook holds such a match so that a human can approve a returning user, and this
   approval is that human; the one-ID-one-account rule draws the same line.
-- **No vendor number at all** (manual mode, a payload without one, or any result the webhook held as
-  `pending`; see item 2 below): the rider is approved, and the `rider.kyc_approve` audit row carries
-  `verified_id_missing`, as the webhook's does.
+- **No vendor number at all** (manual mode, or a payload without one; until the second follow-up below,
+  also any result the webhook held as `pending`): the rider is approved, and the `rider.kyc_approve` audit
+  row carries `verified_id_missing`, as the webhook's does.
 - **An account that already has an ID** is approved exactly as before.
 
 What changes for riders: a rider approved by hand now has the verified number as their national ID,
@@ -4139,20 +4139,48 @@ file shows a "No national ID on file" notice in the kit's own `.warnbar` (the el
 duplicate-ID and mismatch notices already use). It says either what approving will adopt, that
 approving will be refused, or that there is nothing to adopt.
 
+**Second follow-up (2026-10-04, IR26-09): a result held for review stores its number.** Owner's call
+(item 2 below): store it. The webhook now stores the number Didit read from the document when it holds a
+result Didit **judged** for a human (`isDiditReviewHold`): Didit's In Review, or a Didit approval whose
+face match falls in the review band, which is final at Didit. A session Didit never finished judging
+(Abandoned, Expired, In Progress, Resubmitted) is still ignored: a number in its partial data verified
+nothing.
+
+- **What is written** (`RiderService.recordHeldVerifiedId`): `verified_id_hash` and `verified_id_number`,
+  normalised and encrypted like a typed ID. Nothing else. The decision is not resolved, so the rider stays
+  `pending` with `kycStatus`, `idVerified` and `kycResolvedAt` unchanged. Nothing is adopted onto the
+  profile, and no audit row or notification is written. The rider's own app gets the number only once
+  they are verified (`/auth/me` `kycIdNumber`).
+- **Only while the rider's current check is undecided:** the session matches `kycRef`, the rider is
+  `pending`, and `kycResolvedAt` is empty. Every decision stamps `kycResolvedAt`: the webhook's (a verify
+  it holds for review included, which stores its own number) and a hand approval, decline or expiry. So a
+  held result never overwrites a resolved decision's number, in any delivery order. This is deliberately not the
+  event-time comparison decisions make: the only time a webhook carries is Didit's dispatch time, and
+  Didit re-signs a retry with a fresh one. A check that `retryKyc` replaced, and an erased account
+  (erasure nulls `kycRef`), match no row. Erasure still scrubs the number and keeps its hash (DS15-02b).
+- **IR26-04 carries over:** the stored hash makes a later applicant showing the same document collide, as
+  the verified-but-held path already does on purpose. The write takes the number's advisory lock first,
+  like every writer of a national ID.
+
+What changes: the review page's "No national ID on file" notice now names the number for a held rider
+("Approving makes the number the ID check verified, … this account's national ID", or that approving
+will be refused), the duplicate-ID and mismatch notices work for them, and approving adopts the number
+instead of flagging `verified_id_missing`. A held result whose delivery Didit drops after its two
+retries, or that arrives only after a human decided, still stores nothing; approving that rider is
+flagged as before.
+
 **Open for the owner**
 
 1. **Watch the coverage after deploy.** Look for the log line `KYC <ref>: verified webhook carried no
    document number` and for `verified_id_missing` audit rows. If they are common, the Didit workflow is
    not returning document data, and the dedupe has nothing to key on.
 2. ~~**A KYC approved by hand adopts no ID.**~~ **Closed 2026-10-04 (IR26-08)**: see the follow-up above.
-   **One gap remains, and since IR26-07 it is the common case.** A result the webhook holds as `pending`
-   stores nothing, the number included. That covers Didit's In Review and, since IR26-07 made the
-   face-match bands run, a Didit **approval** whose face match falls in the review band (0.6–0.85). Such
-   a rider reaches the admin queue with no number, so approving them adopts nothing and is flagged
-   `verified_id_missing`. A band-held approval is final at Didit, so no later webhook brings the number.
-   An In Review session resolved later in Didit's console does adopt it, if that decision is newer than
-   the approval. Storing the vendor number from a held webhook would close the gap; that is the owner's
-   call.
+   ~~**One gap remains, and since IR26-07 it is the common case.**~~ **Closed 2026-10-04 (IR26-09), the
+   owner's call:** see the second follow-up above. The gap was that a result the webhook holds as
+   `pending` stored nothing, the number included: Didit's In Review and, since IR26-07 made the face-match
+   bands run, a Didit **approval** whose face match falls in the review band (0.6–0.85), which is final at
+   Didit. Such a rider reached the admin queue with no number, so approving them adopted nothing and was
+   flagged `verified_id_missing`.
 3. **No consent line before the check.** The privacy notice says consent for the ID and selfie is "given
    when you start rider verification". The only written line for it was `RO.privacy` on the details page,
    and since D-55/D-62 most riders had already skipped that page. R1 draws no such line. If the owner
