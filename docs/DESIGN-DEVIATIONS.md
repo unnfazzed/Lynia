@@ -16,7 +16,7 @@ be reported back to Design) · **PROPOSED** (built in an open PR that waits on t
 screenshot sheet; it becomes APPROVED when the owner approves that PR, which doesn't merge before —
 merchant web upgrade plan §10, OV-11).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-18, D-19, D-23, D-24, D-27, D-29, D-30, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48, D-49, D-50, D-51, D-52, D-53, D-54, D-55.** D-55 is Calm Mint v2 (2026-10-01): the owner's calm-mint-v2 handoff becomes the authority for the customer Home, customer onboarding and the rider's first run; it retires D-28 for Home and moves `--highlight` to #FFD23F. D-54 is Rider v2 (2026-10-01): the owner's rider-v2 handoff becomes the authority for the rider app and for BOTH Account tabs and Settings; it retires D-15, D-16, D-17, D-22, D-25 and D-26. D-53 is the customer order screen redesign (2026-10-01, with its v2 round the same day): the owner's after-send handoff replaces the gallery's separate auction / tracking / delivered / failure screens with one screen — a full-bleed map and a sheet that follows the order's stage. D-52 is the Send a parcel redesign (2026-10-01): the owner's send-compose-v2 handoff replaces the gallery's one-sheet composer with four steps (Where · What · Price · Review), edits addresses inline on the map, and drops landmarks, declared value and the disclaimer; it retires D-14, D-21 and D-31. D-51 is merchant branches (2026-10-01): the branch switcher, Add a branch, and the not-live Orders home. D-50 is restaurant auto-accept (2026-09-30): for restaurants still taking orders by phone, orders skip the accept window and LyniaGo ops confirm them by phone before a rider is sent. D-49 is the terms & conditions page (2026-09-30): one set of terms for customers, riders and businesses, linked from Settings in the app and the merchant sign-in line. D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-18, D-19, D-23, D-24, D-27, D-29, D-30, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48, D-49, D-50, D-51, D-52, D-53, D-54, D-55, D-77.** D-77 is Merchant v2 (2026-10-04): the owner's merchant-v2 handoff gives kitchens, shops and pharmacies one shell and one five-step order lifecycle, on top of D-48. D-55 is Calm Mint v2 (2026-10-01): the owner's calm-mint-v2 handoff becomes the authority for the customer Home, customer onboarding and the rider's first run; it retires D-28 for Home and moves `--highlight` to #FFD23F. D-54 is Rider v2 (2026-10-01): the owner's rider-v2 handoff becomes the authority for the rider app and for BOTH Account tabs and Settings; it retires D-15, D-16, D-17, D-22, D-25 and D-26. D-53 is the customer order screen redesign (2026-10-01, with its v2 round the same day): the owner's after-send handoff replaces the gallery's separate auction / tracking / delivered / failure screens with one screen — a full-bleed map and a sheet that follows the order's stage. D-52 is the Send a parcel redesign (2026-10-01): the owner's send-compose-v2 handoff replaces the gallery's one-sheet composer with four steps (Where · What · Price · Review), edits addresses inline on the map, and drops landmarks, declared value and the disclaimer; it retires D-14, D-21 and D-31. D-51 is merchant branches (2026-10-01): the branch switcher, Add a branch, and the not-live Orders home. D-50 is restaurant auto-accept (2026-09-30): for restaurants still taking orders by phone, orders skip the accept window and LyniaGo ops confirm them by phone before a rider is sent. D-49 is the terms & conditions page (2026-09-30): one set of terms for customers, riders and businesses, linked from Settings in the app and the merchant sign-in line. D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
 merchant web upgrade (L1–L5: sign-up, Book a rider and the shop's shell, Your riders, Team, and the drawn
 restaurant screens), approved by the owner with PR #986 (2026-09-29). D-42 is the lyniago.com marketing website: the design handoff shipped as-is, with four owner-decided launch items (2026-09-28). D-41 is the iPhone app shipping customer-only (2026-09-27). D-40 reopens D-01
 (WhatsApp OTP copy again, now that Bird Verify can deliver over WhatsApp) on an explicit 2026-09-01 user
@@ -4217,3 +4217,47 @@ Nothing in `packages/design/**` changes.
   states (R8a/R8b, T5c, M8, RD1d). The two handoffs disagree. The app keeps the drawn copy until the owner
   picks the wording (or a browse export redraws it). The fix would land in the customer app and ship with
   the next build.
+
+## D-77 · Merchant v2: one shell and one order lifecycle for kitchens, shops and pharmacies — APPROVED (2026-10-04)
+
+**Owner instruction, this session (2026-10-04):** *"i want to redesign merchant flows for both kitchen and
+shops … they shld be simple and in line with latest customer side redesign. kitchen and shops should share
+common things except where fundamentally different."* Then, with the export: *"here are the redesigns.
+review them and implement."*
+
+**This entry exists because the work touches `packages/design/**`**, which the reverse-drift freeze gates.
+The design package only *absorbs a new export* here; nothing in it is edited to match code.
+
+### 1 · The design-package sync (a record, not a deviation)
+
+| Path | What |
+|---|---|
+| `packages/design/handoff/merchant-v2/` | The Merchant v2 export (`merchant-v2-2026-10`), **verbatim**: `BRIEF.md` (the product rules, "final"), `README.md` (screens K1–K5, S1–S4, P1, T1–T4, the component spec table, Needs backend, Keep/Retire), `CLAUDE-CODE-PROMPT.md`, the 14 screens (`Merchant v2 - all screens.html` and its source `MerchantV2.dc.html`) and a `tokens/` snapshot. |
+
+### 2 · Authority for the merchant app (a scope rule)
+
+For merchant screens the LOOK is now this handoff. It **builds on D-48** (merchant-mobile, the phone
+frame and the screens Merchant v2 doesn't redraw: sign-in, onboarding and the settings sub-screens, which
+are restyled only) and supersedes D-48's B1–B7, C1–C5 and D1–D7 and D-59's merchant M-screens where they
+overlap. Order flow v2's copy (`ORDER_FLOW` in `apps/merchant/app/lib/vocabulary.ts`) stays the source for
+any string Merchant v2 doesn't draw. Viewport unchanged: 360×720 with the 320px check.
+
+### 3 · Owner decisions on what the handoff assumes (2026-10-04, asked before building)
+
+| Handoff says | Decision |
+|---|---|
+| BRIEF §3: a 60 s (kitchen) / 90 s (shop) countdown to answer | **Keep the server's 3-minute accept window.** The ringing screen counts down the real time left (`acceptDeadlineAt`). No customer-facing change. |
+| S1/S2 name the customer ("Rudo asked for 4 items", "4 items · Rudo · cash") | **Add the customer's first name** to the merchant's order read (additive), so the drawn copy is used word for word. First name only. |
+| BRIEF open question 2: does +5 min notify the customer? | **Yes**, a silent push with the new time. |
+| BRIEF open question 1: a manual hand-over when the rider's phone is offline | **Build it behind a flag that stays off.** |
+
+### 4 · What differs from the drawings, and why
+
+| Where | Mock | App | Why |
+|---|---|---|---|
+| Handoff `tokens/colors.css` | `--highlight-sun`, `--highlight-sun-ink` | `--highlight`, `--highlight-chip-ink` | The export carries an older token snapshot. D-55 already made `--highlight` the sun gold (#FFD23F) and `--highlight-chip-ink` is the same #3D3100, so no colour is added. |
+| T1 live bar | "Blessing is at your counter" | "Blessing is coming to your counter" until the API knows a rider has arrived | The API has no arrival signal (the rider's code entry is the first thing it hears at the counter). Arrival is on the README's Needs-backend list; the drawn line returns once it lands. |
+| T1 live bar, undrawn states | One state drawn | "New order · #A1B2" (ringing), "Waiting for the customer to answer", or just the counts | Built from the drawn bar's own parts; nothing new is invented beyond its words. |
+| T4 on a shop | "Customers can see your menu" | "…your items" | A shop has no menu; the shop's vocabulary word. |
+
+*Further rows are added PR by PR as the screens land.*

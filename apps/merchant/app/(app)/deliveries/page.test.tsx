@@ -41,7 +41,7 @@ afterEach(() => {
 });
 
 describe("D1 · Shop Orders home (merchant mobile, D-48)", () => {
-  it("draws B1's header with Book a rider, and the bookings as trackers", async () => {
+  it("draws S1's top card with Book a rider and no KPI strip (Merchant v2, D-77), and the bookings as trackers", async () => {
     vi.mocked(getMerchantProfile).mockResolvedValue(merchantProfile({ name: "Mbare Auto Spares", businessType: "shop", location: PIN }));
     vi.mocked(listBookings).mockResolvedValue([
       merchantBooking({ id: "live", state: "finding", itemsSummary: "Car battery", offerCount: 3, expiresAt: new Date(Date.now() + 62_000).toISOString() }),
@@ -50,7 +50,8 @@ describe("D1 · Shop Orders home (merchant mobile, D-48)", () => {
     ]);
     render(<Page />);
     expect(await screen.findByText("Mbare Auto Spares")).toBeTruthy();
-    expect(await screen.findByText("$86.00")).toBeTruthy();
+    expect(await screen.findByText("Car battery · 3 offers")).toBeTruthy();
+    expect(screen.queryByText("Sales")).toBeNull();
     expect(screen.getByRole("link", { name: /Book a rider/ }).getAttribute("href")).toBe("/deliveries/new");
     const list = screen.getByRole("region", { name: "Riders you booked" });
     expect(within(list).getByText("Car battery · 3 offers")).toBeTruthy();

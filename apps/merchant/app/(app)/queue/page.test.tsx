@@ -174,15 +174,15 @@ describe("a failed queue poll is never a lasting red line (Order flow v2's rule,
 });
 
 describe("B1 · Orders home (merchant mobile, D-48)", () => {
-  it("draws the header: name, open line, switch, and the owner's Orders · Sales · Cash overdue tiles", async () => {
+  it("draws the top card: name, open line, open pill, and the owner's Orders · Sales · Cash due strip (Merchant v2, D-77)", async () => {
     vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
     render(<Page />);
     expect(await screen.findByText("Sadza Republic")).toBeTruthy();
-    expect(screen.getByText("● Open until 23:59")).toBeTruthy();
-    expect(screen.getByRole("switch", { name: "Open for orders" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText("Open · until 23:59")).toBeTruthy();
+    expect(screen.getByRole("switch", { name: "Open" }).getAttribute("aria-checked")).toBe("true");
     expect(await screen.findByText("$59.50")).toBeTruthy();
     expect(screen.getByText("7")).toBeTruthy();
-    expect(screen.getByRole("link", { name: /Cash overdue/ }).getAttribute("href")).toBe("/statement");
+    expect(screen.getByRole("link", { name: /Cash due/ }).getAttribute("href")).toBe("/statement");
     expect(screen.queryByText(/Book a rider/)).toBeNull();
     expect(screen.queryByText(/alarm/i)).toBeNull();
   });
@@ -365,19 +365,20 @@ describe("M1a · an auto-accepted order rings until the kitchen confirms it (Ord
 });
 
 describe("the open/closed switch (B1 → B5)", () => {
-  it("closing greys the header and shows B5; Open now and busy mode open again", async () => {
+  it("closing greys the top card and shows T4 (Merchant v2, D-77); Open now and Open, but busy open again", async () => {
     vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
     const closedUntil = new Date(Date.now() + 3_600_000).toISOString();
     vi.mocked(setOpen).mockResolvedValueOnce(kitchen({ closedUntil }));
     render(<Page />);
-    fireEvent.click(await screen.findByRole("switch", { name: "Open for orders" }));
+    fireEvent.click(await screen.findByRole("switch", { name: "Open" }));
     expect(await screen.findByText("You’re closed")).toBeTruthy();
+    expect(screen.getByText(/^Customers can see your menu but can’t order\./)).toBeTruthy();
     expect(setOpen).toHaveBeenCalledWith(false);
     expect(screen.getByRole("switch", { name: "Closed" }).getAttribute("aria-checked")).toBe("false");
 
     vi.mocked(setOpen).mockResolvedValueOnce(kitchen({ closedUntil: null }));
     vi.mocked(setBusyMode).mockResolvedValueOnce(kitchen({ closedUntil: null, busy: true }));
-    fireEvent.click(screen.getByRole("button", { name: "Open in busy mode (+10 min)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open, but busy (+10 min)" }));
     await vi.waitFor(() => expect(setBusyMode).toHaveBeenCalledWith({ active: true }));
     expect(setOpen).toHaveBeenLastCalledWith(true);
     expect(await screen.findByText("Open · busy mode +10 min")).toBeTruthy();

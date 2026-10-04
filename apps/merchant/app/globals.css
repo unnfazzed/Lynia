@@ -54,6 +54,16 @@
   --danger: #c0392b;
   --danger-wash: #faedeb;
   --danger-ink: #8f2418;
+  /* Merchant v2 (handoff/merchant-v2, ledger D-77): the dark live bar, the gold count chip, the APP
+   * tag and the dish tiles (mirrors packages/design/tokens/colors.css). */
+  --live-bar: #063b22;
+  --live-bar-ink: #bfe6cd;
+  --highlight-chip-ink: #3d3100;
+  --rider-wash: #ece8ff;
+  --rider-accent: #4b2fbf;
+  --tile-peach: #ffd9cc;
+  --coral-ink: #c2412a;
+  --tile-pharmacy: #c5e9df;
   --shadow-card: 0 1px 4px rgba(20, 24, 27, 0.08), 0 2px 12px rgba(20, 24, 27, 0.06);
 
   --space-xs: 4px;

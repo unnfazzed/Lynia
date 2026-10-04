@@ -877,7 +877,7 @@ export class MerchantService {
     const end = endOfToday();
 
     const overdueBefore = new Date(Date.now() - RESTAURANTS_DEBT.cashReturnWindowMs);
-    const [delivered, rejected, walletTaken, cashTaken, prepped, placed, overdueRows, todays] = await Promise.all([
+    const [delivered, rejected, walletTaken, cashTaken, prepped, placed, owedRows, todays] = await Promise.all([
       this.prisma.order.count({
         where: { merchantId, orderType: "merchant", status: "delivered", deliveredAt: { gte: start, lte: end } },
       }),
@@ -909,10 +909,11 @@ export class MerchantService {
         // D-71: sales are the venue's money — goods less the delivery it paid for.
         _sum: { merchantGoodsTotal: true, merchantDeliveryShare: true },
       }),
-      // D-48: cash a rider still owes back past its due time (delivered + the return window), neither
-      // counted nor closed by the merchant. Any day's, not just today's: overdue is overdue.
+      // D-48: cash a rider still owes back, neither counted nor closed by the merchant. Any day's, not
+      // just today's. Merchant v2 (D-77) shows all of it as "Cash due"; past its due time (delivered +
+      // the return window) it is also overdue.
       this.prisma.order.findMany({
-        where: { merchantId, orderType: "merchant", debtStatus: "open", merchantClosedAt: null, deliveredAt: { lt: overdueBefore } },
+        where: { merchantId, orderType: "merchant", debtStatus: "open", merchantClosedAt: null, deliveredAt: { not: null } },
         select: { id: true, debtAmount: true, deliveredAt: true, rider: { select: { profile: { select: { firstName: true } } } } },
         orderBy: { deliveredAt: "asc" },
         take: 50,
@@ -939,14 +940,18 @@ export class MerchantService {
     // D-48 PR 4b: a shop booking's cash on delivery, overdue the same way (its orders are the booking
     // account's, not the merchant's).
     const bookingAccountId = await findBookingAccountId(this.prisma, merchantId);
-    const bookingOverdue = bookingAccountId
+    const bookingOwed = bookingAccountId
       ? await this.prisma.order.findMany({
-          where: { customerId: bookingAccountId, orderType: "parcel", debtStatus: "open", merchantClosedAt: null, deliveredAt: { lt: overdueBefore } },
+          where: { customerId: bookingAccountId, orderType: "parcel", debtStatus: "open", merchantClosedAt: null, deliveredAt: { not: null } },
           select: { id: true, debtAmount: true, deliveredAt: true, rider: { select: { profile: { select: { firstName: true } } } } },
           orderBy: { deliveredAt: "asc" },
           take: 50,
         })
       : [];
+
+    const isOverdue = (o: { deliveredAt: Date | null }) => o.deliveredAt != null && o.deliveredAt < overdueBefore;
+    const overdueRows = owedRows.filter(isOverdue);
+    const bookingOverdue = bookingOwed.filter(isOverdue);
 
     const prepMinutes = prepped
       .filter((o): o is { readyAt: Date; prepStartedAt: Date } => o.readyAt != null && o.prepStartedAt != null)
@@ -962,6 +967,7 @@ export class MerchantService {
       averagePrepMinutes,
       orders: placed._count._all,
       sales: subMoney(Number(placed._sum.merchantGoodsTotal ?? 0), Number(placed._sum.merchantDeliveryShare ?? 0)),
+      cashDue: addMoney(0, ...[...owedRows, ...bookingOwed].map((o) => Number(o.debtAmount ?? 0))),
       cashOverdue: addMoney(0, ...[...overdueRows, ...bookingOverdue].map((o) => Number(o.debtAmount ?? 0))),
       overdue: [
         ...overdueRows.map((o) => ({ o, kind: "order" as const })),

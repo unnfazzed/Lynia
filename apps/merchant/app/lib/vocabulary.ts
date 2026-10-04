@@ -95,7 +95,7 @@ const SHOP_STARTERS: Readonly<Record<MerchantShopKind, readonly string[]>> = {
 function shopVocabulary(kind: MerchantShopKind | null | undefined): Vocabulary {
   const starters = SHOP_STARTERS[kind ?? "other"];
   return {
-    catalog: "Items",
+    catalog: "Inventory", // Merchant v2 (D-77): the tab and screen title
     catalogLower: "items",
     item: "item",
     items: "items",
