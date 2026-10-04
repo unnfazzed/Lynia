@@ -57,7 +57,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-async function toDetailsAs(type: "Restaurant" | "Shop") {
+async function toDetailsAs(type: "Restaurant" | "Shop" | "Pharmacy") {
   render(<OnboardingPage />);
   await screen.findByText("What do you sell?");
   fireEvent.click(screen.getByRole("radio", { name: type }));
@@ -77,12 +77,12 @@ describe("A3 · What do you sell? (merchant mobile redesign, D-48)", () => {
     await vi.waitFor(() => expect(replace).toHaveBeenCalledWith("/deliveries"));
   });
 
-  it("is restaurant or shop — no shop kinds — and Next waits for the pick", async () => {
+  it("is restaurant, shop or pharmacy (D-76) — no other shop kinds — and Next waits for the pick", async () => {
     render(<OnboardingPage />);
     await screen.findByText("Step 1 of 2");
     const next = screen.getByRole("button", { name: "Next" }) as HTMLButtonElement;
     expect(next.disabled).toBe(true);
-    expect(screen.getAllByRole("radio").map((r) => r.textContent)).toEqual(["Restaurant", "Shop"]);
+    expect(screen.getAllByRole("radio").map((r) => r.textContent)).toEqual(["Restaurant", "Shop", "Pharmacy"]);
     fireEvent.click(screen.getByRole("radio", { name: "Shop" }));
     expect(screen.getByRole("radio", { name: "Shop" }).getAttribute("aria-checked")).toBe("true");
     expect(next.disabled).toBe(false);
@@ -124,6 +124,17 @@ describe("A4 · Your business", () => {
       location: { point: MBARE, address: "5th Street, Mbare", contactPhone: "+263771234567" },
       termsAccepted: true,
     });
+  });
+
+  it("signs a pharmacy up as a shop of kind pharmacy, so it lists under Pharmacy", async () => {
+    vi.mocked(becomeMerchant).mockResolvedValue(merchantProfile({ businessType: "shop", shopKind: "pharmacy" }));
+    await toDetailsAs("Pharmacy");
+    fireEvent.change(screen.getByLabelText("Business name"), { target: { value: "Mbare Pharmacy" } });
+    fireEvent.click(screen.getByRole("button", { name: "Use my current location" }));
+    expect(await screen.findByText("5th Street, Mbare")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Create my business" }));
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith("/deliveries"));
+    expect(becomeMerchant).toHaveBeenCalledWith(expect.objectContaining({ name: "Mbare Pharmacy", businessType: "shop", shopKind: "pharmacy" }));
   });
 
   it("finds the business by searching, and Change goes to the search", async () => {

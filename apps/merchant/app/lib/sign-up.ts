@@ -18,8 +18,13 @@ export interface SignUpLocation {
   source: "gps" | "search";
 }
 
+/** Step 1's three cards. A pharmacy is a shop of kind `pharmacy` (ledger D-76). */
+export type SellChoice = MerchantBusinessType | "pharmacy";
+
 export interface SignUpForm {
   businessType: MerchantBusinessType | null;
+  /** True when "Pharmacy" was picked: a shop whose kind is `pharmacy`, listed under Pharmacy. */
+  pharmacy?: boolean;
   ownerName: string;
   name: string;
   location: SignUpLocation | null;
@@ -31,6 +36,17 @@ export type SignUpField = "ownerName" | "name" | "location";
 export type SignUpErrors = Partial<Record<SignUpField, string>>;
 
 export const OUTSIDE_AREA_MESSAGE = "That place is outside the area LyniaGo covers for now.";
+
+/** Which card is ticked. */
+export function sellChoice(form: SignUpForm): SellChoice | null {
+  if (form.businessType === "shop" && form.pharmacy) return "pharmacy";
+  return form.businessType;
+}
+
+/** Picking a card sets the type and, for Pharmacy, the kind. */
+export function pickSellChoice(form: SignUpForm, choice: SellChoice): SignUpForm {
+  return choice === "pharmacy" ? { ...form, businessType: "shop", pharmacy: true } : { ...form, businessType: choice, pharmacy: false };
+}
 
 /** Step 2's checks, with the same limits the API's `BecomeMerchantRequest` enforces. */
 export function validateDetails(form: SignUpForm): SignUpErrors {
@@ -55,6 +71,7 @@ export function toBecomeRequest(form: SignUpForm): BecomeMerchantRequest {
     ownerName: form.ownerName.trim(),
     name: form.name.trim(),
     businessType: form.businessType,
+    ...(form.businessType === "shop" && form.pharmacy ? { shopKind: "pharmacy" as const } : {}),
     location: {
       point: form.location.point,
       ...(address ? { address: address.slice(0, 200) } : {}),

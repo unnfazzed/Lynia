@@ -246,6 +246,11 @@
   background: #dff4ee;
   color: var(--accent-text);
 }
+/* Pharmacy (D-76): the customer app's Pharmacy tile, --tile-pharmacy. */
+.m-tile-pharmacy {
+  background: #c5e9df;
+  color: var(--accent-text);
+}
 
 /* ── Buttons & links ────────────────────────────────────────────────────────────────────── */
 .m-btn {

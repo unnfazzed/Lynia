@@ -1,6 +1,6 @@
 import { BecomeMerchantRequest } from "@lynia/shared";
 import { describe, expect, it } from "vitest";
-import { fieldForReason, OUTSIDE_AREA_MESSAGE, type SignUpForm, toBecomeRequest, validateDetails } from "./sign-up";
+import { fieldForReason, OUTSIDE_AREA_MESSAGE, pickSellChoice, sellChoice, type SignUpForm, toBecomeRequest, validateDetails } from "./sign-up";
 
 const filled: SignUpForm = {
   businessType: "shop",
@@ -39,6 +39,26 @@ describe("sign-up step 2: your business (merchant-mobile A4)", () => {
       termsAccepted: true,
     });
     expect(BecomeMerchantRequest.safeParse(body).success).toBe(true);
+  });
+
+  it("signs a pharmacy up as a shop of kind pharmacy, so it lists under Pharmacy", () => {
+    const form = pickSellChoice(filled, "pharmacy");
+    expect(sellChoice(form)).toBe("pharmacy");
+    const body = toBecomeRequest(form);
+    expect(body.businessType).toBe("shop");
+    expect(body.shopKind).toBe("pharmacy");
+    expect(BecomeMerchantRequest.safeParse(body).success).toBe(true);
+  });
+
+  it("drops the pharmacy kind when the choice changes back to shop or restaurant", () => {
+    const pharmacy = pickSellChoice(filled, "pharmacy");
+    const shop = pickSellChoice(pharmacy, "shop");
+    expect(sellChoice(shop)).toBe("shop");
+    expect(toBecomeRequest(shop).shopKind).toBeUndefined();
+    const restaurant = pickSellChoice(pharmacy, "restaurant");
+    expect(sellChoice(restaurant)).toBe("restaurant");
+    expect(toBecomeRequest(restaurant).shopKind).toBeUndefined();
+    expect(BecomeMerchantRequest.safeParse(toBecomeRequest(restaurant)).success).toBe(true);
   });
 
   it("leaves the address out when nothing could name the place", () => {

@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { MerchantBusinessType } from "@lynia/shared";
 import { AppBar } from "../components/m/AppBar";
 import { LocationField } from "../components/m/LocationField";
 import { useToast } from "../components/m/Toast";
@@ -11,7 +10,7 @@ import { RetryableError } from "../components/RetryableError";
 import { ApiError, becomeMerchant, getMyAccount, getMyMerchant } from "../lib/api-client";
 import { homePath } from "../lib/booking";
 import { clearMerchantSession } from "../lib/session";
-import { fieldForReason, type SignUpErrors, type SignUpForm, toBecomeRequest, validateDetails } from "../lib/sign-up";
+import { fieldForReason, pickSellChoice, type SellChoice, sellChoice, type SignUpErrors, type SignUpForm, toBecomeRequest, validateDetails } from "../lib/sign-up";
 import { noBusinessPath } from "../lib/team-api";
 
 type Gate = { status: "checking" } | { status: "form" } | { status: "error"; message: string };
@@ -19,7 +18,7 @@ type Gate = { status: "checking" } | { status: "form" } | { status: "error"; mes
 const EMPTY_FORM: SignUpForm = { businessType: null, ownerName: "", name: "", location: null, contactPhone: "" };
 
 /**
- * A3 · What do you sell? and A4 · Your business (packages/design/handoff/merchant-mobile, ledger D-48)
+ * A3 · What do you sell? (Restaurant, Shop, or Pharmacy — D-76) and A4 · Your business (packages/design/handoff/merchant-mobile, ledger D-48)
  * — what a signed-in number that isn't on a business sees. Two steps: restaurant or shop, then the
  * business name, your name and where it is: "Use my current location" (GPS, named by a reverse
  * lookup) or "Or search street or area" (Google Places). No map pin, no landmark, no contact-phone
@@ -156,8 +155,9 @@ export default function OnboardingPage() {
             What do you sell?
           </h1>
           <div role="radiogroup" aria-label="What do you sell?" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <TypeCard type="restaurant" picked={form.businessType} onPick={(t) => update("businessType", t)} />
-            <TypeCard type="shop" picked={form.businessType} onPick={(t) => update("businessType", t)} />
+            {(["restaurant", "shop", "pharmacy"] as const).map((t) => (
+              <TypeCard key={t} type={t} picked={sellChoice(form)} onPick={(c) => setForm((f) => pickSellChoice(f, c))} />
+            ))}
           </div>
           <div style={{ flex: 1 }} />
           <Link href="/join" className="m-lnk" style={{ fontSize: 13 }}>
@@ -206,15 +206,22 @@ export default function OnboardingPage() {
   );
 }
 
-function TypeCard({ type, picked, onPick }: { type: MerchantBusinessType; picked: MerchantBusinessType | null; onPick: (t: MerchantBusinessType) => void }) {
-  const restaurant = type === "restaurant";
+const TYPE_CARDS: Record<SellChoice, { label: string; tile: string; img: string; width: number }> = {
+  restaurant: { label: "Restaurant", tile: "m-tile-food", img: "/brand/food.svg", width: 44 },
+  shop: { label: "Shop", tile: "m-tile-shop", img: "/brand/biz-small-business.svg", width: 52 },
+  // Not drawn in A3 (ledger D-76): the same card, with the customer app's Pharmacy tile and sticker.
+  pharmacy: { label: "Pharmacy", tile: "m-tile-pharmacy", img: "/brand/pharmacy.svg", width: 44 },
+};
+
+function TypeCard({ type, picked, onPick }: { type: SellChoice; picked: SellChoice | null; onPick: (t: SellChoice) => void }) {
+  const card = TYPE_CARDS[type];
   return (
     <button type="button" role="radio" aria-checked={picked === type} className="m-opt" style={{ minHeight: 84 }} onClick={() => onPick(type)}>
-      <span className={`m-th ${restaurant ? "m-tile-food" : "m-tile-shop"}`} style={{ width: 56, height: 56 }}>
+      <span className={`m-th ${card.tile}`} style={{ width: 56, height: 56 }}>
         {/* eslint-disable-next-line @next/next/no-img-element -- static illustrations from /public */}
-        <img src={restaurant ? "/brand/food.svg" : "/brand/biz-small-business.svg"} alt="" style={{ width: restaurant ? 44 : 52 }} />
+        <img src={card.img} alt="" style={{ width: card.width }} />
       </span>
-      <b style={{ fontSize: 16, flex: 1 }}>{restaurant ? "Restaurant" : "Shop"}</b>
+      <b style={{ fontSize: 16, flex: 1 }}>{card.label}</b>
       <span className="m-rad" />
     </button>
   );

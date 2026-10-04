@@ -4185,3 +4185,31 @@ flagged as before.
    when you start rider verification". The only written line for it was `RO.privacy` on the details page,
    and since D-55/D-62 most riders had already skipped that page. R1 draws no such line. If the owner
    wants one, it is a Claude Design request: the app does not improvise it.
+
+## D-76 · Pharmacies launch in full: a Pharmacy card at sign-up, prescriptions on by default — APPROVED (2026-10-04)
+
+**Owner instruction, this session (2026-10-04):** *"Shops are also fully launched. If not they must be
+launched."* then *"Pharmacies must be launched too in full."*
+
+Before this, no business could become a pharmacy. The merchant-mobile A3 "What do you sell?" draws only
+Restaurant and Shop (D-48 §4 records it), a shop is stored with kind `other`, and nothing in the merchant
+web or admin console sets the kind. So the customer Pharmacy section (D-58), which lists only kind
+`pharmacy`, could never list anyone. Prescriptions (D-59, BRIEF §13) were built but `RX_ENABLED` had no
+workflow Variable, so production kept them off.
+
+### 1 · What changes
+
+| Where | Mock / before | App now | Why |
+|---|---|---|---|
+| Merchant `/onboarding` A3 | Two radio cards: Restaurant, Shop | **Three:** Restaurant, Shop, **Pharmacy**. Same `m-opt` card (84px, r14, 56px tile). Pharmacy uses the design's `assets/service-icons/pharmacy.svg` on the `--tile-pharmacy` tint (#C5E9DF). Picking it signs up `businessType: shop, shopKind: pharmacy` (the API has accepted `shopKind` since L1). | A pharmacy needs a way in. Undrawn, so it reuses A3's own card and the customer app's Pharmacy sticker. **Upstream ask:** draw the third card. |
+| Release / staging workflows | `RX_ENABLED` not passed (env default `false`) | `RX_ENABLED: ${{ vars.RX_ENABLED \|\| 'true' }}` (staging: `STAGING_RX_ENABLED`), validated `true\|false` with the other kill switches | "In full" includes prescriptions. Setting the Variable to `"false"` is the kill switch. Safeguards are unchanged: only a team member the owner ticks as pharmacist can approve or decline, and an Rx order can't be packed until one does (runbook §5). |
+
+Nothing in `packages/design/**` changes.
+
+### 2 · Open for the owner (PENDING OWNER REVIEW)
+
+- The browse-v2 OTC notice (B4/S4, `B.list.otc`, verbatim) reads *"Over-the-counter only. No prescription
+  medicine yet."* With prescriptions on, that line is no longer true, while Order flow v2 draws the Rx
+  states (R8a/R8b, T5c, M8, RD1d). The two handoffs disagree. The app keeps the drawn copy until the owner
+  picks the wording (or a browse export redraws it). The fix would land in the customer app and ship with
+  the next build.
