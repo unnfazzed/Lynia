@@ -76,6 +76,10 @@ import { PrescriptionService } from "./prescription.service";
 // rider's navigation card; the customer paying their own order needs the real number, exactly as
 // the design source shows it — packages/design/RESTAURANTS-DECISIONS.md D-24). Falls back to the
 // merchant account's own registered phone when no pickup-point contactPhone is set yet (toResponse).
+/** Merchant v2 K3 (D-77): "+5 min" adds this much prep, up to the cap. */
+export const PREP_EXTEND_MIN = 5;
+export const PREP_MAX_MIN = 120;
+
 const ORDER_WITH_ITEMS_INCLUDE = {
   merchantItems: true,
   merchant: {
@@ -113,7 +117,8 @@ const ORDER_WITH_ITEMS_INCLUDE = {
       tripsCount: true,
       kycStatus: true,
       photoUrl: true,
-      profile: { select: { firstName: true, lastName: true } },
+      // `phone` is read only by forMerchant (Merchant v2's call button, D-77); toResponse never maps it.
+      profile: { select: { firstName: true, lastName: true, phone: true } },
     },
   },
 } satisfies Prisma.OrderInclude;
@@ -922,6 +927,36 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     return this.toResponse(await this.mustFindWithItems(orderId));
   }
 
+  /**
+   * Merchant v2 K3 "+5 min" (ledger D-77): the kitchen pushes the ready time back five minutes without
+   * cancelling. The ready time is prep start + prep minutes, so this moves the dispatch lead too. The
+   * customer gets a silent push with the new time (owner decision 2026-10-04). A cap keeps a slow order
+   * from drifting for ever: past it, the kitchen calls the customer.
+   */
+  async extendPrep(profileId: string, orderId: string): Promise<MerchantOrderResponse> {
+    const order = await this.findOwnAsMerchant(profileId, orderId);
+    if (order.merchantPhase !== "preparing" || !order.prepStartedAt) throw new ConflictException("This order isn't in prep");
+    const prepMinutes = (order.prepMinutes ?? 0) + PREP_EXTEND_MIN;
+    if (prepMinutes > PREP_MAX_MIN) {
+      throw new ConflictException({ reason: "prep_too_long", message: "That’s as late as it can go. Call the customer if it needs longer." });
+    }
+    const claimed = await this.prisma.order.updateMany({
+      where: { id: orderId, merchantPhase: "preparing", prepMinutes: order.prepMinutes },
+      data: { prepMinutes },
+    });
+    if (claimed.count === 0) throw new ConflictException("Order changed, retry");
+    this.notifyQueue(order.merchantId, orderId);
+    const readyAt = new Date(order.prepStartedAt.getTime() + prepMinutes * 60_000).toISOString();
+    await this.notifications.notifyProfiles([order.customerId], {
+      title: "",
+      body: "",
+      silent: true,
+      collapseKey: `food-ready-${orderId}`,
+      data: { orderId, status: "preparing", to: "customer", orderType: "merchant", kind: "food_ready_time", readyAt },
+    });
+    return this.forMerchant(await this.mustFindWithItems(orderId));
+  }
+
   /** N-16 reveal: `markReady` hashes the code it mints and discards the plaintext, so this is the
    *  ONLY way the tablet can learn (or re-learn, after a reload) the current code to read out to the
    *  rider at the counter. Mints a fresh code every call — mirrors `rotateDeliveryCode`'s own
@@ -1437,7 +1472,14 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     const { venueRating: _venueRating, ...rest } = this.toResponse(order);
     // Merchant v2 (D-77, owner decision): the customer's FIRST name only ("Rudo asked for 4 items").
     const firstName = order.customer?.firstName?.trim() || null;
-    return { ...rest, customerPhone: dropoff?.contactPhone ?? null, ...(firstName ? { customerFirstName: firstName } : {}) };
+    // Merchant v2 (D-77): the assigned rider's number, so the counter can call them (K4) and about late cash (T2).
+    const riderPhone = order.rider?.profile?.phone || null;
+    return {
+      ...rest,
+      customerPhone: dropoff?.contactPhone ?? null,
+      ...(firstName ? { customerFirstName: firstName } : {}),
+      ...(riderPhone ? { riderPhone } : {}),
+    };
   }
 
   private async notifyCancelledCustomer(orderId: string, reason: MerchantRejectionReasonCode): Promise<void> {

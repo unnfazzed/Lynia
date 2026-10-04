@@ -515,7 +515,7 @@ export class NotificationsService {
    */
   async notifyProfiles(
     profileIds: string[],
-    msg: { title: string; body: string; data?: Record<string, string> },
+    msg: { title: string; body: string; data?: Record<string, string>; collapseKey?: string; silent?: boolean },
   ): Promise<void> {
     try {
       await this.send(profileIds, msg);
@@ -557,7 +557,7 @@ export class NotificationsService {
    *  callers ignore it). Private; all callers pre-wrap in try/catch. */
   private async send(
     profileIds: string[],
-    msg: { title: string; body: string; data?: Record<string, string>; ttlSeconds?: number; collapseKey?: string },
+    msg: { title: string; body: string; data?: Record<string, string>; ttlSeconds?: number; collapseKey?: string; silent?: boolean },
   ): Promise<Set<string>> {
     if (profileIds.length === 0) return new Set();
     const tokens = await this.prisma.deviceToken.findMany({
@@ -579,6 +579,7 @@ export class NotificationsService {
         data: msg.data,
         ttlSeconds: msg.ttlSeconds,
         collapseKey: msg.collapseKey,
+        ...(msg.silent ? { silent: true } : {}),
       })),
     );
 

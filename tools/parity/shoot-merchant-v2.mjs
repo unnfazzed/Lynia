@@ -102,6 +102,7 @@ function apiRoute(route, scenario) {
   const one = path.match(/^\/merchant\/orders\/([0-9a-f-]+)$/);
   if (one) return json(200, (scenario.orders ?? []).find((o) => o.id === one[1]) ?? {});
   if (path === "/merchant/scheduled-orders") return json(200, []);
+  if (/\/pickup-code\/reveal$/.test(path)) return json(200, { pickupCode: scenario.code ?? "720518" });
   if (path === "/merchant/bookings") return json(200, scenario.bookings ?? []);
   const bk = path.match(/^\/merchant\/bookings\/([0-9a-f-]+)$/);
   if (bk) return json(200, (scenario.bookings ?? []).find((b) => b.id === bk[1]) ?? {});
@@ -171,7 +172,30 @@ const removeItem = (name) => async (p) => {
   await d.getByRole("button", { name }).first().click();
   await d.getByRole("button", { name: "Remove it" }).click();
 };
+const cookingK3 = order("a2220000-0000-4000-8000-000000000000", {
+  items: [line("Mazondo", 5), line("Sadza & greens", 4.5)], merchantGoodsTotal: 9.5, prepMinutes: 15, prepStartedAt: ago(6.02),
+  riderId: RIDER.profileId, rider: RIDER, dispatchAttempt: 1,
+});
+const handK4 = order("a4440000-0000-4000-8000-000000000000", {
+  merchantPhase: null, status: "assigned", riderId: RIDER.profileId, rider: RIDER, riderPhone: "+263772222222", items: [line("Mazondo", 5, 2)], merchantGoodsTotal: 10,
+});
+const wayK5 = order("a1110000-0000-4000-8000-000000000000", {
+  merchantPhase: null, status: "en_route_dropoff", riderId: RIDER.profileId, rider: RIDER, items: [line("Sadza & beef stew", 4.5, 2), line("Mazoe", 3)],
+  merchantGoodsTotal: 12, deliveryFee: 3.2, debtStatus: "open", debtAmount: 12,
+});
+const TENDAI = { ...RIDER, firstName: "Tendai", lastName: "Moyo", plate: "ABH 4721", ratingAvg: 4.8 };
+const handS3 = order("a1b20000-0000-4000-8000-000000000000", {
+  merchantPhase: null, status: "en_route_pickup", riderId: TENDAI.profileId, rider: TENDAI, riderPhone: "+263773333333", venue: SHOP_VENUE, pickupProofRequired: true,
+  pickupProof: { photoUrl: null, takenAt: ago(1), bagSealed: true }, items: [line("Bread", 1.1), line("Eggs", 5.5), line("Oil", 4.8)], merchantGoodsTotal: 11.4,
+});
+
 const SETS = {
+  ticket: [
+    { mock: "K3 Cooking ticket", label: "K3 · Cooking ticket", sub: "rider line: no arrival time on the read yet (D-77 §4)", app: { name: "K3", path: `/queue/${cookingK3.id}`, scenario: { me: KITCHEN, orders: [cookingK3] } } },
+    { mock: "K4 Hand over", label: "K4 · Hand over", sub: "no “at your counter”: no arrival signal yet", app: { name: "K4", path: `/queue/${handK4.id}`, scenario: { me: KITCHEN, orders: [handK4] } } },
+    { mock: "K5 On the way", label: "K5 · On the way + cash back", sub: "map: OSM around the kitchen; no arrival time on the read", app: { name: "K5", path: `/queue/${wayK5.id}`, scenario: { me: KITCHEN, orders: [wayK5] } } },
+    { mock: "S3 Sealed bag hand over", label: "S3 · Hand over, sealed bag", sub: "photo stand-in (no URL in the fixture)", app: { name: "S3", path: `/queue/${handS3.id}`, scenario: { me: LIVE_SHOP, orders: [handS3], code: "731604" } } },
+  ],
   board: [
     { mock: "K1 Orders home", label: "K1 · Orders board", sub: "“coming to your counter” (no arrival signal yet); no arrival ETA on the way (D-77 §4)", app: { name: "K1", path: "/queue", scenario: { me: KITCHEN, orders: BOARD } } },
     { mock: "S1 Shop home", label: "S1 · Shop board (APP + BOOKED)", app: { name: "S1", path: "/queue", scenario: { me: LIVE_SHOP, orders: [waitingShop], bookings: BOOKINGS } } },

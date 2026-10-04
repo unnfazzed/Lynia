@@ -132,6 +132,14 @@ describe("maskToken — never log a whole device token", () => {
 });
 
 describe("buildFcmMessage — payload contract", () => {
+  it("a silent push (D-77) is data only, and a background push on iOS", () => {
+    expect(buildFcmMessage({ token: "tok", title: "", body: "", silent: true, data: { readyAt: "07:34" } })).toEqual({
+      token: "tok",
+      data: { readyAt: "07:34" },
+      apns: { headers: { "apns-push-type": "background", "apns-priority": "5" }, payload: { aps: { "content-available": 1 } } },
+    });
+  });
+
   it("maps a PushMessage to an FCM message with a notification block", () => {
     expect(buildFcmMessage({ token: "tok", title: "Order update", body: "Rider en route" })).toEqual({
       token: "tok",

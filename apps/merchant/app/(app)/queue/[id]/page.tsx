@@ -11,7 +11,10 @@ import { AppBar } from "../../../components/m/AppBar";
 import { ConfirmSheet } from "../../../components/m/ConfirmSheet";
 import { StaticMap } from "../../../components/m/StaticMap";
 import { useToast } from "../../../components/m/Toast";
-import { MerchantTrack, OrderLines, RiderRow } from "../../../components/queue/order-parts";
+import { OrderLines } from "../../../components/queue/order-parts";
+import { CashCard, CodeCard, codeText, CtaBar, ProgressSteps, RiderCard } from "../../../components/queue/v2-parts";
+import { boardItems } from "../../../lib/board";
+import { HANDOVER_FALLBACK_ENABLED } from "../../../lib/config";
 import { Note, PhotoRow, RoundLines } from "../../../components/queue/proof-parts";
 import { ProposerSheet } from "../../../components/queue/proposer";
 import { RetryableError } from "../../../components/RetryableError";
@@ -27,6 +30,7 @@ import {
   confirmReturnedCash,
   dispatchCancel,
   dispatchResume,
+  extendPrep,
   getOrder,
   markReady,
   proposeSubstitution,
@@ -34,10 +38,11 @@ import {
   rejectOrder,
   releaseUnpaid,
   reportNonReturn,
+  requestHandoverFallback,
   requestPayment,
   revealPickupCode,
 } from "../../../lib/orders-api";
-import { detailView, groupCode, isAfterPickup, money, orderLabel, riderFirstName, slotLabel } from "../../../lib/orders-view";
+import { detailView, isAfterPickup, money, orderLabel, riderFirstName, slotLabel } from "../../../lib/orders-view";
 import { changeableLines, openRound, proposalLines } from "../../../lib/substitution";
 import { useNow } from "../../../lib/use-now";
 import { countOf, doorProofLine, ORDER_FLOW as OF, vocabulary, type Vocabulary } from "../../../lib/vocabulary";
@@ -53,6 +58,7 @@ type Confirm =
   | "not_returned"
   | "hold_cancel"
   | "items"
+  | "problem"
   | "decline_scheduled"
   // A wallet order placed before D-74: cancel it unpaid, confirm its payment, or refund and cancel it.
   | "release"
@@ -69,7 +75,6 @@ interface Ctx {
   toast: (m: string) => void;
   business: MerchantProfileResponse | null;
   v: Vocabulary;
-  setHandedOver: (v: boolean) => void;
 }
 
 /** A wallet order placed before D-74 that the customer paid for, which LyniaGo never held: cancelling it
@@ -130,8 +135,8 @@ export default function OrderPage() {
   // The payment or refund reference a wallet order's confirm sheet asks for; a fresh one per sheet.
   const [reference, setReference] = useState("");
   useEffect(() => setReference(""), [confirm]);
-  // "Hand over" is the merchant's own step after the rider's code matched (M4 → M5).
-  const [handedOver, setHandedOver] = useState(false);
+  // K4 (BRIEF §5): no hand-over button — the rider's code entry moves the screen on, and says so once.
+  const lastStatus = useRef<string | null>(null);
   const busyRef = useRef(false);
 
   // The poll mustn't restart whenever the provider hands out a new signOut.
@@ -158,6 +163,13 @@ export default function OrderPage() {
   useEffect(() => {
     if (load.status === "ready" && detailView(load.order) === "ringing") router.replace("/queue");
   }, [load, router]);
+
+  useEffect(() => {
+    if (load.status !== "ready") return;
+    const was = lastStatus.current;
+    lastStatus.current = load.order.status;
+    if (was && was !== "picked_up" && load.order.status === "picked_up") toast(`Handed over · ${riderName(load.order)} has it`);
+  }, [load, toast]);
 
   /** Runs an action once, refreshes, and toasts; `leave` returns to the Orders home afterwards. */
   async function act(action: () => Promise<unknown>, done: string, leave = false) {
@@ -189,13 +201,11 @@ export default function OrderPage() {
   }
 
   const order = load.order;
-  let view = detailView(order);
-  // M4 stays up once the code matched, until the merchant taps "Hand over".
-  if (view === "tracking" && order.status === "picked_up" && !handedOver) view = "handover";
+  const view = detailView(order);
   const disabled = actionsDisabled || busy;
   const v = vocabulary(business?.businessType, business?.shopKind);
   const confirmSheet = renderConfirm();
-  const ctx: Ctx = { order, act, disabled, error, setConfirm, toast, business, v, setHandedOver };
+  const ctx: Ctx = { order, act, disabled, error, setConfirm, toast, business, v };
 
   if (view === "ringing") return null;
 
@@ -205,8 +215,7 @@ export default function OrderPage() {
       {view === "payment" && <Payment {...ctx} />}
       {view === "cooking" && <Cooking {...ctx} />}
       {view === "handover" && <Handover {...ctx} />}
-      {view === "tracking" && <Tracking {...ctx} />}
-      {view === "delivered" && <Delivered key={order.id} {...ctx} />}
+      {(view === "tracking" || view === "delivered") && <OnTheWay {...ctx} />}
       {view === "closed" && <Closed order={order} />}
       {confirmSheet}
     </Kitchen>
@@ -238,6 +247,15 @@ export default function OrderPage() {
             error={error}
             making={v.making.toLowerCase()}
             onSend={(p) => void act(() => proposeSubstitution(order.id, { lines: proposalLines(order, p.changes) }), "Changes sent · the customer has 3 minutes")}
+            onCancel={close}
+          />
+        );
+      case "problem":
+        return (
+          <ProblemSheet
+            canChange={changeableLines(order).length > 0}
+            onItems={() => setConfirm("items")}
+            onCantFinish={() => setConfirm(isPaidWallet(order) ? "refund" : "cancel")}
             onCancel={close}
           />
         );
@@ -374,23 +392,15 @@ function Fill({ children }: { children: React.ReactNode }) {
   return <div style={{ minHeight: "100%", display: "flex", flexDirection: "column" }}>{children}</div>;
 }
 
-/** The pinned CTA bar: one primary (52), optionally a hint line above it. */
-function Bar({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="m-foot" style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: "auto" }}>
-      {children}
-    </div>
-  );
-}
-
 // ── M7b ────────────────────────────────────────────────────────────────────────────────────────
 function Scheduled({ order, disabled, setConfirm }: Ctx) {
   const now = useNow(60_000);
   const s = order.scheduledFor ? slotLabel(order.scheduledFor, new Date(now)) : null;
   return (
     <Fill>
-      <AppBar back="/queue" title={orderLabel(order)} right={<span className="m-num" style={{ fontSize: 15, fontWeight: 700 }}>{money(order.merchantGoodsTotal)}</span>} />
-      <div className="m-bd" style={{ flex: 1, paddingTop: 12 }}>
+      <AppBar back="/queue" title={orderLabel(order)} right={<span className="m-num">{money(order.merchantGoodsTotal)}</span>} />
+      <div className="m-bd" style={{ flex: 1, paddingTop: 4 }}>
+        <ProgressSteps step={1} label="Scheduled" />
         {s && (
           <Note icon="calendar" title={OF.schedT(`${s.day} ${s.slot}`)}>
             {order.ringsAt && (
@@ -401,18 +411,26 @@ function Scheduled({ order, disabled, setConfirm }: Ctx) {
             )}
           </Note>
         )}
-        <div className="m-card" style={{ gap: 0, padding: "4px 12px" }}>
+        <div className="m-linescard">
           <OrderLines order={order} />
         </div>
-        <button type="button" className="m-lnk m-red" style={{ minHeight: "var(--target-min)", fontSize: 14 }} disabled={disabled} onClick={() => setConfirm("decline_scheduled")}>
+      </div>
+      <CtaBar>
+        <button type="button" className="m-btn2" disabled={disabled} onClick={() => setConfirm("decline_scheduled")}>
           {OF.decline}
         </button>
-      </div>
+      </CtaBar>
     </Fill>
   );
 }
 
-// ── M3a / M3b / M2 ─────────────────────────────────────────────────────────────────────────────
+// ── K3 (M3a/M3b) / M2 ──────────────────────────────────────────────────────────────────────────
+/**
+ * K3 · the cooking ticket (Merchant v2, ledger D-77): the back header with the number and total, the
+ * five-step bar at "Step 2 of 5 · Cooking", the big countdown with the ready time and the rider line,
+ * the lines, "+5 min" and "Change items", the red "Problem with this order?" pill, then "Food is ready"
+ * (shops: "Packed") in the pinned bar.
+ */
 function Cooking(ctx: Ctx) {
   const { order, act, disabled, error, setConfirm, v, business } = ctx;
   const now = useNow();
@@ -425,27 +443,27 @@ function Cooking(ctx: Ctx) {
   const startMs = order.prepStartedAt ? new Date(order.prepStartedAt).getTime() : now;
   const totalMs = (order.prepMinutes ?? 15) * 60_000;
   const leftMs = Math.max(0, startMs + totalMs - now);
-  const pct = Math.min(100, Math.round(((totalMs - leftMs) / totalMs) * 100));
   const readyBy = hm(new Date(startMs + totalMs).toISOString());
   const canChange = changeableLines(order).length > 0;
-  const shop = (order.venue?.businessType ?? business?.businessType) === "shop";
   const rxToCheck = order.prescription?.status === "pending" && business?.myIsPharmacist === true;
+  const rider = riderFirstName(order);
+  const riderLine = order.riderId && rider ? `${rider} is booked to collect it` : order.dispatchAttempt > 0 ? "Finding a rider" : "We book the rider to arrive as it’s ready";
   return (
     <Fill>
-      <AppBar back="/queue" title={orderLabel(order)} right={<span className="m-num" style={{ fontSize: 15, fontWeight: 700 }}>{money(order.merchantGoodsTotal)}</span>} />
-      <div className="m-bd" style={{ flex: 1, paddingTop: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--accent-wash)", borderRadius: 12, padding: "10px 12px" }}>
-          <div className="m-ring" style={{ width: 56, height: 56, background: `conic-gradient(var(--accent) 0 ${pct}%, #cdeeda ${pct}% 100%)` }}>
-            <b>{formatCountdown(leftMs)}</b>
+      <AppBar back="/queue" title={orderLabel(order)} right={<span className="m-num">{money(order.merchantGoodsTotal)}</span>} />
+      <div className="m-bd" style={{ flex: 1, paddingTop: 4 }}>
+        <ProgressSteps step={2} label={v.making} />
+        <div className="m-cdcard">
+          <div>
+            <b className="m-num">{formatCountdown(leftMs)}</b>
+            <span className="m-num">left · ready {readyBy}</span>
           </div>
-          <div style={{ flex: 1, fontSize: 13 }}>
-            <b style={{ fontSize: 15, display: "block" }}>
-              {v.making} · ready {readyBy}
-            </b>
-            {OF.riderFound}
-          </div>
+          <p>
+            <Icon name="bike" size={16} />
+            {riderLine}
+          </p>
         </div>
-        <div className="m-card" style={{ gap: 0, padding: "4px 12px" }}>
+        <div className="m-linescard">
           <OrderLines order={order} />
         </div>
         {rxToCheck && (
@@ -454,54 +472,57 @@ function Cooking(ctx: Ctx) {
             {OF.rxT}
           </Link>
         )}
-        {shop && (
-          <Note tone="hi" icon="shield-check" title={OF.sealT}>
-            {OF.sealS(riderName(order))}
-          </Note>
-        )}
-        {canChange && (
-          <button type="button" className="m-btn-sec" disabled={disabled} onClick={() => setConfirm("items")}>
-            <Icon name="pencil" size={15} />
-            {OF.changeItems}
+        <div className="m-pillrow">
+          <button type="button" className="m-gh" disabled={disabled} onClick={() => void act(() => extendPrep(order.id), "Ready time pushed back 5 min · customer told")}>
+            <Icon name="clock" size={16} />
+            +5 min
           </button>
-        )}
-        <MerchantTrack order={order} v={v} cashRow={false} />
+          {canChange && (
+            <button type="button" className="m-gh" disabled={disabled} onClick={() => setConfirm("items")}>
+              <Icon name="pencil" size={16} />
+              {OF.changeItems}
+            </button>
+          )}
+        </div>
         {error && <div className="m-alert" role="alert">{error}</div>}
-        <button
-          type="button"
-          className="m-lnk m-red"
-          style={{ minHeight: "var(--target-min)", fontSize: 14 }}
-          disabled={disabled}
-          onClick={() => setConfirm(isPaidWallet(order) ? "refund" : "cancel")}
-        >
-          {OF.cantFinish}
+        <button type="button" className="m-problem" disabled={disabled} onClick={() => setConfirm("problem")}>
+          Problem with this order?
         </button>
       </div>
-      <Bar>
+      <CtaBar>
         <button type="button" className="m-btn" disabled={disabled} onClick={() => void act(() => markReady(order.id), "Marked ready · finding a rider")}>
           {v.readyCta}
         </button>
-      </Bar>
+      </CtaBar>
     </Fill>
   );
 }
 
-// ── M4 ─────────────────────────────────────────────────────────────────────────────────────────
-function Handover({ order, act, disabled, error, setConfirm, toast, setHandedOver }: Ctx) {
-  const matched = isAfterPickup(order);
+// ── K4 / S3 ────────────────────────────────────────────────────────────────────────────────────
+/**
+ * K4 · hand over (Merchant v2, ledger D-77): the rider card with a call button, the six-digit code read
+ * aloud ("SAY THIS CODE TO BLESSING", 720 518) and "Waiting for Blessing to type it. This screen moves on
+ * by itself." There is no hand-over button: the rider's code entry moves the order on (BRIEF §5).
+ *
+ * S3 · a shop or pharmacy hands over on a 3-step checklist: Seal the bag → the rider photographed it
+ * (with the thumbnail) → say the code. Before a rider takes it, it says so; a no-rider hold offers
+ * "Keep searching" or cancelling.
+ */
+function Handover({ order, act, disabled, error, setConfirm, business }: Ctx) {
   const hold = isNoRiderHold(order);
-  // M4b: a shop hands over only once the rider's sealed-bag photo is in (BRIEF §9); a restaurant's is
-  // optional, so its row shows only when there is one.
-  const proof = order.pickupProof?.photoUrl || order.pickupProof?.takenAt ? order.pickupProof : null;
-  const required = order.pickupProofRequired === true;
-  const waitingPhoto = required && !proof;
+  const shop = (order.venue?.businessType ?? business?.businessType) === "shop" || order.pickupProofRequired === true;
+  const code = usePickupCode(order);
   const rider = riderName(order);
+  const first = order.rider?.firstName ?? rider;
+  const proof = order.pickupProof?.photoUrl || order.pickupProof?.takenAt ? order.pickupProof : null;
+  const fallback = HANDOVER_FALLBACK_ENABLED && order.riderId && order.status === "en_route_pickup";
   return (
     <Fill>
       <AppBar back="/queue" title={OF.handTitle(orderLabel(order))} />
-      <div className="m-bd" style={{ flex: 1, paddingTop: 12 }}>
+      <div className="m-bd" style={{ flex: 1, paddingTop: 4 }}>
+        {!shop && <ProgressSteps step={3} label="Hand over" />}
         {order.rider ? (
-          <RiderRow order={order} />
+          <RiderCard order={order} />
         ) : hold ? (
           <div className="m-card" style={{ background: "var(--highlight-wash)", borderColor: "var(--highlight-border)" }}>
             <b style={{ fontSize: 15 }}>No rider yet</b>
@@ -516,194 +537,209 @@ function Handover({ order, act, disabled, error, setConfirm, toast, setHandedOve
             </button>
           </div>
         ) : (
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div className="m-av">
-              <Icon name="bike" size={18} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <b style={{ fontSize: 15 }}>Finding a rider</b>
-              <div className="m-hint" style={{ fontSize: 13 }}>
-                The code appears once a rider takes it
-              </div>
-            </div>
+          <div className="m-waitrow">
+            <span className="m-wspin" />
+            Finding a rider. The code appears once one takes it.
           </div>
         )}
-        <PickupCode key={order.riderId ?? "none"} order={order} matched={matched} />
-        {order.riderId && (proof || required) && (
-          <PhotoRow
-            title={OF.photo}
-            sub={proof ? OF.photoAt(rider, hm(proof.takenAt)) : OF.photoWait(rider)}
-            url={proof?.photoUrl ?? null}
-            waiting={!proof}
-          />
+
+        {order.riderId && !order.autoAccepted && shop && (
+          <>
+            <div className="m-check">
+              <div>
+                <i className={proof?.bagSealed || proof ? "m-on" : undefined}>{proof?.bagSealed || proof ? <Icon name="check" size={16} /> : 1}</i>
+                <div>
+                  <b>{OF.sealT}</b>
+                  <span>Sticker or stapled receipt</span>
+                </div>
+              </div>
+              <div>
+                <i className={proof ? "m-on" : undefined}>{proof ? <Icon name="check" size={16} /> : 2}</i>
+                <div>
+                  <b>{proof ? `${first} photographed it` : `${first} photographs it`}</b>
+                  <span>{proof ? `${hm(proof.takenAt)} · the customer sees this too` : OF.photoWait(rider)}</span>
+                </div>
+                {proof?.photoUrl ? (
+                  <a href={proof.photoUrl} target="_blank" rel="noreferrer" aria-label={OF.photo}>
+                    {/* eslint-disable-next-line @next/next/no-img-element -- a signed, short-lived proof URL */}
+                    <img src={proof.photoUrl} alt="" className="m-thumb" />
+                  </a>
+                ) : null}
+              </div>
+              <div>
+                <i>3</i>
+                <div>
+                  <b>Say the code to {first}</b>
+                  {code && <span className="m-bigcode m-num">{codeText(code)}</span>}
+                </div>
+              </div>
+            </div>
+            <p className="m-hint" style={{ textAlign: "center", fontSize: 13 }}>
+              The order moves on when {first} types the code.
+            </p>
+          </>
         )}
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", borderTop: "1px solid var(--line)", paddingTop: 10 }}>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>{OF.total}</span>
-          <b className="m-num" style={{ fontSize: 20 }}>
-            {money(order.merchantGoodsTotal)}
-          </b>
-        </div>
+
+        {order.riderId && !order.autoAccepted && !shop && (
+          <>
+            <CodeCard rider={first} code={code} />
+            <div className="m-waitrow">
+              <span className="m-wspin" />
+              Waiting for {first} to type it. This screen moves on by itself.
+            </div>
+          </>
+        )}
+
+        {order.riderId && order.autoAccepted && (
+          <div className="m-waitrow">
+            <span className="m-wspin" />
+            {first} collects it at the counter. This screen moves on by itself.
+          </div>
+        )}
+
+        {!shop && (
+          <div className="m-sumrow">
+            <span>{boardItems(order)}</span>
+            <b className="m-num">{money(order.merchantGoodsTotal)}</b>
+          </div>
+        )}
+        {fallback && (
+          <button type="button" className="m-btn2" disabled={disabled} onClick={() => void act(() => requestHandoverFallback(order.id), `${first} got a link to finish it`)}>
+            Rider can’t enter code
+          </button>
+        )}
         {error && <div className="m-alert" role="alert">{error}</div>}
       </div>
-      <Bar>
-        {waitingPhoto && order.riderId && (
-          <span className="m-hint" style={{ textAlign: "center", fontSize: 13 }}>
-            {OF.photoReq}
-          </span>
-        )}
-        <button
-          type="button"
-          className="m-btn"
-          disabled={!matched || waitingPhoto}
-          onClick={() => {
-            setHandedOver(true);
-            toast("Handed over · tracking the delivery");
-          }}
-        >
-          {OF.handBtn}
-        </button>
-      </Bar>
     </Fill>
   );
 }
 
-// ── M5 ─────────────────────────────────────────────────────────────────────────────────────────
-function Tracking({ order, disabled, error, setConfirm, business, v }: Ctx) {
-  return (
-    <>
-      <StaticMap center={business?.location?.point ?? null} height={200}>
-        <Link href="/queue" className="m-gh" aria-label="Back" style={{ position: "absolute", top: "calc(8px + env(safe-area-inset-top))", left: 10, width: 44, padding: 0, borderRadius: "50%", border: "none" }}>
-          <Icon name="chevron-left" size={22} />
-        </Link>
-      </StaticMap>
-      <div style={{ flex: 1, marginTop: -20, background: "var(--bg)", borderRadius: "20px 20px 0 0", position: "relative", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-        <div>
-          <b style={{ fontSize: 22, display: "block" }}>{OF.trackT(orderLabel(order))}</b>
-          <div className="m-hint" style={{ fontSize: 13, marginTop: 4 }}>
-            {countOf(order.items.length, v)} · {money(order.merchantGoodsTotal)}
-          </div>
-        </div>
-        {order.rider && <RiderRow order={order} />}
-        <MerchantTrack order={order} v={v} />
-        {order.doorProof && <PhotoRow title={OF.doorPhoto} sub={doorProofLine(order.doorProof, hm(order.doorProof.takenAt))} url={order.doorProof.photoUrl} />}
-        {error && <div className="m-alert" role="alert">{error}</div>}
-        <button type="button" className="m-lnk" style={{ minHeight: "var(--target-min)", fontSize: 13, marginTop: "auto" }} disabled={disabled} onClick={() => setConfirm("force")}>
-          Mark ride completed
-        </button>
-      </div>
-    </>
-  );
-}
-
-// ── M6a / M6b ──────────────────────────────────────────────────────────────────────────────────
-function Delivered({ order, act, disabled, error, setConfirm, v }: Ctx) {
-  const now = useNow(30_000);
+// ── K5 ─────────────────────────────────────────────────────────────────────────────────────────
+/**
+ * K5 · on the way + cash back (Merchant v2, ledger D-77): one screen that follows the order — the map,
+ * "#A111 on the way" (then "Delivered 07:41", or "Not delivered"), the five-step bar, the cash card
+ * (food only, the delivery fee shown as the rider's, when it is due back), the door photo, and the
+ * pinned "I got $12.00", held "· after delivery" until the order is delivered. An order that wasn't
+ * delivered brings the goods back instead. It replaces the tracking, delivered and goods-back screens.
+ */
+function OnTheWay({ order, act, disabled, error, setConfirm, business, v }: Ctx) {
   const delivered = order.status === "delivered" || order.status === "completed";
-  // D-71: the debt is already the business's net; before it opens, the same net (goods less any delivery it pays).
+  const failed = order.status === "undelivered";
+  const cashBack = order.paymentMethod === "cash" && order.merchantCashRule === "collect_and_return";
   const amount =
     order.debtAmount ??
     foodOrderMoney({ goodsTotal: order.merchantGoodsTotal, deliveryFee: order.deliveryFee, merchantDeliveryShare: order.merchantDeliveryShare }).merchantNet;
-  const dueMin = order.cashDueAt ? Math.round((new Date(order.cashDueAt).getTime() - now) / 60_000) : null;
   const rider = riderName(order);
+  const first = order.rider?.firstName ?? rider;
+  const owes = order.debtStatus === "open";
+  const title = delivered ? OF.delivered(hm(order.deliveredAt)) : failed ? OF.notDelivered : OF.trackT(orderLabel(order));
+  const sub = [order.rider ? rider : null, countOf(order.items.length, v)].filter(Boolean).join(" · ");
+  const cashLine = order.cashDueAt ? `${first} brings it back by ${hm(order.cashDueAt)}` : `${first} brings it back after delivery`;
   return (
-    <>
-      <div className="m-bd" style={{ paddingTop: 0 }}>
-        <div className="m-hero" data-tone={delivered ? undefined : "calm"} style={{ position: "relative" }}>
-          {/* M6 draws no bar; the way back to the Orders home sits on the hero, as M5's does on the map. */}
-          <Link href="/queue" className="m-back" aria-label="Back" style={{ position: "absolute", top: 8, left: 6 }}>
-            <Icon name="chevron-left" size={22} />
-          </Link>
-          <span>
-            <Icon name={delivered ? "circle-check" : "package"} size={30} color={delivered ? "var(--accent-text)" : "var(--muted)"} />
-          </span>
-          <b>{delivered ? OF.delivered(hm(order.deliveredAt)) : OF.notDelivered}</b>
-          {/* M6a's "Rudo confirmed with the code" names the customer, whom a merchant order never carries:
-              the merchant-mobile B7 line stands in. */}
-          <p>{delivered ? "Buyer confirmed with the code" : OF.backS}</p>
+    <Fill>
+      <StaticMap center={business?.location?.point ?? null} height={250}>
+        <Link href="/queue" className="m-mapback" aria-label="Back">
+          <Icon name="chevron-left" size={20} />
+        </Link>
+      </StaticMap>
+      <div className="m-k5">
+        <div>
+          <b>{title}</b>
+          <span>{sub}</span>
         </div>
-
-        {delivered ? (
-          <div className="m-card" style={{ border: "2px solid var(--highlight)", gap: 8 }}>
-            <span className="m-cap" style={{ color: "var(--highlight-ink)" }}>
-              {OF.cashT}
-            </span>
-            <b style={{ fontSize: 17 }}>{OF.cashS(rider, money(amount))}</b>
-            {order.cashDueAt && dueMin !== null && (
-              <span className="m-hint" style={dueMin < 0 ? { color: "var(--danger-ink)" } : undefined}>
-                {dueMin < 0 ? `Due by ${hm(order.cashDueAt)} · ${-dueMin} min overdue` : OF.cashDue(hm(order.cashDueAt), dueMin)}
-              </span>
-            )}
-            {error && <div className="m-alert" role="alert">{error}</div>}
-            <button type="button" className="m-btn m-sm" disabled={disabled} onClick={() => void act(() => confirmReturnedCash(order.id, amount), "Cash confirmed · order closed", true)}>
-              <Icon name="banknote" size={18} />
-              {OF.cashBtn(money(amount))}
-            </button>
-            <button type="button" className="m-btn-sec" disabled={disabled} onClick={() => setConfirm("no_cash")}>
-              {OF.noCash}
-            </button>
+        <ProgressSteps step={delivered ? 5 : 4} />
+        {failed ? (
+          <div className="m-cashcard">
+            <div>
+              <Icon name="package" size={20} />
+              <span>{OF.goodsBackT}</span>
+            </div>
+            <p>{[OF.backT(rider), order.cashDueAt ? OF.goodsDue(hm(order.cashDueAt)) : null].filter(Boolean).join(" · ")}</p>
           </div>
+        ) : cashBack ? (
+          <CashCard amount={amount} food={amount} delivery={order.deliveryFee} line={cashLine} />
+        ) : null}
+        {order.doorProof ? (
+          <PhotoRow title={failed ? OF.attemptPhoto : OF.doorPhoto} sub={doorProofLine(order.doorProof, hm(order.doorProof.takenAt))} url={order.doorProof.photoUrl} />
         ) : (
-          <div className="m-card" style={{ border: "2px solid var(--highlight)", gap: 8 }}>
-            <span className="m-cap" style={{ color: "var(--highlight-ink)" }}>
-              {OF.goodsBackT}
-            </span>
-            <b style={{ fontSize: 17 }}>{OF.backT(rider)}</b>
-            <span className="m-hint">
-              {[countOf(order.items.length, v), money(order.merchantGoodsTotal), order.cashDueAt ? OF.goodsDue(hm(order.cashDueAt)) : null].filter(Boolean).join(" · ")}
-            </span>
-            {error && <div className="m-alert" role="alert">{error}</div>}
-            <button type="button" className="m-btn m-sm" disabled={disabled} onClick={() => void act(() => confirmGoodsReturned(order.id), "Food back · order closed", true)}>
-              <Icon name="package" size={18} />
-              {v.goodsBack}
-            </button>
-            {/* R-07: the merchant's only way to flag goods that never came back (merchant-mobile B7). */}
-            <button type="button" className="m-lnk m-red" style={{ minHeight: "var(--target-min)", fontSize: 13.5 }} disabled={disabled} onClick={() => setConfirm("not_returned")}>
-              It wasn’t returned
-            </button>
-          </div>
+          !delivered &&
+          !failed && (
+            <div className="m-photorow">
+              <i>
+                <Icon name="camera" size={16} />
+              </i>
+              <span>The door photo shows here once it’s delivered</span>
+            </div>
+          )
         )}
-
-        {delivered && <MerchantTrack order={order} v={v} />}
-        {!delivered && order.doorProof && (
-          <PhotoRow title={OF.attemptPhoto} sub={doorProofLine(order.doorProof, hm(order.doorProof.takenAt))} url={order.doorProof.photoUrl} />
+        {error && <div className="m-alert" role="alert">{error}</div>}
+        {!cashBack && !failed && isAfterPickup(order) && (
+          <button type="button" className="m-lnk" style={{ minHeight: "var(--target-min)", fontSize: 13 }} disabled={disabled} onClick={() => setConfirm("force")}>
+            Mark ride completed
+          </button>
         )}
       </div>
-    </>
+      {failed ? (
+        <CtaBar>
+          <button type="button" className="m-btn" disabled={disabled} onClick={() => void act(() => confirmGoodsReturned(order.id), "Goods back · order closed", true)}>
+            {v.goodsBack}
+          </button>
+          {/* R-07: the merchant's only way to flag goods that never came back. */}
+          <button type="button" className="m-btn2" disabled={disabled} onClick={() => setConfirm("not_returned")}>
+            It wasn’t returned
+          </button>
+        </CtaBar>
+      ) : cashBack ? (
+        <CtaBar>
+          {delivered && owes ? (
+            <>
+              <button type="button" className="m-btn" disabled={disabled} onClick={() => void act(() => confirmReturnedCash(order.id, amount), "Cash confirmed · order closed", true)}>
+                {OF.cashBtn(money(amount))}
+              </button>
+              <button type="button" className="m-btn2" disabled={disabled} onClick={() => setConfirm("no_cash")}>
+                {OF.noCash}
+              </button>
+            </>
+          ) : (
+            <button type="button" className="m-btn m-off" disabled>
+              {OF.cashBtn(money(amount))} · after delivery
+            </button>
+          )}
+        </CtaBar>
+      ) : null}
+    </Fill>
   );
 }
 
 // ── M2 ─────────────────────────────────────────────────────────────────────────────────────────
 /** M2 · waiting for the customer: the round's countdown, "Start packing the rest…", the lines with
- *  "Swap asked" / "Removing", and "Order is packed" held until the customer answers (or time runs out).
+ *  "Swap asked" / "Removing", and the ready button held until the customer answers (or time runs out).
  *  A shortened order from before Order flow v2 (`swaps` false) has no swaps and doesn't carry on by
  *  itself when time runs out, so it leaves out the line that says so. */
 function Waiting({ order, v, deadlineAt, swaps, now }: Ctx & { deadlineAt: string | null; swaps: boolean; now: number }) {
   const left = deadlineAt ? formatCountdown(Math.max(0, new Date(deadlineAt).getTime() - now)) : null;
   return (
     <Fill>
-      <AppBar back="/queue" title={orderLabel(order)} right={<span className="m-num" style={{ fontSize: 15, fontWeight: 700 }}>{money(order.merchantGoodsTotal)}</span>} />
-      <div className="m-bd" style={{ flex: 1, paddingTop: 12 }}>
+      <AppBar back="/queue" title={orderLabel(order)} right={<span className="m-num">{money(order.merchantGoodsTotal)}</span>} />
+      <div className="m-bd" style={{ flex: 1, paddingTop: 4 }}>
+        <ProgressSteps step={2} label={v.making} />
         <div className="m-note" data-tone="ok" style={{ flexDirection: "column", gap: 6 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, width: "100%" }}>
             <b style={{ flex: 1, fontSize: 15 }}>{OF.mWait}</b>
-            {left && <span className="m-pl m-gold m-num">{left}</span>}
+            {left && <span className="m-cchip m-num">{left}</span>}
           </div>
           {swaps && <span>{OF.mWaitSub(v.making.toLowerCase())}</span>}
         </div>
-        <div className="m-card" style={{ gap: 0, padding: "4px 12px" }}>
+        <div className="m-linescard">
           <RoundLines order={order} />
         </div>
       </div>
-      <Bar>
-        {left && (
-          <span className="m-hint" style={{ textAlign: "center", fontSize: 13 }}>
-            {OF.mWaitHint(left)}
-          </span>
-        )}
+      <CtaBar>
+        {left && <span className="m-ctahint">{OF.mWaitHint(left)}</span>}
         <button type="button" className="m-btn" disabled>
           {v.readyCta}
         </button>
-      </Bar>
+      </CtaBar>
     </Fill>
   );
 }
@@ -739,11 +775,11 @@ function Payment({ order, act, disabled, error, setConfirm }: Ctx) {
           Cancel order
         </button>
       </div>
-      <Bar>
+      <CtaBar>
         <button type="button" className="m-btn" disabled={disabled} onClick={() => setConfirm("paid")}>
           {OF.cashBtn(money(order.merchantGoodsTotal))}
         </button>
-      </Bar>
+      </CtaBar>
     </Fill>
   );
 }
@@ -770,41 +806,60 @@ function Closed({ order }: Pick<Ctx, "order">) {
 }
 
 /**
- * M4's code card: "READ THIS PICKUP CODE TO TENDAI", the six digits 3+3 at 36/800, then "Tendai entered
- * the code" once it matched. Revealing rotates the code (N-16), so it is asked for once per rider, never
- * on every render; a code the screen never saw (opened after the match) isn't shown.
+ * The pickup code for the rider in front of the merchant. Revealing rotates the code (N-16), so it is
+ * asked for once per rider, never on every render; an auto-accepted order is collected without one.
  */
-function PickupCode({ order, matched }: Pick<Ctx, "order"> & { matched: boolean }) {
+function usePickupCode(order: MerchantOrderResponse): string | null {
   const [code, setCode] = useState<string | null>(null);
   const askedFor = useRef<string | null>(null);
-  // An auto-accepted order is collected without a code ("Collected" at the restaurant's pin).
   const codeless = order.autoAccepted === true;
   useEffect(() => {
-    if (codeless || !order.riderId || matched || askedFor.current === order.riderId) return;
+    if (codeless || !order.riderId || isAfterPickup(order) || askedFor.current === order.riderId) return;
     askedFor.current = order.riderId;
     revealPickupCode(order.id)
       .then((res) => setCode(res.pickupCode))
       .catch(() => setCode(null));
-  }, [matched]);
-  if (!order.riderId || codeless) return null;
-  const rider = riderName(order);
-  const groups = code ? groupCode(code) : null;
+  }, [codeless, order]);
+  return code;
+}
+
+/**
+ * K3's "Problem with this order?" (Merchant v2, ledger D-77): the same danger pill the rider has, which
+ * replaces "Can't finish". It asks what's wrong: something ran out (the "Change items" proposer), or the
+ * order can't be finished (cancel, or refund first for a paid wallet order from before D-74).
+ */
+function ProblemSheet({ canChange, onItems, onCantFinish, onCancel }: { canChange: boolean; onItems: () => void; onCantFinish: () => void; onCancel: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onCancel]);
   return (
-    <div className="m-card" style={{ alignItems: "center", textAlign: "center" }}>
-      <span className="m-cap">{OF.code(rider)}</span>
-      {groups && (
-        <div className="m-pcode" aria-label={`Pickup code ${code!.split("").join(" ")}`}>
-          {groups.map((g, i) => (
-            <span key={i}>{g}</span>
-          ))}
+    <div className="m-overlay" style={{ zIndex: 70 }}>
+      <div className="m-overlay-frame">
+        <button type="button" className="m-scrim" aria-label="Keep" onClick={onCancel} />
+        <div className="m-sheet" role="dialog" aria-modal="true" aria-labelledby="m-problem-title">
+          <div className="m-grab" />
+          <b id="m-problem-title" style={{ fontSize: 18 }}>
+            Problem with this order?
+          </b>
+          {canChange && (
+            <button type="button" className="m-opt m-optsm" onClick={onItems}>
+              <Icon name="pencil" size={18} color="var(--accent-text)" />
+              Something ran out — change items
+            </button>
+          )}
+          <button type="button" className="m-opt m-optsm" onClick={onCantFinish}>
+            <Icon name="ban" size={18} color="var(--danger-ink)" />
+            {OF.cantFinish}
+          </button>
+          <button type="button" className="m-lnk" onClick={onCancel}>
+            Keep
+          </button>
         </div>
-      )}
-      {matched && (
-        <span style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--accent-text)", fontSize: 13, fontWeight: 600 }}>
-          <Icon name="circle-check" size={16} />
-          {OF.codeOk(rider)}
-        </span>
-      )}
+      </div>
     </div>
   );
 }

@@ -48,15 +48,16 @@ const APNS_COLLAPSE_ID_MAX_BYTES = 64;
 export function buildApnsRequest(message: PushMessage, topic: string, nowSec: number): ApnsRequest {
   const headers: Record<string, string> = {
     "apns-topic": topic,
-    "apns-push-type": "alert",
-    "apns-priority": "10",
+    // A silent push (D-77) is a background push: low priority, no alert, no sound.
+    "apns-push-type": message.silent ? "background" : "alert",
+    "apns-priority": message.silent ? "5" : "10",
   };
   // Time-critical push (Fix 5): `apns-expiration` is an ABSOLUTE epoch in seconds — same contract as
   // buildFcmMessage's APNs block.
   if (message.ttlSeconds !== undefined) headers["apns-expiration"] = String(nowSec + message.ttlSeconds);
   if (message.collapseKey !== undefined) headers["apns-collapse-id"] = apnsCollapseId(message.collapseKey);
   const payload: Record<string, unknown> = {
-    aps: { alert: { title: message.title, body: message.body }, sound: "default" },
+    aps: message.silent ? { "content-available": 1 } : { alert: { title: message.title, body: message.body }, sound: "default" },
   };
   if (message.data && Object.keys(message.data).length > 0) payload.body = message.data;
   return { path: `/3/device/${message.token}`, headers, body: JSON.stringify(payload) };

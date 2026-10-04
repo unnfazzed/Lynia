@@ -27,3 +27,6 @@ export function supportWhatsAppUrl(text?: string): string | null {
   if (!SUPPORT_WHATSAPP) return null;
   return `https://wa.me/${SUPPORT_WHATSAPP}${text ? `?text=${encodeURIComponent(text)}` : ""}`;
 }
+
+/** Merchant v2 open question 1 (ledger D-77): the offline-rider hand-over fallback. Off until its API lands. */
+export const HANDOVER_FALLBACK_ENABLED: boolean = process.env.NEXT_PUBLIC_MERCHANT_HANDOVER_FALLBACK === "1";

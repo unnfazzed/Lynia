@@ -162,3 +162,17 @@ export function declinePrescription(orderId: string, body: DeclinePrescriptionRe
 export function getOrderFlags(): Promise<OrderFlagsResponse> {
   return authedFetch<OrderFlagsResponse>("/app/order-flags");
 }
+
+/** Merchant v2 K3 (ledger D-77): "+5 min" pushes the ready time back five minutes. */
+export function extendPrep(orderId: string): Promise<MerchantOrderResponse> {
+  return authedFetch<MerchantOrderResponse>(`/merchant/orders/${orderId}/extend-prep`, { method: "POST" });
+}
+
+/**
+ * Merchant v2 BRIEF open question 1 (owner decision 2026-10-04: build it behind a flag that stays off):
+ * "Rider can't enter code" — the rider gets an SMS link to finish the hand-over. A typed stub: the API
+ * route doesn't exist yet, and the button only shows with `NEXT_PUBLIC_MERCHANT_HANDOVER_FALLBACK=1`.
+ */
+export function requestHandoverFallback(orderId: string): Promise<MerchantOrderResponse> {
+  return authedFetch<MerchantOrderResponse>(`/merchant/orders/${orderId}/handover-fallback`, { method: "POST" });
+}
