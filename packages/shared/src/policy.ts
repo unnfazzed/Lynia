@@ -77,8 +77,11 @@ export const UNDELIVERED_ABUSE = {
 
 /**
  * KYC (Didit) face-match auto-decision thresholds, score in [0,1]. ≥ autoApprove → auto-verify;
- * [needsReview, autoApprove) → hold for a human reviewer; < needsReview → auto-decline. NOTE
- * (product): confirm the real thresholds and what a human reviewer may override.
+ * [needsReview, autoApprove) → hold for a human reviewer; < needsReview → auto-decline. Didit reports
+ * face-match similarity on 0–100 (extractDiditScore divides by 100, so 0.85 = 85/100), and the bands
+ * can only tighten Didit's own verdict, never loosen it (decideDiditKyc, IR26-07). Didit's own default
+ * face-match decline threshold is 30/100. NOTE (product): confirm the real thresholds and what a human
+ * reviewer may override.
  */
 export const KYC_THRESHOLDS = {
   autoApprove: 0.85,

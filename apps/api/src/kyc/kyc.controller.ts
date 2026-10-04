@@ -25,7 +25,15 @@ import { ZodBody } from "../common/zod.pipe";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { RiderService } from "../riders/rider.service";
-import { decideDiditKyc, diditTimestampFresh, extractDiditDocumentNumber, extractDiditScore, verifyDiditSignature, verifyDiditSignatureV2 } from "./didit";
+import {
+  decideDiditKyc,
+  diditTimestampFresh,
+  extractDiditDocumentNumber,
+  extractDiditScore,
+  mapDiditStatus,
+  verifyDiditSignature,
+  verifyDiditSignatureV2,
+} from "./didit";
 
 // A-02: a decline MUST carry the reason code (recorded on the rider + audit log — a compliance
 // invariant, so it's server-enforced here, not only in the admin ConfirmModal). The admin sends a
@@ -138,11 +146,21 @@ export class KycController {
       throw new BadRequestException("Missing session_id or status");
     }
 
-    // Auto-decision (Didit thresholds): key off the numeric face-match score when the payload exposes
-    // one (KYC_THRESHOLDS bands), else fall back to the status-string mapping. A `needsReview` band —
-    // like any non-terminal status — stays `pending`: it's held for the admin backstop, never
-    // auto-verified. `failed` from a sub-threshold score carries a decline reason for the rider app.
-    const decision = decideDiditKyc(payload.status, extractDiditScore(payload));
+    // Auto-decision (Didit thresholds): the face-match score (KYC_THRESHOLDS bands) can only tighten
+    // Didit's own verdict; with no score the status-string mapping decides. A `needsReview` band — like
+    // any non-terminal status — stays `pending`: it's held for the admin backstop, never auto-verified.
+    // `failed` from a sub-threshold score carries a decline reason for the rider app.
+    const score = extractDiditScore(payload);
+    const decision = decideDiditKyc(payload.status, score);
+    // IR26-07 coverage signals. On a Didit approval our bands are the last check, so say when they
+    // could not run, and when they held a rider Didit approved (nothing else records why it's pending).
+    if (mapDiditStatus(payload.status) === "verified") {
+      if (score === null) {
+        this.logger.log(`KYC webhook for session ${payload.session_id}: approved with no face-match score — bands skipped`);
+      } else if (decision.status === "pending") {
+        this.logger.log(`KYC webhook for session ${payload.session_id}: approved, face match in the review band — held for review`);
+      }
+    }
     if (decision.status === "pending") return { ignored: true, status: decision.status };
 
     // Event time drives the monotonic guard. The timestamp is part of the signed body (Unix seconds),

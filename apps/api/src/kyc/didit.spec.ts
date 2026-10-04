@@ -78,12 +78,73 @@ describe("mapDiditPendingState", () => {
 });
 
 describe("extractDiditScore", () => {
+  // IR26-07: our Didit destination is V3, which carries the face-match report as a plural array.
+  it("reads the V3 webhook shape: decision.face_matches[], normalised from Didit's 0–100 scale", () => {
+    // Shape from docs.didit.me/integration/webhooks ("Approved KYC session") — sample data, no real session.
+    const v3 = {
+      webhook_type: "status.updated",
+      session_id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      status: "Approved",
+      decision: {
+        status: "Approved",
+        features: ["ID_VERIFICATION", "LIVENESS", "FACE_MATCH"],
+        id_verifications: [{ node_id: "id_verification_1", status: "Approved", document_type: "Identity Card" }],
+        liveness_checks: [{ node_id: "liveness_1", status: "Approved", method: "ACTIVE_3D", score: 95.4, warnings: [] }],
+        face_matches: [{ node_id: "face_match_1", status: "Approved", score: 96.1, warnings: [] }],
+      },
+    };
+    // The face match, not the liveness score beside it.
+    expect(extractDiditScore(v3)).toBeCloseTo(0.961, 10);
+    // The band edges survive the division exactly.
+    expect(extractDiditScore({ decision: { face_matches: [{ score: 85 }] } })).toBe(0.85);
+    expect(extractDiditScore({ decision: { face_matches: [{ score: 60 }] } })).toBe(0.6);
+    expect(extractDiditScore({ decision: { face_matches: [{ score: 100 }] } })).toBe(1);
+    expect(extractDiditScore({ decision: { face_matches: [{ score: 0 }] } })).toBe(0);
+  });
+  it("takes the scale from the field, not the value: a V3 score of 0.9 is a 0.9% similarity, not 90%", () => {
+    const score = extractDiditScore({ decision: { face_matches: [{ score: 0.9 }] } });
+    expect(score).toBeCloseTo(0.009, 10);
+    // …so a near-zero match lands in the auto-decline band instead of auto-approving.
+    expect(decideDiditKyc("Approved", score)).toEqual({ status: "failed", reason: "face_mismatch" });
+  });
+  it("skips V3 entries with no usable score, and lets the weakest of several face matches decide", () => {
+    // The first entry carries no score (null, or absent): the next scored entry is read.
+    expect(
+      extractDiditScore({ decision: { face_matches: [{ node_id: "fm_1", status: "Declined", score: null }, { node_id: "fm_2", score: 88 }] } }),
+    ).toBe(0.88);
+    expect(extractDiditScore({ decision: { face_matches: [{ node_id: "fm_1" }, { score: 88 }] } })).toBe(0.88);
+    // Two scored nodes: one strong comparison can't cover for a weak one.
+    expect(extractDiditScore({ decision: { face_matches: [{ score: 97 }, { score: 41 }] } })).toBe(0.41);
+    // Entries that aren't objects are ignored, not crashed on.
+    expect(extractDiditScore({ decision: { face_matches: [null, 96, "96", { score: 70 }] } })).toBe(0.7);
+  });
+  it("ignores a malformed (non-array) face_matches and falls through to the legacy shapes", () => {
+    expect(extractDiditScore({ decision: { face_matches: "96.1" } })).toBeNull();
+    expect(extractDiditScore({ decision: { face_matches: { score: 96.1 } } })).toBeNull();
+    expect(extractDiditScore({ decision: { face_matches: null } })).toBeNull();
+    expect(extractDiditScore({ decision: { face_matches: [] } })).toBeNull();
+    expect(extractDiditScore({ decision: { face_matches: { score: 96.1 }, face_match: { score: 73 } } })).toBe(0.73);
+    expect(extractDiditScore({ decision: { face_matches: [{ score: null }], face_match: { score: 73 } } })).toBe(0.73);
+  });
+  it("rejects out-of-range and non-numeric V3 scores without masking a valid one", () => {
+    for (const bad of [150, 100.01, -5, -0.01, Number.NaN, Number.POSITIVE_INFINITY, "96.1", true]) {
+      expect(extractDiditScore({ decision: { face_matches: [{ score: bad }] } })).toBeNull();
+    }
+    expect(extractDiditScore({ decision: { face_matches: [{ score: 150 }, { score: 72 }] } })).toBe(0.72);
+  });
+  it("prefers the V3 face match over the legacy shapes when both are present", () => {
+    expect(extractDiditScore({ score: 0.99, decision: { score: 0.99, face_matches: [{ score: 41 }] } })).toBe(0.41);
+  });
   it("reads a top-level score / confidence", () => {
     expect(extractDiditScore({ score: 0.91 })).toBe(0.91);
     expect(extractDiditScore({ confidence: 0.4 })).toBe(0.4);
   });
-  it("reads a nested decision.face_match score", () => {
-    expect(extractDiditScore({ decision: { face_match: { score: 0.73 } } })).toBe(0.73);
+  it("reads the V2 singular decision.face_match score on the same 0–100 scale, and the legacy probes on [0, 1]", () => {
+    expect(extractDiditScore({ decision: { face_match: { score: 73 } } })).toBe(0.73);
+    // Regression: the old [0, 1] reading took a 0.9% similarity as 0.9 — inside the auto-approve band.
+    expect(extractDiditScore({ decision: { face_match: { score: 0.9 } } })).toBeCloseTo(0.009, 10);
+    expect(extractDiditScore({ decision: { face_match: { score: 101 } } })).toBeNull();
+    expect(extractDiditScore({ decision: { face_match: { confidence: 0.66 } } })).toBe(0.66);
     expect(extractDiditScore({ decision: { score: 0.5 } })).toBe(0.5);
   });
   it("returns null when there is no score, or it is out of [0,1] / non-numeric", () => {
@@ -157,9 +218,61 @@ describe("extractDiditDocumentNumber (IR26-04 vendor-document dedupe)", () => {
 });
 
 describe("decideDiditKyc (Didit auto-decision bands, KYC_THRESHOLDS)", () => {
-  it("score >= autoApprove → verified", () => {
+  it("score >= autoApprove on a Didit approval → verified", () => {
     expect(decideDiditKyc("Approved", KYC_THRESHOLDS.autoApprove)).toEqual({ status: "verified" });
-    expect(decideDiditKyc("In Review", 0.99)).toEqual({ status: "verified" });
+    expect(decideDiditKyc("Approved", 0.99)).toEqual({ status: "verified" });
+  });
+
+  // IR26-07: the score is ONE feature (the face match); Didit's status covers the rest — document validity,
+  // liveness, AML. These paths were dead while V3 extraction returned null; now they are live.
+  it("never lets a passing face match override a Didit decline, review or unfinished session", () => {
+    // A spoof that fails liveness can still match the document's face.
+    expect(decideDiditKyc("Declined", 0.99)).toEqual({ status: "failed" });
+    expect(decideDiditKyc("Declined", 0.7)).toEqual({ status: "failed" });
+    // Didit flagged it for a human: a strong face match doesn't clear warnings it didn't raise.
+    expect(decideDiditKyc("In Review", 0.99)).toEqual({ status: "pending" });
+    expect(decideDiditKyc("IN_REVIEW", 0.99)).toEqual({ status: "pending" });
+    // Abandoned carries a partial decision; it is not a verdict.
+    expect(decideDiditKyc("Abandoned", 0.99)).toEqual({ status: "pending" });
+    expect(decideDiditKyc("In Progress", 0.99)).toEqual({ status: "pending" });
+    expect(decideDiditKyc("Kyc Expired", 0.99)).toEqual({ status: "expired" });
+  });
+
+  it("never auto-declines a session Didit didn't finish judging on a partial low score", () => {
+    // e.g. a dark first selfie, then the rider gave up mid-retry: no verdict, so no burnt attempt.
+    expect(decideDiditKyc("Abandoned", 0.3)).toEqual({ status: "pending" });
+    expect(decideDiditKyc("Expired", 0.3)).toEqual({ status: "pending" });
+    expect(decideDiditKyc("Kyc Expired", 0.3)).toEqual({ status: "expired" });
+  });
+
+  it("gives a Didit decline the face-mismatch reason when its face match is below needsReview", () => {
+    expect(decideDiditKyc("Declined", 0.32)).toEqual({ status: "failed", reason: "face_mismatch" });
+  });
+
+  it("property: no score ever yields `verified` unless Didit approved, nor softens a Didit decline", () => {
+    const statuses = ["Approved", "Declined", "In Review", "IN_REVIEW", "Abandoned", "Expired", "Kyc Expired", "In Progress", "Not Started", "Awaiting User", "Resubmitted", "Something New"];
+    for (const s of statuses) {
+      for (let pct = 0; pct <= 100; pct++) {
+        const d = decideDiditKyc(s, pct / 100);
+        if (d.status === "verified") expect(mapDiditStatus(s)).toBe("verified");
+        if (mapDiditStatus(s) === "failed") expect(d.status).toBe("failed");
+      }
+    }
+  });
+
+  // End to end over the V3 shape (sample data, as above). Didit's own face-match decline threshold
+  // defaults to 30/100, so it approves the 72 and the 45 below — our bands are what catch them.
+  it("bands a V3-shaped webhook: a Didit approval with a weak face match is held or declined", () => {
+    const v3 = (status: string, score: number) => ({
+      status,
+      decision: { status, face_matches: [{ node_id: "face_match_1", status, score, warnings: [] }] },
+    });
+    const decide = (p: { status: string }) => decideDiditKyc(p.status, extractDiditScore(p));
+    expect(decide(v3("Approved", 96.1))).toEqual({ status: "verified" });
+    expect(decide(v3("Approved", 72))).toEqual({ status: "pending" });
+    expect(decide(v3("Approved", 45))).toEqual({ status: "failed", reason: "face_mismatch" });
+    expect(decide(v3("Declined", 32))).toEqual({ status: "failed", reason: "face_mismatch" });
+    expect(decide(v3("Declined", 97))).toEqual({ status: "failed" });
   });
 
   it("[needsReview, autoApprove) → pending (human review, never auto-verified)", () => {

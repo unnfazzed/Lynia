@@ -68,45 +68,83 @@ export function mapDiditPendingState(status: string): ServerKycPendingState {
 }
 
 /**
- * Pull Didit's numeric decision/face-match score (0..1) out of a webhook payload, or null when it
- * doesn't expose one. Didit's terminal decision webhook can carry the confidence at the top level
- * (`score`/`confidence`) or nested under `decision` (e.g. `decision.score`,
- * `decision.face_match.score`/`.confidence`); we probe those documented shapes defensively and reject
- * anything outside [0, 1]. A non-terminal status webhook carries no score → null → status fallback.
+ * Pull Didit's face-match similarity out of a decision webhook as a [0, 1] score, or null when the
+ * payload exposes none (the caller then lets Didit's status decide — see {@link decideDiditKyc}).
+ *
+ * V3 first (IR26-07). Our destination is registered as `webhook_version: "v3"` (docs/PILOT-READINESS.md
+ * step 3), and V3 carries every per-feature result as a PLURAL array: the face-match report is
+ * `decision.face_matches[]`, each entry `{ node_id, status, score, warnings }`. The singular
+ * `decision.face_match` only appears on a destination pinned to V2. Reading only the singular shape
+ * returned null on every real webhook, so the KYC_THRESHOLDS bands never ran.
+ *
+ * Scale: Didit's face-match `score` is a 0–100 similarity in BOTH versions (the V3 serializer extends
+ * the V2 one — docs.didit.me/reference/data-models, "Face match"), so it is divided by 100 here. The
+ * scale comes from the field, never from the value: a `score` of 0.9 is a 0.9% similarity, and reading
+ * it as 0.9 would put a non-match in the auto-approve band.
+ *
+ * Several face-match nodes (V3 allows more than one per workflow) → the WEAKEST scored match decides, so
+ * one strong comparison can't cover for a weak one. Entries without a usable score are skipped.
+ *
+ * Then the legacy probes, unchanged and already on [0, 1]: `face_match.confidence`, `decision.score` and
+ * the top-level `score`/`confidence`. None is in Didit's documented schema; they stay as defensive
+ * fallbacks. Anything outside [0, 1] after normalisation is rejected.
  */
 export function extractDiditScore(payload: unknown): number | null {
   if (!payload || typeof payload !== "object") return null;
   const p = payload as Record<string, unknown>;
   const decision = (p.decision ?? {}) as Record<string, unknown>;
+  const v3 = Array.isArray(decision.face_matches) ? (decision.face_matches as unknown[]) : [];
+  const v3Scores = v3
+    .filter((e): e is Record<string, unknown> => !!e && typeof e === "object")
+    .map((e) => percentToUnit(e.score))
+    .filter((s): s is number => s !== null);
+  if (v3Scores.length > 0) return Math.min(...v3Scores);
   const faceMatch = (decision.face_match ?? {}) as Record<string, unknown>;
-  const candidates = [p.score, p.confidence, decision.score, faceMatch.score, faceMatch.confidence];
-  for (const c of candidates) {
+  const v2 = percentToUnit(faceMatch.score);
+  if (v2 !== null) return v2;
+  for (const c of [faceMatch.confidence, decision.score, p.score, p.confidence]) {
     if (typeof c === "number" && Number.isFinite(c) && c >= 0 && c <= 1) return c;
   }
   return null;
 }
 
+/** A Didit 0–100 score as [0, 1], or null when it isn't a finite number in [0, 100]. */
+function percentToUnit(v: unknown): number | null {
+  if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 100) return null;
+  return v / 100;
+}
+
 /**
  * Auto-decision for a Didit KYC result (NOTE: thresholds live in packages/shared/src/policy.ts
- * `KYC_THRESHOLDS` — no magic numbers). When the payload exposes a numeric score we apply the bands:
- *   - score >= autoApprove         → `verified` (auto-approve)
- *   - [needsReview, autoApprove)   → `pending`  (hold for a human reviewer — NEVER auto-verify)
- *   - score <  needsReview         → `failed`   (auto-decline, with a reason)
- * When the payload has NO score (non-terminal statuses, or a vendor that omits it), we fall back to
- * the legacy status-string mapping ({@link mapDiditStatus}). A `reason` is returned only on a
- * score-driven auto-decline, for the rider-facing decline copy + audit log.
+ * `KYC_THRESHOLDS` — no magic numbers).
+ *
+ * The face-match score can only make Didit's verdict STRICTER, never looser (IR26-07). It measures one
+ * feature, while Didit's status covers all of them: document validity, liveness (the anti-spoofing
+ * check), AML, and anything its workflow flagged. A spoof that fails liveness can still match the
+ * document's face, so a high score must never turn a decline into a verify. Per Didit status:
+ *   - Approved   score >= autoApprove → `verified`; [needsReview, autoApprove) → `pending` (held for a
+ *                human reviewer — NEVER auto-verified); < needsReview → `failed` (auto-decline)
+ *   - Declined   always `failed`, with the face-mismatch reason when score < needsReview
+ *   - In Review  `pending` — Didit wants a human, and a strong face match doesn't clear warnings it
+ *                didn't raise; < needsReview still auto-declines
+ *   - anything else (Abandoned, Expired, Kyc Expired, non-terminal) → the status mapping, score ignored:
+ *                a partial result from a session Didit never finished judging decides nothing
+ * With NO score, Didit's status alone decides ({@link mapDiditStatus}). A `reason` is returned only on
+ * a score-driven decline, for the rider-facing decline copy + audit log.
  */
 export function decideDiditKyc(status: string, score: number | null): { status: RiderKyc; reason?: string } {
-  if (score !== null) {
-    if (score >= KYC_THRESHOLDS.autoApprove) return { status: "verified" };
-    if (score < KYC_THRESHOLDS.needsReview) {
-      // Store a canonical KycDeclineReason KEY (not a sentence) so the rider app resolves it via
-      // KYC_DECLINE_REASON_LABELS, same as an admin decline — a sub-threshold face-match is a mismatch.
-      return { status: "failed", reason: KycDeclineReason.FACE_MISMATCH };
-    }
-    return { status: "pending" }; // needs human review — held for the admin backstop, no auto-verify
+  const vendor = mapDiditStatus(status);
+  // Same separator-tolerant normalisation as mapDiditPendingState: Didit has also spelled it IN_REVIEW.
+  const inReview = status.trim().toLowerCase().replace(/[\s_-]+/g, " ") === "in review";
+  if (score === null || !(vendor === "verified" || vendor === "failed" || inReview)) return { status: vendor };
+  if (score < KYC_THRESHOLDS.needsReview) {
+    // Store a canonical KycDeclineReason KEY (not a sentence) so the rider app resolves it via
+    // KYC_DECLINE_REASON_LABELS, same as an admin decline — a sub-threshold face-match is a mismatch.
+    return { status: "failed", reason: KycDeclineReason.FACE_MISMATCH };
   }
-  return { status: mapDiditStatus(status) };
+  if (vendor === "failed") return { status: "failed" };
+  if (vendor === "verified" && score >= KYC_THRESHOLDS.autoApprove) return { status: "verified" };
+  return { status: "pending" }; // needs human review — held for the admin backstop, no auto-verify
 }
 
 /**
