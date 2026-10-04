@@ -4204,6 +4204,10 @@ workflow Variable, so production kept them off.
 | Merchant `/onboarding` A3 | Two radio cards: Restaurant, Shop | **Three:** Restaurant, Shop, **Pharmacy**. Same `m-opt` card (84px, r14, 56px tile). Pharmacy uses the design's `assets/service-icons/pharmacy.svg` on the `--tile-pharmacy` tint (#C5E9DF). Picking it signs up `businessType: shop, shopKind: pharmacy` (the API has accepted `shopKind` since L1). | A pharmacy needs a way in. Undrawn, so it reuses A3's own card and the customer app's Pharmacy sticker. **Upstream ask:** draw the third card. |
 | Release / staging workflows | `RX_ENABLED` not passed (env default `false`) | `RX_ENABLED: ${{ vars.RX_ENABLED \|\| 'true' }}` (staging: `STAGING_RX_ENABLED`), validated `true\|false` with the other kill switches | "In full" includes prescriptions. Setting the Variable to `"false"` is the kill switch. Safeguards are unchanged: only a team member the owner ticks as pharmacist can approve or decline, and an Rx order can't be packed until one does (runbook §5). |
 
+**Ungated (owner, 2026-10-04: "Ungate prescription orders"):** the API's own default for `RX_ENABLED` is
+now `true` too (`apps/api/src/config/env.ts`, `.env.example`), so no deploy path leaves prescriptions off by
+omission. `"false"` stays the kill switch; the pharmacist check stays mandatory.
+
 Nothing in `packages/design/**` changes.
 
 ### 2 · Open for the owner (PENDING OWNER REVIEW)

@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { getOrderFlags } from "./orders-api";
 
 /**
- * Order flow v2's `rxEnabled` (BRIEF §13, ledger D-59): prescriptions are behind a server flag, off by
- * default. Every Rx control (the dish's "Prescription needed", the team's pharmacist switch) renders only
+ * Order flow v2's `rxEnabled` (BRIEF §13, ledger D-59): prescriptions are behind a server flag, on by
+ * default since D-76 (its kill switch can turn it off). Every Rx control (the dish's "Prescription needed", the team's pharmacist switch) renders only
  * once the server says it is on — fail-safe off, so a failed read hides them. Read once per page load.
  */
 let cached: Promise<boolean> | null = null;
