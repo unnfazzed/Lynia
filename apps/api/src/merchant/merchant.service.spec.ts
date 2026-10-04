@@ -1316,6 +1316,34 @@ describe("MerchantService.getTodaySummary (E3, M4·6; D-48 header tiles)", () =>
     expect(res.overdue).toEqual([{ orderId: "33333333-3333-4333-8333-333333333333", amount: 51, riderName: "Blessing", dueAt: "2026-09-30T11:40:00.000Z", kind: "booking" }]);
   });
 
+  it("D-77 T2: a delivered line says whether its cash is back, on its way or late; a late row carries the rider's phone", async () => {
+    const delivered = (id: string, over: Record<string, unknown>) => ({
+      id: `${id}0000000-0000-4000-8000-000000000000`,
+      status: "delivered",
+      prepStartedAt: new Date(),
+      createdAt: new Date(),
+      cancelledAt: null,
+      merchantGoodsTotal: 12,
+      debtStatus: null,
+      merchantClosedAt: null,
+      ...over,
+    });
+    const res = await svc(
+      summaryPrisma({
+        today: [
+          delivered("a", { deliveredAt: new Date(Date.now() - 50 * 60_000), debtStatus: "settled_cash" }),
+          delivered("b", { deliveredAt: new Date(Date.now() - 50 * 60_000), debtStatus: "open" }),
+          delivered("c", { deliveredAt: new Date(Date.now() - 5 * 60_000), debtStatus: "open" }),
+          delivered("d", { deliveredAt: new Date(Date.now() - 5 * 60_000) }),
+          delivered("e", { status: "cancelled", prepStartedAt: null, deliveredAt: null, cancelledAt: new Date() }),
+        ],
+        overdue: [{ id: "11111111-1111-4111-8111-111111111111", debtAmount: 9.5, deliveredAt: new Date(Date.now() - 45 * 60_000), rider: { profile: { firstName: "Tino", phone: "+263771112222" } } }],
+      }),
+    ).getTodaySummary("p1");
+    expect(res.lines!.map((l) => l.cash ?? null)).toEqual(["in", "late", "due", "none", null]);
+    expect(res.overdue![0]).toMatchObject({ riderName: "Tino", riderPhone: "+263771112222" });
+  });
+
   it("averagePrepMinutes is null and totals are zero with no activity today", async () => {
     const s = svc({
       merchant: { findUnique: async () => ({ id: "m1" }) },

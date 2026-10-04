@@ -446,8 +446,9 @@
 }
 /* The food / shop tiles (handoff "Merchant-only tints"). */
 .m-tile-food {
-  background: #fdeadd;
-  color: #9a4a12;
+  /* Merchant v2 T1 (D-77): the dish tile is the Restaurants tile tint. */
+  background: var(--tile-peach);
+  color: var(--coral-ink);
 }
 .m-tile-shop {
   background: #dff4ee;
@@ -3056,4 +3057,233 @@
   display: flex;
   gap: 6px;
   align-items: center;
+}
+
+/* ── Merchant v2 · T2 Money, T3 Account (ledger D-77) ───────────────────────────────────────── */
+.m-tabtitle {
+  font-size: 22px;
+  font-weight: 700;
+}
+.m-period {
+  height: 44px;
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+  display: flex;
+  padding: 4px;
+}
+.m-period button {
+  flex: 1;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--muted);
+  cursor: pointer;
+}
+.m-period button[aria-selected="true"] {
+  background: var(--cta-fill);
+  color: var(--on-accent);
+}
+.m-salesbig {
+  display: flex;
+  flex-direction: column;
+}
+.m-salesbig span {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.m-salesbig b {
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+.m-latecash {
+  border: 1px solid var(--highlight-border);
+  background: var(--highlight-wash);
+  border-radius: 16px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.m-latecash > a:first-child {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--ink);
+  text-decoration: none;
+}
+.m-latecash > a:first-child > div {
+  display: flex;
+  flex-direction: column;
+}
+.m-latecash b {
+  font-size: 15px;
+  font-weight: 700;
+}
+.m-latecash span {
+  font-size: 13px;
+  color: var(--highlight-ink);
+}
+.m-callpill {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+  color: var(--accent-text);
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  text-decoration: none;
+  flex: none;
+  position: relative;
+}
+/* Drawn 36 tall: the hit area is padded to the floor (D-77 §4). */
+.m-callpill::after {
+  content: "";
+  position: absolute;
+  inset: -4px 0;
+}
+.m-ledger {
+  display: flex;
+  flex-direction: column;
+  margin-top: -2px;
+}
+.m-ledger > a {
+  display: flex;
+  align-items: center;
+  padding: 10px 0;
+  min-height: var(--target-min);
+  color: var(--ink);
+  text-decoration: none;
+}
+.m-ledger > a + a {
+  border-top: 1px solid var(--line);
+}
+.m-ledger > a > div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.m-ledger > a > div b {
+  font-size: 15px;
+  font-weight: 700;
+}
+.m-ledger > a > div span {
+  font-size: 13px;
+  color: var(--muted);
+}
+.m-ledger > a > b {
+  font-size: 16px;
+  font-weight: 700;
+}
+.m-ledger > a[data-tone="credit"] > b {
+  color: var(--accent-text);
+}
+.m-ledger > a[data-tone="late"] > div span {
+  color: var(--highlight-ink);
+  font-weight: 600;
+}
+.m-ledger > a[data-tone="muted"] > div b,
+.m-ledger > a[data-tone="muted"] > b {
+  color: var(--muted);
+}
+.m-hd.m-acct {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 16px;
+}
+.m-acct > span {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  font-weight: 700;
+  flex: none;
+}
+.m-acct-av {
+  background: var(--tile-peach);
+  color: var(--coral-ink);
+}
+.m-acct > div {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.m-acct > div b {
+  font-size: 20px;
+  font-weight: 700;
+}
+.m-acct > div span {
+  font-size: 14px;
+  color: var(--muted);
+}
+.m-group {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 0 14px;
+}
+.m-group > a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  color: var(--ink);
+  text-decoration: none;
+}
+.m-group > a + a {
+  border-top: 1px solid var(--line);
+}
+.m-group > a > b {
+  flex: 1;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+}
+.m-group > a > span {
+  font-size: 13px;
+  color: var(--muted);
+}
+.m-group > a > em {
+  font-style: normal;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
+  background: var(--highlight);
+  color: var(--highlight-chip-ink);
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+}
+.m-signout {
+  min-height: 48px;
+  border-radius: var(--radius-pill);
+  background: var(--danger-wash);
+  color: var(--danger-ink);
+  border: none;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  margin-top: 6px;
+  cursor: pointer;
+}
+
+/* T1 (Merchant v2, D-77): "+ Category" is an outlined chip, accent text on the surface. */
+.m-chip.m-add {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--accent-text);
 }

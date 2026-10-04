@@ -15,18 +15,20 @@ import { clearBusinessCache, useBusiness } from "../../lib/business";
 import { supportWhatsAppUrl } from "../../lib/config";
 import { firstName, initials, ROLE_LABEL } from "../../lib/team";
 import { getTeam, leaveBusiness } from "../../lib/team-api";
+import { dayKeyFor } from "../../lib/hours";
+import { listRiders } from "../../lib/riders-api";
 
 type Confirm = null | "sign-out" | "leave";
 
 /**
- * C4 · Account (packages/design/handoff/merchant-mobile): the business's initials avatar, its name and
- * "Farai · Owner", then Shop front · Opening hours · Branches (owner, D-51) · Taking orders (owner, restaurant) · Preferred riders · Team (the gold count is the
- * invites still waiting) · Help, and a red "Sign out" behind the confirm sheet. It is where the old
- * top bar's person menu, the setup banner and the side rail's Shop / Hours / Riders / Team went.
+ * T3 · Account (Merchant v2, packages/design/handoff/merchant-v2, ledger D-77) over D-48's C4. The mint
+ * top card: the business's initials, its name and "Farai · Owner · 2 branches". Then two grouped cards,
+ * each row showing its current value so most visits need no tap — YOUR SHOP FRONT (Profile & photos ·
+ * Opening hours "08:00–22:00" · Branches "2") and ORDERS & PEOPLE (Taking orders "Auto-accept off" ·
+ * Preferred riders "4" · Team "1 invite open") — and the red "Sign out" pill behind the confirm sheet.
  *
- * Staff don't see Shop front or Team (README C4: "Staff should not see Money or Team"; the shop front
- * is the owner's). A staff member also gets "Leave this business" — the one person-menu action with no
- * other home, so it stays, behind the same confirm sheet.
+ * Staff don't see the shop front, Branches or Team (merchant-mobile README C4). A staff member also gets
+ * "Leave this business". Help (WhatsApp) stays as the last row (D-77 §4).
  */
 export default function AccountPage() {
   const router = useRouter();
@@ -34,6 +36,7 @@ export default function AccountPage() {
   const { signOut } = useKitchenConnection();
   const toast = useToast();
   const [pendingInvites, setPendingInvites] = useState(0);
+  const [riderCount, setRiderCount] = useState<number | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +58,18 @@ export default function AccountPage() {
     };
   }, [owner]);
 
+  useEffect(() => {
+    let alive = true;
+    listRiders()
+      .then((r) => {
+        if (alive) setRiderCount(r.riders.length);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   async function leave() {
     if (busy) return;
     setBusy(true);
@@ -71,39 +86,53 @@ export default function AccountPage() {
     }
   }
 
-  const person = business ? `${business.myName ? `${firstName(business.myName)} · ` : ""}${ROLE_LABEL[business.myRole]}` : "";
+  const branchCount = branches.length;
+  const person = business
+    ? [business.myName ? firstName(business.myName) : null, ROLE_LABEL[business.myRole], owner && branchCount >= 2 ? `${branchCount} branches` : null]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
+  const todayHours = business?.hours ? (business.hours as Record<string, { open: string; close: string } | undefined>)[dayKeyFor(new Date())] : undefined;
+  const hoursValue = business?.hours ? (todayHours ? `${todayHours.open}–${todayHours.close}` : "Closed today") : undefined;
+  const takingValue = shop ? (business?.freeDelivery ? "Free delivery on" : undefined) : business?.autoAccept ? "Auto-accept on" : "Auto-accept off";
 
   return (
     <Kitchen active="account">
-      <div className="m-hd">
-        <div className="m-hdt">
-          <div className={`m-th ${shop ? "m-tile-shop" : "m-tile-food"}`} style={{ width: 52, height: 52, borderRadius: "50%", fontSize: 20 }}>
-            {business ? initials(business.name) : ""}
-          </div>
-          <div className="m-biz">
-            <b style={{ fontSize: 18 }}>{business?.name ?? ""}</b>
-            <span style={{ color: "var(--muted)", fontWeight: 400 }}>{person}</span>
-          </div>
+      <div className="m-hd m-acct">
+        <span className={shop ? "m-tile-shop" : "m-acct-av"}>{business ? initials(business.name) : ""}</span>
+        <div>
+          <b>{business?.name ?? ""}</b>
+          <span>{person}</span>
         </div>
       </div>
 
-      <div className="m-bd" style={{ paddingTop: 6, gap: 0 }}>
-        {owner && <Row href="/shop" icon="store" label="Shop front" />}
-        <Row href="/hours" icon="clock" label="Opening hours" />
-        {/* Branches (ledger D-51): owner only, the count once there are 2+; opens C7. */}
-        {owner && <Row href="/branches/new" icon="map-pin" label="Branches" count={branches.length >= 2 ? String(branches.length) : undefined} />}
-        {/* Auto-accept, the customer-facing number and free delivery (D-71) are the owner's. A shop gets
-            only the free-delivery switch there (shops are never auto-accept). */}
-        {owner && <Row href="/ordering" icon="inbox" label="Taking orders" />}
-        <Row href="/riders" icon="bike" label="Preferred riders" />
-        {owner && <Row href="/team" icon="user" label="Team" badge={pendingInvites > 0 ? String(pendingInvites) : undefined} />}
-        {help && <Row href={help} external icon="phone" label="Help" />}
+      <div className="m-bd" style={{ paddingTop: 16, gap: 10 }}>
+        {owner && (
+          <>
+            <h2 className="m-bh">YOUR SHOP FRONT</h2>
+            <div className="m-group">
+              <Row href="/shop" icon="store" label="Profile & photos" />
+              <Row href="/hours" icon="clock" label="Opening hours" value={hoursValue} />
+              <Row href="/branches/new" icon="map-pin" label="Branches" value={branchCount >= 1 ? String(branchCount) : undefined} />
+            </div>
+          </>
+        )}
+        <h2 className="m-bh" style={owner ? { marginTop: 6 } : undefined}>
+          ORDERS &amp; PEOPLE
+        </h2>
+        <div className="m-group">
+          {!owner && <Row href="/hours" icon="clock" label="Opening hours" value={hoursValue} />}
+          {owner && <Row href="/ordering" icon="inbox" label="Taking orders" value={takingValue} />}
+          <Row href="/riders" icon="bike" label="Preferred riders" value={riderCount !== null ? String(riderCount) : undefined} />
+          {owner && <Row href="/team" icon="user" label="Team" badge={pendingInvites > 0 ? `${pendingInvites} invite${pendingInvites === 1 ? "" : "s"} open` : undefined} />}
+          {help && <Row href={help} external icon="phone" label="Help" />}
+        </div>
         {business?.myRole === "staff" && (
-          <button type="button" className="m-lnk m-red" style={{ justifyContent: "flex-start" }} onClick={() => setConfirm("leave")}>
+          <button type="button" className="m-lnk m-red" onClick={() => setConfirm("leave")}>
             Leave this business
           </button>
         )}
-        <button type="button" className="m-lnk m-red" style={{ justifyContent: "flex-start" }} onClick={() => setConfirm("sign-out")}>
+        <button type="button" className="m-signout" onClick={() => setConfirm("sign-out")}>
           Sign out
         </button>
       </div>
@@ -143,39 +172,32 @@ function Row({
   icon,
   label,
   badge,
-  count,
+  value,
   external,
 }: {
   href: string;
   icon: IconName;
   label: string;
+  /** A worded gold badge ("1 invite open"), never a bare count. */
   badge?: string;
-  /** A plain muted count (Branches), unlike the gold `badge` (Team's waiting invites). */
-  count?: string;
+  /** The row's current value ("08:00–22:00", "Auto-accept off", "4"). */
+  value?: string;
   external?: boolean;
 }) {
   const inner = (
     <>
-      <Icon name={icon} size={18} color="var(--accent-text)" />
-      <div className="m-t">
-        <b>{label}</b>
-      </div>
-      {badge && <span className="m-pl m-gold">{badge}</span>}
-      {count && (
-        <span className="m-num" style={{ fontSize: 12, color: "var(--muted)" }}>
-          {count}
-        </span>
-      )}
-      <Icon name="chevron-right" size={18} color="var(--muted)" />
+      <Icon name={icon} size={20} color="var(--accent-text)" />
+      <b>{label}</b>
+      {value && <span className="m-num">{value}</span>}
+      {badge && <em>{badge}</em>}
+      <Icon name="chevron-right" size={16} color="var(--muted)" />
     </>
   );
   return external ? (
-    <a className="m-li" href={href} target="_blank" rel="noreferrer">
+    <a href={href} target="_blank" rel="noreferrer">
       {inner}
     </a>
   ) : (
-    <Link className="m-li" href={href}>
-      {inner}
-    </Link>
+    <Link href={href}>{inner}</Link>
   );
 }

@@ -6,7 +6,6 @@ import type { MerchantEndOfDaySummaryResponse, MerchantWeeklyStatementResponse }
 import { Icon } from "../../components/icons";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
-import { Segmented } from "../../components/m/Segmented";
 import { OwnerOnlyNotice } from "../../components/OwnerOnlyNotice";
 import { RetryableError } from "../../components/RetryableError";
 import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
@@ -25,13 +24,20 @@ type Period = "today" | "week";
 
 type Line = NonNullable<MerchantEndOfDaySummaryResponse["lines"]>[number];
 
-const OUTCOME: Record<Line["outcome"], string> = {
-  delivered: "Delivered",
-  not_delivered: "Not delivered",
-  rejected: "Rejected",
-  cancelled: "Cancelled",
-  in_progress: "In progress",
-};
+/** T2's ledger row for one of today's orders: what happened, its figure, and how it reads. */
+function todayRow(l: Line): { sub: string; amount: string; tone: "credit" | "late" | "muted" | "plain" } {
+  if (l.outcome === "delivered") {
+    if (l.cash === "in") return { sub: "Delivered · cash back in", amount: `+${money(l.amount)}`, tone: "credit" };
+    if (l.cash === "late") return { sub: "Delivered · cash late", amount: money(l.amount), tone: "late" };
+    if (l.cash === "due") return { sub: "Delivered · cash on its way back", amount: money(l.amount), tone: "plain" };
+    return { sub: "Delivered", amount: `+${money(l.amount)}`, tone: "credit" };
+  }
+  if (l.outcome === "in_progress") return { sub: "In progress", amount: money(l.amount), tone: "plain" };
+  // An order that earned nothing reads as what happened, never "$0.00" (BRIEF §9).
+  if (l.outcome === "rejected") return { sub: "You couldn’t take it", amount: "—", tone: "muted" };
+  if (l.outcome === "cancelled") return { sub: "Cancelled", amount: "—", tone: "muted" };
+  return { sub: "Not delivered", amount: "—", tone: "muted" };
+}
 
 function hm(iso: string): string {
   const d = new Date(iso);
@@ -43,10 +49,11 @@ function dayHm(iso: string): string {
 }
 
 /**
- * C3 · Money (packages/design/handoff/merchant-mobile, ledger D-48). A mint header with Today / This
- * week, "Sales · 7 orders" and the total; then a gold row per order whose cash is overdue ("$9.50
- * overdue · #A098 · Tino · due 11:40", opening that order's cash-back screen), and the Orders list
- * (#id · time / how it ended, the amount on the right). Owner-only, like the tab.
+ * T2 · Money (Merchant v2, packages/design/handoff/merchant-v2, ledger D-77) over D-48's C3. The mint top
+ * card: "Money", Today / This week (the chosen side filled), "SALES · 7 ORDERS" and the total. Then a gold
+ * card per order whose cash is late ("$9.50 cash is late · #A098 · Tino · was due 11:40") with a Call
+ * button for the rider, and the ledger: cash back in is green "+$12.00", late cash a gold sub-line, and an
+ * order the merchant couldn't take reads "—", never "$0.00". Owner-only, like the tab.
  */
 export default function MoneyPage() {
   const { signOut } = useKitchenConnection();
@@ -79,78 +86,77 @@ export default function MoneyPage() {
   const ready = state.status === "ready" ? state : null;
   const count = ready ? (period === "today" ? (ready.today.orders ?? ready.today.delivered) : ready.week.ordersDelivered) : 0;
   const total = ready ? (period === "today" ? (ready.today.sales ?? 0) : ready.week.foodSalesTotal) : 0;
-  const lines: { id: string; title: string; sub: string; amount: number }[] = !ready
+  const lines: { id: string; title: string; sub: string; amount: string; tone: "credit" | "late" | "muted" | "plain" }[] = !ready
     ? []
     : period === "today"
-      ? (ready.today.lines ?? []).map((l) => ({ id: l.orderId, title: `${orderLabel({ id: l.orderId })} · ${hm(l.at)}`, sub: OUTCOME[l.outcome], amount: l.amount }))
-      : ready.week.lineItems.map((li) => ({ id: li.orderId, title: `${orderLabel({ id: li.orderId })} · ${dayHm(li.deliveredAt)}`, sub: "Delivered", amount: li.amount }));
+      ? (ready.today.lines ?? []).map((l) => ({ id: l.orderId, title: `${orderLabel({ id: l.orderId })} · ${hm(l.at)}`, ...todayRow(l) }))
+      : ready.week.lineItems.map((li) => ({
+          id: li.orderId,
+          title: `${orderLabel({ id: li.orderId })} · ${dayHm(li.deliveredAt)}`,
+          sub: "Delivered",
+          amount: `+${money(li.amount)}`,
+          tone: "credit" as const,
+        }));
 
   return (
     <Kitchen active="money">
       <div className="m-hd">
-        <div className="m-hdt">
-          <div className="m-biz">
-            <b style={{ fontSize: 24 }}>Money</b>
-          </div>
-        </div>
+        <b className="m-tabtitle">Money</b>
         {state.status !== "staff" && (
-          <div style={{ marginTop: 12 }}>
-            <Segmented
-              label="Period"
-              value={period}
-              onChange={setPeriod}
-              options={[
-                { value: "today", label: "Today" },
-                { value: "week", label: "This week" },
-              ]}
-            />
+          <div className="m-period" role="tablist" aria-label="Period">
+            {(["today", "week"] as const).map((p) => (
+              <button key={p} type="button" role="tab" aria-selected={period === p} onClick={() => setPeriod(p)}>
+                {p === "today" ? "Today" : "This week"}
+              </button>
+            ))}
           </div>
         )}
         {ready && (
-          <div style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--muted)" }}>
-              Sales · {count} {count === 1 ? "order" : "orders"}
-            </div>
-            <b className="m-num" style={{ fontSize: 34, fontWeight: 700, letterSpacing: "-0.01em" }}>
-              {money(total)}
-            </b>
+          <div className="m-salesbig">
+            <span>
+              SALES · {count} {count === 1 ? "ORDER" : "ORDERS"}
+            </span>
+            <b className="m-num">{money(total)}</b>
           </div>
         )}
       </div>
 
-      <div className="m-bd" style={{ paddingTop: 12 }}>
+      <div className="m-bd" style={{ paddingTop: 16 }}>
         {state.status === "loading" && <div className="m-hint">Loading…</div>}
         {state.status === "error" && <RetryableError message={state.message} onRetry={refresh} />}
         {state.status === "staff" && <OwnerOnlyNotice>Only the owner sees the money.</OwnerOnlyNotice>}
 
         {ready &&
           (ready.today.overdue ?? []).map((o) => (
-            <Link key={o.orderId} href={o.kind === "booking" ? `/deliveries/${o.orderId}` : `/queue/${o.orderId}`} className="m-overdue">
-              <Icon name="circle-alert" size={20} color="var(--highlight-ink)" />
-              <div className="m-t">
-                <b className="m-num">{money(o.amount)} overdue</b>
-                <span className="m-num">
-                  {[orderLabel({ id: o.orderId }), o.riderName, `due ${hm(o.dueAt)}`].filter(Boolean).join(" · ")}
-                </span>
-              </div>
-              <Icon name="chevron-right" size={18} color="var(--muted)" />
-            </Link>
+            <div key={o.orderId} className="m-latecash">
+              <Link href={o.kind === "booking" ? `/deliveries/${o.orderId}` : `/queue/${o.orderId}`}>
+                <Icon name="banknote" size={20} color="var(--highlight-ink)" />
+                <div>
+                  <b className="m-num">{money(o.amount)} cash is late</b>
+                  <span className="m-num">{[orderLabel({ id: o.orderId }), o.riderName, `was due ${hm(o.dueAt)}`].filter(Boolean).join(" · ")}</span>
+                </div>
+              </Link>
+              {o.riderPhone && (
+                <a href={`tel:${o.riderPhone}`} className="m-callpill" aria-label={`Call ${o.riderName ?? "the rider"}`}>
+                  <Icon name="phone" size={16} />
+                  Call
+                </a>
+              )}
+            </div>
           ))}
 
         {ready && (
           <>
-            <div className="m-sec">Orders</div>
-            <div>
+            <h2 className="m-bh">{period === "today" ? "TODAY" : "THIS WEEK"}</h2>
+            <div className="m-ledger">
               {lines.length === 0 && <div className="m-hint">{period === "today" ? "No orders yet today" : "No delivered orders this week"}</div>}
               {lines.map((l) => (
-                <Link key={l.id} href={`/queue/${l.id}`} className="m-li">
-                  <div className="m-t">
+                <Link key={l.id} href={`/queue/${l.id}`} data-tone={l.tone}>
+                  <div>
                     <b className="m-num">{l.title}</b>
                     <span>{l.sub}</span>
                   </div>
-                  <b className="m-num" style={{ fontSize: 16, fontWeight: 700, color: l.amount === 0 ? "var(--muted)" : undefined }}>
-                    {money(l.amount)}
-                  </b>
+                  <b className="m-num">{l.amount}</b>
                 </Link>
               ))}
             </div>

@@ -143,11 +143,11 @@ describe("D5 · Tracking", () => {
     expect(await screen.findByText("New code · the old one stops working")).toBeTruthy();
   });
 
-  it("shows the steps, and cancels before pickup behind the confirm sheet", async () => {
+  it("K5: Step 3 of 5 while the rider comes, and cancels before pickup behind the confirm sheet", async () => {
     vi.mocked(getBooking).mockResolvedValue(merchantBooking({ state: "coming", expiresAt: null, rider: RIDER }));
     vi.mocked(cancelBooking).mockResolvedValue(merchantBooking({ state: "cancelled", expiresAt: null, cancelledBy: "business" }));
     render(<Page />);
-    expect(await screen.findByText("Rider at your shop")).toBeTruthy();
+    expect(await screen.findByLabelText("3 of 5 steps")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Cancel booking" }));
     expect(screen.getByText("The rider is told. You can book again any time.")).toBeTruthy();
     fireEvent.click(screen.getAllByRole("button", { name: "Cancel booking" }).at(-1)!);
@@ -160,20 +160,19 @@ describe("D5 · Tracking", () => {
     vi.mocked(getBooking).mockResolvedValue(merchantBooking({ state: "picked_up", expiresAt: null, rider: RIDER }));
     render(<Page />);
     expect(await screen.findByText("On the way to buyer")).toBeTruthy();
+    expect(screen.getByLabelText("4 of 5 steps")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Cancel booking" })).toBeNull();
-    expect(screen.getByRole("link", { name: "Help" }).getAttribute("href")).toBe("https://wa.me/263770000000");
   });
 });
 
 describe("D7 · Delivered", () => {
-  it("says so, lists what went and the fare, and offers to book again", async () => {
+  it("K5 at Step 5 of 5: says so, names the rider and what went, no code, and offers to book again", async () => {
     vi.mocked(getBooking).mockResolvedValue(merchantBooking({ state: "delivered", expiresAt: null, rider: RIDER, itemsSummary: "2× Brake pads (front) · 1× Oil filter", agreedFare: "3.50" }));
     render(<Page />);
-    expect(await screen.findByText("Buyer gave the rider the code")).toBeTruthy();
-    expect(screen.getByText("Oil filter")).toBeTruthy();
-    expect(screen.getByText("Fare to Blessing M.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /6 of 6 steps done/ }));
-    expect(screen.getByText("Rider at your shop")).toBeTruthy();
+    expect(await screen.findByText("Delivered")).toBeTruthy();
+    expect(screen.getByText("Blessing M. · 2× Brake pads (front) · 1× Oil filter")).toBeTruthy();
+    expect(screen.getByLabelText("5 of 5 steps")).toBeTruthy();
+    expect(screen.queryByText("BUYER’S CODE")).toBeNull();
     expect(screen.getByRole("link", { name: "Book again" }).getAttribute("href")).toBe("/deliveries/new");
   });
 });
@@ -193,14 +192,15 @@ describe("D7 · cash back to you (D-48 PR 4b)", () => {
     vi.mocked(closeBookingCash).mockResolvedValue(merchantBooking({ state: "delivered", expiresAt: null, rider: RIDER, cashOnDelivery: { amount: "51.00", status: "returned", dueAt: null } }));
     render(<Page />);
     expect(await screen.findByText("CASH BACK TO YOU")).toBeTruthy();
-    expect(screen.getByText("Blessing M. is bringing")).toBeTruthy();
-    expect(screen.getByText(/· 2\d min left$/)).toBeTruthy();
-    expect(screen.getByText("6 of 7 steps done")).toBeTruthy();
+    expect(screen.getByText(/^Blessing brings it back by \d\d:\d\d$/)).toBeTruthy();
+    expect(screen.getByText("Goods $51.00")).toBeTruthy();
+    expect(screen.getByText("Delivery $3.50 · rider's")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Book again" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "I got $51.00" }));
     await waitFor(() => expect(closeBookingCash).toHaveBeenCalledWith(ID, "returned"));
     expect(await screen.findByText("Cash confirmed · delivery closed")).toBeTruthy();
     expect(screen.queryByText("CASH BACK TO YOU")).toBeNull();
-    expect(screen.getByText("7 of 7 steps done")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Book again" })).toBeTruthy();
   });
 
   it("'No cash on this one' closes it after a neutral confirm", async () => {
@@ -213,10 +213,11 @@ describe("D7 · cash back to you (D-48 PR 4b)", () => {
     await waitFor(() => expect(closeBookingCash).toHaveBeenCalledWith(ID, "no_cash"));
   });
 
-  it("the tracking stepper carries the 7th step", async () => {
+  it("before delivery the cash card shows and 'I got $51.00' is held until after delivery", async () => {
     vi.mocked(getBooking).mockResolvedValue(merchantBooking({ state: "picked_up", expiresAt: null, rider: RIDER, cashOnDelivery: { amount: "51.00", status: "awaiting_delivery", dueAt: null } }));
     render(<Page />);
-    expect(await screen.findByText("Cash back to you")).toBeTruthy();
+    expect(await screen.findByText("Blessing brings it back after delivery")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "I got $51.00 · after delivery" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
 

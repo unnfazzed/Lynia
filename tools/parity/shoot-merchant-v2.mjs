@@ -114,6 +114,9 @@ function apiRoute(route, scenario) {
   if (path === "/merchant/me") return scenario.me ? json(200, scenario.me) : json(403, { reason: "not_a_member", message: "Not on a business." });
   if (path === "/merchant/invites") return json(200, { invites: [] });
   if (path === "/merchant/branches") return json(200, scenario.branches ?? { branches: [] });
+  if (path === "/merchant/statement/weekly") return json(200, scenario.weekly ?? WEEKLY);
+  if (path === "/merchant/team") return json(200, scenario.team ?? TEAM);
+  if (path === "/merchant/riders") return json(200, scenario.riders ?? RIDERS);
   return json(200, []);
 }
 
@@ -222,7 +225,41 @@ const tickTwo = async (p) => {
   await p.getByRole("checkbox", { name: "Signed and stamped" }).click();
 };
 
+// T2 · Money and T3 · Account.
+const oid = (n) => `e${String(n).padStart(7, "0")}-0000-4000-8000-000000000000`;
+const MONEY = {
+  ...SUMMARY, orders: 7, sales: 59.5, cashDue: 9.5, cashOverdue: 9.5,
+  overdue: [{ orderId: oid(9), amount: 9.5, riderName: "Blessing", dueAt: ago(12), kind: "order", riderPhone: "+263772222222" }],
+  lines: [
+    { orderId: oid(1), at: ago(14), outcome: "delivered", cash: "late", amount: 9.5 },
+    { orderId: oid(2), at: ago(40), outcome: "delivered", cash: "due", amount: 12 },
+    { orderId: oid(3), at: ago(75), outcome: "delivered", cash: "in", amount: 8 },
+    { orderId: oid(4), at: ago(110), outcome: "rejected", amount: 0 },
+    { orderId: oid(5), at: ago(160), outcome: "delivered", cash: "in", amount: 15 },
+  ],
+};
+const WEEKLY = { rangeStart: ago(7 * 1440), rangeEnd: ago(0), ordersDelivered: 41, foodSalesTotal: 412.5, commissionRatePct: 0, commissionCharged: 0, illustrativeRatePct: 10, illustrativeCommission: 41.25, cookedFoodLossTotal: 0, lineItems: [] };
+const TEAM = {
+  members: [{ profileId: "p-parity", name: "Farai", phoneMasked: "+263•••••4567", role: "owner", you: true, joinedAt: ago(90 * 1440) }],
+  invites: [{ id: oid(20), name: "Rudo", phoneMasked: "+263•••••1111", invitePhone: "263771111111", createdAt: ago(60), expiresAt: ahead(13 * 1440) }],
+};
+const RIDERS = {
+  riders: ["Blessing", "Tendai"].map((label, i) => ({ id: oid(30 + i), label, phoneMasked: "+263•••••2222", status: "on_lyniago", online: i === 0, invitePhone: null, jobs: 12, ratingAvg: 4.9, rider: null, addedAt: ago(30 * 1440) })),
+  cap: 5,
+};
+const BRANCHES = {
+  branches: [
+    { id: "m-parity", name: "Sadza Republic", landmark: "5th Street, Mbare", role: "owner", active: true, pilotEnabled: true },
+    { id: oid(40), name: "Sadza Republic · Avondale", landmark: "Avondale shops", role: "owner", active: false, pilotEnabled: true },
+  ],
+};
+
 const SETS = {
+  money: [
+    { mock: "T2 Money", label: "T2 · Money", sub: "each row's cash state comes from the API; a rejected order reads —", app: { name: "T2", path: "/statement", scenario: { me: KITCHEN, orders: [], summary: MONEY } } },
+    { mock: "T3 Account", label: "T3 · Account", sub: "Help (kept, D-77 §4) shows only when the support number is configured", app: { name: "T3", path: "/account", scenario: { me: KITCHEN, orders: [], branches: BRANCHES } } },
+    { mock: "T1 Menu", label: "T1 · Menu", sub: "“Add a dish” kept (D-77 §4)", app: { name: "T1", path: "/menu", scenario: { me: KITCHEN, orders: [], menu: MENU } } },
+  ],
   book: [
     { mock: "S4 Book a rider", label: "S4 · Book a rider, one screen", sub: "keyless run: a pasted location reads “Pin the buyer sent”; the fare follows the distance", app: { name: "S4", path: "/deliveries/new", scenario: { me: { ...SHOP, hours: week("00:00", "23:59") } }, before: fillS4 } },
     { mock: "P1 Prescription check", label: "P1 · Check the prescription", sub: "photo stand-in", app: { name: "P1", path: `/queue/${rxOrder.id}/rx`, scenario: { me: PHARMACY_ME, orders: [rxOrder] }, before: tickTwo } },

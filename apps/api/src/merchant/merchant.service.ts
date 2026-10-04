@@ -155,6 +155,18 @@ function outOfStockUntil(forHowLong: DishOutOfStockFor = "rest_of_today"): Date 
 }
 
 /** D-48 C3: how one of today's orders ended, for Money's list. */
+
+/** Merchant v2 T2 (ledger D-77): a delivered order's cash — back in, on its way back, or late. "none" when
+ *  no cash comes back (no collect-and-return debt). */
+export function moneyLineCash(
+  o: { debtStatus?: string | null; merchantClosedAt?: Date | null; deliveredAt: Date | null },
+  overdueBefore: Date,
+): "in" | "due" | "late" | "none" {
+  if (o.debtStatus === "settled_cash" || o.debtStatus === "settled_goods") return "in";
+  if (o.debtStatus === "open" && !o.merchantClosedAt) return o.deliveredAt && o.deliveredAt < overdueBefore ? "late" : "due";
+  return "none";
+}
+
 function moneyLineOutcome(o: { status: string; prepStartedAt: Date | null }): "delivered" | "not_delivered" | "rejected" | "cancelled" | "in_progress" {
   if (o.status === "delivered" || o.status === "completed") return "delivered";
   if (o.status === "undelivered") return "not_delivered";
@@ -914,7 +926,7 @@ export class MerchantService {
       // the return window) it is also overdue.
       this.prisma.order.findMany({
         where: { merchantId, orderType: "merchant", debtStatus: "open", merchantClosedAt: null, deliveredAt: { not: null } },
-        select: { id: true, debtAmount: true, deliveredAt: true, rider: { select: { profile: { select: { firstName: true } } } } },
+        select: { id: true, debtAmount: true, deliveredAt: true, rider: { select: { profile: { select: { firstName: true, phone: true } } } } },
         orderBy: { deliveredAt: "asc" },
         take: 50,
       }),
@@ -931,6 +943,9 @@ export class MerchantService {
           merchantGoodsTotal: true,
           deliveryFee: true,
           merchantDeliveryShare: true,
+          // Merchant v2 T2 (D-77): whether a delivered order's cash is back, on its way, or late.
+          debtStatus: true,
+          merchantClosedAt: true,
         },
         orderBy: { createdAt: "desc" },
         take: 100,
@@ -943,7 +958,7 @@ export class MerchantService {
     const bookingOwed = bookingAccountId
       ? await this.prisma.order.findMany({
           where: { customerId: bookingAccountId, orderType: "parcel", debtStatus: "open", merchantClosedAt: null, deliveredAt: { not: null } },
-          select: { id: true, debtAmount: true, deliveredAt: true, rider: { select: { profile: { select: { firstName: true } } } } },
+          select: { id: true, debtAmount: true, deliveredAt: true, rider: { select: { profile: { select: { firstName: true, phone: true } } } } },
           orderBy: { deliveredAt: "asc" },
           take: 50,
         })
@@ -978,14 +993,18 @@ export class MerchantService {
         riderName: o.rider?.profile.firstName || null,
         dueAt: new Date(o.deliveredAt!.getTime() + RESTAURANTS_DEBT.cashReturnWindowMs).toISOString(),
         kind,
+        // Merchant v2 T2 (D-77): the late-cash card's Call button.
+        ...(o.rider?.profile.phone ? { riderPhone: o.rider.profile.phone } : {}),
       })),
       lines: (todays ?? []).map((o) => {
         const outcome = moneyLineOutcome(o);
         const earns = outcome === "delivered" || outcome === "in_progress";
+        const cash = outcome === "delivered" ? moneyLineCash(o, overdueBefore) : null;
         return {
           orderId: o.id,
           at: (o.deliveredAt ?? o.cancelledAt ?? o.createdAt).toISOString(),
           outcome,
+          ...(cash ? { cash } : {}),
           amount: earns
             ? roundToCents(foodOrderMoney({ goodsTotal: o.merchantGoodsTotal, deliveryFee: o.deliveryFee, merchantDeliveryShare: o.merchantDeliveryShare }).merchantNet)
             : 0,

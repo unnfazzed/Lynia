@@ -80,8 +80,8 @@ export function CodeCard({ rider, code }: { rider: string; code: string | null }
   );
 }
 
-/** K5's cash card: what comes back (food only), the delivery that's the rider's, and when it's due. */
-export function CashCard({ amount, food, delivery, line }: { amount: number; food: number; delivery: number | null; line: string }) {
+/** K5's cash card: what comes back (food only), the delivery that's the rider's, and when it's due. A shop's line reads "Goods". */
+export function CashCard({ amount, food, delivery, line, foodLabel = "Food" }: { amount: number; food: number; delivery: number | null; line: string; foodLabel?: string }) {
   return (
     <div className="m-cashcard">
       <div>
@@ -90,7 +90,9 @@ export function CashCard({ amount, food, delivery, line }: { amount: number; foo
         <b className="m-num">{money(amount)}</b>
       </div>
       <div className="m-num">
-        <span>Food {money(food)}</span>
+        <span>
+          {foodLabel} {money(food)}
+        </span>
         {delivery !== null && <span>Delivery {money(delivery)} · rider&apos;s</span>}
       </div>
       <p>{line}</p>

@@ -128,14 +128,6 @@ export function itemsEditedLabel(o: Pick<MerchantOrderResponse, "itemsEditedAt">
   return o.itemsEditedAt ? `Items changed ${hm(o.itemsEditedAt)}` : null;
 }
 
-/** A row of the vertical stepper (the shop's booking tracking, D5/D7). */
-export interface Step {
-  label: string;
-  state: "done" | "now" | "todo";
-  /** "12:04", or "live" on the current step. */
-  time: string;
-}
-
 /** "12:36" (local time) for an ISO instant; "" for none. */
 export function hm(iso: string | null | undefined): string {
   if (!iso) return "";
