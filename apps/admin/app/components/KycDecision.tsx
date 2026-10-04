@@ -33,6 +33,13 @@ export function KycDecision({
 }) {
   const path = `/riders/${profileId}/kyc`;
   const isResubmit = attempt >= 2;
+  // decideKyc returns a refusal instead of throwing it (Next redacts a thrown server-action message in
+  // production). Re-thrown here, the modal stays open and shows it in the API's own words, e.g. a D-75
+  // approval refused because the ID-check number is on another live account.
+  const decide = async (status: "verified" | "failed", reasonCode: string | null, note: string) => {
+    const res = await decideKyc(profileId, status, reasonCode, note);
+    if (!res.ok) throw new Error(res.message);
+  };
 
   return (
     <div style={{ display: "flex", gap: 8 }}>
@@ -53,7 +60,7 @@ export function KycDecision({
           </span>
         }
         confirmLabel="Approve rider"
-        onConfirm={(r) => decideKyc(profileId, "verified", null, r.note)}
+        onConfirm={(r) => decide("verified", null, r.note)}
       />
       <ConfirmModal
         action="rider.kyc_decline"
@@ -80,7 +87,7 @@ export function KycDecision({
         }
         reasons={REASONS.kycDecline}
         confirmLabel="Decline application"
-        onConfirm={(r) => decideKyc(profileId, "failed", r.reasonCode, r.note)}
+        onConfirm={(r) => decide("failed", r.reasonCode, r.note)}
       />
     </div>
   );

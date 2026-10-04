@@ -122,6 +122,36 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
         </div>
       ) : null}
 
+      {/* D-75: no national ID on file. New riders type none; the ID check supplies it, and approving
+          adopts the number it verified (the API refuses with a 409 if that number is on another live
+          account). In manual mode, or when the check returned no number, approving leaves the account
+          without one and the approval is audit-flagged. Shown while a decision is still open. */}
+      {!decided && r.idOnFile === false ? (
+        <div className="warnbar">
+          <IconAlert />
+          <span className="t">
+            <b>No national ID on file.</b>{" "}
+            {r.verifiedIdInUse ? (
+              <>
+                The ID check verified{" "}
+                {r.verifiedIdNumber ? <span className="mono">{r.verifiedIdNumber}</span> : "a national ID"}, but it&apos;s
+                already on another live account, so approving will be refused. Resolve that account first.
+              </>
+            ) : r.verifiedIdNumber ? (
+              <>
+                Approving makes the number the ID check verified, <span className="mono">{r.verifiedIdNumber}</span>, this
+                account&apos;s national ID.
+              </>
+            ) : (
+              <>
+                There&apos;s no ID-check number to adopt (manual review, or the check returned none), so approving
+                verifies this rider without a national ID. The approval is flagged in the audit log for follow-up.
+              </>
+            )}
+          </span>
+        </div>
+      ) : null}
+
       {/* A-04 duplicate-account guard: this national ID is already on other account(s). A flag, not a
           block — a legit re-entry and a ban-evading second SIM look identical, so ops decides. */}
       {r.duplicateIdAccounts.length > 0 || r.duplicateIdFlag ? (
@@ -131,7 +161,8 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
             <b>Duplicate ID — needs review.</b>{" "}
             {r.duplicateIdAccounts.length > 0 ? (
               <>
-                This national ID (<span className="mono">{r.idNumber ?? "—"}</span>) is also on{" "}
+                {/* D-75: with no ID on file, the shared number is the one the ID check verified. */}
+                This national ID (<span className="mono">{r.idNumber ?? r.verifiedIdNumber ?? "—"}</span>) is also on{" "}
                 {r.duplicateIdAccounts.length} other account
                 {r.duplicateIdAccounts.length === 1 ? "" : "s"}:{" "}
                 {r.duplicateIdAccounts

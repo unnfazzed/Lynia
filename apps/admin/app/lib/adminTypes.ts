@@ -221,6 +221,16 @@ export interface KycReview {
    *  ("typed a fake number, showed a real document"); false = they match; null = unknown (no vendor
    *  document data persisted, or no typed ID to compare). */
   verifiedIdMismatch: boolean | null;
+  /** D-75: false when the account has no national ID on file. New riders type none: the ID check
+   *  supplies it, and approving adopts it. Optional: an older API omits it, and the console then shows
+   *  no notice. */
+  idOnFile?: boolean;
+  /** D-75: the national ID number the ID check verified (decrypted for the reviewer), or null when none
+   *  was stored. With no ID on file, approving makes it the account's national ID. */
+  verifiedIdNumber?: string | null;
+  /** D-75: true when the account has no national ID and the number the ID check verified is already on
+   *  another live account, so the API refuses the approval (409) until that account is resolved. */
+  verifiedIdInUse?: boolean;
 }
 
 /** One other account sharing this rider's national ID (A-04 duplicate-account guard). */

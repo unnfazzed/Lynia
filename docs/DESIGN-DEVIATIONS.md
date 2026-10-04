@@ -4114,13 +4114,45 @@ store your ID number…", and `RO.privacyTest`.
 It changes IR26-02 on purpose: rider onboarding no longer requires a typed national ID. The
 one-ID-one-account dedupe now runs against the number the check verified.
 
+**Follow-up (2026-10-04, IR26-08): an approval by hand adopts the number too.** This closes item 2
+below. `adminSetKyc` serves the review page's Approve, the queue's quick Approve and every approval in
+manual mode. It now settles the national ID as the verified webhook does, through helpers the two share
+(`RiderService.adoptVerifiedId`, with its lock and collision count):
+
+- **The account has no ID and the ID check verified one** (`riders.verified_id_number`): that number
+  becomes the account's national ID. The webhook's guards apply: the number's advisory lock before the
+  row lock, the collision count on both hash axes, the CAS on an empty slot, and the unique-index
+  backstop.
+- **That number is on another live account:** the approval is **refused** with a 409 the console shows:
+  "Can't approve: the national ID from this rider's ID check is already on another live account.
+  Resolve that account first." Nothing is adopted and nothing is approved. An erased tombstone does not
+  refuse. The webhook holds such a match so that a human can approve a returning user, and this
+  approval is that human; the one-ID-one-account rule draws the same line.
+- **No vendor number at all** (manual mode, a payload without one, or any result the webhook held as
+  `pending`; see item 2 below): the rider is approved, and the `rider.kyc_approve` audit row carries
+  `verified_id_missing`, as the webhook's does.
+- **An account that already has an ID** is approved exactly as before.
+
+What changes for riders: a rider approved by hand now has the verified number as their national ID,
+the same as a rider the webhook verified. On the admin KYC review page, a pending review with no ID on
+file shows a "No national ID on file" notice in the kit's own `.warnbar` (the element the resubmission,
+duplicate-ID and mismatch notices already use). It says either what approving will adopt, that
+approving will be refused, or that there is nothing to adopt.
+
 **Open for the owner**
 
 1. **Watch the coverage after deploy.** Look for the log line `KYC <ref>: verified webhook carried no
    document number` and for `verified_id_missing` audit rows. If they are common, the Didit workflow is
    not returning document data, and the dedupe has nothing to key on.
-2. **A KYC approved by hand adopts no ID.** That covers admin approval and manual mode. Such a rider has
-   no national ID on file until they add one in Account.
+2. ~~**A KYC approved by hand adopts no ID.**~~ **Closed 2026-10-04 (IR26-08)**: see the follow-up above.
+   **One gap remains, and since IR26-07 it is the common case.** A result the webhook holds as `pending`
+   stores nothing, the number included. That covers Didit's In Review and, since IR26-07 made the
+   face-match bands run, a Didit **approval** whose face match falls in the review band (0.6–0.85). Such
+   a rider reaches the admin queue with no number, so approving them adopts nothing and is flagged
+   `verified_id_missing`. A band-held approval is final at Didit, so no later webhook brings the number.
+   An In Review session resolved later in Didit's console does adopt it, if that decision is newer than
+   the approval. Storing the vendor number from a held webhook would close the gap; that is the owner's
+   call.
 3. **No consent line before the check.** The privacy notice says consent for the ID and selfie is "given
    when you start rider verification". The only written line for it was `RO.privacy` on the details page,
    and since D-55/D-62 most riders had already skipped that page. R1 draws no such line. If the owner

@@ -137,6 +137,82 @@ describe("AdminKycReviewService.getKycReview (A-04 duplicate ID)", () => {
   });
 });
 
+describe("AdminKycReviewService.getKycReview — D-75: no national ID on file", () => {
+  // New riders type no national ID: the ID check supplies it, and an approval adopts the number it
+  // verified (RiderService.settleNationalIdOnApproval). The review shows that state before anyone approves.
+  const NUMBER = "63123456A42";
+  const vendorHash = pii.hashId(NUMBER);
+  const riderRow = (over: Record<string, unknown> = {}) => ({
+    profileId: "r1",
+    bikeReg: "ABZ 1",
+    kycStatus: "pending",
+    kycRef: "sess_1",
+    kycAttempts: 0,
+    kycDeclineReason: null,
+    idVerified: false,
+    duplicateIdFlag: false,
+    verifiedIdHash: vendorHash,
+    verifiedIdNumber: pii.encryptId(NUMBER),
+    updatedAt: new Date("2026-07-01T00:00:00Z"),
+    profile: { firstName: "Tendai", lastName: "M", phone: "+263782000001", idNumber: null, idNumberHash: null },
+    ...over,
+  });
+  /** Another account carrying the number; an `erased:<id>` phone makes it a tombstone. */
+  const other = (phone: string) => ({
+    id: "p2",
+    firstName: "Other",
+    lastName: "Account",
+    phone,
+    role: "rider",
+    rider: { kycStatus: "verified", accountStatus: "active" },
+  });
+  const review = async (row: ReturnType<typeof riderRow>, others: ReturnType<typeof other>[] = []) => {
+    const prisma = { rider: { findUnique: async () => row }, profile: { findMany: async () => others } };
+    return (await new AdminKycReviewService(prisma as unknown as PrismaService, pii, noStorage).getKycReview("r1"))!;
+  };
+
+  it("says no ID is on file, and decrypts the number the ID check verified: the one approving adopts", async () => {
+    const r = await review(riderRow());
+    expect(r.idOnFile).toBe(false);
+    expect(r.idNumber).toBeNull();
+    expect(r.verifiedIdNumber).toBe(NUMBER);
+    expect(r.verifiedIdInUse).toBe(false);
+  });
+
+  it("flags verifiedIdInUse when that number is on another LIVE account: approving is refused", async () => {
+    const r = await review(riderRow(), [other("+263782000999")]);
+    expect(r.verifiedIdInUse).toBe(true);
+    expect(r.duplicateIdAccounts).toHaveLength(1);
+  });
+
+  it("lists an erased tombstone carrying the number, without refusing the approval (a returning user)", async () => {
+    const r = await review(riderRow(), [other("erased:p2")]);
+    expect(r.duplicateIdAccounts).toHaveLength(1);
+    expect(r.verifiedIdInUse).toBe(false);
+  });
+
+  it("with no vendor number either (manual mode, or a decision that carried none) there is nothing to adopt", async () => {
+    const r = await review(riderRow({ verifiedIdHash: null, verifiedIdNumber: null }));
+    expect(r.idOnFile).toBe(false);
+    expect(r.verifiedIdNumber).toBeNull();
+    expect(r.verifiedIdInUse).toBe(false);
+  });
+
+  it("an account with an ID on file reports idOnFile and never verifiedIdInUse: its approval adopts nothing", async () => {
+    const onFile = {
+      firstName: "Tendai",
+      lastName: "M",
+      phone: "+263782000001",
+      idNumber: pii.encryptId(NUMBER),
+      idNumberHash: vendorHash,
+    };
+    const r = await review(riderRow({ profile: onFile }), [other("+263782000999")]);
+    expect(r.idOnFile).toBe(true);
+    expect(r.idNumber).toBe(NUMBER);
+    expect(r.verifiedIdInUse).toBe(false);
+  });
+});
+
 describe("AdminKycReviewService.getKycReview — document photo (BUG-HUNT)", () => {
   const riderRow = (over: Record<string, unknown> = {}) => ({
     profileId: "r1",

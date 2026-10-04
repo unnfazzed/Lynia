@@ -1,4 +1,5 @@
 import { COMMISSION, freeJobsLeft } from "@lynia/shared";
+import { ConflictException, InternalServerErrorException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
@@ -2305,5 +2306,308 @@ describe("RiderService.adminSetKyc (A-02 decision state machine)", () => {
     const s = svc(prisma, {});
     await s.adminSetKyc("p1", "failed", "face_mismatch");
     expect(calls).toEqual(["lock", "read", "write"]);
+  });
+});
+
+describe("RiderService.adminSetKyc — D-75: a hand approval settles the national ID", () => {
+  // D-75 follow-up: an approval by hand (an admin's, and so every approval in manual mode) adopts the
+  // number the ID check verified, as the verified webhook does. Shared harness: a pending rider whose
+  // account has NO national ID on file (every new rider since D-75) and whose ID check verified NUMBER,
+  // stored by the webhook encrypted (D-70) with its hash (IR26-04). Overrides:
+  //  - `onFile`: the national ID hash already on the profile;
+  //  - `vendorHash` / `vendorNumber`: what the webhook stored (null: nothing);
+  //  - `liveProfiles` / `liveRiders` / `erasedProfiles`: OTHER accounts carrying the number, on a live
+  //    profile, as a live rider's vendor-verified hash, or on an erased tombstone;
+  //  - `adoptCount` / `onFileAfter`: the adoption CAS's row count, and what a re-read then finds;
+  //  - `adoptP2002` / `decisionP2002`: the adoption write, or the decision write, hits a unique index;
+  //  - `lockedRead`: what the row-locked read returns when the ID facts moved after the first read.
+  // `rec.calls` orders the reads, locks and writes; `rec.counts` keeps every collision count's `where`.
+  const NUMBER = "63123456A42";
+  const HASH = pii.hashId(NUMBER);
+  const OTHER = pii.hashId("63-999999-Z-99");
+  const VENDOR_CIPHERTEXT = pii.encryptId(NUMBER);
+
+  type Row = {
+    profileId: string;
+    kycAttempts: number;
+    kycStatus: string;
+    kycResolvedAt: Date | null;
+    verifiedIdHash: string | null;
+    verifiedIdNumber: string | null;
+    profile: { idNumberHash: string | null };
+  };
+
+  const p2002 = () =>
+    new Prisma.PrismaClientKnownRequestError("Unique constraint failed on the fields: (`id_number_hash`)", {
+      code: "P2002",
+      clientVersion: "test",
+    });
+
+  function approvalPrisma(
+    over: {
+      onFile?: string | null;
+      vendorHash?: string | null;
+      vendorNumber?: string | null;
+      liveProfiles?: number;
+      liveRiders?: number;
+      erasedProfiles?: number;
+      adoptCount?: number;
+      onFileAfter?: string | null;
+      adoptP2002?: boolean;
+      decisionP2002?: boolean;
+      lockedRead?: Partial<Row>;
+    } = {},
+  ) {
+    const first: Row = {
+      profileId: "p1",
+      kycAttempts: 0,
+      kycStatus: "pending",
+      kycResolvedAt: null,
+      verifiedIdHash: over.vendorHash === undefined ? HASH : over.vendorHash,
+      verifiedIdNumber: over.vendorNumber === undefined ? VENDOR_CIPHERTEXT : over.vendorNumber,
+      profile: { idNumberHash: over.onFile ?? null },
+    };
+    const rec: {
+      data?: Record<string, unknown>;
+      audit?: Record<string, unknown>;
+      adopt: { where: Record<string, unknown>; data: Record<string, unknown> }[];
+      counts: { model: string; where: Record<string, unknown> }[];
+      raw: { sql: string; values: unknown[] }[];
+      calls: string[];
+      transactions: number;
+    } = { adopt: [], counts: [], raw: [], calls: [], transactions: 0 };
+    const prisma: Record<string, unknown> = {
+      $transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
+        rec.transactions += 1;
+        return fn(prisma);
+      },
+      $executeRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const sql = strings.join("?");
+        rec.raw.push({ sql, values });
+        rec.calls.push(sql.includes("pg_advisory_xact_lock") ? "advisory" : "row-lock");
+        return 1;
+      },
+      rider: {
+        findUnique: async () => {
+          const locked = rec.calls.includes("row-lock");
+          rec.calls.push(locked ? "locked-read" : "first-read");
+          return locked ? { ...first, ...over.lockedRead } : first;
+        },
+        update: async (args: { data: Record<string, unknown> }) => {
+          rec.calls.push("decision");
+          if (over.decisionP2002) throw p2002();
+          rec.data = args.data;
+          return { kycAttempts: 0 };
+        },
+        count: async (args: { where: Record<string, unknown> }) => {
+          rec.counts.push({ model: "rider", where: args.where });
+          return over.liveRiders ?? 0;
+        },
+      },
+      profile: {
+        // A live-scoped count carries the `NOT erased:` filter; an unscoped one also sees tombstones.
+        count: async (args: { where: Record<string, unknown> }) => {
+          rec.counts.push({ model: "profile", where: args.where });
+          const live = over.liveProfiles ?? 0;
+          return "NOT" in args.where ? live : live + (over.erasedProfiles ?? 0);
+        },
+        updateMany: async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+          rec.calls.push("adopt");
+          rec.adopt.push(args);
+          if (over.adoptP2002) throw p2002();
+          return { count: over.adoptCount ?? 1 };
+        },
+        findUnique: async () => ({ idNumberHash: over.onFileAfter ?? null }),
+      },
+      auditLog: {
+        create: async (args: { data: Record<string, unknown> }) => {
+          rec.calls.push("audit");
+          rec.audit = args.data;
+          return {};
+        },
+      },
+    };
+    return { prisma, rec };
+  }
+
+  const approve = (prisma: Record<string, unknown>) => svc(prisma, {}).adminSetKyc("p1", "verified", null, "alice@corp.com");
+
+  /** The rejection of an approval that must be refused; an approval that goes through fails the test. */
+  const refusal = (p: Promise<unknown>) =>
+    p.then(
+      () => {
+        throw new Error("expected the approval to be refused");
+      },
+      (e: unknown) => e,
+    );
+
+  const reasonOf = (e: unknown) => ((e as ConflictException).getResponse() as { reason?: string }).reason;
+
+  it("D-75: with no national ID on file, approving adopts the number the ID check verified, and verifies", async () => {
+    const { prisma, rec } = approvalPrisma();
+    const res = await approve(prisma);
+    expect(res).toMatchObject({ profileId: "p1", kycStatus: "verified", locked: false });
+    expect(rec.data).toMatchObject({ kycStatus: "verified", idVerified: true, duplicateIdFlag: false });
+    // A CAS that only fills an EMPTY slot, with a typed ID's normalisation, encryption and hash.
+    expect(rec.adopt).toHaveLength(1);
+    expect(rec.adopt[0]!.where).toEqual({ id: "p1", idNumberHash: null });
+    expect(rec.adopt[0]!.data.idNumberHash).toBe(HASH);
+    const stored = rec.adopt[0]!.data.idNumber as string;
+    expect(stored.startsWith("v1:")).toBe(true);
+    expect(stored).not.toContain(NUMBER);
+    expect(pii.decryptId(stored)).toBe(NUMBER);
+    // Encrypted afresh (a new IV), never the rider row's ciphertext copied across.
+    expect(stored).not.toBe(VENDOR_CIPHERTEXT);
+    // An adoption is an ordinary approval in the audit trail: no flag.
+    expect(rec.audit).toMatchObject({ actor: "alice@corp.com", action: "rider.kyc_approve", target: "p1", reasonCode: null });
+  });
+
+  it("D-75: the approval takes the number's advisory lock before the row lock, and adopts before the decision, in one transaction", async () => {
+    const { prisma, rec } = approvalPrisma();
+    await approve(prisma);
+    expect(rec.transactions).toBe(1);
+    expect(rec.calls).toEqual(["first-read", "advisory", "row-lock", "locked-read", "adopt", "decision", "audit"]);
+    // The number's lock, keyed exactly like the webhook's and the ID-writing routes' (hashtext of the hash).
+    expect(rec.raw[0]!.sql).toContain("pg_advisory_xact_lock(hashtext(");
+    expect(rec.raw[0]!.values).toEqual([HASH]);
+  });
+
+  it("D-75: refuses with a 409 when the number is on another LIVE account's profile — nothing adopted, nothing approved, no audit row", async () => {
+    const { prisma, rec } = approvalPrisma({ liveProfiles: 1 });
+    const e = await refusal(approve(prisma));
+    expect(e).toBeInstanceOf(ConflictException);
+    expect((e as ConflictException).getResponse()).toMatchObject({
+      reason: "verified_id_in_use",
+      message: expect.stringContaining("already on another live account"),
+    });
+    expect(rec.adopt).toHaveLength(0);
+    expect(rec.data).toBeUndefined();
+    expect(rec.audit).toBeUndefined();
+  });
+
+  it("D-75: refuses when another live rider's ID check verified the same number (the vendor-hash axis)", async () => {
+    const { prisma, rec } = approvalPrisma({ liveRiders: 1 });
+    expect(reasonOf(await refusal(approve(prisma)))).toBe("verified_id_in_use");
+    expect(rec.adopt).toHaveLength(0);
+    expect(rec.data).toBeUndefined();
+  });
+
+  it("D-75: an erased tombstone carrying the number doesn't refuse (a returning user): adopted, with the A-04 reviewer flag set", async () => {
+    const { prisma, rec } = approvalPrisma({ erasedProfiles: 1 });
+    await approve(prisma);
+    expect(rec.adopt).toHaveLength(1);
+    // IR26-03 parity: the ID write recomputes duplicateIdFlag, so a later auto-verify is held (DOC-16-05).
+    expect(rec.data).toMatchObject({ kycStatus: "verified", duplicateIdFlag: true });
+    // The refusal counted LIVE accounts only, on both axes: erased:<id> tombstones were left out.
+    const live = { NOT: { phone: { startsWith: "erased:" } } };
+    expect(rec.counts).toEqual(
+      expect.arrayContaining([
+        { model: "profile", where: { idNumberHash: HASH, id: { not: "p1" }, ...live } },
+        { model: "rider", where: { verifiedIdHash: HASH, profileId: { not: "p1" }, profile: live } },
+      ]),
+    );
+  });
+
+  it("D-75: the live-ID unique index refusing the adoption is the same 409, not a 500", async () => {
+    // A writer that skipped the advisory lock claimed the number between the count and the write.
+    const { prisma, rec } = approvalPrisma({ adoptP2002: true });
+    expect(reasonOf(await refusal(approve(prisma)))).toBe("verified_id_in_use");
+    expect(rec.adopt).toHaveLength(1);
+    expect(rec.data).toBeUndefined();
+  });
+
+  it("D-75: a P2002 that did NOT come from an adoption still propagates", async () => {
+    const { prisma } = approvalPrisma({ onFile: HASH, decisionP2002: true });
+    const e = await refusal(approve(prisma));
+    expect(e).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
+    expect(e).not.toBeInstanceOf(ConflictException);
+  });
+
+  it("D-75: no national ID and no vendor number (manual mode, or a decision that carried none): approved, audit-flagged verified_id_missing", async () => {
+    const { prisma, rec } = approvalPrisma({ vendorHash: null, vendorNumber: null });
+    await approve(prisma);
+    expect(rec.data).toMatchObject({ kycStatus: "verified", idVerified: true });
+    expect(rec.data).not.toHaveProperty("duplicateIdFlag");
+    expect(rec.audit).toMatchObject({ action: "rider.kyc_approve", reasonCode: "verified_id_missing" });
+    expect(rec.adopt).toHaveLength(0);
+    // No number: no lock to take and nothing to count.
+    expect(rec.calls).not.toContain("advisory");
+    expect(rec.counts).toHaveLength(0);
+  });
+
+  it("D-75: a vendor hash whose number is gone (scrubbed, or pre-D-70) still refuses a live collision, and otherwise approves flagged verified_id_missing", async () => {
+    const colliding = approvalPrisma({ vendorNumber: null, liveProfiles: 1 });
+    expect(reasonOf(await refusal(approve(colliding.prisma)))).toBe("verified_id_in_use");
+    const clean = approvalPrisma({ vendorNumber: null });
+    await approve(clean.prisma);
+    expect(clean.rec.data).toMatchObject({ kycStatus: "verified" });
+    expect(clean.rec.adopt).toHaveLength(0);
+    expect(clean.rec.audit).toMatchObject({ reasonCode: "verified_id_missing" });
+  });
+
+  it("D-75: an account that already has a national ID is approved exactly as before: no lock, no count, no adoption, no flag", async () => {
+    // Even one that disagrees with the check (IR26-04): the review screen flags that and the reviewer decides.
+    const { prisma, rec } = approvalPrisma({ onFile: OTHER });
+    await approve(prisma);
+    expect(rec.data).toMatchObject({ kycStatus: "verified", idVerified: true });
+    expect(rec.data).not.toHaveProperty("duplicateIdFlag");
+    expect(rec.calls).toEqual(["first-read", "row-lock", "locked-read", "decision", "audit"]);
+    expect(rec.counts).toHaveLength(0);
+    expect(rec.audit).toMatchObject({ reasonCode: null });
+  });
+
+  it("D-75: a DIFFERENT national ID landing on the account during the approval (lost CAS) refuses as review_stale", async () => {
+    const { prisma, rec } = approvalPrisma({ adoptCount: 0, onFileAfter: OTHER });
+    const e = await refusal(approve(prisma));
+    expect((e as ConflictException).getResponse()).toMatchObject({
+      reason: "review_stale",
+      message: expect.stringContaining("Reload the page"),
+    });
+    expect(rec.data).toBeUndefined();
+    expect(rec.audit).toBeUndefined();
+  });
+
+  it("D-75: the SAME number landing during the approval (lost CAS) still approves, as an ID already on file", async () => {
+    const { prisma, rec } = approvalPrisma({ adoptCount: 0, onFileAfter: HASH });
+    await approve(prisma);
+    expect(rec.data).toMatchObject({ kycStatus: "verified" });
+    expect(rec.data).not.toHaveProperty("duplicateIdFlag");
+    expect(rec.audit).toMatchObject({ reasonCode: null });
+  });
+
+  it("D-75: ID facts that moved between the read that took the lock and the locked read refuse as review_stale", async () => {
+    // A new decision with a different number landed: the lock held is not that number's.
+    const moved = approvalPrisma({ lockedRead: { verifiedIdHash: OTHER } });
+    expect(reasonOf(await refusal(approve(moved.prisma)))).toBe("review_stale");
+    expect(moved.rec.adopt).toHaveLength(0);
+    // A decision with a number landed where there was none: nothing was locked for it.
+    const appeared = approvalPrisma({ vendorHash: null, vendorNumber: null, lockedRead: { verifiedIdHash: HASH, verifiedIdNumber: VENDOR_CIPHERTEXT } });
+    expect(reasonOf(await refusal(approve(appeared.prisma)))).toBe("review_stale");
+    // A national ID that isn't the locked number landed on the account: a mismatch the reviewer hasn't seen.
+    const landed = approvalPrisma({ lockedRead: { profile: { idNumberHash: OTHER } } });
+    expect(reasonOf(await refusal(approve(landed.prisma)))).toBe("review_stale");
+    // The locked number itself landing is fine: approved as an ID on file.
+    const same = approvalPrisma({ lockedRead: { profile: { idNumberHash: HASH } } });
+    await approve(same.prisma);
+    expect(same.rec.data).toMatchObject({ kycStatus: "verified" });
+    expect(same.rec.adopt).toHaveLength(0);
+  });
+
+  it("D-75: never adopts a stored number that doesn't match its hash (fails closed)", async () => {
+    const { prisma, rec } = approvalPrisma({ vendorNumber: pii.encryptId("63-999999-Z-99") });
+    expect(await refusal(approve(prisma))).toBeInstanceOf(InternalServerErrorException);
+    expect(rec.adopt).toHaveLength(0);
+    expect(rec.data).toBeUndefined();
+  });
+
+  it("D-75: decline, expire and reset never lock, count or adopt", async () => {
+    for (const status of ["failed", "expired", "pending"] as const) {
+      const { prisma, rec } = approvalPrisma();
+      await svc(prisma, {}).adminSetKyc("p1", status, status === "failed" ? "face_mismatch" : null, "alice@corp.com");
+      expect(rec.calls).toEqual(["row-lock", "locked-read", "decision", "audit"]);
+      expect(rec.counts).toHaveLength(0);
+      expect(rec.adopt).toHaveLength(0);
+      expect(rec.audit?.reasonCode).toBe(status === "failed" ? "face_mismatch" : null);
+    }
   });
 });

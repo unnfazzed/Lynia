@@ -125,9 +125,19 @@ describe("creditRiderWallet (manual prepaid credit — the launch top-up rail)",
   });
 });
 
+/** D-75: the API's 409 when an approval's ID-check number is already on another live account. */
+const verifiedIdInUse = {
+  ok: false,
+  status: 409,
+  json: async () => ({
+    reason: "verified_id_in_use",
+    message: "Can't approve: the national ID from this rider's ID check is already on another live account. Resolve that account first.",
+  }),
+};
+
 describe("decideKyc (A-02 KYC decision — gates who can earn)", () => {
   it("approve → verified carries no reason code", async () => {
-    await decideKyc("p1", "verified", null, "looks good");
+    await expect(decideKyc("p1", "verified", null, "looks good")).resolves.toEqual({ ok: true });
     const c = lastCall();
     expect(c.url).toBe("https://api.test/admin/riders/p1/kyc");
     expect(c.body).toEqual({ status: "verified", note: "looks good" });
@@ -141,9 +151,21 @@ describe("decideKyc (A-02 KYC decision — gates who can earn)", () => {
     expect(lastCall().body).toEqual({ status: "failed", reasonCode: "blurry_document", note: null });
   });
 
-  it("FAILS CLOSED: a compliance-write rejection throws (never silently fails open on a KYC decision)", async () => {
+  it("FAILS CLOSED: a compliance-write rejection comes back as a failure (never silently fails open on a KYC decision)", async () => {
     fetchMock.mockResolvedValue(res(403));
-    await expect(decideKyc("p1", "verified", null)).rejects.toThrow(/Failed to record KYC/i);
+    await expect(decideKyc("p1", "verified", null)).resolves.toEqual({
+      ok: false,
+      message: expect.stringMatching(/session may have expired|reach the server/i),
+    });
+    expect(revalidateMock).not.toHaveBeenCalled();
+  });
+
+  it("D-75: a refused approval is RETURNED in the API's own words (a throw would be redacted in production)", async () => {
+    fetchMock.mockResolvedValue(verifiedIdInUse);
+    await expect(decideKyc("p1", "verified", null)).resolves.toEqual({
+      ok: false,
+      message: "Can't approve: the national ID from this rider's ID check is already on another live account. Resolve that account first.",
+    });
     expect(revalidateMock).not.toHaveBeenCalled();
   });
 });
@@ -156,21 +178,31 @@ describe("setKyc (queue-backstop KYC write, FormData)", () => {
   };
 
   it("posts a valid decision and revalidates the queue", async () => {
-    await setKyc(fd({ profileId: "p9", status: "verified" }));
+    await expect(setKyc(fd({ profileId: "p9", status: "verified" }))).resolves.toEqual({ ok: true });
     const c = lastCall();
     expect(c.url).toBe("https://api.test/admin/riders/p9/kyc");
     expect(c.body).toEqual({ status: "verified" });
     expect(revalidateMock).toHaveBeenCalledWith("/riders");
   });
 
-  it("ignores an out-of-set status or a missing profile id (no write, no throw)", async () => {
-    await expect(setKyc(fd({ profileId: "p9", status: "approved" }))).resolves.toBeUndefined();
-    await expect(setKyc(fd({ profileId: "", status: "verified" }))).resolves.toBeUndefined();
+  it("refuses an out-of-set status or a missing profile id without writing", async () => {
+    await expect(setKyc(fd({ profileId: "p9", status: "approved" }))).resolves.toMatchObject({ ok: false });
+    await expect(setKyc(fd({ profileId: "", status: "verified" }))).resolves.toMatchObject({ ok: false });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("FAILS CLOSED on a rejected write", async () => {
     fetchMock.mockResolvedValue(res(500));
-    await expect(setKyc(fd({ profileId: "p9", status: "failed" }))).rejects.toThrow(/Failed to set KYC/i);
+    await expect(setKyc(fd({ profileId: "p9", status: "failed" }))).resolves.toMatchObject({ ok: false });
+    expect(revalidateMock).not.toHaveBeenCalled();
+  });
+
+  it("D-75: a refused quick approval is RETURNED in the API's own words", async () => {
+    fetchMock.mockResolvedValue(verifiedIdInUse);
+    await expect(setKyc(fd({ profileId: "p9", status: "verified" }))).resolves.toEqual({
+      ok: false,
+      message: expect.stringContaining("already on another live account"),
+    });
+    expect(revalidateMock).not.toHaveBeenCalled();
   });
 });
