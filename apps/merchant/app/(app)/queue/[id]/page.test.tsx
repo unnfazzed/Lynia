@@ -18,6 +18,7 @@ import {
   requestPayment,
   dispatchCancel,
   dispatchResume,
+  extendPrep,
   getOrder,
   markReady,
   revealPickupCode,
@@ -33,6 +34,8 @@ vi.mock("next/navigation", () => {
 vi.mock("../../../lib/orders-api", () => ({
   getOrder: vi.fn(),
   markReady: vi.fn(async () => ({})),
+  extendPrep: vi.fn(async () => ({})),
+  requestHandoverFallback: vi.fn(async () => ({})),
   cancelPreparing: vi.fn(async () => ({})),
   confirmKitchen: vi.fn(async () => ({})),
   proposeSubstitution: vi.fn(async () => ({})),
@@ -75,63 +78,67 @@ function show(order: MerchantOrderResponse) {
 
 const cooking = () => merchantOrder({ id: ID, merchantPhase: "preparing", prepMinutes: 15, prepStartedAt: new Date(Date.now() - 5 * 60_000).toISOString() });
 
-describe("M3a · Cooking ticket (Order flow v2, D-59)", () => {
-  it("shows the prep ring with the ready time, the priced lines and the four-step track; 'Food is ready' finds a rider", async () => {
+describe("K3 · the cooking ticket (Merchant v2, D-77)", () => {
+  it("shows Step 2 of 5, the big countdown with the ready time, the lines; 'Food is ready' finds a rider", async () => {
     show(cooking());
-    expect(await screen.findByText(/^Cooking · ready \d\d:\d\d$/)).toBeTruthy();
-    expect(screen.getByText("Rider found 8 min before ready")).toBeTruthy();
+    expect(await screen.findByText(/^left · ready \d\d:\d\d$/)).toBeTruthy();
     expect(screen.getByText(/^9:5\d|^10:00/)).toBeTruthy();
+    expect(screen.getByText("Step 2 of 5 ·", { exact: false })).toBeTruthy();
+    expect(screen.getByText("We book the rider to arrive as it’s ready")).toBeTruthy();
     expect(screen.getByText("Sadza & beef stew")).toBeTruthy();
-    expect(screen.getByRole("list", { name: "Step 2 of 4: Cooking" })).toBeTruthy();
-    expect(screen.queryByText(/Rider secured/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Food is ready" }));
     await vi.waitFor(() => expect(markReady).toHaveBeenCalledWith(ID));
     expect(await screen.findByText("Marked ready · finding a rider")).toBeTruthy();
   });
 
-  it("'Can't finish this order' cancels a cash order behind the confirm sheet", async () => {
+  it("'+5 min' pushes the ready time back", async () => {
     show(cooking());
-    fireEvent.click(await screen.findByRole("button", { name: "Can’t finish this order" }));
+    fireEvent.click(await screen.findByRole("button", { name: "+5 min" }));
+    await vi.waitFor(() => expect(extendPrep).toHaveBeenCalledWith(ID));
+    expect(await screen.findByText("Ready time pushed back 5 min · customer told")).toBeTruthy();
+  });
+
+  it("'Problem with this order?' replaces Can't finish: it cancels a cash order behind the confirm sheet", async () => {
+    show(cooking());
+    expect(screen.queryByRole("button", { name: "Can’t finish this order" })).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "Problem with this order?" }));
+    fireEvent.click(screen.getByRole("button", { name: "Can’t finish this order" }));
     fireEvent.click(screen.getByRole("button", { name: "Cancel order" }));
     await vi.waitFor(() => expect(cancelPreparing).toHaveBeenCalledWith(ID));
     await vi.waitFor(() => expect(replace).toHaveBeenCalledWith("/queue"));
   });
 });
 
-describe("M3b · a shop packs", () => {
-  it("speaks Packing and 'Order is packed'", async () => {
+describe("K3 · a shop packs", () => {
+  it("speaks Packing and 'Packed' (BRIEF §4)", async () => {
     business.current = merchantProfile({ businessType: "shop", shopKind: "pharmacy" });
     show(cooking());
-    expect(await screen.findByText(/^Packing · ready /)).toBeTruthy();
-    expect(screen.getByRole("list", { name: "Step 2 of 4: Packing" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Order is packed" })).toBeTruthy();
+    expect(await screen.findByText("Packing")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Packed" })).toBeTruthy();
   });
 });
 
-describe("M4 · Hand-over", () => {
-  it("before a rider takes it, says a rider is being found — no code yet", async () => {
+describe("K4 · hand over (Merchant v2, D-77)", () => {
+  it("before a rider takes it, says a rider is being found — no code yet, and no hand-over button", async () => {
     show(merchantOrder({ id: ID, merchantPhase: "ready_for_pickup", status: "open_for_offers" }));
-    expect(await screen.findByText("Finding a rider")).toBeTruthy();
+    expect(await screen.findByText("Finding a rider. The code appears once one takes it.")).toBeTruthy();
     expect(revealPickupCode).not.toHaveBeenCalled();
-    expect((screen.getByRole("button", { name: "Hand over" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "Hand over" })).toBeNull();
   });
 
-  it("with a rider coming, reads the six-digit code out 3+3 — asked for once, since asking rotates it", async () => {
-    show(merchantOrder({ id: ID, merchantPhase: null, status: "assigned", riderId: RIDER.profileId, rider: RIDER }));
+  it("with a rider coming, says the six-digit code 3+3 — asked for once, since asking rotates it", async () => {
+    show(merchantOrder({ id: ID, merchantPhase: null, status: "assigned", riderId: RIDER.profileId, rider: RIDER, riderPhone: "+263772222222" }));
     expect(await screen.findByText("Blessing M.")).toBeTruthy();
     expect(screen.getByText("Hand over #A111")).toBeTruthy();
-    expect(screen.getByText("Read this pickup code to Blessing M.")).toBeTruthy();
-    const code = await screen.findByLabelText("Pickup code 7 3 1 6 0 4");
-    expect([...code.children].map((c) => c.textContent)).toEqual(["731", "604"]);
+    expect(screen.getByText("Step 3 of 5 ·", { exact: false })).toBeTruthy();
+    expect(screen.getByText("SAY THIS CODE TO BLESSING")).toBeTruthy();
+    expect((await screen.findByLabelText("Pickup code 7 3 1 6 0 4")).textContent).toBe("731 604");
+    expect(screen.getByText("Waiting for Blessing to type it. This screen moves on by itself.")).toBeTruthy();
     expect(screen.getByText("AFG 2231 · ★ 4.9")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Call Blessing M." }).getAttribute("href")).toBe("tel:+263772222222");
+    expect(screen.queryByRole("button", { name: "Hand over" })).toBeNull();
     await new Promise((r) => setTimeout(r, 50));
     expect(revealPickupCode).toHaveBeenCalledTimes(1);
-  });
-
-  it("a legacy four-digit code shows whole", async () => {
-    vi.mocked(revealPickupCode).mockResolvedValueOnce({ pickupCode: "7205" });
-    show(merchantOrder({ id: ID, merchantPhase: null, status: "assigned", riderId: RIDER.profileId, rider: RIDER }));
-    expect((await screen.findByLabelText("Pickup code 7 2 0 5")).textContent).toBe("7205");
   });
 
   it("an auto-accepted order is collected without a code, so none is asked for", async () => {
@@ -139,13 +146,11 @@ describe("M4 · Hand-over", () => {
     expect(await screen.findByText("Blessing M.")).toBeTruthy();
     await new Promise((r) => setTimeout(r, 50));
     expect(revealPickupCode).not.toHaveBeenCalled();
-    expect(screen.queryByText(/Read this pickup code/)).toBeNull();
+    expect(screen.queryByText(/SAY THIS CODE/)).toBeNull();
   });
 
-  it("once the rider's code matched, says so, and Hand over moves to tracking", async () => {
+  it("the rider's code entry moves the screen on by itself, and says so", async () => {
     show(merchantOrder({ id: ID, merchantPhase: null, status: "picked_up", riderId: RIDER.profileId, rider: RIDER, debtStatus: "open" }));
-    expect(await screen.findByText("Blessing M. entered the code")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Hand over" }));
     expect(await screen.findByText("#A111 on the way")).toBeTruthy();
   });
 
@@ -162,22 +167,26 @@ describe("M4 · Hand-over", () => {
 
 const CASH = { paymentMethod: "cash", merchantCashRule: "collect_and_return" } as const;
 
-describe("M5 · Tracking", () => {
-  it("shows the four-step track and 'Cash back to you · after delivery'; 'Mark ride completed' closes after a neutral confirm", async () => {
-    show(merchantOrder({ id: ID, ...CASH, merchantPhase: null, status: "en_route_dropoff", riderId: RIDER.profileId, rider: RIDER, debtStatus: "open", debtAmount: 12 }));
+describe("K5 · on the way + cash back, one screen (Merchant v2, D-77)", () => {
+  it("on the way: Step 4 of 5, the cash card (food only, delivery as the rider's) and 'I got $12.00 · after delivery' held", async () => {
+    show(merchantOrder({ id: ID, ...CASH, merchantPhase: null, status: "en_route_dropoff", riderId: RIDER.profileId, rider: RIDER, debtStatus: "open", debtAmount: 12, deliveryFee: 3.2 }));
     expect(await screen.findByText("#A111 on the way")).toBeTruthy();
-    expect(screen.getByRole("list", { name: "Step 3 of 4: On the way" })).toBeTruthy();
-    expect(screen.getByText("Cash back to you")).toBeTruthy();
-    expect(screen.getByText("after delivery")).toBeTruthy();
-    expect(screen.queryByText("Rider at your counter")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Mark ride completed" }));
+    expect(screen.getByLabelText("4 of 5 steps")).toBeTruthy();
+    expect(screen.getByText("CASH BACK TO YOU")).toBeTruthy();
+    expect(screen.getByText("Delivery $3.20 · rider's")).toBeTruthy();
+    expect(screen.getByText("Blessing brings it back after delivery")).toBeTruthy();
+    expect(screen.getByText("The door photo shows here once it’s delivered")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "I got $12.00 · after delivery" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("an order with no cash to bring back can be marked completed after a neutral confirm", async () => {
+    show(merchantOrder({ id: ID, merchantPhase: null, status: "en_route_dropoff", riderId: RIDER.profileId, rider: RIDER }));
+    fireEvent.click(await screen.findByRole("button", { name: "Mark ride completed" }));
     expect(screen.getByText("This closes the order now, even if steps are left.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Mark completed" }));
     await vi.waitFor(() => expect(closeOrder).toHaveBeenCalledWith(ID, "force"));
   });
-});
 
-describe("M6a · Delivered + cash back", () => {
   const delivered = () =>
     merchantOrder({
       id: ID,
@@ -192,13 +201,11 @@ describe("M6a · Delivered + cash back", () => {
       cashDueAt: new Date(Date.now() + 22 * 60_000).toISOString(),
     });
 
-  it("says who is bringing how much and by when; 'I got $12.00' counts it", async () => {
+  it("delivered: Step 5 of 5, when the cash is due; 'I got $12.00' counts it", async () => {
     show(delivered());
-    expect(await screen.findByText("CASH BACK TO YOU")).toBeTruthy();
-    expect(screen.getByText("Blessing M. is bringing $12.00")).toBeTruthy();
-    expect(screen.getByText(/· 22 min left$/)).toBeTruthy();
-    expect(screen.getByText(/^due \d\d:\d\d$/)).toBeTruthy();
-    expect(screen.getByRole("list", { name: "Step 4 of 4: Delivered" })).toBeTruthy();
+    expect(await screen.findByText(/^Delivered \d\d:\d\d$/)).toBeTruthy();
+    expect(screen.getByLabelText("5 of 5 steps")).toBeTruthy();
+    expect(screen.getByText(/^Blessing brings it back by \d\d:\d\d$/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "I got $12.00" }));
     await vi.waitFor(() => expect(confirmReturnedCash).toHaveBeenCalledWith(ID, 12));
     await vi.waitFor(() => expect(replace).toHaveBeenCalledWith("/queue"));
@@ -211,10 +218,8 @@ describe("M6a · Delivered + cash back", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close order" }));
     await vi.waitFor(() => expect(closeOrder).toHaveBeenCalledWith(ID, "no_cash"));
   });
-});
 
-describe("M6b · Goods back", () => {
-  it("says the rider is bringing the order back; 'I got the food back' closes it", async () => {
+  it("not delivered: the goods come back on the same screen; 'I got the food back' closes it", async () => {
     show(merchantOrder({ id: ID, ...CASH, merchantPhase: null, status: "undelivered", riderId: RIDER.profileId, rider: RIDER, debtStatus: "open", debtAmount: 12 }));
     expect(await screen.findByText("Not delivered")).toBeTruthy();
     expect(screen.getByText("GOODS BACK TO YOU")).toBeTruthy();
@@ -246,7 +251,7 @@ describe("Auto-accept: the Cooking ticket once the kitchen confirmed", () => {
 
   it("has no confirm card", async () => {
     show(auto());
-    expect(await screen.findByText(/^Cooking · ready /)).toBeTruthy();
+    expect(await screen.findByText(/^left · ready /)).toBeTruthy();
     expect(screen.queryByText("LyniaGo accepted this for you")).toBeNull();
   });
 
@@ -325,10 +330,11 @@ describe("cash only (BRIEF §14, ledger D-74): what is left of the old wallet la
 
   it("paid, it cooks like any other order; 'Can't finish this order' refunds with the business's reference", async () => {
     show({ ...cooking(), paymentMethod: "wallet", merchantGoodsTotal: 9.5, merchantPaymentConfirmedAt: new Date().toISOString() });
-    expect(await screen.findByText(/^Cooking · ready \d\d:\d\d$/)).toBeTruthy();
+    expect(await screen.findByText(/^left · ready \d\d:\d\d$/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Food is ready" })).toBeTruthy();
     expect(screen.queryByText(/^(WALLET|CASH)$/)).toBeNull();
 
+    fireEvent.click(screen.getByRole("button", { name: "Problem with this order?" }));
     fireEvent.click(screen.getByRole("button", { name: "Can’t finish this order" }));
     const sheet = screen.getByRole("dialog", { name: "Cancel this order?" });
     expect(within(sheet).getByText("Refund the customer $9.50 first, then add the refund reference.")).toBeTruthy();
@@ -385,14 +391,14 @@ describe("Order flow v2 round 2 (D-59): the wait, photos, Scheduled, Rx", () => 
     ],
   });
 
-  it("M2: while the customer answers, the ticket waits with the countdown and holds 'Order is packed'", async () => {
+  it("M2: while the customer answers, the ticket waits with the countdown and holds 'Packed'", async () => {
     business.current = merchantProfile({ businessType: "shop", shopKind: "grocery" });
     show(merchantOrder({ ...cooking(), items: lines, substitution: round(new Date(Date.now() + 161_000).toISOString()) }));
     expect(await screen.findByText("Waiting for the customer to answer")).toBeTruthy();
     expect(screen.getByText("Bakers Inn 700g · $1.20")).toBeTruthy();
     expect(screen.getByText("Swap asked")).toBeTruthy();
     expect(screen.getByText("Removing")).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Order is packed" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Packed" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(/^Waiting for the customer’s answer · 2:4/)).toBeTruthy();
   });
 
@@ -402,32 +408,34 @@ describe("Order flow v2 round 2 (D-59): the wait, photos, Scheduled, Rx", () => 
     expect(replace).not.toHaveBeenCalledWith("/queue");
   });
 
-  it("M4b: a shop's Hand over waits for the rider's sealed-bag photo", async () => {
+  it("S3: a shop hands over on a 3-step checklist — seal, the rider's photo, then the code", async () => {
     show(merchantOrder({ id: ID, merchantPhase: null, status: "en_route_pickup", riderId: RIDER.profileId, rider: RIDER, pickupProofRequired: true }));
-    expect(await screen.findByText("Waiting for Blessing M.’s photo of the sealed bag")).toBeTruthy();
-    expect(screen.getByText("Shops and pharmacies: wait for the photo before you hand over.")).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Hand over" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(await screen.findByText("Seal the bag")).toBeTruthy();
+    expect(screen.getByText("Sticker or stapled receipt")).toBeTruthy();
+    expect(screen.getByText("Blessing photographs it")).toBeTruthy();
+    expect(screen.getByText("Waiting for Blessing M.’s photo of the sealed bag")).toBeTruthy();
+    expect(screen.getByText("Say the code to Blessing")).toBeTruthy();
+    expect(await screen.findByText("731 604")).toBeTruthy();
+    expect(screen.getByText("The order moves on when Blessing types the code.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Hand over" })).toBeNull();
   });
 
-  it("M4: the photo row once it's in, with View opening the viewer", async () => {
+  it("S3: once the photo is in, step 2 is ticked with the time and the thumbnail", async () => {
     const takenAt = new Date().toISOString();
     show(
       merchantOrder({
         id: ID,
         merchantPhase: null,
-        status: "picked_up",
+        status: "en_route_pickup",
         riderId: RIDER.profileId,
         rider: RIDER,
-        debtStatus: "open",
         pickupProofRequired: true,
         pickupProof: { photoUrl: "https://storage.example/bag.jpg", takenAt, bagSealed: true },
       }),
     );
-    expect(await screen.findByText("Sealed bag photo")).toBeTruthy();
-    expect(screen.getByText(/^Blessing M\. took this at /)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "View" }));
-    expect(screen.getByRole("dialog")).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Hand over" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(await screen.findByText("Blessing photographed it")).toBeTruthy();
+    expect(screen.getByText(/^\d\d:\d\d · the customer sees this too$/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Sealed bag photo" }).getAttribute("href")).toBe("https://storage.example/bag.jpg");
   });
 
   it("M5b: the door photo on tracking says where it was left", async () => {
@@ -457,17 +465,16 @@ describe("Order flow v2 round 2 (D-59): the wait, photos, Scheduled, Rx", () => 
     await vi.waitFor(() => expect(rejectOrder).toHaveBeenCalledWith(ID, "other"));
   });
 
-  it("M3b + M8a: a pharmacist sees the seal note and the way into the prescription check", async () => {
+  it("M8a: a pharmacist sees the way into the prescription check on the ticket", async () => {
     business.current = merchantProfile({ businessType: "shop", shopKind: "pharmacy", myIsPharmacist: true });
     show(merchantOrder({ ...cooking(), prescription: { status: "pending", patientName: "Rudo Moyo", pageCount: 2 } }));
-    expect(await screen.findByText("Seal the bag")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Prescription check" }).getAttribute("href")).toBe(`/queue/${ID}/rx`);
+    expect((await screen.findByRole("link", { name: "Prescription check" })).getAttribute("href")).toBe(`/queue/${ID}/rx`);
   });
 
   it("no prescription check without a pharmacist, or without a prescription", async () => {
     business.current = merchantProfile({ businessType: "shop", shopKind: "pharmacy", myIsPharmacist: false });
     show(merchantOrder({ ...cooking(), prescription: { status: "pending", patientName: "Rudo Moyo", pageCount: 2 } }));
-    expect(await screen.findByText("Seal the bag")).toBeTruthy();
+    expect(await screen.findByText("Packed")).toBeTruthy();
     expect(screen.queryByRole("link", { name: "Prescription check" })).toBeNull();
   });
 });

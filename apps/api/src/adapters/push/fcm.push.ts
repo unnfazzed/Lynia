@@ -44,14 +44,15 @@ const FCM_BATCH_LIMIT = 500;
 /** The FCM HTTP-v1 message shape we send. Kept narrow — only what PushMessage maps to. */
 export interface FcmMessage {
   token: string;
-  notification: { title: string; body: string };
+  /** Absent on a silent (data-only) push. */
+  notification?: { title: string; body: string };
   data?: Record<string, string>;
   /** Android TTL — firebase-admin's AndroidConfig.ttl is in MILLISECONDS (it converts to the REST
    *  "<n>s" duration under the hood). Set only for time-critical (ttlSeconds) messages. */
   android?: { ttl?: number; collapseKey?: string };
   /** APNs expiry — `apns-expiration` is an ABSOLUTE unix epoch (seconds), NOT a duration; 0 would mean
    *  "expire immediately", so we send now + ttlSeconds. Set only for time-critical messages. */
-  apns?: { headers: Record<string, string> };
+  apns?: { headers: Record<string, string>; payload?: { aps: Record<string, unknown> } };
 }
 
 /**
@@ -59,10 +60,7 @@ export interface FcmMessage {
  * unit-tested with no firebase-admin / network / credentials in play (live send needs a project).
  */
 export function buildFcmMessage(message: PushMessage): FcmMessage {
-  const built: FcmMessage = {
-    token: message.token,
-    notification: { title: message.title, body: message.body },
-  };
+  const built: FcmMessage = message.silent ? { token: message.token } : { token: message.token, notification: { title: message.title, body: message.body } };
   // FCM rejects an empty/undefined data map; include it only when there's something to send.
   if (message.data && Object.keys(message.data).length > 0) {
     built.data = message.data;
@@ -80,6 +78,10 @@ export function buildFcmMessage(message: PushMessage): FcmMessage {
   if (message.collapseKey !== undefined) {
     built.android = { ...built.android, collapseKey: message.collapseKey };
     built.apns = { headers: { ...built.apns?.headers, "apns-collapse-id": message.collapseKey } };
+  }
+  // A silent push reaches an iOS device through FCM only as a background push.
+  if (message.silent) {
+    built.apns = { headers: { ...built.apns?.headers, "apns-push-type": "background", "apns-priority": "5" }, payload: { aps: { "content-available": 1 } } };
   }
   return built;
 }

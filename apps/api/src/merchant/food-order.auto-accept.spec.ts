@@ -347,6 +347,17 @@ describe("phone numbers (safeguard 5)", () => {
     expect(queued!.customerFirstName).toBe("Rudo");
     expect((await svc.getMyOrder("o1", "c1")).customerFirstName).toBeUndefined();
   });
+
+  it("Merchant v2 (D-77): the merchant's own view carries the assigned rider's phone; the customer's doesn't", async () => {
+    const rider = { profileId: "r1", bikeReg: "AFG 2231", vehicleInfo: null, ratingAvg: 4.9, ratingCount: 3, tripsCount: 9, kycStatus: "verified", photoUrl: null, profile: { firstName: "Blessing", lastName: "Moyo", phone: "+263772222222" } };
+    const order = { ...base, riderId: "r1", rider, merchant: shop(false) };
+    const { svc } = build({ merchant: { findUnique: async () => ({ id: "m1" }) }, order: { findMany: async () => [order], findFirst: async () => order } });
+    const [queued] = await svc.listQueue("owner-1");
+    expect(queued!.riderPhone).toBe("+263772222222");
+    const mine = await svc.getMyOrder("o1", "c1");
+    expect(mine.riderPhone).toBeUndefined();
+    expect(JSON.stringify(mine)).not.toContain("+263772222222");
+  });
 });
 
 describe("food-order-ops — shared by the restaurant and ops (safeguards 1 and 4)", () => {
@@ -438,5 +449,51 @@ describe("food-order-ops — shared by the restaurant and ops (safeguards 1 and 
     } as unknown as PrismaService;
     expect(await confirmKitchen(prisma, gateway, "o1", "ops")).toBe(true);
     expect(where).toMatchObject({ autoAccepted: true, kitchenConfirmedAt: null });
+  });
+});
+
+describe("Merchant v2 K3 · +5 min (ledger D-77)", () => {
+  const started = new Date("2026-10-04T07:10:00.000Z");
+  const cooking = { id: "o1", merchantId: "m1", customerId: "c1", status: "requested", merchantPhase: "preparing", prepMinutes: 15, prepStartedAt: started, merchantItems: [], pickupCodeAttempts: 0, noShowCallTimestamps: [], opsNoAnswerAt: [], dropoff: null, merchant: { location: null, showPhoneToCustomers: false, ownerProfile: null } };
+
+  it("adds five minutes to the prep (guarded on the value it read) and tells the customer the new time silently", async () => {
+    let where: Record<string, unknown> | undefined;
+    let data: Record<string, unknown> | undefined;
+    const sent: Array<Record<string, unknown>> = [];
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: {
+        findFirst: async () => cooking,
+        findUnique: async () => ({ ...cooking, prepMinutes: 20 }),
+        updateMany: async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+          where = args.where;
+          data = args.data;
+          return { count: 1 };
+        },
+      },
+    });
+    (svc as unknown as { notifications: { notifyProfiles: (ids: string[], msg: Record<string, unknown>) => Promise<void> } }).notifications = {
+      notifyProfiles: async (_ids, msg) => {
+        sent.push(msg);
+      },
+    };
+    const res = await svc.extendPrep("owner-1", "o1");
+    expect(where).toMatchObject({ id: "o1", merchantPhase: "preparing", prepMinutes: 15 });
+    expect(data).toEqual({ prepMinutes: 20 });
+    expect(res.prepMinutes).toBe(20);
+    expect(queueChanges).toEqual(["o1"]);
+    expect(sent).toEqual([
+      expect.objectContaining({
+        silent: true,
+        data: expect.objectContaining({ orderId: "o1", kind: "food_ready_time", readyAt: "2026-10-04T07:30:00.000Z" }),
+      }),
+    ]);
+  });
+
+  it("refuses an order that isn't cooking, and past the two-hour cap", async () => {
+    const { svc } = build({ merchant: { findUnique: async () => ({ id: "m1" }) }, order: { findFirst: async () => ({ ...cooking, merchantPhase: "ready_for_pickup" }) } });
+    await expect(svc.extendPrep("owner-1", "o1")).rejects.toThrow("This order isn't in prep");
+    const { svc: svc2 } = build({ merchant: { findUnique: async () => ({ id: "m1" }) }, order: { findFirst: async () => ({ ...cooking, prepMinutes: 120 }) } });
+    await expect(svc2.extendPrep("owner-1", "o1")).rejects.toThrow();
   });
 });

@@ -28,6 +28,12 @@ export interface PushMessage {
    * (every send is its own tray entry). Opt-in per kind at the call site.
    */
   collapseKey?: string;
+  /**
+   * A silent push (Merchant v2 +5 min, ledger D-77): data only — no banner, no sound. The app reads the
+   * data (e.g. a new ready time) the next time it handles a message. FCM sends no `notification` block;
+   * APNs sends a `background` push with `content-available`. `title`/`body` are ignored.
+   */
+  silent?: boolean;
 }
 
 /** Outcome of a single send, so the caller can prune tokens the provider says are permanently dead. */

@@ -28,6 +28,12 @@ function verifies(jwt: string, key: KeyObject): boolean {
 }
 
 describe("buildApnsRequest — payload contract", () => {
+  it("a silent push (D-77) is a low-priority background push with no alert or sound", () => {
+    const req = buildApnsRequest({ token, title: "", body: "", silent: true, data: { readyAt: "07:34" } }, "zw.co.lynia", 1_000);
+    expect(req.headers).toEqual({ "apns-topic": "zw.co.lynia", "apns-push-type": "background", "apns-priority": "5" });
+    expect(JSON.parse(req.body)).toEqual({ aps: { "content-available": 1 }, body: { readyAt: "07:34" } });
+  });
+
   it("posts an alert to the device path with the app's topic", () => {
     const req = buildApnsRequest({ token, title: "Rider arriving", body: "Tendai is 2 minutes away" }, "zw.co.lynia", 1_000);
     expect(req.path).toBe(`/3/device/${token}`);

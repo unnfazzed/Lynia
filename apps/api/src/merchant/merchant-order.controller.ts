@@ -122,6 +122,13 @@ export class MerchantOrderController {
     return this.foodOrders.markReady(profileId, orderId);
   }
 
+  // Merchant v2 K3 (ledger D-77): "+5 min" — push the ready time back without cancelling.
+  @Post(":orderId/extend-prep")
+  @UseGuards(MerchantGuard)
+  extendPrep(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
+    return this.foodOrders.extendPrep(profileId, orderId);
+  }
+
   // Auto-accept: "Got it, we're making it" — confirms an auto-accepted order so a rider can be sent.
   @Post(":orderId/confirm-kitchen")
   @UseGuards(MerchantGuard)

@@ -4,7 +4,8 @@ import Link from "next/link";
 import { Icon } from "../icons";
 
 /**
- * A pushed screen's bar (merchant-mobile README "Screens": a back chevron plus a 16px/700 title). Back
+ * A pushed screen's back header (Merchant v2, ledger D-77: 52 tall, a 44px back target in the accent
+ * text, the title 17/700, an optional figure on the right at 16/700). Back
  * goes to the screen's FIXED parent (README "Navigation model"), never the browser history, so a deep
  * link or a reload still backs out to the right place. `onBack` replaces the link when a screen has to
  * run something first (the sign-up steps step back inside one page).
@@ -22,7 +23,7 @@ export function AppBar({
   center?: boolean;
   right?: React.ReactNode;
 }) {
-  const chevron = <Icon name="chevron-left" size={22} />;
+  const chevron = <Icon name="chevron-left" size={20} />;
   return (
     <div className="m-ab">
       {onBack ? (

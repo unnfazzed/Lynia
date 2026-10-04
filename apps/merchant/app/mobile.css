@@ -287,31 +287,35 @@
 }
 
 /* ── App bar (pushed screens) ───────────────────────────────────────────────────────────── */
+/* Merchant v2 (D-77): the back header — 52 tall, a 44px back target in the accent text, title 17/700. */
 .m-ab {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 12px 10px;
-  padding-top: calc(6px + env(safe-area-inset-top));
+  gap: 4px;
+  padding: env(safe-area-inset-top) 16px 0 4px;
   flex-shrink: 0;
-  min-height: 52px;
+  min-height: calc(52px + env(safe-area-inset-top));
 }
 .m-ab b {
   flex: 1;
+  font-size: 17px;
+  font-weight: 700;
+}
+.m-ab > :not(b):not(.m-back) {
   font-size: 16px;
   font-weight: 700;
 }
 .m-back {
   width: var(--target-min);
   height: var(--target-min);
-  margin: -4px;
   display: grid;
   place-items: center;
   background: none;
   border: none;
-  color: var(--ink);
+  color: var(--accent-text);
   cursor: pointer;
   border-radius: 50%;
+  flex: none;
 }
 
 /* ── Tab bar ────────────────────────────────────────────────────────────────────────────── */
@@ -2467,4 +2471,365 @@
 }
 .m-opt.m-optsm {
   min-height: var(--target-min);
+}
+
+/* ── Merchant v2 · ticket parts (K3–K5, S3; ledger D-77) ─────────────────────────────────── */
+.m-psteps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.m-psteps > span {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.m-psteps > span b {
+  font-weight: 600;
+  color: var(--accent-text);
+}
+.m-rcard {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.m-rav {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--accent-wash);
+  color: var(--accent-text);
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 17px;
+  flex: none;
+}
+.m-rcard > div {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.m-rcard > div b {
+  font-size: 16px;
+  font-weight: 700;
+}
+.m-rcard > div span {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.m-call {
+  width: var(--target-min);
+  height: var(--target-min);
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  color: var(--accent-text);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.m-saycode {
+  background: var(--surface);
+  border-radius: 16px;
+  padding: 20px 16px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+}
+.m-saycode > span {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.m-saycode > b {
+  font-size: 48px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin-top: 6px;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+.m-waitrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px dashed var(--line);
+  font-size: 14px;
+  color: var(--muted);
+}
+.m-wspin {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  border-top-color: transparent;
+  flex: none;
+  animation: m-spin 1s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .m-wspin {
+    animation: none;
+  }
+}
+.m-sumrow {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 2px;
+  font-size: 15px;
+}
+.m-sumrow > span {
+  color: var(--muted);
+}
+.m-cashcard {
+  border: 1px solid var(--highlight-border);
+  background: var(--highlight-wash);
+  border-radius: 16px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.m-cashcard > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--highlight-ink);
+}
+.m-cashcard > div:first-child span {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.m-cashcard > div:first-child b {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.m-cashcard > div:nth-child(2) {
+  display: flex;
+  font-size: 13px;
+  color: var(--muted);
+}
+.m-cashcard > div:nth-child(2) span {
+  flex: 1;
+}
+.m-cashcard > p {
+  font-size: 13px;
+  color: var(--highlight-ink);
+  font-weight: 600;
+}
+.m-cta-pin {
+  margin-top: auto;
+  position: sticky;
+  bottom: 0;
+}
+/* K3: the big countdown card. */
+.m-cdcard {
+  background: var(--accent-wash);
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.m-cdcard > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.m-cdcard > div b {
+  font-size: 36px;
+  font-weight: 700;
+  line-height: 1;
+}
+.m-cdcard > div span {
+  font-size: 15px;
+  font-weight: 600;
+}
+.m-cdcard > p {
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.m-linescard {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 4px 14px;
+}
+.m-linescard .m-ol {
+  padding: 12px 0;
+}
+.m-pillrow {
+  display: flex;
+  gap: 8px;
+}
+.m-pillrow .m-gh {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 700;
+}
+.m-problem {
+  align-self: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: var(--radius-pill);
+  background: var(--danger-wash);
+  color: var(--danger-ink);
+  border: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  /* The kit draws this pill 36 tall (below --target-min): the hit area is padded to the floor without
+   * inflating the drawn pill (D-77 §4, reported upstream). */
+  position: relative;
+}
+.m-problem::after {
+  content: "";
+  position: absolute;
+  inset: -4px 0;
+}
+/* S3's checklist: three numbered steps, done ones filled. */
+.m-check {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 6px 14px;
+}
+.m-check > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+}
+.m-check > div + div {
+  border-top: 1px solid var(--line);
+}
+.m-check i {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  color: var(--accent-text);
+  display: grid;
+  place-items: center;
+  font-style: normal;
+  font-size: 13px;
+  font-weight: 700;
+  flex: none;
+}
+.m-check i.m-on {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+}
+.m-check > div > div {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.m-check > div > div > b {
+  font-size: 15px;
+  font-weight: 700;
+}
+.m-check > div > div > span {
+  font-size: 13px;
+  color: var(--muted);
+}
+.m-check .m-bigcode {
+  color: var(--ink);
+  font-size: 36px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  margin-top: 4px;
+  white-space: nowrap;
+}
+.m-thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex: none;
+  background: var(--surface);
+}
+/* K5: the door photo placeholder row. */
+.m-photorow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+.m-photorow > i {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.m-photorow > span {
+  flex: 1;
+  font-size: 14px;
+  color: var(--muted);
+}
+.m-btn.m-off {
+  background: var(--surface);
+  color: var(--muted);
+  opacity: 1;
+}
+/* K5: the map's floating back button and the sheet over it (overlaps by 20, r20). */
+.m-mapback {
+  position: absolute;
+  top: calc(4px + env(safe-area-inset-top));
+  left: 4px;
+  width: var(--target-min);
+  height: var(--target-min);
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--accent-text);
+  display: grid;
+  place-items: center;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  z-index: 2;
+}
+.m-k5 {
+  margin-top: -20px;
+  position: relative;
+  background: var(--bg);
+  border-radius: 20px 20px 0 0;
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+}
+.m-k5 > div:first-child {
+  display: flex;
+  flex-direction: column;
+}
+.m-k5 > div:first-child b {
+  font-size: 20px;
+  font-weight: 700;
+}
+.m-k5 > div:first-child span {
+  font-size: 14px;
+  color: var(--muted);
+  margin-top: 2px;
 }

@@ -4268,4 +4268,19 @@ any string Merchant v2 doesn't draw. Viewport unchanged: 360×720 with the 320px
 | S2 accept without changes | Only "Accept with 2 changes" drawn | "Accept" | Shops get no ready-in picker (BRIEF §3), so there is no time to quote. |
 | K2 kitchen with a removed dish | Drawn without changes | The same "Accept with N changes" and "New total" as S2 | BRIEF §3: accepting and sending changes are one action. |
 
+| K3 cooking ticket, rider line | "Blessing M. arrives 07:31" | "Blessing M. is booked to collect it" / "Finding a rider" / "We book the rider to arrive as it's ready" | No rider arrival time on the read (same as the board). |
+| K3 "Problem with this order?" | A pill (what it opens isn't drawn) | A sheet: "Something ran out — change items" and "Can't finish this order" (cancel, or refund first for a paid wallet order from before D-74) | BRIEF §4: it replaces "Can't finish". **Upstream ask:** draw the sheet. |
+| K3 Problem pill, 36 tall | Drawn at 36px, below `--target-min` | Drawn at 36px, with an invisible hit area padded to 44 | UPSTREAM kit defect (D2: a mock must clear the floor); the app doesn't inflate the drawn pill. |
+| K4 rider card sub-line | "AFG 2231 · ★ 4.9 · at your counter" | "AFG 2231 · ★ 4.9" | No arrival signal (§4 above). |
+| K4 / K5, the call button | Drawn | Shown when the order carries the rider's number: the merchant's own read now does (`riderPhone`, additive) | BRIEF "Needs backend". |
+| S3 step 2 before the photo | Drawn done ("Tendai photographed it") | "Tendai photographs it" / "Waiting for Tendai M.'s photo of the sealed bag" until it's in | The undone state of the drawn step. |
+| K5 sub-line | "Blessing M. · arrives 07:38 · 2 dishes" | "Blessing M. · 2 dishes" | No arrival estimate on the read. |
+| K5 cash card before delivery | "Blessing brings it back by 07:55, after delivery" | "Blessing brings it back after delivery"; the time appears once delivered | The due time is set at delivery (delivered + the return window). |
+| K5 on an order with no cash to bring back | Not drawn | No cash card and no CTA; a "Mark ride completed" link after pickup | Kept from D-48's tracking screen. |
+| K5 goods back (not delivered) | Not drawn (BRIEF: one screen) | The cash card's frame says "GOODS BACK TO YOU", the CTA "I got the food back" and "It wasn't returned" | Order flow v2's M6b words, inside K5. |
+| +5 min | — | `POST /merchant/orders/:id/extend-prep` adds 5 min of prep (capped at 120) and sends the customer a **silent** push (FCM data-only / APNs background) with the new ready time | Owner decision (BRIEF open question 2). The customer app reads it on its next refresh. |
+| Offline-rider fallback | — | "Rider can't enter code" on K4/S3 behind `NEXT_PUBLIC_MERCHANT_HANDOVER_FALLBACK` (off); its API route doesn't exist yet | Owner decision (BRIEF open question 1): built behind a flag that stays off. |
+| Shop's ready button | "Order is packed" (Order flow v2) | "Packed" | BRIEF §4. |
+| Back header | merchant-mobile's 16/700 bar | 52 tall, 44 back target in accent text, title 17/700 — on every pushed screen | Merchant v2 spec ("restyle only" for settings sub-screens). |
+
 *Further rows are added PR by PR as the screens land.*
