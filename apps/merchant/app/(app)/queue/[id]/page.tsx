@@ -657,7 +657,13 @@ function OnTheWay({ order, act, disabled, error, setConfirm, business, v }: Ctx)
             <p>{[OF.backT(rider), order.cashDueAt ? OF.goodsDue(hm(order.cashDueAt)) : null].filter(Boolean).join(" · ")}</p>
           </div>
         ) : cashBack ? (
-          <CashCard amount={amount} food={amount} delivery={order.deliveryFee} line={cashLine} />
+          <CashCard
+            amount={amount}
+            food={amount}
+            delivery={order.deliveryFee}
+            line={cashLine}
+            foodLabel={(order.venue?.businessType ?? business?.businessType) === "shop" ? "Goods" : "Food"}
+          />
         ) : null}
         {order.doorProof ? (
           <PhotoRow title={failed ? OF.attemptPhoto : OF.doorPhoto} sub={doorProofLine(order.doorProof, hm(order.doorProof.takenAt))} url={order.doorProof.photoUrl} />

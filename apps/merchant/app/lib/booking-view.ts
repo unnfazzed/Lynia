@@ -1,6 +1,5 @@
 import type { MerchantBookingOffer, MerchantBookingResponse } from "@lynia/shared";
 import { isFinding, isLiveBooking, orderOffers, STATE_LABEL } from "./booking";
-import type { Step } from "./orders-view";
 
 /**
  * D1's "Riders you booked" trackers and the D5 stepper (packages/design/handoff/merchant-mobile, ledger
@@ -71,27 +70,4 @@ export function fareDelta(offered: string, proposed: string): { text: string; le
   const d = Math.round((Number(offered) - Number(proposed)) * 100) / 100;
   if (!Number.isFinite(d) || d === 0) return null;
   return { text: `$${Math.abs(d).toFixed(2)} ${d < 0 ? "less" : "more"}`, less: d < 0 };
-}
-
-/* ── D5 stepper ────────────────────────────────────────────────────────────────────────────── */
-
-function hm(iso: string): string {
-  const d = new Date(iso);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
-
-const BOOKING_STEPS = ["Booked", "Rider secured", "Rider at your shop", "Picked up", "On the way", "Delivered"] as const;
-
-/** D5's stepper. The API gives no time for the middle steps, so only "Booked" carries one; the current
- *  step says "live". A cash-on-delivery booking has the drawn 7th step, "Cash back to you". */
-export function bookingSteps(b: Pick<MerchantBookingResponse, "state" | "createdAt" | "cashOnDelivery">): Step[] {
-  const cod = b.cashOnDelivery ?? null;
-  const labels = cod ? [...BOOKING_STEPS, "Cash back to you"] : [...BOOKING_STEPS];
-  const cashDone = cod?.status === "returned" || cod?.status === "closed";
-  const done = b.state === "coming" ? 2 : b.state === "picked_up" ? 4 : b.state === "delivered" ? (cod && !cashDone ? 6 : labels.length) : 1;
-  return labels.map((label, i) => ({
-    label,
-    state: i < done ? "done" : i === done ? "now" : "todo",
-    time: i === 0 ? hm(b.createdAt) : i === done ? "live" : "",
-  }));
 }

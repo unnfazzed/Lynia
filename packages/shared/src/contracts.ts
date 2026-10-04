@@ -2049,6 +2049,8 @@ export const MerchantEndOfDaySummaryResponse = z
           dueAt: z.string(),
           /** D-48 PR 4b: a shop booking's cash on delivery (opens /deliveries/:id) rather than a food order. */
           kind: z.enum(["order", "booking"]).optional(),
+          /** Merchant v2 T2 (D-77): the rider's number, for the late-cash card's Call button. */
+          riderPhone: z.string().optional(),
         }),
       )
       .optional(),
@@ -2061,6 +2063,8 @@ export const MerchantEndOfDaySummaryResponse = z
           orderId: z.string().uuid(),
           at: z.string(),
           outcome: z.enum(["delivered", "not_delivered", "rejected", "cancelled", "in_progress"]),
+          /** Merchant v2 T2 (D-77), delivered orders: the cash is back in, on its way, late, or none comes back. */
+          cash: z.enum(["in", "due", "late", "none"]).optional(),
           amount: z.number(),
         }),
       )

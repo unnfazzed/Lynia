@@ -4291,4 +4291,12 @@ any string Merchant v2 doesn't draw. Viewport unchanged: 360×720 with the 320px
 | P1 → S2 | README: "P1 comes before S2. Approving P1 continues into S2." | A pharmacist's ringing screen shows "Check the prescription" in place of Accept until it's approved; the check returns to the ring | The API already allowed the check while the order rings. |
 | P1 decline prefill | "Already filled in from the unticked box" | The first unticked box picks the reason (name / stamp → Not valid; date → Expired) and a one-line note | The note text isn't drawn; it is plain and editable. |
 
+| T2 Money, today's rows | "In" / "due" / "late" drawn on delivered orders | Each row reads its own cash state from the API (`lines[].cash`: in · due · late · none, additive); a rejected order shows "—"; an order whose cash is still with the rider reads "Cash on its way back" | The drawing has no rejected or in-transit row; built from the drawn row. |
+| T2 late-cash card, the Call pill | Drawn at 32px | Drawn at 32px, hit area padded to 44; it dials the rider (`overdue[].riderPhone`, additive) | As K3's pill (UPSTREAM). |
+| T3 Account rows | Values drawn on some rows | Every row shows its value where the API has one (hours today, rider count, "1 invite open") | Built from the drawn row; no new words. |
+| T3 "Help" | Not drawn | Kept as the last row of "ORDERS & PEOPLE" when the support WhatsApp number is configured | Help & support is the merchant's only way to reach LyniaGo (WhatsApp). **Upstream ask:** draw it. |
+| T1 Menu, "Add a dish" | Not drawn on T1 | Kept under the title | Without it a kitchen can't add a dish. **Upstream ask:** draw it. |
+| Shop booking after the pick | "Book a rider → offers → K5" | D-48's tracking (D5) and delivered (D7) screens are replaced by K5: map, Step 3/4/5 of 5, rider card, the buyer's code until delivered, the cash card and "I got $X" | BRIEF §5. The vertical stepper is retired. |
+| K5 cash card on a shop | "Food $12.00" | "Goods $51.00" | A shop sells goods, not food (the BRIEF's vocabulary swap). |
+
 *Further rows are added PR by PR as the screens land.*

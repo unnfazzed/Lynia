@@ -41,11 +41,12 @@ function today(): MerchantEndOfDaySummaryResponse {
     sales: 59.5,
     cashOverdue: 9.5,
     overdue: [
-      { orderId: "a0980000-0000-4000-8000-000000000000", amount: 9.5, riderName: "Tino", dueAt: new Date(2026, 8, 30, 11, 40).toISOString() },
+      { orderId: "a0980000-0000-4000-8000-000000000000", amount: 9.5, riderName: "Tino", riderPhone: "+263771112222", dueAt: new Date(2026, 8, 30, 11, 40).toISOString() },
       { orderId: "b0980000-0000-4000-8000-000000000000", amount: 51, riderName: "Blessing", dueAt: new Date(2026, 8, 30, 12, 10).toISOString(), kind: "booking" as const },
     ],
     lines: [
-      { orderId: "a1110000-0000-4000-8000-000000000000", at: new Date(2026, 8, 30, 12, 31).toISOString(), outcome: "delivered", amount: 12 },
+      { orderId: "a1110000-0000-4000-8000-000000000000", at: new Date(2026, 8, 30, 12, 31).toISOString(), outcome: "delivered", cash: "in", amount: 12 },
+      { orderId: "a0980000-0000-4000-8000-000000000000", at: new Date(2026, 8, 30, 11, 52).toISOString(), outcome: "delivered", cash: "late", amount: 9.5 },
       { orderId: "a0900000-0000-4000-8000-000000000000", at: new Date(2026, 8, 30, 11, 10).toISOString(), outcome: "rejected", amount: 0 },
     ],
   };
@@ -85,21 +86,28 @@ describe("StatementPage initial-load failure has a way out (LC-D##)", () => {
   });
 });
 
-describe("C3 · Money (merchant mobile, D-48)", () => {
-  it("today: sales, the overdue row that opens its order, and how each order ended", async () => {
+describe("T2 · Money (Merchant v2, D-77)", () => {
+  it("today: sales, a late-cash card with Call, and the ledger — credits green, late cash gold, a rejected order '—'", async () => {
     vi.mocked(getTodaySummary).mockResolvedValue(today());
     vi.mocked(getWeeklyStatement).mockResolvedValue(statement());
     render(<MoneyPage />);
     expect(await screen.findByText("$59.50")).toBeTruthy();
-    expect(screen.getByText("Sales · 7 orders")).toBeTruthy();
-    expect(screen.getByText("$9.50 overdue")).toBeTruthy();
-    expect(screen.getByText("#A098 · Tino · due 11:40")).toBeTruthy();
-    expect(screen.getByRole("link", { name: /\$9\.50 overdue/ }).getAttribute("href")).toBe("/queue/a0980000-0000-4000-8000-000000000000");
-    // A shop booking's cash on delivery opens the booking (D-48 PR 4b).
-    expect(screen.getByRole("link", { name: /\$51\.00 overdue/ }).getAttribute("href")).toBe("/deliveries/b0980000-0000-4000-8000-000000000000");
+    expect(screen.getByText("SALES · 7 ORDERS")).toBeTruthy();
+    expect(screen.getByText("$9.50 cash is late")).toBeTruthy();
+    expect(screen.getByText("#A098 · Tino · was due 11:40")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /\$9\.50 cash is late/ }).getAttribute("href")).toBe("/queue/a0980000-0000-4000-8000-000000000000");
+    expect(screen.getByRole("link", { name: "Call Tino" }).getAttribute("href")).toBe("tel:+263771112222");
+    // A shop booking's cash on delivery opens the booking (D-48 PR 4b); no number, no Call.
+    expect(screen.getByRole("link", { name: /\$51\.00 cash is late/ }).getAttribute("href")).toBe("/deliveries/b0980000-0000-4000-8000-000000000000");
+    expect(screen.queryByRole("link", { name: "Call Blessing" })).toBeNull();
+    expect(screen.getByText("TODAY")).toBeTruthy();
     expect(screen.getByText("#A111 · 12:31")).toBeTruthy();
-    expect(screen.getByText("Rejected")).toBeTruthy();
-    expect(screen.getByText("$0.00")).toBeTruthy();
+    expect(screen.getByText("Delivered · cash back in")).toBeTruthy();
+    expect(screen.getByText("+$12.00")).toBeTruthy();
+    expect(screen.getByText("Delivered · cash late")).toBeTruthy();
+    expect(screen.getByText("You couldn’t take it")).toBeTruthy();
+    expect(screen.getByText("—")).toBeTruthy();
+    expect(screen.queryByText("$0.00")).toBeNull();
     expect(screen.queryByText(/Commission/)).toBeNull();
   });
 
@@ -108,8 +116,9 @@ describe("C3 · Money (merchant mobile, D-48)", () => {
     vi.mocked(getWeeklyStatement).mockResolvedValue(statement());
     render(<MoneyPage />);
     fireEvent.click(await screen.findByRole("tab", { name: "This week" }));
-    expect(screen.getByText("Sales · 3 orders")).toBeTruthy();
+    expect(screen.getByText("SALES · 3 ORDERS")).toBeTruthy();
     expect(screen.getByText("$30.00")).toBeTruthy();
+    expect(screen.getByText("THIS WEEK")).toBeTruthy();
     expect(screen.getByText(/^#A111 · \w+ 12:31$/)).toBeTruthy();
   });
 });

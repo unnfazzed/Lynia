@@ -181,7 +181,7 @@ export default function MenuPage() {
         <div className="m-hd">
           <div className="m-hdt">
             <div className="m-biz">
-              <b style={{ fontSize: 24 }}>{v.catalog}</b>
+              <b style={{ fontSize: 22 }}>{v.catalog}</b>
             </div>
           </div>
           {state.status === "ready" && state.categories.length > 0 && (
@@ -238,7 +238,7 @@ export default function MenuPage() {
                     />
                   ))}
                   {!staff && (
-                    <button type="button" className="m-chip m-g" disabled={actionsDisabled} onClick={() => setSheet({ kind: "category", category: null })}>
+                    <button type="button" className="m-chip m-add" disabled={actionsDisabled} onClick={() => setSheet({ kind: "category", category: null })}>
                       <Icon name="plus" size={16} /> Category
                     </button>
                   )}

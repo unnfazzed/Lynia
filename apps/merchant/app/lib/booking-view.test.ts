@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bookingSteps, fareDelta, shortName, sortOffers, tracker, trackedBookings } from "./booking-view";
+import { fareDelta, shortName, sortOffers, tracker, trackedBookings } from "./booking-view";
 import { merchantBooking } from "../testing/fixtures";
 
 describe("D1 trackers", () => {
@@ -60,28 +60,7 @@ describe("D4 offers", () => {
   });
 });
 
-describe("D5 stepper", () => {
-  it("ticks what's done and marks the current step live", () => {
-    const at = new Date(2026, 8, 30, 12, 10).toISOString();
-    const coming = bookingSteps({ state: "coming", createdAt: at });
-    expect(coming.map((s) => s.state)).toEqual(["done", "done", "now", "todo", "todo", "todo"]);
-    expect(coming[0]!.time).toBe("12:10");
-    expect(coming[2]!.time).toBe("live");
-    expect(bookingSteps({ state: "delivered", createdAt: at }).every((s) => s.state === "done")).toBe(true);
-  });
-});
-
 describe("cash on delivery (D-48 PR 4b)", () => {
-  const at = new Date(2026, 8, 30, 12, 10).toISOString();
-  it("adds the 7th step, live while the cash is due and done once it's back", () => {
-    const due = bookingSteps({ state: "delivered", createdAt: at, cashOnDelivery: { amount: "51.00", status: "due", dueAt: null } });
-    expect(due.map((s) => s.label).at(-1)).toBe("Cash back to you");
-    expect(due.at(-1)!.state).toBe("now");
-    const back = bookingSteps({ state: "delivered", createdAt: at, cashOnDelivery: { amount: "51.00", status: "returned", dueAt: null } });
-    expect(back.every((s) => s.state === "done")).toBe(true);
-    expect(bookingSteps({ state: "picked_up", createdAt: at, cashOnDelivery: { amount: "51.00", status: "awaiting_delivery", dueAt: null } })).toHaveLength(7);
-  });
-
   it("keeps a delivered booking live on the home while its cash is on the way", () => {
     expect(tracker(merchantBooking({ state: "delivered", itemsSummary: "Brake pads", cashOnDelivery: { amount: "51.00", status: "due", dueAt: null } }))).toMatchObject({
       icon: "banknote",
