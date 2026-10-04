@@ -339,6 +339,14 @@ describe("phone numbers (safeguard 5)", () => {
     expect(queued!.customerPhone).toBe("+263779999999");
     expect((await svc.getMyOrder("o1", "c1")).customerPhone).toBeUndefined();
   });
+
+  it("Merchant v2 (D-77): the merchant's own queue carries the customer's first name only; the customer's view doesn't", async () => {
+    const order = { ...base, merchant: shop(false), customer: { firstName: " Rudo " } };
+    const { svc } = build({ merchant: { findUnique: async () => ({ id: "m1" }) }, order: { findMany: async () => [order], findFirst: async () => order } });
+    const [queued] = await svc.listQueue("owner-1");
+    expect(queued!.customerFirstName).toBe("Rudo");
+    expect((await svc.getMyOrder("o1", "c1")).customerFirstName).toBeUndefined();
+  });
 });
 
 describe("food-order-ops — shared by the restaurant and ops (safeguards 1 and 4)", () => {

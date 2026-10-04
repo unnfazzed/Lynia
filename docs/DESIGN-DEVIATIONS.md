@@ -4260,4 +4260,12 @@ any string Merchant v2 doesn't draw. Viewport unchanged: 360×720 with the 320px
 | T1 live bar, undrawn states | One state drawn | "New order · #A1B2" (ringing), "Waiting for the customer to answer", or just the counts | Built from the drawn bar's own parts; nothing new is invented beyond its words. |
 | T4 on a shop | "Customers can see your menu" | "…your items" | A shop has no menu; the shop's vocabulary word. |
 
+| K1 board, "ON THE WAY" card | "Arrives 07:38 · then brings you $12.00" | "On the way · then brings you $12.00" | The API keeps no arrival estimate for a leg (`merchant-order-push.ts` says so); the time returns with one. |
+| K1 board, undrawn rows | Needs-you, cooking and on-the-way drawn | A fourth section, "CASH TO COME BACK · n", for delivered orders whose cash is still out (gold once late); "SCHEDULED · n" under the board for orders that haven't rung; a ringing order's own card ("#A1B2 · New order") under its full-screen ring | BRIEF §2 lists "cash still to come back" as the board's fourth group; the scheduled list was the retired tabs' fourth segment. Built from the drawn card. |
+| K1 counter card on a shop booking | Drawn on a kitchen order | The same card for a booking whose rider is coming, without the BOOKED tag | The drawn counter card carries no tag. |
+| K2 ringing, auto-accepted / scheduled | "Only the banner line changes" | Auto-accepted: the sub-line reads "LyniaGo accepted this for you", the countdown is the 1-hour auto-cancel, no ready-in chips (the time is already set). Scheduled: "SCHEDULED · START NOW · #A1B2". | As BRIEF §3 says; the words are Order flow v2's (`O.m.auto`, `O.m.scheduled`). |
+| K2 / S2 "Can't take it" | "Opens the existing reasons sheet" | A new sheet, "Why can't you take it?", with four reasons (kitchen: Out of an ingredient · Too busy right now · Closing soon · Something else; a shop says "Out of stock") | The merchant app had no reasons sheet (decline always sent `other`). The reasons are the API's own codes, whose text is the customer's copy (D-11). **Upstream ask:** draw the sheet. |
+| S2 accept without changes | Only "Accept with 2 changes" drawn | "Accept" | Shops get no ready-in picker (BRIEF §3), so there is no time to quote. |
+| K2 kitchen with a removed dish | Drawn without changes | The same "Accept with N changes" and "New total" as S2 | BRIEF §3: accepting and sending changes are one action. |
+
 *Further rows are added PR by PR as the screens land.*

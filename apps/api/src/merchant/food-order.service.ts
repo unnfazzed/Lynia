@@ -98,6 +98,8 @@ const ORDER_WITH_ITEMS_INCLUDE = {
   prescription: true,
   owedBalance: { select: { amount: true } },
   carriedBalance: { select: { amount: true } },
+  // Merchant v2 (ledger D-77): the customer's first name, for the merchant's own view only (forMerchant).
+  customer: { select: { firstName: true } },
   // #671: the assigned rider's public identity for the food live tracker's "rider secured" card.
   // Name lives on the Profile, everything else (plate=bike_reg, vehicle, rating, trips, KYC, photo)
   // on the Rider. Null until dispatch assigns a rider — toResponse omits the whole block then.
@@ -1428,12 +1430,14 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** The restaurant's own view adds the customer's contact number, so it can call about changes
-   *  (auto-accept safeguard 5). Never on the rider's or the customer's view. */
+   *  (auto-accept safeguard 5), and their first name (Merchant v2, D-77). Never on the rider's view. */
   private forMerchant(order: OrderWithItems): MerchantOrderResponse {
     const dropoff = order.dropoff as Waypoint | null;
     // The customer's own venue rating stays on the customer's read.
     const { venueRating: _venueRating, ...rest } = this.toResponse(order);
-    return { ...rest, customerPhone: dropoff?.contactPhone ?? null };
+    // Merchant v2 (D-77, owner decision): the customer's FIRST name only ("Rudo asked for 4 items").
+    const firstName = order.customer?.firstName?.trim() || null;
+    return { ...rest, customerPhone: dropoff?.contactPhone ?? null, ...(firstName ? { customerFirstName: firstName } : {}) };
   }
 
   private async notifyCancelledCustomer(orderId: string, reason: MerchantRejectionReasonCode): Promise<void> {

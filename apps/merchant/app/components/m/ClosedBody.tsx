@@ -26,13 +26,8 @@ export function ClosedBody({
   children?: React.ReactNode;
 }) {
   const v = vocabulary(merchant.businessType, merchant.shopKind);
-  const from = merchant.closedUntil
-    ? new Date(merchant.closedUntil)
-    : new Date();
-  const opens = nextOpenTime(
-    (merchant.hours ?? null) as PartialMerchantHours | null,
-    from,
-  );
+  const from = merchant.closedUntil ? new Date(merchant.closedUntil) : new Date();
+  const opens = nextOpenTime((merchant.hours ?? null) as PartialMerchantHours | null, from);
   const what = merchant.businessType === "shop" ? v.catalogLower : "menu";
   return (
     <>
@@ -45,20 +40,10 @@ export function ClosedBody({
           Customers can see your {what} but can’t order.
           {opens ? ` You open again at ${opens}.` : ""}
         </p>
-        <button
-          type="button"
-          className="m-btn"
-          disabled={open.switching || disabled}
-          onClick={() => void open.toggleOpen(true)}
-        >
+        <button type="button" className="m-btn" disabled={open.switching || disabled} onClick={() => void open.toggleOpen(true)}>
           Open now
         </button>
-        <button
-          type="button"
-          className="m-gh"
-          disabled={open.switching || disabled}
-          onClick={() => void open.toggleOpen(true, true)}
-        >
+        <button type="button" className="m-gh" disabled={open.switching || disabled} onClick={() => void open.toggleOpen(true, true)}>
           Open, but busy (+10 min)
         </button>
       </div>

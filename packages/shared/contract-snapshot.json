@@ -3057,6 +3057,9 @@
             "null"
           ]
         },
+        "customerFirstName": {
+          "type": "string"
+        },
         "customerPhone": {
           "type": [
             "string",
