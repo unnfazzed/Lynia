@@ -158,7 +158,7 @@ export function declinePrescription(orderId: string, body: DeclinePrescriptionRe
   return authedFetch<MerchantOrderResponse>(`/merchant/orders/${orderId}/prescription/decline`, { method: "POST", body });
 }
 
-/** Order flow v2's switches: `rxEnabled` (prescriptions, BRIEF §13), off by default. Public. */
+/** Order flow v2's switches: `rxEnabled` (prescriptions, BRIEF §13), on by default (D-76). Public. */
 export function getOrderFlags(): Promise<OrderFlagsResponse> {
   return authedFetch<OrderFlagsResponse>("/app/order-flags");
 }

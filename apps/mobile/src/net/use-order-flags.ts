@@ -9,7 +9,7 @@ import { fetchSignal } from "./fetch-signal";
  * prescription flow (BRIEF §13). Its own endpoint because the service-flags body is strict on installed
  * apps.
  *
- * FAILS CLOSED, unlike the section flags: Rx is off by default and launches dark, so the boot frame and
+ * FAILS CLOSED, unlike the section flags: the server has Rx on by default (D-76), but the boot frame and
  * any network error / timeout / non-200 / shape mismatch keep every Rx part unrendered (and the server
  * hides "Prescription needed" items while it is off, so nothing can be ordered without the block).
  */

@@ -375,6 +375,13 @@ describe("loadEnv — Play-review demo account (§7.1)", () => {
   });
 });
 
+describe("loadEnv — pharmacy prescriptions (D-76)", () => {
+  it("are on when RX_ENABLED is unset, and off only when it is \"false\"", () => {
+    expect(loadEnv({ ...base }).RX_ENABLED).toBe("true");
+    expect(loadEnv({ ...base, RX_ENABLED: "false" }).RX_ENABLED).toBe("false");
+  });
+});
+
 describe("loadEnv — scheduler auth (plan C3)", () => {
   const azure = {
     SCHEDULER_AUTH: "azure",
