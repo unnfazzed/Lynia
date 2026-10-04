@@ -205,23 +205,27 @@ export class RiderService {
       throw new BadRequestException("Invalid photo key");
     }
 
-    // One-ID-one-account guard (2026-07-26, supersedes the flag-only A-04 for LIVE accounts): rider
-    // onboarding requires a national ID on the profile, and refuses one that's already on another live
-    // account. Without the ID requirement the dedup has nothing to key on — an ID-less signup could
-    // reach vendor KYC entirely undeduped (the stock client always writes it via completeProfile first,
-    // so only a raw API caller ever hits the 400). Erased tombstones don't block (a restricted account
-    // can't self-erase — DS15-02 — so a tombstone match is a legitimate returning user); they still set
-    // the reviewer flag below, which admin.getKycReview recomputes live and applyKycResult holds
+    // D-75 (owner 2026-10-03): a national ID is NOT required to start. New riders no longer type one
+    // before the ID check — the number is confirmed from the check afterwards (Calm Mint v2 §5 "Didit
+    // ID prefill"): applyKycResult adopts the vendor-verified number onto the profile, and runs the
+    // one-ID-one-account dedupe against THAT number before it verifies anyone (a collision holds the
+    // rider for review). So an ID-less signup is deduped after the check rather than before it. A
+    // decision that carries no number at all still verifies (the extraction is fail-open), and its
+    // approval audit row carries `verified_id_missing` so ops can follow every such rider up.
+    //
+    // One-ID-one-account guard (2026-07-26, supersedes the flag-only A-04 for LIVE accounts), for an
+    // account that already carries a typed ID (added in Account, or a pre-D-75 sign-up): refuse one
+    // that's already on another live account. Erased tombstones don't block (a restricted account can't
+    // self-erase — DS15-02 — so a tombstone match is a legitimate returning user); they still set the
+    // reviewer flag below, which admin.getKycReview recomputes live and applyKycResult holds
     // auto-verifies on (DOC-16-05). Both checks run BEFORE vendor.submit so a refused signup never
     // bills a paid Didit session.
     const profile = await this.prisma.profile.findUnique({
       where: { id: profileId },
       select: { idNumberHash: true },
     });
-    if (!profile?.idNumberHash) {
-      throw new BadRequestException("Add your national ID to your profile before registering as a rider.");
-    }
-    if ((await this.liveDuplicateIdAccountCount(this.prisma, profileId, profile.idNumberHash)) > 0) {
+    if (!profile) throw new NotFoundException("Profile not found");
+    if (profile.idNumberHash && (await this.liveDuplicateIdAccountCount(this.prisma, profileId, profile.idNumberHash)) > 0) {
       this.logger.warn(`Rider ${profileId} blocked from onboarding: national ID already on another live account (one-ID-one-account)`);
       throw new ConflictException({
         reason: "id_in_use",
@@ -703,7 +707,23 @@ export class RiderService {
     // means an audit-write failure rolls the status write back, so the webhook simply retries — never a
     // committed-without-audit decision. The monotonic/replay-safe guards (F-13 counter, the kycRef +
     // kycResolvedAt CAS `where`) are unchanged: still a guarded `updateMany`, not a blind `update`.
-    const { updated, notifyProfileId, demotedProfileId } = await this.prisma.$transaction(async (tx) => {
+    //
+    // D-75: a verified decision may also write the profile (it adopts the vendor-verified number as the
+    // account's national ID when the account has none — see below). That write is guarded so it can't
+    // collide (the number's advisory lock, the collision counts, a CAS), but the partial unique index on
+    // live id_number_hash (IR26-05) stays the backstop for any writer that skips the lock. Its P2002
+    // would roll the whole decision back and 500 the webhook, so the decision is re-applied ONCE with
+    // adoption switched off, which holds the rider for review instead of crashing.
+    const adoption = { attempted: false };
+    const decide = (adoptionBlocked: boolean) => this.prisma.$transaction(async (tx) => {
+      // D-75: a verified decision that carries the document number serializes on that number's advisory
+      // lock — the SAME key the ID-writing routes take (completeProfile / auth.updateProfile) — before any
+      // row lock or read. The collision counts and the adoption write below then see every concurrent
+      // claimer of the number (another account showing the same document, the rider typing it in Account
+      // mid-check) instead of racing it; and like those routes it is taken before any row lock, so two
+      // claimers of one number queue on the lock rather than on each other's rows.
+      const vendorHash = status === "verified" && verifiedDocNumber ? this.pii.hashId(verifiedDocNumber) : null;
+      if (vendorHash) await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${vendorHash}))`;
       // DOC-16-05: a `verified` outcome for a rider already flagged `duplicateIdFlag` (A-04 — their
       // national ID collides with another account, e.g. a banned/suspended one under a new SIM) must NOT
       // auto-verify — that's exactly the auto-mode gap that let a ban-evader re-registering with the same
@@ -730,24 +750,36 @@ export class RiderService {
       // kycAttempts field is simply read and unused (a harmless no-op beyond the existing flag read).
       const current = await tx.rider.findFirst({
         where: { kycRef },
-        select: { profileId: true, duplicateIdFlag: true, kycAttempts: true, profile: { select: { idNumberHash: true } } },
+        select: {
+          profileId: true,
+          duplicateIdFlag: true,
+          kycAttempts: true,
+          // D-75: read under the row lock above, so it is exactly what the CAS update below will see.
+          kycResolvedAt: true,
+          profile: { select: { idNumberHash: true } },
+        },
       });
       // IR26-04 vendor-document dedupe. The typed-ID gate (IR26-01) blocks reusing a number someone
       // TYPED — a ban-evader's remaining move is typing a DIFFERENT number while showing the same real
       // document to the vendor. When the decision payload exposes the verified document number, hash it
       // (pii.hashId normalizes punctuation/case, so it's directly comparable to Profile.idNumberHash)
       // and refuse to auto-verify when:
-      //  - docMismatch: it doesn't match what this applicant typed (or they have no typed ID — a
-      //    legacy pre-IR26-02 rider we can't corroborate), OR
+      //  - docMismatch: it doesn't match the national ID already on the account, OR
       //  - docCollision: it matches ANOTHER account's typed hash or vendor-verified hash (erased
       //    tombstones included — same reviewer-decides semantics as duplicateIdFlag).
-      // Absent doc number (null) → both false → exactly the pre-IR26-04 behavior. The raw number is
-      // never persisted or logged — only the HMAC hash (LR8).
-      const docHash = status === "verified" && verifiedDocNumber && current ? this.pii.hashId(verifiedDocNumber) : null;
+      // D-75 (owner 2026-10-03): an account with NO national ID on file has nothing to mismatch — new
+      // riders no longer type one before the check, the check supplies it. (Before D-75 that account was
+      // a legacy pre-IR26-02 rider and was held as a mismatch.) The vendor's number is adopted onto it
+      // below; docCollision is the one-ID-one-account check against that number.
+      // Absent doc number (null) → both false → exactly the pre-IR26-04 behavior for an account that has
+      // an ID on file (D-75 verifies one that doesn't and audit-flags it — see `idMissing`). The raw number is never persisted
+      // or logged — only the HMAC hash (LR8) and, for D-70/D-75, the AES-GCM ciphertext.
+      const docHash = vendorHash && current ? vendorHash : null;
+      const idOnFile = current?.profile?.idNumberHash ?? null;
       let docMismatch = false;
       let docCollision = false;
       if (docHash && current) {
-        docMismatch = current.profile.idNumberHash !== docHash;
+        docMismatch = idOnFile !== null && idOnFile !== docHash;
         const [profileHits, riderHits] = await Promise.all([
           tx.profile.count({ where: { idNumberHash: docHash, id: { not: current.profileId } } }),
           tx.rider.count({ where: { verifiedIdHash: docHash, profileId: { not: current.profileId } } }),
@@ -755,7 +787,7 @@ export class RiderService {
         docCollision = profileHits > 0 || riderHits > 0;
         if (docMismatch || docCollision) {
           this.logger.warn(
-            `KYC ${kycRef}: vendor-verified document ${docMismatch ? "does not match the typed national ID" : ""}${docMismatch && docCollision ? " and " : ""}${docCollision ? "collides with another account" : ""} — held for review (IR26-04)`,
+            `KYC ${kycRef}: vendor-verified document ${docMismatch ? "does not match the national ID on file" : ""}${docMismatch && docCollision ? " and " : ""}${docCollision ? "collides with another account" : ""} — held for review (IR26-04)`,
           );
         }
       } else if (status === "verified" && !verifiedDocNumber) {
@@ -763,7 +795,48 @@ export class RiderService {
         // document data (the extraction is fail-open by design — see extractDiditDocumentNumber).
         this.logger.log(`KYC ${kycRef}: verified webhook carried no document number — vendor-doc dedupe skipped`);
       }
-      const holdForReview = status === "verified" && (current?.duplicateIdFlag === true || docMismatch || docCollision);
+      // D-75: no national ID on file AND no document number in the decision leaves the one-ID-one-account
+      // check nothing to run against. The extraction stays FAIL-OPEN, as extractDiditDocumentNumber
+      // promises ("a verify is never held hostage to a field we couldn't find"): holding here would park
+      // every new rider in review whenever the payload lacks the number, and a held rider's only way
+      // forward is another paid session. The verify applies, and its approval audit row carries
+      // `verified_id_missing` so ops can see and follow up on every rider verified without a number.
+      const idMissing = status === "verified" && !!current && idOnFile === null && docHash === null;
+      // D-75: the vendor-verified number becomes the account's national ID when the account has none.
+      const needsAdoption = status === "verified" && !!current && idOnFile === null && docHash !== null;
+      let holdForReview =
+        status === "verified" &&
+        (current?.duplicateIdFlag === true || docMismatch || docCollision || (needsAdoption && adoptionBlocked));
+      if (idMissing) {
+        this.logger.warn(`KYC ${kycRef}: verified with no national ID on file and no document number in the decision — verified, audit-flagged verified_id_missing (D-75)`);
+      }
+      // D-75 adoption: "the number is confirmed from the check afterwards". Only for a decision that will
+      // VERIFY the rider in this transaction — not held, and newer than the last applied one (the same
+      // predicate as the CAS `where` below, read under the row lock, so it can't change before that
+      // write) — and only when nothing collides: `docCollision` is false, so no other profile, live or
+      // erased, carries this number and the live-ID unique index can't fire (the advisory lock above
+      // keeps it that way until commit). Same normalisation, encryption and hash as a typed ID.
+      // The CAS on `idNumberHash: null` never overwrites an ID that landed meanwhile (the rider adding
+      // one in Account mid-check takes a different number's lock); re-read it, and a number that is not
+      // the document's is a mismatch, held like any other.
+      const decisionApplies = !!current && (current.kycResolvedAt == null || current.kycResolvedAt < eventAt);
+      if (needsAdoption && !holdForReview && decisionApplies && current && docHash && verifiedDocNumber) {
+        adoption.attempted = true;
+        const adopted = await tx.profile.updateMany({
+          where: { id: current.profileId, idNumberHash: null },
+          data: { idNumber: this.pii.encryptId(normalizeNationalId(verifiedDocNumber)), idNumberHash: docHash },
+        });
+        if (adopted.count > 0) {
+          this.logger.log(`KYC ${kycRef}: no national ID on file — adopted the vendor-verified number (D-75)`);
+        } else {
+          const onFile = await tx.profile.findUnique({ where: { id: current.profileId }, select: { idNumberHash: true } });
+          if (onFile?.idNumberHash !== docHash) {
+            docMismatch = true;
+            holdForReview = true;
+            this.logger.warn(`KYC ${kycRef}: a national ID landed on the account during the check and does not match the document — held for review (D-75)`);
+          }
+        }
+      }
       const res = await tx.rider.updateMany({
         where: { kycRef, OR: [{ kycResolvedAt: null }, { kycResolvedAt: { lt: eventAt } }] },
         data: {
@@ -834,10 +907,11 @@ export class RiderService {
         if (rider) {
           // The audit reason names every condition that held the verify (IR26-04 widened this beyond
           // the original duplicate_id_flag), so the review trail says WHY without exposing any hash.
+          // D-75: a re-run after the live-ID unique index refused the adoption is a collision too.
           const holdReason = [
             current?.duplicateIdFlag ? "duplicate_id_flag" : null,
             docMismatch ? "verified_id_mismatch" : null,
-            docCollision ? "verified_id_collision" : null,
+            docCollision || (needsAdoption && adoptionBlocked) ? "verified_id_collision" : null,
           ]
             .filter(Boolean)
             .join("+");
@@ -856,8 +930,10 @@ export class RiderService {
           // mark the actor as automated ("system:kyc-webhook") so admin audit views can still tell manual
           // from automated decisions. Same transaction as the status write — never one without the other.
           const action = status === "verified" ? "rider.kyc_approve" : "rider.kyc_decline";
+          // D-75: an approval with no number to dedupe on is flagged here rather than held (see idMissing).
+          const auditReason = reason ?? (idMissing ? "verified_id_missing" : null);
           await tx.auditLog.create({
-            data: auditData("system:kyc-webhook", action, rider.profileId, reason ?? null, null),
+            data: auditData("system:kyc-webhook", action, rider.profileId, auditReason, null),
           });
           resolvedProfileId = rider.profileId;
         }
@@ -872,6 +948,17 @@ export class RiderService {
       }
       return { updated: res.count, notifyProfileId: resolvedProfileId, demotedProfileId: demotedId };
     });
+    let decided: Awaited<ReturnType<typeof decide>>;
+    try {
+      decided = await decide(false);
+    } catch (err) {
+      // Only the adoption write can raise a unique violation here (IR26-05's live-ID index); anything
+      // else — and a P2002 from anywhere before the adoption started — propagates unchanged.
+      if (!(adoption.attempted && err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002")) throw err;
+      this.logger.warn(`KYC ${kycRef}: the verified ID number is already on another live account — decision re-applied, held for review (D-75)`);
+      decided = await decide(true);
+    }
+    const { updated, notifyProfileId, demotedProfileId } = decided;
     // Class-B sibling of BR-01/DS15-05: a KYC lapse pulled the rider offline in PG above; now evict them
     // from the board rooms + `rider:geo` Redis index through the standing-demotion funnel, exactly as
     // suspend/ban/auto-hold do. Best-effort, post-commit; never throws, never affects the committed write.

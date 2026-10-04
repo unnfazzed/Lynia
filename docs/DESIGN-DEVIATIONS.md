@@ -2950,7 +2950,7 @@ this bar and lands with that work.
 | R1 note | "No top-up to start. Your first jobs are commission-free. Licence and bike papers can wait." | "Licence and bike papers can wait." | The free-jobs rule doesn't exist on the server yet (README §5); the first two sentences would be false. They render once it does. **Resolved by D-70 (2026-10-02):** drawn in full against a server that serves the rule |
 | R3 meter | "Commission-free jobs · 5 of 5 left" card | Not drawn | Same: NEEDS BACKEND · free-jobs rule. Until then a new rider at a $0 balance still meets the top-up gate after "Go online". **Resolved by D-70 (2026-10-02):** drawn from `/auth/me` `rider.freeJobs` |
 | R1 → ID check | "Start ID check" opens the check | "Start ID check" opens the rider photo step first (the existing capture + review), then the check | The rider photo is uploaded before the vendor session is opened (`POST /riders/become` needs it); R2 draws the photo as done before the check, so this is the handoff's own order |
-| Photo step | Not drawn | "Rider photo for your profile", the capture/review card, and — only when the account has none on file — the name and national-ID fields | Rider onboarding needs a national ID on the profile (one-ID-one-account) and C5 no longer collects it; Didit prefill is NEEDS BACKEND |
+| Photo step | Not drawn | "Rider photo for your profile", the capture/review card, and — only when the account has none on file — the name and national-ID fields | Rider onboarding needs a national ID on the profile (one-ID-one-account) and C5 no longer collects it; Didit prefill is NEEDS BACKEND. **Superseded by D-75 (2026-10-03):** no ID is typed; the check supplies it, and only a nameless account sees a name step (C5's grammar) |
 | R2 | Every pending check | Only while the automated check is with the vendor; manual (ops) review keeps the Rider v2 wall | "Usually under a minute" is false for an ops review |
 | R3 | After verification | Once per account per phone, and only for a rider with no trips yet | No verified-at date is served; a rider with trips is not "just verified" |
 
@@ -3573,7 +3573,7 @@ Clarified:
 | R1 note | "Licence and bike papers can wait." | "Your photo, licence and bike papers can wait." |
 | R2 checklist | Your account · Rider photo (Done) · ID check · Go online | Your account · ID check · Go online (3) |
 | R3 link | "Add licence and bike papers later in Account" | "Add your photo, licence and bike papers later in Account" |
-| After R1 | the photo page (undrawn; old-UI capture + preview) | **"Start ID check" opens the check directly.** Only when the account lacks its name or national ID does an app-authored "A few details first" step ask for just that. |
+| After R1 | the photo page (undrawn; old-UI capture + preview) | **"Start ID check" opens the check directly.** Only when the account lacks its name or national ID does an app-authored "A few details first" step ask for just that. **Superseded by D-75 (2026-10-03):** only a missing name is asked for, in C5's grammar; the national ID comes from the check. |
 | S5 Bike & documents, "Rider photo" row | "Verified" | "Not added yet" when the rider has none (`me.rider.hasPhoto === false`) |
 
 - **API:** `POST /riders/become` takes `photoUrl` as **optional**. When one is sent, it is still
@@ -3909,6 +3909,9 @@ that number when the account has none on file. It stays **editable**: the handof
 and its README says "prefill or confirm", so the rider confirms rather than retypes. The IR26-04 fraud
 checks (typed vs vendor number, collisions) are unchanged.
 
+**Superseded by D-75 (2026-10-03):** the details step and its prefilled ID field are gone. A new rider types no ID; the
+server adopts the number the check verified.
+
 ## D-71 · Free delivery, paid by the restaurant or shop — the flag the handoffs asked for is built — PENDING OWNER REVIEW (2026-10-02)
 
 **Owner decision, this session (2026-10-02):** build free delivery paid by the restaurant or shop. The
@@ -4053,3 +4056,72 @@ every build that still offers wallet checkout, so no customer meets the refusal;
 that picks mobile money is told to choose cash. (b) Once ops confirms no wallet order is open, the payment
 ticket, the refund branch and the legacy payment endpoints can go. (c) Pre-existing: the old customer app
 asked for goods + delivery, while `confirmPayment` checks the goods total; left as it was.
+
+## D-75 · A new rider's national ID comes from the ID check, not a typed field — APPROVED (2026-10-03)
+
+**Owner decision (2026-10-03):** "execute wave 1 and wave 2" (the old-UI audit's Wave 2, decision 1).
+Calm Mint v2 lists **"Didit ID prefill: to prefill or confirm the ID number afterwards"** as NEEDS BACKEND
+(README §5), retires "national ID on register" (§6), and C5 tells the customer "No ID needed". D-70 built
+the *prefill* half: an editable ID field, pre-filled, on an app-authored "A few details first" page that
+no handoff draws. This builds the *confirm afterwards* half instead, and the page goes.
+
+**What changes**
+
+| Where | Before | Now |
+|---|---|---|
+| R1 "Start ID check" | Opened "A few details first" (name + national ID, D-70 prefill) when the account lacked either | Opens the check straight away. Only an account with no name (legacy) sees a name step first |
+| The name step | The old-kit page: Heading, Sub, Field × 3 (name, surname, national ID), a privacy paragraph, Button | C5's own grammar: `OB.nameTitle` / `OB.nameSub`, the two side-by-side `NameFields`, the `VerifiedPhoneRow`, and R1's CTA "Start ID check". C5's "No ID needed…" note is not drawn here, because the ID check is the next step |
+| After the check | An old-kit "Rider setup" outcome page with its own lines per outcome | `router.replace("/rider")`. The board already draws each outcome: R2 while the check is reviewed, R3 once verified, Rider v2 "Finish verifying" after a cancel, the review wall in manual mode |
+| The draft (keystore) | Name, national ID, bike plate | Name only. A national ID stored by an older draft is dropped on the first visit |
+| `POST /riders/become` | 400 without a national ID on the profile (IR26-02) | No ID needed. An account that has one is still refused on a live collision before a paid session opens |
+| A verified ID-check decision | The vendor's number was hashed (IR26-04) and stored encrypted (D-70) | When the account has no national ID, the vendor-verified number **becomes** its national ID: same normalisation, AES-GCM encryption and HMAC hash as a typed one, in the decision's own transaction |
+
+**The adoption rules** (`RiderService.applyKycResult`):
+
+- The decision takes the number's advisory lock first. It is the key `completeProfile` and
+  `auth.updateProfile` take, so every concurrent claimer of the number queues behind it.
+- If the number is on another account (typed or vendor hash, erased tombstones included), the rider is
+  held for review (`verified_id_collision`) and nothing is adopted.
+- The ID is adopted only by a decision that will verify the rider in this transaction (not held, and newer
+  than the last applied one). It is a CAS on an empty `idNumberHash`. If a different ID landed on the
+  account during the check, that is a mismatch and the rider is held.
+- If the live-ID unique index (IR26-05) still refuses the write, the decision is re-applied once with
+  adoption off, and the rider is held as a collision. The webhook never 500s on it.
+- An account that already has a national ID is unchanged: the IR26-04 mismatch and collision holds apply
+  as before.
+- **No number at all** (none on file and none in the decision): the rider is **verified**. The extractor
+  is fail-open by design, and a held rider's only way forward is another paid session. The
+  `rider.kyc_approve` audit row carries `verified_id_missing`, so ops can find every such rider.
+
+**The extractor had never read a real webhook (IR26-06).** Our Didit destination is registered as V3
+(`docs/PILOT-READINESS.md` step 3), and V3 carries the ID report as `decision.id_verifications[]`.
+`extractDiditDocumentNumber` read only V2's singular `id_verification`, so IR26-04 and D-70 had no data.
+It now reads the V3 array first. It prefers `personal_number`, Didit's national ID number "when distinct
+from the document number" (a passport's document number is the passport number), and falls back to
+`document_number`.
+
+**Strings.** None are new: the name step reuses C5's `OB.nameTitle`, `OB.nameSub` and `OB.draftRestored`
+and R1's `RO.startIdCheck`. These are removed with the page: `RO.detailsTitle` "A few details first",
+`RO.detailsSub`, `RO.privacy` "We verify your national ID with an ID photo and a quick selfie check. We
+store your ID number…", and `RO.privacyTest`.
+
+**Supersedes:**
+- D-55's "Photo step" row (already narrowed by D-62);
+- D-62's "After R1" row;
+- D-70's "Didit ID prefill" paragraph. The encrypted `verified_id_number` and `/auth/me` `kycIdNumber`
+  stay, but become-a-rider no longer reads `kycIdNumber`.
+
+It changes IR26-02 on purpose: rider onboarding no longer requires a typed national ID. The
+one-ID-one-account dedupe now runs against the number the check verified.
+
+**Open for the owner**
+
+1. **Watch the coverage after deploy.** Look for the log line `KYC <ref>: verified webhook carried no
+   document number` and for `verified_id_missing` audit rows. If they are common, the Didit workflow is
+   not returning document data, and the dedupe has nothing to key on.
+2. **A KYC approved by hand adopts no ID.** That covers admin approval and manual mode. Such a rider has
+   no national ID on file until they add one in Account.
+3. **No consent line before the check.** The privacy notice says consent for the ID and selfie is "given
+   when you start rider verification". The only written line for it was `RO.privacy` on the details page,
+   and since D-55/D-62 most riders had already skipped that page. R1 draws no such line. If the owner
+   wants one, it is a Claude Design request: the app does not improvise it.

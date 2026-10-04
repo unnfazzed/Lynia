@@ -194,6 +194,8 @@ export class AuthService {
       // (and the rider confirm) the ID field instead of retyping it. Only once the check is VERIFIED
       // (a held/pending result is not yet "the verified KYC result"); null otherwise. Like `idNumber`,
       // returned only on this owner-scoped endpoint and never persisted to the app's disk cache.
+      // Since D-75 the app asks for no ID before the check and the verification ADOPTS this number as
+      // the account's `idNumber` when it has none (RiderService.applyKycResult); kept for older builds.
       kycIdNumber: p.rider?.kycStatus === "verified" ? this.pii.decryptId(p.rider.verifiedIdNumber) : null,
       // S·2: customer account standing — true blocks new broadcasts (the app shows the on-hold screen).
       onHold: p.onHold,

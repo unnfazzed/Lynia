@@ -1,10 +1,12 @@
+import { formatPhoneDisplay } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import React from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Icon, type IconName } from "../Icon";
 import { Tappable } from "../Tappable";
 import { useTabBarSpace } from "../shell/TabShell";
+import { OB } from "./copy";
 
 /**
  * The Calm Mint v2 onboarding kit (`packages/design/handoff/calm-mint-v2-2026-10`, `shared.js` — the
@@ -90,6 +92,78 @@ export function Sub({ children }: { children: React.ReactNode }): React.ReactEle
 /** `label` — 13/600 muted, 6px above its field. */
 export function FieldLabel({ children }: { children: string }): React.ReactElement {
   return <Text style={{ marginBottom: 6, fontSize: 13, fontWeight: tokens.font.weight.semibold, color: tokens.color.muted }}>{children}</Text>;
+}
+
+/** One C5 name field: the `label`, then a 52px `.field` (1px line border, radius 12, 17px text, 14px in). */
+function NameField({
+  label,
+  value,
+  onChangeText,
+  autoComplete,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (v: string) => void;
+  autoComplete: "given-name" | "family-name";
+}): React.ReactElement {
+  return (
+    <View style={{ flex: 1, minWidth: 0 }}>
+      <FieldLabel>{label}</FieldLabel>
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        accessibilityLabel={label}
+        autoComplete={autoComplete}
+        textContentType={autoComplete === "given-name" ? "givenName" : "familyName"}
+        autoCapitalize="words"
+        maxLength={60}
+        style={{
+          height: tokens.touchTargetPrimary,
+          borderWidth: 1,
+          borderColor: tokens.color.line,
+          borderRadius: tokens.radius.input,
+          paddingHorizontal: 14,
+          fontSize: 17,
+          color: tokens.color.ink,
+        }}
+      />
+    </View>
+  );
+}
+
+/** C5 · Name's field pair — First name · Surname side by side (`grid 1fr 1fr`, gap 12). */
+export function NameFields({
+  firstName,
+  lastName,
+  onFirstName,
+  onLastName,
+}: {
+  firstName: string;
+  lastName: string;
+  onFirstName: (v: string) => void;
+  onLastName: (v: string) => void;
+}): React.ReactElement {
+  return (
+    <View style={{ flexDirection: "row", gap: 12 }}>
+      <NameField label={OB.firstName} value={firstName} onChangeText={onFirstName} autoComplete="given-name" />
+      <NameField label={OB.surname} value={lastName} onChangeText={onLastName} autoComplete="family-name" />
+    </View>
+  );
+}
+
+/** C5's `.vrow` — the verified phone: a surface row, an 18px brand check, the number, "Verified" in green text. */
+export function VerifiedPhoneRow({ phone }: { phone: string }): React.ReactElement {
+  return (
+    <View
+      accessible
+      accessibilityLabel={`${formatPhoneDisplay(phone)}, ${OB.verified}`}
+      style={{ marginTop: 16, flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, backgroundColor: tokens.color.surface }}
+    >
+      <Icon name="circle-check" size={18} color={tokens.color.accent} />
+      <Text style={{ fontSize: 14, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatPhoneDisplay(phone)}</Text>
+      <Text style={{ marginLeft: "auto", fontSize: 13, fontWeight: tokens.font.weight.bold, color: tokens.color.accentText }}>{OB.verified}</Text>
+    </View>
+  );
 }
 
 /** `.note` — a surface box with a leading 18px icon, 13px muted text. */

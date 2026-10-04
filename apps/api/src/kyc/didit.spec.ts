@@ -95,6 +95,35 @@ describe("extractDiditScore", () => {
 });
 
 describe("extractDiditDocumentNumber (IR26-04 vendor-document dedupe)", () => {
+  it("reads the V3 webhook shape: decision.id_verifications[] (Didit's default, and our destination's version)", () => {
+    // Shape from docs.didit.me/integration/webhooks (V3: every per-feature result is a plural array).
+    const v3 = {
+      webhook_type: "status.updated",
+      status: "Approved",
+      decision: {
+        id_verifications: [
+          { node_id: "feature_ocr", status: "Approved", document_type: "Identity Card", document_number: "63-123456-A-42", first_name: "Jane", last_name: "Doe" },
+        ],
+      },
+    };
+    expect(extractDiditDocumentNumber(v3)).toBe("63-123456-A-42");
+    // personal_number when the entry has no document number; a later entry when the first carries none.
+    expect(extractDiditDocumentNumber({ decision: { id_verifications: [{ personal_number: "63123456A42" }] } })).toBe("63123456A42");
+    expect(
+      extractDiditDocumentNumber({ decision: { id_verifications: [{ status: "Declined" }, { document_number: "63-222222-B-22" }] } }),
+    ).toBe("63-222222-B-22");
+    // A passport carries both: the passport number as document_number and the national ID as
+    // personal_number. The national ID wins — it is what the one-ID-one-account dedupe compares.
+    expect(
+      extractDiditDocumentNumber({ decision: { id_verifications: [{ document_type: "Passport", document_number: "FN123456", personal_number: "63-123456-A-42" }] } }),
+    ).toBe("63-123456-A-42");
+    expect(
+      extractDiditDocumentNumber({ decision: { id_verification: { document_number: "FN123456", personal_number: "63-123456-A-42" } } }),
+    ).toBe("63-123456-A-42");
+    // A V3 payload whose array carries no number fails open, exactly like the singular shapes.
+    expect(extractDiditDocumentNumber({ decision: { id_verifications: [{ status: "Approved" }] } })).toBeNull();
+    expect(extractDiditDocumentNumber({ decision: { id_verifications: "not-an-array" } })).toBeNull();
+  });
   it("reads the per-feature id_verification document/personal number", () => {
     expect(extractDiditDocumentNumber({ decision: { id_verification: { document_number: "63-123456-A-42" } } })).toBe(
       "63-123456-A-42",

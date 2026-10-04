@@ -941,7 +941,7 @@ export const ADOPTED = [
         state: "form",
         key: "RJ.kyc_form",
         reason:
-          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-55, owner instruction 2026-10-01): after R1 'Start ID check' opens the check directly; a details step appears only when the account has no name or national ID on file, and asks for just that — no bike registration and, since D-62 (owner 2026-10-02), no rider photo (both optional, added later in Account → Bike & documents). The gallery `KycForm` (names, ID, bike reg, photo, consent card) is the structure D-55 retired. Re-adoptable when a gallery export draws Calm Mint v2.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-55, owner instruction 2026-10-01): after R1 'Start ID check' opens the check directly; a name step in C5's grammar appears only when the account has no name on file — no national ID since D-75 (owner 2026-10-03: the check supplies it), no bike registration and, since D-62 (owner 2026-10-02), no rider photo (both optional, added later in Account → Bike & documents). The gallery `KycForm` (names, ID, bike reg, photo, consent card) is the structure D-55 retired. Re-adoptable when a gallery export draws Calm Mint v2.",
       },
     ],
   },

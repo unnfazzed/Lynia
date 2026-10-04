@@ -246,30 +246,52 @@ describe("RiderService.becomeRider", () => {
     expect(created).toMatchObject({ duplicateIdFlag: true });
   });
 
-  it("400s when the profile has no national ID yet — rider onboarding requires it (one-ID-one-account)", async () => {
-    let created = false;
+  // D-75 (owner 2026-10-03): new riders no longer type their national ID before the ID check — the
+  // number is confirmed from the check afterwards (applyKycResult adopts the vendor-verified number and
+  // dedupes it there). Before D-75 this 400'd "Add your national ID to your profile…".
+  it("D-75: registers a rider with NO national ID on the profile — the vendor session opens, nothing to dedupe yet", async () => {
+    const create = vi.fn(async () => ({}));
+    const count = vi.fn(async () => 0);
+    const submit = vi.fn(async () => ({ ref: "sess_1", status: "pending" as const, url: "https://verify.didit.me/sess_1", token: "tok" }));
     const prisma = {
-      rider: {
-        findUnique: async () => null,
-        create: async () => {
-          created = true;
-          return {};
-        },
-      },
-      profile: {
-        update: async () => ({}),
-        findUnique: async () => ({ idNumberHash: null }),
-        count: async () => 0,
-      },
+      rider: { findUnique: async () => null, create },
+      profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: null }), count },
       $transaction: async (ops: unknown[]) => ops,
     };
-    const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "stub" }, new StubKycVendor());
-    // An ID-less rider would reach vendor KYC entirely undeduped — the stock client always writes the
-    // ID via completeProfile first, so only a raw API caller ever sees this.
-    await expect(s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "kyc/p1/photo.jpg" })).rejects.toThrow(
-      /add your national id/i,
+    const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, { submit } as unknown as KycVendor);
+    const res = await s.becomeRider("p1", {});
+    expect(res).toEqual({ kycStatus: "pending", mode: "auto", verificationUrl: "https://verify.didit.me/sess_1", sessionToken: "tok" });
+    expect(submit).toHaveBeenCalledTimes(1);
+    // No ID → no collision query (there is nothing to key it on) and no reviewer flag.
+    expect(count).not.toHaveBeenCalled();
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ kycStatus: "pending", duplicateIdFlag: false }) }));
+  });
+
+  it("D-75: an account that already carries a typed ID is still refused on a LIVE collision before any paid session", async () => {
+    // The same one-ID-one-account guard as before D-75, kept for accounts with an ID on file (added in
+    // Account, or a pre-D-75 sign-up) — see the id_in_use test above for the full shape.
+    const submit = vi.fn();
+    const prisma = {
+      rider: { findUnique: async () => null, create: vi.fn() },
+      profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: pii.hashId("63-123456-A-42") }), count: async () => 1 },
+      $transaction: async (ops: unknown[]) => ops,
+    };
+    const s = svc(prisma, { KYC_MODE: "auto" }, { submit } as unknown as KycVendor);
+    const err = await s.becomeRider("p1", {}).then(
+      () => null,
+      (e: unknown) => e,
     );
-    expect(created).toBe(false);
+    expect((err as { getResponse: () => unknown }).getResponse()).toMatchObject({ reason: "id_in_use" });
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("404s (not a raw FK 500) when the caller's profile is gone", async () => {
+    const prisma = {
+      rider: { findUnique: async () => null, create: vi.fn() },
+      profile: { update: async () => ({}), findUnique: async () => null, count: async () => 0 },
+      $transaction: async (ops: unknown[]) => ops,
+    };
+    await expect(svc(prisma, { KYC_MODE: "manual" }).becomeRider("p1", {})).rejects.toThrow(/profile not found/i);
   });
 
   it("manual mode skips the vendor and returns no url", async () => {
@@ -1527,6 +1549,10 @@ describe("RiderService.setOnline — D-70 commission-free first jobs", () => {
 });
 
 describe("RiderService.applyKycResult", () => {
+  // The rider's account already carries a national ID — every rider onboarded before D-75 does (it was
+  // required at become). An account with NONE on file takes the D-75 path (adopt / hold), tested below.
+  const ON_FILE = { profile: { idNumberHash: pii.hashId("63-1-A") } };
+
   it("applies the status, records the event time, and guards monotonically", async () => {
     let where: Record<string, unknown> | undefined;
     let data: Record<string, unknown> | undefined;
@@ -1538,7 +1564,7 @@ describe("RiderService.applyKycResult", () => {
           data = args.data;
           return { count: 1 };
         },
-        findFirst: async () => ({ profileId: "p1" }),
+        findFirst: async () => ({ profileId: "p1", ...ON_FILE }),
       },
       auditLog: { create: async () => ({}) },
     };
@@ -1684,7 +1710,7 @@ describe("RiderService.applyKycResult", () => {
           data = args.data;
           return { count: 1 };
         },
-        findFirst: async () => ({ profileId: "p1" }),
+        findFirst: async () => ({ profileId: "p1", ...ON_FILE }),
       },
       auditLog: { create: async () => ({}) },
     };
@@ -1697,7 +1723,7 @@ describe("RiderService.applyKycResult", () => {
     const prisma = {
       rider: {
         updateMany: async () => ({ count: 1 }),
-        findFirst: async () => ({ profileId: "p1" }),
+        findFirst: async () => ({ profileId: "p1", ...ON_FILE }),
       },
       auditLog: { create: async (args: { data: Record<string, unknown> }) => { audit = args.data; return {}; } },
     };
@@ -1723,7 +1749,7 @@ describe("RiderService.applyKycResult", () => {
         },
         // Same findFirst mock answers both the pre-flag read and the post-update audit-target read —
         // duplicateIdFlag:true drives holdForReview.
-        findFirst: async () => ({ profileId: "p1", duplicateIdFlag: true }),
+        findFirst: async () => ({ profileId: "p1", duplicateIdFlag: true, ...ON_FILE }),
       },
       auditLog: { create: async (args: { data: Record<string, unknown> }) => { audit = args.data; return {}; } },
     };
@@ -1746,7 +1772,7 @@ describe("RiderService.applyKycResult", () => {
           data = args.data;
           return { count: 1 };
         },
-        findFirst: async () => ({ profileId: "p1", duplicateIdFlag: false }),
+        findFirst: async () => ({ profileId: "p1", duplicateIdFlag: false, ...ON_FILE }),
       },
       auditLog: { create: async (args: { data: Record<string, unknown> }) => { audit = args.data; return {}; } },
     };
@@ -1774,24 +1800,86 @@ describe("RiderService.applyKycResult", () => {
   // IR26-04 vendor-document dedupe: applyKycResult keys off the document number the vendor VERIFIED,
   // not just what the applicant typed. Shared harness: an unflagged rider whose typed ID is
   // 63-123456-A-42; `profileHits`/`riderHits` simulate the two collision probes.
-  function docPrisma(over: { typedHash?: string | null; profileHits?: number; riderHits?: number } = {}) {
-    const rec: { data?: Record<string, unknown>; audit?: Record<string, unknown> } = {};
-    const prisma = {
+  // D-75 additions: `typedHash: null` is an account with no national ID on file (every new rider since
+  // D-75); `adoptCount` is the profile CAS's row count, `onFileAfter` what a re-read then finds, and
+  // `adoptP2002` makes the first N adoption writes hit the live-ID unique index. `rec.calls` is the
+  // order of the writes/locks/reads, `rec.adopt` every adoption write, `rec.raw` every raw statement.
+  function docPrisma(
+    over: {
+      typedHash?: string | null;
+      profileHits?: number;
+      riderHits?: number;
+      duplicateIdFlag?: boolean;
+      kycResolvedAt?: Date | null;
+      adoptCount?: number;
+      onFileAfter?: string | null;
+      adoptP2002?: number;
+    } = {},
+  ) {
+    const rec: {
+      data?: Record<string, unknown>;
+      audit?: Record<string, unknown>;
+      adopt: { where: Record<string, unknown>; data: Record<string, unknown> }[];
+      raw: { sql: string; values: unknown[] }[];
+      calls: string[];
+      transactions: number;
+    } = { adopt: [], raw: [], calls: [], transactions: 0 };
+    let p2002Left = over.adoptP2002 ?? 0;
+    const prisma: Record<string, unknown> = {
+      // A faithful-enough interactive transaction: the callback runs against the same fake, and a throw
+      // inside rejects the whole unit (Postgres would roll every write in it back).
+      $transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
+        rec.transactions += 1;
+        rec.calls.push("begin");
+        return fn(prisma);
+      },
+      $executeRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const sql = strings.join("?");
+        rec.raw.push({ sql, values });
+        rec.calls.push(sql.includes("pg_advisory_xact_lock") ? "advisory" : "row-lock");
+        return 1;
+      },
       rider: {
         updateMany: async (args: { data: Record<string, unknown> }) => {
+          rec.calls.push("decision");
           rec.data = args.data;
           return { count: 1 };
         },
-        findFirst: async () => ({
-          profileId: "p1",
-          duplicateIdFlag: false,
-          kycAttempts: 0,
-          profile: { idNumberHash: over.typedHash === undefined ? pii.hashId("63-123456-A-42") : over.typedHash },
-        }),
+        findFirst: async () => {
+          rec.calls.push("read");
+          return {
+            profileId: "p1",
+            duplicateIdFlag: over.duplicateIdFlag ?? false,
+            kycAttempts: 0,
+            kycResolvedAt: over.kycResolvedAt ?? null,
+            profile: { idNumberHash: over.typedHash === undefined ? pii.hashId("63-123456-A-42") : over.typedHash },
+          };
+        },
         count: async () => over.riderHits ?? 0,
       },
-      profile: { count: async () => over.profileHits ?? 0 },
-      auditLog: { create: async (args: { data: Record<string, unknown> }) => { rec.audit = args.data; return {}; } },
+      profile: {
+        count: async () => over.profileHits ?? 0,
+        updateMany: async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+          rec.calls.push("adopt");
+          rec.adopt.push(args);
+          if (p2002Left > 0) {
+            p2002Left -= 1;
+            throw new Prisma.PrismaClientKnownRequestError("Unique constraint failed on the fields: (`id_number_hash`)", {
+              code: "P2002",
+              clientVersion: "test",
+            });
+          }
+          return { count: over.adoptCount ?? 1 };
+        },
+        findUnique: async () => ({ idNumberHash: over.onFileAfter ?? null }),
+      },
+      auditLog: {
+        create: async (args: { data: Record<string, unknown> }) => {
+          rec.calls.push("audit");
+          rec.audit = args.data;
+          return {};
+        },
+      },
     };
     return { prisma, rec };
   }
@@ -1829,11 +1917,142 @@ describe("RiderService.applyKycResult", () => {
     expect(rec.audit).toMatchObject({ action: "rider.kyc_review_required", reasonCode: "verified_id_mismatch" });
   });
 
-  it("IR26-04: a rider with NO typed ID (legacy) cannot be corroborated — held as a mismatch", async () => {
+  // D-75 (owner 2026-10-03): new riders no longer type their national ID before the check — "the
+  // number is confirmed from the check afterwards". Before D-75 an account with no ID on file was a
+  // legacy rider and was held here as `verified_id_mismatch`; now the vendor-verified number becomes the
+  // account's national ID, deduped exactly like a typed one.
+  it("D-75: with NO national ID on file, a clean verification adopts the vendor number onto the profile and verifies", async () => {
     const { prisma, rec } = docPrisma({ typedHash: null });
-    await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63-123456-A-42");
+    await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63-123456-a-42");
+    expect(rec.data).toMatchObject({ kycStatus: "verified", idVerified: true, verifiedIdHash: pii.hashId("63-123456-A-42") });
+    expect(rec.audit).toMatchObject({ action: "rider.kyc_approve", target: "p1" });
+    // The adoption: a CAS that only fills an EMPTY slot, with a typed ID's normalisation, encryption and hash.
+    expect(rec.adopt).toHaveLength(1);
+    expect(rec.adopt[0]!.where).toEqual({ id: "p1", idNumberHash: null });
+    expect(rec.adopt[0]!.data.idNumberHash).toBe(pii.hashId("63123456A42"));
+    const stored = rec.adopt[0]!.data.idNumber as string;
+    expect(stored.startsWith("v1:")).toBe(true);
+    expect(stored).not.toContain("63123456");
+    expect(pii.decryptId(stored)).toBe("63123456A42");
+  });
+
+  it("D-75: the adoption commits in the SAME transaction as the verification, after the locks and before the decision", async () => {
+    const { prisma, rec } = docPrisma({ typedHash: null });
+    await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42");
+    expect(rec.transactions).toBe(1);
+    expect(rec.calls.slice(0, 6)).toEqual(["begin", "advisory", "row-lock", "read", "adopt", "decision"]);
+    // The advisory lock is the number's, keyed exactly like the ID-writing routes' (hashtext of the hash).
+    expect(rec.raw[0]!.sql).toContain("pg_advisory_xact_lock(hashtext(");
+    expect(rec.raw[0]!.values).toEqual([pii.hashId("63-123456-A-42")]);
+  });
+
+  it("D-75: a vendor number on another account's profile (live OR erased) still holds the rider — no adoption", async () => {
+    const { prisma, rec } = docPrisma({ typedHash: null, profileHits: 1 });
+    await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42");
+    expect(rec.data).not.toHaveProperty("kycStatus");
+    expect(rec.data).not.toHaveProperty("idVerified");
+    // Held for the collision alone — before D-75 this read verified_id_mismatch+verified_id_collision.
+    expect(rec.audit).toMatchObject({ action: "rider.kyc_review_required", reasonCode: "verified_id_collision" });
+    expect(rec.adopt).toHaveLength(0);
+    // The vendor hash is still persisted on the rider row, so later applicants collide with it too.
+    expect(rec.data).toMatchObject({ verifiedIdHash: pii.hashId("63-123456-A-42") });
+  });
+
+  it("D-75: a vendor number another RIDER already verified holds the rider too — no adoption", async () => {
+    const { prisma, rec } = docPrisma({ typedHash: null, riderHits: 1 });
+    await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42");
+    expect(rec.data).not.toHaveProperty("kycStatus");
+    expect(rec.audit).toMatchObject({ reasonCode: "verified_id_collision" });
+    expect(rec.adopt).toHaveLength(0);
+  });
+
+  it("D-75: a rider flagged duplicateIdFlag is held and nothing is adopted", async () => {
+    const { prisma, rec } = docPrisma({ typedHash: null, duplicateIdFlag: true });
+    await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42");
+    expect(rec.data).not.toHaveProperty("kycStatus");
+    expect(rec.audit).toMatchObject({ reasonCode: "duplicate_id_flag" });
+    expect(rec.adopt).toHaveLength(0);
+  });
+
+  it("D-75: no ID on file AND no document number in the decision → verified fail-open, audit-flagged verified_id_missing (never held hostage)", async () => {
+    // extractDiditDocumentNumber is fail-open by design: a verify must not be parked in review because a
+    // payload lacked the number — a held rider's only way forward is another paid session.
+    const { prisma, rec } = docPrisma({ typedHash: null });
+    await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, null);
+    expect(rec.data).toMatchObject({ kycStatus: "verified", idVerified: true });
+    expect(rec.audit).toMatchObject({ action: "rider.kyc_approve", reasonCode: "verified_id_missing" });
+    expect(rec.adopt).toHaveLength(0);
+    // No number → no advisory lock to take.
+    expect(rec.raw.some((r) => r.sql.includes("pg_advisory_xact_lock"))).toBe(false);
+  });
+
+  it("D-75: an account WITH an ID on file keeps the mismatch check and is never overwritten by the vendor number", async () => {
+    const { prisma, rec } = docPrisma();
+    await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63-999999-Z-99");
     expect(rec.data).not.toHaveProperty("kycStatus");
     expect(rec.audit).toMatchObject({ reasonCode: "verified_id_mismatch" });
+    expect(rec.adopt).toHaveLength(0);
+    // And a matching number verifies without touching the profile either.
+    const match = docPrisma();
+    await svc(match.prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42");
+    expect(match.rec.data).toMatchObject({ kycStatus: "verified" });
+    expect(match.rec.adopt).toHaveLength(0);
+  });
+
+  it("D-75: a stale or replayed decision adopts nothing (the CAS it would ride on won't apply)", async () => {
+    const eventAt = new Date("2026-10-03T10:00:00Z");
+    const { prisma, rec } = docPrisma({ typedHash: null, kycResolvedAt: new Date("2026-10-03T11:00:00Z") });
+    await svc(prisma, {}).applyKycResult("sess_1", "verified", eventAt, null, "63123456A42");
+    expect(rec.adopt).toHaveLength(0);
+    // An exact replay (same eventAt) is not newer either.
+    const replay = docPrisma({ typedHash: null, kycResolvedAt: eventAt });
+    await svc(replay.prisma, {}).applyKycResult("sess_1", "verified", eventAt, null, "63123456A42");
+    expect(replay.rec.adopt).toHaveLength(0);
+  });
+
+  it("D-75: failed and expired decisions never adopt a number", async () => {
+    for (const status of ["failed", "expired"] as const) {
+      const { prisma, rec } = docPrisma({ typedHash: null });
+      await svc(prisma, {}).applyKycResult("sess_1", status, new Date(), status === "failed" ? "face_mismatch" : null, "63123456A42");
+      expect(rec.adopt).toHaveLength(0);
+      expect(rec.data).toMatchObject({ kycStatus: status });
+    }
+  });
+
+  it("D-75: a DIFFERENT number that landed on the account mid-check (CAS lost) is held as a mismatch, not verified", async () => {
+    const { prisma, rec } = docPrisma({ typedHash: null, adoptCount: 0, onFileAfter: pii.hashId("63-999999-Z-99") });
+    await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42");
+    expect(rec.adopt).toHaveLength(1);
+    expect(rec.data).not.toHaveProperty("kycStatus");
+    expect(rec.audit).toMatchObject({ action: "rider.kyc_review_required", reasonCode: "verified_id_mismatch" });
+  });
+
+  it("D-75: the SAME number already on the account when the CAS lost still verifies", async () => {
+    const { prisma, rec } = docPrisma({ typedHash: null, adoptCount: 0, onFileAfter: pii.hashId("63-123456-A-42") });
+    await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42");
+    expect(rec.data).toMatchObject({ kycStatus: "verified", idVerified: true });
+  });
+
+  it("D-75: the live-ID unique index refusing the adoption doesn't crash the webhook — re-applied once, held for review", async () => {
+    // A writer that skips the advisory lock claimed the number between the count and the write: the
+    // IR26-05 backstop P2002s. The decision is re-run with adoption off and the rider is held.
+    const { prisma, rec } = docPrisma({ typedHash: null, adoptP2002: 1 });
+    await expect(svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42")).resolves.toEqual({ updated: 1 });
+    expect(rec.transactions).toBe(2);
+    expect(rec.adopt).toHaveLength(1);
+    expect(rec.data).not.toHaveProperty("kycStatus");
+    expect(rec.data).not.toHaveProperty("idVerified");
+    expect(rec.audit).toMatchObject({ action: "rider.kyc_review_required", reasonCode: "verified_id_collision" });
+  });
+
+  it("D-75: a P2002 that did NOT come from the adoption still propagates (no blanket retry)", async () => {
+    const { prisma, rec } = docPrisma();
+    const p2002 = new Prisma.PrismaClientKnownRequestError("Unique constraint failed", { code: "P2002", clientVersion: "test" });
+    (prisma.rider as { updateMany: unknown }).updateMany = async () => {
+      throw p2002;
+    };
+    await expect(svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42")).rejects.toBe(p2002);
+    expect(rec.transactions).toBe(1);
   });
 
   it("IR26-04: a verified doc number colliding with another PROFILE's typed hash is held (reason verified_id_collision)", async () => {
@@ -1878,7 +2097,7 @@ describe("RiderService.applyKycResult", () => {
       },
       rider: {
         updateMany: async () => { calls.push("mutation"); return { count: 1 }; },
-        findFirst: async () => ({ profileId: "p1" }),
+        findFirst: async () => ({ profileId: "p1", ...ON_FILE }),
       },
       auditLog: { create: async () => { calls.push("audit"); throw new Error("audit db down"); } },
     };

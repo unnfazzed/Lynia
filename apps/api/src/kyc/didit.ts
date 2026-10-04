@@ -125,13 +125,24 @@ export function extractDiditDocumentNumber(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") return null;
   const p = payload as Record<string, unknown>;
   const decision = (p.decision ?? {}) as Record<string, unknown>;
+  // V3 webhooks (Didit's default, and the version our destination is registered with — docs/PILOT-READINESS.md
+  // step 3) carry every per-feature result as a PLURAL array: the ID report is `decision.id_verifications[]`.
+  // The singular `id_verification` object only appears on a destination pinned to `webhook_version: "v2"`.
+  // Reading only the singular shape left this extractor returning null on every real V3 webhook.
+  const v3 = Array.isArray(decision.id_verifications) ? (decision.id_verifications as unknown[]) : [];
+  const v3Entries = v3.filter((e): e is Record<string, unknown> => !!e && typeof e === "object");
   const idVerification = (decision.id_verification ?? {}) as Record<string, unknown>;
   const kyc = (decision.kyc ?? {}) as Record<string, unknown>;
+  // personal_number first: Didit defines it as "the OCR'd personal / national identification number, when
+  // distinct from the document number" — on a passport the document number is the PASSPORT number, while
+  // this is the national ID the dedupe and D-75 need. An ID card without a distinct one falls through to
+  // document_number.
   const candidates = [
-    idVerification.document_number,
+    ...v3Entries.flatMap((e) => [e.personal_number, e.document_number]),
     idVerification.personal_number,
-    kyc.document_number,
+    idVerification.document_number,
     kyc.personal_number,
+    kyc.document_number,
     p.document_number,
   ];
   for (const c of candidates) {

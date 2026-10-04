@@ -292,7 +292,7 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | | Badge | Registry id | Screen | PR | Signed off |
 |---|---|---|---|---|---|
 | ⏭ | R2·1 | `RJ kyc_intro` | Become a rider | superseded by D-55 (Calm Mint v2, `packages/design/handoff/calm-mint-v2-2026-10`) — R1 Why ride. Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | |
-| ⏭ | R2·2 | `RJ kyc_form` | KYC form + consent | superseded by D-55 (Calm Mint v2, `packages/design/handoff/calm-mint-v2-2026-10`) — R1 → rider photo step (no bike reg). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | |
+| ⏭ | R2·2 | `RJ kyc_form` | KYC form + consent | superseded by D-55 (Calm Mint v2, `packages/design/handoff/calm-mint-v2-2026-10`) — R1 → the ID check directly (no bike reg; no photo since D-62; no national ID since D-75 — the check supplies it; a nameless legacy account sees C5's name fields first, fixture `rider_kyc_name`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | |
 | ⬜ | R2·3 | `RJ photo_capture` | Rider photo · capture | | |
 | ⬜ | R2·4 | `RJ photo_preview` | Rider photo · preview | | |
 | ⬜ | R2·5 | `RJ photo_uploading` | Rider photo · uploading | | |
