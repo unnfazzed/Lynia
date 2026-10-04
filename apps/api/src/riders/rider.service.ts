@@ -1045,6 +1045,47 @@ export class RiderService {
     return { updated };
   }
 
+  /**
+   * D-75 item 2 (IR26-09): the webhook HOLDS some results for a human (`pending`): Didit's In Review, and
+   * since IR26-07 a Didit approval whose face match falls in the review band (isDiditReviewHold). Those still
+   * carry the number Didit read from the document. Store it on the rider, as a resolved decision does
+   * (`verifiedIdHash`, and `verifiedIdNumber` encrypted and normalised like a typed ID), so the reviewer sees
+   * it and a hand approval adopts it (settleNationalIdOnApproval). A band-held approval is final at Didit,
+   * so without this no later webhook ever brings the number.
+   *
+   * That is the only write. The decision is not resolved, so kycStatus, idVerified and kycResolvedAt keep
+   * their values, nothing is adopted onto the profile, and no audit row or notification is written. The
+   * number reaches the rider's own app only once they are verified (`/auth/me` kycIdNumber).
+   *
+   * Only while the rider's CURRENT check (`kycRef`) is undecided: `pending`, with no kycResolvedAt. Every
+   * decision that resolves a check stamps kycResolvedAt: the webhook's, a verify it holds for review (which
+   * stores its own number), and a hand approval, decline or expiry (a `pending` reset resolves nothing). So a
+   * held result never overwrites the number a resolved decision wrote, in whatever order the deliveries
+   * arrive. It is deliberately not the
+   * event-time comparison applyKycResult makes. The only time a webhook carries is when Didit dispatched
+   * it (body `timestamp`), and Didit re-signs a retry with a fresh one, so a retried held result can look
+   * newer than the decision that followed it; a hand decision's kycResolvedAt is our clock, not Didit's.
+   * A check retryKyc replaced, and an erased account (erasure nulls kycRef), match no row.
+   *
+   * IR26-04: the stored hash makes a later applicant showing the same document collide, as the
+   * verified-but-held path does on purpose. So the write takes the number's advisory lock first, like every
+   * writer of a national ID, and a collision count another claimer takes under that lock sees it or waits.
+   */
+  async recordHeldVerifiedId(kycRef: string, verifiedDocNumber: string): Promise<{ updated: number }> {
+    const verifiedIdHash = this.pii.hashId(verifiedDocNumber);
+    const res = await this.prisma.$transaction(async (tx) => {
+      await this.lockNationalId(tx, verifiedIdHash);
+      return tx.rider.updateMany({
+        where: { kycRef, kycStatus: "pending", kycResolvedAt: null },
+        data: { verifiedIdHash, verifiedIdNumber: this.pii.encryptId(normalizeNationalId(verifiedDocNumber)) },
+      });
+    });
+    if (res.count > 0) {
+      this.logger.log(`KYC ${kycRef}: held for review — stored the number the check read, for the reviewer and a hand approval (D-75)`);
+    }
+    return { updated: res.count };
+  }
+
   /** Best-effort push telling a rider their KYC decision landed → route to their rider home (`/rider`).
    *  Fire-and-forget (notifyProfiles never throws); a notification miss can't affect the KYC write. */
   private notifyKycDecision(profileId: string, status: "verified" | "failed"): void {

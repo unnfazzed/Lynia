@@ -2113,6 +2113,318 @@ describe("RiderService.applyKycResult", () => {
   });
 });
 
+// D-75 item 2 (IR26-09): a result the webhook HOLDS for a human (Didit's In Review, a Didit approval in the
+// face-match review band) stores the number Didit read from the document, so the reviewer sees it and a
+// hand approval adopts it. It resolves nothing, and never overwrites a number a resolved decision wrote.
+describe("RiderService.recordHeldVerifiedId", () => {
+  const NUMBER = "63-123456-a-42";
+  const HASH = pii.hashId("63123456A42");
+  const OTHER = "63-999999-Z-99";
+
+  /** Records the transaction boundary, every raw statement (the advisory lock) and the one write. */
+  function recPrisma(count = 1) {
+    const rec: {
+      calls: string[];
+      raw: { sql: string; values: unknown[] }[];
+      where?: Record<string, unknown>;
+      data?: Record<string, unknown>;
+    } = { calls: [], raw: [] };
+    const prisma: Record<string, unknown> = {
+      $transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
+        rec.calls.push("begin");
+        const out = await fn(prisma);
+        rec.calls.push("commit");
+        return out;
+      },
+      $executeRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const sql = strings.join("?");
+        rec.raw.push({ sql, values });
+        rec.calls.push(sql.includes("pg_advisory_xact_lock") ? "advisory" : "raw");
+        return 1;
+      },
+      rider: {
+        updateMany: async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+          rec.calls.push("write");
+          rec.where = args.where;
+          rec.data = args.data;
+          return { count };
+        },
+      },
+      // Writes this method must never make: they're recorded so a test can prove they didn't happen.
+      profile: {
+        updateMany: async () => {
+          rec.calls.push("profile-write");
+          return { count: 1 };
+        },
+      },
+      auditLog: {
+        create: async () => {
+          rec.calls.push("audit");
+          return {};
+        },
+      },
+    };
+    return { prisma, rec };
+  }
+
+  it("stores the hash and the encrypted, normalised number on the undecided check named by kycRef, and nothing else", async () => {
+    const { prisma, rec } = recPrisma();
+    expect(await svc(prisma, {}).recordHeldVerifiedId("sess_1", NUMBER)).toEqual({ updated: 1 });
+    // Only while the rider's CURRENT check is undecided. Every decision stamps kycResolvedAt, and retryKyc
+    // and erasure move or null kycRef, so a decided, replaced or erased check matches no row.
+    expect(rec.where).toEqual({ kycRef: "sess_1", kycStatus: "pending", kycResolvedAt: null });
+    // Two fields. The decision isn't resolved, so status, idVerified, kycResolvedAt, the decline reason, the
+    // attempt counter and the session credentials keep their values.
+    expect(Object.keys(rec.data ?? {}).sort()).toEqual(["verifiedIdHash", "verifiedIdNumber"]);
+    expect(rec.data?.verifiedIdHash).toBe(HASH);
+    const stored = rec.data?.verifiedIdNumber as string;
+    expect(stored.startsWith("v1:")).toBe(true);
+    expect(stored).not.toContain("63123456");
+    expect(pii.decryptId(stored)).toBe("63123456A42");
+  });
+
+  it("takes the number's advisory lock before the write, in one transaction (IR26-04: other claimers see it)", async () => {
+    const { prisma, rec } = recPrisma();
+    await svc(prisma, {}).recordHeldVerifiedId("sess_1", NUMBER);
+    expect(rec.calls).toEqual(["begin", "advisory", "write", "commit"]);
+    // The key every writer of this national ID takes: hashtext of its HMAC hash.
+    expect(rec.raw[0]!.sql).toContain("pg_advisory_xact_lock(hashtext(");
+    expect(rec.raw[0]!.values).toEqual([HASH]);
+  });
+
+  it("adopts nothing, audits nothing, notifies no one and demotes no one: only a decision does", async () => {
+    const { prisma, rec } = recPrisma();
+    const notifyProfiles = vi.fn(async () => {});
+    const evictRiderFromSupply = vi.fn(async () => {});
+    const s = new RiderService(
+      prisma as unknown as PrismaService,
+      {} as Env,
+      new StubKycVendor(),
+      pii,
+      trackingStub,
+      { evictRiderFromSupply } as unknown as import("../tracking/tracking.gateway").TrackingGateway,
+      { ...notificationsStub, notifyProfiles } as unknown as import("../notifications/notifications.service").NotificationsService,
+    );
+    await s.recordHeldVerifiedId("sess_1", NUMBER);
+    expect(rec.calls).not.toContain("profile-write");
+    expect(rec.calls).not.toContain("audit");
+    expect(notifyProfiles).not.toHaveBeenCalled();
+    expect(evictRiderFromSupply).not.toHaveBeenCalled();
+  });
+
+  it("reports updated:0, without throwing, when no undecided check has the ref", async () => {
+    const { prisma } = recPrisma(0);
+    await expect(svc(prisma, {}).recordHeldVerifiedId("sess_gone", NUMBER)).resolves.toEqual({ updated: 0 });
+  });
+
+  // The tests below run the REAL applyKycResult, adminSetKyc and recordHeldVerifiedId against one rider
+  // and profile held in memory. The fake evaluates each rider write's `where` as Postgres would for these
+  // predicates (equality, IS NULL, `< t`), so they pin what each delivery ORDER leaves on file, not only
+  // the shape of a where clause.
+  type Row = {
+    profileId: string;
+    kycRef: string | null;
+    kycStatus: "pending" | "verified" | "failed" | "expired";
+    idVerified: boolean;
+    kycResolvedAt: Date | null;
+    kycAttempts: number;
+    kycDeclineReason: string | null;
+    duplicateIdFlag: boolean;
+    verifiedIdHash: string | null;
+    verifiedIdNumber: string | null;
+    kycSessionToken: string | null;
+    kycSessionUrl: string | null;
+    isOnline: boolean;
+  };
+  function rowPrisma(init: Partial<Row> = {}, opts: { collisions?: number } = {}) {
+    const row: Row = {
+      profileId: "p1",
+      kycRef: "sess_1",
+      kycStatus: "pending",
+      idVerified: false,
+      kycResolvedAt: null,
+      kycAttempts: 0,
+      kycDeclineReason: null,
+      duplicateIdFlag: false,
+      verifiedIdHash: null,
+      verifiedIdNumber: null,
+      kycSessionToken: null,
+      kycSessionUrl: null,
+      isOnline: false,
+      ...init,
+    };
+    // No national ID on file: every rider onboarded since D-75.
+    const profile: { idNumber: string | null; idNumberHash: string | null } = { idNumber: null, idNumberHash: null };
+    const audit: Record<string, unknown>[] = [];
+    const fields = row as unknown as Record<string, unknown>;
+    const matches = (where: Record<string, unknown>): boolean =>
+      Object.entries(where).every(([k, v]) => {
+        if (k === "OR") return (v as Record<string, unknown>[]).some(matches);
+        if (k === "kycResolvedAt" && v !== null && typeof v === "object") {
+          return row.kycResolvedAt !== null && row.kycResolvedAt < (v as { lt: Date }).lt;
+        }
+        if (!["profileId", "kycRef", "kycStatus", "kycResolvedAt"].includes(k)) throw new Error(`rowPrisma: unsupported where key ${k}`);
+        return fields[k] === v;
+      });
+    const apply = (data: Record<string, unknown>) => {
+      for (const [k, v] of Object.entries(data)) {
+        fields[k] = v !== null && typeof v === "object" && "increment" in v ? (fields[k] as number) + (v as { increment: number }).increment : v;
+      }
+    };
+    const view = () => ({ ...row, profile: { idNumberHash: profile.idNumberHash } });
+    const prisma: Record<string, unknown> = {
+      $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma),
+      $executeRaw: async () => 1,
+      rider: {
+        findFirst: async ({ where }: { where: Record<string, unknown> }) => (matches(where) ? view() : null),
+        findUnique: async ({ where }: { where: Record<string, unknown> }) => (matches(where) ? view() : null),
+        updateMany: async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+          if (!matches(where)) return { count: 0 };
+          apply(data);
+          return { count: 1 };
+        },
+        update: async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+          if (!matches(where)) throw new Error("rowPrisma: no such rider");
+          apply(data);
+          return { kycAttempts: row.kycAttempts };
+        },
+        // OTHER riders carrying the number (the rider's own row is excluded by every caller).
+        count: async () => opts.collisions ?? 0,
+      },
+      profile: {
+        count: async () => opts.collisions ?? 0,
+        updateMany: async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+          if (where.idNumberHash !== null || profile.idNumberHash !== null) return { count: 0 };
+          profile.idNumber = data.idNumber as string;
+          profile.idNumberHash = data.idNumberHash as string;
+          return { count: 1 };
+        },
+        findUnique: async () => ({ idNumberHash: profile.idNumberHash }),
+      },
+      auditLog: {
+        create: async ({ data }: { data: Record<string, unknown> }) => {
+          audit.push(data);
+          return {};
+        },
+      },
+    };
+    return { prisma, row, profile, audit };
+  }
+
+  it("the point: a band-held rider approved by hand adopts the stored number instead of being flagged verified_id_missing", async () => {
+    const { prisma, row, profile, audit } = rowPrisma();
+    const s = svc(prisma, {});
+    // A Didit approval whose face match fell in the review band: held (still pending), its number stored.
+    expect(await s.recordHeldVerifiedId("sess_1", NUMBER)).toEqual({ updated: 1 });
+    expect(row).toMatchObject({ kycStatus: "pending", idVerified: false, kycResolvedAt: null, verifiedIdHash: HASH });
+    expect(profile.idNumberHash).toBeNull(); // nothing adopted by the held result itself
+    // The reviewer approves by hand, and the account adopts the number the check read.
+    await s.adminSetKyc("p1", "verified", null, "admin:ops");
+    expect(row).toMatchObject({ kycStatus: "verified", idVerified: true });
+    expect(profile.idNumberHash).toBe(HASH);
+    expect(pii.decryptId(profile.idNumber)).toBe("63123456A42");
+    expect(audit.at(-1)).toMatchObject({ action: "rider.kyc_approve", target: "p1", reasonCode: null });
+  });
+
+  it("out of order: a held result delivered AFTER its check's decision never overwrites the decision's number", async () => {
+    const { prisma, row, profile } = rowPrisma();
+    const s = svc(prisma, {});
+    // The resolved Approved lands first, and adopts its number.
+    expect(await s.applyKycResult("sess_1", "verified", new Date("2026-10-04T08:00:00Z"), null, "63-123456-A-42")).toEqual({ updated: 1 });
+    expect(row).toMatchObject({ kycStatus: "verified", verifiedIdHash: HASH });
+    // Then a delayed or retried held result for the same check, with a different read of the document. Didit
+    // re-signs a retry with a fresh dispatch time, so no timestamp can order it. It stores nothing.
+    expect(await s.recordHeldVerifiedId("sess_1", OTHER)).toEqual({ updated: 0 });
+    expect(row.verifiedIdHash).toBe(HASH);
+    expect(pii.decryptId(row.verifiedIdNumber)).toBe("63123456A42");
+    expect(profile.idNumberHash).toBe(HASH);
+  });
+
+  it("in order: the decision that follows a held result writes and adopts its own number", async () => {
+    const { prisma, row, profile } = rowPrisma();
+    const s = svc(prisma, {});
+    await s.recordHeldVerifiedId("sess_1", OTHER);
+    expect(row.verifiedIdHash).toBe(pii.hashId(OTHER));
+    await s.applyKycResult("sess_1", "verified", new Date(), null, "63-123456-A-42");
+    expect(row).toMatchObject({ kycStatus: "verified", idVerified: true, verifiedIdHash: HASH });
+    expect(profile.idNumberHash).toBe(HASH);
+  });
+
+  it("a verify held for review (IR26-04) decides the check: a held result after it keeps that decision's number", async () => {
+    // The vendor number collides with another account, so the verified webhook holds the rider (pending)
+    // but stamps kycResolvedAt and stores its own number.
+    const { prisma, row } = rowPrisma({}, { collisions: 1 });
+    const s = svc(prisma, {});
+    await s.applyKycResult("sess_1", "verified", new Date(), null, "63-123456-A-42");
+    expect(row).toMatchObject({ kycStatus: "pending", verifiedIdHash: HASH });
+    expect(row.kycResolvedAt).not.toBeNull();
+    expect(await s.recordHeldVerifiedId("sess_1", OTHER)).toEqual({ updated: 0 });
+    expect(row.verifiedIdHash).toBe(HASH);
+  });
+
+  it("after a hand approval or decline, a held result stores nothing", async () => {
+    for (const status of ["verified", "failed"] as const) {
+      const { prisma, row } = rowPrisma();
+      const s = svc(prisma, {});
+      await s.adminSetKyc("p1", status, status === "failed" ? "document_unreadable" : null, "admin:ops");
+      expect(await s.recordHeldVerifiedId("sess_1", NUMBER)).toEqual({ updated: 0 });
+      expect(row.verifiedIdHash).toBeNull();
+      expect(row.verifiedIdNumber).toBeNull();
+    }
+  });
+
+  it("a check retryKyc replaced matches no row; the new check's held result replaces the old check's number", async () => {
+    // retryKyc rotated sess_1 → sess_2. The old check stored a number before it was replaced.
+    const { prisma, row } = rowPrisma({ kycRef: "sess_2", verifiedIdHash: pii.hashId(OTHER), verifiedIdNumber: pii.encryptId("63999999Z99") });
+    const s = svc(prisma, {});
+    expect(await s.recordHeldVerifiedId("sess_1", NUMBER)).toEqual({ updated: 0 });
+    expect(row.verifiedIdHash).toBe(pii.hashId(OTHER));
+    // The latest check's number wins, as it does when a decision writes it.
+    expect(await s.recordHeldVerifiedId("sess_2", NUMBER)).toEqual({ updated: 1 });
+    expect(row.verifiedIdHash).toBe(HASH);
+    expect(pii.decryptId(row.verifiedIdNumber)).toBe("63123456A42");
+  });
+
+  it("only a pending rider: a verified row with no resolution stamp (the stub provider's instant pass) stores nothing", async () => {
+    const { prisma, row } = rowPrisma({ kycStatus: "verified", idVerified: true, kycResolvedAt: null });
+    expect(await svc(prisma, {}).recordHeldVerifiedId("sess_1", NUMBER)).toEqual({ updated: 0 });
+    expect(row.verifiedIdHash).toBeNull();
+  });
+
+  it("an erased account (erasure nulls kycRef) stores nothing: the scrubbed number stays scrubbed, the hash stays", async () => {
+    const { prisma, row } = rowPrisma({ kycRef: null, verifiedIdHash: HASH, verifiedIdNumber: null });
+    expect(await svc(prisma, {}).recordHeldVerifiedId("sess_1", OTHER)).toEqual({ updated: 0 });
+    expect(row.verifiedIdNumber).toBeNull();
+    expect(row.verifiedIdHash).toBe(HASH);
+  });
+
+  it("never touches the decision: every other field keeps its value, the session credentials included", async () => {
+    // A resubmission (attempt 2) mid-check: the live session must stay resumable, and the board keeps
+    // reading it as "with Didit".
+    const { prisma, row } = rowPrisma({
+      kycAttempts: 1,
+      kycDeclineReason: "document_unreadable",
+      kycSessionToken: "tok_live",
+      kycSessionUrl: "https://verify.example/s/1",
+    });
+    const before = { ...row };
+    await svc(prisma, {}).recordHeldVerifiedId("sess_1", NUMBER);
+    expect({ ...row, verifiedIdHash: null, verifiedIdNumber: null }).toEqual(before);
+  });
+
+  it("a replay is idempotent, and a later held result for the same undecided check replaces the earlier read", async () => {
+    const { prisma, row } = rowPrisma();
+    const s = svc(prisma, {});
+    await s.recordHeldVerifiedId("sess_1", NUMBER);
+    await s.recordHeldVerifiedId("sess_1", NUMBER);
+    expect(row.verifiedIdHash).toBe(HASH);
+    // No decision has spoken for this check yet, so the latest read is the one the reviewer sees and
+    // a hand approval adopts.
+    await s.recordHeldVerifiedId("sess_1", OTHER);
+    expect(row.verifiedIdHash).toBe(pii.hashId(OTHER));
+  });
+});
+
 describe("RiderService.adminSetKyc (A-02 decision state machine)", () => {
   it("404s for an unknown rider", async () => {
     const s = svc({ rider: { findUnique: async () => null } }, {});

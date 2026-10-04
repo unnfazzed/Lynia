@@ -7,6 +7,7 @@ import {
   diditTimestampFresh,
   extractDiditDocumentNumber,
   extractDiditScore,
+  isDiditReviewHold,
   mapDiditPendingState,
   mapDiditStatus,
   verifyDiditSignature,
@@ -290,6 +291,49 @@ describe("decideDiditKyc (Didit auto-decision bands, KYC_THRESHOLDS)", () => {
     expect(decideDiditKyc("Approved", null)).toEqual({ status: "verified" });
     expect(decideDiditKyc("Declined", null)).toEqual({ status: "failed" });
     expect(decideDiditKyc("In Review", null)).toEqual({ status: "pending" });
+  });
+});
+
+// D-75 item 2 (IR26-09): which held results store their document number. Only a result Didit JUDGED and
+// we hold for a human: In Review, or an approval in the face-match review band.
+describe("isDiditReviewHold", () => {
+  it("a Didit approval held in the face-match review band is a review hold", () => {
+    expect(isDiditReviewHold("Approved", 0.72)).toBe(true);
+    expect(isDiditReviewHold("Approved", KYC_THRESHOLDS.needsReview)).toBe(true);
+  });
+
+  it("Didit's In Review is a review hold, with or without a score, however it's spelled", () => {
+    expect(isDiditReviewHold("In Review", null)).toBe(true);
+    expect(isDiditReviewHold("In Review", 0.99)).toBe(true);
+    expect(isDiditReviewHold("IN_REVIEW", 0.7)).toBe(true);
+    expect(isDiditReviewHold("in-review", null)).toBe(true);
+  });
+
+  it("a result the webhook applies is not a hold: verified, declined, auto-declined or expired", () => {
+    expect(isDiditReviewHold("Approved", 0.96)).toBe(false);
+    expect(isDiditReviewHold("Approved", null)).toBe(false);
+    expect(isDiditReviewHold("Approved", 0.45)).toBe(false);
+    expect(isDiditReviewHold("In Review", 0.3)).toBe(false);
+    expect(isDiditReviewHold("Declined", 0.99)).toBe(false);
+    expect(isDiditReviewHold("Kyc Expired", null)).toBe(false);
+  });
+
+  it("a session Didit never finished judging is not a hold, whatever partial score it carries", () => {
+    for (const s of ["Abandoned", "Expired", "In Progress", "Not Started", "Awaiting User", "Resubmitted", "Something New"]) {
+      expect(isDiditReviewHold(s, null)).toBe(false);
+      expect(isDiditReviewHold(s, 0.99)).toBe(false);
+    }
+  });
+
+  it("property: a review hold is always a `pending` decision on an Approved or In Review result", () => {
+    const statuses = ["Approved", "Declined", "In Review", "IN_REVIEW", "Abandoned", "Expired", "Kyc Expired", "In Progress", "Not Started", "Awaiting User", "Resubmitted", "Something New"];
+    for (const s of statuses) {
+      for (const score of [null, ...Array.from({ length: 101 }, (_, pct) => pct / 100)]) {
+        if (!isDiditReviewHold(s, score)) continue;
+        expect(decideDiditKyc(s, score).status).toBe("pending");
+        expect(["Approved", "In Review", "IN_REVIEW"]).toContain(s);
+      }
+    }
   });
 });
 

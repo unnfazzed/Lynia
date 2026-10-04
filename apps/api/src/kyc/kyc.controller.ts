@@ -30,6 +30,7 @@ import {
   diditTimestampFresh,
   extractDiditDocumentNumber,
   extractDiditScore,
+  isDiditReviewHold,
   mapDiditStatus,
   verifyDiditSignature,
   verifyDiditSignatureV2,
@@ -102,7 +103,8 @@ export class KycController {
   /**
    * Didit KYC webhook (status.updated). Verifies the HMAC signature over the raw body, then maps
    * the verification status onto the rider keyed by session_id (== the rider's stored kycRef).
-   * "In Review" and other non-terminal statuses stay pending — the admin backstop resolves them.
+   * "In Review" and other non-terminal statuses stay pending — the admin backstop resolves them. A held
+   * In Review or review-band approval stores the document number for that review (D-75 item 2).
    */
   @Post("kyc/callback")
   async callback(@Req() req: RawBodyRequest<Request>) {
@@ -161,7 +163,26 @@ export class KycController {
         this.logger.log(`KYC webhook for session ${payload.session_id}: approved, face match in the review band — held for review`);
       }
     }
-    if (decision.status === "pending") return { ignored: true, status: decision.status };
+    if (decision.status === "pending") {
+      // D-75 item 2 (IR26-09): a result held for a human (Didit's In Review, or a Didit approval in the
+      // review band) still carries the number Didit read from the document. It is stored for the reviewer
+      // and the hand approval that adopts it; the decision itself stays unresolved. An unfinished session's
+      // partial data is not a judged result, so its number is not stored.
+      if (!isDiditReviewHold(payload.status, score)) return { ignored: true, status: decision.status };
+      const heldNumber = extractDiditDocumentNumber(payload);
+      if (!heldNumber) {
+        // Coverage signal, like applyKycResult's: approving this rider will adopt no number.
+        this.logger.log(`KYC webhook for session ${payload.session_id}: held for review with no document number — nothing stored`);
+        return { ignored: true, status: decision.status };
+      }
+      const held = await this.riders.recordHeldVerifiedId(payload.session_id, heldNumber);
+      if (held.updated === 0) {
+        // No undecided check has this ref: a superseded or already-decided check (whose own decision keeps
+        // its number), or an unknown session. Expected after a decision; surfaced for reconciliation.
+        this.logger.log(`KYC webhook for session ${payload.session_id}: held result matched no undecided check — nothing stored`);
+      }
+      return { ignored: true, status: decision.status, verifiedIdStored: held.updated > 0 };
+    }
 
     // Event time drives the monotonic guard. The timestamp is part of the signed body (Unix seconds),
     // so it can't be forged; fall back to now() only if a delivery omits it.

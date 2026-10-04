@@ -27,9 +27,11 @@ const freshTs = (): string => String(Math.floor(Date.now() / 1000));
 
 /** Records applyKycResult calls so we can assert it fires only for terminal statuses, plus the
  *  last event time passed (for the monotonic guard), the decline reason (IR26-07 score bands) and the
- *  vendor document number (IR26-04). */
-function fakeRiders(updated = 1) {
+ *  vendor document number (IR26-04). `held` records recordHeldVerifiedId calls (D-75 item 2: a result
+ *  held for review stores its document number); `heldUpdated` is the row count that call reports. */
+function fakeRiders(updated = 1, heldUpdated = 1) {
   const calls: Array<[string, string]> = [];
+  const held: Array<[string, string]> = [];
   let lastEventAt: Date | undefined;
   let lastReason: string | null | undefined;
   let lastDocNumber: string | null | undefined;
@@ -41,8 +43,12 @@ function fakeRiders(updated = 1) {
       lastDocNumber = docNumber;
       return { updated };
     },
+    recordHeldVerifiedId: async (ref: string, docNumber: string) => {
+      held.push([ref, docNumber]);
+      return { updated: heldUpdated };
+    },
   } as unknown as RiderService;
-  return { riders, calls, eventAt: () => lastEventAt, reason: () => lastReason, docNumber: () => lastDocNumber };
+  return { riders, calls, held, eventAt: () => lastEventAt, reason: () => lastReason, docNumber: () => lastDocNumber };
 }
 
 const ctl = (riders: RiderService, env: Partial<Env>) => new KycController(riders, env as Env);
@@ -135,11 +141,13 @@ describe("KycController.callback", () => {
   });
 
   it("ignores a non-terminal status without touching the rider", async () => {
-    const { riders, calls } = fakeRiders();
+    const { riders, calls, held } = fakeRiders();
     const raw = JSON.stringify({ session_id: "s_3", status: "In Review" });
     const res = await ctl(riders, {}).callback(req(raw));
     expect(res).toEqual({ ignored: true, status: "pending" });
     expect(calls).toEqual([]);
+    // No document number in the payload, so there is nothing to store either (D-75 item 2).
+    expect(held).toEqual([]);
   });
 
   it("refuses to process unsigned webhooks when KYC_PROVIDER=didit but no secret is set (fail-closed)", async () => {
@@ -212,6 +220,119 @@ describe("KycController.callback", () => {
       req(raw, { "x-signature-v2": signV2(raw), "x-timestamp": freshTs() }),
     );
     expect(eventAt()).toEqual(new Date(ts * 1000));
+  });
+
+  // D-75 item 2 (IR26-09): a result held for review still carries the number Didit read from the
+  // document. It's stored (recordHeldVerifiedId) for the reviewer and the hand approval that adopts it;
+  // the decision stays unresolved, so applyKycResult never runs. Sample data, no real session.
+  const heldV3 = (session_id: string, status: string, score: number | null, document = "63-123456-A-42") =>
+    JSON.stringify({
+      session_id,
+      status,
+      webhook_type: "status.updated",
+      decision: {
+        status,
+        id_verifications: [{ node_id: "id_verification_1", status, document_number: document }],
+        ...(score === null ? {} : { face_matches: [{ node_id: "face_match_1", status, score, warnings: [] }] }),
+      },
+    });
+
+  describe("a result held for review (D-75 item 2)", () => {
+    it("a Didit approval in the face-match review band stores the document number — still held, never applied", async () => {
+      const { riders, calls, held } = fakeRiders();
+      const res = await ctl(riders, {}).callback(req(heldV3("s_h1", "Approved", 72)));
+      expect(held).toEqual([["s_h1", "63-123456-A-42"]]);
+      expect(calls).toEqual([]);
+      expect(res).toEqual({ ignored: true, status: "pending", verifiedIdStored: true });
+    });
+
+    it("Didit's In Review stores the document number too, whatever its spelling, with or without a score", async () => {
+      for (const [status, score] of [
+        ["In Review", null],
+        ["In Review", 91],
+        ["IN_REVIEW", 75],
+      ] as const) {
+        const { riders, calls, held } = fakeRiders();
+        const res = await ctl(riders, {}).callback(req(heldV3("s_h2", status, score)));
+        expect(held).toEqual([["s_h2", "63-123456-A-42"]]);
+        expect(calls).toEqual([]);
+        expect(res).toEqual({ ignored: true, status: "pending", verifiedIdStored: true });
+      }
+    });
+
+    it("reports nothing stored when no undecided check has the session — still a 200, nothing applied", async () => {
+      // A superseded or already-decided check, or an unknown session: the service matched no row.
+      const { riders, calls, held } = fakeRiders(1, 0);
+      const res = await ctl(riders, {}).callback(req(heldV3("s_h3", "Approved", 72)));
+      expect(held).toEqual([["s_h3", "63-123456-A-42"]]);
+      expect(calls).toEqual([]);
+      expect(res).toEqual({ ignored: true, status: "pending", verifiedIdStored: false });
+    });
+
+    it("a held result with no document number stores nothing (approving it will adopt no number)", async () => {
+      const { riders, calls, held } = fakeRiders();
+      const res = await ctl(riders, {}).callback(req(v3("s_h4", "Approved", 72)));
+      expect(held).toEqual([]);
+      expect(calls).toEqual([]);
+      expect(res).toEqual({ ignored: true, status: "pending" });
+    });
+
+    it("an unfinished session's partial data is not a judged result — its number is never stored", async () => {
+      for (const status of ["Abandoned", "Expired", "In Progress", "Resubmitted", "Not Started"]) {
+        const { riders, calls, held } = fakeRiders();
+        const res = await ctl(riders, {}).callback(req(heldV3("s_h5", status, 97)));
+        expect(held).toEqual([]);
+        expect(calls).toEqual([]);
+        expect(res).toEqual({ ignored: true, status: "pending" });
+      }
+    });
+
+    it("an In Review whose face match is below needsReview is a decline, not a hold — applyKycResult takes it", async () => {
+      const { riders, calls, held, reason } = fakeRiders();
+      await ctl(riders, {}).callback(req(heldV3("s_h6", "In Review", 45)));
+      expect(held).toEqual([]);
+      expect(calls).toEqual([["s_h6", "failed"]]);
+      expect(reason()).toBe("face_mismatch");
+    });
+
+    it("a clean Didit approval is applied, not held — the held path never sees it", async () => {
+      const { riders, calls, held, docNumber } = fakeRiders();
+      await ctl(riders, {}).callback(req(heldV3("s_h7", "Approved", 96)));
+      expect(held).toEqual([]);
+      expect(calls).toEqual([["s_h7", "verified"]]);
+      expect(docNumber()).toBe("63-123456-A-42");
+    });
+
+    it("the signature and replay guards run first: a forged or stale held result stores nothing", async () => {
+      const forged = fakeRiders();
+      const raw = heldV3("s_h8", "Approved", 72);
+      await expect(
+        ctl(forged.riders, { DIDIT_WEBHOOK_SECRET: SECRET }).callback(req(raw, { "x-signature-v2": "deadbeef", "x-timestamp": freshTs() })),
+      ).rejects.toThrow(/invalid webhook signature/i);
+      expect(forged.held).toEqual([]);
+
+      const stale = fakeRiders();
+      const old = String(Math.floor(Date.now() / 1000) - 600);
+      await expect(
+        ctl(stale.riders, { DIDIT_WEBHOOK_SECRET: SECRET }).callback(req(raw, { "x-signature-v2": signV2(raw), "x-timestamp": old })),
+      ).rejects.toThrow(/stale webhook timestamp/i);
+      expect(stale.held).toEqual([]);
+
+      // And a validly signed, fresh one is stored.
+      const signed = fakeRiders();
+      await ctl(signed.riders, { DIDIT_WEBHOOK_SECRET: SECRET }).callback(
+        req(raw, { "x-signature-v2": signV2(raw), "x-timestamp": freshTs() }),
+      );
+      expect(signed.held).toEqual([["s_h8", "63-123456-A-42"]]);
+    });
+
+    it("a failed write is not swallowed — the webhook errors, so Didit retries the delivery", async () => {
+      const { riders } = fakeRiders();
+      (riders as unknown as { recordHeldVerifiedId: unknown }).recordHeldVerifiedId = async () => {
+        throw new Error("db down");
+      };
+      await expect(ctl(riders, {}).callback(req(heldV3("s_h9", "Approved", 72)))).rejects.toThrow(/db down/);
+    });
   });
 });
 
