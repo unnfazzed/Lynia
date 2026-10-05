@@ -1,5 +1,6 @@
 import type { MerchantOrderResponse, MerchantProfileResponse } from "@lynia/shared";
 import { dayKeyFor, DAY_KEYS, type PartialMerchantHours } from "./hours";
+import { countOf, type Vocabulary } from "./vocabulary";
 import { groupQueue, isNoRiderHold, isReadyBucket, needsKitchenConfirm } from "./order-groups";
 
 /**
@@ -213,39 +214,66 @@ export function openStatus(business: Pick<MerchantProfileResponse, "hours" | "cl
 }
 
 export interface LiveBarView {
-  /** The bar's bold line: the one thing that needs the merchant, else what's under way. */
+  /** T1b's four states, highest priority first (D-77 follow-ups): ringing, rider at the counter,
+   *  waiting for the customer, counts only. */
+  kind: "ringing" | "counter" | "waiting" | "counts";
+  /** Line 1: "New order · #A1B2", "Blessing is at your counter", "Waiting for Rudo's OK", "2 cooking · 1 on the way". */
   title: string;
-  /** "2 cooking · 1 on the way", or null when the title already says it. */
+  /** Line 2: "3 dishes · $15.00", "2 cooking · 1 on the way", "2 changes on #A1B2 · keep packing", "Next ready 07:29". */
   sub: string | null;
-  /** The order it opens (a ringing order opens the Orders home, where it rings). */
+  /** A live countdown: after line 2 when ringing ("0:48 to answer"), after line 1 when waiting ("· 2:28"). */
+  deadline: string | null;
+  /** A ringing order opens the Orders home (it rings there); the rest open the board at that order. */
   href: string;
 }
 
 /**
- * T1's dark live bar (Merchant v2, ledger D-77) for the tabs that aren't Orders: shown while any order
- * needs the merchant or is live, e.g. "Blessing is at your counter · 2 cooking · 1 on the way". The
- * API has no "rider arrived" signal yet, so a rider heading to the counter reads "is coming to your
- * counter" (ledgered). `making` is the vocabulary's "Cooking" / "Packing".
+ * T1b's live bar (Merchant v2 follow-ups, ledger D-77) for the tabs that aren't Orders: the single
+ * highest-priority state — a new order ringing, a rider at the counter (only once `riderArrivedAt` is
+ * set), waiting for the customer's OK, or the counts with the next ready time. Hidden with nothing live.
+ * `v` is the vocabulary (its "Cooking" / "Packing" and the dish / item count).
  */
-export function liveBar(orders: readonly MerchantOrderResponse[], making: string): LiveBarView | null {
+export function liveBar(orders: readonly MerchantOrderResponse[], v: Vocabulary): LiveBarView | null {
   const s = homeSections(orders);
+  const making = v.making.toLowerCase();
   const ringing = s.new.find((o) => o.merchantPhase === "awaiting_accept" || needsKitchenConfirm(o));
   const answering = s.new.find((o) => o.merchantPhase === "awaiting_item_approval");
-  const counter = s.ready.find((o) => o.riderId && riderFirstName(o));
+  const counter = s.ready.find((o) => o.riderId && o.riderArrivedAt && riderFirstName(o));
   const onTheWay = s.outForDelivery.filter((o) => o.status !== "delivered" && o.status !== "completed" && o.status !== "undelivered");
   const counts = [
-    s.cooking.length > 0 ? `${s.cooking.length} ${making.toLowerCase()}` : null,
+    s.cooking.length > 0 ? `${s.cooking.length} ${making}` : null,
     s.ready.length > 0 ? `${s.ready.length} ready` : null,
     onTheWay.length > 0 ? `${onTheWay.length} on the way` : null,
   ].filter((c): c is string => c !== null);
-  const sub = counts.length > 0 ? counts.join(" · ") : null;
-  if (ringing) return { title: `New order · ${orderLabel(ringing)}`, sub, href: "/queue" };
-  if (counter) {
-    const where = counter.riderArrivedAt ? "is at" : "is coming to";
-    return { title: `${counter.rider!.firstName} ${where} your counter`, sub, href: `/queue/${counter.id}` };
+  const countLine = counts.length > 0 ? counts.join(" · ") : null;
+  if (ringing) {
+    return {
+      kind: "ringing",
+      title: `New order · ${orderLabel(ringing)}`,
+      sub: `${countOf(ringing.items.length, v)} · ${money(ringing.merchantGoodsTotal)}`,
+      deadline: ringing.acceptDeadlineAt ?? null,
+      href: "/queue",
+    };
   }
-  if (answering) return { title: "Waiting for the customer to answer", sub, href: `/queue/${answering.id}` };
-  if (!sub) return null;
-  const first = s.cooking[0] ?? s.ready[0] ?? onTheWay[0];
-  return { title: sub, sub: null, href: first ? `/queue/${first.id}` : "/queue" };
+  if (counter) {
+    return { kind: "counter", title: `${counter.rider!.firstName} is at your counter`, sub: countLine, deadline: null, href: `/queue#o-${counter.id}` };
+  }
+  if (answering) {
+    const round = answering.substitution?.status === "open" ? answering.substitution : null;
+    const n = round?.lines.length ?? 0;
+    const who = answering.customerFirstName?.trim();
+    return {
+      kind: "waiting",
+      title: who ? `Waiting for ${who}'s OK` : "Waiting for the customer's OK",
+      sub: [n > 0 ? `${n} change${n === 1 ? "" : "s"} on ${orderLabel(answering)}` : orderLabel(answering), `keep ${making}`].join(" · "),
+      deadline: round?.deadlineAt ?? answering.itemApprovalDeadlineAt ?? null,
+      href: `/queue#o-${answering.id}`,
+    };
+  }
+  if (!countLine) return null;
+  const next = s.cooking
+    .map((o) => (o.prepStartedAt && o.prepMinutes != null ? new Date(o.prepStartedAt).getTime() + o.prepMinutes * 60_000 : null))
+    .filter((t): t is number => t !== null)
+    .sort((a, b) => a - b)[0];
+  return { kind: "counts", title: countLine, sub: next !== undefined ? `Next ready ${hm(new Date(next).toISOString())}` : null, deadline: null, href: "/queue" };
 }

@@ -28,7 +28,7 @@ type Confirm = null | "sign-out" | "leave";
  * Preferred riders "4" · Team "1 invite open") — and the red "Sign out" pill behind the confirm sheet.
  *
  * Staff don't see the shop front, Branches or Team (merchant-mobile README C4). A staff member also gets
- * "Leave this business". Help (WhatsApp) stays as the last row (D-77 §4).
+ * "Leave this business". Help & support (WhatsApp) is its own HELP group (D-77 follow-ups).
  */
 export default function AccountPage() {
   const router = useRouter();
@@ -42,7 +42,7 @@ export default function AccountPage() {
   const [error, setError] = useState<string | null>(null);
   const owner = business?.myRole === "owner";
   const shop = business?.businessType === "shop";
-  const help = supportWhatsAppUrl();
+  const help = supportWhatsAppUrl(`Hi LyniaGo, I need help with ${business?.name ?? "my business"}`);
   const branches = useBranches(owner);
 
   useEffect(() => {
@@ -125,8 +125,18 @@ export default function AccountPage() {
           {owner && <Row href="/ordering" icon="inbox" label="Taking orders" value={takingValue} />}
           <Row href="/riders" icon="bike" label="Preferred riders" value={riderCount !== null ? String(riderCount) : undefined} />
           {owner && <Row href="/team" icon="user" label="Team" badge={pendingInvites > 0 ? `${pendingInvites} invite${pendingInvites === 1 ? "" : "s"} open` : undefined} />}
-          {help && <Row href={help} external icon="phone" label="Help" />}
         </div>
+        {/* T3 (D-77 follow-ups): a HELP group — "Help & support · WhatsApp", the text prefilled. */}
+        {help && (
+          <>
+            <h2 className="m-bh" style={{ marginTop: 6 }}>
+              HELP
+            </h2>
+            <div className="m-group">
+              <Row href={help} external icon="circle-help" label="Help & support" value="WhatsApp" />
+            </div>
+          </>
+        )}
         {business?.myRole === "staff" && (
           <button type="button" className="m-lnk m-red" onClick={() => setConfirm("leave")}>
             Leave this business

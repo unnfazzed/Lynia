@@ -19,7 +19,10 @@ export function Board({ sections }: { sections: readonly BoardSection[] }) {
         <section key={s.id} aria-label={s.heading} className="m-board-sec">
           <h2 className="m-bh">{s.heading}</h2>
           {s.cards.map((c) => (
-            <BoardCard key={c.key} card={c} now={now} />
+            // T1b: the live bar opens the board at this order (`/queue#o-<id>`).
+            <div key={c.key} id={`o-${c.key}`} className="m-banchor">
+              <BoardCard card={c} now={now} />
+            </div>
           ))}
         </section>
       ))}
