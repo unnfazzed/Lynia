@@ -322,7 +322,7 @@ function OnTheWay({ booking, business, busy, disabled, error, code, onNewCode, o
       <div className="m-k5">
         <div>
           <b>{title}</b>
-          <span>{[rider ? name : null, !delivered && booking.riderEtaAt ? `arrives ${hm(booking.riderEtaAt)}` : null, booking.itemsSummary].filter(Boolean).join(" · ")}</span>
+          <span>{[rider ? name : null, delivered || !rider || (booking.riderArrivedAt && booking.state !== "picked_up") ? null : booking.riderEtaAt ? `arrives ${hm(booking.riderEtaAt)}` : "on the way", booking.itemsSummary].filter(Boolean).join(" · ")}</span>
         </div>
         <ProgressSteps step={delivered ? 5 : booking.state === "picked_up" ? 4 : 3} />
         {rider && (

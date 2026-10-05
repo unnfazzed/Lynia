@@ -447,10 +447,16 @@ target, an `index.json` that matches the directory, and no expectation outliving
 > | ✅ | K3 cooking, K4 / S3 hand over, K5 on the way + cash back | `docs/parity/MERCHANT-V2-TICKET-2026-10-04.png` |
 > | ✅ | S4 Book a rider, P1 prescription check | `docs/parity/MERCHANT-V2-BOOK-RX-2026-10-04.png` |
 > | ✅ | T1 Menu, T2 Money, T3 Account | `docs/parity/MERCHANT-V2-MONEY-ACCOUNT-2026-10-04.png` |
+> | ✅ | Follow-ups 2026-10-05: 44px tap targets | `docs/parity/MERCHANT-V2-FOLLOWUPS-TAP-2026-10-05.png` |
+> | ✅ | Follow-ups: K2a / S2a / K3a / K3b reason sheets | `docs/parity/MERCHANT-V2-FOLLOWUPS-SHEETS-2026-10-05.png` |
+> | ✅ | Follow-ups: K1b cash + scheduled, K1c empty | `docs/parity/MERCHANT-V2-FOLLOWUPS-BOARD-2026-10-05.png` |
+> | ✅ | Follow-ups: K5b delivered, K5c goods back | `docs/parity/MERCHANT-V2-FOLLOWUPS-K5-2026-10-05.png` |
+> | ✅ | Follow-ups: T1 add pill, T1b live bar, T3 Help | `docs/parity/MERCHANT-V2-FOLLOWUPS-TABS-2026-10-05.png` |
+> | ✅ | Follow-ups: T2 rows, T2b this week | `docs/parity/MERCHANT-V2-FOLLOWUPS-MONEY-2026-10-05.png` |
+> | ✅ | Follow-ups: A1 / A2 arrival states | `docs/parity/MERCHANT-V2-FOLLOWUPS-ARRIVAL-2026-10-05.png` |
 >
 > The gallery `RM` rows below are superseded by D-77 wherever v2 redraws the screen; sign-in, onboarding
-> and the settings sub-screens keep D-48's flow, restyled. Open differences (no arrival signal yet, undrawn
-> sheets, below-floor drawn targets) are the D-77 §4 rows.
+> and the settings sub-screens keep D-48's flow, restyled. Open differences are the D-77 rows.
 
 > **D-74 (2026-10-03): merchant leftovers aligned.** Section labels (B1 / D1 / C3) and D1's booked-rider
 > trackers draw as the handoff again (a `.m-sec` / `.m-trk` class clash from #1031). Deleting a dish or a

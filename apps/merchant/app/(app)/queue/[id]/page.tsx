@@ -554,7 +554,8 @@ function Cooking(ctx: Ctx) {
         ? `${rider} is at your counter`
         : order.riderEtaAt
           ? `${rider} arrives ${hm(order.riderEtaAt)}`
-          : `${rider} is booked to collect it`
+          : // A2: no estimate — drop the time, keep the sentence whole (muted).
+            `${rider} is on the way to you`
       : order.dispatchAttempt > 0
         ? "Finding a rider"
         : "We book the rider to arrive as it’s ready";
@@ -568,7 +569,7 @@ function Cooking(ctx: Ctx) {
             <b className="m-num">{formatCountdown(leftMs)}</b>
             <span className="m-num">left · ready {readyBy}</span>
           </div>
-          <p>
+          <p data-quiet={(order.riderId && rider && !order.riderArrivedAt && !order.riderEtaAt) || undefined}>
             <Icon name="bike" size={16} />
             {riderLine}
           </p>
@@ -758,7 +759,8 @@ function OnTheWay({ order, act, disabled, error, setConfirm, business, v }: Ctx)
   // delivered" · "Customer didn't answer · 07:44".
   const label = orderLabel(order);
   const title = delivered ? `${label} delivered` : failed ? `${label} couldn't be delivered` : OF.trackT(label);
-  const eta = !delivered && !failed && order.riderEtaAt ? `arrives ${hm(order.riderEtaAt)}` : null;
+  // A2: "arrives 07:38", or "on the way" with no estimate — never "arrives —".
+  const eta = delivered || failed ? null : order.riderEtaAt ? `arrives ${hm(order.riderEtaAt)}` : "on the way";
   const failedAt = order.doorProof?.takenAt ?? null;
   const sub = failed
     ? [failReason(order), failedAt ? hm(failedAt) : null].filter(Boolean).join(" · ")

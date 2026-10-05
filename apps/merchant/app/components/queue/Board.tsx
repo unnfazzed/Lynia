@@ -90,14 +90,15 @@ function BoardCard({ card, now }: { card: Card; now: number }) {
   if (card.counter) {
     return (
       <Link href={card.href} className={`${cls} m-row`}>
-        <i className="m-disc">
+        <i className={card.arrived ? "m-disc" : "m-disc m-disc-quiet"}>
           <Icon name="bike" size={20} />
         </i>
         <div className="m-bt">
           <b>{card.title}</b>
           <Sub card={card} now={now} />
         </div>
-        <span className="m-pillbtn">Hand over</span>
+        {/* A1: no button until the rider is here. */}
+        {card.arrived && <span className="m-pillbtn">Hand over</span>}
       </Link>
     );
   }

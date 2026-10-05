@@ -58,7 +58,8 @@ describe("the Orders board (Merchant v2 K1/S1, D-77)", () => {
       ],
     });
     expect(sections.map((s) => s.heading)).toEqual(["NEEDS YOU", "COOKING · 2", "ON THE WAY · 1", "CASH TO COME BACK · 1"]);
-    expect(sections[0]!.cards[0]).toMatchObject({ counter: true, title: `${RIDER.firstName} M. is coming to your counter` });
+    // A2: no estimate yet — no time, never "Arrives —".
+    expect(sections[0]!.cards[0]).toMatchObject({ counter: true, arrived: false, urgent: false, title: `${RIDER.firstName} M. is coming to your counter`, sub: "#A444 · $9.00" });
     const [first, second] = sections[1]!.cards;
     expect(first).toMatchObject({ title: "#A222 · 2× Sadza & beef stew", right: "8 min", sub: "Ready 07:28 · rider booked" });
     expect(second).toMatchObject({ right: "13 min", sub: "Ready 07:33" });
@@ -86,8 +87,16 @@ describe("the Orders board (Merchant v2 K1/S1, D-77)", () => {
         }),
       ],
     });
-    expect(sections[0]!.cards[0]).toMatchObject({ counter: true, title: `${RIDER.firstName} M. is at your counter` });
+    expect(sections[0]!.cards[0]).toMatchObject({ counter: true, arrived: true, urgent: true, title: `${RIDER.firstName} M. is at your counter`, sub: "Since 07:19 · #A444 · $9.00" });
     expect(sections[1]!.cards[0]).toMatchObject({ sub: "Arrives 07:38 · then brings you $12.00" });
+  });
+
+  it("A1: before arrival the counter card says when the rider arrives; once here it moves to the top of NEEDS YOU", () => {
+    const coming = merchantOrder({ id: "a4440000-0000-4000-8000-000000000000", merchantPhase: null, status: "assigned", riderId: RIDER.profileId, rider: RIDER, riderEtaAt: at(11) });
+    const here = merchantOrder({ id: "a5550000-0000-4000-8000-000000000000", merchantPhase: null, status: "assigned", riderId: RIDER.profileId, rider: RIDER, riderArrivedAt: at(-1) });
+    const [needs] = buildBoard({ v: kitchen, shop: false, now: NOW, orders: [coming, here] });
+    expect(needs!.cards.map((c) => c.key)).toEqual([here.id, coming.id]);
+    expect(needs!.cards[1]).toMatchObject({ arrived: false, sub: "Arrives 07:31 · #A444 · $9.00" });
   });
 
   it("a shop's board says PACKING, tags its app orders and lists its own bookings as BOOKED", () => {
