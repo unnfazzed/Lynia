@@ -2090,6 +2090,11 @@ export const MerchantEndOfDaySummaryResponse = z
           outcome: z.enum(["delivered", "not_delivered", "rejected", "cancelled", "in_progress"]),
           /** Merchant v2 T2 (D-77), delivered orders: the cash is back in, on its way, late, or none comes back. */
           cash: z.enum(["in", "due", "late", "none"]).optional(),
+          /** Merchant v2 follow-ups T2 (D-77): when cash still owed is due back ("back by 13:05"). */
+          dueAt: z.string().optional(),
+          /** Merchant v2 follow-ups T2 (D-77), rejected rows: why ("You couldn't take it · Too busy"), or
+           *  `shop_closed` / `kitchen_unconfirmed` for one nobody answered ("Missed · no answer in time"). */
+          reason: MerchantRejectionReasonCode.optional(),
           amount: z.number(),
         }),
       )
@@ -2097,6 +2102,32 @@ export const MerchantEndOfDaySummaryResponse = z
   })
   .strict();
 export type MerchantEndOfDaySummaryResponse = z.infer<typeof MerchantEndOfDaySummaryResponse>;
+
+/** `GET /merchant/summary/week` — Merchant v2 follow-ups T2b (D-77): this locale week (Monday to today,
+ *  server-local days, the same boundary as the Today summary), one row per day so far, oldest first. */
+export const MerchantWeekSummaryResponse = z
+  .object({
+    /** Monday 00:00 of this week. */
+    start: z.string(),
+    orders: z.number().int(),
+    sales: z.number(),
+    days: z.array(
+      z.object({
+        /** The day, `YYYY-MM-DD` (server-local) — what `GET /merchant/summary/today?date=` takes. */
+        date: z.string(),
+        orders: z.number().int(),
+        sales: z.number(),
+        /** Cash riders owe back from that day's orders and are past their due time. */
+        cashLate: z.number(),
+        /** Cash still on its way back, not yet late. */
+        cashDue: z.number(),
+        /** Orders the business never took (turned down or missed). */
+        rejected: z.number().int(),
+      }),
+    ),
+  })
+  .strict();
+export type MerchantWeekSummaryResponse = z.infer<typeof MerchantWeekSummaryResponse>;
 
 /* ── Merchant web upgrade L2: Book a rider (docs/plans/2026-09-29-merchant-web-upgrade-plan.md D9) ──
  * A business books a Send delivery from its own pin. The order's customer of record is the business's

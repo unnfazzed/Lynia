@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import type { MerchantEndOfDaySummaryResponse, MerchantWeeklyStatementResponse } from "@lynia/shared";
+import type { MerchantEndOfDaySummaryResponse, MerchantRejectionReasonCode, MerchantWeekSummaryResponse } from "@lynia/shared";
 import { Icon } from "../../components/icons";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
@@ -10,33 +10,86 @@ import { OwnerOnlyNotice } from "../../components/OwnerOnlyNotice";
 import { RetryableError } from "../../components/RetryableError";
 import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
 import { loadBusiness } from "../../lib/business";
-import { getTodaySummary, getWeeklyStatement } from "../../lib/orders-api";
+import { getTodaySummary, getWeekSummary } from "../../lib/orders-api";
 import { money, orderLabel } from "../../lib/orders-view";
 
 type LoadState =
   | { status: "loading" }
-  | { status: "ready"; today: MerchantEndOfDaySummaryResponse; week: MerchantWeeklyStatementResponse }
+  | { status: "ready"; today: MerchantEndOfDaySummaryResponse; week: MerchantWeekSummaryResponse }
   // L4: a Staff member who reached the owner's money by an old link.
   | { status: "staff" }
   | { status: "error"; message: string };
 
-type Period = "today" | "week";
+/** Today, this week, or (T2b) one earlier day of the week opened in the Today layout. */
+type Period = "today" | "week" | { date: string; summary: MerchantEndOfDaySummaryResponse | null };
 
 type Line = NonNullable<MerchantEndOfDaySummaryResponse["lines"]>[number];
+type Tone = "credit" | "late" | "muted" | "plain";
 
-/** T2's ledger row for one of today's orders: what happened, its figure, and how it reads. */
-function todayRow(l: Line): { sub: string; amount: string; tone: "credit" | "late" | "muted" | "plain" } {
+/** T2's "You couldn't take it · Too busy": the reason the merchant picked, as the ledger reads it. */
+const REJECTED_REASON: Partial<Record<MerchantRejectionReasonCode, string>> = {
+  out_of_ingredient: "Out of an ingredient",
+  out_of_stock: "Out of stock",
+  too_busy: "Too busy",
+  closing_soon: "Closing soon",
+};
+
+/** T2's ledger row for one of the day's orders: what happened, its figure, and how it reads. */
+export function dayRow(l: Line): { sub: string; amount: string; tone: Tone } {
   if (l.outcome === "delivered") {
     if (l.cash === "in") return { sub: "Delivered · cash back in", amount: `+${money(l.amount)}`, tone: "credit" };
     if (l.cash === "late") return { sub: "Delivered · cash late", amount: money(l.amount), tone: "late" };
-    if (l.cash === "due") return { sub: "Delivered · cash on its way back", amount: money(l.amount), tone: "plain" };
+    if (l.cash === "due") return { sub: ["Delivered · cash on its way", l.dueAt && `back by ${hm(l.dueAt)}`].filter(Boolean).join(" · "), amount: money(l.amount), tone: "plain" };
     return { sub: "Delivered", amount: `+${money(l.amount)}`, tone: "credit" };
   }
   if (l.outcome === "in_progress") return { sub: "In progress", amount: money(l.amount), tone: "plain" };
-  // An order that earned nothing reads as what happened, never "$0.00" (BRIEF §9).
-  if (l.outcome === "rejected") return { sub: "You couldn’t take it", amount: "—", tone: "muted" };
-  if (l.outcome === "cancelled") return { sub: "Cancelled", amount: "—", tone: "muted" };
-  return { sub: "Not delivered", amount: "—", tone: "muted" };
+  // An order that earned nothing reads as what happened and "No sale", never "$0.00" (BRIEF §9, T2).
+  if (l.outcome === "rejected") {
+    // Nobody answered before the ring ran out (the accept sweep's `shop_closed`, or an unconfirmed kitchen).
+    if (l.reason === "shop_closed" || l.reason === "kitchen_unconfirmed") return { sub: "Missed · no answer in time", amount: "No sale", tone: "muted" };
+    const why = l.reason ? REJECTED_REASON[l.reason] : undefined;
+    return { sub: why ? `You couldn't take it · ${why}` : "You couldn't take it", amount: "No sale", tone: "muted" };
+  }
+  if (l.outcome === "cancelled") return { sub: "Cancelled", amount: "No sale", tone: "muted" };
+  return { sub: "Not delivered", amount: "No sale", tone: "muted" };
+}
+
+type Day = MerchantWeekSummaryResponse["days"][number];
+
+/** T2b's day sub-line: late cash first (gold), then orders not taken, then whether the cash is all in. */
+export function daySub(d: Day): { text: string; late: boolean } {
+  const n = `${d.orders} ${d.orders === 1 ? "order" : "orders"}`;
+  if (d.cashLate > 0) return { text: `${n} · ${money(d.cashLate)} cash late`, late: true };
+  if (d.rejected > 0) return { text: `${n} · ${d.rejected} you couldn't take`, late: false };
+  if (d.cashDue > 0) return { text: `${n} · cash on its way`, late: false };
+  return { text: d.orders > 0 ? `${n} · all cash in` : n, late: false };
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function localDay(key: string): Date {
+  const [y = 0, m = 1, d = 1] = key.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function dayKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** "Sat 3 Oct". */
+function dayTitle(key: string): string {
+  const d = localDay(key);
+  return `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
+}
+
+/** "28 SEP–4 OCT": Monday to Sunday of the week (T2b's header). */
+export function weekRange(startIso: string): string {
+  const a = new Date(startIso);
+  const b = new Date(a);
+  b.setDate(b.getDate() + 6);
+  const left = a.getMonth() === b.getMonth() ? `${a.getDate()}` : `${a.getDate()} ${MONTHS[a.getMonth()]}`;
+  return `${left}–${b.getDate()} ${MONTHS[b.getMonth()]}`.toUpperCase();
 }
 
 function hm(iso: string): string {
@@ -44,16 +97,14 @@ function hm(iso: string): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-function dayHm(iso: string): string {
-  return `${new Date(iso).toLocaleDateString(undefined, { weekday: "short" })} ${hm(iso)}`;
-}
-
 /**
  * T2 · Money (Merchant v2, packages/design/handoff/merchant-v2, ledger D-77) over D-48's C3. The mint top
  * card: "Money", Today / This week (the chosen side filled), "SALES · 7 ORDERS" and the total. Then a gold
  * card per order whose cash is late ("$9.50 cash is late · #A098 · Tino · was due 11:40") with a Call
- * button for the rider, and the ledger: cash back in is green "+$12.00", late cash a gold sub-line, and an
- * order the merchant couldn't take reads "—", never "$0.00". Owner-only, like the tab.
+ * button for the rider, and the ledger: cash back in is green "+$12.00", cash on its way "$8.00" with when it's
+ * back, late cash a gold sub-line, and an order the merchant couldn't take (or missed) "No sale", never
+ * "$0.00". This week (T2b, follow-ups 2026-10-05) is the week's bars and one row per day, newest first; a day
+ * opens in the Today layout. Owner-only, like the tab.
  */
 export default function MoneyPage() {
   const { signOut } = useKitchenConnection();
@@ -65,7 +116,7 @@ export default function MoneyPage() {
     setState({ status: "loading" });
     const load = async (): Promise<LoadState> => {
       if ((await loadBusiness())?.myRole === "staff") return { status: "staff" };
-      const [today, week] = await Promise.all([getTodaySummary(), getWeeklyStatement()]);
+      const [today, week] = await Promise.all([getTodaySummary(), getWeekSummary()]);
       return { status: "ready", today, week };
     };
     load()
@@ -84,19 +135,26 @@ export default function MoneyPage() {
   useEffect(() => refresh(), [refresh]);
 
   const ready = state.status === "ready" ? state : null;
-  const count = ready ? (period === "today" ? (ready.today.orders ?? ready.today.delivered) : ready.week.ordersDelivered) : 0;
-  const total = ready ? (period === "today" ? (ready.today.sales ?? 0) : ready.week.foodSalesTotal) : 0;
-  const lines: { id: string; title: string; sub: string; amount: string; tone: "credit" | "late" | "muted" | "plain" }[] = !ready
-    ? []
-    : period === "today"
-      ? (ready.today.lines ?? []).map((l) => ({ id: l.orderId, title: `${orderLabel({ id: l.orderId })} · ${hm(l.at)}`, ...todayRow(l) }))
-      : ready.week.lineItems.map((li) => ({
-          id: li.orderId,
-          title: `${orderLabel({ id: li.orderId })} · ${dayHm(li.deliveredAt)}`,
-          sub: "Delivered",
-          amount: `+${money(li.amount)}`,
-          tone: "credit" as const,
-        }));
+  const todayKey = dayKey(new Date());
+  const openDay = (date: string) => {
+    if (date === todayKey) return setPeriod("today");
+    setPeriod({ date, summary: null });
+    getTodaySummary(date)
+      .then((summary) => setPeriod((p) => (typeof p === "object" && p.date === date ? { date, summary } : p)))
+      .catch((err: unknown) => {
+        if (redirectIfSessionExpired(err, signOut)) return;
+        setPeriod("week");
+      });
+  };
+
+  // The day on screen in the Today layout: today, or the week's day that was tapped.
+  const day = !ready ? null : period === "today" ? ready.today : period === "week" ? null : period.summary;
+  const count = ready ? (period === "week" ? ready.week.orders : (day?.orders ?? day?.delivered ?? 0)) : 0;
+  const total = ready ? (period === "week" ? ready.week.sales : (day?.sales ?? 0)) : 0;
+  const lines = (day?.lines ?? []).map((l) => ({ id: l.orderId, title: `${orderLabel({ id: l.orderId })} · ${hm(l.at)}`, ...dayRow(l) }));
+  const tab = period === "today" ? "today" : "week";
+  const maxSales = ready ? Math.max(0, ...ready.week.days.map((d) => d.sales)) : 0;
+  const weekStart = ready ? new Date(ready.week.start) : null;
 
   return (
     <Kitchen active="money">
@@ -105,16 +163,17 @@ export default function MoneyPage() {
         {state.status !== "staff" && (
           <div className="m-period" role="tablist" aria-label="Period">
             {(["today", "week"] as const).map((p) => (
-              <button key={p} type="button" role="tab" aria-selected={period === p} onClick={() => setPeriod(p)}>
+              <button key={p} type="button" role="tab" aria-selected={tab === p} onClick={() => setPeriod(p)}>
                 {p === "today" ? "Today" : "This week"}
               </button>
             ))}
           </div>
         )}
-        {ready && (
+        {ready && (period !== "today" && period !== "week" ? period.summary : true) && (
           <div className="m-salesbig">
             <span>
               SALES · {count} {count === 1 ? "ORDER" : "ORDERS"}
+              {period === "week" && ` · ${weekRange(ready.week.start)}`}
             </span>
             <b className="m-num">{money(total)}</b>
           </div>
@@ -122,11 +181,12 @@ export default function MoneyPage() {
       </div>
 
       <div className="m-bd" style={{ paddingTop: 16 }}>
-        {state.status === "loading" && <div className="m-hint">Loading…</div>}
+        {(state.status === "loading" || (typeof period === "object" && !period.summary)) && <div className="m-hint">Loading…</div>}
         {state.status === "error" && <RetryableError message={state.message} onRetry={refresh} />}
         {state.status === "staff" && <OwnerOnlyNotice>Only the owner sees the money.</OwnerOnlyNotice>}
 
         {ready &&
+          period === "today" &&
           (ready.today.overdue ?? []).map((o) => (
             <div key={o.orderId} className="m-latecash">
               <Link href={o.kind === "booking" ? `/deliveries/${o.orderId}` : `/queue/${o.orderId}`}>
@@ -145,13 +205,52 @@ export default function MoneyPage() {
             </div>
           ))}
 
-        {ready && (
+        {ready && period === "week" && weekStart && (
           <>
-            <h2 className="m-bh">{period === "today" ? "TODAY" : "THIS WEEK"}</h2>
+            <div className="m-weekbars" aria-hidden>
+              {Array.from({ length: 7 }, (_, i) => {
+                const d = new Date(weekStart);
+                d.setDate(d.getDate() + i);
+                const row = ready.week.days.find((x) => x.date === dayKey(d));
+                const h = row && maxSales > 0 ? Math.round((row.sales / maxSales) * 56) : 0;
+                return (
+                  <div key={i} data-today={dayKey(d) === todayKey || undefined}>
+                    <span style={{ height: h }} />
+                    <i>{"MTWTFSS"[i]}</i>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="m-weekdays">
+              {[...ready.week.days].reverse().map((d) => {
+                const sub = daySub(d);
+                return (
+                  <button key={d.date} type="button" className="m-dayrow" onClick={() => openDay(d.date)}>
+                    <div>
+                      <b>
+                        {dayTitle(d.date)}
+                        {d.date === todayKey && " · today"}
+                      </b>
+                      <span className="m-num" data-late={sub.late || undefined}>
+                        {sub.text}
+                      </span>
+                    </div>
+                    <b className="m-num">{money(d.sales)}</b>
+                    <Icon name="chevron-right" size={20} color="var(--muted)" />
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {ready && day && (
+          <>
+            <h2 className="m-bh">{typeof period === "object" ? dayTitle(period.date).toUpperCase() : "TODAY"}</h2>
             <div className="m-ledger">
-              {lines.length === 0 && <div className="m-hint">{period === "today" ? "No orders yet today" : "No delivered orders this week"}</div>}
+              {lines.length === 0 && <div className="m-hint">{period === "today" ? "No orders yet today" : "No orders that day"}</div>}
               {lines.map((l) => (
-                <Link key={l.id} href={`/queue/${l.id}`} data-tone={l.tone}>
+                <Link key={l.id} href={`/queue/${l.id}`} className="m-lrow" data-tone={l.tone}>
                   <div>
                     <b className="m-num">{l.title}</b>
                     <span>{l.sub}</span>

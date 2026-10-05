@@ -115,6 +115,7 @@ function apiRoute(route, scenario) {
   if (path === "/merchant/invites") return json(200, { invites: [] });
   if (path === "/merchant/branches") return json(200, scenario.branches ?? { branches: [] });
   if (path === "/merchant/statement/weekly") return json(200, scenario.weekly ?? WEEKLY);
+  if (path === "/merchant/summary/week") return json(200, scenario.week ?? WEEK);
   if (path === "/merchant/team") return json(200, scenario.team ?? TEAM);
   if (path === "/merchant/riders") return json(200, scenario.riders ?? RIDERS);
   return json(200, []);
@@ -125,6 +126,8 @@ async function shootApp(browser, { name, path, scenario = {}, before }) {
   await ctx.addCookies([{ name: "lynia_merchant_session", value: encodeURIComponent(JSON.stringify(SESSION)), url: ORIGIN }]);
   await ctx.route("**/__api/**", (route) => apiRoute(route, scenario));
   await ctx.route("**/socket.io/**", (route) => route.abort());
+  // A screen whose layout depends on the day (T2b's week) renders on a fixed clock.
+  if (scenario.clock) await ctx.clock.setFixedTime(scenario.clock);
   const page = await ctx.newPage();
   try {
     await page.goto(ORIGIN + path, { waitUntil: "networkidle", timeout: 90000 });
@@ -239,6 +242,30 @@ const MONEY = {
   ],
 };
 const WEEKLY = { rangeStart: ago(7 * 1440), rangeEnd: ago(0), ordersDelivered: 41, foodSalesTotal: 412.5, commissionRatePct: 0, commissionCharged: 0, illustrativeRatePct: 10, illustrativeCommission: 41.25, cookedFoodLossTotal: 0, lineItems: [] };
+// T2 (follow-ups): cash on its way with when it's back, and a rejected row's reason.
+const MONEY2 = {
+  ...MONEY,
+  lines: [
+    { orderId: "a1200000-0000-4000-8000-000000000000", at: ago(10), outcome: "delivered", cash: "due", dueAt: ahead(7), amount: 8 },
+    { orderId: "a1110000-0000-4000-8000-000000000000", at: ago(27), outcome: "delivered", cash: "in", amount: 12 },
+    { orderId: "a0980000-0000-4000-8000-000000000000", at: ago(66), outcome: "delivered", cash: "late", amount: 9.5 },
+    { orderId: "a0950000-0000-4000-8000-000000000000", at: ago(88), outcome: "delivered", cash: "in", amount: 14 },
+    { orderId: "a0900000-0000-4000-8000-000000000000", at: ago(108), outcome: "rejected", reason: "too_busy", amount: 0 },
+  ],
+};
+// T2b: the drawn week (Mon 28 Sep to Sun 4 Oct), rendered on Sunday's clock.
+const WEEK_CLOCK = new Date(2026, 9, 4, 13, 0);
+const WEEK = (() => {
+  const day = (n) => { const d = new Date(WEEK_CLOCK); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - n); return d; };
+  const key = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const since = (day(0).getDay() + 6) % 7;
+  const sample = [[59.5, 7, 9.5, 0], [72, 9, 0, 0], [64.5, 8, 0, 0], [48, 6, 0, 1], [51, 4, 0, 0], [45, 4, 0, 0], [46, 3, 0, 0]];
+  const days = Array.from({ length: since + 1 }, (_, i) => {
+    const [sales, orders, cashLate, rejected] = sample[since - i];
+    return { date: key(day(since - i)), orders, sales, cashLate, cashDue: 0, rejected };
+  });
+  return { start: day(since).toISOString(), orders: days.reduce((n, d) => n + d.orders, 0), sales: days.reduce((n, d) => n + d.sales, 0), days };
+})();
 const TEAM = {
   members: [{ profileId: "p-parity", name: "Farai", phoneMasked: "+263•••••4567", role: "owner", you: true, joinedAt: ago(90 * 1440) }],
   invites: [{ id: oid(20), name: "Rudo", phoneMasked: "+263•••••1111", invitePhone: "263771111111", createdAt: ago(60), expiresAt: ahead(13 * 1440) }],
@@ -276,6 +303,10 @@ const k5b = order("a1150000-0000-4000-8000-000000000000", { merchantPhase: null,
 const k5c = order("a1170000-0000-4000-8000-000000000000", { merchantPhase: null, status: "undelivered", riderId: RIDER.profileId, rider: RIDER, items: [line("Mazondo", 5, 2)], merchantGoodsTotal: 10, debtStatus: "open", debtAmount: 10, cashDueAt: ahead(14), doorProof: { photoUrl: null, takenAt: ago(1), reason: "customer_unreachable", handedTo: null } });
 const arrivedK4 = { ...BOARD[0], riderArrivedAt: ago(1) };
 const SETS = {
+  moneyx: [
+    { mock: "T2 Money", label: "T2 · Money (cash on its way, No sale)", app: { name: "T2", path: "/statement", scenario: { me: KITCHEN, orders: [], summary: MONEY2 } } },
+    { mock: "T2b Money this week", label: "T2b · Money, this week", sub: "the lane's week runs Monday to the day it renders", app: { name: "T2b", path: "/statement", scenario: { me: KITCHEN, orders: [], summary: MONEY2, clock: WEEK_CLOCK }, before: async (p) => { await p.getByRole("tab", { name: "This week" }).click(); await p.locator(".m-dayrow").first().waitFor(); } } },
+  ],
   tabsa: [
     { mock: "T1 Menu", label: "T1 · Menu (header pill) + T1b counter state", app: { name: "T1", path: "/menu", scenario: { me: KITCHEN, orders: [arrivedK4, ...BOARD.slice(1)], menu: MENU } } },
     { mock: "T3 Account", label: "T3 · Account with HELP", sub: "the support number comes from config", app: { name: "T3", path: "/account", scenario: { me: KITCHEN, orders: [], branches: BRANCHES } } },
