@@ -121,7 +121,8 @@ describe("loading the Orders home", () => {
     render(<Page />);
     expect(await screen.findByText("Avondale Fresh")).toBeTruthy();
     expect(replace).not.toHaveBeenCalledWith("/deliveries");
-    expect(screen.getByRole("link", { name: /Book a rider/ }).getAttribute("href")).toBe("/deliveries/new");
+    // The top card's Book a rider, and K1c's (an open shop with nothing on).
+    expect(screen.getAllByRole("link", { name: /Book a rider/ }).map((l) => l.getAttribute("href"))).toEqual(["/deliveries/new", "/deliveries/new"]);
   });
 });
 
@@ -136,7 +137,7 @@ describe("a failed queue poll is never a lasting red line (Order flow v2's rule,
     fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
     expect(poll.refetch).toHaveBeenCalledTimes(1);
     expect(screen.getByText("Check your data connection and try again.")).toBeTruthy();
-    expect(screen.queryByText("No orders yet")).toBeNull();
+    expect(screen.queryByText("All quiet for now")).toBeNull();
     expect(container.querySelector(".m-err")).toBeNull();
   });
 
@@ -195,10 +196,12 @@ describe("B1 · Orders home (merchant mobile, D-48)", () => {
     expect(getTodaySummary).not.toHaveBeenCalled();
   });
 
-  it("with nothing on, says so", async () => {
+  it("K1c: open and quiet says so, and a kitchen checks its menu (D-77 follow-ups)", async () => {
     vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
     render(<Page />);
-    expect(await screen.findByText("No orders yet")).toBeTruthy();
+    expect(await screen.findByText("All quiet for now")).toBeTruthy();
+    expect(screen.getByText("You're open. New orders ring here with sound, so keep the volume up.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Check your menu" }).getAttribute("href")).toBe("/menu");
   });
 
   it("draws one board sorted by urgency (Merchant v2 K1, D-77): needs you, cooking, on the way", async () => {
@@ -359,8 +362,9 @@ describe("M7a · scheduled orders (Order flow v2, D-59)", () => {
     poll.orders = [merchantOrder({ id: "a2220000-0000-4000-8000-000000000000", merchantPhase: "preparing", prepMinutes: 15, prepStartedAt: new Date().toISOString() })];
     render(<Page />);
     expect(await screen.findByText("SCHEDULED · 1")).toBeTruthy();
-    expect(screen.getByText("Tomorrow 12:30–13:00")).toBeTruthy();
-    expect(screen.getByText("1 dish · Rings at 12:05 like a new order")).toBeTruthy();
+    // K1b: "Tue 12:30 · #A1B2" (beyond today, the day), then "1 dish · $15.00 · rings at 12:05".
+    expect(screen.getByText(new RegExp(`^${at.toLocaleDateString("en-GB", { weekday: "short" })} 12:30 · #A1B2$`))).toBeTruthy();
+    expect(screen.getByText("1 dish · $15.00 · rings at 12:05")).toBeTruthy();
     expect(screen.getByRole("link", { name: /#A1B2/ }).getAttribute("href")).toBe("/queue/a1b20000-0000-4000-8000-000000000000");
   });
 });

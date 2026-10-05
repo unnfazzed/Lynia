@@ -22,6 +22,7 @@ import {
   getOrder,
   markReady,
   revealPickupCode,
+  reportNonReturn,
 } from "../../../lib/orders-api";
 import { merchantOrder, merchantProfile, RIDER } from "../../../testing/fixtures";
 
@@ -219,7 +220,7 @@ describe("K5 · on the way + cash back, one screen (Merchant v2, D-77)", () => {
 
   it("delivered: Step 5 of 5, when the cash is due; 'I got $12.00' counts it", async () => {
     show(delivered());
-    expect(await screen.findByText(/^Delivered \d\d:\d\d$/)).toBeTruthy();
+    expect(await screen.findByText("#A111 delivered")).toBeTruthy();
     expect(screen.getByLabelText("5 of 5 steps")).toBeTruthy();
     expect(screen.getByText(/^Blessing brings it back by \d\d:\d\d$/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "I got $12.00" }));
@@ -237,11 +238,29 @@ describe("K5 · on the way + cash back, one screen (Merchant v2, D-77)", () => {
 
   it("not delivered: the goods come back on the same screen; 'I got the food back' closes it", async () => {
     show(merchantOrder({ id: ID, ...CASH, merchantPhase: null, status: "undelivered", riderId: RIDER.profileId, rider: RIDER, debtStatus: "open", debtAmount: 12 }));
-    expect(await screen.findByText("Not delivered")).toBeTruthy();
+    // K5c (D-77 follow-ups).
+    expect(await screen.findByText("#A111 couldn't be delivered")).toBeTruthy();
+    expect(screen.getByLabelText("Step 4 of 5 failed")).toBeTruthy();
     expect(screen.getByText("GOODS BACK TO YOU")).toBeTruthy();
-    expect(screen.getByText("Blessing M. is bringing the order back")).toBeTruthy();
+    expect(screen.getByText("Blessing M. is bringing it back")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "I got the food back" }));
     await vi.waitFor(() => expect(confirmGoodsReturned).toHaveBeenCalledWith(ID));
+  });
+
+  it("K5c: 'It wasn't returned' reports it to LyniaGo behind one confirm", async () => {
+    show(merchantOrder({ id: ID, ...CASH, merchantPhase: null, status: "undelivered", riderId: RIDER.profileId, rider: RIDER, debtStatus: "open", debtAmount: 12 }));
+    fireEvent.click(await screen.findByRole("button", { name: "It wasn't returned" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Food not returned?" })).getByRole("button", { name: "Report to LyniaGo" }));
+    await vi.waitFor(() => expect(reportNonReturn).toHaveBeenCalledWith(ID));
+    expect(await screen.findByText("We've told LyniaGo. We'll WhatsApp you.")).toBeTruthy();
+  });
+
+  it("K5b: delivered with nothing to bring back — no cash card and no CTA", async () => {
+    show(merchantOrder({ id: ID, merchantPhase: null, status: "delivered", paymentMethod: "wallet", merchantGoodsTotal: 14, riderId: RIDER.profileId, rider: RIDER, deliveredAt: new Date().toISOString() }));
+    expect(await screen.findByText("Paid by wallet · $14.00")).toBeTruthy();
+    expect(screen.getByText("Nothing to bring back. It's in your Money tab.")).toBeTruthy();
+    expect(screen.queryByText("CASH BACK TO YOU")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^I got/ })).toBeNull();
   });
 });
 

@@ -138,7 +138,7 @@ export function OrdersHeader({
             <span>Sales</span>
             <b>{summary?.sales !== undefined && summary ? money(summary.sales) : "–"}</b>
           </div>
-          <Link href="/statement" className={cashDue ? "m-due" : undefined}>
+          <Link href="/statement" className={cashDue ? "m-due" : cashDue === 0 ? "m-nil" : undefined}>
             <span>Cash due</span>
             <b>{cashDue === null ? "–" : money(cashDue)}</b>
           </Link>

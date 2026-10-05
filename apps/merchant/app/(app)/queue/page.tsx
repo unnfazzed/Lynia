@@ -23,7 +23,7 @@ import { primeBusiness } from "../../lib/business";
 import { alarmOrders } from "../../lib/alarm";
 import { needsKitchenConfirm } from "../../lib/order-groups";
 import { acceptOrder, cancelPreparing, confirmKitchen, listScheduledOrders, proposeSubstitution, rejectOrder } from "../../lib/orders-api";
-import { hm, money, orderLabel, riderFirstName, slotLabel } from "../../lib/orders-view";
+import { hm, money, orderLabel, riderFirstName } from "../../lib/orders-view";
 import { countOf, ORDER_FLOW as OF, vocabulary } from "../../lib/vocabulary";
 import { useNow } from "../../lib/use-now";
 import { useQueuePoll } from "../../lib/use-queue-poll";
@@ -189,12 +189,15 @@ export default function QueuePage() {
   const notLive = nothing && showNotLiveHome(state.merchant, branches.length);
   const closed = open.status.closedByHand && !notLive;
   const board = buildBoard({ orders, bookings, v, shop, now });
+  // K1b (D-77 follow-ups): SCHEDULED · n, last on the board, as dashed cards.
   const scheduledSection =
     scheduled && scheduled.length > 0 ? (
-      <section aria-label={OF.segSched} className="m-board-sec" style={{ padding: "0 16px 16px" }}>
-        <h2 className="m-bh">{`${OF.segSched.toUpperCase()} · ${scheduled.length}`}</h2>
-        <ScheduledList orders={scheduled} v={v} />
-      </section>
+      <div className="m-board" style={{ paddingTop: board.length > 0 ? 0 : undefined }}>
+        <section aria-label={OF.segSched} className="m-board-sec">
+          <h2 className="m-bh">{`${OF.segSched.toUpperCase()} · ${scheduled.length}`}</h2>
+          <ScheduledList orders={scheduled} v={v} />
+        </section>
+      </div>
     ) : null;
 
   return (
@@ -216,28 +219,16 @@ export default function QueuePage() {
           <RetryableError message={queueError.message} onRetry={() => void refetch()} />
         </div>
       ) : nothing ? (
-        <div
-          className="m-bd"
-          style={{
-            alignItems: "center",
-            gap: 10,
-            textAlign: "center",
-            paddingTop: 52,
-          }}
-        >
-          <div
-            style={{
-              width: 72,
-              height: 72,
-              borderRadius: "50%",
-              background: "var(--surface)",
-              display: "grid",
-              placeItems: "center",
-            }}
-          >
-            <Icon name="inbox" size={30} color="var(--muted)" />
-          </div>
-          <b style={{ fontSize: 18 }}>No orders yet</b>
+        // K1c (D-77 follow-ups): open and quiet — mint, so it can't be mistaken for T4 Closed.
+        <div className="m-quiet">
+          <i>
+            <Icon name="inbox" size={30} />
+          </i>
+          <b>All quiet for now</b>
+          <p>You&apos;re open. New orders ring here with sound, so keep the volume up.</p>
+          <Link href={shop ? "/deliveries/new" : "/menu"} className="m-btn2">
+            {shop ? "Book a rider" : "Check your menu"}
+          </Link>
         </div>
       ) : (
         <>
@@ -289,45 +280,33 @@ function useScheduled(enabled: boolean, queueSize: number): MerchantOrderRespons
   return list;
 }
 
-/** M7a · the Scheduled segment: per order "#A1B2 · $15.00", the slot with a calendar, then "2 dishes ·
- *  Rings at 12:05 like a new order". Each opens its ticket (M7b). */
+/** K1b's SCHEDULED rows (D-77 follow-ups): a dashed card with a clock — "12:30 today · #A301" (beyond
+ *  today, "Tue 07:00 · #A301"), then "3 dishes · $18.00 · rings at 12:00". Each opens its ticket (M7b). */
 function ScheduledList({ orders, v }: { orders: readonly MerchantOrderResponse[]; v: ReturnType<typeof vocabulary> }) {
   const now = useNow(60_000);
   return (
     <>
-      {orders.map((o) => {
-        const s = o.scheduledFor ? slotLabel(o.scheduledFor, new Date(now)) : null;
-        const day = s ? s.day.charAt(0).toUpperCase() + s.day.slice(1) : "";
-        return (
-          <Link key={o.id} href={`/queue/${o.id}`} className="m-card" style={{ gap: 6, color: "inherit", textDecoration: "none" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <b className="m-num" style={{ fontSize: 15, flex: 1 }}>
-                {orderLabel(o)}
-              </b>
-              <b className="m-num">{money(o.merchantGoodsTotal)}</b>
-            </div>
-            {s && (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  fontSize: 13,
-                  fontWeight: 600,
-                }}
-              >
-                <Icon name="calendar" size={15} color="var(--accent-text)" />
-                {day} {s.slot}
-              </div>
-            )}
-            <span className="m-hint" style={{ fontSize: 13 }}>
-              {[countOf(o.items.length, v), o.ringsAt ? OF.schedRing(hm(o.ringsAt)) : null].filter(Boolean).join(" · ")}
+      {orders.map((o) => (
+        <Link key={o.id} href={`/queue/${o.id}`} className="m-bc m-row m-dashed">
+          <Icon name="clock" size={20} color="var(--muted)" />
+          <div className="m-bt">
+            <b className="m-num">{[o.scheduledFor ? schedWhen(o.scheduledFor, new Date(now)) : null, orderLabel(o)].filter(Boolean).join(" · ")}</b>
+            <span className="m-bsub">
+              {[countOf(o.items.length, v), money(o.merchantGoodsTotal), o.ringsAt ? `rings at ${hm(o.ringsAt)}` : null].filter(Boolean).join(" · ")}
             </span>
-          </Link>
-        );
-      })}
+          </div>
+          <Icon name="chevron-right" size={20} color="var(--muted)" />
+        </Link>
+      ))}
     </>
   );
+}
+
+/** "12:30 today", or "Tue 07:00" beyond today. */
+function schedWhen(iso: string, now: Date): string {
+  const d = new Date(iso);
+  const today = d.toDateString() === now.toDateString();
+  return today ? `${hm(iso)} today` : `${d.toLocaleDateString("en-GB", { weekday: "short" })} ${hm(iso)}`;
 }
 
 /** One-line toasts for the moments the old full-screen takeovers used to announce. */
