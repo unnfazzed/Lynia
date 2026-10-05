@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DishOutOfStockFor, MerchantCategoryResponse, MerchantDishResponse } from "@lynia/shared";
+import type { DishOutOfStockFor, MerchantCategoryResponse, MerchantDishResponse, MerchantProfileResponse } from "@lynia/shared";
 import { Icon } from "../../components/icons";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
@@ -251,6 +251,7 @@ export default function MenuPage() {
                   <DishRow
                     key={dish.id}
                     dish={dish}
+                    business={business}
                     shop={shop}
                     editable={!staff}
                     disabled={disabled}
@@ -394,6 +395,7 @@ function CategoryChip({
 
 function DishRow({
   dish,
+  business,
   shop,
   editable,
   disabled,
@@ -401,13 +403,14 @@ function DishRow({
   onToggle,
 }: {
   dish: MerchantDishResponse;
+  business: Pick<MerchantProfileResponse, "hours"> | null;
   shop: boolean;
   editable: boolean;
   disabled: boolean;
   onEdit: () => void;
   onToggle: (on: boolean) => void;
 }) {
-  const off = offLabel(dish, new Date());
+  const off = offLabel(dish, new Date(), business);
   const body = (
     <>
       <div className={`m-th ${shop ? "m-tile-shop" : "m-tile-food"}`}>{dish.name.trim().charAt(0).toUpperCase()}</div>

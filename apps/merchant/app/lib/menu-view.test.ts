@@ -12,6 +12,12 @@ describe("an off dish's line (C1)", () => {
     expect(offLabel({ outOfStock: true, outOfStockUntil: new Date(2026, 8, 30, 13, 0).toISOString() }, NOON)).toBe("Off until 13:00");
     expect(offLabel({ outOfStock: true }, NOON)).toBe("Off until tomorrow");
   });
+
+  it("names tomorrow's opening time when the business has hours (T1, D-77)", () => {
+    const hours = { thu: { open: "08:00", close: "22:00" } } as MerchantProfileResponse["hours"];
+    expect(offLabel({ outOfStock: true, outOfStockUntil: new Date(2026, 8, 30, 23, 59, 59).toISOString() }, NOON, { hours })).toBe("Off until 08:00 tomorrow");
+    expect(offLabel({ outOfStock: true, outOfStockUntil: new Date(2026, 8, 30, 13, 0).toISOString() }, NOON, { hours })).toBe("Off until 13:00");
+  });
 });
 
 describe("C2 'Rest of today' comes back at tomorrow's opening", () => {

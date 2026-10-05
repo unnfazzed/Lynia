@@ -1093,6 +1093,10 @@
   margin-top: 12px;
   border: none;
 }
+/* T1 (D-77): in the mint header the column's 12px gap is the only space above the search. */
+.m-hd > .m-srch {
+  margin-top: 0;
+}
 /* On the mint header (C3) the segmented control sits on white, the chosen side mint. */
 .m-hd .m-seg {
   background: var(--bg);
