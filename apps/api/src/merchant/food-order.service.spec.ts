@@ -1293,6 +1293,28 @@ describe("FoodOrderService.cancelPreparing — B3 'Can't finish this order' (D-4
     expect(res.status).toBe("cancelled");
   });
 
+  it("D-77 K3b: stores the reason and the note, and the customer's push carries the note", async () => {
+    let data: Record<string, unknown> | undefined;
+    const pushes: Array<{ body: string }> = [];
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: {
+        updateMany: async (args: { data: Record<string, unknown> }) => {
+          data = args.data;
+          return { count: 1 };
+        },
+        findUnique: async () => ({ id: "o1", merchantId: "m1", customerId: "c1", status: "cancelled", merchantItems: [], pickupCodeAttempts: 0, noShowCallTimestamps: [] }),
+      },
+      orderEvent: { create: async () => ({}) },
+    });
+    (svc as unknown as { notifications: { notifyProfiles: (ids: string[], m: { body: string }) => Promise<void> } }).notifications.notifyProfiles = async (_ids, m) => {
+      pushes.push(m);
+    };
+    await svc.cancelPreparing("p1", "o1", "kitchen_problem", "  Gas ran out  ");
+    expect(data).toMatchObject({ rejectionReason: "kitchen_problem", cancelReason: "Gas ran out" });
+    expect(pushes[0]!.body).toMatch(/“Gas ran out”$/);
+  });
+
   it("refuses anything else — a wallet order (refund path), one already at dispatch, or one not cooking", async () => {
     const { svc } = build({
       merchant: { findUnique: async () => ({ id: "m1" }) },

@@ -1,4 +1,5 @@
 import type {
+  MerchantCancelOrderRequest,
   ApprovePrescriptionRequest,
   DeclinePrescriptionRequest,
   OrderFlagsResponse,
@@ -30,8 +31,8 @@ export function acceptOrder(orderId: string, body: MerchantAcceptOrderRequest): 
 }
 
 /** D-11: the reason IS the customer's copy. */
-export function rejectOrder(orderId: string, reason: MerchantRejectionReasonCode): Promise<MerchantOrderResponse> {
-  return authedFetch<MerchantOrderResponse>(`/merchant/orders/${orderId}/reject`, { method: "POST", body: { reason } });
+export function rejectOrder(orderId: string, reason: MerchantRejectionReasonCode, note?: string): Promise<MerchantOrderResponse> {
+  return authedFetch<MerchantOrderResponse>(`/merchant/orders/${orderId}/reject`, { method: "POST", body: note ? { reason, note } : { reason } });
 }
 
 /** R-16: asks a wallet order's customer to pay (a wallet order placed before D-74 only). The API wants a
@@ -112,8 +113,8 @@ export function closeOrder(orderId: string, reason: "no_cash" | "force"): Promis
 }
 
 /** D-48 (merchant mobile B3): "Can't finish this order" on a cash order still cooking. */
-export function cancelPreparing(orderId: string): Promise<MerchantOrderResponse> {
-  return authedFetch<MerchantOrderResponse>(`/merchant/orders/${orderId}/cancel`, { method: "POST" });
+export function cancelPreparing(orderId: string, body?: MerchantCancelOrderRequest): Promise<MerchantOrderResponse> {
+  return authedFetch<MerchantOrderResponse>(`/merchant/orders/${orderId}/cancel`, body ? { method: "POST", body } : { method: "POST" });
 }
 
 // ── Auto-accept: the kitchen's confirmation and item changes ───────────────────────────────────────

@@ -166,8 +166,8 @@ export default function QueuePage() {
     [refetch],
   );
   const handleReject = useCallback(
-    async (orderId: string, reason: Parameters<typeof rejectOrder>[1]) => {
-      await rejectOrder(orderId, reason);
+    async (orderId: string, reason: Parameters<typeof rejectOrder>[1], note?: string) => {
+      await rejectOrder(orderId, reason, note);
       await refetch();
     },
     [refetch],

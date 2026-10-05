@@ -135,7 +135,7 @@ const SECTIONS_OFF = { SHOPS_ENABLED: "false", PHARMACY_ENABLED: "false" } as co
 /** D-48: the statuses after the rider has the food — when the merchant may close its side. */
 const AFTER_PICKUP_STATUSES: ReadonlySet<string> = new Set(["picked_up", "en_route_dropoff", "delivered", "completed", "undelivered"]);
 /** The reasons a venue itself turned the order down (G3a "{v} couldn’t take your order"). */
-const VENUE_DECLINED: ReadonlySet<string> = new Set(["out_of_ingredient", "too_busy", "closing_soon", "shop_closed", "other"]);
+const VENUE_DECLINED: ReadonlySet<string> = new Set(["out_of_ingredient", "out_of_stock", "too_busy", "closing_soon", "shop_closed", "ran_out", "kitchen_problem", "other"]);
 
 /** E2 listQueue visibility — see the doc comment on the call site. */
 const QUEUE_VISIBLE_STATUSES = ["requested", "open_for_offers", "assigned", "confirmed", "en_route_pickup"] as const;
@@ -807,15 +807,17 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** D-11: the reason IS the customer's copy. */
-  async rejectOrder(profileId: string, orderId: string, reason: MerchantRejectionReasonCode): Promise<MerchantOrderResponse> {
+  async rejectOrder(profileId: string, orderId: string, reason: MerchantRejectionReasonCode, note?: string): Promise<MerchantOrderResponse> {
     const merchantId = await this.ownMerchantId(profileId);
+    // Merchant v2 follow-ups (D-77, S2a): "Something else" may carry a one-line note the customer sees.
+    const said = note?.trim() || null;
     const claimed = await this.prisma.order.updateMany({
       where: { id: orderId, merchantId, orderType: "merchant", status: "requested", merchantPhase: "awaiting_accept" },
-      data: { status: "cancelled", cancelledAt: new Date(), rejectionReason: reason, merchantPhase: null },
+      data: { status: "cancelled", cancelledAt: new Date(), rejectionReason: reason, merchantPhase: null, cancelReason: said },
     });
     if (claimed.count === 0) throw new ConflictException("This order can no longer be rejected");
     await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
-    await this.notifyCancelledCustomer(orderId, reason);
+    await this.notifyCancelledCustomer(orderId, reason, said);
     this.notifyQueue(merchantId, orderId);
     return this.toResponse(await this.mustFindWithItems(orderId));
   }
@@ -826,17 +828,24 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
    * is nothing to refund; the customer is told why. A confirmed WALLET order still goes through the
    * refund path (FoodDebtService.refundOrder), which needs the merchant's refund reference.
    */
-  async cancelPreparing(profileId: string, orderId: string): Promise<MerchantOrderResponse> {
+  async cancelPreparing(
+    profileId: string,
+    orderId: string,
+    reason: MerchantRejectionReasonCode = "other",
+    note?: string,
+  ): Promise<MerchantOrderResponse> {
     const merchantId = await this.ownMerchantId(profileId);
+    // Merchant v2 follow-ups (D-77, K3b): why it can't be finished, and "Something else"'s note.
+    const said = note?.trim() || null;
     const claimed = await this.prisma.order.updateMany({
       where: { id: orderId, merchantId, orderType: "merchant", status: "requested", merchantPhase: "preparing", merchantPaymentMethod: "cash" },
-      data: { status: "cancelled", cancelledAt: new Date(), rejectionReason: "other", merchantPhase: null },
+      data: { status: "cancelled", cancelledAt: new Date(), rejectionReason: reason, merchantPhase: null, cancelReason: said },
     });
     if (claimed.count === 0) {
       throw new ConflictException({ reason: "not_cancellable", message: "This order can no longer be cancelled here." });
     }
     await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
-    await this.notifyCancelledCustomer(orderId, "other");
+    await this.notifyCancelledCustomer(orderId, reason, said);
     this.notifyQueue(merchantId, orderId);
     return this.toResponse(await this.mustFindWithItems(orderId));
   }
@@ -1552,7 +1561,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  private async notifyCancelledCustomer(orderId: string, reason: MerchantRejectionReasonCode): Promise<void> {
+  private async notifyCancelledCustomer(orderId: string, reason: MerchantRejectionReasonCode, note: string | null = null): Promise<void> {
     const order = await this.prisma.order.findUnique({ where: { id: orderId }, select: { customerId: true, merchant: { select: { name: true } } } });
     if (!order) return;
     // Order flow v2 G3a (O.g.push.c[8]/[9]): the venue declined → "{v} couldn’t take your order"; no
@@ -1566,6 +1575,8 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
           : { title: "Your order was cancelled", body: rejectionCopy(reason) };
     await this.notifications.notifyProfiles([order.customerId], {
       ...copy,
+      // D-77 S2a: "Rudo sees this note" — the venue's own words follow the push's sentence.
+      ...(note ? { body: `${copy.body} “${note}”` } : {}),
       // to+orderType so the tap opens the food tracker, not the parcel /order/:id. Additive.
       data: { orderId, status: "cancelled", to: "customer", orderType: "merchant" },
     });

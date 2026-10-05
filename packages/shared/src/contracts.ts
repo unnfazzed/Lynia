@@ -1914,12 +1914,32 @@ export const MerchantRejectionReasonCode = z.enum([
   "kitchen_unconfirmed",
   // Order flow v2 U5: every line ended up removed (substitution). Set by the server, never by a merchant.
   "all_out_of_stock",
+  // Merchant v2 follow-ups (D-77): S2a's "Out of stock" (a shop), and K3b's "Ran out and can't swap" /
+  // "Kitchen problem" ("Shop problem") when a started order can't be finished.
+  "out_of_stock",
+  "ran_out",
+  "kitchen_problem",
   "other",
 ]);
 export type MerchantRejectionReasonCode = z.infer<typeof MerchantRejectionReasonCode>;
 
-export const MerchantRejectOrderRequest = z.object({ reason: MerchantRejectionReasonCode }).strict();
+/** Merchant v2 follow-ups (D-77): the optional note with "Something else" — the customer sees it. */
+export const MERCHANT_REASON_NOTE_MAX = 80;
+
+export const MerchantRejectOrderRequest = z
+  .object({ reason: MerchantRejectionReasonCode, note: z.string().trim().max(MERCHANT_REASON_NOTE_MAX).optional() })
+  .strict();
 export type MerchantRejectOrderRequest = z.infer<typeof MerchantRejectOrderRequest>;
+
+/** `POST /merchant/orders/:orderId/cancel` (K3b, D-77): why a started cash order can't be finished. The
+ *  body is optional, so an older screen's empty POST still cancels (reason `other`). */
+export const MerchantCancelOrderRequest = z
+  .object({
+    reason: z.enum(["ran_out", "kitchen_problem", "too_busy", "other"]).optional(),
+    note: z.string().trim().max(MERCHANT_REASON_NOTE_MAX).optional(),
+  })
+  .strict();
+export type MerchantCancelOrderRequest = z.infer<typeof MerchantCancelOrderRequest>;
 
 /** R-11/D-06: the merchant matches the customer's rail reference against their own statement — a
  *  mismatched amount blocks release and names the gap (checked server-side, not just displayed). */

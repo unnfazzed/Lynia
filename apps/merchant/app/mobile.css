@@ -3269,3 +3269,201 @@
   border: 1px solid var(--line);
   color: var(--accent-text);
 }
+
+/* ── Merchant v2 follow-ups · shared sheet parts (README "Shared patterns", ledger D-77) ─────── */
+/* The reasons / problem sheet: the body scrolls under the pinned CTA pair; at most viewport − 24px. */
+.m-rsheet {
+  max-height: calc(100% - 24px);
+  padding: 10px 16px calc(16px + env(safe-area-inset-bottom));
+}
+.m-rsheet-hd {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.m-rsheet-hd > b {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.m-rsheet-hd > p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.m-rsheet-bd {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.m-rsheet-ft {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: none;
+}
+.m-rsheet-ft .m-btn {
+  gap: 8px;
+}
+.m-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* A reason row: 48 tall, the whole row is the target; picked = 2px accent + mint, padding keeps width. */
+.m-reason {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--bg);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.m-reason[aria-checked="true"] {
+  border: 2px solid var(--accent);
+  background: var(--accent-wash);
+  padding: 7px 13px;
+  font-weight: 700;
+}
+.m-reason .m-rad {
+  width: 22px;
+  height: 22px;
+}
+.m-reason[aria-checked="true"] .m-rad {
+  border: 6px solid var(--accent);
+  background: var(--bg);
+}
+.m-rnote > label {
+  font-size: 14px;
+  font-weight: 700;
+}
+.m-rnote > label > span {
+  font-weight: 600;
+  color: var(--muted);
+}
+.m-rnote .m-in {
+  min-height: 52px;
+  border-radius: 12px;
+}
+.m-rnote .m-in:focus-within {
+  border: 2px solid var(--accent);
+  box-shadow: none;
+}
+.m-rnote .m-hint {
+  font-size: 13px;
+}
+/* K3a's path card: 72 tall, a 44 icon circle, title 16/700 and a muted sub, a chevron. */
+.m-path {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--bg);
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.m-path-ic {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  background: var(--accent-wash);
+  color: var(--accent-text);
+}
+.m-path[data-tone="red"] .m-path-ic {
+  background: var(--danger-wash);
+  color: var(--danger-ink);
+}
+.m-path-t {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.m-path-t > b {
+  font-size: 16px;
+  font-weight: 700;
+}
+.m-path[data-tone="red"] .m-path-t > b {
+  color: var(--danger-ink);
+}
+.m-path-t > span {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+/* Info strips: neutral, gold money, mint money, red goods back. */
+.m-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--ink);
+}
+.m-info > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--muted);
+}
+.m-info[data-tone="gold"] {
+  background: var(--highlight-wash);
+  border: 1px solid var(--highlight-border);
+}
+.m-info[data-tone="gold"] > svg,
+.m-info[data-tone="gold"] b {
+  color: var(--highlight-ink);
+}
+.m-info[data-tone="mint"] {
+  background: var(--accent-wash);
+}
+.m-info[data-tone="mint"] > svg,
+.m-info[data-tone="mint"] b {
+  color: var(--accent-text);
+}
+.m-info[data-tone="red"] {
+  background: var(--danger-wash);
+  border: 1px solid var(--danger);
+}
+.m-info[data-tone="red"] > svg,
+.m-info[data-tone="red"] b {
+  color: var(--danger-ink);
+}
+.m-info b {
+  display: block;
+}
+.m-sheethint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.m-rsheet-ft .m-btn .m-wspin {
+  border-color: var(--bg);
+  border-top-color: transparent;
+}
