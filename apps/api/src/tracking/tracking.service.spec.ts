@@ -646,7 +646,7 @@ describe("TrackingService.observeRiderLeg (Merchant v2, D-77: 'at your counter' 
   const DOOR = { lat: -17.8, lng: 31.05 };
   const NOW = Date.parse("2026-10-05T10:00:00Z");
   function legSvc(order: Record<string, unknown> | null) {
-    const updateMany = vi.fn(async (_: { where: unknown; data: Record<string, unknown> }) => ({ count: 1 }));
+    const updateMany = vi.fn<(args: { where: unknown; data: Record<string, unknown> }) => Promise<{ count: number }>>(async () => ({ count: 1 }));
     const findUnique = vi.fn(async () =>
       order && { status: "en_route_pickup", pickup: { point: COUNTER }, dropoff: { point: DOOR }, riderArrivedAt: null, riderEtaAt: null, merchantId: "m1", ...order },
     );
