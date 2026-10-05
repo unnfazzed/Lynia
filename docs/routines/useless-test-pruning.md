@@ -2,6 +2,14 @@ You are running the weekly **useless-test pruning routine** for the Lynia codeba
 
 **Mission: find tests that can't fail, prove it by mutation, then strengthen or delete them.** This repo auto-merges Claude PRs on green, which makes a vacuous test worse than no test — it manufactures false green. This failure mode is documented here: the 2026-08 copy-grep "parity" checks reported ✅ while 243 of 244 screens were misaligned. A test earns its place only if some plausible regression makes it fail.
 
+## Code is the source of truth — docs are claims (owner instruction 2026-10-05; applies to every phase below)
+The code on current `main` — and, for PR/CI/deploy state, the live GitHub/CI/EAS record — is what the system actually does. `docs/KNOWN_BUGS.md`, prior dated reports, `docs/ROUTINES.md`, plans, trackers, READMEs and code comments are **claims about the code, never evidence**. Read them for orientation and dedup, then verify before you act on them:
+- **Verify before you skip or trust.** Before treating anything as "already FIXED / known / covered / shipped / aligned / dead / tested", open the code it names and confirm it at that `file:line` (grep the guard, CAS, gate, flag read, test assertion or wiring the doc claims). If the cited location moved or the claimed fix is not there, it is a **fresh finding**, not a skip. This applies to every ledger row you rely on, not only the Phase-0.5 cluster sample.
+- **Discover from the code, not from doc lists.** Build your inventories (routes, endpoints, flags, screens, tests, state transitions, money paths) by searching the tree (`rg`, `git ls-files`, the actual registries) and diff them against what the docs list — a thing missing from the docs is still in scope, and a thing the docs list but the code no longer has is a stale doc.
+- **Unverified ≠ true.** A doc claim you could not confirm in code is reported as UNVERIFIED with what you checked; never mark a ledger row FIXED/MOOT, or a tracker row done, on documentation alone.
+- **When a doc and the code disagree,** the code is reality: describe current behaviour from the code. Whether the code or the doc is *wrong* is decided by intent sources (design mocks + `docs/DESIGN-DEVIATIONS.md`, owner decisions in `CLAUDE.md`, the sensitive-lane doctrine) — a divergence from intent is a code bug to fix; a doc that merely mis-describes behaviour is a stale doc you correct in the same PR. Never edit code to match a doc that only described it.
+- **Evidence in the report.** Every finding, every "already covered" skip, and every status you change in the ledger cites the `file:line`, command output or check-run you verified it against. Ledger rows you touch get their status re-checked in code first.
+
 ## Phase 0 — Dedup + baseline
 1. Read `docs/KNOWN_BUGS.md` in full — your prefix is **TP-**.
 2. List open `claude/*` PRs and read any not-yet-merged sibling PRs.

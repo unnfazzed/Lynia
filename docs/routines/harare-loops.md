@@ -64,6 +64,8 @@ low-connectivity program. Mission: make the app cheap to install and cheap to us
 prepaid 2G/3G data in Zimbabwe. Each firing you complete ONE increment and merge it on green.
 Work autonomously end-to-end; never wait for human input mid-run.
 
+CODE IS THE SOURCE OF TRUTH (owner instruction 2026-10-05): the code on current `main` (and, for PR/CI/deploy state, the live GitHub/CI/EAS record) is what the system does; the program doc, backlog, KNOWN_BUGS.md, prior reports and code comments are claims. Before skipping or closing anything as done/fixed/covered, open the code it names and confirm it at file:line — if it is not there it is a fresh finding. Build inventories (bundles, screens, requests, flags) from the tree, not from doc lists. A claim you could not confirm is UNVERIFIED, never done. Where a doc and the code disagree, describe reality from the code and fix the stale doc in the same PR; never change code to match a doc that only described it. Cite file:line / command output for every finding, skip and status change.
+
 PHASE 0 — orient, before any code:
 1. Read docs/plans/2026-08-01-low-connectivity-program.md on main. If missing on main: find the
    open PR titled "Harare low-connectivity program"; if its CI is green squash-merge it and
@@ -119,6 +121,8 @@ low-connectivity program. Mission: the app must start fast, scroll smoothly, and
 1-2 GB RAM Android Go-class phones (Android 8.1+, A53-class CPUs). Each firing you complete ONE
 increment and merge it on green. Work autonomously end-to-end; never wait for human input mid-run.
 
+CODE IS THE SOURCE OF TRUTH (owner instruction 2026-10-05): the code on current `main` (and, for PR/CI/deploy state, the live GitHub/CI/EAS record) is what the system does; the program doc, backlog, KNOWN_BUGS.md, prior reports and code comments are claims. Before skipping or closing anything as done/fixed/covered, open the code it names and confirm it at file:line — if it is not there it is a fresh finding. Build inventories (bundles, screens, requests, flags) from the tree, not from doc lists. A claim you could not confirm is UNVERIFIED, never done. Where a doc and the code disagree, describe reality from the code and fix the stale doc in the same PR; never change code to match a doc that only described it. Cite file:line / command output for every finding, skip and status change.
+
 PHASE 0 — orient, before any code:
 1. Read docs/plans/2026-08-01-low-connectivity-program.md on main. If missing on main: find the
    open PR titled "Harare low-connectivity program"; if its CI is green squash-merge it and
@@ -169,6 +173,8 @@ delivery; rider onboard->KYC->board->bid->job->earnings; merchant order-intake) 
 about staleness. Each firing you complete ONE increment and merge it on green. Work autonomously
 end-to-end; never wait for human input mid-run.
 
+CODE IS THE SOURCE OF TRUTH (owner instruction 2026-10-05): the code on current `main` (and, for PR/CI/deploy state, the live GitHub/CI/EAS record) is what the system does; the program doc, backlog, KNOWN_BUGS.md, prior reports and code comments are claims. Before skipping or closing anything as done/fixed/covered, open the code it names and confirm it at file:line — if it is not there it is a fresh finding. Build inventories (bundles, screens, requests, flags) from the tree, not from doc lists. A claim you could not confirm is UNVERIFIED, never done. Where a doc and the code disagree, describe reality from the code and fix the stale doc in the same PR; never change code to match a doc that only described it. Cite file:line / command output for every finding, skip and status change.
+
 PHASE 0 — orient, before any code:
 1. Read docs/plans/2026-08-01-low-connectivity-program.md on main. If missing on main: find the
    open PR titled "Harare low-connectivity program"; if its CI is green squash-merge it and
@@ -217,6 +223,8 @@ low-connectivity program. Mission: find and fix user-journey blockers and pain p
 apps/mobile, apps/admin, and apps/merchant through the low-end/low-connectivity lens, and keep a
 READ-ONLY watch on infra/CI soundness. Each firing you complete ONE increment and merge it on
 green. Work autonomously end-to-end; never wait for human input mid-run.
+
+CODE IS THE SOURCE OF TRUTH (owner instruction 2026-10-05): the code on current `main` (and, for PR/CI/deploy state, the live GitHub/CI/EAS record) is what the system does; the program doc, backlog, KNOWN_BUGS.md, prior reports and code comments are claims. Before skipping or closing anything as done/fixed/covered, open the code it names and confirm it at file:line — if it is not there it is a fresh finding. Build inventories (bundles, screens, requests, flags) from the tree, not from doc lists. A claim you could not confirm is UNVERIFIED, never done. Where a doc and the code disagree, describe reality from the code and fix the stale doc in the same PR; never change code to match a doc that only described it. Cite file:line / command output for every finding, skip and status change.
 
 PHASE 0 — orient, before any code:
 1. Read docs/plans/2026-08-01-low-connectivity-program.md on main. If missing on main: find the
@@ -277,6 +285,8 @@ unnfazzed/Lynia. You run on the planning model; your job is judgment, not volume
 work, verify the budgets, keep the four LC loops healthy, and call completion honestly. One
 focused session; ship your changes as one PR merged on green. Work autonomously; never wait for
 human input mid-run.
+
+CODE IS THE SOURCE OF TRUTH (owner instruction 2026-10-05): the code on current `main` (and, for PR/CI/deploy state, the live GitHub/CI/EAS record) is what the system does; the program doc, backlog, KNOWN_BUGS.md, prior reports and code comments are claims. Before skipping or closing anything as done/fixed/covered, open the code it names and confirm it at file:line — if it is not there it is a fresh finding. Build inventories (bundles, screens, requests, flags) from the tree, not from doc lists. A claim you could not confirm is UNVERIFIED, never done. Where a doc and the code disagree, describe reality from the code and fix the stale doc in the same PR; never change code to match a doc that only described it. Cite file:line / command output for every finding, skip and status change.
 
 DO, in order:
 1. ORIENT: read docs/plans/2026-08-01-low-connectivity-program.md, docs/routines/harare-loops.md,
