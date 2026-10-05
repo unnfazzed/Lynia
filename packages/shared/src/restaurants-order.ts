@@ -368,3 +368,19 @@ export function substitutionTotals(input: {
   const goods = merchantGoodsForSubtotal(itemsSubtotal);
   return { ...goods, total: addMoney(goods.goodsTotal, input.deliveryFee) };
 }
+
+/** Merchant v2 (ledger D-77): the rider is "at your counter" once a location ping lands this close to the
+ *  pickup pin (a GPS fix's usual error plus a shopfront). */
+export const RIDER_ARRIVAL = {
+  radiusM: 80,
+  /** Minimum gap between two arrival/ETA evaluations of one order (location pings come every few seconds). */
+  evaluateEveryMs: 15_000,
+  /** The stored ETA is only rewritten when it moves by at least this much. */
+  etaStepMs: 60_000,
+} as const;
+
+/** The rider's estimated minutes to a stop `distanceKm` away — the same urban-motorbike model as the
+ *  slot planner (ORDER_SCHEDULE), without the "find a rider" lead. At least one minute. */
+export function rideMinutesForKm(distanceKm: number): number {
+  return Math.max(1, Math.ceil(((Math.max(0, distanceKm) * ORDER_SCHEDULE.roadWindingFactor) / ORDER_SCHEDULE.speedKmh) * 60));
+}

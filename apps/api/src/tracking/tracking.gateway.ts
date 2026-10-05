@@ -398,6 +398,14 @@ export class TrackingGateway
     } catch (err) {
       this.logger.warn(`recordFix on rider:location failed for ${user.sub}: ${(err as Error).message}`);
     }
+    // Merchant v2 (D-77): "at your counter" and "arrives 07:38" come from these pings. Best-effort: a
+    // failure never touches the fix above, and a merchant's queue only refetches when something changed.
+    try {
+      const leg = await this.tracking.observeRiderLeg(orderId, { lat, lng });
+      if (leg?.merchantId) this.emitFoodQueueChanged(leg.merchantId, orderId);
+    } catch (err) {
+      this.logger.warn(`observeRiderLeg failed for order ${orderId}: ${(err as Error).message}`);
+    }
     return { ok: true };
   }
 

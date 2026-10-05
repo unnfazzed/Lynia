@@ -152,6 +152,11 @@ describe("T1's live bar (Merchant v2, D-77)", () => {
     });
   });
 
+  it("says the rider is at the counter once they've arrived (D-77)", () => {
+    const counter = o({ id: "a0000004-0000-4000-8000-000000000000", merchantPhase: null, status: "assigned", riderId: RIDER.profileId, rider: RIDER, riderArrivedAt: "2026-10-05T07:00:00.000Z" });
+    expect(liveBar([counter], "Cooking")?.title).toBe(`${RIDER.firstName} is at your counter`);
+  });
+
   it("a ringing order comes first and opens the Orders home", () => {
     const view = liveBar([o({ id: "a1b20000-0000-4000-8000-000000000000" }), cooking("a0000001-0000-4000-8000-000000000000")], "Packing");
     expect(view).toEqual({ title: "New order · #A1B2", sub: "1 packing", href: "/queue" });

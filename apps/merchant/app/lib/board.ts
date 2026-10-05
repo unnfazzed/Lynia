@@ -140,7 +140,8 @@ function orderCards(
           counter: true,
           urgent: true,
           tag,
-          title: `${rider} is coming to your counter`,
+          // Merchant v2 (D-77): "at your counter" once the rider's location reached the pickup.
+          title: o.riderArrivedAt ? `${rider} is at your counter` : `${rider} is coming to your counter`,
           sub: `${label} · ${boardItems(o)} · ${money(o.merchantGoodsTotal)}`,
         },
       };
@@ -195,7 +196,7 @@ function orderCards(
           href,
           tag,
           title: rider ? `${label} · ${rider}` : label,
-          sub: owed ? `On the way · then brings you ${money(owed)}` : "On the way",
+          sub: [o.riderEtaAt ? `Arrives ${hm(o.riderEtaAt)}` : "On the way", owed ? `then brings you ${money(owed)}` : null].filter(Boolean).join(" · "),
           chevron: true,
         },
       };
@@ -258,7 +259,7 @@ function bookingCard(b: MerchantBookingResponse, now: number): { section: BoardS
         counter: true,
         urgent: true,
         tag: "BOOKED",
-        title: rider ? `${rider} is coming to your counter` : "A rider is coming to your counter",
+        title: `${rider ?? "A rider"} is ${b.riderArrivedAt ? "at" : "coming to"} your counter`,
         sub: b.itemsSummary,
       },
     };
@@ -274,7 +275,7 @@ function bookingCard(b: MerchantBookingResponse, now: number): { section: BoardS
         tag: "BOOKED",
         title: rider ? `${b.itemsSummary} · ${rider}` : b.itemsSummary,
         bar: { steps: 4 },
-        sub: cod ? `Brings you ${money(Number(cod.amount))}${due}` : "On the way",
+        sub: cod ? `Brings you ${money(Number(cod.amount))}${due}` : b.riderEtaAt ? `Arrives ${hm(b.riderEtaAt)}` : "On the way",
       },
     };
   }

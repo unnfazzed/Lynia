@@ -16,6 +16,7 @@ describe("isPublicMerchantPath", () => {
       "/brand/logo.svg",
       "/fonts/inter.woff2",
       "/api/healthz",
+      "/h/a1b20000-0000-4000-8000-000000000000.1790000000.0123456789abcdef0123456789abcdef",
     ]) {
       expect(isPublicMerchantPath(p)).toBe(true);
     }

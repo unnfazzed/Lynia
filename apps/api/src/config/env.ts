@@ -281,6 +281,10 @@ export const envSchema = z.object({
   DIDIT_WORKFLOW_ID: z.string().optional(),
   DIDIT_WEBHOOK_SECRET: z.string().optional(),
   DIDIT_CALLBACK_URL: optionalUrl,
+  // Merchant v2 (ledger D-77) offline-rider hand-over fallback: the merchant web's public origin, where a
+  // rider who can't use the app opens their signed hand-over link (`/h/<token>`). Unset = the fallback
+  // answers "not available" (its button is also behind NEXT_PUBLIC_MERCHANT_HANDOVER_FALLBACK, off).
+  MERCHANT_WEB_URL: optionalUrl,
   // Explicit browser-origin allow-list for HTTP + WebSocket CORS (comma-separated). Empty = deny all
   // cross-origin (native mobile clients send no Origin and are unaffected; a stray browser origin is
   // refused). Set to the admin console / any browser client origins in prod. See common/cors.ts.

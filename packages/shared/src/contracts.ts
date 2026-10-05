@@ -1759,6 +1759,11 @@ export const MerchantOrderResponse = z
     customerFirstName: z.string().optional(),
     /** Merchant v2 (ledger D-77): the assigned rider's phone — on the merchant's own views only. */
     riderPhone: z.string().optional(),
+    /** Merchant v2 (ledger D-77): when the rider reached the counter ("at your counter"); absent until then. */
+    riderArrivedAt: z.string().optional(),
+    /** Merchant v2 (ledger D-77): the rider's estimated arrival at their next stop — the counter before
+     *  pickup, the customer after ("arrives 07:38"). Absent while unknown. */
+    riderEtaAt: z.string().optional(),
     // ── Order flow v2 (ledger D-59, backend B). All optional and additive: an installed app ignores them.
     // (The venue kind — Cooking vs Packing, the tile colour — is backend A's `venue.businessType/shopKind`.)
     /** BRIEF §12: the slot's start (ISO) of a scheduled order; omitted for an ASAP order. */
@@ -2204,6 +2209,10 @@ export const MerchantBookingResponse = z
      * `returned` once the shop said "I got $X"; `closed` for "No cash on this one". Absent on older
      * servers; null when the booking is delivery-only.
      */
+    /** Merchant v2 (ledger D-77): when the rider reached the shop; absent until then. */
+    riderArrivedAt: z.string().optional(),
+    /** Merchant v2 (ledger D-77): the rider's estimated arrival at the next stop; absent while unknown. */
+    riderEtaAt: z.string().optional(),
     cashOnDelivery: z
       .object({
         amount: z.string(),
@@ -2429,3 +2438,35 @@ export const TransferMerchantOwnerRequest = z
   })
   .strict();
 export type TransferMerchantOwnerRequest = z.infer<typeof TransferMerchantOwnerRequest>;
+
+/* ── Merchant v2 (ledger D-77): the offline-rider hand-over fallback ("Rider can't enter code") ──────────
+ * The merchant gets a short-lived signed link for the assigned rider and sends it from their own phone.
+ * The rider opens it in a browser and types the same 6-digit pickup code the merchant reads out, so the
+ * code check is unchanged; only the app is skipped. The link dies at its expiry, at pickup, and whenever
+ * the pickup code is re-minted. Behind the merchant web's NEXT_PUBLIC_MERCHANT_HANDOVER_FALLBACK (off). */
+
+/** `POST /merchant/orders/:orderId/handover-fallback` (merchant). */
+export const HandoverFallbackResponse = z
+  .object({
+    /** The link to send the rider: `<merchant web>/h/<token>`. */
+    link: z.string().url(),
+    expiresAt: z.string(),
+    /** The rider's number, to send the link to (null when unknown). */
+    riderPhone: z.string().nullable(),
+  })
+  .strict();
+export type HandoverFallbackResponse = z.infer<typeof HandoverFallbackResponse>;
+
+/** `GET /handover/:token` (public): what the rider's page shows before the code is typed. */
+export const HandoverLinkInfoResponse = z
+  .object({
+    orderLabel: z.string(),
+    venueName: z.string(),
+    expiresAt: z.string(),
+  })
+  .strict();
+export type HandoverLinkInfoResponse = z.infer<typeof HandoverLinkInfoResponse>;
+
+/** `POST /handover/:token/confirm` (public): the pickup code the merchant reads out. */
+export const HandoverLinkConfirmRequest = z.object({ code: z.string().regex(/^\d{6}$/) }).strict();
+export type HandoverLinkConfirmRequest = z.infer<typeof HandoverLinkConfirmRequest>;

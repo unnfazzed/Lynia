@@ -41,6 +41,8 @@ const MAX_REBROADCAST_DEPTH = 5;
 
 const BOOKING_SELECT = {
   id: true,
+  riderArrivedAt: true,
+  riderEtaAt: true,
   customerId: true,
   status: true,
   createdAt: true,
@@ -460,6 +462,9 @@ export class MerchantBookingService {
       codeIssuedAt: r.deliveryCodeRotatedAt?.toISOString() ?? null,
       offers: extra.offers,
       cashOnDelivery: cashOnDeliveryOf(r),
+      // Merchant v2 (D-77): the rider at the shop, and their estimated arrival at the next stop.
+      ...(r.riderArrivedAt ? { riderArrivedAt: r.riderArrivedAt.toISOString() } : {}),
+      ...(r.riderEtaAt ? { riderEtaAt: r.riderEtaAt.toISOString() } : {}),
     };
   }
 }

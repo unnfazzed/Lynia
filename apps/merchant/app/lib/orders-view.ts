@@ -238,7 +238,10 @@ export function liveBar(orders: readonly MerchantOrderResponse[], making: string
   ].filter((c): c is string => c !== null);
   const sub = counts.length > 0 ? counts.join(" · ") : null;
   if (ringing) return { title: `New order · ${orderLabel(ringing)}`, sub, href: "/queue" };
-  if (counter) return { title: `${counter.rider!.firstName} is coming to your counter`, sub, href: `/queue/${counter.id}` };
+  if (counter) {
+    const where = counter.riderArrivedAt ? "is at" : "is coming to";
+    return { title: `${counter.rider!.firstName} ${where} your counter`, sub, href: `/queue/${counter.id}` };
+  }
   if (answering) return { title: "Waiting for the customer to answer", sub, href: `/queue/${answering.id}` };
   if (!sub) return null;
   const first = s.cooking[0] ?? s.ready[0] ?? onTheWay[0];

@@ -40,7 +40,8 @@ function initials(r: NonNullable<MerchantOrderResponse["rider"]>): string {
 export function RiderCard({ order, sub }: { order: MerchantOrderResponse; sub?: string }) {
   const r = order.rider!;
   const name = riderFirstName(order) ?? r.firstName;
-  const line = sub ?? [r.plate, r.ratingCount > 0 ? `★ ${r.ratingAvg.toFixed(1)}` : null].filter(Boolean).join(" · ");
+  const here = order.riderArrivedAt ? "at your counter" : null;
+  const line = sub ?? [r.plate, r.ratingCount > 0 ? `★ ${r.ratingAvg.toFixed(1)}` : null, here].filter(Boolean).join(" · ");
   return (
     <div className="m-rcard">
       <span className="m-rav">{initials(r)}</span>

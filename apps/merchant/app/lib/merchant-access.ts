@@ -30,7 +30,9 @@ export function isPublicMerchantPath(pathname: string): boolean {
     pathname.startsWith("/icon.") ||
     pathname.startsWith("/brand/") ||
     pathname.startsWith("/fonts/") ||
-    pathname === "/api/healthz"
+    pathname === "/api/healthz" ||
+    // Merchant v2 (D-77): a rider's signed hand-over link — the token is the authority, no session.
+    pathname.startsWith("/h/")
   );
 }
 

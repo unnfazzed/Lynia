@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, type OnModuleDestroy } from "@nestjs/common";
 import type IORedis from "ioredis";
-import { ACTIVE_RIDE_STATUSES } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, haversineKm, type LatLng, RIDER_ARRIVAL, rideMinutesForKm } from "@lynia/shared";
 import { heartbeatMaxAgeMs } from "../common/broadcast-policy";
 import { createRedisClient, REDIS_FAIL_FAST } from "../common/redis";
 import { ENV } from "../config/config.module";
@@ -22,6 +22,14 @@ export interface LivePosition {
 }
 
 const ACTIVE = ACTIVE_RIDE_STATUSES as string[];
+/** Merchant v2 (D-77): the legs a rider's location pings are measured against. */
+const TO_PICKUP: ReadonlySet<string> = new Set(["assigned", "confirmed", "en_route_pickup"]);
+const TO_DROPOFF: ReadonlySet<string> = new Set(["picked_up", "en_route_dropoff"]);
+
+function pointOf(waypoint: unknown): LatLng | null {
+  const p = (waypoint as { point?: { lat?: unknown; lng?: unknown } } | null)?.point;
+  return typeof p?.lat === "number" && typeof p?.lng === "number" ? { lat: p.lat, lng: p.lng } : null;
+}
 
 /** Redis key TTL (s) for a rider's live position — long enough to outlive a flush cycle, short
  *  enough that a stale fix from a disconnected rider self-evicts. */
@@ -82,6 +90,8 @@ export class TrackingService implements OnModuleDestroy {
   /** Per-rider last PG position-flush time (ms). In-memory is fine: a rider's socket lives on one
    *  API instance, so the throttle only needs to be correct for that instance. */
   private readonly lastFlush = new Map<string, number>();
+  /** Merchant v2 (D-77): when each order's rider leg was last evaluated (observeRiderLeg's throttle). */
+  private readonly lastLeg = new Map<string, number>();
 
   constructor(
     @Inject(ENV) private readonly env: Env,
@@ -336,6 +346,41 @@ export class TrackingService implements OnModuleDestroy {
       this.lastFlush.set(riderId, now);
       await this.writePosition(riderId, lat, lng);
     }
+  }
+
+  /**
+   * Merchant v2 (ledger D-77, README "Needs backend"): from the assigned rider's location ping, record
+   * when they reached the pickup ("Blessing is at your counter") and their estimated arrival at the next
+   * stop ("arrives 07:38") on the order. Throttled per order (RIDER_ARRIVAL.evaluateEveryMs) and the ETA
+   * is only rewritten when it moves by a minute, so a ping every few seconds costs one read now and then.
+   * Returns the order's merchant when something the merchant sees changed (the caller pings its queue),
+   * else null. The caller has already checked the sender is the order's assigned rider.
+   */
+  async observeRiderLeg(orderId: string, here: LatLng, now: number = Date.now()): Promise<{ merchantId: string | null } | null> {
+    if (now - (this.lastLeg.get(orderId) ?? 0) < RIDER_ARRIVAL.evaluateEveryMs) return null;
+    if (this.lastLeg.size > 10_000) this.lastLeg.clear(); // bounded: a dropped entry only costs one early read
+    this.lastLeg.set(orderId, now);
+    const o = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { status: true, pickup: true, dropoff: true, riderArrivedAt: true, riderEtaAt: true, merchantId: true },
+    });
+    if (!o) return null;
+    const toPickup = TO_PICKUP.has(o.status);
+    if (!toPickup && !TO_DROPOFF.has(o.status)) return null;
+    const target = pointOf(toPickup ? o.pickup : o.dropoff);
+    if (!target) return null;
+    const km = haversineKm(here, target);
+    const data: { riderArrivedAt?: Date; riderEtaAt?: Date | null } = {};
+    const arrived = toPickup && (o.riderArrivedAt !== null || km * 1000 <= RIDER_ARRIVAL.radiusM);
+    if (toPickup && arrived && o.riderArrivedAt === null) data.riderArrivedAt = new Date(now);
+    // At the counter there's no leg left to estimate; otherwise the ride to the next stop.
+    const eta = arrived ? null : new Date(now + rideMinutesForKm(km) * 60_000);
+    const moved = eta === null ? o.riderEtaAt !== null : o.riderEtaAt === null || Math.abs(eta.getTime() - o.riderEtaAt.getTime()) >= RIDER_ARRIVAL.etaStepMs;
+    if (moved) data.riderEtaAt = eta;
+    if (Object.keys(data).length === 0) return null;
+    // Guarded on the status read above, so a ping racing a pickup/delivery never writes a stale leg.
+    const claimed = await this.prisma.order.updateMany({ where: { id: orderId, status: o.status }, data });
+    return claimed.count > 0 ? { merchantId: o.merchantId } : null;
   }
 
   /** The heavy position write: lat/lng + geography point for ST_DWithin (ET6). */
