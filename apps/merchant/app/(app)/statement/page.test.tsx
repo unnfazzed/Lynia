@@ -2,7 +2,8 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MerchantEndOfDaySummaryResponse, MerchantWeekSummaryResponse } from "@lynia/shared";
-import MoneyPage, { daySub, weekRange } from "./page";
+import MoneyPage from "./page";
+import { daySub, weekRange } from "../../lib/money-view";
 import { ApiError } from "../../lib/api-client";
 import { getTodaySummary, getWeekSummary } from "../../lib/orders-api";
 import { loadBusiness } from "../../lib/business";
