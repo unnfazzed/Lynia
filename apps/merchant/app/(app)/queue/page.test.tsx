@@ -218,7 +218,8 @@ describe("B1 · Orders home (merchant mobile, D-48)", () => {
     expect(screen.getAllByRole("heading").map((h) => h.textContent)).toEqual(["NEEDS YOU", "COOKING · 1", "ON THE WAY · 1"]);
     const counter = screen.getByRole("link", { name: /Blessing M\. is coming to your counter/ });
     expect(counter.getAttribute("href")).toBe("/queue/a4440000-0000-4000-8000-000000000000");
-    expect(within(counter).getByText("Hand over")).toBeTruthy();
+    // A1: no button until the rider is at the counter.
+    expect(within(counter).queryByText("Hand over")).toBeNull();
     expect(screen.getByText("8 min")).toBeTruthy();
     expect(screen.getByRole("link", { name: /#A222/ }).getAttribute("href")).toBe("/queue/a2220000-0000-4000-8000-000000000000");
     expect(screen.getByText("#A111 · Blessing M.")).toBeTruthy();

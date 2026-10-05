@@ -2181,6 +2181,11 @@
   place-items: center;
   flex: none;
 }
+/* A1: the counter card before the rider arrives — a surface disc with a muted bike. */
+.m-bc .m-disc.m-disc-quiet {
+  background: var(--surface);
+  color: var(--muted);
+}
 .m-pillbtn {
   height: 44px;
   padding: 0 14px;
@@ -2543,6 +2548,11 @@
   color: var(--muted);
   margin-top: 2px;
 }
+/* A1: the rider's at the counter — the K4 sub-line in accent. */
+.m-rcard > div span[data-here] {
+  color: var(--accent-text);
+  font-weight: 600;
+}
 .m-call {
   width: var(--target-min);
   height: var(--target-min);
@@ -2683,6 +2693,10 @@
   gap: 6px;
   color: var(--accent-text);
   font-weight: 600;
+}
+/* A2: the rider's on the way with no estimate yet. */
+.m-cdcard > p[data-quiet] {
+  color: var(--muted);
 }
 .m-linescard {
   border: 1px solid var(--line);

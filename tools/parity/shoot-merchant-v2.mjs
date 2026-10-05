@@ -302,7 +302,14 @@ const sched = order("a3010000-0000-4000-8000-000000000000", { merchantPhase: nul
 const k5b = order("a1150000-0000-4000-8000-000000000000", { merchantPhase: null, status: "delivered", paymentMethod: "wallet", riderId: RIDER.profileId, rider: RIDER, items: [line("Mazondo", 7), line("Sadza", 7)], merchantGoodsTotal: 14, deliveredAt: ago(2) });
 const k5c = order("a1170000-0000-4000-8000-000000000000", { merchantPhase: null, status: "undelivered", riderId: RIDER.profileId, rider: RIDER, items: [line("Mazondo", 5, 2)], merchantGoodsTotal: 10, debtStatus: "open", debtAmount: 10, cashDueAt: ahead(14), doorProof: { photoUrl: null, takenAt: ago(1), reason: "customer_unreachable", handedTo: null } });
 const arrivedK4 = { ...BOARD[0], riderArrivedAt: ago(1) };
+const comingK1 = { ...BOARD[0], riderEtaAt: ahead(6) };
 const SETS = {
+  arrival: [
+    { mock: "A1 Arrival states", label: "A1 · Board: the arrived rider on top with Hand over, the coming one with its time", app: { name: "A1-board", path: "/queue", scenario: { me: KITCHEN, orders: [comingK1, { ...arrivedK4, id: "a4450000-0000-4000-8000-000000000000" }, ...BOARD.slice(1, 3)] } } },
+    { mock: "A1 Arrival states", label: "A1 · K4 rider sub-line, arrived", app: { name: "A1-k4", path: `/queue/${handK4.id}`, scenario: { me: KITCHEN, orders: [{ ...handK4, riderArrivedAt: ago(1) }] } } },
+    { mock: "A2 ETA states", label: "A2 · K3 with no estimate", app: { name: "A2-k3", path: `/queue/${cookingK3.id}`, scenario: { me: KITCHEN, orders: [cookingK3] } } },
+    { mock: "A2 ETA states", label: "A2 · K5 with no estimate", app: { name: "A2-k5", path: `/queue/${wayK5.id}`, scenario: { me: KITCHEN, orders: [wayK5] } } },
+  ],
   moneyx: [
     { mock: "T2 Money", label: "T2 · Money (cash on its way, No sale)", app: { name: "T2", path: "/statement", scenario: { me: KITCHEN, orders: [], summary: MONEY2 } } },
     { mock: "T2b Money this week", label: "T2b · Money, this week", sub: "the lane's week runs Monday to the day it renders", app: { name: "T2b", path: "/statement", scenario: { me: KITCHEN, orders: [], summary: MONEY2, clock: WEEK_CLOCK }, before: async (p) => { await p.getByRole("tab", { name: "This week" }).click(); await p.locator(".m-dayrow").first().waitFor(); } } },

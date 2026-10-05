@@ -23,8 +23,11 @@ export type BoardTag = "APP" | "BOOKED";
 export interface BoardCard {
   key: string;
   href: string;
-  /** K1's counter card: the bike disc and a "Hand over" pill. */
+  /** K1's counter card: the bike disc, and once the rider has arrived (A1) the accent border and a
+   *  "Hand over" pill. */
   counter?: boolean;
+  /** A1 (D-77 follow-ups): the rider's location reached the pickup. */
+  arrived?: boolean;
   /** A 2px accent border: this one needs the merchant. */
   urgent?: boolean;
   tag?: BoardTag;
@@ -50,6 +53,12 @@ export interface BoardSection {
   id: "needs" | "making" | "way" | "cash";
   heading: string;
   cards: BoardCard[];
+}
+
+/** A1/A2's counter-card time: "Since 07:30" (arrived), "Arrives 07:31" (estimate), or nothing — never "—". */
+function counterWhen(o: { riderArrivedAt?: string | null; riderEtaAt?: string | null }): string | null {
+  if (o.riderArrivedAt) return `Since ${hm(o.riderArrivedAt)}`;
+  return o.riderEtaAt ? `Arrives ${hm(o.riderEtaAt)}` : null;
 }
 
 /** "Mazondo, Sadza & greens" for several lines (names joined by commas), "1× Mazondo" for one (both as K1 draws them). */
@@ -131,18 +140,22 @@ function orderCards(
     }
     const rider = riderFirstName(o);
     if (o.riderId && rider) {
+      const arrived = !!o.riderArrivedAt;
       return {
         section: "needs",
-        rank: 1,
+        // A1: an arrived rider's card moves to the top of NEEDS YOU.
+        rank: arrived ? -1 : 1,
         card: {
           key: o.id,
           href,
           counter: true,
-          urgent: true,
+          arrived,
+          urgent: arrived,
           tag,
           // Merchant v2 (D-77): "at your counter" once the rider's location reached the pickup.
-          title: o.riderArrivedAt ? `${rider} is at your counter` : `${rider} is coming to your counter`,
-          sub: `${label} · ${boardItems(o)} · ${money(o.merchantGoodsTotal)}`,
+          title: arrived ? `${rider} is at your counter` : `${rider} is coming to your counter`,
+          // A1/A2: "Since 07:30" once here, "Arrives 07:31" before — or just the order when unknown.
+          sub: [counterWhen(o), label, money(o.merchantGoodsTotal)].filter(Boolean).join(" · "),
         },
       };
     }
@@ -251,15 +264,16 @@ function bookingCard(b: MerchantBookingResponse, now: number): { section: BoardS
   if (b.state === "coming") {
     return {
       section: "needs",
-      rank: 1,
+      rank: b.riderArrivedAt ? -1 : 1,
       card: {
         key: b.id,
         href,
         counter: true,
-        urgent: true,
+        arrived: !!b.riderArrivedAt,
+        urgent: !!b.riderArrivedAt,
         tag: "BOOKED",
         title: `${rider ?? "A rider"} is ${b.riderArrivedAt ? "at" : "coming to"} your counter`,
-        sub: b.itemsSummary,
+        sub: [counterWhen(b), b.itemsSummary].filter(Boolean).join(" · "),
       },
     };
   }

@@ -1,7 +1,7 @@
 "use client";
 
 import type { MerchantOrderResponse } from "@lynia/shared";
-import { money, riderFirstName } from "../../lib/orders-view";
+import { hm, money, riderFirstName } from "../../lib/orders-view";
 import { Icon } from "../icons";
 
 /**
@@ -41,14 +41,15 @@ function initials(r: NonNullable<MerchantOrderResponse["rider"]>): string {
 export function RiderCard({ order, sub }: { order: MerchantOrderResponse; sub?: string }) {
   const r = order.rider!;
   const name = riderFirstName(order) ?? r.firstName;
-  const here = order.riderArrivedAt ? "at your counter" : null;
+  // A1: "at your counter" once here, "arrives 07:31" before (A2: nothing when there's no estimate).
+  const here = order.riderArrivedAt ? "at your counter" : order.riderEtaAt ? `arrives ${hm(order.riderEtaAt)}` : null;
   const line = sub ?? [r.plate, r.ratingCount > 0 ? `★ ${r.ratingAvg.toFixed(1)}` : null, here].filter(Boolean).join(" · ");
   return (
     <div className="m-rcard">
       <span className="m-rav">{initials(r)}</span>
       <div>
         <b>{name}</b>
-        {line && <span>{line}</span>}
+        {line && <span data-here={(!sub && !!order.riderArrivedAt) || undefined}>{line}</span>}
       </div>
       {order.riderPhone && (
         <a href={`tel:${order.riderPhone}`} className="m-call" aria-label={`Call ${name}`}>
