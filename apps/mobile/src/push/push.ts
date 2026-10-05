@@ -7,15 +7,27 @@ import { isRiderOnlyRoute, riderModeAvailable } from "../rider-mode";
 // Show a heads-up banner for a notification that arrives while the app is foregrounded (the OS only
 // shows it automatically in the background). Set once at module load.
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    // expo-notifications 0.32 (SDK 54) split the deprecated `shouldShowAlert` into these two: the
-    // heads-up banner, and the entry in the notification list / Notification Centre.
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
+  handleNotification: async (notification) => {
+    // A silent data push (Merchant v2's +5 min, `kind: "food_ready_time"`) has no words to show: it only
+    // tells the app to refresh (use-push-registration.ts), so it never draws a banner or plays a sound.
+    const silent = isSilentPush(notification.request.content.data);
+    return {
+      // expo-notifications 0.32 (SDK 54) split the deprecated `shouldShowAlert` into these two: the
+      // heads-up banner, and the entry in the notification list / Notification Centre.
+      shouldShowBanner: !silent,
+      shouldShowList: !silent,
+      shouldPlaySound: !silent,
+      shouldSetBadge: false,
+    };
+  },
 });
+
+/** Pushes the API sends silently (FCM data-only / APNs background): refresh-only, never shown. */
+const SILENT_KINDS: ReadonlySet<string> = new Set(["food_ready_time"]);
+
+export function isSilentPush(data: Record<string, unknown> | null | undefined): boolean {
+  return typeof data?.kind === "string" && SILENT_KINDS.has(data.kind);
+}
 
 const ANDROID_CHANNEL = "default";
 

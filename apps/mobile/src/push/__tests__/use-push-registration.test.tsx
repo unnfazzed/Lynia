@@ -225,6 +225,35 @@ describe("usePushRegistration account-standing arrivals", () => {
     expect(mockReceivedRemove.mock.calls.length).toBe(removesBefore + 1);
   });
 
+
+  it("refreshes the food order when the kitchen pushes its ready time back (+5 min, silent)", async () => {
+    let tree!: ReturnType<typeof create>;
+    act(() => {
+      tree = create(<Harness role="rider" />);
+    });
+    await flush();
+    expect(receivedListener).not.toBeNull();
+    const invalidate = jest.spyOn(harnessQc!, "invalidateQueries");
+
+    act(() => {
+      receivedListener?.({ request: { content: { data: { kind: "food_ready_time", orderId: "o9", readyAt: "2026-10-05T12:00:00.000Z" } } } });
+    });
+    await flush();
+
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["food-order", "o9"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["order", "o9"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["activeCustomerOrders"] });
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ["me"] });
+
+    // Teardown removes the listener so a later-firing native callback can't touch an unmounted tree.
+    // Measured as a DELTA, not an absolute count: an earlier test in this file unmounts outside `act`,
+    // so its cleanup effect can flush during this one and inflate a whole-run total.
+    const removesBefore = mockReceivedRemove.mock.calls.length;
+    act(() => {
+      tree.unmount();
+    });
+    expect(mockReceivedRemove.mock.calls.length).toBe(removesBefore + 1);
+  });
   it("leaves the cache alone for a push that is not about account standing", async () => {
     // Scoping guard: every order/bid push would otherwise force a ["me"] round trip on arrival — a
     // per-notification refetch of an unrelated resource on a metered corridor link.

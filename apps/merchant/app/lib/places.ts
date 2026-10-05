@@ -34,6 +34,8 @@ export interface ResolvedPlace {
   point: LatLng;
   /** The line the location card shows: "5th Street, Mbare". */
   address: string;
+  /** A reverse lookup's suburb alone ("Copacabana"), for S4's "Pin the buyer sent · Copacabana". */
+  area?: string;
 }
 
 type RawText = { text?: unknown } | undefined;
@@ -78,7 +80,8 @@ export function mapReverse(body: unknown, point: LatLng): ResolvedPlace | null {
   const street = [pick("street_number"), pick("route")].filter(Boolean).join(" ");
   const area = pick("sublocality") || pick("neighborhood") || pick("locality");
   const line = [street, area].filter(Boolean).join(", ") || (first.formatted_address ?? "").split(",").slice(0, 2).join(",").trim();
-  return line ? { point, address: line.slice(0, 200) } : null;
+  if (!line) return null;
+  return area ? { point, address: line.slice(0, 200), area: area.slice(0, 80) } : { point, address: line.slice(0, 200) };
 }
 
 function shortAddress(name: string, formatted: string): string {
@@ -121,6 +124,11 @@ export async function resolvePlace(suggestion: PlaceSuggestion, sessionToken: st
     headers: { "X-Goog-Api-Key": GOOGLE_PLACES_KEY, "X-Goog-FieldMask": "id,formattedAddress,location" },
   });
   return mapDetails(body, suggestion.primary);
+}
+
+/** S4 (Merchant v2, D-77): a pasted pin's line, "Pin the buyer sent · Copacabana" once its area is known. */
+export function pinnedLine(area?: string | null): string {
+  return area ? `Pin the buyer sent · ${area}` : "Pin the buyer sent";
 }
 
 export async function reverseGeocode(point: LatLng): Promise<ResolvedPlace | null> {

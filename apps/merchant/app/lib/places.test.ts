@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapDetails, mapReverse, mapSuggestions } from "./places";
+import { mapDetails, mapReverse, mapSuggestions, pinnedLine } from "./places";
 
 describe("address search for the sign-up location (D-48: Google Places, OSM map)", () => {
   it("keeps only selectable predictions, with the structured main and secondary text", () => {
@@ -42,8 +42,16 @@ describe("address search for the sign-up location (D-48: Google Places, OSM map)
         },
         point,
       ),
-    ).toEqual({ point, address: "12 5th Street, Mbare" });
+    ).toEqual({ point, address: "12 5th Street, Mbare", area: "Mbare" });
     expect(mapReverse({ results: [] }, point)).toBeNull();
     expect(mapReverse({ error_message: "denied", results: [] }, point)).toBeNull();
+  });
+});
+
+describe("S4: a pasted pin's line (Merchant v2, D-77)", () => {
+  it("names the area once the reverse lookup knows it", () => {
+    expect(pinnedLine()).toBe("Pin the buyer sent");
+    expect(pinnedLine(null)).toBe("Pin the buyer sent");
+    expect(pinnedLine("Copacabana")).toBe("Pin the buyer sent · Copacabana");
   });
 });

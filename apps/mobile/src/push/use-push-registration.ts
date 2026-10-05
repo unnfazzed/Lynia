@@ -201,8 +201,18 @@ export function usePushRegistration(session: Session | null): void {
   const qc = useQueryClient();
   useEffect(() => {
     const sub = Notifications.addNotificationReceivedListener((notification) => {
-      if (notification.request.content.data?.kind !== "account") return;
-      void qc.invalidateQueries({ queryKey: ["me"] });
+      const data = notification.request.content.data;
+      if (data?.kind === "account") {
+        void qc.invalidateQueries({ queryKey: ["me"] });
+        return;
+      }
+      // Merchant v2's +5 min (food-order.service.ts `extendPrep`): the kitchen pushed the ready time back.
+      // Refresh the order screen and the Orders/Home cards so the new time shows without a manual refresh.
+      if (data?.kind === "food_ready_time" && typeof data.orderId === "string") {
+        void qc.invalidateQueries({ queryKey: ["food-order", data.orderId] });
+        void qc.invalidateQueries({ queryKey: ["order", data.orderId] });
+        void qc.invalidateQueries({ queryKey: ["activeCustomerOrders"] });
+      }
     });
     return () => sub.remove();
   }, [qc]);

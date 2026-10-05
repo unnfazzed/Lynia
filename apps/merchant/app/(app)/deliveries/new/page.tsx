@@ -30,7 +30,7 @@ import { getMerchantProfile, listDishes } from "../../../lib/menu-api";
 import { parseAmountInput } from "../../../lib/money-input";
 import { money } from "../../../lib/orders-view";
 import { formatLocalDigits, localDigits } from "../../../lib/phone-input";
-import { newSessionToken, type PlaceSuggestion, resolvePlace, searchPlaces } from "../../../lib/places";
+import { newSessionToken, pinnedLine, type PlaceSuggestion, resolvePlace, reverseGeocode, searchPlaces } from "../../../lib/places";
 
 type Gate = { status: "loading" } | { status: "ready"; business: MerchantProfileResponse; pickup: LatLng } | { status: "no_pin" } | { status: "error"; message: string };
 type Sheet = null | "items" | "type" | "terms";
@@ -326,6 +326,17 @@ function WhereSearch({ value, error, signOut, onChange }: { value: Where | null;
     };
   }, [query]);
 
+  /** A pasted pin: shown at once, then named by its area when the reverse lookup answers (if it does). */
+  function pinned(point: LatLng, seq: number) {
+    onChange({ point, address: pinnedLine() });
+    void reverseGeocode(point).then(
+      (place) => {
+        if (seq === linkSeq.current && place?.area) onChange({ point, address: pinnedLine(place.area) });
+      },
+      () => undefined,
+    );
+  }
+
   function type(text: string) {
     setQuery(text);
     setNote(null);
@@ -333,7 +344,7 @@ function WhereSearch({ value, error, signOut, onChange }: { value: Where | null;
     const direct = parseMapLocation(text);
     if (direct) {
       setResults([]);
-      onChange({ point: direct, address: "Pin the buyer sent" });
+      pinned(direct, seq);
       return;
     }
     const url = /https:\/\/\S+/i.exec(text)?.[0];
@@ -345,7 +356,7 @@ function WhereSearch({ value, error, signOut, onChange }: { value: Where | null;
           (point) => {
             if (seq !== linkSeq.current) return;
             setNote(null);
-            onChange({ point, address: "Pin the buyer sent" });
+            pinned(point, seq);
           },
           (err: unknown) => {
             if (seq !== linkSeq.current || redirectIfSessionExpired(err, signOut)) return;
@@ -359,6 +370,7 @@ function WhereSearch({ value, error, signOut, onChange }: { value: Where | null;
   }
 
   async function pick(s: PlaceSuggestion) {
+    linkSeq.current++; // a pasted pin's late area lookup never overwrites a picked place
     const place = await resolvePlace(s, session.current);
     session.current = newSessionToken();
     if (!place) {
@@ -378,6 +390,7 @@ function WhereSearch({ value, error, signOut, onChange }: { value: Where | null;
           className="m-goto"
           aria-label={`Going to ${value.address}. Change it`}
           onClick={() => {
+            linkSeq.current++;
             setQuery("");
             setResults([]);
             onChange(null);

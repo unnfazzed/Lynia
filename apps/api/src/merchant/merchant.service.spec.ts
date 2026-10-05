@@ -836,6 +836,21 @@ describe("MerchantService customer read API (flag + pilotEnabled allowlist)", ()
     expect(res.restaurants[1]).toMatchObject({ ratingAvg: null, ratingCount: 0, prepBaselineMinutes: null });
   });
 
+  it("'Open, but busy' adds 10 minutes to the prep a customer is quoted (Merchant v2, D-77)", async () => {
+    const row = { coverPhotoUrl: null, logoUrl: null, cuisineTags: [], priceLevel: 2, hours: null, location: null, foodRatingAvg: 0, foodRatingCount: 0 };
+    const s = svc({
+      merchant: {
+        findMany: async () => [
+          { ...row, id: "m1", name: "Busy, set", prepBaselineMinutes: 18, busyMode: true },
+          { ...row, id: "m2", name: "Busy, unset", prepBaselineMinutes: null, busyMode: true },
+          { ...row, id: "m3", name: "Calm", prepBaselineMinutes: 18, busyMode: false },
+        ],
+      },
+    });
+    const res = await s.listRestaurants();
+    expect(res.restaurants.map((r) => r.prepBaselineMinutes)).toEqual([28, 30, 18]);
+  });
+
   it("searchRestaurants returns matching PLACES + cross-restaurant DISHES joined to the pilot name (#673 part b)", async () => {
     const s = svc({
       merchant: {
