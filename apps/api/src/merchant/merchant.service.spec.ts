@@ -1359,6 +1359,40 @@ describe("MerchantService.getTodaySummary (E3, M4·6; D-48 header tiles)", () =>
     expect(res.overdue![0]).toMatchObject({ riderName: "Tino", riderPhone: "+263771112222" });
   });
 
+  it("follow-ups T2 (D-77): owed cash carries when it's due back, and a rejected row its reason", async () => {
+    const deliveredAt = new Date(Date.now() - 5 * 60_000);
+    const base = { prepStartedAt: new Date(), createdAt: new Date(), cancelledAt: null, merchantGoodsTotal: 8, merchantClosedAt: null };
+    const res = await svc(
+      summaryPrisma({
+        today: [
+          { ...base, id: "a", status: "delivered", deliveredAt, debtStatus: "open", rejectionReason: null },
+          { ...base, id: "b", status: "cancelled", prepStartedAt: null, deliveredAt: null, cancelledAt: new Date(), debtStatus: null, rejectionReason: "too_busy" },
+          { ...base, id: "c", status: "cancelled", prepStartedAt: null, deliveredAt: null, cancelledAt: new Date(), debtStatus: null, rejectionReason: "not_a_code" },
+        ],
+      }),
+    ).getTodaySummary("p1");
+    expect(res.lines![0]).toMatchObject({ cash: "due", dueAt: new Date(deliveredAt.getTime() + 30 * 60_000).toISOString() });
+    expect(res.lines![0].reason).toBeUndefined();
+    expect(res.lines![1]).toMatchObject({ outcome: "rejected", reason: "too_busy" });
+    expect(res.lines![1].dueAt).toBeUndefined();
+    expect(res.lines![2].reason).toBeUndefined();
+  });
+
+  it("follow-ups T2b (D-77): ?date= reads that server-local day, and anything else 400s", async () => {
+    let todayWhere: { createdAt: { gte: Date; lte: Date } } | undefined;
+    const prisma = summaryPrisma();
+    const findMany = prisma.order.findMany;
+    prisma.order.findMany = async (args: { where: Record<string, unknown> }) => {
+      if (args.where.createdAt && !args.where.prepStartedAt) todayWhere = args.where as typeof todayWhere;
+      return findMany(args);
+    };
+    await svc(prisma).getTodaySummary("p1", "2026-10-03");
+    expect(todayWhere!.createdAt.gte).toEqual(new Date(2026, 9, 3, 0, 0, 0, 0));
+    expect(todayWhere!.createdAt.lte).toEqual(new Date(2026, 9, 3, 23, 59, 59, 999));
+    await expect(svc(summaryPrisma()).getTodaySummary("p1", "2026-02-31")).rejects.toThrow("YYYY-MM-DD");
+    await expect(svc(summaryPrisma()).getTodaySummary("p1", "yesterday")).rejects.toThrow("YYYY-MM-DD");
+  });
+
   it("averagePrepMinutes is null and totals are zero with no activity today", async () => {
     const s = svc({
       merchant: { findUnique: async () => ({ id: "m1" }) },
@@ -1378,6 +1412,53 @@ describe("MerchantService.getTodaySummary (E3, M4·6; D-48 header tiles)", () =>
     expect(res.cashOverdue).toBe(0);
     expect(res.cashDue).toBe(0);
     expect(res.overdue).toEqual([]);
+  });
+});
+
+describe("MerchantService.getWeekSummary (Merchant v2 follow-ups T2b, D-77)", () => {
+  it("rolls Monday-to-today up per server-local day: orders that went through, sales, owed cash, and orders never taken", async () => {
+    const now = new Date(2026, 9, 4, 13, 0); // Sunday 4 Oct
+    let where: { createdAt: { gte: Date; lte: Date } } | undefined;
+    const at = (day: number, h: number) => new Date(2026, 9, day, h, 0);
+    const row = (over: Record<string, unknown>) => ({
+      status: "delivered",
+      prepStartedAt: new Date(),
+      merchantGoodsTotal: 10,
+      merchantDeliveryShare: 0,
+      debtStatus: null,
+      debtAmount: null,
+      merchantClosedAt: null,
+      ...over,
+    });
+    const s = svc({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: {
+        findMany: async (args: { where: typeof where }) => {
+          where = args.where;
+          return [
+            row({ createdAt: at(4, 11), deliveredAt: at(4, 11), debtStatus: "open", debtAmount: 9.5 }), // late
+            row({ createdAt: at(4, 12), deliveredAt: new Date(now.getTime() - 5 * 60_000), debtStatus: "open", debtAmount: 4 }), // due
+            row({ createdAt: at(3, 12), deliveredAt: at(3, 12), debtStatus: "settled_cash", debtAmount: 10, merchantDeliveryShare: 1.5 }),
+            row({ createdAt: at(1, 9), status: "cancelled", prepStartedAt: null, deliveredAt: null }), // couldn't take
+          ];
+        },
+      },
+    });
+    const res = await s.getWeekSummary("p1", now);
+    expect(where!.createdAt.gte).toEqual(new Date(2026, 8, 28, 0, 0, 0, 0));
+    expect(res.start).toBe(new Date(2026, 8, 28).toISOString());
+    expect(res.days.map((d) => d.date)).toEqual(["2026-09-28", "2026-09-29", "2026-09-30", "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04"]);
+    expect(res.days[6]).toEqual({ date: "2026-10-04", orders: 2, sales: 20, cashLate: 9.5, cashDue: 4, rejected: 0 });
+    expect(res.days[5]).toEqual({ date: "2026-10-03", orders: 1, sales: 8.5, cashLate: 0, cashDue: 0, rejected: 0 });
+    expect(res.days[3]).toMatchObject({ orders: 0, sales: 0, rejected: 1 });
+    expect(res.orders).toBe(3);
+    expect(res.sales).toBe(28.5);
+  });
+
+  it("on a Monday the week is just today", async () => {
+    const s = svc({ merchant: { findUnique: async () => ({ id: "m1" }) }, order: { findMany: async () => [] } });
+    const res = await s.getWeekSummary("p1", new Date(2026, 8, 28, 8, 0));
+    expect(res.days).toEqual([{ date: "2026-09-28", orders: 0, sales: 0, cashLate: 0, cashDue: 0, rejected: 0 }]);
   });
 });
 

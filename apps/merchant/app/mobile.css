@@ -3154,6 +3154,7 @@
   flex-direction: column;
   margin-top: -2px;
 }
+/* A class keeps `.m-app a:not([class])` (link green) off the rows. */
 .m-ledger > a {
   display: flex;
   align-items: center;
@@ -3192,6 +3193,81 @@
 .m-ledger > a[data-tone="muted"] > div b,
 .m-ledger > a[data-tone="muted"] > b {
   color: var(--muted);
+}
+.m-ledger > a[data-tone="muted"] > b {
+  font-size: 14px;
+  font-weight: 600;
+}
+/* T2b · This week (follow-ups 2026-10-05): the week's bars, then one row per day. */
+.m-weekbars {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  height: 84px;
+}
+.m-weekbars > div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.m-weekbars span {
+  width: 100%;
+  border-radius: 6px;
+  background: var(--accent-wash);
+}
+.m-weekbars i {
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.m-weekbars > div[data-today] span {
+  background: var(--accent);
+}
+.m-weekbars > div[data-today] i {
+  color: var(--accent-text);
+  font-weight: 700;
+}
+.m-weekdays {
+  display: flex;
+  flex-direction: column;
+}
+.m-dayrow {
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.m-dayrow > div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.m-dayrow > div b {
+  font-size: 15px;
+  font-weight: 700;
+}
+.m-dayrow > div span {
+  font-size: 13px;
+  color: var(--muted);
+}
+.m-dayrow > div span[data-late] {
+  color: var(--highlight-ink);
+  font-weight: 600;
+}
+.m-dayrow > b {
+  font-size: 16px;
+  font-weight: 700;
 }
 .m-hd.m-acct {
   flex-direction: row;

@@ -9,9 +9,10 @@ import type {
   MerchantAcceptOrderRequest,
   MerchantConfirmPaymentRequest,
   MerchantEndOfDaySummaryResponse,
+  MerchantWeekSummaryResponse,
   MerchantOrderResponse,
   MerchantRejectionReasonCode,
-  MerchantWeeklyStatementResponse, HandoverFallbackResponse } from "@lynia/shared";
+  HandoverFallbackResponse } from "@lynia/shared";
 import { authedFetch } from "./api-client";
 
 export type { MerchantOrderResponse, MerchantOrderItemView, MerchantPhase, MerchantRejectionReasonCode } from "@lynia/shared";
@@ -96,14 +97,16 @@ export function refundOrder(orderId: string, reference: string, amount: number):
   return authedFetch(`/merchant/orders/${orderId}/refund`, { method: "POST", body: { reference, amount } });
 }
 
-// ── E3: weekly statement + end-of-day summary (N-13) ────────────────────────────────────────────────
+// ── E3: end-of-day summary (N-13); Merchant v2 T2b's week ────────────────────────────────────────────────
 
-export function getWeeklyStatement(): Promise<MerchantWeeklyStatementResponse> {
-  return authedFetch<MerchantWeeklyStatementResponse>("/merchant/statement/weekly");
+/** Today's summary, or (Merchant v2 follow-ups T2b) another day of this week, `YYYY-MM-DD`. */
+export function getTodaySummary(date?: string): Promise<MerchantEndOfDaySummaryResponse> {
+  return authedFetch<MerchantEndOfDaySummaryResponse>(date ? `/merchant/summary/today?date=${encodeURIComponent(date)}` : "/merchant/summary/today");
 }
 
-export function getTodaySummary(): Promise<MerchantEndOfDaySummaryResponse> {
-  return authedFetch<MerchantEndOfDaySummaryResponse>("/merchant/summary/today");
+/** Merchant v2 follow-ups T2b (D-77): this week, Monday to today, one row per day. */
+export function getWeekSummary(): Promise<MerchantWeekSummaryResponse> {
+  return authedFetch<MerchantWeekSummaryResponse>("/merchant/summary/week");
 }
 
 /** D-48 (merchant mobile B6/B7): close the merchant's side after pickup without counting cash —

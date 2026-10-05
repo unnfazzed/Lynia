@@ -1,16 +1,17 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { MerchantEndOfDaySummaryResponse, MerchantWeeklyStatementResponse } from "@lynia/shared";
+import type { MerchantEndOfDaySummaryResponse, MerchantWeekSummaryResponse } from "@lynia/shared";
 import MoneyPage from "./page";
+import { daySub, weekRange } from "../../lib/money-view";
 import { ApiError } from "../../lib/api-client";
-import { getTodaySummary, getWeeklyStatement } from "../../lib/orders-api";
+import { getTodaySummary, getWeekSummary } from "../../lib/orders-api";
 import { loadBusiness } from "../../lib/business";
 import { merchantProfile } from "../../testing/fixtures";
 
 vi.mock("../../lib/orders-api", () => ({
   getTodaySummary: vi.fn(),
-  getWeeklyStatement: vi.fn(),
+  getWeekSummary: vi.fn(),
 }));
 // The owner's, unless a test says otherwise (L4: Staff don't see the statement).
 vi.mock("../../lib/business", () => ({ loadBusiness: vi.fn(async () => null) }));
@@ -47,23 +48,31 @@ function today(): MerchantEndOfDaySummaryResponse {
     lines: [
       { orderId: "a1110000-0000-4000-8000-000000000000", at: new Date(2026, 8, 30, 12, 31).toISOString(), outcome: "delivered", cash: "in", amount: 12 },
       { orderId: "a0980000-0000-4000-8000-000000000000", at: new Date(2026, 8, 30, 11, 52).toISOString(), outcome: "delivered", cash: "late", amount: 9.5 },
-      { orderId: "a0900000-0000-4000-8000-000000000000", at: new Date(2026, 8, 30, 11, 10).toISOString(), outcome: "rejected", amount: 0 },
+      { orderId: "a1200000-0000-4000-8000-000000000000", at: new Date(2026, 8, 30, 12, 48).toISOString(), outcome: "delivered", cash: "due", dueAt: new Date(2026, 8, 30, 13, 5).toISOString(), amount: 8 },
+      { orderId: "a0900000-0000-4000-8000-000000000000", at: new Date(2026, 8, 30, 11, 10).toISOString(), outcome: "rejected", reason: "too_busy", amount: 0 },
+      { orderId: "a0850000-0000-4000-8000-000000000000", at: new Date(2026, 8, 30, 10, 2).toISOString(), outcome: "rejected", reason: "shop_closed", amount: 0 },
     ],
   };
 }
 
-function statement(): MerchantWeeklyStatementResponse {
+const key = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const daysAgo = (n: number) => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - n);
+  return d;
+};
+
+function statement(): MerchantWeekSummaryResponse {
   return {
-    rangeStart: "2026-07-27",
-    rangeEnd: "2026-08-03",
-    ordersDelivered: 3,
-    foodSalesTotal: 30,
-    commissionCharged: 0,
-    commissionRatePct: 0,
-    illustrativeRatePct: 10,
-    illustrativeCommission: 3,
-    cookedFoodLossTotal: 0,
-    lineItems: [{ orderId: "a1110000-0000-4000-8000-000000000000", deliveredAt: new Date(2026, 8, 29, 12, 31).toISOString(), paymentMethod: "cash", amount: 12, commission: 0 }],
+    start: daysAgo(3).toISOString(),
+    orders: 22,
+    sales: 180,
+    days: [
+      { date: key(daysAgo(2)), orders: 6, sales: 48, cashLate: 0, cashDue: 0, rejected: 1 },
+      { date: key(daysAgo(1)), orders: 9, sales: 72, cashLate: 0, cashDue: 0, rejected: 0 },
+      { date: key(daysAgo(0)), orders: 7, sales: 59.5, cashLate: 9.5, cashDue: 0, rejected: 0 },
+    ],
   };
 }
 
@@ -74,7 +83,7 @@ describe("StatementPage initial-load failure has a way out (LC-D##)", () => {
     vi.mocked(getTodaySummary)
       .mockRejectedValueOnce(new ApiError(0, "Couldn't reach the server — check the connection and try again."))
       .mockResolvedValueOnce(today());
-    vi.mocked(getWeeklyStatement).mockResolvedValue(statement());
+    vi.mocked(getWeekSummary).mockResolvedValue(statement());
 
     render(<MoneyPage />);
     await screen.findByText("Couldn't reach the server — check the connection and try again.");
@@ -87,9 +96,9 @@ describe("StatementPage initial-load failure has a way out (LC-D##)", () => {
 });
 
 describe("T2 · Money (Merchant v2, D-77)", () => {
-  it("today: sales, a late-cash card with Call, and the ledger — credits green, late cash gold, a rejected order '—'", async () => {
+  it("today: sales, a late-cash card with Call, and the ledger — credits green, cash on its way with when, late cash gold, 'No sale'", async () => {
     vi.mocked(getTodaySummary).mockResolvedValue(today());
-    vi.mocked(getWeeklyStatement).mockResolvedValue(statement());
+    vi.mocked(getWeekSummary).mockResolvedValue(statement());
     render(<MoneyPage />);
     expect(await screen.findByText("$59.50")).toBeTruthy();
     expect(screen.getByText("SALES · 7 ORDERS")).toBeTruthy();
@@ -105,21 +114,58 @@ describe("T2 · Money (Merchant v2, D-77)", () => {
     expect(screen.getByText("Delivered · cash back in")).toBeTruthy();
     expect(screen.getByText("+$12.00")).toBeTruthy();
     expect(screen.getByText("Delivered · cash late")).toBeTruthy();
-    expect(screen.getByText("You couldn’t take it")).toBeTruthy();
-    expect(screen.getByText("—")).toBeTruthy();
+    // T2 (follow-ups): cash on its way is plain "$8.00" with when it's back.
+    expect(screen.getByText("Delivered · cash on its way · back by 13:05")).toBeTruthy();
+    expect(screen.getByText("$8.00")).toBeTruthy();
+    expect(screen.getByText("You couldn't take it · Too busy")).toBeTruthy();
+    expect(screen.getByText("Missed · no answer in time")).toBeTruthy();
+    expect(screen.getAllByText("No sale")).toHaveLength(2);
+    expect(screen.queryByText("—")).toBeNull();
     expect(screen.queryByText("$0.00")).toBeNull();
     expect(screen.queryByText(/Commission/)).toBeNull();
   });
 
-  it("this week: the week's delivered sales", async () => {
-    vi.mocked(getTodaySummary).mockResolvedValue(today());
-    vi.mocked(getWeeklyStatement).mockResolvedValue(statement());
-    render(<MoneyPage />);
+  it("T2b this week: the week's total and range, the bars, one row per day newest first; a day opens in the Today layout", async () => {
+    const earlier = { ...today(), orders: 6, sales: 48, overdue: [], lines: [{ orderId: "a0910000-0000-4000-8000-000000000000", at: new Date().toISOString(), outcome: "delivered" as const, cash: "in" as const, amount: 8 }] };
+    vi.mocked(getTodaySummary).mockImplementation(async (date?: string) => (date ? earlier : today()));
+    vi.mocked(getWeekSummary).mockResolvedValue(statement());
+    const { container } = render(<MoneyPage />);
     fireEvent.click(await screen.findByRole("tab", { name: "This week" }));
-    expect(screen.getByText("SALES · 3 ORDERS")).toBeTruthy();
-    expect(screen.getByText("$30.00")).toBeTruthy();
-    expect(screen.getByText("THIS WEEK")).toBeTruthy();
-    expect(screen.getByText(/^#A111 · \w+ 12:31$/)).toBeTruthy();
+    expect(screen.getByText(`SALES · 22 ORDERS · ${weekRange(daysAgo(3).toISOString())}`)).toBeTruthy();
+    expect(screen.getByText("$180.00")).toBeTruthy();
+    // Late-cash cards are Today's, not the week's.
+    expect(screen.queryByText("$9.50 cash is late")).toBeNull();
+    expect(container.querySelectorAll(".m-weekbars > div")).toHaveLength(7);
+    expect(container.querySelectorAll(".m-weekbars > div[data-today]")).toHaveLength(1);
+    const rows = screen.getAllByRole("button").filter((b) => b.classList.contains("m-dayrow"));
+    expect(rows).toHaveLength(3);
+    expect(rows[0]!.textContent).toMatch(/· today7 orders · \$9\.50 cash late\$59\.50/);
+    expect(rows[1]!.textContent).toContain("9 orders · all cash in");
+    expect(rows[2]!.textContent).toContain("6 orders · 1 you couldn't take");
+    fireEvent.click(rows[2]!);
+    expect(getTodaySummary).toHaveBeenLastCalledWith(key(daysAgo(2)));
+    expect(await screen.findByText("SALES · 6 ORDERS")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "This week" }).getAttribute("aria-selected")).toBe("true");
+    // Today's row goes back to Today.
+    fireEvent.click(screen.getByRole("tab", { name: "This week" }));
+    fireEvent.click(screen.getAllByRole("button").find((b) => b.textContent?.includes("· today"))!);
+    expect(screen.getByRole("tab", { name: "Today" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByText("TODAY")).toBeTruthy();
+  });
+});
+
+describe("T2b day lines (follow-ups, D-77)", () => {
+  const d = { date: "2026-10-04", orders: 7, sales: 59.5, cashLate: 0, cashDue: 0, rejected: 0 };
+  it("late cash first, then orders not taken, then cash on its way, else all cash in", () => {
+    expect(daySub({ ...d, cashLate: 9.5, rejected: 1 })).toEqual({ text: "7 orders · $9.50 cash late", late: true });
+    expect(daySub({ ...d, rejected: 1 })).toEqual({ text: "7 orders · 1 you couldn't take", late: false });
+    expect(daySub({ ...d, cashDue: 4 }).text).toBe("7 orders · cash on its way");
+    expect(daySub(d).text).toBe("7 orders · all cash in");
+    expect(daySub({ ...d, orders: 0, sales: 0 }).text).toBe("0 orders");
+  });
+  it("the week's range reads like the header", () => {
+    expect(weekRange(new Date(2026, 8, 28).toISOString())).toBe("28 SEP–4 OCT");
+    expect(weekRange(new Date(2026, 9, 5).toISOString())).toBe("5–11 OCT");
   });
 });
 
@@ -129,6 +175,6 @@ describe("Money is the owner's (merchant web upgrade L4)", () => {
     render(<MoneyPage />);
     expect(await screen.findByText("Only the owner sees the money.")).toBeTruthy();
     expect(getTodaySummary).not.toHaveBeenCalled();
-    expect(getWeeklyStatement).not.toHaveBeenCalled();
+    expect(getWeekSummary).not.toHaveBeenCalled();
   });
 });

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import {
   BecomeMerchantRequest,
   MerchantCategoryRequest,
@@ -62,8 +62,16 @@ export class MerchantController {
   @Get("summary/today")
   @UseGuards(MerchantGuard)
   @OwnerOnly()
-  todaySummary(@CurrentUser() profileId: string) {
-    return this.merchant.getTodaySummary(profileId);
+  todaySummary(@CurrentUser() profileId: string, @Query("date") date?: string) {
+    // Merchant v2 follow-ups T2b (D-77): `?date=YYYY-MM-DD` opens another day in the Today layout.
+    return this.merchant.getTodaySummary(profileId, date || undefined);
+  }
+
+  @Get("summary/week")
+  @UseGuards(MerchantGuard)
+  @OwnerOnly()
+  weekSummary(@CurrentUser() profileId: string) {
+    return this.merchant.getWeekSummary(profileId);
   }
 
   @Patch("profile")

@@ -8,6 +8,7 @@ import type {
   MerchantDishRequest,
   MerchantDishResponse,
   MerchantEndOfDaySummaryResponse,
+  MerchantWeekSummaryResponse,
   MerchantHours,
   MerchantMemberRole,
   MerchantPaymentMethod,
@@ -46,6 +47,7 @@ import {
   BUSY_MODE_EXTRA_MIN,
   RESTAURANTS_AUTO_ACCEPT,
   RESTAURANTS_COMMISSION,
+  MerchantRejectionReasonCode,
   RESTAURANTS_DEBT,
   roundToCents,
   isInServiceArea,
@@ -139,6 +141,19 @@ const RESTAURANTS_SEARCH_MIN_CHARS = 2;
 
 /** N-14: "for the rest of today" — end of the server's local calendar day. A past timestamp reads as
  *  back-in-stock, so no reset job is needed; this is the only place that boundary is computed. */
+/** `YYYY-MM-DD` for a server-local day (the Money tab's day key, D-77 T2b). */
+export function localDayKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** A `YYYY-MM-DD` day as server-local midnight; 400s anything else (the controller's `?date=`). */
+export function parseLocalDay(date: string): Date {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  const d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+  if (!d || localDayKey(d) !== date) throw new BadRequestException("date must be YYYY-MM-DD");
+  return d;
+}
+
 function endOfToday(): Date {
   const d = new Date();
   d.setHours(23, 59, 59, 999);
@@ -884,11 +899,13 @@ export class MerchantService {
    *  local, same boundary as {@link endOfToday}). `cashTaken` only counts collect-and-return debts the
    *  merchant actually confirmed today (`confirmReturnedCash`) — pay-me-upfront cash has no ledger
    *  (C4's own scope cut), so it's honestly omitted rather than estimated (flagged, not guessed). */
-  async getTodaySummary(profileId: string): Promise<MerchantEndOfDaySummaryResponse> {
+  async getTodaySummary(profileId: string, date?: string): Promise<MerchantEndOfDaySummaryResponse> {
     const merchantId = await this.findOwnMerchantIdOrThrow(profileId);
-    const start = new Date();
+    // Merchant v2 follow-ups T2b (D-77): a day of this week opens in the Today layout (`?date=`).
+    const start = date ? parseLocalDay(date) : new Date();
     start.setHours(0, 0, 0, 0);
-    const end = endOfToday();
+    const end = new Date(start);
+    end.setHours(23, 59, 59, 999);
 
     const overdueBefore = new Date(Date.now() - RESTAURANTS_DEBT.cashReturnWindowMs);
     const [delivered, rejected, walletTaken, cashTaken, prepped, placed, owedRows, todays] = await Promise.all([
@@ -948,6 +965,8 @@ export class MerchantService {
           // Merchant v2 T2 (D-77): whether a delivered order's cash is back, on its way, or late.
           debtStatus: true,
           merchantClosedAt: true,
+          // Merchant v2 follow-ups T2 (D-77): why a rejected order wasn't taken.
+          rejectionReason: true,
         },
         orderBy: { createdAt: "desc" },
         take: 100,
@@ -1002,16 +1021,75 @@ export class MerchantService {
         const outcome = moneyLineOutcome(o);
         const earns = outcome === "delivered" || outcome === "in_progress";
         const cash = outcome === "delivered" ? moneyLineCash(o, overdueBefore) : null;
+        const reason = outcome === "rejected" ? MerchantRejectionReasonCode.safeParse(o.rejectionReason).data : undefined;
         return {
           orderId: o.id,
           at: (o.deliveredAt ?? o.cancelledAt ?? o.createdAt).toISOString(),
           outcome,
           ...(cash ? { cash } : {}),
+          ...((cash === "due" || cash === "late") && o.deliveredAt
+            ? { dueAt: new Date(o.deliveredAt.getTime() + RESTAURANTS_DEBT.cashReturnWindowMs).toISOString() }
+            : {}),
+          ...(reason ? { reason } : {}),
           amount: earns
             ? roundToCents(foodOrderMoney({ goodsTotal: o.merchantGoodsTotal, deliveryFee: o.deliveryFee, merchantDeliveryShare: o.merchantDeliveryShare }).merchantNet)
             : 0,
         };
       }),
+    };
+  }
+
+  /** Merchant v2 follow-ups T2b (D-77): this locale week, Monday to today (server-local days, the same
+   *  boundary as {@link getTodaySummary}). A day's `orders` and `sales` count the way Today's do (accepted
+   *  and not cancelled; the venue's money), its cash is what riders still owe from that day's deliveries,
+   *  and `rejected` is the orders never taken (turned down or missed). */
+  async getWeekSummary(profileId: string, now = new Date()): Promise<MerchantWeekSummaryResponse> {
+    const merchantId = await this.findOwnMerchantIdOrThrow(profileId);
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+    const end = new Date(now);
+    end.setHours(23, 59, 59, 999);
+    const overdueBefore = new Date(now.getTime() - RESTAURANTS_DEBT.cashReturnWindowMs);
+
+    const rows = await this.prisma.order.findMany({
+      where: { merchantId, orderType: "merchant", createdAt: { gte: start, lte: end } },
+      select: {
+        createdAt: true,
+        status: true,
+        prepStartedAt: true,
+        deliveredAt: true,
+        merchantGoodsTotal: true,
+        merchantDeliveryShare: true,
+        debtStatus: true,
+        debtAmount: true,
+        merchantClosedAt: true,
+      },
+      take: 2000,
+    });
+
+    const days: MerchantWeekSummaryResponse["days"] = [];
+    const span = (now.getDay() + 6) % 7; // days since Monday
+    for (let i = 0; i <= span; i++) {
+      const key = localDayKey(new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
+      const mine = rows.filter((o) => localDayKey(o.createdAt) === key);
+      const went = mine.filter((o) => o.prepStartedAt != null && o.status !== "cancelled");
+      const owed = (state: "late" | "due") =>
+        addMoney(0, ...mine.filter((o) => moneyLineOutcome(o) === "delivered" && moneyLineCash(o, overdueBefore) === state).map((o) => Number(o.debtAmount ?? 0)));
+      days.push({
+        date: key,
+        orders: went.length,
+        sales: addMoney(0, ...went.map((o) => subMoney(Number(o.merchantGoodsTotal ?? 0), Number(o.merchantDeliveryShare ?? 0)))),
+        cashLate: owed("late"),
+        cashDue: owed("due"),
+        rejected: mine.filter((o) => moneyLineOutcome(o) === "rejected").length,
+      });
+    }
+    return {
+      start: start.toISOString(),
+      orders: days.reduce((n, d) => n + d.orders, 0),
+      sales: addMoney(0, ...days.map((d) => d.sales)),
+      days,
     };
   }
 
