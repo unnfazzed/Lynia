@@ -1975,6 +1975,22 @@ scheduled orders, the merchant/rider hand-over and the 6-digit pickup code.
 - **What it carries.** Everything in vc 41 plus the tab bar (#1018) and Order flow v2 (D-59, #1026 to #1035).
 - **Play's review.** Testers see the release once Play approves it, as with vc 40 and vc 41.
 
+**Build vc 43 — 2026-10-02 (Splash v1, Orders v2, Notifications v1).** Not written here at the time;
+recorded 2026-10-05 from the EAS build record and the status run below.
+
+- **Build.** `mobile-release.yml` run 37055313210 (`profile: closed`, `main` at `f7f3d4e`, #1048) queued
+  EAS build `e05911d2` (v0.51.0 / vc 43, runtime `3b74945e…`). It FINISHED in 9 minutes (19:38 to 19:47
+  UTC).
+- **Submission.** Submission `d95224f9` **FINISHED on track `Closed testing`** (`eas-build-status.yml` run
+  37057486944).
+- **New runtime.** #1043's plain-green launch screen changed `app.config.ts`, the splash assets and a
+  `package.json` script, which are all fingerprint inputs. The runtime moved from `db601ead…` (vc 40 to 42)
+  to `3b74945e…`, so an OTA from `main` now reaches vc 43 and later only. vc 40 to 42 need the Play update.
+- **What it carries.** Everything in vc 42 plus the owner review fixes (D-60, #1037), the wider service
+  area (D-61, #1038), the optional rider photo (D-62, #1039), Orders v2 (D-63, #1041, #1044), Splash v1 and
+  its launch screen (D-64, #1042, #1043, #1046), the "Food" tile (#1047), Notifications v1 (D-66, #1045) and
+  the 2026-10-02 owner decisions (#1048).
+
 ---
 
 ## 9. Pre-submission checklist
