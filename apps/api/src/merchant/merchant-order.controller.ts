@@ -129,6 +129,14 @@ export class MerchantOrderController {
     return this.foodOrders.extendPrep(profileId, orderId);
   }
 
+  // Merchant v2 K4/S3 (ledger D-77): "Rider can't enter code" — a signed link for the assigned rider.
+  @Post(":orderId/handover-fallback")
+  @UseGuards(MerchantGuard)
+  @Throttle({ limit: 5, windowSec: 600, keyPrefix: "handover-link" })
+  createHandoverLink(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
+    return this.foodOrders.createHandoverLink(profileId, orderId);
+  }
+
   // Auto-accept: "Got it, we're making it" — confirms an auto-accepted order so a rider can be sent.
   @Post(":orderId/confirm-kitchen")
   @UseGuards(MerchantGuard)

@@ -15,6 +15,7 @@ import { MerchantBookingController } from "./merchant-booking.controller";
 import { MerchantBookingService } from "./merchant-booking.service";
 import { MerchantGuard } from "./merchant.guard";
 import { MerchantInvitesService } from "./merchant-invites.service";
+import { HandoverLinkController } from "./handover-link.controller";
 import { MerchantOrderController } from "./merchant-order.controller";
 import { MerchantOrderProofService } from "./merchant-order-proof.service";
 import { OrderSubstitutionService } from "./order-substitution.service";
@@ -85,6 +86,7 @@ import { PrescriptionService } from "./prescription.service";
     MerchantBranchesController,
     OrderFlowCustomerController,
     OrderFlowMerchantController,
+    HandoverLinkController,
   ],
   providers: [
     MerchantService,

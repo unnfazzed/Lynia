@@ -1,4 +1,4 @@
-import type { BecomeMerchantRequest, MerchantProfileResponse } from "@lynia/shared";
+import type { BecomeMerchantRequest, HandoverLinkInfoResponse, MerchantProfileResponse } from "@lynia/shared";
 import { API_BASE_URL } from "./config";
 import { getDeviceId } from "./device-id";
 import { getReachabilityStore } from "./reachability";
@@ -80,6 +80,15 @@ interface VerifyResult {
   profileId: string;
   role: string;
   needsProfile: boolean;
+}
+
+/** Merchant v2 (D-77): the rider's public hand-over page (`/h/<token>`) — no session; the token is the authority. */
+export function getHandoverLink(token: string): Promise<HandoverLinkInfoResponse> {
+  return rawFetch<HandoverLinkInfoResponse>(`/handover/${encodeURIComponent(token)}`);
+}
+
+export function confirmHandoverLink(token: string, code: string): Promise<{ orderId: string; status: "picked_up" }> {
+  return rawFetch(`/handover/${encodeURIComponent(token)}/confirm`, { method: "POST", body: { code } });
 }
 
 export function requestOtp(phone: string): Promise<OtpRequestResult> {

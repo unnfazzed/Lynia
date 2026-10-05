@@ -9,6 +9,7 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
   Optional,
+  ServiceUnavailableException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import {
@@ -51,6 +52,8 @@ import {
   type FoodOfferResponse,
   type MerchantOrderPrescriptionView,
   type RxDeclineReason,
+  type HandoverFallbackResponse,
+  type HandoverLinkInfoResponse,
 } from "@lynia/shared";
 import { PAYMENT_RAIL, type PaymentRail } from "../adapters/payments/payment-rail.interface";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
@@ -78,6 +81,8 @@ import { PrescriptionService } from "./prescription.service";
 // merchant account's own registered phone when no pickup-point contactPhone is set yet (toResponse).
 /** Merchant v2 K3 (D-77): "+5 min" adds this much prep, up to the cap. */
 export const PREP_EXTEND_MIN = 5;
+/** Merchant v2 (D-77): how long a hand-over fallback link lives. Long enough to send it and walk to the counter. */
+export const HANDOVER_LINK_TTL_S = 15 * 60;
 export const PREP_MAX_MIN = 120;
 
 const ORDER_WITH_ITEMS_INCLUDE = {
@@ -1021,6 +1026,68 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     }
     this.notifyQueue(outcome.merchantId, orderId);
     return { orderId, status: "picked_up" };
+  }
+
+  // ── Merchant v2 (ledger D-77): the offline-rider hand-over fallback ────────────────────────────────
+
+  /** The signature binds the order, its assigned rider, the expiry and the CURRENT pickup-code hash, so a
+   *  link dies when it expires, when the rider changes, and when the code is re-minted (a fresh reveal).
+   *  Domain-separated HMAC over the server's hash key (TokenService.hash). */
+  private handoverSig(orderId: string, riderId: string, exp: number, pickupCodeHash: string): string {
+    return this.tokens.hash(`handover-link:v1:${orderId}:${riderId}:${exp}:${pickupCodeHash}`).slice(0, 32);
+  }
+
+  /** `POST /merchant/orders/:orderId/handover-fallback`: a signed link for the assigned rider, while the
+   *  rider is on the way to the counter. Audit-logged (who asked, for which order). */
+  async createHandoverLink(profileId: string, orderId: string, now: Date = new Date()): Promise<HandoverFallbackResponse> {
+    const base = this.env?.MERCHANT_WEB_URL;
+    if (!base) throw new ServiceUnavailableException({ reason: "handover_link_unavailable", message: "This isn't available yet." });
+    const order = await this.findOwnAsMerchant(profileId, orderId);
+    if (order.status !== "en_route_pickup" || !order.riderId || !order.pickupCodeHash) {
+      throw new ConflictException({ reason: "not_at_handover", message: "There's no rider on the way for this order." });
+    }
+    const exp = Math.floor(now.getTime() / 1000) + HANDOVER_LINK_TTL_S;
+    const token = `${orderId}.${exp}.${this.handoverSig(orderId, order.riderId, exp, order.pickupCodeHash)}`;
+    await this.prisma.auditLog.create({ data: { actor: profileId, action: "order.handover_link", target: orderId } });
+    return {
+      link: `${base.replace(/\/+$/, "")}/h/${token}`,
+      expiresAt: new Date(exp * 1000).toISOString(),
+      riderPhone: order.rider?.profile?.phone || null,
+    };
+  }
+
+  /** A hand-over link's order, when the token is well-formed, unexpired and still matches the order's
+   *  current rider and pickup code; otherwise one uniform 404 (nothing about why leaks to the holder). */
+  private async verifyHandoverLink(token: string, now: Date) {
+    const m = /^([0-9a-f-]{36})\.(\d{10})\.([0-9a-f]{32})$/.exec(token);
+    const gone = new NotFoundException({ reason: "handover_link_invalid", message: "This link has expired. Ask the counter for a new one." });
+    if (!m) throw gone;
+    const [, orderId, expRaw, sig] = m as unknown as [string, string, string, string];
+    const exp = Number(expRaw);
+    if (exp * 1000 <= now.getTime()) throw gone;
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { id: true, status: true, riderId: true, pickupCodeHash: true, merchant: { select: { name: true } } },
+    });
+    if (!order || order.status !== "en_route_pickup" || !order.riderId || !order.pickupCodeHash) throw gone;
+    if (!this.tokens.safeEqualHex(sig, this.handoverSig(orderId, order.riderId, exp, order.pickupCodeHash))) throw gone;
+    return { order: order as typeof order & { riderId: string }, exp };
+  }
+
+  /** `GET /handover/:token` (public): the order and venue the rider's page names. */
+  async handoverLinkInfo(token: string, now: Date = new Date()): Promise<HandoverLinkInfoResponse> {
+    const { order, exp } = await this.verifyHandoverLink(token, now);
+    return { orderLabel: `#${order.id.slice(0, 4).toUpperCase()}`, venueName: order.merchant?.name ?? "the counter", expiresAt: new Date(exp * 1000).toISOString() };
+  }
+
+  /** `POST /handover/:token/confirm` (public): the rider types the code the counter reads out. Exactly the
+   *  in-app pickup (confirmPickup): same code check, same attempt cap, same debt opening and queue ping.
+   *  Single use by construction — after pickup the order is no longer `en_route_pickup`. Audit-logged. */
+  async confirmHandoverLink(token: string, code: string, now: Date = new Date()): Promise<{ orderId: string; status: "picked_up" }> {
+    const { order } = await this.verifyHandoverLink(token, now);
+    const res = await this.confirmPickup(order.id, order.riderId, code);
+    await this.prisma.auditLog.create({ data: { actor: order.riderId, action: "order.handover_link_used", target: order.id } });
+    return res;
   }
 
   /**

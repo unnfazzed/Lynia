@@ -38,6 +38,7 @@ import {
   rejectOrder,
   releaseUnpaid,
   reportNonReturn,
+  handoverLinkMessage,
   requestHandoverFallback,
   requestPayment,
   revealPickupCode,
@@ -614,7 +615,19 @@ function Handover({ order, act, disabled, error, setConfirm, business }: Ctx) {
           </div>
         )}
         {fallback && (
-          <button type="button" className="m-btn2" disabled={disabled} onClick={() => void act(() => requestHandoverFallback(order.id), `${first} got a link to finish it`)}>
+          <button
+            type="button"
+            className="m-btn2"
+            disabled={disabled}
+            onClick={() =>
+              void act(async () => {
+                // The link goes from the counter's own phone (the rider may have no data for the app, but SMS works).
+                const res = await requestHandoverFallback(order.id);
+                const body = handoverLinkMessage(business?.name ?? "the counter", orderLabel(order), res.link);
+                window.location.href = `sms:${res.riderPhone ?? ""}?body=${encodeURIComponent(body)}`;
+              }, `${first} got a link to finish it`)
+            }
+          >
             Rider can’t enter code
           </button>
         )}

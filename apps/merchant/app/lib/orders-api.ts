@@ -10,8 +10,7 @@ import type {
   MerchantEndOfDaySummaryResponse,
   MerchantOrderResponse,
   MerchantRejectionReasonCode,
-  MerchantWeeklyStatementResponse,
-} from "@lynia/shared";
+  MerchantWeeklyStatementResponse, HandoverFallbackResponse } from "@lynia/shared";
 import { authedFetch } from "./api-client";
 
 export type { MerchantOrderResponse, MerchantOrderItemView, MerchantPhase, MerchantRejectionReasonCode } from "@lynia/shared";
@@ -174,6 +173,11 @@ export function extendPrep(orderId: string): Promise<MerchantOrderResponse> {
  * "Rider can't enter code" — the rider gets an SMS link to finish the hand-over. A typed stub: the API
  * route doesn't exist yet, and the button only shows with `NEXT_PUBLIC_MERCHANT_HANDOVER_FALLBACK=1`.
  */
-export function requestHandoverFallback(orderId: string): Promise<MerchantOrderResponse> {
-  return authedFetch<MerchantOrderResponse>(`/merchant/orders/${orderId}/handover-fallback`, { method: "POST" });
+export function requestHandoverFallback(orderId: string): Promise<HandoverFallbackResponse> {
+  return authedFetch<HandoverFallbackResponse>(`/merchant/orders/${orderId}/handover-fallback`, { method: "POST" });
+}
+
+/** The text the counter sends the rider with the link, from the merchant's own phone (`sms:`). */
+export function handoverLinkMessage(venue: string, label: string, link: string): string {
+  return `Hi, it's ${venue}. To pick up ${label} without the app, open this and type the code we read out: ${link}`;
 }
