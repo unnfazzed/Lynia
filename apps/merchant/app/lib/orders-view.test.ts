@@ -55,7 +55,9 @@ describe("which screen an order opens on", () => {
     expect(detailView(o({ merchantPhase: null, status: "en_route_dropoff" }))).toBe("tracking");
     expect(detailView(o({ merchantPhase: null, status: "delivered", debtStatus: "open" }))).toBe("delivered");
     expect(detailView(o({ merchantPhase: null, status: "undelivered", debtStatus: "open" }))).toBe("delivered");
-    expect(detailView(o({ merchantPhase: null, status: "delivered", debtStatus: "settled_cash" }))).toBe("closed");
+    expect(detailView(o({ merchantPhase: null, status: "delivered", debtStatus: "settled_cash", paymentMethod: "cash", merchantCashRule: "collect_and_return" }))).toBe("closed");
+    // K5b (D-77 follow-ups): delivered with no cash to bring back keeps its screen.
+    expect(detailView(o({ merchantPhase: null, status: "delivered", paymentMethod: "wallet" }))).toBe("delivered");
     expect(detailView(o({ merchantPhase: null, status: "delivered", debtStatus: "open", merchantClosedAt: "2026-09-30T13:00:00Z" }))).toBe("closed");
     expect(detailView(o({ merchantPhase: null, status: "cancelled" }))).toBe("closed");
   });

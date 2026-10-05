@@ -94,7 +94,9 @@ export function detailView(o: MerchantOrderResponse): DetailView {
   if (o.merchantPhase === "preparing") return "cooking";
   if (isReadyBucket(o)) return "handover";
   if (o.status === "delivered" || o.status === "completed" || o.status === "undelivered") {
-    return o.debtStatus === "open" ? "delivered" : "closed";
+    // K5b (D-77 follow-ups): a delivered order with no cash to bring back keeps its "delivered" screen.
+    const noCashBack = o.paymentMethod !== "cash" || o.merchantCashRule !== "collect_and_return";
+    return o.debtStatus === "open" || (o.status !== "undelivered" && noCashBack) ? "delivered" : "closed";
   }
   if (isAfterPickup(o)) return "tracking";
   return "closed";

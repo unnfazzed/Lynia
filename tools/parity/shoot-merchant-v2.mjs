@@ -101,7 +101,7 @@ function apiRoute(route, scenario) {
   if (path === "/merchant/orders") return json(200, scenario.orders ?? []);
   const one = path.match(/^\/merchant\/orders\/([0-9a-f-]+)$/);
   if (one) return json(200, (scenario.orders ?? []).find((o) => o.id === one[1]) ?? {});
-  if (path === "/merchant/scheduled-orders") return json(200, []);
+  if (path === "/merchant/scheduled-orders") return json(200, scenario.scheduled ?? []);
   if (/\/pickup-code\/reveal$/.test(path)) return json(200, { pickupCode: scenario.code ?? "720518" });
   if (/\/prescription$/.test(path)) return json(200, { photos: [{ page: 1, url: RX_PHOTO }, { page: 2, url: RX_PHOTO }], expiresInSeconds: 300 });
   if (path === "/merchant/bookings") return json(200, scenario.bookings ?? []);
@@ -267,7 +267,22 @@ const openProblem = (then) => async (p) => {
     await p.getByRole("radio", { name: then }).click();
   }
 };
+const TINO = { ...RIDER, firstName: "Tino", lastName: "Kativhu" };
+const atToday = (h, m) => { const d = new Date(); d.setHours(h, m, 0, 0); return d.toISOString(); };
+const cashLate = order("a1010000-0000-4000-8000-000000000000", { merchantPhase: null, status: "delivered", riderId: TINO.profileId, rider: TINO, riderPhone: "+263774444444", debtStatus: "open", debtAmount: 9.5, cashDueAt: ago(5) });
+const cashOk = order("a1050000-0000-4000-8000-000000000000", { merchantPhase: null, status: "delivered", riderId: RIDER.profileId, rider: RIDER, debtStatus: "open", debtAmount: 12, deliveredAt: ago(8), cashDueAt: ahead(10) });
+const sched = order("a3010000-0000-4000-8000-000000000000", { merchantPhase: null, items: [line("Mazondo", 6), line("Sadza", 6), line("Greens", 6)], merchantGoodsTotal: 18, scheduledFor: ahead(240), ringsAt: ahead(210) });
+const k5b = order("a1150000-0000-4000-8000-000000000000", { merchantPhase: null, status: "delivered", paymentMethod: "wallet", riderId: RIDER.profileId, rider: RIDER, items: [line("Mazondo", 7), line("Sadza", 7)], merchantGoodsTotal: 14, deliveredAt: ago(2) });
+const k5c = order("a1170000-0000-4000-8000-000000000000", { merchantPhase: null, status: "undelivered", riderId: RIDER.profileId, rider: RIDER, items: [line("Mazondo", 5, 2)], merchantGoodsTotal: 10, debtStatus: "open", debtAmount: 10, cashDueAt: ahead(14), doorProof: { photoUrl: null, takenAt: ago(1), reason: "customer_unreachable", handedTo: null } });
 const SETS = {
+  k5x: [
+    { mock: "K5b Delivered wallet", label: "K5b · Delivered, nothing to bring back", sub: "door photo: none in the fixture", app: { name: "K5b", path: `/queue/${k5b.id}`, scenario: { me: KITCHEN, orders: [k5b] } } },
+    { mock: "K5c Goods back", label: "K5c · Goods coming back", app: { name: "K5c", path: `/queue/${k5c.id}`, scenario: { me: KITCHEN, orders: [k5c] } } },
+  ],
+  boardx: [
+    { mock: "K1b Board cash and scheduled", label: "K1b · Board with cash out and scheduled", app: { name: "K1b", path: "/queue", scenario: { me: KITCHEN, orders: [order("a2220000-0000-4000-8000-000000000000", { items: [line("Mazondo", 5), line("Sadza & greens", 4.5)], merchantGoodsTotal: 9.5, prepMinutes: 15, prepStartedAt: ago(7) }), cashLate, cashOk], scheduled: [sched], summary: { ...SUMMARY, orders: 5, sales: 41, cashDue: 21.5 } } } },
+    { mock: "K1c Board empty", label: "K1c · Open and quiet", app: { name: "K1c", path: "/queue", scenario: { me: KITCHEN, orders: [], summary: { ...SUMMARY, orders: 0, sales: 0, cashDue: 0, cashOverdue: 0 } } } },
+  ],
   sheets: [
     { mock: "K2a Reasons sheet kitchen", label: "K2a · Why can't you take it? (kitchen)", app: { name: "K2a", path: "/queue", scenario: { me: KITCHEN, orders: [ringingKitchen] }, before: openWhy("Too busy right now") } },
     { mock: "S2a Reasons sheet shop", label: "S2a · Why can't you take it? (shop, with note)", app: { name: "S2a", path: "/queue", scenario: { me: LIVE_SHOP, orders: [ringingShop] }, before: openWhy("Something else", "Closing early for stock-take") } },

@@ -41,6 +41,9 @@ export interface BoardCard {
   /** A cooking card's continuous bar (0–1), or a booking's five segments filled. */
   bar?: { fraction: number } | { steps: number };
   chevron?: boolean;
+  /** K1b (D-77 follow-ups): a cash-to-come-back row — gold with a LATE chip once overdue, and a Call
+   *  pill to the rider (in place of the chevron) when the number is known. */
+  cash?: { late: boolean; phone: string | null };
 }
 
 export interface BoardSection {
@@ -49,13 +52,10 @@ export interface BoardSection {
   cards: BoardCard[];
 }
 
-/** "Mazondo, Sadza & greens" for several lines, "1× Mazondo" for one (both as K1 draws them). */
+/** "Mazondo, Sadza & greens" for several lines (names joined by commas), "1× Mazondo" for one (both as K1 draws them). */
 export function boardItems(o: Pick<MerchantOrderResponse, "items">): string {
   if (o.items.length === 1) return `${o.items[0]!.quantity}× ${o.items[0]!.name}`;
-  return o.items
-    .map((i) => i.name)
-    .join(", ")
-    .replace(/, ([^,]*)$/, " & $1");
+  return o.items.map((i) => i.name).join(", ");
 }
 
 /** When the food is ready: started + prep minutes. */
@@ -204,22 +204,21 @@ function orderCards(
     if (owed) {
       const due = o.cashDueAt ? new Date(o.cashDueAt) : null;
       const late = due !== null && due.getTime() < now;
+      const who = rider ?? "Your rider";
       return {
         section: "cash",
-        rank: due?.getTime() ?? 0,
+        rank: cashRank(late, due),
         card: {
           key: o.id,
           href,
-          urgent: late,
           tag,
-          title: rider ? `${label} · ${rider}` : label,
-          sub: due
-            ? late
-              ? `${money(owed)} was due ${hm(due.toISOString())}`
-              : `Brings you ${money(owed)} by ${hm(due.toISOString())}`
-            : `Brings you ${money(owed)}`,
+          title: `${money(owed)} · ${label}`,
+          sub: late
+            ? `${who} · was due ${hm(due!.toISOString())}`
+            : [who, o.deliveredAt ? `delivered ${hm(o.deliveredAt)}` : null, due ? `back by ${hm(due.toISOString())}` : null].filter(Boolean).join(" · "),
           subTone: late ? "gold" : undefined,
-          chevron: true,
+          cash: { late, phone: o.riderPhone ?? null },
+          chevron: !late,
         },
       };
     }
@@ -282,23 +281,28 @@ function bookingCard(b: MerchantBookingResponse, now: number): { section: BoardS
   if (b.state === "delivered" && cod?.status === "due") {
     const dueAt = cod.dueAt ? new Date(cod.dueAt) : null;
     const late = dueAt !== null && dueAt.getTime() < now;
-    const amount = money(Number(cod.amount));
+    const who = rider ?? "Your rider";
     return {
       section: "cash",
-      rank: dueAt?.getTime() ?? 0,
+      rank: cashRank(late, dueAt),
       card: {
         key: b.id,
         href,
-        urgent: late,
         tag: "BOOKED",
-        title: rider ? `${b.itemsSummary} · ${rider}` : b.itemsSummary,
-        sub: dueAt ? (late ? `${amount} was due ${hm(cod.dueAt)}` : `Brings you ${amount} by ${hm(cod.dueAt)}`) : `Brings you ${amount}`,
+        title: `${money(Number(cod.amount))} · ${b.itemsSummary}`,
+        sub: late ? `${who} · was due ${hm(cod.dueAt)}` : dueAt ? `${who} · back by ${hm(cod.dueAt)}` : who,
         subTone: late ? "gold" : undefined,
-        chevron: true,
+        cash: { late, phone: b.rider?.phone ?? null },
+        chevron: !late,
       },
     };
   }
   return null;
+}
+
+/** K1b: late rows first, then the rest; the oldest due first within each. */
+function cashRank(late: boolean, due: Date | null): number {
+  return (late ? 0 : 1e15) + (due?.getTime() ?? 0);
 }
 
 /** K1 / S1: the board's sections, each sorted most urgent first, empty ones dropped. */

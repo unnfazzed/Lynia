@@ -3440,6 +3440,7 @@
 }
 .m-info[data-tone="mint"] {
   background: var(--accent-wash);
+  color: var(--accent-text);
 }
 .m-info[data-tone="mint"] > svg,
 .m-info[data-tone="mint"] b {
@@ -3466,4 +3467,121 @@
 .m-rsheet-ft .m-btn .m-wspin {
   border-color: var(--bg);
   border-top-color: transparent;
+}
+
+/* ── Merchant v2 follow-ups · K1b / K1c (ledger D-77) ───────────────────────────────────────── */
+/* "Cash due" is muted, not gold, when nothing is out. */
+.m-kpi .m-nil b {
+  color: var(--muted);
+}
+.m-bc.m-cashrow {
+  min-height: 56px;
+  padding: 10px 14px;
+  background: var(--bg);
+}
+.m-bc.m-late-row {
+  background: var(--highlight-wash);
+  border-color: var(--highlight-border);
+}
+.m-cashlink {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: inherit;
+  text-decoration: none;
+  min-height: var(--target-min);
+}
+.m-late {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  margin-left: 8px;
+  border-radius: 6px;
+  background: var(--highlight);
+  color: var(--highlight-chip-ink);
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: 2px;
+}
+.m-bc.m-dashed {
+  min-height: 56px;
+  padding: 10px 14px;
+  border-style: dashed;
+}
+/* K1c: open and quiet. */
+.m-quiet {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 64px 16px 24px;
+}
+.m-quiet > i {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--accent-wash);
+  color: var(--accent-text);
+  display: grid;
+  place-items: center;
+  margin-bottom: 6px;
+}
+.m-quiet > b {
+  font-size: 20px;
+  font-weight: 700;
+}
+.m-quiet > p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.m-quiet > .m-btn2 {
+  align-self: stretch;
+  margin-top: 14px;
+  color: var(--accent-text);
+  text-decoration: none;
+}
+
+/* ── Merchant v2 follow-ups · K5b / K5c (ledger D-77) ───────────────────────────────────────── */
+.m-steps i.m-fail {
+  background: var(--danger);
+}
+/* K5c: the goods card in the cash card's slot — red strip, GOODS BACK TO YOU. */
+.m-goodsback {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--danger-wash);
+  border: 1px solid var(--danger);
+  color: var(--danger-ink);
+}
+.m-goodsback > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.m-goodsback > div > span {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.m-goodsback > b {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.m-goodsback > p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.m-btn2.m-danger-ink {
+  color: var(--danger-ink);
 }

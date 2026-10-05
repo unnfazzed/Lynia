@@ -14,12 +14,13 @@ import { Icon } from "../icons";
 export const LIFECYCLE = ["Accept", "Cook", "Hand over", "On the way", "Cash back"] as const;
 
 /** 5 segments, 4 tall, 4 apart; done = accent. With a label: "Step 2 of 5 · Cooking". */
-export function ProgressSteps({ step, label }: { step: number; label?: string }) {
+export function ProgressSteps({ step, label, failed = false }: { step: number; label?: string; failed?: boolean }) {
+  // K5c (D-77 follow-ups): a failed delivery draws its step in --danger and leaves the last one empty.
   return (
     <div className="m-psteps">
-      <div className="m-steps" aria-hidden={label ? "true" : undefined} aria-label={label ? undefined : `${step} of 5 steps`}>
+      <div className="m-steps" aria-hidden={label ? "true" : undefined} aria-label={label ? undefined : failed ? `Step ${step} of 5 failed` : `${step} of 5 steps`}>
         {[0, 1, 2, 3, 4].map((i) => (
-          <i key={i} className={i < step ? "m-on" : undefined} />
+          <i key={i} className={failed && i === step - 1 ? "m-fail" : i < step ? "m-on" : undefined} />
         ))}
       </div>
       {label && (

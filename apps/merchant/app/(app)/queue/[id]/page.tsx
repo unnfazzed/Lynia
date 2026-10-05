@@ -90,6 +90,12 @@ function cancelSub(order: MerchantOrderResponse): string {
     : `${rider} is booked. We call off the rider and tell the customer.`;
 }
 
+/** K5c's reason line, from the rider's door proof. */
+function failReason(order: MerchantOrderResponse): string {
+  const r = order.doorProof?.reason;
+  return r === "customer_unreachable" ? "Customer didn't answer" : r === "left_at_gate" ? "Couldn't hand it over" : "Couldn't deliver";
+}
+
 function isShop(order: MerchantOrderResponse, business: { businessType?: string } | null): boolean {
   return (order.venue?.businessType ?? business?.businessType) === "shop";
 }
@@ -450,16 +456,30 @@ export default function OrderPage() {
           />
         );
       case "not_returned":
+        // K5c (D-77 follow-ups): the reasons-sheet pattern with one confirm; support takes it from there.
         return (
-          <ConfirmSheet
-            title="Food not returned?"
-            body="LyniaGo support follows it up with the rider."
-            confirmLabel="Report it"
-            busy={busy}
-            error={error}
-            onConfirm={() => void act(() => reportNonReturn(order.id), "Reported · support will call you", true)}
-            onCancel={close}
-          />
+          <Sheet
+            title={`${v.goodsBack === "I got the food back" ? "Food" : "Goods"} not returned?`}
+            sub="We flag it to LyniaGo support, who follow it up with the rider."
+            onClose={close}
+            actions={
+              <>
+                {error && (
+                  <div className="m-alert" role="alert">
+                    {error}
+                  </div>
+                )}
+                <button type="button" className="m-btn m-danger" disabled={busy} onClick={() => void act(() => reportNonReturn(order.id), "We've told LyniaGo. We'll WhatsApp you.", true)}>
+                  Report to LyniaGo
+                </button>
+                <button type="button" className="m-btn2" disabled={busy} onClick={close}>
+                  Go back
+                </button>
+              </>
+            }
+          >
+            {null}
+          </Sheet>
         );
       default:
         return null;
@@ -734,9 +754,16 @@ function OnTheWay({ order, act, disabled, error, setConfirm, business, v }: Ctx)
   const rider = riderName(order);
   const first = order.rider?.firstName ?? rider;
   const owes = order.debtStatus === "open";
-  const title = delivered ? OF.delivered(hm(order.deliveredAt)) : failed ? OF.notDelivered : OF.trackT(orderLabel(order));
+  // K5b / K5c (D-77 follow-ups): "#A115 delivered" · "Blessing M. · 07:41 · 2 dishes"; "#A117 couldn't be
+  // delivered" · "Customer didn't answer · 07:44".
+  const label = orderLabel(order);
+  const title = delivered ? `${label} delivered` : failed ? `${label} couldn't be delivered` : OF.trackT(label);
   const eta = !delivered && !failed && order.riderEtaAt ? `arrives ${hm(order.riderEtaAt)}` : null;
-  const sub = [order.rider ? rider : null, eta, countOf(order.items.length, v)].filter(Boolean).join(" · ");
+  const failedAt = order.doorProof?.takenAt ?? null;
+  const sub = failed
+    ? [failReason(order), failedAt ? hm(failedAt) : null].filter(Boolean).join(" · ")
+    : [order.rider ? rider : null, delivered && order.deliveredAt ? hm(order.deliveredAt) : eta, countOf(order.items.length, v)].filter(Boolean).join(" · ");
+  const prepaid = order.paymentMethod === "wallet" ? `Paid by wallet · ${money(order.merchantGoodsTotal)}` : `Paid at pickup · ${money(order.merchantGoodsTotal)}`;
   const cashLine = order.cashDueAt ? `${first} brings it back by ${hm(order.cashDueAt)}` : `${first} brings it back after delivery`;
   return (
     <Fill>
@@ -750,14 +777,17 @@ function OnTheWay({ order, act, disabled, error, setConfirm, business, v }: Ctx)
           <b>{title}</b>
           <span>{sub}</span>
         </div>
-        <ProgressSteps step={delivered ? 5 : 4} />
+        <ProgressSteps step={delivered ? 5 : 4} failed={failed} />
         {failed ? (
-          <div className="m-cashcard">
+          <div className="m-goodsback">
             <div>
               <Icon name="package" size={20} />
               <span>{OF.goodsBackT}</span>
             </div>
-            <p>{[OF.backT(rider), order.cashDueAt ? OF.goodsDue(hm(order.cashDueAt)) : null].filter(Boolean).join(" · ")}</p>
+            <b className="m-num">
+              {boardItems(order)} · {money(order.merchantGoodsTotal)}
+            </b>
+            <p>{order.cashDueAt ? `${rider} brings it back by ${hm(order.cashDueAt)}` : `${rider} is bringing it back`}</p>
           </div>
         ) : cashBack ? (
           <CashCard
@@ -768,8 +798,9 @@ function OnTheWay({ order, act, disabled, error, setConfirm, business, v }: Ctx)
             foodLabel={(order.venue?.businessType ?? business?.businessType) === "shop" ? "Goods" : "Food"}
           />
         ) : null}
-        {order.doorProof ? (
-          <PhotoRow title={failed ? OF.attemptPhoto : OF.doorPhoto} sub={doorProofLine(order.doorProof, hm(order.doorProof.takenAt))} url={order.doorProof.photoUrl} />
+        {/* K5c draws no attempt photo; the goods card is the screen (D-77 follow-ups). */}
+        {failed ? null : order.doorProof ? (
+          <PhotoRow title={OF.doorPhoto} sub={doorProofLine(order.doorProof, hm(order.doorProof.takenAt))} url={order.doorProof.photoUrl} />
         ) : (
           !delivered &&
           !failed && (
@@ -781,8 +812,14 @@ function OnTheWay({ order, act, disabled, error, setConfirm, business, v }: Ctx)
             </div>
           )
         )}
+        {delivered && !cashBack && (
+          <InfoStrip tone="mint" icon="wallet">
+            <b>{prepaid}</b>
+            Nothing to bring back. It&apos;s in your Money tab.
+          </InfoStrip>
+        )}
         {error && <div className="m-alert" role="alert">{error}</div>}
-        {!cashBack && !failed && isAfterPickup(order) && (
+        {!cashBack && !failed && !delivered && isAfterPickup(order) && (
           <button type="button" className="m-lnk" style={{ minHeight: "var(--target-min)", fontSize: 13 }} disabled={disabled} onClick={() => setConfirm("force")}>
             Mark ride completed
           </button>
@@ -794,8 +831,8 @@ function OnTheWay({ order, act, disabled, error, setConfirm, business, v }: Ctx)
             {v.goodsBack}
           </button>
           {/* R-07: the merchant's only way to flag goods that never came back. */}
-          <button type="button" className="m-btn2" disabled={disabled} onClick={() => setConfirm("not_returned")}>
-            It wasn’t returned
+          <button type="button" className="m-btn2 m-danger-ink" disabled={disabled} onClick={() => setConfirm("not_returned")}>
+            It wasn&apos;t returned
           </button>
         </CtaBar>
       ) : cashBack ? (

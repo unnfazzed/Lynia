@@ -121,7 +121,7 @@ function shopVocabulary(kind: MerchantShopKind | null | undefined): Vocabulary {
     making: "Packing", // O.svc.shops.making = O.svc.pharmacy.making
     readyCta: "Packed", // Merchant v2 BRIEF §4 (D-77): "Shops see Packed instead"
     track: ["Confirmed", "Packing", "On the way", "Delivered"], // O.svc.shops.st = O.svc.pharmacy.st
-    goodsBack: "I got the order back", // O.svc.shops.back = O.svc.pharmacy.back
+    goodsBack: "I got the goods back", // Merchant v2 follow-ups K5c (D-77): "for shops 'I got the goods back'"
   };
 }
 

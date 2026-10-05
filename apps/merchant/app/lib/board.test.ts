@@ -18,7 +18,7 @@ describe("the Orders board (Merchant v2 K1/S1, D-77)", () => {
           { dishId: "e", name: "Sadza & greens", priceUsd: 4.5, quantity: 1, note: null, available: null },
         ],
       }),
-    ).toBe("Mazondo & Sadza & greens");
+    ).toBe("Mazondo, Sadza & greens");
   });
 
   it("sorts needs-you, then cooking by ready time, then on the way, then cash still to come back", () => {
@@ -63,7 +63,8 @@ describe("the Orders board (Merchant v2 K1/S1, D-77)", () => {
     expect(first).toMatchObject({ title: "#A222 · 2× Sadza & beef stew", right: "8 min", sub: "Ready 07:28 · rider booked" });
     expect(second).toMatchObject({ right: "13 min", sub: "Ready 07:33" });
     expect(sections[2]!.cards[0]).toMatchObject({ title: "#A111 · Blessing M.", sub: "On the way · then brings you $12.00" });
-    expect(sections[3]!.cards[0]).toMatchObject({ urgent: true, subTone: "gold", sub: "$9.50 was due 07:15" });
+    // K1b (D-77 follow-ups): "$9.50 · #A098", gold with a LATE chip, "Blessing M. · was due 07:15".
+    expect(sections[3]!.cards[0]).toMatchObject({ title: "$9.50 · #A098", subTone: "gold", sub: "Blessing M. · was due 07:15", cash: { late: true } });
   });
 
   it("once the rider's location says so: 'at your counter', and the on-the-way arrival time (D-77)", () => {
@@ -124,5 +125,26 @@ describe("the Orders board (Merchant v2 K1/S1, D-77)", () => {
   it("without a first name, the customer is 'the customer'", () => {
     const [needs] = buildBoard({ v: shopV, shop: true, now: NOW, orders: [merchantOrder({ merchantPhase: "awaiting_item_approval" })] });
     expect(needs!.cards[0]).toMatchObject({ title: "#A111 · The customer asked for 1 item", sub: "Waiting for the customer’s OK" });
+  });
+
+  it("K1b: late cash first (oldest due first), then the rest with when it was delivered and is due back", () => {
+    const cash = (id: string, over: Record<string, unknown>) =>
+      merchantOrder({ id, merchantPhase: null, status: "delivered", rider: RIDER, riderId: RIDER.profileId, debtStatus: "open", ...over });
+    const [section] = buildBoard({
+      v: kitchen,
+      shop: false,
+      now: NOW,
+      orders: [
+        cash("a1050000-0000-4000-8000-000000000000", { debtAmount: 12, deliveredAt: at(-8), cashDueAt: at(10) }),
+        cash("a1010000-0000-4000-8000-000000000000", { debtAmount: 9.5, cashDueAt: at(-10), riderPhone: "+263772222222" }),
+      ],
+    });
+    expect(section!.heading).toBe("CASH TO COME BACK · 2");
+    expect(section!.cards.map((c) => [c.title, c.sub])).toEqual([
+      ["$9.50 · #A101", "Blessing M. · was due 07:10"],
+      ["$12.00 · #A105", "Blessing M. · delivered 07:12 · back by 07:30"],
+    ]);
+    expect(section!.cards[0]!.cash).toEqual({ late: true, phone: "+263772222222" });
+    expect(section!.cards[1]).toMatchObject({ cash: { late: false }, chevron: true });
   });
 });
