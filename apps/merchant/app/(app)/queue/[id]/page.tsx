@@ -18,6 +18,7 @@ import { HANDOVER_FALLBACK_ENABLED } from "../../../lib/config";
 import { Note, PhotoRow, RoundLines } from "../../../components/queue/proof-parts";
 import { ProposerSheet } from "../../../components/queue/proposer";
 import { RetryableError } from "../../../components/RetryableError";
+import { InfoStrip, PathCard, ReasonSheet, Sheet } from "../../../components/m/ReasonSheet";
 import { ApiError, redirectIfSessionExpired } from "../../../lib/api-client";
 import { useBusiness } from "../../../lib/business";
 import { formatCountdown } from "../../../lib/countdown";
@@ -80,6 +81,29 @@ interface Ctx {
 
 /** A wallet order placed before D-74 that the customer paid for, which LyniaGo never held: cancelling it
  *  means the business sends the money back first and records its own reference (D-12). */
+/** K3b/K3c's sub-line: who is called off, and when they were due (A2: no time, no "for HH:MM"). */
+function cancelSub(order: MerchantOrderResponse): string {
+  const rider = riderFirstName(order);
+  if (!order.riderId || !rider) return "We tell the customer.";
+  return order.riderEtaAt
+    ? `${rider} is booked for ${hm(order.riderEtaAt)}. We call off the rider and tell the customer.`
+    : `${rider} is booked. We call off the rider and tell the customer.`;
+}
+
+function isShop(order: MerchantOrderResponse, business: { businessType?: string } | null): boolean {
+  return (order.venue?.businessType ?? business?.businessType) === "shop";
+}
+
+/** K3b's reasons; a shop's problem is "Shop problem (power, stock count)". */
+function cantFinishReasons(shop: boolean) {
+  return [
+    ["ran_out", "Ran out and can't swap"],
+    ["kitchen_problem", shop ? "Shop problem (power, stock count)" : "Kitchen problem (gas, power, water)"],
+    ["too_busy", "Too busy to finish it"],
+    ["other", "Something else"],
+  ] as const;
+}
+
 function isPaidWallet(order: MerchantOrderResponse): boolean {
   return order.paymentMethod === "wallet" && !!order.merchantPaymentConfirmedAt;
 }
@@ -252,13 +276,39 @@ export default function OrderPage() {
           />
         );
       case "problem":
+        // K3a (Merchant v2 follow-ups, D-77).
         return (
-          <ProblemSheet
-            canChange={changeableLines(order).length > 0}
-            onItems={() => setConfirm("items")}
-            onCantFinish={() => setConfirm(isPaidWallet(order) ? "refund" : "cancel")}
-            onCancel={close}
-          />
+          <Sheet
+            title={`Problem with ${orderLabel(order)}?`}
+            sub="Pick what happened."
+            onClose={close}
+            actions={
+              <button type="button" className="m-btn2" onClick={close}>
+                Close
+              </button>
+            }
+          >
+            {changeableLines(order).length > 0 && (
+              <PathCard
+                icon="arrow-left-right"
+                tone="mint"
+                title="Something ran out"
+                sub="Change items: swap or remove, then the customer OKs it"
+                onClick={() => setConfirm("items")}
+              />
+            )}
+            <PathCard
+              icon="x"
+              tone="red"
+              title="Can't finish this order"
+              sub="Cancel with a reason. The customer and rider are told."
+              onClick={() => setConfirm(isPaidWallet(order) ? "refund" : "cancel")}
+            />
+            <div className="m-sheethint">
+              <Icon name="clock" size={16} />
+              Just running late? Use +5 min on the ticket.
+            </div>
+          </Sheet>
         );
       case "decline_scheduled":
         return (
@@ -273,14 +323,20 @@ export default function OrderPage() {
           />
         );
       case "cancel":
+        // K3b: a cash order — nothing to refund.
         return (
-          <ConfirmSheet
-            title="Cancel this order?"
-            body="The customer is told why. Nothing was paid, so there’s nothing to refund."
-            confirmLabel="Cancel order"
+          <ReasonSheet
+            title={`Cancel ${orderLabel(order)}?`}
+            sub={cancelSub(order)}
+            reasons={cantFinishReasons(isShop(order, business))}
+            noteFor="other"
+            noteHelper={`${order.customerFirstName?.trim() || "The customer"} sees this note.`}
+            extra={() => <InfoStrip icon="banknote">Cash order · nothing to refund</InfoStrip>}
+            cta="Cancel order"
+            secondary={`Keep ${v.making.toLowerCase()}`}
             busy={busy}
             error={error}
-            onConfirm={() => void act(() => cancelPreparing(order.id), "Order cancelled · customer told", true)}
+            onConfirm={(reason, note) => void act(() => cancelPreparing(order.id, note ? { reason, note } : { reason }), "Order cancelled · customer told", true)}
             onCancel={close}
           />
         );
@@ -316,20 +372,43 @@ export default function OrderPage() {
         );
       }
       case "refund": {
+        // K3c: a wallet order placed before D-74 — the customer is refunded first, then it's cancelled. The
+        // merchant refunds over mobile money, so the API still needs that refund's reference (D-77 §4).
         const amount = order.merchantGoodsTotal ?? 0;
         return (
-          <ConfirmSheet
-            title="Cancel this order?"
-            body={`Refund the customer ${money(amount)} first, then add the refund reference.`}
-            confirmLabel="Cancel order"
+          <ReasonSheet
+            title={`Cancel ${orderLabel(order)}?`}
+            sub={cancelSub(order)}
+            reasons={cantFinishReasons(isShop(order, business))}
+            noteFor="other"
+            noteHelper={`${order.customerFirstName?.trim() || "The customer"} sees this note.`}
+            extra={() => (
+              <>
+                <InfoStrip tone="gold" icon="wallet">
+                  <b>Paid by wallet · {money(amount)}</b>
+                  We refund the customer first, then cancel.
+                </InfoStrip>
+                {referenceField("Refund reference")}
+              </>
+            )}
+            cta={`Refund ${money(amount)} and cancel`}
+            busyCta="Refunding…"
+            secondary={`Keep ${v.making.toLowerCase()}`}
             busy={busy}
             confirmDisabled={!reference.trim()}
             error={error}
-            onConfirm={() => void act(() => refundOrder(order.id, reference.trim(), amount), "Order cancelled · customer told", true)}
+            onConfirm={() =>
+              void act(async () => {
+                try {
+                  await refundOrder(order.id, reference.trim(), amount);
+                } catch (err) {
+                  if (err instanceof ApiError && err.status === 401) throw err;
+                  throw new ApiError(err instanceof ApiError ? err.status : 0, "Couldn't refund right now. The order is still open; try again.");
+                }
+              }, "Refunded · order cancelled", true)
+            }
             onCancel={close}
-          >
-            {referenceField("Refund reference")}
-          </ConfirmSheet>
+          />
         );
       }
       case "hold_cancel":
@@ -858,38 +937,3 @@ function usePickupCode(order: MerchantOrderResponse): string | null {
  * replaces "Can't finish". It asks what's wrong: something ran out (the "Change items" proposer), or the
  * order can't be finished (cancel, or refund first for a paid wallet order from before D-74).
  */
-function ProblemSheet({ canChange, onItems, onCantFinish, onCancel }: { canChange: boolean; onItems: () => void; onCantFinish: () => void; onCancel: () => void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onCancel]);
-  return (
-    <div className="m-overlay" style={{ zIndex: 70 }}>
-      <div className="m-overlay-frame">
-        <button type="button" className="m-scrim" aria-label="Keep" onClick={onCancel} />
-        <div className="m-sheet" role="dialog" aria-modal="true" aria-labelledby="m-problem-title">
-          <div className="m-grab" />
-          <b id="m-problem-title" style={{ fontSize: 18 }}>
-            Problem with this order?
-          </b>
-          {canChange && (
-            <button type="button" className="m-opt m-optsm" onClick={onItems}>
-              <Icon name="pencil" size={18} color="var(--accent-text)" />
-              Something ran out — change items
-            </button>
-          )}
-          <button type="button" className="m-opt m-optsm" onClick={onCantFinish}>
-            <Icon name="ban" size={18} color="var(--danger-ink)" />
-            {OF.cantFinish}
-          </button>
-          <button type="button" className="m-lnk" onClick={onCancel}>
-            Keep
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}

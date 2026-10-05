@@ -98,13 +98,19 @@ describe("K3 · the cooking ticket (Merchant v2, D-77)", () => {
     expect(await screen.findByText("Ready time pushed back 5 min · customer told")).toBeTruthy();
   });
 
-  it("'Problem with this order?' replaces Can't finish: it cancels a cash order behind the confirm sheet", async () => {
+  it("K3a → K3b: the Problem sheet's 'Can't finish this order' cancels a cash order with a reason (D-77)", async () => {
     show(cooking());
     expect(screen.queryByRole("button", { name: "Can’t finish this order" })).toBeNull();
     fireEvent.click(await screen.findByRole("button", { name: "Problem with this order?" }));
-    fireEvent.click(screen.getByRole("button", { name: "Can’t finish this order" }));
-    fireEvent.click(screen.getByRole("button", { name: "Cancel order" }));
-    await vi.waitFor(() => expect(cancelPreparing).toHaveBeenCalledWith(ID));
+    const problem = screen.getByRole("dialog", { name: "Problem with #A111?" });
+    expect(within(problem).getByText("Just running late? Use +5 min on the ticket.")).toBeTruthy();
+    fireEvent.click(within(problem).getByRole("button", { name: /Can't finish this order/ }));
+    const sheet = screen.getByRole("dialog", { name: "Cancel #A111?" });
+    expect(within(sheet).getByText("Cash order · nothing to refund")).toBeTruthy();
+    expect((within(sheet).getByRole("button", { name: "Cancel order" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(within(sheet).getByRole("radio", { name: "Kitchen problem (gas, power, water)" }));
+    fireEvent.click(within(sheet).getByRole("button", { name: "Cancel order" }));
+    await vi.waitFor(() => expect(cancelPreparing).toHaveBeenCalledWith(ID, { reason: "kitchen_problem" }));
     await vi.waitFor(() => expect(replace).toHaveBeenCalledWith("/queue"));
   });
 });
@@ -345,10 +351,12 @@ describe("cash only (BRIEF §14, ledger D-74): what is left of the old wallet la
     expect(screen.queryByText(/^(WALLET|CASH)$/)).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Problem with this order?" }));
-    fireEvent.click(screen.getByRole("button", { name: "Can’t finish this order" }));
-    const sheet = screen.getByRole("dialog", { name: "Cancel this order?" });
-    expect(within(sheet).getByText("Refund the customer $9.50 first, then add the refund reference.")).toBeTruthy();
-    const cancel = within(sheet).getByRole("button", { name: "Cancel order" }) as HTMLButtonElement;
+    fireEvent.click(screen.getByRole("button", { name: /Can't finish this order/ }));
+    // K3c: the refund comes first; the reference is the merchant's mobile-money refund (D-77 §4).
+    const sheet = screen.getByRole("dialog", { name: "Cancel #A111?" });
+    expect(within(sheet).getByText("Paid by wallet · $9.50")).toBeTruthy();
+    const cancel = within(sheet).getByRole("button", { name: "Refund $9.50 and cancel" }) as HTMLButtonElement;
+    fireEvent.click(within(sheet).getByRole("radio", { name: "Ran out and can't swap" }));
     expect(cancel.disabled).toBe(true);
     fireEvent.change(within(sheet).getByLabelText("Refund reference"), { target: { value: "RF-1" } });
     fireEvent.click(cancel);

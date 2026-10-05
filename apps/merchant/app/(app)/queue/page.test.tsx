@@ -257,11 +257,31 @@ describe("K2 / S2 · the order rings full screen until it's answered (Merchant v
     poll.orders = [merchantOrder()];
     render(<Page />);
     fireEvent.click(await screen.findByRole("button", { name: "Can’t take it" }));
-    const sheet = screen.getByRole("dialog", { name: "Why can’t you take it?" });
-    expect((within(sheet).getByRole("button", { name: "Decline order" }) as HTMLButtonElement).disabled).toBe(true);
+    const sheet = screen.getByRole("dialog", { name: "Why can't you take it?" });
+    expect(within(sheet).getByText("We tell the customer straight away.")).toBeTruthy();
+    expect((within(sheet).getByRole("button", { name: "Turn down #A111" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(within(sheet).getByRole("radio", { name: "Too busy right now" }));
-    fireEvent.click(within(sheet).getByRole("button", { name: "Decline order" }));
-    await vi.waitFor(() => expect(rejectOrder).toHaveBeenCalledWith("a1110000-0000-4000-8000-000000000001", "too_busy"));
+    // K2a: the busy-mode hint, for a kitchen with "Too busy" picked.
+    expect(within(sheet).getByText(/adds 10 min to new orders instead of turning them away/)).toBeTruthy();
+    fireEvent.click(within(sheet).getByRole("button", { name: "Turn down #A111" }));
+    await vi.waitFor(() => expect(rejectOrder).toHaveBeenCalledWith("a1110000-0000-4000-8000-000000000001", "too_busy", undefined));
+  });
+
+  it("S2a: a shop says 'Out of stock', names the customer, and 'Something else' sends the note they see (D-77)", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
+    poll.orders = [shopOrder({ customerFirstName: "Rudo" })];
+    render(<Page />);
+    fireEvent.click(await screen.findByRole("button", { name: "Can’t take it" }));
+    const sheet = screen.getByRole("dialog", { name: "Why can't you take it?" });
+    expect(within(sheet).getByText("We tell Rudo straight away.")).toBeTruthy();
+    expect(within(sheet).getByRole("radio", { name: "Out of stock" })).toBeTruthy();
+    fireEvent.click(within(sheet).getByRole("radio", { name: "Too busy right now" }));
+    expect(within(sheet).queryByText(/Open, but busy/)).toBeNull();
+    fireEvent.click(within(sheet).getByRole("radio", { name: "Something else" }));
+    expect(within(sheet).getByText("Rudo sees this note.")).toBeTruthy();
+    fireEvent.change(within(sheet).getByLabelText(/Add a note/), { target: { value: "Closing early for stock-take" } });
+    fireEvent.click(within(sheet).getByRole("button", { name: "Turn down #A111" }));
+    await vi.waitFor(() => expect(rejectOrder).toHaveBeenCalledWith("a1110000-0000-4000-8000-000000000001", "other", "Closing early for stock-take"));
   });
 
   it("K2: a kitchen taps a dish to remove it (Undo puts it back), and accepts with the change in one step", async () => {
@@ -376,7 +396,7 @@ describe("M1a · an auto-accepted order rings on the same screen until the kitch
     render(<Page />);
     fireEvent.click(await screen.findByRole("button", { name: "Can’t take it" }));
     fireEvent.click(screen.getByRole("radio", { name: "Closing soon" }));
-    fireEvent.click(screen.getByRole("button", { name: "Decline order" }));
+    fireEvent.click(screen.getByRole("button", { name: "Turn down #A111" }));
     await vi.waitFor(() => expect(cancelPreparing).toHaveBeenCalledWith("a1110000-0000-4000-8000-000000000001"));
   });
 

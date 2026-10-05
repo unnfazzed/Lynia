@@ -19,6 +19,7 @@ import { changeableLines, proposalLines, swapLine } from "../../lib/substitution
 import { useNow } from "../../lib/use-now";
 import { countOf, ORDER_FLOW as OF, vocabulary } from "../../lib/vocabulary";
 import { Icon } from "../icons";
+import { InfoStrip, ReasonSheet } from "../m/ReasonSheet";
 import { useToast } from "../m/Toast";
 import { SwapPicker, useProposer, type Proposer } from "./proposer";
 
@@ -51,7 +52,7 @@ export function RingingScreen({
   disabled: boolean;
   onAccept: (orderId: string, prepMinutes: Prep, unavailableDishIds: string[]) => Promise<void>;
   onPropose: (orderId: string, prepMinutes: Prep, lines: SubstitutionProposalLine[]) => Promise<void>;
-  onReject: (orderId: string, reason: MerchantRejectionReasonCode) => Promise<void>;
+  onReject: (orderId: string, reason: MerchantRejectionReasonCode, note?: string) => Promise<void>;
   /** Auto-accept: the kitchen confirms it is making it. */
   onConfirm: (orderId: string) => Promise<void>;
   onCancel: (orderId: string) => Promise<void>;
@@ -118,6 +119,11 @@ export function RingingScreen({
       : null
     : active.acceptDeadlineAt;
   const left = deadline ? msUntil(deadline, now) : null;
+  // D-77 K2a: if the ring runs out while "Why can't you take it?" is open, the sheet closes (missed).
+  const expired = left !== null && left <= 0;
+  useEffect(() => {
+    if (expired) setReasons(false);
+  }, [expired]);
 
   const acceptLabel = changing
     ? `Accept with ${lines.length} change${lines.length === 1 ? "" : "s"}`
@@ -140,8 +146,8 @@ export function RingingScreen({
       ? run(() => onPropose(active.id, prepMinutes, lines), "Accepted · the customer has 3 minutes for the changes", "Couldn't accept the order. Try again.")
       : run(() => onAccept(active.id, prepMinutes, []), `Accepted · ready ${hm(readyAt.toISOString())}`, "Couldn't accept the order. Try again.");
   }
-  const decline = (reason: MerchantRejectionReasonCode) =>
-    run(() => (auto ? onCancel(active.id) : onReject(active.id, reason)), "Declined · the customer was told", "Couldn't decline the order. Try again.");
+  const decline = (reason: MerchantRejectionReasonCode, note?: string) =>
+    run(() => (auto ? onCancel(active.id) : onReject(active.id, reason, note)), "Declined · the customer was told", "Couldn't decline the order. Try again.");
 
   const busy = disabled || submitting;
   const pay = active.paymentMethod ?? "cash";
@@ -233,7 +239,16 @@ export function RingingScreen({
       </div>
 
       {p.picking && <SwapPicker item={p.picking} onPick={(c) => p.set(p.picking!.itemId, c)} onCancel={() => p.setPicking(null)} />}
-      {reasons && <ReasonsSheet shop={shop} busy={submitting} onPick={(r) => void decline(r)} onCancel={() => setReasons(false)} />}
+      {reasons && (
+        <ReasonsSheet
+          shop={shop}
+          label={orderLabel(active)}
+          customer={who}
+          busy={submitting}
+          onPick={(r, note) => void decline(r, note)}
+          onCancel={() => setReasons(false)}
+        />
+      )}
     </div>
   );
 }
@@ -327,8 +342,9 @@ function RingLine({
   );
 }
 
-/** "Can't take it": why, in the customer's terms. The reason is the customer's copy (D-11). */
-const REASONS: Record<"kitchen" | "shop", readonly [MerchantRejectionReasonCode, string][]> = {
+/** K2a / S2a "Why can't you take it?" (Merchant v2 follow-ups, D-77). The reason is the customer's copy
+ *  (D-11); "Something else" may carry a note the customer sees. */
+const REASONS: Record<"kitchen" | "shop", readonly (readonly [MerchantRejectionReasonCode, string])[]> = {
   kitchen: [
     ["out_of_ingredient", "Out of an ingredient"],
     ["too_busy", "Too busy right now"],
@@ -336,7 +352,7 @@ const REASONS: Record<"kitchen" | "shop", readonly [MerchantRejectionReasonCode,
     ["other", "Something else"],
   ],
   shop: [
-    ["out_of_ingredient", "Out of stock"],
+    ["out_of_stock", "Out of stock"],
     ["too_busy", "Too busy right now"],
     ["closing_soon", "Closing soon"],
     ["other", "Something else"],
@@ -345,49 +361,39 @@ const REASONS: Record<"kitchen" | "shop", readonly [MerchantRejectionReasonCode,
 
 export function ReasonsSheet({
   shop,
+  label,
+  customer,
   busy,
   onPick,
   onCancel,
 }: {
   shop: boolean;
+  label: string;
+  customer: string | null;
   busy: boolean;
-  onPick: (reason: MerchantRejectionReasonCode) => void;
+  onPick: (reason: MerchantRejectionReasonCode, note?: string) => void;
   onCancel: () => void;
 }) {
-  const [reason, setReason] = useState<MerchantRejectionReasonCode | null>(null);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onCancel]);
+  const who = customer ?? "the customer";
   return (
-    <div className="m-overlay" style={{ zIndex: 70 }}>
-      <div className="m-overlay-frame">
-        <button type="button" className="m-scrim" aria-label="Keep" onClick={onCancel} />
-        <div className="m-sheet" role="dialog" aria-modal="true" aria-labelledby="m-why-title">
-          <div className="m-grab" />
-          <b id="m-why-title" style={{ fontSize: 18 }}>
-            Why can’t you take it?
-          </b>
-          <p className="m-sub">The customer is told straight away.</p>
-          <div role="radiogroup" aria-labelledby="m-why-title" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {REASONS[shop ? "shop" : "kitchen"].map(([code, label]) => (
-              <button key={code} type="button" role="radio" aria-checked={reason === code} className="m-opt m-optsm" onClick={() => setReason(code)}>
-                <span className="m-rad" />
-                {label}
-              </button>
-            ))}
-          </div>
-          <button type="button" className="m-btn m-danger" disabled={busy || reason === null} onClick={() => reason && onPick(reason)}>
-            Decline order
-          </button>
-          <button type="button" className="m-lnk" onClick={onCancel}>
-            Keep
-          </button>
-        </div>
-      </div>
-    </div>
+    <ReasonSheet
+      title="Why can't you take it?"
+      sub={`We tell ${who} straight away.`}
+      reasons={REASONS[shop ? "shop" : "kitchen"]}
+      noteFor="other"
+      noteHelper={`${customer ?? "The customer"} sees this note.`}
+      extra={(picked) =>
+        !shop && picked === "too_busy" ? (
+          <InfoStrip icon="clock">
+            Busy for a while? <b style={{ display: "inline" }}>Open, but busy</b> adds 10 min to new orders instead of turning them away.
+          </InfoStrip>
+        ) : null
+      }
+      cta={`Turn down ${label}`}
+      secondary="Go back"
+      busy={busy}
+      onConfirm={onPick}
+      onCancel={onCancel}
+    />
   );
 }

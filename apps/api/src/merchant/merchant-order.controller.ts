@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
 import {
+  MerchantCancelOrderRequest,
   AttachMerchantDoorProofRequest,
   AttachMerchantPickupProofRequest,
   CloseMerchantOrderRequest,
@@ -77,7 +78,7 @@ export class MerchantOrderController {
     @Body(new ZodBody(MerchantRejectOrderRequest)) body: MerchantRejectOrderRequest,
     @CurrentUser() profileId: string,
   ) {
-    return this.foodOrders.rejectOrder(profileId, orderId, body.reason);
+    return this.foodOrders.rejectOrder(profileId, orderId, body.reason, body.note);
   }
 
   @Post(":orderId/log-call")
@@ -332,8 +333,11 @@ export class MerchantOrderController {
   /** D-48: "Can't finish this order" on a cash order still cooking (B3). */
   @Post(":orderId/cancel")
   @UseGuards(MerchantGuard)
-  cancelPreparing(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
-    return this.foodOrders.cancelPreparing(profileId, orderId);
+  cancelPreparing(@Param("orderId", ParseUUIDPipe) orderId: string, @Body() raw: unknown, @CurrentUser() profileId: string) {
+    // The body is optional (an older screen POSTs none); Merchant v2 K3b sends `{ reason, note? }`.
+    const parsed = MerchantCancelOrderRequest.safeParse(raw ?? {});
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues.map((i) => i.message).join("; "));
+    return this.foodOrders.cancelPreparing(profileId, orderId, parsed.data.reason ?? "other", parsed.data.note);
   }
 
   /** D-48: the merchant closes its side after pickup without counting cash (B6/B7). */

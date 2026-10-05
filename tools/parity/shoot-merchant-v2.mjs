@@ -254,7 +254,26 @@ const BRANCHES = {
   ],
 };
 
+const openWhy = (pick, note) => async (p) => {
+  await p.getByRole("button", { name: "Can’t take it" }).click();
+  const d = p.getByRole("dialog", { name: "Why can't you take it?" });
+  await d.getByRole("radio", { name: pick }).click();
+  if (note) await d.getByLabel(/Add a note/).fill(note);
+};
+const openProblem = (then) => async (p) => {
+  await p.getByRole("button", { name: "Problem with this order?" }).click();
+  if (then) {
+    await p.getByRole("button", { name: /Can't finish this order/ }).click();
+    await p.getByRole("radio", { name: then }).click();
+  }
+};
 const SETS = {
+  sheets: [
+    { mock: "K2a Reasons sheet kitchen", label: "K2a · Why can't you take it? (kitchen)", app: { name: "K2a", path: "/queue", scenario: { me: KITCHEN, orders: [ringingKitchen] }, before: openWhy("Too busy right now") } },
+    { mock: "S2a Reasons sheet shop", label: "S2a · Why can't you take it? (shop, with note)", app: { name: "S2a", path: "/queue", scenario: { me: LIVE_SHOP, orders: [ringingShop] }, before: openWhy("Something else", "Closing early for stock-take") } },
+    { mock: "K3a Problem sheet", label: "K3a · Problem with #A222?", app: { name: "K3a", path: `/queue/${cookingK3.id}`, scenario: { me: KITCHEN, orders: [{ ...cookingK3, items: [item("i1000000-0000-4000-8000-000000000000", "Mazondo", 5), item("i2000000-0000-4000-8000-000000000000", "Sadza & greens", 4.5)] }] }, before: openProblem() } },
+    { mock: "K3b Cancel cash order", label: "K3b · Cancel, cash order", sub: "rider estimate from the location pings (B1)", app: { name: "K3b", path: `/queue/${cookingK3.id}`, scenario: { me: KITCHEN, orders: [{ ...cookingK3, riderEtaAt: ahead(11) }] }, before: openProblem(/Kitchen problem/) } },
+  ],
   money: [
     { mock: "T2 Money", label: "T2 · Money", sub: "each row's cash state comes from the API; a rejected order reads —", app: { name: "T2", path: "/statement", scenario: { me: KITCHEN, orders: [], summary: MONEY } } },
     { mock: "T3 Account", label: "T3 · Account", sub: "Help (kept, D-77 §4) shows only when the support number is configured", app: { name: "T3", path: "/account", scenario: { me: KITCHEN, orders: [], branches: BRANCHES } } },
