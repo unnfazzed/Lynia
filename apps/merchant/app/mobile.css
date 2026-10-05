@@ -541,7 +541,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 36px;
+  height: 44px;
   padding: 0 14px;
   border-radius: var(--radius-pill);
   background: var(--surface);
@@ -2167,7 +2167,7 @@
   flex: none;
 }
 .m-pillbtn {
-  height: 40px;
+  height: 44px;
   padding: 0 14px;
   border-radius: var(--radius-pill);
   background: var(--cta-fill);
@@ -2688,7 +2688,7 @@
 }
 .m-problem {
   align-self: center;
-  min-height: 36px;
+  min-height: 44px;
   padding: 0 14px;
   border-radius: var(--radius-pill);
   background: var(--danger-wash);
@@ -2698,14 +2698,6 @@
   font-size: 14px;
   font-weight: 700;
   cursor: pointer;
-  /* The kit draws this pill 36 tall (below --target-min): the hit area is padded to the floor without
-   * inflating the drawn pill (D-77 §4, reported upstream). */
-  position: relative;
-}
-.m-problem::after {
-  content: "";
-  position: absolute;
-  inset: -4px 0;
 }
 /* S3's checklist: three numbered steps, done ones filled. */
 .m-check {
@@ -2874,7 +2866,7 @@
   gap: 6px;
 }
 .m-ichip {
-  min-height: 36px;
+  min-height: 44px;
   padding: 0 12px;
   border-radius: var(--radius-pill);
   background: var(--accent-wash);
@@ -2887,13 +2879,6 @@
   align-items: center;
   gap: 4px;
   cursor: pointer;
-  position: relative;
-}
-/* The kit draws these chips 36 tall: the hit area is padded to the floor without inflating them. */
-.m-ichip::after {
-  content: "";
-  position: absolute;
-  inset: -4px 0;
 }
 .m-ichip.m-add {
   background: var(--bg);
@@ -2980,7 +2965,7 @@
 .m-rxzoom, .m-rxpage {
   position: absolute;
   bottom: 10px;
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 14px;
   border-radius: var(--radius-pill);
   background: var(--bg);
@@ -3136,7 +3121,7 @@
   color: var(--highlight-ink);
 }
 .m-callpill {
-  min-height: 36px;
+  min-height: 44px;
   padding: 0 12px;
   border-radius: var(--radius-pill);
   background: var(--bg);
@@ -3148,13 +3133,6 @@
   gap: 4px;
   text-decoration: none;
   flex: none;
-  position: relative;
-}
-/* Drawn 36 tall: the hit area is padded to the floor (D-77 §4). */
-.m-callpill::after {
-  content: "";
-  position: absolute;
-  inset: -4px 0;
 }
 .m-ledger {
   display: flex;
