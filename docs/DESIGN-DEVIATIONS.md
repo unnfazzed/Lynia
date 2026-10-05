@@ -4233,6 +4233,7 @@ The design package only *absorbs a new export* here; nothing in it is edited to 
 | Path | What |
 |---|---|
 | `packages/design/handoff/merchant-v2/` | The Merchant v2 export (`merchant-v2-2026-10`), **verbatim**: `BRIEF.md` (the product rules, "final"), `README.md` (screens K1–K5, S1–S4, P1, T1–T4, the component spec table, Needs backend, Keep/Retire), `CLAUDE-CODE-PROMPT.md`, the 14 screens (`Merchant v2 - all screens.html` and its source `MerchantV2.dc.html`) and a `tokens/` snapshot. |
+| `packages/design/handoff/merchant-v2/` (2026-10-05) | The **follow-ups export** (`merchant-v2-followups-2026-10-05`, the owner's answer to Part A), merged over the folder **verbatim**: the new `README.md` (shared sheet patterns, K2a/S2a, K3a–c, K1b/c, K5b/c, T1b, T2b, A1/A2, the 44px rule), `CHANGELOG.md`, `CLAUDE-CODE-PROMPT.md`, the rebuilt `Merchant v2 - all screens.html` (27 frames) and `source/MerchantV2.dc.html` + `source/MerchantV2Followups.dc.html` (which replace the root `MerchantV2.dc.html`). The 2026-10-04 `README.md` and prompt are kept as `README-2026-10-04.md` / `CLAUDE-CODE-PROMPT-2026-10-04.md`; `BRIEF.md` and `tokens/` are unchanged (identical). |
 
 ### 2 · Authority for the merchant app (a scope rule)
 
@@ -4250,6 +4251,8 @@ any string Merchant v2 doesn't draw. Viewport unchanged: 360×720 with the 320px
 | S1/S2 name the customer ("Rudo asked for 4 items", "4 items · Rudo · cash") | **Add the customer's first name** to the merchant's order read (additive), so the drawn copy is used word for word. First name only. |
 | BRIEF open question 2: does +5 min notify the customer? | **Yes**, a silent push with the new time. |
 | BRIEF open question 1: a manual hand-over when the rider's phone is offline | **Build it behind a flag that stays off.** |
+| S4 "Booking terms" (2026-10-05) | **No booking-terms UI.** Send's liability terms are implied at sign-up; the owner updates the Terms & Conditions. The booking still sends the disclaimer version the API records (no UI). |
+| Sign-in, onboarding and the settings sub-screens (2026-10-05) | **The restyle stands** — confirmed, no redraw. |
 
 ### 4 · What differs from the drawings, and why
 
@@ -4270,7 +4273,6 @@ any string Merchant v2 doesn't draw. Viewport unchanged: 360×720 with the 320px
 
 | K3 cooking ticket, rider line | "Blessing M. arrives 07:31" | As drawn while the rider heads in; "Blessing M. is at your counter" once there; "is booked to collect it" until the first ping; "Finding a rider" / "We book the rider to arrive as it's ready" before one is booked | Same arrival and estimate as K1. |
 | K3 "Problem with this order?" | A pill (what it opens isn't drawn) | A sheet: "Something ran out — change items" and "Can't finish this order" (cancel, or refund first for a paid wallet order from before D-74) | BRIEF §4: it replaces "Can't finish". **Upstream ask:** draw the sheet. |
-| K3 Problem pill, 36 tall | Drawn at 36px, below `--target-min` | Drawn at 36px, with an invisible hit area padded to 44 | UPSTREAM kit defect (D2: a mock must clear the floor); the app doesn't inflate the drawn pill. |
 | K4 rider card sub-line | "AFG 2231 · ★ 4.9 · at your counter" | As drawn once arrived; "AFG 2231 · ★ 4.9" before | Same arrival signal. |
 | K4 / K5, the call button | Drawn | Shown when the order carries the rider's number: the merchant's own read now does (`riderPhone`, additive) | BRIEF "Needs backend". |
 | S3 step 2 before the photo | Drawn done ("Tendai photographed it") | "Tendai photographs it" / "Waiting for Tendai M.'s photo of the sealed bag" until it's in | The undone state of the drawn step. |
@@ -4286,18 +4288,17 @@ any string Merchant v2 doesn't draw. Viewport unchanged: 360×720 with the 320px
 
 | S4 "Going to" from a pasted link | "Pin the buyer sent · Copacabana" | As drawn once the reverse lookup answers; "Pin the buyer sent" until then, or when there is no Places key or no area | The reverse lookup (Geocoding API, the key the Places search already uses) runs after the pin shows. |
 | S4 "+ Add" | A chip | Opens the shop's items, with "Type one" at the bottom; a chip taps to remove its line | The two ways in from D-48's D3, in one sheet. |
-| S4 "Booking terms" | Not drawn | A small "Booking terms" link above the CTA | Send's liability terms; the booking records their version, so the merchant keeps a way to read them. **Upstream ask:** draw it, or say where the terms live. |
-| S4 item chips, 36 tall | Drawn at 36px | Drawn at 36px, hit area padded to 44 | As K3's pill (UPSTREAM). |
 | P1 checklist storage | — | The three ticks are stored with the check (`order_prescriptions.checklist`, JSONB, nullable — migration 0074, expand-only) on approve and on decline | BRIEF "Needs backend": stored for the audit trail. An older screen still approves without them. |
 | P1 → S2 | README: "P1 comes before S2. Approving P1 continues into S2." | A pharmacist's ringing screen shows "Check the prescription" in place of Accept until it's approved; the check returns to the ring | The API already allowed the check while the order rings. |
 | P1 decline prefill | "Already filled in from the unticked box" | The first unticked box picks the reason (name / stamp → Not valid; date → Expired) and a one-line note | The note text isn't drawn; it is plain and editable. |
 
 | T2 Money, today's rows | "In" / "due" / "late" drawn on delivered orders | Each row reads its own cash state from the API (`lines[].cash`: in · due · late · none, additive); a rejected order shows "—"; an order whose cash is still with the rider reads "Cash on its way back" | The drawing has no rejected or in-transit row; built from the drawn row. |
-| T2 late-cash card, the Call pill | Drawn at 32px | Drawn at 32px, hit area padded to 44; it dials the rider (`overdue[].riderPhone`, additive) | As K3's pill (UPSTREAM). |
 | T3 Account rows | Values drawn on some rows | Every row shows its value where the API has one (hours today, rider count, "1 invite open") | Built from the drawn row; no new words. |
 | T3 "Help" | Not drawn | Kept as the last row of "ORDERS & PEOPLE" when the support WhatsApp number is configured | Help & support is the merchant's only way to reach LyniaGo (WhatsApp). **Upstream ask:** draw it. |
 | T1 Menu, "Add a dish" | Not drawn on T1 | Kept under the title | Without it a kitchen can't add a dish. **Upstream ask:** draw it. |
 | Shop booking after the pick | "Book a rider → offers → K5" | D-48's tracking (D5) and delivered (D7) screens are replaced by K5: map, Step 3/4/5 of 5, rider card, the buyer's code until delivered, the cash card and "I got $X" | BRIEF §5. The vertical stepper is retired. |
 | K5 cash card on a shop | "Food $12.00" | "Goods $51.00" | A shop sells goods, not food (the BRIEF's vocabulary swap). |
+
+| Tap targets (2026-10-05) | Every pressable ≥ 44px | As drawn: the K3 Problem pill, S4 item and "+ Add" chips, T1 category chips (`.m-chip`), the T2 Call pill, the K1 "Hand over" pill and P1 "Zoom" are 44px; every padded-hit-area workaround is gone. `apps/merchant/app/tap-targets.test.ts` fails any pressable drawn under 44px or padded with an invisible hit area. | The follow-ups export redrew them. Allowed exceptions, each named in the test: the 44×26 switch (its row is the target; **upstream ask:** confirm), T2's segments inside their 44px track (as drawn), and the hours day chips (restyle-only screen). |
 
 *Further rows are added PR by PR as the screens land.*

@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><link rel="stylesheet" href="../../styles.css"><style>body{margin:0;background:var(--surface);font-family:var(--font-sans),system-ui,sans-serif}</style></helmet>
+<div style="display:flex;flex-direction:column;gap:40px;color:var(--ink);font-variant-numeric:tabular-nums;padding:0 40px 80px">
+<div style="max-width:880px;display:flex;flex-direction:column;gap:10px;padding-top:24px;border-top:1px solid var(--line)">
+<div style="font-size:13px;font-weight:700;letter-spacing:.08em;color:var(--accent-text)">FOLLOW-UPS · 2026-10-05 · D-77</div>
+<div style="font-size:28px;font-weight:700;letter-spacing:-.02em;line-height:1.2">Screens the app needed but the first export didn't draw</div>
+<div style="font-size:16px;line-height:1.5;color:var(--muted);text-wrap:pretty">Every tappable control here is at least 44 px tall, and every primary button is 52 px. The original frames above were redrawn to the same rule.</div>
+</div>
+<div style="font-size:20px;font-weight:700">Sheets</div>
+<div style="display:flex;flex-wrap:wrap;gap:32px;align-items:flex-start">
+<div style="display:flex;flex-direction:column;gap:10px;width:360px"><div style="font-size:13px;font-weight:700;color:var(--muted)">K2a · Why can't you take it? (kitchen)</div>
+<div data-screen-label="K2a Reasons sheet kitchen" style="width:360px;height:720px;position:relative;overflow:hidden;background:var(--bg);border-radius:24px;box-shadow:0 1px 3px rgba(0,0,0,.08),0 8px 24px rgba(0,0,0,.06)">
+<div style="background:var(--cta-fill);color:var(--on-accent);padding:20px 16px 28px;display:flex;align-items:center;gap:12px"><span style="width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.16);display:flex;align-items:center;justify-content:center">{{ i.volume }}</span><div style="flex:1"><div style="font-size:13px;font-weight:700;letter-spacing:.06em">NEW ORDER · #A1B2</div><div style="font-size:15px;margin-top:2px">3 dishes · $15.00 · cash</div></div><div style="font-size:32px;font-weight:700">0:41</div></div>
+<div style="position:absolute;inset:0;background:rgba(20,24,27,.5)"></div>
+<div style="position:absolute;left:0;right:0;bottom:0;background:var(--bg);border-radius:20px 20px 0 0;padding:10px 16px 16px;display:flex;flex-direction:column;gap:12px">
+<div style="align-self:center;width:36px;height:4px;border-radius:2px;background:var(--line)"></div>
+<div><div style="font-size:20px;font-weight:700">Why can't you take it?</div><div style="font-size:14px;color:var(--muted);margin-top:2px">We tell the customer straight away.</div></div>
+<div style="display:flex;flex-direction:column;gap:8px">
+<div style="min-height:48px;border:1px solid var(--line);border-radius:14px;padding:0 14px;display:flex;align-items:center;gap:12px;font-size:15px;font-weight:600"><span style="width:22px;height:22px;border-radius:50%;border:2px solid var(--line);box-sizing:border-box;flex:none"></span>Out of an ingredient</div>
+<div style="min-height:48px;border:2px solid var(--accent);background:var(--accent-wash);border-radius:14px;padding:0 13px;display:flex;align-items:center;gap:12px;font-size:15px;font-weight:700"><span style="width:22px;height:22px;border-radius:50%;border:6px solid var(--accent);background:var(--bg);box-sizing:border-box;flex:none"></span>Too busy right now</div>
+<div style="min-height:48px;border:1px solid var(--line);border-radius:14px;padding:0 14px;display:flex;align-items:center;gap:12px;font-size:15px;font-weight:600"><span style="width:22px;height:22px;border-radius:50%;border:2px solid var(--line);box-sizing:border-box;flex:none"></span>Closing soon</div>
+<div style="min-height:48px;border:1px solid var(--line);border-radius:14px;padding:0 14px;display:flex;align-items:center;gap:12px;font-size:15px;font-weight:600"><span style="width:22px;height:22px;border-radius:50%;border:2px solid var(--line);box-sizing:border-box;flex:none"></span>Something else</div></div>
+<div style="display:flex;gap:10px;padding:12px 14px;border-radius:12px;background:var(--surface);font-size:14px;line-height:1.4"><span style="display:flex;color:var(--accent-text);flex:none">{{ s.clock }}</span><div style="flex:1">Busy for a while? <b>Open, but busy</b> adds 10 min to new orders instead of turning them away.</div></div>
+<div style="height:52px;border-radius:999px;background:var(--danger);color:var(--bg);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700">Turn down #A1B2</div>
+<div style="height:48px;border-radius:999px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700">Go back</div>
+</div>
+</div>
+<sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;line-height:1.5;color:var(--muted)">One tap picks a reason, a second confirms. The ring timer keeps running behind the sheet. "Too busy" points at busy mode, so a rush doesn't turn into a string of rejections.</div></sc-if>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;width:360px"><div style="font-size:13px;font-weight:700;color:var(--muted)">S2a · Why can't you take it? (shop, with note)</div>
+<div data-screen-label="S2a Reasons sheet shop" style="width:360px;height:720px;position:relative;overflow:hidden;background:var(--bg);border-radius:24px;box-shadow:0 1px 3px rgba(0,0,0,.08),0 8px 24px rgba(0,0,0,.06)">
+<div style="background:var(--cta-fill);color:var(--on-accent);padding:20px 16px 28px;display:flex;align-items:center;gap:12px"><span style="width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.16);display:flex;align-items:center;justify-content:center">{{ i.volume }}</span><div style="flex:1"><div style="font-size:13px;font-weight:700;letter-spacing:.06em">NEW ORDER · #A1B2</div><div style="font-size:15px;margin-top:2px">4 items · Rudo · cash</div></div><div style="font-size:32px;font-weight:700">0:58</div></div>
+<div style="position:absolute;inset:0;background:rgba(20,24,27,.5)"></div>
+<div style="position:absolute;left:0;right:0;bottom:0;background:var(--bg);border-radius:20px 20px 0 0;padding:10px 16px 16px;display:flex;flex-direction:column;gap:12px">
+<div style="align-self:center;width:36px;height:4px;border-radius:2px;background:var(--line)"></div>
+<div><div style="font-size:20px;font-weight:700">Why can't you take it?</div><div style="font-size:14px;color:var(--muted);margin-top:2px">We tell Rudo straight away.</div></div>
+<div style="display:flex;flex-direction:column;gap:8px">
+<div style="min-height:48px;border:1px solid var(--line);border-radius:14px;padding:0 14px;display:flex;align-items:center;gap:12px;font-size:15px;font-weight:600"><span style="width:22px;height:22px;border-radius:50%;border:2px solid var(--line);box-sizing:border-box;flex:none"></span>Out of stock</div>
+<div style="min-height:48px;border:1px solid var(--line);border-radius:14px;padding:0 14px;display:flex;align-items:center;gap:12px;font-size:15px;font-weight:600"><span style="width:22px;height:22px;border-radius:50%;border:2px solid var(--line);box-sizing:border-box;flex:none"></span>Too busy right now</div>
+<div style="min-height:48px;border:1px solid var(--line);border-radius:14px;padding:0 14px;display:flex;align-items:center;gap:12px;font-size:15px;font-weight:600"><span style="width:22px;height:22px;border-radius:50%;border:2px solid var(--line);box-sizing:border-box;flex:none"></span>Closing soon</div>
+<div style="min-height:48px;border:2px solid var(--accent);background:var(--accent-wash);border-radius:14px;padding:0 13px;display:flex;align-items:center;gap:12px;font-size:15px;font-weight:700"><span style="width:22px;height:22px;border-radius:50%;border:6px solid var(--accent);background:var(--bg);box-sizing:border-box;flex:none"></span>Something else</div></div>
+<div style="display:flex;flex-direction:column;gap:6px"><div style="font-size:14px;font-weight:700">Add a note <span style="color:var(--muted);font-weight:600">(optional)</span></div><div style="height:52px;border:2px solid var(--accent);border-radius:12px;padding:0 13px;display:flex;align-items:center;font-size:15px">Closing early for stock-take<span style="width:2px;height:20px;background:var(--accent);margin-left:1px"></span></div><div style="font-size:13px;color:var(--muted)">Rudo sees this note.</div></div>
+<div style="height:52px;border-radius:999px;background:var(--danger);color:var(--bg);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700">Turn down #A1B2</div>
+<div style="height:48px;border-radius:999px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700">Go back</div>
+</div>
+</div>
+<sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;line-height:1.5;color:var(--muted)">Shops and pharmacies read "Out of stock". The note field only appears for "Something else", is one line, and the merchant can leave it empty.</div></sc-if>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;width:360px"><div style="font-size:13px;font-weight:700;color:var(--muted)">K3a · Problem with this order?</div>
+<div data-screen-label="K3a Problem sheet" style="width:360px;height:720px;position:relative;overflow:hidden;background:var(--bg);border-radius:24px;box-shadow:0 1px 3px rgba(0,0,0,.08),0 8px 24px rgba(0,0,0,.06)">
+<div style="height:52px;display:flex;align-items:center;gap:4px;padding:0 16px 0 4px"><span style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;color:var(--accent-text)">{{ i.back }}</span><div style="flex:1;font-size:17px;font-weight:700">#A222</div><div style="font-size:16px;font-weight:700">$9.50</div></div>
+<div style="margin:4px 16px;background:var(--accent-wash);border-radius:16px;padding:16px"><div style="font-size:36px;font-weight:700;line-height:1">7:12</div></div>
+<div style="position:absolute;inset:0;background:rgba(20,24,27,.5)"></div>
+<div style="position:absolute;left:0;right:0;bottom:0;background:var(--bg);border-radius:20px 20px 0 0;padding:10px 16px 16px;display:flex;flex-direction:column;gap:12px">
+<div style="align-self:center;width:36px;height:4px;border-radius:2px;background:var(--line)"></div>
+<div><div style="font-size:20px;font-weight:700">Problem with #A222?</div><div style="font-size:14px;color:var(--muted);margin-top:2px">Pick what happened.</div></div>
+<div style="min-height:72px;border:1px solid var(--line);border-radius:16px;padding:12px 14px;display:flex;align-items:center;gap:12px;box-sizing:border-box"><span style="width:44px;height:44px;border-radius:50%;background:var(--accent-wash);color:var(--accent-text);display:flex;align-items:center;justify-content:center;flex:none">{{ i.swap }}</span><div style="flex:1"><div style="font-size:16px;font-weight:700">Something ran out</div><div style="font-size:13px;color:var(--muted);margin-top:2px;line-height:1.35">Change items: swap or remove, then the customer OKs it</div></div><span style="display:flex;color:var(--muted)">{{ i.chev }}</span></div>
+<div style="min-height:72px;border:1px solid var(--line);border-radius:16px;padding:12px 14px;display:flex;align-items:center;gap:12px;box-sizing:border-box"><span style="width:44px;height:44px;border-radius:50%;background:var(--danger-wash);color:var(--danger-ink);display:flex;align-items:center;justify-content:center;flex:none">{{ i.x }}</span><div style="flex:1"><div style="font-size:16px;font-weight:700;color:var(--danger-ink)">Can't finish this order</div><div style="font-size:13px;color:var(--muted);margin-top:2px;line-height:1.35">Cancel with a reason. The customer and rider are told.</div></div><span style="display:flex;color:var(--muted)">{{ i.chev }}</span></div>
+<div style="font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px">{{ s.clock }} Just running late? Use +5 min on the ticket.</div>
+<div style="height:48px;border-radius:999px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700">Close</div>
+</div>
+</div>
+<sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;line-height:1.5;color:var(--muted)">Two paths, two full-width cards. "Something ran out" opens the S2 swap/remove list on this ticket. "Can't finish" opens K3b or K3c.</div></sc-if>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;width:360px"><div style="font-size:13px;font-weight:700;color:var(--muted)">K3b · Can't finish (cash order)</div>
+<div data-screen-label="K3b Cancel cash order" style="width:360px;height:720px;position:relative;overflow:hidden;background:var(--bg);border-radius:24px;box-shadow:0 1px 3px rgba(0,0,0,.08),0 8px 24px rgba(0,0,0,.06)">
+<div style="height:52px;display:flex;align-items:center;gap:4px;padding:0 16px 0 4px"><span style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;color:var(--accent-text)">{{ i.back }}</span><div style="flex:1;font-size:17px;font-weight:700">#A222</div><div style="font-size:16px;font-weight:700">$9.50</div></div>
+<div style="position:absolute;inset:0;background:rgba(20,24,27,.5)"></div>
+<div style="position:absolute;left:0;right:0;bottom:0;background:var(--bg);border-radius:20px 20px 0 0;padding:10px 16px 16px;display:flex;flex-direction:column;gap:12px">
+<div style="align-self:center;width:36px;height:4px;border-radius:2px;background:var(--line)"></div>
+<div><div style="font-size:20px;font-weight:700">Cancel #A222?</div><div style="font-size:14px;color:var(--muted);margin-top:2px;line-height:1.4">Blessing M. is booked for 07:31. We call off the rider and tell the customer.</div></div>
+<div style="display:flex;flex-direction:column;gap:8px">
+<div style="min-height:48px;border:1px solid var(--line);border-radius:14px;padding:0 14px;display:flex;align-items:center;gap:12px;font-size:15px;font-weight:600"><span style="width:22px;height:22px;border-radius:50%;border:2px solid var(--line);box-sizing:border-box;flex:none"></span>Ran out and can't swap</div>
+<div style="min-height:48px;border:2px solid var(--accent);background:var(--accent-wash);border-radius:14px;padding:0 13px;display:flex;align-items:center;gap:12px;font-size:15px;font-weight:700"><span style="width:22px;height:22px;border-radius:50%;border:6px solid var(--accent);background:var(--bg);box-sizing:border-box;flex:none"></span>Kitchen problem (gas, power, water)</div>
+<div style="min-height:48px;border:1px solid var(--line);border-radius:14px;padding:0 14px;display:flex;align-items:center;gap:12px;font-size:15px;font-weight:600"><span style="width:22px;height:22px;border-radius:50%;border:2px solid var(--line);box-sizing:border-box;flex:none"></span>Too busy to finish it</div>
+<div style="min-height:48px;border:1px solid var(--line);border-radius:14px;padding:0 14px;display:flex;align-items:center;gap:12px;font-size:15px;font-weight:600"><span style="width:22px;height:22px;border-radius:50%;border:2px solid var(--line);box-sizing:border-box;flex:none"></span>Something else</div></div>
+<div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:12px;background:var(--surface);font-size:14px"><span style="display:flex;color:var(--muted)">{{ i.cash }}</span><div style="flex:1">Cash order · nothing to refund</div></div>
+<div style="height:52px;border-radius:999px;background:var(--danger);color:var(--bg);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700">Cancel order</div>
+<div style="height:48px;border-radius:999px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700">Keep cooking</div>
+</div>
+</div>
+<sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;line-height:1.5;color:var(--muted)">Same reason pattern as K2a. The sheet names the booked rider, so the kitchen knows someone is being called off.</div></sc-if>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;width:360px"><div style="font-size:13px;font-weight:700;color:var(--muted)">K3c · Can't finish (paid by wallet)</div>
+<div data-screen-label="K3c Cancel wallet order" style="width:360px;height:720px;position:relative;overflow:hidden;background:var(--bg);border-radius:24px;box-shadow:0 1px 3px rgba(0,0,0,.08),0 8px 24px rgba(0,0,0,.06)">
+<div style="height:52px;display:flex;align-items:center;gap:4px;padding:0 16px 0 4px"><span style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;color:var(--accent-text)">{{ i.back }}</span><div style="flex:1;font-size:17px;font-weight:700">#A222</div><div style="font-size:16px;font-weight:700">$9.50</div></div>
+<div style="position:absolute;inset:0;background:rgba(20,24,27,.5)"></div>
+<div style="position:absolute;left:0;right:0;bottom:0;background:var(--bg);border-radius:20px 20px 0 0;padding:10px 16px 16px;display:flex;flex-direction:column;gap:12px">
+<div style="align-self:center;width:36px;height:4px;border-radius:2px;background:var(--line)"></div>
+<div><div style="font-size:20px;font-weight:700">Cancel #A222?</div><div style="font-size:14px;color:var(--muted);margin-top:2px;line-height:1.4">Blessing M. is booked for 07:31. We call off the rider and tell the customer.</div></div>
+<div style="display:flex;flex-direction:column;gap:8px">
+<div style="min-height:48px;border:2px solid var(--accent);background:var(--accent-wash);border-radius:14px;padding:0 13px;display:flex;align-items:center;gap:12px;font-size:15px;font-weight:700"><span style="width:22px;height:22px;border-radius:50%;border:6px solid var(--accent);background:var(--bg);box-sizing:border-box;flex:none"></span>Ran out and can't swap</div>
+<div style="min-height:48px;border:1px solid var(--line);border-radius:14px;padding:0 14px;display:flex;align-items:center;gap:12px;font-size:15px;font-weight:600"><span style="width:22px;height:22px;border-radius:50%;border:2px solid var(--line);box-sizing:border-box;flex:none"></span>Kitchen problem (gas, power, water)</div>
+<div style="min-height:48px;border:1px solid var(--line);border-radius:14px;padding:0 14px;display:flex;align-items:center;gap:12px;font-size:15px;font-weight:600"><span style="width:22px;height:22px;border-radius:50%;border:2px solid var(--line);box-sizing:border-box;flex:none"></span>Too busy to finish it</div>
+<div style="min-height:48px;border:1px solid var(--line);border-radius:14px;padding:0 14px;display:flex;align-items:center;gap:12px;font-size:15px;font-weight:600"><span style="width:22px;height:22px;border-radius:50%;border:2px solid var(--line);box-sizing:border-box;flex:none"></span>Something else</div></div>
+<div style="display:flex;gap:10px;padding:12px 14px;border-radius:12px;border:1px solid var(--highlight-border);background:var(--highlight-wash);font-size:14px;line-height:1.4"><span style="display:flex;color:var(--highlight-ink);flex:none">{{ i.wallet }}</span><div style="flex:1"><b>Paid by wallet · $9.50</b><div style="color:var(--highlight-ink)">We refund the customer first, then cancel.</div></div></div>
+<div style="height:52px;border-radius:999px;background:var(--danger);color:var(--bg);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700">Refund $9.50 and cancel</div>
+<div style="height:48px;border-radius:999px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700">Keep cooking</div>
+</div>
+</div>
+<sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;line-height:1.5;color:var(--muted)">Only the money card and the CTA change. The CTA names the refund amount, so the order of events is explicit: refund, then cancel.</div></sc-if>
+</div>
+</div>
+<div style="font-size:20px;font-weight:700">Board and order states</div>
+<div style="display:flex;flex-wrap:wrap;gap:32px;align-items:flex-start">
+<div style="display:flex;flex-direction:column;gap:10px;width:360px"><div style="font-size:13px;font-weight:700;color:var(--muted)">K1b · Board with cash out and scheduled</div>
+<div data-screen-label="K1b Board cash and scheduled" style="width:360px;height:720px;position:relative;overflow:hidden;background:var(--bg);border-radius:24px;box-shadow:0 1px 3px rgba(0,0,0,.08),0 8px 24px rgba(0,0,0,.06)">
+<div style="background:var(--accent-wash);padding:18px 16px 14px;display:flex;flex-direction:column;gap:12px">
+<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:4px;font-size:22px;font-weight:700;letter-spacing:-.01em">Sadza Republic<span style="color:var(--muted);display:flex">{{ s.down }}</span></div><div style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:13px;font-weight:600;color:var(--accent-text)"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent)"></span>Open · until 22:00</div></div>
+<div style="height:44px;padding:0 14px;border-radius:999px;background:var(--bg);display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700"><span style="width:32px;height:20px;border-radius:10px;background:var(--accent);position:relative"><span style="position:absolute;right:2px;top:2px;width:16px;height:16px;border-radius:50%;background:var(--bg)"></span></span>Open</div></div>
+<div style="background:var(--bg);border-radius:16px;display:flex;padding:12px 0">
+<div style="flex:1;padding:0 14px"><div style="font-size:12px;color:var(--muted);font-weight:600">Orders</div><div style="font-size:18px;font-weight:700;margin-top:2px">5</div></div>
+<div style="flex:1;padding:0 14px;border-left:1px solid var(--line)"><div style="font-size:12px;color:var(--muted);font-weight:600">Sales</div><div style="font-size:18px;font-weight:700;margin-top:2px">$41.00</div></div>
+<div style="flex:1;padding:0 14px;border-left:1px solid var(--line)"><div style="font-size:12px;color:var(--highlight-ink);font-weight:700">Cash due</div><div style="font-size:18px;font-weight:700;margin-top:2px;color:var(--highlight-ink)">$21.50</div></div></div></div>
+<div style="padding:16px;display:flex;flex-direction:column;gap:10px">
+<div style="font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--muted)">COOKING · 1</div>
+<div style="border:1px solid var(--line);border-radius:16px;padding:12px 14px;display:flex;flex-direction:column;gap:8px"><div style="display:flex;justify-content:space-between;gap:8px"><div style="font-size:15px;font-weight:700">#A222 · Mazondo, Sadza &amp; greens</div><div style="font-size:15px;font-weight:700">8 min</div></div><div style="height:4px;border-radius:2px;background:var(--line)"><div style="width:62%;height:4px;border-radius:2px;background:var(--accent)"></div></div></div>
+<div style="font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--muted);margin-top:6px">CASH TO COME BACK · 2</div>
+<div style="border:1px solid var(--highlight-border);background:var(--highlight-wash);border-radius:16px;padding:10px 10px 10px 14px;display:flex;align-items:center;gap:10px"><div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:6px;font-size:15px;font-weight:700">$9.50 · #A101<span style="height:20px;padding:0 6px;border-radius:6px;background:var(--highlight-sun);color:var(--highlight-sun-ink);font-size:11px;font-weight:700;display:flex;align-items:center">LATE</span></div><div style="font-size:13px;color:var(--highlight-ink);font-weight:600;margin-top:2px">Tino K. · was due 07:10</div></div><span style="height:44px;padding:0 14px;border-radius:999px;background:var(--bg);color:var(--accent-text);font-size:14px;font-weight:700;display:flex;align-items:center;gap:6px">{{ s.phone }} Call</span></div>
+<div style="min-height:56px;box-sizing:border-box;border:1px solid var(--line);border-radius:16px;padding:10px 14px;display:flex;align-items:center;gap:10px"><div style="flex:1"><div style="font-size:15px;font-weight:700">$12.00 · #A105</div><div style="font-size:13px;color:var(--muted);margin-top:2px">Blessing M. · delivered 07:12 · back by 07:30</div></div><span style="color:var(--muted);display:flex">{{ i.chev }}</span></div>
+<div style="font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--muted);margin-top:6px">SCHEDULED · 2</div>
+<div style="min-height:56px;box-sizing:border-box;border:1px dashed var(--line);border-radius:16px;padding:10px 14px;display:flex;align-items:center;gap:10px"><span style="display:flex;color:var(--muted)">{{ i.clock }}</span><div style="flex:1"><div style="font-size:15px;font-weight:700">12:30 today · #A301</div><div style="font-size:13px;color:var(--muted);margin-top:2px">3 dishes · $18.00 · rings at 12:00</div></div><span style="color:var(--muted);display:flex">{{ i.chev }}</span></div>
+</div>
+<div style="position:absolute;left:0;right:0;bottom:0;height:64px;border-top:1px solid var(--line);background:var(--bg);display:flex">
+<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--accent-text);font-size:12px;font-weight:700"><span style="width:52px;height:26px;border-radius:13px;background:var(--accent-wash);display:flex;align-items:center;justify-content:center">{{ i.inbox }}</span>Orders</div>
+<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--muted);font-size:12px;font-weight:600"><span style="width:52px;height:26px;display:flex;align-items:center;justify-content:center">{{ i.utensils }}</span>Menu</div>
+<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--muted);font-size:12px;font-weight:600"><span style="width:52px;height:26px;display:flex;align-items:center;justify-content:center">{{ i.wallet }}</span>Money</div>
+<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--muted);font-size:12px;font-weight:600"><span style="width:52px;height:26px;display:flex;align-items:center;justify-content:center">{{ i.user }}</span>Account</div></div>
+</div>
+<sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;line-height:1.5;color:var(--muted)">Cash still out sits below live work and above scheduled orders. Late cash goes gold with a LATE chip and a 44 px Call. Scheduled cards are dashed because they haven't rung yet; the second one is further down the list.</div></sc-if>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;width:360px"><div style="font-size:13px;font-weight:700;color:var(--muted)">K1c · Board, open and quiet</div>
+<div data-screen-label="K1c Board empty" style="width:360px;height:720px;position:relative;overflow:hidden;background:var(--bg);border-radius:24px;box-shadow:0 1px 3px rgba(0,0,0,.08),0 8px 24px rgba(0,0,0,.06)">
+<div style="background:var(--accent-wash);padding:18px 16px 14px;display:flex;flex-direction:column;gap:12px">
+<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:4px;font-size:22px;font-weight:700;letter-spacing:-.01em">Sadza Republic<span style="color:var(--muted);display:flex">{{ s.down }}</span></div><div style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:13px;font-weight:600;color:var(--accent-text)"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent)"></span>Open · until 22:00</div></div>
+<div style="height:44px;padding:0 14px;border-radius:999px;background:var(--bg);display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700"><span style="width:32px;height:20px;border-radius:10px;background:var(--accent);position:relative"><span style="position:absolute;right:2px;top:2px;width:16px;height:16px;border-radius:50%;background:var(--bg)"></span></span>Open</div></div>
+<div style="background:var(--bg);border-radius:16px;display:flex;padding:12px 0">
+<div style="flex:1;padding:0 14px"><div style="font-size:12px;color:var(--muted);font-weight:600">Orders</div><div style="font-size:18px;font-weight:700;margin-top:2px">0</div></div>
+<div style="flex:1;padding:0 14px;border-left:1px solid var(--line)"><div style="font-size:12px;color:var(--muted);font-weight:600">Sales</div><div style="font-size:18px;font-weight:700;margin-top:2px">$0.00</div></div>
+<div style="flex:1;padding:0 14px;border-left:1px solid var(--line)"><div style="font-size:12px;color:var(--muted);font-weight:600">Cash due</div><div style="font-size:18px;font-weight:700;margin-top:2px">$0.00</div></div></div></div>
+<div style="padding:64px 32px 0;display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center"><span style="width:72px;height:72px;border-radius:50%;background:var(--accent-wash);color:var(--accent-text);display:flex;align-items:center;justify-content:center">{{ i.inbox }}</span><div style="font-size:20px;font-weight:700">All quiet for now</div><div style="font-size:15px;color:var(--muted);line-height:1.45;text-wrap:pretty">You're open. New orders ring here with sound, so keep the volume up.</div>
+<div style="height:48px;width:100%;border-radius:999px;border:1px solid var(--line);color:var(--accent-text);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;margin-top:8px">Check your menu</div></div>
+<div style="position:absolute;left:0;right:0;bottom:0;height:64px;border-top:1px solid var(--line);background:var(--bg);display:flex">
+<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--accent-text);font-size:12px;font-weight:700"><span style="width:52px;height:26px;border-radius:13px;background:var(--accent-wash);display:flex;align-items:center;justify-content:center">{{ i.inbox }}</span>Orders</div>
+<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--muted);font-size:12px;font-weight:600"><span style="width:52px;height:26px;display:flex;align-items:center;justify-content:center">{{ i.utensils }}</span>Menu</div>
+<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--muted);font-size:12px;font-weight:600"><span style="width:52px;height:26px;display:flex;align-items:center;justify-content:center">{{ i.wallet }}</span>Money</div>
+<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--muted);font-size:12px;font-weight:600"><span style="width:52px;height:26px;display:flex;align-items:center;justify-content:center">{{ i.user }}</span>Account</div></div>
+</div>
+<sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;line-height:1.5;color:var(--muted)">Mint icon, not grey, so "open and quiet" can't be mistaken for T4 Closed. Shops get "Book a rider" here instead of "Check your menu".</div></sc-if>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;width:360px"><div style="font-size:13px;font-weight:700;color:var(--muted)">K5b · Delivered, no cash to bring back</div>
+<div data-screen-label="K5b Delivered wallet" style="width:360px;height:720px;position:relative;overflow:hidden;background:var(--bg);border-radius:24px;box-shadow:0 1px 3px rgba(0,0,0,.08),0 8px 24px rgba(0,0,0,.06)">
+<div style="height:250px;background:repeating-linear-gradient(45deg,var(--surface) 0 10px,var(--line) 10px 11px);position:relative"><span style="position:absolute;left:4px;top:4px;width:44px;height:44px;border-radius:50%;background:var(--bg);color:var(--accent-text);display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.12)">{{ i.back }}</span><span style="position:absolute;right:12px;bottom:28px;font:12px ui-monospace,monospace;color:var(--muted)">map · drop-off pin</span></div>
+<div style="margin-top:-20px;position:relative;background:var(--bg);border-radius:20px 20px 0 0;padding:18px 16px;display:flex;flex-direction:column;gap:12px">
+<div><div style="font-size:20px;font-weight:700">#A115 delivered</div><div style="font-size:14px;color:var(--muted);margin-top:2px">Blessing M. · 07:41 · 2 dishes</div></div>
+<div style="display:flex;gap:4px"><span style="flex:1;height:4px;border-radius:2px;background:var(--accent)"></span><span style="flex:1;height:4px;border-radius:2px;background:var(--accent)"></span><span style="flex:1;height:4px;border-radius:2px;background:var(--accent)"></span><span style="flex:1;height:4px;border-radius:2px;background:var(--accent)"></span><span style="flex:1;height:4px;border-radius:2px;background:var(--accent)"></span></div>
+<div style="height:150px;border-radius:16px;background:repeating-linear-gradient(45deg,var(--surface) 0 8px,var(--line) 8px 9px);display:flex;align-items:center;justify-content:center;font:12px ui-monospace,monospace;color:var(--muted)">door photo · 07:41</div>
+<div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:12px;background:var(--accent-wash);font-size:14px"><span style="display:flex;color:var(--accent-text)">{{ i.wallet }}</span><div style="flex:1"><b>Paid by wallet · $14.00</b><div style="color:var(--accent-text);font-size:13px;margin-top:2px">Nothing to bring back. It's in your Money tab.</div></div></div>
+</div>
+</div>
+<sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;line-height:1.5;color:var(--muted)">No cash card and no CTA bar: the order is finished. A mint wallet line replaces the gold cash card, so the merchant can see at a glance there's nothing to collect.</div></sc-if>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;width:360px"><div style="font-size:13px;font-weight:700;color:var(--muted)">K5c · Goods coming back</div>
+<div data-screen-label="K5c Goods back" style="width:360px;height:720px;position:relative;overflow:hidden;background:var(--bg);border-radius:24px;box-shadow:0 1px 3px rgba(0,0,0,.08),0 8px 24px rgba(0,0,0,.06)">
+<div style="height:250px;background:repeating-linear-gradient(45deg,var(--surface) 0 10px,var(--line) 10px 11px);position:relative"><span style="position:absolute;left:4px;top:4px;width:44px;height:44px;border-radius:50%;background:var(--bg);color:var(--accent-text);display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.12)">{{ i.back }}</span><span style="position:absolute;right:12px;bottom:28px;font:12px ui-monospace,monospace;color:var(--muted)">live map · rider heading back</span></div>
+<div style="margin-top:-20px;position:relative;background:var(--bg);border-radius:20px 20px 0 0;padding:18px 16px;display:flex;flex-direction:column;gap:12px">
+<div><div style="font-size:20px;font-weight:700">#A117 couldn't be delivered</div><div style="font-size:14px;color:var(--muted);margin-top:2px">Customer didn't answer · 07:44</div></div>
+<div style="display:flex;gap:4px"><span style="flex:1;height:4px;border-radius:2px;background:var(--accent)"></span><span style="flex:1;height:4px;border-radius:2px;background:var(--accent)"></span><span style="flex:1;height:4px;border-radius:2px;background:var(--accent)"></span><span style="flex:1;height:4px;border-radius:2px;background:var(--danger)"></span><span style="flex:1;height:4px;border-radius:2px;background:var(--line)"></span></div>
+<div style="border:1px solid var(--danger);background:var(--danger-wash);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:8px">
+<div style="display:flex;align-items:center;gap:10px"><span style="display:flex;color:var(--danger-ink)">{{ i.box }}</span><div style="flex:1;font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--danger-ink)">GOODS BACK TO YOU</div></div>
+<div style="font-size:15px;font-weight:700">2× Mazondo · $10.00</div>
+<div style="font-size:13px;color:var(--danger-ink);font-weight:600">Blessing M. brings it back by 07:58</div></div>
+</div>
+<div style="position:absolute;left:0;right:0;bottom:0;padding:12px 16px 16px;background:var(--bg);box-shadow:0 -4px 16px rgba(20,24,27,.06);display:flex;flex-direction:column;gap:8px">
+<div style="height:52px;border-radius:999px;background:var(--cta-fill);color:var(--on-accent);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700">I got the food back</div>
+<div style="height:48px;border-radius:999px;border:1px solid var(--line);color:var(--danger-ink);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700">It wasn't returned</div></div>
+</div>
+<sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;line-height:1.5;color:var(--muted)">The cash card's slot turns into a red goods card. Step 4 goes red. Shops read "GOODS BACK TO YOU" and "I got the goods back".</div></sc-if>
+</div>
+</div>
+<div style="font-size:20px;font-weight:700">Money and live bar</div>
+<div style="display:flex;flex-wrap:wrap;gap:32px;align-items:flex-start">
+<div style="display:flex;flex-direction:column;gap:10px;width:360px"><div style="font-size:13px;font-weight:700;color:var(--muted)">T2b · Money, this week</div>
+<div data-screen-label="T2b Money this week" style="width:360px;height:720px;position:relative;overflow:hidden;background:var(--bg);border-radius:24px;box-shadow:0 1px 3px rgba(0,0,0,.08),0 8px 24px rgba(0,0,0,.06)">
+<div style="background:var(--accent-wash);padding:18px 16px 16px;display:flex;flex-direction:column;gap:12px"><div style="font-size:22px;font-weight:700">Money</div>
+<div style="height:44px;border-radius:999px;background:var(--bg);display:flex;padding:4px;box-sizing:border-box"><div style="flex:1;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:var(--muted)">Today</div><div style="flex:1;border-radius:999px;background:var(--cta-fill);color:var(--on-accent);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700">This week</div></div>
+<div><div style="font-size:13px;font-weight:600;color:var(--muted)">SALES · 41 ORDERS · 28 SEP–4 OCT</div><div style="font-size:40px;font-weight:700;letter-spacing:-.02em">$386.00</div></div></div>
+<div style="padding:16px;display:flex;flex-direction:column;gap:12px">
+<div style="display:flex;align-items:flex-end;gap:8px;height:84px">
+<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="width:100%;height:36px;border-radius:6px;background:var(--accent-wash)"></span><span style="font-size:12px;color:var(--muted);font-weight:600">M</span></div>
+<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="width:100%;height:35px;border-radius:6px;background:var(--accent-wash)"></span><span style="font-size:12px;color:var(--muted);font-weight:600">T</span></div>
+<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="width:100%;height:40px;border-radius:6px;background:var(--accent-wash)"></span><span style="font-size:12px;color:var(--muted);font-weight:600">W</span></div>
+<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="width:100%;height:37px;border-radius:6px;background:var(--accent-wash)"></span><span style="font-size:12px;color:var(--muted);font-weight:600">T</span></div>
+<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="width:100%;height:50px;border-radius:6px;background:var(--accent-wash)"></span><span style="font-size:12px;color:var(--muted);font-weight:600">F</span></div>
+<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="width:100%;height:56px;border-radius:6px;background:var(--accent-wash)"></span><span style="font-size:12px;color:var(--muted);font-weight:600">S</span></div>
+<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="width:100%;height:46px;border-radius:6px;background:var(--accent)"></span><span style="font-size:12px;color:var(--accent-text);font-weight:700">S</span></div></div>
+<div style="display:flex;flex-direction:column">
+<div style="min-height:56px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)"><div style="flex:1"><div style="font-size:15px;font-weight:700">Sun 4 Oct · today</div><div style="font-size:13px;color:var(--highlight-ink);font-weight:600">7 orders · $9.50 cash late</div></div><b style="font-size:16px">$59.50</b><span style="display:flex;color:var(--muted)">{{ s.chev }}</span></div>
+<div style="min-height:56px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)"><div style="flex:1"><div style="font-size:15px;font-weight:700">Sat 3 Oct</div><div style="font-size:13px;color:var(--muted)">9 orders · all cash in</div></div><b style="font-size:16px">$72.00</b><span style="display:flex;color:var(--muted)">{{ s.chev }}</span></div>
+<div style="min-height:56px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)"><div style="flex:1"><div style="font-size:15px;font-weight:700">Fri 2 Oct</div><div style="font-size:13px;color:var(--muted)">8 orders · all cash in</div></div><b style="font-size:16px">$64.50</b><span style="display:flex;color:var(--muted)">{{ s.chev }}</span></div>
+<div style="min-height:56px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)"><div style="flex:1"><div style="font-size:15px;font-weight:700">Thu 1 Oct</div><div style="font-size:13px;color:var(--muted)">6 orders · 1 you couldn't take</div></div><b style="font-size:16px">$48.00</b><span style="display:flex;color:var(--muted)">{{ s.chev }}</span></div></div>
+</div>
+<div style="position:absolute;left:0;right:0;bottom:0;height:64px;border-top:1px solid var(--line);background:var(--bg);display:flex">
+<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--muted);font-size:12px;font-weight:600"><span style="width:52px;height:26px;display:flex;align-items:center;justify-content:center">{{ i.inbox }}</span>Orders</div>
+<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--muted);font-size:12px;font-weight:600"><span style="width:52px;height:26px;display:flex;align-items:center;justify-content:center">{{ i.utensils }}</span>Menu</div>
+<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--accent-text);font-size:12px;font-weight:700"><span style="width:52px;height:26px;border-radius:13px;background:var(--accent-wash);display:flex;align-items:center;justify-content:center">{{ i.wallet }}</span>Money</div>
+<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--muted);font-size:12px;font-weight:600"><span style="width:52px;height:26px;display:flex;align-items:center;justify-content:center">{{ i.user }}</span>Account</div></div>
+</div>
+<sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;line-height:1.5;color:var(--muted)">One row per day, newest first; tapping a day opens it in the Today layout. The bars are only for scale: no axis and no numbers. Late cash stays gold on its day.</div></sc-if>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;width:360px"><div style="font-size:13px;font-weight:700;color:var(--muted)">T1b · Live bar states</div>
+<div data-screen-label="T1b Live bar states" style="width:360px;box-sizing:border-box;background:var(--surface);border-radius:24px;padding:16px 12px;display:flex;flex-direction:column;gap:8px">
+<div style="font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--muted);padding:0 2px">NEW ORDER RINGING</div>
+<div style="height:56px;border-radius:16px;background:var(--highlight-sun);color:var(--highlight-sun-ink);display:flex;align-items:center;gap:12px;padding:0 14px"><span style="display:flex">{{ i.volume }}</span><div style="flex:1"><div style="font-size:14px;font-weight:700">New order · #A1B2</div><div style="font-size:12px;font-weight:600">3 dishes · $15.00 · 0:48 to answer</div></div><span style="display:flex">{{ i.chev }}</span></div>
+<div style="font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--muted);padding:0 2px;margin-top:8px">RIDER AT THE COUNTER</div>
+<div style="height:56px;border-radius:16px;background:var(--live-bar);color:var(--bg);display:flex;align-items:center;gap:12px;padding:0 14px"><span style="width:10px;height:10px;border-radius:50%;background:var(--accent)"></span><div style="flex:1"><div style="font-size:14px;font-weight:700">Blessing is at your counter</div><div style="font-size:12px;color:var(--live-bar-ink)">2 cooking · 1 on the way</div></div><span style="display:flex">{{ i.chev }}</span></div>
+<div style="font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--muted);padding:0 2px;margin-top:8px">WAITING FOR THE CUSTOMER</div>
+<div style="height:56px;border-radius:16px;background:var(--live-bar);color:var(--bg);display:flex;align-items:center;gap:12px;padding:0 14px"><span style="width:10px;height:10px;border-radius:50%;border:2px solid var(--highlight-sun);box-sizing:border-box"></span><div style="flex:1"><div style="font-size:14px;font-weight:700">Waiting for Rudo's OK · 2:28</div><div style="font-size:12px;color:var(--live-bar-ink)">2 changes on #A1B2 · keep packing</div></div><span style="display:flex">{{ i.chev }}</span></div>
+<div style="font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--muted);padding:0 2px;margin-top:8px">COUNTS ONLY</div>
+<div style="height:56px;border-radius:16px;background:var(--live-bar);color:var(--bg);display:flex;align-items:center;gap:12px;padding:0 14px"><span style="width:10px;height:10px;border-radius:50%;background:var(--live-bar-ink)"></span><div style="flex:1"><div style="font-size:14px;font-weight:700">2 cooking · 1 on the way</div><div style="font-size:12px;color:var(--live-bar-ink)">Next ready 07:29</div></div><span style="display:flex">{{ i.chev }}</span></div>
+</div>
+<sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;line-height:1.5;color:var(--muted)">Priority order, top to bottom; the bar shows the highest one. Only a ringing order turns sun gold. The whole 56 px bar is the tap target and opens the board on that order.</div></sc-if>
+</div>
+</div>
+<div style="font-size:20px;font-weight:700">Arrival signal <span style="font-size:14px;font-weight:600;color:var(--muted)">· needs Part B, item B1</span></div>
+<div style="display:flex;flex-wrap:wrap;gap:32px;align-items:flex-start">
+<div style="display:flex;flex-direction:column;gap:10px;width:360px"><div style="font-size:13px;font-weight:700;color:var(--muted)">A1 · Counter card and rider line</div>
+<div data-screen-label="A1 Arrival states" style="width:360px;box-sizing:border-box;background:var(--surface);border-radius:24px;padding:16px 12px;display:flex;flex-direction:column;gap:8px">
+<div style="font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--muted);padding:0 2px">K1 · BEFORE ARRIVAL</div>
+<div style="border:1px solid var(--line);background:var(--bg);border-radius:16px;padding:12px 14px;display:flex;align-items:center;gap:12px"><span style="width:40px;height:40px;border-radius:50%;background:var(--surface);color:var(--muted);display:flex;align-items:center;justify-content:center;flex:none">{{ i.bike }}</span><div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:700">Blessing M. is coming to your counter</div><div style="font-size:13px;color:var(--muted);margin-top:2px">Arrives 07:31 · #A444 · $10.00</div></div></div>
+<div style="font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--muted);padding:0 2px;margin-top:8px">K1 · ARRIVED</div>
+<div style="border:2px solid var(--accent);background:var(--bg);border-radius:16px;padding:12px 14px;display:flex;align-items:center;gap:12px"><span style="width:40px;height:40px;border-radius:50%;background:var(--accent-wash);color:var(--accent-text);display:flex;align-items:center;justify-content:center;flex:none">{{ i.bike }}</span><div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:700">Blessing M. is at your counter</div><div style="font-size:13px;color:var(--muted);margin-top:2px">Since 07:30 · #A444 · $10.00</div></div><div style="height:44px;padding:0 14px;border-radius:999px;background:var(--cta-fill);color:var(--on-accent);font-size:14px;font-weight:700;display:flex;align-items:center">Hand over</div></div>
+<div style="font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--muted);padding:0 2px;margin-top:8px">K4 · RIDER SUB-LINE</div>
+<div style="border:1px solid var(--line);background:var(--bg);border-radius:16px;padding:4px 14px;display:flex;flex-direction:column">
+<div style="min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;border-bottom:1px solid var(--line)"><span style="color:var(--muted)">On the way</span><span>AFG 2231 · ★ 4.9 · arrives 07:31</span></div>
+<div style="min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px"><span style="color:var(--muted)">Arrived</span><b style="color:var(--accent-text)">AFG 2231 · ★ 4.9 · at your counter</b></div></div>
+</div>
+<sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;line-height:1.5;color:var(--muted)">Before arrival the card is calm (grey icon, thin border, no button). On arrival it gets the accent border and Hand over, and moves to the top of NEEDS YOU.</div></sc-if>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;width:360px"><div style="font-size:13px;font-weight:700;color:var(--muted)">A2 · Arrival time: known vs unknown</div>
+<div data-screen-label="A2 ETA states" style="width:360px;box-sizing:border-box;background:var(--surface);border-radius:24px;padding:16px 12px;display:flex;flex-direction:column;gap:8px">
+<div style="font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--muted);padding:0 2px">K3 · TIMER CARD</div>
+<div style="background:var(--accent-wash);border-radius:16px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;font-size:14px;font-weight:600;color:var(--accent-text)"><div style="display:flex;align-items:center;gap:6px">{{ s.bike }} Blessing M. arrives 07:31</div><div style="display:flex;align-items:center;gap:6px;color:var(--muted)">{{ s.bike }} Blessing M. is on the way to you</div></div>
+<div style="font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--muted);padding:0 2px;margin-top:8px">K5 · SUB-LINE</div>
+<div style="background:var(--bg);border:1px solid var(--line);border-radius:16px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;font-size:14px"><div>Blessing M. · arrives 07:38 · 2 dishes</div><div style="color:var(--muted)">Blessing M. · on the way · 2 dishes</div></div>
+<div style="font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--muted);padding:0 2px;margin-top:8px">BOARD · ON THE WAY CARD</div>
+<div style="background:var(--bg);border:1px solid var(--line);border-radius:16px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;font-size:13px"><div>Arrives 07:38 · then brings you $12.00</div><div style="color:var(--muted)">On the way · then brings you $12.00</div></div>
+<div style="font-size:13px;color:var(--muted);line-height:1.45;padding:4px 2px 0">Top line: estimate known. Second line: no estimate yet. Never "arrives —" and never a made-up time.</div>
+</div>
+<sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}"><div style="font-size:13px;line-height:1.5;color:var(--muted)">When the estimate is unknown, the time drops out and the sentence still reads; nothing is left as a gap. The same rule applies to the T1 live bar sub-line.</div></sc-if>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showNotes&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const P = {
+      inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+      utensils: '<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>',
+      box: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
+      wallet: '<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
+      user: '<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>',
+      chev: '<path d="m9 18 6-6-6-6"/>', back: '<path d="m15 18-6-6 6-6"/>', down: '<path d="m6 9 6 6 6-6"/>',
+      bike: '<circle cx="18.5" cy="17.5" r="3.5"/><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="15" cy="5" r="1"/><path d="M12 17.5V14l-3-3 4-3 2 3h2"/>',
+      check: '<path d="M20 6 9 17l-5-5"/>', x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+      phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>',
+      volume: '<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/>',
+      swap: '<path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/>',
+      clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+      external: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+      cash: '<rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>'
+    };
+    const mk = (sz) => { const o = {}; for (const k in P) o[k] = React.createElement('svg', { width: sz, height: sz, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', dangerouslySetInnerHTML: { __html: P[k] } }); return o; };
+    if (!this._i) { this._i = mk(20); this._s = mk(16); }
+    return { i: this._i, s: this._s, showNotes: this.props.showNotes ?? true };
+  }
+}
+</script>
+</body>
+</html>

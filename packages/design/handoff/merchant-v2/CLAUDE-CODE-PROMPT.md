@@ -1,58 +1,85 @@
-# Claude Code prompt: LyniaGo Merchant v2 (kitchens, shops, pharmacies)
+# Claude Code prompt: Merchant v2 follow-ups (D-77, 2026-10-05)
 
-Paste this whole file into Claude Code from the repo root. Put this folder in the repo at `packages/design/handoff/merchant-v2/`.
+Paste this file into Claude Code from the root of `unnfazzed/Lynia`.
 
 ---
 
-## Your job
-Redesign the **merchant app** (restaurants, shops, pharmacies) to Merchant v2. It must match the already-shipped **Rider v2** and **Order flow v2.1** visual language: mint top card, tab bar with a pill behind the active icon, back header, pinned CTA bar, 5-step progress bar, cash card.
-
-Rebuild everything with the app's own components, theme tokens, router, bottom sheets and map. **Don't port the HTML.** Take exact values and copy from it.
+## Setup
+1. Read `CLAUDE.md` first. It sets the pixel-parity rules and the merge-on-green policy.
+2. Copy this folder into the repo, merging it over `packages/design/handoff/merchant-v2/`. Keep the existing `BRIEF.md`; this pass adds to it and doesn't replace it.
+3. Add a D-77 ledger entry in `docs/DESIGN-DEVIATIONS.md` recording this import. The reverse-drift freeze requires one.
 
 ## Sources of truth, in order
-1. `BRIEF.md`: product rules. If the design or code disagrees, BRIEF wins.
-2. `Merchant v2 - all screens.html`: every screen at 360×720. Open it in a browser. All copy on it is final; use it word for word.
-3. `README.md`: screen list, navigation, the component spec table, Needs backend, Keep/Retire.
-4. `MerchantV2.dc.html`: the source markup, for exact spacing, sizes and colour variables.
-5. `tokens/`: colour, type and spacing tokens. **Add no new colour values.** Every `var(--x)` in the design must map to an existing theme token. If one is missing, add it to the theme, not inline.
+1. `BRIEF.md` (existing), then this folder's `README.md`. If they disagree, the README wins for this pass, because it supersedes the "show '—'" rule for rejected orders.
+2. `Merchant v2 - all screens.html`: open it in a browser. The new frames are under "FOLLOW-UPS · 2026-10-05". All copy is final; use it word for word.
+3. `source/*.dc.html`: exact spacing, sizes and colour variables.
+4. `tokens/`: no new colour values. Map every `var(--x)` to an existing theme token.
 
-## Build order (one PR each)
-1. **Shell:**
-   - the 4-tab bar (Kitchen: Menu; Shop and pharmacy: Inventory);
-   - the mint top card with the open pill and the KPI strip;
-   - the Closed state (T4);
-   - the live bar on non-Orders tabs (T1).
-2. **Shared parts:** `ProgressSteps(5)`, `BoardCard`, `RiderCard`, `CodeCard` (6-digit, `NNN NNN`), `CashCard`, `CtaBar`.
-3. **Orders board** (K1, S1): one list sorted by urgency, replacing the New / Cooking / Ready tabs.
-4. **Ringing** (K2, S2):
-   - one full-screen ringing screen for manual, auto-accepted and scheduled orders;
-   - the kitchen ready-in picker;
-   - the shop's inline swap / remove / undo, plus the "Accept with N changes" button.
-5. **Ticket** (K3): countdown, +5 min, Change items, and the Problem pill.
-6. **Hand over** (K4, S3):
-   - no merchant hand-over button: the screen moves on when the server sends `order.handed_over`;
-   - the shop's 3-step checklist with the photo thumbnail.
-7. **On the way + cash back** (K5): one screen that changes as the order moves; "I got $X" stays disabled until the order is delivered.
-8. **Book a rider** (S4): one form screen, then the existing Send v2 offers list.
-9. **Rx check** (P1): photo plus checklist; Approve is disabled until every box is ticked.
-10. **Money** (T2) and **Account** (T3).
+Rebuild with the app's own components, sheets and router (`apps/merchant/app/**`). **Don't port the HTML.**
 
-## Rules
-- Touch targets are at least 44 px. Use tabular numbers for money, times and codes. Never truncate an amount; wrap the label instead.
-- Show times as clock times ("ready 07:29"), not just relative times, next to every countdown.
-- Show money with the currency sign and two decimals. Show an order the merchant couldn't take as "—", never "$0.00".
-- No emoji. Lucide icons only (see the list in the README).
-- Support 320 px width and font scale 1.3 without anything clipping.
-- Sign-in, onboarding and the settings sub-screens: restyle only (new header, inputs and buttons); don't change their flow.
+## Work, one PR per group
+Each PR must be green on `pnpm typecheck && pnpm test`. In the same PR, delete or update the matching D-77 row and attach a screenshot sheet: run `tools/parity/shoot-merchant-v2.mjs`, and add a set for each new frame.
 
-## Backend
-Everything in README → "Needs backend". If a piece of backend doesn't exist yet:
-- add a typed client stub and put the feature behind a flag;
-- don't block the UI;
-- list it in your PR description.
+### 1. Tap targets
+- Redraw the K3 Problem pill, the S4 item and "+ Add" chips, the T1 category chips, the T2 Call pill, the K1 Hand over pill and P1 Zoom at 44px.
+- **Delete every padded-hit-area workaround.**
+- Add a test or lint check that fails if any pressable is under 44px.
+
+### 2. Shared sheet parts
+- Build `ReasonSheet` (title, sub, single-choice `ReasonRow`s, optional note field, a danger CTA and a secondary button).
+- Build `PathCard` and `InfoStrip` (neutral / gold / mint / red).
+- Follow the specs in the README under "Shared patterns" and the 320×640 sheet rule.
+
+### 3. Reject and cancel
+- **K2a/S2a:** wire up the reason codes. Show the busy-mode hint only for kitchens with "Too busy" selected. A note of at most 80 characters goes with "Something else".
+- **K3a:** the Problem sheet. "Something ran out" opens the existing S2 swap/remove flow on the ticket.
+- **K3b/K3c:**
+  - cancel with a reason; for a wallet order the refund happens first and the order is cancelled after;
+  - spinner and error states as specified.
+- **API, additive only:**
+  - `reasonCode` and `note` on reject and cancel;
+  - a refund status on the cancel response.
+- Contract changes must be additive. Run `node scripts/contract-snapshot.mjs --write` after any change.
+
+### 4. Board states
+- **K1b:**
+  - CASH TO COME BACK (late rows first, gold LATE chip, 44px Call);
+  - SCHEDULED (dashed cards, "rings at").
+- **K1c:** the empty open state ("Check your menu" for kitchens, "Book a rider" for shops).
+- **"Cash due" KPI:** includes all cash still out.
+- **Migrations:** expand-only; nullable columns with no default (`cashDueAt`, `cashReceivedAt`, `ringsAt` if missing).
+
+### 5. K5 states
+- **K5b:** a delivered order with no cash shows no cash card and no CTA.
+- **K5c:** goods coming back.
+  - "I got the food back" / "I got the goods back".
+  - "It wasn't returned" raises a support ticket and shows the confirmation copy from the README's open items.
+- Make the disabled state of the existing "I got $X · after delivery" CTA explicit.
+
+### 6. Tabs
+- **T1:**
+  - "+ Add a dish" / "+ Add an item" header pill in the top card;
+  - the live bar's 4 states, in the README's priority order.
+- **T2:**
+  - "cash on its way" row;
+  - "No sale" for rejected and missed rows (replacing "—");
+  - the T2b "This week" view with day rows and week bars;
+  - a per-day summary endpoint if one doesn't exist.
+- **T3:**
+  - a HELP group with "Help & support · WhatsApp";
+  - it opens `wa.me` with prefilled text;
+  - the number comes from config.
+
+### 7. Arrival copy (depends on B1)
+- Implement the A2 known/unknown copy table **now**, so nothing reads "arrives —" today.
+- Once `riderArrivedAt` exists, switch on the A1 "at your counter" card (with Hand over), the K4 sub-line and live-bar state 2.
+
+## Out of scope
+- **Booking terms on S4:** the terms live in the T&C accepted at sign-up. Remove any D-77 row that asks for a terms link or a version record.
+- **Sign-in, onboarding and settings sub-screens:** the restyle stands. Close those D-77 rows as "confirmed".
 
 ## Done means
-- Every screen K1–T4 matches the HTML at 360×720, and also at 320 width and font scale 1.3.
-- Every retired screen or flow in README → Keep/Retire is deleted.
-- The two open questions in BRIEF.md are either answered or left as TODOs behind a flag.
-- Each PR includes before and after screenshots.
+- Every frame in `CHANGELOG.md` matches the HTML at 360×720, and also at 320×640 and font scale 1.3.
+- No padded-hit-area hacks remain.
+- The matching D-77 rows are removed or updated.
+- There is a screenshot sheet for each PR.

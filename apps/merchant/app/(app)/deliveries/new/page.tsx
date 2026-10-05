@@ -33,18 +33,11 @@ import { formatLocalDigits, localDigits } from "../../../lib/phone-input";
 import { newSessionToken, pinnedLine, type PlaceSuggestion, resolvePlace, reverseGeocode, searchPlaces } from "../../../lib/places";
 
 type Gate = { status: "loading" } | { status: "ready"; business: MerchantProfileResponse; pickup: LatLng } | { status: "no_pin" } | { status: "error"; message: string };
-type Sheet = null | "items" | "type" | "terms";
+type Sheet = null | "items" | "type";
 
 const UNREADABLE_LINK = "We couldn't read a location from that link. Search for the street instead.";
 /** A typed short link is resolved once typing stops; a paste lands whole, so it resolves right after. */
 const RESOLVE_DELAY_MS = 400;
-
-/** Send's liability terms, as the customer app shows them before a broadcast (DisclaimerSheet). */
-const SEND_TERMS = [
-  "Sending is at your own risk: if the order is lost, damaged or not delivered, LyniaGo isn't liable. You're hiring an independent rider.",
-  "You agree the fare here and pay your rider cash at pickup. LyniaGo isn't involved in payment or any money dispute.",
-  "LyniaGo connects you with a nearby rider. We don't carry, insure or guarantee the goods.",
-];
 
 /**
  * S4 · Book a rider, one screen (Merchant v2, packages/design/handoff/merchant-v2, ledger D-77; it
@@ -101,7 +94,6 @@ export default function NewBookingPage() {
   const pickup = gate.status === "ready" ? gate.pickup : null;
   const suggested = pickup && where ? suggestedFare(pickup, where.point) : null;
   const shownFare = fare ?? (suggested !== null ? startFare(suggested) : null);
-  const pharmacy = gate.status === "ready" && gate.business.businessType === "shop" && gate.business.shopKind === "pharmacy";
 
   async function book() {
     if (submittingRef.current) return;
@@ -237,9 +229,6 @@ export default function NewBookingPage() {
 
         {gate.status === "ready" && (
           <div className="m-cta m-cta-pin">
-            <button type="button" className="m-lnk m-muted" style={{ textDecoration: "underline", fontWeight: 400, fontSize: 13 }} onClick={() => setSheet("terms")}>
-              Booking terms
-            </button>
             <button type="button" className="m-btn" disabled={busy || actionsDisabled} onClick={() => void book()}>
               {busy ? "Booking…" : shownFare !== null ? `Find a rider · ${money(shownFare)}` : "Find a rider"}
             </button>
@@ -251,7 +240,7 @@ export default function NewBookingPage() {
         <div className="m-overlay" style={{ zIndex: 70 }}>
           <div className="m-overlay-frame">
             <button type="button" className="m-scrim" aria-label="Close" onClick={() => setSheet(null)} />
-            <div className="m-sheet" role="dialog" aria-modal="true" aria-label={sheet === "items" ? "Your items" : sheet === "type" ? "Type an item" : "Booking terms"}>
+            <div className="m-sheet" role="dialog" aria-modal="true" aria-label={sheet === "items" ? "Your items" : "Type an item"}>
               <div className="m-grab" />
               {sheet === "items" && (
                 <ItemsPicker
@@ -273,26 +262,6 @@ export default function NewBookingPage() {
                   }}
                   onDone={() => setSheet(null)}
                 />
-              )}
-              {sheet === "terms" && (
-                <>
-                  <b style={{ fontSize: 18 }}>Booking terms</b>
-                  <ul className="m-sub" style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 6 }}>
-                    {SEND_TERMS.map((t) => (
-                      <li key={t}>{t}</li>
-                    ))}
-                    <li>No prescription medicine, weapons, drugs or cash.{pharmacy ? " Over-the-counter items only." : ""}</li>
-                    <li>
-                      {collectCash
-                        ? "Cash on delivery: the rider collects what the goods are worth from the buyer and brings it back to you within 30 minutes. You confirm it in the app."
-                        : "No cash-on-delivery: the rider collects nothing from the buyer. The buyer pays you as they do today."}
-                    </li>
-                  </ul>
-                  <p className="m-hint">Booking a rider means you accept these.</p>
-                  <button type="button" className="m-btn" onClick={() => setSheet(null)}>
-                    OK
-                  </button>
-                </>
               )}
             </div>
           </div>

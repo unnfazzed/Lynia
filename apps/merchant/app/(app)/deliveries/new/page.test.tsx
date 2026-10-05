@@ -203,11 +203,9 @@ describe("S4 · what's going + fare", () => {
     expect(nav.replace).not.toHaveBeenCalled();
   });
 
-  it("Booking terms: a pharmacy is told over-the-counter only, everyone about prohibited goods and no cash-on-delivery", async () => {
+  it("shows no booking-terms UI: Send's terms are part of the T&C accepted at sign-up (D-77 follow-ups)", async () => {
     await openForm({ shopKind: "pharmacy" });
-    fireEvent.click(screen.getByRole("button", { name: "Booking terms" }));
-    expect(screen.getByText("No prescription medicine, weapons, drugs or cash. Over-the-counter items only.")).toBeTruthy();
-    expect(screen.getByText("No cash-on-delivery: the rider collects nothing from the buyer. The buyer pays you as they do today.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Booking terms" })).toBeNull();
   });
 });
 
