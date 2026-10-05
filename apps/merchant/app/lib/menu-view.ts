@@ -16,14 +16,26 @@ function hm(d: Date): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-/** An off dish's gold line: "Off until tomorrow" (C1), "Off until you turn it back on", or "Off until 14:30". */
-export function offLabel(dish: Pick<MerchantDishResponse, "outOfStock" | "outOfStockUntil">, now: Date): string | null {
+/**
+ * An off dish's gold line: "Off until 08:00 tomorrow" (T1, Merchant v2 — tomorrow's opening time, when
+ * the business has hours), "Off until tomorrow" without them, "Off until you turn it back on", or
+ * "Off until 14:30" for a time later today.
+ */
+export function offLabel(
+  dish: Pick<MerchantDishResponse, "outOfStock" | "outOfStockUntil">,
+  now: Date,
+  business: Pick<MerchantProfileResponse, "hours"> | null = null,
+): string | null {
   if (!dish.outOfStock) return null;
-  if (!dish.outOfStockUntil) return "Off until tomorrow";
+  const tomorrow = () => {
+    const next = nextOpenTime((business?.hours ?? null) as PartialMerchantHours | null, startOfNextDay(now));
+    return next ? `Off until ${next} tomorrow` : "Off until tomorrow";
+  };
+  if (!dish.outOfStockUntil) return tomorrow();
   const until = new Date(dish.outOfStockUntil);
   if (until.getFullYear() >= UNTIL_BACK_YEAR) return "Off until you turn it back on";
   const sameDay = until.toDateString() === now.toDateString();
-  return sameDay && until.getHours() < 23 ? `Off until ${hm(until)}` : "Off until tomorrow";
+  return sameDay && until.getHours() < 23 ? `Off until ${hm(until)}` : tomorrow();
 }
 
 /** C2 "Rest of today"'s sub-line: "Back on automatically at 08:00", tomorrow's opening time. */

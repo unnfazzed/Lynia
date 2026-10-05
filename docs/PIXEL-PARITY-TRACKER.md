@@ -436,6 +436,22 @@ target, an `index.json` that matches the directory, and no expectation outliving
 > (`node tools/parity/shoot-order-flow-merchant.mjs --set all2`). Still to shoot: RD2c/RD2d (need a real
 > shot from the phone's camera) and RD4d (the door camera after the why sheet).
 
+> **Merchant v2 (D-77, 2026-10-04) — the merchant authority, outside the gallery registry.** Handoff:
+> `packages/design/handoff/merchant-v2/` (BRIEF.md wins over the drawings). Adopted in five PRs; every
+> screen is wired and has a side-by-side sheet (`node tools/parity/shoot-merchant-v2.mjs --set <set>`):
+>
+> | ✅ | Screens | Sheet |
+> |---|---|---|
+> | ✅ | Shell: tab bar, mint top card + open pill + KPI strip, T1 live bar, T4 Closed | `docs/parity/MERCHANT-V2-SHELL-2026-10-04.png` |
+> | ✅ | K1 / S1 board, K2 / S2 ringing | `docs/parity/MERCHANT-V2-BOARD-2026-10-04.png` |
+> | ✅ | K3 cooking, K4 / S3 hand over, K5 on the way + cash back | `docs/parity/MERCHANT-V2-TICKET-2026-10-04.png` |
+> | ✅ | S4 Book a rider, P1 prescription check | `docs/parity/MERCHANT-V2-BOOK-RX-2026-10-04.png` |
+> | ✅ | T1 Menu, T2 Money, T3 Account | `docs/parity/MERCHANT-V2-MONEY-ACCOUNT-2026-10-04.png` |
+>
+> The gallery `RM` rows below are superseded by D-77 wherever v2 redraws the screen; sign-in, onboarding
+> and the settings sub-screens keep D-48's flow, restyled. Open differences (no arrival signal yet, undrawn
+> sheets, below-floor drawn targets) are the D-77 §4 rows.
+
 > **D-74 (2026-10-03): merchant leftovers aligned.** Section labels (B1 / D1 / C3) and D1's booked-rider
 > trackers draw as the handoff again (a `.m-sec` / `.m-trk` class clash from #1031). Deleting a dish or a
 > category confirms first. Failed loads show the calm "↻ Try again". The old wallet lane is retired: `RM
