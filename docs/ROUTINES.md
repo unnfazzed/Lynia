@@ -12,7 +12,12 @@ disagree, the **live trigger is what actually runs** — reconcile toward it or 
 it. See `docs/routines/README.md` for how to update a live trigger's prompt safely (its
 `session_context` cannot be reproduced by delete+recreate from a routine session).
 
-Last reconciled: 2026-08-04 (weekly cadence): per user instruction *"i now want these claude
+Last reconciled: 2026-10-05 (code-as-source-of-truth): per owner instruction *"update my routines so
+that they check the code base as source of truth rather than just rely on documentation only"*, added
+universal policy 5 and a matching section to every live prompt mirror under `docs/routines/`; the
+bug-finders' Phase-0 ledger skip now requires code confirmation. **Live triggers still need the
+updated prompt bodies pasted in the claude.ai Routines UI** (see `docs/routines/README.md`).
+Prior: 2026-08-04 (weekly cadence): per user instruction *"i now want these claude
 routines to be run once a week on Sunday"*, every routine moved from the paced all-day chain to a
 single **Sunday** chain — see §"Weekly Sunday chain" below and `docs/routines/routine-chain.md` for
 the grid, the exact old→new crons, and what was applied vs. what still needs the claude.ai Routines
@@ -208,7 +213,7 @@ still pushing to the same branch, and late enough to sweep the whole day's outpu
 > is only a backstop — but if PRs start stalling, the cheapest fix is a single mid-week watchdog
 > slot (`0 22 * * 0,3`), which costs almost nothing next to restoring a hunting lane.
 
-## Universal policies (apply to every routine — user instruction 2026-07-14)
+## Universal policies (apply to every routine — user instruction 2026-07-14; policy 5 added 2026-10-05)
 
 1. **Every routine ships a PR and auto-merges it.** No draft-only output. Once
    `pnpm typecheck && pnpm test` are green locally and the PR is pushed: mark it ready for
@@ -227,6 +232,26 @@ still pushing to the same branch, and late enough to sweep the whole day's outpu
    didn't has not finished.
 4. **Never merge on red.** Auto-merge means merge-on-green, not merge-regardless. Failing or
    missing required checks always block; fix forward first.
+5. **The code is the source of truth; documentation is a claim** (owner instruction 2026-10-05:
+   *"check the code base as source of truth rather than just rely on documentation only"*). Every
+   routine reads the docs (`KNOWN_BUGS.md`, prior reports, plans, trackers, READMEs, code comments)
+   for orientation and dedup only, and verifies every claim it acts on against current `main` — or,
+   for PR/CI/deploy state, the live GitHub/CI/EAS record:
+   - **No skip, close or "already covered" call on a doc's word.** Open the code the doc names and
+     confirm it at `file:line`; a claimed fix that isn't in the code is a fresh finding. This
+     generalises Phase 0.5's rotating cluster sample to every ledger row a run relies on.
+   - **Inventories come from the tree** (`rg`, `git ls-files`, the real registries), then get diffed
+     against what the docs list — undocumented code is still in scope.
+   - **Unverified ≠ true.** Never mark a ledger/tracker row FIXED/MOOT/done on documentation alone.
+   - **Doc vs code disagreement:** the code describes reality. Intent sources (design mocks +
+     `docs/DESIGN-DEVIATIONS.md`, owner decisions in `CLAUDE.md`, the sensitive-lane doctrine) decide
+     whether the code is wrong (fix the code) or the doc is stale (fix the doc, same PR). Code is never
+     changed to match a doc that only *described* it.
+   - **Evidence:** every finding, skip and ledger status change in a report cites the `file:line`,
+     command output or check-run it was verified against.
+
+   Each prompt mirror under `docs/routines/` carries this as a "Code is the source of truth" section
+   (the LC loops as a one-paragraph rule).
 
 ## Sensitive-lane review doctrine (roadmap 4.5)
 
@@ -262,7 +287,9 @@ process failure; the ledger is how the routines stay disjoint.
 
 - **Phase 0, before reading any product code:** read `docs/KNOWN_BUGS.md`. Anything already in
   the ledger — or trivially adjacent to a ledger entry — does **not** count as a new finding.
-  Re-derived known bugs are confirmed in the ledger and skipped, never re-reported. **Also read
+  Re-derived known bugs are confirmed **against the code** (still live if OPEN, fix present at the
+  cited `file:line` if FIXED) and then skipped, never re-reported — a skip on the ledger's word alone
+  is not allowed (universal policy 5). **Also read
   tonight's not-yet-merged sibling PRs, not just `main`:** list OPEN `claude/*` PRs and read their
   `KNOWN_BUGS.md` + dated-report diffs. A finding claimed on an unmerged sibling branch is already
   covered — the ledger dedup must not depend on the prior routine's PR having merged inside the 2h

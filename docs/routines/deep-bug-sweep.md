@@ -1,5 +1,13 @@
 You are running the daily **deep bug sweep** for the Lynia codebase (a NestJS/Prisma delivery platform: `apps/api`, `apps/mobile` Expo, `apps/admin` Next.js, `packages/shared`). This is a fresh session — start from the latest `main`. Follow the repo's CLAUDE.md conventions and `docs/ROUTINES.md` if present. Work on a new branch `claude/deep-sweep-<YYYY-MM-DD>`.
 
+## Code is the source of truth — docs are claims (owner instruction 2026-10-05; applies to every phase below)
+The code on current `main` — and, for PR/CI/deploy state, the live GitHub/CI/EAS record — is what the system actually does. `docs/KNOWN_BUGS.md`, prior dated reports, `docs/ROUTINES.md`, plans, trackers, READMEs and code comments are **claims about the code, never evidence**. Read them for orientation and dedup, then verify before you act on them:
+- **Verify before you skip or trust.** Before treating anything as "already FIXED / known / covered / shipped / aligned / dead / tested", open the code it names and confirm it at that `file:line` (grep the guard, CAS, gate, flag read, test assertion or wiring the doc claims). If the cited location moved or the claimed fix is not there, it is a **fresh finding**, not a skip. This applies to every ledger row you rely on, not only the Phase-0.5 cluster sample.
+- **Discover from the code, not from doc lists.** Build your inventories (routes, endpoints, flags, screens, tests, state transitions, money paths) by searching the tree (`rg`, `git ls-files`, the actual registries) and diff them against what the docs list — a thing missing from the docs is still in scope, and a thing the docs list but the code no longer has is a stale doc.
+- **Unverified ≠ true.** A doc claim you could not confirm in code is reported as UNVERIFIED with what you checked; never mark a ledger row FIXED/MOOT, or a tracker row done, on documentation alone.
+- **When a doc and the code disagree,** the code is reality: describe current behaviour from the code. Whether the code or the doc is *wrong* is decided by intent sources (design mocks + `docs/DESIGN-DEVIATIONS.md`, owner decisions in `CLAUDE.md`, the sensitive-lane doctrine) — a divergence from intent is a code bug to fix; a doc that merely mis-describes behaviour is a stale doc you correct in the same PR. Never edit code to match a doc that only described it.
+- **Evidence in the report.** Every finding, every "already covered" skip, and every status you change in the ledger cites the `file:line`, command output or check-run you verified it against. Ledger rows you touch get their status re-checked in code first.
+
 ## Model usage (REQUIRED): Fable for planning, Opus for execution
 Split the work by model, using the Agent/Task tool's `model` override so this holds regardless of your main-loop model:
 - **Planning / discovery / analysis → Fable-5** (`model: fable`, i.e. claude-fable-5): run ALL of Phase 0 review, the Phase 1 orthogonal sweep (the hunting/analysis subagents), and the Phase 3 adversarial analysis by delegating to subagents with `model: fable`. Fable finds.
@@ -7,12 +15,12 @@ Split the work by model, using the Agent/Task tool's `model` override so this ho
 Keep the split clean: Fable does the finding and analysis, Opus does the code changes. If the Agent/Task tool or a model override is unavailable, proceed on the session model and note it in the report — never abort over model availability.
 
 ## Phase 0 — Inherit history (do this FIRST, before reading any product code)
-1. Read `docs/KNOWN_BUGS.md` — the consolidated, deduplicated ledger of every finding from every prior sweep, with statuses and a coverage map. This is your source of truth for what is already known.
+1. Read `docs/KNOWN_BUGS.md` — the consolidated, deduplicated ledger of every finding from every prior sweep, with statuses and a coverage map. It records what prior sweeps *claimed*; the code is the source of truth — confirm a row against the code before relying on it.
 2. Skim the dated reports it references (e.g. `docs/DEEP-SWEEP-*.md`, `docs/BUG-HUNT*.md`, `docs/FRAUD-REVIEW.md`, `docs/UX-USABILITY-REVIEW-*.md`) only as needed for context.
 3. **Inherit tonight's not-yet-merged sibling PRs, not just `main`.** The bug-hunt (23:00) and UX (01:00) routines ran earlier tonight; their ledger updates SHOULD be on main, but the 2h gaps do not guarantee their PRs merged. List OPEN Claude PRs (`mcp__github__list_pull_requests` state=open, head prefix `claude/`) and read their KNOWN_BUGS.md + report diffs. A finding already claimed on an open sibling branch is NOT new — do not re-derive it.
 4. Verify status against code for a small sample of findings the ledger marks FIXED — confirm the fix still exists. If any regressed, that's a finding.
 
-**Hard rule:** anything in `KNOWN_BUGS.md` (or in an open sibling PR), or trivially adjacent, does NOT count as a new finding. If you catch yourself re-deriving a known bug, confirm it and move on. Do not pad.
+**Hard rule:** anything in `KNOWN_BUGS.md` (or in an open sibling PR), or trivially adjacent, does NOT count as a new finding. If you catch yourself re-deriving a known bug, confirm its ledger status against the code (live if OPEN, fix present if FIXED) and move on; a FIXED row whose fix is missing from the code is a fresh finding. Do not pad.
 
 **Your lane** (concentrate here — mobile journeys/contract seams belong to the bug-hunt routine, UX friction/copy to the UX routine): backend correctness, concurrency, data integrity, security, and the adversarial API pass. **You also own the cross-lane seams pass (Phase 1.5 below)** — as the backend-correctness lane, the interactions *between* lanes are your territory. Out-of-lane bugs you find anyway: STILL FIX THEM (no deferrals), tagged in the ledger with the owning lane.
 

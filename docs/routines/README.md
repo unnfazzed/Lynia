@@ -69,5 +69,12 @@ editable in place. So to change a routine's prompt:
    prompt body verbatim. Do **not** delete-and-recreate the trigger from a routine session — a
    recreated trigger loses its repo source binding and subagent tool allowlist.
 
-A prompt change is not "shipped" until both steps are done. When they disagree, the **live
+A prompt change is not "shipped" until both steps are done.
+
+> **Pending sync — 2026-10-05 code-as-source-of-truth update.** Every mirror here (except the
+> finished build loops) gained a "Code is the source of truth — docs are claims" section
+> (`docs/ROUTINES.md` universal policy 5). Until each live trigger's prompt is re-pasted from its
+> mirror, the live routine still runs the old text. The LC loops and the five `create_trigger` lanes
+> (crash fuzzing, logic model audit, flag retirement, useless-test pruning, UI parity audit) can be
+> updated in place with `update_trigger` (`prompt` field) from a session that can see them. When they disagree, the **live
 trigger is what actually runs** — reconcile the file to it, or push the file into the trigger.

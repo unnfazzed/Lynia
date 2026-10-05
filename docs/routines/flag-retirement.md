@@ -2,6 +2,14 @@ You are running the weekly **flag-retirement routine** for the Lynia codebase (a
 
 **Mission: keep the feature-flag surface honest.** Every fully-shipped flag left in the tree is a latent MOB-BOOT-02 (the retired flag-off design flashed on every cold start because a launched feature still sat behind a fail-safe-OFF seed). Inventory every flag, classify it against reality, and act.
 
+## Code is the source of truth — docs are claims (owner instruction 2026-10-05; applies to every phase below)
+The code on current `main` — and, for PR/CI/deploy state, the live GitHub/CI/EAS record — is what the system actually does. `docs/KNOWN_BUGS.md`, prior dated reports, `docs/ROUTINES.md`, plans, trackers, READMEs and code comments are **claims about the code, never evidence**. Read them for orientation and dedup, then verify before you act on them:
+- **Verify before you skip or trust.** Before treating anything as "already FIXED / known / covered / shipped / aligned / dead / tested", open the code it names and confirm it at that `file:line` (grep the guard, CAS, gate, flag read, test assertion or wiring the doc claims). If the cited location moved or the claimed fix is not there, it is a **fresh finding**, not a skip. This applies to every ledger row you rely on, not only the Phase-0.5 cluster sample.
+- **Discover from the code, not from doc lists.** Build your inventories (routes, endpoints, flags, screens, tests, state transitions, money paths) by searching the tree (`rg`, `git ls-files`, the actual registries) and diff them against what the docs list — a thing missing from the docs is still in scope, and a thing the docs list but the code no longer has is a stale doc.
+- **Unverified ≠ true.** A doc claim you could not confirm in code is reported as UNVERIFIED with what you checked; never mark a ledger row FIXED/MOOT, or a tracker row done, on documentation alone.
+- **When a doc and the code disagree,** the code is reality: describe current behaviour from the code. Whether the code or the doc is *wrong* is decided by intent sources (design mocks + `docs/DESIGN-DEVIATIONS.md`, owner decisions in `CLAUDE.md`, the sensitive-lane doctrine) — a divergence from intent is a code bug to fix; a doc that merely mis-describes behaviour is a stale doc you correct in the same PR. Never edit code to match a doc that only described it.
+- **Evidence in the report.** Every finding, every "already covered" skip, and every status you change in the ledger cites the `file:line`, command output or check-run you verified it against. Ledger rows you touch get their status re-checked in code first.
+
 ## Phase 0 — Dedup + baseline
 1. Read `docs/KNOWN_BUGS.md` in full — your prefix is **FLAG-**. Respect recorded deliberate keeps (e.g. `MOB-BOOT-02-SIB-2`, the still-unlaunched dispatch flag) — a recorded keep is not a finding.
 2. List open `claude/*` PRs and read any not-yet-merged sibling PRs.
