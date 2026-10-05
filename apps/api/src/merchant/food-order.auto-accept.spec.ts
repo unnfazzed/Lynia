@@ -210,6 +210,23 @@ describe("sweepAutoAccepted — no rider until the kitchen is confirmed (safegua
     expect(res.released).toBe(1);
     expect(queueChanges).toEqual(["due"]);
   });
+
+  it("+5 min (Merchant v2) pushes the rider search back: the release reads the extended prep time", async () => {
+    const released: string[] = [];
+    const { svc } = build({
+      order: {
+        updateMany: async ({ where, data }: { where: { id?: string }; data: Record<string, unknown> }) => {
+          if (data.merchantPhase === "ready_for_pickup") released.push(where.id!);
+          return { count: data.merchantPhase === "ready_for_pickup" ? 1 : 0 };
+        },
+        // The "due" order above, after one +5 min: 25 min prep started 13 min ago → ready in 12 min.
+        findMany: async () => [{ id: "extended", merchantId: "m1", prepStartedAt: new Date(NOW.getTime() - 13 * 60_000), prepMinutes: 25 }],
+      },
+    });
+    const res = await svc.sweepAutoAccepted(NOW);
+    expect(released).toEqual([]);
+    expect(res.released).toBe(0);
+  });
 });
 
 describe("customer cancel — free until the kitchen confirms", () => {

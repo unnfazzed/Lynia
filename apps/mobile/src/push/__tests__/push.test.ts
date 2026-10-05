@@ -1,5 +1,5 @@
 import { riderModeAvailable } from "../../rider-mode";
-import { notificationRowDestination, pushDestination, pushOnce } from "../push";
+import { isSilentPush, notificationRowDestination, pushDestination, pushOnce } from "../push";
 
 // Regression guard: before this, tapping any push except the rider's "You got the job" (assigned)
 // was a no-op — despite copy like "tap to rate your rider" / "tap for details" on the
@@ -253,5 +253,14 @@ describe("push routing on the customer-only iPhone app (D-41)", () => {
     expect(pushDestination({ kind: "riders_available" }, false)).toBe("/home");
     expect(pushDestination("not an object", false)).toBeNull();
     expect(notificationRowDestination({ orderId: "o1", to: "customer" })).toBe("/order/o1");
+  });
+});
+
+describe("isSilentPush (Merchant v2 +5 min)", () => {
+  it("treats the kitchen's new ready time as a refresh-only push, never a banner", () => {
+    expect(isSilentPush({ kind: "food_ready_time", orderId: "o1" })).toBe(true);
+    expect(isSilentPush({ kind: "account" })).toBe(false);
+    expect(isSilentPush({ orderId: "o1", status: "assigned" })).toBe(false);
+    expect(isSilentPush(null)).toBe(false);
   });
 });

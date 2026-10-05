@@ -43,6 +43,8 @@ import {
   subMoney,
   effectiveMerchantHours,
   merchantWaypoint,
+  BUSY_MODE_EXTRA_MIN,
+  RESTAURANTS_AUTO_ACCEPT,
   RESTAURANTS_COMMISSION,
   RESTAURANTS_DEBT,
   roundToCents,
@@ -1132,7 +1134,7 @@ export class MerchantService {
     merchant: Pick<
       MerchantWithOwner,
       "id" | "name" | "coverPhotoUrl" | "logoUrl" | "cuisineTags" | "priceLevel" | "hours" | "location" | "foodRatingAvg" | "foodRatingCount" | "prepBaselineMinutes" | "closedUntil"
-    > & { freeDelivery?: boolean },
+    > & { freeDelivery?: boolean; busyMode?: boolean },
   ): Promise<RestaurantListItem> {
     const location = (merchant.location as Waypoint | null) ?? null;
     const [coverPhotoUrl, logoUrl] = await Promise.all([this.signPhoto(merchant.coverPhotoUrl), this.signPhoto(merchant.logoUrl)]);
@@ -1152,7 +1154,11 @@ export class MerchantService {
       // merchant's prep baseline for the client-side ETA.
       ratingAvg: merchant.foodRatingCount > 0 ? merchant.foodRatingAvg : null,
       ratingCount: merchant.foodRatingCount,
-      prepBaselineMinutes: merchant.prepBaselineMinutes,
+      // Merchant v2 (D-77, README "Needs backend"): "Open, but busy" adds 10 minutes to every ETA quoted
+      // while it's on, so a busy kitchen's quoted prep carries it (an installed app needs no update).
+      prepBaselineMinutes: merchant.busyMode
+        ? (merchant.prepBaselineMinutes ?? RESTAURANTS_AUTO_ACCEPT.defaultPrepMinutes) + BUSY_MODE_EXTRA_MIN
+        : merchant.prepBaselineMinutes,
       // D-71: sent only when the venue funds delivery, so every other venue's payload is unchanged.
       ...(merchant.freeDelivery ? { freeDelivery: true } : {}),
     };

@@ -7,7 +7,7 @@ import { VALUE_CAP_MESSAGE } from "../../../lib/booking";
 import { createBooking, resolveMapLink } from "../../../lib/bookings-api";
 import { clearBusinessCache } from "../../../lib/business";
 import { getMerchantProfile, listDishes } from "../../../lib/menu-api";
-import { resolvePlace, searchPlaces } from "../../../lib/places";
+import { resolvePlace, reverseGeocode, searchPlaces } from "../../../lib/places";
 import { merchantBooking, merchantProfile } from "../../../testing/fixtures";
 
 const nav = vi.hoisted(() => ({ replace: vi.fn() }));
@@ -17,7 +17,13 @@ vi.mock("next/navigation", () => {
 });
 
 vi.mock("../../../lib/menu-api", () => ({ getMerchantProfile: vi.fn(), listDishes: vi.fn(async () => []) }));
-vi.mock("../../../lib/places", () => ({ newSessionToken: () => "s", searchPlaces: vi.fn(async () => []), resolvePlace: vi.fn() }));
+vi.mock("../../../lib/places", () => ({
+  newSessionToken: () => "s",
+  searchPlaces: vi.fn(async () => []),
+  resolvePlace: vi.fn(),
+  reverseGeocode: vi.fn(async () => null),
+  pinnedLine: (area?: string | null) => (area ? `Pin the buyer sent · ${area}` : "Pin the buyer sent"),
+}));
 vi.mock("../../../lib/bookings-api", () => ({ createBooking: vi.fn(), resolveMapLink: vi.fn() }));
 
 vi.mock("../../../components/KitchenConnectionProvider", () => {
@@ -87,6 +93,14 @@ describe("S4 · Book a rider, one screen (Merchant v2, D-77) — where", () => {
     expect(screen.getByLabelText("Buyer’s phone")).toBeTruthy();
     fireEvent.click(pill);
     expect(search()).toBeTruthy();
+  });
+
+  it("names a pasted pin's area once the reverse lookup answers (S4, D-77)", async () => {
+    vi.mocked(reverseGeocode).mockResolvedValueOnce({ point: { lat: -17.83, lng: 31.05 }, address: "Copacabana", area: "Copacabana" });
+    await openForm();
+    type(search(), "-17.83, 31.05");
+    expect(await screen.findByText("Pin the buyer sent · Copacabana")).toBeTruthy();
+    expect(reverseGeocode).toHaveBeenCalledWith({ lat: -17.83, lng: 31.05 });
   });
 
   it("asks the API to follow a Google Maps short link, and says so plainly when it can't", async () => {
