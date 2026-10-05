@@ -66,6 +66,29 @@ describe("the Orders board (Merchant v2 K1/S1, D-77)", () => {
     expect(sections[3]!.cards[0]).toMatchObject({ urgent: true, subTone: "gold", sub: "$9.50 was due 07:15" });
   });
 
+  it("once the rider's location says so: 'at your counter', and the on-the-way arrival time (D-77)", () => {
+    const sections = buildBoard({
+      v: kitchen,
+      shop: false,
+      now: NOW,
+      orders: [
+        merchantOrder({ id: "a4440000-0000-4000-8000-000000000000", merchantPhase: null, status: "assigned", riderId: RIDER.profileId, rider: RIDER, riderArrivedAt: at(-1) }),
+        merchantOrder({
+          id: "a1110000-0000-4000-8000-000000000000",
+          merchantPhase: null,
+          status: "en_route_dropoff",
+          rider: RIDER,
+          riderId: RIDER.profileId,
+          debtStatus: "open",
+          debtAmount: 12,
+          riderEtaAt: at(18),
+        }),
+      ],
+    });
+    expect(sections[0]!.cards[0]).toMatchObject({ counter: true, title: `${RIDER.firstName} M. is at your counter` });
+    expect(sections[1]!.cards[0]).toMatchObject({ sub: "Arrives 07:38 · then brings you $12.00" });
+  });
+
   it("a shop's board says PACKING, tags its app orders and lists its own bookings as BOOKED", () => {
     const sections = buildBoard({
       v: shopV,

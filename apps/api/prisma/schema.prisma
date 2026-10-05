@@ -768,6 +768,11 @@ model Order {
   // handed to. The photo itself reuses deliveryProofKey/deliveryProofAt above.
   deliveryProofReason     String?             @map("delivery_proof_reason")
   deliveryProofHandedTo   String?             @map("delivery_proof_handed_to")
+  // Merchant v2 (ledger D-77, README "Needs backend"): when the assigned rider's location first came
+  // within ARRIVAL_RADIUS_M of the pickup ("Blessing is at your counter"), and the rider's estimated
+  // arrival at their next stop (the pickup, then the drop-off), refreshed from their location pings.
+  riderArrivedAt          DateTime?           @map("rider_arrived_at")
+  riderEtaAt              DateTime?           @map("rider_eta_at")
 
   merchantDebtLedger MerchantDebtLedger[]
   substitutionRounds MerchantOrderSubstitution[]

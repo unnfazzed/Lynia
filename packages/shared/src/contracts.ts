@@ -1759,6 +1759,11 @@ export const MerchantOrderResponse = z
     customerFirstName: z.string().optional(),
     /** Merchant v2 (ledger D-77): the assigned rider's phone — on the merchant's own views only. */
     riderPhone: z.string().optional(),
+    /** Merchant v2 (ledger D-77): when the rider reached the counter ("at your counter"); absent until then. */
+    riderArrivedAt: z.string().optional(),
+    /** Merchant v2 (ledger D-77): the rider's estimated arrival at their next stop — the counter before
+     *  pickup, the customer after ("arrives 07:38"). Absent while unknown. */
+    riderEtaAt: z.string().optional(),
     // ── Order flow v2 (ledger D-59, backend B). All optional and additive: an installed app ignores them.
     // (The venue kind — Cooking vs Packing, the tile colour — is backend A's `venue.businessType/shopKind`.)
     /** BRIEF §12: the slot's start (ISO) of a scheduled order; omitted for an ASAP order. */
@@ -2204,6 +2209,10 @@ export const MerchantBookingResponse = z
      * `returned` once the shop said "I got $X"; `closed` for "No cash on this one". Absent on older
      * servers; null when the booking is delivery-only.
      */
+    /** Merchant v2 (ledger D-77): when the rider reached the shop; absent until then. */
+    riderArrivedAt: z.string().optional(),
+    /** Merchant v2 (ledger D-77): the rider's estimated arrival at the next stop; absent while unknown. */
+    riderEtaAt: z.string().optional(),
     cashOnDelivery: z
       .object({
         amount: z.string(),

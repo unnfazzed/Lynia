@@ -4256,11 +4256,11 @@ any string Merchant v2 doesn't draw. Viewport unchanged: 360×720 with the 320px
 | Where | Mock | App | Why |
 |---|---|---|---|
 | Handoff `tokens/colors.css` | `--highlight-sun`, `--highlight-sun-ink` | `--highlight`, `--highlight-chip-ink` | The export carries an older token snapshot. D-55 already made `--highlight` the sun gold (#FFD23F) and `--highlight-chip-ink` is the same #3D3100, so no colour is added. |
-| T1 live bar | "Blessing is at your counter" | "Blessing is coming to your counter" until the API knows a rider has arrived | The API has no arrival signal (the rider's code entry is the first thing it hears at the counter). Arrival is on the README's Needs-backend list; the drawn line returns once it lands. |
+| T1 live bar | "Blessing is at your counter" | As drawn once the rider's location reaches the pickup (`riderArrivedAt`); "Blessing is coming to your counter" before that | Arrival comes from the rider's location pings (`TrackingService.observeRiderLeg`, within 80 m of the pin), additive on the merchant read. |
 | T1 live bar, undrawn states | One state drawn | "New order · #A1B2" (ringing), "Waiting for the customer to answer", or just the counts | Built from the drawn bar's own parts; nothing new is invented beyond its words. |
 | T4 on a shop | "Customers can see your menu" | "…your items" | A shop has no menu; the shop's vocabulary word. |
 
-| K1 board, "ON THE WAY" card | "Arrives 07:38 · then brings you $12.00" | "On the way · then brings you $12.00" | The API keeps no arrival estimate for a leg (`merchant-order-push.ts` says so); the time returns with one. |
+| K1 board, "ON THE WAY" card | "Arrives 07:38 · then brings you $12.00" | As drawn once the rider's location gives an estimate (`riderEtaAt`); "On the way · then brings you $12.00" until the first ping | The estimate is the ride at the slot planner's speed model, refreshed every 15 s and rewritten when it moves a minute. |
 | K1 board, undrawn rows | Needs-you, cooking and on-the-way drawn | A fourth section, "CASH TO COME BACK · n", for delivered orders whose cash is still out (gold once late); "SCHEDULED · n" under the board for orders that haven't rung; a ringing order's own card ("#A1B2 · New order") under its full-screen ring | BRIEF §2 lists "cash still to come back" as the board's fourth group; the scheduled list was the retired tabs' fourth segment. Built from the drawn card. |
 | K1 counter card on a shop booking | Drawn on a kitchen order | The same card for a booking whose rider is coming, without the BOOKED tag | The drawn counter card carries no tag. |
 | K2 ringing, auto-accepted / scheduled | "Only the banner line changes" | Auto-accepted: the sub-line reads "LyniaGo accepted this for you", the countdown is the 1-hour auto-cancel, no ready-in chips (the time is already set). Scheduled: "SCHEDULED · START NOW · #A1B2". | As BRIEF §3 says; the words are Order flow v2's (`O.m.auto`, `O.m.scheduled`). |
@@ -4268,13 +4268,13 @@ any string Merchant v2 doesn't draw. Viewport unchanged: 360×720 with the 320px
 | S2 accept without changes | Only "Accept with 2 changes" drawn | "Accept" | Shops get no ready-in picker (BRIEF §3), so there is no time to quote. |
 | K2 kitchen with a removed dish | Drawn without changes | The same "Accept with N changes" and "New total" as S2 | BRIEF §3: accepting and sending changes are one action. |
 
-| K3 cooking ticket, rider line | "Blessing M. arrives 07:31" | "Blessing M. is booked to collect it" / "Finding a rider" / "We book the rider to arrive as it's ready" | No rider arrival time on the read (same as the board). |
+| K3 cooking ticket, rider line | "Blessing M. arrives 07:31" | As drawn while the rider heads in; "Blessing M. is at your counter" once there; "is booked to collect it" until the first ping; "Finding a rider" / "We book the rider to arrive as it's ready" before one is booked | Same arrival and estimate as K1. |
 | K3 "Problem with this order?" | A pill (what it opens isn't drawn) | A sheet: "Something ran out — change items" and "Can't finish this order" (cancel, or refund first for a paid wallet order from before D-74) | BRIEF §4: it replaces "Can't finish". **Upstream ask:** draw the sheet. |
 | K3 Problem pill, 36 tall | Drawn at 36px, below `--target-min` | Drawn at 36px, with an invisible hit area padded to 44 | UPSTREAM kit defect (D2: a mock must clear the floor); the app doesn't inflate the drawn pill. |
-| K4 rider card sub-line | "AFG 2231 · ★ 4.9 · at your counter" | "AFG 2231 · ★ 4.9" | No arrival signal (§4 above). |
+| K4 rider card sub-line | "AFG 2231 · ★ 4.9 · at your counter" | As drawn once arrived; "AFG 2231 · ★ 4.9" before | Same arrival signal. |
 | K4 / K5, the call button | Drawn | Shown when the order carries the rider's number: the merchant's own read now does (`riderPhone`, additive) | BRIEF "Needs backend". |
 | S3 step 2 before the photo | Drawn done ("Tendai photographed it") | "Tendai photographs it" / "Waiting for Tendai M.'s photo of the sealed bag" until it's in | The undone state of the drawn step. |
-| K5 sub-line | "Blessing M. · arrives 07:38 · 2 dishes" | "Blessing M. · 2 dishes" | No arrival estimate on the read. |
+| K5 sub-line | "Blessing M. · arrives 07:38 · 2 dishes" | As drawn once the rider's location gives an estimate; "Blessing M. · 2 dishes" until then | Same estimate. |
 | K5 cash card before delivery | "Blessing brings it back by 07:55, after delivery" | "Blessing brings it back after delivery"; the time appears once delivered | The due time is set at delivery (delivered + the return window). |
 | K5 on an order with no cash to bring back | Not drawn | No cash card and no CTA; a "Mark ride completed" link after pickup | Kept from D-48's tracking screen. |
 | K5 goods back (not delivered) | Not drawn (BRIEF: one screen) | The cash card's frame says "GOODS BACK TO YOU", the CTA "I got the food back" and "It wasn't returned" | Order flow v2's M6b words, inside K5. |

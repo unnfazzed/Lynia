@@ -2252,6 +2252,12 @@
             }
           ]
         },
+        "riderArrivedAt": {
+          "type": "string"
+        },
+        "riderEtaAt": {
+          "type": "string"
+        },
         "state": {
           "enum": [
             "cancelled",
@@ -3776,11 +3782,17 @@
             }
           ]
         },
+        "riderArrivedAt": {
+          "type": "string"
+        },
         "riderCashConfirmedAt": {
           "type": [
             "string",
             "null"
           ]
+        },
+        "riderEtaAt": {
+          "type": "string"
         },
         "riderId": {
           "anyOf": [
@@ -5679,6 +5691,12 @@
                   "type": "null"
                 }
               ]
+            },
+            "riderArrivedAt": {
+              "type": "string"
+            },
+            "riderEtaAt": {
+              "type": "string"
             },
             "state": {
               "enum": [

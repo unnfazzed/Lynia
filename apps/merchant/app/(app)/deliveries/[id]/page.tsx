@@ -21,7 +21,7 @@ import { cancelBooking, closeBookingCash, getBooking, pickOffer, retryBooking, r
 import { useBusiness } from "../../../lib/business";
 import { supportWhatsAppUrl } from "../../../lib/config";
 import { formatCountdown, msUntil } from "../../../lib/countdown";
-import { money } from "../../../lib/orders-view";
+import { hm, money } from "../../../lib/orders-view";
 import { useNow } from "../../../lib/use-now";
 
 type LoadState = { status: "loading" } | { status: "ready"; booking: MerchantBookingResponse } | { status: "error"; message: string };
@@ -310,7 +310,7 @@ function OnTheWay({ booking, business, busy, disabled, error, code, onNewCode, o
   const cashOut = cod && (cod.status === "awaiting_delivery" || cod.status === "due");
   const amount = cod ? Number(cod.amount) : 0;
   const fare = Number(booking.agreedFare ?? booking.proposedFare);
-  const title = delivered ? "Delivered" : booking.state === "picked_up" ? "On the way to buyer" : "Rider coming to your shop";
+  const title = delivered ? "Delivered" : booking.state === "picked_up" ? "On the way to buyer" : booking.riderArrivedAt ? "Rider at your shop" : "Rider coming to your shop";
   const due = cod?.dueAt ? new Date(cod.dueAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : null;
   return (
     <>
@@ -322,7 +322,7 @@ function OnTheWay({ booking, business, busy, disabled, error, code, onNewCode, o
       <div className="m-k5">
         <div>
           <b>{title}</b>
-          <span>{[rider ? name : null, booking.itemsSummary].filter(Boolean).join(" · ")}</span>
+          <span>{[rider ? name : null, !delivered && booking.riderEtaAt ? `arrives ${hm(booking.riderEtaAt)}` : null, booking.itemsSummary].filter(Boolean).join(" · ")}</span>
         </div>
         <ProgressSteps step={delivered ? 5 : booking.state === "picked_up" ? 4 : 3} />
         {rider && (

@@ -447,7 +447,17 @@ function Cooking(ctx: Ctx) {
   const canChange = changeableLines(order).length > 0;
   const rxToCheck = order.prescription?.status === "pending" && business?.myIsPharmacist === true;
   const rider = riderFirstName(order);
-  const riderLine = order.riderId && rider ? `${rider} is booked to collect it` : order.dispatchAttempt > 0 ? "Finding a rider" : "We book the rider to arrive as it’s ready";
+  // Merchant v2 (D-77): the rider's arrival, from their location pings, once there's one to show.
+  const riderLine =
+    order.riderId && rider
+      ? order.riderArrivedAt
+        ? `${rider} is at your counter`
+        : order.riderEtaAt
+          ? `${rider} arrives ${hm(order.riderEtaAt)}`
+          : `${rider} is booked to collect it`
+      : order.dispatchAttempt > 0
+        ? "Finding a rider"
+        : "We book the rider to arrive as it’s ready";
   return (
     <Fill>
       <AppBar back="/queue" title={orderLabel(order)} right={<span className="m-num">{money(order.merchantGoodsTotal)}</span>} />
@@ -633,7 +643,8 @@ function OnTheWay({ order, act, disabled, error, setConfirm, business, v }: Ctx)
   const first = order.rider?.firstName ?? rider;
   const owes = order.debtStatus === "open";
   const title = delivered ? OF.delivered(hm(order.deliveredAt)) : failed ? OF.notDelivered : OF.trackT(orderLabel(order));
-  const sub = [order.rider ? rider : null, countOf(order.items.length, v)].filter(Boolean).join(" · ");
+  const eta = !delivered && !failed && order.riderEtaAt ? `arrives ${hm(order.riderEtaAt)}` : null;
+  const sub = [order.rider ? rider : null, eta, countOf(order.items.length, v)].filter(Boolean).join(" · ");
   const cashLine = order.cashDueAt ? `${first} brings it back by ${hm(order.cashDueAt)}` : `${first} brings it back after delivery`;
   return (
     <Fill>

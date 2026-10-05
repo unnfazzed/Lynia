@@ -463,6 +463,28 @@ describe("TrackingGateway.riderLocation", () => {
     expect(emit).toHaveBeenCalledWith(WS_EVENTS.position, expect.objectContaining({ lat: -17.8, lng: 31.0 }));
   });
 
+  it("Merchant v2 (D-77): pings the merchant's queue when the rider's leg changed (arrival / ETA)", async () => {
+    const { server, to, emit } = fakeServer();
+    const observeRiderLeg = vi.fn(async () => ({ merchantId: "m1" }));
+    const g = gateway({ isAssignedRider: vi.fn(async () => true), recordFix: vi.fn(async () => {}), observeRiderLeg });
+    g.server = server as never;
+    const res = await g.riderLocation(fakeSocket({ sub: "rider-1", role: "rider" }) as never, { orderId: ORD_UUID, lat: -17.8, lng: 31.0 });
+    expect(res).toEqual({ ok: true });
+    expect(observeRiderLeg).toHaveBeenCalledWith(ORD_UUID, { lat: -17.8, lng: 31.0 });
+    expect(to).toHaveBeenCalledWith(merchantQueueRoom("m1"));
+    expect(emit).toHaveBeenCalledWith(WS_EVENTS.foodQueueChanged, expect.objectContaining({ orderId: ORD_UUID }));
+  });
+
+  it("Merchant v2 (D-77): a failing leg evaluation never fails the fix", async () => {
+    const { server } = fakeServer();
+    const observeRiderLeg = vi.fn(async () => {
+      throw new Error("db down");
+    });
+    const g = gateway({ isAssignedRider: vi.fn(async () => true), recordFix: vi.fn(async () => {}), observeRiderLeg });
+    g.server = server as never;
+    expect(await g.riderLocation(fakeSocket({ sub: "rider-1", role: "rider" }) as never, { orderId: ORD_UUID, lat: -17.8, lng: 31.0 })).toEqual({ ok: true });
+  });
+
   it("rejects a non-assigned rider before any emit (auth precedes the push)", async () => {
     const { server, to } = fakeServer();
     const g = gateway({ isAssignedRider: vi.fn(async () => false) });

@@ -109,6 +109,16 @@ describe("K3 · the cooking ticket (Merchant v2, D-77)", () => {
   });
 });
 
+describe("arrival from the rider's location (D-77)", () => {
+  it("K3 names when the booked rider arrives; K4 says they're at the counter", async () => {
+    show({ ...cooking(), riderId: RIDER.profileId, rider: RIDER, riderEtaAt: "2026-10-05T07:31:00" });
+    expect(await screen.findByText("Blessing M. arrives 07:31")).toBeTruthy();
+    cleanup();
+    show(merchantOrder({ id: ID, merchantPhase: null, status: "assigned", riderId: RIDER.profileId, rider: RIDER, riderArrivedAt: "2026-10-05T07:30:00" }));
+    expect(await screen.findByText("AFG 2231 · ★ 4.9 · at your counter")).toBeTruthy();
+  });
+});
+
 describe("K3 · a shop packs", () => {
   it("speaks Packing and 'Packed' (BRIEF §4)", async () => {
     business.current = merchantProfile({ businessType: "shop", shopKind: "pharmacy" });

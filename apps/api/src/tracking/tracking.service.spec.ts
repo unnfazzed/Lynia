@@ -640,3 +640,57 @@ describe("TrackingService notify-me waiting list (2·b1)", () => {
     await expect(noRedis().clearNotifyWaiters(["cust-1"])).resolves.toBeUndefined();
   });
 });
+
+describe("TrackingService.observeRiderLeg (Merchant v2, D-77: 'at your counter' and 'arrives 07:38')", () => {
+  const COUNTER = { lat: -17.8575, lng: 31.0367 };
+  const DOOR = { lat: -17.8, lng: 31.05 };
+  const NOW = Date.parse("2026-10-05T10:00:00Z");
+  function legSvc(order: Record<string, unknown> | null) {
+    const updateMany = vi.fn(async (_: { where: unknown; data: Record<string, unknown> }) => ({ count: 1 }));
+    const findUnique = vi.fn(async () =>
+      order && { status: "en_route_pickup", pickup: { point: COUNTER }, dropoff: { point: DOOR }, riderArrivedAt: null, riderEtaAt: null, merchantId: "m1", ...order },
+    );
+    const s = new TrackingService(noRedisEnv, { order: { findUnique, updateMany } } as unknown as PrismaService, fakeMetrics());
+    return { s, updateMany, findUnique };
+  }
+
+  it("on the way to the counter: stores the arrival estimate and pings the merchant", async () => {
+    const { s, updateMany } = legSvc({});
+    const res = await s.observeRiderLeg("o1", { lat: -17.83, lng: 31.05 }, NOW);
+    expect(res).toEqual({ merchantId: "m1" });
+    const data = updateMany.mock.calls[0]![0].data as { riderEtaAt: Date; riderArrivedAt?: Date };
+    expect(data.riderArrivedAt).toBeUndefined();
+    expect(data.riderEtaAt.getTime()).toBeGreaterThan(NOW);
+  });
+
+  it("within the arrival radius: marks the rider at the counter once and clears the estimate", async () => {
+    const { s, updateMany } = legSvc({ riderEtaAt: new Date(NOW + 60_000) });
+    await s.observeRiderLeg("o1", { lat: COUNTER.lat + 0.0003, lng: COUNTER.lng }, NOW);
+    expect(updateMany.mock.calls[0]![0]).toEqual({ where: { id: "o1", status: "en_route_pickup" }, data: { riderArrivedAt: new Date(NOW), riderEtaAt: null } });
+  });
+
+  it("after pickup: estimates the drop-off, and never re-marks an arrival", async () => {
+    const { s, updateMany } = legSvc({ status: "picked_up", riderArrivedAt: new Date(NOW - 600_000) });
+    await s.observeRiderLeg("o1", COUNTER, NOW);
+    const data = updateMany.mock.calls[0]![0].data as Record<string, unknown>;
+    expect(Object.keys(data)).toEqual(["riderEtaAt"]);
+  });
+
+  it("is throttled per order, skips small ETA moves, and ignores orders not on a leg", async () => {
+    const { s, updateMany, findUnique } = legSvc({});
+    await s.observeRiderLeg("o1", { lat: -17.83, lng: 31.05 }, NOW);
+    expect(await s.observeRiderLeg("o1", { lat: -17.83, lng: 31.05 }, NOW + 5_000)).toBeNull();
+    expect(findUnique).toHaveBeenCalledTimes(1);
+
+    // An estimate within a minute of the stored one isn't rewritten.
+    const stored = (updateMany.mock.calls[0]![0].data as { riderEtaAt: Date }).riderEtaAt;
+    const steady = legSvc({ riderEtaAt: new Date(stored.getTime() + 30_000) });
+    expect(await steady.s.observeRiderLeg("o2", { lat: -17.83, lng: 31.05 }, NOW)).toBeNull();
+    expect(steady.updateMany).not.toHaveBeenCalled();
+
+    const delivered = legSvc({ status: "delivered" });
+    expect(await delivered.s.observeRiderLeg("o3", COUNTER, NOW)).toBeNull();
+    expect(delivered.updateMany).not.toHaveBeenCalled();
+    expect(updateMany).toHaveBeenCalledTimes(1);
+  });
+});
