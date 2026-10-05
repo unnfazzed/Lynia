@@ -53,7 +53,7 @@ const LONG_PRESS_MS = 500;
  * C1 · Menu and E1 · Items (packages/design/handoff/merchant-mobile, ledger D-48). A mint header with
  * the title and a search; category chips with counts (selected = ink; "+ Category" in mint); 64px rows
  * with an initial tile, name / price and a **stock switch** (off greys the row and says until when);
- * "+ Add a dish" pinned at the bottom. Turning a dish off opens C2; turning it on is one tap.
+ * "+ Add a dish" in the top card (D-77 follow-ups). Turning a dish off opens C2; turning it on is one tap.
  *
  * README route map: "/menu/categories becomes category chips (long-press to reorder)" — a long-pressed
  * chip opens its category sheet, which moves it along the row, renames, hides or deletes it. Tapping a
@@ -183,6 +183,17 @@ export default function MenuPage() {
             <div className="m-biz">
               <b style={{ fontSize: 22 }}>{v.catalog}</b>
             </div>
+            {/* T1 (D-77 follow-ups): "+ Add a dish" in the top card, clear of the live bar. */}
+            {state.status === "ready" && state.categories.length > 0 && !staff && (
+              <button
+                type="button"
+                className="m-addpill"
+                disabled={actionsDisabled}
+                onClick={() => setSheet({ kind: "dish", dish: null, defaultCategoryId: current?.id ?? categories[0]?.id })}
+              >
+                <Icon name="plus" size={16} /> Add {v.anItem}
+              </button>
+            )}
           </div>
           {state.status === "ready" && state.categories.length > 0 && (
             <label className="m-in m-srch">
@@ -264,13 +275,6 @@ export default function MenuPage() {
           )}
         </div>
 
-        {state.status === "ready" && state.categories.length > 0 && !staff && (
-          <div className="m-foot">
-            <button type="button" className="m-btn" disabled={actionsDisabled} onClick={() => setSheet({ kind: "dish", dish: null, defaultCategoryId: current?.id ?? categories[0]?.id })}>
-              <Icon name="plus" size={20} /> Add {v.anItem}
-            </button>
-          </div>
-        )}
       </div>
 
       {sheet.kind === "category" && (

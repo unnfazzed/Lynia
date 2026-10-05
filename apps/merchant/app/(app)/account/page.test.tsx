@@ -16,6 +16,7 @@ vi.mock("../../lib/team-api", () => ({
 vi.mock("../../lib/riders-api", () => ({ listRiders: vi.fn(async () => ({ riders: [{}, {}, {}, {}], cap: 20 })) }));
 const signOut = vi.fn();
 vi.mock("../../components/KitchenConnectionProvider", () => ({ useKitchenConnection: () => ({ signOut }) }));
+vi.mock("../../lib/config", () => ({ supportWhatsAppUrl: (text?: string) => `https://wa.me/263770000000${text ? `?text=${encodeURIComponent(text)}` : ""}` }));
 vi.mock("../../components/Kitchen", () => ({ Kitchen: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 
 afterEach(() => {
@@ -60,5 +61,13 @@ describe("T3 · Account (Merchant v2, D-77)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     fireEvent.click(screen.getAllByRole("button", { name: "Sign out" }).at(-1)!);
     expect(signOut).toHaveBeenCalled();
+  });
+
+  it("T3 (D-77 follow-ups): a HELP group opens WhatsApp with the business named", async () => {
+    state.business = merchantProfile({ name: "Sadza Republic", myRole: "owner" });
+    show();
+    const link = await screen.findByRole("link", { name: /Help & support/ });
+    expect(screen.getByText("HELP")).toBeTruthy();
+    expect(decodeURIComponent(link.getAttribute("href")!)).toBe("https://wa.me/263770000000?text=Hi LyniaGo, I need help with Sadza Republic");
   });
 });

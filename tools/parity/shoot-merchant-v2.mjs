@@ -274,7 +274,12 @@ const cashOk = order("a1050000-0000-4000-8000-000000000000", { merchantPhase: nu
 const sched = order("a3010000-0000-4000-8000-000000000000", { merchantPhase: null, items: [line("Mazondo", 6), line("Sadza", 6), line("Greens", 6)], merchantGoodsTotal: 18, scheduledFor: ahead(240), ringsAt: ahead(210) });
 const k5b = order("a1150000-0000-4000-8000-000000000000", { merchantPhase: null, status: "delivered", paymentMethod: "wallet", riderId: RIDER.profileId, rider: RIDER, items: [line("Mazondo", 7), line("Sadza", 7)], merchantGoodsTotal: 14, deliveredAt: ago(2) });
 const k5c = order("a1170000-0000-4000-8000-000000000000", { merchantPhase: null, status: "undelivered", riderId: RIDER.profileId, rider: RIDER, items: [line("Mazondo", 5, 2)], merchantGoodsTotal: 10, debtStatus: "open", debtAmount: 10, cashDueAt: ahead(14), doorProof: { photoUrl: null, takenAt: ago(1), reason: "customer_unreachable", handedTo: null } });
+const arrivedK4 = { ...BOARD[0], riderArrivedAt: ago(1) };
 const SETS = {
+  tabsa: [
+    { mock: "T1 Menu", label: "T1 · Menu (header pill) + T1b counter state", app: { name: "T1", path: "/menu", scenario: { me: KITCHEN, orders: [arrivedK4, ...BOARD.slice(1)], menu: MENU } } },
+    { mock: "T3 Account", label: "T3 · Account with HELP", sub: "the support number comes from config", app: { name: "T3", path: "/account", scenario: { me: KITCHEN, orders: [], branches: BRANCHES } } },
+  ],
   k5x: [
     { mock: "K5b Delivered wallet", label: "K5b · Delivered, nothing to bring back", sub: "door photo: none in the fixture", app: { name: "K5b", path: `/queue/${k5b.id}`, scenario: { me: KITCHEN, orders: [k5b] } } },
     { mock: "K5c Goods back", label: "K5c · Goods coming back", app: { name: "K5c", path: `/queue/${k5c.id}`, scenario: { me: KITCHEN, orders: [k5c] } } },

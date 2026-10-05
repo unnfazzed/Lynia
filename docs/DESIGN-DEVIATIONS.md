@@ -4260,7 +4260,7 @@ any string Merchant v2 doesn't draw. Viewport unchanged: 360×720 with the 320px
 |---|---|---|---|
 | Handoff `tokens/colors.css` | `--highlight-sun`, `--highlight-sun-ink` | `--highlight`, `--highlight-chip-ink` | The export carries an older token snapshot. D-55 already made `--highlight` the sun gold (#FFD23F) and `--highlight-chip-ink` is the same #3D3100, so no colour is added. |
 | T1 live bar | "Blessing is at your counter" | As drawn once the rider's location reaches the pickup (`riderArrivedAt`); "Blessing is coming to your counter" before that | Arrival comes from the rider's location pings (`TrackingService.observeRiderLeg`, within 80 m of the pin), additive on the merchant read. |
-| T1 live bar, undrawn states | One state drawn | "New order · #A1B2" (ringing), "Waiting for the customer to answer", or just the counts | Built from the drawn bar's own parts; nothing new is invented beyond its words. |
+| T1 live bar, undrawn states (2026-10-05) | Drawn by T1b: the ringing bar (accent, "New order · #A1B2 · 2:28", "Tap to answer · 0:48 to answer"), the counter bar (only once the rider has arrived), the waiting bar ("Waiting for Rudo's OK", "2 changes on #A1B2 · keep packing") and the counts bar ("Next ready HH:MM") | As drawn; the ringing bar opens the board, the counter bar jumps to that order's card | Resolved by the follow-ups export. |
 | T4 on a shop | "Customers can see your menu" | "…your items" | A shop has no menu; the shop's vocabulary word. |
 
 | K1 board, "ON THE WAY" card | "Arrives 07:38 · then brings you $12.00" | As drawn once the rider's location gives an estimate (`riderEtaAt`); "On the way · then brings you $12.00" until the first ping | The estimate is the ride at the slot planner's speed model, refreshed every 15 s and rewritten when it moves a minute. |
@@ -4289,8 +4289,8 @@ any string Merchant v2 doesn't draw. Viewport unchanged: 360×720 with the 320px
 
 | T2 Money, today's rows | "In" / "due" / "late" drawn on delivered orders | Each row reads its own cash state from the API (`lines[].cash`: in · due · late · none, additive); a rejected order shows "—"; an order whose cash is still with the rider reads "Cash on its way back" | The drawing has no rejected or in-transit row; built from the drawn row. |
 | T3 Account rows | Values drawn on some rows | Every row shows its value where the API has one (hours today, rider count, "1 invite open") | Built from the drawn row; no new words. |
-| T3 "Help" | Not drawn | Kept as the last row of "ORDERS & PEOPLE" when the support WhatsApp number is configured | Help & support is the merchant's only way to reach LyniaGo (WhatsApp). **Upstream ask:** draw it. |
-| T1 Menu, "Add a dish" | Not drawn on T1 | Kept under the title | Without it a kitchen can't add a dish. **Upstream ask:** draw it. |
+| T3 "Help" (2026-10-05) | Drawn by T3: its own HELP group, "Help & support" with the value "WhatsApp" | As drawn, shown when the support WhatsApp number is configured | Resolved by the follow-ups export. |
+| T1 Menu, "Add a dish" (2026-10-05) | Drawn by T1: a "+ Add a dish" pill beside the title (the vocabulary's item word for shops) | As drawn; the old bottom CTA is gone | Resolved by the follow-ups export. |
 | Shop booking after the pick | "Book a rider → offers → K5" | D-48's tracking (D5) and delivered (D7) screens are replaced by K5: map, Step 3/4/5 of 5, rider card, the buyer's code until delivered, the cash card and "I got $X" | BRIEF §5. The vertical stepper is retired. |
 | K5 cash card on a shop | "Food $12.00" | "Goods $51.00" | A shop sells goods, not food (the BRIEF's vocabulary swap). |
 

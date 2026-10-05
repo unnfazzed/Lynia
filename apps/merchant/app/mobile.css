@@ -213,13 +213,28 @@
   text-decoration: none;
   z-index: 5;
 }
-.m-live::before {
-  content: "";
+/* T1b's leading mark: an accent dot (rider at the counter), a sun ring (waiting), a muted dot (counts). */
+.m-live > i {
   width: 10px;
   height: 10px;
   border-radius: 50%;
   background: var(--accent);
   flex-shrink: 0;
+  box-sizing: border-box;
+}
+.m-live[data-kind="waiting"] > i {
+  background: none;
+  border: 2px solid var(--highlight);
+}
+.m-live[data-kind="counts"] > i {
+  background: var(--live-bar-ink);
+}
+.m-live[data-kind="ringing"] {
+  background: var(--highlight);
+  color: var(--highlight-chip-ink);
+}
+.m-live[data-kind="ringing"] span {
+  color: var(--highlight-chip-ink);
 }
 .m-live div {
   flex: 1;
@@ -3584,4 +3599,28 @@
 }
 .m-btn2.m-danger-ink {
   color: var(--danger-ink);
+}
+.m-banchor {
+  display: flex;
+  flex-direction: column;
+  scroll-margin-top: 16px;
+}
+
+/* ── Merchant v2 follow-ups · T1 / T3 (ledger D-77) ─────────────────────────────────────────── */
+/* T1: "+ Add a dish" / "+ Add an item" on the top card's title row. */
+.m-addpill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: var(--radius-pill);
+  background: var(--cta-fill);
+  color: var(--on-accent);
+  border: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  flex: none;
 }
