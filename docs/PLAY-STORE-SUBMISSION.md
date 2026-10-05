@@ -1975,6 +1975,38 @@ scheduled orders, the merchant/rider hand-over and the 6-digit pickup code.
 - **What it carries.** Everything in vc 41 plus the tab bar (#1018) and Order flow v2 (D-59, #1026 to #1035).
 - **Play's review.** Testers see the release once Play approves it, as with vc 40 and vc 41.
 
+**Build vc 43 — 2026-10-02 (Splash v1, Orders v2, Notifications v1).** Not written here at the time;
+recorded 2026-10-05 from the EAS build record and the status run below.
+
+- **Build.** `mobile-release.yml` run 37055313210 (`profile: closed`, `main` at `f7f3d4e`, #1048) queued
+  EAS build `e05911d2` (v0.51.0 / vc 43, runtime `3b74945e…`). It FINISHED in 9 minutes (19:38 to 19:47
+  UTC).
+- **Submission.** Submission `d95224f9` **FINISHED on track `Closed testing`** (`eas-build-status.yml` run
+  37057486944).
+- **New runtime.** #1043's plain-green launch screen changed `app.config.ts`, the splash assets and a
+  `package.json` script, which are all fingerprint inputs. The runtime moved from `db601ead…` (vc 40 to 42)
+  to `3b74945e…`, so an OTA from `main` now reaches vc 43 and later only. vc 40 to 42 need the Play update.
+- **What it carries.** Everything in vc 42 plus the owner review fixes (D-60, #1037), the wider service
+  area (D-61, #1038), the optional rider photo (D-62, #1039), Orders v2 (D-63, #1041, #1044), Splash v1 and
+  its launch screen (D-64, #1042, #1043, #1046), the "Food" tile (#1047), Notifications v1 (D-66, #1045) and
+  the 2026-10-02 owner decisions (#1048).
+
+**Build vc 44 — 2026-10-05 (rider fixes, tab bar v1.4, Merchant v2 follow-ups).**
+
+- **Before the build.** `main` at `124395c` was green in CI (run 37270287928). No lockfile or workspace
+  `package.json` had changed since vc 43's strict frozen install, and `pnpm install --frozen-lockfile
+  --lockfile-only` passed locally on pnpm 10.33.0. No native input had changed since vc 43 either.
+- **Build.** `mobile-release.yml` run 37297326371 (`profile: closed`, `main` at `124395c`, #1075) queued
+  EAS build `31f82bfe` (v0.51.0 / vc 44, runtime `3b74945e…`, unchanged from vc 43). It FINISHED in 9
+  minutes (10:34 to 10:44 UTC).
+- **Submission.** Submission `04fcfcc6` **FINISHED on track `Closed testing`** (`eas-build-status.yml` run
+  37299226919).
+- **What it carries.** Everything in vc 43 plus the rider onboarding fixes (#1050), tab bar v1.4 (D-56,
+  #1051), the splash motion fix (D-64, #1049), the national ID from the ID check (D-75, #1054), prescription
+  orders switched on (D-76, #1060) and the kitchen's "+5 min" reaching the customer (D-77, #1067).
+- **OTA.** vc 43 and vc 44 share runtime `3b74945e…`, so an OTA from `main` reaches both.
+- **Play's review.** Testers see the release once Play approves it, as with vc 40 to vc 43.
+
 ---
 
 ## 9. Pre-submission checklist
