@@ -1,6 +1,6 @@
 import { riderModeAvailable } from "../../rider-mode";
 import { bootDestination, bootRedirectTarget } from "../boot-route";
-import { signedInDestination } from "../sign-in-route";
+import { signedInDestination, startRoleFor } from "../sign-in-route";
 
 const s = { accessToken: "a", refreshToken: "r", expiresIn: 900, profileId: "p1", role: "customer", needsProfile: false };
 
@@ -102,6 +102,33 @@ describe("signedInDestination (post-sign-in fork, shared by verify.tsx and profi
     expect(signedInDestination("customer", "rider")).toBe("/home");
     expect(signedInDestination("rider", "rider")).toBe("/rider");
   });
+
+  // C-3 (start-up review 2026-10-06): the saved role is wiped by every sign-out and by a reinstall, so a
+  // returning rider used to land in the customer app. With no saved role, the server's role decides.
+  it("a returning rider with no saved role goes to the rider app (via the priming screen)", () => {
+    expect(signedInDestination(null, null, "rider")).toBe("/permissions?next=/rider");
+    expect(startRoleFor(null, null, "rider")).toBe("rider");
+    expect(startRoleFor(null, null, "customer")).toBe("customer");
+  });
+
+  it("a saved role still wins over the server's role (the Customer/Rider toggle)", () => {
+    expect(signedInDestination("customer", null, "rider")).toBe("/home");
+    expect(startRoleFor("customer", null, "rider")).toBe("customer");
+  });
+});
+
+describe("bootDestination falls back to the session's server role (C-3)", () => {
+  it("boots a rider session with no saved role into the rider app", () => {
+    expect(bootDestination({ session: { needsProfile: false, role: "rider" }, onboardingSeen: true, rolePref: null })).toBe("/rider");
+  });
+
+  it("a saved customer role still wins (a rider browsing as a customer)", () => {
+    expect(bootDestination({ session: { needsProfile: false, role: "rider" }, onboardingSeen: true, rolePref: "customer" })).toBe("/home");
+  });
+
+  it("a customer session with no saved role boots to Home", () => {
+    expect(bootDestination({ session: { needsProfile: false, role: "customer" }, onboardingSeen: true, rolePref: null })).toBe("/home");
+  });
 });
 
 // D-41: the iPhone app ships customer-only — no fork to show, and a saved rider role (an account that
@@ -116,6 +143,8 @@ describe("sign-in and boot routing on the customer-only iPhone app (D-41)", () =
     expect(signedInDestination(null, "rider")).toBe("/home");
     expect(signedInDestination("customer")).toBe("/home");
     expect(signedInDestination("rider")).toBe("/home");
+    expect(signedInDestination(null, null, "rider")).toBe("/home");
+    expect(bootDestination({ session: { needsProfile: false, role: "rider" }, onboardingSeen: true, rolePref: null })).toBe("/home");
   });
 
   it("boots a saved rider role into the customer home", () => {
