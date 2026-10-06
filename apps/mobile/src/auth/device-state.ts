@@ -432,25 +432,8 @@ export async function loadOnboardingSeen(): Promise<boolean> {
   }
 }
 
-// Whether we've shown the first-run permission-priming explainers (0·7/0·8) on this install. Stored
-// so a user who's already been primed (and switches role later) isn't re-walked through them. Best-
-// effort — a read failure just re-primes, which is harmless.
-const PERMISSIONS_PRIMED_KEY = "lynia.permissionsPrimed";
-
-export async function savePermissionsPrimed(): Promise<void> {
-  try {
-    await SecureStore.setItemAsync(PERMISSIONS_PRIMED_KEY, "1");
-  } catch {
-    /* best-effort */
-  }
-}
-export async function loadPermissionsPrimed(): Promise<boolean> {
-  try {
-    return (await SecureStore.getItemAsync(PERMISSIONS_PRIMED_KEY)) === "1";
-  } catch {
-    return false;
-  }
-}
+// The pre-D-80 first-run priming flag ("lynia.permissionsPrimed") is no longer read or written: First Run v2
+// asks in context (customers) and runs the rider flow from R3 (src/permissions/store.ts holds its flags).
 
 // The retired pre-broadcast disclaimer's accepted-version flag (A1-8; the disclaimer was removed from
 // the Send flow by ledger D-52). Nothing writes it any more; sign-out still deletes it so devices that

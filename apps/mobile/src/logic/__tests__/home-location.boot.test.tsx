@@ -1,13 +1,14 @@
 /**
- * `useHomeLocation` under the cold-start splash (S-6, ledger D-64). Home mounts UNDER the splash, so the
- * hook's first-run permission request used to pop the OS location dialog over the brand intro. The ask
- * now waits for the boot to end; a permission that is already granted (no dialog) never waits.
+ * `useHomeLocation` never asks (First Run v2, ledger D-80, BRIEF 1–2). Home mounts under the cold-start
+ * splash, and S-6 once moved the OS location dialog to "after the boot"; since D-80 it doesn't open at
+ * mount at all — only PC1's own button opens it (src/logic/location-ask.ts). A granted (or approximate)
+ * permission still fixes a position straight away, splash or not.
  */
 import * as Location from "expo-location";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
-import { BootPhaseProvider, useBootPhase } from "../../boot/boot-phase";
+import { BootPhaseProvider } from "../../boot/boot-phase";
 import { resetBootReadinessForTest } from "../../boot/boot-readiness";
-import { useHomeLocation } from "../home-location";
+import { type HomeLocationApi, useHomeLocation } from "../home-location";
 
 jest.mock("expo-location", () => ({
   Accuracy: { Balanced: 3 },
@@ -27,16 +28,21 @@ jest.mock("expo-secure-store", () => ({
 const getPerm = Location.getForegroundPermissionsAsync as jest.Mock;
 const requestPerm = Location.requestForegroundPermissionsAsync as jest.Mock;
 
-let endBoot: () => void = () => {};
+let api: HomeLocationApi | null = null;
 function Harness(): null {
-  endBoot = useBootPhase().endBoot;
-  useHomeLocation();
+  api = useHomeLocation();
   return null;
 }
 
 let tree: ReactTestRenderer | null = null;
 async function settle(): Promise<void> {
   for (let i = 0; i < 6; i++) await act(async () => undefined);
+}
+async function mount(underSplash: boolean): Promise<void> {
+  await act(async () => {
+    tree = create(underSplash ? <BootPhaseProvider><Harness /></BootPhaseProvider> : <Harness />);
+  });
+  await settle();
 }
 
 beforeEach(() => {
@@ -47,47 +53,47 @@ beforeEach(() => {
 afterEach(() => {
   act(() => tree?.unmount());
   tree = null;
+  api = null;
 });
 
-describe("useHomeLocation · the permission ask waits for the splash", () => {
-  it("does not ask while booting, and asks the moment the boot ends", async () => {
+describe("useHomeLocation · reads the permission, never asks", () => {
+  it.each([true, false])("an undetermined permission is never requested at mount (under the splash: %s)", async (underSplash) => {
     getPerm.mockResolvedValue({ status: "undetermined", granted: false, canAskAgain: true });
-    await act(async () => {
-      tree = create(
-        <BootPhaseProvider>
-          <Harness />
-        </BootPhaseProvider>,
-      );
-    });
-    await settle();
-    expect(getPerm).toHaveBeenCalled(); // reading the permission shows nothing — that goes ahead
+    await mount(underSplash);
+    expect(getPerm).toHaveBeenCalled();
     expect(requestPerm).not.toHaveBeenCalled();
-
-    await act(async () => endBoot());
-    await settle();
-    expect(requestPerm).toHaveBeenCalledTimes(1);
+    expect(api?.source).toBe("none"); // the row stays on its prompt, so H6 offers PC1
+    expect(api?.denied).toBe(false);
   });
 
-  it("a granted permission goes ahead during the boot (no dialog to hold back)", async () => {
+  it("a granted permission fixes a position, even during the boot", async () => {
     getPerm.mockResolvedValue({ status: "granted", granted: true, canAskAgain: true });
-    await act(async () => {
-      tree = create(
-        <BootPhaseProvider>
-          <Harness />
-        </BootPhaseProvider>,
-      );
-    });
-    await settle();
+    await mount(true);
     expect(requestPerm).not.toHaveBeenCalled();
     expect(Location.getCurrentPositionAsync).toHaveBeenCalled();
   });
 
-  it("outside the boot it asks straight away, as before", async () => {
+  it("approximate counts as usable (PC3 asks to upgrade it, from its own button)", async () => {
+    getPerm.mockResolvedValue({ status: "granted", granted: true, canAskAgain: true, android: { accuracy: "coarse" } });
+    await mount(false);
+    expect(Location.getCurrentPositionAsync).toHaveBeenCalled();
+  });
+
+  it("only a permission the OS won't ask again reads as denied", async () => {
+    getPerm.mockResolvedValue({ status: "denied", granted: false, canAskAgain: false });
+    await mount(false);
+    expect(api?.denied).toBe(true);
+    expect(requestPerm).not.toHaveBeenCalled();
+  });
+
+  it("'Use my current location' never asks either — the ask is PC1's", async () => {
     getPerm.mockResolvedValue({ status: "undetermined", granted: false, canAskAgain: true });
+    await mount(false);
+    let out: unknown = "unset";
     await act(async () => {
-      tree = create(<Harness />);
+      out = await api!.useCurrentLocation();
     });
-    await settle();
-    expect(requestPerm).toHaveBeenCalledTimes(1);
+    expect(out).toBeNull();
+    expect(requestPerm).not.toHaveBeenCalled();
   });
 });

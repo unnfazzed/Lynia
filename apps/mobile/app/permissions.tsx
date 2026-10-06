@@ -1,138 +1,381 @@
-import * as Location from "expo-location";
-import * as Notifications from "expo-notifications";
+import { tokens } from "@lynia/shared/tokens";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
-import { View } from "react-native";
-import { loadPermissionsPrimed, savePermissionsPrimed } from "../src/auth/session";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Text, View } from "react-native";
+import { afterLocationAnswer, entryScreen, finishRiderPermFlow, type RiderPermScreen, type RiderPermStep, stepsFor } from "../src/logic/rider-perm-flow";
+import {
+  ensureJobAlertChannel,
+  mutedJobChannel,
+  openBatterySettings,
+  openChannelSettings,
+  openPhoneSettings,
+  playTestAlert,
+  readLocation,
+  readNotif,
+  readPermissions,
+  requestLocation,
+  requestNotif,
+  turnOnGps,
+  useOnAppActive,
+} from "../src/permissions/state";
+import { markRiderPermFlowDone } from "../src/permissions/store";
 import { requestPushRegistration } from "../src/push/push-kick";
-import { Screen } from "../src/ui";
-import { riderModeAvailable } from "../src/rider-mode";
-import { PermLocView } from "./permissions-location.view";
-import { PermNotifView } from "./permissions-notifications.view";
+import { TrustVerifiedArt } from "../src/ui/art/TrustVerifiedArt";
+import { PC, RP } from "../src/ui/firstrun/copy";
+import { RIDER_COPY as R } from "../src/ui/rider/copy";
+import {
+  Body,
+  BulletList,
+  FirstRunScreen,
+  FrBadge,
+  FrSoftPill,
+  HeroDisc,
+  HeroPanel,
+  PinnedFooter,
+  SampleNotification,
+  SplitTitle,
+  SystemSettingsSteps,
+  useToast,
+} from "../src/ui";
+
+const STEPS: readonly RiderPermStep[] = ["location", "notifications", "battery"];
+const parseStep = (v: unknown): RiderPermStep | null => (STEPS.includes(v as RiderPermStep) ? (v as RiderPermStep) : null);
+
+/** The test ping P9 / P12 play: the job-alert channel, with the rider copy Settings' test buttons use. */
+const testPing = (): void => void playTestAlert(R.sAlerts, R.testPing);
 
 /**
- * First-run permission priming (customer/rider 0·7 / 0·8). Two explainer steps shown BEFORE the OS
- * dialogs so the user knows why we're asking — location (set the pickup pin / show parcels + navigate)
- * then notifications (offer + arrival + delivery alerts). Each step primes, then advances; "Not now"
- * skips without blocking (both are re-requestable in context later). Shown ONCE per install (gated on
- * `permissionsPrimed`); if already primed we forward straight to `next` so the role fork can always
- * route through here safely. `next` is the post-priming destination (/home for a customer, /rider for
- * a rider). Push token registration itself is handled by the root PushSync and is permission-checked,
- * so priming here just brings the OS prompt forward with an explanation.
+ * First Run v2 — the rider permission flow P1–P16 (handoff `first-run-v2` README §2B, BRIEF 1/4–7, ledger
+ * D-80). Violet tone, `RP` copy. Replaces the Rider v2-era priming (`RJ`/`LJ perm_loc`, `perm_notif`).
+ *
+ *   ?from=flow          R3 "Go online" (owner #5): location (P1 → P2 → P3 + P8 toast, or P4/P5/P6/P7) →
+ *                       notifications (P9 → P10 → P13, or P11/P12) → P13 "Go online", which goes online.
+ *                       Every "Not now" moves on; nothing skipped blocks the rider (J8/G8 on the board).
+ *   ?step=location      P14 G8 / P15 Settings' Location row — the location step alone, then back.
+ *   ?step=notifications P14 J8 / Settings' Job alerts row — the notification step alone, then back.
+ *   ?step=battery       P16, from Settings only.
+ *
+ * The Android dialog opens only from a primary button (BRIEF 1). Every "Open phone settings" state re-reads
+ * the permission when the rider comes back (BRIEF 7). We never ask for "Allow all the time" (BRIEF 6).
+ * A legacy `?next=/rider` (the pre-D-80 sign-in priming) forwards straight to the board.
  */
-type Step = "location" | "notifications";
-
-function safeNext(raw: string | string[] | undefined): "/home" | "/rider" {
-  const v = Array.isArray(raw) ? raw[0] : raw;
-  // The customer-only iPhone app has no rider home to prime for (src/rider-mode.ts).
-  return v === "/rider" && riderModeAvailable() ? "/rider" : "/home";
-}
-
-/**
- * `initialStep` is the explainer the screen opens on — "location" in the app (priming always starts
- * at step 1). It exists so step 2 can be mounted directly: each step is its own gallery screen
- * (LJ.perm_loc / LJ.perm_notif) and the parity lane stages them through this seam
- * (tools/parity/mobile/fixtures/auth_perms_*.mjs). Expo-router passes no props, so the default ships.
- */
-export type PermissionsScreenProps = { initialStep?: Step };
-
-export default function PermissionsScreen({ initialStep = "location" }: PermissionsScreenProps = {}): React.ReactElement {
+export default function RiderPermissionsScreen(): React.ReactElement {
   const router = useRouter();
-  const { next } = useLocalSearchParams<{ next?: string }>();
-  const dest = safeNext(next);
-  const [step, setStep] = useState<Step>(initialStep);
-  // null = still checking the primed flag; fold into the first render so we never flash a step we're
-  // about to skip.
-  const [ready, setReady] = useState(false);
+  const params = useLocalSearchParams<{ from?: string; step?: string; next?: string }>();
+  const flow = params.from === "flow";
+  const legacy = !flow && params.step == null && params.next != null;
+  const steps = useRef(stepsFor(flow ? "flow" : "single", parseStep(params.step))).current;
+  const toast = useToast();
+  const [stepIdx, setStepIdx] = useState(0);
+  const [screen, setScreen] = useState<RiderPermScreen | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [shake, setShake] = useState(0);
+  const [mutedChannel, setMutedChannel] = useState<string | undefined>(undefined);
+  const leftForBattery = useRef(false);
+
+  const leave = useCallback((): void => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/rider");
+  }, [router]);
+
+  /** Enter step `i` (skipping any with nothing to ask); past the last one, leave. */
+  const enter = useCallback(
+    async (i: number): Promise<void> => {
+      await ensureJobAlertChannel();
+      const perms = await readPermissions(true);
+      for (let k = i; k < steps.length; k++) {
+        const s = entryScreen(steps[k]!, perms);
+        if (s) {
+          if (s === "P12") setMutedChannel((await mutedJobChannel()) ?? undefined);
+          setStepIdx(k);
+          setScreen(s);
+          return;
+        }
+      }
+      leave();
+    },
+    [leave, steps],
+  );
 
   useEffect(() => {
-    let alive = true;
-    void loadPermissionsPrimed().then((primed) => {
-      if (!alive) return;
-      if (primed) router.replace(dest);
-      else setReady(true);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [dest, router]);
+    if (legacy) router.replace("/rider");
+    else void enter(0);
+    // Entered once per visit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const done = (): void => {
-    void savePermissionsPrimed();
-    router.replace(dest);
+  const next = useCallback((): void => void enter(stepIdx + 1), [enter, stepIdx]);
+
+  // P13 marks the flow done for this install (README §4 `riderPermFlowDone`).
+  useEffect(() => {
+    if (screen === "P13") void markRiderPermFlowDone();
+  }, [screen]);
+
+  const withBusy = (run: () => Promise<void>) => (): void => {
+    if (busy) return;
+    setBusy(true);
+    void run().finally(() => setBusy(false));
   };
 
-  const primeLocation = async (): Promise<void> => {
-    try {
-      await Location.requestForegroundPermissionsAsync();
-    } catch {
-      /* the OS dialog can't fail us into a dead-end — advance regardless */
-    } finally {
-      setStep("notifications");
-    }
+  /** P2's answer (and every re-read of location) → the next screen; precise + GPS = P3 with the P8 toast. */
+  const onLocation = (loc: Parameters<typeof afterLocationAnswer>[0], gps: boolean, from: RiderPermScreen): void => {
+    const to = afterLocationAnswer(loc, gps);
+    if (to === "granted") {
+      toast.show(RP.grantedToast, "success");
+      setScreen("P3");
+    } else if (to === "P4" && from === "P4") next(); // kept "Approximate" on the upgrade dialog — move on
+    else if (to !== "P1") setScreen(to); // P1 = the dialog was dismissed: stay where the rider is
   };
 
-  const primeNotifications = async (): Promise<void> => {
-    try {
-      const existing = await Notifications.getPermissionsAsync();
-      if (!existing.granted && existing.canAskAgain) await Notifications.requestPermissionsAsync();
-      // Root push registration is check-don't-request, so nudge it to bind a token now that the user
-      // has (possibly) just granted — otherwise it wouldn't register until the next foreground.
-      requestPushRegistration();
-    } catch {
-      /* best-effort */
-    } finally {
-      done();
-    }
+  /** P10's answer (and every re-read of notifications). */
+  const onNotif = async (granted: boolean): Promise<void> => {
+    if (!granted) return setScreen("P11");
+    requestPushRegistration();
+    const muted = await mutedJobChannel();
+    if (muted) {
+      setMutedChannel(muted);
+      setScreen("P12");
+    } else next();
   };
 
-  if (!ready) return <Screen><View style={{ flex: 1 }} /></Screen>; // brief: reading the flag, about to render or forward
+  const askLocation = withBusy(async () => {
+    const from = screen ?? "P1";
+    const loc = await requestLocation();
+    const { gps } = loc === "granted" || loc === "coarse" ? await readLocation() : { gps: true };
+    onLocation(loc, gps, from);
+  });
 
-  // Role-frame the copy off the resolved destination: a rider primes location to see nearby jobs and
-  // navigate, and notifications to catch new-job/you-were-picked pings — the customer framing ("your
-  // pickup pin", "your parcel is delivered") is wrong for half the users routed through here.
-  const isRider = dest === "/rider";
+  const recheckLocation = async (explicit: boolean): Promise<void> => {
+    const { loc, gps } = await readLocation();
+    if (loc === "granted" || loc === "coarse") onLocation(loc, gps, "P6");
+    else if (explicit) setShake((n) => n + 1);
+  };
 
-  // The presentational tree for each step is GENERATED from the mock's `SystemState` (screens.jsx
-  // `PermLoc` / `PermNotif`) and locked to it by the structural-snapshot guardrail. SystemState is a
-  // structural leaf, so its copy/icon/actions are the DATA SEAM: this container feeds the role-framed
-  // wording (the mock's customer copy verbatim; a rider variant for the jobs framing) and wires the OS
-  // permission requests onto onPrimary/onSecondary. `busy` folds into the SystemState primary via a
-  // no-op while the OS dialog is up (the request itself is the blocking beat).
-  if (step === "location") {
-    return (
-      <PermLocView
-        icon="navigation"
-        title="Turn on location"
-        message={
-          isRider
-            ? "LyniaGo uses your location to show you nearby jobs and navigate you turn-by-turn to pickups and drop-offs. We only use it while you're online or on a job."
-            : "LyniaGo uses your location to set your pickup pin and match you with the closest riders. We only use it while you're arranging a delivery."
-        }
-        primary="Allow location"
-        // Mock (screens.jsx `PermLoc`) secondary is "Enter address manually" — the customer's manual
-        // pickup path. A rider has no pickup address to type, so that framing is wrong for them; keep
-        // the neutral skip there.
-        secondary={isRider ? "Not now" : "Enter address manually"}
-        onPrimary={() => void primeLocation()}
-        onSecondary={() => setStep("notifications")}
-      />
-    );
+  const recheckNotif = async (explicit: boolean): Promise<void> => {
+    if ((await readNotif()) === "granted") await onNotif(true);
+    else if (explicit) setShake((n) => n + 1);
+  };
+
+  // Back from the phone's settings (P6, P11, P12, P16) or Google's location dialog (P7): re-read.
+  useOnAppActive(() => {
+    if (screen === "P6") void recheckLocation(false);
+    else if (screen === "P7") void readLocation().then(({ loc, gps }) => gps && onLocation(loc, gps, "P7"));
+    else if (screen === "P11") void recheckNotif(false);
+    else if (screen === "P12") void mutedJobChannel().then((m) => !m && next());
+    else if (screen === "P16" && leftForBattery.current) leave();
+  });
+
+  if (!screen) return <View testID="rider-perm-loading" style={{ flex: 1, backgroundColor: tokens.color.bg }} />;
+
+  switch (screen) {
+    case "P1":
+      return (
+        <FirstRunScreen testID="P1" footer={<PinnedFooter primary={{ label: RP.locCta, onPress: askLocation, loading: busy, testID: "p-cta" }} link={{ label: RP.notNow, onPress: next, testID: "p-link" }} />}>
+          <HeroPanel tone="violet">
+            <HeroDisc icon="map-pin" />
+          </HeroPanel>
+          <SplitTitle a={RP.locA} b={RP.locB} tone="violet" />
+          <BulletList
+            items={[
+              { icon: "map-pin", text: RP.loc1 },
+              { icon: "user", text: RP.loc2 },
+              { icon: "power", text: RP.loc3 },
+            ]}
+          />
+        </FirstRunScreen>
+      );
+    case "P3":
+      return (
+        <FirstRunScreen testID="P3" footer={<PinnedFooter primary={{ label: RP.tripCta, onPress: next, testID: "p-cta" }} />}>
+          <HeroPanel tone="violet" decor={false}>
+            <Text style={{ fontSize: 12, fontWeight: tokens.font.weight.semibold, color: tokens.color.riderAccent, letterSpacing: 0.72, textTransform: "uppercase" }}>{RP.tripTag}</Text>
+            <SampleNotification icon="navigation" title={RP.fgsTitle} body={RP.fgsBody} width={288} alignTop />
+          </HeroPanel>
+          <SplitTitle a={RP.tripA} b={RP.tripB} tone="violet" />
+          <Body>{RP.tripBody}</Body>
+        </FirstRunScreen>
+      );
+    case "P4":
+      return (
+        <FirstRunScreen testID="P4" footer={<PinnedFooter primary={{ label: RP.approxCta, icon: "navigation", onPress: askLocation, loading: busy, testID: "p-cta" }} link={{ label: RP.notNow, onPress: next, testID: "p-link" }} />}>
+          <HeroPanel tone="violet">
+            <HeroDisc icon="map-pin" />
+          </HeroPanel>
+          <SplitTitle a={RP.approxA} b={RP.approxB} tone="violet" />
+          <Body>{RP.approxBody}</Body>
+        </FirstRunScreen>
+      );
+    case "P5":
+      return (
+        <FirstRunScreen testID="P5" footer={<PinnedFooter primary={{ label: RP.askAgain, onPress: askLocation, loading: busy, testID: "p-cta" }} link={{ label: RP.continue, onPress: next, testID: "p-link" }} />}>
+          <HeroPanel tone="danger">
+            <HeroDisc icon="map-pin" />
+          </HeroPanel>
+          <SplitTitle a={RP.deniedA} b={RP.deniedB} tone="danger" />
+          <Body>{RP.deniedBody}</Body>
+        </FirstRunScreen>
+      );
+    case "P6":
+      return (
+        <FirstRunScreen
+          testID="P6"
+          footer={<PinnedFooter primary={{ label: RP.openSettings, onPress: openPhoneSettings, testID: "p-cta" }} link={{ label: RP.turnedOn, onPress: () => void recheckLocation(true), testID: "p-link" }} />}
+        >
+          <HeroPanel tone="danger" height={180}>
+            <HeroDisc icon="map-pin" />
+          </HeroPanel>
+          <SplitTitle a={RP.deniedA} b={RP.deniedB} tone="danger" />
+          <Body>{RP.foreverBody}</Body>
+          <SystemSettingsSteps steps={[RP.step1, RP.step2, RP.step3]} shakeKey={shake} />
+        </FirstRunScreen>
+      );
+    case "P7":
+      return (
+        <FirstRunScreen
+          testID="P7"
+          footer={
+            <PinnedFooter
+              primary={{
+                label: PC.gpsCta,
+                onPress: withBusy(async () => {
+                  if (!(await turnOnGps())) return;
+                  const { loc, gps } = await readLocation();
+                  onLocation(loc, gps, "P7");
+                }),
+                loading: busy,
+                testID: "p-cta",
+              }}
+              link={{ label: RP.notNow, onPress: next, testID: "p-link" }}
+            />
+          }
+        >
+          <HeroPanel tone="neutral">
+            <HeroDisc icon="map-pin" />
+          </HeroPanel>
+          <SplitTitle a={RP.gpsA} b={RP.gpsB} tone="neutral" />
+          <Body>{RP.gpsBody}</Body>
+        </FirstRunScreen>
+      );
+    case "P9":
+      return (
+        <FirstRunScreen
+          testID="P9"
+          footer={
+            <PinnedFooter
+              primary={{ label: RP.notifCta, icon: "bell", onPress: withBusy(async () => {
+                  await onNotif((await requestNotif()) === "granted");
+                }), loading: busy, testID: "p-cta" }}
+              link={{ label: RP.notNow, onPress: next, testID: "p-link" }}
+            />
+          }
+        >
+          <HeroPanel tone="violet" decor={false}>
+            <OfferCard />
+          </HeroPanel>
+          <SplitTitle a={RP.notifA} b={RP.notifB} tone="violet" />
+          <Body>{RP.notifBody}</Body>
+          <FrSoftPill tone="white" icon="volume-2" label={RP.testPing} onPress={testPing} style={{ marginTop: 16 }} testID="p-test-ping" />
+        </FirstRunScreen>
+      );
+    case "P11":
+      return (
+        <FirstRunScreen
+          testID="P11"
+          footer={<PinnedFooter primary={{ label: RP.openSettings, onPress: openPhoneSettings, testID: "p-cta" }} link={{ label: RP.turnedOn, onPress: () => void recheckNotif(true), testID: "p-link" }} />}
+        >
+          <HeroPanel tone="danger" height={180}>
+            <HeroDisc icon="bell-off" />
+          </HeroPanel>
+          <SplitTitle a={RP.blockedA} b={RP.blockedB} tone="danger" />
+          <Body>{RP.blockedBody}</Body>
+          <SystemSettingsSteps steps={[RP.step1, RP.nStep2, RP.nStep3]} shakeKey={shake} />
+        </FirstRunScreen>
+      );
+    case "P12":
+      return (
+        <FirstRunScreen
+          testID="P12"
+          footer={<PinnedFooter primary={{ label: RP.openSettings, onPress: () => openChannelSettings(mutedChannel), testID: "p-cta" }} link={{ label: RP.testPing, icon: "volume-2", onPress: testPing, testID: "p-link" }} />}
+        >
+          <HeroPanel tone="danger" height={180}>
+            <HeroDisc icon="volume-x" />
+          </HeroPanel>
+          <SplitTitle a={RP.mutedA} b={RP.mutedB} tone="danger" />
+          <Body>{RP.mutedBody}</Body>
+          <SystemSettingsSteps steps={[RP.step1, RP.mStep2, RP.mStep3]} />
+        </FirstRunScreen>
+      );
+    case "P13":
+      return (
+        <FirstRunScreen
+          testID="P13"
+          footer={
+            <PinnedFooter
+              primary={{
+                label: RP.goOnline,
+                icon: "power",
+                testID: "p-cta",
+                onPress: () => {
+                  // The board below runs "online"; a flow reopened after a cold restart has no board waiting.
+                  if (finishRiderPermFlow() && router.canGoBack()) router.back();
+                  else router.replace("/rider");
+                },
+              }}
+            />
+          }
+        >
+          <HeroPanel>
+            <TrustVerifiedArt width={168} />
+          </HeroPanel>
+          <SplitTitle a={RP.doneA} b={RP.doneB} />
+          <Body>{RP.doneBody}</Body>
+        </FirstRunScreen>
+      );
+    case "P16":
+      return (
+        <FirstRunScreen
+          testID="P16"
+          footer={
+            <PinnedFooter
+              primary={{
+                label: RP.batCta,
+                testID: "p-cta",
+                onPress: () => {
+                  leftForBattery.current = true;
+                  openBatterySettings();
+                },
+              }}
+              link={{ label: RP.notNow, onPress: leave, testID: "p-link" }}
+            />
+          }
+        >
+          <HeroPanel tone="violet">
+            <HeroDisc icon="battery" />
+          </HeroPanel>
+          <SplitTitle a={RP.batA} b={RP.batB} tone="violet" />
+          <Body>{RP.batBody}</Body>
+        </FirstRunScreen>
+      );
   }
+}
+
+/** P9's drawn job offer: the "New job" tag, a 60s countdown, the fare 22/700, the route, a violet progress bar. */
+function OfferCard(): React.ReactElement {
   return (
-    <PermNotifView
-      // The mock (screens.jsx `PermNotif`) draws the phone glyph, not an inbox.
-      icon="phone"
-      title="Stay in the loop"
-      message={
-        isRider
-          ? "Get notified the moment a new job is posted near you, when a customer picks you, and for delivery updates."
-          : "Get notified the moment a rider offers, when they're arriving, and when your parcel is delivered."
-      }
-      primary="Turn on notifications"
-      secondary="Not now"
-      onPrimary={() => void primeNotifications()}
-      onSecondary={done}
-    />
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={{ width: 276, backgroundColor: tokens.color.bg, borderRadius: 20, padding: 16, borderWidth: 1, borderColor: "rgba(20,24,27,0.06)" }}
+    >
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+        <FrBadge tone="gold" label={RP.offerTag} height={26} />
+        <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.semibold, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>0:58</Text>
+      </View>
+      <Text style={{ marginTop: 10, fontSize: 22, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{RP.offerFare}</Text>
+      <Text style={{ marginTop: 2, fontSize: 13, color: tokens.color.muted }}>{RP.offerRoute}</Text>
+      <View style={{ marginTop: 12, height: 4, borderRadius: 2, backgroundColor: tokens.color.riderWash }}>
+        <View style={{ width: "92%", height: 4, borderRadius: 2, backgroundColor: tokens.color.riderAccent }} />
+      </View>
+    </View>
   );
 }

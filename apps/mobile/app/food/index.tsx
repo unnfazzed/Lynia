@@ -37,6 +37,7 @@ import { sortLabel, SortSheet } from "../../src/ui/browse/sheets";
 // Not from the ui barrel: LocationSheet reaches AddressSearch, which imports the barrel back (a
 // cycle) — the same direct import the customer home takes for the same reason.
 import { LocationSheet } from "../../src/ui/home/LocationSheet";
+import { useLocationAskSheet } from "../../src/ui/home/LocationAsk";
 import { ServiceSoonSheet } from "../../src/ui/home/ServiceSoonSheet";
 
 /**
@@ -111,6 +112,8 @@ export default function RestaurantListScreen(): React.ReactElement {
     setLocationSearch(search);
     setLocationOpen(true);
   };
+  // H5 "Use my current location" → the First Run v2 location ask (PC1–PC7, ledger D-80).
+  const locationAsk = useLocationAskSheet(location, () => openLocation(true));
   const back = (): void => router.back();
   const search = (): void => router.push("/food/search");
 
@@ -157,9 +160,10 @@ export default function RestaurantListScreen(): React.ReactElement {
         currentLabel={location.label}
         focusSearch={locationSearch}
         onClose={() => setLocationOpen(false)}
-        onUseCurrentLocation={location.useCurrentLocation}
+        onUseCurrentLocation={locationAsk.start}
         onPick={location.setManualPlace}
       />
+      {locationAsk.sheet}
     </>
   );
 

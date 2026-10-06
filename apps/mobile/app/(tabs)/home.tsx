@@ -46,6 +46,7 @@ import {
 // `no-circular` violation the moment the barrel re-exports it) — the same rule ComposeMap /
 // BottomSheet / MapPicker already follow.
 import { LocationSheet } from "../../src/ui/home/LocationSheet";
+import { useLocationAskSheet } from "../../src/ui/home/LocationAsk";
 import { SmBtn } from "../../src/ui/order/kit";
 import { RIDER_COPY as R, RF } from "../../src/ui/rider/copy";
 import { ServiceSoonSheet, type SoonService } from "../../src/ui/home/ServiceSoonSheet";
@@ -346,6 +347,9 @@ export default function LauncherHomeScreen(): React.ReactElement {
     setLocationSearch(search);
     setLocationOpen(true);
   };
+  // First Run v2 PC1–PC7 (ledger D-80): H6 "Use my location" and H5 "Use my current location" open the
+  // same location ask — PC1 explains before the Android dialog; granted fills the header + PC7 toast.
+  const locationAsk = useLocationAskSheet(location, () => openLocation(true));
 
   return (
     // A plain root, not AppScreen: the mint header owns the top inset itself (it paints behind the
@@ -385,7 +389,7 @@ export default function LauncherHomeScreen(): React.ReactElement {
         </BootEntrance>
         <BootEntrance index={2}>
           {noAddress ? (
-            <NoLocationCard onUseLocation={() => void location.useCurrentLocation()} onTypeAddress={() => openLocation(true)} />
+            <NoLocationCard onUseLocation={locationAsk.start} onTypeAddress={() => openLocation(true)} />
           ) : showRestaurants || showShops ? (
             <View>
               {showRestaurants ? (
@@ -457,9 +461,10 @@ export default function LauncherHomeScreen(): React.ReactElement {
         currentLabel={location.label}
         focusSearch={locationSearch}
         onClose={() => setLocationOpen(false)}
-        onUseCurrentLocation={location.useCurrentLocation}
+        onUseCurrentLocation={locationAsk.start}
         onPick={location.setManualPlace}
       />
+      {locationAsk.sheet}
       <ServiceSoonSheet visible={soon != null} service={soon ?? "shops"} onClose={() => setSoon(null)} />
     </View>
   );

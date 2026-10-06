@@ -1,82 +1,89 @@
 import { formatPhoneDisplay } from "@lynia/shared";
+import { tokens } from "@lynia/shared/tokens";
 import { useQuery } from "@tanstack/react-query";
-import * as Location from "expo-location";
-import * as Notifications from "expo-notifications";
-import { useRouter } from "expo-router";
-import React, { useState } from "react";
-import { AppState, Linking, ScrollView, View } from "react-native";
-import { getMe } from "../../src/api/auth";
+import { useFocusEffect, useRouter } from "expo-router";
+import React, { useCallback, useState } from "react";
+import { Linking, Text, View } from "react-native";
+import { getMe, type Me } from "../../src/api/auth";
 import { useAuth } from "../../src/auth/auth-context";
 import { TERMS_URL } from "../../src/config";
 import { bikeVerified } from "../../src/logic/rider-documents";
+import { RIDER_PERM_ROUTES } from "../../src/logic/rider-perm-flow";
 import { providerName, TOPUP_PROVIDERS, type TopupProviderId, useRiderPrefs } from "../../src/logic/rider-prefs";
+import { openPhoneSettings, playTestAlert, usePermissions } from "../../src/permissions/state";
 import { riderModeAvailable } from "../../src/rider-mode";
-import { AppScreen, haptic } from "../../src/ui";
-import { CtaButton, SmBtn } from "../../src/ui/order/kit";
-import { SendField } from "../../src/ui/send/kit";
+import { BackHeader, FirstRunScreen, FrSoftPill, haptic, IconDot, LargeTitle, ListCard, ListRow, Toggle } from "../../src/ui";
+import { PC, PD } from "../../src/ui/firstrun/copy";
+import { CtaButton } from "../../src/ui/order/kit";
 import { RIDER_COPY as R, RF } from "../../src/ui/rider/copy";
-import { Chips, DangerBox, MSheet, PushHeader, RCard, RRow, SectionLabel, Seg } from "../../src/ui/rider/kit";
+import { Chips, MSheet, Seg } from "../../src/ui/rider/kit";
+import { SendField } from "../../src/ui/send/kit";
+import { ST, toAdd } from "../../src/ui/settings/copy";
 
-type Perm = "on" | "off" | null;
-
-/** The phone's real notification + location permission, re-read whenever the app comes back. */
-function usePermissions(): { notifs: Perm; location: Perm } {
-  const [notifs, setNotifs] = useState<Perm>(null);
-  const [location, setLocation] = useState<Perm>(null);
-  React.useEffect(() => {
-    let cancelled = false;
-    const read = (): void => {
-      void Notifications.getPermissionsAsync()
-        .then((p) => !cancelled && setNotifs(p.granted ? "on" : "off"))
-        .catch(() => undefined);
-      void Location.getForegroundPermissionsAsync()
-        .then((p) => !cancelled && setLocation(p.granted ? "on" : "off"))
-        .catch(() => undefined);
-    };
-    read();
-    const sub = AppState.addEventListener("change", (s) => {
-      if (s === "active") read();
-    });
-    return () => {
-      cancelled = true;
-      sub.remove();
-    };
-  }, []);
-  return { notifs, location };
-}
-
-/** A local notification on the app's default channel, so the rider hears exactly what a job sounds like. */
+/** A test job alert on the job-alert channel, so the rider hears exactly what a job sounds like. */
 function testAlert(kind: "ping" | "alarm"): void {
   haptic(kind === "alarm" ? "warning" : "notify");
-  void Notifications.scheduleNotificationAsync({
-    content: { title: kind === "alarm" ? R.tFoodOffer : R.sAlerts, body: kind === "alarm" ? R.testAlarm : R.testPing, sound: true },
-    trigger: null,
-  }).catch(() => undefined);
+  void playTestAlert(kind === "alarm" ? R.tFoodOffer : R.sAlerts, kind === "alarm" ? R.testAlarm : R.testPing);
+}
+
+/** D1's "1 to add": the optional rider photo and bike plate still missing (an older server's unknown photo isn't counted). */
+function bikeItemsToAdd(rider: Me["rider"] | null | undefined): number {
+  if (!rider) return 0;
+  return (rider.hasPhoto === false ? 1 : 0) + (rider.bikeReg?.trim() ? 0 : 1);
+}
+
+/** `.cap` — the 12/600 caption above a card (YOU, ALERTS). */
+function Caption({ children, first }: { children: string; first?: boolean }): React.ReactElement {
+  return (
+    <Text accessibilityRole="header" style={{ marginTop: first ? 0 : 20, marginBottom: 8, marginHorizontal: 4, fontSize: 12, fontWeight: tokens.font.weight.semibold, letterSpacing: 0.72, color: tokens.color.muted }}>
+      {children}
+    </Text>
+  );
 }
 
 /**
- * Settings (Rider v2 S1–S4, ledger D-54): one screen in sections — YOUR ACCOUNT → CUSTOMER → RIDER
- * (riders only) → a last card with Sign out and Delete account, so Delete is always last on screen.
- * Permission values come from the phone and are re-read on resume; nothing is hardcoded "On".
- * No Edit profile row and no "coming soon" items (D-26).
+ * Settings — First Run v2's look (handoff `first-run-v2` D1 / PC11 / P15, ledger D-80) with every row it
+ * had before (owner decision D-80 §2 #1): the round back button and the large title; the PC11 danger card
+ * when order updates are off; YOU (Personal details first, Bike & documents "N to add", Language, plus the
+ * kept Privacy, Terms and Payment rows); ALERTS, whose toggles MIRROR the phone's permissions — tapping an
+ * off toggle asks (the rider flow P1/P9, or PC8 for order updates) or opens phone settings when it can't,
+ * tapping an on toggle opens phone settings (the app can't switch a permission off); the rider's Location
+ * row turns danger when off (P15) and Battery saver opens P16; the kept rider rows (Navigation app, Top-up
+ * number) and Test ping / Test alarm; Sign out and Delete account last. Permissions are re-read on focus
+ * and on return to the app — nothing is hardcoded "On".
  */
 export default function SettingsScreen(): React.ReactElement {
   const router = useRouter();
   const { signOut } = useAuth();
   const me = useQuery({ queryKey: ["me"], queryFn: getMe }).data;
-  const { notifs, location } = usePermissions();
+  const isRider = !!me?.rider && riderModeAvailable();
+  const { perms, refresh } = usePermissions({ rider: isRider });
+  // Back from the rider flow / PC8 (a route, not an app switch): read again.
+  useFocusEffect(refresh);
   const { prefs, save } = useRiderPrefs();
   const [editTopup, setEditTopup] = useState(false);
   const [draftProvider, setDraftProvider] = useState<TopupProviderId>(prefs.topupProvider);
   const [draftPhone, setDraftPhone] = useState("");
 
-  const isRider = !!me?.rider && riderModeAvailable();
   const name = me ? `${me.firstName} ${me.lastName}`.trim() : "";
   const phone = me?.phone ? formatPhoneDisplay(me.phone) : "";
   const topupPhone = prefs.topupPhone ?? phone;
-  const openOs = (): void => void Linking.openSettings();
-  const notifsOff = notifs === "off";
-  const locOff = location === "off";
+
+  const notifOn = perms?.notif === "granted";
+  const jobAlertsOn = notifOn && !perms?.channelMuted;
+  const locOn = perms?.loc === "granted" || perms?.loc === "coarse";
+  const notifOff = perms != null && !notifOn;
+  const locOff = perms != null && !locOn;
+  const missing = isRider ? bikeItemsToAdd(me?.rider) : 0;
+
+  const go = useCallback((href: string) => router.push(href as never), [router]);
+  // PC11 "Turn on" / the Order updates toggle: PC8 again while it can still ask, else the phone's settings.
+  const orderUpdates = (): void => {
+    if (notifOn || perms?.notif === "blocked") openPhoneSettings();
+    else go("/order-updates?from=settings");
+  };
+  const jobAlerts = (): void => (jobAlertsOn ? openPhoneSettings() : go(RIDER_PERM_ROUTES.notifications));
+  const location = (): void => (locOn ? openPhoneSettings() : go(RIDER_PERM_ROUTES.location));
 
   const openTopupEdit = (): void => {
     setDraftProvider(prefs.topupProvider);
@@ -85,89 +92,97 @@ export default function SettingsScreen(): React.ReactElement {
   };
 
   return (
-    <AppScreen banner={<PushHeader title={R.tSettings} onBack={() => router.back()} />}>
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32, gap: 12 }} showsVerticalScrollIndicator={false}>
-        <SectionLabel>{R.secAccount}</SectionLabel>
-        <RCard>
-          <RRow first icon="user" label={name || R.tabAccount} sub={phone || null} chev={false} />
-          {/* D-79 (owner 2026-10-06): C5's "You can add it in Account". Words are the handoff's (mint2.js). */}
-          <RRow icon="id-card" label={R.sPersonal} sub={R.sPersonalS} onPress={() => router.push("/settings/personal")} />
-          <RRow icon="globe" label={R.sLang} value={R.sLangV} onPress={() => router.push("/settings/language")} />
-          <RRow icon="file-text" label={R.sPrivacy} onPress={() => router.push("/settings/privacy")} />
-          <RRow icon="file-text" label={R.sTerms} onPress={() => void Linking.openURL(TERMS_URL)} />
-        </RCard>
+    <>
+      <FirstRunScreen
+        testID="settings"
+        header={
+          <>
+            <BackHeader onBack={() => router.back()} />
+            <LargeTitle>{ST.title}</LargeTitle>
+          </>
+        }
+      >
+        {notifOff ? (
+          // PC11 — the danger card at the top while order updates are off.
+          <View testID="settings-pc11" style={{ marginTop: 4, marginBottom: 20, borderRadius: 20, padding: 16, flexDirection: "row", alignItems: "flex-start", gap: 10, backgroundColor: tokens.color.dangerWash }}>
+            <IconDot icon="bell" tone="bad" bg={tokens.color.bg} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, lineHeight: 19.6, fontWeight: tokens.font.weight.bold, color: tokens.color.dangerInk }}>{PC.setOffTitle}</Text>
+              <Text style={{ marginTop: 2, fontSize: 14, lineHeight: 19.6, color: tokens.color.ink }}>{PC.setOffBody}</Text>
+              <FrSoftPill tone="dangerWhite" label={PC.setOffCta} onPress={orderUpdates} style={{ marginTop: 12 }} testID="settings-pc11-turn-on" />
+            </View>
+          </View>
+        ) : null}
 
-        <SectionLabel>{R.secCustomer}</SectionLabel>
-        <RCard>
-          <RRow first icon="banknote" label={R.sPay} value={R.sPayV} chev={false} />
-          <RRow
-            icon="bell"
-            label={R.sNotifC}
-            value={notifs == null ? null : notifsOff ? R.sOff : R.sOn}
-            sub={notifsOff ? R.sNotifCOff : null}
-            tone={notifsOff ? "warn" : null}
-            onPress={openOs}
-          />
-        </RCard>
+        <Caption first>{ST.you}</Caption>
+        <ListCard>
+          <ListRow icon="user" iconTone="ok" title={PD.row} sub={PD.rowSub} chevron onPress={() => go("/settings/personal")} testID="settings-personal" />
+          {name || phone ? <ListRow icon="smartphone" title={name || R.tabAccount} sub={phone || null} /> : null}
+          {isRider ? (
+            <ListRow
+              icon="bike"
+              iconTone="vi"
+              title={R.sBike}
+              value={missing > 0 ? toAdd(missing) : bikeVerified(me?.rider) ? R.sBikeV : null}
+              valueOk={missing === 0 && bikeVerified(me?.rider)}
+              chevron
+              onPress={() => go("/rider/documents")}
+              testID="settings-bike"
+            />
+          ) : null}
+          <ListRow icon="globe" title={ST.language} value={ST.english} chevron onPress={() => go("/settings/language")} />
+          <ListRow icon="file-text" title={R.sPrivacy} chevron onPress={() => go("/settings/privacy")} />
+          <ListRow icon="file-text" title={R.sTerms} chevron onPress={() => void Linking.openURL(TERMS_URL)} />
+          <ListRow icon="banknote" title={R.sPay} value={R.sPayV} />
+        </ListCard>
+
+        <Caption>{ST.alerts}</Caption>
+        <ListCard testID="settings-alerts">
+          {isRider ? (
+            <ListRow
+              icon="volume-2"
+              title={ST.jobAlerts}
+              sub={ST.jobAlertsSub}
+              right={<Toggle value={jobAlertsOn} onPress={perms ? jobAlerts : undefined} accessibilityLabel={ST.jobAlerts} testID="toggle-job-alerts" />}
+            />
+          ) : null}
+          {isRider ? (
+            <ListRow
+              icon="map-pin"
+              title={ST.location}
+              sub={locOff ? ST.locationOff : ST.locationSub}
+              danger={locOff}
+              // P15: the whole danger row reopens P1 (or P6 when blocked), like its toggle.
+              onPress={locOff ? location : undefined}
+              right={<Toggle value={locOn} onPress={perms ? location : undefined} accessibilityLabel={ST.location} testID="toggle-location" />}
+              testID="settings-location"
+            />
+          ) : null}
+          <ListRow icon="bell" title={ST.orderUpdates} right={<Toggle value={notifOn} onPress={perms ? orderUpdates : undefined} accessibilityLabel={ST.orderUpdates} testID="toggle-order-updates" />} />
+          {isRider ? <ListRow icon="battery" title={ST.battery} sub={ST.batterySub} chevron onPress={() => go(RIDER_PERM_ROUTES.battery)} testID="settings-battery" /> : null}
+        </ListCard>
+        {isRider && jobAlertsOn ? (
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
+            <FrSoftPill tone="white" icon="bell" label={R.testPing} onPress={() => testAlert("ping")} />
+            <FrSoftPill tone="white" icon="volume-2" label={R.testAlarm} onPress={() => testAlert("alarm")} />
+          </View>
+        ) : null}
 
         {isRider ? (
           <>
-            <SectionLabel>{R.secRider}</SectionLabel>
-            <RCard>
-              <RRow first icon="volume-2" label={R.sAlerts} value={notifs == null ? null : notifsOff ? R.sOff : R.sOn} tone={notifsOff ? "warn" : "ok"} sub={R.sAlertsS} chev={false}>
-                {notifsOff ? <DangerBox text={R.sAlertsOff} /> : null}
-                <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
-                  {notifsOff ? (
-                    <SmBtn kind="fill" flex={1} label={R.sOpenSettings} icon="settings" onPress={openOs} />
-                  ) : (
-                    <>
-                      <SmBtn flex={1} label={R.testPing} icon="bell" onPress={() => testAlert("ping")} />
-                      <SmBtn flex={1} label={R.testAlarm} icon="volume-2" onPress={() => testAlert("alarm")} />
-                    </>
-                  )}
-                </View>
-              </RRow>
-              <RRow
-                icon="map-pin"
-                label={R.sLoc}
-                value={location == null ? null : locOff ? R.sOff : R.sLocV}
-                tone={locOff ? "warn" : null}
-                sub={locOff ? null : R.sLocS}
-                onPress={openOs}
-              >
-                {locOff ? <DangerBox text={R.sLocOff} /> : null}
-              </RRow>
-              <RRow icon="navigation" label={R.sNav} sub={R.sNavS} chev={false}>
-                <View style={{ marginTop: 8 }}>
-                  <Seg
-                    opts={[
-                      { id: "gmaps", label: R.gmaps },
-                      { id: "waze", label: R.waze },
-                    ]}
-                    value={prefs.navApp}
-                    onChange={(navApp) => save({ navApp })}
-                    accessibilityLabel={R.sNav}
-                  />
-                </View>
-              </RRow>
-              <RRow icon="smartphone" label={R.sTopNum} sub={RF.sTopNumV(providerName(prefs.topupProvider), topupPhone)} onPress={openTopupEdit} />
-              <RRow
-                icon="id-card"
-                label={R.sBike}
-                sub={me?.rider?.bikeReg ? RF.sBikeS(me.rider.bikeReg, null) : null}
-                value={bikeVerified(me?.rider) ? R.sBikeV : null}
-                tone={bikeVerified(me?.rider) ? "ok" : null}
-                onPress={() => router.push("/rider/documents")}
-              />
-            </RCard>
+            <Caption>{R.secRider}</Caption>
+            <ListCard>
+              <NavAppRow value={prefs.navApp} onChange={(navApp) => save({ navApp })} />
+              <ListRow icon="smartphone" title={R.sTopNum} sub={RF.sTopNumV(providerName(prefs.topupProvider), topupPhone)} chevron onPress={openTopupEdit} />
+            </ListCard>
           </>
         ) : null}
 
-        <RCard style={{ marginTop: 8 }}>
-          <RRow first icon="log-out" label={R.sSignOut} chev={false} onPress={() => void signOut()} />
-          <RRow icon="trash" label={R.sDelete} sub={R.sDeleteS} danger chev={false} onPress={() => router.push("/settings/delete-account")} />
-        </RCard>
-      </ScrollView>
+        <ListCard style={{ marginTop: 16 }}>
+          <ListRow icon="log-out" title={ST.signOut} onPress={() => void signOut()} />
+          <ListRow icon="trash" iconTone="bad" title={R.sDelete} sub={R.sDeleteS} titleColor={tokens.color.dangerInk} onPress={() => go("/settings/delete-account")} />
+        </ListCard>
+      </FirstRunScreen>
 
       <MSheet
         visible={editTopup}
@@ -186,7 +201,26 @@ export default function SettingsScreen(): React.ReactElement {
         <Chips list={TOPUP_PROVIDERS.map((p) => ({ id: p.id, label: p.name }))} value={draftProvider} onChange={setDraftProvider} />
         <SendField label={R.phoneL} value={draftPhone} onChangeText={setDraftPhone} keyboardType="phone-pad" autoComplete="tel" />
       </MSheet>
-    </AppScreen>
+    </>
   );
 }
 
+/** The kept Navigation app row (not drawn by D1): its title row, then the Google Maps / Waze choice. */
+function NavAppRow({ value, onChange, first }: { value: "gmaps" | "waze"; onChange: (v: "gmaps" | "waze") => void; first?: boolean }): React.ReactElement {
+  return (
+    <View>
+      <ListRow first={first} icon="navigation" title={R.sNav} sub={R.sNavS} />
+      <View style={{ paddingHorizontal: 14, paddingBottom: 12 }}>
+        <Seg
+          opts={[
+            { id: "gmaps", label: R.gmaps },
+            { id: "waze", label: R.waze },
+          ]}
+          value={value}
+          onChange={onChange}
+          accessibilityLabel={R.sNav}
+        />
+      </View>
+    </View>
+  );
+}

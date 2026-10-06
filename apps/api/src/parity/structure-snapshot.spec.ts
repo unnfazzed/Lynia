@@ -76,10 +76,12 @@ describe("parity structural snapshot · adopted screens match their mock by cons
 
 describe("parity structural snapshot · multi-state adoption model", () => {
   it("expands multi-state screens into one check unit per ADOPTED state", () => {
-    // The permissions screen is the proving screen — both of its states adopt. (The food list was,
-    // until D-57 superseded every RC.list* key; those are now SUPERSEDED deferrals, asserted below.)
-    const permStates = units.filter((u) => u.screen === "LJ.perm_loc").map((u) => u.state).sort();
-    expect(permStates).toEqual(["location", "notifications"]);
+    // Multi-state screens still expand per state. The permissions screen was the proving screen until
+    // D-80 (First Run v2) superseded both of its states — like the food list's RC.list* keys under D-57,
+    // they are now SUPERSEDED deferrals with no check unit, asserted here.
+    const permDeferred = deferred.filter((d) => d.screen === "LJ.perm_loc").map((d) => d.state).sort();
+    expect(permDeferred).toEqual(["location", "notifications"]);
+    expect(units.filter((u) => u.screen === "LJ.perm_loc")).toEqual([]);
     const foodDeferred = deferred.filter((d) => d.screen === "RC.list").map((d) => d.state).sort();
     expect(foodDeferred).toEqual(["data", "empty", "error", "loading"]);
     expect(units.filter((u) => u.screen === "RC.list")).toEqual([]);

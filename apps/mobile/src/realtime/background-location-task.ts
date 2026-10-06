@@ -1,5 +1,6 @@
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
+import { RP } from "../ui/firstrun/copy";
 
 /**
  * Background GPS continuation for the rider's active-job stream (use-rider-location.ts).
@@ -96,8 +97,10 @@ export async function startRiderBackgroundUpdates(): Promise<void> {
       // Android: the foreground service is what keeps fixes flowing while the rider navigates.
       // Plain rider language — this is a persistent notification they will see the whole trip.
       foregroundService: {
-        notificationTitle: "LyniaGo — delivery in progress",
-        notificationBody: "Sharing your location with the customer for this delivery.",
+        // First Run v2 (ledger D-80): the words P3 draws, from the handoff copy (`RP.fgsTitle/fgsBody`). A JS
+        // string, so an OTA carries a wording change; the service itself is native (manifest, store build).
+        notificationTitle: RP.fgsTitle,
+        notificationBody: RP.fgsBody,
         notificationColor: "#00B14F",
       },
     });

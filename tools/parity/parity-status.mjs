@@ -33,6 +33,14 @@
 export const PARITY_STATUS = {
   // ── LJ ──────────────────────────────────────────────────────────
   "LJ.home_flag_off": { status: "PENDING" }, // Home · Food tile soon
+  "LJ.perm_loc": {
+    status: "PENDING",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-80 (owner, 2026-10-06): First Run v2 (packages/design/handoff/first-run-v2) retires the customer's first-run permission priming. Location is asked in context as a sheet over Home (PC1–PC7: explainer, approximate, denied once, blocked steps, GPS off, granted toast — src/ui/firstrun/CustomerLocationSheet.tsx, useLocationAsk in src/logic/home-location.ts) and notifications after an order (PC8–PC10, app/order-updates.tsx). app/permissions-location.view.tsx and permissions-notifications.view.tsx were deleted. Not aligned to.",
+  }, // Permission · location
+  "LJ.perm_notif": {
+    status: "PENDING",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-80 (owner, 2026-10-06): First Run v2 (packages/design/handoff/first-run-v2) retires the customer's first-run permission priming. Location is asked in context as a sheet over Home (PC1–PC7: explainer, approximate, denied once, blocked steps, GPS off, granted toast — src/ui/firstrun/CustomerLocationSheet.tsx, useLocationAsk in src/logic/home-location.ts) and notifications after an order (PC8–PC10, app/order-updates.tsx). app/permissions-location.view.tsx and permissions-notifications.view.tsx were deleted. Not aligned to.",
+  }, // Permission · notifications
   "LJ.notifications": {
     status: "PENDING",
     reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-66 (owner, 2026-10-02): the Notifications v1 handoff (packages/design/handoff/notifications-v1, N1–N10) redraws the shared Notifications screen for both sides — one row per order with its timeline, tone discs, a danger pin, needs-you buttons, swipe + Undo, the notifications-off row, the dual-role side row, and skeleton / slow / empty / couldn’t-load states (app/notifications/index.tsx, src/ui/notifications/*). app/notifications/notifications.view.tsx was deleted. Not aligned to.",
@@ -220,8 +228,14 @@ export const PARITY_STATUS = {
   "RJ.login": { status: "PENDING" }, // Phone sign-in
   "RJ.otp": { status: "PENDING" }, // SMS OTP
   "RJ.role_select": { status: "PENDING" }, // Choose your role
-  "RJ.perm_loc": { status: "PENDING" }, // Permission · location
-  "RJ.perm_notif": { status: "PENDING" }, // Permission · notifications
+  "RJ.perm_loc": {
+    status: "PENDING",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-80 (owner, 2026-10-06): First Run v2 (packages/design/handoff/first-run-v2) replaces the rider's permission priming with the rider flow P1–P16 (app/permissions.tsx, violet tone): it starts from R3's 'Go online' (owner decision D-80 §2 #5), not after sign-in — location (P1, P3 + P8 toast, P4–P7), notifications (P9, P11, P12), P13 'Go online'; skipped steps resurface on the board as J8 / G8 (P14). Not aligned to.",
+  }, // Permission · location
+  "RJ.perm_notif": {
+    status: "PENDING",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-80 (owner, 2026-10-06): First Run v2 (packages/design/handoff/first-run-v2) replaces the rider's permission priming with the rider flow P1–P16 (app/permissions.tsx, violet tone): it starts from R3's 'Go online' (owner decision D-80 §2 #5), not after sign-in — location (P1, P3 + P8 toast, P4–P7), notifications (P9, P11, P12), P13 'Go online'; skipped steps resurface on the board as J8 / G8 (P14). Not aligned to.",
+  }, // Permission · notifications
   "RJ.kyc_form": { status: "PENDING" }, // KYC form + consent
   "RJ.photo_capture": {
     status: "PENDING",

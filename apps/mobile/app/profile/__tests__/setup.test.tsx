@@ -181,7 +181,7 @@ describe("C5 · Name (Calm Mint v2, D-55)", () => {
     await settle();
     await pressStart(tree);
     expect(mockSaveRole).toHaveBeenCalledWith("rider");
-    expect(mockReplace).toHaveBeenCalledWith("/permissions?next=/rider");
+    expect(mockReplace).toHaveBeenCalledWith("/rider");
   });
 
   // E2E 2026-10-05 FS-9: a stale nameless `me` made R1 ("Ride with LyniaGo") ask for the name a second time.
@@ -269,7 +269,7 @@ describe("profile setup — relaunched with no route params", () => {
     await settle();
     await pressStart(tree);
     expect(mockSaveRole).toHaveBeenCalledWith("rider");
-    expect(mockReplace).toHaveBeenCalledWith("/permissions?next=/rider");
+    expect(mockReplace).toHaveBeenCalledWith("/rider");
     // …and the intent goes with the profile step it belonged to.
     expect(mockUpdateSession).toHaveBeenCalledWith(expect.objectContaining({ needsProfile: false, signupIntent: undefined }));
   });

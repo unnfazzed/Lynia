@@ -1,7 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
 import { Tappable } from "../Tappable";
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Modal, ScrollView, Text, View } from "react-native";
+import { Modal, ScrollView, Text, View } from "react-native";
 import type { HomePlace } from "../../logic/home-location";
 import { loadSaved, type SavedPlaces } from "../../logic/saved-places";
 import { AddressSearch } from "../AddressSearch";
@@ -40,7 +40,6 @@ function Row({
   title,
   sub,
   selected,
-  busy,
   onPress,
   last,
 }: {
@@ -49,7 +48,6 @@ function Row({
   title: string;
   sub?: string;
   selected?: boolean;
-  busy?: boolean;
   onPress: () => void;
   last?: boolean;
 }): React.ReactElement {
@@ -57,14 +55,13 @@ function Row({
   return (
     <Tappable
       onPress={onPress}
-      disabled={busy}
       accessibilityRole="button"
-      accessibilityState={{ busy: !!busy, selected: !!selected }}
+      accessibilityState={{ selected: !!selected }}
       accessibilityLabel={sub ? `${title} — ${sub}` : title}
       style={{ flexDirection: "row", alignItems: "center", gap: 12, minHeight: 56, borderBottomWidth: last ? 0 : 1, borderBottomColor: ROW_DIVIDER }}
     >
       <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: mint ? tokens.color.accentWash : tokens.color.surface, alignItems: "center", justifyContent: "center" }}>
-        {busy ? <ActivityIndicator size="small" color={tokens.color.accentText} /> : <Icon name={icon} size={18} color={mint ? tokens.color.accentText : tokens.color.ink} />}
+        <Icon name={icon} size={18} color={mint ? tokens.color.accentText : tokens.color.ink} />
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={{ fontSize: 15, fontWeight: tokens.font.weight.bold, color: mint ? tokens.color.accentText : tokens.color.ink }}>{title}</Text>
@@ -96,18 +93,20 @@ export function LocationSheet({
   /** Open with the search focused (H6 "Type an address"). */
   focusSearch?: boolean;
   onClose: () => void;
-  onUseCurrentLocation: () => Promise<HomePlace | null>;
+  /**
+   * "Use my current location": the sheet closes and the screen runs the First Run v2 location ask
+   * (`useLocationAskSheet` — PC1 explains before the Android dialog, or the fix and PC7 toast when it is
+   * already granted; ledger D-80).
+   */
+  onUseCurrentLocation: () => void;
   onPick: (place: HomePlace) => void;
 }): React.ReactElement {
   const [saved, setSaved] = useState<SavedPlaces>({ home: null, work: null });
-  const [locating, setLocating] = useState(false);
-  const [failed, setFailed] = useState(false);
   const [focus, setFocus] = useState(0);
 
   useEffect(() => {
     if (!visible) return;
     let alive = true;
-    setFailed(false);
     if (focusSearch) setFocus((n) => n + 1);
     void loadSaved().then((s) => {
       if (alive) setSaved(s);
@@ -118,15 +117,8 @@ export function LocationSheet({
   }, [visible, focusSearch]);
 
   const detect = (): void => {
-    if (locating) return;
-    setLocating(true);
-    setFailed(false);
-    void onUseCurrentLocation()
-      .then((place) => {
-        if (place) onClose();
-        else setFailed(true);
-      })
-      .finally(() => setLocating(false));
+    onClose();
+    onUseCurrentLocation();
   };
 
   const slots = (["home", "work"] as const).filter((slot) => saved[slot] != null);
@@ -174,14 +166,9 @@ export function LocationSheet({
                 Location is off for LyniaGo, so we can&apos;t detect where you are. Turn it on in Settings, or pick an address below.
               </Text>
             ) : null}
-            {failed && !denied ? (
-              <Text style={{ fontSize: 12.5, color: tokens.color.muted, lineHeight: 18, marginTop: 8 }}>
-                Couldn&apos;t get a fix just now. Try again in a moment, or pick an address below.
-              </Text>
-            ) : null}
 
             <View style={{ marginTop: 8 }}>
-              <Row icon="navigation" iconTone="mint" title={H.useCurrent} sub={H.useCurrentSub} busy={locating} onPress={detect} />
+              <Row icon="navigation" iconTone="mint" title={H.useCurrent} sub={H.useCurrentSub} onPress={detect} />
               {slots.map((slot) => {
                 const place = saved[slot]!;
                 const meta = SLOT_META[slot];

@@ -16,6 +16,7 @@ import { usePopularity } from "../../query/use-popularity";
 import { rankedVenueMissing } from "../../logic/popularity";
 // Not from the ui barrel: LocationSheet reaches AddressSearch, which imports the barrel back (a cycle).
 import { LocationSheet } from "../home/LocationSheet";
+import { useLocationAskSheet } from "../home/LocationAsk";
 import { ServiceSoonSheet } from "../home/ServiceSoonSheet";
 import { EmptyState } from "../EmptyState";
 import { emptyCopy, fillEmpty } from "../emptyCopy";
@@ -117,6 +118,8 @@ export function ShopListScreen({ service }: { service: ShopService }): React.Rea
     setLocationSearch(search);
     setLocationOpen(true);
   };
+  // H5 "Use my current location" → the First Run v2 location ask (PC1–PC7, ledger D-80).
+  const locationAsk = useLocationAskSheet(location, () => openLocation(true));
   const back = (): void => router.back();
   const search = (): void => router.push(`/${service}/search`);
   const open = (id: string): void => router.push(`/${service}/${id}`);
@@ -163,9 +166,10 @@ export function ShopListScreen({ service }: { service: ShopService }): React.Rea
         currentLabel={location.label}
         focusSearch={locationSearch}
         onClose={() => setLocationOpen(false)}
-        onUseCurrentLocation={location.useCurrentLocation}
+        onUseCurrentLocation={locationAsk.start}
         onPick={location.setManualPlace}
       />
+      {locationAsk.sheet}
     </>
   );
 

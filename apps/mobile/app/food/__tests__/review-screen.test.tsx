@@ -40,7 +40,7 @@ jest.mock("../../../src/logic/home-location", () => ({ useHomeLocation: () => ({
 let mockOnline = true;
 jest.mock("../../../src/net/use-reachability", () => ({ useReachability: () => mockOnline }));
 jest.mock("../../../src/logic/saved-recipients", () => ({ loadMyPickupPhone: () => Promise.resolve("0771234567"), saveMyPickupPhone: jest.fn(() => Promise.resolve()) }));
-jest.mock("../../../src/push/ask-in-context", () => ({ askNotificationsInContext: jest.fn() }));
+jest.mock("../../../src/push/ask-in-context", () => ({ routeAfterOrderPlaced: jest.fn(async (id: string) => `/order/${id}`) }));
 jest.mock("../../../src/query/use-food-order", () => ({ seedFoodOrder: jest.fn() }));
 jest.mock("../../../src/logic/use-address-suggest", () => ({ useAddressSuggest: () => ({ status: "idle", rows: [], limited: false }) }));
 jest.mock("../../../src/ui/orderflow/PinMap", () => ({ PinMap: () => null }));

@@ -112,8 +112,8 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | ⏭ | C1·6 | `LJ otp` | SMS OTP | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — C4 Code (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
 | ⏭ | C1·7 | `LJ role_select` | Choose your role | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — removed — no role choice screen (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
 | ⏭ | C1·8 | `LJ register` | Profile registration | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — C5 Name (no national ID) (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
-| 👁 | C1·9 | `LJ perm_loc` | Permission · location | auth/SMS cluster align (`docs/parity/PHASE3-auth.md`, `tools/parity/out/phase3_auth.png`) | |
-| ⬜ | C1·10 | `LJ perm_notif` | Permission · notifications | | |
+| ⏭ | C1·9 | `LJ perm_loc` | Permission · location | **SUPERSEDED by D-80 (First Run v2, 2026-10-06)** — PC1–PC7, a location sheet over Home (`packages/design/handoff/first-run-v2`; `src/ui/firstrun/CustomerLocationSheet.tsx`). No first-run priming. Not aligned to the gallery mock. | structure snapshot + rendered conformance SUPERSEDED (D-80) |
+| ⏭ | C1·10 | `LJ perm_notif` | Permission · notifications | **SUPERSEDED by D-80 (First Run v2, 2026-10-06)** — PC8–PC10 after an order (`app/order-updates.tsx`), PC11 in Settings. Not aligned to the gallery mock. | structure snapshot + rendered conformance SUPERSEDED (D-80) |
 | ⏭ | C1·11 | `LJ onboard_flag_off` | Onboarding · food off  [PARCEL] | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — C1 Welcome (carousel retired) (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
 | ⏭ | C1·12 | `LJ role_select_flag_off` | Choose your role · food off | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — removed — no role choice screen (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
 
@@ -284,8 +284,8 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | ⬜ | R1·3 | `RJ login` | Phone sign-in | | |
 | ⬜ | R1·4 | `RJ otp` | SMS OTP | | |
 | ⬜ | R1·5 | `RJ role_select` | Choose your role | | |
-| ⬜ | R1·6 | `RJ perm_loc` | Permission · location | | |
-| ⬜ | R1·7 | `RJ perm_notif` | Permission · notifications | | |
+| ⏭ | R1·6 | `RJ perm_loc` | Permission · location | **SUPERSEDED by D-80 (First Run v2, 2026-10-06)** — the rider flow P1–P7, started by R3's Go online (`app/permissions.tsx`). Not aligned to the gallery mock. | SUPERSEDED (D-80) |
+| ⏭ | R1·7 | `RJ perm_notif` | Permission · notifications | **SUPERSEDED by D-80 (First Run v2, 2026-10-06)** — the rider flow P9–P13 (`app/permissions.tsx`). Not aligned to the gallery mock. | SUPERSEDED (D-80) |
 
 ### R2 · Become a rider (KYC)
 

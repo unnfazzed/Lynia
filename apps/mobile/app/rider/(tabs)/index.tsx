@@ -14,7 +14,6 @@ import { getFoodDispatchOffer } from "../../../src/api/food-rider";
 import { getDemandZones } from "../../../src/api/rider-v2";
 import { noteKycLaunched, retryKyc, sendHeartbeat, setOnline } from "../../../src/api/riders";
 import { loadAcknowledgedHandbacks } from "../../../src/auth/session";
-import { useBootPhase } from "../../../src/boot/boot-phase";
 import { usePrewarmRoutes, type PrewarmRoute } from "../../../src/boot/prewarm-routes";
 import { supportWhatsAppUrl } from "../../../src/config";
 import { KycCheckHost } from "../../../src/kyc/KycCheckHost";
@@ -33,6 +32,8 @@ import {
 } from "../../../src/logic/gates";
 import { useHomeLocation } from "../../../src/logic/home-location";
 import { markRiderWelcomeSeen, riderWelcomeSeen } from "../../../src/logic/rider-welcome";
+import { RIDER_PERM_ROUTES, startRiderPermFlow } from "../../../src/logic/rider-perm-flow";
+import { RiderLocEmpty, RiderNotifOffRow } from "../../../src/ui/firstrun/RiderPermBoard";
 import { isSentOfferExpired, isSentOfferStale } from "../../../src/logic/rider-bid-draft";
 import { type GateId, kycTriesLeft, resolveGate } from "../../../src/logic/rider-gate";
 import { telUri } from "../../../src/logic/safety";
@@ -113,24 +114,10 @@ export default function RiderHome(): React.ReactElement {
   const [withdrawing, setWithdrawing] = useState<ReadonlySet<string>>(new Set());
 
   // ── Location ─────────────────────────────────────────────────────────────────────────────────────
-  // No OS permission prompt over the cold-start splash (S-6, as Home's useHomeLocation): while the boot
-  // runs, an already-granted permission still reads the position, but the ASK waits for the boot to end.
-  const { booting } = useBootPhase();
-  const bootingRef = useRef(booting);
-  bootingRef.current = booting;
-  const askAfterBoot = useRef(false);
+  // First Run v2 (ledger D-80): the board only READS the permission. The ask is the rider flow's (P1 —
+  // from R3's "Go online" or G8's "Turn on"), so no bare OS dialog ever pops over the board or the splash.
   const requestLocation = useCallback(async (): Promise<void> => {
-    let status: string;
-    if (bootingRef.current) {
-      const current = await Location.getForegroundPermissionsAsync().catch(() => null);
-      if (current?.status !== "granted") {
-        askAfterBoot.current = true;
-        return;
-      }
-      status = current.status;
-    } else {
-      status = (await Location.requestForegroundPermissionsAsync()).status;
-    }
+    const status = (await Location.getForegroundPermissionsAsync().catch(() => null))?.status ?? "denied";
     if (status !== "granted") {
       setLocDenied(true);
       return;
@@ -159,12 +146,6 @@ export default function RiderHome(): React.ReactElement {
       void requestLocation();
     }, [requestLocation]),
   );
-  // The ask a boot deferred runs the moment the splash hands off.
-  useEffect(() => {
-    if (booting || !askAfterBoot.current) return;
-    askAfterBoot.current = false;
-    void requestLocation();
-  }, [booting, requestLocation]);
   const locRef = useRef(loc);
   useEffect(() => {
     locRef.current = loc;
@@ -649,15 +630,25 @@ export default function RiderHome(): React.ReactElement {
       case "cantOpen":
         return <Gate icon="wifi-off" tone="calm" title={R.gCantOpenT} body={R.gCantOpenB} primary={{ ...retry, icon: "refresh-cw" }} ghost={wa} />;
       case "gps":
+        // Permission granted but no fix (or the server refused a position-less go-online): the Rider v2 wall.
+        if (!locDenied)
+          return (
+            <Gate
+              icon="map-pin"
+              tone="danger"
+              title={R.gGpsT}
+              body={R.gGpsB}
+              primary={{ label: R.openLoc, icon: "settings", onPress: () => void Linking.openSettings() }}
+              ghost={{ label: R.gpsOn, icon: "check", onPress: () => void requestLocation() }}
+            />
+          );
+        // First Run v2 P14 (D-80): no permission — G8, the Empty States v2 mark, "Turn on" → P1 (or P6 when
+        // blocked); J8 above it.
         return (
-          <Gate
-            icon="map-pin"
-            tone="danger"
-            title={R.gGpsT}
-            body={R.gGpsB}
-            primary={{ label: R.openLoc, icon: "settings", onPress: () => void Linking.openSettings() }}
-            ghost={{ label: R.gpsOn, icon: "check", onPress: () => void requestLocation() }}
-          />
+          <View style={{ flex: 1, paddingTop: 16, paddingHorizontal: 16 }}>
+            {notifOff ? <RiderNotifOffRow onTurnOn={() => router.push(RIDER_PERM_ROUTES.notifications as never)} /> : null}
+            <RiderLocEmpty onTurnOn={() => router.push(RIDER_PERM_ROUTES.location as never)} />
+          </View>
         );
       case "area":
         return <Gate icon="map-pin" tone="calm" title={R.gAreaT} body={R.gAreaB} bridge={leaveForCustomer} />;
@@ -686,13 +677,8 @@ export default function RiderHome(): React.ReactElement {
 
   const sheetContent = (
     <>
-      {notifOff ? (
-        <View style={{ flexDirection: "row", gap: 10, alignItems: "center", borderWidth: 1, borderColor: tokens.color.danger, borderRadius: 12, paddingVertical: 6, paddingRight: 6, paddingLeft: 12 }}>
-          <IconDiscBell />
-          <Text style={{ flex: 1, fontSize: 13, lineHeight: 18, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>{R.notifOff}</Text>
-          <SmBtn kind="fill" label={R.turnOn} onPress={() => void Linking.openSettings()} />
-        </View>
-      ) : null}
+      {/* First Run v2 P14 J8 (D-80): "Turn on" reopens P9 (or P11/P12), not the phone's settings. */}
+      {notifOff ? <RiderNotifOffRow onTurnOn={() => router.push(RIDER_PERM_ROUTES.notifications as never)} /> : null}
       {/* Empty board: reconnecting shows only in the header's status line (empty-states v2 J4, D-78). */}
       {online && !conn && !empty ? <Notice icon="wifi-off" text={R.staleB} /> : null}
       {openQ.isError ? <Notice icon="wifi-off" text={R.loadFail} /> : null}
@@ -760,10 +746,14 @@ export default function RiderHome(): React.ReactElement {
         firstName={meQ.data?.firstName?.trim() || null}
         // D-70: "Commission-free jobs · N of 5 left", served by /auth/me (absent on an older server).
         freeJobs={rider?.freeJobs && rider.freeJobs.total > 0 ? rider.freeJobs : null}
-        onGoOnline={() => {
-          setWelcomeSeen(true);
-          if (profileId) void markRiderWelcomeSeen(profileId);
-        }}
+        // Owner decision D-80 §2 #5: R3's "Go online" starts the rider permission flow (P1…); P13's "Go online"
+        // goes online. A rider who has granted everything goes straight online.
+        onGoOnline={() =>
+          void startRiderPermFlow(router, () => {
+            setWelcomeSeen(true);
+            if (profileId) void markRiderWelcomeSeen(profileId);
+          })
+        }
         onPapers={() => router.push("/rider/documents")}
       />
     );
@@ -827,10 +817,6 @@ function toBoardJob(o: OpenOrder, loc: { lat: number; lng: number } | null): Boa
 
 function IconSmall({ name, color = tokens.color.muted }: { name: IconName; color?: string }): React.ReactElement {
   return <Icon name={name} size={15} color={color} />;
-}
-
-function IconDiscBell(): React.ReactElement {
-  return <IconSmall name="bell" color={tokens.color.danger} />;
 }
 
 function DemandLine({ text }: { text: string }): React.ReactElement {

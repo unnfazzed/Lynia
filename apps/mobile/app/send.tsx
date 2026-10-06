@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getMe } from "../src/api/auth";
 import { ApiError } from "../src/api/client";
 import { createOrder, type OrderSnapshot } from "../src/api/orders";
-import { askNotificationsInContext } from "../src/push/ask-in-context";
+import { routeAfterOrderPlaced } from "../src/push/ask-in-context";
 import type { ResolvedPlace } from "../src/api/places";
 import { fareBand, isBelowBand, isFarAboveBand } from "../src/logic/fare-band";
 import { landmarkFromAddress } from "../src/logic/geocode";
@@ -418,8 +418,9 @@ export default function SendScreen(): React.ReactElement {
       haptic("tap");
       void rememberRecipient({ name: "", phone: recipientPhone.trim() });
       void saveMyPickupPhone(senderPhone.trim());
-      // D-55: notifications are asked for here, after the order goes out, not on a priming screen.
-      void askNotificationsInContext();
+      // D-55 / D-80 PC8: notifications are asked for after the order goes out — an explainer in front of
+      // the order screen while the permission is undetermined (at most 3 times per install).
+      const next = await routeAfterOrderPlaced(order.id);
       // Seed the order cache so the auction paints at once ("Finding riders near you…").
       qc.setQueryData<OrderSnapshot>(orderKey(order.id), {
         id: order.id,
@@ -437,7 +438,7 @@ export default function SendScreen(): React.ReactElement {
       });
       setIdempotencyNonce(randomUuidV4());
       // Replace, not push (After Send handoff, D-53): Back from a live order must never land on Review.
-      router.replace(`/order/${order.id}`);
+      router.replace(next as never);
     } catch (e) {
       if (e instanceof ApiError && isAccountOnHold(e)) {
         setHeldFromBroadcast(true);

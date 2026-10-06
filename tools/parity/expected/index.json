@@ -17,8 +17,6 @@
     "LJ.otp_cooldown",
     "LJ.otp_locked",
     "LJ.otp_resent",
-    "LJ.perm_loc",
-    "LJ.perm_notif",
     "LJ.privacy",
     "LJ.profile",
     "LJ.register",
