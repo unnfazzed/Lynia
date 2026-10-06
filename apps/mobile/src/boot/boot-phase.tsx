@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import { Animated } from "react-native";
+import { getBootReadiness, reportBootEnded } from "./boot-readiness";
 
 /**
  * "Is the process still in its cold start?" — one boolean, owned at the root.
@@ -21,6 +22,11 @@ import { Animated } from "react-native";
  * are picked up for subsequent navigations; a plain module variable would change without telling
  * React. It is deliberately one-way — nothing sets it back to `true`, because a process only cold
  * starts once (the same reasoning as `BootSplashHold` returning null forever once released).
+ *
+ * PROCESS-LIFETIME, NOT MOUNT-LIFETIME. The provider can remount without the process restarting: the
+ * root ErrorBoundary's "Reload" re-renders the whole root layout. A fresh `useState(true)` there would
+ * replay the cold-start splash (~1.7–3.6s) over a recovery tap. So the initial value reads the boot's
+ * process-lifetime end stamp (`boot-readiness` `endedAt`), and `endBoot` writes it.
  */
 export interface BootPhase {
   /** True until the splash has handed off to the first real screen; drives the boot-only animation suppression. */
@@ -60,15 +66,21 @@ const inPlace = (): BootReveal => ({ y: new Animated.Value(1), radius: new Anima
 const BootPhaseContext = createContext<BootPhase>({ booting: false, endBoot: () => {}, reveal: inPlace(), appMountable: true, markSplashDrawn: () => {} });
 
 export function BootPhaseProvider({ children }: { children: React.ReactNode }): React.ReactElement {
-  const [booting, setBooting] = useState(true);
+  const [booting, setBooting] = useState(() => getBootReadiness().endedAt == null);
   const [splashDrawn, setSplashDrawn] = useState(false);
   const markSplashDrawn = useCallback(() => setSplashDrawn(true), []);
-  const reveal = useRef<BootReveal>({
-    y: new Animated.Value(0),
-    radius: new Animated.Value(REVEAL_RADIUS),
-    opacity: new Animated.Value(1),
-  }).current;
+  // Lazily built so a remount after the boot (see above) starts with the app in place.
+  const revealRef = useRef<BootReveal | null>(null);
+  revealRef.current ??= booting
+    ? {
+        y: new Animated.Value(0),
+        radius: new Animated.Value(REVEAL_RADIUS),
+        opacity: new Animated.Value(1),
+      }
+    : inPlace();
+  const reveal = revealRef.current;
   const endBoot = useCallback(() => {
+    reportBootEnded();
     for (const v of [reveal.y, reveal.radius, reveal.opacity]) v.stopAnimation();
     reveal.y.setValue(1);
     reveal.radius.setValue(0);

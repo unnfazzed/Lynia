@@ -1,5 +1,6 @@
 import { useRouter } from "expo-router";
 import { useEffect, useRef } from "react";
+import { replaceClearingStack } from "../logic/nav";
 import { useAuth } from "./auth-context";
 import type { Session } from "./session";
 
@@ -35,8 +36,10 @@ export function SessionGate(): null {
 
   useEffect(() => {
     if (loading) return;
-    // replace (not push) so the authless screen they were on is left behind and Back can't return to it.
-    if (settled.current && isLogoutTransition(prev.current, session)) router.replace("/phone");
+    // Clear the whole stack, then replace: a bare replace swapped only the top screen, so Back from the
+    // phone screen returned to a signed-out Home/Account (C-2, start-up review 2026-10-06) where every
+    // request failed and the gate could never fire again (null → null).
+    if (settled.current && isLogoutTransition(prev.current, session)) replaceClearingStack(router, "/phone");
     settled.current = true;
     prev.current = session;
   }, [session, loading, router]);

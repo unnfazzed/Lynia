@@ -7,6 +7,8 @@ import renderer, { act } from "react-test-renderer";
 
 const mockPush = jest.fn();
 jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush, back: jest.fn() }) }));
+let mockAuth: { session: object | null; loading: boolean } | null = null;
+jest.mock("../../../src/auth/auth-context", () => ({ useOptionalAuth: () => mockAuth }));
 
 import PrivacyScreen from "../privacy";
 
@@ -26,7 +28,10 @@ function press(tree: renderer.ReactTestRenderer, label: string): void {
 
 const text = (tree: renderer.ReactTestRenderer): string => JSON.stringify(tree.toJSON());
 
-beforeEach(() => mockPush.mockClear());
+beforeEach(() => {
+  mockPush.mockClear();
+  mockAuth = null;
+});
 
 describe("privacy screen matches its mock", () => {
   it("draws the three disclosure cards verbatim", () => {
@@ -44,5 +49,25 @@ describe("privacy screen matches its mock", () => {
     expect(text(tree)).toContain("Request a copy of my data");
     press(tree, "Delete my account");
     expect(mockPush).toHaveBeenCalledWith("/settings/delete-account");
+  });
+});
+
+// The phone screen links here before sign-in: with no account there is nothing to delete.
+describe("privacy screen signed out", () => {
+  it("hides the delete row and keeps the data-copy row", () => {
+    mockAuth = { session: null, loading: false };
+    const out = text(render());
+    expect(out).toContain("Request a copy of my data");
+    expect(out).not.toContain("Delete my account");
+  });
+
+  it("shows it to a signed-in user", () => {
+    mockAuth = { session: { profileId: "p1" }, loading: false };
+    expect(text(render())).toContain("Delete my account");
+  });
+
+  it("does not hide it while the session is still loading", () => {
+    mockAuth = { session: null, loading: true };
+    expect(text(render())).toContain("Delete my account");
   });
 });

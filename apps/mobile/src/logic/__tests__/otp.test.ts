@@ -1,4 +1,4 @@
-import { RESEND_COOLDOWN_S, formatCountdown, isOtpExpiredOrLocked } from "../otp";
+import { RESEND_COOLDOWN_S, formatCountdown, formatWait, isOtpExpiredOrLocked, otpErrorMessage, otpFailure } from "../otp";
 
 describe("resend cooldown window", () => {
   it("throttles a resend for a full minute (design: 60s)", () => {
@@ -37,5 +37,59 @@ describe("isOtpExpiredOrLocked", () => {
     expect(isOtpExpiredOrLocked({ status: 500, message: "Server error" })).toBe(false);
     expect(isOtpExpiredOrLocked(null)).toBe(false);
     expect(isOtpExpiredOrLocked(undefined)).toBe(false);
+  });
+});
+
+// C-9 (start-up review 2026-10-06): the API now tags each OTP failure with a reason code; the client
+// reads the code first and keeps the message-matching only for servers released before it.
+describe("otpFailure", () => {
+  it("reads the API's reason codes, whatever the message says", () => {
+    expect(otpFailure({ status: 401, code: "otp_invalid", message: "anything" })).toBe("invalid");
+    expect(otpFailure({ status: 401, code: "otp_expired", message: "Invalid code" })).toBe("expired");
+    expect(otpFailure({ status: 401, code: "otp_locked", message: "Invalid code" })).toBe("locked");
+  });
+
+  it("falls back to the words for an untagged 401 from an older server", () => {
+    expect(otpFailure({ status: 401, message: "Invalid code" })).toBe("invalid");
+    expect(otpFailure({ status: 401, message: "Code expired or never requested" })).toBe("expired");
+    expect(otpFailure({ status: 401, message: "Too many attempts — request a new code" })).toBe("locked");
+  });
+
+  it("is a non-answer for anything that didn't judge the code", () => {
+    expect(otpFailure({ status: 0, message: "Can't reach LyniaGo" })).toBeNull();
+    expect(otpFailure({ status: 500, message: "Internal server error" })).toBeNull();
+    expect(otpFailure({ status: 429, code: "device_signup_cap", retryAfter: 600 })).toBeNull();
+    // A 400 is a malformed request (no device id, a bad number) — never "that code isn't right".
+    expect(otpFailure({ status: 400, message: "A device id is required to create an account." })).toBeNull();
+    expect(otpFailure({ status: 422, message: "Validation failed" })).toBeNull();
+    expect(otpFailure(null)).toBeNull();
+  });
+
+  it("isOtpExpiredOrLocked prefers the code too", () => {
+    expect(isOtpExpiredOrLocked({ status: 401, code: "otp_expired", message: "x" })).toBe(true);
+    expect(isOtpExpiredOrLocked({ status: 401, code: "otp_invalid", message: "Code expired" })).toBe(false);
+  });
+});
+
+describe("formatWait / otpErrorMessage", () => {
+  it("rounds a wait up to whole minutes, then whole hours", () => {
+    expect(formatWait(5)).toBe("1 min");
+    expect(formatWait(60)).toBe("1 min");
+    expect(formatWait(61)).toBe("2 min");
+    expect(formatWait(55 * 60)).toBe("55 min");
+    expect(formatWait(3600)).toBe("1 h");
+    expect(formatWait(86_000)).toBe("24 h");
+  });
+
+  it("names the wait on a 429 that carries retryAfter", () => {
+    expect(otpErrorMessage({ status: 429, message: "Too many requests — try again later", retryAfter: 1200 }, "x")).toBe("Too many tries. Try again in 20 min.");
+  });
+
+  it("otherwise shows the API's message, or the fallback for a non-API error", () => {
+    expect(otpErrorMessage({ status: 429, message: "Too many requests — try again later" }, "x")).toBe("Too many requests — try again later");
+    expect(otpErrorMessage({ status: 0, message: "Can't reach LyniaGo — check your connection and try again." }, "x")).toBe(
+      "Can't reach LyniaGo — check your connection and try again.",
+    );
+    expect(otpErrorMessage(new Error("boom"), "Couldn't verify the code.")).toBe("Couldn't verify the code.");
   });
 });

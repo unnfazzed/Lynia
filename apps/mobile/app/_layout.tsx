@@ -1,15 +1,17 @@
 import { tokens } from "@lynia/shared/tokens";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import Constants from "expo-constants";
-import { Stack, type ErrorBoundaryProps } from "expo-router";
+import { Stack, usePathname, type ErrorBoundaryProps } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo } from "react";
 import { Animated, View, useWindowDimensions } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "../src/auth/auth-context";
+import type { Session } from "../src/auth/session";
 import { SessionGate } from "../src/auth/session-gate";
 import { BootPhaseProvider, useBootPhase } from "../src/boot/boot-phase";
+import { reportBootRoute } from "../src/boot/boot-readiness";
 import { prewarmBootReads } from "../src/boot/prewarm";
 import { isUpdateRequired, isVersionBelow } from "../src/config";
 import { useOfflineBannerClaimed } from "../src/net/offline-banner-owner";
@@ -90,17 +92,77 @@ bootStep(() => SplashScreen.setOptions({ fade: false, duration: 0 }));
 bootStep(prewarmFonts);
 bootStep(prewarmBootReads);
 
-/** Syncs the device's FCM token with the signed-in profile. Renders nothing; lives under AuthProvider. */
+/**
+ * Syncs the device's FCM token with the signed-in profile. Renders nothing; lives under AuthProvider and
+ * BootPhaseProvider. Held until the cold start ends: registration is not something the splash waits on,
+ * and on a 300–600ms-RTT link every request that shares the boot's connection slots slows the ones it
+ * does wait on (/app/bootstrap, Home's rails). The token registers the moment the splash hands off.
+ */
 function PushSync(): null {
-  usePushRegistration(useAuth().session);
+  const { session } = useAuth();
+  const { booting } = useBootPhase();
+  usePushRegistration(booting ? null : session);
   return null;
 }
+
+/**
+ * Tells the splash where the app actually is while it boots (src/boot/boot-readiness.ts
+ * `reportBootRoute`). A boot bound for Home that is redirected before Home is ready — a session the
+ * server rejects (the SessionGate replaces Home with /phone), a route gate — would otherwise hold the
+ * splash on "Loading your saved places" until its 20s give-up (S-2). Renders nothing.
+ */
+function BootRouteWatch(): null {
+  const pathname = usePathname();
+  const { booting } = useBootPhase();
+  useEffect(() => {
+    if (booting) reportBootRoute(pathname);
+  }, [booting, pathname]);
+  return null;
+}
+
+/**
+ * The self-hosted Inter load, in a leaf of its own. It used to live in RootLayout, where its one state
+ * change (pending → loaded) re-rendered the WHOLE root tree — the splash included — in the middle of
+ * the intro. Here it re-renders nothing but this null leaf. Text needs no root re-render to pick the
+ * family up: every Text that mounts after the load gets it, and the fonts are prewarmed at module scope
+ * (`prewarmFonts` below) so they are registered before almost anything draws.
+ *
+ * `useAppFonts` is TIME-BOUNDED (src/ui/fonts.ts): it reports an error rather than pending past
+ * FONT_LOAD_TIMEOUT_MS — since MOB-BOOT-05 the splash release no longer waits on fonts at all (only the
+ * boot_paint mark does), but the bound stays so a stalled font load can never wedge that mark — the
+ * 0.17.12 "installs but won't open" bug class. Font assets are bundled (no network), so on the rare
+ * load error the app simply stays on the system-font fallback.
+ */
+function FontLoad(): null {
+  const [fontsLoaded, fontError] = useAppFonts();
+  const fontsReady = fontsLoaded || fontError != null;
+  // Arm the client-RUM buffer once at app root. Here, ahead of the boot_paint mark below, because a
+  // child's effects run before its parent's: armed from RootLayout it would start AFTER this leaf had
+  // already tried (and, unarmed, dropped) the mark. Role is tagged per-enqueue, so a role at root isn't
+  // needed; we just pass the app version for the (server-bucketed) `appVersion` label.
+  useEffect(() => {
+    startRum(Constants.expoConfig?.version);
+  }, []);
+  // Record the first half of the cold start once fonts resolve (loaded or errored): bundle
+  // evaluation started → the tree is fully paintable. The splash is deliberately NOT dropped here
+  // (MOB-BOOT-05): hiding on this commit raced RN's first PRESENTED frame, and losing that race exposed
+  // the window background for a few frames — the intermittent white flash. The JS splash drops it from
+  // its own first layout (ledger D-64).
+  useEffect(() => {
+    if (!fontsReady) return;
+    enqueueBoot("boot_paint");
+  }, [fontsReady]);
+  return null;
+}
+
+const launchSession = (): Promise<Session | null> => prewarmBootReads().session;
 
 /** Wave-2 W1: fires the one-round-trip boot aggregate as soon as the session is known and seeds the
  *  query cache (me + active order/job), so the first screens paint without their own fetches. Renders
  *  nothing; lives under AuthProvider + the query provider. Failure seeds nothing — screens self-serve. */
 function BootstrapSync(): null {
-  useBootstrap(useAuth().session);
+  // Started from the prewarmed keychain read, not the AuthProvider re-render after it (use-bootstrap.ts).
+  useBootstrap(useAuth().session, launchSession);
   return null;
 }
 
@@ -191,7 +253,9 @@ function SplashWhileBooting(): React.ReactElement | null {
 function AppStage({ children }: { children: React.ReactNode }): React.ReactElement {
   const { booting, reveal, appMountable } = useBootPhase();
   const { height } = useWindowDimensions();
-  const translateY = reveal.y.interpolate({ inputRange: [0, 1], outputRange: [height * 1.05, 0] });
+  // Memoised: a fresh interpolation node on every render (this re-renders with the boot phase) would be
+  // re-attached to the native-driven rise mid-flight, a one-frame jump during Home's entrance.
+  const translateY = useMemo(() => reveal.y.interpolate({ inputRange: [0, 1], outputRange: [height * 1.05, 0] }), [reveal, height]);
   return (
     <Animated.View
       style={{ flex: 1, opacity: reveal.opacity, transform: [{ translateY }] }}
@@ -249,46 +313,18 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps): React.React
 }
 
 function RootLayout(): React.ReactElement | null {
-  // Self-hosted Inter — fonts load during the native launch screen and the JS splash's intro, so Text
-  // is very rarely visible before its family is available (and self-heals when it registers). Font assets are bundled (no network), so on
-  // the rare load error we fall through to the system-font fallback rather than block the app.
-  // `useAppFonts` is TIME-BOUNDED (src/ui/fonts.ts): it reports an error rather than pending past
-  // FONT_LOAD_TIMEOUT_MS — since MOB-BOOT-05 the splash release no longer waits on fonts at all
-  // (only the boot_paint mark does), but the bound stays so a stalled font load can never wedge the
-  // gate's consumers — the 0.17.12 "installs but won't open" bug class.
-  const [fontsLoaded, fontError] = useAppFonts();
-  const fontsReady = fontsLoaded || fontError != null;
-
-  // Arm the client-RUM buffer once at app root. Role is tagged per-enqueue, so a role at root isn't
-  // needed; we just pass the app version for the (server-bucketed) `appVersion` label.
-  useEffect(() => {
-    startRum(Constants.expoConfig?.version);
-  }, []);
-
   // Pause React Query's refetchInterval polling while backgrounded (see wireFocusManager).
   useEffect(() => wireFocusManager(), []);
-
-  // Record the first half of the cold start once fonts resolve (loaded or errored): bundle
-  // evaluation started → the tree is fully paintable. The splash is deliberately NOT dropped here
-  // any more (MOB-BOOT-05): hiding on this commit raced RN's first PRESENTED frame, and losing that
-  // race exposed the window background for a few frames — the intermittent white flash. The JS splash
-  // drops it from its own first layout (ledger D-64). The font gate's own timeout (src/ui/fonts.ts)
-  // still bounds this mark; the splash does not depend on it.
-  useEffect(() => {
-    if (!fontsReady) return;
-    enqueueBoot("boot_paint");
-  }, [fontsReady]);
 
   // NOTE: this deliberately does NOT `return null` while the fonts load, which is what it did until the
   // cold-start work. Returning null unmounted the whole provider tree, so the session read, the
   // query-cache restore and the boot aggregate could not START until the fonts had finished — the
   // serialization prewarm.ts documents. The tree now mounts immediately and does that work DURING the
-  // font load; the native splash (held above, dropped in the effect) is what covers the screen
-  // meanwhile, so nothing unstyled is ever visible. A `<Text>` that commits before its family
-  // registers is self-healing by construction: `fontsReady` flipping re-renders the tree and the
-  // patched Text picks up the same family names (see src/ui/fonts.ts).
+  // font load (FontLoad, a leaf, owns it — so its state change re-renders nothing else); the native
+  // splash, then the JS splash, cover the screen meanwhile.
   return (
     <SafeAreaProvider>
+      <FontLoad />
       {/* AnalyticsProvider is a no-op passthrough until the founder provisions PostHog (see
           src/telemetry/analytics.tsx). Inside SafeAreaProvider (the SDK reads insets) and above
           the navigator so screen autocapture sees every route. */}
@@ -307,7 +343,6 @@ function RootLayout(): React.ReactElement | null {
           }}
         >
           <AuthProvider>
-            <PushSync />
             <BootstrapSync />
             {/* Redirects to /phone when the session drops to null after boot (sign-out or a
                 server-forced 401 logout) — cold-boot routing in app/index.tsx can't reach that
@@ -319,6 +354,10 @@ function RootLayout(): React.ReactElement | null {
             {/* Tap → destination-screen latency (`nav_open`). Renders nothing; needs the router
                 context, and pairs each route change with the press that caused it. */}
             <NavOpenProbe />
+            {/* The app-wide default. Mounted before the splash, so the splash's light icons sit above it
+                in RN's StatusBar stack (the last MOUNTED entry wins) and it takes over again when the
+                splash unmounts. Screen StatusBars mount only after the boot (src/boot/ScreenStatusBar.tsx)
+                — one mounting under the splash would win the stack and turn its icons dark (S-1). */}
             <StatusBar style="dark" />
             {/* ToastProvider wraps the navigator so any screen can raise an in-app toast. Its strip is
                 absolutely positioned at the top inset; in the rare offline-and-toasting overlap it sits
@@ -328,6 +367,8 @@ function RootLayout(): React.ReactElement | null {
                   its screenOptions and the splash ends the phase when it hands off, so in-app
                   navigation keeps its animation. */}
               <BootPhaseProvider>
+                <PushSync />
+                <BootRouteWatch />
                 <View style={{ flex: 1 }}>
                   {/* The cold-start splash (ledger D-64): on screen for exactly as long as the boot
                       takes, then Home rises over it. Drawn UNDER the app, which waits off-screen

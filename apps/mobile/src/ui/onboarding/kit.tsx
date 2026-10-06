@@ -1,6 +1,6 @@
 import { formatPhoneDisplay } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
-import React from "react";
+import React, { useRef } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Icon, type IconName } from "../Icon";
@@ -100,18 +100,29 @@ function NameField({
   value,
   onChangeText,
   autoComplete,
+  inputRef,
+  returnKeyType,
+  onSubmitEditing,
 }: {
   label: string;
   value: string;
   onChangeText: (v: string) => void;
   autoComplete: "given-name" | "family-name";
+  inputRef?: React.Ref<TextInput>;
+  returnKeyType: "next" | "done";
+  onSubmitEditing?: () => void;
 }): React.ReactElement {
   return (
     <View style={{ flex: 1, minWidth: 0 }}>
       <FieldLabel>{label}</FieldLabel>
       <TextInput
+        ref={inputRef}
         value={value}
         onChangeText={onChangeText}
+        returnKeyType={returnKeyType}
+        // "next" moves on without dropping the keyboard in between.
+        submitBehavior={returnKeyType === "next" ? "submit" : "blurAndSubmit"}
+        onSubmitEditing={onSubmitEditing}
         accessibilityLabel={label}
         autoComplete={autoComplete}
         textContentType={autoComplete === "given-name" ? "givenName" : "familyName"}
@@ -131,22 +142,35 @@ function NameField({
   );
 }
 
-/** C5 · Name's field pair — First name · Surname side by side (`grid 1fr 1fr`, gap 12). */
+/**
+ * C5 · Name's field pair — First name · Surname side by side (`grid 1fr 1fr`, gap 12). The keyboard
+ * chains them: First name's return key moves to Surname, Surname's submits (`onSubmit`, when given).
+ */
 export function NameFields({
   firstName,
   lastName,
   onFirstName,
   onLastName,
+  onSubmit,
 }: {
   firstName: string;
   lastName: string;
   onFirstName: (v: string) => void;
   onLastName: (v: string) => void;
+  onSubmit?: () => void;
 }): React.ReactElement {
+  const surname = useRef<TextInput>(null);
   return (
     <View style={{ flexDirection: "row", gap: 12 }}>
-      <NameField label={OB.firstName} value={firstName} onChangeText={onFirstName} autoComplete="given-name" />
-      <NameField label={OB.surname} value={lastName} onChangeText={onLastName} autoComplete="family-name" />
+      <NameField
+        label={OB.firstName}
+        value={firstName}
+        onChangeText={onFirstName}
+        autoComplete="given-name"
+        returnKeyType="next"
+        onSubmitEditing={() => surname.current?.focus()}
+      />
+      <NameField label={OB.surname} value={lastName} onChangeText={onLastName} autoComplete="family-name" inputRef={surname} returnKeyType="done" onSubmitEditing={onSubmit} />
     </View>
   );
 }

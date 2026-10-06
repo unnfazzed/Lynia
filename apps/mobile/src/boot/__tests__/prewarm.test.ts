@@ -26,7 +26,7 @@ jest.mock("../../push/push", () => ({
   consumeColdStartResponse: () => mockConsumeColdStart(),
 }));
 
-import { __resetBootReads, prewarmBootReads } from "../prewarm";
+import { BOOT_READ_TIMEOUT_MS, __resetBootReads, prewarmBootReads } from "../prewarm";
 
 function happyPath(): void {
   mockLoadSession.mockResolvedValue({ profileId: "p1" });
@@ -101,5 +101,43 @@ describe("prewarmBootReads", () => {
     await prewarmBootReads().session;
     await prewarmBootReads().session;
     expect(mockLoadSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("bounds every read: a HUNG read settles to the value that routes somewhere safe (S-3)", async () => {
+    jest.useFakeTimers();
+    try {
+      const never = (): Promise<never> => new Promise<never>(() => {});
+      mockLoadSession.mockImplementation(never);
+      mockLoadOnboardingSeen.mockImplementation(never);
+      mockLoadRolePreference.mockImplementation(never);
+      mockConsumeColdStart.mockImplementation(never);
+      const reads = prewarmBootReads();
+      let settled = false;
+      void Promise.all([reads.session, reads.onboardingSeen, reads.rolePref, reads.coldStartData]).then(() => (settled = true));
+      await jest.advanceTimersByTimeAsync(BOOT_READ_TIMEOUT_MS - 1);
+      expect(settled).toBe(false);
+      await jest.advanceTimersByTimeAsync(1);
+      expect(settled).toBe(true);
+      // No session ⇒ sign in again. Onboarding TRUE (not false, as on an error) ⇒ a session-less boot goes
+      // to /phone rather than replaying the carousel. No role, no deep link.
+      await expect(reads.session).resolves.toBeNull();
+      await expect(reads.onboardingSeen).resolves.toBe(true);
+      await expect(reads.rolePref).resolves.toBeNull();
+      await expect(reads.coldStartData).resolves.toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("a healthy read leaves no timer behind", async () => {
+    jest.useFakeTimers();
+    try {
+      happyPath();
+      const reads = prewarmBootReads();
+      await Promise.all([reads.session, reads.onboardingSeen, reads.rolePref, reads.coldStartData]);
+      expect(jest.getTimerCount()).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

@@ -40,6 +40,21 @@ const OTP_GRACE_TTL_SECONDS = 60;
 // probe can't get more than a handful of guesses at the correct code while it lingers. Mirrors MAX_OTP_ATTEMPTS so a
 // legit timeout-retry (typically 1–2 re-sends of the same correct code) is never affected.
 const MAX_GRACE_ATTEMPTS = 5;
+
+/**
+ * The machine-readable reason on every OTP verify 401. The app branches on these codes; the messages
+ * stay word for word what they were, because app builds released before the codes existed still tell
+ * expired/locked from wrong by matching words in them (apps/mobile/src/logic/otp.ts).
+ */
+export type OtpFailureReason = "otp_invalid" | "otp_expired" | "otp_locked";
+const OTP_FAILURE_MESSAGES: Record<OtpFailureReason, string> = {
+  otp_invalid: "Invalid code",
+  otp_expired: "Code expired or never requested",
+  otp_locked: "Too many attempts — request a new code",
+};
+function otpError(reason: OtpFailureReason): UnauthorizedException {
+  return new UnauthorizedException({ statusCode: HttpStatus.UNAUTHORIZED, message: OTP_FAILURE_MESSAGES[reason], reason });
+}
 // LEGACY rotation grace (RT-GRACE). A session rotated BEFORE successor secrets were derived
 // (TokenService.successorSecret) has a random successor secret that can't be handed back, so a retry of
 // such a token still gets the original treatment: a fresh independent session, only within this window
@@ -382,7 +397,9 @@ export class AuthService {
     }
     const rl = rlFrom(this.env);
     const rlKeys = [`rl:phone:${phone}`, `rl:ip:${ip}`, "rl:global"];
-    await this.enforceRate(rlKeys[0], rl.phone);
+    // `otp_send_limit` + `retryAfter` let the app say "try again in N min" for the per-phone cap, the
+    // one a real person hits (five sends an hour); the per-IP and global caps carry `retryAfter` only.
+    await this.enforceRate(rlKeys[0], rl.phone, "otp_send_limit");
     await this.enforceRate(rlKeys[1], rl.ip);
     await this.enforceRate(rlKeys[2], rl.global);
     // Only a send that went out spends the budget: a failed one is refunded, or a vendor outage would
@@ -546,7 +563,7 @@ export class AuthService {
         return demo;
       }
       record("invalid");
-      throw new UnauthorizedException("Invalid code");
+      throw otpError("otp_invalid");
     }
     try {
       // Bird Verify (bird-verify.ts) owns generation/expiry/attempt-limiting entirely and has no
@@ -560,11 +577,11 @@ export class AuthService {
       if (!checked.success) {
         if (checked.reason === "locked") {
           record("locked");
-          throw new UnauthorizedException("Too many attempts — request a new code");
+          throw otpError("otp_locked");
         }
         if (checked.reason === "invalid") {
           record("invalid");
-          throw new UnauthorizedException("Invalid code");
+          throw otpError("otp_invalid");
         }
         // "expired" — no live OTP (TTL lapsed or never requested), OR — Bird only — a SECOND check
         // of an already-final verification (Bird 404s that; birdVerifyCheck maps it here). Either
@@ -578,7 +595,7 @@ export class AuthService {
           return graced;
         }
         record("expired");
-        throw new UnauthorizedException("Code expired or never requested");
+        throw otpError("otp_expired");
       }
       // Engine-agnostic retry-safety grace (§6): store the just-confirmed code's hash — identical to
       // what checkLocalOtp's own `rec.hash` would be at this point — so a client timeout + retry with
@@ -996,14 +1013,24 @@ export class AuthService {
     };
   }
 
-  /** A fixed-window cap on `key`. The 429 body is `{ statusCode, message }` (never a bare string, which
-   *  the app can't read — E2E 2026-10-05 FS-3); `reason`, when given, rides along in it. */
+  /**
+   * A fixed-window cap on `key`. The 429 body is always `{ statusCode, message, retryAfter }`:
+   * `retryAfter` is the seconds left in the window (the window's full length if the store can't say), so
+   * the app can tell the user when to come back instead of "later". `reason`, when given, rides along so
+   * a client can tell one cap from another (they share the status and the message). Never a bare
+   * string, which the app can't read (E2E 2026-10-05 FS-3).
+   */
   private async enforceRate(key: string, limit: { max: number; windowSec: number }, reason?: string): Promise<void> {
     const count = await this.store.hit(key, limit.windowSec);
     if (count > limit.max) {
-      const message = "Too many requests — try again later";
+      const retryAfter = (await this.store.ttl(key)) ?? limit.windowSec;
       throw new HttpException(
-        { statusCode: HttpStatus.TOO_MANY_REQUESTS, message, ...(reason ? { reason } : {}) },
+        {
+          statusCode: HttpStatus.TOO_MANY_REQUESTS,
+          message: "Too many requests — try again later",
+          retryAfter,
+          ...(reason ? { reason } : {}),
+        },
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }

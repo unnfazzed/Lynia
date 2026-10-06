@@ -19,10 +19,6 @@ export interface BecomeResult {
   sessionToken?: string;
 }
 
-export function completeProfile(body: { firstName: string; lastName: string; idNumber: string }): Promise<{ ok: true }> {
-  return apiFetch("/riders/profile", { method: "PATCH", body });
-}
-
 /** The photo is optional since 2026-10-02 (D-62): sign-up sends none. `photoUrl`, when sent, is the
  *  storage key minted by `POST /uploads/kyc-photo` (not a URL). */
 export function becomeRider(body: { bikeReg?: string; photoUrl?: string }): Promise<BecomeResult> {
