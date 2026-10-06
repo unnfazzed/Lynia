@@ -3,7 +3,8 @@
  * soon as it has drawn; it has no steps card; it stays up exactly until the boot is ready (Home: all
  * three tasks; anywhere else: the session check), never shorter than the 1300ms intro; it shows the
  * offline panel (and never gives up) when the API can't be reached, and "Try again" resumes only the
- * tasks still pending; and it can never strand the app on a hung request.
+ * tasks still pending; and it can never strand the app on a hung request. A boot into the rider board
+ * keeps a card with the rider's two steps (First Run v2 H1/H2, ledger D-82 §2 #2).
  */
 import React from "react";
 import { AccessibilityInfo, Text } from "react-native";
@@ -19,9 +20,9 @@ import { BootPhaseProvider, useBootPhase } from "../../boot-phase";
 import { getBootReadiness, reportBootDestination, reportBootReady, reportBootRoute, resetBootReadinessForTest } from "../../boot-readiness";
 import { resetBootSplashReleaseForTest } from "../../boot-splash-hold";
 import { __resetReachability, __setProbeFetch, reportReachable, reportUnreachable } from "../../../net/reachability";
-import { BootSplash } from "../BootSplash";
+import { BootSplash, stepDoneAnnouncement } from "../BootSplash";
 import { GIVE_UP_MS, INTRO_MS } from "../timeline";
-import { S } from "../copy";
+import { RIDER_OFFLINE, RIDER_STEPS, S } from "../copy";
 
 const metrics = { frame: { x: 0, y: 0, width: 360, height: 720 }, insets: { top: 24, left: 0, right: 0, bottom: 0 } };
 
@@ -385,6 +386,72 @@ describe("BootSplash", () => {
     act(() => reportUnreachable());
     advance(GIVE_UP_MS + 5000);
     expect(released()).toBe(false);
+    act(() => tree.unmount());
+  });
+});
+
+describe("BootSplash · the rider boot keeps its card (First Run v2 H1/H2, ledger D-82 §2 #2)", () => {
+  const riderRows = (tree: renderer.ReactTestRenderer): string[] =>
+    tree.root
+      .findAll((n) => typeof n.type === "string" && n.props.accessibilityState != null && (RIDER_STEPS as readonly string[]).includes(n.props.accessibilityLabel))
+      .map((n) => `${n.props.accessibilityLabel}:${n.props.accessibilityState.checked ? "checked" : n.props.accessibilityState.busy ? "active" : "pending"}`);
+  const card = (tree: renderer.ReactTestRenderer): renderer.ReactTestInstance[] => tree.root.findAll((n) => n.props.testID === "splash-card");
+
+  it("a customer boot has no card at all", () => {
+    const tree = mount();
+    act(() => reportBootDestination("/home"));
+    advance(1800);
+    expect(card(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("runs the rider's two steps, announces each tick, and cuts only once the board's first reads have settled", () => {
+    const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility");
+    announce.mockClear(); // only this boot's announcements
+    const tree = mount();
+    act(() => reportBootDestination("/rider"));
+    advance(1800);
+    expect(card(tree).length).toBeGreaterThan(0);
+    expect(riderRows(tree)).toEqual(["Checking it’s you:checked", "Getting jobs near you:active"]);
+    expect(announce).toHaveBeenCalledWith(stepDoneAnnouncement(RIDER_STEPS[0]));
+    expect(announce).not.toHaveBeenCalledWith(S.loading); // the card is the rider's live region
+    advance(4000);
+    expect(released()).toBe(false); // the board is still reading
+    act(() => reportBootReady("rider"));
+    advance(100);
+    expect(riderRows(tree)).toEqual(["Checking it’s you:checked", "Getting jobs near you:checked"]);
+    advance(400); // the tick is seen, then the cut (no exit into Home)
+    expect(released()).toBe(true);
+    announce.mockRestore();
+    act(() => tree.unmount());
+  });
+
+  it("a rider boot sent elsewhere before the board mounts (a rejected session → /phone) hands off at once", () => {
+    const tree = mount();
+    act(() => reportBootDestination("/rider"));
+    advance(2500);
+    expect(released()).toBe(false);
+    act(() => reportBootRoute("/phone"));
+    advance(100);
+    expect(released()).toBe(true);
+    act(() => tree.unmount());
+  });
+
+  it("offline swaps the steps for the single row in the card — no dark panel, no button — and resumes by itself", () => {
+    __setProbeFetch(async () => false);
+    const tree = mount();
+    act(() => reportBootDestination("/rider"));
+    advance(1500);
+    act(() => reportUnreachable());
+    advance(600);
+    expect(tree.root.findAll((n) => n.props.testID === "splash-offline-row").length).toBeGreaterThan(0);
+    expect(texts(tree)).toEqual(expect.arrayContaining([RIDER_OFFLINE.title, RIDER_OFFLINE.body]));
+    expect(hiddenFromA11y(tree, S.offlineTitle)).toBe(true); // splash-v1's panel stays out of the way
+    expect(hiddenFromA11y(tree, RIDER_OFFLINE.title)).toBe(false);
+    act(() => reportReachable());
+    advance(100);
+    expect(tree.root.findAll((n) => n.props.testID === "splash-offline-row")).toHaveLength(0);
+    expect(riderRows(tree).length).toBe(2);
     act(() => tree.unmount());
   });
 });

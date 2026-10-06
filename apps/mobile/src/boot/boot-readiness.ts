@@ -10,13 +10,16 @@ import { useSyncExternalStore } from "react";
  *                and cold-start push all settled. Carries the `destination` the boot redirects to.
  * - `profile`  — Home's `["me"]` read has settled (seeded by the boot aggregate, or fetched).
  * - `home`     — Home has its first content to show (the rails have data, or have decided they're empty).
+ * - `rider`    — First Run v2 H1 (ledger D-82 §2 #2): a boot into the rider app shows two steps, and the
+ *                second ("Getting jobs near you") is the rider board's first reads settling
+ *                (src/boot/rider-board-ready.ts).
  *
  * Each is stamped with the time it became true. A module store rather than React state because the
  * three are reported from three different subtrees (the boot route, Home, and the splash overlay that
  * reads them sit in different branches of the root layout) and the cold start is a process-lifetime
  * fact, so the stamps must survive a remount and never go back to "not ready".
  */
-export type BootSignal = "session" | "profile" | "home";
+export type BootSignal = "session" | "profile" | "home" | "rider";
 
 export interface BootReadiness {
   /** Where the boot redirect went, once `session` is ready; `null` until then. */
@@ -37,7 +40,7 @@ const EMPTY: BootReadiness = {
   destination: null,
   exitAt: null,
   endedAt: null,
-  readyAt: { session: null, profile: null, home: null },
+  readyAt: { session: null, profile: null, home: null, rider: null },
 };
 
 let state: BootReadiness = EMPTY;
@@ -62,9 +65,13 @@ export function reportBootDestination(destination: string, now: number = Date.no
  * is neither the boot route ("/") nor Home, that place becomes the destination and the splash hands off
  * straight away (a non-Home destination waits only for the session check, long done).
  * Ignored once the exit into Home has started or the boot has ended. Idempotent.
+ *
+ * The same holds for a boot into the rider board (First Run v2 H1, D-82 §2 #2): it waits for the board's
+ * reads (step 2), so a rider sent elsewhere first must hand off rather than wait for a board that never
+ * mounts.
  */
 export function reportBootRoute(pathname: string): void {
-  if (state.destination !== "/home" || state.exitAt != null || state.endedAt != null) return;
+  if ((state.destination !== "/home" && state.destination !== "/rider") || state.exitAt != null || state.endedAt != null) return;
   if (pathname === "/" || pathname === state.destination) return;
   set({ ...state, destination: pathname });
 }

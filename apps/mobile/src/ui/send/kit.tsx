@@ -1,4 +1,5 @@
 import { serviceTownsLabel } from "@lynia/shared";
+import { FirstRunToast } from "../firstrun/toast";
 import { tokens } from "@lynia/shared/tokens";
 import React from "react";
 import { ActivityIndicator, Text, TextInput, type TextInputProps, View, type ViewStyle } from "react-native";
@@ -405,45 +406,8 @@ export function Notice({
 
 /** Ink toast floating above the CTA, with a 44px "↻ Try again" on the right. */
 export function SendToast({ text, action, onAction }: { text: string; action?: string; onAction?: () => void }): React.ReactElement {
-  return (
-    <View
-      accessibilityRole="alert"
-      accessibilityLiveRegion="assertive"
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 10,
-        backgroundColor: tokens.color.ink,
-        borderRadius: tokens.radius.input,
-        paddingVertical: 6,
-        paddingRight: 6,
-        paddingLeft: 14,
-        ...tokens.shadow.menu,
-      }}
-    >
-      <Icon name="circle-alert" size={18} color={tokens.color.onAccent} />
-      <Text style={{ flex: 1, fontSize: 13, lineHeight: 18, color: tokens.color.onAccent }}>{text}</Text>
-      {action && onAction ? (
-        <Tappable
-          onPress={onAction}
-          accessibilityRole="button"
-          accessibilityLabel={action}
-          style={{
-            height: tokens.touchTargetMin,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 4,
-            paddingHorizontal: 10,
-            borderRadius: 10,
-            backgroundColor: tokens.color.accentWash,
-          }}
-        >
-          <Icon name="refresh-cw" size={14} color={tokens.color.accentText} />
-          <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.bold, color: tokens.color.accentText }}>{action}</Text>
-        </Tappable>
-      ) : null}
-    </View>
-  );
+  // Owner 2026-10-06 (D-82): the app-wide bottom toast's look, kept above the CTA.
+  return <FirstRunToast text={text} tone="warning" action={action} actionIcon="refresh-cw" onAction={onAction} assertive />;
 }
 
 /** A 64×56 drawn route thumbnail (no native map): ground, roads, the route, pickup dot + drop square. */

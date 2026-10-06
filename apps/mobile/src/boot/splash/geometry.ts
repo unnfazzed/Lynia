@@ -10,8 +10,8 @@
  * So the offline lift is the handoff's 64px, or more if that would leave less than
  * {@link MIN_CLEARANCE} between the lifted wordmark and the panel — the handoff's own answer to the
  * panel ("the content moves up … so it stays clear of it"), applied to the inset. Nothing else sits
- * under the wordmark since the steps card was removed (CHANGE-2026-10-06), so the anchor is always
- * exactly 44% of H. On a frame with room (every canonical size without a nav bar, 360×720 with one)
+ * under the wordmark since the customer's steps card was removed (CHANGE-2026-10-06), so the anchor is
+ * exactly 44% of H — except on a rider boot, whose card the brand must clear (`cardH`, below). On a frame with room (every canonical size without a nav bar, 360×720 with one)
  * the lift is exactly the handoff's 64px.
  */
 
@@ -30,6 +30,23 @@ export const MIN_CLEARANCE = 24;
  *  and the 52px button. */
 export const PANEL_H_ESTIMATE = 176;
 
+// ── The rider's steps card (First Run v2 H1/H2, ledger D-82 §2 #2) ──
+/** The rider card's distance from the bottom (before the inset): "navBarHeight + 16". */
+export const CARD_BOTTOM = 16;
+/** First-frame estimate of the rider card, replaced by the measured height: 8+8 padding, two 48dp rows. */
+export const CARD_H_ESTIMATE = 112;
+/** The anchor never rises past this (half the orbit + a margin), however short the screen. */
+export const ANCHOR_MIN = 152;
+/** Half the orbit: the brand's top edge sits this far above the anchor. */
+export const ORBIT_HALF = 136;
+/** The entry phone (H2's 320×640): at most this wide, or at most this tall. */
+export const COMPACT_W = 340;
+export const COMPACT_H = 640;
+
+export function isCompactSplash(W: number, H: number): boolean {
+  return W <= COMPACT_W || H <= COMPACT_H;
+}
+
 export interface SplashGeometry {
   /** The anchor's y. */
   anchor: number;
@@ -37,8 +54,20 @@ export interface SplashGeometry {
   offlineLift: number;
 }
 
-export function splashGeometry({ H, bottomInset, panelH }: { H: number; bottomInset: number; panelH: number }): SplashGeometry {
-  const anchor = ANCHOR_RATIO * H;
+/**
+ * `cardH` is set only on a rider boot, whose steps card sits {@link CARD_BOTTOM} above the nav bar. The
+ * brand then stays clear of the card, and on the entry phone ({@link isCompactSplash}) it is centred in
+ * the space above the card (First Run v2 H2): the brand runs from the orbit's top ({@link ORBIT_HALF}
+ * above the anchor) to the wordmark's foot, so centring it puts the anchor at `cardTop / 2 − 28`.
+ */
+export function splashGeometry({ W, H, bottomInset, panelH, cardH }: { W?: number; H: number; bottomInset: number; panelH: number; cardH?: number | null }): SplashGeometry {
+  let anchor = ANCHOR_RATIO * H;
+  if (cardH != null) {
+    const cardTop = H - bottomInset - CARD_BOTTOM - cardH;
+    const brandCentred = cardTop / 2 - (WORDMARK_TOP + WORDMARK_H - ORBIT_HALF) / 2;
+    const preferred = W != null && isCompactSplash(W, H) ? brandCentred : anchor;
+    anchor = Math.max(ANCHOR_MIN, Math.min(preferred, cardTop - MIN_CLEARANCE - WORDMARK_TOP - WORDMARK_H));
+  }
   const panelTop = H - bottomInset - PANEL_BOTTOM - panelH;
   const offlineLift = Math.max(OFFLINE_LIFT, anchor + WORDMARK_TOP + WORDMARK_H + MIN_CLEARANCE - panelTop);
   return { anchor, offlineLift };

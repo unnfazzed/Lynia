@@ -11,6 +11,7 @@ import renderer, { act } from "react-test-renderer";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import type { Me } from "../../../src/api/auth";
 import { becomeStateFor } from "../../../src/logic/become-state";
+import { KY } from "../../../src/ui/firstrun/copy";
 
 const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 360, height: 720 } };
 const mockGetMe = jest.fn<Promise<Me>, []>();
@@ -69,6 +70,8 @@ async function settle(): Promise<void> {
     await new Promise((r) => setTimeout(r, 0));
   });
 }
+/** First Run v2 G2's violet card (its title is two lines with a nested accent, so it is found by testID). */
+const hasBecomeCard = (t: renderer.ReactTestRenderer): boolean => t.root.findAll((n) => n.props.testID === "become-rider-card").length > 0;
 const has = (t: renderer.ReactTestRenderer, copy: string): boolean =>
   t.root.findAll((n) => n.props.children === copy).length > 0 || t.root.findAll((n) => n.props.label === copy).length > 0;
 function press(t: renderer.ReactTestRenderer, label: string): void {
@@ -165,9 +168,11 @@ describe("customer Account (Rider v2 C6–C11)", () => {
     mockGetMe.mockResolvedValue(me(null));
     tree = renderScreen();
     await settle();
-    expect(has(tree, "Earn with your bike")).toBe(true);
+    // First Run v2 G2 (D-82): the violet card, KY's words, "Start" → R1.
+    expect(hasBecomeCard(tree)).toBe(true);
+    expect(has(tree, KY.becomeBody)).toBe(true);
     expect(has(tree, "Rider")).toBe(false);
-    press(tree, "Start");
+    press(tree, KY.becomeCta);
     expect(mockPush).toHaveBeenCalledWith("/rider/become");
   });
 
@@ -175,7 +180,7 @@ describe("customer Account (Rider v2 C6–C11)", () => {
     mockGetMe.mockResolvedValue(me({}));
     tree = renderScreen();
     await settle();
-    expect(has(tree, "Earn with your bike")).toBe(false);
+    expect(hasBecomeCard(tree)).toBe(false);
     const customer = tree.root.findAll((n) => n.props.accessibilityRole === "radio" && n.props.accessibilityLabel === "Customer")[0]!;
     expect(customer.props.accessibilityState.selected).toBe(true);
     press(tree, "Rider");
@@ -186,7 +191,7 @@ describe("customer Account (Rider v2 C6–C11)", () => {
     mockGetMe.mockReturnValue(new Promise(() => undefined));
     tree = renderScreen();
     await settle();
-    expect(has(tree, "Earn with your bike")).toBe(false);
+    expect(hasBecomeCard(tree)).toBe(false);
     expect(has(tree, "Rider")).toBe(false);
   });
 
@@ -194,7 +199,44 @@ describe("customer Account (Rider v2 C6–C11)", () => {
     mockGetMe.mockRejectedValue(new Error("offline"));
     tree = renderScreen();
     await settle();
-    expect(has(tree, "Earn with your bike")).toBe(false);
+    expect(hasBecomeCard(tree)).toBe(false);
     expect(has(tree, "Rider")).toBe(false);
+  });
+});
+
+describe("customer Account — First Run v2 G2 / G3 and the copy pass (D-82)", () => {
+  it("G3: mid-check, the card switches to the rider side like the toggle — the board shows the current F page", async () => {
+    mockStoreWrites.length = 0;
+    mockGetMe.mockResolvedValue(me({ kycStatus: "pending", kycPendingState: "unfinished" }));
+    tree = renderScreen();
+    await settle();
+    expect(hasBecomeCard(tree)).toBe(false);
+    expect(has(tree, KY.unfBody)).toBe(true);
+    press(tree, "Continue");
+    await settle();
+    expect(mockReplace).toHaveBeenCalledWith("/rider");
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockStoreWrites).toContainEqual(["lynia.rolePreference", "rider"]);
+  });
+
+  it("I: the review card says the automated check takes under a minute, a person a few hours — in-app, never SMS", async () => {
+    mockGetMe.mockResolvedValue(me({ kycStatus: "pending", kycPendingState: "in_flight" }));
+    tree = renderScreen();
+    await settle();
+    expect(has(tree, KY.checkBody)).toBe(true);
+    act(() => tree!.unmount());
+
+    mockGetMe.mockResolvedValue(me({ kycStatus: "pending", kycHeld: true }));
+    tree = renderScreen();
+    await settle();
+    expect(has(tree, KY.reviewBody)).toBe(true);
+    expect(tree.root.findAll((n) => typeof n.props.children === "string" && /SMS/.test(n.props.children))).toHaveLength(0);
+  });
+
+  it("I: the locked card carries KY's words", async () => {
+    mockGetMe.mockResolvedValue(me({ kycStatus: "failed", kycAttempts: 2 }));
+    tree = renderScreen();
+    await settle();
+    expect(has(tree, KY.lockedBody)).toBe(true);
   });
 });

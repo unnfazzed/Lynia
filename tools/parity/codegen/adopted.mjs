@@ -583,60 +583,27 @@ export const ADOPTED = [
     ],
   },
   {
-    // LJ.perm_loc — first-run permission priming (app/permissions.tsx). A MULTI-STATE screen: one
-    // container walks two explainer steps (location → notifications), each drawn by the mock as a bare
-    // `<SystemState/>` (mock `PermLoc` / `PermNotif`). Adopt BOTH steps as generated SystemState views.
-    // SystemState is a structural leaf, so its icon/title/message/primary/secondary are the DATA SEAM —
-    // hoisted to props so the container feeds the role-framed copy (the app varies the wording for riders
-    // routed through here) while the STRUCTURE stays the mock's. The container renders the right view from
-    // its existing `step` state machine and wires the OS-permission requests onto onPrimary/onSecondary.
+    // LJ.perm_loc — until 2026-10-06 the first-run permission priming (app/permissions.tsx), a multi-state screen
+    // generated from screens.jsx `PermLoc` / `PermNotif` (permissions-location/-notifications.view.tsx). D-82 made
+    // the First Run v2 handoff the authority (customer PC1–PC11 in context, rider P1–P16 from R3), so both views
+    // were deleted and both states are SUPERSEDED deferrals. app/permissions.tsx is now the rider flow.
     key: "LJ.perm_loc",
     container: "apps/mobile/app/permissions.tsx",
     mockFile: "packages/design/explorations/journey/screens.jsx",
     uiImport: "../src/ui",
-    states: [
+    states: [],
+    deferred: [
       {
         state: "location",
         key: "LJ.perm_loc",
-        component: "PermLoc",
-        componentName: "PermLocView",
-        viewFile: "apps/mobile/app/permissions-location.view.tsx",
-        propsParam: "{ icon, title, message, primary, secondary, onPrimary, onSecondary }: PermPrimeViewProps",
-        propsType: [
-          "export type PermPrimeViewProps = {",
-          "  icon: IconName;",
-          "  title: string;",
-          "  message: string;",
-          "  primary: string;",
-          "  secondary: string;",
-          "  onPrimary: () => void;",
-          "  onSecondary: () => void;",
-          "};",
-        ].join("\n"),
-        bind: ({ t, expr }) => permSystemStateBind({ t, expr }),
+        reason:
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-82, owner instruction 2026-10-06): the first-run permission priming is retired by the First Run v2 handoff (packages/design/handoff/first-run-v2). A customer is asked for location in context — PC1–PC6, a sheet over Home with a mint hero, a split title, the Android dialog only from its primary button — and a rider walks P1–P13 from R3's 'Go online' (violet heroes, bullets, the drawn foreground-service notification, phone-settings steps). The gallery `PermLoc` draws a bare SystemState; a structural snapshot against it would assert the screen D-82 retired. Re-adoptable when a gallery export draws First Run v2.",
       },
       {
         state: "notifications",
         key: "LJ.perm_notif",
-        component: "PermNotif",
-        componentName: "PermNotifView",
-        viewFile: "apps/mobile/app/permissions-notifications.view.tsx",
-        // perm_notif is a step-2 sibling of the same SystemState structure; the app supersets the bare
-        // mock only by role-framing the copy (a data value the container owns), so it adopts cleanly as
-        // its own gated view — no structural divergence, honest per the classification.
-        propsParam: "{ icon, title, message, primary, secondary, onPrimary, onSecondary }: PermPrimeViewProps",
-        propsType: [
-          "export type PermPrimeViewProps = {",
-          "  icon: IconName;",
-          "  title: string;",
-          "  message: string;",
-          "  primary: string;",
-          "  secondary: string;",
-          "  onPrimary: () => void;",
-          "  onSecondary: () => void;",
-          "};",
-        ].join("\n"),
-        bind: ({ t, expr }) => permSystemStateBind({ t, expr }),
+        reason:
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-82, owner instruction 2026-10-06): the first-run notification priming is retired by the First Run v2 handoff (packages/design/handoff/first-run-v2). A customer is asked after an order (PC8: the 'Order placed' pill, three stacked sample notifications, 'Know when it’s at the gate'; PC10 declined) and a rider in the flow's P9 (a mock job offer, 'Play a test ping') with P11/P12 for blocked / muted. The gallery `PermNotif` draws a bare SystemState; a structural snapshot against it would assert the screen D-82 retired. Re-adoptable when a gallery export draws First Run v2.",
       },
     ],
   },
@@ -680,53 +647,8 @@ export const ADOPTED = [
   },
   {
     // ── CUSTOMER SYSTEM / ERROR / EMPTY STATES CLUSTER ──────────────────────────────────────────────
-    // LJ.force_update — the hard version gate (app/force-update.tsx), mounted by the root layout in
-    // place of the whole Stack when the installed build is below either the build-time or the
-    // server-driven minimum (customer/rider S·3). The mock `ForceUpdate` is a pure `<SystemState>` leaf
-    // (brand-green tone, brand mark, one line, one action) — the SAME primitive as perm_loc/perm_notif,
-    // so it adopts as a single 0-residual whole-screen view. SystemState is a structural leaf, so its
-    // tone/mark/title/message/primary/onPrimary are the DATA SEAM (invisible to the structural diff):
-    // the mock's `brand` boolean (which the kit renders as its own Dove mark) is dropped in favour of
-    // the app's `mark` slot (the container feeds <DoveMark on="green" />), and the copy is hoisted so
-    // the container supplies the role-NEUTRAL "keep using LyniaGo" line (this gate fires before the role
-    // is resolved — a role-specific verb would be wrong for half the users) and hides the primary when
-    // no STORE_URL is configured (no dead link). Structure stays the mock's SystemState by construction.
-    key: "LJ.force_update",
-    mockFile: "packages/design/explorations/journey/screens.jsx",
-    component: "ForceUpdate",
-    componentName: "ForceUpdateView",
-    viewFile: "apps/mobile/app/force-update.view.tsx",
-    container: "apps/mobile/app/force-update.tsx",
-    uiImport: "../src/ui",
-    propsParam: "{ mark, title, message, primary, onPrimary }: ForceUpdateViewProps",
-    propsType: [
-      "export type ForceUpdateViewProps = {",
-      "  /** The brand mark node the kit's `brand` boolean draws internally (app feeds <DoveMark/>). */",
-      "  mark: React.ReactNode;",
-      "  title: string;",
-      "  message: string;",
-      "  /** Hidden (undefined) when no store URL is configured — never a dead 'Update now' link. */",
-      "  primary?: string;",
-      "  onPrimary?: () => void;",
-      "};",
-    ].join("\n"),
-    bind: ({ t, expr }) => ({
-      JSXOpeningElement(path) {
-        if (path.node.name.name !== "SystemState") return;
-        // Drop the mock's frozen leaf literals + the kit-only `brand` boolean; feed the app's `mark`
-        // slot and the container-owned copy/action. `tone="green"` stays a static literal (both sides).
-        path.node.attributes = path.node.attributes.filter(
-          (a) => !(a.type === "JSXAttribute" && ["brand", "title", "message", "primary"].includes(a.name.name)),
-        );
-        path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("mark"), t.jsxExpressionContainer(expr("mark"))));
-        path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("title"), t.jsxExpressionContainer(expr("title"))));
-        path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("message"), t.jsxExpressionContainer(expr("message"))));
-        path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("primary"), t.jsxExpressionContainer(expr("primary"))));
-        path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPrimary"), t.jsxExpressionContainer(expr("onPrimary"))));
-      },
-    }),
-  },
-  {
+    // (LJ.force_update left this registry with docs/DESIGN-DEVIATIONS.md D-82: First Run v2 U1 replaced
+    // the gallery `ForceUpdate` SystemState, and app/force-update.view.tsx was deleted.)
     // LJ.on_hold — the customer account-on-hold wall (app/send.tsx → SendHoldView). DEFER-only: since
     // docs/DESIGN-DEVIATIONS.md D-52 the wall is drawn by the send-compose-v2 handoff (state 17), not by
     // the gallery's `OnHold`. See the deferred reason.
@@ -907,11 +829,8 @@ export const ADOPTED = [
   // (RJ splash/onboard/login/otp/role_select/perm_loc/perm_notif) is the SHARED customer auth flow — the
   // SAME app screens already adopted/deferred above under the LJ keys (splash is the native expo-splash;
   // onboard→onboarding.tsx and login→phone.tsx are adopted; otp/register/role_select are deferred;
-  // permissions.tsx renders a rider-framed variant of the SAME generated PermLocView/PermNotifView via its
-  // `isRider` copy seam, so the rider permission screens are ALREADY structurally gated on the exact views
-  // the rider uses). Re-gating those same view FILES against the RJ mocks would collide on the generated
-  // header comment (`gen LJ.perm_loc` and `gen RJ.perm_loc` write the identical path), so the shared band
-  // is not double-adopted. What is rider-SPECIFIC here — the KYC band and the top-up gate — is folded into
+  // perm_loc/perm_notif are superseded by First Run v2's rider flow P1–P16, ledger D-82, and listed in
+  // parity-status.mjs), so the shared band is not double-adopted. What is rider-SPECIFIC here — the KYC band and the top-up gate — is folded into
   // two large INTERACTIVE multi-state containers (the RiderHome board and become.tsx), with live-vs-static
   // divergence in sensitive KYC/gate code, and is deferred honestly per state (CLAUDE.md: honesty over
   // volume; keep KYC/gate behaviour identical). Each is a genuine wall, not laziness.
@@ -1212,29 +1131,6 @@ export const ADOPTED = [
     ],
   },
 ];
-
-/**
- * Shared data-seam for the two permission-priming SystemState views (LJ.perm_loc / LJ.perm_notif).
- * SystemState is a structural leaf, so its icon/title/message/primary/secondary become props (hoisted
- * from the mock's frozen literals) and the OS-permission actions wire onto onPrimary/onSecondary — the
- * container feeds the role-framed copy while the mock's structure is preserved by construction.
- */
-function permSystemStateBind({ t, expr }) {
-  return {
-    JSXOpeningElement(path) {
-      if (path.node.name.name !== "SystemState") return;
-      const hoist = ["icon", "title", "message", "primary", "secondary"];
-      path.node.attributes = path.node.attributes.filter(
-        (a) => !(a.type === "JSXAttribute" && hoist.includes(a.name.name)),
-      );
-      for (const k of hoist) {
-        path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier(k), t.jsxExpressionContainer(expr(k))));
-      }
-      path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPrimary"), t.jsxExpressionContainer(expr("onPrimary"))));
-      path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onSecondary"), t.jsxExpressionContainer(expr("onSecondary"))));
-    },
-  };
-}
 
 /**
  * Flatten the registry into per-view CHECK UNITS — the shape the transpiler + guardrail consume. A

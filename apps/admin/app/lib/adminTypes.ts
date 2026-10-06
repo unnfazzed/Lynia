@@ -431,11 +431,16 @@ export interface FoodDisputes {
 }
 
 /* ── Rider detail (kit riders.html) ────────────────────────── */
+/** First Run v2 E4 (D-82): the bike plate's check. */
+export type PlateStatus = "none" | "checking" | "verified";
+
 export interface RiderDetail {
   id: string;
   name: string;
   phone: string;
   bike: string;
+  /** First Run v2 E4 (D-82): ops' check of `bike` — `checking` until POST plate-verify. Absent on older APIs. */
+  plateStatus?: PlateStatus;
   kyc: "pending" | "verified" | "failed" | "expired";
   status: "online" | "offline" | "suspended" | "banned" | "cooldown" | "on_hold";
   cooldown?: string;

@@ -13,7 +13,7 @@ export { OfflineBanner, type ConnectivityState } from "./OfflineBanner";
 export { AppBar } from "./shell/AppBar";
 export { AppScreen } from "./shell/AppScreen";
 export { APP_TABS, RIDER_TABS, TAB_BAR_GAP, TAB_BAR_H, TAB_BAR_SPACE, TabBar, TabIllus, tabA11yLabel, type AppTab, type TabArt, type TabBadge } from "./shell/TabBar";
-export { ShellTabBar, TabBarSpaceProvider, useCustomerTabBadges, useKeyboardVisible, useRiderTabBadges, useTabBarSpace, useTabReselect, useTabRoot, useTabScrollToTop } from "./shell/TabShell";
+export { ShellTabBar, TabBarSpaceProvider, useCustomerTabBadges, useHideTabBar, useKeyboardVisible, useRiderTabBadges, useTabBarSpace, useTabReselect, useTabRoot, useTabScrollToTop } from "./shell/TabShell";
 // The 8c home header/cards (HomeHeader, HomeStatusRow, LiveOrderCard, RestaurantCard), BrandHeader,
 // CodeInput, Avatar/RiderMini and Celebrate were deleted in the 2026-10-02 bundle trim: no live route
 // rendered them any more (the rider board, Orders tab and Home moved to their v2 handoffs). The
@@ -47,6 +47,43 @@ export { DismissKeyboardArea } from "./DismissKeyboardArea";
 export { useDial } from "./useDial";
 export { ToastProvider, useToast, useActionError, useActionErrorEffect, pushToast, TOAST_DURATION_MS, type ToastTone } from "./Toast";
 export { Tappable, RIPPLE, RIPPLE_INK, RIPPLE_ON_DARK, PRESSED_OPACITY, type PressTone, type TappableProps } from "./Tappable";
+// First Run v2 shared parts (handoff/first-run-v2, ledger D-82). The copy lives in ./firstrun/copy.
+export {
+  BackHeader,
+  Body,
+  BulletList,
+  ExitButton,
+  FirstRunScreen,
+  FirstRunToast,
+  FrBadge,
+  FrField,
+  FrSheet,
+  FrSoftPill,
+  HeroDisc,
+  HeroPanel,
+  IconDot,
+  InfoBox,
+  KycChecklist,
+  LargeTitle,
+  ListCard,
+  ListRow,
+  PinnedFooter,
+  PrimaryButton,
+  SampleNotification,
+  Spinner,
+  SplitTitle,
+  StepList,
+  StepMarker,
+  SystemSettingsSteps,
+  TextLinkButton,
+  TipChips,
+  Toggle,
+  TriesMeter,
+  VerifiedRow,
+  firstRunMetrics,
+  useFirstRunMetrics,
+  type FrTone,
+} from "./firstrun";
 
 /**
  * LR20 exit test, reachable only from the test-build banner's long-press. A release build needs SOME

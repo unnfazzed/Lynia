@@ -114,13 +114,13 @@ describe("C4 · Code — the sixth digit verifies", () => {
     expect(mockReplace).toHaveBeenCalledWith("/home");
   });
 
-  it("the C1 rider path primes the rider permissions", async () => {
+  it("the C1 rider path goes OTP → the rider side, no priming (D-82 G1)", async () => {
     mockLocalSearchParams = { phone: "+263772451180", deliveryChannel: "whatsapp", intent: "rider" };
     mockVerifyOtp.mockResolvedValue(ok);
     const t = mount({ initialCooldownS: 30 });
     await type(t, "418210");
     expect(mockSaveRole).toHaveBeenCalledWith("rider");
-    expect(mockReplace).toHaveBeenCalledWith("/permissions?next=/rider");
+    expect(mockReplace).toHaveBeenCalledWith("/rider");
   });
 
   it("a new account goes to C5 carrying the phone, channel and intent", async () => {
@@ -176,7 +176,7 @@ describe("C4 · a returning rider with no saved role", () => {
     const t = mount({ initialCooldownS: 30 });
     await type(t, "418210");
     expect(mockSaveRole).toHaveBeenCalledWith("rider");
-    expect(mockReplace).toHaveBeenCalledWith("/permissions?next=/rider");
+    expect(mockReplace).toHaveBeenCalledWith("/rider");
   });
 
   it("a saved customer role still wins", async () => {

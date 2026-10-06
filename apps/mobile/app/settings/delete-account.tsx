@@ -7,43 +7,58 @@ import { deleteAccount } from "../../src/api/auth";
 import { getActiveCustomerOrder } from "../../src/api/orders";
 import { useAuth } from "../../src/auth/auth-context";
 import { pendingOrQueued } from "../../src/query/client";
-import { AppBar, Button, Card, Icon, Screen, useActionErrorEffect, Tappable } from "../../src/ui";
+import { Icon, Tappable, useActionErrorEffect } from "../../src/ui";
+import { BackHeader, Body, FirstRunScreen, HeroDisc, HeroPanel, InfoBox, PinnedFooter, SplitTitle } from "../../src/ui/firstrun";
 
 /**
- * Account deletion — the two screens the design draws (screens-shipped.jsx, SH7):
+ * The words First Run v2 I draws (`fr-states.js` `add('I', …)`), verbatim, plus the shipped strings for the
+ * states it doesn't draw: a running delivery (the live check) and the final step (owner D-82 §2 #6 keeps the
+ * two-step confirm; D-79's immediate-deletion sentence stands).
+ */
+const DEL = {
+  titleA: "Delete",
+  titleB: "your account?",
+  body: "Profile, places and order history go for good. Payment records stay as the law needs.",
+  clear: "No delivery running",
+  running: "A delivery is running — finish or cancel it first, then you can delete your account.",
+  keep: "Keep my account",
+  next: "Delete account",
+  finalA: "This is",
+  finalB: "the final step",
+  ack: "I understand my history and saved places will be gone",
+  confirm: "Delete my account",
+} as const;
+
+/**
+ * Account deletion — First Run v2 I (`packages/design/handoff/first-run-v2/`, ledger D-82 §2 #6): the new back
+ * header (44 round `surface` button), a danger hero 180 with the trash disc, "Delete **your account?**", one
+ * sentence, the live "No delivery running" box, then "Keep my account" (the 52 CTA) over the danger text link
+ * "Delete account".
  *
- *   LJ.delete_account  the explainer + the live "is anything running?" check + "Continue to delete"
- *   LJ.delete_final    the final step: what deletion means (immediate, D-79 — the mock's 30-day grace
- *                      copy is replaced), an acknowledgement tick, and the danger-filled "Delete my account"
+ * Two steps, as before (owner #6): the link opens the final step — D-79's sentence (the API erases at once,
+ * `PrivacyService.eraseAccount`), the acknowledgement tick, and "Delete my account" as the same danger link,
+ * armed only by the tick. "Keep my account" stays the primary on both steps. (Play policy requires in-app
+ * deletion; CDPA requires erasure — docs/PLAY-STORE-SUBMISSION.md §4.)
  *
- * Two SCREENS, not one card with a hidden branch: deletion is irreversible, so the mocks put a whole
- * screen between the intent and the act, and the acknowledgement tick is the gate on the last one.
- * (Play policy requires in-app deletion; CDPA requires erasure — docs/PLAY-STORE-SUBMISSION.md §4.)
- *
- * The mock's mint strip is the STATIC drawing of a LIVE check: a running delivery blocks deletion
- * server-side (the API answers 409 with user-facing copy), so the same strip carries the live answer
- * — mint + the mock's wording when nothing is running, danger-toned with the reason when something
- * is, with "Continue to delete" disabled behind it. The structure is the mock's; the value is live.
+ * The box is the drawing of a LIVE check: a running delivery blocks deletion server-side (409 with
+ * user-facing copy), so when one is running the box turns danger with the reason and the link is disabled.
  */
 type Step = "explain" | "final";
 
 export type DeleteAccountScreenProps = {
   /** The step the screen opens on — "explain" in the app. The parity lane stages LJ.delete_final. */
   initialStep?: Step;
-  /** Seeds the acknowledgement tick (the mock draws LJ.delete_final with it already ticked). */
+  /** Seeds the acknowledgement tick (the parity lane draws the final step ticked). */
   initialAcknowledged?: boolean;
 };
 
-export default function DeleteAccountScreen({
-  initialStep = "explain",
-  initialAcknowledged = false,
-}: DeleteAccountScreenProps = {}): React.ReactElement {
+export default function DeleteAccountScreen({ initialStep = "explain", initialAcknowledged = false }: DeleteAccountScreenProps = {}): React.ReactElement {
   const router = useRouter();
   const { signOut } = useAuth();
   const [step, setStep] = React.useState<Step>(initialStep);
   const [acknowledged, setAcknowledged] = React.useState(initialAcknowledged);
 
-  // The live half of the mock's "No delivery is running" strip.
+  // The live half of the drawn "No delivery running" box.
   const activeQ = useQuery({ queryKey: ["activeCustomerOrder"], queryFn: getActiveCustomerOrder });
   const running = !!activeQ.data;
 
@@ -54,121 +69,85 @@ export default function DeleteAccountScreen({
     onSuccess: () => void signOut(),
   });
   // The API's 409s ("finish your active delivery", "account under a standing restriction") are
-  // already user-facing copy and surface verbatim — but as an auto-dismissing toast, not a red line
-  // camped under the button (owner instruction 2026-08-12). Keyed on the Error object, so a second
-  // refused attempt still speaks.
+  // already user-facing copy and surface verbatim as an auto-dismissing toast (owner 2026-08-12).
   useActionErrorEffect(deleteM.error);
+  const deleting = !!pendingOrQueued(deleteM);
 
   const keep = (): void => router.back();
+  const final = step === "final";
 
-  if (step === "final") {
-    return (
-      <Screen>
-        <AppBar title="Delete account" onBack={() => setStep("explain")} />
-        <Card>
-          <Text style={{ fontSize: 17, fontWeight: "700", color: tokens.color.dangerInk }}>This is the final step</Text>
-          <Text style={{ fontSize: 13, color: tokens.color.muted, lineHeight: 20, marginTop: 4 }}>
-            {/* D-79 (owner 2026-10-06): the API erases at once (privacy.service eraseAccount), so the mock's
-                30-day grace copy was false. */}
-            Your account is deleted{" "}
-            <Text style={{ fontWeight: "700", color: tokens.color.ink }}>straight away</Text>
+  return (
+    <FirstRunScreen
+      testID={final ? "delete-final" : "delete-explain"}
+      header={<BackHeader onBack={final ? () => setStep("explain") : keep} />}
+      footer={
+        <PinnedFooter
+          primary={{ label: DEL.keep, onPress: keep, testID: "delete-keep" }}
+          link={
+            final
+              ? { label: DEL.confirm, onPress: () => deleteM.mutate(), disabled: !acknowledged || deleting, color: tokens.color.dangerInk, testID: "delete-confirm" }
+              : { label: DEL.next, onPress: () => setStep("final"), disabled: running, color: tokens.color.dangerInk, testID: "delete-next" }
+          }
+        />
+      }
+    >
+      {/* `margin-top:-24px`: the hero sits 12 under the back header, not the body's 36. */}
+      <View style={{ marginTop: -24 }}>
+        <HeroPanel tone="danger" height={180}>
+          <HeroDisc icon="trash" />
+        </HeroPanel>
+      </View>
+      {final ? (
+        <>
+          <SplitTitle a={DEL.finalA} b={DEL.finalB} tone="danger" />
+          {/* D-79 (owner 2026-10-06): the API erases at once, so the gallery's 30-day grace copy was false. */}
+          <Body>
+            Your account is deleted <Text style={{ fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>straight away</Text>
             {" and can't be recovered. Order records we must keep by law are anonymised."}
-          </Text>
+          </Body>
           <Tappable
+            testID="delete-ack"
             onPress={() => setAcknowledged((v) => !v)}
             accessibilityRole="checkbox"
             accessibilityState={{ checked: acknowledged }}
             style={{
+              marginTop: 16,
+              minHeight: tokens.touchTargetMin,
               flexDirection: "row",
               alignItems: "center",
               gap: 10,
-              paddingVertical: 11,
-              paddingHorizontal: 12,
-              borderRadius: tokens.radius.input,
-              borderWidth: 1.5,
+              paddingVertical: 12,
+              paddingHorizontal: 14,
+              borderRadius: 14,
+              borderWidth: 1,
               borderColor: acknowledged ? tokens.color.accent : tokens.color.line,
               backgroundColor: acknowledged ? tokens.color.accentWash : tokens.color.bg,
-              marginTop: 12,
-              minHeight: tokens.touchTargetMin,
             }}
           >
             <View
               style={{
-                width: 20,
-                height: 20,
+                width: 24,
+                height: 24,
                 borderRadius: 6,
-                backgroundColor: acknowledged ? tokens.color.accent : tokens.color.surface,
+                borderWidth: acknowledged ? 0 : 1.5,
+                borderColor: tokens.color.line,
+                backgroundColor: acknowledged ? tokens.color.accent : tokens.color.bg,
                 alignItems: "center",
                 justifyContent: "center",
-                flexShrink: 0,
               }}
             >
-              {acknowledged ? <Icon name="check" size={13} color={tokens.color.onAccent} /> : null}
+              {acknowledged ? <Icon name="check" size={16} color={tokens.color.onAccent} /> : null}
             </View>
-            <Text style={{ flex: 1, fontSize: 13, fontWeight: "600", color: tokens.color.ink, lineHeight: 18 }}>
-              I understand my history and saved places will be gone
-            </Text>
+            <Text style={{ flex: 1, fontSize: 14, lineHeight: 19.6, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>{DEL.ack}</Text>
           </Tappable>
-        </Card>
-        <Button
-          label="Delete my account"
-          tone="danger"
-          disabled={!acknowledged}
-          loading={pendingOrQueued(deleteM)}
-          onPress={() => deleteM.mutate()}
-        />
-        <Button label="Keep my account" variant="ghost" onPress={keep} />
-      </Screen>
-    );
-  }
-
-  return (
-    <Screen>
-      <AppBar title="Delete account" onBack={() => router.back()} />
-      <Card>
-        <View
-          style={{
-            width: 52,
-            height: 52,
-            borderRadius: 26,
-            backgroundColor: tokens.color.dangerWash,
-            alignItems: "center",
-            justifyContent: "center",
-            marginBottom: 10,
-          }}
-        >
-          <Icon name="trash" size={22} color={tokens.color.dangerInk} />
-        </View>
-        <Text style={{ fontSize: 17, fontWeight: "700", color: tokens.color.ink }}>Delete your account?</Text>
-        <Text style={{ fontSize: 13, color: tokens.color.muted, lineHeight: 20, marginTop: 4 }}>
-          Your profile, saved places, notifications and order history will be permanently deleted. Records the law makes
-          us keep (payments) are kept only as long as it requires.
-        </Text>
-      </Card>
-      <View
-        style={{
-          flexDirection: "row",
-          gap: 8,
-          paddingVertical: 9,
-          paddingHorizontal: 11,
-          borderRadius: tokens.radius.input,
-          backgroundColor: running ? tokens.color.dangerWash : tokens.color.accentWash,
-          marginBottom: 12,
-        }}
-      >
-        <Icon
-          name={running ? "triangle-alert" : "check"}
-          size={15}
-          color={running ? tokens.color.dangerInk : tokens.color.accentText}
-        />
-        <Text style={{ flex: 1, fontSize: 12.5, color: running ? tokens.color.dangerInk : tokens.color.accentText, lineHeight: 18 }}>
-          {running
-            ? "A delivery is running — finish or cancel it first, then you can delete your account."
-            : "No delivery is running — you're clear to continue. (A live order blocks deletion until it ends.)"}
-        </Text>
-      </View>
-      <Button label="Keep my account" onPress={keep} />
-      <Button label="Continue to delete" variant="ghost" tone="danger" disabled={running} onPress={() => setStep("final")} />
-    </Screen>
+        </>
+      ) : (
+        <>
+          <SplitTitle a={DEL.titleA} b={DEL.titleB} tone="danger" />
+          <Body>{DEL.body}</Body>
+          {running ? <InfoBox tone="bad" icon="triangle-alert" text={DEL.running} testID="delete-running" /> : <InfoBox tone="ok" icon="check" text={DEL.clear} testID="delete-clear" />}
+        </>
+      )}
+    </FirstRunScreen>
   );
 }

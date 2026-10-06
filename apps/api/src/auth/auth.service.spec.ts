@@ -6,7 +6,7 @@ import type { KycPendingStateService } from "../kyc/kyc-pending-state.service";
 import type { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { PiiCryptoService } from "../common/pii-crypto.service";
-import { AuthService } from "./auth.service";
+import { AuthService, kycExpiredOn } from "./auth.service";
 import { ConsoleOtpSender } from "./otp-sender";
 import { InMemoryOtpStore } from "./otp-store";
 import { TokenService } from "./token.service";
@@ -340,6 +340,12 @@ describe("AuthService.getProfile", () => {
     const { svc } = make(baseEnv, { profile: { findUnique: async () => riderRow } });
     const me = await svc.getProfile("p2");
     expect(me.rider).toMatchObject({ bikeReg: "ABZ 1234", kycStatus: "verified", ratingAvg: 4.8, tripsCount: 30, isOnline: true });
+  });
+
+  it("First Run v2 E4 (D-82): surfaces the plate's check status, additively", async () => {
+    const { svc } = make(baseEnv, { profile: { findUnique: async () => ({ ...riderRow, rider: { ...riderRow.rider, plateStatus: "checking" } }) } });
+    const me = await svc.getProfile("p2");
+    expect(me.rider).toMatchObject({ bikeReg: "ABZ 1234", plateStatus: "checking" });
   });
 
   // BH-03: KYC_MODE is a global deploy config, not a per-rider column — surfaced on the rider
@@ -1709,5 +1715,15 @@ describe("AuthService.getProfile — kycPendingState (P0-1 / D6)", () => {
       const { svc } = make({ ...baseEnv, KYC_MODE: "manual" } as Env, profileWithRider(held), spyPendingState("held").svc);
       expect((await svc.getProfile("p1")).rider?.kycHeld).toBe(false);
     });
+  });
+});
+
+// First Run v2 F6 (ledger D-82 §4): `rider.kycExpiredOn` on /auth/me.
+describe("kycExpiredOn", () => {
+  it("is the stored expiry day while expired, else the day the expiry applied, else null", () => {
+    expect(kycExpiredOn("expired", new Date("2026-10-02T00:00:00Z"), new Date("2026-10-05T14:00:00Z"))).toBe("2026-10-02");
+    expect(kycExpiredOn("expired", null, new Date("2026-10-05T14:00:00Z"))).toBe("2026-10-05");
+    expect(kycExpiredOn("expired", null, null)).toBeNull();
+    expect(kycExpiredOn("verified", new Date("2031-01-01T00:00:00Z"), null)).toBeNull();
   });
 });

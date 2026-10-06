@@ -4573,3 +4573,380 @@ below are the only differences, and they apply **only** in the web build (`EXPO_
 | Android "Get the app" banner | Not drawn | To be built (phase 4) | Owner decision W4. |
 
 Nothing in `packages/design/**` changes. **Upstream ask:** draw the Android banner and the web Add to Home Screen hint.
+
+## D-82 · First Run v2: permissions, app update, Personal details, Bike & documents, ID-check outcomes, rider entry, splash steps — handoff APPROVED (2026-10-06)
+
+**Owner instruction, this session (2026-10-06):** the owner sent Claude Design the brief
+`docs/designs/first-run-v2-PROMPT.md` (with the current-UI pack) and uploaded the result
+(`Lynia_Design_System.zip` → `handoff/first-run-v2-2026-10`). Before building, the owner asked to review every
+place where it clashed with the shipped UI ("where there are inconsistencies with current UI ask me for review
+before execution"); §2 records those answers.
+
+### 1 · The design-package sync (a record, not a deviation)
+
+| Path | What |
+|---|---|
+| `packages/design/handoff/first-run-v2/` | The handoff, **verbatim**: `README.md` (shell, screens A–I, Android wiring, state, tokens, retires), `BRIEF.md` (18 decisions), `CLAUDE-CODE-PROMPT.md` (phases 0–6), `copy.ts` (`PC`, `RP`, `UP`, `PD`, `BD`, `KY`, `SP`), `design/` (the HTML reference: `First Run v2.html`, `First Run v2 - All States.html?screen=<ID>`, `fr-kit.js`, `fr-states.js`, `fr-copy.js`, assets) and `screenshots/` (one 1× PNG per state, `index.html` contact sheet). |
+| `packages/design/tokens/colors.css` | **Phase 1 (2026-10-06):** adds `--danger-sun: #f4d9d5` — the sun on a danger hero panel (README §1 tones; BRIEF open question 1, answered by the owner below). Decor only, never text. Mirrored on every face (`packages/shared/src/design-tokens.ts` `dangerSun`, admin + merchant `globals.css` `:root`) and pinned by `design-tokens.drift.spec.ts`. `#FFF6D6` needed no token: it is the existing `--highlight-chip-wash`. |
+
+### 2 · Owner decisions where the handoff meets what already shipped (2026-10-06, asked before building)
+
+| # | Clash | Decision |
+|---|---|---|
+| 1 | D1/PC11/P15 redraw Settings (round back button, large title, YOU + ALERTS cards with toggles) and leave out Privacy, Terms, Payment, Delete account, Test ping/alarm | **New look on Settings and its sub-pages (Personal details, Bike & documents, Language, Privacy, Delete account), keeping every existing row.** A toggle mirrors the OS permission: it requests it, or opens phone settings; the app cannot switch a permission off |
+| 2 | H1/H2 draw a different splash (big centred wordmark, corner sun, card radius 20, no dove/orbit) | **Keep splash-v1's look for everyone.** Take only the rider's two steps (`SP.r1`/`SP.r2`), the 320×640 rule (card 16dp above the nav bar, brand centred above it) and the offline row |
+| 3 | F1–F8 are full screens with only ✕ (no tab bar, no mint top card, no "Order food and send parcels") | **As drawn; ✕ switches to the customer side (Home).** Reopening the rider side shows the same F page |
+| 4 | The handoff toast is a bottom forest bar; the app's toast is a top strip | **The bottom toast replaces the shared toast app-wide** |
+| 5 | Permissions move after R3, so "Go online" appears on R3 and P13 | **R3's "Go online" starts the flow (P1…); P13's "Go online" goes online.** A rider who has granted everything goes straight online. The priming after sign-in (before R1) is removed (G1) |
+| 6 | The brief asked only for Delete account copy; the handoff redraws it (I) | **Adopt the redesign**, keeping the two-step confirm and D-79's immediate-deletion copy |
+| 7 | U4a/U4b soft update banners need a server setting | **Build now:** `recommendedVersion` on `/app/version-gate`, off until set; once per version |
+| 8 | Checklist markers 28 vs R1/R2's 22, icons 16/20/24 vs 18/22, titles 28/700 vs C2–C5's 24/700 | **Handoff values on the new screens only**; R1–R3 and C1–C5 stay as their handoff drew them |
+
+Also decided: `#F4D9D5` (the sun on danger heroes) becomes the token `dangerSun` (tokens CSS + every face);
+`#FFF6D6` is the existing `highlightChipWash`. The customer notification re-ask cap of 3 is built as drawn
+(**owner to confirm**). The licence is dropped from all copy (BRIEF 13).
+
+### 3 · What has landed
+
+_Filled in phase by phase (phases 1–6, `CLAUDE-CODE-PROMPT.md`)._
+
+**Phase 0 (read and plan, 2026-10-06).** The primitives map, every permission request today (file:line), the
+KYC status → F mapping and the per-worker file plan for phases 2–6 were reported before any edit. Shared-file
+owners: `app/settings/index.tsx` → phases 2+3 (it owns every Settings row, D1 included); the rider board
+`app/rider/(tabs)/index.tsx` → phase 6 (the others land region-disjoint mount hunks or export components it
+wires); `app/(tabs)/home.tsx` → phases 2+3 (phase 4 adds the one-line U4a mount).
+
+**Phase 1 (shell parts and copy, 2026-10-06).**
+
+- **Copy:** the handoff's `copy.ts` ships **byte-for-byte** as `apps/mobile/src/ui/firstrun/copy.ts` (`PC`, `RP`,
+  `UP`, `PD`, `BD`, `KY`, `SP`) — one file, not split, next to the parts that read it (`KycChecklist` reads `KY`).
+  A jest test fails if it ever differs from `packages/design/handoff/first-run-v2/copy.ts`. Import it from
+  `src/ui/firstrun/copy`; it is deliberately not in the `src/ui` barrel (two-letter names).
+- **Parts** (`apps/mobile/src/ui/firstrun/`, exported from `src/ui/index.tsx`; every number is `fr-kit.js`'s):
+  `HeroPanel` (`tone` mint|violet|danger|neutral|green, `height?`, `decor?` = the coral dot, `topLeft?` = the ✕
+  slot 12 inside the corner), `HeroDisc` (104/84, 40 icon at 1.75, halo 14 out, `spinner` = F8's 48 ring),
+  `SplitTitle` (`a`, `b`, `tone`; 28/31.4, 24 at 320), `Body`, `PinnedFooter` (`primary` 52 + `link` 44, or
+  `inline` in a sheet), `PrimaryButton` (`icon`, `iconAfter`, `disabled` = U3 line/muted, `done` = D3 inline
+  "Saved"), `TextLinkButton`, `ExitButton`, `FrSoftPill` (mint / white / dangerWhite — the barrel's `SoftPill` is
+  the empty-state one), `Toggle` (draws the OS state; `onPress` requests or opens settings), `BackHeader` +
+  `LargeTitle` (owner #1's Settings look), `ListCard` / `ListRow` / `IconDot` (n|ok|vi|bad, `danger` row),
+  `BulletList` (P1), `StepMarker` / `Spinner` / `StepList` / `SystemSettingsSteps` (`shakeKey` for P6) /
+  `KycChecklist` (`step2` active|next|done, `label`), `TipChips`, `TriesMeter` (`left`, `total`, `label` = F4's
+  box), `InfoBox` (ok|bad|n, `title`), `FrBadge` (mint|gold|checking|surface, `lead` for U1's "New"),
+  `SampleNotification` (`behind` = .94), `FrField` / `VerifiedRow`, `FrSheet` (radius 24, grab 4×36, dim .45),
+  `FirstRunScreen` (status bar + 12 / 6, scrolling body, pinned footer, keyboard-aware), `FirstRunToast`, and
+  `useFirstRunMetrics()` / `firstRunMetrics(width, fontScale)` (≤340 wide → hero 160, disc 84, title 24;
+  font scale ≥1.2 → hero 176, disc 84). Icons added to `Icon`: `volume-x`, `sun`, `battery`, `upload` (`trash-2`
+  is the existing `trash`). (A dev gallery route was removed again: every route ships in the release bundle.)
+- **Token:** `dangerSun #F4D9D5` (see §1).
+- **Toast (owner #4):** `ToastProvider` (`src/ui/Toast.tsx`) now draws the bottom toast app-wide — `forest`, radius
+  14, padding 14 16, white 600 14, a 20 brand check, 96 above the bottom + the safe-area inset, slides up, gone
+  after **2.5s** (`TOAST_DURATION_MS` 4000 → 2500). API unchanged (`useToast().show`, `useActionError`,
+  `useActionErrorEffect`, `pushToast`), so no caller moved.
+
+**Phase 6 (ID-check outcomes F, rider entry G, copy pass I — 2026-10-06).**
+
+- **One mapping** (`apps/mobile/src/logic/kyc-outcome.ts`, `kycScreenFor`): the board's existing resolvers
+  (`resolveKycGate` → `resolveGate`) → one page. No rider record → **R1** (G1). Fresh `completed` launch (the 30 s
+  `KYC_COMPLETED_HINT_MS` hint) → **F8**; automated check with the vendor → **R2** (Calm Mint v2 stays, README G3
+  "or R2"); manual review → **F1**; held → **F2**; unfinished (and an API with no pending state, and a cancelled
+  launch) → **F3**; declined below the lock → **F4a–d** by `kycDeclineReason` (`declineVariant`: `id_unreadable` → a,
+  `face_mismatch`/`liveness_failed` → b, `id_expired`/`doc_tampered` → c, `name_mismatch`/`other`/unknown →
+  d; `duplicate` → **F5dup**, see §4); locked → **F5**; expired (the record, or the server's `kyc_expired` refusal) → **F6**; the SDK couldn't open →
+  **F7**; the server's plain `kyc` refusal on a cached-verified rider → **F3**. The non-KYC gates (GPS, area, cooldown,
+  hold, suspended, banned, top-up) keep their Rider v2 walls. Unit-tested state by state (`kyc-outcome.test.ts`).
+- **One shell** (`src/ui/firstrun/IdCheckOutcome.tsx`): `FirstRunScreen` + `HeroPanel` (✕ in `topLeft`) + `HeroDisc`
+  + `SplitTitle` + `Body` + `TipChips` / `TriesMeter` / `KycChecklist` + `PinnedFooter`, composed per `fr-states.js`
+  (F8 spinner + checklist "…", F1/F2 "In review", F3 "~2 min" + trailing arrow, F4 camera CTA + tries box + WhatsApp
+  link, F5 WhatsApp CTA, F6 camera CTA, F7 refresh CTA + WhatsApp link). `KY` verbatim; the checklist's "In review" /
+  "~2 min" are Calm Mint v2's `RO.inReview` / `RO.stepIdTime` (the same drawn words).
+- **Board** (`app/rider/(tabs)/index.tsx`): an F page replaces the whole tab — no `MintTop`, no tab bar
+  (`useHideTabBar`, new in `src/ui/shell/TabShell.tsx`: a tab root holds the floating bar hidden while mounted), no
+  "Order food and send parcels" bridge. ✕ = `saveRolePreference("customer")` + `replace("/home")`, the same switch the
+  Account toggle makes; reopening the rider side re-resolves the same page from `/auth/me`. "Try again" / "Finish ID
+  check" / "Re-verify my ID" run the existing `retryKyc` + SDK lane (force-fresh-session rules unchanged), WhatsApp is
+  the existing support link. `KycCheckHost` stays mounted under the F page. The Rider v2 KYC gate branches and their
+  strings (`gNotRider*`, `gPending*`, `gUnfinished*`, `gFailed*`, `gFailed2*`, `gExpired*`, `gCantOpen*`, `reverify`,
+  `finishId`, `becomeRider`, `RF.gFailedV/gFailedWhyB/gExpiredB/gPendingV`) are deleted.
+- **G1:** the board's "Earn with your bike" interstitial is gone: a non-rider reaching `/rider` is `replace`d by R1
+  (`/rider/become`) — only once the mount's re-read of `me` has landed, so a cached customer `me` can't bounce a rider
+  who just registered. `become.tsx` hands over with `replace("/rider")` after re-reading `me` (no `?from=board` back
+  path any more, and no `/permissions` priming before the board — owner #5).
+- **R3 → permissions (owner #5):** R3's "Go online" marks R3 seen, then calls `startRiderPermFlow(router)` from
+  `src/logic/rider-perm-flow.ts` — the single adapter phase 3 swaps for its own export. Until then it `replace`s to the
+  existing `/permissions?next=/rider` (which forwards straight back on a primed phone).
+- **G2:** the customer Account's start card is `BecomeRiderCard` (`src/ui/firstrun/BecomeRiderCard.tsx`, `fr-states.js`
+  G2: radius 24 `riderWash`, 120 sun, 14 coral, 22/700 "Earn with **your bike**", `KY.becomeBody`, 52 "Start →") → R1.
+- **G3:** mid-check the Account's in-progress / review / failed card switches to the rider side the way the toggle does
+  (`saveRolePreference("rider")` + `replace("/rider")`, was a `push`) and so lands on the current F page or R2; the F
+  page's ✕ comes straight back. Locked keeps its WhatsApp action.
+- **I · copy pass:** the Account card bodies now use `KY`'s times and channel — in progress `KY.unfBody` ("About 2
+  minutes", was "about 3 minutes"), review `KY.checkBody` for the automated check ("Usually under a minute") or
+  `KY.reviewBody` for a person ("Usually a few hours. We'll notify you.", was "We'll SMS you."), locked `KY.lockedBody`.
+  The licence is gone from R1 ("Your photo and bike papers can wait.") and R3 ("Add your photo and bike papers later in
+  Account") — BRIEF 13, settling D-79 §5's first bullet. `grep -ri licen` over `apps/mobile/{app,src}` now finds only
+  code comments.
+- **I · Delete account (owner #6):** `app/settings/delete-account.tsx` is frame I — `BackHeader`, danger hero 180 with
+  the trash disc, "Delete **your account?**", I's sentence, the live box (`ok` "No delivery running", or `bad` with the
+  shipped running-delivery sentence), "Keep my account" (primary, back) over the `dangerInk` link "Delete account"
+  (disabled while a delivery runs). The two-step confirm stays: the link opens the final step in the same shell —
+  "This is **the final step**", D-79's sentence with "straight away" bold, the acknowledgement tick, "Keep my account"
+  over the danger link "Delete my account" armed by the tick. Parity: `LJ.delete_account` / `LJ.delete_final` stay
+  wired (fixtures unchanged) and move to `rendered-conformance.pending.json` as SUPERSEDED TARGETs; the guardrail's
+  asserted-screens floor drops by exactly those two (5 → 3), as D-66 did. `RJ.kyc_pending`, `kyc_unfinished`,
+  `kyc_cant_start`, `kyc_failed`, `kyc_expired` and `gate_kyc_locked` carry SUPERSEDED reasons in `parity-status.mjs`.
+- **Mount slot** for the other phases: one marked comment in the board's `AppScreen` (J8 `RiderPermBoardRow` / G8
+  `RiderLocEmpty` from phase 3, U4b `SoftUpdateBanner` from phase 4).
+
+**Phases 4 + 5 (app update C, splash H, Personal details D, Bike & documents E — 2026-10-06).**
+
+- **U1–U5** (`app/force-update.tsx`): `FirstRunScreen` + a green 280 `HeroPanel` (no dot: it holds the mark, not a disc)
+  with the dove's three facets in white (`lyniago-mark-mono.svg` tinted white) + "Time to **update**" + `UP.body` + the
+  server's what's-new line as `FrBadge` "**New** …" + `PinnedFooter` "Update now" / "Help on WhatsApp". U2 (no
+  `STORE_URL`): `UP.noLinkBody`, the CTA becomes "Message us on WhatsApp", no pill, no link. U3 (offline, store link
+  present): the CTA disabled (`line`/`muted`) over an `n` box "Waiting for a connection"; re-enabled by the app-wide
+  reachability store (the screen checks `/health` on mount and on every return to the foreground, so a dead link
+  starts the store's probe loop and its first OK re-enables the button). U5 = the same screen on return.
+  `app/force-update.view.tsx` is deleted; `LJ.force_update` left `codegen/adopted.mjs`; its target stays wired (the
+  fixture now renders U1) with a SUPERSEDED reason in `rendered-conformance.pending.json`; `RJ.force_update` carries a
+  SUPERSEDED reason in `parity-status.mjs`.
+- **Soft update (owner #7):** `GET /app/version-gate?soft=1` answers `{ minSupportedVersion, recommendedVersion,
+  whatsNew }` (`VersionGateSoftResponse`, strict). Opt-in because the plain body is `.strict()` on every installed
+  build — adding keys to it would turn their force-update gate off; a request without `soft` still gets exactly
+  `{ minSupportedVersion }`. Server env `RECOMMENDED_APP_VERSION` / `RECOMMENDED_APP_VERSION_IOS` (dotted, per platform
+  like the minimum) and `APP_WHATS_NEW` (≤80), all off (null) when unset or ""; wired as optional Variables in
+  `release-azure.yml`. The client asks with `soft=1`, falls back to the plain body from an older server, and shares the
+  one cold-start answer (`useServerVersionGate`). `SoftUpdateBanner` / `useSoftUpdate`
+  (`src/ui/firstrun/SoftUpdateBanner.tsx`, `src/logic/soft-update.ts`): U4a `forest` (body `illusMint`, brand-green
+  "Update" pill, 44 ✕) is mounted under Home's header (one line in `app/(tabs)/home.tsx`); U4b `violet` is exported for
+  the board's marked slot. Once per version: Update or ✕ stores the version (`lynia.softUpdateDismissed.v1`).
+- **Splash (owner #2):** splash-v1 unchanged for everyone, plus: a boot into the rider board (`/rider`) shows the two
+  rider steps `SP.r1` / `SP.r2`; step 2 is the board's first reads (`["me"]` + `["activeJob"]`) settling in the shared
+  query cache (`src/boot/rider-board-ready.ts`, a new `rider` boot signal), then a cut (no exit into Home); a rider
+  boot sent elsewhere first (rejected session) hands off at once. On the entry phone (≤340 wide or ≤640 tall) the brand
+  — orbit to wordmark — is centred in the space above the card (`splashGeometry({ W, … })`); the card was already 16
+  above the nav bar. A rider boot that goes offline swaps the card's rows for the single offline row (`wifi-off` disc,
+  "You're offline", "We'll continue when you're back.") — no dark panel, no button; it resumes on reconnect.
+  **Merged with splash-v1's `CHANGE-2026-10-06` (owner, 2026-10-06, option 1):** that change removed the steps card
+  from the customer's splash while this PR was open. Its note says "Don't change Home or the rider splash" and to keep
+  the step labels if the rider splash still uses them. So the customer splash has no card, and only a rider-board
+  boot draws this card: H1's white card (radius 20, 48dp rows, splash-v1's step markers), its 400ms per-step minimum
+  and the cut after the last tick (`src/boot/splash/timeline.ts` `riderStepTimes`). The 320×640 brand centring
+  applies only while that card shows.
+- **D2–D7** (`app/settings/personal.tsx`): `BackHeader` + `LargeTitle`, `FrField` First name / Surname (gap 12), the
+  phone as `VerifiedRow`, the optional ID (`63-123456A78`, `PD.idWhy`). `src/logic/national-id.ts` normalises (spaces,
+  case, the dash) and checks `^\d{2}-\d{6,7}[A-Z]\d{2}$` on blur and on Save (D5); the server still receives its
+  canonical undashed form. D3: the button turns mint with a check and "Saved" for 1.5 s and stays on the page. D4: the
+  `id_in_use` 409 → the field's red border (`FrField` gained `invalid`: the border without a helper line), the `bad`
+  box "**This ID is on another account**" + body, and the CTA "Message us on WhatsApp" until the ID is edited. D6:
+  `VerifiedRow` "••-••••••K07" "✓ Verified", helper "From your ID check". D7: `FirstRunScreen`'s pinned footer rides
+  the keyboard (Android `adjustResize`).
+- **E1–E6** (`app/rider/documents.tsx`): progress bars + "N of 3" (`bikeDocsProgress`), the three rows with the "+
+  Add" pill at `tokens.touchTargetMin` (`ADD_PILL_HEIGHT`, see §4), `BD.optional`; the "Re-verify my bike" WhatsApp
+  button is gone. E2a `FrSheet` camera / gallery; E2b a full-screen `ink` modal (✕, "Face the **camera**", the 220×290
+  dashed oval, three translucent tips, the 76 shutter); E2c the 240 round preview, "Use photo" / "Retake"; E2d the
+  row's sub-line becomes the 4dp bar with "Uploading…". E4: `FrSheet` + `FrField` (600, `.06em`), `PLATE_RE`
+  `^[A-Z]{3}\s?\d{4}$`, "Plates look like ABC 1234"; Save closes the sheet at once and the row shows the plate, the
+  `checking` `FrBadge` "Checking" and `BD.plateReview` before the server answers (a failure restores the row). E5:
+  everything on file → no large title, the mint 200 hero riding up under the header with a filled brand disc and white
+  check, "You're **all set**", rows with Change / Edit. E6: the danger hero with `upload`, "Upload **didn't finish**",
+  "Try again" — the shot is kept as a SecureStore draft from "Use photo" until the attach lands, so Try again re-sends
+  it, also after a relaunch. `bikeVerified()` (also Settings' row) reads `plateStatus` once the server sends it.
+- **`plate_status` (NEEDS BACKEND → built):** migration `0078_rider_plate_status` (expand-only: `CREATE TYPE
+  "PlateStatus"` + `riders.plate_status NOT NULL DEFAULT 'none'`, catalog-only). `PATCH /riders/me` sets `checking` on a
+  real plate change and returns `plateStatus`; `/auth/me` rider carries it; `POST /admin/riders/:id/plate-verify
+  { plate }` flips `checking` → `verified` with a CAS on the plate ops looked at, audited as the reserved
+  `rider.plate_verify`; the admin rider list / detail expose it. `PlateStatus` enum in `@lynia/shared`.
+- **Language and Privacy** (owner #1): the round `BackHeader` + `LargeTitle` replace `AppBar`; content unchanged.
+
+**Phases 2 + 3 (customer permissions PC1–PC11, rider permission flow P1–P16, Settings — 2026-10-06).**
+
+- **Permission state** (`apps/mobile/src/permissions/`): `location.ts` / `notifications.ts` read and ask (README §3:
+  `canAskAgain`, `android.accuracy === 'coarse'`, `hasServicesEnabledAsync`, `enableNetworkProviderAsync`, the
+  `job-alerts` channel via `getNotificationChannelAsync`), pure `classifyLocation` / `classifyNotif` into README §4's
+  states; `state.ts` `usePermissions()` re-reads on mount and on every AppState `active`; `store.ts` holds the
+  per-install `riderPermFlowDone` and `custNotifAsks` (cap 3, **owner to confirm**). Nothing in the app asks without
+  an explainer any more: Home's deliver-to (`useHomeLocation`) and the rider board only READ the permission, so no OS
+  dialog opens at mount or over the splash (S-6 is now moot).
+- **PC1–PC7** (`src/logic/location-ask.ts` + `src/ui/firstrun/CustomerLocationSheet.tsx`, wired by
+  `src/ui/home/LocationAsk.tsx`): one state machine behind H6 "Use my location" and H5 "Use my current location" — PC1
+  explainer sheet (mint hero 150) → the Android dialog → precise: the fix fills the header and PC7's bottom toast says
+  "Delivering to <resolved address>"; approximate → PC3 (hero 130, re-asks for precise; keeping approximate uses the
+  approximate fix); denied once → PC4 (title + the address search); blocked → PC5 (danger title + the three phone
+  settings steps, re-read on return); GPS off → PC6 (neutral hero, `enableNetworkProviderAsync`). Also mounted on the
+  Restaurants and Shops/Pharmacy lists, which open the same H5 sheet.
+- **PC8–PC10** (`app/order-updates.tsx`, `src/push/ask-in-context.ts`): after Send and after Review & place, the order
+  route is `routeAfterOrderPlaced()` — PC8 first while notifications are undetermined and PC8 has shown < 3 times on
+  this install; "Turn on updates" → POST_NOTIFICATIONS (allowed → push registration kicked, on to the order; declined →
+  PC10 "Updates are off" → "Back to my order"); "Not now" → the order.
+- **P1–P16** (`app/permissions.tsx` rebuilt, `src/logic/rider-perm-flow.ts`): `?from=flow` walks location (P1 → P3 +
+  the P8 toast "Location on", or P4 / P5 / P6 / P7) → notifications (P9 with the drawn offer card and "Play a test
+  ping" → P13, or P11 / P12) → P13 "Go online". Every "Not now" moves on; P6/P11/P12 re-read on return from settings
+  ("I've turned it on" shakes the steps card while still off). Owner #5: R3's "Go online" calls
+  `startRiderPermFlow(router, goOnline)` — straight online when everything is granted (or the flow already ran on this
+  phone), else the flow, whose P13 runs `goOnline`. The sign-in priming is gone (`signedInDestination` → `/rider`), and
+  a legacy `/permissions?next=/rider` forwards to the board.
+- **P14** (rider board): J8 (`RiderNotifOffRow`, the danger box; "Turn on" → P9) replaces the old notif row; G8
+  (`RiderLocEmpty`, the Empty States v2 mark; "Turn on" → P1, or P6 when blocked) replaces the G-gps wall when the
+  permission is missing (J8 above it when both are). A granted permission with no fix keeps the Rider v2 GPS wall.
+- **Settings** (`app/settings/index.tsx`, owner #1): the round `BackHeader` + `LargeTitle`; PC11's danger card while
+  order updates are off ("Turn on" opens the Android dialog directly, or the phone-settings steps when blocked —
+  owner answer 6 below); YOU (Personal details first with `PD.row/rowSub`, Bike & documents with "N to add" from
+  `bikeDocsProgress`, Language, Privacy, Terms, Payment); ALERTS with toggles that mirror the phone (Job alerts,
+  Location, Order updates — an off toggle opens P9 / P1 / the dialog, an on toggle opens phone settings), P15's danger Location row ("Off · You can't receive
+  jobs", the row reopens P1/P6), Battery saver → P16; Test ping / Test alarm under ALERTS (job-alert channel); RIDER
+  (Navigation app, Top-up number); Sign out, Delete account last. Strings the drawing carries but `copy.ts` doesn't are
+  `src/ui/settings/copy.ts` (`ST`), verbatim from `fr-states.js`.
+- **NEEDS NATIVE:** the foreground-service notification already read `RP.fgsTitle/fgsBody`; it now imports them from the
+  copy (a JS string). The location permission rationale in `app.config.ts` is now `RP.manifestRationale` — native, it
+  reaches devices only with the next store build.
+- **Parity:** `LJ.perm_loc` / `LJ.perm_notif` left `app-targets.mjs` (fixtures `auth_perms_*` and their expected JSON
+  deleted) and are PENDING with a SUPERSEDED reason in `parity-status.mjs`, as are `RJ.perm_loc` / `RJ.perm_notif`;
+  the codegen views `permissions-location/-notifications.view.tsx` were deleted and both states are SUPERSEDED
+  deferrals (baseline 76 → 78); the rendered-conformance floor drops by those two.
+
+### 4 · Still different from the handoff
+
+_Filled in phase by phase._
+
+- **Toast tones (phase 1).** The handoff draws only the success toast (check). An action failure raised through
+  `useActionError` (tone `warning`) keeps the same forest bar but shows a `circle-alert` in `highlight` instead of
+  the check — a green check on "Couldn't send the offer." would read as success. `info` uses the check.
+- **Local toasts (phase 1).** Five screen-local toasts drawn by their own handoffs (`OrderToast`, `BrowseToast`,
+  `ReviewToast`, `RToast`, `SendToast` — ink bars, several with an Undo / Try again action) are not the shared
+  `ToastProvider` and were left as their handoffs drew them; owner #4 covered the shared top strip. Flagged for the
+  owner: unify them on the forest bar or keep them.
+- **"+ Add" pill (E1) — UPSTREAM KIT DEFECT, fixed in the kit (owner, 2026-10-06: "Fix the kit to 44dp").** The
+  handoff drew it 36 tall (`fr-states.js` `addBtn`, `min-height:36px`), under `--target-min`. Per CLAUDE.md D2 the app
+  never resizes a drawn target and a below-floor mock is fixed upstream: `packages/design/handoff/first-run-v2/design/
+  fr-states.js` now draws it `min-height:var(--target-min,44px)`, and the app builds it at `tokens.touchTargetMin`
+  (`ADD_PILL_HEIGHT` in `app/rider/documents.tsx`). The 1× `screenshots/E1.png` / `E4c.png` / `E2d.png` still show the
+  old 36 (they can't be re-rendered here) — **report upstream** so the next export redraws them.
+
+**Phases 4 + 5 (C / H / D / E):**
+
+- **U4b's ✕.** U4a draws a 44 ✕; U4b (the violet board banner) draws none. "Once per version" needs a way to say "not
+  now", so both get the ✕ (`UP.softDismiss` as its label). **Owner decision (2026-10-06): keep the ✕ on both.**
+- **The soft banner without a store link** is not shown at all (its only action is the store). `#DCD5FF` (U4b's body
+  line) is not in the token table; used as drawn, as a named constant in `SoftUpdateBanner.tsx`.
+- **U3 detection.** "Offline" is the app's reachability store (real `/health` round trips), not the OS radio state,
+  so a captive portal also counts as offline. U3 applies only while a store link exists (U2 has no network action).
+- **The rider offline row is rider-only.** H2c draws it on the rider splash; a customer boot keeps splash-v1's dark
+  offline panel with "Try again". **Owner decision (2026-10-06): keep the split.**
+- **E2b is a guide, not a viewfinder — NEEDS NATIVE.** The app ships no in-app camera (`expo-camera` is a native
+  dependency = a new store build); the guide's shutter opens the phone's own front camera, which returns to E2c. The
+  oval therefore frames nothing live. **Owner decision (2026-10-06): keep it for now; with the next native build, add
+  `expo-camera` and draw the live front camera inside the oval** (the shutter then captures in-app).
+- **E2d's bar is staged** (prepared → minted → bytes sent → attached): `fetch` exposes no byte progress.
+- **E5's photo row** is drawn with the initials disc and "Verified"; the photo is never checked by anyone (BRIEF: Verified
+  "only for what was actually checked"), so its row has no sub-line — just "Change". The app never receives the photo
+  itself (`/auth/me` sends `hasPhoto` only), so the disc is the initials, as drawn.
+- **Plates on file from before migration 0078 go to ops review (owner decision 2026-10-06).** Migration
+  `0079_rider_plate_review_backfill` (data-only, idempotent, the 0064 precedent) sets `checking` on every rider with a
+  real plate still at `none`, so they show "Checking" in the app and sit in the admin queue until confirmed. (Before,
+  Bike & documents called any verified rider's plate "Verified" — review R-8.)
+- **Admin (owner decision 2026-10-06).** The rider profile's Bike reg row carries a `checking` / `verified` pill and,
+  while checking, a reason-coded "Confirm plate…" (`REASONS.riderPlateVerify`) → `POST /admin/riders/:id/plate-verify`.
+  The Riders page gains an "all riders | plates to check" subnav (the kit's `.subnav`, not drawn on the kit's directory)
+  and `/riders?plate=checking` (`GET /admin/riders?plate=checking`) lists the queue with Confirm plate per row. No
+  sidebar entry or badge was added (the kit's NAV doesn't draw one).
+- **D2's Save** is drawn enabled; it stays enabled (pressing it with nothing changed shows D3's "Saved") except while a
+  name is empty, where it is the disabled `line`/`muted` pill (undrawn). Clearing a stored ID still shows the shipped
+  "To remove your national ID, contact support." (D-79, undrawn) and a verified rider's 403 shows the server's words.
+- **E2c's title** "Looking **good**" is drawn in `fr-states.js` but missing from `copy.ts`; used verbatim from the drawing.
+
+**Phase 6 (F / G / I):**
+
+- **F6's date — BUILT (owner 2026-10-06, answer 4).** `KY.expBody` is drawn "Expired 2 Oct 2026. Re-verify to keep
+  riding." Nothing stored the day an ID expired, so migration `0077_rider_kyc_id_expiry` adds `riders.kyc_id_expires_on`
+  (DATE, nullable, expand-only). The verified decision webhook stores the document's `expiration_date`
+  (`extractDiditDocumentExpiry`, fail-open); an `expired` result — Didit's "Kyc Expired" webhook or the ops expire —
+  stamps the lapse day (`kycIdExpiryOnLapse`: the document's own day when it is on or before the event, else the event's
+  day). `/auth/me` serves `rider.kycExpiredOn` ("YYYY-MM-DD", only while `expired`; for a rider who lapsed before 0077,
+  the day the expiry was applied, `kyc_resolved_at`), and F6 renders `KYF.expBody(date)`. An older server omits the
+  field and F6 drops the date.
+- **F4's tries meter.** `KY.triesLeft` ("1 try left") is the only drawn label. `kycAttempts` counts declines and the
+  lock is 2, so a decline below the lock is always 1 left; the box is drawn only then (an account with 0 recorded
+  declines on a `failed` status — legacy data — shows no box rather than an undrawn "2 tries left").
+- **F4 for `name_mismatch`; `duplicate` on F5's page (owner 2026-10-06, answer 5).** No variant names them.
+  `name_mismatch` gets F4d ("We couldn't verify your ID · Try again, or message us"), not F4c, whose advice ("Use your
+  Zimbabwe national ID card…") would be wrong when the document was fine. A `duplicate` decline (below the lock) gets
+  **F5dup**: F5's shell — mint hero, `message-circle`, "Let's finish **this together**", one CTA "Message us on WhatsApp",
+  no tries meter, no retry — because no retry can fix an ID that is on another account. F5's body ("Both tries are
+  used…") would be false there, so its body is PD's one-ID-one-account words drawn for D4: **"This ID is on another
+  account. One ID, one account. Message us and we'll sort it."** — undrawn on an F page, **owner-approved 2026-10-06**.
+  A duplicate that is also locked (two declines) is plain F5, whose sentence is then true. `liveness_failed` shares F4b's
+  face tips with `face_mismatch`.
+- **F1 / F2 vs README G3's "or R2 if pending".** Only the automated check in flight is R2; held (F2) and manual review
+  (F1) are their own drawn pages, as README F draws them.
+- **The F pages' ✕ from the customer Account (G3).** Mid-check the Account still shows the shipped in-progress / review /
+  failed / locked card rather than the Customer | Rider toggle README G3 mentions ("switching the Account toggle back to
+  Rider") — the toggle only exists for a verified / expired rider. The card now switches sides like the toggle. **Owner
+  question, answered 2026-10-06:** keep the status card (as built).
+- **F8's drawn "…" and the checklist meta.** The F8 checklist's step-2 meta is the drawn literal "…"; F1/F2's "In review"
+  and F3's "~2 min" come from Calm Mint v2's `RO` (identical words), since `KY` has no key for them.
+- **Delete account's final step** is undrawn by I: built in I's shell (danger hero, two-tone title "This is **the final
+  step**", D-79's sentence, the tick). Its destructive action follows I's grammar — the `dangerInk` text link, armed by
+  the tick — instead of the shipped danger-filled button; "Keep my account" is the 52 primary on both steps (**owner,
+  2026-10-06: keep the red text link**). A running delivery keeps the shipped sentence in the `bad` box.
+- **Free-job pushes `KY.notif1T/B`, `KY.notif0T/B` — not adopted (owner 2026-10-06, answer 2).** D-79 §3 already ships
+  the owner's own words for the same two moments ("One commission-free job left" / "Your free jobs are used up", silent
+  while commission is 0%). The owner keeps the D-79 wording; the handoff's `I·free` frame and its two `KY` pairs are not
+  built, and the server templates are unchanged.
+- **Suspended wall: "by SMS" → "in your notifications" (owner 2026-10-06, answer 6).** Rider v2's `gSuspB` said "Our
+  team sent the details by SMS." The server sends **no SMS** on a suspension (SMS is used only for sign-in codes): the
+  admin suspend (`admin-riders.service.ts`) sends a push, "Account paused — open the app for details.", and the
+  Notifications feed (`notifications-feed.service.ts`, `ACCOUNT_FEED_COPY["rider.suspend"]`) pins an "Account paused" row
+  carrying the reason while the pause holds. So `RF.gSuspB` now reads "You can't take jobs until {date}. The details are
+  in your notifications." (or "You can't take jobs right now. The details are in your notifications."). Undrawn
+  sentence, owner-approved 2026-10-06.
+
+**Phases 2 + 3 (PC / P / Settings):**
+
+- **PC4's field** is the shipped address search (`AddressSearch`, its H5 `sheet` variant: borderless surface fill,
+  the shipped suggestions) rather than the drawn bordered/focused field with two pin rows; it is focused on open.
+  PC3's "keeping the approximate centre for search bias" is not built (the search takes no bias point).
+- **PC7's toast** is `PC.grantedToast` with its sample address ("12 Samora Machel Ave", data, not copy) swapped for the
+  resolved one. When a grant gets no fix (indoors, a cold GPS), the H5 search opens instead of a toast (undrawn).
+- **PC11 "Turn on" — owner decision 2026-10-06 (answer 6).** Not PC8 again (README): while the OS can still ask,
+  Settings' "Turn on" (and the off Order updates toggle) opens the Android notification dialog directly; a decline
+  leaves the rider/customer on Settings with the card up. When the OS won't ask again, a sheet shows the PC5-shaped
+  phone-settings steps in notification words — `RP.blockedA/B`, then `PC.setOffBody` (customer) or `RP.blockedBody`
+  (rider), then `RP.step1`, `RP.nStep2` and `RP.nStep3` (for a customer only its first half, "Allow notifications",
+  since "Job alerts on" is a rider channel — derived copy) — with "Open phone settings". PC8 now only follows an order.
+- **PC8's sample code — owner-approved copy exception 2026-10-06 (answer 4).** The handoff draws "Your delivery code is
+  4821"; every real code is 6 digits shown 3+3 (D-59), so PC8 shows **"Your delivery code is 482 193"**. `copy.ts`
+  stays byte-for-byte; the swap is in `app/order-updates.tsx`. **Note for the designer:** redraw PC8's second card with
+  a 6-digit code.
+- **P9's offer card** is an illustration: its "0:58" is a static literal, and "Play a test ping" (like Settings' test
+  buttons) posts a local notification on the `job-alerts` channel — silent until notifications are allowed.
+- **`job-alerts` channel — BUILT (owner 2026-10-06, answer 3).** The API sends rider job pings (`kind: broadcast`) and
+  food-offer alarms (`kind: food_offer`) with `android.notification.channelId = "job-alerts"`
+  (`androidChannelFor` in `apps/api/src/adapters/push/push.interface.ts`, mapped by `buildFcmMessage`; spec
+  `notifications/job-alerts-channel.spec.ts`); every other push stays on the default channel. The app creates
+  `job-alerts` (HIGH importance, sound) when the rider tab shell mounts, in the rider flow and in Settings. A build
+  without the channel gets FCM's fallback to the default channel, so P12 still treats a rider as muted when EITHER
+  channel is below HIGH and opens that channel's page.
+- **P16 — the battery list, owner decision 2026-10-06 (answer 5).** `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` needs the
+  `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` manifest permission, which Play restricts; P16's CTA opens the phone's battery
+  optimisation list (`IGNORE_BATTERY_OPTIMIZATION_SETTINGS`, no permission) and returns to Settings when the rider comes
+  back. Whether the app is exempt can't be read from JS, so the Settings row stays a plain chevron row.
+- **P15's "Tap Location to reopen P1."** is a design annotation, not rendered.
+- **Settings' kept rows (owner #1)** sit where they did: Privacy, Terms and Payment in YOU after Language; Test ping /
+  Test alarm as white soft pills under ALERTS (while job alerts are on); Navigation app and Top-up number in a RIDER
+  card; Delete account last, its title in danger ink. The shipped name / phone row is **removed** (owner 2026-10-06,
+  answer 1): Personal details is the first YOU row, as drawn. The 44×26 toggle keeps its drawn size; its hit area
+  reaches 44 by slop.
+- **Bare asks still outside an explainer** (BRIEF 1, not drawn by the handoff): the Send pickup auto-locate
+  (`use-pickup-autolocate.ts`), the map picker's locate button (`MapPicker.tsx`), the keyless geocoder
+  (`geocode.ts`), "Notify me" for a Soon service (`service-interest.ts`) and the rider's job-start stream
+  (`use-rider-location.ts`, normally granted by P1 by then). **Left as they are — owner decision 2026-10-06
+  (answer 2).**
+
+**Screen-local toasts (owner, 2026-10-06: "move all five to the new bar").** `OrderToast`, `BrowseToast`,
+`ReviewToast`, the rider board's `RToast` and `SendToast` now draw the shared First Run v2 bar
+(`FirstRunToast`: forest, radius 14, white 600 14, a 20 glyph). Each keeps its own position above its screen's
+CTA and its action ("Try again", "Undo") as a 44 mint pill on the right, which the handoff's toast does not draw.
+Failure toasts show the `circle-alert` in highlight (the owner-approved error toast); the others keep their glyph
+(bell, check, undo) in brand green.
+

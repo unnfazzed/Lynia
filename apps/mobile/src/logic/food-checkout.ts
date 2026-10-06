@@ -34,9 +34,10 @@ export interface StackNav {
  * order: the order is then the food stack's only route, and Back from it leaves `/food` for Home. The
  * just-cleared Review is never under the live order (P0-1).
  */
-export function goToPlacedFoodOrder(router: StackNav, orderId: string): void {
+export function goToPlacedFoodOrder(router: StackNav, orderId: string, route: string = `/order/${orderId}`): void {
   router.dismissAll();
-  router.replace(`/order/${orderId}`);
+  // `route` is the order screen, or First Run v2's PC8 explainer in front of it (src/push/ask-in-context.ts).
+  router.replace(route);
 }
 
 /** R-17: free, any time before the kitchen has committed to cooking — mirrors

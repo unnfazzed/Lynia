@@ -697,6 +697,22 @@ export type ClientMetricsBatch = z.infer<typeof ClientMetricsBatch>;
 export const VersionGateResponse = z.object({ minSupportedVersion: z.string().max(24) }).strict();
 export type VersionGateResponse = z.infer<typeof VersionGateResponse>;
 
+/** `GET /app/version-gate?soft=1` — the same gate plus First Run v2's soft update (ledger D-82 §2 #7):
+ *  `recommendedVersion` drives the U4a/U4b "A new version is ready" banners (shown once per version to a
+ *  build below it) and `whatsNew` is U1's one-line "New …" pill. Both are null until set on the server
+ *  (RECOMMENDED_APP_VERSION[_IOS], APP_WHATS_NEW). A SEPARATE body behind an opt-in query parameter
+ *  because {@link VersionGateResponse} is strict and every installed build parses it strictly — adding
+ *  keys to it would switch their force-update gate off. Only a build that sends `soft=1` gets this one,
+ *  and it falls back to the plain body when an older server ignores the parameter. */
+export const VersionGateSoftResponse = z
+  .object({
+    minSupportedVersion: z.string().max(24),
+    recommendedVersion: z.string().max(24).nullable(),
+    whatsNew: z.string().max(80).nullable(),
+  })
+  .strict();
+export type VersionGateSoftResponse = z.infer<typeof VersionGateSoftResponse>;
+
 /** `GET /app/feature-flags` — merchant-vertical kill switches, served publicly (the version-gate
  *  precedent: read at app cold start BEFORE sign-in; a dormant tab must be able to learn it's
  *  dormant). Server truth is the env flags (plan §0b.3); all-false is the launch-inert default.

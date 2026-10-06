@@ -4,6 +4,7 @@
  * two action rows the mock draws at the bottom (data copy, then the red route into deletion).
  */
 import renderer, { act } from "react-test-renderer";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
 const mockPush = jest.fn();
 jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush, back: jest.fn() }) }));
@@ -15,7 +16,12 @@ import PrivacyScreen from "../privacy";
 function render(): renderer.ReactTestRenderer {
   let tree!: renderer.ReactTestRenderer;
   act(() => {
-    tree = renderer.create(<PrivacyScreen />);
+    // The First Run v2 back header (D-82 §2 #1) reads the safe-area insets.
+    tree = renderer.create(
+      <SafeAreaProvider initialMetrics={{ insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 360, height: 720 } }}>
+        <PrivacyScreen />
+      </SafeAreaProvider>,
+    );
   });
   return tree;
 }

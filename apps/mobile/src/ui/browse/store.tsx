@@ -1,4 +1,5 @@
 import { tokens } from "@lynia/shared/tokens";
+import { FirstRunToast } from "../firstrun/toast";
 import React, { useState } from "react";
 import { ScrollView, Text, View, type LayoutChangeEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -702,15 +703,10 @@ export function CartBar({
 
 /** README §4 "Toast": ink, radius 12, 13.5 white, 16 from the sides, above the cart bar. */
 export function BrowseToast({ text, icon, bottom }: { text: string; icon?: "bell" | "check"; bottom: number }): React.ReactElement {
+  // Owner 2026-10-06 (D-82): the app-wide bottom toast's look, kept above the cart bar.
   return (
-    <View
-      accessibilityRole="alert"
-      accessibilityLiveRegion="polite"
-      pointerEvents="none"
-      style={{ position: "absolute", left: 16, right: 16, bottom, flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, backgroundColor: tokens.color.ink }}
-    >
-      {icon ? <Icon name={icon} size={18} color={tokens.color.onForestMuted} /> : null}
-      <Text style={{ flex: 1, fontSize: 13.5, lineHeight: 18.9, color: tokens.color.onAccent }}>{text}</Text>
+    <View pointerEvents="none" style={{ position: "absolute", left: 16, right: 16, bottom }}>
+      <FirstRunToast text={text} icon={icon ?? "check"} />
     </View>
   );
 }

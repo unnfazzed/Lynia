@@ -1,4 +1,5 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
+import { PlateStatus } from "@lynia/shared";
 import { z } from "zod";
 import { auditData } from "../admin/admin.shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
@@ -54,10 +55,10 @@ export class RiderProfileService {
     @Optional() @Inject(STORAGE) private readonly storage?: StorageAdapter,
   ) {}
 
-  async updateProfile(profileId: string, data: UpdateRiderProfile): Promise<{ hasPhoto: boolean; bikeReg: string | null }> {
+  async updateProfile(profileId: string, data: UpdateRiderProfile): Promise<{ hasPhoto: boolean; bikeReg: string | null; plateStatus: PlateStatus }> {
     const rider = await this.prisma.rider.findUnique({
       where: { profileId },
-      select: { photoUrl: true, bikeReg: true },
+      select: { photoUrl: true, bikeReg: true, plateStatus: true },
     });
     if (!rider) throw new NotFoundException("Not a rider");
 
@@ -79,7 +80,9 @@ export class RiderProfileService {
           where: { profileId },
           data: {
             ...(data.photoUrl !== undefined ? { photoUrl: data.photoUrl } : {}),
-            ...(data.bikeReg !== undefined ? { bikeReg: data.bikeReg } : {}),
+            // First Run v2 E4 (D-82): a new plate is saved at once and reads "Checking" until ops confirm
+            // it (admin plate-verify). Only a real change reopens the check.
+            ...(changed.includes("bike_reg") ? { bikeReg: data.bikeReg, plateStatus: PlateStatus.CHECKING } : {}),
           },
         });
         // Ops can see who changed what and when (the plate a customer is shown comes from here). The old
@@ -101,6 +104,10 @@ export class RiderProfileService {
     }
 
     const photoUrl = data.photoUrl ?? rider.photoUrl;
-    return { hasPhoto: photoUrl != null, bikeReg: data.bikeReg ?? rider.bikeReg };
+    return {
+      hasPhoto: photoUrl != null,
+      bikeReg: data.bikeReg ?? rider.bikeReg,
+      plateStatus: changed.includes("bike_reg") ? PlateStatus.CHECKING : rider.plateStatus,
+    };
   }
 }

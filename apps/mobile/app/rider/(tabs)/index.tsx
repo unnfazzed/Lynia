@@ -13,8 +13,7 @@ import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../../src/api/
 import { getFoodDispatchOffer } from "../../../src/api/food-rider";
 import { getDemandZones } from "../../../src/api/rider-v2";
 import { noteKycLaunched, retryKyc, sendHeartbeat, setOnline } from "../../../src/api/riders";
-import { loadAcknowledgedHandbacks } from "../../../src/auth/session";
-import { useBootPhase } from "../../../src/boot/boot-phase";
+import { loadAcknowledgedHandbacks, saveRolePreference } from "../../../src/auth/session";
 import { usePrewarmRoutes, type PrewarmRoute } from "../../../src/boot/prewarm-routes";
 import { supportWhatsAppUrl } from "../../../src/config";
 import { KycCheckHost } from "../../../src/kyc/KycCheckHost";
@@ -29,10 +28,13 @@ import {
   type OnlineGateReason,
   resolveKycGate,
   resolveKycRetryFeedback,
-  riderDeclineLabel,
 } from "../../../src/logic/gates";
 import { useHomeLocation } from "../../../src/logic/home-location";
+import { kycScreenFor, parseIsoDay } from "../../../src/logic/kyc-outcome";
 import { markRiderWelcomeSeen, riderWelcomeSeen } from "../../../src/logic/rider-welcome";
+import { RIDER_PERM_ROUTES, startRiderPermFlow } from "../../../src/logic/rider-perm-flow";
+import { RiderLocEmpty, RiderNotifOffRow } from "../../../src/ui/firstrun/RiderPermBoard";
+import { SoftUpdateBanner } from "../../../src/ui/firstrun/SoftUpdateBanner";
 import { isSentOfferExpired, isSentOfferStale } from "../../../src/logic/rider-bid-draft";
 import { type GateId, kycTriesLeft, resolveGate } from "../../../src/logic/rider-gate";
 import { telUri } from "../../../src/logic/safety";
@@ -44,7 +46,8 @@ import { useTabTop } from "../../../src/query/use-tab-top";
 import { useWallet, useWalletConfig } from "../../../src/query/use-wallet";
 import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refetch";
 import { useRiderBoard } from "../../../src/realtime/use-rider-board";
-import { AppScreen, EmptyRow, EmptyState, emptyCopy, fillEmpty, haptic, Icon, type IconName, statusPillLabel, useActionError, useTabBarSpace } from "../../../src/ui";
+import { AppScreen, EmptyRow, EmptyState, emptyCopy, fillEmpty, haptic, Icon, type IconName, statusPillLabel, useActionError, useHideTabBar, useTabBarSpace } from "../../../src/ui";
+import { IdCheckOutcome } from "../../../src/ui/firstrun";
 import { CtaButton, SmBtn } from "../../../src/ui/order/kit";
 import { OrderSheet } from "../../../src/ui/order/OrderSheet";
 import { Notice } from "../../../src/ui/send/kit";
@@ -69,12 +72,18 @@ const BOARD_PREWARM: readonly PrewarmRoute[] = ["riderJob", "riderFoodJob"];
 type Toast = { text: string; icon?: IconName; undo?: () => void } | null;
 
 /**
- * The Jobs board (Rider v2 J1–J14 + gates G1–G14, `packages/design/handoff/rider-v2/`, ledger D-54).
+ * The Jobs board (Rider v2 J1–J14 + gates G8–G14, `packages/design/handoff/rider-v2/`, ledger D-54).
  *
  * Layout: the mint top card (greeting · Online / Reconnecting · detected street) → the board map (job
  * pins in sync with the cards, "You") → a snapping sheet (peek 50%, 44% when empty) → the tab bar. A
  * rider who can't work right now sees ONE gate in place of the map and sheet, picked by `resolveGate`
  * in the handoff's priority order; every gate clears on its own when its input changes.
+ *
+ * The ID check is First Run v2's (`packages/design/handoff/first-run-v2/`, ledger D-82): an unverified rider
+ * sees the outcome page F1–F8 full screen (no tab bar, no mint top card; ✕ switches to the customer side),
+ * Calm Mint v2 R2 while the automated check runs, R3 once verified — and an account with no rider record
+ * goes to R1 (`/rider/become`, G1). The non-KYC gates (GPS, area, cooldown, hold, suspended, banned, top-up)
+ * keep their Rider v2 walls.
  *
  * ALWAYS ONLINE (owner 2026-08-17): being here, past every gate, IS the shift — `online` is machine
  * state. NO manual refresh anywhere (D-30): the socket, the polls and the foreground re-read keep the
@@ -113,24 +122,10 @@ export default function RiderHome(): React.ReactElement {
   const [withdrawing, setWithdrawing] = useState<ReadonlySet<string>>(new Set());
 
   // ── Location ─────────────────────────────────────────────────────────────────────────────────────
-  // No OS permission prompt over the cold-start splash (S-6, as Home's useHomeLocation): while the boot
-  // runs, an already-granted permission still reads the position, but the ASK waits for the boot to end.
-  const { booting } = useBootPhase();
-  const bootingRef = useRef(booting);
-  bootingRef.current = booting;
-  const askAfterBoot = useRef(false);
+  // First Run v2 (ledger D-82): the board only READS the permission. The ask is the rider flow's (P1 —
+  // from R3's "Go online" or G8's "Turn on"), so no bare OS dialog ever pops over the board or the splash.
   const requestLocation = useCallback(async (): Promise<void> => {
-    let status: string;
-    if (bootingRef.current) {
-      const current = await Location.getForegroundPermissionsAsync().catch(() => null);
-      if (current?.status !== "granted") {
-        askAfterBoot.current = true;
-        return;
-      }
-      status = current.status;
-    } else {
-      status = (await Location.requestForegroundPermissionsAsync()).status;
-    }
+    const status = (await Location.getForegroundPermissionsAsync().catch(() => null))?.status ?? "denied";
     if (status !== "granted") {
       setLocDenied(true);
       return;
@@ -159,12 +154,6 @@ export default function RiderHome(): React.ReactElement {
       void requestLocation();
     }, [requestLocation]),
   );
-  // The ask a boot deferred runs the moment the splash hands off.
-  useEffect(() => {
-    if (booting || !askAfterBoot.current) return;
-    askAfterBoot.current = false;
-    void requestLocation();
-  }, [booting, requestLocation]);
   const locRef = useRef(loc);
   useEffect(() => {
     locRef.current = loc;
@@ -584,6 +573,24 @@ export default function RiderHome(): React.ReactElement {
   const gate: GateId | null = meQ.data == null ? null : resolveGate({ kyc: kycGate, server: serverGate, locDenied });
   const conn = online && board.connected && !beatStale;
 
+  // ── ID check (First Run v2 F / G, ledger D-82) ───────────────────────────────────────────────────
+  const kycScreen = kycScreenFor({ gate, kyc: kycGate, launch: freshKycLaunch(kycLaunch, Date.now()), declineReason: rider?.kycDeclineReason });
+  // F1–F8 are full screens: no tab bar (D-82 §2 #3).
+  useHideTabBar(kycScreen?.kind === "outcome");
+  // ✕ switches to the customer side (Home), as the Account toggle does; reopening the rider side re-resolves
+  // the same page from the server's state (G3).
+  const exitToCustomer = useCallback((): void => {
+    void saveRolePreference("customer");
+    router.replace("/home");
+  }, [router]);
+  // G1: no rider record → R1 (`/rider/become`); the "Earn with your bike" interstitial is gone. Only once the
+  // mount's re-read of `me` has landed: right after Become a rider registers, a cached customer `me` (no rider
+  // yet) must not bounce the new rider straight back to R1.
+  const toBecome = kycScreen?.kind === "become" && !meQ.isFetching;
+  useEffect(() => {
+    if (toBecome) router.replace("/rider/become");
+  }, [toBecome, router]);
+
   const offerFor = (j: BoardJob): void => {
     if (j.kind === "food") {
       router.push("/rider/food-offer");
@@ -605,59 +612,40 @@ export default function RiderHome(): React.ReactElement {
   const banner = <MintTop {...top} online={conn} loc={location.label} />;
 
   const gateView = gate ? renderGate(gate) : null;
-  function renderGate(g: GateId): React.ReactElement {
-    const retry: GateAction = { label: R.tryAgain, icon: "camera", onPress: () => retryM.mutate(), loading: !!pendingOrQueued(retryM) };
-    const wa: GateAction = { label: R.whatsappSupport, icon: "message-circle", onPress: whatsappSupport };
+  function renderGate(g: GateId): React.ReactElement | null {
     const call: GateAction = { label: R.callSupport, icon: "phone", onPress: callSupport };
     const floor = walletConfig?.floor ?? 2;
     const balance = wallet?.balance ?? null;
     switch (g) {
+      // The KYC gates (Rider v2 G1–G7) are retired: `kycScreen` draws R1 / R2 / F1–F8 in their place (D-82).
       case "notRider":
-        return <Gate icon="bike" tone="ok" title={R.gNotRiderT} body={R.gNotRiderB} primary={{ label: R.becomeRider, icon: "arrow-right", onPress: () => router.push("/rider/become?from=board") }} bridge={leaveForCustomer} />;
       case "pending":
-        // Calm Mint v2 R2 (D-55): "Rider setup" while the check is with the vendor — the checklist, safe
-        // to leave, a way to send a parcel. Manual (ops) review keeps the Rider v2 wall: R2's "usually
-        // under a minute" is only true of the automated check.
-        return kycGate?.kind === "in_flight" ? (
-          <RiderSetupPending onSendParcel={() => router.push("/send")} />
-        ) : (
-          <Gate icon="hourglass" tone="calm" title={R.gPendingT} body={R.gPendingB} bridge={leaveForCustomer} />
-        );
       case "unfinished":
-        return (
-          // R-1: the same WhatsApp way out the failed wall has — a rider whose check won't finish isn't stuck
-          // tapping the resume alone (ledger D-54 §4).
-          <Gate
-            icon="id-card"
-            tone="calm"
-            title={R.gUnfinishedT}
-            body={R.gUnfinishedB}
-            primary={{ label: R.finishId, icon: "arrow-right", onPress: () => retryM.mutate(), loading: !!pendingOrQueued(retryM) }}
-            ghost={wa}
-            bridge={leaveForCustomer}
-          />
-        );
-      case "failed": {
-        // R-6: say WHY when the decline says why; the drawn "blurry photo" copy is the default (and that case).
-        const why = riderDeclineLabel(rider?.kycDeclineReason);
-        return <Gate icon="id-card" tone="danger" title={R.gFailedT} body={why ? RF.gFailedWhyB(why) : R.gFailedB} facts={[[R.gFailedK, RF.gFailedV(kycTriesLeft(rider?.kycAttempts), 2)]]} primary={retry} ghost={wa} />;
-      }
+      case "failed":
       case "failed2":
-        return <Gate icon="id-card" tone="danger" title={R.gFailed2T} body={R.gFailed2B} primary={wa} bridge={leaveForCustomer} />;
       case "expired":
-        return <Gate icon="id-card" tone="danger" title={R.gExpiredT} body={RF.gExpiredB(null)} primary={{ ...retry, label: R.reverify }} bridge={leaveForCustomer} />;
       case "cantOpen":
-        return <Gate icon="wifi-off" tone="calm" title={R.gCantOpenT} body={R.gCantOpenB} primary={{ ...retry, icon: "refresh-cw" }} ghost={wa} />;
+        return null;
       case "gps":
+        // Permission granted but no fix (or the server refused a position-less go-online): the Rider v2 wall.
+        if (!locDenied)
+          return (
+            <Gate
+              icon="map-pin"
+              tone="danger"
+              title={R.gGpsT}
+              body={R.gGpsB}
+              primary={{ label: R.openLoc, icon: "settings", onPress: () => void Linking.openSettings() }}
+              ghost={{ label: R.gpsOn, icon: "check", onPress: () => void requestLocation() }}
+            />
+          );
+        // First Run v2 P14 (D-82): no permission — G8, the Empty States v2 mark, "Turn on" → P1 (or P6 when
+        // blocked); J8 above it.
         return (
-          <Gate
-            icon="map-pin"
-            tone="danger"
-            title={R.gGpsT}
-            body={R.gGpsB}
-            primary={{ label: R.openLoc, icon: "settings", onPress: () => void Linking.openSettings() }}
-            ghost={{ label: R.gpsOn, icon: "check", onPress: () => void requestLocation() }}
-          />
+          <View style={{ flex: 1, paddingTop: 16, paddingHorizontal: 16 }}>
+            {notifOff ? <RiderNotifOffRow onTurnOn={() => router.push(RIDER_PERM_ROUTES.notifications as never)} /> : null}
+            <RiderLocEmpty onTurnOn={() => router.push(RIDER_PERM_ROUTES.location as never)} />
+          </View>
         );
       case "area":
         return <Gate icon="map-pin" tone="calm" title={R.gAreaT} body={R.gAreaB} bridge={leaveForCustomer} />;
@@ -686,13 +674,8 @@ export default function RiderHome(): React.ReactElement {
 
   const sheetContent = (
     <>
-      {notifOff ? (
-        <View style={{ flexDirection: "row", gap: 10, alignItems: "center", borderWidth: 1, borderColor: tokens.color.danger, borderRadius: 12, paddingVertical: 6, paddingRight: 6, paddingLeft: 12 }}>
-          <IconDiscBell />
-          <Text style={{ flex: 1, fontSize: 13, lineHeight: 18, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>{R.notifOff}</Text>
-          <SmBtn kind="fill" label={R.turnOn} onPress={() => void Linking.openSettings()} />
-        </View>
-      ) : null}
+      {/* First Run v2 P14 J8 (D-82): "Turn on" reopens P9 (or P11/P12), not the phone's settings. */}
+      {notifOff ? <RiderNotifOffRow onTurnOn={() => router.push(RIDER_PERM_ROUTES.notifications as never)} /> : null}
       {/* Empty board: reconnecting shows only in the header's status line (empty-states v2 J4, D-78). */}
       {online && !conn && !empty ? <Notice icon="wifi-off" text={R.staleB} /> : null}
       {openQ.isError ? <Notice icon="wifi-off" text={R.loadFail} /> : null}
@@ -752,18 +735,51 @@ export default function RiderHome(): React.ReactElement {
     </>
   );
 
+  // G1: on the way to R1 — nothing of the board under it.
+  if (kycScreen?.kind === "become") return <View testID="rider-to-become" style={{ flex: 1, backgroundColor: tokens.color.bg }} />;
+  // F1–F8 (First Run v2, D-82): one full-screen shell, the ✕ its only way out. KycCheckHost presents the ID
+  // check that "Try again" / "Finish ID check" / "Re-verify my ID" reopen.
+  if (kycScreen?.kind === "outcome") {
+    return (
+      <>
+        <IdCheckOutcome
+          id={kycScreen.id}
+          firstName={meQ.data?.firstName}
+          triesLeft={kycTriesLeft(rider?.kycAttempts)}
+          // F6 "Expired 2 Oct 2026" (D-82 §4): `rider.kycExpiredOn`; an older server omits it and F6 drops the date.
+          expiredAt={parseIsoDay(rider?.kycExpiredOn)}
+          onExit={exitToCustomer}
+          onRetry={() => retryM.mutate()}
+          retrying={!!pendingOrQueued(retryM)}
+          onHelp={whatsappSupport}
+        />
+        <KycCheckHost />
+      </>
+    );
+  }
   // R2 and R3 are whole pages in the handoff (no mint top card), so they replace the board outright.
-  if (gate === "pending" && kycGate?.kind === "in_flight" && gateView) return <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>{gateView}</View>;
+  // Calm Mint v2 R2 (D-55): "Rider setup" while the automated check is with the vendor (README G3 "or R2").
+  if (kycScreen?.kind === "r2") {
+    return (
+      <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+        <RiderSetupPending onSendParcel={() => router.push("/send")} />
+      </View>
+    );
+  }
   if (showWelcome && !gate) {
     return (
       <RiderVerified
         firstName={meQ.data?.firstName?.trim() || null}
         // D-70: "Commission-free jobs · N of 5 left", served by /auth/me (absent on an older server).
         freeJobs={rider?.freeJobs && rider.freeJobs.total > 0 ? rider.freeJobs : null}
-        onGoOnline={() => {
-          setWelcomeSeen(true);
-          if (profileId) void markRiderWelcomeSeen(profileId);
-        }}
+        // Owner decision D-82 §2 #5: R3's "Go online" starts the rider permission flow (P1…); P13's "Go online"
+        // goes online (it runs this callback). A rider who has granted everything goes straight online.
+        onGoOnline={() =>
+          void startRiderPermFlow(router, () => {
+            setWelcomeSeen(true);
+            if (profileId) void markRiderWelcomeSeen(profileId);
+          })
+        }
         onPapers={() => router.push("/rider/documents")}
       />
     );
@@ -771,6 +787,8 @@ export default function RiderHome(): React.ReactElement {
 
   return (
     <AppScreen banner={banner}>
+      {/* First Run v2 U4b (D-82): the violet "new version" banner under the mint top card, on the live board only. */}
+      {meQ.isLoading || gateView ? null : <SoftUpdateBanner tone="violet" />}
       {meQ.isLoading ? null : gateView ? (
         gateView
       ) : (
@@ -827,10 +845,6 @@ function toBoardJob(o: OpenOrder, loc: { lat: number; lng: number } | null): Boa
 
 function IconSmall({ name, color = tokens.color.muted }: { name: IconName; color?: string }): React.ReactElement {
   return <Icon name={name} size={15} color={color} />;
-}
-
-function IconDiscBell(): React.ReactElement {
-  return <IconSmall name="bell" color={tokens.color.danger} />;
 }
 
 function DemandLine({ text }: { text: string }): React.ReactElement {

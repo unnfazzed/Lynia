@@ -7,9 +7,11 @@ import {
   classifyStoredDiditStatus,
   decideDiditKyc,
   diditTimestampFresh,
+  extractDiditDocumentExpiry,
   extractDiditDocumentNumber,
   extractDiditScore,
   isDiditReviewHold,
+  kycIdExpiryOnLapse,
   mapDiditPendingState,
   mapDiditStatus,
   verifyDiditSignature,
@@ -425,5 +427,38 @@ describe("diditTimestampFresh", () => {
     expect(diditTimestampFresh(undefined, now)).toBe(false);
     expect(diditTimestampFresh("", now)).toBe(false);
     expect(diditTimestampFresh("not-a-number", now)).toBe(false);
+  });
+});
+
+// First Run v2 F6 (ledger D-82 §4): "Expired 2 Oct 2026" — the verified document's expiry day.
+describe("extractDiditDocumentExpiry", () => {
+  it("reads expiration_date off a V3 id_verifications[] entry as a UTC day", () => {
+    const d = extractDiditDocumentExpiry({ decision: { id_verifications: [{ document_number: "63-123456A78", expiration_date: "2026-10-02" }] } });
+    expect(d?.toISOString()).toBe("2026-10-02T00:00:00.000Z");
+  });
+
+  it("reads the v2 singular object and the kyc alias too", () => {
+    expect(extractDiditDocumentExpiry({ decision: { id_verification: { expiration_date: "2030-01-31" } } })?.toISOString()).toBe("2030-01-31T00:00:00.000Z");
+    expect(extractDiditDocumentExpiry({ decision: { kyc: { date_of_expiry: "2029-12-01" } } })?.toISOString()).toBe("2029-12-01T00:00:00.000Z");
+  });
+
+  it("fails open to null: no field, a malformed one, or an impossible date", () => {
+    expect(extractDiditDocumentExpiry(null)).toBeNull();
+    expect(extractDiditDocumentExpiry({ decision: {} })).toBeNull();
+    expect(extractDiditDocumentExpiry({ decision: { id_verifications: [{ expiration_date: "02/10/2026" }] } })).toBeNull();
+    expect(extractDiditDocumentExpiry({ decision: { id_verifications: [{ expiration_date: "2026-02-31" }] } })).toBeNull();
+    expect(extractDiditDocumentExpiry({ decision: { id_verifications: [{ expiration_date: 20261002 }] } })).toBeNull();
+  });
+});
+
+describe("kycIdExpiryOnLapse", () => {
+  const event = new Date("2026-10-05T14:30:00Z");
+  it("keeps the document's own expiry day when it is on or before the lapse", () => {
+    const stored = new Date("2026-10-02T00:00:00Z");
+    expect(kycIdExpiryOnLapse(stored, event)).toBe(stored);
+  });
+  it("otherwise (unknown, or a later stored day) stamps the day the expiry was applied", () => {
+    expect(kycIdExpiryOnLapse(null, event).toISOString()).toBe("2026-10-05T00:00:00.000Z");
+    expect(kycIdExpiryOnLapse(new Date("2031-01-01T00:00:00Z"), event).toISOString()).toBe("2026-10-05T00:00:00.000Z");
   });
 });

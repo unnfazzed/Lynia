@@ -44,6 +44,7 @@ export const APP_TARGETS = {
   "RC.list_error": { kind: "mobile", component: "app/food/index.tsx", fixture: "food_list_error" },
 
   // ─────────────────────── MOBILE — customer · send + auth + account (LJ) ───────────────────────
+  // SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-82): renders First Run v2 U1, not the gallery `ForceUpdate`.
   "LJ.force_update": { kind: "mobile", component: "app/force-update.tsx", fixture: "force_update" },
   "LJ.login": { kind: "mobile", component: "app/phone.tsx", fixture: "auth_phone" },
   "LJ.otp": { kind: "mobile", component: "app/verify.tsx", fixture: "auth_otp" },
@@ -54,8 +55,6 @@ export const APP_TARGETS = {
   "LJ.onboard_send": { kind: "mobile", component: "app/onboarding.tsx", fixture: "onboard_send" },
   "LJ.onboard_shared": { kind: "mobile", component: "app/onboarding.tsx", fixture: "onboard_shared" },
   "LJ.onboard_flag_off": { kind: "mobile", component: "app/onboarding.tsx", fixture: "onboard_flag_off" },
-  "LJ.perm_loc": { kind: "mobile", component: "app/permissions.tsx", fixture: "auth_perms_loc" },
-  "LJ.perm_notif": { kind: "mobile", component: "app/permissions.tsx", fixture: "auth_perms_notif" },
   "LJ.register": { kind: "mobile", component: "app/profile/setup.tsx", fixture: "auth_register" },
   "LJ.home_empty": { kind: "mobile", component: "app/send.tsx", fixture: "send_empty" },
   "LJ.home_pins": { kind: "mobile", component: "app/send.tsx", fixture: "send_pins" },

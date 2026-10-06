@@ -15,10 +15,18 @@ jest.mock("../../src/boot/window-background", () => ({
   scheduleWindowBackgroundReset: () => mockScheduleReset(),
 }));
 
-// The view layer is not under test (it has its own structural-snapshot guardrail); a stub keeps this
-// about the release seam, and keeps the test off the Brand SVG tree.
-jest.mock("../force-update.view", () => ({ ForceUpdateView: () => null }));
-jest.mock("../../src/ui/Brand", () => ({ DoveMark: () => null }));
+// The view layer is not under test (force-update.test.tsx covers U1–U5); a stub keeps this about the
+// release seam. The connection check is stubbed so no real request leaves the test.
+jest.mock("../../src/ui/firstrun", () => ({
+  Body: () => null,
+  FirstRunScreen: () => null,
+  FrBadge: () => null,
+  HeroPanel: () => null,
+  InfoBox: () => null,
+  PinnedFooter: () => null,
+  SplitTitle: () => null,
+}));
+global.fetch = jest.fn(async () => ({ ok: true, status: 200 })) as unknown as typeof fetch;
 
 import ForceUpdateScreen from "../force-update";
 import { resetBootSplashReleaseForTest, useBootSplashRelease } from "../../src/boot/boot-splash-hold";

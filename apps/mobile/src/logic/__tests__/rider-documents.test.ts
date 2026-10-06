@@ -15,13 +15,38 @@ jest.mock("../../api/riders", () => ({ updateRiderProfile: (...a: unknown[]) => 
 jest.mock("../image-downscale", () => ({ downscaleForUpload: (...a: unknown[]) => mockDownscale(...a) }));
 jest.mock("expo-image-picker", () => ({
   MediaTypeOptions: { Images: "Images" },
+  CameraType: { front: "front", back: "back" },
   requestCameraPermissionsAsync: jest.fn(async () => ({ granted: false })),
   requestMediaLibraryPermissionsAsync: jest.fn(async () => ({ granted: true })),
   launchCameraAsync: jest.fn(),
   launchImageLibraryAsync: jest.fn(async () => ({ canceled: false, assets: [{ uri: "file:///p.png", width: 3000, height: 4000, mimeType: "image/png" }] })),
 }));
 
-import { bikeVerified, maskNationalId, normalizePlate, pickRiderPhoto, plateIsValid, saveRiderPhoto } from "../rider-documents";
+import { bikeDocsProgress, bikeVerified, maskNationalId, normalizePlate, parseRiderPhotoDraft, pickRiderPhoto, plateIsValid, plateMatchesFormat, saveRiderPhoto } from "../rider-documents";
+
+describe("First Run v2 E1/E4/E6 rules (D-82)", () => {
+  it("E4: plates look like ABC 1234 (an optional space), after normalising", () => {
+    for (const ok of ["ABZ 4417", "abz4417", "  abz   4417 "]) expect(plateMatchesFormat(ok)).toBe(true);
+    for (const bad of ["AB 44", "ABZ 441", "ABZ4417X", "1234 ABZ", ""]) expect(plateMatchesFormat(bad)).toBe(false);
+  });
+  it("'Verified' only for an ops-confirmed plate once the server reports plateStatus", () => {
+    expect(bikeVerified({ kycStatus: "verified", bikeReg: "ABZ 4417", plateStatus: "verified" })).toBe(true);
+    expect(bikeVerified({ kycStatus: "verified", bikeReg: "ABZ 4417", plateStatus: "checking" })).toBe(false);
+    expect(bikeVerified({ kycStatus: "verified", bikeReg: "ABZ 4417", plateStatus: "none" })).toBe(false);
+    expect(bikeVerified({ kycStatus: "pending", bikeReg: "ABZ 4417", plateStatus: "verified" })).toBe(true);
+  });
+  it("E1 progress counts the ID check, the photo and a plate on file", () => {
+    expect(bikeDocsProgress({ kycStatus: "verified", hasPhoto: false, bikeReg: null })).toEqual({ done: 1, total: 3 });
+    expect(bikeDocsProgress({ kycStatus: "verified", hasPhoto: true, bikeReg: "ABZ 4417" })).toEqual({ done: 3, total: 3 });
+    expect(bikeDocsProgress(null)).toEqual({ done: 0, total: 3 });
+  });
+  it("E6: a stored photo draft is parsed defensively", () => {
+    expect(parseRiderPhotoDraft(JSON.stringify({ uri: "file:///p.jpg", contentType: "image/jpeg" }))).toEqual({ uri: "file:///p.jpg", contentType: "image/jpeg", width: undefined, height: undefined });
+    expect(parseRiderPhotoDraft("{bad")).toBeNull();
+    expect(parseRiderPhotoDraft(JSON.stringify({ uri: "", contentType: "image/jpeg" }))).toBeNull();
+    expect(parseRiderPhotoDraft(null)).toBeNull();
+  });
+});
 
 describe("plate rules (as PATCH /riders/me applies them)", () => {
   it("normalises to single spaces, upper-case", () => {

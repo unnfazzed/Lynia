@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { OFFER_WINDOW_MS } from "@lynia/shared";
-import { PUSH, type PushAdapter } from "../adapters/push/push.interface";
+import { androidChannelFor, PUSH, type PushAdapter } from "../adapters/push/push.interface";
 import { PrismaService } from "../prisma/prisma.service";
 import { auditData } from "../admin/admin.shared";
 import { pushCopy, pushMoney, PUSH_C } from "./merchant-order-push";
@@ -570,6 +570,8 @@ export class NotificationsService {
     // One batched provider call (FCM sendEach, chunked ≤500) instead of a per-token round-trip fan-out.
     // Results align with `tokens` order, so a dead token is pruned — and a delivery credited — by position.
     // `ttlSeconds`/`collapseKey` (when set by the caller) ride through to the adapter's provider fields.
+    // Rider job pings and food-offer alarms post on the `job-alerts` Android channel (D-82 P12).
+    const channelId = androidChannelFor(msg.data);
     const results = await this.push.sendEach(
       tokens.map((t) => ({
         token: t.token,
@@ -579,6 +581,7 @@ export class NotificationsService {
         data: msg.data,
         ttlSeconds: msg.ttlSeconds,
         collapseKey: msg.collapseKey,
+        ...(channelId ? { channelId } : {}),
         ...(msg.silent ? { silent: true } : {}),
       })),
     );

@@ -1,7 +1,7 @@
 import { Platform } from "react-native";
 import { act, create } from "react-test-renderer";
 import { isVersionBelow } from "../../config";
-import { fetchServerMinVersion, useServerMinVersion } from "../use-server-version-gate";
+import { fetchServerMinVersion, fetchServerVersionGate, useServerMinVersion } from "../use-server-version-gate";
 
 /** Minimal fetch stub — only the fields fetchServerMinVersion touches. */
 function fetchReturning(status: number, body: unknown): typeof fetch {
@@ -76,9 +76,24 @@ describe("fetchServerMinVersion (fail-open by design)", () => {
       Object.defineProperty(Platform, "OS", { value: original, configurable: true });
     }
     expect(urls.map((u) => u.slice(u.indexOf("/app/")))).toEqual([
-      "/app/version-gate?platform=ios",
-      "/app/version-gate?platform=android",
+      "/app/version-gate?platform=ios&soft=1",
+      "/app/version-gate?platform=android&soft=1",
     ]);
+  });
+
+  it("reads the soft-update body (First Run v2, D-82 §2 #7): recommended version + what's new", async () => {
+    await expect(
+      fetchServerVersionGate(fetchReturning(200, { minSupportedVersion: "0.2.0", recommendedVersion: "0.6.0", whatsNew: "Faster live tracking" })),
+    ).resolves.toEqual({ min: "0.2.0", recommended: "0.6.0", whatsNew: "Faster live tracking" });
+    await expect(fetchServerVersionGate(fetchReturning(200, { minSupportedVersion: "0.0.0", recommendedVersion: null, whatsNew: null }))).resolves.toEqual({
+      min: "0.0.0",
+      recommended: null,
+      whatsNew: null,
+    });
+  });
+
+  it("an older server that ignores ?soft answers the plain body — the gate still works, the banner stays off", async () => {
+    await expect(fetchServerVersionGate(fetchReturning(200, { minSupportedVersion: "0.2.0" }))).resolves.toEqual({ min: "0.2.0", recommended: null, whatsNew: null });
   });
 
   it("fails open when the network throws (offline cold start still boots)", async () => {

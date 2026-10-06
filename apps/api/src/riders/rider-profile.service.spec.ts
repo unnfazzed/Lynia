@@ -8,12 +8,12 @@ import type { PrismaService } from "../prisma/prisma.service";
 import { RIDER_PROFILE_UPDATE_ACTION, RiderProfileService, UpdateRiderProfile } from "./rider-profile.service";
 import { RidersController } from "./riders.controller";
 
-function build(rider: { photoUrl: string | null; bikeReg: string | null } | null) {
+function build(rider: { photoUrl: string | null; bikeReg: string | null; plateStatus?: string } | null) {
   const updates: Array<Record<string, unknown>> = [];
   const audits: Array<Record<string, unknown>> = [];
   const prisma = {
     rider: {
-      findUnique: vi.fn(async () => rider),
+      findUnique: vi.fn(async () => (rider ? { plateStatus: "none", ...rider } : null)),
       update: vi.fn(async (a: { data: Record<string, unknown> }) => {
         updates.push(a.data);
         return {};
@@ -66,7 +66,7 @@ describe("RiderProfileService.updateProfile (D-79)", () => {
 
   it("adds a first photo: verified, stored, audited", async () => {
     const { svc, verify, updates, audits, deleteObject } = build({ photoUrl: null, bikeReg: null });
-    expect(await svc.updateProfile("r1", { photoUrl: "kyc/r1/a.jpg" })).toEqual({ hasPhoto: true, bikeReg: null });
+    expect(await svc.updateProfile("r1", { photoUrl: "kyc/r1/a.jpg" })).toEqual({ hasPhoto: true, bikeReg: null, plateStatus: "none" });
     expect(verify).toHaveBeenCalledWith("kyc/r1/a.jpg", "kyc");
     expect(updates).toEqual([{ photoUrl: "kyc/r1/a.jpg" }]);
     expect(audits).toEqual([expect.objectContaining({ actor: "r1", action: RIDER_PROFILE_UPDATE_ACTION, target: "r1", reasonCode: "photo", note: null })]);
@@ -88,20 +88,30 @@ describe("RiderProfileService.updateProfile (D-79)", () => {
 
   it("adds or edits the plate with the old and new value in the audit note", async () => {
     const { svc, updates, audits } = build({ photoUrl: "kyc/r1/a.jpg", bikeReg: "AEE 4471" });
-    expect(await svc.updateProfile("r1", { bikeReg: "AFG 2231" })).toEqual({ hasPhoto: true, bikeReg: "AFG 2231" });
-    expect(updates).toEqual([{ bikeReg: "AFG 2231" }]);
+    expect(await svc.updateProfile("r1", { bikeReg: "AFG 2231" })).toEqual({ hasPhoto: true, bikeReg: "AFG 2231", plateStatus: "checking" });
+    expect(updates).toEqual([{ bikeReg: "AFG 2231", plateStatus: "checking" }]);
     expect(audits[0]).toMatchObject({ reasonCode: "bike_reg", note: "bike_reg: AEE 4471 → AFG 2231" });
   });
 
   it("re-sending the same values writes nothing and logs nothing", async () => {
     const { svc, updates, audits } = build({ photoUrl: null, bikeReg: "AEE 4471" });
-    expect(await svc.updateProfile("r1", { bikeReg: "AEE 4471" })).toEqual({ hasPhoto: false, bikeReg: "AEE 4471" });
+    expect(await svc.updateProfile("r1", { bikeReg: "AEE 4471" })).toEqual({ hasPhoto: false, bikeReg: "AEE 4471", plateStatus: "none" });
     expect(updates).toEqual([]);
     expect(audits).toEqual([]);
   });
 
   it("the audit action is reserved so the free-text audit route can't forge it", () => {
     expect(RESERVED_AUDIT_ACTIONS.has(RIDER_PROFILE_UPDATE_ACTION)).toBe(true);
+    expect(RESERVED_AUDIT_ACTIONS.has("rider.plate_verify")).toBe(true);
+  });
+
+  it("First Run v2 E4 (D-82): a verified plate that changes goes back to 'checking'; a photo-only change leaves it", async () => {
+    const changed = build({ photoUrl: null, bikeReg: "AEE 4471", plateStatus: "verified" });
+    expect((await changed.svc.updateProfile("r1", { bikeReg: "AFG 2231" })).plateStatus).toBe("checking");
+    expect(changed.updates).toEqual([{ bikeReg: "AFG 2231", plateStatus: "checking" }]);
+    const photo = build({ photoUrl: null, bikeReg: "AEE 4471", plateStatus: "verified" });
+    expect((await photo.svc.updateProfile("r1", { photoUrl: "kyc/r1/a.jpg" })).plateStatus).toBe("verified");
+    expect(photo.updates).toEqual([{ photoUrl: "kyc/r1/a.jpg" }]);
   });
 });
 

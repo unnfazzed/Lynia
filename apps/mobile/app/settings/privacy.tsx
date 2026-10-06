@@ -3,7 +3,8 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { Pressable, Text, View } from "react-native";
 import { useOptionalAuth } from "../../src/auth/auth-context";
-import { AppBar, Card, Icon, type IconName, Screen } from "../../src/ui";
+import { Card, Icon, type IconName } from "../../src/ui";
+import { BackHeader, FirstRunScreen, LargeTitle } from "../../src/ui/firstrun";
 import { openSupportWhatsApp } from "../../src/config";
 
 /**
@@ -70,8 +71,15 @@ export default function PrivacyScreen(): React.ReactElement {
   // Known to be signed out: no provider means the state is unknown (a bare render), not signed out.
   const signedOut = auth !== null && !auth.loading && auth.session === null;
   return (
-    <Screen>
-      <AppBar title="Privacy" onBack={() => router.back()} />
+    // First Run v2 Settings look (D-82 §2 #1): the round back header + large title; the content is unchanged.
+    <FirstRunScreen
+      header={
+        <>
+          <BackHeader onBack={() => router.back()} />
+          <LargeTitle>Privacy</LargeTitle>
+        </>
+      }
+    >
       {ROWS.map((r) => (
         <Card key={r.title} style={{ padding: 14 }}>
           <View style={{ flexDirection: "row", gap: 11 }}>
@@ -99,6 +107,6 @@ export default function PrivacyScreen(): React.ReactElement {
           routes into help rather than pretending to produce a file. */}
       <ActionRow icon="inbox" label="Request a copy of my data" last={signedOut} onPress={openSupportWhatsApp} />
       {signedOut ? null : <ActionRow icon="trash" label="Delete my account" danger last onPress={() => router.push("/settings/delete-account")} />}
-    </Screen>
+    </FirstRunScreen>
   );
 }

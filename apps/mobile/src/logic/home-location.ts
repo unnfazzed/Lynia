@@ -1,7 +1,7 @@
 import * as Location from "expo-location";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useBootPhase } from "../boot/boot-phase";
+import { classifyLocation, type LocState } from "../permissions/location";
 import { withTimeout } from "../util";
 
 /**
@@ -180,24 +180,20 @@ export async function saveStoredLocation(place: HomePlace, manual: boolean): Pro
 
 
 /**
- * Granted, or granted after asking — and never asking when the OS would refuse to show the dialog.
- * Mirrors `use-pickup-autolocate.ts`: a hard-denied customer gets no prompt and no delay.
- *
- * `beforeAsking` runs only when the OS dialog is actually about to be shown (the home hook holds it
- * until the cold-start splash has handed off — see useHomeLocation). A granted permission never waits.
+ * Whether the app may read the position right now — a READ, never a request. Since First Run v2 (ledger
+ * D-82, BRIEF 1–2) the OS dialog only ever opens from the PC1 explainer's own button (`useLocationAsk`,
+ * logic/location-ask.ts); mounting Home (or the rider board) never asks, so nothing pops over the splash or over a screen
+ * that didn't explain why. Approximate counts: it still fixes a position (PC3 asks to upgrade it).
  */
-async function ensurePermission(beforeAsking?: () => Promise<void>): Promise<"granted" | "denied"> {
+async function readGrant(): Promise<LocState> {
   try {
-    const existing = await Location.getForegroundPermissionsAsync();
-    if (existing.granted) return "granted";
-    if (!existing.canAskAgain) return "denied";
-    if (beforeAsking) await beforeAsking();
-    const asked = await Location.requestForegroundPermissionsAsync();
-    return asked.status === "granted" ? "granted" : "denied";
+    return classifyLocation(await Location.getForegroundPermissionsAsync());
   } catch {
     return "denied";
   }
 }
+
+const usable = (loc: LocState): boolean => loc === "granted" || loc === "coarse";
 
 async function cachedPoint(): Promise<{ lat: number; lng: number } | null> {
   try {
@@ -236,10 +232,11 @@ export async function addressFor(point: { lat: number; lng: number }): Promise<{
   }
 }
 
-/** Detect → reverse-geocode → a place, or null on any failure. Exported for the location sheet's
- *  "Use my current location", which needs the same resolution without mounting the hook again. */
+/** Detect → reverse-geocode → a place, or null on any failure (no permission included — it never asks).
+ *  Exported for the location sheet's "Use my current location", which needs the same resolution
+ *  without mounting the hook again. */
 export async function detectHomePlace(): Promise<HomePlace | null> {
-  if ((await ensurePermission()) !== "granted") return null;
+  if (!usable(await readGrant())) return null;
   const point = (await livePoint()) ?? (await cachedPoint());
   if (!isUsablePoint(point)) return null;
   const resolved = await addressFor(point);
@@ -296,19 +293,6 @@ export function useHomeLocation({ detectOnly = false }: HomeLocationOptions = {}
   detectOnlyRef.current = detectOnly;
   const alive = useRef(true);
   const started = useRef(false);
-  // No OS location dialog over the cold-start splash (S-6): Home (and the rider board) mount and run
-  // this under the splash, so the first-run permission prompt popped up over the brand intro. The
-  // stored address and an already-granted fix still go ahead during the boot — only the ASK waits for
-  // the boot to end. Outside the boot the gate is open from the start and nothing waits.
-  const { booting } = useBootPhase();
-  const bootGate = useRef<{ open: boolean; waiters: (() => void)[] }>({ open: !booting, waiters: [] });
-  useEffect(() => {
-    if (booting) return;
-    const gate = bootGate.current;
-    gate.open = true;
-    for (const resolve of gate.waiters.splice(0)) resolve();
-  }, [booting]);
-
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -336,14 +320,11 @@ export function useHomeLocation({ detectOnly = false }: HomeLocationOptions = {}
         return;
       }
 
-      const permission = await ensurePermission(
-        bootGate.current.open
-          ? undefined
-          : () => (bootGate.current.open ? Promise.resolve() : new Promise<void>((resolve) => bootGate.current.waiters.push(resolve))),
-      );
+      // A read, never an ask (D-82): without a grant the row stays on its prompt and H6 offers PC1.
+      const permission = await readGrant();
       if (!alive.current) return;
-      if (permission !== "granted") {
-        setDenied(true);
+      if (!usable(permission)) {
+        setDenied(permission === "blocked");
         setLocating(false);
         return;
       }
@@ -389,7 +370,7 @@ export function useHomeLocation({ detectOnly = false }: HomeLocationOptions = {}
     if (!alive.current) return detected;
     setLocating(false);
     if (!detected) {
-      setDenied(true);
+      setDenied((await readGrant()) === "blocked");
       return null;
     }
     setDenied(false);

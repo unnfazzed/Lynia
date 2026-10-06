@@ -96,8 +96,8 @@ describe("signedInDestination (post-sign-in fork, shared by verify.tsx and profi
     expect(signedInDestination(null)).toBe("/home");
   });
 
-  it("the C1 rider path primes location + job alerts before the rider app", () => {
-    expect(signedInDestination(null, "rider")).toBe("/permissions?next=/rider");
+  it("the C1 rider path goes straight to the rider app — no priming (First Run v2 G1, D-82 §2 #5)", () => {
+    expect(signedInDestination(null, "rider")).toBe("/rider");
     // A saved role always wins over the C1 intent.
     expect(signedInDestination("customer", "rider")).toBe("/home");
     expect(signedInDestination("rider", "rider")).toBe("/rider");
@@ -105,8 +105,8 @@ describe("signedInDestination (post-sign-in fork, shared by verify.tsx and profi
 
   // C-3 (start-up review 2026-10-06): the saved role is wiped by every sign-out and by a reinstall, so a
   // returning rider used to land in the customer app. With no saved role, the server's role decides.
-  it("a returning rider with no saved role goes to the rider app (via the priming screen)", () => {
-    expect(signedInDestination(null, null, "rider")).toBe("/permissions?next=/rider");
+  it("a returning rider with no saved role goes to the rider app", () => {
+    expect(signedInDestination(null, null, "rider")).toBe("/rider");
     expect(startRoleFor(null, null, "rider")).toBe("rider");
     expect(startRoleFor(null, null, "customer")).toBe("customer");
   });

@@ -1,8 +1,6 @@
-import { tokens } from "@lynia/shared/tokens";
 import { useRouter } from "expo-router";
 import React from "react";
-import { View } from "react-native";
-import { AppBar, Screen } from "../../src/ui";
+import { BackHeader, FirstRunScreen, LargeTitle } from "../../src/ui/firstrun";
 import { AccountRowList } from "../../src/ui/account/AccountRows";
 
 /**
@@ -21,17 +19,16 @@ import { AccountRowList } from "../../src/ui/account/AccountRows";
 export default function LanguageScreen(): React.ReactElement {
   const router = useRouter();
   return (
-    <Screen scroll>
-      <AppBar title="Language" onBack={() => router.back()} />
-
-      {/* Same `Pad` + card grammar as Settings and the two Account tabs (D-24/D-25), so a screen
-          pushed FROM that card doesn't change shape underneath the user. */}
-      <View style={{ padding: tokens.space.screen, minHeight: "100%", paddingTop: 0 }}>
-        <AccountRowList
-          rows={[{ icon: "check", label: "English", sub: "Used across the app and in your notifications" }]}
-          style={{ marginTop: 0 }}
-        />
-      </View>
-    </Screen>
+    // First Run v2 Settings look (D-82 §2 #1): the round back header + large title; the content is unchanged.
+    <FirstRunScreen
+      header={
+        <>
+          <BackHeader onBack={() => router.back()} />
+          <LargeTitle>Language</LargeTitle>
+        </>
+      }
+    >
+      <AccountRowList rows={[{ icon: "check", label: "English", sub: "Used across the app and in your notifications" }]} style={{ marginTop: 0 }} />
+    </FirstRunScreen>
   );
 }

@@ -15,7 +15,7 @@ import { UploadVerifier } from "../adapters/storage/upload-verifier";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { KYC_VENDOR, type KycVendor } from "../kyc/kyc-vendor";
-import { classifyStoredDiditStatus, DIDIT_APPROVED_STATUS } from "../kyc/didit";
+import { classifyStoredDiditStatus, DIDIT_APPROVED_STATUS, kycIdExpiryOnLapse } from "../kyc/didit";
 import { KycPendingStateService } from "../kyc/kyc-pending-state.service";
 import { auditData } from "../admin/admin.shared";
 import { baseBroadcastRadiusM } from "../common/broadcast-policy";
@@ -909,6 +909,9 @@ export class RiderService {
     // decision payload exposes one. Only consulted on a `verified` outcome; null degrades to the
     // pre-IR26-04 behavior so a payload-shape mismatch can never wedge real verifications.
     verifiedDocNumber?: string | null,
+    // First Run v2 F6 (D-82 §4): the verified document's expiry date (extractDiditDocumentExpiry), when the
+    // decision payload carries one. Stored on a `verified` outcome; an `expired` one stamps the lapse day.
+    documentExpiresOn?: Date | null,
   ): Promise<{ updated: number }> {
     // DS15-06: the CAS status mutation AND its AuditLog row commit in ONE transaction — matching the
     // manual adminSetKyc path and admin-riders.service's suspend/lift/ban CAS+audit pairs. Previously the
@@ -968,6 +971,8 @@ export class RiderService {
           kycAttempts: true,
           // D-75: read under the row lock above, so it is exactly what the CAS update below will see.
           kycResolvedAt: true,
+          // D-82 F6: an `expired` result keeps the document's own expiry day when it is the earlier one.
+          kycIdExpiresOn: true,
           profile: { select: { idNumberHash: true } },
         },
       });
@@ -1106,6 +1111,10 @@ export class RiderService {
           // write; the post-commit evictRiderFromSupply below clears the Redis geo index + board rooms.
           // (verified/holdForReview never demote — they don't set this.)
           ...(status === "failed" || status === "expired" ? { isOnline: false } : {}),
+          // First Run v2 F6 (D-82 §4): the ID's expiry day — the document's, from a verified decision that
+          // carries it; on an expiry, the day it lapsed (or the document's day when that is earlier).
+          ...(status === "verified" && documentExpiresOn ? { kycIdExpiresOn: documentExpiresOn } : {}),
+          ...(status === "expired" ? { kycIdExpiresOn: kycIdExpiryOnLapse(current?.kycIdExpiresOn, eventAt) } : {}),
         },
       });
       // Only when the update actually applied (res.count > 0 — not a stale/replayed webhook). `expired`
@@ -1377,6 +1386,8 @@ export class RiderService {
           kycAttempts: true,
           kycStatus: true,
           kycResolvedAt: true,
+          // D-82 F6: a manual expire keeps the document's own expiry day when it is the earlier one.
+          kycIdExpiresOn: true,
           // D-75: what an approval settles the national ID from.
           verifiedIdHash: true,
           verifiedIdNumber: true,
@@ -1450,7 +1461,9 @@ export class RiderService {
             ...(status === "verified" ? { kycDeclineReason: null, kycResolvedAt: new Date() } : {}),
             // A manual EXPIRE (1·b2 ops backstop) is also terminal: stamp the time, clear any stale
             // decline reason, and reset the A-02 counter so re-verification isn't blocked by an old lock.
-            ...(status === "expired" ? { kycDeclineReason: null, kycResolvedAt: new Date(), kycAttempts: 0 } : {}),
+            ...(status === "expired"
+              ? { kycDeclineReason: null, kycResolvedAt: new Date(), kycAttempts: 0, kycIdExpiresOn: kycIdExpiryOnLapse(rider.kycIdExpiresOn, new Date()) }
+              : {}),
             // Class-B demotion: any transition OUT of verified (expired, or a `pending` reset) means the
             // rider can no longer bid (onlineRefusalReason gates on verified), so pull them offline in the
             // same write. A verified APPROVE is the one status that keeps them online-eligible.

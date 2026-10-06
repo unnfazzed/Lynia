@@ -1,5 +1,5 @@
 import { Body, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
-import { EditMerchantOrderItemsRequest, KycStatus, OrderStatus, OrderType, TransferMerchantOwnerRequest } from "@lynia/shared";
+import { EditMerchantOrderItemsRequest, KycStatus, OrderStatus, OrderType, PlateStatus, TransferMerchantOwnerRequest } from "@lynia/shared";
 import { z } from "zod";
 import { AdminGuard } from "../auth/admin.guard";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -62,6 +62,17 @@ const SetMerchantPilot = z
   })
   .strict();
 const ReasonOptional = z.object({
+  reason: z.string().max(160).nullish(),
+  note: z.string().max(2000).nullish(),
+});
+// First Run v2 E4 (D-82): the plate ops checked, in the stored form (upper-case, single spaces).
+const PlateVerify = z.object({
+  plate: z
+    .string()
+    .trim()
+    .min(3)
+    .max(20)
+    .transform((v) => v.replace(/\s+/g, " ").toUpperCase()),
   reason: z.string().max(160).nullish(),
   note: z.string().max(2000).nullish(),
 });
@@ -141,11 +152,13 @@ export class AdminController {
     return this.sos.acknowledge(id, actor);
   }
 
-  /** Rider roster / KYC review queue. `?kyc=pending|verified|failed` filters; unknown values are ignored. */
+  /** Rider roster / KYC review queue. `?kyc=pending|verified|failed` filters; unknown values are ignored.
+   *  First Run v2 E4 (D-82): `?plate=checking` is the plate review queue (also none|verified). */
   @Get("riders")
-  riders(@Query("kyc") kyc?: string) {
+  riders(@Query("kyc") kyc?: string, @Query("plate") plate?: string) {
     const filter = kyc && KYC_VALUES.includes(kyc) ? (kyc as KycStatus) : undefined;
-    return this.ridersService.listRiders(filter);
+    const plateFilter = plate && (Object.values(PlateStatus) as string[]).includes(plate) ? (plate as PlateStatus) : undefined;
+    return this.ridersService.listRiders(filter, plateFilter);
   }
 
   /** KYC doc-review detail for one rider (A-02). 404s when the profile isn't a rider. */
@@ -298,6 +311,17 @@ export class AdminController {
     @AdminActor() actor: string,
   ) {
     return this.ridersService.clearHold(actor, id, body);
+  }
+
+  /** First Run v2 E4 (D-82): confirm the bike plate a rider saved (plate_status checking → verified).
+   *  `plate` is the plate ops looked at; if the rider changed it since, 409. */
+  @Post("riders/:id/plate-verify")
+  verifyPlate(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(PlateVerify)) body: z.infer<typeof PlateVerify>,
+    @AdminActor() actor: string,
+  ) {
+    return this.ridersService.verifyPlate(actor, id, body);
   }
 
   /* ── Order admin actions (mutation + event + audit in one $transaction) ──────────────── */

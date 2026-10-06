@@ -527,21 +527,22 @@ export function CashLine({ text, icon = "banknote" }: { text: string; icon?: Ico
 }
 
 /**
- * The Become-a-rider card on a customer-only Account (start / in progress / review / failed / locked).
- * `locked` (R-10, ledger D-54 §4) is both tries used: the server refuses a third, so the card carries the
- * board's own "used both tries" wall copy and its WhatsApp action instead of a dead "Try again".
+ * The Become-a-rider card on a customer-only Account while a check is under way (in progress / review /
+ * failed / locked). Its start state ("none") is First Run v2 G2's violet card (`BecomeRiderCard`, ledger
+ * D-82). `locked` (R-10, ledger D-54 §4) is both tries used: the server refuses a third, so the card carries
+ * `KY.lockedBody` and its WhatsApp action instead of a dead "Try again". `body` overrides the review / failed
+ * body (the automated check vs a person; the decline reason).
  */
 export type BecomeState = "none" | "progress" | "review" | "failed" | "locked";
-export function BecomeCard({ state, failBody, onAction }: { state: BecomeState; failBody?: string; onAction: () => void }): React.ReactElement {
+export function BecomeCard({ state, body, onAction }: { state: Exclude<BecomeState, "none">; body?: string; onAction: () => void }): React.ReactElement {
   const arrow: IconName = "arrow-right";
   const d = {
-    none: { icon: "bike" as IconName, tone: "ok", title: R.becomeT, body: R.becomeB, cta: R.startKyc, ctaIcon: arrow },
     progress: { icon: "id-card" as IconName, tone: "ok", title: R.kycProgT, body: R.kycProgB, cta: R.continueKyc, ctaIcon: arrow },
-    review: { icon: "hourglass" as IconName, tone: "calm", title: R.kycReviewT, body: R.kycReviewB, cta: null, ctaIcon: arrow },
-    failed: { icon: "id-card" as IconName, tone: "danger", title: R.kycFailT, body: failBody ?? "", cta: R.tryKyc, ctaIcon: arrow },
-    locked: { icon: "id-card" as IconName, tone: "danger", title: R.gFailed2T, body: R.gFailed2B, cta: R.whatsappSupport, ctaIcon: "message-circle" as IconName },
+    review: { icon: "hourglass" as IconName, tone: "calm", title: R.kycReviewT, body: body ?? R.kycReviewB, cta: null, ctaIcon: arrow },
+    failed: { icon: "id-card" as IconName, tone: "danger", title: R.kycFailT, body: body ?? "", cta: R.tryKyc, ctaIcon: arrow },
+    locked: { icon: "id-card" as IconName, tone: "danger", title: R.kycLockedT, body: R.kycLockedB, cta: R.whatsappSupport, ctaIcon: "message-circle" as IconName },
   }[state];
-  const wash = state === "none" || state === "progress";
+  const wash = state === "progress";
   return (
     <View
       style={{

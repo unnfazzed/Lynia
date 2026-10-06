@@ -36,7 +36,7 @@ import { usePlacingGuard } from "../../src/logic/use-placing-guard";
 import { useNow } from "../../src/logic/use-now";
 import { formatMoney } from "../../src/logic/money";
 import { useReachability } from "../../src/net/use-reachability";
-import { askNotificationsInContext } from "../../src/push/ask-in-context";
+import { routeAfterOrderPlaced } from "../../src/push/ask-in-context";
 import { seedFoodOrder } from "../../src/query/use-food-order";
 import { useOrderFlags } from "../../src/net/use-order-flags";
 import { useCarriedBalance, useScheduleSlots } from "../../src/query/use-order-flow";
@@ -335,11 +335,12 @@ export default function FoodReviewScreen(): React.ReactElement {
         }),
       );
       void saveMyPickupPhone(phone.trim());
-      void askNotificationsInContext();
       seedFoodOrder(queryClient, order);
       cart.clear();
+      // D-82 PC8: the "Know when it's at the gate" explainer in front of the order, while it should ask.
+      const next = await routeAfterOrderPlaced(order.id);
       if (!mounted.current) return;
-      goToPlacedFoodOrder(router, order.id);
+      goToPlacedFoodOrder(router, order.id, next);
     } catch (err) {
       if (!mounted.current) return;
       // A 4xx carries the server's reason (on hold, a dish just sold out); anything else is R7b.

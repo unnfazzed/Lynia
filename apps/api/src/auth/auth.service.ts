@@ -140,6 +140,7 @@ export class AuthService {
         rider: {
           select: {
             bikeReg: true,
+            plateStatus: true,
             // Only its presence leaves this endpoint (`hasPhoto`), never the storage key itself.
             photoUrl: true,
             kycStatus: true,
@@ -165,6 +166,9 @@ export class AuthService {
             // So the cancel-confirm sheet can warn "this is strike N of LIMIT" before a cancel lands,
             // instead of the rider only learning their count at the moment they get locked out.
             cancelStrikes: true,
+            // First Run v2 F6 (D-82 §4): the day the ID expired, served as `kycExpiredOn` below.
+            kycIdExpiresOn: true,
+            kycResolvedAt: true,
           },
         },
       },
@@ -234,6 +238,9 @@ export class AuthService {
       rider: p.rider
         ? {
             bikeReg: p.rider.bikeReg,
+            // First Run v2 E4 (D-82): ops' check of that plate — Bike & documents shows "Checking" until
+            // it is `verified`. Additive; older apps ignore it.
+            plateStatus: p.rider.plateStatus,
             // D-62: the rider photo is optional since 2026-10-02 — Bike & documents reads this to draw
             // "Not added yet". Additive; older apps ignore it.
             hasPhoto: p.rider.photoUrl != null,
@@ -247,6 +254,11 @@ export class AuthService {
             isOnline: p.rider.isOnline,
             kycDeclineReason: p.rider.kycDeclineReason,
             kycAttempts: p.rider.kycAttempts,
+            // First Run v2 F6 (ledger D-82 §4, owner 2026-10-06): "Expired 2 Oct 2026" — the day the rider's ID
+            // expired, as "YYYY-MM-DD", only while the check is `expired` (null otherwise). The stored expiry
+            // day, or for a rider who lapsed before it was stored (migration 0077), the day the expiry was
+            // applied. Additive; older apps ignore it.
+            kycExpiredOn: kycExpiredOn(p.rider.kycStatus, p.rider.kycIdExpiresOn, p.rider.kycResolvedAt),
             cancelStrikes: p.rider.cancelStrikes,
             // BH-03: KYC_MODE is a global deploy config, not a per-rider column — surfaced here so
             // the app can tell "pending, waiting on a browser vendor flow" (auto) apart from "pending,
@@ -1035,4 +1047,11 @@ export class AuthService {
       );
     }
   }
+}
+
+/** /auth/me `rider.kycExpiredOn` (D-82 F6): "YYYY-MM-DD" while `expired`, else null. */
+export function kycExpiredOn(status: string, expiresOn: Date | null | undefined, resolvedAt: Date | null | undefined): string | null {
+  if (status !== "expired") return null;
+  const d = expiresOn ?? resolvedAt;
+  return d ? d.toISOString().slice(0, 10) : null;
 }

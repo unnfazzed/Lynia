@@ -2,6 +2,7 @@ import { ConflictException, Injectable, Logger, NotFoundException } from "@nestj
 import {
   ACTIVE_RIDE_STATUSES,
   type KycStatus,
+  PlateStatus,
   RELIABILITY,
   RiderAccountStatus,
 } from "@lynia/shared";
@@ -25,14 +26,16 @@ export class AdminRidersService {
   ) {}
 
   /** Rider roster for ops — the KYC review queue when filtered to `pending`. */
-  async listRiders(kyc?: KycStatus) {
+  async listRiders(kyc?: KycStatus, plate?: PlateStatus) {
     const riders = await this.prisma.rider.findMany({
-      where: kyc ? { kycStatus: kyc } : {},
+      // First Run v2 E4 (D-82): `plate` = the plate review queue (`checking`).
+      where: { ...(kyc ? { kycStatus: kyc } : {}), ...(plate ? { plateStatus: plate } : {}) },
       orderBy: { updatedAt: "desc" },
       take: 100,
       select: {
         profileId: true,
         bikeReg: true,
+        plateStatus: true,
         kycStatus: true,
         kycRef: true,
         idVerified: true,
@@ -69,6 +72,8 @@ export class AdminRidersService {
       name: `${r.profile.firstName} ${r.profile.lastName}`.trim(),
       phone: revealingRiderIds.has(r.profileId) ? r.profile.phone : maskPhone(r.profile.phone),
       bikeReg: r.bikeReg,
+      // First Run v2 E4 (D-82): "checking" = a self-service plate change waiting on POST riders/:id/plate-verify.
+      plateStatus: r.plateStatus,
       kycStatus: r.kycStatus,
       kycRef: r.kycRef,
       idVerified: r.idVerified,
@@ -376,6 +381,31 @@ export class AdminRidersService {
    * non-suspended rider, so this is the only place that clears the flag for that state. Mutation +
    * audit in one transaction.
    */
+  /**
+   * First Run v2 E4 (D-82): ops confirm the plate a rider saved from Bike & documents. Only a plate that
+   * is `checking` can be confirmed, and only the plate ops looked at: `plate` must equal the stored one
+   * (CAS), so a rider who changed it again meanwhile stays "Checking" instead of having an unseen plate
+   * marked verified. Audited; the rider's app shows "Verified" on its next `/auth/me`.
+   */
+  async verifyPlate(actor: string, profileId: string, input: { plate: string; reason?: string | null; note?: string | null }) {
+    return this.prisma.$transaction(async (tx) => {
+      const rider = await tx.rider.findUnique({ where: { profileId }, select: { bikeReg: true, plateStatus: true } });
+      if (!rider) throw new NotFoundException("Rider not found");
+      if (!rider.bikeReg) throw new ConflictException("Rider has no plate on file");
+      if (rider.plateStatus !== PlateStatus.CHECKING) throw new ConflictException(`Plate is not waiting for a check (status: ${rider.plateStatus})`);
+      const changed = await tx.rider.updateMany({
+        where: { profileId, bikeReg: input.plate, plateStatus: PlateStatus.CHECKING },
+        data: { plateStatus: PlateStatus.VERIFIED },
+      });
+      if (changed.count === 0) throw new ConflictException("The plate changed — refresh and check it again");
+      const audit = await tx.auditLog.create({
+        data: auditData(actor, "rider.plate_verify", profileId, input.reason ?? null, input.note ?? `bike_reg: ${input.plate}`),
+        select: { id: true },
+      });
+      return { id: profileId, bikeReg: input.plate, plateStatus: PlateStatus.VERIFIED, auditId: audit.id };
+    });
+  }
+
   async clearHold(actor: string, profileId: string, input: { reason?: string | null; note?: string | null }) {
     const result = await this.prisma.$transaction(async (tx) => {
       const rider = await tx.rider.findUnique({
@@ -436,6 +466,7 @@ export class AdminRidersService {
       select: {
         profileId: true,
         bikeReg: true,
+        plateStatus: true,
         kycStatus: true,
         isOnline: true,
         ratingAvg: true,
@@ -506,6 +537,8 @@ export class AdminRidersService {
       name: `${rider.profile.firstName} ${rider.profile.lastName}`.trim(),
       phone: liveOrders > 0 ? rider.profile.phone : maskPhone(rider.profile.phone),
       bike: rider.bikeReg,
+      // First Run v2 E4 (D-82): "checking" = waiting on POST riders/:id/plate-verify.
+      plateStatus: rider.plateStatus,
       kyc: rider.kycStatus,
       status,
       cooldown: onCooldown ? fmtUntil(rider.cooldownUntil!, now) : undefined,

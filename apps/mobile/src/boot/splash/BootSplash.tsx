@@ -11,10 +11,13 @@ import { DOVE_BODY_POLYGONS, DOVE_CREASE_PATHS, DOVE_CREASE_WIDTH, DOVE_KEEL_POL
 import { useBootPhase } from "../boot-phase";
 import { reportSplashExit, useBootReadiness } from "../boot-readiness";
 import { releaseNativeSplash, useBootSplashRelease } from "../boot-splash-hold";
-import { S } from "./copy";
+import { watchRiderBoardReady } from "../rider-board-ready";
+import { queryClient } from "../../query/client";
+import { Icon } from "../../ui/Icon";
+import { RIDER_OFFLINE, RIDER_STEPS, S } from "./copy";
 import { held, keyframesEasing, keyframesInput, popEasing } from "./motion";
-import { PANEL_H_ESTIMATE, splashGeometry } from "./geometry";
-import { EXIT, GIVE_UP_MS, INTRO_MS, SLOW_AFTER_MS, pendingTasks, splashDoneAt } from "./timeline";
+import { CARD_BOTTOM, CARD_H_ESTIMATE, PANEL_H_ESTIMATE, splashGeometry } from "./geometry";
+import { EXIT, GIVE_UP_MS, INTRO_MS, SLOW_AFTER_MS, type StepState, isRiderBoot, nextStepChange, pendingTasks, riderStepTimes, splashDoneAt, stepStates } from "./timeline";
 
 /**
  * The cold-start splash — "1a Sun & orbit" (`packages/design/handoff/splash-v1`, ledger D-64; it
@@ -25,8 +28,14 @@ import { EXIT, GIVE_UP_MS, INTRO_MS, SLOW_AFTER_MS, pendingTasks, splashDoneAt }
  * session decision, Home's profile read, Home's first content — and the moment the last one is in the
  * sun floods the screen and Home slides up over it. Anywhere other than Home (onboarding, sign-in, the
  * rider app, a push-tap deep link) hands off as soon as the session check is in, without the exit.
- * There is no steps card: the 2026-10-06 change (handoff `CHANGE-2026-10-06.md`) removed it, so the
- * tasks have no UI of their own. Timing rules: ./timeline.ts.
+ * The customer's splash has no steps card: the 2026-10-06 change (handoff `CHANGE-2026-10-06.md`)
+ * removed it, so its tasks have no UI of their own. Timing rules: ./timeline.ts.
+ *
+ * A boot into the rider board keeps a card (First Run v2 H1/H2, ledger D-82 §2 #2; CHANGE-2026-10-06:
+ * "Don't change Home or the rider splash"). It ticks the rider's two steps ("Checking it's you",
+ * "Getting jobs near you" = the board's first reads, src/boot/rider-board-ready.ts) and then cuts. Offline,
+ * its rows give way to a single offline row (no dark panel). On the entry phone (320×640) the brand is
+ * centred in the space above the card (./geometry.ts).
  *
  * Mounted by the root layout BELOW the navigator while `booting`; the navigator itself is held
  * off-screen (BootPhase `reveal`) until the exit raises it, so Home mounts, fetches and lays out
@@ -68,8 +77,10 @@ const RISE = Easing.bezier(0.2, 0.7, 0.3, 1);
 const SPRING_OUT = Easing.bezier(0.2, 0.9, 0.3, 1.2);
 const SETTLE = Easing.bezier(0.2, 0.9, 0.3, 1);
 const SUN_FLOOD = Easing.bezier(0.6, 0, 0.2, 1);
+const TICK_POP = Easing.bezier(0.3, 1.6, 0.5, 1);
 const HOME_UP = Easing.bezier(0.2, 0.8, 0.2, 1);
 const POP_CURVE = popEasing(POP);
+const TICK_CURVE = popEasing(TICK_POP);
 const SWING_CURVE = keyframesEasing(2, EASE_IN_OUT);
 const DRIFT_CURVE = keyframesEasing(3, EASE_IN_OUT);
 const SWING_IN = keyframesInput(2);
@@ -130,6 +141,11 @@ const BLOBS = [
   },
 ] as const;
 
+/** What a screen reader hears as a rider step completes (accessibility only — the card draws the tick). */
+export function stepDoneAnnouncement(label: string): string {
+  return `${label}, done`;
+}
+
 /** One native-driven timing; `delay` is folded into the easing (no JS timer). */
 const timing = (v: Animated.Value, toValue: number, duration: number, easing: (x: number) => number, delay = 0): Animated.CompositeAnimation =>
   Animated.timing(v, {
@@ -180,6 +196,9 @@ interface SplashValues {
   slow: Animated.Value;
   offline: Animated.Value;
   idle: Animated.Value;
+  /** The rider's steps card, and its active ring's spin. */
+  card: Animated.Value;
+  ringSpin: Animated.Value;
   exitOrbit: Animated.Value;
   exitDove: Animated.Value;
   exitSun: Animated.Value;
@@ -202,12 +221,23 @@ export function BootSplash(): React.ReactElement {
   const [t, setT] = useState(0);
   const [retryAt, setRetryAt] = useState<number | null>(null);
 
-  // The three boot tasks on the splash's clock. This is the only task state: there is no per-task UI,
+  // The boot tasks on the splash's clock. This is the only task state: the customer has no per-task UI,
   // and "Try again" resumes only the tasks still pending (a finished one is stamped once, for good).
   const tasks = useMemo(() => {
     const rel = (at: number | null): number | null => (at == null ? null : Math.max(0, at - t0));
-    return { session: rel(readiness.readyAt.session), profile: rel(readiness.readyAt.profile), home: rel(readiness.readyAt.home) };
+    return {
+      session: rel(readiness.readyAt.session),
+      profile: rel(readiness.readyAt.profile),
+      home: rel(readiness.readyAt.home),
+      rider: rel(readiness.readyAt.rider),
+    };
   }, [readiness, t0]);
+  // A rider boot shows its two steps in a card; the board mounts underneath, and step 2 ticks when its
+  // first reads settle.
+  const riderBoot = isRiderBoot(readiness.destination);
+  useEffect(() => (riderBoot ? watchRiderBoardReady(queryClient) : undefined), [riderBoot]);
+  const riderTimes = useMemo(() => riderStepTimes(tasks), [tasks]);
+  const steps: StepState[] = riderBoot ? stepStates(riderTimes, t) : [];
   const waiting = pendingTasks(tasks, readiness.destination).length > 0;
   const loading = t >= INTRO_MS;
   const readyDoneAt = splashDoneAt(tasks, readiness.destination);
@@ -240,17 +270,22 @@ export function BootSplash(): React.ReactElement {
   const toHome = readiness.destination === "/home";
   const phase: Phase = done ? "done" : offline ? "offline" : loading ? "loading" : "boot";
   const slow = phase === "loading" && t >= INTRO_MS + SLOW_AFTER_MS;
+  // The rider's card is on screen while loading and through the cut; offline it keeps its place and
+  // swaps its rows for the single offline row (H2c) instead of the dark panel.
+  const offlineRow = phase === "offline" && riderBoot;
+  const cardShown = riderBoot && (phase === "loading" || phase === "done" || offlineRow);
+  const nextStep = riderBoot ? nextStepChange(riderTimes, t) : null;
 
-  // Wake at the next moment anything changes (intro end, the slow pill, the end of a retry's grace,
-  // done). A readiness stamp that is already in the past schedules an immediate wake.
+  // Wake at the next moment anything changes (intro end, a rider step boundary, the slow pill, the end
+  // of a retry's grace, done). A readiness stamp that is already in the past schedules an immediate wake.
   useEffect(() => {
     if (done) return;
-    const upcoming = [INTRO_MS, INTRO_MS + SLOW_AFTER_MS, doneAt, retryAt != null ? retryAt + RETRY_GRACE_MS : null].filter((x): x is number => x != null && x > t);
+    const upcoming = [INTRO_MS, INTRO_MS + SLOW_AFTER_MS, doneAt, nextStep, retryAt != null ? retryAt + RETRY_GRACE_MS : null].filter((x): x is number => x != null && x > t);
     if (!upcoming.length) return;
     const wait = Math.max(0, Math.min(...upcoming) - (Date.now() - t0));
     const handle = setTimeout(() => setT(Date.now() - t0), wait);
     return () => clearTimeout(handle);
-  }, [t, t0, doneAt, retryAt, done]);
+  }, [t, t0, doneAt, nextStep, retryAt, done]);
 
   // ── Animated values ──
   const v = useRef<SplashValues>({
@@ -268,6 +303,8 @@ export function BootSplash(): React.ReactElement {
     slow: new Animated.Value(0),
     offline: new Animated.Value(0),
     idle: new Animated.Value(0),
+    card: new Animated.Value(0),
+    ringSpin: new Animated.Value(0),
     exitOrbit: new Animated.Value(0),
     exitDove: new Animated.Value(0),
     exitSun: new Animated.Value(0),
@@ -292,9 +329,12 @@ export function BootSplash(): React.ReactElement {
     // Only its START waits on a JS timer — the blob is at rest then, so a late start is invisible.
     const drifts = BLOBS.map((b, i) => Animated.sequence([Animated.delay(b.drift), loop(v.drift[i]!, DRIFT_MS, DRIFT_CURVE)]));
     drifts.forEach((d) => d.start());
+    const ring = loop(v.ringSpin, 800, Easing.linear);
+    ring.start();
     return () => {
       intro.stop();
       drifts.forEach((d) => d.stop());
+      ring.stop();
     };
   }, [reduce, v]);
 
@@ -302,10 +342,11 @@ export function BootSplash(): React.ReactElement {
   const looping = phase === "loading" || phase === "offline";
   useEffect(() => {
     if (!looping) return;
-    const shown = timing(v.orbitIn, 1, reduce ? EXIT.fadeMs : 400, SETTLE);
+    const card = riderBoot && (phase === "loading" || offlineRow) ? 1 : 0;
+    const shown = Animated.parallel([timing(v.orbitIn, 1, reduce ? EXIT.fadeMs : 400, SETTLE), timing(v.card, card, reduce ? EXIT.fadeMs : 500, SPRING_OUT)]);
     shown.start();
     return () => shown.stop();
-  }, [reduce, looping, v]);
+  }, [reduce, looping, riderBoot, phase, offlineRow, v]);
 
   // The orbit pauses where it is (offline) and resumes from there. The lap itself is a native loop
   // from 0; the paused angle lives in `spinOffset` (rotation = (offset + spin) mod 1), so resuming
@@ -354,13 +395,15 @@ export function BootSplash(): React.ReactElement {
     };
   }, [reduce, phase, v]);
 
-  // Offline panel, idle dot and the lift that keeps the brand clear of the panel.
+  // Offline panel, idle dot and the lift that keeps the brand clear of the panel. A rider boot shows its
+  // offline row in the card's own place instead, so there is no panel and no lift.
   useEffect(() => {
     const on = phase === "offline" ? 1 : 0;
-    const a = Animated.parallel([timing(v.offline, on, reduce ? EXIT.fadeMs : 450, SETTLE), timing(v.idle, on, reduce ? EXIT.fadeMs : 300, EASE_OUT)]);
+    const panel = phase === "offline" && !riderBoot ? 1 : 0;
+    const a = Animated.parallel([timing(v.offline, panel, reduce ? EXIT.fadeMs : 450, SETTLE), timing(v.idle, on, reduce ? EXIT.fadeMs : 300, EASE_OUT)]);
     a.start();
     return () => a.stop();
-  }, [reduce, phase, v]);
+  }, [reduce, phase, riderBoot, v]);
 
   useEffect(() => {
     const a = timing(v.slow, slow ? 1 : 0, reduce ? EXIT.fadeMs : 400, SPRING_OUT);
@@ -412,16 +455,27 @@ export function BootSplash(): React.ReactElement {
 
   // "Loading LyniaGo", once, when the `loading` phase first starts (CHANGE-2026-10-06: it replaces the
   // steps card's live region). Not again after a retry, and not at all if the boot is done at the intro.
+  // A rider boot's card is its own polite live region, so it announces its steps instead.
   const announcedLoading = useRef(false);
   useEffect(() => {
-    if (phase !== "loading" || announcedLoading.current) return;
+    if (phase !== "loading" || riderBoot || announcedLoading.current) return;
     announcedLoading.current = true;
     AccessibilityInfo.announceForAccessibility?.(S.loading);
-  }, [phase]);
-  // The offline panel is an alert (handoff § Accessibility): say so when it appears, on both platforms.
+  }, [phase, riderBoot]);
+  const announcedSteps = useRef(0);
+  const doneCount = steps.filter((s) => s === "done").length;
   useEffect(() => {
-    if (phase === "offline") AccessibilityInfo.announceForAccessibility?.(`${S.offlineTitle}. ${S.offlineBody}`);
-  }, [phase]);
+    if (doneCount <= announcedSteps.current) return;
+    const label = RIDER_STEPS[doneCount - 1];
+    if (label) AccessibilityInfo.announceForAccessibility?.(stepDoneAnnouncement(label));
+    announcedSteps.current = doneCount;
+  }, [doneCount]);
+  // The offline panel (or the rider's offline row) is an alert (handoff § Accessibility): say so when it
+  // appears, on both platforms.
+  useEffect(() => {
+    if (phase !== "offline") return;
+    AccessibilityInfo.announceForAccessibility?.(riderBoot ? `${RIDER_OFFLINE.title}. ${RIDER_OFFLINE.body}` : `${S.offlineTitle}. ${S.offlineBody}`);
+  }, [phase, riderBoot]);
 
   const onLayout = useCallback(
     (e: LayoutChangeEvent) => {
@@ -453,14 +507,23 @@ export function BootSplash(): React.ReactElement {
   // bar. There the lift grows, so the brand is never under the panel (README review notes: "the content
   // moves up … to clear the panel"). The height is measured, so a wrapped body line counts.
   const [panelH, setPanelH] = useState(PANEL_H_ESTIMATE);
-  const geometry = splashGeometry({ H, bottomInset: insets.bottom, panelH });
+  // A rider boot's card is measured with its STEPS: the shorter offline row must not move the brand.
+  const [cardH, setCardH] = useState(CARD_H_ESTIMATE);
+  const geometry = splashGeometry({ W, H, bottomInset: insets.bottom, panelH, cardH: riderBoot ? cardH : null });
   const onPanelLayout = useCallback((e: LayoutChangeEvent) => setPanelH(Math.round(e.nativeEvent.layout.height)), []);
+  const offlineRowRef = useRef(offlineRow);
+  offlineRowRef.current = offlineRow;
+  const onCardLayout = useCallback((e: LayoutChangeEvent) => {
+    if (offlineRowRef.current) return;
+    setCardH(Math.round(e.nativeEvent.layout.height));
+  }, []);
 
   const still = reduce;
   const motion = useMemo(
     () => ({
       slowY: still ? 0 : v.slow.interpolate({ inputRange: [0, 1], outputRange: [-110, 0] }),
       panelY: still ? 0 : v.offline.interpolate({ inputRange: [0, 1], outputRange: [320, 0] }),
+      cardY: still ? 0 : v.card.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }),
     }),
     [still, v],
   );
@@ -470,6 +533,33 @@ export function BootSplash(): React.ReactElement {
       <StatusBar style={homeRising ? "dark" : "light"} />
 
       <SplashArt v={v} W={W} H={H} A={geometry.anchor} lift={geometry.offlineLift} still={still} />
+
+      {/* The rider's steps card — real progress, a polite live region. Only on a rider boot, and hidden from
+          accessibility while it is not on screen (the intro), so a screen reader never reads an invisible card. */}
+      {riderBoot ? (
+        <Animated.View
+          testID="splash-card"
+          accessibilityLiveRegion={offlineRow ? "assertive" : "polite"}
+          accessibilityRole={offlineRow ? "alert" : undefined}
+          importantForAccessibility={cardShown ? "auto" : "no-hide-descendants"}
+          accessibilityElementsHidden={!cardShown}
+          onLayout={onCardLayout}
+          style={[
+            styles.card,
+            {
+              bottom: CARD_BOTTOM + insets.bottom,
+              opacity: v.card,
+              transform: [{ translateY: motion.cardY }],
+            },
+          ]}
+        >
+          {offlineRow ? (
+            <OfflineRow />
+          ) : (
+            RIDER_STEPS.map((label, i) => <StepRow key={label} label={label} state={steps[i] ?? "pending"} spin={v.ringSpin} still={still} />)
+          )}
+        </Animated.View>
+      ) : null}
 
       {/* Slow-network pill — in the accessibility tree only while it is showing. */}
       <Animated.View
@@ -492,11 +582,12 @@ export function BootSplash(): React.ReactElement {
 
       {/* Offline panel. */}
       <Animated.View
-        pointerEvents={phase === "offline" ? "auto" : "none"}
+        testID="splash-offline-panel"
+        pointerEvents={phase === "offline" && !riderBoot ? "auto" : "none"}
         accessibilityRole="alert"
         accessibilityLiveRegion="assertive"
-        importantForAccessibility={phase === "offline" ? "auto" : "no-hide-descendants"}
-        accessibilityElementsHidden={phase !== "offline"}
+        importantForAccessibility={phase === "offline" && !riderBoot ? "auto" : "no-hide-descendants"}
+        accessibilityElementsHidden={phase !== "offline" || riderBoot}
         onLayout={onPanelLayout}
         style={[
           styles.panel,
@@ -738,6 +829,74 @@ const SplashArt = memo(function SplashArt({
   );
 });
 
+/**
+ * First Run v2 H2c (ledger D-82 §2 #2): a rider boot that can't reach the server swaps the steps for one
+ * row in the same card — a 36 `surface` disc with `wifi-off`, "You're offline" and "We'll continue when
+ * you're back." No button: the app-wide reachability probe resumes the boot on its own.
+ */
+function OfflineRow(): React.ReactElement {
+  return (
+    <View testID="splash-offline-row" style={styles.row} accessible accessibilityLabel={`${RIDER_OFFLINE.title}. ${RIDER_OFFLINE.body}`}>
+      <View style={styles.offlineDisc}>
+        <Icon name="wifi-off" size={20} color={C.muted} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.rowText, { color: C.ink }]}>{RIDER_OFFLINE.title}</Text>
+        <Text style={styles.offlineBody}>{RIDER_OFFLINE.body}</Text>
+      </View>
+    </View>
+  );
+}
+
+/** One rider step row. Memoised: it re-renders only when its own state changes, not on every clock tick. */
+const StepRow = memo(function StepRow({
+  label,
+  state,
+  spin,
+  still,
+}: {
+  label: string;
+  state: StepState;
+  spin: Animated.Value;
+  still: boolean;
+}): React.ReactElement {
+  const tick = useRef(new Animated.Value(state === "done" ? 1 : 0)).current;
+  useEffect(() => {
+    if (state !== "done") return;
+    if (still) {
+      tick.setValue(1);
+      return;
+    }
+    // 0 → 1.08 → 1 over 300ms, as one native timing.
+    const a = timing(tick, 1, 300, TICK_CURVE);
+    a.start();
+    return () => a.stop();
+  }, [state, still, tick]);
+  const rotate = useMemo(() => spin.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] }), [spin]);
+  return (
+    <View
+      style={styles.row}
+      accessible
+      accessibilityLabel={label}
+      accessibilityState={{
+        busy: state === "active",
+        checked: state === "done",
+      }}
+    >
+      {state === "done" ? (
+        <View style={[styles.ring, styles.ringDone]}>
+          <Animated.View style={[styles.tick, { transform: [{ scale: tick }, { rotate: "45deg" }] }]} />
+        </View>
+      ) : state === "active" ? (
+        <Animated.View style={[styles.ring, styles.ringActive, { transform: [{ rotate: still ? "0deg" : rotate }] }]} />
+      ) : (
+        <View style={styles.ring} />
+      )}
+      <Text style={[styles.rowText, { color: state === "pending" ? C.muted : C.ink }]}>{label}</Text>
+    </View>
+  );
+});
+
 const styles = StyleSheet.create({
   screen: { backgroundColor: C.accent, overflow: "hidden" },
   anchor: { position: "absolute", width: 0, height: 0 },
@@ -778,6 +937,45 @@ const styles = StyleSheet.create({
     height: DOVE,
   },
   wordmark: { position: "absolute", left: 0, right: 0, alignItems: "center" },
+  // The rider's card (H1: white, radius 20, 48dp rows, the same step markers as splash-v1's card).
+  card: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    backgroundColor: C.bg,
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 18,
+    // `0 18px 40px -12px rgba(0,0,0,.3)` — RN (old arch) takes one offset/blur shadow; no spread.
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  row: { flexDirection: "row", alignItems: "center", gap: 12, minHeight: 48 },
+  offlineDisc: { width: 36, height: 36, borderRadius: 18, backgroundColor: C.surface, alignItems: "center", justifyContent: "center" },
+  offlineBody: { marginTop: 1, fontSize: 13, lineHeight: 18, color: C.muted },
+  rowText: { fontSize: 15, fontWeight: "600" },
+  ring: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: C.line,
+  },
+  ringActive: { borderColor: C.accent, borderTopColor: "transparent" },
+  ringDone: { backgroundColor: C.accent, borderColor: C.accent },
+  tick: {
+    position: "absolute",
+    left: 6,
+    top: 2,
+    width: 5,
+    height: 10,
+    borderColor: C.onAccent,
+    borderRightWidth: 2,
+    borderBottomWidth: 2,
+  },
   slowWrap: { position: "absolute", left: 0, right: 0, alignItems: "center" },
   slow: {
     backgroundColor: C.highlight,

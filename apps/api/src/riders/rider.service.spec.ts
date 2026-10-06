@@ -1716,6 +1716,43 @@ describe("RiderService.applyKycResult", () => {
     expect(data).toMatchObject({ kycStatus: "expired", idVerified: false, isOnline: false });
   });
 
+  it("D-82 F6: an `expired` webhook stamps the ID's expiry day — the document's when earlier, else the lapse day", async () => {
+    let data: Record<string, unknown> | undefined;
+    const stored = new Date("2026-10-02T00:00:00Z");
+    const mk = (kycIdExpiresOn: Date | null) => ({
+      rider: {
+        updateMany: async (args: { data: Record<string, unknown> }) => {
+          data = args.data;
+          return { count: 1 };
+        },
+        findFirst: async () => ({ profileId: "p1", kycAttempts: 0, kycIdExpiresOn }),
+      },
+    });
+    await svc(mk(stored), {}).applyKycResult("sess_1", "expired", new Date("2026-10-05T14:30:00Z"));
+    expect(data?.kycIdExpiresOn).toBe(stored);
+    await svc(mk(null), {}).applyKycResult("sess_1", "expired", new Date("2026-10-05T14:30:00Z"));
+    expect((data?.kycIdExpiresOn as Date | undefined)?.toISOString()).toBe("2026-10-05T00:00:00.000Z");
+  });
+
+  it("D-82 F6: a `verified` webhook stores the document's expiry day when the decision carries one", async () => {
+    let data: Record<string, unknown> | undefined;
+    const prisma = {
+      rider: {
+        updateMany: async (args: { data: Record<string, unknown> }) => {
+          data = args.data;
+          return { count: 1 };
+        },
+        findFirst: async () => ({ profileId: "p1", kycAttempts: 0, duplicateIdFlag: false, kycResolvedAt: null, profile: { idNumberHash: "h" } }),
+      },
+      auditLog: { create: async () => ({}) },
+    };
+    const expires = new Date("2031-03-04T00:00:00Z");
+    await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, null, expires);
+    expect(data?.kycIdExpiresOn).toBe(expires);
+    await svc(prisma, {}).applyKycResult("sess_1", "failed", new Date(), "other", null, expires);
+    expect(data).not.toHaveProperty("kycIdExpiresOn");
+  });
+
   it("DS18-04: row-locks the rider (FOR UPDATE) BEFORE the read that feeds the `expired` kycAttempts reset", async () => {
     // The `current` read's kycAttempts is baked into the updateMany's data payload (deciding whether to
     // write `kycAttempts:0`) BEFORE the write runs, and the updateMany WHERE never re-checks kycAttempts.

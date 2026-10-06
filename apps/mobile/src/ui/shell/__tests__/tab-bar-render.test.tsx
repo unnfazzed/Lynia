@@ -18,7 +18,7 @@ const mockHaptic = jest.fn();
 jest.mock("../../haptics", () => ({ haptic: (k: string) => mockHaptic(k) }));
 
 import { APP_TABS, RIDER_TABS, TabBar, type TabBadge } from "../TabBar";
-import { useCustomerTabBadges, useRiderTabBadges } from "../TabShell";
+import { ShellTabBar, TabBarSpaceProvider, useCustomerTabBadges, useHideTabBar, useRiderTabBadges } from "../TabShell";
 
 const METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 24 }, frame: { x: 0, y: 0, width: 360, height: 720 } };
 
@@ -70,6 +70,40 @@ describe("TabBar", () => {
   it("is removed while hidden (soft keyboard open)", async () => {
     const r = await mount(<TabBar tabs={APP_TABS} active="home" hidden reduceMotion />);
     expect(r.root.findAll((n) => n.props.accessibilityRole === "tablist")).toHaveLength(0);
+  });
+
+  // First Run v2 F1–F8 (ledger D-82 §2 #3): a tab root drawing a full-screen page takes the bar away, and it
+  // comes back when the page goes (or the screen unmounts).
+  it("is removed while a tab root holds it hidden (useHideTabBar), and back once it lets go", async () => {
+    const state = { index: 0, routeNames: ["index", "money", "account"] };
+    const navigation = { navigate: jest.fn() };
+    function Root({ hide }: { hide: boolean }): null {
+      useHideTabBar(hide);
+      return null;
+    }
+    const tree = (hide: boolean, mounted = true) => (
+      <SafeAreaProvider initialMetrics={METRICS}>
+        <TabBarSpaceProvider>
+          {mounted ? <Root hide={hide} /> : null}
+          <ShellTabBar tabs={RIDER_TABS} state={state} navigation={navigation} />
+        </TabBarSpaceProvider>
+      </SafeAreaProvider>
+    );
+    let r!: renderer.ReactTestRenderer;
+    await act(async () => {
+      r = renderer.create(tree(false));
+    });
+    const bars = () => r.root.findAll((n) => n.props.accessibilityRole === "tablist").length;
+    expect(bars()).toBeGreaterThan(0);
+    act(() => r.update(tree(true)));
+    expect(bars()).toBe(0);
+    act(() => r.update(tree(false)));
+    expect(bars()).toBeGreaterThan(0);
+    act(() => r.update(tree(true)));
+    expect(bars()).toBe(0);
+    act(() => r.update(tree(true, false)));
+    expect(bars()).toBeGreaterThan(0);
+    act(() => r.unmount());
   });
 
   it("labels every cell with the handoff's string, selected state and badge", async () => {

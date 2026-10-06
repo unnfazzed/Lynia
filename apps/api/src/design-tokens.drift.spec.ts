@@ -125,6 +125,7 @@ const TS_PAIRS: Array<[designVar: string, tsValue: string | number]> = [
   ["danger", tokens.color.danger],
   ["danger-wash", tokens.color.dangerWash],
   ["danger-ink", tokens.color.dangerInk],
+  ["danger-sun", tokens.color.dangerSun],
   ["success", tokens.color.success],
   ["on-accent", tokens.color.onAccent],
   // spacing (8pt)
