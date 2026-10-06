@@ -91,7 +91,9 @@ export async function birdVerifyStart(env: Env, phone: string): Promise<{ channe
   }
   const body = (await res.json().catch(() => ({}))) as { id?: string; last_channel?: string };
   logger.log(`Bird Verify sent → ${maskPhone(phone)} (verification_id=${body.id ?? "?"}, channel=${body.last_channel ?? "?"})`);
-  return { channel: toDeliveryChannel(body.last_channel) };
+  // No `last_channel` in the reply means Bird didn't say, not that it fell back: report the channel we
+  // asked for. Defaulting to "sms" put "Sent by SMS" beside "Resend on WhatsApp" (E2E 2026-10-05 P-8).
+  return { channel: toDeliveryChannel(body.last_channel ?? CHANNELS[0]) };
 }
 
 /**

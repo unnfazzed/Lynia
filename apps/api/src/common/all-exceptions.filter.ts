@@ -1,6 +1,6 @@
 /**
  * Global exception filter. An HttpException passes through UNCHANGED (its status + response body are
- * preserved), so intentional 4xx contracts (validation, auth, not-found) reach the client verbatim.
+ * preserved; a bare-string body is wrapped as `{ statusCode, message }`), so intentional 4xx contracts (validation, auth, not-found) reach the client verbatim.
  * ANYTHING ELSE — an unexpected throw, a bug, a driver error — is coerced to a SAFE generic 500:
  *   { statusCode: 500, message: "Internal server error", correlationId }
  * The real error (message + stack) is logged server-side against the same correlationId so it stays
@@ -23,7 +23,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     // Intentional HttpExceptions are a first-class contract: keep their status and response body.
     if (exception instanceof HttpException) {
-      res.status(exception.getStatus()).json(exception.getResponse());
+      const status = exception.getStatus();
+      const body = exception.getResponse();
+      // `new HttpException("text", …)` keeps the bare string as its body, which reached clients as a JSON
+      // string with no `.message` (E2E 2026-10-05 FS-3) — give it the same envelope Nest's own
+      // exceptions carry.
+      res.status(status).json(typeof body === "string" ? { statusCode: status, message: body } : body);
       return;
     }
 

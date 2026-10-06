@@ -61,7 +61,7 @@ describe("loadEnv — OTP send caps", () => {
   it("defaults to the pilot-sized ceiling (the global cap is a SPEND ceiling, ~EUR 98/day on Bird)", () => {
     const env = loadEnv(base);
     expect(env.OTP_RL_PHONE_MAX).toBe(5);
-    expect(env.OTP_RL_IP_MAX).toBe(20);
+    expect(env.OTP_RL_IP_MAX).toBe(200);
     expect(env.OTP_RL_GLOBAL_MAX).toBe(500);
     expect(env.OTP_RL_DEVICE_SIGNUP_MAX).toBe(3);
   });
