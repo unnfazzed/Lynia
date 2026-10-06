@@ -103,24 +103,27 @@ async function main(): Promise<void> {
     create: { phone: "+263773333333", firstName: "Sadza", lastName: "Republic", role: "merchant", phoneVerifiedAt: new Date() },
     select: { id: true },
   });
-  const merchant = await prisma.merchant.upsert({
-    where: { ownerProfileId: merchantOwner.id },
-    update: { pilotEnabled: true },
-    create: {
-      name: "Sadza Republic",
-      ownerProfileId: merchantOwner.id,
-      description: "Home-style Zimbabwean plates, cooked to order.",
-      cuisineTags: ["Zimbabwean", "Grills"],
-      priceLevel: 2,
-      pilotEnabled: true, // the per-merchant allowlist gate — required for the customer read API
-      prepBaselineMinutes: 18, // #673: feeds the discovery-card ETA
-      foodRatingAvg: 4.6, // #673: seeded so the card shows a real star
-      foodRatingCount: 24,
-      hours: { mon: { open: "08:00", close: "21:00" }, tue: { open: "08:00", close: "21:00" }, wed: { open: "08:00", close: "21:00" }, thu: { open: "08:00", close: "21:00" }, fri: { open: "08:00", close: "22:00" }, sat: { open: "09:00", close: "22:00" }, sun: { open: "10:00", close: "20:00" } },
-      location: { point: CORRIDOR, landmark: "Sadza Republic, First Street, CBD", contactPhone: "+263773333333" },
-    },
-    select: { id: true },
-  });
+  // ownerProfileId is not @unique (an owner can hold several outlets), so upsert can't key on it:
+  // find this owner's seeded outlet first, then update or create.
+  const existingMerchant = await prisma.merchant.findFirst({ where: { ownerProfileId: merchantOwner.id }, select: { id: true } });
+  const merchant = existingMerchant
+    ? await prisma.merchant.update({ where: { id: existingMerchant.id }, data: { pilotEnabled: true }, select: { id: true } })
+    : await prisma.merchant.create({
+        data: {
+          name: "Sadza Republic",
+          ownerProfileId: merchantOwner.id,
+          description: "Home-style Zimbabwean plates, cooked to order.",
+          cuisineTags: ["Zimbabwean", "Grills"],
+          priceLevel: 2,
+          pilotEnabled: true, // the per-merchant allowlist gate — required for the customer read API
+          prepBaselineMinutes: 18, // #673: feeds the discovery-card ETA
+          foodRatingAvg: 4.6, // #673: seeded so the card shows a real star
+          foodRatingCount: 24,
+          hours: { mon: { open: "08:00", close: "21:00" }, tue: { open: "08:00", close: "21:00" }, wed: { open: "08:00", close: "21:00" }, thu: { open: "08:00", close: "21:00" }, fri: { open: "08:00", close: "22:00" }, sat: { open: "09:00", close: "22:00" }, sun: { open: "10:00", close: "20:00" } },
+          location: { point: CORRIDOR, landmark: "Sadza Republic, First Street, CBD", contactPhone: "+263773333333" },
+        },
+        select: { id: true },
+      });
 
   // Idempotent re-run guard: menu/orders have generated uuids with no natural key to upsert on, so
   // only seed them the first time (an empty menu for this merchant ⇒ not yet seeded).
