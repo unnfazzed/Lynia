@@ -1,6 +1,6 @@
 # Customer web app for iPhone users — plan
 
-**Status:** PROPOSED (2026-10-06). Needs the owner decisions in §2 before the first build PR.
+**Status:** APPROVED (2026-10-06). The owner decided W1–W5 in §2 the same day; P1 is next.
 
 **Why.** The iPhone app is still blocked on the Apple account (`docs/APP-STORE-SUBMISSION.md`), so iPhone users
 can't order today. A mobile-optimised web build of the **customer** app lets them order from Safari now, and it
@@ -45,16 +45,16 @@ Smaller items:
 Already fine: `tel:` / WhatsApp / directions links, haptics (no-op), certificate pinning and OTA updates (native
 only, not applicable), PostHog and Sentry (load lazily, key-gated).
 
-## 2. Owner decisions
+## 2. Owner decisions — decided 2026-10-06
 
-| # | Question | Recommendation |
+| # | Question | Decision |
 |---|---|---|
-| W1 | **Web address** | `app.lyniago.com` |
-| W2 | **Hosting** | **Cloudflare Workers static assets**, like lyniago.com (`docs/WEBSITE.md`): free, fast in Zimbabwe, and the CI Cloudflare token already covers the `lyniago.com` zone. The alternative is a scale-to-zero Azure Container App like admin and merchant (~$0–5/month). |
-| W3 | **Where sign-in is kept** | `localStorage` plus a strict Content-Security-Policy for v1. Moving to httpOnly cookies is safer against script injection but needs API changes; that's a later hardening step. |
-| W4 | **Who can use it** | Everyone with the link (iPhone and any other browser). Optionally show Android visitors a "Get the app" banner. |
-| W5 | **Add to Home Screen** | Yes: a web manifest and icon, so it opens full-screen like an app. That's also what iOS needs before web push (phase 5). |
-| W6 | **Google key** | A new **LyniaGo Customer Web** key, restricted to the W1 address, with Maps JavaScript API, Places API (New) and Geocoding API. Enable Maps JavaScript API first. |
+| W1 | **Web address** | **`app.lyniago.com`** |
+| W2 | **Hosting** | **Cloudflare Workers static assets**, like lyniago.com (`docs/WEBSITE.md`): free, fast in Zimbabwe, and the CI Cloudflare token already covers the `lyniago.com` zone. |
+| W3 | **Where sign-in is kept** | **Browser storage (`localStorage`) now**, with a strict Content-Security-Policy. httpOnly cookies are a later hardening step (they need API changes). |
+| W4 | **Who can use it** | **Anyone with the link**, in any browser. Android visitors see a small "Get the app" banner pointing to the Play app. The banner isn't drawn in any mock, so it gets a `docs/DESIGN-DEVIATIONS.md` entry when it's built (approved here). |
+| W5 | **Add to Home Screen** | **Yes**: a web manifest and icon, so it opens full-screen like an app. That's also what iOS needs before web push (phase 5). |
+| W6 | **Google key** | A new **LyniaGo Customer Web** key, restricted to `https://app.lyniago.com/*`, with Maps JavaScript API, Places API (New) and Geocoding API. Enable Maps JavaScript API first. (Owner step before P2.) |
 
 ## 3. Build phases (one PR each, merge on green)
 
