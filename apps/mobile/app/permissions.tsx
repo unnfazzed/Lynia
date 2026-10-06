@@ -9,7 +9,6 @@ import {
   openBatterySettings,
   openChannelSettings,
   openPhoneSettings,
-  playTestAlert,
   readLocation,
   readNotif,
   readPermissions,
@@ -22,13 +21,11 @@ import { markRiderPermFlowDone } from "../src/permissions/store";
 import { requestPushRegistration } from "../src/push/push-kick";
 import { TrustVerifiedArt } from "../src/ui/art/TrustVerifiedArt";
 import { PC, RP } from "../src/ui/firstrun/copy";
-import { RIDER_COPY as R } from "../src/ui/rider/copy";
 import {
   Body,
   BulletList,
   FirstRunScreen,
   FrBadge,
-  FrSoftPill,
   HeroDisc,
   HeroPanel,
   PinnedFooter,
@@ -40,9 +37,6 @@ import {
 
 const STEPS: readonly RiderPermStep[] = ["location", "notifications", "battery"];
 const parseStep = (v: unknown): RiderPermStep | null => (STEPS.includes(v as RiderPermStep) ? (v as RiderPermStep) : null);
-
-/** The test ping P9 / P12 play: the job-alert channel, with the rider copy Settings' test buttons use. */
-const testPing = (): void => void playTestAlert(R.sAlerts, R.testPing);
 
 /**
  * First Run v2 — the rider permission flow P1–P16 (handoff `first-run-v2` README §2B, BRIEF 1/4–7, ledger
@@ -274,7 +268,6 @@ export default function RiderPermissionsScreen(): React.ReactElement {
           </HeroPanel>
           <SplitTitle a={RP.notifA} b={RP.notifB} tone="violet" />
           <Body>{RP.notifBody}</Body>
-          <FrSoftPill tone="white" icon="volume-2" label={RP.testPing} onPress={testPing} style={{ marginTop: 16 }} testID="p-test-ping" />
         </FirstRunScreen>
       );
     case "P11":
@@ -295,7 +288,7 @@ export default function RiderPermissionsScreen(): React.ReactElement {
       return (
         <FirstRunScreen
           testID="P12"
-          footer={<PinnedFooter primary={{ label: RP.openSettings, onPress: () => openChannelSettings(mutedChannel), testID: "p-cta" }} link={{ label: RP.testPing, icon: "volume-2", onPress: testPing, testID: "p-link" }} />}
+          footer={<PinnedFooter primary={{ label: RP.openSettings, onPress: () => openChannelSettings(mutedChannel), testID: "p-cta" }} link={{ label: RP.notNow, onPress: next, testID: "p-link" }} />}
         >
           <HeroPanel tone="danger" height={180}>
             <HeroDisc icon="volume-x" />

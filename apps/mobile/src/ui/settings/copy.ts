@@ -1,7 +1,7 @@
 /**
  * Settings strings the First Run v2 handoff DRAWS but its `copy.ts` doesn't carry (`design/fr-states.js`
  * D1 / PC11 / P15, ledger D-82) — verbatim from the drawing. The rows the owner kept that the handoff
- * doesn't draw (Privacy, Terms, Payment, Navigation app, Top-up number, Delete account, Test ping / alarm;
+ * doesn't draw (Privacy, Terms, Payment, Navigation app, Top-up number, Delete account;
  * D-82 §2 #1) keep their Rider v2 words (`RIDER_COPY`).
  */
 export const ST = {

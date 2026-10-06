@@ -10,7 +10,7 @@ import { openPhoneSettings, type PermLike } from "./location";
 
 export type NotifState = "undetermined" | "granted" | "denied" | "blocked";
 
-/** The job-alert channel (P9's test ping, P12's muted check, the settings "Job alerts" row). */
+/** The job-alert channel (P12's muted check, the settings "Job alerts" row). */
 export const JOB_ALERTS_CHANNEL = "job-alerts";
 /** The app's default channel (`src/push/push.ts`). Builds before D-82 had no `job-alerts` channel, and FCM
  *  then posts job pushes here — so P12 treats a rider as muted when either channel is. */
@@ -99,18 +99,5 @@ export function openChannelSettings(channelId: string = JOB_ALERTS_CHANNEL): voi
 export function openBatterySettings(): void {
   if (Platform.OS !== "android") return openPhoneSettings();
   void Linking.sendIntent("android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS").catch(openPhoneSettings);
-}
-
-/** P9 / Settings: a local notification on the job-alert channel, so the rider hears what a job sounds like. */
-export async function playTestAlert(title: string, body: string): Promise<void> {
-  await ensureJobAlertChannel();
-  try {
-    await Notifications.scheduleNotificationAsync({
-      content: { title, body, sound: true },
-      trigger: Platform.OS === "android" ? { channelId: JOB_ALERTS_CHANNEL } : null,
-    });
-  } catch {
-    /* best-effort */
-  }
 }
 
