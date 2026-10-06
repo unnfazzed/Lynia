@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import type { CommissionConfig, Wallet } from "@lynia/shared";
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Keyboard, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Me } from "../../api/auth";
@@ -24,9 +24,13 @@ type Shell = {
   /** Tab roots register their scroll-to-top by tab id; a re-tap on the active tab calls it. */
   register: (id: string, fn: ScrollTop) => () => void;
   reselect: (id: string) => void;
+  /** A tab root asks for the bar to go (+1) or come back (−1) — First Run v2 F pages (D-80 §2 #3). */
+  hide: (delta: 1 | -1) => void;
+  /** True while any tab root holds the bar hidden. */
+  barHidden: boolean;
 };
 
-const NO_SHELL: Shell = { space: 0, register: () => () => undefined, reselect: () => undefined };
+const NO_SHELL: Shell = { space: 0, register: () => () => undefined, reselect: () => undefined, hide: () => undefined, barHidden: false };
 const TabShellContext = createContext<Shell>(NO_SHELL);
 
 /**
@@ -42,6 +46,9 @@ export function TabBarSpaceProvider({ children }: { children: React.ReactNode })
   const insets = useSafeAreaInsets();
   const handlers = useRef(new Map<string, ScrollTop>());
   const space = TAB_BAR_SPACE + insets.bottom;
+  const [hiders, setHiders] = useState(0);
+  // Stable across `hiders` changes, so useHideTabBar's effect doesn't re-run (and re-count) on every hide.
+  const hide = useCallback((delta: 1 | -1) => setHiders((n) => Math.max(0, n + delta)), []);
   const value = useMemo<Shell>(
     () => ({
       space,
@@ -52,10 +59,26 @@ export function TabBarSpaceProvider({ children }: { children: React.ReactNode })
         };
       },
       reselect: (id) => handlers.current.get(id)?.(),
+      hide,
+      barHidden: hiders > 0,
     }),
-    [space],
+    [space, hide, hiders],
   );
   return <TabShellContext.Provider value={value}>{children}</TabShellContext.Provider>;
+}
+
+/**
+ * Hide the floating bar while `hidden` is true and the caller is mounted — a tab root that draws a
+ * full-screen page in the tab's place (First Run v2 F1–F8: "no tab bar", ledger D-80 §2 #3). The bar comes
+ * back when `hidden` turns false or the screen unmounts. A no-op outside a tab shell.
+ */
+export function useHideTabBar(hidden: boolean): void {
+  const { hide } = useContext(TabShellContext);
+  useEffect(() => {
+    if (!hidden) return;
+    hide(1);
+    return () => hide(-1);
+  }, [hidden, hide]);
 }
 
 /** Re-taps of the active tab, for the bar inside the shell. */
@@ -123,7 +146,8 @@ export function ShellTabBar({
 }): React.ReactElement | null {
   const keyboard = useKeyboardVisible();
   const reselect = useTabReselect();
-  return <TabBar tabs={tabs} active={state.routeNames[state.index]} badges={badges} hidden={keyboard} onTab={(id) => navigation.navigate(id)} onReselect={reselect} />;
+  const { barHidden } = useContext(TabShellContext);
+  return <TabBar tabs={tabs} active={state.routeNames[state.index]} badges={badges} hidden={keyboard || barHidden} onTab={(id) => navigation.navigate(id)} onReselect={reselect} />;
 }
 
 // ── Badge sources ───────────────────────────────────────────────────────────────────────────────

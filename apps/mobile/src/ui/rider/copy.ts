@@ -5,6 +5,7 @@
  * `RF` below; the wording around them is unchanged. Components read strings from here only.
  */
 import { serviceTownsLabel } from "@lynia/shared";
+import { KY } from "../firstrun/copy";
 
 export const RIDER_COPY = {
   /* shell */
@@ -78,24 +79,11 @@ export const RIDER_COPY = {
   sendFail: "Couldn't send your offer. Check your data.",
   tryAgain: "Try again",
   /* gates */
-  gNotRiderT: "Earn with your bike",
-  gNotRiderB: "Verify your ID and bike once, then take parcel and food jobs near you.",
-  becomeRider: "Become a rider",
-  gPendingT: "Your ID is under review",
-  gPendingB: "We're checking your ID and bike photo. Most checks finish within a few hours.",
-  gPendingK: "Sent",
-  gUnfinishedT: "Finish verifying your ID",
-  gUnfinishedB: "You started the ID check but didn't finish. It takes about 3 minutes.",
-  finishId: "Finish verifying",
-  gFailedT: "We couldn't verify your ID",
-  gFailedB: "The photo of your ID was blurry. Try again in good light, with all four corners showing.",
-  gFailedK: "Tries left",
-  gFailed2T: "We still couldn't verify your ID",
-  gFailed2B: "You've used both tries. Our team will check your documents with you on WhatsApp.",
-  gExpiredT: "Your ID has expired",
-  reverify: "Re-verify my ID",
-  gCantOpenT: "We couldn't open the ID check",
-  gCantOpenB: "The ID check needs a data connection and your camera. Check both, then try again.",
+  /*
+   * The KYC gates (Rider v2 G1–G7: not a rider, pending, unfinished, failed, failed twice, expired, can't
+   * open) are retired: First Run v2 F1–F8 (`KY`, src/ui/firstrun/copy.ts) draw every ID-check outcome and
+   * G1 sends a non-rider to R1 (ledger D-80). The non-KYC gates below stay.
+   */
   gGpsT: "Can't find your location",
   gGpsB: "Jobs are matched by distance, so location must be on while you ride.",
   openLoc: "Open location settings",
@@ -303,17 +291,24 @@ export const RIDER_COPY = {
   rSettings: "Settings",
   rSettingsS: "Job alerts, location, top-up number",
   rSettingsC: "Language, payment, privacy",
-  becomeT: "Earn with your bike",
-  becomeB: "Take parcel and food jobs near you. You'll need your national ID, your bike and 5 minutes.",
+  /*
+   * The customer Account's Become-a-rider card while a check is under way (D-54 C-states). Its "none" state is
+   * First Run v2 G2's violet card (`KY.become*`); the bodies below are the D-80 copy pass (I): `KY`'s times
+   * ("about 2 min", "usually under a minute", "usually a few hours") and an in-app notification, never SMS.
+   */
   kycProgT: "Finish verifying your ID",
-  kycProgB: "You started the ID check but didn't finish. It takes about 3 minutes.",
+  kycProgB: KY.unfBody,
   kycReviewT: "Your ID is under review",
-  kycReviewB: "Most checks finish within a few hours. We'll SMS you.",
+  /** The automated check is with the vendor. */
+  kycCheckingB: KY.checkBody,
+  /** Held for a person, or manual (ops) review. */
+  kycReviewB: KY.reviewBody,
   kycFailT: "We couldn't verify your ID",
+  kycLockedT: "We still couldn't verify your ID",
+  kycLockedB: KY.lockedBody,
   kycOkT: "You're verified",
   kycOkB: "Switch to Rider to start taking jobs.",
   continueKyc: "Continue",
-  startKyc: "Start",
   tryKyc: "Try again",
   swT: "Stop getting jobs?",
   swB: "In the customer view you won't get new jobs or food offers. Switch back any time from Account.",
@@ -457,17 +452,6 @@ export const RF = {
   tripItem: (tripKm: number | null, item: string): string => (tripKm != null ? `${km(tripKm)} trip · ${item}` : item),
   etaChip: (m: number): string => `${m} min`,
   /* gates */
-  gPendingV: (d: Date): string => `${isSameDay(d, new Date()) ? "Today" : dayMonth(d)}, ${hhmm(d)}`,
-  gFailedV: (left: number, of: number): string => `${left} of ${of}`,
-  /**
-   * Undrawn (R-6, startup review 2026-10-06; ledger D-54 §4): the declined wall's body when the decline
-   * carries a known reason other than the drawn one (the drawn `gFailedB` is the unreadable-photo case and
-   * stays the default). `reason` is the shared KYC_DECLINE_REASON_LABELS label, e.g. "Selfie doesn't
-   * match the ID".
-   */
-  gFailedWhyB: (reason: string): string => `${reason}. Check this, then try again.`,
-  gExpiredB: (d: Date | null): string =>
-    d ? `Your national ID expired on ${dayMonthYear(d)}. Re-verify to keep taking jobs.` : "Your national ID has expired. Re-verify to keep taking jobs.",
   gCoolV: (until: Date, now: Date): string => `${hhmm(until)} · ${hMin(until.getTime() - now.getTime())} left`,
   gSuspB: (until: Date | null): string =>
     until ? `You can't take jobs until ${dayMonth(until)}. Our team sent the details by SMS.` : "You can't take jobs right now. Our team sent the details by SMS.",
@@ -564,6 +548,13 @@ export const RF = {
   hCallS: (phone: string): string => `${phone} · 7am–9pm`,
 };
 
-function isSameDay(a: Date, b: Date): boolean {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-}
+/**
+ * First Run v2 F (ledger D-80): the two `KY` strings that carry data. `KY.expBody` is drawn with a sample date
+ * ("Expired 2 Oct 2026. Re-verify to keep riding.") — the date is the rider's, and until the server serves it
+ * (NEEDS BACKEND `kycExpiredAt`, D-80 §4) the sentence after it stands alone. F3's title is "Almost there,"
+ * + the rider's first name.
+ */
+export const KYF = {
+  expBody: (d: Date | null): string => (d ? KY.expBody.replace(/^Expired [^.]+\./, `Expired ${dayMonthYear(d)}.`) : KY.expBody.replace(/^Expired [^.]+\.\s*/, "")),
+  unfName: (firstName: string | null | undefined): string => firstName?.trim() ?? "",
+};
