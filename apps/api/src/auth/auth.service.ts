@@ -17,7 +17,8 @@ import type { Env } from "../config/env";
 import { MetricsService, type OtpVerifyResult } from "../observability/metrics.service";
 import { maskPhone } from "../common/phone-mask";
 import { PiiCryptoService } from "../common/pii-crypto.service";
-import { KycPendingStateService } from "../kyc/kyc-pending-state.service";
+import { classifyStoredDiditStatus } from "../kyc/didit";
+import { KycPendingStateService, pendingStateOf } from "../kyc/kyc-pending-state.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { birdVerifyCheck, birdVerifyStart } from "./bird-verify";
 import { carrierFromPhone } from "./otp-carrier";
@@ -141,6 +142,9 @@ export class AuthService {
             // joins the token as the liveness signal for it (see the derivation below).
             kycRef: true,
             kycSessionUrl: true,
+            // R-1 / R-3: the vendor's last webhook status for the current session — never returned, only
+            // read below to tell a held check and a dead session from one in flight without a vendor call.
+            kycVendorStatus: true,
             // D-70: the vendor-verified ID number (ciphertext) — decrypted below for its OWNER only.
             verifiedIdNumber: true,
             // So the cancel-confirm sheet can warn "this is strike N of LIMIT" before a cancel lands,
@@ -172,11 +176,24 @@ export class AuthService {
     //                        with no action while they wait for a check nobody is running.
     // Never throws and never blocks: see KycPendingStateService for the TTL, the coalescing, and why
     // every failure path answers `unfinished`.
+    //
+    // R-3 / R-4 (startup review 2026-10-06): the vendor's own status webhook, stored on the row, answers
+    // first when it settles the question. A HELD check (In Review, or an approval held for review — that
+    // one has no live session left at all) is `in_flight` for older apps and `kycHeld` for this one, which
+    // draws the Rider v2 "under review" wall instead of R2's "usually under a minute". A DEAD session
+    // already lost its credentials with that webhook, so it falls to `null` (the rider's move) below. Only
+    // a session the webhook hasn't settled costs a vendor read — cached, coalesced, invalidated on change.
     const hasLiveKycSession = Boolean(p.rider?.kycRef && p.rider.kycSessionToken && p.rider.kycSessionUrl);
-    const kycPendingState =
-      p.rider?.kycStatus === "pending" && this.env.KYC_MODE === "auto" && hasLiveKycSession
-        ? await this.kycPendingState.get(p.rider.kycRef)
-        : null;
+    const autoPending = p.rider?.kycStatus === "pending" && this.env.KYC_MODE === "auto";
+    const stored = autoPending ? classifyStoredDiditStatus(p.rider?.kycVendorStatus) : null;
+    const sessionClass =
+      stored === "held" || stored === "dead"
+        ? stored
+        : autoPending && hasLiveKycSession
+          ? await this.kycPendingState.read(p.rider?.kycRef)
+          : null;
+    const kycHeld = sessionClass === "held";
+    const kycPendingState = kycHeld ? "in_flight" : sessionClass && hasLiveKycSession ? pendingStateOf(sessionClass) : null;
 
     return {
       profileId: p.id,
@@ -235,6 +252,10 @@ export class AuthService {
             // network), is deliberately absent: the session still reads "not started" vendor-side, so
             // the server genuinely cannot see it. That one is client-only and short-lived.
             kycPendingState,
+            // R-3, additive: the check is held for a human review (the vendor's In Review, or a result we
+            // hold — a review-band face match, an ID collision). The app draws the "under review" wall and
+            // polls slowly; an older app ignores it and keeps `in_flight`'s R2.
+            kycHeld,
           }
         : null,
     };

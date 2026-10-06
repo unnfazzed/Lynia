@@ -163,7 +163,16 @@ export class KycController {
         this.logger.log(`KYC webhook for session ${payload.session_id}: approved, face match in the review band — held for review`);
       }
     }
+    // Event time drives the monotonic guards. The timestamp is part of the signed body (Unix seconds),
+    // so it can't be forged; fall back to now() only if a delivery omits it.
+    const eventAt = typeof payload.timestamp === "number" ? new Date(payload.timestamp * 1000) : new Date();
+
     if (decision.status === "pending") {
+      // R-1 / R-3 (startup review 2026-10-06): every undecided status is the vendor's signed word about
+      // the session, so it is kept — /auth/me reads a hold (In Review, a review-band approval) as the
+      // "under review" wall instead of "usually under a minute", and a dead session (Abandoned, Expired)
+      // loses its stored credentials here so the next retry mints rather than resuming it forever.
+      await this.riders.recordKycVendorStatus(payload.session_id, payload.status, eventAt);
       // D-75 item 2 (IR26-09): a result held for a human (Didit's In Review, or a Didit approval in the
       // review band) still carries the number Didit read from the document. It is stored for the reviewer
       // and the hand approval that adopts it; the decision itself stays unresolved. An unfinished session's
@@ -184,9 +193,6 @@ export class KycController {
       return { ignored: true, status: decision.status, verifiedIdStored: held.updated > 0 };
     }
 
-    // Event time drives the monotonic guard. The timestamp is part of the signed body (Unix seconds),
-    // so it can't be forged; fall back to now() only if a delivery omits it.
-    const eventAt = typeof payload.timestamp === "number" ? new Date(payload.timestamp * 1000) : new Date();
     const res = await this.riders.applyKycResult(
       payload.session_id,
       decision.status,

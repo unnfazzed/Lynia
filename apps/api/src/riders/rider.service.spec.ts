@@ -2923,3 +2923,264 @@ describe("RiderService.adminSetKyc — D-75: a hand approval settles the nationa
     }
   });
 });
+
+/**
+ * Startup review 2026-10-06 — the rider ID-check fixes on the server side.
+ *
+ * R-1: "Finish verifying" resumed a session the vendor had already declared dead (Abandoned / Expired),
+ *      forever: the web lanes can't see expiry, so the client never sends `force`. The server can.
+ * R-3: a check held for a human read as in flight; a held rider's retry could buy a fresh paid session.
+ * R-4: the shared pending-state cache is invalidated / primed whenever the session's state moves.
+ * R-10: a double-tap race's P2002 now carries the same `already_rider` reason as the pre-check.
+ */
+describe("RiderService — ID-check session lifecycle (startup review 2026-10-06)", () => {
+  const LIVE = {
+    kycStatus: "pending",
+    kycAttempts: 0,
+    kycRef: "sess_old",
+    kycSessionToken: "tok_old",
+    kycSessionUrl: "https://verify.didit.me/sess_old",
+    kycForcedAt: null,
+  };
+  type States = import("../kyc/kyc-pending-state.service").KycPendingStateService;
+  /** A fake of the shared cache: scripted class for `read`, and a log of every read / invalidate / prime. */
+  function fakeStates(cls: "in_flight" | "unfinished" | "held" | "dead" = "unfinished") {
+    const log: string[] = [];
+    const states = {
+      read: vi.fn(async (ref: string) => {
+        log.push(`read:${ref}`);
+        return cls;
+      }),
+      invalidate: vi.fn((ref: string) => {
+        log.push(`invalidate:${ref}`);
+      }),
+      prime: vi.fn((ref: string, status: string) => {
+        log.push(`prime:${ref}:${status}`);
+      }),
+    };
+    return { states: states as unknown as States, log };
+  }
+  function withStates(prisma: Record<string, unknown>, vendor: KycVendor, states: States) {
+    if (!prisma.$transaction) {
+      prisma.$transaction = async (arg: unknown) => (typeof arg === "function" ? (arg as (tx: unknown) => unknown)(prisma) : arg);
+    }
+    if (!prisma.$executeRaw) prisma.$executeRaw = async () => 1;
+    return new RiderService(
+      prisma as unknown as PrismaService,
+      { KYC_MODE: "auto", KYC_PROVIDER: "didit" } as Env,
+      vendor,
+      pii,
+      trackingStub,
+      gatewayStub,
+      notificationsStub,
+      undefined,
+      states,
+    );
+  }
+  const minting = () => {
+    const submit = vi.fn(async () => ({ ref: "sess_new", status: "pending" as const, url: "https://verify.didit.me/sess_new", token: "tok_new" }));
+    return { vendor: { submit } as KycVendor, submit };
+  };
+  type Write = { where: Record<string, unknown>; data: Record<string, unknown> };
+
+  it("R-1: a session the WEBHOOK reported dead is not resumed — the credential is retired and a fresh one minted", async () => {
+    const { vendor, submit } = minting();
+    const writes: Write[] = [];
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ ...LIVE, kycVendorStatus: "Expired" }),
+        updateMany: async (args: Write) => {
+          writes.push(args);
+          return { count: 1 };
+        },
+      },
+    };
+    const res = await withStates(prisma, vendor, fakeStates("in_flight").states).retryKyc("p1");
+    expect(res).toMatchObject({ verificationUrl: "https://verify.didit.me/sess_new", sessionToken: "tok_new" });
+    expect(submit).toHaveBeenCalledTimes(1);
+    // First the CAS that retires exactly the credential we read, then the rotation.
+    expect(writes[0]).toEqual({
+      where: { profileId: "p1", kycStatus: "pending", kycRef: "sess_old", kycSessionToken: "tok_old" },
+      data: { kycSessionToken: null, kycSessionUrl: null },
+    });
+    expect(writes[1]?.data).toMatchObject({ kycRef: "sess_new", kycSessionToken: "tok_new", kycVendorStatus: null, kycVendorStatusAt: null });
+  });
+
+  it("R-1: with no webhook, ONE cached vendor read that says dead is enough to mint", async () => {
+    const { vendor, submit } = minting();
+    const { states, log } = fakeStates("dead");
+    const prisma = { rider: { findUnique: async () => ({ ...LIVE, kycVendorStatus: null }), updateMany: async () => ({ count: 1 }) } };
+    await withStates(prisma, vendor, states).retryKyc("p1");
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(log[0]).toBe("read:sess_old");
+  });
+
+  it("R-1: a webhook status that isn't dead still gets the read — a lost Expired webhook can't bring the loop back", async () => {
+    const { vendor, submit } = minting();
+    const prisma = { rider: { findUnique: async () => ({ ...LIVE, kycVendorStatus: "In Progress" }), updateMany: async () => ({ count: 1 }) } };
+    await withStates(prisma, vendor, fakeStates("dead").states).retryKyc("p1");
+    expect(submit).toHaveBeenCalledTimes(1);
+  });
+
+  it("R-1: a double tap on a dead session buys ONE session — the loser of the retire CAS gets a 409, never a vendor call", async () => {
+    const { vendor, submit } = minting();
+    const prisma = { rider: { findUnique: async () => ({ ...LIVE, kycVendorStatus: "Abandoned" }), updateMany: async () => ({ count: 0 }) } };
+    await expect(withStates(prisma, vendor, fakeStates().states).retryKyc("p1")).rejects.toThrow(/just changed/i);
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("a session the vendor still holds open is resumed for free, and its cached state dropped (R-4)", async () => {
+    const { vendor, submit } = minting();
+    const { states, log } = fakeStates("unfinished");
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const prisma = { rider: { findUnique: async () => ({ ...LIVE, kycVendorStatus: null }), updateMany } };
+    expect(await withStates(prisma, vendor, states).retryKyc("p1")).toMatchObject({
+      sessionToken: "tok_old",
+      verificationUrl: "https://verify.didit.me/sess_old",
+    });
+    expect(submit).not.toHaveBeenCalled();
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(log).toEqual(["read:sess_old", "invalidate:sess_old"]);
+  });
+
+  it("R-3: a held check (stored In Review, or a held Approved) refuses a retry — no resume, no paid mint", async () => {
+    for (const held of ["In Review", "Approved"]) {
+      const { vendor, submit } = minting();
+      const updateMany = vi.fn(async () => ({ count: 1 }));
+      const prisma = { rider: { findUnique: async () => ({ ...LIVE, kycVendorStatus: held }), updateMany } };
+      let caught: unknown;
+      try {
+        await withStates(prisma, vendor, fakeStates().states).retryKyc("p1");
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(ConflictException);
+      expect((caught as ConflictException).getResponse()).toMatchObject({ reason: "kyc_in_review" });
+      expect(submit).not.toHaveBeenCalled();
+      expect(updateMany).not.toHaveBeenCalled();
+    }
+  });
+
+  it("R-10: the double-tap race's P2002 carries `already_rider`, like the pre-check", async () => {
+    const p2002 = new Prisma.PrismaClientKnownRequestError("unique", { code: "P2002", clientVersion: "x" });
+    const prisma = {
+      rider: { findUnique: async () => null, create: () => ({}) },
+      profile: { update: () => ({}), findUnique: async () => ({ idNumberHash: null }), count: async () => 0 },
+      $transaction: async () => {
+        throw p2002;
+      },
+    };
+    const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, { submit: async () => ({ ref: "s", status: "pending", url: "https://x" }) });
+    let caught: unknown;
+    try {
+      await s.becomeRider("p1", {});
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ConflictException);
+    expect((caught as ConflictException).getResponse()).toMatchObject({ reason: "already_rider" });
+  });
+
+  describe("recordKycVendorStatus", () => {
+    it("stores the status on the CURRENT undecided session, monotonic on the event time, and primes the cache", async () => {
+      const writes: Write[] = [];
+      const { states, log } = fakeStates();
+      const prisma = {
+        rider: {
+          updateMany: async (a: Write) => {
+            writes.push(a);
+            return { count: 1 };
+          },
+        },
+      };
+      const at = new Date("2026-10-06T10:00:00Z");
+      expect(await withStates(prisma, minting().vendor, states).recordKycVendorStatus("sess_1", "In Review", at)).toEqual({ updated: 1 });
+      expect(writes[0]?.where).toEqual({ kycRef: "sess_1", kycStatus: "pending", OR: [{ kycVendorStatusAt: null }, { kycVendorStatusAt: { lt: at } }] });
+      // A hold keeps its credentials (only the review is outstanding).
+      expect(writes[0]?.data).toEqual({ kycVendorStatus: "In Review", kycVendorStatusAt: at });
+      expect(log).toEqual(["prime:sess_1:In Review"]);
+    });
+
+    it("a DEAD session loses its credentials in the same write, so the next retry mints", async () => {
+      for (const dead of ["Abandoned", "Expired", "Kyc Expired"]) {
+        const writes: Write[] = [];
+        const prisma = {
+          rider: {
+            updateMany: async (a: Write) => {
+              writes.push(a);
+              return { count: 1 };
+            },
+          },
+        };
+        await withStates(prisma, minting().vendor, fakeStates().states).recordKycVendorStatus("sess_1", dead, new Date());
+        expect(writes[0]?.data).toMatchObject({ kycVendorStatus: dead, kycSessionToken: null, kycSessionUrl: null });
+      }
+    });
+
+    it("a stale or foreign delivery (no row) primes nothing", async () => {
+      const { states, log } = fakeStates();
+      const prisma = { rider: { updateMany: async () => ({ count: 0 }) } };
+      expect(await withStates(prisma, minting().vendor, states).recordKycVendorStatus("sess_x", "Expired", new Date())).toEqual({ updated: 0 });
+      expect(log).toEqual([]);
+    });
+  });
+
+  it("R-3: applyKycResult's hold for review records the vendor's Approved (read as held); a decision clears it", async () => {
+    const run = async (flagged: boolean) => {
+      const writes: Write[] = [];
+      const { states, log } = fakeStates();
+      const prisma = {
+        rider: {
+          updateMany: async (a: Write) => {
+            writes.push(a);
+            return { count: 1 };
+          },
+          findFirst: async () => ({ profileId: "p1", duplicateIdFlag: flagged, profile: { idNumberHash: pii.hashId("63-1-A") } }),
+        },
+        auditLog: { create: async () => ({}) },
+      };
+      const at = new Date("2026-10-06T10:00:00Z");
+      await withStates(prisma, minting().vendor, states).applyKycResult("sess_1", "verified", at);
+      return { data: writes[0]?.data, log, at };
+    };
+    const held = await run(true);
+    expect(held.data).toMatchObject({ kycVendorStatus: "Approved", kycVendorStatusAt: held.at });
+    expect(held.data).not.toHaveProperty("kycStatus");
+    expect(held.log).toEqual(["invalidate:sess_1"]);
+    const decided = await run(false);
+    expect(decided.data).toMatchObject({ kycStatus: "verified", kycVendorStatus: null, kycVendorStatusAt: null });
+  });
+
+  it("R-3: an admin pending RESET clears the stored vendor status — the rider starts afresh, not on the review wall", async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    const prisma = {
+      rider: {
+        findUnique: async () => ({
+          profileId: "p1",
+          kycAttempts: 0,
+          kycStatus: "pending",
+          kycResolvedAt: new Date(),
+          verifiedIdHash: null,
+          verifiedIdNumber: null,
+          profile: { idNumberHash: null },
+        }),
+        update: async (a: { data: Record<string, unknown> }) => {
+          updates.push(a.data);
+          return { kycAttempts: 0 };
+        },
+      },
+      auditLog: { create: async () => ({}) },
+    };
+    await svc(prisma, { KYC_MODE: "auto" }).adminSetKyc("p1", "pending", null, "ops@lynia");
+    expect(updates[0]).toMatchObject({ kycStatus: "pending", kycVendorStatus: null, kycVendorStatusAt: null, kycSessionToken: null });
+  });
+
+  it("R-4: noteKycLaunched drops the cached state of a pending rider's session and changes nothing", async () => {
+    const { states, log } = fakeStates();
+    const updateMany = vi.fn();
+    const prisma = { rider: { findUnique: async () => ({ kycRef: "sess_1", kycStatus: "pending" }), updateMany } };
+    expect(await withStates(prisma, minting().vendor, states).noteKycLaunched("p1")).toEqual({ ok: true });
+    expect(log).toEqual(["invalidate:sess_1"]);
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+});

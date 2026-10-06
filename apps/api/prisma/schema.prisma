@@ -324,6 +324,15 @@ model Rider {
   // needs exactly one replacement. Claimed by a conditional UPDATE before the vendor is called, so
   // concurrent forced requests cannot both pay. Nulled on erasure with the session credentials.
   kycForcedAt       DateTime?                              @map("kyc_forced_at")
+  // The vendor's last reported status for the CURRENT session (kycRef), from its signed status webhook
+  // (Didit's literal: "In Review", "Expired", "Approved"…), and that webhook's event time (the
+  // monotonic guard). It lets /auth/me tell a check HELD for a human (In Review, or an approval held in
+  // the review band / for an ID collision — the app's "under review" wall) and a DEAD session
+  // (Abandoned / Expired — retryKyc mints instead of resuming it forever) from one still in flight,
+  // without a vendor call per poll. Cleared whenever the session it describes is replaced or reset.
+  // Not a secret, not PII. Migration 0076 (expand-only).
+  kycVendorStatus   String?                                @map("kyc_vendor_status")
+  kycVendorStatusAt DateTime?                              @map("kyc_vendor_status_at")
   // IR26-04 vendor-document dedupe: the HMAC hash (LR8 — never the raw number) of the document number
   // the KYC VENDOR actually verified, persisted from the Didit decision webhook on a `verified`
   // outcome, and (D-75 item 2) from a result held for review while the check is undecided

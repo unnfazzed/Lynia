@@ -42,7 +42,7 @@ const tokens = new TokenService(baseEnv);
 /** Spy metrics fake — OTP-verify recording is best-effort; keep tests off the OTel path. */
 /** getProfile's KYC pending-state derivation (P0-1 / D6). None of these specs call getProfile, so it
  *  is never invoked — this exists to satisfy the constructor, and answers the safe default if it ever is. */
-const fakeKycPendingState = () => ({ get: async () => "unfinished" as const }) as unknown as KycPendingStateService;
+const fakeKycPendingState = () => ({ get: async () => "unfinished" as const, read: async () => "unfinished" as const }) as unknown as KycPendingStateService;
 
 const fakeMetrics = () =>
   ({
@@ -1386,10 +1386,10 @@ describe("AuthService.getProfile — kycPendingState (P0-1 / D6)", () => {
   const autoEnv = { ...baseEnv, KYC_MODE: "auto" } as Env;
 
   /** Records which refs the derivation was asked about, so "was it even called" is assertable. */
-  function spyPendingState(answer: "in_flight" | "unfinished" = "in_flight") {
+  function spyPendingState(answer: "in_flight" | "unfinished" | "held" | "dead" = "in_flight") {
     const asked: (string | null | undefined)[] = [];
     const svc = {
-      get: async (ref: string | null | undefined) => {
+      read: async (ref: string | null | undefined) => {
         asked.push(ref);
         return answer;
       },
@@ -1492,5 +1492,51 @@ describe("AuthService.getProfile — kycPendingState (P0-1 / D6)", () => {
     const { svc } = make(autoEnv, profileWithRider(pendingRider), spy.svc);
     const me = await svc.getProfile("p1");
     expect(me.rider).not.toHaveProperty("kycRef");
+  });
+
+  // R-3 (startup review 2026-10-06): a check held for a human was `in_flight`, so the app told the rider
+  // "usually under a minute" and polled every 5s with no end. `kycHeld` is the additive signal for the
+  // "under review" wall; `in_flight` stays for older apps.
+  describe("kycHeld (R-3)", () => {
+    it("the vendor's live In Review reads as held — and in_flight for an app that can't draw the hold", async () => {
+      const spy = spyPendingState("held");
+      const { svc } = make(autoEnv, profileWithRider(pendingRider), spy.svc);
+      const me = await svc.getProfile("p1");
+      expect(me.rider?.kycHeld).toBe(true);
+      expect(me.rider?.kycPendingState).toBe("in_flight");
+      expect(me.rider).not.toHaveProperty("kycVendorStatus");
+    });
+
+    it("a stored hold answers without asking the vendor — even with the session credentials cleared", async () => {
+      // applyKycResult's holdForReview (an ID collision) clears the credentials and stores the vendor's Approved.
+      const spy = spyPendingState("unfinished");
+      const held = { ...pendingRider, kycSessionToken: null, kycSessionUrl: null, kycVendorStatus: "Approved" };
+      const { svc } = make(autoEnv, profileWithRider(held), spy.svc);
+      const me = await svc.getProfile("p1");
+      expect(me.rider?.kycHeld).toBe(true);
+      expect(me.rider?.kycPendingState).toBe("in_flight");
+      expect(spy.asked).toHaveLength(0);
+    });
+
+    it("a stored dead session is the rider's move, with no vendor call", async () => {
+      const spy = spyPendingState("in_flight");
+      const dead = { ...pendingRider, kycSessionToken: null, kycSessionUrl: null, kycVendorStatus: "Expired" };
+      const { svc } = make(autoEnv, profileWithRider(dead), spy.svc);
+      const me = await svc.getProfile("p1");
+      expect(me.rider?.kycHeld).toBe(false);
+      expect(me.rider?.kycPendingState).toBeNull();
+      expect(spy.asked).toHaveLength(0);
+    });
+
+    it("an ordinary in-flight check is not held", async () => {
+      const { svc } = make(autoEnv, profileWithRider(pendingRider), spyPendingState("in_flight").svc);
+      expect((await svc.getProfile("p1")).rider?.kycHeld).toBe(false);
+    });
+
+    it("never in manual mode — the app already draws ops review from kycMode", async () => {
+      const held = { ...pendingRider, kycVendorStatus: "In Review" };
+      const { svc } = make({ ...baseEnv, KYC_MODE: "manual" } as Env, profileWithRider(held), spyPendingState("held").svc);
+      expect((await svc.getProfile("p1")).rider?.kycHeld).toBe(false);
+    });
   });
 });

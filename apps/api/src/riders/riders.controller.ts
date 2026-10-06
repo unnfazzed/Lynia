@@ -83,6 +83,17 @@ export class RidersController {
     return this.riders.retryKyc(id, { force: body.force === true });
   }
 
+  /**
+   * R-4: the app finished an ID-check launch the rider says they completed. Changes nothing; it only
+   * drops the cached pending state so the next /auth/me reads the vendor afresh. Cheap, but each call can
+   * cost one vendor read, so it is throttled like a generous poll.
+   */
+  @Throttle({ limit: 20, windowSec: 3600, keyPrefix: "kyc-launched" })
+  @Post("kyc/launched")
+  kycLaunched(@CurrentUser() id: string) {
+    return this.riders.noteKycLaunched(id);
+  }
+
   @Patch("online")
   online(@Body(new ZodBody(SetOnline)) body: z.infer<typeof SetOnline>, @CurrentUser() id: string) {
     const location = body.lat != null && body.lng != null ? { lat: body.lat, lng: body.lng } : undefined;
