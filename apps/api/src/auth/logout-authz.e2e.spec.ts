@@ -41,6 +41,15 @@ describe("POST /auth/logout — HTTP authz", () => {
       .send({ sessionId: SESSION_ID });
     expect(res.status).not.toBe(401);
     expect(res.status).toBe(201); // Nest POST default success status
-    expect(authService.logout).toHaveBeenCalledWith(SESSION_ID, USER_ID);
+    expect(authService.logout).toHaveBeenCalledWith(SESSION_ID, USER_ID, undefined);
+  });
+
+  it("E2E 2026-10-05 FS-8: passes the device's push token through when the app names it", async () => {
+    const res = await request(app.getHttpServer())
+      .post("/auth/logout")
+      .set("Authorization", bearer(USER_ID))
+      .send({ sessionId: SESSION_ID, pushToken: "fcm-token-1" });
+    expect(res.status).toBe(201);
+    expect(authService.logout).toHaveBeenLastCalledWith(SESSION_ID, USER_ID, "fcm-token-1");
   });
 });

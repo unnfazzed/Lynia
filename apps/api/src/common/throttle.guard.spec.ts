@@ -12,7 +12,7 @@ function makeCtx(req: unknown): ExecutionContext {
   } as unknown as ExecutionContext;
 }
 
-function makeReflector(opts: ThrottleOptions | undefined) {
+function makeReflector(opts: ThrottleOptions | ThrottleOptions[] | undefined) {
   return { getAllAndOverride: () => opts } as unknown as ConstructorParameters<typeof ThrottleGuard>[0];
 }
 
@@ -42,6 +42,7 @@ function makeStore(): OtpStore & { counts: Map<string, number> } {
     del: async () => undefined,
     graceSet: async () => undefined,
     graceGet: async () => null,
+    unhit: async () => undefined,
   } as OtpStore & { counts: Map<string, number> };
 }
 
@@ -57,6 +58,70 @@ describe("ThrottleGuard", () => {
     expect(await guard.canActivate(ctx)).toBe(true); // 1
     expect(await guard.canActivate(ctx)).toBe(true); // 2
     await expect(guard.canActivate(ctx)).rejects.toThrow(/Too many requests/);
+  });
+
+  it("E2E 2026-10-05 FS-3: the 429 body is { statusCode, message }, not a bare string", async () => {
+    const guard = new ThrottleGuard(makeReflector({ limit: 0, windowSec: 60, keyPrefix: "t" }), makeStore(), makeTokens());
+    const err = await guard.canActivate(makeCtx({ ip: "1.1.1.1" })).catch((e: unknown) => e);
+    expect((err as { getStatus(): number }).getStatus()).toBe(429);
+    expect((err as { getResponse(): unknown }).getResponse()).toEqual({
+      statusCode: 429,
+      message: "Too many requests — try again later",
+    });
+  });
+
+  describe("E2E 2026-10-05 FS-1: several rules, and a custom key", () => {
+    const byPhone = (req: { body?: unknown }) => (req.body as { phone?: string } | undefined)?.phone;
+    const byIp = (req: { ip?: string }) => req.ip ?? "unknown";
+
+    it("keys a rule by its own `key` — many phones behind one IP each get the per-phone budget", async () => {
+      const store = makeStore();
+      const guard = new ThrottleGuard(
+        makeReflector([
+          { limit: 1, windowSec: 60, keyPrefix: "p", key: byPhone },
+          { limit: 10, windowSec: 60, keyPrefix: "ip", key: byIp },
+        ]),
+        store,
+        makeTokens(),
+      );
+      const nat = "100.64.0.1";
+      for (let i = 0; i < 5; i++) {
+        expect(await guard.canActivate(makeCtx({ ip: nat, body: { phone: `+26377000000${i}` } }))).toBe(true);
+      }
+      // One phone's second try is over ITS limit, whatever the IP.
+      await expect(guard.canActivate(makeCtx({ ip: "8.8.8.8", body: { phone: "+263770000000" } }))).rejects.toThrow();
+      expect(store.counts.get("rl:throttle:p:+263770000001")).toBe(1);
+      expect(store.counts.get(`rl:throttle:ip:${nat}`)).toBe(5);
+    });
+
+    it("the loose IP ceiling still binds", async () => {
+      const guard = new ThrottleGuard(
+        makeReflector([
+          { limit: 1, windowSec: 60, keyPrefix: "p", key: byPhone },
+          { limit: 3, windowSec: 60, keyPrefix: "ip", key: byIp },
+        ]),
+        makeStore(),
+        makeTokens(),
+      );
+      for (let i = 0; i < 3; i++) await guard.canActivate(makeCtx({ ip: "1.1.1.1", body: { phone: `p${i}` } }));
+      await expect(guard.canActivate(makeCtx({ ip: "1.1.1.1", body: { phone: "p9" } }))).rejects.toThrow(/Too many/);
+    });
+
+    it("a rule whose key is undefined is skipped (the other rules still apply)", async () => {
+      const store = makeStore();
+      const guard = new ThrottleGuard(
+        makeReflector([
+          { limit: 1, windowSec: 60, keyPrefix: "p", key: byPhone },
+          { limit: 2, windowSec: 60, keyPrefix: "ip", key: byIp },
+        ]),
+        store,
+        makeTokens(),
+      );
+      expect(await guard.canActivate(makeCtx({ ip: "1.1.1.1", body: {} }))).toBe(true);
+      expect(await guard.canActivate(makeCtx({ ip: "1.1.1.1", body: {} }))).toBe(true);
+      await expect(guard.canActivate(makeCtx({ ip: "1.1.1.1", body: {} }))).rejects.toThrow();
+      expect([...store.counts.keys()].some((k) => k.startsWith("rl:throttle:p:"))).toBe(false);
+    });
   });
 
   it("gives each client IP an independent budget", async () => {

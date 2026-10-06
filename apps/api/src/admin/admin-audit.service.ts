@@ -53,6 +53,11 @@ export const RESERVED_AUDIT_ACTIONS: ReadonlySet<string> = new Set([
   "issue.resolve",
   "sos.acknowledge",
   "wallet.credit",
+  // D-78: the free-jobs reminder rows (WalletService.noteFreeJobsMilestone) are read back as feed rows and
+  // are each reminder's idempotency key; the self-service photo / plate change is the rider's own record.
+  "rider.free_jobs_one_left",
+  "rider.free_jobs_used_up",
+  "rider.profile_update",
   // C4: `FoodDebtService.reportNonReturn` writes this (actor = the merchant profile id) in the SAME
   // transaction as the rider.accountStatus=suspended write-off — a real, domain-owned suspension the
   // free-text path must not be able to forge (it would read identically to a genuine R-07 non-return

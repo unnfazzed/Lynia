@@ -50,6 +50,16 @@ describe("AllExceptionsFilter", () => {
     expect(captured.status).toBe(HttpStatus.I_AM_A_TEAPOT);
   });
 
+  it("wraps a bare-string HttpException body in the { statusCode, message } envelope (E2E 2026-10-05 FS-3)", () => {
+    const filter = new AllExceptionsFilter();
+    const { host, captured } = makeHost();
+
+    filter.catch(new HttpException("Too many requests — try again later", HttpStatus.TOO_MANY_REQUESTS), host);
+
+    expect(captured.status).toBe(HttpStatus.TOO_MANY_REQUESTS);
+    expect(captured.body).toEqual({ statusCode: 429, message: "Too many requests — try again later" });
+  });
+
   it("coerces a plain Error to a safe generic 500 with no internal detail leaked", () => {
     // Silence the expected error log for a clean test run.
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});

@@ -88,6 +88,9 @@ describe("C4 · Code — drawn states", () => {
     const out = text(mount({ initialCooldownS: 0 }));
     expect(out).toContain("Sent by ");
     expect(out).toContain("SMS");
+    // E2E 2026-10-05 P-8: the resend line must not promise WhatsApp beside "Sent by SMS".
+    expect(out).not.toContain("Resend on WhatsApp");
+    expect(out).toContain("Send a new code");
   });
 });
 

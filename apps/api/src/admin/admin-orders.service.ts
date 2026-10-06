@@ -7,6 +7,7 @@ const ADMIN_RX_READ_URL_TTL_SECONDS = 300;
 import {
   ACTIVE_RIDE_STATUSES,
   commissionBasis,
+  COMPLETED_ORDER_STATUSES,
   DELIVERY_OTP_MAX_ATTEMPTS,
   HeldReason,
   isBusinessBookingAccountPhone,
@@ -277,6 +278,8 @@ export class AdminOrdersService {
         ? applyReliabilityDelta({ ...rider, heldReason: rider.heldReason as HeldReason }, RELIABILITY.RECOVER_PER_COMPLETION)
         : {};
       await tx.rider.update({ where: { profileId: order.riderId }, data: { tripsCount: { increment: 1 }, ...reliability } });
+      // D-78: the free-jobs reminder, after the increment (pushed below, after commit).
+      const freeJobs = (await this.wallet?.noteFreeJobsMilestone(tx, order.riderId)) ?? null;
 
       // WD-021: `order.agreedFare`/`suggestedFare` above is a PRE-CAS snapshot — the status CAS above
       // guards only on `status`, not on the fare, so a concurrent `adjustFare` landing in the gap between
@@ -302,7 +305,7 @@ export class AdminOrdersService {
         data: auditData(actor, "order.adjudicate_delivered", orderId, input.reason, input.note),
         select: { id: true },
       });
-      return { id: orderId, status: "completed" as const, auditId: audit.id, riderId: order.riderId, customerId: order.customerId };
+      return { id: orderId, status: "completed" as const, auditId: audit.id, riderId: order.riderId, customerId: order.customerId, freeJobs };
     });
 
     // Post-commit, best-effort (never affects the committed adjudication). Live WS status for any open
@@ -318,6 +321,7 @@ export class AdminOrdersService {
       body: "Our team reviewed the delivery and confirmed it as complete.",
       data: { orderId, kind: "order" },
     });
+    this.wallet?.sendFreeJobsReminder(result.riderId, result.freeJobs);
     return { id: result.id, status: result.status, auditId: result.auditId };
   }
 
@@ -577,6 +581,9 @@ export class AdminOrdersService {
     // the truth (`counter` = rider named a different price the customer accepted; `accept` = the
     // customer's ask taken as-is — makeOffer pins an accept's offeredFare to proposedFare). The
     // equality fallback covers legacy orders whose offer rows are gone but whose fare matches the ask.
+    // E2E 2026-10-05 FS-10: makeOffer pins an accept to the ask AT THE TIME, and raisePrice leaves earlier
+    // bids at their own price — so an accept selected after a raise ($3 accept, ask now $4) is a rider's
+    // price, not the customer's (current) ask. Compared to the cent, like makeOffer's own pin.
     let fareProvenance: FareProvenance | null = null;
     if (order.agreedFare != null) {
       if (fareAdjusts.length > 0) {
@@ -588,7 +595,10 @@ export class AdminOrdersService {
           previousFare: selectedOffer?.offeredFare.toString() ?? null,
           ...(fareAdjusts.length > 1 ? { count: fareAdjusts.length } : {}),
         };
-      } else if (selectedOffer?.type === "counter") {
+      } else if (
+        selectedOffer?.type === "counter" ||
+        (selectedOffer?.type === "accept" && Math.round(Number(selectedOffer.offeredFare) * 100) !== Math.round(Number(order.proposedFare) * 100))
+      ) {
         fareProvenance = {
           kind: "rider_counter",
           offeredFare: selectedOffer.offeredFare.toString(),
@@ -620,10 +630,12 @@ export class AdminOrdersService {
     const stuck = active && now - lastEventAt.getTime() > STUCK_AFTER_MS;
     const stuckMins = Math.round((now - lastEventAt.getTime()) / 60000);
 
+    // E2E 2026-10-05 P-6: a delivered/completed order is over, so its last reached step is done, never "now".
+    const finished = COMPLETED_ORDER_STATUSES.includes(order.status);
     const timeline = ORDER_TIMELINE.map((step, i) => {
       let state: "done" | "now" | "stall" | undefined;
       if (current === -1) state = i === 0 ? "done" : undefined; // off-path terminal: only the broadcast happened
-      else if (i < current) state = "done";
+      else if (i < current || (finished && i === current)) state = "done";
       else if (i === current) state = stuck ? "stall" : "now";
       return {
         label: step.label,

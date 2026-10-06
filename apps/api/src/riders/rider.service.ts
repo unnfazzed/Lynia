@@ -472,10 +472,28 @@ export class RiderService {
     if (rider.kycAttempts >= 2) {
       throw new ForbiddenException("ID verification is locked after two attempts. Please contact support.");
     }
-    // Manual mode has no vendor to resubmit to — the admin backstop resolves it; leave the rider pending.
+    // Manual mode has no vendor to resubmit to — the admin backstop resolves it.
     // BH-03: include `mode` even on this early return so the client can tell "no verificationUrl
     // because manual review is expected" apart from "no verificationUrl because something went wrong".
-    if (this.env.KYC_MODE !== "auto") return { kycStatus: "pending", mode: this.env.KYC_MODE };
+    if (this.env.KYC_MODE !== "auto") {
+      // E2E 2026-10-05 FS-2: answering `pending` is only true if the row says so. A declined (or expired)
+      // rider who retried used to stay `failed`, outside the admin queue (`?kyc=pending`), told they were
+      // waiting on a review nobody would run. Put them back in it — the same write as an admin `pending`
+      // reset (session credentials cleared, kycResolvedAt kept so a stale webhook still can't land), and
+      // the @updatedAt bump floats them to the top of the queue. Leaving `failed` is also what makes the
+      // next admin decline count as a new attempt (adminSetKyc's F-14 guard). CAS on the observed state,
+      // as the mint path below does, so a decision landing mid-request isn't clobbered.
+      if (rider.kycStatus !== "pending") {
+        const reopened = await this.prisma.rider.updateMany({
+          where: { profileId, kycStatus: rider.kycStatus, kycAttempts: rider.kycAttempts },
+          data: { kycStatus: "pending", idVerified: false, kycSessionToken: null, kycSessionUrl: null },
+        });
+        if (reopened.count === 0) {
+          throw new ConflictException("Your ID verification just changed — refresh and try again.");
+        }
+      }
+      return { kycStatus: "pending", mode: this.env.KYC_MODE };
+    }
 
     // RESUME PATH — free. A `pending` rider still holding session credentials has an unfinished check,
     // not a dead one: hand them back and let the client re-open the SAME session. Costs zero credits
@@ -602,13 +620,16 @@ export class RiderService {
     if (online) {
       const reason = onlineRefusalReason({ ...rider, ...commissionGate });
       if (reason) throw new ForbiddenException({ reason, message: REFUSAL_MESSAGE[reason] });
-      // Service area: when the client sends its position, refuse going online outside it so a rider can't
-      // take jobs we can't route. Location-optional (skipped if not sent) since an older client may not
-      // carry it; the same isInServiceArea the customer order-create gate uses (Harare metro + towns).
-      if (location) {
-        if (!isInServiceArea(location)) {
-          throw new ForbiddenException({ reason: "out_of_area", message: REFUSAL_MESSAGE.out_of_area });
-        }
+      // Service area: refuse going online outside it so a rider can't take jobs we can't route; the same
+      // isInServiceArea the customer order-create gate uses (Harare metro + towns).
+      // E2E 2026-10-05 FS-7 (owner: "Refuse online without GPS"): going ONLINE requires a position. A
+      // missing one used to skip this check, so a rider whose GPS timed out showed "Online" from anywhere
+      // and never got a job. Going offline never needs coordinates (this whole block is online-only).
+      if (!location) {
+        throw new ForbiddenException({ reason: "location_required", message: REFUSAL_MESSAGE.location_required });
+      }
+      if (!isInServiceArea(location)) {
+        throw new ForbiddenException({ reason: "out_of_area", message: REFUSAL_MESSAGE.out_of_area });
       }
     }
     if (online) {
@@ -924,11 +945,14 @@ export class RiderService {
           // keeping the credential would leave a verified rider carrying a live secret for no reason,
           // and would let retryKyc hand back a token the SDK can only reject.
           //
-          // Cleared on the hold-for-review path too, and deliberately: the vendor HAS decided (that is
-          // why we are in this branch), the session is spent, and only our own review is outstanding.
-          // A rider held for review who taps retry should mint a fresh session, not resume a decided one.
-          kycSessionToken: null,
-          kycSessionUrl: null,
+          // E2E 2026-10-05 FS-11: but NOT on the hold-for-review path. A held rider is still `pending`,
+          // and only our own review is outstanding; they owe nothing. Clearing the credentials there made
+          // getProfile answer `unfinished` ("Finish verifying") and retryKyc mint a fresh PAID session for
+          // a check that had already finished. Kept, the rider reads exactly like a Didit In Review hold
+          // (recordHeldVerifiedId, which never touches them either): the vendor reports the decided
+          // session, mapDiditPendingState says `in_flight`, and a retry resumes it for free. The review's
+          // own decision (adminSetKyc, every branch) clears them.
+          ...(holdForReview ? {} : { kycSessionToken: null, kycSessionUrl: null }),
           // IR26-04: persist the vendor-verified document hash EVEN when holding for review — a later
           // applicant presenting the same physical document must collide with this row too, and the
           // admin review screen surfaces the mismatch/collision from it.

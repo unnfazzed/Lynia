@@ -272,6 +272,24 @@ describe("authedFetch feeds the shared ReachabilityStore (LC-D04)", () => {
   });
 });
 
+describe("a validation 400 is never shown as its raw text (E2E 2026-10-05 P-2)", () => {
+  it("marks the API's ZodBody 400 as validation, and apiErrorMessage falls back for it", async () => {
+    const { apiErrorMessage, authedFetch } = await import("./api-client");
+    const zod = { message: "priceUsd: Too big: expected number to be <=1000", formErrors: [], fieldErrors: { priceUsd: ["Too big"] } };
+    fetchMock.mockResolvedValue(makeResponse(400, zod));
+    const err = await authedFetch("/merchant/dishes", { method: "POST", body: {} }).catch((e: unknown) => e);
+    expect(err).toMatchObject({ status: 400, validation: true });
+    expect(apiErrorMessage(err, "Something went wrong — try again.")).toBe("Something went wrong — try again.");
+
+    // A domain refusal's sentence is still the API's to say.
+    fetchMock.mockResolvedValue(makeResponse(400, { statusCode: 400, message: "That category is gone." }));
+    const domain = await authedFetch("/merchant/dishes", { method: "POST", body: {} }).catch((e: unknown) => e);
+    expect(domain).toMatchObject({ status: 400, validation: false });
+    expect(apiErrorMessage(domain, "Something went wrong — try again.")).toBe("That category is gone.");
+    expect(apiErrorMessage(new Error("boom"), "fallback")).toBe("fallback");
+  });
+});
+
 describe("authedFetch — a removed person's next request (merchant web upgrade L4)", () => {
   it("tells the shell when the API says the person isn't on the business any more", async () => {
     const { authedFetch, onMembershipLost } = await import("./api-client");

@@ -204,6 +204,14 @@ describe("B1 · Orders home (merchant mobile, D-48)", () => {
     expect(screen.getByRole("link", { name: "Check your menu" }).getAttribute("href")).toBe("/menu");
   });
 
+  it("a new business ops haven't switched on is 'Almost ready', not 'You're open' (E2E 2026-10-05 FS-4)", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValue(kitchen({ pilotEnabled: false }));
+    render(<Page />);
+    expect(await screen.findByText("Almost ready")).toBeTruthy();
+    expect(screen.queryByText("All quiet for now")).toBeNull();
+    expect(screen.queryByRole("switch")).toBeNull();
+  });
+
   it("draws one board sorted by urgency (Merchant v2 K1, D-77): needs you, cooking, on the way", async () => {
     vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
     const started = new Date(Date.now() - 7 * 60_000).toISOString();

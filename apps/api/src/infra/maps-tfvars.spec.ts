@@ -19,23 +19,29 @@ import { describe, it, expect, beforeAll } from "vitest";
  * from a file:// URL — the same idiom `src/parity/screen-inventory.spec.ts` uses for tools/parity.
  */
 const SCRIPT = resolve(__dirname, "../../../../scripts/tf-maps-tfvars.mjs");
+const CERTS = resolve(__dirname, "../../../../scripts/play-signing-certs.mjs");
 
 type Warn = (message: string) => void;
 type MapsTfvars = {
   buildMapsTfvars: (env: Record<string, string | undefined>, warn?: Warn) => string | null;
   normalizeFingerprint: (raw: string, label: string) => string;
+  normalizeFingerprintList: (raw: string, label: string, warn: Warn) => string[];
   normalizeKeyId: (raw: string, label: string, warn: Warn) => string;
   PLACEHOLDER_FINGERPRINTS: Set<string>;
 };
+type Cert = { sha1: string; file: string; runsOn: string };
 
 let mod: MapsTfvars;
+let playCerts: Cert[];
 
+/** A well-formed fingerprint that is none of the app's real certificates, for the shape-only tests. */
 const PLAY_SHA1 = "AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01";
 const UPLOAD_SHA1 = "01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67";
+/** Filled in beforeAll: TF_MAPS_SHA1_PLAY is every real Play certificate, as the owner would set it. */
 const ARMED = {
   TF_MAPS_KEY_ID: "9d1f2b3c-1111-2222-3333-1234567890ab",
   TF_PLACES_KEY_ID: "7c2e4a10-4444-5555-6666-0987654321fe",
-  TF_MAPS_SHA1_PLAY: PLAY_SHA1,
+  TF_MAPS_SHA1_PLAY: "",
   TF_MAPS_SHA1_UPLOAD: UPLOAD_SHA1,
 };
 
@@ -48,6 +54,8 @@ function build(env: Record<string, string | undefined>): { out: string | null; w
 
 beforeAll(async () => {
   mod = (await import(pathToFileURL(SCRIPT).href)) as MapsTfvars;
+  playCerts = ((await import(pathToFileURL(CERTS).href)) as { PLAY_SIGNING_CERTS: Cert[] }).PLAY_SIGNING_CERTS;
+  ARMED.TF_MAPS_SHA1_PLAY = playCerts.map((c) => c.sha1).join(", ");
 });
 
 describe("tf-maps-tfvars · disarmed by default", () => {
@@ -98,15 +106,57 @@ describe("tf-maps-tfvars · fingerprint validation", () => {
     expect(() => mod.normalizeFingerprint("SHA-1: ZZ:CD:EF", "f")).toThrow(/non-hex/);
   });
 
-  it("refuses the same certificate listed twice as both roles", () => {
-    expect(() => build({ ...ARMED, TF_MAPS_SHA1_UPLOAD: PLAY_SHA1 })).toThrow(/identical/);
+  it("refuses a Play certificate also entered as the upload certificate", () => {
+    expect(() => build({ ...ARMED, TF_MAPS_SHA1_UPLOAD: playCerts[1].sha1 })).toThrow(/identical/);
   });
 
-  it("warns, but proceeds, when only the Play app-signing certificate is supplied", () => {
+  it("warns, but proceeds, when only Play's certificates are supplied", () => {
     const { out, warnings } = build({ ...ARMED, TF_MAPS_SHA1_UPLOAD: "" });
-    expect(out).toContain(PLAY_SHA1);
+    for (const c of playCerts) expect(out).toContain(c.sha1);
     expect(out).not.toContain(UPLOAD_SHA1);
     expect(warnings.join(" ")).toContain("sideloaded QA APKs");
+  });
+});
+
+/**
+ * MOB-MAP-04. Play signs this app with three certificates (hybrid signing) and a phone runs under one
+ * of them depending on its Android version. The docs once named one of them as "the SHA-1 devices run";
+ * arming Terraform with that one alone is a pure in-place update the arm workflow lets through, and it
+ * would strip the other two from the live key — blanking the map on every phone on Android 16 or older.
+ */
+describe("tf-maps-tfvars · every Play signing certificate", () => {
+  it("refuses a list that leaves out the certificate Android 16 and older run under, and names it", () => {
+    const onlyHybrid = playCerts.filter((c) => c.runsOn !== "Android 16 and older").map((c) => c.sha1).join(",");
+    expect(() => build({ ...ARMED, TF_MAPS_SHA1_PLAY: onlyHybrid })).toThrow(/93:56:8F:5C:4A:A0:1E:3C:B9:CF:E9:8D:9F:73:0B:FE:74:9E:30:A9 \(deployment_cert\.der, Android 16 and older\)/);
+  });
+
+  it("refuses the single certificate the old docs pointed at", () => {
+    expect(() => build({ ...ARMED, TF_MAPS_SHA1_PLAY: "35:0F:72:18:13:30:A8:A1:4F:69:5F:E7:EB:AE:B1:6D:76:C6:FC:08" })).toThrow(/leaves out/);
+  });
+
+  it("takes the list in any separator and shape, and keeps a repeat once with a note", () => {
+    const [a, b, c] = playCerts.map((x) => x.sha1);
+    const { out, warnings } = build({ ...ARMED, TF_MAPS_SHA1_PLAY: `${a.toLowerCase()}; ${b.replace(/:/g, "")}\n${c},${a}` });
+    for (const x of playCerts) expect(out).toContain(`"${x.sha1}",`);
+    expect(warnings.join(" ")).toContain("twice");
+  });
+
+  it("labels each Play certificate with the phones that run under it", () => {
+    const { out } = build(ARMED);
+    expect(out).toContain("deployment_cert.der — Android 16 and older");
+    expect(out).toContain("hybrid_classical_cert.der — Android 17 and newer");
+  });
+
+  it("keeps, with a note, a Play certificate it does not know", () => {
+    const { out, warnings } = build({ ...ARMED, TF_MAPS_SHA1_PLAY: `${ARMED.TF_MAPS_SHA1_PLAY}, ${PLAY_SHA1}` });
+    expect(out).toContain(`"${PLAY_SHA1}",`);
+    expect(warnings.join(" ")).toContain("not in scripts/play-signing-certs.mjs");
+  });
+
+  it("asks nothing of another package's certificates beyond their shape", () => {
+    const { out } = build({ ...ARMED, TF_MAPS_PACKAGE: "com.example.other", TF_MAPS_SHA1_PLAY: PLAY_SHA1 });
+    expect(out).toContain('android_package_name           = "com.example.other"');
+    expect(out).toContain(`"${PLAY_SHA1}",`);
   });
 });
 
@@ -134,7 +184,7 @@ describe("tf-maps-tfvars · key ids", () => {
 });
 
 describe("tf-maps-tfvars · emitted HCL", () => {
-  it("sets every variable apikeys.tf needs, with both fingerprints", () => {
+  it("sets every variable apikeys.tf needs, with every fingerprint", () => {
     const { out } = build(ARMED);
     expect(out).not.toBeNull();
     const text = out as string;
@@ -143,14 +193,14 @@ describe("tf-maps-tfvars · emitted HCL", () => {
     expect(text).toContain(`places_api_key_id              = "${ARMED.TF_PLACES_KEY_ID}"`);
     // Must match apps/mobile/app.config.ts `android.package` — a mismatch blanks the map.
     expect(text).toContain('android_package_name           = "zw.co.lynia"');
-    expect(text).toContain(`"${PLAY_SHA1}",`);
+    for (const c of playCerts) expect(text).toContain(`"${c.sha1}",`);
     expect(text).toContain(`"${UPLOAD_SHA1}",`);
   });
 
   it("emits fingerprints in the exact shape apikeys.tf's own validation accepts", () => {
     const { out } = build(ARMED);
     const listed = (out as string).match(/^ {2}"([^"]+)"/gm)?.map((l) => l.replace(/[ "]/g, "")) ?? [];
-    expect(listed).toHaveLength(2);
+    expect(listed).toHaveLength(playCerts.length + 1);
     for (const f of listed) expect(f).toMatch(/^([0-9A-F]{2}:){19}[0-9A-F]{2}$/);
   });
 

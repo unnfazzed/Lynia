@@ -125,6 +125,17 @@ function riderName(order: MerchantOrderResponse): string {
   return riderFirstName(order) ?? "The rider";
 }
 
+/** The rider's first name inside a sentence ("Say the code to Tendai"), or "the rider" when they have
+ *  none (E2E 2026-10-05 P-12: the checklist read "photographs it" / "Say the code to"). */
+function riderInSentence(order: MerchantOrderResponse): string {
+  return order.rider?.firstName.trim() || "the rider";
+}
+
+/** The same at the start of a sentence: "The rider photographs it". */
+function capitalised(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 /**
  * One order, pushed from the Orders home (fixed parent `/queue`), on the screen its state calls for.
  * Order flow v2 (packages/design/handoff/order-flow-v2, ledger D-59) over merchant mobile (D-48):
@@ -623,8 +634,7 @@ function Handover({ order, act, disabled, error, setConfirm, business }: Ctx) {
   const hold = isNoRiderHold(order);
   const shop = (order.venue?.businessType ?? business?.businessType) === "shop" || order.pickupProofRequired === true;
   const code = usePickupCode(order);
-  const rider = riderName(order);
-  const first = order.rider?.firstName ?? rider;
+  const first = riderInSentence(order);
   const proof = order.pickupProof?.photoUrl || order.pickupProof?.takenAt ? order.pickupProof : null;
   const fallback = HANDOVER_FALLBACK_ENABLED && order.riderId && order.status === "en_route_pickup";
   return (
@@ -667,8 +677,8 @@ function Handover({ order, act, disabled, error, setConfirm, business }: Ctx) {
               <div>
                 <i className={proof ? "m-on" : undefined}>{proof ? <Icon name="check" size={16} /> : 2}</i>
                 <div>
-                  <b>{proof ? `${first} photographed it` : `${first} photographs it`}</b>
-                  <span>{proof ? `${hm(proof.takenAt)} · the customer sees this too` : OF.photoWait(rider)}</span>
+                  <b>{proof ? `${capitalised(first)} photographed it` : `${capitalised(first)} photographs it`}</b>
+                  <span>{proof ? `${hm(proof.takenAt)} · the customer sees this too` : OF.photoWait(riderFirstName(order) ?? first)}</span>
                 </div>
                 {proof?.photoUrl ? (
                   <a href={proof.photoUrl} target="_blank" rel="noreferrer" aria-label={OF.photo}>
@@ -704,7 +714,7 @@ function Handover({ order, act, disabled, error, setConfirm, business }: Ctx) {
         {order.riderId && order.autoAccepted && (
           <div className="m-waitrow">
             <span className="m-wspin" />
-            {first} collects it at the counter. This screen moves on by itself.
+            {capitalised(first)} collects it at the counter. This screen moves on by itself.
           </div>
         )}
 
@@ -725,7 +735,7 @@ function Handover({ order, act, disabled, error, setConfirm, business }: Ctx) {
                 const res = await requestHandoverFallback(order.id);
                 const body = handoverLinkMessage(business?.name ?? "the counter", orderLabel(order), res.link);
                 window.location.href = `sms:${res.riderPhone ?? ""}?body=${encodeURIComponent(body)}`;
-              }, `${first} got a link to finish it`)
+              }, `${capitalised(first)} got a link to finish it`)
             }
           >
             Rider can’t enter code
@@ -753,7 +763,7 @@ function OnTheWay({ order, act, disabled, error, setConfirm, business, v }: Ctx)
     order.debtAmount ??
     foodOrderMoney({ goodsTotal: order.merchantGoodsTotal, deliveryFee: order.deliveryFee, merchantDeliveryShare: order.merchantDeliveryShare }).merchantNet;
   const rider = riderName(order);
-  const first = order.rider?.firstName ?? rider;
+  const first = capitalised(riderInSentence(order));
   const owes = order.debtStatus === "open";
   // K5b / K5c (D-77 follow-ups): "#A115 delivered" · "Blessing M. · 07:41 · 2 dishes"; "#A117 couldn't be
   // delivered" · "Customer didn't answer · 07:44".
@@ -966,7 +976,11 @@ function usePickupCode(order: MerchantOrderResponse): string | null {
     askedFor.current = order.riderId;
     revealPickupCode(order.id)
       .then((res) => setCode(res.pickupCode))
-      .catch(() => setCode(null));
+      .catch(() => {
+        // Not silent for good: the next order refresh asks again (E2E 2026-10-05 LB-1 hid behind this).
+        askedFor.current = null;
+        setCode(null);
+      });
   }, [codeless, order]);
   return code;
 }

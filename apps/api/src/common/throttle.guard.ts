@@ -18,7 +18,25 @@ export interface ThrottleOptions {
   windowSec: number;
   /** Namespaces the counter key so unrelated routes don't share a budget (e.g. "refresh", "order-create"). */
   keyPrefix: string;
+  /**
+   * Derives the counter identity from the request instead of subject/IP — e.g. the phone a code check
+   * is for. Returning undefined skips THIS rule for the request (the route's other rules still bind).
+   * Runs before the body pipes, so it sees the raw body and must tolerate any shape.
+   */
+  key?: (req: ThrottleRequest) => string | undefined;
 }
+
+/** The slice of the HTTP request the guard reads. */
+export interface ThrottleRequest {
+  user?: { sub?: string };
+  headers?: Record<string, string | undefined>;
+  body?: unknown;
+  ip?: string;
+  socket?: { remoteAddress?: string };
+}
+
+/** A `key` for a rule that stays per client IP even when the caller presents a valid bearer. */
+export const byIp = (req: ThrottleRequest): string => req.ip ?? req.socket?.remoteAddress ?? "unknown";
 
 export const THROTTLE_KEY = "lynia:throttle";
 
@@ -27,10 +45,13 @@ export const THROTTLE_KEY = "lynia:throttle";
  * AuthService — this generalizes that protection to the other sensitive/high-cost routes (refresh,
  * order/offer creation, offer select) which previously had only `JwtAuthGuard` and no request cap.
  *
- * Example: `@Throttle({ limit: 30, windowSec: 60, keyPrefix: "order-create" })`.
+ * Example: `@Throttle({ limit: 30, windowSec: 60, keyPrefix: "order-create" })`. Several rules may be
+ * given; each keeps its own counter and a request must pass all of them (e.g. a tight per-phone cap
+ * plus a loose per-IP ceiling).
  */
-export const Throttle = (opts: ThrottleOptions): MethodDecorator & ClassDecorator =>
-  SetMetadata(THROTTLE_KEY, opts);
+export const Throttle = (...opts: ThrottleOptions[]): MethodDecorator & ClassDecorator =>
+  // A single rule stays stored as a bare object (the shape every route spec reads back).
+  SetMetadata(THROTTLE_KEY, opts.length === 1 ? opts[0] : opts);
 
 /**
  * Global guard that enforces `@Throttle(...)` metadata. Registered as an APP_GUARD; routes without the
@@ -45,8 +66,9 @@ export const Throttle = (opts: ThrottleOptions): MethodDecorator & ClassDecorato
  * subject without changing guard ordering, we decode the bearer token ourselves: a valid HS256 access
  * token yields the subject we throttle on; a missing/invalid token falls back to IP (JwtAuthGuard rejects
  * it moments later anyway). Verification here is not authorization — it only derives a stable throttle key.
- * Unauthenticated throttled routes (OTP request, refresh — which carries a refresh token, not a bearer)
- * legitimately have no subject and stay IP-keyed, exactly as before.
+ * Unauthenticated throttled routes legitimately have no subject; rather than share one IP budget across
+ * a carrier NAT, they key their rules on what the request is about (`key` — the phone for a code check,
+ * the session for a refresh) with a looser per-IP ceiling beside it.
  */
 @Injectable()
 export class ThrottleGuard implements CanActivate {
@@ -57,25 +79,26 @@ export class ThrottleGuard implements CanActivate {
   ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
-    const opts = this.reflector.getAllAndOverride<ThrottleOptions | undefined>(THROTTLE_KEY, [
+    const meta = this.reflector.getAllAndOverride<ThrottleOptions | ThrottleOptions[] | undefined>(THROTTLE_KEY, [
       ctx.getHandler(),
       ctx.getClass(),
     ]);
-    if (!opts) return true;
+    if (!meta) return true;
+    const rules = Array.isArray(meta) ? meta : [meta];
 
-    const req = ctx.switchToHttp().getRequest<{
-      user?: { sub?: string };
-      headers?: Record<string, string | undefined>;
-      ip?: string;
-      socket?: { remoteAddress?: string };
-    }>();
-    const identity = this.subject(req) ?? req.ip ?? req.socket?.remoteAddress ?? "unknown";
-    const key = `rl:throttle:${opts.keyPrefix}:${identity}`;
-
-    const count = await this.store.hit(key, opts.windowSec);
-    if (count > opts.limit) {
-      // Same shape AuthService.enforceRate raises for the OTP limiter.
-      throw new HttpException("Too many requests — try again later", HttpStatus.TOO_MANY_REQUESTS);
+    const req = ctx.switchToHttp().getRequest<ThrottleRequest>();
+    for (const opts of rules) {
+      const identity = opts.key ? opts.key(req) : (this.subject(req) ?? byIp(req));
+      if (identity === undefined) continue;
+      const count = await this.store.hit(`rl:throttle:${opts.keyPrefix}:${identity}`, opts.windowSec);
+      if (count > opts.limit) {
+        // An object, not a bare string: a string body reached the app as a JSON string with no
+        // `.message`, which it showed as "check your connection" (E2E 2026-10-05 FS-3).
+        throw new HttpException(
+          { statusCode: HttpStatus.TOO_MANY_REQUESTS, message: "Too many requests — try again later" },
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
     }
     return true;
   }

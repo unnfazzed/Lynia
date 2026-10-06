@@ -122,8 +122,11 @@ function isUsable(c: GeocodedLocation | undefined): c is GeocodedLocation {
   );
 }
 
-/** Inside the {@link ZIMBABWE} sanity box, edges included. */
-function inZimbabwe({ latitude, longitude }: GeocodedLocation): boolean {
+/**
+ * Inside the {@link ZIMBABWE} sanity box, edges included. `ComposeMap` applies the same sanity check to a
+ * tap on a map that has not loaded yet, whose camera may be nowhere near Harare (MOB-MAP-04).
+ */
+export function inZimbabwe({ latitude, longitude }: GeocodedLocation): boolean {
   return (
     latitude >= ZIMBABWE.south &&
     latitude <= ZIMBABWE.north &&

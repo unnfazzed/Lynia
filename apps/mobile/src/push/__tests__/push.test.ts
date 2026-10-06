@@ -264,3 +264,13 @@ describe("isSilentPush (Merchant v2 +5 min)", () => {
     expect(isSilentPush(null)).toBe(false);
   });
 });
+
+describe("free-jobs top-up reminder (D-78)", () => {
+  it("opens the rider's Money tab from the push and from its feed row", () => {
+    expect(pushDestination({ kind: "free_jobs", milestone: "one_left" }, true)).toBe("/rider/money");
+    expect(notificationRowDestination({ orderId: null, to: "rider", action: "rider.free_jobs_one_left" })).toBe("/rider/money");
+    expect(notificationRowDestination({ orderId: null, to: "rider", action: "rider.free_jobs_used_up" })).toBe("/rider/money");
+    // Other account rows keep their old destination.
+    expect(notificationRowDestination({ orderId: null, to: "rider", action: "wallet.credit" })).toBe("/rider");
+  });
+});

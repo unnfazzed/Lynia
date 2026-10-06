@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import { AppState, type NativeEventSubscription } from "react-native";
 import type { Session } from "../auth/session";
 import { subscribeReachability } from "../net/reachability";
+import { setBoundPushToken } from "./bound-token";
 import { subscribePushKick } from "./push-kick";
 import {
   pushDestination,
@@ -104,6 +105,7 @@ export function usePushRegistration(session: Session | null): void {
             void unregisterForPushNotificationsAsync(result.token);
           } else {
             registered = result.token;
+            setBoundPushToken(registered);
           }
           stopRetryTriggers();
           return;
@@ -144,6 +146,7 @@ export function usePushRegistration(session: Session | null): void {
         }
         const superseded = registered;
         registered = bound;
+        setBoundPushToken(bound);
         // The old token is now dead FCM-side; drop it server-side too rather than wait for a prune.
         if (superseded && superseded !== bound) void unregisterForPushNotificationsAsync(superseded);
       });
@@ -155,6 +158,9 @@ export function usePushRegistration(session: Session | null): void {
       stopRetryTriggers();
       kickUnsub();
       rotationSub.remove();
+      // On sign-out the logout request already named this token (bound-token.ts) and the API unbound it;
+      // by now the session is gone locally, so this DELETE is only a best-effort backstop.
+      setBoundPushToken(null);
       if (registered) void unregisterForPushNotificationsAsync(registered);
     };
   }, [profileId]);

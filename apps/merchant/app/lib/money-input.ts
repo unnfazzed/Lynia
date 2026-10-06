@@ -1,12 +1,17 @@
-/** Pure amount-parsing for the money-confirm sheets (E3, D-06 "confirming money means acknowledging
- *  a number"). Mirrors the server's own constraint (positive, ≤100000, 2dp) so a sheet's Confirm
- *  button can disable on an obviously-invalid typed amount — the server still re-validates and is the
- *  actual authority (a mismatch 409s naming the gap in dollars; this never second-guesses that). */
-export function parseAmountInput(raw: string): number | null {
+/** The dish/item price ceiling: `MerchantDishRequest.priceUsd` is `.max(1000)` in the shared contracts.
+ *  E2E 2026-10-05 P-1: the dish editor used the 100000 money ceiling, so $1,500 passed here and came
+ *  back as a raw validation error. */
+export const DISH_PRICE_MAX_USD = 1000;
+
+/** Pure amount-parsing for typed money (the dish editor's price, a booking line's price). Mirrors the
+ *  server's constraint (positive, 2dp, ≤ `max` — 100000 by default, the shared money ceiling; pass
+ *  `DISH_PRICE_MAX_USD` for a dish price) so a Save/Add button can refuse an obviously-invalid typed
+ *  amount. The server still re-validates and is the actual authority. */
+export function parseAmountInput(raw: string, max = 100_000): number | null {
   const trimmed = raw.trim();
   if (!trimmed || !/^\d+(\.\d{1,2})?$/.test(trimmed)) return null;
   const value = Number(trimmed);
-  if (!Number.isFinite(value) || value <= 0 || value > 100_000) return null;
+  if (!Number.isFinite(value) || value <= 0 || value > max) return null;
   return Math.round(value * 100) / 100;
 }
 

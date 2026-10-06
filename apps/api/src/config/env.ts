@@ -162,7 +162,9 @@ export const envSchema = z.object({
   // sized for a pilot (500/day ~ EUR 98/day), not for launch volume — raise the repo Variable before
   // opening signups, or real users will hit the ceiling.
   OTP_RL_PHONE_MAX: z.coerce.number().int().positive().default(5), // per phone, per hour
-  OTP_RL_IP_MAX: z.coerce.number().int().positive().default(20), // per IP, per hour
+  // Loose on purpose (10x the old 20): riders behind one carrier NAT share an IP, so this is only a
+  // ceiling; the per-phone cap is what bounds abuse of one number (E2E 2026-10-05 FS-1).
+  OTP_RL_IP_MAX: z.coerce.number().int().positive().default(200), // per IP, per hour
   OTP_RL_GLOBAL_MAX: z.coerce.number().int().positive().default(500), // all senders, per day
   OTP_RL_DEVICE_SIGNUP_MAX: z.coerce.number().int().positive().default(3), // NEW accounts per device, per day
   // E4: WhatsApp default, SMS behind a flag (schedule insurance vs BSP delay). "bird" delivers the OTP
