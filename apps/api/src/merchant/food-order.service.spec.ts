@@ -163,6 +163,18 @@ describe("FoodOrderService.placeOrder", () => {
     });
   });
 
+  it("a shop or pharmacy that isn't orderable (its section off) is 'Shop/Pharmacy not found', not 'Restaurant' (E2E 2026-10-05 P-5)", async () => {
+    const place = (kind: { businessType: string; shopKind: string | null } | null) =>
+      build({
+        order: { findFirst: async () => null },
+        merchant: { findFirst: async () => null, findUnique: async () => kind },
+      }).svc.placeOrder("c1", "m1", { items: [{ dishId: "d1", quantity: 1 }], dropoff: { point: HARARE_CBD }, paymentMethod: "cash" } as never);
+    await expect(place({ businessType: "shop", shopKind: "grocery" })).rejects.toMatchObject({ status: 404, message: "Shop not found" });
+    await expect(place({ businessType: "shop", shopKind: "pharmacy" })).rejects.toMatchObject({ status: 404, message: "Pharmacy not found" });
+    await expect(place({ businessType: "restaurant", shopKind: null })).rejects.toMatchObject({ status: 404, message: "Restaurant not found" });
+    await expect(place(null)).rejects.toMatchObject({ status: 404, message: "Restaurant not found" });
+  });
+
   it("rejects a drop-off outside the service area server-side, naming the towns we serve (owner 2026-10-02)", async () => {
     let created = false;
     const { svc } = build({
