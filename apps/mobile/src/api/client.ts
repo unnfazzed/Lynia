@@ -24,6 +24,9 @@ export class ApiError extends Error {
      *  `out_of_area`), when the API tags one — null otherwise. Domain screens branch on this over the
      *  human `message`, which is copy and can change. */
     public readonly code: string | null = null,
+    /** Seconds until a rate limit lets the caller try again (the API's `retryAfter` on a 429), when it
+     *  says — null otherwise. */
+    public readonly retryAfter: number | null = null,
   ) {
     super(message);
     this.name = "ApiError";
@@ -53,6 +56,16 @@ function errorCode(text: string): string | null {
     /* not JSON */
   }
   return null;
+}
+
+/** The `retryAfter` seconds a rate-limited (429) Nest error body carries, if present and sane. */
+function errorRetryAfter(text: string): number | null {
+  try {
+    const v = (JSON.parse(text) as { retryAfter?: unknown } | null)?.retryAfter;
+    return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null;
+  } catch {
+    return null;
+  }
 }
 
 interface RequestOpts {
@@ -211,7 +224,7 @@ async function apiFetchInner<T>(path: string, opts: RequestOpts = {}): Promise<T
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new ApiError(res.status, friendlyMessage(res.status, text), errorCode(text));
+    throw new ApiError(res.status, friendlyMessage(res.status, text), errorCode(text), errorRetryAfter(text));
   }
   // Parse via text so an empty body (e.g. /orders/mine/active with no job) doesn't throw — it
   // yields undefined, and a literal "null" parses to null, both of which callers treat as "none".
@@ -308,9 +321,15 @@ function isApiErrorBody(status: number, text: string): boolean {
 function friendlyMessage(status: number, text: string): string {
   // The API throws Nest exceptions whose body is { message } (string or array).
   try {
-    const parsed = JSON.parse(text) as { message?: string | string[] };
-    if (Array.isArray(parsed.message)) return parsed.message.join(", ");
-    if (parsed.message) return parsed.message;
+    const parsed = JSON.parse(text) as { message?: string | string[] } | string | null;
+    // A Nest HttpException thrown with a plain string body arrives as a bare JSON string (older API
+    // rate limits did this) — that string IS the message.
+    if (typeof parsed === "string") {
+      if (parsed) return parsed;
+    } else if (parsed) {
+      if (Array.isArray(parsed.message)) return parsed.message.join(", ");
+      if (parsed.message) return parsed.message;
+    }
   } catch {
     /* not JSON */
   }

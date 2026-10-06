@@ -17,31 +17,71 @@ export function formatCountdown(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-/** The minimal shape of an ApiError this helper inspects. */
+/** The minimal shape of an ApiError these helpers inspect. */
 export interface OtpError {
   status?: number;
   message?: string | null;
+  /** The API's machine-readable reason (`otp_invalid` / `otp_expired` / `otp_locked`, …), if any. */
+  code?: string | null;
+  /** Seconds until a rate limit lifts (the API's `retryAfter` on a 429), if it said. */
+  retryAfter?: number | null;
+}
+
+/** What a failed verify says about the code. */
+export type OtpFailure = "invalid" | "expired" | "locked";
+
+const OTP_REASONS: Record<string, OtpFailure> = { otp_invalid: "invalid", otp_expired: "expired", otp_locked: "locked" };
+
+/**
+ * Classify a verify failure as a DEFINITIVE answer about the code (wrong, expired or locked), or null
+ * when the server never judged the code: network, timeout, 5xx, a rate limit, a malformed request. A
+ * null is a non-answer, so the same code may be sent again.
+ *
+ * The API tags each OTP 401 with a reason code (apps/api/src/auth/auth.service.ts `otpError`), and that
+ * is what this reads first. A server released before the codes answered a bare 401 whose message names
+ * the case ("Code expired or never requested", "Too many attempts — request a new code", "Invalid
+ * code"), so an untagged 401 still falls back to the words. Only a 401 is a verdict: a 400 is a
+ * malformed request (no device id, a bad number), never "that code isn't right".
+ */
+export function otpFailure(err: OtpError | null | undefined): OtpFailure | null {
+  if (!err) return null;
+  const tagged = err.code ? OTP_REASONS[err.code] : undefined;
+  if (tagged) return tagged;
+  if (err.status !== 401) return null;
+  const m = (err.message ?? "").toLowerCase();
+  if (m.includes("too many") || m.includes("locked") || m.includes("request a new code")) return "locked";
+  if (m.includes("expired") || m.includes("never requested")) return "expired";
+  return "invalid";
 }
 
 /**
- * Whether a verify failure is a recoverable expired/locked state — i.e. the stored code is gone (TTL
- * lapsed or never requested) or the attempt counter is spent — rather than a plain wrong code. The
- * server answers all of these with 401; the message discriminates. On a match the screen swaps its
- * primary action to "Send a fresh code" (a resend mints a new code AND resets attempts server-side), so
- * the user is never dead-ended. A plain "Invalid code" (still has attempts) returns false — they just
- * retype.
- *
- * Matches the API's exact messages (apps/api/src/auth/auth.service.ts): "Code expired or never
- * requested" and "Too many attempts — request a new code"; the extra tokens are defensive.
+ * Whether a verify failure needs a fresh code (expired or locked) rather than a retype. On a match the
+ * screen swaps its primary action to "Send a new code" (a resend mints a new code AND resets attempts
+ * server-side), so the user is never dead-ended. A plain wrong code (still has attempts) returns false.
  */
 export function isOtpExpiredOrLocked(err: OtpError | null | undefined): boolean {
-  if (!err || err.status !== 401) return false;
-  const m = (err.message ?? "").toLowerCase();
-  return (
-    m.includes("expired") ||
-    m.includes("never requested") ||
-    m.includes("too many") ||
-    m.includes("request a new code") ||
-    m.includes("locked")
-  );
+  const f = otpFailure(err);
+  return f === "expired" || f === "locked";
+}
+
+/** A rate-limit wait as the user reads it: whole minutes under an hour, whole hours above. */
+export function formatWait(seconds: number): string {
+  const minutes = Math.max(1, Math.ceil(seconds / 60));
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.ceil(minutes / 60)} h`;
+}
+
+/**
+ * The line a failed OTP send or verify shows (as a toast). A rate limit names the wait when the API says
+ * how long (`retryAfter`). That line is undrawn copy: the handoff draws no rate-limit state (ledger
+ * D-55 §4). Anything else shows the API's own message, or `fallback` for an error that isn't an
+ * ApiError.
+ */
+export function otpErrorMessage(err: unknown, fallback: string): string {
+  const e = err as OtpError | null | undefined;
+  if (e && e.status === 429 && typeof e.retryAfter === "number" && e.retryAfter > 0) {
+    return `Too many tries. Try again in ${formatWait(e.retryAfter)}.`;
+  }
+  if (e && typeof e.status === "number" && typeof e.message === "string" && e.message.length > 0) return e.message;
+  return fallback;
 }
