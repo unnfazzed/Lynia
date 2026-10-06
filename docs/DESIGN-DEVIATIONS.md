@@ -4628,6 +4628,52 @@ wires); `app/(tabs)/home.tsx` → phases 2+3 (phase 4 adds the one-line U4a moun
   `rider.plate_verify`; the admin rider list / detail expose it. `PlateStatus` enum in `@lynia/shared`.
 - **Language and Privacy** (owner #1): the round `BackHeader` + `LargeTitle` replace `AppBar`; content unchanged.
 
+**Phases 2 + 3 (customer permissions PC1–PC11, rider permission flow P1–P16, Settings — 2026-10-06).**
+
+- **Permission state** (`apps/mobile/src/permissions/`): `location.ts` / `notifications.ts` read and ask (README §3:
+  `canAskAgain`, `android.accuracy === 'coarse'`, `hasServicesEnabledAsync`, `enableNetworkProviderAsync`, the
+  `job-alerts` channel via `getNotificationChannelAsync`), pure `classifyLocation` / `classifyNotif` into README §4's
+  states; `state.ts` `usePermissions()` re-reads on mount and on every AppState `active`; `store.ts` holds the
+  per-install `riderPermFlowDone` and `custNotifAsks` (cap 3, **owner to confirm**). Nothing in the app asks without
+  an explainer any more: Home's deliver-to (`useHomeLocation`) and the rider board only READ the permission, so no OS
+  dialog opens at mount or over the splash (S-6 is now moot).
+- **PC1–PC7** (`src/logic/location-ask.ts` + `src/ui/firstrun/CustomerLocationSheet.tsx`, wired by
+  `src/ui/home/LocationAsk.tsx`): one state machine behind H6 "Use my location" and H5 "Use my current location" — PC1
+  explainer sheet (mint hero 150) → the Android dialog → precise: the fix fills the header and PC7's bottom toast says
+  "Delivering to <resolved address>"; approximate → PC3 (hero 130, re-asks for precise; keeping approximate uses the
+  approximate fix); denied once → PC4 (title + the address search); blocked → PC5 (danger title + the three phone
+  settings steps, re-read on return); GPS off → PC6 (neutral hero, `enableNetworkProviderAsync`). Also mounted on the
+  Restaurants and Shops/Pharmacy lists, which open the same H5 sheet.
+- **PC8–PC10** (`app/order-updates.tsx`, `src/push/ask-in-context.ts`): after Send and after Review & place, the order
+  route is `routeAfterOrderPlaced()` — PC8 first while notifications are undetermined and PC8 has shown < 3 times on
+  this install; "Turn on updates" → POST_NOTIFICATIONS (allowed → push registration kicked, on to the order; declined →
+  PC10 "Updates are off" → "Back to my order"); "Not now" → the order.
+- **P1–P16** (`app/permissions.tsx` rebuilt, `src/logic/rider-perm-flow.ts`): `?from=flow` walks location (P1 → P3 +
+  the P8 toast "Location on", or P4 / P5 / P6 / P7) → notifications (P9 with the drawn offer card and "Play a test
+  ping" → P13, or P11 / P12) → P13 "Go online". Every "Not now" moves on; P6/P11/P12 re-read on return from settings
+  ("I've turned it on" shakes the steps card while still off). Owner #5: R3's "Go online" calls
+  `startRiderPermFlow(router, goOnline)` — straight online when everything is granted (or the flow already ran on this
+  phone), else the flow, whose P13 runs `goOnline`. The sign-in priming is gone (`signedInDestination` → `/rider`), and
+  a legacy `/permissions?next=/rider` forwards to the board.
+- **P14** (rider board): J8 (`RiderNotifOffRow`, the danger box; "Turn on" → P9) replaces the old notif row; G8
+  (`RiderLocEmpty`, the Empty States v2 mark; "Turn on" → P1, or P6 when blocked) replaces the G-gps wall when the
+  permission is missing (J8 above it when both are). A granted permission with no fix keeps the Rider v2 GPS wall.
+- **Settings** (`app/settings/index.tsx`, owner #1): the round `BackHeader` + `LargeTitle`; PC11's danger card while
+  order updates are off ("Turn on" → PC8 again from Settings, or phone settings when blocked); YOU (Personal details
+  first with `PD.row/rowSub`, the name/phone row, Bike & documents with "N to add" from `bikeDocsProgress`, Language,
+  Privacy, Terms, Payment); ALERTS with toggles that mirror the phone (Job alerts, Location, Order updates — an off
+  toggle opens P9 / P1 / PC8, an on toggle opens phone settings), P15's danger Location row ("Off · You can't receive
+  jobs", the row reopens P1/P6), Battery saver → P16; Test ping / Test alarm under ALERTS (job-alert channel); RIDER
+  (Navigation app, Top-up number); Sign out, Delete account last. Strings the drawing carries but `copy.ts` doesn't are
+  `src/ui/settings/copy.ts` (`ST`), verbatim from `fr-states.js`.
+- **NEEDS NATIVE:** the foreground-service notification already read `RP.fgsTitle/fgsBody`; it now imports them from the
+  copy (a JS string). The location permission rationale in `app.config.ts` is now `RP.manifestRationale` — native, it
+  reaches devices only with the next store build.
+- **Parity:** `LJ.perm_loc` / `LJ.perm_notif` left `app-targets.mjs` (fixtures `auth_perms_*` and their expected JSON
+  deleted) and are PENDING with a SUPERSEDED reason in `parity-status.mjs`, as are `RJ.perm_loc` / `RJ.perm_notif`;
+  the codegen views `permissions-location/-notifications.view.tsx` were deleted and both states are SUPERSEDED
+  deferrals (baseline 76 → 78); the rendered-conformance floor drops by those two.
+
 ### 4 · Still different from the handoff
 
 _Filled in phase by phase._
@@ -4724,3 +4770,35 @@ _Filled in phase by phase._
   in your notifications." (or "You can't take jobs right now. The details are in your notifications."). Undrawn
   sentence, owner-approved 2026-10-06.
 
+**Phases 2 + 3 (PC / P / Settings):**
+
+- **PC4's field** is the shipped address search (`AddressSearch`, its H5 `sheet` variant: borderless surface fill,
+  the shipped suggestions) rather than the drawn bordered/focused field with two pin rows; it is focused on open.
+  PC3's "keeping the approximate centre for search bias" is not built (the search takes no bias point).
+- **PC7's toast** is `PC.grantedToast` with its sample address ("12 Samora Machel Ave", data, not copy) swapped for the
+  resolved one. When a grant gets no fix (indoors, a cold GPS), the H5 search opens instead of a toast (undrawn).
+- **PC8 from Settings (PC11 "Turn on").** README says "open PC8 again": it draws no "Order placed" pill there (nothing
+  was just placed) and a decline returns to Settings instead of PC10, whose copy ("Back to my order") is about an order.
+  A Settings visit doesn't count toward the 3-per-install cap. When the OS won't ask again, "Turn on" opens the phone's
+  settings — README's "PC5-style steps using the notification wording" has no customer wording in `copy.ts`.
+- **PC8's sample code** "Your delivery code is 4821" is shipped verbatim although every real code is 6 digits shown
+  3+3 (D-59) — flagged for the owner / designer.
+- **P9's offer card** is an illustration: its "0:58" is a static literal, and "Play a test ping" (like Settings' test
+  buttons) posts a local notification on the `job-alerts` channel — silent until notifications are allowed.
+- **`job-alerts` channel — NEEDS BACKEND.** The app now creates a `job-alerts` channel (importance MAX, sound) and P12
+  reads it, but the API sends no Android `channelId`, so job pushes still post on the `default` channel. P12 therefore
+  treats the rider as muted when EITHER channel is below HIGH and opens that channel's page. Sending rider job pushes
+  with `android.notification.channelId = "job-alerts"` is a server change (`apps/api/src/adapters/push/fcm.push.ts`).
+- **P16 — NEEDS NATIVE for the direct ask.** `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` needs the
+  `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` manifest permission, which Play restricts; P16's CTA opens the phone's battery
+  optimisation list (`IGNORE_BATTERY_OPTIMIZATION_SETTINGS`, no permission) and returns to Settings when the rider comes
+  back. Whether the app is exempt can't be read from JS, so the Settings row stays a plain chevron row.
+- **P15's "Tap Location to reopen P1."** is a design annotation, not rendered.
+- **Settings' kept rows (owner #1)** sit where they did: Privacy, Terms and Payment in YOU after Language; Test ping /
+  Test alarm as white soft pills under ALERTS (while job alerts are on); Navigation app and Top-up number in a RIDER
+  card; Delete account last, its title in danger ink. The shipped name / phone row stays, second in YOU (an owner
+  question: D1 doesn't draw it). The 44×26 toggle keeps its drawn size; its hit area reaches 44 by slop.
+- **Bare asks still outside an explainer** (BRIEF 1, not drawn by the handoff): the Send pickup auto-locate
+  (`use-pickup-autolocate.ts`), the map picker's locate button (`MapPicker.tsx`), the keyless geocoder
+  (`geocode.ts`), "Notify me" for a Soon service (`service-interest.ts`) and the rider's job-start stream
+  (`use-rider-location.ts`, normally granted by P1 by then). Left as they were — an owner question.
