@@ -53,7 +53,7 @@ export function startBootstrap(qc: QueryClient, roleHint: string | undefined): P
       queryKey: ["activeJob"],
       queryFn: async () => {
         const b = await answer;
-        return b && b.me.role === "rider" ? b.activeOrder : getActiveOrder();
+        return b && b.me.role === "rider" ? (b.activeOrder ?? null) : getActiveOrder();
       },
       retry,
     });
