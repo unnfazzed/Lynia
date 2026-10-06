@@ -14,6 +14,7 @@ import { getFoodDispatchOffer } from "../../../src/api/food-rider";
 import { getDemandZones } from "../../../src/api/rider-v2";
 import { noteKycLaunched, retryKyc, sendHeartbeat, setOnline } from "../../../src/api/riders";
 import { loadAcknowledgedHandbacks } from "../../../src/auth/session";
+import { useBootPhase } from "../../../src/boot/boot-phase";
 import { usePrewarmRoutes, type PrewarmRoute } from "../../../src/boot/prewarm-routes";
 import { supportWhatsAppUrl } from "../../../src/config";
 import { KycCheckHost } from "../../../src/kyc/KycCheckHost";
@@ -112,8 +113,24 @@ export default function RiderHome(): React.ReactElement {
   const [withdrawing, setWithdrawing] = useState<ReadonlySet<string>>(new Set());
 
   // ── Location ─────────────────────────────────────────────────────────────────────────────────────
+  // No OS permission prompt over the cold-start splash (S-6, as Home's useHomeLocation): while the boot
+  // runs, an already-granted permission still reads the position, but the ASK waits for the boot to end.
+  const { booting } = useBootPhase();
+  const bootingRef = useRef(booting);
+  bootingRef.current = booting;
+  const askAfterBoot = useRef(false);
   const requestLocation = useCallback(async (): Promise<void> => {
-    const { status } = await Location.requestForegroundPermissionsAsync();
+    let status: string;
+    if (bootingRef.current) {
+      const current = await Location.getForegroundPermissionsAsync().catch(() => null);
+      if (current?.status !== "granted") {
+        askAfterBoot.current = true;
+        return;
+      }
+      status = current.status;
+    } else {
+      status = (await Location.requestForegroundPermissionsAsync()).status;
+    }
     if (status !== "granted") {
       setLocDenied(true);
       return;
@@ -142,6 +159,12 @@ export default function RiderHome(): React.ReactElement {
       void requestLocation();
     }, [requestLocation]),
   );
+  // The ask a boot deferred runs the moment the splash hands off.
+  useEffect(() => {
+    if (booting || !askAfterBoot.current) return;
+    askAfterBoot.current = false;
+    void requestLocation();
+  }, [booting, requestLocation]);
   const locRef = useRef(loc);
   useEffect(() => {
     locRef.current = loc;

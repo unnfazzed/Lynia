@@ -32,10 +32,20 @@ jest.mock("expo-router", () => ({
 // Location behaviour is driven by these two switches rather than per-test `jest.spyOn`: a spy on a
 // module-factory mock did NOT reliably restore between tests, and a leaked "permission denied" made
 // every later test think the rider was gated. Reset in afterEach, set by the tests that need them.
-let mockLocPermission: "granted" | "denied" = "granted";
+let mockLocPermission: "granted" | "denied" | "undetermined" = "granted";
 let mockLocFixFails = false;
+/** OS permission prompts shown, and whether the cold-start splash is still up (S-6). */
+let mockPermissionAsks = 0;
+let mockBooting = false;
+jest.mock("../../../../src/boot/boot-phase", () => {
+  const actual = jest.requireActual("../../../../src/boot/boot-phase");
+  return { ...actual, useBootPhase: () => ({ ...actual.useBootPhase(), booting: mockBooting }) };
+});
 jest.mock("expo-location", () => ({
-  requestForegroundPermissionsAsync: async () => ({ status: mockLocPermission }),
+  requestForegroundPermissionsAsync: async () => {
+    mockPermissionAsks += 1;
+    return { status: mockLocPermission };
+  },
   getForegroundPermissionsAsync: async () => ({
     status: mockLocPermission,
     granted: mockLocPermission === "granted",
@@ -239,6 +249,8 @@ afterEach(() => {
   jest.clearAllMocks();
   mockLocPermission = "granted";
   mockLocFixFails = false;
+  mockPermissionAsks = 0;
+  mockBooting = false;
   mockFoodOn = false;
   mockGetDemandZones.mockImplementation(async () => []);
   mockGetFoodOffer.mockImplementation(async () => null);
@@ -1652,6 +1664,56 @@ describe("rider board — startup review 2026-10-06", () => {
     expect(mockGetMe).toHaveBeenCalled();
     expect(treeText(activeTree)).toContain("We still couldn't verify your ID");
     expect(mockSetOnline).not.toHaveBeenCalled();
+  });
+
+  it("S-6: no OS location prompt over the cold-start splash — the ask waits for the boot to end", async () => {
+    mockLocPermission = "undetermined";
+    mockBooting = true;
+    mockPermissionAsks = 0;
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(["me"], meFixture());
+    // A fresh element per render — re-rendering the SAME element would bail out and never re-run the hook.
+    const el = () => (
+      <SafeAreaProvider initialMetrics={TEST_METRICS}>
+        <QueryClientProvider client={qc}>
+          <RiderHome />
+        </QueryClientProvider>
+      </SafeAreaProvider>
+    );
+    act(() => {
+      activeTree = renderer.create(el());
+    });
+    await settle();
+    await settle();
+    expect(mockPermissionAsks).toBe(0);
+    expect(mockSetOnline).not.toHaveBeenCalled();
+    // The splash hands off: the deferred ask runs now (any re-render carries the new boot phase — here a
+    // fresh `me`).
+    mockBooting = false;
+    act(() => {
+      qc.setQueryData(["me"], { ...meFixture(), firstName: "Tapiwa2" });
+    });
+    await settle();
+    await settle();
+    expect(mockPermissionAsks).toBeGreaterThanOrEqual(1);
+  });
+
+  it("S-6: an already-granted permission still reads the position during the boot", async () => {
+    mockLocPermission = "granted";
+    mockBooting = true;
+    mockPermissionAsks = 0;
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen((qc) => qc.setQueryData(["me"], meFixture()));
+    await settle();
+    await settle();
+    expect(mockPermissionAsks).toBe(0);
+    // The fix was read without an ask, so the shift starts with a position.
+    expect(mockSetOnline).toHaveBeenCalledWith(true, { lat: -17.83, lng: 31.05 });
   });
 
   it("§5: no active-job read behind a KYC wall", async () => {
