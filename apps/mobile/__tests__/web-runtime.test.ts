@@ -43,6 +43,9 @@ describe("web-runtime (customer web build resolution)", () => {
     const { context } = contextFrom(appFile);
     expect(resolve(context, "expo-secure-store", "web")).toEqual({ type: "sourceFile", filePath: shim("secure-store-web.js") });
     expect(resolve(context, "react-native-maps", "web")).toEqual({ type: "sourceFile", filePath: shim("react-native-maps-web.js") });
+    expect(resolve(context, "expo-location", "web")).toEqual({ type: "sourceFile", filePath: shim("expo-location-web.js") });
+    // The location shim's own import must reach the real package, or it would import itself.
+    expect(resolve(contextFrom(shim("expo-location-web.js")).context, "expo-location", "web")).toBeNull();
     expect(resolve(context, "react", "web")).toBeNull();
     expect(resolve(context, "expo-router", "web")).toBeNull();
   });
@@ -84,8 +87,20 @@ describe("secure-store-web (browser storage for sign-in)", () => {
   });
 });
 
-describe("react-native-maps-web (phase 1 placeholder)", () => {
+describe("react-native-maps-web (Google map, phase 2)", () => {
   it("exports what the screens import", () => {
     for (const name of ["default", "Marker", "MarkerAnimated", "Polyline", "Circle", "AnimatedRegion"]) expect(maps[name]).toBeDefined();
+  });
+
+  it("glides an AnimatedRegion and tells its marker every step", () => {
+    const region = new maps.AnimatedRegion({ latitude: -17.8, longitude: 31 });
+    const seen: { latitude: number; longitude: number }[] = [];
+    region.addListener((c: { latitude: number; longitude: number }) => seen.push(c));
+    region.setValue({ latitude: -17.81, longitude: 31.01 });
+    expect(seen.at(-1)).toEqual({ latitude: -17.81, longitude: 31.01 });
+    const done = jest.fn();
+    region.timing({ latitude: -17.82, longitude: 31.02, duration: 0 }).start(done);
+    expect(seen.at(-1)).toEqual({ latitude: -17.82, longitude: 31.02 });
+    expect(done).toHaveBeenCalledWith({ finished: true });
   });
 });

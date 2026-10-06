@@ -1,6 +1,6 @@
 # Customer web app for iPhone users — plan
 
-**Status:** APPROVED (2026-10-06). The owner decided W1–W5 in §2 the same day. **P1 built** (2026-10-06); P2 is next.
+**Status:** APPROVED (2026-10-06). The owner decided W1–W5 in §2 the same day. **P1 and P2 built** (2026-10-06); P3 is next.
 
 **Why.** The iPhone app is still blocked on the Apple account (`docs/APP-STORE-SUBMISSION.md`), so iPhone users
 can't order today. A mobile-optimised web build of the **customer** app lets them order from Safari now, and it
@@ -97,3 +97,20 @@ Rough size: P1 and P2 are the bulk (about a day each); P3 and P4 are small.
   force-update screen and the notifications primer step check it (ledger D-81).
 - **Checked in Chromium** at 360×720 and 320×640: the app starts on C1 with no rider link. API calls are refused by
   CORS until P3.
+
+## 6. How P2 was built (2026-10-06)
+
+- **Maps:** `apps/mobile/metro-shims/react-native-maps-web.js` replaces react-native-maps on web with Google's Maps
+  JavaScript API, speaking the subset the customer screens use (MapView with its camera ref methods, Marker /
+  MarkerAnimated with the screens' own pin views, draggable pins, Polyline incl. dashes, Circle, AnimatedRegion).
+  No screen changes. Camera and colour maths: `src/web/map-geometry.ts` (unit-tested).
+- **Pin → address:** `metro-shims/expo-location-web.js` is the real expo-location with `reverseGeocodeAsync` /
+  `geocodeAsync` answered by Google's Geocoding API (`src/web/geocode-google.ts`, unit-tested), so the seven
+  screens that name a pin keep working unchanged.
+- **Key:** one browser key for maps, Places and Geocoding: `EXPO_PUBLIC_GOOGLE_PLACES_KEY` at export time, from the
+  repo variable **`CUSTOMER_WEB_GOOGLE_KEY`** (the "LyniaGo Customer Web" key, created by the owner 2026-10-06,
+  restricted to `https://app.lyniago.com/*`). Wired into the deploy in P4.
+- **No key, or a refused key:** the map is a plain grey panel (Google's own error panel is hidden) and no screen waits on it.
+- **Checked in Chromium** at 360×720: the Send screen mounts the Google map in place; with a stand-in Google API, two
+  taps place the Pickup and Drop-off pins, draw the route, frame the camera and enable Next.
+- Android fingerprint unchanged (`e09dca91…`).
