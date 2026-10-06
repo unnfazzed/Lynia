@@ -10,12 +10,14 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 360, height: 720 } };
 
 let mockLocalSearchParams: { phone: string; deliveryChannel?: string; intent?: string; devCode?: string } = { phone: "+263772451180" };
-const mockReplace = jest.fn();
+const navCalls: string[] = [];
+const mockReplace = jest.fn((href: unknown) => navCalls.push(`replace:${typeof href === "string" ? href : (href as { pathname: string }).pathname}`));
+const mockDismissAll = jest.fn(() => navCalls.push("dismissAll"));
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ back: jest.fn(), replace: mockReplace, push: jest.fn(), canGoBack: () => true }),
+  useRouter: () => ({ back: jest.fn(), replace: mockReplace, dismissAll: mockDismissAll, push: jest.fn(), canGoBack: () => true }),
   useLocalSearchParams: () => mockLocalSearchParams,
 }));
-const mockSignIn = jest.fn(async () => undefined);
+const mockSignIn = jest.fn(async (_s: unknown) => undefined);
 jest.mock("../../src/auth/auth-context", () => ({ useAuth: () => ({ signIn: mockSignIn }) }));
 const mockVerifyOtp = jest.fn();
 jest.mock("../../src/api/auth", () => ({
@@ -30,6 +32,7 @@ jest.mock("../../src/auth/session", () => ({
 }));
 
 import { ApiError } from "../../src/api/client";
+import { ToastProvider } from "../../src/ui";
 import VerifyScreen, { type VerifyScreenProps } from "../verify";
 
 let live: renderer.ReactTestRenderer | null = null;
@@ -37,7 +40,9 @@ function mount(props: VerifyScreenProps = {}): renderer.ReactTestRenderer {
   act(() => {
     live = renderer.create(
       <SafeAreaProvider initialMetrics={TEST_METRICS}>
-        <VerifyScreen {...props} />
+        <ToastProvider>
+          <VerifyScreen {...props} />
+        </ToastProvider>
       </SafeAreaProvider>,
     );
   });
@@ -56,6 +61,7 @@ async function type(t: renderer.ReactTestRenderer, value: string): Promise<void>
 beforeEach(() => {
   mockLocalSearchParams = { phone: "+263772451180", deliveryChannel: "whatsapp" };
   mockRole = null;
+  navCalls.length = 0;
 });
 afterEach(() => {
   if (live) act(() => live!.unmount());
@@ -119,7 +125,9 @@ describe("C4 · Code — the sixth digit verifies", () => {
     mockVerifyOtp.mockResolvedValue({ ...ok, needsProfile: true });
     const t = mount({ initialCooldownS: 30 });
     await type(t, "418210");
-    expect(mockReplace).toHaveBeenCalledWith({ pathname: "/profile/setup", params: { phone: "+263772451180", deliveryChannel: "whatsapp", intent: "rider" } });
+    expect(mockReplace).toHaveBeenCalledWith({ pathname: "/profile/setup", params: { phone: "+263772451180", intent: "rider" } });
+    // C-4: the intent rides with the session too, so an app killed on C5 still finishes as a rider.
+    expect(mockSignIn).toHaveBeenCalledWith(expect.objectContaining({ needsProfile: true, signupIntent: "rider" }));
   });
 
   it("a wrong code shows the danger line and is not resubmitted in a loop", async () => {
@@ -135,5 +143,137 @@ describe("C4 · Code — the sixth digit verifies", () => {
     const t = mount({ initialCooldownS: 30 });
     await type(t, "000000");
     expect(text(t)).toContain("Send a new code");
+  });
+});
+
+const okRes = { accessToken: "a", refreshToken: "r", expiresIn: 900, profileId: "p", role: "customer", needsProfile: false };
+
+// C-1 (start-up review 2026-10-06): a bare replace left the phone screen under Home.
+describe("C4 · signing in clears the stack", () => {
+  it("dismisses everything, then lands on Home", async () => {
+    mockVerifyOtp.mockResolvedValue(okRes);
+    const t = mount({ initialCooldownS: 30 });
+    await type(t, "418210");
+    expect(navCalls).toEqual(["dismissAll", "replace:/home"]);
+  });
+
+  it("a new account: dismisses everything, then lands on C5", async () => {
+    mockVerifyOtp.mockResolvedValue({ ...okRes, needsProfile: true });
+    const t = mount({ initialCooldownS: 30 });
+    await type(t, "418210");
+    expect(navCalls).toEqual(["dismissAll", "replace:/profile/setup"]);
+    expect(mockSignIn).toHaveBeenCalledWith(expect.not.objectContaining({ signupIntent: expect.anything() }));
+  });
+});
+
+// C-3: the saved role is wiped by sign-out; a returning rider must not land in the customer app.
+describe("C4 · a returning rider with no saved role", () => {
+  it("follows the server's role into the rider app", async () => {
+    mockVerifyOtp.mockResolvedValue({ ...okRes, role: "rider" });
+    const t = mount({ initialCooldownS: 30 });
+    await type(t, "418210");
+    expect(mockSaveRole).toHaveBeenCalledWith("rider");
+    expect(mockReplace).toHaveBeenCalledWith("/permissions?next=/rider");
+  });
+
+  it("a saved customer role still wins", async () => {
+    mockRole = "customer";
+    mockVerifyOtp.mockResolvedValue({ ...okRes, role: "rider" });
+    const t = mount({ initialCooldownS: 30 });
+    await type(t, "418210");
+    expect(mockSaveRole).not.toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledWith("/home");
+  });
+});
+
+// C-5: the screen could get stuck with six full boxes and nothing happening.
+describe("C4 · submitting the latest code", () => {
+  it("after a non-answer, retyping the same code sends it again", async () => {
+    mockVerifyOtp.mockRejectedValueOnce(new ApiError(0, "The network is slow — check your connection and try again.")).mockResolvedValueOnce(okRes);
+    const t = mount({ initialCooldownS: 30 });
+    await type(t, "418210");
+    expect(mockVerifyOtp).toHaveBeenCalledTimes(1);
+    expect(text(t)).toContain("The network is slow");
+    expect(text(t)).not.toContain("isn’t right");
+    // No loop: nothing goes again until the user edits.
+    expect(mockVerifyOtp).toHaveBeenCalledTimes(1);
+    await type(t, "41821");
+    await type(t, "418210");
+    expect(mockVerifyOtp).toHaveBeenCalledTimes(2);
+    expect(mockReplace).toHaveBeenCalledWith("/home");
+  });
+
+  it("after a definitive wrong code, retyping it sends nothing and shows the line again", async () => {
+    mockVerifyOtp.mockRejectedValue(new ApiError(401, "Invalid code", "otp_invalid"));
+    const t = mount({ initialCooldownS: 30 });
+    await type(t, "000000");
+    await type(t, "00000");
+    expect(text(t)).not.toContain("isn’t right");
+    await type(t, "000000");
+    expect(mockVerifyOtp).toHaveBeenCalledTimes(1);
+    expect(text(t)).toContain("isn’t right. Check the message and try again.");
+  });
+
+  it("a code corrected while a request is in flight is sent when it ends", async () => {
+    let fail!: (e: unknown) => void;
+    mockVerifyOtp.mockImplementationOnce(() => new Promise((_r, rej) => (fail = rej))).mockResolvedValueOnce(okRes);
+    const t = mount({ initialCooldownS: 30 });
+    await type(t, "000000");
+    await type(t, "418210"); // typed (or pasted) while the first is still out
+    expect(mockVerifyOtp).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      fail(new ApiError(401, "Invalid code", "otp_invalid"));
+      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(mockVerifyOtp).toHaveBeenCalledTimes(2);
+    expect(mockVerifyOtp).toHaveBeenLastCalledWith("+263772451180", "418210");
+  });
+});
+
+// C-9: the code decides, and a 400 is never "wrong code".
+describe("C4 · error codes", () => {
+  it("otp_expired switches to 'Send a new code' whatever the message", async () => {
+    mockVerifyOtp.mockRejectedValue(new ApiError(401, "Invalid code", "otp_expired"));
+    const t = mount({ initialCooldownS: 30 });
+    await type(t, "000000");
+    expect(text(t)).toContain("Send a new code");
+  });
+
+  it("a 400 shows the server's message, not the wrong-code line", async () => {
+    mockVerifyOtp.mockRejectedValue(new ApiError(400, "A device id is required to create an account."));
+    const t = mount({ initialCooldownS: 30 });
+    await type(t, "418210");
+    expect(text(t)).toContain("A device id is required to create an account.");
+    expect(text(t)).not.toContain("isn’t right");
+  });
+
+  it("the device sign-up cap names the wait", async () => {
+    mockVerifyOtp.mockRejectedValue(new ApiError(429, "Too many requests — try again later", "device_signup_cap", 7200));
+    const t = mount({ initialCooldownS: 30 });
+    await type(t, "418210");
+    expect(text(t)).toContain("Too many tries. Try again in 2 h.");
+    expect(text(t)).not.toContain("isn’t right");
+  });
+});
+
+// C-7: the code entry has to be reachable by TalkBack / VoiceOver.
+describe("C4 · accessibility", () => {
+  const boxes = (t: renderer.ReactTestRenderer) =>
+    t.root.find((n) => typeof n.props?.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("6-digit code,") && typeof n.props?.onPress === "function");
+
+  it("the six boxes are one element that says how many digits are in", async () => {
+    const t = mount({ initialCooldownS: 30 });
+    expect(boxes(t).props.accessibilityLabel).toBe("6-digit code, 0 digits entered");
+    expect(boxes(t).props.accessibilityElementsHidden).toBeFalsy();
+    expect(boxes(t).props.importantForAccessibility).not.toBe("no-hide-descendants");
+    await type(t, "418");
+    expect(boxes(t).props.accessibilityLabel).toBe("6-digit code, 3 digits entered");
+  });
+
+  it("the hidden input is not fully transparent (Android skips opacity 0)", () => {
+    const t = mount({ initialCooldownS: 30 });
+    const input = t.root.find((n) => n.props?.accessibilityLabel === "6-digit code" && typeof n.props?.onChangeText === "function");
+    expect((input.props.style as { opacity: number }).opacity).toBeGreaterThan(0);
   });
 });
