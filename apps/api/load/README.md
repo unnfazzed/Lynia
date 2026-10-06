@@ -3,7 +3,7 @@
 The performance-track (LR11/LR12) scenarios. Standalone [k6](https://k6.io) JavaScript — **not** part
 of the TS build. Full plan + the launch envelope: [`docs/LOAD-MODEL.md`](../../../docs/LOAD-MODEL.md).
 
-> **Target a STAGING deploy, never the live pilot** (`lyniago.lyniafinance.com`). Load-testing prod
+> **Target a STAGING deploy, never the live pilot** (`api.lyniago.com`). Load-testing prod
 > would DoS real users. Deploy staging in **QA mode** so the harness can sign in without vendors:
 > `OTP_CHANNEL=console`, `OTP_TEST_PHONES=<the numbers below>`, `KYC_PROVIDER=stub`.
 

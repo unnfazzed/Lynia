@@ -454,7 +454,7 @@ a metadata-only rejection is fixed in App Store Connect without a new build.
   repo can't show whether the GitHub Variable has since been flipped.
 - **OTP channel.** Production is WhatsApp-only (`bird-verify.ts:12-22`); PSS §4.4 still says SMS.
 - **Support mailbox.** `hello@lyniago.com` is listed everywhere (since 2026-09-28; it replaced
-  `support@lyniafinance.com`), and `lyniago.com` had no MX records that day, so mail to it bounces until
+  the old support address), and `lyniago.com` had no MX records that day, so mail to it bounces until
   a mailbox or forwarding is set up.
 - **Deletion copy vs behaviour.** See D9.
 

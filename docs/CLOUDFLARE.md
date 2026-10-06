@@ -40,9 +40,9 @@ pointing at the single shared load-balancer IP (`load_balancer_ip` output):
 
 | Hostname (var)                          | When            |
 | --------------------------------------- | --------------- |
-| `lyniago.lyniafinance.com` (`api_domain`)        | always          |
-| `staging.lyniafinance.com` (`staging_api_domain`) | when `staging_enabled` |
-| `lyniagoadmin.lyniafinance.com` (`admin_domain`)  | when `admin_enabled`   |
+| `api.lyniago.com` (`api_domain`)        | always          |
+| `<staging-host>` (`staging_api_domain`) | when `staging_enabled` |
+| `admin.lyniago.com` (`admin_domain`)  | when `admin_enabled`   |
 
 Records are **DNS-only (grey-cloud, `proxied = false`)** on purpose: proxying
 would break Google-managed TLS issuance at the load balancer, the mobile app's
@@ -57,7 +57,7 @@ DNS over to Terraform, set the following in a VCS-ignored `terraform.tfvars`
 
 ```hcl
 cloudflare_dns_enabled = true
-cloudflare_zone_id     = "<lyniafinance.com zone id>"
+cloudflare_zone_id     = "<lyniago.com zone id>"
 cloudflare_api_token   = "<token scoped to Zone:DNS:Edit>"
 ```
 

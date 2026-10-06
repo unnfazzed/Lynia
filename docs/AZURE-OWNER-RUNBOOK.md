@@ -52,7 +52,7 @@ reach it until the DNS step on cutover day.
 
 0. Confirm the `KYC_MODE=manual` Variable is set (see **Rider re-approval** below).
    Confirm the app update that points at `api.lyniago.com` has reached testers: the installed builds
-   have `lyniago.lyniafinance.com` built in, so they cannot find the new servers until they update.
+   have the old API host built in, so they cannot find the new servers until they update.
 1. Claude deploys production (you approve nothing extra; production deploys are `main`-only).
 2. **DNS + certificate: one click per host.** GitHub → Actions → **DNS + bind (Cloudflare → Azure)** →
    host `api` (later `admin`, `merchant`). It reads the target from Azure, writes the CNAME (grey cloud,

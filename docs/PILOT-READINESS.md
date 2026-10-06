@@ -21,7 +21,7 @@ GCP provisioning — is now **done**, and the API is **live and CI-deployed**:
   Cloud SQL (PostGIS) + Memorystore (Redis) + Cloud Storage + Secret Manager in `africa-south1`. CI auth
   is **keyless** via Workload Identity Federation (no SA key).
 - **API live behind an external HTTPS load balancer** (global ALB + managed cert) at a custom domain,
-  **`https://lyniago.lyniafinance.com`** → `{"status":"ok","db":true,"redis":true}`. Cloud Run ingress is
+  **`https://api.lyniago.com`** → `{"status":"ok","db":true,"redis":true}`. Cloud Run ingress is
   **locked to the LB** (`internal-and-cloud-load-balancing`); the WS backend timeout is raised to 3600s so
   tracking sockets survive a full delivery.
 - **`/ship` happened** — `.github/workflows/release.yml` builds the API image → Artifact Registry, runs
@@ -206,7 +206,7 @@ wiring, not code:
       mint a device token, so live delivery is only testable on a real build.
 - [ ] **Production OTP** — WhatsApp BSP onboarding + SMS gateway behind the `otp-sender.ts` seam (console
       is dev-only today). **Founder action** — set up a WhatsApp BSP account, then `OTP_CHANNEL=whatsapp`.
-- [x] **HTTPS for device builds** — external HTTPS load balancer + managed cert at `lyniago.lyniafinance.com`;
+- [x] **HTTPS for device builds** — external HTTPS load balancer + managed cert at `api.lyniago.com`;
       mobile cut over to HTTPS/WSS.
 - [x] **OpenTelemetry exporter** (A5) — NodeSDK + OTLP/HTTP, no-op until `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
       _Remaining:_ point it at a collector (deferred by CEO review — pilot volume doesn't need it yet).
@@ -222,7 +222,7 @@ wiring, not code:
 1. ✅ **Revenue model (§6) — decided** (rider commission, 0% for ~6–8 months, infra later). The economics
    story now exists; no infra to build for the pilot.
 2. ✅ **Cloud picked + provisioned + deployed — Google Cloud (chosen 06-27, live 06-29).** The API is up at
-   `https://lyniago.lyniafinance.com` and CI-deployed; ship, storage, OTEL, and push adapters are all wired.
+   `https://api.lyniago.com` and CI-deployed; ship, storage, OTEL, and push adapters are all wired.
    *The cheapest high-leverage move — now banked.*
 3. **Founder/vendor wiring (start now, long lead time):** WhatsApp BSP (OTP) + a real Didit ZIM-ID run, in
    parallel — each a *create account → set secret → flip flag* step. The full flow is exercisable today
@@ -315,7 +315,7 @@ reference secrets that don't exist yet.
 the account, list/pick the workflow, register the webhook — and prints the four values to store:
 ```bash
 cd apps/api
-DIDIT_WEBHOOK_URL=https://lyniago.lyniafinance.com/kyc/callback pnpm didit:setup
+DIDIT_WEBHOOK_URL=https://api.lyniago.com/kyc/callback pnpm didit:setup
 # already have a key? DIDIT_API_KEY=… pnpm didit:setup webhook   (just registers the webhook destination)
 ```
 It talks to the live Didit API (creates a real account/destination) and persists nothing — copy the printed
@@ -330,7 +330,7 @@ do step 4. The manual steps are kept below for reference:
    ```bash
    curl -X POST https://verification.didit.me/v3/webhook/destinations/ \
      -H "x-api-key: $DIDIT_API_KEY" -H "Content-Type: application/json" \
-     -d '{"label":"Lynia prod","url":"https://lyniago.lyniafinance.com/kyc/callback",
+     -d '{"label":"Lynia prod","url":"https://api.lyniago.com/kyc/callback",
           "webhook_version":"v3","subscribed_events":["status.updated"]}'
    # → response.secret_shared_key  →  store as DIDIT_WEBHOOK_SECRET
    ```
@@ -384,7 +384,7 @@ _Trigger:_ when trip volume makes traces necessary — point at a collector, or 
 # Vendor-free QA testing (exercise the full flow with no vendors)
 
 Run the **entire** customer + rider journey on real devices against the live API
-(`https://lyniago.lyniafinance.com`) **without** the WhatsApp BSP (OTP) or Didit (KYC) vendors — so vendor
+(`https://api.lyniago.com`) **without** the WhatsApp BSP (OTP) or Didit (KYC) vendors — so vendor
 onboarding never blocks testing. This is a **test configuration of the production deployment**; there are no
 real users yet.
 

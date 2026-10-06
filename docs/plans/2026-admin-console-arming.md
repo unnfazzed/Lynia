@@ -1,4 +1,4 @@
-# Admin Console Arming Runbook — taking `lyniagoadmin.lyniafinance.com` live
+# Admin Console Arming Runbook — taking `admin.lyniago.com` live
 
 The code, container, CI, deploy workflow, and Terraform for the admin console are merged and **dormant**
 (PRs #301 → #303; plan: `docs/plans/2026-admin-console-deployment.md`). This runbook is the ordered
@@ -54,7 +54,7 @@ admin_enabled                 = true
 admin_iap_oauth_client_id     = "XXXX.apps.googleusercontent.com"   # from step 1
 admin_iap_oauth_client_secret = "GOCSPX-..."                        # from step 1
 admin_iap_members             = ["user:you@gmail.com"]   # your operator Google account(s); never allUsers
-# admin_domain defaults to lyniagoadmin.lyniafinance.com
+# admin_domain defaults to admin.lyniago.com
 # CARRY FORWARD any tier already live: the founder terraform.tfvars is gitignored, so a fresh clone
 # defaults every *_enabled flag OFF and would plan to DESTROY what they provisioned. If staging is
 # live, set staging_enabled = true here (the arm-admin.sh script auto-detects this and refuses to
@@ -145,19 +145,19 @@ Most are shared with the API and already set. Add the admin-specific ones from t
 
 1. Set `GCP_ADMIN_ENABLED=true`. The next push touching `apps/admin/**` (or a manual
    **Actions → Deploy Admin Console → Run workflow**) builds, boot-smokes, and deploys `lynia-admin`.
-2. Create the DNS **A record** `lyniagoadmin.lyniafinance.com` → `terraform output -raw load_balancer_ip`
+2. Create the DNS **A record** `admin.lyniago.com` → `terraform output -raw load_balancer_ip`
    (the SAME IP as the API — a second A record).
 3. Wait for the managed cert to go **ACTIVE** (up to ~30 min). The first request while DNS/cert propagate
    may fail — retry.
 
 ## 7. Verify end to end
 
-- **Unauthenticated** hit to `https://lyniagoadmin.lyniafinance.com` is bounced to Google sign-in by IAP;
+- **Unauthenticated** hit to `https://admin.lyniago.com` is bounced to Google sign-in by IAP;
   after a non-operator signs in, IAP returns 403 (not on the access list).
 - **Operator** signs in → the console loads with live data.
 - A **mutating action** (e.g. a KYC decision) is attributed to that operator in the API **audit log**
   (`X-Operator`), and the console header shows "signed in as <operator>".
-- Plain-HTTP `http://lyniagoadmin.lyniafinance.com` 301-redirects to HTTPS.
+- Plain-HTTP `http://admin.lyniago.com` 301-redirects to HTTPS.
 
 ## Rollback
 

@@ -33,7 +33,7 @@ why that matters for recovering the data.
 
 | Surface | State | Why |
 |---|---|---|
-| Android app (0.49.0, versionCode 36, on the "Closed testing" track) | Cannot sign in, order or track | API host `lyniago.lyniafinance.com` points at a dead GCP load balancer |
+| Android app (0.49.0, versionCode 36, on the "Closed testing" track) | Cannot sign in, order or track | The old API host points at a dead GCP load balancer |
 | Push notifications | Dead | The Firebase/FCM project **is** `lynia-500911` |
 | Native map (Android) | Blank | [RUN] maps-key-doctor 36014734161: *"Google has disabled the use of APIs from this API project."* |
 | Address search | Degraded | The Places key is in the same project. The app falls back to the device geocoder (`apps/mobile/src/logic/geocode.ts`) |
@@ -52,7 +52,7 @@ why that matters for recovering the data.
    OIDC with no stored keys.
 3. **Re-home the Google-platform dependencies in a new, clean Google Cloud project.** That means Firebase/FCM,
    the Maps SDK and Places keys, and the Play API service account. Azure cannot replace these (§3.2).
-4. **Keep the hostname `lyniago.lyniafinance.com`.** The installed build is **unpinned** and has **no URL
+4. **Keep the old API hostname** (later superseded: the app moved to `api.lyniago.com`). The installed build is **unpinned** and has **no URL
    override**, verified from EAS ([RUN] eas-build-status 36014729687). So the moment DNS points at Azure,
    testers' existing app can sign in, order, track and upload again, **with no new binary**.
 5. **Ship one new binary** on the closed track to bring push and the map back. Force-update the old build.
@@ -206,7 +206,7 @@ every SKU is offered in South Africa North. Azure Managed Redis is the one to ch
 | D7 | Edge / WAF | **Cutover:** Container Apps ingress + managed cert, **Cloudflare DNS-only**. That keeps the `TRUST_PROXY=1` hop count, and matches today, since the OWASP rules were off. **Launch prep:** Cloudflare proxied + a rate-limit rule (cheapest; then set `TRUST_PROXY=2` or key on `CF-Connecting-IP`), **or** Front Door Standard + WAF custom rules (~$35/mo+) | Front Door Premium for managed OWASP rules: ~$330/mo, oversized for the pilot |
 | D8 | Scheduler | **Container Apps scheduled jobs → curl with an Entra managed-identity token → the existing endpoints.** The guard gains an Entra verifier | BullMQ repeatable jobs: no execution history, and the schedules vanish on a Redis flush. GitHub cron: unreliable, and it would need a prod admin token in GitHub |
 | D9 | Admin auth | **Easy Auth + an Entra ID app with "Assignment required = Yes"**, only named operators assigned; `ADMIN_CONSOLE_PROXY_HEADER=x-ms-client-principal-name`; an app-level allowlist as defence in depth; sign-out → `/.auth/logout` | Easy Auth with Google as the IdP: works, but needs an OAuth client in the new Google project and a mandatory allowlist |
-| D10 | Google platform | **A new Google Cloud project, owned by a Google identity for `lyniafinance.com`, via Cloud Identity Free** (CEO-8). Mail already runs on Spacemail (MX `mx1/mx2.spacemail.com`), so **do not switch MX**. The runbook is `docs/GCP-BILLING-DOMAIN-SETUP.md`, but its "no mailbox exists" premise is wrong. The project gets **2 owners** and its own billing account (Maps needs billing; FCM doesn't) | Reusing the suspended consumer Gmail. Workspace with Gmail: it would take over MX and break Spacemail. Azure Maps: deferred (see G2) |
+| D10 | Google platform | **A new Google Cloud project, owned by a Google identity for the company domain (`lyniago.com` since 2026-10), via Cloud Identity Free** (CEO-8). Mail already runs on Spacemail (MX `mx1/mx2.spacemail.com`), so **do not switch MX**. The runbook is `docs/GCP-BILLING-DOMAIN-SETUP.md`, but its "no mailbox exists" premise is wrong. The project gets **2 owners** and its own billing account (Maps needs billing; FCM doesn't) | Reusing the suspended consumer Gmail. Workspace with Gmail: it would take over MX and break Spacemail. Azure Maps: deferred (see G2) |
 | D11 | IaC | **Terraform azurerm (+ azapi where azurerm lacks coverage)** in a new `infra/azure/`. Same ownership split as today: Terraform owns infra and app shells with `ignore_changes` on template, image and traffic; CI owns revisions. **Keep `infra/terraform/`** because API specs read it (`src/infra/lb-log-sampling.spec.ts:36-37`, `src/infra/maps-tfvars.spec.ts:21`) | Bicep: a second IaC language in the repo |
 | D12 | Registry | **ACR Basic** (~$5/mo) with managed-identity pull | GHCR: Container Apps needs a long-lived PAT to pull private images |
 | D13 | Observability | Logs to Log Analytics with a cap; an **external uptime monitor** (outside Azure, so it still alerts if Azure itself goes away); Azure Monitor metric alerts; Sentry unchanged. When armed, OTLP goes to Grafana Cloud or App Insights | The Container Apps managed OTel agent: gRPC only, and it can't send metrics to App Insights, while the app exports OTLP/**HTTP** |
@@ -334,7 +334,7 @@ Today every push to main starts a staging deploy that fails. `deploy-autoheal.ym
 | New | Replaces | Key mechanics |
 |---|---|---|
 | `release-azure.yml` | `release.yml` | See the detail below |
-| `deploy-staging-azure.yml` | `deploy-staging.yml` | Same shape, 100% traffic, smoke `staging.lyniafinance.com/healthz` |
+| `deploy-staging-azure.yml` | `deploy-staging.yml` | Same shape, 100% traffic, smoke the staging `/healthz` (no staging exists on Azure today) |
 | `deploy-admin-azure.yml`, `deploy-merchant-azure.yml` | GCP versions | buildx → ACR (the admin and merchant `Dockerfile.dockerignore` needs BuildKit, so keep buildx rather than `az acr build`); the merchant build-arg `NEXT_PUBLIC_API_BASE_URL` is unchanged |
 | `rollback-azure.yml` | `rollback.yml` | `az containerapp ingress traffic set --revision-weight <rev>=100`. Pass inputs through `env:`: the current file interpolates `inputs.revision` into `run:` (`rollback.yml:67`), a shell-injection sink |
 | `azure-drift-detect.yml`, `azure-diagnose.yml` | GCP versions | Reader identity, `terraform plan -refresh-only`, and `if: always()` on the issue step: the current one never files its issue (`gcp-drift-detect.yml:112`) |
@@ -366,7 +366,7 @@ Today every push to main starts a staging deploy that fails. `deploy-autoheal.ym
 
 **M1 — zero-binary revival, which happens automatically at the DNS cutover.** It is verified viable:
 - The EAS `preview` and `production` environments hold only `EXPO_PUBLIC_GOOGLE_PLACES_KEY`, `EXPO_PUBLIC_POSTHOG_*`, `EXPO_PUBLIC_SENTRY_*`, `GOOGLE_MAPS_API_KEY`, `GOOGLE_SERVICES_JSON` and `SENTRY_AUTH_TOKEN`. There is **no `LYNIA_TLS_PINS` and no `EXPO_PUBLIC_API_URL`** ([RUN] 36014729687).
-- The resolved app config of the 09-01 closed build shows `extra.apiUrl = https://lyniago.lyniafinance.com` and no pinning plugin.
+- The resolved app config of the 09-01 closed build shows `extra.apiUrl` set to the old API host and no pinning plugin.
 
 So testers on the installed build (`44538dd1`, the "Closed testing" submission that FINISHED) get sign-in, orders, tracking, uploads and KYC back as soon as Azure answers on that hostname. Push stays dead, the map stays blank, and Places falls back to the device geocoder until M2.
 
@@ -391,7 +391,7 @@ So testers on the installed build (`44538dd1`, the "Closed testing" submission t
 
 **Production access** (the 14-day test is already met, per the owner): apply only after M1 and M2 are live and stable. The review exercises the app, including the demo account (`DEMO_ACCOUNT_ENABLED`, with its secrets in Key Vault).
 
-**Stopgap for the Play listing (optional, about 1 hour, Phase 0).** Serve `/legal/privacy` and `/legal/account-deletion` statically from Cloudflare Pages or a Worker on `lyniago.lyniafinance.com` until Azure is live. Do it if Play flags the listing, or if production access is applied for before cutover. The HTML comes from `legal.content.ts`. This needs the orange-cloud proxy temporarily; switch back to DNS-only at cutover, when the managed cert is issued.
+**Stopgap for the Play listing (optional, about 1 hour, Phase 0).** Serve `/legal/privacy` and `/legal/account-deletion` statically from Cloudflare Pages or a Worker on the old API host until Azure is live. Do it if Play flags the listing, or if production access is applied for before cutover. The HTML comes from `legal.content.ts`. This needs the orange-cloud proxy temporarily; switch back to DNS-only at cutover, when the managed cert is issued.
 
 ## 8. Phased execution
 
@@ -404,7 +404,7 @@ So testers on the installed build (`44538dd1`, the "Closed testing" submission t
   - **pay-as-you-go**: a free-trial subscription is *disabled* when its credit runs out, a repeat of this incident;
   - **2 Owners with MFA**, and a budget alert at $150/month;
   - if startup credits are used, calendar their expiry date: sponsorship subscriptions are disabled at expiry too.
-- [ ] Set up **Cloud Identity Free** for `lyniafinance.com`: verify the domain with a Cloudflare TXT record and **leave MX on Spacemail** (CEO-8). Create the new Google Cloud project with 2 owners and separate billing.
+- [ ] Set up **Cloud Identity Free** for the company domain (`lyniago.com`): verify the domain with a Cloudflare TXT record and **leave MX on Spacemail** (CEO-8). Create the new Google Cloud project with 2 owners and separate billing.
 - **Gate 0:** the subscription exists, and the data path (salvage or fresh) is recorded in §14.
 
 **Phase 1 — Azure foundation (days 1–2)**
@@ -532,7 +532,7 @@ General Purpose Postgres) will roughly double the data-tier lines.
 |---|---|---|---|
 | Q1 | **Answered by owner 2026-09-24: a payment issue.** Google flagged the payments profile as suspicious activity because of VPN use. Billing on the project stopped (the 09-16 `billing to be enabled` error), and the project suspension followed on 09-17 | It decides whether the data can be salvaged. A payments-profile flag is the most recoverable case | **Fix billing first:** verify the payments profile at pay.google.com with the VPN off, and use free Cloud Billing support if needed. Then re-link billing and check the project's Appeals page. Once it is back, run the §9 salvage immediately. Fall back to a fresh start after 3 working days only if Q2 = no real money |
 | Q2 | **Answered by owner 2026-09-24: the database held only user names and profile details. Photos may be lost. Riders were approved by Didit.** Pending owner confirmation that no real cash top-ups exist | It decides whether a fresh start is acceptable | **Fresh start; do not wait for GCP.** Didit keeps every approved session and its ID documents (`vendor_data = riderId`, `kyc/didit-kyc-vendor.ts:41`). Returning riders are re-approved **manually** through the admin KYC review, after looking up their prior approved session in the Didit console, so there are no new paid sessions. Lost: order history and the `verifiedIdHash` ban-evasion dedupe. Still restore GCP billing later, but only to run the §9 exit checklist (settle the balance, delete the project so the old PII is removed) |
-| Q3 | Do you already have an Azure account? Which identity? Startup credits? | Phase 0 | New pay-as-you-go. Verify `lyniafinance.com` in the Entra tenant (TXT record only, so mail is untouched) |
+| Q3 | Do you already have an Azure account? Which identity? Startup credits? | Phase 0 | New pay-as-you-go. Verify the company domain (`lyniago.com`) in the Entra tenant (TXT record only, so mail is untouched) |
 | Q4 | Admin IdP: Microsoft Entra (recommended) or Google via Easy Auth? | C4 / D9 | Entra |
 | Q5 | Maps: keep Google Maps Platform in the new project (recommended), or plan Azure Maps later? | G2 / G3 | Google |
 | Q6 | Staging always-on, or on demand? | About $25–45/month | On demand |
@@ -724,7 +724,7 @@ decision.
 | CEO-8 | D10 said "Google Workspace". **The domain already has mail:** MX points at `mx1/mx2.spacemail.com`. A Workspace setup that switches MX would break it. By `docs/GCP-BILLING-DOMAIN-SETUP.md`'s own rule ("Cloud Identity Free … if email for this domain is hosted elsewhere"), the Google identity should be **Cloud Identity Free**. That runbook's statement that no mailbox exists is also wrong | Live DoH query, 2026-09-24 |
 | CEO-9 | The repo is **public** (`visibility: public`), so Actions logs are public. `eas-build-status.yml:97` prints the *values* of plaintext EAS variables (Places key, PostHog key, Sentry DSN). These already ship in the APK, and the Places key is dead, so there is no new exposure. That is why every new key must be created `sensitive` (§7 M2 step 3 already says so) | GitHub API; [RUN] 36014729687 |
 | CEO-10 | 0G(c) is verified. No code selects a Redis DB index, and Terraform's `REDIS_URL` carries no DB path (`infra/terraform/secrets.tf:21-27`), so Azure Managed Redis's "database 0 only" limit is satisfied | grep: `common/redis.ts`, `offer-expiry.service.ts`, `order-lifecycle.constants.ts`, `tracking.gateway.ts` |
-| CEO-11 | No CAA record exists on `lyniafinance.com`, so Azure managed certificates (DigiCert) can issue. 4 hostnames point at the dead GCP IP `8.232.107.208`: `lyniago`, `lyniagoadmin`, `lyniagomerchant`, `staging` | Live DoH query, 2026-09-24 |
+| CEO-11 | No CAA record existed on the old domain, so Azure managed certificates (DigiCert) can issue. 4 hostnames point at the dead GCP IP `8.232.107.208`: `lyniago`, `lyniagoadmin`, `lyniagomerchant`, `staging` | Live DoH query, 2026-09-24 |
 
 ### /plan-ceo-review: Section 1 — Architecture
 

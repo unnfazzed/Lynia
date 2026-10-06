@@ -29,8 +29,8 @@ describe("loadEnv — optional URL fields", () => {
   });
 
   it("accepts a valid callback URL", () => {
-    const env = loadEnv({ ...base, DIDIT_CALLBACK_URL: "https://lyniago.lyniafinance.com/verified" });
-    expect(env.DIDIT_CALLBACK_URL).toBe("https://lyniago.lyniafinance.com/verified");
+    const env = loadEnv({ ...base, DIDIT_CALLBACK_URL: "https://api.lyniago.com/verified" });
+    expect(env.DIDIT_CALLBACK_URL).toBe("https://api.lyniago.com/verified");
   });
 
   it("still rejects a non-empty invalid URL", () => {

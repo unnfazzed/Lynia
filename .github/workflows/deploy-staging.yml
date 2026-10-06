@@ -218,7 +218,9 @@ jobs:
       - name: Smoke staging /health
         run: |
           set -euo pipefail
-          URL="${{ vars.STAGING_HEALTH_URL || 'https://staging.lyniafinance.com/healthz' }}"
+          # No staging host exists today, so there is no default: set STAGING_HEALTH_URL when one does.
+          URL="${{ vars.STAGING_HEALTH_URL }}"
+          [ -n "$URL" ] || { echo "::error::STAGING_HEALTH_URL is not set"; exit 1; }
           for i in $(seq 1 12); do
             BODY="$(curl -fsS --max-time 10 "$URL" || true)"
             if echo "$BODY" | grep -q '"status":"ok"'; then

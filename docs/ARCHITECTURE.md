@@ -1190,7 +1190,7 @@ The rule: a new non-core surface ships with its kill switch from day one; core s
 Four GitHub Actions workflows. The two central to this pipeline are **CI** (`ci.yml`), which gates
 every PR/push, and **Release** (`release.yml`), which ships the API container to Cloud Run — it is
 **armed and live**: `GCP_DEPLOY_ENABLED` is set, WIF is active, and a push to `main` deploys to the
-running service at `https://lyniago.lyniafinance.com`. The other two are out of scope for this
+running service at `https://api.lyniago.com`. The other two are out of scope for this
 diagram: `codeql.yml` (weekly + per-PR SAST, [SECURITY.md](./SECURITY.md) P1-1) and
 `android-test-apk.yml` (manual, sideloadable QA APK build — see `docs/plans/TEST-APK-BUILD-PLAN.md`).
 
