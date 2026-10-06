@@ -4646,6 +4646,30 @@ _Filled in phase by phase._
   (`ADD_PILL_HEIGHT` in `app/rider/documents.tsx`). The 1× `screenshots/E1.png` / `E4c.png` / `E2d.png` still show the
   old 36 (they can't be re-rendered here) — **report upstream** so the next export redraws them.
 
+**Phases 4 + 5 (C / H / D / E):**
+
+- **U4b's ✕.** U4a draws a 44 ✕; U4b (the violet board banner) draws none. "Once per version" needs a way to say "not
+  now", so both get the ✕ (`UP.softDismiss` as its label). **Owner question.**
+- **The soft banner without a store link** is not shown at all (its only action is the store). `#DCD5FF` (U4b's body
+  line) is not in the token table; used as drawn, as a named constant in `SoftUpdateBanner.tsx`.
+- **U3 detection.** "Offline" is the app's reachability store (real `/health` round trips), not the OS radio state,
+  so a captive portal also counts as offline. U3 applies only while a store link exists (U2 has no network action).
+- **The rider offline row is rider-only.** H2c draws it on the rider splash; a customer boot keeps splash-v1's dark
+  offline panel with "Try again". **Owner question** (one offline style for everyone?).
+- **E2b is a guide, not a viewfinder.** The app ships no in-app camera (`expo-camera` is a native dependency = a new
+  store build); the guide's shutter opens the phone's own front camera, which returns to E2c. The oval therefore
+  frames nothing live. **Owner question** if a live viewfinder is wanted.
+- **E2d's bar is staged** (prepared → minted → bytes sent → attached): `fetch` exposes no byte progress.
+- **E5's photo row** is drawn with the initials disc and "Verified"; the photo is never checked by anyone (BRIEF: Verified
+  "only for what was actually checked"), so its row has no sub-line — just "Change". The app never receives the photo
+  itself (`/auth/me` sends `hasPhoto` only), so the disc is the initials, as drawn.
+- **A plate on file from before migration 0078** reads `plate_status = none`: shown with "Edit" and no "Verified" until a
+  change sends it to ops. (Before, Bike & documents called any verified rider's plate "Verified" — review R-8.)
+- **D2's Save** is drawn enabled; it stays enabled (pressing it with nothing changed shows D3's "Saved") except while a
+  name is empty, where it is the disabled `line`/`muted` pill (undrawn). Clearing a stored ID still shows the shipped
+  "To remove your national ID, contact support." (D-79, undrawn) and a verified rider's 403 shows the server's words.
+- **E2c's title** "Looking **good**" is drawn in `fr-states.js` but missing from `copy.ts`; used verbatim from the drawing.
+
 **Phase 6 (F / G / I):**
 
 - **F6's date — BUILT (owner 2026-10-06, answer 4).** `KY.expBody` is drawn "Expired 2 Oct 2026. Re-verify to keep
