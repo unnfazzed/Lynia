@@ -3,6 +3,7 @@ import { KYC_DECLINE_REASON_LABELS } from "@lynia/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { MERCHANT_STATUS_NOTICES, merchantCustomerCopy } from "./notifications.service";
 import { pushCopy, pushMoney, PUSH_C } from "./merchant-order-push";
+import { FREE_JOBS_ACTION, FREE_JOBS_COPY } from "../wallet/free-jobs-reminder";
 
 /**
  * A single row in the derived in-app notifications feed (customer-journey A·3). Notifications are
@@ -250,6 +251,10 @@ const ACCOUNT_FEED_COPY: Record<string, { icon: string; title: string; message: 
     title: "A rider's online near you",
     message: "Riders are back near your pickup — send your parcel again to get offers.",
   },
+  // D-78 (owner 2026-10-06): the free-jobs top-up reminder Calm Mint v2 R3 promises. Written by
+  // WalletService.noteFreeJobsMilestone in the completion transaction; copy mirrors the push verbatim.
+  [FREE_JOBS_ACTION.one_left]: { icon: "banknote", title: FREE_JOBS_COPY.one_left.title, message: FREE_JOBS_COPY.one_left.body },
+  [FREE_JOBS_ACTION.used_up]: { icon: "banknote", title: FREE_JOBS_COPY.used_up.title, message: FREE_JOBS_COPY.used_up.body },
 };
 const ACCOUNT_FEED_ACTIONS = Object.keys(ACCOUNT_FEED_COPY);
 

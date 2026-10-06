@@ -4,6 +4,7 @@ import { CurrentUser } from "../common/current-user.decorator";
 import { Throttle } from "../common/throttle.guard";
 import { ZodBody } from "../common/zod.pipe";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { RiderProfileService, UpdateRiderProfile } from "./rider-profile.service";
 import { RiderService } from "./rider.service";
 
 const CompleteProfile = z.object({
@@ -57,7 +58,17 @@ const Heartbeat = z.object({
 @Controller("riders")
 @UseGuards(JwtAuthGuard)
 export class RidersController {
-  constructor(private readonly riders: RiderService) {}
+  constructor(
+    private readonly riders: RiderService,
+    private readonly profile: RiderProfileService,
+  ) {}
+
+  /** D-78 (owner 2026-10-06): the rider adds or changes their photo / bike plate from Bike & documents. */
+  @Throttle({ limit: 20, windowSec: 3600, keyPrefix: "rider-me" })
+  @Patch("me")
+  updateMe(@Body(new ZodBody(UpdateRiderProfile)) body: UpdateRiderProfile, @CurrentUser() id: string) {
+    return this.profile.updateProfile(id, body);
+  }
 
   @Patch("profile")
   complete(@Body(new ZodBody(CompleteProfile)) body: z.infer<typeof CompleteProfile>, @CurrentUser() id: string) {

@@ -768,7 +768,7 @@ describe("AdminOrdersService.adjudicateDelivered (KB-POD-DISPUTE Phase B)", () =
     const prisma = { $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
     return { prisma, calls };
   }
-  const wallet = { chargeCommission: vi.fn(async () => {}) };
+  const wallet = { chargeCommission: vi.fn(async () => {}), noteFreeJobsMilestone: vi.fn(async () => null), sendFreeJobsReminder: vi.fn() };
 
   it("force-completes an undelivered order, credits the rider (trip + reliability recovery), charges commission, audits in one tx", async () => {
     wallet.chargeCommission.mockClear();
