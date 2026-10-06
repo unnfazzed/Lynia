@@ -49,6 +49,20 @@ describe("InMemoryOtpStore", () => {
     expect(await store.hit("rl:phone:x", 3600)).toBe(2);
     expect(await store.hit("rl:phone:y", 3600)).toBe(1);
   });
+
+  it("unhit gives one hit back, never below zero and never for a counter that doesn't exist (FS-6)", async () => {
+    const store = new InMemoryOtpStore();
+    await store.hit("rl:phone:x", 3600);
+    await store.hit("rl:phone:x", 3600);
+    await store.unhit("rl:phone:x");
+    expect(await store.hit("rl:phone:x", 3600)).toBe(2);
+    await store.unhit("rl:phone:x");
+    await store.unhit("rl:phone:x");
+    await store.unhit("rl:phone:x");
+    expect(await store.hit("rl:phone:x", 3600)).toBe(1);
+    await store.unhit("rl:never");
+    expect(await store.hit("rl:never", 3600)).toBe(1);
+  });
 });
 
 describe("RedisOtpStore atomicity (incr/hset + expire cannot be split)", () => {
@@ -72,6 +86,17 @@ describe("RedisOtpStore atomicity (incr/hset + expire cannot be split)", () => {
     expect(String(arg)).toBe("86400");
     expect(script).toMatch(/incr/i);
     expect(script).toMatch(/expire/i);
+  });
+
+  it("unhit() checks and decrements in a single eval, guarded so a missing key is never re-created", async () => {
+    const { redis, calls } = fakeRedis();
+    const store = new RedisOtpStore(redis);
+    await store.unhit("rl:ip:1.1.1.1");
+    expect(calls).toHaveLength(1);
+    const [script, numkeys, key] = calls[0] as [string, number, string];
+    expect(numkeys).toBe(1);
+    expect(key).toBe("rl:ip:1.1.1.1");
+    expect(script).toMatch(/> 0 then redis.call\('decr'/);
   });
 
   it("put() writes hash+attempts and sets the TTL in a single eval (numkeys=1)", async () => {

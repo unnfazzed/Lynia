@@ -62,6 +62,14 @@ describe("birdVerifyStart", () => {
     expect(res).toEqual({ channel: "sms" });
   });
 
+  it("E2E 2026-10-05 P-8: a reply without last_channel reports the requested channel (WhatsApp), never 'sms'", async () => {
+    for (const reply of [{ id: "vrf_4" }, {}]) {
+      const fetchMock = (async () => new Response(JSON.stringify(reply), { status: 200 })) as unknown as typeof fetch;
+      const res = await withFetch(fetchMock, () => birdVerifyStart(cfg(), "+263771234567"));
+      expect(res).toEqual({ channel: "whatsapp" });
+    }
+  });
+
   it("throws when Bird rejects the create call (so requestOtp errors, not a silent non-delivery)", async () => {
     const fetchMock = (async () =>
       new Response('{"error":"no eligible channel"}', { status: 422 })) as unknown as typeof fetch;

@@ -7,6 +7,7 @@ const ADMIN_RX_READ_URL_TTL_SECONDS = 300;
 import {
   ACTIVE_RIDE_STATUSES,
   commissionBasis,
+  COMPLETED_ORDER_STATUSES,
   DELIVERY_OTP_MAX_ATTEMPTS,
   HeldReason,
   isBusinessBookingAccountPhone,
@@ -577,6 +578,9 @@ export class AdminOrdersService {
     // the truth (`counter` = rider named a different price the customer accepted; `accept` = the
     // customer's ask taken as-is — makeOffer pins an accept's offeredFare to proposedFare). The
     // equality fallback covers legacy orders whose offer rows are gone but whose fare matches the ask.
+    // E2E 2026-10-05 FS-10: makeOffer pins an accept to the ask AT THE TIME, and raisePrice leaves earlier
+    // bids at their own price — so an accept selected after a raise ($3 accept, ask now $4) is a rider's
+    // price, not the customer's (current) ask. Compared to the cent, like makeOffer's own pin.
     let fareProvenance: FareProvenance | null = null;
     if (order.agreedFare != null) {
       if (fareAdjusts.length > 0) {
@@ -588,7 +592,10 @@ export class AdminOrdersService {
           previousFare: selectedOffer?.offeredFare.toString() ?? null,
           ...(fareAdjusts.length > 1 ? { count: fareAdjusts.length } : {}),
         };
-      } else if (selectedOffer?.type === "counter") {
+      } else if (
+        selectedOffer?.type === "counter" ||
+        (selectedOffer?.type === "accept" && Math.round(Number(selectedOffer.offeredFare) * 100) !== Math.round(Number(order.proposedFare) * 100))
+      ) {
         fareProvenance = {
           kind: "rider_counter",
           offeredFare: selectedOffer.offeredFare.toString(),
@@ -620,10 +627,12 @@ export class AdminOrdersService {
     const stuck = active && now - lastEventAt.getTime() > STUCK_AFTER_MS;
     const stuckMins = Math.round((now - lastEventAt.getTime()) / 60000);
 
+    // E2E 2026-10-05 P-6: a delivered/completed order is over, so its last reached step is done, never "now".
+    const finished = COMPLETED_ORDER_STATUSES.includes(order.status);
     const timeline = ORDER_TIMELINE.map((step, i) => {
       let state: "done" | "now" | "stall" | undefined;
       if (current === -1) state = i === 0 ? "done" : undefined; // off-path terminal: only the broadcast happened
-      else if (i < current) state = "done";
+      else if (i < current || (finished && i === current)) state = "done";
       else if (i === current) state = stuck ? "stall" : "now";
       return {
         label: step.label,

@@ -224,6 +224,7 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
           service={service}
           browseOnly={!sectionOn}
           remind={false}
+          rxEnabled={orderFlags.rxEnabled}
           closedAt={open ? null : (v?.opens?.time ?? null)}
           remindOn={false}
           remindBusy={false}
@@ -371,7 +372,7 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
         {closingStrip && sectionOn ? <ClosingStrip minutes={v.closesInMin!} orderBy={v.closeTime!} /> : null}
         {closingStrip && !sectionOn ? <OpenLine v={v} service={service} /> : null}
         {!open ? <ClosedStrip label={closedLabel(v)} /> : null}
-        {service === "pharmacy" ? <OtcNotice marginTop={10} /> : null}
+        {service === "pharmacy" && !orderFlags.rxEnabled ? <OtcNotice marginTop={10} /> : null}
         {empty ? (
           // S13c — the shop has no items yet.
           <BrowseEmpty icon="inbox" title={B.store.emptyT} body={fmt(B.store.emptyS, { v: name })} />

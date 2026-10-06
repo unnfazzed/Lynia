@@ -323,7 +323,13 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         freeDelivery: true,
       },
     });
-    if (!merchant) throw new NotFoundException("Restaurant not found");
+    if (!merchant) {
+      // E2E 2026-10-05 P-5: a shop or pharmacy hidden by its section switch answered "Restaurant not
+      // found". Name what it is (error path only; an unknown id keeps the restaurant wording).
+      const kind = await this.prisma.merchant.findUnique({ where: { id: merchantId }, select: { businessType: true, shopKind: true } }).catch(() => null);
+      const what = kind?.businessType === "shop" ? (kind.shopKind === "pharmacy" ? "Pharmacy" : "Shop") : "Restaurant";
+      throw new NotFoundException(`${what} not found`);
+    }
     const noun = merchant.businessType === "shop" ? (merchant.shopKind === "pharmacy" ? "pharmacy" : "shop") : "restaurant";
     const location = merchant.location as Waypoint | null;
     if (!location) throw new ConflictException(`This ${noun} isn't ready to take orders yet`);

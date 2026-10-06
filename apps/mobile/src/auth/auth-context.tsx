@@ -5,6 +5,7 @@ import { clearConditionalCache, configureApi } from "../api/client";
 import { queryClient } from "../query/client";
 import { clearPersistedQueries } from "../query/persist";
 import { prewarmBootReads } from "../boot/prewarm";
+import { boundPushToken } from "../push/bound-token";
 import { captureException } from "../telemetry/sentry";
 import { clearDeviceState, clearSession, saveSession, type Session } from "./session";
 
@@ -146,11 +147,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   const signOut = useCallback(async (): Promise<void> => {
     // Revoke the session server-side FIRST, while the token is still live (the endpoint is authed), so a
     // deliberate sign-out actually kills the refresh token instead of leaving it valid for REFRESH_TTL
-    // (a year). Best-effort: an offline/failed revoke must never trap the local sign-out below.
+    // (a year). Best-effort: an offline/failed revoke must never trap the local sign-out below. It also
+    // names this device's push token, so the next person on a shared phone doesn't get this account's
+    // pushes (E2E 2026-10-05 FS-8).
     const current = live;
     if (current?.refreshToken) {
       try {
-        await logout(current.refreshToken);
+        await logout(current.refreshToken, boundPushToken());
       } catch {
         /* best-effort — proceed with the local sign-out regardless */
       }

@@ -24,7 +24,8 @@ export function itemsLine(o: Pick<MerchantOrderResponse, "items">): string {
 }
 
 export function riderFirstName(o: MerchantOrderResponse): string | null {
-  if (!o.rider) return null;
+  // E2E 2026-10-05 P-12: a rider with no name is "unknown", never "" — every caller has a fallback.
+  if (!o.rider || !o.rider.firstName.trim()) return null;
   const last = o.rider.lastName ? ` ${o.rider.lastName.charAt(0)}.` : "";
   return `${o.rider.firstName}${last}`;
 }

@@ -186,6 +186,16 @@ describe("AdminOrdersService.getOrderDetail (D-2)", () => {
     expect(d.timeline!.some((s) => s.state === "now")).toBe(false);
   });
 
+  it("a delivered or completed order's timeline has no 'now' step: the last reached step is done (E2E 2026-10-05 P-6)", async () => {
+    for (const [status, last] of [["delivered", 6], ["completed", 7]] as const) {
+      const events = [{ status, createdAt: new Date(Date.now() - 60000) }];
+      const d = (await new AdminOrdersService(detailPrisma(baseOrder({ status, events })) as unknown as PrismaService).getOrderDetail("o1"))!;
+      expect(d.timeline!.some((s) => s.state === "now" || s.ts === "now")).toBe(false);
+      expect(d.timeline![last]!.state).toBe("done");
+      expect(d.timeline![last]!.ts).toBe(events[0]!.createdAt.toISOString());
+    }
+  });
+
   it("MASKS both phones on a completed/delivered order (A-03: not a live ride, so no PII)", async () => {
     // Regression: the reveal set here is ACTIVE_RIDE_STATUSES, NOT PHONE_REVEAL_STATUSES — the latter
     // includes delivered/completed/undelivered and would leave every finished order unmasked forever.
@@ -247,6 +257,13 @@ describe("AdminOrdersService.getOrderDetail (D-2)", () => {
       const svc = svcWith(baseOrder({ agreedFare: dec("5.00") }), { offer: { type: "accept", offeredFare: dec("5.00") } });
       const d = (await svc.getOrderDetail("o1"))!;
       expect(d.fareProvenance).toEqual({ kind: "customer_ask" });
+    });
+
+    it("rider_counter, not customer_ask, for an accept selected after a raise (E2E 2026-10-05 FS-10)", async () => {
+      // A $3 accept placed at the original ask; the customer then raised to $4 and picked it anyway.
+      const svc = svcWith(baseOrder({ proposedFare: dec("4.00"), agreedFare: dec("3.00") }), { offer: { type: "accept", offeredFare: dec("3.00") } });
+      const d = (await svc.getOrderDetail("o1"))!;
+      expect(d.fareProvenance).toEqual({ kind: "rider_counter", offeredFare: "3.00", ask: "4.00" });
     });
 
     it("customer_ask fallback when no offer row survives but agreed equals the ask", async () => {

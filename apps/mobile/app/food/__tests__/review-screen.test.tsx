@@ -389,6 +389,14 @@ describe("R2a / R2b — shops and pharmacies (Order flow v2 part 5)", () => {
     expect(body.prescription).toBeUndefined();
   });
 
+  it("FS-5 (E2E 2026-10-05) — no 'Over-the-counter only' note while prescriptions are on", async () => {
+    mockRxEnabled = true;
+    shopCart("pharmacy");
+    const t = render();
+    await flush();
+    expect(texts(t)).not.toContain("Over-the-counter medicine only. A pharmacist packs every order.");
+  });
+
   it("a kitchen never sends outOfStockPref", async () => {
     mockPlace.mockResolvedValue({ id: "fo-3" });
     const t = render();

@@ -17,12 +17,13 @@ describe("branches rules (ledger D-51)", () => {
     expect(showBranchChevron(null, 3)).toBe(false);
   });
 
-  it("the not-live home needs 2+ branches, so a single new restaurant keeps today's Orders home", () => {
-    const dormant = { myRole: "owner" as const, pilotEnabled: false, businessType: "restaurant" as const };
-    expect(showNotLiveHome(dormant, 1)).toBe(false);
-    expect(showNotLiveHome(dormant, 2)).toBe(true);
-    expect(showNotLiveHome({ ...dormant, pilotEnabled: true }, 2)).toBe(false);
-    expect(showNotLiveHome({ ...dormant, businessType: "shop" }, 2)).toBe(true);
+  it("the not-live home is for any business not switched on, whatever its branch count (E2E 2026-10-05 FS-4)", () => {
+    const dormant = { pilotEnabled: false, businessType: "restaurant" as const };
+    expect(showNotLiveHome(dormant)).toBe(true);
+    expect(showNotLiveHome({ ...dormant, pilotEnabled: true })).toBe(false);
+    expect(showNotLiveHome({ ...dormant, businessType: "shop" })).toBe(true);
+    expect(showNotLiveHome({ ...dormant, businessType: "shop", pilotEnabled: true })).toBe(false);
+    expect(showNotLiveHome(null)).toBe(false);
   });
 
   it("maps the four API refusals to where C7 shows them, with the drawn copy", () => {
