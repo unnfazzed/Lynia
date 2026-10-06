@@ -1,5 +1,6 @@
 import { __resetReachability } from "../../net/reachability";
 import type { Session } from "../../auth/session";
+import { logout } from "../auth";
 import { ApiError, apiFetch, clearConditionalCache, configureApi } from "../client";
 
 /**
@@ -211,6 +212,69 @@ describe("apiFetch refresh path — transient vs definitive failure", () => {
     // v4-shaped so the server's zod .uuid() would accept it, and identical across calls (per-install stable).
     expect(seen[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
     expect(seen[1]).toBe(seen[0]);
+  });
+});
+
+describe("apiFetch error messages (E2E 2026-10-05 FS-3)", () => {
+  const MESSAGE = "Too many requests — try again later";
+
+  it("shows the server's message for a 429 with the { statusCode, message } envelope", async () => {
+    fetchMock.mockResolvedValue(makeResponse(429, { statusCode: 429, message: MESSAGE }));
+    await expect(apiFetch("/auth/otp/verify", { method: "POST", body: {}, auth: false })).rejects.toMatchObject({
+      status: 429,
+      message: MESSAGE,
+    });
+  });
+
+  it("shows a bare JSON-string body (an older API's 429) as the message, not 'check your connection'", async () => {
+    fetchMock.mockResolvedValue(makeResponse(429, JSON.stringify(MESSAGE)));
+    await expect(apiFetch("/auth/otp/verify", { method: "POST", body: {}, auth: false })).rejects.toMatchObject({
+      status: 429,
+      message: MESSAGE,
+    });
+  });
+
+  it("still falls back to the connection copy for a body with no message at all", async () => {
+    fetchMock.mockResolvedValue(makeResponse(502, "<html>Bad gateway</html>"));
+    await expect(apiFetch("/x", { auth: false })).rejects.toMatchObject({
+      status: 502,
+      message: "Couldn't reach LyniaGo. Check your connection and try again.",
+    });
+  });
+});
+
+describe("logout names the device's push token (E2E 2026-10-05 FS-8)", () => {
+  const SESSION_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const calls = (): { url: string; method?: string; body: unknown }[] =>
+    fetchMock.mock.calls.map(([url, init]: [string, RequestInit | undefined]) => ({
+      url,
+      method: init?.method,
+      body: init?.body ? JSON.parse(init.body as string) : undefined,
+    }));
+
+  it("sends the token with the session id in one request", async () => {
+    fetchMock.mockResolvedValue(makeResponse(201, { revoked: true }));
+    await expect(logout(`${SESSION_ID}.secret`, "fcm-1")).resolves.toEqual({ revoked: true });
+    expect(calls()).toEqual([{ url: expect.stringMatching(/\/auth\/logout$/), method: "POST", body: { sessionId: SESSION_ID, pushToken: "fcm-1" } }]);
+  });
+
+  it("an older API (400 on the unknown key) drops the token the old way first, then revokes without it", async () => {
+    fetchMock
+      .mockResolvedValueOnce(makeResponse(400, { statusCode: 400, message: "Unrecognized key(s) in object: 'pushToken'" }))
+      .mockResolvedValueOnce(makeResponse(200, { ok: true }))
+      .mockResolvedValueOnce(makeResponse(201, { revoked: true }));
+    await expect(logout(`${SESSION_ID}.secret`, "fcm-1")).resolves.toEqual({ revoked: true });
+    expect(calls().map((c) => [c.method, c.url.replace(/^.*(\/[a-z]+\/[a-z-]+)$/, "$1"), c.body])).toEqual([
+      ["POST", "/auth/logout", { sessionId: SESSION_ID, pushToken: "fcm-1" }],
+      ["DELETE", "/notifications/device-token", { token: "fcm-1" }],
+      ["POST", "/auth/logout", { sessionId: SESSION_ID }],
+    ]);
+  });
+
+  it("with no bound token, the body is exactly what older apps send", async () => {
+    fetchMock.mockResolvedValue(makeResponse(201, { revoked: true }));
+    await logout(`${SESSION_ID}.secret`, null);
+    expect(calls()[0]?.body).toEqual({ sessionId: SESSION_ID });
   });
 });
 

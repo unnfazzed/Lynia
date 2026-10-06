@@ -157,6 +157,9 @@ export default function VerifyScreen({
 
   const shown = phone ? formatPhoneDisplay(phone) : "";
   const active = Math.min(code.length, CODE_LENGTH - 1);
+  // "Resend on WhatsApp" beside "Sent by SMS" contradicts itself, so an SMS send offers the screen's own
+  // "Send a new code" instead (E2E 2026-10-05 P-8; ledger D-55).
+  const resendLabel = deliveryChannel === "whatsapp" ? OB.resendOnWhatsApp : OB.sendNewCode;
 
   return (
     // The number pad has no return key on iOS: a tap outside the field is the way to put it away.
@@ -254,13 +257,13 @@ export default function VerifyScreen({
                 onPress={() => void requestFreshCode()}
                 disabled={cooldown > 0 || resending}
                 accessibilityRole="button"
-                accessibilityLabel={OB.resendOnWhatsApp}
+                accessibilityLabel={resendLabel}
                 accessibilityState={{ disabled: cooldown > 0 }}
                 style={{ marginTop: cooldown > 0 ? 6 : 14, minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: 6 }}
               >
                 <Icon name="refresh-cw" size={16} color={cooldown > 0 ? RESEND_IDLE : tokens.color.accentText} />
                 <Text style={{ fontSize: 14, fontWeight: cooldown > 0 ? tokens.font.weight.regular : tokens.font.weight.semibold, color: cooldown > 0 ? RESEND_IDLE : tokens.color.accentText }}>
-                  {OB.resendOnWhatsApp}
+                  {resendLabel}
                 </Text>
               </Tappable>
             </>
