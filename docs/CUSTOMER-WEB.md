@@ -15,6 +15,10 @@ Web-only differences from the phone app: ledger D-81 in [`DESIGN-DEVIATIONS.md`]
 - Hosting: an assets-only Cloudflare Worker (`apps/customer-web/wrangler.jsonc`), like lyniago.com. Free.
 - `apps/customer-web/finish-build.mjs` adds the Add to Home Screen manifest and icons, the iPhone Home Screen
   tags, and `_headers` (CSP and caching) to the export.
+- No zoom when typing: iPhone Safari zooms in on any text field under 16px (the app's fields are 15–17px, as
+  drawn) and leaves the page zoomed past the screen. `public/ios-viewport.js` adds `maximum-scale=1` to the
+  viewport on iOS only, which stops that zoom and keeps pinch-zoom (Safari ignores the limit for pinches).
+  Android keeps the plain viewport, since it doesn't zoom on focus and would lose pinch-zoom.
 
 ## One-time setup (owner)
 

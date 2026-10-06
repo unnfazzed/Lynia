@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Finishes apps/mobile's web export for app.lyniago.com (docs/CUSTOMER-WEB.md):
 //   1. copies public/ (Add to Home Screen manifest + icons, _headers) into the export, and
-//   2. adds the iPhone Home Screen tags and a safe-area viewport to index.html (owner decision W5).
+//   2. adds the iPhone Home Screen tags and a safe-area viewport to index.html (owner decision W5), and
+//   3. loads public/ios-viewport.js, which stops iPhone Safari zooming in when a text field is focused.
 // Usage: node apps/customer-web/finish-build.mjs <export dir>. Idempotent; fails loudly if Expo's
 // index.html no longer has the tags it edits, so a template change can't silently drop them.
 import { cpSync, readFileSync, writeFileSync } from "node:fs";
@@ -37,6 +38,7 @@ if (!html.includes(MARK)) {
     '<meta name="mobile-web-app-capable" content="yes" />',
     '<meta name="apple-mobile-web-app-title" content="LyniaGo" />',
     '<meta name="apple-mobile-web-app-status-bar-style" content="default" />',
+    '<script src="/ios-viewport.js"></script>',
   ].join("\n    ");
   if (!html.includes("</head>")) throw new Error("index.html has no </head>");
   html = html.replace("</head>", `    ${head}\n  </head>`);
