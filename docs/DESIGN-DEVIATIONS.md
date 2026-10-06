@@ -2436,12 +2436,13 @@ outside the area LyniaGo covers for now."
 | Where | Mock | App | Why |
 |---|---|---|---|
 | "Not live yet" (C6 pill, B1/D1 state) | A branch "LyniaGo hasn't switched on" | Live = a **shop**, or a **restaurant** ops switched on (`pilotEnabled`) | Ops only ever switch restaurants on (the go-live switch refuses shops), so a shop read by the flag alone would never leave "Almost ready" and would lose Book a rider |
-| B1/D1 not-live state | "After Create branch, or switching to a not-live branch" | Shown only to an owner with **2+ branches** | Read literally from the mock's two triggers; a single new restaurant keeps today's Orders home, so onboarding is unchanged |
+| B1/D1 not-live state | "After Create branch, or switching to a not-live branch" | Shown for **any business not live**, whatever its branch count (was: an owner with 2+ branches only) | Owner, 2026-10-05 (E2E FS-4, *"Reuse 'Almost ready'"*): a single new business was told "You're open" while customers couldn't see it |
 | C4 Account rows | Shop front · Opening hours · **Branches** · Preferred riders · Team · Help | D-50's owner-only "Taking orders" stays, after Branches | D-50 row, not drawn in either export |
 | Three tap targets (C7 back chevron, the location card's "Change", the C7 banner's "Open WhatsApp") | 36px | `var(--target-min)` (44px); "Change" and "Open WhatsApp" keep the drawn layout with a −4px margin; C7 uses the shared AppBar's 44px back | **Upstream kit defect** (CLAUDE.md, owner decision D2 2026-08-20): a mock may not draw below the floor and the app never reproduces it. "Change" was already 36px in A4 (D-48); fixed there too, as it is the same component |
 
 **Owner OK on both readings (this session, 2026-10-01):** *"Shops are live yes. Shop orders don't expire"*,
-and "Almost ready" for owners with 2+ branches only ("Yes, 2+ branches only"). The second half of the first
+and "Almost ready" for owners with 2+ branches only ("Yes, 2+ branches only"; superseded 2026-10-05 by
+*"Reuse 'Almost ready'"* for any business not live, E2E FS-4). The second half of the first
 answer, that **shop customer orders don't expire**, is recorded for the shop customer surface (plan
 2026-09-29 Phase 3); shops take no customer orders yet, so nothing here depends on it.
 

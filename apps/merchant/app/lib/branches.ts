@@ -20,9 +20,11 @@ export function showBranchChevron(business: Pick<MerchantProfileResponse, "myRol
   return business?.myRole === "owner" && branchCount >= 2;
 }
 
-/** The Orders home's not-live state (README §5), only for an owner with 2+ branches (ledger D-51). */
-export function showNotLiveHome(business: Pick<MerchantProfileResponse, "myRole" | "pilotEnabled" | "businessType"> | null, branchCount: number): boolean {
-  return !!business && showBranchChevron(business, branchCount) && !isLive(business);
+/** The Orders home's not-live state (README §5, ledger D-51). E2E 2026-10-05 FS-4 (owner: "Reuse 'Almost
+ *  ready'"): any business ops haven't switched on, whatever its branch count — a single new business was
+ *  otherwise told "You're open" while customers couldn't see it. */
+export function showNotLiveHome(business: Pick<MerchantProfileResponse, "pilotEnabled" | "businessType"> | null): boolean {
+  return !!business && !isLive(business);
 }
 
 /** C7's four API refusals (README "Error copy"), by the API's `reason`. Inline under a field, or a banner. */

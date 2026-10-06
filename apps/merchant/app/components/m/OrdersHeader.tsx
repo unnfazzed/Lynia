@@ -76,7 +76,7 @@ export function OrdersHeader({
   const [sheet, setSheet] = useState(false);
   const branches = useBranches(owner);
   const chevron = showBranchChevron(merchant, branches.length);
-  const notLive = showNotLiveHome(merchant, branches.length);
+  const notLive = showNotLiveHome(merchant);
   const closed = open.status.closedByHand && !notLive;
   const kpis = owner && !shop && !closed && !notLive;
 
