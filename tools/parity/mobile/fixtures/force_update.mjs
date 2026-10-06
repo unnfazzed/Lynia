@@ -8,3 +8,12 @@
 process.env.EXPO_PUBLIC_STORE_URL = process.env.EXPO_PUBLIC_STORE_URL || "https://play.google.com/store/apps/details?id=zw.co.lynia";
 
 export default {};
+
+// U1 draws the online state with the server's "New · Faster live tracking" line. Without a router the
+// screen's requests fail, the reachability store flips offline and the render shows U3 instead; and the
+// `whatsNew` line comes from the version gate the root layout fetches, which a lone screen never does.
+import { installRouter } from "./_harness.mjs";
+import { setServerVersionGateForTest } from "../../../../apps/mobile/src/net/use-server-version-gate";
+
+installRouter([]);
+setServerVersionGateForTest({ min: "99.0.0", recommended: null, whatsNew: "Faster live tracking" });
