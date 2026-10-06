@@ -232,11 +232,20 @@ export const PARITY_STATUS = {
     reason: "Not a sign-up step since docs/DESIGN-DEVIATIONS.md D-62 (owner, 2026-10-02): see RJ.photo_capture.",
   }, // Rider photo · preview
   "RJ.photo_uploading": { status: "PENDING" }, // Rider photo · uploading
-  "RJ.kyc_pending": { status: "PENDING" }, // Verification pending
+  "RJ.kyc_pending": {
+    status: "PENDING",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-80 (owner, 2026-10-06): the First Run v2 handoff (packages/design/handoff/first-run-v2, F1–F8) draws every ID-check outcome in one full-screen shell on the rider board (app/rider/(tabs)/index.tsx, src/ui/firstrun/IdCheckOutcome.tsx) — this one is F1 (manual review), F2 (held) and F8 (just sent); the automated check keeps Calm Mint v2 R2. Not aligned to.",
+  }, // Verification pending
   // The two new pending states (P0-1). Adopted into the kit here; the app side is PR 3 of
   // docs/plans/2026-08-20-navigation-fix-forward.md, which wires all three through resolveKycGate.
-  "RJ.kyc_unfinished": { status: "PENDING" }, // Verification not finished — resume, don't restart
-  "RJ.kyc_cant_start": { status: "PENDING" }, // SDK couldn't open — device fault, not the rider's
+  "RJ.kyc_unfinished": {
+    status: "PENDING",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-80 (owner, 2026-10-06): the First Run v2 handoff (packages/design/handoff/first-run-v2, F1–F8) draws every ID-check outcome in one full-screen shell on the rider board (app/rider/(tabs)/index.tsx, src/ui/firstrun/IdCheckOutcome.tsx) — this one is F3 ‘Almost there, {firstName}’. Not aligned to.",
+  }, // Verification not finished — resume, don't restart
+  "RJ.kyc_cant_start": {
+    status: "PENDING",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-80 (owner, 2026-10-06): the First Run v2 handoff (packages/design/handoff/first-run-v2, F1–F8) draws every ID-check outcome in one full-screen shell on the rider board (app/rider/(tabs)/index.tsx, src/ui/firstrun/IdCheckOutcome.tsx) — this one is F7 ‘Couldn’t open the ID check’. Not aligned to.",
+  }, // SDK couldn't open — device fault, not the rider's
   "RJ.kyc_verified": { status: "PENDING" }, // Verified
   "RJ.offer_sent": { status: "PENDING" }, // Offer sent · waiting
   "RJ.picked": { status: "PENDING" }, // Customer picked you
@@ -267,13 +276,22 @@ export const PARITY_STATUS = {
   "RJ.job_bail": { status: "PENDING" }, // Rider cancels (bail)
   "RJ.job_offline": { status: "PENDING" }, // Connection lost mid-job
   "RJ.job_cancelled": { status: "PENDING" }, // Customer cancelled
-  "RJ.kyc_failed": { status: "PENDING" }, // Verification failed
-  "RJ.kyc_expired": { status: "PENDING" }, // ID expired (later)
+  "RJ.kyc_failed": {
+    status: "PENDING",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-80 (owner, 2026-10-06): the First Run v2 handoff (packages/design/handoff/first-run-v2, F1–F8) draws every ID-check outcome in one full-screen shell on the rider board (app/rider/(tabs)/index.tsx, src/ui/firstrun/IdCheckOutcome.tsx) — this one is F4a–d, one page per decline reason (blurry / face / document / other). Not aligned to.",
+  }, // Verification failed
+  "RJ.kyc_expired": {
+    status: "PENDING",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-80 (owner, 2026-10-06): the First Run v2 handoff (packages/design/handoff/first-run-v2, F1–F8) draws every ID-check outcome in one full-screen shell on the rider board (app/rider/(tabs)/index.tsx, src/ui/firstrun/IdCheckOutcome.tsx) — this one is F6 ‘Your ID has expired’. Not aligned to.",
+  }, // ID expired (later)
   "RJ.photo_failed": { status: "PENDING" }, // Rider photo · upload failed
   "RJ.gate_out_of_area": { status: "PENDING" }, // Gate · out of area
   "RJ.gate_cooldown": { status: "PENDING" }, // Gate · cooldown
   "RJ.gate_banned": { status: "PENDING" }, // Gate · account closed
-  "RJ.gate_kyc_locked": { status: "PENDING" }, // Gate · verification locked
+  "RJ.gate_kyc_locked": {
+    status: "PENDING",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-80 (owner, 2026-10-06): the First Run v2 handoff (packages/design/handoff/first-run-v2, F1–F8) draws every ID-check outcome in one full-screen shell on the rider board (app/rider/(tabs)/index.tsx, src/ui/firstrun/IdCheckOutcome.tsx) — this one is F5 ‘Let’s finish this together’. Not aligned to.",
+  }, // Gate · verification locked
   "RJ.topup_declined": { status: "PENDING" }, // Top up · declined
   "RJ.offline": { status: "PENDING" }, // Offline banner
   "RJ.on_hold": { status: "PENDING" }, // Account on hold

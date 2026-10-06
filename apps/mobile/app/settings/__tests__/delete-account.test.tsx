@@ -1,8 +1,9 @@
 /**
  * In-app account deletion (Google Play policy: any app offering account creation must offer account
- * deletion from inside the app; CDPA right to erasure), as the design draws it — TWO screens
- * (screens-shipped.jsx `DeleteAccount` → `DeleteFinal`, LJ.delete_account / LJ.delete_final) rather
- * than an inline card in the settings list. This suite pins both the mocks' drawn copy and the
+ * deletion from inside the app; CDPA right to erasure) — First Run v2 I (ledger D-80 §2 #6): the new back
+ * header, a danger hero, "Delete your account?", the live "No delivery running" box, "Keep my account" as
+ * the primary and "Delete account" as the danger link — keeping the TWO steps (the final step carries D-79's
+ * immediate-deletion sentence and the acknowledgement tick). This suite pins the drawn copy and the
  * behaviours that make the flow safe to ship:
  *
  *  1. reaching the destructive call takes an explicit second SCREEN plus the acknowledgement tick —
@@ -28,7 +29,8 @@ const mockSignOut = jest.fn(async () => undefined);
 const mockDeleteAccount = jest.fn(async () => undefined);
 const mockActiveOrder = jest.fn(async (): Promise<unknown> => null);
 
-jest.mock("expo-router", () => ({ useRouter: () => ({ push: jest.fn(), back: jest.fn() }) }));
+const mockBack = jest.fn();
+jest.mock("expo-router", () => ({ useRouter: () => ({ push: jest.fn(), back: mockBack }) }));
 jest.mock("../../../src/auth/auth-context", () => ({
   useAuth: () => ({ session: { role: "customer" }, signOut: mockSignOut }),
 }));
@@ -45,7 +47,7 @@ import DeleteAccountScreen, { type DeleteAccountScreenProps } from "../delete-ac
 function press(tree: renderer.ReactTestRenderer, label: string | RegExp): void {
   const match = (v: unknown): boolean =>
     typeof v === "string" && (typeof label === "string" ? v === label : label.test(v));
-  const node = tree.root.findAll((n) => match(n.props.children) || match(n.props.label))[0];
+  const node = tree.root.findAll((n) => match(n.props.children) || match(n.props.label) || match(n.props.accessibilityLabel))[0];
   if (!node) throw new Error(`no node labelled ${String(label)}`);
   let p: typeof node | null = node;
   while (p && typeof p.props.onPress !== "function") p = p.parent;
@@ -107,37 +109,49 @@ async function render(props: DeleteAccountScreenProps = {}): Promise<renderer.Re
 }
 
 beforeEach(() => {
+  mockBack.mockClear();
   mockSignOut.mockClear();
   mockDeleteAccount.mockClear();
   mockDeleteAccount.mockResolvedValue(undefined);
   mockActiveOrder.mockResolvedValue(null);
 });
 
-describe("delete account — the explainer screen (LJ.delete_account)", () => {
-  it("draws the mock's explainer and the clear-to-continue strip, and deletes nothing", async () => {
+describe("delete account — the explainer (First Run v2 I)", () => {
+  it("draws I's words and the clear-to-continue box, and deletes nothing", async () => {
     const tree = await render();
-    expect(has(tree, "Delete your account?")).toBe(true);
-    expect(has(tree, /Your profile, saved places, notifications and order history will be permanently deleted/)).toBe(true);
-    expect(has(tree, "No delivery is running — you're clear to continue. (A live order blocks deletion until it ends.)")).toBe(true);
+    expect(has(tree, "Delete")).toBe(true);
+    expect(has(tree, "your account?")).toBe(true);
+    expect(has(tree, "Profile, places and order history go for good. Payment records stay as the law needs.")).toBe(true);
+    expect(has(tree, "No delivery running")).toBe(true);
+    // The old explainer's copy is gone.
+    expect(has(tree, /Continue to delete/)).toBe(false);
     expect(mockDeleteAccount).not.toHaveBeenCalled();
   });
 
-  it("a running delivery blocks the step and says so in the same strip", async () => {
+  it("'Keep my account' is the primary, and goes back", async () => {
+    const tree = await render();
+    expect(tree.root.findAll((n) => n.props.testID === "delete-keep" && n.props.label === "Keep my account")).not.toHaveLength(0);
+    press(tree, "Keep my account");
+    expect(mockBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("a running delivery blocks the step and says so in the same box", async () => {
     mockActiveOrder.mockResolvedValue({ id: "0a1b2c3d-0000-4000-8000-000000000001" });
     const tree = await render();
     expect(has(tree, /A delivery is running — finish or cancel it first/)).toBe(true);
-    expect(enabled(tree, "Continue to delete")).toBe(false);
+    expect(has(tree, "No delivery running")).toBe(false);
+    expect(enabled(tree, "Delete account")).toBe(false);
   });
 
-  it("continuing lands on the final step, still without deleting", async () => {
+  it("the danger link lands on the final step, still without deleting", async () => {
     const tree = await render();
-    press(tree, "Continue to delete");
-    expect(has(tree, "This is the final step")).toBe(true);
+    press(tree, "Delete account");
+    expect(has(tree, "the final step")).toBe(true);
     expect(mockDeleteAccount).not.toHaveBeenCalled();
   });
 });
 
-describe("delete account — the final step (LJ.delete_final)", () => {
+describe("delete account — the final step (two-step confirm kept, owner D-80 §2 #6)", () => {
   it("says deletion is immediate (D-79: the API erases at once), with the acknowledgement tick", async () => {
     const tree = await render({ initialStep: "final" });
     // The paragraph interpolates a bold "straight away", so it renders as a child ARRAY rather than
@@ -152,7 +166,14 @@ describe("delete account — the final step (LJ.delete_final)", () => {
     expect(has(tree, "I understand my history and saved places will be gone")).toBe(true);
   });
 
-  it("the delete button is gated on the tick", async () => {
+  it("the back header returns to the explainer, not out of the flow", async () => {
+    const tree = await render({ initialStep: "final" });
+    press(tree, /^Back$/);
+    expect(has(tree, "your account?")).toBe(true);
+    expect(mockBack).not.toHaveBeenCalled();
+  });
+
+  it("the delete link is gated on the tick", async () => {
     const tree = await render({ initialStep: "final" });
     expect(enabled(tree, "Delete my account")).toBe(false);
     press(tree, "I understand my history and saved places will be gone");

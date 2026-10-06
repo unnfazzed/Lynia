@@ -13,7 +13,7 @@ export { OfflineBanner, type ConnectivityState } from "./OfflineBanner";
 export { AppBar } from "./shell/AppBar";
 export { AppScreen } from "./shell/AppScreen";
 export { APP_TABS, RIDER_TABS, TAB_BAR_GAP, TAB_BAR_H, TAB_BAR_SPACE, TabBar, TabIllus, tabA11yLabel, type AppTab, type TabArt, type TabBadge } from "./shell/TabBar";
-export { ShellTabBar, TabBarSpaceProvider, useCustomerTabBadges, useKeyboardVisible, useRiderTabBadges, useTabBarSpace, useTabReselect, useTabRoot, useTabScrollToTop } from "./shell/TabShell";
+export { ShellTabBar, TabBarSpaceProvider, useCustomerTabBadges, useHideTabBar, useKeyboardVisible, useRiderTabBadges, useTabBarSpace, useTabReselect, useTabRoot, useTabScrollToTop } from "./shell/TabShell";
 // The 8c home header/cards (HomeHeader, HomeStatusRow, LiveOrderCard, RestaurantCard), BrandHeader,
 // CodeInput, Avatar/RiderMini and Celebrate were deleted in the 2026-10-02 bundle trim: no live route
 // rendered them any more (the rider board, Orders tab and Home moved to their v2 handoffs). The

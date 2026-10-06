@@ -13,7 +13,7 @@ import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../../src/api/
 import { getFoodDispatchOffer } from "../../../src/api/food-rider";
 import { getDemandZones } from "../../../src/api/rider-v2";
 import { noteKycLaunched, retryKyc, sendHeartbeat, setOnline } from "../../../src/api/riders";
-import { loadAcknowledgedHandbacks } from "../../../src/auth/session";
+import { loadAcknowledgedHandbacks, saveRolePreference } from "../../../src/auth/session";
 import { useBootPhase } from "../../../src/boot/boot-phase";
 import { usePrewarmRoutes, type PrewarmRoute } from "../../../src/boot/prewarm-routes";
 import { supportWhatsAppUrl } from "../../../src/config";
@@ -29,9 +29,10 @@ import {
   type OnlineGateReason,
   resolveKycGate,
   resolveKycRetryFeedback,
-  riderDeclineLabel,
 } from "../../../src/logic/gates";
 import { useHomeLocation } from "../../../src/logic/home-location";
+import { kycScreenFor } from "../../../src/logic/kyc-outcome";
+import { startRiderPermFlow } from "../../../src/logic/rider-perm-flow";
 import { markRiderWelcomeSeen, riderWelcomeSeen } from "../../../src/logic/rider-welcome";
 import { isSentOfferExpired, isSentOfferStale } from "../../../src/logic/rider-bid-draft";
 import { type GateId, kycTriesLeft, resolveGate } from "../../../src/logic/rider-gate";
@@ -44,7 +45,8 @@ import { useTabTop } from "../../../src/query/use-tab-top";
 import { useWallet, useWalletConfig } from "../../../src/query/use-wallet";
 import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refetch";
 import { useRiderBoard } from "../../../src/realtime/use-rider-board";
-import { AppScreen, EmptyRow, EmptyState, emptyCopy, fillEmpty, haptic, Icon, type IconName, statusPillLabel, useActionError, useTabBarSpace } from "../../../src/ui";
+import { AppScreen, EmptyRow, EmptyState, emptyCopy, fillEmpty, haptic, Icon, type IconName, statusPillLabel, useActionError, useHideTabBar, useTabBarSpace } from "../../../src/ui";
+import { IdCheckOutcome } from "../../../src/ui/firstrun";
 import { CtaButton, SmBtn } from "../../../src/ui/order/kit";
 import { OrderSheet } from "../../../src/ui/order/OrderSheet";
 import { Notice } from "../../../src/ui/send/kit";
@@ -69,12 +71,18 @@ const BOARD_PREWARM: readonly PrewarmRoute[] = ["riderJob", "riderFoodJob"];
 type Toast = { text: string; icon?: IconName; undo?: () => void } | null;
 
 /**
- * The Jobs board (Rider v2 J1–J14 + gates G1–G14, `packages/design/handoff/rider-v2/`, ledger D-54).
+ * The Jobs board (Rider v2 J1–J14 + gates G8–G14, `packages/design/handoff/rider-v2/`, ledger D-54).
  *
  * Layout: the mint top card (greeting · Online / Reconnecting · detected street) → the board map (job
  * pins in sync with the cards, "You") → a snapping sheet (peek 50%, 44% when empty) → the tab bar. A
  * rider who can't work right now sees ONE gate in place of the map and sheet, picked by `resolveGate`
  * in the handoff's priority order; every gate clears on its own when its input changes.
+ *
+ * The ID check is First Run v2's (`packages/design/handoff/first-run-v2/`, ledger D-80): an unverified rider
+ * sees the outcome page F1–F8 full screen (no tab bar, no mint top card; ✕ switches to the customer side),
+ * Calm Mint v2 R2 while the automated check runs, R3 once verified — and an account with no rider record
+ * goes to R1 (`/rider/become`, G1). The non-KYC gates (GPS, area, cooldown, hold, suspended, banned, top-up)
+ * keep their Rider v2 walls.
  *
  * ALWAYS ONLINE (owner 2026-08-17): being here, past every gate, IS the shift — `online` is machine
  * state. NO manual refresh anywhere (D-30): the socket, the polls and the foreground re-read keep the
@@ -584,6 +592,24 @@ export default function RiderHome(): React.ReactElement {
   const gate: GateId | null = meQ.data == null ? null : resolveGate({ kyc: kycGate, server: serverGate, locDenied });
   const conn = online && board.connected && !beatStale;
 
+  // ── ID check (First Run v2 F / G, ledger D-80) ───────────────────────────────────────────────────
+  const kycScreen = kycScreenFor({ gate, kyc: kycGate, launch: freshKycLaunch(kycLaunch, Date.now()), declineReason: rider?.kycDeclineReason });
+  // F1–F8 are full screens: no tab bar (D-80 §2 #3).
+  useHideTabBar(kycScreen?.kind === "outcome");
+  // ✕ switches to the customer side (Home), as the Account toggle does; reopening the rider side re-resolves
+  // the same page from the server's state (G3).
+  const exitToCustomer = useCallback((): void => {
+    void saveRolePreference("customer");
+    router.replace("/home");
+  }, [router]);
+  // G1: no rider record → R1 (`/rider/become`); the "Earn with your bike" interstitial is gone. Only once the
+  // mount's re-read of `me` has landed: right after Become a rider registers, a cached customer `me` (no rider
+  // yet) must not bounce the new rider straight back to R1.
+  const toBecome = kycScreen?.kind === "become" && !meQ.isFetching;
+  useEffect(() => {
+    if (toBecome) router.replace("/rider/become");
+  }, [toBecome, router]);
+
   const offerFor = (j: BoardJob): void => {
     if (j.kind === "food") {
       router.push("/rider/food-offer");
@@ -605,49 +631,20 @@ export default function RiderHome(): React.ReactElement {
   const banner = <MintTop {...top} online={conn} loc={location.label} />;
 
   const gateView = gate ? renderGate(gate) : null;
-  function renderGate(g: GateId): React.ReactElement {
-    const retry: GateAction = { label: R.tryAgain, icon: "camera", onPress: () => retryM.mutate(), loading: !!pendingOrQueued(retryM) };
-    const wa: GateAction = { label: R.whatsappSupport, icon: "message-circle", onPress: whatsappSupport };
+  function renderGate(g: GateId): React.ReactElement | null {
     const call: GateAction = { label: R.callSupport, icon: "phone", onPress: callSupport };
     const floor = walletConfig?.floor ?? 2;
     const balance = wallet?.balance ?? null;
     switch (g) {
+      // The KYC gates (Rider v2 G1–G7) are retired: `kycScreen` draws R1 / R2 / F1–F8 in their place (D-80).
       case "notRider":
-        return <Gate icon="bike" tone="ok" title={R.gNotRiderT} body={R.gNotRiderB} primary={{ label: R.becomeRider, icon: "arrow-right", onPress: () => router.push("/rider/become?from=board") }} bridge={leaveForCustomer} />;
       case "pending":
-        // Calm Mint v2 R2 (D-55): "Rider setup" while the check is with the vendor — the checklist, safe
-        // to leave, a way to send a parcel. Manual (ops) review keeps the Rider v2 wall: R2's "usually
-        // under a minute" is only true of the automated check.
-        return kycGate?.kind === "in_flight" ? (
-          <RiderSetupPending onSendParcel={() => router.push("/send")} />
-        ) : (
-          <Gate icon="hourglass" tone="calm" title={R.gPendingT} body={R.gPendingB} bridge={leaveForCustomer} />
-        );
       case "unfinished":
-        return (
-          // R-1: the same WhatsApp way out the failed wall has — a rider whose check won't finish isn't stuck
-          // tapping the resume alone (ledger D-54 §4).
-          <Gate
-            icon="id-card"
-            tone="calm"
-            title={R.gUnfinishedT}
-            body={R.gUnfinishedB}
-            primary={{ label: R.finishId, icon: "arrow-right", onPress: () => retryM.mutate(), loading: !!pendingOrQueued(retryM) }}
-            ghost={wa}
-            bridge={leaveForCustomer}
-          />
-        );
-      case "failed": {
-        // R-6: say WHY when the decline says why; the drawn "blurry photo" copy is the default (and that case).
-        const why = riderDeclineLabel(rider?.kycDeclineReason);
-        return <Gate icon="id-card" tone="danger" title={R.gFailedT} body={why ? RF.gFailedWhyB(why) : R.gFailedB} facts={[[R.gFailedK, RF.gFailedV(kycTriesLeft(rider?.kycAttempts), 2)]]} primary={retry} ghost={wa} />;
-      }
+      case "failed":
       case "failed2":
-        return <Gate icon="id-card" tone="danger" title={R.gFailed2T} body={R.gFailed2B} primary={wa} bridge={leaveForCustomer} />;
       case "expired":
-        return <Gate icon="id-card" tone="danger" title={R.gExpiredT} body={RF.gExpiredB(null)} primary={{ ...retry, label: R.reverify }} bridge={leaveForCustomer} />;
       case "cantOpen":
-        return <Gate icon="wifi-off" tone="calm" title={R.gCantOpenT} body={R.gCantOpenB} primary={{ ...retry, icon: "refresh-cw" }} ghost={wa} />;
+        return null;
       case "gps":
         return (
           <Gate
@@ -752,17 +749,50 @@ export default function RiderHome(): React.ReactElement {
     </>
   );
 
+  // G1: on the way to R1 — nothing of the board under it.
+  if (kycScreen?.kind === "become") return <View testID="rider-to-become" style={{ flex: 1, backgroundColor: tokens.color.bg }} />;
+  // F1–F8 (First Run v2, D-80): one full-screen shell, the ✕ its only way out. KycCheckHost presents the ID
+  // check that "Try again" / "Finish ID check" / "Re-verify my ID" reopen.
+  if (kycScreen?.kind === "outcome") {
+    return (
+      <>
+        <IdCheckOutcome
+          id={kycScreen.id}
+          firstName={meQ.data?.firstName}
+          triesLeft={kycTriesLeft(rider?.kycAttempts)}
+          // NEEDS BACKEND (D-80 §4): the server doesn't serve when the ID expired yet; F6 drops the date.
+          expiredAt={null}
+          onExit={exitToCustomer}
+          onRetry={() => retryM.mutate()}
+          retrying={!!pendingOrQueued(retryM)}
+          onHelp={whatsappSupport}
+        />
+        <KycCheckHost />
+      </>
+    );
+  }
   // R2 and R3 are whole pages in the handoff (no mint top card), so they replace the board outright.
-  if (gate === "pending" && kycGate?.kind === "in_flight" && gateView) return <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>{gateView}</View>;
+  // Calm Mint v2 R2 (D-55): "Rider setup" while the automated check is with the vendor (README G3 "or R2").
+  if (kycScreen?.kind === "r2") {
+    return (
+      <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+        <RiderSetupPending onSendParcel={() => router.push("/send")} />
+      </View>
+    );
+  }
   if (showWelcome && !gate) {
     return (
       <RiderVerified
         firstName={meQ.data?.firstName?.trim() || null}
         // D-70: "Commission-free jobs · N of 5 left", served by /auth/me (absent on an older server).
         freeJobs={rider?.freeJobs && rider.freeJobs.total > 0 ? rider.freeJobs : null}
+        // D-80 §2 #5: R3's "Go online" starts the rider permission flow (P1…); P13's "Go online" is what goes
+        // online. R3 is marked seen first, so the board the flow hands back to opens on the live board.
         onGoOnline={() => {
-          setWelcomeSeen(true);
-          if (profileId) void markRiderWelcomeSeen(profileId);
+          void (async () => {
+            if (profileId) await markRiderWelcomeSeen(profileId).catch(() => undefined);
+            startRiderPermFlow(router);
+          })();
         }}
         onPapers={() => router.push("/rider/documents")}
       />
@@ -771,6 +801,13 @@ export default function RiderHome(): React.ReactElement {
 
   return (
     <AppScreen banner={banner}>
+      {/*
+        ── FIRST RUN v2 MOUNT SLOT (D-80) — wired by the integrator after the other phases merge ──
+        · Worker A (P14): `RiderPermBoardRow` (J8, "Notifications are off…" + "Turn on" → P9) replaces the
+          `notifOff` row at the top of `sheetContent`, and `RiderLocEmpty` (G8, Empty States v2 mark + "Turn on" → P1)
+          takes the "gps" gate's place for a rider who skipped location.
+        · Worker B (U4b): `<SoftUpdateBanner tone="violet" />` goes right here, under the mint top card.
+      */}
       {meQ.isLoading ? null : gateView ? (
         gateView
       ) : (
