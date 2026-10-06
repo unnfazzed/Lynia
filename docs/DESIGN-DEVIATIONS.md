@@ -2998,7 +2998,7 @@ Until each lands, its current screen stays as it is.
 limit; auto-opening the "picked you" sheet.
 
 
-## D-56 · Tab bar v1: the floating pill bar replaces the flat bar on both sides — APPROVED (2026-10-01); v1.4 update (2026-10-03) — glass deferral §5 PENDING OWNER REVIEW
+## D-56 · Tab bar v1: the floating pill bar replaces the flat bar on both sides — APPROVED (2026-10-01); v1.4 update (2026-10-03); glass APPROVED (2026-10-06, §6) — power-save rule §6 PENDING OWNER REVIEW
 
 **Owner instruction, this session (2026-10-01):** the owner asked for a prompt to redesign the bottom
 menu bar for both the rider and customer sides, took a detailed brief to Claude Design, and uploaded the
@@ -3095,11 +3095,73 @@ defined; the bar just stops using them.
 
 | What | Handoff | App | Why |
 |---|---|---|---|
-| **Glass material** (PENDING OWNER REVIEW) | `bg` at 72% over a 24dp backdrop blur + 180% saturate, solid only as a fallback | Always the solid fallback (opaque `bg`) | The app ships no backdrop-blur module. The handoff says to **ask before adding a dependency** (`expo-blur` or Haze) and **never to show a translucent bar without blur**. Adding a native module also needs a new EAS binary, since an OTA can't deliver it. Solid is the handoff's own fallback, and on API < 31 and low-RAM phones it is what most riders would see anyway. Glass ships once the owner approves the dependency. |
+| **Glass material** (SETTLED 2026-10-06: glass ships, see §6) | `bg` at 72% over a 24dp backdrop blur + 180% saturate, solid only as a fallback | Always the solid fallback (opaque `bg`) | The app ships no backdrop-blur module. The handoff says to **ask before adding a dependency** (`expo-blur` or Haze) and **never to show a translucent bar without blur**. Adding a native module also needs a new EAS binary, since an OTA can't deliver it. Solid is the handoff's own fallback, and on API < 31 and low-RAM phones it is what most riders would see anyway. Glass ships once the owner approves the dependency. |
 | Press-fill release | `surface` fill fades out over 300ms | Fades with the 360ms press release | The fill rides the press scale's native-driven value, so there's no second animation. |
 Backend, per README §5: popularity ranking, the
 merchant-funded free-delivery flag (and "Delivery: Free, paid by <venue>" at checkout), the customer
 shop list with `kind`, the new-rider free-jobs rule, Didit ID prefill.
+
+### 6 · Glass (2026-10-06) — APPROVED
+
+**Owner instruction, this session (2026-10-06):** after a review of the bar against the usual standards
+for floating and translucent tab bars, the owner answered *"i approve glass"*. That settles §5's glass
+row and approves the dependency it was waiting on.
+
+**What landed:**
+- **`expo-blur` ~15.0.8** (the SDK 54 version). It is a native module. It shifts the `fingerprint`
+  runtimeVersion, so glass reaches phones only with the next EAS build (`mobile-release.yml`), never by
+  OTA (`mobile-ota.yml`'s JS-only rule). An OTA from a `main` that has it no longer matches binaries built
+  before it.
+- **The fill** (`src/ui/shell/TabBar.tsx`): a `BlurView` under a transparent bar, clipped to the pill.
+  `tint="systemChromeMaterialLight"` overlays white (= `bg`) at 0.97 × intensity / 100, and on Android it
+  blurs at intensity / `blurReductionFactor` (4). So **intensity 96 is 93% `bg` and a 24 radius** (Dimezis
+  BlurView 2.0.6, `RenderEffectBlur` on API 31+). The tint is raised from the handoff's 72% for
+  readability; see the "Glass tint" row below. Still no edge and no shadow.
+- **The fallback** (`src/ui/shell/useGlass.ts`) is solid `bg` whenever the handoff says so. The settings
+  are read live, and until the first read settles the bar is solid, so a user with one of them on never
+  sees a frame of glass:
+
+  | Handoff condition | Read from |
+  |---|---|
+  | Reduced transparency | iOS Reduce Transparency; web `prefers-reduced-transparency` |
+  | Increased contrast / high-contrast text | Android high contrast text; iOS Increase Contrast; web `prefers-contrast: more` |
+  | Forced colours | web `forced-colors: active` (no native equivalent) |
+  | Backdrop blur not supported | Android below API 31; web without `backdrop-filter` |
+  | Android API < 31 | `Platform.Version` |
+  | `isLowRamDevice()` | `expo-device` total memory below 3.5 GiB (see below) |
+  | Power-save mode | **not detected** (see below) |
+
+- `material="solid"` forces the opaque bar, as the kit's `material` prop does.
+- **Bundle:** +5,610 B Hermes (7,276,950 → 7,282,560), within `size-budget.json`, so no raise.
+- **Tests:** `tab-bar-glass.test.tsx` pins the 96 / `systemChromeMaterialLight` / `dimezisBlurView` fill,
+  an idle label's ≥ 4.5:1 through the glass over black, `ink` and `forest` (computed from expo-blur's own
+  overlay formula, so the 72% tint fails it), the transparent bar, the solid paths (`material="solid"`, Reduce Transparency, Increase Contrast live both
+  ways), the API 31 and RAM cut-offs, and that the bar is never translucent without the blur.
+- **Evidence:** `docs/parity/TAB-BAR-V1-4-GLASS-2026-10-06.png`, the prototype beside the app at every
+  state, glass on both sides (the prototype at its 72%, the app at 93%). The parity lane renders expo-blur's
+  real web build (`saturate(180%)` + blur + the tint), shimmed in `tools/parity/mobile/shims/expo-blur.js`. Headless Chromium leaves a
+  few glyphs near the bar's bottom edge legible on **both** sides; that is a renderer artefact and it
+  matches. The Android blur itself (Dimezis) can only be checked on a phone.
+
+**Deviations (glass):**
+
+| What | Handoff | App | Why |
+|---|---|---|---|
+| **Glass tint** (APPROVED 2026-10-06) | `bg` at 72% | `bg` at 93% | **Owner instruction, this session (2026-10-06):** *"improve readability"*, in answer to the contrast finding below. At 72% an idle label (`muted`) falls under 4.5:1 over dark content. At 93% it holds 5.0:1 even over black (5.1:1 over `ink`, 5.2:1 over `forest`). The blur radius is unchanged (24). Content behind still shows through, softly. |
+| Saturation | `blur(24px) saturate(180%)` | Android: blur only. Web: `saturate(180%)` applied | Dimezis BlurView has no saturation step and expo-blur exposes none. |
+| Web blur radius | 24px | 19.2px | expo-blur's web build blurs at intensity × 0.2. Parity lane only; Android is exactly 24. |
+| iOS fill | `bg` + 24 blur | UIKit's light chrome material at intensity 0.96 | expo-blur on iOS is a `UIVisualEffectView`, which has no exact-alpha tint. The iPhone app ships customer-only. |
+| Low-RAM rule | `ActivityManager.isLowRamDevice()` | Total memory below 3.5 GiB | No installed module exposes the flag. A "3GB" phone reports about 2.8 GiB and a "4GB" one about 3.7 GiB, so the cut-off keeps the build brief's "2–3GB devices get the solid fallback". Android's own flag only covers ≤1GB Go phones. |
+| **Power-save rule** (PENDING OWNER REVIEW) | Solid while power-save is on | Not detected | Needs `expo-battery`, a second native module. The owner approved the blur dependency only. It can ride the same binary if wanted. |
+| The bar's own art in the blur | Blur of the content behind | Dimezis also snapshots the bar's indicator and art, so a faint wash of them sits under the tint | expo-blur on Android puts its children beside the Dimezis view, not inside it. Under 93% `bg` this is at most about 7% of an already-blurred image. |
+| Maps behind the bar | Blurred map | Window background | Dimezis snapshots with a software canvas, which can't draw SurfaceView/TextureView. On the Jobs tab the board's sheet, not the map, is behind the bar. |
+
+**Contrast finding (reported upstream; the app's fix is the "Glass tint" row).** The kit's `useGlass`
+comment says the 72% tint "keeps `--muted` ≥ 4.5:1 over any backdrop". Over dark content it doesn't. Blur
+averages colour and doesn't lighten it. An idle label (`muted`) on 72% `bg` over `forest` (#063B22, the
+Orders NOW cards) is 3.38:1, and over `ink` it is 3.15:1. Holding 4.5:1 over near-black needs at least an
+89% tint. The next export should raise the tint (or darken idle labels on glass) so the kit and the app
+agree again.
 
 ## D-57 · Browse v2: the Restaurants list and storefront follow the browse-v2 handoff (Shops and Pharmacy next) — APPROVED (2026-10-01)
 

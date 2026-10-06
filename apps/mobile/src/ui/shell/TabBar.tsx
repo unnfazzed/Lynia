@@ -1,4 +1,5 @@
 import { tokens } from "@lynia/shared/tokens";
+import { BlurView } from "expo-blur";
 import React, { useEffect, useRef, useState } from "react";
 import { Animated, Easing, StyleSheet, Text, View, type LayoutChangeEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -6,6 +7,7 @@ import Svg, { Circle, Path, Polygon, Rect } from "react-native-svg";
 import { haptic } from "../haptics";
 import { Tappable } from "../Tappable";
 import { useReduceMotion } from "../useReduceMotion";
+import { useGlass } from "./useGlass";
 
 /*
  * Tab bar v1.4 — floating pill (`packages/design/handoff/tab-bar-v1/`, ledger D-56). A port of the kit's
@@ -19,6 +21,16 @@ export const TAB_BAR_H = 60;
 export const TAB_BAR_GAP = 12;
 /** `TAB_BAR_H + TAB_BAR_GAP` — the bar's reserve above the safe-area inset. Content pads by this + inset + 16. */
 export const TAB_BAR_SPACE = 72;
+
+/**
+ * v1.4 glass, raised for readability (owner, ledger D-56 §6): `bg` at 93% over a 24 blur. The handoff's
+ * 72% lets an idle `muted` label fall to about 3.2:1 over dark content; 93% holds it at 5:1 even over
+ * black. expo-blur's `systemChromeMaterialLight` overlays white (= `bg`) at 0.97 × intensity / 100 and,
+ * on Android, blurs at intensity / `blurReductionFactor` (4), so 96 is 93% `bg` and a 24 radius. iOS
+ * draws UIKit's light chrome material at that intensity; web, `saturate(180%)` with a 19.2px blur.
+ */
+const GLASS_INTENSITY = 96;
+const GLASS_TINT = "systemChromeMaterialLight";
 
 export type TabArt = "home" | "orders" | "account" | "jobs" | "money";
 
@@ -300,6 +312,7 @@ export function TabBar({
   onReselect,
   hidden = false,
   reduceMotion: reduceMotionProp,
+  material = "glass",
 }: {
   active?: string;
   tabs?: AppTab[];
@@ -308,10 +321,13 @@ export function TabBar({
   onReselect?: (id: string) => void;
   hidden?: boolean;
   reduceMotion?: boolean;
+  /** The kit's `material`: glass (the default) falls back to solid by itself; `solid` forces it. */
+  material?: "glass" | "solid";
 }): React.ReactElement | null {
   const insets = useSafeAreaInsets();
   const osReduce = useReduceMotion();
   const reduceMotion = reduceMotionProp ?? osReduce;
+  const glass = useGlass(material === "glass");
   const n = tabs.length;
   const idx = Math.max(0, tabs.findIndex((t) => t.id === active));
   const cur = tabs[idx]!;
@@ -350,8 +366,11 @@ export function TabBar({
       accessibilityRole="tablist"
       accessibilityLabel="Main"
       onLayout={(e: LayoutChangeEvent) => setBarW(e.nativeEvent.layout.width)}
-      style={[styles.bar, { bottom: TAB_BAR_GAP + insets.bottom }]}
+      style={[styles.bar, glass ? styles.barGlass : null, { bottom: TAB_BAR_GAP + insets.bottom }]}
     >
+      {glass ? (
+        <BlurView pointerEvents="none" intensity={GLASS_INTENSITY} tint={GLASS_TINT} experimentalBlurMethod="dimezisBlurView" style={styles.glass} />
+      ) : null}
       {cellW > 0 ? (
         <Animated.View pointerEvents="none" style={[styles.indicator, { width: cellW, transform: [{ translateX: Animated.multiply(slide, cellW) }] }]} />
       ) : null}
@@ -376,9 +395,8 @@ export function TabBar({
 /**
  * Hoisted out of render (docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.2): the bar is on screen
  * for the whole session and re-renders on every route change, so its static styles are created once.
- * v1.4: no edge and no shadow. The fill is the handoff's solid fallback (opaque `bg`), not the glass —
- * the app ships no backdrop-blur module, and the handoff forbids a translucent bar without blur
- * (ledger D-56 §5).
+ * v1.4: no edge and no shadow. The fill is the glass (`BlurView` under a transparent bar) or, wherever
+ * `useGlass` says the handoff's fallback applies, opaque `bg` — never a translucent bar without blur.
  */
 const styles = StyleSheet.create({
   bar: {
@@ -392,6 +410,9 @@ const styles = StyleSheet.create({
     borderRadius: tokens.radius.pill,
     zIndex: 20,
   },
+  barGlass: { backgroundColor: "transparent" },
+  // expo-blur ignores `borderRadius` unless the view clips (its docs: `overflow: "hidden"`).
+  glass: { ...StyleSheet.absoluteFillObject, borderRadius: tokens.radius.pill, overflow: "hidden" },
   indicator: { position: "absolute", top: 4, left: 4, height: 52, borderRadius: tokens.radius.pill, backgroundColor: c.tileMint },
   cell: { flex: 1, minWidth: 0, height: 52, borderRadius: tokens.radius.pill },
   cellInner: { flex: 1, alignItems: "center", justifyContent: "center", borderRadius: tokens.radius.pill },
