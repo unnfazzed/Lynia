@@ -5,7 +5,7 @@ import { RO } from "../onboarding/copy";
 import { KYF } from "../rider/copy";
 import { PinnedFooter, ExitButton, type PinnedFooterProps } from "./actions";
 import { TipChips, TriesMeter } from "./bits";
-import { KY } from "./copy";
+import { KY, PD } from "./copy";
 import { Body, HeroDisc, HeroPanel, SplitTitle } from "./hero";
 import type { FrTone } from "./metrics";
 import { FirstRunScreen } from "./screen";
@@ -31,7 +31,7 @@ export interface IdCheckOutcomeProps {
   /** F3 finish, F4 try again, F6 re-verify, F7 try again — reopens the ID check. */
   onRetry: () => void;
   retrying?: boolean;
-  /** WhatsApp: F2 / F4 / F7 link, F5 CTA. */
+  /** WhatsApp: F2 / F4 / F7 link, F5 / F5dup CTA. */
   onHelp: () => void;
 }
 
@@ -115,6 +115,11 @@ function pageFor(id: KycOutcomeId, firstName: string | null | undefined, expired
       return { tone: "danger", icon: "circle-alert", a: KY.otherA, b: KY.otherB, body: KY.otherBody, tries: true, primary: "retry", primaryLabel: KY.tryAgain, primaryIcon: "camera", link: true };
     case "F5":
       return { tone: "mint", icon: "message-circle", a: KY.lockedA, b: KY.lockedB, body: KY.lockedBody, primary: "help", primaryLabel: KY.msg, primaryIcon: "message-circle" };
+    case "F5dup":
+      // F5's shell for a decline as a duplicate (owner 2026-10-06, D-80 §4): "Both tries are used" would be
+      // false, so the body is PD's one-ID-one-account words (drawn for D4): "This ID is on another account.
+      // One ID, one account. Message us and we'll sort it." — the sentence is undrawn on an F page.
+      return { tone: "mint", icon: "message-circle", a: KY.lockedA, b: KY.lockedB, body: `${PD.takenA} ${PD.takenB}. ${PD.takenBody}`, primary: "help", primaryLabel: KY.msg, primaryIcon: "message-circle" };
     case "F6":
       return { tone: "danger", icon: "id-card", a: KY.expA, b: KY.expB, body: KYF.expBody(expiredAt ?? null), primary: "retry", primaryLabel: KY.expCta, primaryIcon: "camera" };
     case "F7":

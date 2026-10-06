@@ -4526,8 +4526,8 @@ wires); `app/(tabs)/home.tsx` → phases 2+3 (phase 4 adds the one-line U4a moun
   `KYC_COMPLETED_HINT_MS` hint) → **F8**; automated check with the vendor → **R2** (Calm Mint v2 stays, README G3
   "or R2"); manual review → **F1**; held → **F2**; unfinished (and an API with no pending state, and a cancelled
   launch) → **F3**; declined below the lock → **F4a–d** by `kycDeclineReason` (`declineVariant`: `id_unreadable` → a,
-  `face_mismatch`/`liveness_failed` → b, `id_expired`/`doc_tampered` → c, `name_mismatch`/`duplicate`/`other`/unknown →
-  d); locked → **F5**; expired (the record, or the server's `kyc_expired` refusal) → **F6**; the SDK couldn't open →
+  `face_mismatch`/`liveness_failed` → b, `id_expired`/`doc_tampered` → c, `name_mismatch`/`other`/unknown →
+  d; `duplicate` → **F5dup**, see §4); locked → **F5**; expired (the record, or the server's `kyc_expired` refusal) → **F6**; the SDK couldn't open →
   **F7**; the server's plain `kyc` refusal on a cached-verified rider → **F3**. The non-KYC gates (GPS, area, cooldown,
   hold, suspended, banned, top-up) keep their Rider v2 walls. Unit-tested state by state (`kyc-outcome.test.ts`).
 - **One shell** (`src/ui/firstrun/IdCheckOutcome.tsx`): `FirstRunScreen` + `HeroPanel` (✕ in `topLeft`) + `HeroDisc`
@@ -4589,31 +4589,47 @@ _Filled in phase by phase._
 
 **Phase 6 (F / G / I):**
 
-- **F6's date (NEEDS BACKEND).** `KY.expBody` is drawn "Expired 2 Oct 2026. Re-verify to keep riding." `/auth/me`
-  serves no expiry date (`kycExpiredAt`), so F6 shows "Re-verify to keep riding." alone; `KYF.expBody(date)` (in
-  `src/ui/rider/copy.ts`) puts the date back the day the server sends it.
+- **F6's date — BUILT (owner 2026-10-06, answer 4).** `KY.expBody` is drawn "Expired 2 Oct 2026. Re-verify to keep
+  riding." Nothing stored the day an ID expired, so migration `0077_rider_kyc_id_expiry` adds `riders.kyc_id_expires_on`
+  (DATE, nullable, expand-only). The verified decision webhook stores the document's `expiration_date`
+  (`extractDiditDocumentExpiry`, fail-open); an `expired` result — Didit's "Kyc Expired" webhook or the ops expire —
+  stamps the lapse day (`kycIdExpiryOnLapse`: the document's own day when it is on or before the event, else the event's
+  day). `/auth/me` serves `rider.kycExpiredOn` ("YYYY-MM-DD", only while `expired`; for a rider who lapsed before 0077,
+  the day the expiry was applied, `kyc_resolved_at`), and F6 renders `KYF.expBody(date)`. An older server omits the
+  field and F6 drops the date.
 - **F4's tries meter.** `KY.triesLeft` ("1 try left") is the only drawn label. `kycAttempts` counts declines and the
   lock is 2, so a decline below the lock is always 1 left; the box is drawn only then (an account with 0 recorded
   declines on a `failed` status — legacy data — shows no box rather than an undrawn "2 tries left").
-- **F4 for `name_mismatch` and `duplicate`.** No variant names them; they get F4d ("We couldn't verify your ID · Try
-  again, or message us"), not F4c, whose advice ("Use your Zimbabwe national ID card…") would be wrong when the document
-  was fine. `liveness_failed` shares F4b's face tips with `face_mismatch`.
+- **F4 for `name_mismatch`; `duplicate` on F5's page (owner 2026-10-06, answer 5).** No variant names them.
+  `name_mismatch` gets F4d ("We couldn't verify your ID · Try again, or message us"), not F4c, whose advice ("Use your
+  Zimbabwe national ID card…") would be wrong when the document was fine. A `duplicate` decline (below the lock) gets
+  **F5dup**: F5's shell — mint hero, `message-circle`, "Let's finish **this together**", one CTA "Message us on WhatsApp",
+  no tries meter, no retry — because no retry can fix an ID that is on another account. F5's body ("Both tries are
+  used…") would be false there, so its body is PD's one-ID-one-account words drawn for D4: **"This ID is on another
+  account. One ID, one account. Message us and we'll sort it."** — undrawn on an F page, **owner-approved 2026-10-06**.
+  A duplicate that is also locked (two declines) is plain F5, whose sentence is then true. `liveness_failed` shares F4b's
+  face tips with `face_mismatch`.
 - **F1 / F2 vs README G3's "or R2 if pending".** Only the automated check in flight is R2; held (F2) and manual review
   (F1) are their own drawn pages, as README F draws them.
 - **The F pages' ✕ from the customer Account (G3).** Mid-check the Account still shows the shipped in-progress / review /
   failed / locked card rather than the Customer | Rider toggle README G3 mentions ("switching the Account toggle back to
   Rider") — the toggle only exists for a verified / expired rider. The card now switches sides like the toggle. **Owner
-  question** (see the phase report): show the toggle mid-check instead.
+  question, answered 2026-10-06:** keep the status card (as built).
 - **F8's drawn "…" and the checklist meta.** The F8 checklist's step-2 meta is the drawn literal "…"; F1/F2's "In review"
   and F3's "~2 min" come from Calm Mint v2's `RO` (identical words), since `KY` has no key for them.
 - **Delete account's final step** is undrawn by I: built in I's shell (danger hero, two-tone title "This is **the final
   step**", D-79's sentence, the tick). Its destructive action follows I's grammar — the `dangerInk` text link, armed by
-  the tick — instead of the shipped danger-filled button; "Keep my account" is the 52 primary on both steps. A running
-  delivery keeps the shipped sentence in the `bad` box.
-- **Free-job pushes `KY.notif1T/B`, `KY.notif0T/B` (NEEDS BACKEND — not built).** D-79 §3 already ships the owner's own
-  words for the same two moments ("One commission-free job left" / "Your free jobs are used up", silent while commission
-  is 0%). Replacing the owner's approved words with the handoff's is an **owner question**, so the server templates are
-  unchanged.
-- **`gSuspB` "Our team sent the details by SMS."** (Rider v2 suspended wall) is not an ID-check string and was left as
-  is; BRIEF 17's "in-app notification, no SMS" was applied to the ID-check copy only.
+  the tick — instead of the shipped danger-filled button; "Keep my account" is the 52 primary on both steps (**owner,
+  2026-10-06: keep the red text link**). A running delivery keeps the shipped sentence in the `bad` box.
+- **Free-job pushes `KY.notif1T/B`, `KY.notif0T/B` — not adopted (owner 2026-10-06, answer 2).** D-79 §3 already ships
+  the owner's own words for the same two moments ("One commission-free job left" / "Your free jobs are used up", silent
+  while commission is 0%). The owner keeps the D-79 wording; the handoff's `I·free` frame and its two `KY` pairs are not
+  built, and the server templates are unchanged.
+- **Suspended wall: "by SMS" → "in your notifications" (owner 2026-10-06, answer 6).** Rider v2's `gSuspB` said "Our
+  team sent the details by SMS." The server sends **no SMS** on a suspension (SMS is used only for sign-in codes): the
+  admin suspend (`admin-riders.service.ts`) sends a push, "Account paused — open the app for details.", and the
+  Notifications feed (`notifications-feed.service.ts`, `ACCOUNT_FEED_COPY["rider.suspend"]`) pins an "Account paused" row
+  carrying the reason while the pause holds. So `RF.gSuspB` now reads "You can't take jobs until {date}. The details are
+  in your notifications." (or "You can't take jobs right now. The details are in your notifications."). Undrawn
+  sentence, owner-approved 2026-10-06.
 

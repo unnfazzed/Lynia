@@ -31,7 +31,7 @@ import {
   resolveKycRetryFeedback,
 } from "../../../src/logic/gates";
 import { useHomeLocation } from "../../../src/logic/home-location";
-import { kycScreenFor } from "../../../src/logic/kyc-outcome";
+import { kycScreenFor, parseIsoDay } from "../../../src/logic/kyc-outcome";
 import { startRiderPermFlow } from "../../../src/logic/rider-perm-flow";
 import { markRiderWelcomeSeen, riderWelcomeSeen } from "../../../src/logic/rider-welcome";
 import { isSentOfferExpired, isSentOfferStale } from "../../../src/logic/rider-bid-draft";
@@ -760,8 +760,8 @@ export default function RiderHome(): React.ReactElement {
           id={kycScreen.id}
           firstName={meQ.data?.firstName}
           triesLeft={kycTriesLeft(rider?.kycAttempts)}
-          // NEEDS BACKEND (D-80 §4): the server doesn't serve when the ID expired yet; F6 drops the date.
-          expiredAt={null}
+          // F6 "Expired 2 Oct 2026" (D-80 §4): `rider.kycExpiredOn`; an older server omits it and F6 drops the date.
+          expiredAt={parseIsoDay(rider?.kycExpiredOn)}
           onExit={exitToCustomer}
           onRetry={() => retryM.mutate()}
           retrying={!!pendingOrQueued(retryM)}
