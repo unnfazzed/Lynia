@@ -27,6 +27,11 @@ export interface OtpStore {
   graceGet(phone: string): Promise<string | null>;
   /** Increment a fixed-window counter; returns the new count. */
   hit(key: string, windowSec: number): Promise<number>;
+  /**
+   * Seconds left in `key`'s fixed window, or null when the counter has no live window. Read only after
+   * a cap is hit, so a 429 can tell the client when to try again (`retryAfter`) instead of "later".
+   */
+  ttl(key: string): Promise<number | null>;
 }
 
 export const OTP_STORE = Symbol("OTP_STORE");
@@ -78,6 +83,12 @@ export class InMemoryOtpStore implements OtpStore {
     }
     e.count += 1;
     return e.count;
+  }
+  async ttl(key: string): Promise<number | null> {
+    const e = this.rl.get(key);
+    if (!e) return null;
+    const left = Math.ceil((e.exp - Date.now()) / 1000);
+    return left > 0 ? left : null;
   }
 }
 
@@ -132,5 +143,10 @@ export class RedisOtpStore implements OtpStore {
       windowSec,
     );
     return Number(n);
+  }
+  async ttl(key: string): Promise<number | null> {
+    // TTL answers -2 (no key) or -1 (no expiry); neither is a window the client could wait out.
+    const left = await this.redis.ttl(key);
+    return left > 0 ? left : null;
   }
 }

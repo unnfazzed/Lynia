@@ -49,6 +49,15 @@ describe("InMemoryOtpStore", () => {
     expect(await store.hit("rl:phone:x", 3600)).toBe(2);
     expect(await store.hit("rl:phone:y", 3600)).toBe(1);
   });
+
+  it("ttl answers the seconds left in a counter's window, and null for no window", async () => {
+    const store = new InMemoryOtpStore();
+    expect(await store.ttl("rl:phone:none")).toBeNull();
+    await store.hit("rl:phone:z", 3600);
+    const left = await store.ttl("rl:phone:z");
+    expect(left).toBeGreaterThan(3590);
+    expect(left).toBeLessThanOrEqual(3600);
+  });
 });
 
 describe("RedisOtpStore atomicity (incr/hset + expire cannot be split)", () => {
@@ -109,5 +118,14 @@ describe("RedisOtpStore atomicity (incr/hset + expire cannot be split)", () => {
     // Prefixed away from the live OTP key so the two can never collide.
     expect(await store.graceGet("+263771")).toBe("gracehash");
     expect(await store.graceGet("+263772")).toBeNull();
+  });
+
+  it("ttl reads the counter's TTL and treats -1 / -2 (no expiry / no key) as no window", async () => {
+    const ttls: Record<string, number> = { a: 1200, b: -1, c: -2 };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const store = new RedisOtpStore({ ttl: async (k: string) => ttls[k] } as any);
+    expect(await store.ttl("a")).toBe(1200);
+    expect(await store.ttl("b")).toBeNull();
+    expect(await store.ttl("c")).toBeNull();
   });
 });

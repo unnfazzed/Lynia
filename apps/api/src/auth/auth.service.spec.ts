@@ -526,6 +526,42 @@ describe("AuthService.verifyOtp", () => {
     await expect(svc.verifyOtp("+263770000012", "222222")).rejects.toThrow(/invalid code/i);
   });
 
+  // C-9 (start-up review 2026-10-06): the app used to tell expired/locked from wrong by matching English
+  // words in the message. Each failure now carries a reason code; the messages are unchanged so builds
+  // released before the codes still match their words.
+  describe("every verify 401 carries a machine-readable reason", () => {
+    const bodyOf = (e: unknown): unknown => (e as { getResponse(): unknown }).getResponse();
+
+    it("otp_invalid for a wrong code, with the old message", async () => {
+      const { svc, store } = make(baseEnv, fakePrisma());
+      await store.put("+263770000013", tokens.hash("111111"), 300);
+      const e = await svc.verifyOtp("+263770000013", "222222").catch((x: unknown) => x);
+      expect(e).toMatchObject({ status: 401 });
+      expect(bodyOf(e)).toEqual({ statusCode: 401, message: "Invalid code", reason: "otp_invalid" });
+    });
+
+    it("otp_expired when no code is live, with the old message", async () => {
+      const { svc } = make(baseEnv, fakePrisma());
+      const e = await svc.verifyOtp("+263770000014", "123456").catch((x: unknown) => x);
+      expect(bodyOf(e)).toEqual({ statusCode: 401, message: "Code expired or never requested", reason: "otp_expired" });
+    });
+
+    it("otp_locked once the attempts are spent, with the old message", async () => {
+      const { svc, store } = make(baseEnv, fakePrisma());
+      await store.put("+263770000015", tokens.hash("123456"), 300);
+      for (let i = 0; i < 5; i++) await store.incrAttempts("+263770000015");
+      const e = await svc.verifyOtp("+263770000015", "123456").catch((x: unknown) => x);
+      expect(bodyOf(e)).toEqual({ statusCode: 401, message: "Too many attempts — request a new code", reason: "otp_locked" });
+    });
+
+    it("otp_invalid on the demo number too (same answer as any wrong guess)", async () => {
+      const demoEnv = { ...baseEnv, DEMO_OTP_PHONE: "+263770000777", DEMO_OTP_CODE: "846201" } as Env;
+      const { svc } = make(demoEnv, fakePrisma());
+      const e = await svc.verifyOtp("+263770000777", "000000", "ua", "dev-1").catch((x: unknown) => x);
+      expect(bodyOf(e)).toMatchObject({ reason: "otp_invalid", message: "Invalid code" });
+    });
+  });
+
   it("caps concurrent wrong-guess verifies at MAX_OTP_ATTEMPTS (TOCTOU)", async () => {
     // Fire many concurrent verifies with wrong codes against one live OTP. Because each verify
     // atomically consumes an attempt before comparing, only the first 5 can reach the compare and
@@ -584,7 +620,7 @@ describe("AuthService.verifyOtp", () => {
     await expect(svc.verifyOtp("+263770000059", "654321", "ua", device)).rejects.toThrow(/too many/i);
   });
 
-  it("the device sign-up cap's 429 carries reason device_signup_cap; the per-phone send cap's does not", async () => {
+  it("the device sign-up cap's 429 carries reason device_signup_cap; the per-phone send cap carries its own", async () => {
     // The merchant web names this cap ("This device has added 3 new people today") and must not say so
     // for the route's per-IP verify throttle or the send caps, which answer with the same 429 + message.
     const prisma = {
@@ -603,12 +639,36 @@ describe("AuthService.verifyOtp", () => {
       statusCode: 429,
       message: "Too many requests — try again later",
       reason: "device_signup_cap",
+      retryAfter: expect.any(Number),
     });
+    // The device window is a day: the wait is the rest of it, never more.
+    const deviceWait = ((capped as { getResponse(): { retryAfter: number } }).getResponse()).retryAfter;
+    expect(deviceWait).toBeGreaterThan(86_000);
+    expect(deviceWait).toBeLessThanOrEqual(86_400);
 
     for (let i = 0; i < 5; i++) await svc.requestOtp("+263770000078", "9.9.9.9");
     const sendCapped = await svc.requestOtp("+263770000078", "9.9.9.9").catch((e: unknown) => e);
     expect(sendCapped).toMatchObject({ status: 429 });
-    expect((sendCapped as { getResponse(): unknown }).getResponse()).toBe("Too many requests — try again later");
+    expect((sendCapped as { getResponse(): unknown }).getResponse()).toEqual({
+      statusCode: 429,
+      message: "Too many requests — try again later",
+      reason: "otp_send_limit",
+      retryAfter: expect.any(Number),
+    });
+  });
+
+  it("the per-phone send cap's retryAfter is what is left of the hour, not the whole hour", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-10-06T08:00:00Z"));
+      const { svc } = make(baseEnv, {});
+      for (let i = 0; i < 5; i++) await svc.requestOtp("+263770000068", "9.9.9.8");
+      vi.setSystemTime(new Date("2026-10-06T08:40:00Z"));
+      const capped = await svc.requestOtp("+263770000068", "9.9.9.8").catch((e: unknown) => e);
+      expect((capped as { getResponse(): { retryAfter: number } }).getResponse().retryAfter).toBe(20 * 60);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("KB-IDENTITY-BINDING L1: does NOT throttle an EXISTING account (the cap is signup-only, not sign-in)", async () => {
