@@ -4649,22 +4649,30 @@ _Filled in phase by phase._
 **Phases 4 + 5 (C / H / D / E):**
 
 - **U4b's ✕.** U4a draws a 44 ✕; U4b (the violet board banner) draws none. "Once per version" needs a way to say "not
-  now", so both get the ✕ (`UP.softDismiss` as its label). **Owner question.**
+  now", so both get the ✕ (`UP.softDismiss` as its label). **Owner decision (2026-10-06): keep the ✕ on both.**
 - **The soft banner without a store link** is not shown at all (its only action is the store). `#DCD5FF` (U4b's body
   line) is not in the token table; used as drawn, as a named constant in `SoftUpdateBanner.tsx`.
 - **U3 detection.** "Offline" is the app's reachability store (real `/health` round trips), not the OS radio state,
   so a captive portal also counts as offline. U3 applies only while a store link exists (U2 has no network action).
 - **The rider offline row is rider-only.** H2c draws it on the rider splash; a customer boot keeps splash-v1's dark
-  offline panel with "Try again". **Owner question** (one offline style for everyone?).
-- **E2b is a guide, not a viewfinder.** The app ships no in-app camera (`expo-camera` is a native dependency = a new
-  store build); the guide's shutter opens the phone's own front camera, which returns to E2c. The oval therefore
-  frames nothing live. **Owner question** if a live viewfinder is wanted.
+  offline panel with "Try again". **Owner decision (2026-10-06): keep the split.**
+- **E2b is a guide, not a viewfinder — NEEDS NATIVE.** The app ships no in-app camera (`expo-camera` is a native
+  dependency = a new store build); the guide's shutter opens the phone's own front camera, which returns to E2c. The
+  oval therefore frames nothing live. **Owner decision (2026-10-06): keep it for now; with the next native build, add
+  `expo-camera` and draw the live front camera inside the oval** (the shutter then captures in-app).
 - **E2d's bar is staged** (prepared → minted → bytes sent → attached): `fetch` exposes no byte progress.
 - **E5's photo row** is drawn with the initials disc and "Verified"; the photo is never checked by anyone (BRIEF: Verified
   "only for what was actually checked"), so its row has no sub-line — just "Change". The app never receives the photo
   itself (`/auth/me` sends `hasPhoto` only), so the disc is the initials, as drawn.
-- **A plate on file from before migration 0078** reads `plate_status = none`: shown with "Edit" and no "Verified" until a
-  change sends it to ops. (Before, Bike & documents called any verified rider's plate "Verified" — review R-8.)
+- **Plates on file from before migration 0078 go to ops review (owner decision 2026-10-06).** Migration
+  `0079_rider_plate_review_backfill` (data-only, idempotent, the 0064 precedent) sets `checking` on every rider with a
+  real plate still at `none`, so they show "Checking" in the app and sit in the admin queue until confirmed. (Before,
+  Bike & documents called any verified rider's plate "Verified" — review R-8.)
+- **Admin (owner decision 2026-10-06).** The rider profile's Bike reg row carries a `checking` / `verified` pill and,
+  while checking, a reason-coded "Confirm plate…" (`REASONS.riderPlateVerify`) → `POST /admin/riders/:id/plate-verify`.
+  The Riders page gains an "all riders | plates to check" subnav (the kit's `.subnav`, not drawn on the kit's directory)
+  and `/riders?plate=checking` (`GET /admin/riders?plate=checking`) lists the queue with Confirm plate per row. No
+  sidebar entry or badge was added (the kit's NAV doesn't draw one).
 - **D2's Save** is drawn enabled; it stays enabled (pressing it with nothing changed shows D3's "Saved") except while a
   name is empty, where it is the disabled `line`/`muted` pill (undrawn). Clearing a stored ID still shows the shipped
   "To remove your national ID, contact support." (D-79, undrawn) and a verified rider's 403 shows the server's words.
