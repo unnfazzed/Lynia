@@ -1262,6 +1262,15 @@
 > The first sideload build from it (`Android Test APK` run 36414633349) found a Gradle Metaspace OOM
 > that hung the build instead of failing it (`SDK54-07`). It was fixed in the same PR, before any EAS
 > build could spend quota on it.
+>
+> **Status (2026-10-06 — the map was still blank on most phones, fixed without a build.)** The owner
+> reported "The map didn't load" on vc 44 from `Closed testing`. Not the build: vc 40 and vc 44 carry the
+> same Maps key, identical to EAS `preview`. The key's allowlist held only `hybrid_classical_cert`
+> (`35:0F…`, the one this file called "the app-signing SHA-1"), which only Android 17+ phones present;
+> Play signs `zw.co.lynia` with three certificates (hybrid signing), and phones on Android 16 and older
+> run under `deployment_cert` (`93:56…`). The owner added `deployment_cert` and `hybrid_pqc_cert` to the
+> key in GCP; a live check right after showed all three on the allowlist. No new build or OTA was needed
+> (`MOB-MAP-04` in `docs/KNOWN_BUGS.md`).
 
 ---
 
@@ -1877,6 +1886,10 @@ key cannot travel by OTA (`REL-01`), so this is a store build.
   Play Console → **Protected with Play → App signing → Classical key**; Google has moved it out of App
   integrity. The owner confirmed Maps SDK for Android is enabled on the project. The key replaced
   `GOOGLE_MAPS_API_KEY` in the EAS `preview` environment, which the `closed` profile builds with.
+  **Correction (2026-10-06, `MOB-MAP-04`):** that is not the certificate most phones run. Play signs
+  this app with three (hybrid signing); `35:0F…` is the one Android 17+ phones use, and phones on
+  Android 16 and older run under `deployment_cert` `93:56:8F:…:30:A9`, which was not on the key until
+  2026-10-06. All three are listed in `docs/SECURITY-OPS.md` §B.
 - **A false start.** The first attempt left `GOOGLE_MAPS_API_KEY` unchanged. Maps Key Doctor runs
   36545920694, 36545991426 and 36545994268 still read the dead key in `preview`, `production` and
   `development`, so the build was held until that variable held the new key.

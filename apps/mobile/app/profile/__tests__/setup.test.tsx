@@ -14,6 +14,7 @@
  * mount always starts every field empty.
  */
 import renderer, { act } from "react-test-renderer";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const mockUpdateProfile = jest.fn();
 const mockSignIn = jest.fn(async () => undefined);
@@ -96,10 +97,16 @@ async function pressStart(tree: renderer.ReactTestRenderer): Promise<void> {
   await settle();
 }
 
+let qc: QueryClient;
 async function mountSetup(): Promise<renderer.ReactTestRenderer> {
   let tree!: renderer.ReactTestRenderer;
+  qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   await act(async () => {
-    tree = renderer.create(<ProfileSetupScreen />);
+    tree = renderer.create(
+      <QueryClientProvider client={qc}>
+        <ProfileSetupScreen />
+      </QueryClientProvider>,
+    );
   });
   await settle();
   return tree;
@@ -151,6 +158,19 @@ describe("C5 · Name (Calm Mint v2, D-55)", () => {
     await pressStart(tree);
     expect(mockSaveRole).toHaveBeenCalledWith("rider");
     expect(mockReplace).toHaveBeenCalledWith("/permissions?next=/rider");
+  });
+
+  // E2E 2026-10-05 FS-9: a stale nameless `me` made R1 ("Ride with LyniaGo") ask for the name a second time.
+  it("puts the saved profile in the `me` cache, replacing the nameless one", async () => {
+    const saved = { profileId: "p1", role: "customer", firstName: "Tendai", lastName: "Moyo", phone: "+263772451180" };
+    mockUpdateProfile.mockResolvedValue(saved);
+    const tree = await mountSetup();
+    qc.setQueryData(["me"], { profileId: "p1", role: "customer", firstName: "", lastName: "", phone: "+263772451180" });
+    setFieldByAccessibilityLabel(tree, "First name", "Tendai");
+    setFieldByAccessibilityLabel(tree, "Surname", "Moyo");
+    await settle();
+    await pressStart(tree);
+    expect(qc.getQueryData(["me"])).toEqual(saved);
   });
 
   it("needs both names before it submits", async () => {

@@ -41,6 +41,13 @@ describe("onlineGateReason (rider online-gate refusal)", () => {
     expect(ONLINE_GATE_COPY.out_of_area.message).toContain("service area");
   });
 
+  it("maps the no-position refusal to its own reason, on the board's existing no-GPS copy (E2E 2026-10-05 FS-7)", () => {
+    expect(onlineGateReason({ code: "location_required" })).toBe("location_required");
+    // The server's human sentence (for older builds) must not be mis-sniffed as another gate.
+    expect(onlineGateReason({ message: "Can't find your location. Jobs are matched by distance, so location must be on while you ride." })).toBeNull();
+    expect(ONLINE_GATE_COPY.location_required).toEqual({ title: "Can't find your location", message: "Jobs are matched by distance, so location must be on while you ride." });
+  });
+
   it("maps the commission low-balance block off the code and the friendly message", () => {
     expect(onlineGateReason({ code: "commission_low_balance" })).toBe("commission_low_balance");
     expect(onlineGateReason({ message: "Top up your commission balance to keep riding" })).toBe("commission_low_balance");

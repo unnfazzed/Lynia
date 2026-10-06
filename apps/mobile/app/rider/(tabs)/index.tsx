@@ -296,6 +296,11 @@ export default function RiderHome(): React.ReactElement {
     setServerGate(null);
     void qc.invalidateQueries({ queryKey: ["me"] });
   });
+  // E2E 2026-10-05 FS-7: a go-online refused for want of a position clears the moment GPS fixes, so the
+  // auto-online below retries with coordinates without a tap.
+  useEffect(() => {
+    if (loc && serverGate === "location_required") setServerGate(null);
+  }, [loc, serverGate]);
 
   const onlineM = useMutation({
     mutationFn: (next: boolean) => setOnline(next, loc ?? undefined),

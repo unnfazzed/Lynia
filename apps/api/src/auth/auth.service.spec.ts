@@ -32,7 +32,7 @@ const baseEnv = {
   // for its max and silently stops capping — which would make the cap tests pass for the wrong reason.
   // These mirror the schema defaults in config/env.ts.
   OTP_RL_PHONE_MAX: 5,
-  OTP_RL_IP_MAX: 20,
+  OTP_RL_IP_MAX: 200,
   OTP_RL_GLOBAL_MAX: 500,
   OTP_RL_DEVICE_SIGNUP_MAX: 3,
 } as Env;
@@ -108,6 +108,52 @@ describe("AuthService.requestOtp", () => {
     // A non-allowlisted phone in production is still never exposed.
     const blocked = await svc.requestOtp("+263779999999", "1.1.1.6");
     expect(blocked.devCode).toBeUndefined();
+  });
+
+  // E2E 2026-10-05 FS-6 — a failed send must cost the user nothing: not the code they already hold,
+  // and not their send budget.
+  describe("a failed send (FS-6)", () => {
+    function withSender(env: Env = baseEnv) {
+      const store = new InMemoryOtpStore();
+      const sender = new ConsoleOtpSender();
+      const svc = new AuthService(env, {} as unknown as PrismaService, new TokenService(env), store, sender, fakeMetrics(), pii, fakeKycPendingState());
+      return { svc, store, sender };
+    }
+
+    it("keeps the code the user already has when a resend fails", async () => {
+      const { svc, store, sender } = withSender();
+      const first = await svc.requestOtp("+263770000501", "1.1.1.1");
+      vi.spyOn(sender, "send").mockRejectedValueOnce(new Error("BSP down"));
+      await expect(svc.requestOtp("+263770000501", "1.1.1.1")).rejects.toThrow(/BSP down/);
+      expect((await store.get("+263770000501"))?.hash).toBe(tokens.hash(first.devCode!));
+    });
+
+    it("does not spend the per-phone / per-IP / global budget on a failed send", async () => {
+      const { svc, sender } = withSender();
+      const spy = vi.spyOn(sender, "send").mockRejectedValue(new Error("BSP down"));
+      for (let i = 0; i < 8; i++) {
+        await expect(svc.requestOtp("+263770000502", "1.1.1.1")).rejects.toThrow(/BSP down/);
+      }
+      spy.mockRestore();
+      // The vendor is back: the full per-phone allowance (5) is still there, and a success still counts.
+      for (let i = 0; i < 5; i++) {
+        await expect(svc.requestOtp("+263770000502", "1.1.1.1")).resolves.toMatchObject({ sent: true });
+      }
+      await expect(svc.requestOtp("+263770000502", "1.1.1.1")).rejects.toMatchObject({ status: 429 });
+    });
+
+    it("refunds on the bird-verify path too", async () => {
+      const { svc } = withSender({ ...baseEnv, OTP_CHANNEL: "bird-verify", BIRD_VERIFY_API_KEY: "bk_eu1_testkey" } as Env);
+      const orig = globalThis.fetch;
+      try {
+        globalThis.fetch = (async () => new Response("boom", { status: 503 })) as unknown as typeof fetch;
+        for (let i = 0; i < 8; i++) await expect(svc.requestOtp("+263770000503", "1.1.1.1")).rejects.toMatchObject({ status: 503 });
+        globalThis.fetch = (async () => new Response(JSON.stringify({ last_channel: "whatsapp" }), { status: 200 })) as unknown as typeof fetch;
+        await expect(svc.requestOtp("+263770000503", "1.1.1.1")).resolves.toMatchObject({ sent: true });
+      } finally {
+        globalThis.fetch = orig;
+      }
+    });
   });
 });
 
@@ -608,7 +654,11 @@ describe("AuthService.verifyOtp", () => {
     for (let i = 0; i < 5; i++) await svc.requestOtp("+263770000078", "9.9.9.9");
     const sendCapped = await svc.requestOtp("+263770000078", "9.9.9.9").catch((e: unknown) => e);
     expect(sendCapped).toMatchObject({ status: 429 });
-    expect((sendCapped as { getResponse(): unknown }).getResponse()).toBe("Too many requests — try again later");
+    // An object with a message (E2E 2026-10-05 FS-3: a bare string read as a network failure in the app).
+    expect((sendCapped as { getResponse(): unknown }).getResponse()).toEqual({
+      statusCode: 429,
+      message: "Too many requests — try again later",
+    });
   });
 
   it("KB-IDENTITY-BINDING L1: does NOT throttle an EXISTING account (the cap is signup-only, not sign-in)", async () => {
@@ -794,18 +844,65 @@ describe("AuthService.verifyOtp — post-verify retry grace (§6)", () => {
     }
   });
 
-  it("falls through to 'expired' if the profile is somehow missing — a grace hit never creates an account", async () => {
-    const prisma = {
-      profile: { upsert: async () => profileRow, findUnique: async () => null },
-      session: { create: async () => ({ id: "s1" }) },
+  // E2E 2026-10-05 P-7: a sign-up refused for a device reason comes AFTER the engine consumed the code,
+  // so the retry lands here with no profile. It may create the account, but only through the same
+  // device gates — never as a way round them.
+  describe("a sign-up refused for a device reason doesn't use up the code (P-7)", () => {
+    const signupPrisma = () => {
+      let created = false;
+      return {
+        profile: {
+          findUnique: async () => (created ? { ...profileRow, sessions: [] } : null),
+          upsert: async () => ((created = true), profileRow),
+        },
+        session: { create: vi.fn(async () => ({ id: "s1" })) },
+      };
     };
-    const { svc, store } = make(baseEnv, prisma);
-    await store.put("+263770000043", tokens.hash("654321"), 300);
-    // findUnique stays null throughout, so the live verify is a SIGNUP and needs a device id. The
-    // point of the test is the SECOND call: the grace path finding no profile must fall through to
-    // "expired" rather than minting an account from a grace hit.
-    await svc.verifyOtp("+263770000043", "654321", "ua", "device-grace");
-    await expect(svc.verifyOtp("+263770000043", "654321")).rejects.toThrow(/expired or never/i);
+
+    it("no device id → 400, then the SAME code with a device id signs up", async () => {
+      const prisma = signupPrisma();
+      const { svc, store } = make(baseEnv, prisma);
+      await store.put("+263770000043", tokens.hash("654321"), 300);
+      await expect(svc.verifyOtp("+263770000043", "654321")).rejects.toMatchObject({ status: 400 });
+      const res = await svc.verifyOtp("+263770000043", "654321", "ua", "device-grace");
+      expect(res).toMatchObject({ profileId: "p1", needsProfile: true });
+      expect(prisma.session.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ deviceId: "device-grace" }) }),
+      );
+    });
+
+    it("the retry is still gated: no device id again is the same 400, and no account is created", async () => {
+      const prisma = signupPrisma();
+      const { svc, store } = make(baseEnv, prisma);
+      await store.put("+263770000048", tokens.hash("654321"), 300);
+      await expect(svc.verifyOtp("+263770000048", "654321")).rejects.toMatchObject({ status: 400 });
+      await expect(svc.verifyOtp("+263770000048", "654321")).rejects.toMatchObject({ status: 400 });
+      expect(prisma.session.create).not.toHaveBeenCalled();
+    });
+
+    it("device sign-up cap → 429; the same code on another device signs up, the capped device stays capped", async () => {
+      const { svc, store } = make(baseEnv, {
+        profile: { findUnique: async () => null, upsert: async () => profileRow },
+        session: { create: async () => ({ id: "s1" }) },
+      });
+      for (let i = 0; i < 3; i++) {
+        await store.put(`+26377000090${i}`, tokens.hash("654321"), 300);
+        await svc.verifyOtp(`+26377000090${i}`, "654321", "ua", "shared-device");
+      }
+      await store.put("+263770000909", tokens.hash("654321"), 300);
+      await expect(svc.verifyOtp("+263770000909", "654321", "ua", "shared-device")).rejects.toMatchObject({ status: 429 });
+      await expect(svc.verifyOtp("+263770000909", "654321", "ua", "shared-device")).rejects.toMatchObject({ status: 429 });
+      await expect(svc.verifyOtp("+263770000909", "654321", "ua", "fresh-device")).resolves.toMatchObject({ profileId: "p1" });
+    });
+
+    it("a wrong code on the retry is still the plain 'expired' miss (no oracle, nothing created)", async () => {
+      const prisma = signupPrisma();
+      const { svc, store } = make(baseEnv, prisma);
+      await store.put("+263770000908", tokens.hash("654321"), 300);
+      await expect(svc.verifyOtp("+263770000908", "654321")).rejects.toMatchObject({ status: 400 });
+      await expect(svc.verifyOtp("+263770000908", "111111", "ua", "dev")).rejects.toThrow(/expired or never/i);
+      expect(prisma.session.create).not.toHaveBeenCalled();
+    });
   });
 
   it("records 'grace_ok' (not 'ok') on a grace-path mint", async () => {
@@ -1363,6 +1460,24 @@ describe("AuthService.logout", () => {
     // Neither the live token nor the signed-out one can renew any more.
     await expect(svc.refresh(live.refreshToken)).rejects.toThrow(/invalid or expired/i);
     await expect(svc.refresh(old.token)).rejects.toThrow(/invalid or expired/i);
+  });
+
+  it("E2E 2026-10-05 FS-8: unbinds the push token the app names, scoped to the caller", async () => {
+    const t = sessionTable();
+    const s = t.seed();
+    const deleteMany = vi.fn(async () => ({ count: 1 }));
+    const { svc } = make(baseEnv, { ...t.prisma, deviceToken: { deleteMany } });
+    expect(await svc.logout(s.id, "p1", "fcm-token-1")).toEqual({ revoked: true });
+    expect(deleteMany).toHaveBeenCalledWith({ where: { token: "fcm-token-1", profileId: "p1" } });
+  });
+
+  it("an older app that names no push token touches no device tokens", async () => {
+    const t = sessionTable();
+    const s = t.seed();
+    const deleteMany = vi.fn(async () => ({ count: 0 }));
+    const { svc } = make(baseEnv, { ...t.prisma, deviceToken: { deleteMany } });
+    expect(await svc.logout(s.id, "p1")).toEqual({ revoked: true });
+    expect(deleteMany).not.toHaveBeenCalled();
   });
 
   it("never follows a chain into another profile's sessions", async () => {

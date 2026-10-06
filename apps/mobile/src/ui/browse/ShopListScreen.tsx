@@ -9,6 +9,7 @@ import { useHomeLocation } from "../../logic/home-location";
 import { useNow } from "../../logic/use-now";
 import { useClaimOfflineBanner } from "../../net/offline-banner-owner";
 import { useReachable } from "../../net/use-reachable";
+import { useOrderFlags } from "../../net/use-order-flags";
 import { useServiceFlags } from "../../net/use-service-flags";
 import { useShopListFeed } from "../../query/use-shops";
 import { usePopularity } from "../../query/use-popularity";
@@ -53,6 +54,7 @@ const SHOP_KINDS = B.kinds.slice(1);
 export function ShopListScreen({ service }: { service: ShopService }): React.ReactElement {
   const router = useRouter();
   const flags = useServiceFlags();
+  const orderFlags = useOrderFlags();
   const enabled = service === "pharmacy" ? flags.pharmacyEnabled : flags.shopsEnabled;
   const feed = useShopListFeed(service, enabled);
   // D-72: "Recommended" is the popularity ranking (nearest-open until there's enough history to rank).
@@ -126,7 +128,7 @@ export function ShopListScreen({ service }: { service: ShopService }): React.Rea
       onSearch={search}
     />
   );
-  const otc = service === "pharmacy" ? <OtcNotice /> : null;
+  const otc = service === "pharmacy" && !orderFlags.rxEnabled ? <OtcNotice /> : null;
   const filterBar = (
     <FilterBar
       sortLabel={sortLabel(filters.sort)}

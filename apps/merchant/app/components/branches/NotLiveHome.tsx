@@ -5,7 +5,7 @@ import { Icon } from "../icons";
 /**
  * B1 / D1 · not live yet (merchant-mobile README section F; handoff branches/README.md §5): a branch
  * LyniaGo hasn't switched on. "Almost ready", the call it waits for, "Check your menu" (shop: items) and
- * "Set opening hours". Only an owner with 2+ branches sees it (ledger D-51).
+ * "Set opening hours". Any business not switched on sees it (ledger D-51; E2E 2026-10-05 FS-4).
  */
 export function NotLiveHome({ businessType }: { businessType: MerchantBusinessType }) {
   const shop = businessType === "shop";

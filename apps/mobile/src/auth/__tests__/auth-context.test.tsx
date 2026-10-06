@@ -55,6 +55,8 @@ jest.mock("../session", () => ({
   clearDeviceState: jest.fn(async () => undefined),
 }));
 
+import { logout } from "../../api/auth";
+import { setBoundPushToken } from "../../push/bound-token";
 import { __resetAuthSession, AuthProvider, useAuth } from "../auth-context";
 
 type Auth = ReturnType<typeof useAuth>;
@@ -245,6 +247,27 @@ describe("a remount carries on with the session this process holds", () => {
 
     await mount(newAccount);
     expect(auth.session).toBeNull();
+  });
+});
+
+describe("sign-out unbinds this device's push token (E2E 2026-10-05 FS-8)", () => {
+  afterEach(() => setBoundPushToken(null));
+
+  it("names the bound push token in the logout request, while the session is still live", async () => {
+    setBoundPushToken("fcm-token-1");
+    await mount(newAccount);
+    await act(async () => {
+      await auth.signOut();
+    });
+    expect(logout).toHaveBeenLastCalledWith("refresh-1", "fcm-token-1");
+  });
+
+  it("sends no token when none is bound (push off / never registered)", async () => {
+    await mount(newAccount);
+    await act(async () => {
+      await auth.signOut();
+    });
+    expect(logout).toHaveBeenLastCalledWith("refresh-1", null);
   });
 });
 

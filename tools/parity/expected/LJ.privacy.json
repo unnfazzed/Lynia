@@ -53,8 +53,20 @@
   ],
   "note": "",
   "dynamic": [],
-  "extra": [],
-  "undrawn": [],
+  "extra": [
+    {
+      "text": "Order records 12 months · SOS logs 90 days · a deleted account is erased straight away.",
+      "reason": "Owner decision 2026-10-06: deletion is immediate (PrivacyService.eraseAccount anonymises at once), so the retention line no longer claims a 30-day window that does not exist.",
+      "ref": "docs/DESIGN-DEVIATIONS.md#D-78"
+    }
+  ],
+  "undrawn": [
+    {
+      "mock": "Order records 12 months · SOS logs 90 days · a deleted account is gone after 30 days.",
+      "reason": "Replaced by the immediate-deletion line above (owner 2026-10-06). Upstream ask: redraw the Privacy notice's 'How long we keep it' row with the new copy.",
+      "ref": "docs/DESIGN-DEVIATIONS.md#D-78"
+    }
+  ],
   "tree": {
     "role": "container",
     "children": [

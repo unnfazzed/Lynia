@@ -15,8 +15,16 @@
  *
  *   TF_MAPS_KEY_ID        the EXISTING Maps SDK key's id
  *   TF_PLACES_KEY_ID      the EXISTING Places key's id
- *   TF_MAPS_SHA1_PLAY     Play **app signing** certificate SHA-1  (what installed builds run under)
+ *   TF_MAPS_SHA1_PLAY     EVERY Play **app signing** certificate SHA-1, comma-separated (what
+ *                         installed builds run under; three of them, see below)
  *   TF_MAPS_SHA1_UPLOAD   EAS **upload** keystore SHA-1           (sideloaded QA APKs)
+ *
+ * Why "every". The app uses Play's hybrid signing, so Play signs it with three certificates and a
+ * phone runs under one of them depending on its Android version (scripts/play-signing-certs.mjs).
+ * Arming with only one would be a "pure in-place update" that strips the others from the live key —
+ * the guard in maps-keys-arm.yml would let it through, and phones on the dropped Android versions
+ * would draw a blank map, which is MOB-MAP-04 done by Terraform. So for this app the list must hold
+ * all of PLAY_SIGNING_CERTS, and the script refuses to arm without them.
  *
  * Variables, not secrets, on purpose. A key *id* is a resource name, not a credential — reading a
  * key's string needs `apikeys.keys.getKeyString`, which no CI identity here holds — and a signing
@@ -40,6 +48,8 @@
  * can be real — `.github/workflows/maps-keys-arm.yml` imports and then refuses any plan that is not
  * a pure in-place update, and terraform-apply.yml refuses any plan that CREATES an apikeys key.
  */
+
+import { APP_ID, PLAY_SIGNING_CERTS } from "./play-signing-certs.mjs";
 
 /** The syntactically-valid but deliberately fake fingerprints in terraform.tfvars.example. */
 export const PLACEHOLDER_FINGERPRINTS = new Set([
@@ -82,6 +92,23 @@ export function normalizeFingerprint(raw, label) {
 }
 
 /**
+ * Several fingerprints in one variable: commas, semicolons or newlines separate them (never spaces,
+ * which normalizeFingerprint accepts INSIDE one). Each is normalised under its own numbered label, and a
+ * repeat is dropped with a note.
+ */
+export function normalizeFingerprintList(raw, label, warn) {
+  const parts = String(raw ?? "").split(/[,;\n]+/).map((p) => p.trim()).filter(Boolean);
+  if (parts.length === 0) throw new Error(`${label} is empty.`);
+  const out = [];
+  parts.forEach((part, i) => {
+    const fp = normalizeFingerprint(part, parts.length > 1 ? `${label} (fingerprint ${i + 1})` : label);
+    if (out.includes(fp)) warn(`${label} lists ${fp} twice; it is kept once.`);
+    else out.push(fp);
+  });
+  return out;
+}
+
+/**
  * A key id is the FINAL COMPONENT of `projects/<n>/locations/global/keys/<KEY_ID>`. Pasting the whole
  * resource name is the obvious slip, and it is unambiguously recoverable, so recover it rather than
  * bouncing the founder back to a console — but say so on stderr, since the same person maintains the
@@ -119,7 +146,7 @@ export function buildMapsTfvars(env, warn = () => {}) {
   const placesKeyId = read("TF_PLACES_KEY_ID");
   const sha1Play = read("TF_MAPS_SHA1_PLAY");
   const sha1Upload = read("TF_MAPS_SHA1_UPLOAD");
-  const packageName = read("TF_MAPS_PACKAGE") || "zw.co.lynia";
+  const packageName = read("TF_MAPS_PACKAGE") || APP_ID;
 
   const required = { TF_MAPS_KEY_ID: mapsKeyId, TF_PLACES_KEY_ID: placesKeyId, TF_MAPS_SHA1_PLAY: sha1Play };
   const provided = Object.entries(required).filter(([, v]) => v.length > 0);
@@ -143,26 +170,45 @@ export function buildMapsTfvars(env, warn = () => {}) {
     throw new Error(`TF_MAPS_PACKAGE ("${packageName}") is not an Android application id.`);
   }
 
-  const play = normalizeFingerprint(sha1Play, "TF_MAPS_SHA1_PLAY");
+  const play = normalizeFingerprintList(sha1Play, "TF_MAPS_SHA1_PLAY", warn);
   const upload = sha1Upload ? normalizeFingerprint(sha1Upload, "TF_MAPS_SHA1_UPLOAD") : null;
-  if (upload && upload === play) {
+  if (upload && play.includes(upload)) {
     throw new Error(
-      "TF_MAPS_SHA1_PLAY and TF_MAPS_SHA1_UPLOAD are identical. They are different certificates by " +
-        "construction — Play re-signs the uploaded AAB with the app-signing key, which is not the EAS " +
-        "upload keystore — so one of them was pasted twice. Re-read both (Play Console → App integrity, " +
-        "and expo.dev → Credentials → Android).",
+      "TF_MAPS_SHA1_UPLOAD is identical to one of the TF_MAPS_SHA1_PLAY certificates. They are different " +
+        "certificates by construction — Play re-signs the uploaded AAB with its own app-signing keys, " +
+        "none of which is the EAS upload keystore — so one of them was pasted twice. Re-read both " +
+        "(Play Console → Protected with Play → App signing, and expo.dev → Credentials → Android).",
     );
+  }
+  if (packageName === APP_ID) {
+    const missing = PLAY_SIGNING_CERTS.filter((c) => !play.includes(c.sha1));
+    if (missing.length) {
+      throw new Error(
+        `TF_MAPS_SHA1_PLAY leaves out ${missing.map((c) => `${c.sha1} (${c.file}, ${c.runsOn})`).join(" and ")}. ` +
+          `Play signs ${APP_ID} with ${PLAY_SIGNING_CERTS.length} certificates and a phone runs under one of ` +
+          `them depending on its Android version, so a key missing one blanks the map on those phones ` +
+          `(MOB-MAP-04). List all of scripts/play-signing-certs.mjs, comma-separated; if Play's certificates ` +
+          `have changed, update that file first.`,
+      );
+    }
+    for (const fp of play.filter((f) => !PLAY_SIGNING_CERTS.some((c) => c.sha1 === f))) {
+      warn(`TF_MAPS_SHA1_PLAY includes ${fp}, which is not in scripts/play-signing-certs.mjs. It is kept; check it is meant.`);
+    }
   }
   if (!upload) {
     warn(
-      "TF_MAPS_SHA1_UPLOAD is unset: the Maps key will accept ONLY the Play app-signing certificate. " +
+      "TF_MAPS_SHA1_UPLOAD is unset: the Maps key will accept ONLY Play's app-signing certificates. " +
         "Play-installed builds keep working; sideloaded QA APKs (android-test-apk.yml) will render a " +
         "blank map. Set it unless you mean that.",
     );
   }
 
+  const playComment = (fp) => {
+    const known = PLAY_SIGNING_CERTS.find((c) => c.sha1 === fp);
+    return known ? `Play ${known.file} — ${known.runsOn}` : "Play app signing — not in scripts/play-signing-certs.mjs";
+  };
   const fingerprints = [
-    { value: play, comment: "Play app signing — what installed builds are re-signed with" },
+    ...play.map((value) => ({ value, comment: playComment(value) })),
     ...(upload ? [{ value: upload, comment: "EAS upload keystore — sideloaded QA APKs" }] : []),
   ];
 

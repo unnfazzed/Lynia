@@ -1089,16 +1089,74 @@ describe("RiderService.retryKyc", () => {
         throw new Error("vendor must not be called in manual mode");
       },
     };
-    const s = svc({ rider: { findUnique: async () => ({ kycStatus: "failed" }) } }, { KYC_MODE: "manual" }, vendor);
+    const s = svc(
+      { rider: { findUnique: async () => ({ kycStatus: "failed", kycAttempts: 1 }), updateMany: async () => ({ count: 1 }) } },
+      { KYC_MODE: "manual" },
+      vendor,
+    );
     // BH-03: `mode` must be present even on this early return — the mobile client uses it to tell
     // "no verificationUrl because manual review is expected" apart from "no verificationUrl because
     // something went wrong" (resolveKycRetryFeedback). Without it a manual-mode rider saw a false error
     // on every retry tap.
     expect(await s.retryKyc("p1")).toEqual({ kycStatus: "pending", mode: "manual" });
   });
+
+  // E2E 2026-10-05 FS-2: production runs KYC_MODE=manual. A declined rider's retry answered `pending` but
+  // wrote nothing, so the row stayed `failed` — outside the admin queue (`listRiders("pending")`).
+  it.each(["failed", "expired"] as const)("manual mode: a retry from %s really puts the rider back in the pending queue (CAS on the observed state)", async (from) => {
+    const writes: Array<{ where: unknown; data: unknown }> = [];
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ kycStatus: from, kycAttempts: 1, kycRef: null, kycSessionToken: null, kycSessionUrl: null, kycForcedAt: null }),
+        updateMany: async (args: { where: unknown; data: unknown }) => {
+          writes.push(args);
+          return { count: 1 };
+        },
+      },
+    };
+    const s = svc(prisma, { KYC_MODE: "manual", KYC_PROVIDER: "didit" });
+    expect(await s.retryKyc("p1")).toEqual({ kycStatus: "pending", mode: "manual" });
+    expect(writes).toEqual([
+      {
+        where: { profileId: "p1", kycStatus: from, kycAttempts: 1 },
+        data: { kycStatus: "pending", idVerified: false, kycSessionToken: null, kycSessionUrl: null },
+      },
+    ]);
+    // kycResolvedAt is deliberately NOT cleared (as an admin `pending` reset): a stale webhook stays stale.
+    expect(writes[0].data).not.toHaveProperty("kycResolvedAt");
+    // A retry is not a decline — the A-02 counter is untouched (D4).
+    expect(writes[0].data).not.toHaveProperty("kycAttempts");
+  });
+
+  it("manual mode: an already-pending rider's retry writes nothing", async () => {
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ kycStatus: "pending", kycAttempts: 0 }),
+        updateMany: async () => {
+          throw new Error("a pending rider is already in the queue — nothing to write");
+        },
+      },
+    };
+    const s = svc(prisma, { KYC_MODE: "manual" });
+    expect(await s.retryKyc("p1")).toEqual({ kycStatus: "pending", mode: "manual" });
+  });
+
+  it("manual mode: 409s when an admin decision lands between the read and the reopen (CAS = 0 rows)", async () => {
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ kycStatus: "failed", kycAttempts: 1 }),
+        updateMany: async () => ({ count: 0 }),
+      },
+    };
+    const s = svc(prisma, { KYC_MODE: "manual" });
+    await expect(s.retryKyc("p1")).rejects.toThrow(/just changed/i);
+  });
 });
 
 describe("RiderService.setOnline", () => {
+  // E2E 2026-10-05 FS-7: going online needs a position now, so the eligible paths send one (central Harare).
+  const HARARE = { lat: -17.83, lng: 31.05 };
+
   it("403s when the caller is not a rider", async () => {
     const s = svc({ rider: { findUnique: async () => null } }, {});
     await expect(s.setOnline("p1", true)).rejects.toThrow(/not a rider/i);
@@ -1123,7 +1181,7 @@ describe("RiderService.setOnline", () => {
       },
     };
     const s = svc(prisma, {});
-    expect(await s.setOnline("p1", true)).toEqual({ online: true });
+    expect(await s.setOnline("p1", true, HARARE)).toEqual({ online: true });
     expect(sql).toContain("is_online = true");
     expect(sql).toContain("last_heartbeat_at = now()");
     // The CAS re-asserts the standing the gate read — the exact defence against a suspend landing mid-write.
@@ -1148,7 +1206,7 @@ describe("RiderService.setOnline", () => {
     };
     const s = svc(prisma, {});
     try {
-      await s.setOnline("p1", true);
+      await s.setOnline("p1", true, HARARE);
     } catch (e) {
       threw = e;
     }
@@ -1220,13 +1278,16 @@ describe("RiderService.setOnline", () => {
     expect(cleared).toEqual(["cust-1"]);
   });
 
-  it("does NOT drain the notify list when going online without a location (older client)", async () => {
+  it("refuses going online without a location (location_required) — no write, no drain (E2E 2026-10-05 FS-7)", async () => {
+    let wrote = false;
     const prisma = {
       rider: {
-        findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false }),
+        findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null }),
       },
-      // KB-HEARTBEAT-MARGIN: go-online is a raw CAS now (DB-now() heartbeat); 1 affected row ⇒ online.
-      $executeRaw: async () => 1,
+      $executeRaw: async () => {
+        wrote = true;
+        return 1;
+      },
     };
     let drained = false;
     const tracking = {
@@ -1236,9 +1297,27 @@ describe("RiderService.setOnline", () => {
     } as unknown as import("../tracking/tracking.service").TrackingService;
     const notifications = { notifyRidersAvailable: async () => new Set<string>() } as unknown as import("../notifications/notifications.service").NotificationsService;
     const s = new RiderService(prisma as unknown as PrismaService, {} as Env, new StubKycVendor(), pii, tracking, gatewayStub, notifications);
-    await s.setOnline("p1", true);
+    let threw: unknown;
+    try {
+      await s.setOnline("p1", true);
+    } catch (e) {
+      threw = e;
+    }
+    // A machine-readable reason for the app, and a human sentence for an older build that can't read it.
+    expect((threw as { getStatus: () => number }).getStatus()).toBe(403);
+    expect((threw as { getResponse: () => { reason: string; message: string } }).getResponse()).toEqual({
+      reason: "location_required",
+      message: expect.stringMatching(/location/i),
+    });
     await new Promise((r) => setTimeout(r, 0));
+    // Never flipped online (the old behaviour: "Online" from anywhere, never a job), never drained.
+    expect(wrote).toBe(false);
     expect(drained).toBe(false);
+  });
+
+  it("an ineligible rider without a location still sees their standing refusal, not location_required", async () => {
+    const s = svc({ rider: { findUnique: async () => ({ kycStatus: "verified", accountStatus: "suspended", onHold: false, cooldownUntil: null }) } }, {});
+    await expect(s.setOnline("p1", true)).rejects.toMatchObject({ response: { reason: "suspended" } });
   });
 
   it("lets any rider go offline regardless of verification", async () => {
@@ -1246,6 +1325,7 @@ describe("RiderService.setOnline", () => {
       rider: { findUnique: async () => ({ kycStatus: "pending" }), update: async () => ({}) },
     };
     const s = svc(prisma, {});
+    // No coordinates: going OFFLINE never needs a position (FS-7 gates only the online transition).
     expect(await s.setOnline("p1", false)).toEqual({ online: false });
   });
 
@@ -1269,7 +1349,7 @@ describe("RiderService.setOnline", () => {
       },
       {},
     );
-    expect(await s.setOnline("p1", true)).toEqual({ online: true });
+    expect(await s.setOnline("p1", true, HARARE)).toEqual({ online: true });
   });
 
   it("refuses going online outside the service corridor (out_of_area) when a location is sent", async () => {
@@ -1527,6 +1607,7 @@ describe("onlineRefusalReason — D-70 commission-free first jobs", () => {
 });
 
 describe("RiderService.setOnline — D-70 commission-free first jobs", () => {
+  const HARARE = { lat: -17.83, lng: 31.05 };
   function onlineSvc(tripsCount: number, balance: number) {
     const prisma = {
       rider: { findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null, tripsCount }) },
@@ -1535,17 +1616,17 @@ describe("RiderService.setOnline — D-70 commission-free first jobs", () => {
     return svc(prisma, { COMMISSION_RATE_PCT: 10 } as Partial<Env>);
   }
   it("a newly verified rider (0 jobs, $0 balance) goes online with commission live", async () => {
-    expect(await onlineSvc(0, 0).setOnline("p1", true)).toEqual({ online: true });
+    expect(await onlineSvc(0, 0).setOnline("p1", true, HARARE)).toEqual({ online: true });
   });
   it("a rider on their 5th free job (4 completed) still goes online at $0", async () => {
-    expect(await onlineSvc(4, 0).setOnline("p1", true)).toEqual({ online: true });
+    expect(await onlineSvc(4, 0).setOnline("p1", true, HARARE)).toEqual({ online: true });
   });
   it("after the 5th completed job a $0 rider meets the top-up gate again", async () => {
-    await expect(onlineSvc(5, 0).setOnline("p1", true)).rejects.toMatchObject({ response: { reason: "commission_low_balance" } });
+    await expect(onlineSvc(5, 0).setOnline("p1", true, HARARE)).rejects.toMatchObject({ response: { reason: "commission_low_balance" } });
   });
   it("an existing rider past the allowance is gated exactly as before", async () => {
-    await expect(onlineSvc(80, 1.5).setOnline("p1", true)).rejects.toMatchObject({ response: { reason: "commission_low_balance" } });
-    expect(await onlineSvc(80, 2).setOnline("p1", true)).toEqual({ online: true });
+    await expect(onlineSvc(80, 1.5).setOnline("p1", true, HARARE)).rejects.toMatchObject({ response: { reason: "commission_low_balance" } });
+    expect(await onlineSvc(80, 2).setOnline("p1", true, HARARE)).toEqual({ online: true });
   });
 });
 
@@ -2360,6 +2441,39 @@ describe("RiderService.recordHeldVerifiedId", () => {
     expect(row.kycResolvedAt).not.toBeNull();
     expect(await s.recordHeldVerifiedId("sess_1", OTHER)).toEqual({ updated: 0 });
     expect(row.verifiedIdHash).toBe(HASH);
+  });
+
+  it("E2E 2026-10-05 FS-11: a duplicate-ID hold keeps the finished session, so the rider reads 'in review' and a retry resumes it for free", async () => {
+    const live = { kycSessionToken: "tok_live", kycSessionUrl: "https://verify.didit.me/sess_1" };
+    const { prisma, row } = rowPrisma({ duplicateIdFlag: true, ...live });
+    let minted = 0;
+    const vendor: KycVendor = {
+      submit: async () => {
+        minted += 1;
+        return { ref: "sess_2", status: "pending", url: "https://verify.didit.me/sess_2", token: "tok_2" };
+      },
+    };
+    const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, vendor);
+    await s.applyKycResult("sess_1", "verified", new Date(), null, "63-123456-A-42");
+    // Held: still pending, decided at the vendor, credentials kept (getProfile derives in_flight from them,
+    // the way it does for a Didit In Review hold).
+    expect(row).toMatchObject({ kycStatus: "pending", idVerified: false, ...live });
+    expect(row.kycResolvedAt).not.toBeNull();
+    // A tap on retry re-opens the same check — it never buys a second paid session for a finished one.
+    expect(await s.retryKyc("p1")).toEqual({ kycStatus: "pending", mode: "auto", verificationUrl: live.kycSessionUrl, sessionToken: live.kycSessionToken });
+    expect(minted).toBe(0);
+    expect(row.kycRef).toBe("sess_1");
+    // The review's own decision is what retires the credentials.
+    await s.adminSetKyc("p1", "verified", null, "admin:ops");
+    expect(row).toMatchObject({ kycStatus: "verified", kycSessionToken: null, kycSessionUrl: null });
+  });
+
+  it("a decision that is NOT held still clears the session credentials", async () => {
+    for (const status of ["verified", "failed"] as const) {
+      const { prisma, row } = rowPrisma({ kycSessionToken: "tok_live", kycSessionUrl: "https://verify.didit.me/sess_1" });
+      await svc(prisma, {}).applyKycResult("sess_1", status, new Date(), null, status === "verified" ? "63-123456-A-42" : null);
+      expect(row).toMatchObject({ kycStatus: status, kycSessionToken: null, kycSessionUrl: null });
+    }
   });
 
   it("after a hand approval or decline, a held result stores nothing", async () => {

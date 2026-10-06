@@ -10,7 +10,7 @@ import MapView, {
   Polyline,
   type Region,
 } from "react-native-maps";
-import { landmarkFromAddress } from "../logic/geocode";
+import { inZimbabwe, landmarkFromAddress } from "../logic/geocode";
 import { mapFallbackHint } from "../logic/map-fallback";
 import { mapLoadSignal } from "../logic/map-load-signal";
 import { isReachable } from "../net/reachability";
@@ -262,6 +262,11 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
 
   const activePoint = active === "pickup" ? pickup : drop;
   const setActive = (c: LatLng): void => {
+    // A map that never drew still reports presses, but its camera need not be anywhere near Harare: on a
+    // vc 44 phone whose Maps key was refused (MOB-MAP-04), one tap pinned the drop-off at 13.29708,
+    // -126.66721, in the Pacific. Until the map has loaded, a point counts only inside the Zimbabwe sanity
+    // box, so a slow map still takes taps and a dead one drops nothing. Once loaded, every tap counts.
+    if (!considerLoaded && !inZimbabwe(c)) return;
     const point: PickedPoint = { lat: c.latitude, lng: c.longitude };
     if (active === "pickup") props.onChangePickup(point);
     else props.onChangeDrop(point);

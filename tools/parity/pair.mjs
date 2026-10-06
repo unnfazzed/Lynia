@@ -36,14 +36,18 @@ async function selectScreens(a) {
   throw new Error("select screens with --keys a,b / --category <name> / --wired");
 }
 
-/** Render the app side for a screen per its app-target. Returns { path } | { pending, note }. */
+/**
+ * Render the app side for a screen per its app-target. Returns { path } | { pending, note } |
+ * { failed, note }. A mobile render that threw or left an empty #root is FAILED, not pending: the
+ * screen is wired, so a blank app side is a broken render, and the run must say so.
+ */
 async function renderApp(screen, shared, outDir) {
   const app = screen.app;
   if (!app) return { pending: true, note: "no app target — add one in app-targets.mjs" };
   const out = `${outDir}/app-${screen.key.replace(/[^\w.-]/g, "_")}.png`;
   if (app.kind === "mobile") {
     const r = await renderMobile({ browser: shared.browser, component: app.component, fixture: app.fixture, mode: app.mode || "phone", out });
-    return r.ok ? { path: out } : { pending: true, note: `mobile render failed: ${r.error?.slice(0, 140)}` };
+    return r.ok ? { path: out } : { failed: true, note: `mobile render failed: ${r.error?.slice(0, 140)}`, error: r.error };
   }
   if (app.kind === "web") {
     const r = await renderWeb({ browser: shared.browser, app: app.app, route: app.route, mode: app.mode, waitFor: app.waitFor, out });
@@ -61,6 +65,7 @@ const browser = await launch();
 const shared = { origin: server.origin, browser };
 const outDir = outBase + "-parts";
 const rows = [];
+const failures = [];
 try {
   for (const s of screens) {
     const mockOut = `${outDir}/mock-${s.key.replace(/[^\w.-]/g, "_")}.png`;
@@ -77,14 +82,20 @@ try {
       status: s.app ? "review" : "todo",
       mock: mock.ok ? mockOut : undefined,
       app: app.path,
-      appNote: app.pending ? app.note : undefined,
+      appNote: app.pending || app.failed ? app.note : undefined,
       logicalW: MODE_TO_LOGICAL_W[s.mode] || 360,
     });
-    console.log(`${s.key}: mock ${mock.ok ? "ok" : "MISS"} · app ${app.path ? "ok" : "pending"}`);
+    console.log(`${s.key}: mock ${mock.ok ? "ok" : "MISS"} · app ${app.path ? "ok" : app.failed ? "FAILED" : "pending"}`);
+    if (app.failed) {
+      failures.push(s.key);
+      console.error(`${s.key}: app render failed:\n${String(app.error).slice(0, 1200)}`);
+    }
   }
   const res = await buildSheet({ title: a.title || `Parity sheet — ${screens.length} screen(s)`, rows, out: outBase, browser });
-  console.log(JSON.stringify({ ok: true, html: res.htmlPath, png: res.pngPath, screens: screens.length }));
+  console.log(JSON.stringify({ ok: failures.length === 0, html: res.htmlPath, png: res.pngPath, screens: screens.length, failed: failures }));
 } finally {
   await browser.close();
   await server.close();
 }
+// The sheet is still written (the failed row says why), but the run is not a pass.
+if (failures.length) process.exitCode = 1;

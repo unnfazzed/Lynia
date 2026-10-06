@@ -13,7 +13,7 @@ import { OrdersHeader, useOpenSwitch } from "../../components/m/OrdersHeader";
 import { useToast } from "../../components/m/Toast";
 import { RingingScreen } from "../../components/queue/RingingScreen";
 import { RetryableError } from "../../components/RetryableError";
-import { showNotLiveHome, useBranches } from "../../lib/branches";
+import { showNotLiveHome } from "../../lib/branches";
 import { ApiError, getMyMerchant, type MerchantProfile } from "../../lib/api-client";
 import { bookingsAvailable, homePath } from "../../lib/booking";
 import { buildBoard } from "../../lib/board";
@@ -84,7 +84,6 @@ export default function QueuePage() {
   const ready = state.status === "ready";
   const open = useOpenSwitch(ready ? state.merchant : null, (merchant) => setState({ status: "ready", merchant }));
   const { orders, loaded, error: queueError, refetch } = useQueuePoll(ready);
-  const branches = useBranches(ready && state.merchant.myRole === "owner");
 
   // D-05: rings the whole time any order is unanswered — or auto-accepted and not yet confirmed by the
   // kitchen — and stops the instant none are. Both take over the screen: a new order (B2) first, then
@@ -186,7 +185,7 @@ export default function QueuePage() {
   const nothing = orders.length === 0 && (scheduled?.length ?? 0) === 0 && bookings.length === 0;
   const v = vocabulary(state.merchant.businessType, state.merchant.shopKind);
   // Branches (ledger D-51): a branch not switched on yet, with nothing in its queue, is "Almost ready".
-  const notLive = nothing && showNotLiveHome(state.merchant, branches.length);
+  const notLive = nothing && showNotLiveHome(state.merchant);
   const closed = open.status.closedByHand && !notLive;
   const board = buildBoard({ orders, bookings, v, shop, now });
   // K1b (D-77 follow-ups): SCHEDULED · n, last on the board, as dashed cards.

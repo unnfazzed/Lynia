@@ -457,6 +457,15 @@ describe("Order flow v2 round 2 (D-59): the wait, photos, Scheduled, Rx", () => 
     expect(screen.queryByRole("button", { name: "Hand over" })).toBeNull();
   });
 
+  it("S3: a rider with no name is 'the rider', never a fragment (E2E 2026-10-05 P-12)", async () => {
+    const nameless = { ...RIDER, firstName: "", lastName: "" };
+    show(merchantOrder({ id: ID, merchantPhase: null, status: "en_route_pickup", riderId: RIDER.profileId, rider: nameless, pickupProofRequired: true }));
+    expect(await screen.findByText("The rider photographs it")).toBeTruthy();
+    expect(screen.getByText("Waiting for the rider’s photo of the sealed bag")).toBeTruthy();
+    expect(screen.getByText("Say the code to the rider")).toBeTruthy();
+    expect(screen.getByText("The order moves on when the rider types the code.")).toBeTruthy();
+  });
+
   it("S3: once the photo is in, step 2 is ticked with the time and the thumbnail", async () => {
     const takenAt = new Date().toISOString();
     show(

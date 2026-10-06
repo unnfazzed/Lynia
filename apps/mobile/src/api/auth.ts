@@ -1,5 +1,6 @@
 import type { KycDeclineReason } from "@lynia/shared";
-import { apiFetch } from "./client";
+import { ApiError, apiFetch } from "./client";
+import { unregisterDeviceToken } from "./notifications";
 
 export interface OtpRequestResult {
   sent: true;
@@ -27,10 +28,22 @@ export function requestOtp(phone: string): Promise<OtpRequestResult> {
  * so the sessionId is the substring before the first `.`. Without this call the Session row lives until
  * REFRESH_TTL (a year) and any leaked refresh token keeps minting access tokens after the user signed
  * out. Best-effort at the call site — a failed revoke must never trap sign-out.
+ *
+ * `pushToken` is this device's bound push token: the API unbinds it with the session, so a signed-out
+ * phone stops getting this account's pushes (E2E 2026-10-05 FS-8). An API older than that field rejects
+ * the unknown key with a 400; then the token is dropped the old way, while the session is still live,
+ * and the session revoked without it.
  */
-export function logout(refreshToken: string): Promise<{ revoked: boolean }> {
+export async function logout(refreshToken: string, pushToken?: string | null): Promise<{ revoked: boolean }> {
   const sessionId = refreshToken.split(".")[0];
-  return apiFetch<{ revoked: boolean }>("/auth/logout", { method: "POST", body: { sessionId } });
+  if (!pushToken) return apiFetch<{ revoked: boolean }>("/auth/logout", { method: "POST", body: { sessionId } });
+  try {
+    return await apiFetch<{ revoked: boolean }>("/auth/logout", { method: "POST", body: { sessionId, pushToken } });
+  } catch (e) {
+    if (!(e instanceof ApiError) || e.status !== 400) throw e;
+    await unregisterDeviceToken(pushToken).catch(() => undefined);
+    return apiFetch<{ revoked: boolean }>("/auth/logout", { method: "POST", body: { sessionId } });
+  }
 }
 
 export function verifyOtp(phone: string, code: string): Promise<VerifyResult> {

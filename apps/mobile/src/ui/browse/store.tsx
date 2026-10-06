@@ -561,7 +561,9 @@ export function PharmacyRow({
 }
 
 /** README §4 "OTC notice": surface, radius 12, padding 12 14, circle-alert 18 green-text, the first
- *  sentence bold. Text, not a gate. On the Pharmacy list (margin 12 16 0) and storefront (10 16 0). */
+ *  sentence bold. Text, not a gate. On the Pharmacy list (margin 12 16 0) and storefront (10 16 0).
+ *  E2E 2026-10-05 FS-5 (owner: "Hide it while Rx is on"): callers render it only while `rxEnabled` is
+ *  off — and `useOrderFlags` fails closed, so an unknown flag (old API, offline) keeps it shown. */
 export function OtcNotice({ marginTop = 12 }: { marginTop?: number }): React.ReactElement {
   const [lead, ...rest] = B.list.otc.split(". ");
   return (

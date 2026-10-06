@@ -90,12 +90,15 @@
 #     the plan: it should show ONLY in-place restriction changes. If it proposes
 #     creating, destroying or replacing a key, stop.
 #
-# Both SHA-1s belong in the list. Play RE-SIGNS the AAB with the app-signing
-# certificate, so a key allowlisted only for the EAS upload keystore works in a
-# sideloaded APK and fails in every Play-installed build (MOB-MAP-02).
+# Every Play SHA-1 belongs in the list, plus the upload one. Play RE-SIGNS the AAB
+# with its own app-signing certificates, so a key allowlisted only for the EAS upload
+# keystore works in a sideloaded APK and fails in every Play-installed build
+# (MOB-MAP-02). And Play holds THREE of them for this app (hybrid signing: Android 16
+# and older vs 17+), so a key missing one fails on those phones (MOB-MAP-04). The
+# real values are in scripts/play-signing-certs.mjs.
 #
 # The fingerprints below are syntactically valid PLACEHOLDERS so the shape is
-# unambiguous — they are not real and must both be replaced, or the map will be
+# unambiguous — they are not real and must all be replaced, or the map will be
 # restricted to certificates that do not exist.
 # ⚠️ PREFER THE REPO VARIABLES over filling these four in here. CI reads this file through the
 # write-only TF_PROD_TFVARS secret, so editing it from a phone means re-pasting the whole blob you
@@ -113,6 +116,6 @@
 # places_api_key_id              = "REPLACE-with-the-KEY_ID-printed-above"
 # android_package_name           = "zw.co.lynia"   # already the default
 # android_cert_sha1_fingerprints = [
-#   "00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33",  # REPLACE — Play app signing (Play Console → Test and release → Setup → App integrity)
+#   "00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33",  # REPLACE — one line per Play app-signing certificate (all three in scripts/play-signing-certs.mjs)
 #   "44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77",  # REPLACE — EAS upload keystore, for sideloaded QA APKs
 # ]

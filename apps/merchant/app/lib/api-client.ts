@@ -22,6 +22,9 @@ export class ApiError extends Error {
     /** The API's machine-readable `reason` when it sent one (e.g. `not_a_member`, `already_member`,
      *  `owner_only`, `outside_service_area`) — what screens branch on, never the human message. */
     public reason?: string,
+    /** A request-body validation 400 (the API's ZodBody: `{ message, formErrors, fieldErrors }`). Its
+     *  message is raw schema text ("priceUsd: Too big…"), never a sentence for a person. */
+    public validation = false,
   ) {
     super(message);
   }
@@ -31,6 +34,18 @@ export class ApiError extends Error {
 function reasonOf(body: unknown): string | undefined {
   const reason = (body as { reason?: unknown } | null)?.reason;
   return typeof reason === "string" ? reason : undefined;
+}
+
+/** The API's ZodBody 400 shape (`apps/api/src/common/zod.pipe.ts`): `flatten()`'s two keys beside `message`. */
+function isValidationBody(status: number, body: unknown): boolean {
+  const b = body as { formErrors?: unknown; fieldErrors?: unknown } | null;
+  return status === 400 && !!b && Array.isArray(b.formErrors) && typeof b.fieldErrors === "object" && b.fieldErrors !== null;
+}
+
+/** What a screen says for a failed call: the API's own sentence, or `fallback` for anything else —
+ *  including a validation 400, whose message is schema text (E2E 2026-10-05 P-2). */
+export function apiErrorMessage(err: unknown, fallback: string): string {
+  return err instanceof ApiError && !err.validation ? err.message : fallback;
 }
 
 /**
@@ -175,7 +190,7 @@ async function rawFetch<T>(
       (typeof body?.message === "string" && body.message) ||
       (Array.isArray(body?.message) && body.message.join("; ")) ||
       (res.status === 503 ? "Restaurants isn't live on this account yet." : `Request failed (HTTP ${res.status}).`);
-    throw new ApiError(res.status, message, reasonOf(body));
+    throw new ApiError(res.status, message, reasonOf(body), isValidationBody(res.status, body));
   }
   return (await res.json()) as T;
 }
@@ -323,7 +338,7 @@ export async function authedFetch<T>(path: string, opts: { method?: string; body
       (res.status === 503 ? "Restaurants isn't live on this account yet." : `Request failed (HTTP ${res.status}).`);
     const reason = reasonOf(body);
     if (res.status === 403 && reason === "not_a_member") for (const listener of membershipLostListeners) listener();
-    throw new ApiError(res.status, message, reason);
+    throw new ApiError(res.status, message, reason, isValidationBody(res.status, body));
   }
   return (await res.json()) as T;
 }

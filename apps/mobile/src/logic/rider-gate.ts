@@ -64,7 +64,9 @@ export function resolveGate({ kyc, server, locDenied }: GateInput): GateId | nul
   if (server === "on_hold") return "hold";
   if (server === "cooldown") return "cooldown";
   if (server === "out_of_area") return "area";
-  if (locDenied) return "gps";
+  // E2E 2026-10-05 FS-7: the server refuses a go-online with no position; that is the same wall as a
+  // denied permission (turn location on / retry), so it lands on the same gate.
+  if (locDenied || server === "location_required") return "gps";
   if (server === "commission_low_balance") return "topup";
   return null;
 }

@@ -32,6 +32,8 @@ describe("resolveGate (Rider v2 G1–G14 priority, ledger D-54)", () => {
     ["on_hold", "hold"],
     ["cooldown", "cooldown"],
     ["out_of_area", "area"],
+    // E2E 2026-10-05 FS-7: a go-online refused for want of a position is the no-GPS wall.
+    ["location_required", "gps"],
     ["commission_low_balance", "topup"],
   ] as const)("server %s → %s", (server, id) => {
     expect(resolveGate({ ...none, server })).toBe(id);

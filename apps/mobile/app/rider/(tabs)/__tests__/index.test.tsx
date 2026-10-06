@@ -102,6 +102,7 @@ jest.mock("../../../../src/net/use-feature-flags", () => ({
 }));
 
 import RiderHome from "../index";
+import { ApiError } from "../../../../src/api/client";
 import { SENT_OFFERS_KEY } from "../../../../src/query/use-sent-offers";
 import { runKycVerification } from "../../../../src/kyc/verify";
 import { retryKyc } from "../../../../src/api/riders";
@@ -1349,6 +1350,36 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
     await settle();
 
     expect(treeText(activeTree)).toContain("Jobs are matched by distance, so location must be on while you ride.");
+  });
+
+  it("E2E 2026-10-05 FS-7: a go-online refused for want of a position shows the no-GPS wall, and a fix retries it with coordinates", async () => {
+    // The API refuses online without coordinates now (`location_required`) — the rider used to show
+    // "Online" from anywhere and never get a job. The wall is the board's own no-GPS gate.
+    mockLocFixFails = true;
+    mockSetOnline.mockRejectedValueOnce(new ApiError(403, "Can't find your location. Jobs are matched by distance, so location must be on while you ride.", "location_required"));
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("o-1")]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    expect(mockSetOnline).toHaveBeenCalledTimes(1);
+    expect(mockSetOnline.mock.calls[0]![1]).toBeUndefined();
+    expect(treeText(activeTree)).toContain("Can't find your location");
+    // GPS comes back: "I've turned it on" re-reads the position, the wall lifts, and the shift starts WITH it.
+    mockLocFixFails = false;
+    const gpsOn = activeTree.root.findAll((n) => n.props.label === "I've turned it on" && typeof n.props.onPress === "function")[0];
+    expect(gpsOn).toBeDefined();
+    await act(async () => {
+      gpsOn!.props.onPress();
+    });
+    await settle();
+    await settle();
+    expect(mockSetOnline).toHaveBeenCalledTimes(2);
+    expect(mockSetOnline.mock.calls[1]).toEqual([true, { lat: -17.83, lng: 31.05 }]);
+    expect(treeText(activeTree)).not.toContain("Can't find your location");
   });
 
   it("the location-denied wall offers no shift control — there is no shift to end", async () => {

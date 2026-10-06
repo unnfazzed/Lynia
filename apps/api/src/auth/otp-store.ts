@@ -27,6 +27,9 @@ export interface OtpStore {
   graceGet(phone: string): Promise<string | null>;
   /** Increment a fixed-window counter; returns the new count. */
   hit(key: string, windowSec: number): Promise<number>;
+  /** Give one `hit` back (it paid for work that then failed). Never below zero, never re-creates an
+   *  expired counter, and leaves the window's expiry as it was. */
+  unhit(key: string): Promise<void>;
 }
 
 export const OTP_STORE = Symbol("OTP_STORE");
@@ -78,6 +81,10 @@ export class InMemoryOtpStore implements OtpStore {
     }
     e.count += 1;
     return e.count;
+  }
+  async unhit(key: string): Promise<void> {
+    const e = this.rl.get(key);
+    if (e && Date.now() <= e.exp && e.count > 0) e.count -= 1;
   }
 }
 
@@ -132,5 +139,14 @@ export class RedisOtpStore implements OtpStore {
       windowSec,
     );
     return Number(n);
+  }
+  async unhit(key: string): Promise<void> {
+    // One Lua call so the check and the decrement can't interleave with an expiry: a missing key stays
+    // missing (DECR on it would re-create the counter at -1 with no TTL), and DECR keeps the TTL.
+    await this.redis.eval(
+      "if tonumber(redis.call('get', KEYS[1]) or '0') > 0 then redis.call('decr', KEYS[1]) end; return 1",
+      1,
+      key,
+    );
   }
 }

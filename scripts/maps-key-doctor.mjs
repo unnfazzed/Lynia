@@ -14,20 +14,27 @@
  *
  * WHAT IT CAN AND CANNOT PROVE — read this before trusting a verdict.
  * The Maps **SDK for Android** authenticates over a proprietary channel that cannot be reached with
- * curl. What CAN be reached is the Maps **web service**, which enforces the SAME key object: the same
+ * curl. What CAN be reached is Google's web APIs, which enforce the SAME key object: the same
  * application restriction (the Android package + certificate allowlist) and the same
- * enabled/billing/API-restriction state. So this probe answers, precisely:
+ * enabled/billing/API-restriction state. Two probes use that:
  *
- *   ✅ Is the key alive at all, or invalid/deleted?
- *   ✅ Is billing enabled on the project?
- *   ✅ Is THIS package + SHA-1 pair on the key's Android allowlist?   <- the MOB-MAP-02 question
- *   ❌ Whether the Maps SDK for Android service itself is enabled — an API restriction that excludes
- *      the *static maps* service is reported as such and is NOT evidence about the Android SDK.
+ *   KEY HEALTH  one Static Maps call with no identity: is the key alive, its project live, its billing
+ *               on? Static Maps is not enabled on lyniago-app, so the healthy answer is API_NOT_ACTIVATED,
+ *               and Google stops at that check: this probe never reaches the certificate allowlist.
+ *               Until 2026-10-06 it was the only probe, which is why every run said "fine" while every
+ *               phone on Android 16 or older was refused (MOB-MAP-04).
+ *   ALLOWLIST   one Places API (New) call per certificate, sent with the MAPS key and that certificate's
+ *               X-Android-Package / X-Android-Cert. Places (New) IS enabled on the project (the Places
+ *               key needs it), so Google gets as far as the key's restrictions, and it checks the
+ *               application restriction before the API list. An allowlisted certificate is therefore
+ *               refused for the API (API_KEY_SERVICE_BLOCKED: the Maps key's API list rightly leaves out
+ *               Places) and a missing one for the app (API_KEY_ANDROID_APP_BLOCKED). With no `sha1`
+ *               input it tests every Play certificate in scripts/play-signing-certs.mjs.
  *
- * A key restricted (correctly, per docs/SECURITY-OPS.md §B) to `maps-android-backend.googleapis.com`
- * only will refuse the static-maps probe on API grounds. That is an EXPECTED, healthy answer, and this
- * script says so rather than reporting a false alarm — the application-restriction check still runs,
- * because Google evaluates the Android package/cert allowlist for web-service calls too.
+ *   ✅ Is the key alive, its project live, its billing on?
+ *   ✅ Is each package + SHA-1 pair on the key's Android allowlist?
+ *   ❌ Whether the Maps SDK for Android service is enabled and on the key's API list. No web call
+ *      reaches that service: check APIs & Services -> Enabled APIs and the key's API restrictions.
  *
  * It also checks the OTHER client key, `EXPO_PUBLIC_GOOGLE_PLACES_KEY` (address search). That call IS
  * plain HTTPS from the app's JS (apps/mobile/src/api/places.ts), so the Places probe makes the app's
@@ -35,6 +42,8 @@
  *
  * Keys are read from the environment and never printed, logged, or included in any output.
  */
+
+import { APP_ID, PLAY_SIGNING_CERTS, UPLOAD_CERT } from "./play-signing-certs.mjs";
 
 const PROBE_URL = "https://maps.googleapis.com/maps/api/staticmap";
 // Harare — the app's own initial region (apps/mobile/src/ui/ComposeMap.tsx HARARE).
@@ -88,15 +97,11 @@ export function classify({ status, body }) {
       code: "API_NOT_ACTIVATED",
       verdict: "The key is valid and billing is active, but THIS API is not enabled on the GCP project.",
       meaning:
-        "Rules out two candidates outright: an invalid/regenerated key and lapsed billing both return a " +
-        "different message than this one. Expected in itself — the probe calls the static-maps service, " +
-        "which this project has no reason to enable. What it does NOT prove is the state of the Maps SDK " +
-        "for Android, and it means the Android allowlist could not be reached either, because Google " +
-        "checks API activation BEFORE the application restriction (so re-running with another " +
-        "fingerprint tells you nothing). >>> NEXT: GCP -> APIs & Services -> Enabled APIs, and confirm " +
-        "'Maps SDK for Android' is listed. If it is missing, that is the blank map — nothing in this " +
-        "repo has ever guaranteed it, since infra/terraform/apikeys.tf (which would enable " +
-        "maps-android-backend.googleapis.com) is gated off and was never imported.",
+        "The healthy answer here: the probe calls Static Maps, which this project has no reason to enable, " +
+        "and an invalid/regenerated key or lapsed billing would have answered differently. Google stops at " +
+        "this check, so it says nothing about the certificate allowlist (tested below, through Places API " +
+        "(New)) or about the Maps SDK for Android (GCP -> APIs & Services -> Enabled APIs must list " +
+        "'Maps SDK for Android', and the key's API restrictions must include it).",
     };
   }
   if (has("not authorized to use this API")) {
@@ -293,13 +298,199 @@ async function probePlaces(key) {
   return { status: res.status, json };
 }
 
-async function probe({ key, pkg, sha1 }) {
-  const headers = {};
+// --- Maps key: the Android certificate allowlist (through Places API (New)) ---------------------------
+
+/** "93568F…" → "93:56:8F:…", the shape the Play Console and GCP both show. */
+export function formatSha1(raw) {
+  return (normalizeSha1(raw).match(/.{2}/g) ?? []).join(":");
+}
+
+/**
+ * Split the `sha1` input into fingerprints. Commas, semicolons or newlines separate them; colons and
+ * spaces inside one are dropped, so every shape a console hands you works. Repeats collapse.
+ */
+export function parseSha1List(raw) {
+  const out = [];
+  for (const part of String(raw ?? "").split(/[,;\n]+/)) {
+    const sha1 = normalizeSha1(part);
+    if (sha1 && !out.includes(sha1)) out.push(sha1);
+  }
+  return out;
+}
+
+/**
+ * The certificates to test: whatever the `sha1` input lists; with none, every Play signing certificate
+ * when the package is this app's (a Play-installed phone runs under one of those, never the upload
+ * certificate). Another package has no default.
+ */
+export function certsToTest({ pkg, raw }) {
+  const listed = parseSha1List(raw);
+  if (listed.length) return listed;
+  return pkg === APP_ID ? PLAY_SIGNING_CERTS.map((c) => normalizeSha1(c.sha1)) : [];
+}
+
+/** Which of this app's certificates a fingerprint is, and which phones run under it. */
+export function describeCert(sha1) {
+  const hex = normalizeSha1(sha1);
+  const known = [...PLAY_SIGNING_CERTS, UPLOAD_CERT].find((c) => normalizeSha1(c.sha1) === hex);
+  return known ? `${known.file}, ${known.runsOn}` : "not one of this app's known certificates";
+}
+
+/** Each allowlist verdict, by code. `classifyAllowlist` only decides WHICH one applies. */
+const ALLOWLIST_VERDICTS = {
+  ALLOWED: {
+    verdict: "On the allowlist.",
+    meaning:
+      "Google accepted this package + certificate, then refused the call only because the Maps key's API " +
+      "list leaves out Places, as it should. Phones running the app under this certificate get the map.",
+  },
+  ALLOWED_UNRESTRICTED: {
+    verdict: "On the allowlist, but the Maps key also answered a Places call.",
+    meaning:
+      "The certificate is accepted. The key's API list does not keep it to the map, though: it served " +
+      "Places (New) too. Restrict it to 'Maps SDK for Android' (docs/SECURITY-OPS.md §B).",
+  },
+  NOT_ALLOWED: {
+    verdict: "NOT on the allowlist.",
+    meaning:
+      "Phones that run the app under this certificate are refused and draw a blank map. Add it: GCP -> " +
+      "APIs & Services -> Credentials -> the Maps key -> Application restrictions -> Android apps -> the " +
+      "package + this SHA-1. No new build or OTA: the key string in the app does not change.",
+  },
+  WRONG_RESTRICTION_TYPE: {
+    verdict: "The key's application restriction is not 'Android apps'.",
+    meaning:
+      "It is restricted to websites, IP addresses or iOS apps, so the Android map is refused on every phone. " +
+      "Set Application restrictions -> Android apps, with every certificate in scripts/play-signing-certs.mjs.",
+  },
+  CANNOT_TEST: {
+    verdict: "Could not reach the allowlist: Places API (New) is not enabled on the key's project.",
+    meaning:
+      "This check rides on a Places (New) call, and Google tests whether an API is enabled before it reads " +
+      "the key's restrictions. Check the allowlist by eye in the console instead.",
+  },
+  PROJECT_SUSPENDED: {
+    verdict: "The key belongs to a suspended Cloud project.",
+    meaning:
+      "Every phone draws a blank map. Create the key in the live project (lyniago-app), set it in EAS as " +
+      "Sensitive and ship a NEW BINARY: the Maps key is native and no OTA can carry it (REL-01).",
+  },
+  INVALID_KEY: {
+    verdict: "Google does not recognise this key at all.",
+    meaning: "Deleted, regenerated or pasted wrong. The Maps key is native, so replacing it needs a NEW BINARY (REL-01).",
+  },
+  BILLING: {
+    verdict: "Billing is not enabled on the key's project.",
+    meaning: "The map needs an active billing account on the project: GCP -> Billing.",
+  },
+};
+
+/**
+ * google.rpc.ErrorInfo reasons → allowlist verdict. The order Google checks in is what makes the first
+ * two readable: the application restriction comes before the API list, so a certificate that gets as
+ * far as the API list (SERVICE_BLOCKED) has passed the allowlist.
+ */
+const ALLOWLIST_REASONS = {
+  API_KEY_SERVICE_BLOCKED: "ALLOWED",
+  API_KEY_ANDROID_APP_BLOCKED: "NOT_ALLOWED",
+  API_KEY_IOS_APP_BLOCKED: "WRONG_RESTRICTION_TYPE",
+  API_KEY_HTTP_REFERRER_BLOCKED: "WRONG_RESTRICTION_TYPE",
+  API_KEY_IP_ADDRESS_BLOCKED: "WRONG_RESTRICTION_TYPE",
+  SERVICE_DISABLED: "CANNOT_TEST",
+  CONSUMER_SUSPENDED: "PROJECT_SUSPENDED",
+  API_KEY_INVALID: "INVALID_KEY",
+  BILLING_DISABLED: "BILLING",
+};
+
+/** Message phrases, consulted only when Google sent no reason this script knows. First match wins. */
+const ALLOWLIST_PHRASES = [
+  ["has been suspended", "PROJECT_SUSPENDED"],
+  ["disabled the use of APIs from this API project", "PROJECT_SUSPENDED"],
+  ["has not been used in project", "CANNOT_TEST"],
+  ["Android client application", "NOT_ALLOWED"],
+  ["client application", "WRONG_RESTRICTION_TYPE"],
+  ["referer", "WRONG_RESTRICTION_TYPE"],
+  ["IP address", "WRONG_RESTRICTION_TYPE"],
+  ["Requests to this API", "ALLOWED"],
+  ["API key not valid", "INVALID_KEY"],
+  ["billing", "BILLING"],
+];
+
+/** Map one allowlist probe's answer onto a verdict. Like classifyPlaces: the reason wins, text is a fallback. */
+export function classifyAllowlist({ status, json }) {
+  const error = json?.error;
+  if (status === 200 && !error) return { code: "ALLOWED_UNRESTRICTED", ...ALLOWLIST_VERDICTS.ALLOWED_UNRESTRICTED };
+  const reason = (Array.isArray(error?.details) ? error.details : []).map((d) => d?.reason).find((r) => typeof r === "string" && r) ?? "";
+  const message = String(error?.message ?? "").toLowerCase();
+  const code =
+    ALLOWLIST_REASONS[reason] ?? ALLOWLIST_PHRASES.find(([phrase]) => message.includes(phrase.toLowerCase()))?.[1];
+  if (code) return { code, ...ALLOWLIST_VERDICTS[code] };
+  return {
+    code: "UNKNOWN",
+    verdict: `Google returned something this script does not recognise (HTTP ${status}${reason ? `, reason ${reason}` : ""}).`,
+    meaning: "Read the raw message below and update classifyAllowlist() in scripts/maps-key-doctor.mjs.",
+  };
+}
+
+/**
+ * The one-word answer for the job summary: all allowed, something missing, or the first other answer.
+ *
+ * `control` is the same call sent with NO Android identity. A key whose allowlist is enforced refuses
+ * it as an app (NOT_ALLOWED). A key with no application restriction lets it through to the API list
+ * (ALLOWED), and then every certificate "passes" too, so the per-certificate answers prove nothing:
+ * that is ALLOWLIST_ABSENT, whatever they say.
+ */
+export function summarizeAllowlist(codes, control) {
+  const allowed = (c) => c === "ALLOWED" || c === "ALLOWED_UNRESTRICTED";
+  if (allowed(control)) return "ALLOWLIST_ABSENT";
+  if (codes.length === 0) return "ALLOWLIST_NOT_TESTED";
+  if (codes.includes("NOT_ALLOWED")) return "ALLOWLIST_MISSING";
+  if (codes.every(allowed)) return "ALLOWLIST_OK";
+  return codes.find((c) => !allowed(c));
+}
+
+/**
+ * What the no-identity Static Maps call says about the key. Two of classify()'s answers are worded for a
+ * call that carried a certificate, and this one carries none, so those two are restated.
+ */
+export function keyHealthVerdict(c) {
+  if (c.code === "OK") {
+    return {
+      ...c,
+      verdict: "The key answered a call that carried no Android identity: it has NO application restriction.",
+      meaning: "docs/SECURITY-OPS.md §B restricts the Maps key to Android apps, with every certificate in scripts/play-signing-certs.mjs.",
+    };
+  }
+  if (c.code === "ANDROID_RESTRICTION_REJECTED") {
+    return {
+      ...c,
+      verdict: "The key refuses callers with no Android identity, as an Android-restricted key should.",
+      meaning: "Which certificates it lets through is tested below.",
+    };
+  }
+  return c;
+}
+
+/** One allowlist call. With no `pkg`/`sha1` it carries no Android identity: the control. */
+async function probeAllowlist({ key, pkg, sha1 }) {
+  const headers = { "Content-Type": "application/json", "X-Goog-Api-Key": key };
   if (pkg && sha1) {
     headers["X-Android-Package"] = pkg;
     headers["X-Android-Cert"] = normalizeSha1(sha1);
   }
-  const res = await fetch(`${PROBE_URL}?${PROBE_QUERY}&key=${encodeURIComponent(key)}`, { headers });
+  const res = await fetch(PLACES_PROBE_URL, { method: "POST", headers, body: JSON.stringify(PLACES_PROBE_BODY) });
+  let json = null;
+  try {
+    json = await res.json();
+  } catch {
+    // Not JSON (a proxy page, say): classified UNKNOWN with no message to show.
+  }
+  return { status: res.status, json };
+}
+
+/** The key-health call: Static Maps with no Android identity (see the header for why it cannot test certificates). */
+async function probe({ key }) {
+  const res = await fetch(`${PROBE_URL}?${PROBE_QUERY}&key=${encodeURIComponent(key)}`);
   // A success serves a PNG; only the error path carries prose worth reading.
   const type = res.headers.get("content-type") ?? "";
   const raw = type.startsWith("image/") ? "(binary image — the request succeeded)" : await res.text();
@@ -402,19 +593,22 @@ async function placesSection() {
 }
 
 /**
- * The Maps half of the report. Returns its verdict and the exit code it asks for, and never throws,
- * so an unreadable Maps key or a mistyped SHA-1 no longer stops the Places check from running.
+ * The Maps half of the report. Returns its two verdicts (key health, certificate allowlist) and the exit
+ * code it asks for, and never throws, so an unreadable Maps key or a mistyped SHA-1 no longer stops the
+ * Places check from running.
  */
 async function mapsSection() {
-  const pkg = (process.env.ANDROID_PACKAGE || "zw.co.lynia").trim();
-  const sha1 = process.env.ANDROID_CERT_SHA1?.trim();
+  const pkg = (process.env.ANDROID_PACKAGE || APP_ID).trim();
+  const certs = certsToTest({ pkg, raw: process.env.ANDROID_CERT_SHA1 });
+  const fromInput = parseSha1List(process.env.ANDROID_CERT_SHA1).length > 0;
+  const stop = (code, exitCode) => ({ health: code, allowlist: code, exitCode });
 
   let resolved;
   try {
     resolved = await resolveKey();
   } catch (err) {
     console.error(`Maps key could not be read: ${redactKeys(err?.message ?? err)}`);
-    return { code: "NOT_READABLE", exitCode: 1 };
+    return stop("NOT_READABLE", 1);
   }
   const raw = resolved.value ?? "";
 
@@ -423,13 +617,19 @@ async function mapsSection() {
       "No Maps key could be resolved. With key_source: github the repository secret " +
         "GOOGLE_MAPS_API_KEY must be set (android-test-apk.yml uses the same one).",
     );
-    return { code: "NOT_SET", exitCode: 2 };
+    return stop("NOT_SET", 2);
   }
 
-  console.log("Maps key doctor — MOB-MAP-02\n");
+  console.log("Maps key doctor\n");
   console.log(`  source  : ${resolved.origin}`);
   console.log(`  package : ${pkg}`);
-  console.log(`  sha-1   : ${sha1 ? normalizeSha1(sha1) : "(none supplied — allowlist NOT tested)"}`);
+  console.log(
+    `  certs   : ${
+      certs.length === 0
+        ? "none (no sha1 input, and no default for this package): the allowlist is NOT tested"
+        : `${certs.length}, ${fromInput ? "from the sha1 input" : "every Play signing certificate (scripts/play-signing-certs.mjs)"}`
+    }`,
+  );
   // Shape check reported as CONSTANT strings, never a value derived from the key.
   //
   // The first version of this line printed `key.length` — "safe", since a Google key is a fixed 39
@@ -449,49 +649,92 @@ async function mapsSection() {
   );
   const key = raw.trim();
 
-  if (sha1 && !isWellFormedSha1(sha1)) {
+  // Position and length only, never the value: a key pasted into the sha1 box by mistake must not land
+  // in this public log.
+  const bad = certs.map((s, i) => ({ i, s })).filter(({ s }) => !isWellFormedSha1(s));
+  if (bad.length) {
     console.error(
-      `The supplied fingerprint is not a SHA-1. Expected 40 hex characters (20 colon-separated byte ` +
-        `pairs); got ${normalizeSha1(sha1).length}. A SHA-256 is 64 — the wrong algorithm, and it fails ` +
-        `to match silently at runtime rather than erroring.`,
+      `Not a SHA-1: ${bad.map(({ i, s }) => `fingerprint ${i + 1} has ${s.length} characters`).join("; ")}. ` +
+        `Each must be 40 (20 colon-separated byte pairs), and several are separated by commas. A SHA-256 ` +
+        `is 64: the wrong algorithm, and it fails to match silently at runtime rather than erroring.`,
     );
-    return { code: "BAD_SHA1", exitCode: 2 };
+    return stop("BAD_SHA1", 2);
   }
 
-  // Two probes: with the Android identity, and without. The pair is what separates "this cert is not
-  // allowed" from "the key refuses every unidentified caller", which look identical from one request.
-  let withId;
-  let bare;
+  let exitCode = 0;
+  let health;
   try {
-    withId = sha1 ? await probe({ key, pkg, sha1 }) : null;
-    bare = await probe({ key });
-  } catch {
-    console.error("The Maps probe failed before Google answered. The error text is not shown: it can quote the key.");
-    return { code: "PROBE_FAILED", exitCode: 1 };
-  }
-
-  if (withId) {
-    const c = classify(withId);
-    console.log(`AS THE APP (X-Android-Package + X-Android-Cert) -> HTTP ${withId.status}  [${c.code}]`);
+    const bare = await probe({ key });
+    const c = keyHealthVerdict(classify(bare));
+    health = c.code;
+    console.log(`KEY HEALTH (Static Maps, no Android identity) -> HTTP ${bare.status}  [${c.code}]`);
     console.log(`  ${c.verdict}`);
     console.log(`  ${c.meaning}`);
-    console.log(`  raw: ${withId.body.trim() || "(empty)"}\n`);
+    console.log(`  raw: ${bare.body.trim() || "(empty)"}\n`);
+  } catch {
+    // Reported, then carry on: the allowlist probes below are independent of this one.
+    console.error("The key-health probe failed before Google answered. The error text is not shown: it can quote the key.\n");
+    health = "PROBE_FAILED";
+    exitCode = 1;
   }
 
-  const cb = classify(bare);
-  console.log(`WITHOUT ANY ANDROID IDENTITY -> HTTP ${bare.status}  [${cb.code}]`);
-  console.log(`  ${cb.verdict}`);
-  console.log(`  raw: ${bare.body.trim() || "(empty)"}\n`);
-
-  if (!sha1) {
-    console.log(
-      "No SHA-1 supplied, so the allowlist — the actual MOB-MAP-02 question — was not tested. Re-run with\n" +
-        "the Play *app signing* certificate SHA-1: Play Console -> Protected with Play -> App signing ->\n" +
-        "'Classical key' -> SHA-1 certificate fingerprint. That is the certificate installed builds run under;\n" +
-        "the EAS upload keystore is a different one and allowlisting only it is the documented trap.",
-    );
+  // The control: no Android identity at all. It is what makes an ALLOWED below mean something.
+  let control;
+  if (certs.length) {
+    try {
+      const answer = await probeAllowlist({ key, pkg: "", sha1: "" });
+      const c = classifyAllowlist(answer);
+      control = c.code;
+      console.log(`ALLOWLIST CONTROL (no Android identity) -> HTTP ${answer.status}  [${c.code}]`);
+      if (c.code === "NOT_ALLOWED") {
+        console.log("  Refused as an app, as it should be: the key's Android allowlist is enforced.\n");
+      } else if (c.code === "ALLOWED" || c.code === "ALLOWED_UNRESTRICTED") {
+        console.log("  Let through: the Maps key has NO application restriction, so every certificate below passes and");
+        console.log("  proves nothing. The map works, but anyone holding the key can use it. docs/SECURITY-OPS.md §B:");
+        console.log("  Application restrictions -> Android apps, with every certificate in scripts/play-signing-certs.mjs.\n");
+      } else {
+        console.log(`  ${c.verdict}`);
+        console.log(`  ${c.meaning}\n`);
+      }
+    } catch {
+      console.log("ALLOWLIST CONTROL (no Android identity) -> no answer  [PROBE_FAILED]\n");
+      control = "PROBE_FAILED";
+      exitCode = 1;
+    }
   }
-  return { code: withId ? classify(withId).code : cb.code, exitCode: 0 };
+
+  const codes = [];
+  for (const sha1 of certs) {
+    let answer;
+    try {
+      answer = await probeAllowlist({ key, pkg, sha1 });
+    } catch {
+      console.log(`ALLOWLIST ${formatSha1(sha1)} -> no answer  [PROBE_FAILED]`);
+      console.log("  The request failed before Google answered. The error text is not shown: it can quote the key.\n");
+      codes.push("PROBE_FAILED");
+      exitCode = 1;
+      continue;
+    }
+    const c = classifyAllowlist(answer);
+    codes.push(c.code);
+    console.log(`ALLOWLIST ${formatSha1(sha1)} -> HTTP ${answer.status}  [${c.code}]`);
+    console.log(`  cert : ${describeCert(sha1)}`);
+    console.log(`  ${c.verdict}`);
+    if (c.code !== "ALLOWED") {
+      console.log(`  ${c.meaning}`);
+      const message = String(answer.json?.error?.message ?? "");
+      if (message) console.log(`  raw: ${scrub(message, key).slice(0, 400)}`);
+    }
+    console.log("");
+  }
+
+  const allowlist = summarizeAllowlist(codes, control);
+  if (allowlist === "ALLOWLIST_MISSING") {
+    console.log("At least one certificate is missing from the Maps key: phones that run under it draw a blank map.\n");
+  } else if (allowlist === "ALLOWLIST_NOT_TESTED") {
+    console.log("No certificate was tested. Pass the SHA-1s (comma-separated) in the sha1 input.\n");
+  }
+  return { health, allowlist, exitCode };
 }
 
 async function main() {
@@ -502,7 +745,8 @@ async function main() {
   // Never fail the job on a diagnosis — this is a read-only report, and a non-zero exit would read as
   // "the tool is broken" rather than "the key is misconfigured". Only unusable INPUT (no key, a bad
   // SHA-1) or a probe that could not run exits non-zero, and only after both halves have reported.
-  console.log(`::notice title=Maps key doctor::${maps.code}`);
+  console.log(`::notice title=Maps key health::${maps.health}`);
+  console.log(`::notice title=Maps key allowlist::${maps.allowlist}`);
   console.log(`::notice title=Places key doctor::${places}`);
   if (maps.exitCode) process.exitCode = maps.exitCode;
 }

@@ -864,8 +864,10 @@ const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 /** One day's open/close window, "HH:MM" 24h. Both present or the day is treated as closed. */
 export const MerchantHoursWindow = z.object({ open: z.string().regex(HHMM), close: z.string().regex(HHMM) }).strict();
 export type MerchantHoursWindow = z.infer<typeof MerchantHoursWindow>;
-/** Weekly hours keyed by day; an absent day means closed that day. */
-export const MerchantHours = z.record(z.enum(DAY_KEYS), MerchantHoursWindow);
+/** Weekly hours keyed by day; an absent day means closed that day. `partialRecord`, not `record`: in
+ *  Zod 4 an enum-keyed `record` requires every key, which refused any week with a closed day
+ *  (E2E 2026-10-05 LB-2). */
+export const MerchantHours = z.partialRecord(z.enum(DAY_KEYS), MerchantHoursWindow);
 export type MerchantHours = z.infer<typeof MerchantHours>;
 
 /** Merchant web upgrade L1 (docs/plans/2026-09-29-merchant-web-upgrade-plan.md): what a business sells,

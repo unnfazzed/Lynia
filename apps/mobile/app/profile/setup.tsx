@@ -1,5 +1,6 @@
 import { formatPhoneDisplay } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
+import { useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import { Text, TextInput, View } from "react-native";
@@ -53,6 +54,7 @@ function NameField({ label, value, onChangeText, autoComplete }: { label: string
 
 export default function ProfileSetupScreen(): React.ReactElement {
   const router = useRouter();
+  const qc = useQueryClient();
   const { updateSession } = useAuth();
   const params = useLocalSearchParams<{ phone?: string; deliveryChannel?: string; intent?: string }>();
   const phone = typeof params.phone === "string" ? params.phone : "";
@@ -93,7 +95,10 @@ export default function ProfileSetupScreen(): React.ReactElement {
     setError(null);
     setBusy(true);
     try {
-      await updateProfile({ firstName: firstName.trim(), lastName: lastName.trim() });
+      const me = await updateProfile({ firstName: firstName.trim(), lastName: lastName.trim() });
+      // E2E 2026-10-05 FS-9: the PATCH answers with the full profile — put it in the `["me"]` cache now.
+      // Left stale, "Ride with LyniaGo" → R1 read the nameless cached `me` and asked for the name again.
+      qc.setQueryData(["me"], me);
       void clearProfileDraft();
       await updateSession({ needsProfile: false });
       const chosen = await loadRolePreference();
