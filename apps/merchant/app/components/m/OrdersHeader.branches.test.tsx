@@ -44,11 +44,16 @@ describe("B1 / D1 header · branches (ledger D-51)", () => {
     expect(screen.queryByText("Orders")).toBeNull();
   });
 
-  it("a single business not live yet gets the same not-live header (E2E 2026-10-05 FS-4)", () => {
+  it("a single business not live yet gets the same not-live header, and a shop keeps Book a rider (E2E 2026-10-05 FS-4)", () => {
     list.branches = [branch("m1")];
-    render(<OrdersHeader merchant={merchant({ pilotEnabled: false })} open={open} disabled={false} />);
+    render(
+      <OrdersHeader merchant={merchant({ pilotEnabled: false, businessType: "shop" })} open={open} disabled={false}>
+        <a href="/deliveries/new">Book a rider</a>
+      </OrdersHeader>,
+    );
     expect(screen.getByText("Not live yet")).toBeTruthy();
     expect(screen.queryByRole("switch")).toBeNull();
+    expect(screen.getByRole("link", { name: "Book a rider" })).toBeTruthy();
   });
 
   it("staff never see the chevron", () => {

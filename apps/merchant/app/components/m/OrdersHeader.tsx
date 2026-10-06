@@ -144,7 +144,9 @@ export function OrdersHeader({
           </Link>
         </div>
       )}
-      {!notLive && !closed && children}
+      {/* E2E 2026-10-05 FS-4: "Not live yet" now reaches a single new shop too, and booking a rider for
+          its own sales doesn't wait on ops (the API allows it), so a not-live shop keeps "Book a rider". */}
+      {!closed && children}
       {sheet && <BranchSheet business={merchant} branches={branches} onClose={() => setSheet(false)} />}
     </div>
   );
