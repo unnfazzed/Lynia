@@ -24,10 +24,11 @@ import { useNotificationsUnreadCount } from "../../src/query/use-notifications-u
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { enqueueBoot } from "../../src/telemetry/rum";
+import { useBootPhase } from "../../src/boot/boot-phase";
 import { reportBootReady } from "../../src/boot/boot-readiness";
 import { BootEntrance } from "../../src/boot/splash/BootEntrance";
 import { statusPillLabel, useTabRoot } from "../../src/ui";
-import { StatusBar } from "expo-status-bar";
+import { ScreenStatusBar } from "../../src/boot/ScreenStatusBar";
 import { H } from "../../src/ui/home/copy";
 import {
   HomeTop,
@@ -161,12 +162,19 @@ function useRiderFirstNames(orders: OrderSnapshot[]): Record<string, string | nu
  * native frame is presented and would understate the customer-visible gap (review decision).
  * `enqueueBoot` is idempotent per process, so later remounts of home are no-ops, and on a warm
  * navigation back to home nothing fires at all.
+ *
+ * Since the splash (ledger D-64) Home mounts and paints UNDER it, off-screen, 1.5–3s before anyone can
+ * see it — so on a cold start the mark waits for the boot to end (the splash's exit has raised Home
+ * into place), and only then for the interactions to settle. A Home that mounts after the boot (any
+ * later visit) is visible at once, as before.
  */
 function useBootHomePaintMark(): void {
+  const { booting } = useBootPhase();
   useEffect(() => {
+    if (booting) return;
     const handle = InteractionManager.runAfterInteractions(() => enqueueBoot("boot_home_paint"));
     return () => handle.cancel();
-  }, []);
+  }, [booting]);
 }
 
 /** "Popular restaurants" carries up to this many cards; the rail scrolls (2.2 show at 360px). */
@@ -343,7 +351,8 @@ export default function LauncherHomeScreen(): React.ReactElement {
     // A plain root, not AppScreen: the mint header owns the top inset itself (it paints behind the
     // status bar, README §2.2), so no SafeAreaView may add a second one above it.
     <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
-      <StatusBar style="dark" />
+      {/* Mounts only once the splash has handed off (S-1): mounted under it, dark would win RN's stack. */}
+      <ScreenStatusBar style="dark" />
       <ScrollView
         ref={scrollRef}
         style={{ backgroundColor: tokens.color.bg }}

@@ -22,6 +22,12 @@ export interface BootReadiness {
   destination: string | null;
   /** `Date.now()` when the splash began its exit into Home (Home's entrance keys off it), else null. */
   exitAt: number | null;
+  /**
+   * `Date.now()` when the cold start ENDED (the splash handed off, or something that replaces the
+   * navigator ended it), else null. Process-lifetime: a remount of the root layout (the ErrorBoundary's
+   * "Reload") reads it so the cold-start splash is never replayed in a process that already booted.
+   */
+  endedAt: number | null;
   /** `Date.now()` when each signal became ready, or `null` while still pending. */
   readyAt: Record<BootSignal, number | null>;
 }
@@ -29,6 +35,7 @@ export interface BootReadiness {
 const EMPTY: BootReadiness = {
   destination: null,
   exitAt: null,
+  endedAt: null,
   readyAt: { session: null, profile: null, home: null },
 };
 
@@ -46,6 +53,21 @@ export function reportBootDestination(destination: string, now: number = Date.no
   set({ ...state, destination, readyAt: { ...state.readyAt, session: now } });
 }
 
+/**
+ * The router's pathname while the boot is still going (app/_layout.tsx `BootRouteWatch`). A boot bound
+ * for Home can be sent elsewhere before Home is ready — a session the server rejects signs out and the
+ * SessionGate replaces Home with /phone; a route gate redirects. Home then never reports its steps, so
+ * without this the splash would sit on "Loading your saved places" until its give-up. When the app has
+ * landed somewhere that is neither the boot route ("/") nor Home, that place becomes the destination
+ * and the splash hands off straight away (a non-Home destination ends after step 1, long done).
+ * Ignored once the exit into Home has started or the boot has ended. Idempotent.
+ */
+export function reportBootRoute(pathname: string): void {
+  if (state.destination !== "/home" || state.exitAt != null || state.endedAt != null) return;
+  if (pathname === "/" || pathname === state.destination) return;
+  set({ ...state, destination: pathname });
+}
+
 /** A later signal became true. Idempotent — the first stamp wins. */
 export function reportBootReady(signal: Exclude<BootSignal, "session">, now: number = Date.now()): void {
   if (state.readyAt[signal] != null) return;
@@ -56,6 +78,12 @@ export function reportBootReady(signal: Exclude<BootSignal, "session">, now: num
 export function reportSplashExit(now: number = Date.now()): void {
   if (state.exitAt != null) return;
   set({ ...state, exitAt: now });
+}
+
+/** The cold start ended (see {@link BootReadiness.endedAt}). Idempotent — the first stamp wins. */
+export function reportBootEnded(now: number = Date.now()): void {
+  if (state.endedAt != null) return;
+  set({ ...state, endedAt: now });
 }
 
 export function getBootReadiness(): BootReadiness {

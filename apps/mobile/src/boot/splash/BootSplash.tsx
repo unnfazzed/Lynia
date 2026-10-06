@@ -13,7 +13,8 @@ import { reportSplashExit, useBootReadiness } from "../boot-readiness";
 import { releaseNativeSplash, useBootSplashRelease } from "../boot-splash-hold";
 import { S } from "./copy";
 import { held, keyframesEasing, keyframesInput, popEasing } from "./motion";
-import { EXIT, GIVE_UP_MS, INTRO_MS, SLOW_AFTER_MS, type StepState, nextStepChange, splashDoneAt, stepStates, stepTimes } from "./timeline";
+import { CARD_H_ESTIMATE, PANEL_H_ESTIMATE, splashGeometry } from "./geometry";
+import { EXIT, GIVE_UP_MS, INTRO_MS, SLOW_AFTER_MS, type StepState, nextStepChange, shownSteps, splashDoneAt, stepStates, stepTimes } from "./timeline";
 
 /**
  * The cold-start splash — "1a Sun & orbit" (`packages/design/handoff/splash-v1`, ledger D-64; it
@@ -51,7 +52,6 @@ const DOT = 22;
 const DOT_RING = 5;
 const DOVE = 128;
 const WORDMARK = 40;
-const OFFLINE_LIFT = 64;
 /** How long "Try again" shows loading before the offline panel can come back. */
 const RETRY_GRACE_MS = 3000;
 /** One orbit lap, and the breathe / bob cycle (handoff § Loading loops). */
@@ -98,37 +98,43 @@ const FACETS = [
   },
 ] as const;
 
-/** Decorative blobs. `top` is a function of the screen height H and the anchor A (44% of H). */
+/** Decorative blobs. `top` is a function of the screen height H and the anchor A (44% of H, or higher
+ *  where the screen is short — see {@link splashGeometry}); the sky blob sits at "anchor + 64". */
 const BLOBS = [
   {
     color: C.coral,
     size: 74,
-    pos: (H: number) => ({ left: 28, top: 0.13 * H }),
+    pos: (H: number, _A: number) => ({ left: 28, top: 0.13 * H }),
     pop: 550,
     drift: 1300,
   },
   {
     color: C.illusPink,
     size: 34,
-    pos: (H: number) => ({ right: 40, top: 0.21 * H }),
+    pos: (H: number, _A: number) => ({ right: 40, top: 0.21 * H }),
     pop: 700,
     drift: 1600,
   },
   {
     color: C.sky,
     size: 54,
-    pos: (H: number) => ({ right: -8, top: 0.44 * H + 64 }),
+    pos: (_H: number, A: number) => ({ right: -8, top: A + 64 }),
     pop: 800,
     drift: 1900,
   },
   {
     color: C.riderAccent,
     size: 150,
-    pos: () => ({ left: -62, bottom: -56 }),
+    pos: (_H: number, _A: number) => ({ left: -62, bottom: -56 }),
     pop: 900,
     drift: 1300,
   },
 ] as const;
+
+/** What a screen reader hears as a step completes (accessibility only — the card draws the tick). */
+export function stepDoneAnnouncement(label: string): string {
+  return `${label}, done`;
+}
 
 /** One native-driven timing; `delay` is folded into the easing (no JS timer). */
 const timing = (v: Animated.Value, toValue: number, duration: number, easing: (x: number) => number, delay = 0): Animated.CompositeAnimation =>
@@ -206,18 +212,42 @@ export function BootSplash(): React.ReactElement {
 
   const times = useMemo(() => {
     const rel = (at: number | null): number | null => (at == null ? null : Math.max(0, at - t0));
-    return stepTimes([rel(readiness.readyAt.session), rel(readiness.readyAt.profile), rel(readiness.readyAt.home)]);
+    return stepTimes([rel(readiness.readyAt.session), rel(readiness.readyAt.profile), rel(readiness.readyAt.home)], shownSteps(readiness.destination));
   }, [readiness, t0]);
   const steps = stepStates(times, t);
   const loading = t >= INTRO_MS;
-  const offline = loading && !reachable && (retryAt == null || t - retryAt >= RETRY_GRACE_MS);
   const readyDoneAt = splashDoneAt(times, readiness.destination);
-  const doneAt = readyDoneAt ?? (offline ? null : GIVE_UP_MS);
-  const done = doneAt != null && t >= doneAt;
+  // `done` is one-way: once the exit (or the cut) has started it never flips back — a request failing
+  // mid-exit (offline) must not stop the exit and snap Home into place. Latched in render (idempotent)
+  // because the flip-back render would otherwise reach the exit effect's cleanup before any effect could.
+  const doneLatch = useRef(false);
+  // Offline only while the boot is still WAITING on something (S-4): once every step's real task is in,
+  // the remaining time is the handoff's minimums, not the network — a panel there only flashes.
+  const offline = !doneLatch.current && loading && readyDoneAt == null && !reachable && (retryAt == null || t - retryAt >= RETRY_GRACE_MS);
+  // The give-up bound counts ONLINE loading time only: time spent on the offline panel is time the
+  // network, not the app, was the holdup, so coming back after 20s offline still gets a real load.
+  const [offlineSince, setOfflineSince] = useState<number | null>(null);
+  const [offlineTotal, setOfflineTotal] = useState(0);
+  const giveUpAt = GIVE_UP_MS + offlineTotal + (offlineSince != null ? Math.max(0, t - offlineSince) : 0);
+  const doneAt = readyDoneAt ?? (offline ? null : giveUpAt);
+  const done = doneLatch.current || (doneAt != null && t >= doneAt);
+  if (done) doneLatch.current = true;
+  useEffect(() => {
+    if (offline) {
+      setOfflineSince((s) => s ?? t);
+      return;
+    }
+    if (offlineSince == null) return;
+    // Real elapsed time (not the last clock tick) so the bound never under-counts the outage.
+    setOfflineTotal((total) => total + Math.max(t - offlineSince, Date.now() - t0 - offlineSince));
+    setOfflineSince(null);
+  }, [offline, offlineSince, t, t0]);
   // A full exit into Home; anywhere else (or a give-up before the destination is known) is a straight cut.
   const toHome = readiness.destination === "/home";
   const phase: Phase = done ? "done" : offline ? "offline" : loading ? "loading" : "boot";
   const slow = phase === "loading" && t >= INTRO_MS + SLOW_AFTER_MS;
+  // The steps card is on screen while loading and through the exit; hidden in the intro and offline.
+  const cardShown = phase === "loading" || phase === "done";
 
   // Wake at the next moment anything changes (intro end, a step boundary, the slow pill, the end of a
   // retry's grace, done). A readiness stamp that is already in the past schedules an immediate wake.
@@ -396,15 +426,20 @@ export function BootSplash(): React.ReactElement {
     };
   }, [done, toHome, reduce, release, reveal, v]);
 
-  // Announce each completed step (Android reads the live region; iOS needs the explicit announcement).
+  // Announce each completed step as "<label>, done" — the label alone reads like the task is starting
+  // (Android reads the live region; iOS needs the explicit announcement).
   const announced = useRef(0);
   const doneCount = steps.filter((s) => s === "done").length;
   useEffect(() => {
     if (doneCount > announced.current) {
-      AccessibilityInfo.announceForAccessibility?.(S.steps[doneCount - 1]!);
+      AccessibilityInfo.announceForAccessibility?.(stepDoneAnnouncement(S.steps[doneCount - 1]!));
       announced.current = doneCount;
     }
   }, [doneCount]);
+  // The offline panel is an alert (handoff § Accessibility): say so when it appears, on both platforms.
+  useEffect(() => {
+    if (phase === "offline") AccessibilityInfo.announceForAccessibility?.(`${S.offlineTitle}. ${S.offlineBody}`);
+  }, [phase]);
 
   const onLayout = useCallback(
     (e: LayoutChangeEvent) => {
@@ -431,6 +466,16 @@ export function BootSplash(): React.ReactElement {
     setRetryAt(Date.now() - t0);
   }, [t0]);
 
+  // ── Layout (S-5) ── The handoff's geometry assumes a frame with no system bars; with the bottom inset
+  // added (D-64 #3) the steps card / offline panel can reach the wordmark on a 640dp phone with a
+  // 3-button nav bar. Where space is short the brand moves UP, never under a panel (README review notes:
+  // "the content moves up … to clear the panel"). Heights are measured, so a wrapped body line counts.
+  const [cardH, setCardH] = useState(CARD_H_ESTIMATE);
+  const [panelH, setPanelH] = useState(PANEL_H_ESTIMATE);
+  const geometry = splashGeometry({ H, bottomInset: insets.bottom, cardH, panelH });
+  const onCardLayout = useCallback((e: LayoutChangeEvent) => setCardH(Math.round(e.nativeEvent.layout.height)), []);
+  const onPanelLayout = useCallback((e: LayoutChangeEvent) => setPanelH(Math.round(e.nativeEvent.layout.height)), []);
+
   const still = reduce;
   const motion = useMemo(
     () => ({
@@ -445,11 +490,15 @@ export function BootSplash(): React.ReactElement {
     <View style={[StyleSheet.absoluteFill, styles.screen]} onLayout={onLayout}>
       <StatusBar style={homeRising ? "dark" : "light"} />
 
-      <SplashArt v={v} W={W} H={H} still={still} />
+      <SplashArt v={v} W={W} H={H} A={geometry.anchor} lift={geometry.offlineLift} still={still} />
 
-      {/* Steps card — real progress, a polite live region. */}
+      {/* Steps card — real progress, a polite live region. Hidden from accessibility while it is not on
+          screen (the intro, the offline panel), so a screen reader never reads an invisible card. */}
       <Animated.View
         accessibilityLiveRegion="polite"
+        importantForAccessibility={cardShown ? "auto" : "no-hide-descendants"}
+        accessibilityElementsHidden={!cardShown}
+        onLayout={onCardLayout}
         style={[
           styles.card,
           {
@@ -464,9 +513,11 @@ export function BootSplash(): React.ReactElement {
         ))}
       </Animated.View>
 
-      {/* Slow-network pill. */}
+      {/* Slow-network pill — in the accessibility tree only while it is showing. */}
       <Animated.View
         pointerEvents="none"
+        importantForAccessibility={slow ? "auto" : "no-hide-descendants"}
+        accessibilityElementsHidden={!slow}
         style={[
           styles.slowWrap,
           {
@@ -488,6 +539,7 @@ export function BootSplash(): React.ReactElement {
         accessibilityLiveRegion="assertive"
         importantForAccessibility={phase === "offline" ? "auto" : "no-hide-descendants"}
         accessibilityElementsHidden={phase !== "offline"}
+        onLayout={onPanelLayout}
         style={[
           styles.panel,
           {
@@ -512,15 +564,47 @@ export function BootSplash(): React.ReactElement {
  * screen size or the reduce-motion setting, with every animated node built once: the step clock's
  * re-renders never reach it, so no native-driven transform is ever rebuilt mid-animation.
  */
-const SplashArt = memo(function SplashArt({ v, W, H, still }: { v: SplashValues; W: number; H: number; still: boolean }): React.ReactElement {
-  const A = 0.44 * H;
-  const n = useMemo(() => {
-    const lift = v.offline.interpolate({
-      inputRange: [0, 1],
-      outputRange: [0, still ? 0 : -OFFLINE_LIFT],
-    });
+const SplashArt = memo(function SplashArt({
+  v,
+  W,
+  H,
+  A,
+  lift: liftPx,
+  still,
+}: {
+  v: SplashValues;
+  W: number;
+  H: number;
+  /** The anchor's y (44% of H, clamped up on short screens). */
+  A: number;
+  /** How far the brand moves up while the offline panel shows (64, more on short screens). */
+  lift: number;
+  still: boolean;
+}): React.ReactElement {
+  // The offline lift's nodes are the only ones that depend on the measured layout (`liftPx`), so they
+  // are memoised apart: a late measurement rebuilds the lift alone, never the intro's running nodes.
+  const lifted = useMemo(() => {
+    // Reduced motion keeps the lift — the panel would cover the wordmark without it — but without the
+    // motion: the brand jumps clear the moment the panel starts to fade in and comes back only once it
+    // has fully faded out.
+    const lift = still
+      ? v.offline.interpolate({ inputRange: [0, 0.001, 1], outputRange: [0, -liftPx, -liftPx], extrapolate: "clamp" })
+      : v.offline.interpolate({ inputRange: [0, 1], outputRange: [0, -liftPx] });
     return {
       lift,
+      wordmarkY: Animated.add(
+        lift,
+        still
+          ? 0
+          : v.wordmark.interpolate({
+              inputRange: [0, 1],
+              outputRange: [14, 0],
+            }),
+      ),
+    };
+  }, [v, still, liftPx]);
+  const n = useMemo(() => {
+    return {
       blobs: BLOBS.map((_, i) => ({
         tx: still
           ? 0
@@ -588,15 +672,6 @@ const SplashArt = memo(function SplashArt({ v, W, H, still }: { v: SplashValues;
           outputRange: ["-14deg", "0deg"],
         }),
       })),
-      wordmarkY: Animated.add(
-        lift,
-        still
-          ? 0
-          : v.wordmark.interpolate({
-              inputRange: [0, 1],
-              outputRange: [14, 0],
-            }),
-      ),
     };
   }, [v, still]);
 
@@ -615,7 +690,7 @@ const SplashArt = memo(function SplashArt({ v, W, H, still }: { v: SplashValues;
                 borderRadius: b.size / 2,
                 backgroundColor: b.color,
               },
-              b.pos(H),
+              b.pos(H, A),
               {
                 transform: [{ translateX: n.blobs[i]!.tx }, { translateY: n.blobs[i]!.ty }, { scale: v.blobs[i]! }],
               },
@@ -625,7 +700,7 @@ const SplashArt = memo(function SplashArt({ v, W, H, still }: { v: SplashValues;
       </View>
 
       {/* The anchor group: orbit, sun, dove — centred at 44% of the height. */}
-      <Animated.View style={[styles.anchor, { left: W / 2, top: A, transform: [{ translateY: n.lift }] }]}>
+      <Animated.View style={[styles.anchor, { left: W / 2, top: A, transform: [{ translateY: lifted.lift }] }]}>
         <Animated.View
           pointerEvents="none"
           importantForAccessibility="no-hide-descendants"
@@ -695,7 +770,7 @@ const SplashArt = memo(function SplashArt({ v, W, H, still }: { v: SplashValues;
           {
             top: A + 152,
             opacity: v.wordmark,
-            transform: [{ translateY: n.wordmarkY }],
+            transform: [{ translateY: lifted.wordmarkY }],
           },
         ]}
       >

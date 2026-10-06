@@ -43,6 +43,11 @@ export const PERSISTED_KEY_ROOTS: ReadonlySet<string> = new Set([
   "restaurants",
   // Shops & Pharmacy lists and catalogues (ledger D-58): the same stale-safe browse data.
   "shops",
+  // The Popular rails' ranking (ledger D-72): venue ids and order counts over 30 days — an ordering
+  // hint, no personal data, correct-if-stale by design (it moves by the day). Persisted so the rails a
+  // cold start paints under the splash are already in their ranked order, instead of nearest-open order
+  // that reshuffles a beat after Home rises when the ranking lands.
+  "popularity",
 ]);
 
 /**
