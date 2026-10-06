@@ -20,7 +20,7 @@ const ID_MIN = 4;
 const ID_MAX = 40;
 
 /**
- * Personal details (ledger D-78, owner 2026-10-06): makes C5's "You can add it in Account" true. Reached
+ * Personal details (ledger D-79, owner 2026-10-06): makes C5's "You can add it in Account" true. Reached
  * from Settings → YOUR ACCOUNT on both sides; the row's words are the handoff's (`mint2.js` Account,
  * "Personal details · Name, phone, optional ID"). The screen isn't drawn, so it is built from what is:
  * Rider v2's pushed-screen header, and C5's form (the side-by-side name fields, the verified phone row,

@@ -376,7 +376,7 @@ export const RIDER_COPY = {
   docBike: "Bike",
   bikeChange: "Changed bikes? Re-verify with the new plate.",
   reverifyBike: "Re-verify my bike",
-  /* D-78 (owner 2026-10-06): adding the photo and plate that R1/R3 say can wait. Not drawn. */
+  /* D-79 (owner 2026-10-06): adding the photo and plate that R1/R3 say can wait. Not drawn. */
   docPhotoAdd: "Add photo",
   docPhotoChange: "Change",
   docPhotoBody: "A clear, recent photo of your face, on its own.",
@@ -388,7 +388,7 @@ export const RIDER_COPY = {
   docBikeLabel: "Number plate",
   docBikeHint: "As it's written on the plate, like AEE 4471.",
   docBikeErr: "Couldn't save your plate. Check your connection and try again.",
-  /* D-78 (owner 2026-10-06): Personal details. Row label and sub are the handoff's (mint2.js Account). */
+  /* D-79 (owner 2026-10-06): Personal details. Row label and sub are the handoff's (mint2.js Account). */
   sPersonal: "Personal details",
   sPersonalS: "Name, phone, optional ID",
   tPersonal: "Personal details",

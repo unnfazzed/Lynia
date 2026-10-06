@@ -4,7 +4,6 @@ import { AccessibilityInfo, ActivityIndicator, Alert, Animated, type DimensionVa
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Tappable } from "./Tappable";
 import { captureException, isSentryEnabled, nativeCrash } from "../telemetry/sentry";
-import { Icon, type IconName } from "./Icon";
 import { isTestBuild } from "./test-build";
 
 export { Icon, type IconName } from "./Icon";
@@ -651,44 +650,9 @@ export function Stepper(props: {
 }
 
 // ── Empty state ───────────────────────────────────────────────────────────────
-// A dead-end becomes an action (DESIGN.md): warm illustration + heading + one primary action passed as
-// children. Used for no-offers / no-orders and similar calm, recoverable states.
-export function EmptyState(props: {
-  icon: IconName;
-  title: string;
-  message: string;
-  children?: React.ReactNode;
-  /** "accent" (default, warm mint — most gates/empties) or "danger" (dangerWash/dangerInk — a real
-   *  money block like the top-up gate, distinct from the merely-inconvenient states below it). */
-  tone?: "accent" | "danger";
-}): React.ReactElement {
-  const danger = props.tone === "danger";
-  return (
-    <View style={{ alignItems: "center", paddingVertical: tokens.space.xl }}>
-      <View
-        style={{
-          width: 88,
-          height: 88,
-          borderRadius: 44,
-          // Mint-wash tile + text-green icon (DS EmptyState tone) — warm, not greyed-out. The danger
-          // tone (dangerWash/dangerInk) is reserved for a genuine money block, e.g. the top-up gate.
-          backgroundColor: danger ? tokens.color.dangerWash : tokens.color.accentWash,
-          alignItems: "center",
-          justifyContent: "center",
-          marginBottom: tokens.space.md,
-        }}
-      >
-        <Icon name={props.icon} size={36} color={danger ? tokens.color.dangerInk : tokens.color.accentText} strokeWidth={tokens.icon.stroke} />
-      </View>
-      <Text style={{ fontSize: tokens.font.size.title, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, textAlign: "center" }}>{props.title}</Text>
-      {/* Kit EmptyState message is caption (12) at the body leading (1.45 → ~17), not body 14. */}
-      <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, textAlign: "center", lineHeight: Math.round(tokens.font.size.caption * tokens.leading.body), marginTop: 6, maxWidth: 260 }}>
-        {props.message}
-      </Text>
-      {props.children ? <View style={{ alignSelf: "stretch", marginTop: tokens.space.md }}>{props.children}</View> : null}
-    </View>
-  );
-}
+// One component for every empty / nothing-found / couldn't-load state (handoff empty-states-v2, D-78).
+export { EmptyMark, EmptyRow, EmptyState, SoftPill, TextAction, type EmptyAction, type EmptyTone } from "./EmptyState";
+export { emptyCopy, fillEmpty } from "./emptyCopy";
 
 // ── Skeleton loaders ──────────────────────────────────────────────────────────
 // DESIGN.md (data-light): list/board/stepper screens show content-shaped skeletons while loading,

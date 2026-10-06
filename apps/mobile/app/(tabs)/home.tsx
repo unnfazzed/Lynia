@@ -385,7 +385,7 @@ export default function LauncherHomeScreen(): React.ReactElement {
         </BootEntrance>
         <BootEntrance index={2}>
           {noAddress ? (
-            <NoLocationCard title={H.noLocTitle} onUseLocation={() => void location.useCurrentLocation()} onTypeAddress={() => openLocation(true)} />
+            <NoLocationCard onUseLocation={() => void location.useCurrentLocation()} onTypeAddress={() => openLocation(true)} />
           ) : showRestaurants || showShops ? (
             <View>
               {showRestaurants ? (
@@ -432,7 +432,7 @@ export default function LauncherHomeScreen(): React.ReactElement {
             </View>
           ) : (
             // Both rails empty → the H6 card, reworded: merchants coming, parcels now (owner 2026-10-02, D-60).
-            <ComingSoonCard onSend={() => router.push("/send")} />
+            <ComingSoonCard />
           )}
         </BootEntrance>
       </ScrollView>

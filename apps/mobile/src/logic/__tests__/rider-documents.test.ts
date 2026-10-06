@@ -1,5 +1,5 @@
 /**
- * Ledger D-78 (owner 2026-10-06): the pure rules behind Bike & documents and Personal details, and the
+ * Ledger D-79 (owner 2026-10-06): the pure rules behind Bike & documents and Personal details, and the
  * photo save chain (downscale → mint under kyc/<you>/ → PUT → PATCH /riders/me).
  */
 const mockRequestKyc = jest.fn();

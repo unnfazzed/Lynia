@@ -37,7 +37,7 @@ function build(rider: { photoUrl: string | null; bikeReg: string | null } | null
   return { svc, updates, audits, verify, deleteObject };
 }
 
-describe("UpdateRiderProfile (PATCH /riders/me body, D-78)", () => {
+describe("UpdateRiderProfile (PATCH /riders/me body, D-79)", () => {
   it("validates the plate like become does and stores it upper-case with single spaces", () => {
     expect(UpdateRiderProfile.parse({ bikeReg: "  aee   4471 " })).toEqual({ bikeReg: "AEE 4471" });
     expect(UpdateRiderProfile.safeParse({ bikeReg: "ab" }).success).toBe(false);
@@ -51,7 +51,7 @@ describe("UpdateRiderProfile (PATCH /riders/me body, D-78)", () => {
   });
 });
 
-describe("RiderProfileService.updateProfile (D-78)", () => {
+describe("RiderProfileService.updateProfile (D-79)", () => {
   it("404s for a caller who isn't a rider", async () => {
     const { svc } = build(null);
     await expect(svc.updateProfile("r1", { bikeReg: "AEE 4471" })).rejects.toThrow(/not a rider/i);

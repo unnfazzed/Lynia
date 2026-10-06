@@ -20,7 +20,7 @@ export function requestPickupPhotoUpload(contentType: ImageContentType): Promise
   return apiFetch("/uploads/pickup-photo", { method: "POST", body: { contentType } });
 }
 
-/** The rider's own photo (ledger D-78, Bike & documents → "Add photo"): PUT the bytes, then send the
+/** The rider's own photo (ledger D-79, Bike & documents → "Add photo"): PUT the bytes, then send the
  *  returned `key` to `PATCH /riders/me` (riders.ts `updateRiderProfile`). Keys live under `kyc/<you>/`. */
 export function requestKycPhotoUpload(contentType: ImageContentType): Promise<UploadTarget> {
   return apiFetch("/uploads/kyc-photo", { method: "POST", body: { contentType } });

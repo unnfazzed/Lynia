@@ -14,6 +14,7 @@
   --accent-700: #009d3b;  /* pressed / hover-deep fill */
   --accent-text: #006630; /* text & small icons in green (≈7:1 on white) */
   --accent-wash: #e9f8ef; /* light mint wash — selected states, chips */
+  --accent-wash-pressed: #d4f2e0; /* pressed mint wash — the empty state's soft pill (handoff/empty-states-v2-2026-10) */
   /* Illustration mid-tone — the ONLY second tone allowed in two-tone service illustrations.
      Sits between --accent-text and --accent (NOT between --accent and --accent-wash, since #00b14f is
      only 2.59:1 on the wash, so anything lighter than the brand green fails the 3:1 floor for

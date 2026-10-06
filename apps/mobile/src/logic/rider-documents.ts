@@ -5,7 +5,7 @@ import { requestKycPhotoUpload, uploadImage } from "../api/uploads";
 import { downscaleForUpload, type UploadImageSource } from "./image-downscale";
 
 /**
- * Ledger D-78 (owner 2026-10-06): Bike & documents can add what R1/R3 said could wait — the rider's photo
+ * Ledger D-79 (owner 2026-10-06): Bike & documents can add what R1/R3 said could wait — the rider's photo
  * and bike plate — and Personal details shows a verified national ID masked. The pure parts live here so
  * they're tested without a screen.
  */

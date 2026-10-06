@@ -61,7 +61,7 @@ import { foodOrderKey, useFoodOrder } from "../query/use-food-order";
 import { useScheduleSlots } from "../query/use-order-flow";
 import { useForegroundRefetch } from "../realtime/use-foreground-refetch";
 import { useOrderSocket } from "../realtime/use-order-socket";
-import { haptic, useDial } from "../ui/index";
+import { emptyCopy, EmptyState, haptic, useDial } from "../ui/index";
 import { Icon } from "../ui/Icon";
 import { clock, hhmm, initials, riderShortName } from "../ui/order/copy";
 import { OrderToast } from "../ui/order/kit";
@@ -746,17 +746,30 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       return (
         <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1, backgroundColor: C.bg }}>
           <OrderHeader heavy title="" help={false} onBack={() => onBack()} onHelp={() => undefined} />
-          <View style={{ flex: 1, alignItems: "center", paddingTop: 120, paddingHorizontal: 32, gap: 8 }}>
-            <Disc icon={notFound ? "package" : "wifi-off"} />
-            <StageTitle style={{ textAlign: "center" }}>{notFound ? O.t.notFound : O.t.loadFail}</StageTitle>
-            <Mut size={14} style={{ textAlign: "center" }}>
-              {notFound ? O.t.notFoundSub : O.t.loadFailSub}
-            </Mut>
-          </View>
-          <Bar>
-            {notFound ? null : <Btn label={O.c.tryAgain} onPress={() => food.refetch()} loading={food.isFetching} />}
-            <Btn kind="ghost" label={O.t.home} onPress={() => goHomeClearingStack(router)} />
-          </Bar>
+          {notFound ? (
+            // T14c — not found: the empty-states v2 block, its one way out a soft pill (D-78).
+            <EmptyState
+              icon="package"
+              tone="info"
+              title={emptyCopy.orders.notFound.title}
+              body={emptyCopy.orders.notFound.body}
+              primary={{ label: emptyCopy.orders.notFound.primary, onPress: () => goHomeClearingStack(router) }}
+            />
+          ) : (
+            <>
+              <View style={{ flex: 1, alignItems: "center", paddingTop: 120, paddingHorizontal: 32, gap: 8 }}>
+                <Disc icon="wifi-off" />
+                <StageTitle style={{ textAlign: "center" }}>{O.t.loadFail}</StageTitle>
+                <Mut size={14} style={{ textAlign: "center" }}>
+                  {O.t.loadFailSub}
+                </Mut>
+              </View>
+              <Bar>
+                <Btn label={O.c.tryAgain} onPress={() => food.refetch()} loading={food.isFetching} />
+                <Btn kind="ghost" label={O.t.home} onPress={() => goHomeClearingStack(router)} />
+              </Bar>
+            </>
+          )}
         </SafeAreaView>
       );
     }

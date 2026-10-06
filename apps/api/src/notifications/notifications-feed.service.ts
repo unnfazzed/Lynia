@@ -251,7 +251,7 @@ const ACCOUNT_FEED_COPY: Record<string, { icon: string; title: string; message: 
     title: "A rider's online near you",
     message: "Riders are back near your pickup — send your parcel again to get offers.",
   },
-  // D-78 (owner 2026-10-06): the free-jobs top-up reminder Calm Mint v2 R3 promises. Written by
+  // D-79 (owner 2026-10-06): the free-jobs top-up reminder Calm Mint v2 R3 promises. Written by
   // WalletService.noteFreeJobsMilestone in the completion transaction; copy mirrors the push verbatim.
   [FREE_JOBS_ACTION.one_left]: { icon: "banknote", title: FREE_JOBS_COPY.one_left.title, message: FREE_JOBS_COPY.one_left.body },
   [FREE_JOBS_ACTION.used_up]: { icon: "banknote", title: FREE_JOBS_COPY.used_up.title, message: FREE_JOBS_COPY.used_up.body },

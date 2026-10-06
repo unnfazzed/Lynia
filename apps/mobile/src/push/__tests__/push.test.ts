@@ -265,7 +265,7 @@ describe("isSilentPush (Merchant v2 +5 min)", () => {
   });
 });
 
-describe("free-jobs top-up reminder (D-78)", () => {
+describe("free-jobs top-up reminder (D-79)", () => {
   it("opens the rider's Money tab from the push and from its feed row", () => {
     expect(pushDestination({ kind: "free_jobs", milestone: "one_left" }, true)).toBe("/rider/money");
     expect(notificationRowDestination({ orderId: null, to: "rider", action: "rider.free_jobs_one_left" })).toBe("/rider/money");

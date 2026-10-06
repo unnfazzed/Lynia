@@ -17,11 +17,11 @@ import { RIDER_COPY as R } from "../../src/ui/rider/copy";
 import { MSheet, PushHeader, RCard, RRow } from "../../src/ui/rider/kit";
 
 /**
- * Bike & documents (Rider v2 S5, ledger D-54; D-78 owner 2026-10-06), reached from Settings → RIDER.
+ * Bike & documents (Rider v2 S5, ledger D-54; D-79 owner 2026-10-06), reached from Settings → RIDER.
  * National ID · Rider photo · Bike (the plate), "Changed bikes? Re-verify with the new plate." and a ghost
  * "Re-verify my bike" (support on WhatsApp, with the request written out).
  *
- * D-78 makes R1/R3's "can wait … add later" true: the photo row adds or changes the rider's photo (camera or
+ * D-79 makes R1/R3's "can wait … add later" true: the photo row adds or changes the rider's photo (camera or
  * gallery, downscaled, `PATCH /riders/me`), and the Bike row adds or edits the plate in a small sheet.
  * "Verified" on the Bike row only when the rider is verified AND has a plate (review R-8). The photo is the
  * rider's own upload, never "Verified". No licence row: licences aren't collected.

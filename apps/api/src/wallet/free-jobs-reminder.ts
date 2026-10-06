@@ -1,7 +1,7 @@
 import { COMMISSION } from "@lynia/shared";
 
 /**
- * The free-jobs top-up reminder (ledger D-78, owner 2026-10-06). Calm Mint v2 R3 promises "After these,
+ * The free-jobs top-up reminder (ledger D-79, owner 2026-10-06). Calm Mint v2 R3 promises "After these,
  * commission comes off a prepaid balance. We'll remind you before you need to top up." — so a rider is
  * told twice: when one commission-free job is left, and when none are.
  *
@@ -32,7 +32,7 @@ export const FREE_JOBS_ACTION: Record<FreeJobsMilestone, string> = {
   used_up: "rider.free_jobs_used_up",
 };
 
-/** The push and the feed row, word for word (owner 2026-10-06; ledger D-78). */
+/** The push and the feed row, word for word (owner 2026-10-06; ledger D-79). */
 export const FREE_JOBS_COPY: Record<FreeJobsMilestone, { title: string; body: string }> = {
   one_left: {
     title: "One commission-free job left",

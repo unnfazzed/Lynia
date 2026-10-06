@@ -280,7 +280,7 @@ export class WalletService {
   }
 
   /**
-   * D-78 free-jobs reminder, the in-transaction half. Call from every completion path, inside the
+   * D-79 free-jobs reminder, the in-transaction half. Call from every completion path, inside the
    * completion transaction and AFTER that path's `tripsCount` increment (under the rider row lock), so the
    * count read here is this job's ordinal — the same contract {@link chargeCommission} relies on. When the
    * job crosses a milestone (one free job left, or none) this writes the milestone's audit row, which is
@@ -306,7 +306,7 @@ export class WalletService {
     return milestone;
   }
 
-  /** D-78, the post-commit half: the push for a milestone {@link noteFreeJobsMilestone} recorded. Best-effort. */
+  /** D-79, the post-commit half: the push for a milestone {@link noteFreeJobsMilestone} recorded. Best-effort. */
   sendFreeJobsReminder(riderId: string, milestone: FreeJobsMilestone | null): void {
     if (!milestone) return;
     const copy = FREE_JOBS_COPY[milestone];

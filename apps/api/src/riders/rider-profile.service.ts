@@ -17,7 +17,7 @@ export const BikeRegSchema = z
   .transform((v) => v.replace(/\s+/g, " ").toUpperCase());
 
 /**
- * `PATCH /riders/me` (ledger D-78, owner 2026-10-06): the rider adds or changes their photo and bike
+ * `PATCH /riders/me` (ledger D-79, owner 2026-10-06): the rider adds or changes their photo and bike
  * plate after sign-up, from Bike & documents. Both optional, at least one present; unknown keys refused.
  * `photoUrl` is the storage key `POST /uploads/kyc-photo` minted (the column keeps its old name).
  */
@@ -34,7 +34,7 @@ export type UpdateRiderProfile = z.infer<typeof UpdateRiderProfile>;
 export const RIDER_PROFILE_UPDATE_ACTION = "rider.profile_update";
 
 /**
- * The rider's own photo + bike plate (D-78). R1 ("Your photo, licence and bike papers can wait") and R3
+ * The rider's own photo + bike plate (D-79). R1 ("Your photo, licence and bike papers can wait") and R3
  * send riders here; before this the screen was read-only and nothing could add either one (review R-8).
  *
  * Separate from RiderService on purpose: none of this touches KYC state. The ID check never verified the

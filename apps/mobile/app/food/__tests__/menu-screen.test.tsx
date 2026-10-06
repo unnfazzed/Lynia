@@ -193,7 +193,8 @@ describe("Storefront — closed (S8)", () => {
     expect(tree.root.findAll((n) => (n.props.accessibilityLabel ?? "").startsWith("Add "))).toHaveLength(0);
     const all = texts(tree);
     expect(all).toContain("Closed now");
-    expect(all).toContain("Remind me when they open");
+    // Empty states v2 S8 (D-78): one row, "Remind me" as its text action.
+    expect(all).toContain("Remind me");
     expect(all).toContain("$4.50");
   });
 });

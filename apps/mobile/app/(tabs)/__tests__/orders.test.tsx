@@ -149,35 +149,31 @@ async function open(feed: unknown, active: unknown = []): Promise<renderer.React
 
 describe("(tabs)/orders.tsx — Orders v2", () => {
   describe("empty, error and offline cards", () => {
-    it("O17: parcels only — 'No orders yet' with one 'Send a parcel', no food or shop promise", async () => {
+    // Empty states v2 (D-78): one quiet mark, a title and one line — no buttons on O16/O17.
+    it("O17: parcels only — 'No parcels yet', no buttons and no food or shop promise", async () => {
       const tree = await open(emptyHistory);
-      expect(has(tree, "No orders yet")).toBe(true);
-      expect(has(tree, /^Parcels you send land here/)).toBe(true);
+      expect(has(tree, "No parcels yet")).toBe(true);
+      expect(has(tree, "Parcels you send show here.")).toBe(true);
+      expect(has(tree, "Send a parcel")).toBe(false);
       expect(has(tree, "Find food or shops")).toBe(false);
       // No search field: there is nothing to search.
       expect(has(tree, "Search your orders")).toBe(false);
     });
 
-    it("O16: with food on, the body names every service and offers 'Find food or shops'", async () => {
+    it("O16: with food on, 'No orders yet' / 'Your orders will show here.' and no buttons", async () => {
       mockFlags = { ...mockFlags, restaurantsEnabled: true };
       const tree = await open(emptyHistory);
-      expect(has(tree, /^Parcels, food and shop orders all land here/)).toBe(true);
-      press(tree, "Find food or shops");
-      expect(mockPush).toHaveBeenCalledWith("/food");
-    });
-
-    // P1 (navigation review 2026-08-12): router.replace('/send') from a tab root swaps out the (tabs) group.
-    it("'Send a parcel' routes via push, NOT replace (keeps the tab shell reachable)", async () => {
-      const tree = await open(emptyHistory);
-      press(tree, "Send a parcel");
-      expect(mockPush).toHaveBeenCalledWith("/send");
-      expect(mockReplace).not.toHaveBeenCalled();
+      expect(has(tree, "No orders yet")).toBe(true);
+      expect(has(tree, "Your orders will show here.")).toBe(true);
+      expect(has(tree, "Send a parcel")).toBe(false);
+      expect(has(tree, "Find food or shops")).toBe(false);
     });
 
     it("O21: a failed load with no saved copy offers 'Try again', which refetches", async () => {
       const refetch = jest.fn();
       const tree = await open({ ...emptyHistory, rows: null, isError: true, hasLiveData: false, refetch });
-      expect(has(tree, /Couldn.t load your orders/)).toBe(true);
+      expect(has(tree, "Couldn’t load orders")).toBe(true);
+      expect(has(tree, "Your orders are safe.")).toBe(true);
       press(tree, "Try again");
       expect(refetch).toHaveBeenCalled();
     });
@@ -212,7 +208,7 @@ describe("(tabs)/orders.tsx — Orders v2", () => {
     // CF-04 (crash-fuzz 2026-08-23): a malformed 200 body is a truthy non-array.
     it("does not crash when the active-orders body isn't an array — degrades to no Now card", async () => {
       const tree = await open(emptyHistory, { orders: [] });
-      expect(has(tree, "No orders yet")).toBe(true);
+      expect(has(tree, "No parcels yet")).toBe(true);
       expect(has(tree, "NOW")).toBe(false);
     });
   });
@@ -229,8 +225,8 @@ describe("(tabs)/orders.tsx — Orders v2", () => {
 
     it("O18: a running order with nothing earlier shows the note, not the empty card", async () => {
       const tree = await open(emptyHistory, [parcel]);
-      expect(has(tree, /^Past orders show here once this one/)).toBe(true);
-      expect(has(tree, "No orders yet")).toBe(false);
+      expect(has(tree, "Past orders show here.")).toBe(true);
+      expect(has(tree, "No parcels yet")).toBe(false);
     });
 
     it("O2: every running order pins (a food order and a parcel) under 'NOW · 2' with the helper", async () => {
@@ -293,7 +289,7 @@ describe("(tabs)/orders.tsx — Orders v2", () => {
       expect(has(tree, "Parcel to Mbare")).toBe(false);
       act(() => activeTree!.unmount());
       tree = await open(history([histRow("rider-1", { role: "rider" })]));
-      expect(has(tree, "No orders yet")).toBe(true);
+      expect(has(tree, "No parcels yet")).toBe(true);
     });
 
     it("rows group under a day label, and a short history ends with 'That’s everything'", async () => {

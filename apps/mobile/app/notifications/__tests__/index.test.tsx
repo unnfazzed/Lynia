@@ -8,6 +8,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { FlatList, Text } from "react-native";
 import type { NotificationRow } from "../../../src/api/notifications";
 import { N } from "../../../src/ui/notifications/copy";
+import { emptyCopy } from "../../../src/ui/emptyCopy";
+
+const E = emptyCopy.notifications;
 
 const NOW = new Date();
 const ago = (min: number): string => new Date(NOW.getTime() - min * 60_000).toISOString();
@@ -213,28 +216,30 @@ describe("Notifications v1 screen", () => {
     expect(has(N.offC)).toBe(true);
   });
 
-  it("empty: the customer gets Send a parcel, the rider no action", async () => {
+  // Empty states v2 (D-78): "No notifications" with one line per side, and no action on either.
+  it("empty: one quiet line per side, no Send a parcel", async () => {
     mockGetNotificationsFeed.mockResolvedValue([]);
     await renderScreen();
-    expect(has(N.emptyCT)).toBe(true);
-    expect(has(N.sendParcel)).toBe(true);
+    expect(has(E.customer.title)).toBe(true);
+    expect(has(E.customer.body)).toBe(true);
+    expect(has(N.sendParcel)).toBe(false);
     mockParams = { side: "rider" };
     act(() => tree.unmount());
     await renderScreen();
-    expect(has(N.emptyRT)).toBe(true);
+    expect(has(E.rider.body)).toBe(true);
     expect(has(N.sendParcel)).toBe(false);
   });
 
   it("a non-array body renders the empty state, not a crash (CF-04)", async () => {
     mockGetNotificationsFeed.mockResolvedValue({ error: "nope" });
     await renderScreen();
-    expect(has(N.emptyCT)).toBe(true);
+    expect(has(E.customer.title)).toBe(true);
   });
 
   it("couldn't load with nothing cached: N10 with Try again", async () => {
     mockGetNotificationsFeed.mockRejectedValue(new Error("offline"));
     await renderScreen();
-    expect(has(N.failT)).toBe(true);
-    expect(has(N.tryAgain)).toBe(true);
+    expect(has(E.error.title)).toBe(true);
+    expect(has(E.error.primary)).toBe(true);
   });
 });

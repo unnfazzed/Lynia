@@ -2,7 +2,6 @@ import { tokens } from "@lynia/shared/tokens";
 import React, { useEffect, useRef } from "react";
 import { Animated, Easing, ScrollView, Text, TextInput, useWindowDimensions, View, type TextStyle, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { TrustTrackingArt } from "../art/TrustTrackingArt";
 import { PharmacyStickerV2, RestaurantsSticker, SendStickerV2, ShopsSticker } from "../art/stickers";
 import { Icon, type IconName } from "../Icon";
 import { Tappable } from "../Tappable";
@@ -528,66 +527,6 @@ export function OfflineBanner({ text }: { text: string }): React.ReactElement {
       <Text style={{ flex: 1, fontSize: 13, lineHeight: 18.2, fontWeight: tokens.font.weight.semibold, color: tokens.color.muted }}>{text}</Text>
     </View>
   );
-}
-
-/** Empty / info card (README §4): mint (empty) or white + hairline; art or a 64 icon disc, title, body. */
-export function InfoCard({
-  mint,
-  art,
-  title,
-  body,
-  children,
-}: {
-  mint?: boolean;
-  art?: React.ReactNode;
-  title: string;
-  body: string;
-  children?: React.ReactNode;
-}): React.ReactElement {
-  return (
-    <View
-      style={{
-        marginTop: 20,
-        marginHorizontal: 16,
-        padding: 20,
-        borderRadius: 20,
-        backgroundColor: mint ? tokens.color.accentWash : tokens.color.bg,
-        borderWidth: mint ? 0 : 1,
-        borderColor: tokens.color.line,
-      }}
-    >
-      {art ? (
-        <View style={{ alignItems: "center" }} accessibilityElementsHidden importantForAccessibility="no">
-          {art}
-        </View>
-      ) : null}
-      <Text accessibilityRole="header" style={{ marginTop: art ? 8 : 0, textAlign: "center", fontSize: 18, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
-        {title}
-      </Text>
-      <Text style={{ marginTop: 6, marginBottom: children ? 16 : 0, textAlign: "center", fontSize: 14, lineHeight: 20.3, color: tokens.color.muted }}>{body}</Text>
-      {children}
-    </View>
-  );
-}
-
-/** The 64px icon disc an info card leads with (offline / error). */
-export function IconDisc({ icon, bg, ink }: { icon: IconName; bg: string; ink: string }): React.ReactElement {
-  return (
-    <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: bg, alignItems: "center", justifyContent: "center" }}>
-      <Icon name={icon} size={28} color={ink} />
-    </View>
-  );
-}
-
-/** The empty-state art (O16/O17): trust-tracking, 104 tall. */
-export function EmptyArt(): React.ReactElement {
-  return <TrustTrackingArt width={125} />;
-}
-
-/** A service sticker for the filter-with-no-matches card (O9d), 56 tall. */
-export function ServiceArt({ service }: { service: OrdersService }): React.ReactElement {
-  const Art = STICKER[service];
-  return <Art width={56} />;
 }
 
 /** Pill buttons: primary (52, cta) · text (48, green) · ghost (44, hairline). */

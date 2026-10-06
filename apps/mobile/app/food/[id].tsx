@@ -15,8 +15,9 @@ import { useNow } from "../../src/logic/use-now";
 import { useScheduleSlots } from "../../src/query/use-order-flow";
 import { useReopenReminder, useRestaurantMenu } from "../../src/query/use-restaurants";
 import { haptic, Icon } from "../../src/ui";
+import { emptyCopy, EmptyState, fillEmpty } from "../../src/ui";
 import { B, fmt } from "../../src/ui/browse/copy";
-import { BrowseButton, BrowseEmpty, CompactBar, IconButton, NARROW_MAX, TABULAR } from "../../src/ui/browse/kit";
+import { CompactBar, IconButton, NARROW_MAX, STORE_EMPTY_TOP, TABULAR } from "../../src/ui/browse/kit";
 import { ItemSheet, JustClosedModal, NewCartSheet } from "../../src/ui/browse/sheets";
 import {
   BrowseToast,
@@ -190,9 +191,13 @@ export default function RestaurantMenuScreen(): React.ReactElement {
           <IconButton icon="chevron-left" size={22} label="Back" onPress={() => router.back()} />
         </View>
         {isError ? (
-          <BrowseEmpty icon="circle-alert" title={fmt(B.store.errT, { place: B.svc.food.place })} body={B.list.errS}>
-            <BrowseButton label={B.list.retry} variant="ghost" disabled={isFetching} onPress={refetch} />
-          </BrowseEmpty>
+          <EmptyState
+            icon="circle-alert"
+            tone="error"
+            title={fmt(B.store.errT, { place: B.svc.food.place })}
+            body={emptyCopy.browse.error.body}
+            primary={{ label: emptyCopy.browse.error.primary, icon: "refresh-cw", disabled: isFetching, onPress: refetch }}
+          />
         ) : null}
       </View>
     );
@@ -244,9 +249,13 @@ export default function RestaurantMenuScreen(): React.ReactElement {
           </View>
         </View>
         {q.length >= 2 && hits.length === 0 ? (
-          <BrowseEmpty title={fmt(B.store.noHits.t, { q, v: name })} body={fmt(B.store.noHits.s, { noun: B.svc.food.noun })}>
-            <BrowseButton label={fmt(B.store.noHits.cta, { noun: B.svc.food.noun })} variant="ghost" onPress={() => router.push(`/food/search?q=${encodeURIComponent(q)}` as never)} />
-          </BrowseEmpty>
+          <EmptyState
+            icon="search"
+            tone="info"
+            title={fillEmpty(emptyCopy.store.noMatch.title, { q })}
+            body={emptyCopy.store.noMatch.body.replace("restaurants", B.svc.food.noun)}
+            secondary={{ label: emptyCopy.store.noMatch.secondary.replace("restaurants", B.svc.food.noun), onPress: () => router.push(`/food/search?q=${encodeURIComponent(q)}` as never) }}
+          />
         ) : (
           <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: hasCart ? 96 : 24 }}>
             {hits.length > 0 ? (
@@ -355,7 +364,7 @@ export default function RestaurantMenuScreen(): React.ReactElement {
         {!open ? <ClosedStrip label={closedLabel(v)} remindOn={reminder.isSet} remindBusy={reminder.isPending || reminder.isLoading} onRemind={reminder.toggle} /> : null}
         {empty ? (
           // S13c — the kitchen has no dishes on its menu yet.
-          <BrowseEmpty icon="inbox" title={B.store.emptyT} body={fmt(B.store.emptyS, { v: name })} />
+          <EmptyState icon="inbox" title={emptyCopy.store.noItems.title} body={emptyCopy.store.noItems.body} offsetTop={STORE_EMPTY_TOP} />
         ) : (
           <>
             <View

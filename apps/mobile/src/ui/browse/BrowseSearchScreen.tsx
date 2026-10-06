@@ -16,7 +16,9 @@ import { SendStickerV2 } from "../art/stickers";
 import { Icon } from "../Icon";
 import { Tappable } from "../Tappable";
 import { B, fmt } from "./copy";
-import { BrowseEmpty, IconButton, NARROW_MAX, OfflineNote, TABULAR, VenueImage } from "./kit";
+import { EmptyState } from "../EmptyState";
+import { emptyCopy, fillEmpty } from "../emptyCopy";
+import { IconButton, NARROW_MAX, OfflineRow, TABULAR, VenueImage } from "./kit";
 
 /**
  * Search — Browse v2 X1–X4 (`packages/design/handoff/browse-v2`, ledger D-57). Home (`all`) searches every
@@ -229,7 +231,7 @@ export function BrowseSearchScreen({ scope, initialQuery = "" }: { scope: Search
   if (!active) {
     body = (
       <>
-        {!reachable ? <OfflineNote text={B.search.offline.s} /> : null}
+        {!reachable ? <OfflineRow text={emptyCopy.search.offlineRow} /> : null}
         {recentList}
         {scope === "all" && reachable && (popular.data?.terms.length ?? 0) > 0 ? (
           <View>
@@ -256,7 +258,7 @@ export function BrowseSearchScreen({ scope, initialQuery = "" }: { scope: Search
     // X4b — offline: search needs a connection; the recent searches still work.
     body = (
       <>
-        <OfflineNote text={B.search.offline.s} />
+        <OfflineRow text={emptyCopy.search.offlineRow} />
         {recentList}
       </>
     );
@@ -268,7 +270,7 @@ export function BrowseSearchScreen({ scope, initialQuery = "" }: { scope: Search
         <Text style={{ padding: 16, fontSize: 13, color: tokens.color.muted }}>{`No restaurants, shops or items match “${q}”.`}</Text>
       </>
     ) : (
-      <BrowseEmpty title={fmt(B.search.none.t, { q })} body={B.search.none.s} />
+      <EmptyState icon="search" tone="info" title={fillEmpty(emptyCopy.search.noMatch.title, { q })} body={emptyCopy.search.noMatch.body} />
     );
   } else if (results.data) {
     body =

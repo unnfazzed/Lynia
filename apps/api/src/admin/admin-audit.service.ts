@@ -53,7 +53,7 @@ export const RESERVED_AUDIT_ACTIONS: ReadonlySet<string> = new Set([
   "issue.resolve",
   "sos.acknowledge",
   "wallet.credit",
-  // D-78: the free-jobs reminder rows (WalletService.noteFreeJobsMilestone) are read back as feed rows and
+  // D-79: the free-jobs reminder rows (WalletService.noteFreeJobsMilestone) are read back as feed rows and
   // are each reminder's idempotency key; the self-service photo / plate change is the rider's own record.
   "rider.free_jobs_one_left",
   "rider.free_jobs_used_up",

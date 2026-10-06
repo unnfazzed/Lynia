@@ -138,7 +138,7 @@ describe("delete account — the explainer screen (LJ.delete_account)", () => {
 });
 
 describe("delete account — the final step (LJ.delete_final)", () => {
-  it("says deletion is immediate (D-78: the API erases at once), with the acknowledgement tick", async () => {
+  it("says deletion is immediate (D-79: the API erases at once), with the acknowledgement tick", async () => {
     const tree = await render({ initialStep: "final" });
     // The paragraph interpolates a bold "straight away", so it renders as a child ARRAY rather than
     // one string — assert against the serialised tree.

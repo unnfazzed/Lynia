@@ -63,7 +63,7 @@ export class RidersController {
     private readonly profile: RiderProfileService,
   ) {}
 
-  /** D-78 (owner 2026-10-06): the rider adds or changes their photo / bike plate from Bike & documents. */
+  /** D-79 (owner 2026-10-06): the rider adds or changes their photo / bike plate from Bike & documents. */
   @Throttle({ limit: 20, windowSec: 3600, keyPrefix: "rider-me" })
   @Patch("me")
   updateMe(@Body(new ZodBody(UpdateRiderProfile)) body: UpdateRiderProfile, @CurrentUser() id: string) {

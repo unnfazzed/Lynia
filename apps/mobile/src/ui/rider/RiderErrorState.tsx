@@ -1,45 +1,53 @@
-import { tokens } from "@lynia/shared/tokens";
 import React from "react";
-import { View } from "react-native";
-import { Button, EmptyState } from "../index";
+import { AppBar, EmptyState, emptyCopy, fillEmpty } from "../index";
+
+const RETRY_EVERY_S = 10;
 
 /**
- * The kit's `generic_error` (`explorations/journey/rider-screens.jsx` — `GenericError`): "Something
- * went wrong … your active job is safe" with Try again / Back to board.
+ * Calls `onRetry` every 10 s while mounted and returns the seconds left to the next try, for the
+ * "Trying again in {s} s" line. Rider screens retry by themselves rather than offer a button.
+ */
+export function useAutoRetry(onRetry: () => void, everyS = RETRY_EVERY_S): number {
+  const [left, setLeft] = React.useState(everyS);
+  const retryRef = React.useRef(onRetry);
+  retryRef.current = onRetry;
+  React.useEffect(() => {
+    const iv = setInterval(() => {
+      setLeft((s) => {
+        if (s > 1) return s - 1;
+        retryRef.current();
+        return everyS;
+      });
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [everyS]);
+  return left;
+}
+
+/**
+ * A rider job screen whose READ failed with nothing cached: "Something went wrong" in the empty-states
+ * v2 error tone (handoff `empty-states-v2-2026-10`, D-78). A failed read never touches the order
+ * server-side, so the job the rider carries is exactly where they left it.
  *
- * The reassurance is the whole point of the screen and it's load-bearing for a rider: a failed READ
- * (the active-job poll, the food-order read) never touches the order server-side, so the job the
- * rider is carrying is exactly where they left it. Before this, both rider job screens fell back to a
- * bare "Couldn't load your job" — honest about the failure, silent about the one thing the rider is
- * actually anxious about mid-delivery.
- *
- * Deliberately NOT used for a network-shaped failure that already has a better, more specific screen
- * (job.tsx's offline cold-start still paints the last-known job summary first) — this is the
- * unclassified "that didn't load" fallback underneath it.
+ * Rider screens never show a Retry button (rider-v2 README: "say what the app is doing"), so the screen
+ * retries by itself every 10 s and its one line counts down to the next try. Back lives in the app bar.
  */
 export function RiderErrorState({
   onRetry,
   retrying,
   onBack,
-  backLabel = "Back to board",
-  /** Override the kit's copy where a screen genuinely knows more (e.g. "we couldn't load the order"). */
   title = "Something went wrong",
-  message = "That didn't load. Check your connection and try again — your active job is safe.",
 }: {
   onRetry: () => void;
   retrying?: boolean;
   onBack: () => void;
-  backLabel?: string;
   title?: string;
-  message?: string;
 }): React.ReactElement {
+  const left = useAutoRetry(onRetry);
   return (
-    <View>
-      <EmptyState icon="circle-alert" title={title} message={message}>
-        <Button label="Try again" onPress={onRetry} loading={retrying} />
-        <Button label={backLabel} variant="ghost" onPress={onBack} />
-      </EmptyState>
-      <View style={{ height: tokens.space.md }} />
-    </View>
+    <>
+      <AppBar onBack={onBack} />
+      <EmptyState icon="circle-alert" tone="error" title={title} body={retrying ? "Trying again…" : fillEmpty(emptyCopy.rider.retrying, { s: left })} />
+    </>
   );
 }

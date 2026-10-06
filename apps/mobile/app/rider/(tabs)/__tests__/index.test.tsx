@@ -312,7 +312,7 @@ describe("rider board (Rider v2 J1/J3: the board draws every job as a card, and 
     await expect(settle()).resolves.toBeUndefined();
     await settle();
 
-    expect(treeText(activeTree)).toContain("Nothing in range yet");
+    expect(treeText(activeTree)).toContain("No jobs nearby"); // empty-states v2 J4 (D-78)
   });
 
   it("not yet a verified rider (G1): renders no job cards and does not leak open-order data", async () => {
@@ -540,7 +540,7 @@ describe("rider board (RJM.board_empty + offline: no manual refresh, online-togg
     await settle();
 
     // The empty state renders...
-    expect(treeText(activeTree)).toContain("Nothing in range yet");
+    expect(treeText(activeTree)).toContain("No jobs nearby"); // empty-states v2 J4 (D-78)
 
     // ...and carries no Refresh button. Pinned by the exact label the sweep missed, and by the general
     // "no refresh-shaped action anywhere on the empty board".

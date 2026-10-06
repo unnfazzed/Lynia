@@ -87,7 +87,7 @@ describe("Settings sections", () => {
   });
 });
 
-describe("Personal details and Bike & documents rows (D-78)", () => {
+describe("Personal details and Bike & documents rows (D-79)", () => {
   it("both sides get a Personal details row in YOUR ACCOUNT, in the handoff's words, opening the screen", async () => {
     for (const me of [CUSTOMER, RIDER]) {
       mockPush.mockClear();

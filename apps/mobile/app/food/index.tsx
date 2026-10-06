@@ -12,10 +12,12 @@ import { useReachable } from "../../src/net/use-reachable";
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
 import { usePopularity } from "../../src/query/use-popularity";
 import { rankedVenueMissing } from "../../src/logic/popularity";
+import { EmptyState, emptyCopy } from "../../src/ui";
 import { B, fmt } from "../../src/ui/browse/copy";
+
+/** Empty states (handoff empty-states-v2, D-78). */
+const E = emptyCopy.browse;
 import {
-  BrowseButton,
-  BrowseEmpty,
   ClosedGroupHeader,
   CompactBar,
   FilterBar,
@@ -23,7 +25,8 @@ import {
   ListHeading,
   ListSkeleton,
   NARROW_MAX,
-  NoLocationCard,
+  LIST_EMPTY_TOP,
+  NoAddressRow,
   OfflineNote,
   RowSkeletons,
   ServiceEmpty,
@@ -193,13 +196,11 @@ export default function RestaurantListScreen(): React.ReactElement {
     return (
       <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
         {header}
-        <BrowseEmpty
-          icon={offline ? "wifi-off" : "circle-alert"}
-          title={offline ? B.list.offNone.t : B.svc.food.err}
-          body={offline ? B.list.offNone.s : B.list.errS}
-        >
-          <BrowseButton label={B.list.retry} variant="ghost" onPress={feed.refetch} />
-        </BrowseEmpty>
+        {offline ? (
+          <EmptyState icon="wifi-off" tone="info" title={E.offline.title} body={E.offline.body} secondary={{ label: E.offline.secondary, onPress: feed.refetch }} />
+        ) : (
+          <EmptyState icon="circle-alert" tone="error" title={E.error.title} body={E.error.body} primary={{ label: E.error.primary, icon: "refresh-cw", onPress: feed.refetch }} />
+        )}
         {sheets}
       </View>
     );
@@ -210,7 +211,7 @@ export default function RestaurantListScreen(): React.ReactElement {
     return (
       <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
         {header}
-        <ServiceEmpty service="food" area={area} onChangeAddress={() => openLocation(true)} onSendParcel={() => router.push("/send")} />
+        <ServiceEmpty service="food" area={area} onChangeAddress={() => openLocation(true)} />
         {sheets}
       </View>
     );
@@ -225,7 +226,6 @@ export default function RestaurantListScreen(): React.ReactElement {
   // so the right-hand side reads "in Harare" — the tail of `summaryNoLoc`.
   const count = total === 1 ? "1 place" : fmt(B.list.count, { n: total });
   const right = hasLocation ? (range ? fmt(B.list.range, { a: range.a, b: range.b }) : null) : fmt(B.list.summaryNoLoc, { n: total }).replace(fmt(B.list.count, { n: total }), "").trim();
-  const filterWords = [filters.category, filters.free ? B.list.free : null].filter(Boolean).join(" + ");
 
   return (
     <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
@@ -247,12 +247,17 @@ export default function RestaurantListScreen(): React.ReactElement {
             ) : null}
             {filterBar}
             {total > 0 ? <ListHeading count={count} range={right} /> : null}
-            {!hasLocation && total > 0 ? <NoLocationCard onUseLocation={() => void location.useCurrentLocation()} /> : null}
+            {!hasLocation && total > 0 ? <NoAddressRow onSet={() => void location.useCurrentLocation()} /> : null}
             {total === 0 ? (
               // B6 — the filters leave nothing; the way out is to clear them.
-              <BrowseEmpty icon="search" title={B.list.noMatch.t} body={fmt(B.list.noMatch.s, { f: filterWords, area })}>
-                <BrowseButton label={B.list.noMatch.clear} variant="ghost" onPress={() => setFilters(DEFAULT_FILTERS)} />
-              </BrowseEmpty>
+              <EmptyState
+                icon="search"
+                tone="info"
+                title={E.noFilterMatch.title}
+                body={E.noFilterMatch.body}
+                offsetTop={LIST_EMPTY_TOP}
+                secondary={{ label: E.noFilterMatch.secondary, onPress: () => setFilters(DEFAULT_FILTERS) }}
+              />
             ) : null}
           </View>
         }

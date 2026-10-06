@@ -1033,7 +1033,7 @@ describe("OrderLifecycleService.completeOrder (auto-close)", () => {
     expect(wallet.sendFreeJobsReminder).not.toHaveBeenCalled();
   });
 
-  it("D-78: records the free-jobs milestone after the trips increment and pushes it only after commit", async () => {
+  it("D-79: records the free-jobs milestone after the trips increment and pushes it only after commit", async () => {
     const order: string[] = [];
     let committed = false;
     const h = build({

@@ -3,8 +3,9 @@ import React, { useState } from "react";
 import { ScrollView, Text, View, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { avatarTint } from "../../logic/avatar";
-import { TrustTrackingArt } from "../art/TrustTrackingArt";
 import { PharmacyStickerV2, RestaurantsSticker, SendStickerV2, ShopsSticker } from "../art/stickers";
+import { EmptyState } from "../EmptyState";
+import { emptyCopy } from "../emptyCopy";
 import { Icon, type IconName } from "../Icon";
 import { RemoteImage } from "../RemoteImage";
 import { useTabBarSpace } from "../shell/TabShell";
@@ -488,84 +489,26 @@ export function LiveOrderBar({
 
 // ── H6 — no address yet ────────────────────────────────────────────────────────────────────────
 
-/** A pill button with an optional leading icon — primary (cta fill) or a text-weight ghost. */
-export function PillButton({
-  label,
-  icon,
-  ghost = false,
-  onPress,
-}: {
-  label: string;
-  icon?: IconName;
-  ghost?: boolean;
-  onPress: () => void;
-}): React.ReactElement {
-  const ink = ghost ? tokens.color.accentText : tokens.color.onAccent;
+/** H6 — no address yet: the v2 empty state under the service tiles (handoff empty-states-v2, D-78). */
+export function NoLocationCard({ onUseLocation, onTypeAddress }: { onUseLocation: () => void; onTypeAddress: () => void }): React.ReactElement {
+  const e = emptyCopy.home.noLocation;
   return (
-    <Tappable
-      onPress={onPress}
-      tone={ghost ? "row" : "onDark"}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      style={{
-        height: ghost ? 48 : tokens.touchTargetPrimary,
-        borderRadius: tokens.radius.button,
-        backgroundColor: ghost ? "transparent" : tokens.color.cta,
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 8,
-      }}
-    >
-      {icon ? <Icon name={icon} size={18} color={ink} /> : null}
-      <Text style={{ fontSize: 16, fontWeight: tokens.font.weight.semibold, color: ink }}>{label}</Text>
-    </Tappable>
+    <EmptyState
+      icon="map-pin"
+      title={e.title}
+      body={e.body}
+      offsetTop={HOME_EMPTY_TOP}
+      primary={{ label: e.primary, icon: "navigation", onPress: onUseLocation }}
+      secondary={{ label: e.secondary, onPress: onTypeAddress }}
+    />
   );
 }
 
-/** The mint card that replaces the rails when there is no address (H6). */
-export function NoLocationCard({
-  title,
-  onUseLocation,
-  onTypeAddress,
-}: {
-  title: string;
-  onUseLocation: () => void;
-  onTypeAddress: () => void;
-}): React.ReactElement {
-  return (
-    <MintEmptyCard title={title} body={H.noLocBody}>
-      <PillButton label={H.useMyLocation} icon="navigation" onPress={onUseLocation} />
-      <View style={{ marginTop: 8 }}>
-        <PillButton label={H.typeAddress} ghost onPress={onTypeAddress} />
-      </View>
-    </MintEmptyCard>
-  );
+/** Both rails empty: merchants are still coming to this area (handoff empty-states-v2, D-78). */
+export function ComingSoonCard(): React.ReactElement {
+  const e = emptyCopy.home.comingSoon;
+  return <EmptyState icon="store" title={e.title} body={e.body} offsetTop={HOME_EMPTY_TOP} />;
 }
 
-/**
- * The H6 card when both rails are empty: merchants are still being onboarded here, parcels work now —
- * one "Send a parcel" button (owner 2026-10-02, ledger D-60).
- */
-export function ComingSoonCard({ onSend }: { onSend: () => void }): React.ReactElement {
-  return (
-    <MintEmptyCard title={H.comingSoonTitle} body={H.comingSoonBody}>
-      <PillButton label={H.sendParcel} icon="package" onPress={onSend} />
-    </MintEmptyCard>
-  );
-}
-
-function MintEmptyCard({ title, body, children }: { title: string; body: string; children: React.ReactNode }): React.ReactElement {
-  return (
-    <View style={{ marginTop: 24, marginHorizontal: 16, padding: 20, borderRadius: 20, backgroundColor: tokens.color.accentWash, alignItems: "stretch" }}>
-      <View style={{ alignItems: "center" }} accessibilityElementsHidden importantForAccessibility="no">
-        <TrustTrackingArt width={132} />
-      </View>
-      <Text accessibilityRole="header" style={{ marginTop: 8, textAlign: "center", fontSize: 18, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
-        {title}
-      </Text>
-      <Text style={{ marginTop: 6, marginBottom: 16, textAlign: "center", fontSize: 14, lineHeight: 20.3, color: tokens.color.muted }}>{body}</Text>
-      {children}
-    </View>
-  );
-}
+/** The gap between the service tiles and the empty state's mark on Home (as drawn in H6). */
+const HOME_EMPTY_TOP = 52;

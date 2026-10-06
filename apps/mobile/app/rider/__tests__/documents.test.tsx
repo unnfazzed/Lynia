@@ -1,5 +1,5 @@
 /**
- * Rider v2 S5 (Bike & documents), ledger D-54; D-78 (owner 2026-10-06) adds the photo and the plate.
+ * Rider v2 S5 (Bike & documents), ledger D-54; D-79 (owner 2026-10-06) adds the photo and the plate.
  * S6 (Help & support) is gone: the row opens WhatsApp (D-60).
  */
 import renderer, { act } from "react-test-renderer";
@@ -102,7 +102,7 @@ describe("S5 Bike & documents", () => {
     expect(rowLabel(tree, "Bike")).toBe("Bike, Add plate");
   });
 
-  it("a rider with no photo sees 'Not added yet' and 'Add photo' (D-62 / D-78)", async () => {
+  it("a rider with no photo sees 'Not added yet' and 'Add photo' (D-62 / D-79)", async () => {
     mockRider = { kycStatus: "verified", bikeReg: "ABH 4721", hasPhoto: false };
     const tree = render();
     await loaded(tree);

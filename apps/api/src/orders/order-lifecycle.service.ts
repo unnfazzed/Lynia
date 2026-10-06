@@ -613,7 +613,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     let newlyHeldRiderId: string | null = null;
     // True when this rates an already-`completed` order (the late path) — no completion push after commit.
     let late = false;
-    // D-78: the free-jobs milestone this completion crossed, pushed after commit.
+    // D-79: the free-jobs milestone this completion crossed, pushed after commit.
     let freeJobs = null as { riderId: string; milestone: FreeJobsMilestone } | null;
     try {
       await this.prisma.$transaction(async (tx) => {
@@ -806,7 +806,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
                 ...(newlyHeld ? { isOnline: false } : {}),
               },
             });
-            // D-78: after the increment, under the rider row lock (the late path counted nothing new).
+            // D-79: after the increment, under the rider row lock (the late path counted nothing new).
             if (!late) {
               const milestone = await this.wallet.noteFreeJobsMilestone(tx, order.riderId);
               if (milestone) freeJobs = { riderId: order.riderId, milestone };
@@ -1298,7 +1298,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
 
   /** Auto-close a delivered-but-unrated order so completion metrics don't stall (T3). Idempotent. */
   async completeOrder(orderId: string): Promise<{ completed: boolean }> {
-    // D-78: the free-jobs milestone this completion crossed, pushed after commit.
+    // D-79: the free-jobs milestone this completion crossed, pushed after commit.
     let freeJobs = null as { riderId: string; milestone: FreeJobsMilestone } | null;
     const done = await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.order.updateMany({

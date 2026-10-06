@@ -278,7 +278,7 @@ export class AdminOrdersService {
         ? applyReliabilityDelta({ ...rider, heldReason: rider.heldReason as HeldReason }, RELIABILITY.RECOVER_PER_COMPLETION)
         : {};
       await tx.rider.update({ where: { profileId: order.riderId }, data: { tripsCount: { increment: 1 }, ...reliability } });
-      // D-78: the free-jobs reminder, after the increment (pushed below, after commit).
+      // D-79: the free-jobs reminder, after the increment (pushed below, after commit).
       const freeJobs = (await this.wallet?.noteFreeJobsMilestone(tx, order.riderId)) ?? null;
 
       // WD-021: `order.agreedFare`/`suggestedFare` above is a PRE-CAS snapshot — the status CAS above

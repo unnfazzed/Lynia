@@ -44,11 +44,11 @@ import { useTabTop } from "../../../src/query/use-tab-top";
 import { useWallet, useWalletConfig } from "../../../src/query/use-wallet";
 import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refetch";
 import { useRiderBoard } from "../../../src/realtime/use-rider-board";
-import { AppScreen, haptic, Icon, type IconName, statusPillLabel, useActionError, useTabBarSpace } from "../../../src/ui";
-import { CtaButton, IconDisc, SmBtn } from "../../../src/ui/order/kit";
+import { AppScreen, EmptyRow, EmptyState, emptyCopy, fillEmpty, haptic, Icon, type IconName, statusPillLabel, useActionError, useTabBarSpace } from "../../../src/ui";
+import { CtaButton, SmBtn } from "../../../src/ui/order/kit";
 import { OrderSheet } from "../../../src/ui/order/OrderSheet";
 import { Notice } from "../../../src/ui/send/kit";
-import { type BoardJob, BoardJobCard, BoardMap, Gate, type GateAction, RToast, WhyQuiet } from "../../../src/ui/rider/board";
+import { type BoardJob, BoardJobCard, BoardMap, Gate, type GateAction, RToast } from "../../../src/ui/rider/board";
 import { RIDER_COPY as R, RF, usd } from "../../../src/ui/rider/copy";
 import { MintTop, MSheet, RLabel } from "../../../src/ui/rider/kit";
 import { useReduceMotion } from "../../../src/ui/useReduceMotion";
@@ -693,22 +693,28 @@ export default function RiderHome(): React.ReactElement {
           <SmBtn kind="fill" label={R.turnOn} onPress={() => void Linking.openSettings()} />
         </View>
       ) : null}
-      {online && !conn ? <Notice icon="wifi-off" text={R.staleB} /> : null}
+      {/* Empty board: reconnecting shows only in the header's status line (empty-states v2 J4, D-78). */}
+      {online && !conn && !empty ? <Notice icon="wifi-off" text={R.staleB} /> : null}
       {openQ.isError ? <Notice icon="wifi-off" text={R.loadFail} /> : null}
       {locHint ? <Notice icon="map-pin" tone="warn" text={R.gGpsB} /> : null}
       {activeJob && activeJob.status !== "assigned" ? (
         <SmBtn kind="fill" icon="package" label={RF.swJobBar(statusPillLabel(activeJob.status))} onPress={() => pushOnce(router, pathname, jobRoute)} />
       ) : null}
       {empty ? (
-        <>
-          <View style={{ flexDirection: "row", gap: 12, alignItems: "center" }}>
-            <IconDisc name="inbox" size={48} />
-            <Text style={{ flex: 1, fontSize: 18, lineHeight: 24, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{R.emptyT}</Text>
-          </View>
-          <Text style={{ fontSize: 14, lineHeight: 20, color: tokens.color.muted }}>{foodOn ? `${R.emptyB} ${R.emptyFood}` : R.emptyB}</Text>
-          <WhyQuiet place={location.area ?? null} />
-          {busyLine ? <DemandLine text={busyLine} /> : null}
-        </>
+        // J4 / J5 — empty-states v2 (D-78): the quiet mark, one line, then the busiest zone if there is one.
+        <View style={{ gap: 24 }}>
+          <EmptyState inSheet offsetTop={24} icon="bike" title={emptyCopy.rider.noJobs.title} body={emptyCopy.rider.noJobs.body} />
+          {busiest && loc ? (
+            <EmptyRow
+              centred
+              icon="map-pin"
+              iconSize={16}
+              iconColor={tokens.color.accent}
+              gap={8}
+              text={fillEmpty(emptyCopy.rider.demandRow, { place: busiest.place, km: haversineKm(loc, busiest).toFixed(1) })}
+            />
+          ) : null}
+        </View>
       ) : (
         <>
           {myOffers.length ? (

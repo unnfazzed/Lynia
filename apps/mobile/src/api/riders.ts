@@ -26,7 +26,7 @@ export function becomeRider(body: { bikeReg?: string; photoUrl?: string }): Prom
 }
 
 /**
- * Ledger D-78 (owner 2026-10-06): the rider adds or changes their photo (the key `POST /uploads/kyc-photo`
+ * Ledger D-79 (owner 2026-10-06): the rider adds or changes their photo (the key `POST /uploads/kyc-photo`
  * minted) and bike plate from Bike & documents. The server validates the plate like sign-up did (3–20
  * characters) and stores it upper-case; it answers with what `/auth/me` would now say.
  */

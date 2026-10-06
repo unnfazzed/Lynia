@@ -90,7 +90,7 @@ export default function SettingsScreen(): React.ReactElement {
         <SectionLabel>{R.secAccount}</SectionLabel>
         <RCard>
           <RRow first icon="user" label={name || R.tabAccount} sub={phone || null} chev={false} />
-          {/* D-78 (owner 2026-10-06): C5's "You can add it in Account". Words are the handoff's (mint2.js). */}
+          {/* D-79 (owner 2026-10-06): C5's "You can add it in Account". Words are the handoff's (mint2.js). */}
           <RRow icon="id-card" label={R.sPersonal} sub={R.sPersonalS} onPress={() => router.push("/settings/personal")} />
           <RRow icon="globe" label={R.sLang} value={R.sLangV} onPress={() => router.push("/settings/language")} />
           <RRow icon="file-text" label={R.sPrivacy} onPress={() => router.push("/settings/privacy")} />

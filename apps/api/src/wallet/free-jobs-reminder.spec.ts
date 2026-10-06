@@ -34,7 +34,7 @@ function wallet(ratePct: string | undefined, notifications?: NotificationsServic
   return new WalletService({ COMMISSION_RATE_PCT: ratePct, COMMISSION_SHADOW_RATE_PCT: 10 } as unknown as Env, {} as PrismaService, notifications);
 }
 
-describe("freeJobsMilestoneAt (D-78)", () => {
+describe("freeJobsMilestoneAt (D-79)", () => {
   it("fires once at one free job left and once at none, never otherwise", () => {
     expect(freeJobsMilestoneAt(TOTAL - 1)).toBe("one_left");
     expect(freeJobsMilestoneAt(TOTAL)).toBe("used_up");
@@ -44,7 +44,7 @@ describe("freeJobsMilestoneAt (D-78)", () => {
   });
 });
 
-describe("WalletService.noteFreeJobsMilestone (D-78, inside the completion transaction)", () => {
+describe("WalletService.noteFreeJobsMilestone (D-79, inside the completion transaction)", () => {
   it("records the one-left milestone as its audit row and returns it", async () => {
     const t = tx(TOTAL - 1);
     const out = await wallet("10").noteFreeJobsMilestone(t.client as never, "r1");
@@ -80,7 +80,7 @@ describe("WalletService.noteFreeJobsMilestone (D-78, inside the completion trans
   });
 });
 
-describe("WalletService.sendFreeJobsReminder (D-78, after commit)", () => {
+describe("WalletService.sendFreeJobsReminder (D-79, after commit)", () => {
   it("pushes the owner's copy verbatim with the free_jobs kind", () => {
     const notifyProfiles = vi.fn(async () => {});
     const w = wallet("10", { notifyProfiles } as unknown as NotificationsService);
@@ -105,7 +105,7 @@ describe("WalletService.sendFreeJobsReminder (D-78, after commit)", () => {
   });
 });
 
-describe("free-jobs reminder rows (D-78)", () => {
+describe("free-jobs reminder rows (D-79)", () => {
   it("are read back by the Notifications feed and reserved against forgery", () => {
     for (const action of Object.values(FREE_JOBS_ACTION)) {
       expect(FEED_READ_ACTIONS).toContain(action);

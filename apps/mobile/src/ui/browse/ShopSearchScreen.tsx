@@ -12,8 +12,10 @@ import { useReachable } from "../../net/use-reachable";
 import { useShopSearch } from "../../query/use-shops";
 import { Icon } from "../Icon";
 import { Tappable } from "../Tappable";
-import { B, fmt } from "./copy";
-import { BrowseEmpty, IconButton, TABULAR, VenueImage } from "./kit";
+import { B } from "./copy";
+import { EmptyState } from "../EmptyState";
+import { emptyCopy, fillEmpty } from "../emptyCopy";
+import { IconButton, OfflineRow, TABULAR, VenueImage } from "./kit";
 
 /** The match in green-text (README §4 "Search"). */
 function Marked({ text, q }: { text: string; q: string }): React.ReactElement {
@@ -61,6 +63,7 @@ export function ShopSearchScreen({ service }: { service: ShopService }): React.R
   const places = useMemo(() => (data?.shops ?? []).map((x) => shopVenue(x, location.point, now)), [data, location.point, now]);
   const items = data?.items ?? [];
   const searched = q.length >= 2 && data != null;
+  const idle = service === "pharmacy" ? emptyCopy.search.idlePharmacy : emptyCopy.search.idleShops;
 
   return (
     <View style={{ flex: 1, backgroundColor: tokens.color.bg, paddingTop: insets.top }}>
@@ -80,10 +83,12 @@ export function ShopSearchScreen({ service }: { service: ShopService }): React.R
           {query ? <IconButton icon="x" size={18} label="Clear" onPress={() => setQuery("")} /> : null}
         </View>
       </View>
-      {!reachable && q.length >= 2 && data == null ? (
-        <BrowseEmpty icon="wifi-off" title={B.search.offline.t} body={B.search.offline.s} />
-      ) : searched && places.length === 0 && items.length === 0 && !isFetching ? (
-        <BrowseEmpty icon="search" title={fmt(B.search.none.t, { q })} body={B.search.none.s} />
+      {!reachable ? <OfflineRow text={emptyCopy.search.offlineRow} /> : null}
+      {q.length < 2 ? (
+        // Nothing typed yet: say what this search finds (empty-states v2; it was a blank screen).
+        <EmptyState icon="search" tone="info" title={idle.title} body={idle.body} />
+      ) : !reachable && data == null ? null : searched && places.length === 0 && items.length === 0 && !isFetching ? (
+        <EmptyState icon="search" tone="info" title={fillEmpty(emptyCopy.search.noMatch.title, { q })} body={emptyCopy.search.noMatch.body} />
       ) : (
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 + insets.bottom }}>
           {places.length > 0 ? <GroupLabel text={B.search.places} /> : null}
