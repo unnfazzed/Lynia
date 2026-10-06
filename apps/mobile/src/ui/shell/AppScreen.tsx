@@ -1,8 +1,9 @@
 import { tokens } from "@lynia/shared/tokens";
-import { StatusBar } from "expo-status-bar";
 import React from "react";
 import { View, type ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+// Held back while the splash is up (S-1): a StatusBar mounted under it would win RN's stack.
+import { ScreenStatusBar } from "../../boot/ScreenStatusBar";
 
 /**
  * Phone screen scaffold, ported from `packages/design/components/shell/AppScreen.jsx`. Sets the
@@ -34,7 +35,7 @@ export function AppScreen({
   const wrapperProps = banner ? {} : { edges: ["top"] as const };
   return (
     <View style={[{ flex: 1, backgroundColor: bg }, style]}>
-      <StatusBar style={dark ? "light" : "dark"} />
+      <ScreenStatusBar style={dark ? "light" : "dark"} />
       {banner}
       <Wrapper style={{ flex: 1 }} {...wrapperProps}>
         {children}

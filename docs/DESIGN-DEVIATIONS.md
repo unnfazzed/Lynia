@@ -3680,7 +3680,7 @@ Outcomes the handoff's table doesn't label, with their copy in `OX` (neutral ton
 handoff's text once but carries no "Try again" action (the app's toast has none) — the page-failed row
 right above it offers the retry.
 
-## D-64 · Splash v1 — "1a Sun & orbit": the splash stays up until the app is ready — handoff APPROVED (2026-10-02); deviations 1–6 PENDING OWNER REVIEW
+## D-64 · Splash v1 — "1a Sun & orbit": the splash stays up until the app is ready — handoff APPROVED (2026-10-02); deviations 1–7 PENDING OWNER REVIEW
 
 **Owner instruction, this session (2026-10-02):** *"lets implement a new splash screen. It should open
 with the time it takes to be ready to show the home screen."*, with the design handoff attached
@@ -3720,11 +3720,12 @@ frame + `app/splash.view.tsx`). Those gallery screens are SUPERSEDED and not ali
 | # | Handoff | App | Why |
 |---|---|---|---|
 | 1 | Step 3 = "nearby-rider or zone availability call" | Home's first content (the rails) | No customer-side nearby-rider or zone endpoint exists. Home's content is what "ready to show the home screen" means. |
-| 2 | Loading keeps going indefinitely on a slow network | Hands off after 20s (`GIVE_UP_MS`) unless offline | Never strand the app on a hung request; Home has its own loading and empty states. |
+| 2 | Loading keeps going indefinitely on a slow network | Hands off after 20s (`GIVE_UP_MS`) of ONLINE loading — time on the offline panel doesn't count (2026-10-06) | Never strand the app on a hung request; Home has its own loading and empty states. Counting offline time made a phone that came back after 20s offline exit straight into an unloaded Home. |
 | 3 | Steps card / panels at 16 / 14px from the bottom, pill at top 44 | Plus the device's bottom inset; pill at max(44, top inset + 8) | The mock frame has no system bars; this keeps them clear of gesture/nav bars and notches. |
 | 4 | Card shadow `0 18px 40px -12px rgba(0,0,0,.3)` | One-layer RN shadow (offset 18, radius 20, opacity .3, elevation 12) | The app runs the old architecture: no `boxShadow`, no spread. |
 | 5 | Orbit's CSS dashed border | SVG circle, `strokeDasharray 6 6` | Dashed rounded borders aren't reliable on Android. |
 | 6 | Splash starts on plain green | ~~The native launch frame still shows the old dove + wordmark lockup~~ **Resolved (owner, 2026-10-02: "remove it entirely the old dove and wordmark"):** the native launch screen is now plain green (`assets/splash-blank.xml` / `splash-blank.png`); the lockup generator (`src/ui/splash-lockup.ts`, `scripts/build-splash-icon.mjs`) and its assets are deleted. | Native config: reaches devices only in the next store build (none dispatched — owner: "dont build an expo"). Until then installed binaries keep the old frame. |
+| 7 | Anchor at 44% of H; wordmark top at anchor + 152; the offline lift is 64px ("✅ Fits 320×640 … clears the wordmark by about 26px") | Same values wherever they fit. Where #3's bottom inset leaves less than 24px between the wordmark and the steps card, the anchor (sun, orbit, dove, wordmark, sky blob) moves UP until it does; where the 64px lift leaves less than 24px above the offline panel, the lift grows (`src/boot/splash/geometry.ts`, measured card/panel heights). Reduced motion keeps the lift, without the motion. (2026-10-06, startup review S-5) | The mock frame has no system bars. At 320×640 with a 48dp 3-button nav bar #3 put the card ~20dp over "LyniaGo" and the offline panel ~8dp over the lifted wordmark; the handoff's own answer to a panel is "the content moves up". Unchanged at 640/700/720 with no nav bar and at 720/780 with one. |
 
 ## D-65 · The Home service tile reads "Food", not "Restaurants" — APPROVED (2026-10-02)
 

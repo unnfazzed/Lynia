@@ -1,6 +1,7 @@
 import * as Location from "expo-location";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useBootPhase } from "../boot/boot-phase";
 import { withTimeout } from "../util";
 
 /**
@@ -181,12 +182,16 @@ export async function saveStoredLocation(place: HomePlace, manual: boolean): Pro
 /**
  * Granted, or granted after asking — and never asking when the OS would refuse to show the dialog.
  * Mirrors `use-pickup-autolocate.ts`: a hard-denied customer gets no prompt and no delay.
+ *
+ * `beforeAsking` runs only when the OS dialog is actually about to be shown (the home hook holds it
+ * until the cold-start splash has handed off — see useHomeLocation). A granted permission never waits.
  */
-async function ensurePermission(): Promise<"granted" | "denied"> {
+async function ensurePermission(beforeAsking?: () => Promise<void>): Promise<"granted" | "denied"> {
   try {
     const existing = await Location.getForegroundPermissionsAsync();
     if (existing.granted) return "granted";
     if (!existing.canAskAgain) return "denied";
+    if (beforeAsking) await beforeAsking();
     const asked = await Location.requestForegroundPermissionsAsync();
     return asked.status === "granted" ? "granted" : "denied";
   } catch {
@@ -291,6 +296,18 @@ export function useHomeLocation({ detectOnly = false }: HomeLocationOptions = {}
   detectOnlyRef.current = detectOnly;
   const alive = useRef(true);
   const started = useRef(false);
+  // No OS location dialog over the cold-start splash (S-6): Home (and the rider board) mount and run
+  // this under the splash, so the first-run permission prompt popped up over the brand intro. The
+  // stored address and an already-granted fix still go ahead during the boot — only the ASK waits for
+  // the boot to end. Outside the boot the gate is open from the start and nothing waits.
+  const { booting } = useBootPhase();
+  const bootGate = useRef<{ open: boolean; waiters: (() => void)[] }>({ open: !booting, waiters: [] });
+  useEffect(() => {
+    if (booting) return;
+    const gate = bootGate.current;
+    gate.open = true;
+    for (const resolve of gate.waiters.splice(0)) resolve();
+  }, [booting]);
 
   useEffect(() => {
     alive.current = true;
@@ -319,7 +336,11 @@ export function useHomeLocation({ detectOnly = false }: HomeLocationOptions = {}
         return;
       }
 
-      const permission = await ensurePermission();
+      const permission = await ensurePermission(
+        bootGate.current.open
+          ? undefined
+          : () => (bootGate.current.open ? Promise.resolve() : new Promise<void>((resolve) => bootGate.current.waiters.push(resolve))),
+      );
       if (!alive.current) return;
       if (permission !== "granted") {
         setDenied(true);

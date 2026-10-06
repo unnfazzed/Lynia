@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { Animated, Easing } from "react-native";
 import { useReduceMotion } from "../../ui/useReduceMotion";
 import { useBootPhase } from "../boot-phase";
@@ -25,6 +25,9 @@ export function BootEntrance({ index, children }: { index: number; children: Rea
   const reduce = useReduceMotion();
   const { exitAt } = useBootReadiness();
   const p = useRef(new Animated.Value(animate ? 0 : 1)).current;
+  // Built once: a fresh interpolation per render (Home re-renders as its data lands, mid-rise) is
+  // re-attached to the running native animation and jumps it for a frame.
+  const translateY = useMemo(() => p.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }), [p]);
 
   useEffect(() => {
     if (!animate) return;
@@ -55,14 +58,7 @@ export function BootEntrance({ index, children }: { index: number; children: Rea
     <Animated.View
       style={{
         opacity: p,
-        transform: [
-          {
-            translateY: p.interpolate({
-              inputRange: [0, 1],
-              outputRange: [14, 0],
-            }),
-          },
-        ],
+        transform: [{ translateY }],
       }}
     >
       {children}

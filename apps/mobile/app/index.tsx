@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { View } from "react-native";
 import { useAuth } from "../src/auth/auth-context";
 import { type StartRole } from "../src/auth/session";
-import { reportBootDestination } from "../src/boot/boot-readiness";
+import { getBootReadiness, reportBootDestination, useBootReadiness } from "../src/boot/boot-readiness";
 import { prewarmBootReads } from "../src/boot/prewarm";
 import { bootRedirectTarget } from "../src/logic/boot-route";
 import { enqueueBoot } from "../src/telemetry/rum";
@@ -41,7 +41,21 @@ export default function Index(): React.ReactElement {
   // screen. `boot_home - boot_paint` isolates the device-read segment (see rum.ts). In an effect, not
   // inline in the render below, so a double-invoked render can't enqueue telemetry as a side effect —
   // `enqueueBoot` is idempotent per process anyway, but a render that reports is a render that lies.
-  const target = bootResolved ? bootRedirectTarget({ session, onboardingSeen, rolePref: rolePref ?? null, coldStartData }) : null;
+  //
+  // Never a permanent blank screen (S-3): every boot read is time-bounded (src/boot/prewarm.ts), so this
+  // decision normally always arrives. If the splash nonetheless gives up and hands off while it is still
+  // pending, this route is what is on screen — a plain green View with no way forward. So once the boot
+  // has ended under it, decide with what is known, each unknown read taking its safe default (the same
+  // ones prewarm falls back to). Only a boot that ends WHILE this screen waits counts: on a remount after
+  // the boot (the ErrorBoundary's "Reload") the reads are already settled and the normal decision wins.
+  const { endedAt } = useBootReadiness();
+  const [endedBeforeMount] = useState(() => getBootReadiness().endedAt != null);
+  const gaveUp = endedAt != null && !endedBeforeMount;
+  const target = bootResolved
+    ? bootRedirectTarget({ session, onboardingSeen, rolePref: rolePref ?? null, coldStartData })
+    : gaveUp
+      ? bootRedirectTarget({ session: loading ? null : session, onboardingSeen: onboardingSeen ?? true, rolePref: rolePref ?? null, coldStartData: coldStartData ?? null })
+      : null;
   useEffect(() => {
     if (!target) return;
     enqueueBoot("boot_home");

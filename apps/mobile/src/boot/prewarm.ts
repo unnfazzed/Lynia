@@ -32,7 +32,40 @@ import { consumeColdStartResponse } from "../push/push";
  * EVERY READ IS BEST-EFFORT. Each promise resolves to the same "nothing stored" value its caller
  * already treated a failure as, so an unhandled rejection can never escape into the boot path — this
  * runs before any error boundary exists, so a throw here would be an unrecoverable white screen.
+ *
+ * EVERY READ IS TIME-BOUNDED (S-3). Guarding against a throw is not guarding against a HANG: a keystore
+ * or notification read that never settles held the boot decision (app/index.tsx) forever, and the
+ * splash then gave up onto a blank green screen with no way forward. Each read therefore settles by
+ * {@link BOOT_READ_TIMEOUT_MS} at the latest, to the value that routes somewhere safe:
+ *  - session → null: the user signs in again (a fresh OTP) rather than staring at a dead screen;
+ *  - onboardingSeen → TRUE on a timeout (not false, as on an error): a hung keystore is far likelier on
+ *    a phone that has been through onboarding, and true routes a session-less boot to /phone, the
+ *    screen that recovers either way, instead of replaying the first-run carousel;
+ *  - rolePref → null (the customer Home), coldStartData → null (no deep link).
+ * The bound is generous next to a healthy read (tens to hundreds of ms, three keychain retries included)
+ * so it only ever fires on a genuinely stuck read.
  */
+
+/** The longest any boot read may hold the boot decision. */
+export const BOOT_READ_TIMEOUT_MS = 5000;
+
+/** `p`, or `fallback` if `p` hasn't settled within `ms`. Never rejects (callers pre-catch); the timer is
+ *  cleared the moment `p` settles so a healthy boot leaves nothing scheduled. */
+function bounded<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise<T>((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    void p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(fallback);
+      },
+    );
+  });
+}
 
 export interface BootReads {
   /** The persisted session, or null when absent/unreadable (keychain corruption ⇒ re-authenticate). */
@@ -63,12 +96,28 @@ export function prewarmBootReads(): BootReads {
   // boot path doesn't grow a device-state import for a temporary janitor line.
   void SecureStore.deleteItemAsync("lynia.restaurants.list-snapshot.v1").catch(() => undefined);
   reads = {
-    session: loadSession().catch(() => null),
-    onboardingSeen: loadOnboardingSeen().catch(() => false),
-    rolePref: loadRolePreference().catch(() => null),
-    coldStartData: consumeColdStartResponse()
-      .then((response) => (response ? response.notification.request.content.data : null))
-      .catch(() => null),
+    session: bounded(
+      loadSession().catch(() => null),
+      BOOT_READ_TIMEOUT_MS,
+      null,
+    ),
+    onboardingSeen: bounded(
+      loadOnboardingSeen().catch(() => false),
+      BOOT_READ_TIMEOUT_MS,
+      true,
+    ),
+    rolePref: bounded(
+      loadRolePreference().catch(() => null),
+      BOOT_READ_TIMEOUT_MS,
+      null,
+    ),
+    coldStartData: bounded(
+      consumeColdStartResponse()
+        .then((response) => (response ? response.notification.request.content.data : null))
+        .catch(() => null),
+      BOOT_READ_TIMEOUT_MS,
+      null,
+    ),
   };
   return reads;
 }
