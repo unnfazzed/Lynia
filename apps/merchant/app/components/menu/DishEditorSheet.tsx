@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { MerchantCategoryResponse, MerchantDishResponse } from "@lynia/shared";
 import { useBusiness } from "../../lib/business";
-import { formatMoney, parseAmountInput } from "../../lib/money-input";
+import { DISH_PRICE_MAX_USD, formatMoney, parseAmountInput } from "../../lib/money-input";
 import { useRxEnabled } from "../../lib/order-flags";
 import { useVocabulary } from "../../lib/vocabulary";
 import { dangerGhostButtonStyle, ghostButtonStyle, primaryButtonStyle } from "../queue/styles";
@@ -61,7 +61,7 @@ export function DishEditorSheet({
   const rxOn = useRxEnabled(pharmacy);
   const [rxRequired, setRxRequired] = useState(dish?.rxRequired === true);
 
-  const price = parseAmountInput(priceText);
+  const price = parseAmountInput(priceText, DISH_PRICE_MAX_USD);
   const canSave = name.trim().length > 0 && price != null && !!categoryId && !disabled && !submitting;
   const isDraft = dish?.isDraft ?? (!photoKey && !dish?.photoUrl);
 
