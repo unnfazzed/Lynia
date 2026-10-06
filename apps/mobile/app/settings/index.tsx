@@ -8,6 +8,7 @@ import { AppState, Linking, ScrollView, View } from "react-native";
 import { getMe } from "../../src/api/auth";
 import { useAuth } from "../../src/auth/auth-context";
 import { TERMS_URL } from "../../src/config";
+import { bikeVerified } from "../../src/logic/rider-documents";
 import { providerName, TOPUP_PROVIDERS, type TopupProviderId, useRiderPrefs } from "../../src/logic/rider-prefs";
 import { riderModeAvailable } from "../../src/rider-mode";
 import { AppScreen, haptic } from "../../src/ui";
@@ -89,6 +90,8 @@ export default function SettingsScreen(): React.ReactElement {
         <SectionLabel>{R.secAccount}</SectionLabel>
         <RCard>
           <RRow first icon="user" label={name || R.tabAccount} sub={phone || null} chev={false} />
+          {/* D-78 (owner 2026-10-06): C5's "You can add it in Account". Words are the handoff's (mint2.js). */}
+          <RRow icon="id-card" label={R.sPersonal} sub={R.sPersonalS} onPress={() => router.push("/settings/personal")} />
           <RRow icon="globe" label={R.sLang} value={R.sLangV} onPress={() => router.push("/settings/language")} />
           <RRow icon="file-text" label={R.sPrivacy} onPress={() => router.push("/settings/privacy")} />
           <RRow icon="file-text" label={R.sTerms} onPress={() => void Linking.openURL(TERMS_URL)} />
@@ -152,8 +155,8 @@ export default function SettingsScreen(): React.ReactElement {
                 icon="id-card"
                 label={R.sBike}
                 sub={me?.rider?.bikeReg ? RF.sBikeS(me.rider.bikeReg, null) : null}
-                value={me?.rider?.kycStatus === "verified" ? R.sBikeV : null}
-                tone="ok"
+                value={bikeVerified(me?.rider) ? R.sBikeV : null}
+                tone={bikeVerified(me?.rider) ? "ok" : null}
                 onPress={() => router.push("/rider/documents")}
               />
             </RCard>
