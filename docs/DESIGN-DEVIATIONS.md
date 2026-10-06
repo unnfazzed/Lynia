@@ -4218,6 +4218,9 @@ Nothing in `packages/design/**` changes.
   states (R8a/R8b, T5c, M8, RD1d). The two handoffs disagree. The app keeps the drawn copy until the owner
   picks the wording (or a browse export redraws it). The fix would land in the customer app and ship with
   the next build.
+- **Resolved 2026-10-05 (E2E FS-5, owner: *"Hide it while Rx is on"*).** The notice (list, storefront and
+  the item sheet's line) renders only while `rxEnabled` is off. `useOrderFlags` fails closed, so an unknown
+  flag (an older API, offline) keeps it shown. No copy changes.
 
 ## D-77 · Merchant v2: one shell and one order lifecycle for kitchens, shops and pharmacies — APPROVED (2026-10-04)
 
