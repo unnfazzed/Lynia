@@ -32,16 +32,18 @@
 # Getting that backwards is not hypothetical — it is the documented failure mode in
 # §B and the reason `AddressSearch` now carries a device-geocoder escape hatch.
 #
-# THE MAPS SHA-1 IS THE OTHER TRAP. Google Play RE-SIGNS the uploaded AAB with the
-# *app signing* certificate, which is NOT the EAS-managed *upload* keystore. A key
-# allowlisted for the upload certificate alone renders tiles perfectly in a
-# sideloaded QA APK and fails in every Play-installed build — a "worked yesterday"
-# regression that only appears after a track upload. List BOTH fingerprints:
-#   - app signing: Play Console → Test and release → Setup → App integrity →
-#                  "App signing key certificate" SHA-1   (what devices run)
-#   - upload:      the EAS-managed keystore's SHA-1       (sideloaded QA APKs)
-# There is no API for the first one; it is read from the Play Console by hand and
-# pasted into a tfvars. That is the single manual step this file cannot remove.
+# THE MAPS SHA-1 IS THE OTHER TRAP. Google Play RE-SIGNS the uploaded AAB with its
+# own *app signing* certificates, none of which is the EAS-managed *upload* keystore.
+# And there are THREE of them: the app uses Play's hybrid (quantum-ready) signing, so
+# phones on Android 16 and older run under `deployment_cert` while Android 17+ run
+# under the hybrid pair (`hybrid_classical_cert` + `hybrid_pqc_cert`). A key missing
+# any of them draws a blank map on the phones that run under it — MOB-MAP-04, where
+# only the hybrid classical one was listed and every older phone was refused. List:
+#   - every Play app-signing certificate: scripts/play-signing-certs.mjs (Play Console
+#     → Protected with Play → App signing → download the certificates)
+#   - upload: the EAS-managed keystore's SHA-1             (sideloaded QA APKs)
+# There is no API for the Play ones; they are read from the Play Console by hand.
+# scripts/tf-maps-tfvars.mjs refuses to arm this file without all of them.
 #
 # ENABLEMENT — OFF BY DEFAULT, AND YOU MUST IMPORT BEFORE YOU APPLY.
 # Gated by var.maps_api_keys_enabled (default false), mirroring cloudflare_dns_enabled:
@@ -81,11 +83,13 @@
 #                                                      which the import path rejects) and both keys'
 #                                                      current restrictions.
 #   2. Set four repo VARIABLES ...................... TF_MAPS_KEY_ID, TF_PLACES_KEY_ID,
-#                                                      TF_MAPS_SHA1_PLAY, TF_MAPS_SHA1_UPLOAD.
+#                                                      TF_MAPS_SHA1_PLAY (all three Play certificates,
+#                                                      comma-separated), TF_MAPS_SHA1_UPLOAD.
 #                                                      scripts/tf-maps-tfvars.mjs turns them into
 #                                                      maps.auto.tfvars at plan time and refuses a
 #                                                      half-armed set, a SHA-256, the placeholders
-#                                                      below, or one fingerprint entered twice.
+#                                                      below, one fingerprint entered as both roles,
+#                                                      or a Play list missing one of Play's certs.
 #   3. Actions -> "Maps Keys — arm Terraform" ....... imports what is missing, plans, and REFUSES
 #                                                      any plan that is not a pure in-place update.
 #                                                      Re-dispatch with apply=apply to execute it.
@@ -139,8 +143,9 @@ resource "google_project_service" "apikeys" {
 }
 
 # --- Maps SDK for Android (GOOGLE_MAPS_API_KEY) ---
-# Native SDK ⇒ Android application restriction. Both certificate fingerprints are
-# listed against the one package; see the SHA-1 trap in the header.
+# Native SDK ⇒ Android application restriction. Every certificate fingerprint (Play's
+# three + the upload keystore) is listed against the one package; see the SHA-1 trap in
+# the header.
 resource "google_apikeys_key" "maps" {
   count = var.maps_api_keys_enabled ? 1 : 0
 
@@ -176,7 +181,7 @@ resource "google_apikeys_key" "maps" {
     # Fail at plan time with the reason rather than shipping it.
     precondition {
       condition     = length(var.android_cert_sha1_fingerprints) > 0
-      error_message = "maps_api_keys_enabled is on but android_cert_sha1_fingerprints is empty. Restricting the Maps SDK key to no certificate blanks the map for everyone. Supply at least the Play app-signing SHA-1 (Play Console → Test and release → Setup → App integrity)."
+      error_message = "maps_api_keys_enabled is on but android_cert_sha1_fingerprints is empty. Restricting the Maps SDK key to no certificate blanks the map for everyone. Supply every Play app-signing SHA-1 (scripts/play-signing-certs.mjs; Play Console → Protected with Play → App signing)."
     }
 
     precondition {
