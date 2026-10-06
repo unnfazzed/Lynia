@@ -124,7 +124,9 @@ Rough size: P1 and P2 are the bulk (about a day each); P3 and P4 are small.
   by the owner through Terraform apply (Azure).
 - **P4 hosting:** `apps/customer-web/` (assets-only Worker on the `app.lyniago.com` Custom Domain, one-page fallback,
   `_headers` with a CSP built from Google's documented Maps allowlist, Add to Home Screen manifest and icons on the brand
-  green, `finish-build.mjs`, `smoke.sh`) and `.github/workflows/deploy-customer-web.yml` (dispatch only, main only, the
+  green, `finish-build.mjs`, `smoke.sh`) and `.github/workflows/deploy-customer-web.yml` (main only, the
   website's Cloudflare token). Checked in Chromium: under the CSP the app and Google's script load with no violations,
   and a control CSP does block Google, so the check is real.
+- **Auto-deploy (owner, 2026-10-06):** a merge to main that changes the web's sources starts the deploy, which
+  waits for the production approval, so customer fixes reach the web along with Android.
 - **W4 banner:** not built, because the Play listing is closed (404) until the public release.

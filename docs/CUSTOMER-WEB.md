@@ -30,9 +30,17 @@ Web-only differences from the phone app: ledger D-81 in [`DESIGN-DEVIATIONS.md`]
 
 ## Deploy
 
-Actions → **Deploy customer web (Cloudflare)** → Run workflow (main). It builds, deploys and smoke-tests
-(`apps/customer-web/smoke.sh`). The first deploy creates the `app.lyniago.com` DNS record and certificate;
-the smoke test waits up to ~5 minutes for it. Merging to main deploys nothing.
+**Deploy customer web (Cloudflare)** starts by itself when a merge to main changes what the web is built
+from (`apps/mobile` except tests, docs and the native folders, `packages/shared`, `apps/customer-web`,
+`tools/web-runtime`, `pnpm-lock.yaml`), so a customer fix made for Android reaches the web as well (owner
+decision 2026-10-06). It waits for the `production` approval, then builds, deploys and smoke-tests
+(`apps/customer-web/smoke.sh`). If several merges land before you approve, the newest run replaces the older
+ones and carries all of them. To redeploy by hand: Actions → Deploy customer web (Cloudflare) → Run workflow (main).
+
+Shared code is fixed once for both. The web-only parts are not: the map
+(`metro-shims/react-native-maps-web.js`), pin → address (`metro-shims/expo-location-web.js`,
+`src/web/geocode-google.ts`) and sign-in storage (`metro-shims/secure-store-web.js`) need their own fix,
+and code behind `Platform.OS === "android"` never runs on the web.
 
 **Rollback:** re-run the workflow on an earlier commit's code (revert on main first), or roll back the
 `lyniago-customer-web` Worker to its previous version in the Cloudflare dashboard (Workers → Deployments).
