@@ -2436,12 +2436,12 @@ outside the area LyniaGo covers for now."
 | Where | Mock | App | Why |
 |---|---|---|---|
 | "Not live yet" (C6 pill, B1/D1 state) | A branch "LyniaGo hasn't switched on" | Live = a **shop**, or a **restaurant** ops switched on (`pilotEnabled`) | Ops only ever switch restaurants on (the go-live switch refuses shops), so a shop read by the flag alone would never leave "Almost ready" and would lose Book a rider |
-| B1/D1 not-live state | "After Create branch, or switching to a not-live branch" | Shown for **any business not live**, whatever its branch count (was: an owner with 2+ branches only) | Owner, 2026-10-05 (E2E FS-4, *"Reuse 'Almost ready'"*): a single new business was told "You're open" while customers couldn't see it |
+| B1/D1 not-live state | "After Create branch, or switching to a not-live branch" | Shown for **any business not live**, whatever its branch count (was: an owner with 2+ branches only) | Owner, 2026-10-06 (E2E FS-4, *"Reuse 'Almost ready'"*): a single new business was told "You're open" while customers couldn't see it. A not-live **shop** keeps "Book a rider" on its top card (owner, 2026-10-06: *"Keep 'Book a rider'"*; the API lets it book, merchant-v2 draws the card); the open switch and stat tiles stay hidden |
 | C4 Account rows | Shop front · Opening hours · **Branches** · Preferred riders · Team · Help | D-50's owner-only "Taking orders" stays, after Branches | D-50 row, not drawn in either export |
 | Three tap targets (C7 back chevron, the location card's "Change", the C7 banner's "Open WhatsApp") | 36px | `var(--target-min)` (44px); "Change" and "Open WhatsApp" keep the drawn layout with a −4px margin; C7 uses the shared AppBar's 44px back | **Upstream kit defect** (CLAUDE.md, owner decision D2 2026-08-20): a mock may not draw below the floor and the app never reproduces it. "Change" was already 36px in A4 (D-48); fixed there too, as it is the same component |
 
 **Owner OK on both readings (this session, 2026-10-01):** *"Shops are live yes. Shop orders don't expire"*,
-and "Almost ready" for owners with 2+ branches only ("Yes, 2+ branches only"; superseded 2026-10-05 by
+and "Almost ready" for owners with 2+ branches only ("Yes, 2+ branches only"; superseded 2026-10-06 by
 *"Reuse 'Almost ready'"* for any business not live, E2E FS-4). The second half of the first
 answer, that **shop customer orders don't expire**, is recorded for the shop customer surface (plan
 2026-09-29 Phase 3); shops take no customer orders yet, so nothing here depends on it.
@@ -2942,7 +2942,7 @@ this bar and lands with that work.
 | Location sheet | Search, current location, Home, Work, Add a place | The same, plus the existing one-line notes when location is off or a fix fails; "Add a place" focuses the search (saving a found place as Home/Work is the search's own job) | The sheet must still explain why "Use my current location" did nothing |
 | C2 wrong prefix | Only the too-short line (C3) is drawn | A nine-digit number that isn't 71/73/77/78 gets "That doesn't look like a mobile number…" | Sending a code to a landline wastes a send; one undrawn line |
 | C4 channel line | "Sent on WhatsApp to …" | That, or "Sent by SMS to …" when Bird fell back to SMS for this number | D-40: Bird Verify is WhatsApp-first with a per-number SMS fallback; a fixed "WhatsApp" would sometimes be false |
-| C4 resend line after an SMS send | "Resend on WhatsApp" | That, or the screen's own "Send a new code" when the code went by SMS | "Resend on WhatsApp" beside "Sent by SMS" contradicts itself (E2E 2026-10-05 P-8); no new string — the locked state's drawn CTA copy |
+| C4 resend line after an SMS send | "Resend on WhatsApp" | That, or the screen's own "Send a new code" when the code went by SMS | "Resend on WhatsApp" beside "Sent by SMS" contradicts itself (E2E 2026-10-05 P-8); no new string — the locked state's drawn CTA copy. **Owner-approved 2026-10-06** |
 | C4 "Fills in by itself" | Auto-read from the message | The input carries the platform autofill hints (`sms-otp`, `oneTimeCode`); a WhatsApp code is pasted or tapped in from the suggestion strip, and the sixth digit still submits | No app can read a WhatsApp message; true zero-tap needs WhatsApp's one-tap autofill template (NEEDS BACKEND, Bird) |
 | C4 on a QA build | — | "Test build: code pre-filled." in place of the channel line | No message is sent on a QA build (console OTP); the drawn line would be false |
 | C5 | Two fields, the verified row, the note | The same, plus the existing "We saved what you'd filled in…" line when a draft is restored | A half-filled form survives an app kill (LC-C10); the line says why the fields are already filled |
@@ -4219,8 +4219,9 @@ Nothing in `packages/design/**` changes.
   states (R8a/R8b, T5c, M8, RD1d). The two handoffs disagree. The app keeps the drawn copy until the owner
   picks the wording (or a browse export redraws it). The fix would land in the customer app and ship with
   the next build.
-- **Resolved 2026-10-05 (E2E FS-5, owner: *"Hide it while Rx is on"*).** The notice (list, storefront and
-  the item sheet's line) renders only while `rxEnabled` is off. `useOrderFlags` fails closed, so an unknown
+- **Resolved 2026-10-06 (E2E FS-5, owner: *"Hide it while Rx is on"*).** The notice (list, storefront and
+  the item sheet's line) renders only while `rxEnabled` is off, and so does Review & place's matching
+  `O.r.otc` note ("Over-the-counter medicine only…"). `useOrderFlags` fails closed, so an unknown
   flag (an older API, offline) keeps it shown. No copy changes.
 
 ## D-77 · Merchant v2: one shell and one order lifecycle for kitchens, shops and pharmacies — APPROVED (2026-10-04)
