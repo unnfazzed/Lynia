@@ -1,0 +1,24 @@
+# Security and caching headers for app.lyniago.com (Cloudflare Workers static assets).
+# CSP (owner decision W3, 2026-10-06: sign-in kept in browser storage, so no script may run except the
+# app's own bundle and Google Maps). Inline styles are allowed because react-native-web writes them. The
+# Google sources, blob: workers and 'unsafe-eval' are Google's documented allowlist CSP for the Maps
+# JavaScript API (developers.google.com/maps/documentation/javascript/content-security-policy); tighten
+# after a live check on app.lyniago.com.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-eval' blob: https://*.googleapis.com https://*.gstatic.com https://*.google.com https://*.ggpht.com https://*.googleusercontent.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https://*.googleapis.com https://*.gstatic.com https://*.google.com https://*.ggpht.com https://*.googleusercontent.com https://*.blob.core.windows.net; connect-src 'self' data: blob: https://api.lyniago.com wss://api.lyniago.com https://*.googleapis.com https://*.google.com https://*.gstatic.com https://*.blob.core.windows.net; worker-src 'self' blob:; frame-src https://*.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Content-Type-Options: nosniff
+  Permissions-Policy: geolocation=(self), camera=(self), microphone=(), payment=()
+  Strict-Transport-Security: max-age=31536000
+
+# The page itself is never cached, so a deploy reaches everyone on their next visit.
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+
+# Bundles and assets carry a content hash in their names.
+/_expo/static/*
+  Cache-Control: public, max-age=31536000, immutable
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

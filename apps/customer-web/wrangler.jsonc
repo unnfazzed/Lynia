@@ -1,0 +1,21 @@
+// app.lyniago.com — the customer web app for iPhone users (docs/CUSTOMER-WEB.md,
+// docs/plans/2026-10-06-customer-web-app-plan.md). An ASSETS-ONLY Worker like lyniago.com: no script, so
+// every request is a free static-asset request from Cloudflare's edge. `dist/` is apps/mobile's web export
+// (EXPO_PUBLIC_LYNIA_WEB=1) finished by finish-build.mjs; it is built in CI and never committed.
+//
+// Deployed by .github/workflows/deploy-customer-web.yml.
+{
+  "name": "lyniago-customer-web",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./dist",
+    // One-page app: every path that isn't a file (/send, /order/abc …) gets index.html, and the app's
+    // router takes it from there.
+    "not_found_handling": "single-page-application"
+  },
+  // Custom Domain: Cloudflare creates the DNS record and the edge certificate itself.
+  "routes": [{ "pattern": "app.lyniago.com", "custom_domain": true }],
+  // One public host only (the Google key is restricted to it).
+  "workers_dev": false,
+  "preview_urls": false
+}

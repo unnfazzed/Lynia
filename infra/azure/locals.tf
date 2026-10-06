@@ -23,6 +23,8 @@ locals {
   api_hostname      = var.api_hostname != "" ? var.api_hostname : (local.is_prod ? "api.lyniago.com" : "staging-api.lyniago.com")
   admin_hostname    = var.admin_hostname != "" ? var.admin_hostname : (local.is_prod ? "admin.lyniago.com" : "")
   merchant_hostname = var.merchant_hostname != "" ? var.merchant_hostname : (local.is_prod ? "merchant.lyniago.com" : "")
+  # The customer web app lives on Cloudflare (W2); Azure only needs its origin for Blob CORS.
+  customer_web_hostname = var.customer_web_hostname != "" ? var.customer_web_hostname : (local.is_prod ? "app.lyniago.com" : "")
 
   api_min_replicas   = var.api_min_replicas != null ? var.api_min_replicas : (local.is_prod ? 1 : 0)
   log_daily_quota_gb = var.log_daily_quota_gb != null ? var.log_daily_quota_gb : (local.is_prod ? 0.2 : 0.1)

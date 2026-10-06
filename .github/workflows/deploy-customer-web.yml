@@ -1,0 +1,103 @@
+name: Deploy customer web (Cloudflare)
+
+# Publishes app.lyniago.com, the customer web app for iPhone users (docs/CUSTOMER-WEB.md,
+# docs/plans/2026-10-06-customer-web-app-plan.md P4), to Cloudflare Workers: apps/mobile's web export
+# (EXPO_PUBLIC_LYNIA_WEB=1), finished by apps/customer-web/finish-build.mjs, served by an ASSETS-ONLY
+# Worker on the app.lyniago.com Custom Domain. Cloudflare creates the DNS record and certificate itself.
+#
+# TRIGGER: workflow_dispatch only, like the mobile releases. Merging to main ships nothing here.
+#
+# DORMANT UNTIL ARMED: skipped until the Variable CLOUDFLARE_ACCOUNT_ID is set. Same token as
+# deploy-website.yml: CLOUDFLARE_WORKERS_API_TOKEN, a `production` ENVIRONMENT secret (main-only branch
+# policy; Workers Admin + Zone Workers Routes Edit on lyniago.com). Never a repository secret: this
+# repo's Actions logs are public.
+#
+# GOOGLE KEY: the repo Variable CUSTOMER_WEB_GOOGLE_KEY (the "LyniaGo Customer Web" browser key,
+# restricted to https://app.lyniago.com/*, with Maps JavaScript API, Places API (New) and Geocoding API).
+# It is baked into the page as EXPO_PUBLIC_GOOGLE_PLACES_KEY: a browser key is public by design, and
+# its address restriction is what protects it. Without it the build still ships, with grey maps.
+#
+# SUPPLY CHAIN: wrangler from apps/website/deploy/package-lock.json and react-native-web from
+# tools/web-runtime/package-lock.json, both installed with --ignore-scripts in steps with no token.
+# Only the deploy step sees the token. Never write `${{ }}` inside a run: block in this file.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-customer-web
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: build · deploy · smoke (app.lyniago.com)
+    if: vars.CLOUDFLARE_ACCOUNT_ID != ''
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    env:
+      WRANGLER: apps/website/deploy/node_modules/.bin/wrangler
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Guard — main only, token present
+        env:
+          REF: ${{ github.ref }}
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_API_TOKEN }}
+          GOOGLE_KEY: ${{ vars.CUSTOMER_WEB_GOOGLE_KEY }}
+        run: |
+          set -euo pipefail
+          [ "$REF" = "refs/heads/main" ] || { echo "::error::The customer web app deploys from main only (got ${REF})."; exit 1; }
+          [ -n "$CF_TOKEN" ] || { echo "::error::CLOUDFLARE_WORKERS_API_TOKEN is not set. It must be a production ENVIRONMENT secret (docs/WEBSITE.md § One-time setup)."; exit 1; }
+          [ -n "$GOOGLE_KEY" ] || echo "::warning::CUSTOMER_WEB_GOOGLE_KEY is not set: the site will deploy with grey maps and no address search (docs/CUSTOMER-WEB.md)."
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install workspace (no token in this step)
+        run: pnpm install --frozen-lockfile
+
+      # The app imports @lynia/shared at bundle time (as the mobile bundle job does).
+      - name: Build shared package
+        run: pnpm --filter @lynia/shared build
+
+      - name: Install web runtime (react-native-web; lockfile, no install scripts)
+        run: npm ci --omit=peer --ignore-scripts --no-audit --no-fund --prefix tools/web-runtime
+
+      - name: Export the customer web build
+        working-directory: apps/mobile
+        env:
+          EXPO_PUBLIC_LYNIA_WEB: "1"
+          EXPO_NO_WEB_SETUP: "1"
+          EXPO_PUBLIC_API_URL: https://api.lyniago.com
+          EXPO_PUBLIC_GOOGLE_PLACES_KEY: ${{ vars.CUSTOMER_WEB_GOOGLE_KEY }}
+        run: pnpm exec expo export --platform web --output-dir ../customer-web/dist
+
+      - name: Finish the build (Home Screen manifest, icons, headers)
+        run: node apps/customer-web/finish-build.mjs apps/customer-web/dist
+
+      - name: Install pinned wrangler (lockfile, no install scripts, no token)
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix apps/website/deploy
+
+      - name: Deploy app.lyniago.com (static assets)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_API_TOKEN }}
+        run: '"$WRANGLER" deploy --config apps/customer-web/wrangler.jsonc'
+
+      - name: Smoke — what a visitor gets
+        run: bash apps/customer-web/smoke.sh https://app.lyniago.com
+
+      - name: Summary
+        if: ${{ success() }}
+        run: echo "app.lyniago.com deployed from ${GITHUB_SHA::7} and passed the smoke checks." >> "$GITHUB_STEP_SUMMARY"

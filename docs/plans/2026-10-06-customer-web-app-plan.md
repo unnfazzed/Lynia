@@ -1,6 +1,6 @@
 # Customer web app for iPhone users — plan
 
-**Status:** APPROVED (2026-10-06). The owner decided W1–W5 in §2 the same day. **P1 and P2 built** (2026-10-06); P3 is next.
+**Status:** APPROVED (2026-10-06). The owner decided W1–W5 in §2 the same day. **P1–P4 built** (2026-10-06); runbook: [`../CUSTOMER-WEB.md`](../CUSTOMER-WEB.md). P5 (web push) later.
 
 **Why.** The iPhone app is still blocked on the Apple account (`docs/APP-STORE-SUBMISSION.md`), so iPhone users
 can't order today. A mobile-optimised web build of the **customer** app lets them order from Safari now, and it
@@ -114,3 +114,17 @@ Rough size: P1 and P2 are the bulk (about a day each); P3 and P4 are small.
 - **Checked in Chromium** at 360×720: the Send screen mounts the Google map in place; with a stand-in Google API, two
   taps place the Pickup and Drop-off pins, draw the route, frame the camera and enable Next.
 - Android fingerprint unchanged (`e09dca91…`).
+
+## 7. How P3 and P4 were built (2026-10-06)
+
+- **P3 API access:** the owner set `CORS_EXTRA_ORIGINS=https://app.lyniago.com` and ran Release (Azure) #146; its log
+  shows `CORS_ALLOWED_ORIGINS=https://merchant.lyniago.com,https://app.lyniago.com`, and a live preflight from that
+  origin answers 204 with the origin allowed (a foreign origin still gets nothing). Blob CORS: `infra/azure` gains
+  `customer_web_hostname` (production default `app.lyniago.com`) and the media account's CORS rule lists it; applied
+  by the owner through Terraform apply (Azure).
+- **P4 hosting:** `apps/customer-web/` (assets-only Worker on the `app.lyniago.com` Custom Domain, one-page fallback,
+  `_headers` with a CSP built from Google's documented Maps allowlist, Add to Home Screen manifest and icons on the brand
+  green, `finish-build.mjs`, `smoke.sh`) and `.github/workflows/deploy-customer-web.yml` (dispatch only, main only, the
+  website's Cloudflare token). Checked in Chromium: under the CSP the app and Google's script load with no violations,
+  and a control CSP does block Google, so the check is real.
+- **W4 banner:** not built, because the Play listing is closed (404) until the public release.
