@@ -88,6 +88,17 @@ describe("C5 · Opening hours (merchant mobile, D-48)", () => {
   });
 });
 
+describe("a rejected save (E2E 2026-10-05 P-2)", () => {
+  it("says the generic line, not the API's raw validation text", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile());
+    vi.mocked(updateHours).mockRejectedValue(new ApiError(400, "hours: Invalid input", undefined, true));
+    render(<Page />);
+    fireEvent.click(await screen.findByRole("button", { name: "Save hours" }));
+    expect(await screen.findByText("Couldn't save — try again.")).toBeTruthy();
+    expect(screen.queryByText("hours: Invalid input")).toBeNull();
+  });
+});
+
 describe("busy mode (LC-D04)", () => {
   // A dropped connection mid-tap must say so: busy mode is for the slammed-kitchen moment.
   it("shows the error and stays off when setBusyMode fails", async () => {

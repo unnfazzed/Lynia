@@ -63,7 +63,9 @@ export function DishEditorSheet({
 
   const price = parseAmountInput(priceText, DISH_PRICE_MAX_USD);
   const canSave = name.trim().length > 0 && price != null && !!categoryId && !disabled && !submitting;
-  const isDraft = dish?.isDraft ?? (!photoKey && !dish?.photoUrl);
+  // "Saved, but customers can't see it yet" is about a saved draft — never a new dish not saved yet
+  // (E2E 2026-10-05 P-3: it read beside a failed first save).
+  const isDraft = dish != null && (dish.isDraft ?? (!photoKey && !dish.photoUrl));
 
   return (
     <div className="kitchen-sheet-overlay">

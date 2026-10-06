@@ -12,7 +12,7 @@ import { ConfirmSheet } from "../../components/m/ConfirmSheet";
 import { Switch } from "../../components/m/Switch";
 import { useToast } from "../../components/m/Toast";
 import { RetryableError } from "../../components/RetryableError";
-import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
+import { ApiError, apiErrorMessage, redirectIfSessionExpired } from "../../lib/api-client";
 import { loadBusiness, useBusiness } from "../../lib/business";
 import { planCategoryMove, sortedCategories } from "../../lib/menu-groups";
 import {
@@ -113,7 +113,7 @@ export default function MenuPage() {
       await fn();
       return true;
     } catch (err) {
-      if (!redirectIfSessionExpired(err, signOut)) onError(err instanceof ApiError ? err.message : fallback);
+      if (!redirectIfSessionExpired(err, signOut)) onError(apiErrorMessage(err, fallback));
       return false;
     } finally {
       setSubmitting(false);

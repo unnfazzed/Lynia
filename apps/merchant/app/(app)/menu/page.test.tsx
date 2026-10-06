@@ -6,7 +6,7 @@ import MenuPage from "./page";
 import { ToastProvider } from "../../components/m/Toast";
 import { ApiError } from "../../lib/api-client";
 import { clearBusinessCache, primeBusiness } from "../../lib/business";
-import { clearDishOutOfStock, createCategory, deleteCategory, deleteDish, listCategories, listDishes, setDishOutOfStock, updateCategory } from "../../lib/menu-api";
+import { clearDishOutOfStock, createCategory, deleteCategory, deleteDish, listCategories, listDishes, setDishOutOfStock, updateCategory, updateDish } from "../../lib/menu-api";
 import { merchantProfile } from "../../testing/fixtures";
 
 vi.mock("../../lib/menu-api", () => ({
@@ -212,6 +212,31 @@ describe("a dead session on a change signs out (LC-D##)", () => {
     fireEvent.click(within(screen.getByRole("dialog", { name: "Delete Mains?" })).getByRole("button", { name: "Delete category" }));
     await waitFor(() => expect(signOut).toHaveBeenCalledTimes(1));
     expect(screen.queryByText("Your session expired — sign in again.")).toBeNull();
+  });
+});
+
+describe("the dish editor (E2E 2026-10-05 P-2, P-3)", () => {
+  it("a rejected save says the generic line, not the API's raw validation text", async () => {
+    vi.mocked(listCategories).mockResolvedValue([category()]);
+    vi.mocked(listDishes).mockResolvedValue([dish({ outOfStock: false })]);
+    vi.mocked(updateDish).mockRejectedValue(new ApiError(400, "priceUsd: Too big: expected number to be <=1000", undefined, true));
+    render(<Page />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Sadza" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(await screen.findByText("Something went wrong — try again.")).toBeTruthy();
+    expect(screen.queryByText(/priceUsd/)).toBeNull();
+  });
+
+  it("a new dish isn't 'Saved, but…' before it is saved; a saved draft is", async () => {
+    vi.mocked(listCategories).mockResolvedValue([category()]);
+    vi.mocked(listDishes).mockResolvedValue([dish({ outOfStock: false, isDraft: true })]);
+    render(<Page />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Sadza" }));
+    expect(screen.getByText(/Saved, but customers can.t see it yet/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add a dish" }));
+    expect(screen.getByText("DISH PHOTO")).toBeTruthy();
+    expect(screen.queryByText(/Saved, but customers can.t see it yet/)).toBeNull();
   });
 });
 
