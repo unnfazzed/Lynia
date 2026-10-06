@@ -6,6 +6,7 @@
 // draws. GET /wallet + /wallet/config back the shown balance and the min/max top-up bounds.
 import Constants from "expo-constants";
 import { installRouter, withQuery } from "./_harness.mjs";
+import { HISTORY } from "./_rider_v2.mjs";
 
 // Flip the QA-test-build flag on the shim's shared Constants object so isTestBuild() → true and the
 // TopUpSimulator (amount entry) renders instead of the release "call support" screen.
@@ -17,6 +18,8 @@ const wallet = { balance: 8.4, currency: "USD", updatedAt: new Date(Date.now() -
 installRouter([
   { match: "/wallet/config", json: config },
   { match: "/wallet", method: "GET", json: wallet },
+  // The amount hint averages recent fares from the history feed; unstubbed it answered `{}`.
+  { match: "/orders/history", json: HISTORY },
 ]);
 
 export default { wrap: withQuery() };
