@@ -59,8 +59,8 @@ export default function Index(): React.ReactElement {
   useEffect(() => {
     if (!target) return;
     enqueueBoot("boot_home");
-    // Step 1 of the splash ("Checking it's you") is this decision; the destination tells the splash
-    // whether to wait for Home's steps or hand off now (src/boot/boot-readiness.ts, ledger D-64).
+    // The splash's session-check task is this decision; the destination tells the splash whether to
+    // wait for Home's two tasks or hand off now (src/boot/boot-readiness.ts, ledger D-64).
     reportBootDestination(target);
   }, [target]);
 

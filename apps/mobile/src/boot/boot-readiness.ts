@@ -1,9 +1,10 @@
 import { useSyncExternalStore } from "react";
 
 /**
- * "How far has the cold start got?" — the three real signals the splash's steps card reports
- * (`packages/design/handoff/splash-v1`, ledger D-64). The splash is ON SCREEN for exactly as long as
- * these take (plus the handoff's minimums), so each one has to be the real thing, not a timer:
+ * "How far has the cold start got?" — the three real boot tasks the splash waits on
+ * (`packages/design/handoff/splash-v1`, ledger D-64; they have no UI of their own since the steps card
+ * was removed, CHANGE-2026-10-06). The splash is ON SCREEN for exactly as long as these take (and never
+ * shorter than its 1300ms intro), so each one has to be the real thing, not a timer:
  *
  * - `session`  — the boot decision is made (app/index.tsx): session read, onboarding flag, saved role
  *                and cold-start push all settled. Carries the `destination` the boot redirects to.
@@ -47,7 +48,7 @@ function set(next: BootReadiness): void {
   for (const fn of listeners) fn();
 }
 
-/** The boot route made its decision: step 1 is done and the destination is known. Idempotent. */
+/** The boot route made its decision: the session check is done and the destination is known. Idempotent. */
 export function reportBootDestination(destination: string, now: number = Date.now()): void {
   if (state.readyAt.session != null) return;
   set({ ...state, destination, readyAt: { ...state.readyAt, session: now } });
@@ -56,10 +57,10 @@ export function reportBootDestination(destination: string, now: number = Date.no
 /**
  * The router's pathname while the boot is still going (app/_layout.tsx `BootRouteWatch`). A boot bound
  * for Home can be sent elsewhere before Home is ready — a session the server rejects signs out and the
- * SessionGate replaces Home with /phone; a route gate redirects. Home then never reports its steps, so
- * without this the splash would sit on "Loading your saved places" until its give-up. When the app has
- * landed somewhere that is neither the boot route ("/") nor Home, that place becomes the destination
- * and the splash hands off straight away (a non-Home destination ends after step 1, long done).
+ * SessionGate replaces Home with /phone; a route gate redirects. Home then never reports its tasks, so
+ * without this the splash would wait on them until its give-up. When the app has landed somewhere that
+ * is neither the boot route ("/") nor Home, that place becomes the destination and the splash hands off
+ * straight away (a non-Home destination waits only for the session check, long done).
  * Ignored once the exit into Home has started or the boot has ended. Idempotent.
  */
 export function reportBootRoute(pathname: string): void {

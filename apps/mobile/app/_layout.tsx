@@ -109,7 +109,7 @@ function PushSync(): null {
  * Tells the splash where the app actually is while it boots (src/boot/boot-readiness.ts
  * `reportBootRoute`). A boot bound for Home that is redirected before Home is ready — a session the
  * server rejects (the SessionGate replaces Home with /phone), a route gate — would otherwise hold the
- * splash on "Loading your saved places" until its 20s give-up (S-2). Renders nothing.
+ * splash, waiting on Home's tasks, until its 20s give-up (S-2). Renders nothing.
  */
 function BootRouteWatch(): null {
   const pathname = usePathname();

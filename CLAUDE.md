@@ -152,8 +152,9 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
   (`code/copy.ts`, verbatim). Cash only; **every code is 6 digits shown 3+3**, the pickup code included.
 - **The splash follows its own handoff (`handoff/splash-v1/`).** The cold-start splash
   (`src/boot/splash/BootSplash.tsx`) aligns to `packages/design/handoff/splash-v1/` (ledger D-64, owner
-  2026-10-02): "1a Sun & orbit", up for exactly as long as the boot takes (real steps from
-  `src/boot/boot-readiness.ts`), then Home rises over it. The gallery `LJ splash` / `RJ splash` are superseded.
+  2026-10-02): "1a Sun & orbit", up for exactly as long as the boot takes (real tasks from
+  `src/boot/boot-readiness.ts`), then Home rises over it. No steps card: `CHANGE-2026-10-06.md` removed it
+  (owner, 2026-10-06). The gallery `LJ splash` / `RJ splash` are superseded.
 - **Notifications follow their own handoff (`handoff/notifications-v1/`).** The shared Notifications screen
   (`app/notifications/index.tsx`, both sides) aligns to `packages/design/handoff/notifications-v1/` (ledger D-66,
   owner 2026-10-02): one row per order with its timeline, tone discs, a danger pin, swipe + Undo. The gallery

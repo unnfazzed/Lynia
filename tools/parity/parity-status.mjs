@@ -43,7 +43,7 @@ export const PARITY_STATUS = {
   }, // Notifications · empty
   "LJ.splash": {
     status: "PENDING",
-    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-64 (owner, 2026-10-02): the splash-v1 handoff (packages/design/handoff/splash-v1, '1a Sun & orbit') replaces the static green dove splash with an animated sun-and-orbit splash and a live steps card that stays up until the boot is ready (src/boot/splash/BootSplash.tsx). app/splash.view.tsx was deleted. Not aligned to.",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-64 (owner, 2026-10-02): the splash-v1 handoff (packages/design/handoff/splash-v1, '1a Sun & orbit') replaces the static green dove splash with an animated sun-and-orbit splash that stays up until the boot is ready (src/boot/splash/BootSplash.tsx; its steps card was removed by the 2026-10-06 change). app/splash.view.tsx was deleted. Not aligned to.",
   }, // Splash
   "LJ.role_select": {
     status: "PENDING",
@@ -214,7 +214,7 @@ export const PARITY_STATUS = {
   // ── RJ ──────────────────────────────────────────────────────────
   "RJ.splash": {
     status: "PENDING",
-    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-64 (owner, 2026-10-02): the splash-v1 handoff (packages/design/handoff/splash-v1, '1a Sun & orbit') replaces the static green dove splash with an animated sun-and-orbit splash and a live steps card that stays up until the boot is ready (src/boot/splash/BootSplash.tsx). app/splash.view.tsx was deleted. Not aligned to.",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-64 (owner, 2026-10-02): the splash-v1 handoff (packages/design/handoff/splash-v1, '1a Sun & orbit') replaces the static green dove splash with an animated sun-and-orbit splash that stays up until the boot is ready (src/boot/splash/BootSplash.tsx; its steps card was removed by the 2026-10-06 change). app/splash.view.tsx was deleted. Not aligned to.",
   }, // Splash
   "RJ.onboard": { status: "PENDING" }, // Onboarding · rider
   "RJ.login": { status: "PENDING" }, // Phone sign-in

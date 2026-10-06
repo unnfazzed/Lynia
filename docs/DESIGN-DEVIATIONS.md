@@ -3750,7 +3750,29 @@ Outcomes the handoff's table doesn't label, with their copy in `OX` (neutral ton
 handoff's text once but carries no "Try again" action (the app's toast has none) — the page-failed row
 right above it offers the retry.
 
-## D-64 · Splash v1 — "1a Sun & orbit": the splash stays up until the app is ready — handoff APPROVED (2026-10-02); deviations 1–7 PENDING OWNER REVIEW
+## D-64 · Splash v1 — "1a Sun & orbit": the splash stays up until the app is ready — handoff APPROVED (2026-10-02); steps card removed (owner, 2026-10-06); deviations 1–7 PENDING OWNER REVIEW
+
+> **Update 2026-10-06 — the steps card is gone (owner).** Owner instruction, this session: *"update the
+> splash screen"*, with a new export of the same handoff attached (`Lynia_Design_System.zip` →
+> `design_handoff_splash/`). It changes one thing: `CHANGE-2026-10-06.md` removes the white steps card
+> ("Checking it's you" / "Loading your saved places" / "Finding riders near you") in every phase. Vendored
+> verbatim into `packages/design/handoff/splash-v1/` (the new `CHANGE-2026-10-06.md`; `README.md` gains a
+> pointer to it; `Splash.html` hides the card; the mark and fonts are unchanged). In the app
+> (`src/boot/splash/*`):
+> - The card, its rows, its rise-in, the tick pop, the spinning ring and the three step labels are deleted.
+> - The boot logic stays: the three tasks run in parallel and the splash is `done` when every task its
+>   destination waits for is in **and** the 1300ms intro has played. The per-step 400ms minimum and the
+>   300ms "let the tick be seen" wait before a non-Home cut go with the card, so a fast boot is now
+>   intro + exit (~2.45s, was ~3.65s) and a signed-out boot cuts at 1300ms (was 2000ms).
+> - Task status is kept for retry (`pendingTasks` in `timeline.ts`): "Try again" probes at once and only
+>   the unfinished tasks resume (a finished one is stamped once in `boot-readiness.ts` and never re-runs).
+> - Accessibility: "Loading LyniaGo" is announced once, when `loading` first starts (it replaces the card's
+>   live region). The slow pill (status) and the offline panel (alert) are unchanged.
+> - Layout: nothing sits under the wordmark any more, so the anchor is the handoff's 44% of H on every
+>   screen; #7 below now only grows the offline lift. Everything else (sun, orbit, dove, wordmark, blobs,
+>   slow pill, offline panel, exit, reduced motion) is unchanged.
+>
+> The bullets and table below are updated to match; text that described the card is struck or reworded.
 
 **Owner instruction, this session (2026-10-02):** *"lets implement a new splash screen. It should open
 with the time it takes to be ready to show the home screen."*, with the design handoff attached
@@ -3761,16 +3783,17 @@ frame + `app/splash.view.tsx`). Those gallery screens are SUPERSEDED and not ali
 
 **What the app does** (`src/boot/splash/BootSplash.tsx`, timing rules in `src/boot/splash/timeline.ts`):
 
-- **On screen for exactly as long as the boot takes.** The brand intro plays (1300ms), then the steps
-  card ticks off three REAL tasks (`src/boot/boot-readiness.ts`), each active for at least 400ms:
-  1. *Checking it's you* — the boot decision in `app/index.tsx` (session, onboarding flag, saved role,
-     cold-start push).
-  2. *Loading your saved places* — Home's `["me"]` read settles (seeded by the boot aggregate).
-  3. *Finding riders near you* — Home has its first content (each enabled rail has data, or failed).
-  When the last one is done the sun floods the screen and Home slides up over it, its sections rising
-  in turn (`src/boot/splash/BootEntrance.tsx`). Home therefore arrives drawn, not as skeletons.
+- **On screen for exactly as long as the boot takes.** The brand intro plays (1300ms) while three REAL
+  tasks (`src/boot/boot-readiness.ts`) run in parallel, with no UI of their own since 2026-10-06:
+  1. the session check — the boot decision in `app/index.tsx` (session, onboarding flag, saved role,
+     cold-start push);
+  2. saved places — Home's `["me"]` read settles (seeded by the boot aggregate);
+  3. Home's first content (each enabled rail has data, or failed).
+  When the last one is in (and not before the intro has played) the sun floods the screen and Home
+  slides up over it, its sections rising in turn (`src/boot/splash/BootEntrance.tsx`). Home therefore
+  arrives drawn, not as skeletons.
 - **Not Home** (onboarding, sign-in, profile setup, the rider app, a push-tap deep link): hands off
-  straight after step 1 with no exit, as the handoff says.
+  as soon as the session check is in (and the intro has played), with no exit, as the handoff says.
 - **Slow** (4s into loading): the yellow pill. **Offline** (the API unreachable, `src/net/reachability.ts`):
   the orbit pauses, the dot greys, the offline panel slides up; "Try again" probes at once
   (`probeNow`) and shows loading for 3s before the panel can return. Retrying in the background is the
@@ -3789,13 +3812,13 @@ frame + `app/splash.view.tsx`). Those gallery screens are SUPERSEDED and not ali
 
 | # | Handoff | App | Why |
 |---|---|---|---|
-| 1 | Step 3 = "nearby-rider or zone availability call" | Home's first content (the rails) | No customer-side nearby-rider or zone endpoint exists. Home's content is what "ready to show the home screen" means. |
+| 1 | Task 3 = "nearby-rider or zone availability call" | Home's first content (the rails) | No customer-side nearby-rider or zone endpoint exists. Home's content is what "ready to show the home screen" means. |
 | 2 | Loading keeps going indefinitely on a slow network | Hands off after 20s (`GIVE_UP_MS`) of ONLINE loading — time on the offline panel doesn't count (2026-10-06) | Never strand the app on a hung request; Home has its own loading and empty states. Counting offline time made a phone that came back after 20s offline exit straight into an unloaded Home. |
-| 3 | Steps card / panels at 16 / 14px from the bottom, pill at top 44 | Plus the device's bottom inset; pill at max(44, top inset + 8) | The mock frame has no system bars; this keeps them clear of gesture/nav bars and notches. |
-| 4 | Card shadow `0 18px 40px -12px rgba(0,0,0,.3)` | One-layer RN shadow (offset 18, radius 20, opacity .3, elevation 12) | The app runs the old architecture: no `boxShadow`, no spread. |
+| 3 | Offline panel 14px from the bottom, pill at top 44 (the steps card's 16px went with the card, 2026-10-06) | Plus the device's bottom inset; pill at max(44, top inset + 8) | The mock frame has no system bars; this keeps them clear of gesture/nav bars and notches. |
+| 4 | Pill shadow `0 8px 20px -8px rgba(0,0,0,.3)` (~~card shadow `0 18px 40px -12px`~~ — the card is gone, 2026-10-06) | One-layer RN shadow (offset 8, radius 10, opacity .3, elevation 6) | The app runs the old architecture: no `boxShadow`, no spread. |
 | 5 | Orbit's CSS dashed border | SVG circle, `strokeDasharray 6 6` | Dashed rounded borders aren't reliable on Android. |
 | 6 | Splash starts on plain green | ~~The native launch frame still shows the old dove + wordmark lockup~~ **Resolved (owner, 2026-10-02: "remove it entirely the old dove and wordmark"):** the native launch screen is now plain green (`assets/splash-blank.xml` / `splash-blank.png`); the lockup generator (`src/ui/splash-lockup.ts`, `scripts/build-splash-icon.mjs`) and its assets are deleted. | Native config: reaches devices only in the next store build (none dispatched — owner: "dont build an expo"). Until then installed binaries keep the old frame. |
-| 7 | Anchor at 44% of H; wordmark top at anchor + 152; the offline lift is 64px ("✅ Fits 320×640 … clears the wordmark by about 26px") | Same values wherever they fit. Where #3's bottom inset leaves less than 24px between the wordmark and the steps card, the anchor (sun, orbit, dove, wordmark, sky blob) moves UP until it does; where the 64px lift leaves less than 24px above the offline panel, the lift grows (`src/boot/splash/geometry.ts`, measured card/panel heights). Reduced motion keeps the lift, without the motion. (2026-10-06, startup review S-5) | The mock frame has no system bars. At 320×640 with a 48dp 3-button nav bar #3 put the card ~20dp over "LyniaGo" and the offline panel ~8dp over the lifted wordmark; the handoff's own answer to a panel is "the content moves up". Unchanged at 640/700/720 with no nav bar and at 720/780 with one. |
+| 7 | Anchor at 44% of H; wordmark top at anchor + 152; the offline lift is 64px | The anchor is always 44% of H (~~moved up to clear the steps card~~ — the card is gone, 2026-10-06). Where the 64px lift leaves less than 24px between the lifted wordmark and the offline panel, the lift grows (`src/boot/splash/geometry.ts`, measured panel height). Reduced motion keeps the lift, without the motion. (2026-10-06, startup review S-5) | The mock frame has no system bars. At 320×640 with a 48dp 3-button nav bar #3 put the offline panel over the lifted wordmark; the handoff's own answer to a panel is "the content moves up". Exactly 64px at 640/700/720 with no nav bar and at 720/780 with one. |
 
 ## D-65 · The Home service tile reads "Food", not "Restaurants" — APPROVED (2026-10-02)
 
