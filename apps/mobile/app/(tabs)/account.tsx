@@ -16,12 +16,14 @@ import { AppScreen, SkeletonList, useTabRoot } from "../../src/ui";
 import { Notice } from "../../src/ui/send/kit";
 import { RIDER_COPY as R, RF } from "../../src/ui/rider/copy";
 import { BecomeCard, IdentityCard, MintTop, RCard, RoleToggle, RRow } from "../../src/ui/rider/kit";
+import { BecomeRiderCard } from "../../src/ui/firstrun";
 import { useTabTop } from "../../src/query/use-tab-top";
 
 /**
  * Customer Account (Rider v2 C6–C11, ledger D-54) — the rider Account's sibling: mint top card with the
  * deliver-to street, the identity card (not tappable — owner 2026-10-02, D-60), then either the **Customer | Rider** toggle (Customer
- * selected) for someone who rides, or the Become-a-rider card for someone who doesn't yet — then
+ * selected) for someone who rides, or the Become-a-rider card for someone who doesn't yet (First Run v2 G2's
+ * violet card before any check, ledger D-80; the in-progress / review / failed / locked card during one) — then
  * Trip history · Notifications · Help & support (straight to WhatsApp, D-60) · Settings. iPhone builds are customer-only (D-41), so
  * neither the toggle nor the card is drawn there.
  */
@@ -40,6 +42,13 @@ export default function AccountTabScreen(): React.ReactElement {
   const become = me && meQ.isSuccess && riderModeAvailable() ? becomeStateFor(me) : null;
   const left = Math.max(0, 2 - (me?.rider?.kycAttempts ?? 0));
   const declineLabel = riderDeclineLabel(me?.rider?.kycDeclineReason);
+  // Held for a person or in manual (ops) review — hours, not the automated check's minute.
+  const reviewByPerson = !!me?.rider && (me.rider.kycHeld === true || me.rider.kycMode === "manual");
+  // R-5: the side the rider picks is the side the next cold start opens on.
+  const toRiderSide = (): void => {
+    void saveRolePreference("rider");
+    router.replace("/rider");
+  };
 
   return (
     <AppScreen banner={<MintTop {...top} customer loc={location.label} />}>
@@ -59,10 +68,7 @@ export default function AccountTabScreen(): React.ReactElement {
               <RoleToggle
                 side="customer"
                 onChange={(s) => {
-                  if (s !== "rider") return;
-                  // R-5: the side the rider picks is the side the next cold start opens on.
-                  void saveRolePreference("rider");
-                  router.replace("/rider");
+                  if (s === "rider") toRiderSide();
                 }}
               />
               {me?.rider?.kycStatus === "verified" && (me.rider.tripsCount ?? 0) === 0 ? (
@@ -71,13 +77,19 @@ export default function AccountTabScreen(): React.ReactElement {
                 <Text style={{ fontSize: 12, lineHeight: 16, color: tokens.color.muted, textAlign: "center", marginTop: -4 }}>{R.switchHint}</Text>
               )}
             </>
+          ) : become === "none" ? (
+            // First Run v2 G2 (D-80): the violet card → R1.
+            <BecomeRiderCard onStart={() => router.push("/rider/become")} />
           ) : become ? (
             <BecomeCard
               state={become}
-              // R-6: the real decline reason when it is known; the drawn "blurry photo" copy otherwise.
-              failBody={declineLabel ? RF.kycFailWhyB(declineLabel, left) : RF.kycFailB(left)}
+              // review: the automated check (usually under a minute) vs a person (usually a few hours) — D-80 I.
+              // failed: R-6, the real decline reason when it is known; the drawn "blurry photo" copy otherwise.
+              body={become === "review" ? (reviewByPerson ? R.kycReviewB : R.kycCheckingB) : declineLabel ? RF.kycFailWhyB(declineLabel, left) : RF.kycFailB(left)}
               // R-10: a locked application's only way forward is support — never a "Try again" the server refuses.
-              onAction={() => (become === "locked" ? openSupportWhatsApp() : router.push(become === "none" ? "/rider/become" : "/rider"))}
+              // G3 (D-80): otherwise the card is the way back to the rider side, which lands on the current F page
+              // (or R2) — switched like the toggle, so the F page's ✕ comes straight back here.
+              onAction={() => (become === "locked" ? openSupportWhatsApp() : toRiderSide())}
             />
           ) : null}
           <RCard>

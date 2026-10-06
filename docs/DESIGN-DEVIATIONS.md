@@ -4512,12 +4512,66 @@ wires); `app/(tabs)/home.tsx` → phases 2+3 (phase 4 adds the one-line U4a moun
   `FirstRunScreen` (status bar + 12 / 6, scrolling body, pinned footer, keyboard-aware), `FirstRunToast`, and
   `useFirstRunMetrics()` / `firstRunMetrics(width, fontScale)` (≤340 wide → hero 160, disc 84, title 24;
   font scale ≥1.2 → hero 176, disc 84). Icons added to `Icon`: `volume-x`, `sun`, `battery`, `upload` (`trash-2`
-  is the existing `trash`). Dev gallery: `app/dev/first-run.tsx` (redirects home in a release build).
+  is the existing `trash`). (A dev gallery route was removed again: every route ships in the release bundle.)
 - **Token:** `dangerSun #F4D9D5` (see §1).
 - **Toast (owner #4):** `ToastProvider` (`src/ui/Toast.tsx`) now draws the bottom toast app-wide — `forest`, radius
   14, padding 14 16, white 600 14, a 20 brand check, 96 above the bottom + the safe-area inset, slides up, gone
   after **2.5s** (`TOAST_DURATION_MS` 4000 → 2500). API unchanged (`useToast().show`, `useActionError`,
   `useActionErrorEffect`, `pushToast`), so no caller moved.
+
+**Phase 6 (ID-check outcomes F, rider entry G, copy pass I — 2026-10-06).**
+
+- **One mapping** (`apps/mobile/src/logic/kyc-outcome.ts`, `kycScreenFor`): the board's existing resolvers
+  (`resolveKycGate` → `resolveGate`) → one page. No rider record → **R1** (G1). Fresh `completed` launch (the 30 s
+  `KYC_COMPLETED_HINT_MS` hint) → **F8**; automated check with the vendor → **R2** (Calm Mint v2 stays, README G3
+  "or R2"); manual review → **F1**; held → **F2**; unfinished (and an API with no pending state, and a cancelled
+  launch) → **F3**; declined below the lock → **F4a–d** by `kycDeclineReason` (`declineVariant`: `id_unreadable` → a,
+  `face_mismatch`/`liveness_failed` → b, `id_expired`/`doc_tampered` → c, `name_mismatch`/`duplicate`/`other`/unknown →
+  d); locked → **F5**; expired (the record, or the server's `kyc_expired` refusal) → **F6**; the SDK couldn't open →
+  **F7**; the server's plain `kyc` refusal on a cached-verified rider → **F3**. The non-KYC gates (GPS, area, cooldown,
+  hold, suspended, banned, top-up) keep their Rider v2 walls. Unit-tested state by state (`kyc-outcome.test.ts`).
+- **One shell** (`src/ui/firstrun/IdCheckOutcome.tsx`): `FirstRunScreen` + `HeroPanel` (✕ in `topLeft`) + `HeroDisc`
+  + `SplitTitle` + `Body` + `TipChips` / `TriesMeter` / `KycChecklist` + `PinnedFooter`, composed per `fr-states.js`
+  (F8 spinner + checklist "…", F1/F2 "In review", F3 "~2 min" + trailing arrow, F4 camera CTA + tries box + WhatsApp
+  link, F5 WhatsApp CTA, F6 camera CTA, F7 refresh CTA + WhatsApp link). `KY` verbatim; the checklist's "In review" /
+  "~2 min" are Calm Mint v2's `RO.inReview` / `RO.stepIdTime` (the same drawn words).
+- **Board** (`app/rider/(tabs)/index.tsx`): an F page replaces the whole tab — no `MintTop`, no tab bar
+  (`useHideTabBar`, new in `src/ui/shell/TabShell.tsx`: a tab root holds the floating bar hidden while mounted), no
+  "Order food and send parcels" bridge. ✕ = `saveRolePreference("customer")` + `replace("/home")`, the same switch the
+  Account toggle makes; reopening the rider side re-resolves the same page from `/auth/me`. "Try again" / "Finish ID
+  check" / "Re-verify my ID" run the existing `retryKyc` + SDK lane (force-fresh-session rules unchanged), WhatsApp is
+  the existing support link. `KycCheckHost` stays mounted under the F page. The Rider v2 KYC gate branches and their
+  strings (`gNotRider*`, `gPending*`, `gUnfinished*`, `gFailed*`, `gFailed2*`, `gExpired*`, `gCantOpen*`, `reverify`,
+  `finishId`, `becomeRider`, `RF.gFailedV/gFailedWhyB/gExpiredB/gPendingV`) are deleted.
+- **G1:** the board's "Earn with your bike" interstitial is gone: a non-rider reaching `/rider` is `replace`d by R1
+  (`/rider/become`) — only once the mount's re-read of `me` has landed, so a cached customer `me` can't bounce a rider
+  who just registered. `become.tsx` hands over with `replace("/rider")` after re-reading `me` (no `?from=board` back
+  path any more, and no `/permissions` priming before the board — owner #5).
+- **R3 → permissions (owner #5):** R3's "Go online" marks R3 seen, then calls `startRiderPermFlow(router)` from
+  `src/logic/rider-perm-flow.ts` — the single adapter phase 3 swaps for its own export. Until then it `replace`s to the
+  existing `/permissions?next=/rider` (which forwards straight back on a primed phone).
+- **G2:** the customer Account's start card is `BecomeRiderCard` (`src/ui/firstrun/BecomeRiderCard.tsx`, `fr-states.js`
+  G2: radius 24 `riderWash`, 120 sun, 14 coral, 22/700 "Earn with **your bike**", `KY.becomeBody`, 52 "Start →") → R1.
+- **G3:** mid-check the Account's in-progress / review / failed card switches to the rider side the way the toggle does
+  (`saveRolePreference("rider")` + `replace("/rider")`, was a `push`) and so lands on the current F page or R2; the F
+  page's ✕ comes straight back. Locked keeps its WhatsApp action.
+- **I · copy pass:** the Account card bodies now use `KY`'s times and channel — in progress `KY.unfBody` ("About 2
+  minutes", was "about 3 minutes"), review `KY.checkBody` for the automated check ("Usually under a minute") or
+  `KY.reviewBody` for a person ("Usually a few hours. We'll notify you.", was "We'll SMS you."), locked `KY.lockedBody`.
+  The licence is gone from R1 ("Your photo and bike papers can wait.") and R3 ("Add your photo and bike papers later in
+  Account") — BRIEF 13, settling D-79 §5's first bullet. `grep -ri licen` over `apps/mobile/{app,src}` now finds only
+  code comments.
+- **I · Delete account (owner #6):** `app/settings/delete-account.tsx` is frame I — `BackHeader`, danger hero 180 with
+  the trash disc, "Delete **your account?**", I's sentence, the live box (`ok` "No delivery running", or `bad` with the
+  shipped running-delivery sentence), "Keep my account" (primary, back) over the `dangerInk` link "Delete account"
+  (disabled while a delivery runs). The two-step confirm stays: the link opens the final step in the same shell —
+  "This is **the final step**", D-79's sentence with "straight away" bold, the acknowledgement tick, "Keep my account"
+  over the danger link "Delete my account" armed by the tick. Parity: `LJ.delete_account` / `LJ.delete_final` stay
+  wired (fixtures unchanged) and move to `rendered-conformance.pending.json` as SUPERSEDED TARGETs; the guardrail's
+  asserted-screens floor drops by exactly those two (5 → 3), as D-66 did. `RJ.kyc_pending`, `kyc_unfinished`,
+  `kyc_cant_start`, `kyc_failed`, `kyc_expired` and `gate_kyc_locked` carry SUPERSEDED reasons in `parity-status.mjs`.
+- **Mount slot** for the other phases: one marked comment in the board's `AppScreen` (J8 `RiderPermBoardRow` / G8
+  `RiderLocEmpty` from phase 3, U4b `SoftUpdateBanner` from phase 4).
 
 ### 4 · Still different from the handoff
 
@@ -4532,4 +4586,34 @@ _Filled in phase by phase._
   owner: unify them on the forest bar or keep them.
 - **"+ Add" pill (E1, for phase 5).** The handoff draws it 36 tall, under the 44 floor; per the 2026-08-20 rule
   that is a kit defect to report, not to reproduce. `FrSoftPill` is 44; phase 5 decides with the owner.
+
+**Phase 6 (F / G / I):**
+
+- **F6's date (NEEDS BACKEND).** `KY.expBody` is drawn "Expired 2 Oct 2026. Re-verify to keep riding." `/auth/me`
+  serves no expiry date (`kycExpiredAt`), so F6 shows "Re-verify to keep riding." alone; `KYF.expBody(date)` (in
+  `src/ui/rider/copy.ts`) puts the date back the day the server sends it.
+- **F4's tries meter.** `KY.triesLeft` ("1 try left") is the only drawn label. `kycAttempts` counts declines and the
+  lock is 2, so a decline below the lock is always 1 left; the box is drawn only then (an account with 0 recorded
+  declines on a `failed` status — legacy data — shows no box rather than an undrawn "2 tries left").
+- **F4 for `name_mismatch` and `duplicate`.** No variant names them; they get F4d ("We couldn't verify your ID · Try
+  again, or message us"), not F4c, whose advice ("Use your Zimbabwe national ID card…") would be wrong when the document
+  was fine. `liveness_failed` shares F4b's face tips with `face_mismatch`.
+- **F1 / F2 vs README G3's "or R2 if pending".** Only the automated check in flight is R2; held (F2) and manual review
+  (F1) are their own drawn pages, as README F draws them.
+- **The F pages' ✕ from the customer Account (G3).** Mid-check the Account still shows the shipped in-progress / review /
+  failed / locked card rather than the Customer | Rider toggle README G3 mentions ("switching the Account toggle back to
+  Rider") — the toggle only exists for a verified / expired rider. The card now switches sides like the toggle. **Owner
+  question** (see the phase report): show the toggle mid-check instead.
+- **F8's drawn "…" and the checklist meta.** The F8 checklist's step-2 meta is the drawn literal "…"; F1/F2's "In review"
+  and F3's "~2 min" come from Calm Mint v2's `RO` (identical words), since `KY` has no key for them.
+- **Delete account's final step** is undrawn by I: built in I's shell (danger hero, two-tone title "This is **the final
+  step**", D-79's sentence, the tick). Its destructive action follows I's grammar — the `dangerInk` text link, armed by
+  the tick — instead of the shipped danger-filled button; "Keep my account" is the 52 primary on both steps. A running
+  delivery keeps the shipped sentence in the `bad` box.
+- **Free-job pushes `KY.notif1T/B`, `KY.notif0T/B` (NEEDS BACKEND — not built).** D-79 §3 already ships the owner's own
+  words for the same two moments ("One commission-free job left" / "Your free jobs are used up", silent while commission
+  is 0%). Replacing the owner's approved words with the handoff's is an **owner question**, so the server templates are
+  unchanged.
+- **`gSuspB` "Our team sent the details by SMS."** (Rider v2 suspended wall) is not an ID-check string and was left as
+  is; BRIEF 17's "in-app notification, no SMS" was applied to the ID-check copy only.
 

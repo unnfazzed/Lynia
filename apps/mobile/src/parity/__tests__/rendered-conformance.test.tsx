@@ -327,10 +327,11 @@ describe("rendered conformance — coverage ledger", () => {
   // v2 handoff, not the gallery's home-8c mock, so it sits in the pending ledger as a SUPERSEDED
   // target until an export redraws it; the floor on asserted screens stays. D-66 (2026-10-02) retired
   // the asserted LJ.notif_empty with the August Notifications screen (Notifications v1 handoff), so the
-  // floor drops by exactly that one screen. D-80 (2026-10-06, First Run v2) retired the asserted LJ.perm_loc
-  // and LJ.perm_notif with the first-run permission priming, so it drops by exactly those two.
-  it("asserts at least three wired screens", () => {
-    expect(COVERED.length).toBeGreaterThanOrEqual(3);
+  // floor drops by exactly that one screen. D-80 (2026-10-06, First Run v2) retired four more asserted screens,
+  // so it drops by exactly those four: LJ.perm_loc and LJ.perm_notif with the first-run permission priming,
+  // and (§2 #6) LJ.delete_account and LJ.delete_final with the gallery's delete screens (First Run v2 I).
+  it("asserts at least one wired screen", () => {
+    expect(COVERED.length).toBeGreaterThanOrEqual(1);
   });
 
   it("every per-string escape carries a real reason and a tracked reference", () => {

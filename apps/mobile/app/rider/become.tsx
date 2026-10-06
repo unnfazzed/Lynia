@@ -1,5 +1,5 @@
 import { tokens } from "@lynia/shared/tokens";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import React, { useEffect, useRef, useState } from "react";
 import { Text } from "react-native";
@@ -25,15 +25,14 @@ import { useWalletConfig } from "../../src/query/use-wallet";
  * - No rider photo either (D-62): it is optional and added later from Settings → Bike & documents.
  * - The only thing ever asked first is the NAME, and only on a legacy account without one, in C5's own
  *   grammar (the two name fields, the verified phone row) — then on to the check.
- * - However the check ends, the rider lands on the board, whose Rider v2 gates and Calm Mint v2 pages
- *   already draw every outcome: R2 while the check is reviewed, R3 once verified, "Finish verifying"
- *   after a cancel, "Your ID is under review" in manual mode.
+ * - However the check ends, the rider lands on the board, which draws every outcome: First Run v2's F pages
+ *   (F8 while it is sent, F3 after a cancel, F1 in manual mode, F4 on a decline … — ledger D-80), Calm Mint
+ *   v2 R2 while the automated check runs, R3 once verified.
+ * - G1 (D-80): this is the first rider screen. C1 "Ride with LyniaGo" → OTP → here, and a non-rider reaching
+ *   the board is sent here; no permission priming before it (the rider permission flow follows R3).
  */
 export default function BecomeRiderScreen(): React.ReactElement {
   const router = useRouter();
-  // `board` when the rider board's "Earn with your bike" gate pushed this screen over itself (R-2).
-  const { from } = useLocalSearchParams<{ from?: string }>();
-  const overBoard = from === "board";
   const qc = useQueryClient();
   // CF-02-SIB-3: same-tick double-submit guard for `submit` below — see the ref's use for why a plain
   // `busy` state boolean isn't enough.
@@ -92,25 +91,21 @@ export default function BecomeRiderScreen(): React.ReactElement {
   const namesReady = firstName.trim().length > 0 && lastName.trim().length > 0;
 
   /**
-   * Hand over to the board.
+   * Hand over to the board, saved as the side the next cold start opens on (R-5).
    *
-   * R-2: pushed from the board's "Earn with your bike" gate (`?from=board`), the board is still mounted
-   * right below — so go BACK to it. A `replace("/rider")` here mounted a second board under a new key:
-   * two heartbeats, two `me` pollers, two food-offer listeners (the offer screen pushed twice), and Back
-   * showed the board (and R3) again.
+   * First Run v2 (ledger D-80): G1 — the board no longer pushes this screen over itself (its "Earn with your
+   * bike" interstitial is gone; a non-rider reaching `/rider` is REPLACED by this screen), so there is never
+   * a board below to go back to and a `replace` mounts exactly one. Owner #5 — no permission priming before
+   * the board: the rider permission flow runs after R3 "You're verified", before going online. The board
+   * shows the check's outcome from here (F8 while it is sent, R2, F1–F7, R3).
    *
-   * R-5: from Account there is no board below. That path goes through the rider permission priming first,
-   * like C1's "Ride with LyniaGo" (`/permissions` forwards straight on when this phone already primed), so
-   * R2's "We'll notify you" and the ID-check result push can actually arrive. Either way the rider side is
-   * saved as the side the next cold start opens on.
+   * `me` is re-read first, so the board reads the new rider record instead of bouncing a cached customer
+   * `me` (no rider yet) back here.
    */
-  const handOver = (): void => {
+  const handOver = async (): Promise<void> => {
     void saveRolePreference("rider");
-    if (overBoard && router.canGoBack()) {
-      router.back();
-      return;
-    }
-    router.replace("/permissions?next=/rider");
+    await qc.refetchQueries({ queryKey: ["me"] }).catch(() => undefined);
+    router.replace("/rider");
   };
 
   const submit = async (withName: boolean): Promise<void> => {
@@ -135,21 +130,22 @@ export default function BecomeRiderScreen(): React.ReactElement {
       // never throws. Manual review (and the QA stub's instant pass) returns no session to open.
       if (res.sessionToken || res.verificationUrl) {
         const launch = await runKycVerification({ sessionToken: res.sessionToken, verificationUrl: res.verificationUrl });
-        // R-4 / R-10: the board picks the wall, so it gets the outcome — "completed" keeps R2 up while the
-        // vendor catches up, "failed" lands on the can't-open wall (with support), not "Finish verifying".
+        // R-4 / R-10: the board picks the page, so it gets the outcome — "completed" is F8 "Sending your ID"
+        // while the vendor catches up, "failed" lands on F7 "Couldn't open the ID check" (with WhatsApp help),
+        // not F3 "Almost there".
         recordKycLaunch(launch.outcome);
         if (launch.outcome === "completed") void noteKycLaunched();
       }
-      // However it went, the board shows the right state from here: R2 "Rider setup" while the check is
-      // reviewed, R3 once verified, "Finish verifying" after a cancel, the review wall in manual mode.
-      handOver();
+      // However it went, the board shows the right page from here: F8 while it is sent, R2 while the
+      // automated check runs, R3 once verified, F3 after a cancel, F1 in manual mode (D-80).
+      await handOver();
     } catch (e) {
       // BH-04: a lost-response retry on `becomeRider` hits this exact 409 — the FIRST submit already
       // landed server-side (and since R-10 so does the loser of a double-tap race), so the board
       // re-reads the real (already-registered) state.
       if (e instanceof ApiError && e.code === "already_rider") {
         void clearKycDraft();
-        handOver();
+        await handOver();
         return;
       }
       setError(e instanceof ApiError ? e.message : "Couldn't start rider setup.");
