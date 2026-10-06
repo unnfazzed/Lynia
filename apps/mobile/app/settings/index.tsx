@@ -35,7 +35,7 @@ function bikeItemsToAdd(rider: Me["rider"] | null | undefined): number {
   return total - done - (rider.kycStatus === "verified" ? 0 : 1);
 }
 
-/** The customer's third step: `RP.nStep3` without its rider-only "· Job alerts on" (derived copy, D-80 §4). */
+/** The customer's third step: `RP.nStep3` without its rider-only "· Job alerts on" (derived copy, D-81 §4). */
 const NOTIF_STEP3_CUSTOMER = RP.nStep3.split(" · ")[0]!;
 
 /** `.cap` — the 12/600 caption above a card (YOU, ALERTS). */
@@ -48,8 +48,8 @@ function Caption({ children, first }: { children: string; first?: boolean }): Re
 }
 
 /**
- * Settings — First Run v2's look (handoff `first-run-v2` D1 / PC11 / P15, ledger D-80) with every row it
- * had before (owner decision D-80 §2 #1): the round back button and the large title; the PC11 danger card
+ * Settings — First Run v2's look (handoff `first-run-v2` D1 / PC11 / P15, ledger D-81) with every row it
+ * had before (owner decision D-81 §2 #1): the round back button and the large title; the PC11 danger card
  * when order updates are off; YOU (Personal details first, Bike & documents "N to add", Language, plus the
  * kept Privacy, Terms and Payment rows); ALERTS, whose toggles MIRROR the phone's permissions — tapping an
  * off toggle asks (the rider flow P1/P9, or PC8 for order updates) or opens phone settings when it can't,
@@ -82,7 +82,7 @@ export default function SettingsScreen(): React.ReactElement {
   const missing = isRider ? bikeItemsToAdd(me?.rider) : 0;
 
   const go = useCallback((href: string) => router.push(href as never), [router]);
-  // PC11 "Turn on" / the Order updates toggle (owner 2026-10-06, D-80 §4): the Android dialog directly while it
+  // PC11 "Turn on" / the Order updates toggle (owner 2026-10-06, D-81 §4): the Android dialog directly while it
   // can still ask (a decline just leaves the card up); when it can't, the phone-settings steps sheet. On → settings.
   const [notifSteps, setNotifSteps] = useState(false);
   const orderUpdates = (): void => {
@@ -194,7 +194,7 @@ export default function SettingsScreen(): React.ReactElement {
         </ListCard>
       </FirstRunScreen>
 
-      {/* Order updates blocked for good: the PC5-shaped phone-settings steps in notification words (owner, D-80 §4). */}
+      {/* Order updates blocked for good: the PC5-shaped phone-settings steps in notification words (owner, D-81 §4). */}
       <FrSheet visible={notifSteps} onClose={() => setNotifSteps(false)} testID="settings-notif-steps">
         <SplitTitle a={RP.blockedA} b={RP.blockedB} tone="danger" style={{ marginTop: 0 }} />
         <Body>{isRider ? RP.blockedBody : PC.setOffBody}</Body>

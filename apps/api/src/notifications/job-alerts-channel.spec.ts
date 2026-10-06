@@ -5,7 +5,7 @@ import type { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "./notifications.service";
 
 /**
- * First Run v2 P12 (ledger D-80, owner 2026-10-06): rider job pings and food-offer alarms post on the
+ * First Run v2 P12 (ledger D-81, owner 2026-10-06): rider job pings and food-offer alarms post on the
  * Android channel `job-alerts`, which the app creates loud (HIGH importance + sound) and checks for a muted
  * alarm; every other push stays on the app's default channel.
  */

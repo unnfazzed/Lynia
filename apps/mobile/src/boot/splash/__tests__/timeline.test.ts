@@ -1,79 +1,100 @@
 /**
- * Splash v1 timing (ledger D-64, packages/design/handoff/splash-v1 § Interactions & behaviour). The
- * contract the owner asked for — the splash is up for exactly as long as the boot takes — lives in
- * these rules, bounded below by the handoff's two minimums (1300ms intro, 400ms per active step).
+ * Splash v1 timing (ledger D-64, packages/design/handoff/splash-v1 § Interactions & behaviour, as changed
+ * by CHANGE-2026-10-06). The contract the owner asked for — the splash is up for exactly as long as the
+ * boot takes — lives in these rules: done when every task the destination waits for is in AND the
+ * 1300ms intro has played. The steps card (and its 400ms per-step minimum) is gone.
  */
-import { CUT_AFTER_TICK_MS, INTRO_MS, STEP_MIN_ACTIVE_MS, nextStepChange, shownSteps, splashDoneAt, stepStates, stepTimes } from "../timeline";
+import {
+  BOOT_TASKS,
+  CUT_AFTER_TICK_MS,
+  INTRO_MS,
+  RIDER_TASKS,
+  STEP_MIN_ACTIVE_MS,
+  type TaskTimes,
+  awaitedTasks,
+  isRiderBoot,
+  nextStepChange,
+  pendingTasks,
+  riderStepTimes,
+  splashDoneAt,
+  stepStates,
+} from "../timeline";
 
-describe("stepTimes", () => {
-  it("a boot that was ready before the intro ended still shows each step for its minimum", () => {
-    const times = stepTimes([0, 0, 0]);
-    expect(times.activeAt).toEqual([INTRO_MS, INTRO_MS + STEP_MIN_ACTIVE_MS, INTRO_MS + 2 * STEP_MIN_ACTIVE_MS]);
-    expect(times.doneAt).toEqual([1700, 2100, 2500]);
-  });
-
-  it("a slow task holds its step — and every later step — until it actually resolves", () => {
-    const times = stepTimes([200, 6000, 1000]);
-    expect(times.doneAt).toEqual([1700, 6000, 6400]);
-  });
-
-  it("a non-Home boot runs step 1 only: step 2 never flashes active as step 1 completes", () => {
-    const times = stepTimes([0, 0, 0], shownSteps("/phone"));
-    expect(times.activeAt).toEqual([INTRO_MS, null, null]);
-    expect(stepStates(times, 1700)).toEqual(["done", "pending", "pending"]);
-    expect(shownSteps("/home")).toBe(3);
-    expect(shownSteps(null)).toBe(3);
-  });
-
-  it("a pending task leaves its step (and the ones after it) open-ended", () => {
-    const times = stepTimes([500, null, 900]);
-    expect(times.doneAt).toEqual([1700, null, null]);
-    expect(times.activeAt).toEqual([1300, 1700, null]);
-  });
-});
-
-describe("stepStates", () => {
-  const times = stepTimes([0, 3000, 3100]);
-  it.each([
-    [0, ["pending", "pending", "pending"]],
-    [1300, ["active", "pending", "pending"]],
-    [1700, ["done", "active", "pending"]],
-    [3000, ["done", "done", "active"]],
-    [3400, ["done", "done", "done"]],
-  ])("at %ims", (t, expected) => {
-    expect(stepStates(times, t)).toEqual(expected);
-  });
-
-  it("schedules the next wake at the next boundary", () => {
-    expect(nextStepChange(times, 0)).toBe(1300);
-    expect(nextStepChange(times, 1700)).toBe(3000);
-    expect(nextStepChange(times, 3400)).toBeNull();
-  });
-});
+const at = (session: number | null, profile: number | null, home: number | null, rider: number | null = null): TaskTimes => ({ session, profile, home, rider });
 
 describe("splashDoneAt", () => {
-  const times = stepTimes([0, 0, 4000]);
-  it("Home waits for all three steps", () => {
-    expect(splashDoneAt(times, "/home")).toBe(4000); // step 3 went active at 2100; its task resolved at 4000
+  it("Home waits for all three tasks", () => {
+    expect(splashDoneAt(at(200, 3000, 4000), "/home")).toBe(4000);
+    expect(splashDoneAt(at(200, 6000, 1000), "/home")).toBe(6000); // the tasks run in parallel: the last one in decides
+    expect(splashDoneAt(at(200, 3000, null), "/home")).toBeNull();
   });
-  it("anywhere else hands off after step 1's tick has been seen (onboarding, sign-in, a deep link — the rider board has its own two)", () => {
-    for (const d of ["/onboarding", "/phone", "/rider/job", "/order/abc"]) expect(splashDoneAt(times, d)).toBe(1700 + CUT_AFTER_TICK_MS);
+
+  it("never before the 1300ms intro has played, however fast the tasks are", () => {
+    expect(splashDoneAt(at(0, 0, 0), "/home")).toBe(INTRO_MS);
+    expect(splashDoneAt(at(100, 900, 1299), "/home")).toBe(INTRO_MS);
   });
+
+  it("no per-task minimum any more: a task that lands after the intro ends the splash at that moment", () => {
+    expect(splashDoneAt(at(0, 0, 1301), "/home")).toBe(1301);
+  });
+
+  it("anywhere else hands off once the session check is in (onboarding, sign-in, a deep link — the rider board has its own two)", () => {
+    for (const d of ["/onboarding", "/phone", "/rider/job", "/order/abc"]) {
+      expect(splashDoneAt(at(0, null, null), d)).toBe(INTRO_MS);
+      expect(splashDoneAt(at(2500, null, null), d)).toBe(2500);
+    }
+  });
+
   it("is not done before the boot decision exists", () => {
-    expect(splashDoneAt(times, null)).toBeNull();
+    expect(splashDoneAt(at(null, 500, 900), null)).toBeNull();
   });
 });
 
-describe("the rider boot (First Run v2 H1, ledger D-80 §2 #2)", () => {
-  it("shows the rider's two steps, and a push-tap into a rider job keeps step 1 only", () => {
-    expect(shownSteps("/rider")).toBe(2);
-    expect(shownSteps("/rider/job")).toBe(1);
+describe("task status", () => {
+  it("Home (and a boot not yet decided) waits on all three; anywhere else on the session check alone", () => {
+    expect(awaitedTasks("/home")).toEqual(BOOT_TASKS);
+    expect(awaitedTasks(null)).toEqual(BOOT_TASKS);
+    expect(awaitedTasks("/phone")).toEqual(["session"]);
+    expect(awaitedTasks("/rider")).toEqual(RIDER_TASKS);
   });
 
-  it("waits for step 2 (the board's first reads), then cuts after its tick is seen", () => {
-    const times = stepTimes([0, 5000], shownSteps("/rider"));
+  it("lists only the unfinished tasks — what a retry resumes", () => {
+    expect(pendingTasks(at(0, 400, null), "/home")).toEqual(["home"]);
+    expect(pendingTasks(at(0, null, null), "/home")).toEqual(["profile", "home"]);
+    expect(pendingTasks(at(0, null, null), "/phone")).toEqual([]);
+    expect(pendingTasks(at(null, null, null), null)).toEqual(["session", "profile", "home"]);
+  });
+});
+
+describe("the rider boot keeps its steps card (First Run v2 H1, ledger D-81 §2 #2)", () => {
+  it("is the rider board only: a push-tap into a rider job hands off after the session", () => {
+    expect(isRiderBoot("/rider")).toBe(true);
+    expect(isRiderBoot("/rider/job")).toBe(false);
+    expect(isRiderBoot("/home")).toBe(false);
+    expect(isRiderBoot(null)).toBe(false);
+  });
+
+  it("runs its two steps in order from the end of the intro, each active for at least the minimum", () => {
+    const times = riderStepTimes(at(0, null, null, 5000));
     expect(times.activeAt).toEqual([INTRO_MS, INTRO_MS + STEP_MIN_ACTIVE_MS]);
-    expect(splashDoneAt(times, "/rider")).toBe(5000 + CUT_AFTER_TICK_MS);
-    expect(splashDoneAt(stepTimes([0, null], 2), "/rider")).toBeNull();
+    expect(times.doneAt).toEqual([INTRO_MS + STEP_MIN_ACTIVE_MS, 5000]);
+    expect(stepStates(times, 1000)).toEqual(["pending", "pending"]);
+    expect(stepStates(times, INTRO_MS)).toEqual(["active", "pending"]);
+    expect(stepStates(times, 2000)).toEqual(["done", "active"]);
+    expect(stepStates(times, 5000)).toEqual(["done", "done"]);
+    expect(nextStepChange(times, 2000)).toBe(5000);
+    expect(nextStepChange(times, 5000)).toBeNull();
+  });
+
+  it("waits for step 2 (the board's first reads), then cuts once its tick has been seen", () => {
+    expect(splashDoneAt(at(0, null, null, 5000), "/rider")).toBe(5000 + CUT_AFTER_TICK_MS);
+    expect(splashDoneAt(at(0, null, null, null), "/rider")).toBeNull();
+    // A board that was ready at once still shows both ticks.
+    expect(splashDoneAt(at(0, null, null, 0), "/rider")).toBe(INTRO_MS + 2 * STEP_MIN_ACTIVE_MS + CUT_AFTER_TICK_MS);
+  });
+
+  it("a retry resumes only the rider's unfinished task", () => {
+    expect(pendingTasks(at(0, null, null, null), "/rider")).toEqual(["rider"]);
+    expect(pendingTasks(at(null, null, null, null), "/rider")).toEqual(["session", "rider"]);
   });
 });

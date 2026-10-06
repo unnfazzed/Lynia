@@ -24,7 +24,7 @@ jest.mock("expo-image-picker", () => ({
 
 import { bikeDocsProgress, bikeVerified, maskNationalId, normalizePlate, parseRiderPhotoDraft, pickRiderPhoto, plateIsValid, plateMatchesFormat, saveRiderPhoto } from "../rider-documents";
 
-describe("First Run v2 E1/E4/E6 rules (D-80)", () => {
+describe("First Run v2 E1/E4/E6 rules (D-81)", () => {
   it("E4: plates look like ABC 1234 (an optional space), after normalising", () => {
     for (const ok of ["ABZ 4417", "abz4417", "  abz   4417 "]) expect(plateMatchesFormat(ok)).toBe(true);
     for (const bad of ["AB 44", "ABZ 441", "ABZ4417X", "1234 ABZ", ""]) expect(plateMatchesFormat(bad)).toBe(false);

@@ -1,5 +1,7 @@
 # Handoff: LyniaGo Splash — "1a Sun & orbit"
 
+> **Update 2026-10-06:** the steps card was removed from the UI. Boot logic is unchanged. See `CHANGE-2026-10-06.md`, which also has the Claude Code prompt. That file overrides the steps-card details below.
+
 ## Overview
 This is the cold-start splash for the LyniaGo customer app. It plays a short brand moment, then stays up with a live loading state until the session check and app bootstrap finish. Once they do, it hands off straight to Home. It replaces the current "dove lift-in" splash (journey map node 0·1).
 

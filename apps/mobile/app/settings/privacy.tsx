@@ -71,7 +71,7 @@ export default function PrivacyScreen(): React.ReactElement {
   // Known to be signed out: no provider means the state is unknown (a bare render), not signed out.
   const signedOut = auth !== null && !auth.loading && auth.session === null;
   return (
-    // First Run v2 Settings look (D-80 §2 #1): the round back header + large title; the content is unchanged.
+    // First Run v2 Settings look (D-81 §2 #1): the round back header + large title; the content is unchanged.
     <FirstRunScreen
       header={
         <>

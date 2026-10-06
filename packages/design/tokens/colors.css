@@ -35,7 +35,7 @@
   --danger: #c0392b;      /* errors, destructive */
   --danger-wash: #faedeb; /* soft red wash — negative-balance hero, below-floor chip (never red text on white) */
   --danger-ink: #8f2418;  /* darker danger text on --danger-wash (≈6:1) — owed labels, gate reason */
-  --danger-sun: #f4d9d5;  /* the decor sun on a danger hero panel (First Run v2, ledger D-80) — decor only, never text */
+  --danger-sun: #f4d9d5;  /* the decor sun on a danger hero panel (First Run v2, ledger D-81) — decor only, never text */
   --success: #00b14f;     /* confirmation fills (== accent); use --accent-text for success TEXT */
   --on-accent: #ffffff;   /* text/icons on an accent (or danger) fill — the one inverse */
 

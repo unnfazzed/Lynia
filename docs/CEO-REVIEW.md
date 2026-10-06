@@ -256,7 +256,7 @@ the lifecycle, decide revenue, run T0, then pick the surface. → all three acti
 
 > The product/economics lens of the three-lens ship-stage triage (the engineering and design lenses live in
 > `docs/ENG-REVIEW.md` §Ship and `docs/DESIGN-REVIEW.md` §Ship). Posture: triage the post-launch follow-up
-> tasks before execution. The API is live on GCP at `https://lyniago.lyniafinance.com`.
+> tasks before execution. The API is live on GCP at `https://api.lyniago.com`.
 
 | Task | CEO / product verdict | Decision |
 |------|-----------------------|----------|

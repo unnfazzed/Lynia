@@ -9,7 +9,7 @@ import { PC } from "../src/ui/firstrun/copy";
 
 /**
  * PC8's second sample, with a 6-digit code shown 3+3 like every real code (D-59). The handoff draws "4821";
- * owner-approved copy exception 2026-10-06 (D-80 §4) — the designer is asked to redraw it. `copy.ts` stays verbatim.
+ * owner-approved copy exception 2026-10-06 (D-81 §4) — the designer is asked to redraw it. `copy.ts` stays verbatim.
  */
 const EX2_BODY = PC.ex2B.replace("4821", "482 193");
 
@@ -20,7 +20,7 @@ function safeNext(raw: string | string[] | undefined): string | null {
 }
 
 /**
- * First Run v2 PC8–PC10 — customer order updates (handoff `first-run-v2` README §2A, ledger D-80).
+ * First Run v2 PC8–PC10 — customer order updates (handoff `first-run-v2` README §2A, ledger D-81).
  *
  *   PC8  the explainer, right after an order is placed: the "Order placed" pill, a mint hero with three
  *        stacked sample notifications, "Know when it's at the gate", "Turn on updates" (→ the Android
@@ -28,7 +28,7 @@ function safeNext(raw: string | string[] | undefined): string | null {
  *   PC10 declined: a neutral bell-off hero, "Updates are off", "Back to my order".
  *
  * Reached only from a just-placed order (`next=/order/<id>`, src/push/ask-in-context.ts); each visit counts
- * toward the 3-per-install cap. Settings' "Turn on" (PC11) asks directly, without this screen (owner, D-80 §4).
+ * toward the 3-per-install cap. Settings' "Turn on" (PC11) asks directly, without this screen (owner, D-81 §4).
  */
 export default function OrderUpdatesScreen(): React.ReactElement {
   const router = useRouter();

@@ -62,7 +62,7 @@ export const HELP_WHATSAPP_URL = "https://wa.me/263778831938";
  * channel that actually answers. Replace with the registered DPO contact once one is designated.
  *
  * On the lyniago.com brand domain by owner decision (2026-09-28): every public contact address is
- * hello@lyniago.com, replacing support@lyniafinance.com.
+ * hello@lyniago.com, replacing the old support address.
  */
 export const LEGAL_CONTACT_EMAIL = "hello@lyniago.com";
 

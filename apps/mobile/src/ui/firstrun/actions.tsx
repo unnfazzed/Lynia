@@ -8,7 +8,7 @@ import { em, useFirstRunMetrics } from "./metrics";
 
 /**
  * First Run v2 actions and chrome (README §1, `fr-kit.js` `.ft` `.cta` `.lk` `.ex` `.pill.b` `.tg` `.top`
- * `.big`, ledger D-80). Targets come from the tokens (`touchTargetPrimary` 52, `touchTargetMin` 44).
+ * `.big`, ledger D-81). Targets come from the tokens (`touchTargetPrimary` 52, `touchTargetMin` 44).
  */
 
 export interface FrAction {
@@ -178,7 +178,7 @@ export function FrSoftPill({ label, onPress, icon, disabled, testID, tone = "min
 
 /**
  * `.tg` — the 44×26 toggle (brand on / `line` off, 20 white knob). It only DRAWS a state: a permission
- * toggle mirrors the OS permission, and its `onPress` requests it or opens phone settings (D-80 §2 #1 —
+ * toggle mirrors the OS permission, and its `onPress` requests it or opens phone settings (D-81 §2 #1 —
  * the app cannot switch a permission off). The 26 track gets a 9 vertical hit slop to reach 44.
  */
 export function Toggle({ value, onPress, disabled, accessibilityLabel, testID }: { value: boolean; onPress?: () => void; disabled?: boolean; accessibilityLabel: string; testID?: string }): React.ReactElement {
@@ -199,7 +199,7 @@ export function Toggle({ value, onPress, disabled, accessibilityLabel, testID }:
 }
 
 /**
- * `.top` — the back header (Settings and its sub-pages, D-80 §2 #1): 56 tall right under the status bar,
+ * `.top` — the back header (Settings and its sub-pages, D-81 §2 #1): 56 tall right under the status bar,
  * padding 0 12, a 44 round `surface` back button with a 24 chevron. The large title sits below it
  * (`LargeTitle`). `title` is the optional small 17 title beside the button (`.top b`).
  */

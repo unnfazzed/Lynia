@@ -8,7 +8,7 @@ import { ListCard, ListRow } from "./lists";
 
 /**
  * Step markers, the phone-settings steps and the KYC checklist (README §1 "Step markers", `fr-kit.js`
- * `.stp` / `steps()` / `kyc()`, ledger D-80). Markers are 28: done = brand fill + white 16 check; open =
+ * `.stp` / `steps()` / `kyc()`, ledger D-81). Markers are 28: done = brand fill + white 16 check; open =
  * a 1.5 `line` ring with a 13/700 numeral; next = the same ring in brand green; active = a 3 mint ring
  * with a brand top arc, spinning at 1s linear.
  */

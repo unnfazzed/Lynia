@@ -24,7 +24,7 @@ type Shell = {
   /** Tab roots register their scroll-to-top by tab id; a re-tap on the active tab calls it. */
   register: (id: string, fn: ScrollTop) => () => void;
   reselect: (id: string) => void;
-  /** A tab root asks for the bar to go (+1) or come back (−1) — First Run v2 F pages (D-80 §2 #3). */
+  /** A tab root asks for the bar to go (+1) or come back (−1) — First Run v2 F pages (D-81 §2 #3). */
   hide: (delta: 1 | -1) => void;
   /** True while any tab root holds the bar hidden. */
   barHidden: boolean;
@@ -69,7 +69,7 @@ export function TabBarSpaceProvider({ children }: { children: React.ReactNode })
 
 /**
  * Hide the floating bar while `hidden` is true and the caller is mounted — a tab root that draws a
- * full-screen page in the tab's place (First Run v2 F1–F8: "no tab bar", ledger D-80 §2 #3). The bar comes
+ * full-screen page in the tab's place (First Run v2 F1–F8: "no tab bar", ledger D-81 §2 #3). The bar comes
  * back when `hidden` turns false or the screen unmounts. A no-op outside a tab shell.
  */
 export function useHideTabBar(hidden: boolean): void {

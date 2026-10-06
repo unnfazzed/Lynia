@@ -1,5 +1,5 @@
 /**
- * First Run v2 permission state (ledger D-80, handoff `first-run-v2` README §3–§4): the pure classifiers,
+ * First Run v2 permission state (ledger D-81, handoff `first-run-v2` README §3–§4): the pure classifiers,
  * the per-install flags, the PC8 gate and the rider-flow step logic.
  */
 const mockStore: Record<string, string> = {};
@@ -144,7 +144,7 @@ describe("rider flow steps (README §2B)", () => {
   });
 });
 
-describe("startRiderPermFlow (owner decision D-80 §2 #5)", () => {
+describe("startRiderPermFlow (owner decision D-81 §2 #5)", () => {
   it("everything granted → online straight away, no flow", async () => {
     mockNotif = { status: "granted", granted: true };
     const push = jest.fn();

@@ -31,7 +31,7 @@ for you, labels leaf/intermediate/root, and prints each `sha256/…=` pin ready 
 machine with **direct** network egress (not through an HTTP proxy):
 
 ```sh
-./apps/mobile/scripts/compute-tls-pins.sh lyniago.lyniafinance.com:443
+./apps/mobile/scripts/compute-tls-pins.sh api.lyniago.com:443
 ```
 
 Then pick the **intermediate** (primary) and **root** (backup) lines it emits — never the leaf.
@@ -42,7 +42,7 @@ Get the base64 SHA-256 of the **Subject Public Key Info** for the intermediate a
 chain (not the leaf):
 
 ```sh
-HOST=lyniago.lyniafinance.com
+HOST=api.lyniago.com
 
 # Dump the full chain the server presents.
 openssl s_client -connect "$HOST:443" -servername "$HOST" -showcerts </dev/null 2>/dev/null > chain.pem

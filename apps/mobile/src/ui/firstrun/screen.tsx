@@ -11,7 +11,7 @@ import { useFirstRunMetrics } from "./metrics";
 const HEADER_BODY_GAP = 24;
 
 /**
- * The First Run v2 page shell (README §1 "The shell", ledger D-80): white; the content starts 12 below
+ * The First Run v2 page shell (README §1 "The shell", ledger D-81): white; the content starts 12 below
  * the status bar (6 at 320) with the 16 gutter and scrolls; the footer (`PinnedFooter`) is pinned below
  * it, so nothing hides under the CTA at 320×640 or font scale 1.3. `header` sits above the scroll
  * (`BackHeader` + `LargeTitle` on Settings sub-pages — then the body starts 36 below it). `overlay` is drawn

@@ -2,7 +2,7 @@ import type { Query, QueryClient } from "@tanstack/react-query";
 import { reportBootReady } from "./boot-readiness";
 
 /**
- * The rider splash's step 2, "Getting jobs near you" (First Run v2 H1, ledger D-80 §2 #2). The splash
+ * The rider splash's step 2, "Getting jobs near you" (First Run v2 H1, ledger D-81 §2 #2). The splash
  * holds the navigator off-screen while the rider board mounts underneath it, so the honest signal is the
  * board's own first reads: `["me"]` (who the rider is, KYC state) and `["activeJob"]` (a job in hand).
  * Read off the shared query cache, so the board needs no splash wiring of its own.

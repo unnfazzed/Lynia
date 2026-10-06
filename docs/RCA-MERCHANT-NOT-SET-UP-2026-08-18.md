@@ -1,7 +1,7 @@
 # RCA — "This number isn't set up as a merchant yet" (0778831938), 2026-08-18
 
 **Reported by the owner**, signed in on the merchant tablet
-(`lyniagomerchant.lyniafinance.com`) with **0778831938**. Sign-in succeeds, the shell renders
+(`merchant.lyniago.com`) with **0778831938**. Sign-in succeeds, the shell renders
 (header "Connected", the Orders/Menu/Shop/Hours/Statement tab bar), and the queue card reads
 *"This number isn't set up as a merchant yet — This phone signs in fine, but it isn't linked to a
 kitchen. Contact LyniaGo support to get your restaurant set up before using this tablet."* with a

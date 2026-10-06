@@ -65,7 +65,7 @@ const ReasonOptional = z.object({
   reason: z.string().max(160).nullish(),
   note: z.string().max(2000).nullish(),
 });
-// First Run v2 E4 (D-80): the plate ops checked, in the stored form (upper-case, single spaces).
+// First Run v2 E4 (D-81): the plate ops checked, in the stored form (upper-case, single spaces).
 const PlateVerify = z.object({
   plate: z
     .string()
@@ -153,7 +153,7 @@ export class AdminController {
   }
 
   /** Rider roster / KYC review queue. `?kyc=pending|verified|failed` filters; unknown values are ignored.
-   *  First Run v2 E4 (D-80): `?plate=checking` is the plate review queue (also none|verified). */
+   *  First Run v2 E4 (D-81): `?plate=checking` is the plate review queue (also none|verified). */
   @Get("riders")
   riders(@Query("kyc") kyc?: string, @Query("plate") plate?: string) {
     const filter = kyc && KYC_VALUES.includes(kyc) ? (kyc as KycStatus) : undefined;
@@ -313,7 +313,7 @@ export class AdminController {
     return this.ridersService.clearHold(actor, id, body);
   }
 
-  /** First Run v2 E4 (D-80): confirm the bike plate a rider saved (plate_status checking → verified).
+  /** First Run v2 E4 (D-81): confirm the bike plate a rider saved (plate_status checking → verified).
    *  `plate` is the plate ops looked at; if the rider changed it since, 409. */
   @Post("riders/:id/plate-verify")
   verifyPlate(

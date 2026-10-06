@@ -14,8 +14,8 @@ set -uo pipefail
 PROJECT="${1:-lynia-500911}"
 REGION="${2:-africa-south1}"
 SCHEDULER_REGION="europe-west1" # africa-south1 has no Cloud Scheduler
-API_DOMAIN="lyniago.lyniafinance.com"
-STAGING_DOMAIN="staging.lyniafinance.com"
+API_DOMAIN="api.lyniago.com"
+STAGING_DOMAIN="${STAGING_DOMAIN:-}" # no staging host exists today; pass one to check it
 
 PASS=0 FAIL=0 WARN=0
 ok()   { PASS=$((PASS+1)); printf '  \033[32mPASS\033[0m %s\n' "$1"; }
@@ -147,10 +147,12 @@ if command -v curl >/dev/null; then
   grep -q '"status":"ok"' <<<"$BODY" \
     && ok "live /healthz: $BODY" \
     || bad "live /healthz unreachable or degraded: ${BODY:-<no response>}" "check LB + serving revision"
-  SBODY="$(curl -fsS --max-time 10 "https://$STAGING_DOMAIN/healthz" 2>/dev/null)"
-  grep -q '"status":"ok"' <<<"$SBODY" \
-    && ok "staging /healthz: $SBODY" \
-    || warn "staging /healthz unreachable: ${SBODY:-<no response>}" "check staging DNS/cert (staging.tf)"
+  if [ -n "$STAGING_DOMAIN" ]; then
+    SBODY="$(curl -fsS --max-time 10 "https://$STAGING_DOMAIN/healthz" 2>/dev/null)"
+    grep -q '"status":"ok"' <<<"$SBODY" \
+      && ok "staging /healthz: $SBODY" \
+      || warn "staging /healthz unreachable: ${SBODY:-<no response>}" "check staging DNS/cert (staging.tf)"
+  fi
 fi
 
 hdr "Cloud Scheduler (retention purge — runbook §2, NOT in Terraform)"

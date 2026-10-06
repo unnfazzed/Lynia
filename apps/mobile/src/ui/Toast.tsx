@@ -17,7 +17,7 @@ import { useReduceMotion } from "./useReduceMotion";
  * it's for in-app moments. Each toast auto-dismisses; a new one replaces the visible one (we show a
  * single strip, newest wins) so a burst can't stack into a wall. Announced to screen readers.
  *
- * LOOK (ledger D-80 §2 #4, owner 2026-10-06): the First Run v2 bottom toast, app-wide — a `forest` bar,
+ * LOOK (ledger D-81 §2 #4, owner 2026-10-06): the First Run v2 bottom toast, app-wide — a `forest` bar,
  * radius 14, padding 14 16, white Inter 600 14 with a 20 brand check, sitting 96 above the bottom (plus
  * the safe-area inset), gone after 2.5s. It replaced the white top strip. The API is unchanged, so
  * every `useToast().show(text, tone)` / `useActionError()` caller keeps working: `success` and `info`
@@ -32,7 +32,7 @@ export interface ToastMessage {
   tone: ToastTone;
 }
 
-/** How long a toast stays before auto-dismissing (the First Run v2 toast's 2.5s, D-80 §2 #4). */
+/** How long a toast stays before auto-dismissing (the First Run v2 toast's 2.5s, D-81 §2 #4). */
 export const TOAST_DURATION_MS = 2500;
 
 /**

@@ -105,7 +105,7 @@ describe("RiderProfileService.updateProfile (D-79)", () => {
     expect(RESERVED_AUDIT_ACTIONS.has("rider.plate_verify")).toBe(true);
   });
 
-  it("First Run v2 E4 (D-80): a verified plate that changes goes back to 'checking'; a photo-only change leaves it", async () => {
+  it("First Run v2 E4 (D-81): a verified plate that changes goes back to 'checking'; a photo-only change leaves it", async () => {
     const changed = build({ photoUrl: null, bikeReg: "AEE 4471", plateStatus: "verified" });
     expect((await changed.svc.updateProfile("r1", { bikeReg: "AFG 2231" })).plateStatus).toBe("checking");
     expect(changed.updates).toEqual([{ bikeReg: "AFG 2231", plateStatus: "checking" }]);

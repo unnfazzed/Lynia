@@ -1,20 +1,19 @@
+import type { BootSignal } from "../boot-readiness";
+
 /**
- * The splash's timing rules (`packages/design/handoff/splash-v1/README.md` § Interactions & behaviour),
- * as pure functions so the "how long is the splash up" contract is unit-tested without a device.
+ * The splash's timing rules (`packages/design/handoff/splash-v1/README.md` § Interactions & behaviour,
+ * as changed by `CHANGE-2026-10-06.md`), as pure functions so the "how long is the splash up" contract
+ * is unit-tested without a device.
  *
- * The splash stays up for exactly as long as the boot takes, bounded below by the handoff's two
- * minimums so a fast boot still reads:
- *  - the brand intro plays for {@link INTRO_MS} before loading starts;
- *  - each step spends at least {@link STEP_MIN_ACTIVE_MS} in the active state, so ticks don't flicker.
- * Steps run in order: step N goes active when step N-1 is done, and is done at the later of
- * (active + minimum) and the moment its real task resolved. A task that resolved early (Home's data
- * is often in cache) simply ticks after its minimum.
+ * The splash stays up for exactly as long as the boot takes, and never shorter than the brand intro
+ * ({@link INTRO_MS}). The three boot tasks (src/boot/boot-readiness.ts) run in parallel. Since the
+ * 2026-10-06 change the customer's splash has no steps card, so nothing on screen ticks per task and
+ * there is no per-task minimum: the splash is done the moment the last task it waits for is in, or when
+ * the intro ends, whichever is later. The rider board's boot keeps its card (see {@link isRiderBoot}).
  */
 
 /** `boot` phase length — the intro timeline ends and the `loading` phase begins. */
 export const INTRO_MS = 1300;
-/** Minimum time each step spends active. */
-export const STEP_MIN_ACTIVE_MS = 400;
 /** The slow pill drops in this long into `loading` if the splash is still up. */
 export const SLOW_AFTER_MS = 4000;
 /**
@@ -24,12 +23,6 @@ export const SLOW_AFTER_MS = 4000;
  * handoff (which keeps loading with the slow pill); it only ever fires on a hung request.
  */
 export const GIVE_UP_MS = 20_000;
-/**
- * A non-Home boot ends after step 1 (handoff: "route to onboarding/login after step 1"). The cut waits
- * this long past step 1's tick so the tick is actually SEEN — it pops in over 300ms (§ Steps card);
- * cutting in the same render as the tick showed a step that never visibly completed.
- */
-export const CUT_AFTER_TICK_MS = 300;
 
 /** Exit (`done`) timings, from the moment the splash is done. */
 export const EXIT = {
@@ -44,6 +37,66 @@ export const EXIT = {
   fadeMs: 200,
 } as const;
 
+/** The three boot tasks, in the handoff's order: the session check, saved places, then Home's content. */
+export const BOOT_TASKS: readonly BootSignal[] = ["session", "profile", "home"];
+/**
+ * The rider board's boot (First Run v2 H1, ledger D-81 §2 #2). It keeps its steps card, because
+ * CHANGE-2026-10-06 removed only the customer's ("Don't change Home or the rider splash"). Step 1 is the
+ * session, and step 2 ("Getting jobs near you") is the board's first reads (src/boot/rider-board-ready.ts).
+ */
+export const RIDER_DESTINATION = "/rider";
+export const RIDER_TASKS: readonly BootSignal[] = ["session", "rider"];
+
+/** A boot into the rider board. A push-tap deep link into a rider job is not one: it hands off after the session. */
+export function isRiderBoot(destination: string | null): boolean {
+  return destination === RIDER_DESTINATION;
+}
+
+/** When each task resolved (ms since launch), or null while it is still running. */
+export type TaskTimes = Readonly<Record<BootSignal, number | null>>;
+
+/**
+ * The tasks a boot to `destination` waits for. Home (and a boot whose destination isn't known yet)
+ * waits for all three, and the rider board for its two ({@link RIDER_TASKS}). Anywhere else (onboarding,
+ * sign-in, a push-tap deep link) waits for the session check alone (handoff: "if there's no valid session, still route to onboarding/login
+ * once the session check finishes").
+ */
+export function awaitedTasks(destination: string | null): readonly BootSignal[] {
+  if (destination == null || destination === "/home") return BOOT_TASKS;
+  return isRiderBoot(destination) ? RIDER_TASKS : ["session"];
+}
+
+/**
+ * The awaited tasks that haven't finished. This is the splash's task status: "Try again" resumes only
+ * these, because a finished task is stamped once and never runs again (boot-readiness is one-way).
+ */
+export function pendingTasks(times: TaskTimes, destination: string | null): BootSignal[] {
+  return awaitedTasks(destination).filter((task) => times[task] == null);
+}
+
+/**
+ * When the splash is done (ms since launch): every awaited task is in and the intro has played. Null
+ * while one is still running. A rider boot is done once its card's last tick has been seen
+ * ({@link CUT_AFTER_TICK_MS}), so it never cuts on a step that didn't visibly complete.
+ */
+export function splashDoneAt(times: TaskTimes, destination: string | null): number | null {
+  if (pendingTasks(times, destination).length) return null;
+  if (isRiderBoot(destination)) {
+    const last = riderStepTimes(times).doneAt[RIDER_TASKS.length - 1];
+    return last == null ? null : last + CUT_AFTER_TICK_MS;
+  }
+  return Math.max(INTRO_MS, ...awaitedTasks(destination).map((task) => times[task] ?? 0));
+}
+
+// ── The rider's steps card (First Run v2 H1, D-81 §2 #2) ──
+// The card is splash-v1's old steps card with the rider's two rows. It keeps splash-v1's per-step rules:
+// the per-step minimum (so a tick doesn't flicker) and the wait for the last tick before the cut.
+
+/** Minimum time each rider step spends active. */
+export const STEP_MIN_ACTIVE_MS = 400;
+/** The cut waits this long past the last tick so the tick (a 300ms pop) is actually seen. */
+export const CUT_AFTER_TICK_MS = 300;
+
 export type StepState = "pending" | "active" | "done";
 
 export interface StepTimes {
@@ -54,22 +107,27 @@ export interface StepTimes {
 }
 
 /**
- * Lay the steps out on the launch clock. `readyAt[i]` is when step i's real task resolved (ms since
- * launch), or null if it hasn't. Only the first `shown` steps ever run: the rest stay pending (a
- * non-Home boot shows step 1 only, so step 2 must not flash "active" as step 1 completes).
+ * Lay steps out on the launch clock. `readyAt[i]` is when step i's task resolved (ms since launch), or
+ * null. Steps run in order from the end of the intro: step N goes active when step N-1 is done, and is
+ * done at the later of (active + {@link STEP_MIN_ACTIVE_MS}) and the moment its task resolved.
  */
-export function stepTimes(readyAt: readonly (number | null)[], shown: number = readyAt.length): StepTimes {
+export function stepTimes(readyAt: readonly (number | null)[]): StepTimes {
   const activeAt: (number | null)[] = [];
   const doneAt: (number | null)[] = [];
   let prevDone: number | null = INTRO_MS;
-  for (const [i, ready] of readyAt.entries()) {
-    const active: number | null = i < shown ? prevDone : null;
+  for (const ready of readyAt) {
+    const active: number | null = prevDone;
     const done: number | null = active == null || ready == null ? null : Math.max(active + STEP_MIN_ACTIVE_MS, ready);
     activeAt.push(active);
     doneAt.push(done);
     prevDone = done;
   }
   return { activeAt, doneAt };
+}
+
+/** The rider's two steps on the launch clock. */
+export function riderStepTimes(times: TaskTimes): StepTimes {
+  return stepTimes(RIDER_TASKS.map((task) => times[task]));
 }
 
 /** Each step's state at `t` (ms since launch). */
@@ -86,35 +144,4 @@ export function stepStates(times: StepTimes, t: number): StepState[] {
 export function nextStepChange(times: StepTimes, t: number): number | null {
   const upcoming = [...times.activeAt, ...times.doneAt].filter((x): x is number => x != null && x > t);
   return upcoming.length ? Math.min(...upcoming) : null;
-}
-
-/** The rider app's board: First Run v2 H1 gives a boot there its own two steps (ledger D-80 §2 #2). */
-export const RIDER_DESTINATION = "/rider";
-
-/** A boot into the rider board (not a push-tap deep link into a rider job: that keeps step 1 only). */
-export function isRiderBoot(destination: string | null): boolean {
-  return destination === RIDER_DESTINATION;
-}
-
-/**
- * How many steps a boot to `destination` shows: all three for Home (and while still undecided), the
- * rider's two for the rider board (First Run v2 H1: "Checking it's you", "Getting jobs near you"), else
- * step 1.
- */
-export function shownSteps(destination: string | null): number {
-  if (destination == null || destination === "/home") return 3;
-  return isRiderBoot(destination) ? 2 : 1;
-}
-
-/**
- * When the splash is done, given where the boot is going. Home waits for all three steps (the
- * handoff's `done`); the rider board for its two, then cuts (no exit into Home). Anywhere else —
- * onboarding, sign-in, a push-tap deep link — "skip the exit and route … after step 1": only the
- * session step is shown. A cut waits for the last tick to be seen ({@link CUT_AFTER_TICK_MS}).
- */
-export function splashDoneAt(times: StepTimes, destination: string | null): number | null {
-  if (destination == null) return null;
-  if (destination === "/home") return times.doneAt[2] ?? null;
-  const last = times.doneAt[isRiderBoot(destination) ? 1 : 0] ?? null;
-  return last == null ? null : last + CUT_AFTER_TICK_MS;
 }

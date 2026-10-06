@@ -317,7 +317,7 @@ export const envSchema = z.object({
     (v) => (v === "" ? undefined : v),
     z.string().max(24).regex(/^\d+(\.\d+)*$/, "must be a dotted version like 0.2.0").default("0.0.0"),
   ),
-  // --- Soft update (First Run v2 U1/U4, ledger D-80 §2 #7) ---
+  // --- Soft update (First Run v2 U1/U4, ledger D-81 §2 #7) ---
   // The version the app NUDGES a build below it towards (the U4a/U4b "A new version is ready" banner,
   // shown once per version, dismissible) — never a block; that is MIN_SUPPORTED_APP_VERSION above.
   // Served only to builds that ask with `?soft=1` (the plain body is strict on installed clients).

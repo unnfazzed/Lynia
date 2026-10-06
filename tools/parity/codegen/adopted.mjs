@@ -584,7 +584,7 @@ export const ADOPTED = [
   },
   {
     // LJ.perm_loc — until 2026-10-06 the first-run permission priming (app/permissions.tsx), a multi-state screen
-    // generated from screens.jsx `PermLoc` / `PermNotif` (permissions-location/-notifications.view.tsx). D-80 made
+    // generated from screens.jsx `PermLoc` / `PermNotif` (permissions-location/-notifications.view.tsx). D-81 made
     // the First Run v2 handoff the authority (customer PC1–PC11 in context, rider P1–P16 from R3), so both views
     // were deleted and both states are SUPERSEDED deferrals. app/permissions.tsx is now the rider flow.
     key: "LJ.perm_loc",
@@ -597,13 +597,13 @@ export const ADOPTED = [
         state: "location",
         key: "LJ.perm_loc",
         reason:
-          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-80, owner instruction 2026-10-06): the first-run permission priming is retired by the First Run v2 handoff (packages/design/handoff/first-run-v2). A customer is asked for location in context — PC1–PC6, a sheet over Home with a mint hero, a split title, the Android dialog only from its primary button — and a rider walks P1–P13 from R3's 'Go online' (violet heroes, bullets, the drawn foreground-service notification, phone-settings steps). The gallery `PermLoc` draws a bare SystemState; a structural snapshot against it would assert the screen D-80 retired. Re-adoptable when a gallery export draws First Run v2.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-81, owner instruction 2026-10-06): the first-run permission priming is retired by the First Run v2 handoff (packages/design/handoff/first-run-v2). A customer is asked for location in context — PC1–PC6, a sheet over Home with a mint hero, a split title, the Android dialog only from its primary button — and a rider walks P1–P13 from R3's 'Go online' (violet heroes, bullets, the drawn foreground-service notification, phone-settings steps). The gallery `PermLoc` draws a bare SystemState; a structural snapshot against it would assert the screen D-81 retired. Re-adoptable when a gallery export draws First Run v2.",
       },
       {
         state: "notifications",
         key: "LJ.perm_notif",
         reason:
-          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-80, owner instruction 2026-10-06): the first-run notification priming is retired by the First Run v2 handoff (packages/design/handoff/first-run-v2). A customer is asked after an order (PC8: the 'Order placed' pill, three stacked sample notifications, 'Know when it’s at the gate'; PC10 declined) and a rider in the flow's P9 (a mock job offer, 'Play a test ping') with P11/P12 for blocked / muted. The gallery `PermNotif` draws a bare SystemState; a structural snapshot against it would assert the screen D-80 retired. Re-adoptable when a gallery export draws First Run v2.",
+          "SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-81, owner instruction 2026-10-06): the first-run notification priming is retired by the First Run v2 handoff (packages/design/handoff/first-run-v2). A customer is asked after an order (PC8: the 'Order placed' pill, three stacked sample notifications, 'Know when it’s at the gate'; PC10 declined) and a rider in the flow's P9 (a mock job offer, 'Play a test ping') with P11/P12 for blocked / muted. The gallery `PermNotif` draws a bare SystemState; a structural snapshot against it would assert the screen D-81 retired. Re-adoptable when a gallery export draws First Run v2.",
       },
     ],
   },
@@ -647,7 +647,7 @@ export const ADOPTED = [
   },
   {
     // ── CUSTOMER SYSTEM / ERROR / EMPTY STATES CLUSTER ──────────────────────────────────────────────
-    // (LJ.force_update left this registry with docs/DESIGN-DEVIATIONS.md D-80: First Run v2 U1 replaced
+    // (LJ.force_update left this registry with docs/DESIGN-DEVIATIONS.md D-81: First Run v2 U1 replaced
     // the gallery `ForceUpdate` SystemState, and app/force-update.view.tsx was deleted.)
     // LJ.on_hold — the customer account-on-hold wall (app/send.tsx → SendHoldView). DEFER-only: since
     // docs/DESIGN-DEVIATIONS.md D-52 the wall is drawn by the send-compose-v2 handoff (state 17), not by
@@ -829,7 +829,7 @@ export const ADOPTED = [
   // (RJ splash/onboard/login/otp/role_select/perm_loc/perm_notif) is the SHARED customer auth flow — the
   // SAME app screens already adopted/deferred above under the LJ keys (splash is the native expo-splash;
   // onboard→onboarding.tsx and login→phone.tsx are adopted; otp/register/role_select are deferred;
-  // perm_loc/perm_notif are superseded by First Run v2's rider flow P1–P16, ledger D-80, and listed in
+  // perm_loc/perm_notif are superseded by First Run v2's rider flow P1–P16, ledger D-81, and listed in
   // parity-status.mjs), so the shared band is not double-adopted. What is rider-SPECIFIC here — the KYC band and the top-up gate — is folded into
   // two large INTERACTIVE multi-state containers (the RiderHome board and become.tsx), with live-vs-static
   // divergence in sensitive KYC/gate code, and is deferred honestly per state (CLAUDE.md: honesty over

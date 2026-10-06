@@ -14,7 +14,7 @@ import { Body, FirstRunScreen, FrBadge, HeroPanel, InfoBox, PinnedFooter, SplitT
 import { UP } from "../src/ui/firstrun/copy";
 
 /**
- * The hard version gate — First Run v2 U1–U5 (`packages/design/handoff/first-run-v2`, ledger D-80; it
+ * The hard version gate — First Run v2 U1–U5 (`packages/design/handoff/first-run-v2`, ledger D-81; it
  * supersedes `LJ/RJ force_update`). Mounted by the root layout in place of the whole Stack when the
  * installed build is below the build-time or the server minimum, so there is no route past it. It is
  * role-neutral (the role isn't known at the root).

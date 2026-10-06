@@ -242,7 +242,7 @@ const config: ExpoConfig = {
     [
       "expo-location",
       {
-        // First Run v2 `RP.manifestRationale` (ledger D-80), verbatim. NATIVE: the permission rationale is
+        // First Run v2 `RP.manifestRationale` (ledger D-81), verbatim. NATIVE: the permission rationale is
         // baked into the binary — it reaches devices only with the next store build (not OTA-able).
         locationWhenInUsePermission:
           "LyniaGo uses your location to set pickup pins and, for riders, to show nearby jobs and share your position with the customer during their job.",

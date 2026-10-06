@@ -46,7 +46,7 @@ const testPing = (): void => void playTestAlert(R.sAlerts, R.testPing);
 
 /**
  * First Run v2 — the rider permission flow P1–P16 (handoff `first-run-v2` README §2B, BRIEF 1/4–7, ledger
- * D-80). Violet tone, `RP` copy. Replaces the Rider v2-era priming (`RJ`/`LJ perm_loc`, `perm_notif`).
+ * D-81). Violet tone, `RP` copy. Replaces the Rider v2-era priming (`RJ`/`LJ perm_loc`, `perm_notif`).
  *
  *   ?from=flow          R3 "Go online" (owner #5): location (P1 → P2 → P3 + P8 toast, or P4/P5/P6/P7) →
  *                       notifications (P9 → P10 → P13, or P11/P12) → P13 "Go online", which goes online.
@@ -57,7 +57,7 @@ const testPing = (): void => void playTestAlert(R.sAlerts, R.testPing);
  *
  * The Android dialog opens only from a primary button (BRIEF 1). Every "Open phone settings" state re-reads
  * the permission when the rider comes back (BRIEF 7). We never ask for "Allow all the time" (BRIEF 6).
- * A legacy `?next=/rider` (the pre-D-80 sign-in priming) forwards straight to the board.
+ * A legacy `?next=/rider` (the pre-D-81 sign-in priming) forwards straight to the board.
  */
 export default function RiderPermissionsScreen(): React.ReactElement {
   const router = useRouter();

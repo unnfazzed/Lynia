@@ -35,11 +35,11 @@ export const PARITY_STATUS = {
   "LJ.home_flag_off": { status: "PENDING" }, // Home · Food tile soon
   "LJ.perm_loc": {
     status: "PENDING",
-    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-80 (owner, 2026-10-06): First Run v2 (packages/design/handoff/first-run-v2) retires the customer's first-run permission priming. Location is asked in context as a sheet over Home (PC1–PC7: explainer, approximate, denied once, blocked steps, GPS off, granted toast — src/ui/firstrun/CustomerLocationSheet.tsx, useLocationAsk in src/logic/home-location.ts) and notifications after an order (PC8–PC10, app/order-updates.tsx). app/permissions-location.view.tsx and permissions-notifications.view.tsx were deleted. Not aligned to.",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-81 (owner, 2026-10-06): First Run v2 (packages/design/handoff/first-run-v2) retires the customer's first-run permission priming. Location is asked in context as a sheet over Home (PC1–PC7: explainer, approximate, denied once, blocked steps, GPS off, granted toast — src/ui/firstrun/CustomerLocationSheet.tsx, useLocationAsk in src/logic/home-location.ts) and notifications after an order (PC8–PC10, app/order-updates.tsx). app/permissions-location.view.tsx and permissions-notifications.view.tsx were deleted. Not aligned to.",
   }, // Permission · location
   "LJ.perm_notif": {
     status: "PENDING",
-    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-80 (owner, 2026-10-06): First Run v2 (packages/design/handoff/first-run-v2) retires the customer's first-run permission priming. Location is asked in context as a sheet over Home (PC1–PC7: explainer, approximate, denied once, blocked steps, GPS off, granted toast — src/ui/firstrun/CustomerLocationSheet.tsx, useLocationAsk in src/logic/home-location.ts) and notifications after an order (PC8–PC10, app/order-updates.tsx). app/permissions-location.view.tsx and permissions-notifications.view.tsx were deleted. Not aligned to.",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-81 (owner, 2026-10-06): First Run v2 (packages/design/handoff/first-run-v2) retires the customer's first-run permission priming. Location is asked in context as a sheet over Home (PC1–PC7: explainer, approximate, denied once, blocked steps, GPS off, granted toast — src/ui/firstrun/CustomerLocationSheet.tsx, useLocationAsk in src/logic/home-location.ts) and notifications after an order (PC8–PC10, app/order-updates.tsx). app/permissions-location.view.tsx and permissions-notifications.view.tsx were deleted. Not aligned to.",
   }, // Permission · notifications
   "LJ.notifications": {
     status: "PENDING",
@@ -51,7 +51,7 @@ export const PARITY_STATUS = {
   }, // Notifications · empty
   "LJ.splash": {
     status: "PENDING",
-    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-64 (owner, 2026-10-02): the splash-v1 handoff (packages/design/handoff/splash-v1, '1a Sun & orbit') replaces the static green dove splash with an animated sun-and-orbit splash and a live steps card that stays up until the boot is ready (src/boot/splash/BootSplash.tsx). app/splash.view.tsx was deleted. Not aligned to.",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-64 (owner, 2026-10-02): the splash-v1 handoff (packages/design/handoff/splash-v1, '1a Sun & orbit') replaces the static green dove splash with an animated sun-and-orbit splash that stays up until the boot is ready (src/boot/splash/BootSplash.tsx; its steps card was removed by the 2026-10-06 change). app/splash.view.tsx was deleted. Not aligned to.",
   }, // Splash
   "LJ.role_select": {
     status: "PENDING",
@@ -222,7 +222,7 @@ export const PARITY_STATUS = {
   // ── RJ ──────────────────────────────────────────────────────────
   "RJ.splash": {
     status: "PENDING",
-    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-64 (owner, 2026-10-02): the splash-v1 handoff (packages/design/handoff/splash-v1, '1a Sun & orbit') replaces the static green dove splash with an animated sun-and-orbit splash and a live steps card that stays up until the boot is ready (src/boot/splash/BootSplash.tsx). app/splash.view.tsx was deleted. Not aligned to.",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-64 (owner, 2026-10-02): the splash-v1 handoff (packages/design/handoff/splash-v1, '1a Sun & orbit') replaces the static green dove splash with an animated sun-and-orbit splash that stays up until the boot is ready (src/boot/splash/BootSplash.tsx; its steps card was removed by the 2026-10-06 change). app/splash.view.tsx was deleted. Not aligned to.",
   }, // Splash
   "RJ.onboard": { status: "PENDING" }, // Onboarding · rider
   "RJ.login": { status: "PENDING" }, // Phone sign-in
@@ -230,11 +230,11 @@ export const PARITY_STATUS = {
   "RJ.role_select": { status: "PENDING" }, // Choose your role
   "RJ.perm_loc": {
     status: "PENDING",
-    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-80 (owner, 2026-10-06): First Run v2 (packages/design/handoff/first-run-v2) replaces the rider's permission priming with the rider flow P1–P16 (app/permissions.tsx, violet tone): it starts from R3's 'Go online' (owner decision D-80 §2 #5), not after sign-in — location (P1, P3 + P8 toast, P4–P7), notifications (P9, P11, P12), P13 'Go online'; skipped steps resurface on the board as J8 / G8 (P14). Not aligned to.",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-81 (owner, 2026-10-06): First Run v2 (packages/design/handoff/first-run-v2) replaces the rider's permission priming with the rider flow P1–P16 (app/permissions.tsx, violet tone): it starts from R3's 'Go online' (owner decision D-81 §2 #5), not after sign-in — location (P1, P3 + P8 toast, P4–P7), notifications (P9, P11, P12), P13 'Go online'; skipped steps resurface on the board as J8 / G8 (P14). Not aligned to.",
   }, // Permission · location
   "RJ.perm_notif": {
     status: "PENDING",
-    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-80 (owner, 2026-10-06): First Run v2 (packages/design/handoff/first-run-v2) replaces the rider's permission priming with the rider flow P1–P16 (app/permissions.tsx, violet tone): it starts from R3's 'Go online' (owner decision D-80 §2 #5), not after sign-in — location (P1, P3 + P8 toast, P4–P7), notifications (P9, P11, P12), P13 'Go online'; skipped steps resurface on the board as J8 / G8 (P14). Not aligned to.",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-81 (owner, 2026-10-06): First Run v2 (packages/design/handoff/first-run-v2) replaces the rider's permission priming with the rider flow P1–P16 (app/permissions.tsx, violet tone): it starts from R3's 'Go online' (owner decision D-81 §2 #5), not after sign-in — location (P1, P3 + P8 toast, P4–P7), notifications (P9, P11, P12), P13 'Go online'; skipped steps resurface on the board as J8 / G8 (P14). Not aligned to.",
   }, // Permission · notifications
   "RJ.kyc_form": { status: "PENDING" }, // KYC form + consent
   "RJ.photo_capture": {
@@ -248,17 +248,17 @@ export const PARITY_STATUS = {
   "RJ.photo_uploading": { status: "PENDING" }, // Rider photo · uploading
   "RJ.kyc_pending": {
     status: "PENDING",
-    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-80 (owner, 2026-10-06): the First Run v2 handoff (packages/design/handoff/first-run-v2, F1–F8) draws every ID-check outcome in one full-screen shell on the rider board (app/rider/(tabs)/index.tsx, src/ui/firstrun/IdCheckOutcome.tsx) — this one is F1 (manual review), F2 (held) and F8 (just sent); the automated check keeps Calm Mint v2 R2. Not aligned to.",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-81 (owner, 2026-10-06): the First Run v2 handoff (packages/design/handoff/first-run-v2, F1–F8) draws every ID-check outcome in one full-screen shell on the rider board (app/rider/(tabs)/index.tsx, src/ui/firstrun/IdCheckOutcome.tsx) — this one is F1 (manual review), F2 (held) and F8 (just sent); the automated check keeps Calm Mint v2 R2. Not aligned to.",
   }, // Verification pending
   // The two new pending states (P0-1). Adopted into the kit here; the app side is PR 3 of
   // docs/plans/2026-08-20-navigation-fix-forward.md, which wires all three through resolveKycGate.
   "RJ.kyc_unfinished": {
     status: "PENDING",
-    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-80 (owner, 2026-10-06): the First Run v2 handoff (packages/design/handoff/first-run-v2, F1–F8) draws every ID-check outcome in one full-screen shell on the rider board (app/rider/(tabs)/index.tsx, src/ui/firstrun/IdCheckOutcome.tsx) — this one is F3 ‘Almost there, {firstName}’. Not aligned to.",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-81 (owner, 2026-10-06): the First Run v2 handoff (packages/design/handoff/first-run-v2, F1–F8) draws every ID-check outcome in one full-screen shell on the rider board (app/rider/(tabs)/index.tsx, src/ui/firstrun/IdCheckOutcome.tsx) — this one is F3 ‘Almost there, {firstName}’. Not aligned to.",
   }, // Verification not finished — resume, don't restart
   "RJ.kyc_cant_start": {
     status: "PENDING",
-    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-80 (owner, 2026-10-06): the First Run v2 handoff (packages/design/handoff/first-run-v2, F1–F8) draws every ID-check outcome in one full-screen shell on the rider board (app/rider/(tabs)/index.tsx, src/ui/firstrun/IdCheckOutcome.tsx) — this one is F7 ‘Couldn’t open the ID check’. Not aligned to.",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-81 (owner, 2026-10-06): the First Run v2 handoff (packages/design/handoff/first-run-v2, F1–F8) draws every ID-check outcome in one full-screen shell on the rider board (app/rider/(tabs)/index.tsx, src/ui/firstrun/IdCheckOutcome.tsx) — this one is F7 ‘Couldn’t open the ID check’. Not aligned to.",
   }, // SDK couldn't open — device fault, not the rider's
   "RJ.kyc_verified": { status: "PENDING" }, // Verified
   "RJ.offer_sent": { status: "PENDING" }, // Offer sent · waiting
@@ -292,11 +292,11 @@ export const PARITY_STATUS = {
   "RJ.job_cancelled": { status: "PENDING" }, // Customer cancelled
   "RJ.kyc_failed": {
     status: "PENDING",
-    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-80 (owner, 2026-10-06): the First Run v2 handoff (packages/design/handoff/first-run-v2, F1–F8) draws every ID-check outcome in one full-screen shell on the rider board (app/rider/(tabs)/index.tsx, src/ui/firstrun/IdCheckOutcome.tsx) — this one is F4a–d, one page per decline reason (blurry / face / document / other). Not aligned to.",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-81 (owner, 2026-10-06): the First Run v2 handoff (packages/design/handoff/first-run-v2, F1–F8) draws every ID-check outcome in one full-screen shell on the rider board (app/rider/(tabs)/index.tsx, src/ui/firstrun/IdCheckOutcome.tsx) — this one is F4a–d, one page per decline reason (blurry / face / document / other). Not aligned to.",
   }, // Verification failed
   "RJ.kyc_expired": {
     status: "PENDING",
-    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-80 (owner, 2026-10-06): the First Run v2 handoff (packages/design/handoff/first-run-v2, F1–F8) draws every ID-check outcome in one full-screen shell on the rider board (app/rider/(tabs)/index.tsx, src/ui/firstrun/IdCheckOutcome.tsx) — this one is F6 ‘Your ID has expired’. Not aligned to.",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-81 (owner, 2026-10-06): the First Run v2 handoff (packages/design/handoff/first-run-v2, F1–F8) draws every ID-check outcome in one full-screen shell on the rider board (app/rider/(tabs)/index.tsx, src/ui/firstrun/IdCheckOutcome.tsx) — this one is F6 ‘Your ID has expired’. Not aligned to.",
   }, // ID expired (later)
   "RJ.photo_failed": { status: "PENDING" }, // Rider photo · upload failed
   "RJ.gate_out_of_area": { status: "PENDING" }, // Gate · out of area
@@ -304,14 +304,14 @@ export const PARITY_STATUS = {
   "RJ.gate_banned": { status: "PENDING" }, // Gate · account closed
   "RJ.gate_kyc_locked": {
     status: "PENDING",
-    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-80 (owner, 2026-10-06): the First Run v2 handoff (packages/design/handoff/first-run-v2, F1–F8) draws every ID-check outcome in one full-screen shell on the rider board (app/rider/(tabs)/index.tsx, src/ui/firstrun/IdCheckOutcome.tsx) — this one is F5 ‘Let’s finish this together’. Not aligned to.",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-81 (owner, 2026-10-06): the First Run v2 handoff (packages/design/handoff/first-run-v2, F1–F8) draws every ID-check outcome in one full-screen shell on the rider board (app/rider/(tabs)/index.tsx, src/ui/firstrun/IdCheckOutcome.tsx) — this one is F5 ‘Let’s finish this together’. Not aligned to.",
   }, // Gate · verification locked
   "RJ.topup_declined": { status: "PENDING" }, // Top up · declined
   "RJ.offline": { status: "PENDING" }, // Offline banner
   "RJ.on_hold": { status: "PENDING" }, // Account on hold
   "RJ.force_update": {
     status: "PENDING",
-    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-80 (owner, 2026-10-06): the First Run v2 handoff (packages/design/handoff/first-run-v2, U1–U5) redraws the hard update gate for both sides as one role-neutral screen — white, a green 280 hero with the white mark, 'Time to update', 'Update now' + 'Help on WhatsApp', the server's what's-new pill, U2 (no store link → WhatsApp) and U3 (offline, disabled CTA). app/force-update.view.tsx was deleted. Not aligned to.",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-81 (owner, 2026-10-06): the First Run v2 handoff (packages/design/handoff/first-run-v2, U1–U5) redraws the hard update gate for both sides as one role-neutral screen — white, a green 280 hero with the white mark, 'Time to update', 'Update now' + 'Help on WhatsApp', the server's what's-new pill, U2 (no store link → WhatsApp) and U3 (offline, disabled CTA). app/force-update.view.tsx was deleted. Not aligned to.",
   }, // Force update
   "RJ.no_gps": { status: "PENDING" }, // Location off / no GPS
   "RJ.generic_error": { status: "PENDING" }, // Generic error

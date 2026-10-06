@@ -19,6 +19,7 @@ overrides:
   fast-uri@>=3.0.0 <3.1.6: '>=3.1.6 <4.0.0'
   fast-xml-parser@<5.10.1: '>=5.10.1'
   sharp@<0.35.5: '>=0.35.5'
+  shell-quote@<1.11.0: '>=1.11.0 <2.0.0'
   valibot@<1.4.2: '>=1.4.2'
   brace-expansion@<1.1.21: 1.1.21
   brace-expansion@>=2.0.0 <2.1.7: 2.1.7
@@ -36,7 +37,6 @@ overrides:
   source-map-js@<1.2.2: '>=1.2.2 <2.0.0'
   '@prisma/studio-core>react': 18.3.1
   '@prisma/studio-core>react-dom': 18.3.1
-  shell-quote@<1.11.0: '>=1.11.0 <2.0.0'
 
 packageExtensionsChecksum: sha256-Y9s9xZ3sw9WY6Wl6Qbxd2k+y0lbbjcOzTOzgTEI3RNI=
 

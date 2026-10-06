@@ -118,7 +118,7 @@ export function ShopListScreen({ service }: { service: ShopService }): React.Rea
     setLocationSearch(search);
     setLocationOpen(true);
   };
-  // H5 "Use my current location" → the First Run v2 location ask (PC1–PC7, ledger D-80).
+  // H5 "Use my current location" → the First Run v2 location ask (PC1–PC7, ledger D-81).
   const locationAsk = useLocationAskSheet(location, () => openLocation(true));
   const back = (): void => router.back();
   const search = (): void => router.push(`/${service}/search`);

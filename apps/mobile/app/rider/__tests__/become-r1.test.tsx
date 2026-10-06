@@ -21,7 +21,7 @@ jest.mock("expo-router", () => ({
   useLocalSearchParams: () => mockParams,
 }));
 /**
- * First Run v2 (D-80): Become always REPLACES itself with the board — G1 removed the board's interstitial that
+ * First Run v2 (D-81): Become always REPLACES itself with the board — G1 removed the board's interstitial that
  * pushed it, and owner #5 removed the permission priming before the board (the flow follows R3 now).
  */
 const BOARD = "/rider";
@@ -381,7 +381,7 @@ describe("BecomeRiderScreen — after the check, the board (D-75: the old outcom
 });
 
 /**
- * Startup review 2026-10-06 + First Run v2 (D-80) — how Become hands over to the board.
+ * Startup review 2026-10-06 + First Run v2 (D-81) — how Become hands over to the board.
  *
  * G1: the board no longer pushes Become over itself (its "Earn with your bike" interstitial is gone; a
  *     non-rider reaching /rider is REPLACED by Become), so Become always replaces itself with ONE board.
@@ -389,7 +389,7 @@ describe("BecomeRiderScreen — after the check, the board (D-75: the old outcom
  * R-4 / R-10: the launch's outcome reaches the board (completed is F8; failed is F7, with support).
  * R-5: the rider side is saved for the next cold start.
  */
-describe("BecomeRiderScreen — the hand-over to the board (startup review 2026-10-06, D-80)", () => {
+describe("BecomeRiderScreen — the hand-over to the board (startup review 2026-10-06, D-81)", () => {
   it("G1: the hand-over replaces Become with the board — once, never back(), never through /permissions", async () => {
     mockMe = { ...NAMED, idNumber: null };
     const tree = await mount();

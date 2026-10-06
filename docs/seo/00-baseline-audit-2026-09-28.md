@@ -72,7 +72,7 @@ research passes on 2026-09-28:
 | Surface | State |
 |---|---|
 | Google Business Profile | None |
-| Google Play | `play.google.com/store/apps/details?id=zw.co.lynia` returns **404** (closed testing only). The listing name is "LyniaGo", category Maps & Navigation, **no website field**, and support email `support@lyniafinance.com` ([`../PLAY-STORE-SUBMISSION.md`](../PLAY-STORE-SUBMISSION.md) around lines 1271–1336) |
+| Google Play | `play.google.com/store/apps/details?id=zw.co.lynia` returns **404** (closed testing only). The listing name is "LyniaGo", category Maps & Navigation, **no website field**, and support email on the old company domain ([`../PLAY-STORE-SUBMISSION.md`](../PLAY-STORE-SUBMISSION.md) around lines 1271–1336) |
 | Social | X `@lyniago` unused; LinkedIn `company/lyniago` returns 404; YouTube `@lyniago` returns 404; TikTok `@lyniago` has no account; Facebook and Instagram inconclusive (login walls) |
 | Directories and press | None found |
 | GitHub | `github.com/unnfazzed/Lynia` is **public** and is what brand searches return |

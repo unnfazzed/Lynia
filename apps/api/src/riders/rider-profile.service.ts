@@ -80,7 +80,7 @@ export class RiderProfileService {
           where: { profileId },
           data: {
             ...(data.photoUrl !== undefined ? { photoUrl: data.photoUrl } : {}),
-            // First Run v2 E4 (D-80): a new plate is saved at once and reads "Checking" until ops confirm
+            // First Run v2 E4 (D-81): a new plate is saved at once and reads "Checking" until ops confirm
             // it (admin plate-verify). Only a real change reopens the check.
             ...(changed.includes("bike_reg") ? { bikeReg: data.bikeReg, plateStatus: PlateStatus.CHECKING } : {}),
           },

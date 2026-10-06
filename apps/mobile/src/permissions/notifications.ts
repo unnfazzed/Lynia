@@ -5,14 +5,14 @@ import { openPhoneSettings, type PermLike } from "./location";
 
 /**
  * Notification permission + the rider's job-alert channel, as First Run v2 reads them (handoff
- * `first-run-v2` README §3–§4, ledger D-80). Every read is best-effort and never throws.
+ * `first-run-v2` README §3–§4, ledger D-81). Every read is best-effort and never throws.
  */
 
 export type NotifState = "undetermined" | "granted" | "denied" | "blocked";
 
 /** The job-alert channel (P9's test ping, P12's muted check, the settings "Job alerts" row). */
 export const JOB_ALERTS_CHANNEL = "job-alerts";
-/** The app's default channel (`src/push/push.ts`). Builds before D-80 had no `job-alerts` channel, and FCM
+/** The app's default channel (`src/push/push.ts`). Builds before D-81 had no `job-alerts` channel, and FCM
  *  then posts job pushes here — so P12 treats a rider as muted when either channel is. */
 export const DEFAULT_CHANNEL = "default";
 
@@ -93,7 +93,7 @@ export function openChannelSettings(channelId: string = JOB_ALERTS_CHANNEL): voi
 
 /**
  * P16: the phone's battery-optimisation list. The direct per-app ask (`ACTION_REQUEST_IGNORE_BATTERY_
- * OPTIMIZATIONS`) needs a manifest permission Play restricts — NEEDS NATIVE (ledger D-80 §4); this list
+ * OPTIMIZATIONS`) needs a manifest permission Play restricts — NEEDS NATIVE (ledger D-81 §4); this list
  * needs none.
  */
 export function openBatterySettings(): void {

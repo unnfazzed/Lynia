@@ -270,7 +270,7 @@ export function extractDiditDocumentNumber(payload: unknown): string | null {
 /**
  * The verified document's EXPIRY date out of a Didit decision webhook (`expiration_date`, "YYYY-MM-DD", on
  * the ID-verification result), or null when the payload doesn't carry a well-formed one. First Run v2 F6
- * ("Expired 2 Oct 2026", ledger D-80 §4): the rider app names the day their ID expired. Probes the same
+ * ("Expired 2 Oct 2026", ledger D-81 §4): the rider app names the day their ID expired. Probes the same
  * shapes as {@link extractDiditDocumentNumber} (V3 `id_verifications[]`, the v2 singular object, `kyc`), and
  * fails open to null — a date is never worth holding a decision for. Returned as a UTC midnight Date.
  */

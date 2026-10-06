@@ -1,58 +1,25 @@
+import { SERVICE_CORRIDOR } from "@lynia/shared";
 import { describe, expect, it } from "vitest";
-import { clampZoom, HARARE_CBD, insideServiceArea, MAX_ZOOM, MIN_ZOOM, panBy, project, TILE_SIZE, tileUrl, unproject, visibleTiles } from "./geo";
+import { insideServiceArea, STATIC_MAP_MAX, staticMapUrl } from "./geo";
 
-describe("Web Mercator (the sign-up map pin)", () => {
-  it("puts (0, 0) in the middle of the world at every zoom", () => {
-    for (const zoom of [0, 3, 16]) {
-      const p = project({ lat: 0, lng: 0 }, zoom);
-      expect(p.x).toBeCloseTo((TILE_SIZE * 2 ** zoom) / 2, 6);
-      expect(p.y).toBeCloseTo((TILE_SIZE * 2 ** zoom) / 2, 6);
-    }
+const HARARE_CBD = { lat: SERVICE_CORRIDOR.centerLat, lng: SERVICE_CORRIDOR.centerLng };
+
+describe("staticMapUrl — the tracking band's Google Static Maps image (D-80)", () => {
+  it("centres a 2× image of the band's size on the point, with the key and no marker", () => {
+    const url = new URL(staticMapUrl({ lat: -17.8292, lng: 31.0522 }, 360, 250, "k-123"));
+    expect(url.origin + url.pathname).toBe("https://maps.googleapis.com/maps/api/staticmap");
+    expect(url.searchParams.get("center")).toBe("-17.8292,31.0522");
+    expect(url.searchParams.get("zoom")).toBe("15");
+    expect(url.searchParams.get("size")).toBe("360x250");
+    expect(url.searchParams.get("scale")).toBe("2");
+    expect(url.searchParams.get("key")).toBe("k-123");
+    expect(url.searchParams.has("markers")).toBe(false);
   });
 
-  it("round-trips a point through pixels and back", () => {
-    const back = unproject(project(HARARE_CBD, 16), 16);
-    expect(back.lat).toBeCloseTo(HARARE_CBD.lat, 5);
-    expect(back.lng).toBeCloseTo(HARARE_CBD.lng, 5);
-  });
-
-  it("dragging the map right moves the pin's point west; dragging it down moves it north", () => {
-    const right = panBy(HARARE_CBD, 100, 0, 16);
-    expect(right.lng).toBeLessThan(HARARE_CBD.lng);
-    expect(right.lat).toBeCloseTo(HARARE_CBD.lat, 6);
-    const down = panBy(HARARE_CBD, 0, 100, 16);
-    expect(down.lat).toBeGreaterThan(HARARE_CBD.lat);
-  });
-
-  it("covers the whole viewport with tiles, placed relative to its top-left corner", () => {
-    const tiles = visibleTiles(HARARE_CBD, 16, 520, 260);
-    const right = Math.max(...tiles.map((t) => t.left + TILE_SIZE));
-    const bottom = Math.max(...tiles.map((t) => t.top + TILE_SIZE));
-    expect(Math.min(...tiles.map((t) => t.left))).toBeLessThanOrEqual(0);
-    expect(Math.min(...tiles.map((t) => t.top))).toBeLessThanOrEqual(0);
-    expect(right).toBeGreaterThanOrEqual(520);
-    expect(bottom).toBeGreaterThanOrEqual(260);
-    expect(new Set(tiles.map((t) => t.key)).size).toBe(tiles.length);
-  });
-
-  it("wraps tile columns across the antimeridian and never asks for a row off the world", () => {
-    const tiles = visibleTiles({ lat: 0, lng: 179.99 }, 3, 800, 4000);
-    for (const t of tiles) {
-      expect(t.x).toBeGreaterThanOrEqual(0);
-      expect(t.x).toBeLessThan(8);
-      expect(t.y).toBeGreaterThanOrEqual(0);
-      expect(t.y).toBeLessThan(8);
-    }
-  });
-
-  it("builds OpenStreetMap tile URLs", () => {
-    expect(tileUrl({ zoom: 16, x: 38420, y: 36480 })).toBe("https://tile.openstreetmap.org/16/38420/36480.png");
-  });
-
-  it("clamps zoom to the tile server's range", () => {
-    expect(clampZoom(0)).toBe(MIN_ZOOM);
-    expect(clampZoom(40)).toBe(MAX_ZOOM);
-    expect(clampZoom(15.6)).toBe(16);
+  it("holds each side to the API's 1..640 range and whole pixels", () => {
+    const size = (w: number, h: number) => new URL(staticMapUrl(HARARE_CBD, w, h, "k")).searchParams.get("size");
+    expect(size(1024, 250)).toBe(`${STATIC_MAP_MAX}x250`);
+    expect(size(359.6, 0)).toBe("360x1");
   });
 });
 

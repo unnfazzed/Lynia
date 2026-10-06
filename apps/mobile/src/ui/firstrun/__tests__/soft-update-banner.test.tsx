@@ -1,5 +1,5 @@
 /**
- * First Run v2 U4a / U4b (README §2 C, ledger D-80 §2 #7): the soft update banner. Shown when the server's
+ * First Run v2 U4a / U4b (README §2 C, ledger D-81 §2 #7): the soft update banner. Shown when the server's
  * `recommendedVersion` is above this build, ONCE per version (Update or ✕ settles it on this phone), and
  * never without a store link (its only action). Forest on Home, violet on the rider board.
  */

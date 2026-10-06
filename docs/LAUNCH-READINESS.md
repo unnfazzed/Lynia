@@ -51,7 +51,7 @@ residual risk is concentrated:
   integration happens through PRs, not shared working trees.
 - **Prod is founder-touched only.** Agents prepare Terraform plans, drill scripts, and runbooks;
   `terraform apply` / `gcloud` against `lynia-500911` is executed by the founder. Load tests target a
-  **staging stack**, never `lyniago.lyniafinance.com` while the pilot runs. Secrets never enter
+  **staging stack**, never `api.lyniago.com` while the pilot runs. Secrets never enter
   prompts, transcripts, or the repo.
 - **Status is held once.** Gate ticks live in the scorecard here; `PILOT-READINESS.md` keeps overall
   build status; findings append to the per-discipline review logs as dated sections, as always.

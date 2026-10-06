@@ -331,7 +331,7 @@ describe("rider board (Rider v2 J1/J3: the board draws every job as a card, and 
     await settle();
 
     expect(cards(activeTree)).toHaveLength(0);
-    // First Run v2 G1 (D-80): no "Earn with your bike" interstitial — the account goes to R1.
+    // First Run v2 G1 (D-81): no "Earn with your bike" interstitial — the account goes to R1.
     expect(mockReplace).toHaveBeenCalledWith("/rider/become");
     expect(treeText(activeTree)).not.toContain("Earn with your bike");
     expect(treeText(activeTree)).not.toContain("should-not-appear");
@@ -419,7 +419,7 @@ describe("rider board (Rider v2 O1/J9/J10: make an offer, your offers, withdraw)
     expect(cardIds(activeTree, "offer")).toEqual([]);
     expect(treeText(activeTree)).toContain("Offer withdrawn.");
 
-    // RToast renders the shared FirstRunToast (D-80), which receives the same props — count the board toast only.
+    // RToast renders the shared FirstRunToast (D-81), which receives the same props — count the board toast only.
     const undo = activeTree.root.findAll((n) => n.props.action === "Undo" && typeof n.props.onAction === "function" && (n.type as { name?: string }).name === "RToast");
     expect(undo.length).toBe(1);
     act(() => (undo[0]!.props as { onAction: () => void }).onAction());
@@ -795,8 +795,8 @@ describe("rider board (owner 2026-08-16: no manual refresh; bridge scoped, not r
     expect(labelHits(activeTree, "Go to customer view")).toBe(0);
   });
 
-  // First Run v2 F3 (D-80): the unfinished page draws its one tap that clears it — and nothing else: the ✕ is
-  // the way out (no "Order food and send parcels" bridge on an F page, owner D-80 §2 #3).
+  // First Run v2 F3 (D-81): the unfinished page draws its one tap that clears it — and nothing else: the ✕ is
+  // the way out (no "Order food and send parcels" bridge on an F page, owner D-81 §2 #3).
   it("the unfinished page (F3) leads with its own action and draws no bridge", async () => {
     mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto" }));
     mockGetActiveOrder.mockResolvedValue(null);
@@ -815,8 +815,8 @@ describe("rider board (owner 2026-08-16: no manual refresh; bridge scoped, not r
   });
 
   /**
-   * Every ID-check page's action set, pinned by SHAPE rather than by string (First Run v2 F, D-80). The
-   * Rider v2 walls' "Order food and send parcels" bridge (D-36) is gone from every F page: owner D-80 §2 #3
+   * Every ID-check page's action set, pinned by SHAPE rather than by string (First Run v2 F, D-81). The
+   * Rider v2 walls' "Order food and send parcels" bridge (D-36) is gone from every F page: owner D-81 §2 #3
    * made the ✕ (customer Home) the only way out. Any OTHER new action on an ID-check page fails here and has
    * to be argued for.
    */
@@ -879,7 +879,7 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
 
   it("unfinished: never claims the check is with the vendor — nothing was submitted", async () => {
     const text = await wall({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" });
-    // F3 "Almost there, Tapiwa" (D-80).
+    // F3 "Almost there, Tapiwa" (D-81).
     expect(text).toContain("Almost there,");
     expect(text).toContain(KY.unfBody);
     // The precise lie this split exists to remove.
@@ -920,7 +920,7 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
     await settle();
 
     const text = treeText(activeTree);
-    // F7 "Couldn't open the ID check" (D-80).
+    // F7 "Couldn't open the ID check" (D-81).
     expect(text).toContain(KY.cantBody);
     // It must NOT read as a decline: nothing was assessed, and blaming the rider for a device fault
     // sends them round a loop that fails the same way.
@@ -1414,7 +1414,7 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
     await settle();
     await settle();
 
-    // First Run v2 P14 G8 (D-80): no permission → the empty-states mark, not the Rider v2 wall.
+    // First Run v2 P14 G8 (D-81): no permission → the empty-states mark, not the Rider v2 wall.
     expect(treeText(activeTree)).toContain("Turn on location");
     expect(treeText(activeTree)).toContain("Jobs need your location.");
     expect(activeTree.root.findAll((n) => n.props.label === "Go offline")).toHaveLength(0);
@@ -1467,7 +1467,7 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
 
 /** Calm Mint v2 R3 (D-55): "You're verified" takes the board's place once, for a new rider only. */
 describe("rider board — R3 'You're verified' (Calm Mint v2)", () => {
-  it("a verified rider with no trips yet sees R3; 'Go online' starts the rider permission flow (D-80 §2 #5)", async () => {
+  it("a verified rider with no trips yet sees R3; 'Go online' starts the rider permission flow (D-81 §2 #5)", async () => {
     mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 0 }));
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);
@@ -1475,7 +1475,7 @@ describe("rider board — R3 'You're verified' (Calm Mint v2)", () => {
     await settle();
     await settle();
     expect(treeText(activeTree)).toContain("You’re verified");
-    // BRIEF 13 (D-80): no licence anywhere.
+    // BRIEF 13 (D-81): no licence anywhere.
     expect(treeText(activeTree)).toContain("Add your photo and bike papers later in Account");
     // An older server that doesn't serve `rider.freeJobs` (D-70) gets no meter card.
     expect(treeText(activeTree)).not.toContain("Commission-free jobs");
@@ -1607,7 +1607,7 @@ describe("rider board — startup review 2026-10-06", () => {
     expect(treeText(activeTree)).not.toContain(KY.unfBody);
   });
 
-  it("G1 (D-80): a non-rider reaching the board is replaced by R1 — no interstitial, nothing pushed over the board", async () => {
+  it("G1 (D-81): a non-rider reaching the board is replaced by R1 — no interstitial, nothing pushed over the board", async () => {
     mockGetMe.mockResolvedValue({ ...meFixture(), rider: null });
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);
@@ -1647,7 +1647,7 @@ describe("rider board — startup review 2026-10-06", () => {
     expect(treeText(activeTree)).not.toContain("Rider setup");
   });
 
-  // R-6 → First Run v2 BRIEF 15 (D-80): each decline reason gets its own page and advice.
+  // R-6 → First Run v2 BRIEF 15 (D-81): each decline reason gets its own page and advice.
   it.each([
     ["id_unreadable", KY.blurryTip2],
     ["face_mismatch", KY.faceTip1],
@@ -1681,7 +1681,7 @@ describe("rider board — startup review 2026-10-06", () => {
       tree.root.find((n) => n.props.label === "Go online" && typeof n.props.onPress === "function").props.onPress();
     });
     await settle();
-    // D-80 §2 #5: P13's "Go online" is what goes online; this board hands over to the flow without going online.
+    // D-81 §2 #5: P13's "Go online" is what goes online; this board hands over to the flow without going online.
     expect(mockPush).toHaveBeenCalledWith("/permissions?from=flow");
     expect(mockSetOnline).not.toHaveBeenCalled();
     expect(treeText(activeTree)).toContain("You’re verified");
@@ -1701,7 +1701,7 @@ describe("rider board — startup review 2026-10-06", () => {
     expect(mockSetOnline).not.toHaveBeenCalled();
   });
 
-  it("D-80: the board never opens the OS location dialog — during the boot or after; G8 asks instead", async () => {
+  it("D-81: the board never opens the OS location dialog — during the boot or after; G8 asks instead", async () => {
     mockLocPermission = "undetermined";
     mockBooting = true;
     mockPermissionAsks = 0;
@@ -1780,8 +1780,8 @@ describe("rider board — startup review 2026-10-06", () => {
   });
 });
 
-/** First Run v2 F (ledger D-80 §2 #3): the outcome pages are full screens, and ✕ goes to the customer side. */
-describe("rider board — First Run v2 ID-check outcome pages (D-80)", () => {
+/** First Run v2 F (ledger D-81 §2 #3): the outcome pages are full screens, and ✕ goes to the customer side. */
+describe("rider board — First Run v2 ID-check outcome pages (D-81)", () => {
   it("an F page draws no mint top card and no tab bar slot; ✕ switches to the customer side (Home)", async () => {
     mockGetMe.mockResolvedValue(meFixture({ kycStatus: "failed", kycAttempts: 1, kycDeclineReason: "id_unreadable" }));
     mockGetActiveOrder.mockResolvedValue(null);
@@ -1849,7 +1849,7 @@ describe("rider board — First Run v2 ID-check outcome pages (D-80)", () => {
     await settle();
     await settle();
     expect(treeText(activeTree)).toContain("Your account is suspended");
-    // D-80 §4 (owner 2026-10-06): the server pushes and pins an "Account paused" row — it sends no SMS.
+    // D-81 §4 (owner 2026-10-06): the server pushes and pins an "Account paused" row — it sends no SMS.
     expect(treeText(activeTree)).toContain("The details are in your notifications.");
     expect(treeText(activeTree)).not.toContain("SMS");
     expect(activeTree.root.findAll((n) => typeof n.type === "string" && typeof n.props.testID === "string" && n.props.testID.startsWith("kyc-outcome-"))).toHaveLength(0);

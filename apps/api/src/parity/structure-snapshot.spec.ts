@@ -77,7 +77,7 @@ describe("parity structural snapshot · adopted screens match their mock by cons
 describe("parity structural snapshot · multi-state adoption model", () => {
   it("expands multi-state screens into one check unit per ADOPTED state", () => {
     // Multi-state screens still expand per state. The permissions screen was the proving screen until
-    // D-80 (First Run v2) superseded both of its states — like the food list's RC.list* keys under D-57,
+    // D-81 (First Run v2) superseded both of its states — like the food list's RC.list* keys under D-57,
     // they are now SUPERSEDED deferrals with no check unit, asserted here.
     const permDeferred = deferred.filter((d) => d.screen === "LJ.perm_loc").map((d) => d.state).sort();
     expect(permDeferred).toEqual(["location", "notifications"]);

@@ -277,7 +277,7 @@
 > reported **no pending migrations** (50 found), revision `lynia-api-01146-gus` deployed with
 > `--no-traffic` then canaried **10% → 50% → 100%** with every health gate passing; promoted
 > 15:58:24 UTC, previous revision `lynia-api-01142-qof` left intact as the rollback target.
-> Independently verified through the LB: `GET https://lyniago.lyniafinance.com/healthz` → 200
+> Independently verified through the LB: `GET <the GCP-era API host>/healthz` → 200
 > `{"status":"ok","db":true,"redis":true,"provider":"gcp"}`.
 > ② **Admin console** — **deliberately not deployed.** Nothing under `apps/admin/**`,
 > `apps/merchant/**` or `packages/shared/**` changed since `96a55d3`, so `deploy-admin.yml`'s path
@@ -517,7 +517,7 @@
 > having handled them), new revision deployed `--no-traffic` with the rollback target captured, then
 > the graduated canary passed and promoted at **21:19:53 UTC**; the roll-back-on-failed-canary step
 > skipped, as it should on a clean run. Verified independently through the LB rather than inferred
-> from the green tick: `GET https://lyniago.lyniafinance.com/healthz` → 200
+> from the green tick: `GET <the GCP-era API host>/healthz` → 200
 > `{"status":"ok","db":true,"redis":true,"provider":"gcp"}`. ③ **Admin/merchant — deliberately not
 > dispatched.** Nothing under `apps/admin/**`, `apps/merchant/**` or `packages/shared/**` has changed
 > since `deploy-admin.yml` run #79 (`e768b7e`); the one `packages/shared/src/design-tokens.ts` change
@@ -575,7 +575,7 @@
 > `list_pull_requests` returned empty; `main` = `83b3a5a` (release-please `chore(main): release 0.41.1`,
 > merging #810), CI green (run 1811). ② **API** (`release.yml` run 640) — green at that exact sha;
 > independently verified through the LB rather than inferred from the tick: `GET
-> https://lyniago.lyniafinance.com/healthz` → 200 `{"status":"ok","db":true,"redis":true,"provider":"gcp"}`.
+> <the GCP-era API host>/healthz` → 200 `{"status":"ok","db":true,"redis":true,"provider":"gcp"}`.
 > ③ **Admin console — deliberately not dispatched.** Nothing under `apps/admin/**`, `apps/merchant/**`
 > or `packages/shared/**` changed since `deploy-admin.yml` run #80 (`9b5e0de`); a dispatch would have
 > shipped a byte-identical image, so this records the skip rather than the click.
@@ -650,7 +650,7 @@
 > Proxy path; the in-VPC job correctly skipped), no-traffic revision deployed, canary graduated
 > **10% → 50% → 100%**, promoted 12:22:09 UTC, rollback step skipped as expected on a clean run.
 > Independently verified through the LB rather than inferred from the tick: `GET
-> https://lyniago.lyniafinance.com/healthz` → 200 `{"status":"ok","db":true,"redis":true,"provider":"gcp"}`.
+> <the GCP-era API host>/healthz` → 200 `{"status":"ok","db":true,"redis":true,"provider":"gcp"}`.
 >
 > **Admin/merchant — deliberately not dispatched.** Nothing under `apps/admin/**`, `apps/merchant/**`
 > or `packages/shared/**` changed since `deploy-admin.yml`/`deploy-merchant.yml`'s last green runs
@@ -701,7 +701,7 @@
 > **② GCP/API: current and healthy.** `release.yml` had already run green on every commit up to the
 > tip, including `main`@`866455b` itself (run `32261720314`, success 14:03:19 UTC). Independently
 > verified through the LB rather than inferred from the tick: `GET
-> https://lyniago.lyniafinance.com/healthz` → 200 `{"status":"ok","db":true,"redis":true,"provider":"gcp"}`.
+> <the GCP-era API host>/healthz` → 200 `{"status":"ok","db":true,"redis":true,"provider":"gcp"}`.
 > **Admin/merchant — deliberately not dispatched**: `git diff` between the last mobile build
 > (`fb094420a3`) and the new tip (`866455b`) touched only `apps/mobile/**` — no admin/merchant/shared
 > change to ship, same call as every prior entry.
@@ -890,7 +890,7 @@
 >
 > **Open PRs: none at start.** `main` = `f3c47430` (release 0.46.0, merging #859). `release.yml` and
 > `ci.yml` were still finishing on that exact merge commit when checked — both confirmed green before
-> anything was dispatched, and `GET https://lyniago.lyniafinance.com/healthz` independently returned
+> anything was dispatched, and `GET <the GCP-era API host>/healthz` independently returned
 > `{"status":"ok","db":true,"redis":true,"provider":"gcp"}`. Admin/merchant — deliberately not
 > dispatched: `git diff --stat` against their last green baseline (`640adb1`) touched neither
 > `apps/admin/**`, `apps/merchant/**` nor `packages/shared/**`.
@@ -1020,7 +1020,7 @@
 > inferred from the green dispatcher job. **Failure class: none.**
 >
 > Server side, same morning: `GET /kyc/return` deployed and verified live (release runs #679–#681),
-> and `DIDIT_CALLBACK_URL=https://lyniago.lyniafinance.com/kyc/return` confirmed injected on the
+> and `DIDIT_CALLBACK_URL=<the GCP-era API host>/kyc/return` confirmed injected on the
 > promoted revision (run `32562491423` logs) — new Didit sessions carry the redirect, so the sheet
 > auto-closes on completion.
 >
@@ -1051,7 +1051,7 @@
 > environment-wait pattern recorded 2026-08-19, not a stuck reviewer gate — then ran the staging
 > gate, migration and no-traffic deploy and completed **SUCCESS** at 14:02:22 UTC. Independently
 > verified through the LB rather than inferred from the tick: `GET
-> https://lyniago.lyniafinance.com/healthz` → 200
+> <the GCP-era API host>/healthz` → 200
 > `{"status":"ok","db":true,"redis":true,"provider":"gcp"}`.
 >
 > **Admin/merchant — deliberately not dispatched.** `git diff 640adb1..origin/main -- apps/admin
@@ -1285,7 +1285,7 @@
 | Free or paid | Free | Commission is charged to riders in-app, not at install |
 | Category | Maps & Navigation | Closest fit for a courier marketplace; Business is the alternative |
 | Tags | Delivery, Courier, Navigation | |
-| Contact email | `hello@lyniago.com` | Matches `SUPPORT_URL` in `apps/mobile/src/config.ts` and `LEGAL_CONTACT_EMAIL` in `apps/api/src/legal/legal.content.ts` (owner decision 2026-09-28; was `support@lyniafinance.com`, so re-enter it in Play Console's store-listing contact details) |
+| Contact email | `hello@lyniago.com` | Matches `SUPPORT_URL` in `apps/mobile/src/config.ts` and `LEGAL_CONTACT_EMAIL` in `apps/api/src/legal/legal.content.ts` (owner decision 2026-09-28; it replaced the old support address, so re-enter it in Play Console's store-listing contact details) |
 | Website | *(none — see §7.3)* | |
 | Version name at first submission | Whatever `main` holds at build time (`0.17.6` as of 2026-08-03 evening) | `app.config.ts` → `version` (release-please-managed; was `0.11.0` when this doc was first written) |
 | Version code | EAS-managed, auto-incrementing | `eas.json` → `appVersionSource: "remote"` + `autoIncrement` |
@@ -1420,13 +1420,13 @@ Play Console → **App content**. Every item, with the answer and the evidence.
 https://api.lyniago.com/legal/privacy
 ```
 
-> **Host moved (2026-09-27).** The old URL, `https://lyniago.lyniafinance.com/legal/privacy`, went down
+> **Host moved (2026-09-27).** The old URL, on the previous API host, went down
 > with the GCP project suspension on 2026-09-17. It now returns 503 or fails TLS, so a listing that
 > still carries it shows reviewers a dead privacy link. The URL above serves the same page from the
 > Azure API (HTTP 200, checked 2026-09-27). **Owner step:** Play Console → App content → Privacy
 > policy → paste the URL above → Save (also `docs/AZURE-OWNER-RUNBOOK.md` §6 step 6). Optional
-> safety net for anything that still holds the old URL: in the `lyniafinance.com` Cloudflare zone, set
-> the `lyniago` record to Proxied and add a 301 redirect rule to `https://api.lyniago.com` that keeps
+> safety net for anything that still holds the old URL: in the old domain's Cloudflare zone, set
+> its `lyniago` record to Proxied and add a 301 redirect rule to `https://api.lyniago.com` that keeps
 > the path. The CI token (`CLOUDFLARE_API_TOKEN`) is scoped to `lyniago.com`, so this is a dashboard
 > step.
 
@@ -1440,7 +1440,7 @@ asserts nothing remote is referenced, so it cannot break for a reviewer on a res
 https://api.lyniago.com/legal/account-deletion
 ```
 
-Same host move as §4.1: the old `lyniago.lyniafinance.com/legal/account-deletion` is down. This URL
+Same host move as §4.1: the old `/legal/account-deletion` URL on the previous API host is down. This URL
 is entered in the Data safety form (§3), so switching it means editing and re-submitting that form.
 
 Play requires **both** a deletion URL and an in-app path for any app offering account creation. The

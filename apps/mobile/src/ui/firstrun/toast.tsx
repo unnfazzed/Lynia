@@ -5,13 +5,13 @@ import { Icon, type IconName } from "../Icon";
 import { Tappable } from "../Tappable";
 
 /**
- * The First Run v2 bottom toast (README §1 "Toast", `fr-kit.js` `.toast`, ledger D-80): `forest`,
- * radius 14, padding 14 16, white Inter 600 14, a 20 brand check, 10 gap. D-80 §2 #4 makes it the
+ * The First Run v2 bottom toast (README §1 "Toast", `fr-kit.js` `.toast`, ledger D-81): `forest`,
+ * radius 14, padding 14 16, white Inter 600 14, a 20 brand check, 10 gap. D-81 §2 #4 makes it the
  * app-wide toast — `ToastProvider` (src/ui/Toast.tsx) draws exactly this bar, 96 above the bottom
  * (+ the safe-area inset), and dismisses it after 2.5s.
  *
  * `warning` (an action failure) swaps the check for a `circle-alert` in `highlight`: the handoff draws
- * only the success toast, and a green check on "Couldn't send the offer." would read as success (D-80 §4,
+ * only the success toast, and a green check on "Couldn't send the offer." would read as success (D-81 §4,
  * owner-approved 2026-10-06).
  *
  * The five screen-local toasts (Order, Browse, Review, rider board, Send) draw this same bar too (owner,

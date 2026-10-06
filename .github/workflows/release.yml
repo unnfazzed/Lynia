@@ -538,7 +538,7 @@ jobs:
           # Default-deny is the right policy for the native apps — they send no Origin at all — but
           # the merchant kitchen dashboard (apps/merchant, on its OWN hostname) is a browser client:
           # sign-in, every queue mutation and the Socket.IO queue socket are cross-origin requests
-          # from https://lyniagomerchant.lyniafinance.com to this service. Until now this workflow
+          # from https://merchant.lyniago.com to this service. Until now this workflow
           # never set the variable, so the deployed list was empty and the dashboard's very first
           # call — POST /auth/otp/request from the login screen — was blocked by the browser at
           # preflight, surfacing as "Couldn't reach the server" over a perfectly healthy API
@@ -551,7 +551,7 @@ jobs:
           # CORS_EXTRA_ORIGINS, which APPENDS — so adding one origin can never silently drop the one
           # the dashboard cannot work without. The admin console deliberately needs no entry: it
           # proxies server-side (apps/admin/app/lib/api.ts) and its browser never touches this API.
-          CORS_ORIGINS="${MERCHANT_DASHBOARD_ORIGIN:-https://lyniagomerchant.lyniafinance.com}"
+          CORS_ORIGINS="${MERCHANT_DASHBOARD_ORIGIN:-https://merchant.lyniago.com}"
           if [ -n "${CORS_EXTRA_ORIGINS:-}" ]; then
             CORS_ORIGINS="${CORS_ORIGINS},${CORS_EXTRA_ORIGINS}"
           fi
@@ -792,7 +792,7 @@ jobs:
 
           STEPS="${{ vars.CANARY_STEPS || '10 50' }}"
           OBSERVE="${{ vars.CANARY_OBSERVE_SECONDS || '120' }}"
-          HEALTH_URL="${{ vars.PUBLIC_HEALTH_URL || 'https://lyniago.lyniafinance.com/healthz' }}"
+          HEALTH_URL="${{ vars.PUBLIC_HEALTH_URL || 'https://api.lyniago.com/healthz' }}"
           MIN_SAMPLE="${{ vars.CANARY_MIN_SAMPLE || '20' }}"
           MAX_5XX_PCT="${{ vars.CANARY_MAX_5XX_PCT || '5' }}"
           START_TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"

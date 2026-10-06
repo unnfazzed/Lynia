@@ -13,7 +13,7 @@ export default function RiderTabsLayout(): React.ReactElement {
   const [active, setActive] = useState<string | undefined>("index");
   const badges = useRiderTabBadges(active);
   // The `job-alerts` Android channel (loud: HIGH + sound) exists before the first job ping or food-offer alarm
-  // posts on it — the API sends both there (First Run v2 P12, ledger D-80). Idempotent.
+  // posts on it — the API sends both there (First Run v2 P12, ledger D-81). Idempotent.
   useEffect(() => {
     void ensureJobAlertChannel();
   }, []);

@@ -226,7 +226,7 @@ export default async function RiderProfilePage({
                   value: (
                     <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
                       <span className="mono">{r.bike || "—"}</span>
-                      {/* First Run v2 E4 (D-80): ops' check of the plate. */}
+                      {/* First Run v2 E4 (D-81): ops' check of the plate. */}
                       {r.bike && r.plateStatus === "checking" ? <Pill kind="mut">checking</Pill> : null}
                       {r.bike && r.plateStatus === "verified" ? <Pill kind="good">verified</Pill> : null}
                     </span>

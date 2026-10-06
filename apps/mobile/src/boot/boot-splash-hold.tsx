@@ -8,7 +8,7 @@ import { scheduleWindowBackgroundReset } from "./window-background";
  * The two ends of the cold-start splash (ledger D-64, `packages/design/handoff/splash-v1`).
  *
  * The cold start is the JS splash (src/boot/splash/BootSplash.tsx): an animated brand intro, then a
- * live steps card that stays up for exactly as long as the boot takes, then a handoff into Home. The
+ * loading state that stays up for exactly as long as the boot takes, then a handoff into Home. The
  * NATIVE launch screen only covers the time before JS can draw: it is held (`preventAutoHideAsync` in
  * app/_layout.tsx) until the JS splash has laid out its first frame, then dropped onto that frame —
  * {@link releaseNativeSplash}. Both are the same brand green, so the drop is invisible.

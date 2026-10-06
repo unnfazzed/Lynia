@@ -25,7 +25,7 @@ import { getBootReadiness, reportBootEnded } from "./boot-readiness";
  *
  * PROCESS-LIFETIME, NOT MOUNT-LIFETIME. The provider can remount without the process restarting: the
  * root ErrorBoundary's "Reload" re-renders the whole root layout. A fresh `useState(true)` there would
- * replay the cold-start splash (~1.7–3.6s) over a recovery tap. So the initial value reads the boot's
+ * replay the cold-start splash (~1.3–2.5s) over a recovery tap. So the initial value reads the boot's
  * process-lifetime end stamp (`boot-readiness` `endedAt`), and `endBoot` writes it.
  */
 export interface BootPhase {

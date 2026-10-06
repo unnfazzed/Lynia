@@ -1,7 +1,7 @@
 # Plan — Test-phase Android APK (GitHub-built, sideloadable)
 
 > Goal: hand a tester a sideloadable Android APK, built on GitHub, that runs the **full** customer
-> *and* rider journeys against the live API (`https://lyniago.lyniafinance.com`) with no WhatsApp BSP
+> *and* rider journeys against the live API (`https://api.lyniago.com`) with no WhatsApp BSP
 > and no Didit KYC. Reviewed by the gstack Engineering planner (+ independent outside voice) and the
 > Design planner. Decisions locked with the founder — see the review report at the bottom.
 >

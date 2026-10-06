@@ -37,7 +37,7 @@ export interface PushMessage {
   /**
    * Android notification channel the push posts on (FCM `android.notification.channelId`). Omitted ⇒ the
    * app's default channel. Rider job pings and food-offer alarms go on `JOB_ALERTS_CHANNEL` (First Run v2
-   * P9/P12, ledger D-80) so a rider's job alarm can be checked and un-muted on its own. A channel the device
+   * P9/P12, ledger D-81) so a rider's job alarm can be checked and un-muted on its own. A channel the device
    * hasn't created falls back to the default one, so older builds are unaffected. Ignored by APNs.
    */
   channelId?: string;

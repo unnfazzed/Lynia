@@ -1,8 +1,10 @@
 /**
- * The cold-start splash (ledger D-64). Pinned: it drops the native launch screen as soon as it has
- * drawn; it stays up exactly until the boot is ready (Home: all three steps; anywhere else: step 1),
- * never shorter than the handoff's minimums; it shows the offline panel (and never gives up) when the
- * API can't be reached; and it can never strand the app on a hung request.
+ * The cold-start splash (ledger D-64, CHANGE-2026-10-06). Pinned: it drops the native launch screen as
+ * soon as it has drawn; it has no steps card; it stays up exactly until the boot is ready (Home: all
+ * three tasks; anywhere else: the session check), never shorter than the 1300ms intro; it shows the
+ * offline panel (and never gives up) when the API can't be reached, and "Try again" resumes only the
+ * tasks still pending; and it can never strand the app on a hung request. A boot into the rider board
+ * keeps a card with the rider's two steps (First Run v2 H1/H2, ledger D-81 §2 #2).
  */
 import React from "react";
 import { AccessibilityInfo, Text } from "react-native";
@@ -15,11 +17,11 @@ const mockScheduleReset = jest.fn();
 jest.mock("../../window-background", () => ({ scheduleWindowBackgroundReset: () => mockScheduleReset() }));
 
 import { BootPhaseProvider, useBootPhase } from "../../boot-phase";
-import { reportBootDestination, reportBootReady, reportBootRoute, resetBootReadinessForTest } from "../../boot-readiness";
+import { getBootReadiness, reportBootDestination, reportBootReady, reportBootRoute, resetBootReadinessForTest } from "../../boot-readiness";
 import { resetBootSplashReleaseForTest } from "../../boot-splash-hold";
 import { __resetReachability, __setProbeFetch, reportReachable, reportUnreachable } from "../../../net/reachability";
 import { BootSplash, stepDoneAnnouncement } from "../BootSplash";
-import { GIVE_UP_MS } from "../timeline";
+import { GIVE_UP_MS, INTRO_MS } from "../timeline";
 import { RIDER_OFFLINE, RIDER_STEPS, S } from "../copy";
 
 const metrics = { frame: { x: 0, y: 0, width: 360, height: 720 }, insets: { top: 24, left: 0, right: 0, bottom: 0 } };
@@ -60,11 +62,10 @@ const advance = (ms: number): void => {
   }
 };
 const released = (): boolean => booting.at(-1) === false;
-/** Each step row's state, read off its accessibilityState. */
-const stepLabels = (tree: renderer.ReactTestRenderer): string[] =>
-  tree.root
-    .findAll((n) => typeof n.type === "string" && n.props.accessibilityState != null && S.steps.includes(n.props.accessibilityLabel))
-    .map((n) => (n.props.accessibilityState.checked ? "checked" : n.props.accessibilityState.busy ? "active" : "pending"));
+/** The splash is `done`: its exit into Home has started (reportSplashExit). */
+const exiting = (): boolean => getBootReadiness().exitAt != null;
+/** The removed steps card's labels (CHANGE-2026-10-06) — never drawn, never announced. */
+const RETIRED_STEP_LABELS = ["Checking it's you", "Loading your saved places", "Finding riders near you"];
 /** Whether the host view holding `text` sits inside a subtree hidden from accessibility. */
 const hiddenFromA11y = (tree: renderer.ReactTestRenderer, text: string): boolean => {
   let node: renderer.ReactTestInstance | null = tree.root.findAll((n) => n.type === Text && String(n.props.children) === text)[0] ?? null;
@@ -74,6 +75,9 @@ const hiddenFromA11y = (tree: renderer.ReactTestRenderer, text: string): boolean
   return false;
 };
 const texts = (tree: renderer.ReactTestRenderer): string[] => tree.root.findAllByType(Text).map((t) => String(t.props.children));
+/** The offline panel's "Try again" button. */
+const findRetry = (tree: renderer.ReactTestRenderer): renderer.ReactTestInstance =>
+  tree.root.findAll((n) => n.props.accessibilityRole === "button" && typeof n.props.onPress === "function")[0]!;
 
 // RN's jest mock ends every native-driven animation after 16ms whatever its length. The splash runs
 // everything on the native driver (delays folded into the curve — see ../motion.ts), so give the mock
@@ -132,24 +136,64 @@ describe("BootSplash", () => {
     act(() => tree.unmount());
   });
 
-  it("draws the handoff's steps card copy, verbatim", () => {
+  it("draws the handoff's copy verbatim, and no steps card", () => {
     const tree = mount();
-    expect(texts(tree)).toEqual(expect.arrayContaining([...S.steps, S.slow, S.offlineTitle, S.offlineBody, S.retry]));
+    expect(texts(tree)).toEqual(expect.arrayContaining([S.slow, S.offlineTitle, S.offlineBody, S.retry]));
+    act(() => reportBootDestination("/home"));
+    advance(INTRO_MS + 500); // loading: where the card used to rise in
+    for (const label of RETIRED_STEP_LABELS) expect(texts(tree)).not.toContain(label);
     act(() => tree.unmount());
   });
 
-  it("a signed-out boot hands off after step 1 — not before the intro, its minimum and its tick being seen", () => {
+  it("a signed-out boot hands off once the session check is in — not before the intro has played", () => {
     const tree = mount();
     act(() => reportBootDestination("/phone"));
-    advance(1600);
+    advance(INTRO_MS - 50);
     expect(released()).toBe(false);
-    advance(300); // 1900: step 1 ticked at 1700, its 300ms pop is still on screen
-    expect(released()).toBe(false);
-    expect(stepLabels(tree)).toEqual(["checked", "pending", "pending"]); // step 2 never goes active
-    advance(200);
-    expect(released()).toBe(true);
+    advance(100);
+    expect(released()).toBe(true); // a straight cut: no exit, no tick to wait for
+    expect(exiting()).toBe(false);
     expect(mockScheduleReset).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
+  });
+
+  it("a session check that lands after the intro hands off at that moment", () => {
+    const tree = mount();
+    advance(3000);
+    expect(released()).toBe(false);
+    act(() => reportBootDestination("/onboarding"));
+    advance(50);
+    expect(released()).toBe(true);
+    act(() => tree.unmount());
+  });
+
+  it("done waits for all three tasks AND the 1300ms intro", () => {
+    const tree = mount();
+    act(() => {
+      reportBootDestination("/home");
+      reportBootReady("profile");
+    });
+    advance(INTRO_MS + 2000);
+    expect(exiting()).toBe(false); // Home's content still pending
+    act(() => reportBootReady("home"));
+    advance(50);
+    expect(exiting()).toBe(true);
+    act(() => tree.unmount());
+
+    // …and all three in at once still waits for the intro.
+    resetBootReadinessForTest();
+    resetBootSplashReleaseForTest();
+    const again = mount();
+    act(() => {
+      reportBootDestination("/home");
+      reportBootReady("profile");
+      reportBootReady("home");
+    });
+    advance(INTRO_MS - 50);
+    expect(exiting()).toBe(false);
+    advance(100);
+    expect(exiting()).toBe(true);
+    act(() => again.unmount());
   });
 
   it("Home: stays up until Home's profile and content are ready, then exits into Home", () => {
@@ -159,23 +203,24 @@ describe("BootSplash", () => {
     advance(6000);
     expect(released()).toBe(false); // Home's content still loading — the splash is still the screen
     act(() => reportBootReady("home"));
-    advance(400); // step 3's minimum active time
+    advance(400);
+    expect(exiting()).toBe(true);
     expect(released()).toBe(false); // exit animation running
     advance(2000);
     expect(released()).toBe(true);
     act(() => tree.unmount());
   });
 
-  it("a fast boot is as short as the handoff allows (intro + three 400ms steps + the exit)", () => {
+  it("a fast boot is as short as the handoff allows (the 1300ms intro + the 1150ms exit)", () => {
     const tree = mount();
     act(() => {
       reportBootDestination("/home");
       reportBootReady("profile");
       reportBootReady("home");
     });
-    advance(2450);
+    advance(2300);
     expect(released()).toBe(false);
-    advance(1500);
+    advance(400);
     expect(released()).toBe(true);
     act(() => tree.unmount());
   });
@@ -220,11 +265,11 @@ describe("BootSplash", () => {
       reportBootReady("home");
       reportUnreachable(); // a background request failed — but Home already has everything it needs
     });
-    for (let ms = 0; ms < 2600; ms += 100) {
+    for (let ms = 0; ms < 2300; ms += 100) {
       advance(100);
       expect(hiddenFromA11y(tree, S.offlineTitle)).toBe(true);
     }
-    advance(1500);
+    advance(400);
     expect(released()).toBe(true);
     act(() => tree.unmount());
   });
@@ -256,33 +301,75 @@ describe("BootSplash", () => {
     act(() => tree.unmount());
   });
 
-  it("accessibility: completed steps are announced as done, the offline panel is announced, hidden parts are not read", () => {
+  it("accessibility: \"Loading LyniaGo\" once when loading starts, the offline panel is announced, hidden parts are not read", () => {
     const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility").mockImplementation(() => {});
+    announce.mockClear(); // RN's jest setup already mocks it, so earlier tests' calls are still on it
     __setProbeFetch(async () => false);
     const tree = mount();
-    // The intro: the card is not on screen yet, so it is not in the accessibility tree; nor is the pill.
-    expect(hiddenFromA11y(tree, S.steps[0])).toBe(true);
+    // The intro: nothing announced yet, and the pill and the panel are not in the accessibility tree.
     expect(hiddenFromA11y(tree, S.slow)).toBe(true);
+    expect(hiddenFromA11y(tree, S.offlineTitle)).toBe(true);
     act(() => reportBootDestination("/home"));
-    advance(1800);
-    expect(hiddenFromA11y(tree, S.steps[0])).toBe(false);
-    expect(announce).toHaveBeenCalledWith(stepDoneAnnouncement(S.steps[0]));
-    expect(stepDoneAnnouncement(S.steps[0])).toBe("Checking it's you, done");
+    advance(INTRO_MS - 50);
+    expect(announce).not.toHaveBeenCalled();
+    advance(100);
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenCalledWith("Loading LyniaGo");
+    expect(S.loading).toBe("Loading LyniaGo");
     advance(4000);
     expect(hiddenFromA11y(tree, S.slow)).toBe(false); // slow now: the pill is read
     act(() => reportUnreachable());
     advance(100);
     expect(announce).toHaveBeenCalledWith(`${S.offlineTitle}. ${S.offlineBody}`);
-    expect(hiddenFromA11y(tree, S.steps[0])).toBe(true); // the card hides behind the panel
     expect(hiddenFromA11y(tree, S.offlineTitle)).toBe(false);
+    // Back to loading after "Try again": not announced a second time.
+    act(() => findRetry(tree).props.onPress());
+    advance(100);
+    expect(announce.mock.calls.filter(([msg]) => msg === S.loading)).toHaveLength(1);
+    for (const label of RETIRED_STEP_LABELS) expect(announce.mock.calls.flat().join(" ")).not.toContain(label);
     announce.mockRestore();
+    act(() => tree.unmount());
+  });
+
+  it("retry after going offline resumes only the unfinished tasks", async () => {
+    let probes = 0;
+    let probeOk = false;
+    __setProbeFetch(async () => {
+      probes += 1;
+      return probeOk;
+    });
+    const tree = mount();
+    act(() => {
+      reportBootDestination("/home");
+      reportBootReady("profile");
+    });
+    const before = { ...getBootReadiness().readyAt };
+    advance(2000);
+    act(() => reportUnreachable());
+    advance(100);
+    expect(hiddenFromA11y(tree, S.offlineTitle)).toBe(false); // offline, still waiting on Home's content
+    probeOk = true;
+    const probesBefore = probes;
+    await act(async () => {
+      findRetry(tree).props.onPress();
+    });
+    expect(probes).toBe(probesBefore + 1); // "Try again" probes at once
+    // The finished tasks are not re-run or re-stamped: the splash still counts them as done…
+    expect(getBootReadiness().readyAt.session).toBe(before.session);
+    expect(getBootReadiness().readyAt.profile).toBe(before.profile);
+    advance(500);
+    expect(exiting()).toBe(false);
+    // …so the one unfinished task landing is all it takes — no second intro, no wait on the others.
+    act(() => reportBootReady("home"));
+    advance(50);
+    expect(exiting()).toBe(true);
     act(() => tree.unmount());
   });
 
   it("a root layout remounted after the boot (the ErrorBoundary's Reload) never replays the splash", () => {
     const first = mount();
     act(() => reportBootDestination("/phone"));
-    advance(2100);
+    advance(INTRO_MS + 100);
     expect(released()).toBe(true);
     act(() => first.unmount());
     booting = [];
@@ -303,19 +390,31 @@ describe("BootSplash", () => {
   });
 });
 
-describe("BootSplash · the rider boot (First Run v2 H1/H2, ledger D-80 §2 #2)", () => {
+describe("BootSplash · the rider boot keeps its card (First Run v2 H1/H2, ledger D-81 §2 #2)", () => {
   const riderRows = (tree: renderer.ReactTestRenderer): string[] =>
     tree.root
       .findAll((n) => typeof n.type === "string" && n.props.accessibilityState != null && (RIDER_STEPS as readonly string[]).includes(n.props.accessibilityLabel))
       .map((n) => `${n.props.accessibilityLabel}:${n.props.accessibilityState.checked ? "checked" : n.props.accessibilityState.busy ? "active" : "pending"}`);
+  const card = (tree: renderer.ReactTestRenderer): renderer.ReactTestInstance[] => tree.root.findAll((n) => n.props.testID === "splash-card");
 
-  it("runs the rider's two steps and cuts only once the board's first reads have settled", () => {
+  it("a customer boot has no card at all", () => {
+    const tree = mount();
+    act(() => reportBootDestination("/home"));
+    advance(1800);
+    expect(card(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("runs the rider's two steps, announces each tick, and cuts only once the board's first reads have settled", () => {
+    const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility");
+    announce.mockClear(); // only this boot's announcements
     const tree = mount();
     act(() => reportBootDestination("/rider"));
     advance(1800);
+    expect(card(tree).length).toBeGreaterThan(0);
     expect(riderRows(tree)).toEqual(["Checking it’s you:checked", "Getting jobs near you:active"]);
-    // Home's three steps are gone from the card.
-    expect(texts(tree)).not.toContain(S.steps[1]);
+    expect(announce).toHaveBeenCalledWith(stepDoneAnnouncement(RIDER_STEPS[0]));
+    expect(announce).not.toHaveBeenCalledWith(S.loading); // the card is the rider's live region
     advance(4000);
     expect(released()).toBe(false); // the board is still reading
     act(() => reportBootReady("rider"));
@@ -323,6 +422,7 @@ describe("BootSplash · the rider boot (First Run v2 H1/H2, ledger D-80 §2 #2)"
     expect(riderRows(tree)).toEqual(["Checking it’s you:checked", "Getting jobs near you:checked"]);
     advance(400); // the tick is seen, then the cut (no exit into Home)
     expect(released()).toBe(true);
+    announce.mockRestore();
     act(() => tree.unmount());
   });
 

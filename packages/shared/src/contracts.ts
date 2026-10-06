@@ -697,7 +697,7 @@ export type ClientMetricsBatch = z.infer<typeof ClientMetricsBatch>;
 export const VersionGateResponse = z.object({ minSupportedVersion: z.string().max(24) }).strict();
 export type VersionGateResponse = z.infer<typeof VersionGateResponse>;
 
-/** `GET /app/version-gate?soft=1` — the same gate plus First Run v2's soft update (ledger D-80 §2 #7):
+/** `GET /app/version-gate?soft=1` — the same gate plus First Run v2's soft update (ledger D-81 §2 #7):
  *  `recommendedVersion` drives the U4a/U4b "A new version is ready" banners (shown once per version to a
  *  build below it) and `whatsNew` is U1's one-line "New …" pill. Both are null until set on the server
  *  (RECOMMENDED_APP_VERSION[_IOS], APP_WHATS_NEW). A SEPARATE body behind an opt-in query parameter

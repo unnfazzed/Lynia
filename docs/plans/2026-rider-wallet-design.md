@@ -460,7 +460,7 @@ ship date never waits on the merchant agreement even though both are one build.
 ## Distribution Plan
 
 Existing pipelines cover this: API and admin deploy via the current CI to GCP
-(`lyniago.lyniafinance.com`); the rider-facing wallet screens ship in the next
+(`api.lyniago.com`); the rider-facing wallet screens ship in the next
 Expo/EAS mobile build. No new distribution channel needed.
 
 ## Dependencies

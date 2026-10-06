@@ -31,7 +31,7 @@ describe("resolveKycWebNavigation", () => {
   });
 
   it("treats the /kyc/return landing as completion, on whatever host the callback names", () => {
-    expect(resolveKycWebNavigation(INITIAL, "https://lyniago.lyniafinance.com/kyc/return?session_id=abc")).toBe(
+    expect(resolveKycWebNavigation(INITIAL, "https://api.lyniago.com/kyc/return?session_id=abc")).toBe(
       "completed",
     );
     expect(resolveKycWebNavigation(INITIAL, "https://api.lyniago.com/kyc/return")).toBe("completed");

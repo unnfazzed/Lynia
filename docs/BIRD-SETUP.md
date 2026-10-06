@@ -222,7 +222,7 @@ stops a replay). A signature-valid delivery whose body we cannot parse is swallo
 1. ☐ **Create the endpoint** — dashboard (Developers → Webhooks) or CLI, subscribed to the
    non-delivery events:
    ```bash
-   bird webhooks create https://lyniago.lyniafinance.com/webhooks/bird \
+   bird webhooks create https://api.lyniago.com/webhooks/bird \
      --events sms.delivered,sms.undelivered,sms.failed,sms.rejected,sms.expired
    ```
    > **Capture the `secret` (`whsec_…`) from the create response immediately** — Bird returns it

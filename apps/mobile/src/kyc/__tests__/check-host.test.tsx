@@ -111,7 +111,7 @@ describe("KycCheckSheet outcomes", () => {
   it("completes when a committed navigation lands off the vendor host (server-side redirect chain)", async () => {
     const { tree, pending } = openSheet();
     act(() => {
-      webViewProps(tree).onNavigationStateChange!({ url: "https://lyniago.lyniafinance.com/kyc/return" } as never);
+      webViewProps(tree).onNavigationStateChange!({ url: "https://api.lyniago.com/kyc/return" } as never);
     });
     await expect(pending).resolves.toBe("completed");
   });

@@ -6,7 +6,7 @@ import { FR, FR_TONES, HALO_GAP, type FrTone, em, useFirstRunMetrics } from "./m
 import { Spinner } from "./steps";
 
 /**
- * The First Run v2 hero, disc, split title and body (handoff `first-run-v2` README §1, ledger D-80).
+ * The First Run v2 hero, disc, split title and body (handoff `first-run-v2` README §1, ledger D-81).
  * Every number is `design/fr-kit.js`'s: `.hero`, `.disc`, `.t`, `.s`.
  */
 

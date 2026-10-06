@@ -1,7 +1,7 @@
 import { normalizeNationalId } from "@lynia/shared";
 
 /**
- * First Run v2 Personal details (D2–D6, ledger D-80): the Zimbabwe national ID as the handoff validates
+ * First Run v2 Personal details (D2–D6, ledger D-81): the Zimbabwe national ID as the handoff validates
  * and shows it. The format is `63-123456A78` — two digits, a dash, six or seven digits, a check letter,
  * two digits (README D5: `^\d{2}-\d{6,7}[A-Z]\d{2}$`, after normalising spaces and case).
  *

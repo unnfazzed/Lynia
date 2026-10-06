@@ -1,4 +1,4 @@
-/** First Run v2 D5/D6 (ledger D-80): the national ID's format, normalisation and masking. */
+/** First Run v2 D5/D6 (ledger D-81): the national ID's format, normalisation and masking. */
 import { NATIONAL_ID_RE, formatNationalId, maskNationalIdDashed, nationalIdValid } from "../national-id";
 
 describe("national ID", () => {

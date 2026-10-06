@@ -16,7 +16,7 @@ be reported back to Design) · **PROPOSED** (built in an open PR that waits on t
 screenshot sheet; it becomes APPROVED when the owner approves that PR, which doesn't merge before —
 merchant web upgrade plan §10, OV-11).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-18, D-19, D-23, D-24, D-27, D-29, D-30, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48, D-49, D-50, D-51, D-52, D-53, D-54, D-55, D-77.** D-77 is Merchant v2 (2026-10-04): the owner's merchant-v2 handoff gives kitchens, shops and pharmacies one shell and one five-step order lifecycle, on top of D-48. D-55 is Calm Mint v2 (2026-10-01): the owner's calm-mint-v2 handoff becomes the authority for the customer Home, customer onboarding and the rider's first run; it retires D-28 for Home and moves `--highlight` to #FFD23F. D-54 is Rider v2 (2026-10-01): the owner's rider-v2 handoff becomes the authority for the rider app and for BOTH Account tabs and Settings; it retires D-15, D-16, D-17, D-22, D-25 and D-26. D-53 is the customer order screen redesign (2026-10-01, with its v2 round the same day): the owner's after-send handoff replaces the gallery's separate auction / tracking / delivered / failure screens with one screen — a full-bleed map and a sheet that follows the order's stage. D-52 is the Send a parcel redesign (2026-10-01): the owner's send-compose-v2 handoff replaces the gallery's one-sheet composer with four steps (Where · What · Price · Review), edits addresses inline on the map, and drops landmarks, declared value and the disclaimer; it retires D-14, D-21 and D-31. D-51 is merchant branches (2026-10-01): the branch switcher, Add a branch, and the not-live Orders home. D-50 is restaurant auto-accept (2026-09-30): for restaurants still taking orders by phone, orders skip the accept window and LyniaGo ops confirm them by phone before a rider is sent. D-49 is the terms & conditions page (2026-09-30): one set of terms for customers, riders and businesses, linked from Settings in the app and the merchant sign-in line. D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-18, D-19, D-23, D-24, D-27, D-29, D-30, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48, D-49, D-50, D-51, D-52, D-53, D-54, D-55, D-77, D-80.** D-80 is Google Maps on the web (2026-10-06): the merchant web and the planned customer web app draw maps with Google, replacing D-48's OpenStreetMap. D-77 is Merchant v2 (2026-10-04): the owner's merchant-v2 handoff gives kitchens, shops and pharmacies one shell and one five-step order lifecycle, on top of D-48. D-55 is Calm Mint v2 (2026-10-01): the owner's calm-mint-v2 handoff becomes the authority for the customer Home, customer onboarding and the rider's first run; it retires D-28 for Home and moves `--highlight` to #FFD23F. D-54 is Rider v2 (2026-10-01): the owner's rider-v2 handoff becomes the authority for the rider app and for BOTH Account tabs and Settings; it retires D-15, D-16, D-17, D-22, D-25 and D-26. D-53 is the customer order screen redesign (2026-10-01, with its v2 round the same day): the owner's after-send handoff replaces the gallery's separate auction / tracking / delivered / failure screens with one screen — a full-bleed map and a sheet that follows the order's stage. D-52 is the Send a parcel redesign (2026-10-01): the owner's send-compose-v2 handoff replaces the gallery's one-sheet composer with four steps (Where · What · Price · Review), edits addresses inline on the map, and drops landmarks, declared value and the disclaimer; it retires D-14, D-21 and D-31. D-51 is merchant branches (2026-10-01): the branch switcher, Add a branch, and the not-live Orders home. D-50 is restaurant auto-accept (2026-09-30): for restaurants still taking orders by phone, orders skip the accept window and LyniaGo ops confirm them by phone before a rider is sent. D-49 is the terms & conditions page (2026-09-30): one set of terms for customers, riders and businesses, linked from Settings in the app and the merchant sign-in line. D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
 merchant web upgrade (L1–L5: sign-up, Book a rider and the shop's shell, Your riders, Team, and the drawn
 restaurant screens), approved by the owner with PR #986 (2026-09-29). D-42 is the lyniago.com marketing website: the design handoff shipped as-is, with four owner-decided launch items (2026-09-28). D-41 is the iPhone app shipping customer-only (2026-09-27). D-40 reopens D-01
 (WhatsApp OTP copy again, now that Bird Verify can deliver over WhatsApp) on an explicit 2026-09-01 user
@@ -2224,7 +2224,7 @@ lands (below).
 | No payment tags; cash back on every order | **Cash only for food orders.** Wallet comes off the customer's food checkout; every food order is collect-and-return with the "Cash back to you" close. The API keeps accepting wallet from installed apps until they update. |
 | Shops receive customer orders | **Not yet.** Shops get the new shell, Book a rider, Items, Money and Account; the customer-orders part appears when shop ordering launches. |
 | No landmark field | **Landmark becomes optional in the API** for merchant locations (and later bookings). Rider-facing payloads still carry a non-empty string (the address line, else the business name), so installed rider apps keep working. |
-| Google Maps | **Google Places (New) for address search and GPS lookup, OpenStreetMap for maps.** Keyless builds fall back to "your current location". |
+| Google Maps | **Google Places (New) for address search and GPS lookup, OpenStreetMap for maps.** Keyless builds fall back to "your current location". *The OpenStreetMap half is superseded by D-80 (2026-10-06): maps are Google's.* |
 | Delivery | **Four phased PRs**, each auto-merging on green: (1) handoff + shell + get-in + Account; (2) Orders, cash back and its backend; (3) Menu, Money, Hours, Team, Riders; (4) shop booking and Items. |
 
 **Second round (2026-09-30, asked before PR 2):**
@@ -2269,7 +2269,7 @@ Evidence: `docs/parity/MERCHANT-MOBILE-ORDERS-2026-09-30.png` (mock left, app ri
 | B2 "Can't take it" | confirm sheet | same; the decline is sent with reason `other` | the handoff draws no reason picker |
 | B4 / B6 rider row | 44px call button | no call button | rider phone numbers are not exposed to merchants |
 | B4 "Hand over" | always live | enabled once the rider's code matched (status picked up) | owner decision §3: the rider types the code; handing over before that would skip the check |
-| B6 map | live rider position | OpenStreetMap tiles centred on the kitchen with its pin | no live rider location in the merchant API yet |
+| B6 map | live rider position | ~~OpenStreetMap tiles~~ a Google Static Maps image (D-80) centred on the kitchen with its pin | no live rider location in the merchant API yet |
 | B5 offline bar | drawn inside B5 | the shell's "No connection, retrying…" bar (shown on every screen when offline) | same bar, one place |
 | B5 closed body | power icon, "You're closed", Open now, busy mode | same, plus any orders still in the kitchen listed under "In the kitchen" | closing does not cancel orders already accepted; hiding them would strand them |
 | Restaurant "Book a rider" strip | not drawn on B1 | removed | not drawn ⇒ not rendered |
@@ -3116,7 +3116,8 @@ row and approves the dependency it was waiting on.
   `tint="systemChromeMaterialLight"` overlays white (= `bg`) at 0.97 × intensity / 100, and on Android it
   blurs at intensity / `blurReductionFactor` (4). So **intensity 96 is 93% `bg` and a 24 radius** (Dimezis
   BlurView 2.0.6, `RenderEffectBlur` on API 31+). The tint is raised from the handoff's 72% for
-  readability; see the "Glass tint" row below. Still no edge and no shadow.
+  readability; see the "Glass tint" row below. No shadow. The edge is a hairline outline; see the "Bar
+  edge" row below.
 - **The fallback** (`src/ui/shell/useGlass.ts`) is solid `bg` whenever the handoff says so. The settings
   are read live, and until the first read settles the bar is solid, so a user with one of them on never
   sees a frame of glass:
@@ -3148,6 +3149,7 @@ row and approves the dependency it was waiting on.
 | What | Handoff | App | Why |
 |---|---|---|---|
 | **Glass tint** (APPROVED 2026-10-06) | `bg` at 72% | `bg` at 93% | **Owner instruction, this session (2026-10-06):** *"improve readability"*, in answer to the contrast finding below. At 72% an idle label (`muted`) falls under 4.5:1 over dark content. At 93% it holds 5.0:1 even over black (5.1:1 over `ink`, 5.2:1 over `forest`). The blur radius is unchanged (24). Content behind still shows through, softly. |
+| **Bar edge** (APPROVED 2026-10-06) | No edge (v1.4: no `--line` ring, no `--shadow-float`) | A hairline outline: one physical pixel (`StyleSheet.hairlineWidth`) in `ink` at 6% (`EDGE`, about #F0F1F1 on white), glass or solid, always shown | **Owner instructions, this session (2026-10-06):** shown three edge options rendered on the real screens (a 1px `line` outline, outline + `shadow-float`, shadow only), the owner chose *"option A but make is as thin as possible and greyer"*. A first cut in `illus-idle-mid` (#AEB6BD) read too strong: *"the outline is still darker and thicker. i want it subtle and not noticeable"*. Asked how faint and when, the owner picked "fainter than any design grey", "all the time". So the colour is `ink` + an alpha suffix (the construction `Tappable`'s ripple uses), lighter than `line`, the lightest design border; a test pins that. Without any edge the white pill vanishes into the white tab roots. It is an overlay, so the cells and the indicator still sit 4 in. A shadow was ruled out: on the old architecture Android only draws `elevation` under a view with a solid background, which would hide the glass. The parity lane draws the hairline at 1 CSS px (react-native-web fixes `hairlineWidth` at 1), so the sheet shows it slightly heavier than a phone does. |
 | Saturation | `blur(24px) saturate(180%)` | Android: blur only. Web: `saturate(180%)` applied | Dimezis BlurView has no saturation step and expo-blur exposes none. |
 | Web blur radius | 24px | 19.2px | expo-blur's web build blurs at intensity × 0.2. Parity lane only; Android is exactly 24. |
 | iOS fill | `bg` + 24 blur | UIKit's light chrome material at intensity 0.96 | expo-blur on iOS is a `UIVisualEffectView`, which has no exact-alpha tint. The iPhone app ships customer-only. |
@@ -3748,7 +3750,29 @@ Outcomes the handoff's table doesn't label, with their copy in `OX` (neutral ton
 handoff's text once but carries no "Try again" action (the app's toast has none) — the page-failed row
 right above it offers the retry.
 
-## D-64 · Splash v1 — "1a Sun & orbit": the splash stays up until the app is ready — handoff APPROVED (2026-10-02); deviations 1–7 PENDING OWNER REVIEW
+## D-64 · Splash v1 — "1a Sun & orbit": the splash stays up until the app is ready — handoff APPROVED (2026-10-02); steps card removed (owner, 2026-10-06); deviations 1–7 PENDING OWNER REVIEW
+
+> **Update 2026-10-06 — the steps card is gone (owner).** Owner instruction, this session: *"update the
+> splash screen"*, with a new export of the same handoff attached (`Lynia_Design_System.zip` →
+> `design_handoff_splash/`). It changes one thing: `CHANGE-2026-10-06.md` removes the white steps card
+> ("Checking it's you" / "Loading your saved places" / "Finding riders near you") in every phase. Vendored
+> verbatim into `packages/design/handoff/splash-v1/` (the new `CHANGE-2026-10-06.md`; `README.md` gains a
+> pointer to it; `Splash.html` hides the card; the mark and fonts are unchanged). In the app
+> (`src/boot/splash/*`):
+> - The card, its rows, its rise-in, the tick pop, the spinning ring and the three step labels are deleted.
+> - The boot logic stays: the three tasks run in parallel and the splash is `done` when every task its
+>   destination waits for is in **and** the 1300ms intro has played. The per-step 400ms minimum and the
+>   300ms "let the tick be seen" wait before a non-Home cut go with the card, so a fast boot is now
+>   intro + exit (~2.45s, was ~3.65s) and a signed-out boot cuts at 1300ms (was 2000ms).
+> - Task status is kept for retry (`pendingTasks` in `timeline.ts`): "Try again" probes at once and only
+>   the unfinished tasks resume (a finished one is stamped once in `boot-readiness.ts` and never re-runs).
+> - Accessibility: "Loading LyniaGo" is announced once, when `loading` first starts (it replaces the card's
+>   live region). The slow pill (status) and the offline panel (alert) are unchanged.
+> - Layout: nothing sits under the wordmark any more, so the anchor is the handoff's 44% of H on every
+>   screen; #7 below now only grows the offline lift. Everything else (sun, orbit, dove, wordmark, blobs,
+>   slow pill, offline panel, exit, reduced motion) is unchanged.
+>
+> The bullets and table below are updated to match; text that described the card is struck or reworded.
 
 **Owner instruction, this session (2026-10-02):** *"lets implement a new splash screen. It should open
 with the time it takes to be ready to show the home screen."*, with the design handoff attached
@@ -3759,16 +3783,17 @@ frame + `app/splash.view.tsx`). Those gallery screens are SUPERSEDED and not ali
 
 **What the app does** (`src/boot/splash/BootSplash.tsx`, timing rules in `src/boot/splash/timeline.ts`):
 
-- **On screen for exactly as long as the boot takes.** The brand intro plays (1300ms), then the steps
-  card ticks off three REAL tasks (`src/boot/boot-readiness.ts`), each active for at least 400ms:
-  1. *Checking it's you* — the boot decision in `app/index.tsx` (session, onboarding flag, saved role,
-     cold-start push).
-  2. *Loading your saved places* — Home's `["me"]` read settles (seeded by the boot aggregate).
-  3. *Finding riders near you* — Home has its first content (each enabled rail has data, or failed).
-  When the last one is done the sun floods the screen and Home slides up over it, its sections rising
-  in turn (`src/boot/splash/BootEntrance.tsx`). Home therefore arrives drawn, not as skeletons.
+- **On screen for exactly as long as the boot takes.** The brand intro plays (1300ms) while three REAL
+  tasks (`src/boot/boot-readiness.ts`) run in parallel, with no UI of their own since 2026-10-06:
+  1. the session check — the boot decision in `app/index.tsx` (session, onboarding flag, saved role,
+     cold-start push);
+  2. saved places — Home's `["me"]` read settles (seeded by the boot aggregate);
+  3. Home's first content (each enabled rail has data, or failed).
+  When the last one is in (and not before the intro has played) the sun floods the screen and Home
+  slides up over it, its sections rising in turn (`src/boot/splash/BootEntrance.tsx`). Home therefore
+  arrives drawn, not as skeletons.
 - **Not Home** (onboarding, sign-in, profile setup, the rider app, a push-tap deep link): hands off
-  straight after step 1 with no exit, as the handoff says.
+  as soon as the session check is in (and the intro has played), with no exit, as the handoff says.
 - **Slow** (4s into loading): the yellow pill. **Offline** (the API unreachable, `src/net/reachability.ts`):
   the orbit pauses, the dot greys, the offline panel slides up; "Try again" probes at once
   (`probeNow`) and shows loading for 3s before the panel can return. Retrying in the background is the
@@ -3787,13 +3812,13 @@ frame + `app/splash.view.tsx`). Those gallery screens are SUPERSEDED and not ali
 
 | # | Handoff | App | Why |
 |---|---|---|---|
-| 1 | Step 3 = "nearby-rider or zone availability call" | Home's first content (the rails) | No customer-side nearby-rider or zone endpoint exists. Home's content is what "ready to show the home screen" means. |
+| 1 | Task 3 = "nearby-rider or zone availability call" | Home's first content (the rails) | No customer-side nearby-rider or zone endpoint exists. Home's content is what "ready to show the home screen" means. |
 | 2 | Loading keeps going indefinitely on a slow network | Hands off after 20s (`GIVE_UP_MS`) of ONLINE loading — time on the offline panel doesn't count (2026-10-06) | Never strand the app on a hung request; Home has its own loading and empty states. Counting offline time made a phone that came back after 20s offline exit straight into an unloaded Home. |
-| 3 | Steps card / panels at 16 / 14px from the bottom, pill at top 44 | Plus the device's bottom inset; pill at max(44, top inset + 8) | The mock frame has no system bars; this keeps them clear of gesture/nav bars and notches. |
-| 4 | Card shadow `0 18px 40px -12px rgba(0,0,0,.3)` | One-layer RN shadow (offset 18, radius 20, opacity .3, elevation 12) | The app runs the old architecture: no `boxShadow`, no spread. |
+| 3 | Offline panel 14px from the bottom, pill at top 44 (the steps card's 16px went with the card, 2026-10-06) | Plus the device's bottom inset; pill at max(44, top inset + 8) | The mock frame has no system bars; this keeps them clear of gesture/nav bars and notches. |
+| 4 | Pill shadow `0 8px 20px -8px rgba(0,0,0,.3)` (~~card shadow `0 18px 40px -12px`~~ — the card is gone, 2026-10-06) | One-layer RN shadow (offset 8, radius 10, opacity .3, elevation 6) | The app runs the old architecture: no `boxShadow`, no spread. |
 | 5 | Orbit's CSS dashed border | SVG circle, `strokeDasharray 6 6` | Dashed rounded borders aren't reliable on Android. |
 | 6 | Splash starts on plain green | ~~The native launch frame still shows the old dove + wordmark lockup~~ **Resolved (owner, 2026-10-02: "remove it entirely the old dove and wordmark"):** the native launch screen is now plain green (`assets/splash-blank.xml` / `splash-blank.png`); the lockup generator (`src/ui/splash-lockup.ts`, `scripts/build-splash-icon.mjs`) and its assets are deleted. | Native config: reaches devices only in the next store build (none dispatched — owner: "dont build an expo"). Until then installed binaries keep the old frame. |
-| 7 | Anchor at 44% of H; wordmark top at anchor + 152; the offline lift is 64px ("✅ Fits 320×640 … clears the wordmark by about 26px") | Same values wherever they fit. Where #3's bottom inset leaves less than 24px between the wordmark and the steps card, the anchor (sun, orbit, dove, wordmark, sky blob) moves UP until it does; where the 64px lift leaves less than 24px above the offline panel, the lift grows (`src/boot/splash/geometry.ts`, measured card/panel heights). Reduced motion keeps the lift, without the motion. (2026-10-06, startup review S-5) | The mock frame has no system bars. At 320×640 with a 48dp 3-button nav bar #3 put the card ~20dp over "LyniaGo" and the offline panel ~8dp over the lifted wordmark; the handoff's own answer to a panel is "the content moves up". Unchanged at 640/700/720 with no nav bar and at 720/780 with one. |
+| 7 | Anchor at 44% of H; wordmark top at anchor + 152; the offline lift is 64px | The anchor is always 44% of H (~~moved up to clear the steps card~~ — the card is gone, 2026-10-06). Where the 64px lift leaves less than 24px between the lifted wordmark and the offline panel, the lift grows (`src/boot/splash/geometry.ts`, measured panel height). Reduced motion keeps the lift, without the motion. (2026-10-06, startup review S-5) | The mock frame has no system bars. At 320×640 with a 48dp 3-button nav bar #3 put the offline panel over the lifted wordmark; the handoff's own answer to a panel is "the content moves up". Exactly 64px at 640/700/720 with no nav bar and at 720/780 with one. |
 
 ## D-65 · The Home service tile reads "Food", not "Restaurants" — APPROVED (2026-10-02)
 
@@ -4511,7 +4536,27 @@ the free-jobs rows, and redraw `delete_final` / `privacy` with the immediate-del
 - The reminder is silent until commission is switched on (§3). If the owner wants riders told during the 0%
   period, the copy needs different words.
 
-## D-80 · First Run v2: permissions, app update, Personal details, Bike & documents, ID-check outcomes, rider entry, splash steps — handoff APPROVED (2026-10-06)
+## D-80 · Google Maps on the web apps: the merchant web drops OpenStreetMap — APPROVED (2026-10-06)
+
+**Owner decision (2026-10-06, this session):** *"i will stay with google maps on both merchant and customer
+web apps"*, after a cost review of a mobile web version for iPhone users. It replaces the OpenStreetMap half
+of D-48 ("Google Places (New) for address search and GPS lookup, OpenStreetMap for maps"); Places and the
+reverse lookup are unchanged.
+
+| Where | Before | App | Why |
+|---|---|---|---|
+| Merchant B6 / D5 tracking band (`components/m/StaticMap.tsx`, on `/queue/[id]` and `/deliveries/[id]`) | OpenStreetMap tiles at zoom 15, a fixed 480px strip centred and cropped | One **Maps Static API** image at zoom 15, requested at the band's measured width (≤ 640px, centred beyond that) × its height at `scale=2`, with the same drawn pin on top. No marker, no map script. | Owner decision. Requesting the exact width keeps the image uncropped, so Google's logo (its terms) stays visible. |
+| No key, or the image is refused | (OSM needed no key) | The handoff's grey placeholder, children (the back button) kept | Same key-gated, failure-quiet rule as address search. |
+| The key | — | The existing browser key `NEXT_PUBLIC_GOOGLE_PLACES_KEY` (repo variable `MERCHANT_GOOGLE_PLACES_KEY`). **Owner action:** add **Maps Static API** to that key's allowed APIs, and set a daily quota cap on it in Google Cloud. | One key per web app, restricted to its own address. |
+| The customer web app (not built yet) | — | Will use Google's Maps JavaScript API for its interactive maps, with its own referrer-restricted key | Recorded here so its plan starts from this decision. |
+| `lib/geo.ts` tile maths | Web Mercator + OSM tile helpers (left over from the retired `LocationPin`) | Removed; `staticMapUrl` + `insideServiceArea` remain | Nothing used them once the band stopped drawing tiles. |
+
+**Cost** (Google's list price, to confirm on its pricing page): Static Maps and Dynamic Maps each carry a
+monthly free allowance of about 10,000 loads, then roughly $2 and $7 per 1,000. At pilot volume this is
+about $0. Nothing in `packages/design/**` changes; the merchant-mobile handoff draws a map band without naming
+a provider.
+
+## D-81 · First Run v2: permissions, app update, Personal details, Bike & documents, ID-check outcomes, rider entry, splash steps — handoff APPROVED (2026-10-06)
 
 **Owner instruction, this session (2026-10-06):** the owner sent Claude Design the brief
 `docs/designs/first-run-v2-PROMPT.md` (with the current-UI pack) and uploaded the result
@@ -4664,6 +4709,12 @@ wires); `app/(tabs)/home.tsx` → phases 2+3 (phase 4 adds the one-line U4a moun
   — orbit to wordmark — is centred in the space above the card (`splashGeometry({ W, … })`); the card was already 16
   above the nav bar. A rider boot that goes offline swaps the card's rows for the single offline row (`wifi-off` disc,
   "You're offline", "We'll continue when you're back.") — no dark panel, no button; it resumes on reconnect.
+  **Merged with splash-v1's `CHANGE-2026-10-06` (owner, 2026-10-06, option 1):** that change removed the steps card
+  from the customer's splash while this PR was open. Its note says "Don't change Home or the rider splash" and to keep
+  the step labels if the rider splash still uses them. So the customer splash has no card, and only a rider-board
+  boot draws this card: H1's white card (radius 20, 48dp rows, splash-v1's step markers), its 400ms per-step minimum
+  and the cut after the last tick (`src/boot/splash/timeline.ts` `riderStepTimes`). The 320×640 brand centring
+  applies only while that card shows.
 - **D2–D7** (`app/settings/personal.tsx`): `BackHeader` + `LargeTitle`, `FrField` First name / Surname (gap 12), the
   phone as `VerifiedRow`, the optional ID (`63-123456A78`, `PD.idWhy`). `src/logic/national-id.ts` normalises (spaces,
   case, the dash) and checks `^\d{2}-\d{6,7}[A-Z]\d{2}$` on blur and on Save (D5); the server still receives its

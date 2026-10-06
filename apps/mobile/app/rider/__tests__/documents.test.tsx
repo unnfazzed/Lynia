@@ -1,5 +1,5 @@
 /**
- * Bike & documents — First Run v2 E1–E6 (`packages/design/handoff/first-run-v2` README §2 E, ledger D-80;
+ * Bike & documents — First Run v2 E1–E6 (`packages/design/handoff/first-run-v2` README §2 E, ledger D-81;
  * replaces Rider v2 S5, D-54 / D-79). Pins: the "N of 3" progress and the three rows with "+ Add"; no
  * Re-verify button and no licence; E2a camera/gallery → E2b guide → E2c preview → E2d upload → E5/E6; the
  * E4 plate sheet's format and its instant "Checking"; "Verified" only for what was actually checked.
@@ -100,7 +100,7 @@ describe("E1 · new rider", () => {
     expect(s).not.toMatch(/licen[cs]e/i);
   });
 
-  it("the '+ Add' pill is the tap-target token tall (the kit was fixed to 44, D-80 §4)", async () => {
+  it("the '+ Add' pill is the tap-target token tall (the kit was fixed to 44, D-81 §4)", async () => {
     expect(ADD_PILL_HEIGHT).toBe(tokens.touchTargetMin);
     const tree = render();
     await loaded(tree);

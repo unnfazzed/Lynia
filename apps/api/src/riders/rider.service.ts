@@ -909,7 +909,7 @@ export class RiderService {
     // decision payload exposes one. Only consulted on a `verified` outcome; null degrades to the
     // pre-IR26-04 behavior so a payload-shape mismatch can never wedge real verifications.
     verifiedDocNumber?: string | null,
-    // First Run v2 F6 (D-80 §4): the verified document's expiry date (extractDiditDocumentExpiry), when the
+    // First Run v2 F6 (D-81 §4): the verified document's expiry date (extractDiditDocumentExpiry), when the
     // decision payload carries one. Stored on a `verified` outcome; an `expired` one stamps the lapse day.
     documentExpiresOn?: Date | null,
   ): Promise<{ updated: number }> {
@@ -971,7 +971,7 @@ export class RiderService {
           kycAttempts: true,
           // D-75: read under the row lock above, so it is exactly what the CAS update below will see.
           kycResolvedAt: true,
-          // D-80 F6: an `expired` result keeps the document's own expiry day when it is the earlier one.
+          // D-81 F6: an `expired` result keeps the document's own expiry day when it is the earlier one.
           kycIdExpiresOn: true,
           profile: { select: { idNumberHash: true } },
         },
@@ -1111,7 +1111,7 @@ export class RiderService {
           // write; the post-commit evictRiderFromSupply below clears the Redis geo index + board rooms.
           // (verified/holdForReview never demote — they don't set this.)
           ...(status === "failed" || status === "expired" ? { isOnline: false } : {}),
-          // First Run v2 F6 (D-80 §4): the ID's expiry day — the document's, from a verified decision that
+          // First Run v2 F6 (D-81 §4): the ID's expiry day — the document's, from a verified decision that
           // carries it; on an expiry, the day it lapsed (or the document's day when that is earlier).
           ...(status === "verified" && documentExpiresOn ? { kycIdExpiresOn: documentExpiresOn } : {}),
           ...(status === "expired" ? { kycIdExpiresOn: kycIdExpiryOnLapse(current?.kycIdExpiresOn, eventAt) } : {}),
@@ -1386,7 +1386,7 @@ export class RiderService {
           kycAttempts: true,
           kycStatus: true,
           kycResolvedAt: true,
-          // D-80 F6: a manual expire keeps the document's own expiry day when it is the earlier one.
+          // D-81 F6: a manual expire keeps the document's own expiry day when it is the earlier one.
           kycIdExpiresOn: true,
           // D-75: what an approval settles the national ID from.
           verifiedIdHash: true,

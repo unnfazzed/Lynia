@@ -164,7 +164,7 @@ client unable to connect. Adopt it carefully:
 
 1. Pin the **SPKI public-key hash**, not the leaf certificate (survives cert renewal on the same key).
 2. Always ship **≥ 2 pins**: the current key **and** a backup key held offline, so you can rotate.
-3. Pin the API host (`lyniago.lyniafinance.com`) and the WS host.
+3. Pin the API host (`api.lyniago.com`) and the WS host.
 4. Implementation: a config-plugin / native module (e.g. `react-native-ssl-pinning` or an
    `expo-build-properties` network-security-config on Android). Gate it behind a flag so it can be
    disabled by an OTA/remote-config kill-switch if a rotation goes wrong.

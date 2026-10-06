@@ -282,7 +282,7 @@ variable "labels" {
 variable "api_domain" {
   description = "Fully-qualified domain for the public API endpoint fronted by the global external HTTPS load balancer. A Google-managed certificate is issued for this domain, and the mobile app's device builds point at it (HTTPS for device builds). After apply, create a DNS A record for this domain pointing at the load_balancer_ip output, then wait for the managed cert to go ACTIVE."
   type        = string
-  default     = "lyniago.lyniafinance.com"
+  default     = "api.lyniago.com"
 }
 
 # --- Cloudflare DNS (dns.tf) — off by default ---
@@ -293,14 +293,14 @@ variable "cloudflare_dns_enabled" {
 }
 
 variable "cloudflare_api_token" {
-  description = "Cloudflare API token scoped to Zone:DNS:Edit on the lyniafinance.com zone. Only used when cloudflare_dns_enabled. Read/set via a *.tfvars kept out of VCS (mirrors admin_iap_oauth_client_secret)."
+  description = "Cloudflare API token scoped to Zone:DNS:Edit on the lyniago.com zone. Only used when cloudflare_dns_enabled. Read/set via a *.tfvars kept out of VCS (mirrors admin_iap_oauth_client_secret)."
   type        = string
   default     = ""
   sensitive   = true
 }
 
 variable "cloudflare_zone_id" {
-  description = "Cloudflare Zone ID for lyniafinance.com (Cloudflare dashboard → the zone → Overview → API section). Required when cloudflare_dns_enabled."
+  description = "Cloudflare Zone ID for lyniago.com (Cloudflare dashboard → the zone → Overview → API section). Required when cloudflare_dns_enabled."
   type        = string
   default     = ""
 }
@@ -315,7 +315,7 @@ variable "admin_enabled" {
 variable "admin_domain" {
   description = "Hostname for the admin console on the shared load balancer (own managed cert; same LB IP as api_domain — add a second A record)."
   type        = string
-  default     = "lyniagoadmin.lyniafinance.com"
+  default     = "admin.lyniago.com"
 }
 
 variable "admin_cloud_run_service" {
@@ -353,7 +353,7 @@ variable "merchant_enabled" {
 variable "merchant_domain" {
   description = "Hostname for the merchant dashboard on the shared load balancer (own managed cert; same LB IP as api_domain — add another A record)."
   type        = string
-  default     = "lyniagomerchant.lyniafinance.com"
+  default     = "merchant.lyniago.com"
 }
 
 variable "merchant_cloud_run_service" {
@@ -370,9 +370,9 @@ variable "staging_enabled" {
 }
 
 variable "staging_api_domain" {
-  description = "Hostname for the staging API on the shared load balancer (own managed cert; same LB IP as api_domain — add a second A record)."
+  description = "Hostname for the staging API on the shared load balancer (own managed cert; same LB IP as api_domain — add a second A record). No staging host exists today, so there is no default: set it before arming staging_enabled."
   type        = string
-  default     = "staging.lyniafinance.com"
+  default     = ""
 }
 
 variable "staging_cloud_run_service" {

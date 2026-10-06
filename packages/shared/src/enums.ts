@@ -168,7 +168,7 @@ export const KycStatus = {
 } as const;
 export type KycStatus = (typeof KycStatus)[keyof typeof KycStatus];
 
-/** First Run v2 E4 (ledger D-80): ops' check of the rider's bike plate (Prisma `PlateStatus`). A
+/** First Run v2 E4 (ledger D-81): ops' check of the rider's bike plate (Prisma `PlateStatus`). A
  *  self-service plate change saves instantly as `checking`; ops confirm → `verified`; `none` = never
  *  checked. The app says "Verified" only for `verified`. */
 export const PlateStatus = {

@@ -13,7 +13,7 @@ interface Rider {
   name: string;
   phone: string;
   bikeReg: string;
-  /** First Run v2 E4 (D-80): ops' check of the plate. Absent on older APIs. */
+  /** First Run v2 E4 (D-81): ops' check of the plate. Absent on older APIs. */
   plateStatus?: "none" | "checking" | "verified";
   kycStatus: "pending" | "verified" | "failed" | "expired";
   idVerified: boolean;
@@ -29,7 +29,7 @@ interface Rider {
 }
 
 const KYC_TABS = ["pending", "verified", "failed", "expired", "all"] as const;
-/** First Run v2 E4 (D-80): the directory vs the plate review queue (`?plate=checking`). */
+/** First Run v2 E4 (D-81): the directory vs the plate review queue (`?plate=checking`). */
 const PLATE_TABS = [
   { value: "all", label: "all riders" },
   { value: "checking", label: "plates to check" },
@@ -83,7 +83,7 @@ export default async function RidersPage({
 }) {
   const sp = await searchParams;
   const raw = sp.kyc;
-  // Plate-review mode (First Run v2 E4, D-80): plates riders added or changed, waiting on ops.
+  // Plate-review mode (First Run v2 E4, D-81): plates riders added or changed, waiting on ops.
   const plateMode = typeof raw !== "string" && sp.plate === "checking";
   // KYC-queue mode when a (valid) ?kyc= filter is present; otherwise the full rider DIRECTORY.
   const kycMode = typeof raw === "string" && (KYC_TABS as readonly string[]).includes(raw);

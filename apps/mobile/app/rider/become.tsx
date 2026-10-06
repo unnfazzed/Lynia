@@ -26,9 +26,9 @@ import { useWalletConfig } from "../../src/query/use-wallet";
  * - The only thing ever asked first is the NAME, and only on a legacy account without one, in C5's own
  *   grammar (the two name fields, the verified phone row) — then on to the check.
  * - However the check ends, the rider lands on the board, which draws every outcome: First Run v2's F pages
- *   (F8 while it is sent, F3 after a cancel, F1 in manual mode, F4 on a decline … — ledger D-80), Calm Mint
+ *   (F8 while it is sent, F3 after a cancel, F1 in manual mode, F4 on a decline … — ledger D-81), Calm Mint
  *   v2 R2 while the automated check runs, R3 once verified.
- * - G1 (D-80): this is the first rider screen. C1 "Ride with LyniaGo" → OTP → here, and a non-rider reaching
+ * - G1 (D-81): this is the first rider screen. C1 "Ride with LyniaGo" → OTP → here, and a non-rider reaching
  *   the board is sent here; no permission priming before it (the rider permission flow follows R3).
  */
 export default function BecomeRiderScreen(): React.ReactElement {
@@ -93,7 +93,7 @@ export default function BecomeRiderScreen(): React.ReactElement {
   /**
    * Hand over to the board, saved as the side the next cold start opens on (R-5).
    *
-   * First Run v2 (ledger D-80): G1 — the board no longer pushes this screen over itself (its "Earn with your
+   * First Run v2 (ledger D-81): G1 — the board no longer pushes this screen over itself (its "Earn with your
    * bike" interstitial is gone; a non-rider reaching `/rider` is REPLACED by this screen), so there is never
    * a board below to go back to and a `replace` mounts exactly one. Owner #5 — no permission priming before
    * the board: the rider permission flow runs after R3 "You're verified", before going online. The board
@@ -137,7 +137,7 @@ export default function BecomeRiderScreen(): React.ReactElement {
         if (launch.outcome === "completed") void noteKycLaunched();
       }
       // However it went, the board shows the right page from here: F8 while it is sent, R2 while the
-      // automated check runs, R3 once verified, F3 after a cancel, F1 in manual mode (D-80).
+      // automated check runs, R3 once verified, F3 after a cancel, F1 in manual mode (D-81).
       await handOver();
     } catch (e) {
       // BH-04: a lost-response retry on `becomeRider` hits this exact 409 — the FIRST submit already

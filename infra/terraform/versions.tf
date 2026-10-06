@@ -43,7 +43,7 @@ provider "google-beta" {
   region  = var.region
 }
 
-# Cloudflare — DNS-only management of the lyniafinance.com zone (dns.tf).
+# Cloudflare — DNS-only management of the lyniago.com zone (dns.tf).
 # Gated by cloudflare_dns_enabled (default false): with the flag off, every
 # cloudflare_dns_record has count = 0, so no API call is ever made. The token is
 # supplied via a VCS-ignored *.tfvars when you opt in (mirrors

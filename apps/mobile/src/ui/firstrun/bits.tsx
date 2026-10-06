@@ -4,7 +4,7 @@ import { Text, View, type ViewStyle } from "react-native";
 import { Icon, type IconName } from "../Icon";
 
 /**
- * First Run v2 small parts (README §1, `fr-kit.js` `.chips` `.tries` `.box` `.pill` `.ntf`, ledger D-80).
+ * First Run v2 small parts (README §1, `fr-kit.js` `.chips` `.tries` `.box` `.pill` `.ntf`, ledger D-81).
  */
 
 /** `.chips` — F4/F7 tips: pills min 32, `surface`, Inter 600 13, a 16 green icon, 6 gap; wrap with 8 gap. */

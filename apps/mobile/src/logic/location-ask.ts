@@ -3,7 +3,7 @@ import { type LocState, openPhoneSettings, readLocation, requestLocation, turnOn
 import type { HomePlace } from "./home-location";
 
 // ---------------------------------------------------------------------------
-// Asking for location (First Run v2 PC1–PC7, ledger D-80)
+// Asking for location (First Run v2 PC1–PC7, ledger D-81)
 // ---------------------------------------------------------------------------
 
 /**

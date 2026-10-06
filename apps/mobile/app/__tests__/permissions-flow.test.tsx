@@ -1,6 +1,6 @@
 /**
  * First Run v2 — the rider permission flow P1–P16 (app/permissions.tsx, handoff `first-run-v2` README §2B,
- * ledger D-80). Each screen, every branch out of the Android dialogs, "Not now" moving on, the re-read on
+ * ledger D-81). Each screen, every branch out of the Android dialogs, "Not now" moving on, the re-read on
  * return from phone settings, P13's "Go online" running R3's callback, and the single-step visits.
  */
 import renderer, { act } from "react-test-renderer";

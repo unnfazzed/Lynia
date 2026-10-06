@@ -4,7 +4,7 @@ import { Text, TextInput, type TextInputProps, type TextStyle, View, type ViewSt
 import { Icon, type IconName } from "../Icon";
 
 /**
- * First Run v2 fields (README §1 "Fields", `fr-kit.js` `.fld` `.flab` `.fhelp`, ledger D-80): 52 tall,
+ * First Run v2 fields (README §1 "Fields", `fr-kit.js` `.fld` `.flab` `.fhelp`, ledger D-81): 52 tall,
  * radius 12, a 1 `line` border; focus = 2 brand; error = 2 danger, with the helper as a 13/600
  * danger-ink line behind a 16 alert icon. Label 13/600 muted, 6 above. Placeholder `illusIdleMid`.
  */

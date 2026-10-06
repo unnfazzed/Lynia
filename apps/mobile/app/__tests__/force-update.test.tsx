@@ -1,5 +1,5 @@
 /**
- * First Run v2 U1–U5 (`packages/design/handoff/first-run-v2` README §2 C, ledger D-80): the hard update
+ * First Run v2 U1–U5 (`packages/design/handoff/first-run-v2` README §2 C, ledger D-81): the hard update
  * gate. White screen, green 280 hero with the white mark, "Time to update", "Update now" + "Help on
  * WhatsApp"; the server's what's-new line as the "New" pill; U2 swaps the CTA for WhatsApp when no store
  * link is configured; U3 disables the CTA while offline and re-enables it on reconnect.

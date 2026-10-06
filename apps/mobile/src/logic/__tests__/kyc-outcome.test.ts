@@ -1,5 +1,5 @@
 /**
- * First Run v2 F · the ID-check outcome mapping (ledger D-80): every server KYC state lands on exactly one
+ * First Run v2 F · the ID-check outcome mapping (ledger D-81): every server KYC state lands on exactly one
  * page — F1–F8, R2 (the automated check, Calm Mint v2 stays) or R1 (no rider record, G1) — and the non-KYC
  * gates are left to their Rider v2 walls.
  */
@@ -56,7 +56,7 @@ describe("kycScreenFor — server state → First Run v2 page", () => {
     expect(declined("id_expired")).toEqual({ kind: "outcome", id: "F4c" });
     expect(declined("doc_tampered")).toEqual({ kind: "outcome", id: "F4c" });
     expect(declined("name_mismatch")).toEqual({ kind: "outcome", id: "F4d" });
-    // Owner 2026-10-06 (D-80 §4): a duplicate can't be fixed by a retry — F5's WhatsApp-only shell.
+    // Owner 2026-10-06 (D-81 §4): a duplicate can't be fixed by a retry — F5's WhatsApp-only shell.
     expect(declined("duplicate")).toEqual({ kind: "outcome", id: "F5dup" });
     expect(declined("other")).toEqual({ kind: "outcome", id: "F4d" });
     expect(declined(null)).toEqual({ kind: "outcome", id: "F4d" });

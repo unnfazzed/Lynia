@@ -147,7 +147,7 @@ export const color = {
   /** Darker danger TEXT on `dangerWash` (≈6:1) — owed labels, gate reasons, muted-alarm state.
    *  Mirrors packages/design/tokens/colors.css `--danger-ink`. Never use `danger` for text. */
   dangerInk: "#8F2418",
-  /** The decor sun on a danger hero panel (First Run v2 README §1 tones, ledger D-80; mirrors
+  /** The decor sun on a danger hero panel (First Run v2 README §1 tones, ledger D-81; mirrors
    *  --danger-sun). Decor only — never text, never a fill behind text. */
   dangerSun: "#F4D9D5",
   /** Confirmation fills (== accent); use `accentText` for success TEXT. */

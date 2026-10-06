@@ -1,6 +1,6 @@
 /**
- * Settings — First Run v2's look (handoff `first-run-v2` D1 / PC11 / P15, ledger D-80) keeping every row
- * (owner decision D-80 §2 #1).
+ * Settings — First Run v2's look (handoff `first-run-v2` D1 / PC11 / P15, ledger D-81) keeping every row
+ * (owner decision D-81 §2 #1).
  *
  * Pins: YOU (Personal details first, Bike & documents "N to add") → ALERTS → (rider) RIDER → Sign out and
  * Delete account last; the toggles MIRROR the phone's permissions and tapping one asks (rider flow / PC8)
@@ -91,7 +91,7 @@ beforeEach(() => {
   jest.spyOn(Linking, "openSettings").mockImplementation(mockOpenSettings);
 });
 
-describe("D1 · the new look, every row kept (D-80 §2 #1)", () => {
+describe("D1 · the new look, every row kept (D-81 §2 #1)", () => {
   it("a rider sees YOU → ALERTS → RIDER, then Sign out and Delete account last", async () => {
     const s = out(await render(RIDER));
     const order = [
@@ -134,7 +134,7 @@ describe("D1 · the new look, every row kept (D-80 §2 #1)", () => {
     const s = out(t);
     expect(s.indexOf('"YOU"')).toBeLessThan(s.indexOf('"Personal details"'));
     expect(s).toContain('"Name, phone, ID"');
-    // Owner 2026-10-06 (D-80 §4): the shipped name / phone row is gone — Personal details carries both.
+    // Owner 2026-10-06 (D-81 §4): the shipped name / phone row is gone — Personal details carries both.
     expect(s).not.toContain('"Chipo Marufu"');
     expect(s).not.toContain("77 245 1180");
     await act(async () => byTestId(t, "settings-personal").props.onPress());

@@ -703,7 +703,7 @@ export function CartBar({
 
 /** README §4 "Toast": ink, radius 12, 13.5 white, 16 from the sides, above the cart bar. */
 export function BrowseToast({ text, icon, bottom }: { text: string; icon?: "bell" | "check"; bottom: number }): React.ReactElement {
-  // Owner 2026-10-06 (D-80): the app-wide bottom toast's look, kept above the cart bar.
+  // Owner 2026-10-06 (D-81): the app-wide bottom toast's look, kept above the cart bar.
   return (
     <View pointerEvents="none" style={{ position: "absolute", left: 16, right: 16, bottom }}>
       <FirstRunToast text={text} icon={icon ?? "check"} />

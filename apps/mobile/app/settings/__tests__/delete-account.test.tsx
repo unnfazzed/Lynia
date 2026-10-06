@@ -1,6 +1,6 @@
 /**
  * In-app account deletion (Google Play policy: any app offering account creation must offer account
- * deletion from inside the app; CDPA right to erasure) — First Run v2 I (ledger D-80 §2 #6): the new back
+ * deletion from inside the app; CDPA right to erasure) — First Run v2 I (ledger D-81 §2 #6): the new back
  * header, a danger hero, "Delete your account?", the live "No delivery running" box, "Keep my account" as
  * the primary and "Delete account" as the danger link — keeping the TWO steps (the final step carries D-79's
  * immediate-deletion sentence and the acknowledgement tick). This suite pins the drawn copy and the
@@ -151,7 +151,7 @@ describe("delete account — the explainer (First Run v2 I)", () => {
   });
 });
 
-describe("delete account — the final step (two-step confirm kept, owner D-80 §2 #6)", () => {
+describe("delete account — the final step (two-step confirm kept, owner D-81 §2 #6)", () => {
   it("says deletion is immediate (D-79: the API erases at once), with the acknowledgement tick", async () => {
     const tree = await render({ initialStep: "final" });
     // The paragraph interpolates a bold "straight away", so it renders as a child ARRAY rather than

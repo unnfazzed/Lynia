@@ -19,7 +19,7 @@ set -euo pipefail
 # ---- Set these, then run: IAP_CLIENT_ID=… IAP_CLIENT_SECRET=… IAP_MEMBERS=… bash infra/scripts/arm-admin.sh
 PROJECT_ID="${PROJECT_ID:-lynia-500911}"
 REGION="${REGION:-africa-south1}"
-API_DOMAIN="${API_DOMAIN:-lyniago.lyniafinance.com}"       # the console calls https://<API_DOMAIN>
+API_DOMAIN="${API_DOMAIN:-api.lyniago.com}"       # the console calls https://<API_DOMAIN>
 GITHUB_REPO="${GITHUB_REPO:-unnfazzed/Lynia}"              # owner/repo for `gh variable set`
 # Operators allowed through IAP. Space-separated Google accounts, e.g. "user:you@gmail.com". This is
 # the ONLY authorization boundary (External consent lets any Google account authenticate), so keep it
@@ -121,6 +121,6 @@ else
 fi
 
 say "5. LAST STEP (you): DNS"
-echo "Create an A record:  lyniagoadmin.lyniafinance.com  ->  $LB_IP"
+echo "Create an A record:  admin.lyniago.com  ->  $LB_IP"
 echo "Then push any apps/admin change (or run the Deploy Admin Console workflow) — the agent can"
 echo "trigger + babysit it. Managed cert goes ACTIVE within ~30 min; first request may 503 until then."

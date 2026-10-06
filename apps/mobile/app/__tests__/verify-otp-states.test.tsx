@@ -114,7 +114,7 @@ describe("C4 · Code — the sixth digit verifies", () => {
     expect(mockReplace).toHaveBeenCalledWith("/home");
   });
 
-  it("the C1 rider path goes OTP → the rider side, no priming (D-80 G1)", async () => {
+  it("the C1 rider path goes OTP → the rider side, no priming (D-81 G1)", async () => {
     mockLocalSearchParams = { phone: "+263772451180", deliveryChannel: "whatsapp", intent: "rider" };
     mockVerifyOtp.mockResolvedValue(ok);
     const t = mount({ initialCooldownS: 30 });
