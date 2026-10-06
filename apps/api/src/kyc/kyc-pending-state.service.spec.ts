@@ -111,3 +111,66 @@ describe("KycPendingStateService", () => {
     await expect(new KycPendingStateService(vendor).get("sess_1")).resolves.toBe("unfinished");
   });
 });
+
+/**
+ * Startup review 2026-10-06: the raw-status read (R-1 dead sessions, R-3 holds) and the cache moving
+ * with the session (R-4) — invalidated when a launch starts/completes or a decision lands, primed by
+ * the signed status webhook so the next poll doesn't ask the vendor what it just told us.
+ */
+describe("KycPendingStateService — session class, invalidation and webhook priming (2026-10-06)", () => {
+  function rawVendor(...statuses: (string | null)[]) {
+    const calls: string[] = [];
+    let i = 0;
+    const vendor: KycVendor = {
+      async submit(): Promise<KycSubmission> {
+        throw new Error("not used");
+      },
+      async sessionStatus(ref: string) {
+        calls.push(ref);
+        return statuses[Math.min(i++, statuses.length - 1)] ?? null;
+      },
+    };
+    return { vendor, calls };
+  }
+
+  it("classifies the raw status: In Review is held, Expired/Abandoned dead; the two-value read keeps old meanings", async () => {
+    for (const [raw, cls, two] of [
+      ["In Review", "held", "in_flight"],
+      ["Expired", "dead", "unfinished"],
+      ["Abandoned", "dead", "unfinished"],
+      ["In Progress", "unfinished", "unfinished"],
+      ["Approved", "in_flight", "in_flight"],
+      [null, "unfinished", "unfinished"],
+    ] as const) {
+      const svc = new KycPendingStateService(rawVendor(raw).vendor);
+      expect(await svc.read("s")).toBe(cls);
+      expect(await svc.get("s")).toBe(two);
+    }
+  });
+
+  it("read and get share ONE vendor call per ref per TTL", async () => {
+    const { vendor, calls } = rawVendor("In Progress");
+    const svc = new KycPendingStateService(vendor);
+    await svc.read("s1");
+    await svc.get("s1");
+    await svc.read("s1");
+    expect(calls).toEqual(["s1"]);
+  });
+
+  it("invalidate drops the entry, so the next read asks the vendor afresh (R-4)", async () => {
+    const { vendor, calls } = rawVendor("In Progress", "In Review");
+    const svc = new KycPendingStateService(vendor);
+    expect(await svc.read("s1")).toBe("unfinished");
+    svc.invalidate("s1");
+    expect(await svc.read("s1")).toBe("held");
+    expect(calls).toEqual(["s1", "s1"]);
+  });
+
+  it("prime serves the webhook's status without a vendor call", async () => {
+    const { vendor, calls } = rawVendor("In Progress");
+    const svc = new KycPendingStateService(vendor);
+    svc.prime("s1", "Expired");
+    expect(await svc.read("s1")).toBe("dead");
+    expect(calls).toHaveLength(0);
+  });
+});

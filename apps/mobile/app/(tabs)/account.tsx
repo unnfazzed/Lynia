@@ -6,7 +6,9 @@ import React from "react";
 import { ScrollView, Text, View } from "react-native";
 import { getMe } from "../../src/api/auth";
 import { openSupportWhatsApp } from "../../src/config";
+import { saveRolePreference } from "../../src/auth/session";
 import { becomeStateFor } from "../../src/logic/become-state";
+import { riderDeclineLabel } from "../../src/logic/gates";
 import { useHomeLocation } from "../../src/logic/home-location";
 import { useNotificationsUnreadCount } from "../../src/query/use-notifications-unread";
 import { riderModeAvailable } from "../../src/rider-mode";
@@ -37,6 +39,7 @@ export default function AccountTabScreen(): React.ReactElement {
   // rider's own account (MOB-BOOT-02-SIB-3).
   const become = me && meQ.isSuccess && riderModeAvailable() ? becomeStateFor(me) : null;
   const left = Math.max(0, 2 - (me?.rider?.kycAttempts ?? 0));
+  const declineLabel = riderDeclineLabel(me?.rider?.kycDeclineReason);
 
   return (
     <AppScreen banner={<MintTop {...top} customer loc={location.label} />}>
@@ -53,7 +56,15 @@ export default function AccountTabScreen(): React.ReactElement {
           />
           {become === "toggle" ? (
             <>
-              <RoleToggle side="customer" onChange={(s) => (s === "rider" ? router.replace("/rider") : undefined)} />
+              <RoleToggle
+                side="customer"
+                onChange={(s) => {
+                  if (s !== "rider") return;
+                  // R-5: the side the rider picks is the side the next cold start opens on.
+                  void saveRolePreference("rider");
+                  router.replace("/rider");
+                }}
+              />
               {me?.rider?.kycStatus === "verified" && (me.rider.tripsCount ?? 0) === 0 ? (
                 <Notice tone="wash" icon="circle-check" text={`${R.kycOkT}. ${R.kycOkB}`} />
               ) : (
@@ -63,8 +74,10 @@ export default function AccountTabScreen(): React.ReactElement {
           ) : become ? (
             <BecomeCard
               state={become}
-              failBody={RF.kycFailB(left)}
-              onAction={() => router.push(become === "none" ? "/rider/become" : "/rider")}
+              // R-6: the real decline reason when it is known; the drawn "blurry photo" copy otherwise.
+              failBody={declineLabel ? RF.kycFailWhyB(declineLabel, left) : RF.kycFailB(left)}
+              // R-10: a locked application's only way forward is support — never a "Try again" the server refuses.
+              onAction={() => (become === "locked" ? openSupportWhatsApp() : router.push(become === "none" ? "/rider/become" : "/rider"))}
             />
           ) : null}
           <RCard>

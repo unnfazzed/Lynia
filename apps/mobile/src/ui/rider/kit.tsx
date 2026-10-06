@@ -526,14 +526,20 @@ export function CashLine({ text, icon = "banknote" }: { text: string; icon?: Ico
   );
 }
 
-/** The Become-a-rider card on a customer-only Account (start / in progress / review / failed). */
-export type BecomeState = "none" | "progress" | "review" | "failed";
+/**
+ * The Become-a-rider card on a customer-only Account (start / in progress / review / failed / locked).
+ * `locked` (R-10, ledger D-54 §4) is both tries used: the server refuses a third, so the card carries the
+ * board's own "used both tries" wall copy and its WhatsApp action instead of a dead "Try again".
+ */
+export type BecomeState = "none" | "progress" | "review" | "failed" | "locked";
 export function BecomeCard({ state, failBody, onAction }: { state: BecomeState; failBody?: string; onAction: () => void }): React.ReactElement {
+  const arrow: IconName = "arrow-right";
   const d = {
-    none: { icon: "bike" as IconName, tone: "ok", title: R.becomeT, body: R.becomeB, cta: R.startKyc },
-    progress: { icon: "id-card" as IconName, tone: "ok", title: R.kycProgT, body: R.kycProgB, cta: R.continueKyc },
-    review: { icon: "hourglass" as IconName, tone: "calm", title: R.kycReviewT, body: R.kycReviewB, cta: null },
-    failed: { icon: "id-card" as IconName, tone: "danger", title: R.kycFailT, body: failBody ?? "", cta: R.tryKyc },
+    none: { icon: "bike" as IconName, tone: "ok", title: R.becomeT, body: R.becomeB, cta: R.startKyc, ctaIcon: arrow },
+    progress: { icon: "id-card" as IconName, tone: "ok", title: R.kycProgT, body: R.kycProgB, cta: R.continueKyc, ctaIcon: arrow },
+    review: { icon: "hourglass" as IconName, tone: "calm", title: R.kycReviewT, body: R.kycReviewB, cta: null, ctaIcon: arrow },
+    failed: { icon: "id-card" as IconName, tone: "danger", title: R.kycFailT, body: failBody ?? "", cta: R.tryKyc, ctaIcon: arrow },
+    locked: { icon: "id-card" as IconName, tone: "danger", title: R.gFailed2T, body: R.gFailed2B, cta: R.whatsappSupport, ctaIcon: "message-circle" as IconName },
   }[state];
   const wash = state === "none" || state === "progress";
   return (
@@ -544,7 +550,7 @@ export function BecomeCard({ state, failBody, onAction }: { state: BecomeState; 
         gap: 10,
         backgroundColor: wash ? tokens.color.accentWash : tokens.color.bg,
         borderWidth: wash ? 0 : 1,
-        borderColor: state === "failed" ? tokens.color.danger : tokens.color.line,
+        borderColor: state === "failed" || state === "locked" ? tokens.color.danger : tokens.color.line,
       }}
     >
       <View style={{ flexDirection: "row", gap: 12, alignItems: "flex-start" }}>
@@ -569,7 +575,7 @@ export function BecomeCard({ state, failBody, onAction }: { state: BecomeState; 
       </View>
       {d.cta ? (
         <View style={{ flexDirection: "row" }}>
-          <SmBtn kind="fill" flex={1} label={d.cta} icon="arrow-right" onPress={onAction} />
+          <SmBtn kind="fill" flex={1} label={d.cta} icon={d.ctaIcon} onPress={onAction} />
         </View>
       ) : null}
     </View>

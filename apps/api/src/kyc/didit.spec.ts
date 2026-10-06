@@ -3,6 +3,8 @@ import { KYC_THRESHOLDS } from "@lynia/shared";
 import { describe, expect, it } from "vitest";
 import {
   canonicalizeDiditBody,
+  classifyDiditSession,
+  classifyStoredDiditStatus,
   decideDiditKyc,
   diditTimestampFresh,
   extractDiditDocumentNumber,
@@ -30,6 +32,31 @@ describe("mapDiditStatus", () => {
     expect(mapDiditStatus("Resubmitted")).toBe("pending");
     expect(mapDiditStatus("Abandoned")).toBe("pending");
     expect(mapDiditStatus("Not Started")).toBe("pending");
+  });
+});
+
+// Startup review 2026-10-06 (R-1 / R-3): the finer class behind kycHeld and retryKyc's dead check.
+describe("classifyDiditSession / classifyStoredDiditStatus", () => {
+  it("In Review is a hold; Abandoned / Expired / Kyc Expired are dead; separators and case don't matter", () => {
+    expect(classifyDiditSession("In Review")).toBe("held");
+    expect(classifyDiditSession("IN_REVIEW")).toBe("held");
+    expect(classifyDiditSession("Abandoned")).toBe("dead");
+    expect(classifyDiditSession("expired")).toBe("dead");
+    expect(classifyDiditSession("Kyc Expired")).toBe("dead");
+    expect(classifyDiditSession("Resubmitted")).toBe("in_flight");
+    expect(classifyDiditSession("Approved")).toBe("in_flight");
+    expect(classifyDiditSession("In Progress")).toBe("unfinished");
+    expect(classifyDiditSession("Not Started")).toBe("unfinished");
+    expect(classifyDiditSession(null)).toBe("unfinished");
+    expect(classifyDiditSession("Brand New Status")).toBe("unfinished");
+  });
+
+  it("a STORED Approved on a still-pending rider is a hold — that webhook already ran and held it", () => {
+    expect(classifyStoredDiditStatus("Approved")).toBe("held");
+    expect(classifyStoredDiditStatus("In Review")).toBe("held");
+    expect(classifyStoredDiditStatus("Expired")).toBe("dead");
+    expect(classifyStoredDiditStatus("In Progress")).toBe("unfinished");
+    expect(classifyStoredDiditStatus(null)).toBeNull();
   });
 });
 

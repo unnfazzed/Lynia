@@ -32,6 +32,7 @@ const freshTs = (): string => String(Math.floor(Date.now() / 1000));
 function fakeRiders(updated = 1, heldUpdated = 1) {
   const calls: Array<[string, string]> = [];
   const held: Array<[string, string]> = [];
+  const vendorStatuses: Array<[string, string, Date]> = [];
   let lastEventAt: Date | undefined;
   let lastReason: string | null | undefined;
   let lastDocNumber: string | null | undefined;
@@ -47,8 +48,12 @@ function fakeRiders(updated = 1, heldUpdated = 1) {
       held.push([ref, docNumber]);
       return { updated: heldUpdated };
     },
+    recordKycVendorStatus: async (ref: string, status: string, at: Date) => {
+      vendorStatuses.push([ref, status, at]);
+      return { updated: 1 };
+    },
   } as unknown as RiderService;
-  return { riders, calls, held, eventAt: () => lastEventAt, reason: () => lastReason, docNumber: () => lastDocNumber };
+  return { riders, calls, held, vendorStatuses, eventAt: () => lastEventAt, reason: () => lastReason, docNumber: () => lastDocNumber };
 }
 
 const ctl = (riders: RiderService, env: Partial<Env>) => new KycController(riders, env as Env);
@@ -138,6 +143,28 @@ describe("KycController.callback", () => {
   it("rejects a body missing session_id or status", async () => {
     const { riders } = fakeRiders();
     await expect(ctl(riders, {}).callback(req(JSON.stringify({ status: "Approved" })))).rejects.toThrow(/missing/i);
+  });
+
+  // R-1 / R-3 (startup review 2026-10-06): every undecided status is kept as the vendor's word about the
+  // session — a hold reads as "under review", a dead session's credentials are cleared so the next retry
+  // mints instead of resuming it forever. With the signed event time, for the monotonic guard.
+  it("records every undecided status (dead and held included) with its event time; a decision records none", async () => {
+    const f = fakeRiders();
+    for (const [id, status] of [["s_ab", "Abandoned"], ["s_ex", "Expired"], ["s_ir", "In Review"], ["s_ip", "In Progress"]]) {
+      await ctl(f.riders, { DIDIT_WEBHOOK_SECRET: undefined }).callback(req(JSON.stringify({ session_id: id, status, timestamp: 1_790_000_000 })));
+    }
+    expect(f.vendorStatuses.map(([ref, status]) => [ref, status])).toEqual([
+      ["s_ab", "Abandoned"],
+      ["s_ex", "Expired"],
+      ["s_ir", "In Review"],
+      ["s_ip", "In Progress"],
+    ]);
+    expect(f.vendorStatuses.every(([, , at]) => at.getTime() === 1_790_000_000_000)).toBe(true);
+    expect(f.calls).toEqual([]);
+
+    const decided = fakeRiders();
+    await ctl(decided.riders, { DIDIT_WEBHOOK_SECRET: undefined }).callback(req(JSON.stringify({ session_id: "s_ok", status: "Approved" })));
+    expect(decided.vendorStatuses).toEqual([]);
   });
 
   it("ignores a non-terminal status without touching the rider", async () => {

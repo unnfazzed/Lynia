@@ -5,6 +5,11 @@
 # each screen, cold-start timings and a logcat crash scan. It never presses "Send code": production OTP
 # goes out over WhatsApp to a real number, so the field only ever holds a partial one.
 #
+# The markers are the strings of the Calm Mint v2 onboarding (ledger D-55,
+# apps/mobile/src/ui/onboarding/copy.ts `OB`). ui.py matches an element's text or content-desc
+# exactly, and each button below carries its label as its content-desc. C2's title ("What’s your
+# number?") has a curly apostrophe, so phone sign-in is recognised by its "Send code" button instead.
+#
 # Usage: smoke.sh <apk> <out-dir>. Exits non-zero if the app crashed, or died or left where it
 # shouldn't have; the screenshots are for a person to read either way.
 set -uo pipefail
@@ -20,6 +25,9 @@ failures=0
 fail() { echo "FAIL: $*" | tee -a "$OUT/report.txt"; failures=$((failures + 1)); }
 note() { echo "$*" | tee -a "$OUT/report.txt"; }
 ui() { python3 "$HERE/ui.py" "$@"; }
+C1_CTA="Continue with your number"         # OB.continueWithNumber, C1 Welcome's primary button
+C1_RIDER="Want to earn? Ride with LyniaGo" # the rider link's accessibilityLabel (Android only)
+PHONE="Send code"                          # OB.sendCode, C2 phone sign-in's primary button
 shot() {
   sleep 1
   adb exec-out screencap -p > "$OUT/$1.png"
@@ -73,27 +81,22 @@ launch() { adb shell am start -W -n "$ACTIVITY" | tr -d '\r' | grep -E "TotalTim
 relaunch_to_phone() {
   adb shell am force-stop "$PKG"
   launch > /dev/null
-  ui wait "Welcome to Lynia" 60 > /dev/null 2>&1
+  ui wait "$PHONE" 60 > /dev/null 2>&1
 }
 adb logcat -c
 
-# 1. Fresh install: splash, then the onboarding carousel.
+# 1. Fresh install: splash, then C1 Welcome with its CTA and the rider link.
 note "cold start, fresh install: $(launch)"
-if ui wait "Skip" 120; then shot 01-onboarding-1; else fail "a fresh install never reached onboarding"; shot 01-stuck; fi
+if ui wait "$C1_CTA" 120; then shot 01-welcome; else fail "a fresh install never reached C1 Welcome"; shot 01-stuck; fi
+ui has "$C1_RIDER" || fail "C1 Welcome has no \"$C1_RIDER\" link"
+on_screen "$C1_CTA" "C1 Welcome"
 
-# 2. Next until the last slide, then Get started, which lands on phone sign-in.
-for slide in 2 3 4; do
-  ui has "Get started" && break
-  on_screen "Next" "onboarding slide $((slide - 1))"
-  ui tap "Next" 15 || { fail "no Next on onboarding slide $((slide - 1))"; break; }
-  shot "02-onboarding-$slide"
-done
-on_screen "Get started" "the last onboarding slide"
-ui tap "Get started" 15 || fail "no Get started on the last onboarding slide"
-if ui wait "Welcome to Lynia" 30; then shot 03-phone; else fail "Get started did not reach phone sign-in"; shot 03-stuck; fi
-on_screen "Send code" "phone sign-in"
+# 2. "Continue with your number" lands on C2, phone sign-in.
+ui tap "$C1_CTA" 15 || fail "no \"$C1_CTA\" on C1 Welcome"
+if ui wait "$PHONE" 30; then shot 02-phone; else fail "\"$C1_CTA\" did not reach phone sign-in"; shot 02-stuck; fi
+on_screen "$PHONE" "phone sign-in"
 
-# 3. The keyboard over the phone field. A partial number keeps "Send code" disabled.
+# 3. The keyboard over the phone field, holding a partial number ("Send code" is never pressed).
 if ui tap --class android.widget.EditText 15; then
   sleep 1
   adb shell input text "0771"
@@ -101,20 +104,21 @@ if ui tap --class android.widget.EditText 15; then
   note "keyboard: $(adb shell dumpsys input_method | grep -m1 -o -E 'mInputShown=[a-z]+' | tr -d '\r')"
   back # the first back closes the keyboard
   alive || fail "back with the keyboard up killed the app"
-  ui has "Welcome to Lynia" || fail "back with the keyboard up left phone sign-in"
+  ui has "$PHONE" || fail "back with the keyboard up left phone sign-in"
   shot 05-phone-keyboard-closed
 else
   fail "no phone field on phone sign-in"
 fi
 
 # 4. Every route a link could open while signed out. Each must draw, and back must return inside the
-#    app (API 36 is where targeting 36 changes back handling).
-for route in help send home food history notifications settings profile wallet rider permissions role; do
+#    app (API 36 is where targeting 36 changes back handling). The routes are the screens in
+#    apps/mobile/app; Help is a WhatsApp chat and the profile page is gone (D-60).
+for route in send home orders account food shops pharmacy history notifications settings wallet/top-up rider permissions; do
+  name="${route//\//-}"
   deeplink "lynia://$route"
   sleep 5
-  system_dialog "lynia://$route" "06-link-$route-dialog"
-  shot "06-link-$route"
-  [ "$route" = role ] && on_screen "Continue as a customer" "lynia://role"
+  system_dialog "lynia://$route" "06-link-$name-dialog"
+  shot "06-link-$name"
   if ! alive; then
     fail "lynia://$route killed the app"
     relaunch_to_phone
@@ -122,7 +126,7 @@ for route in help send home food history notifications settings profile wallet r
   fi
   back
   # Back can land on a screen that asks for location again (the rider board does on each focus).
-  system_dialog "back from lynia://$route" "06-link-$route-back-dialog"
+  system_dialog "back from lynia://$route" "06-link-$name-back-dialog"
   if ! alive; then
     fail "back from lynia://$route killed the app"
     relaunch_to_phone
@@ -135,7 +139,7 @@ done
 # 5. Relaunch after a force-stop: onboarding is remembered, so it opens on phone sign-in.
 adb shell am force-stop "$PKG"
 note "cold start after force-stop: $(launch)"
-if ui wait "Welcome to Lynia" 60; then shot 07-relaunch; else fail "relaunch did not reach phone sign-in"; shot 07-stuck; fi
+if ui wait "$PHONE" 60; then shot 07-relaunch; else fail "relaunch did not reach phone sign-in"; shot 07-stuck; fi
 
 # 6. Back on the root screen sends the app to the background, and must not crash it.
 back
@@ -151,7 +155,7 @@ fi
 sleep 3
 adb shell am force-stop "$PKG"
 note "cold start, offline: $(launch)"
-if ui wait "Welcome to Lynia" 60; then shot 08-offline; else fail "the offline cold start did not reach phone sign-in"; shot 08-stuck; fi
+if ui wait "$PHONE" 60; then shot 08-offline; else fail "the offline cold start did not reach phone sign-in"; shot 08-stuck; fi
 if [ "$SDK" -ge 30 ]; then
   adb shell cmd connectivity airplane-mode disable
 else
@@ -161,29 +165,32 @@ fi
 sleep 3
 
 # 8. The 320x640dp entry phone (CLAUDE.md): the same 720x1440 panel at density 360. Clearing the
-#    app's data brings onboarding back, the screen with a button pinned to the bottom.
+#    app's data brings C1 Welcome back, the screen with its CTA pinned to the bottom.
 adb shell wm density 360
 adb shell pm clear "$PKG" > /dev/null
 launch > /dev/null
-if ui wait "Skip" 60; then
-  on_screen "Next" "onboarding at 320x640dp"
-  shot 09-small-phone-onboarding
-  ui tap "Skip" 15 > /dev/null 2>&1
+if ui wait "$C1_CTA" 60; then
+  on_screen "$C1_CTA" "C1 Welcome at 320x640dp"
+  shot 09-small-phone-welcome
+  ui tap "$C1_CTA" 15 > /dev/null 2>&1
+else
+  fail "C1 Welcome did not come back at 320x640dp"
+  shot 09-small-phone-stuck
 fi
-# Skip saves the onboarding flag in the background; a force-stop straight after it can beat the write
-# and reopen onboarding, so follow Skip to sign-in rather than relaunching.
-ui wait "Welcome to Lynia" 30 > /dev/null 2>&1 || relaunch_to_phone
+# The CTA saves the onboarding flag in the background; a force-stop straight after it can beat the
+# write and reopen C1, so follow the CTA to sign-in rather than relaunching.
+ui wait "$PHONE" 30 > /dev/null 2>&1 || relaunch_to_phone
 shot 09-small-phone
-on_screen "Send code" "phone sign-in at 320x640dp"
+on_screen "$PHONE" "phone sign-in at 320x640dp"
 if ui tap --class android.widget.EditText 15; then
   sleep 1
   adb shell input text "0771"
   shot 10-small-phone-keyboard
   back
 fi
-deeplink "lynia://help"
+deeplink "lynia://settings"
 sleep 5
-shot 11-small-phone-help
+shot 11-small-phone-settings
 adb shell wm density reset
 
 # 9. Crash scan over the whole walk.

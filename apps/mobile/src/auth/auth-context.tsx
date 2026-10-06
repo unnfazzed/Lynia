@@ -184,6 +184,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
+/**
+ * The auth state, or null outside an AuthProvider. For a screen that also renders where there is no
+ * provider (the parity lane mounts some screens bare) and treats "unknown" differently from "signed out".
+ */
+export function useOptionalAuth(): AuthState | null {
+  return useContext(AuthContext);
+}
+
 export function useAuth(): AuthState {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");

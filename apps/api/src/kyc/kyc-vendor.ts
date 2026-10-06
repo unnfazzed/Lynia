@@ -32,6 +32,14 @@ export interface KycVendor {
    * degrade to a default, not fail the rider's own `/auth/me`.
    */
   pendingState?(ref: string): Promise<ServerKycPendingState>;
+
+  /**
+   * The vendor's RAW status string for a session (e.g. Didit's "In Review", "Expired"), or null when it
+   * can't be read. OPTIONAL and, like `pendingState`, must never throw. Preferred over `pendingState`
+   * when present: the raw status also tells a held check (R-3) and a dead session (R-1) apart, which the
+   * two-value pending state cannot.
+   */
+  sessionStatus?(ref: string): Promise<string | null>;
 }
 
 export const KYC_VENDOR = Symbol("KYC_VENDOR");

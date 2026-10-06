@@ -3,6 +3,7 @@
 // of parcel-commission debits + a top-up credit + the opening grace credit. No active job, so the
 // cash-held "owed" strip reads zero. Wallet/ledger amounts are plain NUMBERS (not serialised strings).
 import { installRouter, withQuery } from "./_harness.mjs";
+import { HISTORY } from "./_rider_v2.mjs";
 
 if (typeof window !== "undefined") window.__PARITY_SETTLE_MS = 1200;
 
@@ -37,7 +38,11 @@ installRouter([
   { match: "/wallet/config", json: config },
   { match: "/wallet/ledger", json: ledger },
   { match: "/wallet", method: "GET", json: wallet },
-  { match: "/orders/mine/active", json: null },
+  // `false`, not `null`: the harness coalesces a null body to `{}`, which reads as an active job.
+  { match: "/orders/mine/active", json: false },
+  // The earnings card and the top-up hint read the history feed; unstubbed it answered `{}` (not iterable).
+  { match: "/orders/history", json: HISTORY },
+  { match: "/notifications/unread-count", json: { count: 0 } },
 ]);
 
 export default { wrap: withQuery() };

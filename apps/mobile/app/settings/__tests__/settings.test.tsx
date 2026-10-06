@@ -87,6 +87,35 @@ describe("Settings sections", () => {
   });
 });
 
+describe("Personal details and Bike & documents rows (D-79)", () => {
+  it("both sides get a Personal details row in YOUR ACCOUNT, in the handoff's words, opening the screen", async () => {
+    for (const me of [CUSTOMER, RIDER]) {
+      mockPush.mockClear();
+      const t = await render(me);
+      const s = out(t);
+      expect(s.indexOf('"YOUR ACCOUNT"')).toBeLessThan(s.indexOf('"Personal details"'));
+      expect(s.indexOf('"Personal details"')).toBeLessThan(s.indexOf('"CUSTOMER"'));
+      expect(s).toContain('"Name, phone, optional ID"');
+      const row = t.root.findAll((n) => n.props.accessibilityLabel === "Personal details, Name, phone, optional ID" && typeof n.props.onPress === "function")[0]!;
+      await act(async () => row.props.onPress());
+      expect(mockPush).toHaveBeenCalledWith("/settings/personal");
+    }
+  });
+
+  it("a verified rider with no plate is not shown 'Verified' on Bike & documents (review R-8)", async () => {
+    const s = out(await render({ ...RIDER, rider: { bikeReg: null, kycStatus: "verified" } }));
+    const at = s.indexOf('"Bike & documents"');
+    expect(at).toBeGreaterThan(-1);
+    expect(s.slice(at, s.indexOf('"Sign out"'))).not.toContain('"Verified"');
+  });
+
+  it("a verified rider with a plate still is", async () => {
+    const s = out(await render(RIDER));
+    const at = s.indexOf('"Bike & documents"');
+    expect(s.slice(at, s.indexOf('"Sign out"'))).toContain('"Verified"');
+  });
+});
+
 describe("permissions come from the phone", () => {
   it("granted: 'While using' and 'On', no warnings", async () => {
     const s = out(await render(RIDER));

@@ -53,7 +53,7 @@
 | D6 | iPhone only? | **Yes** (`supportsTablet: false`) | No iPad screenshots are needed. Reviewers may still run the app on iPad in compatibility mode (2.4.1); see the `tel:` item in B6. |
 | D7 | Bundle ID | **`zw.co.lynia`** (same as the Android package) | Permanent once the App Store Connect record exists. |
 | D8 | What a reviewer's test order does | **Recommended: mark demo-account orders as test server-side** | The demo login is a normal customer (`auth.service.ts:448-452`). A parcel request inside the Harare corridor goes to real online riders. Restaurants are listed regardless of location (`merchant.service.ts:399-429`), so a food order reaches a real pilot restaurant. |
-| D9 | Account deletion: 30-day grace or immediate? | **OPEN, owner call** | The in-app final step, drawn in `screens-shipped.jsx:361`, promises a 30-day grace period. The server (`PrivacyService.eraseAccount`) and the public page both delete **immediately**. Apple accepts either (5.1.1(v)), but the app must say what actually happens. |
+| D9 | Account deletion: 30-day grace or immediate? | **DECIDED 2026-10-06: immediate** (owner; ledger D-79) | The in-app final step and the Privacy notice now say the account is erased straight away, matching the server (`PrivacyService.eraseAccount`) and the public page. Apple accepts either (5.1.1(v)). |
 | D10 | Permission-primer button "Allow location" (`app/permissions.tsx:110`) | **OPEN, recommended: "Continue"** | A custom pre-permission button worded "Allow" is a recurring App Review 5.1.1 rejection (a reviewer pattern, not guideline text). The mock draws "Allow location", so the change needs a deviation entry. |
 
 ## 2. Phase A — Apple accounts [F]
@@ -422,7 +422,7 @@ Then **override to 18+**, matching the privacy notice's "not intended for anyone
 | 2.1 completeness / demo login | Everything is behind OTP sign-in | The demo login above, armed and non-expiring. |
 | 2.1 real-world side effects | A reviewer's test order reaches real riders or restaurants | D8. |
 | 3.1.3(e) | Cash and mobile money for physical goods and services | Must *not* use in-app purchase. Say so in the notes. |
-| 5.1.1(v) account deletion | Exists: Settings → Delete account → `DELETE /auth/me` | Fix the D9 mismatch. |
+| 5.1.1(v) account deletion | Exists: Settings → Delete account → `DELETE /auth/me` | D9 fixed 2026-10-06 (D-79): the copy now says immediate. |
 | 5.1.1(v) login before non-account features | Restaurant browsing sits behind sign-in | Explain in the notes. If rejected, allowing browsing before sign-in is a design change. |
 | 5.1.1 primer wording and purpose strings | "Allow location"; generic plugin defaults | D10, B2. |
 | 5.2.1 seller vs brand | Seller "FortyoneX Studio (Private) Limited", app "LyniaGo" | The operator line everywhere (D1). |

@@ -18,7 +18,14 @@ const mockPush = jest.fn();
 const mockReplace = jest.fn();
 
 jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush, replace: mockReplace, back: jest.fn() }) }));
-jest.mock("expo-secure-store", () => ({ getItemAsync: async () => null, setItemAsync: async () => undefined, deleteItemAsync: async () => undefined }));
+const mockStoreWrites: Array<[string, string]> = [];
+jest.mock("expo-secure-store", () => ({
+  getItemAsync: async () => null,
+  setItemAsync: async (k: string, v: string) => {
+    mockStoreWrites.push([k, v]);
+  },
+  deleteItemAsync: async () => undefined,
+}));
 jest.mock("../../../src/api/auth", () => ({ getMe: () => mockGetMe() }));
 jest.mock("../../../src/api/notifications", () => ({ getNotificationsUnreadCount: () => Promise.resolve({ count: 0 }) }));
 
@@ -89,6 +96,53 @@ describe("becomeStateFor", () => {
     expect(becomeStateFor(me({ kycStatus: "failed" }))).toBe("failed");
     expect(becomeStateFor(me({ kycStatus: "verified" }))).toBe("toggle");
     expect(becomeStateFor(me({ kycStatus: "expired" }))).toBe("toggle");
+  });
+
+  // Startup review 2026-10-06.
+  it("R-3: a held check is a wait (review), whatever the pending state says", () => {
+    expect(becomeStateFor(me({ kycStatus: "pending", kycPendingState: "unfinished", kycHeld: true }))).toBe("review");
+  });
+  it("R-10: both tries used is `locked`, not a second `failed` with a Try again", () => {
+    expect(becomeStateFor(me({ kycStatus: "failed", kycAttempts: 1 }))).toBe("failed");
+    expect(becomeStateFor(me({ kycStatus: "failed", kycAttempts: 2 }))).toBe("locked");
+  });
+});
+
+describe("customer Account — the Become card and toggle (startup review 2026-10-06)", () => {
+  it("R-10: a locked application offers WhatsApp support, never 'Try again'", async () => {
+    mockGetMe.mockResolvedValue(me({ kycStatus: "failed", kycAttempts: 2, kycDeclineReason: "face_mismatch" }));
+    tree = renderScreen();
+    await settle();
+    expect(has(tree, "We still couldn't verify your ID")).toBe(true);
+    expect(has(tree, "Try again")).toBe(false);
+    expect(tree.root.findAll((n) => typeof n.props.children === "string" && n.props.children.includes("0 tries left"))).toHaveLength(0);
+    press(tree, "Message support on WhatsApp");
+    expect(openURL).toHaveBeenCalledWith("https://wa.me/263778831938");
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("R-6: a declined card names the real reason; an unknown one keeps the drawn copy", async () => {
+    mockGetMe.mockResolvedValue(me({ kycStatus: "failed", kycAttempts: 1, kycDeclineReason: "face_mismatch" }));
+    tree = renderScreen();
+    await settle();
+    expect(has(tree, "Selfie doesn't match the ID. You have 1 try left.")).toBe(true);
+    expect(has(tree, "The ID photo was blurry. You have 1 try left.")).toBe(false);
+    act(() => tree!.unmount());
+
+    mockGetMe.mockResolvedValue(me({ kycStatus: "failed", kycAttempts: 1, kycDeclineReason: null }));
+    tree = renderScreen();
+    await settle();
+    expect(has(tree, "The ID photo was blurry. You have 1 try left.")).toBe(true);
+  });
+
+  it("R-5: switching to Rider saves the rider side for the next cold start", async () => {
+    mockStoreWrites.length = 0;
+    mockGetMe.mockResolvedValue(me({}));
+    tree = renderScreen();
+    await settle();
+    press(tree, "Rider");
+    await settle();
+    expect(mockStoreWrites).toContainEqual(["lynia.rolePreference", "rider"]);
   });
 });
 

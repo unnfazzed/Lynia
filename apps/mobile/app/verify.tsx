@@ -2,12 +2,13 @@ import { formatPhoneDisplay } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
-import { AppState, Text, TextInput, View } from "react-native";
+import { AccessibilityInfo, AppState, Platform, Text, TextInput, View } from "react-native";
 import { requestOtp, verifyOtp } from "../src/api/auth";
 import { ApiError } from "../src/api/client";
 import { useAuth } from "../src/auth/auth-context";
 import { loadRolePreference, saveRolePreference } from "../src/auth/session";
-import { RESEND_COOLDOWN_S, formatCountdown, isOtpExpiredOrLocked } from "../src/logic/otp";
+import { replaceClearingStack } from "../src/logic/nav";
+import { RESEND_COOLDOWN_S, formatCountdown, otpErrorMessage, otpFailure } from "../src/logic/otp";
 import { parseSignInIntent, signedInDestination, startRoleFor } from "../src/logic/sign-in-route";
 import { DismissKeyboardArea, Icon, Tappable, useActionError } from "../src/ui";
 import { OB } from "../src/ui/onboarding/copy";
@@ -15,7 +16,8 @@ import { BackButton, Cta, H2, OnbScreen, Pad } from "../src/ui/onboarding/kit";
 
 /**
  * Test seam: the parity lane stages the code screen's states by mounting it directly (expo-router passes
- * no props, so the defaults are what ships).
+ * no props, so the defaults are what ships). `initialResent` is still passed by the `auth_otp_resent`
+ * fixture; C4 draws no "resent" banner (a resend restarts the countdown), so it changes nothing.
  */
 export type VerifyScreenProps = {
   initialCooldownS?: number;
@@ -33,6 +35,60 @@ const CODE_LENGTH = 6;
 /** The idle resend line, greyed until the countdown ends (`shared.js` `O.otp`). */
 const RESEND_IDLE = "#9AA3AB";
 
+/** The code boxes' spoken label: what the six boxes show, which the eye reads at a glance. */
+function codeBoxesLabel(entered: number): string {
+  return `${CODE_LENGTH}-digit code, ${entered} ${entered === 1 ? "digit" : "digits"} entered`;
+}
+
+function secondsUntil(at: number): number {
+  return Math.max(0, Math.ceil((at - Date.now()) / 1000));
+}
+
+/**
+ * "Resend in 0:42", then "Resend on WhatsApp" (or "Send a new code" after an SMS send, P-8). Its own component so the one-second tick re-renders this
+ * row alone, not the whole code screen 60 times per code.
+ */
+function ResendRow({ endsAt, label, resending, onResend }: { endsAt: number; label: string; resending: boolean; onResend: () => void }): React.ReactElement {
+  const [cooldown, setCooldown] = useState(() => secondsUntil(endsAt));
+
+  useEffect(() => {
+    const tick = (): void => setCooldown(secondsUntil(endsAt));
+    tick(); // recompute immediately (mount, resend, and — via AppState below — on foreground)
+    const iv = setInterval(tick, 1000);
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "active") tick();
+    });
+    return () => {
+      clearInterval(iv);
+      sub.remove();
+    };
+  }, [endsAt]);
+
+  return (
+    <>
+      {cooldown > 0 ? (
+        <View style={{ marginTop: 14, flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <Icon name="clock" size={16} color={tokens.color.muted} />
+          <Text style={{ fontSize: 13, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>{OB.resendIn(formatCountdown(cooldown))}</Text>
+        </View>
+      ) : null}
+      <Tappable
+        onPress={onResend}
+        disabled={cooldown > 0 || resending}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityState={{ disabled: cooldown > 0 }}
+        style={{ marginTop: cooldown > 0 ? 6 : 14, minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: 6 }}
+      >
+        <Icon name="refresh-cw" size={16} color={cooldown > 0 ? RESEND_IDLE : tokens.color.accentText} />
+        <Text style={{ fontSize: 14, fontWeight: cooldown > 0 ? tokens.font.weight.regular : tokens.font.weight.semibold, color: cooldown > 0 ? RESEND_IDLE : tokens.color.accentText }}>
+          {label}
+        </Text>
+      </Tappable>
+    </>
+  );
+}
+
 /**
  * C4 · Code (Calm Mint v2, `packages/design/handoff/calm-mint-v2-2026-10` README §3; ledger D-55):
  * "Enter the code", "Sent on WhatsApp to +263 … Change", six 56px boxes with the active one bordered
@@ -43,12 +99,13 @@ const RESEND_IDLE = "#9AA3AB";
  * The channel line follows the real send (D-40): Bird Verify is WhatsApp-first and can fall back to SMS
  * per number, so "Sent by SMS" when it did. The input keeps the platform autofill hints (`sms-otp`,
  * `oneTimeCode`), which is what "fills in by itself" rests on.
+ *
+ * Submitting (start-up review 2026-10-06, C-5): the latest complete code is sent as soon as nothing is in
+ * flight, so a code corrected while a request runs is not dropped. A definitive "wrong code" is never
+ * re-sent as is (it would only burn an attempt); after a non-answer (no network, a timeout, a 5xx, a rate
+ * limit) the same code can be sent again by retyping it, which is what the server's same-code grace is for.
  */
-export default function VerifyScreen({
-  initialCooldownS = RESEND_COOLDOWN_S,
-  initialResent = false,
-  initialLocked = false,
-}: VerifyScreenProps = {}): React.ReactElement {
+export default function VerifyScreen({ initialCooldownS = RESEND_COOLDOWN_S, initialLocked = false }: VerifyScreenProps = {}): React.ReactElement {
   const router = useRouter();
   const { signIn } = useAuth();
   const params = useLocalSearchParams<{ phone?: string; devCode?: string; deliveryChannel?: string; intent?: string }>();
@@ -61,27 +118,26 @@ export default function VerifyScreen({
   const setError = useActionError();
   const [wrong, setWrong] = useState(false);
   const [cooldownEndsAt, setCooldownEndsAt] = useState<number>(() => Date.now() + initialCooldownS * 1000);
-  const [cooldown, setCooldown] = useState(initialCooldownS);
   const [resending, setResending] = useState(false);
-  const [, setResent] = useState(initialResent);
   const [locked, setLocked] = useState(initialLocked);
   const [focused, setFocused] = useState(false);
   const input = useRef<TextInput>(null);
-  // The last code we submitted — the sixth digit auto-submits once per distinct code, never in a loop.
+  // The last code submitted. The sixth digit submits once per distinct code, never in a loop.
   const tried = useRef<string | null>(null);
+  // True when the last submit got no answer about the code: an edit then clears `tried`, so retyping
+  // the same six digits sends them again.
+  const retryable = useRef(false);
+  // Synchronous: two effects in one frame both see `busy` false.
+  const inFlight = useRef(false);
+  // The code the server last called wrong: retyping it shows the danger line again instead of nothing.
+  const wrongCode = useRef<string | null>(null);
 
+  // iOS has no live regions: say the error lines out loud there (Android's accessibilityLiveRegion does).
   useEffect(() => {
-    const tick = (): void => setCooldown(Math.max(0, Math.ceil((cooldownEndsAt - Date.now()) / 1000)));
-    tick(); // recompute immediately (mount, resend, and — via AppState below — on foreground)
-    const iv = setInterval(tick, 1000);
-    const sub = AppState.addEventListener("change", (s) => {
-      if (s === "active") tick();
-    });
-    return () => {
-      clearInterval(iv);
-      sub.remove();
-    };
-  }, [cooldownEndsAt]);
+    if (Platform.OS !== "ios") return;
+    if (locked) AccessibilityInfo.announceForAccessibility(OB.expired);
+    else if (wrong) AccessibilityInfo.announceForAccessibility(OB.wrongCode);
+  }, [wrong, locked]);
 
   const requestFreshCode = async (): Promise<void> => {
     if (resending || phone.length === 0) return;
@@ -90,28 +146,33 @@ export default function VerifyScreen({
     try {
       const res = await requestOtp(phone);
       setDeliveryChannel(asDeliveryChannel(res.deliveryChannel));
-      setResent(true);
       setLocked(false);
       setWrong(false);
       setCode("");
       tried.current = null;
+      retryable.current = false;
+      wrongCode.current = null;
       setCooldownEndsAt(Date.now() + RESEND_COOLDOWN_S * 1000);
       input.current?.focus();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't send a new code.");
+      setError(otpErrorMessage(e, "Couldn't send a new code."));
     } finally {
       setResending(false);
     }
   };
 
   const submit = async (value: string): Promise<void> => {
-    if (busy) return;
+    if (inFlight.current) return;
+    inFlight.current = true;
     tried.current = value;
+    retryable.current = false;
     setError(null);
     setWrong(false);
     setBusy(true);
     try {
       const res = await verifyOtp(phone, value);
+      // A brand-new account keeps its C1 rider intent with the session, so an app killed on C5 still
+      // finishes as a rider (C-4).
       await signIn({
         accessToken: res.accessToken,
         refreshToken: res.refreshToken,
@@ -119,36 +180,45 @@ export default function VerifyScreen({
         profileId: res.profileId,
         role: res.role,
         needsProfile: res.needsProfile,
+        ...(res.needsProfile && intent ? { signupIntent: intent } : {}),
       });
-      // A brand-new account has no name yet: C5 first, carrying the verified number, the channel that
-      // verified it, and the C1 rider intent. That screen routes onward itself once the name is saved.
+      // Every way out of sign-in clears the stack: Back must never reach the phone screen again (C-1).
+      // A brand-new account has no name yet: C5 first, carrying the verified number and the C1 rider
+      // intent. That screen routes onward itself once the name is saved.
       if (res.needsProfile) {
-        router.replace({ pathname: "/profile/setup", params: { phone, deliveryChannel, ...(intent ? { intent } : {}) } });
+        replaceClearingStack(router, { pathname: "/profile/setup", params: { phone, ...(intent ? { intent } : {}) } });
         return;
       }
-      // No role choice screen (D-55): a saved role wins; otherwise the account starts as a customer, or
-      // as a rider if it came in through C1's "Ride with LyniaGo".
+      // No role choice screen (D-55): a saved role wins; then the server's (a returning rider whose saved
+      // role a sign-out wiped, C-3); otherwise customer, or rider through C1's "Ride with LyniaGo".
       const chosen = await loadRolePreference();
-      if (!chosen) void saveRolePreference(startRoleFor(null, intent));
-      router.replace(signedInDestination(chosen, intent));
+      if (!chosen) void saveRolePreference(startRoleFor(null, intent, res.role));
+      replaceClearingStack(router, signedInDestination(chosen, intent, res.role));
     } catch (e) {
-      // An expired or locked code isn't a "try again" error — it needs a fresh code.
-      if (e instanceof ApiError && isOtpExpiredOrLocked(e)) {
+      const failure = otpFailure(e instanceof ApiError ? e : null);
+      if (failure === "expired" || failure === "locked") {
+        // Not a "try again" error: it needs a fresh code.
         setLocked(true);
-      } else if (e instanceof ApiError && (e.status === 400 || e.status === 401 || e.status === 422)) {
+      } else if (failure === "invalid") {
+        wrongCode.current = value;
         setWrong(true);
       } else {
-        setError(e instanceof ApiError ? e.message : "Couldn't verify the code.");
+        // The server never judged this code: the user may send it again.
+        retryable.current = true;
+        setError(otpErrorMessage(e, "Couldn't verify the code."));
       }
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   };
 
-  // The sixth digit submits (README §3 "auto-verifies, so there's no Verify button").
+  // The sixth digit submits (README §3 "auto-verifies, so there's no Verify button") — the latest code,
+  // once nothing is in flight: `busy` is a dependency so a code completed mid-request goes when it ends.
   useEffect(() => {
-    if (code.length === CODE_LENGTH && !locked && tried.current !== code) void submit(code);
-  }, [code, locked]);
+    if (busy || locked || code.length !== CODE_LENGTH || tried.current === code) return;
+    void submit(code);
+  }, [code, locked, busy]);
 
   const back = (): void => {
     if (router.canGoBack()) router.back();
@@ -193,7 +263,9 @@ export default function VerifyScreen({
             )}
           </Text>
 
-          <Tappable onPress={() => input.current?.focus()} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          {/* The six boxes are the code field a screen reader meets (C-7): one element that says how many
+              digits are in and opens the keyboard. The real input below stays out of the reader's way. */}
+          <Tappable onPress={() => input.current?.focus()} accessible accessibilityLabel={codeBoxesLabel(code.length)} accessibilityHint="Opens the keyboard">
             <View style={{ flexDirection: "row", gap: 8 }}>
               {Array.from({ length: CODE_LENGTH }, (_, i) => {
                 const current = focused && !locked && i === active && code.length < CODE_LENGTH;
@@ -216,13 +288,20 @@ export default function VerifyScreen({
               })}
             </View>
           </Tappable>
-          {/* One real input under the six boxes: it owns the keyboard, autofill and paste. */}
+          {/* One real input under the six boxes: it owns the keyboard, autofill and paste. Near-invisible
+              rather than opacity 0, which Android drops from autofill and accessibility focus. */}
           <TextInput
             ref={input}
             value={code}
             onChangeText={(v) => {
-              setCode(v.replace(/\D/g, "").slice(0, CODE_LENGTH));
-              setWrong(false);
+              const next = v.replace(/\D/g, "").slice(0, CODE_LENGTH);
+              // An edit after a non-answer re-arms the same code (C-5); a wrong code stays spent.
+              if (retryable.current && next !== code) {
+                tried.current = null;
+                retryable.current = false;
+              }
+              setCode(next);
+              setWrong(next === wrongCode.current);
             }}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
@@ -232,8 +311,10 @@ export default function VerifyScreen({
             autoComplete="sms-otp"
             textContentType="oneTimeCode"
             accessibilityLabel="6-digit code"
+            accessibilityElementsHidden
+            importantForAccessibility="no"
             caretHidden
-            style={{ position: "absolute", width: 1, height: 1, opacity: 0 }}
+            style={{ position: "absolute", width: 1, height: 1, opacity: 0.01 }}
           />
 
           {wrong ? (
@@ -246,27 +327,7 @@ export default function VerifyScreen({
               {OB.expired}
             </Text>
           ) : (
-            <>
-              {cooldown > 0 ? (
-                <View style={{ marginTop: 14, flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <Icon name="clock" size={16} color={tokens.color.muted} />
-                  <Text style={{ fontSize: 13, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>{OB.resendIn(formatCountdown(cooldown))}</Text>
-                </View>
-              ) : null}
-              <Tappable
-                onPress={() => void requestFreshCode()}
-                disabled={cooldown > 0 || resending}
-                accessibilityRole="button"
-                accessibilityLabel={resendLabel}
-                accessibilityState={{ disabled: cooldown > 0 }}
-                style={{ marginTop: cooldown > 0 ? 6 : 14, minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: 6 }}
-              >
-                <Icon name="refresh-cw" size={16} color={cooldown > 0 ? RESEND_IDLE : tokens.color.accentText} />
-                <Text style={{ fontSize: 14, fontWeight: cooldown > 0 ? tokens.font.weight.regular : tokens.font.weight.semibold, color: cooldown > 0 ? RESEND_IDLE : tokens.color.accentText }}>
-                  {resendLabel}
-                </Text>
-              </Tappable>
-            </>
+            <ResendRow endsAt={cooldownEndsAt} label={resendLabel} resending={resending} onResend={() => void requestFreshCode()} />
           )}
         </Pad>
       </OnbScreen>

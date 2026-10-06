@@ -20,7 +20,14 @@ const mockPush = jest.fn();
 const mockReplace = jest.fn();
 
 jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush, replace: mockReplace }) }));
-jest.mock("expo-secure-store", () => ({ getItemAsync: async () => null, setItemAsync: async () => undefined, deleteItemAsync: async () => undefined }));
+const mockStoreWrites: Array<[string, string]> = [];
+jest.mock("expo-secure-store", () => ({
+  getItemAsync: async () => null,
+  setItemAsync: async (k: string, v: string) => {
+    mockStoreWrites.push([k, v]);
+  },
+  deleteItemAsync: async () => undefined,
+}));
 jest.mock("../../../../src/api/auth", () => ({ getMe: () => mockGetMe() }));
 jest.mock("../../../../src/api/orders", () => ({ getActiveOrder: (...a: unknown[]) => mockGetActiveOrder(...a) }));
 jest.mock("../../../../src/api/notifications", () => ({ getNotificationsUnreadCount: () => Promise.resolve({ count: 3 }) }));
@@ -161,6 +168,23 @@ describe("the Customer | Rider toggle (C4 / C5)", () => {
     await settle();
     expect(mockSetOnline).toHaveBeenCalledWith(false);
     expect(mockReplace).toHaveBeenCalledWith("/home");
+  });
+
+  // R-5 (startup review 2026-10-06): the side picked is the side the next cold start opens on.
+  it("R-5: going to the customer view saves the customer side; staying saves nothing", async () => {
+    mockStoreWrites.length = 0;
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    tree = renderScreen();
+    await settle();
+    press(tree, "Customer");
+    press(tree, "Stay online as a rider");
+    await settle();
+    expect(mockStoreWrites.filter(([k]) => k === "lynia.rolePreference")).toEqual([]);
+    press(tree, "Customer");
+    press(tree, "Go to customer view");
+    await settle();
+    expect(mockStoreWrites).toContainEqual(["lynia.rolePreference", "customer"]);
   });
 
   it("C4: 'Stay online as a rider' leaves everything alone", async () => {

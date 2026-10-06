@@ -20,6 +20,12 @@ export function requestPickupPhotoUpload(contentType: ImageContentType): Promise
   return apiFetch("/uploads/pickup-photo", { method: "POST", body: { contentType } });
 }
 
+/** The rider's own photo (ledger D-79, Bike & documents → "Add photo"): PUT the bytes, then send the
+ *  returned `key` to `PATCH /riders/me` (riders.ts `updateRiderProfile`). Keys live under `kyc/<you>/`. */
+export function requestKycPhotoUpload(contentType: ImageContentType): Promise<UploadTarget> {
+  return apiFetch("/uploads/kyc-photo", { method: "POST", body: { contentType } });
+}
+
 /** Same mint for the rider's proof-of-drop photo (KB-POD-DISPUTE Phase A): PUT the bytes, then attach
  *  the returned `key` (with GPS) via attachDeliveryProof (orders.ts). */
 export function requestDeliveryProofUpload(contentType: ImageContentType): Promise<UploadTarget> {

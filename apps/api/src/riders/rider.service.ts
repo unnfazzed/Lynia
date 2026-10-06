@@ -15,6 +15,8 @@ import { UploadVerifier } from "../adapters/storage/upload-verifier";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { KYC_VENDOR, type KycVendor } from "../kyc/kyc-vendor";
+import { classifyStoredDiditStatus, DIDIT_APPROVED_STATUS } from "../kyc/didit";
+import { KycPendingStateService } from "../kyc/kyc-pending-state.service";
 import { auditData } from "../admin/admin.shared";
 import { baseBroadcastRadiusM } from "../common/broadcast-policy";
 import { PiiCryptoService } from "../common/pii-crypto.service";
@@ -78,6 +80,11 @@ export class RiderService {
     // a missing provider fails boot rather than silently skipping the check); TS-optional only so the
     // existing positional spec constructions stay valid.
     private readonly uploads?: UploadVerifier,
+    // The shared pending-state cache (KycModule, imported by RidersModule — so Nest always injects it).
+    // retryKyc asks it whether a stored session is dead (R-1), and every write that moves a session's
+    // state invalidates or primes it (R-4). TS-optional for the positional spec constructions, same as
+    // `uploads`; without it retryKyc simply trusts the persisted vendor status.
+    private readonly pendingStates?: KycPendingStateService,
   ) {}
 
   /**
@@ -376,7 +383,10 @@ export class RiderService {
       ]);
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-        throw new ConflictException("You're already a rider");
+        // R-10: the SAME structured reason as the pre-check above. The loser of a double-tap race lands
+        // here, and the app special-cases `already_rider` (the first submit won — go to the board); a
+        // bare message left that rider on R1 with a toast.
+        throw new ConflictException({ reason: "already_rider", message: "You're already a rider" });
       }
       throw err;
     }
@@ -462,10 +472,33 @@ export class RiderService {
   ): Promise<{ kycStatus: Kyc; mode: Env["KYC_MODE"]; verificationUrl?: string; sessionToken?: string }> {
     const rider = await this.prisma.rider.findUnique({
       where: { profileId },
-      select: { kycStatus: true, kycAttempts: true, kycRef: true, kycSessionToken: true, kycSessionUrl: true, kycForcedAt: true },
+      select: {
+        kycStatus: true,
+        kycAttempts: true,
+        kycRef: true,
+        kycSessionToken: true,
+        kycSessionUrl: true,
+        kycForcedAt: true,
+        kycVendorStatus: true,
+      },
     });
     if (!rider) throw new NotFoundException("Not a rider");
     if (rider.kycStatus === "verified") throw new ConflictException("Already verified");
+    // R-3: a check HELD for a human (the vendor's In Review, or an approval held in the review band or for
+    // an ID collision) is not the rider's move; the app draws no retry on that wall. A retry that still
+    // arrives (an older app) resumes the finished session for free when its credentials were kept (E2E
+    // FS-11 keeps them on a hold) — but it must never MINT a fresh paid check for someone already in the
+    // review queue. So a held check with no live session (a hold recorded before FS-11) is refused. Only
+    // the stored webhook status counts — it is the vendor's signed word, and an admin reset clears it.
+    const liveKycSession = Boolean(rider.kycRef && rider.kycSessionToken && rider.kycSessionUrl);
+    if (
+      this.env.KYC_MODE === "auto" &&
+      rider.kycStatus === "pending" &&
+      !liveKycSession &&
+      classifyStoredDiditStatus(rider.kycVendorStatus) === "held"
+    ) {
+      throw new ConflictException({ reason: "kyc_in_review", message: "Your ID is under review. We'll let you know when it's checked." });
+    }
     // A-02 lock: one resubmit is allowed. After a second admin decline (kycAttempts >= 2) the
     // application is locked — no third attempt is minted; the rider must contact support. Enforced here
     // for every mode so a manual-mode rider can't loop past the limit either.
@@ -535,12 +568,41 @@ export class RiderService {
         kycAttempts: rider.kycAttempts,
       }));
     if (!forceHonored && rider.kycStatus === "pending" && rider.kycRef && rider.kycSessionToken && rider.kycSessionUrl) {
-      return {
-        kycStatus: "pending",
-        mode: this.env.KYC_MODE,
-        verificationUrl: rider.kycSessionUrl,
-        sessionToken: rider.kycSessionToken,
-      };
+      // R-1 (startup review 2026-10-06): the resume guard proves a session EXISTS, never that it can
+      // still be finished. The app's web lanes can't see expiry (the hosted page renders its own
+      // "expired" screen), so the client never sends `force` — and "Finish verifying" re-opened a dead
+      // session forever. The server CAN see it: the vendor's own status, from the signed webhook we
+      // stored (Abandoned / Expired / Kyc Expired), or — when no webhook arrived — one cached vendor
+      // read (shared with /auth/me's derivation, so it is one call per rider per TTL either way).
+      const stored = classifyStoredDiditStatus(rider.kycVendorStatus);
+      // A stored non-dead status still gets the (cached) read: an expiry whose webhook was lost must not
+      // bring the loop back.
+      const dead = stored === "dead" || (await this.pendingStates?.read(rider.kycRef)) === "dead";
+      if (!dead) {
+        // The rider is about to re-open this session, so whatever we cached about it is about to move.
+        this.pendingStates?.invalidate(rider.kycRef);
+        return {
+          kycStatus: "pending",
+          mode: this.env.KYC_MODE,
+          verificationUrl: rider.kycSessionUrl,
+          sessionToken: rider.kycSessionToken,
+        };
+      }
+      // A dead session is replaced, and the replacement is a PAID session — so it is claimed before the
+      // vendor is called, like `force`'s claim: one conditional UPDATE retires exactly the credential we
+      // read. Two concurrent taps cannot both win it (the loser sees the token already gone and gets the
+      // same 409 the rotation raises), so a double tap on a dead session buys one session, not two. The
+      // rotation's own CAS below still guards the write. Unlike `force` this is not a client assertion —
+      // the vendor said the session is over — so it needs no window: a genuinely dead session always gets
+      // its one replacement.
+      const retired = await this.prisma.rider.updateMany({
+        where: { profileId, kycStatus: "pending", kycRef: rider.kycRef, kycSessionToken: rider.kycSessionToken },
+        data: { kycSessionToken: null, kycSessionUrl: null },
+      });
+      if (retired.count !== 1) {
+        throw new ConflictException("Your ID verification just changed — refresh and try again.");
+      }
+      this.logger.log(`KYC ${rider.kycRef}: the vendor reports the session dead — minting a replacement instead of resuming it (R-1)`);
     }
 
     let submission: Awaited<ReturnType<KycVendor["submit"]>>;
@@ -578,12 +640,58 @@ export class RiderService {
         // longer belongs to. They are always written and cleared together.
         kycSessionToken: submission.token ?? null,
         kycSessionUrl: submission.url ?? null,
+        // The stored vendor status described the session being replaced; the new one has reported nothing.
+        kycVendorStatus: null,
+        kycVendorStatusAt: null,
       },
     });
     if (rotated.count === 0) {
       throw new ConflictException("Your ID verification just changed — refresh and try again.");
     }
+    this.pendingStates?.invalidate(rider.kycRef);
     return { kycStatus: next, mode: this.env.KYC_MODE, verificationUrl: submission.url, sessionToken: submission.token };
+  }
+
+  /**
+   * The app finished a launch of the ID check (R-4): the rider says they completed it. Nothing is
+   * trusted from that — no state changes — but whatever we cached about the session is now stale, so the
+   * next `/auth/me` asks the vendor afresh instead of serving a pre-launch "unfinished" for up to a TTL.
+   * One vendor read at most, coalesced with the poll; the route is throttled.
+   */
+  async noteKycLaunched(profileId: string): Promise<{ ok: true }> {
+    const rider = await this.prisma.rider.findUnique({ where: { profileId }, select: { kycRef: true, kycStatus: true } });
+    if (rider?.kycStatus === "pending") this.pendingStates?.invalidate(rider.kycRef);
+    return { ok: true };
+  }
+
+  /**
+   * R-1 / R-3: record the vendor's status for a session that is still undecided on our side — every
+   * signed status webhook that doesn't resolve the check (In Progress, In Review, Abandoned, Expired, a
+   * review-band approval…). Monotonic on the webhook's event time, so a late delivery of an older status
+   * can't overwrite a newer one. Only the rider's CURRENT session (kycRef) while `pending` matches: a
+   * replaced session's late webhook, and a decided rider, match no row.
+   *
+   * A DEAD session (Abandoned / Expired / Kyc Expired) also loses its stored credentials in the same
+   * write: they can never open a finishable check again, so the next retry mints instead of resuming,
+   * and /auth/me stops deriving a pending state from a session nobody can finish.
+   */
+  async recordKycVendorStatus(kycRef: string, vendorStatus: string, eventAt: Date): Promise<{ updated: number }> {
+    const dead = classifyStoredDiditStatus(vendorStatus) === "dead";
+    const res = await this.prisma.rider.updateMany({
+      where: {
+        kycRef,
+        kycStatus: "pending",
+        OR: [{ kycVendorStatusAt: null }, { kycVendorStatusAt: { lt: eventAt } }],
+      },
+      data: {
+        kycVendorStatus: vendorStatus.slice(0, 64),
+        kycVendorStatusAt: eventAt,
+        ...(dead ? { kycSessionToken: null, kycSessionUrl: null } : {}),
+      },
+    });
+    // The vendor just told us; serve that rather than asking it again on the next poll.
+    if (res.count > 0) this.pendingStates?.prime(kycRef, vendorStatus);
+    return { updated: res.count };
   }
 
   /** The rider's prepaid commission balance for the online-gate, or undefined when commission is off
@@ -940,6 +1048,13 @@ export class RiderService {
           // the same webhook delivery can't be reprocessed.
           ...(holdForReview ? {} : { kycStatus: status, idVerified: status === "verified" }),
           kycResolvedAt: eventAt,
+          // R-3: a verify HELD for review stays `pending`, and with its credentials cleared below /auth/me
+          // used to read it as "unfinished" — the rider was told to finish a check they had finished, and
+          // a retry bought a fresh paid session. Record what the vendor said (it approved; WE hold), which
+          // /auth/me reads as held → the "under review" wall. A decided check needs no vendor status.
+          ...(holdForReview
+            ? { kycVendorStatus: DIDIT_APPROVED_STATUS, kycVendorStatusAt: eventAt }
+            : { kycVendorStatus: null, kycVendorStatusAt: null }),
           // The session token dies with the decision it belonged to. Every outcome that reaches here is
           // terminal for THAT session — Didit will not reopen an Approved/Declined/Expired one — so
           // keeping the credential would leave a verified rider carrying a live secret for no reason,
@@ -1056,6 +1171,8 @@ export class RiderService {
       decided = await decide(true);
     }
     const { updated, notifyProfileId, demotedProfileId } = decided;
+    // R-4: the session is decided (or held); nothing cached about it as "in progress" may outlive that.
+    if (updated > 0) this.pendingStates?.invalidate(kycRef);
     // Class-B sibling of BR-01/DS15-05: a KYC lapse pulled the rider offline in PG above; now evict them
     // from the board rooms + `rider:geo` Redis index through the standing-demotion funnel, exactly as
     // suspend/ban/auto-hold do. Best-effort, post-commit; never throws, never affects the committed write.
@@ -1295,6 +1412,8 @@ export class RiderService {
             // rather than hand back a token that can only be rejected.
             kycSessionToken: null,
             kycSessionUrl: null,
+            kycVendorStatus: null,
+            kycVendorStatusAt: null,
             ...(isRepeatOfSameDecline ? {} : { kycAttempts: { increment: 1 } }),
             // Stamp the resolution time so applyKycResult's monotonic guard treats this human decision
             // as the latest word: a later (or replayed) vendor webhook with an older eventAt can no
@@ -1321,6 +1440,10 @@ export class RiderService {
             // the very check the admin just set aside.
             kycSessionToken: null,
             kycSessionUrl: null,
+            // R-3: and the vendor status that session left behind — a reset held rider must read
+            // "unfinished" (start a fresh check), not stay on the under-review wall.
+            kycVendorStatus: null,
+            kycVendorStatusAt: null,
             // A manual APPROVE is a terminal human decision: stamp kycResolvedAt so a later/replayed
             // vendor webhook can't override it (mirrors the decline path). A `pending` RESET is
             // deliberately inviting a fresh vendor result, so it leaves kycResolvedAt untouched.

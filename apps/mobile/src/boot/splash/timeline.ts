@@ -24,6 +24,12 @@ export const SLOW_AFTER_MS = 4000;
  * handoff (which keeps loading with the slow pill); it only ever fires on a hung request.
  */
 export const GIVE_UP_MS = 20_000;
+/**
+ * A non-Home boot ends after step 1 (handoff: "route to onboarding/login after step 1"). The cut waits
+ * this long past step 1's tick so the tick is actually SEEN — it pops in over 300ms (§ Steps card);
+ * cutting in the same render as the tick showed a step that never visibly completed.
+ */
+export const CUT_AFTER_TICK_MS = 300;
 
 /** Exit (`done`) timings, from the moment the splash is done. */
 export const EXIT = {
@@ -49,14 +55,15 @@ export interface StepTimes {
 
 /**
  * Lay the steps out on the launch clock. `readyAt[i]` is when step i's real task resolved (ms since
- * launch), or null if it hasn't.
+ * launch), or null if it hasn't. Only the first `shown` steps ever run: the rest stay pending (a
+ * non-Home boot shows step 1 only, so step 2 must not flash "active" as step 1 completes).
  */
-export function stepTimes(readyAt: readonly (number | null)[]): StepTimes {
+export function stepTimes(readyAt: readonly (number | null)[], shown: number = readyAt.length): StepTimes {
   const activeAt: (number | null)[] = [];
   const doneAt: (number | null)[] = [];
   let prevDone: number | null = INTRO_MS;
-  for (const ready of readyAt) {
-    const active: number | null = prevDone;
+  for (const [i, ready] of readyAt.entries()) {
+    const active: number | null = i < shown ? prevDone : null;
     const done: number | null = active == null || ready == null ? null : Math.max(active + STEP_MIN_ACTIVE_MS, ready);
     activeAt.push(active);
     doneAt.push(done);
@@ -81,12 +88,20 @@ export function nextStepChange(times: StepTimes, t: number): number | null {
   return upcoming.length ? Math.min(...upcoming) : null;
 }
 
+/** How many steps a boot to `destination` shows: all three for Home (and while still undecided), else step 1. */
+export function shownSteps(destination: string | null): number {
+  return destination == null || destination === "/home" ? 3 : 1;
+}
+
 /**
  * When the splash is done, given where the boot is going. Home waits for all three steps (the
  * handoff's `done`). Anywhere else — onboarding, sign-in, the rider app, a push-tap deep link —
- * "skip the exit and route … after step 1": only the session step is shown.
+ * "skip the exit and route … after step 1": only the session step is shown, and the cut waits for its
+ * tick to be seen ({@link CUT_AFTER_TICK_MS}).
  */
 export function splashDoneAt(times: StepTimes, destination: string | null): number | null {
   if (destination == null) return null;
-  return destination === "/home" ? (times.doneAt[2] ?? null) : (times.doneAt[0] ?? null);
+  if (destination === "/home") return times.doneAt[2] ?? null;
+  const step1 = times.doneAt[0] ?? null;
+  return step1 == null ? null : step1 + CUT_AFTER_TICK_MS;
 }

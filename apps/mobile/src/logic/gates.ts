@@ -254,6 +254,7 @@ export type KycGate =
   | { kind: "declined"; reasonLabel: string | null }
   | { kind: "locked"; reasonLabel: string | null }
   | { kind: "manual_review" }
+  | { kind: "held" }
   | { kind: "in_flight" }
   | { kind: "unfinished" }
   | { kind: "cant_start" };
@@ -266,6 +267,8 @@ export interface KycGateRider {
   kycMode?: "auto" | "manual";
   /** Server's read of a live pending session (P0-1 / D6); null when it doesn't apply or isn't known. */
   kycPendingState?: "in_flight" | "unfinished" | null;
+  /** R-3: the server holds the check for a human review (absent on an older server ⇒ not held). */
+  kycHeld?: boolean;
 }
 
 /**
@@ -295,9 +298,14 @@ export type KycSdkResult = "completed" | "cancelled" | "failed" | null;
  *     the session still reads "not started" and the server would answer `unfinished`. That is not
  *     wrong so much as unhelpful — it would send a rider whose camera is broken round a loop that
  *     fails again for the same reason, instead of to support.
- *  5. **Otherwise the server decides**, and the SDK's own result is only a hint filling the gap before
- *     the first poll lands — never authority. A client-side marker dies on reinstall, diverges across
- *     devices, and can contradict what actually happened (D6).
+ *  5. **A fresh `completed` launch outranks the server's `unfinished`** (R-4, startup review
+ *     2026-10-06). Right after a real submit the vendor still reads "In Progress" for a while, and the
+ *     server caches it, so the rider who just finished was told "You started the ID check but didn't
+ *     finish" for up to ~20s. The CALLER passes `completed` only while it is fresh
+ *     ({@link KYC_COMPLETED_HINT_MS}, see {@link freshKycLaunch}); after that the server decides again,
+ *     so a completion the vendor never registered still lands back on the resume. Otherwise the server
+ *     decides — a client-side marker dies on reinstall, diverges across devices, and can contradict
+ *     what actually happened (D6).
  *  6. **Absent signal ⇒ `unfinished`.** Offering a resume to a rider genuinely mid-check costs one
  *     wasted tap; withholding it from one who cancelled strands them behind the wall with nothing to
  *     press. It deliberately does NOT default to `cant_start`: that accuses the device of a fault we
@@ -313,9 +321,73 @@ export function resolveKycGate(rider: KycGateRider | null | undefined, sdkResult
   }
 
   if (rider.kycMode === "manual") return { kind: "manual_review" };
+  // R-3: held for a human (the vendor's In Review, a review-band match, an ID collision). Like manual
+  // review, nothing the rider does on this screen changes it, and "usually under a minute" is false.
+  if (rider.kycHeld) return { kind: "held" };
 
   if (sdkResult === "failed") return { kind: "cant_start" };
-  if (rider.kycPendingState) return { kind: rider.kycPendingState === "in_flight" ? "in_flight" : "unfinished" };
   if (sdkResult === "completed") return { kind: "in_flight" };
+  if (rider.kycPendingState) return { kind: rider.kycPendingState === "in_flight" ? "in_flight" : "unfinished" };
   return { kind: "unfinished" };
+}
+
+/** R-4: how long a `completed` launch outranks the server's `unfinished` (see resolveKycGate step 5). */
+export const KYC_COMPLETED_HINT_MS = 30_000;
+
+/** One launch's outcome and when it landed (ms since epoch). */
+export interface KycLaunchMark {
+  outcome: KycSdkResult;
+  at: number;
+}
+
+/**
+ * The launch result `resolveKycGate` should see right now: a `completed` mark only while it is fresh;
+ * `failed` and `cancelled` for as long as the screen holds them (a broken camera is still broken).
+ */
+export function freshKycLaunch(mark: KycLaunchMark | null, now: number): KycSdkResult {
+  if (!mark) return null;
+  if (mark.outcome === "completed" && now - mark.at >= KYC_COMPLETED_HINT_MS) return null;
+  return mark.outcome;
+}
+
+/** R-3 / §5 poll back-off: the first minutes of an automated check poll fast, then slow down. */
+export const KYC_FAST_POLL_WINDOW_MS = 3 * 60_000;
+
+/**
+ * How often the board re-reads `/auth/me` for the rider's KYC wall (false = not at all).
+ *
+ *   verified                         no poll — nothing to wait for
+ *   in flight (automated check)      5 s for the first {@link KYC_FAST_POLL_WINDOW_MS}, then 30 s — a check
+ *                                    still running after 3 minutes is not finishing in the next 5 s
+ *   held / manual review             60 s — a human is reviewing; minutes, not seconds
+ *   anything else (the rider's move) 30 s — they'll tap; the poll only catches an outside change
+ *
+ * `inFlightForMs` is how long the board has watched this check in flight (0 when it just started).
+ */
+export function kycPollMs(gate: KycGate | null, verified: boolean, inFlightForMs: number): number | false {
+  if (verified) return false;
+  if (!gate) return 60_000;
+  switch (gate.kind) {
+    case "in_flight":
+      return inFlightForMs < KYC_FAST_POLL_WINDOW_MS ? 5_000 : 30_000;
+    case "held":
+    case "manual_review":
+    case "not_a_rider":
+    case "declined":
+    case "locked":
+    case "expired":
+      return 60_000;
+    default:
+      return 30_000;
+  }
+}
+
+/**
+ * R-6: the rider-facing label for a decline reason, or null when the drawn copy should stand. The drawn
+ * copy already IS the unreadable-photo case, and `other` is the reviewer's free-text bucket ("see
+ * notes") the rider can't see — so both keep the drawn default.
+ */
+export function riderDeclineLabel(reason: KycDeclineReason | string | null | undefined): string | null {
+  if (!reason || reason === "id_unreadable" || reason === "other") return null;
+  return kycDeclineLabel(reason);
 }

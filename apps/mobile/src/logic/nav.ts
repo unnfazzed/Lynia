@@ -21,6 +21,26 @@ export interface RootNav {
  * still lands home.
  */
 export function goHomeClearingStack(router: RootNav): void {
-  router.dismissAll();
-  router.replace("/home");
+  replaceClearingStack(router, "/home");
+}
+
+/** The root-stack subset {@link replaceClearingStack} needs; `H` is whatever href type `replace` takes. */
+export interface ClearingNav<H> {
+  dismissAll: () => void;
+  replace: (href: H) => void;
+  /** expo-router's `canDismiss`; when present and false there is nothing to pop, so dismissAll is skipped. */
+  canDismiss?: () => boolean;
+}
+
+/**
+ * Land on `href` with nothing left behind it — for every auth transition (start-up review 2026-10-06,
+ * C-1 / C-2). A bare `replace` swaps only the top screen: after sign-in the history read `[phone, Home]`,
+ * so Android Back on Home showed "What's your number?" to a signed-in user (and "Send code" there spent
+ * another paid OTP); after sign-out it read `[Home, phone]`, so Back reached a signed-out Home. dismissAll
+ * pops the root stack to its first screen, then replace swaps that one out, so Back from `href` leaves the
+ * app. Skipped when there is nothing to pop (a cold start straight onto this screen).
+ */
+export function replaceClearingStack<H>(router: ClearingNav<H>, href: H): void {
+  if (router.canDismiss?.() !== false) router.dismissAll();
+  router.replace(href);
 }
