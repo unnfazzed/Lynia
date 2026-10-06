@@ -80,7 +80,7 @@ describe("runKycVerification — the in-app sheet lane", () => {
     mockOpen.mockResolvedValue({ type: "cancel" } as never);
     await expect(runKycVerification(CREDS)).resolves.toEqual({ outcome: "cancelled", sessionUnusable: false });
     expect(mockPresent).not.toHaveBeenCalled();
-    expect(mockOpen).toHaveBeenCalledWith(CREDS.verificationUrl);
+    expect(mockOpen).toHaveBeenCalledWith(CREDS.verificationUrl, "lynia://");
   });
 
   it("falls back to the browser tab when the host races away (presentKycCheck returns null)", async () => {
@@ -110,7 +110,8 @@ describe("runKycVerification — the browser fallback lane", () => {
   it("opens the https verification URL in the in-app browser when the sheet can't present", async () => {
     mockOpen.mockResolvedValue({ type: "cancel" } as never);
     await runKycVerification(CREDS);
-    expect(mockOpen).toHaveBeenCalledWith("https://verify.didit.me/sess_1");
+    // R-10: with the return URL the API's /kyc/return landing redirects to, so a finish can be `success`.
+    expect(mockOpen).toHaveBeenCalledWith("https://verify.didit.me/sess_1", "lynia://");
   });
 
   it("maps the redirect back (success) to completed — the wall becomes in_flight", async () => {

@@ -100,6 +100,13 @@ export interface Me {
      * client-only, held for the current screen.
      */
     kycPendingState?: "in_flight" | "unfinished" | null;
+    /**
+     * R-3 (startup review 2026-10-06): the check is HELD for a human review — the vendor's In Review, or
+     * a result the server holds (a review-band face match, an ID collision). `kycPendingState` reads
+     * `in_flight` for it too (older apps keep R2); this app draws the Rider v2 "under review" wall and
+     * polls slowly. Absent on an older server ⇒ not held.
+     */
+    kycHeld?: boolean;
   } | null;
 }
 

@@ -5,6 +5,7 @@ import React, { useState } from "react";
 import { Linking, ScrollView, Text, View } from "react-native";
 import { tokens } from "@lynia/shared/tokens";
 import { getMe } from "../../../src/api/auth";
+import { saveRolePreference } from "../../../src/auth/session";
 import { getActiveOrder } from "../../../src/api/orders";
 import { openSupportWhatsApp } from "../../../src/config";
 import { setOnline } from "../../../src/api/riders";
@@ -49,6 +50,8 @@ export default function RiderAccountTabScreen(): React.ReactElement {
     // C5 keeps the rider online so the job they're carrying keeps its pings; C4 takes them offline,
     // which is what stops new jobs and food offers reaching them while they're on the customer side.
     if (!activeJob) offlineM.mutate();
+    // R-5: the side the rider picks is the side the next cold start opens on.
+    void saveRolePreference("customer");
     setConfirm(false);
     router.replace("/home");
   };

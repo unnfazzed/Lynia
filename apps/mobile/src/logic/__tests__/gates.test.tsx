@@ -1,5 +1,6 @@
 import { KYC_DECLINE_REASON_LABELS } from "@lynia/shared";
-import { ACCOUNT_ON_HOLD_COPY, isAccountOnHold, ONLINE_GATE_COPY, isKycLocked, isOutOfServiceArea, isWithinServiceCorridor, KYC_LOCK_ATTEMPTS, kycDeclineLabel, onlineGateReason, resolveKycGate, resolveKycRetryFeedback } from "../gates";
+import { ACCOUNT_ON_HOLD_COPY, freshKycLaunch, isAccountOnHold, ONLINE_GATE_COPY, isKycLocked, isOutOfServiceArea, isWithinServiceCorridor, KYC_COMPLETED_HINT_MS, KYC_FAST_POLL_WINDOW_MS, KYC_LOCK_ATTEMPTS, kycDeclineLabel, kycPollMs, onlineGateReason, resolveKycGate, resolveKycRetryFeedback, riderDeclineLabel } from "../gates";
+import { resolveGate } from "../rider-gate";
 
 describe("onlineGateReason (rider online-gate refusal)", () => {
   it("reads a machine reason code (case-insensitive)", () => {
@@ -272,12 +273,64 @@ describe("resolveKycGate (P0-1 / D6)", () => {
     expect(resolveKycGate({ kycStatus: "pending", kycPendingState: "in_flight" }, "failed").kind).toBe("cant_start");
   });
 
-  // Hint, never authority — it only fills the gap before the first poll lands.
-  it("uses the SDK result as a hint only while the server has no answer", () => {
+  // R-4 (startup review 2026-10-06): a FRESH completed launch outranks the server's "unfinished" — the
+  // vendor still reads "In Progress" right after a real submit. The caller passes `completed` only while it
+  // is fresh (freshKycLaunch), so after the window the server decides again.
+  it("lets a fresh completed launch outrank a stale unfinished; a cancel never outranks in flight", () => {
     expect(resolveKycGate({ kycStatus: "pending" }, "completed").kind).toBe("in_flight");
     expect(resolveKycGate({ kycStatus: "pending" }, "cancelled").kind).toBe("unfinished");
-    // Server present → server wins, and the stale hint is ignored.
-    expect(resolveKycGate({ kycStatus: "pending", kycPendingState: "unfinished" }, "completed").kind).toBe("unfinished");
+    expect(resolveKycGate({ kycStatus: "pending", kycPendingState: "unfinished" }, "completed").kind).toBe("in_flight");
     expect(resolveKycGate({ kycStatus: "pending", kycPendingState: "in_flight" }, "cancelled").kind).toBe("in_flight");
+    // A terminal answer still wins over it.
+    expect(resolveKycGate({ kycStatus: "failed", kycAttempts: 1 }, "completed").kind).toBe("declined");
+  });
+
+  // R-3: a hold is the "under review" wall, whatever the launch said — and never R2.
+  it("a held check is its own kind, mapped to the under-review wall", () => {
+    expect(resolveKycGate({ kycStatus: "pending", kycPendingState: "in_flight", kycHeld: true }).kind).toBe("held");
+    expect(resolveKycGate({ kycStatus: "pending", kycHeld: true }, "completed").kind).toBe("held");
+    expect(resolveKycGate({ kycStatus: "pending", kycHeld: true }, "failed").kind).toBe("held");
+    expect(resolveGate({ kyc: { kind: "held" }, server: null, locDenied: false })).toBe("pending");
+  });
+});
+
+describe("freshKycLaunch (R-4)", () => {
+  it("a completed mark counts for KYC_COMPLETED_HINT_MS, then the server decides", () => {
+    expect(freshKycLaunch({ outcome: "completed", at: 1_000 }, 1_000 + KYC_COMPLETED_HINT_MS - 1)).toBe("completed");
+    expect(freshKycLaunch({ outcome: "completed", at: 1_000 }, 1_000 + KYC_COMPLETED_HINT_MS)).toBeNull();
+  });
+  it("failed and cancelled hold for the screen", () => {
+    expect(freshKycLaunch({ outcome: "failed", at: 0 }, 10 * 60_000)).toBe("failed");
+    expect(freshKycLaunch({ outcome: "cancelled", at: 0 }, 10 * 60_000)).toBe("cancelled");
+    expect(freshKycLaunch(null, 0)).toBeNull();
+  });
+});
+
+describe("kycPollMs (R-3 / §5 poll back-off)", () => {
+  it("in flight: 5 s for the first 3 minutes, then 30 s", () => {
+    expect(kycPollMs({ kind: "in_flight" }, false, 0)).toBe(5_000);
+    expect(kycPollMs({ kind: "in_flight" }, false, KYC_FAST_POLL_WINDOW_MS - 1)).toBe(5_000);
+    expect(kycPollMs({ kind: "in_flight" }, false, KYC_FAST_POLL_WINDOW_MS)).toBe(30_000);
+  });
+  it("holds and manual review: 60 s — never 5 s", () => {
+    expect(kycPollMs({ kind: "held" }, false, 0)).toBe(60_000);
+    expect(kycPollMs({ kind: "manual_review" }, false, 0)).toBe(60_000);
+  });
+  it("the rider's move: 30 s; terminal walls 60 s; verified: no poll", () => {
+    expect(kycPollMs({ kind: "unfinished" }, false, 0)).toBe(30_000);
+    expect(kycPollMs({ kind: "cant_start" }, false, 0)).toBe(30_000);
+    expect(kycPollMs({ kind: "declined", reasonLabel: null }, false, 0)).toBe(60_000);
+    expect(kycPollMs({ kind: "not_a_rider" }, false, 0)).toBe(60_000);
+    expect(kycPollMs(null, true, 0)).toBe(false);
+  });
+});
+
+describe("riderDeclineLabel (R-6)", () => {
+  it("names a known reason; the drawn copy stands for the unreadable photo, `other` and no reason", () => {
+    expect(riderDeclineLabel("face_mismatch")).toBe("Selfie doesn't match the ID");
+    expect(riderDeclineLabel("id_unreadable")).toBeNull();
+    expect(riderDeclineLabel("other")).toBeNull();
+    expect(riderDeclineLabel(null)).toBeNull();
+    expect(riderDeclineLabel("not_a_reason")).toBeNull();
   });
 });

@@ -42,6 +42,19 @@ export function retryKyc(force = false): Promise<Pick<BecomeResult, "kycStatus" 
   return apiFetch("/riders/kyc/retry", { method: "POST", body: { force } });
 }
 
+/**
+ * R-4: tell the server a launch of the ID check just completed, so it drops its cached pending state and
+ * the next `/auth/me` reads the vendor afresh. Changes nothing server-side; best-effort and never throws
+ * (an older server answers 404, which is fine — the board's own completed hint covers the gap).
+ */
+export async function noteKycLaunched(): Promise<void> {
+  try {
+    await apiFetch("/riders/kyc/launched", { method: "POST", body: {} });
+  } catch {
+    /* best-effort */
+  }
+}
+
 /** Going online sends the rider's position (when known) so the server can corridor-check it and refuse
  *  with an `out_of_area` reason if they're outside the launch area (Q1). Location is optional. */
 export function setOnline(online: boolean, location?: { lat: number; lng: number }): Promise<{ online: boolean }> {

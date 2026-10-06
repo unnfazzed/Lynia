@@ -437,6 +437,13 @@ export const RF = {
   /* gates */
   gPendingV: (d: Date): string => `${isSameDay(d, new Date()) ? "Today" : dayMonth(d)}, ${hhmm(d)}`,
   gFailedV: (left: number, of: number): string => `${left} of ${of}`,
+  /**
+   * Undrawn (R-6, startup review 2026-10-06; ledger D-54 §4): the declined wall's body when the decline
+   * carries a known reason other than the drawn one (the drawn `gFailedB` is the unreadable-photo case and
+   * stays the default). `reason` is the shared KYC_DECLINE_REASON_LABELS label, e.g. "Selfie doesn't
+   * match the ID".
+   */
+  gFailedWhyB: (reason: string): string => `${reason}. Check this, then try again.`,
   gExpiredB: (d: Date | null): string =>
     d ? `Your national ID expired on ${dayMonthYear(d)}. Re-verify to keep taking jobs.` : "Your national ID has expired. Re-verify to keep taking jobs.",
   gCoolV: (until: Date, now: Date): string => `${hhmm(until)} · ${hMin(until.getTime() - now.getTime())} left`,
@@ -523,6 +530,8 @@ export const RF = {
     `${used} of ${max} strikes. One more cancel in the next 30 days pauses jobs for 24 hours.${clears ? ` Your oldest strike clears on ${dayMonth(clears)}.` : ""}`,
   rNotifS: (n: number): string => (n > 0 ? `${n} new` : "All caught up"),
   kycFailB: (left: number): string => `The ID photo was blurry. You have ${plural(left, "try", "tries")} left.`,
+  /** Undrawn (R-6; ledger D-54 §4): the Account card's body for a known decline reason (`kycFailB` stays the default). */
+  kycFailWhyB: (reason: string, left: number): string => `${reason}. You have ${plural(left, "try", "tries")} left.`,
   swJobB: (from: string, to: string): string => `You're still carrying ${from} → ${to}. Come back to it from the bar at the top of Home.`,
   swJobBar: (stage: string): string => `Job in progress · ${stage}`,
   /* history */

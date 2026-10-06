@@ -28,6 +28,12 @@
 import type { KycSdkResult } from "../logic/gates";
 
 /**
+ * The deep link the API's `/kyc/return` landing redirects to (`apps/api/src/kyc/kyc.controller.ts`
+ * KYC_RETURN_HTML) — the app's own scheme (app.config.ts `scheme`). The browser lane watches for it.
+ */
+export const KYC_RETURN_REDIRECT = "lynia://";
+
+/**
  * Everything a launch attempt may need. `verificationUrl` feeds both lanes below; `sessionToken` is
  * the native SDK's credential, carried so the call sites don't change shape if the SDK re-lands as
  * the primary path. Both come from the same become/retry response.
@@ -113,7 +119,10 @@ export async function runKycVerification(creds: KycLaunchCredentials): Promise<K
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const WebBrowser = require("expo-web-browser") as typeof import("expo-web-browser");
-    const browser = await WebBrowser.openAuthSessionAsync(url);
+    // R-10: the return URL is what makes `success` reachable at all. The API's /kyc/return landing (the
+    // DIDIT_CALLBACK_URL target) bounces the tab to `lynia://`; without a redirect URL to watch for,
+    // the auth session can't recognise that hop and Android reported every finished check `cancel`.
+    const browser = await WebBrowser.openAuthSessionAsync(url, KYC_RETURN_REDIRECT);
     // `success` is the redirect back; `cancel` / `dismiss` / anything else is the rider closing the
     // tab, which is "unfinished", not "failed" — they chose to leave, nothing broke.
     return { outcome: browser.type === "success" ? "completed" : "cancelled", sessionUnusable: false };

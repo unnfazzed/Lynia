@@ -13,7 +13,14 @@ import { resolveGate } from "../../../src/logic/rider-gate";
 const mockReplace = jest.fn();
 let mockSecureStore: Record<string, string> = {};
 
-jest.mock("expo-router", () => ({ useRouter: () => ({ replace: mockReplace, back: jest.fn(), canGoBack: () => true }) }));
+const mockBack = jest.fn();
+let mockParams: Record<string, string> = {};
+jest.mock("expo-router", () => ({
+  useRouter: () => ({ replace: mockReplace, back: mockBack, canGoBack: () => true }),
+  useLocalSearchParams: () => mockParams,
+}));
+/** R-5: with no board below (Account → Become), the hand-over goes through the rider permission priming. */
+const BOARD_VIA_PERMISSIONS = "/permissions?next=/rider";
 jest.mock("expo-secure-store", () => ({
   getItemAsync: async (key: string) => mockSecureStore[key] ?? null,
   setItemAsync: async (key: string, value: string) => {
@@ -25,9 +32,11 @@ jest.mock("expo-secure-store", () => ({
 }));
 const mockBecomeRider = jest.fn();
 const mockCompleteProfile = jest.fn();
+const mockNoteLaunched = jest.fn(async () => undefined);
 jest.mock("../../../src/api/riders", () => ({
   becomeRider: (...a: unknown[]) => mockBecomeRider(...a),
   completeProfile: (...a: unknown[]) => mockCompleteProfile(...a),
+  noteKycLaunched: () => mockNoteLaunched(),
 }));
 const mockRunKyc = jest.fn();
 jest.mock("../../../src/kyc/verify", () => ({ runKycVerification: (...a: unknown[]) => mockRunKyc(...a) }));
@@ -49,7 +58,9 @@ jest.mock("../../../src/api/wallet", () => ({
 }));
 
 import { ApiError } from "../../../src/api/client";
+import { takeKycLaunch } from "../../../src/kyc/launch-hint";
 import { KYC_DRAFT_KEY } from "../../../src/logic/kyc-draft";
+import { RiderIntro } from "../../../src/ui/onboarding/rider";
 import BecomeRiderScreen from "../become";
 
 const METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 360, height: 720 } };
@@ -116,6 +127,10 @@ beforeEach(() => {
   mockSecureStore = {};
   mockWalletConfig = null;
   mockReplace.mockClear();
+  mockBack.mockClear();
+  mockNoteLaunched.mockClear();
+  mockParams = {};
+  takeKycLaunch();
   mockBecomeRider.mockReset().mockResolvedValue({ kycStatus: "pending", mode: "auto", sessionToken: "tok", verificationUrl: "https://verify.didit.me/s" });
   mockCompleteProfile.mockReset().mockResolvedValue({});
   mockUpdateProfile.mockReset().mockImplementation(async (body: Record<string, unknown>) => ({ ...mockMe, ...body }));
@@ -160,7 +175,7 @@ describe("BecomeRiderScreen — no national ID before the check (D-75)", () => {
     expect(mockRunKyc).toHaveBeenCalledWith({ sessionToken: "tok", verificationUrl: "https://verify.didit.me/s" });
     expect(mockUpdateProfile).not.toHaveBeenCalled();
     expect(mockCompleteProfile).not.toHaveBeenCalled();
-    expect(mockReplace).toHaveBeenCalledWith("/rider");
+    expect(mockReplace).toHaveBeenCalledWith(BOARD_VIA_PERMISSIONS);
     for (const gone of RETIRED) expect(text(tree)).not.toContain(gone);
     act(() => tree.unmount());
   });
@@ -182,7 +197,7 @@ describe("BecomeRiderScreen — no national ID before the check (D-75)", () => {
     expect(mockBecomeRider).toHaveBeenCalledWith({});
     expect(mockUpdateProfile).not.toHaveBeenCalled();
     expect(mockCompleteProfile).not.toHaveBeenCalled();
-    expect(mockReplace).toHaveBeenCalledWith("/rider");
+    expect(mockReplace).toHaveBeenCalledWith(BOARD_VIA_PERMISSIONS);
     act(() => tree.unmount());
   });
 
@@ -224,7 +239,7 @@ describe("BecomeRiderScreen — no national ID before the check (D-75)", () => {
     mockBecomeRider.mockRejectedValue(new ApiError(409, "Already registered as a rider", "already_rider"));
     const tree = await mount();
     await tapStart(tree);
-    expect(mockReplace).toHaveBeenCalledWith("/rider");
+    expect(mockReplace).toHaveBeenCalledWith(BOARD_VIA_PERMISSIONS);
     act(() => tree.unmount());
   });
 });
@@ -266,7 +281,7 @@ describe("BecomeRiderScreen — the name step (legacy accounts without a name), 
     expect(mockBecomeRider).toHaveBeenCalledWith({});
     expect(mockUpdateProfile.mock.invocationCallOrder[0]).toBeLessThan(mockBecomeRider.mock.invocationCallOrder[0]!);
     expect(mockRunKyc).toHaveBeenCalled();
-    expect(mockReplace).toHaveBeenCalledWith("/rider");
+    expect(mockReplace).toHaveBeenCalledWith(BOARD_VIA_PERMISSIONS);
     // Registered: the name draft is cleared.
     expect(mockSecureStore[KYC_DRAFT_KEY]).toBeUndefined();
     act(() => tree.unmount());
@@ -322,7 +337,7 @@ describe("BecomeRiderScreen — after the check, the board (D-75: the old outcom
       await tapStart(tree);
       expect(mockRunKyc).toHaveBeenCalledTimes(c.outcome === "none" ? 0 : 1);
       expect(mockReplace).toHaveBeenCalledTimes(1);
-      expect(mockReplace).toHaveBeenCalledWith("/rider");
+      expect(mockReplace).toHaveBeenCalledWith(BOARD_VIA_PERMISSIONS);
       const after = text(tree);
       for (const gone of RETIRED) expect(after).not.toContain(gone);
       expect(after).not.toContain("Rider setup");
@@ -358,5 +373,89 @@ describe("BecomeRiderScreen — after the check, the board (D-75: the old outcom
     // Manual review → the Rider v2 "Your ID is under review" wall (G2).
     expect(gateFor({ kycStatus: "pending", kycMode: "manual", kycAttempts: 0 })).toBe("pending");
     expect(resolveKycGate({ kycStatus: "pending", kycMode: "manual" }).kind).toBe("manual_review");
+  });
+});
+
+/**
+ * Startup review 2026-10-06 — how Become hands over to the board.
+ *
+ * R-2: pushed from the board's "Earn with your bike" gate, Become must go BACK to that board; a
+ *      replace("/rider") mounted a second one (two heartbeats, two pollers, the food offer pushed twice).
+ * R-4 / R-10: the launch's outcome reaches the board (completed keeps R2 up; failed is the can't-open wall).
+ * R-5: from Account, the hand-over goes through the rider permission priming, and the rider side is saved.
+ */
+describe("BecomeRiderScreen — the hand-over to the board (startup review 2026-10-06)", () => {
+  it("R-2: pushed from the board, it goes BACK to that board — never a second one", async () => {
+    mockMe = { ...NAMED, idNumber: null };
+    mockParams = { from: "board" };
+    const tree = await mount();
+    await tapStart(tree);
+    expect(mockBack).toHaveBeenCalledTimes(1);
+    expect(mockReplace).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("R-2: the already_rider path goes back to the board too", async () => {
+    mockMe = { ...NAMED, idNumber: null };
+    mockParams = { from: "board" };
+    mockBecomeRider.mockRejectedValue(new ApiError(409, "You're already a rider", "already_rider"));
+    const tree = await mount();
+    await tapStart(tree);
+    expect(mockBack).toHaveBeenCalledTimes(1);
+    expect(mockReplace).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("R-5: from Account, the hand-over primes permissions first and saves the rider side for the next cold start", async () => {
+    mockMe = { ...NAMED, idNumber: null };
+    const tree = await mount();
+    await tapStart(tree);
+    expect(mockReplace).toHaveBeenCalledWith("/permissions?next=/rider");
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(mockSecureStore["lynia.rolePreference"]).toBe("rider");
+    act(() => tree.unmount());
+  });
+
+  it("R-4: a completed check is handed to the board (and the server told to re-read the vendor)", async () => {
+    mockMe = { ...NAMED, idNumber: null };
+    mockRunKyc.mockResolvedValue({ outcome: "completed", sessionUnusable: false });
+    const tree = await mount();
+    await tapStart(tree);
+    expect(takeKycLaunch()).toMatchObject({ outcome: "completed" });
+    expect(mockNoteLaunched).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("R-10: a launch that never opened is handed to the board as `failed` (the can't-open wall, with support)", async () => {
+    mockMe = { ...NAMED, idNumber: null };
+    mockRunKyc.mockResolvedValue({ outcome: "failed", sessionUnusable: false });
+    const tree = await mount();
+    await tapStart(tree);
+    const mark = takeKycLaunch();
+    expect(mark).toMatchObject({ outcome: "failed" });
+    expect(mockNoteLaunched).not.toHaveBeenCalled();
+    // …which the board resolves to G7, not "Finish verifying".
+    const pending = { kycStatus: "pending" as const, kycMode: "auto" as const, kycAttempts: 0, kycPendingState: "unfinished" as const };
+    expect(resolveGate({ kyc: resolveKycGate(pending, mark!.outcome), server: null, locDenied: false })).toBe("cantOpen");
+    act(() => tree.unmount());
+  });
+
+  it("R-10: 'Start ID check' shows busy while it is still reading the account", async () => {
+    mockMe = { ...NAMED, idNumber: null };
+    const { getMe } = jest.requireMock("../../../src/api/auth") as { getMe: jest.Mock };
+    getMe.mockImplementation(() => new Promise(() => undefined));
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(becomeEl());
+    });
+    await flush();
+    expect(tree.root.findByType(RiderIntro).props.busy).toBe(false);
+    await act(async () => {
+      startButton(tree).props.onPress();
+    });
+    expect(tree.root.findByType(RiderIntro).props.busy).toBe(true);
+    expect(mockBecomeRider).not.toHaveBeenCalled();
+    getMe.mockImplementation(async () => mockMe);
+    act(() => tree.unmount());
   });
 });

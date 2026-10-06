@@ -82,6 +82,7 @@ jest.mock("../../../../src/api/notifications", () => ({
   getNotificationsUnreadCount: async () => ({ count: 0 }),
 }));
 jest.mock("../../../../src/api/riders", () => ({
+  noteKycLaunched: jest.fn(async () => undefined),
   retryKyc: jest.fn(),
   sendHeartbeat: jest.fn(async () => ({ online: true })),
   setOnline: (online: boolean, loc?: unknown) => mockSetOnline(online, loc),
@@ -104,6 +105,7 @@ import RiderHome from "../index";
 import { SENT_OFFERS_KEY } from "../../../../src/query/use-sent-offers";
 import { runKycVerification } from "../../../../src/kyc/verify";
 import { retryKyc } from "../../../../src/api/riders";
+import { recordKycLaunch, takeKycLaunch } from "../../../../src/kyc/launch-hint";
 
 // The KYC launch lane: `retryKyc` hands back an opaque Didit SESSION TOKEN, and the native SDK either
 // completes, is cancelled by the rider, or fails to launch — the three outcomes the pending walls
@@ -220,6 +222,8 @@ let activeTree: renderer.ReactTestRenderer | null = null;
 let interactions: InteractionControl;
 beforeEach(() => {
   interactions = controlInteractions();
+  // A launch hint left by an earlier test must not leak into this one.
+  takeKycLaunch();
   mockUseRiderBoard.mockReturnValue({
     connected: true,
     expiredOrderIds: new Set<string>(),
@@ -784,7 +788,8 @@ describe("rider board (owner 2026-08-16: no manual refresh; bridge scoped, not r
     const labels = activeTree.root
       .findAll((n) => typeof n.props.label === "string" && typeof n.props.onPress === "function")
       .map((n) => n.props.label as string);
-    expect(labels).toEqual(["Finish verifying", "Order food and send parcels"]);
+    // R-1 (startup review 2026-10-06): plus the WhatsApp way out the failed wall has.
+    expect(labels).toEqual(["Finish verifying", "Message support on WhatsApp", "Order food and send parcels"]);
   });
 
   /**
@@ -805,7 +810,9 @@ describe("rider board (owner 2026-08-16: no manual refresh; bridge scoped, not r
   const WALL_ACTIONS: ReadonlyArray<[string, Parameters<typeof meFixture>[0], string[]]> = [
     // Calm Mint v2 R2 (D-55): in flight is "Rider setup", whose only action is its ghost.
     ["in flight — with the vendor, only the R2 ghost", { kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight" }, ["Send a parcel while you wait"]],
-    ["unfinished — the rider's move, the bridge beneath it", { kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }, ["Finish verifying", CUSTOMER_BRIDGE]],
+    ["unfinished — the rider's move, support (R-1), the bridge beneath it", { kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }, ["Finish verifying", "Message support on WhatsApp", CUSTOMER_BRIDGE]],
+    // R-3: a check held for a human review is the under-review wall — not R2, no retry.
+    ["held for review — nothing to press but the bridge", { kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight", kycHeld: true }, [CUSTOMER_BRIDGE]],
     ["manual/ops review — nothing to press but the bridge", { kycStatus: "pending", kycMode: "manual" }, [CUSTOMER_BRIDGE]],
     ["ID expired", { kycStatus: "expired" }, ["Re-verify my ID", CUSTOMER_BRIDGE]],
     ["declined", { kycStatus: "failed", kycAttempts: 1 }, ["Try again", "Message support on WhatsApp"]],
@@ -952,11 +959,12 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
   });
 
   /**
-   * ...and it must stay a hint. The obvious fix — let a `completed` launch outrank the server — would
-   * strand a rider whose completion the vendor never registered: the in-flight wall has no action by
-   * design, so there is nothing to press to get off it. The refetch has to be able to pull them back.
+   * R-4 (startup review 2026-10-06): right after a real submit the vendor still reads "In Progress" and the
+   * server cached it, so the refetch the launch fires lands "unfinished" — and the rider who just finished
+   * was told "You started the ID check but didn't finish". A completed launch now outranks that for
+   * KYC_COMPLETED_HINT_MS…
    */
-  it("but the server can still pull a completed rider back to the resume", async () => {
+  it("a completed launch outranks the stale 'unfinished' the immediate refetch brings back", async () => {
     mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);
@@ -970,12 +978,75 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
     await renderer.act(async () => {
       tree.root.find((n) => n.props.label === "Finish verifying").props.onPress();
     });
-    // The refetch the launch fires lands with the vendor's real answer: nothing was registered.
     await settle();
     await settle();
 
+    expect(mockGetMe.mock.calls.length).toBeGreaterThan(1);
+    expect(treeText(activeTree)).toContain("We’re checking your ID");
+    expect(treeText(activeTree)).not.toContain("Finish verifying your ID");
+    // …and the server was told to drop its cached pending state, so the next read asks the vendor.
+    const { noteKycLaunched } = jest.requireMock("../../../../src/api/riders") as { noteKycLaunched: jest.Mock };
+    expect(noteKycLaunched).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * …and only for that window. A `completed` launch that outranked the server FOREVER would strand a
+   * rider whose completion the vendor never registered: the in-flight wall has no action by design, so
+   * there is nothing to press to get off it. Once the hint is stale, the server pulls them back.
+   */
+  it("but once the hint is stale, the server pulls a completed rider back to the resume", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", sessionToken: "sess_tok_s1" });
+    mockRunKyc.mockResolvedValue(LAUNCH_COMPLETED);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    // Hold the refetch the launch fires, so it lands only after the window has passed.
+    let land!: (me: Me) => void;
+    mockGetMe.mockImplementation(() => new Promise<Me>((resolve) => (land = resolve)));
+    const tree = activeTree;
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Finish verifying").props.onPress();
+    });
+    expect(treeText(activeTree)).toContain("We’re checking your ID");
+
+    const now = Date.now();
+    const clock = jest.spyOn(Date, "now").mockReturnValue(now + 31_000);
+    try {
+      await renderer.act(async () => {
+        land(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
+      });
+      await settle();
+      expect(treeText(activeTree)).toContain("Finish verifying your ID");
+      expect(treeText(activeTree)).not.toContain("We’re checking your ID");
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  // R-4: retrying from a decline puts the rider back to pending server-side; the old decline wall must not
+  // come back while the refetch is out.
+  it("retrying from a decline shows pending at once, not the old decline wall", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "failed", kycAttempts: 1 }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", sessionToken: "sess_tok_s1" });
+    mockRunKyc.mockResolvedValue(LAUNCH_CANCELLED);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).toContain("We couldn't verify your ID");
+    mockGetMe.mockImplementation(() => new Promise(() => undefined));
+    const tree = activeTree;
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Try again").props.onPress();
+    });
+    expect(treeText(activeTree)).not.toContain("We couldn't verify your ID");
     expect(treeText(activeTree)).toContain("Finish verifying your ID");
-    expect(treeText(activeTree)).not.toContain("We're checking your ID");
   });
 
   /**
@@ -1446,5 +1517,120 @@ describe("rider board — tagged jobs and demand (owner 2026-10-01)", () => {
 
     expect(mockGetDemandZones).toHaveBeenCalledWith({ lat: -17.83, lng: 31.05 });
     expect(treeText(activeTree)).toMatch(/Busier near Avondale Shops · \d/);
+  });
+});
+
+/** Startup review 2026-10-06 — the rider registration / ID-check fixes on the board. */
+describe("rider board — startup review 2026-10-06", () => {
+  const PENDING_UNFINISHED = { kycStatus: "pending" as const, kycMode: "auto" as const, kycPendingState: "unfinished" as const };
+
+  it("R-10: a launch Become a rider couldn't open lands on the can't-open wall (with support), not 'Finish verifying'", async () => {
+    recordKycLaunch("failed");
+    mockGetMe.mockResolvedValue(meFixture(PENDING_UNFINISHED));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).toContain("We couldn't open the ID check");
+    expect(treeText(activeTree)).not.toContain("Finish verifying your ID");
+  });
+
+  it("R-4: a check Become a rider just completed shows R2, not the stale 'unfinished'", async () => {
+    recordKycLaunch("completed");
+    mockGetMe.mockResolvedValue(meFixture(PENDING_UNFINISHED));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).toContain("We’re checking your ID");
+    expect(treeText(activeTree)).not.toContain("Finish verifying your ID");
+  });
+
+  it("R-2: the 'Earn with your bike' gate opens Become as over-the-board, so Become goes back to THIS board", async () => {
+    mockGetMe.mockResolvedValue({ ...meFixture(), rider: null });
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    const tree = activeTree;
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Become a rider" && typeof n.props.onPress === "function").props.onPress();
+    });
+    expect(mockPush).toHaveBeenCalledWith("/rider/become?from=board");
+  });
+
+  it("R-3: a check held for review is the under-review wall, never R2's 'usually under a minute'", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight", kycHeld: true }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).toContain("Your ID is under review");
+    expect(treeText(activeTree)).not.toContain("Rider setup");
+  });
+
+  it("R-6: the declined wall says why when the decline says why; the drawn copy otherwise", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "failed", kycAttempts: 1, kycDeclineReason: "face_mismatch" }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).toContain("Selfie doesn't match the ID. Check this, then try again.");
+    expect(treeText(activeTree)).not.toContain("The photo of your ID was blurry");
+    act(() => activeTree!.unmount());
+
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "failed", kycAttempts: 1, kycDeclineReason: "id_unreadable" }));
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).toContain("The photo of your ID was blurry");
+  });
+
+  it("R-7: the rider is not put online behind R3 — 'Go online' is what starts the shift", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 0 }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen((qc) => qc.setQueryData(["me"], meFixture({ kycStatus: "verified", tripsCount: 0 })));
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).toContain("You’re verified");
+    expect(mockSetOnline).not.toHaveBeenCalled();
+    // The board socket isn't live behind R3 either (warm cache started `online` true on frame 1).
+    expect(mockUseRiderBoard.mock.calls.at(-1)?.[0]).toBe(false);
+    const tree = activeTree;
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Go online" && typeof n.props.onPress === "function").props.onPress();
+    });
+    await settle();
+    expect(mockSetOnline).toHaveBeenCalledWith(true, expect.anything());
+  });
+
+  it("R-9: a failed re-read keeps the rider behind their wall (the last known `me` stands)", async () => {
+    const declined = meFixture({ kycStatus: "failed", kycAttempts: 2 });
+    mockGetMe.mockRejectedValue(new Error("503"));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("order-0")]);
+    activeTree = renderScreen((qc) => qc.setQueryData(["me"], declined));
+    await settle();
+    await settle();
+    expect(mockGetMe).toHaveBeenCalled();
+    expect(treeText(activeTree)).toContain("We still couldn't verify your ID");
+    expect(mockSetOnline).not.toHaveBeenCalled();
+  });
+
+  it("§5: no active-job read behind a KYC wall", async () => {
+    mockGetMe.mockResolvedValue(meFixture(PENDING_UNFINISHED));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen((qc) => qc.setQueryData(["me"], meFixture(PENDING_UNFINISHED)));
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).toContain("Finish verifying your ID");
+    expect(mockGetActiveOrder).not.toHaveBeenCalled();
   });
 });
