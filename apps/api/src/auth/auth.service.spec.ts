@@ -342,6 +342,12 @@ describe("AuthService.getProfile", () => {
     expect(me.rider).toMatchObject({ bikeReg: "ABZ 1234", kycStatus: "verified", ratingAvg: 4.8, tripsCount: 30, isOnline: true });
   });
 
+  it("First Run v2 E4 (D-80): surfaces the plate's check status, additively", async () => {
+    const { svc } = make(baseEnv, { profile: { findUnique: async () => ({ ...riderRow, rider: { ...riderRow.rider, plateStatus: "checking" } }) } });
+    const me = await svc.getProfile("p2");
+    expect(me.rider).toMatchObject({ bikeReg: "ABZ 1234", plateStatus: "checking" });
+  });
+
   // BH-03: KYC_MODE is a global deploy config, not a per-rider column — surfaced on the rider
   // object so the mobile client can tell "pending, waiting on a browser vendor flow" (auto) apart from
   // "pending, waiting on manual ops review, no browser step exists" (manual) instead of always

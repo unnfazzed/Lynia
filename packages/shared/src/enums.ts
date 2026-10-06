@@ -168,6 +168,16 @@ export const KycStatus = {
 } as const;
 export type KycStatus = (typeof KycStatus)[keyof typeof KycStatus];
 
+/** First Run v2 E4 (ledger D-80): ops' check of the rider's bike plate (Prisma `PlateStatus`). A
+ *  self-service plate change saves instantly as `checking`; ops confirm → `verified`; `none` = never
+ *  checked. The app says "Verified" only for `verified`. */
+export const PlateStatus = {
+  NONE: "none",
+  CHECKING: "checking",
+  VERIFIED: "verified",
+} as const;
+export type PlateStatus = (typeof PlateStatus)[keyof typeof PlateStatus];
+
 /** Rider account standing, distinct from KYC + reliability (A-04). `suspended` and `banned` are admin
  *  actions (or a settlement auto-pause → `suspended`); `active` is the only status that may go online.
  *  A reliability `on_hold` is a SEPARATE, auto flag (see policy.ts) — a rider can be active-but-on-hold. */

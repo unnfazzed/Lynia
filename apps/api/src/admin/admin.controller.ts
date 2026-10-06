@@ -65,6 +65,17 @@ const ReasonOptional = z.object({
   reason: z.string().max(160).nullish(),
   note: z.string().max(2000).nullish(),
 });
+// First Run v2 E4 (D-80): the plate ops checked, in the stored form (upper-case, single spaces).
+const PlateVerify = z.object({
+  plate: z
+    .string()
+    .trim()
+    .min(3)
+    .max(20)
+    .transform((v) => v.replace(/\s+/g, " ").toUpperCase()),
+  reason: z.string().max(160).nullish(),
+  note: z.string().max(2000).nullish(),
+});
 // Positive money value for a manual fare correction. Constrained to whole cents (matches the
 // CreateOrderRequest / MakeOfferRequest contracts) so a sub-cent value can't silently round on the way
 // into NUMERIC(10,2) and diverge from the value echoed back to the admin.
@@ -298,6 +309,17 @@ export class AdminController {
     @AdminActor() actor: string,
   ) {
     return this.ridersService.clearHold(actor, id, body);
+  }
+
+  /** First Run v2 E4 (D-80): confirm the bike plate a rider saved (plate_status checking → verified).
+   *  `plate` is the plate ops looked at; if the rider changed it since, 409. */
+  @Post("riders/:id/plate-verify")
+  verifyPlate(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(PlateVerify)) body: z.infer<typeof PlateVerify>,
+    @AdminActor() actor: string,
+  ) {
+    return this.ridersService.verifyPlate(actor, id, body);
   }
 
   /* ── Order admin actions (mutation + event + audit in one $transaction) ──────────────── */

@@ -706,3 +706,50 @@ describe("AdminRidersService.walletView", () => {
     expect(out.nextCursor).toBeNull();
   });
 });
+
+describe("AdminRidersService.verifyPlate (First Run v2 E4, D-80)", () => {
+  function plateTx(rider: unknown, count = 1) {
+    const calls: { update: { where: unknown; data: unknown } | null; audit: { data: Record<string, unknown> } | null } = { update: null, audit: null };
+    const tx = {
+      rider: {
+        findUnique: async () => rider,
+        updateMany: async (a: { where: unknown; data: unknown }) => {
+          calls.update = a;
+          return { count };
+        },
+      },
+      auditLog: {
+        create: async (a: { data: Record<string, unknown> }) => {
+          calls.audit = a;
+          return { id: "audit-p" };
+        },
+      },
+    };
+    return { prisma: { $transaction: async (fn: (t: unknown) => unknown) => fn(tx) }, calls };
+  }
+
+  it("confirms a plate that is checking — CAS on the plate ops looked at — and audits it", async () => {
+    const { prisma, calls } = plateTx({ bikeReg: "ABZ 4417", plateStatus: "checking" });
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, noNotifications, noGateway);
+    const res = await svc.verifyPlate("admin-1", "r1", { plate: "ABZ 4417" });
+    expect(calls.update).toEqual({ where: { profileId: "r1", bikeReg: "ABZ 4417", plateStatus: "checking" }, data: { plateStatus: "verified" } });
+    expect(calls.audit!.data).toMatchObject({ actor: "admin-1", action: "rider.plate_verify", target: "r1" });
+    expect(res).toEqual({ id: "r1", bikeReg: "ABZ 4417", plateStatus: "verified", auditId: "audit-p" });
+  });
+
+  it("refuses when the rider changed the plate since (0 rows) — nothing unseen is marked verified", async () => {
+    const { prisma, calls } = plateTx({ bikeReg: "ABZ 9999", plateStatus: "checking" }, 0);
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, noNotifications, noGateway);
+    await expect(svc.verifyPlate("admin-1", "r1", { plate: "ABZ 4417" })).rejects.toThrow(/changed/i);
+    expect(calls.audit).toBeNull();
+  });
+
+  it("refuses a plate that isn't waiting for a check, and a rider with none", async () => {
+    for (const rider of [{ bikeReg: "ABZ 4417", plateStatus: "verified" }, { bikeReg: "ABZ 4417", plateStatus: "none" }, { bikeReg: null, plateStatus: "none" }]) {
+      const { prisma, calls } = plateTx(rider);
+      const svc = new AdminRidersService(prisma as unknown as PrismaService, noNotifications, noGateway);
+      await expect(svc.verifyPlate("admin-1", "r1", { plate: "ABZ 4417" })).rejects.toThrow();
+      expect(calls.update).toBeNull();
+    }
+  });
+});

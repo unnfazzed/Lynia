@@ -140,6 +140,7 @@ export class AuthService {
         rider: {
           select: {
             bikeReg: true,
+            plateStatus: true,
             // Only its presence leaves this endpoint (`hasPhoto`), never the storage key itself.
             photoUrl: true,
             kycStatus: true,
@@ -234,6 +235,9 @@ export class AuthService {
       rider: p.rider
         ? {
             bikeReg: p.rider.bikeReg,
+            // First Run v2 E4 (D-80): ops' check of that plate — Bike & documents shows "Checking" until
+            // it is `verified`. Additive; older apps ignore it.
+            plateStatus: p.rider.plateStatus,
             // D-62: the rider photo is optional since 2026-10-02 — Bike & documents reads this to draw
             // "Not added yet". Additive; older apps ignore it.
             hasPhoto: p.rider.photoUrl != null,
