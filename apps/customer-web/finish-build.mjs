@@ -2,7 +2,10 @@
 // Finishes apps/mobile's web export for app.lyniago.com (docs/CUSTOMER-WEB.md):
 //   1. copies public/ (Add to Home Screen manifest + icons, _headers) into the export, and
 //   2. adds the iPhone Home Screen tags and a safe-area viewport to index.html (owner decision W5), and
-//   3. loads public/ios-viewport.js, which stops iPhone Safari zooming in when a text field is focused.
+//   3. loads public/ios-viewport.js, which stops iPhone Safari zooming in when a text field is focused, and
+//   4. lets text fields shrink to their row (min-width: 0). A browser <input> keeps a built-in minimum width
+//      (about 20 characters) that react-native-web's flex: 1 can't shrink, so the phone field ran ~45px past a
+//      320px screen and focusing it slid the whole page sideways. Native TextInputs have no such minimum.
 // Usage: node apps/customer-web/finish-build.mjs <export dir>. Idempotent; fails loudly if Expo's
 // index.html no longer has the tags it edits, so a template change can't silently drop them.
 import { cpSync, readFileSync, writeFileSync } from "node:fs";
@@ -39,6 +42,7 @@ if (!html.includes(MARK)) {
     '<meta name="apple-mobile-web-app-title" content="LyniaGo" />',
     '<meta name="apple-mobile-web-app-status-bar-style" content="default" />',
     '<script src="/ios-viewport.js"></script>',
+    '<style id="lyniago-web">input, textarea { min-width: 0; }</style>',
   ].join("\n    ");
   if (!html.includes("</head>")) throw new Error("index.html has no </head>");
   html = html.replace("</head>", `    ${head}\n  </head>`);

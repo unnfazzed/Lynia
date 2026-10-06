@@ -17,6 +17,7 @@ grep -q '<title>LyniaGo</title>' <<<"$page" || fail "the page title is not Lynia
 grep -q 'rel="manifest"' <<<"$page" || fail "the Add to Home Screen manifest link is missing"
 grep -q '/_expo/static/js/web/entry-' <<<"$page" || fail "the app bundle is not referenced"
 grep -q 'src="/ios-viewport.js"' <<<"$page" || fail "ios-viewport.js (no zoom on focus) is not loaded"
+grep -q 'input, textarea { min-width: 0; }' <<<"$page" || fail "text fields can overflow the screen (min-width rule missing)"
 
 # One-page app: a deep link is served the same page, not a 404.
 deep="$(curl -fsS --max-time 20 "$BASE/send")" || fail "$BASE/send did not answer 200"

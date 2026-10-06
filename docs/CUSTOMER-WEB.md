@@ -19,6 +19,9 @@ Web-only differences from the phone app: ledger D-81 in [`DESIGN-DEVIATIONS.md`]
   drawn) and leaves the page zoomed past the screen. `public/ios-viewport.js` adds `maximum-scale=1` to the
   viewport on iOS only, which stops that zoom and keeps pinch-zoom (Safari ignores the limit for pinches).
   Android keeps the plain viewport, since it doesn't zoom on focus and would lose pinch-zoom.
+- Text fields fit their row: a browser `<input>` keeps a built-in minimum width (~20 characters) that `flex: 1`
+  can't shrink, so the phone-number field ran past a 320px screen and focusing it slid the page sideways (any
+  browser, Android Chrome included). `finish-build.mjs` adds `input, textarea { min-width: 0 }`.
 
 ## One-time setup (owner)
 
