@@ -345,6 +345,10 @@ model Rider {
   // Not a secret, not PII. Migration 0076 (expand-only).
   kycVendorStatus   String?                                @map("kyc_vendor_status")
   kycVendorStatusAt DateTime?                              @map("kyc_vendor_status_at")
+  // First Run v2 F6 (ledger D-80 §4): the day the rider's verified ID expires / expired — the document's
+  // `expiration_date` from the verified decision webhook, and on an `expired` result the day it lapsed
+  // (kycIdExpiryOnLapse). /auth/me serves it as `kycExpiredOn` while kycStatus is `expired`. Null = unknown.
+  kycIdExpiresOn    DateTime?                              @map("kyc_id_expires_on") @db.Date
   // IR26-04 vendor-document dedupe: the HMAC hash (LR8 — never the raw number) of the document number
   // the KYC VENDOR actually verified, persisted from the Didit decision webhook on a `verified`
   // outcome, and (D-75 item 2) from a result held for review while the check is undecided

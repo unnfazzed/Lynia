@@ -122,6 +122,11 @@ export interface Me {
      * polls slowly. Absent on an older server ⇒ not held.
      */
     kycHeld?: boolean;
+    /**
+     * First Run v2 F6 (ledger D-80 §4): the day the rider's ID expired, "YYYY-MM-DD", while `kycStatus` is
+     * `expired` (null otherwise). Absent on an older server — F6 then drops the date.
+     */
+    kycExpiredOn?: string | null;
   } | null;
 }
 

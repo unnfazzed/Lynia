@@ -28,6 +28,7 @@ import { RiderService } from "../riders/rider.service";
 import {
   decideDiditKyc,
   diditTimestampFresh,
+  extractDiditDocumentExpiry,
   extractDiditDocumentNumber,
   extractDiditScore,
   isDiditReviewHold,
@@ -202,6 +203,8 @@ export class KycController {
       // service degrades to typed-ID-only dedupe and logs the coverage gap). Hashed downstream; the
       // raw number is never persisted or logged.
       extractDiditDocumentNumber(payload),
+      // First Run v2 F6 (D-80 §4): the document's expiry date, so an expired rider can be told the day.
+      extractDiditDocumentExpiry(payload),
     );
     if (res.updated === 0) {
       // No rider has this ref, or the event was stale/duplicate — surface for reconciliation.

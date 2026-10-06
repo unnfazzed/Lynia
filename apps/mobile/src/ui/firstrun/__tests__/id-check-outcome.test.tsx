@@ -11,7 +11,7 @@ import renderer, { act } from "react-test-renderer";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import type { KycOutcomeId } from "../../../logic/kyc-outcome";
 import { IdCheckOutcome } from "../IdCheckOutcome";
-import { KY } from "../copy";
+import { KY, PD } from "../copy";
 
 const METRICS = { insets: { top: 24, left: 0, right: 0, bottom: 20 }, frame: { x: 0, y: 0, width: 360, height: 720 } };
 
@@ -51,7 +51,7 @@ const heroFill = (t: renderer.ReactTestRenderer): string | undefined => {
   return (StyleSheet.flatten(p?.props.style) as ViewStyle | undefined)?.backgroundColor as string | undefined;
 };
 
-const ALL: KycOutcomeId[] = ["F1", "F2", "F3", "F4a", "F4b", "F4c", "F4d", "F5", "F6", "F7", "F8"];
+const ALL: KycOutcomeId[] = ["F1", "F2", "F3", "F4a", "F4b", "F4c", "F4d", "F5", "F5dup", "F6", "F7", "F8"];
 
 describe("IdCheckOutcome — one shell for every F page", () => {
   it.each(ALL)("%s: the ✕ is the way out, and nothing offers to order food or send a parcel", (id) => {
@@ -119,6 +119,17 @@ describe("IdCheckOutcome — one shell for every F page", () => {
   it("F5 · locked: one CTA, WhatsApp", () => {
     const { tree, onHelp, onRetry } = mount("F5");
     expect(lines(tree)).toEqual(expect.arrayContaining([`${KY.lockedA} ${KY.lockedB}`, KY.lockedBody, KY.msg]));
+    press(tree, "outcome-primary");
+    expect(onHelp).toHaveBeenCalled();
+    expect(onRetry).not.toHaveBeenCalled();
+  });
+
+  it("F5dup · declined as a duplicate: F5's WhatsApp-only shell, never 'Both tries are used' (owner 2026-10-06)", () => {
+    const { tree, onHelp, onRetry } = mount("F5dup");
+    expect(lines(tree)).toEqual(expect.arrayContaining([`${KY.lockedA} ${KY.lockedB}`, `${PD.takenA} ${PD.takenB}. ${PD.takenBody}`, KY.msg]));
+    expect(lines(tree)).not.toContain(KY.lockedBody);
+    expect(byTestId(tree, "tries-meter")).toHaveLength(0);
+    expect(byTestId(tree, "outcome-help")).toHaveLength(0);
     press(tree, "outcome-primary");
     expect(onHelp).toHaveBeenCalled();
     expect(onRetry).not.toHaveBeenCalled();

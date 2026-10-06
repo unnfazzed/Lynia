@@ -6,7 +6,7 @@ import type { KycPendingStateService } from "../kyc/kyc-pending-state.service";
 import type { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { PiiCryptoService } from "../common/pii-crypto.service";
-import { AuthService } from "./auth.service";
+import { AuthService, kycExpiredOn } from "./auth.service";
 import { ConsoleOtpSender } from "./otp-sender";
 import { InMemoryOtpStore } from "./otp-store";
 import { TokenService } from "./token.service";
@@ -1715,5 +1715,15 @@ describe("AuthService.getProfile — kycPendingState (P0-1 / D6)", () => {
       const { svc } = make({ ...baseEnv, KYC_MODE: "manual" } as Env, profileWithRider(held), spyPendingState("held").svc);
       expect((await svc.getProfile("p1")).rider?.kycHeld).toBe(false);
     });
+  });
+});
+
+// First Run v2 F6 (ledger D-80 §4): `rider.kycExpiredOn` on /auth/me.
+describe("kycExpiredOn", () => {
+  it("is the stored expiry day while expired, else the day the expiry applied, else null", () => {
+    expect(kycExpiredOn("expired", new Date("2026-10-02T00:00:00Z"), new Date("2026-10-05T14:00:00Z"))).toBe("2026-10-02");
+    expect(kycExpiredOn("expired", null, new Date("2026-10-05T14:00:00Z"))).toBe("2026-10-05");
+    expect(kycExpiredOn("expired", null, null)).toBeNull();
+    expect(kycExpiredOn("verified", new Date("2031-01-01T00:00:00Z"), null)).toBeNull();
   });
 });

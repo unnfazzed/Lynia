@@ -454,7 +454,9 @@ export const RF = {
   /* gates */
   gCoolV: (until: Date, now: Date): string => `${hhmm(until)} · ${hMin(until.getTime() - now.getTime())} left`,
   gSuspB: (until: Date | null): string =>
-    until ? `You can't take jobs until ${dayMonth(until)}. Our team sent the details by SMS.` : "You can't take jobs right now. Our team sent the details by SMS.",
+    // D-80 §4 (owner 2026-10-06): the server sends no SMS on a suspension — it sends a push and pins an
+    // "Account paused" row with the reason in Notifications (admin-riders.service suspend, notifications-feed).
+    until ? `You can't take jobs until ${dayMonth(until)}. The details are in your notifications.` : "You can't take jobs right now. The details are in your notifications.",
   gSuspV: (until: Date): string => `${dayMonthYear(until)}, ${hhmm(until)}`,
   gTopB: (floor: number): string => `Your commission balance is below the ${usd(floor)} floor. Top up and jobs show again straight away.`,
   /* food offer */
