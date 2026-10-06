@@ -4512,7 +4512,7 @@ wires); `app/(tabs)/home.tsx` → phases 2+3 (phase 4 adds the one-line U4a moun
   `FirstRunScreen` (status bar + 12 / 6, scrolling body, pinned footer, keyboard-aware), `FirstRunToast`, and
   `useFirstRunMetrics()` / `firstRunMetrics(width, fontScale)` (≤340 wide → hero 160, disc 84, title 24;
   font scale ≥1.2 → hero 176, disc 84). Icons added to `Icon`: `volume-x`, `sun`, `battery`, `upload` (`trash-2`
-  is the existing `trash`). Dev gallery: `app/dev/first-run.tsx` (redirects home in a release build).
+  is the existing `trash`). (A dev gallery route was removed again: every route ships in the release bundle.)
 - **Token:** `dangerSun #F4D9D5` (see §1).
 - **Toast (owner #4):** `ToastProvider` (`src/ui/Toast.tsx`) now draws the bottom toast app-wide — `forest`, radius
   14, padding 14 16, white 600 14, a 20 brand check, 96 above the bottom + the safe-area inset, slides up, gone
