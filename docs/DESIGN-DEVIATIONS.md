@@ -4659,10 +4659,10 @@ wires); `app/(tabs)/home.tsx` → phases 2+3 (phase 4 adds the one-line U4a moun
   (`RiderLocEmpty`, the Empty States v2 mark; "Turn on" → P1, or P6 when blocked) replaces the G-gps wall when the
   permission is missing (J8 above it when both are). A granted permission with no fix keeps the Rider v2 GPS wall.
 - **Settings** (`app/settings/index.tsx`, owner #1): the round `BackHeader` + `LargeTitle`; PC11's danger card while
-  order updates are off ("Turn on" → PC8 again from Settings, or phone settings when blocked); YOU (Personal details
-  first with `PD.row/rowSub`, the name/phone row, Bike & documents with "N to add" from `bikeDocsProgress`, Language,
-  Privacy, Terms, Payment); ALERTS with toggles that mirror the phone (Job alerts, Location, Order updates — an off
-  toggle opens P9 / P1 / PC8, an on toggle opens phone settings), P15's danger Location row ("Off · You can't receive
+  order updates are off ("Turn on" opens the Android dialog directly, or the phone-settings steps when blocked —
+  owner answer 6 below); YOU (Personal details first with `PD.row/rowSub`, Bike & documents with "N to add" from
+  `bikeDocsProgress`, Language, Privacy, Terms, Payment); ALERTS with toggles that mirror the phone (Job alerts,
+  Location, Order updates — an off toggle opens P9 / P1 / the dialog, an on toggle opens phone settings), P15's danger Location row ("Off · You can't receive
   jobs", the row reopens P1/P6), Battery saver → P16; Test ping / Test alarm under ALERTS (job-alert channel); RIDER
   (Navigation app, Top-up number); Sign out, Delete account last. Strings the drawing carries but `copy.ts` doesn't are
   `src/ui/settings/copy.ts` (`ST`), verbatim from `fr-states.js`.
@@ -4777,28 +4777,37 @@ _Filled in phase by phase._
   PC3's "keeping the approximate centre for search bias" is not built (the search takes no bias point).
 - **PC7's toast** is `PC.grantedToast` with its sample address ("12 Samora Machel Ave", data, not copy) swapped for the
   resolved one. When a grant gets no fix (indoors, a cold GPS), the H5 search opens instead of a toast (undrawn).
-- **PC8 from Settings (PC11 "Turn on").** README says "open PC8 again": it draws no "Order placed" pill there (nothing
-  was just placed) and a decline returns to Settings instead of PC10, whose copy ("Back to my order") is about an order.
-  A Settings visit doesn't count toward the 3-per-install cap. When the OS won't ask again, "Turn on" opens the phone's
-  settings — README's "PC5-style steps using the notification wording" has no customer wording in `copy.ts`.
-- **PC8's sample code** "Your delivery code is 4821" is shipped verbatim although every real code is 6 digits shown
-  3+3 (D-59) — flagged for the owner / designer.
+- **PC11 "Turn on" — owner decision 2026-10-06 (answer 6).** Not PC8 again (README): while the OS can still ask,
+  Settings' "Turn on" (and the off Order updates toggle) opens the Android notification dialog directly; a decline
+  leaves the rider/customer on Settings with the card up. When the OS won't ask again, a sheet shows the PC5-shaped
+  phone-settings steps in notification words — `RP.blockedA/B`, then `PC.setOffBody` (customer) or `RP.blockedBody`
+  (rider), then `RP.step1`, `RP.nStep2` and `RP.nStep3` (for a customer only its first half, "Allow notifications",
+  since "Job alerts on" is a rider channel — derived copy) — with "Open phone settings". PC8 now only follows an order.
+- **PC8's sample code — owner-approved copy exception 2026-10-06 (answer 4).** The handoff draws "Your delivery code is
+  4821"; every real code is 6 digits shown 3+3 (D-59), so PC8 shows **"Your delivery code is 482 193"**. `copy.ts`
+  stays byte-for-byte; the swap is in `app/order-updates.tsx`. **Note for the designer:** redraw PC8's second card with
+  a 6-digit code.
 - **P9's offer card** is an illustration: its "0:58" is a static literal, and "Play a test ping" (like Settings' test
   buttons) posts a local notification on the `job-alerts` channel — silent until notifications are allowed.
-- **`job-alerts` channel — NEEDS BACKEND.** The app now creates a `job-alerts` channel (importance MAX, sound) and P12
-  reads it, but the API sends no Android `channelId`, so job pushes still post on the `default` channel. P12 therefore
-  treats the rider as muted when EITHER channel is below HIGH and opens that channel's page. Sending rider job pushes
-  with `android.notification.channelId = "job-alerts"` is a server change (`apps/api/src/adapters/push/fcm.push.ts`).
-- **P16 — NEEDS NATIVE for the direct ask.** `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` needs the
+- **`job-alerts` channel — BUILT (owner 2026-10-06, answer 3).** The API sends rider job pings (`kind: broadcast`) and
+  food-offer alarms (`kind: food_offer`) with `android.notification.channelId = "job-alerts"`
+  (`androidChannelFor` in `apps/api/src/adapters/push/push.interface.ts`, mapped by `buildFcmMessage`; spec
+  `notifications/job-alerts-channel.spec.ts`); every other push stays on the default channel. The app creates
+  `job-alerts` (HIGH importance, sound) when the rider tab shell mounts, in the rider flow and in Settings. A build
+  without the channel gets FCM's fallback to the default channel, so P12 still treats a rider as muted when EITHER
+  channel is below HIGH and opens that channel's page.
+- **P16 — the battery list, owner decision 2026-10-06 (answer 5).** `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` needs the
   `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` manifest permission, which Play restricts; P16's CTA opens the phone's battery
   optimisation list (`IGNORE_BATTERY_OPTIMIZATION_SETTINGS`, no permission) and returns to Settings when the rider comes
   back. Whether the app is exempt can't be read from JS, so the Settings row stays a plain chevron row.
 - **P15's "Tap Location to reopen P1."** is a design annotation, not rendered.
 - **Settings' kept rows (owner #1)** sit where they did: Privacy, Terms and Payment in YOU after Language; Test ping /
   Test alarm as white soft pills under ALERTS (while job alerts are on); Navigation app and Top-up number in a RIDER
-  card; Delete account last, its title in danger ink. The shipped name / phone row stays, second in YOU (an owner
-  question: D1 doesn't draw it). The 44×26 toggle keeps its drawn size; its hit area reaches 44 by slop.
+  card; Delete account last, its title in danger ink. The shipped name / phone row is **removed** (owner 2026-10-06,
+  answer 1): Personal details is the first YOU row, as drawn. The 44×26 toggle keeps its drawn size; its hit area
+  reaches 44 by slop.
 - **Bare asks still outside an explainer** (BRIEF 1, not drawn by the handoff): the Send pickup auto-locate
   (`use-pickup-autolocate.ts`), the map picker's locate button (`MapPicker.tsx`), the keyless geocoder
   (`geocode.ts`), "Notify me" for a Soon service (`service-interest.ts`) and the rider's job-start stream
-  (`use-rider-location.ts`, normally granted by P1 by then). Left as they were — an owner question.
+  (`use-rider-location.ts`, normally granted by P1 by then). **Left as they are — owner decision 2026-10-06
+  (answer 2).**
