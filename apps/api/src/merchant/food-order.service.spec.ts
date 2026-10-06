@@ -798,6 +798,44 @@ describe("FoodOrderService.revealPickupCode — N-16 reveal-by-rotation", () => 
     });
   });
 
+  // E2E 2026-10-05 LB-1: a rider's acceptance clears merchantPhase, and the merchant web reveals only
+  // once a rider is assigned — so this window is the one every shop and pharmacy order needs.
+  it.each(["assigned", "confirmed", "en_route_pickup"])("re-mints the code after a rider accepts (status %s)", async (status) => {
+    let updateArgs: Record<string, unknown> | undefined;
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: {
+        findFirst: async () => ({ id: "o1", merchantId: "m1", status, merchantPhase: null, riderId: "r1", pickupCodeHash: "old", merchantItems: [] }),
+        updateMany: async (a: Record<string, unknown>) => {
+          updateArgs = a;
+          return { count: 1 };
+        },
+      },
+    });
+    const res = await svc.revealPickupCode("p1", "o1");
+    expect(res.pickupCode).toMatch(/^\d{6}$/);
+    expect(updateArgs).toEqual({
+      where: { id: "o1", status, riderId: "r1", merchantPhase: null, pickupCodeHash: { not: null } },
+      data: { pickupCodeHash: tokens.hash(res.pickupCode), pickupCodeAttempts: 0 },
+    });
+  });
+
+  it("409s after a rider accepts when the order never had a code (codeless stays codeless)", async () => {
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: { findFirst: async () => ({ id: "o1", merchantId: "m1", status: "assigned", merchantPhase: null, riderId: "r1", pickupCodeHash: null, merchantItems: [] }) },
+    });
+    await expect(svc.revealPickupCode("p1", "o1")).rejects.toThrow(/isn't ready for pickup/);
+  });
+
+  it("409s once the rider has picked up", async () => {
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: { findFirst: async () => ({ id: "o1", merchantId: "m1", status: "picked_up", merchantPhase: null, riderId: "r1", pickupCodeHash: "h", merchantItems: [] }) },
+    });
+    await expect(svc.revealPickupCode("p1", "o1")).rejects.toThrow(/isn't ready for pickup/);
+  });
+
   it("409s on a lost CAS race (order changed between the read and the update)", async () => {
     const { svc } = build({
       merchant: { findUnique: async () => ({ id: "m1" }) },

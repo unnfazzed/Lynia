@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import type { MerchantHours, MerchantProfileResponse } from "@lynia/shared";
+import type { MerchantProfileResponse } from "@lynia/shared";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
 import { AppBar } from "../../components/m/AppBar";
@@ -92,8 +92,8 @@ export default function HoursPage() {
     setSaving(true);
     setError(null);
     try {
-      // An absent day is closed; MerchantHours' zod record validates that shape at runtime.
-      const profile = await updateHours({ hours: draft as MerchantHours });
+      // An absent day is closed; MerchantHours is a zod partialRecord, so a closed day validates.
+      const profile = await updateHours({ hours: draft });
       primeBusiness(profile);
       toast("Hours saved");
       router.push("/account");

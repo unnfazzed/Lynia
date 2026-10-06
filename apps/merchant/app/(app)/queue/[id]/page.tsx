@@ -966,7 +966,11 @@ function usePickupCode(order: MerchantOrderResponse): string | null {
     askedFor.current = order.riderId;
     revealPickupCode(order.id)
       .then((res) => setCode(res.pickupCode))
-      .catch(() => setCode(null));
+      .catch(() => {
+        // Not silent for good: the next order refresh asks again (E2E 2026-10-05 LB-1 hid behind this).
+        askedFor.current = null;
+        setCode(null);
+      });
   }, [codeless, order]);
   return code;
 }
