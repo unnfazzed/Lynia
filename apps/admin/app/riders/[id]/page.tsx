@@ -6,6 +6,7 @@ import { KpiCard } from "../../components/KpiCard";
 import { KeyValue } from "../../components/KeyValue";
 import { StatusPill, Pill } from "../../components/StatusPill";
 import { RiderActions } from "./RiderActions";
+import { PlateConfirmButton } from "../PlateConfirm";
 import { WalletCreditButton, WalletFreezeActions } from "./WalletActions";
 import { ReportsCallout } from "../../components/ReportsCallout";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle, SubsectionUnavailable } from "../../components/states";
@@ -220,7 +221,17 @@ export default async function RiderProfilePage({
             <KeyValue
               rows={[
                 { label: "Phone", value: <span className="mono">{formatPhoneLocal(r.phone)}</span> },
-                { label: "Bike reg", value: <span className="mono">{r.bike}</span> },
+                {
+                  label: "Bike reg",
+                  value: (
+                    <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                      <span className="mono">{r.bike || "—"}</span>
+                      {/* First Run v2 E4 (D-80): ops' check of the plate. */}
+                      {r.bike && r.plateStatus === "checking" ? <Pill kind="mut">checking</Pill> : null}
+                      {r.bike && r.plateStatus === "verified" ? <Pill kind="good">verified</Pill> : null}
+                    </span>
+                  ),
+                },
                 { label: "Joined", value: r.joined },
                 {
                   label: "KYC",
@@ -251,6 +262,9 @@ export default async function RiderProfilePage({
                 telHref={telHref}
                 connected={connected}
               />
+              {r.bike && r.plateStatus === "checking" ? (
+                <PlateConfirmButton id={r.id} name={r.name} plate={r.bike} connected={connected} path={`/riders/${r.id}`} />
+              ) : null}
             </div>
             <div style={{ fontSize: 11, color: tokens.color.muted, marginTop: 10 }}>
               Suspensions and bans require a reason code and are recorded in the audit log.

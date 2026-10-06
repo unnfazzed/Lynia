@@ -6,12 +6,15 @@ import { FilterNav } from "../components/FilterNav";
 import { Pill } from "../components/StatusPill";
 import { IconBike } from "../components/icons";
 import { KycApproveButton } from "./KycSubmitButton";
+import { PlateConfirmButton } from "./PlateConfirm";
 
 interface Rider {
   profileId: string;
   name: string;
   phone: string;
   bikeReg: string;
+  /** First Run v2 E4 (D-80): ops' check of the plate. Absent on older APIs. */
+  plateStatus?: "none" | "checking" | "verified";
   kycStatus: "pending" | "verified" | "failed" | "expired";
   idVerified: boolean;
   isOnline: boolean;
@@ -26,6 +29,11 @@ interface Rider {
 }
 
 const KYC_TABS = ["pending", "verified", "failed", "expired", "all"] as const;
+/** First Run v2 E4 (D-80): the directory vs the plate review queue (`?plate=checking`). */
+const PLATE_TABS = [
+  { value: "all", label: "all riders" },
+  { value: "checking", label: "plates to check" },
+] as const;
 
 /** Account-standing chip — lets the directory flag a suspended/banned/held rider at a glance (A-04). */
 function standingPill(r: Rider) {
@@ -73,11 +81,14 @@ export default async function RidersPage({
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const raw = (await searchParams).kyc;
+  const sp = await searchParams;
+  const raw = sp.kyc;
+  // Plate-review mode (First Run v2 E4, D-80): plates riders added or changed, waiting on ops.
+  const plateMode = typeof raw !== "string" && sp.plate === "checking";
   // KYC-queue mode when a (valid) ?kyc= filter is present; otherwise the full rider DIRECTORY.
   const kycMode = typeof raw === "string" && (KYC_TABS as readonly string[]).includes(raw);
   const kycFilter = kycMode ? (raw as string) : "";
-  const query = kycMode && kycFilter !== "all" ? `?kyc=${kycFilter}` : "";
+  const query = kycMode && kycFilter !== "all" ? `?kyc=${kycFilter}` : plateMode ? "?plate=checking" : "";
   const res = await adminFetchResult<Rider[]>(`/admin/riders${query}`);
   const riders = "data" in res ? res.data : null;
   const reason = "data" in res ? undefined : res.reason;
@@ -105,11 +116,30 @@ export default async function RidersPage({
     { key: "action", header: "Action", cell: (r) => <KycAction r={r} /> },
   ];
 
+  const plateColumns: Column<Rider>[] = [
+    { key: "name", header: "Rider", cell: riderName },
+    { key: "phone", header: "Phone", className: "mono", cell: (r) => formatPhoneLocal(r.phone) },
+    { key: "plate", header: "Plate", className: "mono", cell: (r) => r.bikeReg },
+    { key: "kyc", header: "KYC", cell: (r) => kycPill(r.kycStatus) },
+    { key: "trips", header: "Trips / rating", className: "num", cell: (r) => `${r.tripsCount} · ${ratingTxt(r)}` },
+    {
+      key: "action",
+      header: "Action",
+      cell: (r) => <PlateConfirmButton id={r.profileId} name={r.name || r.profileId.slice(0, 8)} plate={r.bikeReg} connected={connected} path="/riders" />,
+    },
+  ];
+
   return (
     <main className="content">
       <header className="page">
-        <h1>{kycMode ? "Riders — KYC review" : "Riders"}</h1>
-        <span className="sub">{kycMode ? "Didit verification queue — approve or review each application" : "Rider directory — standing, KYC, trips & strikes"}</span>
+        <h1>{kycMode ? "Riders — KYC review" : plateMode ? "Riders — plate review" : "Riders"}</h1>
+        <span className="sub">
+          {kycMode
+            ? "Didit verification queue — approve or review each application"
+            : plateMode
+              ? "Plates riders added or changed — check each against the bike, then confirm"
+              : "Rider directory — standing, KYC, trips & strikes"}
+        </span>
         <Conn connected={connected} reason={reason} />
       </header>
 
@@ -121,20 +151,30 @@ export default async function RidersPage({
           active={kycFilter}
           hrefFor={(v) => `/riders?kyc=${v}`}
         />
-      ) : null}
+      ) : (
+        <FilterNav
+          items={PLATE_TABS.map((t) => ({ value: t.value, label: t.label }))}
+          active={plateMode ? "checking" : "all"}
+          hrefFor={(v) => (v === "checking" ? "/riders?plate=checking" : "/riders")}
+        />
+      )}
 
       <section className="card">
         <DataTable
-          columns={kycMode ? kycColumns : directoryColumns}
+          columns={kycMode ? kycColumns : plateMode ? plateColumns : directoryColumns}
           rows={riders ?? []}
           rowKey={(r) => r.profileId}
           // Directory rows are pure links to the profile; KYC rows carry an inline Approve form, so no
           // stretched row-link there (it would sit under the button).
-          getRowHref={kycMode ? undefined : (r) => `/riders/${r.profileId}`}
-          rowLabel={kycMode ? undefined : (r) => `Open ${r.name || r.profileId.slice(0, 8)}`}
+          getRowHref={kycMode || plateMode ? undefined : (r) => `/riders/${r.profileId}`}
+          rowLabel={kycMode || plateMode ? undefined : (r) => `Open ${r.name || r.profileId.slice(0, 8)}`}
           empty={
             connected ? (
-              <EmptyState icon={<IconBike />} title={kycMode ? "No riders in this view" : "No riders yet"} line={kycMode ? "Try a different KYC filter." : "Riders appear here once they sign up."} />
+              plateMode ? (
+                <EmptyState icon={<IconBike />} title="No plates to check" line="New and changed plates appear here until you confirm them." />
+              ) : (
+                <EmptyState icon={<IconBike />} title={kycMode ? "No riders in this view" : "No riders yet"} line={kycMode ? "Try a different KYC filter." : "Riders appear here once they sign up."} />
+              )
             ) : (
               <EmptyState
                 icon={<IconBike />}

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { creditRiderWallet, decideKyc, setKyc } from "./actions";
+import { creditRiderWallet, decideKyc, setKyc, verifyPlate } from "./actions";
 
 /**
  * Money + compliance server actions on the rider rail (item 1.6). These are the daily human-in-the-loop
@@ -204,5 +204,29 @@ describe("setKyc (queue-backstop KYC write, FormData)", () => {
       message: expect.stringContaining("already on another live account"),
     });
     expect(revalidateMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("verifyPlate (First Run v2 E4, D-80 — ops confirm a rider's plate)", () => {
+  it("posts the plate ops looked at, with the reason and note, and refreshes the profile + list", async () => {
+    await verifyPlate("rider-1", "ABZ 4417", "Matches the bike photo", "seen on WhatsApp");
+    const c = lastCall();
+    expect(c.url).toBe("https://api.test/admin/riders/rider-1/plate-verify");
+    expect(c.method).toBe("POST");
+    expect(c.body).toEqual({ plate: "ABZ 4417", reason: "Matches the bike photo", note: "seen on WhatsApp" });
+    expect(c.headers.Authorization).toBe("Bearer test-admin-token");
+    expect(revalidateMock).toHaveBeenCalledWith("/riders/rider-1");
+    expect(revalidateMock).toHaveBeenCalledWith("/riders");
+  });
+
+  it("a refusal (the rider changed the plate since: 409) throws so the modal stays open, and refreshes nothing", async () => {
+    fetchMock.mockResolvedValueOnce(res(409));
+    await expect(verifyPlate("rider-1", "ABZ 4417", null, "")).rejects.toThrow(/Couldn't confirm the plate/);
+    expect(revalidateMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses to post without a plate", async () => {
+    await expect(verifyPlate("rider-1", "", null, "")).rejects.toThrow(/no plate/);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
