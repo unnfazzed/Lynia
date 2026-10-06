@@ -1,17 +1,16 @@
 /**
- * Splash layout on real screens (ledger D-64 #7, S-5). The handoff fits 320×640 in a frame with no
- * system bars; with the bottom inset under the steps card and the offline panel the wordmark must still
- * never sit under either — the brand moves up instead — and where there is room the handoff's own
- * values are untouched.
+ * Splash layout on real screens (ledger D-64 #7, S-5). The anchor is the handoff's 44% of H everywhere
+ * (nothing sits under the wordmark since the steps card was removed, CHANGE-2026-10-06). The offline
+ * lift is the handoff's 64px wherever that clears the panel; with the bottom inset under the panel on a
+ * short phone it grows, so the lifted wordmark is never under the panel.
  */
-import { ANCHOR_RATIO, CARD_BOTTOM, CARD_H_ESTIMATE, MIN_CLEARANCE, OFFLINE_LIFT, PANEL_BOTTOM, PANEL_H_ESTIMATE, WORDMARK_H, WORDMARK_TOP, splashGeometry } from "../geometry";
+import { ANCHOR_RATIO, MIN_CLEARANCE, OFFLINE_LIFT, PANEL_BOTTOM, PANEL_H_ESTIMATE, WORDMARK_H, WORDMARK_TOP, splashGeometry } from "../geometry";
 
 const wordmarkBottom = (anchor: number): number => anchor + WORDMARK_TOP + WORDMARK_H;
-const cardTop = (H: number, inset: number): number => H - inset - CARD_BOTTOM - CARD_H_ESTIMATE;
-const panelTop = (H: number, inset: number): number => H - inset - PANEL_BOTTOM - PANEL_H_ESTIMATE;
+const panelTop = (H: number, inset: number, panelH = PANEL_H_ESTIMATE): number => H - inset - PANEL_BOTTOM - panelH;
 
 describe("splashGeometry", () => {
-  const at = (H: number, bottomInset: number) => splashGeometry({ H, bottomInset, cardH: CARD_H_ESTIMATE, panelH: PANEL_H_ESTIMATE });
+  const at = (H: number, bottomInset: number) => splashGeometry({ H, bottomInset, panelH: PANEL_H_ESTIMATE });
 
   it.each([
     [640, 0],
@@ -24,19 +23,19 @@ describe("splashGeometry", () => {
   });
 
   it.each([
-    [640, 48], // the entry phone with a 3-button nav bar — the card used to cover ~20dp of "LyniaGo"
-    [640, 24], // …and with gesture navigation (~4dp of clearance before)
+    [640, 48], // the entry phone with a 3-button nav bar — 64px left the panel over the lifted wordmark
+    [640, 24], // …and with gesture navigation
     [600, 48],
-  ])("H=%i, inset %i: the brand moves up so neither panel ever reaches the wordmark", (H, inset) => {
+  ])("H=%i, inset %i: the anchor stays at 44%%; the lift grows so the panel never reaches the wordmark", (H, inset) => {
     const { anchor, offlineLift } = at(H, inset);
-    expect(anchor).toBeLessThan(ANCHOR_RATIO * H);
-    expect(cardTop(H, inset) - wordmarkBottom(anchor)).toBeGreaterThanOrEqual(MIN_CLEARANCE);
+    expect(anchor).toBe(ANCHOR_RATIO * H);
+    expect(offlineLift).toBeGreaterThan(OFFLINE_LIFT);
     expect(panelTop(H, inset) - (wordmarkBottom(anchor) - offlineLift)).toBeGreaterThanOrEqual(MIN_CLEARANCE);
   });
 
-  it("a taller (measured) offline panel lifts the brand further than 64", () => {
-    const { anchor, offlineLift } = splashGeometry({ H: 640, bottomInset: 48, cardH: CARD_H_ESTIMATE, panelH: 260 });
+  it("a taller (measured) offline panel lifts the brand further", () => {
+    const { anchor, offlineLift } = splashGeometry({ H: 700, bottomInset: 0, panelH: 260 });
     expect(offlineLift).toBeGreaterThan(OFFLINE_LIFT);
-    expect(panelTop(640, 48) - 84 - (wordmarkBottom(anchor) - offlineLift)).toBeGreaterThanOrEqual(MIN_CLEARANCE);
+    expect(panelTop(700, 0, 260) - (wordmarkBottom(anchor) - offlineLift)).toBeGreaterThanOrEqual(MIN_CLEARANCE);
   });
 });
