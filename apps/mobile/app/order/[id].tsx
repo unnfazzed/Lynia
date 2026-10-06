@@ -684,15 +684,13 @@ function ParcelOrderScreen(): React.ReactElement {
       return frame({ title: "", map: <BlankMap />, content: <OpeningSheet />, bar: null, floor: 0, fallbackShare: 0.34, contentKey: "opening" });
     }
     const gone = loadErrorKind !== "transient";
-    const bar = gone ? (
-      <OneButtonBar label={A.home} icon="home" onPress={() => goHomeClearingStack(router)} />
-    ) : (
+    const bar = gone ? null : (
       <CtaBar>
         <CtaButton label={A.tryAgain} icon="refresh-cw" onPress={() => void orderQ.refetch()} loading={orderQ.isFetching} />
         <CtaButton ghost label={A.home} onPress={() => goHomeClearingStack(router)} />
       </CtaBar>
     );
-    return frame({ title: "", map: <BlankMap />, content: <LoadErrorSheet gone={gone} />, bar, floor: 0, fallbackShare: 0.36, contentKey: gone ? "gone" : "fail" });
+    return frame({ title: "", map: <BlankMap />, content: <LoadErrorSheet gone={gone} onHome={() => goHomeClearingStack(router)} />, bar, floor: 0, fallbackShare: 0.36, contentKey: gone ? "gone" : "fail" });
   }
 
   // ── view model ──

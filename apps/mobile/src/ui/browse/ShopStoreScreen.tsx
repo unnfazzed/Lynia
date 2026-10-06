@@ -17,8 +17,10 @@ import { useScheduleSlots } from "../../query/use-order-flow";
 import { useShopCatalogue } from "../../query/use-shops";
 import { haptic } from "../haptics";
 import { Icon } from "../Icon";
+import { EmptyState } from "../EmptyState";
+import { emptyCopy, fillEmpty } from "../emptyCopy";
 import { B, fmt } from "./copy";
-import { BrowseButton, BrowseEmpty, CompactBar, IconButton, NARROW_MAX, TABULAR } from "./kit";
+import { CompactBar, IconButton, NARROW_MAX, STORE_EMPTY_TOP, TABULAR } from "./kit";
 import { ItemSheet, JustClosedModal, NewCartSheet } from "./sheets";
 import {
   BrowseToast,
@@ -269,9 +271,13 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
           <IconButton icon="chevron-left" size={22} label="Back" onPress={() => router.back()} />
         </View>
         {isError ? (
-          <BrowseEmpty icon="circle-alert" title={fmt(B.store.errT, { place: s.place })} body={B.list.errS}>
-            <BrowseButton label={B.list.retry} variant="ghost" disabled={isFetching} onPress={refetch} />
-          </BrowseEmpty>
+          <EmptyState
+            icon="circle-alert"
+            tone="error"
+            title={fmt(B.store.errT, { place: s.place })}
+            body={emptyCopy.browse.error.body}
+            primary={{ label: emptyCopy.browse.error.primary, icon: "refresh-cw", disabled: isFetching, onPress: refetch }}
+          />
         ) : null}
       </View>
     );
@@ -322,9 +328,13 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
           </View>
         </View>
         {q.length >= 2 && hits.length === 0 ? (
-          <BrowseEmpty title={fmt(B.store.noHits.t, { q, v: name })} body={fmt(B.store.noHits.s, { noun: s.noun })}>
-            <BrowseButton label={fmt(B.store.noHits.cta, { noun: s.noun })} variant="ghost" onPress={() => router.push(`/${service}/search`)} />
-          </BrowseEmpty>
+          <EmptyState
+            icon="search"
+            tone="info"
+            title={fillEmpty(emptyCopy.store.noMatch.title, { q })}
+            body={emptyCopy.store.noMatch.body.replace("restaurants", s.noun)}
+            secondary={{ label: emptyCopy.store.noMatch.secondary.replace("restaurants", s.noun), onPress: () => router.push(`/${service}/search`) }}
+          />
         ) : (
           <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: bottomPad }}>
             {hits.length > 0 ? (
@@ -375,7 +385,7 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
         {service === "pharmacy" && !orderFlags.rxEnabled ? <OtcNotice marginTop={10} /> : null}
         {empty ? (
           // S13c — the shop has no items yet.
-          <BrowseEmpty icon="inbox" title={B.store.emptyT} body={fmt(B.store.emptyS, { v: name })} />
+          <EmptyState icon="inbox" title={emptyCopy.store.noItems.title} body={emptyCopy.store.noItems.body} offsetTop={STORE_EMPTY_TOP} />
         ) : (
           <>
             <View

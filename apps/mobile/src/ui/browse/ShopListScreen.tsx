@@ -17,10 +17,13 @@ import { rankedVenueMissing } from "../../logic/popularity";
 // Not from the ui barrel: LocationSheet reaches AddressSearch, which imports the barrel back (a cycle).
 import { LocationSheet } from "../home/LocationSheet";
 import { ServiceSoonSheet } from "../home/ServiceSoonSheet";
+import { EmptyState } from "../EmptyState";
+import { emptyCopy, fillEmpty } from "../emptyCopy";
 import { B, fmt } from "./copy";
+
+/** Empty states (handoff empty-states-v2, D-78). */
+const E = emptyCopy.browse;
 import {
-  BrowseButton,
-  BrowseEmpty,
   ClosedGroupHeader,
   CompactBar,
   FilterBar,
@@ -28,7 +31,8 @@ import {
   ListHeading,
   ListSkeleton,
   NARROW_MAX,
-  NoLocationCard,
+  LIST_EMPTY_TOP,
+  NoAddressRow,
   OfflineNote,
   RowSkeletons,
   ServiceEmpty,
@@ -197,9 +201,11 @@ export function ShopListScreen({ service }: { service: ShopService }): React.Rea
     return (
       <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
         {header}
-        <BrowseEmpty icon={offline ? "wifi-off" : "circle-alert"} title={offline ? B.list.offNone.t : s.err} body={offline ? B.list.offNone.s : B.list.errS}>
-          <BrowseButton label={B.list.retry} variant="ghost" onPress={feed.refetch} />
-        </BrowseEmpty>
+        {offline ? (
+          <EmptyState icon="wifi-off" tone="info" title={E.offline.title} body={E.offline.body} secondary={{ label: E.offline.secondary, onPress: feed.refetch }} />
+        ) : (
+          <EmptyState icon="circle-alert" tone="error" title={s.err} body={E.error.body} primary={{ label: E.error.primary, icon: "refresh-cw", onPress: feed.refetch }} />
+        )}
         {sheets}
       </View>
     );
@@ -210,7 +216,7 @@ export function ShopListScreen({ service }: { service: ShopService }): React.Rea
     return (
       <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
         {header}
-        <ServiceEmpty service={service} area={area} onChangeAddress={() => openLocation(true)} onSendParcel={() => router.push("/send")} />
+        <ServiceEmpty service={service} area={area} onChangeAddress={() => openLocation(true)} />
         {sheets}
       </View>
     );
@@ -223,7 +229,6 @@ export function ShopListScreen({ service }: { service: ShopService }): React.Rea
 
   const count = total === 1 ? "1 place" : fmt(B.list.count, { n: total });
   const right = hasLocation ? (range ? fmt(B.list.range, { a: range.a, b: range.b }) : null) : fmt(B.list.summaryNoLoc, { n: total }).replace(fmt(B.list.count, { n: total }), "").trim();
-  const filterWords = [filters.category, filters.free ? B.list.free : null].filter(Boolean).join(" + ");
   // B3b — only the kind is narrowing and it has no shops: say so and offer All shops.
   const kindNone = total === 0 && filters.category != null && !filters.free;
 
@@ -248,16 +253,25 @@ export function ShopListScreen({ service }: { service: ShopService }): React.Rea
             {otc}
             {filterBar}
             {total > 0 ? <ListHeading count={count} range={right} /> : null}
-            {!hasLocation && total > 0 ? <NoLocationCard onUseLocation={() => void location.useCurrentLocation()} /> : null}
+            {!hasLocation && total > 0 ? <NoAddressRow onSet={() => void location.useCurrentLocation()} /> : null}
             {kindNone ? (
-              <BrowseEmpty icon="store" title={fmt(B.list.kindNone.t, { kind: filters.category!.toLowerCase() })} body={fmt(B.list.kindNone.s, { kind: filters.category!.toLowerCase() })}>
-                <BrowseButton label={B.list.kindNone.cta} variant="ghost" onPress={() => setFilters((f) => ({ ...f, category: null }))} />
-              </BrowseEmpty>
+              <EmptyState
+                icon="store"
+                title={fillEmpty(E.noCategory.title, { service: filters.category!.toLowerCase() })}
+                body={E.noCategory.body}
+                offsetTop={LIST_EMPTY_TOP}
+                secondary={{ label: E.noCategory.secondary, onPress: () => setFilters((f) => ({ ...f, category: null })) }}
+              />
             ) : total === 0 ? (
               // B6 — the filters leave nothing; the way out is to clear them.
-              <BrowseEmpty icon="search" title={B.list.noMatch.t} body={fmt(B.list.noMatch.s, { f: filterWords, area })}>
-                <BrowseButton label={B.list.noMatch.clear} variant="ghost" onPress={() => setFilters(DEFAULT_FILTERS)} />
-              </BrowseEmpty>
+              <EmptyState
+                icon="search"
+                tone="info"
+                title={E.noFilterMatch.title}
+                body={E.noFilterMatch.body}
+                offsetTop={LIST_EMPTY_TOP}
+                secondary={{ label: E.noFilterMatch.secondary, onPress: () => setFilters(DEFAULT_FILTERS) }}
+              />
             ) : null}
           </View>
         }

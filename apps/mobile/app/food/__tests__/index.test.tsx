@@ -200,11 +200,12 @@ describe("RestaurantListScreen — B1 data", () => {
 });
 
 describe("RestaurantListScreen — B7 no location", () => {
-  it("shows the mint card and no fee, time or distance", () => {
+  it("shows the add-an-address row (empty-states v2) and no fee, time or distance", () => {
     mockLocation.point = null;
     const tree = mount();
     const all = texts(tree);
-    expect(all).toContain("Where should we deliver?");
+    expect(all).toContain("Add an address for fees and times");
+    expect(all).toContain("Set");
     expect(all).toContain("in Harare");
     const row = texts(renderRow(tree, 3));
     expect(row.some((t) => /km|delivery|min/.test(t))).toBe(false);
@@ -221,12 +222,12 @@ describe("RestaurantListScreen — first load, failure, empty", () => {
     expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Loading").length).toBeGreaterThan(0);
   });
 
-  it("B11: couldn't load, with ↻ Try again calling refetch", () => {
+  it("B11: couldn't load, with Try again calling refetch", () => {
     mockFeedStub.restaurants = null;
     mockFeedStub.isError = true;
     const tree = mount();
     expect(texts(tree)).toContain("Couldn’t load restaurants");
-    const retry = tree.root.findAll((n) => n.props.accessibilityLabel === "↻ Try again" && typeof n.props.onPress === "function")[0]!;
+    const retry = tree.root.findAll((n) => n.props.accessibilityLabel === "Try again" && typeof n.props.onPress === "function")[0]!;
     act(() => retry.props.onPress());
     expect(mockFeedStub.refetch).toHaveBeenCalledTimes(1);
   });
@@ -234,7 +235,9 @@ describe("RestaurantListScreen — first load, failure, empty", () => {
   it("B9: a successful load with nothing in the corridor names the area", () => {
     mockFeedStub.restaurants = [];
     const tree = mount();
-    expect(texts(tree)).toContain("No restaurants deliver to Belgravia yet");
+    expect(texts(tree)).toContain("No restaurants in Belgravia yet");
+    expect(texts(tree)).toContain("Change address");
+    expect(texts(tree)).not.toContain("Send a parcel");
   });
 });
 

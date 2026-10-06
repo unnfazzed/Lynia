@@ -13,9 +13,9 @@ import { becomeStateFor } from "../../src/logic/become-state";
 import { useNow } from "../../src/logic/use-now";
 import { notificationRowDestination } from "../../src/push/push";
 import { riderModeAvailable } from "../../src/rider-mode";
-import { AppScreen } from "../../src/ui";
+import { AppScreen, EmptyState, emptyCopy } from "../../src/ui";
 import { N, NF } from "../../src/ui/notifications/copy";
-import { NCard, Day, NEmpty, NFail, NRow, OffRow, OtherSide, SkelDay, SkelRow, SwipeRow } from "../../src/ui/notifications/kit";
+import { NCard, Day, NRow, OffRow, OtherSide, SkelDay, SkelRow, SwipeRow } from "../../src/ui/notifications/kit";
 import { buildFeed, clockOf, type NItem, type Side } from "../../src/ui/notifications/model";
 import { CtaButton } from "../../src/ui/order/kit";
 import { RToast } from "../../src/ui/rider/board";
@@ -41,6 +41,8 @@ import { Notice } from "../../src/ui/send/kit";
 const SLOW_MS = 6_000;
 /** README "Swipe": the toast stays 5 s; the dismissal is sent only when it expires. */
 const UNDO_MS = 5_000;
+/** Empty states (handoff empty-states-v2, D-78). */
+const E = emptyCopy.notifications;
 
 type ListEntry =
   | { kind: "off" }
@@ -215,6 +217,8 @@ export default function NotificationsScreen(): React.ReactElement {
   const header = <PushHeader title={N.title} onBack={() => router.back()} />;
   const page = { paddingTop: 12, paddingHorizontal: pad, paddingBottom: 88 + insets.bottom, gap: 10 };
 
+  const failed = feedQ.isError && rows.length === 0;
+  const blank = !feedQ.isLoading && (failed || entries.every((e) => e.kind !== "day" && e.kind !== "pinned"));
   let body: React.ReactElement;
   if (feedQ.isLoading) {
     body = (
@@ -238,15 +242,27 @@ export default function NotificationsScreen(): React.ReactElement {
         ) : null}
       </View>
     );
-  } else if (feedQ.isError && rows.length === 0) {
-    body = <NFail onRetry={() => void feedQ.refetch()} />;
+  } else if (failed) {
+    body = (
+      <EmptyState
+        icon="circle-alert"
+        tone="error"
+        title={E.error.title}
+        body={E.error.body}
+        primary={{ label: E.error.primary, icon: "refresh-cw", onPress: () => void feedQ.refetch() }}
+      />
+    );
   } else if (entries.every((e) => e.kind !== "day" && e.kind !== "pinned")) {
     body = (
-      <View style={page}>
-        {entries.map((e, i) => (
-          <React.Fragment key={i}>{renderEntry({ item: e })}</React.Fragment>
-        ))}
-        <NEmpty rider={rider} onSend={() => router.push("/send")} />
+      <View style={{ flexGrow: 1, paddingBottom: 88 + insets.bottom }}>
+        {entries.length > 0 ? (
+          <View style={{ ...page, paddingBottom: 0 }}>
+            {entries.map((e, i) => (
+              <React.Fragment key={i}>{renderEntry({ item: e })}</React.Fragment>
+            ))}
+          </View>
+        ) : null}
+        <EmptyState icon="bell" title={(rider ? E.rider : E.customer).title} body={(rider ? E.rider : E.customer).body} />
       </View>
     );
   } else {
@@ -263,7 +279,8 @@ export default function NotificationsScreen(): React.ReactElement {
   }
 
   return (
-    <AppScreen banner={header} bg={tokens.color.surface}>
+    // An empty or failed feed sits on white, as drawn (empty-states v2, D-78); the feed itself on surface.
+    <AppScreen banner={header} bg={blank ? tokens.color.bg : tokens.color.surface}>
       {body}
       {pending ? (
         <View style={{ position: "absolute", left: 12, right: 12, bottom: 16 + insets.bottom }}>

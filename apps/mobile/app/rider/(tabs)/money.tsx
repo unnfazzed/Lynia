@@ -15,8 +15,8 @@ import { useFeatureFlags } from "../../../src/net/use-feature-flags";
 import { useHistoryFeed } from "../../../src/query/use-history-feed";
 import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refetch";
 import { useWallet, useWalletConfig, useWalletLedger, walletKey, walletLedgerKey } from "../../../src/query/use-wallet";
-import { AppScreen, Icon, SkeletonRows, useTabRoot } from "../../../src/ui";
-import { IconDisc, SmBtn } from "../../../src/ui/order/kit";
+import { AppScreen, EmptyRow, emptyCopy, Icon, SkeletonRows, useTabRoot } from "../../../src/ui";
+import { SmBtn } from "../../../src/ui/order/kit";
 import { Notice } from "../../../src/ui/send/kit";
 import { hhmm, RIDER_COPY as R, RF, usd } from "../../../src/ui/rider/copy";
 import { CashLine, CashSplit, Chips, LRow, MintTop, RCard, RLabel, Seg } from "../../../src/ui/rider/kit";
@@ -220,7 +220,8 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
             </View>
           )}
           {range === "week" ? <WeekBars byDay={earned.byDay} todayIdx={(now.getDay() + 6) % 7} /> : null}
-          <Text style={{ fontSize: 12, lineHeight: 16, color: tokens.color.muted }}>{noJobs ? R.emptyMoneyB : R.earnHint}</Text>
+          {/* M9: no hint on an empty day (empty-states v2, D-78). */}
+          {noJobs ? null : <Text style={{ fontSize: 12, lineHeight: 16, color: tokens.color.muted }}>{R.earnHint}</Text>}
         </RCard>
 
         <View
@@ -244,7 +245,10 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
             )}
             <SmBtn kind="fill" icon="plus" label={R.topUp} onPress={() => router.push("/wallet/top-up")} />
           </View>
-          <Text style={{ fontSize: 13, lineHeight: 19, color: danger ? tokens.color.dangerInk : tokens.color.ink, fontWeight: danger || low ? tokens.font.weight.semibold : tokens.font.weight.regular }}>{balanceText}</Text>
+          {/* M9 draws the balance and Top up only; a low or blocked balance still says why. */}
+          {noJobs && !danger && !low ? null : (
+            <Text style={{ fontSize: 13, lineHeight: 19, color: danger ? tokens.color.dangerInk : tokens.color.ink, fontWeight: danger || low ? tokens.font.weight.semibold : tokens.font.weight.regular }}>{balanceText}</Text>
+          )}
         </View>
 
         {noJobs && owed === 0 ? null : foodOn ? (
@@ -268,13 +272,8 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
         {ledgerLoading ? (
           <SkeletonRows count={3} />
         ) : feed.length === 0 ? (
-          <View style={{ flexDirection: "row", gap: 12, alignItems: "center", paddingVertical: 8 }}>
-            <IconDisc name="receipt" size={44} />
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 15, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{R.emptyMoneyT}</Text>
-              <Text style={{ fontSize: 12, lineHeight: 16, color: tokens.color.muted }}>{R.emptyMoneyB}</Text>
-            </View>
-          </View>
+          // M9 — one quiet row (empty-states v2, D-78).
+          <EmptyRow disc icon="receipt" text={emptyCopy.rider.noJobsToday} style={{ paddingVertical: 4 }} />
         ) : (
           <View>
             {groups.map((g) => (

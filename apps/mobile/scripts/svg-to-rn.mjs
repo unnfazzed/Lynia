@@ -34,7 +34,6 @@ const OUTPUTS = {
   ],
   "src/ui/art/HeroRiderArt.tsx": [["HeroRiderArt", `${HANDOFF}/illustrations/hero-rider.svg`]],
   "src/ui/art/ScooterRiderArt.tsx": [["ScooterRiderArt", `${HANDOFF}/illustrations/biz-scooter-rider.svg`]],
-  "src/ui/art/TrustTrackingArt.tsx": [["TrustTrackingArt", `${HANDOFF}/illustrations/trust-tracking.svg`]],
   "src/ui/art/TrustVerifiedArt.tsx": [["TrustVerifiedArt", `${HANDOFF}/illustrations/trust-verified.svg`]],
 };
 

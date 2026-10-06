@@ -81,8 +81,27 @@ describe("history split by side", () => {
     expect(ids(t)).toEqual(["rider-1", "rider-2"]);
     const s = text(t);
     expect(s).toContain("Job history");
-    expect(s).toContain("This week · 1 job · $3.20 earned");
+    // Empty states v2 (D-78): plain text "This week · 1 job · $3.20", the figures in ink.
+    expect(t.root.findAll((n) => Array.isArray(n.props.children) && n.props.children[0] === "This week · ").length).toBeGreaterThan(0);
+    expect(s).toContain("1 job · $3.20");
+    expect(s).not.toContain("earned");
     expect(s).toContain("No fare");
+  });
+
+  it("rider with no jobs: the summary reads 0 and the list shows 'No jobs this week'", () => {
+    mockSide = "rider";
+    mockRows = baseRows.filter((r) => !r.id.startsWith("rider-"));
+    const t = render();
+    const list = t.root.findByType(SectionList);
+    let empty!: renderer.ReactTestRenderer;
+    act(() => {
+      empty = renderer.create(list.props.ListEmptyComponent as Parameters<typeof renderer.create>[0]);
+    });
+    const e = text(empty);
+    expect(e).toContain("No jobs this week");
+    expect(e).toContain("Finished jobs show here.");
+    expect(text(t)).toContain("0 jobs · $0.00");
+    mockRows = baseRows;
   });
 
   it("rider: a long list stays virtualized", () => {

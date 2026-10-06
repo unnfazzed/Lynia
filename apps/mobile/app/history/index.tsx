@@ -7,10 +7,11 @@ import { groupByDay, isRiderRow, matchesService, paidFare, type ServiceFilter, s
 import { useNow } from "../../src/logic/use-now";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { useHistoryFeed } from "../../src/query/use-history-feed";
-import { AppScreen, Button, SkeletonRows, Tappable } from "../../src/ui";
+import { AppScreen, EmptyState, emptyCopy, fillEmpty, SkeletonRows, Tappable } from "../../src/ui";
 import { Notice } from "../../src/ui/send/kit";
-import { hhmm, RIDER_COPY as R, RF } from "../../src/ui/rider/copy";
-import { CentreState, Chips, LRow, PushHeader, RLabel } from "../../src/ui/rider/kit";
+import { hhmm, RIDER_COPY as R, RF, usd } from "../../src/ui/rider/copy";
+import { Chips, LRow, PushHeader, RLabel } from "../../src/ui/rider/kit";
+import { useAutoRetry } from "../../src/ui/rider/RiderErrorState";
 
 function title(o: OrderHistoryRow): string {
   const from = o.orderType === "merchant" ? o.merchantName || o.pickup.landmark : o.pickup.landmark;
@@ -86,13 +87,8 @@ function JobHistoryScreen(): React.ReactElement {
           ListHeaderComponent={
             <View style={{ gap: 12, marginBottom: 12 }}>
               {showingStale ? <Notice icon="wifi-off" text="Showing your last saved trips — we'll refresh when you're back online." /> : null}
-              {week ? (
-                <View style={{ backgroundColor: tokens.color.accentWash, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14 }}>
-                  <Text style={{ fontSize: 14, fontWeight: tokens.font.weight.bold, color: tokens.color.accentText, fontVariant: ["tabular-nums"] }}>
-                    {RF.histWeek(week.jobs, week.total)}
-                  </Text>
-                </View>
-              ) : null}
+              {/* Plain text, not a banner: "This week · 0 jobs · $0.00" (empty-states v2, D-78). */}
+              <WeekLine jobs={week.jobs} total={week.total} />
               {merchantDispatchAutoEnabled ? (
                 <Chips
                   list={[
@@ -108,17 +104,39 @@ function JobHistoryScreen(): React.ReactElement {
           }
           renderSectionHeader={({ section }) => <RLabel style={{ fontSize: 11, marginTop: 8 }}>{section.title}</RLabel>}
           renderItem={({ item, index }) => renderRow(item, index === 0)}
+          ListEmptyComponent={<EmptyState icon="bike" title={emptyCopy.rider.historyEmpty.title} body={emptyCopy.rider.historyEmpty.body} offsetTop={HISTORY_EMPTY_TOP} />}
         />
       ) : isFetching ? (
         <View style={{ padding: 16 }}>
           <SkeletonRows />
         </View>
       ) : (
-        <CentreState icon="wifi-off" title="Couldn't load your trips" body="Check your connection and try again.">
-          <Button label="Retry" onPress={refetch} loading={isFetching} />
-        </CentreState>
+        <LoadFailed onRetry={refetch} />
       )}
     </AppScreen>
   );
 }
 
+/** The empty list's mark sits this far below the summary and chips, as drawn. */
+const HISTORY_EMPTY_TOP = 56;
+
+/** "This week · 0 jobs · $0.00": the label muted, the figures 600 ink (empty-states v2, D-78). */
+function WeekLine({ jobs, total }: { jobs: number; total: number }): React.ReactElement {
+  // One job reads "1 job", not the template's "1 jobs".
+  const line = fillEmpty(emptyCopy.rider.historySummary, { count: jobs, amount: usd(total) }).replace(" 1 jobs ", " 1 job ");
+  const cut = line.indexOf(" · ");
+  const label = line.slice(0, cut);
+  const fig = line.slice(cut + 3);
+  return (
+    <Text style={{ fontSize: 14, lineHeight: 20.3, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
+      {`${label} · `}
+      <Text style={{ fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>{fig}</Text>
+    </Text>
+  );
+}
+
+/** Couldn't load and nothing saved: say what the app is doing, and do it (no Retry button on rider screens). */
+function LoadFailed({ onRetry }: { onRetry: () => void }): React.ReactElement {
+  const left = useAutoRetry(onRetry);
+  return <EmptyState icon="wifi-off" tone="info" title="Couldn't load your trips" body={fillEmpty(emptyCopy.rider.retrying, { s: left })} />;
+}
