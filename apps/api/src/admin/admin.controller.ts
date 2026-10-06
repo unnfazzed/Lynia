@@ -1,5 +1,5 @@
 import { Body, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
-import { EditMerchantOrderItemsRequest, KycStatus, OrderStatus, OrderType, TransferMerchantOwnerRequest } from "@lynia/shared";
+import { EditMerchantOrderItemsRequest, KycStatus, OrderStatus, OrderType, PlateStatus, TransferMerchantOwnerRequest } from "@lynia/shared";
 import { z } from "zod";
 import { AdminGuard } from "../auth/admin.guard";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -152,11 +152,13 @@ export class AdminController {
     return this.sos.acknowledge(id, actor);
   }
 
-  /** Rider roster / KYC review queue. `?kyc=pending|verified|failed` filters; unknown values are ignored. */
+  /** Rider roster / KYC review queue. `?kyc=pending|verified|failed` filters; unknown values are ignored.
+   *  First Run v2 E4 (D-80): `?plate=checking` is the plate review queue (also none|verified). */
   @Get("riders")
-  riders(@Query("kyc") kyc?: string) {
+  riders(@Query("kyc") kyc?: string, @Query("plate") plate?: string) {
     const filter = kyc && KYC_VALUES.includes(kyc) ? (kyc as KycStatus) : undefined;
-    return this.ridersService.listRiders(filter);
+    const plateFilter = plate && (Object.values(PlateStatus) as string[]).includes(plate) ? (plate as PlateStatus) : undefined;
+    return this.ridersService.listRiders(filter, plateFilter);
   }
 
   /** KYC doc-review detail for one rider (A-02). 404s when the profile isn't a rider. */

@@ -51,6 +51,11 @@ describe("AdminRidersService.listRiders", () => {
     const svc = new AdminRidersService(prisma as unknown as PrismaService, noNotifications, noGateway);
     const rows = await svc.listRiders("pending");
     expect(where).toEqual({ kycStatus: "pending" });
+    // First Run v2 E4 (D-80): the plate review queue.
+    await svc.listRiders(undefined, "checking");
+    expect(where).toEqual({ plateStatus: "checking" });
+    await svc.listRiders();
+    expect(where).toEqual({});
     expect(rows[0]).toMatchObject({ profileId: "r1", name: "Tendai M", kycStatus: "pending" });
     // Account standing is surfaced so the directory can flag suspended/banned/held riders (A-04).
     expect(rows[0]!.accountStatus).toBe("active");

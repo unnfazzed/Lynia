@@ -26,9 +26,10 @@ export class AdminRidersService {
   ) {}
 
   /** Rider roster for ops — the KYC review queue when filtered to `pending`. */
-  async listRiders(kyc?: KycStatus) {
+  async listRiders(kyc?: KycStatus, plate?: PlateStatus) {
     const riders = await this.prisma.rider.findMany({
-      where: kyc ? { kycStatus: kyc } : {},
+      // First Run v2 E4 (D-80): `plate` = the plate review queue (`checking`).
+      where: { ...(kyc ? { kycStatus: kyc } : {}), ...(plate ? { plateStatus: plate } : {}) },
       orderBy: { updatedAt: "desc" },
       take: 100,
       select: {
