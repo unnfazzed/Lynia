@@ -13,6 +13,7 @@
  * from the persisted draft. Against the pre-fix code (no `profile-draft.ts` wiring) this fails: a fresh
  * mount always starts every field empty.
  */
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import renderer, { act } from "react-test-renderer";
 
 const mockUpdateProfile = jest.fn();
@@ -25,7 +26,9 @@ const PROFILE_DRAFT_KEY = "lynia.profileDraft.v1";
 const mockSignOut = jest.fn(async () => {
   delete secureStore[PROFILE_DRAFT_KEY];
 });
-const mockReplace = jest.fn();
+const navCalls: string[] = [];
+const mockReplace = jest.fn((href: string) => navCalls.push(`replace:${href}`));
+const mockDismissAll = jest.fn(() => navCalls.push("dismissAll"));
 // Mutable so individual tests can vary the route params (D-40, docs/DESIGN-DEVIATIONS.md) without
 // re-declaring the whole expo-router mock — see the reset in beforeEach below.
 let mockLocalSearchParams: { phone: string; deliveryChannel?: string; intent?: string } = { phone: "+263 77 245 1180" };
@@ -40,7 +43,7 @@ const mockDeleteItemAsync = jest.fn(async (key: string) => {
 });
 
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ replace: mockReplace }),
+  useRouter: () => ({ replace: mockReplace, dismissAll: mockDismissAll }),
   useLocalSearchParams: () => mockLocalSearchParams,
 }));
 jest.mock("expo-secure-store", () => ({
@@ -48,12 +51,15 @@ jest.mock("expo-secure-store", () => ({
   setItemAsync: (...args: [string, string]) => mockSetItemAsync(...args),
   deleteItemAsync: (...args: [string]) => mockDeleteItemAsync(...args),
 }));
+const mockGetMe = jest.fn(async () => ({ phone: "+263772451180" }));
 jest.mock("../../../src/api/auth", () => ({
   updateProfile: (...args: unknown[]) => mockUpdateProfile(...args),
+  getMe: () => mockGetMe(),
 }));
+let mockSession: { profileId: string; role: string; needsProfile: boolean; signupIntent?: string } = { profileId: "p1", role: "customer", needsProfile: true };
 jest.mock("../../../src/auth/auth-context", () => ({
   useAuth: () => ({
-    session: { profileId: "p1", role: "customer", needsProfile: true },
+    session: mockSession,
     signIn: mockSignIn,
     updateSession: mockUpdateSession,
     signOut: mockSignOut,
@@ -96,11 +102,30 @@ async function pressStart(tree: renderer.ReactTestRenderer): Promise<void> {
   await settle();
 }
 
+// Every mounted screen, unmounted after each test so no debounced draft write leaks into the next one.
+const mounted = new Set<renderer.ReactTestRenderer>();
+afterEach(() => {
+  for (const t of mounted) {
+    try {
+      act(() => t.unmount());
+    } catch {
+      /* already unmounted by the test */
+    }
+  }
+  mounted.clear();
+});
+
 async function mountSetup(): Promise<renderer.ReactTestRenderer> {
   let tree!: renderer.ReactTestRenderer;
   await act(async () => {
-    tree = renderer.create(<ProfileSetupScreen />);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+    tree = renderer.create(
+      <QueryClientProvider client={qc}>
+        <ProfileSetupScreen />
+      </QueryClientProvider>,
+    );
   });
+  mounted.add(tree);
   await settle();
   return tree;
 }
@@ -114,6 +139,10 @@ beforeEach(() => {
   mockUpdateSession.mockClear();
   mockSignOut.mockClear();
   mockReplace.mockClear();
+  mockDismissAll.mockClear();
+  mockGetMe.mockClear();
+  navCalls.length = 0;
+  mockSession = { profileId: "p1", role: "customer", needsProfile: true };
   mockSetItemAsync.mockClear();
   mockGetItemAsync.mockClear();
   mockDeleteItemAsync.mockClear();
@@ -199,5 +228,106 @@ describe("profile setup — finishing sign-up never writes back a stale session"
     expect(mockUpdateSession).toHaveBeenCalledTimes(1);
     expect(mockUpdateSession).toHaveBeenCalledWith({ needsProfile: false });
     expect(mockSignIn).not.toHaveBeenCalled();
+  });
+});
+
+// C-1 (start-up review 2026-10-06): a bare replace left the sign-up screens under the app.
+describe("profile setup — finishing clears the stack", () => {
+  it("dismisses everything, then lands on Home", async () => {
+    const tree = await mountSetup();
+    setFieldByAccessibilityLabel(tree, "First name", "Chipo");
+    setFieldByAccessibilityLabel(tree, "Surname", "Marufu");
+    await settle();
+    await pressStart(tree);
+    expect(navCalls).toEqual(["dismissAll", "replace:/home"]);
+  });
+});
+
+// C-4: an app killed on C5 relaunches here with no route params.
+describe("profile setup — relaunched with no route params", () => {
+  it("keeps the C1 rider intent from the session and finishes as a rider", async () => {
+    mockLocalSearchParams = {} as typeof mockLocalSearchParams;
+    mockSession = { profileId: "p1", role: "customer", needsProfile: true, signupIntent: "rider" };
+    const tree = await mountSetup();
+    setFieldByAccessibilityLabel(tree, "First name", "Tendai");
+    setFieldByAccessibilityLabel(tree, "Surname", "Moyo");
+    await settle();
+    await pressStart(tree);
+    expect(mockSaveRole).toHaveBeenCalledWith("rider");
+    expect(mockReplace).toHaveBeenCalledWith("/permissions?next=/rider");
+    // …and the intent goes with the profile step it belonged to.
+    expect(mockUpdateSession).toHaveBeenCalledWith(expect.objectContaining({ needsProfile: false, signupIntent: undefined }));
+  });
+
+  it("shows the verified number from /auth/me", async () => {
+    mockLocalSearchParams = {} as typeof mockLocalSearchParams;
+    const tree = await mountSetup();
+    await settle();
+    expect(mockGetMe).toHaveBeenCalled();
+    expect(text(tree)).toContain("+263 77 245 1180");
+    expect(text(tree)).toContain("Verified");
+  });
+
+  it("does not fetch /auth/me when the number came with the route", async () => {
+    await mountSetup();
+    expect(mockGetMe).not.toHaveBeenCalled();
+  });
+});
+
+describe("profile setup — draft writes are debounced", () => {
+  const draftWrites = (): number => mockSetItemAsync.mock.calls.filter(([k]) => k === PROFILE_DRAFT_KEY).length;
+
+  it("a burst of keystrokes writes the keystore once, after the pause, with no idNumber", async () => {
+    const tree = await mountSetup();
+    mockSetItemAsync.mockClear();
+    for (const v of ["T", "Te", "Ten", "Tend", "Tenda", "Tendai"]) setFieldByAccessibilityLabel(tree, "First name", v);
+    await settle();
+    expect(draftWrites()).toBe(0);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 600));
+    });
+    expect(draftWrites()).toBe(1);
+    expect(JSON.parse(secureStore[PROFILE_DRAFT_KEY]!)).toEqual({ firstName: "Tendai", lastName: "" });
+  });
+
+  it("a write still waiting is flushed when the screen goes away", async () => {
+    const tree = await mountSetup();
+    mockSetItemAsync.mockClear();
+    setFieldByAccessibilityLabel(tree, "First name", "Rudo");
+    await settle();
+    expect(draftWrites()).toBe(0);
+    act(() => tree.unmount());
+    expect(draftWrites()).toBe(1);
+  });
+
+  it("nothing is written after the name is saved", async () => {
+    const tree = await mountSetup();
+    setFieldByAccessibilityLabel(tree, "First name", "Chipo");
+    setFieldByAccessibilityLabel(tree, "Surname", "Marufu");
+    await settle();
+    await pressStart(tree);
+    act(() => tree.unmount());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 600));
+    });
+    expect(secureStore[PROFILE_DRAFT_KEY]).toBeUndefined();
+  });
+});
+
+describe("profile setup — the keyboard chains the two names", () => {
+  it("First name's return key moves on; Surname's submits", async () => {
+    const tree = await mountSetup();
+    const input = (label: string) => tree.root.findAll((n) => n.props.accessibilityLabel === label && typeof n.props.onChangeText === "function")[0]!;
+    expect(input("First name").props.returnKeyType).toBe("next");
+    expect(input("Surname").props.returnKeyType).toBe("done");
+    setFieldByAccessibilityLabel(tree, "First name", "Chipo");
+    setFieldByAccessibilityLabel(tree, "Surname", "Marufu");
+    await settle();
+    await act(async () => {
+      input("Surname").props.onSubmitEditing();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    await settle();
+    expect(mockUpdateProfile).toHaveBeenCalledWith({ firstName: "Chipo", lastName: "Marufu" });
   });
 });
