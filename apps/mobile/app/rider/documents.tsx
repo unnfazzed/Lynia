@@ -430,7 +430,7 @@ function CaptureGuide({ visible, onClose, onShoot }: { visible: boolean; onClose
     <Modal visible={visible} animationType="fade" statusBarTranslucent onRequestClose={onClose}>
       <View testID="capture-guide" style={{ flex: 1, backgroundColor: tokens.color.ink, alignItems: "center", paddingTop: insets.top, paddingBottom: insets.bottom }}>
         <View style={{ alignSelf: "stretch", height: 56, marginTop: 24, flexDirection: "row", alignItems: "center", paddingHorizontal: 8 }}>
-          <Pressable testID="guide-close" onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" style={{ width: tokens.touchTargetMin, height: tokens.touchTargetMin, alignItems: "center", justifyContent: "center" }}>
+          <Pressable testID="guide-close" onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" style={({ pressed }) => ({ width: tokens.touchTargetMin, height: tokens.touchTargetMin, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.6 : 1 })}>
             <Icon name="x" size={24} color={tokens.color.onAccent} />
           </Pressable>
         </View>
