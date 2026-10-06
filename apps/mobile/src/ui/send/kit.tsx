@@ -406,7 +406,7 @@ export function Notice({
 
 /** Ink toast floating above the CTA, with a 44px "↻ Try again" on the right. */
 export function SendToast({ text, action, onAction }: { text: string; action?: string; onAction?: () => void }): React.ReactElement {
-  // Owner 2026-10-06 (D-81): the app-wide bottom toast's look, kept above the CTA.
+  // Owner 2026-10-06 (D-82): the app-wide bottom toast's look, kept above the CTA.
   return <FirstRunToast text={text} tone="warning" action={action} actionIcon="refresh-cw" onAction={onAction} assertive />;
 }
 

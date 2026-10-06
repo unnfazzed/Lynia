@@ -168,7 +168,7 @@ describe("customer Account (Rider v2 C6–C11)", () => {
     mockGetMe.mockResolvedValue(me(null));
     tree = renderScreen();
     await settle();
-    // First Run v2 G2 (D-81): the violet card, KY's words, "Start" → R1.
+    // First Run v2 G2 (D-82): the violet card, KY's words, "Start" → R1.
     expect(hasBecomeCard(tree)).toBe(true);
     expect(has(tree, KY.becomeBody)).toBe(true);
     expect(has(tree, "Rider")).toBe(false);
@@ -204,7 +204,7 @@ describe("customer Account (Rider v2 C6–C11)", () => {
   });
 });
 
-describe("customer Account — First Run v2 G2 / G3 and the copy pass (D-81)", () => {
+describe("customer Account — First Run v2 G2 / G3 and the copy pass (D-82)", () => {
   it("G3: mid-check, the card switches to the rider side like the toggle — the board shows the current F page", async () => {
     mockStoreWrites.length = 0;
     mockGetMe.mockResolvedValue(me({ kycStatus: "pending", kycPendingState: "unfinished" }));

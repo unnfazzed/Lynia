@@ -10,7 +10,7 @@ import { useSyncExternalStore } from "react";
  *                and cold-start push all settled. Carries the `destination` the boot redirects to.
  * - `profile`  — Home's `["me"]` read has settled (seeded by the boot aggregate, or fetched).
  * - `home`     — Home has its first content to show (the rails have data, or have decided they're empty).
- * - `rider`    — First Run v2 H1 (ledger D-81 §2 #2): a boot into the rider app shows two steps, and the
+ * - `rider`    — First Run v2 H1 (ledger D-82 §2 #2): a boot into the rider app shows two steps, and the
  *                second ("Getting jobs near you") is the rider board's first reads settling
  *                (src/boot/rider-board-ready.ts).
  *
@@ -66,7 +66,7 @@ export function reportBootDestination(destination: string, now: number = Date.no
  * straight away (a non-Home destination waits only for the session check, long done).
  * Ignored once the exit into Home has started or the boot has ended. Idempotent.
  *
- * The same holds for a boot into the rider board (First Run v2 H1, D-81 §2 #2): it waits for the board's
+ * The same holds for a boot into the rider board (First Run v2 H1, D-82 §2 #2): it waits for the board's
  * reads (step 2), so a rider sent elsewhere first must hand off rather than wait for a board that never
  * mounts.
  */

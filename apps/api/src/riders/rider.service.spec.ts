@@ -1716,7 +1716,7 @@ describe("RiderService.applyKycResult", () => {
     expect(data).toMatchObject({ kycStatus: "expired", idVerified: false, isOnline: false });
   });
 
-  it("D-81 F6: an `expired` webhook stamps the ID's expiry day — the document's when earlier, else the lapse day", async () => {
+  it("D-82 F6: an `expired` webhook stamps the ID's expiry day — the document's when earlier, else the lapse day", async () => {
     let data: Record<string, unknown> | undefined;
     const stored = new Date("2026-10-02T00:00:00Z");
     const mk = (kycIdExpiresOn: Date | null) => ({
@@ -1734,7 +1734,7 @@ describe("RiderService.applyKycResult", () => {
     expect((data?.kycIdExpiresOn as Date | undefined)?.toISOString()).toBe("2026-10-05T00:00:00.000Z");
   });
 
-  it("D-81 F6: a `verified` webhook stores the document's expiry day when the decision carries one", async () => {
+  it("D-82 F6: a `verified` webhook stores the document's expiry day when the decision carries one", async () => {
     let data: Record<string, unknown> | undefined;
     const prisma = {
       rider: {

@@ -7,7 +7,7 @@ import { RP } from "./copy";
 
 /**
  * First Run v2 P14 — what a rider who skipped a permission sees on the board (handoff `first-run-v2` README
- * §2B, `fr-states.js` P14, ledger D-81). Presentational; the board decides when to show them and routes
+ * §2B, `fr-states.js` P14, ledger D-82). Presentational; the board decides when to show them and routes
  * "Turn on" into the flow (`RIDER_PERM_ROUTES`, src/logic/rider-perm-flow.ts).
  */
 

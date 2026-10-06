@@ -11,7 +11,7 @@ import { SystemSettingsSteps } from "./steps";
 
 /**
  * First Run v2 PC1–PC6 — the customer location sheet over Home (handoff `first-run-v2` README §2A, ledger
- * D-81). One sheet, the same from H6 "Use my location" and H5 "Use my current location" (BRIEF 3); Home
+ * D-82). One sheet, the same from H6 "Use my location" and H5 "Use my current location" (BRIEF 3); Home
  * stays visible behind it. Presentational: the state machine is `useLocationAsk` (logic/location-ask.ts).
  *
  *   explain  PC1  mint hero 150 · navigation · "Deliver to your door" · Use my location / Type an address

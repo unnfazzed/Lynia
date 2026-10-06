@@ -1,7 +1,7 @@
 import * as SecureStore from "expo-secure-store";
 
 /**
- * First Run v2 per-install permission flags (handoff `first-run-v2` README §4, ledger D-81). Install-level,
+ * First Run v2 per-install permission flags (handoff `first-run-v2` README §4, ledger D-82). Install-level,
  * like the onboarding flag: they survive sign-out (`clearDeviceState` leaves them), because they are about
  * the phone's permission prompts, not about an account. Every call is best-effort.
  */
@@ -11,7 +11,7 @@ export const RIDER_PERM_FLOW_KEY = "lynia.riderPermFlowDone.v1";
 /** How many times PC8 has been shown after an order on this install. */
 export const CUST_NOTIF_ASKS_SLOT = "lynia.custNotifAsks.v1";
 
-/** PC8 shows at most this many times per install (designer's proposal; owner to confirm — D-81 §2). */
+/** PC8 shows at most this many times per install (designer's proposal; owner to confirm — D-82 §2). */
 export const CUST_NOTIF_ASK_CAP = 3;
 
 export async function riderPermFlowDone(): Promise<boolean> {

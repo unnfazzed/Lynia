@@ -491,7 +491,7 @@ export function OrderToast({
   actionIcon?: IconName;
   onAction?: () => void;
 }): React.ReactElement {
-  // Owner 2026-10-06 (D-81): the app-wide bottom toast's look; this screen keeps its place above the CTA bar.
+  // Owner 2026-10-06 (D-82): the app-wide bottom toast's look; this screen keeps its place above the CTA bar.
   return <FirstRunToast text={text} icon={icon} action={action} actionIcon={actionIcon} onAction={onAction} />;
 }
 

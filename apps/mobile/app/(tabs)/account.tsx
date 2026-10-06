@@ -23,7 +23,7 @@ import { useTabTop } from "../../src/query/use-tab-top";
  * Customer Account (Rider v2 C6–C11, ledger D-54) — the rider Account's sibling: mint top card with the
  * deliver-to street, the identity card (not tappable — owner 2026-10-02, D-60), then either the **Customer | Rider** toggle (Customer
  * selected) for someone who rides, or the Become-a-rider card for someone who doesn't yet (First Run v2 G2's
- * violet card before any check, ledger D-81; the in-progress / review / failed / locked card during one) — then
+ * violet card before any check, ledger D-82; the in-progress / review / failed / locked card during one) — then
  * Trip history · Notifications · Help & support (straight to WhatsApp, D-60) · Settings. iPhone builds are customer-only (D-41), so
  * neither the toggle nor the card is drawn there.
  */
@@ -78,16 +78,16 @@ export default function AccountTabScreen(): React.ReactElement {
               )}
             </>
           ) : become === "none" ? (
-            // First Run v2 G2 (D-81): the violet card → R1.
+            // First Run v2 G2 (D-82): the violet card → R1.
             <BecomeRiderCard onStart={() => router.push("/rider/become")} />
           ) : become ? (
             <BecomeCard
               state={become}
-              // review: the automated check (usually under a minute) vs a person (usually a few hours) — D-81 I.
+              // review: the automated check (usually under a minute) vs a person (usually a few hours) — D-82 I.
               // failed: R-6, the real decline reason when it is known; the drawn "blurry photo" copy otherwise.
               body={become === "review" ? (reviewByPerson ? R.kycReviewB : R.kycCheckingB) : declineLabel ? RF.kycFailWhyB(declineLabel, left) : RF.kycFailB(left)}
               // R-10: a locked application's only way forward is support — never a "Try again" the server refuses.
-              // G3 (D-81): otherwise the card is the way back to the rider side, which lands on the current F page
+              // G3 (D-82): otherwise the card is the way back to the rider side, which lands on the current F page
               // (or R2) — switched like the toggle, so the F page's ✕ comes straight back here.
               onAction={() => (become === "locked" ? openSupportWhatsApp() : toRiderSide())}
             />

@@ -79,7 +79,7 @@ export function buildFcmMessage(message: PushMessage): FcmMessage {
     built.android = { ...built.android, collapseKey: message.collapseKey };
     built.apns = { headers: { ...built.apns?.headers, "apns-collapse-id": message.collapseKey } };
   }
-  // The Android channel (rider job alerts → `job-alerts`, ledger D-81). A silent push draws nothing, so it has none.
+  // The Android channel (rider job alerts → `job-alerts`, ledger D-82). A silent push draws nothing, so it has none.
   if (message.channelId && !message.silent) {
     built.android = { ...built.android, notification: { channelId: message.channelId } };
   }

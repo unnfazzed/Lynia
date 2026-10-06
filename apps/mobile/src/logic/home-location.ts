@@ -181,7 +181,7 @@ export async function saveStoredLocation(place: HomePlace, manual: boolean): Pro
 
 /**
  * Whether the app may read the position right now — a READ, never a request. Since First Run v2 (ledger
- * D-81, BRIEF 1–2) the OS dialog only ever opens from the PC1 explainer's own button (`useLocationAsk`,
+ * D-82, BRIEF 1–2) the OS dialog only ever opens from the PC1 explainer's own button (`useLocationAsk`,
  * logic/location-ask.ts); mounting Home (or the rider board) never asks, so nothing pops over the splash or over a screen
  * that didn't explain why. Approximate counts: it still fixes a position (PC3 asks to upgrade it).
  */
@@ -320,7 +320,7 @@ export function useHomeLocation({ detectOnly = false }: HomeLocationOptions = {}
         return;
       }
 
-      // A read, never an ask (D-81): without a grant the row stays on its prompt and H6 offers PC1.
+      // A read, never an ask (D-82): without a grant the row stays on its prompt and H6 offers PC1.
       const permission = await readGrant();
       if (!alive.current) return;
       if (!usable(permission)) {

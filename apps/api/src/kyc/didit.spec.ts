@@ -430,7 +430,7 @@ describe("diditTimestampFresh", () => {
   });
 });
 
-// First Run v2 F6 (ledger D-81 §4): "Expired 2 Oct 2026" — the verified document's expiry day.
+// First Run v2 F6 (ledger D-82 §4): "Expired 2 Oct 2026" — the verified document's expiry day.
 describe("extractDiditDocumentExpiry", () => {
   it("reads expiration_date off a V3 id_verifications[] entry as a UTC day", () => {
     const d = extractDiditDocumentExpiry({ decision: { id_verifications: [{ document_number: "63-123456A78", expiration_date: "2026-10-02" }] } });

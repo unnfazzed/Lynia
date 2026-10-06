@@ -7,7 +7,7 @@ import { em } from "./metrics";
 
 /**
  * First Run v2 G2 — the customer Account's violet "Become a rider" card (README §2 G, `fr-states.js` G2,
- * ledger D-81): radius 24, `riderWash`, padding 20; a 120 `highlight` sun overhanging the top-right corner
+ * ledger D-82): radius 24, `riderWash`, padding 20; a 120 `highlight` sun overhanging the top-right corner
  * (right/top −40) and a 14 `coral` dot (right 70, top 24); the title 22/700 on two lines with "your bike"
  * in `riderAccent`; `KY.becomeBody` 14 muted; the 52 CTA `KY.becomeCta` with a trailing arrow → R1.
  */

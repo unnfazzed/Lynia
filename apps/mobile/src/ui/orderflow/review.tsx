@@ -713,7 +713,7 @@ export function ReviewBar({ hint, bottomInset, children }: { hint?: string | nul
 
 /** `.toast` (polish): ink, r14, 14/16, alert icon + 13 white + the mint "↻ Try again". */
 export function ReviewToast({ text, action, onAction, bottom }: { text: string; action?: string; onAction?: () => void; bottom: number }): React.ReactElement {
-  // Owner 2026-10-06 (D-81): the app-wide bottom toast's look, kept above the place bar.
+  // Owner 2026-10-06 (D-82): the app-wide bottom toast's look, kept above the place bar.
   return (
     <View style={{ position: "absolute", left: 12, right: 12, bottom, zIndex: 35 }}>
       <FirstRunToast text={text} tone="warning" action={action} onAction={onAction} assertive />

@@ -6,7 +6,7 @@ import { adminFetch, adminFetchResult } from "../../lib/api";
 import type { RiderDetail } from "../../lib/adminTypes";
 
 /**
- * First Run v2 E4 (D-81): the rider profile shows the plate's check next to "Bike reg" and offers
+ * First Run v2 E4 (D-82): the rider profile shows the plate's check next to "Bike reg" and offers
  * "Confirm plate…" only while it is waiting on review.
  */
 vi.mock("../../lib/api", () => ({ adminFetchResult: vi.fn(), adminFetch: vi.fn() }));
@@ -46,7 +46,7 @@ async function show(d: RiderDetail): Promise<void> {
   render(await RiderProfilePage({ params: Promise.resolve({ id: d.id }), searchParams: Promise.resolve({}) }));
 }
 
-describe("Rider profile — plate check (D-81)", () => {
+describe("Rider profile — plate check (D-82)", () => {
   it("a plate waiting on review reads 'checking' and offers Confirm plate", async () => {
     await show(detail());
     expect(screen.getByText("checking")).toBeTruthy();

@@ -6,7 +6,7 @@ export * from "./location";
 export * from "./notifications";
 
 /**
- * The phone's permission state, as First Run v2 reads it (handoff `first-run-v2` README §3–§4, ledger D-81).
+ * The phone's permission state, as First Run v2 reads it (handoff `first-run-v2` README §3–§4, ledger D-82).
  *
  *   loc    undetermined · granted (precise) · coarse (approximate, PC3/P4) · denied (can ask again, PC4/P5)
  *          · blocked (the OS won't show the dialog again, PC5/P6)

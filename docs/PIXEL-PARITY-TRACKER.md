@@ -112,8 +112,8 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | ⏭ | C1·6 | `LJ otp` | SMS OTP | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — C4 Code (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
 | ⏭ | C1·7 | `LJ role_select` | Choose your role | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — removed — no role choice screen (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
 | ⏭ | C1·8 | `LJ register` | Profile registration | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — C5 Name (no national ID) (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
-| ⏭ | C1·9 | `LJ perm_loc` | Permission · location | **SUPERSEDED by D-81 (First Run v2, 2026-10-06)** — PC1–PC7, a location sheet over Home (`packages/design/handoff/first-run-v2`; `src/ui/firstrun/CustomerLocationSheet.tsx`). No first-run priming. Not aligned to the gallery mock. | structure snapshot + rendered conformance SUPERSEDED (D-81) |
-| ⏭ | C1·10 | `LJ perm_notif` | Permission · notifications | **SUPERSEDED by D-81 (First Run v2, 2026-10-06)** — PC8–PC10 after an order (`app/order-updates.tsx`), PC11 in Settings. Not aligned to the gallery mock. | structure snapshot + rendered conformance SUPERSEDED (D-81) |
+| ⏭ | C1·9 | `LJ perm_loc` | Permission · location | **SUPERSEDED by D-82 (First Run v2, 2026-10-06)** — PC1–PC7, a location sheet over Home (`packages/design/handoff/first-run-v2`; `src/ui/firstrun/CustomerLocationSheet.tsx`). No first-run priming. Not aligned to the gallery mock. | structure snapshot + rendered conformance SUPERSEDED (D-82) |
+| ⏭ | C1·10 | `LJ perm_notif` | Permission · notifications | **SUPERSEDED by D-82 (First Run v2, 2026-10-06)** — PC8–PC10 after an order (`app/order-updates.tsx`), PC11 in Settings. Not aligned to the gallery mock. | structure snapshot + rendered conformance SUPERSEDED (D-82) |
 | ⏭ | C1·11 | `LJ onboard_flag_off` | Onboarding · food off  [PARCEL] | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — C1 Welcome (carousel retired) (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
 | ⏭ | C1·12 | `LJ role_select_flag_off` | Choose your role · food off | **SUPERSEDED by D-55 (Calm Mint v2, 2026-10-01)** — removed — no role choice screen (`packages/design/handoff/calm-mint-v2-2026-10`). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | structure snapshot + rendered conformance SUPERSEDED (D-55) |
 
@@ -208,8 +208,8 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | ⏭ | C8·7 | `LJ settings_perms` | Settings · real permissions | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 S1/S3 (permissions read from the phone) | |
 | ⏭ | C8·8 | `LJ settings_perms_ok` | Settings · all granted | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 S1 | |
 | ⬜ | C8·9 | `LJ privacy` | Privacy | | |
-| ⏭ | C8·10 | `LJ delete_account` | Delete account | superseded by D-81 (First Run v2, `packages/design/handoff/first-run-v2`) — frame I (back header, danger hero, 'Delete your account?', live 'No delivery running' box, 'Keep my account' over the danger link). Not aligned to the gallery mock. | |
-| ⏭ | C8·11 | `LJ delete_final` | Delete · final confirm | superseded by D-81 (First Run v2, `packages/design/handoff/first-run-v2`) — the final step in frame I's shell, two-step confirm and D-79's immediate-deletion copy kept (D-81 §2 #6). Not aligned to the gallery mock. | |
+| ⏭ | C8·10 | `LJ delete_account` | Delete account | superseded by D-82 (First Run v2, `packages/design/handoff/first-run-v2`) — frame I (back header, danger hero, 'Delete your account?', live 'No delivery running' box, 'Keep my account' over the danger link). Not aligned to the gallery mock. | |
+| ⏭ | C8·11 | `LJ delete_final` | Delete · final confirm | superseded by D-82 (First Run v2, `packages/design/handoff/first-run-v2`) — the final step in frame I's shell, two-step confirm and D-79's immediate-deletion copy kept (D-82 §2 #6). Not aligned to the gallery mock. | |
 | ⬜ | C8·12 | `LJ phone_masked` | Order ended · numbers masked  [BOTH] | | |
 
 ### C9 · Trust & safety
@@ -284,8 +284,8 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | ⬜ | R1·3 | `RJ login` | Phone sign-in | | |
 | ⬜ | R1·4 | `RJ otp` | SMS OTP | | |
 | ⬜ | R1·5 | `RJ role_select` | Choose your role | | |
-| ⏭ | R1·6 | `RJ perm_loc` | Permission · location | **SUPERSEDED by D-81 (First Run v2, 2026-10-06)** — the rider flow P1–P7, started by R3's Go online (`app/permissions.tsx`). Not aligned to the gallery mock. | SUPERSEDED (D-81) |
-| ⏭ | R1·7 | `RJ perm_notif` | Permission · notifications | **SUPERSEDED by D-81 (First Run v2, 2026-10-06)** — the rider flow P9–P13 (`app/permissions.tsx`). Not aligned to the gallery mock. | SUPERSEDED (D-81) |
+| ⏭ | R1·6 | `RJ perm_loc` | Permission · location | **SUPERSEDED by D-82 (First Run v2, 2026-10-06)** — the rider flow P1–P7, started by R3's Go online (`app/permissions.tsx`). Not aligned to the gallery mock. | SUPERSEDED (D-82) |
+| ⏭ | R1·7 | `RJ perm_notif` | Permission · notifications | **SUPERSEDED by D-82 (First Run v2, 2026-10-06)** — the rider flow P9–P13 (`app/permissions.tsx`). Not aligned to the gallery mock. | SUPERSEDED (D-82) |
 
 ### R2 · Become a rider (KYC)
 
@@ -296,9 +296,9 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | ⬜ | R2·3 | `RJ photo_capture` | Rider photo · capture | | |
 | ⬜ | R2·4 | `RJ photo_preview` | Rider photo · preview | | |
 | ⬜ | R2·5 | `RJ photo_uploading` | Rider photo · uploading | | |
-| ⏭ | R2·6 | `RJ kyc_pending` | Verification pending | superseded by D-55 (Calm Mint v2) — R2 Rider setup while the automated check runs — and D-81 (First Run v2): F8 just sent, F1 manual review, F2 held. Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | |
-| ⏭ | R2·7 | `RJ kyc_unfinished` | Verification not finished | superseded by D-81 (First Run v2, `packages/design/handoff/first-run-v2`) — F3 'Almost there, {firstName}'. Not aligned to. | |
-| ⏭ | R2·8 | `RJ kyc_cant_start` | Couldn't open the ID check | superseded by D-81 (First Run v2, `packages/design/handoff/first-run-v2`) — F7 'Couldn't open the ID check'. Not aligned to. | |
+| ⏭ | R2·6 | `RJ kyc_pending` | Verification pending | superseded by D-55 (Calm Mint v2) — R2 Rider setup while the automated check runs — and D-82 (First Run v2): F8 just sent, F1 manual review, F2 held. Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | |
+| ⏭ | R2·7 | `RJ kyc_unfinished` | Verification not finished | superseded by D-82 (First Run v2, `packages/design/handoff/first-run-v2`) — F3 'Almost there, {firstName}'. Not aligned to. | |
+| ⏭ | R2·8 | `RJ kyc_cant_start` | Couldn't open the ID check | superseded by D-82 (First Run v2, `packages/design/handoff/first-run-v2`) — F7 'Couldn't open the ID check'. Not aligned to. | |
 | ⏭ | R2·9 | `RJ kyc_verified` | Verified | superseded by D-55 (Calm Mint v2, `packages/design/handoff/calm-mint-v2-2026-10`) — R3 You're verified (new riders, once). Not aligned to the gallery mock. Evidence: `docs/parity/CALM-MINT-V2-HOME-2026-10-01.png` | |
 
 > **Two rows here are newer than the export.** `kyc_unfinished` and `kyc_cant_start` (#841) were
@@ -411,13 +411,13 @@ target, an `index.json` that matches the directory, and no expectation outliving
 | ⏭ | R9·15 | `RR return_rest` | Return to restaurant  [FOOD] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 X5 (food, with the return leg) | |
 | ⏭ | R9·16 | `RR handback` | Hand back confirm  [FOOD] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 X9 (food) | |
 | ⏭ | R9·17 | `RR offline_resume` | Resumed mid-delivery  [FOOD] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 X12 (Job restored) | |
-| ⏭ | R9·18 | `RJ kyc_failed` | Verification failed | superseded by D-81 (First Run v2, `packages/design/handoff/first-run-v2`) — F4a–d, one page per decline reason, with the tries meter. Not aligned to. | |
-| ⏭ | R9·19 | `RJ kyc_expired` | ID expired (later) | superseded by D-81 (First Run v2, `packages/design/handoff/first-run-v2`) — F6 'Your ID has expired'. Not aligned to. | |
+| ⏭ | R9·18 | `RJ kyc_failed` | Verification failed | superseded by D-82 (First Run v2, `packages/design/handoff/first-run-v2`) — F4a–d, one page per decline reason, with the tries meter. Not aligned to. | |
+| ⏭ | R9·19 | `RJ kyc_expired` | ID expired (later) | superseded by D-82 (First Run v2, `packages/design/handoff/first-run-v2`) — F6 'Your ID has expired'. Not aligned to. | |
 | ⬜ | R9·20 | `RJ photo_failed` | Rider photo · upload failed | | |
 | ⏭ | R9·21 | `RJ gate_out_of_area` | Gate · out of area | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 G9 | |
 | ⏭ | R9·22 | `RJ gate_cooldown` | Gate · cooldown | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 G10 | |
 | ⏭ | R9·23 | `RJ gate_banned` | Gate · account closed | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 G13 | |
-| ⏭ | R9·24 | `RJ gate_kyc_locked` | Gate · verification locked | superseded by D-81 (First Run v2, `packages/design/handoff/first-run-v2`) — F5 'Let's finish this together'. Not aligned to. | |
+| ⏭ | R9·24 | `RJ gate_kyc_locked` | Gate · verification locked | superseded by D-82 (First Run v2, `packages/design/handoff/first-run-v2`) — F5 'Let's finish this together'. Not aligned to. | |
 | ⏭ | R9·25 | `RJ topup_declined` | Top up · declined  [BOTH] | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 T6 | |
 | ⏭ | R9·26 | `RJ offline` | Offline banner | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 J6 (Reconnecting in the top card) | |
 | ⏭ | R9·27 | `RJ on_hold` | Account on hold | superseded by D-54 (rider-v2 handoff) — not aligned to; app = Rider v2 G11 | |

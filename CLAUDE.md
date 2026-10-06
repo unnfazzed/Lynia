@@ -155,7 +155,7 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
   2026-10-02): "1a Sun & orbit", up for exactly as long as the boot takes (real tasks from
   `src/boot/boot-readiness.ts`), then Home rises over it. No steps card for the customer: `CHANGE-2026-10-06.md`
   removed it (owner, 2026-10-06). A boot into the rider board keeps First Run v2's two-step card (H1/H2, ledger
-  D-81 §2 #2; the change note leaves the rider splash alone). The gallery `LJ splash` / `RJ splash` are superseded.
+  D-82 §2 #2; the change note leaves the rider splash alone). The gallery `LJ splash` / `RJ splash` are superseded.
 - **Notifications follow their own handoff (`handoff/notifications-v1/`).** The shared Notifications screen
   (`app/notifications/index.tsx`, both sides) aligns to `packages/design/handoff/notifications-v1/` (ledger D-66,
   owner 2026-10-02): one row per order with its timeline, tone discs, a danger pin, swipe + Undo. The gallery
@@ -170,9 +170,9 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
 - **First run follows its own handoff (`handoff/first-run-v2/`).** Permission asks (customer PC1–PC11 in context,
   rider P1–P16 after R3), the app update screens (U1–U5), Personal details (D1–D7), Bike & documents (E1–E6),
   the ID-check outcomes (F1–F8, full-screen, ✕ to customer Home), the rider entry (G1–G3), the rider splash steps
-  (H) and the copy pass (I) align to `packages/design/handoff/first-run-v2/` (ledger D-81, owner 2026-10-06). It
+  (H) and the copy pass (I) align to `packages/design/handoff/first-run-v2/` (ledger D-82, owner 2026-10-06). It
   supersedes `LJ/RJ perm_loc`, `perm_notif`, `force_update`, the Rider v2 KYC gates during onboarding and S5, and
-  the `kyc-2026-08` outcome screens. Where it clashed with shipped screens the owner chose case by case (D-81 §2):
+  the `kyc-2026-08` outcome screens. Where it clashed with shipped screens the owner chose case by case (D-82 §2):
   the splash keeps splash-v1's look, Settings takes the new look but keeps every row, the toast is the new bottom
   toast app-wide. Strings come from the handoff's `copy.ts`, verbatim.
 - **The merchant app follows its own handoff (`handoff/merchant-v2/`).** Kitchens, shops and pharmacies

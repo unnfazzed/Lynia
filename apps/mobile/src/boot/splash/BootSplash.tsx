@@ -31,7 +31,7 @@ import { EXIT, GIVE_UP_MS, INTRO_MS, SLOW_AFTER_MS, type StepState, isRiderBoot,
  * The customer's splash has no steps card: the 2026-10-06 change (handoff `CHANGE-2026-10-06.md`)
  * removed it, so its tasks have no UI of their own. Timing rules: ./timeline.ts.
  *
- * A boot into the rider board keeps a card (First Run v2 H1/H2, ledger D-81 §2 #2; CHANGE-2026-10-06:
+ * A boot into the rider board keeps a card (First Run v2 H1/H2, ledger D-82 §2 #2; CHANGE-2026-10-06:
  * "Don't change Home or the rider splash"). It ticks the rider's two steps ("Checking it's you",
  * "Getting jobs near you" = the board's first reads, src/boot/rider-board-ready.ts) and then cuts. Offline,
  * its rows give way to a single offline row (no dark panel). On the entry phone (320×640) the brand is
@@ -830,7 +830,7 @@ const SplashArt = memo(function SplashArt({
 });
 
 /**
- * First Run v2 H2c (ledger D-81 §2 #2): a rider boot that can't reach the server swaps the steps for one
+ * First Run v2 H2c (ledger D-82 §2 #2): a rider boot that can't reach the server swaps the steps for one
  * row in the same card — a 36 `surface` disc with `wifi-off`, "You're offline" and "We'll continue when
  * you're back." No button: the app-wide reachability probe resumes the boot on its own.
  */

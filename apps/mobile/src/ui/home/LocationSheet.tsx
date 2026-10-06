@@ -96,7 +96,7 @@ export function LocationSheet({
   /**
    * "Use my current location": the sheet closes and the screen runs the First Run v2 location ask
    * (`useLocationAskSheet` — PC1 explains before the Android dialog, or the fix and PC7 toast when it is
-   * already granted; ledger D-81).
+   * already granted; ledger D-82).
    */
   onUseCurrentLocation: () => void;
   onPick: (place: HomePlace) => void;

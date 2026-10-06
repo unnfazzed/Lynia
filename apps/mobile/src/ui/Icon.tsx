@@ -173,7 +173,7 @@ const ICONS = {
   calendar: Calendar,
   // Order flow v2 G1/G2 (ledger D-59): the pharmacy order's glyph on the live bar and the Now card.
   pill: Pill,
-  // First Run v2 (ledger D-81): P12 job alarm muted, F4a "Good light" tip, P16 battery saver, E6 upload failed.
+  // First Run v2 (ledger D-82): P12 job alarm muted, F4a "Good light" tip, P16 battery saver, E6 upload failed.
   "volume-x": VolumeX,
   sun: Sun,
   battery: Battery,

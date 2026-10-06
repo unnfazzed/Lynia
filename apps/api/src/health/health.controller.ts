@@ -38,7 +38,7 @@ export class HealthController {
   // parse and switch its gate off), and the query string keeps each platform's answer a separate cache
   // entry.
   //
-  // First Run v2 (ledger D-81 §2 #7): `?soft=1` opts a NEW build into the soft-update body — the same
+  // First Run v2 (ledger D-82 §2 #7): `?soft=1` opts a NEW build into the soft-update body — the same
   // minimum plus `recommendedVersion` (the U4 banner) and `whatsNew` (U1's pill), both null until set.
   // Opt-in, never added to the plain body, for the strictness reason above: a build that predates it
   // never sends `soft`, so it keeps getting exactly `{ minSupportedVersion }`.

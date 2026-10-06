@@ -36,7 +36,7 @@ describe("pushToast", () => {
 });
 
 /**
- * The look (ledger D-81 §2 #4, owner 2026-10-06): the shared toast is the First Run v2 bottom toast,
+ * The look (ledger D-82 §2 #4, owner 2026-10-06): the shared toast is the First Run v2 bottom toast,
  * app-wide — `forest`, radius 14, padding 14 16, white 600 14, a 20 brand check, 96 above the bottom
  * (+ the safe-area inset), gone after 2.5s. The old white top strip is retired.
  */

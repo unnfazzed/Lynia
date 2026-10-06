@@ -72,7 +72,7 @@ export const RO = {
   noteFree: "No top-up to start. Your first jobs are commission-free.",
   /**
    * Owner 2026-10-02 (D-62): the photo is optional and waits with the papers. Drawn: "Licence and bike papers can
-   * wait." First Run v2 BRIEF 13 (D-81): the licence is dropped from all copy — nothing collects one.
+   * wait." First Run v2 BRIEF 13 (D-82): the licence is dropped from all copy — nothing collects one.
    */
   notePapers: "Your photo and bike papers can wait.",
   startIdCheck: "Start ID check",
@@ -94,6 +94,6 @@ export const RO = {
   verifiedTitle: (first: string | null): string => (first ? `You’re verified, ${first}` : "You’re verified"),
   verifiedSub: "You can go online and take jobs now.",
   goOnline: "Go online",
-  /** Owner 2026-10-02 (D-62). Drawn: "Add licence and bike papers later in Account". No licence (D-81, BRIEF 13). */
+  /** Owner 2026-10-02 (D-62). Drawn: "Add licence and bike papers later in Account". No licence (D-82, BRIEF 13). */
   papersLater: "Add your photo and bike papers later in Account",
 } as const;

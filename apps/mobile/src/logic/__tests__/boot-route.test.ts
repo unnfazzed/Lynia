@@ -96,7 +96,7 @@ describe("signedInDestination (post-sign-in fork, shared by verify.tsx and profi
     expect(signedInDestination(null)).toBe("/home");
   });
 
-  it("the C1 rider path goes straight to the rider app — no priming (First Run v2 G1, D-81 §2 #5)", () => {
+  it("the C1 rider path goes straight to the rider app — no priming (First Run v2 G1, D-82 §2 #5)", () => {
     expect(signedInDestination(null, "rider")).toBe("/rider");
     // A saved role always wins over the C1 intent.
     expect(signedInDestination("customer", "rider")).toBe("/home");

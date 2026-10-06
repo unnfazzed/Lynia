@@ -72,7 +72,7 @@ describe("TabBar", () => {
     expect(r.root.findAll((n) => n.props.accessibilityRole === "tablist")).toHaveLength(0);
   });
 
-  // First Run v2 F1–F8 (ledger D-81 §2 #3): a tab root drawing a full-screen page takes the bar away, and it
+  // First Run v2 F1–F8 (ledger D-82 §2 #3): a tab root drawing a full-screen page takes the bar away, and it
   // comes back when the page goes (or the screen unmounts).
   it("is removed while a tab root holds it hidden (useHideTabBar), and back once it lets go", async () => {
     const state = { index: 0, routeNames: ["index", "money", "account"] };

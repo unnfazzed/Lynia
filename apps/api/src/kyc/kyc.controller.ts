@@ -203,7 +203,7 @@ export class KycController {
       // service degrades to typed-ID-only dedupe and logs the coverage gap). Hashed downstream; the
       // raw number is never persisted or logged.
       extractDiditDocumentNumber(payload),
-      // First Run v2 F6 (D-81 §4): the document's expiry date, so an expired rider can be told the day.
+      // First Run v2 F6 (D-82 §4): the document's expiry date, so an expired rider can be told the day.
       extractDiditDocumentExpiry(payload),
     );
     if (res.updated === 0) {

@@ -1,5 +1,5 @@
 /**
- * First Run v2 F1–F8 — the ID-check outcome shell (README §2 F, `fr-states.js` F*, ledger D-81). Each page:
+ * First Run v2 F1–F8 — the ID-check outcome shell (README §2 F, `fr-states.js` F*, ledger D-82). Each page:
  * the ✕ (its only way out), the hero tone + disc, the split title in `KY`'s words, the body, the checklist /
  * tips / tries meter as drawn, and exactly the CTA + link the frame draws. Never a "Send a parcel" / "Order
  * food" secondary, never the vendor's name.

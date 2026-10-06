@@ -3,7 +3,7 @@ import type { KycGate, KycSdkResult } from "./gates";
 import type { GateId } from "./rider-gate";
 
 /**
- * First Run v2 F · ID-check outcomes (`packages/design/handoff/first-run-v2/` README §2 F, ledger D-81):
+ * First Run v2 F · ID-check outcomes (`packages/design/handoff/first-run-v2/` README §2 F, ledger D-82):
  * which full-screen outcome page an unverified rider sees, mapped once from the server's KYC state.
  *
  *   F8  just submitted (a completed launch, fresh — before R2)   F1  manual review (ops)
@@ -12,7 +12,7 @@ import type { GateId } from "./rider-gate";
  *   F4d declined · other       F5  locked (both tries used)    F6  ID expired
  *   F7  the check couldn't open
  *   F5dup  declined as a duplicate (the ID is on another account) — F5's WhatsApp-only page with an
- *          undrawn body (owner 2026-10-06, D-81 §4): no retry can fix a duplicate
+ *          undrawn body (owner 2026-10-06, D-82 §4): no retry can fix a duplicate
  *
  * Two non-F answers: `r2` (the automated check is with the vendor — Calm Mint v2 R2 "Rider setup" stays,
  * D-55 / README G3 "or R2 if pending") and `become` (no rider record: G1 sends the account to R1).
@@ -48,7 +48,7 @@ export type DeclineVariant = "F4a" | "F4b" | "F4c" | "F4d" | "F5dup";
  *
  * `name_mismatch` goes to F4d, not F4c: the document itself was fine, so "use your national ID card" would be
  * wrong advice; F4d's "message us and we'll help" is the honest route. `duplicate` gets F5's WhatsApp-only
- * shell (owner 2026-10-06, ledger D-81 §4).
+ * shell (owner 2026-10-06, ledger D-82 §4).
  */
 export function declineVariant(reason: KycDeclineReason | string | null | undefined): DeclineVariant {
   switch (reason) {

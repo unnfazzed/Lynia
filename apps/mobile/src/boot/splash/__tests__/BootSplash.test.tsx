@@ -4,7 +4,7 @@
  * three tasks; anywhere else: the session check), never shorter than the 1300ms intro; it shows the
  * offline panel (and never gives up) when the API can't be reached, and "Try again" resumes only the
  * tasks still pending; and it can never strand the app on a hung request. A boot into the rider board
- * keeps a card with the rider's two steps (First Run v2 H1/H2, ledger D-81 §2 #2).
+ * keeps a card with the rider's two steps (First Run v2 H1/H2, ledger D-82 §2 #2).
  */
 import React from "react";
 import { AccessibilityInfo, Text } from "react-native";
@@ -390,7 +390,7 @@ describe("BootSplash", () => {
   });
 });
 
-describe("BootSplash · the rider boot keeps its card (First Run v2 H1/H2, ledger D-81 §2 #2)", () => {
+describe("BootSplash · the rider boot keeps its card (First Run v2 H1/H2, ledger D-82 §2 #2)", () => {
   const riderRows = (tree: renderer.ReactTestRenderer): string[] =>
     tree.root
       .findAll((n) => typeof n.type === "string" && n.props.accessibilityState != null && (RIDER_STEPS as readonly string[]).includes(n.props.accessibilityLabel))

@@ -330,7 +330,7 @@ jobs:
           # Paths that can change what Metro bundles: the app itself, the two workspace packages it
           # imports at bundle time, the lockfile (a dep bump can balloon the bundle), and this workflow.
           if printf '%s\n' "$CHANGED" \
-             | grep -Eq '^(apps/mobile/|packages/shared/|packages/design/|pnpm-lock\.yaml$|\.github/workflows/ci\.yml$)'; then
+             | grep -Eq '^(apps/mobile/|packages/shared/|packages/design/|tools/web-runtime/|pnpm-lock\.yaml$|\.github/workflows/ci\.yml$)'; then
             echo "::notice::Mobile-relevant paths changed — running the JS bundle-size check."
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
@@ -369,6 +369,25 @@ jobs:
         if: steps.changes.outputs.run == 'true'
         working-directory: apps/mobile
         run: node scripts/check-bundle-size.mjs "$RUNNER_TEMP/expo-export-android"
+
+      # The customer web build for iPhone users (docs/plans/2026-10-06-customer-web-app-plan.md) must keep
+      # compiling. react-native-web is installed from tools/web-runtime, outside the pnpm workspace, so the
+      # Android install (and its OTA fingerprint) stays unchanged; EXPO_PUBLIC_LYNIA_WEB=1 switches on the
+      # web-only config and code paths. EXPO_NO_WEB_SETUP skips Expo's check for react-native-web in the
+      # project, which is deliberately not there.
+      - name: Install web runtime (react-native-web)
+        if: steps.changes.outputs.run == 'true'
+        working-directory: tools/web-runtime
+        run: npm ci --omit=peer --no-audit --no-fund
+
+      - name: Export customer web build (expo export --platform web)
+        if: steps.changes.outputs.run == 'true'
+        working-directory: apps/mobile
+        env:
+          EXPO_PUBLIC_LYNIA_WEB: "1"
+          EXPO_NO_WEB_SETUP: "1"
+          EXPO_PUBLIC_API_URL: https://api.lyniago.com
+        run: pnpm exec expo export --platform web --output-dir "$RUNNER_TEMP/expo-export-web"
 
   # Terraform config validation with DEFAULTS ONLY — deliberately no tfvars.
   #

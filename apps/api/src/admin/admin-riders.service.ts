@@ -28,7 +28,7 @@ export class AdminRidersService {
   /** Rider roster for ops — the KYC review queue when filtered to `pending`. */
   async listRiders(kyc?: KycStatus, plate?: PlateStatus) {
     const riders = await this.prisma.rider.findMany({
-      // First Run v2 E4 (D-81): `plate` = the plate review queue (`checking`).
+      // First Run v2 E4 (D-82): `plate` = the plate review queue (`checking`).
       where: { ...(kyc ? { kycStatus: kyc } : {}), ...(plate ? { plateStatus: plate } : {}) },
       orderBy: { updatedAt: "desc" },
       take: 100,
@@ -72,7 +72,7 @@ export class AdminRidersService {
       name: `${r.profile.firstName} ${r.profile.lastName}`.trim(),
       phone: revealingRiderIds.has(r.profileId) ? r.profile.phone : maskPhone(r.profile.phone),
       bikeReg: r.bikeReg,
-      // First Run v2 E4 (D-81): "checking" = a self-service plate change waiting on POST riders/:id/plate-verify.
+      // First Run v2 E4 (D-82): "checking" = a self-service plate change waiting on POST riders/:id/plate-verify.
       plateStatus: r.plateStatus,
       kycStatus: r.kycStatus,
       kycRef: r.kycRef,
@@ -382,7 +382,7 @@ export class AdminRidersService {
    * audit in one transaction.
    */
   /**
-   * First Run v2 E4 (D-81): ops confirm the plate a rider saved from Bike & documents. Only a plate that
+   * First Run v2 E4 (D-82): ops confirm the plate a rider saved from Bike & documents. Only a plate that
    * is `checking` can be confirmed, and only the plate ops looked at: `plate` must equal the stored one
    * (CAS), so a rider who changed it again meanwhile stays "Checking" instead of having an unseen plate
    * marked verified. Audited; the rider's app shows "Verified" on its next `/auth/me`.
@@ -537,7 +537,7 @@ export class AdminRidersService {
       name: `${rider.profile.firstName} ${rider.profile.lastName}`.trim(),
       phone: liveOrders > 0 ? rider.profile.phone : maskPhone(rider.profile.phone),
       bike: rider.bikeReg,
-      // First Run v2 E4 (D-81): "checking" = waiting on POST riders/:id/plate-verify.
+      // First Run v2 E4 (D-82): "checking" = waiting on POST riders/:id/plate-verify.
       plateStatus: rider.plateStatus,
       kyc: rider.kycStatus,
       status,

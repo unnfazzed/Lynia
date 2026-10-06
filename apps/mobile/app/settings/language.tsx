@@ -19,7 +19,7 @@ import { AccountRowList } from "../../src/ui/account/AccountRows";
 export default function LanguageScreen(): React.ReactElement {
   const router = useRouter();
   return (
-    // First Run v2 Settings look (D-81 §2 #1): the round back header + large title; the content is unchanged.
+    // First Run v2 Settings look (D-82 §2 #1): the round back header + large title; the content is unchanged.
     <FirstRunScreen
       header={
         <>

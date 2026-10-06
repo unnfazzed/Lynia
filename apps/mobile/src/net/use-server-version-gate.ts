@@ -8,7 +8,7 @@ import { API_URL } from "../config";
 import { BACKGROUND_CHECK_TIMEOUT_MS } from "./network-policy";
 import { fetchSignal } from "./fetch-signal";
 
-/** What `GET /app/version-gate?soft=1` answers (First Run v2, ledger D-81 §2 #7). */
+/** What `GET /app/version-gate?soft=1` answers (First Run v2, ledger D-82 §2 #7). */
 export interface ServerVersionGate {
   /** The hard minimum — below it the force-update screen (U1) replaces the app. */
   min: string;

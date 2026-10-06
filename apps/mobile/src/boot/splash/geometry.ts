@@ -30,7 +30,7 @@ export const MIN_CLEARANCE = 24;
  *  and the 52px button. */
 export const PANEL_H_ESTIMATE = 176;
 
-// ── The rider's steps card (First Run v2 H1/H2, ledger D-81 §2 #2) ──
+// ── The rider's steps card (First Run v2 H1/H2, ledger D-82 §2 #2) ──
 /** The rider card's distance from the bottom (before the inset): "navBarHeight + 16". */
 export const CARD_BOTTOM = 16;
 /** First-frame estimate of the rider card, replaced by the measured height: 8+8 padding, two 48dp rows. */

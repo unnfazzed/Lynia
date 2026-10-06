@@ -10,7 +10,7 @@ import { UP } from "./copy";
 
 /**
  * U4b's body line on the violet banner. Drawn (`fr-states.js` U4b) but not in the token table (README
- * §5); used as drawn, text only. D-81 §4.
+ * §5); used as drawn, text only. D-82 §4.
  */
 const VIOLET_BODY = "#DCD5FF";
 
@@ -35,7 +35,7 @@ export interface SoftUpdateState {
 }
 
 /**
- * The soft update (U4a/U4b, ledger D-81 §2 #7): visible when the server's `recommendedVersion` (fetched
+ * The soft update (U4a/U4b, ledger D-82 §2 #7): visible when the server's `recommendedVersion` (fetched
  * once per cold start by the root layout) is above this build and this version hasn't been settled on
  * this phone yet. Hidden while the dismissed version is still being read, so it never flashes.
  */

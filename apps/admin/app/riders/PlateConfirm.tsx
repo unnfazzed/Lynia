@@ -5,7 +5,7 @@ import { REASONS } from "../lib/reasons";
 import { verifyPlate } from "./actions";
 
 /**
- * First Run v2 E4 (D-81): "Confirm plate…" for a plate waiting on review (`plateStatus: "checking"`). A
+ * First Run v2 E4 (D-82): "Confirm plate…" for a plate waiting on review (`plateStatus: "checking"`). A
  * self-service plate change saves instantly in the rider app and reads "Checking" there until ops confirm it
  * here; the rider then sees "Verified". Reason-coded through <ConfirmModal> like every rider action; the
  * endpoint writes the audit row in-transaction (`auditInEndpoint`). Used on the rider profile and in the

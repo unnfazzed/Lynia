@@ -8,7 +8,7 @@ import { Tappable } from "../Tappable";
 export const SHEET_DIM = "rgba(20,24,27,0.45)";
 
 /**
- * The First Run v2 sheet (README §1 "Sheet", `fr-kit.js` `.sheet` `.grab` `.dim`, ledger D-81): radius
+ * The First Run v2 sheet (README §1 "Sheet", `fr-kit.js` `.sheet` `.grab` `.dim`, ledger D-82): radius
  * 24 at the top, a 4×36 `line` grab handle 16 above the content, padding 8 16 16 (+ the bottom inset),
  * over a .45 ink dim. PC1–PC6 (over Home), E2a (photo source), E4 (plate). Tapping the dim or Back
  * closes it unless `locked`.

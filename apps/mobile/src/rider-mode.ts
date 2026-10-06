@@ -1,4 +1,5 @@
 import { Platform } from "react-native";
+import { isCustomerWebBuild } from "./web-build";
 
 /**
  * Whether this build offers rider mode at all. **iOS ships customer-only** (owner decision 2026-09-27,
@@ -11,6 +12,10 @@ import { Platform } from "react-native";
  * sends /rider/* and /wallet/* home (src/rider-route-gate.tsx). A rider account signing in on an
  * iPhone therefore simply gets the customer app.
  *
+ * The customer web build (docs/plans/2026-10-06-customer-web-app-plan.md) is customer-only for the same
+ * reasons, so it is off there too ({@link isCustomerWebBuild}; the parity lane's react-native-web render
+ * still sees rider mode).
+ *
  * Never tell iPhone users to go and use another platform instead: App Review guideline 2.3.10 bans
  * naming other mobile platforms inside the app.
  *
@@ -19,7 +24,7 @@ import { Platform } from "react-native";
  * and the iOS-gate tests override it per case.
  */
 export function riderModeAvailable(): boolean {
-  return Platform.OS !== "ios";
+  return Platform.OS !== "ios" && !isCustomerWebBuild();
 }
 
 /** True for a route that belongs to rider mode (the rider app, KYC, the commission wallet). */

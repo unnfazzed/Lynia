@@ -289,7 +289,7 @@ export function RRoute({ job }: { job: BoardJob }): React.ReactElement {
 
 /** The ink toast: icon + 13/18 white text, optional 44px action (accent-wash / accent-text). */
 export function RToast({ text, icon = "circle-alert", action, actionIcon = "undo-2", onAction }: { text: string; icon?: IconName; action?: string; actionIcon?: IconName; onAction?: () => void }): React.ReactElement {
-  // Owner 2026-10-06 (D-81): the app-wide bottom toast's look.
+  // Owner 2026-10-06 (D-82): the app-wide bottom toast's look.
   return <FirstRunToast text={text} icon={icon} action={action} actionIcon={actionIcon} onAction={onAction} assertive />;
 }
 

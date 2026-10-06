@@ -97,7 +97,7 @@ export async function startRiderBackgroundUpdates(): Promise<void> {
       // Android: the foreground service is what keeps fixes flowing while the rider navigates.
       // Plain rider language — this is a persistent notification they will see the whole trip.
       foregroundService: {
-        // First Run v2 (ledger D-81): the words P3 draws, from the handoff copy (`RP.fgsTitle/fgsBody`). A JS
+        // First Run v2 (ledger D-82): the words P3 draws, from the handoff copy (`RP.fgsTitle/fgsBody`). A JS
         // string, so an OTA carries a wording change; the service itself is native (manifest, store build).
         notificationTitle: RP.fgsTitle,
         notificationBody: RP.fgsBody,

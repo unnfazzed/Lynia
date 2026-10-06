@@ -1,5 +1,5 @@
 /**
- * First Run v2 shared parts (packages/design/handoff/first-run-v2/, ledger D-81) — render + the key
+ * First Run v2 shared parts (packages/design/handoff/first-run-v2/, ledger D-82) — render + the key
  * geometry each part's README §1 / fr-kit.js row pins. Geometry is read off the flattened styles.
  */
 import { tokens } from "@lynia/shared/tokens";

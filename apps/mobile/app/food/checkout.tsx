@@ -337,7 +337,7 @@ export default function FoodReviewScreen(): React.ReactElement {
       void saveMyPickupPhone(phone.trim());
       seedFoodOrder(queryClient, order);
       cart.clear();
-      // D-81 PC8: the "Know when it's at the gate" explainer in front of the order, while it should ask.
+      // D-82 PC8: the "Know when it's at the gate" explainer in front of the order, while it should ask.
       const next = await routeAfterOrderPlaced(order.id);
       if (!mounted.current) return;
       goToPlacedFoodOrder(router, order.id, next);

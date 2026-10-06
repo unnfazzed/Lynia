@@ -66,7 +66,7 @@ describe("task status", () => {
   });
 });
 
-describe("the rider boot keeps its steps card (First Run v2 H1, ledger D-81 §2 #2)", () => {
+describe("the rider boot keeps its steps card (First Run v2 H1, ledger D-82 §2 #2)", () => {
   it("is the rider board only: a push-tap into a rider job hands off after the session", () => {
     expect(isRiderBoot("/rider")).toBe(true);
     expect(isRiderBoot("/rider/job")).toBe(false);

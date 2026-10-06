@@ -1,6 +1,6 @@
 /**
- * `useHomeLocation` never asks (First Run v2, ledger D-81, BRIEF 1–2). Home mounts under the cold-start
- * splash, and S-6 once moved the OS location dialog to "after the boot"; since D-81 it doesn't open at
+ * `useHomeLocation` never asks (First Run v2, ledger D-82, BRIEF 1–2). Home mounts under the cold-start
+ * splash, and S-6 once moved the OS location dialog to "after the boot"; since D-82 it doesn't open at
  * mount at all — only PC1's own button opens it (src/logic/location-ask.ts). A granted (or approximate)
  * permission still fixes a position straight away, splash or not.
  */

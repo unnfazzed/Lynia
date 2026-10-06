@@ -418,7 +418,7 @@ jobs:
           # doesn't name its platform; the iPhone app has its own (?platform=ios). Unset = gate off.
           MIN_SUPPORTED_APP_VERSION: ${{ vars.MIN_SUPPORTED_APP_VERSION }}
           MIN_SUPPORTED_APP_VERSION_IOS: ${{ vars.MIN_SUPPORTED_APP_VERSION_IOS }}
-          # Soft update (First Run v2 U4/U1, ledger D-81): the version the app nudges towards once per
+          # Soft update (First Run v2 U4/U1, ledger D-82): the version the app nudges towards once per
           # version, and U1's what's-new line. Unset = off.
           RECOMMENDED_APP_VERSION: ${{ vars.RECOMMENDED_APP_VERSION }}
           RECOMMENDED_APP_VERSION_IOS: ${{ vars.RECOMMENDED_APP_VERSION_IOS }}

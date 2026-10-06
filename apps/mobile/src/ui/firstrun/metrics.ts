@@ -2,9 +2,9 @@ import { tokens } from "@lynia/shared/tokens";
 import { useWindowDimensions } from "react-native";
 
 /**
- * First Run v2 (`packages/design/handoff/first-run-v2/`, ledger D-81) — the numbers every part shares.
+ * First Run v2 (`packages/design/handoff/first-run-v2/`, ledger D-82) — the numbers every part shares.
  * Every value below is the handoff's `design/fr-kit.js` CSS block; colours are tokens only
- * (README §5), plus `dangerSun` which D-81 added for the danger hero's sun.
+ * (README §5), plus `dangerSun` which D-82 added for the danger hero's sun.
  */
 
 export type FrTone = "mint" | "violet" | "danger" | "neutral" | "green";

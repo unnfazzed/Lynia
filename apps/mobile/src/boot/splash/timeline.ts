@@ -40,7 +40,7 @@ export const EXIT = {
 /** The three boot tasks, in the handoff's order: the session check, saved places, then Home's content. */
 export const BOOT_TASKS: readonly BootSignal[] = ["session", "profile", "home"];
 /**
- * The rider board's boot (First Run v2 H1, ledger D-81 §2 #2). It keeps its steps card, because
+ * The rider board's boot (First Run v2 H1, ledger D-82 §2 #2). It keeps its steps card, because
  * CHANGE-2026-10-06 removed only the customer's ("Don't change Home or the rider splash"). Step 1 is the
  * session, and step 2 ("Getting jobs near you") is the board's first reads (src/boot/rider-board-ready.ts).
  */
@@ -88,7 +88,7 @@ export function splashDoneAt(times: TaskTimes, destination: string | null): numb
   return Math.max(INTRO_MS, ...awaitedTasks(destination).map((task) => times[task] ?? 0));
 }
 
-// ── The rider's steps card (First Run v2 H1, D-81 §2 #2) ──
+// ── The rider's steps card (First Run v2 H1, D-82 §2 #2) ──
 // The card is splash-v1's old steps card with the rider's two rows. It keeps splash-v1's per-step rules:
 // the per-step minimum (so a tick doesn't flicker) and the wait for the last tick before the cut.
 

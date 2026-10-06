@@ -1,5 +1,5 @@
 /**
- * The rider splash's step 2 (First Run v2 H1, ledger D-81 §2 #2) is the rider board's first reads —
+ * The rider splash's step 2 (First Run v2 H1, ledger D-82 §2 #2) is the rider board's first reads —
  * `["me"]` and `["activeJob"]` — settling in the shared query cache. A disabled read (an unverified
  * rider's board never asks for an active job) counts as settled; a read the board hasn't created doesn't.
  */

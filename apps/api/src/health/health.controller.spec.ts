@@ -137,7 +137,7 @@ describe("HealthController — app/feature-flags (merchant kill switches, plan �
   });
 });
 
-describe("HealthController — app/version-gate soft update (First Run v2 U1/U4, ledger D-81 §2 #7)", () => {
+describe("HealthController — app/version-gate soft update (First Run v2 U1/U4, ledger D-82 §2 #7)", () => {
   it("the plain body never grows: an installed build parses it strictly, so ?soft is opt-in", () => {
     const controller = controllerWith(okReport, { ...baseSource, RECOMMENDED_APP_VERSION: "0.60.0", APP_WHATS_NEW: "Faster live tracking" });
     expect(controller.versionGate()).toEqual({ minSupportedVersion: "0.0.0" });

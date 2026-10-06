@@ -51,7 +51,7 @@ describe("AdminRidersService.listRiders", () => {
     const svc = new AdminRidersService(prisma as unknown as PrismaService, noNotifications, noGateway);
     const rows = await svc.listRiders("pending");
     expect(where).toEqual({ kycStatus: "pending" });
-    // First Run v2 E4 (D-81): the plate review queue.
+    // First Run v2 E4 (D-82): the plate review queue.
     await svc.listRiders(undefined, "checking");
     expect(where).toEqual({ plateStatus: "checking" });
     await svc.listRiders();
@@ -712,7 +712,7 @@ describe("AdminRidersService.walletView", () => {
   });
 });
 
-describe("AdminRidersService.verifyPlate (First Run v2 E4, D-81)", () => {
+describe("AdminRidersService.verifyPlate (First Run v2 E4, D-82)", () => {
   function plateTx(rider: unknown, count = 1) {
     const calls: { update: { where: unknown; data: unknown } | null; audit: { data: Record<string, unknown> } | null } = { update: null, audit: null };
     const tx = {

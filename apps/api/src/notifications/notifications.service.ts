@@ -570,7 +570,7 @@ export class NotificationsService {
     // One batched provider call (FCM sendEach, chunked ≤500) instead of a per-token round-trip fan-out.
     // Results align with `tokens` order, so a dead token is pruned — and a delivery credited — by position.
     // `ttlSeconds`/`collapseKey` (when set by the caller) ride through to the adapter's provider fields.
-    // Rider job pings and food-offer alarms post on the `job-alerts` Android channel (D-81 P12).
+    // Rider job pings and food-offer alarms post on the `job-alerts` Android channel (D-82 P12).
     const channelId = androidChannelFor(msg.data);
     const results = await this.push.sendEach(
       tokens.map((t) => ({

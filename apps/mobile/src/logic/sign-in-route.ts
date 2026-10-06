@@ -27,7 +27,7 @@ export function startRoleFor(chosen: StartRole | null, intent: SignInIntent, ser
  * Where a signed-in, profile-complete account goes (verify.tsx for a returning user, profile/setup.tsx
  * after a new account names itself). A customer lands on Home — location and notifications are asked
  * in context there. A rider goes straight to the rider side (C1 rider path: OTP → R1, First Run v2 G1):
- * the permission priming that used to sit here is gone (owner decision D-81 §2 #5) — the rider flow
+ * the permission priming that used to sit here is gone (owner decision D-82 §2 #5) — the rider flow
  * (P1…P13) runs from R3's "Go online", and a returning rider's missing permission shows on the board.
  */
 export function signedInDestination(chosen: StartRole | null, intent: SignInIntent = null, serverRole?: string | null): "/rider" | "/home" {

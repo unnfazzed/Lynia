@@ -348,7 +348,7 @@ export default function LauncherHomeScreen(): React.ReactElement {
     setLocationSearch(search);
     setLocationOpen(true);
   };
-  // First Run v2 PC1–PC7 (ledger D-81): H6 "Use my location" and H5 "Use my current location" open the
+  // First Run v2 PC1–PC7 (ledger D-82): H6 "Use my location" and H5 "Use my current location" open the
   // same location ask — PC1 explains before the Android dialog; granted fills the header + PC7 toast.
   const locationAsk = useLocationAskSheet(location, () => openLocation(true));
 

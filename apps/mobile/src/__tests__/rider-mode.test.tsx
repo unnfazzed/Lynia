@@ -13,6 +13,9 @@ jest.mock("expo-router", () => ({
   useSegments: () => mockSegments,
 }));
 
+let mockCustomerWeb = false;
+jest.mock("../web-build", () => ({ isCustomerWebBuild: () => mockCustomerWeb }));
+
 import { riderModeAvailable } from "../rider-mode";
 import { RiderRouteGate, isRiderRouteSegment } from "../rider-route-gate";
 
@@ -34,6 +37,15 @@ describe("riderModeAvailable (the real platform switch)", () => {
     withOS("android", () => expect(actual.riderModeAvailable()).toBe(true));
     // The parity lane renders screens through react-native-web; it must keep seeing rider mode.
     withOS("web", () => expect(actual.riderModeAvailable()).toBe(true));
+  });
+
+  it("is off in the customer web build", () => {
+    mockCustomerWeb = true;
+    try {
+      withOS("web", () => expect(actual.riderModeAvailable()).toBe(false));
+    } finally {
+      mockCustomerWeb = false;
+    }
   });
 });
 

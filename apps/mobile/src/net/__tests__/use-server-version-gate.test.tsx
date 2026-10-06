@@ -81,7 +81,7 @@ describe("fetchServerMinVersion (fail-open by design)", () => {
     ]);
   });
 
-  it("reads the soft-update body (First Run v2, D-81 §2 #7): recommended version + what's new", async () => {
+  it("reads the soft-update body (First Run v2, D-82 §2 #7): recommended version + what's new", async () => {
     await expect(
       fetchServerVersionGate(fetchReturning(200, { minSupportedVersion: "0.2.0", recommendedVersion: "0.6.0", whatsNew: "Faster live tracking" })),
     ).resolves.toEqual({ min: "0.2.0", recommended: "0.6.0", whatsNew: "Faster live tracking" });

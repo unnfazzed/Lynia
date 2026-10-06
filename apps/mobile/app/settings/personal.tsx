@@ -18,7 +18,7 @@ import { Notice } from "../../src/ui/send/kit";
 export const SAVED_MS = 1500;
 
 /**
- * Personal details — First Run v2 D2–D7 (`packages/design/handoff/first-run-v2`, ledger D-81; the screen
+ * Personal details — First Run v2 D2–D7 (`packages/design/handoff/first-run-v2`, ledger D-82; the screen
  * itself is D-79's). Reached from Settings → Personal details on both sides.
  *
  * - D2: the back header + large title, First name / Surname side by side, the verified phone row, the

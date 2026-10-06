@@ -4,7 +4,7 @@ import { AppState, Linking } from "react-native";
 
 /**
  * Location permission + the phone's location switch, as First Run v2 reads them (handoff `first-run-v2`
- * README §3–§4, ledger D-81). Split from the notification half so a location-only module (Home's
+ * README §3–§4, ledger D-82). Split from the notification half so a location-only module (Home's
  * deliver-to) doesn't load expo-notifications. Every read is best-effort and never throws.
  */
 

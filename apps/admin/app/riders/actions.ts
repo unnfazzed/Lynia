@@ -83,7 +83,7 @@ export async function mutateRider(
 }
 
 /**
- * First Run v2 E4 (D-81): confirm the bike plate a rider saved from Bike & documents —
+ * First Run v2 E4 (D-82): confirm the bike plate a rider saved from Bike & documents —
  * `POST /admin/riders/:id/plate-verify { plate, reason, note }`. `plate` is the plate ops looked at: the
  * endpoint refuses (409) if the rider changed it since, so an unseen plate is never marked verified. The
  * endpoint writes the `rider.plate_verify` audit row in its own transaction. Throws on a refusal so

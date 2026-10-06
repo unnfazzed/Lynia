@@ -1,5 +1,5 @@
 /**
- * First Run v2 permission state (ledger D-81, handoff `first-run-v2` README §3–§4): the pure classifiers,
+ * First Run v2 permission state (ledger D-82, handoff `first-run-v2` README §3–§4): the pure classifiers,
  * the per-install flags, the PC8 gate and the rider-flow step logic.
  */
 const mockStore: Record<string, string> = {};
@@ -24,6 +24,9 @@ jest.mock("expo-location", () => ({
   hasServicesEnabledAsync: async () => true,
 }));
 
+let mockCustomerWeb = false;
+jest.mock("../../web-build", () => ({ isCustomerWebBuild: () => mockCustomerWeb }));
+
 import { routeAfterOrderPlaced, shouldExplainOrderUpdates } from "../../push/ask-in-context";
 import { afterLocationAnswer, entryScreen, finishRiderPermFlow, startRiderPermFlow, stepsFor } from "../../logic/rider-perm-flow";
 import { Platform } from "react-native";
@@ -31,6 +34,7 @@ import { allGranted, channelIsMuted, classifyLocation, classifyNotif, ensureJobA
 import { CUST_NOTIF_ASK_CAP, CUST_NOTIF_ASKS_SLOT, custNotifAsks, markRiderPermFlowDone, noteCustNotifAsked, RIDER_PERM_FLOW_KEY, riderPermFlowDone } from "../store";
 
 beforeEach(() => {
+  mockCustomerWeb = false;
   for (const k of Object.keys(mockStore)) delete mockStore[k];
   mockNotif = { status: "undetermined", granted: false, canAskAgain: true };
   mockLoc = { status: "granted", granted: true, canAskAgain: true };
@@ -108,6 +112,12 @@ describe("PC8 gate (src/push/ask-in-context.ts)", () => {
     mockNotif = { status: "denied", granted: false, canAskAgain: true };
     expect(await routeAfterOrderPlaced("o-1")).toBe("/order/o-1");
   });
+
+  it("never explains in the customer web build, which has no push (ledger D-81)", async () => {
+    mockCustomerWeb = true;
+    expect(await shouldExplainOrderUpdates()).toBe(false);
+    expect(await routeAfterOrderPlaced("o-1")).toBe("/order/o-1");
+  });
 });
 
 describe("rider flow steps (README §2B)", () => {
@@ -144,7 +154,7 @@ describe("rider flow steps (README §2B)", () => {
   });
 });
 
-describe("startRiderPermFlow (owner decision D-81 §2 #5)", () => {
+describe("startRiderPermFlow (owner decision D-82 §2 #5)", () => {
   it("everything granted → online straight away, no flow", async () => {
     mockNotif = { status: "granted", granted: true };
     const push = jest.fn();

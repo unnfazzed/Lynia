@@ -12,7 +12,7 @@ import { BackHeader, Body, FirstRunScreen, HeroDisc, HeroPanel, InfoBox, PinnedF
 
 /**
  * The words First Run v2 I draws (`fr-states.js` `add('I', …)`), verbatim, plus the shipped strings for the
- * states it doesn't draw: a running delivery (the live check) and the final step (owner D-81 §2 #6 keeps the
+ * states it doesn't draw: a running delivery (the live check) and the final step (owner D-82 §2 #6 keeps the
  * two-step confirm; D-79's immediate-deletion sentence stands).
  */
 const DEL = {
@@ -30,7 +30,7 @@ const DEL = {
 } as const;
 
 /**
- * Account deletion — First Run v2 I (`packages/design/handoff/first-run-v2/`, ledger D-81 §2 #6): the new back
+ * Account deletion — First Run v2 I (`packages/design/handoff/first-run-v2/`, ledger D-82 §2 #6): the new back
  * header (44 round `surface` button), a danger hero 180 with the trash disc, "Delete **your account?**", one
  * sentence, the live "No delivery running" box, then "Keep my account" (the 52 CTA) over the danger text link
  * "Delete account".

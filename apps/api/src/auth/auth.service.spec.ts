@@ -342,7 +342,7 @@ describe("AuthService.getProfile", () => {
     expect(me.rider).toMatchObject({ bikeReg: "ABZ 1234", kycStatus: "verified", ratingAvg: 4.8, tripsCount: 30, isOnline: true });
   });
 
-  it("First Run v2 E4 (D-81): surfaces the plate's check status, additively", async () => {
+  it("First Run v2 E4 (D-82): surfaces the plate's check status, additively", async () => {
     const { svc } = make(baseEnv, { profile: { findUnique: async () => ({ ...riderRow, rider: { ...riderRow.rider, plateStatus: "checking" } }) } });
     const me = await svc.getProfile("p2");
     expect(me.rider).toMatchObject({ bikeReg: "ABZ 1234", plateStatus: "checking" });
@@ -1718,7 +1718,7 @@ describe("AuthService.getProfile — kycPendingState (P0-1 / D6)", () => {
   });
 });
 
-// First Run v2 F6 (ledger D-81 §4): `rider.kycExpiredOn` on /auth/me.
+// First Run v2 F6 (ledger D-82 §4): `rider.kycExpiredOn` on /auth/me.
 describe("kycExpiredOn", () => {
   it("is the stored expiry day while expired, else the day the expiry applied, else null", () => {
     expect(kycExpiredOn("expired", new Date("2026-10-02T00:00:00Z"), new Date("2026-10-05T14:00:00Z"))).toBe("2026-10-02");

@@ -16,7 +16,7 @@ import PrivacyScreen from "../privacy";
 function render(): renderer.ReactTestRenderer {
   let tree!: renderer.ReactTestRenderer;
   act(() => {
-    // The First Run v2 back header (D-81 §2 #1) reads the safe-area insets.
+    // The First Run v2 back header (D-82 §2 #1) reads the safe-area insets.
     tree = renderer.create(
       <SafeAreaProvider initialMetrics={{ insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 360, height: 720 } }}>
         <PrivacyScreen />

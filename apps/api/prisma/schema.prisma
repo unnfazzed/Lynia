@@ -103,7 +103,7 @@ enum OfferStatus {
   expired
 }
 
-/// First Run v2 E4 (ledger D-81): ops' check of the rider's bike plate.
+/// First Run v2 E4 (ledger D-82): ops' check of the rider's bike plate.
 enum PlateStatus {
   none
   checking
@@ -302,7 +302,7 @@ model Rider {
   profile           Profile                                @relation(fields: [profileId], references: [id], onDelete: Cascade)
   vehicleInfo       String?                                @map("vehicle_info")
   bikeReg           String?                                @map("bike_reg")
-  /// First Run v2 E4 (ledger D-81): whether ops have confirmed `bikeReg`. A self-service plate change
+  /// First Run v2 E4 (ledger D-82): whether ops have confirmed `bikeReg`. A self-service plate change
   /// (PATCH /riders/me) saves instantly and sets `checking`; ops confirm it (POST
   /// /admin/riders/:id/plate-verify) → `verified`. `none` = never checked (no plate, or one that predates
   /// this column). Bike & documents says "Verified" only for `verified`. Migration 0078 (expand-only).
@@ -345,7 +345,7 @@ model Rider {
   // Not a secret, not PII. Migration 0076 (expand-only).
   kycVendorStatus   String?                                @map("kyc_vendor_status")
   kycVendorStatusAt DateTime?                              @map("kyc_vendor_status_at")
-  // First Run v2 F6 (ledger D-81 §4): the day the rider's verified ID expires / expired — the document's
+  // First Run v2 F6 (ledger D-82 §4): the day the rider's verified ID expires / expired — the document's
   // `expiration_date` from the verified decision webhook, and on an `expired` result the day it lapsed
   // (kycIdExpiryOnLapse). /auth/me serves it as `kycExpiredOn` while kycStatus is `expired`. Null = unknown.
   kycIdExpiresOn    DateTime?                              @map("kyc_id_expires_on") @db.Date

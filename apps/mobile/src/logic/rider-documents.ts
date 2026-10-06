@@ -26,7 +26,7 @@ export function plateIsValid(raw: string): boolean {
 }
 
 /**
- * First Run v2 E4 (ledger D-81): the plate rule Bike & documents' sheet applies — three letters and four
+ * First Run v2 E4 (ledger D-82): the plate rule Bike & documents' sheet applies — three letters and four
  * digits, an optional space ("ABC 1234"), after `normalizePlate`. Stricter than the server's 3–20, which
  * still accepts older plates on file.
  */
@@ -38,7 +38,7 @@ export function plateMatchesFormat(raw: string): boolean {
 
 /**
  * Bike & documents' Bike row and Settings' "Bike & documents" row: "Verified" only for what was actually
- * checked (First Run v2 E5, D-81). Since migration 0078 that is ops' plate check (`plateStatus`); a server
+ * checked (First Run v2 E5, D-82). Since migration 0078 that is ops' plate check (`plateStatus`); a server
  * that predates it falls back to review R-8's rule (a verified rider with a plate on file).
  */
 export function bikeVerified(rider: { kycStatus?: string | null; bikeReg?: string | null; plateStatus?: string | null } | null | undefined): boolean {

@@ -44,7 +44,7 @@ import { Notice } from "../../src/ui/send/kit";
 
 /**
  * E1's in-row "+ Add" pill height. The handoff drew it 36, under the tap-target floor; the owner had the
- * KIT fixed to 44 (D-81 §4, CLAUDE.md D2: the app never shrinks or inflates a drawn target on its own),
+ * KIT fixed to 44 (D-82 §4, CLAUDE.md D2: the app never shrinks or inflates a drawn target on its own),
  * so it is the token, never a literal.
  */
 export const ADD_PILL_HEIGHT = tokens.touchTargetMin;
@@ -63,7 +63,7 @@ type Stage =
   | { kind: "failed"; shot: UploadImageSource };
 
 /**
- * Bike & documents — First Run v2 E1–E6 (`packages/design/handoff/first-run-v2` README §2 E, ledger D-81;
+ * Bike & documents — First Run v2 E1–E6 (`packages/design/handoff/first-run-v2` README §2 E, ledger D-82;
  * it replaces Rider v2 S5). Reached from Settings → Bike & documents.
  *
  * - E1: back header + large title, three 6dp bars and "N of 3", the National ID / Rider photo / Bike plate

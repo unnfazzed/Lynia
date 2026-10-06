@@ -1,6 +1,6 @@
 /**
  * First Run v2 PC1–PC7 — the customer location ask (src/logic/location-ask.ts) and its sheet
- * (CustomerLocationSheet), wired the way Home wires them (src/ui/home/LocationAsk.tsx). Ledger D-81.
+ * (CustomerLocationSheet), wired the way Home wires them (src/ui/home/LocationAsk.tsx). Ledger D-82.
  */
 import renderer, { act } from "react-test-renderer";
 import { AppState, Linking } from "react-native";

@@ -1,6 +1,6 @@
 /**
  * First Run v2 PC8–PC10 — customer order updates after an order (app/order-updates.tsx, handoff `first-run-v2`
- * README §2A, ledger D-81), and PC11's re-entry from Settings.
+ * README §2A, ledger D-82), and PC11's re-entry from Settings.
  */
 import renderer, { act } from "react-test-renderer";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -61,7 +61,7 @@ it("PC8: the Order placed pill, three sample notifications, the explainer — an
   await mount();
   const s = text();
   for (const k of ["Order placed", "Tafara picked it up", "Arriving now", "Delivered", "Know when it’s", "at the gate", "Turn on updates", "Not now"]) expect(s).toContain(k);
-  // Owner-approved copy exception (D-81 §4): the sample code is 6 digits shown 3+3, not the drawn "4821".
+  // Owner-approved copy exception (D-82 §4): the sample code is 6 digits shown 3+3, not the drawn "4821".
   expect(s).toContain("Your delivery code is 482 193");
   expect(s).not.toContain("4821");
   expect(mockStore[CUST_NOTIF_ASKS_SLOT]).toBe("1");

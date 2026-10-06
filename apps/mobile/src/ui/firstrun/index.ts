@@ -1,4 +1,4 @@
-// First Run v2 shared parts (packages/design/handoff/first-run-v2/, ledger D-81). Re-exported from the
+// First Run v2 shared parts (packages/design/handoff/first-run-v2/, ledger D-82). Re-exported from the
 // src/ui barrel; the copy (`PC`, `RP`, `UP`, `PD`, `BD`, `KY`, `SP`) is imported from ./copy directly.
 export { FR, FR_TONES, HERO_H, DISC, COMPACT_MAX_WIDTH, LARGE_FONT_SCALE, firstRunMetrics, useFirstRunMetrics, type FrTone, type FrTonePalette, type FirstRunMetrics } from "./metrics";
 export { HeroPanel, HeroDisc, SplitTitle, Body, useHeroTone, type HeroPanelProps, type HeroDiscProps, type SplitTitleProps } from "./hero";

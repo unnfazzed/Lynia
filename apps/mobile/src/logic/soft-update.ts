@@ -2,7 +2,7 @@ import * as SecureStore from "expo-secure-store";
 import { isVersionBelow } from "../config";
 
 /**
- * First Run v2 U4a/U4b (ledger D-81 §2 #7): the soft "A new version is ready" banner. It shows when the
+ * First Run v2 U4a/U4b (ledger D-82 §2 #7): the soft "A new version is ready" banner. It shows when the
  * server's `recommendedVersion` is above this build, ONCE per version: tapping Update or ✕ settles that
  * version on this phone (README §4 `softUpdateDismissed[version]`), and only a newer recommendation brings
  * it back. Pure rule + best-effort storage, so the rule is unit-tested without a device.

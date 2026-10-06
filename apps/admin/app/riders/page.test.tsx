@@ -5,7 +5,7 @@ import RidersPage from "./page";
 import { adminFetchResult } from "../lib/api";
 
 /**
- * First Run v2 E4 (D-81): the plate review queue — /riders?plate=checking lists the plates riders added
+ * First Run v2 E4 (D-82): the plate review queue — /riders?plate=checking lists the plates riders added
  * or changed, each with "Confirm plate…"; the directory links to it.
  */
 vi.mock("../lib/api", () => ({ adminFetchResult: vi.fn() }));
@@ -35,7 +35,7 @@ const rider = {
   cooldownUntil: null,
 };
 
-describe("Riders — plate review (D-81)", () => {
+describe("Riders — plate review (D-82)", () => {
   it("asks the API for the checking queue and offers Confirm plate on each row", async () => {
     vi.mocked(adminFetchResult).mockResolvedValue({ data: [rider] } as never);
     render(await RidersPage({ searchParams: Promise.resolve({ plate: "checking" }) }));

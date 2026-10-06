@@ -21,9 +21,9 @@
     "db:seed": "pnpm --filter @lynia/api seed"
   },
   "devDependencies": {
-    "@types/node": "^26.4.0",
-    "dependency-cruiser": "^18.2.0",
-    "turbo": "^2.10.12",
+    "@types/node": "^26.6.4",
+    "dependency-cruiser": "^18.5.0",
+    "turbo": "^2.11.7",
     "typescript": "^6.0.3"
   },
   "pnpm": {
@@ -68,6 +68,16 @@
       "@prisma/studio-core>react-dom": "18.3.1"
     },
     "packageExtensions": {
+      "next": {
+        "peerDependencies": {
+          "@types/react": "*"
+        },
+        "peerDependenciesMeta": {
+          "@types/react": {
+            "optional": true
+          }
+        }
+      },
       "posthog-react-native": {
         "peerDependencies": {
           "@types/react": "*",

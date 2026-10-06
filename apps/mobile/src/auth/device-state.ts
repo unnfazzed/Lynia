@@ -432,7 +432,7 @@ export async function loadOnboardingSeen(): Promise<boolean> {
   }
 }
 
-// The pre-D-81 first-run priming flag ("lynia.permissionsPrimed") is no longer read or written: First Run v2
+// The pre-D-82 first-run priming flag ("lynia.permissionsPrimed") is no longer read or written: First Run v2
 // asks in context (customers) and runs the rider flow from R3 (src/permissions/store.ts holds its flags).
 
 // The retired pre-broadcast disclaimer's accepted-version flag (A1-8; the disclaimer was removed from

@@ -2,10 +2,10 @@ import { allGranted, ensureJobAlertChannel, type PermissionsSnapshot, readPermis
 import { riderPermFlowDone } from "../permissions/store";
 
 /**
- * The rider permission flow (First Run v2 P1–P16, handoff `first-run-v2` README §2B, ledger D-81) — the pure
+ * The rider permission flow (First Run v2 P1–P16, handoff `first-run-v2` README §2B, ledger D-82) — the pure
  * step logic and the entry point R3 calls.
  *
- * Owner decision D-81 §2 #5: R3's "Go online" STARTS the flow (P1 …) and P13's "Go online" is what goes
+ * Owner decision D-82 §2 #5: R3's "Go online" STARTS the flow (P1 …) and P13's "Go online" is what goes
  * online. A rider who has already granted everything (or already ran the flow on this phone) goes straight
  * online — no screens. The flow runs once per install; a skipped step resurfaces on the board as J8 / G8.
  */

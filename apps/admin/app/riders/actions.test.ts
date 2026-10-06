@@ -207,7 +207,7 @@ describe("setKyc (queue-backstop KYC write, FormData)", () => {
   });
 });
 
-describe("verifyPlate (First Run v2 E4, D-81 — ops confirm a rider's plate)", () => {
+describe("verifyPlate (First Run v2 E4, D-82 — ops confirm a rider's plate)", () => {
   it("posts the plate ops looked at, with the reason and note, and refreshes the profile + list", async () => {
     await verifyPlate("rider-1", "ABZ 4417", "Matches the bike photo", "seen on WhatsApp");
     const c = lastCall();

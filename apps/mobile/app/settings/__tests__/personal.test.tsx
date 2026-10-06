@@ -1,5 +1,5 @@
 /**
- * Personal details — First Run v2 D2–D7 (`packages/design/handoff/first-run-v2` README §2 D, ledger D-81;
+ * Personal details — First Run v2 D2–D7 (`packages/design/handoff/first-run-v2` README §2 D, ledger D-82;
  * the screen is D-79's). Pins: the back header + large title; the form seeded from `me`; the ID
  * normalised and validated on blur and on Save (D5); the ID sent canonical and only when it changed;
  * D3's inline "Saved" for 1.5s (no toast, no navigation); D4's 409 → danger box + WhatsApp CTA; D6's

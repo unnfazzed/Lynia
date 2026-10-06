@@ -418,7 +418,7 @@ export default function SendScreen(): React.ReactElement {
       haptic("tap");
       void rememberRecipient({ name: "", phone: recipientPhone.trim() });
       void saveMyPickupPhone(senderPhone.trim());
-      // D-55 / D-81 PC8: notifications are asked for after the order goes out — an explainer in front of
+      // D-55 / D-82 PC8: notifications are asked for after the order goes out — an explainer in front of
       // the order screen while the permission is undetermined (at most 3 times per install).
       const next = await routeAfterOrderPlaced(order.id);
       // Seed the order cache so the auction paints at once ("Finding riders near you…").

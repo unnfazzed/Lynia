@@ -47,7 +47,7 @@ export { DismissKeyboardArea } from "./DismissKeyboardArea";
 export { useDial } from "./useDial";
 export { ToastProvider, useToast, useActionError, useActionErrorEffect, pushToast, TOAST_DURATION_MS, type ToastTone } from "./Toast";
 export { Tappable, RIPPLE, RIPPLE_INK, RIPPLE_ON_DARK, PRESSED_OPACITY, type PressTone, type TappableProps } from "./Tappable";
-// First Run v2 shared parts (handoff/first-run-v2, ledger D-81). The copy lives in ./firstrun/copy.
+// First Run v2 shared parts (handoff/first-run-v2, ledger D-82). The copy lives in ./firstrun/copy.
 export {
   BackHeader,
   Body,

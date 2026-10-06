@@ -79,7 +79,7 @@ type Toast = { text: string; icon?: IconName; undo?: () => void } | null;
  * rider who can't work right now sees ONE gate in place of the map and sheet, picked by `resolveGate`
  * in the handoff's priority order; every gate clears on its own when its input changes.
  *
- * The ID check is First Run v2's (`packages/design/handoff/first-run-v2/`, ledger D-81): an unverified rider
+ * The ID check is First Run v2's (`packages/design/handoff/first-run-v2/`, ledger D-82): an unverified rider
  * sees the outcome page F1–F8 full screen (no tab bar, no mint top card; ✕ switches to the customer side),
  * Calm Mint v2 R2 while the automated check runs, R3 once verified — and an account with no rider record
  * goes to R1 (`/rider/become`, G1). The non-KYC gates (GPS, area, cooldown, hold, suspended, banned, top-up)
@@ -122,7 +122,7 @@ export default function RiderHome(): React.ReactElement {
   const [withdrawing, setWithdrawing] = useState<ReadonlySet<string>>(new Set());
 
   // ── Location ─────────────────────────────────────────────────────────────────────────────────────
-  // First Run v2 (ledger D-81): the board only READS the permission. The ask is the rider flow's (P1 —
+  // First Run v2 (ledger D-82): the board only READS the permission. The ask is the rider flow's (P1 —
   // from R3's "Go online" or G8's "Turn on"), so no bare OS dialog ever pops over the board or the splash.
   const requestLocation = useCallback(async (): Promise<void> => {
     const status = (await Location.getForegroundPermissionsAsync().catch(() => null))?.status ?? "denied";
@@ -573,9 +573,9 @@ export default function RiderHome(): React.ReactElement {
   const gate: GateId | null = meQ.data == null ? null : resolveGate({ kyc: kycGate, server: serverGate, locDenied });
   const conn = online && board.connected && !beatStale;
 
-  // ── ID check (First Run v2 F / G, ledger D-81) ───────────────────────────────────────────────────
+  // ── ID check (First Run v2 F / G, ledger D-82) ───────────────────────────────────────────────────
   const kycScreen = kycScreenFor({ gate, kyc: kycGate, launch: freshKycLaunch(kycLaunch, Date.now()), declineReason: rider?.kycDeclineReason });
-  // F1–F8 are full screens: no tab bar (D-81 §2 #3).
+  // F1–F8 are full screens: no tab bar (D-82 §2 #3).
   useHideTabBar(kycScreen?.kind === "outcome");
   // ✕ switches to the customer side (Home), as the Account toggle does; reopening the rider side re-resolves
   // the same page from the server's state (G3).
@@ -617,7 +617,7 @@ export default function RiderHome(): React.ReactElement {
     const floor = walletConfig?.floor ?? 2;
     const balance = wallet?.balance ?? null;
     switch (g) {
-      // The KYC gates (Rider v2 G1–G7) are retired: `kycScreen` draws R1 / R2 / F1–F8 in their place (D-81).
+      // The KYC gates (Rider v2 G1–G7) are retired: `kycScreen` draws R1 / R2 / F1–F8 in their place (D-82).
       case "notRider":
       case "pending":
       case "unfinished":
@@ -639,7 +639,7 @@ export default function RiderHome(): React.ReactElement {
               ghost={{ label: R.gpsOn, icon: "check", onPress: () => void requestLocation() }}
             />
           );
-        // First Run v2 P14 (D-81): no permission — G8, the Empty States v2 mark, "Turn on" → P1 (or P6 when
+        // First Run v2 P14 (D-82): no permission — G8, the Empty States v2 mark, "Turn on" → P1 (or P6 when
         // blocked); J8 above it.
         return (
           <View style={{ flex: 1, paddingTop: 16, paddingHorizontal: 16 }}>
@@ -674,7 +674,7 @@ export default function RiderHome(): React.ReactElement {
 
   const sheetContent = (
     <>
-      {/* First Run v2 P14 J8 (D-81): "Turn on" reopens P9 (or P11/P12), not the phone's settings. */}
+      {/* First Run v2 P14 J8 (D-82): "Turn on" reopens P9 (or P11/P12), not the phone's settings. */}
       {notifOff ? <RiderNotifOffRow onTurnOn={() => router.push(RIDER_PERM_ROUTES.notifications as never)} /> : null}
       {/* Empty board: reconnecting shows only in the header's status line (empty-states v2 J4, D-78). */}
       {online && !conn && !empty ? <Notice icon="wifi-off" text={R.staleB} /> : null}
@@ -737,7 +737,7 @@ export default function RiderHome(): React.ReactElement {
 
   // G1: on the way to R1 — nothing of the board under it.
   if (kycScreen?.kind === "become") return <View testID="rider-to-become" style={{ flex: 1, backgroundColor: tokens.color.bg }} />;
-  // F1–F8 (First Run v2, D-81): one full-screen shell, the ✕ its only way out. KycCheckHost presents the ID
+  // F1–F8 (First Run v2, D-82): one full-screen shell, the ✕ its only way out. KycCheckHost presents the ID
   // check that "Try again" / "Finish ID check" / "Re-verify my ID" reopen.
   if (kycScreen?.kind === "outcome") {
     return (
@@ -746,7 +746,7 @@ export default function RiderHome(): React.ReactElement {
           id={kycScreen.id}
           firstName={meQ.data?.firstName}
           triesLeft={kycTriesLeft(rider?.kycAttempts)}
-          // F6 "Expired 2 Oct 2026" (D-81 §4): `rider.kycExpiredOn`; an older server omits it and F6 drops the date.
+          // F6 "Expired 2 Oct 2026" (D-82 §4): `rider.kycExpiredOn`; an older server omits it and F6 drops the date.
           expiredAt={parseIsoDay(rider?.kycExpiredOn)}
           onExit={exitToCustomer}
           onRetry={() => retryM.mutate()}
@@ -772,7 +772,7 @@ export default function RiderHome(): React.ReactElement {
         firstName={meQ.data?.firstName?.trim() || null}
         // D-70: "Commission-free jobs · N of 5 left", served by /auth/me (absent on an older server).
         freeJobs={rider?.freeJobs && rider.freeJobs.total > 0 ? rider.freeJobs : null}
-        // Owner decision D-81 §2 #5: R3's "Go online" starts the rider permission flow (P1…); P13's "Go online"
+        // Owner decision D-82 §2 #5: R3's "Go online" starts the rider permission flow (P1…); P13's "Go online"
         // goes online (it runs this callback). A rider who has granted everything goes straight online.
         onGoOnline={() =>
           void startRiderPermFlow(router, () => {
@@ -787,7 +787,7 @@ export default function RiderHome(): React.ReactElement {
 
   return (
     <AppScreen banner={banner}>
-      {/* First Run v2 U4b (D-81): the violet "new version" banner under the mint top card, on the live board only. */}
+      {/* First Run v2 U4b (D-82): the violet "new version" banner under the mint top card, on the live board only. */}
       {meQ.isLoading || gateView ? null : <SoftUpdateBanner tone="violet" />}
       {meQ.isLoading ? null : gateView ? (
         gateView

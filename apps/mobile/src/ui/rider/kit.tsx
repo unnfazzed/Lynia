@@ -529,7 +529,7 @@ export function CashLine({ text, icon = "banknote" }: { text: string; icon?: Ico
 /**
  * The Become-a-rider card on a customer-only Account while a check is under way (in progress / review /
  * failed / locked). Its start state ("none") is First Run v2 G2's violet card (`BecomeRiderCard`, ledger
- * D-81). `locked` (R-10, ledger D-54 §4) is both tries used: the server refuses a third, so the card carries
+ * D-82). `locked` (R-10, ledger D-54 §4) is both tries used: the server refuses a third, so the card carries
  * `KY.lockedBody` and its WhatsApp action instead of a dead "Try again". `body` overrides the review / failed
  * body (the automated check vs a person; the decline reason).
  */

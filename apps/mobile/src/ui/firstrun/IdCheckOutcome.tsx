@@ -13,8 +13,8 @@ import { KycChecklist } from "./steps";
 
 /**
  * First Run v2 F1–F8 — the ID-check outcomes in ONE shell (README §2 F, BRIEF 14, `fr-states.js` F*,
- * ledger D-81): the ✕ over the hero's top-left (the only way out — no tab bar, no mint top card, no
- * "Order food" / "Send a parcel" secondary, owner D-81 §2 #3), the hero + disc, the split title, the
+ * ledger D-82): the ✕ over the hero's top-left (the only way out — no tab bar, no mint top card, no
+ * "Order food" / "Send a parcel" secondary, owner D-82 §2 #3), the hero + disc, the split title, the
  * body, then the 3-step checklist / tips / tries meter, and at most one CTA + one link. Never names the
  * vendor. Which page shows is decided by `kycScreenFor` (src/logic/kyc-outcome.ts).
  */
@@ -24,7 +24,7 @@ export interface IdCheckOutcomeProps {
   firstName?: string | null;
   /** F4: self-serve tries left (the meter is drawn at 1 left — the only state a decline can be in). */
   triesLeft?: number;
-  /** F6: when the ID expired. Not served yet (NEEDS BACKEND, D-81 §4) — the body drops the date then. */
+  /** F6: when the ID expired. Not served yet (NEEDS BACKEND, D-82 §4) — the body drops the date then. */
   expiredAt?: Date | null;
   /** ✕: switch to the customer side (Home). */
   onExit: () => void;
@@ -116,7 +116,7 @@ function pageFor(id: KycOutcomeId, firstName: string | null | undefined, expired
     case "F5":
       return { tone: "mint", icon: "message-circle", a: KY.lockedA, b: KY.lockedB, body: KY.lockedBody, primary: "help", primaryLabel: KY.msg, primaryIcon: "message-circle" };
     case "F5dup":
-      // F5's shell for a decline as a duplicate (owner 2026-10-06, D-81 §4): "Both tries are used" would be
+      // F5's shell for a decline as a duplicate (owner 2026-10-06, D-82 §4): "Both tries are used" would be
       // false, so the body is PD's one-ID-one-account words (drawn for D4): "This ID is on another account.
       // One ID, one account. Message us and we'll sort it." — the sentence is undrawn on an F page.
       return { tone: "mint", icon: "message-circle", a: KY.lockedA, b: KY.lockedB, body: `${PD.takenA} ${PD.takenB}. ${PD.takenBody}`, primary: "help", primaryLabel: KY.msg, primaryIcon: "message-circle" };

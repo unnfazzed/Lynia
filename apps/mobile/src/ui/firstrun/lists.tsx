@@ -5,7 +5,7 @@ import { Icon, type IconName } from "../Icon";
 import { Tappable } from "../Tappable";
 
 /**
- * First Run v2 list card + rows (README §1 "List card", `fr-kit.js` `.list` / `.li` / `.dd`, ledger D-81):
+ * First Run v2 list card + rows (README §1 "List card", `fr-kit.js` `.list` / `.li` / `.dd`, ledger D-82):
  * 1 `line` border, radius 16; rows ≥56, padding 8 14, a hairline between rows; a 36 leading disc;
  * title 600 15 + sub 13 muted; a trailing value (600 14), chevron (20, `illusIdleMid`) or any node.
  */

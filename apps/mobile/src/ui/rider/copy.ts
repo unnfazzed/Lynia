@@ -82,7 +82,7 @@ export const RIDER_COPY = {
   /*
    * The KYC gates (Rider v2 G1–G7: not a rider, pending, unfinished, failed, failed twice, expired, can't
    * open) are retired: First Run v2 F1–F8 (`KY`, src/ui/firstrun/copy.ts) draw every ID-check outcome and
-   * G1 sends a non-rider to R1 (ledger D-81). The non-KYC gates below stay.
+   * G1 sends a non-rider to R1 (ledger D-82). The non-KYC gates below stay.
    */
   gGpsT: "Can't find your location",
   gGpsB: "Jobs are matched by distance, so location must be on while you ride.",
@@ -293,7 +293,7 @@ export const RIDER_COPY = {
   rSettingsC: "Language, payment, privacy",
   /*
    * The customer Account's Become-a-rider card while a check is under way (D-54 C-states). Its "none" state is
-   * First Run v2 G2's violet card (`KY.become*`); the bodies below are the D-81 copy pass (I): `KY`'s times
+   * First Run v2 G2's violet card (`KY.become*`); the bodies below are the D-82 copy pass (I): `KY`'s times
    * ("about 2 min", "usually under a minute", "usually a few hours") and an in-app notification, never SMS.
    */
   kycProgT: "Finish verifying your ID",
@@ -454,7 +454,7 @@ export const RF = {
   /* gates */
   gCoolV: (until: Date, now: Date): string => `${hhmm(until)} · ${hMin(until.getTime() - now.getTime())} left`,
   gSuspB: (until: Date | null): string =>
-    // D-81 §4 (owner 2026-10-06): the server sends no SMS on a suspension — it sends a push and pins an
+    // D-82 §4 (owner 2026-10-06): the server sends no SMS on a suspension — it sends a push and pins an
     // "Account paused" row with the reason in Notifications (admin-riders.service suspend, notifications-feed).
     until ? `You can't take jobs until ${dayMonth(until)}. The details are in your notifications.` : "You can't take jobs right now. The details are in your notifications.",
   gSuspV: (until: Date): string => `${dayMonthYear(until)}, ${hhmm(until)}`,
@@ -551,9 +551,9 @@ export const RF = {
 };
 
 /**
- * First Run v2 F (ledger D-81): the two `KY` strings that carry data. `KY.expBody` is drawn with a sample date
+ * First Run v2 F (ledger D-82): the two `KY` strings that carry data. `KY.expBody` is drawn with a sample date
  * ("Expired 2 Oct 2026. Re-verify to keep riding.") — the date is the rider's, and until the server serves it
- * (NEEDS BACKEND `kycExpiredAt`, D-81 §4) the sentence after it stands alone. F3's title is "Almost there,"
+ * (NEEDS BACKEND `kycExpiredAt`, D-82 §4) the sentence after it stands alone. F3's title is "Almost there,"
  * + the rider's first name.
  */
 export const KYF = {

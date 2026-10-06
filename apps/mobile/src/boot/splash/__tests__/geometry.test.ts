@@ -53,7 +53,7 @@ describe("splashGeometry", () => {
   });
 });
 
-describe("the rider card (First Run v2 H2 — the 320×640 rule, ledger D-81 §2 #2)", () => {
+describe("the rider card (First Run v2 H2 — the 320×640 rule, ledger D-82 §2 #2)", () => {
   const brandTop = (anchor: number): number => anchor - ORBIT_HALF;
   it.each([
     [48, "3-button"],

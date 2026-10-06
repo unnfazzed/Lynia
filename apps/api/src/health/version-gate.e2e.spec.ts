@@ -57,7 +57,7 @@ describe("GET /app/version-gate — per platform, over HTTP", () => {
   });
 });
 
-describe("GET /app/version-gate?soft=1 — the soft-update body (First Run v2, ledger D-81 §2 #7)", () => {
+describe("GET /app/version-gate?soft=1 — the soft-update body (First Run v2, ledger D-82 §2 #7)", () => {
   let app: INestApplication;
   const softEnv = loadEnv({
     DATABASE_URL: "postgresql://localhost/lynia",

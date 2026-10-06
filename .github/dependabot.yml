@@ -17,11 +17,19 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 10
+    # Groups take minor/patch only. One major inside a group marks the WHOLE group semver-major, so the
+    # auto-merge workflow skips it and every safe patch in it waits too (#1090: vitest 5 held back 12
+    # routine bumps). Majors now arrive one PR each. PostHog is also kept out of the group: its
+    # 4.70 -> 4.79 minor alone added ~48 KB to the Android bundle (#1079), and the size budget
+    # (docs/APP-SIZE.md) must fail that PR, not the 20 other bumps it was batched with.
     groups:
       dev-dependencies:
         dependency-type: development
+        update-types: ["minor", "patch"]
       production-dependencies:
         dependency-type: production
+        update-types: ["minor", "patch"]
+        exclude-patterns: ["posthog-react-native"]
     # Majors on these stacks are coupled migrations, not routine bumps — a grouped major here has
     # broken CI before (prisma CLI 7 against @prisma/client 5; jest-expo 57 against Expo SDK 52).
     # Each is upgraded deliberately in its own PR: Prisma with prisma.config.ts/adapters, Nest with
@@ -34,8 +42,10 @@ updates:
       # before it could measure. A crash-reporter major is a coupled migration like the rest of this
       # list: upgrade it deliberately, in its own PR, measuring the bundle (docs/APP-SIZE.md) and
       # re-checking the Sentry init/API surface — never as one line in an 18-package batch.
+      # Expo SDK 54 also pins it (`bundledNativeModules.json`: ~7.2.0), so a minor is off-SDK too.
+      # #1079's 7.2 -> 7.13 was one of three SDK-pinned packages in that batch.
       - dependency-name: "@sentry/react-native"
-        update-types: ["version-update:semver-major"]
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "prisma"
         update-types: ["version-update:semver-major"]
       - dependency-name: "@prisma/*"
@@ -48,12 +58,14 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@types/jest"
         update-types: ["version-update:semver-major"]
+      # react / react-dom are exact pins: 19.1.0 is what Expo SDK 54 and react-native 0.81.5's bundled
+      # renderer require, and React throws "Incompatible React versions" on any skew, a patch included.
+      # The web apps sit on 18.3.1, the last React 18. react-test-renderer must equal react exactly
+      # (#1090 tried 19.3.0 against react 19.1.0). All of them move only with an Expo SDK upgrade.
       - dependency-name: "react"
-        update-types: ["version-update:semver-major"]
       - dependency-name: "react-dom"
-        update-types: ["version-update:semver-major"]
       - dependency-name: "react-test-renderer"
-        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react-test-renderer"
       - dependency-name: "@types/react*"
         update-types: ["version-update:semver-major"]
       - dependency-name: "typescript"
@@ -84,7 +96,14 @@ updates:
       # misses — that skew broke mobile typecheck against Expo SDK 52 (AbortSignal/global.AbortSignal
       # and the NotificationBehavior shouldShowBanner/shouldShowList split). Hold them at patch-only;
       # minor/major come in as part of the SDK bump, never on their own.
+      # react-native gets no updates at all, patches included: the SDK pins it exactly (0.81.5), and a
+      # patch can move its bundled react-native-renderer. #1079's 0.81.6 shipped renderer 19.1.4
+      # against react 19.1.0, and 226 mobile tests failed with "Incompatible React versions".
       - dependency-name: "react-native"
+      # @expo/* (metro-runtime, config-plugins, ...) carries the SDK's own version numbers, so a
+      # "major" is a jump to another SDK. #1079 moved @expo/metro-runtime 6 -> 57 and #1090 moved
+      # @expo/config-plugins 54 -> 58, both against expo ~54.0.
+      - dependency-name: "@expo/*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "react-native-*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
