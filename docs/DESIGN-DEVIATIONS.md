@@ -4802,3 +4802,11 @@ _Filled in phase by phase._
   (`use-pickup-autolocate.ts`), the map picker's locate button (`MapPicker.tsx`), the keyless geocoder
   (`geocode.ts`), "Notify me" for a Soon service (`service-interest.ts`) and the rider's job-start stream
   (`use-rider-location.ts`, normally granted by P1 by then). Left as they were — an owner question.
+
+**Screen-local toasts (owner, 2026-10-06: "move all five to the new bar").** `OrderToast`, `BrowseToast`,
+`ReviewToast`, the rider board's `RToast` and `SendToast` now draw the shared First Run v2 bar
+(`FirstRunToast`: forest, radius 14, white 600 14, a 20 glyph). Each keeps its own position above its screen's
+CTA and its action ("Try again", "Undo") as a 44 mint pill on the right, which the handoff's toast does not draw.
+Failure toasts show the `circle-alert` in highlight (the owner-approved error toast); the others keep their glyph
+(bell, check, undo) in brand green.
+

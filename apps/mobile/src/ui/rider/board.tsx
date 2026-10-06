@@ -1,4 +1,5 @@
 import { tokens } from "@lynia/shared/tokens";
+import { FirstRunToast } from "../firstrun/toast";
 import React, { useEffect, useMemo, useRef } from "react";
 import { ActivityIndicator, ScrollView, Text, View } from "react-native";
 import MapView, { Circle, type LatLng, Marker, Polyline, type Region } from "react-native-maps";
@@ -288,27 +289,8 @@ export function RRoute({ job }: { job: BoardJob }): React.ReactElement {
 
 /** The ink toast: icon + 13/18 white text, optional 44px action (accent-wash / accent-text). */
 export function RToast({ text, icon = "circle-alert", action, actionIcon = "undo-2", onAction }: { text: string; icon?: IconName; action?: string; actionIcon?: IconName; onAction?: () => void }): React.ReactElement {
-  return (
-    <View
-      accessibilityRole="alert"
-      accessibilityLiveRegion="assertive"
-      style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: tokens.color.ink, borderRadius: 12, paddingVertical: 6, paddingRight: 6, paddingLeft: 14, minHeight: 48, ...tokens.shadow.menu }}
-    >
-      <Icon name={icon} size={18} color={tokens.color.onAccent} />
-      <Text style={{ flex: 1, fontSize: 13, lineHeight: 18, color: tokens.color.onAccent }}>{text}</Text>
-      {action && onAction ? (
-        <Tappable
-          onPress={onAction}
-          accessibilityRole="button"
-          accessibilityLabel={action}
-          style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, borderRadius: 10, backgroundColor: tokens.color.accentWash }}
-        >
-          <Icon name={actionIcon} size={14} color={tokens.color.accentText} />
-          <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.bold, color: tokens.color.accentText }}>{action}</Text>
-        </Tappable>
-      ) : null}
-    </View>
-  );
+  // Owner 2026-10-06 (D-80): the app-wide bottom toast's look.
+  return <FirstRunToast text={text} icon={icon} action={action} actionIcon={actionIcon} onAction={onAction} assertive />;
 }
 
 export interface GateAction {

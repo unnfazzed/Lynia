@@ -1,4 +1,5 @@
 import type { ScheduleSlot, ScheduleSlotsResponse } from "@lynia/shared";
+import { FirstRunToast } from "../firstrun/toast";
 import { tokens } from "@lynia/shared/tokens";
 import React from "react";
 import { ActivityIndicator, Image, Modal, ScrollView, Text, TextInput, View, type TextInputProps, type TextStyle, type ViewStyle } from "react-native";
@@ -712,37 +713,10 @@ export function ReviewBar({ hint, bottomInset, children }: { hint?: string | nul
 
 /** `.toast` (polish): ink, r14, 14/16, alert icon + 13 white + the mint "↻ Try again". */
 export function ReviewToast({ text, action, onAction, bottom }: { text: string; action?: string; onAction?: () => void; bottom: number }): React.ReactElement {
+  // Owner 2026-10-06 (D-80): the app-wide bottom toast's look, kept above the place bar.
   return (
-    <View
-      accessibilityRole="alert"
-      accessibilityLiveRegion="assertive"
-      style={{
-        position: "absolute",
-        left: 12,
-        right: 12,
-        bottom,
-        zIndex: 35,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 10,
-        paddingVertical: 14,
-        paddingHorizontal: 16,
-        borderRadius: 14,
-        backgroundColor: tokens.color.ink,
-        ...tokens.shadow.menu,
-      }}
-    >
-      <Icon name="circle-alert" size={18} color={tokens.color.onAccent} />
-      <Text style={{ flex: 1, fontSize: 13, lineHeight: 18.2, color: tokens.color.onAccent }}>{text}</Text>
-      {action && onAction ? (
-        <Tappable
-          onPress={onAction}
-          accessibilityRole="button"
-          style={{ minHeight: tokens.touchTargetMin, marginVertical: -6, marginRight: -6, paddingHorizontal: 12, borderRadius: 10, backgroundColor: tokens.color.accentWash, justifyContent: "center" }}
-        >
-          <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.bold, color: tokens.color.accentText }}>{action}</Text>
-        </Tappable>
-      ) : null}
+    <View style={{ position: "absolute", left: 12, right: 12, bottom, zIndex: 35 }}>
+      <FirstRunToast text={text} tone="warning" action={action} onAction={onAction} assertive />
     </View>
   );
 }

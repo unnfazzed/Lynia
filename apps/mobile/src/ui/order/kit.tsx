@@ -1,4 +1,5 @@
 import { tokens } from "@lynia/shared/tokens";
+import { FirstRunToast } from "../firstrun/toast";
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Text, type TextStyle, View, type ViewStyle } from "react-native";
 import { Icon, type IconName } from "../Icon";
@@ -490,37 +491,8 @@ export function OrderToast({
   actionIcon?: IconName;
   onAction?: () => void;
 }): React.ReactElement {
-  return (
-    <View
-      accessibilityRole="alert"
-      accessibilityLiveRegion="polite"
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 10,
-        backgroundColor: tokens.color.ink,
-        borderRadius: tokens.radius.input,
-        paddingVertical: action ? 6 : 12,
-        paddingRight: action ? 6 : 14,
-        paddingLeft: 14,
-        ...tokens.shadow.menu,
-      }}
-    >
-      <Icon name={icon} size={18} color={tokens.color.onAccent} />
-      <Text style={{ flex: 1, fontSize: 13, lineHeight: 18, color: tokens.color.onAccent }}>{text}</Text>
-      {action && onAction ? (
-        <Tappable
-          onPress={onAction}
-          accessibilityRole="button"
-          accessibilityLabel={action}
-          style={{ height: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, borderRadius: 10, backgroundColor: tokens.color.accentWash }}
-        >
-          {actionIcon ? <Icon name={actionIcon} size={15} color={tokens.color.accentText} /> : null}
-          <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.bold, color: tokens.color.accentText, ...TABULAR }}>{action}</Text>
-        </Tappable>
-      ) : null}
-    </View>
-  );
+  // Owner 2026-10-06 (D-80): the app-wide bottom toast's look; this screen keeps its place above the CTA bar.
+  return <FirstRunToast text={text} icon={icon} action={action} actionIcon={actionIcon} onAction={onAction} />;
 }
 
 /** The skeleton offer card under "Offers show here as riders reply." */
