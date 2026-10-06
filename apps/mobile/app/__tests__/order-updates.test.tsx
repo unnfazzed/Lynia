@@ -26,7 +26,7 @@ jest.mock("expo-secure-store", () => ({
 }));
 jest.mock("../../src/push/push-kick", () => ({ requestPushRegistration: () => mockKick() }));
 
-import { CUST_NOTIF_ASKS_KEY } from "../../src/permissions/store";
+import { CUST_NOTIF_ASKS_SLOT } from "../../src/permissions/store";
 import OrderUpdatesScreen from "../order-updates";
 
 let tree: renderer.ReactTestRenderer | null = null;
@@ -64,7 +64,7 @@ it("PC8: the Order placed pill, three sample notifications, the explainer — an
   // Owner-approved copy exception (D-80 §4): the sample code is 6 digits shown 3+3, not the drawn "4821".
   expect(s).toContain("Your delivery code is 482 193");
   expect(s).not.toContain("4821");
-  expect(mockStore[CUST_NOTIF_ASKS_KEY]).toBe("1");
+  expect(mockStore[CUST_NOTIF_ASKS_SLOT]).toBe("1");
 });
 
 it("Turn on → the OS dialog; allowed → registers push and continues to the order", async () => {

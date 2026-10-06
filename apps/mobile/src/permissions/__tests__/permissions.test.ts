@@ -28,7 +28,7 @@ import { routeAfterOrderPlaced, shouldExplainOrderUpdates } from "../../push/ask
 import { afterLocationAnswer, entryScreen, finishRiderPermFlow, startRiderPermFlow, stepsFor } from "../../logic/rider-perm-flow";
 import { Platform } from "react-native";
 import { allGranted, channelIsMuted, classifyLocation, classifyNotif, ensureJobAlertChannel, JOB_ALERTS_CHANNEL, mutedJobChannel, type PermissionsSnapshot } from "../state";
-import { CUST_NOTIF_ASK_CAP, CUST_NOTIF_ASKS_KEY, custNotifAsks, markRiderPermFlowDone, noteCustNotifAsked, RIDER_PERM_FLOW_KEY, riderPermFlowDone } from "../store";
+import { CUST_NOTIF_ASK_CAP, CUST_NOTIF_ASKS_SLOT, custNotifAsks, markRiderPermFlowDone, noteCustNotifAsked, RIDER_PERM_FLOW_KEY, riderPermFlowDone } from "../store";
 
 beforeEach(() => {
   for (const k of Object.keys(mockStore)) delete mockStore[k];
@@ -85,7 +85,7 @@ describe("per-install flags", () => {
     expect(await custNotifAsks()).toBe(0);
     await noteCustNotifAsked();
     await noteCustNotifAsked();
-    expect(mockStore[CUST_NOTIF_ASKS_KEY]).toBe("2");
+    expect(mockStore[CUST_NOTIF_ASKS_SLOT]).toBe("2");
   });
 });
 
@@ -97,7 +97,7 @@ describe("PC8 gate (src/push/ask-in-context.ts)", () => {
   });
 
   it("stops after 3 asks", async () => {
-    mockStore[CUST_NOTIF_ASKS_KEY] = "3";
+    mockStore[CUST_NOTIF_ASKS_SLOT] = "3";
     expect(await shouldExplainOrderUpdates()).toBe(false);
     expect(await routeAfterOrderPlaced("o-1")).toBe("/order/o-1");
   });

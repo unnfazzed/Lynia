@@ -31,4 +31,8 @@ paths = [
 commits = [
   "ccac6361c5485125e57a3b0187899c5587d37045", # feat(mobile): P1 UX richness — saved recipients, ...
   "10954ec426573c2b5e791d87b70b808ce9a27f4c", # Merge pull request #145 (same line, carried through)
+  # Same false positive, First Run v2 (#1086): `CUST_NOTIF_ASKS_KEY = "lynia.custNotifAsks.v1"` names the
+  # SecureStore slot for the PC8 ask count. The constant was renamed (…_SLOT) before merge so the squash
+  # commit does not trip the rule; only this branch commit still carries the old line.
+  "dab427d2775efd2e10eeadd14d2f6bece5ea1005", # wip(mobile): First Run v2 worker A checkpoint (#1086)
 ]
