@@ -1,6 +1,6 @@
 # Customer web app for iPhone users — plan
 
-**Status:** APPROVED (2026-10-06). The owner decided W1–W5 in §2 the same day; P1 is next.
+**Status:** APPROVED (2026-10-06). The owner decided W1–W5 in §2 the same day. **P1 built** (2026-10-06); P2 is next.
 
 **Why.** The iPhone app is still blocked on the Apple account (`docs/APP-STORE-SUBMISSION.md`), so iPhone users
 can't order today. A mobile-optimised web build of the **customer** app lets them order from Safari now, and it
@@ -77,3 +77,23 @@ Rough size: P1 and P2 are the bulk (about a day each); P3 and P4 are small.
 | Rider-only modules break the web bundle | P1's CI web export catches it; stub them on web if needed |
 | iPhone Safari layout quirks (keyboard, safe areas, 100vh) | P4 device pass on a real iPhone; `Platform.OS === "ios"` keyboard branches take the Android path on web and need checking |
 | No push on web until P5 | Customers keep the order screen open; live tracking works over the socket |
+
+## 5. How P1 was built (2026-10-06)
+
+- **The Android OTA fingerprint must not move.** It hashes the whole resolved app config and the pnpm install paths
+  of every native module. Adding `react-native-web` to `apps/mobile` gives expo-image, expo-router, expo-system-ui
+  and react-native-maps a new peer, pnpm renames their folders, and the hash moved (`e09dca91…` → `30e01dfd…`),
+  which would have cut installed phones off from OTA updates. So:
+  - `react-native-web` lives in **`tools/web-runtime`** (npm, outside the pnpm workspace, like `tools/parity`), and
+    `apps/mobile/metro-shims/web-runtime.js` resolves it from there on web only.
+  - The `web` platform and config exist only when `EXPO_PUBLIC_LYNIA_WEB=1` (`app.config.ts`).
+  - Verified: the Android fingerprint is `e09dca91…` before and after P1.
+- **Build:** `cd tools/web-runtime && npm ci --omit=peer`, then in `apps/mobile`:
+  `EXPO_PUBLIC_LYNIA_WEB=1 EXPO_NO_WEB_SETUP=1 EXPO_PUBLIC_API_URL=https://api.lyniago.com npx expo export --platform web`.
+  CI runs the same in the `mobile js bundle · size budget` job.
+- **Web-only shims** (`apps/mobile/metro-shims/`): `secure-store-web.js` (browser storage, B1),
+  `react-native-maps-web.js` (placeholder map until P2).
+- **Customer-only switch:** `src/web-build.ts` `isCustomerWebBuild()`; rider mode, push, the store link, the
+  force-update screen and the notifications primer step check it (ledger D-81).
+- **Checked in Chromium** at 360×720 and 320×640: the app starts on C1 with no rider link. API calls are refused by
+  CORS until P3.

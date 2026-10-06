@@ -10,6 +10,15 @@ import type { ExpoConfig } from "expo/config";
 const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY;
 
 /**
+ * The customer web build (docs/plans/2026-10-06-customer-web-app-plan.md): `EXPO_PUBLIC_LYNIA_WEB=1 expo export
+ * --platform web`. Only that export sees `web` in `platforms` and the `web` block. Every Android and iOS
+ * build and OTA resolves this config WITHOUT them, because the whole resolved config is hashed into the
+ * fingerprint runtimeVersion (fingerprint.config.js) and adding them there would cut installed phones
+ * off from OTA updates.
+ */
+const isWebBuild = process.env.EXPO_PUBLIC_LYNIA_WEB === "1";
+
+/**
  * Android FCM credentials file (`google-services.json`) from the Firebase project. Android needs this
  * baked into the build for `expo-notifications` to mint a native FCM device token — without it,
  * `getDevicePushTokenAsync()` returns nothing and live push never delivers, even with the server on
@@ -153,7 +162,8 @@ const config: ExpoConfig = {
    * NATIVE (theme + colors resource) — ships only in a store build, not by OTA.
    */
   backgroundColor: "#00B14F",
-  platforms: ["android", "ios"],
+  platforms: isWebBuild ? ["android", "ios", "web"] : ["android", "ios"],
+  ...(isWebBuild ? { web: { bundler: "metro", output: "single", favicon: "./assets/icon.png" } } : {}),
   /**
    * React Native's New Architecture (Fabric + TurboModules) — OFF, reverted 2026-08-21 (MOB-BOOT-04).
    *

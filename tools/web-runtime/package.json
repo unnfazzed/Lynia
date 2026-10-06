@@ -1,0 +1,9 @@
+{
+  "name": "lynia-web-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "description": "react-native-web for the customer web build of apps/mobile (EXPO_PUBLIC_LYNIA_WEB=1). Outside the pnpm workspace on purpose: adding it to apps/mobile renames the pnpm folders of expo-image, expo-router, expo-system-ui and react-native-maps (new peer), which moves the Android OTA fingerprint. Install with `npm ci` here.",
+  "dependencies": {
+    "react-native-web": "0.21.3"
+  }
+}

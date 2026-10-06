@@ -1,3 +1,6 @@
+let mockCustomerWeb = false;
+jest.mock("../web-build", () => ({ isCustomerWebBuild: () => mockCustomerWeb }));
+
 import { storeUrlFor } from "../config";
 
 // The force-update "Update now" button opens this. A Google Play link on an iPhone is a dead end for
@@ -19,5 +22,14 @@ describe("storeUrlFor", () => {
 
   it("is null on Android when no listing is configured", () => {
     expect(storeUrlFor("android", {})).toBeNull();
+  });
+
+  it("has no listing in the customer web build, which is always the latest version", () => {
+    mockCustomerWeb = true;
+    try {
+      expect(storeUrlFor("web", urls)).toBeNull();
+    } finally {
+      mockCustomerWeb = false;
+    }
   });
 });
