@@ -1652,7 +1652,6 @@ describe("rider board — startup review 2026-10-06", () => {
     ["face_mismatch", KY.faceTip1],
     ["liveness_failed", KY.faceTip1],
     ["doc_tampered", KY.docBody],
-    ["duplicate", KY.otherBody],
   ] as const)("R-6: a decline for %s draws its own advice", async (reason, advice) => {
     mockGetMe.mockResolvedValue(meFixture({ kycStatus: "failed", kycAttempts: 1, kycDeclineReason: reason }));
     mockGetActiveOrder.mockResolvedValue(null);
@@ -1733,7 +1732,7 @@ describe("rider board — startup review 2026-10-06", () => {
     await settle();
     await settle();
     expect(mockPermissionAsks).toBe(0);
-    expect(treeText(activeTree)).toContain("Turn on location");
+    expect(treeText(activeTree!)).toContain("Turn on location");
     const turnOn = activeTree!.root.findAll((n) => n.props.accessibilityLabel === "Turn on" && typeof n.props.onPress === "function")[0]!;
     await renderer.act(async () => turnOn.props.onPress());
     expect(mockPush).toHaveBeenCalledWith("/permissions?step=location");
@@ -1801,6 +1800,30 @@ describe("rider board — First Run v2 ID-check outcome pages (D-80)", () => {
     expect(mockReplace).toHaveBeenCalledWith("/home");
   });
 
+  it("a duplicate decline is F5's WhatsApp-only page — no Try again (owner 2026-10-06)", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "failed", kycAttempts: 1, kycDeclineReason: "duplicate" }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(activeTree.root.findAll((n) => typeof n.type === "string" && n.props.testID === "kyc-outcome-F5dup")).toHaveLength(1);
+    const labels = activeTree.root
+      .findAll((n) => typeof n.props.label === "string" && typeof n.props.onPress === "function")
+      .map((n) => n.props.label as string);
+    expect(labels).toEqual([KY.msg]);
+  });
+
+  it("F6 names the day the ID expired when the server sends it (kycExpiredOn)", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "expired", kycExpiredOn: "2026-10-02" }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).toContain("Expired 2 Oct 2026. Re-verify to keep riding.");
+  });
+
   it("reopening the rider side re-resolves the same page from the server (G3)", async () => {
     mockGetMe.mockResolvedValue(meFixture({ kycStatus: "expired" }));
     mockGetActiveOrder.mockResolvedValue(null);
@@ -1825,6 +1848,9 @@ describe("rider board — First Run v2 ID-check outcome pages (D-80)", () => {
     await settle();
     await settle();
     expect(treeText(activeTree)).toContain("Your account is suspended");
+    // D-80 §4 (owner 2026-10-06): the server pushes and pins an "Account paused" row — it sends no SMS.
+    expect(treeText(activeTree)).toContain("The details are in your notifications.");
+    expect(treeText(activeTree)).not.toContain("SMS");
     expect(activeTree.root.findAll((n) => typeof n.type === "string" && typeof n.props.testID === "string" && n.props.testID.startsWith("kyc-outcome-"))).toHaveLength(0);
   });
 });

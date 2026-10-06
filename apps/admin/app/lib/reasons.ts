@@ -63,6 +63,8 @@ export const REASONS = {
   riderLift: ["Issue resolved with the rider", "Report not substantiated", "Suspension period served"],
   riderBan: ["Confirmed fraud", "Serious safety incident", "Repeat offences after suspension"],
   riderClearHold: ["Reliability recovered", "Hold applied in error", "Manual override — ops discretion"],
+  // First Run v2 E4 (D-80): how ops checked a plate the rider saved from Bike & documents.
+  riderPlateVerify: ["Matches the bike photo", "Checked in person", "Checked with the rider on a call"],
 
   // customers.html
   customerFlag: [

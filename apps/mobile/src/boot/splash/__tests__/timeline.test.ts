@@ -56,10 +56,24 @@ describe("splashDoneAt", () => {
   it("Home waits for all three steps", () => {
     expect(splashDoneAt(times, "/home")).toBe(4000); // step 3 went active at 2100; its task resolved at 4000
   });
-  it("anywhere else hands off after step 1's tick has been seen (onboarding, sign-in, rider, a deep link)", () => {
-    for (const d of ["/onboarding", "/phone", "/rider", "/order/abc"]) expect(splashDoneAt(times, d)).toBe(1700 + CUT_AFTER_TICK_MS);
+  it("anywhere else hands off after step 1's tick has been seen (onboarding, sign-in, a deep link — the rider board has its own two)", () => {
+    for (const d of ["/onboarding", "/phone", "/rider/job", "/order/abc"]) expect(splashDoneAt(times, d)).toBe(1700 + CUT_AFTER_TICK_MS);
   });
   it("is not done before the boot decision exists", () => {
     expect(splashDoneAt(times, null)).toBeNull();
+  });
+});
+
+describe("the rider boot (First Run v2 H1, ledger D-80 §2 #2)", () => {
+  it("shows the rider's two steps, and a push-tap into a rider job keeps step 1 only", () => {
+    expect(shownSteps("/rider")).toBe(2);
+    expect(shownSteps("/rider/job")).toBe(1);
+  });
+
+  it("waits for step 2 (the board's first reads), then cuts after its tick is seen", () => {
+    const times = stepTimes([0, 5000], shownSteps("/rider"));
+    expect(times.activeAt).toEqual([INTRO_MS, INTRO_MS + STEP_MIN_ACTIVE_MS]);
+    expect(splashDoneAt(times, "/rider")).toBe(5000 + CUT_AFTER_TICK_MS);
+    expect(splashDoneAt(stepTimes([0, null], 2), "/rider")).toBeNull();
   });
 });

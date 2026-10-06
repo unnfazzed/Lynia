@@ -147,8 +147,8 @@ describe("Bike & documents · N to add", () => {
     expect(s).toContain('"2 to add"');
   });
 
-  it("an older server that doesn't say whether there's a photo only counts the plate", async () => {
-    const s = out(await render({ ...RIDER, rider: { bikeReg: null, kycStatus: "verified" } }));
+  it("counts the same items as Bike & documents' progress (a plate on file, no photo → 1 to add)", async () => {
+    const s = out(await render({ ...RIDER, rider: { bikeReg: "ABH 4721", kycStatus: "verified", hasPhoto: false } }));
     expect(s).toContain('"1 to add"');
   });
 

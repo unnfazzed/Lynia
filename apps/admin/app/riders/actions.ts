@@ -83,6 +83,25 @@ export async function mutateRider(
 }
 
 /**
+ * First Run v2 E4 (D-80): confirm the bike plate a rider saved from Bike & documents —
+ * `POST /admin/riders/:id/plate-verify { plate, reason, note }`. `plate` is the plate ops looked at: the
+ * endpoint refuses (409) if the rider changed it since, so an unseen plate is never marked verified. The
+ * endpoint writes the `rider.plate_verify` audit row in its own transaction. Throws on a refusal so
+ * <ConfirmModal> keeps the dialog open with the API's words.
+ */
+export async function verifyPlate(profileId: string, plate: string, reasonCode: string | null, note: string): Promise<void> {
+  if (!profileId || !plate) throw new Error("This rider has no plate to confirm — reload the page.");
+  const res = await adminPostResult(`/admin/riders/${profileId}/plate-verify`, {
+    plate,
+    reason: reasonCode ?? null,
+    note: note || null,
+  });
+  if (!res.ok) throw new Error(`Couldn't confirm the plate: ${describeAdminPostFailure(res)}`);
+  revalidatePath(`/riders/${profileId}`);
+  revalidatePath("/riders");
+}
+
+/**
  * DOC-16-03: record a manual prepaid credit to a rider's commission account from the console — the launch
  * top-up rail (grace credits, support corrections) that previously required a raw API call. Hits
  * `POST /admin/riders/:id/wallet-credit` (rail=manual); the endpoint's WalletService.creditManual writes

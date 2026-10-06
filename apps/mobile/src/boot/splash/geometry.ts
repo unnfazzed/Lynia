@@ -44,9 +44,27 @@ export interface SplashGeometry {
   offlineLift: number;
 }
 
-export function splashGeometry({ H, bottomInset, cardH, panelH }: { H: number; bottomInset: number; cardH: number; panelH: number }): SplashGeometry {
+/**
+ * First Run v2 H2 (ledger D-80 §2 #2, "the 320×640 rule"): on the entry phone the steps card sits 16
+ * above the nav bar (it always does: {@link CARD_BOTTOM} + the inset) and the BRAND is centred in the
+ * space above the card. Splash-v1's brand is the orbit (half {@link ORBIT_HALF} above the anchor) down to
+ * the wordmark's foot (anchor + 152 + 40), so centring it puts the anchor at `cardTop / 2 − 28`. A frame
+ * counts as the entry phone at 340 wide or 640 tall and under (the first-run breakpoint, plus any phone
+ * as short as it).
+ */
+export const ORBIT_HALF = 136;
+export const COMPACT_W = 340;
+export const COMPACT_H = 640;
+
+export function isCompactSplash(W: number, H: number): boolean {
+  return W <= COMPACT_W || H <= COMPACT_H;
+}
+
+export function splashGeometry({ W, H, bottomInset, cardH, panelH }: { W?: number; H: number; bottomInset: number; cardH: number; panelH: number }): SplashGeometry {
   const cardTop = H - bottomInset - CARD_BOTTOM - cardH;
-  const anchor = Math.max(ANCHOR_MIN, Math.min(ANCHOR_RATIO * H, cardTop - MIN_CLEARANCE - WORDMARK_TOP - WORDMARK_H));
+  const brandCentred = cardTop / 2 - (WORDMARK_TOP + WORDMARK_H - ORBIT_HALF) / 2;
+  const preferred = W != null && isCompactSplash(W, H) ? brandCentred : ANCHOR_RATIO * H;
+  const anchor = Math.max(ANCHOR_MIN, Math.min(preferred, cardTop - MIN_CLEARANCE - WORDMARK_TOP - WORDMARK_H));
   const panelTop = H - bottomInset - PANEL_BOTTOM - panelH;
   const offlineLift = Math.max(OFFLINE_LIFT, anchor + WORDMARK_TOP + WORDMARK_H + MIN_CLEARANCE - panelTop);
   return { anchor, offlineLift };

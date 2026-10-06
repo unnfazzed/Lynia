@@ -317,6 +317,22 @@ export const envSchema = z.object({
     (v) => (v === "" ? undefined : v),
     z.string().max(24).regex(/^\d+(\.\d+)*$/, "must be a dotted version like 0.2.0").default("0.0.0"),
   ),
+  // --- Soft update (First Run v2 U1/U4, ledger D-80 §2 #7) ---
+  // The version the app NUDGES a build below it towards (the U4a/U4b "A new version is ready" banner,
+  // shown once per version, dismissible) — never a block; that is MIN_SUPPORTED_APP_VERSION above.
+  // Served only to builds that ask with `?soft=1` (the plain body is strict on installed clients).
+  // Unset or "" = off (null). Per platform like the minimum.
+  RECOMMENDED_APP_VERSION: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.string().max(24).regex(/^\d+(\.\d+)*$/, "must be a dotted version like 0.2.0").optional(),
+  ),
+  RECOMMENDED_APP_VERSION_IOS: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.string().max(24).regex(/^\d+(\.\d+)*$/, "must be a dotted version like 0.2.0").optional(),
+  ),
+  // U1's optional what's-new line (the pill "New · Faster live tracking"), one short sentence. Unset or
+  // blank = no pill.
+  APP_WHATS_NEW: z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? undefined : v), z.string().trim().max(80).optional()),
   // --- Data retention (LR8, docs/DATA-RETENTION.md) ---
   // GPS coords on order_events are scrubbed this many days after the event; expired sessions are
   // hard-deleted this many days after they lapse. Driven by the POST /admin/retention/purge sweep.

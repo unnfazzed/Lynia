@@ -5,7 +5,7 @@
  */
 import { KycDeclineReason } from "@lynia/shared";
 import { resolveKycGate, type KycGateRider } from "../gates";
-import { declineVariant, kycScreenFor } from "../kyc-outcome";
+import { declineVariant, kycScreenFor, parseIsoDay } from "../kyc-outcome";
 import { resolveGate } from "../rider-gate";
 
 /** The board's own pipeline: rider → KYC wall → gate → screen. */
@@ -56,13 +56,14 @@ describe("kycScreenFor — server state → First Run v2 page", () => {
     expect(declined("id_expired")).toEqual({ kind: "outcome", id: "F4c" });
     expect(declined("doc_tampered")).toEqual({ kind: "outcome", id: "F4c" });
     expect(declined("name_mismatch")).toEqual({ kind: "outcome", id: "F4d" });
-    expect(declined("duplicate")).toEqual({ kind: "outcome", id: "F4d" });
+    // Owner 2026-10-06 (D-80 §4): a duplicate can't be fixed by a retry — F5's WhatsApp-only shell.
+    expect(declined("duplicate")).toEqual({ kind: "outcome", id: "F5dup" });
     expect(declined("other")).toEqual({ kind: "outcome", id: "F4d" });
     expect(declined(null)).toEqual({ kind: "outcome", id: "F4d" });
   });
 
   it("every shared decline reason maps to one of the four variants", () => {
-    for (const r of Object.values(KycDeclineReason)) expect(["F4a", "F4b", "F4c", "F4d"]).toContain(declineVariant(r));
+    for (const r of Object.values(KycDeclineReason)) expect(["F4a", "F4b", "F4c", "F4d", "F5dup"]).toContain(declineVariant(r));
     expect(declineVariant("a-reason-a-newer-server-added")).toBe("F4d");
   });
 
@@ -92,5 +93,18 @@ describe("kycScreenFor — server state → First Run v2 page", () => {
     for (const server of ["suspended", "banned", "on_hold", "cooldown", "out_of_area", "location_required", "commission_low_balance"] as const) {
       expect(screen({ kycStatus: "verified", ...auto }, { server })).toBeNull();
     }
+  });
+});
+
+describe("parseIsoDay — /auth/me kycExpiredOn → the local calendar day F6 names", () => {
+  it("reads YYYY-MM-DD as that local day", () => {
+    const d = parseIsoDay("2026-10-02")!;
+    expect([d.getFullYear(), d.getMonth(), d.getDate()]).toEqual([2026, 9, 2]);
+  });
+  it("is null when absent or malformed", () => {
+    expect(parseIsoDay(undefined)).toBeNull();
+    expect(parseIsoDay(null)).toBeNull();
+    expect(parseIsoDay("2026-02-31")).toBeNull();
+    expect(parseIsoDay("2 Oct 2026")).toBeNull();
   });
 });

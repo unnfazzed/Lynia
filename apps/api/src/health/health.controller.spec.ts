@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ServiceUnavailableException } from "@nestjs/common";
+import { VersionGateResponse, VersionGateSoftResponse } from "@lynia/shared";
 import { loadEnv } from "../config/env";
 import { HealthController } from "./health.controller";
 import type { HealthReport, HealthService } from "./health.service";
@@ -133,6 +134,41 @@ describe("HealthController — app/feature-flags (merchant kill switches, plan �
       "merchantWalletEnabled",
       "restaurantsEnabled",
     ]);
+  });
+});
+
+describe("HealthController — app/version-gate soft update (First Run v2 U1/U4, ledger D-80 §2 #7)", () => {
+  it("the plain body never grows: an installed build parses it strictly, so ?soft is opt-in", () => {
+    const controller = controllerWith(okReport, { ...baseSource, RECOMMENDED_APP_VERSION: "0.60.0", APP_WHATS_NEW: "Faster live tracking" });
+    expect(controller.versionGate()).toEqual({ minSupportedVersion: "0.0.0" });
+    expect(controller.versionGate("android")).toEqual({ minSupportedVersion: "0.0.0" });
+    expect(controller.versionGate("android", "0")).toEqual({ minSupportedVersion: "0.0.0" });
+    expect(VersionGateResponse.safeParse(controller.versionGate("android")).success).toBe(true);
+  });
+
+  it("is off (null, null) by default for a build that asks", () => {
+    const body = controllerWith(okReport).versionGate("android", "1");
+    expect(body).toEqual({ minSupportedVersion: "0.0.0", recommendedVersion: null, whatsNew: null });
+    expect(VersionGateSoftResponse.safeParse(body).success).toBe(true);
+  });
+
+  it("serves the recommended version per platform and the what's-new line", () => {
+    const controller = controllerWith(okReport, {
+      ...baseSource,
+      MIN_SUPPORTED_APP_VERSION: "0.50.0",
+      RECOMMENDED_APP_VERSION: "0.60.0",
+      RECOMMENDED_APP_VERSION_IOS: "1.2.0",
+      APP_WHATS_NEW: "  Faster live tracking ",
+    });
+    expect(controller.versionGate("android", "1")).toEqual({ minSupportedVersion: "0.50.0", recommendedVersion: "0.60.0", whatsNew: "Faster live tracking" });
+    expect(controller.versionGate("ios", "1")).toEqual({ minSupportedVersion: "0.0.0", recommendedVersion: "1.2.0", whatsNew: "Faster live tracking" });
+  });
+
+  it("treats deploy-injected empty values as off and rejects a malformed version or an over-long line at boot", () => {
+    const body = controllerWith(okReport, { ...baseSource, RECOMMENDED_APP_VERSION: "", RECOMMENDED_APP_VERSION_IOS: "", APP_WHATS_NEW: "  " }).versionGate("android", "1");
+    expect(body).toEqual({ minSupportedVersion: "0.0.0", recommendedVersion: null, whatsNew: null });
+    expect(() => loadEnv({ ...baseSource, RECOMMENDED_APP_VERSION: "next" })).toThrow();
+    expect(() => loadEnv({ ...baseSource, APP_WHATS_NEW: "x".repeat(81) })).toThrow();
   });
 });
 

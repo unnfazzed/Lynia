@@ -88,20 +88,33 @@ export function nextStepChange(times: StepTimes, t: number): number | null {
   return upcoming.length ? Math.min(...upcoming) : null;
 }
 
-/** How many steps a boot to `destination` shows: all three for Home (and while still undecided), else step 1. */
+/** The rider app's board: First Run v2 H1 gives a boot there its own two steps (ledger D-80 §2 #2). */
+export const RIDER_DESTINATION = "/rider";
+
+/** A boot into the rider board (not a push-tap deep link into a rider job: that keeps step 1 only). */
+export function isRiderBoot(destination: string | null): boolean {
+  return destination === RIDER_DESTINATION;
+}
+
+/**
+ * How many steps a boot to `destination` shows: all three for Home (and while still undecided), the
+ * rider's two for the rider board (First Run v2 H1: "Checking it's you", "Getting jobs near you"), else
+ * step 1.
+ */
 export function shownSteps(destination: string | null): number {
-  return destination == null || destination === "/home" ? 3 : 1;
+  if (destination == null || destination === "/home") return 3;
+  return isRiderBoot(destination) ? 2 : 1;
 }
 
 /**
  * When the splash is done, given where the boot is going. Home waits for all three steps (the
- * handoff's `done`). Anywhere else — onboarding, sign-in, the rider app, a push-tap deep link —
- * "skip the exit and route … after step 1": only the session step is shown, and the cut waits for its
- * tick to be seen ({@link CUT_AFTER_TICK_MS}).
+ * handoff's `done`); the rider board for its two, then cuts (no exit into Home). Anywhere else —
+ * onboarding, sign-in, a push-tap deep link — "skip the exit and route … after step 1": only the
+ * session step is shown. A cut waits for the last tick to be seen ({@link CUT_AFTER_TICK_MS}).
  */
 export function splashDoneAt(times: StepTimes, destination: string | null): number | null {
   if (destination == null) return null;
   if (destination === "/home") return times.doneAt[2] ?? null;
-  const step1 = times.doneAt[0] ?? null;
-  return step1 == null ? null : step1 + CUT_AFTER_TICK_MS;
+  const last = times.doneAt[isRiderBoot(destination) ? 1 : 0] ?? null;
+  return last == null ? null : last + CUT_AFTER_TICK_MS;
 }

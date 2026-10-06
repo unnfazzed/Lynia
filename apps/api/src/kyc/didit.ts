@@ -268,6 +268,46 @@ export function extractDiditDocumentNumber(payload: unknown): string | null {
 }
 
 /**
+ * The verified document's EXPIRY date out of a Didit decision webhook (`expiration_date`, "YYYY-MM-DD", on
+ * the ID-verification result), or null when the payload doesn't carry a well-formed one. First Run v2 F6
+ * ("Expired 2 Oct 2026", ledger D-80 §4): the rider app names the day their ID expired. Probes the same
+ * shapes as {@link extractDiditDocumentNumber} (V3 `id_verifications[]`, the v2 singular object, `kyc`), and
+ * fails open to null — a date is never worth holding a decision for. Returned as a UTC midnight Date.
+ */
+export function extractDiditDocumentExpiry(payload: unknown): Date | null {
+  if (!payload || typeof payload !== "object") return null;
+  const p = payload as Record<string, unknown>;
+  const decision = (p.decision ?? {}) as Record<string, unknown>;
+  const v3 = Array.isArray(decision.id_verifications) ? (decision.id_verifications as unknown[]) : [];
+  const entries = [
+    ...v3.filter((e): e is Record<string, unknown> => !!e && typeof e === "object"),
+    (decision.id_verification ?? {}) as Record<string, unknown>,
+    (decision.kyc ?? {}) as Record<string, unknown>,
+  ];
+  for (const e of entries) {
+    for (const c of [e.expiration_date, e.date_of_expiry, e.expiry_date]) {
+      if (typeof c !== "string") continue;
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(c.trim());
+      if (!m) continue;
+      const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+      // Round-trip guard: "2026-02-31" is not a date.
+      if (d.getUTCFullYear() === Number(m[1]) && d.getUTCMonth() === Number(m[2]) - 1 && d.getUTCDate() === Number(m[3])) return d;
+    }
+  }
+  return null;
+}
+
+/**
+ * When an `expired` KYC result is applied (webhook "Kyc Expired" or the ops backstop), the day the ID
+ * expired: the document's own expiry date when the verification stored one and it is not after the event,
+ * otherwise the day the expiry was applied (the vendor fires it when the document lapses). UTC midnight.
+ */
+export function kycIdExpiryOnLapse(stored: Date | null | undefined, eventAt: Date): Date {
+  const eventDay = new Date(Date.UTC(eventAt.getUTCFullYear(), eventAt.getUTCMonth(), eventAt.getUTCDate()));
+  return stored && stored.getTime() <= eventDay.getTime() ? stored : eventDay;
+}
+
+/**
  * Whole-number floats (1.0) → integers (1), recursively. Part of the X-Signature-V2 canonical form;
  * matches Didit's server-side canonicalisation. (Mostly a no-op in JS, where JSON.parse already
  * collapses 1.0 → 1 — kept for exact parity with the documented contract.)

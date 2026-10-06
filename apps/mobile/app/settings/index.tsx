@@ -7,7 +7,7 @@ import { Linking, Text, View } from "react-native";
 import { getMe, type Me } from "../../src/api/auth";
 import { useAuth } from "../../src/auth/auth-context";
 import { TERMS_URL } from "../../src/config";
-import { bikeVerified } from "../../src/logic/rider-documents";
+import { bikeDocsProgress, bikeVerified } from "../../src/logic/rider-documents";
 import { RIDER_PERM_ROUTES } from "../../src/logic/rider-perm-flow";
 import { providerName, TOPUP_PROVIDERS, type TopupProviderId, useRiderPrefs } from "../../src/logic/rider-prefs";
 import { openPhoneSettings, playTestAlert, usePermissions } from "../../src/permissions/state";
@@ -26,10 +26,12 @@ function testAlert(kind: "ping" | "alarm"): void {
   void playTestAlert(kind === "alarm" ? R.tFoodOffer : R.sAlerts, kind === "alarm" ? R.testAlarm : R.testPing);
 }
 
-/** D1's "1 to add": the optional rider photo and bike plate still missing (an older server's unknown photo isn't counted). */
+/** D1's "1 to add": the optional photo and plate still missing — the same count Bike & documents' E1 progress
+ *  draws (`bikeDocsProgress`, its third item being the ID check itself). */
 function bikeItemsToAdd(rider: Me["rider"] | null | undefined): number {
   if (!rider) return 0;
-  return (rider.hasPhoto === false ? 1 : 0) + (rider.bikeReg?.trim() ? 0 : 1);
+  const { done, total } = bikeDocsProgress(rider);
+  return total - done - (rider.kycStatus === "verified" ? 0 : 1);
 }
 
 /** `.cap` — the 12/600 caption above a card (YOU, ALERTS). */

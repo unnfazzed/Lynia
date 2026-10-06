@@ -309,7 +309,10 @@ export const PARITY_STATUS = {
   "RJ.topup_declined": { status: "PENDING" }, // Top up · declined
   "RJ.offline": { status: "PENDING" }, // Offline banner
   "RJ.on_hold": { status: "PENDING" }, // Account on hold
-  "RJ.force_update": { status: "PENDING" }, // Force update
+  "RJ.force_update": {
+    status: "PENDING",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-80 (owner, 2026-10-06): the First Run v2 handoff (packages/design/handoff/first-run-v2, U1–U5) redraws the hard update gate for both sides as one role-neutral screen — white, a green 280 hero with the white mark, 'Time to update', 'Update now' + 'Help on WhatsApp', the server's what's-new pill, U2 (no store link → WhatsApp) and U3 (offline, disabled CTA). app/force-update.view.tsx was deleted. Not aligned to.",
+  }, // Force update
   "RJ.no_gps": { status: "PENDING" }, // Location off / no GPS
   "RJ.generic_error": { status: "PENDING" }, // Generic error
 

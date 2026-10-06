@@ -1,4 +1,4 @@
-// LJ.force_update — the hard version gate. No providers or props; the screen is self-contained.
+// LJ.force_update — the hard version gate, now First Run v2 U1 (docs/DESIGN-DEVIATIONS.md D-80). No props.
 //
 // The one thing it DOES need staged is config: `src/config.ts` resolves STORE_URL once at module
 // init, and `app/force-update.tsx` hides its primary button when there is no store URL. Without a

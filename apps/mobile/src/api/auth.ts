@@ -87,6 +87,8 @@ export interface Me {
     kycAttempts?: number;
     /** D-62: whether the rider has a photo on file (optional since 2026-10-02). Absent on older servers. */
     hasPhoto?: boolean;
+    /** First Run v2 E4 (D-80): ops' check of `bikeReg` — "Checking" until `verified`. Absent on older servers. */
+    plateStatus?: "none" | "checking" | "verified";
     /** Pre-pickup cancel strikes toward RIDER_STRIKE_LIMIT — resets to 0 once a cooldown lands. */
     cancelStrikes?: number;
     ratingAvg: number;
@@ -120,6 +122,11 @@ export interface Me {
      * polls slowly. Absent on an older server ⇒ not held.
      */
     kycHeld?: boolean;
+    /**
+     * First Run v2 F6 (ledger D-80 §4): the day the rider's ID expired, "YYYY-MM-DD", while `kycStatus` is
+     * `expired` (null otherwise). Absent on an older server — F6 then drops the date.
+     */
+    kycExpiredOn?: string | null;
   } | null;
 }
 

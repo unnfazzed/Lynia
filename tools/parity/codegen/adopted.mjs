@@ -647,53 +647,8 @@ export const ADOPTED = [
   },
   {
     // ── CUSTOMER SYSTEM / ERROR / EMPTY STATES CLUSTER ──────────────────────────────────────────────
-    // LJ.force_update — the hard version gate (app/force-update.tsx), mounted by the root layout in
-    // place of the whole Stack when the installed build is below either the build-time or the
-    // server-driven minimum (customer/rider S·3). The mock `ForceUpdate` is a pure `<SystemState>` leaf
-    // (brand-green tone, brand mark, one line, one action) — the SAME primitive as perm_loc/perm_notif,
-    // so it adopts as a single 0-residual whole-screen view. SystemState is a structural leaf, so its
-    // tone/mark/title/message/primary/onPrimary are the DATA SEAM (invisible to the structural diff):
-    // the mock's `brand` boolean (which the kit renders as its own Dove mark) is dropped in favour of
-    // the app's `mark` slot (the container feeds <DoveMark on="green" />), and the copy is hoisted so
-    // the container supplies the role-NEUTRAL "keep using LyniaGo" line (this gate fires before the role
-    // is resolved — a role-specific verb would be wrong for half the users) and hides the primary when
-    // no STORE_URL is configured (no dead link). Structure stays the mock's SystemState by construction.
-    key: "LJ.force_update",
-    mockFile: "packages/design/explorations/journey/screens.jsx",
-    component: "ForceUpdate",
-    componentName: "ForceUpdateView",
-    viewFile: "apps/mobile/app/force-update.view.tsx",
-    container: "apps/mobile/app/force-update.tsx",
-    uiImport: "../src/ui",
-    propsParam: "{ mark, title, message, primary, onPrimary }: ForceUpdateViewProps",
-    propsType: [
-      "export type ForceUpdateViewProps = {",
-      "  /** The brand mark node the kit's `brand` boolean draws internally (app feeds <DoveMark/>). */",
-      "  mark: React.ReactNode;",
-      "  title: string;",
-      "  message: string;",
-      "  /** Hidden (undefined) when no store URL is configured — never a dead 'Update now' link. */",
-      "  primary?: string;",
-      "  onPrimary?: () => void;",
-      "};",
-    ].join("\n"),
-    bind: ({ t, expr }) => ({
-      JSXOpeningElement(path) {
-        if (path.node.name.name !== "SystemState") return;
-        // Drop the mock's frozen leaf literals + the kit-only `brand` boolean; feed the app's `mark`
-        // slot and the container-owned copy/action. `tone="green"` stays a static literal (both sides).
-        path.node.attributes = path.node.attributes.filter(
-          (a) => !(a.type === "JSXAttribute" && ["brand", "title", "message", "primary"].includes(a.name.name)),
-        );
-        path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("mark"), t.jsxExpressionContainer(expr("mark"))));
-        path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("title"), t.jsxExpressionContainer(expr("title"))));
-        path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("message"), t.jsxExpressionContainer(expr("message"))));
-        path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("primary"), t.jsxExpressionContainer(expr("primary"))));
-        path.node.attributes.push(t.jsxAttribute(t.jsxIdentifier("onPrimary"), t.jsxExpressionContainer(expr("onPrimary"))));
-      },
-    }),
-  },
-  {
+    // (LJ.force_update left this registry with docs/DESIGN-DEVIATIONS.md D-80: First Run v2 U1 replaced
+    // the gallery `ForceUpdate` SystemState, and app/force-update.view.tsx was deleted.)
     // LJ.on_hold — the customer account-on-hold wall (app/send.tsx → SendHoldView). DEFER-only: since
     // docs/DESIGN-DEVIATIONS.md D-52 the wall is drawn by the send-compose-v2 handoff (state 17), not by
     // the gallery's `OnHold`. See the deferred reason.

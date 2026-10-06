@@ -8,7 +8,7 @@ import { Icon, type IconName } from "../Icon";
  * radius 12, a 1 `line` border; focus = 2 brand; error = 2 danger, with the helper as a 13/600
  * danger-ink line behind a 16 alert icon. Label 13/600 muted, 6 above. Placeholder `illusIdleMid`.
  */
-export interface FrFieldProps extends Pick<TextInputProps, "keyboardType" | "autoCapitalize" | "autoComplete" | "textContentType" | "maxLength" | "returnKeyType" | "onSubmitEditing" | "autoFocus"> {
+export interface FrFieldProps extends Pick<TextInputProps, "keyboardType" | "autoCapitalize" | "autoCorrect" | "autoComplete" | "textContentType" | "maxLength" | "returnKeyType" | "onSubmitEditing" | "autoFocus"> {
   label?: string;
   /** The regular-weight suffix after the label (" · optional"). */
   labelNote?: string;
@@ -19,6 +19,8 @@ export interface FrFieldProps extends Pick<TextInputProps, "keyboardType" | "aut
   helper?: string;
   /** An error: red border + the danger helper line (replaces `helper`). */
   error?: string | null;
+  /** The red border alone, with no helper line (D4: the danger box below explains it). */
+  invalid?: boolean;
   /** A 20 leading icon in the field (PC4's search). */
   icon?: IconName;
   onBlur?: () => void;
@@ -29,10 +31,10 @@ export interface FrFieldProps extends Pick<TextInputProps, "keyboardType" | "aut
   testID?: string;
 }
 
-export function FrField({ label, labelNote, value, onChangeText, placeholder, helper, error, icon, onBlur, editable, inputStyle, style, testID, ...input }: FrFieldProps): React.ReactElement {
+export function FrField({ label, labelNote, value, onChangeText, placeholder, helper, error, invalid, icon, onBlur, editable, inputStyle, style, testID, ...input }: FrFieldProps): React.ReactElement {
   const [focused, setFocused] = useState(false);
   const hasError = !!error;
-  const border = hasError ? { borderWidth: 2, borderColor: tokens.color.danger } : focused ? { borderWidth: 2, borderColor: tokens.color.accent } : { borderWidth: 1, borderColor: tokens.color.line };
+  const border = hasError || invalid ? { borderWidth: 2, borderColor: tokens.color.danger } : focused ? { borderWidth: 2, borderColor: tokens.color.accent } : { borderWidth: 1, borderColor: tokens.color.line };
   // Keep the text from shifting when the border thickens: pad 1 less at 2.
   const padH = 14 - (border.borderWidth - 1);
   return (
