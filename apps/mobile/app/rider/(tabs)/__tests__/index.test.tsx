@@ -419,7 +419,8 @@ describe("rider board (Rider v2 O1/J9/J10: make an offer, your offers, withdraw)
     expect(cardIds(activeTree, "offer")).toEqual([]);
     expect(treeText(activeTree)).toContain("Offer withdrawn.");
 
-    const undo = activeTree.root.findAll((n) => n.props.action === "Undo" && typeof n.props.onAction === "function");
+    // RToast renders the shared FirstRunToast (D-80), which receives the same props — count the board toast only.
+    const undo = activeTree.root.findAll((n) => n.props.action === "Undo" && typeof n.props.onAction === "function" && (n.type as { name?: string }).name === "RToast");
     expect(undo.length).toBe(1);
     act(() => (undo[0]!.props as { onAction: () => void }).onAction());
 

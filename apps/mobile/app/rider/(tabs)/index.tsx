@@ -34,6 +34,7 @@ import { kycScreenFor, parseIsoDay } from "../../../src/logic/kyc-outcome";
 import { markRiderWelcomeSeen, riderWelcomeSeen } from "../../../src/logic/rider-welcome";
 import { RIDER_PERM_ROUTES, startRiderPermFlow } from "../../../src/logic/rider-perm-flow";
 import { RiderLocEmpty, RiderNotifOffRow } from "../../../src/ui/firstrun/RiderPermBoard";
+import { SoftUpdateBanner } from "../../../src/ui/firstrun/SoftUpdateBanner";
 import { isSentOfferExpired, isSentOfferStale } from "../../../src/logic/rider-bid-draft";
 import { type GateId, kycTriesLeft, resolveGate } from "../../../src/logic/rider-gate";
 import { telUri } from "../../../src/logic/safety";
@@ -786,13 +787,8 @@ export default function RiderHome(): React.ReactElement {
 
   return (
     <AppScreen banner={banner}>
-      {/*
-        ── FIRST RUN v2 MOUNT SLOT (D-80) — wired by the integrator after the other phases merge ──
-        · Worker A (P14): `RiderPermBoardRow` (J8, "Notifications are off…" + "Turn on" → P9) replaces the
-          `notifOff` row at the top of `sheetContent`, and `RiderLocEmpty` (G8, Empty States v2 mark + "Turn on" → P1)
-          takes the "gps" gate's place for a rider who skipped location.
-        · Worker B (U4b): `<SoftUpdateBanner tone="violet" />` goes right here, under the mint top card.
-      */}
+      {/* First Run v2 U4b (D-80): the violet "new version" banner under the mint top card, on the live board only. */}
+      {meQ.isLoading || gateView ? null : <SoftUpdateBanner tone="violet" />}
       {meQ.isLoading ? null : gateView ? (
         gateView
       ) : (
