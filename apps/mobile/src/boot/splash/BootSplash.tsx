@@ -11,10 +11,13 @@ import { DOVE_BODY_POLYGONS, DOVE_CREASE_PATHS, DOVE_CREASE_WIDTH, DOVE_KEEL_POL
 import { useBootPhase } from "../boot-phase";
 import { reportSplashExit, useBootReadiness } from "../boot-readiness";
 import { releaseNativeSplash, useBootSplashRelease } from "../boot-splash-hold";
-import { S } from "./copy";
+import { queryClient } from "../../query/client";
+import { Icon } from "../../ui/Icon";
+import { watchRiderBoardReady } from "../rider-board-ready";
+import { RIDER_OFFLINE, RIDER_STEPS, S } from "./copy";
 import { held, keyframesEasing, keyframesInput, popEasing } from "./motion";
 import { CARD_H_ESTIMATE, PANEL_H_ESTIMATE, splashGeometry } from "./geometry";
-import { EXIT, GIVE_UP_MS, INTRO_MS, SLOW_AFTER_MS, type StepState, nextStepChange, shownSteps, splashDoneAt, stepStates, stepTimes } from "./timeline";
+import { EXIT, GIVE_UP_MS, INTRO_MS, SLOW_AFTER_MS, type StepState, isRiderBoot, nextStepChange, shownSteps, splashDoneAt, stepStates, stepTimes } from "./timeline";
 
 /**
  * The cold-start splash — "1a Sun & orbit" (`packages/design/handoff/splash-v1`, ledger D-64; it
@@ -26,6 +29,11 @@ import { EXIT, GIVE_UP_MS, INTRO_MS, SLOW_AFTER_MS, type StepState, nextStepChan
  * floods the screen and Home slides up over it. Anywhere other than Home (onboarding, sign-in, the
  * rider app, a push-tap deep link) hands off straight after step 1, without the exit (handoff:
  * "skip the exit and route to onboarding/login after step 1"). Timing rules: ./timeline.ts.
+ *
+ * First Run v2 (ledger D-80 §2 #2) keeps this look for everyone and adds three things: a boot into the
+ * rider board runs the rider's two steps ("Checking it's you", "Getting jobs near you" = the board's first
+ * reads, src/boot/rider-board-ready.ts) and its offline state is one row in the card; and on the entry
+ * phone (320×640) the brand is centred in the space above the card (./geometry.ts).
  *
  * Mounted by the root layout BELOW the navigator while `booting`; the navigator itself is held
  * off-screen (BootPhase `reveal`) until the exit raises it, so Home mounts, fetches and lays out
@@ -212,8 +220,17 @@ export function BootSplash(): React.ReactElement {
 
   const times = useMemo(() => {
     const rel = (at: number | null): number | null => (at == null ? null : Math.max(0, at - t0));
-    return stepTimes([rel(readiness.readyAt.session), rel(readiness.readyAt.profile), rel(readiness.readyAt.home)], shownSteps(readiness.destination));
+    // First Run v2 H1 (D-80 §2 #2): a rider boot runs the rider's two steps — the session, then the board's
+    // first reads — instead of Home's three.
+    const ready = isRiderBoot(readiness.destination)
+      ? [rel(readiness.readyAt.session), rel(readiness.readyAt.rider)]
+      : [rel(readiness.readyAt.session), rel(readiness.readyAt.profile), rel(readiness.readyAt.home)];
+    return stepTimes(ready, shownSteps(readiness.destination));
   }, [readiness, t0]);
+  const riderBoot = isRiderBoot(readiness.destination);
+  const labels: readonly string[] = riderBoot ? RIDER_STEPS : S.steps;
+  // The rider board mounts under the splash; step 2 ticks when its first reads settle.
+  useEffect(() => (riderBoot ? watchRiderBoardReady(queryClient) : undefined), [riderBoot]);
   const steps = stepStates(times, t);
   const loading = t >= INTRO_MS;
   const readyDoneAt = splashDoneAt(times, readiness.destination);
@@ -247,7 +264,10 @@ export function BootSplash(): React.ReactElement {
   const phase: Phase = done ? "done" : offline ? "offline" : loading ? "loading" : "boot";
   const slow = phase === "loading" && t >= INTRO_MS + SLOW_AFTER_MS;
   // The steps card is on screen while loading and through the exit; hidden in the intro and offline.
-  const cardShown = phase === "loading" || phase === "done";
+  // A rider boot offline keeps the card and swaps its rows for First Run v2's single offline row (H2c)
+  // instead of splash-v1's dark panel (D-80 §2 #2, "the offline row, if it fits splash-v1").
+  const offlineRow = phase === "offline" && riderBoot;
+  const cardShown = phase === "loading" || phase === "done" || offlineRow;
 
   // Wake at the next moment anything changes (intro end, a step boundary, the slow pill, the end of a
   // retry's grace, done). A readiness stamp that is already in the past schedules an immediate wake.
@@ -318,10 +338,10 @@ export function BootSplash(): React.ReactElement {
   useEffect(() => {
     if (!looping) return;
     const fade = reduce ? EXIT.fadeMs : 400;
-    const shown = Animated.parallel([timing(v.orbitIn, 1, fade, SETTLE), timing(v.card, phase === "loading" ? 1 : 0, reduce ? EXIT.fadeMs : 500, SPRING_OUT)]);
+    const shown = Animated.parallel([timing(v.orbitIn, 1, fade, SETTLE), timing(v.card, phase === "loading" || offlineRow ? 1 : 0, reduce ? EXIT.fadeMs : 500, SPRING_OUT)]);
     shown.start();
     return () => shown.stop();
-  }, [reduce, looping, phase, v]);
+  }, [reduce, looping, phase, offlineRow, v]);
 
   // The orbit pauses where it is (offline) and resumes from there. The lap itself is a native loop
   // from 0; the paused angle lives in `spinOffset` (rotation = (offset + spin) mod 1), so resuming
@@ -373,10 +393,12 @@ export function BootSplash(): React.ReactElement {
   // Offline panel, idle dot and the lift that keeps the brand clear of the panel.
   useEffect(() => {
     const on = phase === "offline" ? 1 : 0;
-    const a = Animated.parallel([timing(v.offline, on, reduce ? EXIT.fadeMs : 450, SETTLE), timing(v.idle, on, reduce ? EXIT.fadeMs : 300, EASE_OUT)]);
+    // The rider's offline row sits in the card's own place, so the brand needs no lift (no panel).
+    const panel = phase === "offline" && !riderBoot ? 1 : 0;
+    const a = Animated.parallel([timing(v.offline, panel, reduce ? EXIT.fadeMs : 450, SETTLE), timing(v.idle, on, reduce ? EXIT.fadeMs : 300, EASE_OUT)]);
     a.start();
     return () => a.stop();
-  }, [reduce, phase, v]);
+  }, [reduce, phase, riderBoot, v]);
 
   useEffect(() => {
     const a = timing(v.slow, slow ? 1 : 0, reduce ? EXIT.fadeMs : 400, SPRING_OUT);
@@ -432,14 +454,16 @@ export function BootSplash(): React.ReactElement {
   const doneCount = steps.filter((s) => s === "done").length;
   useEffect(() => {
     if (doneCount > announced.current) {
-      AccessibilityInfo.announceForAccessibility?.(stepDoneAnnouncement(S.steps[doneCount - 1]!));
+      const label = labels[doneCount - 1];
+      if (label) AccessibilityInfo.announceForAccessibility?.(stepDoneAnnouncement(label));
       announced.current = doneCount;
     }
-  }, [doneCount]);
+  }, [doneCount, labels]);
   // The offline panel is an alert (handoff § Accessibility): say so when it appears, on both platforms.
   useEffect(() => {
-    if (phase === "offline") AccessibilityInfo.announceForAccessibility?.(`${S.offlineTitle}. ${S.offlineBody}`);
-  }, [phase]);
+    if (phase !== "offline") return;
+    AccessibilityInfo.announceForAccessibility?.(riderBoot ? `${RIDER_OFFLINE.title}. ${RIDER_OFFLINE.body}` : `${S.offlineTitle}. ${S.offlineBody}`);
+  }, [phase, riderBoot]);
 
   const onLayout = useCallback(
     (e: LayoutChangeEvent) => {
@@ -472,8 +496,15 @@ export function BootSplash(): React.ReactElement {
   // "the content moves up … to clear the panel"). Heights are measured, so a wrapped body line counts.
   const [cardH, setCardH] = useState(CARD_H_ESTIMATE);
   const [panelH, setPanelH] = useState(PANEL_H_ESTIMATE);
-  const geometry = splashGeometry({ H, bottomInset: insets.bottom, cardH, panelH });
-  const onCardLayout = useCallback((e: LayoutChangeEvent) => setCardH(Math.round(e.nativeEvent.layout.height)), []);
+  // `W` turns on First Run v2's 320×640 rule (the brand centred above the card, D-80 §2 #2). The card is
+  // measured with its STEPS: the shorter offline row must not move the brand while it shows.
+  const geometry = splashGeometry({ W, H, bottomInset: insets.bottom, cardH, panelH });
+  const offlineRowRef = useRef(offlineRow);
+  offlineRowRef.current = offlineRow;
+  const onCardLayout = useCallback((e: LayoutChangeEvent) => {
+    if (offlineRowRef.current) return;
+    setCardH(Math.round(e.nativeEvent.layout.height));
+  }, []);
   const onPanelLayout = useCallback((e: LayoutChangeEvent) => setPanelH(Math.round(e.nativeEvent.layout.height)), []);
 
   const still = reduce;
@@ -495,7 +526,9 @@ export function BootSplash(): React.ReactElement {
       {/* Steps card — real progress, a polite live region. Hidden from accessibility while it is not on
           screen (the intro, the offline panel), so a screen reader never reads an invisible card. */}
       <Animated.View
-        accessibilityLiveRegion="polite"
+        testID="splash-card"
+        accessibilityLiveRegion={offlineRow ? "assertive" : "polite"}
+        accessibilityRole={offlineRow ? "alert" : undefined}
         importantForAccessibility={cardShown ? "auto" : "no-hide-descendants"}
         accessibilityElementsHidden={!cardShown}
         onLayout={onCardLayout}
@@ -508,9 +541,11 @@ export function BootSplash(): React.ReactElement {
           },
         ]}
       >
-        {S.steps.map((label, i) => (
-          <StepRow key={label} label={label} state={steps[i]!} spin={v.ringSpin} still={still} />
-        ))}
+        {offlineRow ? (
+          <OfflineRow />
+        ) : (
+          labels.map((label, i) => <StepRow key={label} label={label} state={steps[i] ?? "pending"} spin={v.ringSpin} still={still} />)
+        )}
       </Animated.View>
 
       {/* Slow-network pill — in the accessibility tree only while it is showing. */}
@@ -534,11 +569,12 @@ export function BootSplash(): React.ReactElement {
 
       {/* Offline panel. */}
       <Animated.View
-        pointerEvents={phase === "offline" ? "auto" : "none"}
+        testID="splash-offline-panel"
+        pointerEvents={phase === "offline" && !riderBoot ? "auto" : "none"}
         accessibilityRole="alert"
         accessibilityLiveRegion="assertive"
-        importantForAccessibility={phase === "offline" ? "auto" : "no-hide-descendants"}
-        accessibilityElementsHidden={phase !== "offline"}
+        importantForAccessibility={phase === "offline" && !riderBoot ? "auto" : "no-hide-descendants"}
+        accessibilityElementsHidden={phase !== "offline" || riderBoot}
         onLayout={onPanelLayout}
         style={[
           styles.panel,
@@ -780,6 +816,25 @@ const SplashArt = memo(function SplashArt({
   );
 });
 
+/**
+ * First Run v2 H2c (ledger D-80 §2 #2): a rider boot that can't reach the server swaps the steps for one
+ * row in the same card — a 36 `surface` disc with `wifi-off`, "You're offline" and "We'll continue when
+ * you're back." No button: the app-wide reachability probe resumes the boot on its own.
+ */
+function OfflineRow(): React.ReactElement {
+  return (
+    <View testID="splash-offline-row" style={styles.row} accessible accessibilityLabel={`${RIDER_OFFLINE.title}. ${RIDER_OFFLINE.body}`}>
+      <View style={styles.offlineDisc}>
+        <Icon name="wifi-off" size={20} color={C.muted} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.rowText, { color: C.ink }]}>{RIDER_OFFLINE.title}</Text>
+        <Text style={styles.offlineBody}>{RIDER_OFFLINE.body}</Text>
+      </View>
+    </View>
+  );
+}
+
 /** One step row. Memoised: it re-renders only when its own state changes, not on every clock tick. */
 const StepRow = memo(function StepRow({
   label,
@@ -886,6 +941,8 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   row: { flexDirection: "row", alignItems: "center", gap: 12 },
+  offlineDisc: { width: 36, height: 36, borderRadius: 18, backgroundColor: C.surface, alignItems: "center", justifyContent: "center" },
+  offlineBody: { marginTop: 1, fontSize: 13, lineHeight: 18, color: C.muted },
   rowText: { fontSize: 15, fontWeight: "600" },
   ring: {
     width: 22,

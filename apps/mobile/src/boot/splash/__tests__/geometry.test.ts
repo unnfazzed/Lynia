@@ -4,7 +4,7 @@
  * never sit under either — the brand moves up instead — and where there is room the handoff's own
  * values are untouched.
  */
-import { ANCHOR_RATIO, CARD_BOTTOM, CARD_H_ESTIMATE, MIN_CLEARANCE, OFFLINE_LIFT, PANEL_BOTTOM, PANEL_H_ESTIMATE, WORDMARK_H, WORDMARK_TOP, splashGeometry } from "../geometry";
+import { ANCHOR_RATIO, CARD_BOTTOM, CARD_H_ESTIMATE, MIN_CLEARANCE, OFFLINE_LIFT, ORBIT_HALF, PANEL_BOTTOM, PANEL_H_ESTIMATE, WORDMARK_H, WORDMARK_TOP, isCompactSplash, splashGeometry } from "../geometry";
 
 const wordmarkBottom = (anchor: number): number => anchor + WORDMARK_TOP + WORDMARK_H;
 const cardTop = (H: number, inset: number): number => H - inset - CARD_BOTTOM - CARD_H_ESTIMATE;
@@ -32,6 +32,28 @@ describe("splashGeometry", () => {
     expect(anchor).toBeLessThan(ANCHOR_RATIO * H);
     expect(cardTop(H, inset) - wordmarkBottom(anchor)).toBeGreaterThanOrEqual(MIN_CLEARANCE);
     expect(panelTop(H, inset) - (wordmarkBottom(anchor) - offlineLift)).toBeGreaterThanOrEqual(MIN_CLEARANCE);
+  });
+
+  describe("First Run v2 H2 — the 320×640 rule (D-80 §2 #2)", () => {
+    // The rider card: 16+16 padding, two 22 rows, one 12 gap.
+    const RIDER_CARD = 88;
+    const brandTop = (anchor: number): number => anchor - ORBIT_HALF;
+    it.each([
+      [48, "3-button"],
+      [20, "gesture"],
+    ])("inset %i (%s): the card is 16 above the nav bar and the brand is centred in the space above it", (inset) => {
+      const { anchor } = splashGeometry({ W: 320, H: 640, bottomInset: inset, cardH: RIDER_CARD, panelH: PANEL_H_ESTIMATE });
+      const top = 640 - inset - CARD_BOTTOM - RIDER_CARD;
+      expect(Math.abs(brandTop(anchor) - (top - wordmarkBottom(anchor)))).toBeLessThanOrEqual(1);
+      expect(top - wordmarkBottom(anchor)).toBeGreaterThanOrEqual(MIN_CLEARANCE);
+    });
+
+    it("leaves every larger frame on splash-v1's 44%", () => {
+      expect(isCompactSplash(360, 720)).toBe(false);
+      expect(isCompactSplash(320, 640)).toBe(true);
+      expect(isCompactSplash(360, 640)).toBe(true);
+      expect(splashGeometry({ W: 360, H: 720, bottomInset: 0, cardH: CARD_H_ESTIMATE, panelH: PANEL_H_ESTIMATE }).anchor).toBe(ANCHOR_RATIO * 720);
+    });
   });
 
   it("a taller (measured) offline panel lifts the brand further than 64", () => {
