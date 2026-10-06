@@ -10,3 +10,5 @@ export { FirstRunToast, type FirstRunToastTone } from "./toast";
 export { FrField, VerifiedRow, type FrFieldProps } from "./form";
 export { FrSheet, SHEET_DIM } from "./sheet";
 export { FirstRunScreen } from "./screen";
+export { IdCheckOutcome, type IdCheckOutcomeProps } from "./IdCheckOutcome";
+export { BecomeRiderCard } from "./BecomeRiderCard";
