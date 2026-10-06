@@ -1731,7 +1731,7 @@ describe("RiderService.applyKycResult", () => {
     await svc(mk(stored), {}).applyKycResult("sess_1", "expired", new Date("2026-10-05T14:30:00Z"));
     expect(data?.kycIdExpiresOn).toBe(stored);
     await svc(mk(null), {}).applyKycResult("sess_1", "expired", new Date("2026-10-05T14:30:00Z"));
-    expect((data?.kycIdExpiresOn as Date).toISOString()).toBe("2026-10-05T00:00:00.000Z");
+    expect((data?.kycIdExpiresOn as Date | undefined)?.toISOString()).toBe("2026-10-05T00:00:00.000Z");
   });
 
   it("D-80 F6: a `verified` webhook stores the document's expiry day when the decision carries one", async () => {
