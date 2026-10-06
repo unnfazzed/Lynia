@@ -83,8 +83,10 @@ jest.mock("../../../../src/api/offers", () => ({
   makeOffer: jest.fn(),
   withdrawOffer: (orderId: string) => mockWithdrawOffer(orderId),
 }));
+let mockNotifGranted = true;
 jest.mock("expo-notifications", () => ({
-  getPermissionsAsync: async () => ({ granted: true, status: "granted" }),
+  getPermissionsAsync: async () => (mockNotifGranted ? { granted: true, status: "granted" } : { granted: false, status: "undetermined", canAskAgain: true }),
+  AndroidImportance: { MAX: 5, HIGH: 4, DEFAULT: 3 },
 }));
 // The 8c mint header reads the unread count for the bell's gold dot. Mock it rather than let it
 // fail: an unmocked `apiFetch` throws a network error, which flips `src/net/reachability` — and so
@@ -254,6 +256,7 @@ afterEach(() => {
   mockLocFixFails = false;
   mockPermissionAsks = 0;
   mockBooting = false;
+  mockNotifGranted = true;
   mockFoodOn = false;
   mockGetDemandZones.mockImplementation(async () => []);
   mockGetFoodOffer.mockImplementation(async () => null);
@@ -1410,7 +1413,9 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
     await settle();
     await settle();
 
-    expect(treeText(activeTree)).toMatch(/Can't find your location/);
+    // First Run v2 P14 G8 (D-80): no permission → the empty-states mark, not the Rider v2 wall.
+    expect(treeText(activeTree)).toContain("Turn on location");
+    expect(treeText(activeTree)).toContain("Jobs need your location.");
     expect(activeTree.root.findAll((n) => n.props.label === "Go offline")).toHaveLength(0);
   });
 
@@ -1474,12 +1479,15 @@ describe("rider board — R3 'You're verified' (Calm Mint v2)", () => {
     // An older server that doesn't serve `rider.freeJobs` (D-70) gets no meter card.
     expect(treeText(activeTree)).not.toContain("Commission-free jobs");
     const tree = activeTree;
+    // Everything is granted on this phone: R3's "Go online" goes straight online — no flow (owner #5).
     await renderer.act(async () => {
       tree.root.find((n) => n.props.label === "Go online" && typeof n.props.onPress === "function").props.onPress();
     });
     await settle();
-    // The interim flow is the existing priming screen; it hands back to the board (`replace`, so one board).
-    expect(mockReplace).toHaveBeenCalledWith("/permissions?next=/rider");
+    await settle();
+    expect(mockPush).not.toHaveBeenCalledWith("/permissions?from=flow");
+    expect(treeText(activeTree)).not.toContain("You’re verified");
+    expect(mockSetOnline).toHaveBeenCalledWith(true, { lat: -17.83, lng: 31.05 });
   });
 
   it("D-70: R3 draws the 'Commission-free jobs · 5 of 5 left' meter the server reports", async () => {
@@ -1665,6 +1673,7 @@ describe("rider board — startup review 2026-10-06", () => {
     await settle();
     expect(treeText(activeTree)).toContain("You’re verified");
     expect(mockSetOnline).not.toHaveBeenCalled();
+    mockNotifGranted = false; // something is missing, so R3 hands over to the flow
     // The board socket isn't live behind R3 either (warm cache started `online` true on frame 1).
     expect(mockUseRiderBoard.mock.calls.at(-1)?.[0]).toBe(false);
     const tree = activeTree;
@@ -1673,8 +1682,9 @@ describe("rider board — startup review 2026-10-06", () => {
     });
     await settle();
     // D-80 §2 #5: P13's "Go online" is what goes online; this board hands over to the flow without going online.
-    expect(mockReplace).toHaveBeenCalledWith("/permissions?next=/rider");
+    expect(mockPush).toHaveBeenCalledWith("/permissions?from=flow");
     expect(mockSetOnline).not.toHaveBeenCalled();
+    expect(treeText(activeTree)).toContain("You’re verified");
   });
 
   it("R-9: a failed re-read keeps the rider behind their wall (the last known `me` stands)", async () => {
@@ -1691,7 +1701,7 @@ describe("rider board — startup review 2026-10-06", () => {
     expect(mockSetOnline).not.toHaveBeenCalled();
   });
 
-  it("S-6: no OS location prompt over the cold-start splash — the ask waits for the boot to end", async () => {
+  it("D-80: the board never opens the OS location dialog — during the boot or after; G8 asks instead", async () => {
     mockLocPermission = "undetermined";
     mockBooting = true;
     mockPermissionAsks = 0;
@@ -1715,15 +1725,32 @@ describe("rider board — startup review 2026-10-06", () => {
     await settle();
     expect(mockPermissionAsks).toBe(0);
     expect(mockSetOnline).not.toHaveBeenCalled();
-    // The splash hands off: the deferred ask runs now (any re-render carries the new boot phase — here a
-    // fresh `me`).
+    // The splash hands off: still no dialog — the board shows G8, whose "Turn on" opens P1 (First Run v2).
     mockBooting = false;
     act(() => {
       qc.setQueryData(["me"], { ...meFixture(), firstName: "Tapiwa2" });
     });
     await settle();
     await settle();
-    expect(mockPermissionAsks).toBeGreaterThanOrEqual(1);
+    expect(mockPermissionAsks).toBe(0);
+    expect(treeText(activeTree)).toContain("Turn on location");
+    const turnOn = activeTree!.root.findAll((n) => n.props.accessibilityLabel === "Turn on" && typeof n.props.onPress === "function")[0]!;
+    await renderer.act(async () => turnOn.props.onPress());
+    expect(mockPush).toHaveBeenCalledWith("/permissions?step=location");
+  });
+
+  it("P14 J8: notifications off shows the danger row; 'Turn on' opens P9, not the phone's settings", async () => {
+    mockNotifGranted = false;
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen((qc) => qc.setQueryData(["me"], meFixture()));
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).toContain("Notifications are off. You won’t get new jobs or food offers.");
+    const j8 = activeTree.root.find((n) => n.props.testID === "rider-j8" && typeof n.props.onPress === "function");
+    await renderer.act(async () => j8.props.onPress());
+    expect(mockPush).toHaveBeenCalledWith("/permissions?step=notifications");
   });
 
   it("S-6: an already-granted permission still reads the position during the boot", async () => {
