@@ -2,6 +2,7 @@ import { tokens } from "@lynia/shared/tokens";
 import { useRouter } from "expo-router";
 import React from "react";
 import { Pressable, Text, View } from "react-native";
+import { useOptionalAuth } from "../../src/auth/auth-context";
 import { AppBar, Card, Icon, type IconName, Screen } from "../../src/ui";
 import { openSupportWhatsApp } from "../../src/config";
 
@@ -15,6 +16,10 @@ import { openSupportWhatsApp } from "../../src/config";
  * Play policy needs the privacy notice reachable from inside the app as well as from the store
  * listing (docs/PLAY-STORE-SUBMISSION.md §4); settings routes here, and this screen is the drawn
  * entry point to /settings/delete-account (the mock's red "Delete my account" row).
+ *
+ * The phone screen links here before sign-in. Signed out there is no account to delete (the deletion flow
+ * needs a session and would only fail), so the delete row is not shown then; the data-copy row closes
+ * the list instead.
  */
 const ROWS: { icon: IconName; title: string; body: string }[] = [
   {
@@ -61,6 +66,9 @@ function ActionRow(props: { icon: IconName; label: string; danger?: boolean; las
 
 export default function PrivacyScreen(): React.ReactElement {
   const router = useRouter();
+  const auth = useOptionalAuth();
+  // Known to be signed out: no provider means the state is unknown (a bare render), not signed out.
+  const signedOut = auth !== null && !auth.loading && auth.session === null;
   return (
     <Screen>
       <AppBar title="Privacy" onBack={() => router.back()} />
@@ -89,8 +97,8 @@ export default function PrivacyScreen(): React.ReactElement {
       ))}
       {/* The data-copy request is a support conversation today (no self-serve export endpoint), so it
           routes into help rather than pretending to produce a file. */}
-      <ActionRow icon="inbox" label="Request a copy of my data" onPress={openSupportWhatsApp} />
-      <ActionRow icon="trash" label="Delete my account" danger last onPress={() => router.push("/settings/delete-account")} />
+      <ActionRow icon="inbox" label="Request a copy of my data" last={signedOut} onPress={openSupportWhatsApp} />
+      {signedOut ? null : <ActionRow icon="trash" label="Delete my account" danger last onPress={() => router.push("/settings/delete-account")} />}
     </Screen>
   );
 }
