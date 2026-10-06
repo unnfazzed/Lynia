@@ -2737,6 +2737,23 @@ OTA can't rescue a binary that fails on a phone.
 
 ---
 
+## Dependabot batches 2026-10-06 (interactive session) — why #1079 and #1090 couldn't merge
+
+Neither weekly group could land. #1079 (production, 22 bumps) was red. #1090 (dev, 13 bumps) was green, but
+the auto-merge workflow skips a group that contains any major. Each batch carried packages Expo SDK 54 pins.
+The safe bumps from both landed in one PR, measured and tested, and `.github/dependabot.yml` now keeps the
+same batches from recurring.
+
+| ID | Finding | Location | Severity | Status |
+|----|---------|----------|----------|--------|
+| DEP-01 | **A react-native patch broke every mobile test that mounts an Animated view.** #1079 moved `react-native` 0.81.5 → 0.81.6. That release bundles `react-native-renderer` 19.1.4, while the app pins `react` 19.1.0 (Expo SDK 54), so React threw "Incompatible React versions" and 226 tests in 28 suites failed. The ignore rule held react-native at patch-only, which still let this through. | `.github/dependabot.yml` | HIGH (an off-SDK native layer; it was blocked only because CI went red) | **FIXED**: react-native gets no Dependabot updates. Neither do `react` / `react-dom` / `react-test-renderer` / `@types/react-test-renderer`, which are exact pins that move together. They move only with an Expo SDK upgrade. |
+| DEP-02 | **SDK-numbered `@expo/*` packages jumped to other SDKs.** #1079 moved `@expo/metro-runtime` 6 → 57 and #1090 moved `@expo/config-plugins` 54 → 58, both against `expo ~54.0`. The `expo-*` rule doesn't match the `@expo/` scope. #1079 also moved `@sentry/react-native` 7.2 → 7.13, a minor, while SDK 54's `bundledNativeModules.json` pins `~7.2.0`. | `.github/dependabot.yml` | MEDIUM (config-plugins runs only at prebuild, so CI can't catch a mismatch there) | **FIXED**: `@expo/*` and `@sentry/react-native` are held to patch-only. |
+| DEP-03 | **One major turned a whole group manual.** #1090's vitest 4 → 5 made the group `semver-major`, so `dependabot-auto-merge.yml` skipped it and 12 routine bumps waited with it. | `.github/dependabot.yml` `groups` | LOW (delay only) | **FIXED**: groups take minor and patch only, and majors come one PR each. vitest 5 itself landed here, green on api/admin/merchant/shared. |
+| DEP-04 | **The admin and merchant typecheck depended on pnpm's hoisting choice.** Next's `.d.ts` files import `react` without declaring `@types/react`, so they resolved to whichever copy pnpm hoisted into `node_modules/.pnpm/node_modules`. On `main` that is 18.3.31. The combined bump flipped it to 19.2.18 (Prisma's copy), and admin failed `tsc` on React 18 code (`TransitionFunction`, `SVGProps`). | root `package.json` `pnpm.packageExtensions` | MEDIUM (any unrelated lockfile change could turn admin/merchant typecheck red) | **FIXED**: `next` declares an optional `@types/react` peer, the same fix as SDK54-02, so it resolves each app's own copy. Checked with `tsc --explainFiles`: admin loads no 19.x React types. |
+| DEP-05 | **A PostHog minor would have spent the whole Android bundle budget.** `posthog-react-native` 4.70 → 4.79 (with `@posthog/core`) adds ~48 KB of minified JS, about +87 KB of Hermes bytecode with lucide's +4.5 KB. That is 73 KB over `size-budget.json`, and `main` has only 12 KB of headroom. | `apps/mobile` / `.github/dependabot.yml` | LOW (the size guard blocks it) | **HELD**: PostHog stays at 4.70.x and now arrives as its own Dependabot PR (`exclude-patterns`), so the size budget fails that PR alone. Taking it needs a deliberate budget raise or a trim (`docs/APP-SIZE.md`). |
+
+---
+
 ## Merchant web upgrade review 2026-09-29 — account-standing, contract and sign-in gaps
 
 Found while the `/plan-ceo-review` of the merchant web upgrade (`docs/plans/2026-09-29-merchant-web-upgrade-plan.md`
