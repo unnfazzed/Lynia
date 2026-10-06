@@ -5,7 +5,11 @@ name: Deploy customer web (Cloudflare)
 # (EXPO_PUBLIC_LYNIA_WEB=1), finished by apps/customer-web/finish-build.mjs, served by an ASSETS-ONLY
 # Worker on the app.lyniago.com Custom Domain. Cloudflare creates the DNS record and certificate itself.
 #
-# TRIGGER: workflow_dispatch only, like the mobile releases. Merging to main ships nothing here.
+# TRIGGERS: a push to main that changes what the web bundle is built from (the customer app in
+# apps/mobile, @lynia/shared, the web runtime, this Worker, the lockfile), so a customer fix merged
+# for Android reaches the web too (owner decision 2026-10-06). It still waits for the `production`
+# environment's approval. Tests, docs and the native android/ios folders don't trigger it. Also
+# workflow_dispatch, to redeploy by hand. The newest run replaces older ones (concurrency below).
 #
 # DORMANT UNTIL ARMED: skipped until the Variable CLOUDFLARE_ACCOUNT_ID is set. Same token as
 # deploy-website.yml: CLOUDFLARE_WORKERS_API_TOKEN, a `production` ENVIRONMENT secret (main-only branch
@@ -22,11 +26,32 @@ name: Deploy customer web (Cloudflare)
 # Only the deploy step sees the token. Never write `${{ }}` inside a run: block in this file.
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/mobile/**"
+      - "!apps/mobile/**/__tests__/**"
+      - "!apps/mobile/**/*.test.ts"
+      - "!apps/mobile/**/*.test.tsx"
+      - "!apps/mobile/**/*.md"
+      - "!apps/mobile/android/**"
+      - "!apps/mobile/ios/**"
+      - "!apps/mobile/eas.json"
+      - "packages/shared/**"
+      - "!packages/shared/**/*.spec.ts"
+      - "!packages/shared/**/*.test.ts"
+      - "apps/customer-web/**"
+      - "tools/web-runtime/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/deploy-customer-web.yml"
   workflow_dispatch:
 
+# Newest wins: a newer run replaces one still waiting for approval (or running), so an unapproved old
+# run never blocks the queue. Safe for a static site: Cloudflare only switches to a new version once
+# its upload completes, and the newer run carries every change the replaced one had.
 concurrency:
   group: deploy-customer-web
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: read
