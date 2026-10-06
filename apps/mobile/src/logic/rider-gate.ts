@@ -50,6 +50,7 @@ export function resolveGate({ kyc, server, locDenied }: GateInput): GateId | nul
       case "cant_start":
         return "cantOpen";
       case "manual_review":
+      case "held":
       case "in_flight":
         return "pending";
       case "unfinished":

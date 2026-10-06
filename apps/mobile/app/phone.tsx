@@ -1,12 +1,14 @@
 import { tokens } from "@lynia/shared/tokens";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useState } from "react";
-import { Linking, Text, TextInput, View } from "react-native";
+import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import React, { useEffect, useRef, useState } from "react";
+import { AccessibilityInfo, Keyboard, Linking, Platform, Text, TextInput, View } from "react-native";
 import { requestOtp } from "../src/api/auth";
-import { ApiError } from "../src/api/client";
+import { useAuth } from "../src/auth/auth-context";
 import { TERMS_URL } from "../src/config";
+import { replaceClearingStack } from "../src/logic/nav";
+import { otpErrorMessage } from "../src/logic/otp";
 import { formatZwNational, zwE164, zwMobileProblem, zwNationalDigits } from "../src/logic/zw-mobile";
-import { DismissKeyboardArea } from "../src/ui";
+import { DismissKeyboardArea, useActionError } from "../src/ui";
 import { OB } from "../src/ui/onboarding/copy";
 import { BackButton, Cta, FieldLabel, H2, OnbScreen, Pad, Sub } from "../src/ui/onboarding/kit";
 
@@ -18,21 +20,41 @@ import { BackButton, Cta, FieldLabel, H2, OnbScreen, Pad, Sub } from "../src/ui/
  *
  * Validation runs on "Send code", not while typing — a half-typed number is not an error yet. A rider
  * intent from C1 ("Ride with LyniaGo") rides along to /verify.
+ *
+ * Only a problem with the NUMBER paints the field red (C3). A send that fails for any other reason (no
+ * network, a server error, the send limit) is not the number's fault, so it is a toast, as on C4/C5.
+ * The field has no `maxLength`: a pasted or autofilled "+263 77 245 1180" is longer than the nine digits
+ * it holds, and `zwNationalDigits` already strips the prefix and caps at nine.
  */
 export default function PhoneScreen(): React.ReactElement {
   const router = useRouter();
+  const navigation = useNavigation();
+  const { session } = useAuth();
   const params = useLocalSearchParams<{ intent?: string }>();
   const intent = params.intent === "rider" ? "rider" : undefined;
   const [digits, setDigits] = useState("");
   const [busy, setBusy] = useState(false);
+  // The C3 validation line: only ever a problem with the number itself.
   const [error, setError] = useState<string | null>(null);
+  const showFailure = useActionError();
+  // Synchronous in-flight guard: "Send code" then the keypad's submit key, a frame apart, both read
+  // `busy` as false. That sent two paid codes and pushed two code screens (C-8).
+  const inFlight = useRef(false);
+
+  // iOS has no live regions: say the C3 line out loud there (Android's accessibilityLiveRegion does it).
+  useEffect(() => {
+    if (error && Platform.OS === "ios") AccessibilityInfo.announceForAccessibility(error);
+  }, [error]);
 
   const submit = async (): Promise<void> => {
+    if (inFlight.current) return;
     const problem = zwMobileProblem(digits);
     if (problem) {
       setError(problem === "short" ? OB.phoneShort : OB.phoneNotMobile);
       return;
     }
+    inFlight.current = true;
+    Keyboard.dismiss();
     setError(null);
     setBusy(true);
     try {
@@ -43,15 +65,25 @@ export default function PhoneScreen(): React.ReactElement {
         params: { phone, devCode: res.devCode ?? "", deliveryChannel: res.deliveryChannel, ...(intent ? { intent } : {}) },
       });
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't send the code. Check your connection.");
+      showFailure(otpErrorMessage(e, "Couldn't send the code. Check your connection."));
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   };
 
+  // Signed out, the only screen that belongs behind this one is C1. Anything else (a signed-in screen
+  // left on the stack) must never be one Back away from a signed-out user (C-2), so the stack is cleared.
   const back = (): void => {
-    if (router.canGoBack()) router.back();
-    else router.replace("/onboarding");
+    if (session) {
+      if (router.canGoBack()) router.back();
+      else router.replace("/onboarding");
+      return;
+    }
+    const state = navigation.getState?.();
+    const prev = state && state.index > 0 ? state.routes[state.index - 1]?.name : undefined;
+    if (prev === "onboarding") router.back();
+    else replaceClearingStack(router, "/onboarding");
   };
 
   return (
@@ -108,7 +140,6 @@ export default function PhoneScreen(): React.ReactElement {
               autoComplete="tel"
               textContentType="telephoneNumber"
               accessibilityLabel={`${OB.phoneLabel}, ${OB.phonePrefix}`}
-              maxLength={12}
               style={{ flex: 1, height: "100%", fontSize: 17, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}
             />
           </View>

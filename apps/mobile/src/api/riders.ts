@@ -19,14 +19,19 @@ export interface BecomeResult {
   sessionToken?: string;
 }
 
-export function completeProfile(body: { firstName: string; lastName: string; idNumber: string }): Promise<{ ok: true }> {
-  return apiFetch("/riders/profile", { method: "PATCH", body });
-}
-
 /** The photo is optional since 2026-10-02 (D-62): sign-up sends none. `photoUrl`, when sent, is the
  *  storage key minted by `POST /uploads/kyc-photo` (not a URL). */
 export function becomeRider(body: { bikeReg?: string; photoUrl?: string }): Promise<BecomeResult> {
   return apiFetch("/riders/become", { method: "POST", body });
+}
+
+/**
+ * Ledger D-79 (owner 2026-10-06): the rider adds or changes their photo (the key `POST /uploads/kyc-photo`
+ * minted) and bike plate from Bike & documents. The server validates the plate like sign-up did (3–20
+ * characters) and stores it upper-case; it answers with what `/auth/me` would now say.
+ */
+export function updateRiderProfile(body: { photoUrl?: string; bikeReg?: string }): Promise<{ hasPhoto: boolean; bikeReg: string | null }> {
+  return apiFetch("/riders/me", { method: "PATCH", body });
 }
 
 /**
@@ -40,6 +45,19 @@ export function becomeRider(body: { bikeReg?: string; photoUrl?: string }): Prom
  */
 export function retryKyc(force = false): Promise<Pick<BecomeResult, "kycStatus" | "mode" | "verificationUrl" | "sessionToken">> {
   return apiFetch("/riders/kyc/retry", { method: "POST", body: { force } });
+}
+
+/**
+ * R-4: tell the server a launch of the ID check just completed, so it drops its cached pending state and
+ * the next `/auth/me` reads the vendor afresh. Changes nothing server-side; best-effort and never throws
+ * (an older server answers 404, which is fine — the board's own completed hint covers the gap).
+ */
+export async function noteKycLaunched(): Promise<void> {
+  try {
+    await apiFetch("/riders/kyc/launched", { method: "POST", body: {} });
+  } catch {
+    /* best-effort */
+  }
 }
 
 /** Going online sends the rider's position (when known) so the server can corridor-check it and refuse

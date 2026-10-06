@@ -3,7 +3,7 @@
  * contract the owner asked for — the splash is up for exactly as long as the boot takes — lives in
  * these rules, bounded below by the handoff's two minimums (1300ms intro, 400ms per active step).
  */
-import { INTRO_MS, STEP_MIN_ACTIVE_MS, nextStepChange, splashDoneAt, stepStates, stepTimes } from "../timeline";
+import { CUT_AFTER_TICK_MS, INTRO_MS, STEP_MIN_ACTIVE_MS, nextStepChange, shownSteps, splashDoneAt, stepStates, stepTimes } from "../timeline";
 
 describe("stepTimes", () => {
   it("a boot that was ready before the intro ended still shows each step for its minimum", () => {
@@ -15,6 +15,14 @@ describe("stepTimes", () => {
   it("a slow task holds its step — and every later step — until it actually resolves", () => {
     const times = stepTimes([200, 6000, 1000]);
     expect(times.doneAt).toEqual([1700, 6000, 6400]);
+  });
+
+  it("a non-Home boot runs step 1 only: step 2 never flashes active as step 1 completes", () => {
+    const times = stepTimes([0, 0, 0], shownSteps("/phone"));
+    expect(times.activeAt).toEqual([INTRO_MS, null, null]);
+    expect(stepStates(times, 1700)).toEqual(["done", "pending", "pending"]);
+    expect(shownSteps("/home")).toBe(3);
+    expect(shownSteps(null)).toBe(3);
   });
 
   it("a pending task leaves its step (and the ones after it) open-ended", () => {
@@ -48,8 +56,8 @@ describe("splashDoneAt", () => {
   it("Home waits for all three steps", () => {
     expect(splashDoneAt(times, "/home")).toBe(4000); // step 3 went active at 2100; its task resolved at 4000
   });
-  it("anywhere else hands off after step 1 (onboarding, sign-in, rider, a deep link)", () => {
-    for (const d of ["/onboarding", "/phone", "/rider", "/order/abc"]) expect(splashDoneAt(times, d)).toBe(1700);
+  it("anywhere else hands off after step 1's tick has been seen (onboarding, sign-in, rider, a deep link)", () => {
+    for (const d of ["/onboarding", "/phone", "/rider", "/order/abc"]) expect(splashDoneAt(times, d)).toBe(1700 + CUT_AFTER_TICK_MS);
   });
   it("is not done before the boot decision exists", () => {
     expect(splashDoneAt(times, null)).toBeNull();

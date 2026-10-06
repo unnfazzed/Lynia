@@ -1,6 +1,7 @@
 import * as SplashScreen from "expo-splash-screen";
 import { useCallback } from "react";
 import { useBootPhase } from "./boot-phase";
+import { reportBootEnded } from "./boot-readiness";
 import { scheduleWindowBackgroundReset } from "./window-background";
 
 /**
@@ -53,6 +54,9 @@ export function useBootSplashRelease(): () => void {
       bootEnded = true;
       scheduleWindowBackgroundReset();
     }
+    // The process-lifetime stamp — also from callers outside BootPhaseProvider (the ErrorBoundary),
+    // whose `endBoot` is the default no-op: a remounted root layout must not replay the splash.
+    reportBootEnded();
     // Idempotent (a plain setState to false) — safe to repeat after another caller released.
     endBoot();
   }, [endBoot]);

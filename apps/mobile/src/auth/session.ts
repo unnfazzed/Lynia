@@ -19,6 +19,11 @@ export interface Session {
   // reads this on every launch instead of only right after verifyOtp, so a killed setup step re-prompts
   // on relaunch rather than silently landing the still-unnamed account on /home forever (BH-15).
   needsProfile?: boolean;
+  // The C1 rider path ("Ride with LyniaGo") of an account still on C5, kept with the session for the same
+  // reason as needsProfile: an app killed on C5 relaunches into /profile/setup with no route params, and
+  // the sign-up must still reach the rider app (start-up review 2026-10-06, C-4). Set at sign-in only
+  // when needsProfile is true; cleared when the name is saved.
+  signupIntent?: "rider";
 }
 
 const KEY = "lynia.session";

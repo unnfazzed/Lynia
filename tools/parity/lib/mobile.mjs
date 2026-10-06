@@ -79,6 +79,18 @@ export async function renderMobile(o) {
     // that resolves. A fixture can tune the wait via window.__PARITY_SETTLE_MS (default 600).
     const settle = await page.evaluate(() => Number(window.__PARITY_SETTLE_MS) || 600);
     await page.waitForTimeout(settle);
+    // The ready flag flips two frames after the first render, before effects and data have settled:
+    // an error thrown later (an effect, a resolved query) unmounts the tree after it. So look again —
+    // a recorded error, or an empty #root (the tree is gone), is a failed render, never a blank "ok".
+    const after = await page.evaluate(() => ({
+      err: typeof window.__PARITY_ERROR === "string" ? window.__PARITY_ERROR : null,
+      empty: (document.getElementById("root")?.childElementCount ?? 0) === 0,
+    }));
+    if (after.err) return { ok: false, error: after.err, width: dims.w * scale, height: dims.h * scale };
+    if (after.empty) {
+      const why = errors[0] ? `: ${errors[0]}` : "";
+      return { ok: false, error: `app tree unmounted, #root is empty${why}`, width: dims.w * scale, height: dims.h * scale };
+    }
     const el = await page.$("#root");
     const buffer = await el.screenshot({ type: "png" });
     if (o.out) {

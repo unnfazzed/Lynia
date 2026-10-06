@@ -17,7 +17,8 @@ import type { Env } from "../config/env";
 import { MetricsService, type OtpVerifyResult } from "../observability/metrics.service";
 import { maskPhone } from "../common/phone-mask";
 import { PiiCryptoService } from "../common/pii-crypto.service";
-import { KycPendingStateService } from "../kyc/kyc-pending-state.service";
+import { classifyStoredDiditStatus } from "../kyc/didit";
+import { KycPendingStateService, pendingStateOf } from "../kyc/kyc-pending-state.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { birdVerifyCheck, birdVerifyStart } from "./bird-verify";
 import { carrierFromPhone } from "./otp-carrier";
@@ -39,6 +40,21 @@ const OTP_GRACE_TTL_SECONDS = 60;
 // probe can't get more than a handful of guesses at the correct code while it lingers. Mirrors MAX_OTP_ATTEMPTS so a
 // legit timeout-retry (typically 1–2 re-sends of the same correct code) is never affected.
 const MAX_GRACE_ATTEMPTS = 5;
+
+/**
+ * The machine-readable reason on every OTP verify 401. The app branches on these codes; the messages
+ * stay word for word what they were, because app builds released before the codes existed still tell
+ * expired/locked from wrong by matching words in them (apps/mobile/src/logic/otp.ts).
+ */
+export type OtpFailureReason = "otp_invalid" | "otp_expired" | "otp_locked";
+const OTP_FAILURE_MESSAGES: Record<OtpFailureReason, string> = {
+  otp_invalid: "Invalid code",
+  otp_expired: "Code expired or never requested",
+  otp_locked: "Too many attempts — request a new code",
+};
+function otpError(reason: OtpFailureReason): UnauthorizedException {
+  return new UnauthorizedException({ statusCode: HttpStatus.UNAUTHORIZED, message: OTP_FAILURE_MESSAGES[reason], reason });
+}
 // LEGACY rotation grace (RT-GRACE). A session rotated BEFORE successor secrets were derived
 // (TokenService.successorSecret) has a random successor secret that can't be handed back, so a retry of
 // such a token still gets the original treatment: a fresh independent session, only within this window
@@ -141,6 +157,9 @@ export class AuthService {
             // joins the token as the liveness signal for it (see the derivation below).
             kycRef: true,
             kycSessionUrl: true,
+            // R-1 / R-3: the vendor's last webhook status for the current session — never returned, only
+            // read below to tell a held check and a dead session from one in flight without a vendor call.
+            kycVendorStatus: true,
             // D-70: the vendor-verified ID number (ciphertext) — decrypted below for its OWNER only.
             verifiedIdNumber: true,
             // So the cancel-confirm sheet can warn "this is strike N of LIMIT" before a cancel lands,
@@ -172,11 +191,24 @@ export class AuthService {
     //                        with no action while they wait for a check nobody is running.
     // Never throws and never blocks: see KycPendingStateService for the TTL, the coalescing, and why
     // every failure path answers `unfinished`.
+    //
+    // R-3 / R-4 (startup review 2026-10-06): the vendor's own status webhook, stored on the row, answers
+    // first when it settles the question. A HELD check (In Review, or an approval held for review — that
+    // one has no live session left at all) is `in_flight` for older apps and `kycHeld` for this one, which
+    // draws the Rider v2 "under review" wall instead of R2's "usually under a minute". A DEAD session
+    // already lost its credentials with that webhook, so it falls to `null` (the rider's move) below. Only
+    // a session the webhook hasn't settled costs a vendor read — cached, coalesced, invalidated on change.
     const hasLiveKycSession = Boolean(p.rider?.kycRef && p.rider.kycSessionToken && p.rider.kycSessionUrl);
-    const kycPendingState =
-      p.rider?.kycStatus === "pending" && this.env.KYC_MODE === "auto" && hasLiveKycSession
-        ? await this.kycPendingState.get(p.rider.kycRef)
-        : null;
+    const autoPending = p.rider?.kycStatus === "pending" && this.env.KYC_MODE === "auto";
+    const stored = autoPending ? classifyStoredDiditStatus(p.rider?.kycVendorStatus) : null;
+    const sessionClass =
+      stored === "held" || stored === "dead"
+        ? stored
+        : autoPending && hasLiveKycSession
+          ? await this.kycPendingState.read(p.rider?.kycRef)
+          : null;
+    const kycHeld = sessionClass === "held";
+    const kycPendingState = kycHeld ? "in_flight" : sessionClass && hasLiveKycSession ? pendingStateOf(sessionClass) : null;
 
     return {
       profileId: p.id,
@@ -235,6 +267,10 @@ export class AuthService {
             // network), is deliberately absent: the session still reads "not started" vendor-side, so
             // the server genuinely cannot see it. That one is client-only and short-lived.
             kycPendingState,
+            // R-3, additive: the check is held for a human review (the vendor's In Review, or a result we
+            // hold — a review-band face match, an ID collision). The app draws the "under review" wall and
+            // polls slowly; an older app ignores it and keeps `in_flight`'s R2.
+            kycHeld,
           }
         : null,
     };
@@ -361,7 +397,9 @@ export class AuthService {
     }
     const rl = rlFrom(this.env);
     const rlKeys = [`rl:phone:${phone}`, `rl:ip:${ip}`, "rl:global"];
-    await this.enforceRate(rlKeys[0], rl.phone);
+    // `otp_send_limit` + `retryAfter` let the app say "try again in N min" for the per-phone cap, the
+    // one a real person hits (five sends an hour); the per-IP and global caps carry `retryAfter` only.
+    await this.enforceRate(rlKeys[0], rl.phone, "otp_send_limit");
     await this.enforceRate(rlKeys[1], rl.ip);
     await this.enforceRate(rlKeys[2], rl.global);
     // Only a send that went out spends the budget: a failed one is refunded, or a vendor outage would
@@ -525,7 +563,7 @@ export class AuthService {
         return demo;
       }
       record("invalid");
-      throw new UnauthorizedException("Invalid code");
+      throw otpError("otp_invalid");
     }
     try {
       // Bird Verify (bird-verify.ts) owns generation/expiry/attempt-limiting entirely and has no
@@ -539,11 +577,11 @@ export class AuthService {
       if (!checked.success) {
         if (checked.reason === "locked") {
           record("locked");
-          throw new UnauthorizedException("Too many attempts — request a new code");
+          throw otpError("otp_locked");
         }
         if (checked.reason === "invalid") {
           record("invalid");
-          throw new UnauthorizedException("Invalid code");
+          throw otpError("otp_invalid");
         }
         // "expired" — no live OTP (TTL lapsed or never requested), OR — Bird only — a SECOND check
         // of an already-final verification (Bird 404s that; birdVerifyCheck maps it here). Either
@@ -557,7 +595,7 @@ export class AuthService {
           return graced;
         }
         record("expired");
-        throw new UnauthorizedException("Code expired or never requested");
+        throw otpError("otp_expired");
       }
       // Engine-agnostic retry-safety grace (§6): store the just-confirmed code's hash — identical to
       // what checkLocalOtp's own `rec.hash` would be at this point — so a client timeout + retry with
@@ -975,14 +1013,24 @@ export class AuthService {
     };
   }
 
-  /** A fixed-window cap on `key`. The 429 body is `{ statusCode, message }` (never a bare string, which
-   *  the app can't read — E2E 2026-10-05 FS-3); `reason`, when given, rides along in it. */
+  /**
+   * A fixed-window cap on `key`. The 429 body is always `{ statusCode, message, retryAfter }`:
+   * `retryAfter` is the seconds left in the window (the window's full length if the store can't say), so
+   * the app can tell the user when to come back instead of "later". `reason`, when given, rides along so
+   * a client can tell one cap from another (they share the status and the message). Never a bare
+   * string, which the app can't read (E2E 2026-10-05 FS-3).
+   */
   private async enforceRate(key: string, limit: { max: number; windowSec: number }, reason?: string): Promise<void> {
     const count = await this.store.hit(key, limit.windowSec);
     if (count > limit.max) {
-      const message = "Too many requests — try again later";
+      const retryAfter = (await this.store.ttl(key)) ?? limit.windowSec;
       throw new HttpException(
-        { statusCode: HttpStatus.TOO_MANY_REQUESTS, message, ...(reason ? { reason } : {}) },
+        {
+          statusCode: HttpStatus.TOO_MANY_REQUESTS,
+          message: "Too many requests — try again later",
+          retryAfter,
+          ...(reason ? { reason } : {}),
+        },
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }

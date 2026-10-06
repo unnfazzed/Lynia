@@ -1,18 +1,21 @@
-import { formatPhoneDisplay } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
-import { Text, TextInput, View } from "react-native";
-import { updateProfile } from "../../src/api/auth";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { AppState, Text } from "react-native";
+import { getMe, updateProfile } from "../../src/api/auth";
 import { ApiError } from "../../src/api/client";
 import { useAuth } from "../../src/auth/auth-context";
 import { loadRolePreference, saveRolePreference } from "../../src/auth/session";
+import { replaceClearingStack } from "../../src/logic/nav";
 import { clearProfileDraft, loadProfileDraft, profileDraftHasContent, saveProfileDraft } from "../../src/logic/profile-draft";
 import { parseSignInIntent, signedInDestination, startRoleFor } from "../../src/logic/sign-in-route";
-import { DismissKeyboardArea, Icon, useActionError } from "../../src/ui";
+import { DismissKeyboardArea, useActionError } from "../../src/ui";
 import { OB } from "../../src/ui/onboarding/copy";
-import { Cta, FieldLabel, H2, Note, OnbScreen, Pad, Sub } from "../../src/ui/onboarding/kit";
+import { Cta, H2, NameFields, Note, OnbScreen, Pad, Sub, VerifiedPhoneRow } from "../../src/ui/onboarding/kit";
+
+/** How long typing must pause before the draft is written to the keystore (not on every keystroke). */
+const DRAFT_SAVE_DEBOUNCE_MS = 500;
 
 /**
  * C5 · Name (Calm Mint v2, `packages/design/handoff/calm-mint-v2-2026-10` README §3; ledger D-55): the
@@ -24,47 +27,39 @@ import { Cta, FieldLabel, H2, Note, OnbScreen, Pad, Sub } from "../../src/ui/onb
  * in Account. No role choice either: the account starts as a customer, or as a rider when it came in
  * through C1's "Ride with LyniaGo" (`intent`).
  *
- * The half-filled form survives an app kill (logic/profile-draft.ts), as before.
+ * An app killed here relaunches straight onto this screen with no route params (boot-route.ts), so
+ * neither the rider intent nor the verified number may live only in the params (start-up review
+ * 2026-10-06, C-4): the intent falls back to the one kept with the session, the number to `/auth/me`.
+ * The half-filled form survives the kill too (logic/profile-draft.ts).
  */
-function NameField({ label, value, onChangeText, autoComplete }: { label: string; value: string; onChangeText: (v: string) => void; autoComplete: "given-name" | "family-name" }): React.ReactElement {
-  return (
-    <View style={{ flex: 1, minWidth: 0 }}>
-      <FieldLabel>{label}</FieldLabel>
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        accessibilityLabel={label}
-        autoComplete={autoComplete}
-        textContentType={autoComplete === "given-name" ? "givenName" : "familyName"}
-        autoCapitalize="words"
-        maxLength={60}
-        style={{
-          height: tokens.touchTargetPrimary,
-          borderWidth: 1,
-          borderColor: tokens.color.line,
-          borderRadius: tokens.radius.input,
-          paddingHorizontal: 14,
-          fontSize: 17,
-          color: tokens.color.ink,
-        }}
-      />
-    </View>
-  );
-}
-
 export default function ProfileSetupScreen(): React.ReactElement {
   const router = useRouter();
   const qc = useQueryClient();
-  const { updateSession } = useAuth();
-  const params = useLocalSearchParams<{ phone?: string; deliveryChannel?: string; intent?: string }>();
-  const phone = typeof params.phone === "string" ? params.phone : "";
-  const intent = parseSignInIntent(params.intent);
+  const { session, updateSession } = useAuth();
+  const params = useLocalSearchParams<{ phone?: string; intent?: string }>();
+  const paramPhone = typeof params.phone === "string" ? params.phone : "";
+  const meQ = useQuery({ queryKey: ["me"], queryFn: getMe, enabled: paramPhone.length === 0 && !!session });
+  const phone = paramPhone || meQ.data?.phone || "";
+  const intent = parseSignInIntent(params.intent) ?? parseSignInIntent(session?.signupIntent);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [busy, setBusy] = useState(false);
   const setError = useActionError();
   const [draftRestored, setDraftRestored] = useState(false);
   const hydrated = useRef(false);
+
+  // The draft write is debounced: an encrypted keystore write per keystroke is slow on low-end Android.
+  // A pending write is flushed when the app goes to the background (the moment before the OS may kill it)
+  // and when the screen unmounts; once the name is saved, nothing is written again.
+  const latest = useRef({ firstName: "", lastName: "" });
+  const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const finished = useRef(false);
+  const flushDraft = useCallback((): void => {
+    if (!pending.current) return;
+    clearTimeout(pending.current);
+    pending.current = null;
+    if (!finished.current) void saveProfileDraft(latest.current);
+  }, []);
 
   // Restore a half-filled form from before an app kill.
   useEffect(() => {
@@ -74,7 +69,7 @@ export default function ProfileSetupScreen(): React.ReactElement {
       if (!cancelled && d && profileDraftHasContent(d)) {
         setFirstName(d.firstName);
         setLastName(d.lastName);
-        setDraftRestored(!!(d.firstName || d.lastName));
+        setDraftRestored(true);
       }
       hydrated.current = true;
     })();
@@ -84,9 +79,24 @@ export default function ProfileSetupScreen(): React.ReactElement {
   }, []);
 
   useEffect(() => {
-    if (!hydrated.current) return;
-    void saveProfileDraft({ firstName: firstName.trim(), lastName: lastName.trim(), idNumber: "" });
+    if (!hydrated.current || finished.current) return;
+    latest.current = { firstName: firstName.trim(), lastName: lastName.trim() };
+    if (pending.current) clearTimeout(pending.current);
+    pending.current = setTimeout(() => {
+      pending.current = null;
+      if (!finished.current) void saveProfileDraft(latest.current);
+    }, DRAFT_SAVE_DEBOUNCE_MS);
   }, [firstName, lastName]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s !== "active") flushDraft();
+    });
+    return () => {
+      sub.remove();
+      flushDraft();
+    };
+  }, [flushDraft]);
 
   const canSubmit = firstName.trim().length > 0 && lastName.trim().length > 0;
 
@@ -99,11 +109,16 @@ export default function ProfileSetupScreen(): React.ReactElement {
       // E2E 2026-10-05 FS-9: the PATCH answers with the full profile — put it in the `["me"]` cache now.
       // Left stale, "Ride with LyniaGo" → R1 read the nameless cached `me` and asked for the name again.
       qc.setQueryData(["me"], me);
+      // The draft has served its purpose: drop any write still waiting, then the stored one.
+      finished.current = true;
+      if (pending.current) clearTimeout(pending.current);
+      pending.current = null;
       void clearProfileDraft();
-      await updateSession({ needsProfile: false });
+      await updateSession({ needsProfile: false, signupIntent: undefined });
       const chosen = await loadRolePreference();
-      if (!chosen) void saveRolePreference(startRoleFor(null, intent));
-      router.replace(signedInDestination(chosen, intent));
+      if (!chosen) void saveRolePreference(startRoleFor(null, intent, session?.role));
+      // Clear the stack: Back from the app must not return to sign-up (C-1).
+      replaceClearingStack(router, signedInDestination(chosen, intent, session?.role));
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't save your details.");
     } finally {
@@ -120,21 +135,8 @@ export default function ProfileSetupScreen(): React.ReactElement {
           {draftRestored ? (
             <Text style={{ marginTop: -12, marginBottom: 12, fontSize: 12, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>{OB.draftRestored}</Text>
           ) : null}
-          <View style={{ flexDirection: "row", gap: 12 }}>
-            <NameField label={OB.firstName} value={firstName} onChangeText={setFirstName} autoComplete="given-name" />
-            <NameField label={OB.surname} value={lastName} onChangeText={setLastName} autoComplete="family-name" />
-          </View>
-          {phone ? (
-            <View
-              accessible
-              accessibilityLabel={`${formatPhoneDisplay(phone)}, ${OB.verified}`}
-              style={{ marginTop: 16, flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, backgroundColor: tokens.color.surface }}
-            >
-              <Icon name="circle-check" size={18} color={tokens.color.accent} />
-              <Text style={{ fontSize: 14, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatPhoneDisplay(phone)}</Text>
-              <Text style={{ marginLeft: "auto", fontSize: 13, fontWeight: tokens.font.weight.bold, color: tokens.color.accentText }}>{OB.verified}</Text>
-            </View>
-          ) : null}
+          <NameFields firstName={firstName} lastName={lastName} onFirstName={setFirstName} onLastName={setLastName} onSubmit={() => void submit()} />
+          {phone ? <VerifiedPhoneRow phone={phone} /> : null}
           <Note icon="id-card">{OB.noIdNote}</Note>
         </Pad>
       </OnbScreen>

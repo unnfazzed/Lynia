@@ -2817,6 +2817,11 @@ offer-card views are deleted; deferral baseline 78 → 76) and ⏭ rows in the t
 | Support phone (S6) | "+263 242 700 100 · 7am–9pm" | The safety line's number, the only staffed line configured | No separate support number is configured |
 | Common questions (S6) | Three rows | Each opens WhatsApp with the question | There are no help articles to open |
 | Live-job bar position (C5) | Not drawn (described in the switch rules) | A filled 44 SmBtn above the service tiles, the same bar the Jobs board draws | The handoff names the bar and its copy but draws no Home frame |
+| "Finish verifying" wall (G3) — startup review 2026-10-06, R-1 | "Finish verifying" + the customer bridge | Also the WhatsApp ghost the failed wall (G4) draws (`whatsappSupport`, an existing string) | A check that won't finish (a dead vendor session, a phone that can't open it) needs a way out besides the resume |
+| Declined wall (G4) body — R-6 | "The photo of your ID was blurry. Try again in good light, with all four corners showing." | That, unless the decline carries a known reason other than an unreadable photo: then "‹reason›. Check this, then try again." (`RF.gFailedWhyB`, one undrawn formatter; the reason is the shared `KYC_DECLINE_REASON_LABELS` label) | A face-mismatch rider was told to retake a blurry photo and could spend their last try on it |
+| Become card, failed (C9) body — R-6 | "The ID photo was blurry. You have 1 try left." | Same rule: "‹reason›. You have N tries left." (`RF.kycFailWhyB`, one undrawn formatter) for a known reason | Same as above |
+| Become card, both tries used — R-10 | Not drawn (only the one-try-left failed card is) | The board's own G5 copy on the card — "We still couldn't verify your ID", "You've used both tries…" — and "Message support on WhatsApp" (all existing strings) instead of "Try again" | The server refuses a third try; "You have 0 tries left" + "Try again" was a dead end |
+| Held for review (Didit In Review, a review-band face match, an ID collision) — R-3 | Not distinguished | The "under review" wall (G2), like manual review; `/auth/me` serves `rider.kycHeld` | "Usually under a minute" (R2) is false while a human reviews it. See also D-55 §4 "R2" |
 
 ### 5 · Still to land
 
@@ -2945,6 +2950,8 @@ this bar and lands with that work.
 | C4 resend line after an SMS send | "Resend on WhatsApp" | That, or the screen's own "Send a new code" when the code went by SMS | "Resend on WhatsApp" beside "Sent by SMS" contradicts itself (E2E 2026-10-05 P-8); no new string — the locked state's drawn CTA copy. **Owner-approved 2026-10-06** |
 | C4 "Fills in by itself" | Auto-read from the message | The input carries the platform autofill hints (`sms-otp`, `oneTimeCode`); a WhatsApp code is pasted or tapped in from the suggestion strip, and the sixth digit still submits | No app can read a WhatsApp message; true zero-tap needs WhatsApp's one-tap autofill template (NEEDS BACKEND, Bird) |
 | C4 on a QA build | — | "Test build: code pre-filled." in place of the channel line | No message is sent on a QA build (console OTP); the drawn line would be false |
+| C2 / C4 rate limit | No rate-limit state drawn | A toast "Too many tries. Try again in N min." (or "N h"), from the API's `retryAfter`, when a send or verify hits a cap (5 sends an hour per number, 3 new accounts a day per device). Other send/verify failures that aren't the number's or the code's fault (network, server) are a toast too; only a bad number paints C2's field red (C3) | Without the wait, the user saw "try again later" for up to 55 minutes, or a red "number" error that wasn't about the number. One undrawn line (start-up review 2026-10-06, C-9) |
+| Privacy (SH7), opened from C2's footer before sign-in | Both action rows | Signed out, only "Request a copy of my data"; "Delete my account" is not shown | There is no account to delete before sign-in, and the deletion flow needs a session. The mock draws the signed-in screen |
 | C5 | Two fields, the verified row, the note | The same, plus the existing "We saved what you'd filled in…" line when a draft is restored | A half-filled form survives an app kill (LC-C10); the line says why the fields are already filled |
 | C5 exit | None drawn | None — the kyc-2026-08 "Use a different number" ghost is gone with `Register` | A mistyped number is fixed with C4's "Change" before the code is accepted |
 | Rider path after sign-in | Permissions in context | Riders still see the location + job-alert priming screens (`/permissions?next=/rider`) before the rider app | A rider without location and job alerts cannot take work; the handoff's in-context rule is written for customers |
@@ -2953,7 +2960,8 @@ this bar and lands with that work.
 | R3 meter | "Commission-free jobs · 5 of 5 left" card | Not drawn | Same: NEEDS BACKEND · free-jobs rule. Until then a new rider at a $0 balance still meets the top-up gate after "Go online". **Resolved by D-70 (2026-10-02):** drawn from `/auth/me` `rider.freeJobs` |
 | R1 → ID check | "Start ID check" opens the check | "Start ID check" opens the rider photo step first (the existing capture + review), then the check | The rider photo is uploaded before the vendor session is opened (`POST /riders/become` needs it); R2 draws the photo as done before the check, so this is the handoff's own order |
 | Photo step | Not drawn | "Rider photo for your profile", the capture/review card, and — only when the account has none on file — the name and national-ID fields | Rider onboarding needs a national ID on the profile (one-ID-one-account) and C5 no longer collects it; Didit prefill is NEEDS BACKEND. **Superseded by D-75 (2026-10-03):** no ID is typed; the check supplies it, and only a nameless account sees a name step (C5's grammar) |
-| R2 | Every pending check | Only while the automated check is with the vendor; manual (ops) review keeps the Rider v2 wall | "Usually under a minute" is false for an ops review |
+| R2 | Every pending check | Only while the automated check is with the vendor; manual (ops) review — and since 2026-10-06 (startup review R-3) a check HELD for a human review (`rider.kycHeld`: Didit In Review, a review-band face match, an ID collision) — keeps the Rider v2 wall | "Usually under a minute" is false for any human review |
+| Become → board (startup review 2026-10-06, R-2 / R-5) | "Start ID check" → the check → R2 | From the board's "Earn with your bike" gate, Become returns to that same board; from Account it goes through the rider permission priming (`/permissions?next=/rider`, which forwards at once if this phone already primed) — the same as C1's rider path | A second board was mounted under the first; from Account, R2's "We'll notify you" couldn't arrive without the notification permission |
 | R3 | After verification | Once per account per phone, and only for a rider with no trips yet | No verified-at date is served; a rider with trips is not "just verified" |
 
 ### 3c · What has landed (part 3: Search, 2026-10-02)
@@ -3737,7 +3745,7 @@ Outcomes the handoff's table doesn't label, with their copy in `OX` (neutral ton
 handoff's text once but carries no "Try again" action (the app's toast has none) — the page-failed row
 right above it offers the retry.
 
-## D-64 · Splash v1 — "1a Sun & orbit": the splash stays up until the app is ready — handoff APPROVED (2026-10-02); deviations 1–6 PENDING OWNER REVIEW
+## D-64 · Splash v1 — "1a Sun & orbit": the splash stays up until the app is ready — handoff APPROVED (2026-10-02); deviations 1–7 PENDING OWNER REVIEW
 
 **Owner instruction, this session (2026-10-02):** *"lets implement a new splash screen. It should open
 with the time it takes to be ready to show the home screen."*, with the design handoff attached
@@ -3777,11 +3785,12 @@ frame + `app/splash.view.tsx`). Those gallery screens are SUPERSEDED and not ali
 | # | Handoff | App | Why |
 |---|---|---|---|
 | 1 | Step 3 = "nearby-rider or zone availability call" | Home's first content (the rails) | No customer-side nearby-rider or zone endpoint exists. Home's content is what "ready to show the home screen" means. |
-| 2 | Loading keeps going indefinitely on a slow network | Hands off after 20s (`GIVE_UP_MS`) unless offline | Never strand the app on a hung request; Home has its own loading and empty states. |
+| 2 | Loading keeps going indefinitely on a slow network | Hands off after 20s (`GIVE_UP_MS`) of ONLINE loading — time on the offline panel doesn't count (2026-10-06) | Never strand the app on a hung request; Home has its own loading and empty states. Counting offline time made a phone that came back after 20s offline exit straight into an unloaded Home. |
 | 3 | Steps card / panels at 16 / 14px from the bottom, pill at top 44 | Plus the device's bottom inset; pill at max(44, top inset + 8) | The mock frame has no system bars; this keeps them clear of gesture/nav bars and notches. |
 | 4 | Card shadow `0 18px 40px -12px rgba(0,0,0,.3)` | One-layer RN shadow (offset 18, radius 20, opacity .3, elevation 12) | The app runs the old architecture: no `boxShadow`, no spread. |
 | 5 | Orbit's CSS dashed border | SVG circle, `strokeDasharray 6 6` | Dashed rounded borders aren't reliable on Android. |
 | 6 | Splash starts on plain green | ~~The native launch frame still shows the old dove + wordmark lockup~~ **Resolved (owner, 2026-10-02: "remove it entirely the old dove and wordmark"):** the native launch screen is now plain green (`assets/splash-blank.xml` / `splash-blank.png`); the lockup generator (`src/ui/splash-lockup.ts`, `scripts/build-splash-icon.mjs`) and its assets are deleted. | Native config: reaches devices only in the next store build (none dispatched — owner: "dont build an expo"). Until then installed binaries keep the old frame. |
+| 7 | Anchor at 44% of H; wordmark top at anchor + 152; the offline lift is 64px ("✅ Fits 320×640 … clears the wordmark by about 26px") | Same values wherever they fit. Where #3's bottom inset leaves less than 24px between the wordmark and the steps card, the anchor (sun, orbit, dove, wordmark, sky blob) moves UP until it does; where the 64px lift leaves less than 24px above the offline panel, the lift grows (`src/boot/splash/geometry.ts`, measured card/panel heights). Reduced motion keeps the lift, without the motion. (2026-10-06, startup review S-5) | The mock frame has no system bars. At 320×640 with a 48dp 3-button nav bar #3 put the card ~20dp over "LyniaGo" and the offline panel ~8dp over the lifted wordmark; the handoff's own answer to a panel is "the content moves up". Unchanged at 640/700/720 with no nav bar and at 720/780 with one. |
 
 ## D-65 · The Home service tile reads "Food", not "Restaurants" — APPROVED (2026-10-02)
 
@@ -4428,3 +4437,73 @@ longer drawn anywhere in the app; its SVG stays in the Calm Mint v2 handoff).
 
 **Evidence:** `docs/parity/EMPTY-STATES-V2-2026-10-06.png` (before / after for every drawn frame, 360×720, rendered by
 `tools/parity`); the 320×640 check was run on O16, H6, B9, S8 and J4.
+
+## D-79 · Owner decisions 2026-10-06: Personal details, rider photo + bike plate, free-jobs reminder, immediate deletion copy — APPROVED (2026-10-06)
+
+**Owner decisions (2026-10-06, this session)**, after the startup review
+(`startup-review-2026-10-06`, items C-10, R-8 and §6) found four promises the app made and didn't keep:
+C5 "You can add it in Account" (nowhere to add an ID), R1/R3 "Your photo … can wait" / "Add your photo …
+later in Account" (Bike & documents was read-only), R3 "We'll remind you before you need to top up" (no
+reminder existed), and Delete account's "Sign back in within 30 days and the deletion is cancelled" (the
+API erases at once). The owner chose to make the first three true and to change the fourth's words. None
+of the new screens or strings is drawn; this entry is their approval.
+
+### 1 · Personal details (C-10)
+
+| Where | Mock | App | Why |
+|---|---|---|---|
+| Settings → YOUR ACCOUNT, second row (both sides; Settings is one screen) | Calm Mint v2 `mint2.js` `OB.account` draws the row "Personal details · Name, phone, optional ID" on an Account screen the app doesn't use | The row, words verbatim (`R.sPersonal` / `R.sPersonalS`), an `id-card` disc, after the identity row | Makes C5's note true. The row's words are drawn; its place in Rider v2's Settings is not. |
+| `app/settings/personal.tsx` | Not drawn | Rider v2's `PushHeader` ("Personal details"); C5's side-by-side `NameFields` (editable), the `VerifiedPhoneRow`, a 52px ID field under the `FieldLabel` "National ID (optional)", C5's surface `Note`, the 52px `Cta` "Save" (`R.save`, D-54) | Built from the two drawn grammars the owner named. |
+| The ID | — | Optional. Saved through `PATCH /auth/me` (sent normalised, only when it changed). The one-ID-one-account refusal (409 `id_in_use`) and the verified-ID freeze (403) show under the field in the API's own words. A stored ID can't be emptied here (the API has no clear): Save stays off and the line below says how. | Existing API rules; no API change. |
+| A verified rider | — | The ID read-only, masked to its last three characters ("••••••••A42"), "Verified" (C5's word) and the note below, no field | Since D-75 the check's number becomes the account's ID; the API refuses to change it. |
+| Storage | — | Memory only: `me` is persisted with `idNumber` / `kycIdNumber` stripped (`redactBeforePersist`, unchanged); the screen keeps no draft | |
+
+**New strings** (`src/ui/rider/copy.ts`): "Personal details" (also the title), "Name, phone, optional ID" (both
+drawn), "National ID (optional)", "Only if you want to add it. We keep it private and only use it to
+confirm who you are.", "This came from your ID check. To change it, contact support.", "To remove your
+national ID, contact support.", "Couldn't load your details. Check your connection and try again.",
+"Couldn't save your details. Check your connection and try again."
+
+### 2 · Rider photo and bike plate on Bike & documents (R-8)
+
+| Where | Mock | App | Why |
+|---|---|---|---|
+| Rider photo row | Rider v2 S5: "Rider photo · Verified" | No photo: sub "Not added yet" (D-62), value "Add photo". A photo: value "Change". Never "Verified". Tapping opens a sheet ("Rider photo", "A clear, recent photo of your face, on its own.", "Take photo" / "Choose from gallery"); the shot is downscaled, uploaded to `kyc/<you>/` (`POST /uploads/kyc-photo`) and attached with the new `PATCH /riders/me`. While it saves the value reads "Saving photo…" (`R.photoUploading`). | The photo is the rider's own upload after D-62, not something a check verified. |
+| Bike row | S5: "Bike · ABH 4721 · Verified" | The plate as the sub. "Verified" **only** for a verified rider who has a plate; no plate: value "Add plate". Tapping opens a sheet ("Your bike's number plate", the field "Number plate", the hint "As it's written on the plate, like AEE 4471.", "Save"). | Since D-75 no plate is collected at sign-up, so every verified rider used to read "Bike · Verified" with no plate (review R-8). |
+| Settings → Bike & documents row | S1: value "Verified" | The same rule (`bikeVerified`): no "Verified" without a plate | Same. |
+| "Re-verify my bike" | Drawn | Kept (support on WhatsApp) | |
+| Licence | R1 / R3 mention licence papers | **Not built** — no licence row (owner: licences aren't collected) | See §5. |
+| `PATCH /riders/me` | — | `{ photoUrl?, bikeReg? }`, strict. The key must sit under the caller's own `kyc/<id>/` and pass the attach-time `UploadVerifier` (as `become` does); the plate is validated as `become` validates it (3–20 once trimmed) and stored upper-case with single spaces. Each change writes a `rider.profile_update` audit row (actor = the rider; the plate's old → new in the note), reserved against the free-text audit route. A replaced photo object is deleted after commit. Throttled 20/hour. | No migration: the `riders.photo_url` and `bike_reg` columns exist. |
+
+**New strings:** "Add photo", "Change", "A clear, recent photo of your face, on its own.", "Choose from gallery",
+"Allow camera and photo access in your phone's settings, then try again.", "Couldn't save your photo.
+Check your connection and try again.", "Add plate", "Your bike's number plate", "Number plate", "As it's
+written on the plate, like AEE 4471.", "Couldn't save your plate. Check your connection and try again."
+
+### 3 · The free-jobs top-up reminder (R3)
+
+| Where | Mock | App | Why |
+|---|---|---|---|
+| A push + an in-app Notifications row | R3: "We'll remind you before you need to top up." (no reminder drawn) | When a completed job leaves the rider **one** commission-free job: "One commission-free job left" / "After your next job, commission comes off your prepaid balance. Top up in Money so you can keep going online." When it leaves **none**: "Your free jobs are used up" / "Commission now comes off your prepaid balance. Top up in Money to keep going online." | Owner's words, verbatim. |
+| When | — | Decided inside each completion transaction (customer rating, auto-close, ops adjudication), after the `tripsCount` increment, by the exact count (`freeFirstJobs − 1`, `freeFirstJobs`); a `rider.free_jobs_one_left` / `rider.free_jobs_used_up` audit row is the once-per-rider key and the feed row; the push (`kind: "free_jobs"`) goes after commit. Riders already past either count are never told late. | |
+| While commission is off | — | **Silent.** At the 0% launch rate nothing comes off any balance and there is nothing to top up, so the sentences would be false. They start the day `COMMISSION_RATE_PCT` is flipped above 0. | Honesty over a reminder for a cost that doesn't exist yet. |
+| Tap | — | The push and the row open the rider's Money tab (`/rider/money`), where "Top up" is | |
+| The row's look | Notifications v1 draws no such row | The generic account row: banknote disc, neutral tone, the push's title and sentence | |
+
+### 4 · Deletion is immediate (§6)
+
+| Where | Mock | App | Why |
+|---|---|---|---|
+| `LJ.delete_final` paragraph | "Your account closes now and is permanently deleted after **30 days**. Sign back in within 30 days and the deletion is cancelled — after that, nothing can be recovered." | "Your account is deleted **straight away** and can't be recovered. Order records we must keep by law are anonymised." | `PrivacyService.eraseAccount` anonymises at once (phone → `erased:<id>`); signing back in makes a new, empty account. Resolves `docs/APP-STORE-SUBMISSION.md` D9. |
+| `LJ.privacy` "How long we keep it" | "… · a deleted account is gone after 30 days." | "… · a deleted account is erased straight away." | Same. |
+
+Nothing in `packages/design/**` changes. **Upstream asks:** draw Personal details, the photo and plate sheets,
+the free-jobs rows, and redraw `delete_final` / `privacy` with the immediate-deletion copy.
+
+### 5 · Open for the owner (PENDING OWNER REVIEW)
+
+- R1 "Your photo, licence and bike papers can wait." and R3 "Add your photo, licence and bike papers later in
+  Account" (`RO.notePapers`, `RO.papersLater`) still promise **licence** papers, which nothing collects. The
+  photo and plate are now true; the licence half needs a decision (drop the word, or build a licence row).
+- The reminder is silent until commission is switched on (§3). If the owner wants riders told during the 0%
+  period, the copy needs different words.

@@ -4,6 +4,7 @@ import { CurrentUser } from "../common/current-user.decorator";
 import { Throttle } from "../common/throttle.guard";
 import { ZodBody } from "../common/zod.pipe";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { RiderProfileService, UpdateRiderProfile } from "./rider-profile.service";
 import { RiderService } from "./rider.service";
 
 const CompleteProfile = z.object({
@@ -57,7 +58,17 @@ const Heartbeat = z.object({
 @Controller("riders")
 @UseGuards(JwtAuthGuard)
 export class RidersController {
-  constructor(private readonly riders: RiderService) {}
+  constructor(
+    private readonly riders: RiderService,
+    private readonly profile: RiderProfileService,
+  ) {}
+
+  /** D-79 (owner 2026-10-06): the rider adds or changes their photo / bike plate from Bike & documents. */
+  @Throttle({ limit: 20, windowSec: 3600, keyPrefix: "rider-me" })
+  @Patch("me")
+  updateMe(@Body(new ZodBody(UpdateRiderProfile)) body: UpdateRiderProfile, @CurrentUser() id: string) {
+    return this.profile.updateProfile(id, body);
+  }
 
   @Patch("profile")
   complete(@Body(new ZodBody(CompleteProfile)) body: z.infer<typeof CompleteProfile>, @CurrentUser() id: string) {
@@ -81,6 +92,17 @@ export class RidersController {
   @Post("kyc/retry")
   retryKyc(@Body(new ZodBody(RetryKyc)) body: z.infer<typeof RetryKyc>, @CurrentUser() id: string) {
     return this.riders.retryKyc(id, { force: body.force === true });
+  }
+
+  /**
+   * R-4: the app finished an ID-check launch the rider says they completed. Changes nothing; it only
+   * drops the cached pending state so the next /auth/me reads the vendor afresh. Cheap, but each call can
+   * cost one vendor read, so it is throttled like a generous poll.
+   */
+  @Throttle({ limit: 20, windowSec: 3600, keyPrefix: "kyc-launched" })
+  @Post("kyc/launched")
+  kycLaunched(@CurrentUser() id: string) {
+    return this.riders.noteKycLaunched(id);
   }
 
   @Patch("online")

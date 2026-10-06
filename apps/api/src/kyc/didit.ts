@@ -68,6 +68,61 @@ export function mapDiditPendingState(status: string): ServerKycPendingState {
 }
 
 /**
+ * What a still-PENDING Didit session means for the rider's next step, one notch finer than
+ * {@link mapDiditPendingState} (R-1 / R-3, startup review 2026-10-06):
+ *
+ *   held       In Review — a human has to look (Didit's reviewer, then ours). The rider owes nothing and
+ *              "usually under a minute" is false: the app draws the Rider v2 "under review" wall.
+ *   dead       Abandoned / Expired / Kyc Expired — the session can never be finished. Resuming it is the
+ *              R-1 loop ("Finish verifying" re-opening a dead page forever); the next attempt must mint.
+ *   in_flight  Resubmitted, or a terminal Approved / Declined whose webhook is still on its way.
+ *   unfinished Not Started / In Progress / Awaiting User, and anything unknown (the safe default — see
+ *              mapDiditPendingState).
+ *
+ * `mapDiditPendingState` keeps its two-value answer for the `/auth/me` field older apps read; this one
+ * feeds the additive `kycHeld` flag and retryKyc's dead-session check.
+ */
+export type DiditSessionClass = "in_flight" | "unfinished" | "held" | "dead";
+
+/** Didit's status literal for an approval — what a held-for-review approval leaves on the rider row. */
+export const DIDIT_APPROVED_STATUS = "Approved";
+
+function normDiditStatus(status: string): string {
+  return status.trim().toLowerCase().replace(/[\s_-]+/g, " ");
+}
+
+export function classifyDiditSession(status: string | null | undefined): DiditSessionClass {
+  if (!status) return "unfinished";
+  switch (normDiditStatus(status)) {
+    case "in review":
+      return "held";
+    case "abandoned":
+    case "expired":
+    case "kyc expired":
+      return "dead";
+    case "resubmitted":
+    case "approved":
+    case "declined":
+      return "in_flight";
+    default:
+      return "unfinished";
+  }
+}
+
+/**
+ * The PERSISTED vendor status (`riders.kyc_vendor_status`, written by the webhook) read against a rider
+ * whose kycStatus is still `pending`. Unlike a live read, a stored Approved can't be "the webhook is on its
+ * way" — the webhook that carried it already ran and decided to HOLD (a review-band face match, or an ID
+ * collision/mismatch: applyKycResult's holdForReview). So Approved here is a hold too.
+ */
+export function classifyStoredDiditStatus(status: string | null | undefined): DiditSessionClass | null {
+  if (!status) return null;
+  const cls = classifyDiditSession(status);
+  if (normDiditStatus(status) === "approved") return "held";
+  return cls;
+}
+
+/**
  * Pull Didit's face-match similarity out of a decision webhook as a [0, 1] score, or null when the
  * payload exposes none (the caller then lets Didit's status decide — see {@link decideDiditKyc}).
  *

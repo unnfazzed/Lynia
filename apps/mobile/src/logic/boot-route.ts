@@ -12,7 +12,7 @@ import { riderModeAvailable } from "../rider-mode";
  * a killed app.
  */
 export function bootDestination(params: {
-  session: { needsProfile?: boolean } | null;
+  session: { needsProfile?: boolean; role?: string } | null;
   onboardingSeen: boolean;
   rolePref: StartRole | null;
 }): "/onboarding" | "/phone" | "/profile/setup" | "/rider" | "/home" {
@@ -20,9 +20,12 @@ export function bootDestination(params: {
   if (!session && !onboardingSeen) return "/onboarding";
   if (!session) return "/phone";
   if (session.needsProfile) return "/profile/setup";
-  // A saved rider role only counts where rider mode exists — the iPhone app is customer-only
-  // (src/rider-mode.ts), so a rider account booting on iOS lands on the customer home.
-  return rolePref === "rider" && riderModeAvailable() ? "/rider" : "/home";
+  // The role saved on this device wins (the Customer/Rider toggle); with none saved, the session's
+  // server role decides (C-3, start-up review 2026-10-06: a rider whose saved role was lost cold-started
+  // into the customer app). A rider role only counts where rider mode exists — the iPhone app is
+  // customer-only (src/rider-mode.ts), so a rider account booting on iOS lands on the customer home.
+  const role = rolePref ?? (session.role === "rider" ? "rider" : "customer");
+  return role === "rider" && riderModeAvailable() ? "/rider" : "/home";
 }
 
 /**

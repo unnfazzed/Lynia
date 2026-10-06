@@ -26,6 +26,11 @@ const me = {
   },
 };
 
-installRouter([{ match: "/auth/me", json: me }]);
+installRouter([
+  { match: "/auth/me", json: me },
+  // No live job: `false`, because the harness coalesces null to `{}`, which reads as an active job.
+  { match: "/orders/mine/active", json: false },
+  { match: "/notifications/unread-count", json: { count: 0 } },
+]);
 
 export default { wrap: withQuery() };

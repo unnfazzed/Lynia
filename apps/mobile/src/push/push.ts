@@ -173,6 +173,10 @@ function withoutRiderRoutes<T extends string | null>(dest: T): T | "/home" {
  * — older in-flight pushes sent before the backend stamped it, or any other push kind — we fall back to
  * the existing `isRider` logic unchanged.
  */
+/** D-79: the free-jobs reminder push (`data.kind`) and its feed rows (`rider.free_jobs_one_left` / `_used_up`). */
+const FREE_JOBS_KIND = "free_jobs";
+const FREE_JOBS_ACTION_PREFIX = "rider.free_jobs_";
+
 export function pushDestination(data: unknown, isRider: boolean): string | null {
   return withoutRiderRoutes(pushRoute(data, isRider));
 }
@@ -195,6 +199,8 @@ function pushRoute(data: unknown, isRider: boolean): string | null {
   const merchant = orderType === "merchant";
   const customerOrderScreen = (id: string): string => `/order/${id}`;
   if (kind === "broadcast") return "/rider";
+  // D-79: the free-jobs top-up reminder ("Top up in Money …") opens the rider's Money tab.
+  if (kind === FREE_JOBS_KIND) return "/rider/money";
   // D5: a food-dispatch offer push (`food-dispatch.service.ts` `tick()`) lands the rider on the offer
   // intake screen, which reads the live offer straight off the poll-fallback GET rather than trusting
   // this push's own payload — a stale/lost push can never show a dead offer there.
@@ -250,11 +256,13 @@ function pushRoute(data: unknown, isRider: boolean): string | null {
  * had already collected the parcel gets no hand-back guidance and no way to call the sender, unlike the
  * dedicated CancelledHandback screen `/rider/job` shows for the exact same event.
  */
-export function notificationRowDestination(row: { orderId: string | null; to?: "customer" | "rider"; status?: string }): string {
+export function notificationRowDestination(row: { orderId: string | null; to?: "customer" | "rider"; status?: string; action?: string }): string {
   return withoutRiderRoutes(notificationRowRoute(row));
 }
 
-function notificationRowRoute(row: { orderId: string | null; to?: "customer" | "rider"; status?: string }): string {
+function notificationRowRoute(row: { orderId: string | null; to?: "customer" | "rider"; status?: string; action?: string }): string {
+  // D-79: the free-jobs reminder rows open Money, like their push.
+  if (!row.orderId && row.action?.startsWith(FREE_JOBS_ACTION_PREFIX)) return "/rider/money";
   if (row.orderId) {
     if (row.to === "rider" && typeof row.status === "string" && RIDER_JOB_SCREEN_STATUSES.has(row.status)) return "/rider/job";
     if (row.to === "rider" && row.status === "cancelled") return "/rider/job";

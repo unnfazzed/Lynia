@@ -41,7 +41,7 @@ function build(methods: Record<string, unknown>, opts: { verify?: (key: string, 
   const orders = { announceOpenOrder: vi.fn(async () => {}) };
   // Prepaid commission debit — a no-op stub (the wallet has its own tests); the completion paths call
   // this inside the transaction. At ratePct 0 the real one is a no-op too.
-  const wallet = { chargeCommission: vi.fn(async () => {}) };
+  const wallet = { chargeCommission: vi.fn(async () => {}), noteFreeJobsMilestone: vi.fn(async () => null), sendFreeJobsReminder: vi.fn() };
   // DS18-03: a photo retake purges the superseded GCS object (best-effort). Spy the deletes so a test can
   // assert the previous key was cleaned up when a second attach overwrote the pointer.
   const deletedObjects: string[] = [];
@@ -1026,9 +1026,45 @@ describe("OrderLifecycleService.completeOrder (auto-close)", () => {
   });
 
   it("is a no-op when the order is not delivered (idempotent)", async () => {
-    const { svc, emits } = build({ order: { updateMany: async () => ({ count: 0 }) } });
+    const { svc, emits, wallet } = build({ order: { updateMany: async () => ({ count: 0 }) } });
     expect(await svc.completeOrder("o1")).toEqual({ completed: false });
     expect(emits).toEqual([]);
+    expect(wallet.noteFreeJobsMilestone).not.toHaveBeenCalled();
+    expect(wallet.sendFreeJobsReminder).not.toHaveBeenCalled();
+  });
+
+  it("D-79: records the free-jobs milestone after the trips increment and pushes it only after commit", async () => {
+    const order: string[] = [];
+    let committed = false;
+    const h = build({
+      order: {
+        updateMany: async () => ({ count: 1 }),
+        findUnique: async () => ({ riderId: "r1" }),
+        update: async () => ({}),
+      },
+      orderEvent: { create: async () => ({}) },
+      rider: {
+        findUnique: async () => ({ reliabilityScore: 95, onHold: false, heldReason: null }),
+        update: async () => { order.push("increment"); return {}; },
+      },
+    });
+    const inner = h.prisma.$transaction as (cb: (tx: unknown) => unknown) => Promise<unknown>;
+    h.prisma.$transaction = async (cb: (tx: unknown) => unknown) => {
+      const out = await inner(cb);
+      committed = true;
+      return out;
+    };
+    h.wallet.noteFreeJobsMilestone.mockImplementation((async () => {
+      order.push("milestone");
+      return "one_left";
+    }) as never);
+    h.wallet.sendFreeJobsReminder.mockImplementation(() => {
+      expect(committed).toBe(true);
+    });
+    await h.svc.completeOrder("o1");
+    expect(order).toEqual(["increment", "milestone"]);
+    expect(h.wallet.noteFreeJobsMilestone).toHaveBeenCalledWith(expect.anything(), "r1");
+    expect(h.wallet.sendFreeJobsReminder).toHaveBeenCalledWith("r1", "one_left");
   });
 });
 

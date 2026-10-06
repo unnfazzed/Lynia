@@ -20,15 +20,15 @@ export function useWalletConfig(): { config: CommissionConfig | undefined; isLoa
   return { config: q.data, isLoading: q.isLoading };
 }
 
-/** The prepaid balance. */
-export function useWallet(): {
+/** The prepaid balance. `enabled: false` skips the read (the rider board behind a KYC wall needs none). */
+export function useWallet(opts: { enabled?: boolean } = {}): {
   wallet: Wallet | undefined;
   isLoading: boolean;
   isFetching: boolean;
   isError: boolean;
   refetch: () => void;
 } {
-  const q = useQuery({ queryKey: walletKey, queryFn: getWallet });
+  const q = useQuery({ queryKey: walletKey, queryFn: getWallet, enabled: opts.enabled ?? true });
   return { wallet: q.data, isLoading: q.isLoading, isFetching: q.isFetching, isError: q.isError, refetch: () => void q.refetch() };
 }
 

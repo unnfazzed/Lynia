@@ -12,13 +12,25 @@ import { withdrawOffer } from "../../../src/api/offers";
 import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../../src/api/orders";
 import { getFoodDispatchOffer } from "../../../src/api/food-rider";
 import { getDemandZones } from "../../../src/api/rider-v2";
-import { retryKyc, sendHeartbeat, setOnline } from "../../../src/api/riders";
+import { noteKycLaunched, retryKyc, sendHeartbeat, setOnline } from "../../../src/api/riders";
 import { loadAcknowledgedHandbacks } from "../../../src/auth/session";
+import { useBootPhase } from "../../../src/boot/boot-phase";
 import { usePrewarmRoutes, type PrewarmRoute } from "../../../src/boot/prewarm-routes";
 import { supportWhatsAppUrl } from "../../../src/config";
 import { KycCheckHost } from "../../../src/kyc/KycCheckHost";
+import { takeKycLaunch } from "../../../src/kyc/launch-hint";
 import { runKycVerification } from "../../../src/kyc/verify";
-import { type KycSdkResult, onlineGateReason, type OnlineGateReason, resolveKycGate, resolveKycRetryFeedback } from "../../../src/logic/gates";
+import {
+  freshKycLaunch,
+  KYC_COMPLETED_HINT_MS,
+  type KycLaunchMark,
+  kycPollMs,
+  onlineGateReason,
+  type OnlineGateReason,
+  resolveKycGate,
+  resolveKycRetryFeedback,
+  riderDeclineLabel,
+} from "../../../src/logic/gates";
 import { useHomeLocation } from "../../../src/logic/home-location";
 import { markRiderWelcomeSeen, riderWelcomeSeen } from "../../../src/logic/rider-welcome";
 import { isSentOfferExpired, isSentOfferStale } from "../../../src/logic/rider-bid-draft";
@@ -78,7 +90,7 @@ export default function RiderHome(): React.ReactElement {
   const { height: winH } = useWindowDimensions();
   const { merchantDispatchAutoEnabled: foodOn } = useFeatureFlags();
   const setError = useActionError();
-  const [online, setOnlineState] = useState(() => qc.getQueryData<Me>(["me"])?.rider?.kycStatus === "verified");
+  const [onlineFlag, setOnlineState] = useState(() => qc.getQueryData<Me>(["me"])?.rider?.kycStatus === "verified");
   const autoOnlineRef = useRef(false);
   const [activationRetry, setActivationRetry] = useState(0);
   const [loc, setLoc] = useState<{ lat: number; lng: number } | null>(null);
@@ -101,8 +113,24 @@ export default function RiderHome(): React.ReactElement {
   const [withdrawing, setWithdrawing] = useState<ReadonlySet<string>>(new Set());
 
   // ── Location ─────────────────────────────────────────────────────────────────────────────────────
+  // No OS permission prompt over the cold-start splash (S-6, as Home's useHomeLocation): while the boot
+  // runs, an already-granted permission still reads the position, but the ASK waits for the boot to end.
+  const { booting } = useBootPhase();
+  const bootingRef = useRef(booting);
+  bootingRef.current = booting;
+  const askAfterBoot = useRef(false);
   const requestLocation = useCallback(async (): Promise<void> => {
-    const { status } = await Location.requestForegroundPermissionsAsync();
+    let status: string;
+    if (bootingRef.current) {
+      const current = await Location.getForegroundPermissionsAsync().catch(() => null);
+      if (current?.status !== "granted") {
+        askAfterBoot.current = true;
+        return;
+      }
+      status = current.status;
+    } else {
+      status = (await Location.requestForegroundPermissionsAsync()).status;
+    }
     if (status !== "granted") {
       setLocDenied(true);
       return;
@@ -131,6 +159,12 @@ export default function RiderHome(): React.ReactElement {
       void requestLocation();
     }, [requestLocation]),
   );
+  // The ask a boot deferred runs the moment the splash hands off.
+  useEffect(() => {
+    if (booting || !askAfterBoot.current) return;
+    askAfterBoot.current = false;
+    void requestLocation();
+  }, [booting, requestLocation]);
   const locRef = useRef(loc);
   useEffect(() => {
     locRef.current = loc;
@@ -150,11 +184,87 @@ export default function RiderHome(): React.ReactElement {
     return () => sub.remove();
   }, [readNotif]);
 
+  // ── Identity / KYC ───────────────────────────────────────────────────────────────────────────────
+  // The last ID-check launch on this board (or handed over by Become, R-4 / R-10) and when it landed.
+  // A `completed` mark only counts while fresh (gates.ts freshKycLaunch); `failed` holds for the screen.
+  const [kycLaunch, setKycLaunch] = useState<KycLaunchMark | null>(null);
+  const kycLaunchRef = useRef(kycLaunch);
+  kycLaunchRef.current = kycLaunch;
+  // When this board first saw the current check in flight — the poll's fast window counts from here.
+  const inFlightSinceRef = useRef<number | null>(null);
+  const meQ = useQuery({
+    queryKey: ["me"],
+    queryFn: getMe,
+    // R-3 / §5: 5 s only for the first minutes of an automated check, then 30 s; a hold or a manual review
+    // 60 s; nothing once verified (gates.ts kycPollMs).
+    refetchInterval: (query) => {
+      const me = query.state.data;
+      if (!me) return false;
+      const r = me.rider;
+      const isVerified = r?.kycStatus === "verified";
+      const now = Date.now();
+      const g = isVerified ? null : resolveKycGate(r, freshKycLaunch(kycLaunchRef.current, now));
+      const since = inFlightSinceRef.current;
+      return kycPollMs(g, isVerified, since == null ? 0 : now - since);
+    },
+  });
+  const knownUnverified = meQ.data != null && meQ.data.rider?.kycStatus !== "verified";
+  const rider = meQ.data?.rider;
+  const forceFreshSession = useRef(false);
+  const spentForce = useRef(false);
+  const leaveForCustomer = useCallback((): void => router.replace("/home"), [router]);
+  const kycGate = knownUnverified ? resolveKycGate(rider, freshKycLaunch(kycLaunch, Date.now())) : null;
+  if (kycGate?.kind === "in_flight") inFlightSinceRef.current ??= Date.now();
+  else inFlightSinceRef.current = null;
+  // A `completed` mark stops counting after KYC_COMPLETED_HINT_MS — re-render then, so the server's own
+  // answer takes over even if no poll lands in between.
+  const [, setHintTick] = useState(0);
+  useEffect(() => {
+    if (kycLaunch?.outcome !== "completed") return;
+    const left = kycLaunch.at + KYC_COMPLETED_HINT_MS - Date.now();
+    if (left <= 0) return;
+    const t = setTimeout(() => setHintTick((n) => n + 1), left + 50);
+    return () => clearTimeout(t);
+  }, [kycLaunch]);
+  // R-4 / R-10: the launch Become a rider just ran, handed over on focus (this board may have been
+  // mounted below Become all along). Taken once.
+  useFocusEffect(
+    useCallback(() => {
+      const handed = takeKycLaunch();
+      if (handed) setKycLaunch(handed);
+    }, []),
+  );
+  // Calm Mint v2 R3 (D-55): the first time this account opens the board verified, "You're verified"
+  // takes the board's place once. `null` = still reading the flag (nothing shown, no flash).
+  const profileId = meQ.data?.profileId ?? null;
+  const verified = rider?.kycStatus === "verified";
+  const [welcomeSeen, setWelcomeSeen] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!profileId || !verified) return;
+    let alive = true;
+    void riderWelcomeSeen(profileId).then((seen) => {
+      if (alive) setWelcomeSeen(seen);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [profileId, verified]);
+  // New riders only: a rider with trips behind them is not "just verified" (no verified-at date is served).
+  const showWelcome = verified && welcomeSeen === false && (rider?.tripsCount ?? 0) === 0;
+  // R-7: while R3 "You're verified" is up — or still being decided (the flag is being read) — the rider is
+  // NOT online: its "Go online" is what starts the shift. Otherwise heartbeats, job pushes and the
+  // food-offer screen were live behind "You're verified", and the button only dismissed the page.
+  const holdForWelcome = verified && (rider?.tripsCount ?? 0) === 0 && welcomeSeen !== true;
+  // The live shift: the server flag, held while R3 is up (a warm cache can start `online` true on frame 1).
+  const online = onlineFlag && !holdForWelcome;
+
   // ── Board socket + active job ────────────────────────────────────────────────────────────────────
   const board = useRiderBoard(online, loc, bidIds, foodOn ? () => router.push("/rider/food-offer") : undefined);
   const activeQ = useQuery({
     queryKey: ["activeJob"],
     queryFn: getActiveOrder,
+    // §5 item 10: no active-job read behind a KYC wall — an unverified rider can't hold a job.
+    enabled: !knownUnverified,
     refetchInterval: (query) => (board.connected ? false : online || query.state.data != null ? 8000 : false),
   });
   const [ackedHandbacks, setAckedHandbacks] = useState<Set<string>>(() => new Set());
@@ -186,44 +296,6 @@ export default function RiderHome(): React.ReactElement {
     prevHadJobRef.current = hasActiveJob;
   }, [hasActiveJob, requestLocation]);
 
-  // ── Identity / KYC ───────────────────────────────────────────────────────────────────────────────
-  const meQ = useQuery({
-    queryKey: ["me"],
-    queryFn: getMe,
-    refetchInterval: (query) => {
-      const me = query.state.data;
-      if (!me) return false;
-      const rider = me.rider;
-      if (!rider) return 60_000;
-      if (rider.kycStatus === "verified") return false;
-      if (rider.kycStatus === "pending") return rider.kycMode === "manual" ? 60_000 : 5000;
-      return 60_000;
-    },
-  });
-  const knownUnverified = meQ.data != null && meQ.data.rider?.kycStatus !== "verified";
-  const rider = meQ.data?.rider;
-  const [kycLaunch, setKycLaunch] = useState<KycSdkResult>(null);
-  const forceFreshSession = useRef(false);
-  const spentForce = useRef(false);
-  const leaveForCustomer = useCallback((): void => router.replace("/home"), [router]);
-  const kycGate = knownUnverified ? resolveKycGate(rider, kycLaunch) : null;
-  // Calm Mint v2 R3 (D-55): the first time this account opens the board verified, "You're verified"
-  // takes the board's place once. `null` = still reading the flag (nothing shown, no flash).
-  const profileId = meQ.data?.profileId ?? null;
-  const verified = rider?.kycStatus === "verified";
-  const [welcomeSeen, setWelcomeSeen] = useState<boolean | null>(null);
-  useEffect(() => {
-    if (!profileId || !verified) return;
-    let alive = true;
-    void riderWelcomeSeen(profileId).then((seen) => {
-      if (alive) setWelcomeSeen(seen);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [profileId, verified]);
-  // New riders only: a rider with trips behind them is not "just verified" (no verified-at date is served).
-  const showWelcome = verified && welcomeSeen === false && (rider?.tripsCount ?? 0) === 0;
   const callSupport = (): void => {
     const uri = telUri(SOS_POLICY.safetyLine);
     if (uri) void Linking.openURL(uri);
@@ -274,7 +346,9 @@ export default function RiderHome(): React.ReactElement {
 
   // ALWAYS ONLINE: drive the server flag true the moment every wall is down.
   useEffect(() => {
-    const allowed = !meQ.isLoading && !meQ.isError && !knownUnverified && !locDenied && serverGate == null;
+    // R-9: a failed re-read keeps the last known `me` (TanStack keeps data on error), so the shift
+    // follows what we know rather than dropping on one 5xx.
+    const allowed = meQ.data != null && !knownUnverified && !holdForWelcome && !locDenied && serverGate == null;
     if (!allowed) {
       autoOnlineRef.current = false;
       return;
@@ -284,7 +358,7 @@ export default function RiderHome(): React.ReactElement {
     autoOnlineRef.current = true;
     onlineM.mutate(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meQ.isLoading, meQ.isError, knownUnverified, locDenied, serverGate, loc, locHint]);
+  }, [meQ.data != null, knownUnverified, holdForWelcome, locDenied, serverGate, loc, locHint]);
 
   const retryM = useMutation({
     mutationFn: () => {
@@ -297,12 +371,26 @@ export default function RiderHome(): React.ReactElement {
       if (feedback.error) setError(feedback.error);
       if (feedback.launch) {
         const launch = await runKycVerification(feedback.launch);
-        setKycLaunch(launch.outcome);
+        setKycLaunch({ outcome: launch.outcome, at: Date.now() });
         forceFreshSession.current = launch.sessionUnusable && !spentForce.current;
         if (launch.outcome !== "failed") spentForce.current = false;
-        if (launch.outcome === "completed") {
-          qc.setQueryData<Me>(["me"], (prev) => (prev?.rider ? { ...prev, rider: { ...prev.rider, kycPendingState: "in_flight" } } : prev));
-        }
+        // R-4: the retry put the rider back to `pending` server-side (a failed or expired rider included),
+        // so the cached `me` must stop showing the old decline / expiry wall while the refetch is out; a
+        // completed launch is in flight on top of that.
+        qc.setQueryData<Me>(["me"], (prev) =>
+          prev?.rider
+            ? {
+                ...prev,
+                rider: {
+                  ...prev.rider,
+                  kycStatus: res.kycStatus ?? prev.rider.kycStatus,
+                  ...(launch.outcome === "completed" ? { kycPendingState: "in_flight" as const, kycHeld: false } : {}),
+                },
+              }
+            : prev,
+        );
+        // …and the server drops what it cached about the session, so that refetch reads the vendor afresh.
+        if (launch.outcome === "completed") void noteKycLaunched();
       }
       void qc.invalidateQueries({ queryKey: ["me"] });
     },
@@ -488,9 +576,12 @@ export default function RiderHome(): React.ReactElement {
   const busyLine = busiest && loc ? RF.busyLine(busiest.place, haversineKm(loc, busiest)) : null;
 
   // ── Gates ────────────────────────────────────────────────────────────────────────────────────────
-  const { wallet } = useWallet();
+  // §5 item 10: the balance only matters past the KYC walls (the top-up gate) — no read behind one.
+  const { wallet } = useWallet({ enabled: !knownUnverified });
   const { config: walletConfig } = useWalletConfig();
-  const gate: GateId | null = meQ.isLoading || meQ.isError ? null : resolveGate({ kyc: kycGate, server: serverGate, locDenied });
+  // R-9: keyed on DATA, not on the query status: a failed re-read keeps the last good `me` (TanStack keeps
+  // data on error), so a pending, declined or locked rider stays behind their wall through a 5xx.
+  const gate: GateId | null = meQ.data == null ? null : resolveGate({ kyc: kycGate, server: serverGate, locDenied });
   const conn = online && board.connected && !beatStale;
 
   const offerFor = (j: BoardJob): void => {
@@ -522,7 +613,7 @@ export default function RiderHome(): React.ReactElement {
     const balance = wallet?.balance ?? null;
     switch (g) {
       case "notRider":
-        return <Gate icon="bike" tone="ok" title={R.gNotRiderT} body={R.gNotRiderB} primary={{ label: R.becomeRider, icon: "arrow-right", onPress: () => router.push("/rider/become") }} bridge={leaveForCustomer} />;
+        return <Gate icon="bike" tone="ok" title={R.gNotRiderT} body={R.gNotRiderB} primary={{ label: R.becomeRider, icon: "arrow-right", onPress: () => router.push("/rider/become?from=board") }} bridge={leaveForCustomer} />;
       case "pending":
         // Calm Mint v2 R2 (D-55): "Rider setup" while the check is with the vendor — the checklist, safe
         // to leave, a way to send a parcel. Manual (ops) review keeps the Rider v2 wall: R2's "usually
@@ -534,10 +625,23 @@ export default function RiderHome(): React.ReactElement {
         );
       case "unfinished":
         return (
-          <Gate icon="id-card" tone="calm" title={R.gUnfinishedT} body={R.gUnfinishedB} primary={{ label: R.finishId, icon: "arrow-right", onPress: () => retryM.mutate(), loading: !!pendingOrQueued(retryM) }} bridge={leaveForCustomer} />
+          // R-1: the same WhatsApp way out the failed wall has — a rider whose check won't finish isn't stuck
+          // tapping the resume alone (ledger D-54 §4).
+          <Gate
+            icon="id-card"
+            tone="calm"
+            title={R.gUnfinishedT}
+            body={R.gUnfinishedB}
+            primary={{ label: R.finishId, icon: "arrow-right", onPress: () => retryM.mutate(), loading: !!pendingOrQueued(retryM) }}
+            ghost={wa}
+            bridge={leaveForCustomer}
+          />
         );
-      case "failed":
-        return <Gate icon="id-card" tone="danger" title={R.gFailedT} body={R.gFailedB} facts={[[R.gFailedK, RF.gFailedV(kycTriesLeft(rider?.kycAttempts), 2)]]} primary={retry} ghost={wa} />;
+      case "failed": {
+        // R-6: say WHY when the decline says why; the drawn "blurry photo" copy is the default (and that case).
+        const why = riderDeclineLabel(rider?.kycDeclineReason);
+        return <Gate icon="id-card" tone="danger" title={R.gFailedT} body={why ? RF.gFailedWhyB(why) : R.gFailedB} facts={[[R.gFailedK, RF.gFailedV(kycTriesLeft(rider?.kycAttempts), 2)]]} primary={retry} ghost={wa} />;
+      }
       case "failed2":
         return <Gate icon="id-card" tone="danger" title={R.gFailed2T} body={R.gFailed2B} primary={wa} bridge={leaveForCustomer} />;
       case "expired":

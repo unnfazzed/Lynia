@@ -1,12 +1,14 @@
 import { tokens } from "@lynia/shared/tokens";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import React, { useEffect, useRef, useState } from "react";
 import { Text } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { getMe, updateProfile } from "../../src/api/auth";
-import { becomeRider } from "../../src/api/riders";
+import { becomeRider, noteKycLaunched } from "../../src/api/riders";
+import { saveRolePreference } from "../../src/auth/session";
 import { KycCheckHost } from "../../src/kyc/KycCheckHost";
+import { recordKycLaunch } from "../../src/kyc/launch-hint";
 import { runKycVerification } from "../../src/kyc/verify";
 import { clearKycDraft, kycDraftHasContent, loadKycDraft, saveKycDraft } from "../../src/logic/kyc-draft";
 import { DismissKeyboardArea, useActionError } from "../../src/ui";
@@ -29,6 +31,9 @@ import { useWalletConfig } from "../../src/query/use-wallet";
  */
 export default function BecomeRiderScreen(): React.ReactElement {
   const router = useRouter();
+  // `board` when the rider board's "Earn with your bike" gate pushed this screen over itself (R-2).
+  const { from } = useLocalSearchParams<{ from?: string }>();
+  const overBoard = from === "board";
   const qc = useQueryClient();
   // CF-02-SIB-3: same-tick double-submit guard for `submit` below — see the ref's use for why a plain
   // `busy` state boolean isn't enough.
@@ -86,6 +91,28 @@ export default function BecomeRiderScreen(): React.ReactElement {
 
   const namesReady = firstName.trim().length > 0 && lastName.trim().length > 0;
 
+  /**
+   * Hand over to the board.
+   *
+   * R-2: pushed from the board's "Earn with your bike" gate (`?from=board`), the board is still mounted
+   * right below — so go BACK to it. A `replace("/rider")` here mounted a second board under a new key:
+   * two heartbeats, two `me` pollers, two food-offer listeners (the offer screen pushed twice), and Back
+   * showed the board (and R3) again.
+   *
+   * R-5: from Account there is no board below. That path goes through the rider permission priming first,
+   * like C1's "Ride with LyniaGo" (`/permissions` forwards straight on when this phone already primed), so
+   * R2's "We'll notify you" and the ID-check result push can actually arrive. Either way the rider side is
+   * saved as the side the next cold start opens on.
+   */
+  const handOver = (): void => {
+    void saveRolePreference("rider");
+    if (overBoard && router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace("/permissions?next=/rider");
+  };
+
   const submit = async (withName: boolean): Promise<void> => {
     // CF-02-SIB-3: `busy` (React state) only reflects the FIRST of two same-tick taps — the second
     // tap's re-render hasn't landed yet, so a fast double-tap fired becomeRider() twice (each opening its
@@ -107,17 +134,22 @@ export default function BecomeRiderScreen(): React.ReactElement {
       // falling back to the in-app browser tab when the sheet can't present. `runKycVerification`
       // never throws. Manual review (and the QA stub's instant pass) returns no session to open.
       if (res.sessionToken || res.verificationUrl) {
-        await runKycVerification({ sessionToken: res.sessionToken, verificationUrl: res.verificationUrl });
+        const launch = await runKycVerification({ sessionToken: res.sessionToken, verificationUrl: res.verificationUrl });
+        // R-4 / R-10: the board picks the wall, so it gets the outcome — "completed" keeps R2 up while the
+        // vendor catches up, "failed" lands on the can't-open wall (with support), not "Finish verifying".
+        recordKycLaunch(launch.outcome);
+        if (launch.outcome === "completed") void noteKycLaunched();
       }
       // However it went, the board shows the right state from here: R2 "Rider setup" while the check is
       // reviewed, R3 once verified, "Finish verifying" after a cancel, the review wall in manual mode.
-      router.replace("/rider");
+      handOver();
     } catch (e) {
       // BH-04: a lost-response retry on `becomeRider` hits this exact 409 — the FIRST submit already
-      // landed server-side, so `/rider` re-reads the real (already-registered) state.
+      // landed server-side (and since R-10 so does the loser of a double-tap race), so the board
+      // re-reads the real (already-registered) state.
       if (e instanceof ApiError && e.code === "already_rider") {
         void clearKycDraft();
-        router.replace("/rider");
+        handOver();
         return;
       }
       setError(e instanceof ApiError ? e.message : "Couldn't start rider setup.");
@@ -131,7 +163,19 @@ export default function BecomeRiderScreen(): React.ReactElement {
   // only) — then C5's name step first. The name decides the path, so wait for `me` if it isn't here yet.
   const start = async (): Promise<void> => {
     if (submitInFlightRef.current) return;
-    const current = me ?? (await meQ.refetch()).data;
+    let current = me;
+    if (!current) {
+      // R-10: reading `me` can take a while on a slow link — show the button busy (and hold a second tap)
+      // instead of a dead-looking "Start ID check".
+      submitInFlightRef.current = true;
+      setBusy(true);
+      try {
+        current = (await meQ.refetch()).data;
+      } finally {
+        submitInFlightRef.current = false;
+        setBusy(false);
+      }
+    }
     if (!current) {
       setError("Couldn't start rider setup.");
       return;

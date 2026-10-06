@@ -13,8 +13,8 @@ import { AppBar, Button, Card, Icon, Screen, useActionErrorEffect, Tappable } fr
  * Account deletion — the two screens the design draws (screens-shipped.jsx, SH7):
  *
  *   LJ.delete_account  the explainer + the live "is anything running?" check + "Continue to delete"
- *   LJ.delete_final    the final step: the 30-day grace copy, an acknowledgement tick, and the
- *                      danger-filled "Delete my account"
+ *   LJ.delete_final    the final step: what deletion means (immediate, D-79 — the mock's 30-day grace
+ *                      copy is replaced), an acknowledgement tick, and the danger-filled "Delete my account"
  *
  * Two SCREENS, not one card with a hidden branch: deletion is irreversible, so the mocks put a whole
  * screen between the intent and the act, and the acknowledgement tick is the gate on the last one.
@@ -68,9 +68,11 @@ export default function DeleteAccountScreen({
         <Card>
           <Text style={{ fontSize: 17, fontWeight: "700", color: tokens.color.dangerInk }}>This is the final step</Text>
           <Text style={{ fontSize: 13, color: tokens.color.muted, lineHeight: 20, marginTop: 4 }}>
-            Your account closes now and is permanently deleted after{" "}
-            <Text style={{ fontWeight: "700", color: tokens.color.ink }}>30 days</Text>. Sign back in within 30 days and
-            the deletion is cancelled — after that, nothing can be recovered.
+            {/* D-79 (owner 2026-10-06): the API erases at once (privacy.service eraseAccount), so the mock's
+                30-day grace copy was false. */}
+            Your account is deleted{" "}
+            <Text style={{ fontWeight: "700", color: tokens.color.ink }}>straight away</Text>
+            {" and can't be recovered. Order records we must keep by law are anonymised."}
           </Text>
           <Tappable
             onPress={() => setAcknowledged((v) => !v)}

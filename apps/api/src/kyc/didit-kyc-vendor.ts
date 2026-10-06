@@ -84,8 +84,18 @@ export class DiditKycVendor implements KycVendor {
    * tap, while withholding it from someone who cancelled strands them entirely.
    */
   async pendingState(ref: string): Promise<ServerKycPendingState> {
+    const status = await this.sessionStatus(ref);
+    return status ? mapDiditPendingState(status) : "unfinished";
+  }
+
+  /**
+   * The session's raw Didit status from the decision endpoint, or null when it can't be read. Fails
+   * SOFT, always (see `pendingState` above, which it backs): never throws, never logs the ref beside
+   * anything token-shaped.
+   */
+  async sessionStatus(ref: string): Promise<string | null> {
     const apiKey = this.env.DIDIT_API_KEY;
-    if (!apiKey || !ref) return "unfinished";
+    if (!apiKey || !ref) return null;
 
     try {
       const res = await fetch(`${this.env.DIDIT_BASE_URL}/v3/session/${encodeURIComponent(ref)}/decision/`, {
@@ -94,16 +104,15 @@ export class DiditKycVendor implements KycVendor {
       });
       if (!res.ok) {
         // debug, not warn: a 404 here is ordinary (a session garbage-collected vendor-side), and this
-        // path runs on a 5s poll — warning would bury the log in noise for a state we handle by design.
-        this.logger.debug(`Didit decision read for ${ref}: ${res.status} — defaulting to unfinished`);
-        return "unfinished";
+        // path runs on the board's poll — warning would bury the log in noise for a state we handle by design.
+        this.logger.debug(`Didit decision read for ${ref}: ${res.status} — no status`);
+        return null;
       }
       const data = (await res.json()) as { status?: string };
-      return data.status ? mapDiditPendingState(data.status) : "unfinished";
+      return typeof data.status === "string" && data.status ? data.status : null;
     } catch (err) {
-      // Never log `ref` alongside anything token-shaped, and never rethrow: see the doc comment.
       this.logger.debug(`Didit decision read failed: ${err instanceof Error ? err.message : String(err)}`);
-      return "unfinished";
+      return null;
     }
   }
 }

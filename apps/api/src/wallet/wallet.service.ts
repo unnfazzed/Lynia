@@ -25,6 +25,7 @@ import type { Env } from "../config/env";
 import { NotificationsService } from "../notifications/notifications.service";
 import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { FREE_JOBS_ACTION, FREE_JOBS_COPY, FREE_JOBS_PUSH_KIND, type FreeJobsMilestone, freeJobsMilestoneAt } from "./free-jobs-reminder";
 
 /** Page size for the ledger history feed. */
 const LEDGER_PAGE_SIZE = 25;
@@ -276,6 +277,44 @@ export class WalletService {
       },
     });
     await tx.commissionAccount.update({ where: { riderId }, data: { balance: balanceAfter } });
+  }
+
+  /**
+   * D-79 free-jobs reminder, the in-transaction half. Call from every completion path, inside the
+   * completion transaction and AFTER that path's `tripsCount` increment (under the rider row lock), so the
+   * count read here is this job's ordinal — the same contract {@link chargeCommission} relies on. When the
+   * job crosses a milestone (one free job left, or none) this writes the milestone's audit row, which is
+   * both the idempotency key and the in-app Notifications row, and returns the milestone for the caller to
+   * push AFTER commit ({@link sendFreeJobsReminder}). Returns null otherwise.
+   *
+   * Silent while commission is off (the 0% launch rate): "commission comes off your prepaid balance"
+   * would be false, and there is nothing to top up for. A merchant job counts like a parcel — both
+   * increment `tripsCount`, so both spend the allowance.
+   */
+  async noteFreeJobsMilestone(tx: Prisma.TransactionClient, riderId: string): Promise<FreeJobsMilestone | null> {
+    if (!isCommissionActive(this.ratePct)) return null;
+    const row = await tx.rider.findUnique({ where: { profileId: riderId }, select: { tripsCount: true } });
+    const milestone = freeJobsMilestoneAt(row?.tripsCount);
+    if (!milestone) return null;
+    const action = FREE_JOBS_ACTION[milestone];
+    // tripsCount only grows, so the exact count is reached once; the row check covers an ops correction
+    // that ever lowered it.
+    const already = await tx.auditLog.findFirst({ where: { target: riderId, action }, select: { id: true } });
+    if (already) return null;
+    await tx.auditLog.create({ data: { actor: "system:free-jobs", action, target: riderId, reasonCode: null, note: null } });
+    this.logger.log(`free_jobs_reminder riderId=${riderId} milestone=${milestone} trips=${row?.tripsCount}`);
+    return milestone;
+  }
+
+  /** D-79, the post-commit half: the push for a milestone {@link noteFreeJobsMilestone} recorded. Best-effort. */
+  sendFreeJobsReminder(riderId: string, milestone: FreeJobsMilestone | null): void {
+    if (!milestone) return;
+    const copy = FREE_JOBS_COPY[milestone];
+    void this.notifications?.notifyProfiles([riderId], {
+      title: copy.title,
+      body: copy.body,
+      data: { kind: FREE_JOBS_PUSH_KIND, milestone },
+    });
   }
 
   /**
