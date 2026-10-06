@@ -46,14 +46,21 @@ native-map device spot-check is for.
 
 `mobile/bundle.mjs` bundles a screen with esbuild, aliasing `react-native`→`react-native-web`, deduping
 React to one copy (two copies = "invalid hook call"), routing native-only modules to shims
-(`mobile/shims/`: safe-area, `react-native-svg`→DOM, expo-router, expo-constants, sentry, a generic
-empty), and `@lynia/shared`→its TS source. lucide icons draw through the svg shim. The bundle mounts in
+(`mobile/shims/`: safe-area, `react-native-svg`→DOM, expo-router, expo-constants, expo-splash-screen,
+sentry, a generic empty), and `@lynia/shared`→its TS source. lucide icons draw through the svg shim. The bundle mounts in
 a blank 360×720 page with Inter inlined, and `#root` is a flex column so a root `flex:1` fills the
 height the way the RN root does on device.
 
 Per-screen data comes from a **fixture** (`mobile/fixtures/<name>.mjs`, `{ wrap?, props? }`) — the same
 provider-mocking the jest suites already do. A screen with no fixture yet still shows its **mock**; its
 app column shows an honest "pending", never a blank that reads as "matches".
+
+A wired screen that throws (in render or in an effect) is a **failed** render, not an "ok": the entry
+wraps the tree in a boundary that sets `window.__PARITY_ERROR`, and `lib/mobile.mjs` also refuses an
+empty `#root` after the settle wait. `pair.mjs` prints `app FAILED` with the stack, marks the row, and
+exits 1; `render-mobile.mjs` exits 1. A native module the app reads as a namespace
+(`import * as SplashScreen from "expo-splash-screen"`) needs its own shim with named exports: the
+generic empty shim only answers through its default export.
 
 ### Web app side — Playwright on the Next dev server
 

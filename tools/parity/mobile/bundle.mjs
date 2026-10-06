@@ -10,7 +10,10 @@
  * lucide-react-native is left real — it draws through react-native-svg, which the svg shim maps to DOM.
  *
  * The generated entry mounts <Screen/>, optionally wrapped by a fixture's providers, and flips
- * window.__PARITY_READY after paint. A fixture that throws sets window.__PARITY_ERROR.
+ * window.__PARITY_READY after paint. A fixture that throws sets window.__PARITY_ERROR, and so does an
+ * error thrown anywhere in the tree (render or effect) that the screen itself doesn't catch: the entry
+ * wraps the root in a boundary that records it. Without that, React unmounts the tree and the lane
+ * would screenshot an empty #root as if it had rendered (lib/mobile.mjs also refuses an empty #root).
  */
 import { build } from "esbuild";
 import { fileURLToPath } from "node:url";
@@ -27,10 +30,13 @@ const SHIMS = join(HERE, "shims");
 
 // Native-only modules with no bearing on a static screenshot → the generic empty shim.
 // (expo-secure-store gets a real in-memory shim instead — fixtures seed device state through it.)
+// A module the app reads as a namespace (`import * as X`) needs its own shim with named exports: the
+// empty shim's Proxy is only its DEFAULT export, so `X.fn` on the namespace is undefined and calling it
+// throws (expo-splash-screen did exactly that, and blanked LJ.force_update).
 const EMPTY_MODULES = [
   "expo-linking",
   "expo-clipboard", "expo-web-browser", "expo-device", "expo-application",
-  "expo-splash-screen", "expo-updates", "expo-asset", "expo-file-system",
+  "expo-updates", "expo-asset", "expo-file-system",
   // Exact subpath (src/query/persist.ts, since Expo SDK 54): the package alias above would otherwise
   // be extended to ".../empty.js/legacy", which is not a directory.
   "expo-file-system/legacy",
@@ -81,6 +87,7 @@ export function aliasMap() {
     "expo-router": join(SHIMS, "expo-router.js"),
     "expo-font": join(SHIMS, "expo-font.js"),
     "expo-status-bar": join(SHIMS, "expo-status-bar.js"),
+    "expo-splash-screen": join(SHIMS, "expo-splash-screen.js"),
     "expo-notifications": join(SHIMS, "expo-notifications.js"),
     "expo-task-manager": join(SHIMS, "expo-task-manager.js"),
     "expo-location": join(SHIMS, "expo-location.js"),
@@ -137,8 +144,16 @@ export async function bundleScreen(o) {
       const wrap = (Fixture.default && Fixture.default.wrap) || Fixture.wrap;
       return wrap ? wrap(el) : el;
     }
+    class ParityBoundary extends React.Component {
+      constructor(p) { super(p); this.state = { failed: false }; }
+      static getDerivedStateFromError() { return { failed: true }; }
+      componentDidCatch(e) {
+        if (typeof window.__PARITY_ERROR !== "string") window.__PARITY_ERROR = "screen threw: " + String((e && e.stack) || e);
+      }
+      render() { return this.state.failed ? null : this.props.children; }
+    }
     try {
-      createRoot(document.getElementById("root")).render(React.createElement(Root));
+      createRoot(document.getElementById("root")).render(React.createElement(ParityBoundary, null, React.createElement(Root)));
       requestAnimationFrame(() => requestAnimationFrame(() => { window.__PARITY_READY = true; }));
     } catch (e) { window.__PARITY_ERROR = String((e && e.stack) || e); }
   `;
