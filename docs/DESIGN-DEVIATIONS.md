@@ -4306,3 +4306,73 @@ any string Merchant v2 doesn't draw. Viewport unchanged: 360×720 with the 320px
 | K5b / K5c (2026-10-05) | Drawn | As drawn: "#A115 delivered" · "Blessing M. · 07:41 · 2 dishes", every step done, the door photo, the mint "Paid by wallet · $14.00 / Nothing to bring back. It's in your Money tab." and no CTA; "#A117 couldn't be delivered" · "Customer didn't answer · 07:44", step 4 red, the GOODS BACK TO YOU card ("2× Mazondo · $10.00", "… brings it back by 07:58" or "… is bringing it back"), "I got the food back" / "I got the goods back" and "It wasn't returned" (a one-confirm sheet, "Report to LyniaGo", then "We've told LyniaGo. We'll WhatsApp you."). The "after delivery" CTA is drawn disabled (`--surface`, `--muted`). | A cash order on "pay me at pickup" (no cash back) reads "Paid at pickup · $X" in the same strip (not drawn). The "back by" time is the return deadline (`cashDueAt`); the rider's return trip has no estimate. "Mark ride completed" stays only while on the way. |
 
 *Further rows are added PR by PR as the screens land.*
+
+## D-78 · Owner decisions 2026-10-06: Personal details, rider photo + bike plate, free-jobs reminder, immediate deletion copy — APPROVED (2026-10-06)
+
+**Owner decisions (2026-10-06, this session)**, after the startup review
+(`startup-review-2026-10-06`, items C-10, R-8 and §6) found four promises the app made and didn't keep:
+C5 "You can add it in Account" (nowhere to add an ID), R1/R3 "Your photo … can wait" / "Add your photo …
+later in Account" (Bike & documents was read-only), R3 "We'll remind you before you need to top up" (no
+reminder existed), and Delete account's "Sign back in within 30 days and the deletion is cancelled" (the
+API erases at once). The owner chose to make the first three true and to change the fourth's words. None
+of the new screens or strings is drawn; this entry is their approval.
+
+### 1 · Personal details (C-10)
+
+| Where | Mock | App | Why |
+|---|---|---|---|
+| Settings → YOUR ACCOUNT, second row (both sides; Settings is one screen) | Calm Mint v2 `mint2.js` `OB.account` draws the row "Personal details · Name, phone, optional ID" on an Account screen the app doesn't use | The row, words verbatim (`R.sPersonal` / `R.sPersonalS`), an `id-card` disc, after the identity row | Makes C5's note true. The row's words are drawn; its place in Rider v2's Settings is not. |
+| `app/settings/personal.tsx` | Not drawn | Rider v2's `PushHeader` ("Personal details"); C5's side-by-side `NameFields` (editable), the `VerifiedPhoneRow`, a 52px ID field under the `FieldLabel` "National ID (optional)", C5's surface `Note`, the 52px `Cta` "Save" (`R.save`, D-54) | Built from the two drawn grammars the owner named. |
+| The ID | — | Optional. Saved through `PATCH /auth/me` (sent normalised, only when it changed). The one-ID-one-account refusal (409 `id_in_use`) and the verified-ID freeze (403) show under the field in the API's own words. A stored ID can't be emptied here (the API has no clear): Save stays off and the line below says how. | Existing API rules; no API change. |
+| A verified rider | — | The ID read-only, masked to its last three characters ("••••••••A42"), "Verified" (C5's word) and the note below, no field | Since D-75 the check's number becomes the account's ID; the API refuses to change it. |
+| Storage | — | Memory only: `me` is persisted with `idNumber` / `kycIdNumber` stripped (`redactBeforePersist`, unchanged); the screen keeps no draft | |
+
+**New strings** (`src/ui/rider/copy.ts`): "Personal details" (also the title), "Name, phone, optional ID" (both
+drawn), "National ID (optional)", "Only if you want to add it. We keep it private and only use it to
+confirm who you are.", "This came from your ID check. To change it, contact support.", "To remove your
+national ID, contact support.", "Couldn't load your details. Check your connection and try again.",
+"Couldn't save your details. Check your connection and try again."
+
+### 2 · Rider photo and bike plate on Bike & documents (R-8)
+
+| Where | Mock | App | Why |
+|---|---|---|---|
+| Rider photo row | Rider v2 S5: "Rider photo · Verified" | No photo: sub "Not added yet" (D-62), value "Add photo". A photo: value "Change". Never "Verified". Tapping opens a sheet ("Rider photo", "A clear, recent photo of your face, on its own.", "Take photo" / "Choose from gallery"); the shot is downscaled, uploaded to `kyc/<you>/` (`POST /uploads/kyc-photo`) and attached with the new `PATCH /riders/me`. While it saves the value reads "Saving photo…" (`R.photoUploading`). | The photo is the rider's own upload after D-62, not something a check verified. |
+| Bike row | S5: "Bike · ABH 4721 · Verified" | The plate as the sub. "Verified" **only** for a verified rider who has a plate; no plate: value "Add plate". Tapping opens a sheet ("Your bike's number plate", the field "Number plate", the hint "As it's written on the plate, like AEE 4471.", "Save"). | Since D-75 no plate is collected at sign-up, so every verified rider used to read "Bike · Verified" with no plate (review R-8). |
+| Settings → Bike & documents row | S1: value "Verified" | The same rule (`bikeVerified`): no "Verified" without a plate | Same. |
+| "Re-verify my bike" | Drawn | Kept (support on WhatsApp) | |
+| Licence | R1 / R3 mention licence papers | **Not built** — no licence row (owner: licences aren't collected) | See §5. |
+| `PATCH /riders/me` | — | `{ photoUrl?, bikeReg? }`, strict. The key must sit under the caller's own `kyc/<id>/` and pass the attach-time `UploadVerifier` (as `become` does); the plate is validated as `become` validates it (3–20 once trimmed) and stored upper-case with single spaces. Each change writes a `rider.profile_update` audit row (actor = the rider; the plate's old → new in the note), reserved against the free-text audit route. A replaced photo object is deleted after commit. Throttled 20/hour. | No migration: the `riders.photo_url` and `bike_reg` columns exist. |
+
+**New strings:** "Add photo", "Change", "A clear, recent photo of your face, on its own.", "Choose from gallery",
+"Allow camera and photo access in your phone's settings, then try again.", "Couldn't save your photo.
+Check your connection and try again.", "Add plate", "Your bike's number plate", "Number plate", "As it's
+written on the plate, like AEE 4471.", "Couldn't save your plate. Check your connection and try again."
+
+### 3 · The free-jobs top-up reminder (R3)
+
+| Where | Mock | App | Why |
+|---|---|---|---|
+| A push + an in-app Notifications row | R3: "We'll remind you before you need to top up." (no reminder drawn) | When a completed job leaves the rider **one** commission-free job: "One commission-free job left" / "After your next job, commission comes off your prepaid balance. Top up in Money so you can keep going online." When it leaves **none**: "Your free jobs are used up" / "Commission now comes off your prepaid balance. Top up in Money to keep going online." | Owner's words, verbatim. |
+| When | — | Decided inside each completion transaction (customer rating, auto-close, ops adjudication), after the `tripsCount` increment, by the exact count (`freeFirstJobs − 1`, `freeFirstJobs`); a `rider.free_jobs_one_left` / `rider.free_jobs_used_up` audit row is the once-per-rider key and the feed row; the push (`kind: "free_jobs"`) goes after commit. Riders already past either count are never told late. | |
+| While commission is off | — | **Silent.** At the 0% launch rate nothing comes off any balance and there is nothing to top up, so the sentences would be false. They start the day `COMMISSION_RATE_PCT` is flipped above 0. | Honesty over a reminder for a cost that doesn't exist yet. |
+| Tap | — | The push and the row open the rider's Money tab (`/rider/money`), where "Top up" is | |
+| The row's look | Notifications v1 draws no such row | The generic account row: banknote disc, neutral tone, the push's title and sentence | |
+
+### 4 · Deletion is immediate (§6)
+
+| Where | Mock | App | Why |
+|---|---|---|---|
+| `LJ.delete_final` paragraph | "Your account closes now and is permanently deleted after **30 days**. Sign back in within 30 days and the deletion is cancelled — after that, nothing can be recovered." | "Your account is deleted **straight away** and can't be recovered. Order records we must keep by law are anonymised." | `PrivacyService.eraseAccount` anonymises at once (phone → `erased:<id>`); signing back in makes a new, empty account. Resolves `docs/APP-STORE-SUBMISSION.md` D9. |
+| `LJ.privacy` "How long we keep it" | "… · a deleted account is gone after 30 days." | "… · a deleted account is erased straight away." | Same. |
+
+Nothing in `packages/design/**` changes. **Upstream asks:** draw Personal details, the photo and plate sheets,
+the free-jobs rows, and redraw `delete_final` / `privacy` with the immediate-deletion copy.
+
+### 5 · Open for the owner (PENDING OWNER REVIEW)
+
+- R1 "Your photo, licence and bike papers can wait." and R3 "Add your photo, licence and bike papers later in
+  Account" (`RO.notePapers`, `RO.papersLater`) still promise **licence** papers, which nothing collects. The
+  photo and plate are now true; the licence half needs a decision (drop the word, or build a licence row).
+- The reminder is silent until commission is switched on (§3). If the owner wants riders told during the 0%
+  period, the copy needs different words.
