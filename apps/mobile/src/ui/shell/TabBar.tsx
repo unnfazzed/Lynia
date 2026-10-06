@@ -32,6 +32,12 @@ export const TAB_BAR_SPACE = 72;
 const GLASS_INTENSITY = 96;
 const GLASS_TINT = "systemChromeMaterialLight";
 
+/**
+ * The bar's outline: `ink` at 6% (about #F0F1F1 on white), fainter than any design grey, as the owner
+ * asked (ledger D-56 §6). Built as token + alpha suffix, like `Tappable`'s ripple, not a new design value.
+ */
+export const EDGE = `${tokens.color.ink}0F`;
+
 export type TabArt = "home" | "orders" | "account" | "jobs" | "money";
 
 /** `id` doubles as the route segment name (see the `(tabs)` layouts), so a press needs no lookup table. */
@@ -371,6 +377,7 @@ export function TabBar({
       {glass ? (
         <BlurView pointerEvents="none" intensity={GLASS_INTENSITY} tint={GLASS_TINT} experimentalBlurMethod="dimezisBlurView" style={styles.glass} />
       ) : null}
+      <View pointerEvents="none" style={styles.edge} />
       {cellW > 0 ? (
         <Animated.View pointerEvents="none" style={[styles.indicator, { width: cellW, transform: [{ translateX: Animated.multiply(slide, cellW) }] }]} />
       ) : null}
@@ -395,8 +402,10 @@ export function TabBar({
 /**
  * Hoisted out of render (docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.2): the bar is on screen
  * for the whole session and re-renders on every route change, so its static styles are created once.
- * v1.4: no edge and no shadow. The fill is the glass (`BlurView` under a transparent bar) or, wherever
- * `useGlass` says the handoff's fallback applies, opaque `bg` — never a translucent bar without blur.
+ * The fill is the glass (`BlurView` under a transparent bar) or, wherever `useGlass` says the handoff's
+ * fallback applies, opaque `bg` — never a translucent bar without blur. No shadow (v1.4). The edge is the
+ * owner's one change to v1.4's "no edge" (ledger D-56 §6): a hairline outline, so the white pill doesn't
+ * vanish into a white screen.
  */
 const styles = StyleSheet.create({
   bar: {
@@ -413,6 +422,9 @@ const styles = StyleSheet.create({
   barGlass: { backgroundColor: "transparent" },
   // expo-blur ignores `borderRadius` unless the view clips (its docs: `overflow: "hidden"`).
   glass: { ...StyleSheet.absoluteFillObject, borderRadius: tokens.radius.pill, overflow: "hidden" },
+  // One physical pixel on every phone, barely there. An overlay, so it takes no layout: the cells and the
+  // indicator still sit exactly 4 in.
+  edge: { ...StyleSheet.absoluteFillObject, borderRadius: tokens.radius.pill, borderWidth: StyleSheet.hairlineWidth, borderColor: EDGE },
   indicator: { position: "absolute", top: 4, left: 4, height: 52, borderRadius: tokens.radius.pill, backgroundColor: c.tileMint },
   cell: { flex: 1, minWidth: 0, height: 52, borderRadius: tokens.radius.pill },
   cellInner: { flex: 1, alignItems: "center", justifyContent: "center", borderRadius: tokens.radius.pill },

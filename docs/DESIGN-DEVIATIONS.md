@@ -3116,7 +3116,8 @@ row and approves the dependency it was waiting on.
   `tint="systemChromeMaterialLight"` overlays white (= `bg`) at 0.97 × intensity / 100, and on Android it
   blurs at intensity / `blurReductionFactor` (4). So **intensity 96 is 93% `bg` and a 24 radius** (Dimezis
   BlurView 2.0.6, `RenderEffectBlur` on API 31+). The tint is raised from the handoff's 72% for
-  readability; see the "Glass tint" row below. Still no edge and no shadow.
+  readability; see the "Glass tint" row below. No shadow. The edge is a hairline outline; see the "Bar
+  edge" row below.
 - **The fallback** (`src/ui/shell/useGlass.ts`) is solid `bg` whenever the handoff says so. The settings
   are read live, and until the first read settles the bar is solid, so a user with one of them on never
   sees a frame of glass:
@@ -3148,6 +3149,7 @@ row and approves the dependency it was waiting on.
 | What | Handoff | App | Why |
 |---|---|---|---|
 | **Glass tint** (APPROVED 2026-10-06) | `bg` at 72% | `bg` at 93% | **Owner instruction, this session (2026-10-06):** *"improve readability"*, in answer to the contrast finding below. At 72% an idle label (`muted`) falls under 4.5:1 over dark content. At 93% it holds 5.0:1 even over black (5.1:1 over `ink`, 5.2:1 over `forest`). The blur radius is unchanged (24). Content behind still shows through, softly. |
+| **Bar edge** (APPROVED 2026-10-06) | No edge (v1.4: no `--line` ring, no `--shadow-float`) | A hairline outline: one physical pixel (`StyleSheet.hairlineWidth`) in `ink` at 6% (`EDGE`, about #F0F1F1 on white), glass or solid, always shown | **Owner instructions, this session (2026-10-06):** shown three edge options rendered on the real screens (a 1px `line` outline, outline + `shadow-float`, shadow only), the owner chose *"option A but make is as thin as possible and greyer"*. A first cut in `illus-idle-mid` (#AEB6BD) read too strong: *"the outline is still darker and thicker. i want it subtle and not noticeable"*. Asked how faint and when, the owner picked "fainter than any design grey", "all the time". So the colour is `ink` + an alpha suffix (the construction `Tappable`'s ripple uses), lighter than `line`, the lightest design border; a test pins that. Without any edge the white pill vanishes into the white tab roots. It is an overlay, so the cells and the indicator still sit 4 in. A shadow was ruled out: on the old architecture Android only draws `elevation` under a view with a solid background, which would hide the glass. The parity lane draws the hairline at 1 CSS px (react-native-web fixes `hairlineWidth` at 1), so the sheet shows it slightly heavier than a phone does. |
 | Saturation | `blur(24px) saturate(180%)` | Android: blur only. Web: `saturate(180%)` applied | Dimezis BlurView has no saturation step and expo-blur exposes none. |
 | Web blur radius | 24px | 19.2px | expo-blur's web build blurs at intensity × 0.2. Parity lane only; Android is exactly 24. |
 | iOS fill | `bg` + 24 blur | UIKit's light chrome material at intensity 0.96 | expo-blur on iOS is a `UIVisualEffectView`, which has no exact-alpha tint. The iPhone app ships customer-only. |
