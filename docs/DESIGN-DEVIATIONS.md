@@ -4448,3 +4448,43 @@ the free-jobs rows, and redraw `delete_final` / `privacy` with the immediate-del
   photo and plate are now true; the licence half needs a decision (drop the word, or build a licence row).
 - The reminder is silent until commission is switched on (§3). If the owner wants riders told during the 0%
   period, the copy needs different words.
+
+## D-80 · First Run v2: permissions, app update, Personal details, Bike & documents, ID-check outcomes, rider entry, splash steps — handoff APPROVED (2026-10-06)
+
+**Owner instruction, this session (2026-10-06):** the owner sent Claude Design the brief
+`docs/designs/first-run-v2-PROMPT.md` (with the current-UI pack) and uploaded the result
+(`Lynia_Design_System.zip` → `handoff/first-run-v2-2026-10`). Before building, the owner asked to review every
+place where it clashed with the shipped UI ("where there are inconsistencies with current UI ask me for review
+before execution"); §2 records those answers.
+
+### 1 · The design-package sync (a record, not a deviation)
+
+| Path | What |
+|---|---|
+| `packages/design/handoff/first-run-v2/` | The handoff, **verbatim**: `README.md` (shell, screens A–I, Android wiring, state, tokens, retires), `BRIEF.md` (18 decisions), `CLAUDE-CODE-PROMPT.md` (phases 0–6), `copy.ts` (`PC`, `RP`, `UP`, `PD`, `BD`, `KY`, `SP`), `design/` (the HTML reference: `First Run v2.html`, `First Run v2 - All States.html?screen=<ID>`, `fr-kit.js`, `fr-states.js`, `fr-copy.js`, assets) and `screenshots/` (one 1× PNG per state, `index.html` contact sheet). |
+
+### 2 · Owner decisions where the handoff meets what already shipped (2026-10-06, asked before building)
+
+| # | Clash | Decision |
+|---|---|---|
+| 1 | D1/PC11/P15 redraw Settings (round back button, large title, YOU + ALERTS cards with toggles) and leave out Privacy, Terms, Payment, Delete account, Test ping/alarm | **New look on Settings and its sub-pages (Personal details, Bike & documents, Language, Privacy, Delete account), keeping every existing row.** A toggle mirrors the OS permission: it requests it, or opens phone settings; the app cannot switch a permission off |
+| 2 | H1/H2 draw a different splash (big centred wordmark, corner sun, card radius 20, no dove/orbit) | **Keep splash-v1's look for everyone.** Take only the rider's two steps (`SP.r1`/`SP.r2`), the 320×640 rule (card 16dp above the nav bar, brand centred above it) and the offline row |
+| 3 | F1–F8 are full screens with only ✕ (no tab bar, no mint top card, no "Order food and send parcels") | **As drawn; ✕ switches to the customer side (Home).** Reopening the rider side shows the same F page |
+| 4 | The handoff toast is a bottom forest bar; the app's toast is a top strip | **The bottom toast replaces the shared toast app-wide** |
+| 5 | Permissions move after R3, so "Go online" appears on R3 and P13 | **R3's "Go online" starts the flow (P1…); P13's "Go online" goes online.** A rider who has granted everything goes straight online. The priming after sign-in (before R1) is removed (G1) |
+| 6 | The brief asked only for Delete account copy; the handoff redraws it (I) | **Adopt the redesign**, keeping the two-step confirm and D-79's immediate-deletion copy |
+| 7 | U4a/U4b soft update banners need a server setting | **Build now:** `recommendedVersion` on `/app/version-gate`, off until set; once per version |
+| 8 | Checklist markers 28 vs R1/R2's 22, icons 16/20/24 vs 18/22, titles 28/700 vs C2–C5's 24/700 | **Handoff values on the new screens only**; R1–R3 and C1–C5 stay as their handoff drew them |
+
+Also decided: `#F4D9D5` (the sun on danger heroes) becomes the token `dangerSun` (tokens CSS + every face);
+`#FFF6D6` is the existing `highlightChipWash`. The customer notification re-ask cap of 3 is built as drawn
+(**owner to confirm**). The licence is dropped from all copy (BRIEF 13).
+
+### 3 · What has landed
+
+_Filled in phase by phase (phases 1–6, `CLAUDE-CODE-PROMPT.md`)._
+
+### 4 · Still different from the handoff
+
+_Filled in phase by phase._
+
