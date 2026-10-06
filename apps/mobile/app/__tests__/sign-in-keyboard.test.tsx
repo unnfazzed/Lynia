@@ -9,6 +9,7 @@ import { DismissKeyboardArea } from "../../src/ui";
 
 jest.mock("expo-router", () => ({
   useRouter: () => ({ back: jest.fn(), replace: jest.fn(), push: jest.fn() }),
+  useNavigation: () => ({ getState: () => undefined }),
   useLocalSearchParams: () => ({ phone: "+263772451180" }),
 }));
 jest.mock("../../src/auth/auth-context", () => ({ useAuth: () => ({ signIn: jest.fn() }) }));
