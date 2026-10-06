@@ -9,7 +9,9 @@ Web-only differences from the phone app: ledger D-81 in [`DESIGN-DEVIATIONS.md`]
 - `apps/mobile`, exported for the web with `EXPO_PUBLIC_LYNIA_WEB=1` (customer-only; no rider mode, no push,
   no store links, no force-update). react-native-web comes from `tools/web-runtime`, outside the pnpm
   workspace, so the Android OTA fingerprint never moves.
-- Maps: Google Maps JavaScript API; pin → address: Google Geocoding; search: Places API (New). One browser key.
+- Maps: Google Maps JavaScript API; pin → address: the Maps JavaScript API's Geocoder (the Geocoding web
+  service refuses website-restricted keys: "API keys with referer restrictions cannot be used with this API");
+  search: Places API (New), which accepts them. One browser key.
 - Hosting: an assets-only Cloudflare Worker (`apps/customer-web/wrangler.jsonc`), like lyniago.com. Free.
 - `apps/customer-web/finish-build.mjs` adds the Add to Home Screen manifest and icons, the iPhone Home Screen
   tags, and `_headers` (CSP and caching) to the export.
@@ -44,6 +46,13 @@ EXPO_PUBLIC_LYNIA_WEB=1 EXPO_NO_WEB_SETUP=1 EXPO_PUBLIC_API_URL=https://api.lyni
   npx expo export --platform web --output-dir ../customer-web/dist
 node ../customer-web/finish-build.mjs ../customer-web/dist
 ```
+
+## Checked live (2026-10-06)
+
+First deploy (run #1) green. In Chromium at 360×720 on https://app.lyniago.com with the real key: the Google map of
+Harare renders inside the Send screen with no CSP violations; a map tap places the pin; Places search returns
+suggestions; the Maps JavaScript Geocoder names a Harare point ("Jason Moyo Avenue"). The Geocoding web service
+returned REQUEST_DENIED for the referrer-restricted key, which is why pin → address uses the Geocoder.
 
 ## Not yet
 

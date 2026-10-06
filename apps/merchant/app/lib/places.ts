@@ -3,8 +3,11 @@ import type { LatLng } from "@lynia/shared";
 /**
  * Address search and "where am I" for the merchant web (merchant mobile redesign, D-48; maps are Google's
  * too since D-80). Places API (New) autocomplete + details, the same REST calls the
- * customer app makes (apps/mobile/src/api/places.ts), plus the Geocoding API's reverse lookup for a
- * GPS fix. Browser-direct with a referrer-restricted key in `NEXT_PUBLIC_GOOGLE_PLACES_KEY` — the same key
+ * customer app makes (apps/mobile/src/api/places.ts), plus a reverse lookup for a GPS fix. The reverse
+ * lookup goes through the Maps JavaScript API's Geocoder, not the Geocoding web service: the web service
+ * refuses a key restricted to a website ("API keys with referer restrictions cannot be used with this
+ * API", seen on app.lyniago.com 2026-10-06), and this browser key is restricted to merchant.lyniago.com.
+ * So the key needs Maps JavaScript API and Geocoding API as well as Places API (New) and Maps Static API. Browser-direct with a referrer-restricted key in `NEXT_PUBLIC_GOOGLE_PLACES_KEY` — the same key
  * draws the tracking band's Static Maps image (`components/m/StaticMap.tsx`).
  *
  * Key-gated and failure-quiet: with no key, or on any refusal or network drop, search returns nothing
@@ -20,7 +23,6 @@ export function placesEnabled(): boolean {
 
 const AUTOCOMPLETE_URL = "https://places.googleapis.com/v1/places:autocomplete";
 const DETAILS_URL = "https://places.googleapis.com/v1/places/";
-const GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json";
 /** Harare, and the API's maximum bias radius — local places first, Zimbabwe only. */
 const BIAS = { circle: { center: { latitude: -17.8292, longitude: 31.0522 }, radius: 50_000 } };
 const TIMEOUT_MS = 8_000;
@@ -132,10 +134,51 @@ export function pinnedLine(area?: string | null): string {
   return area ? `Pin the buyer sent · ${area}` : "Pin the buyer sent";
 }
 
+interface MapsGeocoder {
+  geocode(request: { location: { lat: number; lng: number } }): Promise<{ results?: unknown[] }>;
+}
+interface MapsNamespace {
+  maps: { Geocoder: new () => MapsGeocoder };
+}
+
+let mapsLoading: Promise<MapsNamespace> | null = null;
+
+/** Google's Maps JavaScript API script, loaded once and only when a reverse lookup is first needed. */
+function loadMaps(key: string): Promise<MapsNamespace> {
+  if (mapsLoading) return mapsLoading;
+  mapsLoading = new Promise<MapsNamespace>((resolve, reject) => {
+    const g = globalThis as unknown as Record<string, unknown> & { google?: MapsNamespace };
+    if (g.google?.maps?.Geocoder) return resolve(g.google);
+    if (typeof document === "undefined") return reject(new Error("no document"));
+    g.__lyniaMerchantMapsReady = () => (g.google ? resolve(g.google) : reject(new Error("maps missing")));
+    g.gm_authFailure = () => reject(new Error("maps key refused"));
+    const s = document.createElement("script");
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&language=en&region=ZW&callback=__lyniaMerchantMapsReady`;
+    s.async = true;
+    s.addEventListener("error", () => {
+      mapsLoading = null;
+      reject(new Error("maps script failed"));
+    });
+    document.head.appendChild(s);
+  });
+  return mapsLoading;
+}
+
+function withTimeout<T>(p: Promise<T>): Promise<T> {
+  return Promise.race([p, new Promise<T>((_, reject) => setTimeout(() => reject(new Error("timeout")), TIMEOUT_MS))]);
+}
+
 export async function reverseGeocode(point: LatLng): Promise<ResolvedPlace | null> {
   if (!GOOGLE_PLACES_KEY) return null;
-  const url = `${GEOCODE_URL}?latlng=${point.lat},${point.lng}&key=${encodeURIComponent(GOOGLE_PLACES_KEY)}`;
-  return mapReverse(await getJson(url, { method: "GET" }), point);
+  try {
+    const google = await withTimeout(loadMaps(GOOGLE_PLACES_KEY));
+    const { results } = await withTimeout(new google.maps.Geocoder().geocode({ location: { lat: point.lat, lng: point.lng } }));
+    return mapReverse({ results }, point);
+  } catch {
+    // No key access, a refused key, nothing at this point (ZERO_RESULTS rejects too) or no network:
+    // the screen falls back to "Your current location".
+    return null;
+  }
 }
 
 /** One autocomplete+details pair bills as one session. */

@@ -1,13 +1,16 @@
 /**
- * Google's Geocoding API in expo-location's shapes, for the customer web build. On the web,
+ * Google geocoding in expo-location's shapes, for the customer web build. On the web,
  * `Location.reverseGeocodeAsync` throws and `Location.geocodeAsync` returns nothing (there is no platform
  * geocoder), and seven screens turn a pin into a landmark that way. metro-shims/expo-location-web.js swaps
  * these two in for them on web only, so no screen changes.
  *
+ * It goes through the Maps JavaScript API's Geocoder, not the Geocoding web service: the web service
+ * refuses any key restricted to a website ("API keys with referer restrictions cannot be used with this
+ * API", seen live on app.lyniago.com 2026-10-06), and a browser key must be restricted to its website.
+ * The key is the customer web key (`EXPO_PUBLIC_GOOGLE_PLACES_KEY`; Maps JavaScript + Geocoding APIs).
+ *
  * Same contract as the native calls: results in expo-location's field names, an empty list for "nothing
- * here", and a rejection for "couldn't ask" (no key, network, refused key) so callers keep their existing
- * fallbacks. Key: the customer web key (`EXPO_PUBLIC_GOOGLE_PLACES_KEY`, restricted to app.lyniago.com,
- * with Geocoding enabled; plan W6).
+ * here", and a rejection for "couldn't ask" (no key, network, refused key) so callers keep their fallbacks.
  */
 
 export interface ExpoGeocodedAddress {
@@ -32,23 +35,28 @@ export interface ExpoGeocodedLocation {
   accuracy?: number;
 }
 
-interface GoogleComponent {
+export interface GoogleComponent {
   long_name?: string;
   short_name?: string;
   types?: string[];
 }
 
-interface GoogleResult {
+export interface GoogleResult {
   address_components?: GoogleComponent[];
   formatted_address?: string;
-  geometry?: { location?: { lat?: number; lng?: number } };
+  /** Plain numbers in the web service's JSON; `lat()` / `lng()` methods on the Maps JavaScript API's LatLng. */
+  geometry?: { location?: { lat?: number | (() => number); lng?: number | (() => number) } };
 }
 
-const ENDPOINT = "https://maps.googleapis.com/maps/api/geocode/json";
-/** Harare's service area first, Zimbabwe only (the same bias the Places search uses). */
-const COUNTRY = "ZW";
+/** The Maps JavaScript API Geocoder's `geocode`, injected so this module stays free of Google's globals. */
+export type JsGeocode = (request: {
+  location?: { lat: number; lng: number };
+  address?: string;
+  componentRestrictions?: { country: string };
+}) => Promise<{ results?: GoogleResult[] }>;
 
-type FetchLike = (url: string) => Promise<{ json(): Promise<unknown> }>;
+/** Zimbabwe only (the same bias the Places search uses). */
+const COUNTRY = "ZW";
 
 /** One Google result as expo-location's address. `name` is only a real place name (a shop, a school),
  *  never the street again, so `landmarkFromAddress` doesn't repeat itself. */
@@ -74,30 +82,35 @@ export function toExpoAddress(result: GoogleResult): ExpoGeocodedAddress {
   };
 }
 
-async function ask(params: Record<string, string>, key: string | null | undefined, fetchImpl: FetchLike): Promise<GoogleResult[]> {
-  if (!key) throw new Error("geocode-unavailable: no key");
-  const query = new URLSearchParams({ ...params, key, language: "en" }).toString();
-  const body = (await (await fetchImpl(`${ENDPOINT}?${query}`)).json()) as { status?: string; results?: GoogleResult[] } | null;
-  if (body?.status === "ZERO_RESULTS") return [];
-  if (body?.status !== "OK" || !Array.isArray(body.results)) throw new Error(`geocode-unavailable: ${body?.status ?? "no response"}`);
-  return body.results;
+/** The Geocoder rejects "nothing here" with code ZERO_RESULTS; that is an answer, not a failure. */
+function isZeroResults(err: unknown): boolean {
+  const e = err as { code?: unknown; message?: unknown } | null;
+  return e?.code === "ZERO_RESULTS" || (typeof e?.message === "string" && e.message.includes("ZERO_RESULTS"));
 }
 
-export async function reverseGeocodeGoogle(
-  point: { latitude: number; longitude: number },
-  key: string | null | undefined,
-  fetchImpl: FetchLike = fetch,
-): Promise<ExpoGeocodedAddress[]> {
-  const results = await ask({ latlng: `${point.latitude},${point.longitude}` }, key, fetchImpl);
+async function ask(geocode: JsGeocode, request: Parameters<JsGeocode>[0]): Promise<GoogleResult[]> {
+  try {
+    const { results } = await geocode(request);
+    return Array.isArray(results) ? results : [];
+  } catch (err) {
+    if (isZeroResults(err)) return [];
+    throw err;
+  }
+}
+
+const num = (v: number | (() => number) | undefined): number | undefined => (typeof v === "function" ? v() : v);
+
+export async function reverseGeocodeGoogle(point: { latitude: number; longitude: number }, geocode: JsGeocode): Promise<ExpoGeocodedAddress[]> {
+  const results = await ask(geocode, { location: { lat: point.latitude, lng: point.longitude } });
   return results.map(toExpoAddress);
 }
 
-export async function geocodeGoogle(address: string, key: string | null | undefined, fetchImpl: FetchLike = fetch): Promise<ExpoGeocodedLocation[]> {
-  const results = await ask({ address, components: `country:${COUNTRY}` }, key, fetchImpl);
+export async function geocodeGoogle(address: string, geocode: JsGeocode): Promise<ExpoGeocodedLocation[]> {
+  const results = await ask(geocode, { address, componentRestrictions: { country: COUNTRY } });
   const out: ExpoGeocodedLocation[] = [];
   for (const r of results) {
-    const lat = r.geometry?.location?.lat;
-    const lng = r.geometry?.location?.lng;
+    const lat = num(r.geometry?.location?.lat);
+    const lng = num(r.geometry?.location?.lng);
     if (typeof lat === "number" && typeof lng === "number") out.push({ latitude: lat, longitude: lng });
   }
   return out;
