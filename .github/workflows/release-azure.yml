@@ -418,6 +418,11 @@ jobs:
           # doesn't name its platform; the iPhone app has its own (?platform=ios). Unset = gate off.
           MIN_SUPPORTED_APP_VERSION: ${{ vars.MIN_SUPPORTED_APP_VERSION }}
           MIN_SUPPORTED_APP_VERSION_IOS: ${{ vars.MIN_SUPPORTED_APP_VERSION_IOS }}
+          # Soft update (First Run v2 U4/U1, ledger D-80): the version the app nudges towards once per
+          # version, and U1's what's-new line. Unset = off.
+          RECOMMENDED_APP_VERSION: ${{ vars.RECOMMENDED_APP_VERSION }}
+          RECOMMENDED_APP_VERSION_IOS: ${{ vars.RECOMMENDED_APP_VERSION_IOS }}
+          APP_WHATS_NEW: ${{ vars.APP_WHATS_NEW }}
           REFRESH_TTL_SECONDS: ${{ vars.REFRESH_TTL_SECONDS }}
           RESTAURANTS_ENABLED: ${{ vars.RESTAURANTS_ENABLED }}
           MERCHANT_DISPATCH_AUTO_ENABLED: ${{ vars.MERCHANT_DISPATCH_AUTO_ENABLED }}
@@ -494,13 +499,16 @@ jobs:
           SET+=("OTP_CHANNEL=$OTP_CHANNEL" "KYC_PROVIDER=$KYC_PROVIDER" "KYC_MODE=$KYC_MODE" "PUSH_PROVIDER=$PUSH_PROVIDER")
           opt OTP_TEST_PHONES "$OTP_TEST_PHONES"
           # The API refuses to boot on a minimum that isn't a dotted version; refuse here, before deploying.
-          for _v in MIN_SUPPORTED_APP_VERSION MIN_SUPPORTED_APP_VERSION_IOS; do
+          for _v in MIN_SUPPORTED_APP_VERSION MIN_SUPPORTED_APP_VERSION_IOS RECOMMENDED_APP_VERSION RECOMMENDED_APP_VERSION_IOS; do
             if [ -n "$(printf '%s' "${!_v}" | tr -d '[:space:]')" ] && ! [[ "${!_v}" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
               echo "::error::${_v} must be a dotted version like 0.2.0 (got '${!_v}')"; exit 1
             fi
           done
           opt MIN_SUPPORTED_APP_VERSION "$MIN_SUPPORTED_APP_VERSION"
           opt MIN_SUPPORTED_APP_VERSION_IOS "$MIN_SUPPORTED_APP_VERSION_IOS"
+          opt RECOMMENDED_APP_VERSION "$RECOMMENDED_APP_VERSION"
+          opt RECOMMENDED_APP_VERSION_IOS "$RECOMMENDED_APP_VERSION_IOS"
+          opt APP_WHATS_NEW "$APP_WHATS_NEW"
           opt REFRESH_TTL_SECONDS "$REFRESH_TTL_SECONDS"
 
           # Merchant-vertical kill switches (plan 2026-07-26 §0b.3), exactly true|false; unset → false.

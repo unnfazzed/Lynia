@@ -46,6 +46,7 @@ import {
 // `no-circular` violation the moment the barrel re-exports it) — the same rule ComposeMap /
 // BottomSheet / MapPicker already follow.
 import { LocationSheet } from "../../src/ui/home/LocationSheet";
+import { SoftUpdateBanner } from "../../src/ui/firstrun/SoftUpdateBanner";
 import { SmBtn } from "../../src/ui/order/kit";
 import { RIDER_COPY as R, RF } from "../../src/ui/rider/copy";
 import { ServiceSoonSheet, type SoonService } from "../../src/ui/home/ServiceSoonSheet";
@@ -374,6 +375,7 @@ export default function LauncherHomeScreen(): React.ReactElement {
             onSearch={() => router.push("/food/search?scope=all")}
           />
         </BootEntrance>
+        <SoftUpdateBanner tone="forest" />
         {riderJob && riderJobStage ? (
           // Rider v2 C5 (D-54): a rider in customer view mid-job — the way back to the job.
           <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>

@@ -44,6 +44,7 @@ export const APP_TARGETS = {
   "RC.list_error": { kind: "mobile", component: "app/food/index.tsx", fixture: "food_list_error" },
 
   // ─────────────────────── MOBILE — customer · send + auth + account (LJ) ───────────────────────
+  // SUPERSEDED TARGET (docs/DESIGN-DEVIATIONS.md D-80): renders First Run v2 U1, not the gallery `ForceUpdate`.
   "LJ.force_update": { kind: "mobile", component: "app/force-update.tsx", fixture: "force_update" },
   "LJ.login": { kind: "mobile", component: "app/phone.tsx", fixture: "auth_phone" },
   "LJ.otp": { kind: "mobile", component: "app/verify.tsx", fixture: "auth_otp" },

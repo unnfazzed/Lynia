@@ -1,5 +1,5 @@
 import { Controller, Get, Header, Inject, Query, ServiceUnavailableException } from "@nestjs/common";
-import type { MerchantFeatureFlagsResponse, OrderFlagsResponse, ServiceFlagsResponse, VersionGateResponse } from "@lynia/shared";
+import type { MerchantFeatureFlagsResponse, OrderFlagsResponse, ServiceFlagsResponse, VersionGateResponse, VersionGateSoftResponse } from "@lynia/shared";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { HealthService, type HealthReport } from "./health.service";
@@ -37,11 +37,22 @@ export class HealthController {
   // shape is unchanged (the contract is `.strict()`, so an added key would fail every installed client's
   // parse and switch its gate off), and the query string keeps each platform's answer a separate cache
   // entry.
+  //
+  // First Run v2 (ledger D-80 §2 #7): `?soft=1` opts a NEW build into the soft-update body — the same
+  // minimum plus `recommendedVersion` (the U4 banner) and `whatsNew` (U1's pill), both null until set.
+  // Opt-in, never added to the plain body, for the strictness reason above: a build that predates it
+  // never sends `soft`, so it keeps getting exactly `{ minSupportedVersion }`.
   @Get("app/version-gate")
   @Header("Cache-Control", "public, max-age=300")
-  versionGate(@Query("platform") platform?: string): VersionGateResponse {
-    const min = platform === "ios" ? this.env.MIN_SUPPORTED_APP_VERSION_IOS : this.env.MIN_SUPPORTED_APP_VERSION;
-    return { minSupportedVersion: min };
+  versionGate(@Query("platform") platform?: string, @Query("soft") soft?: string): VersionGateResponse | VersionGateSoftResponse {
+    const ios = platform === "ios";
+    const min = ios ? this.env.MIN_SUPPORTED_APP_VERSION_IOS : this.env.MIN_SUPPORTED_APP_VERSION;
+    if (soft !== "1") return { minSupportedVersion: min };
+    return {
+      minSupportedVersion: min,
+      recommendedVersion: (ios ? this.env.RECOMMENDED_APP_VERSION_IOS : this.env.RECOMMENDED_APP_VERSION) ?? null,
+      whatsNew: this.env.APP_WHATS_NEW ?? null,
+    };
   }
 
   // Merchant-vertical kill switches (docs/plans/2026-07-26-merchant-verticals-plan.md §0b.3).
