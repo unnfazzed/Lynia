@@ -3157,11 +3157,12 @@ describe("RiderService — ID-check session lifecycle (startup review 2026-10-06
     expect(log).toEqual(["read:sess_old", "invalidate:sess_old"]);
   });
 
-  it("R-3: a held check (stored In Review, or a held Approved) refuses a retry — no resume, no paid mint", async () => {
+  it("R-3: a held check with no live session refuses a retry — never a paid mint for someone in review", async () => {
     for (const held of ["In Review", "Approved"]) {
       const { vendor, submit } = minting();
       const updateMany = vi.fn(async () => ({ count: 1 }));
-      const prisma = { rider: { findUnique: async () => ({ ...LIVE, kycVendorStatus: held }), updateMany } };
+      const noSession = { ...LIVE, kycSessionToken: null, kycSessionUrl: null };
+      const prisma = { rider: { findUnique: async () => ({ ...noSession, kycVendorStatus: held }), updateMany } };
       let caught: unknown;
       try {
         await withStates(prisma, vendor, fakeStates().states).retryKyc("p1");
@@ -3173,6 +3174,13 @@ describe("RiderService — ID-check session lifecycle (startup review 2026-10-06
       expect(submit).not.toHaveBeenCalled();
       expect(updateMany).not.toHaveBeenCalled();
     }
+  });
+
+  it("R-3 + FS-11: a held check that kept its session resumes it for free (vendor read: not dead)", async () => {
+    const { vendor, submit } = minting();
+    const prisma = { rider: { findUnique: async () => ({ ...LIVE, kycVendorStatus: "Approved" }), updateMany: vi.fn() } };
+    expect(await withStates(prisma, vendor, fakeStates("in_flight").states).retryKyc("p1")).toMatchObject({ sessionToken: "tok_old" });
+    expect(submit).not.toHaveBeenCalled();
   });
 
   it("R-10: the double-tap race's P2002 carries `already_rider`, like the pre-check", async () => {

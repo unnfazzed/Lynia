@@ -485,11 +485,18 @@ export class RiderService {
     if (!rider) throw new NotFoundException("Not a rider");
     if (rider.kycStatus === "verified") throw new ConflictException("Already verified");
     // R-3: a check HELD for a human (the vendor's In Review, or an approval held in the review band or for
-    // an ID collision) is not the rider's move. Resuming would re-open a decided session, and minting would
-    // buy a fresh paid check for someone already in the review queue. The app draws no retry on that wall;
-    // this is the server half, for an older app that still offers one. Only the stored webhook status
-    // counts here — it is the vendor's signed word, and an admin reset clears it.
-    if (this.env.KYC_MODE === "auto" && rider.kycStatus === "pending" && classifyStoredDiditStatus(rider.kycVendorStatus) === "held") {
+    // an ID collision) is not the rider's move; the app draws no retry on that wall. A retry that still
+    // arrives (an older app) resumes the finished session for free when its credentials were kept (E2E
+    // FS-11 keeps them on a hold) — but it must never MINT a fresh paid check for someone already in the
+    // review queue. So a held check with no live session (a hold recorded before FS-11) is refused. Only
+    // the stored webhook status counts — it is the vendor's signed word, and an admin reset clears it.
+    const liveKycSession = Boolean(rider.kycRef && rider.kycSessionToken && rider.kycSessionUrl);
+    if (
+      this.env.KYC_MODE === "auto" &&
+      rider.kycStatus === "pending" &&
+      !liveKycSession &&
+      classifyStoredDiditStatus(rider.kycVendorStatus) === "held"
+    ) {
       throw new ConflictException({ reason: "kyc_in_review", message: "Your ID is under review. We'll let you know when it's checked." });
     }
     // A-02 lock: one resubmit is allowed. After a second admin decline (kycAttempts >= 2) the
