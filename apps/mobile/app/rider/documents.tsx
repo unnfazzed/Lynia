@@ -72,7 +72,7 @@ type Stage =
  *   shutter) — the shutter opens the phone's front camera. E2c: the round preview, "Use photo" / "Retake".
  *   E2d: the row's sub-line becomes a 4dp progress bar while it uploads.
  * - E4: the plate sheet (`^[A-Z]{3}\s?\d{4}$`, "Plates look like ABC 1234"); Save is instant — the row
- *   shows the plate with a "Checking" pill until ops confirm (`plateStatus`, migration 0077).
+ *   shows the plate with a "Checking" pill until ops confirm (`plateStatus`, migration 0078).
  * - E5: everything on file → the mint hero with a filled check, "You're all set", rows with Change / Edit.
  *   "Verified" only for what was actually checked: the ID check and an ops-confirmed plate — never the
  *   photo, which nobody checks.

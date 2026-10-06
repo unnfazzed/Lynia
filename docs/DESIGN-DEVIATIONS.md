@@ -4621,7 +4621,7 @@ wires); `app/(tabs)/home.tsx` → phases 2+3 (phase 4 adds the one-line U4a moun
   check, "You're **all set**", rows with Change / Edit. E6: the danger hero with `upload`, "Upload **didn't finish**",
   "Try again" — the shot is kept as a SecureStore draft from "Use photo" until the attach lands, so Try again re-sends
   it, also after a relaunch. `bikeVerified()` (also Settings' row) reads `plateStatus` once the server sends it.
-- **`plate_status` (NEEDS BACKEND → built):** migration `0077_rider_plate_status` (expand-only: `CREATE TYPE
+- **`plate_status` (NEEDS BACKEND → built):** migration `0078_rider_plate_status` (expand-only: `CREATE TYPE
   "PlateStatus"` + `riders.plate_status NOT NULL DEFAULT 'none'`, catalog-only). `PATCH /riders/me` sets `checking` on a
   real plate change and returns `plateStatus`; `/auth/me` rider carries it; `POST /admin/riders/:id/plate-verify
   { plate }` flips `checking` → `verified` with a CAS on the plate ops looked at, audited as the reserved

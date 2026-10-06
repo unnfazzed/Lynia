@@ -38,7 +38,7 @@ export function plateMatchesFormat(raw: string): boolean {
 
 /**
  * Bike & documents' Bike row and Settings' "Bike & documents" row: "Verified" only for what was actually
- * checked (First Run v2 E5, D-80). Since migration 0077 that is ops' plate check (`plateStatus`); a server
+ * checked (First Run v2 E5, D-80). Since migration 0078 that is ops' plate check (`plateStatus`); a server
  * that predates it falls back to review R-8's rule (a verified rider with a plate on file).
  */
 export function bikeVerified(rider: { kycStatus?: string | null; bikeReg?: string | null; plateStatus?: string | null } | null | undefined): boolean {

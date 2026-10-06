@@ -305,7 +305,7 @@ model Rider {
   /// First Run v2 E4 (ledger D-80): whether ops have confirmed `bikeReg`. A self-service plate change
   /// (PATCH /riders/me) saves instantly and sets `checking`; ops confirm it (POST
   /// /admin/riders/:id/plate-verify) → `verified`. `none` = never checked (no plate, or one that predates
-  /// this column). Bike & documents says "Verified" only for `verified`. Migration 0077 (expand-only).
+  /// this column). Bike & documents says "Verified" only for `verified`. Migration 0078 (expand-only).
   plateStatus       PlateStatus                            @default(none) @map("plate_status")
   /// Optional since 2026-10-02 (owner): the rider photo is no longer a sign-up step.
   photoUrl          String?                                @map("photo_url")
