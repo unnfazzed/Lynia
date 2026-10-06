@@ -2020,6 +2020,25 @@ recorded 2026-10-05 from the EAS build record and the status run below.
 - **OTA.** vc 43 and vc 44 share runtime `3b74945e…`, so an OTA from `main` reaches both.
 - **Play's review.** Testers see the release once Play approves it, as with vc 40 to vc 43.
 
+**Build vc 45 — 2026-10-06 (First Run v2, empty states v2, tab bar glass, E2E fixes).**
+
+- **Before the build.** `main` at `a79af8e`. The lockfile and `apps/mobile/package.json` had moved since
+  vc 44 (#1088, #1094), so `pnpm install --frozen-lockfile` was run locally on pnpm 10.33.0 first; it
+  passed.
+- **Build.** `mobile-release.yml` run 37531508584 (`profile: closed`, `main` at `a79af8e`, #1099) queued
+  EAS build `87291256` (v0.51.0 / vc 45, runtime `76f4048c…`). It FINISHED in 10 minutes (21:08 to 21:18
+  UTC).
+- **Submission.** Submission `680005fe` **FINISHED on track `Closed testing`** (`eas-build-status.yml` run
+  37534918396).
+- **New runtime.** `app.config.ts`, `apps/mobile/package.json` and the lockfile changed since vc 44, so
+  the runtime moved from `3b74945e…` (vc 43, vc 44) to `76f4048c…`. An OTA from `main` now reaches vc 45
+  and later only. vc 43 and vc 44 need the Play update.
+- **What it carries.** Everything in vc 44 plus the E2E fixes (#1081, #1082), the Maps signing-cert fix
+  (MOB-MAP-04, #1083), empty states v2 (D-78, #1085), the start-up and registration fixes (#1084), tab bar
+  glass and hairline (D-56 §6, #1087, #1088), the splash without the steps card (D-64, #1089), the
+  lyniago.com hosts (#1092), the dependency updates (#1094), and First Run v2 (D-82, #1086).
+- **Play's review.** Testers see the release once Play approves it, as with vc 40 to vc 44.
+
 ---
 
 ## 9. Pre-submission checklist
