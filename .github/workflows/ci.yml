@@ -171,6 +171,11 @@ jobs:
           W=apps/website/deploy/node_modules/.bin/wrangler
           "$W" deploy --dry-run --config apps/website/wrangler.jsonc
           "$W" deploy --dry-run --config apps/website/www-redirect/wrangler.jsonc --outdir "$RUNNER_TEMP/www-redirect"
+          # app.lyniago.com (docs/CUSTOMER-WEB.md): its dist/ is built at deploy time, so dry-run on a stub.
+          mkdir -p apps/customer-web/dist
+          cp -r apps/customer-web/public/. apps/customer-web/dist/
+          printf '<!doctype html><title>LyniaGo</title>\n' > apps/customer-web/dist/index.html
+          "$W" deploy --dry-run --config apps/customer-web/wrangler.jsonc
 
   # Parity-render EVIDENCE — pixel-parity guardrail, non-blocking. Renders every WIRED mobile screen
   # (app-targets.mjs kind:"mobile") to a PNG via react-native-web and uploads them as an artifact, so
@@ -330,7 +335,7 @@ jobs:
           # Paths that can change what Metro bundles: the app itself, the two workspace packages it
           # imports at bundle time, the lockfile (a dep bump can balloon the bundle), and this workflow.
           if printf '%s\n' "$CHANGED" \
-             | grep -Eq '^(apps/mobile/|packages/shared/|packages/design/|tools/web-runtime/|pnpm-lock\.yaml$|\.github/workflows/ci\.yml$)'; then
+             | grep -Eq '^(apps/mobile/|packages/shared/|packages/design/|tools/web-runtime/|apps/customer-web/|pnpm-lock\.yaml$|\.github/workflows/ci\.yml$)'; then
             echo "::notice::Mobile-relevant paths changed — running the JS bundle-size check."
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
@@ -388,6 +393,11 @@ jobs:
           EXPO_NO_WEB_SETUP: "1"
           EXPO_PUBLIC_API_URL: https://api.lyniago.com
         run: pnpm exec expo export --platform web --output-dir "$RUNNER_TEMP/expo-export-web"
+
+      # The deploy (deploy-customer-web.yml) finishes the export for app.lyniago.com; prove that still works.
+      - name: Finish the customer web build (manifest, icons, headers)
+        if: steps.changes.outputs.run == 'true'
+        run: node apps/customer-web/finish-build.mjs "$RUNNER_TEMP/expo-export-web"
 
   # Terraform config validation with DEFAULTS ONLY — deliberately no tfvars.
   #

@@ -4570,7 +4570,7 @@ below are the only differences, and they apply **only** in the web build (`EXPO_
 | `LJ.perm_notif` (second permission step) | Drawn after location | Skipped: the location step finishes priming | No push on web until phase 5; asking for a permission nothing uses is a dead step. |
 | Force-update screen | Drawn | Never shown | The web build is always the latest version. |
 | Maps | Drawn on the phone's Google map | Google's Maps JavaScript map (D-80) with the screens' own pins, route lines and zones; a plain grey panel when there is no key or Google refuses it | Same map provider as the Android app; the browser has no native map. |
-| Android "Get the app" banner | Not drawn | To be built (phase 4) | Owner decision W4. |
+| Android "Get the app" banner | Not drawn | Not built yet: waits for the public Play listing, which returns 404 during closed testing | Owner decision W4; a banner to a dead listing would be worse than none. |
 
 Nothing in `packages/design/**` changes. **Upstream ask:** draw the Android banner and the web Add to Home Screen hint.
 

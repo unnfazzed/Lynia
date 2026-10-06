@@ -116,6 +116,8 @@ locals {
   # CORS origin for direct SAS PUTs from the merchant dashboard (D5). Staging has no custom
   # domain by default, so it falls back to the merchant app's generated FQDN.
   merchant_origin = local.merchant_hostname != "" ? "https://${local.merchant_hostname}" : "https://${local.names.merchant}.${azurerm_container_app_environment.main.default_domain}"
+  # The customer web app (app.lyniago.com, production only) PUTs prescription photos the same way.
+  blob_cors_origins = compact([local.merchant_origin, local.customer_web_hostname != "" ? "https://${local.customer_web_hostname}" : ""])
 }
 
 resource "azurerm_storage_account" "media" {
@@ -152,7 +154,7 @@ resource "azurerm_storage_account" "media" {
     }
 
     cors_rule {
-      allowed_origins    = [local.merchant_origin]
+      allowed_origins    = local.blob_cors_origins
       allowed_methods    = ["GET", "HEAD", "PUT", "OPTIONS"]
       allowed_headers    = ["content-type", "x-ms-blob-type", "x-ms-version", "x-ms-date", "x-ms-client-request-id"]
       exposed_headers    = ["etag", "x-ms-request-id", "x-ms-version"]

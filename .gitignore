@@ -51,3 +51,6 @@ apps/*/CLAUDE.md
 
 # Cloudflare wrangler local state (apps/website)
 .wrangler/
+
+# Customer web build output (apps/customer-web, built in CI)
+apps/customer-web/dist/

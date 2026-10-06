@@ -59,6 +59,12 @@ variable "merchant_hostname" {
   default     = ""
 }
 
+variable "customer_web_hostname" {
+  description = "The customer web app's hostname (docs/plans/2026-10-06-customer-web-app-plan.md; hosted on Cloudflare, not here). Empty = production: app.lyniago.com; staging: none. Only used as a Blob CORS origin, so customers can upload prescription photos from the browser."
+  type        = string
+  default     = ""
+}
+
 # --- Sizing (pilot, §2 / E9) ---
 
 variable "api_max_replicas" {
