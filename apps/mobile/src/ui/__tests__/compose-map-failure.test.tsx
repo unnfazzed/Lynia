@@ -38,7 +38,12 @@ let mockSignal: "onMapLoaded" | "onMapReady" = "onMapLoaded";
 jest.mock("../../logic/map-load-signal", () => ({ mapLoadSignal: () => mockSignal }));
 
 /** Per-mount callbacks the test fires by hand, so "ready but never loaded" is expressible. */
-type MapHandlers = { onMapReady?: () => void; onMapLoaded?: () => void };
+type Coordinate = { latitude: number; longitude: number };
+type MapHandlers = {
+  onMapReady?: () => void;
+  onMapLoaded?: () => void;
+  onPress?: (e: { nativeEvent: { coordinate: Coordinate } }) => void;
+};
 const mounts: MapHandlers[] = [];
 
 jest.mock("react-native-maps", () => {
@@ -46,8 +51,14 @@ jest.mock("react-native-maps", () => {
   const { View: View_ } = require("react-native");
   const MapView = React_.forwardRef((props: MapHandlers & { children?: React.ReactNode }, ref: React.Ref<unknown>) => {
     React_.useImperativeHandle(ref, () => ({ animateToRegion: () => {}, fitToCoordinates: () => {} }));
+    // One handlers object per mount, refreshed on every render: a press must reach the CURRENT onPress,
+    // whose closure knows whether the map has loaded by now.
+    const handlers: MapHandlers = React_.useRef({}).current;
+    handlers.onMapReady = props.onMapReady;
+    handlers.onMapLoaded = props.onMapLoaded;
+    handlers.onPress = props.onPress;
     React_.useEffect(() => {
-      mounts.push({ onMapReady: props.onMapReady, onMapLoaded: props.onMapLoaded });
+      mounts.push(handlers);
     }, []);
     return React_.createElement(View_, null, props.children);
   });
@@ -426,5 +437,61 @@ describe("mapElapsedBucket boundaries", () => {
     [60_000, ">=22s"],
   ])("%d ms → %s", (ms, bucket) => {
     expect(mapElapsedBucket(ms as number)).toBe(bucket);
+  });
+});
+
+/**
+ * MOB-MAP-04: a map whose key was refused still reports presses, but its camera was nowhere near Harare,
+ * so one tap pinned the drop-off in the Pacific (13.29708, -126.66721, from the owner's vc 44 screenshot)
+ * and the screen showed "Outside our area" for a point nobody chose.
+ */
+describe("ComposeMap — taps before the map has loaded", () => {
+  const PACIFIC: Coordinate = { latitude: 13.29708, longitude: -126.66721 };
+  const HARARE_POINT: Coordinate = { latitude: -17.8292, longitude: 31.0522 };
+
+  function renderDropMap(onChangeDrop: jest.Mock): renderer.ReactTestRenderer {
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<ComposeMap pickup={null} drop={null} active="drop" onChangePickup={noop} onChangeDrop={onChangeDrop} />);
+    });
+    act(() => interactions.flush());
+    // Ready but no tiles: the refused-key state, where the SDK has a map object and draws nothing.
+    act(() => {
+      mounts[0]?.onMapReady?.();
+    });
+    return tree;
+  }
+
+  function press(coordinate: Coordinate): void {
+    act(() => {
+      mounts[0]?.onPress?.({ nativeEvent: { coordinate } });
+    });
+  }
+
+  it("drops no pin for a press outside Zimbabwe while the map has not loaded", () => {
+    const onChangeDrop = jest.fn();
+    const tree = renderDropMap(onChangeDrop);
+    press(PACIFIC);
+    expect(onChangeDrop).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("still takes a press inside Zimbabwe on a map that is only slow", () => {
+    const onChangeDrop = jest.fn();
+    const tree = renderDropMap(onChangeDrop);
+    press(HARARE_POINT);
+    expect(onChangeDrop).toHaveBeenCalledWith({ lat: HARARE_POINT.latitude, lng: HARARE_POINT.longitude });
+    act(() => tree.unmount());
+  });
+
+  it("takes every press once the map has loaded", () => {
+    const onChangeDrop = jest.fn();
+    const tree = renderDropMap(onChangeDrop);
+    act(() => {
+      mounts[0]?.onMapLoaded?.();
+    });
+    press(PACIFIC);
+    expect(onChangeDrop).toHaveBeenCalledWith({ lat: PACIFIC.latitude, lng: PACIFIC.longitude });
+    act(() => tree.unmount());
   });
 });

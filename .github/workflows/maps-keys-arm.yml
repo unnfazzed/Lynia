@@ -19,8 +19,9 @@ name: Maps Keys — arm Terraform (import + plan + apply)
 # ORDER OF OPERATIONS (all of it dispatchable from the GitHub mobile app):
 #   1. GCP Diagnose (read-only) -> "API keys inventory" step prints both KEY_IDs and both keys'
 #      current restrictions. No console, no gcloud.
-#   2. Set the repo variables: TF_MAPS_KEY_ID, TF_PLACES_KEY_ID, TF_MAPS_SHA1_PLAY,
-#      TF_MAPS_SHA1_UPLOAD  (Settings -> Secrets and variables -> Actions -> Variables).
+#   2. Set the repo variables: TF_MAPS_KEY_ID, TF_PLACES_KEY_ID, TF_MAPS_SHA1_PLAY (every Play
+#      signing certificate, comma-separated: scripts/play-signing-certs.mjs), TF_MAPS_SHA1_UPLOAD
+#      (Settings -> Secrets and variables -> Actions -> Variables).
 #   3. Run this workflow with confirm = "arm". It imports what is missing, plans, and REFUSES any
 #      plan that is not a pure in-place update of the two keys. Read the plan in the job summary.
 #   4. Run it again with apply = "apply" to execute that plan.
