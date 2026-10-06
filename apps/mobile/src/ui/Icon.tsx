@@ -82,6 +82,10 @@ import ImageIcon from "lucide-react-native/dist/cjs/icons/image";
 import Download from "lucide-react-native/dist/cjs/icons/download";
 import Calendar from "lucide-react-native/dist/cjs/icons/calendar";
 import Pill from "lucide-react-native/dist/cjs/icons/pill";
+import VolumeX from "lucide-react-native/dist/cjs/icons/volume-x";
+import Sun from "lucide-react-native/dist/cjs/icons/sun";
+import Battery from "lucide-react-native/dist/cjs/icons/battery";
+import Upload from "lucide-react-native/dist/cjs/icons/upload";
 import type { LucideIcon } from "lucide-react-native";
 import React from "react";
 import type { StyleProp, ViewStyle } from "react-native";
@@ -169,6 +173,11 @@ const ICONS = {
   calendar: Calendar,
   // Order flow v2 G1/G2 (ledger D-59): the pharmacy order's glyph on the live bar and the Now card.
   pill: Pill,
+  // First Run v2 (ledger D-80): P12 job alarm muted, F4a "Good light" tip, P16 battery saver, E6 upload failed.
+  "volume-x": VolumeX,
+  sun: Sun,
+  battery: Battery,
+  upload: Upload,
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;

@@ -47,6 +47,43 @@ export { DismissKeyboardArea } from "./DismissKeyboardArea";
 export { useDial } from "./useDial";
 export { ToastProvider, useToast, useActionError, useActionErrorEffect, pushToast, TOAST_DURATION_MS, type ToastTone } from "./Toast";
 export { Tappable, RIPPLE, RIPPLE_INK, RIPPLE_ON_DARK, PRESSED_OPACITY, type PressTone, type TappableProps } from "./Tappable";
+// First Run v2 shared parts (handoff/first-run-v2, ledger D-80). The copy lives in ./firstrun/copy.
+export {
+  BackHeader,
+  Body,
+  BulletList,
+  ExitButton,
+  FirstRunScreen,
+  FirstRunToast,
+  FrBadge,
+  FrField,
+  FrSheet,
+  FrSoftPill,
+  HeroDisc,
+  HeroPanel,
+  IconDot,
+  InfoBox,
+  KycChecklist,
+  LargeTitle,
+  ListCard,
+  ListRow,
+  PinnedFooter,
+  PrimaryButton,
+  SampleNotification,
+  Spinner,
+  SplitTitle,
+  StepList,
+  StepMarker,
+  SystemSettingsSteps,
+  TextLinkButton,
+  TipChips,
+  Toggle,
+  TriesMeter,
+  VerifiedRow,
+  firstRunMetrics,
+  useFirstRunMetrics,
+  type FrTone,
+} from "./firstrun";
 
 /**
  * LR20 exit test, reachable only from the test-build banner's long-press. A release build needs SOME

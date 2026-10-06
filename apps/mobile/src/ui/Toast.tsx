@@ -1,8 +1,9 @@
 import { tokens } from "@lynia/shared/tokens";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Animated, Text, View } from "react-native";
+import { AccessibilityInfo, Animated } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Icon, type IconName } from "./Icon";
+import { FR } from "./firstrun/metrics";
+import { FirstRunToast } from "./firstrun/toast";
 import { useReduceMotion } from "./useReduceMotion";
 
 /**
@@ -15,6 +16,12 @@ import { useReduceMotion } from "./useReduceMotion";
  * It deliberately does NOT duplicate the OS push banner (that already fires for background notices) —
  * it's for in-app moments. Each toast auto-dismisses; a new one replaces the visible one (we show a
  * single strip, newest wins) so a burst can't stack into a wall. Announced to screen readers.
+ *
+ * LOOK (ledger D-80 §2 #4, owner 2026-10-06): the First Run v2 bottom toast, app-wide — a `forest` bar,
+ * radius 14, padding 14 16, white Inter 600 14 with a 20 brand check, sitting 96 above the bottom (plus
+ * the safe-area inset), gone after 2.5s. It replaced the white top strip. The API is unchanged, so
+ * every `useToast().show(text, tone)` / `useActionError()` caller keeps working: `success` and `info`
+ * draw the check, `warning` (an action failure) a `circle-alert` (see FirstRunToast).
  */
 
 export type ToastTone = "info" | "success" | "warning";
@@ -25,8 +32,8 @@ export interface ToastMessage {
   tone: ToastTone;
 }
 
-/** How long a toast stays before auto-dismissing. */
-export const TOAST_DURATION_MS = 4000;
+/** How long a toast stays before auto-dismissing (the First Run v2 toast's 2.5s, D-80 §2 #4). */
+export const TOAST_DURATION_MS = 2500;
 
 /**
  * Reduce a raise into the visible queue: newest-first, capped. Pure so the behaviour is unit-testable
@@ -37,12 +44,6 @@ export const TOAST_DURATION_MS = 4000;
 export function pushToast(queue: ToastMessage[], msg: ToastMessage, max = 3): ToastMessage[] {
   return [msg, ...queue.filter((m) => m.id !== msg.id)].slice(0, max);
 }
-
-const TONE: Record<ToastTone, { icon: IconName; tint: string; ink: string }> = {
-  info: { icon: "circle-alert", tint: tokens.color.accentWash, ink: tokens.color.accentText },
-  success: { icon: "check", tint: tokens.color.accentWash, ink: tokens.color.accentText },
-  warning: { icon: "triangle-alert", tint: tokens.color.dangerWash, ink: tokens.color.danger },
-};
 
 interface ToastApi {
   show: (text: string, tone?: ToastTone) => void;
@@ -66,7 +67,7 @@ const NOOP: ToastApi = { show: () => undefined };
  * the drop-in replacement: it keeps the exact `(message: string | null) => void` shape of the `setError`
  * setters it replaces, so call sites keep reading `setError("Couldn't send the offer.")` and the
  * screen-specific, curated copy each `onError` computes is preserved verbatim — but the message is now
- * spoken once as a 4s auto-dismissing toast instead of being stored.
+ * spoken once as a 2.5s auto-dismissing toast instead of being stored.
  *
  * Raising is UNCONDITIONAL per call, which is the point: a second failed attempt with a byte-identical
  * message must still speak. (A `useState`-based version silently swallows that — React bails out when
@@ -146,35 +147,17 @@ export function ToastProvider({ children }: { children: React.ReactNode }): Reac
       {current ? (
         <Animated.View
           pointerEvents="none"
+          testID="app-toast"
           style={{
             position: "absolute",
-            top: insets.top + tokens.space.sm,
+            bottom: insets.bottom + FR.toastBottom,
             left: tokens.space.screen,
             right: tokens.space.screen,
             opacity: anim,
-            transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [-16, 0] }) }],
+            transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) }],
           }}
         >
-          <View
-            accessibilityRole="alert"
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: tokens.space.sm,
-              backgroundColor: tokens.color.bg,
-              borderRadius: tokens.radius.card,
-              paddingVertical: tokens.space.md,
-              paddingHorizontal: tokens.space.lg,
-              ...tokens.shadow.menu,
-            }}
-          >
-            <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: TONE[current.tone].tint, alignItems: "center", justifyContent: "center" }}>
-              <Icon name={TONE[current.tone].icon} size={16} color={TONE[current.tone].ink} />
-            </View>
-            <Text style={{ flex: 1, fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink, lineHeight: 18 }}>
-              {current.text}
-            </Text>
-          </View>
+          <FirstRunToast text={current.text} tone={current.tone === "warning" ? "warning" : "success"} />
         </Animated.View>
       ) : null}
     </ToastContext.Provider>

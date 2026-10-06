@@ -4462,6 +4462,7 @@ before execution"); §2 records those answers.
 | Path | What |
 |---|---|
 | `packages/design/handoff/first-run-v2/` | The handoff, **verbatim**: `README.md` (shell, screens A–I, Android wiring, state, tokens, retires), `BRIEF.md` (18 decisions), `CLAUDE-CODE-PROMPT.md` (phases 0–6), `copy.ts` (`PC`, `RP`, `UP`, `PD`, `BD`, `KY`, `SP`), `design/` (the HTML reference: `First Run v2.html`, `First Run v2 - All States.html?screen=<ID>`, `fr-kit.js`, `fr-states.js`, `fr-copy.js`, assets) and `screenshots/` (one 1× PNG per state, `index.html` contact sheet). |
+| `packages/design/tokens/colors.css` | **Phase 1 (2026-10-06):** adds `--danger-sun: #f4d9d5` — the sun on a danger hero panel (README §1 tones; BRIEF open question 1, answered by the owner below). Decor only, never text. Mirrored on every face (`packages/shared/src/design-tokens.ts` `dangerSun`, admin + merchant `globals.css` `:root`) and pinned by `design-tokens.drift.spec.ts`. `#FFF6D6` needed no token: it is the existing `--highlight-chip-wash`. |
 
 ### 2 · Owner decisions where the handoff meets what already shipped (2026-10-06, asked before building)
 
@@ -4484,7 +4485,51 @@ Also decided: `#F4D9D5` (the sun on danger heroes) becomes the token `dangerSun`
 
 _Filled in phase by phase (phases 1–6, `CLAUDE-CODE-PROMPT.md`)._
 
+**Phase 0 (read and plan, 2026-10-06).** The primitives map, every permission request today (file:line), the
+KYC status → F mapping and the per-worker file plan for phases 2–6 were reported before any edit. Shared-file
+owners: `app/settings/index.tsx` → phases 2+3 (it owns every Settings row, D1 included); the rider board
+`app/rider/(tabs)/index.tsx` → phase 6 (the others land region-disjoint mount hunks or export components it
+wires); `app/(tabs)/home.tsx` → phases 2+3 (phase 4 adds the one-line U4a mount).
+
+**Phase 1 (shell parts and copy, 2026-10-06).**
+
+- **Copy:** the handoff's `copy.ts` ships **byte-for-byte** as `apps/mobile/src/ui/firstrun/copy.ts` (`PC`, `RP`,
+  `UP`, `PD`, `BD`, `KY`, `SP`) — one file, not split, next to the parts that read it (`KycChecklist` reads `KY`).
+  A jest test fails if it ever differs from `packages/design/handoff/first-run-v2/copy.ts`. Import it from
+  `src/ui/firstrun/copy`; it is deliberately not in the `src/ui` barrel (two-letter names).
+- **Parts** (`apps/mobile/src/ui/firstrun/`, exported from `src/ui/index.tsx`; every number is `fr-kit.js`'s):
+  `HeroPanel` (`tone` mint|violet|danger|neutral|green, `height?`, `decor?` = the coral dot, `topLeft?` = the ✕
+  slot 12 inside the corner), `HeroDisc` (104/84, 40 icon at 1.75, halo 14 out, `spinner` = F8's 48 ring),
+  `SplitTitle` (`a`, `b`, `tone`; 28/31.4, 24 at 320), `Body`, `PinnedFooter` (`primary` 52 + `link` 44, or
+  `inline` in a sheet), `PrimaryButton` (`icon`, `iconAfter`, `disabled` = U3 line/muted, `done` = D3 inline
+  "Saved"), `TextLinkButton`, `ExitButton`, `FrSoftPill` (mint / white / dangerWhite — the barrel's `SoftPill` is
+  the empty-state one), `Toggle` (draws the OS state; `onPress` requests or opens settings), `BackHeader` +
+  `LargeTitle` (owner #1's Settings look), `ListCard` / `ListRow` / `IconDot` (n|ok|vi|bad, `danger` row),
+  `BulletList` (P1), `StepMarker` / `Spinner` / `StepList` / `SystemSettingsSteps` (`shakeKey` for P6) /
+  `KycChecklist` (`step2` active|next|done, `label`), `TipChips`, `TriesMeter` (`left`, `total`, `label` = F4's
+  box), `InfoBox` (ok|bad|n, `title`), `FrBadge` (mint|gold|checking|surface, `lead` for U1's "New"),
+  `SampleNotification` (`behind` = .94), `FrField` / `VerifiedRow`, `FrSheet` (radius 24, grab 4×36, dim .45),
+  `FirstRunScreen` (status bar + 12 / 6, scrolling body, pinned footer, keyboard-aware), `FirstRunToast`, and
+  `useFirstRunMetrics()` / `firstRunMetrics(width, fontScale)` (≤340 wide → hero 160, disc 84, title 24;
+  font scale ≥1.2 → hero 176, disc 84). Icons added to `Icon`: `volume-x`, `sun`, `battery`, `upload` (`trash-2`
+  is the existing `trash`). Dev gallery: `app/dev/first-run.tsx` (redirects home in a release build).
+- **Token:** `dangerSun #F4D9D5` (see §1).
+- **Toast (owner #4):** `ToastProvider` (`src/ui/Toast.tsx`) now draws the bottom toast app-wide — `forest`, radius
+  14, padding 14 16, white 600 14, a 20 brand check, 96 above the bottom + the safe-area inset, slides up, gone
+  after **2.5s** (`TOAST_DURATION_MS` 4000 → 2500). API unchanged (`useToast().show`, `useActionError`,
+  `useActionErrorEffect`, `pushToast`), so no caller moved.
+
 ### 4 · Still different from the handoff
 
 _Filled in phase by phase._
+
+- **Toast tones (phase 1).** The handoff draws only the success toast (check). An action failure raised through
+  `useActionError` (tone `warning`) keeps the same forest bar but shows a `circle-alert` in `highlight` instead of
+  the check — a green check on "Couldn't send the offer." would read as success. `info` uses the check.
+- **Local toasts (phase 1).** Five screen-local toasts drawn by their own handoffs (`OrderToast`, `BrowseToast`,
+  `ReviewToast`, `RToast`, `SendToast` — ink bars, several with an Undo / Try again action) are not the shared
+  `ToastProvider` and were left as their handoffs drew them; owner #4 covered the shared top strip. Flagged for the
+  owner: unify them on the forest bar or keep them.
+- **"+ Add" pill (E1, for phase 5).** The handoff draws it 36 tall, under the 44 floor; per the 2026-08-20 rule
+  that is a kit defect to report, not to reproduce. `FrSoftPill` is 44; phase 5 decides with the owner.
 
