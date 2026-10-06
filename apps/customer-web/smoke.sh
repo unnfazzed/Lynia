@@ -16,6 +16,8 @@ done
 grep -q '<title>LyniaGo</title>' <<<"$page" || fail "the page title is not LyniaGo"
 grep -q 'rel="manifest"' <<<"$page" || fail "the Add to Home Screen manifest link is missing"
 grep -q '/_expo/static/js/web/entry-' <<<"$page" || fail "the app bundle is not referenced"
+grep -q 'src="/ios-viewport.js"' <<<"$page" || fail "ios-viewport.js (no zoom on focus) is not loaded"
+grep -q 'input, textarea { min-width: 0; }' <<<"$page" || fail "text fields can overflow the screen (min-width rule missing)"
 
 # One-page app: a deep link is served the same page, not a 404.
 deep="$(curl -fsS --max-time 20 "$BASE/send")" || fail "$BASE/send did not answer 200"
@@ -23,6 +25,7 @@ grep -q '<title>LyniaGo</title>' <<<"$deep" || fail "$BASE/send is not the app p
 
 curl -fsS --max-time 20 -o /dev/null "$BASE/manifest.webmanifest" || fail "manifest.webmanifest is missing"
 curl -fsS --max-time 20 -o /dev/null "$BASE/apple-touch-icon.png" || fail "apple-touch-icon.png is missing"
+curl -fsS --max-time 20 -o /dev/null "$BASE/ios-viewport.js" || fail "ios-viewport.js is missing"
 
 headers="$(curl -fsS --max-time 20 -o /dev/null -D - "$BASE/")"
 grep -qi '^content-security-policy:' <<<"$headers" || fail "no Content-Security-Policy header"
