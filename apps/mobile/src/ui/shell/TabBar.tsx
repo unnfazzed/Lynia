@@ -23,12 +23,14 @@ export const TAB_BAR_GAP = 12;
 export const TAB_BAR_SPACE = 72;
 
 /**
- * v1.4 glass: `bg` at 72% over a 24 blur. expo-blur's `systemChromeMaterial` overlays white (= `bg`) at
- * 0.75 × intensity / 100 and, on Android, blurs at intensity / `blurReductionFactor` (4), so 96 is exactly
- * 72% `bg` and a 24 radius. iOS draws UIKit's chrome material at that intensity; web, the kit's
- * `saturate(180%)` with a 19.2px blur (ledger D-56 §6).
+ * v1.4 glass, raised for readability (owner, ledger D-56 §6): `bg` at 93% over a 24 blur. The handoff's
+ * 72% lets an idle `muted` label fall to about 3.2:1 over dark content; 93% holds it at 5:1 even over
+ * black. expo-blur's `systemChromeMaterialLight` overlays white (= `bg`) at 0.97 × intensity / 100 and,
+ * on Android, blurs at intensity / `blurReductionFactor` (4), so 96 is 93% `bg` and a 24 radius. iOS
+ * draws UIKit's light chrome material at that intensity; web, `saturate(180%)` with a 19.2px blur.
  */
 const GLASS_INTENSITY = 96;
+const GLASS_TINT = "systemChromeMaterialLight";
 
 export type TabArt = "home" | "orders" | "account" | "jobs" | "money";
 
@@ -367,7 +369,7 @@ export function TabBar({
       style={[styles.bar, glass ? styles.barGlass : null, { bottom: TAB_BAR_GAP + insets.bottom }]}
     >
       {glass ? (
-        <BlurView pointerEvents="none" intensity={GLASS_INTENSITY} tint="systemChromeMaterial" experimentalBlurMethod="dimezisBlurView" style={styles.glass} />
+        <BlurView pointerEvents="none" intensity={GLASS_INTENSITY} tint={GLASS_TINT} experimentalBlurMethod="dimezisBlurView" style={styles.glass} />
       ) : null}
       {cellW > 0 ? (
         <Animated.View pointerEvents="none" style={[styles.indicator, { width: cellW, transform: [{ translateX: Animated.multiply(slide, cellW) }] }]} />

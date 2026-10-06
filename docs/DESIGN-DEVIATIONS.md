@@ -3113,9 +3113,10 @@ row and approves the dependency it was waiting on.
   OTA (`mobile-ota.yml`'s JS-only rule). An OTA from a `main` that has it no longer matches binaries built
   before it.
 - **The fill** (`src/ui/shell/TabBar.tsx`): a `BlurView` under a transparent bar, clipped to the pill.
-  `tint="systemChromeMaterial"` overlays white (= `bg`) at 0.75 × intensity / 100, and on Android it blurs
-  at intensity / `blurReductionFactor` (4). So **intensity 96 is exactly 72% `bg` and a 24 radius**
-  (Dimezis BlurView 2.0.6, `RenderEffectBlur` on API 31+). Still no edge and no shadow.
+  `tint="systemChromeMaterialLight"` overlays white (= `bg`) at 0.97 × intensity / 100, and on Android it
+  blurs at intensity / `blurReductionFactor` (4). So **intensity 96 is 93% `bg` and a 24 radius** (Dimezis
+  BlurView 2.0.6, `RenderEffectBlur` on API 31+). The tint is raised from the handoff's 72% for
+  readability; see the "Glass tint" row below. Still no edge and no shadow.
 - **The fallback** (`src/ui/shell/useGlass.ts`) is solid `bg` whenever the handoff says so. The settings
   are read live, and until the first read settles the bar is solid, so a user with one of them on never
   sees a frame of glass:
@@ -3132,12 +3133,13 @@ row and approves the dependency it was waiting on.
 
 - `material="solid"` forces the opaque bar, as the kit's `material` prop does.
 - **Bundle:** +5,610 B Hermes (7,276,950 → 7,282,560), within `size-budget.json`, so no raise.
-- **Tests:** `tab-bar-glass.test.tsx` pins the 96 / `systemChromeMaterial` / `dimezisBlurView` fill, the
-  transparent bar, the solid paths (`material="solid"`, Reduce Transparency, Increase Contrast live both
+- **Tests:** `tab-bar-glass.test.tsx` pins the 96 / `systemChromeMaterialLight` / `dimezisBlurView` fill,
+  an idle label's ≥ 4.5:1 through the glass over black, `ink` and `forest` (computed from expo-blur's own
+  overlay formula, so the 72% tint fails it), the transparent bar, the solid paths (`material="solid"`, Reduce Transparency, Increase Contrast live both
   ways), the API 31 and RAM cut-offs, and that the bar is never translucent without the blur.
 - **Evidence:** `docs/parity/TAB-BAR-V1-4-GLASS-2026-10-06.png`, the prototype beside the app at every
-  state, glass on both sides. The parity lane renders expo-blur's real web build (`saturate(180%)` + blur
-  + the same 72% white), shimmed in `tools/parity/mobile/shims/expo-blur.js`. Headless Chromium leaves a
+  state, glass on both sides (the prototype at its 72%, the app at 93%). The parity lane renders expo-blur's
+  real web build (`saturate(180%)` + blur + the tint), shimmed in `tools/parity/mobile/shims/expo-blur.js`. Headless Chromium leaves a
   few glyphs near the bar's bottom edge legible on **both** sides; that is a renderer artefact and it
   matches. The Android blur itself (Dimezis) can only be checked on a phone.
 
@@ -3145,20 +3147,21 @@ row and approves the dependency it was waiting on.
 
 | What | Handoff | App | Why |
 |---|---|---|---|
+| **Glass tint** (APPROVED 2026-10-06) | `bg` at 72% | `bg` at 93% | **Owner instruction, this session (2026-10-06):** *"improve readability"*, in answer to the contrast finding below. At 72% an idle label (`muted`) falls under 4.5:1 over dark content. At 93% it holds 5.0:1 even over black (5.1:1 over `ink`, 5.2:1 over `forest`). The blur radius is unchanged (24). Content behind still shows through, softly. |
 | Saturation | `blur(24px) saturate(180%)` | Android: blur only. Web: `saturate(180%)` applied | Dimezis BlurView has no saturation step and expo-blur exposes none. |
 | Web blur radius | 24px | 19.2px | expo-blur's web build blurs at intensity × 0.2. Parity lane only; Android is exactly 24. |
-| iOS fill | 72% `bg` + 24 blur | UIKit's chrome material at intensity 0.96 | expo-blur on iOS is a `UIVisualEffectView`, which has no exact-alpha tint. The iPhone app ships customer-only. |
+| iOS fill | `bg` + 24 blur | UIKit's light chrome material at intensity 0.96 | expo-blur on iOS is a `UIVisualEffectView`, which has no exact-alpha tint. The iPhone app ships customer-only. |
 | Low-RAM rule | `ActivityManager.isLowRamDevice()` | Total memory below 3.5 GiB | No installed module exposes the flag. A "3GB" phone reports about 2.8 GiB and a "4GB" one about 3.7 GiB, so the cut-off keeps the build brief's "2–3GB devices get the solid fallback". Android's own flag only covers ≤1GB Go phones. |
 | **Power-save rule** (PENDING OWNER REVIEW) | Solid while power-save is on | Not detected | Needs `expo-battery`, a second native module. The owner approved the blur dependency only. It can ride the same binary if wanted. |
-| The bar's own art in the blur | Blur of the content behind | Dimezis also snapshots the bar's indicator and art, so a faint wash of them sits under the tint | expo-blur on Android puts its children beside the Dimezis view, not inside it. Under 72% `bg` this is at most about 28% of an already-blurred image. |
+| The bar's own art in the blur | Blur of the content behind | Dimezis also snapshots the bar's indicator and art, so a faint wash of them sits under the tint | expo-blur on Android puts its children beside the Dimezis view, not inside it. Under 93% `bg` this is at most about 7% of an already-blurred image. |
 | Maps behind the bar | Blurred map | Window background | Dimezis snapshots with a software canvas, which can't draw SurfaceView/TextureView. On the Jobs tab the board's sheet, not the map, is behind the bar. |
 
-**Contrast caveat (upstream report, not a deviation).** The kit's `useGlass` comment says the 72% tint
-"keeps `--muted` ≥ 4.5:1 over any backdrop". Over dark content it doesn't. Blur averages colour and
-doesn't lighten it. An idle label (`muted`) on 72% `bg` over `forest` (#063B22, the Orders NOW cards) is
-3.38:1, and over `ink` it is 3.15:1. Holding 4.5:1 over near-black needs at least an 89% tint. Glass ships
-at the handoff's 72%, verbatim; the fix belongs in the next export (raise the tint, or darken idle labels
-on glass). The app change is one constant (`GLASS_INTENSITY`, or a `systemChromeMaterialLight` tint).
+**Contrast finding (reported upstream; the app's fix is the "Glass tint" row).** The kit's `useGlass`
+comment says the 72% tint "keeps `--muted` ≥ 4.5:1 over any backdrop". Over dark content it doesn't. Blur
+averages colour and doesn't lighten it. An idle label (`muted`) on 72% `bg` over `forest` (#063B22, the
+Orders NOW cards) is 3.38:1, and over `ink` it is 3.15:1. Holding 4.5:1 over near-black needs at least an
+89% tint. The next export should raise the tint (or darken idle labels on glass) so the kit and the app
+agree again.
 
 ## D-57 · Browse v2: the Restaurants list and storefront follow the browse-v2 handoff (Shops and Pharmacy next) — APPROVED (2026-10-01)
 
