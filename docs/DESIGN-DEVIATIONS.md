@@ -4569,7 +4569,7 @@ below are the only differences, and they apply **only** in the web build (`EXPO_
 | C1 onboarding "Want to earn? Ride with LyniaGo" and every rider entry | Drawn | Hidden (`riderModeAvailable()` is false) | Customer-only, as on iPhone (D-41). |
 | `LJ.perm_notif` (second permission step) | Drawn after location | Skipped: the location step finishes priming | No push on web until phase 5; asking for a permission nothing uses is a dead step. |
 | Force-update screen | Drawn | Never shown | The web build is always the latest version. |
-| Maps (phase 1 only) | Drawn | An empty grey panel with the same size | Placeholder until phase 2's Google Maps JavaScript map (D-80). |
+| Maps | Drawn on the phone's Google map | Google's Maps JavaScript map (D-80) with the screens' own pins, route lines and zones; a plain grey panel when there is no key or Google refuses it | Same map provider as the Android app; the browser has no native map. |
 | Android "Get the app" banner | Not drawn | To be built (phase 4) | Owner decision W4. |
 
 Nothing in `packages/design/**` changes. **Upstream ask:** draw the Android banner and the web Add to Home Screen hint.

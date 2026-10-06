@@ -9,7 +9,9 @@
 // 2. expo-secure-store is an empty module on web, so sign-in could never be saved. Redirect it to a
 //    browser-storage shim with the same API (./secure-store-web.js).
 // 3. react-native-maps has no web version and imports native-only internals. Redirect it to
-//    ./react-native-maps-web.js (a placeholder until phase 2's Google Maps JavaScript map).
+//    ./react-native-maps-web.js, the same API drawn with Google's Maps JavaScript API (D-80).
+// 4. expo-location has no browser geocoder. Redirect it to ./expo-location-web.js, which is the real module
+//    with the two geocoding calls answered by Google; that shim's own `expo-location` import resolves normally.
 const path = require("path");
 
 const runtimeDir = path.resolve(__dirname, "../../../tools/web-runtime");
@@ -17,6 +19,7 @@ const runtimeAnchor = path.join(runtimeDir, "package.json");
 const appAnchor = path.resolve(__dirname, "../package.json");
 const secureStoreShim = path.join(__dirname, "secure-store-web.js");
 const mapsShim = path.join(__dirname, "react-native-maps-web.js");
+const locationShim = path.join(__dirname, "expo-location-web.js");
 
 const isRnw = (name) => name === "react-native-web" || name.startsWith("react-native-web/");
 const isReact = (name) => /^(react|react-dom)(\/|$)/.test(name);
@@ -25,6 +28,7 @@ const isReact = (name) => /^(react|react-dom)(\/|$)/.test(name);
 function resolve(context, moduleName, platform) {
   if (moduleName === "expo-secure-store") return { type: "sourceFile", filePath: secureStoreShim };
   if (moduleName === "react-native-maps") return { type: "sourceFile", filePath: mapsShim };
+  if (moduleName === "expo-location" && context.originModulePath !== locationShim) return { type: "sourceFile", filePath: locationShim };
   // Expo's own web alias (react-native → react-native-web) only works when react-native-web resolves
   // from the project, so mirror it here.
   if (moduleName === "react-native" || moduleName === "react-native/index") {
