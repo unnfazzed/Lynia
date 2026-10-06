@@ -4573,6 +4573,61 @@ wires); `app/(tabs)/home.tsx` → phases 2+3 (phase 4 adds the one-line U4a moun
 - **Mount slot** for the other phases: one marked comment in the board's `AppScreen` (J8 `RiderPermBoardRow` / G8
   `RiderLocEmpty` from phase 3, U4b `SoftUpdateBanner` from phase 4).
 
+**Phases 4 + 5 (app update C, splash H, Personal details D, Bike & documents E — 2026-10-06).**
+
+- **U1–U5** (`app/force-update.tsx`): `FirstRunScreen` + a green 280 `HeroPanel` (no dot: it holds the mark, not a disc)
+  with the dove's three facets in white (`lyniago-mark-mono.svg` tinted white) + "Time to **update**" + `UP.body` + the
+  server's what's-new line as `FrBadge` "**New** …" + `PinnedFooter` "Update now" / "Help on WhatsApp". U2 (no
+  `STORE_URL`): `UP.noLinkBody`, the CTA becomes "Message us on WhatsApp", no pill, no link. U3 (offline, store link
+  present): the CTA disabled (`line`/`muted`) over an `n` box "Waiting for a connection"; re-enabled by the app-wide
+  reachability store (the screen checks `/health` on mount and on every return to the foreground, so a dead link
+  starts the store's probe loop and its first OK re-enables the button). U5 = the same screen on return.
+  `app/force-update.view.tsx` is deleted; `LJ.force_update` left `codegen/adopted.mjs`; its target stays wired (the
+  fixture now renders U1) with a SUPERSEDED reason in `rendered-conformance.pending.json`; `RJ.force_update` carries a
+  SUPERSEDED reason in `parity-status.mjs`.
+- **Soft update (owner #7):** `GET /app/version-gate?soft=1` answers `{ minSupportedVersion, recommendedVersion,
+  whatsNew }` (`VersionGateSoftResponse`, strict). Opt-in because the plain body is `.strict()` on every installed
+  build — adding keys to it would turn their force-update gate off; a request without `soft` still gets exactly
+  `{ minSupportedVersion }`. Server env `RECOMMENDED_APP_VERSION` / `RECOMMENDED_APP_VERSION_IOS` (dotted, per platform
+  like the minimum) and `APP_WHATS_NEW` (≤80), all off (null) when unset or ""; wired as optional Variables in
+  `release-azure.yml`. The client asks with `soft=1`, falls back to the plain body from an older server, and shares the
+  one cold-start answer (`useServerVersionGate`). `SoftUpdateBanner` / `useSoftUpdate`
+  (`src/ui/firstrun/SoftUpdateBanner.tsx`, `src/logic/soft-update.ts`): U4a `forest` (body `illusMint`, brand-green
+  "Update" pill, 44 ✕) is mounted under Home's header (one line in `app/(tabs)/home.tsx`); U4b `violet` is exported for
+  the board's marked slot. Once per version: Update or ✕ stores the version (`lynia.softUpdateDismissed.v1`).
+- **Splash (owner #2):** splash-v1 unchanged for everyone, plus: a boot into the rider board (`/rider`) shows the two
+  rider steps `SP.r1` / `SP.r2`; step 2 is the board's first reads (`["me"]` + `["activeJob"]`) settling in the shared
+  query cache (`src/boot/rider-board-ready.ts`, a new `rider` boot signal), then a cut (no exit into Home); a rider
+  boot sent elsewhere first (rejected session) hands off at once. On the entry phone (≤340 wide or ≤640 tall) the brand
+  — orbit to wordmark — is centred in the space above the card (`splashGeometry({ W, … })`); the card was already 16
+  above the nav bar. A rider boot that goes offline swaps the card's rows for the single offline row (`wifi-off` disc,
+  "You're offline", "We'll continue when you're back.") — no dark panel, no button; it resumes on reconnect.
+- **D2–D7** (`app/settings/personal.tsx`): `BackHeader` + `LargeTitle`, `FrField` First name / Surname (gap 12), the
+  phone as `VerifiedRow`, the optional ID (`63-123456A78`, `PD.idWhy`). `src/logic/national-id.ts` normalises (spaces,
+  case, the dash) and checks `^\d{2}-\d{6,7}[A-Z]\d{2}$` on blur and on Save (D5); the server still receives its
+  canonical undashed form. D3: the button turns mint with a check and "Saved" for 1.5 s and stays on the page. D4: the
+  `id_in_use` 409 → the field's red border (`FrField` gained `invalid`: the border without a helper line), the `bad`
+  box "**This ID is on another account**" + body, and the CTA "Message us on WhatsApp" until the ID is edited. D6:
+  `VerifiedRow` "••-••••••K07" "✓ Verified", helper "From your ID check". D7: `FirstRunScreen`'s pinned footer rides
+  the keyboard (Android `adjustResize`).
+- **E1–E6** (`app/rider/documents.tsx`): progress bars + "N of 3" (`bikeDocsProgress`), the three rows with the "+
+  Add" pill at `tokens.touchTargetMin` (`ADD_PILL_HEIGHT`, see §4), `BD.optional`; the "Re-verify my bike" WhatsApp
+  button is gone. E2a `FrSheet` camera / gallery; E2b a full-screen `ink` modal (✕, "Face the **camera**", the 220×290
+  dashed oval, three translucent tips, the 76 shutter); E2c the 240 round preview, "Use photo" / "Retake"; E2d the
+  row's sub-line becomes the 4dp bar with "Uploading…". E4: `FrSheet` + `FrField` (600, `.06em`), `PLATE_RE`
+  `^[A-Z]{3}\s?\d{4}$`, "Plates look like ABC 1234"; Save closes the sheet at once and the row shows the plate, the
+  `checking` `FrBadge` "Checking" and `BD.plateReview` before the server answers (a failure restores the row). E5:
+  everything on file → no large title, the mint 200 hero riding up under the header with a filled brand disc and white
+  check, "You're **all set**", rows with Change / Edit. E6: the danger hero with `upload`, "Upload **didn't finish**",
+  "Try again" — the shot is kept as a SecureStore draft from "Use photo" until the attach lands, so Try again re-sends
+  it, also after a relaunch. `bikeVerified()` (also Settings' row) reads `plateStatus` once the server sends it.
+- **`plate_status` (NEEDS BACKEND → built):** migration `0077_rider_plate_status` (expand-only: `CREATE TYPE
+  "PlateStatus"` + `riders.plate_status NOT NULL DEFAULT 'none'`, catalog-only). `PATCH /riders/me` sets `checking` on a
+  real plate change and returns `plateStatus`; `/auth/me` rider carries it; `POST /admin/riders/:id/plate-verify
+  { plate }` flips `checking` → `verified` with a CAS on the plate ops looked at, audited as the reserved
+  `rider.plate_verify`; the admin rider list / detail expose it. `PlateStatus` enum in `@lynia/shared`.
+- **Language and Privacy** (owner #1): the round `BackHeader` + `LargeTitle` replace `AppBar`; content unchanged.
+
 ### 4 · Still different from the handoff
 
 _Filled in phase by phase._
@@ -4584,8 +4639,12 @@ _Filled in phase by phase._
   `ReviewToast`, `RToast`, `SendToast` — ink bars, several with an Undo / Try again action) are not the shared
   `ToastProvider` and were left as their handoffs drew them; owner #4 covered the shared top strip. Flagged for the
   owner: unify them on the forest bar or keep them.
-- **"+ Add" pill (E1, for phase 5).** The handoff draws it 36 tall, under the 44 floor; per the 2026-08-20 rule
-  that is a kit defect to report, not to reproduce. `FrSoftPill` is 44; phase 5 decides with the owner.
+- **"+ Add" pill (E1) — UPSTREAM KIT DEFECT, fixed in the kit (owner, 2026-10-06: "Fix the kit to 44dp").** The
+  handoff drew it 36 tall (`fr-states.js` `addBtn`, `min-height:36px`), under `--target-min`. Per CLAUDE.md D2 the app
+  never resizes a drawn target and a below-floor mock is fixed upstream: `packages/design/handoff/first-run-v2/design/
+  fr-states.js` now draws it `min-height:var(--target-min,44px)`, and the app builds it at `tokens.touchTargetMin`
+  (`ADD_PILL_HEIGHT` in `app/rider/documents.tsx`). The 1× `screenshots/E1.png` / `E4c.png` / `E2d.png` still show the
+  old 36 (they can't be re-rendered here) — **report upstream** so the next export redraws them.
 
 **Phase 6 (F / G / I):**
 
