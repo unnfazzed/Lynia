@@ -86,6 +86,7 @@ export function aliasMap() {
     "expo-location": join(SHIMS, "expo-location.js"),
     "react-native-maps": join(SHIMS, "react-native-maps.js"),
     "expo-image": join(SHIMS, "expo-image.js"),
+    "expo-blur": join(SHIMS, "expo-blur.js"),
     "expo-image-manipulator": join(SHIMS, "expo-image-manipulator.js"),
     "expo-image-picker": join(SHIMS, "expo-image-picker.js"),
     "socket.io-client": join(SHIMS, "socket-io.js"),
