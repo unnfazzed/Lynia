@@ -32,6 +32,7 @@ import { BootSplash } from "../src/boot/splash/BootSplash";
 import { RevealCorners } from "../src/boot/RevealCorners";
 import { RiderRouteGate } from "../src/rider-route-gate";
 import ForceUpdateScreen from "./force-update";
+import { isCustomerWebBuild } from "../src/web-build";
 
 /**
  * EVERY STATEMENT IN THIS BLOCK RUNS WHERE NOTHING CAN CATCH IT (MOB-BOOT-04,
@@ -233,7 +234,9 @@ function AppNavigator(): React.ReactElement {
   const current = Constants.expoConfig?.version ?? "0.0.0";
   // Cold-start handoff runs without a transition; every navigation after it animates normally.
   const { booting } = useBootPhase();
-  if (isUpdateRequired(current) || isVersionBelow(current, serverMin)) return <ForceUpdateScreen />;
+  // The customer web build is always the latest version, so there is nothing to update to.
+  const gated = !isCustomerWebBuild() && (isUpdateRequired(current) || isVersionBelow(current, serverMin));
+  if (gated) return <ForceUpdateScreen />;
   return <Stack screenOptions={booting ? bootStackScreenOptions : stackScreenOptions} />;
 }
 

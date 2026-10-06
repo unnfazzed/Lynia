@@ -7,6 +7,7 @@ import { loadPermissionsPrimed, savePermissionsPrimed } from "../src/auth/sessio
 import { requestPushRegistration } from "../src/push/push-kick";
 import { Screen } from "../src/ui";
 import { riderModeAvailable } from "../src/rider-mode";
+import { isCustomerWebBuild } from "../src/web-build";
 import { PermLocView } from "./permissions-location.view";
 import { PermNotifView } from "./permissions-notifications.view";
 
@@ -62,13 +63,19 @@ export default function PermissionsScreen({ initialStep = "location" }: Permissi
     router.replace(dest);
   };
 
+  // The customer web build has no push yet (src/push/push.ts), so it skips the notifications step.
+  const afterLocation = (): void => {
+    if (isCustomerWebBuild()) done();
+    else setStep("notifications");
+  };
+
   const primeLocation = async (): Promise<void> => {
     try {
       await Location.requestForegroundPermissionsAsync();
     } catch {
       /* the OS dialog can't fail us into a dead-end — advance regardless */
     } finally {
-      setStep("notifications");
+      afterLocation();
     }
   };
 
@@ -115,7 +122,7 @@ export default function PermissionsScreen({ initialStep = "location" }: Permissi
         // the neutral skip there.
         secondary={isRider ? "Not now" : "Enter address manually"}
         onPrimary={() => void primeLocation()}
-        onSecondary={() => setStep("notifications")}
+        onSecondary={afterLocation}
       />
     );
   }

@@ -1,5 +1,6 @@
 import Constants from "expo-constants";
 import { Linking, Platform } from "react-native";
+import { isCustomerWebBuild } from "./web-build";
 
 /**
  * API base URL. Set it for device/prod via EXPO_PUBLIC_API_URL (e.g. your LAN IP in dev, the HTTPS
@@ -187,6 +188,8 @@ export const STORE_URL: string | null = storeUrlFor(Platform.OS, {
 
 /** The listing for this platform ({@link STORE_URL}); exported pure for unit testing. */
 export function storeUrlFor(os: string, urls: { appStore?: string; play?: string }): string | null {
+  // The customer web build is always the latest version and has no store listing of its own.
+  if (os === "web" && isCustomerWebBuild()) return null;
   return (os === "ios" ? urls.appStore : urls.play) ?? null;
 }
 

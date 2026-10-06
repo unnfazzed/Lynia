@@ -3,6 +3,7 @@ import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { registerDeviceToken, unregisterDeviceToken } from "../api/notifications";
 import { isRiderOnlyRoute, riderModeAvailable } from "../rider-mode";
+import { isCustomerWebBuild } from "../web-build";
 
 // Show a heads-up banner for a notification that arrives while the app is foregrounded (the OS only
 // shows it automatically in the background). Set once at module load.
@@ -65,6 +66,9 @@ export type PushRegistrationResult =
 export async function registerForPushNotificationsAsync(): Promise<PushRegistrationResult> {
   let granted: boolean;
   try {
+    // The customer web build has no push yet: the API sends through FCM and APNs, which can't reach a
+    // browser (docs/plans/2026-10-06-customer-web-app-plan.md, phase 5).
+    if (isCustomerWebBuild()) return { registered: false, retry: false };
     // Push tokens are only ever issued to real hardware (incl. dev builds), never simulators.
     if (!Device.isDevice) return { registered: false, retry: false };
 

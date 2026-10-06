@@ -36,6 +36,13 @@ const sentryBrowserRedirect = require("./metro-shims/sentry-browser-redirect");
 // Bundle trim (2026-10-02): `assert` under @ide/backoff, PostHog's survey UI, zod's fromJSONSchema —
 // dependency-internal weight the app never runs. Scope + safety notes live in the shim files.
 const bundleTrimRedirect = require("./metro-shims/bundle-trim-redirect");
+// Customer web build only (EXPO_PUBLIC_LYNIA_WEB=1): react-native-web from tools/web-runtime and the browser-storage
+// expo-secure-store. Never reached on Android/iOS. Scope + reasons live in the shim file.
+const webRuntime = require("./metro-shims/web-runtime");
+
+// Metro only resolves files it watches, and tools/ sits outside the workspace folders Expo watches. Web
+// exports only (EXPO_PUBLIC_LYNIA_WEB=1), so phone builds never depend on tools/web-runtime being installed.
+if (process.env.EXPO_PUBLIC_LYNIA_WEB === "1") config.watchFolders = [...(config.watchFolders ?? []), webRuntime.runtimeDir];
 
 const defaultResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
@@ -52,6 +59,10 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   }
   if (sentryBrowserRedirect.shouldRedirect(moduleName, context.originModulePath)) {
     return { type: "sourceFile", filePath: sentryBrowserRedirect.stubPath };
+  }
+  if (platform === "web") {
+    const webResolution = webRuntime.resolve(context, moduleName, platform);
+    if (webResolution) return webResolution;
   }
   const trimmedStub = bundleTrimRedirect.redirectFor(moduleName, context.originModulePath);
   if (trimmedStub) {
