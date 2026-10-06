@@ -1,0 +1,94 @@
+/**
+ * Ledger D-78 (owner 2026-10-06): the pure rules behind Bike & documents and Personal details, and the
+ * photo save chain (downscale → mint under kyc/<you>/ → PUT → PATCH /riders/me).
+ */
+const mockRequestKyc = jest.fn();
+const mockUploadImage = jest.fn();
+const mockUpdateRider = jest.fn();
+const mockDownscale = jest.fn();
+
+jest.mock("../../api/uploads", () => ({
+  requestKycPhotoUpload: (...a: unknown[]) => mockRequestKyc(...a),
+  uploadImage: (...a: unknown[]) => mockUploadImage(...a),
+}));
+jest.mock("../../api/riders", () => ({ updateRiderProfile: (...a: unknown[]) => mockUpdateRider(...a) }));
+jest.mock("../image-downscale", () => ({ downscaleForUpload: (...a: unknown[]) => mockDownscale(...a) }));
+jest.mock("expo-image-picker", () => ({
+  MediaTypeOptions: { Images: "Images" },
+  requestCameraPermissionsAsync: jest.fn(async () => ({ granted: false })),
+  requestMediaLibraryPermissionsAsync: jest.fn(async () => ({ granted: true })),
+  launchCameraAsync: jest.fn(),
+  launchImageLibraryAsync: jest.fn(async () => ({ canceled: false, assets: [{ uri: "file:///p.png", width: 3000, height: 4000, mimeType: "image/png" }] })),
+}));
+
+import { bikeVerified, maskNationalId, normalizePlate, pickRiderPhoto, plateIsValid, saveRiderPhoto } from "../rider-documents";
+
+describe("plate rules (as PATCH /riders/me applies them)", () => {
+  it("normalises to single spaces, upper-case", () => {
+    expect(normalizePlate("  aee   4471 ")).toBe("AEE 4471");
+  });
+  it("accepts 3–20 characters once trimmed", () => {
+    expect(plateIsValid("ab")).toBe(false);
+    expect(plateIsValid("  ab  ")).toBe(false);
+    expect(plateIsValid("abc")).toBe(true);
+    expect(plateIsValid("x".repeat(21))).toBe(false);
+  });
+});
+
+describe("bikeVerified (review R-8)", () => {
+  it("is true only for a verified rider who has a plate", () => {
+    expect(bikeVerified({ kycStatus: "verified", bikeReg: "AEE 4471" })).toBe(true);
+    expect(bikeVerified({ kycStatus: "verified", bikeReg: null })).toBe(false);
+    expect(bikeVerified({ kycStatus: "verified", bikeReg: "  " })).toBe(false);
+    expect(bikeVerified({ kycStatus: "pending", bikeReg: "AEE 4471" })).toBe(false);
+    expect(bikeVerified(null)).toBe(false);
+  });
+});
+
+describe("maskNationalId", () => {
+  it("shows only the last three characters", () => {
+    expect(maskNationalId("63-123456-A-42")).toBe("••••••••A42");
+    expect(maskNationalId("ab1")).toBe("AB1");
+    expect(maskNationalId(null)).toBe("");
+  });
+});
+
+describe("pickRiderPhoto", () => {
+  it("reports a refused camera permission", async () => {
+    expect(await pickRiderPhoto("camera")).toBe("denied");
+  });
+  it("hands back the gallery pick with its real content type", async () => {
+    expect(await pickRiderPhoto("gallery")).toEqual({ uri: "file:///p.png", width: 3000, height: 4000, contentType: "image/png" });
+  });
+});
+
+describe("saveRiderPhoto", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRequestKyc.mockResolvedValue({ uploadUrl: "https://put", key: "kyc/p1/x.jpg", headers: { "Content-Type": "image/jpeg", "x-size": "1" } });
+    mockUploadImage.mockResolvedValue(undefined);
+    mockUpdateRider.mockResolvedValue({ hasPhoto: true, bikeReg: null });
+  });
+
+  it("uploads the downscaled JPEG under the minted key, then attaches the key", async () => {
+    mockDownscale.mockResolvedValue({ uri: "file:///small.jpg", contentType: "image/jpeg" });
+    const out = await saveRiderPhoto({ uri: "file:///p.png", width: 3000, height: 4000, contentType: "image/png" });
+    expect(mockRequestKyc).toHaveBeenCalledWith("image/jpeg");
+    expect(mockUploadImage).toHaveBeenCalledWith("https://put", "file:///small.jpg", { "Content-Type": "image/jpeg", "x-size": "1" });
+    expect(mockUpdateRider).toHaveBeenCalledWith({ photoUrl: "kyc/p1/x.jpg" });
+    expect(out).toEqual({ hasPhoto: true, bikeReg: null });
+  });
+
+  it("uploads the original when the optimizer fails", async () => {
+    mockDownscale.mockRejectedValue(new Error("oom"));
+    await saveRiderPhoto({ uri: "file:///p.jpg", contentType: "image/jpeg" });
+    expect(mockUploadImage).toHaveBeenCalledWith("https://put", "file:///p.jpg", expect.anything());
+  });
+
+  it("never attaches a key whose upload failed", async () => {
+    mockDownscale.mockResolvedValue({ uri: "file:///small.jpg", contentType: "image/jpeg" });
+    mockUploadImage.mockRejectedValue(new Error("timed out"));
+    await expect(saveRiderPhoto({ uri: "file:///p.jpg", contentType: "image/jpeg" })).rejects.toThrow("timed out");
+    expect(mockUpdateRider).not.toHaveBeenCalled();
+  });
+});
