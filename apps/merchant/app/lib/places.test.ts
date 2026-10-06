@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mapDetails, mapReverse, mapSuggestions, pinnedLine } from "./places";
 
-describe("address search for the sign-up location (D-48: Google Places, OSM map)", () => {
+describe("address search for the sign-up location (D-48: Google Places)", () => {
   it("keeps only selectable predictions, with the structured main and secondary text", () => {
     expect(
       mapSuggestions({

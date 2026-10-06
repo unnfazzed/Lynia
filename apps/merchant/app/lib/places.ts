@@ -1,10 +1,11 @@
 import type { LatLng } from "@lynia/shared";
 
 /**
- * Address search and "where am I" for the merchant web (merchant mobile redesign, D-48: "Google Places
- * search, OpenStreetMap map"). Places API (New) autocomplete + details, the same REST calls the
+ * Address search and "where am I" for the merchant web (merchant mobile redesign, D-48; maps are Google's
+ * too since D-80). Places API (New) autocomplete + details, the same REST calls the
  * customer app makes (apps/mobile/src/api/places.ts), plus the Geocoding API's reverse lookup for a
- * GPS fix. Browser-direct with a referrer-restricted key in `NEXT_PUBLIC_GOOGLE_PLACES_KEY`.
+ * GPS fix. Browser-direct with a referrer-restricted key in `NEXT_PUBLIC_GOOGLE_PLACES_KEY` — the same key
+ * draws the tracking band's Static Maps image (`components/m/StaticMap.tsx`).
  *
  * Key-gated and failure-quiet: with no key, or on any refusal or network drop, search returns nothing
  * and reverse lookup returns null, and the screen falls back to "Your current location". The mapping
