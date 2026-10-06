@@ -413,6 +413,21 @@ What's wrong with it:
 3c. `docs/designs/owner-review-2026-10-02/PROMPTS.md` Prompt 1 (rider photo, an earlier ask), for E.
 3d. Renders of today's Bike & documents, the KYC gates, the "Earn with your bike" card and Settings
     (the Rider v2 prototype `?screen=` views cover them).
+3e. **The current-UI pack** (`first-run-v2-current-ui.zip`, overview sheet
+    `docs/designs/first-run-v2-current-ui.png`). It shows today's app for every section, named by
+    section letter:
+    - A: customer location priming (old), Settings with permissions off, H5 / H6;
+    - B: rider permissions, mock vs app;
+    - C: force update, mocks vs app;
+    - D: Settings (customer, rider) and C5;
+    - E: Bike & documents (new rider, verified);
+    - F: every ID-check wall (in review, unfinished, declined, locked, expired, R2);
+    - G: "Earn with your bike", the Account Become card, C1, R1;
+    - I: R3, Delete account.
+
+    "Reconnecting…" in the rider headers is an artifact of the render harness (it has no live
+    socket), not part of the design. For the splash (H), use `splash-v1/Splash.html`, which plays
+    every state.
 4. Renders of today's screens: `node tools/parity/pair.mjs --keys LJ.perm_loc,LJ.perm_notif,LJ.force_update --out out/perm-update`.
 5. `docs/designs/rider-permissions-v1-PROMPT.md` (optional, the fuller rider reference).
 
