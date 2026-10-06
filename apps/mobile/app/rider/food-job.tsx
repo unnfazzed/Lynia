@@ -37,7 +37,7 @@ import { invalidateRiderJobQueries } from "../../src/query/use-history-feed";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
-import { AppBar, haptic, Heading, Icon, Screen, SkeletonList, Sub, Tappable, useActionError, useToast } from "../../src/ui";
+import { AppBar, EmptyState, emptyCopy, haptic, Icon, Screen, SkeletonList, Tappable, useActionError, useToast } from "../../src/ui";
 import { O, ofFmt } from "../../src/ui/orderflow/copy";
 import { CameraStep, OfNote, Shutter, TickRow } from "../../src/ui/rider/proof-kit";
 import { useReduceMotion } from "../../src/ui/useReduceMotion";
@@ -832,8 +832,7 @@ export default function RiderFoodJob(): React.ReactElement {
     return (
       <Screen>
         <AppBar onBack={() => router.replace("/rider")} />
-        <Heading>No active job</Heading>
-        <Sub>Accept an offer to start a delivery.</Sub>
+        <EmptyState icon="bike" title={emptyCopy.rider.noActiveJob.title} body={emptyCopy.rider.noActiveJob.body} />
       </Screen>
     );
   }

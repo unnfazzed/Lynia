@@ -384,15 +384,4 @@ export function Gate({
   );
 }
 
-/** The calm "Why no jobs?" box. */
-export function WhyQuiet({ place }: { place: string | null }): React.ReactElement | null {
-  if (!place) return null;
-  return (
-    <View style={{ backgroundColor: tokens.color.surface, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, gap: 4 }}>
-      <Text style={{ fontSize: 14, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{R.whyQuiet}</Text>
-      <Text style={{ fontSize: 13, lineHeight: 19, color: tokens.color.ink }}>{RF.whyQuietB(place)}</Text>
-    </View>
-  );
-}
-
 export { RLabel };

@@ -44,7 +44,7 @@ import { RX_MAX_PAGES, usePrescriptionPhotos } from "../../src/query/use-prescri
 import { useRestaurantMenu } from "../../src/query/use-restaurants";
 import { useShopCatalogue } from "../../src/query/use-shops";
 import { uuidV4FromSeed, withTimeout } from "../../src/util";
-import { Icon } from "../../src/ui";
+import { EmptyState, emptyCopy, Icon } from "../../src/ui";
 import { B } from "../../src/ui/browse/copy";
 import { ServiceSticker } from "../../src/ui/browse/kit";
 import { AddressEdit } from "../../src/ui/orderflow/AddressEdit";
@@ -356,18 +356,7 @@ export default function FoodReviewScreen(): React.ReactElement {
     return (
       <View style={{ flex: 1, backgroundColor: tokens.color.bg, paddingTop: insets.top }}>
         <ReviewHeader onBack={() => router.back()} />
-        <View style={{ alignItems: "center", gap: 8, paddingTop: 44, paddingHorizontal: 32 }}>
-          <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: tokens.color.surface, alignItems: "center", justifyContent: "center" }}>
-            <Icon name="shopping-bag" size={28} color={tokens.color.muted} />
-          </View>
-          <Text accessibilityRole="header" style={{ fontSize: 21, lineHeight: 25.2, fontWeight: tokens.font.weight.extrabold, letterSpacing: -0.5, color: tokens.color.ink, textAlign: "center" }}>
-            {O.r.empty}
-          </Text>
-          <Text style={{ fontSize: 14, lineHeight: 19.6, color: tokens.color.muted, textAlign: "center" }}>{O.r.emptySub}</Text>
-          <View style={{ alignSelf: "stretch", marginTop: 8 }}>
-            <PrimaryButton label={O.r.emptyCta} onPress={() => router.replace("/food")} />
-          </View>
-        </View>
+        <EmptyState icon="shopping-bag" title={emptyCopy.cart.empty.title} primary={{ label: emptyCopy.cart.empty.primary, onPress: () => router.replace("/food") }} />
       </View>
     );
   }

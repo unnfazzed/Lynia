@@ -45,7 +45,7 @@ import { clearLastActiveJob, loadLastActiveJob, saveLastActiveJob } from "../../
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
-import { AppBar, Button, Card, haptic, Heading, Icon, orderStatusTone, Screen, SkeletonList, StatusPill, Sub, useActionError, useToast } from "../../src/ui";
+import { AppBar, Button, Card, EmptyState, emptyCopy, haptic, Heading, Icon, orderStatusTone, Screen, SkeletonList, StatusPill, Sub, useActionError, useToast } from "../../src/ui";
 import { useReduceMotion } from "../../src/ui/useReduceMotion";
 import { IconDisc, SmBtn, Stars, Tags } from "../../src/ui/order/kit";
 import { OrderMap } from "../../src/ui/order/OrderMap";
@@ -928,7 +928,7 @@ export default function RiderJob(): React.ReactElement {
     }
     return (
       <Screen>
-        <RiderErrorState onRetry={() => void jobQ.refetch()} retrying={jobQ.isFetching} onBack={() => router.replace("/rider")} backLabel="Back" />
+        <RiderErrorState onRetry={() => void jobQ.refetch()} retrying={jobQ.isFetching} onBack={() => router.replace("/rider")} />
       </Screen>
     );
   }
@@ -945,8 +945,7 @@ export default function RiderJob(): React.ReactElement {
     return (
       <Screen>
         <AppBar onBack={() => router.replace("/rider")} />
-        <Heading>No active job</Heading>
-        <Sub>Accept an order to start a delivery.</Sub>
+        <EmptyState icon="bike" title={emptyCopy.rider.noActiveJob.title} body={emptyCopy.rider.noActiveJob.body} />
       </Screen>
     );
   }

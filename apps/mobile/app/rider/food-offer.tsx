@@ -8,7 +8,7 @@ import { acceptFoodDispatch, declineFoodDispatch, type FoodOfferJob, getFoodDisp
 import { foodCashBreakdown, foodOfferVariant } from "../../src/logic/food-rider-job";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { pendingOrQueued } from "../../src/query/client";
-import { EmptyState, haptic, Icon, Screen, SkeletonList, useActionErrorEffect } from "../../src/ui";
+import { AppBar, EmptyState, haptic, Icon, Screen, SkeletonList, useActionErrorEffect } from "../../src/ui";
 import { useReduceMotion } from "../../src/ui/useReduceMotion";
 import { CtaBar, CtaButton } from "../../src/ui/order/kit";
 import { OrderMap } from "../../src/ui/order/OrderMap";
@@ -93,7 +93,8 @@ export default function FoodOffer(): React.ReactElement {
   if (!restaurantsEnabled) {
     return (
       <Screen>
-        <EmptyState icon="utensils" title="Restaurants isn't available yet" message="Check back soon." />
+        <AppBar onBack={() => router.replace("/rider")} />
+        <EmptyState icon="utensils" tone="info" title="Restaurants isn't available yet" body="Check back soon." />
       </Screen>
     );
   }

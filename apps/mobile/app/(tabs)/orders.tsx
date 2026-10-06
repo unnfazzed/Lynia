@@ -16,29 +16,24 @@ import { useCustomerOrders } from "../../src/query/use-customer-orders";
 import { invalidateCustomerOrderHistory } from "../../src/query/use-history-feed";
 import { useNotificationsUnreadCount } from "../../src/query/use-notifications-unread";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
-import { useActionError, useTabRoot } from "../../src/ui";
+import { EmptyRow, EmptyState, emptyCopy, fillEmpty, useActionError, useTabRoot } from "../../src/ui";
 import { hhmm } from "../../src/ui/order/copy";
-import { ordersCopy as C, OX } from "../../src/ui/orders/copy";
+import { ordersCopy as C } from "../../src/ui/orders/copy";
 import {
   DayLabel,
-  EmptyArt,
   EndRow,
   HistoryRow,
-  IconDisc,
   LoadingOlderRow,
-  InfoCard,
   NoteRow,
   NowCard,
   NowStrip,
   OfflineBanner,
-  OrdersButton,
   OrdersHeader,
   OrdersSkeleton,
   PageFailedRow,
   SearchBar,
   SearchField,
   SectionLabel,
-  ServiceArt,
   ServiceChips,
 } from "../../src/ui/orders/kit";
 import {
@@ -55,6 +50,11 @@ import {
 } from "../../src/ui/orders/model";
 
 const ACTIVE_ORDERS_KEY = ["activeCustomerOrders"] as const;
+
+/** Empty states (handoff empty-states-v2, D-78). */
+const E = emptyCopy.orders;
+/** The service word in "No {service} orders yet" (O9d). */
+const SERVICE_WORD: Record<OrdersService, string> = { send: "parcel", restaurants: "food", shops: "shop", pharmacy: "pharmacy" };
 
 /** Every row on this tab opens the one order screen; warm it from the list's idle time (prewarm-routes.ts). */
 const ORDERS_PREWARM: readonly PrewarmRoute[] = ["order"];
@@ -164,7 +164,6 @@ export default function OrdersTabScreen(): React.ReactElement {
   };
 
   const anyFood = restaurantsEnabled || shopsEnabled || pharmacyEnabled;
-  const findFood = (): void => router.push(restaurantsEnabled ? "/food" : shopsEnabled ? "/shops" : "/pharmacy");
   const header = (search: boolean, dim = false): React.ReactElement => (
     <OrdersHeader narrow={narrow} unread={unread} onBell={() => router.push("/notifications")}>
       {search ? <SearchField query={query} dim={dim} onPress={() => setSearching(true)} onClear={() => setQuery("")} /> : null}
@@ -190,9 +189,13 @@ export default function OrdersTabScreen(): React.ReactElement {
         ))}
       </>
     ) : (
-      <InfoCard title={C.noMatch(q)} body={C.noMatchSub}>
-        <OrdersButton kind="ghost" label={C.clearSearch} onPress={() => setQuery("")} />
-      </InfoCard>
+      <EmptyState
+        icon="search"
+        tone="info"
+        title={fillEmpty(E.noMatch.title, { q })}
+        body={E.noMatch.body}
+        secondary={{ label: E.noMatch.secondary, onPress: () => setQuery("") }}
+      />
     );
 
   // The tab draws its own offline message (the banner, the search note, the O20 card), so the app-wide
@@ -228,11 +231,9 @@ export default function OrdersTabScreen(): React.ReactElement {
         {header(false)}
         {nowSection()}
         {!online ? (
-          <InfoCard art={<IconDisc icon="wifi-off" bg={tokens.color.surface} ink={tokens.color.muted} />} title={C.offT} body={C.offB} />
+          <EmptyState icon="wifi-off" tone="info" title={E.offline.title} body={E.offline.body} />
         ) : (
-          <InfoCard art={<IconDisc icon="circle-alert" bg={tokens.color.dangerWash} ink={tokens.color.dangerInk} />} title={C.errT} body={C.errB}>
-            <OrdersButton kind="primary" icon="refresh-cw" label={C.tryAgain} onPress={refetch} />
-          </InfoCard>
+          <EmptyState icon="circle-alert" tone="error" title={E.error.title} body={E.error.body} primary={{ label: E.error.primary, icon: "refresh-cw", onPress: refetch }} />
         )}
       </>
     );
@@ -243,17 +244,16 @@ export default function OrdersTabScreen(): React.ReactElement {
         <>
           {header(false)}
           {nowSection()}
-          <View style={{ marginTop: 8 }}>
-            <NoteRow center icon="receipt" text={C.onlyNow} />
-          </View>
+          <EmptyRow centred text={E.noHistoryNote} style={{ marginTop: 20, paddingHorizontal: 16 }} />
         </>
       ) : (
         <>
           {header(false)}
-          <InfoCard mint art={<EmptyArt />} title={C.emptyT} body={anyFood ? C.emptyB : C.emptyBParcels}>
-            <OrdersButton kind="primary" icon="package" label={C.sendParcel} onPress={() => router.push("/send")} />
-            {anyFood ? <OrdersButton kind="text" label={C.findFood} onPress={findFood} /> : null}
-          </InfoCard>
+          {anyFood ? (
+            <EmptyState icon="receipt" title={E.none.title} body={E.none.body} />
+          ) : (
+            <EmptyState icon="package" title={E.noneParcels.title} body={E.noneParcels.body} />
+          )}
         </>
       );
   } else {
@@ -271,9 +271,13 @@ export default function OrdersTabScreen(): React.ReactElement {
         ) : none && filtered.length === 0 && (hasMore || isLoadingMore) && !loadMoreFailed ? (
           <LoadingOlderRow />
         ) : none && filtered.length === 0 ? (
-          <InfoCard art={<ServiceArt service={none} />} title={none === "pharmacy" ? OX.pharmacyNone : C.filterNone[none]} body={C.filterNoneSub}>
-            <OrdersButton kind="ghost" label={C.showAll} onPress={() => setFilter("all")} />
-          </InfoCard>
+          <EmptyState
+            icon="receipt"
+            tone="info"
+            title={fillEmpty(E.noneService.title, { service: SERVICE_WORD[none] })}
+            body={E.noneService.body}
+            primary={{ label: E.noneService.primary, onPress: () => setFilter("all") }}
+          />
         ) : (
           <>
             {groups.map((g) => (
@@ -304,7 +308,7 @@ export default function OrdersTabScreen(): React.ReactElement {
       <ScrollView
         ref={scrollRef}
         style={{ backgroundColor: tokens.color.bg }}
-        contentContainerStyle={{ paddingBottom: bottomPad }}
+        contentContainerStyle={{ flexGrow: 1, paddingBottom: bottomPad }}
         keyboardShouldPersistTaps="handled"
         onScroll={onScroll}
         scrollEventThrottle={200}

@@ -66,6 +66,7 @@ const TS_PAIRS: Array<[designVar: string, tsValue: string | number]> = [
   ["accent-700", tokens.color.accentPressed],
   ["accent-text", tokens.color.accentText],
   ["accent-wash", tokens.color.accentWash],
+  ["accent-wash-pressed", tokens.color.accentWashPressed],
   ["accent-illus", tokens.color.accentIllus],
   ["cta-fill", tokens.color.cta],
   ["cta-fill-pressed", tokens.color.ctaPressed],

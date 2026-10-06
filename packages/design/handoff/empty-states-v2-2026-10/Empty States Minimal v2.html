@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Empty States — Minimal v2</title>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Inter,system-ui,sans-serif;color:#14181B;-webkit-font-smoothing:antialiased}
+a{color:#006630;text-decoration:none}a:hover{color:#00812F}
+.board{position:absolute;left:0;top:0;padding:80px;display:grid;grid-template-columns:repeat(6,360px);gap:88px 64px}
+.intro{grid-column:1/-1;display:flex;gap:64px;align-items:flex-start}
+.intro h1{font-size:40px;font-weight:700;letter-spacing:-.02em}
+.intro p{font-size:16px;color:#5B6670;margin-top:8px;max-width:520px;line-height:1.45}
+.rules{display:grid;grid-template-columns:repeat(4,220px);gap:24px;font-size:14px;line-height:1.45;color:#5B6670}
+.rules b{display:block;color:#14181B;font-weight:600;margin-bottom:4px}
+.cell{position:relative}
+.lbl{position:absolute;top:-32px;left:0;font-size:13px;font-weight:600;color:#5B6670;display:flex;gap:8px}
+.lbl i{font-style:normal;color:#14181B}
+.f{width:360px;height:720px;background:#fff;overflow:hidden;position:relative;border-radius:4px;box-shadow:0 0 0 1px rgba(20,24,27,.06)}
+.ic{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.ic.s{width:16px;height:16px}.ic.m{width:20px;height:20px}
+/* empty state — L */
+.es{display:flex;flex-direction:column;align-items:center;text-align:center;padding:0 40px;color:#AEB6BD}
+.mk{position:relative;width:64px;height:64px;border-radius:50%;background:#E9F8EF;color:#00B14F;display:grid;place-items:center;margin-bottom:8px}.mk::before{content:"";position:absolute;inset:-12px;border-radius:50%;border:1px solid #E9F8EF}.mk::after{content:"";position:absolute;width:8px;height:8px;border-radius:50%;background:#FFD23F;top:4px;right:2px;box-shadow:0 0 0 3px #fff}.err .mk{background:#FAEDEB;color:#8F2418}.err .mk::before{border-color:#FAEDEB}.err .mk::after{display:none}.info .mk{background:#F6F7F8;color:#7D8790}.info .mk::before{border-color:#F6F7F8}.info .mk::after{background:#AEB6BD}
+.es h3{margin-top:16px;font-size:18px;font-weight:600;letter-spacing:-.01em;color:#14181B;text-wrap:balance;max-width:264px}
+.es p{max-width:264px;margin-top:4px;font-size:14px;line-height:1.45;color:#5B6670;text-wrap:pretty}
+.acts{margin-top:20px;display:flex;flex-direction:column;align-items:center;gap:4px}.acts>.tb:first-child,.acts>.ob{background:#E9F8EF;border:0;border-radius:999px;padding:0 20px}
+.tb{height:44px;padding:0 16px;display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:#006630;border:0;background:none;font-family:inherit}
+.ob{height:44px;padding:0 20px;display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:#006630;border:1px solid #E2E6EA;border-radius:999px;background:#fff;font-family:inherit}
+/* inline — S */
+.row{display:flex;align-items:center;gap:12px;font-size:14px;color:#5B6670;line-height:1.45}
+.row .ic{color:#AEB6BD}.rd{width:36px;height:36px;border-radius:50%;background:#F6F7F8;display:grid;place-items:center;flex:none}
+/* chrome */
+.hd{background:#E9F8EF;border-radius:0 0 28px 28px;position:relative;overflow:hidden}
+.sun{position:absolute;right:-90px;top:-90px;width:180px;height:180px;border-radius:50%;background:#FFD23F}
+.dot{position:absolute;border-radius:50%;background:#FF6B4A}
+.bell{position:absolute;width:44px;height:44px;border-radius:50%;background:#fff;display:grid;place-items:center;color:#006630}
+.ttl{font-size:24px;font-weight:700;letter-spacing:-.01em}
+.bk{height:52px;border-bottom:1px solid #E2E6EA;display:flex;align-items:center;position:relative}
+.bk span{position:absolute;left:0;right:0;text-align:center;font-size:16px;font-weight:600}
+.bk a{display:flex;align-items:center;gap:4px;font-weight:600;font-size:16px;padding-left:12px;position:relative;z-index:1}
+.srch{display:flex;align-items:center;gap:8px;height:48px;padding:0 16px;border-radius:12px;background:#fff;color:#5B6670;font-size:14px}
+.chip{height:44px;padding:0 16px;border-radius:999px;border:1px solid #E2E6EA;display:flex;align-items:center;font-size:14px;font-weight:600}
+.card{border:1px solid #E2E6EA;border-radius:16px;padding:16px}
+.cap{font-size:12px;font-weight:600;letter-spacing:.06em;color:#5B6670;text-transform:uppercase}
+.copy{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,1fr);gap:8px 48px;font-size:14px;line-height:1.45;padding-top:24px;border-top:1px solid #E2E6EA}
+.copy h2{grid-column:1/-1;font-size:18px;font-weight:700;margin-bottom:8px}
+.copy div{display:grid;grid-template-columns:56px 1fr;gap:8px}
+.copy s{color:#7D8790}.copy em{font-style:normal;color:#14181B;font-weight:600}
+.copy code{font-family:inherit;font-weight:600;color:#5B6670;font-size:13px}
+</style></head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+<symbol id="pkg" viewBox="0 0 24 24"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"></path><path d="M12 22V12"></path><path d="m3.3 7 7.7 4.73a2 2 0 0 0 2 0L20.7 7"></path><path d="m7.5 4.27 9 5.15"></path></symbol>
+<symbol id="bag" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"></path><path d="M3 6h18"></path><path d="M16 10a4 4 0 0 1-8 0"></path></symbol>
+<symbol id="pin" viewBox="0 0 24 24"><path d="M20 10c0 5-5.54 10.19-7.4 11.8a1 1 0 0 1-1.2 0C9.54 20.19 4 15 4 10a8 8 0 0 1 16 0"></path><circle cx="12" cy="10" r="3"></circle></symbol>
+<symbol id="search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></symbol>
+<symbol id="bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></symbol>
+<symbol id="wifioff" viewBox="0 0 24 24"><path d="M12 20h.01"></path><path d="M8.5 16.43a5 5 0 0 1 7 0"></path><path d="M5 12.86a10 10 0 0 1 5.17-2.69"></path><path d="M19 12.86a10 10 0 0 0-2-1.52"></path><path d="M2 8.82a15 15 0 0 1 4.18-2.64"></path><path d="M22 8.82a15 15 0 0 0-11.29-3.76"></path><path d="m2 2 20 20"></path></symbol>
+<symbol id="alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path d="M12 8v4"></path><path d="M12 16h.01"></path></symbol>
+<symbol id="fork" viewBox="0 0 24 24"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"></path><path d="M7 2v20"></path><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"></path></symbol>
+<symbol id="receipt" viewBox="0 0 24 24"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"></path><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"></path><path d="M12 17.5v-11"></path></symbol>
+<symbol id="bike" viewBox="0 0 24 24"><circle cx="18.5" cy="17.5" r="3.5"></circle><circle cx="5.5" cy="17.5" r="3.5"></circle><circle cx="15" cy="5" r="1"></circle><path d="M12 17.5V14l-3-3 4-3 2 3h2"></path></symbol>
+<symbol id="nav" viewBox="0 0 24 24"><path d="M3 11 22 2l-9 19-2-8-8-2z"></path></symbol>
+<symbol id="back" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"></path></symbol>
+<symbol id="x" viewBox="0 0 24 24"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></symbol>
+<symbol id="hist" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l4 2"></path></symbol>
+<symbol id="inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></symbol>
+<symbol id="retry" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path><path d="M8 16H3v5"></path></symbol>
+<symbol id="clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></symbol>
+<symbol id="plus" viewBox="0 0 24 24"><path d="M5 12h14"></path><path d="M12 5v14"></path></symbol>
+<symbol id="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"></path></symbol>
+</svg>
+
+<div class="board">
+<div class="intro">
+<div><h1>Empty states, quieter</h1><p>A soft mark, a short title, one line, one gentle action. Calm, warm, out of the way.</p></div>
+<div class="rules">
+<div><b>L · screen</b>Mark 64 (wash disc + 1px halo 88) · icon 24 · title 18/600 · line 14 muted · max 264 wide</div>
+<div><b>S · inline</b>One row: icon 20 + 14 muted text. Used under live content, in sheets and lists</div>
+<div><b>Action</b>Soft pill 44 (mint wash, accent-text). Optional text button 44 below it</div>
+<div><b>Tones</b>Empty: mint wash, green icon. Info: surface, grey icon. Error: danger wash, danger ink</div>
+</div>
+</div>
+
+<!-- 1 O16 -->
+<div class="cell"><div class="lbl"><i>O16</i>Orders · none yet</div><div class="f">
+<div class="hd" style="height:120px"><div class="sun"></div><div class="dot" style="width:24px;height:24px;right:84px;top:50px"></div><div class="ttl" style="position:absolute;left:16px;top:44px">Your orders</div><div class="bell" style="right:16px;top:32px"><svg class="ic m"><use href="#bell"></use></svg></div></div>
+<div class="es" style="margin-top:168px"><span class="mk"><svg class="ic"><use href="#receipt"></use></svg></span><h3>No orders yet</h3><p>Your orders will show here.</p></div>
+</div></div>
+
+<!-- 2 O17 -->
+<div class="cell"><div class="lbl"><i>O17</i>Orders · parcels only</div><div class="f">
+<div class="hd" style="height:120px"><div class="sun"></div><div class="dot" style="width:24px;height:24px;right:84px;top:50px"></div><div class="ttl" style="position:absolute;left:16px;top:44px">Your orders</div><div class="bell" style="right:16px;top:32px"><svg class="ic m"><use href="#bell"></use></svg></div></div>
+<div class="es" style="margin-top:168px"><span class="mk"><svg class="ic"><use href="#pkg"></use></svg></span><h3>No parcels yet</h3><p>Parcels you send show here.</p></div>
+</div></div>
+
+<!-- 3 O18 -->
+<div class="cell"><div class="lbl"><i>O18</i>Orders · running, no history</div><div class="f">
+<div class="hd" style="height:120px"><div class="sun"></div><div class="dot" style="width:24px;height:24px;right:84px;top:50px"></div><div class="ttl" style="position:absolute;left:16px;top:44px">Your orders</div><div class="bell" style="right:16px;top:32px"><svg class="ic m"><use href="#bell"></use></svg></div></div>
+<div style="padding:24px 16px 0"><div class="cap">Now</div>
+<div style="margin-top:12px;background:#073D21;border-radius:24px;padding:16px;display:flex;gap:16px;align-items:center;color:#fff"><div style="width:44px;height:44px;border-radius:50%;background:#00B14F;display:grid;place-items:center"><svg class="ic m"><use href="#fork"></use></svg></div><div style="flex:1"><div style="font-weight:600;font-size:16px">Cooking your order</div><div style="font-size:14px;color:#B9E8CC;margin-top:2px">Sadza Republic · 09:35–09:50</div><div style="display:flex;gap:4px;margin-top:10px"><i style="height:3px;width:36px;background:#00B14F;border-radius:2px"></i><i style="height:3px;width:36px;background:#00B14F;border-radius:2px"></i><i style="height:3px;width:36px;background:#3B5E4A;border-radius:2px"></i><i style="height:3px;width:36px;background:#3B5E4A;border-radius:2px"></i></div></div></div>
+<div class="row" style="margin-top:32px;justify-content:center">Past orders show here.</div></div>
+</div></div>
+
+<!-- 4 O21 -->
+<div class="cell"><div class="lbl"><i>O21</i>Orders · couldn’t load</div><div class="f">
+<div class="hd" style="height:120px"><div class="sun"></div><div class="dot" style="width:24px;height:24px;right:84px;top:50px"></div><div class="ttl" style="position:absolute;left:16px;top:44px">Your orders</div><div class="bell" style="right:16px;top:32px"><svg class="ic m"><use href="#bell"></use></svg></div></div>
+<div class="es err" style="margin-top:168px"><span class="mk"><svg class="ic"><use href="#alert"></use></svg></span><h3>Couldn’t load orders</h3><p>Your orders are safe.</p><div class="acts"><button class="tb"><svg class="ic s"><use href="#retry"></use></svg>Try again</button></div></div>
+</div></div>
+
+<!-- 5 N8a -->
+<div class="cell"><div class="lbl"><i>N8a</i>Notifications · customer</div><div class="f">
+<div class="bk"><a href="#"><svg class="ic m"><use href="#back"></use></svg>Back</a><span>Notifications</span></div>
+<div class="es" style="margin-top:200px"><span class="mk"><svg class="ic"><use href="#bell"></use></svg></span><h3>No notifications</h3><p>Order updates show here.</p></div>
+</div></div>
+
+<!-- 6 N8b -->
+<div class="cell"><div class="lbl"><i>N8b</i>Notifications · rider</div><div class="f">
+<div class="bk"><a href="#"><svg class="ic m"><use href="#back"></use></svg>Back</a><span>Notifications</span></div>
+<div class="es" style="margin-top:200px"><span class="mk"><svg class="ic"><use href="#bell"></use></svg></span><h3>No notifications</h3><p>Job and money updates show here.</p></div>
+</div></div>
+
+<!-- 7 H6 -->
+<div class="cell"><div class="lbl"><i>H6</i>Home · no location</div><div class="f">
+<div class="hd" style="padding:20px 16px 20px"><div class="sun"></div><div class="dot" style="width:24px;height:24px;right:84px;top:50px"></div><div class="bell" style="right:16px;top:12px"><svg class="ic m"><use href="#bell"></use></svg></div>
+<div style="font-size:16px;font-weight:600;color:#8F2418;display:flex;align-items:center;gap:6px;position:relative"><svg class="ic s"><use href="#pin"></use></svg>Set your location<svg class="ic s" style="color:#14181B"><use href="#chev"></use></svg></div>
+<div class="ttl" style="margin-top:20px;position:relative">Good morning, <span style="color:#006630">Rudo</span></div>
+<div class="srch" style="margin-top:16px;position:relative"><svg class="ic m"><use href="#search"></use></svg>Search food, shops or parcels</div></div>
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:16px">
+<div style="text-align:center;font-size:13px;font-weight:600"><div style="aspect-ratio:1;border-radius:16px;background:#D4F2E0;margin-bottom:6px"></div>Send</div>
+<div style="text-align:center;font-size:13px;font-weight:600"><div style="aspect-ratio:1;border-radius:16px;background:#FFDCD2;margin-bottom:6px"></div>Food</div>
+<div style="text-align:center;font-size:13px;font-weight:600"><div style="aspect-ratio:1;border-radius:16px;background:#E3DCFA;margin-bottom:6px"></div>Shops</div>
+<div style="text-align:center;font-size:13px;font-weight:600"><div style="aspect-ratio:1;border-radius:16px;background:#CFEDE3;margin-bottom:6px"></div>Pharmacy</div></div>
+<div class="es" style="margin-top:56px"><span class="mk"><svg class="ic"><use href="#pin"></use></svg></span><h3>Where should we deliver?</h3><p>See who delivers to you.</p><div class="acts"><button class="ob"><svg class="ic s"><use href="#nav"></use></svg>Use my location</button><button class="tb">Type an address</button></div></div>
+</div></div>
+
+<!-- 8 B9 -->
+<div class="cell"><div class="lbl"><i>B9</i>Restaurants · none deliver here</div><div class="f">
+<div class="hd" style="padding:16px 16px 20px"><div class="sun"></div><div class="dot" style="width:24px;height:24px;right:132px;top:72px"></div>
+<div style="display:flex;align-items:center;gap:12px;position:relative"><svg class="ic"><use href="#back"></use></svg><div style="font-size:15px;font-weight:600;display:flex;align-items:center;gap:6px"><svg class="ic s" style="color:#00B14F"><use href="#pin"></use></svg>12 Lanark Rd, Belgravia<svg class="ic s"><use href="#chev"></use></svg></div></div>
+<div class="ttl" style="margin-top:20px;font-size:28px;position:relative">Restaurants</div>
+<div class="srch" style="margin-top:16px;position:relative"><svg class="ic m"><use href="#search"></use></svg>Search restaurants or dishes</div></div>
+<div class="es" style="margin-top:136px"><span class="mk"><svg class="ic"><use href="#fork"></use></svg></span><h3>No restaurants in Belgravia yet</h3><p>We’re adding kitchens near you.</p><div class="acts"><button class="tb">Change address</button></div></div>
+</div></div>
+
+<!-- 9 B7 -->
+<div class="cell"><div class="lbl"><i>B7</i>Restaurants · no address (inline)</div><div class="f">
+<div class="hd" style="padding:16px 16px 20px"><div class="sun"></div><div class="dot" style="width:24px;height:24px;right:132px;top:72px"></div>
+<div style="display:flex;align-items:center;gap:12px;position:relative"><svg class="ic"><use href="#back"></use></svg><div style="font-size:15px;font-weight:600;color:#8F2418;display:flex;align-items:center;gap:6px"><svg class="ic s"><use href="#pin"></use></svg>Set your location<svg class="ic s" style="color:#14181B"><use href="#chev"></use></svg></div></div>
+<div class="ttl" style="margin-top:20px;font-size:28px;position:relative">Restaurants</div>
+<div class="srch" style="margin-top:16px;position:relative"><svg class="ic m"><use href="#search"></use></svg>Search restaurants or dishes</div></div>
+<div style="padding:16px">
+<div class="row" style="justify-content:space-between;border-bottom:1px solid #E2E6EA;padding-bottom:4px"><span style="display:flex;gap:10px;align-items:center"><svg class="ic m"><use href="#pin"></use></svg>Add an address for fees and times</span><button class="tb" style="padding:0 4px">Set</button></div>
+<div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:20px"><span style="font-size:20px;font-weight:700">6 places</span><span style="font-size:14px;color:#5B6670">in Harare</span></div>
+<div style="margin-top:12px;height:200px;border-radius:16px;background:#FFE4DC;display:grid;place-items:center"><div style="width:64px;height:64px;border-radius:50%;background:#fff;display:grid;place-items:center;font-size:28px;font-weight:700;color:#8F2418">G</div></div>
+<div style="display:flex;justify-content:space-between;margin-top:12px"><span style="font-size:18px;font-weight:700">Gava’s Kitchen</span><span style="font-size:14px;font-weight:600">★ 4.7</span></div>
+<div style="font-size:14px;color:#5B6670;margin-top:2px">Zimbabwean · Grills · $$</div></div>
+</div></div>
+
+<!-- 10 X4a -->
+<div class="cell"><div class="lbl"><i>X4a</i>Search · no matches</div><div class="f">
+<div style="display:flex;align-items:center;gap:8px;padding:8px 16px 8px 8px"><div style="width:44px;height:44px;display:grid;place-items:center"><svg class="ic"><use href="#back"></use></svg></div><div class="srch" style="flex:1;border:1.5px solid #00B14F;color:#14181B;font-size:16px"><svg class="ic m" style="color:#5B6670"><use href="#search"></use></svg><span style="flex:1">fufu</span><svg class="ic m"><use href="#x"></use></svg></div></div>
+<div class="es info" style="margin-top:160px"><span class="mk"><svg class="ic"><use href="#search"></use></svg></span><h3>No results for “fufu”</h3><p>Try a shorter word.</p></div>
+</div></div>
+
+<!-- 11 X4b -->
+<div class="cell"><div class="lbl"><i>X4b</i>Search · offline</div><div class="f">
+<div style="display:flex;align-items:center;gap:8px;padding:8px 16px 8px 8px"><div style="width:44px;height:44px;display:grid;place-items:center"><svg class="ic"><use href="#back"></use></svg></div><div class="srch" style="flex:1;border:1.5px solid #00B14F;font-size:16px"><svg class="ic m"><use href="#search"></use></svg>Search food, shops…</div></div>
+<div style="padding:16px">
+<div class="row" style="gap:8px"><svg class="ic s"><use href="#wifioff"></use></svg>Offline · recent searches only</div>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-top:24px"><span class="cap">Recent</span><a href="#" style="font-size:14px;font-weight:600">Clear</a></div>
+<div class="row" style="height:52px;color:#14181B;font-size:16px"><svg class="ic m" style="color:#5B6670"><use href="#hist"></use></svg><span style="flex:1">sadza</span><svg class="ic m" style="color:#14181B"><use href="#x"></use></svg></div>
+<div class="row" style="height:52px;color:#14181B;font-size:16px"><svg class="ic m" style="color:#5B6670"><use href="#hist"></use></svg><span style="flex:1">brake pads</span><svg class="ic m" style="color:#14181B"><use href="#x"></use></svg></div>
+<div class="row" style="height:52px;color:#14181B;font-size:16px"><svg class="ic m" style="color:#5B6670"><use href="#hist"></use></svg><span style="flex:1">paracetamol</span><svg class="ic m" style="color:#14181B"><use href="#x"></use></svg></div></div>
+</div></div>
+
+<!-- 12 S13c -->
+<div class="cell"><div class="lbl"><i>S13c</i>Storefront · no items</div><div class="f">
+<div style="height:150px;background:#FFD9CC;position:relative;overflow:hidden"><div class="sun" style="right:-60px;top:-80px"></div><div class="bell" style="left:12px;top:12px;color:#14181B"><svg class="ic m"><use href="#back"></use></svg></div><div class="bell" style="right:12px;top:12px;color:#14181B"><svg class="ic m"><use href="#search"></use></svg></div></div>
+<div style="padding:0 16px"><div style="width:76px;height:76px;border-radius:50%;background:#FFE4DC;border:4px solid #fff;margin-top:-38px;display:grid;place-items:center;font-size:28px;font-weight:700;color:#8F2418;position:relative">G</div>
+<div class="ttl" style="margin-top:8px">Gava’s Kitchen</div><div style="font-size:14px;color:#5B6670;margin-top:2px">Zimbabwean · Grills · $$</div>
+<div style="font-size:14px;margin-top:6px;display:flex;gap:6px;align-items:center"><i style="width:8px;height:8px;border-radius:50%;background:#00B14F"></i><b style="color:#006630;font-weight:600">Open until 23:59</b><span style="color:#5B6670">· ~20 min</span></div></div>
+<div class="es" style="margin-top:120px"><span class="mk"><svg class="ic"><use href="#inbox"></use></svg></span><h3>No items yet</h3><p>Check back soon.</p></div>
+</div></div>
+
+<!-- 13 S8 -->
+<div class="cell"><div class="lbl"><i>S8</i>Storefront · closed</div><div class="f">
+<div style="height:150px;background:#FFD9CC;position:relative;overflow:hidden"><div class="sun" style="right:-60px;top:-80px"></div><div class="bell" style="left:12px;top:12px;color:#14181B"><svg class="ic m"><use href="#back"></use></svg></div><div class="bell" style="right:12px;top:12px;color:#14181B"><svg class="ic m"><use href="#search"></use></svg></div></div>
+<div style="padding:0 16px"><div style="width:76px;height:76px;border-radius:50%;background:#FFE4DC;border:4px solid #fff;margin-top:-38px;display:grid;place-items:center;font-size:28px;font-weight:700;color:#8F2418;position:relative">P</div>
+<div class="ttl" style="margin-top:8px">Pizza Inn</div><div style="font-size:14px;color:#5B6670;margin-top:2px">Pizza · $$</div>
+<div class="row" style="justify-content:space-between;margin-top:12px;border-top:1px solid #E2E6EA;border-bottom:1px solid #E2E6EA;padding:4px 0"><span style="display:flex;gap:8px;align-items:center;color:#14181B;font-weight:600"><svg class="ic s" style="color:#7D8790"><use href="#clock"></use></svg>Closed · opens 10:08</span><button class="tb" style="padding:0 4px"><svg class="ic s"><use href="#bell"></use></svg>Remind me</button></div>
+<div style="display:flex;gap:24px;margin-top:20px;font-size:15px;font-weight:600;color:#5B6670;border-bottom:1px solid #E2E6EA"><span style="color:#14181B;border-bottom:3px solid #00B14F;padding-bottom:10px">Popular</span><span>Mains</span><span>Sides</span><span>Drinks</span></div>
+<div style="display:flex;gap:12px;margin-top:20px;opacity:.55"><div style="flex:none;width:148px;height:148px;border-radius:16px;background:#FFE4DC"></div><div style="flex:none;width:148px;height:148px;border-radius:16px;background:#FFE4DC"></div><div style="flex:none;width:148px;height:148px;border-radius:16px;background:#FFE4DC"></div></div></div>
+</div></div>
+
+<!-- 14 R9a -->
+<div class="cell"><div class="lbl"><i>R9a</i>Cart · empty</div><div class="f">
+<div class="bk"><a href="#"><svg class="ic m"><use href="#back"></use></svg>Back</a><span>Review order</span></div>
+<div class="es" style="margin-top:200px"><span class="mk"><svg class="ic"><use href="#bag"></use></svg></span><h3>Your cart is empty</h3><div class="acts"><button class="tb">Browse places</button></div></div>
+</div></div>
+
+<!-- 15 J4 -->
+<div class="cell"><div class="lbl"><i>J4</i>Rider · jobs board</div><div class="f" style="background:#E5E7EB">
+<div style="background:#E9F8EF;padding:20px 16px 16px;position:relative"><div class="ttl">Good morning, Tendai</div><div style="font-size:14px;font-weight:600;margin-top:4px;display:flex;align-items:center;gap:6px"><i style="width:8px;height:8px;border-radius:50%;background:#00B14F"></i><span style="color:#006630">Online</span></div><div class="bell" style="right:16px;top:20px"><svg class="ic m"><use href="#bell"></use></svg></div></div>
+<div style="position:absolute;left:0;right:0;bottom:0;height:316px;background:#fff;border-radius:24px 24px 0 0;padding:12px 16px">
+<div style="width:36px;height:4px;border-radius:2px;background:#E2E6EA;margin:0 auto"></div>
+<div class="es" style="margin-top:56px;padding:0 24px"><span class="mk"><svg class="ic"><use href="#bike"></use></svg></span><h3>No jobs nearby</h3><p>New jobs appear here on their own.</p></div>
+<div class="row" style="justify-content:center;margin-top:24px;gap:8px"><svg class="ic s" style="color:#00B14F"><use href="#pin"></use></svg>Busier near Avondale Shops · 1.2 km</div>
+</div></div></div>
+
+<!-- 16 M9 -->
+<div class="cell"><div class="lbl"><i>M9</i>Rider · money, no jobs</div><div class="f">
+<div style="background:#E9F8EF;padding:20px 16px 16px;position:relative"><div class="ttl">Good morning, Tendai</div><div style="font-size:14px;font-weight:600;margin-top:4px;display:flex;align-items:center;gap:6px"><i style="width:8px;height:8px;border-radius:50%;background:#00B14F"></i><span style="color:#006630">Online</span></div><div class="bell" style="right:16px;top:20px"><svg class="ic m"><use href="#bell"></use></svg></div></div>
+<div style="padding:16px;display:flex;flex-direction:column;gap:12px">
+<div class="card"><div class="cap">Earnings</div><div style="display:flex;margin-top:12px;background:#F6F7F8;border-radius:999px;padding:4px"><div style="flex:1;height:40px;border-radius:999px;background:#00812F;color:#fff;font-weight:600;display:grid;place-items:center;font-size:15px">Today</div><div style="flex:1;height:40px;display:grid;place-items:center;font-weight:600;font-size:15px">This week</div></div><div style="display:flex;align-items:baseline;gap:10px;margin-top:16px"><span style="font-size:40px;font-weight:700;letter-spacing:-.02em">$0.00</span><span style="color:#5B6670;font-weight:600">0 jobs</span></div></div>
+<div class="card" style="display:flex;justify-content:space-between;align-items:center"><div><div class="cap">Commission balance</div><div style="font-size:28px;font-weight:700;margin-top:6px">$7.60</div></div><button class="ob" style="background:#00812F;color:#fff;border:0;height:44px"><svg class="ic s"><use href="#plus"></use></svg>Top up</button></div>
+<div class="cap" style="margin-top:12px">History</div>
+<div class="row"><span class="rd"><svg class="ic m"><use href="#receipt"></use></svg></span>No jobs yet today</div></div>
+</div></div>
+
+<!-- 17 Rider history -->
+<div class="cell"><div class="lbl"><i>NEW</i>Rider · job history</div><div class="f">
+<div class="bk"><a href="#"><svg class="ic m"><use href="#back"></use></svg>Back</a><span>Job history</span></div>
+<div style="padding:16px"><div style="font-size:14px;color:#5B6670">This week · <b style="color:#14181B;font-weight:600">0 jobs · $0.00</b></div>
+<div style="display:flex;gap:8px;margin-top:12px"><div class="chip" style="background:#E9F8EF;border-color:#006630;color:#006630">All</div><div class="chip">Parcels</div><div class="chip">Food</div></div></div>
+<div class="es" style="margin-top:120px"><span class="mk"><svg class="ic"><use href="#bike"></use></svg></span><h3>No jobs this week</h3><p>Finished jobs show here.</p></div>
+</div></div>
+
+<div class="copy">
+<h2>Proposed copy changes</h2>
+<div><code>O16</code><span><s>Parcels, food and shop orders all land here. Follow the one on its way…</s> → <em>Your orders will show here.</em> · drops both buttons</span></div>
+<div><code>O17</code><span><s>No orders yet / Parcels you send land here…</s> → <em>No parcels yet / Parcels you send show here.</em> · drops button</span></div>
+<div><code>O18</code><span><s>Past orders show here once this one’s done.</s> → <em>Past orders show here.</em></span></div>
+<div><code>O21</code><span><s>Couldn’t load your orders / Something went wrong on our side…</s> → <em>Couldn’t load orders / Your orders are safe.</em></span></div>
+<div><code>N8a</code><span><s>Nothing here yet / Updates about your orders and your account…</s> → <em>No notifications / Order updates show here.</em> · drops button</span></div>
+<div><code>N8b</code><span><s>No updates yet / Updates about your jobs, money and account…</s> → <em>No notifications / Job and money updates show here.</em></span></div>
+<div><code>H6</code><span><s>Set your area to see restaurants and shops that deliver to you.</s> → <em>See who delivers to you.</em></span></div>
+<div><code>B9</code><span><s>No restaurants deliver to Belgravia yet / We’re bringing kitchens… Try another address, or send a parcel today.</s> → <em>No restaurants in Belgravia yet / We’re adding kitchens near you.</em></span></div>
+<div><code>B7</code><span><s>Where should we deliver? / Set your address to see delivery fees…</s> → <em>Add an address for fees and times</em> [Set]</span></div>
+<div><code>X4a</code><span><s>No matches… / Try a shorter word, or a dish or shop name.</s> → <em>No results for “fufu” / Try a shorter word.</em></span></div>
+<div><code>X4b</code><span><s>Search needs a connection. Your recent searches still work.</s> → <em>Offline · recent searches only</em></span></div>
+<div><code>S13c</code><span><s>Gava’s Kitchen is still adding items. Check back soon.</s> → <em>Check back soon.</em></span></div>
+<div><code>S8</code><span><s>Remind me when they open</s> (toggle row) → <em>Remind me</em> (inline with closed status)</span></div>
+<div><code>R9a</code><span><s>Add dishes or items from a restaurant, shop or pharmacy.</s> → <em>(no line)</em></span></div>
+<div><code>J4</code><span><s>Nothing in range yet / You’ll see parcels here the moment… + Why no jobs? box</s> → <em>No jobs nearby / New jobs appear here on their own.</em></span></div>
+<div><code>M9</code><span><s>No jobs yet today / Your earnings and commission show here…</s> → <em>No jobs yet today</em> (row only; card hint removed)</span></div>
+<div><code>NEW</code><span>Job history → <em>No jobs this week / Finished jobs show here.</em></span></div>
+</div>
+</div>
+</body></html>

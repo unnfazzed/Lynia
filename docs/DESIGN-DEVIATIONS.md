@@ -4312,3 +4312,60 @@ any string Merchant v2 doesn't draw. Viewport unchanged: 360×720 with the 320px
 | K5b / K5c (2026-10-05) | Drawn | As drawn: "#A115 delivered" · "Blessing M. · 07:41 · 2 dishes", every step done, the door photo, the mint "Paid by wallet · $14.00 / Nothing to bring back. It's in your Money tab." and no CTA; "#A117 couldn't be delivered" · "Customer didn't answer · 07:44", step 4 red, the GOODS BACK TO YOU card ("2× Mazondo · $10.00", "… brings it back by 07:58" or "… is bringing it back"), "I got the food back" / "I got the goods back" and "It wasn't returned" (a one-confirm sheet, "Report to LyniaGo", then "We've told LyniaGo. We'll WhatsApp you."). The "after delivery" CTA is drawn disabled (`--surface`, `--muted`). | A cash order on "pay me at pickup" (no cash back) reads "Paid at pickup · $X" in the same strip (not drawn). The "back by" time is the return deadline (`cashDueAt`); the rider's return trip has no estimate. "Mark ride completed" stays only while on the way. |
 
 *Further rows are added PR by PR as the screens land.*
+
+## D-78 · Empty states v2: one quiet component for every empty, nothing-found and couldn't-load state — APPROVED (2026-10-06)
+
+**Owner instruction, this session (2026-10-06):** *"i want to redesign the card for empty states. They dont look
+that nice."* Then, with the export: *"i have redesigned please implement and test"*.
+
+**This entry exists because the work touches `packages/design/**`**, which the reverse-drift freeze gates.
+The design package only *absorbs a new export* here, plus the one token its README §5 names.
+
+### 1 · The design-package sync (a record, not a deviation)
+
+| Path | What |
+|---|---|
+| `packages/design/handoff/empty-states-v2-2026-10/` | The export, **verbatim**: `README.md` (the component, two sizes, three tones; the 17 drawn frames; the rules for the undrawn states; out of scope), `copy.ts` (every string, with the old copy as `was:` notes), `CLAUDE-CODE-PROMPT.md` and the 17-frame canvas `Empty States Minimal v2.html`. |
+| `packages/design/tokens/colors.css` | `--accent-wash-pressed: #d4f2e0`, the soft pill's pressed fill (README §1 and §5 name it `accent-wash-pressed`). Mirrored as `accentWashPressed` in `packages/shared/src/design-tokens.ts` and asserted by the token-conformance guardrail. |
+
+### 2 · Authority (a scope rule)
+
+For any empty, nothing-found or couldn't-load state in `apps/mobile`, this handoff overrides the handoff that
+owns the screen around it: Orders v2 (D-63: O9d, O10c, O16–O18, O20, O21), Calm Mint v2 (D-55: H6 and the
+both-rails-empty card, reworded by D-60), Notifications v1 (D-66: N8a/b, N10), Browse v2 (D-57/D-58: B3b, B6,
+B7, B9a–c, B10b, B11, S8, S12b, S13c, X4a, X4b), Order flow v2 (D-59: R9a, T14c), After send v2 (D-53: 2.3) and
+Rider v2 (D-54: J4/J5, M9, and C12, which drew no empty state). Strings come from `src/ui/emptyCopy.ts`, the
+handoff's `copy.ts` verbatim.
+
+**Copy approval.** The handoff lists every changed line and every removed action ("Proposed copy changes",
+README §6) for sign-off; the owner sent it to be implemented, which is that sign-off. The removed actions stay
+removed: O16/O17 "Send a parcel" + "Find food or shops", N8a "Send a parcel", B9 "Send a parcel", the Home
+both-rails "Send a parcel" (D-60) and J4's "Why no jobs?" box.
+
+**Out of scope, untouched (README §3):** rider gates (G1–G14), S9 "just closed", F4 food offer gone, the
+service-soon sheet, the merchant app and the admin console.
+
+### 3 · What the build decides where the handoff doesn't draw
+
+| Where | Handoff | App | Why |
+|---|---|---|---|
+| B9 on Shops / Pharmacy | Draws Restaurants only ("No restaurants in {area} yet" / "We’re adding kitchens near you.", `utensils`) | "No shops in {area} yet" / "We’re adding shops near you." (`store`); "No pharmacies in {area} yet" / "We’re adding pharmacies near you." (`pill`) | The drawn lines with the section's noun. **Upstream ask:** confirm. |
+| S12b on Shops / Pharmacy | "Try all restaurants instead." / "Search all restaurants" | "restaurants" becomes "shops" / "pharmacies" | Same rule. |
+| B11 on Shops / Pharmacy | "Couldn’t load restaurants" | "Couldn’t load shops" / "Couldn’t load pharmacies" (Browse v2's titles), body and pill as drawn | Same rule. |
+| O9d title | "No {service} orders yet" | `{service}` is "parcel", "food", "shop" or "pharmacy" | The chip's own word, singular. |
+| Job history summary | "This week · {count} jobs · {amount}" | "1 job" when there is one | Grammar; every other count as drawn. |
+| Placement (README §1) | Top of the mark at ≈30% of the free height, min 48 | As drawn wherever the block fills a screen. Where it sits in content-sized space it takes the drawn offset: Home 52 below the tiles, storefront 120 below the info, a list's header 48, Job history 56, a sheet 24 | A content-sized list or sheet has no free height to measure. |
+| Rider "couldn't load" (job, food job, Job history) | "none — rider screens never show Retry; line says what the app is doing, e.g. 'Trying again in 10 s'" | The error tone, the screen's existing title, and "Trying again in {s} s" counting down; the screen retries every 10 s. Back moves into the app bar. "Your active job is safe" is no longer shown | One line, as drawn. |
+| Root crash screen | — (not listed) | The error tone with "Reload" as the soft pill; its title and line unchanged | A crashed tree can't retry by itself, so it keeps its one action. |
+| Food offer, Restaurants switched off | — | The info tone, with an app bar back to Jobs | It was a dead end with no way out. |
+| Notifications, empty or failed | Drawn on white | The page is white while empty or failed; the feed itself stays on `--surface` | As drawn. |
+| J4 reconnecting | "shown only in the header status line, not as a banner in the sheet" | The sheet banner is hidden while the board is empty; with jobs on the board (J6) it stays | J6 is not part of this handoff. |
+| Shops / Pharmacy search | Idle state is new; X4b is a row above the recents | Idle: "Search shops" / "Search pharmacies" as drawn. Offline: the X4b row (this screen keeps no recents) | As drawn. |
+| Storefront couldn't load (S13b), order not found (2.3, T14c) | B11's rules; "Order not found" as listed | S13b: the error tone with Browse v2's title, "Nothing was lost." and "Try again". Not found: the info tone with "Back to home" as the soft pill (on the parcel order screen it sits in the sheet and the bottom bar goes) | README §3. The transient "couldn't load" states of the two order screens are not empty states and keep their own treatment. |
+
+**Retired:** `InfoCard`, `IconDisc` and `EmptyArt`/`ServiceArt` (Orders kit), `MintEmptyCard`, `PillButton`,
+`NEmpty`, `NFail`, `BrowseEmpty`, Browse's `NoLocationCard`, `WhyQuiet`, and `TrustTrackingArt` (the pin is no
+longer drawn anywhere in the app; its SVG stays in the Calm Mint v2 handoff).
+
+**Evidence:** `docs/parity/EMPTY-STATES-V2-2026-10-06.png` (before / after for every drawn frame, 360×720, rendered by
+`tools/parity`); the 320×640 check was run on O16, H6, B9, S8 and J4.

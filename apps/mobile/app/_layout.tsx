@@ -23,7 +23,7 @@ import { AnalyticsProvider } from "../src/telemetry/analytics";
 import { NavOpenProbe } from "../src/telemetry/nav-timing";
 import { enqueueBoot, start as startRum } from "../src/telemetry/rum";
 import { captureException, initSentry, wrap } from "../src/telemetry/sentry";
-import { Button, EmptyState, OfflineBanner, Screen, ToastProvider } from "../src/ui";
+import { EmptyState, OfflineBanner, Screen, ToastProvider } from "../src/ui";
 import { prewarmFonts, useAppFonts } from "../src/ui/fonts";
 import { useBootSplashRelease } from "../src/boot/boot-splash-hold";
 import { BootSplash } from "../src/boot/splash/BootSplash";
@@ -234,15 +234,13 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps): React.React
   return (
     <SafeAreaProvider>
       <Screen>
-        <View style={{ flex: 1, justifyContent: "center" }}>
-          <EmptyState
-            icon="triangle-alert"
-            title="Something went wrong"
-            message="The app hit an unexpected snag. Tap to reload and pick up where you left off."
-          >
-            <Button label="Reload" onPress={() => void retry()} />
-          </EmptyState>
-        </View>
+        <EmptyState
+          icon="circle-alert"
+          tone="error"
+          title="Something went wrong"
+          body="The app hit an unexpected snag. Tap to reload and pick up where you left off."
+          primary={{ label: "Reload", icon: "refresh-cw", onPress: () => void retry() }}
+        />
       </Screen>
     </SafeAreaProvider>
   );

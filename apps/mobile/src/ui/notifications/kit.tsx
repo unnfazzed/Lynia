@@ -4,9 +4,8 @@ import { Animated, PanResponder, Text, View, type ViewStyle } from "react-native
 import { Icon, type IconName } from "../Icon";
 import { Tappable } from "../Tappable";
 import { PharmacyStickerV2, RestaurantsSticker, SendStickerV2, ShopsSticker } from "../art/stickers";
-import { TrustTrackingArt } from "../art/TrustTrackingArt";
 import { SKELETON } from "../browse/kit";
-import { CtaButton, IconDisc, SmBtn } from "../order/kit";
+import { SmBtn } from "../order/kit";
 import { earlier, N } from "./copy";
 import type { NItem, Service, Tone } from "./model";
 
@@ -361,34 +360,3 @@ export function SkelDay({ w }: { w: number }): React.ReactElement {
   return <View style={{ height: 10, width: w, backgroundColor: SKELETON, borderRadius: 5, marginTop: 8, marginHorizontal: 4 }} />;
 }
 
-/** N8: the Calm Mint v2 empty card (mint wash, r20, trust-tracking). Customers get "Send a parcel". */
-export function NEmpty({ rider, onSend }: { rider: boolean; onSend: () => void }): React.ReactElement {
-  return (
-    <View style={{ marginTop: 12, backgroundColor: C.accentWash, borderRadius: 20, padding: 20, alignItems: "center", gap: 6 }}>
-      <TrustTrackingArt width={132} />
-      <Text style={{ fontSize: 18, fontWeight: "700", lineHeight: 24, marginTop: 8, color: C.ink, textAlign: "center" }}>{rider ? N.emptyRT : N.emptyCT}</Text>
-      <Text style={{ fontSize: 14, lineHeight: 20, color: C.muted, textAlign: "center", marginBottom: rider ? 4 : 10 }}>{rider ? N.emptyRB : N.emptyCB}</Text>
-      {rider ? null : (
-        <View style={{ alignSelf: "stretch", flexDirection: "row" }}>
-          <CtaButton label={N.sendParcel} icon="package" onPress={onSend} />
-        </View>
-      )}
-    </View>
-  );
-}
-
-/** N10: couldn't load, nothing cached. */
-export function NFail({ onRetry }: { onRetry: () => void }): React.ReactElement {
-  return (
-    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 24, paddingBottom: 60 }}>
-      <IconDisc name="wifi-off" size={72} />
-      <Text accessibilityRole="header" style={{ fontSize: 20, fontWeight: "700", lineHeight: 26, color: C.ink, textAlign: "center" }}>
-        {N.failT}
-      </Text>
-      <Text style={{ fontSize: 15, lineHeight: 22, color: C.muted, textAlign: "center" }}>{N.failB}</Text>
-      <View style={{ alignSelf: "stretch", flexDirection: "row", marginTop: 8 }}>
-        <CtaButton label={N.tryAgain} icon="refresh-cw" onPress={onRetry} />
-      </View>
-    </View>
-  );
-}

@@ -4,6 +4,8 @@ import { ScrollView, Text, View, type LayoutChangeEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { BrowseService, VenueView } from "../../logic/browse";
 import { formatMoney } from "../../logic/money";
+import { EmptyRow } from "../EmptyState";
+import { emptyCopy } from "../emptyCopy";
 import { Icon } from "../Icon";
 import { RemoteImage } from "../RemoteImage";
 import { Tappable } from "../Tappable";
@@ -219,21 +221,24 @@ export function RemindRow({ on, busy, onToggle, bordered = true }: { on: boolean
   );
 }
 
-/** Closed: a surface strip "Closed · opens 10:00", then the Remind me row (none without `onRemind`:
- *  Shops and Pharmacy have no reminder while they're browse-only, ledger D-58). */
+/**
+ * S8 — closed: one row between hairlines, "Closed · opens 10:00" and, where the venue takes reminders,
+ * a "Remind me" text action that toggles to "Reminder on" (empty-states v2, D-78). Shops and Pharmacy
+ * have no reminder while they're browse-only (ledger D-58), so their row has no action.
+ */
 export function ClosedStrip({ label, remindOn = false, remindBusy = false, onRemind }: { label: string; remindOn?: boolean; remindBusy?: boolean; onRemind?: () => void }): React.ReactElement {
+  const e = emptyCopy.store.closedRow;
   return (
-    <View>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10, marginHorizontal: 16, minHeight: 40, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, backgroundColor: tokens.color.surface }}>
-        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: tokens.color.muted }} />
-        <Text style={{ flex: 1, fontSize: 13, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, ...TABULAR }}>{label}</Text>
-      </View>
-      {onRemind ? (
-        <View style={{ marginTop: 10, marginHorizontal: 16 }}>
-          <RemindRow on={remindOn} busy={remindBusy} onToggle={onRemind} />
-        </View>
-      ) : null}
-    </View>
+    <EmptyRow
+      icon="clock"
+      iconSize={16}
+      iconColor={tokens.color.illusIdleDark}
+      gap={8}
+      strong
+      text={label}
+      action={onRemind ? { label: remindOn ? e.actionOn : e.action, icon: "bell", onPress: onRemind, disabled: remindBusy } : undefined}
+      style={{ marginTop: 10, marginHorizontal: 16, paddingVertical: 4, minHeight: 44 + 8, borderTopWidth: 1, borderBottomWidth: 1, borderColor: tokens.color.line }}
+    />
   );
 }
 

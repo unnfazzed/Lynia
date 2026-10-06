@@ -159,6 +159,12 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
   owner 2026-10-02): one row per order with its timeline, tone discs, a danger pin, swipe + Undo. The gallery
   `LJ notifications` / `LJ notif_empty` and `RJM notifications` are superseded. Strings come from
   `src/ui/notifications/copy.ts` (the handoff's `N`, verbatim).
+- **Every empty state follows its own handoff (`handoff/empty-states-v2-2026-10/`).** Every empty, nothing-found
+  and couldn't-load state in `apps/mobile` (customer + rider) uses the one `EmptyState` / `EmptyRow`
+  (`src/ui/EmptyState.tsx`) per `packages/design/handoff/empty-states-v2-2026-10/` (ledger D-78, owner 2026-10-06):
+  a 64 tinted mark in an 88 halo, a title, at most one line, at most one soft pill. It overrides the empty states
+  the other handoffs drew (Orders O9d–O21, Home H6, Notifications N8/N10, Browse B3b–B11/S8/S12b/S13c/X4, R9a, J4/M9).
+  No mint cards, no pin illustration. Strings come from `src/ui/emptyCopy.ts` (the handoff's `copy.ts`, verbatim).
 - **The merchant app follows its own handoff (`handoff/merchant-v2/`).** Kitchens, shops and pharmacies
   (`apps/merchant`) align to `packages/design/handoff/merchant-v2/` (ledger D-77, owner 2026-10-04): one
   shell (4 tabs, the mint top card with a labelled open pill and one KPI strip, the dark live bar on the

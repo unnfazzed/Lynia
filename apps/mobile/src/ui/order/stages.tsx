@@ -1,6 +1,8 @@
 import { tokens } from "@lynia/shared/tokens";
 import React from "react";
 import { ActivityIndicator, Text, View } from "react-native";
+import { EmptyState } from "../EmptyState";
+import { emptyCopy } from "../emptyCopy";
 import { Icon } from "../Icon";
 import { Notice } from "../send/kit";
 import { CentredHead, CodeBig, CodeCard, GMapsRow, LabelBox, OfferCard, type OfferView, PickupPhotoRow, PriceBox, Receipt, type ReceiptView, RiderCard, type RiderView } from "./cards";
@@ -606,8 +608,11 @@ export function OpeningSheet(): React.ReactElement {
   );
 }
 
-export function LoadErrorSheet({ gone }: { gone: boolean }): React.ReactElement {
-  return (
-    <CentredHead icon={<IconDisc name={gone ? "package" : "wifi-off"} />} title={gone ? A.notFound : A.loadFail} sub={gone ? A.notFoundSub : A.loadFailSub} />
-  );
+export function LoadErrorSheet({ gone, onHome }: { gone: boolean; onHome: () => void }): React.ReactElement {
+  if (gone) {
+    // 2.3 — not found: the empty-states v2 block in the sheet, its one way out a soft pill (D-78).
+    const e = emptyCopy.orders.notFound;
+    return <EmptyState inSheet offsetTop={24} icon="package" tone="info" title={e.title} body={e.body} primary={{ label: e.primary, onPress: onHome }} />;
+  }
+  return <CentredHead icon={<IconDisc name="wifi-off" />} title={A.loadFail} sub={A.loadFailSub} />;
 }

@@ -31,6 +31,8 @@ export const color = {
   accentText: "#006630",
   /** Light mint wash — selected states, chips, highlighted rows. */
   accentWash: "#E9F8EF",
+  /** Pressed mint wash — the empty state's soft pill under a finger (handoff/empty-states-v2-2026-10, D-78). */
+  accentWashPressed: "#D4F2E0",
   /** Illustration mid-tone (mirrors --accent-illus) — illustrations and the tab bar's Home/Jobs active
    *  ring only, never text. #009947 clears 3:1 on the mint tile. */
   accentIllus: "#009947",

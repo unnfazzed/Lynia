@@ -4,7 +4,8 @@ import { Text, View, type TextStyle, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { BrowseService, VenueOpening, VenueView } from "../../logic/browse";
 import { formatMoney } from "../../logic/money";
-import { TrustTrackingArt } from "../art/TrustTrackingArt";
+import { EmptyRow, EmptyState } from "../EmptyState";
+import { emptyCopy, fillEmpty } from "../emptyCopy";
 import { PharmacyStickerV2, RestaurantsSticker, ShopsSticker } from "../art/stickers";
 import { Icon, type IconName } from "../Icon";
 import { RemoteImage } from "../RemoteImage";
@@ -547,57 +548,51 @@ export function BrowseButton({
   );
 }
 
-/** The centred empty / error block (B3b, B6, B10b, B11, S12b, S13b): disc, title, body, a button. */
-export function BrowseEmpty({ icon, title, body, children }: { icon?: IconName; title: string; body: string; children?: React.ReactNode }): React.ReactElement {
+// ── Empty states (handoff empty-states-v2-2026-10, ledger D-78) ─────────────────────────────────
+
+/** The gap above the mark when an empty state sits under a list's header in content-sized space. */
+export const LIST_EMPTY_TOP = 48;
+/** S13c: the mark sits 120 below the storefront's info, as drawn. */
+export const STORE_EMPTY_TOP = 120;
+
+/**
+ * B9 — nothing delivers here. The handoff draws Restaurants; Shops and Pharmacy take the same lines with
+ * their own noun (ledger D-78 §3).
+ */
+const NONE_IN_AREA: Record<BrowseService, { icon: IconName; title: string; body: string }> = {
+  food: { icon: "utensils", title: emptyCopy.browse.noneInArea.title, body: emptyCopy.browse.noneInArea.body },
+  shops: { icon: "store", title: "No shops in {area} yet", body: "We’re adding shops near you." },
+  pharmacy: { icon: "pill", title: "No pharmacies in {area} yet", body: "We’re adding pharmacies near you." },
+};
+
+export function ServiceEmpty({ service, area, onChangeAddress }: { service: BrowseService; area: string; onChangeAddress: () => void }): React.ReactElement {
+  const n = NONE_IN_AREA[service];
   return (
-    <View style={{ alignItems: "stretch", paddingTop: 36, paddingHorizontal: 20, paddingBottom: 24 }}>
-      {icon ? (
-        <View style={{ alignSelf: "center", width: 56, height: 56, borderRadius: 28, backgroundColor: tokens.color.surface, alignItems: "center", justifyContent: "center" }}>
-          <Icon name={icon} size={24} color={tokens.color.muted} />
-        </View>
-      ) : null}
-      <Text accessibilityRole="header" style={{ marginTop: 12, marginBottom: 6, textAlign: "center", fontSize: 18, lineHeight: 23.4, letterSpacing: -0.2, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
-        {title}
-      </Text>
-      <Text style={{ marginBottom: 16, textAlign: "center", fontSize: 14, lineHeight: 20.3, color: tokens.color.muted }}>{body}</Text>
-      {children}
-    </View>
+    <EmptyState
+      icon={n.icon}
+      title={fillEmpty(n.title, { area })}
+      body={n.body}
+      primary={{ label: emptyCopy.browse.noneInArea.primary, icon: "map-pin", onPress: onChangeAddress }}
+    />
   );
 }
 
-/** B9 — nothing delivers here: the mint card with the tracking art, Change address, Send a parcel. */
-export function ServiceEmpty({ service, area, onChangeAddress, onSendParcel }: { service: BrowseService; area: string; onChangeAddress: () => void; onSendParcel: () => void }): React.ReactElement {
-  const s = B.svc[service];
+/** B7 — no address, list has results: one bordered row, "Set" asks for the phone's location. */
+export function NoAddressRow({ onSet }: { onSet: () => void }): React.ReactElement {
+  const e = emptyCopy.browse.noAddressRow;
   return (
-    <View style={{ paddingTop: 24, paddingHorizontal: 20, paddingBottom: 24 }}>
-      <View style={{ backgroundColor: tokens.color.accentWash, borderRadius: 20, paddingVertical: 20, paddingHorizontal: 16 }}>
-        <View style={{ alignItems: "center" }} accessibilityElementsHidden importantForAccessibility="no">
-          <TrustTrackingArt width={120} />
-        </View>
-        <Text accessibilityRole="header" style={{ marginTop: 12, marginBottom: 6, textAlign: "center", fontSize: 18, lineHeight: 23.4, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
-          {fmt(s.none.t, { area })}
-        </Text>
-        <Text style={{ marginBottom: 16, textAlign: "center", fontSize: 14, lineHeight: 20.3, color: tokens.color.muted }}>{s.none.s}</Text>
-        <BrowseButton label={B.list.changeAddr} icon="map-pin" onPress={onChangeAddress} />
-        <View style={{ marginTop: 4 }}>
-          <BrowseButton label={B.list.sendParcel} variant="text" onPress={onSendParcel} />
-        </View>
-      </View>
-    </View>
+    <EmptyRow
+      icon="map-pin"
+      text={e.text}
+      action={{ label: e.action, onPress: onSet }}
+      style={{ marginHorizontal: 16, marginTop: 4, paddingBottom: 4, borderBottomWidth: 1, borderBottomColor: tokens.color.line }}
+    />
   );
 }
 
-/** B7 — the mint "Where should we deliver?" card on top of a list with no location. */
-export function NoLocationCard({ onUseLocation }: { onUseLocation: () => void }): React.ReactElement {
-  return (
-    <View style={{ marginTop: 4, marginHorizontal: 16, marginBottom: 4, padding: 16, borderRadius: 20, backgroundColor: tokens.color.accentWash }}>
-      <Text accessibilityRole="header" style={{ fontSize: 15, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
-        {B.list.noLoc.t}
-      </Text>
-      <Text style={{ marginTop: 4, marginBottom: 10, fontSize: 13, lineHeight: 18.2, color: tokens.color.muted }}>{B.list.noLoc.s}</Text>
-      <BrowseButton label={B.list.noLoc.cta} icon="navigation" compact onPress={onUseLocation} />
-    </View>
-  );
+/** X4b and the list's offline line: a 16px wifi-off, no box (gap 8). */
+export function OfflineRow({ text }: { text: string }): React.ReactElement {
+  return <EmptyRow icon="wifi-off" iconSize={16} gap={8} text={text} style={{ marginHorizontal: 16, marginTop: 10 }} />;
 }
 
 /** README §4 "Offline banner": surface, radius 12, wifi-off 16, 12.5 muted. */
