@@ -458,6 +458,8 @@ const Nothing = () => null;
 
 module.exports = {
   __esModule: true,
+  // Shared with ./expo-location-web.js, whose geocoding uses the same Maps JavaScript API script.
+  loadGoogle,
   default: MapView,
   MapView,
   Marker,

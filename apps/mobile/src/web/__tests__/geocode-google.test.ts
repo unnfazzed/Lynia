@@ -1,8 +1,6 @@
-import { geocodeGoogle, reverseGeocodeGoogle, toExpoAddress } from "../geocode-google";
+import { geocodeGoogle, type GoogleResult, type JsGeocode, reverseGeocodeGoogle, toExpoAddress } from "../geocode-google";
 
-const respond = (body: unknown) => jest.fn(async (_url: string) => ({ json: async () => body }));
-
-const AVONDALE = {
+const AVONDALE: GoogleResult = {
   formatted_address: "12 Fife Ave, Harare, Zimbabwe",
   address_components: [
     { long_name: "12", types: ["street_number"] },
@@ -12,8 +10,12 @@ const AVONDALE = {
     { long_name: "Harare Province", types: ["administrative_area_level_1"] },
     { long_name: "Zimbabwe", short_name: "ZW", types: ["country"] },
   ],
-  geometry: { location: { lat: -17.8, lng: 31.04 } },
+  // The Maps JavaScript API's LatLng exposes lat()/lng() methods, not numbers.
+  geometry: { location: { lat: () => -17.8, lng: () => 31.04 } },
 };
+
+const answering = (results: GoogleResult[]) => jest.fn<ReturnType<JsGeocode>, Parameters<JsGeocode>>(async () => ({ results }));
+const failing = (err: unknown) => jest.fn<ReturnType<JsGeocode>, Parameters<JsGeocode>>(async () => Promise.reject(err));
 
 describe("Google geocoding in expo-location's shapes (customer web build)", () => {
   it("maps a result to expo-location's address fields, with no place name made up from the street", () => {
@@ -30,25 +32,22 @@ describe("Google geocoding in expo-location's shapes (customer web build)", () =
     });
   });
 
-  it("reverse-geocodes a pin with the key", async () => {
-    const fetchImpl = respond({ status: "OK", results: [AVONDALE] });
-    const out = await reverseGeocodeGoogle({ latitude: -17.8, longitude: 31.04 }, "k-1", fetchImpl);
+  it("reverse-geocodes a pin through the Maps JavaScript Geocoder", async () => {
+    const geocode = answering([AVONDALE]);
+    const out = await reverseGeocodeGoogle({ latitude: -17.8, longitude: 31.04 }, geocode);
     expect(out[0]?.street).toBe("Fife Avenue");
-    const url = new URL(fetchImpl.mock.calls[0]![0]);
-    expect(url.origin + url.pathname).toBe("https://maps.googleapis.com/maps/api/geocode/json");
-    expect(url.searchParams.get("latlng")).toBe("-17.8,31.04");
-    expect(url.searchParams.get("key")).toBe("k-1");
+    expect(geocode).toHaveBeenCalledWith({ location: { lat: -17.8, lng: 31.04 } });
   });
 
-  it("looks up an address inside Zimbabwe only", async () => {
-    const fetchImpl = respond({ status: "OK", results: [AVONDALE] });
-    await expect(geocodeGoogle("Fife Ave", "k-1", fetchImpl)).resolves.toEqual([{ latitude: -17.8, longitude: 31.04 }]);
-    expect(new URL(fetchImpl.mock.calls[0]![0]).searchParams.get("components")).toBe("country:ZW");
+  it("looks up an address inside Zimbabwe only, reading LatLng methods", async () => {
+    const geocode = answering([AVONDALE]);
+    await expect(geocodeGoogle("Fife Ave", geocode)).resolves.toEqual([{ latitude: -17.8, longitude: 31.04 }]);
+    expect(geocode).toHaveBeenCalledWith({ address: "Fife Ave", componentRestrictions: { country: "ZW" } });
   });
 
   it("answers 'nothing here' with an empty list and 'couldn't ask' with a rejection, like the native calls", async () => {
-    await expect(reverseGeocodeGoogle({ latitude: 0, longitude: 0 }, "k", respond({ status: "ZERO_RESULTS", results: [] }))).resolves.toEqual([]);
-    await expect(reverseGeocodeGoogle({ latitude: 0, longitude: 0 }, "k", respond({ status: "REQUEST_DENIED" }))).rejects.toThrow("geocode-unavailable");
-    await expect(geocodeGoogle("x", null, respond({}))).rejects.toThrow("no key");
+    await expect(reverseGeocodeGoogle({ latitude: 0, longitude: 0 }, failing({ code: "ZERO_RESULTS" }))).resolves.toEqual([]);
+    await expect(reverseGeocodeGoogle({ latitude: 0, longitude: 0 }, failing(new Error("REQUEST_DENIED")))).rejects.toThrow("REQUEST_DENIED");
+    await expect(geocodeGoogle("x", failing(new Error("maps-unavailable")))).rejects.toThrow("maps-unavailable");
   });
 });
