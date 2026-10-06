@@ -5,7 +5,7 @@ and runbooks stay; point-in-time reports are pruned once absorbed (see "Routine 
 below) — `git log --follow docs/<file>` recovers anything retired.
 
 **Status:** the API is **live and CI-deployed on GCP** at
-**[`https://lyniago.lyniafinance.com`](https://lyniago.lyniafinance.com)**, and as of **2026-08-04**
+**[`https://api.lyniago.com`](https://api.lyniago.com)**, and as of **2026-08-04**
 the Android app is **live on Google Play's internal testing track** — v0.17.9 (versionCode 2),
 submitted end-to-end by `mobile-release.yml` → EAS build → EAS auto-submit, with no manual console
 upload ([`PLAY-STORE-SUBMISSION.md`](./PLAY-STORE-SUBMISSION.md), attempt-9 status block). Internal
@@ -54,7 +54,7 @@ older parts of the status board.
 | [`APP-SIZE.md`](./APP-SIZE.md) | 🟢 Living (guardrail) | Download/OTA size playbook + the CI-enforced per-PR bundle-size budget and its audit trail. |
 | [`LOAD-MODEL.md`](./LOAD-MODEL.md) | 🟢 Living (plan) | The launch load envelope (1×/×5) and k6 scenario plan (`apps/api/load/`); SLO assertions LR10–LR15. |
 | [`CLOUDFLARE.md`](./CLOUDFLARE.md) | 🟢 Living | Why DNS is grey-cloud/DNS-only (TLS issuance, cert pinning, `trust proxy`), plus the Cloudflare MCP wiring for agent sessions. |
-| [`GCP-BILLING-DOMAIN-SETUP.md`](./GCP-BILLING-DOMAIN-SETUP.md) | 🟢 Living (runbook) | Founder runbook: standing up Google Workspace for `lyniafinance.com` so a domain-matched admin (`shepherd@lyniafinance.com`) can be granted GCP billing-account admin. |
+| [`GCP-BILLING-DOMAIN-SETUP.md`](./GCP-BILLING-DOMAIN-SETUP.md) | ⚪ Historical | Founder runbook for the retired GCP project: standing up Google Workspace on the old company domain so a domain-matched admin could be granted GCP billing-account admin. |
 | [`BIRD-SETUP.md`](./BIRD-SETUP.md) | 🟢 Living (runbook) | OTP channel arming: Bird SMS (priority channel, verified to Econet) + the WhatsApp Cloud API fallback section. |
 | [`INFRA-HARDENING-ROLLOUT.md`](./INFRA-HARDENING-ROLLOUT.md) | 🟢 Living (runbook) | Ordered verify-and-rollback sequence for the default-off Terraform hardening flags. |
 | [`GCP-PENDING-REVIEW-2026-07-13.md`](./GCP-PENDING-REVIEW-2026-07-13.md) | 📋 Campaign tracker | Live GCP pending/drift state — cited by the CI drift/diagnose workflows; includes the provisioned-inventory appendix behind `scripts/gcp-provisioning-verify.sh`. |

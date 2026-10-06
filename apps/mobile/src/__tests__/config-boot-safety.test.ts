@@ -66,8 +66,8 @@ describe("config.ts — a misconfigured release build boots instead of dying at 
 
   it("does not flag a real host that merely resembles loopback spellings", () => {
     for (const url of [
-      "https://user@api.lyniafinance.com",
-      "https://localhost.lyniafinance.com",
+      "https://user@api.lyniago.com",
+      "https://localhost.lyniago.com",
       "http://[2001:db8::1]",
       // A 127.-prefixed DNS NAME is not the 127.0.0.0/8 ADDRESS block — it resolves wherever its
       // owner points it, and rejecting it would break a correctly configured build.
@@ -83,9 +83,9 @@ describe("config.ts — a misconfigured release build boots instead of dying at 
   });
 
   it("reports no error for a correctly configured release build", () => {
-    const cfg = loadConfigAsRelease("https://lyniago.lyniafinance.com");
+    const cfg = loadConfigAsRelease("https://api.lyniago.com");
     expect(cfg.API_CONFIG_ERROR).toBeNull();
-    expect(cfg.API_URL).toBe("https://lyniago.lyniafinance.com");
+    expect(cfg.API_URL).toBe("https://api.lyniago.com");
   });
 
   it("reports no error in dev with nothing configured — localhost is legitimate there", () => {

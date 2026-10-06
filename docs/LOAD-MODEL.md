@@ -54,7 +54,7 @@ the ceiling, OTEL as truth:
 ## How to run (founder / staging)
 
 1. **Stand up a staging stack** (LR9/LR11) — a second Cloud Run + Cloud SQL + Redis, or any deploy that
-   is NOT the live pilot (`lyniago.lyniafinance.com` is off-limits during the pilot). Deploy it in
+   is NOT the live pilot (`api.lyniago.com` is off-limits during the pilot). Deploy it in
    **QA mode** (`OTP_CHANNEL=console`, `OTP_TEST_PHONES=<the harness numbers>`, `KYC_PROVIDER=stub`) so
    the harness can authenticate without the WhatsApp/Didit vendors.
 2. **Make the OTEL collector live** (LR9) so the real server-side SLOs are measured, not just k6 RTT.

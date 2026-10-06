@@ -220,7 +220,7 @@ The component checklist `scripts/gcp-provisioning-verify.sh` runs against. Verif
 | Runtime SA `lynia-run@…` (SQL client, bucket objectAdmin, self signBlob, FCM admin, metric/trace writer, per-secret accessor) | `iam.tf`, `secrets.tf` | revision `00101` boots and serves with it |
 | Deployer SA + WIF `github-pool/github-provider` (keyless CI) | `iam.tf`, `wif.tf` | every workflow authenticates keylessly |
 | Secrets `DATABASE_URL`, `REDIS_URL`, `JWT_SIGNING_SECRET`, `PII_ENCRYPTION_KEY` (+ `DIDIT_API_KEY`, `DIDIT_WEBHOOK_SECRET` added by hand) | `secrets.tf` (Didit: manual) | run #103 resolved all six `--set-secrets` refs and booted |
-| Global HTTPS ALB + managed cert + Cloud Armor (`lyniago.lyniafinance.com`) | `lb.tf`, `armor.tf` | canary health gate polled `/healthz` green for 2×120s |
+| Global HTTPS ALB + managed cert + Cloud Armor (`api.lyniago.com`) | `lb.tf`, `armor.tf` | canary health gate polled `/healthz` green for 2×120s |
 | Remote TF state (`gs://lynia-tfstate`) | `versions.tf` | active backend block, migrated 2026-07-08 |
-| Staging stack: `lynia-pg-staging`, `lynia-redis-staging`, `lynia-media-staging`, `lynia-run-staging`, `*_STAGING` secrets, `staging.lyniafinance.com` cert | `staging.tf` (`staging_enabled`) | `deploy-staging.yml` runs #3–#12 green (first success 2026-07-08) |
+| Staging stack: `lynia-pg-staging`, `lynia-redis-staging`, `lynia-media-staging`, `lynia-run-staging`, `*_STAGING` secrets, staging cert (old domain) | `staging.tf` (`staging_enabled`) | `deploy-staging.yml` runs #3–#12 green (first success 2026-07-08) |
 | KYC vendor (Didit) armed | manual | `DIDIT_ENABLED=true`, `DIDIT_WORKFLOW_ID` set; both Didit secrets resolve at deploy |

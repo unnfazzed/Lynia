@@ -1,4 +1,4 @@
-# Cloudflare DNS for the lyniafinance.com zone.
+# Cloudflare DNS for the lyniago.com zone.
 #
 # WHY THIS EXISTS
 # The product's DNS was previously created by hand in the Cloudflare dashboard —

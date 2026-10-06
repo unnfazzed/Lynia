@@ -27,7 +27,7 @@ const ctxFor = (req: FakeRequest): ExecutionContext =>
   ({ switchToHttp: () => ({ getRequest: () => req }) }) as unknown as ExecutionContext;
 
 const PURGE_URL = "/admin/retention/purge";
-const HOST = "lyniago.lyniafinance.com";
+const HOST = "api.lyniago.com";
 const onHost = (req: Omit<FakeRequest, "protocol" | "hostname">): FakeRequest => ({
   ...req,
   protocol: "https",
@@ -99,7 +99,7 @@ describe("AdminOrSchedulerGuard", () => {
 
   it("rejects an OIDC token minted for a different route (audience replay)", async () => {
     const req: FakeRequest = { headers: { authorization: "Bearer google-oidc" }, url: PURGE_URL };
-    const claims = { ...schedulerClaims, aud: "https://lyniago.lyniafinance.com/admin/cash/settlements/auto-pause" };
+    const claims = { ...schedulerClaims, aud: "https://api.lyniago.com/admin/cash/settlements/auto-pause" };
     await expect(guardWith(claims).canActivate(ctxFor(req))).rejects.toThrow("Invalid or expired token");
   });
 

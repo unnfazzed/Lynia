@@ -1,7 +1,7 @@
 # Merchant Dashboard Deployment Plan — "take apps/merchant to its URL"
 
 **Goal:** stand up the `apps/merchant` Next.js dashboard at a stable public URL
-(`https://lyniagomerchant.lyniafinance.com`), reusing the GCP/ALB topology the API and admin console
+(`https://merchant.lyniago.com`), reusing the GCP/ALB topology the API and admin console
 already run on. Parent plan: `docs/plans/2026-07-26-merchant-verticals-plan.md` §2.3 ("own Cloud Run
 service + deploy workflow; cannot take down the API") and §5 ("dark launch continuously... launch day
 is a config flip, not a deploy"). This doc is the deploy-wiring piece that plan deferred to P3.
@@ -44,7 +44,7 @@ This makes merchant's arming meaningfully shorter than admin's.
 **Deploying this tier is not launching the vertical.** `RESTAURANTS_ENABLED` /
 `MERCHANT_DISPATCH_AUTO_ENABLED` / `MERCHANT_WALLET_ENABLED` are `apps/api` kill switches that stay
 OFF in production independently of this deploy (`deploy-staging.yml`, `release.yml`). Standing up
-`lyniagomerchant.lyniafinance.com` makes the dashboard *reachable* — a merchant who signs in still
+`merchant.lyniago.com` makes the dashboard *reachable* — a merchant who signs in still
 hits `503`s on every restaurants-gated route until those flags flip and their account is onboarded.
 That flip is a separate, already-existing decision, not part of this PR.
 
@@ -88,19 +88,19 @@ CI (`ci.yml` already runs `@lynia/merchant`'s typecheck/lint/build/test via `tur
    GCP_MERCHANT_ENABLED               = true
    MERCHANT_CLOUD_RUN_SERVICE          = lynia-merchant                 (terraform output, or default)
    MERCHANT_CLOUD_RUN_SERVICE_ACCOUNT  = <terraform output MERCHANT_CLOUD_RUN_SERVICE_ACCOUNT>
-   MERCHANT_API_BASE_URL               = https://<api_domain>            (e.g. https://lyniago.lyniafinance.com)
+   MERCHANT_API_BASE_URL               = https://<api_domain>            (e.g. https://api.lyniago.com)
    ```
    `GCP_PROJECT_ID` / `GCP_REGION` / `GCP_ARTIFACT_REPO` / `GCP_WORKLOAD_IDENTITY_PROVIDER` /
    `GCP_SERVICE_ACCOUNT` already exist (shared with `release.yml` / `deploy-admin.yml`) — nothing new
    to add there.
 3. **DNS** — if `cloudflare_dns_enabled` is on, Terraform already created the A record in step 1; skip
-   to step 4. Otherwise, by hand: `merchant_domain` (default `lyniagomerchant.lyniafinance.com`) → the
+   to step 4. Otherwise, by hand: `merchant_domain` (default `merchant.lyniago.com`) → the
    **same** `load_balancer_ip` output the API and admin domains already point at (one shared anycast
    IP, a second/third/fourth A record — no new IP).
 4. **Allow the dashboard's origin on the API — the step this plan originally missed.** The dashboard
    is a *browser* client of `apps/api`: sign-in (`POST /auth/otp/request`), every queue mutation and
-   the Socket.IO queue socket are cross-origin requests from `https://lyniagomerchant.lyniafinance.com`
-   to `https://lyniago.lyniafinance.com`. `apps/api` is default-deny (`CORS_ALLOWED_ORIGINS`,
+   the Socket.IO queue socket are cross-origin requests from `https://merchant.lyniago.com`
+   to `https://api.lyniago.com`. `apps/api` is default-deny (`CORS_ALLOWED_ORIGINS`,
    `src/common/cors.ts`), and until 2026-08-18 `release.yml` never set that variable at all — so the
    first real sign-in attempt failed at preflight and the login screen said **"Couldn't reach the
    server — check the connection and try again."** with the API green, DNS correct, the cert active
@@ -114,7 +114,7 @@ CI (`ci.yml` already runs `@lynia/merchant`'s typecheck/lint/build/test via `tur
    wants — update the running service directly:
    ```
    gcloud run services update <CLOUD_RUN_SERVICE> --region <GCP_REGION> --project <GCP_PROJECT_ID> \
-     --update-env-vars CORS_ALLOWED_ORIGINS=https://lyniagomerchant.lyniafinance.com
+     --update-env-vars CORS_ALLOWED_ORIGINS=https://merchant.lyniago.com
    ```
    That `gcloud` command is a stop-gap, not the fix: `release.yml` deploys with **`--set-env-vars`**,
    which replaces the service's entire env set, so a hand-added variable the workflow does not also
@@ -133,24 +133,24 @@ CI (`ci.yml` already runs `@lynia/merchant`'s typecheck/lint/build/test via `tur
    resolves; the first run's boot smoke tests the *container*, not the public URL, so it isn't blocked
    on the cert — but the public URL itself won't answer until the cert is active).
 6. **Verify:**
-   - `curl -I https://lyniagomerchant.lyniafinance.com/` → `307`/`308` to `/login` (unauthenticated,
+   - `curl -I https://merchant.lyniago.com/` → `307`/`308` to `/login` (unauthenticated,
      fail-closed).
-   - `curl https://lyniagomerchant.lyniafinance.com/api/healthz` → `{"status":"ok","app":"merchant"}`.
+   - `curl https://merchant.lyniago.com/api/healthz` → `{"status":"ok","app":"merchant"}`.
    - Plain HTTP redirects to HTTPS (existing `:80` redirect rule covers every hostname on the shared
      IP — no per-tier work needed).
    - **CORS preflight from the dashboard's origin is accepted** — the check that would have caught
      `OPS-CORS-01` before a human did, and the one to run first if sign-in reports a connection
      error:
      ```
-     curl -si -X OPTIONS https://lyniago.lyniafinance.com/auth/otp/request \
-       -H 'Origin: https://lyniagomerchant.lyniafinance.com' \
+     curl -si -X OPTIONS https://api.lyniago.com/auth/otp/request \
+       -H 'Origin: https://merchant.lyniago.com' \
        -H 'Access-Control-Request-Method: POST' \
        -H 'Access-Control-Request-Headers: content-type' | head -1
      ```
      Expect `204` with an `access-control-allow-origin` header echoing that origin. A **`404`** is
      the failure signature: the origin is not allow-listed, so Nest's CORS middleware never handles
      the preflight and it falls through to the router. Note the API itself answers normally to a
-     request with **no** `Origin` header (`curl https://lyniago.lyniafinance.com/healthz` → `ok`) —
+     request with **no** `Origin` header (`curl https://api.lyniago.com/healthz` → `ok`) —
      which is exactly why this looks like an outage from the browser and like perfect health from a
      terminal.
    - Sign in with a real merchant OTP account end-to-end once one exists in this environment.
@@ -169,9 +169,9 @@ CI (`ci.yml` already runs `@lynia/merchant`'s typecheck/lint/build/test via `tur
 
 ## Open decisions for the founder
 
-- **Domain:** proposing `lyniagomerchant.lyniafinance.com` (consistent with `lyniago.lyniafinance.com`
-  / `lyniagoadmin.lyniafinance.com`). Override via `merchant_domain` in `terraform.tfvars` before the
-  first apply if you'd rather use something else (e.g. `vendor.lyniafinance.com`) — changing it later
+- **Domain:** proposing `merchant.lyniago.com` (consistent with `api.lyniago.com`
+  / `admin.lyniago.com`). Override via `merchant_domain` in `terraform.tfvars` before the
+  first apply if you'd rather use something else (e.g. `vendor.lyniago.com`) — changing it later
   force-replaces the managed cert.
 - **`MERCHANT_API_BASE_URL`:** recommend the same public `api_domain` the admin console and mobile app
   already use. Because it's baked in at *build* time, changing it later means a rebuild+redeploy of

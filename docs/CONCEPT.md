@@ -12,7 +12,7 @@
 
 > ✅ **Build shipped (2026-06-27); deployed to GCP (2026-06-29).** The concept and architecture below are
 > validated — a full delivery runs phone-to-phone in code (offer loop → lifecycle → OTP hand-off → rating),
-> and the API is now **live and CI-deployed** at `https://lyniago.lyniafinance.com`. This doc remains the
+> and the API is now **live and CI-deployed** at `https://api.lyniago.com`. This doc remains the
 > living north star; its forward-looking parts (§3 risks, §7 one-month plan, §10 next steps) are annotated
 > below. The **cloud (Google Cloud) is provisioned + deployed** and the **revenue model (§6) is decided**;
 > the remaining gates are the **dev build** and **founder/vendor wiring** (WhatsApp BSP, Didit).
@@ -413,7 +413,7 @@ number is simply gated by order state.
 - ✅ **Cloud chosen, provisioned + deployed — Google Cloud** (chosen 2026-06-27, live 2026-06-29):
   region Johannesburg `africa-south1`, default `CLOUD_PROVIDER=gcp` behind the D7 adapter seam
   (GCS-only since the Azure impl was removed). The project (`lynia-500911`) is Terraform-provisioned and the API is CI-deployed to
-  Cloud Run behind an external HTTPS load balancer (`https://lyniago.lyniafinance.com`). Closes T0.
+  Cloud Run behind an external HTTPS load balancer (`https://api.lyniago.com`). Closes T0.
 - ✅ **Phase-3 build shipped (2026-06-30 → 07-01)** — native map + tap-to-pin for pickup/drop-off and a
   **live tracking map** on the customer order and rider job screens; rider-broadcast push + batched FCM;
   in-app KYC hand-off with auto-poll; FCM device-token registration + `google-services.json` build wiring.

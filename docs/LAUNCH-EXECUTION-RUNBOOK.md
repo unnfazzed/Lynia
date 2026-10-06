@@ -9,7 +9,7 @@
 export PROJECT=lynia-500911
 export REGION=africa-south1
 export RUNTIME_SA=lynia-run@lynia-500911.iam.gserviceaccount.com
-export API_URL=https://lyniago.lyniafinance.com
+export API_URL=https://api.lyniago.com
 ```
 
 ## 1. LR8 — national-ID encryption: mint the key + backfill  🔴 do before the next deploy
@@ -335,7 +335,8 @@ echo 'staging_enabled = true' >> terraform.tfvars
 terraform apply       # review: everything is new + gated; prod's only diff is the LB host rule/cert
 
 # 2. DNS: if cloudflare_dns_enabled = true (dns.tf), the staging A record is created BY THIS APPLY —
-#    nothing to do by hand. Otherwise add an A record for staging.lyniafinance.com → the SAME
+#    nothing to do by hand. Otherwise add an A record for <staging-host> (none exists today; pick one
+#    and set staging_api_domain) → the SAME
 #    load_balancer_ip output as prod. Either way the managed cert goes ACTIVE after DNS
 #    propagates (can take ~30 min).
 
@@ -347,8 +348,8 @@ gh secret set MIGRATE_DATABASE_URL_STAGING --body "$(terraform output -raw MIGRA
 gh variable set STAGING_OTP_TEST_PHONES --body "+263771234567,+263770000002"   # QA numbers
 
 # 4. First deploy: Actions → "Deploy Staging (Cloud Run)" (or push to main). The first run's smoke
-#    can fail while DNS/cert propagate — re-run once https://staging.lyniafinance.com/healthz answers.
-# 5. Point the k6 harness at it (LR11): BASE_URL=https://staging.lyniafinance.com k6 run apps/api/load/smoke.js
+#    can fail while DNS/cert propagate — re-run once https://<staging-host>/healthz answers.
+# 5. Point the k6 harness at it (LR11): BASE_URL=https://<staging-host> k6 run apps/api/load/smoke.js
 ```
 
 Staging runs `APP_ENV=staging`: prod-shaped (real secret-strength guards, NODE_ENV=production)
@@ -502,7 +503,7 @@ gh variable set STAGING_MERCHANT_WALLET_ENABLED --body "true"
 gh workflow run "Deploy Staging (Cloud Run)" && gh run watch
 
 # The flag is public config — this is the same read the mobile app makes for its remote config.
-curl -s https://staging.lyniafinance.com/app/feature-flags
+curl -s https://<staging-host>/app/feature-flags
 # expect: {"restaurantsEnabled":true,"merchantDispatchAutoEnabled":true,"merchantWalletEnabled":true}
 
 # Re-run the golden pass against STAGING's own database (not the local one), so the proof covers the
@@ -531,9 +532,9 @@ gh variable set STAGING_MERCHANT_DISPATCH_AUTO_ENABLED --body "false"
 gh variable set STAGING_MERCHANT_WALLET_ENABLED --body "false"
 gh workflow run "Deploy Staging (Cloud Run)" && gh run watch
 
-curl -s https://staging.lyniafinance.com/app/feature-flags     # all three false
-curl -s -o /dev/null -w '%{http_code}\n' https://staging.lyniafinance.com/merchant/me    # expect 503
-curl -s -o /dev/null -w '%{http_code}\n' https://staging.lyniafinance.com/restaurants    # expect 503
+curl -s https://<staging-host>/app/feature-flags     # all three false
+curl -s -o /dev/null -w '%{http_code}\n' https://<staging-host>/merchant/me    # expect 503
+curl -s -o /dev/null -w '%{http_code}\n' https://<staging-host>/restaurants    # expect 503
 ```
 
 Then walk one **parcel** order end-to-end on a device (compose → auction → bid → assign → pickup →
@@ -548,7 +549,7 @@ Only after 11.1–11.4 all pass:
 gh variable set RESTAURANTS_ENABLED --body "true"
 # Dispatch auto + wallet are independently flippable — turn them on deliberately, not reflexively.
 gh workflow run "Release (Cloud Run)" && gh run watch
-curl -s https://lyniago.lyniafinance.com/app/feature-flags
+curl -s https://api.lyniago.com/app/feature-flags
 ```
 
 **Rollback is the same flip back** (`--body "false"` + redeploy, or an immediate

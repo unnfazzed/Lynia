@@ -128,7 +128,7 @@ also be squatted. The profiles become the `sameAs` links in the structured data 
 ## 5. One name, one entity (Owner, 30 minutes)
 
 **Why:** "Lynia" alone is a Polish cosmetics brand in search results. Anything that says "Lynia" or points
-to `lyniafinance.com` splits the entity.
+to the old company domain splits the entity.
 
 - **Play Console:**
   - **LyniaGo → Store settings** (under *Store presence*) **→ Store listing contact details**: Website `https://lyniago.com`; email `support@lyniago.com` once step 4's routing exists.

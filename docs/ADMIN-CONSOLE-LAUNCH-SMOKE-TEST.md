@@ -15,7 +15,7 @@ reach the production Postgres (Cloud SQL) read-only for verification.
 
 | Thing | Value |
 |---|---|
-| Admin URL | `https://lyniagoadmin.lyniafinance.com/` |
+| Admin URL | `https://admin.lyniago.com/` |
 | GCP project | `lynia-500911` |
 | Cloud Run service | `lynia-admin` |
 | IAP backend service | `lynia-admin-backend` (global), IAP **enabled** |
@@ -80,7 +80,7 @@ reach the production Postgres (Cloud SQL) read-only for verification.
 | 3.3 | Sign in with a granted operator account | The Overview loads | |
 | 3.4 | Look at the sidebar footer | Your **operator identity** (your email/name), not a generic "Ops admin", and a **Sign out** link | |
 | 3.5 | Click **Sign out** | You're bounced back through Google; returning requires re-auth | |
-| 3.6 | (fail-closed spot check) `curl -s -o /dev/null -w '%{http_code}' https://lyniagoadmin.lyniafinance.com/` with no IAP cookie | `302` to Google (or `401`) — **never 200** | |
+| 3.6 | (fail-closed spot check) `curl -s -o /dev/null -w '%{http_code}' https://admin.lyniago.com/` with no IAP cookie | `302` to Google (or `401`) — **never 200** | |
 
 - [ ] **3.7 Audit actor is your real identity.** After any action below, the `audit_logs.actor` must be
   your **operator email** (e.g. `accounts.google.com:ops@lynia.com` or the normalized email), proving
