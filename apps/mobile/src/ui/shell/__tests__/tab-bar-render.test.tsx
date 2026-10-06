@@ -22,9 +22,10 @@ import { ShellTabBar, TabBarSpaceProvider, useCustomerTabBadges, useHideTabBar, 
 
 const METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 24 }, frame: { x: 0, y: 0, width: 360, height: 720 } };
 
-function mount(el: React.ReactElement): renderer.ReactTestRenderer {
+/** Async so the glass material's OS-settings read (`useGlass`) settles inside act. */
+async function mount(el: React.ReactElement): Promise<renderer.ReactTestRenderer> {
   let r!: renderer.ReactTestRenderer;
-  act(() => {
+  await act(async () => {
     r = renderer.create(<SafeAreaProvider initialMetrics={METRICS}>{el}</SafeAreaProvider>);
   });
   return r;
@@ -51,10 +52,10 @@ async function settle(fn: () => void): Promise<void> {
 beforeEach(() => mockHaptic.mockClear());
 
 describe("TabBar", () => {
-  it("navigates with a light tick on a change, and reselects silently on the active tab", () => {
+  it("navigates with a light tick on a change, and reselects silently on the active tab", async () => {
     const onTab = jest.fn();
     const onReselect = jest.fn();
-    const r = mount(<TabBar tabs={APP_TABS} active="home" onTab={onTab} onReselect={onReselect} reduceMotion />);
+    const r = await mount(<TabBar tabs={APP_TABS} active="home" onTab={onTab} onReselect={onReselect} reduceMotion />);
     const [home, orders] = tabsOf(r);
     act(() => orders!.props.onPress());
     expect(onTab).toHaveBeenCalledWith("orders");
@@ -66,14 +67,14 @@ describe("TabBar", () => {
     expect(mockHaptic).not.toHaveBeenCalled();
   });
 
-  it("is removed while hidden (soft keyboard open)", () => {
-    const r = mount(<TabBar tabs={APP_TABS} active="home" hidden reduceMotion />);
+  it("is removed while hidden (soft keyboard open)", async () => {
+    const r = await mount(<TabBar tabs={APP_TABS} active="home" hidden reduceMotion />);
     expect(r.root.findAll((n) => n.props.accessibilityRole === "tablist")).toHaveLength(0);
   });
 
   // First Run v2 F1–F8 (ledger D-80 §2 #3): a tab root drawing a full-screen page takes the bar away, and it
   // comes back when the page goes (or the screen unmounts).
-  it("is removed while a tab root holds it hidden (useHideTabBar), and back once it lets go", () => {
+  it("is removed while a tab root holds it hidden (useHideTabBar), and back once it lets go", async () => {
     const state = { index: 0, routeNames: ["index", "money", "account"] };
     const navigation = { navigate: jest.fn() };
     function Root({ hide }: { hide: boolean }): null {
@@ -89,7 +90,7 @@ describe("TabBar", () => {
       </SafeAreaProvider>
     );
     let r!: renderer.ReactTestRenderer;
-    act(() => {
+    await act(async () => {
       r = renderer.create(tree(false));
     });
     const bars = () => r.root.findAll((n) => n.props.accessibilityRole === "tablist").length;
@@ -105,9 +106,9 @@ describe("TabBar", () => {
     act(() => r.unmount());
   });
 
-  it("labels every cell with the handoff's string, selected state and badge", () => {
+  it("labels every cell with the handoff's string, selected state and badge", async () => {
     const badges: Record<string, TabBadge> = { index: { kind: "count", n: 3 }, money: { kind: "warn" }, account: { kind: "dot" } };
-    const r = mount(<TabBar tabs={RIDER_TABS} active="money" badges={badges} reduceMotion />);
+    const r = await mount(<TabBar tabs={RIDER_TABS} active="money" badges={badges} reduceMotion />);
     const cells = tabsOf(r);
     expect(cells.map((c) => c.props.accessibilityLabel)).toEqual([
       "Jobs, tab, 1 of 3, 3 new jobs",
@@ -118,10 +119,10 @@ describe("TabBar", () => {
   });
 
   // v1.4: no edge or shadow on the bar, one `tileMint` pill for every tab, labels always 700.
-  it("draws the v1.4 bar: flat, one mint indicator, every label bold", () => {
+  it("draws the v1.4 bar: flat, one mint indicator, every label bold", async () => {
     const flat = (n: renderer.ReactTestInstance) => StyleSheet.flatten(n.props.style) ?? {};
     for (const active of ["index", "money", "account"]) {
-      const r = mount(<TabBar tabs={RIDER_TABS} active={active} reduceMotion />);
+      const r = await mount(<TabBar tabs={RIDER_TABS} active={active} reduceMotion />);
       const bar = flat(r.root.findAll((n) => n.props.accessibilityRole === "tablist" && typeof n.type === "string")[0]!);
       expect([bar.borderWidth, bar.shadowOpacity, bar.elevation, bar.padding]).toEqual([undefined, undefined, undefined, 4]);
       const host = r.root.findAll((n) => n.props.accessibilityRole === "tablist" && typeof n.props.onLayout === "function")[0]!;
