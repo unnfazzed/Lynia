@@ -7,6 +7,12 @@ import { requestPushRegistration } from "../src/push/push-kick";
 import { Body, FirstRunScreen, FrBadge, HeroDisc, HeroPanel, PinnedFooter, SampleNotification, SplitTitle } from "../src/ui";
 import { PC } from "../src/ui/firstrun/copy";
 
+/**
+ * PC8's second sample, with a 6-digit code shown 3+3 like every real code (D-59). The handoff draws "4821";
+ * owner-approved copy exception 2026-10-06 (D-80 §4) — the designer is asked to redraw it. `copy.ts` stays verbatim.
+ */
+const EX2_BODY = PC.ex2B.replace("4821", "482 193");
+
 /** Only an in-app path may be handed over to (never a scheme or another host). */
 function safeNext(raw: string | string[] | undefined): string | null {
   const v = Array.isArray(raw) ? raw[0] : raw;
@@ -85,7 +91,7 @@ export default function OrderUpdatesScreen(): React.ReactElement {
       <HeroPanel height={250} decor={false}>
         <View style={{ alignItems: "center", gap: 10 }}>
           <SampleNotification icon="bike" title={PC.ex1T} body={PC.ex1B} behind />
-          <SampleNotification icon="lock" title={PC.ex2T} body={PC.ex2B} />
+          <SampleNotification icon="lock" title={PC.ex2T} body={EX2_BODY} />
           <SampleNotification icon="check" title={PC.ex3T} body={PC.ex3B} behind />
         </View>
       </HeroPanel>

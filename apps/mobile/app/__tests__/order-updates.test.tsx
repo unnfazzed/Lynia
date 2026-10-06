@@ -61,6 +61,9 @@ it("PC8: the Order placed pill, three sample notifications, the explainer — an
   await mount();
   const s = text();
   for (const k of ["Order placed", "Tafara picked it up", "Arriving now", "Delivered", "Know when it’s", "at the gate", "Turn on updates", "Not now"]) expect(s).toContain(k);
+  // Owner-approved copy exception (D-80 §4): the sample code is 6 digits shown 3+3, not the drawn "4821".
+  expect(s).toContain("Your delivery code is 482 193");
+  expect(s).not.toContain("4821");
   expect(mockStore[CUST_NOTIF_ASKS_KEY]).toBe("1");
 });
 
