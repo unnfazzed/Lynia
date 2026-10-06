@@ -152,3 +152,21 @@ describe("TabBar material", () => {
     }
   });
 });
+
+// Owner (2026-10-06, ledger D-56 §6): "option A but make is as thin as possible and greyer".
+describe("TabBar edge", () => {
+  it("outlines the pill with one physical pixel of the idle-art grey, glass or solid, as an overlay", async () => {
+    for (const material of ["glass", "solid"] as const) {
+      const r = await mount(<TabBar tabs={APP_TABS} active="home" reduceMotion material={material} />);
+      const edges = r.root.findAll((n) => typeof n.type === "string" && flat(n).borderColor === tokens.color.illusIdleMid);
+      expect(edges).toHaveLength(1);
+      const edge = flat(edges[0]!);
+      expect(edge).toMatchObject({ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, borderRadius: tokens.radius.pill });
+      expect(edge.borderWidth).toBe(StyleSheet.hairlineWidth);
+      expect(edges[0]!.props.pointerEvents).toBe("none");
+      // The bar itself is untouched: no border of its own, no shadow, padding 4 so the cells sit 4 in.
+      const bar = flat(barOf(r));
+      expect([bar.borderWidth, bar.shadowOpacity, bar.elevation, bar.padding]).toEqual([undefined, undefined, undefined, 4]);
+    }
+  });
+});

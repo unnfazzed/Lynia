@@ -371,6 +371,7 @@ export function TabBar({
       {glass ? (
         <BlurView pointerEvents="none" intensity={GLASS_INTENSITY} tint={GLASS_TINT} experimentalBlurMethod="dimezisBlurView" style={styles.glass} />
       ) : null}
+      <View pointerEvents="none" style={styles.edge} />
       {cellW > 0 ? (
         <Animated.View pointerEvents="none" style={[styles.indicator, { width: cellW, transform: [{ translateX: Animated.multiply(slide, cellW) }] }]} />
       ) : null}
@@ -395,8 +396,10 @@ export function TabBar({
 /**
  * Hoisted out of render (docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.2): the bar is on screen
  * for the whole session and re-renders on every route change, so its static styles are created once.
- * v1.4: no edge and no shadow. The fill is the glass (`BlurView` under a transparent bar) or, wherever
- * `useGlass` says the handoff's fallback applies, opaque `bg` — never a translucent bar without blur.
+ * The fill is the glass (`BlurView` under a transparent bar) or, wherever `useGlass` says the handoff's
+ * fallback applies, opaque `bg` — never a translucent bar without blur. No shadow (v1.4). The edge is the
+ * owner's one change to v1.4's "no edge" (ledger D-56 §6): a hairline outline, so the white pill doesn't
+ * vanish into a white screen.
  */
 const styles = StyleSheet.create({
   bar: {
@@ -413,6 +416,9 @@ const styles = StyleSheet.create({
   barGlass: { backgroundColor: "transparent" },
   // expo-blur ignores `borderRadius` unless the view clips (its docs: `overflow: "hidden"`).
   glass: { ...StyleSheet.absoluteFillObject, borderRadius: tokens.radius.pill, overflow: "hidden" },
+  // One physical pixel on every phone, in the bar's own idle-art grey. An overlay, so it takes no layout:
+  // the cells and the indicator still sit exactly 4 in.
+  edge: { ...StyleSheet.absoluteFillObject, borderRadius: tokens.radius.pill, borderWidth: StyleSheet.hairlineWidth, borderColor: c.illusIdleMid },
   indicator: { position: "absolute", top: 4, left: 4, height: 52, borderRadius: tokens.radius.pill, backgroundColor: c.tileMint },
   cell: { flex: 1, minWidth: 0, height: 52, borderRadius: tokens.radius.pill },
   cellInner: { flex: 1, alignItems: "center", justifyContent: "center", borderRadius: tokens.radius.pill },
