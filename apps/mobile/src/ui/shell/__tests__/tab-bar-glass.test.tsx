@@ -17,7 +17,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 jest.mock("../../haptics", () => ({ haptic: jest.fn() }));
 
-import { APP_TABS, TabBar } from "../TabBar";
+import { APP_TABS, EDGE, TabBar } from "../TabBar";
 import { blurSupported, GLASS_MIN_API, GLASS_MIN_RAM_BYTES, lowRam } from "../useGlass";
 
 const METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 24 }, frame: { x: 0, y: 0, width: 360, height: 720 } };
@@ -153,12 +153,19 @@ describe("TabBar material", () => {
   });
 });
 
-// Owner (2026-10-06, ledger D-56 §6): "option A but make is as thin as possible and greyer".
+// Owner (2026-10-06, ledger D-56 §6): as thin as possible, then "subtle and not noticeable" — fainter than
+// any design grey, shown all the time.
 describe("TabBar edge", () => {
-  it("outlines the pill with one physical pixel of the idle-art grey, glass or solid, as an overlay", async () => {
+  it("is ink at 6%: fainter than the lightest design border on white", () => {
+    expect(EDGE).toBe(`${tokens.color.ink}0F`);
+    const onWhite = over(tokens.color.ink, 0x0f / 255, tokens.color.bg);
+    expect(contrast(onWhite, tokens.color.bg)).toBeLessThan(contrast(tokens.color.line, tokens.color.bg));
+  });
+
+  it("outlines the pill with one physical pixel of it, glass or solid, as an overlay", async () => {
     for (const material of ["glass", "solid"] as const) {
       const r = await mount(<TabBar tabs={APP_TABS} active="home" reduceMotion material={material} />);
-      const edges = r.root.findAll((n) => typeof n.type === "string" && flat(n).borderColor === tokens.color.illusIdleMid);
+      const edges = r.root.findAll((n) => typeof n.type === "string" && flat(n).borderColor === EDGE);
       expect(edges).toHaveLength(1);
       const edge = flat(edges[0]!);
       expect(edge).toMatchObject({ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, borderRadius: tokens.radius.pill });
