@@ -23,6 +23,7 @@ export type OnlineRefusal =
   | "on_hold"
   | "cooldown"
   | "out_of_area"
+  | "location_required"
   | "commission_low_balance";
 
 /** The commission side of the gate: whether commission is switched on (rate > 0) and the rider's
@@ -96,5 +97,8 @@ export const REFUSAL_MESSAGE: Record<OnlineRefusal, string> = {
   on_hold: "Your account is on hold — contact support to get back on the road",
   cooldown: "On cooldown after repeated cancellations — try again later",
   out_of_area: `You're outside the service area — go online from ${serviceTownsLabel()}`,
+  // E2E 2026-10-05 FS-7: the rider app's own no-GPS gate copy (R.gGpsT + R.gGpsB), so an older build that
+  // can't read the `reason` still has a human sentence to show.
+  location_required: "Can't find your location. Jobs are matched by distance, so location must be on while you ride.",
   commission_low_balance: "Top up your commission balance to keep riding",
 };

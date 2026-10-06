@@ -450,7 +450,9 @@ export default function FoodReviewScreen(): React.ReactElement {
                 </View>
               </View>
 
-              {service === "pharmacy" ? (
+              {/* "Over-the-counter medicine only" is untrue while prescriptions are on (E2E 2026-10-05 FS-5,
+                  owner: hide it, as the browse notice). useOrderFlags fails closed, so an unknown flag keeps it. */}
+              {service === "pharmacy" && !flags.rxEnabled ? (
                 <ReviewNote tone="ok" icon="shield-check">
                   {O.r.otc}
                 </ReviewNote>

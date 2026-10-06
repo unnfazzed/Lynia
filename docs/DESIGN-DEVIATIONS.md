@@ -2436,12 +2436,13 @@ outside the area LyniaGo covers for now."
 | Where | Mock | App | Why |
 |---|---|---|---|
 | "Not live yet" (C6 pill, B1/D1 state) | A branch "LyniaGo hasn't switched on" | Live = a **shop**, or a **restaurant** ops switched on (`pilotEnabled`) | Ops only ever switch restaurants on (the go-live switch refuses shops), so a shop read by the flag alone would never leave "Almost ready" and would lose Book a rider |
-| B1/D1 not-live state | "After Create branch, or switching to a not-live branch" | Shown only to an owner with **2+ branches** | Read literally from the mock's two triggers; a single new restaurant keeps today's Orders home, so onboarding is unchanged |
+| B1/D1 not-live state | "After Create branch, or switching to a not-live branch" | Shown for **any business not live**, whatever its branch count (was: an owner with 2+ branches only) | Owner, 2026-10-06 (E2E FS-4, *"Reuse 'Almost ready'"*): a single new business was told "You're open" while customers couldn't see it. A not-live **shop** keeps "Book a rider" on its top card (owner, 2026-10-06: *"Keep 'Book a rider'"*; the API lets it book, merchant-v2 draws the card); the open switch and stat tiles stay hidden |
 | C4 Account rows | Shop front · Opening hours · **Branches** · Preferred riders · Team · Help | D-50's owner-only "Taking orders" stays, after Branches | D-50 row, not drawn in either export |
 | Three tap targets (C7 back chevron, the location card's "Change", the C7 banner's "Open WhatsApp") | 36px | `var(--target-min)` (44px); "Change" and "Open WhatsApp" keep the drawn layout with a −4px margin; C7 uses the shared AppBar's 44px back | **Upstream kit defect** (CLAUDE.md, owner decision D2 2026-08-20): a mock may not draw below the floor and the app never reproduces it. "Change" was already 36px in A4 (D-48); fixed there too, as it is the same component |
 
 **Owner OK on both readings (this session, 2026-10-01):** *"Shops are live yes. Shop orders don't expire"*,
-and "Almost ready" for owners with 2+ branches only ("Yes, 2+ branches only"). The second half of the first
+and "Almost ready" for owners with 2+ branches only ("Yes, 2+ branches only"; superseded 2026-10-06 by
+*"Reuse 'Almost ready'"* for any business not live, E2E FS-4). The second half of the first
 answer, that **shop customer orders don't expire**, is recorded for the shop customer surface (plan
 2026-09-29 Phase 3); shops take no customer orders yet, so nothing here depends on it.
 
@@ -2941,6 +2942,7 @@ this bar and lands with that work.
 | Location sheet | Search, current location, Home, Work, Add a place | The same, plus the existing one-line notes when location is off or a fix fails; "Add a place" focuses the search (saving a found place as Home/Work is the search's own job) | The sheet must still explain why "Use my current location" did nothing |
 | C2 wrong prefix | Only the too-short line (C3) is drawn | A nine-digit number that isn't 71/73/77/78 gets "That doesn't look like a mobile number…" | Sending a code to a landline wastes a send; one undrawn line |
 | C4 channel line | "Sent on WhatsApp to …" | That, or "Sent by SMS to …" when Bird fell back to SMS for this number | D-40: Bird Verify is WhatsApp-first with a per-number SMS fallback; a fixed "WhatsApp" would sometimes be false |
+| C4 resend line after an SMS send | "Resend on WhatsApp" | That, or the screen's own "Send a new code" when the code went by SMS | "Resend on WhatsApp" beside "Sent by SMS" contradicts itself (E2E 2026-10-05 P-8); no new string — the locked state's drawn CTA copy. **Owner-approved 2026-10-06** |
 | C4 "Fills in by itself" | Auto-read from the message | The input carries the platform autofill hints (`sms-otp`, `oneTimeCode`); a WhatsApp code is pasted or tapped in from the suggestion strip, and the sixth digit still submits | No app can read a WhatsApp message; true zero-tap needs WhatsApp's one-tap autofill template (NEEDS BACKEND, Bird) |
 | C4 on a QA build | — | "Test build: code pre-filled." in place of the channel line | No message is sent on a QA build (console OTP); the drawn line would be false |
 | C2 / C4 rate limit | No rate-limit state drawn | A toast "Too many tries. Try again in N min." (or "N h"), from the API's `retryAfter`, when a send or verify hits a cap (5 sends an hour per number, 3 new accounts a day per device). Other send/verify failures that aren't the number's or the code's fault (network, server) are a toast too; only a bad number paints C2's field red (C3) | Without the wait, the user saw "try again later" for up to 55 minutes, or a red "number" error that wasn't about the number. One undrawn line (start-up review 2026-10-06, C-9) |
@@ -4219,6 +4221,10 @@ Nothing in `packages/design/**` changes.
   states (R8a/R8b, T5c, M8, RD1d). The two handoffs disagree. The app keeps the drawn copy until the owner
   picks the wording (or a browse export redraws it). The fix would land in the customer app and ship with
   the next build.
+- **Resolved 2026-10-06 (E2E FS-5, owner: *"Hide it while Rx is on"*).** The notice (list, storefront and
+  the item sheet's line) renders only while `rxEnabled` is off, and so does Review & place's matching
+  `O.r.otc` note ("Over-the-counter medicine only…"). `useOrderFlags` fails closed, so an unknown
+  flag (an older API, offline) keeps it shown. No copy changes.
 
 ## D-77 · Merchant v2: one shell and one order lifecycle for kitchens, shops and pharmacies — APPROVED (2026-10-04)
 
@@ -4308,3 +4314,73 @@ any string Merchant v2 doesn't draw. Viewport unchanged: 360×720 with the 320px
 | K5b / K5c (2026-10-05) | Drawn | As drawn: "#A115 delivered" · "Blessing M. · 07:41 · 2 dishes", every step done, the door photo, the mint "Paid by wallet · $14.00 / Nothing to bring back. It's in your Money tab." and no CTA; "#A117 couldn't be delivered" · "Customer didn't answer · 07:44", step 4 red, the GOODS BACK TO YOU card ("2× Mazondo · $10.00", "… brings it back by 07:58" or "… is bringing it back"), "I got the food back" / "I got the goods back" and "It wasn't returned" (a one-confirm sheet, "Report to LyniaGo", then "We've told LyniaGo. We'll WhatsApp you."). The "after delivery" CTA is drawn disabled (`--surface`, `--muted`). | A cash order on "pay me at pickup" (no cash back) reads "Paid at pickup · $X" in the same strip (not drawn). The "back by" time is the return deadline (`cashDueAt`); the rider's return trip has no estimate. "Mark ride completed" stays only while on the way. |
 
 *Further rows are added PR by PR as the screens land.*
+
+## D-78 · Owner decisions 2026-10-06: Personal details, rider photo + bike plate, free-jobs reminder, immediate deletion copy — APPROVED (2026-10-06)
+
+**Owner decisions (2026-10-06, this session)**, after the startup review
+(`startup-review-2026-10-06`, items C-10, R-8 and §6) found four promises the app made and didn't keep:
+C5 "You can add it in Account" (nowhere to add an ID), R1/R3 "Your photo … can wait" / "Add your photo …
+later in Account" (Bike & documents was read-only), R3 "We'll remind you before you need to top up" (no
+reminder existed), and Delete account's "Sign back in within 30 days and the deletion is cancelled" (the
+API erases at once). The owner chose to make the first three true and to change the fourth's words. None
+of the new screens or strings is drawn; this entry is their approval.
+
+### 1 · Personal details (C-10)
+
+| Where | Mock | App | Why |
+|---|---|---|---|
+| Settings → YOUR ACCOUNT, second row (both sides; Settings is one screen) | Calm Mint v2 `mint2.js` `OB.account` draws the row "Personal details · Name, phone, optional ID" on an Account screen the app doesn't use | The row, words verbatim (`R.sPersonal` / `R.sPersonalS`), an `id-card` disc, after the identity row | Makes C5's note true. The row's words are drawn; its place in Rider v2's Settings is not. |
+| `app/settings/personal.tsx` | Not drawn | Rider v2's `PushHeader` ("Personal details"); C5's side-by-side `NameFields` (editable), the `VerifiedPhoneRow`, a 52px ID field under the `FieldLabel` "National ID (optional)", C5's surface `Note`, the 52px `Cta` "Save" (`R.save`, D-54) | Built from the two drawn grammars the owner named. |
+| The ID | — | Optional. Saved through `PATCH /auth/me` (sent normalised, only when it changed). The one-ID-one-account refusal (409 `id_in_use`) and the verified-ID freeze (403) show under the field in the API's own words. A stored ID can't be emptied here (the API has no clear): Save stays off and the line below says how. | Existing API rules; no API change. |
+| A verified rider | — | The ID read-only, masked to its last three characters ("••••••••A42"), "Verified" (C5's word) and the note below, no field | Since D-75 the check's number becomes the account's ID; the API refuses to change it. |
+| Storage | — | Memory only: `me` is persisted with `idNumber` / `kycIdNumber` stripped (`redactBeforePersist`, unchanged); the screen keeps no draft | |
+
+**New strings** (`src/ui/rider/copy.ts`): "Personal details" (also the title), "Name, phone, optional ID" (both
+drawn), "National ID (optional)", "Only if you want to add it. We keep it private and only use it to
+confirm who you are.", "This came from your ID check. To change it, contact support.", "To remove your
+national ID, contact support.", "Couldn't load your details. Check your connection and try again.",
+"Couldn't save your details. Check your connection and try again."
+
+### 2 · Rider photo and bike plate on Bike & documents (R-8)
+
+| Where | Mock | App | Why |
+|---|---|---|---|
+| Rider photo row | Rider v2 S5: "Rider photo · Verified" | No photo: sub "Not added yet" (D-62), value "Add photo". A photo: value "Change". Never "Verified". Tapping opens a sheet ("Rider photo", "A clear, recent photo of your face, on its own.", "Take photo" / "Choose from gallery"); the shot is downscaled, uploaded to `kyc/<you>/` (`POST /uploads/kyc-photo`) and attached with the new `PATCH /riders/me`. While it saves the value reads "Saving photo…" (`R.photoUploading`). | The photo is the rider's own upload after D-62, not something a check verified. |
+| Bike row | S5: "Bike · ABH 4721 · Verified" | The plate as the sub. "Verified" **only** for a verified rider who has a plate; no plate: value "Add plate". Tapping opens a sheet ("Your bike's number plate", the field "Number plate", the hint "As it's written on the plate, like AEE 4471.", "Save"). | Since D-75 no plate is collected at sign-up, so every verified rider used to read "Bike · Verified" with no plate (review R-8). |
+| Settings → Bike & documents row | S1: value "Verified" | The same rule (`bikeVerified`): no "Verified" without a plate | Same. |
+| "Re-verify my bike" | Drawn | Kept (support on WhatsApp) | |
+| Licence | R1 / R3 mention licence papers | **Not built** — no licence row (owner: licences aren't collected) | See §5. |
+| `PATCH /riders/me` | — | `{ photoUrl?, bikeReg? }`, strict. The key must sit under the caller's own `kyc/<id>/` and pass the attach-time `UploadVerifier` (as `become` does); the plate is validated as `become` validates it (3–20 once trimmed) and stored upper-case with single spaces. Each change writes a `rider.profile_update` audit row (actor = the rider; the plate's old → new in the note), reserved against the free-text audit route. A replaced photo object is deleted after commit. Throttled 20/hour. | No migration: the `riders.photo_url` and `bike_reg` columns exist. |
+
+**New strings:** "Add photo", "Change", "A clear, recent photo of your face, on its own.", "Choose from gallery",
+"Allow camera and photo access in your phone's settings, then try again.", "Couldn't save your photo.
+Check your connection and try again.", "Add plate", "Your bike's number plate", "Number plate", "As it's
+written on the plate, like AEE 4471.", "Couldn't save your plate. Check your connection and try again."
+
+### 3 · The free-jobs top-up reminder (R3)
+
+| Where | Mock | App | Why |
+|---|---|---|---|
+| A push + an in-app Notifications row | R3: "We'll remind you before you need to top up." (no reminder drawn) | When a completed job leaves the rider **one** commission-free job: "One commission-free job left" / "After your next job, commission comes off your prepaid balance. Top up in Money so you can keep going online." When it leaves **none**: "Your free jobs are used up" / "Commission now comes off your prepaid balance. Top up in Money to keep going online." | Owner's words, verbatim. |
+| When | — | Decided inside each completion transaction (customer rating, auto-close, ops adjudication), after the `tripsCount` increment, by the exact count (`freeFirstJobs − 1`, `freeFirstJobs`); a `rider.free_jobs_one_left` / `rider.free_jobs_used_up` audit row is the once-per-rider key and the feed row; the push (`kind: "free_jobs"`) goes after commit. Riders already past either count are never told late. | |
+| While commission is off | — | **Silent.** At the 0% launch rate nothing comes off any balance and there is nothing to top up, so the sentences would be false. They start the day `COMMISSION_RATE_PCT` is flipped above 0. | Honesty over a reminder for a cost that doesn't exist yet. |
+| Tap | — | The push and the row open the rider's Money tab (`/rider/money`), where "Top up" is | |
+| The row's look | Notifications v1 draws no such row | The generic account row: banknote disc, neutral tone, the push's title and sentence | |
+
+### 4 · Deletion is immediate (§6)
+
+| Where | Mock | App | Why |
+|---|---|---|---|
+| `LJ.delete_final` paragraph | "Your account closes now and is permanently deleted after **30 days**. Sign back in within 30 days and the deletion is cancelled — after that, nothing can be recovered." | "Your account is deleted **straight away** and can't be recovered. Order records we must keep by law are anonymised." | `PrivacyService.eraseAccount` anonymises at once (phone → `erased:<id>`); signing back in makes a new, empty account. Resolves `docs/APP-STORE-SUBMISSION.md` D9. |
+| `LJ.privacy` "How long we keep it" | "… · a deleted account is gone after 30 days." | "… · a deleted account is erased straight away." | Same. |
+
+Nothing in `packages/design/**` changes. **Upstream asks:** draw Personal details, the photo and plate sheets,
+the free-jobs rows, and redraw `delete_final` / `privacy` with the immediate-deletion copy.
+
+### 5 · Open for the owner (PENDING OWNER REVIEW)
+
+- R1 "Your photo, licence and bike papers can wait." and R3 "Add your photo, licence and bike papers later in
+  Account" (`RO.notePapers`, `RO.papersLater`) still promise **licence** papers, which nothing collects. The
+  photo and plate are now true; the licence half needs a decision (drop the word, or build a licence row).
+- The reminder is silent until commission is switched on (§3). If the owner wants riders told during the 0%
+  period, the copy needs different words.

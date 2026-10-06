@@ -168,14 +168,18 @@ export function getOpenOrders(loc?: { lat: number; lng: number }, radiusM?: numb
   return apiFetch<OpenOrder[]>(`/orders/open${q}`);
 }
 
-export function getActiveOrder(): Promise<OrderSnapshot | null> {
-  return apiFetch<OrderSnapshot | null>("/orders/mine/active");
+/** The rider's current job, or null. E2E 2026-10-05 P-9: "no job" arrives as an EMPTY 200 (the API returns
+ *  null, which Nest sends with no body), and apiFetch reads an empty body as `undefined` — which TanStack
+ *  Query rejects as query data, so every ["activeJob"] poll with no job went into error. Normalise to null. */
+export async function getActiveOrder(): Promise<OrderSnapshot | null> {
+  return (await apiFetch<OrderSnapshot | null | undefined>("/orders/mine/active")) ?? null;
 }
 
 /** The signed-in customer's current live order (auction or active ride), or null — used to restore
- *  them to their tracking screen on a cold start instead of a blank compose form. */
-export function getActiveCustomerOrder(): Promise<OrderSnapshot | null> {
-  return apiFetch<OrderSnapshot | null>("/orders/mine/active-order");
+ *  them to their tracking screen on a cold start instead of a blank compose form. Same empty-body
+ *  normalisation as {@link getActiveOrder} (P-9). */
+export async function getActiveCustomerOrder(): Promise<OrderSnapshot | null> {
+  return (await apiFetch<OrderSnapshot | null | undefined>("/orders/mine/active-order")) ?? null;
 }
 
 /** EVERY live order the signed-in customer is running, newest first — the home screen draws one

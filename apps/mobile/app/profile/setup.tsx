@@ -1,5 +1,5 @@
 import { tokens } from "@lynia/shared/tokens";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Text } from "react-native";
@@ -34,6 +34,7 @@ const DRAFT_SAVE_DEBOUNCE_MS = 500;
  */
 export default function ProfileSetupScreen(): React.ReactElement {
   const router = useRouter();
+  const qc = useQueryClient();
   const { session, updateSession } = useAuth();
   const params = useLocalSearchParams<{ phone?: string; intent?: string }>();
   const paramPhone = typeof params.phone === "string" ? params.phone : "";
@@ -104,7 +105,10 @@ export default function ProfileSetupScreen(): React.ReactElement {
     setError(null);
     setBusy(true);
     try {
-      await updateProfile({ firstName: firstName.trim(), lastName: lastName.trim() });
+      const me = await updateProfile({ firstName: firstName.trim(), lastName: lastName.trim() });
+      // E2E 2026-10-05 FS-9: the PATCH answers with the full profile — put it in the `["me"]` cache now.
+      // Left stale, "Ride with LyniaGo" → R1 read the nameless cached `me` and asked for the name again.
+      qc.setQueryData(["me"], me);
       // The draft has served its purpose: drop any write still waiting, then the stored one.
       finished.current = true;
       if (pending.current) clearTimeout(pending.current);

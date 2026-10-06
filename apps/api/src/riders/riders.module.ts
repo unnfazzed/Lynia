@@ -3,6 +3,7 @@ import { KycModule } from "../kyc/kyc.module";
 import { KycController } from "../kyc/kyc.controller";
 import { TrackingModule } from "../tracking/tracking.module";
 import { RidersController } from "./riders.controller";
+import { RiderProfileService } from "./rider-profile.service";
 import { RiderService } from "./rider.service";
 
 @Module({
@@ -13,6 +14,6 @@ import { RiderService } from "./rider.service";
   // instance for the pending-state derivation — see that module's note).
   imports: [TrackingModule, KycModule],
   controllers: [RidersController, KycController],
-  providers: [RiderService],
+  providers: [RiderService, RiderProfileService],
 })
 export class RidersModule {}

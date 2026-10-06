@@ -41,7 +41,7 @@ describe("privacy screen matches its mock", () => {
     expect(out).toContain("What others see");
     expect(out).toContain("First name + last initial only. Your phone is shared with your rider just while a delivery runs — then it's masked.");
     expect(out).toContain("How long we keep it");
-    expect(out).toContain("Order records 12 months · SOS logs 90 days · a deleted account is gone after 30 days.");
+    expect(out).toContain("Order records 12 months · SOS logs 90 days · a deleted account is erased straight away.");
   });
 
   it("draws the two action rows, the delete one routing into the deletion flow", () => {

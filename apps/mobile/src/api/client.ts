@@ -319,11 +319,11 @@ function isApiErrorBody(status: number, text: string): boolean {
 }
 
 function friendlyMessage(status: number, text: string): string {
-  // The API throws Nest exceptions whose body is { message } (string or array).
+  // The API throws Nest exceptions whose body is { message } (string or array). An API from before
+  // E2E 2026-10-05 FS-3 answered its 429s with a bare JSON string instead — that string IS the message,
+  // and reading it as "no message" showed a rate limit as "check your connection".
   try {
     const parsed = JSON.parse(text) as { message?: string | string[] } | string | null;
-    // A Nest HttpException thrown with a plain string body arrives as a bare JSON string (older API
-    // rate limits did this) — that string IS the message.
     if (typeof parsed === "string") {
       if (parsed) return parsed;
     } else if (parsed) {

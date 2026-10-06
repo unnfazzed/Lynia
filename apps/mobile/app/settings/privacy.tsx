@@ -35,7 +35,7 @@ const ROWS: { icon: IconName; title: string; body: string }[] = [
   {
     icon: "history",
     title: "How long we keep it",
-    body: "Order records 12 months · SOS logs 90 days · a deleted account is gone after 30 days.",
+    body: "Order records 12 months · SOS logs 90 days · a deleted account is erased straight away.",
   },
 ];
 

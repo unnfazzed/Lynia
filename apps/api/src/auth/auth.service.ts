@@ -34,9 +34,9 @@ const MAX_OTP_ATTEMPTS = 5;
 // client timeout plus a retry or two while keeping the replay window tight.
 const OTP_GRACE_TTL_SECONDS = 60;
 // Belt-and-suspenders cap on grace-path guesses per phone within the grace window. The grace record
-// itself carries no attempt counter by design (see verifyViaGrace), and the route throttle is keyed
-// per IP — this per-phone fixed-window ceiling ensures even a distributed (many-IP) probe can't get
-// more than a handful of guesses at the correct code while it lingers. Mirrors MAX_OTP_ATTEMPTS so a
+// itself carries no attempt counter by design (see verifyViaGrace), and the route throttle allows 10
+// per 5 minutes — this tighter per-phone fixed-window ceiling ensures even a distributed (many-IP)
+// probe can't get more than a handful of guesses at the correct code while it lingers. Mirrors MAX_OTP_ATTEMPTS so a
 // legit timeout-retry (typically 1–2 re-sends of the same correct code) is never affected.
 const MAX_GRACE_ATTEMPTS = 5;
 
@@ -375,23 +375,37 @@ export class AuthService {
       return { sent: true, channel: this.env.OTP_CHANNEL, deliveryChannel: previewDeliveryChannel(this.env.OTP_CHANNEL) };
     }
     const rl = rlFrom(this.env);
+    const rlKeys = [`rl:phone:${phone}`, `rl:ip:${ip}`, "rl:global"];
     // `otp_send_limit` + `retryAfter` let the app say "try again in N min" for the per-phone cap, the
     // one a real person hits (five sends an hour); the per-IP and global caps carry `retryAfter` only.
-    await this.enforceRate(`rl:phone:${phone}`, rl.phone, "otp_send_limit");
-    await this.enforceRate(`rl:ip:${ip}`, rl.ip);
-    await this.enforceRate("rl:global", rl.global);
+    await this.enforceRate(rlKeys[0], rl.phone, "otp_send_limit");
+    await this.enforceRate(rlKeys[1], rl.ip);
+    await this.enforceRate(rlKeys[2], rl.global);
+    // Only a send that went out spends the budget: a failed one is refunded, or a vendor outage would
+    // lock every retrying user out for the hour (E2E 2026-10-05 FS-6). Charging up front, rather than
+    // after, keeps concurrent requests from all slipping under the cap together.
+    const refundOnFailure = async <T>(send: () => Promise<T>): Promise<T> => {
+      try {
+        return await send();
+      } catch (err) {
+        await Promise.all(rlKeys.map((k) => this.store.unhit(k).catch(() => undefined)));
+        throw err;
+      }
+    };
 
     // Bird Verify owns the whole generate/send lifecycle (bird-verify.ts) — there is no local code to
     // store or a devCode to echo on this path (Bird never returns the code to us).
     if (this.env.OTP_CHANNEL === "bird-verify") {
-      const { channel: deliveryChannel } = await birdVerifyStart(this.env, phone);
+      const { channel: deliveryChannel } = await refundOnFailure(() => birdVerifyStart(this.env, phone));
       this.metrics.incOtpRequested(carrierFromPhone(phone));
       return { sent: true, channel: this.env.OTP_CHANNEL, deliveryChannel };
     }
 
     const code = this.tokens.randomOtp();
+    // Send BEFORE storing: the store holds one code per phone, so storing first replaced the code the
+    // user already had and a failed resend left them with none (E2E 2026-10-05 FS-6).
+    await refundOnFailure(() => this.sender.send(phone, code));
     await this.store.put(phone, this.tokens.hash(code), this.env.OTP_TTL_SECONDS);
-    await this.sender.send(phone, code);
     // D-O2: send-attempt count, labeled by a best-effort carrier guess (real delivery outcome by
     // carrier arrives later via the Bird webhook — see bird-webhook.controller.ts).
     this.metrics.incOtpRequested(carrierFromPhone(phone));
@@ -467,7 +481,7 @@ export class AuthService {
    * requirement: a reviewer must be able to sign in cleanly with just the two credentials from the
    * App-access form. Blast radius is a throwaway CUSTOMER account — in production it cannot self-verify
    * as a rider (KYC needs real ID; the stub auto-pass is non-prod only), so it never reaches the rider
-   * board or payouts. The route-level verify throttle (10/5min per IP) still applies, bounding brute
+   * board or payouts. The route-level verify throttle (10/5min per phone) still applies, bounding brute
    * force of the 6-digit code.
    */
   private async verifyDemoOtp(
@@ -515,7 +529,7 @@ export class AuthService {
     // is not distinguishable by response. Inert unless both DEMO_OTP_* vars are set.
     if (this.isDemoPhone(phone)) {
       // The demo code is FIXED and never rotates, and this path skips the OTP store's 5-attempt
-      // lock, so the only other guard — the per-IP route throttle — leaves a distributed (many-IP)
+      // lock, so the only other guard — the route throttle, 10 per 5 minutes — leaves a patient
       // attacker able to brute-force the 6-digit space. Bound it with a per-PHONE fixed-window cap
       // that holds regardless of source IP: the demo number is a single value, so this is one shared
       // counter over all guesses at it. 10/hour makes the 1e6 space take years in expectation while
@@ -554,7 +568,7 @@ export class AuthService {
         // grace hit mints a fresh session; a miss falls through to the exact same error as having no
         // grace record at all, so a probe can't distinguish "recently verified, wrong guess" from
         // "nothing here" (no oracle).
-        const graced = await this.verifyViaGrace(phone, code, userAgent);
+        const graced = await this.verifyViaGrace(phone, code, userAgent, device);
         if (graced) {
           record("grace_ok");
           return graced;
@@ -581,24 +595,9 @@ export class AuthService {
       });
 
       if (!existing) {
-        // L1: the device id is REQUIRED to create an account. It used to be optional, which made the
-        // per-device signup cap opt-out: sending a random id got you capped at 3/day, sending none at
-        // all skipped the check entirely, so the control rewarded non-compliance (CodeQL
-        // js/user-controlled-bypass). Demanding it costs nothing — the app sends it on every request
-        // and MIN_SUPPORTED_APP_VERSION retires any client that stops.
-        //
-        // Scoped to CREATION only, deliberately: an existing account signing in from a client that
-        // somehow omits the header still gets in, so this can never lock out someone already
-        // registered. It is a 400, not a 429 — the caller sent a malformed request, and conflating it
-        // with the rate limit would make a genuine cap-hit indistinguishable from a broken client.
-        if (!device) {
-          throw new BadRequestException("A device id is required to create an account.");
-        }
-        // A fresh SIM is free; a fresh device is not. This is now unconditional on the signup path.
-        // `reason: "device_signup_cap"` lets a client tell this cap apart from the route's own per-IP
-        // verify throttle, which answers with the same 429 and message (merchant web upgrade L1: the
-        // web names the cap — "This device has added 3 new people today" — and only for this one).
-        await this.enforceRate(`rl:signup:device:${device}`, rlFrom(this.env).deviceSignup, "device_signup_cap");
+        // A refusal here comes after the engine consumed the code; the grace record above is what
+        // lets the same code be retried once the device reason is fixed (verifyViaGrace).
+        await this.admitNewAccount(device);
       } else {
         this.flagUnrecognisedDevice(existing, device);
       }
@@ -619,6 +618,28 @@ export class AuthService {
       if (!(err instanceof UnauthorizedException)) record("error");
       throw err;
     }
+  }
+
+  /** The device gates on creating an account from a verified code; throws when it may not be created. */
+  private async admitNewAccount(device?: string): Promise<void> {
+    // L1: the device id is REQUIRED to create an account. It used to be optional, which made the
+    // per-device signup cap opt-out: sending a random id got you capped at 3/day, sending none at
+    // all skipped the check entirely, so the control rewarded non-compliance (CodeQL
+    // js/user-controlled-bypass). Demanding it costs nothing — the app sends it on every request
+    // and MIN_SUPPORTED_APP_VERSION retires any client that stops.
+    //
+    // Scoped to CREATION only, deliberately: an existing account signing in from a client that
+    // somehow omits the header still gets in, so this can never lock out someone already
+    // registered. It is a 400, not a 429 — the caller sent a malformed request, and conflating it
+    // with the rate limit would make a genuine cap-hit indistinguishable from a broken client.
+    if (!device) {
+      throw new BadRequestException("A device id is required to create an account.");
+    }
+    // A fresh SIM is free; a fresh device is not. This is now unconditional on the signup path.
+    // `reason: "device_signup_cap"` lets a client tell this cap apart from the route's own
+    // verify throttle, which answers with the same 429 and message (merchant web upgrade L1: the
+    // web names the cap — "This device has added 3 new people today" — and only for this one).
+    await this.enforceRate(`rl:signup:device:${device}`, rlFrom(this.env).deviceSignup, "device_signup_cap");
   }
 
   /**
@@ -849,7 +870,13 @@ export class AuthService {
     return this.issueSession(s.profileId, s.profile.role, userAgent);
   }
 
-  async logout(sessionId: string, profileId: string): Promise<{ revoked: boolean }> {
+  async logout(sessionId: string, profileId: string, pushToken?: string): Promise<{ revoked: boolean }> {
+    // The signing-out device's push token, when the app names it: unbind it here, in the same request.
+    // The app's own token DELETE only runs once the session is gone locally, so it always failed and a
+    // signed-out phone kept getting this account's pushes (E2E 2026-10-05 FS-8). Scoped to the caller:
+    // a token since re-homed to another account is not theirs to drop.
+    if (pushToken) await this.prisma.deviceToken.deleteMany({ where: { token: pushToken, profileId } });
+
     // Scope by the caller's profileId so a user can only revoke their OWN sessions — otherwise a leaked
     // session UUID is a targeted forced-logout of any account.
     //
@@ -897,6 +924,7 @@ export class AuthService {
     phone: string,
     code: string,
     userAgent?: string,
+    device?: string,
   ): Promise<(SessionTokens & { profileId: string; role: string; needsProfile: boolean }) | null> {
     // Cap grace-path guesses per phone (reuses the store's generic fixed-window counter with a key
     // prefix distinct from the send-rate limits). Over the ceiling falls through to the same null →
@@ -906,15 +934,25 @@ export class AuthService {
 
     const graceHash = await this.store.graceGet(phone);
     if (!graceHash || !this.tokens.safeEqualHex(this.tokens.hash(code), graceHash)) return null;
-    // The original verify upserted the profile, so it must exist — plain read, and re-derive
-    // needsProfile the same way as the happy path. If it somehow vanished, fall through to the
-    // normal "expired" error rather than minting an account from a grace hit.
-    const profile = await this.prisma.profile.findUnique({
+    // Plain read, and re-derive needsProfile the same way as the happy path.
+    let profile = await this.prisma.profile.findUnique({
       where: { phone },
       select: { id: true, role: true, firstName: true },
     });
-    if (!profile) return null;
-    const session = await this.issueSession(profile.id, profile.role, userAgent);
+    if (!profile) {
+      // The original verify was refused for a device reason (no device id, the per-device signup cap)
+      // AFTER the engine had consumed the code, so no account exists yet. The code is proven, so the
+      // retry may create it behind the SAME device gates — fixing the device reason must not need a
+      // new code (E2E 2026-10-05 P-7).
+      await this.admitNewAccount(device);
+      profile = await this.prisma.profile.upsert({
+        where: { phone },
+        update: { phoneVerifiedAt: new Date() },
+        create: { phone, firstName: "", lastName: "", role: "customer", phoneVerifiedAt: new Date() },
+        select: { id: true, role: true, firstName: true },
+      });
+    }
+    const session = await this.issueSession(profile.id, profile.role, userAgent, device);
     return { ...session, profileId: profile.id, role: profile.role, needsProfile: profile.firstName === "" };
   }
 
@@ -958,8 +996,8 @@ export class AuthService {
    * A fixed-window cap on `key`. The 429 body is always `{ statusCode, message, retryAfter }`:
    * `retryAfter` is the seconds left in the window (the window's full length if the store can't say), so
    * the app can tell the user when to come back instead of "later". `reason`, when given, rides along so
-   * a client can tell one cap from another (they share the status and the message). A plain-string
-   * HttpException used to reach the client as a bare JSON string, which the app could not read at all.
+   * a client can tell one cap from another (they share the status and the message). Never a bare
+   * string, which the app can't read (E2E 2026-10-05 FS-3).
    */
   private async enforceRate(key: string, limit: { max: number; windowSec: number }, reason?: string): Promise<void> {
     const count = await this.store.hit(key, limit.windowSec);

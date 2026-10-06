@@ -138,13 +138,17 @@ describe("delete account — the explainer screen (LJ.delete_account)", () => {
 });
 
 describe("delete account — the final step (LJ.delete_final)", () => {
-  it("draws the mock's 30-day grace copy and the acknowledgement tick", async () => {
+  it("says deletion is immediate (D-78: the API erases at once), with the acknowledgement tick", async () => {
     const tree = await render({ initialStep: "final" });
-    // The grace paragraph interpolates a bold "30 days", so it renders as a child ARRAY rather than
+    // The paragraph interpolates a bold "straight away", so it renders as a child ARRAY rather than
     // one string — assert against the serialised tree.
     const out = JSON.stringify(tree.toJSON());
-    expect(out).toContain("Your account closes now and is permanently deleted after");
-    expect(out).toContain("30 days");
+    expect(out).toContain("Your account is deleted");
+    expect(out).toContain("straight away");
+    expect(out).toContain("and can't be recovered. Order records we must keep by law are anonymised.");
+    // The false 30-day grace promise is gone (review §6).
+    expect(out).not.toContain("30 days");
+    expect(out).not.toContain("Sign back in");
     expect(has(tree, "I understand my history and saved places will be gone")).toBe(true);
   });
 

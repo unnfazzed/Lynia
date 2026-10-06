@@ -160,6 +160,12 @@ describe("Pharmacy list (B4)", () => {
     expect(t).toContain("Over-the-counter only.");
     expect(t).toContain("No prescription medicine yet.");
   });
+
+  it("hides the OTC notice while prescriptions are on (E2E 2026-10-05 FS-5)", () => {
+    mockRxEnabled = true;
+    tree = mount(<ShopListScreen service="pharmacy" />);
+    expect(texts(tree)).not.toContain("Over-the-counter only.");
+  });
 });
 
 describe("Pharmacy storefront (S4) — ordering (Order flow v2, D-59)", () => {
@@ -218,6 +224,20 @@ describe("Pharmacy storefront (S4) — ordering (Order flow v2, D-59)", () => {
     expect(texts(tree)).not.toContain("1 item · $1.50");
     press(tree, "Paracetamol 500mg (20 tabs), $1.50");
     expect(texts(tree)).not.toMatch(/Add · \$/);
+  });
+
+  it("rxEnabled: no OTC notice on the storefront or in the item sheet (E2E 2026-10-05 FS-5)", () => {
+    tree = mount(<ShopStoreScreen service="pharmacy" />);
+    press(tree, "Paracetamol 500mg (20 tabs), $1.50");
+    // Off (the default, and what an unknown flag reads as): the storefront notice and the sheet's line.
+    expect(texts(tree).match(/Over-the-counter only\./g)?.length).toBe(2);
+    act(() => tree!.unmount());
+    mockRxEnabled = true;
+    tree = mount(<ShopStoreScreen service="pharmacy" />);
+    press(tree, "Paracetamol 500mg (20 tabs), $1.50");
+    const t = texts(tree);
+    expect(t).toContain("Note for the pharmacy");
+    expect(t).not.toContain("Over-the-counter only.");
   });
 
   it("rxEnabled: an Rx item wears Prescription needed and carries it into the cart; off, nothing", () => {

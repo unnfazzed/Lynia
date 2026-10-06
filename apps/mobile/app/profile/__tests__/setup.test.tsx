@@ -115,10 +115,12 @@ afterEach(() => {
   mounted.clear();
 });
 
+let qc: QueryClient;
 async function mountSetup(): Promise<renderer.ReactTestRenderer> {
   let tree!: renderer.ReactTestRenderer;
+  // gcTime Infinity: no garbage-collection timer left to hold a single-file jest run open.
+  qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
   await act(async () => {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
     tree = renderer.create(
       <QueryClientProvider client={qc}>
         <ProfileSetupScreen />
@@ -180,6 +182,19 @@ describe("C5 · Name (Calm Mint v2, D-55)", () => {
     await pressStart(tree);
     expect(mockSaveRole).toHaveBeenCalledWith("rider");
     expect(mockReplace).toHaveBeenCalledWith("/permissions?next=/rider");
+  });
+
+  // E2E 2026-10-05 FS-9: a stale nameless `me` made R1 ("Ride with LyniaGo") ask for the name a second time.
+  it("puts the saved profile in the `me` cache, replacing the nameless one", async () => {
+    const saved = { profileId: "p1", role: "customer", firstName: "Tendai", lastName: "Moyo", phone: "+263772451180" };
+    mockUpdateProfile.mockResolvedValue(saved);
+    const tree = await mountSetup();
+    qc.setQueryData(["me"], { profileId: "p1", role: "customer", firstName: "", lastName: "", phone: "+263772451180" });
+    setFieldByAccessibilityLabel(tree, "First name", "Tendai");
+    setFieldByAccessibilityLabel(tree, "Surname", "Moyo");
+    await settle();
+    await pressStart(tree);
+    expect(qc.getQueryData(["me"])).toEqual(saved);
   });
 
   it("needs both names before it submits", async () => {

@@ -190,10 +190,13 @@ export function ItemSheet({
   onClose,
   browseOnly = false,
   remind = true,
+  rxEnabled = false,
 }: {
   item: StoreItem | null;
   service: BrowseService;
   browseOnly?: boolean;
+  /** Pharmacy prescriptions on (`useOrderFlags`): the OTC line is hidden. Unknown ⇒ false ⇒ shown. */
+  rxEnabled?: boolean;
   /** The closed sheet's Remind me row (I1d). Off for shops: the reopen reminder is a restaurants API (D-58). */
   remind?: boolean;
   /** Non-null when the venue is closed: the time it next opens ("10:00"). */
@@ -285,7 +288,7 @@ export function ItemSheet({
               </View>
             </>
           ) : null}
-          {service === "pharmacy" ? (
+          {service === "pharmacy" && !rxEnabled ? (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 }}>
               <Icon name="circle-alert" size={14} color={tokens.color.accentText} />
               <Text style={{ flex: 1, fontSize: 12.5, color: tokens.color.muted }}>{B.list.otc}</Text>

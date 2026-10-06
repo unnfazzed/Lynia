@@ -428,6 +428,8 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
         data: {
           status: "assigned",
           riderId,
+          // Clears the kitchen phase; the counter's pickup code stays revealable while the rider holds the
+          // order (FoodOrderService.revealPickupCode's second window, E2E 2026-10-05 LB-1).
           merchantPhase: null,
           otpHash: this.tokens.hash(deliveryCode),
           deliveryOtpAttempts: 0,

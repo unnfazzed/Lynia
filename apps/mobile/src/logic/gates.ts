@@ -1,4 +1,5 @@
 import { isInServiceArea, KYC_DECLINE_REASON_LABELS, type KycDeclineReason, type LatLng, serviceTownsLabel } from "@lynia/shared";
+import { RIDER_COPY as R } from "../ui/rider/copy";
 
 /**
  * Pure decision helpers for the rider online-gate and the customer service-corridor gate. Both read a
@@ -22,7 +23,8 @@ export interface GateError {
  * contract: `kyc` (not verified), `suspended` (admin/settlement pause, recoverable via support),
  * `banned` (permanent admin removal — a harder state than suspended), `on_hold` (reliability auto-hold,
  * Q2), `cooldown` (recent cancel cool-off), `out_of_area` (rider is outside the launch service corridor,
- * Q1 — recoverable by moving back into the coverage area).
+ * Q1 — recoverable by moving back into the coverage area), `location_required` (no position was sent
+ * with the go-online — E2E 2026-10-05 FS-7; recoverable once GPS fixes).
  */
 export type OnlineGateReason =
   | "kyc"
@@ -32,6 +34,7 @@ export type OnlineGateReason =
   | "on_hold"
   | "cooldown"
   | "out_of_area"
+  | "location_required"
   | "commission_low_balance";
 
 const ONLINE_GATE_REASONS: readonly OnlineGateReason[] = [
@@ -42,6 +45,7 @@ const ONLINE_GATE_REASONS: readonly OnlineGateReason[] = [
   "on_hold",
   "cooldown",
   "out_of_area",
+  "location_required",
   "commission_low_balance",
 ];
 
@@ -116,6 +120,8 @@ export const ONLINE_GATE_COPY: Record<OnlineGateReason, GateCopy> = {
     title: "You're outside the service area",
     message: `You can only go online inside the service area: ${serviceTownsLabel()}. Head back inside, then refresh.`,
   },
+  // FS-7: the board's existing no-GPS gate copy (Rider v2), not new wording.
+  location_required: { title: R.gGpsT, message: R.gGpsB },
   // Calm, specific, actionable — and explicitly not punitive. The go-online screen deep-links the CTA
   // into the wallet's top-up flow.
   commission_low_balance: {

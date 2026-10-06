@@ -360,7 +360,7 @@ const SETS = {
   ],
   shell: [
     { mock: "K1 Orders home", label: "K1 · Orders home — top card, open pill, KPI strip, tab bar", sub: "the board below is still B1's segments until PR 2", app: { name: "K1", path: "/queue", scenario: { me: KITCHEN, orders: BOARD } } },
-    { mock: "S1 Shop home", label: "S1 · Shop home — top card with Book a rider, no strip", sub: "the board below is still D1's list until PR 2", app: { name: "S1", path: "/deliveries", scenario: { me: SHOP, bookings: BOOKINGS } } },
+    { mock: "S1 Shop home", label: "S1 · Shop home — top card with Book a rider, no strip", sub: "the board below is still D1's list until PR 2", app: { name: "S1", path: "/deliveries", scenario: { me: LIVE_SHOP, bookings: BOOKINGS } } },
     { mock: "T1 Menu", label: "T1 · the live bar on Menu", sub: "“coming to your counter”: no arrival signal yet (D-77 §4); the Menu body is restyled in PR 5", app: { name: "T1", path: "/menu", scenario: { me: KITCHEN, orders: BOARD, menu: MENU } } },
     { mock: "T4 Closed", label: "T4 · Closed", app: { name: "T4", path: "/queue", scenario: { me: closed, orders: [] } } },
   ],

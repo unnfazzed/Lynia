@@ -45,10 +45,10 @@ function secondsUntil(at: number): number {
 }
 
 /**
- * "Resend in 0:42", then "Resend on WhatsApp". Its own component so the one-second tick re-renders this
+ * "Resend in 0:42", then "Resend on WhatsApp" (or "Send a new code" after an SMS send, P-8). Its own component so the one-second tick re-renders this
  * row alone, not the whole code screen 60 times per code.
  */
-function ResendRow({ endsAt, resending, onResend }: { endsAt: number; resending: boolean; onResend: () => void }): React.ReactElement {
+function ResendRow({ endsAt, label, resending, onResend }: { endsAt: number; label: string; resending: boolean; onResend: () => void }): React.ReactElement {
   const [cooldown, setCooldown] = useState(() => secondsUntil(endsAt));
 
   useEffect(() => {
@@ -76,13 +76,13 @@ function ResendRow({ endsAt, resending, onResend }: { endsAt: number; resending:
         onPress={onResend}
         disabled={cooldown > 0 || resending}
         accessibilityRole="button"
-        accessibilityLabel={OB.resendOnWhatsApp}
+        accessibilityLabel={label}
         accessibilityState={{ disabled: cooldown > 0 }}
         style={{ marginTop: cooldown > 0 ? 6 : 14, minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: 6 }}
       >
         <Icon name="refresh-cw" size={16} color={cooldown > 0 ? RESEND_IDLE : tokens.color.accentText} />
         <Text style={{ fontSize: 14, fontWeight: cooldown > 0 ? tokens.font.weight.regular : tokens.font.weight.semibold, color: cooldown > 0 ? RESEND_IDLE : tokens.color.accentText }}>
-          {OB.resendOnWhatsApp}
+          {label}
         </Text>
       </Tappable>
     </>
@@ -227,6 +227,9 @@ export default function VerifyScreen({ initialCooldownS = RESEND_COOLDOWN_S, ini
 
   const shown = phone ? formatPhoneDisplay(phone) : "";
   const active = Math.min(code.length, CODE_LENGTH - 1);
+  // "Resend on WhatsApp" beside "Sent by SMS" contradicts itself, so an SMS send offers the screen's own
+  // "Send a new code" instead (E2E 2026-10-05 P-8; ledger D-55).
+  const resendLabel = deliveryChannel === "whatsapp" ? OB.resendOnWhatsApp : OB.sendNewCode;
 
   return (
     // The number pad has no return key on iOS: a tap outside the field is the way to put it away.
@@ -324,7 +327,7 @@ export default function VerifyScreen({ initialCooldownS = RESEND_COOLDOWN_S, ini
               {OB.expired}
             </Text>
           ) : (
-            <ResendRow endsAt={cooldownEndsAt} resending={resending} onResend={() => void requestFreshCode()} />
+            <ResendRow endsAt={cooldownEndsAt} label={resendLabel} resending={resending} onResend={() => void requestFreshCode()} />
           )}
         </Pad>
       </OnbScreen>

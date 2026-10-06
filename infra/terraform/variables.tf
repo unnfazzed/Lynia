@@ -451,7 +451,7 @@ variable "android_package_name" {
 }
 
 variable "android_cert_sha1_fingerprints" {
-  description = "Signing-certificate SHA-1 fingerprints allowed to use the Maps SDK key, colon-separated uppercase hex. List BOTH: the Play **app signing** certificate (Play Console → Test and release → Setup → App integrity — this is what installed builds are actually signed with, and omitting it is the 2026-08-16 blank-map failure) and the EAS-managed **upload** keystore (sideloaded QA APKs). Only used when maps_api_keys_enabled; the app-signing value has no API and is read from the Play Console by hand."
+  description = "Signing-certificate SHA-1 fingerprints allowed to use the Maps SDK key, colon-separated uppercase hex. List EVERY Play **app signing** certificate — three, because the app uses Play's hybrid signing: Android 16 and older run under deployment_cert, Android 17+ under the hybrid pair (scripts/play-signing-certs.mjs; Play Console → Protected with Play → App signing). Omitting one blanks the map on those phones (MOB-MAP-04). Add the EAS-managed **upload** keystore for sideloaded QA APKs. Only used when maps_api_keys_enabled; the Play values have no API and are read from the Play Console by hand."
   type        = list(string)
   default     = []
 

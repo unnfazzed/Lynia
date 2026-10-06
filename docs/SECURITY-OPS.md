@@ -111,31 +111,48 @@ Contain them in the GCP console:
    name + SHA-1 signing cert (and iOS bundle id if applicable).
 
    > ⚠️ **Which SHA-1 — this is the one that bites.** Google Play **re-signs** the uploaded AAB with
-   > the *app signing* certificate, which is NOT the EAS-managed *upload* keystore. A key allowlisted
-   > for the upload certificate alone renders tiles perfectly in a sideloaded APK and returns
-   > `Authorization failure` — a blank grey map — in every Play-installed build, so the failure only
-   > appears after a track upload and looks like a regression that "worked yesterday". List **both**
-   > fingerprints against `zw.co.lynia`: Play Console → **Protected with Play** → **App signing** →
-   > *Classical key* → SHA-1 certificate fingerprint (the one devices actually run; since 2026-09 the
-   > old App integrity page only says it has moved). For `zw.co.lynia` it is
-   > `35:0F:72:18:13:30:A8:A1:4F:69:5F:E7:EB:AE:B1:6D:76:C6:FC:08`. Add the upload key SHA-1 for
-   > sideloaded QA APKs. Confirm from the handset with
-   > **Confirm without a cable:** GitHub → Actions → **Maps Key Doctor** → Run workflow, pasting that
-   > app-signing SHA-1. It probes the live key and names the cause (allowlist / billing / invalid /
-   > API restriction) in the job log — `workflow_dispatch`, so it runs from a phone. (`adb logcat |
-   > grep -i "Google Maps Android API"` says the same thing if you have a terminal and a cable.)
-   > Ordered fix: `docs/MOB-MAP-02-RUNBOOK.md`. See also MOB-MAP-02 in `docs/KNOWN_BUGS.md` and
-   > `docs/MAPS-LOADING-REVIEW-2026-08-16.md`.
+   > its own *app signing* certificates, none of which is the EAS-managed *upload* keystore. A key
+   > allowlisted for the upload certificate alone renders tiles perfectly in a sideloaded APK and
+   > returns `Authorization failure` — a blank grey map — in every Play-installed build.
+   >
+   > **And Play signs this app with THREE certificates.** `zw.co.lynia` is enrolled in Play's
+   > quantum-ready hybrid signing, so which certificate a phone runs the app under depends on its
+   > Android version. Google's instruction is to register all three with every API provider:
+   >
+   > | Certificate (Play's file name) | Phones that run under it | SHA-1 |
+   > |---|---|---|
+   > | `deployment_cert.der` | **Android 16 and older** (most phones) | `93:56:8F:5C:4A:A0:1E:3C:B9:CF:E9:8D:9F:73:0B:FE:74:9E:30:A9` |
+   > | `hybrid_classical_cert.der` | Android 17 and newer | `35:0F:72:18:13:30:A8:A1:4F:69:5F:E7:EB:AE:B1:6D:76:C6:FC:08` |
+   > | `hybrid_pqc_cert.der` | Android 17 and newer | `ED:43:68:09:A6:AB:A4:D8:F9:52:99:18:61:5A:E1:75:8B:A2:C0:5F` |
+   > | `upload_cert.der` (EAS keystore) | sideloaded EAS builds only | `C7:D2:78:02:94:1B:2C:A9:6A:85:4C:43:27:C9:DE:EE:7A:BC:FB:9F` |
+   >
+   > List all of them against `zw.co.lynia`. The Play Console page (**Protected with Play → App
+   > signing**) labels the hybrid one *Classical key*, and until 2026-10-06 this section called it "the
+   > one devices actually run". Only that one was on the key, so every phone on Android 16 or older drew
+   > a blank map (`MOB-MAP-04` in `docs/KNOWN_BUGS.md`). To read them yourself, download the
+   > certificates from that page and run `openssl x509 -inform DER -noout -fingerprint -sha1` on each.
+   > The list the tooling reads is `scripts/play-signing-certs.mjs`; update it if Play's certificates
+   > ever change.
+   >
+   > **Confirm without a cable:** GitHub → Actions → **Maps Key Doctor** → Run workflow, leaving `sha1`
+   > empty. It tests every Play certificate against the live key's allowlist (through a Places API (New)
+   > call made with the Maps key, the one web call that reaches the allowlist on this project) and
+   > prints `ALLOWLIST_OK`, or names each missing certificate. `workflow_dispatch`, so it runs from a
+   > phone. (`adb logcat | grep -i "Google Android Maps SDK"` prints the certificate a given phone
+   > presents, if you have a terminal and a cable.) Ordered fix: `docs/MOB-MAP-02-RUNBOOK.md`. See also
+   > `MOB-MAP-02` and `MOB-MAP-04` in `docs/KNOWN_BUGS.md`.
 2. The **Places** key → **Application restrictions: None** (a client-side key can't be IP-restricted).
    Compensate with a tight **API restriction** (**Places API (New)** *only*, `places.googleapis.com`)
    and a hard **quota cap**.
 3. Set a **quota cap** on both so a leaked key can't run up an unbounded bill.
 4. Keep a separate, server-restricted key for any server-side Google calls.
 
-*Verify:* the Maps key is rejected from an unlisted package; the Places key returns real predictions
-(not `PERMISSION_DENIED`) and is refused for any non-Places API. **Maps Key Doctor** checks both from a
-phone: its Places section sends the app's own request for "westgate" and prints `OK` with Google's top
-suggestion, or names the cause (suspended project / API not enabled / API or app restriction / billing).
+*Verify:* the Maps key lets every Play certificate through and refuses an unlisted one; the Places key
+returns real predictions (not `PERMISSION_DENIED`) and is refused for any non-Places API. **Maps Key
+Doctor** checks both from a phone: its allowlist section prints `ALLOWLIST_OK` for the Play certificates
+(pass a junk SHA-1 in `sha1` to see `NOT_ALLOWED`), and its Places section sends the app's own request
+for "westgate" and prints `OK` with Google's top suggestion, or names the cause (suspended project / API
+not enabled / API or app restriction / billing).
 
 ---
 

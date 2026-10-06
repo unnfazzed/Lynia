@@ -46,6 +46,7 @@ import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interf
 import { UploadVerifier } from "../adapters/storage/upload-verifier";
 import type { UploadKind } from "../adapters/storage/upload-kinds";
 import { TrackingGateway } from "../tracking/tracking.gateway";
+import type { FreeJobsMilestone } from "../wallet/free-jobs-reminder";
 import { WalletService } from "../wallet/wallet.service";
 
 // Lifecycle policy constants + shared types now live in ./order-lifecycle.constants (roadmap 3.4).
@@ -612,6 +613,8 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     let newlyHeldRiderId: string | null = null;
     // True when this rates an already-`completed` order (the late path) — no completion push after commit.
     let late = false;
+    // D-78: the free-jobs milestone this completion crossed, pushed after commit.
+    let freeJobs = null as { riderId: string; milestone: FreeJobsMilestone } | null;
     try {
       await this.prisma.$transaction(async (tx) => {
         const order = await tx.order.findUnique({
@@ -803,6 +806,11 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
                 ...(newlyHeld ? { isOnline: false } : {}),
               },
             });
+            // D-78: after the increment, under the rider row lock (the late path counted nothing new).
+            if (!late) {
+              const milestone = await this.wallet.noteFreeJobsMilestone(tx, order.riderId);
+              if (milestone) freeJobs = { riderId: order.riderId, milestone };
+            }
           }
           // Prepaid commission debit (design Flow 1): same transaction as completion, after the rider row
           // lock above. No-op at ratePct 0. Never blocks a delivered parcel from completing. Uses the
@@ -838,6 +846,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         this.logger.warn(`supply eviction after rating hold failed for ${newlyHeldRiderId}: ${(err as Error).message}`);
       });
     }
+    if (freeJobs) this.wallet.sendFreeJobsReminder(freeJobs.riderId, freeJobs.milestone);
     if (late) {
       // The order was already `completed` (and its push already sent by the auto-close) — just nudge open
       // screens to refetch so the rating shows. No second "Delivery complete" push to the rider.
@@ -1289,6 +1298,8 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
 
   /** Auto-close a delivered-but-unrated order so completion metrics don't stall (T3). Idempotent. */
   async completeOrder(orderId: string): Promise<{ completed: boolean }> {
+    // D-78: the free-jobs milestone this completion crossed, pushed after commit.
+    let freeJobs = null as { riderId: string; milestone: FreeJobsMilestone } | null;
     const done = await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.order.updateMany({
         where: { id: orderId, status: "delivered" },
@@ -1319,6 +1330,8 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
           where: { profileId: order.riderId },
           data: { tripsCount: { increment: 1 }, ...next },
         });
+        const milestone = await this.wallet.noteFreeJobsMilestone(tx, order.riderId);
+        if (milestone) freeJobs = { riderId: order.riderId, milestone };
         // Owner 2026-10-02: a late rating REPLACES this credit, so record what it actually was — the
         // post-clamp delta (0 at MAX), never the nominal +RECOVER_PER_COMPLETION — for rate() to reverse.
         if (rider && next) {
@@ -1341,6 +1354,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       return true;
     });
     if (done) this.safeEmit(orderId, "completed");
+    if (freeJobs) this.wallet.sendFreeJobsReminder(freeJobs.riderId, freeJobs.milestone);
     return { completed: done };
   }
 

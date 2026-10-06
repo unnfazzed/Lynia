@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import type { MerchantHours, MerchantProfileResponse } from "@lynia/shared";
+import type { MerchantProfileResponse } from "@lynia/shared";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
 import { AppBar } from "../../components/m/AppBar";
@@ -10,7 +10,7 @@ import { Segmented } from "../../components/m/Segmented";
 import { Switch } from "../../components/m/Switch";
 import { useToast } from "../../components/m/Toast";
 import { RetryableError } from "../../components/RetryableError";
-import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
+import { ApiError, apiErrorMessage, redirectIfSessionExpired } from "../../lib/api-client";
 import { primeBusiness } from "../../lib/business";
 import {
   asSameEveryDay,
@@ -92,14 +92,14 @@ export default function HoursPage() {
     setSaving(true);
     setError(null);
     try {
-      // An absent day is closed; MerchantHours' zod record validates that shape at runtime.
-      const profile = await updateHours({ hours: draft as MerchantHours });
+      // An absent day is closed; MerchantHours is a zod partialRecord, so a closed day validates.
+      const profile = await updateHours({ hours: draft });
       primeBusiness(profile);
       toast("Hours saved");
       router.push("/account");
     } catch (err) {
       if (redirectIfSessionExpired(err, signOut)) return;
-      setError(err instanceof ApiError ? err.message : "Couldn't save — try again.");
+      setError(apiErrorMessage(err, "Couldn't save — try again."));
       setSaving(false);
     }
   }
@@ -116,7 +116,7 @@ export default function HoursPage() {
     } catch (err) {
       // LC-D04: a failed toggle must say so — busy mode exists for the slammed-kitchen moment.
       if (redirectIfSessionExpired(err, signOut)) return;
-      setBusyError(err instanceof ApiError ? err.message : "Couldn't update busy mode — try again.");
+      setBusyError(apiErrorMessage(err, "Couldn't update busy mode — try again."));
     } finally {
       setBusySaving(false);
     }

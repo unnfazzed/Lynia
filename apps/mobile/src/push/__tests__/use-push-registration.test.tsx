@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import { act, create } from "react-test-renderer";
+import { boundPushToken } from "../bound-token";
 import { usePushRegistration } from "../use-push-registration";
 
 const mockPush = jest.fn();
@@ -401,12 +402,15 @@ describe("usePushRegistration resilience", () => {
     expect(mockRegisterRotated).toHaveBeenCalledWith("tok-new");
     // The old, now-dead token is unregistered server-side.
     expect(mockUnregister).toHaveBeenCalledWith("tok-old");
+    // E2E 2026-10-05 FS-8: sign-out names the CURRENT token in its logout request.
+    expect(boundPushToken()).toBe("tok-new");
 
     act(() => {
       tree.unmount();
     });
     // Teardown unregisters the CURRENT (rotated) token, not the stale one again.
     expect(mockUnregister).toHaveBeenLastCalledWith("tok-new");
+    expect(boundPushToken()).toBeNull();
   });
 
   it("does NOT adopt the stale initial token when FCM rotates while the register POST is in flight (race)", async () => {
@@ -438,6 +442,7 @@ describe("usePushRegistration resilience", () => {
     await flush();
     // The stale token is dropped server-side, not adopted as `registered`.
     expect(mockUnregister).toHaveBeenCalledWith("tok-old");
+    expect(boundPushToken()).toBe("tok-new");
 
     mockUnregister.mockClear();
     act(() => {
