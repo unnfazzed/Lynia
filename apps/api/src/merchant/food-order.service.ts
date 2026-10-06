@@ -141,6 +141,22 @@ const VENUE_DECLINED: ReadonlySet<string> = new Set(["out_of_ingredient", "out_o
 const QUEUE_VISIBLE_STATUSES = ["requested", "open_for_offers", "assigned", "confirmed", "en_route_pickup"] as const;
 
 /** Sum of `priceUsd * quantity` across lines, exact (integer cents), never float accumulation error. */
+/** The pre-pickup statuses a rider holds an order in (assigned → confirmed → en route to the counter). */
+const RIDER_PRE_PICKUP_STATUSES = ["assigned", "confirmed", "en_route_pickup"] as const;
+
+/** LB-1 (E2E 2026-10-05): the CAS filter a pickup-code reveal may rotate under, or null when the order
+ *  is in neither reveal window (see `revealPickupCode`). */
+export function pickupRevealWhere(
+  order: Pick<OrderWithItems, "status" | "merchantPhase" | "riderId" | "pickupCodeHash">,
+): Prisma.OrderWhereInput | null {
+  if (order.merchantPhase === "ready_for_pickup") return { merchantPhase: "ready_for_pickup" };
+  const riderHolds = (RIDER_PRE_PICKUP_STATUSES as readonly string[]).includes(order.status);
+  if (riderHolds && order.merchantPhase === null && order.riderId && order.pickupCodeHash) {
+    return { status: order.status, riderId: order.riderId, merchantPhase: null, pickupCodeHash: { not: null } };
+  }
+  return null;
+}
+
 function lineTotal(priceUsd: Prisma.Decimal | number, quantity: number): number {
   return fromCents(toCents(Number(priceUsd)) * quantity);
 }
@@ -976,14 +992,18 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
    *  rider at the counter. Mints a fresh code every call — mirrors `rotateDeliveryCode`'s own
    *  reveal-by-rotation shape — which is safe here because the code is only ever communicated live,
    *  never queued up ahead of time, so nothing depends on a stale value surviving a re-reveal.
-   *  `merchantPhase` stays `"ready_for_pickup"` for the whole C3 dispatch lifecycle (search → hold →
-   *  rider secured → en route), so this deliberately does not also gate on `status`. */
+   *  Two windows: `ready_for_pickup` while dispatch searches, and — once a rider accepts, which clears
+   *  `merchantPhase` (`FoodDispatchService.acceptDispatch`) — any pre-pickup rider status with a
+   *  minted code. The second window is the one the merchant web actually asks in (it reveals only once a
+   *  rider is assigned); without it no shop, pharmacy or hand-accepted kitchen order could be collected
+   *  (E2E 2026-10-05 LB-1). It only ever re-mints an existing code: an order with no code stays codeless. */
   async revealPickupCode(profileId: string, orderId: string): Promise<{ pickupCode: string }> {
     const order = await this.findOwnAsMerchant(profileId, orderId);
-    if (order.merchantPhase !== "ready_for_pickup") throw new ConflictException("This order isn't ready for pickup yet");
+    const where = pickupRevealWhere(order);
+    if (!where) throw new ConflictException("This order isn't ready for pickup yet");
     const pickupCode = this.tokens.randomPickupCode();
     const claimed = await this.prisma.order.updateMany({
-      where: { id: orderId, merchantPhase: "ready_for_pickup" },
+      where: { id: orderId, ...where },
       data: { pickupCodeHash: this.tokens.hash(pickupCode), pickupCodeAttempts: 0 },
     });
     if (claimed.count === 0) throw new ConflictException("Order changed, retry");

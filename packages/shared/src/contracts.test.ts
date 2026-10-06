@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { BecomeMerchantRequest, ConfirmMerchantPickupRequest, MarkUndeliveredRequest, MerchantLocationInput, merchantWaypoint, UpdateMerchantLocationRequest, Waypoint } from "./contracts";
+import {
+  BecomeMerchantRequest,
+  ConfirmMerchantPickupRequest,
+  MarkUndeliveredRequest,
+  MerchantLocationInput,
+  merchantWaypoint,
+  UpdateMerchantHoursRequest,
+  UpdateMerchantLocationRequest,
+  Waypoint,
+} from "./contracts";
 
 describe("MarkUndeliveredRequest (UNDELIVERED-NOTE-01)", () => {
   it("carries only the reason — no free-text note the API would silently throw away", () => {
@@ -56,5 +65,25 @@ describe("ConfirmMerchantPickupRequest (N-16, six digits since D-59)", () => {
     for (const code of ["", "731", "73160", "7316040", "731 604", "abcdef"]) {
       expect(ConfirmMerchantPickupRequest.safeParse({ code }).success).toBe(false);
     }
+  });
+});
+
+describe("UpdateMerchantHoursRequest (E2E 2026-10-05 LB-2)", () => {
+  const day = { open: "08:00", close: "17:00" };
+
+  it("accepts a week with a closed day (the day is simply absent)", () => {
+    const hours = { mon: day, tue: day, wed: day, thu: day, fri: day, sat: day };
+    expect(UpdateMerchantHoursRequest.safeParse({ hours }).success).toBe(true);
+  });
+
+  it("accepts a week closed every day, and a full week", () => {
+    expect(UpdateMerchantHoursRequest.safeParse({ hours: {} }).success).toBe(true);
+    const full = { mon: day, tue: day, wed: day, thu: day, fri: day, sat: day, sun: day };
+    expect(UpdateMerchantHoursRequest.safeParse({ hours: full }).success).toBe(true);
+  });
+
+  it("still refuses an unknown day key and a malformed window", () => {
+    expect(UpdateMerchantHoursRequest.safeParse({ hours: { funday: day } }).success).toBe(false);
+    expect(UpdateMerchantHoursRequest.safeParse({ hours: { mon: { open: "8am", close: "17:00" } } }).success).toBe(false);
   });
 });

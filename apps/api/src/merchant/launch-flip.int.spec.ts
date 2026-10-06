@@ -319,9 +319,15 @@ describe("X2 · flags ON — food golden pass", () => {
     await lifecycleOn.advance(orderId, rider, "confirmed");
     await lifecycleOn.advance(orderId, rider, "en_route_pickup");
 
+    // LB-1 (E2E 2026-10-05): the merchant web reveals the code only once a rider is assigned, i.e. after
+    // acceptance cleared merchantPhase. That reveal must work, and it re-mints: the earlier code is dead.
+    const { pickupCode: counterCode } = await foodOrders.revealPickupCode(kitchen.ownerId, orderId);
+    expect(counterCode).toMatch(/^\d{6}$/);
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: orderId } })).pickupCodeHash).not.toBe(tokens.hash(pickupCode));
+
     // N-16: a wrong code at the counter is counted, never collected on.
-    await expect(foodOrders.confirmPickup(orderId, rider, pickupCode === "000000" ? "111111" : "000000")).rejects.toThrow(/attempts left/i);
-    expect(await foodOrders.confirmPickup(orderId, rider, pickupCode)).toEqual({ orderId, status: "picked_up" });
+    await expect(foodOrders.confirmPickup(orderId, rider, counterCode === "000000" ? "111111" : "000000")).rejects.toThrow(/attempts left/i);
+    expect(await foodOrders.confirmPickup(orderId, rider, counterCode)).toEqual({ orderId, status: "picked_up" });
 
     // R-01: the debt opens IN the pickup transaction — the goods left the counter unpaid.
     const collected = await orderRow(orderId);
