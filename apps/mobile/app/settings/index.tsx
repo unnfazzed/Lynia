@@ -10,10 +10,11 @@ import { TERMS_URL } from "../../src/config";
 import { bikeDocsProgress, bikeVerified } from "../../src/logic/rider-documents";
 import { RIDER_PERM_ROUTES } from "../../src/logic/rider-perm-flow";
 import { providerName, TOPUP_PROVIDERS, type TopupProviderId, useRiderPrefs } from "../../src/logic/rider-prefs";
-import { openPhoneSettings, playTestAlert, usePermissions } from "../../src/permissions/state";
+import { openPhoneSettings, playTestAlert, requestNotif, usePermissions } from "../../src/permissions/state";
+import { requestPushRegistration } from "../../src/push/push-kick";
 import { riderModeAvailable } from "../../src/rider-mode";
-import { BackHeader, FirstRunScreen, FrSoftPill, haptic, IconDot, LargeTitle, ListCard, ListRow, Toggle } from "../../src/ui";
-import { PC, PD } from "../../src/ui/firstrun/copy";
+import { BackHeader, Body, FirstRunScreen, FrSheet, FrSoftPill, haptic, IconDot, LargeTitle, ListCard, ListRow, PinnedFooter, SplitTitle, SystemSettingsSteps, Toggle } from "../../src/ui";
+import { PC, PD, RP } from "../../src/ui/firstrun/copy";
 import { CtaButton } from "../../src/ui/order/kit";
 import { RIDER_COPY as R, RF } from "../../src/ui/rider/copy";
 import { Chips, MSheet, Seg } from "../../src/ui/rider/kit";
@@ -33,6 +34,9 @@ function bikeItemsToAdd(rider: Me["rider"] | null | undefined): number {
   const { done, total } = bikeDocsProgress(rider);
   return total - done - (rider.kycStatus === "verified" ? 0 : 1);
 }
+
+/** The customer's third step: `RP.nStep3` without its rider-only "· Job alerts on" (derived copy, D-80 §4). */
+const NOTIF_STEP3_CUSTOMER = RP.nStep3.split(" · ")[0]!;
 
 /** `.cap` — the 12/600 caption above a card (YOU, ALERTS). */
 function Caption({ children, first }: { children: string; first?: boolean }): React.ReactElement {
@@ -60,14 +64,13 @@ export default function SettingsScreen(): React.ReactElement {
   const me = useQuery({ queryKey: ["me"], queryFn: getMe }).data;
   const isRider = !!me?.rider && riderModeAvailable();
   const { perms, refresh } = usePermissions({ rider: isRider });
-  // Back from the rider flow / PC8 (a route, not an app switch): read again.
+  // Back from the rider flow (a route, not an app switch): read again.
   useFocusEffect(refresh);
   const { prefs, save } = useRiderPrefs();
   const [editTopup, setEditTopup] = useState(false);
   const [draftProvider, setDraftProvider] = useState<TopupProviderId>(prefs.topupProvider);
   const [draftPhone, setDraftPhone] = useState("");
 
-  const name = me ? `${me.firstName} ${me.lastName}`.trim() : "";
   const phone = me?.phone ? formatPhoneDisplay(me.phone) : "";
   const topupPhone = prefs.topupPhone ?? phone;
 
@@ -79,10 +82,16 @@ export default function SettingsScreen(): React.ReactElement {
   const missing = isRider ? bikeItemsToAdd(me?.rider) : 0;
 
   const go = useCallback((href: string) => router.push(href as never), [router]);
-  // PC11 "Turn on" / the Order updates toggle: PC8 again while it can still ask, else the phone's settings.
+  // PC11 "Turn on" / the Order updates toggle (owner 2026-10-06, D-80 §4): the Android dialog directly while it
+  // can still ask (a decline just leaves the card up); when it can't, the phone-settings steps sheet. On → settings.
+  const [notifSteps, setNotifSteps] = useState(false);
   const orderUpdates = (): void => {
-    if (notifOn || perms?.notif === "blocked") openPhoneSettings();
-    else go("/order-updates?from=settings");
+    if (notifOn) return openPhoneSettings();
+    if (perms?.notif === "blocked") return setNotifSteps(true);
+    void requestNotif().then((state) => {
+      if (state === "granted") requestPushRegistration();
+      refresh();
+    });
   };
   const jobAlerts = (): void => (jobAlertsOn ? openPhoneSettings() : go(RIDER_PERM_ROUTES.notifications));
   const location = (): void => (locOn ? openPhoneSettings() : go(RIDER_PERM_ROUTES.location));
@@ -119,7 +128,6 @@ export default function SettingsScreen(): React.ReactElement {
         <Caption first>{ST.you}</Caption>
         <ListCard>
           <ListRow icon="user" iconTone="ok" title={PD.row} sub={PD.rowSub} chevron onPress={() => go("/settings/personal")} testID="settings-personal" />
-          {name || phone ? <ListRow icon="smartphone" title={name || R.tabAccount} sub={phone || null} /> : null}
           {isRider ? (
             <ListRow
               icon="bike"
@@ -185,6 +193,24 @@ export default function SettingsScreen(): React.ReactElement {
           <ListRow icon="trash" iconTone="bad" title={R.sDelete} sub={R.sDeleteS} titleColor={tokens.color.dangerInk} onPress={() => go("/settings/delete-account")} />
         </ListCard>
       </FirstRunScreen>
+
+      {/* Order updates blocked for good: the PC5-shaped phone-settings steps in notification words (owner, D-80 §4). */}
+      <FrSheet visible={notifSteps} onClose={() => setNotifSteps(false)} testID="settings-notif-steps">
+        <SplitTitle a={RP.blockedA} b={RP.blockedB} tone="danger" style={{ marginTop: 0 }} />
+        <Body>{isRider ? RP.blockedBody : PC.setOffBody}</Body>
+        <SystemSettingsSteps steps={[RP.step1, RP.nStep2, isRider ? RP.nStep3 : NOTIF_STEP3_CUSTOMER]} />
+        <PinnedFooter
+          inline
+          primary={{
+            label: RP.openSettings,
+            testID: "settings-notif-open",
+            onPress: () => {
+              setNotifSteps(false);
+              openPhoneSettings();
+            },
+          }}
+        />
+      </FrSheet>
 
       <MSheet
         visible={editTopup}

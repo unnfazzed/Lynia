@@ -88,16 +88,6 @@ it("PC10: declined → Updates are off → Back to my order", async () => {
   expect(mockReplace).toHaveBeenCalledWith("/order/o-1");
 });
 
-it("PC11 re-entry from Settings: no Order placed pill, not counted, a decline goes back", async () => {
-  mockParams = { from: "settings" };
-  mockReq = { status: "denied", granted: false, canAskAgain: true };
-  await mount();
-  expect(text()).not.toContain("Order placed");
-  expect(mockStore[CUST_NOTIF_ASKS_KEY]).toBeUndefined();
-  await press("pc8-turn-on");
-  expect(mockBack).toHaveBeenCalled();
-});
-
 it("an outside `next` is never followed", async () => {
   mockParams = { next: "https://evil.example" };
   await mount();

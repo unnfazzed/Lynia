@@ -30,8 +30,12 @@ jest.mock("expo-router", () => {
     useFocusEffect: (cb: () => void) => R.useEffect(() => cb(), []),
   };
 });
+const mockNotifRequest = jest.fn(async (): Promise<Perm> => GRANTED);
+const mockKick = jest.fn();
+jest.mock("../../../src/push/push-kick", () => ({ requestPushRegistration: () => mockKick() }));
 jest.mock("expo-notifications", () => ({
   getPermissionsAsync: () => mockNotifPerms(),
+  requestPermissionsAsync: () => mockNotifRequest(),
   scheduleNotificationAsync: (...a: unknown[]) => mockSchedule(...(a as [])),
   AndroidImportance: { MAX: 5, HIGH: 4, DEFAULT: 3 },
 }));
@@ -130,6 +134,9 @@ describe("D1 · the new look, every row kept (D-80 §2 #1)", () => {
     const s = out(t);
     expect(s.indexOf('"YOU"')).toBeLessThan(s.indexOf('"Personal details"'));
     expect(s).toContain('"Name, phone, ID"');
+    // Owner 2026-10-06 (D-80 §4): the shipped name / phone row is gone — Personal details carries both.
+    expect(s).not.toContain('"Chipo Marufu"');
+    expect(s).not.toContain("77 245 1180");
     await act(async () => byTestId(t, "settings-personal").props.onPress());
     expect(mockPush).toHaveBeenCalledWith("/settings/personal");
   });
@@ -204,23 +211,47 @@ describe("ALERTS toggles mirror the phone", () => {
 });
 
 describe("PC11 · order updates off", () => {
-  it("draws the danger card; Turn on reopens PC8 while the OS can still ask", async () => {
+  it("draws the danger card; Turn on opens the Android dialog directly (owner 2026-10-06) — granted clears it", async () => {
     mockNotifPerms.mockResolvedValue({ status: "denied", granted: false, canAskAgain: true });
     const t = await render(CUSTOMER);
     const s = out(t);
     expect(s).toContain('"Order updates are off"');
     expect(s).toContain('"You won’t hear when your rider arrives."');
     expect(toggle(t, "toggle-order-updates").props.accessibilityState.checked).toBe(false);
+    mockNotifRequest.mockImplementation(async () => {
+      mockNotifPerms.mockResolvedValue(GRANTED);
+      return GRANTED;
+    });
     await act(async () => byTestId(t, "settings-pc11-turn-on").props.onPress());
-    expect(mockPush).toHaveBeenCalledWith("/order-updates?from=settings");
+    for (let i = 0; i < 4; i++) await act(async () => undefined);
+    expect(mockNotifRequest).toHaveBeenCalled();
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockKick).toHaveBeenCalled();
+    expect(t.root.findAll((n) => n.props.testID === "settings-pc11")).toHaveLength(0);
   });
 
-  it("blocked for good: Turn on opens the phone's settings", async () => {
+  it("a decline stays on Settings with the card up", async () => {
+    const denied = { status: "denied", granted: false, canAskAgain: true };
+    mockNotifPerms.mockResolvedValue(denied);
+    mockNotifRequest.mockResolvedValue(denied);
+    const t = await render(CUSTOMER);
+    await act(async () => byTestId(t, "settings-pc11-turn-on").props.onPress());
+    for (let i = 0; i < 4; i++) await act(async () => undefined);
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(t.root.findAll((n) => n.props.testID === "settings-pc11").length).toBeGreaterThan(0);
+  });
+
+  it("blocked for good: Turn on shows the phone-settings steps, whose button opens settings", async () => {
     mockNotifPerms.mockResolvedValue({ status: "denied", granted: false, canAskAgain: false });
     const t = await render(CUSTOMER);
     await act(async () => byTestId(t, "settings-pc11-turn-on").props.onPress());
+    expect(mockNotifRequest).not.toHaveBeenCalled();
+    const s = out(t);
+    expect(s).toContain('"are blocked"');
+    expect(s).toContain('"Allow notifications"');
+    expect(s).not.toContain("Job alerts on");
+    await act(async () => byTestId(t, "settings-notif-open").props.onPress());
     expect(mockOpenSettings).toHaveBeenCalled();
-    expect(mockPush).not.toHaveBeenCalled();
   });
 });
 

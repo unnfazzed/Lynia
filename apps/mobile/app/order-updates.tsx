@@ -21,25 +21,22 @@ function safeNext(raw: string | string[] | undefined): string | null {
  *        POST_NOTIFICATIONS dialog, PC9) and "Not now" (→ the order; asked again after the next order).
  *   PC10 declined: a neutral bell-off hero, "Updates are off", "Back to my order".
  *
- * Reached two ways: from an order (`next=/order/<id>`, src/push/ask-in-context.ts — each visit counts
- * toward the 3-per-install cap) or from Settings' Order updates "Turn on" (PC11, `from=settings`): there
- * it draws no "Order placed" pill (nothing was just placed) and a decline goes back to Settings, because
- * PC10's copy is about an order (D-80 §4).
+ * Reached only from a just-placed order (`next=/order/<id>`, src/push/ask-in-context.ts); each visit counts
+ * toward the 3-per-install cap. Settings' "Turn on" (PC11) asks directly, without this screen (owner, D-80 §4).
  */
 export default function OrderUpdatesScreen(): React.ReactElement {
   const router = useRouter();
-  const params = useLocalSearchParams<{ next?: string; from?: string }>();
-  const fromSettings = params.from === "settings";
+  const params = useLocalSearchParams<{ next?: string }>();
   const next = safeNext(params.next);
   const [declined, setDeclined] = useState(false);
   const [busy, setBusy] = useState(false);
   const counted = useRef(false);
 
   useEffect(() => {
-    if (fromSettings || counted.current) return;
+    if (counted.current) return;
     counted.current = true;
     void noteCustNotifAsked();
-  }, [fromSettings]);
+  }, []);
 
   const leave = (): void => {
     if (next) router.replace(next as never);
@@ -56,11 +53,10 @@ export default function OrderUpdatesScreen(): React.ReactElement {
       // Root push registration is check-don't-request: bind the token now rather than at the next foreground.
       requestPushRegistration();
       leave();
-    } else if (fromSettings) leave();
-    else setDeclined(true);
+    } else setDeclined(true);
   };
 
-  const pill = fromSettings ? null : <FrBadge icon="check" label={PC.placed} style={{ marginBottom: 16 }} />;
+  const pill = <FrBadge icon="check" label={PC.placed} style={{ marginBottom: 16 }} />;
 
   if (declined) {
     return (
