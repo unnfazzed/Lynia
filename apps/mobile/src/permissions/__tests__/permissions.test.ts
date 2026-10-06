@@ -11,8 +11,12 @@ jest.mock("expo-secure-store", () => ({
 }));
 let mockNotif: Record<string, unknown> = { status: "undetermined", granted: false, canAskAgain: true };
 let mockLoc: Record<string, unknown> = { status: "granted", granted: true, canAskAgain: true };
+const mockSetChannel = jest.fn(async (..._a: unknown[]) => null);
+const mockChannels: Record<string, { importance: number } | null> = {};
 jest.mock("expo-notifications", () => ({
   getPermissionsAsync: async () => mockNotif,
+  setNotificationChannelAsync: (...a: unknown[]) => mockSetChannel(...a),
+  getNotificationChannelAsync: async (id: string) => mockChannels[id] ?? null,
   AndroidImportance: { MAX: 5, HIGH: 4, DEFAULT: 3, LOW: 2 },
 }));
 jest.mock("expo-location", () => ({
@@ -22,7 +26,8 @@ jest.mock("expo-location", () => ({
 
 import { routeAfterOrderPlaced, shouldExplainOrderUpdates } from "../../push/ask-in-context";
 import { afterLocationAnswer, entryScreen, finishRiderPermFlow, startRiderPermFlow, stepsFor } from "../../logic/rider-perm-flow";
-import { allGranted, channelIsMuted, classifyLocation, classifyNotif, type PermissionsSnapshot } from "../state";
+import { Platform } from "react-native";
+import { allGranted, channelIsMuted, classifyLocation, classifyNotif, ensureJobAlertChannel, JOB_ALERTS_CHANNEL, mutedJobChannel, type PermissionsSnapshot } from "../state";
 import { CUST_NOTIF_ASK_CAP, CUST_NOTIF_ASKS_KEY, custNotifAsks, markRiderPermFlowDone, noteCustNotifAsked, RIDER_PERM_FLOW_KEY, riderPermFlowDone } from "../store";
 
 beforeEach(() => {
@@ -175,5 +180,29 @@ describe("startRiderPermFlow (owner decision D-80 §2 #5)", () => {
     await startRiderPermFlow({ push }, goOnline);
     expect(goOnline).toHaveBeenCalled();
     expect(push).not.toHaveBeenCalled();
+  });
+});
+
+describe("the job-alerts channel on Android (owner 2026-10-06: the API posts job pings + food-offer alarms there)", () => {
+  beforeEach(() => {
+    jest.replaceProperty(Platform, "OS", "android");
+    for (const k of Object.keys(mockChannels)) delete mockChannels[k];
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it("is created loud: HIGH importance with sound", async () => {
+    await ensureJobAlertChannel();
+    expect(mockSetChannel).toHaveBeenCalledWith(JOB_ALERTS_CHANNEL, expect.objectContaining({ importance: 4, sound: "default" }));
+  });
+
+  it("P12 names the muted channel: job-alerts first, then the default one older builds post on", async () => {
+    mockChannels["job-alerts"] = { importance: 4 };
+    mockChannels.default = { importance: 4 };
+    expect(await mutedJobChannel()).toBeNull();
+    mockChannels["job-alerts"] = { importance: 2 };
+    expect(await mutedJobChannel()).toBe("job-alerts");
+    mockChannels["job-alerts"] = { importance: 4 };
+    mockChannels.default = { importance: 3 };
+    expect(await mutedJobChannel()).toBe("default");
   });
 });

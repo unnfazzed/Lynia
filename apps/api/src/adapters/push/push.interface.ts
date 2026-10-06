@@ -34,6 +34,24 @@ export interface PushMessage {
    * APNs sends a `background` push with `content-available`. `title`/`body` are ignored.
    */
   silent?: boolean;
+  /**
+   * Android notification channel the push posts on (FCM `android.notification.channelId`). Omitted ⇒ the
+   * app's default channel. Rider job pings and food-offer alarms go on `JOB_ALERTS_CHANNEL` (First Run v2
+   * P9/P12, ledger D-80) so a rider's job alarm can be checked and un-muted on its own. A channel the device
+   * hasn't created falls back to the default one, so older builds are unaffected. Ignored by APNs.
+   */
+  channelId?: string;
+}
+
+/** The rider job-alert channel the app creates (apps/mobile src/permissions/notifications.ts). */
+export const JOB_ALERTS_CHANNEL = "job-alerts";
+
+/** The push kinds that are rider job alerts: the new-parcel ping and the food-offer alarm. */
+const JOB_ALERT_KINDS: ReadonlySet<string> = new Set(["broadcast", "food_offer"]);
+
+/** The Android channel for a push, from its `data.kind`: job alerts → `job-alerts`, everything else default. */
+export function androidChannelFor(data: Record<string, string> | undefined): string | undefined {
+  return data?.kind && JOB_ALERT_KINDS.has(data.kind) ? JOB_ALERTS_CHANNEL : undefined;
 }
 
 /** Outcome of a single send, so the caller can prune tokens the provider says are permanently dead. */

@@ -49,7 +49,7 @@ export interface FcmMessage {
   data?: Record<string, string>;
   /** Android TTL — firebase-admin's AndroidConfig.ttl is in MILLISECONDS (it converts to the REST
    *  "<n>s" duration under the hood). Set only for time-critical (ttlSeconds) messages. */
-  android?: { ttl?: number; collapseKey?: string };
+  android?: { ttl?: number; collapseKey?: string; notification?: { channelId: string } };
   /** APNs expiry — `apns-expiration` is an ABSOLUTE unix epoch (seconds), NOT a duration; 0 would mean
    *  "expire immediately", so we send now + ttlSeconds. Set only for time-critical messages. */
   apns?: { headers: Record<string, string>; payload?: { aps: Record<string, unknown> } };
@@ -78,6 +78,10 @@ export function buildFcmMessage(message: PushMessage): FcmMessage {
   if (message.collapseKey !== undefined) {
     built.android = { ...built.android, collapseKey: message.collapseKey };
     built.apns = { headers: { ...built.apns?.headers, "apns-collapse-id": message.collapseKey } };
+  }
+  // The Android channel (rider job alerts → `job-alerts`, ledger D-80). A silent push draws nothing, so it has none.
+  if (message.channelId && !message.silent) {
+    built.android = { ...built.android, notification: { channelId: message.channelId } };
   }
   // A silent push reaches an iOS device through FCM only as a background push.
   if (message.silent) {

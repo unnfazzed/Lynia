@@ -12,8 +12,8 @@ export type NotifState = "undetermined" | "granted" | "denied" | "blocked";
 
 /** The job-alert channel (P9's test ping, P12's muted check, the settings "Job alerts" row). */
 export const JOB_ALERTS_CHANNEL = "job-alerts";
-/** The channel every push lands on today (`src/push/push.ts`). The API sends no channel id yet, so a
- *  rider's job pushes post here: P12 treats it as muted when either channel is. */
+/** The app's default channel (`src/push/push.ts`). Builds before D-80 had no `job-alerts` channel, and FCM
+ *  then posts job pushes here — so P12 treats a rider as muted when either channel is. */
 export const DEFAULT_CHANNEL = "default";
 
 /** A notification permission answer → the four states. Pure. */
@@ -38,13 +38,18 @@ export async function readNotif(): Promise<NotifState> {
   }
 }
 
-/** Android 8+ only: create (idempotently) the job-alert channel — loud, pops on screen. */
+/**
+ * Android 8+ only: create (idempotently) the job-alert channel — HIGH importance (pops on screen) with
+ * sound. The API posts rider job pings and food-offer alarms here (`android.notification.channelId`); a
+ * rider can later lower it in the phone's settings, which P12 detects. Created by the rider tab shell,
+ * the rider flow and Settings.
+ */
 export async function ensureJobAlertChannel(): Promise<void> {
   if (Platform.OS !== "android") return;
   try {
     await Notifications.setNotificationChannelAsync(JOB_ALERTS_CHANNEL, {
       name: "Job alerts",
-      importance: Notifications.AndroidImportance.MAX,
+      importance: Notifications.AndroidImportance.HIGH,
       sound: "default",
       vibrationPattern: [0, 250, 150, 250],
       lightColor: "#00B14F",
