@@ -28,7 +28,13 @@ paths = [
 # enough entropy, and this string has no other purpose than naming the on-device keychain slot (see
 # the file's own doc comment). History can't be rewritten to un-flag it, so it's allowlisted by
 # commit rather than broadened to a path/regex exclusion that could mask a real future secret.
+#
+# The same false positive, same reasoning: SecureStore key NAMES assigned to `…_KEY` constants in
+# `apps/mobile/src/permissions/store.ts` (`RIDER_PERM_FLOW_KEY = "lynia.riderPermFlowDone.v1"`,
+# `CUST_NOTIF_ASKS_KEY = "lynia.custNotifAsks.v1"`). CI scans every fetched ref (`git log --all`), so
+# this commit on an open PR branch turned the secret scan red on every PR (2026-10-06).
 commits = [
   "ccac6361c5485125e57a3b0187899c5587d37045", # feat(mobile): P1 UX richness — saved recipients, ...
   "10954ec426573c2b5e791d87b70b808ce9a27f4c", # Merge pull request #145 (same line, carried through)
+  "dab427d2775efd2e10eeadd14d2f6bece5ea1005", # wip(mobile): First Run v2 worker A checkpoint (#1086 branch)
 ]
