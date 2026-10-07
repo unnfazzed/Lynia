@@ -115,12 +115,19 @@ describe("OrdersService.customerOrders", () => {
     expect(args!.select).toMatchObject({ carriedBalance: { select: { amount: true } }, owedBalance: { select: { amount: true } } });
   });
 
-  it("C9 (U36): a merchant order cancelled after collection shows what it left owing, not 'No charge'", async () => {
-    const { rows } = await svc([food(1, { status: "cancelled", cancelledBy: ME, owedBalance: { amount: dec("8.00") } }), food(2, { status: "cancelled", cancelledBy: ME })]).customerOrders(
-      ME,
-    );
-    expect(rows[0]).toMatchObject({ outcome: "cancelled_by_you", chargedTotal: "8.00" });
-    expect(rows[1]).toMatchObject({ outcome: "cancelled_by_you", chargedTotal: null });
+  it("C9 (U36, review): a cancel after collection stays 'No charge' — the order that collects it charges it, so the cash is counted once", async () => {
+    // A owes $8 from a cancel after collection; C carries it and is delivered.
+    const { rows } = await svc([
+      food(1, { carriedBalance: [{ amount: dec("8.00") }] }),
+      food(2, { status: "cancelled", cancelledBy: ME, owedBalance: { amount: dec("8.00") } }),
+      food(3, { status: "cancelled", cancelledBy: ME }),
+    ]).customerOrders(ME);
+    expect(rows[0]).toMatchObject({ outcome: "delivered", chargedTotal: "17.00" });
+    expect(rows[1]).toMatchObject({ outcome: "cancelled_by_you", chargedTotal: null, owedUsd: 8 });
+    expect(rows[2]).toMatchObject({ outcome: "cancelled_by_you", chargedTotal: null });
+    expect(rows[2]).not.toHaveProperty("owedUsd");
+    // The history adds up to the cash handed over: $17, not $25.
+    expect(rows.reduce((sum, r) => sum + Number(r.chargedTotal ?? 0), 0)).toBe(17);
   });
 
   it("C9: a parcel row is unchanged — its agreed fare, no amountDueUsd", async () => {

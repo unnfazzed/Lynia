@@ -3,7 +3,7 @@ import { RESTAURANTS_COMMISSION } from "@lynia/shared";
 import { describe, expect, it, vi } from "vitest";
 import type { UploadVerifier } from "../adapters/storage/upload-verifier";
 import { PrismaService } from "../prisma/prisma.service";
-import { MerchantService, OUT_OF_STOCK_UNTIL_BACK } from "./merchant.service";
+import { endOfToday, MerchantService, OUT_OF_STOCK_UNTIL_BACK } from "./merchant.service";
 import { withMembershipShim } from "./testing/membership-shim";
 
 /** Mirrors the shared mock shape used across the repo's other *.service.spec.ts files (e.g.
@@ -626,10 +626,10 @@ describe("MerchantService dishes (D-31 draft state, N-14 OOS)", () => {
     expect(hour).toBeLessThanOrEqual(60 * 60 * 1000 + 5000);
     expect(untils[1]).toEqual(OUT_OF_STOCK_UNTIL_BACK);
     // The rest of today, and the same when an older client sends no duration.
-    const endOfToday = new Date();
-    endOfToday.setHours(23, 59, 59, 999);
-    expect(untils[2]!.getTime()).toBe(endOfToday.getTime());
-    expect(untils[3]!.getTime()).toBe(endOfToday.getTime());
+    // The end of today in Harare (N-14 / MJ-RM7 sibling), whatever the server's zone.
+    const harareEnd = endOfToday(new Date());
+    expect(untils[2]!.getTime()).toBe(harareEnd.getTime());
+    expect(untils[3]!.getTime()).toBe(harareEnd.getTime());
   });
 
   it("clearDishOutOfStock nulls the field and reports back in stock", async () => {
@@ -1466,6 +1466,8 @@ describe("MerchantService.getTodaySummary (E3, M4·6; D-48 header tiles)", () =>
     // 00:30 on Wed 7 Oct in Harare = 22:30 UTC on Tue 6 Oct.
     const res = await svc(prisma).getTodaySummary("p1", undefined, new Date("2026-10-06T22:30:00.000Z"));
     expect(res.date).toBe("2026-10-06T22:00:00.000Z");
+    // The Harare date itself, so a browser in another zone never labels the day from `date`.
+    expect(res.dateKey).toBe("2026-10-07");
     expect(wheres.length).toBeGreaterThanOrEqual(2);
     for (const w of wheres) {
       expect(w.createdAt).toEqual({ gte: new Date("2026-10-06T22:00:00.000Z"), lte: new Date("2026-10-07T21:59:59.999Z") });
@@ -1475,6 +1477,32 @@ describe("MerchantService.getTodaySummary (E3, M4·6; D-48 header tiles)", () =>
     expect((await svc(summaryPrisma()).getTodaySummary("p1", undefined, new Date("2026-10-07T00:00:00.000Z"))).date).toBe("2026-10-06T22:00:00.000Z");
     // 23:59 Harare on the 6th (21:59 UTC) is the day before.
     expect((await svc(summaryPrisma()).getTodaySummary("p1", undefined, new Date("2026-10-06T21:59:00.000Z"))).date).toBe("2026-10-05T22:00:00.000Z");
+  });
+
+  it("MJ-RM8 (review): an unconfirmed auto-accept's in-progress line earns nothing, so the list adds up to Sales", async () => {
+    const at = new Date();
+    const base = { prepStartedAt: at, createdAt: at, deliveredAt: null, cancelledAt: null, merchantGoodsTotal: 12, status: "preparing" };
+    const res = await svc(
+      summaryPrisma({
+        today: [
+          { ...base, id: "a0000000-0000-4000-8000-000000000000", autoAccepted: true, kitchenConfirmedAt: null },
+          { ...base, id: "b0000000-0000-4000-8000-000000000000", autoAccepted: true, kitchenConfirmedAt: at },
+          { ...base, id: "c0000000-0000-4000-8000-000000000000", autoAccepted: false, kitchenConfirmedAt: null },
+        ],
+      }),
+    ).getTodaySummary("p1");
+    expect(res.lines!.map((l) => [l.outcome, l.amount])).toEqual([
+      ["in_progress", 0],
+      ["in_progress", 12],
+      ["in_progress", 12],
+    ]);
+  });
+
+  it("N-14 sibling (review): 'sold out for the rest of today' ends at Harare midnight, not the server's", () => {
+    // 00:30 Harare on 7 Oct (22:30 UTC on the 6th): the dish is back at the end of Harare's 7 Oct.
+    expect(endOfToday(new Date("2026-10-06T22:30:00.000Z")).toISOString()).toBe("2026-10-07T21:59:59.999Z");
+    // 23:00 Harare on 7 Oct (21:00 UTC): the same Harare day.
+    expect(endOfToday(new Date("2026-10-07T21:00:00.000Z")).toISOString()).toBe("2026-10-07T21:59:59.999Z");
   });
 
   it("MJ-RM8: Orders/Sales count only orders that can still earn — not cancelled, not undelivered, not an unconfirmed auto-accept", async () => {
@@ -1550,6 +1578,7 @@ describe("MerchantService.getWeekSummary (Merchant v2 follow-ups T2b, D-77)", ()
     expect(where!.createdAt.gte).toEqual(new Date("2026-09-27T22:00:00.000Z"));
     expect(where!.createdAt.lte).toEqual(new Date("2026-10-04T21:59:59.999Z"));
     expect(res.start).toBe("2026-09-27T22:00:00.000Z");
+    expect(res.startKey).toBe("2026-09-28");
     expect(res.days.map((d) => d.date)).toEqual(["2026-09-28", "2026-09-29", "2026-09-30", "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04"]);
     expect(res.days[6]).toEqual({ date: "2026-10-04", orders: 2, sales: 20, cashLate: 9.5, cashDue: 4, rejected: 0 });
     expect(res.days[5]).toEqual({ date: "2026-10-03", orders: 1, sales: 8.5, cashLate: 0, cashDue: 0, rejected: 0 });
@@ -1578,6 +1607,7 @@ describe("MerchantService.getWeekSummary (Merchant v2 follow-ups T2b, D-77)", ()
     // 01:00 Monday 5 Oct in Harare = 23:00 UTC on Sunday 4 Oct.
     const res = await s.getWeekSummary("p1", new Date("2026-10-04T23:00:00.000Z"));
     expect(res.start).toBe("2026-10-04T22:00:00.000Z");
+    expect(res.startKey).toBe("2026-10-05");
     expect(res.days.map((d) => d.date)).toEqual(["2026-10-05"]);
     expect(where!.createdAt).toEqual({ gte: new Date("2026-10-04T22:00:00.000Z"), lte: new Date("2026-10-05T21:59:59.999Z") });
   });

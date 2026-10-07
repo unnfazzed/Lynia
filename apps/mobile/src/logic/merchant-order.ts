@@ -328,12 +328,15 @@ export function roundClock(round: Pick<SubstitutionRoundView, "deadlineAt">, now
  * The live totals for a set of answers: "Was" (the round's `wasTotal`) and "New total" (the shared
  * `substitutionTotals` — kept lines + each swap not removed (an unanswered one counts as offered, as U2a
  * draws it), the small-order fee re-applied, the delivery
- * fee unchanged), and how many swaps are still unanswered.
+ * fee unchanged), and how many swaps are still unanswered. C9 (review 2026-10-07): both figures include
+ * `carried` — an earlier owed balance the order collects at the door (`previousBalanceUsd`) — so the sheet
+ * quotes the same amount the rider will ask for.
  */
 export function substitutionState(
   round: Pick<SubstitutionRoundView, "lines" | "wasTotal" | "keptSubtotal">,
   deliveryFee: number,
   answers: Readonly<Record<string, SubAnswer>>,
+  carried = 0,
 ): { was: number; newTotal: number; unanswered: number } {
   const swaps = round.lines.filter((l) => l.action === "swap");
   const answerOf = (l: { id: string; answer: SubAnswer | null }): SubAnswer | null => answers[l.id] ?? l.answer;
@@ -346,7 +349,8 @@ export function substitutionState(
     acceptedLineIds: accepted,
   });
   const unanswered = swaps.filter((l) => answerOf(l) == null).length;
-  return { was: round.wasTotal, newTotal: t.total, unanswered };
+  const withCarried = (n: number): number => (cents(n) + cents(carried)) / 100;
+  return { was: withCarried(round.wasTotal), newTotal: withCarried(t.total), unanswered };
 }
 
 /**

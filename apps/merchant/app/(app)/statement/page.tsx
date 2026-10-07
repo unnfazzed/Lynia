@@ -11,7 +11,7 @@ import { RetryableError } from "../../components/RetryableError";
 import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
 import { loadBusiness } from "../../lib/business";
 import { getTodaySummary, getWeekSummary } from "../../lib/orders-api";
-import { dayKey, dayRow, daySub, dayTitle, hm, weekRange } from "../../lib/money-view";
+import { addDaysToKey, dayKey, dayRow, daySub, dayTitle, hm, weekRange } from "../../lib/money-view";
 import { money, orderLabel } from "../../lib/orders-view";
 import { bookingHref, orderHref } from "../../lib/routes";
 
@@ -63,7 +63,8 @@ export default function MoneyPage() {
   useEffect(() => refresh(), [refresh]);
 
   const ready = state.status === "ready" ? state : null;
-  const todayKey = dayKey(new Date());
+  // MJ-RM7 (review): the merchant's day is the server's Harare date; the browser's own day only with an older API.
+  const todayKey = ready?.today.dateKey ?? dayKey(new Date());
   const openDay = (date: string) => {
     if (date === todayKey) return setPeriod("today");
     setPeriod({ date, summary: null });
@@ -82,7 +83,9 @@ export default function MoneyPage() {
   const lines = (day?.lines ?? []).map((l) => ({ id: l.orderId, title: `${orderLabel({ id: l.orderId })} · ${hm(l.at)}`, ...dayRow(l) }));
   const tab = period === "today" ? "today" : "week";
   const maxSales = ready ? Math.max(0, ...ready.week.days.map((d) => d.sales)) : 0;
-  const weekStart = ready ? new Date(ready.week.start) : null;
+  // MJ-RM7 (review): the week's Monday as a Harare date key — bars and range come from keys, never from
+  // `week.start` (Harare midnight, the day before in a UTC browser) read with local getters.
+  const weekStartKey = ready ? (ready.week.startKey ?? dayKey(new Date(ready.week.start))) : null;
 
   return (
     <Kitchen active="money">
@@ -101,7 +104,7 @@ export default function MoneyPage() {
           <div className="m-salesbig">
             <span>
               SALES · {count} {count === 1 ? "ORDER" : "ORDERS"}
-              {period === "week" && ` · ${weekRange(ready.week.start)}`}
+              {period === "week" && weekStartKey && ` · ${weekRange(weekStartKey)}`}
             </span>
             <b className="m-num">{money(total)}</b>
           </div>
@@ -133,16 +136,15 @@ export default function MoneyPage() {
             </div>
           ))}
 
-        {ready && period === "week" && weekStart && (
+        {ready && period === "week" && weekStartKey && (
           <>
             <div className="m-weekbars" aria-hidden>
               {Array.from({ length: 7 }, (_, i) => {
-                const d = new Date(weekStart);
-                d.setDate(d.getDate() + i);
-                const row = ready.week.days.find((x) => x.date === dayKey(d));
+                const key = addDaysToKey(weekStartKey, i);
+                const row = ready.week.days.find((x) => x.date === key);
                 const h = row && maxSales > 0 ? Math.round((row.sales / maxSales) * 56) : 0;
                 return (
-                  <div key={i} data-today={dayKey(d) === todayKey || undefined}>
+                  <div key={i} data-today={key === todayKey || undefined}>
                     <span style={{ height: h }} />
                     <i>{"MTWTFSS"[i]}</i>
                   </div>

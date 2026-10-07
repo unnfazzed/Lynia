@@ -2087,6 +2087,10 @@ export type MerchantWeeklyStatementResponse = z.infer<typeof MerchantWeeklyState
 export const MerchantEndOfDaySummaryResponse = z
   .object({
     date: z.string(),
+    /** MJ-RM7: the day as a Harare calendar date, `YYYY-MM-DD` — what a client keys and labels the day by
+     *  (`date` is the instant Harare's day starts, which a browser in another zone reads as the day before).
+     *  Additive: an older API omits it. */
+    dateKey: z.string().optional(),
     delivered: z.number().int(),
     rejected: z.number().int(),
     cashTaken: z.number(),
@@ -2143,13 +2147,16 @@ export type MerchantEndOfDaySummaryResponse = z.infer<typeof MerchantEndOfDaySum
  *  server-local days, the same boundary as the Today summary), one row per day so far, oldest first. */
 export const MerchantWeekSummaryResponse = z
   .object({
-    /** Monday 00:00 of this week. */
+    /** Monday 00:00 of this week (Harare). */
     start: z.string(),
+    /** MJ-RM7: that Monday as a Harare calendar date, `YYYY-MM-DD` — what a client derives the week's bars
+     *  and range from (never from `start` with local getters). Additive: an older API omits it. */
+    startKey: z.string().optional(),
     orders: z.number().int(),
     sales: z.number(),
     days: z.array(
       z.object({
-        /** The day, `YYYY-MM-DD` (server-local) — what `GET /merchant/summary/today?date=` takes. */
+        /** The day, `YYYY-MM-DD` (a Harare date, MJ-RM7) — what `GET /merchant/summary/today?date=` takes. */
         date: z.string(),
         orders: z.number().int(),
         sales: z.number(),

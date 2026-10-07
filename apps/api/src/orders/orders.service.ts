@@ -969,16 +969,12 @@ export class OrdersService {
         // C9 (U36): a merchant order's one server-computed amount due — the same figure as its receipt Total
         // and the doorstep handshake. Parcels keep their agreed fare.
         const amountDue = o.orderType === "merchant" ? merchantAmountDueUsd(o) : null;
+        // A cancel after collection leaves the full total owing (BRIEF D3f). It is NOT a charge on this row:
+        // every unpaid outcome reads "No charge", and the order that collects it already charges it (its
+        // amount due), so charging it here too would count the same cash twice once paid. Sent additively
+        // as `owedUsd` for a future drawn line; the current tab doesn't render it.
         const owed = o.orderType === "merchant" && o.owedBalance ? roundToCents(Number(o.owedBalance.amount)) : null;
-        const charged =
-          outcome === "delivered"
-            ? amountDue != null
-              ? amountDue.toFixed(2)
-              : (o.agreedFare ?? o.proposedFare).toString()
-            : // A cancel after collection: the customer owes the full total (its own screen says "You owe $X").
-              owed != null && owed > 0
-              ? owed.toFixed(2)
-              : null;
+        const charged = outcome === "delivered" ? (amountDue != null ? amountDue.toFixed(2) : (o.agreedFare ?? o.proposedFare).toString()) : null;
         return {
           id: o.id,
           orderType: o.orderType,
@@ -996,6 +992,7 @@ export class OrdersService {
           chargedTotal: charged,
           // C9: additive — the merchant order's amount due (absent on a parcel).
           ...(amountDue != null ? { amountDueUsd: amountDue } : {}),
+          ...(owed != null && owed > 0 ? { owedUsd: owed } : {}),
           createdAt: o.createdAt.toISOString(),
           rating: (() => {
             const r = o.rating.find((x) => x.byProfileId === customerId);

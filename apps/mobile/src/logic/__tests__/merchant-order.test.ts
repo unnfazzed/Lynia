@@ -212,6 +212,9 @@ describe("substitution (BRIEF §8)", () => {
     expect(s.unanswered).toBe(2);
     expect(s.newTotal).toBe(13.2);
   });
+  it("C9 (review): Was and New total carry an owed balance the order collects at the door", () => {
+    expect(substitutionState(U2B, 1.5, { bread: "accept", oil: "remove" }, 10)).toEqual({ was: 26.1, newTotal: 18.2, unanswered: 0 });
+  });
   it("the small-order fee comes back when the kept items fall under the minimum", () => {
     expect(substitutionState({ ...U2B, keptSubtotal: 2 }, 1.5, { bread: "remove", oil: "remove" }).newTotal).toBe(4.5);
   });

@@ -62,11 +62,22 @@ export function dayTitle(key: string): string {
   return `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
 }
 
-/** "28 SEP–4 OCT": Monday to Sunday of the week (T2b's header). */
-export function weekRange(startIso: string): string {
-  const a = new Date(startIso);
-  const b = new Date(a);
-  b.setDate(b.getDate() + 6);
+const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** MJ-RM7 (review 2026-10-07): `n` calendar days after a `YYYY-MM-DD` key — pure date arithmetic, so the
+ *  browser's own time zone never moves a day. */
+export function addDaysToKey(key: string, n: number): string {
+  const [y = 0, m = 1, d = 1] = key.split("-").map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d + n));
+  return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, "0")}-${String(t.getUTCDate()).padStart(2, "0")}`;
+}
+
+/** "28 SEP–4 OCT": Monday to Sunday of the week (T2b's header). Takes the week's Monday as a `YYYY-MM-DD`
+ *  key (the server's Harare `startKey`); an older API's ISO `start` is read with local getters, as before. */
+export function weekRange(start: string): string {
+  const key = DAY_KEY.test(start) ? start : dayKey(new Date(start));
+  const a = localDay(key);
+  const b = localDay(addDaysToKey(key, 6));
   const left = a.getMonth() === b.getMonth() ? `${a.getDate()}` : `${a.getDate()} ${MONTHS[a.getMonth()]}`;
   return `${left}–${b.getDate()} ${MONTHS[b.getMonth()]}`.toUpperCase();
 }

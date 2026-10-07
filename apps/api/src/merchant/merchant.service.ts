@@ -139,8 +139,6 @@ const POPULAR_MAX = 6;
 const POPULAR_MIN_DISHES = 2;
 const RESTAURANTS_SEARCH_MIN_CHARS = 2;
 
-/** N-14: "for the rest of today" — end of the server's local calendar day. A past timestamp reads as
- *  back-in-stock, so no reset job is needed; this is the only place that boundary is computed. */
 /** MJ-RM7: a `YYYY-MM-DD` Harare day's first and last instants (the Money tab's day, D-77 T2b); 400s
  *  anything else (the controller's `?date=`). The merchant's day is Harare's, never the server's (UTC). */
 export function parseHarareDay(date: string): { start: Date; end: Date } {
@@ -149,10 +147,12 @@ export function parseHarareDay(date: string): { start: Date; end: Date } {
   return bounds;
 }
 
-function endOfToday(): Date {
-  const d = new Date();
-  d.setHours(23, 59, 59, 999);
-  return d;
+/** N-14: "for the rest of today" — the end of the merchant's (Harare) calendar day. A past timestamp reads
+ *  as back-in-stock, so no reset job is needed; this is the only place that boundary is computed. The
+ *  server runs in UTC, so its own local day (the old `setHours(23, 59, …)`) brought sold-out dishes back
+ *  at 01:59:59 Harare, not at midnight (MJ-RM7 sibling, review of 2026-10-07). */
+export function endOfToday(now: Date = new Date()): Date {
+  return parseHarareDay(harareDayKey(now)).end;
 }
 
 /** `RM.oos_sheet`'s "Until I turn it back on" (merchant web upgrade L5): a date no kitchen reaches, so
@@ -932,7 +932,8 @@ export class MerchantService {
     // Merchant v2 follow-ups T2b (D-77): a day of this week opens in the Today layout (`?date=`).
     // MJ-RM7: the bounds of the merchant's (Harare) calendar day — `setHours` on the UTC server put
     // Harare's 00:00–02:00 on the previous day.
-    const { start, end } = parseHarareDay(date ?? harareDayKey(now));
+    const dayKeyHarare = date ?? harareDayKey(now);
+    const { start, end } = parseHarareDay(dayKeyHarare);
 
     const overdueBefore = new Date(now.getTime() - RESTAURANTS_DEBT.cashReturnWindowMs);
     const [delivered, rejected, walletTaken, cashTaken, prepped, placed, owedRows, todays] = await Promise.all([
@@ -995,6 +996,9 @@ export class MerchantService {
           merchantClosedAt: true,
           // Merchant v2 follow-ups T2 (D-77): why a rejected order wasn't taken.
           rejectionReason: true,
+          // MJ-RM8 review: an unconfirmed auto-accept doesn't earn yet (as in Sales).
+          autoAccepted: true,
+          kitchenConfirmedAt: true,
         },
         orderBy: { createdAt: "desc" },
         take: 100,
@@ -1024,6 +1028,8 @@ export class MerchantService {
 
     return {
       date: start.toISOString(),
+      // MJ-RM7: the Harare day itself, so a client never derives it from `date` with local getters.
+      dateKey: dayKeyHarare,
       delivered,
       rejected,
       cashTaken: roundToCents(Number(cashTaken._sum.debtAmount ?? 0)),
@@ -1047,7 +1053,9 @@ export class MerchantService {
       })),
       lines: (todays ?? []).map((o) => {
         const outcome = moneyLineOutcome(o);
-        const earns = outcome === "delivered" || outcome === "in_progress";
+        // MJ-RM8 (review 2026-10-07): an in-progress line earns only when Sales counts it (not an auto-accept
+        // the kitchen hasn't confirmed), so the list adds up to the Sales header.
+        const earns = outcome === "delivered" || (outcome === "in_progress" && isSaleOrder(o));
         const cash = outcome === "delivered" ? moneyLineCash(o, overdueBefore) : null;
         const reason = outcome === "rejected" ? MerchantRejectionReasonCode.safeParse(o.rejectionReason).data : undefined;
         return {
@@ -1119,6 +1127,8 @@ export class MerchantService {
     }
     return {
       start: start.toISOString(),
+      // MJ-RM7: that Monday as a Harare date — the client's bars and range come from it.
+      startKey: mondayKey,
       orders: days.reduce((n, d) => n + d.orders, 0),
       sales: addMoney(0, ...days.map((d) => d.sales)),
       days,

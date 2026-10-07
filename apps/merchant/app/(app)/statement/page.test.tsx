@@ -167,6 +167,36 @@ describe("T2b day lines (follow-ups, D-77)", () => {
     expect(weekRange(new Date(2026, 8, 28).toISOString())).toBe("28 SEP–4 OCT");
     expect(weekRange(new Date(2026, 9, 5).toISOString())).toBe("5–11 OCT");
   });
+  it("MJ-RM7 (review): a Harare day key is read as that date, never shifted by the browser's zone", () => {
+    expect(weekRange("2026-09-28")).toBe("28 SEP–4 OCT");
+    expect(weekRange("2026-10-26")).toBe("26 OCT–1 NOV");
+  });
+});
+
+describe("MJ-RM7 (review): the week view comes from the server's Harare day keys", () => {
+  it("bars, today's marker and the range follow startKey/dateKey, not week.start read in the browser's zone", async () => {
+    // Harare's Monday 28 Sep starts at 27 Sep 22:00 UTC — a UTC browser's local getters read that as Sunday.
+    vi.mocked(getTodaySummary).mockResolvedValue({ ...today(), date: "2026-09-29T22:00:00.000Z", dateKey: "2026-09-30" });
+    vi.mocked(getWeekSummary).mockResolvedValue({
+      start: "2026-09-27T22:00:00.000Z",
+      startKey: "2026-09-28",
+      orders: 3,
+      sales: 30,
+      days: [
+        { date: "2026-09-28", orders: 1, sales: 10, cashLate: 0, cashDue: 0, rejected: 0 },
+        { date: "2026-09-29", orders: 1, sales: 10, cashLate: 0, cashDue: 0, rejected: 0 },
+        { date: "2026-09-30", orders: 1, sales: 10, cashLate: 0, cashDue: 0, rejected: 0 },
+      ],
+    });
+    const { container } = render(<MoneyPage />);
+    fireEvent.click(await screen.findByRole("tab", { name: "This week" }));
+    expect(screen.getByText("SALES · 3 ORDERS · 28 SEP–4 OCT")).toBeTruthy();
+    const bars = [...container.querySelectorAll(".m-weekbars > div")];
+    // Mon, Tue, Wed carry sales; Wednesday (the server's Harare today) is marked today.
+    expect(bars.map((b) => (b.querySelector("span") as HTMLElement).style.height)).toEqual(["56px", "56px", "56px", "0px", "0px", "0px", "0px"]);
+    expect(bars.findIndex((b) => b.hasAttribute("data-today"))).toBe(2);
+    expect(screen.getAllByRole("button").find((b) => b.textContent?.includes("· today"))!.textContent).toContain("Wed 30 Sep");
+  });
 });
 
 describe("Money is the owner's (merchant web upgrade L4)", () => {

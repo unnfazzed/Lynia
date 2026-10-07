@@ -283,6 +283,15 @@ describe("merchant order — one order screen (D-59)", () => {
     expect(mockRespondToItems).not.toHaveBeenCalled();
   });
 
+  it("C9 (review): the swap sheet's New total and Confirm quote the door amount — a carried owed balance included", async () => {
+    const t = await render(
+      foodOrder({ merchantPhase: "awaiting_item_approval", itemApprovalDeadlineAt: iso(161_000), total: 17, previousBalanceUsd: 2, amountDueUsd: 17, substitution: round() }),
+      snapshot(),
+    );
+    press(t, "Accept swap");
+    expect(t.root.findAll((n) => n.props.accessibilityLabel === "Confirm changes · New total $18.20" && typeof n.props.onPress === "function").length).toBeGreaterThan(0);
+  });
+
   it("U2b: three lines — a removal is announced, each swap answered, New total $8.20; Cancel the whole order is free", async () => {
     const lines = [
       subLine({ id: "b0000000-0000-4000-8000-000000000001" }),

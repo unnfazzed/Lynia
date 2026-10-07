@@ -433,7 +433,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     timeoutSaid.current = round.id;
     const off = roundTakenOff(round);
     const names = off.declinedSwaps.length ? off.declinedSwaps : off.removed;
-    showToast({ text: ofFmt(O.u.timeout, { i: names.join(", "), p: usd(orderTotalNow ?? round.wasTotal - off.saved) }), icon: "timer" });
+    showToast({ text: ofFmt(O.u.timeout, { i: names.join(", "), p: usd(orderTotalNow ?? round.wasTotal - off.saved + (food.order?.previousBalanceUsd ?? 0)) }), icon: "timer" });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per round id
   }, [round?.id, roundStatus, roundResolvedAt]);
 
@@ -1212,7 +1212,8 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   const openRound = round && isOpenRound(round) && !AFTER_PICKUP.has(order.status) ? round : null;
   if (openRound) {
     const { leftMs, pct } = roundClock(openRound, nowMs);
-    const st = substitutionState(openRound, customerFeeOf(order), answers);
+    // C9: the sheet quotes the door amount — a carried owed balance included.
+    const st = substitutionState(openRound, customerFeeOf(order), answers, order.previousBalanceUsd ?? 0);
     const subLines = substitutionLines(openRound);
     const mid = openRound.kind === "mid_prep";
     const answerIn = `${Math.round(RESTAURANTS_TIMING.substitutionWindowMs / 60_000)} ${O.c.min}`;
@@ -1302,7 +1303,8 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       const end = order.itemApprovalDeadlineAt ? Date.parse(order.itemApprovalDeadlineAt) : NaN;
       const leftMs = Number.isFinite(end) ? Math.max(0, end - nowMs) : 0;
       const removed = order.items.filter((i) => i.available === false);
-      const was = order.items.reduce((a, i) => a + i.priceUsd * i.quantity, 0) + customerFeeOf(order);
+      // C9: "Was" carries the owed balance too, like the New total (the amount due) beneath it.
+      const was = order.items.reduce((a, i) => a + i.priceUsd * i.quantity, 0) + customerFeeOf(order) + (order.previousBalanceUsd ?? 0);
       tall = true;
       content = (
         <>
