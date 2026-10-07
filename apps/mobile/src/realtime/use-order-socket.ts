@@ -50,7 +50,8 @@ export function useOrderSocket(
   // slow response racing a fast WS push — the exact profile of a flaky connection) can't clobber the
   // cache with an older fix. invalidateQueries replaces the cached rider position outright; nothing
   // about a normal refetch is otherwise aware a newer live fix already landed.
-  const lastPositionRef = useRef<{ lat: number; lng: number; at: string } | null>(null);
+  // `riderId` is who sent it (U07) — re-applied only onto the same rider.
+  const lastPositionRef = useRef<{ riderId: string | null; lat: number; lng: number; at: string } | null>(null);
 
   useEffect(() => {
     if (!orderId || !token) return;
@@ -69,6 +70,7 @@ export function useOrderSocket(
       if (!lp) return;
       qc.setQueryData<OrderSnapshot>(orderKey(orderId), (prev) => {
         if (!prev?.rider) return prev;
+        if (isForeignRider(prev.rider.profileId, lp.riderId)) return prev;
         const cachedAt = prev.rider.updatedAt ? new Date(prev.rider.updatedAt).getTime() : -Infinity;
         if (cachedAt >= new Date(lp.at).getTime()) return prev;
         return { ...prev, rider: { ...prev.rider, currentLat: lp.lat, currentLng: lp.lng, updatedAt: lp.at } };
@@ -160,22 +162,37 @@ export function useOrderSocket(
     };
     socket.on(WS_EVENTS.offersChanged, onOffersChanged);
 
-    const onPosition = (p: { lat: number; lng: number; at: string }) => {
+    const onPosition = (p: { riderId?: string; lat: number; lng: number; at: string }) => {
+      if (!p) return;
+      const riderId = typeof p.riderId === "string" && p.riderId ? p.riderId : null;
+      // U07: the shared socket can sit in more than one order room (a second order screen pushed over the
+      // first), and `position` carries no order id — only the sending rider's id (tracking.gateway
+      // `coalescePositionEmit`). A fix from a rider who isn't THIS order's rider is another order's and
+      // must not move this map's pin. While this order's rider isn't known yet, the first fix still
+      // lands (as before) and the REST snapshot settles who the rider is.
+      const known = qc.getQueryData<OrderSnapshot>(orderKey(orderId))?.rider?.profileId;
+      if (isForeignRider(known, riderId)) return;
       // RUM: glass-to-glass from the fix's server `at` to now (skew-clamped).
-      if (p?.at) {
+      if (p.at) {
         const ms = clampGlassSample(Date.now(), p.at);
         if (ms == null) noteDropped();
         else enqueue("position_glass", ms, "customer");
       }
-      lastPositionRef.current = { lat: p.lat, lng: p.lng, at: p.at };
+      lastPositionRef.current = { riderId, lat: p.lat, lng: p.lng, at: p.at };
       qc.setQueryData<OrderSnapshot>(orderKey(orderId), (prev) => {
         if (!prev) return prev;
         // Don't drop the first fix when the snapshot's rider isn't populated yet.
-        const rider = prev.rider ?? { profileId: "", currentLat: null, currentLng: null, updatedAt: null };
+        const rider = prev.rider ?? { profileId: riderId ?? "", currentLat: null, currentLng: null, updatedAt: null };
         return { ...prev, rider: { ...rider, currentLat: p.lat, currentLng: p.lng, updatedAt: p.at } };
       });
     };
     socket.on(WS_EVENTS.position, onPosition);
+
+    // U07: the socket is shared (acquireSocket), so a second order screen pushed over a first one gets a
+    // socket that is ALREADY connected — its "connect" fired long ago and won't fire again. Join this
+    // order's room (and take the self-heal refetch) now instead of waiting for a reconnect that may
+    // never come; otherwise the screen got no offers/status/positions and fell back to polling.
+    if (socket.connected) onConnect();
 
     return () => {
       socket.off("connect", onConnect);
@@ -192,4 +209,9 @@ export function useOrderSocket(
   }, [orderId, token, qc]);
 
   return { connected };
+}
+
+/** U07: a `position` fix from `sender` belongs to another order when both riders are known and differ. */
+function isForeignRider(orderRider: string | null | undefined, sender: string | null): boolean {
+  return !!orderRider && !!sender && orderRider !== sender;
 }

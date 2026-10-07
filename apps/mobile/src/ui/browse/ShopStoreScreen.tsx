@@ -9,7 +9,7 @@ import { useFoodCart } from "../../food/cart-context";
 import { categoryServedNow, shopVenue, windowLaterToday, type VenueView } from "../../logic/browse";
 import { MAX_ITEM_QTY } from "../../logic/food-cart";
 import { useHomeLocation } from "../../logic/home-location";
-import { firstSlot } from "../../logic/review";
+import { firstSlot, rxOnFor } from "../../logic/review";
 import { useNow } from "../../logic/use-now";
 import { useOrderFlags } from "../../net/use-order-flags";
 import { useServiceFlags } from "../../net/use-service-flags";
@@ -101,6 +101,9 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
   const now = useNow();
   const serviceFlags = useServiceFlags();
   const orderFlags = useOrderFlags();
+  // U09: Rx is on when the flag says so OR this catalogue lists an Rx item (the server lists those only
+  // while Rx is on) — so an item added before `/app/order-flags` answers still carries `rxRequired`.
+  const rxEnabled = rxOnFor(orderFlags.rxEnabled, catalogue?.categories);
   const sectionOn = service === "pharmacy" ? serviceFlags.pharmacyEnabled : serviceFlags.shopsEnabled;
   const s = B.svc[service];
 
@@ -145,11 +148,11 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
           title: c.name,
           window: windowed ? fmt(B.store.window, { a: c.availableFrom!, b: c.availableTo! }) : null,
           note: windowed ? fmt(B.store.windowNote, { a: windowLaterToday(c.availableFrom!, now) ? c.availableFrom! : `${c.availableFrom!} tomorrow` }) : null,
-          items: c.dishes.map((d) => storeItem(d, served, orderFlags.rxEnabled)),
+          items: c.dishes.map((d) => storeItem(d, served, rxEnabled)),
         };
       })
       .filter((c) => c.items.length > 0);
-  }, [catalogue, now, orderFlags.rxEnabled]);
+  }, [catalogue, now, rxEnabled]);
 
   const hasCart = cart.itemCount > 0 && cart.cart.restaurantId === id;
   const canAdd = open && sectionOn;
@@ -226,7 +229,7 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
           service={service}
           browseOnly={!sectionOn}
           remind={false}
-          rxEnabled={orderFlags.rxEnabled}
+          rxEnabled={rxEnabled}
           closedAt={open ? null : (v?.opens?.time ?? null)}
           remindOn={false}
           remindBusy={false}
@@ -382,7 +385,7 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
         {closingStrip && sectionOn ? <ClosingStrip minutes={v.closesInMin!} orderBy={v.closeTime!} /> : null}
         {closingStrip && !sectionOn ? <OpenLine v={v} service={service} /> : null}
         {!open ? <ClosedStrip label={closedLabel(v)} /> : null}
-        {service === "pharmacy" && !orderFlags.rxEnabled ? <OtcNotice marginTop={10} /> : null}
+        {service === "pharmacy" && !rxEnabled ? <OtcNotice marginTop={10} /> : null}
         {empty ? (
           // S13c — the shop has no items yet.
           <EmptyState icon="inbox" title={emptyCopy.store.noItems.title} body={emptyCopy.store.noItems.body} offsetTop={STORE_EMPTY_TOP} />

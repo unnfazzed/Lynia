@@ -15,7 +15,8 @@ const TEST_METRICS = { frame: { x: 0, y: 0, width: 360, height: 720 }, insets: {
 const mockRouter = { back: jest.fn(), push: jest.fn(), replace: jest.fn(), dismissAll: jest.fn(), canGoBack: jest.fn(() => true) };
 let mockParams: { schedule?: string } = {};
 jest.mock("expo-router", () => ({ useRouter: () => mockRouter, useLocalSearchParams: () => mockParams, useNavigation: () => ({ setOptions: () => undefined }), Redirect: () => null }));
-jest.mock("@tanstack/react-query", () => ({ useQueryClient: () => ({}) }));
+let mockMe: { phone: string } | undefined;
+jest.mock("@tanstack/react-query", () => ({ useQueryClient: () => ({}), useQuery: () => ({ data: mockMe }) }));
 
 const dish = (id: string, name: string, priceUsd: number, extra: object = {}) => ({ id, name, description: null, priceUsd, photoUrl: null, outOfStock: false, ...extra });
 const mockMenu = {
@@ -39,7 +40,8 @@ let mockHome: { label: string; point: { lat: number; lng: number } | null; area:
 jest.mock("../../../src/logic/home-location", () => ({ useHomeLocation: () => ({ ...mockHome, source: "gps", locating: false, denied: false }) }));
 let mockOnline = true;
 jest.mock("../../../src/net/use-reachability", () => ({ useReachability: () => mockOnline }));
-jest.mock("../../../src/logic/saved-recipients", () => ({ loadMyPickupPhone: () => Promise.resolve("0771234567"), saveMyPickupPhone: jest.fn(() => Promise.resolve()) }));
+let mockSavedPhone: string | null = "0771234567";
+jest.mock("../../../src/logic/saved-recipients", () => ({ loadMyPickupPhone: () => Promise.resolve(mockSavedPhone), saveMyPickupPhone: jest.fn(() => Promise.resolve()) }));
 jest.mock("../../../src/push/ask-in-context", () => ({ routeAfterOrderPlaced: jest.fn(async (id: string) => `/order/${id}`) }));
 jest.mock("../../../src/query/use-food-order", () => ({ seedFoodOrder: jest.fn() }));
 jest.mock("../../../src/logic/use-address-suggest", () => ({ useAddressSuggest: () => ({ status: "idle", rows: [], limited: false }) }));
@@ -126,6 +128,8 @@ function press(t: renderer.ReactTestRenderer, label: string | RegExp): void {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockSavedPhone = "0771234567";
+  mockMe = undefined;
   mockOnline = true;
   mockHome = { label: "12 Lanark Rd", point: { lat: -17.8, lng: 31.05 }, area: "Belgravia" };
   mockMenu.restaurant.hours = null;
@@ -247,6 +251,43 @@ describe("Place order", () => {
     await flush();
     expect(texts(t)).toContain("Sadza & beef stew is out of stock right now");
     expect(mockRefetch).toHaveBeenCalled();
+  });
+});
+
+describe("U08 — YOUR PHONE on a first order", () => {
+  it("no phone saved on this install: the block is prefilled with the account's own number and Place uses it", async () => {
+    mockSavedPhone = null;
+    mockMe = { phone: "+263772000111" };
+    mockPlace.mockResolvedValue({ id: "fo-1" });
+    const t = render();
+    await flush();
+    expect(texts(t)).toContain("0772 000 111");
+    press(t, /^Place order · /);
+    await flush();
+    expect(mockPlace).toHaveBeenCalledTimes(1);
+    expect(mockPlace.mock.calls[0]![1]).toMatchObject({ dropoff: { contactPhone: "+263772000111" } });
+  });
+
+  it("a phone saved from a past order still wins over the account's number", async () => {
+    mockMe = { phone: "+263772000111" };
+    const t = render();
+    await flush();
+    expect(texts(t)).toContain("0771 234 567");
+    expect(texts(t)).not.toContain("0772 000 111");
+  });
+
+  it("no usable phone at all: Place focuses the (already open) phone field instead of doing nothing", async () => {
+    mockSavedPhone = null;
+    const t = render();
+    await flush();
+    // The empty field is already mounted (an empty phone opens it), so flipping autoFocus did nothing.
+    const input = t.root.findAll((n) => n.props.accessibilityLabel === "YOUR PHONE" && typeof n.instance?.focus === "function")[0]!;
+    const focus = input.instance.focus as jest.Mock;
+    focus.mockClear();
+    press(t, /^Place order · /);
+    await flush();
+    expect(mockPlace).not.toHaveBeenCalled();
+    expect(focus).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -464,12 +505,30 @@ describe("R8a / R8b — prescription (behind rxEnabled)", () => {
   ];
 
   it("flag off: nothing Rx renders", async () => {
-    shopCart("pharmacy", RX);
+    // Off, the server lists no "Prescription needed" item, so neither the catalogue nor the cart has one.
+    shopCart("pharmacy", RX.map(({ rxRequired: _rx, ...l }) => l));
     const t = render();
     await flush();
     const all = texts(t);
     expect(all).not.toContain("PRESCRIPTION");
     expect(all).not.toContain("Prescription needed");
+  });
+
+  // U09: the line was added while `/app/order-flags` hadn't answered (stamped without rxRequired), and the
+  // flag still reads its fail-closed default here. The latest catalogue marks the item, so Review asks for
+  // the prescription (instead of letting Place fail with nowhere to add one) and the line is re-stamped.
+  it("U09: a line stamped before the Rx flag loaded still needs its prescription (from the catalogue)", async () => {
+    mockRxEnabled = false;
+    shopCart("pharmacy", RX);
+    mockCart.cart.lines = RX.map(({ rxRequired: _rx, ...l }) => ({ ...l }));
+    const t = render();
+    await flush();
+    const all = texts(t);
+    expect(all).toContain("PRESCRIPTION");
+    expect(all).toContain("Prescription needed");
+    expect(all.some((x) => x.startsWith("Over-the-counter"))).toBe(false);
+    expect(pressable(t, /^Place order · /)!.props.accessibilityState.disabled).toBe(true);
+    expect(mockCart.replaceLines).toHaveBeenCalledWith([expect.objectContaining({ dishId: "i3", rxRequired: true }), expect.not.objectContaining({ rxRequired: true })]);
   });
 
   it("R8a — empty: the block above Items, Take photo / From gallery, placing blocked with one hint line", async () => {

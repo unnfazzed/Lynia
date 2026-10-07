@@ -28,6 +28,7 @@ export async function loadFoodCart(): Promise<FoodCartState | null> {
       lines: parsed.lines,
       orderNote: parsed.orderNote ?? "",
       venue: parsed.venue ?? null,
+      ...(typeof parsed.nonce === "string" && parsed.nonce ? { nonce: parsed.nonce } : {}),
     };
   } catch {
     return null;

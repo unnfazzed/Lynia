@@ -240,17 +240,30 @@ describe("Pharmacy storefront (S4) — ordering (Order flow v2, D-59)", () => {
     expect(t).not.toContain("Over-the-counter only.");
   });
 
-  it("rxEnabled: an Rx item wears Prescription needed and carries it into the cart; off, nothing", () => {
+  it("rxEnabled: an Rx item wears Prescription needed and carries it into the cart", () => {
     mockCatalogue = {
       shop: shop("s-1", "Avondale Pharmacy", "pharmacy"),
       categories: [{ id: "c-1", name: "Antibiotics", availableFrom: null, availableTo: null, dishes: [{ ...item("d-3", "Amoxicillin 500mg (21 caps)", 4.2), rxRequired: true }] }],
     };
-    tree = mount(<ShopStoreScreen service="pharmacy" />);
-    expect(texts(tree)).not.toContain("Prescription needed");
-    act(() => tree!.unmount());
     mockRxEnabled = true;
     tree = mount(<ShopStoreScreen service="pharmacy" />);
     expect(texts(tree)).toContain("Prescription needed");
+    press(tree, /^Add Amoxicillin/);
+    expect(mockCart.addItem).toHaveBeenCalledWith("s-1", "Avondale Pharmacy", expect.objectContaining({ dishId: "d-3", rxRequired: true }), { businessType: "shop", shopKind: "pharmacy" });
+  });
+
+  // U09: the catalogue paints from the persisted cache before `/app/order-flags` answers (the fail-closed
+  // default reads "off"). The server lists an Rx item only while Rx is on, so the catalogue itself says it
+  // is on: the item still wears its pill and the line keeps `rxRequired`, and the OTC notice stays away.
+  it("U09: an Rx item added before the order flags load keeps rxRequired (the catalogue proves Rx is on)", () => {
+    mockCatalogue = {
+      shop: shop("s-1", "Avondale Pharmacy", "pharmacy"),
+      categories: [{ id: "c-1", name: "Antibiotics", availableFrom: null, availableTo: null, dishes: [{ ...item("d-3", "Amoxicillin 500mg (21 caps)", 4.2), rxRequired: true }] }],
+    };
+    mockRxEnabled = false; // the flag hasn't answered yet
+    tree = mount(<ShopStoreScreen service="pharmacy" />);
+    expect(texts(tree)).toContain("Prescription needed");
+    expect(texts(tree)).not.toContain("Over-the-counter only.");
     press(tree, /^Add Amoxicillin/);
     expect(mockCart.addItem).toHaveBeenCalledWith("s-1", "Avondale Pharmacy", expect.objectContaining({ dishId: "d-3", rxRequired: true }), { businessType: "shop", shopKind: "pharmacy" });
   });

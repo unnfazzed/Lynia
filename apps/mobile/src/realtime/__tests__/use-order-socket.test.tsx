@@ -276,3 +276,79 @@ describe("useOrderSocket rider presence recovery (BH-25)", () => {
     expect(spy).not.toHaveBeenCalledWith({ queryKey: orderKey(ORDER_6) });
   });
 });
+
+describe("useOrderSocket on an already-connected shared socket (U07)", () => {
+  // A second order screen pushed over a first one gets the SAME connected socket from acquireSocket:
+  // its "connect" fired long ago, so subscribing only on "connect" meant it never joined its room.
+  function nextSocket(connected: boolean, emit: jest.Mock): void {
+    const { acquireSocket } = jest.requireMock("../socket") as { acquireSocket: jest.Mock };
+    acquireSocket.mockImplementationOnce(() => {
+      mockLastSocket = mockCreateFakeSocket();
+      Object.assign(mockLastSocket, { connected, emit });
+      return mockLastSocket;
+    });
+  }
+
+  it("joins the order room at once when the shared socket is already connected", () => {
+    const emit = jest.fn();
+    nextSocket(true, emit);
+    const qc = new QueryClient();
+    act(() => {
+      create(
+        <QueryClientProvider client={qc}>
+          <Harness orderId="order-B" />
+        </QueryClientProvider>,
+      );
+    });
+    expect(emit).toHaveBeenCalledWith("subscribe:order", { orderId: "order-B" });
+  });
+
+  it("waits for connect on a socket that is still connecting", () => {
+    const emit = jest.fn();
+    nextSocket(false, emit);
+    const qc = new QueryClient();
+    act(() => {
+      create(
+        <QueryClientProvider client={qc}>
+          <Harness orderId="order-B" />
+        </QueryClientProvider>,
+      );
+    });
+    expect(emit).not.toHaveBeenCalled();
+    act(() => mockLastSocket.trigger("connect"));
+    expect(emit).toHaveBeenCalledWith("subscribe:order", { orderId: "order-B" });
+  });
+
+  it("ignores a position fix from another order's rider (riderId differs), applies its own", () => {
+    const qc = new QueryClient();
+    qc.setQueryData(orderKey("order-1"), baseSnapshot); // rider r1
+    act(() => {
+      create(
+        <QueryClientProvider client={qc}>
+          <Harness orderId="order-1" />
+        </QueryClientProvider>,
+      );
+    });
+    act(() => mockLastSocket.trigger("position", { riderId: "r-other", lat: 9, lng: 9, at: "2026-07-12T00:05:00.000Z" }));
+    expect(qc.getQueryData<OrderSnapshot>(orderKey("order-1"))?.rider).toEqual(baseSnapshot.rider);
+
+    act(() => mockLastSocket.trigger("position", { riderId: "r1", lat: 3, lng: 4, at: "2026-07-12T00:06:00.000Z" }));
+    const rider = qc.getQueryData<OrderSnapshot>(orderKey("order-1"))?.rider;
+    expect(rider?.currentLat).toBe(3);
+    expect(rider?.currentLng).toBe(4);
+  });
+
+  it("lets the first fix through while this order's rider isn't known yet", () => {
+    const qc = new QueryClient();
+    qc.setQueryData(orderKey("order-1"), { ...baseSnapshot, rider: null });
+    act(() => {
+      create(
+        <QueryClientProvider client={qc}>
+          <Harness orderId="order-1" />
+        </QueryClientProvider>,
+      );
+    });
+    act(() => mockLastSocket.trigger("position", { riderId: "r1", lat: 3, lng: 4, at: "2026-07-12T00:06:00.000Z" }));
+    expect(qc.getQueryData<OrderSnapshot>(orderKey("order-1"))?.rider).toMatchObject({ profileId: "r1", currentLat: 3, currentLng: 4 });
+  });
+});

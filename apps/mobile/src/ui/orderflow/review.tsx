@@ -2,7 +2,7 @@ import type { ScheduleSlot, ScheduleSlotsResponse } from "@lynia/shared";
 import { FirstRunToast } from "../firstrun/toast";
 import { tokens } from "@lynia/shared/tokens";
 import React from "react";
-import { ActivityIndicator, Image, Modal, ScrollView, Text, TextInput, View, type TextInputProps, type TextStyle, type ViewStyle } from "react-native";
+import { ActivityIndicator, Image, Modal, ScrollView, Text, TextInput, View, type LayoutChangeEvent, type TextInputProps, type TextStyle, type ViewStyle } from "react-native";
 import { formatMoney } from "../../logic/money";
 import { firstSlot, type ChosenSlot, type SlotDay } from "../../logic/review";
 import { GRAB, HAIRLINE, RADIO_OFF, TABULAR } from "../browse/kit";
@@ -421,6 +421,7 @@ export function ReviewBlock({
   focused,
   children,
   style,
+  onLayout,
 }: {
   label: string;
   edit?: { label: string; onPress: () => void; icon?: boolean } | null;
@@ -428,9 +429,12 @@ export function ReviewBlock({
   focused?: boolean;
   children: React.ReactNode;
   style?: ViewStyle;
+  /** Where the block sits in the scroll content (U08: Review scrolls to the phone it stops on). */
+  onLayout?: (e: LayoutChangeEvent) => void;
 }): React.ReactElement {
   return (
     <View
+      onLayout={onLayout}
       style={{
         backgroundColor: tokens.color.bg,
         borderRadius: 16,
@@ -560,8 +564,12 @@ export function ItemLine({
   );
 }
 
-/** `.field`: 48 min, r12, 1px line (1.5 accent when focused), 15 text. */
-export function ReviewField({ icon, style, ...input }: TextInputProps & { icon?: IconName }): React.ReactElement {
+/**
+ * `.field`: 48 min, r12, 1px line (1.5 accent when focused), 15 text. Forwards its ref to the TextInput
+ * (U08): a field that is already mounted can't be focused by flipping `autoFocus`, so Review focuses the
+ * phone field through the ref when Place stops on it.
+ */
+export const ReviewField = React.forwardRef<TextInput, TextInputProps & { icon?: IconName }>(function ReviewField({ icon, style, ...input }, ref): React.ReactElement {
   const [focused, setFocused] = React.useState(false);
   return (
     <View
@@ -578,6 +586,7 @@ export function ReviewField({ icon, style, ...input }: TextInputProps & { icon?:
     >
       {icon ? <Icon name={icon} size={18} color={tokens.color.muted} /> : null}
       <TextInput
+        ref={ref}
         placeholderTextColor={tokens.color.muted}
         {...input}
         onFocus={(e) => {
@@ -592,7 +601,7 @@ export function ReviewField({ icon, style, ...input }: TextInputProps & { icon?:
       />
     </View>
   );
-}
+});
 
 /** `.kv`: 13 muted label, 600 value; the Total row is ink 700 + 17/700. */
 function Kv({ k, v, text, total, first }: { k: string; v: number; text?: string; total?: boolean; first?: boolean }): React.ReactElement {

@@ -80,6 +80,8 @@ export function carriedBalance(balance: Pick<CustomerBalanceResponse, "lines">):
 export interface LatestDish {
   priceUsd: number;
   outOfStock: boolean;
+  /** U09: the catalogue's own "Prescription needed" mark (absent on a restaurant menu). */
+  rxRequired?: boolean;
 }
 
 export interface ReconcileResult {
@@ -89,6 +91,17 @@ export interface ReconcileResult {
   gone: FoodCartLine[];
   /** Price changes applied to kept lines, keyed by the line key (`dishId|note`). */
   priceChanges: Record<string, { from: number; to: number }>;
+  /** U09: a kept line's prescription mark was brought in line with the catalogue (set only when true). */
+  rxChanged?: boolean;
+}
+
+/**
+ * U09: whether the prescription flow is on for this catalogue. The flag decides it — and so does the
+ * catalogue itself: the server lists "Prescription needed" items ONLY while Rx is on (merchant.service
+ * catalogue), so a catalogue holding one proves Rx is on even before (or without) `/app/order-flags`.
+ */
+export function rxOnFor(rxEnabledFlag: boolean, categories: readonly { dishes: readonly { rxRequired?: boolean }[] }[] | null | undefined): boolean {
+  return rxEnabledFlag || (categories ?? []).some((c) => c.dishes.some((d) => d.rxRequired === true));
 }
 
 export function lineKey(l: Pick<FoodCartLine, "dishId" | "note">): string {
@@ -105,20 +118,28 @@ export function reconcileCart(lines: readonly FoodCartLine[], latest: ReadonlyMa
   const kept: FoodCartLine[] = [];
   const gone: FoodCartLine[] = [];
   const priceChanges: Record<string, { from: number; to: number }> = {};
+  let rxChanged = false;
   for (const line of lines) {
     const dish = latest.get(line.dishId);
     if (!dish || dish.outOfStock) {
       gone.push(line);
       continue;
     }
+    let next = line;
     if (dish.priceUsd !== line.priceUsd) {
       priceChanges[lineKey(line)] = { from: line.priceUsd, to: dish.priceUsd };
-      kept.push({ ...line, priceUsd: dish.priceUsd });
-    } else {
-      kept.push(line);
+      next = { ...next, priceUsd: dish.priceUsd };
     }
+    // U09: the catalogue's Rx mark wins over the one stamped when the line was added (stamped "no" while
+    // the flag was still loading, or the pharmacist marked the item since).
+    if (dish.rxRequired !== undefined && dish.rxRequired !== (line.rxRequired === true)) {
+      rxChanged = true;
+      const { rxRequired: _drop, ...rest } = next;
+      next = dish.rxRequired ? { ...rest, rxRequired: true } : rest;
+    }
+    kept.push(next);
   }
-  return { lines: kept, gone, priceChanges };
+  return { lines: kept, gone, priceChanges, ...(rxChanged ? { rxChanged } : {}) };
 }
 
 // ── Place order ────────────────────────────────────────────────────────────────────────────────────

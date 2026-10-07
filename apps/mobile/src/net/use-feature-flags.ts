@@ -3,10 +3,10 @@
 // the first fetch — which already runs behind a 250 ms boot-priority timer — not at module
 // evaluation on the launch path. Same lazy-require seam as PostHog in src/telemetry/analytics.tsx.
 import type { MerchantFeatureFlagsResponse } from "@lynia/shared";
-import { useEffect, useState } from "react";
 import { API_URL } from "../config";
 import { BACKGROUND_CHECK_TIMEOUT_MS } from "./network-policy";
 import { fetchSignal } from "./fetch-signal";
+import { createSharedFlags, isBooleanRecord } from "./shared-flags";
 
 /**
  * Remote config for the merchant-vertical kill switches (`docs/plans/2026-07-28-restaurants-send-
@@ -34,23 +34,28 @@ export const DEFAULT_FEATURE_FLAGS: MerchantFeatureFlagsResponse = {
   merchantWalletEnabled: false,
 };
 
-export async function fetchFeatureFlags(
-  fetchImpl: typeof fetch = fetch,
-  timeoutMs = BACKGROUND_CHECK_TIMEOUT_MS,
-): Promise<MerchantFeatureFlagsResponse> {
+async function tryFetchFeatureFlags(fetchImpl: typeof fetch = fetch, timeoutMs = BACKGROUND_CHECK_TIMEOUT_MS): Promise<MerchantFeatureFlagsResponse | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetchImpl(`${API_URL}/app/feature-flags`, { signal: fetchSignal(controller) });
-    if (!res.ok) return DEFAULT_FEATURE_FLAGS;
+    if (!res.ok) return null;
     const { MerchantFeatureFlagsResponse: schema } = require("@lynia/shared") as typeof import("@lynia/shared");
     const parsed = schema.safeParse(await res.json());
-    return parsed.success ? parsed.data : DEFAULT_FEATURE_FLAGS;
+    return parsed.success ? parsed.data : null;
   } catch {
-    return DEFAULT_FEATURE_FLAGS; // offline / timeout / bad JSON — per-flag defaults (see above)
+    return null;
   } finally {
     clearTimeout(timer);
   }
+}
+
+export async function fetchFeatureFlags(
+  fetchImpl: typeof fetch = fetch,
+  timeoutMs = BACKGROUND_CHECK_TIMEOUT_MS,
+): Promise<MerchantFeatureFlagsResponse> {
+  // offline / timeout / bad JSON — per-flag defaults (see above)
+  return (await tryFetchFeatureFlags(fetchImpl, timeoutMs)) ?? DEFAULT_FEATURE_FLAGS;
 }
 
 /** Cold-boot request prioritization (B-O7): deferred a beat behind mount so this fetch doesn't
@@ -60,22 +65,23 @@ export async function fetchFeatureFlags(
  *  the correct launched layout — the fetch only matters when a kill switch has been flipped. */
 const BOOT_FEATURE_FLAGS_DELAY_MS = 250;
 
-/** The feature flags, defaulting closed until the fetch resolves. Checked once per cold start —
- *  a mid-session flip takes effect on next launch, matching `useServerMinVersion`'s reasoning:
- *  never yank a tile out from under an in-progress session. */
+/** Re-asked at most this often, across every screen (P17). */
+const FEATURE_FLAGS_MAX_AGE_MS = 60_000;
+
+const featureFlags = createSharedFlags<MerchantFeatureFlagsResponse>({
+  storageKey: "lynia.feature-flags.v1",
+  defaults: DEFAULT_FEATURE_FLAGS,
+  fetch: () => tryFetchFeatureFlags(),
+  delayMs: BOOT_FEATURE_FLAGS_DELAY_MS,
+  maxAgeMs: FEATURE_FLAGS_MAX_AGE_MS,
+  isValid: (v): v is MerchantFeatureFlagsResponse => isBooleanRecord(v, ["restaurantsEnabled", "merchantDispatchAutoEnabled", "merchantWalletEnabled"]),
+});
+
+// P17: shared across mounts — one answer (last known, persisted across launches) that every screen
+// reads; a remount no longer restarts from the default and re-asks (at most once a minute).
 export function useFeatureFlags(): MerchantFeatureFlagsResponse {
-  const [flags, setFlags] = useState<MerchantFeatureFlagsResponse>(DEFAULT_FEATURE_FLAGS);
-  useEffect(() => {
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      void fetchFeatureFlags().then((value) => {
-        if (!cancelled) setFlags(value);
-      });
-    }, BOOT_FEATURE_FLAGS_DELAY_MS);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, []);
-  return flags;
+  return featureFlags.useValue();
 }
+
+/** Test seam. */
+export const resetFeatureFlagsForTest = (): void => featureFlags.resetForTest();
