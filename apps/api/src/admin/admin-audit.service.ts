@@ -60,11 +60,15 @@ export const RESERVED_AUDIT_ACTIONS: ReadonlySet<string> = new Set([
   "rider.profile_update",
   // First Run v2 E4 (D-82): AdminRidersService.verifyPlate writes it with the plate_status flip.
   "rider.plate_verify",
-  // C4: `FoodDebtService.reportNonReturn` writes this (actor = the merchant profile id) in the SAME
-  // transaction as the rider.accountStatus=suspended write-off — a real, domain-owned suspension the
-  // free-text path must not be able to forge (it would read identically to a genuine R-07 non-return
-  // finding with no underlying account-standing change).
+  // C4: `FoodDebtService.reportNonReturn` wrote this (actor = the merchant profile id) in the SAME
+  // transaction as the rider.accountStatus=suspended write-off until D3 (2026-10-07) made the report a
+  // flag. Kept protected: historical rows must stay unforgeable.
   "rider.suspend_food_debt",
+  // D3 (2026-10-07, MJ-RH1): `FoodDebtService.reportNonReturn` writes this with the
+  // debtNonReturnReportedAt flag, and `AdminMerchantsService.writeOffDebt` writes order.debt_write_off with
+  // the written_off settle — both domain-owned, same forgery risk as the rows above.
+  "merchant.report_non_return",
+  "order.debt_write_off",
   // X1: `AdminMerchantsService.resolveHandshake` writes this in the same transaction as the
   // riderCashConfirmedAt release write (the sole valve out of an R-05 frozen doorstep handshake) — a
   // real, domain-owned dispute resolution the free-text path must not be able to forge (it would read

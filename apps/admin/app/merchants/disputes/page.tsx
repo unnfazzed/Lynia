@@ -1,16 +1,18 @@
 import { tokens } from "@lynia/shared";
 import { adminFetchResult } from "../../lib/api";
-import type { FoodDisputes, HandshakeDisputeRow, RefundOverdueRow } from "../../lib/adminTypes";
+import type { FoodDisputes, HandshakeDisputeRow, NonReturnReportRow, RefundOverdueRow } from "../../lib/adminTypes";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
 import { DataTable, type Column } from "../../components/DataTable";
 import { Pill } from "../../components/StatusPill";
 import { IconAlert } from "../../components/icons";
 import { ResolveHandshakeButton } from "../ResolveHandshakeButton";
+import { WriteOffDebtButton } from "../WriteOffDebtButton";
 
-/** Support dispute queue (X1): R-05 frozen doorstep handshakes needing a resolve decision, plus N-12
+/** Support dispute queue (X1): R-05 frozen doorstep handshakes needing a resolve decision, N-12
  *  refund-overdue visibility (Q6 mocked default — escalation is visibility only; LyniaGo never holds
  *  the money, so there is no "pay the refund" button here, only the overdue flag support acts on
- *  off-console). */
+ *  off-console), and D3's merchant non-return reports (owner decision 2026-10-07: a flag an admin
+ *  decides — write the debt off here, suspend the rider from the rider's page). */
 export default async function FoodDisputesPage() {
   const res = await adminFetchResult<FoodDisputes>("/admin/merchant-disputes");
   const disputes = "data" in res ? res.data : null;
@@ -30,6 +32,32 @@ export default async function FoodDisputesPage() {
       cell: (d) => new Date(d.frozenAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }),
     },
     { key: "actions", header: "", cell: (d) => <ResolveHandshakeButton orderId={d.orderId} connected={connected} /> },
+  ];
+
+  const nonReturnCols: Column<NonReturnReportRow>[] = [
+    { key: "order", header: "Order", className: "mono", cell: (d) => d.orderId.slice(0, 8) },
+    { key: "merchant", header: "Merchant", cell: (d) => d.merchant },
+    {
+      key: "rider",
+      header: "Rider",
+      className: "mut",
+      cell: (d) =>
+        d.riderId ? (
+          <a href={`/riders/${d.riderId}`} style={{ color: tokens.color.accentText }}>
+            {d.rider ?? "Rider"}
+          </a>
+        ) : (
+          (d.rider ?? "—")
+        ),
+    },
+    { key: "amount", header: "Owed", className: "num", cell: (d) => (d.amount ? `$${d.amount}` : "—") },
+    {
+      key: "reportedAt",
+      header: "Reported",
+      className: "mut",
+      cell: (d) => new Date(d.reportedAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }),
+    },
+    { key: "actions", header: "", cell: (d) => <WriteOffDebtButton orderId={d.orderId} connected={connected} /> },
   ];
 
   const refundCols: Column<RefundOverdueRow>[] = [
@@ -62,7 +90,7 @@ export default async function FoodDisputesPage() {
     <main className="content">
       <header className="page">
         <h1>Food disputes</h1>
-        <span className="sub">R-05 frozen doorstep handshakes and N-12 refund-overdue orders</span>
+        <span className="sub">R-05 frozen doorstep handshakes, goods or cash not returned, and N-12 refund-overdue orders</span>
         <Conn connected={connected} reason={reason} />
       </header>
 
@@ -101,6 +129,32 @@ export default async function FoodDisputesPage() {
         {disputes && disputes.handshakeDisputes.length >= 100 ? (
           <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: 12 }}>
             Showing the oldest 100 frozen handshakes — newer ones aren&apos;t listed until these are resolved.
+          </div>
+        ) : null}
+      </section>
+
+      <section className="card" style={{ marginBottom: tokens.space.lg }}>
+        <div className="block-title">Goods or cash not returned</div>
+        <div style={{ fontSize: 12, color: tokens.color.muted, marginBottom: 10 }}>
+          The merchant reported that the rider didn&apos;t bring the goods or the cash back. Nothing has happened to the
+          rider yet: the debt stays open (the merchant can still confirm it came back) and the rider takes no new jobs
+          until it&apos;s settled. Call both, then write it off here or suspend the rider from their page.
+        </div>
+        <DataTable
+          columns={nonReturnCols}
+          rows={disputes?.nonReturnReports ?? []}
+          rowKey={(d) => d.orderId}
+          empty={
+            connected ? (
+              <EmptyState icon={<IconAlert />} title="No reports" line="No merchant is waiting on goods or cash." />
+            ) : (
+              <EmptyState icon={<IconAlert />} title={reasonTitle(reason ?? "unconfigured", "Reports")} line={reasonLine(reason ?? "unconfigured", "reports")} />
+            )
+          }
+        />
+        {disputes && (disputes.nonReturnReports?.length ?? 0) >= 100 ? (
+          <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: 12 }}>
+            Showing the oldest 100 reports — newer ones aren&apos;t listed until these are settled.
           </div>
         ) : null}
       </section>

@@ -247,6 +247,16 @@ describe("K5 · on the way + cash back, one screen (Merchant v2, D-77)", () => {
     await vi.waitFor(() => expect(confirmGoodsReturned).toHaveBeenCalledWith(ID));
   });
 
+  it("MJ-RB1: cancelled after the rider collected — the same K5c goods return, and 'I got the food back' settles it", async () => {
+    show(merchantOrder({ id: ID, ...CASH, merchantPhase: null, status: "cancelled", riderId: RIDER.profileId, rider: RIDER, debtStatus: "open", debtAmount: 12 }));
+    expect(await screen.findByText("#A111 couldn't be delivered")).toBeTruthy();
+    expect(screen.queryByText("This order was cancelled")).toBeNull();
+    expect(screen.getByText("GOODS BACK TO YOU")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "It wasn't returned" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "I got the food back" }));
+    await vi.waitFor(() => expect(confirmGoodsReturned).toHaveBeenCalledWith(ID));
+  });
+
   it("K5c: 'It wasn't returned' reports it to LyniaGo behind one confirm", async () => {
     show(merchantOrder({ id: ID, ...CASH, merchantPhase: null, status: "undelivered", riderId: RIDER.profileId, rider: RIDER, debtStatus: "open", debtAmount: 12 }));
     fireEvent.click(await screen.findByRole("button", { name: "It wasn't returned" }));

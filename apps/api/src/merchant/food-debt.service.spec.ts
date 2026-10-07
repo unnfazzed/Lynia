@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { NotificationsService } from "../notifications/notifications.service";
 import type { OrderLifecycleService } from "../orders/order-lifecycle.service";
 import { PrismaService } from "../prisma/prisma.service";
-import { FoodDebtService } from "./food-debt.service";
+import { RESTAURANTS_DEBT } from "@lynia/shared";
+import { FoodDebtService, handshakeDeadline } from "./food-debt.service";
 import { withMembershipShim } from "./testing/membership-shim";
 
 const notified: Array<{ profileIds: string[]; title: string; body: string }> = [];
@@ -147,6 +148,102 @@ describe("FoodDebtService — doorstep handshake (R-04/R-05/N-19)", () => {
     expect(updateData!.cashHandshakeAmount).toBe(15.5);
     expect(updateData!.cashHandshakeDeadlineAt).toBeInstanceOf(Date);
     expect(notified).toEqual([expect.objectContaining({ profileIds: ["r1"] })]);
+  });
+
+  it("D5: a customer confirm made on the way (rider not at the door yet) gets the trip ceiling, not the 2:00 window", async () => {
+    let updateData: Record<string, unknown> | undefined;
+    const { svc } = build({
+      order: {
+        findFirst: async () => ({ status: "en_route_dropoff", merchantPaymentMethod: "cash", agreedFare: 15.5, customerCashConfirmedAt: null, riderId: "r1", riderAtDropoffAt: null }),
+        updateMany: async (a: { data: Record<string, unknown> }) => {
+          updateData = a.data;
+          return { count: 1 };
+        },
+      },
+    });
+    const before = Date.now();
+    await svc.confirmCustomerCash(orderId, "c1");
+    const deadline = (updateData!.cashHandshakeDeadlineAt as Date).getTime();
+    expect(deadline - before).toBeGreaterThanOrEqual(RESTAURANTS_DEBT.handshakeTripCeilingMs - 1000);
+  });
+
+  it("D5: once the rider said \"I'm here\", the customer's confirm starts the normal 2:00 window", async () => {
+    let updateData: Record<string, unknown> | undefined;
+    const { svc } = build({
+      order: {
+        findFirst: async () => ({ status: "en_route_dropoff", merchantPaymentMethod: "cash", agreedFare: 15.5, customerCashConfirmedAt: null, riderId: "r1", riderAtDropoffAt: new Date() }),
+        updateMany: async (a: { data: Record<string, unknown> }) => {
+          updateData = a.data;
+          return { count: 1 };
+        },
+      },
+    });
+    const before = Date.now();
+    await svc.confirmCustomerCash(orderId, "c1");
+    const left = (updateData!.cashHandshakeDeadlineAt as Date).getTime() - before;
+    expect(left).toBeLessThanOrEqual(RESTAURANTS_DEBT.handshakeWindowMs + 1000);
+    expect(left).toBeGreaterThan(RESTAURANTS_DEBT.handshakeWindowMs - 1000);
+  });
+
+  it("D5: handshakeDeadline is the 2:00 window at the door and the long ceiling on the road", () => {
+    const t = new Date("2026-10-07T10:00:00Z");
+    expect(handshakeDeadline(t, new Date()).getTime() - t.getTime()).toBe(RESTAURANTS_DEBT.handshakeWindowMs);
+    expect(handshakeDeadline(t, null).getTime() - t.getTime()).toBe(RESTAURANTS_DEBT.handshakeTripCeilingMs);
+    expect(RESTAURANTS_DEBT.handshakeTripCeilingMs).toBeGreaterThan(RESTAURANTS_DEBT.handshakeWindowMs);
+  });
+
+  it("D5: the rider's \"I'm here\" stamps once and starts the 2:00 window on a customer confirm made on the way", async () => {
+    const updates: Array<{ where: Record<string, unknown>; data: Record<string, unknown> }> = [];
+    const { svc } = build({
+      order: {
+        findFirst: async () => ({ status: "en_route_dropoff", riderAtDropoffAt: null }),
+        updateMany: async (a: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+          updates.push(a);
+          return { count: 1 };
+        },
+      },
+    });
+    const before = Date.now();
+    const res = await svc.markAtDropoff(orderId, "r1");
+    expect(res.riderAtDropoffAt).toBeTruthy();
+    expect(updates[0]).toEqual({
+      where: { id: orderId, riderId: "r1", riderAtDropoffAt: null, status: { in: ["picked_up", "en_route_dropoff"] } },
+      data: { riderAtDropoffAt: expect.any(Date) },
+    });
+    // The window restarts only on an unresolved handshake the customer already started.
+    expect(updates[1]!.where).toEqual({ id: orderId, customerCashConfirmedAt: { not: null }, riderCashConfirmedAt: null, cashHandshakeFrozenAt: null });
+    const left = (updates[1]!.data.cashHandshakeDeadlineAt as Date).getTime() - before;
+    expect(left).toBeLessThanOrEqual(RESTAURANTS_DEBT.handshakeWindowMs + 1000);
+  });
+
+  it("D5: a repeated \"I'm here\" is idempotent — no second stamp, no clock restart", async () => {
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const at = new Date("2026-10-07T10:00:00Z");
+    const { svc } = build({ order: { findFirst: async () => ({ status: "en_route_dropoff", riderAtDropoffAt: at }), updateMany } });
+    const res = await svc.markAtDropoff(orderId, "r1");
+    expect(res.riderAtDropoffAt).toBe(at.toISOString());
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("D5: \"I'm here\" is refused before the rider has the food", async () => {
+    const { svc } = build({ order: { findFirst: async () => ({ status: "en_route_pickup", riderAtDropoffAt: null }) } });
+    await expect(svc.markAtDropoff(orderId, "r1")).rejects.toThrow(/taking the order to the customer/i);
+  });
+
+  it("D5: the rider can still complete — after an on-the-way customer confirm, the rider's confirm unlocks the code", async () => {
+    let updated = false;
+    const { svc } = build({
+      order: {
+        findFirst: async () => ({ customerCashConfirmedAt: new Date(Date.now() - 20 * 60_000), riderCashConfirmedAt: null, cashHandshakeFrozenAt: null, customerId: "c1" }),
+        updateMany: async () => {
+          updated = true;
+          return { count: 1 };
+        },
+      },
+    });
+    const res = await svc.confirmRiderCash(orderId, "r1");
+    expect(res.riderCashConfirmedAt).toBeTruthy();
+    expect(updated).toBe(true);
   });
 
   it("rejects a WALLET order — the handshake is CASH-only", async () => {
@@ -397,88 +494,120 @@ describe("FoodDebtService — merchant debt settlement (R-06/R-07/N-20/N-21, D-0
     });
     await expect(svc.confirmGoodsReturned("p1", orderId)).rejects.toThrow(/order changed/i);
     expect(updateMany).toHaveBeenCalledWith({
-      where: { id: orderId, debtStatus: "open", status: "undelivered" },
+      where: { id: orderId, debtStatus: "open", OR: [{ status: "undelivered" }, { status: "cancelled", collectedAt: { not: null } }] },
       data: { debtStatus: "settled_goods", debtSettledAt: expect.any(Date) },
     });
     expect(ledgerCreate).not.toHaveBeenCalled();
   });
 
-  it("reportNonReturn writes off the debt AND suspends + names the rider in one transaction", async () => {
-    let riderUpdate: Record<string, unknown> | undefined;
-    let sessionsRevoked = false;
-    let audit: Record<string, unknown> | undefined;
-    const { svc } = build({
-      merchant: { findUnique: async () => ({ id: "m1" }) },
-      order: {
-        findFirst: async () => ({ debtStatus: "open", debtAmount: 13, riderId: "r1" }),
-        updateMany: async () => ({ count: 1 }),
-      },
-      merchantDebtLedger: { create: async () => ({}) },
-      rider: {
-        findUnique: async () => ({ accountStatus: "active" }),
-        updateMany: async (a: { data: Record<string, unknown> }) => {
-          riderUpdate = a.data;
-          return { count: 1 };
-        },
-      },
-      session: {
-        updateMany: async () => {
-          sessionsRevoked = true;
-          return { count: 1 };
-        },
-      },
-      auditLog: {
-        create: async (a: { data: Record<string, unknown> }) => {
-          audit = a.data;
-          return {};
-        },
-      },
-    });
-    const res = await svc.reportNonReturn("p1", orderId, "never showed up");
-    expect(res.debtStatus).toBe("written_off");
-    expect(riderUpdate).toMatchObject({ accountStatus: "suspended", suspendReason: "food_debt_non_return", isOnline: false });
-    expect(sessionsRevoked).toBe(true);
-    expect(audit).toMatchObject({ action: "rider.suspend_food_debt", target: "r1", note: "never showed up" });
-    expect(notified).toEqual([expect.objectContaining({ profileIds: ["r1"] })]);
-  });
+  // ── D3 (2026-10-07, MJ-RH1): "It wasn't returned" is a flag for support — never a write-off or suspension ──
 
-  it("reportNonReturn never downgrades an already-banned rider back to suspended", async () => {
-    let riderUpdateCalled = false;
-    const { svc } = build({
-      merchant: { findUnique: async () => ({ id: "m1" }) },
-      order: {
-        findFirst: async () => ({ debtStatus: "open", debtAmount: 13, riderId: "r1" }),
-        updateMany: async () => ({ count: 1 }),
-      },
-      merchantDebtLedger: { create: async () => ({}) },
-      rider: { findUnique: async () => ({ accountStatus: "banned" }), updateMany: async () => { riderUpdateCalled = true; return { count: 0 }; } },
+  /** A fake order row the spies below act on, so a report followed by a "got it back" reads like the DB. */
+  function nonReturnHarness(initial: Record<string, unknown> = {}) {
+    const row: Record<string, unknown> = { debtStatus: "open", debtAmount: 13, riderId: "r1", status: "undelivered", collectedAt: new Date(), debtNonReturnReportedAt: null, ...initial };
+    const matches = (where: Record<string, unknown>): boolean =>
+      Object.entries(where).every(([k, v]): boolean => {
+        if (k === "id") return true;
+        if (k === "OR") return (v as Record<string, unknown>[]).some((alt): boolean => matches(alt));
+        if (v && typeof v === "object" && "not" in (v as object)) return row[k] != null;
+        return row[k] === v;
+      });
+    const orderUpdateMany = vi.fn(async (a: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+      if (!matches(a.where)) return { count: 0 };
+      Object.assign(row, a.data);
+      return { count: 1 };
     });
-    await svc.reportNonReturn("p1", orderId);
-    expect(riderUpdateCalled).toBe(false);
-  });
-
-  it("an already-suspended rider's separate non-return is still recorded — the debt writes off AND gets its own audit row and food-debt reason", async () => {
-    const riderUpdateMany = vi.fn(async () => ({ count: 1 }));
-    const sessionUpdateMany = vi.fn(async () => ({ count: 1 }));
-    const auditCreate = vi.fn(async () => ({}));
     const ledgerCreate = vi.fn(async () => ({}));
+    const auditCreate = vi.fn(async () => ({}));
+    const riderUpdateMany = vi.fn(async () => ({ count: 1 }));
+    const riderUpdate = vi.fn(async () => ({}));
+    const sessionUpdateMany = vi.fn(async () => ({ count: 1 }));
     const { svc } = build({
       merchant: { findUnique: async () => ({ id: "m1" }) },
-      order: { findFirst: async () => ({ debtStatus: "open", debtAmount: 13, riderId: "r1" }), updateMany: async () => ({ count: 1 }) },
+      order: { findFirst: async () => ({ ...row }), findUnique: async () => ({ ...row }), updateMany: orderUpdateMany },
       merchantDebtLedger: { create: ledgerCreate },
-      rider: { findUnique: async () => ({ accountStatus: "suspended" }), updateMany: riderUpdateMany },
-      session: { updateMany: sessionUpdateMany },
       auditLog: { create: auditCreate },
+      rider: { findUnique: async () => ({ accountStatus: "active" }), updateMany: riderUpdateMany, update: riderUpdate },
+      session: { updateMany: sessionUpdateMany },
     });
-    const res = await svc.reportNonReturn("p1", orderId, "second order");
-    expect(res.debtStatus).toBe("written_off");
-    expect(ledgerCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ type: "written_off", amount: -13 }) });
-    // A different order's unreturned cash is a new event, not a retry (the same order's retry 409s on the
-    // debt CAS): it must not vanish behind an earlier, unrelated admin suspension.
-    expect(riderUpdateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ suspendReason: "food_debt_non_return" }) }),
-    );
-    expect(auditCreate).toHaveBeenCalledTimes(1);
+    return { svc, row, orderUpdateMany, ledgerCreate, auditCreate, riderUpdateMany, riderUpdate, sessionUpdateMany };
+  }
+
+  it("D3: reportNonReturn flags the order for support — the debt stays open, no ledger write-off", async () => {
+    const h = nonReturnHarness();
+    const res = await h.svc.reportNonReturn("p1", orderId, "never showed up");
+    expect(res).toEqual({ orderId, debtStatus: "open", reportedAt: expect.any(String) });
+    expect(h.row.debtStatus).toBe("open");
+    expect(h.row.debtNonReturnReportedAt).toBeInstanceOf(Date);
+    expect(h.orderUpdateMany).toHaveBeenCalledWith({
+      where: { id: orderId, debtStatus: "open", debtNonReturnReportedAt: null },
+      data: { debtNonReturnReportedAt: expect.any(Date) },
+    });
+    expect(h.ledgerCreate).not.toHaveBeenCalled();
+    expect(h.auditCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ actor: "p1", action: "merchant.report_non_return", target: orderId, note: "never showed up" }),
+    });
+  });
+
+  it("D3: reportNonReturn never suspends the rider, never revokes a session and never pushes the rider", async () => {
+    const h = nonReturnHarness();
+    await h.svc.reportNonReturn("p1", orderId);
+    expect(h.riderUpdateMany).not.toHaveBeenCalled();
+    expect(h.riderUpdate).not.toHaveBeenCalled();
+    expect(h.sessionUpdateMany).not.toHaveBeenCalled();
+    expect(notified).toEqual([]);
+  });
+
+  it("D3: after a report, \"I got the food back\" still settles the debt (and so clears the flag off the admin queue)", async () => {
+    const h = nonReturnHarness();
+    await h.svc.reportNonReturn("p1", orderId);
+    const res = await h.svc.confirmGoodsReturned("p1", orderId);
+    expect(res.debtStatus).toBe("settled_goods");
+    expect(h.row.debtStatus).toBe("settled_goods");
+    expect(h.ledgerCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ type: "settled_goods", amount: -13 }) });
+  });
+
+  it("D3: a second report of the same order is an idempotent success — one flag, one audit row", async () => {
+    const h = nonReturnHarness();
+    const first = await h.svc.reportNonReturn("p1", orderId);
+    const second = await h.svc.reportNonReturn("p1", orderId);
+    expect(second.reportedAt).toBe(first.reportedAt);
+    expect(h.auditCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("D3: nothing to report once the debt is settled", async () => {
+    const h = nonReturnHarness({ debtStatus: "settled_goods" });
+    await expect(h.svc.reportNonReturn("p1", orderId)).rejects.toThrow(/no open debt/i);
+    expect(h.auditCreate).not.toHaveBeenCalled();
+  });
+
+  // ── MJ-RB1 (2026-10-07): a customer cancel after the rider collected rides the food back (K5c) ──
+
+  it("MJ-RB1: confirmGoodsReturned accepts a cancelled order the rider had collected", async () => {
+    const h = nonReturnHarness({ status: "cancelled", collectedAt: new Date() });
+    const res = await h.svc.confirmGoodsReturned("p1", orderId);
+    expect(res.debtStatus).toBe("settled_goods");
+    expect(h.orderUpdateMany).toHaveBeenCalledWith({
+      where: { id: orderId, debtStatus: "open", OR: [{ status: "undelivered" }, { status: "cancelled", collectedAt: { not: null } }] },
+      data: { debtStatus: "settled_goods", debtSettledAt: expect.any(Date) },
+    });
+  });
+
+  it("MJ-RB1: confirmGoodsReturned still refuses a cancelled order that was never collected", async () => {
+    const h = nonReturnHarness({ status: "cancelled", collectedAt: null });
+    await expect(h.svc.confirmGoodsReturned("p1", orderId)).rejects.toThrow(/haven't come back/i);
+    expect(h.orderUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("MJ-RB1: the settle CAS is exactly the widened condition — a delivered order can't settle as goods even if read as cancelled", async () => {
+    const h = nonReturnHarness({ status: "cancelled", collectedAt: new Date() });
+    // An admin flipped it after the read (say to completed): the CAS's OR no longer matches.
+    const read = { ...h.row };
+    h.row.status = "completed";
+    const prismaOrder = (h.svc as unknown as { prisma: { order: { findFirst: () => Promise<unknown> } } }).prisma.order;
+    prismaOrder.findFirst = async () => read;
+    await expect(h.svc.confirmGoodsReturned("p1", orderId)).rejects.toThrow(/order changed/i);
+    expect(h.ledgerCreate).not.toHaveBeenCalled();
   });
 
   it("no path strands the debt — every settling event's ledger amount is the negative of the opened amount", async () => {

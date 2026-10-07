@@ -1,4 +1,4 @@
-import { type MerchantOrderResponse, type MerchantOrderTrackView, ORDER_SCHEDULE, type OrderStatusEvent, type RatingTag, RESTAURANTS_TIMING, SOS_POLICY, type VenueRatingTag } from "@lynia/shared";
+import { type MerchantOrderResponse, type MerchantOrderTrackView, ORDER_SCHEDULE, type OrderStatusEvent, type RatingTag, RESTAURANTS_DEBT, RESTAURANTS_TIMING, SOS_POLICY, type VenueRatingTag } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -38,6 +38,7 @@ import {
   merchantService,
   type MerchantService,
   type MerchantStage,
+  doorPayOpen,
   prepProgress,
   readyAtMs,
   resolveMerchantStage,
@@ -603,6 +604,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
         dropoff,
         assignedAt: snap?.events.find((e) => e.status === "assigned")?.createdAt ?? null,
         handshakeStarted: handshake === "waiting_rider" || handshake === "confirmed" || handshake === "frozen",
+        riderAtDropoff: !!order.riderAtDropoffAt,
         nowMs,
       })
     : null;
@@ -1154,7 +1156,12 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   let tall = false;
   const noFix = res?.noFix ?? false;
   const paused = res?.gpsPaused ?? false;
-  const awaitingDoor = order.status === "en_route_dropoff" && (noFix || paused);
+  // D5 (2026-10-07, U10): the pay step opens for the whole ride to the door — no distance gate (the rider
+  // may be offline or their GPS 150 m off the pin). Until the rider is "at your door" the onWay sheet
+  // carries the drawn door card and pay bar under the trip.
+  const awaitingDoor = doorPayOpen(order.status);
+  // At the door with no live fix: the drawn door state hides the cancel link (as before D5).
+  const doorNoFix = awaitingDoor && (noFix || paused);
 
   // U3 (no answer in time) and U4b (a removal / quantity drop, nothing to answer): said under the track.
   let roundNote: React.ReactNode = null;
@@ -1187,7 +1194,10 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     const paid = handshake === "waiting_rider" || handshake === "confirmed" || handshake === "frozen";
     const both = handshake === "confirmed";
     const p = usd(order.cashHandshakeAmount ?? total);
-    const left = order.cashHandshakeDeadlineAt ? clock(Date.parse(order.cashHandshakeDeadlineAt) - nowMs) : null;
+    // D5: a confirm made on the way carries the long trip ceiling until the rider says "I'm here" — only
+    // the real N-19 window is a countdown worth showing.
+    const leftMs = order.cashHandshakeDeadlineAt ? Date.parse(order.cashHandshakeDeadlineAt) - nowMs : null;
+    const left = leftMs != null && leftMs <= RESTAURANTS_DEBT.handshakeWindowMs ? clock(leftMs) : null;
     return [
       { state: paid ? "done" : "current", title: O.p.s1, sub: paid ? null : sealed ? O.p.s1Seal : withRider(O.p.s1Sub, rFirst) },
       {
@@ -1493,9 +1503,9 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
           {photoFresh ? pickupRow : null}
           {riderCard}
           {photoFresh ? null : pickupRow}
-          {awaitingDoor ? null : cancelLink(O.t.cancelFull)}
+          {doorNoFix ? null : cancelLink(O.t.cancelFull)}
           <PeekMark />
-          {/* No fix at the door: the customer must still be able to pay, so the door card follows. */}
+          {/* D5: the customer can pay any time on the way — the door card follows the trip. */}
           {awaitingDoor ? <DoorCard rows={doorRows()} /> : null}
         </>
       );

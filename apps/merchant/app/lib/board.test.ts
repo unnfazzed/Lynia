@@ -156,4 +156,19 @@ describe("the Orders board (Merchant v2 K1/S1, D-77)", () => {
     expect(section!.cards[0]!.cash).toEqual({ late: true, phone: "+263772222222" });
     expect(section!.cards[1]).toMatchObject({ cash: { late: false }, chevron: true });
   });
+
+  it("MJ-RB1: a cancel after the rider collected sits under CASH TO COME BACK with the undelivered goods returns", () => {
+    const back = (id: string, status: string) =>
+      merchantOrder({ id, merchantPhase: null, status, rider: RIDER, riderId: RIDER.profileId, debtStatus: "open", debtAmount: 12 });
+    const sections = buildBoard({
+      v: kitchen,
+      shop: false,
+      now: NOW,
+      orders: [back("a1060000-0000-4000-8000-000000000000", "undelivered"), back("a1070000-0000-4000-8000-000000000000", "cancelled")],
+    });
+    expect(sections.map((s) => s.heading)).toEqual(["CASH TO COME BACK · 2"]);
+    expect(sections[0]!.cards.map((c) => c.title)).toEqual(["$12.00 · #A106", "$12.00 · #A107"]);
+    // Once the food is back (debt settled), the cancelled order leaves the board.
+    expect(buildBoard({ v: kitchen, shop: false, now: NOW, orders: [merchantOrder({ merchantPhase: null, status: "cancelled", debtStatus: "settled_goods" })] })).toEqual([]);
+  });
 });

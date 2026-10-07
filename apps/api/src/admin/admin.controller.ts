@@ -454,8 +454,9 @@ export class AdminController {
     return this.kitchen.setOrderSettings(actor, id, body);
   }
 
-  /** Support dispute queue (X1): R-05 frozen doorstep handshakes needing `resolve-handshake`, plus
-   *  N-12 refund-overdue visibility (Q6 mocked default — escalation is visibility only, no penalty). */
+  /** Support dispute queue (X1): R-05 frozen doorstep handshakes needing `resolve-handshake`, N-12
+   *  refund-overdue visibility (Q6 mocked default — escalation is visibility only, no penalty), and D3's
+   *  merchant non-return reports (open debts flagged for support; `write-off-debt` closes one). */
   @Get("merchant-disputes")
   merchantDisputes() {
     return this.merchantsService.listDisputes();
@@ -470,6 +471,17 @@ export class AdminController {
     @AdminActor() actor: string,
   ) {
     return this.merchantsService.resolveHandshake(actor, id, body);
+  }
+
+  /** D3 (2026-10-07, MJ-RH1): the only write-off of a food debt — an admin, reason required, after
+   *  support followed up a merchant's non-return report. Suspending the rider is the separate rider action. */
+  @Post("orders/:id/write-off-debt")
+  writeOffDebt(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(ReasonRequired)) body: z.infer<typeof ReasonRequired>,
+    @AdminActor() actor: string,
+  ) {
+    return this.merchantsService.writeOffDebt(actor, id, body);
   }
 
   /* ── Commission (prepaid per-ride, delegated to SettlementsService) ──────────────────────── */

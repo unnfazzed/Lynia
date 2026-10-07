@@ -322,7 +322,7 @@ describe("AdminService.utilization", () => {
 });
 
 describe("AdminService.navCounts — X1 foodDisputes badge", () => {
-  it("sums R-05 frozen handshakes and N-12 refund-overdue orders into one badge count", async () => {
+  it("sums R-05 frozen handshakes, N-12 refund-overdue orders and D3 non-return reports into one badge count", async () => {
     const counts: Record<string, unknown>[] = [];
     const prisma = {
       rider: { count: async () => 0 },
@@ -333,13 +333,14 @@ describe("AdminService.navCounts — X1 foodDisputes badge", () => {
           counts.push(args.where);
           // Distinguish the two order.count calls by their distinctive where-clause shape.
           if ("cashHandshakeFrozenAt" in args.where) return 2; // frozen handshakes
+          if ("debtNonReturnReportedAt" in args.where) return 4; // D3: merchant non-return reports
           return 3; // refund-overdue
         },
       },
     };
     const svc = new AdminService(prisma as unknown as PrismaService, envStub());
     const out = await svc.navCounts();
-    expect(out.foodDisputes).toBe(5);
+    expect(out.foodDisputes).toBe(9);
     // Both order-vertical queries are scoped to merchant orders only — never mix in parcel counts.
     expect(counts.every((w) => w.orderType === "merchant")).toBe(true);
   });

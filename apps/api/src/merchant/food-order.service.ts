@@ -1962,6 +1962,8 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       kitchenConfirmedAt: order.kitchenConfirmedAt?.toISOString() ?? null,
       kitchenConfirmedBy: (order.kitchenConfirmedBy as MerchantOrderResponse["kitchenConfirmedBy"]) ?? null,
       itemsEditedAt: order.itemsEditedAt?.toISOString() ?? null,
+      // D5 (U10): the rider's "I'm here" at the drop-off — a hint for the customer's door card, never a gate.
+      riderAtDropoffAt: order.riderAtDropoffAt?.toISOString() ?? null,
       restaurantPhone,
       ...orderFlowV2Fields(order),
       ...orderFlowV2BFields(order),
@@ -2014,6 +2016,7 @@ const RESPONSE_NULL_OMIT_FIELDS = [
   "kitchenConfirmedAt",
   "kitchenConfirmedBy",
   "itemsEditedAt",
+  "riderAtDropoffAt",
   "restaurantPhone",
   // D-71: absent unless the venue funds this order's delivery.
   "merchantDeliveryShare",

@@ -33,8 +33,22 @@ export function riderFirstName(o: MerchantOrderResponse): string | null {
 /** The statuses after the rider has the food (the API's own AFTER_PICKUP set). */
 const AFTER_PICKUP = new Set(["picked_up", "en_route_dropoff", "delivered", "completed", "undelivered"]);
 
-export function isAfterPickup(o: Pick<MerchantOrderResponse, "status">): boolean {
-  return AFTER_PICKUP.has(o.status);
+export function isAfterPickup(o: Pick<MerchantOrderResponse, "status" | "debtStatus">): boolean {
+  return AFTER_PICKUP.has(o.status) || isCancelledGoodsReturn(o);
+}
+
+/**
+ * MJ-RB1 (2026-10-07): the customer cancelled after the rider collected — the food rides back to the
+ * venue and the collect-and-return debt opened at pickup stays open until the merchant says "I got the
+ * food back". It is the same goods return as an undelivered order (K5c), so it is drawn the same way.
+ */
+export function isCancelledGoodsReturn(o: Pick<MerchantOrderResponse, "status" | "debtStatus">): boolean {
+  return o.status === "cancelled" && o.debtStatus === "open";
+}
+
+/** K5c: the goods are coming back — the order wasn't delivered, or was cancelled after pickup (MJ-RB1). */
+export function isGoodsReturn(o: Pick<MerchantOrderResponse, "status" | "debtStatus">): boolean {
+  return o.status === "undelivered" || isCancelledGoodsReturn(o);
 }
 
 export interface HomeSections {
@@ -83,6 +97,8 @@ export function slotLabel(scheduledFor: string, now: Date, slotMinutes = 30): { 
 
 /** Which screen an order opens on: B3 cooking, B4 handover, B6 tracking or B7 delivered. */
 export function detailView(o: MerchantOrderResponse): DetailView {
+  // MJ-RB1: a cancel after pickup still has the food to take back — K5c, like an undelivered order.
+  if (!o.merchantClosedAt && isCancelledGoodsReturn(o)) return "delivered";
   if (o.merchantClosedAt || o.status === "cancelled" || o.status === "expired") return "closed";
   // M7b: a scheduled order waits on its ticket until it rings (then it rings like a new one, M1c).
   if (o.merchantPhase === "awaiting_accept" && isScheduledWaiting(o)) return "scheduled";
@@ -123,7 +139,7 @@ export function rowSub(o: MerchantOrderResponse): string {
   }
   const cash = o.debtStatus === "open" && o.debtAmount ? ` · cash back ${money(o.debtAmount)}` : "";
   if (o.status === "delivered" || o.status === "completed") return `Delivered${cash}`;
-  if (o.status === "undelivered") return `Not delivered${cash}`;
+  if (isGoodsReturn(o)) return `Not delivered${cash}`;
   return `On the way${cash}`;
 }
 
@@ -252,7 +268,7 @@ export function liveBar(orders: readonly MerchantOrderResponse[], v: Vocabulary)
   const ringing = s.new.find((o) => o.merchantPhase === "awaiting_accept" || needsKitchenConfirm(o));
   const answering = s.new.find((o) => o.merchantPhase === "awaiting_item_approval");
   const counter = s.ready.find((o) => o.riderId && o.riderArrivedAt && riderFirstName(o));
-  const onTheWay = s.outForDelivery.filter((o) => o.status !== "delivered" && o.status !== "completed" && o.status !== "undelivered");
+  const onTheWay = s.outForDelivery.filter((o) => o.status !== "delivered" && o.status !== "completed" && !isGoodsReturn(o));
   const counts = [
     s.cooking.length > 0 ? `${s.cooking.length} ${making}` : null,
     s.ready.length > 0 ? `${s.ready.length} ready` : null,

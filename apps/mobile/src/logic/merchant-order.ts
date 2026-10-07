@@ -103,6 +103,9 @@ export interface StageInput extends TrackInput {
   assignedAt: string | null;
   /** The cash handshake has started (either side confirmed, or it froze). */
   handshakeStarted: boolean;
+  /** D5 (2026-10-07, U10): the rider tapped "I'm here" at the drop-off (`riderAtDropoffAt`, server-stamped).
+   *  A hint for the "at your door" stage — never what opens the pay step (see {@link doorPayOpen}). */
+  riderAtDropoff?: boolean;
   nowMs: number;
 }
 
@@ -135,9 +138,10 @@ function baseStage(i: StageInput): MerchantStage {
     return "toVenue";
   }
   if (POST_PICKUP.has(i.status)) {
-    // The door card takes over once the rider is within ~150 m, or as soon as either side starts the
-    // cash handshake — the customer must always be able to pay, even when the fix is stale.
-    if (i.status === "en_route_dropoff" && i.handshakeStarted) return "door";
+    // "At your door" (P) once the rider is within ~150 m, said "I'm here" (D5's server stamp), or either side
+    // started the cash handshake. Paying never waits on this: the pay step opens for the whole ride
+    // (doorPayOpen), the onWay sheet carries the door card until the rider is here.
+    if (i.status === "en_route_dropoff" && (i.handshakeStarted || i.riderAtDropoff)) return "door";
     if (i.status === "en_route_dropoff" && i.rider && i.dropoff && metres(i.rider, i.dropoff) <= ARRIVING_M) return "door";
     return "onWay";
   }
@@ -159,6 +163,16 @@ function baseStage(i: StageInput): MerchantStage {
     default:
       return "waiting";
   }
+}
+
+/**
+ * Owner decision D5 (2026-10-07, U10): the customer's pay step (the door card + "I've paid $X") opens as soon
+ * as the rider has the food and is on the way to them — `en_route_dropoff` — with NO distance gate: the
+ * rider may be offline, or their GPS stale or 150 m off a geocoded pin. The server takes the confirm on any
+ * `en_route_dropoff` order, and its handshake clock waits for the rider's "I'm here" (FoodDebtService).
+ */
+export function doorPayOpen(status: string): boolean {
+  return status === "en_route_dropoff";
 }
 
 const LIVE_RIDER: ReadonlySet<MerchantStage> = new Set(["toVenue", "collecting", "onWay", "door"]);

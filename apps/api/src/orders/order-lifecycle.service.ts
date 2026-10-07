@@ -1069,6 +1069,9 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       // the next merchant order carries it as its own line (merchant/customer-balance.ts). `agreedFare` is
       // goods + delivery only, so a balance this order was itself carrying is not counted twice (it simply
       // becomes free to carry again).
+      // MJ-RB1 (2026-10-07): the collect-and-return debt opened at pickup is deliberately left `open` here —
+      // the food is riding back to the venue, so the merchant's goods-return view (K5c) settles it with
+      // "I got the food back" (FoodDebtService.confirmGoodsReturned accepts `cancelled` + `collectedAt`).
       if (isCustomer && collected && order.orderType === "merchant") {
         const owed = roundToCents(Number(order.agreedFare ?? 0));
         if (owed > 0) {

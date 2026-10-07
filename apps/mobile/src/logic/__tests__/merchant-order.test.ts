@@ -1,5 +1,6 @@
 import type { SubstitutionRoundView } from "@lynia/shared";
 import {
+  doorPayOpen,
   codeCopied,
   codeGroups,
   codeShown,
@@ -97,6 +98,28 @@ describe("resolveMerchantStage", () => {
     expect(resolveMerchantStage(base({ status: "en_route_dropoff", merchantPhase: null, riderId: "r1", rider: far, handshakeStarted: true })).stage).toBe("door");
     // picked_up is never the door, even when close.
     expect(resolveMerchantStage(base({ status: "picked_up", merchantPhase: null, riderId: "r1", rider: near })).stage).toBe("onWay");
+  });
+
+  it("D5 (U10): the rider's server-stamped \"I'm here\" is the door even when their GPS is far off the pin", () => {
+    const far = { lat: -17.83, lng: 31.05, at: new Date(NOW).toISOString() };
+    expect(resolveMerchantStage(base({ status: "en_route_dropoff", merchantPhase: null, riderId: "r1", rider: far, riderAtDropoff: true })).stage).toBe("door");
+    expect(resolveMerchantStage(base({ status: "en_route_dropoff", merchantPhase: null, riderId: "r1", rider: null, riderAtDropoff: true })).stage).toBe("door");
+    // Before collection it means nothing.
+    expect(resolveMerchantStage(base({ status: "picked_up", merchantPhase: null, riderId: "r1", rider: far, riderAtDropoff: true })).stage).toBe("onWay");
+  });
+
+  it("D5 (U10): the pay step opens at en_route_dropoff whatever the distance — never before, never after", () => {
+    expect(doorPayOpen("en_route_dropoff")).toBe(true);
+    for (const s of ["requested", "assigned", "en_route_pickup", "picked_up", "delivered", "completed", "cancelled", "undelivered"]) {
+      expect(doorPayOpen(s)).toBe(false);
+    }
+    // It does not depend on the stage either: a far rider with a fresh fix is "onWay" and can still be paid.
+    const far = { lat: -17.83, lng: 31.05, at: new Date(NOW).toISOString() };
+    const r = resolveMerchantStage(base({ status: "en_route_dropoff", merchantPhase: null, riderId: "r1", rider: far }));
+    expect(r.stage).toBe("onWay");
+    expect(r.noFix).toBe(false);
+    expect(r.gpsPaused).toBe(false);
+    expect(doorPayOpen("en_route_dropoff")).toBe(true);
   });
 
   it("terminals", () => {

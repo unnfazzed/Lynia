@@ -5062,3 +5062,26 @@ window that cancels at 0:00. Neither draws what happens after 0:00 when the orde
 - **Owner follow-up (2026-10-07):** the ring has **no cap** — the alarm keeps sounding for the whole 24 h until the
   order is answered or cancelled (owner chose "ring the full 24 h" over muting after 10 min or outside opening hours),
   and there is **no age limit on a late accept** (owner chose "no limit" over an age warning or an end-of-day cancel).
+
+## D-87 · Pay at the door on the whole ride; a cancel after pickup is a goods return; non-return is a flag — APPROVED (owner decisions D3 + D5, 2026-10-07)
+
+**Owner decision D5 (reviewed list 2026-10-07, C19 / U10):** *"dont gate this to meters because rider may be offline."*
+**Owner decision D3 (C6 / MJ-RH1):** *"Never automatically. It flags support, the debt stays open, and only an admin
+decides."*
+
+- **Customer (Order flow v2, D-59):** the drawn door card (P1) and its "I've paid $X" bar sit under the drawn T8/T9
+  "On the way to you" sheet for the whole `en_route_dropoff` ride, not only once the rider's GPS is within ~150 m of
+  the pin. Before D5 the app already composed them this way for a ride with no fix; now it does for every ride.
+  "Rider is at your door" (P) follows the 150 m geofence, the rider's "I'm here" (now stamped on the server,
+  `riderAtDropoffAt`) or a started handshake. The handshake's countdown chip shows only once it is the real 2:00
+  window — a confirm made on the way runs on a long server ceiling until the rider says "I'm here". No new element or
+  copy.
+- **Merchant (Merchant v2, D-77):** an order the customer cancelled after the rider collected it opens the drawn K5c
+  goods-return screen ("#A117 couldn't be delivered", GOODS BACK TO YOU, "I got the food back" / "It wasn't
+  returned") and sits under CASH TO COME BACK on the board, like an undelivered order, instead of "This order was
+  cancelled". K5c draws no cancelled variant; no new element or copy.
+- **Admin console (X1 dispute queue):** a third card, "Goods or cash not returned", lists the merchant's flags with a
+  "Write off…" reason modal (the existing ConfirmModal) and a link to the rider's page, where the existing suspend
+  action lives. The console's dispute page is not a gallery screen.
+- **Upstream:** the handoffs should draw the door card during the ride and a K5c variant for a cancel after pickup.
+  Reported upstream; the kit is not edited here.

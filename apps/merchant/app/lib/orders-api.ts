@@ -82,13 +82,15 @@ export function confirmReturnedCash(orderId: string, amount: number): Promise<{ 
   return authedFetch(`/merchant/orders/${orderId}/debt/confirm-cash`, { method: "POST", body: { amount } });
 }
 
-/** The goods-only return (refusal/no-show) — only valid once the order is `undelivered`. */
+/** The goods-only return (refusal/no-show) — valid once the order is `undelivered`, or `cancelled` after the
+ *  rider collected it (MJ-RB1). */
 export function confirmGoodsReturned(orderId: string): Promise<{ orderId: string; debtStatus: "settled_goods" }> {
   return authedFetch(`/merchant/orders/${orderId}/debt/confirm-goods`, { method: "POST" });
 }
 
-/** R-07: writes off the debt and suspends + names the rider — the merchant's last-resort action. */
-export function reportNonReturn(orderId: string, note?: string): Promise<{ orderId: string; debtStatus: "written_off" }> {
+/** D3 (2026-10-07, MJ-RH1): flags the order for LyniaGo support — the debt stays open ("I got the food back"
+ *  still settles it), the rider is not suspended; an admin decides. */
+export function reportNonReturn(orderId: string, note?: string): Promise<{ orderId: string; debtStatus: "open"; reportedAt: string }> {
   return authedFetch(`/merchant/orders/${orderId}/debt/report-non-return`, { method: "POST", body: { note } });
 }
 

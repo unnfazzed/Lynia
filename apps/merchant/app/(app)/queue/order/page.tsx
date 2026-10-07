@@ -44,7 +44,7 @@ import {
   requestPayment,
   revealPickupCode,
 } from "../../../lib/orders-api";
-import { detailView, isAfterPickup, money, orderLabel, riderFirstName, slotLabel } from "../../../lib/orders-view";
+import { detailView, isAfterPickup, isGoodsReturn, money, orderLabel, riderFirstName, slotLabel } from "../../../lib/orders-view";
 import { changeableLines, openRound, proposalLines } from "../../../lib/substitution";
 import { useNow } from "../../../lib/use-now";
 import { countOf, doorProofLine, ORDER_FLOW as OF, vocabulary, type Vocabulary } from "../../../lib/vocabulary";
@@ -758,7 +758,8 @@ function Handover({ order, act, disabled, error, setConfirm, business }: Ctx) {
  */
 function OnTheWay({ order, act, disabled, error, setConfirm, business, v }: Ctx) {
   const delivered = order.status === "delivered" || order.status === "completed";
-  const failed = order.status === "undelivered";
+  // MJ-RB1: a cancel after the rider collected rides the goods back too — the same K5c screen.
+  const failed = isGoodsReturn(order);
   const cashBack = order.paymentMethod === "cash" && order.merchantCashRule === "collect_and_return";
   const amount =
     order.debtAmount ??

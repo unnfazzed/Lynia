@@ -16,6 +16,7 @@ import {
   dropFoodDispatch,
   getFoodOrderAsRider,
   logFoodDoorstepCall,
+  markFoodAtDropoff,
   reportFoodCustomerRefused,
   reportFoodNoShow,
 } from "../../src/api/food-rider";
@@ -814,6 +815,9 @@ export default function RiderFoodJob(): React.ReactElement {
     void saveArrival(m);
     setRestoreDismissed(true);
     haptic("tap");
+    // D5 (2026-10-07, U10): tell the server too — the customer's "at your door" and the cash-handshake
+    // clock follow it. Best-effort and never a gate: offline, the rider's own flow carries on unchanged.
+    if (at === "drop") void Promise.resolve(orderId).then(markFoodAtDropoff).catch(() => undefined);
   };
   const [sheet, setSheet] = useState<null | "problem" | "drop" | "undeliver" | "report" | "sos" | "why">(null);
   // FJ-M4: Rider v2 X3 (can't reach — on the stage sheet) and X4 (why can't you deliver) on food jobs

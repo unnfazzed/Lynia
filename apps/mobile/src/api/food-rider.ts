@@ -77,6 +77,13 @@ export function disputeFoodCash(orderId: string): Promise<{ orderId: string; fro
   return apiFetch(`/merchant/orders/${orderId}/cash/dispute`, { method: "POST" });
 }
 
+/** D5 (2026-10-07, U10): the rider's "I'm here" at the drop-off, stamped on the server — a hint for the
+ *  customer's door card (never a gate); it also starts the cash-handshake window when the customer paid on
+ *  the way. Idempotent. */
+export function markFoodAtDropoff(orderId: string): Promise<{ orderId: string; riderAtDropoffAt: string }> {
+  return apiFetch(`/merchant/orders/${orderId}/doorstep/arrived`, { method: "POST" });
+}
+
 /** N-10: a call attempt logged before a no-show report is accepted (mirrors the merchant's own
  *  R-16 call-log gate). */
 export function logFoodDoorstepCall(orderId: string): Promise<{ orderId: string; callsLogged: number }> {

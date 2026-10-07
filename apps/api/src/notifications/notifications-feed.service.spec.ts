@@ -1169,13 +1169,15 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
           agreedFare: dec("16.5"),
           kitchenConfirmedAt: t("18:38"),
           prepStartedAt: t("18:41"),
+          // D5 / U12: the rider's "I'm here" at the door is the "At your door" step.
+          riderAtDropoffAt: t("19:12"),
           merchant: { name: "Mama's Kitchen", businessType: "restaurant", shopKind: null },
           rider: { profile: { firstName: "Tendai" } },
           events: [
             { status: "requested", createdAt: t("18:30") },
             { status: "assigned", createdAt: t("18:45") },
             { status: "picked_up", createdAt: t("18:55") },
-            { status: "en_route_dropoff", createdAt: t("19:12") },
+            { status: "en_route_dropoff", createdAt: t("18:56") },
             { status: "delivered", createdAt: t("19:14") },
           ],
         },
@@ -1183,10 +1185,39 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       const [row] = await service.feedForUser("cust", NOW);
       // Accepted · Being prepared · Rider collected · At your door · Delivered — no Posted, no assigned.
       expect(row!.steps!.map((s) => s.beat)).toEqual(["delivered", "en_route_dropoff", "picked_up", "preparing", "accepted"]);
+      // The door step is the rider's "I'm here" (19:12), not the en_route_dropoff event right after pickup.
+      expect(row!.steps!.find((s) => s.beat === "en_route_dropoff")!.at).toBe(t("19:12").toISOString());
       // The collected step reads like the headline would have ("Tendai has your order"), not the generic
       // "Your rider has your order" fallback of the table.
       expect(row!.steps!.find((s) => s.beat === "picked_up")!.title).toBe("Tendai has your order");
       expect(row!.steps![0]!.title).toBe(row!.title);
+    });
+
+    it("U12 follow-up: a merchant order on the way with no \"I'm here\" yet has no \"at your door\" step or headline", async () => {
+      const { prisma, service } = makeDeps();
+      prisma.order.findMany.mockResolvedValue([
+        {
+          id: "m2",
+          riderId: "rider",
+          customerId: "cust",
+          orderType: "merchant",
+          status: "en_route_dropoff",
+          agreedFare: dec("16.5"),
+          kitchenConfirmedAt: t("18:38"),
+          prepStartedAt: t("18:41"),
+          riderAtDropoffAt: null,
+          merchant: { name: "Mama's Kitchen", businessType: "restaurant", shopKind: null },
+          rider: { profile: { firstName: "Tendai" } },
+          events: [
+            { status: "requested", createdAt: t("18:30") },
+            { status: "picked_up", createdAt: t("18:55") },
+            { status: "en_route_dropoff", createdAt: t("18:56") },
+          ],
+        },
+      ]);
+      const [row] = await service.feedForUser("cust", NOW);
+      expect(row).toMatchObject({ beat: "picked_up", title: "Tendai has your order" });
+      expect(row!.steps!.map((s) => s.beat)).toEqual(["picked_up", "preparing", "accepted"]);
     });
 
     it("every order step: an override beat keeps its override in the steps (rider bail → rebroadcast)", async () => {

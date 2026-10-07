@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { foodOrderMoney, merchantAmountDueUsd, RESTAURANTS_DEBT, RiderAccountStatus, roundToCents } from "@lynia/shared";
+import { foodOrderMoney, merchantAmountDueUsd, RESTAURANTS_DEBT, roundToCents } from "@lynia/shared";
 import { NotificationsService } from "../notifications/notifications.service";
 import { OrderLifecycleService } from "../orders/order-lifecycle.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -17,7 +17,10 @@ import { resolveOwnMerchantId } from "./merchant-lookup.util";
  *     writes the two confirm timestamps a CASH order's code-reveal gate reads).
  *  2. The collect-and-return merchant-debt ledger (R-01/R-06/N-20/N-21) — opened at pickup (goods
  *     leave the counter unpaid), settled by the merchant's returned-cash count-confirm or a
- *     goods-only return (refusal/no-show), or written off + the rider suspended on non-return (R-07).
+ *     goods-only return (refusal/no-show, or a customer cancel after the rider collected — MJ-RB1).
+ *     A merchant's non-return report only FLAGS the debt for support (owner decision D3, 2026-10-07):
+ *     the write-off and any rider suspension are admin actions (AdminMerchantsService.writeOffDebt and
+ *     the rider suspend console action), never automatic.
  *  3. N-10 no-show / R-08 refusal at the door, both thin wrappers around
  *     OrderLifecycleService.markUndelivered (reused verbatim, never re-derived — "never a parallel
  *     state machine") plus the merchant-specific side effect each one carries.
@@ -29,6 +32,28 @@ import { resolveOwnMerchantId } from "./merchant-lookup.util";
  * named as surviving only for upfront kitchens (§7 "M3·1 upfront confirm... survive"), and is left as
  * an open item for a future increment rather than half-built here.
  */
+/** D3 (2026-10-07): the audit row a merchant's non-return report writes (domain-owned, see admin-audit). */
+export const NON_RETURN_REPORT_ACTION = "merchant.report_non_return";
+
+/** MJ-RB1 (2026-10-07): the goods are riding back to the venue — the order wasn't delivered, or the customer
+ *  cancelled it after the rider collected it. The settle CAS of a goods-only return re-checks exactly this. */
+const GOODS_RETURN_STATUS: Prisma.OrderWhereInput = {
+  OR: [{ status: "undelivered" }, { status: "cancelled", collectedAt: { not: null } }],
+};
+
+/**
+ * D5 (2026-10-07, U10): when an unresolved doorstep handshake freezes. The N-19 window
+ * (`handshakeWindowMs`) is for counting notes at the door, so it runs from the moment both are there: from
+ * the customer's confirm when the rider has already said "I'm here", else only once the rider does
+ * (FoodDebtService.markAtDropoff starts it then). Until that, a confirm made on the way gets the long
+ * `handshakeTripCeilingMs`, so the clock can never run out on the road; the ceiling is only reached by a
+ * rider app that never stamps "I'm here" (the rider is job-locked meanwhile by the unconfirmed handshake).
+ */
+export function handshakeDeadline(confirmedAt: Date, riderAtDropoffAt: Date | null | undefined): Date {
+  const span = riderAtDropoffAt ? RESTAURANTS_DEBT.handshakeWindowMs : RESTAURANTS_DEBT.handshakeTripCeilingMs;
+  return new Date(confirmedAt.getTime() + span);
+}
+
 @Injectable()
 export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(FoodDebtService.name);
@@ -97,7 +122,9 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
   // ── Doorstep handshake (R-04/R-05/N-19) ──────────────────────────────────────────────────────────
 
   /** Customer taps "I gave $X" — always first (R-04 "food first: hand the food over, customer pays,
-   *  THEN the confirms"). */
+   *  THEN the confirms"). D5 (2026-10-07, U10): the customer's pay step is open for the whole ride to the
+   *  door (no distance gate), so the N-19 clock only starts here when the rider has already said "I'm
+   *  here"; otherwise it waits for the rider's "I'm here" ({@link markAtDropoff}) — see handshakeDeadline. */
   async confirmCustomerCash(orderId: string, customerId: string): Promise<{ orderId: string; customerCashConfirmedAt: string }> {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, customerId, orderType: "merchant" },
@@ -111,6 +138,7 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
         merchantDeliveryShare: true,
         customerCashConfirmedAt: true,
         riderId: true,
+        riderAtDropoffAt: true,
         // Order flow v2 (BRIEF D3f): an earlier owed balance this order collects at the door, on top.
         carriedBalance: { select: { amount: true } },
       },
@@ -128,7 +156,7 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
       data: {
         customerCashConfirmedAt: now,
         cashHandshakeAmount: amount,
-        cashHandshakeDeadlineAt: new Date(now.getTime() + RESTAURANTS_DEBT.handshakeWindowMs),
+        cashHandshakeDeadlineAt: handshakeDeadline(now, order.riderAtDropoffAt),
       },
     });
     if (claimed.count === 0) throw new ConflictException("Order changed, retry");
@@ -321,81 +349,108 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** For a no-cash-collected return (refusal/no-show, D-15's return leg) — the food itself is back
-   *  with the merchant, so the debt nets to zero via a physical return, not cash. */
+   *  with the merchant, so the debt nets to zero via a physical return, not cash. MJ-RB1 (2026-10-07):
+   *  a customer cancel AFTER the rider collected sends the food back the same way, so a `cancelled`
+   *  order with `collectedAt` set is accepted too — precisely that case, nothing wider. A merchant's
+   *  earlier non-return flag (D3) needs no extra write: settling the debt takes it off the admin queue. */
   async confirmGoodsReturned(profileId: string, orderId: string): Promise<{ orderId: string; debtStatus: "settled_goods" }> {
     const merchantId = await this.ownMerchantId(profileId);
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, merchantId, orderType: "merchant" },
-      select: { debtStatus: true, debtAmount: true, riderId: true, status: true },
+      select: { debtStatus: true, debtAmount: true, riderId: true, status: true, collectedAt: true },
     });
     if (!order) throw new NotFoundException("Order not found");
     if (order.debtStatus !== "open") throw new ConflictException("This order has no open debt to settle");
-    if (order.status !== "undelivered") throw new ConflictException("The goods haven't come back yet");
-    // LC-D-SIB-3 sibling: the settle CAS re-checks `undelivered` too, so an admin adjudicateDelivered
-    // committing after the read above can't leave "goods returned" on a completed order.
-    await this.settleDebt(orderId, merchantId, order.riderId!, "settled_goods", Number(order.debtAmount ?? 0), undefined, undefined, "undelivered");
+    const goodsComingBack = order.status === "undelivered" || (order.status === "cancelled" && order.collectedAt != null);
+    if (!goodsComingBack) throw new ConflictException("The goods haven't come back yet");
+    // LC-D-SIB-3 sibling: the settle CAS re-checks the same status condition, so an admin
+    // adjudicateDelivered committing after the read above can't leave "goods returned" on a completed order.
+    await this.settleDebt(orderId, merchantId, order.riderId!, "settled_goods", Number(order.debtAmount ?? 0), undefined, undefined, GOODS_RETURN_STATUS);
     return { orderId, debtStatus: "settled_goods" };
   }
 
-  /** R-07: default risk sits with the merchant, by their own cashRule choice — if a rider never
-   *  returns the cash, the merchant eats the loss and the rider is suspended and named (mirrors
-   *  admin-riders.service.ts:suspendRider's shape: CAS on accountStatus, force offline, revoke live
-   *  sessions, audit row — all in the SAME transaction as the debt write-off). */
-  async reportNonReturn(profileId: string, orderId: string, note?: string): Promise<{ orderId: string; debtStatus: "written_off" }> {
+  /**
+   * Owner decision D3 (2026-10-07, MJ-RH1): "It wasn't returned" FLAGS the order for LyniaGo support —
+   * exactly what the merchant's K5c sheet says ("We flag it to LyniaGo support, who follow it up with the
+   * rider"). It never writes off the debt, never suspends the rider, never revokes a session and never
+   * pushes the rider: the button sits next to "I got the food back" while the rider may still be riding
+   * back, and the debt stays `open` so that button still settles it afterwards. An admin reads the flag in
+   * the dispute queue (AdminMerchantsService.listDisputes) and decides — write-off
+   * (AdminMerchantsService.writeOffDebt) and suspension (the rider console action) are admin-only.
+   * Idempotent: a second report of the same order returns the first report's time.
+   */
+  async reportNonReturn(profileId: string, orderId: string, note?: string): Promise<{ orderId: string; debtStatus: "open"; reportedAt: string }> {
     const merchantId = await this.ownMerchantId(profileId);
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, merchantId, orderType: "merchant" },
-      select: { debtStatus: true, debtAmount: true, riderId: true },
+      select: { debtStatus: true, riderId: true, debtNonReturnReportedAt: true },
     });
     if (!order) throw new NotFoundException("Order not found");
-    if (order.debtStatus !== "open") throw new ConflictException("This order has no open debt to write off");
+    if (order.debtStatus !== "open") throw new ConflictException("This order has no open debt to report");
     if (!order.riderId) throw new ConflictException("No rider on this order");
-    const riderId = order.riderId;
-    const amount = Number(order.debtAmount ?? 0);
-
-    const suspended = await this.prisma.$transaction(async (tx) => {
-      await this.settleDebt(orderId, merchantId, riderId, "written_off", amount, note, tx);
-      const rider = await tx.rider.findUnique({ where: { profileId: riderId }, select: { accountStatus: true } });
-      // A permanent ban outranks this — never downgrade a banned rider back to suspended (mirrors
-      // admin-riders.service.ts:suspendRider's same guard). An already-SUSPENDED rider is still recorded:
-      // each report is a separate order's unreturned cash (a retry of the SAME order already 409s on the
-      // debt CAS above), so it gets its own audit row and the food-debt suspend reason, rather than
-      // vanishing behind an earlier, unrelated suspension.
-      if (rider && rider.accountStatus !== RiderAccountStatus.BANNED) {
-        const changed = await tx.rider.updateMany({
-          where: { profileId: riderId, accountStatus: rider.accountStatus },
-          data: { accountStatus: RiderAccountStatus.SUSPENDED, suspendReason: "food_debt_non_return", isOnline: false },
-        });
-        if (changed.count > 0) {
-          await tx.session.updateMany({ where: { profileId: riderId, revokedAt: null }, data: { revokedAt: new Date() } });
-          await tx.auditLog.create({
-            data: {
-              actor: profileId,
-              action: "rider.suspend_food_debt",
-              target: riderId,
-              reasonCode: "food_debt_non_return",
-              note: note ?? null,
-            },
-          });
-          return true;
-        }
-      }
-      return false;
-    });
-    if (suspended) {
-      void this.notifications.notifyProfiles([riderId], {
-        title: "Your account has been suspended",
-        body: "A restaurant reported you didn't return cash owed for a delivery. Contact support to resolve this.",
-        data: { orderId, kind: "food_debt_suspend" },
+    if (order.debtNonReturnReportedAt) return { orderId, debtStatus: "open", reportedAt: order.debtNonReturnReportedAt.toISOString() };
+    const now = new Date();
+    const reported = await this.prisma.$transaction(async (tx) => {
+      // CAS on the debt still being open and not yet reported: a "got it back" settle committing after the
+      // read above makes this a miss (nothing left to report), never a flag on a settled debt.
+      const claimed = await tx.order.updateMany({
+        where: { id: orderId, debtStatus: "open", debtNonReturnReportedAt: null },
+        data: { debtNonReturnReportedAt: now },
       });
+      if (claimed.count === 0) return false;
+      await tx.auditLog.create({
+        data: { actor: profileId, action: NON_RETURN_REPORT_ACTION, target: orderId, reasonCode: "food_debt_non_return", note: note ?? null },
+      });
+      return true;
+    });
+    if (!reported) {
+      const fresh = await this.prisma.order.findUnique({ where: { id: orderId }, select: { debtStatus: true, debtNonReturnReportedAt: true } });
+      if (fresh?.debtStatus === "open" && fresh.debtNonReturnReportedAt) return { orderId, debtStatus: "open", reportedAt: fresh.debtNonReturnReportedAt.toISOString() };
+      throw new ConflictException("Order changed, retry");
     }
-    return { orderId, debtStatus: "written_off" };
+    return { orderId, debtStatus: "open", reportedAt: now.toISOString() };
+  }
+
+  /**
+   * D5 (2026-10-07, U10): the rider's "I'm here" at the drop-off, stamped once on the server. A HINT, never
+   * a gate — the customer's pay step is open for the whole ride (`en_route_dropoff`) with or without it.
+   * The customer's door card and "at your door" feed step follow it, and when the customer confirmed
+   * paying before the rider arrived it starts the real N-19 handshake window now (the customer's early
+   * confirm only set the long trip ceiling, see handshakeDeadline). Idempotent.
+   */
+  async markAtDropoff(orderId: string, riderId: string): Promise<{ orderId: string; riderAtDropoffAt: string }> {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, riderId, orderType: "merchant" },
+      select: { status: true, riderAtDropoffAt: true },
+    });
+    if (!order) throw new NotFoundException("Order not found");
+    if (order.riderAtDropoffAt) return { orderId, riderAtDropoffAt: order.riderAtDropoffAt.toISOString() };
+    if (order.status !== "picked_up" && order.status !== "en_route_dropoff") {
+      throw new ConflictException("You can only arrive while taking the order to the customer");
+    }
+    const now = new Date();
+    const claimed = await this.prisma.order.updateMany({
+      where: { id: orderId, riderId, riderAtDropoffAt: null, status: { in: ["picked_up", "en_route_dropoff"] } },
+      data: { riderAtDropoffAt: now },
+    });
+    if (claimed.count === 0) {
+      const fresh = await this.prisma.order.findUnique({ where: { id: orderId }, select: { riderAtDropoffAt: true } });
+      if (fresh?.riderAtDropoffAt) return { orderId, riderAtDropoffAt: fresh.riderAtDropoffAt.toISOString() };
+      throw new ConflictException("Order changed, retry");
+    }
+    // The customer already confirmed on the way (D5): their confirm set only the trip ceiling, so the real
+    // 2:00 window starts now that both are at the door. Guarded on the handshake still being unresolved.
+    await this.prisma.order.updateMany({
+      where: { id: orderId, customerCashConfirmedAt: { not: null }, riderCashConfirmedAt: null, cashHandshakeFrozenAt: null },
+      data: { cashHandshakeDeadlineAt: new Date(now.getTime() + RESTAURANTS_DEBT.handshakeWindowMs) },
+    });
+    return { orderId, riderAtDropoffAt: now.toISOString() };
   }
 
   /** Guarded CAS settle (debtStatus:open → the given terminal type) + the matching append-only ledger
    *  row, `amount` always negative — nets the `opened` row's positive amount to zero. Accepts an
-   *  in-flight transaction client (reportNonReturn) or runs its own (the other two callers).
-   *  `requireStatus` folds the caller's own order-status precondition into the same CAS (LC-D-SIB-3). */
+   *  in-flight transaction client or runs its own. `requireStatus` folds the caller's own order-status
+   *  precondition into the same CAS (LC-D-SIB-3). */
   private async settleDebt(
     orderId: string,
     merchantId: string,
@@ -404,11 +459,11 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
     amount: number,
     note?: string,
     txIn?: Prisma.TransactionClient,
-    requireStatus?: "undelivered",
+    requireStatus?: Prisma.OrderWhereInput,
   ): Promise<void> {
     const run = async (tx: Prisma.TransactionClient) => {
       const claimed = await tx.order.updateMany({
-        where: { id: orderId, debtStatus: "open", ...(requireStatus ? { status: requireStatus } : {}) },
+        where: { id: orderId, debtStatus: "open", ...requireStatus },
         data: { debtStatus: type, debtSettledAt: new Date() },
       });
       if (claimed.count === 0) throw new ConflictException("Order changed, retry");

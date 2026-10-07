@@ -52,7 +52,7 @@ export class AdminService {
     // admin-merchants.service.ts's precise per-row cancelledAt/undeliveredAt computation — a nav badge
     // only needs to be a cheap, roughly-right attention signal, not the authoritative queue itself.
     const refundOverdueCutoff = new Date(Date.now() - RESTAURANTS_DEBT.refundSlaMs);
-    const [kycPending, openIssues, sosPending, frozenHandshakes, refundsOverdue] = await Promise.all([
+    const [kycPending, openIssues, sosPending, frozenHandshakes, refundsOverdue, nonReturnReports] = await Promise.all([
       this.prisma.rider.count({ where: { kycStatus: "pending" } }),
       this.prisma.issue.count({ where: { status: { in: ["open", "investigating"] } } }),
       this.prisma.sosEvent.count({ where: { acknowledgedAt: null } }),
@@ -69,8 +69,12 @@ export class AdminService {
           updatedAt: { lt: refundOverdueCutoff },
         },
       }),
+      // D3 (2026-10-07, MJ-RH1): a merchant flagged goods / cash as not returned — support follows it up.
+      this.prisma.order.count({
+        where: { orderType: "merchant", debtStatus: "open", merchantClosedAt: null, debtNonReturnReportedAt: { not: null } },
+      }),
     ]);
-    return { kycPending, openIssues, sosPending, foodDisputes: frozenHandshakes + refundsOverdue };
+    return { kycPending, openIssues, sosPending, foodDisputes: frozenHandshakes + refundsOverdue + nonReturnReports };
   }
 
   /** Single read for the monitor dashboard: status counts, rider stats, pilot funnel, recent orders. */

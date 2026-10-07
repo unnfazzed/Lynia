@@ -275,6 +275,12 @@ export const RESTAURANTS_DEBT = {
    *  stalling rider is caught at the door, not down the road. Past this (or an explicit rider
    *  dispute) the trip freezes (R-05) and support is notified. */
   handshakeWindowMs: 2 * 60 * 1000,
+  /** Owner decision D5 (2026-10-07, U10): the customer's pay step opens for the whole ride to the door
+   *  (`en_route_dropoff`), with no distance gate. A customer who confirms before the rider says "I'm here"
+   *  must not start a 2:00 clock that runs out on the road, so their confirm sets this longer ceiling
+   *  instead; the rider's "I'm here" (FoodDebtService.markAtDropoff) then starts the real
+   *  `handshakeWindowMs`. The ceiling only bites for a rider app that never stamps "I'm here". */
+  handshakeTripCeilingMs: 60 * 60 * 1000,
   /** D-48 (merchant mobile B7): how long the rider has, after delivery, to bring the merchant's cash
    *  back before it shows as overdue ("Due by 13:00 · 22 min left"). Shown, never chased: no penalty
    *  or reminder hangs off it. */

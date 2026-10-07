@@ -502,6 +502,9 @@ export class NotificationsFeedService {
           kitchenConfirmedAt: true,
           prepStartedAt: true,
           prepMinutes: true,
+          // D5 / U12 (2026-10-07): the rider's "I'm here" at the drop-off — the merchant customer's
+          // "{rider} is at your door" step (the en_route_dropoff event fires right after pickup).
+          riderAtDropoffAt: true,
           merchant: { select: { name: true, businessType: true, shopKind: true } },
           rider: { select: { profile: { select: { firstName: true } } } },
           customer: { select: { firstName: true } },
@@ -741,10 +744,16 @@ export class NotificationsFeedService {
         merchantCustomer || (status === "completed" && isAdjudicated) || (FEED_AUDIENCE[status]?.includes(audience) ?? false);
 
       // A merchant order's kitchen beats, synthesized in time order among its events (in window only).
-      const beats: { status: string; createdAt: Date; synthetic?: true }[] = [...order.events];
+      // U12 follow-up (2026-10-07): for the merchant customer the drawn "{rider} is at your door" step
+      // (`en_route_dropoff`) is the rider's "I'm here" stamp, not the en_route_dropoff event — the rider app
+      // steps to en_route_dropoff right after collecting, maybe 20 minutes before the door.
+      const beats: { status: string; createdAt: Date; synthetic?: true }[] = merchantCustomer
+        ? order.events.filter((e) => e.status !== "en_route_dropoff")
+        : [...order.events];
       if (merchantCustomer) {
         if (order.kitchenConfirmedAt && order.kitchenConfirmedAt >= cutoff) beats.push({ status: "accepted", createdAt: order.kitchenConfirmedAt, synthetic: true });
         if (order.prepStartedAt && order.prepStartedAt >= cutoff) beats.push({ status: "preparing", createdAt: order.prepStartedAt, synthetic: true });
+        if (order.riderAtDropoffAt && order.riderAtDropoffAt >= cutoff) beats.push({ status: "en_route_dropoff", createdAt: order.riderAtDropoffAt, synthetic: true });
         beats.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
       }
       const addressed = beats.filter((e) => notices[e.status] !== undefined && addressesViewer(e.status));

@@ -287,6 +287,12 @@ export class MerchantOrderController {
     return this.debt.disputeCash(orderId, profileId);
   }
 
+  /** D5 (2026-10-07, U10): the rider's "I'm here" at the drop-off — a server hint, never a gate. */
+  @Post(":orderId/doorstep/arrived")
+  markAtDropoff(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
+    return this.debt.markAtDropoff(orderId, profileId);
+  }
+
   @Post(":orderId/doorstep/log-call")
   logDoorstepCall(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
     return this.debt.logDoorstepCall(orderId, profileId);
