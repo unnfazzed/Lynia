@@ -206,6 +206,25 @@ describe("the flow from R3 (?from=flow)", () => {
     expect(screen()).toBe("P13");
   });
 
+  it("B1: blocked notifications → P11's 'Not now' moves on to P13 (the rider is never trapped)", async () => {
+    mockLocGet = GRANTED;
+    mockNotifGet = BLOCKED;
+    await mount();
+    expect(screen()).toBe("P11");
+    expect(text()).toContain("Not now");
+    expect(text()).toContain("I’ve turned it on");
+    await press("p-not-now");
+    expect(screen()).toBe("P13");
+  });
+
+  it("B1: blocked location → P6's 'Not now' moves on to the notification step", async () => {
+    mockLocGet = BLOCKED;
+    await mount();
+    expect(screen()).toBe("P6");
+    await press("p-not-now");
+    expect(screen()).toBe("P9");
+  });
+
   it("already granted: location and notifications are skipped straight to P13", async () => {
     mockLocGet = GRANTED;
     mockNotifGet = GRANTED;

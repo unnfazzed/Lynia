@@ -32,6 +32,7 @@ import {
   SampleNotification,
   SplitTitle,
   SystemSettingsSteps,
+  TextLinkButton,
   useToast,
 } from "../src/ui";
 
@@ -213,7 +214,12 @@ export default function RiderPermissionsScreen(): React.ReactElement {
       return (
         <FirstRunScreen
           testID="P6"
-          footer={<PinnedFooter primary={{ label: RP.openSettings, onPress: openPhoneSettings, testID: "p-cta" }} link={{ label: RP.turnedOn, onPress: () => void recheckLocation(true), testID: "p-link" }} />}
+          // B1 (D-82 §4): "Not now" moves on like every other step's, so a blocked permission never traps the rider.
+          footer={
+            <PinnedFooter primary={{ label: RP.openSettings, onPress: openPhoneSettings, testID: "p-cta" }} link={{ label: RP.notNow, onPress: next, testID: "p-not-now" }}>
+              <TextLinkButton label={RP.turnedOn} onPress={() => void recheckLocation(true)} testID="p-link" />
+            </PinnedFooter>
+          }
         >
           <HeroPanel tone="danger" height={180}>
             <HeroDisc icon="map-pin" />
@@ -274,7 +280,12 @@ export default function RiderPermissionsScreen(): React.ReactElement {
       return (
         <FirstRunScreen
           testID="P11"
-          footer={<PinnedFooter primary={{ label: RP.openSettings, onPress: openPhoneSettings, testID: "p-cta" }} link={{ label: RP.turnedOn, onPress: () => void recheckNotif(true), testID: "p-link" }} />}
+          // B1 (D-82 §4): "Not now" moves on — without it a rider with blocked notifications never reached the board.
+          footer={
+            <PinnedFooter primary={{ label: RP.openSettings, onPress: openPhoneSettings, testID: "p-cta" }} link={{ label: RP.notNow, onPress: next, testID: "p-not-now" }}>
+              <TextLinkButton label={RP.turnedOn} onPress={() => void recheckNotif(true)} testID="p-link" />
+            </PinnedFooter>
+          }
         >
           <HeroPanel tone="danger" height={180}>
             <HeroDisc icon="bell-off" />
