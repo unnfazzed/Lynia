@@ -30,7 +30,8 @@ export function useAutoRetry(onRetry: () => void, everyS = RETRY_EVERY_S): numbe
  * server-side, so the job the rider carries is exactly where they left it.
  *
  * Rider screens never show a Retry button (rider-v2 README: "say what the app is doing"), so the screen
- * retries by itself every 10 s and its one line counts down to the next try. Back lives in the app bar.
+ * retries by itself every 10 s and its one line counts down to the next try. Back lives in the app bar;
+ * a tab root (the Jobs board, BD-M1) passes no `onBack` and draws no app bar.
  */
 export function RiderErrorState({
   onRetry,
@@ -40,13 +41,13 @@ export function RiderErrorState({
 }: {
   onRetry: () => void;
   retrying?: boolean;
-  onBack: () => void;
+  onBack?: () => void;
   title?: string;
 }): React.ReactElement {
   const left = useAutoRetry(onRetry);
   return (
     <>
-      <AppBar onBack={onBack} />
+      {onBack ? <AppBar onBack={onBack} /> : null}
       <EmptyState icon="circle-alert" tone="error" title={title} body={retrying ? "Trying again…" : fillEmpty(emptyCopy.rider.retrying, { s: left })} />
     </>
   );
