@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { MerchantOrderResponse, PREP_CHIPS_MIN, SubstitutionProposalLine } from "@lynia/shared";
+import type { MerchantOrderResponse } from "@lynia/shared";
 import { Icon } from "../../components/icons";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
@@ -11,7 +11,6 @@ import { NotLiveHome } from "../../components/branches/NotLiveHome";
 import { BookRiderCard, ClosedBody } from "../../components/m/ClosedBody";
 import { OrdersHeader, useOpenSwitch } from "../../components/m/OrdersHeader";
 import { useToast } from "../../components/m/Toast";
-import { RingingScreen } from "../../components/queue/RingingScreen";
 import { RetryableError } from "../../components/RetryableError";
 import { showNotLiveHome } from "../../lib/branches";
 import { ApiError, getMyMerchant, type MerchantProfile } from "../../lib/api-client";
@@ -20,16 +19,21 @@ import { buildBoard } from "../../lib/board";
 import { useBookings } from "../../lib/use-bookings";
 import { Board } from "../../components/queue/Board";
 import { primeBusiness } from "../../lib/business";
-import { alarmOrders } from "../../lib/alarm";
-import { needsKitchenConfirm } from "../../lib/order-groups";
-import { acceptOrder, cancelPreparing, confirmKitchen, listScheduledOrders, proposeSubstitution, rejectOrder } from "../../lib/orders-api";
+import { listScheduledOrders } from "../../lib/orders-api";
 import { hm, money, orderLabel, riderFirstName } from "../../lib/orders-view";
 import { countOf, ORDER_FLOW as OF, vocabulary } from "../../lib/vocabulary";
 import { useNow } from "../../lib/use-now";
-import { useQueuePoll } from "../../lib/use-queue-poll";
 import { orderHref } from "../../lib/routes";
 
-type LoadState = { status: "loading" } | { status: "ready"; merchant: MerchantProfile } | { status: "error"; message: string };
+type LoadState =
+  | { status: "loading" }
+  | { status: "ready"; merchant: MerchantProfile }
+  /** `retry`: a failure worth trying again by itself (anything but "signed out" / "not a member"). */
+  | { status: "error"; message: string; retry: boolean };
+
+/** MJ-RH4: the profile read retries by itself on a back-off — 2s, 4s, 8s… up to 30s. */
+const PROFILE_RETRY_BASE_MS = 2_000;
+const PROFILE_RETRY_MAX_MS = 30_000;
 
 /**
  * B1 · Orders home and B5 · Closed (packages/design/handoff/merchant-mobile, ledger D-48). The mint
@@ -38,19 +42,26 @@ type LoadState = { status: "loading" } | { status: "ready"; merchant: MerchantPr
  * for rider" and "Out for delivery". Closed by hand, the header greys and the body says "You're
  * closed" with "Open now" and "Open in busy mode (+10 min)". A ringing order (B2) takes over the
  * whole screen until it is answered, and the alarm rings for as long as one is waiting.
+ *
+ * C20 (2026-10-07): the queue poll, the alarm and the ringing screen are no longer this page's — the
+ * signed-in shell owns them (`KitchenConnectionProvider`, `RingingHost`), so they run on every screen
+ * and this board reads the same queue. MJ-RH4: that poll starts with the session, beside this page's
+ * `/merchant/me` read rather than after it, and a failed profile read retries by itself on a back-off.
  */
 export default function QueuePage() {
-  const { alarm, actionsDisabled, reachability, signOut } = useKitchenConnection();
+  const { actionsDisabled, reachability, signOut, queue } = useKitchenConnection();
   const router = useRouter();
   const toast = useToast();
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  const retriesRef = useRef(0);
 
-  const loadMerchant = useCallback(() => {
+  const loadMerchant = useCallback((quiet = false) => {
     let cancelled = false;
-    setState({ status: "loading" });
+    if (!quiet) setState({ status: "loading" });
     getMyMerchant()
       .then((merchant) => {
         if (cancelled) return;
+        retriesRef.current = 0;
         primeBusiness(merchant);
         // A shop that isn't live to customers takes no orders, so its Orders home is Deliveries (D-48).
         if (homePath(merchant) !== "/queue") {
@@ -62,18 +73,36 @@ export default function QueuePage() {
       .catch((err: unknown) => {
         if (cancelled) return;
         if (err instanceof ApiError && err.status === 403) router.replace("/onboarding");
+        else if (err instanceof ApiError && err.status === 401) signOut();
         else
           setState({
             status: "error",
             message: err instanceof ApiError ? err.message : "Something went wrong loading your orders.",
+            retry: true,
           });
       });
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [router, signOut]);
 
   useEffect(() => loadMerchant(), [loadMerchant]);
+
+  // MJ-RH4: a 5xx (an API cold start) is a response, so reachability still reads "reachable" and the
+  // effect below never fires — the board sat on "Try again" with nobody to tap it. Retry on a back-off.
+  useEffect(() => {
+    if (state.status !== "error" || !state.retry) return undefined;
+    const delay = Math.min(PROFILE_RETRY_MAX_MS, PROFILE_RETRY_BASE_MS * 2 ** retriesRef.current);
+    retriesRef.current += 1;
+    let cancel: (() => void) | undefined;
+    const t = setTimeout(() => {
+      cancel = loadMerchant(true);
+    }, delay);
+    return () => {
+      clearTimeout(t);
+      cancel?.();
+    };
+  }, [state, loadMerchant]);
 
   // A dropped first load would otherwise leave the whole order poll and alarm unarmed until a manual
   // Retry: retry by itself the moment the connection comes back.
@@ -84,22 +113,8 @@ export default function QueuePage() {
 
   const ready = state.status === "ready";
   const open = useOpenSwitch(ready ? state.merchant : null, (merchant) => setState({ status: "ready", merchant }));
-  const { orders, loaded, error: queueError, refetch } = useQueuePoll(ready);
-
-  // D-05: rings the whole time any order is unanswered — or auto-accepted and not yet confirmed by the
-  // kitchen — and stops the instant none are. Both take over the screen: a new order (B2) first, then
-  // an auto-accepted one waiting for the kitchen (Order flow v2 M1a, ledger D-59).
-  const ringing = orders.filter((o) => o.merchantPhase === "awaiting_accept");
-  const confirming = orders.filter(needsKitchenConfirm);
-  const alarmCount = alarmOrders(orders).length;
-  useEffect(() => {
-    if (alarmCount > 0) alarm.ring();
-    else alarm.silence();
-  }, [alarmCount, alarm]);
-
-  useEffect(() => {
-    if (queueError?.status === 401) signOut();
-  }, [queueError, signOut]);
+  // The shell's one queue poll (C20). Its 401 sign-out and the alarm are the shell's too.
+  const { orders, loaded, error: queueError, refetch } = queue;
 
   // Order flow v2's rule for every merchant screen (ledger D-74): a failed poll is never a lasting red
   // line. Before the first load lands it is the calm "↻ Try again" below; after that the board keeps its
@@ -127,57 +142,11 @@ export default function QueuePage() {
   const shop = ready && state.merchant.businessType === "shop";
   const { bookings } = useBookings(shop && bookingsAvailable(state.status === "ready" ? state.merchant : null));
   const now = useNow(15_000);
-  const handleAccept = useCallback(
-    async (orderId: string, prepMinutes: (typeof PREP_CHIPS_MIN)[number], unavailableDishIds: string[]) => {
-      await acceptOrder(orderId, {
-        prepMinutes,
-        unavailableDishIds: unavailableDishIds.length > 0 ? unavailableDishIds : undefined,
-      });
-      await refetch();
-    },
-    [refetch],
-  );
-  const handleTakeoverConfirm = useCallback(
-    async (orderId: string) => {
-      await confirmKitchen(orderId);
-      await refetch();
-    },
-    [refetch],
-  );
-  const handleTakeoverCancel = useCallback(
-    async (orderId: string) => {
-      await cancelPreparing(orderId);
-      await refetch();
-    },
-    [refetch],
-  );
-  const handlePropose = useCallback(
-    async (orderId: string, prepMinutes: (typeof PREP_CHIPS_MIN)[number], lines: SubstitutionProposalLine[]) => {
-      await proposeSubstitution(orderId, { lines, prepMinutes });
-      await refetch();
-    },
-    [refetch],
-  );
-  const handleEditItems = useCallback(
-    async (orderId: string, lines: SubstitutionProposalLine[]) => {
-      await proposeSubstitution(orderId, { lines });
-      await refetch();
-    },
-    [refetch],
-  );
-  const handleReject = useCallback(
-    async (orderId: string, reason: Parameters<typeof rejectOrder>[1], note?: string) => {
-      await rejectOrder(orderId, reason, note);
-      await refetch();
-    },
-    [refetch],
-  );
-
   if (state.status !== "ready") {
     return (
       <Kitchen active="queue">
         <div className="m-bd" style={{ paddingTop: 24 }}>
-          {state.status === "loading" ? <div className="m-hint">Loading your orders…</div> : <RetryableError message={state.message} onRetry={loadMerchant} />}
+          {state.status === "loading" ? <div className="m-hint">Loading your orders…</div> : <RetryableError message={state.message} onRetry={() => loadMerchant()} />}
         </div>
       </Kitchen>
     );
@@ -235,22 +204,6 @@ export default function QueuePage() {
           <Board sections={board} />
           {scheduledSection}
         </>
-      )}
-
-      {/* K2 / S2 (Merchant v2, D-77): one ringing screen — a new order first, then an auto-accepted one. */}
-      {(ringing[0] ?? confirming[0]) && (
-        <RingingScreen
-          key={(ringing[0] ?? confirming[0])!.id}
-          active={(ringing[0] ?? confirming[0])!}
-          disabled={actionsDisabled}
-          onAccept={handleAccept}
-          onPropose={handlePropose}
-          onReject={handleReject}
-          onConfirm={handleTakeoverConfirm}
-          onCancel={handleTakeoverCancel}
-          onEditItems={handleEditItems}
-          refetch={refetch}
-        />
       )}
     </Kitchen>
   );

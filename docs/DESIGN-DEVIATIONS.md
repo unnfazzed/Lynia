@@ -5004,3 +5004,25 @@ Both reuse existing strings; both are reported upstream as missing states.
   `Notice` with `R.docPhotoDenied` and a soft pill **"Open phone settings"** (`R.sOpenSettings`) shows under the photo row
   while the camera permission is refused; it clears when the rider comes back with it on.
 - With no recipient number, X3's Call / WhatsApp pills draw disabled (PJ-L2) instead of counting calls that never happened.
+
+## D-86 · K2 / S2 presented over any (app) screen while an order rings — APPROVED (owner decision D4, 2026-10-07)
+
+**Owner decision D4 (reviewed list 2026-10-07, C20 / MJ-B1):** *"The drawn K2/S2 ringing screen, full screen over any
+screen, plus a DESIGN-DEVIATIONS entry. The poll and the alarm move app-wide."*
+
+Merchant v2 (`handoff/merchant-v2/`, D-77) draws the K2 / S2 ringing screen as the Orders board's takeover, and its
+README T1b says only that "a ringing order opens K2/S2 directly" from the live bar. It draws nothing for a new order
+arriving while the merchant is on a **pushed screen** (a cooking or hand-over ticket, the Rx check, hours, shop front,
+taking orders, team, riders, branches, bookings) — and the app showed nothing there: no ring, no sound, and the order
+was cancelled `shop_closed` three minutes later (MJ-B1, live-confirmed).
+
+- **App:** the queue poll and the alarm belong to the signed-in shell (`KitchenConnectionProvider`), and the shell
+  mounts the drawn K2 / S2 (`components/queue/RingingHost.tsx` → `RingingScreen`, unchanged) full screen over
+  **whatever (app) screen is open** while an order rings. On the Orders board it is the same takeover as before.
+- No new element or copy: the screen, its banner, countdown, chips, reasons sheet and buttons are the drawn K2 / S2.
+- The one screen it does not cover is the **Rx check (P1) for that same order**, which is how a pharmacist answers
+  that ring ("Check the prescription" on S2 opens it); the alarm keeps ringing there until the order is answered
+  (D-05).
+- The order being answered keeps the screen until it is resolved; a second ring waits its turn (MJ-M10).
+- **Upstream:** the handoff should draw the ring arriving over a pushed screen. Reported upstream; the kit is not
+  edited here.
