@@ -10,22 +10,16 @@ import { TERMS_URL } from "../../src/config";
 import { bikeDocsProgress, bikeVerified } from "../../src/logic/rider-documents";
 import { RIDER_PERM_ROUTES } from "../../src/logic/rider-perm-flow";
 import { providerName, TOPUP_PROVIDERS, type TopupProviderId, useRiderPrefs } from "../../src/logic/rider-prefs";
-import { openPhoneSettings, playTestAlert, requestNotif, usePermissions } from "../../src/permissions/state";
+import { openPhoneSettings, requestNotif, usePermissions } from "../../src/permissions/state";
 import { requestPushRegistration } from "../../src/push/push-kick";
 import { riderModeAvailable } from "../../src/rider-mode";
-import { BackHeader, Body, FirstRunScreen, FrSheet, FrSoftPill, haptic, IconDot, LargeTitle, ListCard, ListRow, PinnedFooter, SplitTitle, SystemSettingsSteps, Toggle } from "../../src/ui";
+import { BackHeader, Body, FirstRunScreen, FrSheet, FrSoftPill, IconDot, LargeTitle, ListCard, ListRow, PinnedFooter, SplitTitle, SystemSettingsSteps, Toggle } from "../../src/ui";
 import { PC, PD, RP } from "../../src/ui/firstrun/copy";
 import { CtaButton } from "../../src/ui/order/kit";
 import { RIDER_COPY as R, RF } from "../../src/ui/rider/copy";
 import { Chips, MSheet, Seg } from "../../src/ui/rider/kit";
 import { SendField } from "../../src/ui/send/kit";
 import { ST, toAdd } from "../../src/ui/settings/copy";
-
-/** A test job alert on the job-alert channel, so the rider hears exactly what a job sounds like. */
-function testAlert(kind: "ping" | "alarm"): void {
-  haptic(kind === "alarm" ? "warning" : "notify");
-  void playTestAlert(kind === "alarm" ? R.tFoodOffer : R.sAlerts, kind === "alarm" ? R.testAlarm : R.testPing);
-}
 
 /** D1's "1 to add": the optional photo and plate still missing — the same count Bike & documents' E1 progress
  *  draws (`bikeDocsProgress`, its third item being the ID check itself). */
@@ -55,7 +49,7 @@ function Caption({ children, first }: { children: string; first?: boolean }): Re
  * off toggle asks (the rider flow P1/P9, or PC8 for order updates) or opens phone settings when it can't,
  * tapping an on toggle opens phone settings (the app can't switch a permission off); the rider's Location
  * row turns danger when off (P15) and Battery saver opens P16; the kept rider rows (Navigation app, Top-up
- * number) and Test ping / Test alarm; Sign out and Delete account last. Permissions are re-read on focus
+ * number); Sign out and Delete account last. Permissions are re-read on focus
  * and on return to the app — nothing is hardcoded "On".
  */
 export default function SettingsScreen(): React.ReactElement {
@@ -171,12 +165,6 @@ export default function SettingsScreen(): React.ReactElement {
           <ListRow icon="bell" title={ST.orderUpdates} right={<Toggle value={notifOn} onPress={perms ? orderUpdates : undefined} accessibilityLabel={ST.orderUpdates} testID="toggle-order-updates" />} />
           {isRider ? <ListRow icon="battery" title={ST.battery} sub={ST.batterySub} chevron onPress={() => go(RIDER_PERM_ROUTES.battery)} testID="settings-battery" /> : null}
         </ListCard>
-        {isRider && jobAlertsOn ? (
-          <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
-            <FrSoftPill tone="white" icon="bell" label={R.testPing} onPress={() => testAlert("ping")} />
-            <FrSoftPill tone="white" icon="volume-2" label={R.testAlarm} onPress={() => testAlert("alarm")} />
-          </View>
-        ) : null}
 
         {isRider ? (
           <>

@@ -117,7 +117,7 @@ describe("the flow from R3 (?from=flow)", () => {
     expect(text()).toContain("LyniaGo — delivery in progress");
     await press("p-cta");
     expect(screen()).toBe("P9");
-    expect(text()).toContain("Play a test ping");
+    expect(text()).not.toContain("Play a test ping");
     await press("p-cta");
     expect(mockKick).toHaveBeenCalled();
     expect(screen()).toBe("P13");

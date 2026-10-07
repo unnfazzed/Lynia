@@ -108,7 +108,6 @@ describe("D1 · the new look, every row kept (D-82 §2 #1)", () => {
       "Location",
       "Order updates",
       "Battery saver",
-      "Test ping",
       "RIDER",
       "Navigation app",
       "Top-up number",
@@ -188,10 +187,9 @@ describe("ALERTS toggles mirror the phone", () => {
     expect(mockPush).toHaveBeenCalledWith("/permissions?step=location");
   });
 
-  it("job alerts off reopens P9 (the rider flow's notification step); the test buttons give way", async () => {
+  it("job alerts off reopens P9 (the rider flow's notification step)", async () => {
     mockNotifPerms.mockResolvedValue({ status: "undetermined", granted: false, canAskAgain: true });
     const t = await render(RIDER);
-    expect(out(t)).not.toContain('"Test ping"');
     await act(async () => toggle(t, "toggle-job-alerts").props.onPress());
     expect(mockPush).toHaveBeenCalledWith("/permissions?step=notifications");
   });
@@ -202,11 +200,10 @@ describe("ALERTS toggles mirror the phone", () => {
     expect(mockPush).toHaveBeenCalledWith("/permissions?step=battery");
   });
 
-  it("Test ping plays a local job alert", async () => {
-    const t = await render(RIDER);
-    const ping = t.root.findAll((n) => n.props.accessibilityLabel === "Test ping" && typeof n.props.onPress === "function")[0]!;
-    await act(async () => ping.props.onPress());
-    expect(mockSchedule).toHaveBeenCalled();
+  it("draws no Test ping / Test alarm buttons (owner 2026-10-06, D-83)", async () => {
+    const s = out(await render(RIDER));
+    expect(s).not.toContain('"Test ping"');
+    expect(s).not.toContain('"Test alarm"');
   });
 });
 

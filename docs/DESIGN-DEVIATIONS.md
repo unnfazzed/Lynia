@@ -4950,3 +4950,16 @@ CTA and its action ("Try again", "Undo") as a 44 mint pill on the right, which t
 Failure toasts show the `circle-alert` in highlight (the owner-approved error toast); the others keep their glyph
 (bell, check, undo) in brand green.
 
+
+## D-83 · No test ping / test alarm buttons anywhere — APPROVED (2026-10-06)
+
+**Owner instruction, this session (2026-10-06):** *"Remove any buttons for test ping or test alarm. Unnecessary."*
+
+- **Settings (rider):** the white Test ping / Test alarm soft pills under ALERTS (kept by D-82 §2 #1) are removed.
+  Every other kept row stays.
+- **P9 (rider first run, notifications):** the drawn "Play a test ping" soft pill is not rendered.
+- **P12 (job alerts muted):** the drawn "Play a test ping" link is replaced by **"Not now"** (`RP.notNow`), which
+  moves the flow on like every other step's "Not now" — P12 has no back button, so the link is the rider's only way
+  past the screen without opening phone settings.
+- `playTestAlert` (the local notification behind those buttons) is deleted. `RP.testPing` and `R.testPing` /
+  `R.testAlarm` stay in the copy files because those mirror the handoffs verbatim; nothing renders them.
