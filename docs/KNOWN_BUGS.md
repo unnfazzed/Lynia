@@ -2925,3 +2925,15 @@ independent skeptics. **All OPEN, awaiting the owner's selection.** Future sweep
 known. Headline items: U01 web signed-out deep load can't reach sign-in; U02 re-ordering the same basket returns the old
 order; U10–U13 door-handshake geofence, endless no-rider hold, early/short "at your door" cash push; P01 PostHog lazy-load
 remounts the app mid-boot (~+1.9 s).
+
+
+## Reviewed list 2026-10-07 — customer + merchant audits cross-checked (interactive)
+
+`docs/REVIEWED-ISSUES-2026-10-07.md` merges the merchant audit above with the customer UI/UX + speed review
+(`docs/CUSTOMER-UX-PERF-REVIEW-2026-10-07.md`, PR #1118, IDs U01–U67 / P01–P42). Five independent checkers
+re-traced every blocker/high, every cross-side pair and every split verdict against `main` @ `26536c5`.
+Result: ~200 raw findings → ~150 distinct; 22 cross-side clusters (C1–C22) with one fix each; P28 refuted;
+U60, U63, P31, P40 negligible; P26/P32 deferred. Three proposed fixes were wrong and are corrected there
+(U02 server backstop would trip the unique index; U33 "other = venue" would mislabel N-18 timeouts; U10 pay bar
+for the whole trip vs. the handshake clock — superseded by owner decision D5). Owner decisions D1–D8 are
+recorded in the same file. Rows above stay **OPEN** until the fix PR that names them lands.
