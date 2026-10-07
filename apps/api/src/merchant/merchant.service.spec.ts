@@ -278,13 +278,31 @@ describe("MerchantService.setOpen — the Orders header's open/closed switch (D-
   }
 
   it("closing holds until the next day starts, and the profile says until when", async () => {
-    const h = harness();
-    const res = await h.s.setOpen("p1", { open: false });
-    const until = h.data()!.closedUntil as Date;
-    const tomorrow = new Date();
-    tomorrow.setHours(24, 0, 0, 0);
-    expect(until.getTime()).toBe(tomorrow.getTime());
-    expect(res.closedUntil).toBe(until.toISOString());
+    // 15:30 Harare (13:30Z): closed until Harare's midnight, 22:00Z.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-07T13:30:00.250Z"));
+    try {
+      const h = harness();
+      const res = await h.s.setOpen("p1", { open: false });
+      const until = h.data()!.closedUntil as Date;
+      expect(until.toISOString()).toBe("2026-10-07T22:00:00.000Z");
+      expect(res.closedUntil).toBe(until.toISOString());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("MJ-RM13 sibling: closing just after Harare midnight holds until the NEXT Harare midnight, not 02:00 the same day", async () => {
+    // 00:30 Harare on the 8th is 22:30Z on the 7th; UTC's next midnight (the old answer) is 02:00 Harare.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-07T22:30:00Z"));
+    try {
+      const h = harness();
+      await h.s.setOpen("p1", { open: false });
+      expect((h.data()!.closedUntil as Date).toISOString()).toBe("2026-10-08T22:00:00.000Z");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("opening clears it", async () => {

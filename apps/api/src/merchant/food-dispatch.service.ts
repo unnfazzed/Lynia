@@ -5,6 +5,7 @@ import {
   FoodOfferEvent,
   type HeldReason,
   RELIABILITY,
+  RESTAURANTS_AUTO_ACCEPT,
   RESTAURANTS_DISPATCH,
   RIDER_STRIKE_COOLDOWN_MS,
   type Waypoint,
@@ -51,11 +52,46 @@ import { preferredRiderIds } from "./preferred-riders";
  * `ready_for_pickup` for the entire dispatch lifetime (search, offered, hold) and is cleared to null
  * only on a genuine hand-off out — acceptance (assigned) or cancellation — mirroring how every other
  * MerchantPhase exit already clears it without its own MERCHANT_PHASE_TRANSITIONS row.
+ * Exception (MJ-RM1 / U32, 2026-10-07): an auto-accepted order's search starts `dispatchLeadMs` before
+ * its ready time while it is still `preparing` (see `earlyDispatchDue`), and the kitchen phase is left
+ * alone throughout — searching, offered and secured. "Food is ready" (or the ready time passing) then
+ * moves it on as usual: to `ready_for_pickup` while searching, to null once a rider holds it.
  *
  * DB-only reconciler (no BullMQ), same reasoning as FoodOrderService: `RESTAURANTS_DISPATCH.
  * sweepIntervalMs` (20s) is tight enough to read as "auto" against the 60s offer window without a
  * queue/worker per order.
  */
+/** The fields {@link earlyDispatchDue} reads. */
+export interface EarlyDispatchInput {
+  merchantPhase: string | null;
+  autoAccepted?: boolean | null;
+  kitchenConfirmedAt?: Date | null;
+  prepStartedAt?: Date | null;
+  prepMinutes?: number | null;
+  /** Open substitution rounds (Order flow v2 BRIEF §8: never to a rider while the customer answers). */
+  substitutionRounds?: ReadonlyArray<unknown>;
+}
+
+/**
+ * MJ-RM1 / U32 (2026-10-07): an auto-accepted order the kitchen confirmed starts its rider search
+ * `RESTAURANTS_AUTO_ACCEPT.dispatchLeadMs` before its ready time (prep start + prep minutes), so the rider
+ * arrives as the food is ready — while the order is STILL `preparing`. The search never touches the
+ * kitchen's own state: `merchantPhase` stays `preparing` and `readyAt` stays unset until the kitchen taps
+ * "Food is ready" or the ready time passes (FoodOrderService.sweepAutoAccepted). Before this, the sweep
+ * flipped the order to `ready_for_pickup` 8 minutes early, so the kitchen lost its cooking ticket (+5 min,
+ * "Problem with this order") and the customer read "Food is ready" while it was still cooking.
+ */
+export function earlyDispatchDue(o: EarlyDispatchInput, nowMs: number): boolean {
+  if (o.merchantPhase !== "preparing" || o.autoAccepted !== true || !o.kitchenConfirmedAt) return false;
+  if ((o.substitutionRounds?.length ?? 0) > 0) return false;
+  return prepReadyMs(o, nowMs) - RESTAURANTS_AUTO_ACCEPT.dispatchLeadMs <= nowMs;
+}
+
+/** When the kitchen's food is due: prep start + prep minutes (an unstarted prep counts from now). */
+function prepReadyMs(o: Pick<EarlyDispatchInput, "prepStartedAt" | "prepMinutes">, nowMs: number): number {
+  return (o.prepStartedAt?.getTime() ?? nowMs) + (o.prepMinutes ?? 0) * 60_000;
+}
+
 @Injectable()
 export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(FoodDispatchService.name);
@@ -93,6 +129,11 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       this.logger.error(`sweepExpiredOffers failed: ${(err as Error).message}`);
     }
     try {
+      await this.sweepOrphanedOffers();
+    } catch (err) {
+      this.logger.error(`sweepOrphanedOffers failed: ${(err as Error).message}`);
+    }
+    try {
       await this.sweepSearch();
     } catch (err) {
       this.logger.error(`sweepSearch failed: ${(err as Error).message}`);
@@ -122,22 +163,65 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     return { expired };
   }
 
+  /**
+   * Backstop for sweepExpiredOffers, which only sees orders still at `open_for_offers`: a pending offer
+   * whose order has moved on (cancelled by the kitchen while a round was being written, review of
+   * wave 1 C2) would otherwise stay pending — and its rider's alarm open — for ever. Only offers past
+   * their own expiry, and never the row of the rider the order went to (acceptDispatch marks that row
+   * accepted just after its own claim).
+   */
+  async sweepOrphanedOffers(now: Date = new Date()): Promise<{ expired: number }> {
+    const rows = await this.prisma.foodDispatchAttempt.findMany({
+      where: { outcome: "pending", expiresAt: { lt: now }, order: { status: { not: "open_for_offers" } } },
+      select: { id: true, orderId: true, riderId: true, order: { select: { riderId: true } } },
+      take: 200,
+    });
+    const orphaned = rows.filter((r) => r.riderId !== r.order?.riderId);
+    if (orphaned.length === 0) return { expired: 0 };
+    const res = await this.prisma.foodDispatchAttempt.updateMany({
+      where: { id: { in: orphaned.map((r) => r.id) }, outcome: "pending" },
+      data: { outcome: "expired", respondedAt: now },
+    });
+    for (const r of orphaned) void this.gateway.emitFoodOfferClosed(r.riderId, r.orderId);
+    return { expired: res.count };
+  }
+
   /** Orders due for their next dispatch tick: never started (dispatchAttempt=0) or past their
    *  dispatchNextCheckAt (a prior no-candidate poll, or immediately after a decline/expire). */
   async sweepSearch(): Promise<{ offered: number; held: number }> {
     let offered = 0;
     let held = 0;
-    const due = await this.prisma.order.findMany({
+    const now = new Date();
+    const ready = await this.prisma.order.findMany({
       where: {
         orderType: "merchant",
         status: "requested",
         merchantPhase: "ready_for_pickup",
         noRiderHoldAt: null,
-        OR: [{ dispatchAttempt: 0 }, { dispatchNextCheckAt: { lte: new Date() } }],
+        OR: [{ dispatchAttempt: 0 }, { dispatchNextCheckAt: { lte: now } }],
       },
       select: { id: true },
       take: 200,
     });
+    // MJ-RM1 / U32: auto-accepted orders still cooking, inside the lead before their ready time. A
+    // separate read so cooking orders can never crowd ready ones out of the batch; oldest prep first.
+    const cooking = await this.prisma.order.findMany({
+      where: {
+        orderType: "merchant",
+        status: "requested",
+        merchantPhase: "preparing",
+        autoAccepted: true,
+        kitchenConfirmedAt: { not: null },
+        noRiderHoldAt: null,
+        substitutionRounds: { none: { status: "open" } },
+        OR: [{ dispatchAttempt: 0 }, { dispatchNextCheckAt: { lte: now } }],
+      },
+      select: { id: true, merchantPhase: true, autoAccepted: true, kitchenConfirmedAt: true, prepStartedAt: true, prepMinutes: true },
+      orderBy: { prepStartedAt: "asc" },
+      take: 200,
+    });
+    const seen = new Set<string>();
+    const due = [...ready, ...cooking.filter((o) => earlyDispatchDue(o, now.getTime()))].filter((o) => !seen.has(o.id) && !!seen.add(o.id));
     for (const o of due) {
       try {
         const outcome = await this.tick(o.id);
@@ -174,13 +258,36 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
         distanceKm: true,
         merchantPaymentMethod: true,
         merchantCashRule: true,
+        // MJ-RM1 / U32: the early search of an auto-accepted order still cooking.
+        autoAccepted: true,
+        kitchenConfirmedAt: true,
+        prepStartedAt: true,
+        prepMinutes: true,
+        substitutionRounds: { where: { status: "open" }, select: { id: true } },
       },
     });
-    if (!order || order.status !== "requested" || order.merchantPhase !== "ready_for_pickup" || order.noRiderHoldAt) {
+    const nowMs = Date.now();
+    const cooking = order?.merchantPhase === "preparing";
+    if (
+      !order ||
+      order.status !== "requested" ||
+      order.noRiderHoldAt ||
+      !(order.merchantPhase === "ready_for_pickup" || (cooking && earlyDispatchDue(order, nowMs)))
+    ) {
       return "skipped"; // raced with a concurrent accept/drop/cancel — the next relevant sweep re-evaluates.
     }
 
     const attempt = order.dispatchAttempt + 1;
+    if (attempt > RESTAURANTS_DISPATCH.maxAttempts && cooking) {
+      // MJ-RM1: nobody took it while the kitchen is still cooking. The D-34 hold is a decision about food
+      // that is READY (the merchant's hold card lives on the hand-over screen), so park until the ready
+      // time; by then the kitchen (or sweepAutoAccepted) has marked it ready and the cap applies as usual.
+      const claimed = await this.prisma.order.updateMany({
+        where: { id: orderId, status: "requested", merchantPhase: "preparing", dispatchAttempt: order.dispatchAttempt, noRiderHoldAt: null },
+        data: { dispatchNextCheckAt: new Date(Math.max(prepReadyMs(order, nowMs), nowMs + RESTAURANTS_DISPATCH.offerWindowMs)) },
+      });
+      return claimed.count > 0 ? "searching" : "skipped";
+    }
     if (attempt > RESTAURANTS_DISPATCH.maxAttempts) {
       const claimed = await this.prisma.order.updateMany({
         where: { id: orderId, status: "requested", dispatchAttempt: order.dispatchAttempt, noRiderHoldAt: null },
@@ -203,11 +310,15 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     }
 
     const radiusM = RESTAURANTS_DISPATCH.radiusM;
+    // MJ-RM18: never offer a business's order to someone on its own team (they could reveal the pickup
+    // code themselves and, on collect-and-return, settle their own cash debt). Not persisted in
+    // dispatchExcludedRiderIds: membership is re-read every round, so a later leave/join applies.
+    const teamIds = await this.teamProfileIds(order.merchantId);
     const candidates = await this.strategy.pickCandidates({
       lat: point.lat,
       lng: point.lng,
       radiusM,
-      excludeRiderIds: order.dispatchExcludedRiderIds,
+      excludeRiderIds: teamIds.length > 0 ? [...new Set([...order.dispatchExcludedRiderIds, ...teamIds])] : order.dispatchExcludedRiderIds,
       preferredRiderIds: await this.preferredFor(order.merchantId),
       limit: dispatchRoundSize(attempt),
     });
@@ -217,9 +328,22 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     const now = new Date();
     const startedAt = order.dispatchStartedAt ?? now;
 
+    // Both claims also guard on the phase read above, so a cooking order the kitchen marked ready (or
+    // cancelled) in between is re-read on the next pass rather than offered on a stale view.
+    // A cooking order's claims also require no open substitution round: one the kitchen opened in between
+    // must keep the order at `requested`, where the customer's free "cancel the whole order" works.
+    const phase = order.merchantPhase;
+    const guard: Prisma.OrderWhereInput = {
+      id: orderId,
+      status: "requested",
+      merchantPhase: phase,
+      dispatchAttempt: order.dispatchAttempt,
+      noRiderHoldAt: null,
+      ...(phase === "preparing" ? { substitutionRounds: { none: { status: "open" } } } : {}),
+    };
     if (candidates.length === 0) {
       const claimed = await this.prisma.order.updateMany({
-        where: { id: orderId, status: "requested", dispatchAttempt: order.dispatchAttempt, noRiderHoldAt: null },
+        where: guard,
         data: {
           dispatchAttempt: attempt,
           dispatchStartedAt: startedAt,
@@ -231,7 +355,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
 
     const expiresAt = new Date(now.getTime() + RESTAURANTS_DISPATCH.offerWindowMs);
     const claimed = await this.prisma.order.updateMany({
-      where: { id: orderId, status: "requested", dispatchAttempt: order.dispatchAttempt, noRiderHoldAt: null },
+      where: guard,
       data: {
         status: "open_for_offers",
         dispatchOfferedRiderId: null,
@@ -260,6 +384,13 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       // Without the rows nobody can accept: close the round now so the next sweep opens a fresh one.
       this.logger.error(`FoodDispatchAttempt write failed for order ${orderId}: ${(err as Error).message}`);
       await this.closeRound(orderId, expiresAt);
+      return "skipped";
+    }
+    // The round may already be gone: the kitchen cancelled (cancelPreparing) between the claim and the rows,
+    // so its own offer clean-up found nothing to close. Then this round's rows end here and nobody is rung.
+    const stillLive = await this.prisma.order.count({ where: { id: orderId, status: "open_for_offers", dispatchOfferExpiresAt: expiresAt } });
+    if (stillLive === 0) {
+      await this.expireRound(orderId, expiresAt);
       return "skipped";
     }
     // Order flow v2 G3c (O.g.push.r): "New food job · $1.50" / "Gava’s Kitchen → 12 Lanark Rd. 60 s to
@@ -296,6 +427,15 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       this.logger.warn(`merchant.dispatch.preferred lookup failed for merchant ${merchantId}: ${(err as Error).message}`);
       return [];
     }
+  }
+
+  /** MJ-RM18: everyone on the business's own team (owner, manager, staff), whatever their role. Unlike
+   *  `preferredFor` this is NOT best effort: a failed read throws, the tick fails, and the next sweep
+   *  retries — an offer must never go out without the team excluded. */
+  private async teamProfileIds(merchantId: string | null): Promise<string[]> {
+    if (!merchantId) return [];
+    const rows = await this.prisma.merchantMember.findMany({ where: { merchantId }, select: { profileId: true } });
+    return rows.map((r) => r.profileId).filter((id): id is string => typeof id === "string" && id.length > 0);
   }
 
   /** REDACTED (point + landmark, never contactPhone — mirrors `buildBoardNewOrderEvent`) offer
@@ -350,6 +490,15 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     return true;
   }
 
+  /** Expire the still-pending rows of ONE round (by its expiry) and close those riders' alarms. */
+  private async expireRound(orderId: string, roundExpiresAt: Date): Promise<void> {
+    const where: Prisma.FoodDispatchAttemptWhereInput = { orderId, outcome: "pending", expiresAt: roundExpiresAt };
+    const open = await this.prisma.foodDispatchAttempt.findMany({ where, select: { riderId: true } });
+    if (open.length === 0) return;
+    await this.prisma.foodDispatchAttempt.updateMany({ where, data: { outcome: "expired", respondedAt: new Date() } });
+    for (const { riderId } of open) void this.gateway.emitFoodOfferClosed(riderId, orderId);
+  }
+
   /** Mark every still-pending row on the order expired (but `exceptRiderId`'s) and close those riders'
    *  offer alarms (C5) — the only signal a rider whose phone is still ringing gets. */
   private async expirePending(orderId: string, exceptRiderId?: string): Promise<void> {
@@ -362,10 +511,13 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
 
   /** The order behind the rider's live offer, or the reason they have none: not offered it at all
    *  (403), or the round closed, someone else took it, they already answered, or it ran out (409). */
-  private async liveOffer(orderId: string, riderId: string): Promise<{ merchantId: string | null; roundExpiresAt: Date | null; excluded: string[] }> {
+  private async liveOffer(
+    orderId: string,
+    riderId: string,
+  ): Promise<{ merchantId: string | null; merchantPhase: string | null; roundExpiresAt: Date | null; excluded: string[] }> {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, orderType: "merchant" },
-      select: { status: true, merchantId: true, dispatchOfferExpiresAt: true, dispatchExcludedRiderIds: true },
+      select: { status: true, merchantId: true, merchantPhase: true, dispatchOfferExpiresAt: true, dispatchExcludedRiderIds: true },
     });
     if (!order) throw new NotFoundException("Order not found");
     const offer = await this.prisma.foodDispatchAttempt.findUnique({
@@ -375,7 +527,12 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     if (!offer) throw new ForbiddenException("This offer isn't yours");
     if (order.status !== "open_for_offers" || offer.outcome !== "pending") throw new ConflictException("This offer is no longer live");
     if (offer.expiresAt.getTime() < Date.now()) throw new ConflictException("This offer just expired, pick your next job");
-    return { merchantId: order.merchantId, roundExpiresAt: order.dispatchOfferExpiresAt, excluded: order.dispatchExcludedRiderIds };
+    return {
+      merchantId: order.merchantId,
+      merchantPhase: order.merchantPhase ?? null,
+      roundExpiresAt: order.dispatchOfferExpiresAt,
+      excluded: order.dispatchExcludedRiderIds,
+    };
   }
 
   // ── Rider actions ────────────────────────────────────────────────────────────────────────────────
@@ -418,27 +575,41 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
    *  the same way); every other rider on the round is told it's gone. */
   async acceptDispatch(orderId: string, riderId: string): Promise<{ orderId: string; status: "assigned" }> {
     const order = await this.liveOffer(orderId, riderId);
+    // MJ-RM18 backstop (the round already leaves the team out): someone on the business's own team never
+    // takes its order — same guard as MerchantBookingService.pick.
+    if (order.merchantId && (await this.prisma.merchantMember.findFirst({ where: { merchantId: order.merchantId, profileId: riderId }, select: { id: true } }))) {
+      throw new ConflictException({ reason: "own_member", message: "Someone on your team can't take your own delivery." });
+    }
 
     const deliveryCode = this.tokens.randomOtp();
+    const secured = (keepCooking: boolean) => ({
+      status: "assigned" as const,
+      riderId,
+      // Clears the kitchen phase; the counter's pickup code stays revealable while the rider holds the
+      // order (FoodOrderService.revealPickupCode's second window, E2E 2026-10-05 LB-1). MJ-RM1: an order
+      // found early, while still cooking, keeps `preparing` — the kitchen's ticket is the kitchen's
+      // until it taps "Food is ready" (or the ready time passes), which then clears it.
+      merchantPhase: keepCooking ? ("preparing" as const) : null,
+      otpHash: this.tokens.hash(deliveryCode),
+      deliveryOtpAttempts: 0,
+      deliveryCodeRotatedAt: new Date(),
+      dispatchOfferedRiderId: null,
+      dispatchOfferExpiresAt: null,
+      dispatchNextCheckAt: null,
+    });
     try {
       // First writer wins. The CAS is on the round itself, so a rider whose round closed (and maybe
       // reopened without them) between the read above and here loses cleanly.
-      const claimed = await this.prisma.order.updateMany({
-        where: { id: orderId, status: "open_for_offers", dispatchOfferExpiresAt: order.roundExpiresAt },
-        data: {
-          status: "assigned",
-          riderId,
-          // Clears the kitchen phase; the counter's pickup code stays revealable while the rider holds the
-          // order (FoodOrderService.revealPickupCode's second window, E2E 2026-10-05 LB-1).
-          merchantPhase: null,
-          otpHash: this.tokens.hash(deliveryCode),
-          deliveryOtpAttempts: 0,
-          deliveryCodeRotatedAt: new Date(),
-          dispatchOfferedRiderId: null,
-          dispatchOfferExpiresAt: null,
-          dispatchNextCheckAt: null,
-        },
+      const round = { id: orderId, status: "open_for_offers" as const, dispatchOfferExpiresAt: order.roundExpiresAt };
+      const cooking = order.merchantPhase === "preparing";
+      let claimed = await this.prisma.order.updateMany({
+        where: cooking ? { ...round, merchantPhase: "preparing" } : round,
+        data: secured(cooking),
       });
+      if (claimed.count === 0 && cooking) {
+        // The kitchen marked it ready between the read and the claim: secure it as a ready order.
+        claimed = await this.prisma.order.updateMany({ where: { ...round, merchantPhase: "ready_for_pickup" }, data: secured(false) });
+      }
       if (claimed.count === 0) throw new ConflictException("This offer is no longer live");
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
@@ -523,7 +694,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
   async dropDispatch(orderId: string, riderId: string): Promise<{ orderId: string; status: "requested" }> {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, orderType: "merchant", riderId },
-      select: { status: true, dispatchExcludedRiderIds: true, merchantId: true },
+      select: { status: true, merchantPhase: true, dispatchExcludedRiderIds: true, merchantId: true },
     });
     if (!order) throw new NotFoundException("Order not found");
     const droppable = new Set(["assigned", "confirmed", "en_route_pickup"]);
@@ -537,10 +708,14 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     let strikeLimitHit = false;
     await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.order.updateMany({
-        where: { id: orderId, status: order.status, riderId },
+        // Guarded on the phase read above too: a kitchen marking a still-cooking order ready in between
+        // must not be overwritten back to `preparing`.
+        where: { id: orderId, status: order.status, riderId, merchantPhase: order.merchantPhase },
         data: {
           status: "requested",
-          merchantPhase: "ready_for_pickup",
+          // MJ-RM1: a rider found early drops while the kitchen is still cooking — it keeps cooking, and
+          // the early search picks it up again. Otherwise the food is ready and waiting.
+          merchantPhase: order.merchantPhase === "preparing" ? "preparing" : "ready_for_pickup",
           riderId: null,
           otpHash: null,
           deliveryOtpAttempts: 0,
@@ -549,6 +724,14 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
           dispatchStartedAt: null,
           dispatchNextCheckAt: null,
           noRiderHoldAt: null,
+          // MJ-RM2: the dropped rider's counter state goes with them — otherwise the next rider is shown
+          // "at your counter" from the start, never gets an ETA, and inherits the old sealed-bag photo
+          // (a shop/pharmacy S3 checklist ticked with someone else's proof).
+          riderArrivedAt: null,
+          riderEtaAt: null,
+          pickupPhotoKey: null,
+          pickupPhotoAt: null,
+          pickupBagSealed: null,
         },
       });
       if (claimed.count === 0) throw new ConflictException("Order changed, retry");

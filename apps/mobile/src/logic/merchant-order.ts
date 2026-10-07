@@ -53,6 +53,15 @@ export function awaitingKitchenConfirm(i: TrackInput): boolean {
 }
 
 /**
+ * U11 (2026-10-07): the D-34 no-rider hold — the food is ready, dispatch stopped after its last round and no
+ * rider has it, so nobody is coming until the venue decides. The customer may cancel free (T11a/T11b's
+ * drawn "Cancel order · free"); the server's cancelUnpaid takes it under the same condition.
+ */
+export function isNoRiderHold(o: { status: string; merchantPhase: string | null | undefined; noRiderHoldAt?: string | null; riderId?: string | null }): boolean {
+  return o.status === "requested" && o.merchantPhase === "ready_for_pickup" && o.noRiderHoldAt != null && o.riderId == null;
+}
+
+/**
  * The current step of the four-step track. Rider found, at the venue and collected are sheet content and
  * map state inside steps 2–3 (BRIEF §4), so a rider heading to the venue is still "Cooking".
  */

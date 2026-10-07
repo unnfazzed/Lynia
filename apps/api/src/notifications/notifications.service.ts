@@ -118,11 +118,15 @@ export const MERCHANT_STATUS_NOTICES: Partial<Record<string, Notice>> = {
   // delivered and not delivered, in `O.g.push.c`'s words (merchantCustomerCopy fills the names). The
   // static title/body here is the no-name fallback.
   picked_up: { to: ["customer"], title: "Your rider has your order", body: "On the way." },
-  // A food order's `en_route_dropoff` is the rider ARRIVING at the door (the cash handshake opens on it).
+  // Feed-only (U12): `en_route_dropoff` fires right after pickup, so it is never pushed (MERCHANT_SILENT_PUSH);
+  // the feed keeps the drawn "At your door" step.
   en_route_dropoff: { to: ["customer"], title: "Your rider is at your door", body: "Have your cash ready." },
   delivered: { to: ["customer"], title: "Delivered", body: "Enjoy!" },
   undelivered: { to: ["customer"], title: "Your order wasn’t delivered", body: "Nothing was charged." },
 };
+
+/** U12: merchant-order statuses whose beat stays in the feed but is never pushed (see notifyOrderStatus). */
+export const MERCHANT_SILENT_PUSH: ReadonlySet<string> = new Set(["en_route_dropoff"]);
 
 interface MerchantCopyOrder {
   agreedFare?: unknown;
@@ -231,6 +235,12 @@ export class NotificationsService {
       // rather than send a customer misleading Express copy about their food order.
       const notice = order.orderType === "merchant" ? MERCHANT_STATUS_NOTICES[status] : order.orderType === "parcel" ? STATUS_NOTICES[status] : undefined;
       if (!notice) return;
+      // U12 (2026-10-07): no push for a merchant order's `en_route_dropoff`. The rider app steps
+      // picked_up → en_route_dropoff right after collecting, so "{n} is at your door · Have $X cash
+      // ready" landed seconds after "{n} has your order · On the way", maybe 20 minutes before the
+      // rider arrived. The picked_up push already says "On the way"; the server has no drop-off arrival
+      // to push on yet. The feed's step table (MERCHANT_STATUS_NOTICES) is left as drawn.
+      if (order.orderType === "merchant" && MERCHANT_SILENT_PUSH.has(status)) return;
       // Fix 3: stamp each recipient's PER-ORDER role (`to`) onto the push so the client routes by the
       // order relationship, not the account's global session role — a rider-role account acting as the
       // customer on THIS order must open /order/:id, not /rider/job. Sent per-audience so each carries

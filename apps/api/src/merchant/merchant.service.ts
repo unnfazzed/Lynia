@@ -42,7 +42,6 @@ import {
   addMoney,
   foodOrderMoney,
   subMoney,
-  effectiveMerchantHours,
   merchantWaypoint,
   BUSY_MODE_EXTRA_MIN,
   RESTAURANTS_AUTO_ACCEPT,
@@ -51,7 +50,6 @@ import {
   RESTAURANTS_DEBT,
   roundToCents,
   isInServiceArea,
-  startOfNextDay,
 } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { ownNamespace, type UploadKind } from "../adapters/storage/upload-kinds";
@@ -65,6 +63,7 @@ import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { lockMembershipsTx, resolveMerchantAccess } from "./merchant-access";
 import { findBookingAccountId } from "./booking-account";
+import { harareEffectiveHours, harareStartOfNextDay } from "./harare-clock";
 import { CUSTOMER_VISIBLE_RESTAURANT, isDishOutOfStock as isOutOfStock, resolveOwnMerchantId } from "./merchant-lookup.util";
 import {
   POPULAR_MIN_ORDERS,
@@ -390,7 +389,8 @@ export class MerchantService {
     const merchant = await this.findOwnMerchantOrThrow(profileId);
     const updated = await this.prisma.merchant.update({
       where: { id: merchant.id },
-      data: { closedUntil: body.open ? null : startOfNextDay(new Date()) },
+      // MJ-RM13 sibling: Harare's next midnight, not the UTC server's (02:00 Harare).
+      data: { closedUntil: body.open ? null : harareStartOfNextDay(new Date()) },
       include: { ownerProfile: { select: { phone: true } } },
     });
     return await this.toProfileResponse(updated, merchant);
@@ -1225,7 +1225,8 @@ export class MerchantService {
       priceLevel: merchant.priceLevel,
       // D-48: a merchant closed by hand is served with today's window dropped, so every client —
       // installed apps included — reads it as closed and says when it opens next.
-      hours: effectiveMerchantHours((merchant.hours as MerchantHours | null) ?? null, merchant.closedUntil, new Date()),
+      // MJ-RM13 sibling: the day dropped is Harare's (the UTC server's day is yesterday until 02:00 Harare).
+      hours: harareEffectiveHours((merchant.hours as MerchantHours | null) ?? null, merchant.closedUntil, new Date()),
       // Geo-point only (D-17) — see the field's doc comment in contracts.ts.
       location: location ? location.point : null,
       // #673: star rating (null while unrated — the card shows no star, never a fake "0") + the

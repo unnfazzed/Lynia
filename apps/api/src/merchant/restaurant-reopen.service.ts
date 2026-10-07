@@ -1,7 +1,8 @@
-import { isMerchantOpenNow, type MerchantHours } from "@lynia/shared";
+import type { MerchantHours } from "@lynia/shared";
 import { Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { isVenueOpenNow } from "./harare-clock";
 import { CUSTOMER_VISIBLE_RESTAURANT } from "./merchant-lookup.util";
 
 /**
@@ -12,7 +13,8 @@ import { CUSTOMER_VISIBLE_RESTAURANT } from "./merchant-lookup.util";
  * list; this is the machinery behind it.
  *
  * **Why a sweep and not an event.** Nothing in the system emits "merchant opened". Open-ness is
- * derived from the merchant's weekly `hours` JSON every time it's read (`isMerchantOpenNow`), so
+ * derived from the merchant's weekly `hours` JSON (in Harare time) and its `closedUntil` every time it's
+ * read (`isVenueOpenNow`, placeOrder's own rule), so
  * there is no transition to subscribe to — only a schedule to observe. The sweep re-derives open-ness
  * on a tick and fires the reminders that just became due. The alternative (computing each merchant's
  * next opening instant and scheduling a job) buys precision this doesn't need and breaks the moment a
@@ -63,11 +65,13 @@ export class RestaurantReopenService implements OnModuleInit, OnModuleDestroy {
       // Same visibility rule as the browse list: a merchant outside the pilot allowlist doesn't exist
       // to a customer, so it can't be subscribed to either.
       where: { id: merchantId, ...CUSTOMER_VISIBLE_RESTAURANT },
-      select: { id: true, hours: true },
+      select: { id: true, hours: true, closedUntil: true },
     });
     if (!merchant) throw new NotFoundException("Restaurant not found");
 
-    if (isMerchantOpenNow(merchant.hours as MerchantHours | null, new Date())) {
+    // MJ-RM13: open exactly when placeOrder would take the order — Harare's wall clock (not the UTC
+    // server's, which read 08:00 Harare as 06:00) and never while closed by hand (`closedUntil`).
+    if (isVenueOpenNow((merchant.hours as MerchantHours | null) ?? null, merchant.closedUntil ?? null, new Date())) {
       return { set: false, alreadyOpen: true };
     }
 
@@ -100,7 +104,7 @@ export class RestaurantReopenService implements OnModuleInit, OnModuleDestroy {
     try {
       const pending = await this.prisma.restaurantReopenReminder.findMany({
         where: { notifiedAt: null },
-        select: { id: true, profileId: true, merchantId: true, merchant: { select: { name: true, hours: true, pilotEnabled: true } } },
+        select: { id: true, profileId: true, merchantId: true, merchant: { select: { name: true, hours: true, closedUntil: true, pilotEnabled: true } } },
         orderBy: { createdAt: "asc" },
         take: SWEEP_BATCH,
       });
@@ -112,7 +116,8 @@ export class RestaurantReopenService implements OnModuleInit, OnModuleDestroy {
       const due = new Map<string, { name: string; ids: string[]; rowIds: string[] }>();
       for (const row of pending) {
         if (!row.merchant.pilotEnabled) continue;
-        if (!isMerchantOpenNow(row.merchant.hours as MerchantHours | null, now)) continue;
+        // MJ-RM13: the same rule as placeOrder (Harare time, closed by hand stays closed).
+        if (!isVenueOpenNow((row.merchant.hours as MerchantHours | null) ?? null, row.merchant.closedUntil ?? null, now)) continue;
         const bucket = due.get(row.merchantId) ?? { name: row.merchant.name, ids: [], rowIds: [] };
         bucket.ids.push(row.profileId);
         bucket.rowIds.push(row.id);

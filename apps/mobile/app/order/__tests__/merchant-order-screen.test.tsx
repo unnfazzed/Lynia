@@ -226,6 +226,24 @@ describe("merchant order — one order screen (D-59)", () => {
     expect(mockCancelOrder).not.toHaveBeenCalled();
   });
 
+  // U11 (2026-10-07): the D-34 no-rider hold had no customer exit — T11a/T11b draw "Cancel order · free".
+  it("U11 T11a: food ready, slow rider search — no cancel while dispatch is still searching", async () => {
+    const t = await render(foodOrder({ merchantPhase: "ready_for_pickup", readyAt: iso(-60_000), noRiderHoldAt: null }), snapshot());
+    expect(has(t, "Finding a rider is taking longer")).toBe(true);
+    expect(has(t, "Cancel order · free")).toBe(false);
+  });
+
+  it("U11 T11a: in the no-rider hold, the drawn free cancel goes through the unpaid-cancel endpoint", async () => {
+    const t = await render(foodOrder({ merchantPhase: "ready_for_pickup", readyAt: iso(-8 * 60_000), noRiderHoldAt: iso(-60_000), dispatchAttempt: 6 }), snapshot());
+    expect(has(t, "Finding a rider is taking longer")).toBe(true);
+    press(t, "Cancel order · free");
+    expect(has(t, "Cancel this order?")).toBe(true);
+    press(t, "Cancel order");
+    await act(async () => undefined);
+    expect(mockCancelUnpaid).toHaveBeenCalledWith("order-1");
+    expect(mockCancelOrder).not.toHaveBeenCalled();
+  });
+
   it("T2 confirming: auto-accepted, kitchen not confirmed — step 1 and a free cancel", async () => {
     const t = await render(foodOrder({ autoAccepted: true, kitchenConfirmedAt: null }), snapshot());
     expect(has(t, "Gava’s Kitchen is confirming")).toBe(true);
