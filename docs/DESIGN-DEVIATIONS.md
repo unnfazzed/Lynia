@@ -4964,8 +4964,19 @@ Failure toasts show the `circle-alert` in highlight (the owner-approved error to
 - `playTestAlert` (the local notification behind those buttons) is deleted. `RP.testPing` and `R.testPing` /
   `R.testAlarm` stay in the copy files because those mirror the handoffs verbatim; nothing renders them.
 
+## D-84 · Top up: the drawn $2 quick chip sits below the $5 minimum — UPSTREAM KIT DEFECT (2026-10-07)
 
-## D-84 · Rider audit 2026-10-07, parcel job: two undrawn controls — PENDING OWNER REVIEW
+**Found by the rider audit (MA-M1, 2026-10-07).** Rider v2 T2 (`packages/design/handoff/rider-v2/`) draws the
+amount step's quick chips as **$2 · $5 · $10 · $20**, but the server's minimum top-up (`CommissionConfig.minTopUp`)
+is **$5**. Tapping the drawn $2 chip could only ever produce "Enter at least $5.00".
+
+- **App:** `src/ui/rider/TopUpFlow.tsx` hides any quick chip below the served `minTopUp` (today: the $2 chip; the
+  row shows $5 · $10 · $20). The chips still come from the drawing; none is invented.
+- **App:** the low-balance wall's "Top up at least" (Rider v2 J-gate `gTopK2`) shows
+  `max(minTopUp, floor − balance)`, so it never asks for an amount the top-up screen refuses.
+- **Upstream:** the kit should draw chips at or above the minimum. Reported upstream; the kit is not edited here.
+
+## D-85 · Rider audit 2026-10-07, parcel job: two undrawn controls — PENDING OWNER REVIEW
 
 Fixes from the rider UI/UX audit that needed an element the Rider v2 handoff (`handoff/rider-v2/`, D-54) does not draw.
 Both reuse existing strings; both are reported upstream as missing states.

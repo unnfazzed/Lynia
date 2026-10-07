@@ -35,6 +35,8 @@ jest.mock("expo-router", () => ({
 // every later test think the rider was gated. Reset in afterEach, set by the tests that need them.
 let mockLocPermission: "granted" | "denied" | "undetermined" = "granted";
 let mockLocFixFails = false;
+let mockWatchCalls = 0;
+let mockWatchCallback: ((p: { coords: { latitude: number; longitude: number } }) => void) | null = null;
 /** OS permission prompts shown, and whether the cold-start splash is still up (S-6). */
 let mockPermissionAsks = 0;
 let mockBooting = false;
@@ -57,6 +59,12 @@ jest.mock("expo-location", () => ({
     return { coords: { latitude: -17.83, longitude: 31.05 } };
   },
   getLastKnownPositionAsync: async () => null,
+  // BD-H1: the board follows the rider while online; tests drive a move through `mockWatchCallback`.
+  watchPositionAsync: async (_opts: unknown, cb: (p: { coords: { latitude: number; longitude: number } }) => void) => {
+    mockWatchCalls += 1;
+    mockWatchCallback = cb;
+    return { remove: () => undefined };
+  },
   reverseGeocodeAsync: async () => [],
   Accuracy: { Balanced: 3 },
 }));
@@ -1853,5 +1861,257 @@ describe("rider board — First Run v2 ID-check outcome pages (D-82)", () => {
     expect(treeText(activeTree)).toContain("The details are in your notifications.");
     expect(treeText(activeTree)).not.toContain("SMS");
     expect(activeTree.root.findAll((n) => typeof n.type === "string" && typeof n.props.testID === "string" && n.props.testID.startsWith("kyc-outcome-"))).toHaveLength(0);
+  });
+});
+
+/**
+ * Rider audit 2026-10-07, Board & Jobs (B5, BD-H1–H5, BD-M1–M5, BD-L1–L2). Each case pins the fixed
+ * behaviour on the real board.
+ */
+describe("rider board — rider audit fixes (Board & Jobs)", () => {
+  const { onlineManager } = jest.requireActual("@tanstack/react-query") as typeof import("@tanstack/react-query");
+  const { pushOnce: mockPushOnce } = jest.requireMock("../../../../src/push/push") as { pushOnce: jest.Mock };
+
+  function renderWithClient(): { tree: renderer.ReactTestRenderer; qc: QueryClient } {
+    let qc!: QueryClient;
+    const tree = renderScreen((c) => (qc = c));
+    return { tree, qc };
+  }
+  function rerender(tree: renderer.ReactTestRenderer, qc: QueryClient): void {
+    act(() =>
+      tree.update(
+        <SafeAreaProvider initialMetrics={TEST_METRICS}>
+          <QueryClientProvider client={qc}>
+            <RiderHome />
+          </QueryClientProvider>
+        </SafeAreaProvider>,
+      ),
+    );
+  }
+  function pickedSheetVisible(tree: renderer.ReactTestRenderer): boolean {
+    return tree.root.findAll((n) => typeof n.type !== "string" && n.props.locked === true && "visible" in n.props).some((n) => n.props.visible === true);
+  }
+  function labels(tree: renderer.ReactTestRenderer): string[] {
+    return tree.root.findAll((n) => typeof n.props.label === "string" && typeof n.props.onPress === "function").map((n) => n.props.label as string);
+  }
+
+  it("B5: a failed go-online retries the moment the network comes back, and the board says it's reconnecting", async () => {
+    mockSetOnline.mockRejectedValueOnce(new Error("network down"));
+    mockGetMe.mockResolvedValue(meFixture({ isOnline: false }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    // The go-online failed: the rider is allowed online but isn't, and the sheet says so.
+    expect(mockSetOnline).toHaveBeenCalledTimes(1);
+    expect(treeText(activeTree)).toContain("Reconnecting… Jobs may be a minute behind.");
+
+    act(() => onlineManager.setOnline(false));
+    act(() => onlineManager.setOnline(true));
+    await settle();
+    expect(mockSetOnline).toHaveBeenCalledTimes(2);
+  });
+
+  it("BD-H1: while online the board follows the rider, and the open-jobs read uses the new position", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(mockWatchCalls).toBeGreaterThan(0);
+    act(() => mockWatchCallback?.({ coords: { latitude: -17.9, longitude: 31.1 } }));
+    await settle();
+    expect(mockGetOpenOrders.mock.calls.some((c) => (c[0] as { lat: number } | undefined)?.lat === -17.9)).toBe(true);
+  });
+
+  it("BD-H2: a withdraw that never reached the server puts the card back and says so", async () => {
+    const bid = { ...openOrderFixture("order-0"), createdAt: new Date().toISOString() };
+    mockWithdrawOffer.mockRejectedValueOnce(new ApiError(0, "Network request failed"));
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([bid]);
+    activeTree = renderScreen((qc) =>
+      qc.setQueryData(SENT_OFFERS_KEY, [{ order: bid, fare: "5.50", etaMinutes: 10, expiresAt: new Date(Date.now() + 10 * 60_000).toISOString() }]),
+    );
+    await settle();
+    await settle();
+    const withdraw = activeTree.root.findAll((n) => n.props.label === "Withdraw" && typeof n.props.onPress === "function");
+    act(() => (withdraw[0]!.props as { onPress: () => void }).onPress());
+    expect(cardIds(activeTree, "offer")).toEqual([]);
+    await wait(5200);
+    expect(mockWithdrawOffer).toHaveBeenCalledWith("order-0");
+    expect(cardIds(activeTree, "offer")).toEqual(["order-0"]);
+    expect(treeText(activeTree)).toContain("Couldn't withdraw. Check your data.");
+  }, 10000);
+
+  it("BD-H2: a withdraw the server took keeps the job off the board (no second offer is allowed)", async () => {
+    const bid = { ...openOrderFixture("order-0"), createdAt: new Date().toISOString() };
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([bid]);
+    activeTree = renderScreen((qc) =>
+      qc.setQueryData(SENT_OFFERS_KEY, [{ order: bid, fare: "5.50", etaMinutes: 10, expiresAt: new Date(Date.now() + 10 * 60_000).toISOString() }]),
+    );
+    await settle();
+    await settle();
+    const withdraw = activeTree.root.findAll((n) => n.props.label === "Withdraw" && typeof n.props.onPress === "function");
+    act(() => (withdraw[0]!.props as { onPress: () => void }).onPress());
+    await wait(5200);
+    await settle();
+    expect(cardIds(activeTree, "offer")).toEqual([]);
+    expect(cardIds(activeTree)).toEqual([]);
+  }, 10000);
+
+  it("BD-H3: a failed active-job check retries by itself while the socket is up — still no card", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockRejectedValue(new Error("network down"));
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    const before = mockGetActiveOrder.mock.calls.length;
+    await wait(8500);
+    expect(mockGetActiveOrder.mock.calls.length).toBeGreaterThan(before);
+    expect(treeText(activeTree)).not.toContain("Couldn't check for an active job");
+  }, 15000);
+
+  it("BD-H4: a failed open-jobs read draws two skeleton cards and really tries again in 10 s with the socket up", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockRejectedValue(new Error("network down"));
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).toContain("Couldn't load nearby jobs. Trying again in 10 s.");
+    expect(activeTree.root.findAll((n) => typeof n.type !== "string" && (n.type as { name?: string }).name === "SkeletonOffer")).toHaveLength(2);
+    const before = mockGetOpenOrders.mock.calls.length;
+    await wait(10_500);
+    expect(mockGetOpenOrders.mock.calls.length).toBeGreaterThan(before);
+  }, 15000);
+
+  it("BD-H5: a food job just accepted gets the job bar, never the parcel 'picked you' sheet", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue({ ...activeJobFixture(), orderType: "merchant", customerFirstName: "Rudo" });
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(pickedSheetVisible(activeTree)).toBe(false);
+    expect(labels(activeTree).some((l) => l.startsWith("Job in progress"))).toBe(true);
+  });
+
+  it("BD-H5: a parcel assignment still shows 'picked you', and the job bar is there behind it", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue({ ...activeJobFixture(), customerFirstName: "Rudo" });
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(pickedSheetVisible(activeTree)).toBe(true);
+    expect(labels(activeTree).some((l) => l.startsWith("Job in progress"))).toBe(true);
+  });
+
+  it("BD-L2: an unacknowledged cancelled job's bar says who cancelled, not 'Job in progress'", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue({ ...activeJobFixture(), status: "cancelled", cancelledBy: "customer", customerFirstName: "Rudo" });
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(labels(activeTree)).toContain("Rudo cancelled the order");
+    expect(labels(activeTree).some((l) => l.startsWith("Job in progress"))).toBe(false);
+  });
+
+  it("BD-M1: a failed profile read with nothing cached says so and counts down to the next try", async () => {
+    mockGetMe.mockRejectedValue(new Error("network down"));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    const text = treeText(activeTree);
+    expect(text).toContain("Something went wrong");
+    expect(text).toContain("Trying again in");
+    expect(activeTree.root.findAll((n) => n.props.testID === "rider-board-area")).toHaveLength(0);
+  });
+
+  it("BD-M2: the selected card taken by another rider shows 'That parcel was taken', even though the card left first", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("order-0"), openOrderFixture("order-1")]);
+    const { tree, qc } = renderWithClient();
+    activeTree = tree;
+    await settle();
+    await settle();
+    // The socket drops the card from the cache first…
+    act(() => void qc.setQueryData<OpenOrder[]>(["openOrders"], (prev) => prev?.filter((o) => o.id !== "order-0")));
+    expect(treeText(tree)).not.toContain("That parcel was taken by another rider.");
+    // …and marks it taken only after the active-job re-read.
+    mockUseRiderBoard.mockReturnValue({ connected: true, expiredOrderIds: new Set<string>(), takenOrderIds: new Set(["order-0"]), boardTakenNudge: 1 });
+    rerender(tree, qc);
+    expect(treeText(tree)).toContain("That parcel was taken by another rider.");
+  });
+
+  it("BD-M3: the cooldown wall says when it clears (G10 'Clears at')", async () => {
+    const until = new Date(Date.now() + 72 * 60_000);
+    mockGetMe.mockResolvedValue({ ...meFixture(), rider: { ...meFixture().rider!, cooldownUntil: until.toISOString() } });
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    mockSetOnline.mockRejectedValueOnce(new ApiError(403, "On cooldown", "cooldown"));
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    const text = treeText(activeTree);
+    expect(text).toContain("You're on a cooldown");
+    expect(text).toContain("Clears at");
+    expect(text).toMatch(/1 h 1\d min left/);
+  });
+
+  it("BD-M4: tapping a map pin scrolls its card into view", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue(Array.from({ length: 6 }, (_, i) => openOrderFixture(`order-${i}`)));
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    // Give the card wrappers a position, as a device would.
+    const wrappers = activeTree.root.findAll((n) => typeof n.type === "string" && n.props.collapsable === false && typeof n.props.onLayout === "function");
+    act(() => wrappers.forEach((w, i) => w.props.onLayout({ nativeEvent: { layout: { x: 0, y: i * 150, width: 320, height: 140 } } })));
+    const scroll = activeTree.root.find((n) => n.instance != null && typeof n.instance.scrollTo === "function").instance as { scrollTo: jest.Mock };
+    scroll.scrollTo.mockClear();
+    const map = activeTree.root.find((n) => typeof n.type !== "string" && typeof n.props.onSelect === "function" && Array.isArray(n.props.jobs));
+    const target = (map.props.jobs as { id: string }[])[4]!.id;
+    act(() => map.props.onSelect(target));
+    expect(scroll.scrollTo).toHaveBeenCalledWith(expect.objectContaining({ y: 600 }));
+  });
+
+  it("BD-M5: a food-offer push goes through pushOnce, so it never stacks a second offer screen", async () => {
+    mockFoodOn = true;
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    const onFoodOffer = mockUseRiderBoard.mock.calls.at(-1)![3] as () => void;
+    act(() => onFoodOffer());
+    expect(mockPushOnce).toHaveBeenCalledWith(expect.anything(), "/rider", "/rider/food-offer");
+    expect(mockPush).not.toHaveBeenCalledWith("/rider/food-offer");
+  });
+
+  it("BD-L1: the selected card announces it, and its button is reachable as an action", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("order-0"), openOrderFixture("order-1")]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    const a11yCards = activeTree.root.findAll((n) => typeof n.type === "string" && n.props.accessible === true && Array.isArray(n.props.accessibilityActions) && n.props.accessibilityState?.selected != null);
+    expect(a11yCards.filter((n) => n.props.accessibilityState.selected === true)).toHaveLength(1);
+    const first = a11yCards[0]!;
+    expect(first.props.accessibilityActions).toEqual([{ name: "offer", label: "Make an offer" }]);
+    act(() => first.props.onAccessibilityAction({ nativeEvent: { actionName: "offer" } }));
+    expect(mockPush).toHaveBeenCalledWith(expect.objectContaining({ pathname: "/rider/offer/[jobId]" }));
   });
 });

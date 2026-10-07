@@ -45,6 +45,8 @@ export const RIDER_COPY = {
   openJob: "Open job",
   taken: "That parcel was taken by another rider.",
   withdrawn: "Offer withdrawn.",
+  /** Undrawn (rider audit BD-H2): the withdraw didn't reach the server, so the offer still stands. */
+  withdrawFail: "Couldn't withdraw. Check your data.",
   undo: "Undo",
   /* make an offer */
   /** Not drawn: stands in for the sender's name when the API sends none (ledger D-54 §4). */
@@ -77,6 +79,8 @@ export const RIDER_COPY = {
   sending: "Sending…",
   skip: "Skip this job",
   sendFail: "Couldn't send your offer. Check your data.",
+  /** Undrawn (MA-H3): the switch to customer couldn't take the rider offline. */
+  offFail: "Couldn't go offline. Check your data.",
   tryAgain: "Try again",
   /* gates */
   /*
@@ -512,8 +516,8 @@ export const RF = {
   balanceB: (ratePct: number, floor: number): string => `${ratePct}% comes off when a job closes. Below ${usd(floor)} you can't take jobs.`,
   floorB: (floor: number): string => `Below the ${usd(floor)} floor. Top up to keep riding.`,
   pendingOk: (amt: number): string => `Your ${usd(amt)} top-up went through while the app was closed.`,
-  pendingWait: (provider: string): string => `Waiting for ${provider} to confirm your top-up…`,
-  pendingFail: "Your top-up didn't go through. Nothing was taken.",
+  pendingWait: (provider: string, amt: number): string => `Waiting for ${provider} to confirm your ${usd(amt)} top-up…`,
+  pendingFail: (amt: number): string => `Your ${usd(amt)} top-up didn't go through. Nothing was taken.`,
   cashOnly: (amt: number): string => `Cash with you now: ${usd(amt)}. It's all yours.`,
   lTop: (provider: string): string => `Top-up · ${provider}`,
   lMeta: (kind: string, time: string): string => `${kind} · ${time}`,

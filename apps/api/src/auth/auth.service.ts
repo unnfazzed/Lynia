@@ -169,6 +169,8 @@ export class AuthService {
             // First Run v2 F6 (D-82 §4): the day the ID expired, served as `kycExpiredOn` below.
             kycIdExpiresOn: true,
             kycResolvedAt: true,
+            // Rider v2 G10 "Clears at" (rider audit BD-M3), served as `cooldownUntil` below.
+            cooldownUntil: true,
           },
         },
       },
@@ -260,6 +262,9 @@ export class AuthService {
             // applied. Additive; older apps ignore it.
             kycExpiredOn: kycExpiredOn(p.rider.kycStatus, p.rider.kycIdExpiresOn, p.rider.kycResolvedAt),
             cancelStrikes: p.rider.cancelStrikes,
+            // Rider v2 G10 (rider audit BD-M3): when a cancel cooldown ends, ISO, only while it is still
+            // running (null otherwise). Additive; older apps ignore it.
+            cooldownUntil: p.rider.cooldownUntil && p.rider.cooldownUntil.getTime() > Date.now() ? p.rider.cooldownUntil.toISOString() : null,
             // BH-03: KYC_MODE is a global deploy config, not a per-rider column — surfaced here so
             // the app can tell "pending, waiting on a browser vendor flow" (auto) apart from "pending,
             // waiting on manual ops review, no browser step exists" (manual) instead of always assuming auto.

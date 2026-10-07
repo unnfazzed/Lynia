@@ -2,6 +2,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import type { Topup } from "@lynia/shared";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { ApiError } from "../../../api/client";
+import { walletKey } from "../../../query/use-wallet";
 import { TopUpFlow } from "../TopUpFlow";
 
 const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 360, height: 720 } };
@@ -72,7 +74,7 @@ const flush = (): Promise<void> => act(async () => new Promise((resolve) => setT
 const mounted: ReactTestRenderer[] = [];
 const clients: QueryClient[] = [];
 
-function render(): ReactTestRenderer {
+function render(minTopUp = 2): ReactTestRenderer {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   clients.push(qc);
   let root!: ReactTestRenderer;
@@ -81,7 +83,7 @@ function render(): ReactTestRenderer {
       <SafeAreaProvider initialMetrics={TEST_METRICS}>
         <QueryClientProvider client={qc}>
           <TopUpFlow
-            minTopUp={2}
+            minTopUp={minTopUp}
             maxTopUp={50}
             ratePct={10}
             avgFare={3}
@@ -161,7 +163,8 @@ describe("TopUpFlow — the server decides the outcome", () => {
     await submit(tree);
 
     const t = texts(tree);
-    expect(t).toContain("Approve $5.00 on your phone");
+    // The server's own intent (seeded from the create response, MA-M4) names the amount.
+    expect(t).toContain("Approve $10.00 on your phone");
     expect(t).not.toContain("Top-up done");
   });
 
@@ -223,5 +226,55 @@ describe("TopUpFlow — the server decides the outcome", () => {
     await submit(tree);
     await flush();
     expect(tree.root.findAll((n) => n.props?.label === "Call support").length).toBeGreaterThan(0);
+  });
+});
+
+describe("TopUpFlow — audit fixes", () => {
+  it("MA-M4: a failed first poll still shows the countdown from the create response", async () => {
+    mockCreateTopup.mockResolvedValue(topup());
+    mockGetTopup.mockRejectedValue(new Error("offline"));
+    const tree = render();
+    await submit(tree);
+    await flush();
+
+    expect(texts(tree)).toContain("Approve $10.00 on your phone");
+    const countdown = tree.root.findAll((n) => "expiresAt" in (n.props ?? {}) && typeof n.type === "function");
+    expect(countdown[0]?.props.expiresAt).toEqual(expect.any(String));
+  });
+
+  it("MA-M3: the success names the balance only after the wallet re-reads", async () => {
+    mockCreateTopup.mockResolvedValue(topup());
+    mockGetTopup.mockResolvedValue(topup({ status: "succeeded" }));
+    const tree = render();
+    await submit(tree);
+    await flush();
+
+    expect(texts(tree)).toContain("$10.00 added.");
+    expect(texts(tree)).not.toContain("Your balance is");
+    await act(async () => {
+      clients[0]!.setQueryData(walletKey, { balance: 12.6, currency: "USD", updatedAt: new Date().toISOString() });
+    });
+    await flush();
+    expect(texts(tree)).toContain("$10.00 added. Your balance is $12.60.");
+  });
+
+  it("MA-L1: a refused request shows the server's message", async () => {
+    mockCreateTopup.mockRejectedValue(new ApiError(429, "Too many top-ups. Try again in a minute."));
+    const tree = render();
+    await submit(tree);
+    await flush();
+    expect(mockFail).toHaveBeenCalledWith("Too many top-ups. Try again in a minute.");
+  });
+
+  it("MA-M1: quick chips below the minimum are hidden", () => {
+    const tree = render(5);
+    const press = (l: string): void => {
+      const b = tree.root.findAll((n) => n.props?.label === l && typeof n.props.onPress === "function")[0];
+      act(() => b?.props.onPress());
+    };
+    press("Next");
+    const chips = tree.root.findAll((n) => n.props?.accessibilityRole === "button" && typeof n.props.accessibilityLabel === "string" && /^\$\d/.test(n.props.accessibilityLabel) && typeof n.props.onPress === "function");
+    const labels = [...new Set(chips.map((n) => n.props.accessibilityLabel as string))];
+    expect(labels).toEqual(["$5.00", "$10.00", "$20.00"]);
   });
 });

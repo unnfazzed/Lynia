@@ -4,6 +4,7 @@ import { ActivityIndicator, Modal, ScrollView, Text, type TextStyle, View, type 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon, type IconName } from "../Icon";
 import { Tappable } from "../Tappable";
+import { SHEET_DIM } from "../firstrun/sheet";
 import { MoonSticker, SunSticker } from "../home/ServiceStickers";
 import { IconDisc, RiderAvatar, SmBtn, VerifiedTag } from "../order/kit";
 import { OrderHeader } from "../order/panels";
@@ -423,7 +424,7 @@ export function MSheet({
           accessibilityLabel={R.close}
           disabled={locked}
           onPress={onClose}
-          style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(20,24,27,0.45)" }}
+          style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: SHEET_DIM }}
         />
         <View style={{ maxHeight: "92%", backgroundColor: tokens.color.bg, borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingHorizontal: 16, paddingBottom: 12 + insets.bottom }}>
           <View style={{ height: 28, alignItems: "center", justifyContent: "center" }}>
