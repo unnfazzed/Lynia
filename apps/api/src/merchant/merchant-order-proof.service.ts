@@ -7,7 +7,6 @@ import type {
   MerchantDoorProofView,
   MerchantPickupProofView,
 } from "@lynia/shared";
-import type { StorageAdapter } from "../adapters/storage/storage.interface";
 import { PICKUP_PHOTO_STATUSES } from "../orders/order-lifecycle.constants";
 import { OrderLifecycleService } from "../orders/order-lifecycle.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -119,7 +118,19 @@ export async function assertPickupProofIfRequired(tx: Prisma.TransactionClient, 
 }
 
 /** Read URLs live as long as the parcel pickup photo's (orders.service PICKUP_PHOTO_READ_URL_TTL_SECONDS). */
-const PROOF_READ_URL_TTL_SECONDS = 900;
+export const PROOF_READ_URL_TTL_SECONDS = 900;
+
+/** C4 (MJ-P3 + P03): how long a minted proof-photo URL is served from cache — 2/3 of its signed
+ *  validity, the orders.service PICKUP_PHOTO_URL_CACHE_TTL_MS rule. With the cache's ±10% TTL jitter
+ *  the worst-case entry lives 11 min of the URL's 15, so a URL handed to a client always keeps ≥4 min
+ *  of signed life (download headroom on 2G); once the entry expires the next read re-signs. Reusing
+ *  the SAME string across the 4–15 s order-screen polls is the point: the device image cache keys on
+ *  it, and a per-poll fresh signature re-downloaded the photo on every poll. */
+export const PROOF_PHOTO_URL_CACHE_TTL_MS = (PROOF_READ_URL_TTL_SECONDS * 1000 * 2) / 3;
+
+/** Mints (or returns a cached) read URL for one object key — FoodOrderService's object-key cache
+ *  (C4). May reject; proofViews maps that to null. */
+export type ProofUrlSigner = (key: string) => Promise<string | null>;
 
 export interface ProofSource {
   pickupPhotoKey: string | null;
@@ -132,15 +143,14 @@ export interface ProofSource {
 }
 
 /** The pickup and door proof as the wire shape, with signed read URLs minted on demand (never stored).
- *  Best-effort: a storage blip serves a null URL, never a failed read. Each is null when there's nothing. */
+ *  Best-effort: a storage blip serves a null URL, never a failed read. Each is null when there's nothing.
+ *  The signer is keyed by object key, so a retaken photo (a new `pickup/<riderId>/<uuid>` key) always
+ *  gets its own URL. */
 export async function proofViews(
-  storage: StorageAdapter | undefined,
+  signer: ProofUrlSigner,
   o: ProofSource,
 ): Promise<{ pickupProof: MerchantPickupProofView | null; doorProof: MerchantDoorProofView | null }> {
-  const sign = async (key: string | null): Promise<string | null> => {
-    if (!key || !storage) return null;
-    return storage.createReadUrl(key, PROOF_READ_URL_TTL_SECONDS).catch(() => null);
-  };
+  const sign = async (key: string | null): Promise<string | null> => (key ? signer(key).catch(() => null) : null);
   const [pickupUrl, doorUrl] = await Promise.all([sign(o.pickupPhotoKey), sign(o.deliveryProofKey)]);
   const pickupProof =
     o.pickupPhotoKey || o.pickupBagSealed != null

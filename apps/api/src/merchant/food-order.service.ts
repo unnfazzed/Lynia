@@ -66,7 +66,16 @@ import { FoodDebtService } from "./food-debt.service";
 import { confirmKitchen, editOrderItems } from "./food-order-ops";
 import { harareWallClock } from "./harare-clock";
 import { CUSTOMER_VISIBLE_RESTAURANT, customerVisibleShop, isDishOutOfStock, notifyFoodQueueChanged, resolveOwnMerchantId } from "./merchant-lookup.util";
-import { assertPickupProofIfRequired, proofViews } from "./merchant-order-proof.service";
+import {
+  assertPickupProofIfRequired,
+  PROOF_PHOTO_URL_CACHE_TTL_MS,
+  PROOF_READ_URL_TTL_SECONDS,
+  proofViews,
+} from "./merchant-order-proof.service";
+import { MERCHANT_PHOTO_URL_CACHE_TTL_MS, PHOTO_READ_URL_TTL_SECONDS } from "./merchant.service";
+import { MicroCache } from "../common/micro-cache";
+import { MicroCacheL2Provider } from "../common/micro-cache-l2.provider";
+import { MetricsService } from "../observability/metrics.service";
 import { OrderSubstitutionService, SUBSTITUTION_ROUND_INCLUDE, toSubstitutionRoundView } from "./order-substitution.service";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
@@ -175,6 +184,28 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(FoodOrderService.name);
   private sweep?: ReturnType<typeof setInterval>;
 
+  // C4 (MJ-P3 + P03): read-URL micro-caches for the single-order reads, keyed by OBJECT KEY — the
+  // OrdersService.pickupPhotoUrlCache / MerchantService.photoUrlCache pattern. The customer, merchant
+  // and rider order screens poll every 4–15 s; minting per read handed each poll a new V4 signature,
+  // so the device image cache missed and the photo downloaded again every poll. Cached, a URL is
+  // byte-stable until its entry expires at 2/3 of the signed validity (with the ±10% jitter a served
+  // URL keeps ≥4 min of 15 for proof, ≥8.6 h of 24 for swap photos), then the next read re-signs. A
+  // retaken photo has a new uuid key, so it never inherits the old photo's URL. L2 prefixes match the
+  // sibling caches on purpose — same key, same signed TTL — so the parcel snapshot, the menu and this
+  // read hand a phone one URL per photo when the shared Redis L2 is on.
+  private readonly proofPhotoUrlCache = new MicroCache<string>(500, {
+    ttlJitterRatio: 0.1,
+    onEvent: (o) => this.metricsSvc?.recordMicroCache("proof_photo_url", o),
+    l2: () => this.l2?.resolve() ?? null,
+    l2KeyPrefix: "mc:photo:",
+  });
+  private readonly swapPhotoUrlCache = new MicroCache<string>(500, {
+    ttlJitterRatio: 0.1,
+    onEvent: (o) => this.metricsSvc?.recordMicroCache("swap_photo_url", o),
+    l2: () => this.l2?.resolve() ?? null,
+    l2KeyPrefix: "mc:mphoto:",
+  });
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly tokens: TokenService,
@@ -195,7 +226,45 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     @Optional() @Inject(ENV) private readonly env?: Env,
     @Optional() private readonly schedule?: OrderScheduleService,
     @Optional() private readonly prescriptions?: PrescriptionService,
+    // C4: the photo-URL caches' metrics and shared L2 — both @Global-provided, optional like the rest.
+    @Optional() private readonly metricsSvc?: MetricsService,
+    @Optional() private readonly l2?: MicroCacheL2Provider,
   ) {}
+
+  /** The MICRO_CACHE_DISABLED kill-switch plus "TTL 0 disables it" — OrdersService.microCacheBypassed. */
+  private microCacheBypassed(ttlMs: number): boolean {
+    return this.env?.MICRO_CACHE_DISABLED === "true" || ttlMs <= 0;
+  }
+
+  /** C4: one read URL per object key, reused until its cache entry expires (see the cache fields).
+   *  A rejected mint is never cached (MicroCache contract); callers map it to null. */
+  private signCached(cache: MicroCache<string>, key: string, signedTtlSeconds: number, cacheTtlMs: number): Promise<string> {
+    const storage = this.storage;
+    if (!storage) return Promise.reject(new Error("no storage"));
+    const mint = (): Promise<string> => storage.createReadUrl(key, signedTtlSeconds);
+    return this.microCacheBypassed(cacheTtlMs) ? mint() : cache.getOrLoad(key, cacheTtlMs, mint);
+  }
+
+  /** Pickup / door proof photos (15-min URLs). The env override shares the parcel pickup photo's
+   *  bounded knob — same signed validity, same ≤600 s ceiling. */
+  private signProofPhoto(key: string): Promise<string | null> {
+    return this.signCached(
+      this.proofPhotoUrlCache,
+      key,
+      PROOF_READ_URL_TTL_SECONDS,
+      this.env?.MICRO_CACHE_TTL_MS_PICKUP_PHOTO_URL ?? PROOF_PHOTO_URL_CACHE_TTL_MS,
+    );
+  }
+
+  /** Swap-dish photos (24 h URLs, the menu's dish-photo validity and its bounded env knob). */
+  private signSwapPhoto(key: string): Promise<string | null> {
+    return this.signCached(
+      this.swapPhotoUrlCache,
+      key,
+      PHOTO_READ_URL_TTL_SECONDS,
+      this.env?.MICRO_CACHE_TTL_MS_MERCHANT_PHOTO_URL ?? MERCHANT_PHOTO_URL_CACHE_TTL_MS,
+    );
+  }
 
   /** C5 kitchen socket queue: best-effort push telling the merchant's tablet(s) something on their
    *  queue changed, so a connected tablet doesn't wait out E2's 5s poll fallback. `merchantId` is
@@ -501,19 +570,18 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
   /** Order flow v2 (D-59): what only single-order reads carry — the pickup/door proof with signed read
    *  URLs, and the swap photos of the substitution round. Never on the queue poll. Best-effort. */
   private async withDetail(order: OrderWithItems, response: MerchantOrderResponse): Promise<MerchantOrderResponse> {
-    const { pickupProof, doorProof } = await proofViews(this.storage, order);
+    const { pickupProof, doorProof } = await proofViews((key) => this.signProofPhoto(key), order);
     const out: MerchantOrderResponse = { ...response };
     if (pickupProof) out.pickupProof = pickupProof;
     if (doorProof) out.doorProof = doorProof;
     const round = order.substitutionRounds?.[0];
     const swapDishIds = round ? [...new Set(round.lines.map((l) => l.swapDishId).filter((id): id is string => !!id))] : [];
     if (round && swapDishIds.length > 0 && this.storage) {
-      const storage = this.storage;
       try {
         const dishes = await this.prisma.merchantDish.findMany({ where: { id: { in: swapDishIds } }, select: { id: true, photoUrl: true } });
         const photos = new Map<string, string | null>(
           await Promise.all(
-            dishes.map(async (d) => [d.id, d.photoUrl ? await storage.createReadUrl(d.photoUrl, 24 * 60 * 60).catch(() => null) : null] as const),
+            dishes.map(async (d) => [d.id, d.photoUrl ? await this.signSwapPhoto(d.photoUrl).catch(() => null) : null] as const),
           ),
         );
         out.substitution = toSubstitutionRoundView(round, { keptSubtotal: keptSubtotalOf(order), swapPhotos: photos });
