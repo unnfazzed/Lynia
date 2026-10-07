@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MerchantProfileResponse } from "@lynia/shared";
 import { merchantOrder, merchantProfile, RIDER } from "../testing/fixtures";
-import { detailView, homeSections, itemsEditedLabel, itemsLine, liveBar, openStatus, orderLabel, rowSub, trackStep, cashBackRow, groupCode } from "./orders-view";
+import { detailView, homeSections, itemsEditedLabel, itemsLine, liveBar, openStatus, ringDeadline, orderLabel, rowSub, trackStep, cashBackRow, groupCode } from "./orders-view";
 import { alarmOrders } from "./alarm";
 import { vocabulary } from "./vocabulary";
 
@@ -151,6 +151,23 @@ describe("T1b's live bar (Merchant v2 follow-ups, D-77)", () => {
     const deadline = new Date(Date.now() + 48_000).toISOString();
     const view = liveBar([o({ id: "a1b20000-0000-4000-8000-000000000000", merchantGoodsTotal: 15, acceptDeadlineAt: deadline }), cooking("a0000001-0000-4000-8000-000000000000")], shop);
     expect(view).toMatchObject({ kind: "ringing", title: "New order · #A1B2", sub: "1 item · $15.00", deadline, href: "/queue" });
+  });
+
+  it("D1 · an auto-accepted ring (no acceptDeadlineAt) counts the same 3:00 window as K2 — not null", () => {
+    const startedAt = new Date(Date.now() - 60_000).toISOString();
+    const ring = o({
+      id: "a1b20000-0000-4000-8000-000000000000",
+      merchantPhase: "preparing",
+      autoAccepted: true,
+      kitchenConfirmedAt: null,
+      acceptDeadlineAt: null,
+      prepStartedAt: startedAt,
+      createdAt: startedAt,
+    });
+    const view = liveBar([ring], kitchen);
+    expect(view?.kind).toBe("ringing");
+    expect(view?.deadline).toBe(new Date(Date.parse(startedAt) + 3 * 60_000).toISOString());
+    expect(view?.deadline).toBe(ringDeadline(ring));
   });
 
   it("2 · a rider at the counter only once they've arrived; heading there, the counts lead", () => {

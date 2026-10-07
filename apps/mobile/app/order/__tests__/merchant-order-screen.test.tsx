@@ -248,6 +248,28 @@ describe("merchant order — one order screen (D-59)", () => {
     expect(has(t, /^2:\d\d left$/m)).toBe(true);
   });
 
+  it("D1: a legacy awaiting_payment order (stale acceptDeadlineAt) gets neither the countdown nor the lapsed sub", async () => {
+    const t = await render(
+      foodOrder({ merchantPhase: "awaiting_payment", paymentMethod: "wallet", acceptDeadlineAt: iso(-10 * 60_000), prepStartedAt: null }),
+      snapshot(),
+    );
+    expect(has(t, / left$/m)).toBe(false);
+    expect(has(t, /^Nothing is ordered until they accept\.$/m)).toBe(false);
+  });
+
+  it("D1: the 1 s tick runs while the 3:00 counts down and stops once it has lapsed", async () => {
+    const spy = jest.spyOn(global, "setInterval");
+    const ticks = () => spy.mock.calls.filter((c) => c[1] === 1000).length;
+    await render(foodOrder({ merchantPhase: "awaiting_accept", acceptDeadlineAt: iso(150_000), prepStartedAt: null }), snapshot());
+    expect(ticks()).toBeGreaterThan(0);
+    act(() => active?.unmount());
+    active = null;
+    spy.mockClear();
+    await render(foodOrder({ merchantPhase: "awaiting_accept", acceptDeadlineAt: iso(-10 * 60_000), prepStartedAt: null }), snapshot());
+    expect(ticks()).toBe(0);
+    spy.mockRestore();
+  });
+
   // U11 (2026-10-07): the D-34 no-rider hold had no customer exit — T11a/T11b draw "Cancel order · free".
   it("U11 T11a: food ready, slow rider search — no cancel while dispatch is still searching", async () => {
     const t = await render(foodOrder({ merchantPhase: "ready_for_pickup", readyAt: iso(-60_000), noRiderHoldAt: null }), snapshot());
@@ -660,6 +682,15 @@ describe("merchant order — one order screen (D-59)", () => {
     const t = await render(foodOrder({ status: "cancelled", merchantPhase: null, rejectionReason: "no_rider" }), snapshot({ status: "cancelled", cancelledBy: null }));
     expect(has(t, "We couldn’t find a rider")).toBe(true);
     expect(has(t, "No charge")).toBe(true);
+  });
+
+  it("D1 D3c: the kitchen never confirmed — no false 'We waited an hour.' (the wait is 24 h now)", async () => {
+    const t = await render(
+      foodOrder({ status: "cancelled", merchantPhase: null, rejectionReason: "kitchen_unconfirmed" }),
+      snapshot({ status: "cancelled", cancelledBy: null }),
+    );
+    expect(has(t, "We waited an hour")).toBe(false);
+    expect(has(t, /^Nothing was charged\.$/m)).toBe(true);
   });
 
   it("D3a: you cancelled", async () => {

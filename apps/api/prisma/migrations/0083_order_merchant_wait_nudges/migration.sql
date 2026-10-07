@@ -4,4 +4,4 @@
 -- Expand-only: one NOT NULL column with a constant default — on PostgreSQL 11+ that is a catalog-only
 -- change (no table rewrite, no long lock); existing rows read 0, and the still-live old revision neither
 -- reads nor writes the column.
-ALTER TABLE "orders" ADD COLUMN "merchant_wait_nudges" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "merchant_wait_nudges" INTEGER NOT NULL DEFAULT 0;

@@ -13,10 +13,18 @@ export const foodOrderKey = (orderId: string): readonly ["food-order", string] =
 const TIGHT_POLL_MS = 4_000;
 const RELAXED_POLL_MS = 15_000;
 
-function pollIntervalFor(order: MerchantOrderResponse | undefined): number | false {
+/** Exported for tests. `nowMs` defaults to the wall clock. */
+export function pollIntervalFor(order: MerchantOrderResponse | undefined, nowMs: number = Date.now()): number | false {
   if (!order) return TIGHT_POLL_MS;
   if (order.status === "cancelled") return false; // terminal — nothing left to observe
-  if (order.merchantPhase === "awaiting_accept" || order.merchantPhase === "awaiting_item_approval") return TIGHT_POLL_MS;
+  // Owner decision D1 (2026-10-07): the venue may answer for 24 h. Tight while the drawn 3:00 runs (the
+  // accept usually lands inside it); once it has lapsed, nothing is racing a deadline, so a 15 s poll
+  // notices the accept (or the 24 h cancel) without hammering the API for a day.
+  if (order.merchantPhase === "awaiting_accept") {
+    const end = order.acceptDeadlineAt ? Date.parse(order.acceptDeadlineAt) : NaN;
+    return Number.isFinite(end) && end <= nowMs ? RELAXED_POLL_MS : TIGHT_POLL_MS;
+  }
+  if (order.merchantPhase === "awaiting_item_approval") return TIGHT_POLL_MS;
   // Order flow v2 (BRIEF §8): a mid-prep substitution round has a 3-minute answer window too.
   if (order.substitution?.status === "open") return TIGHT_POLL_MS;
   if (order.merchantPhase === "awaiting_payment") return RELAXED_POLL_MS;

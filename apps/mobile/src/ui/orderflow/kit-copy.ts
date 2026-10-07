@@ -53,6 +53,9 @@ export const OX = {
    *  decision D1 (2026-10-07) the venue may still answer for 24 h, so "They have 3 minutes." would be
    *  untrue. The words are the handoff's own second sentence. Ledger D-87. */
   waitingLapsedSub: "Nothing is ordered until they accept.",
+  /** D3c's `O.d.cxKitchenSub` without "We waited an hour." — since D1 the kitchen-unconfirmed cancel comes
+   *  at 24 h, so that sentence is untrue. The handoff's own second sentence. Ledger D-87. */
+  cxKitchenSub: "Nothing was charged.",
 } as const;
 
 /**

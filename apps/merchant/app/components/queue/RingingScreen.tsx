@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
   PREP_CHIPS_MIN,
-  RESTAURANTS_TIMING,
   type MerchantOrderItemView,
   type MerchantOrderResponse,
   type MerchantRejectionReasonCode,
@@ -14,7 +13,7 @@ import {
 import { useBusiness } from "../../lib/business";
 import { formatCountdown, msUntil } from "../../lib/countdown";
 import { needsKitchenConfirm } from "../../lib/order-groups";
-import { hm, money, orderLabel } from "../../lib/orders-view";
+import { hm, money, orderLabel, ringDeadline } from "../../lib/orders-view";
 import { changeableLines, proposalLines, swapLine } from "../../lib/substitution";
 import { useNow } from "../../lib/use-now";
 import { countOf, ORDER_FLOW as OF, vocabulary } from "../../lib/vocabulary";
@@ -115,18 +114,13 @@ export function RingingScreen({
     auto && active.prepStartedAt && active.prepMinutes != null ? new Date(new Date(active.prepStartedAt).getTime() + active.prepMinutes * 60_000) : null;
   const readyAt = autoReady ?? new Date(now + prepMinutes * 60_000);
   // Owner decision D1 (2026-10-07): every merchant wait runs 24 h, so the countdown is the drawn answer
-  // window only — the same one for all three rings (BRIEF §3: "only the banner line changes"). A manual
-  // or scheduled ring reads the server's `acceptDeadlineAt`; an auto-accepted one counts the same window
-  // from when it started cooking (it used to count down the old 60-min auto-cancel: "59:44 to answer").
+  // window only — the same one for all three rings (BRIEF §3: "only the banner line changes"), computed
+  // by `ringDeadline` exactly as the live bar does (an auto-accepted ring used to count down the old
+  // 60-min auto-cancel: "59:44 to answer").
   // At 0:00 nothing is missed: the countdown holds at 0:00 and the order keeps ringing until it is
   // answered. Only the server's 24 h cap ends it, and then the order leaves the ring (this screen is
   // keyed by order, so the reasons sheet goes with it) — README K2a's "the sheet closes (missed)".
-  const opened = active.prepStartedAt ?? active.createdAt;
-  const deadline = auto
-    ? opened
-      ? new Date(new Date(opened).getTime() + RESTAURANTS_TIMING.acceptWindowMs).toISOString()
-      : null
-    : active.acceptDeadlineAt;
+  const deadline = ringDeadline(active);
   const left = deadline ? msUntil(deadline, now) : null;
 
   const acceptLabel = changing

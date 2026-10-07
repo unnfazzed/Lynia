@@ -8,6 +8,8 @@ import { auditData } from "./admin.shared";
 
 /** Kitchen phases/statuses that still count as "waiting on the kitchen" for the ops call list. */
 const LIVE_STATUSES = ["requested", "open_for_offers", "assigned", "confirmed", "en_route_pickup"] as const;
+/** The call list's read cap — newest rows first, so the cap only ever drops the stalest (D1: 24 h backlog). */
+const LIST_CAP = 300;
 
 /**
  * Auto-accept (docs/plans/2026-09-30-restaurant-auto-accept.md), the ops side. Restaurants still taking
@@ -24,12 +26,19 @@ export class AdminKitchenService {
     @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
-  /** "Orders to confirm": auto-accepted orders the kitchen hasn't confirmed, urgent first, then oldest. */
+  /**
+   * "Orders to confirm": auto-accepted orders the kitchen hasn't confirmed, urgent first.
+   *
+   * Owner decision D1 (2026-10-07): an unconfirmed order now lives 24 h, not 60 min, so the list can hold
+   * a day's backlog. The read takes the NEWEST rows (a larger cap, LIST_CAP) so a fresh order never falls
+   * off behind stale ones, and within the urgent group the newest comes first — the call most likely to
+   * still save the order. Not-yet-urgent orders keep oldest-first (the next to escalate).
+   */
   async listToConfirm() {
     const rows = await this.prisma.order.findMany({
       where: { orderType: "merchant", autoAccepted: true, kitchenConfirmedAt: null, status: { in: [...LIVE_STATUSES] } },
-      orderBy: { createdAt: "asc" },
-      take: 100,
+      orderBy: { createdAt: "desc" },
+      take: LIST_CAP,
       select: {
         id: true,
         createdAt: true,
@@ -76,8 +85,8 @@ export class AdminKitchenService {
         itemsEdited: o.itemsEditedAt != null,
       };
     });
-    // Urgent first (waiting longest first within each group).
-    out.sort((a, b) => Number(b.urgent) - Number(a.urgent) || a.placedAt.localeCompare(b.placedAt));
+    // Urgent first, newest first among them (D1: a 24 h backlog); not yet urgent, oldest first.
+    out.sort((a, b) => Number(b.urgent) - Number(a.urgent) || (a.urgent ? b.placedAt.localeCompare(a.placedAt) : a.placedAt.localeCompare(b.placedAt)));
     return { orders: out, escalateAfterMinutes: RESTAURANTS_AUTO_ACCEPT.escalateAfterMs / 60_000 };
   }
 

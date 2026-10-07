@@ -43,6 +43,23 @@ describe("AdminKitchenService", () => {
     });
   });
 
+  it("D1 (24 h backlog): reads the newest rows so a fresh order never falls off, newest first among the urgent", async () => {
+    let args: { orderBy?: unknown; take?: number } | undefined;
+    const prisma = {
+      order: {
+        findMany: async (a: { orderBy?: unknown; take?: number }) => {
+          args = a;
+          return [row("fresh-urgent", 7, true), row("calm-b", 4, false), row("day-old", 20 * 60, true), row("calm-a", 2, false)];
+        },
+      },
+    } as unknown as PrismaService;
+    const res = await new AdminKitchenService(prisma, gateway).listToConfirm();
+    // The DB cap must drop the stalest rows, not the newest (it used to be createdAt asc, take 100).
+    expect(args!.orderBy).toEqual({ createdAt: "desc" });
+    expect(args!.take).toBeGreaterThan(100);
+    expect(res.orders.map((o) => o.orderId)).toEqual(["fresh-urgent", "day-old", "calm-b", "calm-a"]);
+  });
+
   it("confirm is audited, and 409s when there is nothing left to confirm", async () => {
     let audited: Record<string, unknown> | undefined;
     const prisma = {

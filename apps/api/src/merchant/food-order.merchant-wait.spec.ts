@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MERCHANT_WAIT_CAP_MS, RESTAURANTS_TIMING } from "@lynia/shared";
 import type { Env } from "../config/env";
@@ -283,6 +285,11 @@ describe("D1 — the customer's free cancel holds for every pre-acceptance state
     await tick(at(ms));
     await svc.cancelUnpaid("o1", "c1");
     expect(order).toMatchObject({ status: "cancelled", cancelledBy: "c1", merchantPhase: null });
+  });
+
+  it("migration 0083 adds merchant_wait_nudges re-runnably (ADD COLUMN IF NOT EXISTS, the 0063 style)", () => {
+    const sql = readFileSync(resolve(__dirname, "../../prisma/migrations/0083_order_merchant_wait_nudges/migration.sql"), "utf8");
+    expect(sql).toMatch(/ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "merchant_wait_nudges" INTEGER NOT NULL DEFAULT 0;/);
   });
 
   it("refuses once the venue accepted and is cooking (no longer a merchant wait)", async () => {
