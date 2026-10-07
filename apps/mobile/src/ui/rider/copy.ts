@@ -215,6 +215,8 @@ export const RIDER_COPY = {
   undelPick: "Pick a reason to continue.",
   undelDoneT: "Marked undelivered",
   undelNoStrike: "This doesn't count against you.",
+  /** FJ-M5: the return card once the venue confirmed the order is back. */
+  backDoneT: "Handed back",
   cxT: "Cancel this job?",
   cxFinal: "You're one strike from a pause. Cancelling now pauses jobs for 24 hours.",
   cxKeep: "Keep the job",
@@ -481,6 +483,16 @@ export const RF = {
   codeT: (recipient: string): string => `Ask ${recipient} for the delivery code`,
   codeB: "The 6-digit code proves you handed it over. Hand over the parcel only after it's accepted.",
   triesLeft: (n: number): string => `Wrong code. ${n} tries left.`,
+  /** FJ-M5: X5 for a venue's order — the first line of `undelDoneB`, the return itself is on the card. */
+  undelFoodB: (customer: string): string => `${customer} has been told.`,
+  /** FJ-M5: the return card (`ReturnToRestaurantCard`) — short, with the venue's own name. */
+  backT: (name: string): string => `Take it back to ${name}`,
+  backB: (name: string): string => `${name} confirms it in their app.`,
+  backRefund: (paid: number, name: string): string => `Ask ${name} for the ${usd(paid)} you paid.`,
+  backDoneB: (name: string): string => `${name} has it back.`,
+  navTo: (name: string): string => `Navigate to ${name}`,
+  /** FJ-M3: the pickup code locked — a fresh reveal at the counter resets the tries. */
+  pickupLockedB: (place: string): string => `Ask the ${place} to show the code again.`,
   triesLast: (recipient: string): string => `Wrong code. 1 try left — check every digit with ${recipient}.`,
   lockedB: (sender: string, recipient: string): string => `Ask ${sender} to send ${recipient} a new code. Keep the parcel until it arrives.`,
   askResend: (sender: string): string => `Call ${sender} to re-send`,
@@ -568,3 +580,18 @@ export const KYF = {
   expBody: (d: Date | null): string => (d ? KY.expBody.replace(/^Expired [^.]+\./, `Expired ${dayMonthYear(d)}.`) : KY.expBody.replace(/^Expired [^.]+\.\s*/, "")),
   unfName: (firstName: string | null | undefined): string => firstName?.trim() ?? "",
 };
+
+/**
+ * FJ-L1: a kitchen's Rider v2 line, worded for a shop or a pharmacy (`O.svc[…].place`). A kitchen keeps
+ * the handoff's words verbatim; elsewhere "kitchen" / "restaurant" become the venue's noun and "the food"
+ * becomes "the order".
+ */
+export function venueCopy(text: string, place: string): string {
+  if (place === "kitchen") return text;
+  const Place = place.charAt(0).toUpperCase() + place.slice(1);
+  return text
+    .replace(/\bKITCHEN\b/g, place.toUpperCase())
+    .replace(/\bKitchen\b/g, Place)
+    .replace(/\b(kitchen|restaurant)\b/g, place)
+    .replace(/\bthe food\b/g, "the order");
+}
