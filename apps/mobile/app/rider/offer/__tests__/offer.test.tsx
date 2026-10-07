@@ -25,6 +25,8 @@ jest.mock("expo-secure-store", () => ({
 jest.mock("../../../../src/api/offers", () => ({ makeOffer: (...a: unknown[]) => mockMakeOffer(...a) }));
 
 import MakeOfferScreen, { isWellAbove } from "../[jobId]";
+import { ApiError } from "../../../../src/api/client";
+import { ToastProvider } from "../../../../src/ui/Toast";
 import { SENT_OFFERS_KEY, SKIPPED_JOBS_KEY } from "../../../../src/query/use-sent-offers";
 
 const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 360, height: 720 } };
@@ -51,7 +53,9 @@ function render(): void {
     tree = renderer.create(
       <SafeAreaProvider initialMetrics={TEST_METRICS}>
         <QueryClientProvider client={qc}>
-          <MakeOfferScreen />
+          <ToastProvider>
+            <MakeOfferScreen />
+          </ToastProvider>
         </QueryClientProvider>
       </SafeAreaProvider>,
     );
@@ -137,5 +141,41 @@ describe("isWellAbove (O2 warn notice)", () => {
   it("warns only past 1.4× the top of the band", () => {
     expect(isWellAbove(420, 3)).toBe(false);
     expect(isWellAbove(421, 3)).toBe(true);
+  });
+});
+
+describe("rider audit — the offer screen", () => {
+  it("PJ-H5: a price the customer raised while the rider was here is read live — the old fare goes as a COUNTER", async () => {
+    mockMakeOffer.mockResolvedValue({});
+    render();
+    // The board refreshes openOrders underneath this screen: the ask is now $4.00.
+    act(() => {
+      qc.setQueryData(["openOrders"], [{ ...ORDER, proposedFare: "4.00" }]);
+    });
+    await flush();
+    expect(text()).toContain("$4.00");
+    press("Send offer · $3.00");
+    await flush();
+    expect(mockMakeOffer).toHaveBeenCalledWith("order-1", { type: "counter", offeredFare: 3, etaMinutes: 10 });
+  });
+
+  it("PJ-M1: a 403 refusal shows the server's reason with no Try again", async () => {
+    mockMakeOffer.mockRejectedValue(new ApiError(403, "Go online to make offers"));
+    render();
+    press("Send offer · $3.00");
+    await flush();
+    expect(text()).toContain("Go online to make offers");
+    expect(text()).not.toContain("Couldn't send your offer. Check your data.");
+    expect(tree.root.findAll((n) => n.props.action === "Try again").length).toBe(0);
+  });
+
+  it("PJ-L4: a typed 0.3 is sent as the $0.50 minimum the label shows, not the old fare", async () => {
+    mockMakeOffer.mockResolvedValue({});
+    render();
+    const input = tree.root.findAll((n) => n.props.accessibilityLabel === "Your fare" && typeof n.props.onChangeText === "function")[0]!;
+    act(() => input.props.onChangeText("0.3"));
+    press("Send offer · $0.50");
+    await flush();
+    expect(mockMakeOffer).toHaveBeenCalledWith("order-1", { type: "counter", offeredFare: 0.5, etaMinutes: 10 });
   });
 });

@@ -2,7 +2,7 @@ import { haversineKm } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ApiError } from "../../../src/api/client";
@@ -43,10 +43,13 @@ export default function MakeOfferScreen(): React.ReactElement {
   const { setOffers } = useSentOffers();
   const { skip } = useSkippedJobs();
 
-  const order = useMemo(() => {
+  // PJ-H5: read reactively — the customer can raise the price while the rider is here, and a stale ask sent
+  // as an "accept" is refused by the server. The board keeps `openOrders` fresh underneath this screen.
+  const readOrder = (): OpenOrder | null => {
     const list = qc.getQueryData<OpenOrder[]>(["openOrders"]);
     return Array.isArray(list) ? (list.find((o) => o.id === jobId) ?? null) : null;
-  }, [qc, jobId]);
+  };
+  const [order, setOrder] = useState<OpenOrder | null>(readOrder);
 
   const asking = order ? Number(order.proposedFare) : 0;
   const askingCents = Math.round(asking * 100);
@@ -58,15 +61,20 @@ export default function MakeOfferScreen(): React.ReactElement {
   const name = order?.customerFirstName || R.theSender;
   const band = fareBand(asking || 3);
 
-  // The job left the board (taken by someone else, or the window closed) while the rider was here.
+  // The job left the board (taken by someone else, or the window closed) while the rider was here; or its
+  // asking price changed (kept in step for the "accept" vs "counter" choice below).
   useEffect(() => {
     const unsub = qc.getQueryCache().subscribe((e) => {
       if (e.query.queryKey[0] !== "openOrders" || e.type !== "updated") return;
       const list = qc.getQueryData<OpenOrder[]>(["openOrders"]);
-      if (Array.isArray(list) && !list.some((o) => o.id === jobId)) {
+      if (!Array.isArray(list)) return;
+      const fresh = list.find((o) => o.id === jobId);
+      if (!fresh) {
         setError(R.taken);
         router.back();
+        return;
       }
+      setOrder((cur) => (cur && cur.proposedFare === fresh.proposedFare && cur.customerFirstName === fresh.customerFirstName ? cur : fresh));
     });
     return unsub;
   }, [qc, jobId, router, setError]);
@@ -77,25 +85,40 @@ export default function MakeOfferScreen(): React.ReactElement {
     setFareText((v / 100).toFixed(2));
   };
 
+  // PJ-L4: what is sent is what the field says — normalised here (not only on blur, which a tap on the
+  // button bar doesn't fire), and the field snaps to it.
+  const fareToSend = (): number => {
+    const typed = Math.round(Number(fareText) * 100);
+    const c = Math.max(MIN_CENTS, Number.isFinite(typed) ? typed : fareCents);
+    setCents(c);
+    return c;
+  };
   const offerM = useMutation({
-    mutationFn: () => makeOffer(order!.id, { type: fareCents === askingCents ? "accept" : "counter", offeredFare: fareCents / 100, etaMinutes: eta }),
-    onSuccess: () => {
+    // An unchanged fare is an "accept" only while it still equals the CURRENT ask (PJ-H5).
+    mutationFn: (cents: number) => makeOffer(order!.id, { type: cents === askingCents ? "accept" : "counter", offeredFare: cents / 100, etaMinutes: eta }),
+    onSuccess: (_res, cents) => {
       haptic("tap");
-      setOffers((prev) => [buildSentOfferEntry(order!, (fareCents / 100).toFixed(2), eta), ...prev.filter((p) => p.order.id !== order!.id)]);
+      setOffers((prev) => [buildSentOfferEntry(order!, (cents / 100).toFixed(2), eta), ...prev.filter((p) => p.order.id !== order!.id)]);
       void qc.invalidateQueries({ queryKey: ["openOrders"] });
       router.back();
     },
-    onError: (e) => {
+    onError: (e, cents) => {
       const msg = e instanceof ApiError ? e.message : "";
       // A retry after a timeout can land on an offer the server already took — that's a success.
       if (msg === "You already responded to this order (one round only)") {
-        setOffers((prev) => [buildSentOfferEntry(order!, (fareCents / 100).toFixed(2), eta), ...prev.filter((p) => p.order.id !== order!.id)]);
+        setOffers((prev) => [buildSentOfferEntry(order!, (cents / 100).toFixed(2), eta), ...prev.filter((p) => p.order.id !== order!.id)]);
         router.back();
         return;
       }
       if (msg === "This order is not open for offers" || msg.startsWith("The offer window has closed")) {
         setError(R.taken);
         router.back();
+        return;
+      }
+      // PJ-M1: a refusal (standing, ID check, offline, a food order still settling, a blocked pair) is not
+      // a data problem and "Try again" can't fix it — say what the server said, with no retry.
+      if (e instanceof ApiError && e.status === 403) {
+        setError(msg || R.sendFail);
         return;
       }
       setFailed(true);
@@ -156,8 +179,9 @@ export default function MakeOfferScreen(): React.ReactElement {
                 onChangeText={(t) => {
                   const clean = t.replace(/[^0-9.]/g, "");
                   setFareText(clean);
+                  // PJ-L4: every change moves the fare (a "0" or "0.3" is the $0.50 minimum, not the old fare).
                   const n = Math.round(Number(clean) * 100);
-                  if (Number.isFinite(n) && n > 0) setFareCents(Math.max(MIN_CENTS, n));
+                  if (Number.isFinite(n)) setFareCents(Math.max(MIN_CENTS, n));
                 }}
                 onBlur={() => setCents(fareCents)}
                 keyboardType="decimal-pad"
@@ -239,7 +263,7 @@ export default function MakeOfferScreen(): React.ReactElement {
             actionIcon="refresh-cw"
             onAction={() => {
               setFailed(false);
-              offerM.mutate();
+              offerM.mutate(fareToSend());
             }}
           />
         </View>
@@ -250,7 +274,7 @@ export default function MakeOfferScreen(): React.ReactElement {
           loading={sending}
           onPress={() => {
             setFailed(false);
-            offerM.mutate();
+            offerM.mutate(fareToSend());
           }}
         />
         <CtaButton

@@ -4990,3 +4990,17 @@ is **$5**. Tapping the drawn $2 chip could only ever produce "Enter at least $5.
 - **App:** the low-balance wall's "Top up at least" (Rider v2 J-gate `gTopK2`) shows
   `max(minTopUp, floor − balance)`, so it never asks for an amount the top-up screen refuses.
 - **Upstream:** the kit should draw chips at or above the minimum. Reported upstream; the kit is not edited here.
+
+## D-85 · Rider audit 2026-10-07, parcel job: two undrawn controls — PENDING OWNER REVIEW
+
+Fixes from the rider UI/UX audit that needed an element the Rider v2 handoff (`handoff/rider-v2/`, D-54) does not draw.
+Both reuse existing strings; both are reported upstream as missing states.
+
+- **X3 Can't reach → back to the code (PJ-H2).** The handoff's Can't-reach stage has no exit: a recipient who answers on
+  the second call left the rider stuck until they backed out to the board. A ghost soft pill **"Enter the delivery code"**
+  (`R.door3`, Order flow v2's door card) sits under Call / WhatsApp and returns to A8. The wait itself now persists per
+  order like the arrival mark (the handoff's state model already says `reach` persists).
+- **A2 camera refused (B3).** The handoff draws no camera-off state for the pickup photo, which Collect requires. A warn
+  `Notice` with `R.docPhotoDenied` and a soft pill **"Open phone settings"** (`R.sOpenSettings`) shows under the photo row
+  while the camera permission is refused; it clears when the rider comes back with it on.
+- With no recipient number, X3's Call / WhatsApp pills draw disabled (PJ-L2) instead of counting calls that never happened.
