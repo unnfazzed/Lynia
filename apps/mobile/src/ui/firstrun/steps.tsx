@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
 import React, { useEffect, useRef } from "react";
-import { Animated, Easing, Text, View, type ViewStyle } from "react-native";
+import { Animated, Text, View, type ViewStyle } from "react-native";
+import { ArcSpinner } from "../ArcSpinner";
 import { Icon } from "../Icon";
 import { useReduceMotion } from "../useReduceMotion";
 import { KY } from "./copy";
@@ -15,31 +16,7 @@ import { ListCard, ListRow } from "./lists";
 
 /** The active ring (`.stp.a`): a `width`-wide mint ring with a brand top arc, one turn per second. */
 export function Spinner({ size = 28, width = 3, testID }: { size?: number; width?: number; testID?: string }): React.ReactElement {
-  const reduceMotion = useReduceMotion();
-  const turn = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    if (reduceMotion) return;
-    const loop = Animated.loop(Animated.timing(turn, { toValue: 1, duration: 1000, easing: Easing.linear, useNativeDriver: true }));
-    loop.start();
-    return () => loop.stop();
-  }, [reduceMotion, turn]);
-  const rotate = turn.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
-  return (
-    <Animated.View
-      testID={testID}
-      accessibilityRole="progressbar"
-      accessibilityState={{ busy: true }}
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        borderWidth: width,
-        borderColor: tokens.color.accentWash,
-        borderTopColor: tokens.color.accent,
-        transform: [{ rotate }],
-      }}
-    />
-  );
+  return <ArcSpinner size={size} width={width} track={tokens.color.accentWash} arc={tokens.color.accent} duration={1000} testID={testID} />;
 }
 
 export type StepState = "done" | "open" | "next" | "active";
