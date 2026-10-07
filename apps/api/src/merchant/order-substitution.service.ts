@@ -201,6 +201,30 @@ export class OrderSubstitutionService implements OnModuleInit, OnModuleDestroy {
         if (isDishOutOfStock(dish)) throw new ConflictException(`${dish.name} is out of stock too`);
         if (dish.id === itemById.get(l.itemId)!.dishId) throw new BadRequestException("Swap for a different item");
       }
+      // MJ-H4: a "Prescription needed" item can be swapped in only by a pharmacist on the team, and only on
+      // an order whose prescription has been approved — otherwise "Swap for…" would hand out
+      // prescription-only medicine nobody checked. The line records it (swapRxRequired) and an accepted
+      // swap's new order line is flagged rxRequired from that record, in resolve().
+      const rxSwap = swapLines.map((l) => dishById.get(l.dishId)!).find((d) => d.rxRequired);
+      if (rxSwap) {
+        const member = await tx.merchantMember.findUnique({
+          where: { profileId_merchantId: { profileId, merchantId } },
+          select: { isPharmacist: true },
+        });
+        if (!member?.isPharmacist) {
+          throw new ConflictException({
+            reason: "rx_swap_needs_pharmacist",
+            message: `${rxSwap.name} needs a prescription. Only a pharmacist on your team can swap it in.`,
+          });
+        }
+        const rx = await tx.orderPrescription.findUnique({ where: { orderId }, select: { status: true } });
+        if (rx?.status !== "approved") {
+          throw new ConflictException({
+            reason: "rx_swap_needs_prescription",
+            message: `${rxSwap.name} needs a prescription. You can swap it in only on an order with an approved prescription.`,
+          });
+        }
+      }
 
       // ── The new state ──
       const proposalByItem = new Map(body.lines.map((l) => [l.itemId, l]));
@@ -254,6 +278,7 @@ export class OrderSubstitutionService implements OnModuleInit, OnModuleDestroy {
                 swapNameSnapshot: dish?.name ?? null,
                 swapPriceUsd: dish?.priceUsd ?? null,
                 swapQuantity: l.action === "swap" ? (l.quantity ?? item.quantity) : null,
+                ...(dish?.rxRequired ? { swapRxRequired: true } : {}),
               };
             }),
           },
@@ -470,6 +495,10 @@ export class OrderSubstitutionService implements OnModuleInit, OnModuleDestroy {
             quantity: qty,
             available: true,
             replacesItemId: line.orderItemId,
+            // MJ-H4: an accepted swap to a "Prescription needed" item carries the flag recorded when the
+            // pharmacist proposed it onto its new line, like a placed line (FoodOrderService.placeOrder), so a
+            // decline / the rider's tick treat it as Rx.
+            ...(line.swapRxRequired ? { rxRequired: true } : {}),
           },
         });
         addedCents += toCents(Number(line.swapPriceUsd ?? line.priceUsd)) * qty;

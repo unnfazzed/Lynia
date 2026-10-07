@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { BadRequestException } from "@nestjs/common";
 import type { Env } from "../config/env";
 import type { NotificationsService } from "../notifications/notifications.service";
@@ -70,6 +70,7 @@ const dish = (over: Record<string, unknown> = {}) => ({
   priceUsd: 5,
   isDraft: false,
   outOfStockUntil: null,
+  category: { hidden: false, availableFrom: null, availableTo: null },
   ...over,
 });
 
@@ -226,6 +227,58 @@ describe("FoodOrderService.placeOrder", () => {
     await expect(
       svc.placeOrder("c1", "m1", { items: [{ dishId: "d1", quantity: 1 }], dropoff: { point: AVONDALE }, paymentMethod: "cash" } as never),
     ).rejects.toThrow(/out of stock/i);
+  });
+
+  // MJ-RM12 / U25: the server, not the storefront, decides whether a category is on sale.
+  describe("a dish's category must be sellable (MJ-RM12 / U25)", () => {
+    const BREAKFAST = { hidden: false, availableFrom: "07:00", availableTo: "11:00" };
+    function placeWith(category: Record<string, unknown>, opts: { scheduledFor?: Date } = {}) {
+      let created = false;
+      const prisma = build({
+        order: {
+          findFirst: async () => null,
+          create: async ({ data }: { data: Record<string, unknown> }) => {
+            created = true;
+            return { ...data, id: "o1", merchantItems: [], pickupCodeAttempts: 0, noShowCallTimestamps: [], schedule: null };
+          },
+        },
+        merchant: { findFirst: async () => ({ id: "m1", location: { point: HARARE_CBD, landmark: "CBD", contactPhone: "+263771234567" } }) },
+        merchantDish: { findMany: async () => [dish({ category })] },
+      }).prisma;
+      const schedule = opts.scheduledFor
+        ? { resolveSlot: async () => ({ scheduledFor: opts.scheduledFor!, ringsAt: new Date(opts.scheduledFor!.getTime() - 30 * 60_000) }) }
+        : undefined;
+      const svc = new FoodOrderService(prisma as unknown as PrismaService, tokens, notifications, debt, fakeGateway(), fakeRail(), undefined, undefined, undefined, schedule as never);
+      const run = svc.placeOrder("c1", "m1", {
+        items: [{ dishId: "d1", quantity: 2 }],
+        dropoff: { point: AVONDALE, landmark: "Avondale", contactPhone: "+263779999999" },
+        paymentMethod: "cash",
+        ...(opts.scheduledFor ? { scheduledFor: opts.scheduledFor.toISOString() } : {}),
+      } as never);
+      return run.then(() => created);
+    }
+    afterEach(() => vi.useRealTimers());
+
+    it("refuses a dish in a hidden category with the 409 'isn't available' (a basket built before the hide)", async () => {
+      await expect(placeWith({ hidden: true, availableFrom: null, availableTo: null })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/isn't available/) });
+    });
+
+    it("refuses a dish outside its category's window by the HARARE clock, and takes it inside it", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      // 09:30 UTC is 11:30 in Harare: Breakfast is over (a UTC reading would still say 09:30, served).
+      vi.setSystemTime(new Date("2026-07-29T09:30:00Z"));
+      await expect(placeWith(BREAKFAST)).rejects.toMatchObject({ status: 409, response: { reason: "category_window", message: "Sadza & Chicken isn't served at that time" } });
+      // 05:30 UTC is 07:30 in Harare: served (a UTC reading would say 05:30, not yet).
+      vi.setSystemTime(new Date("2026-07-29T05:30:00Z"));
+      await expect(placeWith(BREAKFAST)).resolves.toBe(true);
+    });
+
+    it("judges a scheduled order at its slot, not at the moment it is placed", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-07-29T18:00:00Z")); // 20:00 Harare, Breakfast long over
+      await expect(placeWith(BREAKFAST, { scheduledFor: new Date("2026-07-30T06:30:00Z") })).resolves.toBe(true); // 08:30 tomorrow
+      await expect(placeWith(BREAKFAST, { scheduledFor: new Date("2026-07-30T10:00:00Z") })).rejects.toMatchObject({ status: 409, response: { reason: "category_window", message: expect.stringMatching(/isn't served at that time$/) } }); // 12:00
+    });
   });
 
   it("409s a merchant with no pickup point set — nothing to price the delivery fee against", async () => {

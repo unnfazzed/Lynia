@@ -46,7 +46,7 @@ function build(methods: Record<string, unknown>, debt: Partial<FoodDebtService> 
 
 const CBD = { lat: -17.8292, lng: 31.0522 };
 const AVONDALE = { lat: -17.8003, lng: 31.0335 };
-const dish = { id: "d1", merchantId: "m1", name: "Sadza & Chicken", priceUsd: 5, isDraft: false, outOfStockUntil: null };
+const dish = { id: "d1", merchantId: "m1", name: "Sadza & Chicken", priceUsd: 5, isDraft: false, outOfStockUntil: null, category: { hidden: false, availableFrom: null, availableTo: null } };
 const ORDER_BODY = {
   items: [{ dishId: "d1", quantity: 1 }],
   dropoff: { point: AVONDALE, landmark: "Avondale", contactPhone: "+263779999999" },

@@ -1403,6 +1403,9 @@ model MerchantOrderSubstitutionLine {
   swapNameSnapshot String?                   @map("swap_name_snapshot")
   swapPriceUsd     Decimal?                  @map("swap_price_usd") @db.Decimal(10, 2)
   swapQuantity     Int?                      @map("swap_quantity")
+  // MJ-H4: the swapped-in item is "Prescription needed" (only a pharmacist may propose it, on an order
+  // with an approved prescription). Recorded at propose; an accepted swap's new line takes it.
+  swapRxRequired   Boolean                   @default(false) @map("swap_rx_required")
   // accept | remove; null until the customer answers (a swap) — always null on remove/reduce.
   answer           String?
   // The order line an accepted swap created.

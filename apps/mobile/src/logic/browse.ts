@@ -183,14 +183,10 @@ export function anyFreeDelivery(venues: readonly VenueView[]): boolean {
   return venues.some((v) => v.freeDelivery);
 }
 
-/** Whether `now` falls inside a category's serving window. Null bounds = always served. */
-export function categoryServedNow(from: string | null | undefined, to: string | null | undefined, now: Date): boolean {
-  if (!from || !to) return true;
-  const mins = now.getHours() * 60 + now.getMinutes();
-  const [fh, fm] = from.split(":");
-  const [th, tm] = to.split(":");
-  return mins >= Number(fh) * 60 + Number(fm) && mins < Number(th) * 60 + Number(tm);
-}
+/** Whether `now` falls inside a category's serving window. Null bounds = always served. Lives in
+ *  `@lynia/shared` (MJ-RM12 / U25) so the API refuses the same dishes at placement; re-exported here
+ *  so the storefronts keep their import. */
+export { categoryServedNow } from "@lynia/shared";
 
 /** Whether a category's window is still ahead today (else it next opens tomorrow). */
 export function windowLaterToday(from: string, now: Date): boolean {

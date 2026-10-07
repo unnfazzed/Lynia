@@ -436,9 +436,7 @@ export class MerchantService {
 
   async createCategory(profileId: string, body: MerchantCategoryRequest): Promise<MerchantCategoryResponse> {
     const merchantId = await this.findOwnMerchantIdOrThrow(profileId);
-    if ((body.availableFrom === undefined) !== (body.availableTo === undefined)) {
-      throw new BadRequestException("availableFrom and availableTo must be set together");
-    }
+    assertCategoryWindow(body.availableFrom ?? null, body.availableTo ?? null);
     const created = await this.prisma.merchantCategory.create({
       data: {
         merchantId,
@@ -457,7 +455,15 @@ export class MerchantService {
     body: UpdateMerchantCategoryRequest,
   ): Promise<MerchantCategoryResponse> {
     const merchantId = await this.findOwnMerchantIdOrThrow(profileId);
-    await this.findOwnCategoryOrThrow(merchantId, categoryId);
+    const current = await this.findOwnCategoryOrThrow(merchantId, categoryId);
+    // MJ-RM12 follow-up: the window the category ends up with (this edit merged over what it has) must be
+    // usable — placement refuses dishes outside it, so "11:00–07:00" or a lone end would take them off sale.
+    if (body.availableFrom !== undefined || body.availableTo !== undefined) {
+      assertCategoryWindow(
+        body.availableFrom !== undefined ? body.availableFrom : current.availableFrom,
+        body.availableTo !== undefined ? body.availableTo : current.availableTo,
+      );
+    }
 
     const data: Prisma.MerchantCategoryUpdateInput = {};
     if (body.name !== undefined) data.name = body.name;
@@ -625,6 +631,9 @@ export class MerchantService {
           where: {
             merchantId: { in: pilots.map((p) => p.id) },
             isDraft: false,
+            // MJ-RM12: "Hidden — customers don't see it or its dishes" holds in search too. (A category's
+            // time window does not take its dishes out of search; placement refuses them out of window.)
+            category: { hidden: false },
             OR: [{ name: { contains: q, mode: "insensitive" } }, { description: { contains: q, mode: "insensitive" } }],
           },
           orderBy: [{ name: "asc" }, { id: "asc" }],
@@ -739,7 +748,11 @@ export class MerchantService {
       .sort((a, b) => b._count.orderId - a._count.orderId)
       .slice(0, SEARCH_POPULAR_MAX * 2);
     if (top.length === 0) return { terms: [] };
-    const dishes = await this.prisma.merchantDish.findMany({ where: { id: { in: top.map((r) => r.dishId) }, isDraft: false }, select: { id: true, name: true } });
+    // MJ-RM12: a hidden category's dishes are off sale, so they aren't suggested either.
+    const dishes = await this.prisma.merchantDish.findMany({
+      where: { id: { in: top.map((r) => r.dishId) }, isDraft: false, category: { hidden: false } },
+      select: { id: true, name: true },
+    });
     const nameOf = new Map(dishes.map((d) => [d.id, d.name] as const));
     const seen = new Set<string>();
     const terms: string[] = [];
@@ -771,6 +784,7 @@ export class MerchantService {
           where: {
             merchantId: { in: visible.map((p) => p.id) },
             isDraft: false,
+            category: { hidden: false }, // MJ-RM12, as restaurant search
             ...this.rxVisible(),
             OR: [{ name: { contains: q, mode: "insensitive" } }, { description: { contains: q, mode: "insensitive" } }],
           },
@@ -1261,9 +1275,13 @@ export class MerchantService {
     };
   }
 
-  /** Order flow v2 (BRIEF §13): while RX_ENABLED is off, "Prescription needed" items are not listed. */
+  /** Order flow v2 (BRIEF §13): while RX_ENABLED is off, "Prescription needed" items are not listed.
+   *  MJ-H5 / U43: nor are they at a pharmacy with no team member ticked as pharmacist — nobody there
+   *  could check the prescription, so the order could never be packed (placement refuses it too,
+   *  PrescriptionService.prepareForPlacement). Wrapped in AND so it composes with a caller's own OR. */
   private rxVisible(): Prisma.MerchantDishWhereInput {
-    return this.env?.RX_ENABLED === "true" ? {} : { rxRequired: false };
+    if (this.env?.RX_ENABLED !== "true") return { rxRequired: false };
+    return { AND: [{ OR: [{ rxRequired: false }, { category: { merchant: { members: { some: { isPharmacist: true } } } } }] }] };
   }
 }
 
@@ -1271,4 +1289,13 @@ export class MerchantService {
  *  first sign-up, which the web treats as success. */
 function alreadyMember(): ConflictException {
   return new ConflictException({ reason: "already_member", message: "This number is already on a business on LyniaGo" });
+}
+
+/** D-29 category window, as the server enforces it (MJ-RM12 follow-up; the merchant web already blocks
+ *  both): both ends or neither, and a same-day window whose start is before its end — `categoryServedNow`
+ *  has no overnight windows, so "22:00–02:00" would never be served. Times are zero-padded HH:MM
+ *  (contract regex), so they compare as strings. */
+function assertCategoryWindow(from: string | null, to: string | null): void {
+  if ((from === null) !== (to === null)) throw new BadRequestException("availableFrom and availableTo must be set together");
+  if (from !== null && to !== null && from >= to) throw new BadRequestException("The start time must be before the end time.");
 }

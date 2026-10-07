@@ -400,6 +400,33 @@ describe("MerchantService categories (D-29)", () => {
     );
   });
 
+  // MJ-RM12 follow-up: placement now refuses dishes outside the window, so the API must not store an
+  // unusable one (the merchant web already blocks both; this is the server's own enforcement).
+  it("refuses a window whose start isn't before its end, on create and on the MERGED update", async () => {
+    let written: unknown;
+    const s = svc({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      merchantCategory: {
+        findFirst: async () => ({ id: "c1", merchantId: "m1", availableFrom: "07:00", availableTo: "11:00" }),
+        create: async ({ data }: { data: unknown }) => ((written = data), { id: "c2", ...(data as object), _count: { dishes: 0 } }),
+        update: async ({ data }: { data: unknown }) => ((written = data), { id: "c1", name: "Breakfast", _count: { dishes: 0 } }),
+      },
+    });
+    await expect(s.createCategory("p1", { name: "Late", availableFrom: "22:00", availableTo: "02:00" })).rejects.toThrow(/start time must be before the end time/i);
+    await expect(s.createCategory("p1", { name: "Never", availableFrom: "09:00", availableTo: "09:00" })).rejects.toThrow(/start time must be before/i);
+    // Only one end sent: merged with the stored 07:00–11:00 it becomes 12:00–11:00.
+    await expect(s.updateCategory("p1", "c1", { availableFrom: "12:00" })).rejects.toThrow(/start time must be before/i);
+    // Clearing one end only leaves a half window.
+    await expect(s.updateCategory("p1", "c1", { availableTo: null })).rejects.toThrow(/must be set together/i);
+    expect(written).toBeUndefined();
+    // Valid edits still save: a merged 08:00–11:00, clearing both, and a rename that leaves the window alone.
+    await s.updateCategory("p1", "c1", { availableFrom: "08:00" });
+    expect(written).toEqual({ availableFrom: "08:00" });
+    await s.updateCategory("p1", "c1", { availableFrom: null, availableTo: null });
+    await s.updateCategory("p1", "c1", { name: "Brunch" });
+    await s.createCategory("p1", { name: "Breakfast", availableFrom: "07:00", availableTo: "11:00" });
+  });
+
   it("deletes an empty category", async () => {
     let deletedId: string | undefined;
     const s = svc({
@@ -908,6 +935,17 @@ describe("MerchantService customer read API (flag + pilotEnabled allowlist)", ()
       merchantDish: { findMany: async () => [{ id: "d1", name: "Roast chicken" }, { id: "d2", name: "roast chicken" }, { id: "d3", name: "Pizza" }] },
     });
     expect(await s.searchPopular()).toEqual({ terms: ["Roast chicken", "Pizza"] });
+  });
+
+  it("MJ-RM12: searchPopular never suggests a dish from a hidden category", async () => {
+    let where: Record<string, unknown> | undefined;
+    const s = svc({
+      merchant: { findMany: async () => [{ id: "m1" }] },
+      merchantOrderItem: { groupBy: async () => [{ dishId: "d1", _count: { orderId: 9 } }] },
+      merchantDish: { findMany: async (args: { where: Record<string, unknown> }) => ((where = args.where), []) },
+    });
+    await s.searchPopular();
+    expect(where).toMatchObject({ isDraft: false, category: { hidden: false } });
   });
 
   it("searchPopular answers no terms when no restaurant is live", async () => {
@@ -1636,5 +1674,34 @@ describe("MerchantService customer Shops & Pharmacy reads (D-58)", () => {
     expect(await s.searchShops(WHERE, "p")).toEqual({ shops: [], items: [] });
     const res = await s.searchShops(WHERE, "para");
     expect(res.items).toEqual([{ dishId: "d1", name: "Paracetamol", priceUsd: 1.5, photoUrl: null, merchantId: "s1", merchantName: "Avondale Pharmacy" }]);
+  });
+
+  it("MJ-RM12: a hidden category's dishes leave restaurant AND shop search", async () => {
+    const wheres: Array<Record<string, unknown>> = [];
+    const s = svc({
+      merchant: { findMany: async ({ select }: { select?: unknown }) => (select ? [{ id: "s1", name: "Avondale Pharmacy" }] : []) },
+      merchantDish: { findMany: async ({ where }: { where: Record<string, unknown> }) => (wheres.push(where), []) },
+    });
+    await s.searchShops(WHERE, "para");
+    await s.searchRestaurants("sadza");
+    expect(wheres).toHaveLength(2);
+    for (const w of wheres) expect(w.category).toEqual({ hidden: false });
+  });
+
+  it("MJ-H5 / U43: with RX_ENABLED on, Rx items are listed only at a pharmacy with a ticked pharmacist", async () => {
+    const wheres: Array<Record<string, unknown>> = [];
+    const prisma: Record<string, unknown> = {
+      merchantMember: { findFirst: async () => OWNER_OF_M1 },
+      merchant: { findFirst: async () => SHOP, findMany: async ({ select }: { select?: unknown }) => (select ? [{ id: "s1", name: "Avondale Pharmacy" }] : []) },
+      merchantCategory: { findMany: async ({ include }: { include: { dishes: { where: Record<string, unknown> } } }) => (wheres.push(include.dishes.where), []) },
+      merchantDish: { findMany: async ({ where }: { where: Record<string, unknown> }) => (wheres.push(where), []) },
+    };
+    const s = new MerchantService(prisma as unknown as PrismaService, defaultStorageStub as never, { RX_ENABLED: "true" } as never);
+    await s.getShopCatalogue(WHERE, "s1");
+    await s.searchShops(WHERE, "amox");
+    const rxRule = { AND: [{ OR: [{ rxRequired: false }, { category: { merchant: { members: { some: { isPharmacist: true } } } } }] }] };
+    expect(wheres[0]).toEqual({ isDraft: false, ...rxRule });
+    // Composes with search's own name/description OR rather than overwriting it.
+    expect(wheres[1]).toMatchObject({ ...rxRule, OR: [{ name: { contains: "amox", mode: "insensitive" } }, { description: { contains: "amox", mode: "insensitive" } }] });
   });
 });

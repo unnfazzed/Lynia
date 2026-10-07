@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { Text, View } from "react-native";
 import { deleteAccount, getMe } from "../../src/api/auth";
-import { getActiveCustomerOrder, getActiveOrder } from "../../src/api/orders";
+import { getActiveCustomerOrders, getActiveOrder } from "../../src/api/orders";
 import { useAuth } from "../../src/auth/auth-context";
 import { pendingOrQueued } from "../../src/query/client";
 import { Icon, Tappable, useActionErrorEffect } from "../../src/ui";
@@ -58,13 +58,21 @@ export default function DeleteAccountScreen({ initialStep = "explain", initialAc
   const [step, setStep] = React.useState<Step>(initialStep);
   const [acknowledged, setAcknowledged] = React.useState(initialAcknowledged);
 
-  // The live half of the drawn "No delivery running" box.
-  const activeQ = useQuery({ queryKey: ["activeCustomerOrder"], queryFn: getActiveCustomerOrder });
+  // The live half of the drawn "No delivery running" box. U14: EVERY live order the customer runs (the
+  // list Home draws, food / shop / pharmacy orders still with the business included), not only the
+  // single most-recent parcel. U58: a `delivered` order only awaits its rating — the server lets the
+  // deletion through, so it doesn't count as running here either.
+  const activeQ = useQuery({ queryKey: ["activeCustomerOrders"], queryFn: getActiveCustomerOrders });
   // MA-M7: a rider's job they're carrying blocks deletion server-side too — check it as well.
-  const isRider = !!useQuery({ queryKey: ["me"], queryFn: getMe }).data?.rider;
+  const meQ = useQuery({ queryKey: ["me"], queryFn: getMe });
+  const isRider = !!meQ.data?.rider;
   const riderJobQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, enabled: isRider });
   const riderJob = isRider && riderJobQ.data && riderJobQ.data.status !== "cancelled" ? riderJobQ.data : null;
-  const running = !!activeQ.data || !!riderJob;
+  const running = (activeQ.data ?? []).some((o) => o.status !== "delivered") || !!riderJob;
+  // U14: until every read the box depends on has answered (the customer's orders, who this is, and a
+  // rider's own job), "No delivery running" would be a guess — draw no box and keep the link off (the
+  // server refuses a live order anyway).
+  const known = activeQ.isSuccess && meQ.isSuccess && (!isRider || riderJobQ.isSuccess);
 
   const deleteM = useMutation({
     mutationFn: deleteAccount,
@@ -90,7 +98,7 @@ export default function DeleteAccountScreen({ initialStep = "explain", initialAc
           link={
             final
               ? { label: DEL.confirm, onPress: () => deleteM.mutate(), disabled: !acknowledged || deleting, color: tokens.color.dangerInk, testID: "delete-confirm" }
-              : { label: DEL.next, onPress: () => setStep("final"), disabled: running, color: tokens.color.dangerInk, testID: "delete-next" }
+              : { label: DEL.next, onPress: () => setStep("final"), disabled: running || !known, color: tokens.color.dangerInk, testID: "delete-next" }
           }
         />
       }
@@ -149,7 +157,7 @@ export default function DeleteAccountScreen({ initialStep = "explain", initialAc
         <>
           <SplitTitle a={DEL.titleA} b={DEL.titleB} tone="danger" />
           <Body>{DEL.body}</Body>
-          {running ? <InfoBox tone="bad" icon="triangle-alert" text={DEL.running} testID="delete-running" /> : <InfoBox tone="ok" icon="check" text={DEL.clear} testID="delete-clear" />}
+          {running ? <InfoBox tone="bad" icon="triangle-alert" text={DEL.running} testID="delete-running" /> : known ? <InfoBox tone="ok" icon="check" text={DEL.clear} testID="delete-clear" /> : null}
         </>
       )}
     </FirstRunScreen>

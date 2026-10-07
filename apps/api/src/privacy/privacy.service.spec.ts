@@ -143,6 +143,53 @@ describe("PrivacyService.eraseAccount", () => {
     await expect(svc.eraseAccount("p1")).rejects.toBeInstanceOf(ConflictException);
   });
 
+  // U14 / U58: the live-order guard covers every order the customer is still running — a merchant order
+  // still with the business and a parcel in the auction — and not a delivered one awaiting its rating.
+  // The where clause both checks pass is evaluated here against real-shaped rows.
+  describe("which orders block deletion (U14 / U58)", () => {
+    type Row = { status: string; orderType: string; customerId: string; riderId: string | null };
+    type Where = Record<string, unknown>;
+    const matches = (w: Where, r: Row): boolean =>
+      Object.entries(w).every(([k, v]) => {
+        if (k === "OR") return (v as Where[]).some((sub) => matches(sub, r));
+        if (v && typeof v === "object" && "in" in (v as object)) return ((v as { in: string[] }).in).includes(r[k as keyof Row] as string);
+        return r[k as keyof Row] === v;
+      });
+
+    async function blocks(row: Row): Promise<{ preflight: boolean; inTx: boolean }> {
+      const wheres: Where[] = [];
+      const preflight = eraseHarness({ phone: "+263771234567" }, false);
+      // Capture both reads' where clauses and answer them from the one row.
+      const answer = async ({ where }: { where: Where }) => (wheres.push(where), matches(where, row) ? { id: "o1" } : null);
+      (preflight.svc as unknown as { prisma: { order: { findFirst: unknown } } }).prisma.order.findFirst = answer;
+      preflight.tx.order.findFirst.mockImplementation(answer as never);
+      const threw = await preflight.svc.eraseAccount("p1").then(() => false, (e: unknown) => e instanceof ConflictException);
+      return { preflight: threw && wheres.length === 1, inTx: wheres.length === 2 && matches(wheres[1]!, row) };
+    }
+    const mine = (status: string, orderType = "ride"): Row => ({ status, orderType, customerId: "p1", riderId: null });
+
+    it("a restaurant / shop / pharmacy order still with the business blocks it", async () => {
+      expect((await blocks(mine("requested", "merchant"))).preflight).toBe(true);
+    });
+
+    it("a parcel in the auction blocks it", async () => {
+      expect((await blocks(mine("open_for_offers"))).preflight).toBe(true);
+    });
+
+    it("a ride in progress blocks it, as customer or as rider", async () => {
+      expect((await blocks(mine("picked_up"))).preflight).toBe(true);
+      expect((await blocks({ status: "en_route_dropoff", orderType: "merchant", customerId: "other", riderId: "p1" })).preflight).toBe(true);
+    });
+
+    it("a delivered order awaiting only its rating, a finished one, or someone else's does not", async () => {
+      for (const row of [mine("delivered"), mine("completed", "merchant"), mine("cancelled", "merchant"), { status: "requested", orderType: "merchant", customerId: "other", riderId: null }]) {
+        const r = await blocks(row);
+        expect(r.preflight).toBe(false);
+        expect(r.inTx).toBe(false);
+      }
+    });
+  });
+
   it("anonymises the profile, scrubs rider PII + GPS, and deletes addresses/tokens/sessions", async () => {
     // DOC-16-01's TopUp.phone scrub is gated on isRider — give this fixture a rider row (it already
     // asserts rider-scrub behavior below) so that gate is exercised for real, not just recorded blind.

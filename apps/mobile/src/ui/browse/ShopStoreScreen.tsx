@@ -11,6 +11,7 @@ import { MAX_ITEM_QTY } from "../../logic/food-cart";
 import { useHomeLocation } from "../../logic/home-location";
 import { firstSlot, rxOnFor } from "../../logic/review";
 import { useNow } from "../../logic/use-now";
+import { useFeatureFlags } from "../../net/use-feature-flags";
 import { useOrderFlags } from "../../net/use-order-flags";
 import { useServiceFlags } from "../../net/use-service-flags";
 import { useScheduleSlots } from "../../query/use-order-flow";
@@ -104,7 +105,11 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
   // U09: Rx is on when the flag says so OR this catalogue lists an Rx item (the server lists those only
   // while Rx is on) — so an item added before `/app/order-flags` answers still carries `rxRequired`.
   const rxEnabled = rxOnFor(orderFlags.rxEnabled, catalogue?.categories);
-  const sectionOn = service === "pharmacy" ? serviceFlags.pharmacyEnabled : serviceFlags.shopsEnabled;
+  // U65: every order route (Review, slots, Place) sits behind the Restaurants switch on the API
+  // (RestaurantsEnabledGuard), so with Restaurants off a shop can't take an order either — the storefront
+  // goes browse only, like its own section's switch, instead of offering a Place that always fails.
+  const { restaurantsEnabled } = useFeatureFlags();
+  const sectionOn = (service === "pharmacy" ? serviceFlags.pharmacyEnabled : serviceFlags.shopsEnabled) && restaurantsEnabled;
   const s = B.svc[service];
 
   const [openItem, setOpenItem] = useState<StoreItem | null>(null);

@@ -1,6 +1,21 @@
 import { describe, expect, it } from "vitest";
 import type { MerchantHours } from "./contracts";
-import { closingTimeToday, effectiveMerchantHours, isMerchantOpenNow, minutesUntilClose, nextOpenDescription, nextOpening, startOfNextDay } from "./restaurant-hours";
+import { categoryServedNow, closingTimeToday, effectiveMerchantHours, isMerchantOpenNow, minutesUntilClose, nextOpenDescription, nextOpening, startOfNextDay } from "./restaurant-hours";
+
+describe("categoryServedNow (MJ-RM12 / U25: one rule for the app and the API)", () => {
+  const at = (h: number, m = 0) => new Date(2026, 6, 29, h, m);
+  it("is served inside [from, to) and not outside it", () => {
+    expect(categoryServedNow("07:00", "11:00", at(7))).toBe(true);
+    expect(categoryServedNow("07:00", "11:00", at(10, 59))).toBe(true);
+    expect(categoryServedNow("07:00", "11:00", at(11))).toBe(false);
+    expect(categoryServedNow("07:00", "11:00", at(6, 59))).toBe(false);
+  });
+  it("is always served without both bounds", () => {
+    expect(categoryServedNow(null, null, at(3))).toBe(true);
+    expect(categoryServedNow("07:00", null, at(3))).toBe(true);
+    expect(categoryServedNow(undefined, "", at(3))).toBe(true);
+  });
+});
 
 // Wednesday 2026-07-29 (matches the plan's "today"); getDay() === 3.
 const WED_NOON = new Date(2026, 6, 29, 12, 0);

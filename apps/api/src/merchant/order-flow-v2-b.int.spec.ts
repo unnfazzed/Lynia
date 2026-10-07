@@ -242,6 +242,9 @@ describe("prescriptions (BRIEF §13)", () => {
     const offPrescriptions = new PrescriptionService(prisma, notifications, gateway, storage, { ...ENV, RX_ENABLED: "false" } as Env);
     const off = new FoodOrderService(prisma, tokens, notifications, debt, gateway, new StubPaymentRail(), undefined, storage, ENV, schedule, offPrescriptions);
     await expect(off.placeOrder(customer, pharmacy.merchantId, body(pharmacy.rxDishId, { prescription: script(customer) }))).rejects.toMatchObject({ response: { reason: "rx_unavailable" } });
+    // MJ-H5 / U43: nobody on the team is ticked as pharmacist yet, so nobody could check it.
+    await expect(foodOrders.placeOrder(customer, pharmacy.merchantId, body(pharmacy.rxDishId, { prescription: script(customer) }))).rejects.toMatchObject({ response: { reason: "rx_unavailable" } });
+    await prisma.merchantMember.updateMany({ where: { profileId: pharmacy.ownerId }, data: { isPharmacist: true } });
     await expect(foodOrders.placeOrder(customer, pharmacy.merchantId, body(pharmacy.rxDishId))).rejects.toMatchObject({ response: { reason: "prescription_required" } });
     // Someone else's photo key is refused.
     await expect(
@@ -251,6 +254,9 @@ describe("prescriptions (BRIEF §13)", () => {
 
   it("pharmacist check: only a pharmacist approves; packing waits for it; the rider's tick is recorded; photos only for the parties", async () => {
     const pharmacy = await makeVenue({ businessType: "shop", shopKind: "pharmacy" });
+    // MJ-H5: an Rx order needs a ticked pharmacist on the team — here a second member, not the owner.
+    const pharmacistId = await makeProfile("pharmacist");
+    await prisma.merchantMember.create({ data: { merchantId: pharmacy.merchantId, profileId: pharmacistId, role: "staff", displayName: "Tendai", isPharmacist: true } });
     const customer = await makeProfile("cust");
     const placed = await foodOrders.placeOrder(customer, pharmacy.merchantId, {
       ...body(pharmacy.dishId),

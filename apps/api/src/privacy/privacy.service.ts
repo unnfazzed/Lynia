@@ -56,6 +56,25 @@ const ERASURE_PROFILE_SELECT = {
 type ErasureProfile = Prisma.ProfileGetPayload<{ select: typeof ERASURE_PROFILE_SELECT }>;
 
 /**
+ * The live orders that block an erasure (U14 / U58): erasing mid-order strands the other party.
+ *  - a ride in progress, as its customer or its rider;
+ *  - the customer's parcel still in the auction (`open_for_offers`) — merchant orders dispatching are
+ *    covered by the same status;
+ *  - the customer's restaurant / shop / pharmacy order still with the business (`requested`, before any
+ *    rider: the kitchen would cook for "Deleted User" and the rider would get no number to call).
+ * A `delivered` order (awaiting only the rating) does NOT block: the hand-over is done.
+ */
+function liveOrderWhere(profileId: string): Prisma.OrderWhereInput {
+  return {
+    OR: [
+      { status: { in: ACTIVE_RIDE_STATUSES }, OR: [{ customerId: profileId }, { riderId: profileId }] },
+      { customerId: profileId, status: "open_for_offers" },
+      { customerId: profileId, orderType: "merchant", status: "requested" },
+    ],
+  };
+}
+
+/**
  * An order waypoint (`pickup` / `dropoff`) is a JSON blob `{ point, landmark, contactPhone }`.
  * `contactPhone` is dialable PII the API masks everywhere else — but it lives inside a Json column, so
  * the profile/rider/GPS scrub in eraseAccount never reaches it. Return a copy with the phone nulled (the
@@ -144,13 +163,8 @@ export class PrivacyService {
 
     // Never strand a live delivery: a customer with an open/active order or a rider mid-ride must
     // finish or cancel first. (Erasing mid-ride would break the counterparty's in-flight delivery.)
-    const activeRide = await this.prisma.order.findFirst({
-      where: {
-        status: { in: ACTIVE_RIDE_STATUSES },
-        OR: [{ customerId: profileId }, { riderId: profileId }],
-      },
-      select: { id: true },
-    });
+    // U14: that includes a parcel in the auction and a merchant order still with the business.
+    const activeRide = await this.prisma.order.findFirst({ where: liveOrderWhere(profileId), select: { id: true } });
     if (activeRide) {
       throw new ConflictException("Finish or cancel your active delivery before deleting your account");
     }
@@ -173,13 +187,7 @@ export class PrivacyService {
     // new order (or the customer could place one), which the outer read wouldn't see — anonymising
     // mid-ride would then break the counterparty's live delivery. Re-reading here narrows that
     // window to the transaction itself.
-    const activeMidErase = await tx.order.findFirst({
-      where: {
-        status: { in: ACTIVE_RIDE_STATUSES },
-        OR: [{ customerId: profileId }, { riderId: profileId }],
-      },
-      select: { id: true },
-    });
+    const activeMidErase = await tx.order.findFirst({ where: liveOrderWhere(profileId), select: { id: true } });
     if (activeMidErase) {
       throw new ConflictException("Finish or cancel your active delivery before deleting your account");
     }
