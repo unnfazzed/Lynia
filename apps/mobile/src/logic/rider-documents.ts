@@ -68,18 +68,29 @@ export function maskNationalId(raw: string | null | undefined): string {
 export type PhotoSource = "camera" | "gallery";
 
 /**
- * Opens the camera or the gallery. Null when the rider cancelled; "denied" when the phone refused access.
+ * Opens the camera or the gallery. Null when the rider cancelled; "denied" when the phone refused access;
+ * "blocked" when it refused and will no longer ask (only phone settings can turn it on — FR-H2).
  * The camera opens on the FRONT lens (E2b "Face the camera": the rider photographs themself).
  */
-export async function pickRiderPhoto(from: PhotoSource): Promise<UploadImageSource | "denied" | null> {
+export async function pickRiderPhoto(from: PhotoSource): Promise<UploadImageSource | "denied" | "blocked" | null> {
   const perm = from === "camera" ? await ImagePicker.requestCameraPermissionsAsync() : await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!perm.granted) return "denied";
+  if (!perm.granted) return perm.canAskAgain === false ? "blocked" : "denied";
   const opts = { mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 };
   const result = from === "camera" ? await ImagePicker.launchCameraAsync({ ...opts, cameraType: ImagePicker.CameraType.front }) : await ImagePicker.launchImageLibraryAsync(opts);
   if (result.canceled) return null;
   const a = result.assets[0];
   if (!a) return null;
   return { uri: a.uri, width: a.width, height: a.height, contentType: a.mimeType === "image/png" ? "image/png" : "image/jpeg" };
+}
+
+/** Whether the camera / gallery access is on now (the re-read when the rider comes back from settings). */
+export async function riderPhotoAllowed(from: PhotoSource): Promise<boolean> {
+  try {
+    const perm = from === "camera" ? await ImagePicker.getCameraPermissionsAsync() : await ImagePicker.getMediaLibraryPermissionsAsync();
+    return perm.granted;
+  } catch {
+    return false;
+  }
 }
 
 /**
