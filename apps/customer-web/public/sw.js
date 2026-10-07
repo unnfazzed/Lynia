@@ -23,7 +23,12 @@ self.addEventListener("install", (event) => {
       await shell.add(new Request("/", { cache: "reload" }));
       const stat = await caches.open(STATIC);
       // One failed file must not fail the install: the worker still serves what it has.
-      await Promise.all(PRECACHE.map((url) => stat.add(new Request(url, { cache: "reload" })).catch(() => undefined)));
+      // Hashed files (the bundle, the fonts) come from the browser's HTTP cache: the page fetched those exact
+      // bytes seconds ago and they are immutable, so `reload` only downloaded them a second time (P07).
+      // The rest (manifest, icons, the small scripts) keep their names across deploys, so they bypass it.
+      await Promise.all(
+        PRECACHE.map((url) => stat.add(isHashed(url) ? url : new Request(url, { cache: "reload" })).catch(() => undefined)),
+      );
       await self.skipWaiting();
     })(),
   );
