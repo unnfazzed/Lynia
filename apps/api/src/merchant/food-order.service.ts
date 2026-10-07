@@ -1083,6 +1083,9 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       data: {
         merchantPhase: next,
         readyAt: new Date(),
+        // A search parked until the planned ready time (the early search hit its cap while cooking) must
+        // resume now the food is ready, not at the old ready time (review of wave 1 C2).
+        ...(next === "ready_for_pickup" ? { dispatchNextCheckAt: new Date() } : {}),
         pickupCodeHash: this.tokens.hash(pickupCode),
         pickupCodeAttempts: 0,
         // A restaurant tapping "Food is ready" plainly knows about the order: that confirms the kitchen.
@@ -1598,7 +1601,14 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         const pickupCode = this.tokens.randomPickupCode();
         const claimed = await this.prisma.order.updateMany({
           where: { id: o.id, status, merchantPhase: "preparing", kitchenConfirmedAt: { not: null } },
-          data: { merchantPhase: next, readyAt: now, pickupCodeHash: this.tokens.hash(pickupCode), pickupCodeAttempts: 0 },
+          data: {
+            merchantPhase: next,
+            readyAt: now,
+            pickupCodeHash: this.tokens.hash(pickupCode),
+            pickupCodeAttempts: 0,
+            // As markReady: a parked search resumes now (and the D-34 cap then applies as usual).
+            ...(next === "ready_for_pickup" ? { dispatchNextCheckAt: now } : {}),
+          },
         });
         if (claimed.count > 0) {
           released++;

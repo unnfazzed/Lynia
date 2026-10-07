@@ -129,6 +129,11 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       this.logger.error(`sweepExpiredOffers failed: ${(err as Error).message}`);
     }
     try {
+      await this.sweepOrphanedOffers();
+    } catch (err) {
+      this.logger.error(`sweepOrphanedOffers failed: ${(err as Error).message}`);
+    }
+    try {
       await this.sweepSearch();
     } catch (err) {
       this.logger.error(`sweepSearch failed: ${(err as Error).message}`);
@@ -156,6 +161,29 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       }
     }
     return { expired };
+  }
+
+  /**
+   * Backstop for sweepExpiredOffers, which only sees orders still at `open_for_offers`: a pending offer
+   * whose order has moved on (cancelled by the kitchen while a round was being written, review of
+   * wave 1 C2) would otherwise stay pending — and its rider's alarm open — for ever. Only offers past
+   * their own expiry, and never the row of the rider the order went to (acceptDispatch marks that row
+   * accepted just after its own claim).
+   */
+  async sweepOrphanedOffers(now: Date = new Date()): Promise<{ expired: number }> {
+    const rows = await this.prisma.foodDispatchAttempt.findMany({
+      where: { outcome: "pending", expiresAt: { lt: now }, order: { status: { not: "open_for_offers" } } },
+      select: { id: true, orderId: true, riderId: true, order: { select: { riderId: true } } },
+      take: 200,
+    });
+    const orphaned = rows.filter((r) => r.riderId !== r.order?.riderId);
+    if (orphaned.length === 0) return { expired: 0 };
+    const res = await this.prisma.foodDispatchAttempt.updateMany({
+      where: { id: { in: orphaned.map((r) => r.id) }, outcome: "pending" },
+      data: { outcome: "expired", respondedAt: now },
+    });
+    for (const r of orphaned) void this.gateway.emitFoodOfferClosed(r.riderId, r.orderId);
+    return { expired: res.count };
   }
 
   /** Orders due for their next dispatch tick: never started (dispatchAttempt=0) or past their
@@ -302,10 +330,20 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
 
     // Both claims also guard on the phase read above, so a cooking order the kitchen marked ready (or
     // cancelled) in between is re-read on the next pass rather than offered on a stale view.
+    // A cooking order's claims also require no open substitution round: one the kitchen opened in between
+    // must keep the order at `requested`, where the customer's free "cancel the whole order" works.
     const phase = order.merchantPhase;
+    const guard: Prisma.OrderWhereInput = {
+      id: orderId,
+      status: "requested",
+      merchantPhase: phase,
+      dispatchAttempt: order.dispatchAttempt,
+      noRiderHoldAt: null,
+      ...(phase === "preparing" ? { substitutionRounds: { none: { status: "open" } } } : {}),
+    };
     if (candidates.length === 0) {
       const claimed = await this.prisma.order.updateMany({
-        where: { id: orderId, status: "requested", merchantPhase: phase, dispatchAttempt: order.dispatchAttempt, noRiderHoldAt: null },
+        where: guard,
         data: {
           dispatchAttempt: attempt,
           dispatchStartedAt: startedAt,
@@ -317,7 +355,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
 
     const expiresAt = new Date(now.getTime() + RESTAURANTS_DISPATCH.offerWindowMs);
     const claimed = await this.prisma.order.updateMany({
-      where: { id: orderId, status: "requested", merchantPhase: phase, dispatchAttempt: order.dispatchAttempt, noRiderHoldAt: null },
+      where: guard,
       data: {
         status: "open_for_offers",
         dispatchOfferedRiderId: null,
@@ -346,6 +384,13 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       // Without the rows nobody can accept: close the round now so the next sweep opens a fresh one.
       this.logger.error(`FoodDispatchAttempt write failed for order ${orderId}: ${(err as Error).message}`);
       await this.closeRound(orderId, expiresAt);
+      return "skipped";
+    }
+    // The round may already be gone: the kitchen cancelled (cancelPreparing) between the claim and the rows,
+    // so its own offer clean-up found nothing to close. Then this round's rows end here and nobody is rung.
+    const stillLive = await this.prisma.order.count({ where: { id: orderId, status: "open_for_offers", dispatchOfferExpiresAt: expiresAt } });
+    if (stillLive === 0) {
+      await this.expireRound(orderId, expiresAt);
       return "skipped";
     }
     // Order flow v2 G3c (O.g.push.r): "New food job · $1.50" / "Gava’s Kitchen → 12 Lanark Rd. 60 s to
@@ -443,6 +488,15 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     if (claimed.count === 0) return false;
     await this.expirePending(orderId);
     return true;
+  }
+
+  /** Expire the still-pending rows of ONE round (by its expiry) and close those riders' alarms. */
+  private async expireRound(orderId: string, roundExpiresAt: Date): Promise<void> {
+    const where: Prisma.FoodDispatchAttemptWhereInput = { orderId, outcome: "pending", expiresAt: roundExpiresAt };
+    const open = await this.prisma.foodDispatchAttempt.findMany({ where, select: { riderId: true } });
+    if (open.length === 0) return;
+    await this.prisma.foodDispatchAttempt.updateMany({ where, data: { outcome: "expired", respondedAt: new Date() } });
+    for (const { riderId } of open) void this.gateway.emitFoodOfferClosed(riderId, orderId);
   }
 
   /** Mark every still-pending row on the order expired (but `exceptRiderId`'s) and close those riders'

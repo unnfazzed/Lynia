@@ -218,9 +218,10 @@ describe("sweepAutoAccepted — no rider until the kitchen is confirmed (safegua
     expect((listWhere!.status as { in: string[] }).in).toEqual(expect.arrayContaining(["requested", "open_for_offers", "assigned", "confirmed", "en_route_pickup"]));
     expect(released.map((r) => r.id)).toEqual(["due", "held"]);
     expect(released[0]!.where).toMatchObject({ status: "requested", merchantPhase: "preparing" });
-    expect(released[0]!.data).toMatchObject({ merchantPhase: "ready_for_pickup", readyAt: NOW, pickupCodeHash: expect.any(String) });
+    expect(released[0]!.data).toMatchObject({ merchantPhase: "ready_for_pickup", readyAt: NOW, pickupCodeHash: expect.any(String), dispatchNextCheckAt: NOW });
     expect(released[1]!.where).toMatchObject({ status: "en_route_pickup", merchantPhase: "preparing" });
     expect(released[1]!.data).toMatchObject({ merchantPhase: null, readyAt: NOW });
+    expect(released[1]!.data).not.toHaveProperty("dispatchNextCheckAt");
     expect(res.released).toBe(2);
     expect(queueChanges).toEqual(["due", "held"]);
   });
@@ -597,6 +598,8 @@ describe("Merchant v2 K3 · +5 min (ledger D-77)", () => {
     await svc.markReady("owner-1", "o1");
     expect(where).toEqual({ id: "o1", status, merchantPhase: "preparing" });
     expect(data).toMatchObject({ merchantPhase: phase, readyAt: expect.any(Date), pickupCodeHash: expect.any(String), pickupCodeAttempts: 0 });
+    // Review fix: a search the early search parked until the planned ready time resumes at once.
+    expect(data!.dispatchNextCheckAt instanceof Date).toBe(phase === "ready_for_pickup");
   });
 
   it("refuses an order that isn't cooking, and past the two-hour cap", async () => {

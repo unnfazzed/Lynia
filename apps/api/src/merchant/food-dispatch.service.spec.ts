@@ -40,6 +40,9 @@ function build(methods: Record<string, unknown>, strategy: DispatchStrategy, gat
   notified.length = 0;
   const prisma = withMembershipShim({ ...methods } as Record<string, unknown>);
   prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
+  // The tick's post-write "is the round still live?" re-check: live unless a test says otherwise.
+  const order = prisma.order as Record<string, unknown> | undefined;
+  if (order && !order.count) order.count = async () => 1;
   const svc = new FoodDispatchService(prisma as unknown as PrismaService, tokens, notifications, gateway, strategy);
   return { svc, prisma, gateway };
 }
@@ -657,6 +660,31 @@ describe("FoodDispatchService.sweepSearch — MJ-RM1 / U32: the early search lea
     expect(claim.data).not.toHaveProperty("readyAt");
   });
 
+  // Review of wave 1: a mid-prep substitution the kitchen opened between the tick's read and its claim
+  // must keep the order at `requested` (the customer's free cancel needs it).
+  it("a cooking order's claims require no open substitution round; a ready order's claims are unchanged", async () => {
+    const cookingWorld = world(cookingOrder(7));
+    await cookingWorld.svc.sweepSearch();
+    expect(cookingWorld.orderUpdateMany.mock.calls[0]![0].where).toMatchObject({ substitutionRounds: { none: { status: "open" } } });
+
+    const nobody = world(cookingOrder(7), pick([]));
+    await nobody.svc.sweepSearch();
+    expect(nobody.orderUpdateMany.mock.calls[0]![0].where).toMatchObject({ merchantPhase: "preparing", substitutionRounds: { none: { status: "open" } } });
+
+    const orderUpdateMany = vi.fn(async (_args: { where: Record<string, unknown> }) => ({ count: 1 }));
+    const { svc } = build(
+      {
+        order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder(), updateMany: orderUpdateMany },
+        merchant: { findUnique: async () => ({ location: { point: HARARE_CBD } }) },
+        orderEvent: { create: async () => ({}) },
+        foodDispatchAttempt: { upsert: vi.fn(async () => ({})) },
+      },
+      pick(one("r1")),
+    );
+    await svc.sweepSearch();
+    expect(orderUpdateMany.mock.calls[0]![0].where).not.toHaveProperty("substitutionRounds");
+  });
+
   it("does not search for a cooking order outside the lead (ready in 15 min)", async () => {
     const { svc, strategy } = world(cookingOrder(15));
     expect(await svc.sweepSearch()).toEqual({ offered: 0, held: 0 });
@@ -670,6 +698,58 @@ describe("FoodDispatchService.sweepSearch — MJ-RM1 / U32: the early search lea
     expect(park.where).toMatchObject({ merchantPhase: "preparing", dispatchAttempt: 6, noRiderHoldAt: null });
     expect(park.data).not.toHaveProperty("noRiderHoldAt");
     expect((park.data.dispatchNextCheckAt as Date).getTime()).toBeGreaterThan(Date.now() + 2 * MIN);
+  });
+});
+
+// Review of wave 1: the kitchen's K3 cancel can land between the tick's claim and its offer rows, when
+// cancelPreparing's own clean-up finds nothing yet. Those rows must not stay pending, nor ring anyone.
+describe("FoodDispatchService — a round cancelled while its offers were being written", () => {
+  it("re-checks the round after writing its rows: gone → this round's rows expire, alarms close, no push, no offer", async () => {
+    const attemptFindMany = vi.fn(async () => [{ riderId: "r1" }, { riderId: "r2" }]);
+    const attemptUpdateMany = vi.fn(async () => ({ count: 2 }));
+    const { svc, gateway } = build(
+      {
+        order: {
+          findMany: async () => [{ id: orderId }],
+          findUnique: async () => baseOrder(),
+          updateMany: async () => ({ count: 1 }),
+          count: async () => 0, // cancelled meanwhile
+        },
+        merchant: { findUnique: async () => ({ location: { point: HARARE_CBD } }) },
+        orderEvent: { create: async () => ({}) },
+        foodDispatchAttempt: { upsert: vi.fn(async () => ({})), findMany: attemptFindMany, updateMany: attemptUpdateMany },
+      },
+      pick([
+        { riderId: "r1", distanceM: 100 },
+        { riderId: "r2", distanceM: 200 },
+      ]),
+    );
+    expect(await svc.sweepSearch()).toEqual({ offered: 0, held: 0 });
+    expect(attemptUpdateMany).toHaveBeenCalledWith({
+      where: { orderId, outcome: "pending", expiresAt: expect.any(Date) },
+      data: expect.objectContaining({ outcome: "expired" }),
+    });
+    expect(gateway.emitFoodOfferClosed).toHaveBeenCalledWith("r1", orderId);
+    expect(gateway.emitFoodOfferClosed).toHaveBeenCalledWith("r2", orderId);
+    expect(gateway.emitFoodOffer).not.toHaveBeenCalled();
+    expect(notified).toEqual([]);
+  });
+
+  it("sweepOrphanedOffers: expires stale pending offers on orders no longer offering — never the rider the order went to", async () => {
+    const attemptFindMany = vi.fn(async () => [
+      { id: "a1", orderId, riderId: "r1", order: { riderId: null } }, // cancelled order
+      { id: "a2", orderId: "o2", riderId: "winner", order: { riderId: "winner" } }, // accept still marking its own row
+    ]);
+    const attemptUpdateMany = vi.fn(async () => ({ count: 1 }));
+    const { svc, gateway } = build({ foodDispatchAttempt: { findMany: attemptFindMany, updateMany: attemptUpdateMany } }, NONE);
+    const now = new Date();
+    expect(await svc.sweepOrphanedOffers(now)).toEqual({ expired: 1 });
+    expect(attemptFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { outcome: "pending", expiresAt: { lt: now }, order: { status: { not: "open_for_offers" } } } }),
+    );
+    expect(attemptUpdateMany).toHaveBeenCalledWith({ where: { id: { in: ["a1"] }, outcome: "pending" }, data: { outcome: "expired", respondedAt: now } });
+    expect(gateway.emitFoodOfferClosed).toHaveBeenCalledTimes(1);
+    expect(gateway.emitFoodOfferClosed).toHaveBeenCalledWith("r1", orderId);
   });
 });
 
