@@ -5,6 +5,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
 import { Linking, Text, View } from "react-native";
 import { getMe, type Me } from "../../src/api/auth";
+import { setOnline } from "../../src/api/riders";
 import { useAuth } from "../../src/auth/auth-context";
 import { TERMS_URL } from "../../src/config";
 import { bikeDocsProgress, bikeVerified } from "../../src/logic/rider-documents";
@@ -76,6 +77,13 @@ export default function SettingsScreen(): React.ReactElement {
   const missing = isRider ? bikeItemsToAdd(me?.rider) : 0;
 
   const go = useCallback((href: string) => router.push(href as never), [router]);
+  // MA-H4: a rider goes offline first (best effort). Signing out ends the heartbeat and the job pings, but
+  // the server's logout leaves the online flag alone — without this the rider stays "online" to dispatch.
+  const hasRider = !!me?.rider;
+  const signOutNow = useCallback(async (): Promise<void> => {
+    if (hasRider) await setOnline(false).catch(() => undefined);
+    await signOut();
+  }, [hasRider, signOut]);
   // PC11 "Turn on" / the Order updates toggle (owner 2026-10-06, D-82 §4): the Android dialog directly while it
   // can still ask (a decline just leaves the card up); when it can't, the phone-settings steps sheet. On → settings.
   const [notifSteps, setNotifSteps] = useState(false);
@@ -177,7 +185,7 @@ export default function SettingsScreen(): React.ReactElement {
         ) : null}
 
         <ListCard style={{ marginTop: 16 }}>
-          <ListRow icon="log-out" title={ST.signOut} onPress={() => void signOut()} />
+          <ListRow icon="log-out" title={ST.signOut} onPress={() => void signOutNow()} />
           <ListRow icon="trash" iconTone="bad" title={R.sDelete} sub={R.sDeleteS} titleColor={tokens.color.dangerInk} onPress={() => go("/settings/delete-account")} />
         </ListCard>
       </FirstRunScreen>

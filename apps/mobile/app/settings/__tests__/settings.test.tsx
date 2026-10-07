@@ -41,7 +41,16 @@ jest.mock("expo-notifications", () => ({
 }));
 jest.mock("expo-location", () => ({ getForegroundPermissionsAsync: () => mockLocPerms(), hasServicesEnabledAsync: async () => true }));
 jest.mock("expo-secure-store", () => ({ getItemAsync: async () => null, setItemAsync: (...a: unknown[]) => mockSetItem(...(a as [])), deleteItemAsync: async () => undefined }));
-jest.mock("../../../src/auth/auth-context", () => ({ useAuth: () => ({ session: { role: "customer" }, signOut: jest.fn() }) }));
+const mockCalls: string[] = [];
+const mockSignOut = jest.fn(async () => {
+  mockCalls.push("signOut");
+});
+const mockSetOnline = jest.fn(async (online: boolean) => {
+  mockCalls.push(`setOnline:${online}`);
+  return { online };
+});
+jest.mock("../../../src/auth/auth-context", () => ({ useAuth: () => ({ session: { role: "customer" }, signOut: () => mockSignOut() }) }));
+jest.mock("../../../src/api/riders", () => ({ setOnline: (online: boolean) => mockSetOnline(online) }));
 jest.mock("../../../src/api/auth", () => ({ getMe: () => mockGetMe() }));
 
 import { Linking } from "react-native";
@@ -257,4 +266,37 @@ it("the navigation-app choice is saved on the phone", async () => {
   const waze = t.root.findAll((n) => n.props.accessibilityRole === "radio" && n.props.accessibilityLabel === "Waze")[0]!;
   await act(async () => waze.props.onPress());
   expect(mockSetItem).toHaveBeenCalledWith("lynia.riderPrefs.v1", expect.stringContaining('"navApp":"waze"'));
+});
+
+describe("Sign out (MA-H4)", () => {
+  const signOutRow = (t: renderer.ReactTestRenderer) => t.root.findAll((n) => n.props.title === "Sign out" && typeof n.props.onPress === "function")[0]!;
+  beforeEach(() => {
+    mockCalls.length = 0;
+  });
+
+  it("a rider goes offline first, then signs out", async () => {
+    const t = await render(RIDER);
+    await act(async () => {
+      signOutRow(t).props.onPress();
+    });
+    expect(mockCalls).toEqual(["setOnline:false", "signOut"]);
+  });
+
+  it("a failed go-offline never traps the sign-out", async () => {
+    mockSetOnline.mockRejectedValueOnce(new Error("offline"));
+    const t = await render(RIDER);
+    await act(async () => {
+      signOutRow(t).props.onPress();
+    });
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("a customer just signs out", async () => {
+    const t = await render(CUSTOMER);
+    await act(async () => {
+      signOutRow(t).props.onPress();
+    });
+    expect(mockSetOnline).not.toHaveBeenCalled();
+    expect(mockCalls).toEqual(["signOut"]);
+  });
 });
