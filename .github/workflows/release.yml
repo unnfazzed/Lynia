@@ -769,9 +769,12 @@ jobs:
       #   CANARY_MAX_5XX_PCT      max candidate 5xx percentage (default 5)
       #   PUBLIC_HEALTH_URL       health endpoint via the LB (default the live domain /healthz)
       #   CANARY_DISABLED         "true" → old behavior: promote to 100% immediately
-      # Note on migrations: they ran above, BEFORE any traffic moved — safe because the repo
-      # enforces expand-only/online-safe migrations (src/prisma/migration-safety.spec.ts), so the
-      # still-serving old revision keeps working against the migrated schema.
+      # Note on migrations: they ran above, BEFORE any traffic moved, while the old revision is still
+      # serving. CI (src/prisma/migration-safety.spec.ts) only blocks LOCKING hazards (non-CONCURRENTLY
+      # CREATE INDEX, DROP INDEX without IF EXISTS, a STORED generated column). Backward compatibility
+      # — never dropping/renaming/tightening a column the old revision still reads — is the
+      # expand → migrate code → contract rule in docs/LAUNCH-DEPLOYMENT-STRATEGY.md §2c, enforced in
+      # review, not by CI; a migration that breaks it breaks the old revision through the canary.
       - name: Canary — graduated shift, observe, promote
         id: canary
         run: |

@@ -353,9 +353,11 @@ jobs:
       # environment, reaching the private Flexible Server over the DATABASE_URL Key Vault reference —
       # nothing crosses the public internet and the runner never holds a database credential. Identity
       # and secret are Terraform's (infra/azure/jobs.tf); CI sets the image and the command
-      # (`prisma migrate deploy`), replacing Terraform's placeholder. Runs BEFORE any traffic moves; safe because migrations are
-      # expand-only/online-safe (src/prisma/migration-safety.spec.ts), so the serving revision keeps
-      # working against the migrated schema.
+      # (`prisma migrate deploy`), replacing Terraform's placeholder. Runs BEFORE any traffic moves, while
+      # the old revision is still serving. CI (src/prisma/migration-safety.spec.ts) only blocks LOCKING
+      # hazards; backward compatibility (no drop/rename/tighten of a column the serving revision reads)
+      # is the expand → migrate code → contract rule in docs/LAUNCH-DEPLOYMENT-STRATEGY.md §2c,
+      # enforced in review, not by CI.
       - name: Apply database migrations (caj-lynia-migrate)
         run: |
           set -euo pipefail
