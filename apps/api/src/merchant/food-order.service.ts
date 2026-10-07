@@ -693,6 +693,9 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         NOT: { schedule: { is: { rungAt: null } } },
       },
       orderBy: { createdAt: "asc" },
+      // PW-LC2: deliberately no `take`. Every row is one the board must show (a live order or a debt still
+      // to count), and oldest-first a cap would drop the NEWEST orders. The set is bounded by what's live;
+      // the 5s poll's cost is the merchant_id index (0071), not the row count.
       include: ORDER_WITH_ITEMS_INCLUDE,
     });
     return orders.map((o) => this.forMerchant(o));
