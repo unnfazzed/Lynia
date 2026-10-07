@@ -9,8 +9,8 @@ export const ORPHAN_MIN_AGE_MS = 24 * 60 * 60 * 1000;
 /** Keys looked up per DB round-trip. */
 const REFERENCE_BATCH = 200;
 /** Upper bound on objects examined per kind per run, so one sweep can't run unbounded; the next day's
- *  run picks up the rest. */
-const MAX_SCANNED_PER_KIND = 20_000;
+ *  run picks up the rest. Doubled for D7: every dish and banner photo now has a `.thumb.jpg` beside it. */
+export const MAX_SCANNED_PER_KIND = 40_000;
 
 export interface OrphanSweepResult {
   scanned: number;
@@ -88,16 +88,22 @@ export class StorageSweeper {
         break;
       }
       case "dish": {
-        const rows = await this.prisma.merchantDish.findMany({ where: { photoUrl: { in: keys } }, select: { photoUrl: true } });
-        found.push(...rows.map((r) => r.photoUrl));
+        // D7: a photo's `<key>.thumb.jpg` lives in the same namespace and is referenced by its own column.
+        const rows = await this.prisma.merchantDish.findMany({
+          where: { OR: [{ photoUrl: { in: keys } }, { photoThumbKey: { in: keys } }] },
+          select: { photoUrl: true, photoThumbKey: true },
+        });
+        found.push(...rows.flatMap((r) => [r.photoUrl, r.photoThumbKey]));
         break;
       }
       case "banner": {
         const rows = await this.prisma.merchant.findMany({
-          where: { OR: [{ coverPhotoUrl: { in: keys } }, { logoUrl: { in: keys } }] },
-          select: { coverPhotoUrl: true, logoUrl: true },
+          where: {
+            OR: [{ coverPhotoUrl: { in: keys } }, { logoUrl: { in: keys } }, { coverThumbKey: { in: keys } }, { logoThumbKey: { in: keys } }],
+          },
+          select: { coverPhotoUrl: true, logoUrl: true, coverThumbKey: true, logoThumbKey: true },
         });
-        found.push(...rows.flatMap((r) => [r.coverPhotoUrl, r.logoUrl]));
+        found.push(...rows.flatMap((r) => [r.coverPhotoUrl, r.logoUrl, r.coverThumbKey, r.logoThumbKey]));
         break;
       }
       case "rx": {

@@ -52,8 +52,9 @@ import {
   isInServiceArea,
 } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
-import { ownNamespace, type UploadKind } from "../adapters/storage/upload-kinds";
+import { isMintedUploadKey, type UploadKind } from "../adapters/storage/upload-kinds";
 import { UploadVerifier } from "../adapters/storage/upload-verifier";
+import { currentThumbKey, makePhotoThumbnail } from "../adapters/storage/photo-thumbnail";
 import { MicroCache } from "../common/micro-cache";
 import { MicroCacheL2Provider } from "../common/micro-cache-l2.provider";
 import { maskPhone } from "../common/phone-mask";
@@ -249,7 +250,11 @@ export class MerchantService {
    */
   private async verifyPhotoKey(key: string, current: string | null, profileId: string, kind: UploadKind): Promise<void> {
     if (key === current) return;
-    if (!key.startsWith(ownNamespace(kind, profileId))) throw new BadRequestException("Invalid photo key");
+    // D7 review: exactly the key POST /uploads/merchant-*-photo minted for this caller
+    // (`<kind>/<profileId>/<uuid>.jpg|png`). A prefix match alone let `dish/<me>/../../kyc/<victim>/x.jpg`
+    // through: the Azure SDK resolves that to the victim's blob, which the verifier would then delete
+    // and the thumbnailer would read.
+    if (!isMintedUploadKey(kind, profileId, key)) throw new BadRequestException("Invalid photo key");
     await this.uploads?.verify(key, kind);
   }
 
@@ -343,10 +348,12 @@ export class MerchantService {
     if (body.coverPhotoUrl !== undefined) {
       await this.verifyPhotoKey(body.coverPhotoUrl, merchant.coverPhotoUrl, profileId, "banner");
       data.coverPhotoUrl = body.coverPhotoUrl;
+      if (body.coverPhotoUrl !== merchant.coverPhotoUrl) data.coverThumbKey = await this.thumbFor(body.coverPhotoUrl);
     }
     if (body.logoUrl !== undefined) {
       await this.verifyPhotoKey(body.logoUrl, merchant.logoUrl, profileId, "banner");
       data.logoUrl = body.logoUrl;
+      if (body.logoUrl !== merchant.logoUrl) data.logoThumbKey = await this.thumbFor(body.logoUrl);
     }
     if (body.cuisineTags !== undefined) data.cuisineTags = body.cuisineTags;
     if (body.priceLevel !== undefined) data.priceLevel = body.priceLevel;
@@ -531,6 +538,7 @@ export class MerchantService {
     const merchantId = await this.findOwnMerchantIdOrThrow(profileId);
     const category = await this.findOwnCategoryOrThrow(merchantId, body.categoryId);
     if (body.photoUrl) await this.verifyPhotoKey(body.photoUrl, null, profileId, "dish");
+    const photoThumbKey = body.photoUrl ? await this.thumbFor(body.photoUrl) : null;
     const created = await this.prisma.merchantDish.create({
       data: {
         categoryId: category.id,
@@ -539,6 +547,7 @@ export class MerchantService {
         description: body.description ?? null,
         priceUsd: body.priceUsd,
         photoUrl: body.photoUrl ?? null,
+        ...(photoThumbKey ? { photoThumbKey } : {}),
         // D-31: no photo at save time => draft, visible to the kitchen only. Never client-supplied.
         isDraft: !body.photoUrl,
         ...(body.rxRequired ? { rxRequired: await this.assertRxAllowed(merchantId) } : {}),
@@ -568,6 +577,7 @@ export class MerchantService {
       await this.verifyPhotoKey(body.photoUrl, dish.photoUrl, profileId, "dish");
       data.photoUrl = body.photoUrl;
       data.isDraft = false;
+      if (body.photoUrl !== dish.photoUrl) data.photoThumbKey = await this.thumbFor(body.photoUrl);
     }
 
     const updated = await this.prisma.merchantDish.update({ where: { id: dishId }, data });
@@ -660,6 +670,7 @@ export class MerchantService {
         name: d.name,
         priceUsd: Number(d.priceUsd),
         photoUrl: await this.signPhoto(d.photoUrl),
+        ...(await this.signThumb("thumbUrl", d.photoUrl, d.photoThumbKey)),
         merchantId: d.merchantId,
         merchantName: pilotName.get(d.merchantId) ?? "",
       })),
@@ -812,6 +823,7 @@ export class MerchantService {
         name: d.name,
         priceUsd: Number(d.priceUsd),
         photoUrl: await this.signPhoto(d.photoUrl),
+        ...(await this.signThumb("thumbUrl", d.photoUrl, d.photoThumbKey)),
         merchantId: d.merchantId,
         merchantName: nameOf.get(d.merchantId) ?? "",
       })),
@@ -1187,6 +1199,18 @@ export class MerchantService {
     return (this.microCacheBypassed(ttlMs) ? mint() : this.photoUrlCache.getOrLoad(key, ttlMs, mint)).catch(() => null);
   }
 
+  /** D7: the signed thumbnail URL, as a spread — `{}` when the photo has no (current) thumb, so a
+   *  response without one is byte-identical to before and clients fall back to the full photo. */
+  private async signThumb<F extends string>(field: F, photoKey: string | null | undefined, thumbKey: string | null | undefined): Promise<Partial<Record<F, string>>> {
+    const url = await this.signPhoto(currentThumbKey(photoKey, thumbKey));
+    return url ? ({ [field]: url } as Partial<Record<F, string>>) : {};
+  }
+
+  /** D7: make the thumb for a photo key being saved. Never fails the save: null = no thumb (yet). */
+  private thumbFor(photoKey: string): Promise<string | null> {
+    return makePhotoThumbnail(this.storage, photoKey);
+  }
+
   private async toProfileResponse(merchant: MerchantWithOwner, me: Pick<OwnMerchant, "myRole" | "myName" | "myIsPharmacist">): Promise<MerchantProfileResponse> {
     const [coverPhotoUrl, logoUrl] = await Promise.all([this.signPhoto(merchant.coverPhotoUrl), this.signPhoto(merchant.logoUrl)]);
     return {
@@ -1239,6 +1263,7 @@ export class MerchantService {
       description: dish.description,
       priceUsd: Number(dish.priceUsd),
       photoUrl: await this.signPhoto(dish.photoUrl),
+      ...(await this.signThumb("thumbUrl", dish.photoUrl, dish.photoThumbKey)),
       isDraft: dish.isDraft,
       outOfStock: isOutOfStock(dish),
       outOfStockUntil: isOutOfStock(dish) ? (dish.outOfStockUntil?.toISOString() ?? null) : null,
@@ -1253,16 +1278,23 @@ export class MerchantService {
   private async toListItem(
     merchant: Pick<
       MerchantWithOwner,
-      "id" | "name" | "coverPhotoUrl" | "logoUrl" | "cuisineTags" | "priceLevel" | "hours" | "location" | "foodRatingAvg" | "foodRatingCount" | "prepBaselineMinutes" | "closedUntil"
+      "id" | "name" | "coverPhotoUrl" | "logoUrl" | "coverThumbKey" | "logoThumbKey" | "cuisineTags" | "priceLevel" | "hours" | "location" | "foodRatingAvg" | "foodRatingCount" | "prepBaselineMinutes" | "closedUntil"
     > & { freeDelivery?: boolean; busyMode?: boolean },
   ): Promise<RestaurantListItem> {
     const location = (merchant.location as Waypoint | null) ?? null;
-    const [coverPhotoUrl, logoUrl] = await Promise.all([this.signPhoto(merchant.coverPhotoUrl), this.signPhoto(merchant.logoUrl)]);
+    const [coverPhotoUrl, logoUrl, coverThumb, logoThumb] = await Promise.all([
+      this.signPhoto(merchant.coverPhotoUrl),
+      this.signPhoto(merchant.logoUrl),
+      this.signThumb("coverThumbUrl", merchant.coverPhotoUrl, merchant.coverThumbKey),
+      this.signThumb("logoThumbUrl", merchant.logoUrl, merchant.logoThumbKey),
+    ]);
     return {
       id: merchant.id,
       name: merchant.name,
       coverPhotoUrl,
       logoUrl,
+      ...coverThumb,
+      ...logoThumb,
       cuisineTags: merchant.cuisineTags,
       priceLevel: merchant.priceLevel,
       // D-48: a merchant closed by hand is served with today's window dropped, so every client —
@@ -1297,6 +1329,7 @@ export class MerchantService {
       description: dish.description,
       priceUsd: Number(dish.priceUsd),
       photoUrl: await this.signPhoto(dish.photoUrl),
+      ...(await this.signThumb("thumbUrl", dish.photoUrl, dish.photoThumbKey)),
       outOfStock: isOutOfStock(dish),
       // Only ever true here: with RX_ENABLED off, Rx items never reach the customer read (rxVisible).
       ...(dish.rxRequired ? { rxRequired: true } : {}),

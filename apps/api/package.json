@@ -19,7 +19,8 @@
     "didit:setup": "tsx scripts/didit-setup.ts",
     "phones:normalize": "tsx scripts/normalize-phones.ts",
     "encrypt-ids": "tsx scripts/encrypt-national-ids.ts",
-    "ids:rehash": "tsx scripts/rehash-national-ids.ts"
+    "ids:rehash": "tsx scripts/rehash-national-ids.ts",
+    "thumbs:backfill": "tsx scripts/backfill-photo-thumbnails.ts"
   },
   "dependencies": {
     "@azure/identity": "^4.13.3",
@@ -50,6 +51,7 @@
     "jsonwebtoken": "^9.0.3",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "sharp": "^0.35.5",
     "socket.io": "^4.8.4",
     "zod": "^4.6.5"
   },

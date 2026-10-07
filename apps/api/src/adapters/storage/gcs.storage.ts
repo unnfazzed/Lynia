@@ -1,6 +1,7 @@
 import { Storage } from "@google-cloud/storage";
 import { Logger } from "@nestjs/common";
-import type { CloudProvider, ObjectStat, StorageAdapter, StoredObject, UploadTarget } from "./storage.interface";
+import { ObjectTooLargeError, type CloudProvider, type ObjectStat, type StorageAdapter, type StoredObject, type UploadTarget } from "./storage.interface";
+import { assertSafeObjectKey } from "./upload-kinds";
 
 export interface GcsStorageOptions {
   projectId?: string;
@@ -43,9 +44,7 @@ export class GcsStorage implements StorageAdapter {
     maxBytes?: number,
   ): Promise<UploadTarget> {
     const range = maxBytes != null ? `0,${maxBytes}` : undefined;
-    const [url] = await this.storage
-      .bucket(this.bucket)
-      .file(key)
+    const [url] = await this.file(key)
       .getSignedUrl({
         version: "v4",
         action: "write",
@@ -68,9 +67,7 @@ export class GcsStorage implements StorageAdapter {
   }
 
   async createReadUrl(key: string, expiresInSeconds = 900): Promise<string> {
-    const [url] = await this.storage
-      .bucket(this.bucket)
-      .file(key)
+    const [url] = await this.file(key)
       .getSignedUrl({
         version: "v4",
         action: "read",
@@ -81,7 +78,7 @@ export class GcsStorage implements StorageAdapter {
 
   async stat(key: string): Promise<ObjectStat | null> {
     try {
-      const [meta] = await this.storage.bucket(this.bucket).file(key).getMetadata();
+      const [meta] = await this.file(key).getMetadata();
       return {
         size: Number(meta.size ?? 0),
         contentType: meta.contentType ?? null,
@@ -96,12 +93,40 @@ export class GcsStorage implements StorageAdapter {
   async readHead(key: string, bytes: number): Promise<Buffer | null> {
     try {
       // `end` is inclusive.
-      const [buf] = await this.storage.bucket(this.bucket).file(key).download({ start: 0, end: bytes - 1 });
+      const [buf] = await this.file(key).download({ start: 0, end: bytes - 1 });
       return buf;
     } catch (err) {
       if (isNotFound(err)) return null;
       throw err;
     }
+  }
+
+  async readObject(key: string, maxBytes: number, signal?: AbortSignal): Promise<Buffer | null> {
+    // The GCS client takes no AbortSignal: the deadline is checked between the two calls instead.
+    const stat = await this.stat(key);
+    if (!stat) return null;
+    if (stat.size > maxBytes) throw new ObjectTooLargeError(key, stat.size, maxBytes);
+    signal?.throwIfAborted();
+    try {
+      // `end` is inclusive: never more than the cap, even if the object grew since the stat.
+      const [buf] = await this.file(key).download({ start: 0, end: maxBytes - 1 });
+      return buf;
+    } catch (err) {
+      if (isNotFound(err)) return null;
+      throw err;
+    }
+  }
+
+  async writeObject(key: string, body: Buffer, contentType: string, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
+    // A thumbnail is a few tens of KB: one simple upload, no resumable session.
+    await this.file(key).save(body, { contentType, resumable: false });
+  }
+
+  /** Every object call goes through here: a key that could escape its namespace never reaches GCS. */
+  private file(key: string) {
+    assertSafeObjectKey(key);
+    return this.storage.bucket(this.bucket).file(key);
   }
 
   async *listObjects(prefix: string): AsyncIterable<StoredObject> {
@@ -125,7 +150,7 @@ export class GcsStorage implements StorageAdapter {
    */
   async deleteObject(key: string): Promise<void> {
     try {
-      await this.storage.bucket(this.bucket).file(key).delete({ ignoreNotFound: true });
+      await this.file(key).delete({ ignoreNotFound: true });
     } catch (err) {
       this.logger.warn(`deleteObject(${key}) failed (swallowed): ${(err as Error).message}`);
     }

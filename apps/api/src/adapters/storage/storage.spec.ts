@@ -168,3 +168,43 @@ describe("GcsStorage.stat / readHead / listObjects (E8 / E2)", () => {
     expect(calls.map((c) => [c.prefix, c.pageToken])).toEqual([["dish/", undefined], ["dish/", "p2"]]);
   });
 });
+
+describe("GcsStorage refuses unsafe keys, and caps readObject (D7 review)", () => {
+  const TRAVERSAL = "dish/me/../../kyc/victim/selfie.jpg";
+  const tracked = () => {
+    const touched: string[] = [];
+    const gcs = testGcs();
+    (gcs as unknown as { storage: unknown }).storage = {
+      bucket: () => ({
+        file: (key: string) => {
+          touched.push(key);
+          return {
+            getMetadata: async () => [{ size: "5000000", contentType: "image/jpeg", etag: "e" }],
+            download: async () => [Buffer.alloc(10)],
+            save: async () => undefined,
+            delete: async () => undefined,
+            getSignedUrl: async () => ["https://signed"],
+          };
+        },
+      }),
+    };
+    return { gcs, touched };
+  };
+
+  it("never hands a traversal key to the GCS client, on any call", async () => {
+    const { gcs, touched } = tracked();
+    await expect(gcs.createReadUrl(TRAVERSAL)).rejects.toThrow(/unsafe storage key/);
+    await expect(gcs.createUploadUrl(TRAVERSAL, "image/jpeg")).rejects.toThrow(/unsafe storage key/);
+    await expect(gcs.stat(TRAVERSAL)).rejects.toThrow(/unsafe storage key/);
+    await expect(gcs.readHead(TRAVERSAL, 12)).rejects.toThrow(/unsafe storage key/);
+    await expect(gcs.readObject(TRAVERSAL, 1000)).rejects.toThrow(/unsafe storage key/);
+    await expect(gcs.writeObject(TRAVERSAL, Buffer.alloc(1), "image/jpeg")).rejects.toThrow(/unsafe storage key/);
+    await expect(gcs.deleteObject(TRAVERSAL)).resolves.toBeUndefined(); // best-effort: refused, logged, not deleted
+    expect(touched).toEqual([]);
+  });
+
+  it("readObject refuses an object over the cap without downloading it", async () => {
+    const { gcs } = tracked();
+    await expect(gcs.readObject("dish/p1/a.jpg", 2 * 1024 * 1024)).rejects.toThrow(/over the .* read cap/);
+  });
+});

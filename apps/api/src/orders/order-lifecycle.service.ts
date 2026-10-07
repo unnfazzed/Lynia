@@ -44,7 +44,7 @@ import { pickupPoint } from "./waypoints";
 import { PrismaService } from "../prisma/prisma.service";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { UploadVerifier } from "../adapters/storage/upload-verifier";
-import type { UploadKind } from "../adapters/storage/upload-kinds";
+import { isOwnedUploadKey, type UploadKind } from "../adapters/storage/upload-kinds";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import type { FreeJobsMilestone } from "../wallet/free-jobs-reminder";
 import { WalletService } from "../wallet/wallet.service";
@@ -315,7 +315,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       // The key must live under this caller's own pickup namespace — POST /uploads/pickup-photo mints
       // keys as `pickup/<callerId>/<uuid>` — so a rider can't persist a key that points at another
       // user's object (mirrors the becomeRider KYC-key guard in rider.service.ts).
-      if (!key.startsWith(`pickup/${riderId}/`)) {
+      if (!isOwnedUploadKey("pickup", riderId, key)) {
         throw new BadRequestException("Invalid photo key");
       }
       await tx.order.update({ where: { id: orderId }, data: { pickupPhotoKey: key } });
@@ -365,7 +365,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       if (!DELIVERY_PROOF_STATUSES.includes(o.status as OrderStatus)) {
         throw new ConflictException("Proof of drop-off can only be added at the door or right after marking it undelivered");
       }
-      if (!key.startsWith(`delivery-proof/${riderId}/`)) {
+      if (!isOwnedUploadKey("delivery-proof", riderId, key)) {
         throw new BadRequestException("Invalid photo key");
       }
       await tx.order.update({

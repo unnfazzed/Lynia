@@ -95,31 +95,69 @@ export function outputDimensions(cropWidth: number, cropHeight: number, maxDimen
 
 const MAX_QUALITY_PASSES = 8;
 
+/**
+ * P04 (D7, 2026-10-07): the long-edge cap per photo kind, sized to the largest place each is drawn. A dish
+ * fills the customer's item sheet (about 360 dp wide, 3x density); the 3:1 cover spans the storefront; the
+ * logo is a ~64 dp disc. Everything smaller (rows, tiles, the 40 px swap thumbnails) draws the server's
+ * thumbnail instead.
+ */
+export const MAX_DIMENSION_BY_KIND = { dish: 1200, banner: 1600, logo: 512 } as const;
+
+/** MJ-RL11: the output long edges tried in turn, from `maxDimension` down, when a photo still won't fit
+ *  its budget at the quality floor. 400 px at 0.35 is a few tens of KB, so the last rung always fits. */
+export function dimensionLadder(maxDimension: number): number[] {
+  return [maxDimension, ...[1200, 800, 600, 400].filter((d) => d < maxDimension)];
+}
+
+/**
+ * Pure core of {@link compressImage}: `encode(maxDimension, quality)` makes one JPEG. Steps the quality
+ * down ({@link nextQuality}) at each size and, when even the quality floor is over `maxBytes`, steps the
+ * size down ({@link dimensionLadder}) — so a busy, detailed photo is uploaded smaller rather than never
+ * (MJ-RL11: Retry used to repeat the same over-budget encode forever).
+ */
+export async function encodeUnderBudget(
+  encode: (maxDimension: number, quality: number) => Promise<Blob>,
+  maxBytes: number,
+  maxDimension: number,
+): Promise<Blob> {
+  let blob: Blob | null = null;
+  for (const dimension of dimensionLadder(maxDimension)) {
+    let quality = 0.9;
+    blob = await encode(dimension, quality);
+    for (let pass = 0; blob.size > maxBytes && pass < MAX_QUALITY_PASSES; pass += 1) {
+      const next = nextQuality(quality);
+      if (next === quality) break; // at the floor: a smaller size is the only way down
+      quality = next;
+      blob = await encode(dimension, quality);
+    }
+    if (blob.size <= maxBytes) return blob;
+  }
+  return blob!;
+}
+
 /** Side-effecting (Canvas/Image are browser-only, so this never runs under the app's node-environment
  *  vitest config — apps/merchant/vitest.config.ts, matching how apps/mobile's uploadImage is likewise
  *  untested at the DOM/network boundary). Draws the center-cropped source into a canvas sized by
- *  {@link outputDimensions}, then re-encodes at decreasing JPEG quality (via {@link nextQuality}) until
- *  the blob is under `maxBytes` or the pass budget runs out — whichever first. */
+ *  {@link outputDimensions}, then lets {@link encodeUnderBudget} pick the quality and size. */
 export async function compressImage(file: File, opts: CompressOptions): Promise<Blob> {
   const bitmap = await createImageBitmap(file);
   try {
     const crop = opts.crop ?? centerCropRect(bitmap.width, bitmap.height, opts.aspect);
-    const { width, height } = outputDimensions(crop.width, crop.height, opts.maxDimension);
-
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Couldn't prepare the photo for upload — try a different browser.");
-    ctx.drawImage(bitmap, crop.x, crop.y, crop.width, crop.height, 0, 0, width, height);
-
-    let quality = 0.9;
-    let blob = await canvasToBlob(canvas, quality);
-    for (let pass = 0; blob.size > opts.maxBytes && pass < MAX_QUALITY_PASSES; pass += 1) {
-      quality = nextQuality(quality);
-      blob = await canvasToBlob(canvas, quality);
-    }
-    return blob;
+    const canvases = new Map<number, HTMLCanvasElement>();
+    const canvasAt = (maxDimension: number): HTMLCanvasElement => {
+      const cached = canvases.get(maxDimension);
+      if (cached) return cached;
+      const { width, height } = outputDimensions(crop.width, crop.height, maxDimension);
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Couldn't prepare the photo for upload — try a different browser.");
+      ctx.drawImage(bitmap, crop.x, crop.y, crop.width, crop.height, 0, 0, width, height);
+      canvases.set(maxDimension, canvas);
+      return canvas;
+    };
+    return await encodeUnderBudget((dimension, quality) => canvasToBlob(canvasAt(dimension), quality), opts.maxBytes, opts.maxDimension);
   } finally {
     bitmap.close();
   }

@@ -319,7 +319,7 @@ describe("MerchantService attach-time photo verification (C1 / E8)", () => {
     name: "Shop",
     ownerProfile: { phone: null },
     description: null,
-    coverPhotoUrl: "banner/p1/old-cover.jpg",
+    coverPhotoUrl: "banner/p1/aaaaaaaa-0000-4000-8000-000000000003.jpg",
     logoUrl: null,
     cuisineTags: [],
     priceLevel: null,
@@ -341,8 +341,8 @@ describe("MerchantService attach-time photo verification (C1 / E8)", () => {
   it("updateProfile verifies a NEW cover + logo as kind `banner`, and skips the unchanged one", async () => {
     const update = vi.fn(async () => profileRow);
     const { s, verify } = withVerifier({ merchant: { findUnique: async () => profileRow, update } });
-    await s.updateProfile("p1", { coverPhotoUrl: "banner/p1/old-cover.jpg", logoUrl: "banner/p1/logo.jpg" });
-    expect(verify.mock.calls).toEqual([["banner/p1/logo.jpg", "banner"]]);
+    await s.updateProfile("p1", { coverPhotoUrl: "banner/p1/aaaaaaaa-0000-4000-8000-000000000003.jpg", logoUrl: "banner/p1/aaaaaaaa-0000-4000-8000-000000000001.jpg" });
+    expect(verify.mock.calls).toEqual([["banner/p1/aaaaaaaa-0000-4000-8000-000000000001.jpg", "banner"]]);
     expect(update).toHaveBeenCalledOnce();
   });
 
@@ -371,10 +371,10 @@ describe("MerchantService attach-time photo verification (C1 / E8)", () => {
       },
       reject,
     );
-    await expect(s.updateProfile("p1", { coverPhotoUrl: "banner/p1/new.jpg" })).rejects.toThrow(UnprocessableEntityException);
-    await expect(s.createDish("p1", { categoryId: "c1", name: "Sadza", priceUsd: 5, photoUrl: "dish/p1/x.jpg" })).rejects.toThrow(UnprocessableEntityException);
-    await expect(s.updateDish("p1", "d1", { photoUrl: "dish/p1/y.jpg" })).rejects.toThrow(UnprocessableEntityException);
-    expect(reject.mock.calls).toEqual([["banner/p1/new.jpg", "banner"], ["dish/p1/x.jpg", "dish"], ["dish/p1/y.jpg", "dish"]]);
+    await expect(s.updateProfile("p1", { coverPhotoUrl: "banner/p1/aaaaaaaa-0000-4000-8000-000000000002.jpg" })).rejects.toThrow(UnprocessableEntityException);
+    await expect(s.createDish("p1", { categoryId: "c1", name: "Sadza", priceUsd: 5, photoUrl: "dish/p1/aaaaaaaa-0000-4000-8000-000000000004.jpg" })).rejects.toThrow(UnprocessableEntityException);
+    await expect(s.updateDish("p1", "d1", { photoUrl: "dish/p1/aaaaaaaa-0000-4000-8000-000000000005.jpg" })).rejects.toThrow(UnprocessableEntityException);
+    expect(reject.mock.calls).toEqual([["banner/p1/aaaaaaaa-0000-4000-8000-000000000002.jpg", "banner"], ["dish/p1/aaaaaaaa-0000-4000-8000-000000000004.jpg", "dish"], ["dish/p1/aaaaaaaa-0000-4000-8000-000000000005.jpg", "dish"]]);
     expect(profileUpdate).not.toHaveBeenCalled();
     expect(dishCreate).not.toHaveBeenCalled();
     expect(dishUpdate).not.toHaveBeenCalled();
@@ -384,11 +384,32 @@ describe("MerchantService attach-time photo verification (C1 / E8)", () => {
     const { s, verify } = withVerifier({
       merchant: { findUnique: async () => ({ id: "m1" }) },
       merchantCategory: { findFirst: async () => ({ id: "c1", merchantId: "m1" }) },
-      merchantDish: { findFirst: async () => dishRow("dish/p1/current.jpg") },
+      merchantDish: { findFirst: async () => dishRow("dish/p1/aaaaaaaa-0000-4000-8000-000000000006.jpg") },
     });
-    await expect(s.createDish("p1", { categoryId: "c1", name: "Sadza", priceUsd: 5, photoUrl: "banner/p1/x.jpg" })).rejects.toThrow(/invalid photo key/i);
-    await expect(s.updateDish("p1", "d1", { photoUrl: "dish/p2/x.jpg" })).rejects.toThrow(/invalid photo key/i);
+    await expect(s.createDish("p1", { categoryId: "c1", name: "Sadza", priceUsd: 5, photoUrl: "banner/p1/aaaaaaaa-0000-4000-8000-000000000004.jpg" })).rejects.toThrow(/invalid photo key/i);
+    await expect(s.updateDish("p1", "d1", { photoUrl: "dish/p2/aaaaaaaa-0000-4000-8000-000000000004.jpg" })).rejects.toThrow(/invalid photo key/i);
     expect(verify).not.toHaveBeenCalled();
+  });
+
+  it("D7 review: a key that only STARTS with my namespace (`dish/<me>/../../kyc/<victim>/…`) is refused before the verifier (which deletes) or the thumbnailer (which reads) ever sees it", async () => {
+    const readObject = vi.fn();
+    const verify = vi.fn(async () => ({}));
+    const p = withMembershipShim({
+      merchant: { findUnique: async () => profileRow, update: vi.fn() },
+      merchantCategory: { findFirst: async () => ({ id: "c1", merchantId: "m1" }) },
+      merchantDish: { findFirst: async () => dishRow(null), create: vi.fn(), update: vi.fn() },
+    });
+    const s = new MerchantService(p as unknown as PrismaService, { ...defaultStorageStub, readObject } as never, undefined, undefined, undefined, {
+      verify,
+    } as unknown as UploadVerifier);
+    const victim = "kyc/victim/aaaaaaaa-0000-4000-8000-000000000009.jpg";
+    for (const key of [`dish/p1/../../${victim}`, `dish/p1/..%2f..%2f${victim}`, "dish/p1/selfie.jpg", "dish/p1/aaaaaaaa-0000-4000-8000-000000000009.jpg.thumb.jpg"]) {
+      await expect(s.createDish("p1", { categoryId: "c1", name: "Sadza", priceUsd: 5, photoUrl: key })).rejects.toThrow(/invalid photo key/i);
+      await expect(s.updateDish("p1", "d1", { photoUrl: key })).rejects.toThrow(/invalid photo key/i);
+    }
+    await expect(s.updateProfile("p1", { logoUrl: `banner/p1/../../${victim}` })).rejects.toThrow(/invalid photo key/i);
+    expect(verify).not.toHaveBeenCalled();
+    expect(readObject).not.toHaveBeenCalled();
   });
 });
 
@@ -506,7 +527,7 @@ describe("MerchantService dishes (D-31 draft state, N-14 OOS)", () => {
         }),
       },
     });
-    const res = await s.createDish("p1", { categoryId: "c1", name: "Sadza", priceUsd: 5, photoUrl: "dish/p1/x.jpg" });
+    const res = await s.createDish("p1", { categoryId: "c1", name: "Sadza", priceUsd: 5, photoUrl: "dish/p1/aaaaaaaa-0000-4000-8000-000000000004.jpg" });
     expect(res.isDraft).toBe(false);
   });
 
@@ -542,7 +563,7 @@ describe("MerchantService dishes (D-31 draft state, N-14 OOS)", () => {
         },
       },
     });
-    const res = await s.updateDish("p1", "d1", { photoUrl: "dish/p1/y.jpg" });
+    const res = await s.updateDish("p1", "d1", { photoUrl: "dish/p1/aaaaaaaa-0000-4000-8000-000000000005.jpg" });
     expect(receivedData.isDraft).toBe(false);
     expect(res.isDraft).toBe(false);
   });
@@ -552,7 +573,7 @@ describe("MerchantService dishes (D-31 draft state, N-14 OOS)", () => {
     const s = svc({
       merchant: { findUnique: async () => ({ id: "m1" }) },
       merchantDish: {
-        findFirst: async () => ({ id: "d1", merchantId: "m1", isDraft: false, photoUrl: "dish/p1/y.jpg" }),
+        findFirst: async () => ({ id: "d1", merchantId: "m1", isDraft: false, photoUrl: "dish/p1/aaaaaaaa-0000-4000-8000-000000000005.jpg" }),
         update: async ({ data }: { data: Record<string, unknown> }) => {
           receivedData = data;
           return {
@@ -561,7 +582,7 @@ describe("MerchantService dishes (D-31 draft state, N-14 OOS)", () => {
             name: "New name",
             description: null,
             priceUsd: 5,
-            photoUrl: "dish/p1/y.jpg",
+            photoUrl: "dish/p1/aaaaaaaa-0000-4000-8000-000000000005.jpg",
             isDraft: false,
             outOfStockUntil: null,
             sortOrder: 0,

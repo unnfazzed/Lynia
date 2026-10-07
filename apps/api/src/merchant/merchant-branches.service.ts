@@ -101,6 +101,8 @@ export class MerchantBranchesService {
           description: true,
           coverPhotoUrl: true,
           logoUrl: true,
+          coverThumbKey: true,
+          logoThumbKey: true,
           cuisineTags: true,
           priceLevel: true,
           hours: true,
@@ -118,6 +120,9 @@ export class MerchantBranchesService {
           description: source.description,
           coverPhotoUrl: source.coverPhotoUrl,
           logoUrl: source.logoUrl,
+          // D7: the branch shares the same photo objects, so their thumbs too.
+          coverThumbKey: source.coverThumbKey,
+          logoThumbKey: source.logoThumbKey,
           cuisineTags: source.cuisineTags,
           priceLevel: source.priceLevel,
           hours: source.hours ?? Prisma.DbNull,
@@ -172,7 +177,7 @@ async function copyMenuTx(tx: Prisma.TransactionClient, fromId: string, toId: st
       availableFrom: true,
       availableTo: true,
       hidden: true,
-      dishes: { select: { name: true, description: true, priceUsd: true, photoUrl: true, isDraft: true, sortOrder: true } },
+      dishes: { select: { name: true, description: true, priceUsd: true, photoUrl: true, photoThumbKey: true, isDraft: true, sortOrder: true } },
     },
   });
   if (categories.length === 0) return;

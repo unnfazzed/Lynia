@@ -1,4 +1,5 @@
 import { Body, Controller, Patch, Post, UseGuards } from "@nestjs/common";
+import { UploadObjectKey } from "@lynia/shared";
 import { z } from "zod";
 import { CurrentUser } from "../common/current-user.decorator";
 import { Throttle } from "../common/throttle.guard";
@@ -24,7 +25,7 @@ const BecomeRider = z.object({
   // The storage key returned by POST /uploads/kyc-photo (not a URL anymore — read URLs are minted on
   // demand). Kept the column/field name `photoUrl`; the value it carries is now the object key.
   // OPTIONAL since 2026-10-02 (owner): the rider photo is no longer a sign-up step — it can be added later.
-  photoUrl: z.string().min(1).max(256).optional(),
+  photoUrl: UploadObjectKey.optional(),
 });
 // lat/lng are optional — when the going-online request carries the rider's position we corridor-check it
 // (Q1 out-of-area gate); an older client that omits them just skips the check.

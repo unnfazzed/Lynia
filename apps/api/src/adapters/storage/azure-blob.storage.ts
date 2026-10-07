@@ -7,8 +7,8 @@ import {
   type UserDelegationKey,
 } from "@azure/storage-blob";
 import { Logger } from "@nestjs/common";
-import { UPLOAD_KINDS } from "./upload-kinds";
-import type { CloudProvider, ObjectStat, StorageAdapter, StoredObject, UploadTarget } from "./storage.interface";
+import { assertSafeObjectKey, UPLOAD_KINDS } from "./upload-kinds";
+import { ObjectTooLargeError, type CloudProvider, type ObjectStat, type StorageAdapter, type StoredObject, type UploadTarget } from "./storage.interface";
 
 /** Clock-skew allowance on every SAS and on the delegation key (C1): a phone or edge node running a
  *  few minutes fast would otherwise see a "not yet valid" 403. */
@@ -118,6 +118,23 @@ export class AzureBlobStorage implements StorageAdapter {
     }
   }
 
+  async readObject(key: string, maxBytes: number, signal?: AbortSignal): Promise<Buffer | null> {
+    try {
+      const props = await this.blob(key).getProperties({ abortSignal: signal });
+      const size = props.contentLength ?? 0;
+      if (size > maxBytes) throw new ObjectTooLargeError(key, size, maxBytes);
+      if (size === 0) return Buffer.alloc(0);
+      return await this.blob(key).downloadToBuffer(0, size, { abortSignal: signal });
+    } catch (err) {
+      if (isNotFound(err)) return null;
+      throw err;
+    }
+  }
+
+  async writeObject(key: string, body: Buffer, contentType: string, signal?: AbortSignal): Promise<void> {
+    await this.blob(key).uploadData(body, { blobHTTPHeaders: { blobContentType: contentType }, abortSignal: signal });
+  }
+
   async *listObjects(prefix: string): AsyncIterable<StoredObject> {
     for await (const item of this.service.getContainerClient(this.opts.container).listBlobsFlat({ prefix })) {
       yield { key: item.name, createdAt: item.properties.createdOn ?? item.properties.lastModified };
@@ -133,12 +150,16 @@ export class AzureBlobStorage implements StorageAdapter {
     }
   }
 
+  /** Every blob call goes through here. The SDK normalises `dish/me/../../kyc/x.jpg` to `kyc/x.jpg`, so an
+   *  unsafe key is refused before it can address another user's blob (D7 review). */
   private blob(key: string) {
+    assertSafeObjectKey(key);
     return this.service.getContainerClient(this.opts.container).getBlockBlobClient(key);
   }
 
   /** One blob, one permission set, https only (S4). The SAS never outlives the key that signs it. */
   private async sasUrl(key: string, permissions: "cw" | "r", ttlSeconds: number): Promise<string> {
+    assertSafeObjectKey(key);
     const now = this.now();
     const wantExpiry = now + ttlSeconds * 1000;
     const delegation = await this.userDelegationKey(wantExpiry);
