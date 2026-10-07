@@ -72,6 +72,35 @@ describe("OrdersService.create", () => {
     expect(created!.suggestedFare).not.toBe(created!.proposedFare);
   });
 
+  it("refuses the reserved cash-on-delivery line from a customer — only a shop booking account may send it", async () => {
+    // A customer typing the booking's cash line on a plain parcel would have the rider app tell the rider
+    // to collect cash from the recipient that nobody asks back for.
+    let created = false;
+    const mk = (phone: string) =>
+      new OrdersService(
+        {
+          profile: { findUnique: async () => ({ onHold: false, phone }) },
+          order: {
+            create: async () => {
+              created = true;
+              return { id: "ord-1", status: "open_for_offers", itemDesc: "x", proposedFare: { toString: () => "2.50" }, suggestedFare: { toString: () => "2.40" }, distanceKm: 1.5, createdAt: new Date() };
+            },
+          },
+        } as unknown as PrismaService,
+        { schedule: async () => {} } as unknown as OfferExpiryService,
+        noTracking,
+        noNotifications,
+        noGateway,
+      );
+    const cod = { ...orderInput, itemDescription: undefined, items: [{ description: "Cash on delivery: collect $50.00 from the buyer, bring it back to Nowhere", quantity: 1 }] };
+    await expect(mk("+263771111111").create(cod, "cust-1")).rejects.toMatchObject({ status: 400 });
+    await expect(mk("+263771111111").create({ ...orderInput, itemDescription: cod.items[0]!.description }, "cust-1")).rejects.toMatchObject({ status: 400 });
+    expect(created).toBe(false);
+    // A real booking (the business's booking account) still sends it.
+    await expect(mk("business:7c1d6a2e-0000-4000-8000-000000000001").create(cod, "acct-1")).resolves.toMatchObject({ id: "ord-1" });
+    expect(created).toBe(true);
+  });
+
   it("legacy itemDescription-only create: itemDesc stays the raw string, items normalizes to one qty-1 row", async () => {
     let created: Record<string, unknown> | undefined;
     const prisma = {
@@ -1201,6 +1230,15 @@ describe("OrdersService.historyForUser", () => {
     rider: { profile: { firstName: "Rugare", lastName: "C" } },
     merchant: null,
     ...over,
+  });
+
+  it("LC-B-SIB-4: carries a merchant order's deliveryFee (what its rider keeps) beside agreedFare", async () => {
+    const out = await svc([
+      row({ orderType: "merchant", agreedFare: { toString: () => "20.00" }, deliveryFee: { toString: () => "2.50" } }),
+      row({ id: "o2" }),
+    ]).historyForUser("rider-1");
+    expect(out[0]).toMatchObject({ agreedFare: "20.00", deliveryFee: "2.50" });
+    expect(out[1]).toMatchObject({ deliveryFee: null });
   });
 
   it("queries both roles (OR customer/rider), newest first, capped at 50 (UX-2026-07-15, was 100)", async () => {

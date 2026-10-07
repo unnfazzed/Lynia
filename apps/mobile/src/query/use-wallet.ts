@@ -44,6 +44,8 @@ export function useWalletLedger(): {
   entries: WalletEntry[];
   isLoading: boolean;
   isError: boolean;
+  /** The first read is waiting on the network (offline), so there is no data and no error yet either. */
+  isPaused: boolean;
   refetch: () => void;
   hasMore: boolean;
   isLoadingMore: boolean;
@@ -59,6 +61,7 @@ export function useWalletLedger(): {
     entries: q.data?.pages.flatMap((p) => p.entries) ?? [],
     isLoading: q.isLoading,
     isError: q.isError,
+    isPaused: q.isPaused,
     refetch: () => void q.refetch(),
     hasMore: q.hasNextPage,
     isLoadingMore: q.isFetchingNextPage,

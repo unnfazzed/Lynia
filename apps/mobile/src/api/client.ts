@@ -36,6 +36,8 @@ export class ApiError extends Error {
     /** Seconds until a rate limit lets the caller try again (the API's `retryAfter` on a 429), when it
      *  says — null otherwise. */
     public readonly retryAfter: number | null = null,
+    /** The parsed error body, for the rare screen that needs a field beyond `code` (null if not JSON). */
+    public readonly body: unknown = null,
   ) {
     super(message);
     this.name = "ApiError";
@@ -50,6 +52,15 @@ export class ApiError extends Error {
    */
   get retryable(): boolean {
     return this.status === 0 || this.status >= 500;
+  }
+}
+
+/** The error body as JSON, or null. */
+function errorBody(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
   }
 }
 
@@ -233,7 +244,7 @@ async function apiFetchInner<T>(path: string, opts: RequestOpts = {}): Promise<T
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new ApiError(res.status, friendlyMessage(res.status, text), errorCode(text), errorRetryAfter(text));
+    throw new ApiError(res.status, friendlyMessage(res.status, text), errorCode(text), errorRetryAfter(text), errorBody(text));
   }
   // Parse via text so an empty body (e.g. /orders/mine/active with no job) doesn't throw — it
   // yields undefined, and a literal "null" parses to null, both of which callers treat as "none".

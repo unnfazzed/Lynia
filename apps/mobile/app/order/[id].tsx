@@ -17,7 +17,7 @@ import { goHomeClearingStack } from "../../src/logic/nav";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { orderOffers } from "../../src/logic/order-offers";
 import { isLiveStage, minutesSince, type OrderStage, phoneMasked, resolveStage, showsHelp, stageMapShare, stagePeekFloor, stageTitleKey, stepIndex, suggestedRetryPrice } from "../../src/logic/order-stage";
-import { orderLoadErrorKind, reconcileDeliveryCode, reconcilePendingRating, selectOfferReconciled, selectOrderShell, selectRiderTelemetry } from "../../src/logic/order-tracking";
+import { liveOrderFromResendError, orderLoadErrorKind, reconcileDeliveryCode, reconcilePendingRating, selectOfferReconciled, selectOrderShell, selectRiderTelemetry } from "../../src/logic/order-tracking";
 import { loadRiderIdentity, type RiderIdentity, saveRiderIdentity } from "../../src/logic/rider-identity";
 import { clearLastActiveOrder, saveLastActiveOrder } from "../../src/net/last-active-store";
 import { useClaimOfflineBanner } from "../../src/net/offline-banner-owner";
@@ -523,7 +523,17 @@ function ParcelOrderScreen(): React.ReactElement {
       void qc.invalidateQueries({ queryKey: ["history"] });
       router.replace(`/order/${res.id}`);
     },
-    onError: (_e, price) => showToast({ text: A.sendFail, action: A.tryAgain, actionIcon: "refresh-cw", onAction: () => resendM.mutate(price), ttl: 0 }),
+    onError: (e, price) => {
+      // The trip this order belongs to already has a rider (an earlier re-send was picked up): retrying can
+      // never succeed, so open that live order instead of a "Try again" toast.
+      const live = liveOrderFromResendError(e);
+      if (live) {
+        void qc.invalidateQueries({ queryKey: ["history"] });
+        router.replace(`/order/${live}`);
+        return;
+      }
+      showToast({ text: A.sendFail, action: A.tryAgain, actionIcon: "refresh-cw", onAction: () => resendM.mutate(price), ttl: 0 });
+    },
   });
 
   const selectRace = selectM.error instanceof ApiError && selectM.error.status === 409;

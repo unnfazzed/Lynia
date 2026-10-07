@@ -7,11 +7,13 @@ const RETRY_EVERY_S = 10;
  * Calls `onRetry` every 10 s while mounted and returns the seconds left to the next try, for the
  * "Trying again in {s} s" line. Rider screens retry by themselves rather than offer a button.
  */
-export function useAutoRetry(onRetry: () => void, everyS = RETRY_EVERY_S): number {
+export function useAutoRetry(onRetry: () => void, everyS = RETRY_EVERY_S, enabled = true): number {
   const [left, setLeft] = React.useState(everyS);
   const retryRef = React.useRef(onRetry);
   retryRef.current = onRetry;
   React.useEffect(() => {
+    // A screen kept mounted out of view (a tab) passes enabled=false so it never re-reads in the background.
+    if (!enabled) return;
     const iv = setInterval(() => {
       setLeft((s) => {
         if (s > 1) return s - 1;
@@ -20,7 +22,7 @@ export function useAutoRetry(onRetry: () => void, everyS = RETRY_EVERY_S): numbe
       });
     }, 1000);
     return () => clearInterval(iv);
-  }, [everyS]);
+  }, [everyS, enabled]);
   return left;
 }
 

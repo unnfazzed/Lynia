@@ -205,6 +205,8 @@ export interface OrderHistoryRow {
   note: string | null;
   proposedFare: string;
   agreedFare: string | null;
+  /** A merchant order's delivery fee — what its rider keeps (LC-B-SIB-4). Absent from older API builds. */
+  deliveryFee?: string | null;
   status: OrderStatus;
   createdAt: string;
   rating: { score: number; comment: string | null } | null;

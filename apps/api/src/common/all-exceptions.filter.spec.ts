@@ -115,6 +115,13 @@ describe("AllExceptionsFilter", () => {
       ["P2024 engine pool timeout", known("P2024")],
       ["P2037 too many connections", known("P2037")],
       ["init error P1001", new Prisma.PrismaClientInitializationError("cannot reach", "7.10.0", "P1001")],
+      [
+        "P2028 interactive $transaction maxWait (pool exhaustion on a write)",
+        new Prisma.PrismaClientKnownRequestError("Transaction API error: Unable to start a transaction in the given time.", {
+          code: "P2028",
+          clientVersion: "7.10.0",
+        }),
+      ],
     ])("%s → 503", (_label, err) => {
       const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
       const { host, captured } = makeHost();
@@ -125,6 +132,19 @@ describe("AllExceptionsFilter", () => {
       expect(body.statusCode).toBe(503);
       expect(body.correlationId).toMatch(/^[0-9a-f-]{36}$/);
       expect(JSON.stringify(body)).not.toContain("db down");
+      errSpy.mockRestore();
+    });
+
+    it("P2028 for an expired / closed transaction (an app bug, not exhaustion) stays a 500", () => {
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const { host, captured } = makeHost();
+      const expired = new Prisma.PrismaClientKnownRequestError(
+        "Transaction API error: Transaction already closed: A query cannot be executed on an expired transaction.",
+        { code: "P2028", clientVersion: "7.10.0" },
+      );
+      new AllExceptionsFilter().catch(expired, host);
+      expect(captured.status).toBe(500);
+      expect(captured.headers["Retry-After"]).toBeUndefined();
       errSpy.mockRestore();
     });
 

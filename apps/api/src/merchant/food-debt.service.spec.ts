@@ -457,7 +457,7 @@ describe("FoodDebtService — merchant debt settlement (R-06/R-07/N-20/N-21, D-0
     expect(riderUpdateCalled).toBe(false);
   });
 
-  it("LC-D-SIB-2: an already-suspended rider is a no-op — the debt still writes off, but no re-suspend, re-revoke, audit row or push", async () => {
+  it("an already-suspended rider's separate non-return is still recorded — the debt writes off AND gets its own audit row and food-debt reason", async () => {
     const riderUpdateMany = vi.fn(async () => ({ count: 1 }));
     const sessionUpdateMany = vi.fn(async () => ({ count: 1 }));
     const auditCreate = vi.fn(async () => ({}));
@@ -473,10 +473,12 @@ describe("FoodDebtService — merchant debt settlement (R-06/R-07/N-20/N-21, D-0
     const res = await svc.reportNonReturn("p1", orderId, "second order");
     expect(res.debtStatus).toBe("written_off");
     expect(ledgerCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ type: "written_off", amount: -13 }) });
-    expect(riderUpdateMany).not.toHaveBeenCalled();
-    expect(sessionUpdateMany).not.toHaveBeenCalled();
-    expect(auditCreate).not.toHaveBeenCalled();
-    expect(notified).toEqual([]);
+    // A different order's unreturned cash is a new event, not a retry (the same order's retry 409s on the
+    // debt CAS): it must not vanish behind an earlier, unrelated admin suspension.
+    expect(riderUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ suspendReason: "food_debt_non_return" }) }),
+    );
+    expect(auditCreate).toHaveBeenCalledTimes(1);
   });
 
   it("no path strands the debt — every settling event's ledger amount is the negative of the opened amount", async () => {

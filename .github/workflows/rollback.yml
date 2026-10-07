@@ -5,8 +5,11 @@ name: Rollback (Cloud Run)
 # Run with no input to LIST recent revisions (find the last-good name), then re-run with the
 # revision name to route 100% of traffic to it.
 #
-# Schema note: migrations are expand-only/online-safe (CI-enforced), so an older revision keeps
-# working against the current schema. Rolling back traffic never rolls back the database.
+# Schema note: rolling back traffic never rolls back the database, so an older revision runs against the
+# CURRENT schema. CI (src/prisma/migration-safety.spec.ts) only blocks locking hazards; backward
+# compatibility — no drop/rename/tightening of a column an older revision still reads — is the
+# expand → migrate code → contract rule in docs/LAUNCH-DEPLOYMENT-STRATEGY.md §2c, enforced in review.
+# Check the migrations shipped since the target revision before routing traffic back to it.
 
 on:
   workflow_dispatch:

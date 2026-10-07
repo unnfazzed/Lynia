@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { ConflictException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import { TokenService } from "../auth/token.service";
 import type { Env } from "../config/env";
@@ -2102,7 +2103,11 @@ describe("OrderLifecycleService.resend (one-tap resend at a new fare)", () => {
       rootId: "order-a",
       lineage: [{ id: "order-d", status: "en_route_pickup", created_at: new Date("2026-10-01T09:59:40Z") }],
     });
-    await expect(h.svc.resend("order-c", "c1", 7)).rejects.toThrow(/already on its way/i);
+    const err = await h.svc.resend("order-c", "c1", 7).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ConflictException);
+    expect((err as Error).message).toMatch(/already on its way/i);
+    // The app opens the live order from this id rather than offering a "Try again" that can't succeed.
+    expect((err as ConflictException).getResponse()).toMatchObject({ reason: "trip_in_progress", orderId: "order-d" });
     expect(h.created).toHaveLength(0);
     expect(h.updates).toHaveLength(0);
   });

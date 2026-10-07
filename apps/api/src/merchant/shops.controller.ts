@@ -26,7 +26,8 @@ export class ShopsController {
   ) {}
 
   @Get()
-  list(@Query("service") service?: string, @Query("cursor") cursor?: string) {
+  // The cursor is a merchant @db.Uuid id: a malformed one is a clean 400, not a Prisma uuid-cast 500 (DRS-03).
+  list(@Query("service") service?: string, @Query("cursor", new ParseUUIDPipe({ optional: true })) cursor?: string) {
     return this.merchant.listShops(this.visible(service), cursor);
   }
 

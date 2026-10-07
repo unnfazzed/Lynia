@@ -37,11 +37,20 @@ const TRANSIENT_DB_CODES = new Set(["P1001", "P1002", "P1008", "P1017", "P2024",
  */
 const POOL_TIMEOUT_MESSAGES = ["timeout exceeded when trying to connect", "Connection terminated due to connection timeout"];
 
+/**
+ * An interactive `$transaction` that can't get a connection within `maxWait` fails as P2028 "Unable to
+ * start a transaction in the given time." — the form pool exhaustion takes on every transactional write.
+ * Only that message counts: P2028 also covers an expired / already-closed transaction, which is an app bug
+ * and stays a 500.
+ */
+const TX_START_TIMEOUT = "Unable to start a transaction in the given time";
+
 /** True for the transient DB-unavailable class (LC-D22); walks `cause` so a wrapped pool error counts. */
 export function isTransientDbError(exception: unknown): boolean {
   let e: unknown = exception;
   for (let depth = 0; e instanceof Error && depth < 5; depth++) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && TRANSIENT_DB_CODES.has(e.code)) return true;
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2028" && e.message.includes(TX_START_TIMEOUT)) return true;
     if (e instanceof Prisma.PrismaClientInitializationError && e.errorCode && TRANSIENT_DB_CODES.has(e.errorCode)) {
       return true;
     }

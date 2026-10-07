@@ -210,3 +210,16 @@ export function selectOfferReconciled(input: {
 export function shouldCancelBeforeRebroadcast(orderStatus: string): boolean {
   return orderStatus === "open_for_offers";
 }
+
+/**
+ * A resend refused because this trip already has a rider (API 409 `trip_in_progress`, DRS-02) carries the
+ * live order's id: the screen opens it instead of offering a "Try again" that can never succeed. Null for
+ * any other failure (those keep the toast).
+ */
+export function liveOrderFromResendError(e: unknown): string | null {
+  // Read as fields (ApiError's shape) so this module stays free of the network client.
+  const err = e as { status?: unknown; code?: unknown; body?: unknown } | null;
+  if (!err || err.status !== 409 || err.code !== "trip_in_progress") return null;
+  const id = (err.body as { orderId?: unknown } | null)?.orderId;
+  return typeof id === "string" && id.length > 0 ? id : null;
+}

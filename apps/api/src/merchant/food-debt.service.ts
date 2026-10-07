@@ -351,11 +351,11 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
       await this.settleDebt(orderId, merchantId, riderId, "written_off", amount, note, tx);
       const rider = await tx.rider.findUnique({ where: { profileId: riderId }, select: { accountStatus: true } });
       // A permanent ban outranks this — never downgrade a banned rider back to suspended (mirrors
-      // admin-riders.service.ts:suspendRider's same guard). LC-D-SIB-2: an already-suspended rider is a
-      // no-op too (the liftRider/clearHold precondition shape) — a second non-return report (another
-      // order's debt) still writes its own debt off, but never re-suspends: no second audit row, no
-      // re-revoke, no repeat push.
-      if (rider && rider.accountStatus !== RiderAccountStatus.BANNED && rider.accountStatus !== RiderAccountStatus.SUSPENDED) {
+      // admin-riders.service.ts:suspendRider's same guard). An already-SUSPENDED rider is still recorded:
+      // each report is a separate order's unreturned cash (a retry of the SAME order already 409s on the
+      // debt CAS above), so it gets its own audit row and the food-debt suspend reason, rather than
+      // vanishing behind an earlier, unrelated suspension.
+      if (rider && rider.accountStatus !== RiderAccountStatus.BANNED) {
         const changed = await tx.rider.updateMany({
           where: { profileId: riderId, accountStatus: rider.accountStatus },
           data: { accountStatus: RiderAccountStatus.SUSPENDED, suspendReason: "food_debt_non_return", isOnline: false },

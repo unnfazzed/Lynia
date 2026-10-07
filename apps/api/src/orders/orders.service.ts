@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, deriveMerchantOrderTrack, isBusinessBookingAccountPhone, type LatLng, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, isInServiceArea, quoteFare, serviceTownsLabel, summarizeItems } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, deriveMerchantOrderTrack, isBusinessBookingAccountPhone, isCodItem, type LatLng, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, isInServiceArea, quoteFare, serviceTownsLabel, summarizeItems } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush, maxBroadcastRadiusM } from "../common/broadcast-policy";
 import { MicroCache } from "../common/micro-cache";
@@ -240,6 +240,18 @@ export class OrdersService {
     // The derived row is clamped to OrderItem's 140-char cap (legacy itemDescription allows 280)
     // so stored `items` JSON always round-trips through the contract; itemDesc keeps the raw string.
     const items: OrderItem[] = input.items ?? [{ description: (input.itemDescription ?? "").slice(0, 140), quantity: 1 }];
+
+    // The "Cash on delivery: collect $X…" line is how a shop BOOKING tells every rider app to collect cash
+    // (booking-cod.ts); the rider app shows it on any parcel carrying it. Only a booking account (a
+    // business's `business:<merchantId>` customer, which no sign-in produces) may send one — a customer
+    // typing it on a plain parcel would have the rider collect cash from the recipient that nobody ever
+    // asks back for. (DRS-01's debt gate already refuses to open a debt for it; this stops the line itself.)
+    if (items.some(isCodItem)) {
+      const sender = await this.prisma.profile.findUnique({ where: { id: customerId }, select: { phone: true } });
+      if (!isBusinessBookingAccountPhone(sender?.phone)) {
+        throw new BadRequestException({ reason: "reserved_item_text", message: "Describe what you're sending — that line is reserved for shop bookings." });
+      }
+    }
 
     let order;
     try {
@@ -844,6 +856,7 @@ export class OrdersService {
         note: true,
         proposedFare: true,
         agreedFare: true,
+        deliveryFee: true,
         status: true,
         createdAt: true,
         rating: { select: { score: true, comment: true, byProfileId: true } },
@@ -871,6 +884,9 @@ export class OrdersService {
         note: o.note,
         proposedFare: o.proposedFare.toString(),
         agreedFare: o.agreedFare ? o.agreedFare.toString() : null,
+        // LC-B-SIB-4: a merchant order's agreedFare is the customer's goods+delivery total; the rider keeps
+        // only this (schema D-08/D-71). The rider's Money tab / Job history credit a food job with it.
+        deliveryFee: o.deliveryFee ? o.deliveryFee.toString() : null,
         status: o.status,
         createdAt: o.createdAt.toISOString(),
         // `rating` is a to-many relation since two-way rating (migration 0015): both the customer's

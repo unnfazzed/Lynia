@@ -1039,7 +1039,7 @@ model AuditLog {
 
   @@index([createdAt])
   // PW-LC1: the notifications feed reads rows back by `target` (a profile or order id) + `action`, several
-  // times per open (migration 0076).
+  // times per open (migration 0080).
   @@index([target, action])
   @@map("audit_logs")
 }

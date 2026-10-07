@@ -1215,8 +1215,10 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         )
         SELECT o.id, o.status::text AS status, o.created_at FROM orders o JOIN down ON o.id = down.id ORDER BY o.created_at DESC`;
       // A rider already has this trip: re-sending would dispatch the same parcel twice.
-      if (lineage.some((r) => (ACTIVE_RIDE_STATUSES as string[]).includes(r.status))) {
-        throw new ConflictException("This delivery is already on its way.");
+      const inProgress = lineage.find((r) => (ACTIVE_RIDE_STATUSES as string[]).includes(r.status));
+      if (inProgress) {
+        // `orderId` lets the app open the live order instead of offering a "Try again" that can't succeed.
+        throw new ConflictException({ reason: "trip_in_progress", message: "This delivery is already on its way.", orderId: inProgress.id });
       }
       const live = lineage.find((r) => r.status === "open_for_offers");
       const existing = live ? { id: live.id, createdAt: live.created_at } : null;

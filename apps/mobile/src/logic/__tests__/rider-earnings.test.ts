@@ -37,6 +37,19 @@ describe("rider earnings", () => {
     expect(paidFare(row({ agreedFare: null }))).toBe(3);
   });
 
+  it("LC-B-SIB-4: a rider's food job earns its delivery fee, not the customer's goods+delivery total", () => {
+    const food = row({ orderType: "merchant", merchantName: "Sadza Republic", agreedFare: "20.00", deliveryFee: "2.50" });
+    expect(paidFare(food)).toBe(2.5);
+    // The EARNINGS card adds the fee, not $20 of dishes that went back to the kitchen.
+    expect(summarise([row({}), food], "today", NOW).total).toBeCloseTo(5.7);
+    // The Money feed's fare row says the same.
+    const feed = buildMoneyFeed([food], []);
+    expect(feed.find((i) => i.kind === "fare")?.amount).toBe(2.5);
+    // A customer's own food order keeps what they paid; an older API with no deliveryFee keeps the old reading.
+    expect(paidFare(row({ role: "customer", orderType: "merchant", agreedFare: "20.00", deliveryFee: "2.50" }))).toBe(20);
+    expect(paidFare(row({ orderType: "merchant", agreedFare: "20.00" }))).toBe(20);
+  });
+
   it("weeks start on Monday", () => {
     expect(startOfWeek(NOW).getDate()).toBe(28); // Mon 28 Sep
   });

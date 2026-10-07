@@ -105,9 +105,16 @@ describe("Shops & Pharmacy read API (D-58)", () => {
     });
 
     it("any signed-in customer lists Shops: live shops, every kind but pharmacy", async () => {
-      const res = await request(app.getHttpServer()).get("/shops?service=shops&cursor=c1").set("Authorization", bearer("p1", "customer"));
+      const res = await request(app.getHttpServer()).get(`/shops?service=shops&cursor=${ID}`).set("Authorization", bearer("p1", "customer"));
       expect(res.status).toBe(200);
-      expect(s.calls.at(-1)).toEqual({ fn: "list", where: { pilotEnabled: true, businessType: "shop", shopKind: { not: "pharmacy" } }, arg: "c1" });
+      expect(s.calls.at(-1)).toEqual({ fn: "list", where: { pilotEnabled: true, businessType: "shop", shopKind: { not: "pharmacy" } }, arg: ID });
+    });
+
+    it("a malformed cursor is a clean 400, never a Prisma uuid-cast 500 (DRS-03)", async () => {
+      const before = s.calls.length;
+      const res = await request(app.getHttpServer()).get("/shops?service=shops&cursor=not-a-uuid").set("Authorization", bearer("p1", "customer"));
+      expect(res.status).toBe(400);
+      expect(s.calls.length).toBe(before);
     });
 
     it("the switched-off Pharmacy section, or no section at all, is 503", async () => {
