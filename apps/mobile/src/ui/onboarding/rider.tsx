@@ -182,6 +182,7 @@ export function RiderVerified({
             accessibilityLabel={RO.papersLater}
             onPress={onPapers}
             hitSlop={{ top: PAPERS_SLOP, bottom: PAPERS_SLOP }}
+            style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
           >
             <Text style={{ textAlign: "center", fontSize: 13, lineHeight: PAPERS_LINE_H, color: tokens.color.muted }}>{RO.papersLater}</Text>
           </Pressable>
