@@ -2914,3 +2914,14 @@ Source: `docs/e2e-runs/2026-10-07-merchant/REPORT.md` (live browser run of the m
 | MJ-RH1…RH4 | "It wasn't returned" instantly writes off the debt and suspends the rider; ended bookings vanish from the board; hours page shows 08:00–22:00 when none were saved, while customers see 24/7; a 5xx on /merchant/me leaves the board and alarm off. | see report addendum | High | **OPEN** |
 | MJ-RM1…RM19, MJ-RL1…RL28 | Review addendum: lifecycle, booking, Money in UTC not Harare time, listing, branches, speed and attack findings. | `docs/e2e-runs/2026-10-07-merchant/REPORT.md` addendum | Medium/Low | **OPEN** |
 
+---
+
+## Customer UI/UX + speed review 2026-10-07 (interactive, report only)
+
+Source: `docs/CUSTOMER-UX-PERF-REVIEW-2026-10-07.md`, a read-only multi-agent review of the customer side of `apps/mobile`
+(Android + app.lyniago.com) and its seams with `apps/merchant` and `apps/api`. 109 distinct findings after merging
+duplicates: **U01–U67** (journeys: 2 BLOCKER, 12 HIGH) and **P01–P42** (speed: 7 HIGH). Each was judged by two
+independent skeptics. **All OPEN, awaiting the owner's selection.** Future sweeps: treat every U-/P- id in that report as
+known. Headline items: U01 web signed-out deep load can't reach sign-in; U02 re-ordering the same basket returns the old
+order; U10–U13 door-handshake geofence, endless no-rider hold, early/short "at your door" cash push; P01 PostHog lazy-load
+remounts the app mid-boot (~+1.9 s).
