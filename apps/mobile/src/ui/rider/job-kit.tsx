@@ -292,14 +292,14 @@ export function PhotoRow({ saved, thumb, onTake }: { saved: boolean; thumb?: Rea
  * focused box ringed with a caret; error = every box danger; locked = surface boxes with a lock. The OS
  * number pad types into one hidden input, so the code is always a string.
  */
-export function CodeBoxes({ value, onChange, error, locked, autoFocus = true, length = 6, label = R.codeL }: { value: string; onChange: (v: string) => void; error?: boolean; locked?: boolean; autoFocus?: boolean; length?: 4 | 6; label?: string }): React.ReactElement {
+export function CodeBoxes({ value, onChange, error, locked, disabled, autoFocus = true, length = 6, label = R.codeL }: { value: string; onChange: (v: string) => void; error?: boolean; locked?: boolean; /** Read-only while the code is being sent (or queued offline). */ disabled?: boolean; autoFocus?: boolean; length?: 4 | 6; label?: string }): React.ReactElement {
   const narrow = useWindowDimensions().width < 340;
   const ref = useRef<TextInput>(null);
   const [focused, setFocused] = useState(false);
   const w = narrow ? 36 : 42;
   const h = narrow ? 50 : 56;
   return (
-    <Tappable tone="icon" disabled={locked} onPress={() => ref.current?.focus()} accessibilityRole="button" accessibilityLabel={label} style={{ alignItems: "center" }}>
+    <Tappable tone="icon" disabled={locked || disabled} onPress={() => ref.current?.focus()} accessibilityRole="button" accessibilityLabel={label} style={{ alignItems: "center" }}>
       <View style={{ flexDirection: "row", gap: 6 }}>
         {Array.from({ length }, (_, i) => i).map((i) => {
           const ch = value[i] ?? "";
@@ -322,7 +322,7 @@ export function CodeBoxes({ value, onChange, error, locked, autoFocus = true, le
               {locked ? (
                 <Icon name="lock" size={16} color={tokens.color.muted} />
               ) : ch ? (
-                <Text style={{ fontSize: 26, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, ...TABULAR }}>{ch}</Text>
+                <Text maxFontSizeMultiplier={1.15} style={{ fontSize: 26, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, ...TABULAR }}>{ch}</Text>
               ) : isFocus ? (
                 <View style={{ width: 2, height: 26, backgroundColor: tokens.color.accentText }} />
               ) : null}
@@ -340,6 +340,7 @@ export function CodeBoxes({ value, onChange, error, locked, autoFocus = true, le
           autoComplete="one-time-code"
           autoFocus={autoFocus}
           maxLength={length}
+          editable={!disabled}
           caretHidden
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}

@@ -223,6 +223,8 @@ export const RIDER_COPY = {
   offlineJob: "No connection. Your job is saved on this phone — keep riding.",
   offlineLong: "Still offline after 4 min. Your job is safe. The delivery code works without data; it syncs when you're back.",
   offlineCode: "Saved. Syncs when you're back online.",
+  /** Undrawn (rider audit 2026-10-07): a job step that failed with no server message. */
+  jobFail: "Couldn't update the job. Check your data.",
   sosT: "Call 999?",
   sosB: "This calls the emergency line and tells our safety team where you are.",
   sosCall: "Call 999",

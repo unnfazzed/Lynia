@@ -4963,3 +4963,18 @@ Failure toasts show the `circle-alert` in highlight (the owner-approved error to
   past the screen without opening phone settings.
 - `playTestAlert` (the local notification behind those buttons) is deleted. `RP.testPing` and `R.testPing` /
   `R.testAlarm` stay in the copy files because those mirror the handoffs verbatim; nothing renders them.
+
+
+## D-84 · Rider audit 2026-10-07, parcel job: two undrawn controls — PENDING OWNER REVIEW
+
+Fixes from the rider UI/UX audit that needed an element the Rider v2 handoff (`handoff/rider-v2/`, D-54) does not draw.
+Both reuse existing strings; both are reported upstream as missing states.
+
+- **X3 Can't reach → back to the code (PJ-H2).** The handoff's Can't-reach stage has no exit: a recipient who answers on
+  the second call left the rider stuck until they backed out to the board. A ghost soft pill **"Enter the delivery code"**
+  (`R.door3`, Order flow v2's door card) sits under Call / WhatsApp and returns to A8. The wait itself now persists per
+  order like the arrival mark (the handoff's state model already says `reach` persists).
+- **A2 camera refused (B3).** The handoff draws no camera-off state for the pickup photo, which Collect requires. A warn
+  `Notice` with `R.docPhotoDenied` and a soft pill **"Open phone settings"** (`R.sOpenSettings`) shows under the photo row
+  while the camera permission is refused; it clears when the rider comes back with it on.
+- With no recipient number, X3's Call / WhatsApp pills draw disabled (PJ-L2) instead of counting calls that never happened.

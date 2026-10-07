@@ -1,8 +1,8 @@
 import { type AdvanceStatusRequest, haversineKm, SOS_POLICY, UndeliveredReason } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { onlineManager, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, Linking, ScrollView, Text, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { getMe } from "../../src/api/auth";
@@ -13,9 +13,26 @@ import {
   loadPickupChecklistDraft,
   savePickupChecklistDraft,
 } from "../../src/logic/pickup-checklist-draft";
-import { clearPickupPhotoDraft } from "../../src/logic/pickup-photo-draft";
 import { ACTIVE, advanceReconciled, DELIVERY_OTP_MAX_ATTEMPTS, parcelCashOnDelivery, RIDER_CANCELLABLE, reconcileConfirmItemsPending, reconcileOtpAttempts, reconcilePendingSenderRating, reconcileRiderJobTerminal } from "../../src/logic/rider-job";
-import { type Arrival, type ArrivalMark, AUTO_ADVANCE, clearArrival, loadArrival, parcelStage, REACH_WAIT_MS, saveArrival, stepFor } from "../../src/logic/rider-job-stage";
+import {
+  type Arrival,
+  type ArrivalMark,
+  AUTO_ADVANCE,
+  clearArrival,
+  clearDeliverOutbox,
+  clearReach,
+  type DeliverOutbox,
+  loadArrival,
+  loadDeliverOutbox,
+  loadReach,
+  parcelStage,
+  REACH_WAIT_MS,
+  type ReachMark,
+  saveArrival,
+  saveDeliverOutbox,
+  saveReach,
+  stepFor,
+} from "../../src/logic/rider-job-stage";
 import { navUrl, useRiderPrefs } from "../../src/logic/rider-prefs";
 import { uuidV4FromSeed } from "../../src/util";
 import { advanceStatus, cancelOrder, confirmDelivery, confirmItems, getActiveOrder, getOrder, markUndelivered, rateSender, type OrderSnapshot } from "../../src/api/orders";
@@ -38,14 +55,13 @@ import {
   type PendingSenderRating,
   type RiderJobTerminal,
 } from "../../src/auth/session";
-import { fmtClock } from "../../src/logic/format-time";
-import { formatMoney } from "../../src/logic/money";
-import type { LastActive } from "../../src/logic/last-active";
 import { clearLastActiveJob, loadLastActiveJob, saveLastActiveJob } from "../../src/net/last-active-store";
+import { clearOrderCopy, loadOrderCopy, saveOrderCopy } from "../../src/net/order-copy-store";
+import { openPhoneSettings } from "../../src/permissions/location";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useRiderJobSocket } from "../../src/realtime/use-rider-job-socket";
 import { useRiderLocationStream } from "../../src/realtime/use-rider-location";
-import { AppBar, Button, Card, EmptyState, emptyCopy, haptic, Heading, Icon, orderStatusTone, Screen, SkeletonList, StatusPill, Sub, useActionError, useToast } from "../../src/ui";
+import { AppBar, EmptyState, emptyCopy, haptic, Icon, Screen, SkeletonList, useActionError, useToast } from "../../src/ui";
 import { useReduceMotion } from "../../src/ui/useReduceMotion";
 import { IconDisc, SmBtn, Stars, Tags } from "../../src/ui/order/kit";
 import { OrderMap } from "../../src/ui/order/OrderMap";
@@ -137,6 +153,19 @@ export default function RiderJob(): React.ReactElement {
   const [bailReason] = useState("");
   // R9: count wrong delivery-code tries to show attempts-remaining and lock the field at the cap.
   const [otpTries, setOtpTries] = useState(0);
+  // The last code the server rejected (401) — the wrong-code state shows only while the field still holds it.
+  const [rejectedCode, setRejectedCode] = useState<string | null>(null);
+  // PJ-M4: a delivery confirm queued by an earlier process (killed while offline), re-sent on this launch.
+  const [outbox, setOutbox] = useState<DeliverOutbox | null | "loading">("loading");
+  useEffect(() => {
+    let alive = true;
+    void loadDeliverOutbox().then((o) => {
+      if (alive) setOutbox(o);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   // Rate-the-sender (4·7): an OPTIONAL post-delivery star, recorded-only — tap-then-submit, no undo.
   const [senderScore, setSenderScore] = useState(0);
   // BH-07: whether the sender rating is confirmed landed — either this session's own POST succeeded, or
@@ -195,11 +224,20 @@ export default function RiderJob(): React.ReactElement {
   // REST polling while it isn't connected — avoids a redundant round-trip every 6s on metered data for
   // the whole duration of an active delivery.
   const [jobPollFallback, setJobPollFallback] = useState(true);
-  const jobQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, refetchInterval: jobPollFallback ? 6000 : false });
+  // A locked code (5 wrong tries) also polls: the sender's re-issue zeroes the server's attempt count, and
+  // the screen promises the new code "works here as soon as" it is sent — don't wait for a socket push.
+  const codeLocked = otpTries >= DELIVERY_OTP_MAX_ATTEMPTS;
+  const jobQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, refetchInterval: jobPollFallback || codeLocked ? 6000 : false });
+  // The full job as this phone last saw it live (net/order-copy-store), for an OFFLINE COLD START: the live
+  // query can't load, so the normal job screen draws from the saved copy (with "Job restored") instead of
+  // a dead end. Never shown over live data — only while the fetch has failed or is paused for the network.
+  const [offlineCopy, setOfflineCopy] = useState<OrderSnapshot | null>(null);
+  // The order id whose copy is on disk (this process's save, or the earlier one's being shown).
+  const persistedCopyId = useRef<string | null>(null);
   // Only needed to show "this would be strike N" on the bail-confirm sheet — a light, cached read, not
   // polled (the count only matters at the moment the rider opens the cancel sheet).
   const meQ = useQuery({ queryKey: ["me"], queryFn: getMe });
-  const order = jobQ.data ?? null;
+  const order = jobQ.data ?? (jobQ.data === undefined && (jobQ.isError || jobQ.isPaused) ? offlineCopy : null);
   const orderId = order?.id ?? null;
   const items = order?.items ?? [];
   // B-O2: memoized off the primitive lat/lng, ahead of every early return below (the rules of hooks
@@ -224,9 +262,6 @@ export default function RiderJob(): React.ReactElement {
     if (order && order.orderType === "merchant") router.replace("/rider/food-job");
   }, [order, router]);
 
-  // Load the last-known job summary (persisted below) so an OFFLINE COLD START shows it instead of a
-  // bare "couldn't load your job" — only ever rendered in the fetch-error branch, never over live data.
-  const [lastKnownJob, setLastKnownJob] = useState<LastActive | null>(null);
   // `offline_resume` (kit r-rider.jsx RR.offline_resume): the SAME slot, read once on mount, also tells
   // us whether an EARLIER app process saw this job live — i.e. the app was killed mid-delivery. Derived
   // here (not in a second effect) so it's measured against the store before this process's own persist
@@ -242,9 +277,16 @@ export default function RiderJob(): React.ReactElement {
     let alive = true;
     void loadLastActiveJob().then((la) => {
       if (!alive) return;
-      setLastKnownJob(la);
       if (la) setRestoredJobId(wasJobRestored(la, la.id) ? la.id : null);
       setResumeChecked(true);
+      // The saved full copy of that job, for the offline cold start above.
+      if (la && ACTIVE.includes(la.status)) {
+        void loadOrderCopy(la.id).then((c) => {
+          if (!alive || !c) return;
+          persistedCopyId.current = persistedCopyId.current ?? c.order.id;
+          if (ACTIVE.includes(c.order.status) && c.order.orderType !== "merchant") setOfflineCopy(c.order);
+        });
+      }
     });
     return () => {
       alive = false;
@@ -259,15 +301,30 @@ export default function RiderJob(): React.ReactElement {
     if (!resumeChecked) return; // let the offline_resume read above see the stored value first
     const d = jobQ.data;
     if (d === undefined) return; // loading or errored — keep whatever's stored
+    const dropCopy = (): void => {
+      if (persistedCopyId.current) void clearOrderCopy(persistedCopyId.current);
+      persistedCopyId.current = null;
+      setOfflineCopy(null);
+    };
     if (d === null) {
       persistedJobStatus.current = null;
       void clearLastActiveJob();
+      dropCopy();
       return;
     }
     if (d.status === persistedJobStatus.current) return;
     persistedJobStatus.current = d.status;
-    if (ACTIVE.includes(d.status)) void saveLastActiveJob(d);
-    else void clearLastActiveJob(); // terminal (delivered / cancelled / undelivered / completed)
+    if (ACTIVE.includes(d.status) && d.orderType !== "merchant") {
+      void saveLastActiveJob(d);
+      if (persistedCopyId.current && persistedCopyId.current !== d.id) void clearOrderCopy(persistedCopyId.current);
+      persistedCopyId.current = d.id;
+      void saveOrderCopy(d);
+    } else if (ACTIVE.includes(d.status)) {
+      void saveLastActiveJob(d);
+    } else {
+      void clearLastActiveJob(); // terminal (delivered / cancelled / undelivered / completed)
+      dropCopy();
+    }
   }, [jobQ.data, resumeChecked]);
 
   // Stream GPS only while the ride is genuinely active — stops on delivered AND cancelled/completed
@@ -322,7 +379,7 @@ export default function RiderJob(): React.ReactElement {
   // hand-back. Invalidating on resume makes the terminal appear immediately; reuses `refresh()` so a
   // delivery/cancel/undeliver that landed while backgrounded also self-heals Trip History/Earnings.
   useForegroundRefetch(refresh);
-  const fail = (e: unknown): void => setError(e instanceof ApiError ? e.message : "Couldn't update this delivery. Check your connection and try again.");
+  const fail = (e: unknown): void => setError(e instanceof ApiError ? e.message : R.jobFail);
 
   // Optimistic advance: the trip step is a frequent, near-always-succeeds tap, so paint the next
   // step instantly and reconcile in the background. cancelQueries first so the 6s poller can't
@@ -369,7 +426,9 @@ export default function RiderJob(): React.ReactElement {
     onSettled: refresh,
   });
   const deliverM = useMutation({
-    mutationFn: () => confirmDelivery(orderId!, code.trim()),
+    // The code travels as the mutation's variable (not read from state at send time), so a queued confirm
+    // re-sent after a relaunch (PJ-M4) and the wrong-code check (PJ-M2) both know exactly which code went.
+    mutationFn: (sent: string) => confirmDelivery(orderId!, sent),
     // LC-C07: write the terminal marker BEFORE the request fires, not just on success/409-reconcile —
     // an app kill strictly between sending confirmDelivery and processing any response previously left
     // no marker at all, so reconcileRiderJobTerminal (which only PROMOTES an existing marker once the
@@ -377,8 +436,16 @@ export default function RiderJob(): React.ReactElement {
     // from on relaunch, even though the delivery had actually landed server-side. Safe to write eagerly:
     // reconcileRiderJobTerminal still gates on `hasActiveOrder`, so a marker written for a request that
     // in fact failed (order still active) just sits inert until a definitive rejection below clears it.
-    onMutate: () => {
-      if (orderRef.current) void saveRiderJobTerminal({ orderId: orderRef.current.id, kind: "delivered" });
+    onMutate: (sent) => {
+      if (orderRef.current) {
+        void saveRiderJobTerminal({ orderId: orderRef.current.id, kind: "delivered" });
+        // PJ-M4: the durable outbox — a confirm still waiting for data survives an app kill.
+        void saveDeliverOutbox({ orderId: orderRef.current.id, code: sent });
+      }
+    },
+    onSettled: () => {
+      void clearDeliverOutbox();
+      setOutbox(null);
     },
     onSuccess: () => {
       // The hand-off landed — the warm success cue at the moment the delivery completes.
@@ -391,7 +458,7 @@ export default function RiderJob(): React.ReactElement {
       if (orderRef.current) setDeliveredDone(orderRef.current.id);
       refresh();
     },
-    onError: (e) => {
+    onError: (e, sent) => {
       // 409 = "Order is not ready for delivery" — thrown when the order isn't en_route_dropoff. A
       // client-side timeout retry can land here after the server already committed the delivery on the
       // FIRST attempt: the rider sees a scary generic conflict, then `refresh()` (activeForRider
@@ -411,7 +478,6 @@ export default function RiderJob(): React.ReactElement {
               // so land the rider on the acknowledgement screen, not just a toast that a refresh wipes.
               // The durable marker was already written in onMutate; no need to rewrite it here.
               setDeliveredDone(fresh.id);
-              toast.show("Looks like that delivery already went through.", "success");
             } else {
               // Definitive: the reconciliation check confirms this attempt did NOT deliver — roll back
               // the provisional marker onMutate wrote so it can't later mislead reconcileRiderJobTerminal
@@ -437,12 +503,14 @@ export default function RiderJob(): React.ReactElement {
       if (e instanceof ApiError && e.status === 403) {
         haptic("warning");
         setOtpTries(DELIVERY_OTP_MAX_ATTEMPTS);
-        setError("Too many attempts — ask the customer to re-issue the delivery code.");
+        setError(R.lockedT);
         void clearRiderJobTerminal();
       } else if (e instanceof ApiError && e.status === 401) {
         // A firmer double so a wrong code is felt, not just read — useful at a noisy hand-off.
         haptic("warning");
         setOtpTries((n) => n + 1);
+        // PJ-M2: the wrong-code state belongs to THIS code only — a fresh one isn't red before it is sent.
+        setRejectedCode(sent);
         setError(null);
         void clearRiderJobTerminal();
       } else {
@@ -466,9 +534,13 @@ export default function RiderJob(): React.ReactElement {
       // server owns the duration (COOLDOWN_MS); we just surface the `cooldownUntil` it already returns.
       if (res.cooldownUntil) {
         haptic("warning");
-        toast.show(`You've been taken offline until ${fmtClock(res.cooldownUntil)} after cancelling too many jobs.`, "warning");
+        toast.show(R.gCoolT, "warning");
       }
       refresh();
+      // PJ-L3: the job is gone — back to the board (which shows the cooldown gate, if any), not "No active job".
+      void clearArrival();
+      void clearReach();
+      router.replace("/rider");
     },
     onError: (e) => {
       // A timed-out/dropped response can land here after the server already committed the cancel — the
@@ -582,8 +654,27 @@ export default function RiderJob(): React.ReactElement {
   // Reset the per-order UI counters whenever the active job changes.
   useEffect(() => {
     setOtpTries(0);
+    setRejectedCode(null);
     setUndelivering(false);
   }, [orderId]);
+
+  // PJ-M4: re-send the outbox confirm once this job is back at the door. Cleared if the job ended or changed.
+  const outboxSent = useRef(false);
+  useEffect(() => {
+    if (outbox === "loading" || !outbox || outboxSent.current || jobQ.isLoading) return;
+    if (order && order.id === outbox.orderId) {
+      if (order.status !== "en_route_dropoff" || deliverM.isPending) return;
+      outboxSent.current = true;
+      setCode(outbox.code);
+      deliverM.mutate(outbox.code);
+      return;
+    }
+    if (order || jobQ.isSuccess) {
+      void clearDeliverOutbox();
+      setOutbox(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliverM is a fresh object each render; its isPending is the dep.
+  }, [outbox, order, jobQ.isLoading, jobQ.isSuccess, deliverM.isPending]);
 
   // Promote a durable terminal marker into the live in-memory state the first time this session sees
   // no active job — the reconciliation path for an app kill between the deliver/undeliver mutation's
@@ -667,11 +758,9 @@ export default function RiderJob(): React.ReactElement {
         confirmRetryInFlight.current = false;
       });
     void clearPickupChecklistDraft();
-    // C-O7 (LC-C09): a pending/failed pickup-photo resume marker no longer applies once the rider has
-    // moved past this step — leaving it would offer a stale "finish uploading" resume for a job that's
-    // already progressed. Harmless either way (single key, overwritten by the next capture), but this
-    // keeps the same-order invariant tight.
-    void clearPickupPhotoDraft();
+    // PJ-H1: the pickup-photo draft is NOT cleared here — it is the only copy of a shot that hasn't gone up
+    // yet (no data at the pickup). usePickupPhoto clears it once the upload lands, and the server accepts
+    // the photo until the drop-off leg ends.
     advanceM.mutate("picked_up");
   };
 
@@ -726,7 +815,23 @@ export default function RiderJob(): React.ReactElement {
     haptic("tap");
   };
   const [sheet, setSheet] = useState<null | "problem" | "cancel" | "undeliver" | "report" | "sos">(null);
-  const [reach, setReach] = useState<{ startedAt: number; calls: number; wa: number } | null>(null);
+  // X3's wait, persisted per order like the arrival mark (PJ-H2) so an app kill doesn't restart the clock.
+  const [reachMark, setReachMark] = useState<ReachMark | null | "loading">("loading");
+  useEffect(() => {
+    let alive = true;
+    void loadReach().then((m) => {
+      if (alive) setReachMark(m);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const reach = reachMark !== "loading" && reachMark && reachMark.orderId === orderId ? reachMark : null;
+  const setReach = (next: ReachMark | null): void => {
+    setReachMark(next);
+    if (next) void saveReach(next);
+    else void clearReach();
+  };
   const [undelPick, setUndelPick] = useState<number | null>(null);
   const [jobToast, setJobToast] = useState<JobToast | null>(null);
   useEffect(() => {
@@ -750,19 +855,66 @@ export default function RiderJob(): React.ReactElement {
   }, [reach, offlineSince]);
   // The server's own steps the handoff draws no tap for: accept → heading to pickup on open, and
   // collected → heading to the drop-off right after the collect. Once per (order, status).
+  // B2: a failed step (timeout, 5xx) used to stay "tried" for good, leaving Collect / Confirm greyed out.
+  // A failure now frees the key and re-tries with backoff (2 s, 4 s, … 30 s), and at once on reconnect.
   const autoKey = useRef<string | null>(null);
+  const autoFails = useRef<{ key: string; n: number } | null>(null);
+  const autoRetry = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [autoTick, setAutoTick] = useState(0);
+  const retryAutoNow = useCallback((): void => {
+    if (!autoRetry.current) return;
+    clearTimeout(autoRetry.current);
+    autoRetry.current = null;
+    autoKey.current = null;
+    setAutoTick((t) => t + 1);
+  }, []);
   useEffect(() => {
     if (!order) return;
     const to = AUTO_ADVANCE[order.status];
     const key = `${order.id}:${order.status}`;
     if (!to || autoKey.current === key || advanceM.isPending) return;
+    if (autoRetry.current) {
+      clearTimeout(autoRetry.current);
+      autoRetry.current = null;
+    }
     autoKey.current = key;
-    advanceM.mutate(to);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the order's id + status only.
-  }, [order?.id, order?.status, advanceM.isPending]);
+    advanceM.mutate(to, {
+      onSuccess: () => {
+        autoFails.current = null;
+      },
+      onError: () => {
+        const n = autoFails.current?.key === key ? autoFails.current.n + 1 : 1;
+        autoFails.current = { key, n };
+        const delay = Math.min(30_000, 2_000 * 2 ** (n - 1));
+        autoRetry.current = setTimeout(() => {
+          autoRetry.current = null;
+          autoKey.current = null;
+          setAutoTick((t) => t + 1);
+        }, delay);
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the order's id + status (and a retry tick) only.
+  }, [order?.id, order?.status, advanceM.isPending, autoTick]);
+  useEffect(
+    () =>
+      onlineManager.subscribe((online) => {
+        if (online) retryAutoNow();
+      }),
+    [retryAutoNow],
+  );
+  useEffect(() => {
+    if (jobSocketConnected) retryAutoNow();
+  }, [jobSocketConnected, retryAutoNow]);
+  useEffect(
+    () => () => {
+      if (autoRetry.current) clearTimeout(autoRetry.current);
+    },
+    [],
+  );
   const backToJobs = (): void => {
     void clearRiderJobTerminal();
     void clearArrival();
+    void clearReach();
     router.replace("/rider");
   };
 
@@ -802,6 +954,7 @@ export default function RiderJob(): React.ReactElement {
       // Record that this parcel was handed back so the 24h reopen window doesn't re-prompt the rider.
       void acknowledgeHandback(snap.id);
       void clearArrival();
+      void clearReach();
       router.replace("/rider");
     };
     return (
@@ -899,33 +1052,7 @@ export default function RiderJob(): React.ReactElement {
   // Cold-start fetch failure with NOTHING cached: the job fetch failed, which is not the same as
   // "you have no work". Ordered AFTER the loading and terminal checks so those still win.
   if (shouldShowJobError(jobQ.isError, order != null)) {
-    // Offline cold-start: the fetch failed but we have the last-known job summary. Show it instead of a
-    // bare error — the live query takes over the moment we reconnect.
-    if (lastKnownJob) {
-      return (
-        <Screen>
-          <AppBar onBack={() => router.replace("/rider")} />
-          <ScrollView showsVerticalScrollIndicator={false}>
-            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: tokens.space.md }}>
-              <Heading>Your job</Heading>
-              <View style={{ flex: 1 }} />
-              <StatusPill status={lastKnownJob.status} tone={orderStatusTone(lastKnownJob.status)} />
-            </View>
-            <Card>
-              <Text style={{ fontSize: 14, color: tokens.color.muted, marginBottom: tokens.space.xs, fontVariant: ["tabular-nums"] }}>
-                Fare {formatMoney(lastKnownJob.fare)}
-              </Text>
-              <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.ink }}>
-                {lastKnownJob.pickupLandmark || "Pickup"} → {lastKnownJob.dropoffLandmark || "Drop-off"}
-              </Text>
-              <View style={{ height: tokens.space.sm }} />
-              <Sub>Showing your last saved job — we&apos;ll refresh the moment you&apos;re back online.</Sub>
-            </Card>
-            <Button label="Retry now" onPress={() => void jobQ.refetch()} loading={jobQ.isFetching} />
-          </ScrollView>
-        </Screen>
-      );
-    }
+    // An offline cold start with a saved copy never gets here — `order` is that copy (see offlineCopy).
     return (
       <Screen>
         <RiderErrorState onRetry={() => void jobQ.refetch()} retrying={jobQ.isFetching} onBack={() => router.replace("/rider")} />
@@ -968,11 +1095,10 @@ export default function RiderJob(): React.ReactElement {
   const itemsOk = items.length === 0 || checkedItems.size > 0;
   const collectOk = itemsOk && !!photo.uri && order.status === "en_route_pickup";
   const collect = (): void => {
+    // PJ-H1: send a shot that hasn't gone up yet now, ahead of the status change (never blocks the collect).
+    void photo.flush();
     if (items.length > 0) confirmAndCollect();
-    else {
-      void clearPickupPhotoDraft();
-      advanceM.mutate("picked_up");
-    }
+    else advanceM.mutate("picked_up");
   };
   const help = (): void => {
     setSheet(null);
@@ -1012,7 +1138,7 @@ export default function RiderJob(): React.ReactElement {
         beforePickup={beforePickup}
         onCancel={() => setSheet("cancel")}
         onReach={() => {
-          setReach((r) => r ?? { startedAt: Date.now(), calls: 0, wa: 0 });
+          if (!reach) setReach({ orderId: order.id, startedAt: Date.now(), calls: 0, wa: 0 });
           if (!arrived || arrived !== "drop") markArrived("drop");
           setSheet(null);
         }}
@@ -1070,8 +1196,10 @@ export default function RiderJob(): React.ReactElement {
   if (stage === "code" && !reach) {
     const left = DELIVERY_OTP_MAX_ATTEMPTS - otpTries;
     const locked = left <= 0;
-    const wrong = otpTries > 0 && code.length === 6 && !deliverM.isPending && !locked;
-    const queued = pendingOrQueued(deliverM) === "queued";
+    const sending = pendingOrQueued(deliverM);
+    const queued = sending === "queued";
+    // PJ-M2: red only while the field still holds the code the server just rejected.
+    const wrong = rejectedCode != null && code === rejectedCode && !sending && !locked;
     return (
       <JobPage
         title={R.tArriving}
@@ -1087,7 +1215,8 @@ export default function RiderJob(): React.ReactElement {
             </CtaBar>
           ) : (
             <CtaBar>
-              <CtaButton label={R.confirmCta} disabled={code.length < 6 || order.status !== "en_route_dropoff"} loading={!!pendingOrQueued(deliverM) && !queued} onPress={() => deliverM.mutate()} />
+              {/* PJ-M3: a queued confirm can't be tapped again (each tap would burn a try on reconnect). */}
+              <CtaButton label={R.confirmCta} disabled={code.length < 6 || order.status !== "en_route_dropoff" || queued || code === rejectedCode} loading={!!sending && !queued} onPress={() => deliverM.mutate(code.trim())} />
             </CtaBar>
           )
         }
@@ -1096,7 +1225,7 @@ export default function RiderJob(): React.ReactElement {
           {notices}
           <RSteps cur={2} />
           <JobTitle title={locked ? R.lockedT : RF.codeT(recipient)} body={locked ? RF.lockedB(name, recipient) : RF.codeB} />
-          <CodeBoxes value={code} onChange={setCode} error={wrong} locked={locked} />
+          <CodeBoxes value={code} onChange={setCode} error={wrong} locked={locked} disabled={!!sending} />
           {wrong ? <CodeError text={left === 1 ? RF.triesLast(recipient) : RF.triesLeft(left)} /> : null}
           {queued ? (
             <View style={{ flexDirection: "row", gap: 6, justifyContent: "center", alignItems: "center" }}>
@@ -1134,13 +1263,16 @@ export default function RiderJob(): React.ReactElement {
           <Progress pct={Math.min(100, (reachElapsed * 1000 * 100) / REACH_WAIT_MS)} />
         </View>
         <View style={{ flexDirection: "row", gap: 8 }}>
+          {/* PJ-L2: with no recipient number there is nothing to dial — and nothing to count. */}
           <SmBtn
             flex={1}
             kind="fill"
             icon="phone"
             label={R.call}
+            disabled={!dropPhone}
             onPress={() => {
-              setReach((r) => (r ? { ...r, calls: r.calls + 1 } : r));
+              if (!dropPhone) return;
+              setReach({ ...reach, calls: reach.calls + 1 });
               dial(dropPhone);
             }}
           />
@@ -1148,12 +1280,16 @@ export default function RiderJob(): React.ReactElement {
             flex={1}
             icon="message-circle"
             label={R.whatsapp}
+            disabled={!dropPhone}
             onPress={() => {
-              setReach((r) => (r ? { ...r, wa: r.wa + 1 } : r));
+              if (!dropPhone) return;
+              setReach({ ...reach, wa: reach.wa + 1 });
               wa(dropPhone);
             }}
           />
         </View>
+        {/* PJ-H2: they answered after all — back to the code page (undrawn; ledger entry). */}
+        <SmBtn label={R.door3} onPress={() => setReach(null)} />
       </>
     );
     bar = (
@@ -1181,6 +1317,13 @@ export default function RiderJob(): React.ReactElement {
         ))}
         <PhotoRow saved={!!photo.uri} thumb={photo.uri ? <Image source={{ uri: photo.uri }} style={{ width: 56, height: 56 }} accessibilityLabel={R.photoSaved} /> : undefined} onTake={photo.take} />
         {photo.uri && !photo.uploaded && liveReconnecting ? <Notice icon="wifi-off" text={R.photoFail} /> : null}
+        {/* B3: the camera is off for the app — say so and open the phone's settings (re-checked on resume). */}
+        {photo.denied ? (
+          <>
+            <Notice icon="camera" tone="warn" text={R.docPhotoDenied} />
+            <SmBtn label={R.sOpenSettings} onPress={openPhoneSettings} />
+          </>
+        ) : null}
         <ProblemLink onPress={() => setSheet("problem")} />
       </>
     );
