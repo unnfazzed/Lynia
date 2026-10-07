@@ -16,7 +16,8 @@ export function isRiderRow(r: OrderHistoryRow): boolean {
 
 export function paidFare(r: OrderHistoryRow): number | null {
   if (r.status !== "delivered" && r.status !== "completed") return null;
-  const n = Number(r.agreedFare ?? r.proposedFare);
+  // MA-H1: on a merchant job the agreed fare is the customer's whole bill; the rider earns `riderFare`.
+  const n = Number((r.orderType === "merchant" ? r.riderFare : null) ?? r.agreedFare ?? r.proposedFare);
   return Number.isFinite(n) ? n : null;
 }
 

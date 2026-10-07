@@ -3,8 +3,8 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React from "react";
 import { Text, View } from "react-native";
-import { deleteAccount } from "../../src/api/auth";
-import { getActiveCustomerOrder } from "../../src/api/orders";
+import { deleteAccount, getMe } from "../../src/api/auth";
+import { getActiveCustomerOrder, getActiveOrder } from "../../src/api/orders";
 import { useAuth } from "../../src/auth/auth-context";
 import { pendingOrQueued } from "../../src/query/client";
 import { Icon, Tappable, useActionErrorEffect } from "../../src/ui";
@@ -60,7 +60,11 @@ export default function DeleteAccountScreen({ initialStep = "explain", initialAc
 
   // The live half of the drawn "No delivery running" box.
   const activeQ = useQuery({ queryKey: ["activeCustomerOrder"], queryFn: getActiveCustomerOrder });
-  const running = !!activeQ.data;
+  // MA-M7: a rider's job they're carrying blocks deletion server-side too — check it as well.
+  const isRider = !!useQuery({ queryKey: ["me"], queryFn: getMe }).data?.rider;
+  const riderJobQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, enabled: isRider });
+  const riderJob = isRider && riderJobQ.data && riderJobQ.data.status !== "cancelled" ? riderJobQ.data : null;
+  const running = !!activeQ.data || !!riderJob;
 
   const deleteM = useMutation({
     mutationFn: deleteAccount,

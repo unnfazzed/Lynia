@@ -377,6 +377,19 @@ describe("AuthService.getProfile", () => {
     await expect(svc.getProfile("p1")).resolves.toMatchObject({ idNumber: null });
   });
 
+  // Rider audit BD-M3: G10 "Clears at" needs the end of a running cancel cooldown; a lapsed one is null.
+  it("BD-M3: serves cooldownUntil only while the cooldown is still running", async () => {
+    const until = new Date(Date.now() + 60 * 60_000);
+    const running = { ...riderRow, rider: { ...riderRow.rider, cooldownUntil: until } };
+    const { svc: a } = make(baseEnv, { profile: { findUnique: async () => running } });
+    expect((await a.getProfile("p2")).rider).toMatchObject({ cooldownUntil: until.toISOString() });
+    const lapsed = { ...riderRow, rider: { ...riderRow.rider, cooldownUntil: new Date(Date.now() - 1000) } };
+    const { svc: b } = make(baseEnv, { profile: { findUnique: async () => lapsed } });
+    expect((await b.getProfile("p2")).rider).toMatchObject({ cooldownUntil: null });
+    const { svc: c } = make(baseEnv, { profile: { findUnique: async () => riderRow } });
+    expect((await c.getProfile("p2")).rider).toMatchObject({ cooldownUntil: null });
+  });
+
   it("404s when the profile is missing", async () => {
     const { svc } = make(baseEnv, { profile: { findUnique: async () => null } });
     await expect(svc.getProfile("nope")).rejects.toThrow(/not found/i);

@@ -37,6 +37,14 @@ describe("rider earnings", () => {
     expect(paidFare(row({ agreedFare: null }))).toBe(3);
   });
 
+  it("MA-H1: a merchant job pays the rider's fare, not the customer's whole bill", () => {
+    expect(paidFare(row({ orderType: "merchant", agreedFare: "15.50", riderFare: "2.50" }))).toBe(2.5);
+    // A parcel's agreed fare is the rider's fare; an older server without riderFare keeps the old read.
+    expect(paidFare(row({ riderFare: null }))).toBe(3.2);
+    expect(paidFare(row({ orderType: "merchant", agreedFare: "15.50" }))).toBe(15.5);
+    expect(summarise([row({ orderType: "merchant", agreedFare: "15.50", riderFare: "2.50", createdAt: at(1, 9) })], "today", NOW).total).toBe(2.5);
+  });
+
   it("weeks start on Monday", () => {
     expect(startOfWeek(NOW).getDate()).toBe(28); // Mon 28 Sep
   });
