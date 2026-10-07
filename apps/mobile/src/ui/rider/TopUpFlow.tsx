@@ -4,7 +4,7 @@ import React from "react";
 import { ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { type TopupProviderId, TOPUP_PROVIDERS, providerName } from "../../logic/rider-prefs";
-import { validateTopupAmount } from "../../logic/topup";
+import { acceptAmountInput, validateTopupAmount } from "../../logic/topup";
 import { useTopUp } from "../../query/use-topup";
 import { uuidV4FromSeed } from "../../util";
 import { Icon } from "../Icon";
@@ -24,6 +24,8 @@ import { CentreState, Progress, RStepBar } from "./kit";
  * only on `succeeded`, i.e. only after something credited the balance.
  */
 const STEPS = [R.tsProvider, R.tsAmount, R.tsPhone, R.tsApprove] as const;
+// The drawn chips. MA-M1: a chip below the server's minimum is hidden (the drawn $2 sits under the $5
+// minimum — an upstream kit defect, docs/DESIGN-DEVIATIONS.md).
 const QUICK = [2, 5, 10, 20];
 
 function Header({ step, onBack }: { step: number | null; onBack: () => void }): React.ReactElement {
@@ -75,7 +77,7 @@ export function TopUpFlow({
     if (!touched.current.phone) setPhone(defaultPhone);
   }, [defaultPhone]);
 
-  const { topup, status, hasIntent, isStarting, start, reset } = useTopUp({ onStartError: () => fail(R.failT) });
+  const { topup, status, hasIntent, walletFresh, isStarting, start, reset } = useTopUp({ onStartError: (msg) => fail(msg ?? R.failT) });
 
   const amountError = validateTopupAmount(amountRaw, minTopUp, maxTopUp);
   const amount = Number(amountRaw);
@@ -119,7 +121,7 @@ export function TopUpFlow({
     return (
       <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
         <Header step={null} onBack={onExit} />
-        <CentreState icon={ok ? "circle-check" : "circle-alert"} tone={ok ? "ok" : "danger"} title={ok ? R.okT : R.failT} body={ok ? RF.okB(topup?.amount ?? amount, balance) : RF.failB(name)} />
+        <CentreState icon={ok ? "circle-check" : "circle-alert"} tone={ok ? "ok" : "danger"} title={ok ? R.okT : R.failT} body={ok ? RF.okB(topup?.amount ?? amount, walletFresh ? balance : null) : RF.failB(name)} />
         <CtaBar>
           {ok ? (
             <>
@@ -198,7 +200,7 @@ export function TopUpFlow({
                 </Text>
                 <TextInput
                   value={amountRaw}
-                  onChangeText={setAmountRaw}
+                  onChangeText={(v) => setAmountRaw((prev) => acceptAmountInput(prev, v))}
                   keyboardType="decimal-pad"
                   maxLength={6}
                   accessibilityLabel={R.amount}
@@ -214,7 +216,7 @@ export function TopUpFlow({
               ) : null}
             </View>
             <View style={{ flexDirection: "row", gap: 8 }}>
-              {QUICK.map((v) => {
+              {QUICK.filter((v) => v >= minTopUp).map((v) => {
                 const on = Number(amountRaw) === v;
                 return (
                   <Tappable

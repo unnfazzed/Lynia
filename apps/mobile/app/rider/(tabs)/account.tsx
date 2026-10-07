@@ -1,17 +1,16 @@
 import { RIDER_STRIKE_LIMIT, SOS_POLICY } from "@lynia/shared";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import { Linking, ScrollView, Text, View } from "react-native";
 import { tokens } from "@lynia/shared/tokens";
 import { getMe } from "../../../src/api/auth";
-import { saveRolePreference } from "../../../src/auth/session";
 import { getActiveOrder } from "../../../src/api/orders";
 import { openSupportWhatsApp } from "../../../src/config";
-import { setOnline } from "../../../src/api/riders";
+import { switchToCustomer } from "../../../src/logic/switch-to-customer";
 import { getRiderStanding } from "../../../src/api/rider-v2";
 import { useNotificationsUnreadCount } from "../../../src/query/use-notifications-unread";
-import { AppScreen, SkeletonList, useTabRoot } from "../../../src/ui";
+import { AppScreen, SkeletonList, useActionError, useTabRoot } from "../../../src/ui";
 import { CtaButton } from "../../../src/ui/order/kit";
 import { RIDER_COPY as R, RF } from "../../../src/ui/rider/copy";
 import { IdentityCard, MintTop, MSheet, RCard, RoleToggle, RRow, SafetyLineRow, Standing } from "../../../src/ui/rider/kit";
@@ -38,7 +37,7 @@ export default function RiderAccountTabScreen(): React.ReactElement {
   const rider = me?.rider;
   const activeQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder });
   const activeJob = activeQ.data && activeQ.data.status !== "cancelled" ? activeQ.data : null;
-  const offlineM = useMutation({ mutationFn: () => setOnline(false) });
+  const fail = useActionError();
   const unreadCount = useNotificationsUnreadCount();
   const [confirm, setConfirm] = useState(false);
 
@@ -49,9 +48,8 @@ export default function RiderAccountTabScreen(): React.ReactElement {
   const goCustomer = (): void => {
     // C5 keeps the rider online so the job they're carrying keeps its pings; C4 takes them offline,
     // which is what stops new jobs and food offers reaching them while they're on the customer side.
-    if (!activeJob) offlineM.mutate();
-    // R-5: the side the rider picks is the side the next cold start opens on.
-    void saveRolePreference("customer");
+    // R-5: the side the rider picks is the side the next cold start opens on (saved by the helper).
+    void switchToCustomer(!!activeJob).then((ok) => (ok ? undefined : fail(R.offFail)));
     setConfirm(false);
     router.replace("/home");
   };

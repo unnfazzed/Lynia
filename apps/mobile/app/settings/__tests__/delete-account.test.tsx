@@ -28,6 +28,8 @@ const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: 
 const mockSignOut = jest.fn(async () => undefined);
 const mockDeleteAccount = jest.fn(async () => undefined);
 const mockActiveOrder = jest.fn(async (): Promise<unknown> => null);
+const mockRiderJob = jest.fn(async (): Promise<unknown> => null);
+let mockMe: unknown = { rider: null };
 
 const mockBack = jest.fn();
 jest.mock("expo-router", () => ({ useRouter: () => ({ push: jest.fn(), back: mockBack }) }));
@@ -36,9 +38,11 @@ jest.mock("../../../src/auth/auth-context", () => ({
 }));
 jest.mock("../../../src/api/auth", () => ({
   deleteAccount: () => mockDeleteAccount(),
+  getMe: async () => mockMe,
 }));
 jest.mock("../../../src/api/orders", () => ({
   getActiveCustomerOrder: () => mockActiveOrder(),
+  getActiveOrder: () => mockRiderJob(),
 }));
 
 import DeleteAccountScreen, { type DeleteAccountScreenProps } from "../delete-account";
@@ -114,6 +118,8 @@ beforeEach(() => {
   mockDeleteAccount.mockClear();
   mockDeleteAccount.mockResolvedValue(undefined);
   mockActiveOrder.mockResolvedValue(null);
+  mockRiderJob.mockReset().mockResolvedValue(null);
+  mockMe = { rider: null };
 });
 
 describe("delete account — the explainer (First Run v2 I)", () => {
@@ -141,6 +147,22 @@ describe("delete account — the explainer (First Run v2 I)", () => {
     expect(has(tree, /A delivery is running — finish or cancel it first/)).toBe(true);
     expect(has(tree, "No delivery running")).toBe(false);
     expect(enabled(tree, "Delete account")).toBe(false);
+  });
+
+  it("MA-M7: a rider's job they're carrying blocks the step too", async () => {
+    mockMe = { rider: { kycStatus: "verified" } };
+    mockRiderJob.mockResolvedValue({ id: "job-1", status: "picked_up" });
+    const tree = await render();
+    await settle();
+    expect(has(tree, /A delivery is running — finish or cancel it first/)).toBe(true);
+    expect(enabled(tree, "Delete account")).toBe(false);
+  });
+
+  it("MA-M7: a customer never asks for a rider job", async () => {
+    const tree = await render();
+    await settle();
+    expect(mockRiderJob).not.toHaveBeenCalled();
+    expect(enabled(tree, "Delete account")).toBe(true);
   });
 
   it("the danger link lands on the final step, still without deleting", async () => {

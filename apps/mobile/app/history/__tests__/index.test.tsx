@@ -43,8 +43,9 @@ jest.mock("expo-router", () => ({
     return null;
   },
 }));
+let mockFeed: { rows: OrderHistoryRow[] | null; showingStale: boolean; savedAt: string | null; isFetching: boolean } | null = null;
 jest.mock("../../../src/query/use-history-feed", () => ({
-  useHistoryFeed: () => ({ rows: mockRows, showingStale: false, isFetching: false, isError: false, hasLiveData: true, refetch: jest.fn() }),
+  useHistoryFeed: () => ({ rows: mockRows, showingStale: false, savedAt: null, isFetching: false, isError: false, hasLiveData: true, refetch: jest.fn(), ...mockFeed }),
 }));
 
 import HistoryScreen from "../index";
@@ -134,5 +135,35 @@ describe("history split by side", () => {
     press(render(), "rider-98-food");
     expect(mockPush).toHaveBeenLastCalledWith("/order/rider-98-food");
     mockRows = baseRows;
+  });
+});
+
+describe("MA-L2 / MA-M5: Job history copy and the jobs that didn't pay", () => {
+  afterEach(() => {
+    mockFeed = null;
+    mockRows = baseRows;
+    mockSide = "rider";
+  });
+
+  it("a saved list says when it's from, in the handoff's words", () => {
+    const at = new Date(2026, 9, 7, 9, 24);
+    mockFeed = { rows: baseRows, showingStale: true, savedAt: at.toISOString(), isFetching: false };
+    const tree = render();
+    expect(tree.root.findAll((n) => n.props.text === "As of 09:24")).not.toHaveLength(0);
+    expect(text(tree)).not.toMatch(/trips/i);
+  });
+
+  it("couldn't load with nothing saved: the rider screens' title and the retry line, no 'trips'", () => {
+    mockFeed = { rows: null, showingStale: false, savedAt: null, isFetching: false };
+    const t = text(render());
+    expect(t).toContain("Something went wrong");
+    expect(t).not.toMatch(/trips/i);
+  });
+
+  it("an undelivered and a cancelled job show their outcome and no fare", () => {
+    mockRows = [row(1, "rider", "undelivered"), row(2, "rider", "cancelled")];
+    const t = text(render());
+    expect(t).toMatch(/Undelivered/);
+    expect(t).toMatch(/Cancelled/);
   });
 });

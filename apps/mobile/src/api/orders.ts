@@ -205,6 +205,9 @@ export interface OrderHistoryRow {
   note: string | null;
   proposedFare: string;
   agreedFare: string | null;
+  /** MA-H1: a merchant row's rider fare (the delivery fee); `agreedFare` there is the customer's whole
+   *  bill. Null on a parcel (its agreed fare is the rider's); absent on older servers. */
+  riderFare?: string | null;
   status: OrderStatus;
   createdAt: string;
   rating: { score: number; comment: string | null } | null;
