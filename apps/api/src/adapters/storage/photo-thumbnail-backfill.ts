@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-import { currentThumbKey, makePhotoThumbnail, thumbKeyFor } from "./photo-thumbnail";
+import { currentThumbKey, makePhotoThumbnail } from "./photo-thumbnail";
 import type { StorageAdapter } from "./storage.interface";
 
 /**
@@ -8,8 +8,11 @@ import type { StorageAdapter } from "./storage.interface";
  *
  * - **Idempotent.** Only a photo with no CURRENT thumb is touched (`currentThumbKey`), and the thumb key
  *   is derived from the photo key, so a second run finds nothing to do.
- * - **Resumable.** Progress is the column itself: a crash loses at most the in-flight batch, and a thumb
- *   that was written but not yet recorded is found by `stat` and recorded without being re-made.
+ * - **Resumable.** Progress is the column itself: a crash loses at most the in-flight batch. A thumb
+ *   written but not yet recorded is simply made again (an object that merely exists is never trusted:
+ *   it could be a truncated write), overwriting it.
+ * - **Complete.** Pages are keyed on `id > last id`, not a Prisma cursor row, so a row deleted mid-run
+ *   can't end the walk early.
  * - **Race-safe.** The column is set only `where` the row still holds the same photo key, so a photo the
  *   merchant replaces mid-run never gets the old photo's thumb.
  * - **Gentle.** Rows are walked by id in pages and at most `concurrency` photos are in flight.
@@ -31,8 +34,6 @@ export interface BackfillCounts {
   skipped: number;
   /** Thumbs made (or, in a dry run, that would be). */
   made: number;
-  /** Thumbs found already in storage and only recorded. */
-  recorded: number;
   failed: number;
 }
 
@@ -50,24 +51,15 @@ export async function backfillPhotoThumbnails(prisma: BackfillPrisma, storage: S
   const concurrency = Math.max(1, opts.concurrency ?? 3);
   const pageSize = Math.max(1, opts.pageSize ?? 100);
   const log = opts.log ?? (() => undefined);
-  const counts: BackfillCounts = { scanned: 0, skipped: 0, made: 0, recorded: 0, failed: 0 };
+  const counts: BackfillCounts = { scanned: 0, skipped: 0, made: 0, failed: 0 };
 
   const runJob = async (job: Job): Promise<void> => {
     if (!opts.apply) {
       counts.made++;
       return;
     }
-    const thumbKey = thumbKeyFor(job.photoKey);
-    try {
-      if (await storage.stat(thumbKey)) {
-        await job.record(thumbKey);
-        counts.recorded++;
-        return;
-      }
-    } catch {
-      // Couldn't ask: fall through and make it (an overwrite of an identical thumb is harmless).
-    }
-    const made = await makePhotoThumbnail(storage, job.photoKey, opts.timeoutMs ?? 30_000);
+    // No save-path gate here: `concurrency` already bounds this process.
+    const made = await makePhotoThumbnail(storage, job.photoKey, { timeoutMs: opts.timeoutMs ?? 30_000, slots: null });
     if (!made) {
       counts.failed++;
       log(`  failed: ${job.label} (${job.photoKey}); the full photo keeps being served`);
@@ -97,11 +89,10 @@ export async function backfillPhotoThumbnails(prisma: BackfillPrisma, storage: S
   let cursor: string | undefined;
   for (;;) {
     const rows = await prisma.merchantDish.findMany({
-      where: { photoUrl: { not: null } },
+      where: { photoUrl: { not: null }, ...(cursor ? { id: { gt: cursor } } : {}) },
       select: { id: true, photoUrl: true, photoThumbKey: true },
       orderBy: { id: "asc" },
       take: pageSize,
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
     if (rows.length === 0) break;
     cursor = rows[rows.length - 1]!.id;
@@ -129,11 +120,10 @@ export async function backfillPhotoThumbnails(prisma: BackfillPrisma, storage: S
   let shopCursor: string | undefined;
   for (;;) {
     const rows: Array<{ id: string; coverPhotoUrl: string | null; logoUrl: string | null; coverThumbKey: string | null; logoThumbKey: string | null }> = await prisma.merchant.findMany({
-      where: { OR: [{ coverPhotoUrl: { not: null } }, { logoUrl: { not: null } }] },
+      where: { OR: [{ coverPhotoUrl: { not: null } }, { logoUrl: { not: null } }], ...(shopCursor ? { id: { gt: shopCursor } } : {}) },
       select: { id: true, coverPhotoUrl: true, logoUrl: true, coverThumbKey: true, logoThumbKey: true },
       orderBy: { id: "asc" },
       take: pageSize,
-      ...(shopCursor ? { cursor: { id: shopCursor }, skip: 1 } : {}),
     });
     if (rows.length === 0) break;
     shopCursor = rows[rows.length - 1]!.id;

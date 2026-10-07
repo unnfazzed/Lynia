@@ -32,7 +32,6 @@ async function main(): Promise<void> {
   console.log(`\nPhotos scanned:            ${counts.scanned}`);
   console.log(`Already had a thumbnail:   ${counts.skipped}`);
   console.log(`Thumbnails ${verb}:${" ".repeat(Math.max(1, 16 - verb.length))}${counts.made}`);
-  if (APPLY) console.log(`Found in storage, recorded: ${counts.recorded}`);
   if (counts.failed > 0) console.log(`Failed (re-run to retry):  ${counts.failed}`);
   console.log(`\n${APPLY ? "Applied." : "Dry run — re-run with -- --apply to execute."}`);
   if (counts.failed > 0) process.exitCode = 1;

@@ -9,6 +9,15 @@ import { z } from "zod";
  *  value — one source so the clock the customer sees and the server enforces can't drift. */
 export const OFFER_WINDOW_MS = 90_000;
 
+/**
+ * A storage object key a client sends back after an upload (D7 review, 2026-10-07). Keys are only ever
+ * minted by the API (`<kind>/<ownerId>/<uuid>.<ext>`), so anything that could steer a storage SDK outside
+ * the caller's namespace is refused at the edge: a leading `/`, `..`, `//`, `\`, `%` (pre-encoded
+ * escapes) and control characters. The API also checks the exact minted shape and the owner.
+ */
+export const SAFE_OBJECT_KEY_RE = /^(?!\/)(?!.*\.\.)(?!.*\/\/)[^\\%\u0000-\u001f\u007f]+$/;
+export const UploadObjectKey = z.string().min(1).max(256).regex(SAFE_OBJECT_KEY_RE, "Invalid photo key");
+
 /** Choose grace after the offer window (after-send v2). When the countdown hits 0, offers already on
  *  the customer's screen stay choosable for this long; NEW offers are refused from the window end.
  *  The API expires an order with pending offers only once the grace has run out (one with none
@@ -977,8 +986,8 @@ export const UpdateMerchantProfileRequest = z
   .object({
     name: z.string().trim().min(1).max(120).optional(),
     description: z.string().trim().max(500).optional(),
-    coverPhotoUrl: z.string().min(1).max(256).optional(),
-    logoUrl: z.string().min(1).max(256).optional(),
+    coverPhotoUrl: UploadObjectKey.optional(),
+    logoUrl: UploadObjectKey.optional(),
     cuisineTags: z.array(z.string().trim().min(1).max(24)).max(3).optional(),
     priceLevel: z.number().int().min(1).max(3).optional(),
   })
@@ -1114,7 +1123,7 @@ export const MerchantDishRequest = z
     name: z.string().trim().min(1).max(80),
     description: z.string().trim().max(300).optional(),
     priceUsd: z.number().positive().multipleOf(0.01).max(1000),
-    photoUrl: z.string().min(1).max(256).optional(),
+    photoUrl: UploadObjectKey.optional(),
     /** Order flow v2 (BRIEF §13): "Prescription needed". Pharmacies only; default false. */
     rxRequired: z.boolean().optional(),
   })
@@ -1127,7 +1136,7 @@ export const UpdateMerchantDishRequest = z
     name: z.string().trim().min(1).max(80).optional(),
     description: z.string().trim().max(300).nullable().optional(),
     priceUsd: z.number().positive().multipleOf(0.01).max(1000).optional(),
-    photoUrl: z.string().min(1).max(256).optional(),
+    photoUrl: UploadObjectKey.optional(),
     sortOrder: z.number().int().min(0).optional(),
     /** Order flow v2 (BRIEF §13): "Prescription needed". Pharmacies only. */
     rxRequired: z.boolean().optional(),
@@ -1398,7 +1407,7 @@ export type PlaceMerchantOrderItem = z.infer<typeof PlaceMerchantOrderItem>;
  *  `consent` is the "I'll show the original prescription to the rider" tick, which must be ticked. */
 export const PrescriptionInput = z
   .object({
-    photoKeys: z.array(z.string().min(1).max(256)).min(1).max(3),
+    photoKeys: z.array(UploadObjectKey).min(1).max(3),
     patientName: z.string().trim().min(1).max(80),
     consent: z.literal(true),
   })
@@ -1584,7 +1593,7 @@ export type MerchantDoorProofView = z.infer<typeof MerchantDoorProofView>;
  *  pickup completes, optional for restaurants. */
 export const AttachMerchantPickupProofRequest = z
   .object({
-    key: z.string().min(1).max(256).optional(),
+    key: UploadObjectKey.optional(),
     bagSealed: z.boolean().optional(),
   })
   .strict()
@@ -1595,7 +1604,7 @@ export type AttachMerchantPickupProofRequest = z.infer<typeof AttachMerchantPick
  *  `POST /uploads/delivery-proof`, why the code couldn't be used, and who it was handed to. */
 export const AttachMerchantDoorProofRequest = z
   .object({
-    key: z.string().min(1).max(256),
+    key: UploadObjectKey,
     reason: DoorProofReason,
     handedTo: z.string().trim().min(1).max(60).optional(),
     lat: z.number().min(-90).max(90).optional(),

@@ -578,7 +578,7 @@ pnpm --filter @lynia/api thumbs:backfill                               # DRY RUN
 pnpm --filter @lynia/api thumbs:backfill -- --apply --concurrency=3    # APPLY — 3 photos at a time
 ```
 
-The summary prints photos scanned, already thumbnailed, made, found-in-storage-and-recorded, and
+The summary prints photos scanned, already thumbnailed, made, and
 failed (a non-zero exit when any failed — re-run to retry; a photo whose object is gone stays failed and
 keeps being served in full). Code: `apps/api/scripts/backfill-photo-thumbnails.ts` →
 `apps/api/src/adapters/storage/photo-thumbnail-backfill.ts`.

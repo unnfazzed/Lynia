@@ -157,6 +157,27 @@ export function ProposerTotal({ p, fallback }: { p: Proposer; fallback: number }
   );
 }
 
+/** MJ-RL20 (D7): the 40 px tile draws the server's thumbnail, lazily, never the full photo; a thumbnail
+ *  that fails to load falls back to the full photo once (D7 review). */
+function SwapThumb({ thumbUrl, photoUrl }: { thumbUrl?: string; photoUrl: string }) {
+  const [src, setSrc] = useState(thumbUrl ?? photoUrl);
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- a signed catalogue URL, not a static asset
+    <img
+      src={src}
+      alt=""
+      width={40}
+      height={40}
+      loading="lazy"
+      decoding="async"
+      onError={() => {
+        if (src !== photoUrl) setSrc(photoUrl);
+      }}
+      style={{ borderRadius: 10, objectFit: "cover", flexShrink: 0 }}
+    />
+  );
+}
+
 /**
  * U1b · Swap picker: "Swap Bread (Lobels 700g) for", a search field, the venue's own live items (not the
  * line's own, nothing out of stock or still a draft) with "price · difference", a radio, then
@@ -219,17 +240,7 @@ export function SwapPicker({ item, onPick, onCancel }: { item: MerchantOrderItem
                 onClick={() => setChosen(d.id)}
               >
                 {d.photoUrl ? (
-                  // MJ-RL20 (D7): the 40 px tile draws the server's thumbnail, lazily, never the full photo.
-                  // eslint-disable-next-line @next/next/no-img-element -- a signed catalogue URL, not a static asset
-                  <img
-                    src={d.thumbUrl ?? d.photoUrl}
-                    alt=""
-                    width={40}
-                    height={40}
-                    loading="lazy"
-                    decoding="async"
-                    style={{ borderRadius: 10, objectFit: "cover", flexShrink: 0 }}
-                  />
+                  <SwapThumb thumbUrl={d.thumbUrl} photoUrl={d.photoUrl} />
                 ) : (
                   <span style={{ width: 40, height: 40, borderRadius: 10, background: "var(--surface)", flexShrink: 0 }} />
                 )}

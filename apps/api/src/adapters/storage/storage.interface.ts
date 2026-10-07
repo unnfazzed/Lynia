@@ -61,15 +61,17 @@ export interface StorageAdapter {
    */
   listObjects(prefix: string): AsyncIterable<StoredObject>;
   /**
-   * The whole object, or `null` on 404 (D7 thumbnails: the server reads a menu/shop photo, at most
-   * MAX_DISH_PHOTO_BYTES, to make its small variant). Throws on any other failure, like {@link stat}.
+   * The whole object, or `null` on 404 (D7 thumbnails: the server reads a menu/shop photo to make its
+   * small variant). The size is checked first: an object over `maxBytes` throws {@link ObjectTooLargeError}
+   * without being downloaded. `signal` aborts the call where the SDK supports it. Throws on any other
+   * failure, like {@link stat}.
    */
-  readObject(key: string): Promise<Buffer | null>;
+  readObject(key: string, maxBytes: number, signal?: AbortSignal): Promise<Buffer | null>;
   /**
    * Write `body` at `key` from the server (D7: the `<key>.thumb.jpg` variant). Overwrites an existing
    * object. Throws on failure — the caller decides whether that matters.
    */
-  writeObject(key: string, body: Buffer, contentType: string): Promise<void>;
+  writeObject(key: string, body: Buffer, contentType: string, signal?: AbortSignal): Promise<void>;
   /**
    * Hard-delete the underlying object (DS15-03). Used by right-to-erasure to purge the KYC selfie /
    * ID-document (and profile photo) from the bucket after the DB pointers are nulled — the signed-URL
@@ -81,3 +83,11 @@ export interface StorageAdapter {
 }
 
 export const STORAGE = Symbol("STORAGE_ADAPTER");
+
+/** {@link StorageAdapter.readObject} refused an object bigger than the caller's cap. */
+export class ObjectTooLargeError extends Error {
+  constructor(key: string, size: number, maxBytes: number) {
+    super(`Object ${key} is ${size} bytes, over the ${maxBytes}-byte read cap`);
+    this.name = "ObjectTooLargeError";
+  }
+}

@@ -65,7 +65,18 @@ export function StoreCover({
 }
 
 /** Logo 76 round with a 4px white ring, overlapping the cover by half. */
-export function StoreLogo({ logoUrl, name, kind }: { logoUrl: string | null; name: string; kind: string | null }): React.ReactElement {
+export function StoreLogo({
+  logoUrl,
+  logoThumbUrl,
+  name,
+  kind,
+}: {
+  logoUrl: string | null;
+  /** D7: the logo's small variant (the disc is ~64 dp); the full logo is the fallback. */
+  logoThumbUrl?: string | null;
+  name: string;
+  kind: string | null;
+}): React.ReactElement {
   const [failed, setFailed] = useState(false);
   const photo = !!logoUrl && !failed;
   const tint = kindTint(kind);
@@ -88,7 +99,12 @@ export function StoreLogo({ logoUrl, name, kind }: { logoUrl: string | null; nam
       }}
     >
       {photo ? (
-        <RemoteImage source={{ uri: logoUrl! }} onError={() => setFailed(true)} style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }} />
+        <RemoteImage
+          source={{ uri: logoThumbUrl ?? logoUrl! }}
+          fallbackUri={logoUrl}
+          onError={() => setFailed(true)}
+          style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
+        />
       ) : (
         <Text style={{ fontSize: 28, fontWeight: tokens.font.weight.bold, color: tint.ink }}>{initial(name)}</Text>
       )}
@@ -459,7 +475,7 @@ export function DishRow({
         {item.outOfStock ? <OosChip /> : null}
         {qty > 0 && canAdd ? <QtyStepper qty={qty} label={item.name} onMinus={onMinus} onPlus={onAdd} /> : null}
       </View>
-      <VenueImage photoUrl={listPhoto(item)} priority={priority} name={item.name} kind={null} dim={item.unavailable} style={{ width: 112, height: 112, borderRadius: 14 }}>
+      <VenueImage photoUrl={listPhoto(item)} fallbackUrl={item.photoUrl} priority={priority} name={item.name} kind={null} dim={item.unavailable} style={{ width: 112, height: 112, borderRadius: 14 }}>
         {canAdd && !item.unavailable ? <AddButton count={qty} label={item.name} onPress={onAdd} /> : null}
       </VenueImage>
     </Tappable>
@@ -490,7 +506,7 @@ export function ShopTile({
   return (
     <View style={{ flex: 1, minWidth: 0 }}>
       <Tappable onPress={onOpen} accessibilityRole="button" accessibilityLabel={`${item.name}, ${formatMoney(item.priceUsd)}${item.outOfStock ? `, ${B.store.oos}` : ""}`}>
-        <VenueImage photoUrl={listPhoto(item)} priority={priority} name={item.name} kind={null} dim={item.unavailable} style={{ width: "100%", aspectRatio: 1, borderRadius: 16 }}>
+        <VenueImage photoUrl={listPhoto(item)} fallbackUrl={item.photoUrl} priority={priority} name={item.name} kind={null} dim={item.unavailable} style={{ width: "100%", aspectRatio: 1, borderRadius: 16 }}>
           {canAdd && !item.unavailable && onAdd ? <AddButton count={qty} label={item.name} onPress={onAdd} /> : null}
         </VenueImage>
         <Text style={{ marginTop: 10, fontSize: 16, fontWeight: tokens.font.weight.bold, color: ink, ...TABULAR }}>{formatMoney(item.priceUsd)}</Text>
@@ -554,7 +570,7 @@ export function PharmacyRow({
       accessibilityLabel={`${item.name}, ${formatMoney(item.priceUsd)}${item.outOfStock ? `, ${B.store.oos}` : ""}${item.rxRequired ? `, ${O.r.rxNeed}` : ""}`}
       style={{ flexDirection: "row", alignItems: "center", gap: 14, marginHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: HAIRLINE }}
     >
-      <VenueImage photoUrl={listPhoto(item)} priority={priority} name={item.name} kind={null} dim={item.unavailable} style={{ width: 72, height: 72, borderRadius: 14 }} />
+      <VenueImage photoUrl={listPhoto(item)} fallbackUrl={item.photoUrl} priority={priority} name={item.name} kind={null} dim={item.unavailable} style={{ width: 72, height: 72, borderRadius: 14 }} />
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={{ fontSize: 15, lineHeight: 19.5, fontWeight: tokens.font.weight.semibold, color: ink }}>
           {highlight ? <Highlighted text={item.name} match={highlight} /> : item.name}
@@ -636,7 +652,7 @@ export function PopularCard({
   return (
     <View style={{ width: POPULAR_CARD }}>
       <Tappable onPress={onOpen} accessibilityRole="button" accessibilityLabel={`${item.name}, ${formatMoney(item.priceUsd)}`}>
-        <VenueImage photoUrl={listPhoto(item)} name={item.name} kind={null} dim={item.unavailable} style={{ width: POPULAR_CARD, height: POPULAR_CARD, borderRadius: 16 }}>
+        <VenueImage photoUrl={listPhoto(item)} fallbackUrl={item.photoUrl} name={item.name} kind={null} dim={item.unavailable} style={{ width: POPULAR_CARD, height: POPULAR_CARD, borderRadius: 16 }}>
           {canAdd && !item.unavailable ? <AddButton count={qty} label={item.name} onPress={onAdd} /> : null}
         </VenueImage>
         <Text numberOfLines={2} style={{ marginTop: 8, fontSize: 14, lineHeight: 18.2, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>

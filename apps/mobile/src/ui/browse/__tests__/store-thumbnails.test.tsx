@@ -65,9 +65,9 @@ describe("catalogue photos prefer the thumbnail (D7)", () => {
       prepBaselineMinutes: null,
     } as RestaurantListItem;
     const v = restaurantVenue(r, null, new Date("2026-10-07T10:00:00Z"));
-    expect(v).toMatchObject({ photoUrl: r.coverPhotoUrl, thumbUrl: r.coverThumbUrl, logoUrl: r.logoThumbUrl });
+    expect(v).toMatchObject({ photoUrl: r.coverPhotoUrl, thumbUrl: r.coverThumbUrl, logoUrl: r.logoUrl, logoThumbUrl: r.logoThumbUrl });
     const old = restaurantVenue({ ...r, coverThumbUrl: undefined, logoThumbUrl: undefined }, null, new Date());
-    expect(old).toMatchObject({ photoUrl: r.coverPhotoUrl, thumbUrl: null, logoUrl: r.logoUrl });
+    expect(old).toMatchObject({ photoUrl: r.coverPhotoUrl, thumbUrl: null, logoUrl: r.logoUrl, logoThumbUrl: null });
   });
 });
 
@@ -78,5 +78,22 @@ describe("off-screen catalogue photos load at low priority (P11 first step)", ()
     expect(photoPriority(EAGER_PHOTO_ROWS)).toBe("low");
     expect(images(<DishRow item={item()} qty={0} canAdd priority="low" onOpen={noop} onAdd={noop} onMinus={noop} />)[0]!.priority).toBe("low");
     expect(images(<DishRow item={item()} qty={0} canAdd onOpen={noop} onAdd={noop} onMinus={noop} />)[0]!.priority).toBe("normal");
+  });
+});
+
+describe("a thumbnail that fails to load falls back to the full photo (D7 review)", () => {
+  it("tries the full photo once, then the placeholder", () => {
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<DishRow item={item()} qty={0} canAdd onOpen={noop} onAdd={noop} onMinus={noop} />);
+    });
+    const img = () => tree.root.findAllByType(ExpoImage as unknown as React.ElementType);
+    expect(img()[0]!.props.source).toEqual({ uri: THUMB });
+    act(() => img()[0]!.props.onError());
+    expect(img()[0]!.props.source).toEqual({ uri: FULL });
+    act(() => img()[0]!.props.onError());
+    expect(img()).toHaveLength(0); // the placeholder initial
+    expect(tree.root.findByProps({ children: "S" })).toBeTruthy();
+    act(() => tree.unmount());
   });
 });

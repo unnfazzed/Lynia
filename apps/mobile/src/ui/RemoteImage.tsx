@@ -1,5 +1,5 @@
 import { Image as ExpoImage } from "expo-image";
-import React from "react";
+import React, { useState } from "react";
 import type { ImageStyle, StyleProp } from "react-native";
 
 /**
@@ -59,19 +59,31 @@ export function RemoteImage(props: {
   /** P11 (D7): expo-image's load priority; 'low' queues an off-screen row behind what the customer can
    *  see (on web it becomes the `<img>`'s fetchpriority). Default "normal". */
   priority?: "low" | "normal" | "high";
+  /** D7 review: tried once when `source` fails (a thumbnail that is recorded but missing falls back to
+   *  the full photo); only if that fails too does `onError` fire. */
+  fallbackUri?: string | null;
 }): React.ReactElement {
+  // Which source failed: a new `source` starts over from the primary.
+  const [failedUri, setFailedUri] = useState<string | null>(null);
+  const primary = props.source.uri;
+  const fallback = props.fallbackUri && props.fallbackUri !== primary ? props.fallbackUri : null;
+  const uri = failedUri === primary && fallback ? fallback : primary;
+  const onError = (): void => {
+    if (uri === primary && fallback) setFailedUri(primary);
+    else props.onError?.();
+  };
   // expo-image has no "center"; "none" (natural size, centered) is its closest equivalent.
   const contentFit =
     props.resizeMode === "stretch" ? "fill" : props.resizeMode === "center" ? "none" : (props.resizeMode ?? "cover");
   return (
     <ExpoImage
-      source={{ uri: props.source.uri, cacheKey: imageCacheKey(props.source.uri) }}
+      source={{ uri, cacheKey: imageCacheKey(uri) }}
       style={props.style as never}
       contentFit={contentFit}
       cachePolicy={props.cachePolicy ?? "memory-disk"}
       recyclingKey={props.recyclingKey}
       priority={props.priority ?? "normal"}
-      onError={props.onError ? () => props.onError?.() : undefined}
+      onError={props.onError || fallback ? onError : undefined}
       accessibilityElementsHidden={props.accessibilityElementsHidden}
       importantForAccessibility={props.importantForAccessibility}
       accessible={props.accessible}

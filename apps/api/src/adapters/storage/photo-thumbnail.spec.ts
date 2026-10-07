@@ -1,6 +1,16 @@
 import sharp from "sharp";
 import { describe, expect, it, vi } from "vitest";
-import { currentThumbKey, makePhotoThumbnail, renderThumbnail, THUMB_MIN_SIDE, thumbKeyFor } from "./photo-thumbnail";
+import {
+  currentThumbKey,
+  makePhotoThumbnail,
+  renderThumbnail,
+  SAVE_THUMB_SLOTS,
+  THUMB_MIN_SIDE,
+  THUMB_SAVE_CONCURRENCY,
+  THUMB_SOURCE_MAX_BYTES,
+  ThumbSlots,
+  thumbKeyFor,
+} from "./photo-thumbnail";
 import type { StorageAdapter } from "./storage.interface";
 
 const jpeg = (width: number, height: number) =>
@@ -63,7 +73,7 @@ describe("photo thumbnails (D7: P04 / MJ-RL20)", () => {
     const writeFails = memStorage({ "dish/p1/x.jpg": await jpeg(800, 800) }, { writeObject: vi.fn(async () => Promise.reject(new Error("403"))) });
     expect(await makePhotoThumbnail(writeFails.storage, "dish/p1/x.jpg")).toBeNull();
     const hangs = memStorage({}, { readObject: vi.fn(() => new Promise<Buffer | null>(() => undefined)) });
-    expect(await makePhotoThumbnail(hangs.storage, "dish/p1/x.jpg", 20)).toBeNull();
+    expect(await makePhotoThumbnail(hangs.storage, "dish/p1/x.jpg", { timeoutMs: 20, slots: new ThumbSlots(2) })).toBeNull();
   });
 
   it("a stored thumb key is served only while it is the thumb of the current photo", () => {
@@ -72,5 +82,72 @@ describe("photo thumbnails (D7: P04 / MJ-RL20)", () => {
     expect(currentThumbKey("dish/p1/b.jpg", "dish/p1/a.jpg.thumb.jpg")).toBeNull();
     expect(currentThumbKey("dish/p1/a.jpg", null)).toBeNull();
     expect(currentThumbKey(null, "dish/p1/a.jpg.thumb.jpg")).toBeNull();
+  });
+
+  it("reads the source with a size cap and the deadline's AbortSignal", async () => {
+    const { storage } = memStorage({ "dish/p1/a.jpg": await jpeg(800, 800) });
+    await makePhotoThumbnail(storage, "dish/p1/a.jpg", { slots: new ThumbSlots(2) });
+    const [key, maxBytes, signal] = vi.mocked(storage.readObject).mock.calls[0]!;
+    expect([key, maxBytes]).toEqual(["dish/p1/a.jpg", THUMB_SOURCE_MAX_BYTES]);
+    expect(signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
+describe("D7 review: thumbnail work is bounded", () => {
+  it("the save paths share a gate of 2: a third save while two are in progress skips its thumb without reading", async () => {
+    expect(SAVE_THUMB_SLOTS.size).toBe(THUMB_SAVE_CONCURRENCY);
+    expect(THUMB_SAVE_CONCURRENCY).toBe(2);
+    const slots = new ThumbSlots(2);
+    let finish!: () => void;
+    const gate = new Promise<void>((r) => (finish = r));
+    const original = await jpeg(800, 800);
+    const { storage, writes } = memStorage({}, { readObject: vi.fn(async () => (await gate, original)) });
+    const first = makePhotoThumbnail(storage, "dish/p1/a.jpg", { slots });
+    const second = makePhotoThumbnail(storage, "dish/p1/b.jpg", { slots });
+    await expect(makePhotoThumbnail(storage, "dish/p1/c.jpg", { slots })).resolves.toBeNull();
+    expect(vi.mocked(storage.readObject).mock.calls.map((c) => c[0])).toEqual(["dish/p1/a.jpg", "dish/p1/b.jpg"]);
+    finish();
+    await expect(Promise.all([first, second])).resolves.toEqual(["dish/p1/a.jpg.thumb.jpg", "dish/p1/b.jpg.thumb.jpg"]);
+    expect(writes).toHaveLength(2);
+    // The slots come back once the work ends: the next save makes its thumb.
+    expect(slots.busy).toBe(0);
+    await expect(makePhotoThumbnail(storage, "dish/p1/c.jpg", { slots })).resolves.toBe("dish/p1/c.jpg.thumb.jpg");
+  });
+
+  it("at the deadline the read is aborted, nothing is written, and the slot stays held until the work really stops", async () => {
+    const slots = new ThumbSlots(1);
+    let release!: () => void;
+    const late = new Promise<void>((r) => (release = r));
+    let seenSignal: AbortSignal | undefined;
+    const original = await jpeg(800, 800);
+    const { storage, writes } = memStorage(
+      {},
+      {
+        readObject: vi.fn(async (_k: string, _max: number, signal?: AbortSignal) => {
+          seenSignal = signal;
+          await late; // a store that ignores the signal and answers late
+          return original;
+        }),
+      },
+    );
+    await expect(makePhotoThumbnail(storage, "dish/p1/a.jpg", { timeoutMs: 20, slots })).resolves.toBeNull();
+    expect(seenSignal?.aborted).toBe(true);
+    expect(slots.busy).toBe(1);
+    release();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(writes).toEqual([]);
+    expect(slots.busy).toBe(0);
+  });
+
+  it("only JPEG and PNG are decoded; anything else is refused before decoding", async () => {
+    const webp = await sharp({ create: { width: 600, height: 600, channels: 3, background: "#123456" } }).webp().toBuffer();
+    await expect(renderThumbnail(webp)).rejects.toThrow(/not a JPEG or PNG \(webp\)/);
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600"><rect width="600" height="600"/></svg>');
+    await expect(renderThumbnail(svg)).rejects.toThrow(/not a JPEG or PNG/);
+  });
+
+  it("refuses a source over 12 MP (a decompression bomb)", async () => {
+    const big = await sharp({ create: { width: 4000, height: 3200, channels: 3, background: "#000000" } }).jpeg({ quality: 30 }).toBuffer();
+    await expect(renderThumbnail(big)).rejects.toThrow(/pixel limit/i);
   });
 });

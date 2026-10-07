@@ -400,7 +400,8 @@ export default function LauncherHomeScreen(): React.ReactElement {
                     <VenueCard
                       key={v.id}
                       name={v.name}
-                      photoUrl={v.photoUrl}
+                      photoUrl={v.thumbUrl ?? v.photoUrl}
+                      fallbackUrl={v.photoUrl}
                       rating={v.rating}
                       etaMinutes={v.etaMinutes}
                       deliveryFee={v.deliveryFee}
@@ -418,7 +419,8 @@ export default function LauncherHomeScreen(): React.ReactElement {
                     <VenueCard
                       key={v.id}
                       name={v.name}
-                      photoUrl={v.photoUrl}
+                      photoUrl={v.thumbUrl ?? v.photoUrl}
+                      fallbackUrl={v.photoUrl}
                       kind={SHOP_KIND_LABEL[v.shopKind]}
                       rating={v.rating}
                       etaMinutes={v.etaMinutes}

@@ -5,19 +5,22 @@ import type { StorageAdapter } from "./storage.interface";
 
 type Row = Record<string, string | null>;
 
-/** A tiny in-memory table honouring what the backfill asks of Prisma: `not: null` / OR filters, id
- *  cursor paging, and a guarded `updateMany`. */
+/** A tiny in-memory table honouring what the backfill asks of Prisma: `not: null` / `gt` / OR filters,
+ *  Prisma-style cursor paging (a cursor row that no longer exists gives an EMPTY page, as Prisma does),
+ *  and a guarded `updateMany`. */
 function table(rows: Row[]) {
   const matches = (r: Row, where: Record<string, unknown>): boolean =>
     Object.entries(where).every(([col, cond]) => {
       if (col === "OR") return (cond as Array<Record<string, unknown>>).some((c) => matches(r, c));
       if (cond && typeof cond === "object" && "not" in cond) return r[col] != null;
+      if (cond && typeof cond === "object" && "gt" in cond) return String(r[col]) > String((cond as { gt: string }).gt);
       return r[col] === cond;
     });
   return {
     rows,
     findMany: vi.fn(async (args: { where: Record<string, unknown>; take: number; cursor?: { id: string } }) => {
       const sorted = rows.filter((r) => matches(r, args.where)).sort((a, b) => a.id!.localeCompare(b.id!));
+      if (args.cursor && !sorted.some((r) => r.id === args.cursor!.id)) return [];
       const from = args.cursor ? sorted.findIndex((r) => r.id === args.cursor!.id) + 1 : 0;
       return sorted.slice(from, from + args.take).map((r) => ({ ...r }));
     }),
@@ -62,7 +65,7 @@ describe("backfillPhotoThumbnails (D7)", () => {
   it("a dry run counts what it would make and writes nothing", async () => {
     const h = await harness();
     const counts = await backfillPhotoThumbnails(h.prisma, h.storage, { apply: false, pageSize: 2 });
-    expect(counts).toEqual({ scanned: 6, skipped: 1, made: 5, recorded: 0, failed: 0 });
+    expect(counts).toEqual({ scanned: 6, skipped: 1, made: 5, failed: 0 });
     expect(h.storage.writeObject).not.toHaveBeenCalled();
     expect(h.dishes.updateMany).not.toHaveBeenCalled();
   });
@@ -70,7 +73,7 @@ describe("backfillPhotoThumbnails (D7)", () => {
   it("makes and records every missing or stale thumb, paging by id, and a second run is a no-op", async () => {
     const h = await harness();
     const first = await backfillPhotoThumbnails(h.prisma, h.storage, { apply: true, pageSize: 2, concurrency: 2 });
-    expect(first).toEqual({ scanned: 6, skipped: 1, made: 4, recorded: 0, failed: 1 });
+    expect(first).toEqual({ scanned: 6, skipped: 1, made: 4, failed: 1 });
     expect(h.dishes.rows.map((r) => r.photoThumbKey)).toEqual([
       "dish/p1/a.jpg.thumb.jpg",
       "dish/p1/b.jpg.thumb.jpg",
@@ -84,17 +87,31 @@ describe("backfillPhotoThumbnails (D7)", () => {
 
     vi.mocked(h.storage.writeObject).mockClear();
     const second = await backfillPhotoThumbnails(h.prisma, h.storage, { apply: true, pageSize: 2 });
-    expect(second).toEqual({ scanned: 6, skipped: 5, made: 0, recorded: 0, failed: 1 });
+    expect(second).toEqual({ scanned: 6, skipped: 5, made: 0, failed: 1 });
     expect(h.storage.writeObject).not.toHaveBeenCalled();
   });
 
-  it("resumes: a thumb already written (a crash before it was recorded) is recorded without being re-made", async () => {
+  it("resumes without trusting a thumb that merely exists: an unrecorded (maybe truncated) thumb is made again", async () => {
     const h = await harness();
-    h.objects.set("dish/p1/a.jpg.thumb.jpg", Buffer.from("thumb"));
+    h.objects.set("dish/p1/a.jpg.thumb.jpg", Buffer.from("half a jpeg"));
     const counts = await backfillPhotoThumbnails(h.prisma, h.storage, { apply: true });
-    expect(counts.recorded).toBe(1);
+    expect(counts.failed).toBe(1); // only d5, whose photo is gone
     expect(h.dishes.rows[0]!.photoThumbKey).toBe("dish/p1/a.jpg.thumb.jpg");
-    expect(vi.mocked(h.storage.writeObject).mock.calls.map((c) => c[0])).not.toContain("dish/p1/a.jpg.thumb.jpg");
+    expect((await sharp(h.objects.get("dish/p1/a.jpg.thumb.jpg")!).metadata()).format).toBe("jpeg");
+  });
+
+  it("a row deleted mid-run never ends the walk early (pages are `id > last`, not a cursor row)", async () => {
+    const h = await harness();
+    // Page 1 is d1, d2 (pageSize 2); d2 — the last id of that page — is deleted while the page is worked.
+    vi.mocked(h.storage.readObject).mockImplementationOnce(async (k: string) => {
+      const i = h.dishes.rows.findIndex((r) => r.id === "d2");
+      h.dishes.rows.splice(i, 1);
+      return h.objects.get(k) ?? null;
+    });
+    const counts = await backfillPhotoThumbnails(h.prisma, h.storage, { apply: true, pageSize: 2, concurrency: 1 });
+    // d3 (already done) and d5 (photo gone) on the later pages were still reached, and so were the shops.
+    expect(counts.scanned).toBe(6);
+    expect(h.merchants.rows[0]).toMatchObject({ coverThumbKey: "banner/p1/cover.jpg.thumb.jpg" });
   });
 
   it("never records a thumb onto a row whose photo changed mid-run", async () => {

@@ -52,7 +52,7 @@ import {
   isInServiceArea,
 } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
-import { ownNamespace, type UploadKind } from "../adapters/storage/upload-kinds";
+import { isMintedUploadKey, type UploadKind } from "../adapters/storage/upload-kinds";
 import { UploadVerifier } from "../adapters/storage/upload-verifier";
 import { currentThumbKey, makePhotoThumbnail } from "../adapters/storage/photo-thumbnail";
 import { MicroCache } from "../common/micro-cache";
@@ -250,7 +250,11 @@ export class MerchantService {
    */
   private async verifyPhotoKey(key: string, current: string | null, profileId: string, kind: UploadKind): Promise<void> {
     if (key === current) return;
-    if (!key.startsWith(ownNamespace(kind, profileId))) throw new BadRequestException("Invalid photo key");
+    // D7 review: exactly the key POST /uploads/merchant-*-photo minted for this caller
+    // (`<kind>/<profileId>/<uuid>.jpg|png`). A prefix match alone let `dish/<me>/../../kyc/<victim>/x.jpg`
+    // through: the Azure SDK resolves that to the victim's blob, which the verifier would then delete
+    // and the thumbnailer would read.
+    if (!isMintedUploadKey(kind, profileId, key)) throw new BadRequestException("Invalid photo key");
     await this.uploads?.verify(key, kind);
   }
 

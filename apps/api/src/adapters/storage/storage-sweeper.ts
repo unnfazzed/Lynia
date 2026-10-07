@@ -9,8 +9,8 @@ export const ORPHAN_MIN_AGE_MS = 24 * 60 * 60 * 1000;
 /** Keys looked up per DB round-trip. */
 const REFERENCE_BATCH = 200;
 /** Upper bound on objects examined per kind per run, so one sweep can't run unbounded; the next day's
- *  run picks up the rest. */
-const MAX_SCANNED_PER_KIND = 20_000;
+ *  run picks up the rest. Doubled for D7: every dish and banner photo now has a `.thumb.jpg` beside it. */
+export const MAX_SCANNED_PER_KIND = 40_000;
 
 export interface OrphanSweepResult {
   scanned: number;

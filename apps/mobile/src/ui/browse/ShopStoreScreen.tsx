@@ -399,7 +399,7 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
     <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
       <ScrollView ref={scrollRef} onScroll={onScroll} scrollEventThrottle={32} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: bottomPad }}>
         <StoreCover service={service} photoUrl={v.photoUrl} narrow={narrow} onBack={() => router.back()} onSearch={() => setSearching(true)} searchLabel={fmt(B.store.searchIn, { v: name })} />
-        <StoreLogo logoUrl={v.logoUrl} name={name} kind={v.kind} />
+        <StoreLogo logoUrl={v.logoUrl} logoThumbUrl={v.logoThumbUrl} name={name} kind={v.kind} />
         <StoreTitle name={name} sub={v.sub} />
         {open && !closingStrip ? <OpenLine v={v} service={service} /> : null}
         <InfoStrip v={v} />

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaService } from "../../prisma/prisma.service";
-import { ORPHAN_MIN_AGE_MS, StorageSweeper } from "./storage-sweeper";
+import { MAX_SCANNED_PER_KIND, ORPHAN_MIN_AGE_MS, StorageSweeper } from "./storage-sweeper";
 import type { StorageAdapter, StoredObject } from "./storage.interface";
 
 const NOW = new Date("2026-09-24T03:00:00Z");
@@ -98,6 +98,10 @@ describe("StorageSweeper.sweepOrphans (C1 / E2)", () => {
     } as unknown as PrismaService;
     await new StorageSweeper(prisma, storage).sweepOrphans(NOW);
     expect(deleted.sort()).toEqual(["banner/o1/l.jpg.thumb.jpg", "dish/o1/gone.jpg.thumb.jpg"]);
+  });
+
+  it("D7 review: the per-kind scan cap was doubled, since every dish and banner photo now has a thumbnail beside it", () => {
+    expect(MAX_SCANNED_PER_KIND).toBeGreaterThanOrEqual(40_000);
   });
 
   it("never touches an object younger than 24 h, even unreferenced (an upload mid-flow)", async () => {

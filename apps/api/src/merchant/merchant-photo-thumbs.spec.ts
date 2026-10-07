@@ -48,7 +48,7 @@ const merchantRow = (over: Record<string, unknown> = {}) => ({
   name: "Gava",
   ownerProfile: { phone: null },
   description: null,
-  coverPhotoUrl: "banner/p1/cover.jpg",
+  coverPhotoUrl: "banner/p1/aaaaaaaa-0000-4000-8000-00000000000e.jpg",
   logoUrl: null,
   coverThumbKey: null,
   logoThumbKey: null,
@@ -67,7 +67,7 @@ const merchantRow = (over: Record<string, unknown> = {}) => ({
 
 describe("D7 thumbnails on save", () => {
   it("createDish makes the thumb from the stored photo and records it; the response carries thumbUrl", async () => {
-    const objects = new Map([["dish/p1/a.jpg", await photo()]]);
+    const objects = new Map([["dish/p1/aaaaaaaa-0000-4000-8000-00000000000a.jpg", await photo()]]);
     const storage = storageWith(objects);
     let created: Record<string, unknown> = {};
     const s = svc(
@@ -82,10 +82,10 @@ describe("D7 thumbnails on save", () => {
       },
       storage,
     );
-    const res = await s.createDish("p1", { categoryId: "c1", name: "Sadza", priceUsd: 5, photoUrl: "dish/p1/a.jpg" });
-    expect(created).toMatchObject({ photoUrl: "dish/p1/a.jpg", photoThumbKey: "dish/p1/a.jpg.thumb.jpg", isDraft: false });
-    expect((await sharp(objects.get("dish/p1/a.jpg.thumb.jpg")!).metadata()).width).toBe(400);
-    expect(res).toMatchObject({ photoUrl: "https://signed.example/dish/p1/a.jpg", thumbUrl: "https://signed.example/dish/p1/a.jpg.thumb.jpg" });
+    const res = await s.createDish("p1", { categoryId: "c1", name: "Sadza", priceUsd: 5, photoUrl: "dish/p1/aaaaaaaa-0000-4000-8000-00000000000a.jpg" });
+    expect(created).toMatchObject({ photoUrl: "dish/p1/aaaaaaaa-0000-4000-8000-00000000000a.jpg", photoThumbKey: "dish/p1/aaaaaaaa-0000-4000-8000-00000000000a.jpg.thumb.jpg", isDraft: false });
+    expect((await sharp(objects.get("dish/p1/aaaaaaaa-0000-4000-8000-00000000000a.jpg.thumb.jpg")!).metadata()).width).toBe(400);
+    expect(res).toMatchObject({ photoUrl: "https://signed.example/dish/p1/aaaaaaaa-0000-4000-8000-00000000000a.jpg", thumbUrl: "https://signed.example/dish/p1/aaaaaaaa-0000-4000-8000-00000000000a.jpg.thumb.jpg" });
   });
 
   it("a thumb that cannot be made never fails the save: the dish saves with its photo and no thumbUrl", async () => {
@@ -96,26 +96,26 @@ describe("D7 thumbnails on save", () => {
       {
         merchantCategory: { findFirst: async () => ({ id: "c1", merchantId: "m1" }) },
         merchantDish: {
-          findFirst: async () => dishRow({ photoUrl: "dish/p1/old.jpg", photoThumbKey: "dish/p1/old.jpg.thumb.jpg", isDraft: false }),
+          findFirst: async () => dishRow({ photoUrl: "dish/p1/aaaaaaaa-0000-4000-8000-00000000000d.jpg", photoThumbKey: "dish/p1/aaaaaaaa-0000-4000-8000-00000000000d.jpg.thumb.jpg", isDraft: false }),
           create: async ({ data }: { data: Record<string, unknown> }) => ((created = data), dishRow(data)),
           update: async ({ data }: { data: Record<string, unknown> }) => ((updated = data), dishRow({ ...data })),
         },
       },
       broken,
     );
-    const res = await s.createDish("p1", { categoryId: "c1", name: "Sadza", priceUsd: 5, photoUrl: "dish/p1/a.jpg" });
-    expect(created.photoUrl).toBe("dish/p1/a.jpg");
+    const res = await s.createDish("p1", { categoryId: "c1", name: "Sadza", priceUsd: 5, photoUrl: "dish/p1/aaaaaaaa-0000-4000-8000-00000000000a.jpg" });
+    expect(created.photoUrl).toBe("dish/p1/aaaaaaaa-0000-4000-8000-00000000000a.jpg");
     expect(created).not.toHaveProperty("photoThumbKey");
-    expect(res.photoUrl).toBe("https://signed.example/dish/p1/a.jpg");
+    expect(res.photoUrl).toBe("https://signed.example/dish/p1/aaaaaaaa-0000-4000-8000-00000000000a.jpg");
     expect(res).not.toHaveProperty("thumbUrl");
 
     // A NEW photo whose thumb fails clears the old photo's thumb key rather than leaving it behind.
-    await s.updateDish("p1", "d1", { photoUrl: "dish/p1/b.jpg" });
-    expect(updated).toMatchObject({ photoUrl: "dish/p1/b.jpg", photoThumbKey: null, isDraft: false });
+    await s.updateDish("p1", "d1", { photoUrl: "dish/p1/aaaaaaaa-0000-4000-8000-00000000000b.jpg" });
+    expect(updated).toMatchObject({ photoUrl: "dish/p1/aaaaaaaa-0000-4000-8000-00000000000b.jpg", photoThumbKey: null, isDraft: false });
   });
 
   it("re-saving the same photo makes no new thumb; a profile save thumbs only the photo that changed", async () => {
-    const objects = new Map([["banner/p1/logo.jpg", await photo()]]);
+    const objects = new Map([["banner/p1/aaaaaaaa-0000-4000-8000-00000000000f.jpg", await photo()]]);
     const storage = storageWith(objects);
     let dishData: Record<string, unknown> = {};
     let profileData: Record<string, unknown> = {};
@@ -126,18 +126,18 @@ describe("D7 thumbnails on save", () => {
           update: async ({ data }: { data: Record<string, unknown> }) => ((profileData = data), merchantRow(data)),
         },
         merchantDish: {
-          findFirst: async () => dishRow({ photoUrl: "dish/p1/a.jpg", isDraft: false }),
-          update: async ({ data }: { data: Record<string, unknown> }) => ((dishData = data), dishRow({ photoUrl: "dish/p1/a.jpg" })),
+          findFirst: async () => dishRow({ photoUrl: "dish/p1/aaaaaaaa-0000-4000-8000-00000000000a.jpg", isDraft: false }),
+          update: async ({ data }: { data: Record<string, unknown> }) => ((dishData = data), dishRow({ photoUrl: "dish/p1/aaaaaaaa-0000-4000-8000-00000000000a.jpg" })),
         },
       },
       storage,
     );
-    await s.updateDish("p1", "d1", { photoUrl: "dish/p1/a.jpg", name: "Sadza 2" });
+    await s.updateDish("p1", "d1", { photoUrl: "dish/p1/aaaaaaaa-0000-4000-8000-00000000000a.jpg", name: "Sadza 2" });
     expect(dishData).not.toHaveProperty("photoThumbKey");
-    await s.updateProfile("p1", { coverPhotoUrl: "banner/p1/cover.jpg", logoUrl: "banner/p1/logo.jpg" });
-    expect(profileData).toMatchObject({ logoThumbKey: "banner/p1/logo.jpg.thumb.jpg" });
+    await s.updateProfile("p1", { coverPhotoUrl: "banner/p1/aaaaaaaa-0000-4000-8000-00000000000e.jpg", logoUrl: "banner/p1/aaaaaaaa-0000-4000-8000-00000000000f.jpg" });
+    expect(profileData).toMatchObject({ logoThumbKey: "banner/p1/aaaaaaaa-0000-4000-8000-00000000000f.jpg.thumb.jpg" });
     expect(profileData).not.toHaveProperty("coverThumbKey");
-    expect(storage.readObject.mock.calls).toEqual([["banner/p1/logo.jpg"]]);
+    expect(storage.readObject.mock.calls.map((c) => c[0])).toEqual(["banner/p1/aaaaaaaa-0000-4000-8000-00000000000f.jpg"]);
   });
 });
 
@@ -146,12 +146,12 @@ describe("D7 thumbnails on reads", () => {
 
   it("the customer list, menu and search carry signed thumb URLs next to the full photos", async () => {
     const thumbed = merchantRow({
-      coverPhotoUrl: "banner/p1/cover.jpg",
-      coverThumbKey: "banner/p1/cover.jpg.thumb.jpg",
-      logoUrl: "banner/p1/logo.jpg",
-      logoThumbKey: "banner/p1/logo.jpg.thumb.jpg",
+      coverPhotoUrl: "banner/p1/aaaaaaaa-0000-4000-8000-00000000000e.jpg",
+      coverThumbKey: "banner/p1/aaaaaaaa-0000-4000-8000-00000000000e.jpg.thumb.jpg",
+      logoUrl: "banner/p1/aaaaaaaa-0000-4000-8000-00000000000f.jpg",
+      logoThumbKey: "banner/p1/aaaaaaaa-0000-4000-8000-00000000000f.jpg.thumb.jpg",
     });
-    const dish = { id: "d1", name: "Peri", description: null, priceUsd: 8, photoUrl: "dish/p1/a.jpg", photoThumbKey: "dish/p1/a.jpg.thumb.jpg", outOfStockUntil: null, merchantId: "m1" };
+    const dish = { id: "d1", name: "Peri", description: null, priceUsd: 8, photoUrl: "dish/p1/aaaaaaaa-0000-4000-8000-00000000000a.jpg", photoThumbKey: "dish/p1/aaaaaaaa-0000-4000-8000-00000000000a.jpg.thumb.jpg", outOfStockUntil: null, merchantId: "m1" };
     const s = svc(
       {
         merchant: {
@@ -167,17 +167,17 @@ describe("D7 thumbnails on reads", () => {
     );
     const list = await s.listRestaurants();
     expect(list.restaurants[0]).toMatchObject({
-      coverPhotoUrl: "https://signed.example/banner/p1/cover.jpg",
-      coverThumbUrl: "https://signed.example/banner/p1/cover.jpg.thumb.jpg",
-      logoThumbUrl: "https://signed.example/banner/p1/logo.jpg.thumb.jpg",
+      coverPhotoUrl: "https://signed.example/banner/p1/aaaaaaaa-0000-4000-8000-00000000000e.jpg",
+      coverThumbUrl: "https://signed.example/banner/p1/aaaaaaaa-0000-4000-8000-00000000000e.jpg.thumb.jpg",
+      logoThumbUrl: "https://signed.example/banner/p1/aaaaaaaa-0000-4000-8000-00000000000f.jpg.thumb.jpg",
     });
     const menu = await s.getRestaurantMenu("m1");
     expect(menu.categories[0]!.dishes[0]).toMatchObject({
-      photoUrl: "https://signed.example/dish/p1/a.jpg",
-      thumbUrl: "https://signed.example/dish/p1/a.jpg.thumb.jpg",
+      photoUrl: "https://signed.example/dish/p1/aaaaaaaa-0000-4000-8000-00000000000a.jpg",
+      thumbUrl: "https://signed.example/dish/p1/aaaaaaaa-0000-4000-8000-00000000000a.jpg.thumb.jpg",
     });
     const search = await s.searchRestaurants("peri");
-    expect(search.dishes[0]).toMatchObject({ thumbUrl: "https://signed.example/dish/p1/a.jpg.thumb.jpg" });
+    expect(search.dishes[0]).toMatchObject({ thumbUrl: "https://signed.example/dish/p1/aaaaaaaa-0000-4000-8000-00000000000a.jpg.thumb.jpg" });
   });
 
   it("the merchant's dish list carries thumbUrl; no thumb or a stale one sends no thumbUrl at all", async () => {
@@ -185,19 +185,19 @@ describe("D7 thumbnails on reads", () => {
       {
         merchantDish: {
           findMany: async () => [
-            dishRow({ id: "d1", photoUrl: "dish/p1/a.jpg", photoThumbKey: "dish/p1/a.jpg.thumb.jpg", isDraft: false }),
-            dishRow({ id: "d2", photoUrl: "dish/p1/b.jpg", photoThumbKey: null, isDraft: false }),
+            dishRow({ id: "d1", photoUrl: "dish/p1/aaaaaaaa-0000-4000-8000-00000000000a.jpg", photoThumbKey: "dish/p1/aaaaaaaa-0000-4000-8000-00000000000a.jpg.thumb.jpg", isDraft: false }),
+            dishRow({ id: "d2", photoUrl: "dish/p1/aaaaaaaa-0000-4000-8000-00000000000b.jpg", photoThumbKey: null, isDraft: false }),
             // The photo changed and its thumb failed: the old thumb is never served for the new photo.
-            dishRow({ id: "d3", photoUrl: "dish/p1/new.jpg", photoThumbKey: "dish/p1/old.jpg.thumb.jpg", isDraft: false }),
+            dishRow({ id: "d3", photoUrl: "dish/p1/aaaaaaaa-0000-4000-8000-00000000000c.jpg", photoThumbKey: "dish/p1/aaaaaaaa-0000-4000-8000-00000000000d.jpg.thumb.jpg", isDraft: false }),
           ],
         },
       },
       readStorage,
     );
     const [a, b, c] = await s.listDishes("p1");
-    expect(a!.thumbUrl).toBe("https://signed.example/dish/p1/a.jpg.thumb.jpg");
+    expect(a!.thumbUrl).toBe("https://signed.example/dish/p1/aaaaaaaa-0000-4000-8000-00000000000a.jpg.thumb.jpg");
     expect(b).not.toHaveProperty("thumbUrl");
     expect(c).not.toHaveProperty("thumbUrl");
-    expect(c!.photoUrl).toBe("https://signed.example/dish/p1/new.jpg");
+    expect(c!.photoUrl).toBe("https://signed.example/dish/p1/aaaaaaaa-0000-4000-8000-00000000000c.jpg");
   });
 });

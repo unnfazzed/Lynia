@@ -411,7 +411,7 @@ export default function RestaurantMenuScreen(): React.ReactElement {
     <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
       <ScrollView ref={scrollRef} onScroll={onScroll} scrollEventThrottle={32} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: hasCart ? 96 + insets.bottom : 24 }}>
         <StoreCover service="food" photoUrl={v.photoUrl} narrow={narrow} onBack={() => router.back()} onSearch={() => setSearching(true)} searchLabel={fmt(B.store.searchIn, { v: name })} />
-        <StoreLogo logoUrl={v.logoUrl} name={name} kind={null} />
+        <StoreLogo logoUrl={v.logoUrl} logoThumbUrl={v.logoThumbUrl} name={name} kind={null} />
         <StoreTitle name={name} sub={v.sub} />
         {open && !closingStrip ? <OpenLine v={v} service="food" /> : null}
         <InfoStrip v={v} />
