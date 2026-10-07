@@ -4942,6 +4942,21 @@ _Filled in phase by phase._
   (`geocode.ts`), "Notify me" for a Soon service (`service-interest.ts`) and the rider's job-start stream
   (`use-rider-location.ts`, normally granted by P1 by then). **Left as they are — owner decision 2026-10-06
   (answer 2).**
+- **P11 and P6 gain a "Not now" (rider audit B1, 2026-10-07) — UPSTREAM KIT GAP.** P11 (notifications blocked) and P6
+  (location blocked) were drawn with only "Open phone settings" and "I've turned it on". The handoff's own brief says
+  every "Not now" moves on, and R3 is only marked seen at P13, so a rider with blocked notifications looped R3 → P11
+  forever and never reached the board. Both screens now add **"Not now"** (`RP.notNow`, verbatim) under "I've turned it
+  on"; it moves to the next step (P6 → the notification step, P11 → P13; a single step reopened from the board leaves),
+  the same pattern D-83 used for P12. **Report upstream** so the next export draws the link on P6 / P11.
+- **R3's "Add your photo and bike papers later" link — UPSTREAM KIT DEFECT (rider audit FR-L2, 2026-10-07).** The kit
+  draws it as bare 13/24 text: a 24px tap target, under `--target-min`. Per CLAUDE.md D2 the app keeps the drawn look
+  (same text, same 24 line, no layout change) and reaches the token by touch slop only
+  (`(tokens.touchTargetMin − 24) / 2` above and below, `src/ui/onboarding/rider.tsx`). **Report upstream**: the kit
+  should give the link a `var(--target-min)` row.
+- **E2b capture-guide tip glyphs — UPSTREAM KIT DEFECT (rider audit FR-L3, 2026-10-07).** The kit draws the three tip
+  icons in the dark accent text green on a 12% white chip over `ink` — about 1.8:1, under the 3:1 non-text minimum. The
+  app draws them in the brand green (`tokens.color.accent`, the same green the guide's title half uses on ink).
+  **Report upstream** so the kit uses a light glyph on dark.
 
 **Screen-local toasts (owner, 2026-10-06: "move all five to the new bar").** `OrderToast`, `BrowseToast`,
 `ReviewToast`, the rider board's `RToast` and `SendToast` now draw the shared First Run v2 bar
