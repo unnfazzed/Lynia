@@ -1,4 +1,5 @@
 import * as ImagePicker from "expo-image-picker";
+import { onlineManager } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { attachPickupPhoto } from "../api/orders";
@@ -20,7 +21,8 @@ export interface PickupPhoto {
   /** Downscaling the used shot (A5 "Saving photo…"). */
   saving: boolean;
   uploaded: boolean;
-  /** The camera permission was refused. */
+  /** The camera permission was refused. Re-checked when the app comes back to the foreground (the rider
+   *  may have just turned it on in the phone's settings), so it clears without another tap. */
   denied: boolean;
   take: () => void;
   use: () => void;
@@ -96,22 +98,54 @@ export function usePickupPhoto(orderId: string | null, serverUrl: string | null 
     };
   }, [orderId, upload]);
 
+  const deniedRef = useRef(false);
+  deniedRef.current = denied;
   useEffect(() => {
     const sub = AppState.addEventListener("change", (s) => {
-      if (s === "active" && queued.current) void upload(queued.current);
+      if (s !== "active") return;
+      if (queued.current) void upload(queued.current);
+      // Back from the phone's settings: pick up a camera permission the rider just turned on.
+      if (deniedRef.current) {
+        void ImagePicker.getCameraPermissionsAsync()
+          .then((p) => {
+            if (p.granted) setDenied(false);
+          })
+          .catch(() => undefined);
+      }
     });
     return () => sub.remove();
   }, [upload]);
 
+  // PJ-H1: a shot that couldn't go up (no data at the pickup) is re-sent the moment data is back, not only
+  // on the next foreground or mount.
+  useEffect(
+    () =>
+      onlineManager.subscribe((online) => {
+        if (online && queued.current) void upload(queued.current);
+      }),
+    [upload],
+  );
+
   const take = useCallback(() => {
     void (async () => {
-      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      let perm: { granted: boolean };
+      try {
+        perm = await ImagePicker.requestCameraPermissionsAsync();
+      } catch {
+        perm = { granted: false };
+      }
       if (!perm.granted) {
         setDenied(true);
         return;
       }
       setDenied(false);
-      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.6 });
+      let result: ImagePicker.ImagePickerResult;
+      try {
+        result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.6 });
+      } catch {
+        // No camera app / the OS refused to open it: nothing to preview; the rider can tap again.
+        return;
+      }
       if (result.canceled) return;
       const a = result.assets[0];
       if (!a) return;
