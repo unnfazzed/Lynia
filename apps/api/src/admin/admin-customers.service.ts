@@ -198,6 +198,10 @@ export class AdminCustomersService {
     const result = await this.prisma.$transaction(async (tx) => {
       const customer = await tx.profile.findFirst({ where: { id: profileId, role: "customer" }, select: { onHold: true } });
       if (!customer) throw new NotFoundException("Customer not found");
+      // LC-D-SIB-2: the CAS below guards on the OBSERVED onHold, which trivially matches when the customer
+      // is already held — so a lost-response retry wrote a second `customer.hold` audit row and re-pushed
+      // "Account paused". Refuse the no-op re-apply up front (mirrors liftCashBan's precondition).
+      if (customer.onHold) throw new ConflictException("Customer is already on hold");
       // DS13-04: CAS on the observed onHold (mirrors DS-03) so a concurrent hold/lift can't be silently
       // clobbered between the read and this write. 0 rows ⇒ the row moved under us ⇒ 409.
       const changed = await tx.profile.updateMany({
@@ -234,6 +238,9 @@ export class AdminCustomersService {
     const result = await this.prisma.$transaction(async (tx) => {
       const customer = await tx.profile.findFirst({ where: { id: profileId, role: "customer" }, select: { onHold: true } });
       if (!customer) throw new NotFoundException("Customer not found");
+      // LC-D-SIB-2: lifting a customer who isn't held is a no-op the CAS below would happily match —
+      // refuse it so a retry can't double-write `customer.lift` or re-push "Account restored".
+      if (!customer.onHold) throw new ConflictException("Customer is not on hold");
       // DS13-04: CAS on the observed onHold (mirrors DS-03) so a concurrent hold/lift can't be silently
       // clobbered between the read and this write. 0 rows ⇒ the row moved under us ⇒ 409.
       const changed = await tx.profile.updateMany({
