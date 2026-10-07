@@ -88,4 +88,46 @@ describe("isSafeMerchantRedirectPath (CWE-601 guard on the post-login `next` par
   it("rejects a backslash-leading path some browsers normalize to protocol-relative", () => {
     expect(isSafeMerchantRedirectPath("/\\attacker.example")).toBe(false);
   });
+
+  // MJ-M5 (2026-10-07): the WHATWG URL parser strips tab/CR/LF and reads `\` as `/`, so these
+  // all resolved off-site while passing the old `next[1] !== "/"` test. `decodeURIComponent` mirrors
+  // what `useSearchParams().get("next")` hands the login page.
+  it.each([
+    "/%09/evil.example",
+    "/%0a/evil.example",
+    "/%0d/evil.example",
+    "/%0d%0a/evil.example",
+    "%09//evil.example",
+    "//evil.example",
+    "/%5Cevil.example",
+    "/%5C%5Cevil.example",
+    "%5C%5Cevil.example",
+    "/%2F/evil.example",
+    "/%00/evil.example",
+    "/%7f/evil.example",
+    "https:%2F%2Fevil.example",
+    "javascript:alert(1)",
+  ])("rejects the decoded bypass %s", (encoded) => {
+    const next = decodeURIComponent(encoded);
+    expect(isSafeMerchantRedirectPath(next)).toBe(false);
+    expect(isSafeMerchantRedirectPath(next, "https://merchant.lyniago.com")).toBe(false);
+  });
+
+  it("rejects a backslash or control character anywhere in the path", () => {
+    expect(isSafeMerchantRedirectPath("/queue\\evil")).toBe(false);
+    expect(isSafeMerchantRedirectPath("/\\/evil.example")).toBe(false);
+    expect(isSafeMerchantRedirectPath("/queue\n")).toBe(false);
+    expect(isSafeMerchantRedirectPath("/\t\t/evil.example")).toBe(false);
+  });
+
+  it("accepts still-encoded text, which the parser keeps on the same origin", () => {
+    // A double-encoded `%09` arrives as the literal "%09": a harmless same-origin path segment.
+    expect(isSafeMerchantRedirectPath("/%09/evil.example", "https://merchant.lyniago.com")).toBe(true);
+    expect(isSafeMerchantRedirectPath("/queue/order?id=o1&b=%2F%2Fx", "https://merchant.lyniago.com")).toBe(true);
+  });
+
+  it("resolves against the given origin and keeps only same-origin paths", () => {
+    expect(isSafeMerchantRedirectPath("/queue", "https://merchant.lyniago.com")).toBe(true);
+    expect(isSafeMerchantRedirectPath("/./queue", "https://merchant.lyniago.com")).toBe(true);
+  });
 });

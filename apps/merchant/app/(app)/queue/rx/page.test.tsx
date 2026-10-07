@@ -22,7 +22,11 @@ const business = vi.hoisted(() => ({ pharmacist: true }));
 vi.mock("../../../lib/business", () => ({
   useBusiness: () => merchantProfile({ businessType: "shop", shopKind: "pharmacy", myIsPharmacist: business.pharmacist }),
 }));
-vi.mock("../../../components/KitchenConnectionProvider", () => ({ useKitchenConnection: () => ({ actionsDisabled: false }) }));
+const { holdTakeover, release } = vi.hoisted(() => {
+  const releaseHold = vi.fn();
+  return { release: releaseHold, holdTakeover: vi.fn(() => releaseHold) };
+});
+vi.mock("../../../components/KitchenConnectionProvider", () => ({ useKitchenConnection: () => ({ actionsDisabled: false, holdTakeover }) }));
 vi.mock("../../../components/Kitchen", () => ({ Kitchen: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 
 afterEach(() => {
@@ -101,5 +105,16 @@ describe("P1 · Check the prescription (Merchant v2, D-77, over Order flow v2's 
     expect(await screen.findByText("Rudo Moyo")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
     expect(screen.queryByRole("checkbox")).toBeNull();
+  });
+});
+
+describe("C20 / MJ-M13: the Rx check is how a pharmacist answers the ring", () => {
+  it("holds this order off the shell's ringing screen while open, and lets go on leaving", async () => {
+    show();
+    await screen.findByText("Rudo Moyo");
+    expect(holdTakeover).toHaveBeenCalledWith(ID);
+    expect(release).not.toHaveBeenCalled();
+    cleanup();
+    expect(release).toHaveBeenCalledTimes(1);
   });
 });

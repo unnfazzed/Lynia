@@ -3,6 +3,7 @@
 import { Fragment, useEffect } from "react";
 import { useBranchEpoch } from "../lib/branches";
 import { KitchenConnectionProvider, useKitchenConnection } from "../components/KitchenConnectionProvider";
+import { RingingHost } from "../components/queue/RingingHost";
 
 /** Client-side safety net: if the session is cleared while a page is mounted (an API call's
  *  refresh-then-fail path calls clearMerchantSession + signOut already, which redirects — this
@@ -44,6 +45,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <KitchenConnectionProvider>
       <SessionGuard>
         <BranchScope>{children}</BranchScope>
+        {/* C20 / D4 (ledger D-86): a ringing order covers whatever screen is open with K2 / S2. */}
+        <RingingHost />
       </SessionGuard>
     </KitchenConnectionProvider>
   );

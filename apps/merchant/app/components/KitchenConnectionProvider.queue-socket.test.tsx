@@ -14,9 +14,19 @@ import { KitchenConnectionProvider } from "./KitchenConnectionProvider";
  * joining the room on every connect (including reconnects), and tearing it down on unmount/sign-out.
  */
 
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
+const { replace, refreshMerchantSession } = vi.hoisted(() => ({
+  replace: vi.fn(),
+  refreshMerchantSession: vi.fn(async (): Promise<"refreshed" | "dead" | "transient"> => "refreshed"),
 }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace, push: vi.fn() }),
+}));
+vi.mock("../lib/api-client", async () => {
+  const actual = await vi.importActual<typeof import("../lib/api-client")>("../lib/api-client");
+  return { ...actual, refreshMerchantSession: () => refreshMerchantSession() };
+});
+// The shell's queue poll (C20) is not under test here.
+vi.mock("../lib/orders-api", () => ({ listQueue: vi.fn(() => new Promise(() => {})) }));
 
 vi.mock("./alarm-singleton", () => {
   const controller = {
@@ -46,6 +56,7 @@ type FakeSocket = {
   on: (event: string, cb: (...args: unknown[]) => void) => FakeSocket;
   emit: (...args: unknown[]) => FakeSocket;
   disconnect: () => void;
+  connect: () => void;
   trigger: (event: string, ...args: unknown[]) => void;
 };
 
@@ -58,6 +69,7 @@ function makeFakeSocket(): FakeSocket {
     },
     emit: vi.fn(() => socket),
     disconnect: vi.fn(),
+    connect: vi.fn(),
     trigger: (event, ...args) => (handlers[event] ?? []).forEach((cb) => cb(...args)),
   };
   return socket;
@@ -117,5 +129,70 @@ describe("KitchenConnectionProvider queue-socket presence (LC-C C-T4)", () => {
     });
 
     expect(lastSocket.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  // MJ-M7 (2026-10-07): the server drops a handshake carrying an expired token with
+  // `client.disconnect(true)` ("io server disconnect"), which Socket.IO never retries by itself — the
+  // tablet read as dark for the rest of the shift.
+  it("refreshes the session and reconnects after the server drops it (an expired token)", async () => {
+    await act(async () => {
+      render(<KitchenConnectionProvider>{null}</KitchenConnectionProvider>);
+    });
+    await act(async () => {
+      lastSocket.trigger("disconnect", "io server disconnect");
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(refreshMerchantSession).toHaveBeenCalledTimes(1);
+    expect(lastSocket.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves ordinary drops to Socket.IO's own reconnect", async () => {
+    await act(async () => {
+      render(<KitchenConnectionProvider>{null}</KitchenConnectionProvider>);
+    });
+    await act(async () => {
+      lastSocket.trigger("disconnect", "transport close");
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(refreshMerchantSession).not.toHaveBeenCalled();
+    expect(lastSocket.connect).not.toHaveBeenCalled();
+  });
+
+  it("backs off when the server keeps refusing it", async () => {
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        render(<KitchenConnectionProvider>{null}</KitchenConnectionProvider>);
+      });
+      await act(async () => {
+        lastSocket.trigger("disconnect", "io server disconnect");
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(lastSocket.connect).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        lastSocket.trigger("disconnect", "io server disconnect");
+        await vi.advanceTimersByTimeAsync(500);
+      });
+      expect(lastSocket.connect).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(600);
+      });
+      expect(lastSocket.connect).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("signs out when the refresh token is dead", async () => {
+    refreshMerchantSession.mockResolvedValueOnce("dead");
+    await act(async () => {
+      render(<KitchenConnectionProvider>{null}</KitchenConnectionProvider>);
+    });
+    await act(async () => {
+      lastSocket.trigger("disconnect", "io server disconnect");
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(lastSocket.connect).not.toHaveBeenCalled();
+    expect(replace).toHaveBeenCalledWith("/login");
   });
 });

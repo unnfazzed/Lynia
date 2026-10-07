@@ -1,12 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef } from "react";
-import { alarmOrders } from "../../lib/alarm";
+import { useEffect } from "react";
 import { formatCountdown, msUntil } from "../../lib/countdown";
 import { liveBar, type LiveBarView } from "../../lib/orders-view";
 import { useNow } from "../../lib/use-now";
-import { useQueuePoll } from "../../lib/use-queue-poll";
 import { useVocabulary } from "../../lib/vocabulary";
 import { Icon } from "../icons";
 import { useKitchenConnection } from "../KitchenConnectionProvider";
@@ -14,27 +12,14 @@ import { useKitchenConnection } from "../KitchenConnectionProvider";
 /**
  * T1 · the live bar (Merchant v2, packages/design/handoff/merchant-v2, ledger D-77): on every tab but
  * Orders, a dark bar floats 12px above the tab bar while an order needs the merchant or is live, so a
- * rider at the counter is never hidden. Tapping it opens that order. It reads the same queue poll as
- * the Orders home, and rings the alarm for a new order the way the Orders home does.
+ * rider at the counter is never hidden. Tapping it opens that order. It reads the shell's one queue poll
+ * (C20, `KitchenConnectionProvider`) — the same copy as the Orders home; the alarm and the ringing screen
+ * are the shell's, so this bar neither polls nor rings by itself any more.
  */
 export function LiveBar({ onShown }: { onShown?: (shown: boolean) => void }) {
-  const { alarm } = useKitchenConnection();
+  const { queue } = useKitchenConnection();
   const v = useVocabulary();
-  const { orders } = useQueuePoll(true);
-  const view = liveBar(orders, v);
-  const ringing = alarmOrders(orders).length;
-
-  // Silence only what this bar started: Account's "Test the alarm" rings with nothing waiting.
-  const rang = useRef(false);
-  useEffect(() => {
-    if (ringing > 0) {
-      rang.current = true;
-      alarm.ring();
-    } else if (rang.current) {
-      rang.current = false;
-      alarm.silence();
-    }
-  }, [ringing, alarm]);
+  const view = liveBar(queue.orders, v);
 
   useEffect(() => {
     onShown?.(view !== null);

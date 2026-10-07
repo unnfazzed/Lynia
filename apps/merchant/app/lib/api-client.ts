@@ -266,6 +266,21 @@ async function doRefresh(refreshToken: string): Promise<RefreshOutcome> {
   return { kind: "refreshed", session: next };
 }
 
+/**
+ * MJ-M7 (2026-10-07): refresh the session outside an HTTP call — for the presence socket, which the
+ * server drops with `io server disconnect` when its handshake token has expired. Socket.IO never
+ * auto-reconnects after a server-side disconnect, so the shell refreshes and reconnects itself; the
+ * socket's `auth` callback then reads the fresh token. Shares `authedFetch`'s single-flight refresh, and
+ * clears the session only on a definitively dead refresh token (LC-C03): `transient` keeps it.
+ */
+export async function refreshMerchantSession(): Promise<"refreshed" | "dead" | "transient"> {
+  const session = loadMerchantSession();
+  if (!session) return "dead";
+  const outcome = await refreshSession(session.refreshToken);
+  if (outcome.kind === "dead") clearMerchantSession();
+  return outcome.kind;
+}
+
 /** Authenticated fetch with refresh-on-401 (single-flight) and sign-out on a definitively dead
  *  session. Callers should treat a thrown ApiError(401, "Your session expired...") as "send the
  *  merchant back to /login" — the alarm/queue shell does this at its top level.

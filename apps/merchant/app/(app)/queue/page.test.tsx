@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MerchantOrderResponse } from "@lynia/shared";
 import QueuePage from "./page";
+import { RingingHost } from "../../components/queue/RingingHost";
 import { TOAST_MS, ToastProvider } from "../../components/m/Toast";
 import { ApiError, getMyMerchant } from "../../lib/api-client";
 import { setBusyMode, setOpen } from "../../lib/menu-api";
@@ -38,15 +39,25 @@ const poll = vi.hoisted(() => ({
   error: null as { status: number; message: string } | null,
   refetch: vi.fn(async () => {}),
 }));
-vi.mock("../../lib/use-queue-poll", () => ({
-  useQueuePoll: () => ({ orders: poll.orders, loading: false, loaded: poll.loaded, error: poll.error, refetch: poll.refetch }),
-}));
 
+// C20: the queue poll, the alarm and the ringing screen are the shell's (KitchenConnectionProvider +
+// RingingHost); this board reads the shell's queue. The host is rendered beside the page, as the
+// (app) layout does, so K2 / S2 still take over the Orders board exactly as before.
 const alarm = vi.hoisted(() => ({ ring: vi.fn(), silence: vi.fn(), testRing: vi.fn() }));
 const signOut = vi.fn();
 let reachable = true;
+const session = { accessToken: "at", refreshToken: "rt", expiresIn: 900, issuedAt: 0, profileId: "p", role: "merchant" };
 vi.mock("../../components/KitchenConnectionProvider", () => ({
-  useKitchenConnection: () => ({ alarm, actionsDisabled: false, reachability: { reachable, attempt: 0, unreachableSinceMs: null }, signOut }),
+  useKitchenConnection: () => ({
+    alarm,
+    session,
+    actionsDisabled: false,
+    reachability: { reachable, attempt: 0, unreachableSinceMs: null },
+    signOut,
+    queue: { orders: poll.orders, loading: false, loaded: poll.loaded, error: poll.error, refetch: poll.refetch },
+    heldOrderIds: new Set<string>(),
+    holdTakeover: () => () => {},
+  }),
 }));
 vi.mock("../../components/Kitchen", () => ({
   Kitchen: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -55,6 +66,7 @@ vi.mock("../../components/Kitchen", () => ({
 const Page = () => (
   <ToastProvider>
     <QueuePage />
+    <RingingHost />
   </ToastProvider>
 );
 
@@ -103,6 +115,42 @@ describe("loading the Orders home", () => {
     reachable = true;
     rerender(<Page />);
     expect(await screen.findByText("Sadza Republic")).toBeTruthy();
+  });
+
+  it("retries a 5xx profile read by itself on a back-off (MJ-RH4) — reachability never flips for a response", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.mocked(getMyMerchant)
+        .mockRejectedValueOnce(new ApiError(503, "Restaurants isn't live on this account yet."))
+        .mockRejectedValueOnce(new ApiError(500, "Request failed (HTTP 500)."))
+        .mockResolvedValueOnce(kitchen());
+      render(<Page />);
+      await screen.findByText("Restaurants isn't live on this account yet.");
+      expect(getMyMerchant).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000);
+      });
+      expect(getMyMerchant).toHaveBeenCalledTimes(2);
+      // The quiet retry keeps the message up instead of flashing "Loading…"; the next waits twice as long.
+      await screen.findByText("Request failed (HTTP 500).");
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+      expect(getMyMerchant).toHaveBeenCalledTimes(2);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_500);
+      });
+      expect(await screen.findByText("Sadza Republic")).toBeTruthy();
+      expect(getMyMerchant).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a 401 on the profile read signs out instead of offering Retry", async () => {
+    vi.mocked(getMyMerchant).mockRejectedValueOnce(new ApiError(401, "Your session expired — sign in again."));
+    render(<Page />);
+    await vi.waitFor(() => expect(signOut).toHaveBeenCalled());
   });
 
   it("sends a number that isn't on a business to the sign-up, and a shop to Deliveries", async () => {
@@ -254,7 +302,6 @@ describe("K2 / S2 · the order rings full screen until it's answered (Merchant v
     poll.orders = [merchantOrder()];
     render(<Page />);
     const takeover = await screen.findByRole("alertdialog", { name: "New order #A111" });
-    expect(alarm.ring).toHaveBeenCalled();
     expect(within(takeover).getByText("NEW ORDER · #A111")).toBeTruthy();
     expect(within(takeover).getByText("to answer")).toBeTruthy();
     expect(within(takeover).getByText("min · we book the rider to arrive as it's ready")).toBeTruthy();
@@ -350,12 +397,22 @@ describe("K2 / S2 · the order rings full screen until it's answered (Merchant v
     expect(within(takeover).getByText("SCHEDULED · START NOW · #A111")).toBeTruthy();
   });
 
-  it("goes quiet when nothing is waiting", async () => {
+  it("shows nothing over the board when nothing is waiting — and the board itself never drives the alarm (C20: the shell does)", async () => {
     vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
     render(<Page />);
     await screen.findByText("Sadza Republic");
-    expect(alarm.silence).toHaveBeenCalled();
     expect(screen.queryByRole("alertdialog")).toBeNull();
+    // MJ-M14: mounting the board used to silence the alarm before its first queue read had landed.
+    expect(alarm.silence).not.toHaveBeenCalled();
+    expect(alarm.ring).not.toHaveBeenCalled();
+  });
+
+  it("the board doesn't wait for /merchant/me to show the ring (MJ-RH4): K2 is up while the profile is still loading", async () => {
+    vi.mocked(getMyMerchant).mockReturnValue(new Promise(() => {}));
+    poll.orders = [merchantOrder()];
+    render(<Page />);
+    expect(await screen.findByRole("alertdialog", { name: "New order #A111" })).toBeTruthy();
+    expect(screen.getByText("Loading your orders…")).toBeTruthy();
   });
 });
 
@@ -394,7 +451,6 @@ describe("M1a · an auto-accepted order rings on the same screen until the kitch
     poll.orders = [auto()];
     render(<Page />);
     const takeover = await screen.findByRole("alertdialog", { name: "New order #A111" });
-    expect(alarm.ring).toHaveBeenCalled();
     expect(within(takeover).getByText("NEW ORDER · #A111")).toBeTruthy();
     expect(within(takeover).getByText("LyniaGo accepted this for you")).toBeTruthy();
     expect(within(takeover).getByLabelText("Time left to answer").textContent).toMatch(/^5[78]:\d\d$/);

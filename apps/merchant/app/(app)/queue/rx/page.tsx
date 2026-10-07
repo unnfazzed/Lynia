@@ -44,7 +44,7 @@ export default function PrescriptionCheckPage() {
   const router = useRouter();
   const toast = useToast();
   const business = useBusiness();
-  const { actionsDisabled } = useKitchenConnection();
+  const { actionsDisabled, holdTakeover } = useKitchenConnection();
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [page, setPage] = useState(0);
   const [zoom, setZoom] = useState(false);
@@ -68,6 +68,11 @@ export default function PrescriptionCheckPage() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // C20 / MJ-M13: this screen IS how a pharmacist answers this order's ring, so the ringing screen (which
+  // covers every other screen, D-86) leaves it alone here. The alarm is the shell's: it keeps ringing until
+  // the order is answered (D-05) and stops the moment it is — nothing on this page can leave it looping.
+  useEffect(() => (id ? holdTakeover(id) : undefined), [id, holdTakeover]);
 
   async function act(action: () => Promise<unknown>, done: string) {
     if (busyRef.current) return;

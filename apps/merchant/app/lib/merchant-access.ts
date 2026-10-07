@@ -54,16 +54,31 @@ export function evaluateLoginPageAccess(input: { hasSession: boolean }): Merchan
   return { allow: true };
 }
 
+/** The base a relative `next` is resolved against when no window is around (tests, SSR). Any
+ *  origin works: only "does it stay on the SAME origin" is asked of it. */
+const FALLBACK_ORIGIN = "https://merchant.lynia.invalid";
+
 /**
- * Validate the `next` param the login page reads back after sign-in (CWE-601 guard). A same-origin
- * PATH-only check via `startsWith("/")` is NOT enough — `"//attacker.example/x"` also starts with
- * `/` and a browser resolves that protocol-relative URL against `location.protocol`, so
- * `router.replace(next)` would leave the app entirely. Requiring a SECOND character that isn't `/`
- * (and isn't a backslash, which some browsers normalize to `/`) rules out every protocol-relative
- * form while still accepting ordinary in-app paths like `/queue` or `/queue?foo=bar`.
+ * Validate the `next` param the login page reads back after sign-in (CWE-601 guard).
+ *
+ * A prefix check is NOT enough (MJ-M5, 2026-10-07). `"//attacker.example/x"` is protocol-relative,
+ * and the WHATWG URL parser strips tab / CR / LF anywhere in the input and treats `\` as `/`, so
+ * `"/\t/attacker.example"` (`next=%2F%09%2Fattacker.example` once the query is decoded) passed the old
+ * `next[1] !== "/"` test and still resolved to `//attacker.example` — an off-site redirect right after
+ * a real OTP sign-in. So the guard now asks the parser itself:
+ *   - no control characters (C0, DEL) and no backslash anywhere — no in-app path has one;
+ *   - a path: starts with `/`, and not `//`;
+ *   - `new URL(next, origin).origin === origin` — whatever the parser makes of it stays on this site.
  */
-export function isSafeMerchantRedirectPath(next: string | null): next is string {
+export function isSafeMerchantRedirectPath(next: string | null, origin?: string): next is string {
   if (!next) return false;
-  if (!next.startsWith("/")) return false;
-  return next[1] !== "/" && next[1] !== "\\";
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f\\]/.test(next)) return false;
+  if (!next.startsWith("/") || next.startsWith("//")) return false;
+  const base = origin ?? (typeof window !== "undefined" && window.location?.origin && window.location.origin !== "null" ? window.location.origin : FALLBACK_ORIGIN);
+  try {
+    return new URL(next, base).origin === new URL(base).origin;
+  } catch {
+    return false;
+  }
 }
