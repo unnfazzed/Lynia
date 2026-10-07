@@ -1,8 +1,9 @@
 import { tokens } from "@lynia/shared/tokens";
-import React, { useEffect, useRef } from "react";
-import { Animated, Easing, ScrollView, Text, TextInput, useWindowDimensions, View, type TextStyle, type ViewStyle } from "react-native";
+import React from "react";
+import { ScrollView, Text, TextInput, useWindowDimensions, View, type TextStyle, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PharmacyStickerV2, RestaurantsSticker, SendStickerV2, ShopsSticker } from "../art/stickers";
+import { ArcSpinner } from "../ArcSpinner";
 import { Icon, type IconName } from "../Icon";
 import { Tappable } from "../Tappable";
 import { ordersCopy as C, OX } from "./copy";
@@ -460,18 +461,7 @@ export function HistoryRow({ r, when, q = "", last, onPress }: { r: HistoryRowVM
 
 /** The 18px ring (2.5px tile-send track, brand top arc, 0.8 s linear turn) the handoff draws. */
 function Spinner(): React.ReactElement {
-  const turn = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const loop = Animated.loop(Animated.timing(turn, { toValue: 1, duration: 800, easing: Easing.linear, useNativeDriver: true }));
-    loop.start();
-    return () => loop.stop();
-  }, [turn]);
-  const rotate = turn.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
-  return (
-    <Animated.View
-      style={{ width: 18, height: 18, borderRadius: 9, borderWidth: 2.5, borderColor: tokens.color.tileSend, borderTopColor: tokens.color.accent, transform: [{ rotate }] }}
-    />
-  );
+  return <ArcSpinner size={18} width={2.5} track={tokens.color.tileSend} arc={tokens.color.accent} duration={800} />;
 }
 
 /** Loading older orders (O12): an 18px ring (track tile-send, brand arc) + "Loading older orders…". */

@@ -143,7 +143,13 @@ describe("HeroDisc", () => {
     const t = mount(<HeroDisc spinner />);
     expect(flat(byId(t, "hero-disc")).width).toBe(84);
     const ring = t.root.find((n) => n.props.accessibilityRole === "progressbar" && n.props.style);
-    expect(flat(ring)).toMatchObject({ width: 48, height: 48, borderWidth: 5, borderTopColor: tokens.color.accent, borderColor: tokens.color.accentWash });
+    expect(flat(ring)).toMatchObject({ width: 48, height: 48 });
+    // Track + a quarter arc as SVG strokes — not a bordered View, which Android draws as a lopsided sliver.
+    const strokes = ring.findAll((n) => typeof n.props.stroke === "string" && n.props.strokeWidth === 5);
+    expect(strokes.map((n) => n.props.stroke)).toEqual(expect.arrayContaining([tokens.color.accentWash, tokens.color.accent]));
+    const arc = strokes.find((n) => n.props.stroke === tokens.color.accent)!;
+    const c = 2 * Math.PI * ((48 - 5) / 2);
+    expect(arc.props.strokeDasharray).toBe(`${c / 4} ${(c * 3) / 4}`);
   });
 });
 
