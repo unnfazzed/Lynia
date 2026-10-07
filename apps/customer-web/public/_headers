@@ -16,6 +16,9 @@
   Cache-Control: no-cache
 /index.html
   Cache-Control: no-cache
+# The offline shell's worker: always revalidated, so a deploy (or its kill switch) reaches every browser.
+/sw.js
+  Cache-Control: no-cache
 
 # Bundles and assets carry a content hash in their names.
 /_expo/static/*

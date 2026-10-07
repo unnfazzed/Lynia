@@ -2,10 +2,12 @@ import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persi
 import { defaultShouldDehydrateQuery, type Query } from "@tanstack/react-query";
 import type { PersistedClient } from "@tanstack/react-query-persist-client";
 import Constants from "expo-constants";
+import { Platform } from "react-native";
 // SDK 54 (expo-file-system 19) moved this path-and-promise API to the `/legacy` entry; the package
 // root is now the object API (File / Directory). Same functions, same on-disk file.
 import * as FileSystem from "expo-file-system/legacy";
 import { clearAllOrderCopies } from "../net/order-copy-store";
+import { webKvGet, webKvRemove, webKvSet } from "../net/web-kv";
 
 /**
  * Disk persistence for the React Query cache — the "warm boot" layer. On a cold start over a slow or
@@ -121,8 +123,21 @@ export const fileStorage = {
     FileSystem.deleteAsync(CACHE_FILE, { idempotent: true }).catch(() => undefined),
 };
 
+/**
+ * The same adapter for the customer web build. expo-file-system has no web implementation (every call
+ * rejects), so on app.lyniago.com the warm boot silently never happened: each reload on a slow link
+ * painted skeletons until the first fetch survived, and offline painted nothing. localStorage holds the
+ * cache instead (tens of KB, well inside the ~5 MB quota); the redaction in `serialize` below still runs
+ * first, so the national ID never reaches browser storage either. Exported for unit tests.
+ */
+export const webStorage = {
+  getItem: (key: string): Promise<string | null> => Promise.resolve(webKvGet(key)),
+  setItem: (key: string, value: string): Promise<void> => Promise.resolve(webKvSet(key, value)),
+  removeItem: (key: string): Promise<void> => Promise.resolve(webKvRemove(key)),
+};
+
 export const queryPersister = createAsyncStoragePersister({
-  storage: fileStorage,
+  storage: Platform.OS === "web" ? webStorage : fileStorage,
   key: "lynia-rq-cache",
   // The ONE hook every write passes through, so there is no second path that could reach the file
   // with an un-redacted payload. See {@link redactBeforePersist}.

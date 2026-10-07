@@ -27,6 +27,13 @@ curl -fsS --max-time 20 -o /dev/null "$BASE/manifest.webmanifest" || fail "manif
 curl -fsS --max-time 20 -o /dev/null "$BASE/apple-touch-icon.png" || fail "apple-touch-icon.png is missing"
 curl -fsS --max-time 20 -o /dev/null "$BASE/ios-viewport.js" || fail "ios-viewport.js is missing"
 
+# Offline shell (docs/CUSTOMER-WEB.md § Offline): registered, stamped by finish-build, never cached by HTTP.
+grep -q 'src="/sw-register.js"' <<<"$page" || fail "sw-register.js (offline shell) is not loaded"
+sw="$(curl -fsS --max-time 20 "$BASE/sw.js")" || fail "sw.js is missing"
+grep -q '__LYNIA_BUILD__\|__LYNIA_PRECACHE__' <<<"$sw" && fail "sw.js was not stamped by finish-build"
+sw_headers="$(curl -fsS --max-time 20 -o /dev/null -D - "$BASE/sw.js")"
+grep -qi '^cache-control: no-cache' <<<"$sw_headers" || fail "sw.js is HTTP-cached; a deploy would not reach browsers"
+
 headers="$(curl -fsS --max-time 20 -o /dev/null -D - "$BASE/")"
 grep -qi '^content-security-policy:' <<<"$headers" || fail "no Content-Security-Policy header"
 
