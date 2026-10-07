@@ -3,19 +3,21 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { ActivityIndicator, type NativeScrollEvent, type NativeSyntheticEvent, ScrollView, Text, View } from "react-native";
+import { getMe } from "../../../src/api/auth";
 import { getFoodOrderAsRider } from "../../../src/api/food-rider";
 import { getActiveOrder } from "../../../src/api/orders";
 import { getTopup } from "../../../src/api/wallet";
 import { clearPendingTopup, loadPendingTopup } from "../../../src/auth/session";
 import { buildMoneyFeed, filterMoneyFeed, type MoneyItem, oldestHistoryAt } from "../../../src/logic/money-feed";
 import { groupByDay, type ServiceFilter, summarise } from "../../../src/logic/rider-earnings";
-import { reconcilePendingTopup } from "../../../src/logic/topup";
+import { floorApplies, reconcilePendingTopup } from "../../../src/logic/topup";
 import { useNow } from "../../../src/logic/use-now";
 import { useFeatureFlags } from "../../../src/net/use-feature-flags";
 import { useHistoryFeed } from "../../../src/query/use-history-feed";
 import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refetch";
 import { useWallet, useWalletConfig, useWalletLedger, walletKey, walletLedgerKey } from "../../../src/query/use-wallet";
-import { AppScreen, EmptyRow, emptyCopy, Icon, SkeletonRows, useTabRoot } from "../../../src/ui";
+import { AppScreen, EmptyRow, emptyCopy, fillEmpty, Icon, SkeletonRows, useTabRoot } from "../../../src/ui";
+import { useAutoRetry } from "../../../src/ui/rider/RiderErrorState";
 import { SmBtn } from "../../../src/ui/order/kit";
 import { Notice } from "../../../src/ui/send/kit";
 import { hhmm, RIDER_COPY as R, RF, usd } from "../../../src/ui/rider/copy";
@@ -25,18 +27,31 @@ import type { IconName } from "../../../src/ui";
 
 /**
  * Recovery for `session.ts`'s durable `PendingTopup` marker (UX-2026-07-16): an app kill during the
- * top-up wait lost all UI state. On mount, resolve any marker against the server and clear it once
- * the outcome is known; a still-pending intent keeps the marker so this runs again next time.
+ * top-up wait lost all UI state. Resolve any marker against the server and clear it once the outcome is
+ * known. MA-M2: the tab stays mounted, so this re-checks on every focus and app resume (a rider who backs
+ * out of the approve step lands here with the marker set), polls while the intent is pending (the server
+ * expires it on read once `expiresAt` passes), and drops the notice once the marker is gone.
  */
-type PendingTopupNotice = { kind: "succeeded"; amount: number } | { kind: "pending"; provider: string } | { kind: "terminal" };
-function usePendingTopupReconciliation(): PendingTopupNotice | null {
+type PendingTopupNotice = { kind: "succeeded"; amount: number } | { kind: "pending"; provider: string; amount: number } | { kind: "terminal"; amount: number };
+const PENDING_POLL_MS = 5_000;
+function usePendingTopupReconciliation(focused: boolean): PendingTopupNotice | null {
   const qc = useQueryClient();
   const [notice, setNotice] = React.useState<PendingTopupNotice | null>(null);
+  const [tick, setTick] = React.useState(0);
+  const recheck = React.useCallback(() => setTick((n) => n + 1), []);
+  useForegroundRefetch(recheck, focused);
   React.useEffect(() => {
+    if (!focused) return;
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     void (async () => {
       const marker = await loadPendingTopup();
-      if (!marker || cancelled) return;
+      if (cancelled) return;
+      if (!marker) {
+        // Settled elsewhere (the top-up screen clears it on a final status): a pending notice is stale.
+        setNotice((n) => (n?.kind === "pending" ? null : n));
+        return;
+      }
       try {
         const topup = await getTopup(marker.topupId);
         if (cancelled) return;
@@ -48,18 +63,21 @@ function usePendingTopupReconciliation(): PendingTopupNotice | null {
           setNotice({ kind: "succeeded", amount: topup.amount });
         } else if (outcome === "terminal") {
           void clearPendingTopup();
-          setNotice({ kind: "terminal" });
+          setNotice({ kind: "terminal", amount: topup.amount });
         } else {
-          setNotice({ kind: "pending", provider: topup.rail === "innbucks" ? "InnBucks" : topup.rail === "omari" ? "O'mari" : "EcoCash" });
+          setNotice({ kind: "pending", amount: topup.amount, provider: topup.rail === "innbucks" ? "InnBucks" : topup.rail === "omari" ? "O'mari" : "EcoCash" });
+          timer = setTimeout(recheck, PENDING_POLL_MS);
         }
       } catch {
-        /* transient — the marker stays, so this retries next time the Money tab mounts */
+        /* transient — the marker stays; the next poll, focus or resume tries again */
+        timer = setTimeout(recheck, PENDING_POLL_MS);
       }
     })();
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
     };
-  }, [qc]);
+  }, [qc, focused, tick, recheck]);
   return notice;
 }
 
@@ -113,9 +131,9 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
   const { merchantDispatchAutoEnabled: foodOn } = useFeatureFlags();
   const { config } = useWalletConfig();
   const { wallet, isLoading, isError } = useWallet();
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe }).data;
   const { entries, isLoading: ledgerLoading, hasMore, isLoadingMore, loadMore } = useWalletLedger();
   const { rows: history } = useHistoryFeed();
-  const pending = usePendingTopupReconciliation();
   const [range, setRange] = useState<"today" | "week">("today");
   const [filter, setFilter] = useState<ServiceFilter>("all");
 
@@ -143,11 +161,9 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
     }, [reread]),
   );
   useForegroundRefetch(reread, focused);
-  React.useEffect(() => {
-    if (!focused || !isError) return;
-    const t = setInterval(reread, 20_000);
-    return () => clearInterval(t);
-  }, [focused, isError, reread]);
+  const pending = usePendingTopupReconciliation(focused);
+  // MA-M6: an unreadable wallet is unknown, not $0 — "—" and the retrying line, never the floor alarm.
+  const unreadable = isError && wallet == null;
 
   const rows = useMemo(() => history ?? [], [history]);
   const earned = summarise(rows, range, now);
@@ -163,9 +179,12 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
   const floor = config?.floor ?? 2;
   const rate = config?.ratePct ?? 0;
   const balance = wallet?.balance ?? 0;
-  const owes = balance < 0;
-  const belowFloor = !owes && balance < floor;
-  const low = !owes && !belowFloor && balance < floor + 1;
+  // MA-H2: the server's online gate — the floor only binds once commission is on AND the rider's free
+  // first jobs are used up (online-gate.ts). Below it otherwise, the rider still rides: no alarm.
+  const gated = floorApplies(rate, me?.rider?.freeJobs?.left);
+  const owes = !unreadable && balance < 0;
+  const belowFloor = gated && !unreadable && !owes && balance < floor;
+  const low = gated && !unreadable && !owes && !belowFloor && balance < floor + 1;
   const danger = owes || belowFloor;
   const balanceText = owes ? R.owesB : belowFloor ? RF.floorB(floor) : low ? R.lowB : rate > 0 ? RF.balanceB(rate, floor) : R.balanceB0;
 
@@ -183,9 +202,9 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
           pending.kind === "succeeded" ? (
             <Notice tone="wash" icon="circle-check" text={RF.pendingOk(pending.amount)} />
           ) : pending.kind === "pending" ? (
-            <Notice icon="hourglass" text={RF.pendingWait(pending.provider)} />
+            <Notice icon="hourglass" text={RF.pendingWait(pending.provider, pending.amount)} />
           ) : (
-            <Notice icon="circle-alert" text={RF.pendingFail} />
+            <Notice icon="circle-alert" text={RF.pendingFail(pending.amount)} />
           )
         ) : null}
 
@@ -241,12 +260,14 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
                 <ActivityIndicator color={tokens.color.muted} />
               </View>
             ) : (
-              <Text style={{ flex: 1, fontSize: 28, fontWeight: tokens.font.weight.bold, color: danger ? tokens.color.dangerInk : tokens.color.ink, fontVariant: ["tabular-nums"] }}>{usd(balance)}</Text>
+              <Text style={{ flex: 1, fontSize: 28, fontWeight: tokens.font.weight.bold, color: danger ? tokens.color.dangerInk : tokens.color.ink, fontVariant: ["tabular-nums"] }}>{unreadable ? "—" : usd(balance)}</Text>
             )}
             <SmBtn kind="fill" icon="plus" label={R.topUp} onPress={() => router.push("/wallet/top-up")} />
           </View>
           {/* M9 draws the balance and Top up only; a low or blocked balance still says why. */}
-          {noJobs && !danger && !low ? null : (
+          {unreadable && focused ? (
+            <BalanceRetry onRetry={reread} />
+          ) : noJobs && !danger && !low ? null : (
             <Text style={{ fontSize: 13, lineHeight: 19, color: danger ? tokens.color.dangerInk : tokens.color.ink, fontWeight: danger || low ? tokens.font.weight.semibold : tokens.font.weight.regular }}>{balanceText}</Text>
           )}
         </View>
@@ -295,4 +316,10 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
       </ScrollView>
     </AppScreen>
   );
+}
+
+/** MA-M6: a failed wallet read retries every 20 s and says so (rider screens have no Retry button). */
+function BalanceRetry({ onRetry }: { onRetry: () => void }): React.ReactElement {
+  const left = useAutoRetry(onRetry, 20);
+  return <Text style={{ fontSize: 13, lineHeight: 19, color: tokens.color.muted }}>{fillEmpty(emptyCopy.rider.retrying, { s: left })}</Text>;
 }

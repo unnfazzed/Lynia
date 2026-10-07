@@ -24,3 +24,13 @@ export function reconcilePendingTopup(status: TopupStatus): PendingTopupOutcome 
   if (status === "pending") return "pending";
   return "terminal"; // declined | expired — no money moved, safe to clear
 }
+
+/**
+ * MA-H2: the server's online-gate rule for the commission floor (`online-gate.ts`
+ * `onlineRefusalReason`): the floor binds only once commission is on (rate above 0%) AND the rider's
+ * commission-free first jobs are used up (D-70). An older server that doesn't report the free jobs
+ * keeps the floor (as the server's own undefined branch does).
+ */
+export function floorApplies(ratePct: number, freeJobsLeft: number | null | undefined): boolean {
+  return ratePct > 0 && !(freeJobsLeft != null && freeJobsLeft > 0);
+}
