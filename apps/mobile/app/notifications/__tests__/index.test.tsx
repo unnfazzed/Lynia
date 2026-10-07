@@ -13,7 +13,9 @@ import { emptyCopy } from "../../../src/ui/emptyCopy";
 const E = emptyCopy.notifications;
 
 const NOW = new Date();
-const ago = (min: number): string => new Date(NOW.getTime() - min * 60_000).toISOString();
+// Clamped to local midnight so a run just after 00:00 still lands every row under TODAY.
+const TODAY_START = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate()).getTime();
+const ago = (min: number): string => new Date(Math.max(NOW.getTime() - min * 60_000, TODAY_START)).toISOString();
 
 const mockGetNotificationsFeed = jest.fn();
 const mockMarkNotificationsRead = jest.fn();
