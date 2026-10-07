@@ -1085,7 +1085,9 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     const token = `${orderId}.${exp}.${this.handoverSig(orderId, order.riderId, exp, order.pickupCodeHash)}`;
     await this.prisma.auditLog.create({ data: { actor: profileId, action: "order.handover_link", target: orderId } });
     return {
-      link: `${base.replace(/\/+$/, "")}/h/${token}`,
+      // `/h?t=<token>`: the merchant web is a static export, so the token rides in the query string
+      // (apps/merchant/app/lib/routes.ts); the old `/h/<token>` form still forwards there.
+      link: `${base.replace(/\/+$/, "")}/h?t=${encodeURIComponent(token)}`,
       expiresAt: new Date(exp * 1000).toISOString(),
       riderPhone: order.rider?.profile?.phone || null,
     };

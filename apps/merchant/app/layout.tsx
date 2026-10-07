@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
+import { Suspense } from "react";
 import "./globals.css";
 import "./mobile.css";
+import { AccessGate } from "./components/AccessGate";
 import { ToastProvider } from "./components/m/Toast";
 
 export const metadata: Metadata = {
@@ -19,16 +21,19 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-// The dashboard will be a LIVE order surface (WebSocket queue, P3) — never statically prerender it,
-// for the same reason as the admin console (its QA finding D-1: a build-time fetch would bake the
-// offline state permanently). Set now so the P3 pages inherit the correct posture from day one.
-export const dynamic = "force-dynamic";
-
+// A static export (next.config.js, docs/MERCHANT-WEB.md): every page is a shell built once, and all of
+// its data is fetched in the browser after it loads, so nothing live is ever baked in at build time.
+// The Suspense boundary is what lets a page read its id from the query string (lib/routes.ts) in an
+// exported build.
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body>
-        <ToastProvider>{children}</ToastProvider>
+        <ToastProvider>
+          <AccessGate>
+            <Suspense fallback={null}>{children}</Suspense>
+          </AccessGate>
+        </ToastProvider>
       </body>
     </html>
   );

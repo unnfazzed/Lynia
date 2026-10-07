@@ -1,7 +1,9 @@
 name: DNS + bind (Cloudflare → Azure)
 
-# Points a lyniago.com hostname at its production Container App and binds Azure's free managed
+# Points a lyniago.com hostname (api, admin) at its production Container App and binds Azure's free managed
 # certificate — the cutover DNS step (docs/AZURE-OWNER-RUNBOOK.md §6), without copying values by hand.
+# merchant.lyniago.com is not here any more: it is served from Cloudflare (deploy-merchant-web.yml,
+# docs/MERCHANT-WEB.md), and binding it back to Azure would take it off the Worker.
 #
 #   1. Reads the target from Azure itself (deploy identity, OIDC): the app's ingress FQDN and the
 #      environment's custom-domain verification id. Nothing is typed in, so nothing can be mistyped.
@@ -24,7 +26,7 @@ on:
       host:
         description: "Which hostname (in lyniago.com) to point and bind"
         type: choice
-        options: [api, admin, merchant]
+        options: [api, admin]
         default: api
 
 concurrency:
@@ -50,7 +52,6 @@ jobs:
       CAE: ${{ vars.AZ_CONTAINERAPP_ENV || 'cae-lynia-prod' }}
       APP_API: ${{ vars.AZ_CONTAINERAPP_API || 'ca-lynia-api' }}
       APP_ADMIN: ${{ vars.AZ_CONTAINERAPP_ADMIN || 'ca-lynia-admin' }}
-      APP_MERCHANT: ${{ vars.AZ_CONTAINERAPP_MERCHANT || 'ca-lynia-merchant' }}
     steps:
       - name: Guard — main only, validated inputs
         env:
@@ -59,7 +60,7 @@ jobs:
         run: |
           set -euo pipefail
           [ "$REF" = "refs/heads/main" ] || { echo "::error::dns-bind-azure may only run from main (got ${REF})."; exit 1; }
-          case "$HOST_KEY" in api|admin|merchant) ;; *) echo "::error::invalid host"; exit 1 ;; esac
+          case "$HOST_KEY" in api|admin) ;; *) echo "::error::invalid host"; exit 1 ;; esac
           [ -n "$CF_TOKEN" ] || { echo "::error::Repository secret CLOUDFLARE_API_TOKEN is not set (Cloudflare → API Tokens → Edit zone DNS, zone lyniago.com)."; exit 1; }
 
       - name: Azure login (OIDC, production deploy identity)
@@ -76,7 +77,6 @@ jobs:
           case "$HOST_KEY" in
             api) APP="$APP_API" ;;
             admin) APP="$APP_ADMIN" ;;
-            merchant) APP="$APP_MERCHANT" ;;
           esac
           FQDN=$(az containerapp show -g "$RG" -n "$APP" --query properties.configuration.ingress.fqdn -o tsv)
           VERIFY=$(az containerapp env show -g "$RG" -n "$CAE" --query properties.customDomainConfiguration.customDomainVerificationId -o tsv)

@@ -104,7 +104,7 @@ describe("RingingScreen — an Rx order is checked before it's accepted (Merchan
     business.current = { myIsPharmacist: true };
     const props = { disabled: false, onAccept: vi.fn(), onPropose: vi.fn(), onReject: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn(), onEditItems: vi.fn(), refetch: vi.fn() };
     render(<RingingScreen active={order({ prescription: { status: "pending", patientName: "Rudo Moyo", pageCount: 1 } })} {...props} />);
-    expect(screen.getByRole("link", { name: "Check the prescription" }).getAttribute("href")).toBe("/queue/o1/rx");
+    expect(screen.getByRole("link", { name: "Check the prescription" }).getAttribute("href")).toBe("/queue/rx?id=o1");
     expect(screen.queryByRole("button", { name: /^Accept/ })).toBeNull();
     cleanup();
     render(<RingingScreen active={order({ prescription: { status: "approved", patientName: "Rudo Moyo", pageCount: 1 } })} {...props} />);

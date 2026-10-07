@@ -104,10 +104,10 @@ describe("T2 · Money (Merchant v2, D-77)", () => {
     expect(screen.getByText("SALES · 7 ORDERS")).toBeTruthy();
     expect(screen.getByText("$9.50 cash is late")).toBeTruthy();
     expect(screen.getByText("#A098 · Tino · was due 11:40")).toBeTruthy();
-    expect(screen.getByRole("link", { name: /\$9\.50 cash is late/ }).getAttribute("href")).toBe("/queue/a0980000-0000-4000-8000-000000000000");
+    expect(screen.getByRole("link", { name: /\$9\.50 cash is late/ }).getAttribute("href")).toBe("/queue/order?id=a0980000-0000-4000-8000-000000000000");
     expect(screen.getByRole("link", { name: "Call Tino" }).getAttribute("href")).toBe("tel:+263771112222");
     // A shop booking's cash on delivery opens the booking (D-48 PR 4b); no number, no Call.
-    expect(screen.getByRole("link", { name: /\$51\.00 cash is late/ }).getAttribute("href")).toBe("/deliveries/b0980000-0000-4000-8000-000000000000");
+    expect(screen.getByRole("link", { name: /\$51\.00 cash is late/ }).getAttribute("href")).toBe("/deliveries/booking?id=b0980000-0000-4000-8000-000000000000");
     expect(screen.queryByRole("link", { name: "Call Blessing" })).toBeNull();
     expect(screen.getByText("TODAY")).toBeTruthy();
     expect(screen.getByText("#A111 · 12:31")).toBeTruthy();

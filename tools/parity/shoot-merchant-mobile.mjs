@@ -263,11 +263,11 @@ const signOutSheet = async (page) => page.getByRole("button", { name: "Sign out"
 const ORDER_ROWS = [
   { id: "B1", label: "B1 · Orders home", sub: "Cooking selected here: a new order always rings full-screen (B2), so the New card sits under it", app: { name: "B1", path: "/queue", scenario: { me: KITCHEN, orders: BOARD }, before: async (p) => p.getByRole("tab", { name: /Cooking/ }).click() } },
   { id: "B2", label: "B2 · New order ringing", app: { name: "B2", path: "/queue", scenario: { me: KITCHEN, orders: [ORDERS.ringing] } } },
-  { id: "B3", label: "B3 · Cooking ticket", sub: "no 'Rider secured' — dispatch stays at 'Food is ready' (owner decision)", app: { name: "B3", path: `/queue/${ORDERS.cooking.id}`, scenario: { me: KITCHEN, orders: [ORDERS.cooking] } } },
-  { id: "B4", label: "B4 · Handover", sub: "the code is the rider's to type (owner decision); ✓ appears once they have", app: { name: "B4", path: `/queue/${ORDERS.handover.id}`, scenario: { me: KITCHEN, orders: [ORDERS.handover] } } },
+  { id: "B3", label: "B3 · Cooking ticket", sub: "no 'Rider secured' — dispatch stays at 'Food is ready' (owner decision)", app: { name: "B3", path: `/queue/order?id=${ORDERS.cooking.id}`, scenario: { me: KITCHEN, orders: [ORDERS.cooking] } } },
+  { id: "B4", label: "B4 · Handover", sub: "the code is the rider's to type (owner decision); ✓ appears once they have", app: { name: "B4", path: `/queue/order?id=${ORDERS.handover.id}`, scenario: { me: KITCHEN, orders: [ORDERS.handover] } } },
   { id: "B5", label: "B5 · Closed", sub: "the offline bar shows only when the connection is really lost", app: { name: "B5", path: "/queue", scenario: { me: { ...KITCHEN, closedUntil: ahead(600) }, orders: [] } } },
-  { id: "B6", label: "B6 · Tracking", sub: "map: OSM around the kitchen (no live rider position yet), no ETA pill", app: { name: "B6", path: `/queue/${ORDERS.tracking.id}`, scenario: { me: KITCHEN, orders: [ORDERS.tracking] } } },
-  { id: "B7", label: "B7 · Delivered + cash back", app: { name: "B7", path: `/queue/${ORDERS.delivered.id}`, scenario: { me: KITCHEN, orders: [ORDERS.delivered] } } },
+  { id: "B6", label: "B6 · Tracking", sub: "map: OSM around the kitchen (no live rider position yet), no ETA pill", app: { name: "B6", path: `/queue/order?id=${ORDERS.tracking.id}`, scenario: { me: KITCHEN, orders: [ORDERS.tracking] } } },
+  { id: "B7", label: "B7 · Delivered + cash back", app: { name: "B7", path: `/queue/order?id=${ORDERS.delivered.id}`, scenario: { me: KITCHEN, orders: [ORDERS.delivered] } } },
 ];
 
 const MENU_ROWS = [
@@ -326,15 +326,15 @@ const SHOP_ROWS = [
     },
   },
   { id: "D3", label: "D3 · Book · what + fare", mode: "shop", app: { name: "D3", path: "/deliveries/new", scenario: { me: SHOP_ME, menu: { dishes: SHOP_ITEMS } }, before: toD3 } },
-  { id: "D4", label: "D4 · Offers", mode: "shop", app: { name: "D4", path: `/deliveries/${BOOKINGS.finding.id}`, scenario: { me: SHOP_ME, bookings: [BOOKINGS.finding] } } },
+  { id: "D4", label: "D4 · Offers", mode: "shop", app: { name: "D4", path: `/deliveries/booking?id=${BOOKINGS.finding.id}`, scenario: { me: SHOP_ME, bookings: [BOOKINGS.finding] } } },
   {
     id: "D5",
     label: "D5 · Tracking",
     mode: "shop",
     sub: "code shown to whoever picked; this browser didn't · no ETA · a cash-on-delivery booking (PR 4b)",
-    app: { name: "D5", path: `/deliveries/${BOOKINGS.tracking.id}`, scenario: { me: SHOP_ME, bookings: [BOOKINGS.tracking] } },
+    app: { name: "D5", path: `/deliveries/booking?id=${BOOKINGS.tracking.id}`, scenario: { me: SHOP_ME, bookings: [BOOKINGS.tracking] } },
   },
-  { id: "D7", label: "D7 · Delivered + cash back", mode: "shop", sub: "no delivered time in the booking payload", app: { name: "D7", path: `/deliveries/${BOOKINGS.delivered.id}`, scenario: { me: SHOP_ME, bookings: [BOOKINGS.delivered] } } },
+  { id: "D7", label: "D7 · Delivered + cash back", mode: "shop", sub: "no delivered time in the booking payload", app: { name: "D7", path: `/deliveries/booking?id=${BOOKINGS.delivered.id}`, scenario: { me: SHOP_ME, bookings: [BOOKINGS.delivered] } } },
 ];
 
 // ── Branches (ledger D-51): the header chevron, C6, the C4 row, C7 and the not-live home ─────────

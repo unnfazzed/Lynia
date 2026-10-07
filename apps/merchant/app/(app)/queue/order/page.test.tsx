@@ -30,7 +30,7 @@ const ID = "a1110000-0000-4000-8000-000000000001";
 const { replace } = vi.hoisted(() => ({ replace: vi.fn() }));
 vi.mock("next/navigation", () => {
   const router = { replace, push: vi.fn() };
-  return { useRouter: () => router, useParams: () => ({ id: "a1110000-0000-4000-8000-000000000001" }) };
+  return { useRouter: () => router, useSearchParams: () => new URLSearchParams({ id: "a1110000-0000-4000-8000-000000000001" }) };
 });
 vi.mock("../../../lib/orders-api", () => ({
   getOrder: vi.fn(),
@@ -514,7 +514,7 @@ describe("Order flow v2 round 2 (D-59): the wait, photos, Scheduled, Rx", () => 
   it("M8a: a pharmacist sees the way into the prescription check on the ticket", async () => {
     business.current = merchantProfile({ businessType: "shop", shopKind: "pharmacy", myIsPharmacist: true });
     show(merchantOrder({ ...cooking(), prescription: { status: "pending", patientName: "Rudo Moyo", pageCount: 2 } }));
-    expect((await screen.findByRole("link", { name: "Prescription check" })).getAttribute("href")).toBe(`/queue/${ID}/rx`);
+    expect((await screen.findByRole("link", { name: "Prescription check" })).getAttribute("href")).toBe(`/queue/rx?id=${ID}`);
   });
 
   it("no prescription check without a pharmacist, or without a prescription", async () => {

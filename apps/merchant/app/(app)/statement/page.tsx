@@ -13,6 +13,7 @@ import { loadBusiness } from "../../lib/business";
 import { getTodaySummary, getWeekSummary } from "../../lib/orders-api";
 import { dayKey, dayRow, daySub, dayTitle, hm, weekRange } from "../../lib/money-view";
 import { money, orderLabel } from "../../lib/orders-view";
+import { bookingHref, orderHref } from "../../lib/routes";
 
 type LoadState =
   | { status: "loading" }
@@ -116,7 +117,7 @@ export default function MoneyPage() {
           period === "today" &&
           (ready.today.overdue ?? []).map((o) => (
             <div key={o.orderId} className="m-latecash">
-              <Link href={o.kind === "booking" ? `/deliveries/${o.orderId}` : `/queue/${o.orderId}`}>
+              <Link href={o.kind === "booking" ? bookingHref(o.orderId) : orderHref(o.orderId)}>
                 <Icon name="banknote" size={20} color="var(--highlight-ink)" />
                 <div>
                   <b className="m-num">{money(o.amount)} cash is late</b>
@@ -177,7 +178,7 @@ export default function MoneyPage() {
             <div className="m-ledger">
               {lines.length === 0 && <div className="m-hint">{period === "today" ? "No orders yet today" : "No orders that day"}</div>}
               {lines.map((l) => (
-                <Link key={l.id} href={`/queue/${l.id}`} className="m-lrow" data-tone={l.tone}>
+                <Link key={l.id} href={orderHref(l.id)} className="m-lrow" data-tone={l.tone}>
                   <div>
                     <b className="m-num">{l.title}</b>
                     <span>{l.sub}</span>

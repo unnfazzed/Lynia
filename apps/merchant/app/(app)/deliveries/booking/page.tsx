@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import type { MerchantBookingOffer, MerchantBookingResponse, MerchantProfileResponse } from "@lynia/shared";
 import { Icon } from "../../../components/icons";
 import { Kitchen } from "../../../components/Kitchen";
@@ -23,6 +23,7 @@ import { supportWhatsAppUrl } from "../../../lib/config";
 import { formatCountdown, msUntil } from "../../../lib/countdown";
 import { hm, money } from "../../../lib/orders-view";
 import { useNow } from "../../../lib/use-now";
+import { bookingHref } from "../../../lib/routes";
 
 type LoadState = { status: "loading" } | { status: "ready"; booking: MerchantBookingResponse } | { status: "error"; message: string };
 
@@ -51,7 +52,7 @@ interface Ctx {
  * teammate can get a new code, which replaces it.
  */
 export default function BookingPage() {
-  const { id } = useParams<{ id: string }>();
+  const id = useSearchParams().get("id") ?? "";
   const router = useRouter();
   const toast = useToast();
   const { signOut, actionsDisabled } = useKitchenConnection();
@@ -133,7 +134,7 @@ export default function BookingPage() {
         toast("New code · the old one stops working");
       }),
     onCancel: () => setConfirmCancel(true),
-    onRetry: (fare) => void act("retry", () => retryBooking(id, { proposedFare: fare, idempotencyKey: retryKey.current }), (b) => router.replace(`/deliveries/${b.id}`)),
+    onRetry: (fare) => void act("retry", () => retryBooking(id, { proposedFare: fare, idempotencyKey: retryKey.current }), (b) => router.replace(bookingHref(b.id))),
     onCashReturned: () =>
       void act("cash", () => closeBookingCash(id, "returned"), (b) => {
         setState({ status: "ready", booking: b });
@@ -459,7 +460,7 @@ function Ended({ booking, disabled, busy, error, onRetry }: Ctx) {
           </a>
         )}
         {booking.rebroadcastedToId && (
-          <Link href={`/deliveries/${booking.rebroadcastedToId}`} className="m-btn">
+          <Link href={bookingHref(booking.rebroadcastedToId)} className="m-btn">
             LyniaGo sent it out again · follow it
           </Link>
         )}

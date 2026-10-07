@@ -284,7 +284,7 @@ export const envSchema = z.object({
   DIDIT_WEBHOOK_SECRET: z.string().optional(),
   DIDIT_CALLBACK_URL: optionalUrl,
   // Merchant v2 (ledger D-77) offline-rider hand-over fallback: the merchant web's public origin, where a
-  // rider who can't use the app opens their signed hand-over link (`/h/<token>`). Unset = the fallback
+  // rider who can't use the app opens their signed hand-over link (`/h?t=<token>`). Unset = the fallback
   // answers "not available" (its button is also behind NEXT_PUBLIC_MERCHANT_HANDOVER_FALLBACK, off).
   MERCHANT_WEB_URL: optionalUrl,
   // Explicit browser-origin allow-list for HTTP + WebSocket CORS (comma-separated). Empty = deny all

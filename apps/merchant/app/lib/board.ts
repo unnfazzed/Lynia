@@ -5,6 +5,7 @@ import { isNoRiderHold, isReadyBucket, needsKitchenConfirm } from "./order-group
 import { hm, isAfterPickup, money, orderLabel, riderFirstName } from "./orders-view";
 import { openRound } from "./substitution";
 import { countOf, type Vocabulary } from "./vocabulary";
+import { bookingHref, orderHref } from "./routes";
 
 /**
  * Merchant v2's Orders board (K1 kitchen, S1 shop — packages/design/handoff/merchant-v2, ledger D-77),
@@ -88,7 +89,7 @@ function orderCards(
   now: number,
 ): { section: BoardSection["id"]; card: BoardCard; rank: number } | null {
   const tag: BoardTag | undefined = shop ? "APP" : undefined;
-  const href = `/queue/${o.id}`;
+  const href = orderHref(o.id);
   const label = orderLabel(o);
   // 1 · NEEDS YOU
   if (o.merchantPhase === "awaiting_accept" || needsKitchenConfirm(o)) {
@@ -241,7 +242,7 @@ function orderCards(
 
 function bookingCard(b: MerchantBookingResponse, now: number): { section: BoardSection["id"]; card: BoardCard; rank: number } | null {
   if (b.rebroadcastedToId) return null;
-  const href = `/deliveries/${b.id}`;
+  const href = bookingHref(b.id);
   const rider = shortName(b.rider?.name);
   const cod = b.cashOnDelivery ?? null;
   if (isFinding(b.state)) {

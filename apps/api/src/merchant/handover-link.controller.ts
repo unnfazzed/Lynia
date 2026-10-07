@@ -7,7 +7,7 @@ import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
 
 /**
  * Merchant v2 (ledger D-77): the offline-rider hand-over fallback's public side. A rider who can't use the
- * app opens the signed link the counter sent them (`<merchant web>/h/<token>`) and types the pickup code
+ * app opens the signed link the counter sent them (`<merchant web>/h?t=<token>`) and types the pickup code
  * the counter reads out. No login: the token is the authority (signed, 15-minute, bound to the order's
  * current rider and pickup code), and the code is checked exactly as in the app, with the same attempt
  * cap. Both routes are throttled per IP.
