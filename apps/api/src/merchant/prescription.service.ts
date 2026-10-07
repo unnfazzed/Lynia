@@ -76,7 +76,7 @@ export class PrescriptionService {
    */
   async prepareForPlacement(
     customerId: string,
-    shopKind: string | null,
+    merchant: { id: string; shopKind: string | null },
     rxLines: number,
     prescription: PrescriptionInput | undefined,
   ): Promise<Omit<Prisma.OrderPrescriptionCreateWithoutOrderInput, "order"> | null> {
@@ -84,7 +84,14 @@ export class PrescriptionService {
       if (prescription) throw new BadRequestException({ reason: "prescription_not_needed", message: "Nothing in this order needs a prescription." });
       return null;
     }
-    if (!this.rxEnabled || shopKind !== "pharmacy") {
+    // MJ-H5 / U43: a pharmacy with nobody ticked as pharmacist can't check a prescription, so the order
+    // could never be packed and the customer couldn't cancel it. Refused here, like RX_ENABLED off (the
+    // customer read hides its Rx items too, MerchantService.rxVisible).
+    const hasPharmacist =
+      this.rxEnabled &&
+      merchant.shopKind === "pharmacy" &&
+      (await this.prisma.merchantMember.count({ where: { merchantId: merchant.id, isPharmacist: true } })) > 0;
+    if (!hasPharmacist) {
       throw new ConflictException({ reason: "rx_unavailable", message: "Prescription medicines can't be ordered in the app yet." });
     }
     if (!prescription) {

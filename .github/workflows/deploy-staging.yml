@@ -137,7 +137,9 @@ jobs:
         # Merchant kill switches come in as env (mapped from the STAGING_* Variables), never as
         # ${{ }} inside the script — see the validation loop below.
         env:
-          RESTAURANTS_ENABLED: ${{ vars.STAGING_RESTAURANTS_ENABLED }}
+          # Restaurants is launched, and every Shops / Pharmacy order route sits behind it too
+          # (RestaurantsEnabledGuard), so unset means ON like those two (U65).
+          RESTAURANTS_ENABLED: ${{ vars.STAGING_RESTAURANTS_ENABLED || 'true' }}
           MERCHANT_DISPATCH_AUTO_ENABLED: ${{ vars.STAGING_MERCHANT_DISPATCH_AUTO_ENABLED }}
           MERCHANT_WALLET_ENABLED: ${{ vars.STAGING_MERCHANT_WALLET_ENABLED }}
           # Shops and Pharmacy (ledger D-58) are launched, so unset means ON; set the Variable to "false"

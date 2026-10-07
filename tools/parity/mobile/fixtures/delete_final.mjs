@@ -4,6 +4,6 @@
 import { installRouter } from "./_harness.mjs";
 import { withAuthQuery } from "./_auth.mjs";
 
-installRouter([{ match: "/orders/mine/active-order", json: null }]);
+installRouter([{ match: "/orders/mine/active-orders", json: [] }]);
 
 export default { wrap: withAuthQuery(), props: { initialStep: "final", initialAcknowledged: true } };

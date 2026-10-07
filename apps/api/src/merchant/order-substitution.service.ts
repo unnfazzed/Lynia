@@ -201,6 +201,19 @@ export class OrderSubstitutionService implements OnModuleInit, OnModuleDestroy {
         if (isDishOutOfStock(dish)) throw new ConflictException(`${dish.name} is out of stock too`);
         if (dish.id === itemById.get(l.itemId)!.dishId) throw new BadRequestException("Swap for a different item");
       }
+      // MJ-H4: a "Prescription needed" item can be swapped in only on an order whose prescription a
+      // pharmacist has already approved — otherwise "Swap for…" would hand out prescription-only medicine
+      // nobody checked. (The new line is then flagged rxRequired, in resolve().)
+      const rxSwap = swapLines.map((l) => dishById.get(l.dishId)!).find((d) => d.rxRequired);
+      if (rxSwap) {
+        const rx = await tx.orderPrescription.findUnique({ where: { orderId }, select: { status: true } });
+        if (rx?.status !== "approved") {
+          throw new ConflictException({
+            reason: "rx_swap_needs_prescription",
+            message: `${rxSwap.name} needs a prescription. You can swap it in only on an order with an approved prescription.`,
+          });
+        }
+      }
 
       // ── The new state ──
       const proposalByItem = new Map(body.lines.map((l) => [l.itemId, l]));
@@ -457,6 +470,14 @@ export class OrderSubstitutionService implements OnModuleInit, OnModuleDestroy {
     const now = new Date();
     const removedNames: string[] = [];
     let addedCents = 0;
+    // MJ-H4: an accepted swap to a "Prescription needed" item carries the flag onto its new line, like a
+    // placed line (FoodOrderService.placeOrder), so a decline / the rider's tick treat it as Rx.
+    const swapDishIds = round.lines.filter((l) => l.action === "swap" && accepted.has(l.id) && l.swapDishId).map((l) => l.swapDishId!);
+    const rxDishIds = new Set(
+      swapDishIds.length
+        ? (await tx.merchantDish.findMany({ where: { id: { in: swapDishIds }, rxRequired: true }, select: { id: true } })).map((d) => d.id)
+        : [],
+    );
     for (const line of round.lines) {
       if (line.action !== "swap") continue;
       if (accepted.has(line.id)) {
@@ -470,6 +491,7 @@ export class OrderSubstitutionService implements OnModuleInit, OnModuleDestroy {
             quantity: qty,
             available: true,
             replacesItemId: line.orderItemId,
+            ...(line.swapDishId && rxDishIds.has(line.swapDishId) ? { rxRequired: true } : {}),
           },
         });
         addedCents += toCents(Number(line.swapPriceUsd ?? line.priceUsd)) * qty;

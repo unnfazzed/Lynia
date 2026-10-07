@@ -14,6 +14,7 @@ import {
 import { Prisma } from "@prisma/client";
 import {
   addMoney,
+  categoryServedNow,
   isInServiceArea,
   serviceTownsLabel,
   DELIVERY_OTP_MAX_ATTEMPTS,
@@ -444,19 +445,29 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     }
 
     const dishIds = [...new Set(body.items.map((i) => i.dishId))];
-    const dishes = await this.prisma.merchantDish.findMany({ where: { id: { in: dishIds }, merchantId } });
+    const dishes = await this.prisma.merchantDish.findMany({
+      where: { id: { in: dishIds }, merchantId },
+      include: { category: { select: { hidden: true, availableFrom: true, availableTo: true } } },
+    });
     if (dishes.length !== dishIds.length) throw new NotFoundException("One or more dishes are not on this menu");
     const dishById = new Map(dishes.map((d) => [d.id, d]));
+    // MJ-RM12 / U25: a category is sellable only while it isn't hidden and is inside its serving window
+    // (Breakfast 07:00–11:00), in Harare time — at the slot for a scheduled order, else now. The app's
+    // storefront check is advisory: a saved basket or a search result could still carry such a dish.
+    const servedAt = slot ? harareWallClock(slot.scheduledFor) : nowWall;
     for (const item of body.items) {
       const dish = dishById.get(item.dishId)!;
       if (dish.isDraft) throw new ConflictException(`${dish.name} isn't available yet`);
+      if (dish.category.hidden || !categoryServedNow(dish.category.availableFrom, dish.category.availableTo, servedAt)) {
+        throw new ConflictException(`${dish.name} isn't available right now`);
+      }
       if (isDishOutOfStock(dish)) throw new ConflictException(`${dish.name} is out of stock right now`);
     }
-    // BRIEF §13: "Prescription needed" lines need RX_ENABLED, a pharmacy and a prescription.
+    // BRIEF §13: "Prescription needed" lines need RX_ENABLED, a pharmacy with a pharmacist, and a prescription.
     const rxLines = body.items.filter((i) => dishById.get(i.dishId)!.rxRequired).length;
     const prescription =
       rxLines > 0 || body.prescription
-        ? await this.prescriptionService().prepareForPlacement(customerId, merchant.shopKind, rxLines, body.prescription)
+        ? await this.prescriptionService().prepareForPlacement(customerId, { id: merchant.id, shopKind: merchant.shopKind }, rxLines, body.prescription)
         : null;
     // BRIEF D3f: an earlier cancel-after-collection balance rides on this order as its own line.
     const owed = await openBalance(this.prisma, customerId);

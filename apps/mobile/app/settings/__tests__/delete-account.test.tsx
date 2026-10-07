@@ -27,7 +27,7 @@ const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: 
 // these initialisers otherwise would).
 const mockSignOut = jest.fn(async () => undefined);
 const mockDeleteAccount = jest.fn(async () => undefined);
-const mockActiveOrder = jest.fn(async (): Promise<unknown> => null);
+const mockActiveOrders = jest.fn(async (): Promise<unknown> => []);
 const mockRiderJob = jest.fn(async (): Promise<unknown> => null);
 let mockMe: unknown = { rider: null };
 
@@ -41,7 +41,7 @@ jest.mock("../../../src/api/auth", () => ({
   getMe: async () => mockMe,
 }));
 jest.mock("../../../src/api/orders", () => ({
-  getActiveCustomerOrder: () => mockActiveOrder(),
+  getActiveCustomerOrders: () => mockActiveOrders(),
   getActiveOrder: () => mockRiderJob(),
 }));
 
@@ -117,7 +117,7 @@ beforeEach(() => {
   mockSignOut.mockClear();
   mockDeleteAccount.mockClear();
   mockDeleteAccount.mockResolvedValue(undefined);
-  mockActiveOrder.mockResolvedValue(null);
+  mockActiveOrders.mockReset().mockResolvedValue([]);
   mockRiderJob.mockReset().mockResolvedValue(null);
   mockMe = { rider: null };
 });
@@ -142,9 +142,37 @@ describe("delete account — the explainer (First Run v2 I)", () => {
   });
 
   it("a running delivery blocks the step and says so in the same box", async () => {
-    mockActiveOrder.mockResolvedValue({ id: "0a1b2c3d-0000-4000-8000-000000000001" });
+    mockActiveOrders.mockResolvedValue([{ id: "0a1b2c3d-0000-4000-8000-000000000001", status: "en_route_dropoff" }]);
     const tree = await render();
     expect(has(tree, /A delivery is running — finish or cancel it first/)).toBe(true);
+    expect(has(tree, "No delivery running")).toBe(false);
+    expect(enabled(tree, "Delete account")).toBe(false);
+  });
+
+  it("U14: a food, shop or pharmacy order still with the business blocks the step", async () => {
+    // The active-orders list (not the single most-recent order): a parcel delivered and awaiting its rating
+    // plus a pharmacy order the business is still packing.
+    mockActiveOrders.mockResolvedValue([
+      { id: "parcel-1", status: "delivered" },
+      { id: "food-1", status: "requested" },
+    ]);
+    const tree = await render();
+    expect(has(tree, /A delivery is running — finish or cancel it first/)).toBe(true);
+    expect(enabled(tree, "Delete account")).toBe(false);
+  });
+
+  it("U58: a delivered parcel awaiting only its rating isn't 'running' (the server allows the deletion)", async () => {
+    mockActiveOrders.mockResolvedValue([{ id: "parcel-1", status: "delivered" }]);
+    const tree = await render();
+    expect(has(tree, "No delivery running")).toBe(true);
+    expect(has(tree, /A delivery is running/)).toBe(false);
+    expect(enabled(tree, "Delete account")).toBe(true);
+  });
+
+  it("U14: until the active-orders read answers, it never claims 'No delivery running' and the link stays off", async () => {
+    mockActiveOrders.mockRejectedValue(new Error("offline"));
+    const tree = await render();
+    await settle();
     expect(has(tree, "No delivery running")).toBe(false);
     expect(enabled(tree, "Delete account")).toBe(false);
   });

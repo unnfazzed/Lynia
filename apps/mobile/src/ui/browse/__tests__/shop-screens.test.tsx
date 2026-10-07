@@ -93,6 +93,8 @@ let mockSlots: unknown = undefined;
 jest.mock("../../../query/use-order-flow", () => ({ useScheduleSlots: () => ({ slots: mockSlots, isLoading: false, isError: false }) }));
 let mockRxEnabled = false;
 jest.mock("../../../net/use-order-flags", () => ({ useOrderFlags: () => ({ rxEnabled: mockRxEnabled }) }));
+let mockRestaurantsEnabled = true;
+jest.mock("../../../net/use-feature-flags", () => ({ useFeatureFlags: () => ({ restaurantsEnabled: mockRestaurantsEnabled, merchantDispatchAutoEnabled: false, merchantWalletEnabled: false }) }));
 
 import { ShopListScreen } from "../ShopListScreen";
 import { ShopStoreScreen } from "../ShopStoreScreen";
@@ -118,6 +120,7 @@ afterEach(() => {
   mockFlags = { shopsEnabled: true, pharmacyEnabled: true };
   mockSlots = undefined;
   mockRxEnabled = false;
+  mockRestaurantsEnabled = true;
   setCart(null, null, []);
   mockCatalogue = PHARMACY;
   jest.clearAllMocks();
@@ -218,6 +221,16 @@ describe("Pharmacy storefront (S4) — ordering (Order flow v2, D-59)", () => {
 
   it("section switched off: browse only — no +, no Add in the sheet, no cart bar", () => {
     mockFlags = { shopsEnabled: true, pharmacyEnabled: false };
+    setCart("s-1", "Avondale Pharmacy", [{ dishId: "d-1", name: "Paracetamol 500mg (20 tabs)", priceUsd: 1.5, quantity: 1, note: "" }]);
+    tree = mount(<ShopStoreScreen service="pharmacy" />);
+    expect(tree.root.findAll((n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("Add ")).length).toBe(0);
+    expect(texts(tree)).not.toContain("1 item · $1.50");
+    press(tree, "Paracetamol 500mg (20 tabs), $1.50");
+    expect(texts(tree)).not.toMatch(/Add · \$/);
+  });
+
+  it("U65: Restaurants switched off makes the storefront browse only too (every order route sits behind it)", () => {
+    mockRestaurantsEnabled = false;
     setCart("s-1", "Avondale Pharmacy", [{ dishId: "d-1", name: "Paracetamol 500mg (20 tabs)", priceUsd: 1.5, quantity: 1, note: "" }]);
     tree = mount(<ShopStoreScreen service="pharmacy" />);
     expect(tree.root.findAll((n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("Add ")).length).toBe(0);

@@ -126,3 +126,15 @@ export function startOfNextDay(now: Date): Date {
   next.setHours(24, 0, 0, 0);
   return next;
 }
+
+/**
+ * Whether `now` falls inside a menu category's serving window, e.g. Breakfast "07:00"–"11:00" (D-29).
+ * Null/empty bounds = always served. Reads `now`'s LOCAL getters like every helper here: the app passes
+ * the device clock, the API passes `harareWallClock(...)` (MJ-RM12 / U25: the server refuses a dish
+ * outside its window at placement, so this is the one rule both sides apply).
+ */
+export function categoryServedNow(from: string | null | undefined, to: string | null | undefined, now: Date): boolean {
+  if (!from || !to) return true;
+  const mins = minutesOfDay(now);
+  return mins >= parseHHMM(from) && mins < parseHHMM(to);
+}

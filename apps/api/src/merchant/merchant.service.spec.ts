@@ -1637,4 +1637,33 @@ describe("MerchantService customer Shops & Pharmacy reads (D-58)", () => {
     const res = await s.searchShops(WHERE, "para");
     expect(res.items).toEqual([{ dishId: "d1", name: "Paracetamol", priceUsd: 1.5, photoUrl: null, merchantId: "s1", merchantName: "Avondale Pharmacy" }]);
   });
+
+  it("MJ-RM12: a hidden category's dishes leave restaurant AND shop search", async () => {
+    const wheres: Array<Record<string, unknown>> = [];
+    const s = svc({
+      merchant: { findMany: async ({ select }: { select?: unknown }) => (select ? [{ id: "s1", name: "Avondale Pharmacy" }] : []) },
+      merchantDish: { findMany: async ({ where }: { where: Record<string, unknown> }) => (wheres.push(where), []) },
+    });
+    await s.searchShops(WHERE, "para");
+    await s.searchRestaurants("sadza");
+    expect(wheres).toHaveLength(2);
+    for (const w of wheres) expect(w.category).toEqual({ hidden: false });
+  });
+
+  it("MJ-H5 / U43: with RX_ENABLED on, Rx items are listed only at a pharmacy with a ticked pharmacist", async () => {
+    const wheres: Array<Record<string, unknown>> = [];
+    const prisma: Record<string, unknown> = {
+      merchantMember: { findFirst: async () => OWNER_OF_M1 },
+      merchant: { findFirst: async () => SHOP, findMany: async ({ select }: { select?: unknown }) => (select ? [{ id: "s1", name: "Avondale Pharmacy" }] : []) },
+      merchantCategory: { findMany: async ({ include }: { include: { dishes: { where: Record<string, unknown> } } }) => (wheres.push(include.dishes.where), []) },
+      merchantDish: { findMany: async ({ where }: { where: Record<string, unknown> }) => (wheres.push(where), []) },
+    };
+    const s = new MerchantService(prisma as unknown as PrismaService, defaultStorageStub as never, { RX_ENABLED: "true" } as never);
+    await s.getShopCatalogue(WHERE, "s1");
+    await s.searchShops(WHERE, "amox");
+    const rxRule = { AND: [{ OR: [{ rxRequired: false }, { category: { merchant: { members: { some: { isPharmacist: true } } } } }] }] };
+    expect(wheres[0]).toEqual({ isDraft: false, ...rxRule });
+    // Composes with search's own name/description OR rather than overwriting it.
+    expect(wheres[1]).toMatchObject({ ...rxRule, OR: [{ name: { contains: "amox", mode: "insensitive" } }, { description: { contains: "amox", mode: "insensitive" } }] });
+  });
 });

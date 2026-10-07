@@ -625,6 +625,9 @@ export class MerchantService {
           where: {
             merchantId: { in: pilots.map((p) => p.id) },
             isDraft: false,
+            // MJ-RM12: "Hidden — customers don't see it or its dishes" holds in search too. (A category's
+            // time window does not take its dishes out of search; placement refuses them out of window.)
+            category: { hidden: false },
             OR: [{ name: { contains: q, mode: "insensitive" } }, { description: { contains: q, mode: "insensitive" } }],
           },
           orderBy: [{ name: "asc" }, { id: "asc" }],
@@ -771,6 +774,7 @@ export class MerchantService {
           where: {
             merchantId: { in: visible.map((p) => p.id) },
             isDraft: false,
+            category: { hidden: false }, // MJ-RM12, as restaurant search
             ...this.rxVisible(),
             OR: [{ name: { contains: q, mode: "insensitive" } }, { description: { contains: q, mode: "insensitive" } }],
           },
@@ -1261,9 +1265,13 @@ export class MerchantService {
     };
   }
 
-  /** Order flow v2 (BRIEF §13): while RX_ENABLED is off, "Prescription needed" items are not listed. */
+  /** Order flow v2 (BRIEF §13): while RX_ENABLED is off, "Prescription needed" items are not listed.
+   *  MJ-H5 / U43: nor are they at a pharmacy with no team member ticked as pharmacist — nobody there
+   *  could check the prescription, so the order could never be packed (placement refuses it too,
+   *  PrescriptionService.prepareForPlacement). Wrapped in AND so it composes with a caller's own OR. */
   private rxVisible(): Prisma.MerchantDishWhereInput {
-    return this.env?.RX_ENABLED === "true" ? {} : { rxRequired: false };
+    if (this.env?.RX_ENABLED !== "true") return { rxRequired: false };
+    return { AND: [{ OR: [{ rxRequired: false }, { category: { merchant: { members: { some: { isPharmacist: true } } } } }] }] };
   }
 }
 
