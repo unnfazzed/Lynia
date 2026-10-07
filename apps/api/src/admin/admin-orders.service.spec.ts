@@ -761,7 +761,9 @@ describe("AdminOrdersService.adjudicateDelivered (KB-POD-DISPUTE Phase B)", () =
     const calls: Calls = { orderUpdate: null, orderEvent: null, riderUpdate: null, audit: null };
     const count = over.updateCount ?? 1;
     const baseOrder =
-      "order" in over ? over.order : { status: "undelivered", riderId: "r1", customerId: "c1", agreedFare: dec("6.00"), suggestedFare: dec("6.00") };
+      "order" in over
+        ? over.order
+        : { status: "undelivered", riderId: "r1", customerId: "c1", agreedFare: dec("6.00"), suggestedFare: dec("6.00"), orderType: "parcel" };
     let orderFindUniqueCalls = 0;
     const tx = {
       order: {
@@ -809,7 +811,7 @@ describe("AdminOrdersService.adjudicateDelivered (KB-POD-DISPUTE Phase B)", () =
   it("WD-021: charges commission off the fare re-read AFTER the status CAS, not the pre-CAS snapshot — a concurrent fare-adjust landing in the gap must not be priced off the stale fare", async () => {
     wallet.chargeCommission.mockClear();
     const { prisma } = makeTx({
-      order: { status: "undelivered", riderId: "r1", customerId: "c1", agreedFare: dec("6.00"), suggestedFare: dec("6.00") },
+      order: { status: "undelivered", riderId: "r1", customerId: "c1", agreedFare: dec("6.00"), suggestedFare: dec("6.00"), orderType: "parcel" },
       // Simulates a concurrent adjustFare(order, $20) committing between the initial read and this
       // function's own status CAS — the order's real, current fare by the time we charge is $20, not $6.
       freshOrder: { agreedFare: dec("20.00"), suggestedFare: dec("20.00") },
@@ -822,6 +824,28 @@ describe("AdminOrdersService.adjudicateDelivered (KB-POD-DISPUTE Phase B)", () =
     };
     expect(args.agreedFare.toString()).toBe("20.00");
     expect(args.suggestedFare.toString()).toBe("20.00");
+  });
+
+  it("LC-B-SIB-1: a merchant order adjudicated delivered charges NO Express commission (C4's ledger) but still completes and credits the rider; a parcel still charges", async () => {
+    wallet.chargeCommission.mockClear();
+    const { prisma, calls } = makeTx({
+      // A food order's agreedFare is its goods+delivery total — never an Express ride-commission basis.
+      order: { status: "undelivered", riderId: "r1", customerId: "c1", agreedFare: dec("25.00"), suggestedFare: dec("25.00"), orderType: "merchant" },
+    });
+    const svc = new AdminOrdersService(prisma as unknown as PrismaService, undefined, undefined, wallet as unknown as WalletService);
+    const res = await svc.adjudicateDelivered("admin-1", "o1", { reason: "x" });
+    expect(wallet.chargeCommission).not.toHaveBeenCalled();
+    expect(calls.orderUpdate!.data).toMatchObject({ status: "completed" });
+    expect(calls.riderUpdate!.data).toMatchObject({ tripsCount: { increment: 1 } });
+    expect(calls.audit!.data).toMatchObject({ action: "order.adjudicate_delivered", target: "o1" });
+    expect(res).toMatchObject({ id: "o1", status: "completed" });
+
+    // The parcel path is unchanged — the debit still fires.
+    const parcel = makeTx();
+    const svc2 = new AdminOrdersService(parcel.prisma as unknown as PrismaService, undefined, undefined, wallet as unknown as WalletService);
+    await svc2.adjudicateDelivered("admin-1", "o1", { reason: "x" });
+    expect(wallet.chargeCommission).toHaveBeenCalledTimes(1);
+    expect(wallet.chargeCommission).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ orderId: "o1", riderId: "r1" }));
   });
 
   it("409s on any non-undelivered order — this can only overturn a failed hand-off, not complete an arbitrary order", async () => {

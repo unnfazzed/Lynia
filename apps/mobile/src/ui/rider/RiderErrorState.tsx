@@ -10,11 +10,13 @@ const RETRY_EVERY_S = 10;
 /** The rider screens' couldn't-load title (empty-states v2 error tone, D-78). */
 export const RIDER_LOAD_FAIL_T = "Something went wrong";
 
-export function useAutoRetry(onRetry: () => void, everyS = RETRY_EVERY_S): number {
+export function useAutoRetry(onRetry: () => void, everyS = RETRY_EVERY_S, enabled = true): number {
   const [left, setLeft] = React.useState(everyS);
   const retryRef = React.useRef(onRetry);
   retryRef.current = onRetry;
   React.useEffect(() => {
+    // A screen kept mounted out of view (a tab) passes enabled=false so it never re-reads in the background.
+    if (!enabled) return;
     const iv = setInterval(() => {
       setLeft((s) => {
         if (s > 1) return s - 1;
@@ -23,7 +25,7 @@ export function useAutoRetry(onRetry: () => void, everyS = RETRY_EVERY_S): numbe
       });
     }, 1000);
     return () => clearInterval(iv);
-  }, [everyS]);
+  }, [everyS, enabled]);
   return left;
 }
 

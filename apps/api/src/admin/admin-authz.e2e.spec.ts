@@ -131,3 +131,60 @@ describe("POST /admin/sos/:id/ack — HTTP authz (DS13-06 acknowledge is AdminGu
     expect(res.body).toEqual({ id: SOS_ID, acknowledgedAt: "2026-07-13T10:00:00.000Z" });
   });
 });
+
+// Ledger cursors are @db.Uuid row ids. Before the optional ParseUUIDPipe, a malformed ?cursor= /
+// ?debtCursor= reached Prisma and 500'd (the query-param vector the path-param ParseUUIDPipe never covered).
+describe("admin ledger cursors — optional ParseUUIDPipe", () => {
+  let app: INestApplication;
+  const riders = { walletView: vi.fn(async () => ({ balance: 0, entries: [] })) };
+  const merchants = { getMerchantDetail: vi.fn(async () => ({ id: SOS_ID })) };
+
+  beforeAll(async () => {
+    app = await buildAuthzApp([AdminController], [
+      { provide: AdminService, useValue: adminService },
+      { provide: AdminOrdersService, useValue: {} },
+      { provide: AdminRidersService, useValue: riders },
+      { provide: AdminKycReviewService, useValue: {} },
+      { provide: AdminCustomersService, useValue: {} },
+      { provide: AdminMerchantsService, useValue: merchants },
+      { provide: AdminAuditService, useValue: {} },
+      { provide: SettlementsService, useValue: settlements },
+      { provide: SosService, useValue: sos },
+    ]);
+  });
+  afterAll(async () => {
+    await app?.close();
+  });
+
+  it("400 (not 500) for a malformed rider-wallet cursor; the service is never reached", async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/admin/riders/${USER_ID}/wallet?cursor=not-a-uuid`)
+      .set("Authorization", bearer(ADMIN_ID, "admin"));
+    expect(res.status).toBe(400);
+    expect(riders.walletView).not.toHaveBeenCalled();
+  });
+
+  it("forwards a well-formed rider-wallet cursor", async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/admin/riders/${USER_ID}/wallet?cursor=${SOS_ID}`)
+      .set("Authorization", bearer(ADMIN_ID, "admin"));
+    expect(res.status).toBe(200);
+    expect(riders.walletView).toHaveBeenCalledWith(USER_ID, SOS_ID);
+  });
+
+  it("400 (not 500) for a malformed merchant debtCursor; the service is never reached", async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/admin/merchants/${SOS_ID}?debtCursor=not-a-uuid`)
+      .set("Authorization", bearer(ADMIN_ID, "admin"));
+    expect(res.status).toBe(400);
+    expect(merchants.getMerchantDetail).not.toHaveBeenCalled();
+  });
+
+  it("forwards a well-formed merchant debtCursor", async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/admin/merchants/${SOS_ID}?debtCursor=${USER_ID}`)
+      .set("Authorization", bearer(ADMIN_ID, "admin"));
+    expect(res.status).toBe(200);
+    expect(merchants.getMerchantDetail).toHaveBeenCalledWith(SOS_ID, USER_ID);
+  });
+});

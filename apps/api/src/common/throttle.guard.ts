@@ -5,11 +5,14 @@ import {
   HttpStatus,
   Inject,
   Injectable,
+  Logger,
+  Optional,
   SetMetadata,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { OTP_STORE, type OtpStore } from "../auth/otp-store";
 import { TokenService } from "../auth/token.service";
+import { MetricsService } from "../observability/metrics.service";
 
 export interface ThrottleOptions {
   /** Max requests allowed inside the window before a 429. */
@@ -69,13 +72,24 @@ export const Throttle = (...opts: ThrottleOptions[]): MethodDecorator & ClassDec
  * Unauthenticated throttled routes legitimately have no subject; rather than share one IP budget across
  * a carrier NAT, they key their rules on what the request is about (`key` — the phone for a code check,
  * the session for a refresh) with a looser per-IP ceiling beside it.
+ *
+ * LC-D19: the counter store FAILS OPEN. A Redis error on `hit` (outage, Memorystore blip, the ~2s
+ * REDIS_FAIL_FAST bound) used to propagate out of this APP_GUARD and 500 every `@Throttle` route —
+ * including SOS raise. Rate limiting is a degradable protection, so a store error now logs a warning,
+ * counts `throttle_store_errors_total`, and skips that rule un-counted, matching every other Redis
+ * consumer here (micro-cache L2, tracking geo, presence). Only this generic counting degrades: the OTP
+ * code store and verify path (AuthService, incl. its own `enforceRate`) call the store directly and keep
+ * failing closed — an OTP can't be verified without Redis.
  */
 @Injectable()
 export class ThrottleGuard implements CanActivate {
+  private readonly logger = new Logger(ThrottleGuard.name);
+
   constructor(
     private readonly reflector: Reflector,
     @Inject(OTP_STORE) private readonly store: OtpStore,
     private readonly tokens: TokenService,
+    @Optional() private readonly metrics?: MetricsService,
   ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
@@ -90,7 +104,15 @@ export class ThrottleGuard implements CanActivate {
     for (const opts of rules) {
       const identity = opts.key ? opts.key(req) : (this.subject(req) ?? byIp(req));
       if (identity === undefined) continue;
-      const count = await this.store.hit(`rl:throttle:${opts.keyPrefix}:${identity}`, opts.windowSec);
+      let count: number;
+      try {
+        count = await this.store.hit(`rl:throttle:${opts.keyPrefix}:${identity}`, opts.windowSec);
+      } catch (err) {
+        // Fail open (LC-D19). Never log the key — it carries a subject id, phone or client IP.
+        this.logger.warn(`throttle store unavailable, failing open (${opts.keyPrefix}): ${(err as Error).message}`);
+        this.metrics?.recordThrottleStoreError(opts.keyPrefix);
+        continue;
+      }
       if (count > opts.limit) {
         // An object, not a bare string: a string body reached the app as a JSON string with no
         // `.message`, which it showed as "check your connection" (E2E 2026-10-05 FS-3).

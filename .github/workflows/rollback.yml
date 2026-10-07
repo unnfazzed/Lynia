@@ -5,8 +5,11 @@ name: Rollback (Cloud Run)
 # Run with no input to LIST recent revisions (find the last-good name), then re-run with the
 # revision name to route 100% of traffic to it.
 #
-# Schema note: migrations are expand-only/online-safe (CI-enforced), so an older revision keeps
-# working against the current schema. Rolling back traffic never rolls back the database.
+# Schema note: rolling back traffic never rolls back the database, so an older revision runs against the
+# CURRENT schema. CI (src/prisma/migration-safety.spec.ts) only blocks locking hazards; backward
+# compatibility — no drop/rename/tightening of a column an older revision still reads — is the
+# expand → migrate code → contract rule in docs/LAUNCH-DEPLOYMENT-STRATEGY.md §2c, enforced in review.
+# Check the migrations shipped since the target revision before routing traffic back to it.
 
 on:
   workflow_dispatch:
@@ -60,13 +63,26 @@ jobs:
 
       - name: Route 100% of traffic to the requested revision
         if: ${{ inputs.revision != '' }}
+        # The revision is free-form dispatch input, and this step holds production deploy credentials:
+        # it arrives via env (never `${{ }}` inside run:, which GitHub pastes into the script before bash
+        # parses it) and must look like a Cloud Run revision name before gcloud sees it.
+        env:
+          REVISION: ${{ inputs.revision }}
+          SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
+          PROJECT: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+          HEALTH_URL: ${{ vars.PUBLIC_HEALTH_URL || 'https://api.lyniago.com/healthz' }}
         run: |
           set -euo pipefail
-          gcloud run services update-traffic "${{ vars.CLOUD_RUN_SERVICE }}" \
-            --project "${{ vars.GCP_PROJECT_ID }}" --region "${{ vars.GCP_REGION }}" \
-            --to-revisions "${{ inputs.revision }}=100"
+          if [[ ! "$REVISION" =~ ^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$ ]]; then
+            echo "::error::'revision' must be a Cloud Run revision name (lowercase letters, digits and hyphens). Run with no input to list them."
+            exit 1
+          fi
+          gcloud run services update-traffic "$SERVICE" \
+            --project "$PROJECT" --region "$REGION" \
+            --to-revisions "${REVISION}=100"
           echo "Verifying service health through the LB…"
           sleep 10
-          curl -fsS --max-time 10 "${{ vars.PUBLIC_HEALTH_URL || 'https://api.lyniago.com/healthz' }}" \
+          curl -fsS --max-time 10 "$HEALTH_URL" \
             | grep -q '"status":"ok"' && echo "Health OK after rollback."
-          echo "Rolled back: 100% of traffic → ${{ inputs.revision }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Rolled back: 100% of traffic → ${REVISION}" >> "$GITHUB_STEP_SUMMARY"

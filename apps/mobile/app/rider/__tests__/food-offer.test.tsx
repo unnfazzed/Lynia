@@ -178,6 +178,41 @@ describe("FoodOffer (Rider v2 F1–F4)", () => {
     expect(tree.root.findAll((n) => n.props.label === "Accept this job")).toHaveLength(0);
   });
 
+  it("a FAILED offer read is the couldn't-load state, not F4's 'went to another rider' (LC-D-SIB-1)", async () => {
+    mockGetOffer.mockRejectedValue(new Error("network"));
+    const tree = await render();
+    const text = textOf(tree);
+
+    expect(text).toContain("Something went wrong");
+    expect(text).toContain("Trying again in 10 s");
+    expect(text).not.toContain("That one went to another rider");
+    expect(tree.root.findAll((n) => n.props.label === "Accept this job")).toHaveLength(0);
+  });
+
+  it("a failed read stops the 3 s poll (RiderErrorState retries every 10 s) and never flashes back to the skeleton", async () => {
+    // Earlier tests' screens stay mounted and keep polling the shared mock; stop their timers so the
+    // count below is this screen's alone.
+    jest.clearAllTimers();
+    mockGetOffer.mockRejectedValue(new Error("network"));
+    const tree = await render();
+    const callsAfterFail = mockGetOffer.mock.calls.length;
+    // Well past the 3 s poll but short of the 10 s retry: no extra reads, and the error state stays up.
+    await act(async () => {
+      jest.advanceTimersByTime(9_000);
+      await Promise.resolve();
+    });
+    expect(mockGetOffer.mock.calls.length).toBe(callsAfterFail);
+    expect(textOf(tree)).toContain("Something went wrong");
+    // The 10 s retry fires; while it is in flight the screen keeps the error state ("Trying again…").
+    mockGetOffer.mockReturnValue(new Promise(() => undefined));
+    await act(async () => {
+      jest.advanceTimersByTime(1_500);
+      await Promise.resolve();
+    });
+    expect(mockGetOffer.mock.calls.length).toBe(callsAfterFail + 1);
+    expect(textOf(tree)).toContain("Trying again");
+  });
+
   it("RD1b: a pharmacy job wears the PHARMACY tag and the sealed-bag note (Order flow v2, D-59)", async () => {
     mockJob = { businessType: "shop", shopKind: "pharmacy", scheduledFor: null, rx: false };
     mockGetOffer.mockResolvedValue(offer());

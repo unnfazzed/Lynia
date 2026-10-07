@@ -357,6 +357,15 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
       expect(res.body).toEqual({ restaurants: [] });
     });
 
+    it("GET /restaurants?cursor= rejects a malformed cursor with 400, never a Prisma uuid-cast 500 (DRS-03)", async () => {
+      const res = await request(app.getHttpServer()).get("/restaurants?cursor=not-a-uuid").set("Authorization", bearer("p1", "customer"));
+      expect(res.status).toBe(400);
+      const ok = await request(app.getHttpServer())
+        .get("/restaurants?cursor=11111111-1111-1111-1111-111111111111")
+        .set("Authorization", bearer("p1", "customer"));
+      expect(ok.status).toBe(200);
+    });
+
     it("C2: /merchant/orders needs membership — no auth 401, not a member 403, member 200", async () => {
       const noAuth = await request(app.getHttpServer()).get("/merchant/orders");
       expect(noAuth.status).toBe(401);

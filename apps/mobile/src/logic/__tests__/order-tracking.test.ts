@@ -329,3 +329,21 @@ describe("selectOfferReconciled", () => {
     expect(selectOfferReconciled({ freshStatus: "assigned", freshRiderId: "r1", selectedRiderId: undefined })).toBe(false);
   });
 });
+
+describe("liveOrderFromResendError (DRS-02 resend refused: the trip already has a rider)", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { ApiError } = require("../../api/client") as typeof import("../../api/client");
+  const { liveOrderFromResendError } = require("../order-tracking") as typeof import("../order-tracking");
+
+  it("returns the live order the 409 names, so the screen opens it instead of a Try again that can't succeed", () => {
+    const e = new ApiError(409, "This delivery is already on its way.", "trip_in_progress", null, { reason: "trip_in_progress", orderId: "ord-live" });
+    expect(liveOrderFromResendError(e)).toBe("ord-live");
+  });
+
+  it("is null for every other failure, which keeps the Try again toast", () => {
+    expect(liveOrderFromResendError(new ApiError(409, "Order changed, retry"))).toBeNull();
+    expect(liveOrderFromResendError(new ApiError(0, "offline"))).toBeNull();
+    expect(liveOrderFromResendError(new ApiError(409, "x", "trip_in_progress", null, null))).toBeNull();
+    expect(liveOrderFromResendError(new Error("boom"))).toBeNull();
+  });
+});

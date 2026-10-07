@@ -187,6 +187,44 @@ describe("AdminService.overview", () => {
     expect(undeliveredToday).toMatchObject({ status: "undelivered" });
   });
 
+  // LC-B-SIB-4: "Completed today" (and its completion-rate hint) sit beside the parcel-only "Fares
+  // today" KPI. Unscoped, a merchant order completing today moved the count/rate while adding $0 to the
+  // fares beside it. All three today-figures must cover the same parcel universe.
+  it("scopes completed/undelivered-today to parcel orders, the same universe as fares-today", async () => {
+    const seenCountWheres: Record<string, unknown>[] = [];
+    const seenAggregateWheres: Record<string, unknown>[] = [];
+    const prisma = {
+      order: {
+        groupBy: async () => [],
+        count: async (args?: { where?: Record<string, unknown> }) => {
+          const w = args?.where ?? {};
+          seenCountWheres.push(w);
+          // A merchant order completing today must not reach the count.
+          if (w.status === "completed" && w.completedAt) return w.orderType === "parcel" ? 3 : 4;
+          if (w.status === "undelivered" && w.undeliveredAt) return w.orderType === "parcel" ? 1 : 2;
+          return 0;
+        },
+        aggregate: async (args?: { where?: Record<string, unknown> }) => {
+          seenAggregateWheres.push(args?.where ?? {});
+          return { _sum: { agreedFare: dec("30.00") } };
+        },
+        findFirst: async () => null,
+        findMany: async () => [],
+      },
+      offer: { count: async () => 0 },
+      rider: { count: async () => 0 },
+      issue: { count: async () => 0 },
+      $queryRaw: async () => [{ count: 0 }],
+    };
+
+    const out = await new AdminService(prisma as unknown as PrismaService, envStub()).overview();
+
+    expect(out.today).toEqual({ completed: 3, completionRatePct: 75, fares: "30.00" });
+    const fares = seenAggregateWheres[0];
+    expect(seenCountWheres.find((w) => "completedAt" in w)?.orderType).toBe(fares.orderType);
+    expect(seenCountWheres.find((w) => "undeliveredAt" in w)?.orderType).toBe(fares.orderType);
+  });
+
   // DS20-01: the ops-dashboard stuck-order query and the per-order detail badge (admin-orders.service)
   // must be governed by ONE shared threshold. admin.service used to redeclare its own 25-min literal
   // while admin.shared exported 20 min, so the same order could read "stuck" on its detail page yet not

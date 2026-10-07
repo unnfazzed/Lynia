@@ -14,14 +14,19 @@
 
 locals {
   # The five preconfigured OWASP rulesets, as data rather than five near-identical `rule` blocks.
-  # Priorities are load-bearing: above the per-IP throttle at 1000 so rate limiting is evaluated
-  # first, below the default-allow at 2147483647.
+  # Priorities are load-bearing: the WAF must be evaluated BEFORE the per-IP throttle at 1000. Cloud
+  # Armor applies the highest-priority (lowest-number) rule that matches, and the throttle matches
+  # every IP: an under-threshold request takes its conform action (allow) and is "allowed through the
+  # security policy". With the WAF at 2000+ an injection probe under the rate limit was allowed at 1000
+  # and never reached these rules — not blocked when enforced, not even logged while in preview. At
+  # 900+ a match is denied (or, in preview, logged and evaluation continues on to the throttle), and a
+  # clean request falls through to the throttle exactly as before.
   armor_waf_rules = [
-    { priority = 2000, description = "OWASP SQL injection", ruleset = "sqli-v33-stable" },
-    { priority = 2001, description = "OWASP cross-site scripting", ruleset = "xss-v33-stable" },
-    { priority = 2002, description = "OWASP local file inclusion", ruleset = "lfi-v33-stable" },
-    { priority = 2003, description = "OWASP remote code execution", ruleset = "rce-v33-stable" },
-    { priority = 2004, description = "Scanner / recon detection", ruleset = "scannerdetection-v33-stable" },
+    { priority = 900, description = "OWASP SQL injection", ruleset = "sqli-v33-stable" },
+    { priority = 901, description = "OWASP cross-site scripting", ruleset = "xss-v33-stable" },
+    { priority = 902, description = "OWASP local file inclusion", ruleset = "lfi-v33-stable" },
+    { priority = 903, description = "OWASP remote code execution", ruleset = "rce-v33-stable" },
+    { priority = 904, description = "Scanner / recon detection", ruleset = "scannerdetection-v33-stable" },
   ]
 }
 
@@ -69,7 +74,8 @@ resource "google_compute_security_policy" "api" {
   # rule in PREVIEW blocks nothing — it only logs would-have-matched entries for tuning. Pre-launch
   # there is no traffic to tune against, so these five were ~$5/mo spent observing an empty road.
   # NOT a reduction in live protection: preview rules were already blocking nothing, and the per-IP
-  # throttle above (priority 1000, always enforced) is untouched. Arm this at launch prep, BEFORE
+  # throttle (priority 1000, always enforced) is untouched. When armed, these sit at 900-904 — ahead of
+  # the throttle (see local.armor_waf_rules for why the order matters). Arm this at launch prep, BEFORE
   # real traffic, so the preview window has something to learn from.
   dynamic "rule" {
     for_each = var.armor_waf_enabled ? local.armor_waf_rules : []

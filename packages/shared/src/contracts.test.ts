@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   BecomeMerchantRequest,
   ConfirmMerchantPickupRequest,
+  CreateOrderRequest,
   MarkUndeliveredRequest,
   MerchantLocationInput,
   merchantWaypoint,
+  SubscribeOrderEvent,
   UpdateMerchantHoursRequest,
   UpdateMerchantLocationRequest,
   Waypoint,
@@ -85,5 +87,40 @@ describe("UpdateMerchantHoursRequest (E2E 2026-10-05 LB-2)", () => {
   it("still refuses an unknown day key and a malformed window", () => {
     expect(UpdateMerchantHoursRequest.safeParse({ hours: { funday: day } }).success).toBe(false);
     expect(UpdateMerchantHoursRequest.safeParse({ hours: { mon: { open: "8am", close: "17:00" } } }).success).toBe(false);
+  });
+});
+
+describe("CreateOrderRequest item text — whitespace-only is not a description", () => {
+  const base = {
+    pickup: { point: { lat: -17.82, lng: 31.05 }, landmark: "Eastgate", contactPhone: "+263771234567" },
+    dropoff: { point: { lat: -17.8, lng: 31.04 }, landmark: "Avondale", contactPhone: "+263777654321" },
+    declaredValue: 0,
+    proposedFare: 5,
+  };
+
+  it("rejects a whitespace-only itemDescription, the same as an empty one", () => {
+    expect(CreateOrderRequest.safeParse({ ...base, itemDescription: "   " }).success).toBe(false);
+    expect(CreateOrderRequest.safeParse({ ...base, itemDescription: "" }).success).toBe(false);
+  });
+
+  it("rejects a whitespace-only line-item description", () => {
+    expect(CreateOrderRequest.safeParse({ ...base, items: [{ description: " \t ", quantity: 1 }] }).success).toBe(false);
+  });
+
+  it("trims surrounding whitespace off a real description", () => {
+    const r = CreateOrderRequest.parse({ ...base, itemDescription: "  Documents  " });
+    expect(r.itemDescription).toBe("Documents");
+  });
+});
+
+describe("SubscribeOrderEvent — the subscribe:order payload is runtime-validated", () => {
+  it("accepts a UUID orderId", () => {
+    expect(SubscribeOrderEvent.safeParse({ orderId: "2f1e9b3c-0000-4000-8000-000000000001" }).success).toBe(true);
+  });
+
+  it("rejects a malformed or missing orderId (it would otherwise reach a @db.Uuid column)", () => {
+    expect(SubscribeOrderEvent.safeParse({ orderId: "not-a-uuid" }).success).toBe(false);
+    expect(SubscribeOrderEvent.safeParse({}).success).toBe(false);
+    expect(SubscribeOrderEvent.safeParse(undefined).success).toBe(false);
   });
 });

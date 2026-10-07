@@ -16,7 +16,7 @@ import { useFeatureFlags } from "../../../src/net/use-feature-flags";
 import { useHistoryFeed } from "../../../src/query/use-history-feed";
 import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refetch";
 import { useWallet, useWalletConfig, useWalletLedger, walletKey, walletLedgerKey } from "../../../src/query/use-wallet";
-import { AppScreen, EmptyRow, emptyCopy, fillEmpty, Icon, SkeletonRows, useTabRoot } from "../../../src/ui";
+import { AppScreen, EmptyRow, EmptyState, emptyCopy, fillEmpty, Icon, SkeletonRows, useTabRoot } from "../../../src/ui";
 import { useAutoRetry } from "../../../src/ui/rider/RiderErrorState";
 import { SmBtn } from "../../../src/ui/order/kit";
 import { Notice } from "../../../src/ui/send/kit";
@@ -100,6 +100,24 @@ function itemMeta(i: MoneyItem): string {
   return RF.lMeta(i.amount < 0 ? R.fromBalance : R.toBalance, t);
 }
 
+/**
+ * The history's failed or offline read with nothing cached (LC-D-SIB-1): not M9's "No jobs yet today". Rider
+ * errors are the L state with no Retry, saying what the app is doing (empty-states v2 §3 "Rider offline /
+ * errors"), with RiderErrorState's own strings; offline is its wifi-off info variant, like Job history.
+ * Retries only while the tab is focused — the tab navigator keeps this screen mounted out of view.
+ */
+function LedgerFailedState({ onRetry, offline, focused }: { onRetry: () => void; offline: boolean; focused: boolean }): React.ReactElement {
+  const left = useAutoRetry(onRetry, undefined, focused);
+  return (
+    <EmptyState
+      icon={offline ? "wifi-off" : "circle-alert"}
+      tone={offline ? "info" : "error"}
+      title="Something went wrong"
+      body={fillEmpty(emptyCopy.rider.retrying, { s: left })}
+    />
+  );
+}
+
 /** Bars for the week strip: today's bar is accent with a 700 label, the rest accent-wash. */
 function WeekBars({ byDay, todayIdx }: { byDay: number[]; todayIdx: number }): React.ReactElement {
   const max = Math.max(1, ...byDay);
@@ -132,7 +150,7 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
   const { config } = useWalletConfig();
   const { wallet, isLoading, isError } = useWallet();
   const me = useQuery({ queryKey: ["me"], queryFn: getMe }).data;
-  const { entries, isLoading: ledgerLoading, hasMore, isLoadingMore, loadMore } = useWalletLedger();
+  const { entries, isLoading: ledgerLoading, isError: ledgerError, isPaused: ledgerPaused, refetch: refetchLedger, hasMore, isLoadingMore, loadMore } = useWalletLedger();
   const { rows: history } = useHistoryFeed();
   const [range, setRange] = useState<"today" | "week">("today");
   const [filter, setFilter] = useState<ServiceFilter>("all");
@@ -298,6 +316,9 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
         ) : null}
         {ledgerLoading ? (
           <SkeletonRows count={3} />
+        ) : feed.length === 0 && (ledgerError || ledgerPaused) && entries.length === 0 ? (
+          // A FAILED or OFFLINE ledger read is not "No jobs yet today" (LC-D-SIB-1).
+          <LedgerFailedState onRetry={refetchLedger} offline={ledgerPaused && !ledgerError} focused={focused} />
         ) : feed.length === 0 ? (
           // M9 — one quiet row (empty-states v2, D-78).
           <EmptyRow disc icon="receipt" text={emptyCopy.rider.noJobsToday} style={{ paddingVertical: 4 }} />

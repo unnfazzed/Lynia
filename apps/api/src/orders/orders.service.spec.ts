@@ -72,6 +72,35 @@ describe("OrdersService.create", () => {
     expect(created!.suggestedFare).not.toBe(created!.proposedFare);
   });
 
+  it("refuses the reserved cash-on-delivery line from a customer — only a shop booking account may send it", async () => {
+    // A customer typing the booking's cash line on a plain parcel would have the rider app tell the rider
+    // to collect cash from the recipient that nobody asks back for.
+    let created = false;
+    const mk = (phone: string) =>
+      new OrdersService(
+        {
+          profile: { findUnique: async () => ({ onHold: false, phone }) },
+          order: {
+            create: async () => {
+              created = true;
+              return { id: "ord-1", status: "open_for_offers", itemDesc: "x", proposedFare: { toString: () => "2.50" }, suggestedFare: { toString: () => "2.40" }, distanceKm: 1.5, createdAt: new Date() };
+            },
+          },
+        } as unknown as PrismaService,
+        { schedule: async () => {} } as unknown as OfferExpiryService,
+        noTracking,
+        noNotifications,
+        noGateway,
+      );
+    const cod = { ...orderInput, itemDescription: undefined, items: [{ description: "Cash on delivery: collect $50.00 from the buyer, bring it back to Nowhere", quantity: 1 }] };
+    await expect(mk("+263771111111").create(cod, "cust-1")).rejects.toMatchObject({ status: 400 });
+    await expect(mk("+263771111111").create({ ...orderInput, itemDescription: cod.items[0]!.description }, "cust-1")).rejects.toMatchObject({ status: 400 });
+    expect(created).toBe(false);
+    // A real booking (the business's booking account) still sends it.
+    await expect(mk("business:7c1d6a2e-0000-4000-8000-000000000001").create(cod, "acct-1")).resolves.toMatchObject({ id: "ord-1" });
+    expect(created).toBe(true);
+  });
+
   it("legacy itemDescription-only create: itemDesc stays the raw string, items normalizes to one qty-1 row", async () => {
     let created: Record<string, unknown> | undefined;
     const prisma = {
@@ -1290,13 +1319,13 @@ describe("OrdersService.historyForUser", () => {
 });
 
 describe("OrdersService.earningsSummary (WD-004 — a full aggregate, not a sum over the capped history page)", () => {
-  const svc = (agg: unknown, capture?: (a: unknown) => void) =>
+  const svc = (groups: unknown, capture?: (a: unknown) => void) =>
     new OrdersService(
       {
         order: {
-          aggregate: async (args: unknown) => {
+          groupBy: async (args: unknown) => {
             capture?.(args);
-            return agg;
+            return groups;
           },
         },
       } as unknown as PrismaService,
@@ -1305,26 +1334,47 @@ describe("OrdersService.earningsSummary (WD-004 — a full aggregate, not a sum 
       noNotifications,
       noGateway,
     );
+  const parcel = (agreedFare: string | null, n: number) => ({
+    orderType: "parcel",
+    _sum: { agreedFare: agreedFare == null ? null : new Prisma.Decimal(agreedFare), deliveryFee: null },
+    _count: { _all: n },
+  });
 
   it("aggregates over ALL matching orders (not capped at 50), scoped to this rider's completed/delivered orders", async () => {
     let args: unknown;
     // A rider with well over 50 lifetime deliveries — the aggregate must reflect all of them, not a page.
-    await svc({ _sum: { agreedFare: new Prisma.Decimal("6234.50") }, _count: { _all: 187 } }, (a) => (args = a)).earningsSummary("r1");
+    await svc([parcel("6234.50", 187)], (a) => (args = a)).earningsSummary("r1");
     expect(args).toMatchObject({
+      by: ["orderType"],
       where: { riderId: "r1", status: { in: COMPLETED_ORDER_STATUSES } },
-      _sum: { agreedFare: true },
+      _sum: { agreedFare: true, deliveryFee: true },
       _count: { _all: true },
     });
   });
 
   it("returns the summed total and trip count", async () => {
-    const result = await svc({ _sum: { agreedFare: new Prisma.Decimal("123.45") }, _count: { _all: 12 } }).earningsSummary("r1");
+    const result = await svc([parcel("123.45", 12)]).earningsSummary("r1");
     expect(result).toEqual({ total: "123.45", count: 12 });
   });
 
   it("returns $0/0 for a rider with no completed trips yet (SQL SUM of nothing is NULL)", async () => {
-    const result = await svc({ _sum: { agreedFare: null }, _count: { _all: 0 } }).earningsSummary("r1");
-    expect(result).toEqual({ total: "0", count: 0 });
+    expect(await svc([]).earningsSummary("r1")).toEqual({ total: "0", count: 0 });
+    expect(await svc([parcel(null, 0)]).earningsSummary("r1")).toEqual({ total: "0", count: 0 });
+  });
+
+  // LC-B-SIB-4: a merchant order's agreedFare is the customer's goods + delivery total; the rider only
+  // keeps its deliveryFee. The old single aggregate summed agreedFare for both, so a $20 food order
+  // with a $2.50 delivery fee credited the rider $20.
+  it("credits a merchant order with its deliveryFee, not its goods+delivery agreedFare", async () => {
+    const result = await svc([
+      parcel("10.00", 2),
+      {
+        orderType: "merchant",
+        _sum: { agreedFare: new Prisma.Decimal("20.00"), deliveryFee: new Prisma.Decimal("2.50") },
+        _count: { _all: 1 },
+      },
+    ]).earningsSummary("r1");
+    expect(result).toEqual({ total: "12.5", count: 3 });
   });
 });
 

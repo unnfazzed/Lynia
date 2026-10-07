@@ -29,6 +29,7 @@ import {
   type PresenceRecoveredEvent,
   type PresenceStaleEvent,
   RiderLocationEvent,
+  SubscribeOrderEvent,
   WS_EVENTS,
 } from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
@@ -205,8 +206,13 @@ export class TrackingGateway
   ): Promise<{ joined: string } | { error: string }> {
     const user = client.data.user as SocketUser | undefined;
     if (!user) return { error: "unauthenticated" };
-    if (!(await this.tracking.canAccessOrder(user.sub, body.orderId))) return { error: "forbidden" };
-    await client.join(orderRoom(body.orderId));
+    // Runtime-validate the payload (mirrors riderLocation/boardSubscribe): a non-UUID orderId otherwise
+    // reaches Prisma's uuid column and throws an uncaught 22P02 — no ack, an ERROR logged per call.
+    const parsed = SubscribeOrderEvent.safeParse(body);
+    if (!parsed.success) return { error: "invalid" };
+    const { orderId } = parsed.data;
+    if (!(await this.tracking.canAccessOrder(user.sub, orderId))) return { error: "forbidden" };
+    await client.join(orderRoom(orderId));
     // C5 customer-presence: mark the subscriber live only when THEY are this order's CUSTOMER (the
     // sender), keyed on the per-order relationship — NOT the global JWT role. `Role` is one enum per
     // account, so a rider-role account that placed THIS delivery as the sender would never get the
@@ -215,8 +221,8 @@ export class TrackingGateway
     // order — so "not the assigned rider" ⇒ the customer. The order's assigned rider is left untracked
     // here (its liveness is the DB heartbeat via findStaleRiderPresence), so the two branches stay
     // mutually exclusive and driven by the order relationship rather than the role.
-    if (!(await this.tracking.isAssignedRider(user.sub, body.orderId))) {
-      this.markCustomerPresent(client.id, body.orderId);
+    if (!(await this.tracking.isAssignedRider(user.sub, orderId))) {
+      this.markCustomerPresent(client.id, orderId);
     } else {
       // BH-20: sync the CURRENT customer-presence truth to a (re)joining rider socket. `presence:stale`/
       // `presence:recovered` are room broadcasts — a socket that (re)joins after the event fired never
@@ -226,9 +232,9 @@ export class TrackingGateway
       // handler nor a foreground refetch touches it (both only invalidate order/job REST state). Emitting
       // directly to THIS client (not the room) reconciles it on every subscribe, including the very first
       // one, without re-notifying the customer's own socket.
-      this.syncCustomerPresenceToRider(client, body.orderId);
+      this.syncCustomerPresenceToRider(client, orderId);
     }
-    return { joined: body.orderId };
+    return { joined: orderId };
   }
 
   /** See the BH-20 comment at its call site in {@link subscribeOrder}. */
@@ -322,13 +328,22 @@ export class TrackingGateway
         if (room.startsWith("board:geo:") || room === BOARD_ROOM) await client.leave(room);
       }
 
-      if (lat !== undefined && lng !== undefined) {
-        const rooms = boardCellNeighborhood(lat, lng).map(boardGeoRoom);
-        for (const room of rooms) await client.join(room);
-        return { joined: rooms.length };
+      const rooms =
+        lat !== undefined && lng !== undefined ? boardCellNeighborhood(lat, lng).map(boardGeoRoom) : [BOARD_ROOM];
+      for (const room of rooms) await client.join(room);
+
+      // BH-25-SIB-1: re-check standing AFTER joining. kickRiderFromBoard runs post-commit off a
+      // fetchSockets() snapshot, so a subscribe that passed the gate above before a suspend/hold committed
+      // but joined after the kick's snapshot would otherwise keep those rooms until reconnect. Join-then-
+      // read here vs commit-then-snapshot there means at least one side sees the other: either this read
+      // sees the committed demotion (we leave), or the kick's snapshot is taken after our join (it leaves
+      // for us). No cross-instance lock needed; one PK lookup per subscribe. A failed read fails closed.
+      const stillEligible = await this.tracking.isBoardEligible(user.sub).catch(() => false);
+      if (!stillEligible) {
+        for (const room of rooms) await client.leave(room);
+        return { error: "forbidden" };
       }
-      await client.join(BOARD_ROOM);
-      return { joined: "board" };
+      return lat !== undefined && lng !== undefined ? { joined: rooms.length } : { joined: "board" };
     });
   }
 
@@ -560,7 +575,8 @@ export class TrackingGateway
    * the cluster-wide socket registry (fetchSockets — the same Redis adapter the presence guard uses) to
    * find the rider's sockets on ANY instance, then leaves the city-wide BOARD_ROOM and every board:geo:*
    * cell room — ONLY the board rooms, so an assigned rider still tracking their own delivery keeps that
-   * order room. Never throws.
+   * order room. Never throws. A boardSubscribe racing this kick (joining after the snapshot) is closed
+   * by boardSubscribe's own post-join standing re-check (BH-25-SIB-1).
    */
   async kickRiderFromBoard(riderId: string): Promise<void> {
     if (!this.server) return;

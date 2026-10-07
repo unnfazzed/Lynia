@@ -59,7 +59,8 @@ type CounterName =
   | "identity_new_device_verify_total"
   | "micro_cache_requests_total"
   | "wallet_integrity_runs_total"
-  | "wallet_integrity_drift_total";
+  | "wallet_integrity_drift_total"
+  | "throttle_store_errors_total";
 
 /** Fixed label vocabularies — NEVER accept ids/phones/lat-lng/raw-urls as labels (cardinality). */
 export type MatchSelectOutcome = "assigned" | "taken" | "unavailable" | "not_open" | "forbidden" | "error";
@@ -400,6 +401,13 @@ export class MetricsService {
    *  vocabulary — never a rider/account id. This is the series 1.5's ledger-drift alert watches. */
   recordWalletIntegrityDrift(kind: WalletIntegrityDrift, count: number): void {
     if (count > 0) this.counter("wallet_integrity_drift_total").add(count, { kind });
+  }
+
+  /** The global ThrottleGuard's counter store (Redis) errored and the request was let through
+   *  un-counted (LC-D19 fail-open). `keyPrefix` is the route's `@Throttle` namespace — a closed,
+   *  code-defined vocabulary, never an id/IP — so any nonzero rate means rate limiting is degraded. */
+  recordThrottleStoreError(keyPrefix: string): void {
+    this.counter("throttle_store_errors_total").add(1, { key_prefix: keyPrefix });
   }
 }
 

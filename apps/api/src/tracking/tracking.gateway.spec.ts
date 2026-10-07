@@ -131,6 +131,42 @@ describe("TrackingGateway.boardSubscribe", () => {
     expect(client.join).not.toHaveBeenCalled();
   });
 
+  it("BH-25-SIB-1: a suspend committed between the gate and the join (kick snapshot already taken) leaves no board room", async () => {
+    const client = fakeSocket({ sub: "rider-1", role: "rider" });
+    let suspended = false;
+    const g = gateway({
+      isBoardEligible: vi.fn(async () => {
+        if (suspended) return false;
+        // The gate read passes; then the standing flip commits and the post-commit kick runs off a
+        // fetchSockets() snapshot taken BEFORE this socket has joined any board room.
+        suspended = true;
+        await g.kickRiderFromBoard("rider-1");
+        return true;
+      }),
+    });
+    g.server = fakeServer([remoteSocket("rider-1", [])]).server as never;
+
+    const res = await g.boardSubscribe(client as never, { lat: -17.8292, lng: 31.0522 });
+
+    expect(res).toEqual({ error: "forbidden" });
+    // The snapshot missed the fresh rooms, so the subscribe side must have left them itself.
+    expect([...client.rooms].filter((r) => r.startsWith("board:") || r === BOARD_ROOM)).toEqual([]);
+  });
+
+  it("BH-25-SIB-1: a failing post-join standing re-check fails closed (rooms left, forbidden)", async () => {
+    const client = fakeSocket({ sub: "rider-1", role: "rider" });
+    const isBoardEligible = vi
+      .fn<() => Promise<boolean>>()
+      .mockResolvedValueOnce(true)
+      .mockRejectedValueOnce(new Error("db down"));
+    const g = gateway({ isBoardEligible } as Partial<TrackingService>);
+
+    const res = await g.boardSubscribe(client as never, {});
+
+    expect(res).toEqual({ error: "forbidden" });
+    expect(client.rooms.has(BOARD_ROOM)).toBe(false);
+  });
+
   it("returns unauthenticated when the socket carries no user", async () => {
     const g = gateway({ isBoardEligible: vi.fn(async () => true) });
     const client = fakeSocket(undefined);
@@ -884,6 +920,8 @@ describe("TrackingGateway.emitOrderRebroadcast (F-01)", () => {
 });
 
 describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
+  // subscribe:order runtime-validates orderId as a UUID (SubscribeOrderEvent), so these ids are UUID-shaped.
+  const ORDER_1 = "0d6f1c2a-0000-4000-8000-000000000001";
   // A customer-role subscribe marks presence; the customer's disconnect starts the dark clock; a scan
   // after PRESENCE_ESCALATION_MS escalates presence:stale role:"customer" to the order room (the rider
   // is the receiver). filterActiveOrders confirms the ride is still live before escalating.
@@ -900,6 +938,18 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
     assignedRiderId: vi.fn(async () => "assigned-rider"),
   });
 
+  it("rejects a malformed or missing subscribe:order orderId with {error:'invalid'} before any DB lookup", async () => {
+    // A non-UUID orderId used to reach Prisma's @db.Uuid column and throw an uncaught 22P02 (no ack,
+    // an ERROR logged per call). It is now refused at the payload, like riderLocation/boardSubscribe.
+    const tracking = customerTracking();
+    const g = gateway(tracking);
+    const client = fakeSocket({ sub: "c1", role: "customer" });
+    await expect(g.subscribeOrder(client as never, { orderId: "not-a-uuid" })).resolves.toEqual({ error: "invalid" });
+    await expect(g.subscribeOrder(client as never, {} as never)).resolves.toEqual({ error: "invalid" });
+    expect(tracking.canAccessOrder).not.toHaveBeenCalled();
+    expect(client.join).not.toHaveBeenCalled();
+  });
+
   it("escalates role:customer once after the customer socket has been dark past the threshold", async () => {
     vi.useFakeTimers();
     try {
@@ -908,7 +958,7 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
       g.server = server as never;
       const client = fakeSocket({ sub: "c1", role: "customer" });
 
-      await g.subscribeOrder(client as never, { orderId: "ord-1" });
+      await g.subscribeOrder(client as never, { orderId: ORDER_1 });
       // Not yet dark → a scan escalates nothing.
       await g.scanPresence();
       expect(emit).not.toHaveBeenCalled();
@@ -921,10 +971,10 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
       // Past the escalation window → one presence:stale role:"customer" to the order room.
       await vi.advanceTimersByTimeAsync(PRESENCE_ESCALATION_MS + 1);
       await g.scanPresence();
-      expect(to).toHaveBeenCalledWith(orderRoom("ord-1"));
+      expect(to).toHaveBeenCalledWith(orderRoom(ORDER_1));
       expect(emit).toHaveBeenCalledWith(
         WS_EVENTS.presenceStale,
-        expect.objectContaining({ orderId: "ord-1", role: "customer" }),
+        expect.objectContaining({ orderId: ORDER_1, role: "customer" }),
       );
 
       // Still dark on the next scan → no repeat (escalate once, no spam).
@@ -945,13 +995,13 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
       g.server = server as never;
       const client = fakeSocket({ sub: "c1", role: "customer" });
 
-      await g.subscribeOrder(client as never, { orderId: "ord-1" });
+      await g.subscribeOrder(client as never, { orderId: ORDER_1 });
       g.handleDisconnect(client as never); // drops on THIS instance → local dark clock starts
       await vi.advanceTimersByTimeAsync(PRESENCE_ESCALATION_MS + 1);
       await g.scanPresence();
 
       // The adapter shows the customer live elsewhere → suppress the false "customer offline".
-      expect(inFn).toHaveBeenCalledWith(orderRoom("ord-1"));
+      expect(inFn).toHaveBeenCalledWith(orderRoom(ORDER_1));
       expect(emit).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
@@ -968,7 +1018,7 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
       g.server = server as never;
       const client = fakeSocket({ sub: "c1", role: "customer" });
 
-      await g.subscribeOrder(client as never, { orderId: "ord-1" });
+      await g.subscribeOrder(client as never, { orderId: ORDER_1 });
       g.handleDisconnect(client as never);
       await vi.advanceTimersByTimeAsync(PRESENCE_ESCALATION_MS + 1);
       await g.scanPresence();
@@ -987,7 +1037,7 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
       g.server = server as never;
       const client = fakeSocket({ sub: "c1", role: "customer" });
 
-      await g.subscribeOrder(client as never, { orderId: "ord-1" });
+      await g.subscribeOrder(client as never, { orderId: ORDER_1 });
       g.handleDisconnect(client as never);
       await vi.advanceTimersByTimeAsync(PRESENCE_ESCALATION_MS + 1);
       await g.scanPresence(); // escalates ord-1 → now in the notified set (excluded from `candidates`)
@@ -998,7 +1048,7 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
       tracking.filterActiveOrders.mockClear();
       tracking.filterActiveOrders.mockImplementation(async () => new Set<string>());
       await g.scanPresence();
-      expect(tracking.filterActiveOrders).toHaveBeenCalledWith(expect.arrayContaining(["ord-1"]));
+      expect(tracking.filterActiveOrders).toHaveBeenCalledWith(expect.arrayContaining([ORDER_1]));
     } finally {
       vi.useRealTimers();
     }
@@ -1013,7 +1063,7 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
       const client = fakeSocket({ sub: "c1", role: "customer" });
 
       // First dark spell → one escalation.
-      await g.subscribeOrder(client as never, { orderId: "ord-1" });
+      await g.subscribeOrder(client as never, { orderId: ORDER_1 });
       g.handleDisconnect(client as never);
       await vi.advanceTimersByTimeAsync(PRESENCE_ESCALATION_MS + 1);
       await g.scanPresence();
@@ -1023,9 +1073,9 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
       // re-subscribe itself now also pushes presence:recovered role:"customer" immediately, rather than
       // making the rider's app wait for the order's next status change.
       const client2 = fakeSocket({ sub: "c1", role: "customer" }, [], "sock-2");
-      await g.subscribeOrder(client2 as never, { orderId: "ord-1" });
+      await g.subscribeOrder(client2 as never, { orderId: ORDER_1 });
       expect(emit).toHaveBeenCalledTimes(2);
-      expect(emit).toHaveBeenNthCalledWith(2, WS_EVENTS.presenceRecovered, expect.objectContaining({ orderId: "ord-1", role: "customer" }));
+      expect(emit).toHaveBeenNthCalledWith(2, WS_EVENTS.presenceRecovered, expect.objectContaining({ orderId: ORDER_1, role: "customer" }));
 
       // Then goes dark again → a second stale escalation.
       g.handleDisconnect(client2 as never);
@@ -1043,7 +1093,7 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
     g.server = server as never;
     const client = fakeSocket({ sub: "c1", role: "customer" });
 
-    await g.subscribeOrder(client as never, { orderId: "ord-1" });
+    await g.subscribeOrder(client as never, { orderId: ORDER_1 });
     expect(emit).not.toHaveBeenCalled();
   });
 
@@ -1058,19 +1108,19 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
       // Duplicate subscribe from the SAME socket to the SAME order (e.g. a client retry). Presence
       // must stay idempotent: live goes to 1, not 2 — otherwise the single disconnect below can't
       // bring live back to 0 and the dark clock / escalation never fires.
-      await g.subscribeOrder(client as never, { orderId: "ord-1" });
-      await g.subscribeOrder(client as never, { orderId: "ord-1" });
+      await g.subscribeOrder(client as never, { orderId: ORDER_1 });
+      await g.subscribeOrder(client as never, { orderId: ORDER_1 });
       const presence = (g as unknown as { customerPresence: Map<string, { live: number }> }).customerPresence;
-      expect(presence.get("ord-1")?.live).toBe(1);
+      expect(presence.get(ORDER_1)?.live).toBe(1);
 
       // One disconnect → live back to 0 → dark clock starts → escalation fires past the window.
       g.handleDisconnect(client as never);
       await vi.advanceTimersByTimeAsync(PRESENCE_ESCALATION_MS + 1);
       await g.scanPresence();
-      expect(to).toHaveBeenCalledWith(orderRoom("ord-1"));
+      expect(to).toHaveBeenCalledWith(orderRoom(ORDER_1));
       expect(emit).toHaveBeenCalledWith(
         WS_EVENTS.presenceStale,
-        expect.objectContaining({ orderId: "ord-1", role: "customer" }),
+        expect.objectContaining({ orderId: ORDER_1, role: "customer" }),
       );
     } finally {
       vi.useRealTimers();
@@ -1087,7 +1137,7 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
       g.server = server as never;
       const rider = fakeSocket({ sub: "r1", role: "rider" });
 
-      await g.subscribeOrder(rider as never, { orderId: "ord-1" });
+      await g.subscribeOrder(rider as never, { orderId: ORDER_1 });
       g.handleDisconnect(rider as never);
       await vi.advanceTimersByTimeAsync(PRESENCE_ESCALATION_MS + 1);
       await g.scanPresence();
@@ -1109,10 +1159,10 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
 
       // Simulate an already-escalated order (the customer went dark and the room broadcast already fired
       // while this rider's socket was disconnected, so it never received the room event).
-      (g as unknown as { customerStaleNotified: Set<string> }).customerStaleNotified.add("ord-1");
+      (g as unknown as { customerStaleNotified: Set<string> }).customerStaleNotified.add(ORDER_1);
       const rider = fakeSocket({ sub: "r1", role: "rider" });
-      await g.subscribeOrder(rider as never, { orderId: "ord-1" });
-      expect(rider.emit).toHaveBeenCalledWith(WS_EVENTS.presenceStale, expect.objectContaining({ orderId: "ord-1", role: "customer" }));
+      await g.subscribeOrder(rider as never, { orderId: ORDER_1 });
+      expect(rider.emit).toHaveBeenCalledWith(WS_EVENTS.presenceStale, expect.objectContaining({ orderId: ORDER_1, role: "customer" }));
     } finally {
       vi.useRealTimers();
     }
@@ -1126,8 +1176,8 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
     g.server = server as never;
     const rider = fakeSocket({ sub: "r1", role: "rider" });
 
-    await g.subscribeOrder(rider as never, { orderId: "ord-1" });
-    expect(rider.emit).toHaveBeenCalledWith(WS_EVENTS.presenceRecovered, expect.objectContaining({ orderId: "ord-1", role: "customer" }));
+    await g.subscribeOrder(rider as never, { orderId: ORDER_1 });
+    expect(rider.emit).toHaveBeenCalledWith(WS_EVENTS.presenceRecovered, expect.objectContaining({ orderId: ORDER_1, role: "customer" }));
   });
 
   it("DS13-01: refutes a dark customer whose live socket is a rider-ROLE sender (matched by relationship, not role)", async () => {
@@ -1146,13 +1196,13 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
       g.server = server as never;
       const client = fakeSocket({ sub: senderSub, role: "rider" });
 
-      await g.subscribeOrder(client as never, { orderId: "ord-1" });
+      await g.subscribeOrder(client as never, { orderId: ORDER_1 });
       g.handleDisconnect(client as never); // drops on THIS instance → local dark clock starts
       await vi.advanceTimersByTimeAsync(PRESENCE_ESCALATION_MS + 1);
       await g.scanPresence();
 
-      expect(inFn).toHaveBeenCalledWith(orderRoom("ord-1"));
-      expect(tracking.assignedRiderId).toHaveBeenCalledWith("ord-1");
+      expect(inFn).toHaveBeenCalledWith(orderRoom(ORDER_1));
+      expect(tracking.assignedRiderId).toHaveBeenCalledWith(ORDER_1);
       // The dual-role sender is recognised as the live customer → the false escalation is suppressed.
       expect(emit).not.toHaveBeenCalled();
     } finally {
@@ -1172,14 +1222,14 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
       g.server = server as never;
       const client = fakeSocket({ sub: "c1", role: "customer" });
 
-      await g.subscribeOrder(client as never, { orderId: "ord-1" });
+      await g.subscribeOrder(client as never, { orderId: ORDER_1 });
       g.handleDisconnect(client as never);
       await vi.advanceTimersByTimeAsync(PRESENCE_ESCALATION_MS + 1);
       await g.scanPresence();
 
       expect(emit).toHaveBeenCalledWith(
         WS_EVENTS.presenceStale,
-        expect.objectContaining({ orderId: "ord-1", role: "customer" }),
+        expect.objectContaining({ orderId: ORDER_1, role: "customer" }),
       );
     } finally {
       vi.useRealTimers();
@@ -1199,14 +1249,14 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
       g.server = server as never;
       const senderWithRiderRole = fakeSocket({ sub: "acct-1", role: "rider" });
 
-      await g.subscribeOrder(senderWithRiderRole as never, { orderId: "ord-1" });
+      await g.subscribeOrder(senderWithRiderRole as never, { orderId: ORDER_1 });
       g.handleDisconnect(senderWithRiderRole as never);
       await vi.advanceTimersByTimeAsync(PRESENCE_ESCALATION_MS + 1);
       await g.scanPresence();
-      expect(to).toHaveBeenCalledWith(orderRoom("ord-1"));
+      expect(to).toHaveBeenCalledWith(orderRoom(ORDER_1));
       expect(emit).toHaveBeenCalledWith(
         WS_EVENTS.presenceStale,
-        expect.objectContaining({ orderId: "ord-1", role: "customer" }),
+        expect.objectContaining({ orderId: ORDER_1, role: "customer" }),
       );
     } finally {
       vi.useRealTimers();

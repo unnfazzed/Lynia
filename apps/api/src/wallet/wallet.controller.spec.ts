@@ -24,6 +24,9 @@ const TOPUP_ID = "2f1e9b3c-0000-4000-8000-000000000001";
 // spy must NOT be called in the 400 case.
 const wallet = {
   getTopup: vi.fn(async (_id: string, topupId: string) => ({ id: topupId, status: "pending" })),
+  // getLedger is only reached on the well-formed-cursor path; a malformed ?cursor= is rejected by the
+  // optional ParseUUIDPipe before the service is consulted.
+  getLedger: vi.fn(async (_id: string, _cursor?: string) => ({ entries: [], nextCursor: undefined })),
 };
 
 describe("GET /wallet/topups/:id — ParseUUIDPipe (DS18-05)", () => {
@@ -57,5 +60,45 @@ describe("GET /wallet/topups/:id — ParseUUIDPipe (DS18-05)", () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ id: TOPUP_ID, status: "pending" });
     expect(wallet.getTopup).toHaveBeenCalledWith(RIDER_ID, TOPUP_ID);
+  });
+});
+
+// The ?cursor= query param is a ledger-row @db.Uuid id. Before the optional ParseUUIDPipe, a malformed
+// cursor reached Prisma and 500'd (same class as DS18-05, but the query-param vector DS18-05 did not cover).
+describe("GET /wallet/ledger?cursor — optional ParseUUIDPipe", () => {
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    app = await buildAuthzApp([WalletController], [{ provide: WalletService, useValue: wallet }]);
+  });
+  afterAll(async () => {
+    await app?.close();
+  });
+
+  it("400 (not 500) for a malformed, non-UUID cursor", async () => {
+    wallet.getLedger.mockClear();
+    const res = await request(app.getHttpServer())
+      .get("/wallet/ledger?cursor=not-a-uuid")
+      .set("Authorization", bearer(RIDER_ID, "rider"));
+    expect(res.status).toBe(400);
+    expect(wallet.getLedger).not.toHaveBeenCalled();
+  });
+
+  it("200 with no cursor (first page)", async () => {
+    wallet.getLedger.mockClear();
+    const res = await request(app.getHttpServer())
+      .get("/wallet/ledger")
+      .set("Authorization", bearer(RIDER_ID, "rider"));
+    expect(res.status).toBe(200);
+    expect(wallet.getLedger).toHaveBeenCalledWith(RIDER_ID, undefined);
+  });
+
+  it("200 and forwards a well-formed UUID cursor to the service", async () => {
+    wallet.getLedger.mockClear();
+    const res = await request(app.getHttpServer())
+      .get(`/wallet/ledger?cursor=${TOPUP_ID}`)
+      .set("Authorization", bearer(RIDER_ID, "rider"));
+    expect(res.status).toBe(200);
+    expect(wallet.getLedger).toHaveBeenCalledWith(RIDER_ID, TOPUP_ID);
   });
 });

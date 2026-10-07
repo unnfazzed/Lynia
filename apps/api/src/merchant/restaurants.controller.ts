@@ -23,7 +23,8 @@ export class RestaurantsController {
   /** B-O10: `cursor` (opaque, the last id from a previous page's `nextCursor`) pages through the
    *  corridor's catalog instead of one unbounded fetch. */
   @Get()
-  list(@Query("cursor") cursor?: string) {
+  // The cursor is a merchant @db.Uuid id: a malformed one is a clean 400, not a Prisma uuid-cast 500 (DRS-03).
+  list(@Query("cursor", new ParseUUIDPipe({ optional: true })) cursor?: string) {
     return this.merchant.listRestaurants(cursor);
   }
 

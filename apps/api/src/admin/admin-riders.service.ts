@@ -223,6 +223,12 @@ export class AdminRidersService {
       if (rider.accountStatus === RiderAccountStatus.BANNED) {
         throw new ConflictException("A banned rider can't be suspended — reinstating a ban is a separate action.");
       }
+      // LC-D-SIB-2: the CAS below guards on the OBSERVED status, which trivially matches when that status
+      // already IS the target — so an admin's lost-response retry of an already-applied suspend wrote a
+      // second `rider.suspend` audit row (with the retry's own reason), re-ran the session revocation and
+      // re-fired the rider + every active-order customer push. Refuse the no-op re-apply up front, mirroring
+      // liftRider/clearHold's explicit precondition (409, nothing written, nothing pushed).
+      if (rider.accountStatus === RiderAccountStatus.SUSPENDED) throw new ConflictException("Rider is already suspended");
       // DS13-04: CAS on the observed accountStatus instead of a blind update-by-id (mirrors DS-03 in
       // admin-orders.service). The findUnique takes no row lock, so a concurrent standing change (e.g. a
       // ban committing between the read and this write) would otherwise be silently clobbered back to
@@ -338,6 +344,9 @@ export class AdminRidersService {
     const result = await this.prisma.$transaction(async (tx) => {
       const rider = await tx.rider.findUnique({ where: { profileId }, select: { accountStatus: true } });
       if (!rider) throw new NotFoundException("Rider not found");
+      // LC-D-SIB-2: refuse re-banning an already-banned rider (see suspendRider) — the observed-status CAS
+      // below would otherwise match and double-write the `rider.ban` audit row + re-fire every push.
+      if (rider.accountStatus === RiderAccountStatus.BANNED) throw new ConflictException("Rider is already banned");
       // DS13-04: CAS on the observed accountStatus (mirrors DS-03) so a concurrent standing change can't
       // be silently clobbered between the read and this write. 0 rows ⇒ the row moved ⇒ 409.
       const changed = await tx.rider.updateMany({

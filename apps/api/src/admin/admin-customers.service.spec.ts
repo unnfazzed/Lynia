@@ -232,7 +232,7 @@ describe("AdminCustomersService hold/lift (S·2 — mutation + audit in ONE $tra
   });
 
   it("liftCustomerHold clears onHold + reason and audits", async () => {
-    const { prisma, calls } = makeTx();
+    const { prisma, calls } = makeTx({ id: "c1", onHold: true });
     const svc = new AdminCustomersService(prisma as unknown as PrismaService);
     const res = await svc.liftCustomerHold("admin-1", "c1", {});
     expect(calls.update!.data).toEqual({ onHold: false, holdReason: null });
@@ -277,7 +277,7 @@ describe("AdminCustomersService hold/lift (S·2 — mutation + audit in ONE $tra
   });
 
   it("UX18-04: liftCustomerHold pushes the customer a best-effort 'Account restored' notice", async () => {
-    const { prisma } = makeTx();
+    const { prisma } = makeTx({ id: "c1", onHold: true });
     const { notifications, notified } = spyNotifications();
     const svc = new AdminCustomersService(prisma as unknown as PrismaService, notifications);
     await svc.liftCustomerHold("admin-1", "c1", {});
@@ -299,11 +299,58 @@ describe("AdminCustomersService hold/lift (S·2 — mutation + audit in ONE $tra
   });
 
   it("BH-18: liftCustomerHold stamps to:'customer' on the push data so the client doesn't misroute to /rider", async () => {
-    const { prisma } = makeTx();
+    const { prisma } = makeTx({ id: "c1", onHold: true });
     const { notifications, notified } = spyNotifications();
     const svc = new AdminCustomersService(prisma as unknown as PrismaService, notifications);
     await svc.liftCustomerHold("admin-1", "c1", {});
     expect(notified[0]!.msg).toMatchObject({ data: { kind: "account", to: "customer" } });
+  });
+
+  // LC-D-SIB-2: the observed-onHold CAS trivially matched when the row already held the target value, so
+  // an admin's lost-response retry of an already-applied hold/lift double-wrote the audit trail and
+  // re-pushed the customer. A STATEFUL fake (the CAS only matches the row's real onHold) replays the
+  // action and proves the second call 409s with no second audit row and no second push.
+  function makeStatefulTx(onHold: boolean) {
+    const row = { id: "c1", onHold };
+    const audits: Array<Record<string, unknown>> = [];
+    const tx = {
+      profile: {
+        findFirst: async () => ({ ...row }),
+        updateMany: async (args: { where: { onHold: boolean }; data: { onHold: boolean } }) => {
+          if (args.where.onHold !== row.onHold) return { count: 0 };
+          row.onHold = args.data.onHold;
+          return { count: 1 };
+        },
+      },
+      auditLog: {
+        create: async (args: { data: Record<string, unknown> }) => {
+          audits.push(args.data);
+          return { id: `audit-${audits.length}` };
+        },
+      },
+    };
+    const prisma = { $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
+    return { prisma, audits };
+  }
+
+  it("LC-D-SIB-2: replaying holdCustomer on an already-held customer 409s — no second audit row, no second push", async () => {
+    const { prisma, audits } = makeStatefulTx(false);
+    const { notifications, notified } = spyNotifications();
+    const svc = new AdminCustomersService(prisma as unknown as PrismaService, notifications);
+    await svc.holdCustomer("admin-1", "c1", { reason: "suspected fraud" });
+    await expect(svc.holdCustomer("admin-1", "c1", { reason: "retry reason" })).rejects.toThrow(/already on hold/i);
+    expect(audits.map((a) => a.action)).toEqual(["customer.hold"]);
+    expect(notified).toHaveLength(1);
+  });
+
+  it("LC-D-SIB-2: replaying liftCustomerHold on a customer who isn't held 409s — no second audit row, no second push", async () => {
+    const { prisma, audits } = makeStatefulTx(true);
+    const { notifications, notified } = spyNotifications();
+    const svc = new AdminCustomersService(prisma as unknown as PrismaService, notifications);
+    await svc.liftCustomerHold("admin-1", "c1", {});
+    await expect(svc.liftCustomerHold("admin-1", "c1", {})).rejects.toThrow(/not on hold/i);
+    expect(audits.map((a) => a.action)).toEqual(["customer.lift"]);
+    expect(notified).toHaveLength(1);
   });
 });
 

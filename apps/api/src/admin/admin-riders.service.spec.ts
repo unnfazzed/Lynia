@@ -476,6 +476,87 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
   });
 });
 
+// LC-D-SIB-2: suspend/ban CAS on the OBSERVED accountStatus, which trivially matched when it already
+// equalled the target — so an admin's lost-response retry of an already-applied suspend/ban wrote a second
+// audit row, re-ran the session revocation, and re-fired the rider push + every active-order customer push.
+// A STATEFUL fake (the CAS only matches the row's real status) replays each action and proves the second
+// call 409s with nothing written and nothing pushed.
+describe("AdminRidersService suspend/ban replay idempotency (LC-D-SIB-2)", () => {
+  function makeStateful(accountStatus: string) {
+    const row = { accountStatus };
+    const audits: Array<Record<string, unknown>> = [];
+    let sessionRevokes = 0;
+    const tx = {
+      rider: {
+        findUnique: async () => ({ ...row }),
+        updateMany: async (args: { where: { accountStatus: string }; data: { accountStatus: string } }) => {
+          if (args.where.accountStatus !== row.accountStatus) return { count: 0 };
+          row.accountStatus = args.data.accountStatus;
+          return { count: 1 };
+        },
+      },
+      auditLog: {
+        create: async (args: { data: Record<string, unknown> }) => {
+          audits.push(args.data);
+          return { id: `audit-${audits.length}` };
+        },
+      },
+      session: { updateMany: async () => { sessionRevokes++; return { count: 1 }; } },
+    };
+    const prisma = {
+      $transaction: async (fn: (t: unknown) => unknown) => fn(tx),
+      // One live order, so the customer-facing standing notice would fire on every successful apply.
+      order: { findMany: async () => [{ id: "o1", customerId: "c1" }] },
+      auditLog: { create: async () => ({ id: "standing-audit" }) },
+    };
+    const pushed: string[][] = [];
+    const notifications = {
+      notifyProfiles: async (ids: string[]) => { pushed.push(ids); },
+    } as unknown as NotificationsService;
+    const evicted: string[] = [];
+    const gateway = {
+      evictRiderFromSupply: async (id: string) => { evicted.push(id); },
+    } as unknown as import("../tracking/tracking.gateway").TrackingGateway;
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, notifications, gateway);
+    return { svc, audits, pushed, evicted, sessionRevokes: () => sessionRevokes };
+  }
+  const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("replaying suspendRider on an already-suspended rider 409s — no second audit, push, revocation or eviction", async () => {
+    const s = makeStateful("active");
+    await s.svc.suspendRider("admin-1", "r1", { reason: "safety report" });
+    await flush();
+    const pushesAfterFirst = s.pushed.length; // rider "Account paused" + the active-order customer notice
+    await expect(s.svc.suspendRider("admin-1", "r1", { reason: "retry reason" })).rejects.toThrow(/already suspended/i);
+    await flush();
+    expect(s.audits.map((a) => a.action)).toEqual(["rider.suspend"]);
+    expect(s.pushed).toHaveLength(pushesAfterFirst);
+    expect(pushesAfterFirst).toBe(2);
+    expect(s.sessionRevokes()).toBe(1);
+    expect(s.evicted).toEqual(["r1"]);
+  });
+
+  it("replaying banRider on an already-banned rider 409s — no second audit, push, revocation or eviction", async () => {
+    const s = makeStateful("active");
+    await s.svc.banRider("admin-1", "r1", { reason: "fraud" });
+    await flush();
+    const pushesAfterFirst = s.pushed.length; // rider "Account blocked" + the active-order customer notice
+    await expect(s.svc.banRider("admin-1", "r1", { reason: "fraud" })).rejects.toThrow(/already banned/i);
+    await flush();
+    expect(s.audits.map((a) => a.action)).toEqual(["rider.ban"]);
+    expect(s.pushed).toHaveLength(pushesAfterFirst);
+    expect(pushesAfterFirst).toBe(2);
+    expect(s.sessionRevokes()).toBe(1);
+    expect(s.evicted).toEqual(["r1"]);
+  });
+
+  it("a suspended rider can still be banned — the guard only refuses the SAME state", async () => {
+    const s = makeStateful("suspended");
+    await s.svc.banRider("admin-1", "r1", { reason: "fraud" });
+    expect(s.audits.map((a) => a.action)).toEqual(["rider.ban"]);
+  });
+});
+
 // A banned/suspended rider's already-assigned order isn't touched by the standing change (the
 // lifecycle mutations only check order.riderId, not standing) — so the customer on that live order
 // previously heard nothing. suspendRider/banRider now fire a best-effort post-commit notify to every

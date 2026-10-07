@@ -29,6 +29,11 @@ jobs:
       # `pnpm audit --audit-level high` gate (CVSS 7.0+ = the High/Critical band) we emit the JSON
       # report and gate on each advisory group's `max_severity` ourselves. Fails CLOSED: a malformed
       # report (scan didn't run) is treated as a failure, never a silent pass.
+      # `max_severity` is a CVSS score and is EMPTY for an advisory with no CVSS vector, so a score alone
+      # would let an unscored High/Critical advisory through. An unscored group therefore counts when any
+      # of its advisories is labelled HIGH/CRITICAL (the label `audit-level high` gated on), when it is a
+      # malicious-package report (MAL-*, never scored), or when it carries no label at all (unknown).
+      # An unscored group labelled only MODERATE/LOW stays below the bar, as before.
       - name: Dependency vulnerability scan (osv-scanner, high+)
         run: |
           set -euo pipefail
@@ -47,9 +52,15 @@ jobs:
           # A well-formed report always carries a `.results` array; its absence means the scan itself
           # failed — fail closed rather than treat a broken run as "no vulnerabilities".
           jq -e 'has("results")' osv-results.json >/dev/null || { echo "::error::osv-scanner produced no valid JSON report"; cat osv-results.json || true; exit 1; }
-          HIGH=$(jq '[.results[]?.packages[]?.groups[]?.max_severity | select(. != null and . != "") | tonumber | select(. >= 7)] | length' osv-results.json)
+          HIGH=$(jq '[.results[]?.packages[]? | . as $p | .groups[]?
+            | ((.max_severity // "") | tostring) as $s
+            | if $s != "" then (($s | tonumber) >= 7)
+              else ([.ids[]? as $i | $p.vulnerabilities[]? | select(.id == $i) | ((.database_specific.severity // "") | ascii_upcase)]) as $labels
+                | (any(.ids[]?; startswith("MAL-")) or ($labels | any(. == "HIGH" or . == "CRITICAL")) or ($labels | all(. == "")))
+              end
+            | select(.)] | length' osv-results.json)
           if [ "${HIGH:-0}" -gt 0 ]; then
-            echo "::error::osv-scanner found ${HIGH} High/Critical (CVSS>=7) advisory group(s) in the scanned lockfiles"
+            echo "::error::osv-scanner found ${HIGH} High/Critical (CVSS>=7, or unscored High/Critical/malicious/unknown) advisory group(s) in the scanned lockfiles"
             ./osv-scanner scan source "${LOCKS[@]}" || true
             exit 1
           fi

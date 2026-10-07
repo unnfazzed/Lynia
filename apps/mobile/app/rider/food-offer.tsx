@@ -16,6 +16,7 @@ import { OrderSheet, PeekMark } from "../../src/ui/order/OrderSheet";
 import { JTag, StopLine } from "../../src/ui/rider/board";
 import { O, ofFmt } from "../../src/ui/orderflow/copy";
 import { OfNote } from "../../src/ui/rider/proof-kit";
+import { RiderErrorState } from "../../src/ui/rider/RiderErrorState";
 import type { IconName } from "../../src/ui";
 import { RIDER_COPY as R, RF, usd, venueCopy } from "../../src/ui/rider/copy";
 import { TerminalBody } from "../../src/ui/rider/job-kit";
@@ -43,7 +44,15 @@ export default function FoodOffer(): React.ReactElement {
   const { height: winH } = useWindowDimensions();
   const { restaurantsEnabled } = useFeatureFlags();
   // Its own key: the board's ["foodOffer"] caches the bare offer, this read carries the job's tags too.
-  const offerQ = useQuery({ queryKey: ["foodOfferJob"], queryFn: getFoodDispatchOfferWithJob, refetchInterval: 3000, enabled: restaurantsEnabled });
+  // While a read has failed with nothing cached, RiderErrorState owns the retry cadence (every 10 s): the
+  // 3 s poll would otherwise keep re-firing and, since a refetch with no data flips the query back to
+  // pending, swap the error state for a skeleton every few seconds.
+  const offerQ = useQuery({
+    queryKey: ["foodOfferJob"],
+    queryFn: getFoodDispatchOfferWithJob,
+    refetchInterval: (q) => (q.state.data === undefined && q.state.errorUpdateCount > 0 ? false : 3000),
+    enabled: restaurantsEnabled,
+  });
   const offer = offerQ.data?.offer ?? null;
   const job = offerQ.data?.job ?? null;
   // The expired state (F4) has no offer left to read the kind from: keep the last one seen (FJ-L1).
@@ -99,6 +108,18 @@ export default function FoodOffer(): React.ReactElement {
       <Screen>
         <AppBar onBack={() => router.replace("/rider")} />
         <EmptyState icon="utensils" tone="info" title="Restaurants isn't available yet" body="Check back soon." />
+      </Screen>
+    );
+  }
+
+  // `generic_error`: a FAILED (or offline, paused) READ is not "the offer went to another rider"
+  // (LC-D-SIB-1). The no-offer answer is a 200 with `offer: null`, so a failure here means the read itself
+  // failed. Checked before the skeleton: a retry of a failed read is pending again, and must keep showing
+  // this state ("Trying again…") rather than flashing the skeleton.
+  if (!offerQ.data && (offerQ.isError || offerQ.isPaused || offerQ.errorUpdateCount > 0)) {
+    return (
+      <Screen>
+        <RiderErrorState onRetry={() => void offerQ.refetch()} retrying={offerQ.isFetching} onBack={() => router.replace("/rider")} />
       </Screen>
     );
   }

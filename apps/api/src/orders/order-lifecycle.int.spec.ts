@@ -522,3 +522,65 @@ describe("seam-contract transitions", () => {
     }
   });
 });
+
+/**
+ * DRS-02 on real Postgres: resend's lineage guarantee lives in recursive SQL (root walk + lineage scan +
+ * root lock), which the unit spec can only stub. One trip = one rebroadcast lineage; at most one live
+ * auction per lineage, and a trip that already has a rider refuses another resend.
+ */
+describe("resend — one live auction per trip (DRS-02)", () => {
+  const resendOrders = {
+    announceOpenOrder: async () => {},
+    announcePriceChange: async () => {},
+    assertCustomerMayBroadcast: async () => {},
+  } as unknown as OrdersService;
+  const resender = new OrderLifecycleService({ ...MERCHANT_FLAGS_OFF } as Env, prisma, tokens, gateway, noopNotifications, resendOrders, wallet, storageStub);
+
+  async function finished(customerId: string, status: "expired" | "cancelled", rebroadcastOfId?: string): Promise<string> {
+    const id = await makeOpenOrder(customerId);
+    await prisma.order.update({ where: { id }, data: { status, ...(rebroadcastOfId ? { rebroadcastOfId } : {}) } });
+    return id;
+  }
+  async function liveInLineage(rootId: string): Promise<string[]> {
+    const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+      WITH RECURSIVE d(id) AS (SELECT ${rootId}::uuid UNION ALL SELECT o.id FROM orders o JOIN d ON o.rebroadcast_of_id = d.id)
+      SELECT o.id FROM orders o JOIN d ON o.id = d.id WHERE o.status = 'open_for_offers'`;
+    return rows.map((r) => r.id);
+  }
+
+  it("resending a DIFFERENT finished order of the trip re-prices its live auction instead of opening a second", async () => {
+    const customer = await makeCustomer();
+    const a = await finished(customer, "expired");
+    const c = (await resender.resend(a, customer, 3)).id; // A → C
+    await prisma.order.update({ where: { id: c }, data: { status: "cancelled" } });
+    const d = (await resender.resend(a, customer, 4)).id; // A → D (C is no longer live)
+    expect(d).not.toBe(c);
+
+    const res = await resender.resend(c, customer, 5); // resend C while D is live
+    expect(res.id).toBe(d);
+    expect(await liveInLineage(a)).toEqual([d]);
+    const dRow = await prisma.order.findUniqueOrThrow({ where: { id: d }, select: { proposedFare: true } });
+    expect(Number(dRow.proposedFare)).toBe(5);
+  });
+
+  it("concurrent resends of two different orders of one trip leave exactly one live auction", async () => {
+    const customer = await makeCustomer();
+    const a = await finished(customer, "expired");
+    const c = await finished(customer, "cancelled", a);
+    const results = await Promise.allSettled(
+      Array.from({ length: 8 }, (_, i) => resender.resend(i % 2 === 0 ? a : c, customer, 3 + i / 10)),
+    );
+    expect(results.filter((r) => r.status === "fulfilled").length).toBeGreaterThan(0);
+    expect(await liveInLineage(a)).toHaveLength(1);
+  });
+
+  it("a trip that already has a rider refuses another resend with trip_in_progress and the live order id", async () => {
+    const customer = await makeCustomer();
+    const a = await finished(customer, "expired");
+    const live = await finished(customer, "cancelled", a);
+    await prisma.order.update({ where: { id: live }, data: { status: "en_route_pickup" } });
+    const err = await resender.resend(a, customer, 4).catch((e: unknown) => e);
+    expect((err as { getResponse(): unknown }).getResponse()).toMatchObject({ reason: "trip_in_progress", orderId: live });
+    expect(await liveInLineage(a)).toEqual([]);
+  });
+});

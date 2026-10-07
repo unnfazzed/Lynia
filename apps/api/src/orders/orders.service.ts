@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, deriveMerchantOrderTrack, isBusinessBookingAccountPhone, type LatLng, OFFER_WINDOW_MS, OrderStatus, type OrderItem, PHONE_REVEAL_STATUSES, isInServiceArea, quoteFare, serviceTownsLabel, summarizeItems } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, deriveMerchantOrderTrack, isBusinessBookingAccountPhone, isCodItem, type LatLng, OFFER_WINDOW_MS, OrderStatus, type OrderItem, PHONE_REVEAL_STATUSES, isInServiceArea, quoteFare, serviceTownsLabel, summarizeItems } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush, maxBroadcastRadiusM } from "../common/broadcast-policy";
 import { MicroCache } from "../common/micro-cache";
@@ -243,6 +243,18 @@ export class OrdersService {
     // The derived row is clamped to OrderItem's 140-char cap (legacy itemDescription allows 280)
     // so stored `items` JSON always round-trips through the contract; itemDesc keeps the raw string.
     const items: OrderItem[] = input.items ?? [{ description: (input.itemDescription ?? "").slice(0, 140), quantity: 1 }];
+
+    // The "Cash on delivery: collect $X…" line is how a shop BOOKING tells every rider app to collect cash
+    // (booking-cod.ts); the rider app shows it on any parcel carrying it. Only a booking account (a
+    // business's `business:<merchantId>` customer, which no sign-in produces) may send one — a customer
+    // typing it on a plain parcel would have the rider collect cash from the recipient that nobody ever
+    // asks back for. (DRS-01's debt gate already refuses to open a debt for it; this stops the line itself.)
+    if (items.some(isCodItem)) {
+      const sender = await this.prisma.profile.findUnique({ where: { id: customerId }, select: { phone: true } });
+      if (!isBusinessBookingAccountPhone(sender?.phone)) {
+        throw new BadRequestException({ reason: "reserved_item_text", message: "Describe what you're sending — that line is reserved for shop bookings." });
+      }
+    }
 
     let order;
     try {
@@ -979,14 +991,29 @@ export class OrdersService {
    *  aggregate over ALL matching orders — never derived by summing the capped 50-row `historyForUser`
    *  page, which silently understates a rider with more than 50 lifetime orders (across both roles).
    *  `_sum` ignores NULL `agreedFare` rows in SQL (a documented completion anomaly — see
-   *  wallet.service.ts's `chargeCommission`), so an anomalous row can't inflate the total either. */
+   *  wallet.service.ts's `chargeCommission`), so an anomalous row can't inflate the total either.
+   *
+   *  LC-B-SIB-4: what a rider EARNED differs by order type. A parcel's `agreedFare` is the rider's fare,
+   *  but a merchant order's `agreedFare` is the customer's grand total (goods + delivery − venue share);
+   *  the rider keeps only its `deliveryFee` (schema D-08/D-71). Summing `agreedFare` across both credited
+   *  a rider's food runs with the dish cost they hand back to the kitchen. One grouped read, then each
+   *  type contributes its own earned column; the trip count still covers both (same set as the Trips
+   *  list, `historyForUser`). */
   async earningsSummary(riderId: string): Promise<{ total: string; count: number }> {
-    const agg = await this.prisma.order.aggregate({
+    const groups = await this.prisma.order.groupBy({
+      by: ["orderType"],
       where: { riderId, status: { in: COMPLETED_ORDER_STATUSES } },
-      _sum: { agreedFare: true },
+      _sum: { agreedFare: true, deliveryFee: true },
       _count: { _all: true },
     });
-    return { total: (agg._sum.agreedFare ?? new Prisma.Decimal(0)).toString(), count: agg._count._all };
+    let total = new Prisma.Decimal(0);
+    let count = 0;
+    for (const g of groups) {
+      const earned = g.orderType === "merchant" ? g._sum.deliveryFee : g._sum.agreedFare;
+      if (earned != null) total = total.plus(earned);
+      count += g._count._all;
+    }
+    return { total: total.toString(), count };
   }
 
   /**

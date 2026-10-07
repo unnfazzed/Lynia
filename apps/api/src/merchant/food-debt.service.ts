@@ -172,7 +172,13 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
     if (!order.customerCashConfirmedAt || order.riderCashConfirmedAt) {
       throw new ConflictException("Nothing to dispute right now");
     }
-    await this.freeze(orderId);
+    // LC-D-SIB-3: freeze() re-checks the handshake is still unresolved inside its own CAS, so a
+    // concurrent confirmRiderCash landing after the read above makes this a miss, not a false freeze.
+    // A miss on an already-frozen handshake (a double-tapped dispute) stays an idempotent success.
+    if (!(await this.freeze(orderId))) {
+      const fresh = await this.prisma.order.findUnique({ where: { id: orderId }, select: { cashHandshakeFrozenAt: true } });
+      if (!fresh?.cashHandshakeFrozenAt) throw new ConflictException("Nothing to dispute right now");
+    }
     return { orderId, frozen: true };
   }
 
@@ -202,9 +208,13 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
     return { frozen };
   }
 
+  /** LC-D-SIB-3: the CAS carries the whole "still unresolved" precondition both callers read outside
+   *  it (customer confirmed, rider not yet) — never just `cashHandshakeFrozenAt: null` — so a rider
+   *  confirm committing in the gap can't leave a resolved handshake frozen (false pushes, and an order
+   *  no queue ever resurfaces). The mirror of confirmRiderCash's own CAS on `cashHandshakeFrozenAt: null`. */
   private async freeze(orderId: string): Promise<boolean> {
     const claimed = await this.prisma.order.updateMany({
-      where: { id: orderId, cashHandshakeFrozenAt: null },
+      where: { id: orderId, cashHandshakeFrozenAt: null, customerCashConfirmedAt: { not: null }, riderCashConfirmedAt: null },
       data: { cashHandshakeFrozenAt: new Date() },
     });
     if (claimed.count === 0) return false;
@@ -233,9 +243,15 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
     if (order.status !== "picked_up" && order.status !== "en_route_dropoff") {
       throw new ConflictException("A call can only be logged while heading to the customer");
     }
-    const timestamps = [...order.noShowCallTimestamps, new Date()];
-    await this.prisma.order.update({ where: { id: orderId }, data: { noShowCallTimestamps: timestamps } });
-    return { orderId, callsLogged: timestamps.length };
+    // LC-D-SIB-4: an atomic DB-side append (`push`), never a JS read-modify-write of the whole array —
+    // two near-simultaneous calls (a flaky-network double-tap) must both land, or a rider who genuinely
+    // made N-10's minimum calls is left short of it.
+    const updated = await this.prisma.order.update({
+      where: { id: orderId },
+      data: { noShowCallTimestamps: { push: new Date() } },
+      select: { noShowCallTimestamps: true },
+    });
+    return { orderId, callsLogged: updated.noShowCallTimestamps.length };
   }
 
   /** N-10: 8:00 wait + 2 logged calls, then the food rides back like any failed hand-off — reuses
@@ -309,7 +325,9 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
     if (!order) throw new NotFoundException("Order not found");
     if (order.debtStatus !== "open") throw new ConflictException("This order has no open debt to settle");
     if (order.status !== "undelivered") throw new ConflictException("The goods haven't come back yet");
-    await this.settleDebt(orderId, merchantId, order.riderId!, "settled_goods", Number(order.debtAmount ?? 0));
+    // LC-D-SIB-3 sibling: the settle CAS re-checks `undelivered` too, so an admin adjudicateDelivered
+    // committing after the read above can't leave "goods returned" on a completed order.
+    await this.settleDebt(orderId, merchantId, order.riderId!, "settled_goods", Number(order.debtAmount ?? 0), undefined, undefined, "undelivered");
     return { orderId, debtStatus: "settled_goods" };
   }
 
@@ -329,11 +347,14 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
     const riderId = order.riderId;
     const amount = Number(order.debtAmount ?? 0);
 
-    await this.prisma.$transaction(async (tx) => {
+    const suspended = await this.prisma.$transaction(async (tx) => {
       await this.settleDebt(orderId, merchantId, riderId, "written_off", amount, note, tx);
       const rider = await tx.rider.findUnique({ where: { profileId: riderId }, select: { accountStatus: true } });
       // A permanent ban outranks this — never downgrade a banned rider back to suspended (mirrors
-      // admin-riders.service.ts:suspendRider's same guard).
+      // admin-riders.service.ts:suspendRider's same guard). An already-SUSPENDED rider is still recorded:
+      // each report is a separate order's unreturned cash (a retry of the SAME order already 409s on the
+      // debt CAS above), so it gets its own audit row and the food-debt suspend reason, rather than
+      // vanishing behind an earlier, unrelated suspension.
       if (rider && rider.accountStatus !== RiderAccountStatus.BANNED) {
         const changed = await tx.rider.updateMany({
           where: { profileId: riderId, accountStatus: rider.accountStatus },
@@ -350,20 +371,25 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
               note: note ?? null,
             },
           });
+          return true;
         }
       }
+      return false;
     });
-    void this.notifications.notifyProfiles([riderId], {
-      title: "Your account has been suspended",
-      body: "A restaurant reported you didn't return cash owed for a delivery. Contact support to resolve this.",
-      data: { orderId, kind: "food_debt_suspend" },
-    });
+    if (suspended) {
+      void this.notifications.notifyProfiles([riderId], {
+        title: "Your account has been suspended",
+        body: "A restaurant reported you didn't return cash owed for a delivery. Contact support to resolve this.",
+        data: { orderId, kind: "food_debt_suspend" },
+      });
+    }
     return { orderId, debtStatus: "written_off" };
   }
 
   /** Guarded CAS settle (debtStatus:open → the given terminal type) + the matching append-only ledger
    *  row, `amount` always negative — nets the `opened` row's positive amount to zero. Accepts an
-   *  in-flight transaction client (reportNonReturn) or runs its own (the other two callers). */
+   *  in-flight transaction client (reportNonReturn) or runs its own (the other two callers).
+   *  `requireStatus` folds the caller's own order-status precondition into the same CAS (LC-D-SIB-3). */
   private async settleDebt(
     orderId: string,
     merchantId: string,
@@ -372,10 +398,11 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
     amount: number,
     note?: string,
     txIn?: Prisma.TransactionClient,
+    requireStatus?: "undelivered",
   ): Promise<void> {
     const run = async (tx: Prisma.TransactionClient) => {
       const claimed = await tx.order.updateMany({
-        where: { id: orderId, debtStatus: "open" },
+        where: { id: orderId, debtStatus: "open", ...(requireStatus ? { status: requireStatus } : {}) },
         data: { debtStatus: type, debtSettledAt: new Date() },
       });
       if (claimed.count === 0) throw new ConflictException("Order changed, retry");
