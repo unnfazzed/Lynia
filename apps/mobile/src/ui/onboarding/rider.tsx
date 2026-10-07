@@ -1,6 +1,6 @@
 import { tokens } from "@lynia/shared/tokens";
-import React from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import React, { useRef, useState } from "react";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { ScooterRiderArt } from "../art/ScooterRiderArt";
 import { TrustVerifiedArt } from "../art/TrustVerifiedArt";
 import { Icon } from "../Icon";
@@ -51,6 +51,14 @@ export function Checklist({ steps }: { steps: readonly ChecklistStep[] }): React
     </View>
   );
 }
+
+/** R3's "papers later" link line height (the drawn 13/24 text). */
+const PAPERS_LINE_H = 24;
+/**
+ * FR-L2 (D-82 §4, an upstream kit defect): the kit draws R3's link as bare 24px text. The look stays as
+ * drawn; the touch area reaches the tap-target token through slop, never a literal.
+ */
+const PAPERS_SLOP = Math.max(0, (tokens.touchTargetMin - PAPERS_LINE_H) / 2);
 
 /** R1's hero panel: inset 12px, radius 28, `--rider-wash`, 210 tall, the scooter art with 20px clear below. */
 const R1_HERO_H = 210;
@@ -144,17 +152,39 @@ export function RiderVerified({
 }: {
   firstName: string | null;
   freeJobs?: { left: number; total: number } | null;
-  onGoOnline: () => void;
+  /** May return a promise (the permission flow starting); taps are held until it settles (FR-L1). */
+  onGoOnline: () => void | Promise<void>;
   onPapers: () => void;
 }): React.ReactElement {
+  // FR-L1: a same-tick double tap opened two permission flows. A ref, because `busy` lands a render late.
+  const goingRef = useRef(false);
+  const [going, setGoing] = useState(false);
+  const goOnline = (): void => {
+    if (goingRef.current) return;
+    goingRef.current = true;
+    setGoing(true);
+    void Promise.resolve()
+      .then(onGoOnline)
+      .catch(() => undefined)
+      .finally(() => {
+        goingRef.current = false;
+        setGoing(false);
+      });
+  };
   return (
     <OnbScreen
       footer={
         <>
-          <Cta label={RO.goOnline} icon="power" onPress={onGoOnline} />
-          <Text accessibilityRole="link" onPress={onPapers} style={{ textAlign: "center", fontSize: 13, lineHeight: 24, color: tokens.color.muted }}>
-            {RO.papersLater}
-          </Text>
+          <Cta label={RO.goOnline} icon="power" onPress={goOnline} busy={going} />
+          <Pressable
+            testID="r3-papers"
+            accessibilityRole="link"
+            accessibilityLabel={RO.papersLater}
+            onPress={onPapers}
+            hitSlop={{ top: PAPERS_SLOP, bottom: PAPERS_SLOP }}
+          >
+            <Text style={{ textAlign: "center", fontSize: 13, lineHeight: PAPERS_LINE_H, color: tokens.color.muted }}>{RO.papersLater}</Text>
+          </Pressable>
         </>
       }
     >

@@ -2,7 +2,7 @@ import { tokens } from "@lynia/shared/tokens";
 import { useRouter } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import React, { useEffect, useRef, useState } from "react";
-import { Text } from "react-native";
+import { BackHandler, Text } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { getMe, updateProfile } from "../../src/api/auth";
 import { becomeRider, noteKycLaunched } from "../../src/api/riders";
@@ -89,6 +89,16 @@ export default function BecomeRiderScreen(): React.ReactElement {
   }, [firstName, lastName]);
 
   const namesReady = firstName.trim().length > 0 && lastName.trim().length > 0;
+
+  // FR-L5: Android back on the name step returns to R1 (with R1 as the root it used to close the app).
+  useEffect(() => {
+    if (step !== "name") return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (!submitInFlightRef.current) setStep("intro");
+      return true;
+    });
+    return () => sub.remove();
+  }, [step]);
 
   /**
    * Hand over to the board, saved as the side the next cold start opens on (R-5).
