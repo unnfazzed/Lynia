@@ -1,7 +1,7 @@
 import { __resetReachability } from "../../net/reachability";
 import type { Session } from "../../auth/session";
 import { logout } from "../auth";
-import { ApiError, apiFetch, clearConditionalCache, configureApi } from "../client";
+import { ApiError, apiFetch, clearConditionalCache, configureApi, currentAccessToken } from "../client";
 
 /**
  * These cover the refresh-and-retry path in apiFetch, whose one job here is to tell apart a genuinely
@@ -373,5 +373,19 @@ describe("apiFetch conditional GETs — ETag revalidation on the polling loops",
     fetchMock.mockResolvedValueOnce(makeResponse(200, { mine: false }, { ETag: 'W/"user-b"' }));
     await apiFetch("/me");
     expect(sentHeaders(0)["If-None-Match"]).toBeUndefined();
+  });
+});
+
+// LC-C14: the realtime socket's `auth` callback reads this on every reconnect handshake — it must
+// reflect the session's rotated token, not the one held when the caller first read it.
+describe("currentAccessToken", () => {
+  it("returns the live session's access token, following a rotation", () => {
+    let live: Session | null = { accessToken: "a1", refreshToken: "r1", expiresIn: 900 } as Session;
+    configureApi({ getSession: () => live, onTokens: async () => {}, onSignOut: () => {} });
+    expect(currentAccessToken()).toBe("a1");
+    live = { ...live, accessToken: "a2" };
+    expect(currentAccessToken()).toBe("a2");
+    live = null;
+    expect(currentAccessToken()).toBeNull();
   });
 });

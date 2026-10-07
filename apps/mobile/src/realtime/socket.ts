@@ -1,4 +1,5 @@
 import { io, type Socket } from "socket.io-client";
+import { currentAccessToken } from "../api/client";
 import { WS_URL } from "../config";
 import { reportReachable } from "../net/reachability";
 
@@ -34,7 +35,17 @@ const shared = new Map<string, SharedEntry>();
 export function acquireSocket(token: string): Socket {
   let entry = shared.get(token);
   if (!entry) {
-    const socket = io(WS_URL, { auth: { token }, transports: ["websocket", "polling"] });
+    // LC-C14: `auth` is a callback (not a captured `{ token }`) — Socket.IO calls it on EVERY
+    // handshake, including its own internal auto-reconnect after a bare network drop. A captured
+    // object replayed the original token on each retry, so a dead zone longer than the 15-minute
+    // access TTL kept handshaking with an expired token until some unrelated REST call rotated the
+    // session. Reading the live session token instead authenticates with whatever's current (same
+    // fix as apps/merchant/app/lib/queue-socket.ts); the acquirer's `token` is only the fallback for
+    // a moment with no live session.
+    const socket = io(WS_URL, {
+      auth: (cb) => cb({ token: currentAccessToken() ?? token }),
+      transports: ["websocket", "polling"],
+    });
     // A successful (re)connect is a second, independent proof the network is back — on a tracking
     // screen the socket often reconnects before any REST call runs, so feeding `connect` into
     // reachability clears the offline state seconds sooner than waiting on the /health probe. Only

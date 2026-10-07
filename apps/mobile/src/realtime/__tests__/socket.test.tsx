@@ -1,3 +1,4 @@
+import { io } from "socket.io-client";
 import { acquireSocket, releaseSocket } from "../socket";
 
 type FakeIoSocket = {
@@ -17,8 +18,48 @@ jest.mock("socket.io-client", () => ({
 
 jest.mock("../../net/reachability", () => ({ reportReachable: jest.fn() }));
 
+let mockLiveToken: string | null = null;
+jest.mock("../../api/client", () => ({ currentAccessToken: () => mockLiveToken }));
+
 beforeEach(() => {
   mockCreatedSockets = [];
+  mockLiveToken = null;
+  (io as jest.Mock).mockClear();
+});
+
+type AuthCallback = (cb: (data: { token: string }) => void) => void;
+
+/** Run the `auth` option the last io() call got, the way Socket.IO does on each (re)connect handshake. */
+function handshakeToken(): string {
+  const opts = (io as jest.Mock).mock.calls.at(-1)![1] as { auth: AuthCallback };
+  expect(typeof opts.auth).toBe("function"); // a captured object would replay the original token forever
+  let sent = "";
+  opts.auth((data) => {
+    sent = data.token;
+  });
+  return sent;
+}
+
+// LC-C14: Socket.IO's own auto-reconnect re-runs `auth` on every retry — it must send the session's
+// CURRENT access token, not the one the socket was opened with, or a >15 min dead zone replays an
+// expired token until an unrelated REST call happens to rotate the session.
+describe("acquireSocket auth handshake", () => {
+  it("a reconnect after the access token rotated sends the NEW token", () => {
+    mockLiveToken = "tok-old";
+    const socket = acquireSocket("tok-old");
+    expect(handshakeToken()).toBe("tok-old"); // the first connect
+
+    mockLiveToken = "tok-new"; // the refresh path rotated the session while the link was down
+    expect(handshakeToken()).toBe("tok-new"); // the auto-reconnect handshake
+
+    releaseSocket("tok-old", socket);
+  });
+
+  it("falls back to the acquirer's token when no live session is registered", () => {
+    const socket = acquireSocket("tok");
+    expect(handshakeToken()).toBe("tok");
+    releaseSocket("tok", socket);
+  });
 });
 
 // A-O17: board/job/location hooks all want a connection for the same rider token during an active

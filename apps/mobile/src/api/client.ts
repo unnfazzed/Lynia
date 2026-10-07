@@ -16,6 +16,15 @@ export function configureApi(h: ApiHooks): void {
   hooks = h;
 }
 
+/**
+ * LC-C14: the access token the session holds RIGHT NOW (rotated in place by the refresh path below),
+ * or null with no session / before the AuthProvider registered. For callers that must not replay a
+ * token they captured earlier — the realtime socket's `auth` callback reads this on every reconnect.
+ */
+export function currentAccessToken(): string | null {
+  return hooks?.getSession()?.accessToken ?? null;
+}
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
