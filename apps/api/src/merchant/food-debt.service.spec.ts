@@ -216,6 +216,49 @@ describe("FoodDebtService — doorstep handshake (R-04/R-05/N-19)", () => {
     expect(res).toEqual({ frozen: 1 });
     expect(notified).toEqual([expect.objectContaining({ profileIds: ["c1", "r1"] })]);
   });
+
+  // LC-D-SIB-3: the freeze CAS must re-check the handshake is still unresolved, not only `frozenAt: null`.
+  const UNRESOLVED_FREEZE_WHERE = { id: orderId, cashHandshakeFrozenAt: null, customerCashConfirmedAt: { not: null }, riderCashConfirmedAt: null };
+
+  it("LC-D-SIB-3: a rider confirm racing the dispute makes it a conflict, not a false freeze — the CAS re-checks riderCashConfirmedAt", async () => {
+    const updateMany = vi.fn(async () => ({ count: 0 })); // confirmRiderCash committed between the read and the CAS
+    const { svc } = build({
+      order: {
+        findFirst: async () => ({ customerCashConfirmedAt: new Date(), riderCashConfirmedAt: null }),
+        updateMany,
+        findUnique: async () => ({ cashHandshakeFrozenAt: null, customerId: "c1", riderId: "r1" }),
+      },
+    });
+    await expect(svc.disputeCash(orderId, "r1")).rejects.toThrow(/nothing to dispute/i);
+    expect(updateMany).toHaveBeenCalledWith({ where: UNRESOLVED_FREEZE_WHERE, data: { cashHandshakeFrozenAt: expect.any(Date) } });
+    expect(notified).toEqual([]);
+  });
+
+  it("LC-D-SIB-3: a double-tapped dispute on an already-frozen handshake stays an idempotent success, with no repeat push", async () => {
+    const { svc } = build({
+      order: {
+        findFirst: async () => ({ customerCashConfirmedAt: new Date(), riderCashConfirmedAt: null }),
+        updateMany: async () => ({ count: 0 }),
+        findUnique: async () => ({ cashHandshakeFrozenAt: new Date() }),
+      },
+    });
+    await expect(svc.disputeCash(orderId, "r1")).resolves.toEqual({ orderId, frozen: true });
+    expect(notified).toEqual([]);
+  });
+
+  it("LC-D-SIB-3: the N-19 sweep's freeze uses the same unresolved-handshake CAS, and a miss neither counts nor notifies", async () => {
+    const updateMany = vi.fn(async () => ({ count: 0 }));
+    const { svc } = build({
+      order: {
+        findMany: async () => [{ id: orderId }],
+        updateMany,
+        findUnique: async () => ({ customerId: "c1", riderId: "r1" }),
+      },
+    });
+    expect(await svc.sweepFrozenHandshakes()).toEqual({ frozen: 0 });
+    expect(updateMany).toHaveBeenCalledWith({ where: UNRESOLVED_FREEZE_WHERE, data: { cashHandshakeFrozenAt: expect.any(Date) } });
+    expect(notified).toEqual([]);
+  });
 });
 
 describe("FoodDebtService — doorstep failure paths (N-10/R-08), reusing markUndelivered", () => {
@@ -223,11 +266,27 @@ describe("FoodDebtService — doorstep failure paths (N-10/R-08), reusing markUn
     const { svc } = build({
       order: {
         findFirst: async () => ({ status: "en_route_dropoff", noShowCallTimestamps: [new Date()] }),
-        update: async () => ({}),
+        update: async () => ({ noShowCallTimestamps: [new Date(), new Date()] }),
       },
     });
     const res = await svc.logDoorstepCall(orderId, "r1");
     expect(res.callsLogged).toBe(2);
+  });
+
+  it("LC-D-SIB-4: logDoorstepCall appends atomically (DB-side push), never writes back the stale array it read", async () => {
+    const stale = [new Date(Date.now() - 60_000)];
+    // A concurrent call already landed after our read — the DB now holds 2, and our push makes 3.
+    const update = vi.fn(async () => ({ noShowCallTimestamps: [stale[0], new Date(), new Date()] }));
+    const { svc } = build({
+      order: { findFirst: async () => ({ status: "en_route_dropoff", noShowCallTimestamps: stale }), update },
+    });
+    const res = await svc.logDoorstepCall(orderId, "r1");
+    expect(update).toHaveBeenCalledWith({
+      where: { id: orderId },
+      data: { noShowCallTimestamps: { push: expect.any(Date) } },
+      select: { noShowCallTimestamps: true },
+    });
+    expect(res.callsLogged).toBe(3);
   });
 
   it("reportNoShow refuses under the N-10 minimum call count", async () => {
@@ -328,6 +387,22 @@ describe("FoodDebtService — merchant debt settlement (R-06/R-07/N-20/N-21, D-0
     expect(res.debtStatus).toBe("settled_goods");
   });
 
+  it("LC-D-SIB-3 sibling: confirmGoodsReturned's settle CAS re-checks status=undelivered — an adjudicated-delivered order can't settle as goods", async () => {
+    const updateMany = vi.fn(async () => ({ count: 0 })); // adjudicateDelivered flipped it to completed after the read
+    const ledgerCreate = vi.fn();
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: { findFirst: async () => ({ debtStatus: "open", debtAmount: 13, riderId: "r1", status: "undelivered" }), updateMany },
+      merchantDebtLedger: { create: ledgerCreate },
+    });
+    await expect(svc.confirmGoodsReturned("p1", orderId)).rejects.toThrow(/order changed/i);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: orderId, debtStatus: "open", status: "undelivered" },
+      data: { debtStatus: "settled_goods", debtSettledAt: expect.any(Date) },
+    });
+    expect(ledgerCreate).not.toHaveBeenCalled();
+  });
+
   it("reportNonReturn writes off the debt AND suspends + names the rider in one transaction", async () => {
     let riderUpdate: Record<string, unknown> | undefined;
     let sessionsRevoked = false;
@@ -380,6 +455,28 @@ describe("FoodDebtService — merchant debt settlement (R-06/R-07/N-20/N-21, D-0
     });
     await svc.reportNonReturn("p1", orderId);
     expect(riderUpdateCalled).toBe(false);
+  });
+
+  it("LC-D-SIB-2: an already-suspended rider is a no-op — the debt still writes off, but no re-suspend, re-revoke, audit row or push", async () => {
+    const riderUpdateMany = vi.fn(async () => ({ count: 1 }));
+    const sessionUpdateMany = vi.fn(async () => ({ count: 1 }));
+    const auditCreate = vi.fn(async () => ({}));
+    const ledgerCreate = vi.fn(async () => ({}));
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: { findFirst: async () => ({ debtStatus: "open", debtAmount: 13, riderId: "r1" }), updateMany: async () => ({ count: 1 }) },
+      merchantDebtLedger: { create: ledgerCreate },
+      rider: { findUnique: async () => ({ accountStatus: "suspended" }), updateMany: riderUpdateMany },
+      session: { updateMany: sessionUpdateMany },
+      auditLog: { create: auditCreate },
+    });
+    const res = await svc.reportNonReturn("p1", orderId, "second order");
+    expect(res.debtStatus).toBe("written_off");
+    expect(ledgerCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ type: "written_off", amount: -13 }) });
+    expect(riderUpdateMany).not.toHaveBeenCalled();
+    expect(sessionUpdateMany).not.toHaveBeenCalled();
+    expect(auditCreate).not.toHaveBeenCalled();
+    expect(notified).toEqual([]);
   });
 
   it("no path strands the debt — every settling event's ledger amount is the negative of the opened amount", async () => {
