@@ -77,6 +77,8 @@ export const RIDER_COPY = {
   sending: "Sending…",
   skip: "Skip this job",
   sendFail: "Couldn't send your offer. Check your data.",
+  /** Undrawn (MA-H3): the switch to customer couldn't take the rider offline. */
+  offFail: "Couldn't go offline. Check your data.",
   tryAgain: "Try again",
   /* gates */
   /*

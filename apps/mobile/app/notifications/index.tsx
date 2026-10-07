@@ -1,5 +1,5 @@
 import { tokens } from "@lynia/shared/tokens";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Notifications from "expo-notifications";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React from "react";
@@ -8,12 +8,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getMe } from "../../src/api/auth";
 import { dismissNotification, getNotificationsFeed, markNotificationsRead, type NotificationRow } from "../../src/api/notifications";
 import { getActiveOrder } from "../../src/api/orders";
-import { setOnline } from "../../src/api/riders";
+import { switchToCustomer } from "../../src/logic/switch-to-customer";
 import { becomeStateFor } from "../../src/logic/become-state";
 import { useNow } from "../../src/logic/use-now";
 import { notificationRowDestination } from "../../src/push/push";
 import { riderModeAvailable } from "../../src/rider-mode";
-import { AppScreen, EmptyState, emptyCopy } from "../../src/ui";
+import { AppScreen, EmptyState, emptyCopy, useActionError } from "../../src/ui";
 import { N, NF } from "../../src/ui/notifications/copy";
 import { NCard, Day, NRow, OffRow, OtherSide, SkelDay, SkelRow, SwipeRow } from "../../src/ui/notifications/kit";
 import { buildFeed, clockOf, type NItem, type Side } from "../../src/ui/notifications/model";
@@ -300,9 +300,10 @@ function SwitchToCustomer({ visible, onClose }: { visible: boolean; onClose: () 
   const router = useRouter();
   const activeQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, enabled: visible });
   const activeJob = activeQ.data && activeQ.data.status !== "cancelled" ? activeQ.data : null;
-  const offlineM = useMutation({ mutationFn: () => setOnline(false) });
+  const fail = useActionError();
   const goCustomer = (): void => {
-    if (!activeJob) offlineM.mutate();
+    // MA-H3: the same switch as the Account toggle — the side is saved and a failed go-offline is said.
+    void switchToCustomer(!!activeJob).then((ok) => (ok ? undefined : fail(R.offFail)));
     onClose();
     router.replace("/home");
   };
