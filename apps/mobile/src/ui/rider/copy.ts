@@ -45,6 +45,8 @@ export const RIDER_COPY = {
   openJob: "Open job",
   taken: "That parcel was taken by another rider.",
   withdrawn: "Offer withdrawn.",
+  /** Undrawn (rider audit BD-H2): the withdraw didn't reach the server, so the offer still stands. */
+  withdrawFail: "Couldn't withdraw. Check your data.",
   undo: "Undo",
   /* make an offer */
   /** Not drawn: stands in for the sender's name when the API sends none (ledger D-54 §4). */

@@ -1,6 +1,6 @@
 import { COMMISSION, haversineKm, SOS_POLICY } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { onlineManager, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
 import * as Notifications from "expo-notifications";
 import { useFocusEffect, usePathname, useRouter } from "expo-router";
@@ -49,12 +49,13 @@ import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refet
 import { useRiderBoard } from "../../../src/realtime/use-rider-board";
 import { AppScreen, EmptyRow, EmptyState, emptyCopy, fillEmpty, haptic, Icon, type IconName, statusPillLabel, useActionError, useHideTabBar, useTabBarSpace } from "../../../src/ui";
 import { IdCheckOutcome } from "../../../src/ui/firstrun";
-import { CtaButton, SmBtn } from "../../../src/ui/order/kit";
-import { OrderSheet } from "../../../src/ui/order/OrderSheet";
+import { CtaButton, SkeletonOffer, SmBtn } from "../../../src/ui/order/kit";
+import { OrderSheet, type OrderSheetHandle } from "../../../src/ui/order/OrderSheet";
 import { Notice } from "../../../src/ui/send/kit";
 import { type BoardJob, BoardJobCard, BoardMap, Gate, type GateAction, RToast } from "../../../src/ui/rider/board";
 import { RIDER_COPY as R, RF, usd } from "../../../src/ui/rider/copy";
 import { MintTop, MSheet, RLabel } from "../../../src/ui/rider/kit";
+import { RiderErrorState } from "../../../src/ui/rider/RiderErrorState";
 import { useReduceMotion } from "../../../src/ui/useReduceMotion";
 import { RiderSetupPending, RiderVerified } from "../../../src/ui/onboarding/rider";
 import { withTimeout } from "../../../src/util";
@@ -62,9 +63,9 @@ import { withTimeout } from "../../../src/util";
 // GPS fix bound: a cold fix can hang forever, and the server records a broadcast-eligible position only
 // `if (online && location)` — so race the fix and fall back to the last-known one.
 const LOCATE_TIMEOUT_MS = 9_000;
-/** Transient activation failures retry this many times, this far apart. */
-const ACTIVATION_MAX_RETRIES = 3;
+/** Transient activation failures retry forever: 15 s, doubling, capped at 2 min (B5). */
 const ACTIVATION_RETRY_MS = 15_000;
+const ACTIVATION_RETRY_MAX_MS = 120_000;
 /** The Undo window on a withdrawn offer (J10); the API call fires after it. */
 const WITHDRAW_UNDO_MS = 5_000;
 
@@ -103,6 +104,8 @@ export default function RiderHome(): React.ReactElement {
   const [onlineFlag, setOnlineState] = useState(() => qc.getQueryData<Me>(["me"])?.rider?.kycStatus === "verified");
   const autoOnlineRef = useRef(false);
   const [activationRetry, setActivationRetry] = useState(0);
+  // B5: bumped to make the auto-online effect re-test (a retry tick, focus, resume, network back).
+  const [activationNudge, setActivationNudge] = useState(0);
   const [loc, setLoc] = useState<{ lat: number; lng: number } | null>(null);
   const [locDenied, setLocDenied] = useState(false);
   const [locHint, setLocHint] = useState(false);
@@ -117,7 +120,7 @@ export default function RiderHome(): React.ReactElement {
   useEffect(() => () => void (toastTimer.current && clearTimeout(toastTimer.current)), []);
 
   const { offers: sentOffers, setOffers: setSentOffers } = useSentOffers();
-  const { skipped } = useSkippedJobs();
+  const { skipped, skip } = useSkippedJobs();
   const bidIds = useMemo(() => new Set(sentOffers.map((s) => s.order.id)), [sentOffers]);
   // Offers withdrawn but still inside their 5 s Undo window — hidden now, sent to the API after.
   const [withdrawing, setWithdrawing] = useState<ReadonlySet<string>>(new Set());
@@ -170,9 +173,14 @@ export default function RiderHome(): React.ReactElement {
   }, []);
   useFocusEffect(readNotif);
   useEffect(() => {
-    const sub = AppState.addEventListener("change", (s) => s === "active" && readNotif());
+    // BD-H1: location permission is re-read on resume too, so turning it off in settings shows G8 at once.
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s !== "active") return;
+      readNotif();
+      void requestLocation();
+    });
     return () => sub.remove();
-  }, [readNotif]);
+  }, [readNotif, requestLocation]);
 
   // ── Identity / KYC ───────────────────────────────────────────────────────────────────────────────
   // The last ID-check launch on this board (or handed over by Become, R-4 / R-10) and when it landed.
@@ -199,6 +207,7 @@ export default function RiderHome(): React.ReactElement {
     },
   });
   const knownUnverified = meQ.data != null && meQ.data.rider?.kycStatus !== "verified";
+  const meFailed = meQ.isError && meQ.data == null;
   const rider = meQ.data?.rider;
   const forceFreshSession = useRef(false);
   const spentForce = useRef(false);
@@ -247,15 +256,53 @@ export default function RiderHome(): React.ReactElement {
   const holdForWelcome = verified && (rider?.tripsCount ?? 0) === 0 && welcomeSeen !== true;
   // The live shift: the server flag, held while R3 is up (a warm cache can start `online` true on frame 1).
   const online = onlineFlag && !holdForWelcome;
+  const onlineRef = useRef(online);
+  onlineRef.current = online;
+
+  // BD-H1: while online, follow the rider (Balanced, ~100 m) so the heartbeat, the open-jobs read, the
+  // distances and the socket's area all use where they are now, not where the board was last focused.
+  useEffect(() => {
+    if (!online || locDenied) return;
+    let alive = true;
+    let sub: Location.LocationSubscription | null = null;
+    Promise.resolve()
+      .then(() =>
+        Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced, distanceInterval: 100 }, (p) => {
+          setLoc({ lat: p.coords.latitude, lng: p.coords.longitude });
+          setLocHint(false);
+        }),
+      )
+      .then((s) => {
+        if (alive) sub = s;
+        else s.remove();
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+      sub?.remove();
+    };
+  }, [online, locDenied]);
 
   // ── Board socket + active job ────────────────────────────────────────────────────────────────────
-  const board = useRiderBoard(online, loc, bidIds, foodOn ? () => router.push("/rider/food-offer") : undefined);
+  // BD-M5: a next-round offer while the offer screen is already up refreshes it rather than stacking a copy.
+  const board = useRiderBoard(
+    online,
+    loc,
+    bidIds,
+    foodOn
+      ? () => {
+          if (pathname === "/rider/food-offer") void qc.invalidateQueries({ queryKey: ["foodOfferJob"] });
+          else pushOnce(router, pathname, "/rider/food-offer");
+        }
+      : undefined,
+  );
   const activeQ = useQuery({
     queryKey: ["activeJob"],
     queryFn: getActiveOrder,
     // §5 item 10: no active-job read behind a KYC wall — an unverified rider can't hold a job.
     enabled: !knownUnverified,
-    refetchInterval: (query) => (board.connected ? false : online || query.state.data != null ? 8000 : false),
+    // BD-H3: a failed check retries silently every 8 s even while the socket is up (no card — owner 2026-08-12).
+    refetchInterval: (query) => (query.state.status === "error" ? 8000 : board.connected ? false : online || query.state.data != null ? 8000 : false),
   });
   const [ackedHandbacks, setAckedHandbacks] = useState<Set<string>>(() => new Set());
   useFocusEffect(
@@ -270,9 +317,17 @@ export default function RiderHome(): React.ReactElement {
   const activeJob = activeQ.data && !(activeQ.data.status === "cancelled" && ackedHandbacks.has(activeQ.data.id)) ? activeQ.data : null;
   const jobRoute = activeJob?.orderType === "merchant" ? "/rider/food-job" : "/rider/job";
 
-  // J11: "Rudo picked you!" — once per assignment, with the job ping.
+  // J11: "Rudo picked you!" — once per assignment, with the job ping. BD-H5: parcel jobs only (a food or
+  // shop job is accepted on its own offer screen), and only while the board is the screen on top.
+  const [focused, setFocused] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      setFocused(true);
+      return () => setFocused(false);
+    }, []),
+  );
   const [pickedSeen, setPickedSeen] = useState<string | null>(null);
-  const picked = activeJob?.status === "assigned" && pickedSeen !== activeJob.id ? activeJob : null;
+  const picked = focused && activeJob?.status === "assigned" && activeJob.orderType !== "merchant" && pickedSeen !== activeJob.id ? activeJob : null;
   const prevJobStatus = useRef<string | undefined>(undefined);
   useEffect(() => {
     const s = activeJob?.status;
@@ -299,16 +354,27 @@ export default function RiderHome(): React.ReactElement {
   // The server's last refusal (go-online / heartbeat 403). Cleared on focus and on resume, so a lifted
   // gate re-tests without a tap.
   const [serverGate, setServerGate] = useState<OnlineGateReason | null>(null);
+  // B5: a rider who should be online but isn't (failed go-online, a bare heartbeat 403) tries again now.
+  const reactivate = useCallback((): void => {
+    if (onlineRef.current) return;
+    autoOnlineRef.current = false;
+    setActivationRetry(0);
+    setActivationNudge((n) => n + 1);
+  }, []);
   useFocusEffect(
     useCallback(() => {
       setServerGate(null);
+      reactivate();
       void qc.invalidateQueries({ queryKey: ["me"] });
-    }, [qc]),
+    }, [qc, reactivate]),
   );
   useForegroundRefetch(() => {
     setServerGate(null);
+    reactivate();
     void qc.invalidateQueries({ queryKey: ["me"] });
   });
+  // …and the moment the network comes back.
+  useEffect(() => onlineManager.subscribe((up) => up && reactivate()), [reactivate]);
   // E2E 2026-10-05 FS-7: a go-online refused for want of a position clears the moment GPS fixes, so the
   // auto-online below retries with coordinates without a tap.
   useEffect(() => {
@@ -335,20 +401,21 @@ export default function RiderHome(): React.ReactElement {
   });
 
   // ALWAYS ONLINE: drive the server flag true the moment every wall is down.
+  // R-9: a failed re-read keeps the last known `me` (TanStack keeps data on error), so the shift
+  // follows what we know rather than dropping on one 5xx.
+  const onlineAllowed = meQ.data != null && !knownUnverified && !holdForWelcome && !locDenied && serverGate == null;
   useEffect(() => {
-    // R-9: a failed re-read keeps the last known `me` (TanStack keeps data on error), so the shift
-    // follows what we know rather than dropping on one 5xx.
-    const allowed = meQ.data != null && !knownUnverified && !holdForWelcome && !locDenied && serverGate == null;
-    if (!allowed) {
+    if (!onlineAllowed) {
       autoOnlineRef.current = false;
       return;
     }
-    if (autoOnlineRef.current) return;
+    if (autoOnlineRef.current || onlineM.isPending) return;
     if (loc == null && !locHint) return;
     autoOnlineRef.current = true;
     onlineM.mutate(true);
+    // B5: `onlineFlag` re-runs it after a heartbeat 403 takes the rider offline with no reason code.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meQ.data != null, knownUnverified, holdForWelcome, locDenied, serverGate, loc, locHint]);
+  }, [onlineAllowed, loc, locHint, onlineFlag, activationNudge]);
 
   const retryM = useMutation({
     mutationFn: () => {
@@ -388,14 +455,18 @@ export default function RiderHome(): React.ReactElement {
     onError: (e) => setError(e instanceof ApiError ? e.message : "Couldn't restart verification."),
   });
 
+  // B5: a transient go-online failure retries with a capped backoff and never gives up; the effect above
+  // re-checks the walls before each try.
   useEffect(() => {
-    if (activationRetry === 0 || activationRetry > ACTIVATION_MAX_RETRIES) return;
-    const t = setTimeout(() => {
-      autoOnlineRef.current = true;
-      onlineM.mutate(true);
-    }, ACTIVATION_RETRY_MS);
+    if (activationRetry === 0) return;
+    const t = setTimeout(
+      () => {
+        autoOnlineRef.current = false;
+        setActivationNudge((n) => n + 1);
+      },
+      Math.min(ACTIVATION_RETRY_MAX_MS, ACTIVATION_RETRY_MS * 2 ** (activationRetry - 1)),
+    );
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activationRetry]);
 
   // Heartbeat: only a 403 takes the rider offline; two failed beats show "Reconnecting…".
@@ -433,8 +504,9 @@ export default function RiderHome(): React.ReactElement {
     queryKey: ["openOrders"],
     queryFn: () => getOpenOrders(loc ?? undefined, 5000),
     enabled: online,
-    // The socket keeps the list live; while it's down, re-read every 10 s (J7: "Trying again in 10 s").
-    refetchInterval: online ? (board.connected ? false : 10_000) : false,
+    // The socket keeps the list live; while it's down — or the last read failed (BD-H4) — re-read every
+    // 10 s (J7: "Trying again in 10 s").
+    refetchInterval: (query) => (online ? (board.connected && query.state.status !== "error" ? false : 10_000) : false),
   });
   useEffect(() => {
     if (!online || !loc) return;
@@ -473,13 +545,21 @@ export default function RiderHome(): React.ReactElement {
   const mixedKinds = jobs.some((j) => j.kind === "food" || j.kind === "shop");
   const effectiveSelected = selectedId && jobs.some((j) => j.id === selectedId) ? selectedId : (jobs[0]?.id ?? null);
 
-  // J13: the job the rider was looking at was taken by someone else.
+  // J13: the job the rider was looking at was taken by someone else. BD-M2: the socket drops the card
+  // first and marks it taken only after the active-job re-read, so remember a selected card that left the
+  // list and say so when (if) it turns out to have been taken.
   const prevSelected = useRef<string | null>(null);
+  const lostSelected = useRef<string | null>(null);
   useEffect(() => {
     const was = prevSelected.current;
-    if (was && board.takenOrderIds.has(was) && !bidIds.has(was)) showToast({ text: R.taken });
+    if (was && was !== effectiveSelected && !jobs.some((j) => j.id === was)) lostSelected.current = was;
     prevSelected.current = effectiveSelected;
-  }, [effectiveSelected, board.takenOrderIds, bidIds, showToast]);
+    const lost = lostSelected.current;
+    if (lost && board.takenOrderIds.has(lost)) {
+      lostSelected.current = null;
+      if (!bidIds.has(lost) && !skipped.has(lost)) showToast({ text: R.taken });
+    }
+  }, [effectiveSelected, jobs, board.takenOrderIds, bidIds, skipped, showToast]);
 
   // A new nearby job — one attention buzz (never on the first load, never on a decrease).
   const prevCount = useRef(-1);
@@ -546,14 +626,24 @@ export default function RiderHome(): React.ReactElement {
       orderId,
       setTimeout(() => {
         withdrawTimers.current.delete(orderId);
-        void withdrawOffer(orderId)
-          .catch(() => undefined)
-          .finally(() => {
-            resolvedRef.current.add(orderId);
-            setSentOffers((prev) => prev.filter((p) => p.order.id !== orderId));
-            setWithdrawing((prev) => new Set([...prev].filter((id) => id !== orderId)));
-            void qc.invalidateQueries({ queryKey: ["openOrders"] });
-          });
+        const unhide = (): void => setWithdrawing((prev) => new Set([...prev].filter((id) => id !== orderId)));
+        const drop = (): void => {
+          resolvedRef.current.add(orderId);
+          // The API refuses a second offer after a withdraw, so the job stays off the board.
+          skip(orderId);
+          setSentOffers((prev) => prev.filter((p) => p.order.id !== orderId));
+          unhide();
+          void qc.invalidateQueries({ queryKey: ["openOrders"] });
+        };
+        void withdrawOffer(orderId).then(drop, (e: unknown) => {
+          // BD-H2: a 4xx is the server's final word (no offer left to withdraw) — drop it. A dropped link
+          // or a 5xx means the offer still stands: put the card back and say so.
+          if (e instanceof ApiError && !e.retryable) drop();
+          else {
+            unhide();
+            showToast({ text: R.withdrawFail });
+          }
+        });
       }, WITHDRAW_UNDO_MS),
     );
   };
@@ -572,6 +662,25 @@ export default function RiderHome(): React.ReactElement {
   // R-9: keyed on DATA, not on the query status: a failed re-read keeps the last good `me` (TanStack keeps
   // data on error), so a pending, declined or locked rider stays behind their wall through a 5xx.
   const gate: GateId | null = meQ.data == null ? null : resolveGate({ kyc: kycGate, server: serverGate, locDenied });
+  // G10 "Clears at" (BD-M3): the cooldown's end from /auth/me (absent on an older server). The facts tick
+  // each minute, and the wall lifts by itself when the timer ends.
+  const coolUntil = rider?.cooldownUntil ? new Date(rider.cooldownUntil) : null;
+  const coolUntilMs = coolUntil && !Number.isNaN(coolUntil.getTime()) ? coolUntil.getTime() : null;
+  const [coolNow, setCoolNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (gate !== "cooldown" || coolUntilMs == null) return;
+    const tick = (): void => setCoolNow(Date.now());
+    tick();
+    const iv = setInterval(tick, 60_000);
+    // Only a timer that is still running on this phone's clock lifts the wall — a phone clock ahead of the
+    // server's must not re-try go-online in a loop (the wall then waits for focus / resume, as before).
+    const left = coolUntilMs - Date.now();
+    const end = left > 0 ? setTimeout(() => setServerGate(null), left + 1000) : null;
+    return () => {
+      clearInterval(iv);
+      if (end) clearTimeout(end);
+    };
+  }, [gate, coolUntilMs]);
   const conn = online && board.connected && !beatStale;
 
   // ── ID check (First Run v2 F / G, ledger D-82) ───────────────────────────────────────────────────
@@ -592,6 +701,16 @@ export default function RiderHome(): React.ReactElement {
     if (toBecome) router.replace("/rider/become");
   }, [toBecome, router]);
 
+  // BD-M4: a pin tap brings its card into view in the sheet (BoardMap spec).
+  const sheetRef = useRef<OrderSheetHandle>(null);
+  const listY = useRef(0);
+  const cardY = useRef(new Map<string, number>());
+  const onPinSelect = useCallback((id: string): void => {
+    setSelectedId(id);
+    const y = cardY.current.get(id);
+    if (y != null) sheetRef.current?.scrollTo(listY.current + y);
+  }, []);
+
   const offerFor = (j: BoardJob): void => {
     if (j.kind === "food") {
       router.push("/rider/food-offer");
@@ -604,6 +723,7 @@ export default function RiderHome(): React.ReactElement {
   const [areaH, setAreaH] = useState(0);
   const [sheetVisible, setSheetVisible] = useState(0);
   const empty = online && openQ.isSuccess && jobs.length === 0 && myOffers.length === 0;
+  const loadFailed = openQ.isError && openQ.data == null;
   // Peek 50% of the screen (44% when empty), measured from the screen's top, as the handoff draws it. The
   // floating tab bar (tab bar v1, D-56) takes no layout space, so the area runs to the screen's bottom
   // and everything above it is the mint top card; the sheet continues behind the bar.
@@ -651,7 +771,17 @@ export default function RiderHome(): React.ReactElement {
       case "area":
         return <Gate icon="map-pin" tone="calm" title={R.gAreaT} body={R.gAreaB} bridge={leaveForCustomer} />;
       case "cooldown":
-        return <Gate icon="clock" tone="calm" title={R.gCoolT} body={R.gCoolB} ghost={{ label: R.rJobHist, icon: "history", onPress: () => router.push("/history?side=rider") }} bridge={leaveForCustomer} />;
+        return (
+          <Gate
+            icon="clock"
+            tone="calm"
+            title={R.gCoolT}
+            body={R.gCoolB}
+            facts={coolUntilMs != null && coolUntilMs > coolNow ? [[R.gCoolK, RF.gCoolV(new Date(coolUntilMs), new Date(coolNow))]] : null}
+            ghost={{ label: R.rJobHist, icon: "history", onPress: () => router.push("/history?side=rider") }}
+            bridge={leaveForCustomer}
+          />
+        );
       case "hold":
         return <Gate icon="circle-alert" tone="danger" title={R.gHoldT} body={R.gHoldB} primary={call} bridge={leaveForCustomer} />;
       case "suspended":
@@ -678,11 +808,25 @@ export default function RiderHome(): React.ReactElement {
       {/* First Run v2 P14 J8 (D-82): "Turn on" reopens P9 (or P11/P12), not the phone's settings. */}
       {notifOff ? <RiderNotifOffRow onTurnOn={() => router.push(RIDER_PERM_ROUTES.notifications as never)} /> : null}
       {/* Empty board: reconnecting shows only in the header's status line (empty-states v2 J4, D-78). */}
-      {online && !conn && !empty ? <Notice icon="wifi-off" text={R.staleB} /> : null}
+      {/* B5: also while the rider is allowed online but going online keeps failing. */}
+      {(online ? !conn : onlineAllowed) && !empty ? <Notice icon="wifi-off" text={R.staleB} /> : null}
       {openQ.isError ? <Notice icon="wifi-off" text={R.loadFail} /> : null}
       {locHint ? <Notice icon="map-pin" tone="warn" text={R.gGpsB} /> : null}
-      {activeJob && activeJob.status !== "assigned" ? (
-        <SmBtn kind="fill" icon="package" label={RF.swJobBar(statusPillLabel(activeJob.status))} onPress={() => pushOnce(router, pathname, jobRoute)} />
+      {/* BD-H5: `assigned` too — the way back once "picked you" is closed (or never shown, for food). */}
+      {activeJob ? (
+        <SmBtn
+          kind="fill"
+          icon="package"
+          // BD-L2: a cancelled job isn't "in progress" — the same title the job screen's handback uses.
+          label={
+            activeJob.status !== "cancelled"
+              ? RF.swJobBar(statusPillLabel(activeJob.status))
+              : activeJob.cancelledBy === "customer"
+                ? RF.custCxT(activeJob.customerFirstName || R.theSender)
+                : R.cancelled
+          }
+          onPress={() => pushOnce(router, pathname, jobRoute)}
+        />
       ) : null}
       {empty ? (
         // J4 / J5 — empty-states v2 (D-78): the quiet mark, one line, then the busiest zone if there is one.
@@ -712,10 +856,10 @@ export default function RiderHome(): React.ReactElement {
           ) : jobs.length ? (
             <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}>
               <Text style={{ flex: 1, fontSize: 17, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{mixedKinds ? RF.jobsNearYou(jobs.length) : RF.nearYou(jobs.length)}</Text>
-              <Text style={{ fontSize: 12, color: tokens.color.muted }}>{R.nearest}</Text>
+              <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted }}>{R.nearest}</Text>
             </View>
           ) : null}
-          {!myOffers.length && (busyLine || foodOn) ? (
+          {!myOffers.length && !loadFailed && (busyLine || foodOn) ? (
             <View style={{ gap: 4 }}>
               {busyLine ? <DemandLine text={busyLine} /> : null}
               {foodOn ? (
@@ -726,9 +870,18 @@ export default function RiderHome(): React.ReactElement {
               ) : null}
             </View>
           ) : null}
-          <View style={{ gap: 10, opacity: online && !conn ? 0.6 : 1 }}>
+          {/* J7: nothing loaded yet — two skeleton cards under the "Couldn't load" notice (BD-H4). */}
+          {loadFailed ? (
+            <>
+              <SkeletonOffer />
+              <SkeletonOffer />
+            </>
+          ) : null}
+          <View style={{ gap: 10, opacity: online && !conn ? 0.6 : 1 }} onLayout={(e) => (listY.current = e.nativeEvent.layout.y)}>
             {jobs.map((j) => (
-              <BoardJobCard key={j.id} job={j} selected={j.id === effectiveSelected} onSelect={() => setSelectedId(j.id)} onOffer={() => offerFor(j)} />
+              <View key={j.id} collapsable={false} onLayout={(e) => cardY.current.set(j.id, e.nativeEvent.layout.y)}>
+                <BoardJobCard job={j} selected={j.id === effectiveSelected} onSelect={() => setSelectedId(j.id)} onOffer={() => offerFor(j)} />
+              </View>
             ))}
           </View>
         </>
@@ -789,14 +942,17 @@ export default function RiderHome(): React.ReactElement {
   return (
     <AppScreen banner={banner}>
       {/* First Run v2 U4b (D-82): the violet "new version" banner under the mint top card, on the live board only. */}
-      {meQ.isLoading || gateView ? null : <SoftUpdateBanner tone="violet" />}
-      {meQ.isLoading ? null : gateView ? (
+      {meQ.isLoading || gateView || meFailed ? null : <SoftUpdateBanner tone="violet" />}
+      {meQ.isLoading ? null : meFailed ? (
+        // BD-M1: the profile read failed with nothing cached — say so and retry by itself.
+        <RiderErrorState onRetry={() => void meQ.refetch()} retrying={meQ.isFetching} />
+      ) : gateView ? (
         gateView
       ) : (
         <View testID="rider-board-area" style={{ flex: 1 }} onLayout={(e) => setAreaH(e.nativeEvent.layout.height)}>
-          <BoardMap jobs={jobs} selectedId={effectiveSelected} onSelect={setSelectedId} you={loc} zones={zones.map((z) => ({ ...z, busiest: z === busiest }))} padBottom={sheetVisible} />
+          <BoardMap jobs={jobs} selectedId={effectiveSelected} onSelect={onPinSelect} you={loc} zones={zones.map((z) => ({ ...z, busiest: z === busiest }))} padBottom={sheetVisible} />
           {areaH > 0 ? (
-            <OrderSheet areaHeight={areaH} fallbackShare={mapShare} floor={0} bottomInset={tabSpace} contentKey={empty ? "empty" : "list"} reduceMotion={reduceMotion} onVisibleHeight={setSheetVisible}>
+            <OrderSheet ref={sheetRef} areaHeight={areaH} fallbackShare={mapShare} floor={0} bottomInset={tabSpace} contentKey={empty ? "empty" : "list"} reduceMotion={reduceMotion} onVisibleHeight={setSheetVisible}>
               {sheetContent}
             </OrderSheet>
           ) : null}
