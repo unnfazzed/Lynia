@@ -2832,3 +2832,15 @@ after collection and no reason before it).
 | FJ-H4 | Cancelled food order: wrong instruction after collection, none before. | `food-job.tsx`, `copy.ts` | High | **OPEN — not selected** |
 | MA-H1…MA-L2 | Money: merchant jobs paid at the customer's bill, false "below floor", unsaved role switch, sign-out left online, top-up amounts/polling/success balance, history without cancels, unreadable wallet as $0, delete-account ignoring rider job, decimals, copy. | money files, `orders.service.ts` | High–Low | **FIXED** (#1106). Partial: MA-H4 (no active-job warning on sign-out: would need a new sheet). D-84 logged. |
 | FR-H1…FR-L5 | First run: location order before R3, camera denied in Bike & documents, upload shown failed mid-flight, couldn't-load state, offline splash hold (owner chose: proceed after timeout), double tap, link target, icon contrast, duplicate placeholder, busy CTA, back on name step. | first-run files | High–Low | **FIXED** (#1108). Gaps: no camera settings steps list, no E6 discard (would be new controls). Kit defects logged under D-82 §4. |
+
+---
+
+## Customer UI/UX + speed review 2026-10-07 (interactive, report only)
+
+Source: `docs/CUSTOMER-UX-PERF-REVIEW-2026-10-07.md`, a read-only multi-agent review of the customer side of `apps/mobile`
+(Android + app.lyniago.com) and its seams with `apps/merchant` and `apps/api`. 109 distinct findings after merging
+duplicates: **U01–U67** (journeys: 2 BLOCKER, 12 HIGH) and **P01–P42** (speed: 7 HIGH). Each was judged by two
+independent skeptics. **All OPEN, awaiting the owner's selection.** Future sweeps: treat every U-/P- id in that report as
+known. Headline items: U01 web signed-out deep load can't reach sign-in; U02 re-ordering the same basket returns the old
+order; U10–U13 door-handshake geofence, endless no-rider hold, early/short "at your door" cash push; P01 PostHog lazy-load
+remounts the app mid-boot (~+1.9 s).
