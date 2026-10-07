@@ -112,3 +112,40 @@ describe("RingingScreen — an Rx order is checked before it's accepted (Merchan
     business.current = null;
   });
 });
+
+describe("RingingScreen — owner decision D1: the drawn countdown runs to 0:00 and the order keeps ringing", () => {
+  const props = { disabled: false, onAccept: vi.fn(), onPropose: vi.fn(), onReject: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn(), onEditItems: vi.fn(), refetch: vi.fn() };
+  const countdown = () => screen.getByLabelText("Time left to answer").textContent;
+
+  afterEach(() => vi.useRealTimers());
+
+  it("past the 3:00 window the countdown holds at 0:00 and Accept / Can't take it stay", () => {
+    render(<RingingScreen active={order({ acceptDeadlineAt: new Date(Date.now() - 10 * 60_000).toISOString() })} {...props} />);
+    expect(countdown()).toBe("0:00");
+    expect(screen.getByRole("button", { name: /^Accept/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Can’t take it" })).toBeTruthy();
+  });
+
+  it("an auto-accepted ring counts the same 3:00 answer window — not the old 60-min (or the new 24 h) cancel", () => {
+    const startedAt = new Date(Date.now() - 60_000).toISOString();
+    render(
+      <RingingScreen
+        active={order({ merchantPhase: "preparing", acceptDeadlineAt: null, autoAccepted: true, kitchenConfirmedAt: null, prepStartedAt: startedAt, prepMinutes: 20, createdAt: startedAt })}
+        {...props}
+      />,
+    );
+    expect(countdown()).toBe("2:00");
+  });
+
+  it("the reasons sheet stays open when the countdown reaches 0:00 — the order isn't missed", () => {
+    vi.useFakeTimers();
+    render(<RingingScreen active={order({ acceptDeadlineAt: new Date(Date.now() + 1_500).toISOString() })} {...props} />);
+    act(() => screen.getByRole("button", { name: "Can’t take it" }).click());
+    expect(screen.getByText("Why can't you take it?")).toBeTruthy();
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+    expect(countdown()).toBe("0:00");
+    expect(screen.getByText("Why can't you take it?")).toBeTruthy();
+  });
+});

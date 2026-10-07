@@ -151,7 +151,7 @@ describe("sweepAutoAccepted — no rider until the kitchen is confirmed (safegua
     expect((escalateWhere!.prepStartedAt as { lt: Date }).lt.getTime()).toBe(NOW.getTime() - RESTAURANTS_AUTO_ACCEPT.escalateAfterMs);
   });
 
-  it("cancels orders nobody confirmed within an hour and tells the customer nothing was charged", async () => {
+  it("cancels orders nobody confirmed within 24 h (D1; was an hour) and tells the customer nothing was charged", async () => {
     let abandonedWhere: Record<string, unknown> | undefined;
     const cancels: Array<{ where: Record<string, unknown>; data: Record<string, unknown> }> = [];
     const { svc } = build({

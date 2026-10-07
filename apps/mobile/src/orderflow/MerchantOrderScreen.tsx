@@ -1275,11 +1275,16 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       break;
     case "waiting": {
       const end = order.acceptDeadlineAt ? Date.parse(order.acceptDeadlineAt) : NaN;
+      // Owner decision D1 (2026-10-07, ledger D-87): the drawn 3:00 is the venue's answer window, not a
+      // cancel — they may still accept for 24 h. So the countdown runs once, and at 0:00 the timer row
+      // goes (never "0:00 left" for hours, never a restart: C1/U31's 0:20 → 0:00 loop) and the sub drops
+      // "They have 3 minutes." The title, the venue row and the free cancel stay as drawn.
       const leftMs = Number.isFinite(end) ? Math.max(0, end - nowMs) : null;
+      const lapsed = leftMs === 0;
       content = (
         <>
-          <StageTop title={ofFmt(O.t.waiting, { v: venueName })} eta={null} sub={O.t.waitingSub} />
-          {leftMs != null ? (
+          <StageTop title={ofFmt(O.t.waiting, { v: venueName })} eta={null} sub={lapsed ? OX.waitingLapsedSub : O.t.waitingSub} />
+          {leftMs != null && !lapsed ? (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
               <View style={{ height: 28, flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 9, borderRadius: tokens.radius.pill, backgroundColor: C.surface }}>
                 <Icon name="timer" size={14} color={C.muted} />

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BadRequestException } from "@nestjs/common";
+import { RESTAURANTS_TIMING } from "@lynia/shared";
 import type { Env } from "../config/env";
 import type { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -34,10 +35,9 @@ const notifications = {
 // behaviour is covered by food-debt.service.spec.ts.
 const debt = { openDebtIfNeeded: async () => {} } as unknown as FoodDebtService;
 
-// C5 kitchen socket queue: every mutating method now best-effort pushes emitFoodQueueChanged, and
-// the N-03 accept-window sweep gates on isMerchantOnline. `queueChanges` records every push so tests
-// can assert it fired (or didn't); defaults to "always online" so every pre-existing sweep test keeps
-// its original always-auto-cancel behaviour unless a test overrides `isMerchantOnline` itself.
+// C5 kitchen socket queue: every mutating method best-effort pushes emitFoodQueueChanged.
+// `queueChanges` records every push so tests can assert it fired (or didn't). `isMerchantOnline`
+// stays stubbed "online"; since D1 (C1) the accept-window sweep no longer reads it.
 const queueChanges: Array<{ merchantId: string; orderId: string }> = [];
 function fakeGateway(overrides: Record<string, unknown> = {}) {
   return {
@@ -914,11 +914,16 @@ describe("FoodOrderService.revealPickupCode — N-16 reveal-by-rotation", () => 
 });
 
 describe("FoodOrderService reconciler sweeps", () => {
-  it("N-03: auto-cancels an order past its accept deadline and notifies the customer (merchant online)", async () => {
+  it("N-03 + D1: cancels `shop_closed` only once the order waited 24 h on the merchant, and notifies the customer", async () => {
+    const NOW = new Date("2026-10-07T10:00:00Z");
+    let listWhere: Record<string, unknown> | undefined;
     let cancelled: Record<string, unknown> | undefined;
     const { svc } = build({
       order: {
-        findMany: async () => [{ id: "o1", merchantId: "m1", acceptDeadlineAt: new Date(0) }],
+        findMany: async ({ where }: { where: Record<string, unknown> }) => {
+          listWhere = where;
+          return [{ id: "o1", merchantId: "m1", acceptDeadlineAt: new Date(0) }];
+        },
         updateMany: async (a: Record<string, unknown>) => {
           cancelled = a;
           return { count: 1 };
@@ -927,8 +932,12 @@ describe("FoodOrderService reconciler sweeps", () => {
       },
       orderEvent: { create: async () => ({}) },
     });
-    const res = await svc.sweepExpiredAcceptWindows();
-    expect(res).toEqual({ cancelled: 1, paused: 0 });
+    const res = await svc.sweepExpiredAcceptWindows(NOW);
+    expect(res).toEqual({ cancelled: 1 });
+    // The window opened acceptWindowMs before acceptDeadlineAt; the cap is 24 h after that.
+    const cutoff = (listWhere!.acceptDeadlineAt as { lt: Date }).lt.getTime();
+    expect(cutoff).toBe(NOW.getTime() - (RESTAURANTS_TIMING.merchantWaitCapMs - RESTAURANTS_TIMING.acceptWindowMs));
+    expect(NOW.getTime() - (cutoff - RESTAURANTS_TIMING.acceptWindowMs)).toBe(24 * 60 * 60 * 1000);
     const data = cancelled!.data as Record<string, unknown>;
     expect(data.status).toBe("cancelled");
     expect(data.rejectionReason).toBe("shop_closed");
@@ -936,15 +945,16 @@ describe("FoodOrderService reconciler sweeps", () => {
     expect(queueChanges).toEqual([{ merchantId: "m1", orderId: "o1" }]);
   });
 
-  it("C5/D-16: pauses (extends the deadline) instead of cancelling when the kitchen tablet is dark, and pushes no cancellation notice", async () => {
-    let updateArgs: Record<string, unknown> | undefined;
+  it("C1 (MJ-H2 + U31): an offline merchant's order is never paused — the deadline is not moved and presence is not read", async () => {
+    const writes: Array<Record<string, unknown>> = [];
     const isMerchantOnline = vi.fn(async () => false);
     const { svc } = build(
       {
         order: {
-          findMany: async () => [{ id: "o1", merchantId: "m1", acceptDeadlineAt: new Date(0) }],
+          // Nothing has waited 24 h yet: the sweep finds nothing to cancel, offline or not.
+          findMany: async () => [],
           updateMany: async (a: Record<string, unknown>) => {
-            updateArgs = a;
+            writes.push(a);
             return { count: 1 };
           },
         },
@@ -952,31 +962,11 @@ describe("FoodOrderService reconciler sweeps", () => {
       fakeGateway({ isMerchantOnline }),
     );
     const res = await svc.sweepExpiredAcceptWindows();
-    expect(res).toEqual({ cancelled: 0, paused: 1 });
-    expect(isMerchantOnline).toHaveBeenCalledWith("m1");
-    const data = updateArgs!.data as Record<string, unknown>;
-    // Only the deadline moves — no status/merchantPhase change, so this is a metadata write, not a
-    // lifecycle transition (nothing for order-lifecycle.transitions.ts to declare).
-    expect(Object.keys(data)).toEqual(["acceptDeadlineAt"]);
-    expect((data.acceptDeadlineAt as Date).getTime()).toBeGreaterThan(Date.now());
+    expect(res).toEqual({ cancelled: 0 });
+    expect(isMerchantOnline).not.toHaveBeenCalled();
+    // The old pause rewrote acceptDeadlineAt 20 s ahead every tick (the customer's 0:20 → 0:00 loop).
+    expect(writes).toEqual([]);
     expect(notified).toHaveLength(0);
-    expect(queueChanges).toHaveLength(0);
-  });
-
-  it("C5: a reconnected merchant's next sweep cancels for real if they still haven't answered", async () => {
-    const { svc } = build(
-      {
-        order: {
-          findMany: async () => [{ id: "o1", merchantId: "m1", acceptDeadlineAt: new Date(0) }],
-          updateMany: async () => ({ count: 1 }),
-          findUnique: async () => ({ customerId: "c1" }),
-        },
-        orderEvent: { create: async () => ({}) },
-      },
-      fakeGateway({ isMerchantOnline: async () => true }),
-    );
-    const res = await svc.sweepExpiredAcceptWindows();
-    expect(res).toEqual({ cancelled: 1, paused: 0 });
   });
 
   it("N-18: an unanswered item-approval window is treated as a decline (named mocked default)", async () => {

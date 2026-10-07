@@ -500,6 +500,10 @@ export class TrackingGateway
    * (D-13 "never a silent hang") rather than the new pause, since a pause that can never be lifted by
    * a gateway outage would trade one failure mode (a lost order) for a worse one (an order stuck
    * forever, never yielding a customer response either way).
+   *
+   * Owner decision D1 (2026-10-07, C1 = MJ-H2 + U31): the accept sweep no longer calls this — every
+   * merchant wait, offline or not, runs the same 24 h (RESTAURANTS_TIMING.merchantWaitCapMs), and the
+   * per-tick pause it fed gave a reconnected tablet ≤ 20 s and looped the customer's countdown.
    */
   async isMerchantOnline(merchantId: string): Promise<boolean> {
     if (!this.server) return true;

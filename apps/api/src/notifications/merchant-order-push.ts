@@ -37,6 +37,16 @@ export const PUSH_C = {
   schedStarted: { title: "Your scheduled order has started", body: ["{v} is {making}.", "Arrives {s}."] },
 } as const satisfies Record<string, Template>;
 
+/**
+ * Not in `O.g.push` — owner decision D1 (2026-10-07), ledger D-87: while the venue hasn't accepted, the
+ * customer is pushed this at 3 and 15 minutes (FoodOrderService.sweepStillWaiting). The title is the
+ * owner's own words; the body tells them the one thing they can do about it (the free cancel D1 keeps).
+ */
+export const PUSH_C_STILL_WAITING = {
+  title: "Still waiting for {v}",
+  body: ["They haven’t accepted your order yet.", "You can cancel free until they do."],
+} as const satisfies Template;
+
 /** Merchant (G3b), index-aligned with `O.g.push.m`. */
 export const PUSH_M = {
   newOrder: { title: "New order #{id} · {p}", body: ["{n} {items}.", "Confirm you’re making it."] },

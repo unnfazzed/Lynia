@@ -60,7 +60,7 @@ import {
 import { PAYMENT_RAIL, type PaymentRail } from "../adapters/payments/payment-rail.interface";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { TokenService } from "../auth/token.service";
-import { pushCopy, PUSH_C } from "../notifications/merchant-order-push";
+import { pushCopy, PUSH_C, PUSH_C_STILL_WAITING } from "../notifications/merchant-order-push";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
@@ -309,9 +309,9 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     // DB-only reconciler (no BullMQ per-order scheduling, unlike order-lifecycle.service's rating
-    // auto-close) — a tight sweep interval (RESTAURANTS_TIMING.sweepIntervalMs, 20s) keeps N-03's
-    // 3:00 accept window reading as "auto-cancel", not "eventually", without the added queue/worker
-    // infra. Revisit with a delayed-job precision pass if real usage needs sub-20s accuracy.
+    // auto-close) — a tight sweep interval (RESTAURANTS_TIMING.sweepIntervalMs, 20s) keeps the
+    // customer-side windows (item approval, substitutions) and the D1 "still waiting" pushes on time
+    // without the added queue/worker infra.
     void this.runSweeps();
     this.sweep = setInterval(() => void this.runSweeps(), RESTAURANTS_TIMING.sweepIntervalMs);
     this.sweep.unref?.();
@@ -346,6 +346,11 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       await this.sweepAutoAccepted();
     } catch (err) {
       this.logger.error(`sweepAutoAccepted failed: ${(err as Error).message}`);
+    }
+    try {
+      await this.sweepStillWaiting();
+    } catch (err) {
+      this.logger.error(`sweepStillWaiting failed: ${(err as Error).message}`);
     }
   }
 
@@ -1360,38 +1365,29 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
   // ── Reconciler sweeps (DB-only, RESTAURANTS_TIMING.sweepIntervalMs) ─────────────────────────────────
 
   /**
-   * N-03: unanswered merchant accept auto-cancels — never a silent hang (D-13). C5 addition
-   * ("server-paused accept clocks while dark", D-16): the merchant is the ONLY actor who can answer
-   * this window, so before treating a past-deadline order as a genuine no-answer, ask the kitchen
-   * socket queue (TrackingGateway.isMerchantOnline) whether that merchant's tablet is actually
-   * connected. Offline ⇒ the deadline is pushed one sweep tick forward instead of the order being
-   * cancelled — not a new lifecycle state (status/merchantPhase are untouched, so this needs no new
-   * `order-lifecycle.transitions.ts` row, only a metadata field), just a clock that stops advancing
-   * toward cancellation while nobody could have answered it. The very next sweep after the tablet
-   * reconnects sees a real online merchant and lets N-03 run out for real if they still don't
-   * answer — D-13's guarantee holds for a CONNECTED merchant, which is the only merchant it can
-   * meaningfully apply to. The item-approval sweep (N-18) has no equivalent: that window waits on
-   * the CUSTOMER, whose connectivity this channel says nothing about, so it stays on the plain
-   * {@link sweepExpiredPhase} path unchanged.
+   * N-03 + owner decision D1 (2026-10-07): an order the venue never answers is cancelled `shop_closed` —
+   * never a silent hang (D-13) — but only RESTAURANTS_TIMING.merchantWaitCapMs (24 h) after its answer
+   * window opened, not when the drawn 3:00 countdown (`acceptDeadlineAt`) reaches 0:00. Until then it
+   * keeps ringing and the customer keeps a free cancel (cancelUnpaid) and is nudged (sweepStillWaiting).
+   *
+   * C1 = MJ-H2 + U31: this used to pause an OFFLINE merchant's clock by pushing `acceptDeadlineAt` one
+   * sweep tick (20 s) forward. A tablet back online then had at most 20 s to answer, and the customer's
+   * countdown looped 0:20 → 0:00. D1 folds the offline case into the one 24 h cap, so presence is no
+   * longer read here and `acceptDeadlineAt` is never moved after it is stamped.
+   *
+   * The window opened at `acceptDeadlineAt − acceptWindowMs` (placement; a scheduled order's ring), so
+   * the cap is reached once `acceptDeadlineAt < now − (merchantWaitCapMs − acceptWindowMs)`.
    */
-  async sweepExpiredAcceptWindows(): Promise<{ cancelled: number; paused: number }> {
+  async sweepExpiredAcceptWindows(now: Date = new Date()): Promise<{ cancelled: number }> {
     let cancelled = 0;
-    let paused = 0;
+    const capCutoff = new Date(now.getTime() - (RESTAURANTS_TIMING.merchantWaitCapMs - RESTAURANTS_TIMING.acceptWindowMs));
     const stale = await this.prisma.order.findMany({
-      where: { orderType: "merchant", status: "requested", merchantPhase: "awaiting_accept", acceptDeadlineAt: { lt: new Date() } },
+      where: { orderType: "merchant", status: "requested", merchantPhase: "awaiting_accept", acceptDeadlineAt: { lt: capCutoff } },
       select: { id: true, merchantId: true, acceptDeadlineAt: true },
       take: 200,
     });
     for (const o of stale) {
       try {
-        if (o.merchantId && !(await this.gateway.isMerchantOnline(o.merchantId))) {
-          const pauseResult = await this.prisma.order.updateMany({
-            where: { id: o.id, status: "requested", merchantPhase: "awaiting_accept", acceptDeadlineAt: o.acceptDeadlineAt },
-            data: { acceptDeadlineAt: new Date(Date.now() + RESTAURANTS_TIMING.sweepIntervalMs) },
-          });
-          if (pauseResult.count > 0) paused++;
-          continue;
-        }
         if (
           await this.commitStaleCancellation(
             o.id,
@@ -1406,7 +1402,67 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         this.logger.error(`sweepExpiredAcceptWindows failed for order ${o.id}: ${(err as Error).message}`);
       }
     }
-    return { cancelled, paused };
+    return { cancelled };
+  }
+
+  /**
+   * Owner decision D1 (2026-10-07), ledger D-87: while the venue hasn't accepted — a ringing order
+   * (`awaiting_accept`, rung) or an auto-accepted one the kitchen hasn't confirmed — the customer is
+   * pushed "Still waiting for {v}" RESTAURANTS_TIMING.stillWaitingPushAfterMs (3 and 15 min) after the
+   * venue's wait started: placement, or a scheduled order's ring (a scheduled order is not late before
+   * it rings). `merchantWaitNudges` is the idempotency guard, claimed by compare-and-swap before the
+   * push, so each push goes once per order; an order first seen past 15 min (sweeps were down) gets only
+   * the 15-min one. A crash between the claim and the push drops that push rather than repeating it —
+   * the softer failure for a nudge (the N-22 precedent). An accepted, declined or cancelled order no
+   * longer matches the query or the claim, so nothing is pushed after the venue answers.
+   */
+  async sweepStillWaiting(now: Date = new Date()): Promise<{ pushed: number }> {
+    let pushed = 0;
+    const steps = RESTAURANTS_TIMING.stillWaitingPushAfterMs;
+    // Latest step first: an order already past 15 min is claimed at step 2 and skips step 1.
+    for (let step = steps.length; step >= 1; step--) {
+      const waitedMs = steps[step - 1]!;
+      const due = await this.prisma.order.findMany({
+        where: {
+          orderType: "merchant",
+          status: "requested",
+          merchantWaitNudges: { lt: step },
+          OR: [
+            // Ringing: the wait started acceptWindowMs before acceptDeadlineAt (null = scheduled, not rung).
+            { merchantPhase: "awaiting_accept", acceptDeadlineAt: { lte: new Date(now.getTime() - waitedMs + RESTAURANTS_TIMING.acceptWindowMs) } },
+            // Auto-accepted, kitchen not confirmed: the wait started at prepStartedAt (placement or ring).
+            { merchantPhase: "preparing", autoAccepted: true, kitchenConfirmedAt: null, prepStartedAt: { lte: new Date(now.getTime() - waitedMs) } },
+          ],
+        },
+        select: { id: true, customerId: true, merchant: { select: { name: true, businessType: true } } },
+        take: 200,
+      });
+      for (const o of due) {
+        try {
+          const claimed = await this.prisma.order.updateMany({
+            where: {
+              id: o.id,
+              status: "requested",
+              merchantWaitNudges: { lt: step },
+              OR: [{ merchantPhase: "awaiting_accept" }, { merchantPhase: "preparing", autoAccepted: true, kitchenConfirmedAt: null }],
+            },
+            data: { merchantWaitNudges: step },
+          });
+          if (claimed.count === 0) continue;
+          const fallback = o.merchant?.businessType === "shop" ? "the shop" : "the restaurant";
+          await this.notifications.notifyProfiles([o.customerId], {
+            ...pushCopy(PUSH_C_STILL_WAITING, { v: o.merchant?.name?.trim() || null }, { v: fallback }),
+            // to+orderType so the tap opens the order screen (and its free cancel); one tray slot per order.
+            data: { orderId: o.id, status: "requested", to: "customer", orderType: "merchant", kind: "food_still_waiting" },
+            collapseKey: `order:${o.id}:still_waiting`,
+          });
+          pushed++;
+        } catch (err) {
+          this.logger.error(`sweepStillWaiting failed for order ${o.id}: ${(err as Error).message}`);
+        }
+      }
+    }
+    return { pushed };
   }
 
   /** N-18: unanswered 60s item-approval window — mocked default (surfaced in the PR): treated as a
@@ -1540,8 +1596,9 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
    * Auto-accept safeguard 1. Two jobs for auto-accepted orders still in the kitchen:
    *  - Escalate: unconfirmed RESTAURANTS_AUTO_ACCEPT.escalateAfterMs after placement → marked urgent for
    *    the ops call list (once).
-   *  - Cancel: still unconfirmed RESTAURANTS_AUTO_ACCEPT.autoCancelAfterMs after placement → cancelled,
-   *    customer told nothing was charged (a cash order has taken no money yet).
+   *  - Cancel: still unconfirmed RESTAURANTS_AUTO_ACCEPT.autoCancelAfterMs after placement (24 h since
+   *    owner decision D1 — a merchant wait; it was 60 min) → cancelled, customer told nothing was
+   *    charged (a cash order has taken no money yet).
    *  - Food is ready: once CONFIRMED and the prep time has run out with nobody tapping "Food is ready",
    *    the order is marked ready (`ready_for_pickup` while dispatch looks, null once a rider holds it).
    *    The rider search itself starts RESTAURANTS_AUTO_ACCEPT.dispatchLeadMs earlier, without touching

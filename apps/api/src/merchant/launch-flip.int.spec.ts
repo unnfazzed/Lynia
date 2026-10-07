@@ -75,10 +75,8 @@ const noopNotifications = {
   notifyRidersAvailable: async () => {},
 } as unknown as NotificationsService;
 
-// Every gateway call in these paths is best-effort realtime. `isMerchantOnline` is the one that has to
-// answer truthfully rather than no-op: FoodOrderService.sweepExpiredAcceptWindows treats an OFFLINE
-// merchant as "clock paused" (D-16), so a stub returning false would silently disable the N-03 window.
-// Nothing here drives that sweep, but the honest value keeps the stub safe for anyone extending this file.
+// Every gateway call in these paths is best-effort realtime. `isMerchantOnline` answers "online"; since
+// owner decision D1 (C1) the accept sweep no longer reads it (every merchant wait runs the same 24 h).
 const gateway = {
   emitOrderStatus: () => undefined,
   emitBidExpired: () => undefined,
