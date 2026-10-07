@@ -34,6 +34,11 @@ export const POST_PICKUP_FOR_UNDELIVERED = new Set<string>(["picked_up", "en_rou
  *  collected" can land after the advance to picked_up instead of 409ing into the void. Typed as the
  *  Prisma enum (not a Set<string>) because the CAS `where` reuses it verbatim. */
 export const PICKUP_PHOTO_STATUSES: readonly OrderStatus[] = ["en_route_pickup", "picked_up"];
+/** A PARCEL's pickup photo may also land on the drop-off leg (rider audit PJ-H1): the rider app moves
+ *  picked_up → en_route_dropoff the instant the collect lands, so a shot taken with no data at the pickup
+ *  would otherwise 409 on every retry and never reach the customer. Merchant pickup proof keeps
+ *  {@link PICKUP_PHOTO_STATUSES}. */
+export const PARCEL_PICKUP_PHOTO_STATUSES: readonly OrderStatus[] = [...PICKUP_PHOTO_STATUSES, "en_route_dropoff"];
 /** KB-POD-DISPUTE Phase A — the proof-of-drop attach window: at the door before giving up
  *  (en_route_dropoff) OR just after marking the hand-off failed (undelivered), so a rider can attach
  *  evidence either while disputing or right after. Optional, never gates a status. Typed as the Prisma

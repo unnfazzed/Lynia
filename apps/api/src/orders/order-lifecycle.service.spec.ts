@@ -176,8 +176,8 @@ describe("OrderLifecycleService.attachPickupPhoto", () => {
     await expect(svc.attachPickupPhoto("o1", "other", key)).rejects.toThrow(/assigned rider/i);
   });
 
-  it("409s outside the attach window (before the pickup leg, and after heading to drop-off)", async () => {
-    for (const status of ["assigned", "confirmed", "en_route_dropoff", "delivered", "cancelled"]) {
+  it("409s outside the attach window (before the pickup leg, and once the hand-off is over)", async () => {
+    for (const status of ["assigned", "confirmed", "delivered", "undelivered", "cancelled"]) {
       const { svc } = build({ $queryRaw: async () => row({ status }) });
       await expect(svc.attachPickupPhoto("o1", "r1", key)).rejects.toThrow(/while collecting/i);
     }
@@ -203,6 +203,13 @@ describe("OrderLifecycleService.attachPickupPhoto", () => {
     await expect(svc.attachPickupPhoto("o1", "r1", key)).resolves.toEqual({ orderId: "o1", pickupPhotoKey: key });
     expect(args!.data).toEqual({ pickupPhotoKey: key });
     expect(args!.where).toEqual({ id: "o1" });
+  });
+
+  it("still attaches on the drop-off leg — a shot taken with no data at the pickup isn't lost (PJ-H1)", async () => {
+    // The rider app moves picked_up → en_route_dropoff the instant the collect lands, so a queued upload
+    // retried on reconnect always arrives here.
+    const { svc } = build({ $queryRaw: async () => row({ status: "en_route_dropoff" }), order: { update: async () => ({}) } });
+    await expect(svc.attachPickupPhoto("o1", "r1", key)).resolves.toEqual({ orderId: "o1", pickupPhotoKey: key });
   });
 
   it("still attaches at picked_up — a slow upload must not lose to the one-tap collect", async () => {
@@ -1116,6 +1123,28 @@ describe("OrderLifecycleService.rotateDeliveryCode", () => {
     expect(args!.where.status).toMatchObject({ in: expect.arrayContaining(["en_route_dropoff", "assigned"]) });
     // The new robust rotation signal is stamped with the DB clock on every re-issue.
     expect(sql).toContain("delivery_code_rotated_at = now()");
+  });
+
+  it("pushes order:status (unchanged status) so an open rider screen refetches the reset attempts (PJ-H3)", async () => {
+    const { svc, emits } = build({
+      order: {
+        findUnique: async () => ({ customerId: "c1", status: "en_route_dropoff" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+    });
+    await svc.rotateDeliveryCode("o1", "c1");
+    expect(emits).toEqual([["o1", "en_route_dropoff"]]);
+  });
+
+  it("does not push when the rotation lost the CAS", async () => {
+    const { svc, emits } = build({
+      order: {
+        findUnique: async () => ({ customerId: "c1", status: "en_route_dropoff" }),
+        updateMany: async () => ({ count: 0 }),
+      },
+    });
+    await expect(svc.rotateDeliveryCode("o1", "c1")).rejects.toThrow(/order changed, retry/i);
+    expect(emits).toEqual([]);
   });
 
   it("403s for a non-owner", async () => {
