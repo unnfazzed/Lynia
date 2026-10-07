@@ -32,7 +32,7 @@ describe("handshakeState", () => {
     );
   });
 
-  it("frozen wins even if a rider confirm somehow also landed (shouldn't happen server-side, but never claim confirmed)", () => {
+  it("is confirmed once support resolves a frozen handshake (the resolve sets the rider confirm and keeps the frozen record)", () => {
     expect(
       handshakeState({
         ...base,
@@ -40,7 +40,7 @@ describe("handshakeState", () => {
         riderCashConfirmedAt: "2026-07-31T10:15:00Z",
         cashHandshakeFrozenAt: "2026-07-31T10:16:00Z",
       }),
-    ).toBe("frozen");
+    ).toBe("confirmed");
   });
 });
 
@@ -60,7 +60,11 @@ describe("codeEligible", () => {
     ).toBe(true);
   });
 
-  it("is false for a frozen CASH handshake even if a rider confirm raced in", () => {
+  it("is false for a frozen CASH handshake with no rider confirm", () => {
+    expect(codeEligible({ ...base, customerCashConfirmedAt: "2026-07-31T10:14:00Z", cashHandshakeFrozenAt: "2026-07-31T10:16:00Z" })).toBe(false);
+  });
+
+  it("is true once support resolves a frozen handshake (both confirms + the kept frozen record)", () => {
     expect(
       codeEligible({
         ...base,
@@ -68,6 +72,6 @@ describe("codeEligible", () => {
         riderCashConfirmedAt: "2026-07-31T10:15:00Z",
         cashHandshakeFrozenAt: "2026-07-31T10:16:00Z",
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 });
