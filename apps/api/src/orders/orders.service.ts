@@ -962,14 +962,29 @@ export class OrdersService {
    *  aggregate over ALL matching orders — never derived by summing the capped 50-row `historyForUser`
    *  page, which silently understates a rider with more than 50 lifetime orders (across both roles).
    *  `_sum` ignores NULL `agreedFare` rows in SQL (a documented completion anomaly — see
-   *  wallet.service.ts's `chargeCommission`), so an anomalous row can't inflate the total either. */
+   *  wallet.service.ts's `chargeCommission`), so an anomalous row can't inflate the total either.
+   *
+   *  LC-B-SIB-4: what a rider EARNED differs by order type. A parcel's `agreedFare` is the rider's fare,
+   *  but a merchant order's `agreedFare` is the customer's grand total (goods + delivery − venue share);
+   *  the rider keeps only its `deliveryFee` (schema D-08/D-71). Summing `agreedFare` across both credited
+   *  a rider's food runs with the dish cost they hand back to the kitchen. One grouped read, then each
+   *  type contributes its own earned column; the trip count still covers both (same set as the Trips
+   *  list, `historyForUser`). */
   async earningsSummary(riderId: string): Promise<{ total: string; count: number }> {
-    const agg = await this.prisma.order.aggregate({
+    const groups = await this.prisma.order.groupBy({
+      by: ["orderType"],
       where: { riderId, status: { in: COMPLETED_ORDER_STATUSES } },
-      _sum: { agreedFare: true },
+      _sum: { agreedFare: true, deliveryFee: true },
       _count: { _all: true },
     });
-    return { total: (agg._sum.agreedFare ?? new Prisma.Decimal(0)).toString(), count: agg._count._all };
+    let total = new Prisma.Decimal(0);
+    let count = 0;
+    for (const g of groups) {
+      const earned = g.orderType === "merchant" ? g._sum.deliveryFee : g._sum.agreedFare;
+      if (earned != null) total = total.plus(earned);
+      count += g._count._all;
+    }
+    return { total: total.toString(), count };
   }
 
   /**

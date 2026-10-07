@@ -144,11 +144,15 @@ export class AdminService {
       // `adjudicateDelivered`'s force-complete of a disputed `undelivered` order all set both together),
       // so this also picks up an adjudicated-delivered order same-day (WD-026) that never got a
       // `deliveredAt` at all.
-      this.prisma.order.count({ where: { status: "completed", completedAt: { gte: startOfDay } } }),
+      // LC-B-SIB-4: parcel-only, the same universe as "Fares today" beside it (A-9 below). Unscoped, a
+      // merchant order completing today moved "Completed today" + the completion rate while adding $0
+      // to the adjacent fares KPI — two headline figures silently counting different order sets.
+      this.prisma.order.count({ where: { status: "completed", completedAt: { gte: startOfDay }, orderType: "parcel" } }),
       // Mirror: only orders STILL `undelivered` today count toward the failure side of the completion
       // rate — one later adjudicated back to `completed` (WD-026) must stop counting here, even though
-      // its `undeliveredAt` timestamp from the original failed hand-off is never cleared.
-      this.prisma.order.count({ where: { status: "undelivered", undeliveredAt: { gte: startOfDay } } }),
+      // its `undeliveredAt` timestamp from the original failed hand-off is never cleared. Parcel-only
+      // like its numerator (LC-B-SIB-4), so the rate is a ratio over one universe.
+      this.prisma.order.count({ where: { status: "undelivered", undeliveredAt: { gte: startOfDay }, orderType: "parcel" } }),
       // A-9 (status-keyed-query-audit): a merchant order's `agreedFare` is its own goods+delivery
       // total, not a parcel fare — summing it into "Fares today" would misstate the parcel KPI once a
       // merchant order can complete (C3/C4). Merchant orders get their own settlement view later.
@@ -181,7 +185,8 @@ export class AdminService {
         ordersWithOffer: ordersWithOfferRows[0]?.count ?? 0,
         expired,
       }),
-      // Today's throughput (drives the "Completed today" + "Fares today" headline KPIs).
+      // Today's throughput (drives the "Completed today" + "Fares today" headline KPIs) — all three
+      // figures are parcel-only (LC-B-SIB-4), so the adjacent KPIs describe the same orders.
       today: {
         completed: deliveredToday,
         completionRatePct,
