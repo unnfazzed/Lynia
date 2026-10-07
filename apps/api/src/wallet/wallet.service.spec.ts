@@ -220,11 +220,42 @@ describe("WalletService.chargeCommission — WD-012 commission-basis floor (DOC-
     // — a colluding pair lowballing offeredFare to $1 can't evade commission down to $0.10.
     await svc.chargeCommission(tx as never, { orderId: "o1", riderId: "r1", agreedFare: 1, suggestedFare: 10 });
     expect(create).toHaveBeenCalledWith({
-      data: { riderId: "r1", orderId: "o1", type: "ride_commission", amount: -0.5, balanceAfter: -0.5, ratePct: 10, fare: 1, actor: "system" },
+      // LC-B-SIB-3: `fare` stores the $5 basis actually billed, not the raw $1 — it is the receipt's math.
+      data: { riderId: "r1", orderId: "o1", type: "ride_commission", amount: -0.5, balanceAfter: -0.5, ratePct: 10, fare: 5, actor: "system" },
     });
   });
 
-  it("never floors ABOVE the real agreedFare — a fare that already clears the floor is charged unchanged, and the receipt `fare` field always shows the real agreedFare", async () => {
+  it("LC-B-SIB-3: the rider's receipt math matches the debit when the floor bites — \"10% of $5.00\" beside −$0.50, not \"10% of $1.00\"", async () => {
+    const create = vi.fn();
+    const tx = {
+      commissionLedger: { create, findFirst: async () => null },
+      rider: PAST_FREE_JOBS,
+      commissionAccount: { update: vi.fn() },
+      $executeRaw: vi.fn(),
+      $queryRaw: vi.fn(async () => [{ balance: "0" }]),
+    };
+    const svc = build({ COMMISSION_RATE_PCT: 10 });
+    await svc.chargeCommission(tx as never, { orderId: "o1", riderId: "r1", agreedFare: 1, suggestedFare: 10 });
+    // Round-trip the written row through getLedger → toEntry exactly as the DB would hand it back.
+    const data = create.mock.calls[0]![0].data as Record<string, unknown>;
+    const row = {
+      id: "l1",
+      type: data.type,
+      amount: new Prisma.Decimal(data.amount as number),
+      balanceAfter: new Prisma.Decimal(data.balanceAfter as number),
+      orderId: data.orderId,
+      ratePct: new Prisma.Decimal(data.ratePct as number),
+      fare: new Prisma.Decimal(data.fare as number),
+      note: null,
+      createdAt: new Date("2026-10-07T00:00:00.000Z"),
+      topUp: null,
+    };
+    const reader = build({ COMMISSION_RATE_PCT: 10 }, { commissionLedger: { findMany: async () => [row] } });
+    const [entry] = (await reader.getLedger("r1")).entries;
+    expect(entry).toMatchObject({ type: "commission", amount: -0.5, ratePct: 10, fare: 5, meta: "10% of $5.00" });
+  });
+
+  it("never floors ABOVE the real agreedFare — a fare that already clears the floor is charged unchanged, and the receipt `fare` field shows the real agreedFare (it IS the basis)", async () => {
     const create = vi.fn();
     const tx = {
       commissionLedger: { create, findFirst: async () => null },

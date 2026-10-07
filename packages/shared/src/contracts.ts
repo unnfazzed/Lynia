@@ -822,7 +822,8 @@ export const WalletEntry = z
     meta: z.string(),
     /** The rate a `commission` debit was charged at (design OV-2A: stored per row), else absent. */
     ratePct: z.number().optional(),
-    /** The ride's agreed fare a `commission` debit derives from, for the show-the-math receipt. */
+    /** The basis a `commission` debit was billed on — the ride's agreed fare, or the WD-012 floor when it
+     *  bites (LC-B-SIB-3) — so `meta`'s "rate% of $fare" always multiplies out to `amount`. */
     fare: z.number().optional(),
     orderId: z.string().optional(),
     rail: TopupRail.optional(),

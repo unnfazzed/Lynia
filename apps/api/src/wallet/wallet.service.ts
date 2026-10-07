@@ -229,7 +229,8 @@ export class WalletService {
     // WD-012 (DOC-16-04 / FRAUD-REVIEW P0-2): bill on max(agreedFare, basisFloorPct × suggestedFare), not
     // the raw fare — closes the lowball-to-evade-commission gap. The rider still keeps the real agreedFare;
     // only the commission CALCULATION is floored. suggestedFare unset/invalid falls back to the raw fare.
-    const amount = perRideCommission(commissionBasis(fare, suggestedFare), rate);
+    const basis = commissionBasis(fare, suggestedFare);
+    const amount = perRideCommission(basis, rate);
     if (amount <= 0) return;
 
     // D-70 commission-free first jobs (Calm Mint v2 R1/R3): every completion path increments
@@ -272,7 +273,10 @@ export class WalletService {
         amount: -amount,
         balanceAfter,
         ratePct: rate,
-        fare,
+        // LC-B-SIB-3: the receipt's `fare` is the basis actually billed, not the raw agreedFare — toEntry
+        // renders "${rate}% of $${fare}" beside `amount`, so when the WD-012 floor bites the stored figure
+        // must be the floored one or the rider's own check of the math reads as a 5× overcharge.
+        fare: basis,
         actor: "system",
       },
     });
