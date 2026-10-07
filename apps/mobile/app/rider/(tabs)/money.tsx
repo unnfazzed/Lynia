@@ -162,8 +162,14 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
   );
   useForegroundRefetch(reread, focused);
   const pending = usePendingTopupReconciliation(focused);
-  // MA-M6: an unreadable wallet is unknown, not $0 — "—" and the retrying line, never the floor alarm.
+  // MA-M6: an unreadable wallet is unknown, not $0 — "—" and the retrying line (BalanceRetry, which
+  // also re-reads), never the floor alarm. A failed re-read over a known balance retries quietly.
   const unreadable = isError && wallet == null;
+  React.useEffect(() => {
+    if (!focused || !isError || unreadable) return;
+    const t = setInterval(reread, 20_000);
+    return () => clearInterval(t);
+  }, [focused, isError, unreadable, reread]);
 
   const rows = useMemo(() => history ?? [], [history]);
   const earned = summarise(rows, range, now);
