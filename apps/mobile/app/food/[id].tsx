@@ -2,7 +2,7 @@ import type { RestaurantMenuDish } from "@lynia/shared";
 import { RESTAURANTS_PRICING } from "@lynia/shared/restaurants-order";
 import { tokens } from "@lynia/shared/tokens";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, Text, TextInput, View, useWindowDimensions, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { usePrewarmRoutes, type PrewarmRoute } from "../../src/boot/prewarm-routes";
@@ -181,6 +181,40 @@ export default function RestaurantMenuScreen(): React.ReactElement {
     const line = lines.find((l) => l.note === "") ?? lines[lines.length - 1];
     if (line) cart.setQuantity(line.dishId, line.note, line.quantity - 1);
   };
+
+  // The menu body, built once per menu/basket change. The scroll-spy (`active`) and the collapsing bar
+  // (`collapsed`) re-render this screen at every section crossing; rebuilding the body there re-rendered
+  // every dish row and photo with it, a visible hitch mid-fling on a low-end phone. The row handlers read
+  // the latest add/minus through a ref, so the memo needn't change when they do.
+  const latest = useRef({ add, minus });
+  latest.current = { add, minus };
+  const onRowAdd = useCallback((it: StoreItem) => latest.current.add(it), []);
+  const onRowMinus = useCallback((it: StoreItem) => latest.current.minus(it), []);
+  const menuBody = useMemo(() => {
+    const qty = (dishId: string): number =>
+      cart.cart.restaurantId === id ? cart.cart.lines.filter((l) => l.dishId === dishId).reduce((s, l) => s + l.quantity, 0) : 0;
+    return sections.map((s, i) => (
+      <View
+        key={s.key}
+        onLayout={(e) => {
+          sectionY.current[i] = e.nativeEvent.layout.y;
+        }}
+      >
+        <SectionHeading title={s.title} window={s.window} note={s.note} />
+        {s.popular ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingVertical: 6, paddingHorizontal: 16 }}>
+            {s.items.map((it) => (
+              <PopularCard key={it.id} item={it} qty={qty(it.id)} canAdd={open} onOpen={() => setOpenItem(it)} onAdd={() => onRowAdd(it)} onMinus={() => onRowMinus(it)} />
+            ))}
+          </ScrollView>
+        ) : (
+          s.items.map((it) => (
+            <DishRow key={it.id} item={it} qty={qty(it.id)} canAdd={open} onOpen={() => setOpenItem(it)} onAdd={() => onRowAdd(it)} onMinus={() => onRowMinus(it)} />
+          ))
+        )}
+      </View>
+    ));
+  }, [sections, cart.cart, id, open, onRowAdd, onRowMinus]);
 
   // ── Loading / error ──────────────────────────────────────────────────────────────────────────
   if (isLoading && !menu) return <StoreSkeleton />;
@@ -375,27 +409,7 @@ export default function RestaurantMenuScreen(): React.ReactElement {
             >
               <StoreTabs names={tabNames} active={active} onPick={jump} />
             </View>
-            {sections.map((s, i) => (
-              <View
-                key={s.key}
-                onLayout={(e) => {
-                  sectionY.current[i] = e.nativeEvent.layout.y;
-                }}
-              >
-                <SectionHeading title={s.title} window={s.window} note={s.note} />
-                {s.popular ? (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingVertical: 6, paddingHorizontal: 16 }}>
-                    {s.items.map((it) => (
-                      <PopularCard key={it.id} item={it} qty={qtyFor(it.id)} canAdd={canAdd} onOpen={() => setOpenItem(it)} onAdd={() => add(it)} onMinus={() => minus(it)} />
-                    ))}
-                  </ScrollView>
-                ) : (
-                  s.items.map((it) => (
-                    <DishRow key={it.id} item={it} qty={qtyFor(it.id)} canAdd={canAdd} onOpen={() => setOpenItem(it)} onAdd={() => add(it)} onMinus={() => minus(it)} />
-                  ))
-                )}
-              </View>
-            ))}
+            {menuBody}
           </>
         )}
       </ScrollView>
