@@ -237,7 +237,8 @@ export class AdminOrdersService {
    *
    * On adjudication the order is force-completed and the rider is credited exactly like a normal
    * completion — a successful trip (tripsCount + reliability recovery, mirroring completeOrder) and the
-   * prepaid commission debit (no-op at rate 0; the delivery IS commissionable — the rider did the work).
+   * prepaid commission debit (no-op at rate 0; the delivery IS commissionable — the rider did the work;
+   * parcel orders only, like rate()/completeOrder() — a merchant order's commission is C4's ledger).
    * The customer is notified and can contest via the existing "report a problem" (raise an issue) path,
    * which lands in the disputes queue where ops can refund/re-adjudicate — `IssuesService.raise` has no
    * time-based gating, so this stays open indefinitely; the push/feed copy must not claim a deadline the
@@ -248,7 +249,7 @@ export class AdminOrdersService {
     const result = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        select: { status: true, riderId: true, customerId: true, agreedFare: true, suggestedFare: true },
+        select: { status: true, riderId: true, customerId: true, agreedFare: true, suggestedFare: true, orderType: true },
       });
       if (!order) throw new NotFoundException("Order not found");
       // Only a rider-raised failed hand-off is adjudicable — this is not a way to complete an arbitrary
@@ -292,7 +293,10 @@ export class AdminOrdersService {
 
       // Prepaid commission debit — commissionable per the Phase-B decision; no-op at rate 0, idempotent
       // (unique (riderId, orderId, ride_commission)). Guarded on wallet presence for test construction.
-      if (this.wallet) {
+      // LC-B-SIB-1: the same A-5 merchant guard as OrderLifecycleService.rate()/completeOrder() — a
+      // merchant order's own commission is C4's ledger, not the Express wallet, and chargeCommission
+      // assumes a parcel fare basis (a merchant order's agreedFare is its goods+delivery total).
+      if (this.wallet && order.orderType === "parcel") {
         await this.wallet.chargeCommission(tx, {
           orderId,
           riderId: order.riderId,
