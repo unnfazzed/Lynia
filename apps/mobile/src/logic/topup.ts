@@ -1,13 +1,22 @@
 import type { TopupStatus } from "@lynia/shared";
 import { formatMoney } from "./money";
 
+const TWO_DP = /^\d*(\.\d{0,2})?$/;
+
+/** MA-L1: the amount field takes digits with at most two decimals; any other keystroke is ignored. */
+export function acceptAmountInput(prev: string, next: string): string {
+  const v = next.replace(",", ".");
+  return TWO_DP.test(v) ? v : prev;
+}
+
 /** WD-009: pure top-up amount validation, factored out of `app/wallet/top-up.tsx` so the bounds it's
  *  called with are testable — the caller must pass the server-authoritative config bounds (not the
  *  bundled `COMMISSION` constant), and this proves the message reflects whatever bounds it's given. */
 export function validateTopupAmount(amountRaw: string, minTopUp: number, maxTopUp: number): string | null {
   if (amountRaw.trim() === "") return null;
   const n = Number(amountRaw);
-  if (!Number.isFinite(n) || n < minTopUp) return `Enter at least ${formatMoney(minTopUp)}`;
+  // MA-L1: cents only — "5.555" is not an amount the server takes.
+  if (!Number.isFinite(n) || n < minTopUp || !TWO_DP.test(amountRaw.trim())) return `Enter at least ${formatMoney(minTopUp)}`;
   if (n > maxTopUp) return `The most you can top up at once is ${formatMoney(maxTopUp)}`;
   return null;
 }
@@ -33,4 +42,10 @@ export function reconcilePendingTopup(status: TopupStatus): PendingTopupOutcome 
  */
 export function floorApplies(ratePct: number, freeJobsLeft: number | null | undefined): boolean {
   return ratePct > 0 && !(freeJobsLeft != null && freeJobsLeft > 0);
+}
+
+/** MA-M1: the low-balance wall's "Top up at least" — what clears the floor, but never under the minimum
+ *  top-up the server accepts (the wall must not ask for an amount the top-up screen refuses). */
+export function topUpAtLeast(floor: number, balance: number, minTopUp: number): number {
+  return Math.max(minTopUp, floor - balance, 0.01);
 }

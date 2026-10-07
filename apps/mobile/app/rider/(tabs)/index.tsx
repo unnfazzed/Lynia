@@ -1,4 +1,4 @@
-import { haversineKm, SOS_POLICY } from "@lynia/shared";
+import { COMMISSION, haversineKm, SOS_POLICY } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
@@ -32,6 +32,7 @@ import {
 import { useHomeLocation } from "../../../src/logic/home-location";
 import { kycScreenFor, parseIsoDay } from "../../../src/logic/kyc-outcome";
 import { markRiderWelcomeSeen, riderWelcomeSeen } from "../../../src/logic/rider-welcome";
+import { topUpAtLeast } from "../../../src/logic/topup";
 import { RIDER_PERM_ROUTES, startRiderPermFlow } from "../../../src/logic/rider-perm-flow";
 import { RiderLocEmpty, RiderNotifOffRow } from "../../../src/ui/firstrun/RiderPermBoard";
 import { SoftUpdateBanner } from "../../../src/ui/firstrun/SoftUpdateBanner";
@@ -664,7 +665,7 @@ export default function RiderHome(): React.ReactElement {
             tone="danger"
             title={R.gTopT}
             body={RF.gTopB(floor)}
-            facts={balance != null ? [[R.gTopK, usd(balance)], [R.gTopK2, usd(Math.max(0.01, floor - balance))]] : null}
+            facts={balance != null ? [[R.gTopK, usd(balance)], [R.gTopK2, usd(topUpAtLeast(floor, balance, walletConfig?.minTopUp ?? COMMISSION.minTopUp))]] : null}
             factsDanger
             primary={{ label: R.goTopUp, icon: "plus", onPress: () => router.push("/wallet/top-up") }}
           />
