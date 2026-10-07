@@ -4,6 +4,7 @@ import {
   addMoney,
   foodOrderMoney,
   fromCents,
+  merchantAmountDueUsd,
   recomputeMerchantDeliveryShare,
   smallOrderFeeForSubtotal,
   toCents,
@@ -73,6 +74,8 @@ export async function editOrderItems(
       merchant: { select: { name: true } },
       // Order flow v2 (BRIEF §8): an open substitution round blocks a second change.
       substitutionRounds: { where: { status: "open" }, select: { id: true } },
+      // C9 (U13): an earlier owed balance this order collects — part of the "New total" cash at the door.
+      carriedBalance: { select: { amount: true } },
     },
   });
   if (!order) throw new NotFoundException("Order not found");
@@ -134,7 +137,8 @@ export async function editOrderItems(
   notifyFoodQueueChanged(gateway, order.merchantId, orderId);
   await notifications.notifyProfiles([order.customerId], {
     title: `${order.merchant?.name ?? "The restaurant"} updated your order`,
-    body: `New total $${agreedFare.toFixed(2)}, cash at the door.`,
+    // C9 (U13): the one amount due at the door — the new agreed total plus any carried balance.
+    body: `New total $${(merchantAmountDueUsd({ agreedFare, carriedBalance: order.carriedBalance }) ?? agreedFare).toFixed(2)}, cash at the door.`,
     data: { orderId, status: order.status, to: "customer", orderType: "merchant", kind: "food_items_edited" },
   });
 }

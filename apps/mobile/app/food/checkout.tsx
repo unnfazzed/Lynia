@@ -181,7 +181,8 @@ export default function FoodReviewScreen(): React.ReactElement {
 
   // ── Placing, toasts, offline ──────────────────────────────────────────────────────────────────────
   const [busy, setBusy] = useState(false);
-  const [toast, setToast] = useState<{ text: string; retry: boolean } | null>(null);
+  // `balance`: U49 — the R7b toast raised because the carried-balance read failed; its Try again re-reads it.
+  const [toast, setToast] = useState<{ text: string; retry: boolean; balance?: boolean } | null>(null);
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), TOAST_MS);
@@ -263,7 +264,10 @@ export default function FoodReviewScreen(): React.ReactElement {
   const rxKeys = rx.keys.join(",");
 
   // ── BRIEF D3f: a balance owed from a cancel after collection rides on this order ──────────────────
-  const owed = useCarriedBalance(cart.ready && !!rid);
+  // U49 (reviewed list 2026-10-07): Place waits for it, so the total the customer agrees to can't leave out
+  // a balance the rider will still collect at the door.
+  const balance = useCarriedBalance(cart.ready && !!rid);
+  const owed = balance.owed;
 
   // U02: seeded by the cart's nonce too, so the same basket ordered again (a new cart) is a new order,
   // while a retry of this attempt (double tap, timeout, restart — the cart is persisted) still dedupes.
@@ -359,6 +363,11 @@ export default function FoodReviewScreen(): React.ReactElement {
     // either is said once in the toast (hints never block except the Rx photo itself).
     if (rxNeeded && !patient.trim()) return setToast({ text: O.r.rxPatient, retry: false });
     if (rxNeeded && !consent) return setToast({ text: O.r.rxConsent, retry: false });
+    // U49: never place on a total that hasn't heard the carried balance — the R7b toast, Try again re-reads it.
+    if (!balance.settled) {
+      balance.refetch();
+      return setToast({ text: O.r.failed, retry: true, balance: true });
+    }
     setBusy(true);
     try {
       const order = await placeFoodOrder(
@@ -674,8 +683,9 @@ export default function FoodReviewScreen(): React.ReactElement {
           <PrimaryButton
             label={busy ? O.r.placing : placeLabel}
             onPress={() => void submit()}
-            loading={busy}
-            disabled={!reachable || !drop || (!restaurant && !busy) || rxEmpty || (rxNeeded && rx.uploading)}
+            // U49: the existing loading state while the carried balance is still being read.
+            loading={busy || balance.loading}
+            disabled={!reachable || !drop || (!restaurant && !busy) || rxEmpty || (rxNeeded && rx.uploading) || (!balance.settled && !balance.failed)}
           />
         )}
       </ReviewBar>
@@ -684,7 +694,11 @@ export default function FoodReviewScreen(): React.ReactElement {
         <ReviewToast
           text={toast.text}
           action={toast.retry ? O.c.tryAgain : undefined}
-          onAction={() => void submit()}
+          onAction={() => {
+            if (!toast.balance) return void submit();
+            setToast(null);
+            balance.refetch();
+          }}
           bottom={insets.bottom + 88}
         />
       ) : null}

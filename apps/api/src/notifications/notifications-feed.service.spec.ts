@@ -985,6 +985,34 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       expect((await service.feedForUser("cust", NOW))[0]).toMatchObject({ service: "pharmacy", beat: "accepted", status: "requested" });
     });
 
+    it("C9 (U13): a merchant 'at your door' row quotes the one amount due — the agreed total plus a carried balance", async () => {
+      const { prisma, service } = makeDeps();
+      prisma.order.findMany.mockResolvedValue([
+        {
+          id: "m1",
+          riderId: "rider",
+          customerId: "cust",
+          orderType: "merchant",
+          status: "en_route_dropoff",
+          agreedFare: dec("8"),
+          carriedBalance: [{ amount: dec("10") }],
+          kitchenConfirmedAt: t("12:02"),
+          prepStartedAt: t("12:05"),
+          prepMinutes: 15,
+          merchant: { name: "Sadza Republic", businessType: "restaurant", shopKind: null },
+          rider: { profile: { firstName: "Tendai" } },
+          pickup: {},
+          dropoff: { landmark: "Avondale" },
+          events: [{ status: "en_route_dropoff", createdAt: t("12:30") }],
+        },
+      ]);
+      const [row] = await service.feedForUser("cust", NOW);
+      expect(row).toMatchObject({ beat: "en_route_dropoff", title: "Tendai is at your door", message: "Have $18.00 cash ready.", amount: "18.00" });
+      // The select asks for the carried balance (else the row falls back to the bare agreed fare).
+      const select = (prisma.order.findMany.mock.calls[0]![0] as { select: Record<string, unknown> }).select;
+      expect(select.carriedBalance).toEqual({ select: { amount: true } });
+    });
+
     it("a rider's merchant job reads in rider voice, gated like a parcel job", async () => {
       const { prisma, service } = makeDeps();
       prisma.order.findMany.mockResolvedValue([

@@ -344,9 +344,19 @@ export class AdminOrdersService {
     const result = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        select: { id: true, agreedFare: true, riderId: true, customerId: true, status: true, suggestedFare: true },
+        select: { id: true, agreedFare: true, riderId: true, customerId: true, status: true, suggestedFare: true, orderType: true },
       });
       if (!order) throw new NotFoundException("Order not found");
+      // C9 (U37): a restaurant / shop / pharmacy order's `agreedFare` is the customer's goods + delivery
+      // total, not a rider fare. Rewriting it alone leaves the goods, the fee and the order screen on the old
+      // total while the door handshake asks for the new one — so it is refused, and a wrong amount on a
+      // merchant order is corrected with the merchant refund instead.
+      if (order.orderType === "merchant") {
+        throw new ConflictException({
+          reason: "merchant_order_fare",
+          message: "Restaurant, shop and pharmacy orders can't have their fare adjusted. Use a refund instead.",
+        });
+      }
       // Only correct a fare that was actually agreed. Writing agreedFare onto an order that never had
       // one (open_for_offers / requested / expired, or a pre-assignment cancel) would mint a
       // non-null agreed fare on an order that was never agreed — integrity drift in the monitor.

@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { KYC_DECLINE_REASON_LABELS } from "@lynia/shared";
+import { KYC_DECLINE_REASON_LABELS, merchantAmountDueUsd } from "@lynia/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { MERCHANT_STATUS_NOTICES, merchantCustomerCopy } from "./notifications.service";
 import { pushCopy, pushMoney, PUSH_C } from "./merchant-order-push";
@@ -490,6 +490,9 @@ export class NotificationsFeedService {
           // UX20-04: the current agreed fare, so a fare-adjust feed row can quote the corrected amount
           // exactly like the push does.
           agreedFare: true,
+          // C9 (U13): an earlier owed balance a merchant order collects at the door — part of the amount its
+          // "at your door" row quotes (merchantCustomerCopy), like the push.
+          carriedBalance: { select: { amount: true } },
           // Notifications v1 (D-66): the names and places the app builds the row's title and line from,
           // and the kitchen beats of a merchant order (not OrderEvents, see MERCHANT_FEED_NOTICES).
           customerId: true,
@@ -698,7 +701,10 @@ export class NotificationsFeedService {
         venue: o.merchant?.name?.trim() || undefined,
         riderName: o.rider?.profile?.firstName?.trim() || undefined,
         customerName: o.customer?.firstName?.trim() || undefined,
-        amount: amountOf(o.agreedFare),
+        // C9 (U13): a merchant order's customer sees the one amount due (agreed total + carried balance).
+        amount: amountOf(
+          o.orderType === "merchant" && o.customerId === userId ? merchantAmountDueUsd({ agreedFare: o.agreedFare, carriedBalance: o.carriedBalance }) : o.agreedFare,
+        ),
         prepMinutes: o.prepMinutes ?? undefined,
       };
     };

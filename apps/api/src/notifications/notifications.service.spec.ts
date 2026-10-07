@@ -561,6 +561,16 @@ describe("NotificationsService — parcel customer stage copy (after-send v2)", 
     expect(sent).toMatchObject({ token: "cust-tok", title, body, data: { orderId: "o1", status, to: "customer", orderType: "merchant" } });
   });
 
+  it("C9 (U13): 'at your door' copy quotes the one amount due — the agreed total plus a carried owed balance", async () => {
+    // U12 (#1123): the merchant `en_route_dropoff` beat is feed-only (MERCHANT_SILENT_PUSH), so nothing is pushed
+    // there; the copy — which the feed row and any later arrival push share — still carries the full amount due.
+    const order = { agreedFare: "8.00", carriedBalance: [{ amount: "10.00" }], merchant: { name: "Gava’s Kitchen" }, rider: { profile: { firstName: "Tendai" } } };
+    expect(merchantCustomerCopy("en_route_dropoff", order)).toMatchObject({ title: "Tendai is at your door", body: "Have $18.00 cash ready." });
+    expect(
+      await sentFor("en_route_dropoff", parcel({ orderType: "merchant", agreedFare: "8.00", carriedBalance: [{ amount: "10.00" }], merchant: { name: "Gava’s Kitchen" } })),
+    ).toEqual([]);
+  });
+
   it("merchant: an undelivered order not caused by an unreachable customer doesn't say so; no code in any push", async () => {
     const [sent] = await sentFor("undelivered", parcel({ orderType: "merchant", undeliveredReason: "breakdown", merchant: { name: "Gava’s Kitchen" } }));
     expect(sent).toMatchObject({ title: "Your order wasn’t delivered", body: "Nothing was charged." });

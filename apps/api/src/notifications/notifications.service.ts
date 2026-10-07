@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { OFFER_WINDOW_MS } from "@lynia/shared";
+import { merchantAmountDueUsd, OFFER_WINDOW_MS } from "@lynia/shared";
 import { androidChannelFor, PUSH, type PushAdapter } from "../adapters/push/push.interface";
 import { PrismaService } from "../prisma/prisma.service";
 import { auditData } from "../admin/admin.shared";
@@ -129,7 +129,9 @@ export const MERCHANT_STATUS_NOTICES: Partial<Record<string, Notice>> = {
 export const MERCHANT_SILENT_PUSH: ReadonlySet<string> = new Set(["en_route_dropoff"]);
 
 interface MerchantCopyOrder {
-  agreedFare?: unknown;
+  agreedFare?: number | { toString(): string } | null;
+  /** C9 (U13): an earlier owed balance this order collects at the door, on top of the agreed total. */
+  carriedBalance?: readonly { amount: number | { toString(): string } }[] | null;
   undeliveredReason?: string | null;
   merchant?: { name?: string | null } | null;
   rider?: { profile?: { firstName?: string | null } | null } | null;
@@ -146,8 +148,12 @@ export function merchantCustomerCopy(status: string, order: MerchantCopyOrder): 
   switch (status) {
     case "picked_up":
       return pushCopy(PUSH_C.collected, { n }, fallback);
-    case "en_route_dropoff":
-      return pushCopy(PUSH_C.atDoor, { n, p: order.agreedFare == null ? null : pushMoney(order.agreedFare) }, fallback);
+    case "en_route_dropoff": {
+      // C9 (U13): "Have $X cash ready" is the one amount due — what the screen shows and the rider collects
+      // (the agreed total plus any carried balance), never the bare agreed fare.
+      const due = order.agreedFare == null ? null : merchantAmountDueUsd({ agreedFare: order.agreedFare, carriedBalance: order.carriedBalance });
+      return pushCopy(PUSH_C.atDoor, { n, p: due == null ? null : pushMoney(due) }, fallback);
+    }
     case "delivered":
       // "Tap to rate {v} and {n}." needs both names; without them the push is just "Delivered · Enjoy!".
       return pushCopy(PUSH_C.delivered, v && n ? { v, n } : {});
@@ -225,6 +231,8 @@ export class NotificationsService {
           rider: { select: { profile: { select: { firstName: true } } } },
           // Order flow v2 G3a: the venue and the cash amount for a merchant order's stage push.
           agreedFare: true,
+          // C9 (U13): the carried balance is part of the "Have $X cash ready" amount.
+          carriedBalance: { select: { amount: true } },
           merchant: { select: { name: true } },
         },
       });

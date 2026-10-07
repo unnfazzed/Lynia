@@ -1812,6 +1812,11 @@ export const MerchantOrderResponse = z
     /** BRIEF D3f: an earlier owed balance this order collects, as its own line. Already inside `total`
      *  (and the doorstep cash amount); NOT inside `merchantGoodsTotal` / `deliveryFee`. */
     previousBalanceUsd: z.number().nullable().optional(),
+    /** C9 (reviewed list 2026-10-07): the ONE server-computed amount the customer pays at the door —
+     *  the agreed total plus any carried `previousBalanceUsd` (`merchantAmountDueUsd`). The doorstep
+     *  handshake, the pushes and the Orders history row use the same figure. Additive; older apps read
+     *  `total`, which now carries the same value. */
+    amountDueUsd: z.number().nullable().optional(),
     // ── Order flow v2 (ledger D-59). All optional/additive: an installed app never reads them. ──
     /** "Order #A1B2" (`orderShortId`). */
     shortId: z.string().optional(),
@@ -2082,6 +2087,10 @@ export type MerchantWeeklyStatementResponse = z.infer<typeof MerchantWeeklyState
 export const MerchantEndOfDaySummaryResponse = z
   .object({
     date: z.string(),
+    /** MJ-RM7: the day as a Harare calendar date, `YYYY-MM-DD` — what a client keys and labels the day by
+     *  (`date` is the instant Harare's day starts, which a browser in another zone reads as the day before).
+     *  Additive: an older API omits it. */
+    dateKey: z.string().optional(),
     delivered: z.number().int(),
     rejected: z.number().int(),
     cashTaken: z.number(),
@@ -2138,13 +2147,16 @@ export type MerchantEndOfDaySummaryResponse = z.infer<typeof MerchantEndOfDaySum
  *  server-local days, the same boundary as the Today summary), one row per day so far, oldest first. */
 export const MerchantWeekSummaryResponse = z
   .object({
-    /** Monday 00:00 of this week. */
+    /** Monday 00:00 of this week (Harare). */
     start: z.string(),
+    /** MJ-RM7: that Monday as a Harare calendar date, `YYYY-MM-DD` — what a client derives the week's bars
+     *  and range from (never from `start` with local getters). Additive: an older API omits it. */
+    startKey: z.string().optional(),
     orders: z.number().int(),
     sales: z.number(),
     days: z.array(
       z.object({
-        /** The day, `YYYY-MM-DD` (server-local) — what `GET /merchant/summary/today?date=` takes. */
+        /** The day, `YYYY-MM-DD` (a Harare date, MJ-RM7) — what `GET /merchant/summary/today?date=` takes. */
         date: z.string(),
         orders: z.number().int(),
         sales: z.number(),

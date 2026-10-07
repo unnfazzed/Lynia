@@ -3,6 +3,7 @@ import {
   RESTAURANTS_PRICING,
   deliveryFeeForDistance,
   smallOrderFeeForSubtotal,
+  merchantAmountDueUsd,
   RESTAURANTS_TIMING,
   PREP_CHIPS_MIN,
   BUSY_MODE_EXTRA_MIN,
@@ -61,6 +62,29 @@ describe("deliveryFeeForDistance — golden cases", () => {
       expect(fee).toBeGreaterThanOrEqual(prev - 1e-9);
       prev = fee;
     }
+  });
+});
+
+describe("merchantAmountDueUsd — C9 (U13/U35/U36/U37)", () => {
+  it("is the agreed total when nothing is carried", () => {
+    expect(merchantAmountDueUsd({ agreedFare: 8, merchantGoodsTotal: 6.5, deliveryFee: 1.5 })).toBe(8);
+  });
+
+  it("adds every carried balance on top of the agreed total, in cents", () => {
+    expect(merchantAmountDueUsd({ agreedFare: "8.00", carriedBalance: [{ amount: "10.00" }, { amount: 0.1 }] })).toBe(18.1);
+    expect(merchantAmountDueUsd({ agreedFare: 0.2, carriedBalance: [{ amount: 0.1 }] })).toBe(0.3);
+  });
+
+  it("follows agreedFare over the goods + fee split (the handshake's figure)", () => {
+    expect(merchantAmountDueUsd({ agreedFare: 10, merchantGoodsTotal: 10.5, deliveryFee: 1.5, carriedBalance: [{ amount: 2 }] })).toBe(12);
+  });
+
+  it("falls back to goods + fee − the venue's share without an agreed fare", () => {
+    expect(merchantAmountDueUsd({ merchantGoodsTotal: 7, deliveryFee: 1.5, merchantDeliveryShare: 1.5, carriedBalance: [{ amount: 3 }] })).toBe(10);
+  });
+
+  it("is null when nothing is known", () => {
+    expect(merchantAmountDueUsd({ carriedBalance: [{ amount: 3 }] })).toBeNull();
   });
 });
 
