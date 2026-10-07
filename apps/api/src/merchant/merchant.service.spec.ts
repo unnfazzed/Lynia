@@ -1434,7 +1434,7 @@ describe("MerchantService.getTodaySummary (E3, M4·6; D-48 header tiles)", () =>
     expect(res.lines![2].reason).toBeUndefined();
   });
 
-  it("follow-ups T2b (D-77): ?date= reads that server-local day, and anything else 400s", async () => {
+  it("follow-ups T2b (D-77) + MJ-RM7: ?date= reads that Harare day, and anything else 400s", async () => {
     let todayWhere: { createdAt: { gte: Date; lte: Date } } | undefined;
     const prisma = summaryPrisma();
     const findMany = prisma.order.findMany;
@@ -1443,10 +1443,54 @@ describe("MerchantService.getTodaySummary (E3, M4·6; D-48 header tiles)", () =>
       return findMany(args);
     };
     await svc(prisma).getTodaySummary("p1", "2026-10-03");
-    expect(todayWhere!.createdAt.gte).toEqual(new Date(2026, 9, 3, 0, 0, 0, 0));
-    expect(todayWhere!.createdAt.lte).toEqual(new Date(2026, 9, 3, 23, 59, 59, 999));
+    // Harare is UTC+2: its 3 Oct runs from 2 Oct 22:00 UTC to 3 Oct 21:59:59.999 UTC.
+    expect(todayWhere!.createdAt.gte).toEqual(new Date("2026-10-02T22:00:00.000Z"));
+    expect(todayWhere!.createdAt.lte).toEqual(new Date("2026-10-03T21:59:59.999Z"));
     await expect(svc(summaryPrisma()).getTodaySummary("p1", "2026-02-31")).rejects.toThrow("YYYY-MM-DD");
     await expect(svc(summaryPrisma()).getTodaySummary("p1", "yesterday")).rejects.toThrow("YYYY-MM-DD");
+  });
+
+  it("MJ-RM7: between 00:00 and 02:00 Harare, Today is already the new Harare day (not the server's UTC day)", async () => {
+    const wheres: Record<string, unknown>[] = [];
+    const prisma = summaryPrisma();
+    const findMany = prisma.order.findMany;
+    prisma.order.findMany = async (args: { where: Record<string, unknown> }) => {
+      if (args.where.createdAt) wheres.push(args.where);
+      return findMany(args);
+    };
+    const aggregate = prisma.order.aggregate;
+    prisma.order.aggregate = async (args: { where: Record<string, unknown> }) => {
+      if (args.where.createdAt) wheres.push(args.where);
+      return aggregate(args);
+    };
+    // 00:30 on Wed 7 Oct in Harare = 22:30 UTC on Tue 6 Oct.
+    const res = await svc(prisma).getTodaySummary("p1", undefined, new Date("2026-10-06T22:30:00.000Z"));
+    expect(res.date).toBe("2026-10-06T22:00:00.000Z");
+    expect(wheres.length).toBeGreaterThanOrEqual(2);
+    for (const w of wheres) {
+      expect(w.createdAt).toEqual({ gte: new Date("2026-10-06T22:00:00.000Z"), lte: new Date("2026-10-07T21:59:59.999Z") });
+    }
+    // 01:59 Harare is still the same day; 02:00 Harare (00:00 UTC) too — the UTC midnight is no boundary.
+    expect((await svc(summaryPrisma()).getTodaySummary("p1", undefined, new Date("2026-10-06T23:59:00.000Z"))).date).toBe("2026-10-06T22:00:00.000Z");
+    expect((await svc(summaryPrisma()).getTodaySummary("p1", undefined, new Date("2026-10-07T00:00:00.000Z"))).date).toBe("2026-10-06T22:00:00.000Z");
+    // 23:59 Harare on the 6th (21:59 UTC) is the day before.
+    expect((await svc(summaryPrisma()).getTodaySummary("p1", undefined, new Date("2026-10-06T21:59:00.000Z"))).date).toBe("2026-10-05T22:00:00.000Z");
+  });
+
+  it("MJ-RM8: Orders/Sales count only orders that can still earn — not cancelled, not undelivered, not an unconfirmed auto-accept", async () => {
+    let salesWhere: Record<string, unknown> | undefined;
+    const prisma = summaryPrisma({ placed: { count: 2, sum: 20 } });
+    const aggregate = prisma.order.aggregate;
+    prisma.order.aggregate = async (args: { where: Record<string, unknown> }) => {
+      if (args.where.prepStartedAt) salesWhere = args.where;
+      return aggregate(args);
+    };
+    await svc(prisma).getTodaySummary("p1");
+    expect(salesWhere).toMatchObject({
+      prepStartedAt: { not: null },
+      status: { notIn: ["cancelled", "undelivered"] },
+      NOT: { autoAccepted: true, kitchenConfirmedAt: null },
+    });
   });
 
   it("averagePrepMinutes is null and totals are zero with no activity today", async () => {
@@ -1472,10 +1516,11 @@ describe("MerchantService.getTodaySummary (E3, M4·6; D-48 header tiles)", () =>
 });
 
 describe("MerchantService.getWeekSummary (Merchant v2 follow-ups T2b, D-77)", () => {
-  it("rolls Monday-to-today up per server-local day: orders that went through, sales, owed cash, and orders never taken", async () => {
-    const now = new Date(2026, 9, 4, 13, 0); // Sunday 4 Oct
+  it("rolls Monday-to-today up per Harare day: orders that went through, sales, owed cash, and orders never taken", async () => {
+    // Harare wall-clock instants (UTC+2), whatever the test machine's zone.
+    const at = (day: number, h: number) => new Date(Date.UTC(2026, 9, day, h - 2, 0));
+    const now = at(4, 13); // Sunday 4 Oct, 13:00 Harare
     let where: { createdAt: { gte: Date; lte: Date } } | undefined;
-    const at = (day: number, h: number) => new Date(2026, 9, day, h, 0);
     const row = (over: Record<string, unknown>) => ({
       status: "delivered",
       prepStartedAt: new Date(),
@@ -1501,8 +1546,10 @@ describe("MerchantService.getWeekSummary (Merchant v2 follow-ups T2b, D-77)", ()
       },
     });
     const res = await s.getWeekSummary("p1", now);
-    expect(where!.createdAt.gte).toEqual(new Date(2026, 8, 28, 0, 0, 0, 0));
-    expect(res.start).toBe(new Date(2026, 8, 28).toISOString());
+    // Monday 28 Sep 00:00 Harare = Sunday 27 Sep 22:00 UTC; the week ends at the end of Harare's today.
+    expect(where!.createdAt.gte).toEqual(new Date("2026-09-27T22:00:00.000Z"));
+    expect(where!.createdAt.lte).toEqual(new Date("2026-10-04T21:59:59.999Z"));
+    expect(res.start).toBe("2026-09-27T22:00:00.000Z");
     expect(res.days.map((d) => d.date)).toEqual(["2026-09-28", "2026-09-29", "2026-09-30", "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04"]);
     expect(res.days[6]).toEqual({ date: "2026-10-04", orders: 2, sales: 20, cashLate: 9.5, cashDue: 4, rejected: 0 });
     expect(res.days[5]).toEqual({ date: "2026-10-03", orders: 1, sales: 8.5, cashLate: 0, cashDue: 0, rejected: 0 });
@@ -1513,8 +1560,82 @@ describe("MerchantService.getWeekSummary (Merchant v2 follow-ups T2b, D-77)", ()
 
   it("on a Monday the week is just today", async () => {
     const s = svc({ merchant: { findUnique: async () => ({ id: "m1" }) }, order: { findMany: async () => [] } });
-    const res = await s.getWeekSummary("p1", new Date(2026, 8, 28, 8, 0));
+    const res = await s.getWeekSummary("p1", new Date("2026-09-28T06:00:00.000Z")); // 08:00 Harare
     expect(res.days).toEqual([{ date: "2026-09-28", orders: 0, sales: 0, cashLate: 0, cashDue: 0, rejected: 0 }]);
+  });
+
+  it("MJ-RM7: from 00:00 to 02:00 Harare on a Monday, This week is the NEW week (the server's UTC clock still reads Sunday)", async () => {
+    let where: { createdAt: { gte: Date; lte: Date } } | undefined;
+    const s = svc({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: {
+        findMany: async (args: { where: typeof where }) => {
+          where = args.where;
+          return [];
+        },
+      },
+    });
+    // 01:00 Monday 5 Oct in Harare = 23:00 UTC on Sunday 4 Oct.
+    const res = await s.getWeekSummary("p1", new Date("2026-10-04T23:00:00.000Z"));
+    expect(res.start).toBe("2026-10-04T22:00:00.000Z");
+    expect(res.days.map((d) => d.date)).toEqual(["2026-10-05"]);
+    expect(where!.createdAt).toEqual({ gte: new Date("2026-10-04T22:00:00.000Z"), lte: new Date("2026-10-05T21:59:59.999Z") });
+  });
+
+  it("MJ-RM7: a late-night order is booked on the Harare day it was placed", async () => {
+    const row = (createdAt: Date) => ({
+      createdAt,
+      status: "delivered",
+      prepStartedAt: createdAt,
+      deliveredAt: createdAt,
+      merchantGoodsTotal: 10,
+      merchantDeliveryShare: 0,
+      debtStatus: null,
+      debtAmount: null,
+      merchantClosedAt: null,
+    });
+    const s = svc({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      // 01:30 Tuesday 6 Oct in Harare = 23:30 UTC on Monday 5 Oct.
+      order: { findMany: async () => [row(new Date("2026-10-05T23:30:00.000Z"))] },
+    });
+    const res = await s.getWeekSummary("p1", new Date("2026-10-06T10:00:00.000Z"));
+    expect(res.days.map((d) => [d.date, d.orders])).toEqual([
+      ["2026-10-05", 0],
+      ["2026-10-06", 1],
+    ]);
+  });
+
+  it("MJ-RM8: a day's Sales leave out undelivered orders and unconfirmed auto-accepts — Sales equals the earning ledger rows", async () => {
+    const at = new Date("2026-10-05T10:00:00.000Z"); // Monday 12:00 Harare
+    const row = (over: Record<string, unknown>) => ({
+      createdAt: at,
+      status: "delivered",
+      prepStartedAt: at,
+      deliveredAt: at,
+      merchantGoodsTotal: 10,
+      merchantDeliveryShare: 0,
+      debtStatus: null,
+      debtAmount: null,
+      merchantClosedAt: null,
+      autoAccepted: false,
+      kitchenConfirmedAt: null,
+      ...over,
+    });
+    const s = svc({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: {
+        findMany: async () => [
+          row({}),
+          row({ status: "undelivered", deliveredAt: null, merchantGoodsTotal: 7 }), // rode back: "No sale"
+          row({ status: "requested", deliveredAt: null, autoAccepted: true, kitchenConfirmedAt: null, merchantGoodsTotal: 5 }), // unconfirmed
+          row({ status: "requested", deliveredAt: null, autoAccepted: true, kitchenConfirmedAt: at, merchantGoodsTotal: 4 }), // confirmed
+        ],
+      },
+    });
+    const res = await s.getWeekSummary("p1", new Date("2026-10-05T12:00:00.000Z"));
+    expect(res.days[0]).toMatchObject({ date: "2026-10-05", orders: 2, sales: 14 });
+    expect(res.sales).toBe(14);
   });
 });
 

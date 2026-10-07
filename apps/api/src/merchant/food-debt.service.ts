@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { foodOrderMoney, RESTAURANTS_DEBT, RiderAccountStatus, roundToCents } from "@lynia/shared";
+import { foodOrderMoney, merchantAmountDueUsd, RESTAURANTS_DEBT, RiderAccountStatus, roundToCents } from "@lynia/shared";
 import { NotificationsService } from "../notifications/notifications.service";
 import { OrderLifecycleService } from "../orders/order-lifecycle.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -105,6 +105,10 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
         status: true,
         merchantPaymentMethod: true,
         agreedFare: true,
+        // C9: merchantAmountDueUsd's fallback when a row has no agreed fare.
+        merchantGoodsTotal: true,
+        deliveryFee: true,
+        merchantDeliveryShare: true,
         customerCashConfirmedAt: true,
         riderId: true,
         // Order flow v2 (BRIEF D3f): an earlier owed balance this order collects at the door, on top.
@@ -115,7 +119,9 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
     if (order.merchantPaymentMethod !== "cash") throw new ConflictException("This order isn't a cash order");
     if (order.status !== "en_route_dropoff") throw new ConflictException("The rider hasn't reached you yet");
     if (order.customerCashConfirmedAt) throw new ConflictException("Already confirmed");
-    const amount = roundToCents(Number(order.agreedFare ?? 0) + (order.carriedBalance ?? []).reduce((sum, b) => sum + Number(b.amount), 0));
+    // C9: the one amount due (`merchantAmountDueUsd`) — the same figure the order read, the pushes and the
+    // Orders history show.
+    const amount = merchantAmountDueUsd(order) ?? 0;
     const now = new Date();
     const claimed = await this.prisma.order.updateMany({
       where: { id: orderId, status: "en_route_dropoff", customerCashConfirmedAt: null },

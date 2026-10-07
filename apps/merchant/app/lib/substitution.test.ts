@@ -28,6 +28,18 @@ describe("the merchant proposer (U1a, D-59)", () => {
     ]);
   });
 
+  it("MJ-M3: New total carries the $1.00 small-order fee once the items drop below $4.00, like the server's goods total", () => {
+    // Bread $1.10 + Mazoe $3.20 = $4.30 (no fee); remove the Mazoe → $1.10 + the $1.00 fee = $2.10.
+    const small = shop({ items: shop().items.filter((i) => i.itemId === BREAD || i.itemId === MAZOE) });
+    expect(proposalTotals(small, {})).toEqual({ was: 4.3, now: 4.3 });
+    expect(proposalTotals(small, { [MAZOE]: { kind: "remove" as const } })).toEqual({ was: 4.3, now: 2.1 });
+    // An order already under the minimum shows the fee on both sides.
+    const tiny = shop({ items: shop().items.filter((i) => i.itemId === BREAD) });
+    expect(proposalTotals(tiny, {})).toEqual({ was: 2.1, now: 2.1 });
+    // Nothing left is no order (the server cancels it), never a lone $1.00 fee.
+    expect(proposalTotals(tiny, { [BREAD]: { kind: "remove" as const } })).toEqual({ was: 2.1, now: 0 });
+  });
+
   it("draws the price difference: +$0.10, −$0.15, Same price", () => {
     expect(priceDiff(1.1, 1.2, "Same price")).toBe("+$0.10");
     expect(priceDiff(1.1, 0.95, "Same price")).toBe("−$0.15");

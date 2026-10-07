@@ -16,6 +16,7 @@ import {
   foodOrderMoney,
   fromCents,
   recomputeMerchantDeliveryShare,
+  merchantAmountDueUsd,
   merchantGoodsForSubtotal,
   type ProposeSubstitutionRequest,
   RESTAURANTS_TIMING,
@@ -64,6 +65,8 @@ type RoundWithLines = Prisma.MerchantOrderSubstitutionGetPayload<{ include: type
 const ORDER_INCLUDE = {
   merchantItems: { orderBy: { createdAt: "asc" } },
   merchant: { select: { name: true, busyMode: true } },
+  // C9 (U13): an earlier owed balance this order collects — part of the "New total" cash at the door.
+  carriedBalance: { select: { amount: true } },
 } satisfies Prisma.OrderInclude;
 type OrderForSubstitution = Prisma.OrderGetPayload<{ include: typeof ORDER_INCLUDE }>;
 
@@ -333,7 +336,8 @@ export class OrderSubstitutionService implements OnModuleInit, OnModuleDestroy {
         hasSwaps,
         allGone,
         atAccept,
-        total: newTotal,
+        // C9 (U13): the pushes quote the one amount due — the new agreed total plus any carried balance.
+        total: merchantAmountDueUsd({ agreedFare: newTotal, carriedBalance: order.carriedBalance }) ?? newTotal,
         status: allGone ? "cancelled" : "requested",
         merchantPhase: allGone ? null : ((data.merchantPhase as string | undefined) ?? order.merchantPhase),
         removedNames: body.lines
@@ -549,7 +553,8 @@ export class OrderSubstitutionService implements OnModuleInit, OnModuleDestroy {
       customerId: order.customerId,
       venue: order.merchant?.name ?? "The restaurant",
       cancelled,
-      total: newTotal,
+      // C9 (U13): the one amount due — the new agreed total plus any carried balance.
+      total: merchantAmountDueUsd({ agreedFare: newTotal, carriedBalance: order.carriedBalance }) ?? newTotal,
       status: cancelled ? "cancelled" : order.status,
       merchantPhase: nextPhase,
       removedNames,

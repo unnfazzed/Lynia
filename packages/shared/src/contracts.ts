@@ -1812,6 +1812,11 @@ export const MerchantOrderResponse = z
     /** BRIEF D3f: an earlier owed balance this order collects, as its own line. Already inside `total`
      *  (and the doorstep cash amount); NOT inside `merchantGoodsTotal` / `deliveryFee`. */
     previousBalanceUsd: z.number().nullable().optional(),
+    /** C9 (reviewed list 2026-10-07): the ONE server-computed amount the customer pays at the door —
+     *  the agreed total plus any carried `previousBalanceUsd` (`merchantAmountDueUsd`). The doorstep
+     *  handshake, the pushes and the Orders history row use the same figure. Additive; older apps read
+     *  `total`, which now carries the same value. */
+    amountDueUsd: z.number().nullable().optional(),
     // ── Order flow v2 (ledger D-59). All optional/additive: an installed app never reads them. ──
     /** "Order #A1B2" (`orderShortId`). */
     shortId: z.string().optional(),

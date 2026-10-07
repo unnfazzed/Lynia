@@ -235,6 +235,9 @@ export interface CustomerOrderRow extends OrderHistoryRow {
   outcome: CustomerOrderOutcome;
   /** What the customer paid; null = no charge. */
   chargedTotal: string | null;
+  /** C9: a merchant order's server-computed amount due (agreed total + any carried owed balance). Absent on
+   *  a parcel and from an older API. */
+  amountDueUsd?: number;
 }
 
 export interface CustomerOrdersPage {

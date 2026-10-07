@@ -61,3 +61,65 @@ export function isVenueOpenNow(hours: MerchantHours | null, closedUntil: Date | 
   if (closedUntil && closedUntil.getTime() > now.getTime()) return false;
   return isMerchantOpenNow(effectiveMerchantHours(hours, closedUntil, now), harareWallClock(now));
 }
+
+// ── Harare calendar days as instants (MJ-RM7) ────────────────────────────────────────────────────────
+// The Money tab and the KPI strip count by the merchant's day, not the server's: the container runs in
+// UTC, so `setHours(0…)` put Harare's 00:00–02:00 on the previous day (and Monday's first two hours in
+// last week). These helpers turn a Harare calendar day into the instants it starts and ends at.
+
+function harareFields(at: Date): { year: number; month: number; day: number; hour: number; minute: number; second: number } {
+  const parts: Record<string, number> = {};
+  for (const p of HARARE_PARTS.formatToParts(at)) {
+    if (p.type !== "literal") parts[p.type] = Number(p.value);
+  }
+  return { year: parts.year!, month: parts.month!, day: parts.day!, hour: parts.hour!, minute: parts.minute!, second: parts.second! };
+}
+
+const dayKeyOf = (year: number, month: number, day: number): string =>
+  `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+
+/** `YYYY-MM-DD` of the Harare calendar day an instant falls on. */
+export function harareDayKey(at: Date): string {
+  const f = harareFields(at);
+  return dayKeyOf(f.year, f.month, f.day);
+}
+
+/** The instant Harare's wall clock reads 00:00 on `y-m-d`. Harare has no DST; the offset is still read
+ *  from the zone database rather than assumed, and re-checked once. */
+function harareMidnight(year: number, month: number, day: number): Date {
+  const wallAsUtc = Date.UTC(year, month - 1, day);
+  let instant = wallAsUtc;
+  for (let i = 0; i < 2; i++) {
+    const f = harareFields(new Date(instant));
+    const offset = Date.UTC(f.year, f.month - 1, f.day, f.hour, f.minute, f.second) - instant;
+    instant = wallAsUtc - offset;
+  }
+  return new Date(instant);
+}
+
+/** A `YYYY-MM-DD` Harare day's first and last instants (end = the next day's 00:00 less 1 ms). Null for
+ *  anything that isn't a real calendar date. */
+export function harareDayBounds(key: string): { start: Date; end: Date } | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
+  if (!m) return null;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const probe = new Date(Date.UTC(y, mo - 1, d));
+  if (probe.getUTCFullYear() !== y || probe.getUTCMonth() !== mo - 1 || probe.getUTCDate() !== d) return null;
+  const next = new Date(Date.UTC(y, mo - 1, d + 1));
+  const start = harareMidnight(y, mo, d);
+  const end = new Date(harareMidnight(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate()).getTime() - 1);
+  return { start, end };
+}
+
+/** The `YYYY-MM-DD` key `n` calendar days after (or before, when negative) a day key. */
+export function addDaysToKey(key: string, n: number): string {
+  const [y, mo, d] = key.split("-").map(Number) as [number, number, number];
+  const t = new Date(Date.UTC(y, mo - 1, d + n));
+  return dayKeyOf(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate());
+}
+
+/** Days since Monday (0 = Monday … 6 = Sunday) of a day key. */
+export function daysSinceMonday(key: string): number {
+  const [y, mo, d] = key.split("-").map(Number) as [number, number, number];
+  return (new Date(Date.UTC(y, mo - 1, d)).getUTCDay() + 6) % 7;
+}

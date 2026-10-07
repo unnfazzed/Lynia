@@ -62,9 +62,18 @@ const SLOT_FULL = slot("2026-10-03T09:00:00.000Z", "11:00–11:30", true);
 const SLOTS = { slotMinutes: 30, openNow: true, leadMinutes: 25, today: { date: "2026-10-02", slots: [] }, tomorrow: { date: "2026-10-03", slots: [SLOT_FULL, SLOT_A] }, firstAvailable: SLOT_A };
 let mockSlots: unknown = SLOTS;
 let mockOwed = 0;
+// U49: the carried-balance read's state — settled unless a test says otherwise.
+let mockBalanceState: "settled" | "loading" | "failed" = "settled";
+const mockBalanceRefetch = jest.fn();
 jest.mock("../../../src/query/use-order-flow", () => ({
   useScheduleSlots: () => ({ slots: mockSlots, isLoading: false, isError: false }),
-  useCarriedBalance: () => mockOwed,
+  useCarriedBalance: () => ({
+    owed: mockBalanceState === "settled" ? mockOwed : 0,
+    settled: mockBalanceState === "settled",
+    loading: mockBalanceState === "loading",
+    failed: mockBalanceState === "failed",
+    refetch: mockBalanceRefetch,
+  }),
 }));
 let mockRxEnabled = false;
 jest.mock("../../../src/net/use-order-flags", () => ({ useOrderFlags: () => ({ rxEnabled: mockRxEnabled }) }));
@@ -139,6 +148,7 @@ beforeEach(() => {
   mockParams = {};
   mockSlots = SLOTS;
   mockOwed = 0;
+  mockBalanceState = "settled";
   mockRxEnabled = false;
   mockRx.pages = [];
   mockRx.keys = [];
@@ -591,5 +601,30 @@ describe("BRIEF D3f — a balance owed from a cancel after collection", () => {
     const placeLabel = all.find((s) => s.startsWith("Place order · "))!;
     const total = Number(/\$(\d+\.\d\d)/.exec(placeLabel)![1]);
     expect(total).toBeGreaterThan(31.5);
+  });
+
+  it("U49: Place waits in its loading state while the balance is still being read — nothing is placed", async () => {
+    mockBalanceState = "loading";
+    const t = render();
+    await flush();
+    const place = pressable(t, /^Place order · /)!;
+    expect(place.props.accessibilityState).toMatchObject({ disabled: true, busy: true });
+    act(() => place.props.onPress());
+    await flush();
+    expect(mockPlace).not.toHaveBeenCalled();
+  });
+
+  it("U49: a failed balance read never places on a total without it — the R7b toast, and Try again re-reads the balance", async () => {
+    mockBalanceState = "failed";
+    const t = render();
+    await flush();
+    press(t, /^Place order · /);
+    await flush();
+    expect(mockPlace).not.toHaveBeenCalled();
+    expect(texts(t)).toContain("Couldn’t place your order. Nothing was ordered.");
+    mockBalanceRefetch.mockClear();
+    press(t, "↻ Try again");
+    expect(mockBalanceRefetch).toHaveBeenCalledTimes(1);
+    expect(mockPlace).not.toHaveBeenCalled();
   });
 });

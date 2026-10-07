@@ -1,4 +1,4 @@
-import type { MerchantOrderItemView, MerchantOrderResponse, SubstitutionProposalLine } from "@lynia/shared";
+import { merchantGoodsForSubtotal, type MerchantOrderItemView, type MerchantOrderResponse, type SubstitutionProposalLine } from "@lynia/shared";
 
 /**
  * Order flow v2's merchant proposer (packages/design/handoff/order-flow-v2 README "Merchant proposer",
@@ -32,8 +32,11 @@ export function proposalLines(order: Pick<MerchantOrderResponse, "items">, chang
   return out;
 }
 
-/** What the lines add up to, before and with the proposed changes ("$14.60 → $11.60"): a removed line is
- *  gone, a swapped one counts at the replacement's price for the same quantity. */
+/** What the order adds up to, before and with the proposed changes ("$14.60 → $11.60"): a removed line is
+ *  gone, a swapped one counts at the replacement's price for the same quantity. MJ-M3: it is the GOODS
+ *  total the server will store (`merchantGoodsTotal`) — the items plus the N-15 small-order fee when they
+ *  drop below the minimum (`merchantGoodsForSubtotal`, the server's own rule) — so "New total" matches the
+ *  cash the merchant later collects. Nothing left reads $0.00 (the server cancels that order). */
 export function proposalTotals(order: Pick<MerchantOrderResponse, "items">, changes: Changes): { was: number; now: number } {
   let was = 0;
   let now = 0;
@@ -45,7 +48,8 @@ export function proposalTotals(order: Pick<MerchantOrderResponse, "items">, chan
     if (!c) now += line;
     else if (c.kind === "swap") now += c.priceUsd * item.quantity;
   }
-  return { was: round2(was), now: round2(now) };
+  const goods = (items: number): number => (items > 0 ? merchantGoodsForSubtotal(round2(items)).goodsTotal : 0);
+  return { was: goods(was), now: goods(now) };
 }
 
 /** U1b: the price difference against the line it replaces — "+$0.10", "−$0.15" or `same`. */

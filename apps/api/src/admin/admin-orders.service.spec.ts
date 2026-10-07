@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { ConflictException } from "@nestjs/common";
 import type { StorageAdapter } from "../adapters/storage/storage.interface";
 import type { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -548,6 +549,16 @@ describe("AdminOrdersService mutations (Item 1 — mutation + audit in ONE $tran
     expect(calls.orderUpdate!.data).toEqual({ agreedFare: 7.5 });
     expect(calls.audit!.data).toMatchObject({ action: "order.fare_adjust", target: "o1", reasonCode: "GPS overcharge" });
     expect(res).toMatchObject({ id: "o1", agreedFare: "7.50", auditId: "audit-9" });
+  });
+
+  it("C9 (U37): adjustFare refuses a restaurant / shop / pharmacy order (409) and writes nothing", async () => {
+    const { prisma, calls } = makeTx({ order: { id: "o1", status: "en_route_dropoff", agreedFare: dec("12.00"), riderId: "r1", customerId: "c1", orderType: "merchant" } });
+    const svc = new AdminOrdersService(prisma as unknown as PrismaService);
+    const err = await svc.adjustFare("admin-1", "o1", { agreedFare: 10, reason: "overcharge" }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ConflictException);
+    expect((err as ConflictException).getResponse()).toMatchObject({ reason: "merchant_order_fare", message: expect.stringMatching(/refund/i) });
+    expect(calls.orderUpdate).toBeNull();
+    expect(calls.audit).toBeNull();
   });
 
   it("UX18-04: adjustFare pushes both parties a best-effort 'fare was updated' notice", async () => {

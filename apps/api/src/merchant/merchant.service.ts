@@ -65,6 +65,7 @@ import { lockMembershipsTx, resolveMerchantAccess } from "./merchant-access";
 import { findBookingAccountId } from "./booking-account";
 import { harareEffectiveHours, harareStartOfNextDay } from "./harare-clock";
 import { CUSTOMER_VISIBLE_RESTAURANT, isDishOutOfStock as isOutOfStock, resolveOwnMerchantId } from "./merchant-lookup.util";
+import { addDaysToKey, daysSinceMonday, harareDayBounds, harareDayKey } from "./harare-clock";
 import {
   POPULAR_MIN_ORDERS,
   POPULAR_ORDER_STATUSES,
@@ -140,17 +141,12 @@ const RESTAURANTS_SEARCH_MIN_CHARS = 2;
 
 /** N-14: "for the rest of today" — end of the server's local calendar day. A past timestamp reads as
  *  back-in-stock, so no reset job is needed; this is the only place that boundary is computed. */
-/** `YYYY-MM-DD` for a server-local day (the Money tab's day key, D-77 T2b). */
-export function localDayKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-/** A `YYYY-MM-DD` day as server-local midnight; 400s anything else (the controller's `?date=`). */
-export function parseLocalDay(date: string): Date {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
-  const d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
-  if (!d || localDayKey(d) !== date) throw new BadRequestException("date must be YYYY-MM-DD");
-  return d;
+/** MJ-RM7: a `YYYY-MM-DD` Harare day's first and last instants (the Money tab's day, D-77 T2b); 400s
+ *  anything else (the controller's `?date=`). The merchant's day is Harare's, never the server's (UTC). */
+export function parseHarareDay(date: string): { start: Date; end: Date } {
+  const bounds = harareDayBounds(date);
+  if (!bounds) throw new BadRequestException("date must be YYYY-MM-DD");
+  return bounds;
 }
 
 function endOfToday(): Date {
@@ -181,6 +177,24 @@ export function moneyLineCash(
   if (o.debtStatus === "settled_cash" || o.debtStatus === "settled_goods") return "in";
   if (o.debtStatus === "open" && !o.merchantClosedAt) return o.deliveredAt && o.deliveredAt < overdueBefore ? "late" : "due";
   return "none";
+}
+
+/**
+ * MJ-RM8 (+ the merchant audit's "Sales counts unconfirmed auto-accepts", 2026-10-07): an order counts in
+ * Orders/Sales (the KPI strip, Money's Today header and each day of This week) when the kitchen took it
+ * and it can still earn — accepted (`prepStartedAt`), neither cancelled nor undelivered (the goods rode
+ * back; the ledger row says "No sale"), and not an auto-accepted order the kitchen hasn't confirmed yet
+ * (it is not the kitchen's order until it does, and it is cancelled if it never does).
+ */
+const SALE_ORDER_WHERE = {
+  prepStartedAt: { not: null },
+  status: { notIn: ["cancelled", "undelivered"] },
+  NOT: { autoAccepted: true, kitchenConfirmedAt: null },
+} satisfies Prisma.OrderWhereInput;
+
+function isSaleOrder(o: { status: string; prepStartedAt: Date | null; autoAccepted?: boolean | null; kitchenConfirmedAt?: Date | null }): boolean {
+  if (o.prepStartedAt == null || o.status === "cancelled" || o.status === "undelivered") return false;
+  return !(o.autoAccepted === true && o.kitchenConfirmedAt == null);
 }
 
 function moneyLineOutcome(o: { status: string; prepStartedAt: Date | null }): "delivered" | "not_delivered" | "rejected" | "cancelled" | "in_progress" {
@@ -909,19 +923,18 @@ export class MerchantService {
     };
   }
 
-  /** M4·6 "what the owner actually asks at closing time" — read-only, today's calendar day (server
-   *  local, same boundary as {@link endOfToday}). `cashTaken` only counts collect-and-return debts the
+  /** M4·6 "what the owner actually asks at closing time" — read-only, today's calendar day (MJ-RM7:
+   *  Harare's day, whatever the server's zone). `cashTaken` only counts collect-and-return debts the
    *  merchant actually confirmed today (`confirmReturnedCash`) — pay-me-upfront cash has no ledger
    *  (C4's own scope cut), so it's honestly omitted rather than estimated (flagged, not guessed). */
-  async getTodaySummary(profileId: string, date?: string): Promise<MerchantEndOfDaySummaryResponse> {
+  async getTodaySummary(profileId: string, date?: string, now = new Date()): Promise<MerchantEndOfDaySummaryResponse> {
     const merchantId = await this.findOwnMerchantIdOrThrow(profileId);
     // Merchant v2 follow-ups T2b (D-77): a day of this week opens in the Today layout (`?date=`).
-    const start = date ? parseLocalDay(date) : new Date();
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(start);
-    end.setHours(23, 59, 59, 999);
+    // MJ-RM7: the bounds of the merchant's (Harare) calendar day — `setHours` on the UTC server put
+    // Harare's 00:00–02:00 on the previous day.
+    const { start, end } = parseHarareDay(date ?? harareDayKey(now));
 
-    const overdueBefore = new Date(Date.now() - RESTAURANTS_DEBT.cashReturnWindowMs);
+    const overdueBefore = new Date(now.getTime() - RESTAURANTS_DEBT.cashReturnWindowMs);
     const [delivered, rejected, walletTaken, cashTaken, prepped, placed, owedRows, todays] = await Promise.all([
       this.prisma.order.count({
         where: { merchantId, orderType: "merchant", status: "delivered", deliveredAt: { gte: start, lte: end } },
@@ -947,9 +960,10 @@ export class MerchantService {
         select: { readyAt: true, prepStartedAt: true },
         take: 500,
       }),
-      // D-48: today's orders that went through — accepted by the kitchen and not cancelled.
+      // D-48: today's orders that went through — accepted by the kitchen, and neither cancelled nor
+      // undelivered (MJ-RM8: the goods rode back, the ledger row says "No sale", so Sales must too).
       this.prisma.order.aggregate({
-        where: { merchantId, orderType: "merchant", createdAt: { gte: start, lte: end }, prepStartedAt: { not: null }, status: { not: "cancelled" } },
+        where: { merchantId, orderType: "merchant", createdAt: { gte: start, lte: end }, ...SALE_ORDER_WHERE },
         _count: { _all: true },
         // D-71: sales are the venue's money — goods less the delivery it paid for.
         _sum: { merchantGoodsTotal: true, merchantDeliveryShare: true },
@@ -1053,17 +1067,17 @@ export class MerchantService {
     };
   }
 
-  /** Merchant v2 follow-ups T2b (D-77): this locale week, Monday to today (server-local days, the same
-   *  boundary as {@link getTodaySummary}). A day's `orders` and `sales` count the way Today's do (accepted
-   *  and not cancelled; the venue's money), its cash is what riders still owe from that day's deliveries,
-   *  and `rejected` is the orders never taken (turned down or missed). */
+  /** Merchant v2 follow-ups T2b (D-77): this week, Monday to today, in Harare days (MJ-RM7 — the same
+   *  boundary as {@link getTodaySummary}). A day's `orders` and `sales` count the way Today's do (accepted,
+   *  neither cancelled nor undelivered; the venue's money), its cash is what riders still owe from that
+   *  day's deliveries, and `rejected` is the orders never taken (turned down or missed). */
   async getWeekSummary(profileId: string, now = new Date()): Promise<MerchantWeekSummaryResponse> {
     const merchantId = await this.findOwnMerchantIdOrThrow(profileId);
-    const start = new Date(now);
-    start.setHours(0, 0, 0, 0);
-    start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
-    const end = new Date(now);
-    end.setHours(23, 59, 59, 999);
+    const todayKey = harareDayKey(now);
+    const span = daysSinceMonday(todayKey); // days since Monday, in Harare
+    const mondayKey = addDaysToKey(todayKey, -span);
+    const start = parseHarareDay(mondayKey).start;
+    const end = parseHarareDay(todayKey).end;
     const overdueBefore = new Date(now.getTime() - RESTAURANTS_DEBT.cashReturnWindowMs);
 
     const rows = await this.prisma.order.findMany({
@@ -1078,16 +1092,20 @@ export class MerchantService {
         debtStatus: true,
         debtAmount: true,
         merchantClosedAt: true,
+        // MJ-RM8: an unconfirmed auto-accept is not a sale yet.
+        autoAccepted: true,
+        kitchenConfirmedAt: true,
       },
       take: 2000,
     });
 
     const days: MerchantWeekSummaryResponse["days"] = [];
-    const span = (now.getDay() + 6) % 7; // days since Monday
     for (let i = 0; i <= span; i++) {
-      const key = localDayKey(new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
-      const mine = rows.filter((o) => localDayKey(o.createdAt) === key);
-      const went = mine.filter((o) => o.prepStartedAt != null && o.status !== "cancelled");
+      // MJ-RM7: rows are keyed by the Harare date they were placed on.
+      const key = addDaysToKey(mondayKey, i);
+      const mine = rows.filter((o) => harareDayKey(o.createdAt) === key);
+      // MJ-RM8: a sale is accepted and neither cancelled nor undelivered (the ledger's "No sale").
+      const went = mine.filter(isSaleOrder);
       const owed = (state: "late" | "due") =>
         addMoney(0, ...mine.filter((o) => moneyLineOutcome(o) === "delivered" && moneyLineCash(o, overdueBefore) === state).map((o) => Number(o.debtAmount ?? 0)));
       days.push({

@@ -97,6 +97,34 @@ export function foodOrderMoney(input: { goodsTotal: MoneyLike; deliveryFee: Mone
   };
 }
 
+/**
+ * C9 (reviewed list 2026-10-07: U13, U35, U36, U37): the ONE amount a merchant order's customer pays at
+ * the door, computed on the server and nowhere else — the doorstep cash handshake, the order read
+ * (`total`, `amountDueUsd`), the Orders history row, the "at your door" / "updated your order" pushes and
+ * their feed rows all read it.
+ *
+ * It is the order's agreed total plus any earlier owed balance it carries (BRIEF D3f,
+ * `previousBalanceUsd`). The agreed total follows `agreedFare`, which every re-price (item edits, swaps,
+ * an Rx decline) writes as `foodOrderMoney().customerTotal`; a row with no agreed fare falls back to that
+ * same goods + delivery − venue-share split. Null when neither is known.
+ */
+export function merchantAmountDueUsd(o: {
+  agreedFare?: MoneyLike;
+  merchantGoodsTotal?: MoneyLike;
+  deliveryFee?: MoneyLike;
+  merchantDeliveryShare?: MoneyLike;
+  carriedBalance?: readonly { amount: MoneyLike }[] | null;
+}): number | null {
+  const base =
+    o.agreedFare != null
+      ? roundToCents(Number(o.agreedFare))
+      : o.merchantGoodsTotal != null && o.deliveryFee != null
+        ? foodOrderMoney({ goodsTotal: o.merchantGoodsTotal, deliveryFee: o.deliveryFee, merchantDeliveryShare: o.merchantDeliveryShare }).customerTotal
+        : null;
+  if (base == null || !Number.isFinite(base)) return null;
+  return addMoney(base, ...(o.carriedBalance ?? []).map((b) => Number(b.amount ?? 0)));
+}
+
 export const RESTAURANTS_TIMING = {
   /** N-03: unanswered merchant accept auto-cancels. */
   acceptWindowMs: 3 * 60 * 1000,

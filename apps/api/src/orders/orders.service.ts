@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, deriveMerchantOrderTrack, isBusinessBookingAccountPhone, isCodItem, type LatLng, OFFER_WINDOW_MS, OrderStatus, type OrderItem, PHONE_REVEAL_STATUSES, isInServiceArea, quoteFare, serviceTownsLabel, summarizeItems } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, deriveMerchantOrderTrack, isBusinessBookingAccountPhone, isCodItem, type LatLng, merchantAmountDueUsd, OFFER_WINDOW_MS, OrderStatus, type OrderItem, PHONE_REVEAL_STATUSES, isInServiceArea, quoteFare, roundToCents, serviceTownsLabel, summarizeItems } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush, maxBroadcastRadiusM } from "../common/broadcast-policy";
 import { MicroCache } from "../common/micro-cache";
@@ -951,6 +951,13 @@ export class OrdersService {
         rating: { select: { score: true, comment: true, byProfileId: true } },
         rider: { select: { profile: { select: { firstName: true, lastName: true } } } },
         merchant: { select: { name: true, businessType: true, shopKind: true } },
+        // C9 (U36): a merchant row's amount due (agreed total + an earlier owed balance it collected), and
+        // what a cancel after collection left owing (BRIEF D3f).
+        merchantGoodsTotal: true,
+        deliveryFee: true,
+        merchantDeliveryShare: true,
+        carriedBalance: { select: { amount: true } },
+        owedBalance: { select: { amount: true } },
       },
     });
     const page = orders.slice(0, CUSTOMER_ORDERS_PAGE);
@@ -959,7 +966,19 @@ export class OrdersService {
       rows: page.map((o) => {
         const rider = o.rider?.profile;
         const outcome = customerOrderOutcome(o, customerId);
-        const charged = outcome === "delivered" ? (o.agreedFare ?? o.proposedFare).toString() : null;
+        // C9 (U36): a merchant order's one server-computed amount due — the same figure as its receipt Total
+        // and the doorstep handshake. Parcels keep their agreed fare.
+        const amountDue = o.orderType === "merchant" ? merchantAmountDueUsd(o) : null;
+        const owed = o.orderType === "merchant" && o.owedBalance ? roundToCents(Number(o.owedBalance.amount)) : null;
+        const charged =
+          outcome === "delivered"
+            ? amountDue != null
+              ? amountDue.toFixed(2)
+              : (o.agreedFare ?? o.proposedFare).toString()
+            : // A cancel after collection: the customer owes the full total (its own screen says "You owe $X").
+              owed != null && owed > 0
+              ? owed.toFixed(2)
+              : null;
         return {
           id: o.id,
           orderType: o.orderType,
@@ -975,6 +994,8 @@ export class OrdersService {
           status: o.status,
           outcome,
           chargedTotal: charged,
+          // C9: additive — the merchant order's amount due (absent on a parcel).
+          ...(amountDue != null ? { amountDueUsd: amountDue } : {}),
           createdAt: o.createdAt.toISOString(),
           rating: (() => {
             const r = o.rating.find((x) => x.byProfileId === customerId);

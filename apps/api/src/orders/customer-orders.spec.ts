@@ -92,6 +92,42 @@ describe("OrdersService.customerOrders", () => {
     ]).customerOrders(ME);
     expect(rows[0]).toMatchObject({ service: "pharmacy", merchantName: "Avondale Pharmacy", outcome: "kitchen_timeout", chargedTotal: null, counterpartyName: null });
   });
+
+  // C9 (U36): a merchant row's charge is its one server-computed amount due, as on its receipt.
+  const food = (n: number, over: Record<string, unknown> = {}) =>
+    row(n, {
+      orderType: "merchant",
+      merchant: { name: "Gava’s Kitchen", businessType: "restaurant", shopKind: null },
+      agreedFare: dec("9.00"),
+      merchantGoodsTotal: dec("7.50"),
+      deliveryFee: dec("1.50"),
+      merchantDeliveryShare: null,
+      carriedBalance: [],
+      owedBalance: null,
+      ...over,
+    });
+
+  it("C9 (U36): a delivered merchant row that collected an owed balance charges the agreed total plus it, and says so additively", async () => {
+    let args: Args | undefined;
+    const { rows } = await svc([food(1, { carriedBalance: [{ amount: dec("8.00") }] }), food(2)], (a) => (args = a)).customerOrders(ME);
+    expect(rows[0]).toMatchObject({ outcome: "delivered", chargedTotal: "17.00", amountDueUsd: 17 });
+    expect(rows[1]).toMatchObject({ outcome: "delivered", chargedTotal: "9.00", amountDueUsd: 9 });
+    expect(args!.select).toMatchObject({ carriedBalance: { select: { amount: true } }, owedBalance: { select: { amount: true } } });
+  });
+
+  it("C9 (U36): a merchant order cancelled after collection shows what it left owing, not 'No charge'", async () => {
+    const { rows } = await svc([food(1, { status: "cancelled", cancelledBy: ME, owedBalance: { amount: dec("8.00") } }), food(2, { status: "cancelled", cancelledBy: ME })]).customerOrders(
+      ME,
+    );
+    expect(rows[0]).toMatchObject({ outcome: "cancelled_by_you", chargedTotal: "8.00" });
+    expect(rows[1]).toMatchObject({ outcome: "cancelled_by_you", chargedTotal: null });
+  });
+
+  it("C9: a parcel row is unchanged — its agreed fare, no amountDueUsd", async () => {
+    const [r] = (await svc([row(1)]).customerOrders(ME)).rows;
+    expect(r!.chargedTotal).toBe("3.36");
+    expect(r).not.toHaveProperty("amountDueUsd");
+  });
 });
 
 describe("customerOrderOutcome", () => {

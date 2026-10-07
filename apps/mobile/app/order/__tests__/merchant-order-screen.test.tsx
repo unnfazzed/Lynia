@@ -503,6 +503,24 @@ describe("merchant order — one order screen (D-59)", () => {
     expect(has(t, "Prescription checked")).toBe(true);
   });
 
+  it("C9 (U35/U37): the delivered hero and receipt Total are the server's one amountDueUsd; with nothing carried the rows add up to it", async () => {
+    const delivered = { status: "delivered", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003", deliveredAt: iso(-60_000), shortId: "A1B2", itemsSubtotal: 15, smallOrderFee: 0 } as const;
+    // The handshake collected $18.50 (the agreed total plus a carried $2.00): the receipt says so, not a
+    // total rebuilt on the phone.
+    const t = await render(foodOrder({ ...delivered, total: 16.5, amountDueUsd: 18.5, previousBalanceUsd: 2 }), snapshot({ status: "delivered", riderCard: RIDER_CARD }));
+    expect(has(t, "$18.50 paid in cash · Gava’s Kitchen")).toBe(true);
+    expect(has(t, "$18.50")).toBe(true);
+    act(() => t.unmount());
+    active = null;
+    await act(async () => undefined);
+
+    // Nothing carried: Food $15.00 + Delivery fee $1.50 = Total $16.50.
+    const u = await render(foodOrder({ ...delivered, amountDueUsd: 16.5 }), snapshot({ status: "delivered", riderCard: RIDER_CARD }));
+    expect(has(u, "$15.00")).toBe(true);
+    expect(has(u, "$1.50")).toBe(true);
+    expect(has(u, "$16.50 paid in cash · Gava’s Kitchen")).toBe(true);
+  });
+
   it("D1: delivered — hero, the two-row rating (venue + rider), the receipt, Order again; D1b toast + Undo", async () => {
     const t = await render(
       foodOrder({ status: "delivered", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003", deliveredAt: iso(-60_000), shortId: "A1B2", itemsSubtotal: 15, smallOrderFee: 0 }),

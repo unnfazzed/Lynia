@@ -149,6 +149,9 @@ type Panel = null | "help" | "report" | "cancel" | "schedule";
 
 /** D-71: what the customer pays for delivery — the fee less the venue's share (0 on free delivery). */
 const customerFeeOf = (o: MerchantOrderResponse): number => o.customerDeliveryFee ?? o.deliveryFee ?? 0;
+/** C9 (U35/U37): what the customer pays at the door — the server's one `amountDueUsd` (the agreed total plus
+ *  any carried owed balance, the figure the handshake collects); an older API's `total`, else goods + fee. */
+const amountDueOf = (o: MerchantOrderResponse): number => o.amountDueUsd ?? o.total ?? (o.merchantGoodsTotal ?? 0) + customerFeeOf(o);
 /** D-71: the receipt's Delivery fee value — "Free, paid by {venue}" when the venue paid it. */
 const feeTextOf = (o: MerchantOrderResponse, venue: string): string =>
   o.merchantDeliveryShare != null && customerFeeOf(o) === 0 ? ofFmt(O_ADDED.r.freePaidBy, { v: venue }) : usd(customerFeeOf(o));
@@ -422,7 +425,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   const timeoutSaid = useRef<string | null>(null);
   const roundStatus = round?.status;
   const roundResolvedAt = round?.resolvedAt ?? null;
-  const orderTotalNow = food.order?.total ?? null;
+  const orderTotalNow = food.order ? (food.order.amountDueUsd ?? food.order.total ?? null) : null;
   useEffect(() => {
     if (!round || roundStatus !== "timed_out" || timeoutSaid.current === round.id) return;
     const at = roundResolvedAt ? Date.parse(roundResolvedAt) : NaN;
@@ -706,7 +709,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   const freeCancel = !!order && (canCancelFreely(order.merchantPhase) || awaitingKitchenConfirm(order) || noRiderHold);
   // T15b: after the rider collects, the customer can still cancel — it costs the full total (D3f).
   const afterPickup = !!order && (order.status === "picked_up" || order.status === "en_route_dropoff");
-  const orderTotal = order ? (order.total ?? (order.merchantGoodsTotal ?? 0) + customerFeeOf(order)) : 0;
+  const orderTotal = order ? amountDueOf(order) : 0;
   const riderCancel = !!order && order.riderId != null && (order.status === "assigned" || order.status === "confirmed" || order.status === "en_route_pickup");
   const panels = (
     <>
@@ -795,7 +798,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   }
 
   // ── view model ──
-  const total = order.total ?? (order.merchantGoodsTotal ?? 0) + customerFeeOf(order);
+  const total = amountDueOf(order);
   const keptItems = order.items.filter((i) => i.available !== false);
   const lines: LineView[] = keptItems.map((i) => ({ qty: i.quantity, name: i.name, price: i.priceUsd * i.quantity, note: i.note }));
   const count = keptItems.reduce((a, i) => a + i.quantity, 0);

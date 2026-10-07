@@ -561,6 +561,14 @@ describe("NotificationsService — parcel customer stage copy (after-send v2)", 
     expect(sent).toMatchObject({ token: "cust-tok", title, body, data: { orderId: "o1", status, to: "customer", orderType: "merchant" } });
   });
 
+  it("C9 (U13): 'at your door' quotes the one amount due — the agreed total plus a carried owed balance", async () => {
+    const [sent] = await sentFor(
+      "en_route_dropoff",
+      parcel({ orderType: "merchant", agreedFare: "8.00", carriedBalance: [{ amount: "10.00" }], merchant: { name: "Gava’s Kitchen" } }),
+    );
+    expect(sent).toMatchObject({ title: "Tendai is at your door", body: "Have $18.00 cash ready." });
+  });
+
   it("merchant: an undelivered order not caused by an unreachable customer doesn't say so; no code in any push", async () => {
     const [sent] = await sentFor("undelivered", parcel({ orderType: "merchant", undeliveredReason: "breakdown", merchant: { name: "Gava’s Kitchen" } }));
     expect(sent).toMatchObject({ title: "Your order wasn’t delivered", body: "Nothing was charged." });

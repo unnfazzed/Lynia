@@ -25,6 +25,7 @@ import {
   recomputeMerchantDeliveryShare,
   type EditMerchantOrderItemsRequest,
   merchantGoodsForSubtotal,
+  merchantAmountDueUsd,
   orderShortId,
   effectiveMerchantHours,
   isMerchantOpenNow,
@@ -1813,7 +1814,10 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     // restaurant agreed to show it to its customers.
     const merchantPaymentPhone = order.merchantPaymentMethod === "wallet" ? shopPhone : null;
     const restaurantPhone = order.merchant?.showPhoneToCustomers ? shopPhone : null;
-    const previousBalanceUsd = addMoney(0, ...(order.carriedBalance ?? []).map((b) => Number(b.amount)));
+    // C9 (reviewed list 2026-10-07): the one amount due at the door — the agreed total plus any carried
+    // balance — the same figure the handshake (FoodDebtService.confirmCustomerCash), the pushes and the
+    // Orders history row use.
+    const amountDueUsd = merchantAmountDueUsd(order);
     const response: MerchantOrderResponse = {
       id: order.id,
       merchantId: order.merchantId!,
@@ -1905,7 +1909,10 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       ...orderFlowV2Fields(order),
       ...orderFlowV2BFields(order),
     };
-    if (previousBalanceUsd > 0 && response.total != null) response.total = addMoney(response.total, previousBalanceUsd);
+    // C9 (U35/U37): `total` is that same amount, so the order screen, the receipt and the handshake can't
+    // disagree (it used to rebuild goods + fee + carried and miss an `agreedFare` correction).
+    if (response.total != null && amountDueUsd != null) response.total = amountDueUsd;
+    response.amountDueUsd = amountDueUsd;
     // A-O14 (LC-A06): the doorstep-handshake/debt-ledger/refund fields above are `null` on the
     // overwhelming majority of polls (wallet orders never touch the handshake/debt fields at all;
     // refund fields only ever populate on a merchant-issued refund) — omit rather than send an
@@ -1961,6 +1968,7 @@ const RESPONSE_NULL_OMIT_FIELDS = [
   "prescription",
   "owedUsd",
   "previousBalanceUsd",
+  "amountDueUsd",
 ] as const satisfies readonly (keyof MerchantOrderResponse)[];
 
 /** Order flow v2 (ledger D-59, backend B): the additive order-read fields (scheduled, Rx, owed balance). Nulls are omitted by the
