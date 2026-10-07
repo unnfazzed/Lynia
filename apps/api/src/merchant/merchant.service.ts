@@ -106,7 +106,7 @@ export function splitPersonName(full: string): { firstName: string; lastName: st
 // it is what made the phone's image cache miss across sessions (a lunchtime and an evening open
 // never shared a URL). A leaked menu-photo URL replayable for a day is a non-risk; the bound still
 // exists so a cached tablet response can't be replayed indefinitely.
-const PHOTO_READ_URL_TTL_SECONDS = 24 * 60 * 60;
+export const PHOTO_READ_URL_TTL_SECONDS = 24 * 60 * 60;
 
 // Serve each minted URL from cache for 14 h of its 24 h validity: with the cache's ±10% TTL jitter
 // the worst-case entry lives 15.4 h, so any URL a client is handed still has ≥8.6 h of signed life
@@ -118,7 +118,7 @@ const PHOTO_READ_URL_TTL_SECONDS = 24 * 60 * 60;
 // few URL variants per photo per window — each variant caches for hours, which is what matters.
 // Cross-instance byte-stability needs the shared Redis L2 (TODO — requires extracting
 // OrdersService's private L2 provider into a shared seam).
-const MERCHANT_PHOTO_URL_CACHE_TTL_MS = 14 * 60 * 60 * 1000;
+export const MERCHANT_PHOTO_URL_CACHE_TTL_MS = 14 * 60 * 60 * 1000;
 
 // B-O10: `GET /restaurants` had no server-side cap — every other list endpoint (history 50, board
 // 50, notifications 30) does. 20 keeps a single page's DB round-trip + payload small on a metered

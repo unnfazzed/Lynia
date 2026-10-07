@@ -3,6 +3,22 @@ import React from "react";
 import type { ImageStyle, StyleProp } from "react-native";
 
 /**
+ * P16: the device image-cache key for a remote photo — the URL WITHOUT its query string (and
+ * fragment). A signed URL's query carries the signature, its date and expiry, which change at least
+ * every ~14 h (the API's cache window) and per API instance, so keying on the full URL re-downloaded
+ * the same photo every day. The path still holds the host, the bucket/container and the object key
+ * (`dish/<id>/<uuid>.jpg`, `pickup/<riderId>/<uuid>.jpg`…), so two different objects never share a
+ * key, and a replaced photo (always a new uuid key) never shows the old bytes. Only http(s) URLs with
+ * a query are rewritten; local captures (`file://`), data URIs and plain URLs keep the default key
+ * (the uri itself).
+ */
+export function imageCacheKey(uri: string): string | undefined {
+  if (!/^https?:\/\//i.test(uri)) return undefined;
+  const cut = uri.search(/[?#]/);
+  return cut === -1 ? undefined : uri.slice(0, cut);
+}
+
+/**
  * The one remote-photo component (deferred-item D5, RCA 2026-08-17 §5.1 follow-through — ranked
  * backlog #3 in docs/PERFORMANCE.md since wave 1, unlocked now that the API serves byte-stable
  * signed URLs): a thin seam over `expo-image` with the exact prop surface the app's RN `Image`
@@ -19,6 +35,9 @@ import type { ImageStyle, StyleProp } from "react-native";
  * accessibility passthroughs, and `recyclingKey` for FlatList rows. Anything new goes through here,
  * so a future image-library change stays a one-file event. NATIVE dependency: ships with the next
  * EAS build (fingerprint shifts); until that build installs, this code path simply isn't on any phone.
+ *
+ * P16: the device cache is keyed by {@link imageCacheKey} (the URL minus its signature query), not
+ * the full signed URL, so a re-signed URL for the same object still hits the disk cache.
  */
 export function RemoteImage(props: {
   source: { uri: string };
@@ -43,7 +62,7 @@ export function RemoteImage(props: {
     props.resizeMode === "stretch" ? "fill" : props.resizeMode === "center" ? "none" : (props.resizeMode ?? "cover");
   return (
     <ExpoImage
-      source={{ uri: props.source.uri }}
+      source={{ uri: props.source.uri, cacheKey: imageCacheKey(props.source.uri) }}
       style={props.style as never}
       contentFit={contentFit}
       cachePolicy={props.cachePolicy ?? "memory-disk"}
