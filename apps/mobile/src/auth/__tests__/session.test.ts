@@ -85,6 +85,8 @@ describe("clearDeviceState (full key-wipe characterization, RF-10 pin)", () => {
         "lynia.handbackAck",
         "lynia.confirmItemsPending",
         "lynia.riderJobTerminal",
+        "lynia.riderFoodReturn",
+        "lynia.foodHandedOver",
         "lynia.pendingRating",
         "lynia.pendingSenderRating",
         "lynia.pendingTopup",

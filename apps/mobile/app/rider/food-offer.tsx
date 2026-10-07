@@ -17,7 +17,7 @@ import { JTag, StopLine } from "../../src/ui/rider/board";
 import { O, ofFmt } from "../../src/ui/orderflow/copy";
 import { OfNote } from "../../src/ui/rider/proof-kit";
 import type { IconName } from "../../src/ui";
-import { RIDER_COPY as R, RF, usd } from "../../src/ui/rider/copy";
+import { RIDER_COPY as R, RF, usd, venueCopy } from "../../src/ui/rider/copy";
 import { TerminalBody } from "../../src/ui/rider/job-kit";
 
 /** How long a food offer holds (the server's window); the bar shows the share left. */
@@ -46,7 +46,11 @@ export default function FoodOffer(): React.ReactElement {
   const offerQ = useQuery({ queryKey: ["foodOfferJob"], queryFn: getFoodDispatchOfferWithJob, refetchInterval: 3000, enabled: restaurantsEnabled });
   const offer = offerQ.data?.offer ?? null;
   const job = offerQ.data?.job ?? null;
-  const kind = jobKind(job);
+  // The expired state (F4) has no offer left to read the kind from: keep the last one seen (FJ-L1).
+  const lastKind = useRef<OfferKind>("food");
+  if (job) lastKind.current = jobKind(job);
+  const kind = job ? jobKind(job) : lastKind.current;
+  const place = O.svc[kind === "shop" ? "shops" : kind].place;
   const [now, setNow] = useState(() => Date.now());
   const [areaH, setAreaH] = useState(0);
   const [ctaH, setCtaH] = useState(0);
@@ -115,7 +119,7 @@ export default function FoodOffer(): React.ReactElement {
       <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1, backgroundColor: tokens.color.bg }}>
         {header}
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 24, paddingVertical: 16 }} showsVerticalScrollIndicator={false}>
-          <TerminalBody icon="clock" title={R.expT} body={R.expB} />
+          <TerminalBody icon="clock" title={R.expT} body={kind === "food" ? R.expB : R.expB.replace("Food offers", "Offers")} />
         </ScrollView>
         <CtaBar>
           <CtaButton label={R.backBoard} onPress={() => router.replace("/rider")} />
@@ -130,7 +134,8 @@ export default function FoodOffer(): React.ReactElement {
   const cash = foodCashBreakdown(offer);
   const pay = cash.owed;
   const fee = cash.kept;
-  const collect = cash.collected;
+  // FJ-H5: an earlier owed balance this order carries is collected at the door on top.
+  const collect = cash.collected + (job?.carriedUsd ?? 0);
   const pending = acceptM.isPending || declineM.isPending;
   // Peek: 40% of the screen (26% upfront, 20% under 700dp), measured from the top of the screen.
   const share = upfront ? (winH < 700 ? 0.2 : 0.26) : 0.4;
@@ -158,9 +163,10 @@ export default function FoodOffer(): React.ReactElement {
         {area > 0 ? (
           <OrderSheet areaHeight={area} fallbackShare={mapShare} floor={0} bottomInset={ctaH} contentKey={upfront ? "upfront" : "offer"} reduceMotion={reduceMotion} onVisibleHeight={setVisible}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, height: 28, paddingHorizontal: 10, borderRadius: tokens.radius.pill, backgroundColor: tokens.color.surface }}>
-                <Icon name="timer" size={14} color={tokens.color.ink} />
-                <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{RF.left(leftS)}</Text>
+              {/* RD1a–d draw the pill 32 high, 14 type, a 16 timer (FJ-L2). */}
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, height: 32, paddingHorizontal: 10, borderRadius: tokens.radius.pill, backgroundColor: tokens.color.surface }}>
+                <Icon name="timer" size={16} color={tokens.color.ink} />
+                <Text style={{ fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{RF.left(leftS)}</Text>
               </View>
               <View style={{ flex: 1, height: 4, borderRadius: 2, backgroundColor: tokens.color.line, overflow: "hidden" }}>
                 <View style={{ width: `${Math.min(100, (leftS / OFFER_WINDOW_S) * 100)}%`, height: "100%", backgroundColor: tokens.color.accent }} />
@@ -182,10 +188,10 @@ export default function FoodOffer(): React.ReactElement {
                 <StopLine drop name={offer.dropoff.landmark} />
                 <JobNotes job={job} />
                 <View style={{ flexDirection: "row", gap: 8 }}>
-                  <MoneyTile label={R.payKitchen} value={pay} />
+                  <MoneyTile label={venueCopy(R.payKitchen, place)} value={pay} />
                   <MoneyTile label={R.collectDoor} value={collect} />
                 </View>
-                <Text style={{ fontSize: 13, lineHeight: 18, color: tokens.color.muted }}>{RF.payKitchenB(pay, collect)}</Text>
+                <Text style={{ fontSize: 13, lineHeight: 18, color: tokens.color.muted }}>{venueCopy(RF.payKitchenB(pay, collect), place)}</Text>
                 <PeekMark />
               </>
             ) : (
@@ -201,7 +207,7 @@ export default function FoodOffer(): React.ReactElement {
           </OrderSheet>
         ) : null}
         <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 25 }} onLayout={(e) => setCtaH(e.nativeEvent.layout.height)}>
-          <CtaBar hint={R.passHint}>
+          <CtaBar hint={O.rd.passing}>
             <CtaButton label={R.accept} onPress={() => acceptM.mutate(offer.orderId)} loading={!!pendingOrQueued(acceptM)} disabled={pending} />
             <CtaButton ghost label={R.pass} onPress={() => declineM.mutate(offer.orderId)} loading={!!pendingOrQueued(declineM)} disabled={pending} />
           </CtaBar>

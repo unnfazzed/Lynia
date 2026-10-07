@@ -298,6 +298,59 @@ export async function clearRiderJobTerminal(): Promise<void> {
   }
 }
 
+// The food job's sibling of the marker above (FJ-H3): a delivered collect-and-return CASH order or an
+// undelivered merchant order leaves activeForRider while the rider still owes the venue its cash or its
+// goods. The frozen return-leg snapshot is kept here until the venue confirms (debtStatus no longer
+// "open"), so an app kill or a lost response doesn't drop the rider to "No active job". Single slot.
+const RIDER_FOOD_RETURN_KEY = "lynia.riderFoodReturn";
+export type RiderFoodReturn = { orderId: string; kind: "delivered" | "undelivered"; snapshot: Record<string, unknown> };
+export async function saveRiderFoodReturn(v: RiderFoodReturn): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(RIDER_FOOD_RETURN_KEY, JSON.stringify(v));
+  } catch {
+    /* best-effort */
+  }
+}
+export async function loadRiderFoodReturn(): Promise<RiderFoodReturn | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(RIDER_FOOD_RETURN_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as Partial<RiderFoodReturn> | null;
+    if (!v || typeof v.orderId !== "string" || (v.kind !== "delivered" && v.kind !== "undelivered") || !v.snapshot || typeof v.snapshot !== "object") return null;
+    return { orderId: v.orderId, kind: v.kind, snapshot: v.snapshot };
+  } catch {
+    return null;
+  }
+}
+export async function clearRiderFoodReturn(): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(RIDER_FOOD_RETURN_KEY);
+  } catch {
+    /* best-effort */
+  }
+}
+
+// RD4a (1) "Hand over the order" (FJ-L1): the rider's own tap, kept so a relaunch at the door doesn't
+// reset it. Single slot — one job at a time.
+const FOOD_HANDED_OVER_KEY = "lynia.foodHandedOver";
+export async function saveFoodHandedOver(v: { orderId: string; at: string }): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(FOOD_HANDED_OVER_KEY, JSON.stringify(v));
+  } catch {
+    /* best-effort */
+  }
+}
+export async function loadFoodHandedOver(): Promise<{ orderId: string; at: string } | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(FOOD_HANDED_OVER_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as { orderId?: unknown; at?: unknown } | null;
+    return v && typeof v.orderId === "string" && typeof v.at === "string" ? { orderId: v.orderId, at: v.at } : null;
+  } catch {
+    return null;
+  }
+}
+
 // BH-07: a durable "rate-the-sender still needs to reach the server for order X" marker, mirroring
 // PENDING_RATING_KEY above for the rider's own optional post-delivery star tap. Unlike the customer's
 // rateOrder (which flips the order to `status: "completed"` — an unambiguous "already rated" signal),
@@ -498,6 +551,9 @@ export async function clearDeviceState(): Promise<void> {
       // The rider's durable delivered/undelivered terminal-acknowledgement marker must not survive to
       // the next user on a shared device (it would otherwise resurface a stranger's completed job).
       SecureStore.deleteItemAsync(RIDER_JOB_TERMINAL_KEY),
+      // Its food sibling (a venue's name, route point and cash owed) and the door's hand-over tap.
+      SecureStore.deleteItemAsync(RIDER_FOOD_RETURN_KEY),
+      SecureStore.deleteItemAsync(FOOD_HANDED_OVER_KEY),
       // The customer's durable pending-rating marker (an order id + armed score) must not survive to
       // the next user on a shared device, or auto-submit a rating on the next user's account.
       SecureStore.deleteItemAsync(PENDING_RATING_KEY),

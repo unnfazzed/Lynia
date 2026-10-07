@@ -3,8 +3,8 @@ import { Tappable } from "../Tappable";
 import React from "react";
 import { Linking, Text, View } from "react-native";
 import { mapsPlaceUrl } from "../../logic/maps";
-import { formatMoney } from "../../logic/money";
 import { Card, Icon } from "../index";
+import { RIDER_COPY as R, RF } from "./copy";
 
 /**
  * `return_rest` (kit `explorations/restaurants/r-rider.jsx` — `RR.return_rest`, "R4·2 — the return
@@ -25,6 +25,9 @@ import { Card, Icon } from "../index";
  *    (food-debt.service.ts's own scope-cut note), so the refund is a counter handshake with no app
  *    record — the copy says exactly that instead of implying LyniaGo is tracking it.
  *
+ * FJ-M5: the copy lives in `RF` (short, no "mobile money", the venue's own name passed in — never the
+ * pickup landmark — and no "the restaurant" on a shop's or a pharmacy's order); sizes come from tokens.
+ *
  * `debtStatus` is the one genuinely server-confirmed beat: `collect_and_return` opens a debt at pickup
  * and the merchant's own `confirmGoodsReturned` settles it as `settled_goods`, so the card can honestly
  * flip to "the kitchen confirmed" once that lands.
@@ -36,79 +39,37 @@ export function ReturnToRestaurantCard({
   frontedAmount,
   debtStatus,
 }: {
-  merchantName?: string | null;
+  /** The venue's own name (or its noun, "The shop", when the name isn't known). */
+  merchantName: string;
   pickupPoint: { lat: number; lng: number } | null;
   cashRule: "collect_and_return" | "pay_upfront" | null;
-  /** `pay_upfront` only: what the rider paid the kitchen out of their own pocket at the counter. */
+  /** `pay_upfront` only: what the rider paid the venue out of their own pocket at the counter. */
   frontedAmount: number | null;
   debtStatus: "open" | "settled_cash" | "settled_goods" | "written_off" | null;
 }): React.ReactElement {
-  const kitchen = merchantName ?? "the restaurant";
+  const name = merchantName;
   const handedBack = debtStatus === "settled_goods";
   return (
     <Card style={handedBack ? undefined : { borderColor: tokens.color.danger }}>
-      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 9 }}>
-        <Icon
-          name={handedBack ? "check" : "triangle-alert"}
-          size={18}
-          color={handedBack ? tokens.color.accentText : tokens.color.danger}
-          style={{ marginTop: 1 }}
-        />
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: tokens.space.sm }}>
+        <Icon name={handedBack ? "check" : "triangle-alert"} size={18} color={handedBack ? tokens.color.accentText : tokens.color.danger} style={{ marginTop: 1 }} />
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={{ fontSize: 14.5, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
-            {handedBack ? "Food handed back" : "Delivery failed — return the food"}
-          </Text>
-          <Text style={{ fontSize: 13, color: tokens.color.muted, lineHeight: 18, marginTop: 4 }}>
-            {handedBack
-              ? `${kitchen} has confirmed the order came back. Nothing else is riding with you.`
-              : `The order is still on your bike. Ride it back to ${kitchen} — they've been told it's coming.`}
+          <Text style={{ fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, textAlign: "left" }}>{handedBack ? R.backDoneT : RF.backT(name)}</Text>
+          <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginTop: 4, textAlign: "left" }}>
+            {handedBack ? RF.backDoneB(name) : cashRule === "pay_upfront" && frontedAmount != null && frontedAmount > 0 ? RF.backRefund(frontedAmount, name) : RF.backB(name)}
           </Text>
         </View>
       </View>
-
-      {!handedBack ? (
-        <>
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "flex-start",
-              gap: tokens.space.sm,
-              padding: tokens.space.md,
-              marginTop: tokens.space.md,
-              backgroundColor: tokens.color.surface,
-              borderRadius: tokens.radius.input,
-            }}
-          >
-            <Icon name="banknote" size={16} color={tokens.color.muted} style={{ marginTop: 1 }} />
-            <Text style={{ flex: 1, fontSize: 12.5, color: tokens.color.muted, lineHeight: 18 }}>
-              {cashRule === "pay_upfront" && frontedAmount != null && frontedAmount > 0
-                ? `Ask ${kitchen} for the ${formatMoney(frontedAmount)} you fronted when you hand the food over. LyniaGo doesn't record that refund — count it at the counter, and call support if they won't return it.`
-                : cashRule === "collect_and_return"
-                  ? `You never paid for this food, so there's no cash to settle — handing the order back is what closes it. ${kitchen} confirms the return on their own screen.`
-                  : `Hand the order back at the counter. ${kitchen} confirms the return on their own screen.`}
-            </Text>
-          </View>
-
-          {pickupPoint ? (
-            <Tappable
-              onPress={() => void Linking.openURL(mapsPlaceUrl(pickupPoint))}
-              accessibilityRole="button"
-              accessibilityLabel={`Navigate back to ${kitchen}`}
-              style={{
-                minHeight: tokens.touchTargetMin,
-                flexDirection: "row",
-                alignItems: "center",
-                gap: tokens.space.sm,
-                marginTop: tokens.space.sm,
-              }}
-            >
-              <Icon name="navigation" size={16} color={tokens.color.accentText} />
-              <Text style={{ fontSize: 14, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>
-                Navigate back to {kitchen}
-              </Text>
-            </Tappable>
-          ) : null}
-        </>
+      {!handedBack && pickupPoint ? (
+        <Tappable
+          onPress={() => void Linking.openURL(mapsPlaceUrl(pickupPoint)).catch(() => undefined)}
+          accessibilityRole="button"
+          accessibilityLabel={RF.navTo(name)}
+          style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: tokens.space.sm, marginTop: tokens.space.sm }}
+        >
+          <Icon name="navigation" size={16} color={tokens.color.accentText} />
+          <Text style={{ fontSize: tokens.font.size.body, fontWeight: tokens.font.weight.semibold, color: tokens.color.accentText }}>{RF.navTo(name)}</Text>
+        </Tappable>
       ) : null}
     </Card>
   );

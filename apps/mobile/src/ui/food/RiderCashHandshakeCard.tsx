@@ -34,8 +34,8 @@ export function RiderCashHandshakeCard({
   if (state === "pending") {
     return (
       <Card>
-        <Text style={{ fontWeight: "700", marginBottom: 2 }}>1 · Hand over the food first</Text>
-        <Text style={{ fontSize: 13, color: tokens.color.muted, lineHeight: 18 }}>
+        <Text style={{ fontWeight: tokens.font.weight.bold, marginBottom: 2 }}>1 · Hand over the food first</Text>
+        <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20 }}>
           Give the customer their order, then wait for them to confirm they paid you {formatMoney(amount)}.
         </Text>
       </Card>
@@ -45,11 +45,11 @@ export function RiderCashHandshakeCard({
   if (state === "waiting_rider" && confirmedAt) {
     return (
       <Card>
-        <Text style={{ fontSize: 11.5, fontWeight: "700", color: tokens.color.muted, letterSpacing: 0.4 }}>2 · COLLECT AND COUNT</Text>
+        <Text style={{ fontSize: tokens.font.size.caption, fontWeight: tokens.font.weight.bold, color: tokens.color.muted, letterSpacing: 0.4 }}>2 · COLLECT AND COUNT</Text>
         <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8, marginTop: 2 }}>
-          <Text style={{ fontSize: 30, fontWeight: "700", color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatMoney(amount)}</Text>
+          <Text style={{ fontSize: tokens.font.size.display, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}>{formatMoney(amount)}</Text>
         </View>
-        <Text style={{ fontSize: 12.5, color: tokens.color.muted, marginTop: 2 }}>
+        <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted, marginTop: 2 }}>
           The customer says they gave you this. Count it, then confirm.
         </Text>
         <Button label={`Confirm · I received ${formatMoney(amount)}`} onPress={onConfirm} loading={busy} disabled={!!busy} />
@@ -75,8 +75,8 @@ export function RiderCashHandshakeCard({
         <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 9 }}>
           <Icon name="triangle-alert" size={18} color={tokens.color.danger} />
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 14.5, fontWeight: "700", color: tokens.color.ink }}>We&apos;ve flagged this order</Text>
-            <Text style={{ fontSize: 13, color: tokens.color.muted, lineHeight: 18, marginTop: 4 }}>
+            <Text style={{ fontSize: tokens.font.size.bodyLg, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>We&apos;ve flagged this order</Text>
+            <Text style={{ fontSize: tokens.font.size.body, color: tokens.color.muted, lineHeight: 20, marginTop: 4 }}>
               The customer says they gave you {formatMoney(amount)} but this wasn&apos;t confirmed in time. Support has been
               notified automatically. You can&apos;t take a new job until this settles.
             </Text>

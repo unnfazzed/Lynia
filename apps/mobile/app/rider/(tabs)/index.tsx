@@ -14,6 +14,7 @@ import { getFoodDispatchOffer } from "../../../src/api/food-rider";
 import { getDemandZones } from "../../../src/api/rider-v2";
 import { noteKycLaunched, retryKyc, sendHeartbeat, setOnline } from "../../../src/api/riders";
 import { loadAcknowledgedHandbacks, saveRolePreference } from "../../../src/auth/session";
+import { loadRiderFoodReturn } from "../../../src/auth/device-state";
 import { usePrewarmRoutes, type PrewarmRoute } from "../../../src/boot/prewarm-routes";
 import { supportWhatsAppUrl } from "../../../src/config";
 import { KycCheckHost } from "../../../src/kyc/KycCheckHost";
@@ -91,6 +92,9 @@ type Toast = { text: string; icon?: IconName; undo?: () => void } | null;
  * state. NO manual refresh anywhere (D-30): the socket, the polls and the foreground re-read keep the
  * board current.
  */
+/** FJ-H3: the return leg the board has already reopened this app run (so Back from it stays on the board). */
+let broughtBackTo: string | null = null;
+
 export default function RiderHome(): React.ReactElement {
   usePrewarmRoutes(BOARD_PREWARM);
   const router = useRouter();
@@ -319,6 +323,23 @@ export default function RiderHome(): React.ReactElement {
   );
   const activeJob = activeQ.data && !(activeQ.data.status === "cancelled" && ackedHandbacks.has(activeQ.data.id)) ? activeQ.data : null;
   const jobRoute = activeJob?.orderType === "merchant" ? "/rider/food-job" : "/rider/job";
+  // FJ-H3: a venue's cash or order still riding back (kept on the phone by the food job until the venue
+  // confirms) — the server holds new offers until then, so open that leg again, once per app run.
+  const noJob = activeQ.isSuccess && activeQ.data == null;
+  useFocusEffect(
+    useCallback(() => {
+      if (!noJob) return;
+      let alive = true;
+      void loadRiderFoodReturn().then((m) => {
+        if (!alive || !m || broughtBackTo === m.orderId) return;
+        broughtBackTo = m.orderId;
+        router.push("/rider/food-job");
+      });
+      return () => {
+        alive = false;
+      };
+    }, [noJob, router]),
+  );
 
   // J11: "Rudo picked you!" — once per assignment, with the job ping. BD-H5: parcel jobs only (a food or
   // shop job is accepted on its own offer screen), and only while the board is the screen on top.

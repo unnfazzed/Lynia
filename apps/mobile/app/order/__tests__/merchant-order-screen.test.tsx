@@ -395,6 +395,17 @@ describe("merchant order — one order screen (D-59)", () => {
     expect(has(t, "Share code")).toBe(true);
   });
 
+  it("B4: support resolved a frozen handshake (both confirms, the freeze kept as a record) — the code is issued", async () => {
+    const t = await render(
+      foodOrder({ status: "en_route_dropoff", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003", customerCashConfirmedAt: iso(-300_000), cashHandshakeFrozenAt: iso(-120_000), riderCashConfirmedAt: iso(-30_000) }),
+      snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, rider: { profileId: "r", currentLat: -17.83, currentLng: 31.05, updatedAt: iso(-2_000) } }),
+    );
+    expect(mockRotate).toHaveBeenCalledWith("order-1");
+    for (let i = 0; i < 2; i++) await act(async () => new Promise((r) => setTimeout(r, 0)));
+    expect(has(t, "Delivery code")).toBe(true);
+    expect(has(t, "418")).toBe(true);
+  });
+
   // ── round 3: per service, scheduled, Rx (README "Per service", BRIEF §12–13) ──
   const SHOP = { name: "Avondale Fresh", businessType: "shop" as const, shopKind: "grocery" };
   const PHARMACY = { name: "Avondale Pharmacy", businessType: "shop" as const, shopKind: "pharmacy" };

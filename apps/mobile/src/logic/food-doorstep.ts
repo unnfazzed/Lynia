@@ -17,8 +17,10 @@ export type HandshakeState =
   | "confirmed";
 
 /** R-04: derives the handshake's current state purely off the four server timestamps/method — never
- *  a client-side timer or guess. `frozen` is checked before `confirmed`/`waiting_rider` because a
- *  frozen handshake can only be reached from `waiting_rider` (R-05) and must win the branch. */
+ *  a client-side timer or guess. Both confirms win first: support's dispute resolve (admin
+ *  `resolveHandshake`) sets the rider's confirm and keeps `cashHandshakeFrozenAt` as a permanent record,
+ *  and that IS the unlock (the server's code gate reads only the two confirms). Otherwise `frozen` beats
+ *  `waiting_rider` — a freeze can only be reached from there (R-05). */
 export function handshakeState(order: {
   paymentMethod: string | null;
   customerCashConfirmedAt: string | null | undefined;
@@ -26,8 +28,8 @@ export function handshakeState(order: {
   cashHandshakeFrozenAt: string | null | undefined;
 }): HandshakeState {
   if (order.paymentMethod !== "cash") return "not_cash";
-  if (order.cashHandshakeFrozenAt) return "frozen";
   if (order.customerCashConfirmedAt && order.riderCashConfirmedAt) return "confirmed";
+  if (order.cashHandshakeFrozenAt) return "frozen";
   if (order.customerCashConfirmedAt) return "waiting_rider";
   return "pending";
 }

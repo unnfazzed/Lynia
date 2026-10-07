@@ -498,7 +498,7 @@ export function Chips<T extends string>({ list, value, onChange }: { list: reado
 }
 
 /** "YOURS" (accent-text) | "OWED TO KITCHEN" (ink) on a surface box, optional title. */
-export function CashSplit({ yours, owed, title }: { yours: number; owed: number; title?: string }): React.ReactElement {
+export function CashSplit({ yours, owed, title, owedLabel = R.owed }: { yours: number; owed: number; title?: string; owedLabel?: string }): React.ReactElement {
   return (
     <View style={{ backgroundColor: tokens.color.surface, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, gap: 6 }}>
       {title ? <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>{title}</Text> : null}
@@ -509,7 +509,7 @@ export function CashSplit({ yours, owed, title }: { yours: number; owed: number;
         </View>
         <View style={{ width: 1, backgroundColor: tokens.color.line }} />
         <View style={{ flex: 1, paddingLeft: 4 }}>
-          <RLabel>{R.owed}</RLabel>
+          <RLabel>{owedLabel}</RLabel>
           <Text style={{ fontSize: 20, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, ...TABULAR }}>{usd(owed)}</Text>
         </View>
       </View>
