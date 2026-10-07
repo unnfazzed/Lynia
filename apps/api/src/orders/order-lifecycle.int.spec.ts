@@ -53,7 +53,9 @@ const gateway = {
 } as unknown as TrackingGateway;
 // The no-bid-expiry supply check is best-effort push; an empty nearby list keeps it off the geo path.
 const matchingTrackingStub = { nearbyRiders: async () => [] } as unknown as import("../tracking/tracking.service").TrackingService;
-const matching = new MatchingService(prisma, tokens, noopNotifications, new MetricsService(), gateway, matchingTrackingStub);
+// D2: the real code sealer, as production wires it (@Global).
+const codeCrypto = new PiiCryptoService({ PII_ENCRYPTION_KEY: "lifecycle-int-pii-key-0123456789abcdef" } as Env);
+const matching = new MatchingService(prisma, tokens, noopNotifications, new MetricsService(), gateway, matchingTrackingStub, codeCrypto);
 // The board announce for F-01 re-broadcast is best-effort push; stub it so the proof asserts DB state
 // (the new open_for_offers row) without a live socket/Redis, mirroring how notifications are stubbed.
 const noopOrders = { announceOpenOrder: async () => {} } as unknown as OrdersService;
@@ -67,7 +69,7 @@ const deletedObjects: string[] = [];
 const storageStub = {
   deleteObject: async (k: string) => { deletedObjects.push(k); },
 } as unknown as import("../adapters/storage/storage.interface").StorageAdapter;
-const lifecycle = new OrderLifecycleService({ ...MERCHANT_FLAGS_OFF } as Env, prisma, tokens, gateway, noopNotifications, noopOrders, wallet, storageStub);
+const lifecycle = new OrderLifecycleService({ ...MERCHANT_FLAGS_OFF } as Env, prisma, tokens, gateway, noopNotifications, noopOrders, wallet, storageStub, undefined, undefined, codeCrypto);
 const trackingStub = { evictFromGeo: async () => {}, claimNotifyWaitersNear: async () => [], clearNotifyWaiters: async () => {} } as unknown as import("../tracking/tracking.service").TrackingService;
 const notificationsStub = { notifyRidersAvailable: async () => {}, notifyProfiles: async () => {} } as unknown as import("../notifications/notifications.service").NotificationsService;
 const riders = new RiderService(prisma, { ...MERCHANT_FLAGS_OFF } as Env, new StubKycVendor(), new PiiCryptoService({ PII_ENCRYPTION_KEY: "test-pii-key-0123456789abcdefghij", ...MERCHANT_FLAGS_OFF } as Env), trackingStub, gateway, notificationsStub);
@@ -475,6 +477,24 @@ describe("seam-contract transitions", () => {
     // The fresh code now works — the lockout recovered because the counter was reset.
     await lifecycle.confirmDelivery(orderId, rider, fresh);
     expect(await statusOf(orderId)).toBe("delivered");
+  });
+
+  it("D2 (U19): reveal returns the code minted at assignment on every call, sealed in otp_cipher, tries untouched", async () => {
+    const customer = await makeCustomer();
+    const rider = await makeRider();
+    const { orderId, deliveryCode } = await driveTo(customer, rider, "en_route_dropoff");
+    await expect(lifecycle.confirmDelivery(orderId, rider, deliveryCode === "000000" ? "111111" : "000000")).rejects.toThrow(/attempts left/i);
+
+    expect(await lifecycle.revealDeliveryCode(orderId, customer)).toEqual({ deliveryCode });
+    expect(await lifecycle.revealDeliveryCode(orderId, customer)).toEqual({ deliveryCode });
+    const row = await prisma.order.findUniqueOrThrow({ where: { id: orderId }, select: { deliveryOtpAttempts: true, otpCipher: true } });
+    expect(row.deliveryOtpAttempts).toBe(1);
+    expect(row.otpCipher).not.toContain(deliveryCode);
+
+    await lifecycle.confirmDelivery(orderId, rider, deliveryCode);
+    expect(await statusOf(orderId)).toBe("delivered");
+    // A used code is never shown again.
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: orderId }, select: { otpCipher: true } })).otpCipher).toBeNull();
   });
 
   it("rotateDeliveryCode: rejects once the order has moved past en_route_dropoff (no stale-otp write onto a delivered order)", async () => {

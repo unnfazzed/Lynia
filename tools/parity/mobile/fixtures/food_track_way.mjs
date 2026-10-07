@@ -4,7 +4,7 @@
 //   GET /orders/:id              → the generic OrderSnapshot the LiveTrackingCard draws (map + events)
 //   GET /restaurants/:id/menu    → resolves the restaurant name in the header
 // WALLET payment (already paid) so there's no cash doorstep handshake; at the door the plain delivery
-// code card appears, so POST …/delivery-code/rotate is routed to hand back a code.
+// code card appears, so POST …/delivery-code/reveal (D2) is routed to hand back a code.
 import { installRouter, setParams } from "./_harness.mjs";
 import { MENU, OID, foodOrder, orderSnapshot , withOrder } from "./_food.mjs";
 
@@ -12,7 +12,7 @@ import { MENU, OID, foodOrder, orderSnapshot , withOrder } from "./_food.mjs";
 setParams({ id: OID });
 
 installRouter([
-  { match: /\/delivery-code\/rotate$/, method: "POST", json: { deliveryCode: "4821" } },
+  { match: /\/delivery-code\/(rotate|reveal)$/, method: "POST", json: { deliveryCode: "4821" } },
   { match: /^\/restaurants\/orders\//, json: foodOrder({ status: "en_route_dropoff", paymentMethod: "wallet", merchantPhase: null }) },
   { match: /^\/restaurants\/[^/]+\/menu$/, json: MENU },
   { match: /^\/orders\/[^/]+$/, json: orderSnapshot({ status: "en_route_dropoff" }) },

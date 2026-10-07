@@ -11,6 +11,7 @@
 // per-tick slice) and is the ONLY thing that re-renders on a position push. What the screen itself
 // draws from the position (stage, ETA minutes, "last seen") reaches it as a display-granularity glance
 // (`selectParcelGlance`, P42), so a fix that changes none of that leaves the screen still.
+import { DELIVERY_OTP_MAX_ATTEMPTS } from "@lynia/shared";
 import type { OrderSnapshot } from "../api/orders";
 import { liveEta } from "./eta";
 import { isLiveStage, minutesSince, resolveStage, type StageInput, type StageResult } from "./order-stage";
@@ -138,9 +139,10 @@ export function expiredTerminalKind(input: {
  * refresh, to catch a code that was rotated (customer tapped "Re-issue delivery code" → server rotated the
  * hash and reset the attempt counter to 0) while the app was killed before the rotate response landed.
  *
- * The server never re-sends the plaintext code, so the client keeps the OLD value in secure storage; with a
- * non-null local code the re-issue UI never re-prompts and the customer confidently relays a DEAD code,
- * burning the rider's attempts.
+ * A stale local code is the danger: with a non-null local code nothing re-fetches it and the customer
+ * confidently relays a DEAD code, burning the rider's attempts. Since D2 (owner 2026-10-07) the server can
+ * show the current code again (`revealDeliveryCode`, idempotent), so "invalidate" just drops the local copy
+ * and the screen re-reads the live one — it never has to mint a new code to recover.
  *
  * PRIMARY signal (KB-DELIVERY-CODE-ROTATION-SIGNAL): the snapshot's `codeRotatedAt` — an ISO timestamp the
  * server stamps on every code issue/rotate. It's always reliable: once we've confirmed a baseline value for
@@ -190,6 +192,26 @@ export function reconcileDeliveryCode(input: {
   if (snapshotAttempts < storedAttemptsHighWater) return { action: "invalidate" };
   if (snapshotAttempts > storedAttemptsHighWater) return { action: "advance-highwater", attempts: snapshotAttempts };
   return { action: "none" };
+}
+
+/**
+ * U04 / D2 (owner 2026-10-07): the code card's lockout re-issue. The server locks a delivery code after
+ * DELIVERY_OTP_MAX_ATTEMPTS wrong tries and tells the rider to ask the sender for a new one; the sender's
+ * screen re-issues it (the explicit rotate: a new code, tries reset) ONCE per locked code. The lock is keyed
+ * by the code's issue stamp (`codeRotatedAt`), so a code locked again after a re-issue is re-issued again,
+ * while repeated snapshots of the SAME lock never rotate twice.
+ *
+ *   - "reissue": this locked code hasn't been re-issued from here yet → rotate, remember `key`.
+ *   - "none":    not locked (or no attempt count yet), or already re-issued for this lock.
+ */
+export function deliveryCodeLockout(input: {
+  attempts: number | null | undefined;
+  codeRotatedAt: string | null | undefined;
+  reissuedFor: string | null;
+}): { action: "reissue"; key: string } | { action: "none" } {
+  if (input.attempts == null || input.attempts < DELIVERY_OTP_MAX_ATTEMPTS) return { action: "none" };
+  const key = input.codeRotatedAt ?? "unstamped";
+  return input.reissuedFor === key ? { action: "none" } : { action: "reissue", key };
 }
 
 /**

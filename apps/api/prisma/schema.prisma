@@ -579,6 +579,10 @@ model Order {
   currency              String                                 @default("USD")
   // Hashed delivery OTP — never store plaintext (ET7).
   otpHash               String?                                @map("otp_hash")
+  // D2 (owner 2026-10-07): the same code AES-GCM-sealed (PiiCryptoService.encryptCode) so "show the code"
+  // returns the code already shared instead of minting a new one. otpHash stays the verifier. Null on
+  // pre-0086 rows: the first reveal mints once and stores both.
+  otpCipher             String?                                @map("otp_cipher")
   deliveryOtpAttempts   Int                                    @default(0) @map("delivery_otp_attempts")
   // KB-DELIVERY-CODE-ROTATION-SIGNAL: when the delivery code was last (re)issued — stamped at
   // assignment (matching.selectOffer) and on every rotateDeliveryCode. Lets the rider app robustly
@@ -691,6 +695,8 @@ model Order {
   // N-16: 4-digit pickup code, hashed like otpHash — proves the rider at the counter is the one
   // assigned. Minted by C3's dispatch at assignment; verified here (mirrors confirmDelivery's shape).
   pickupCodeHash             String?                @map("pickup_code_hash")
+  // D2: the pickup code sealed next to its hash, so a reveal on a second staff phone shows the same code.
+  pickupCodeCipher           String?                @map("pickup_code_cipher")
   pickupCodeAttempts         Int                    @default(0) @map("pickup_code_attempts")
   // D-08: money and delivery money are never merged into one figure for the merchant — this is what's
   // OWED TO THE MERCHANT (dish subtotal + N-15 small-order fee); deliveryFee is what the rider keeps.

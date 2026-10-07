@@ -31,6 +31,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { StubPaymentRail } from "../adapters/payments/stub-payment-rail";
 import { TokenService } from "../auth/token.service";
 import { hasOpenMerchantObligation } from "../common/merchant-debt-lock";
+import { PiiCryptoService } from "../common/pii-crypto.service";
 import type { Env } from "../config/env";
 import { MatchingService } from "../matching/matching.service";
 import { OfferExpiryService } from "../matching/offer-expiry.service";
@@ -102,7 +103,25 @@ const walletOn = new WalletService({ ...MERCHANT_FLAGS_ON } as Env, prisma);
 // No onModuleInit() → no Redis queue; scheduleAutoClose() no-ops, which is what we want under test.
 const lifecycleOn = new OrderLifecycleService({ ...MERCHANT_FLAGS_ON } as Env, prisma, tokens, gateway, noopNotifications, noopOrders, walletOn);
 const debt = new FoodDebtService(prisma, noopNotifications, lifecycleOn);
-const foodOrders = new FoodOrderService(prisma, tokens, noopNotifications, debt, gateway, new StubPaymentRail());
+// D2 (owner 2026-10-07): the real code sealer, as production wires it (@Global), so the golden pass proves
+// the reveal is idempotent end-to-end against the real `pickup_code_cipher` column.
+const codeCrypto = new PiiCryptoService({ PII_ENCRYPTION_KEY: "launch-flip-int-pii-key-0123456789abcdef" } as Env);
+const foodOrders = new FoodOrderService(
+  prisma,
+  tokens,
+  noopNotifications,
+  debt,
+  gateway,
+  new StubPaymentRail(),
+  undefined,
+  undefined,
+  undefined,
+  undefined,
+  undefined,
+  undefined,
+  undefined,
+  codeCrypto,
+);
 
 // The dispatch STRATEGY is the real NearestRiderDispatchStrategy over the real Prisma — so its
 // eligibility filters (already-mid-ride, already holding another food offer, owing a merchant debt) are
@@ -318,10 +337,12 @@ describe("X2 · flags ON — food golden pass", () => {
     await lifecycleOn.advance(orderId, rider, "en_route_pickup");
 
     // LB-1 (E2E 2026-10-05): the merchant web reveals the code only once a rider is assigned, i.e. after
-    // acceptance cleared merchantPhase. That reveal must work, and it re-mints: the earlier code is dead.
+    // acceptance cleared merchantPhase. That reveal must work — and since D2 (MJ-H1) it is the SAME code
+    // markReady minted, on every phone, with the tries untouched.
     const { pickupCode: counterCode } = await foodOrders.revealPickupCode(kitchen.ownerId, orderId);
-    expect(counterCode).toMatch(/^\d{6}$/);
-    expect((await prisma.order.findUniqueOrThrow({ where: { id: orderId } })).pickupCodeHash).not.toBe(tokens.hash(pickupCode));
+    expect(counterCode).toBe(pickupCode);
+    expect((await foodOrders.revealPickupCode(kitchen.ownerId, orderId)).pickupCode).toBe(pickupCode);
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: orderId } })).pickupCodeHash).toBe(tokens.hash(pickupCode));
 
     // N-16: a wrong code at the counter is counted, never collected on.
     await expect(foodOrders.confirmPickup(orderId, rider, counterCode === "000000" ? "111111" : "000000")).rejects.toThrow(/attempts left/i);

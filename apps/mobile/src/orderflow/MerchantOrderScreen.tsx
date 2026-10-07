@@ -8,7 +8,7 @@ import { AccessibilityInfo, ActivityIndicator, BackHandler, Linking, ScrollView,
 import { SafeAreaInsetsContext, SafeAreaView } from "react-native-safe-area-context";
 import { ApiError } from "../api/client";
 import { cancelUnpaidFoodOrder, changeFoodOrderSchedule, confirmFoodCustomerCash, confirmFoodSubstitution, rateFoodVenue, respondToFoodOrderItems } from "../api/food-orders";
-import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../api/orders";
+import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, revealDeliveryCode, rotateDeliveryCode } from "../api/orders";
 import { raiseIssue, raiseSos } from "../api/safety";
 import {
   clearDeliveryCode,
@@ -54,7 +54,7 @@ import {
 import { goHomeClearingStack } from "../logic/nav";
 import type { ChosenSlot } from "../logic/review";
 import { minutesSince } from "../logic/order-stage";
-import { reconcileDeliveryCode, reconcilePendingRating, selectOrderShell, selectRiderTelemetry } from "../logic/order-tracking";
+import { deliveryCodeLockout, reconcileDeliveryCode, reconcilePendingRating, selectOrderShell, selectRiderTelemetry } from "../logic/order-tracking";
 import { loadFoodOrderSnapshot, saveFoodOrderSnapshot } from "../net/food-order-store";
 import { useClaimOfflineBanner } from "../net/offline-banner-owner";
 import { useReachability } from "../net/use-reachability";
@@ -388,24 +388,48 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     setCode(null);
     void clearDeliveryCode(orderId);
   }, [riderDropped, code, orderId]);
-  // The code is issued only once both cash confirms have landed (R-09, server-enforced).
+  // The code shows only once both cash confirms have landed (R-09, server-enforced). D2 (owner 2026-10-07;
+  // U19): showing it is a READ — the same code on every device, never a rotation; a failed read retries on
+  // the next order refresh.
   const codeInFlight = useRef(false);
+  const adoptCode = useCallback(
+    (deliveryCode: string) => {
+      setCode(deliveryCode);
+      setAttemptsSeen(0);
+      setRotatedSeen(null);
+      void saveDeliveryCode(orderId, deliveryCode);
+    },
+    [orderId],
+  );
+  const codeLocked = deliveryCodeLockout({ attempts: snap?.deliveryOtpAttempts, codeRotatedAt: snap?.codeRotatedAt, reissuedFor: null }).action === "reissue";
   useEffect(() => {
-    if (!order || order.status !== "en_route_dropoff" || !codeRestored || code || !online || codeInFlight.current) return;
+    if (!order || order.status !== "en_route_dropoff" || !codeRestored || code || codeLocked || !online || codeInFlight.current) return;
     if (!codeEligible(cashOf(order))) return;
     codeInFlight.current = true;
-    void rotateDeliveryCode(orderId)
-      .then((res) => {
-        setCode(res.deliveryCode);
-        setAttemptsSeen(0);
-        setRotatedSeen(null);
-        void saveDeliveryCode(orderId, res.deliveryCode);
-      })
+    void revealDeliveryCode(orderId)
+      .then((res) => adoptCode(res.deliveryCode))
       .catch(() => undefined)
       .finally(() => {
         codeInFlight.current = false;
       });
-  }, [order, codeRestored, code, online, orderId]);
+  }, [order, codeRestored, code, codeLocked, online, orderId, adoptCode]);
+  // U04 (D2): the rider's tries ran out — re-issue once per locked code (the explicit rotate: a new code,
+  // tries reset), shown through the same code card. No locked state is drawn, so nothing new renders.
+  const reissuedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!order || order.status !== "en_route_dropoff" || !codeRestored || !online || codeInFlight.current) return;
+    const lockout = deliveryCodeLockout({ attempts: snap?.deliveryOtpAttempts, codeRotatedAt: snap?.codeRotatedAt, reissuedFor: reissuedFor.current });
+    if (lockout.action !== "reissue") return;
+    reissuedFor.current = lockout.key;
+    codeInFlight.current = true;
+    setCode(null);
+    void rotateDeliveryCode(orderId)
+      .then((res) => adoptCode(res.deliveryCode))
+      .catch(() => undefined)
+      .finally(() => {
+        codeInFlight.current = false;
+      });
+  }, [order, snap?.deliveryOtpAttempts, snap?.codeRotatedAt, codeRestored, online, orderId, adoptCode]);
 
   // ── screen state ──
   const [panel, setPanel] = useState<Panel>(null);

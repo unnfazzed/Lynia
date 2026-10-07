@@ -14,7 +14,9 @@
  * hold the SecureStore read open so that window can be asserted on; the first fails pre-fix.
  *
  * After Send (ledger D-53) removed the "Re-issue" button: once the read confirms no code is held, the
- * screen issues a fresh one by itself, once, so the delivery code card is never empty.
+ * screen fetches the code by itself, so the delivery code card is never empty. D2 (owner 2026-10-07): that
+ * fetch is a READ (`revealDeliveryCode`, the same code on every device), never a rotation — before D2 it
+ * rotated, so opening the order on a second device killed the code the recipient already had (U19).
  */
 import renderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -24,6 +26,7 @@ const CODE_KEY_PREFIX = "lynia.deliveryCode.";
 
 const mockGetOrder = jest.fn<Promise<OrderSnapshot>, [string]>();
 const mockRotateDeliveryCode = jest.fn();
+const mockRevealDeliveryCode = jest.fn();
 
 /** Held open until the test releases it, so the "restore in flight" window is deterministic. */
 let releaseCodeRead: ((value: string | null) => void) | null = null;
@@ -54,6 +57,7 @@ jest.mock("../../../src/api/orders", () => ({
   notifyWhenRiderOnline: jest.fn(),
   rateOrder: jest.fn(),
   rotateDeliveryCode: (...args: unknown[]) => mockRotateDeliveryCode(...args),
+  revealDeliveryCode: (...args: unknown[]) => mockRevealDeliveryCode(...args),
   raiseOrderPrice: jest.fn(),
   resendOrder: jest.fn(),
 }));
@@ -144,6 +148,7 @@ beforeEach(() => {
   rejectCodeRead = null;
   mockGetOrder.mockReset();
   mockRotateDeliveryCode.mockReset();
+  mockRevealDeliveryCode.mockReset();
   mockGetItemAsync.mockClear();
 });
 
@@ -165,6 +170,7 @@ describe("parcel hand-off code — no false 'code isn't showing' while the devic
     expect(textHits(tree, CODE_LABEL)).toBe(0);
     // And it must not have re-issued one either — the customer may hold a perfectly good code.
     expect(mockRotateDeliveryCode).not.toHaveBeenCalled();
+    expect(mockRevealDeliveryCode).not.toHaveBeenCalled();
   });
 
   it("shows the restored digits once the read lands — and never re-issues", async () => {
@@ -178,20 +184,22 @@ describe("parcel hand-off code — no false 'code isn't showing' while the devic
 
     expect(codeShown(tree, "482913")).toBe(true);
     expect(mockRotateDeliveryCode).not.toHaveBeenCalled();
+    expect(mockRevealDeliveryCode).not.toHaveBeenCalled();
   });
 
-  it("issues a fresh code once when the read confirms none is held — the code card is never left empty", async () => {
+  it("U19: a device with no code (a second phone, the web app) READS the current code — it never rotates it", async () => {
     mockGetOrder.mockResolvedValue(assignedOrder());
 
     const tree = await render();
-    mockRotateDeliveryCode.mockResolvedValue({ deliveryCode: "553201" });
+    mockRevealDeliveryCode.mockResolvedValue({ deliveryCode: "553201" });
     await act(async () => {
       releaseCodeRead?.(null);
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     await settle();
 
-    expect(mockRotateDeliveryCode).toHaveBeenCalledTimes(1);
+    expect(mockRevealDeliveryCode).toHaveBeenCalledTimes(1);
+    expect(mockRotateDeliveryCode).not.toHaveBeenCalled();
     expect(codeShown(tree, "553201")).toBe(true);
   });
 
@@ -203,14 +211,81 @@ describe("parcel hand-off code — no false 'code isn't showing' while the devic
     mockGetOrder.mockResolvedValue(assignedOrder());
 
     const tree = await render();
-    mockRotateDeliveryCode.mockResolvedValue({ deliveryCode: "553201" });
+    mockRevealDeliveryCode.mockResolvedValue({ deliveryCode: "553201" });
     await act(async () => {
       rejectCodeRead?.(new Error("keychain unavailable"));
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     await settle();
 
-    expect(mockRotateDeliveryCode).toHaveBeenCalledTimes(1);
+    expect(mockRevealDeliveryCode).toHaveBeenCalledTimes(1);
+    expect(mockRotateDeliveryCode).not.toHaveBeenCalled();
     expect(codeShown(tree, "553201")).toBe(true);
+  });
+});
+
+describe("delivery code — D2 (U20 failed read, U04 lockout re-issue)", () => {
+  it("U20: a failed read keeps the card on 'Getting your code…' with a Try again toast; Try again shows the code", async () => {
+    mockGetOrder.mockResolvedValue(assignedOrder());
+    mockRevealDeliveryCode.mockRejectedValueOnce(new Error("timeout")).mockResolvedValueOnce({ deliveryCode: "553201" });
+
+    const tree = await render();
+    await act(async () => {
+      releaseCodeRead?.(null);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await settle();
+
+    expect(mockRevealDeliveryCode).toHaveBeenCalledTimes(1);
+    // Before U20 the card vanished on the error (and came back as "Getting your code…" for good).
+    expect(textHits(tree, "Getting your code…")).toBeGreaterThan(0);
+    const tryAgain = tree.root.findAll((n) => n.props.accessibilityLabel === "Try again" && typeof n.props.onPress === "function");
+    expect(tryAgain.length).toBeGreaterThan(0);
+    // It doesn't loop on its own: one failure, one call, until something changes or the customer taps.
+    await settle();
+    expect(mockRevealDeliveryCode).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      tryAgain[0]!.props.onPress();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await settle();
+
+    expect(mockRevealDeliveryCode).toHaveBeenCalledTimes(2);
+    expect(codeShown(tree, "553201")).toBe(true);
+    expect(mockRotateDeliveryCode).not.toHaveBeenCalled();
+  });
+
+  it("U04: the rider's tries ran out — the code is re-issued ONCE (the explicit rotate) and the new code replaces the dead one", async () => {
+    mockGetOrder.mockResolvedValue(assignedOrder({ deliveryOtpAttempts: 5, codeRotatedAt: "2026-10-07T09:00:00.000Z" }));
+    mockRotateDeliveryCode.mockResolvedValue({ deliveryCode: "604117" });
+
+    const tree = await render();
+    await act(async () => {
+      releaseCodeRead?.("482913");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await settle();
+    await settle();
+
+    expect(mockRotateDeliveryCode).toHaveBeenCalledTimes(1);
+    // A locked code is dead: it is never read back to be shown.
+    expect(mockRevealDeliveryCode).not.toHaveBeenCalled();
+    expect(codeShown(tree, "604117")).toBe(true);
+    expect(codeShown(tree, "482913")).toBe(false);
+  });
+
+  it("a code that isn't locked is never re-issued, however many snapshots arrive", async () => {
+    mockGetOrder.mockResolvedValue(assignedOrder({ deliveryOtpAttempts: 4, codeRotatedAt: "2026-10-07T09:00:00.000Z" }));
+
+    const tree = await render();
+    await act(async () => {
+      releaseCodeRead?.("482913");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await settle();
+
+    expect(mockRotateDeliveryCode).not.toHaveBeenCalled();
+    expect(codeShown(tree, "482913")).toBe(true);
   });
 });

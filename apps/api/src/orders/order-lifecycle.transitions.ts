@@ -192,7 +192,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     guard:
       "guarded CAS status=open_for_offers; caller === order.customerId; offer belongs to the order and is status=pending; NOT a self-offer (offer.riderId !== customerId); pair not blocked; rider isOnline AND heartbeat < 60s (ET3) AND account standing OK (onlineRefusalReason); one_active_ride partial-unique blocks a rider already on another ride (ET2)",
     sideEffect:
-      "MONEY: bind agreedFare = offer.offeredFare; set riderId, otpHash (delivery code minted once, hash stored), deliveryOtpAttempts=0, deliveryCodeRotatedAt; offer→selected, all other pending offers→declined; OrderEvent(assigned); post-commit notify rider + emitOrderTaken to close the board card",
+      "MONEY: bind agreedFare = offer.offeredFare; set riderId, otpHash + otpCipher (delivery code minted once, hash = verifier, D2 ciphertext so reveal is repeatable; a rider-bail clone's carried code is KEPT, pinned in the CAS — U22), deliveryOtpAttempts=0, deliveryCodeRotatedAt; offer→selected, all other pending offers→declined; OrderEvent(assigned); post-commit notify rider + emitOrderTaken to close the board card",
     compensation:
       "CAS count 0 / P2002 one_active_ride → ConflictException('Order was just taken' / 'Rider just became unavailable'); nothing persisted, customer picks another offer",
     source: "matching.service.ts:selectOffer",
@@ -691,7 +691,7 @@ export const MERCHANT_PHASE_TRANSITIONS: readonly MerchantPhaseTransition[] = [
     actor: "merchant",
     guard: "caller owns the merchant; guarded CAS on merchantPhase=preparing AND the status read (requested / open_for_offers, or a rider already holding an order found early, MJ-RM1); also fired by sweepAutoAccepted once an auto-accepted order's ready time has passed",
     sideEffect:
-      "ready_for_pickup while dispatch looks; null once a rider holds it (MJ-RM1). readyAt=now; mint pickupCodeHash (N-16, 6-digit since D-59, hashed like otpHash) so it exists by the time C3's dispatch assigns a rider and confirmPickup can verify it. Hand-off point to C3: broadcasting this order (status requested -> open_for_offers) is dispatch's job, not this method's.",
+      "ready_for_pickup while dispatch looks; null once a rider holds it (MJ-RM1). readyAt=now; mint pickupCodeHash + pickupCodeCipher (N-16, 6-digit since D-59, hashed like otpHash; D2 ciphertext so revealPickupCode is idempotent) so it exists by the time C3's dispatch assigns a rider and confirmPickup can verify it. Hand-off point to C3: broadcasting this order (status requested -> open_for_offers) is dispatch's job, not this method's.",
     source: "merchant/food-order.service.ts:markReady",
   },
 ];

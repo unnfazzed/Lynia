@@ -1,9 +1,11 @@
-import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { BROADCAST, broadcastRadiusAtMs, OFFER_CHOOSE_GRACE_MS, OFFER_WINDOW_MS } from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush } from "../common/broadcast-policy";
+import { openHandoverCode, sealHandoverCode } from "../common/handover-code";
 import { hasOpenMerchantObligation } from "../common/merchant-debt-lock";
+import { PiiCryptoService } from "../common/pii-crypto.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { MetricsService, type MatchSelectOutcome } from "../observability/metrics.service";
 import { buildBoardNewOrderEvent, pickupPoint } from "../orders/waypoints";
@@ -46,6 +48,9 @@ export class MatchingService {
     private readonly metrics: MetricsService,
     private readonly gateway: TrackingGateway,
     private readonly tracking: TrackingService,
+    // D2 (owner 2026-10-07): seals the delivery code next to its hash. @Global in the app; optional only
+    // for the positional unit harnesses (without it the code is hash-only, the pre-D2 shape).
+    @Optional() private readonly codeCrypto?: PiiCryptoService,
   ) {}
 
   /**
@@ -69,7 +74,8 @@ export class MatchingService {
             offeredFare: true,
             // `pickup` (HEAD) feeds the post-commit order:taken board emit; the expanded rider
             // account-standing fields (origin/main) gate a banned/suspended/held rider at select time.
-            order: { select: { status: true, customerId: true, pickup: true, createdAt: true } },
+            // otpHash/otpCipher: U22 — a rider-bail re-broadcast clone carries the trip's code (D2).
+            order: { select: { status: true, customerId: true, pickup: true, createdAt: true, otpHash: true, otpCipher: true } },
             rider: {
               select: {
                 isOnline: true,
@@ -130,26 +136,42 @@ export class MatchingService {
           throw new ConflictException("Rider just became unavailable, pick another");
         }
 
-        // Mint the delivery handover code now; store only its hash (ET7). The plaintext is
-        // returned to the selecting customer once and never persisted or re-exposed.
-        const deliveryCode = this.tokens.randomOtp();
+        // The delivery handover code. ET7: the verifier is its hash; D2 (owner 2026-10-07) also stores it
+        // sealed (otpCipher) so the customer can be shown the SAME code again. U22: a re-broadcast clone of
+        // a trip whose rider bailed carries that trip's code (cloneForRebroadcast keepCode) — the recipient
+        // may already hold it, so it is kept, not re-minted. Any other order gets a fresh code here.
+        const keptCode = openHandoverCode(this.codeCrypto, this.tokens, offer.order.otpCipher, offer.order.otpHash);
+        const deliveryCode = keptCode ?? this.tokens.randomOtp();
+        const codeData = keptCode
+          ? {}
+          : {
+              otpHash: this.tokens.hash(deliveryCode),
+              otpCipher: sealHandoverCode(this.codeCrypto, deliveryCode),
+              deliveryOtpAttempts: 0,
+              // KB-DELIVERY-CODE-ROTATION-SIGNAL: stamp the code-issued time at assignment (the code's
+              // FIRST issue) so `codeRotatedAt` is never confusingly null once an order has a code, and the
+              // rider app has a rotation baseline. new Date() (not DB now()) here deliberately: this is the
+              // sensitive bid-acceptance CAS, kept as the typed Prisma updateMany rather than rewritten to
+              // raw SQL — and rotation always happens minutes after assignment, so the app-vs-DB clock skew
+              // between this stamp and rotateDeliveryCode's now() can't reorder them. A kept code keeps the
+              // stamp the clone copied.
+              deliveryCodeRotatedAt: new Date(),
+            };
 
-        // Guarded CAS — first writer wins (ET1).
+        // Guarded CAS — first writer wins (ET1). A kept code is pinned in the CAS too, so the code returned
+        // below is exactly the one the row holds.
         const claimed = await tx.order.updateMany({
-          where: { id: orderId, status: "open_for_offers", createdAt: { gt: chooseCutoff } },
+          where: {
+            id: orderId,
+            status: "open_for_offers",
+            createdAt: { gt: chooseCutoff },
+            ...(keptCode ? { otpHash: offer.order.otpHash } : {}),
+          },
           data: {
             status: "assigned",
             riderId: offer.riderId,
             agreedFare: offer.offeredFare,
-            otpHash: this.tokens.hash(deliveryCode),
-            deliveryOtpAttempts: 0,
-            // KB-DELIVERY-CODE-ROTATION-SIGNAL: stamp the code-issued time at assignment (the code's
-            // FIRST issue) so `codeRotatedAt` is never confusingly null once an order has a code, and the
-            // rider app has a rotation baseline. new Date() (not DB now()) here deliberately: this is the
-            // sensitive bid-acceptance CAS, kept as the typed Prisma updateMany rather than rewritten to
-            // raw SQL — and rotation always happens minutes after assignment, so the app-vs-DB clock skew
-            // between this stamp and rotateDeliveryCode's now() can't reorder them.
-            deliveryCodeRotatedAt: new Date(),
+            ...codeData,
           },
         });
         if (claimed.count === 0) throw new ConflictException("Order was just taken, pick another");

@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit, Optional } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import {
   dispatchRoundSize,
@@ -11,6 +11,8 @@ import {
   type Waypoint,
 } from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
+import { sealHandoverCode } from "../common/handover-code";
+import { PiiCryptoService } from "../common/pii-crypto.service";
 import { CANCEL_STRIKE_LIMIT } from "../orders/order-lifecycle.constants";
 import { pushCopy, PUSH_C, pushMoney, riderJobTemplate } from "../notifications/merchant-order-push";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -103,6 +105,9 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     private readonly notifications: NotificationsService,
     private readonly gateway: TrackingGateway,
     @Inject(DISPATCH_STRATEGY) private readonly strategy: DispatchStrategy,
+    // D2 (owner 2026-10-07): seals the delivery code next to its hash so the customer's reveal is
+    // repeatable. @Global in the app; optional only for the positional unit harnesses.
+    @Optional() private readonly codeCrypto?: PiiCryptoService,
   ) {}
 
   onModuleInit(): void {
@@ -591,6 +596,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       // until it taps "Food is ready" (or the ready time passes), which then clears it.
       merchantPhase: keepCooking ? ("preparing" as const) : null,
       otpHash: this.tokens.hash(deliveryCode),
+      otpCipher: sealHandoverCode(this.codeCrypto, deliveryCode),
       deliveryOtpAttempts: 0,
       deliveryCodeRotatedAt: new Date(),
       dispatchOfferedRiderId: null,
@@ -718,6 +724,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
           merchantPhase: order.merchantPhase === "preparing" ? "preparing" : "ready_for_pickup",
           riderId: null,
           otpHash: null,
+          otpCipher: null,
           deliveryOtpAttempts: 0,
           dispatchExcludedRiderIds: excluded,
           dispatchAttempt: 0,

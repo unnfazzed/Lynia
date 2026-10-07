@@ -104,7 +104,7 @@ export function stage({ status, phase = null, food = {}, snap = {}, pos, fixAgoM
     // T13a "Change time": the schedule sheet's slots (R5a's sample — 11:00 and 13:00 tomorrow are full).
     { match: /^\/restaurants\/[^/]+\/schedule-slots/, json: () => scheduleSlots() },
     { match: /^\/restaurants\/orders\/[^/]+\/cash\/customer-confirm$/, method: "POST", json: { orderId: ORDER_ID, customerCashConfirmedAt: at(0) } },
-    { match: /^\/orders\/[^/]+\/delivery-code\/rotate$/, method: "POST", json: { deliveryCode: "418290" } },
+    { match: /^\/orders\/[^/]+\/delivery-code\/(rotate|reveal)$/, method: "POST", json: { deliveryCode: "418290" } },
     { match: /^\/restaurants\/orders\/[^/]+$/, status: loadStatus ?? 200, json: () => (loadStatus ? { message: "x" } : order) },
     { match: /^\/orders\/[^/]+$/, status: snapStatus ?? 200, json: () => (snapStatus ? { message: "x" } : snapshot) },
   ]);

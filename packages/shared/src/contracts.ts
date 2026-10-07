@@ -1702,7 +1702,8 @@ export const MerchantOrderResponse = z
     noRiderHoldAt: z.string().nullable(),
     // N-16: the server-committed pickup-code attempt count, mirroring `deliveryOtpAttempts` on the
     // generic OrderSnapshot — lets the rider's pickup screen resync its lockout state from the server
-    // (a merchant re-reveal resets this to 0) instead of trusting a purely local counter.
+    // (a merchant's lockout re-reveal resets this to 0; since D2 an ordinary reveal returns the same code
+    // and leaves it alone) instead of trusting a purely local counter.
     pickupCodeAttempts: z.number().int(),
     // C4: doorstep handshake (R-04/R-05/N-19) — CASH orders only, null otherwise. R-12: WALLET orders
     // show PAID via merchantPaymentConfirmedAt/merchantPaymentReference above; this is CASH's mirror.

@@ -33,6 +33,33 @@ describe("PiiCryptoService", () => {
     expect(h).toMatch(/^[0-9a-f]{64}$/);
   });
 
+  // D2 (owner 2026-10-07): hand-over codes are sealed so a reveal can show the SAME code again.
+  it("encryptCode/decryptCode round-trip with a fresh IV, and never leak the code", () => {
+    const a = svc.encryptCode("418290");
+    const b = svc.encryptCode("418290");
+    expect(a.startsWith("c1:")).toBe(true);
+    expect(a).not.toContain("418290");
+    expect(a).not.toBe(b);
+    expect(svc.decryptCode(a)).toBe("418290");
+    expect(svc.decryptCode(b)).toBe("418290");
+  });
+
+  it("decryptCode reads anything else as no code (null, plaintext, a national-ID ciphertext, tampering, another key) — never throws", () => {
+    expect(svc.decryptCode(null)).toBeNull();
+    expect(svc.decryptCode(undefined)).toBeNull();
+    expect(svc.decryptCode("418290")).toBeNull();
+    expect(svc.decryptCode(svc.encryptId("418290"))).toBeNull();
+    expect(svc.decryptCode("c1:AAAA")).toBeNull();
+    const ct = svc.encryptCode("418290");
+    const flipped = ct.slice(0, -2) + (ct.endsWith("A") ? "B" : "A") + ct.slice(-1);
+    expect(svc.decryptCode(flipped)).toBeNull();
+    const other = new PiiCryptoService({ PII_ENCRYPTION_KEY: "a-different-test-pii-key-0123456789abcdef" } as Env);
+    expect(other.decryptCode(ct)).toBeNull();
+    // The national-ID decrypt can't open a code ciphertext either (separate key, separate prefix).
+    expect(() => svc.decryptId(ct)).not.toThrow();
+    expect(svc.decryptId(ct)).toBe(ct);
+  });
+
   it("does not leak the id into the hash", () => {
     expect(svc.hashId(ID)).not.toContain(ID);
   });

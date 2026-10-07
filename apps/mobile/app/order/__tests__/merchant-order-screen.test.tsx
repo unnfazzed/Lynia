@@ -18,7 +18,8 @@ const mockRateVenue = jest.fn(async (..._a: unknown[]) => ({ score: 5, tags: [],
 const mockConfirmCash = jest.fn(async (..._a: unknown[]) => ({ orderId: "order-1", customerCashConfirmedAt: new Date().toISOString() }));
 const mockGetOrder = jest.fn();
 const mockCancelOrder = jest.fn(async (..._a: unknown[]) => ({ orderId: "order-1", status: "cancelled", cancelledBy: "customer", cooldownUntil: null }));
-const mockRotate = jest.fn(async (..._a: unknown[]) => ({ deliveryCode: "418290" }));
+const mockRotate = jest.fn(async (..._a: unknown[]) => ({ deliveryCode: "604117" }));
+const mockReveal = jest.fn(async (..._a: unknown[]) => ({ deliveryCode: "418290" }));
 const mockRate = jest.fn(async (..._a: unknown[]) => ({}));
 const mockPush = jest.fn();
 
@@ -44,6 +45,7 @@ jest.mock("../../../src/api/orders", () => ({
   getOrder: (...a: unknown[]) => mockGetOrder(...a),
   cancelOrder: (...a: unknown[]) => mockCancelOrder(...a),
   rotateDeliveryCode: (...a: unknown[]) => mockRotate(...a),
+  revealDeliveryCode: (...a: unknown[]) => mockReveal(...a),
   rateOrder: (...a: unknown[]) => mockRate(...a),
   notifyWhenRiderOnline: jest.fn(),
   raiseOrderPrice: jest.fn(),
@@ -425,6 +427,7 @@ describe("merchant order — one order screen (D-59)", () => {
     expect(has(t, "Tendai M.")).toBe(true);
     expect(has(t, "Delivery code")).toBe(false);
     expect(mockRotate).not.toHaveBeenCalled();
+    expect(mockReveal).not.toHaveBeenCalled();
   });
 
   it("T12a: no fix — no ETA, only the sentence", async () => {
@@ -448,17 +451,19 @@ describe("merchant order — one order screen (D-59)", () => {
     expect(has(t, "Tendai hands it over first")).toBe(true);
     expect(has(t, "Shows here once you and Tendai both confirm the cash")).toBe(true);
     expect(mockRotate).not.toHaveBeenCalled();
+    expect(mockReveal).not.toHaveBeenCalled();
     press(t, "I’ve paid $16.50");
     await act(async () => undefined);
     expect(mockConfirmCash).toHaveBeenCalledWith("order-1");
   });
 
-  it("P2: both confirmed — the code is issued and shown 3+3 on the forest panel", async () => {
+  it("P2: both confirmed — the code is read (D2: never rotated just to show it) and shown 3+3 on the forest panel", async () => {
     const t = await render(
       foodOrder({ status: "en_route_dropoff", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003", customerCashConfirmedAt: iso(-60_000), riderCashConfirmedAt: iso(-30_000) }),
       snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, rider: { profileId: "r", currentLat: -17.83, currentLng: 31.05, updatedAt: iso(-2_000) } }),
     );
-    expect(mockRotate).toHaveBeenCalledWith("order-1");
+    expect(mockReveal).toHaveBeenCalledWith("order-1");
+    expect(mockRotate).not.toHaveBeenCalled();
     for (let i = 0; i < 2; i++) await act(async () => new Promise((r) => setTimeout(r, 0)));
     expect(has(t, "418")).toBe(true);
     expect(has(t, "290")).toBe(true);
@@ -471,10 +476,23 @@ describe("merchant order — one order screen (D-59)", () => {
       foodOrder({ status: "en_route_dropoff", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003", customerCashConfirmedAt: iso(-300_000), cashHandshakeFrozenAt: iso(-120_000), riderCashConfirmedAt: iso(-30_000) }),
       snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, rider: { profileId: "r", currentLat: -17.83, currentLng: 31.05, updatedAt: iso(-2_000) } }),
     );
-    expect(mockRotate).toHaveBeenCalledWith("order-1");
+    expect(mockReveal).toHaveBeenCalledWith("order-1");
     for (let i = 0; i < 2; i++) await act(async () => new Promise((r) => setTimeout(r, 0)));
     expect(has(t, "Delivery code")).toBe(true);
     expect(has(t, "418")).toBe(true);
+  });
+
+  it("U04: the rider's tries ran out — the code is re-issued once (the explicit rotate) and the new one shown", async () => {
+    const t = await render(
+      foodOrder({ status: "en_route_dropoff", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003", customerCashConfirmedAt: iso(-60_000), riderCashConfirmedAt: iso(-30_000) }),
+      snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, deliveryOtpAttempts: 5, codeRotatedAt: iso(-600_000), rider: { profileId: "r", currentLat: -17.83, currentLng: 31.05, updatedAt: iso(-2_000) } }),
+    );
+    for (let i = 0; i < 3; i++) await act(async () => new Promise((r) => setTimeout(r, 0)));
+    expect(mockRotate).toHaveBeenCalledTimes(1);
+    // A locked code is dead: it is never read back to be shown.
+    expect(mockReveal).not.toHaveBeenCalled();
+    expect(has(t, "604")).toBe(true);
+    expect(has(t, "117")).toBe(true);
   });
 
   // ── round 3: per service, scheduled, Rx (README "Per service", BRIEF §12–13) ──

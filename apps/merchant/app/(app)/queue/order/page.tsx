@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { foodOrderMoney, type MerchantOrderResponse, type MerchantProfileResponse } from "@lynia/shared";
+import { DELIVERY_OTP_MAX_ATTEMPTS, foodOrderMoney, type MerchantOrderResponse, type MerchantProfileResponse } from "@lynia/shared";
 import { Icon } from "../../../components/icons";
 import { Kitchen } from "../../../components/Kitchen";
 import { useKitchenConnection } from "../../../components/KitchenConnectionProvider";
@@ -984,16 +984,20 @@ function Closed({ order }: Pick<Ctx, "order">) {
 }
 
 /**
- * The pickup code for the rider in front of the merchant. Revealing rotates the code (N-16), so it is
- * asked for once per rider, never on every render; an auto-accepted order is collected without one.
+ * The pickup code for the rider in front of the merchant; an auto-accepted order is collected without one.
+ * Since D2 (owner 2026-10-07, MJ-H1) a reveal returns the SAME code on every phone, so asking again is
+ * harmless — it is asked once per rider, and once more when the rider's tries run out: at the cap the
+ * reveal is the lockout re-issue (a new code, tries reset), which this screen then shows.
  */
 function usePickupCode(order: MerchantOrderResponse): string | null {
   const [code, setCode] = useState<string | null>(null);
   const askedFor = useRef<string | null>(null);
   const codeless = order.autoAccepted === true;
   useEffect(() => {
-    if (codeless || !order.riderId || isAfterPickup(order) || askedFor.current === order.riderId) return;
-    askedFor.current = order.riderId;
+    const locked = order.pickupCodeAttempts >= DELIVERY_OTP_MAX_ATTEMPTS;
+    const key = order.riderId ? `${order.riderId}:${locked ? "locked" : "open"}` : null;
+    if (codeless || !key || isAfterPickup(order) || askedFor.current === key) return;
+    askedFor.current = key;
     revealPickupCode(order.id)
       .then((res) => setCode(res.pickupCode))
       .catch(() => {

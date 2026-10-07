@@ -351,7 +351,7 @@ describe("confirmCollected — the no-code pickup, only at the restaurant (safeg
     // ~60 m north of the pin.
     const res = await svc.confirmCollected("o1", "r1", { lat: CBD.lat + 0.00055, lng: CBD.lng });
     expect(res).toEqual({ orderId: "o1", status: "picked_up" });
-    expect(updated).toEqual({ status: "picked_up", collectedAt: expect.any(Date), merchantPhase: null });
+    expect(updated).toEqual({ status: "picked_up", collectedAt: expect.any(Date), merchantPhase: null, pickupCodeCipher: null });
     expect(debtFor).toMatchObject({ id: "o1", riderId: "r1", merchantGoodsTotal: 12 });
   });
 

@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { ConflictException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import { TokenService } from "../auth/token.service";
+import { PiiCryptoService } from "../common/pii-crypto.service";
 import type { Env } from "../config/env";
 import type { NotificationsService } from "../notifications/notifications.service";
 import type { StorageAdapter } from "../adapters/storage/storage.interface";
@@ -13,11 +14,12 @@ import type { WalletService } from "../wallet/wallet.service";
 import { OrderLifecycleService } from "./order-lifecycle.service";
 
 const tokens = new TokenService({ JWT_SIGNING_SECRET: "lifecycle-test-secret-0123456789", ACCESS_TTL_SECONDS: 900 } as Env);
+const pii = new PiiCryptoService({ PII_ENCRYPTION_KEY: "lifecycle-test-pii-key-0123456789abcdef" } as Env);
 /** Push is fire-and-forget; a no-op stub keeps the lifecycle unit tests off the notification path. */
 const noopNotifications = { notifyOrderStatus: async () => {}, notifyProfiles: async () => {} } as unknown as NotificationsService;
 
 /** Fake Prisma where `$transaction(cb)` runs the callback against the same fake (tx === prisma). */
-function build(methods: Record<string, unknown>, opts: { verify?: (key: string, kind: string) => Promise<unknown> } = {}) {
+function build(methods: Record<string, unknown>, opts: { verify?: (key: string, kind: string) => Promise<unknown>; crypto?: false } = {}) {
   const emits: Array<[string, string]> = [];
   const jobCancelled: Array<[string, boolean, string]> = [];
   const rebroadcasts: Array<[string, string]> = [];
@@ -69,6 +71,8 @@ function build(methods: Record<string, unknown>, opts: { verify?: (key: string, 
     undefined,
     // C1/E8: the attach-time verifier, only when a test wires one (absent ⇒ the unit harness skips it).
     opts.verify ? ({ verify: opts.verify } as unknown as UploadVerifier) : undefined,
+    // D2: the real code sealer, as production wires it (@Global); `crypto: false` = a pre-D2 harness.
+    opts.crypto === false ? undefined : pii,
   );
   return { svc, emits, jobCancelled, rebroadcasts, bidExpired, evicted, kickedFromBoard, evictedFromSupply, orders, prisma, wallet, storage, deletedObjects };
 }

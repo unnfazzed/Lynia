@@ -1,7 +1,9 @@
 import { ForbiddenException } from "@nestjs/common";
 import { OFFER_CHOOSE_GRACE_MS, OFFER_WINDOW_MS } from "@lynia/shared";
 import { describe, expect, it, vi } from "vitest";
-import type { TokenService } from "../auth/token.service";
+import { TokenService } from "../auth/token.service";
+import { PiiCryptoService } from "../common/pii-crypto.service";
+import type { Env } from "../config/env";
 import type { NotificationsService } from "../notifications/notifications.service";
 import type { MetricsService, MatchSelectOutcome } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -256,6 +258,75 @@ describe("MatchingService.selectOffer — C4 soft-lock vs an open merchant debt 
     });
     const res = await service.selectOffer(orderId, offerId, "cust");
     expect(res).toMatchObject({ status: "assigned", riderId: "r1" });
+  });
+});
+
+/**
+ * D2 (owner 2026-10-07) / U22: the delivery code is sealed next to its hash at assignment, and a rider-bail
+ * re-broadcast clone (which carries the trip's code, OrderLifecycleService.cloneForRebroadcast keepCode)
+ * keeps it on the next select — the recipient may already hold it. Real token + crypto services here.
+ */
+describe("MatchingService.selectOffer — D2 sealed delivery code, kept across a re-match (U22)", () => {
+  const realTokens = new TokenService({ JWT_SIGNING_SECRET: "matching-d2-secret-0123456789", ACCESS_TTL_SECONDS: 900 } as Env);
+  const pii = new PiiCryptoService({ PII_ENCRYPTION_KEY: "matching-d2-pii-key-0123456789abcdef" } as Env);
+
+  function selectHarness(order: Record<string, unknown>) {
+    const writes: Array<{ where: Record<string, unknown>; data: Record<string, unknown> }> = [];
+    const tx = {
+      offer: {
+        findFirst: async () => ({
+          status: "pending",
+          riderId: "r1",
+          offeredFare: { toString: () => "2.50" },
+          order: { status: "open_for_offers", customerId: "cust", otpHash: null, otpCipher: null, ...order },
+          rider: { isOnline: true, lastHeartbeatAt: new Date(), kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null },
+        }),
+        update: async () => ({}),
+        updateMany: async () => ({ count: 0 }),
+      },
+      order: {
+        updateMany: async (a: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+          writes.push(a);
+          return { count: 1 };
+        },
+        findFirst: async () => null,
+      },
+      orderEvent: { create: async () => ({}) },
+      block: { findFirst: async () => null },
+    };
+    const prisma = { $transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx) } as unknown as PrismaService;
+    const service = new MatchingService(prisma, realTokens, noopNotifications, fakeMetrics(), noopGateway, noopTracking, pii);
+    return { service, writes };
+  }
+
+  it("a first match mints a code and stores it sealed next to its hash (reveal can show it again)", async () => {
+    const { service, writes } = selectHarness({});
+    const res = await service.selectOffer(orderId, offerId, "cust");
+    expect(res.deliveryCode).toMatch(/^\d{6}$/);
+    const data = writes[0]!.data;
+    expect(data.otpHash).toBe(realTokens.hash(res.deliveryCode));
+    expect(pii.decryptCode(data.otpCipher as string)).toBe(res.deliveryCode);
+    expect(data).toMatchObject({ deliveryOtpAttempts: 0, deliveryCodeRotatedAt: expect.any(Date) });
+  });
+
+  it("U22: a re-broadcast clone carrying the trip's code keeps it — same code returned, hash/cipher/stamp untouched", async () => {
+    const carried = { otpHash: realTokens.hash("418290"), otpCipher: pii.encryptCode("418290") };
+    const { service, writes } = selectHarness(carried);
+    const res = await service.selectOffer(orderId, offerId, "cust");
+    expect(res.deliveryCode).toBe("418290");
+    const { where, data } = writes[0]!;
+    expect(data).not.toHaveProperty("otpHash");
+    expect(data).not.toHaveProperty("otpCipher");
+    expect(data).not.toHaveProperty("deliveryCodeRotatedAt");
+    expect(data).toMatchObject({ status: "assigned", riderId: "r1" });
+    // The kept code is pinned in the CAS, so the code returned is exactly the one the row holds.
+    expect(where).toMatchObject({ status: "open_for_offers", otpHash: carried.otpHash });
+  });
+
+  it("an unreadable or mismatched carried code is replaced by a fresh one (never returns a code the hash won't accept)", async () => {
+    const { service, writes } = selectHarness({ otpHash: realTokens.hash("418290"), otpCipher: pii.encryptCode("999999") });
+    const res = await service.selectOffer(orderId, offerId, "cust");
+    expect(writes[0]!.data.otpHash).toBe(realTokens.hash(res.deliveryCode));
   });
 });
 

@@ -294,8 +294,16 @@ export function rateSender(orderId: string, body: RateSenderRequest): Promise<{ 
   return apiFetch(`/orders/${orderId}/sender-rating`, { method: "POST", body });
 }
 
+/** The EXPLICIT re-issue (D2): a new code, the rider's tries reset. Only for a locked code (U04) — never
+ *  just to show the code, which is {@link revealDeliveryCode}. */
 export function rotateDeliveryCode(orderId: string): Promise<{ deliveryCode: string }> {
   return apiFetch(`/orders/${orderId}/delivery-code/rotate`, { method: "POST" });
+}
+
+/** D2 (owner 2026-10-07; U19): the order's CURRENT delivery code — the same one on every call and every
+ *  device. A read: it never rotates the code or resets the rider's tries. */
+export function revealDeliveryCode(orderId: string): Promise<{ deliveryCode: string }> {
+  return apiFetch(`/orders/${orderId}/delivery-code/reveal`, { method: "POST" });
 }
 
 /** Raise the price of an open order in place (+ $0.50): the offer window keeps running, riders are re-pinged. */

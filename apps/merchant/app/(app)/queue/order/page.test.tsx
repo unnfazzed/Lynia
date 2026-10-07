@@ -143,7 +143,28 @@ describe("K4 · hand over (Merchant v2, D-77)", () => {
     expect(screen.queryByRole("button", { name: "Hand over" })).toBeNull();
   });
 
-  it("with a rider coming, says the six-digit code 3+3 — asked for once, since asking rotates it", async () => {
+  // D2 (owner 2026-10-07, MJ-H1): the reveal is idempotent server-side, so a poll that changes nothing
+  // doesn't ask again; when the rider's tries run out the next poll asks once more — the lockout re-issue —
+  // and the screen shows the new code.
+  it("asks again only when the rider's tries run out, and shows the re-issued code (MJ-H1 lockout re-issue)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const coming = merchantOrder({ id: ID, merchantPhase: null, status: "assigned", riderId: RIDER.profileId, rider: RIDER, pickupCodeAttempts: 0 });
+      show(coming);
+      expect(await screen.findByLabelText("Pickup code 7 3 1 6 0 4")).toBeTruthy();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(revealPickupCode).toHaveBeenCalledTimes(1);
+      vi.mocked(getOrder).mockResolvedValue({ ...coming, pickupCodeAttempts: 5 });
+      vi.mocked(revealPickupCode).mockResolvedValueOnce({ pickupCode: "204118" });
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await screen.findByLabelText("Pickup code 2 0 4 1 1 8")).toBeTruthy();
+      expect(revealPickupCode).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("with a rider coming, says the six-digit code 3+3 — asked for once per rider", async () => {
     show(merchantOrder({ id: ID, merchantPhase: null, status: "assigned", riderId: RIDER.profileId, rider: RIDER, riderPhone: "+263772222222" }));
     expect(await screen.findByText("Blessing M.")).toBeTruthy();
     expect(screen.getByText("Hand over #A111")).toBeTruthy();

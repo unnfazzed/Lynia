@@ -542,7 +542,7 @@ Load-bearing schema invariants (all enforced in the database, not just app code)
 | `one_active_ride` — partial-unique index on `orders(rider_id)` over active statuses | A rider can be on **at most one active ride** at a time. The DB rejects a double-assign even under a race (ET2). |
 | `offers` unique `(order_id, rider_id)` | **One offer per rider per order** — the "one round" rule as a constraint (ET7). |
 | `riders_geog_gist` — GiST on `geog geography(Point,4326)` | Fast nearby-rider radius search via `ST_DWithin` (ET6). |
-| `orders.otp_hash` (never plaintext) + `delivery_otp_attempts` | Delivery handover code is stored only as an HMAC hash, with a 5-attempt cap (ET7). |
+| `orders.otp_hash` + `otp_cipher` + `delivery_otp_attempts` | Delivery handover code: verified only against its HMAC hash, with a 5-attempt cap (ET7). Since owner decision D2 (2026-10-07, migration 0086) it is also stored AES-GCM-sealed (`PiiCryptoService.encryptCode`, its own key) so "show the code" returns the same code on every device instead of minting a new one; never plaintext, never logged, cleared at delivery. `pickup_code_hash` + `pickup_code_cipher` do the same for the N-16 pickup code (cleared at pickup). |
 | `sessions.refreshTokenHash` (hashed) + `revokedAt` | Server-owned sessions → real revoke/logout/ban (ET5). |
 
 ---
@@ -599,7 +599,10 @@ What makes the select safe:
 - **Liveness is checked inside the transaction**: the selected rider must be `isOnline` with a
   heartbeat newer than 30s, or the select is rejected ("pick another").
 - The **delivery code is minted here, hashed, and stored**; the plaintext is returned to the
-  selecting customer exactly once and never persisted or re-exposed.
+  selecting customer. D2 (owner 2026-10-07): it is also stored sealed (`otp_cipher`), so the
+  customer's other devices read the SAME code back through `POST /orders/:id/delivery-code/reveal`
+  (idempotent; never rotates, never resets the tries). A rider-bail re-broadcast clone carries the
+  trip's code and this select keeps it, so the recipient's code survives a re-match (U22).
 - The expiry path (`expireOrder`) runs the *same* guarded CAS: if a customer already selected, the
   order is no longer `open_for_offers`, so the expiry no-ops. Idempotent by construction.
 
@@ -1266,7 +1269,8 @@ require the `admin` role.
 | `POST /orders/:orderId/delivery-proof` | Lifecycle | Rider attaches an optional proof-of-drop photo + GPS on the undelivered flow (`KB-POD-DISPUTE` Phase A, IR16-11) |
 | `POST /orders/:id/rating` | Lifecycle | Customer rates → `completed` |
 | `POST /orders/:id/sender-rating` | Lifecycle | Rider rates the sender (recorded-only, rider-journey 4·7) |
-| `POST /orders/:id/delivery-code/rotate` | Lifecycle | Customer re-issues delivery code |
+| `POST /orders/:id/delivery-code/reveal` | Lifecycle | Customer reads the current delivery code (D2: same code every call/device, no rotation) |
+| `POST /orders/:id/delivery-code/rotate` | Lifecycle | Customer re-issues delivery code (explicit only: the lockout re-issue, U04) |
 | `POST /orders/:id/cancel` | Lifecycle | Either party cancels (rider = strike) |
 | `POST /orders/:orderId/issues` | Issues | Party-facing "get help with this trip" (A-05) |
 | `POST /orders/:orderId/report` | Reports | Report the order counterparty after a trip (A-05 adjacent) |
