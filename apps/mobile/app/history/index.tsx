@@ -8,10 +8,11 @@ import { useNow } from "../../src/logic/use-now";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
 import { useHistoryFeed } from "../../src/query/use-history-feed";
 import { AppScreen, EmptyState, emptyCopy, fillEmpty, SkeletonRows, Tappable } from "../../src/ui";
+import { ordersCopy } from "../../src/ui/orders/copy";
 import { Notice } from "../../src/ui/send/kit";
 import { hhmm, RIDER_COPY as R, RF, usd } from "../../src/ui/rider/copy";
 import { Chips, LRow, PushHeader, RLabel } from "../../src/ui/rider/kit";
-import { useAutoRetry } from "../../src/ui/rider/RiderErrorState";
+import { RIDER_LOAD_FAIL_T, useAutoRetry } from "../../src/ui/rider/RiderErrorState";
 
 function title(o: OrderHistoryRow): string {
   const from = o.orderType === "merchant" ? o.merchantName || o.pickup.landmark : o.pickup.landmark;
@@ -46,7 +47,10 @@ function JobHistoryScreen(): React.ReactElement {
   const router = useRouter();
   const now = useNow();
   const { merchantDispatchAutoEnabled } = useFeatureFlags();
-  const { rows, showingStale, isFetching, refetch } = useHistoryFeed();
+  const { rows, showingStale, savedAt, isFetching, refetch } = useHistoryFeed();
+  // MA-L2: the saved list says when it's from in the handoff's words (Orders v2 `asOf`), not invented copy.
+  const savedAtDate = savedAt ? new Date(savedAt) : null;
+  const staleLine = showingStale && savedAtDate && !Number.isNaN(savedAtDate.getTime()) ? ordersCopy.asOf(hhmm(savedAtDate)) : null;
   const [filter, setFilter] = useState<ServiceFilter>("all");
 
   const mine = useMemo(() => (rows ?? []).filter(isRiderRow), [rows]);
@@ -86,7 +90,7 @@ function JobHistoryScreen(): React.ReactElement {
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
             <View style={{ gap: 12, marginBottom: 12 }}>
-              {showingStale ? <Notice icon="wifi-off" text="Showing your last saved trips — we'll refresh when you're back online." /> : null}
+              {staleLine ? <Notice icon="wifi-off" text={staleLine} /> : null}
               {/* Plain text, not a banner: "This week · 0 jobs · $0.00" (empty-states v2, D-78). */}
               <WeekLine jobs={week.jobs} total={week.total} />
               {merchantDispatchAutoEnabled ? (
@@ -138,5 +142,6 @@ function WeekLine({ jobs, total }: { jobs: number; total: number }): React.React
 /** Couldn't load and nothing saved: say what the app is doing, and do it (no Retry button on rider screens). */
 function LoadFailed({ onRetry }: { onRetry: () => void }): React.ReactElement {
   const left = useAutoRetry(onRetry);
-  return <EmptyState icon="wifi-off" tone="info" title="Couldn't load your trips" body={fillEmpty(emptyCopy.rider.retrying, { s: left })} />;
+  // MA-L2: the rider screens' couldn't-load title (RiderErrorState, empty-states v2), not invented copy.
+  return <EmptyState icon="wifi-off" tone="info" title={RIDER_LOAD_FAIL_T} body={fillEmpty(emptyCopy.rider.retrying, { s: left })} />;
 }

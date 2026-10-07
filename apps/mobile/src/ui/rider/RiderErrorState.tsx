@@ -7,6 +7,9 @@ const RETRY_EVERY_S = 10;
  * Calls `onRetry` every 10 s while mounted and returns the seconds left to the next try, for the
  * "Trying again in {s} s" line. Rider screens retry by themselves rather than offer a button.
  */
+/** The rider screens' couldn't-load title (empty-states v2 error tone, D-78). */
+export const RIDER_LOAD_FAIL_T = "Something went wrong";
+
 export function useAutoRetry(onRetry: () => void, everyS = RETRY_EVERY_S): number {
   const [left, setLeft] = React.useState(everyS);
   const retryRef = React.useRef(onRetry);
@@ -36,7 +39,7 @@ export function RiderErrorState({
   onRetry,
   retrying,
   onBack,
-  title = "Something went wrong",
+  title = RIDER_LOAD_FAIL_T,
 }: {
   onRetry: () => void;
   retrying?: boolean;
