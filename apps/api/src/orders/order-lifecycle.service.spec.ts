@@ -515,6 +515,8 @@ describe("OrderLifecycleService.confirmDelivery", () => {
         row({
           order_type: "parcel",
           declared_value: "51.00",
+          // A real booking: its customer of record is the business's booking account.
+          customer_phone: "business:7c1d6a2e-0000-4000-8000-000000000001",
           items: [
             { description: "Brake pads (front)", quantity: 2 },
             { description: "Cash on delivery: collect $51.00 from the buyer, bring it back to Mbare Auto Spares", quantity: 1 },
@@ -526,6 +528,27 @@ describe("OrderLifecycleService.confirmDelivery", () => {
     await svc.confirmDelivery("o1", "r1", "123456");
     expect(updates[0]).toMatchObject({ status: "delivered", debtStatus: "open", debtAmount: 51 });
     expect(updates[0]!.debtOpenedAt).toBe(updates[0]!.deliveredAt);
+  });
+
+  it("a plain customer parcel whose free-text item mimics the cash line opens NO debt on the rider", async () => {
+    // The cash line is free text, so any customer can type it. Only a booking (customer = the business's
+    // booking account) may open a debt — otherwise one parcel parks a permanent, unsettleable debt on the
+    // rider that the debt lock then uses to keep them off new jobs.
+    const updates: Array<Record<string, unknown>> = [];
+    const { svc } = build({
+      $queryRaw: async () =>
+        row({
+          order_type: "parcel",
+          declared_value: "0",
+          customer_phone: "+263771111111",
+          items: [{ description: "Cash on delivery: collect $50.00 from the buyer, bring it back to Nowhere", quantity: 1 }],
+        }),
+      order: { update: async (a: { data: Record<string, unknown> }) => (updates.push(a.data), {}) },
+      orderEvent: { create: async () => ({}) },
+    });
+    await svc.confirmDelivery("o1", "r1", "123456");
+    expect(updates[0]).toMatchObject({ status: "delivered" });
+    expect(updates[0]).not.toHaveProperty("debtStatus");
   });
 
   it("a delivery-only parcel opens no debt", async () => {
@@ -1948,8 +1971,19 @@ describe("OrderLifecycleService.resend (one-tap resend at a new fare)", () => {
   const createdAt = new Date("2026-10-01T10:00:00Z");
 
   /** Harness: `existing` = an already-open clone of the source (or null); spies on every write. */
-  function harness(opts: { src?: Record<string, unknown> | null; existing?: { id: string; createdAt: Date } | null; casCount?: number } = {}) {
+  function harness(
+    opts: {
+      src?: Record<string, unknown> | null;
+      existing?: { id: string; createdAt: Date } | null;
+      casCount?: number;
+      /** The lineage root (default: the source itself). */
+      rootId?: string;
+      /** Extra lineage rows beyond `existing` (e.g. a sibling clone in an active ride). */
+      lineage?: Array<{ id: string; status: string; created_at: Date }>;
+    } = {},
+  ) {
     let reads = 0;
+    let queries = 0;
     const created: Array<Record<string, unknown>> = [];
     const updates: Array<Record<string, unknown>> = [];
     const locks: unknown[] = [];
@@ -1957,11 +1991,18 @@ describe("OrderLifecycleService.resend (one-tap resend at a new fare)", () => {
       order: {
         // First read = the guard read in resend(); later reads = cloneForRebroadcast's source read.
         findUnique: async () => (reads++ === 0 ? (opts.src === undefined ? source() : opts.src) : cloneSource),
-        findFirst: async () => opts.existing ?? null,
         updateMany: async (args: Record<string, unknown>) => { updates.push(args); return { count: opts.casCount ?? 1 }; },
         create: async (args: { data: Record<string, unknown> }) => { created.push(args.data); return { id: "clone-new", createdAt }; },
       },
       $executeRaw: async (...args: unknown[]) => { locks.push(args); return 1; },
+      // 1st $queryRaw = the lineage-root walk; 2nd = the lineage rows (newest first).
+      $queryRaw: async () =>
+        queries++ === 0
+          ? [{ id: opts.rootId ?? "o1" }]
+          : [
+              ...(opts.lineage ?? []),
+              ...(opts.existing ? [{ id: opts.existing.id, status: "open_for_offers", created_at: opts.existing.createdAt }] : []),
+            ],
     });
     const gate = vi.fn(async () => {});
     const announcePriceChange = vi.fn(async () => {});
@@ -2035,6 +2076,35 @@ describe("OrderLifecycleService.resend (one-tap resend at a new fare)", () => {
     expect(h.updates[0].data).not.toHaveProperty("createdAt");
     expect(h.announcePriceChange).toHaveBeenCalledWith("clone-old");
     expect(h.orders.announceOpenOrder).not.toHaveBeenCalled();
+  });
+
+  it("re-prices the lineage's open auction when resending a DIFFERENT finished order of the same trip", async () => {
+    // A expired → C (resend); C cancelled; resend A → D (open). Now resend C: D is the trip's live auction,
+    // so it is re-priced — not a second auction E for the same parcel.
+    const dAt = new Date("2026-10-01T09:59:40Z");
+    const h = harness({
+      src: source({ status: "cancelled" }),
+      rootId: "order-a",
+      existing: { id: "order-d", createdAt: dAt },
+      lineage: [{ id: "order-c", status: "cancelled", created_at: new Date("2026-10-01T09:59:00Z") }],
+    });
+    const res = await h.svc.resend("order-c", "c1", 7);
+    expect(res).toMatchObject({ id: "order-d", status: "open_for_offers", proposedFare: "7" });
+    expect(h.created).toHaveLength(0);
+    expect(h.updates[0]).toMatchObject({ where: { id: "order-d", status: "open_for_offers", customerId: "c1" } });
+    // Both the lineage root and the source are locked, so two resends of different sources in one lineage serialize.
+    expect(h.locks).toHaveLength(2);
+  });
+
+  it("409s when another order of the same trip already has a rider (no second dispatch)", async () => {
+    const h = harness({
+      src: source({ status: "expired" }),
+      rootId: "order-a",
+      lineage: [{ id: "order-d", status: "en_route_pickup", created_at: new Date("2026-10-01T09:59:40Z") }],
+    });
+    await expect(h.svc.resend("order-c", "c1", 7)).rejects.toThrow(/already on its way/i);
+    expect(h.created).toHaveLength(0);
+    expect(h.updates).toHaveLength(0);
   });
 
   it("409s when the open clone's CAS loses (it was picked/cancelled under us)", async () => {

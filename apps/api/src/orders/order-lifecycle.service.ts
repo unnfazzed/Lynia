@@ -11,7 +11,7 @@ import {
   Optional,
   UnauthorizedException,
 } from "@nestjs/common";
-import { codAmount, customerRatingCarriesWeight, DELIVERY_OTP_MAX_ATTEMPTS, HeldReason, OFFER_WINDOW_MS, RELIABILITY, RIDER_STRIKE_COOLDOWN_MS, roundToCents, UNDELIVERED_ABUSE } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, codAmount, customerRatingCarriesWeight, DELIVERY_OTP_MAX_ATTEMPTS, HeldReason, isBusinessBookingAccountPhone, OFFER_WINDOW_MS, RELIABILITY, RIDER_STRIKE_COOLDOWN_MS, roundToCents, UNDELIVERED_ABUSE } from "@lynia/shared";
 import { type OrderStatus, Prisma } from "@prisma/client";
 import { applyReliabilityDelta, shouldFlagUndeliveredVelocity, undeliveredPenalty } from "../riders/reliability";
 import { Queue, Worker } from "bullmq";
@@ -53,6 +53,10 @@ import { WalletService } from "../wallet/wallet.service";
 // RATING_WINDOW_MS stays re-exported here so existing importers of the service module are unaffected.
 export { RATING_WINDOW_MS } from "./order-lifecycle.constants";
 export type { CancelResult, LifecycleResult } from "./order-lifecycle.constants";
+
+/** Bound on a re-broadcast lineage walk (resend): a chain is a handful of re-sends; the cap only guards
+ *  the recursive query against a malformed (cyclic) chain. */
+const LINEAGE_MAX_DEPTH = 50;
 
 /**
  * The post-assignment delivery lifecycle (CONCEPT §5 tracker). Every transition is a guarded CAS
@@ -404,8 +408,9 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
           rider_cash_confirmed_at: Date | null;
           items: unknown;
           declared_value: Prisma.Decimal | string | number | null;
+          customer_phone: string | null;
         }>
-      >`SELECT status, rider_id, otp_hash, delivery_otp_attempts, order_type, merchant_payment_method, customer_cash_confirmed_at, rider_cash_confirmed_at, items, declared_value FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
+      >`SELECT status, rider_id, otp_hash, delivery_otp_attempts, order_type, merchant_payment_method, customer_cash_confirmed_at, rider_cash_confirmed_at, items, declared_value, (SELECT phone FROM profiles WHERE profiles.id = orders.customer_id) AS customer_phone FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
       const o = rows[0];
       if (!o) throw new NotFoundException("Order not found");
       if (o.rider_id !== riderId) throw new ForbiddenException("Not the assigned rider");
@@ -440,7 +445,12 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       // D-48 PR 4b: a shop booking with cash on delivery (its cash line, booking-cod.ts) — the buyer has
       // just paid the rider, so the rider now owes it back to the shop: open the same debt the restaurant
       // cash-back uses, for the booking's declared value, in the same commit as the delivery.
-      const cod = o.order_type === "parcel" && Array.isArray(o.items) ? codAmount(o.items as { description: string }[]) : null;
+      // Only a real booking qualifies: its customer of record is the business's booking account (phone
+      // `business:<merchantId>`, which no sign-in can produce, and re-broadcasts keep it). The cash line
+      // is free text, so a customer typing "Cash on delivery: collect $50…" on a plain parcel must NOT
+      // open a debt on the rider.
+      const isBooking = isBusinessBookingAccountPhone(o.customer_phone);
+      const cod = o.order_type === "parcel" && isBooking && Array.isArray(o.items) ? codAmount(o.items as { description: string }[]) : null;
       const owed = cod === null ? null : Number(o.declared_value ?? cod) || cod;
       await tx.order.update({
         where: { id: orderId },
@@ -1181,13 +1191,35 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
 
     const fare = new Prisma.Decimal(proposedFare);
     const { clone, created } = await this.prisma.$transaction(async (tx) => {
-      // Serialize resends of the same source (and the rider-bail clone, whose cancel tx holds this row).
-      await tx.$executeRaw`SELECT 1 FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
-      const existing = await tx.order.findFirst({
-        where: { rebroadcastOfId: orderId, status: "open_for_offers" },
-        orderBy: { createdAt: "desc" },
-        select: { id: true, createdAt: true },
-      });
+      // One trip = one re-broadcast lineage (orders linked by rebroadcast_of_id). The guarantee is one live
+      // auction per TRIP, not per source row: resending two different finished orders of the same lineage
+      // (A expired → C; C cancelled; resend A → D; resend C → E) must not leave D and E both live — two
+      // riders and two delivery codes for one parcel. So lock the lineage ROOT (every resend in the lineage
+      // meets on it) as well as the source (the rider-bail clone's cancel tx holds that row), then look
+      // across the whole lineage.
+      const rootRows = await tx.$queryRaw<Array<{ id: string }>>`
+        WITH RECURSIVE up(id, parent, depth) AS (
+          SELECT id, rebroadcast_of_id, 0 FROM orders WHERE id = ${orderId}::uuid
+          UNION ALL
+          SELECT o.id, o.rebroadcast_of_id, up.depth + 1 FROM orders o JOIN up ON o.id = up.parent WHERE up.depth < ${LINEAGE_MAX_DEPTH}
+        )
+        SELECT id FROM up ORDER BY depth DESC LIMIT 1`;
+      const rootId = rootRows[0]?.id ?? orderId;
+      await tx.$executeRaw`SELECT 1 FROM orders WHERE id = ${rootId}::uuid FOR UPDATE`;
+      if (rootId !== orderId) await tx.$executeRaw`SELECT 1 FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
+      const lineage = await tx.$queryRaw<Array<{ id: string; status: string; created_at: Date }>>`
+        WITH RECURSIVE down(id, depth) AS (
+          SELECT ${rootId}::uuid, 0
+          UNION ALL
+          SELECT o.id, down.depth + 1 FROM orders o JOIN down ON o.rebroadcast_of_id = down.id WHERE down.depth < ${LINEAGE_MAX_DEPTH}
+        )
+        SELECT o.id, o.status::text AS status, o.created_at FROM orders o JOIN down ON o.id = down.id ORDER BY o.created_at DESC`;
+      // A rider already has this trip: re-sending would dispatch the same parcel twice.
+      if (lineage.some((r) => (ACTIVE_RIDE_STATUSES as string[]).includes(r.status))) {
+        throw new ConflictException("This delivery is already on its way.");
+      }
+      const live = lineage.find((r) => r.status === "open_for_offers");
+      const existing = live ? { id: live.id, createdAt: live.created_at } : null;
       if (existing) {
         const claimed = await tx.order.updateMany({
           where: { id: existing.id, status: "open_for_offers", customerId },

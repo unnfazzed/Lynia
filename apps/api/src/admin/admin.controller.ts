@@ -204,7 +204,12 @@ export class AdminController {
    *  Read-only; the credit action is `POST riders/:id/wallet-credit`. `cursor` (LC-D07) is the last
    *  ledger row id from the previous page — pass it to page further back past the first 20 entries. */
   @Get("riders/:profileId/wallet")
-  riderWallet(@Param("profileId", ParseUUIDPipe) profileId: string, @Query("cursor") cursor?: string) {
+  riderWallet(
+    @Param("profileId", ParseUUIDPipe) profileId: string,
+    // The cursor is a ledger row id (@db.Uuid): validate it so a malformed ?cursor= is a clean 400, not
+    // an unhandled Prisma uuid-cast 500 (same class as the path-param ParseUUIDPipe above).
+    @Query("cursor", new ParseUUIDPipe({ optional: true })) cursor?: string,
+  ) {
     return this.ridersService.walletView(profileId, cursor);
   }
 
@@ -372,7 +377,12 @@ export class AdminController {
    *  404s when the id isn't a merchant. `debtCursor` (LC-D-T1) is the last debt-ledger row id from the
    *  previous page — pass it to page further back past the first 30 entries. */
   @Get("merchants/:id")
-  async merchantDetail(@Param("id", ParseUUIDPipe) id: string, @Query("debtCursor") debtCursor?: string) {
+  async merchantDetail(
+    @Param("id", ParseUUIDPipe) id: string,
+    // The debt-ledger cursor is a @db.Uuid row id: validate it so a malformed ?debtCursor= is a clean
+    // 400, not an unhandled Prisma uuid-cast 500 (same class as the path-param ParseUUIDPipe above).
+    @Query("debtCursor", new ParseUUIDPipe({ optional: true })) debtCursor?: string,
+  ) {
     const merchant = await this.merchantsService.getMerchantDetail(id, debtCursor);
     if (!merchant) throw new NotFoundException("Merchant not found");
     return merchant;

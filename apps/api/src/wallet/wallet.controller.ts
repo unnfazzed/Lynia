@@ -31,7 +31,12 @@ export class WalletController {
 
   /** A reverse-chronological page of ledger receipts. */
   @Get("ledger")
-  ledger(@CurrentUser() id: string, @Query("cursor") cursor?: string) {
+  ledger(
+    @CurrentUser() id: string,
+    // The cursor is a ledger row id (a @db.Uuid PK). Validate it here so a malformed ?cursor= is a clean
+    // 400, not an unhandled Prisma 22P02 uuid-cast → 500 (same class as DS18-05's path-param fix).
+    @Query("cursor", new ParseUUIDPipe({ optional: true })) cursor?: string,
+  ) {
     return this.wallet.getLedger(id, cursor);
   }
 

@@ -42,7 +42,7 @@ export type Waypoint = z.infer<typeof Waypoint>;
 /** One "what are you sending?" line — description + quantity, nothing more for the pilot
  *  (order item-model decision 2026-07-02, recorded in packages/design/HANDOFF.md; size/category/photo stay deferred seams). */
 export const OrderItem = z.object({
-  description: z.string().min(1).max(140),
+  description: z.string().trim().min(1).max(140),
   quantity: z.number().int().min(1).max(99),
 });
 export type OrderItem = z.infer<typeof OrderItem>;
@@ -63,7 +63,7 @@ export const CreateOrderRequest = z
   .object({
     pickup: Waypoint,
     dropoff: Waypoint,
-    itemDescription: z.string().min(1).max(280).optional(),
+    itemDescription: z.string().trim().min(1).max(280).optional(),
     items: z.array(OrderItem).min(1).max(10).optional(),
     note: z.string().max(280).optional(),
     itemPhotoUrl: z.string().url().optional(),
@@ -449,6 +449,15 @@ export const RiderLocationEvent = z.object({
   lng: z.number().min(-180).max(180),
 });
 export type RiderLocationEvent = z.infer<typeof RiderLocationEvent>;
+
+/** `subscribe:order` payload — the order a socket wants to watch. `orderId` is a Postgres `@db.Uuid`
+ *  column, so the gateway must runtime-validate it (mirroring RiderLocationEvent/BoardSubscribeEvent)
+ *  before it reaches Prisma: a non-UUID string otherwise throws an uncaught `22P02` uuid-cast error
+ *  instead of a clean rejection, with no ack returned and an ERROR logged per call. */
+export const SubscribeOrderEvent = z.object({
+  orderId: z.string().uuid(),
+});
+export type SubscribeOrderEvent = z.infer<typeof SubscribeOrderEvent>;
 
 /** Redacted waypoint a browsing (pre-assignment) rider may see: point + landmark only. `.strict()`
  *  so a stray `contactPhone` is REJECTED, not silently stripped — the board must never carry PII. */
