@@ -39,6 +39,7 @@ import {
 import {
   groupByDay,
   historyRowVM,
+  isNowOrder,
   matchesQuery,
   merchantNowVM,
   monthYear,
@@ -95,7 +96,9 @@ export default function OrdersTabScreen(): React.ReactElement {
   );
   const activeOrdersQ = useQuery({ queryKey: ACTIVE_ORDERS_KEY, queryFn: getActiveCustomerOrders, refetchInterval: focused ? 30_000 : false });
   // Array.isArray, not `?? []`: a malformed 200 body is a truthy non-array (CF-04 / UIP-02).
-  const activeOrders = Array.isArray(activeOrdersQ.data) ? activeOrdersQ.data : [];
+  // U06: a delivered order leaves NOW at once and becomes a history row (README §5); the shared feed
+  // keeps it for Home and the cold-start resume, so the filter lives here, not in the status set.
+  const activeOrders = useMemo(() => (Array.isArray(activeOrdersQ.data) ? activeOrdersQ.data.filter(isNowOrder) : []), [activeOrdersQ.data]);
   const foodReads = useFoodOrdersPeek(
     activeOrders.filter((o) => o.orderType === "merchant").map((o) => o.id),
     focused,

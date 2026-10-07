@@ -243,6 +243,15 @@ describe("(tabs)/orders.tsx — Orders v2", () => {
       expect(has(tree, "Parcel to Belgravia · asking $12.00")).toBe(true);
     });
 
+    it("U06: a delivered, unrated parcel leaves NOW and is a history row (README §5), not 'Rider assigned'", async () => {
+      const delivered = { ...parcel, id: "order-1", status: "delivered" };
+      const tree = await open(history([histRow("order-1")]), [delivered]);
+      expect(has(tree, "NOW")).toBe(false);
+      expect(has(tree, /is your rider/)).toBe(false);
+      expect(has(tree, "Rider assigned")).toBe(false);
+      expect(hosts(tree, (n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("Parcel to Borrowdale")).length).toBe(1);
+    });
+
     it("a running order is not repeated in the history", async () => {
       const tree = await open(history([histRow("order-1"), histRow("parcel-2")]), [parcel]);
       expect(hosts(tree, (n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("Parcel to Borrowdale")).length).toBe(1);

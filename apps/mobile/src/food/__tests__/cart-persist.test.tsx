@@ -9,6 +9,7 @@ jest.mock("expo-secure-store", () => ({
   deleteItemAsync: (...a: unknown[]) => mockDeleteItemAsync(...a),
 }));
 
+import { foodOrderIdempotencyKey } from "../../logic/food-cart";
 import { CART_PERSIST_DEBOUNCE_MS, FoodCartProvider, useFoodCart, type FoodCartApi } from "../cart-context";
 
 /**
@@ -110,5 +111,65 @@ describe("cart persistence", () => {
     expect(mockSetItemAsync).toHaveBeenCalledTimes(1);
     const [, payload] = mockSetItemAsync.mock.calls[0] as [string, string];
     expect(JSON.parse(payload).orderNote).toBe("no chilli");
+  });
+});
+
+/**
+ * U02 (BLOCKER): the place-order key used to be derived from the basket alone, so ordering the same
+ * dishes to the same address again replayed the OLD order (cancelled / delivered) instead of placing a
+ * new one. A cart now carries a nonce minted when it starts and dropped with it.
+ */
+describe("cart nonce → place-order idempotency key (U02)", () => {
+  const ATTEMPT = "-17.8,31.0|cash|asap||";
+
+  it("the same attempt keeps the same key, across a restart (retries still dedupe)", async () => {
+    let cart = mountCart();
+    await act(async () => {
+      cart.api().addItem("r1", "Gava's", LINE);
+    });
+    const before = foodOrderIdempotencyKey(cart.api().cart, ATTEMPT);
+    expect(cart.api().cart.nonce).toEqual(expect.any(String));
+    // A second add to the same cart keeps its nonce.
+    await act(async () => {
+      cart.api().addItem("r1", "Gava's", { ...LINE, dishId: "d2" });
+      cart.api().removeItem("d2", "");
+    });
+    expect(foodOrderIdempotencyKey(cart.api().cart, ATTEMPT)).toBe(before);
+
+    // Restart: the persisted draft (with its nonce) is read back.
+    cart.unmount();
+    const [, payload] = mockSetItemAsync.mock.calls[mockSetItemAsync.mock.calls.length - 1] as [string, string];
+    mockGetItemAsync.mockResolvedValue(payload);
+    cart = mountCart();
+    await act(async () => {});
+    expect(cart.api().ready).toBe(true);
+    expect(foodOrderIdempotencyKey(cart.api().cart, ATTEMPT)).toBe(before);
+    cart.unmount();
+  });
+
+  it("a new cart after clear() with the very same basket gets a NEW key", async () => {
+    const cart = mountCart();
+    await act(async () => {
+      cart.api().addItem("r1", "Gava's", LINE);
+    });
+    const first = foodOrderIdempotencyKey(cart.api().cart, ATTEMPT);
+    await act(async () => {
+      cart.api().clear();
+    });
+    expect(cart.api().cart.nonce).toBeUndefined();
+    await act(async () => {
+      cart.api().addItem("r1", "Gava's", LINE);
+    });
+    expect(foodOrderIdempotencyKey(cart.api().cart, ATTEMPT)).not.toBe(first);
+    cart.unmount();
+  });
+
+  it("a draft saved before nonces existed gets one on load (no collision with a past order's key)", async () => {
+    mockGetItemAsync.mockResolvedValue(JSON.stringify({ restaurantId: "r1", restaurantName: "Gava's", lines: [LINE], orderNote: "" }));
+    const cart = mountCart();
+    await act(async () => {});
+    expect(cart.api().cart.nonce).toEqual(expect.any(String));
+    expect(foodOrderIdempotencyKey(cart.api().cart, ATTEMPT)).not.toBe(foodOrderIdempotencyKey({ ...cart.api().cart, nonce: undefined }, ATTEMPT));
+    cart.unmount();
   });
 });

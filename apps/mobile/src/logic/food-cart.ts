@@ -7,6 +7,7 @@
 // app/food/_layout.tsx → cart-context → here (expo-router evaluates every layout while building
 // the route tree) — and a barrel value import would put the API contracts back on the launch path.
 import { RESTAURANTS_PRICING, smallOrderFeeForSubtotal } from "@lynia/shared/restaurants-order";
+import { randomUuidV4, uuidV4FromSeed } from "../util";
 
 export const MAX_ITEM_QTY = 20;
 
@@ -43,9 +44,32 @@ export interface FoodCartState {
   orderNote: string;
   /** The venue's kind; absent on a cart saved before shop ordering (a restaurant cart). */
   venue?: FoodCartVenue | null;
+  /**
+   * U02: a random token minted when a cart STARTS (the first line into an empty cart, or a switch to
+   * another venue) and dropped with the cart (`clear()`, or the last line removed). It seeds the
+   * place-order idempotency key, so retries of one attempt — a double tap, a timeout, an app restart
+   * (the cart is persisted) — still land on the same key and dedupe, while the same basket ordered
+   * again later is a NEW cart with a new key, not the old (cancelled / delivered) order replayed.
+   * Absent on a cart saved before it existed; the cart store mints one on load.
+   */
+  nonce?: string;
 }
 
 export const EMPTY_CART: FoodCartState = { restaurantId: null, restaurantName: null, lines: [], orderNote: "" };
+
+/** A fresh cart nonce (see `FoodCartState.nonce`). */
+export function newCartNonce(): string {
+  return randomUuidV4();
+}
+
+/**
+ * U02: the place-order idempotency key for this cart. `attempt` is everything else that makes the order
+ * (the drop-off, the slot, the out-of-stock choice, the prescription photos); the cart's own `nonce`
+ * makes a new cart a new order even when every one of those matches a past one.
+ */
+export function foodOrderIdempotencyKey(cart: FoodCartState, attempt: string): string {
+  return uuidV4FromSeed(`food-order|${cart.nonce ?? ""}|${cart.restaurantId}|${JSON.stringify(cart.lines)}|${cart.orderNote}|${attempt}`);
+}
 
 export function cartItemCount(lines: FoodCartLine[]): number {
   return lines.reduce((sum, l) => sum + l.quantity, 0);

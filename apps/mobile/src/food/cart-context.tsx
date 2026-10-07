@@ -10,6 +10,7 @@ import {
   type FoodCartState,
   type FoodCartVenue,
   isBelowMinimumOrder,
+  newCartNonce,
   removeLine,
   setLineQuantity,
 } from "../logic/food-cart";
@@ -117,9 +118,13 @@ function mount(): void {
   const epoch = shared.epoch;
   void loadFoodCart().then((saved) => {
     if (epoch !== shared.epoch) return;
-    if (saved) shared.cart = saved;
+    // U02: a draft saved before carts carried a nonce gets one now (and keeps it across restarts), so
+    // its place-order key is still stable for retries but no longer collides with a past order.
+    const legacy = !!saved && saved.lines.length > 0 && !saved.nonce;
+    if (saved) shared.cart = legacy ? { ...saved, nonce: newCartNonce() } : saved;
     shared.ready = true;
     emit();
+    if (legacy) void saveFoodCart(shared.cart);
   });
 }
 
@@ -139,9 +144,11 @@ const addItem = (restaurantId: string, restaurantName: string, line: FoodCartLin
   update((prev) => {
     if (prev.restaurantId && prev.restaurantId !== restaurantId) {
       switched = true;
-      return { restaurantId, restaurantName, lines: [line], orderNote: "", venue: venue ?? null };
+      return { restaurantId, restaurantName, lines: [line], orderNote: "", venue: venue ?? null, nonce: newCartNonce() };
     }
-    return { restaurantId, restaurantName, lines: addLine(prev.lines, line), orderNote: prev.orderNote, venue: venue ?? prev.venue ?? null };
+    // U02: a cart starts with its first line — that is when its nonce is minted; later lines keep it.
+    const nonce = prev.lines.length > 0 && prev.nonce ? prev.nonce : newCartNonce();
+    return { restaurantId, restaurantName, lines: addLine(prev.lines, line), orderNote: prev.orderNote, venue: venue ?? prev.venue ?? null, nonce };
   });
   return switched;
 };
@@ -169,6 +176,7 @@ const clear = (): void => {
     clearTimeout(shared.timer);
     shared.timer = null;
   }
+  // U02: EMPTY_CART carries no nonce — the next cart mints its own, so it is a new order.
   shared.cart = EMPTY_CART;
   emit();
   void clearFoodCart();

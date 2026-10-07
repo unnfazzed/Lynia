@@ -260,6 +260,18 @@ function offline(v: NowCardVM, serviceIcon: IconName, asOf: string): NowCardVM {
   return { ...v, icon: serviceIcon, sub: `${C.lastKnownPrefix}${v.sub}`, etaMinutes: null, pill: C.asOf(asOf) };
 }
 
+/**
+ * Whether a running order still belongs in NOW (README §5 "A card leaves Now as soon as its order is
+ * delivered or cancelled"; segment 7 "the card leaves Now and becomes a history row"). The active feed
+ * keeps `delivered` (the rating still gates closure, so Home and the cold-start resume can return to it),
+ * so the Orders tab filters it out itself — U06: a delivered, unrated parcel otherwise fell to the
+ * `parcelNowVM` default ("{Rider} is your rider · Rider assigned") and stayed out of history for up to 6 h.
+ * The shared status set is deliberately left alone: Home reads the same query.
+ */
+export function isNowOrder(o: Pick<OrderSnapshot, "status">): boolean {
+  return o.status !== "delivered" && o.status !== "completed";
+}
+
 /** Now ordering (README §5): most-advanced stage first, then newest (the feed's own order breaks ties). */
 export function sortNow(cards: NowCardVM[]): NowCardVM[] {
   return cards

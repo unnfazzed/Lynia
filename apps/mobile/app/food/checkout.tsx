@@ -1,15 +1,16 @@
 import { isMerchantOpenNow, normalizePhone } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, View } from "react-native";
+import { Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { getMe, type Me } from "../../src/api/auth";
 import { ApiError } from "../../src/api/client";
 import { placeFoodOrder } from "../../src/api/food-orders";
 import { useFoodCart } from "../../src/food/cart-context";
-import { addLine, cartService, MAX_ITEM_QTY, removeLine, type FoodCartLine } from "../../src/logic/food-cart";
+import { addLine, cartService, foodOrderIdempotencyKey, MAX_ITEM_QTY, removeLine, type FoodCartLine } from "../../src/logic/food-cart";
 import { estimateDeliveryFee, goToPlacedFoodOrder } from "../../src/logic/food-checkout";
 import { deliverToLabel, etaRange, restaurantMeta } from "../../src/logic/food-list";
 import { isWithinServiceCorridor } from "../../src/logic/gates";
@@ -27,7 +28,9 @@ import {
   reviewBreakdown,
   slotDay,
   startsAt,
+  rxOnFor,
   type ChosenSlot,
+  type LatestDish,
   type ReconcileResult,
 } from "../../src/logic/review";
 import { loadMyPickupPhone, saveMyPickupPhone } from "../../src/logic/saved-recipients";
@@ -38,12 +41,12 @@ import { formatMoney } from "../../src/logic/money";
 import { useReachability } from "../../src/net/use-reachability";
 import { routeAfterOrderPlaced } from "../../src/push/ask-in-context";
 import { seedFoodOrder } from "../../src/query/use-food-order";
-import { useOrderFlags } from "../../src/net/use-order-flags";
+import { refreshOrderFlags, useOrderFlags } from "../../src/net/use-order-flags";
 import { useCarriedBalance, useScheduleSlots } from "../../src/query/use-order-flow";
 import { RX_MAX_PAGES, usePrescriptionPhotos } from "../../src/query/use-prescription-photos";
 import { useRestaurantMenu } from "../../src/query/use-restaurants";
 import { useShopCatalogue } from "../../src/query/use-shops";
-import { uuidV4FromSeed, withTimeout } from "../../src/util";
+import { withTimeout } from "../../src/util";
 import { EmptyState, emptyCopy, Icon } from "../../src/ui";
 import { B } from "../../src/ui/browse/copy";
 import { ServiceSticker } from "../../src/ui/browse/kit";
@@ -137,15 +140,41 @@ export default function FoodReviewScreen(): React.ReactElement {
   const suggest = useAddressSuggest(query, editingAddr && queryTyped, reachable);
 
   // ── Phone and the rider note ──────────────────────────────────────────────────────────────────────
-  const [phone, setPhone] = useState("");
+  const [phone, setPhoneRaw] = useState("");
   const [editingPhone, setEditingPhone] = useState(false);
   const [riderNote, setRiderNote] = useState("");
   const [editingNote, setEditingNote] = useState(false);
+  // U08: the block is drawn filled (R1 "YOUR PHONE · 0771 234 567"). The phone this customer last placed
+  // with wins; on a first order (nothing saved — a new install, a new browser) it is the signed-in
+  // account's own number, so a first order no longer meets an empty field that silently blocks Place.
+  // Neither overrides what the customer typed.
+  const phoneTouched = useRef(false);
+  const setPhone = useCallback((p: string): void => {
+    phoneTouched.current = true;
+    setPhoneRaw(p);
+  }, []);
+  const [savedPhone, setSavedPhone] = useState<string | null>(null);
+  const mePhone = useQuery<Me>({ queryKey: ["me"], queryFn: getMe, staleTime: 5 * 60_000 }).data?.phone ?? null;
   useEffect(() => {
     void loadMyPickupPhone().then((p) => {
-      if (p) setPhone((cur) => cur || p);
+      if (p) setSavedPhone(p);
     });
   }, []);
+  useEffect(() => {
+    const pre = savedPhone || mePhone;
+    if (pre && !phoneTouched.current) setPhoneRaw(pre);
+  }, [savedPhone, mePhone]);
+  // U08: Place stopping on the phone focuses the field (and scrolls to it). `autoFocus` alone did nothing
+  // when the field was already mounted (an empty phone), so Place looked dead.
+  const phoneRef = useRef<TextInput>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const phoneY = useRef<number | null>(null);
+  const [phoneAsk, setPhoneAsk] = useState(0);
+  useEffect(() => {
+    if (phoneAsk === 0) return;
+    if (phoneY.current != null) scrollRef.current?.scrollTo({ y: Math.max(0, phoneY.current - 12), animated: true });
+    phoneRef.current?.focus();
+  }, [phoneAsk]);
 
   // A line's note, edited in place (the line key it belongs to + the draft text).
   const [lineNote, setLineNote] = useState<{ key: string; text: string } | null>(null);
@@ -176,11 +205,15 @@ export default function FoodReviewScreen(): React.ReactElement {
   const [changes, setChanges] = useState<Pick<ReconcileResult, "gone" | "priceChanges">>({ gone: [], priceChanges: {} });
   useEffect(() => {
     if (!categories) return;
-    const latest = new Map<string, { priceUsd: number; outOfStock: boolean }>();
-    for (const c of categories) for (const d of c.dishes) latest.set(d.id, { priceUsd: d.priceUsd, outOfStock: d.outOfStock });
+    const latest = new Map<string, LatestDish>();
+    // U09: a pharmacy catalogue also carries each item's "Prescription needed" mark — the reconcile copies
+    // it onto the line, so a line stamped before the Rx flag loaded still asks for its prescription.
+    for (const c of categories)
+      for (const d of c.dishes) latest.set(d.id, { priceUsd: d.priceUsd, outOfStock: d.outOfStock, ...(isShop ? { rxRequired: d.rxRequired === true } : {}) });
     const r = reconcileCart(cart.cart.lines, latest);
-    if (r.gone.length === 0 && Object.keys(r.priceChanges).length === 0) return;
+    if (r.gone.length === 0 && Object.keys(r.priceChanges).length === 0 && !r.rxChanged) return;
     cart.replaceLines(r.lines);
+    if (r.gone.length === 0 && Object.keys(r.priceChanges).length === 0) return;
     setChanges((prev) => ({ gone: [...prev.gone, ...r.gone], priceChanges: { ...prev.priceChanges, ...r.priceChanges } }));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per fetched menu, not per cart edit.
   }, [categories]);
@@ -216,8 +249,13 @@ export default function FoodReviewScreen(): React.ReactElement {
   const [oos, setOos] = useState<"ask" | "remove">("ask");
 
   // ── Prescription (R8a/R8b, behind rxEnabled) ──────────────────────────────────────────────────────
-  const rxOn = flags.rxEnabled && service === "pharmacy";
-  const rxNeeded = rxOn && cart.cart.lines.some((l) => l.rxRequired);
+  // U09 / P17: on when the (shared, cached) flag says so OR the pharmacy's catalogue holds an Rx item (the
+  // server lists those only while Rx is on). A line needs a prescription when it was stamped so, or when
+  // the latest catalogue marks its item — a line added before the flag loaded is no longer exempt.
+  const rxOn = service === "pharmacy" && rxOnFor(flags.rxEnabled, categories);
+  const rxDishes = useMemo(() => new Set((categories ?? []).flatMap((c) => c.dishes.filter((d) => d.rxRequired === true).map((d) => d.id))), [categories]);
+  const lineNeedsRx = (l: FoodCartLine): boolean => rxOn && (l.rxRequired === true || rxDishes.has(l.dishId));
+  const rxNeeded = cart.cart.lines.some(lineNeedsRx);
   const rx = usePrescriptionPhotos(() => setToast({ text: O.c.noData, retry: false }));
   const [patient, setPatient] = useState("");
   const [consent, setConsent] = useState(false);
@@ -227,12 +265,11 @@ export default function FoodReviewScreen(): React.ReactElement {
   // ── BRIEF D3f: a balance owed from a cancel after collection rides on this order ──────────────────
   const owed = useCarriedBalance(cart.ready && !!rid);
 
+  // U02: seeded by the cart's nonce too, so the same basket ordered again (a new cart) is a new order,
+  // while a retry of this attempt (double tap, timeout, restart — the cart is persisted) still dedupes.
   const idempotencyKey = useMemo(
-    () =>
-      uuidV4FromSeed(
-        `food-order|${cart.cart.restaurantId}|${JSON.stringify(cart.cart.lines)}|${cart.cart.orderNote}|${drop?.lat},${drop?.lng}|cash|${sched?.slot.start ?? "asap"}|${isShop ? oos : ""}|${rxKeys}`,
-      ),
-    [cart.cart.restaurantId, cart.cart.lines, cart.cart.orderNote, drop?.lat, drop?.lng, sched?.slot.start, isShop, oos, rxKeys],
+    () => foodOrderIdempotencyKey(cart.cart, `${drop?.lat},${drop?.lng}|cash|${sched?.slot.start ?? "asap"}|${isShop ? oos : ""}|${rxKeys}`),
+    [cart.cart, drop?.lat, drop?.lng, sched?.slot.start, isShop, oos, rxKeys],
   );
 
   const deliveryFee = drop && restaurant ? estimateDeliveryFee(restaurant.location, drop) : null;
@@ -312,7 +349,11 @@ export default function FoodReviewScreen(): React.ReactElement {
   const submit = async (): Promise<void> => {
     setToast(null);
     if (!drop) return openAddress();
-    if (!phoneOk) return setEditingPhone(true);
+    if (!phoneOk) {
+      setEditingPhone(true);
+      setPhoneAsk((n) => n + 1);
+      return;
+    }
     if (!cart.cart.restaurantId) return;
     // R8b: the prescription travels whole — a patient name and the consent tick with the pages. Missing
     // either is said once in the toast (hints never block except the Rx photo itself).
@@ -345,7 +386,11 @@ export default function FoodReviewScreen(): React.ReactElement {
       if (!mounted.current) return;
       // A 4xx carries the server's reason (on hold, a dish just sold out); anything else is R7b.
       const told = err instanceof ApiError && err.status >= 400 && err.status < 500 && err.message;
-      if (err instanceof ApiError && err.status === 409) refetch();
+      if (err instanceof ApiError && err.status === 409) {
+        refetch();
+        // U09: a refusal for a missing prescription means the Rx switch is on — re-ask, so the block shows.
+        if (service === "pharmacy") void refreshOrderFlags();
+      }
       setToast(told ? { text: err.message, retry: false } : { text: O.r.failed, retry: true });
     } finally {
       if (mounted.current) setBusy(false);
@@ -398,7 +443,7 @@ export default function FoodReviewScreen(): React.ReactElement {
     <View style={{ flex: 1, backgroundColor: tokens.color.surface, paddingTop: insets.top }}>
       <ReviewHeader onBack={() => (editingAddr ? setEditingAddr(false) : router.back())} />
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: 12, paddingHorizontal: 16, paddingBottom: 24, gap: 12 }}>
+        <ScrollView ref={scrollRef} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: 12, paddingHorizontal: 16, paddingBottom: 24, gap: 12 }}>
           {editingAddr ? (
             <AddressEdit
               draft={draft}
@@ -442,7 +487,7 @@ export default function FoodReviewScreen(): React.ReactElement {
 
               {/* "Over-the-counter medicine only" is untrue while prescriptions are on (E2E 2026-10-05 FS-5,
                   owner: hide it, as the browse notice). useOrderFlags fails closed, so an unknown flag keeps it. */}
-              {service === "pharmacy" && !flags.rxEnabled ? (
+              {service === "pharmacy" && !rxOn ? (
                 <ReviewNote tone="ok" icon="shield-check">
                   {O.r.otc}
                 </ReviewNote>
@@ -463,7 +508,7 @@ export default function FoodReviewScreen(): React.ReactElement {
                       key={k}
                       name={l.name}
                       price={l.priceUsd * l.quantity}
-                      rx={rxOn && !!l.rxRequired}
+                      rx={lineNeedsRx(l)}
                       was={ch ? ch.from * l.quantity : null}
                       flag={ch ? { text: ofFmt(O.r.priceUp, { a: formatMoney(ch.from), b: formatMoney(ch.to) }), tone: "hi" } : null}
                       note={l.note}
@@ -553,9 +598,16 @@ export default function FoodReviewScreen(): React.ReactElement {
                 </ReviewBlock>
               ) : null}
 
-              <ReviewBlock label={O.r.phone} edit={{ label: phoneOpen ? O.c.done : O.c.edit, onPress: () => setEditingPhone(!phoneOpen) }}>
+              <ReviewBlock
+                label={O.r.phone}
+                edit={{ label: phoneOpen ? O.c.done : O.c.edit, onPress: () => setEditingPhone(!phoneOpen) }}
+                onLayout={(e) => {
+                  phoneY.current = e.nativeEvent.layout.y;
+                }}
+              >
                 {phoneOpen ? (
                   <ReviewField
+                    ref={phoneRef}
                     autoFocus={editingPhone}
                     value={phone}
                     onChangeText={setPhone}
