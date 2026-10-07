@@ -108,6 +108,8 @@ export default function RiderHome(): React.ReactElement {
   const [activationNudge, setActivationNudge] = useState(0);
   const [loc, setLoc] = useState<{ lat: number; lng: number } | null>(null);
   const [locDenied, setLocDenied] = useState(false);
+  // FR-H1: never asked yet (a C1 "Ride" signup). Not a wall while R3 is held — R3's "Go online" asks (P1).
+  const [locUndetermined, setLocUndetermined] = useState(false);
   const [locHint, setLocHint] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast>(null);
@@ -130,6 +132,7 @@ export default function RiderHome(): React.ReactElement {
   // from R3's "Go online" or G8's "Turn on"), so no bare OS dialog ever pops over the board or the splash.
   const requestLocation = useCallback(async (): Promise<void> => {
     const status = (await Location.getForegroundPermissionsAsync().catch(() => null))?.status ?? "denied";
+    setLocUndetermined(status === "undetermined");
     if (status !== "granted") {
       setLocDenied(true);
       return;
@@ -661,7 +664,7 @@ export default function RiderHome(): React.ReactElement {
   const { config: walletConfig } = useWalletConfig();
   // R-9: keyed on DATA, not on the query status: a failed re-read keeps the last good `me` (TanStack keeps
   // data on error), so a pending, declined or locked rider stays behind their wall through a 5xx.
-  const gate: GateId | null = meQ.data == null ? null : resolveGate({ kyc: kycGate, server: serverGate, locDenied });
+  const gate: GateId | null = meQ.data == null ? null : resolveGate({ kyc: kycGate, server: serverGate, locDenied: locDenied && !(holdForWelcome && locUndetermined) });
   // G10 "Clears at" (BD-M3): the cooldown's end from /auth/me (absent on an older server). The facts tick
   // each minute, and the wall lifts by itself when the timer ends.
   const coolUntil = rider?.cooldownUntil ? new Date(rider.cooldownUntil) : null;
@@ -929,7 +932,7 @@ export default function RiderHome(): React.ReactElement {
         // Owner decision D-82 §2 #5: R3's "Go online" starts the rider permission flow (P1…); P13's "Go online"
         // goes online (it runs this callback). A rider who has granted everything goes straight online.
         onGoOnline={() =>
-          void startRiderPermFlow(router, () => {
+          startRiderPermFlow(router, () => {
             setWelcomeSeen(true);
             if (profileId) void markRiderWelcomeSeen(profileId);
           })

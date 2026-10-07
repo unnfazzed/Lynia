@@ -387,6 +387,8 @@ export const RIDER_COPY = {
   docBikeLabel: "Number plate",
   docBikeHint: "As it's written on the plate, like AEE 4471.",
   docBikeErr: "Couldn't save your plate. Check your connection and try again.",
+  /* FR-M2 (D-78 shape): Bike & documents couldn't load `me`. */
+  docLoadErr: "Couldn't load your documents",
   /* D-79 (owner 2026-10-06): Personal details. Row label and sub are the handoff's (mint2.js Account). */
   sPersonal: "Personal details",
   sPersonalS: "Name, phone, optional ID",

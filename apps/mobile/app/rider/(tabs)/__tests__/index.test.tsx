@@ -1512,6 +1512,29 @@ describe("rider board — R3 'You're verified' (Calm Mint v2)", () => {
     expect(treeText(activeTree)).toContain("After these, commission comes off a prepaid balance.");
   });
 
+  it("FR-H1: location never asked yet — R3 comes first, not the G8 'Turn on location' wall", async () => {
+    mockLocPermission = "undetermined";
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 0 }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).toContain("You’re verified");
+    expect(treeText(activeTree)).not.toContain("Jobs need your location.");
+  });
+
+  it("FR-H1: a denied location still walls a rider past R3", async () => {
+    mockLocPermission = "denied";
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 0 }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).toContain("Turn on location");
+  });
+
   it("a rider with trips behind them never sees R3", async () => {
     mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 20 }));
     mockGetActiveOrder.mockResolvedValue(null);

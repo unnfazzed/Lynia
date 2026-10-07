@@ -5,6 +5,7 @@ import React from "react";
  * without a name sees C5's name step first; and however the check ends, the rider lands on the board.
  */
 import renderer, { act } from "react-test-renderer";
+import { BackHandler } from "react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { resolveKycGate, type KycGateRider, type KycSdkResult } from "../../../src/logic/gates";
@@ -267,6 +268,28 @@ describe("BecomeRiderScreen — the name step (legacy accounts without a name), 
     expect(tree.root.findAll((n) => (n.type as unknown) === "TextInput").map((n) => n.props.accessibilityLabel)).toEqual(["First name", "Surname"]);
     expect(mockBecomeRider).not.toHaveBeenCalled();
     expect(tree.root.findAllByType("KycCheckHostMarker" as never)).toHaveLength(1);
+    act(() => tree.unmount());
+  });
+
+  it("FR-L5: Android back on the name step returns to R1 instead of closing the app", async () => {
+    mockMe = { ...NAMELESS };
+    const handlers: (() => boolean | null | undefined)[] = [];
+    const spy = jest.spyOn(BackHandler, "addEventListener").mockImplementation((_e, h) => {
+      handlers.push(h);
+      return { remove: () => void handlers.splice(handlers.indexOf(h), 1) } as never;
+    });
+    const tree = await mount();
+    await tapStart(tree);
+    expect(text(tree)).toContain("What should riders call you?");
+    let consumed: boolean | null | undefined;
+    await act(async () => {
+      consumed = handlers.at(-1)?.();
+    });
+    await flush();
+    expect(consumed).toBe(true);
+    expect(tree.root.findAllByType(RiderIntro)).toHaveLength(1);
+    expect(text(tree)).not.toContain("What should riders call you?");
+    spy.mockRestore();
     act(() => tree.unmount());
   });
 

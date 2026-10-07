@@ -253,7 +253,9 @@ export function BootSplash(): React.ReactElement {
   const [offlineSince, setOfflineSince] = useState<number | null>(null);
   const [offlineTotal, setOfflineTotal] = useState(0);
   const giveUpAt = GIVE_UP_MS + offlineTotal + (offlineSince != null ? Math.max(0, t - offlineSince) : 0);
-  const doneAt = readyDoneAt ?? (offline ? null : giveUpAt);
+  // FR-M3 (owner decision): a rider boot never holds forever offline. Its bound is wall-clock, so after the
+  // give-up the rider reaches the board / active job from the cache instead of waiting on the network.
+  const doneAt = readyDoneAt ?? (riderBoot ? GIVE_UP_MS : offline ? null : giveUpAt);
   const done = doneLatch.current || (doneAt != null && t >= doneAt);
   if (done) doneLatch.current = true;
   useEffect(() => {

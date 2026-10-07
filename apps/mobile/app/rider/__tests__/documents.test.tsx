@@ -20,11 +20,13 @@ jest.mock("../../../src/api/auth", () => ({
 const mockUpdateRider = jest.fn();
 jest.mock("../../../src/api/riders", () => ({ updateRiderProfile: (b: unknown) => mockUpdateRider(b) }));
 const mockPick = jest.fn();
+const mockAllowed = jest.fn(async (_from: string) => false);
 const mockSavePhoto = jest.fn();
 const mockDraft = { value: null as unknown };
 jest.mock("../../../src/logic/rider-documents", () => ({
   ...jest.requireActual("../../../src/logic/rider-documents"),
   pickRiderPhoto: (from: string) => mockPick(from),
+  riderPhotoAllowed: (from: string) => mockAllowed(from),
   saveRiderPhoto: (shot: unknown, onProgress?: (n: number) => void) => mockSavePhoto(shot, onProgress),
   loadRiderPhotoDraft: async () => mockDraft.value,
   saveRiderPhotoDraft: async (shot: unknown) => {
@@ -35,7 +37,8 @@ jest.mock("../../../src/logic/rider-documents", () => ({
   },
 }));
 
-import DocumentsScreen, { ADD_PILL_HEIGHT } from "../documents";
+import { AppState, Linking } from "react-native";
+import DocumentsScreen, { __resetPhotoUploadForTest, ADD_PILL_HEIGHT } from "../documents";
 
 const trees: renderer.ReactTestRenderer[] = [];
 function render(): renderer.ReactTestRenderer {
@@ -77,6 +80,7 @@ const bars = (t: renderer.ReactTestRenderer) => ({
 
 beforeEach(() => {
   jest.clearAllMocks();
+  __resetPhotoUploadForTest();
   mockDraft.value = null;
   mockRider = { kycStatus: "verified", bikeReg: null, hasPhoto: false, plateStatus: "none" };
 });
@@ -187,6 +191,108 @@ describe("E2 · photo", () => {
     await act(async () => {
       (BackHandler as unknown as { mockPressBack?: () => void }).mockPressBack?.();
     });
+  });
+});
+
+describe("rider audit — Bike & documents", () => {
+  const shot = { uri: "file:///p.jpg", contentType: "image/jpeg" };
+
+  it("FR-H2: camera denied in the guide closes the guide first, so the toast is seen", async () => {
+    mockPick.mockResolvedValue("denied");
+    const tree = render();
+    await loaded(tree);
+    await press(tree, "add-photo");
+    await press(tree, "photo-camera");
+    expect(has(tree, "capture-guide")).toBe(true);
+    await press(tree, "guide-shutter");
+    const guide = tree.root.findAll((n) => n.props.visible !== undefined && n.props.onRequestClose !== undefined && n.props.animationType === "fade")[0];
+    expect(guide?.props.visible).toBe(false);
+  });
+
+  it("FR-H2: camera blocked for good → the Open phone settings sheet; back with access on, the camera opens", async () => {
+    let resume: ((s: string) => void) | null = null;
+    // Swapped by hand, not spied: restoring a spy on the RN mock's jest.fn would wipe its implementation.
+    const original = AppState.addEventListener;
+    AppState.addEventListener = ((_e: string, cb: (s: string) => void) => {
+      resume = cb;
+      return { remove: () => undefined };
+    }) as never;
+    const openSettings = jest.spyOn(Linking, "openSettings").mockImplementation(async () => undefined);
+    mockPick.mockResolvedValueOnce("blocked").mockResolvedValueOnce(shot);
+    const tree = render();
+    await loaded(tree);
+    await press(tree, "add-photo");
+    await press(tree, "photo-camera");
+    await press(tree, "guide-shutter");
+    expect(text(tree)).toContain("Allow camera and photo access in your phone's settings, then try again.");
+    await press(tree, "photo-settings");
+    expect(openSettings).toHaveBeenCalled();
+    mockAllowed.mockResolvedValueOnce(true);
+    await act(async () => resume?.("active"));
+    await tick();
+    expect(mockAllowed).toHaveBeenCalledWith("camera");
+    expect(mockPick).toHaveBeenCalledTimes(2);
+    expect(has(tree, "documents-preview")).toBe(true);
+    AppState.addEventListener = original;
+    openSettings.mockRestore();
+  });
+
+  it("FR-M1: leaving mid-upload and coming back shows it still uploading — not 'didn't finish' — and never sends twice", async () => {
+    mockPick.mockResolvedValue(shot);
+    let finish!: (v: unknown) => void;
+    mockSavePhoto.mockImplementation(() => new Promise((r) => (finish = r)));
+    const first = render();
+    await loaded(first);
+    await press(first, "add-photo");
+    await press(first, "photo-gallery");
+    await press(first, "photo-use");
+    act(() => first.unmount());
+    trees.splice(trees.indexOf(first), 1);
+    expect(mockDraft.value).toEqual(shot); // the draft is on the phone while it uploads
+
+    const again = render();
+    await loaded(again);
+    await tick();
+    expect(has(again, "documents-failed")).toBe(false);
+    expect(text(again)).toContain("Uploading…");
+    await act(async () => finish({ hasPhoto: true, bikeReg: null, plateStatus: "none" }));
+    await tick();
+    expect(mockSavePhoto).toHaveBeenCalledTimes(1);
+    expect(text(again)).not.toContain("Uploading…");
+    expect(mockDraft.value).toBeNull();
+  });
+
+  it("FR-M2: a failed load is the D-78 empty state with a 'Try again' that re-reads", async () => {
+    mockRider = null as unknown as Record<string, unknown>;
+    const tree = render();
+    for (let i = 0; i < 20 && !has(tree, "documents-error"); i += 1) await tick(1);
+    expect(has(tree, "documents-error")).toBe(true);
+    expect(text(tree)).toContain("Couldn't load your documents");
+    mockRider = { kycStatus: "verified", bikeReg: null, hasPhoto: false, plateStatus: "none" };
+    const retry = tree.root.findAll((n) => n.props.accessibilityLabel === "Try again" && typeof n.props.onPress === "function")[0]!;
+    await act(async () => retry.props.onPress());
+    await loaded(tree);
+    expect(text(tree)).toContain("National ID");
+  });
+
+  it("FR-L3: the capture guide's tip glyphs use the brand green on the ink, not the dark accent text", async () => {
+    const tree = render();
+    await loaded(tree);
+    await press(tree, "add-photo");
+    await press(tree, "photo-camera");
+    const guide = tree.root.findAll((n) => n.props.testID === "capture-guide")[0]!;
+    const colors = guide.findAll((n) => typeof n.props.color === "string" && n.props.size === 16).map((n) => n.props.color);
+    expect(colors.length).toBeGreaterThan(0);
+    expect(colors).not.toContain(tokens.color.accentText);
+    expect(new Set(colors)).toEqual(new Set([tokens.color.accent]));
+  });
+
+  it("FR-L4: the plate field shows 'e.g. ABC 1234' once (the helper), with no placeholder", async () => {
+    const tree = render();
+    await loaded(tree);
+    await press(tree, "add-plate");
+    const field = tree.root.findAll((n) => n.props.testID === "plate-field" && typeof n.props.onChangeText === "function")[0]!;
+    expect(field.props.placeholder).toBeUndefined();
   });
 });
 
