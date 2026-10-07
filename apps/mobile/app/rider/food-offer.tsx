@@ -16,6 +16,7 @@ import { OrderSheet, PeekMark } from "../../src/ui/order/OrderSheet";
 import { JTag, StopLine } from "../../src/ui/rider/board";
 import { O, ofFmt } from "../../src/ui/orderflow/copy";
 import { OfNote } from "../../src/ui/rider/proof-kit";
+import { RiderErrorState } from "../../src/ui/rider/RiderErrorState";
 import type { IconName } from "../../src/ui";
 import { RIDER_COPY as R, RF, usd } from "../../src/ui/rider/copy";
 import { TerminalBody } from "../../src/ui/rider/job-kit";
@@ -103,6 +104,16 @@ export default function FoodOffer(): React.ReactElement {
     return (
       <Screen>
         <SkeletonList />
+      </Screen>
+    );
+  }
+
+  // `generic_error`: a FAILED READ is not "the offer went to another rider" (LC-D-SIB-1). The no-offer
+  // answer is a 200 with `offer: null`, so an error here means the read itself failed.
+  if (offerQ.isError && !offerQ.data) {
+    return (
+      <Screen>
+        <RiderErrorState onRetry={() => void offerQ.refetch()} retrying={offerQ.isFetching} onBack={() => router.replace("/rider")} />
       </Screen>
     );
   }

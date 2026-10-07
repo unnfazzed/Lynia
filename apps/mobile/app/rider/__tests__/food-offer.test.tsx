@@ -177,6 +177,17 @@ describe("FoodOffer (Rider v2 F1–F4)", () => {
     expect(tree.root.findAll((n) => n.props.label === "Accept this job")).toHaveLength(0);
   });
 
+  it("a FAILED offer read is the couldn't-load state, not F4's 'went to another rider' (LC-D-SIB-1)", async () => {
+    mockGetOffer.mockRejectedValue(new Error("network"));
+    const tree = await render();
+    const text = textOf(tree);
+
+    expect(text).toContain("Something went wrong");
+    expect(text).toContain("Trying again in 10 s");
+    expect(text).not.toContain("That one went to another rider");
+    expect(tree.root.findAll((n) => n.props.label === "Accept this job")).toHaveLength(0);
+  });
+
   it("RD1b: a pharmacy job wears the PHARMACY tag and the sealed-bag note (Order flow v2, D-59)", async () => {
     mockJob = { businessType: "shop", shopKind: "pharmacy", scheduledFor: null, rx: false };
     mockGetOffer.mockResolvedValue(offer());

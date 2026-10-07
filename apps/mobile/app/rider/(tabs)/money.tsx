@@ -15,7 +15,8 @@ import { useFeatureFlags } from "../../../src/net/use-feature-flags";
 import { useHistoryFeed } from "../../../src/query/use-history-feed";
 import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refetch";
 import { useWallet, useWalletConfig, useWalletLedger, walletKey, walletLedgerKey } from "../../../src/query/use-wallet";
-import { AppScreen, EmptyRow, emptyCopy, Icon, SkeletonRows, useTabRoot } from "../../../src/ui";
+import { AppScreen, EmptyRow, emptyCopy, fillEmpty, Icon, SkeletonRows, useTabRoot } from "../../../src/ui";
+import { useAutoRetry } from "../../../src/ui/rider/RiderErrorState";
 import { SmBtn } from "../../../src/ui/order/kit";
 import { Notice } from "../../../src/ui/send/kit";
 import { hhmm, RIDER_COPY as R, RF, usd } from "../../../src/ui/rider/copy";
@@ -82,6 +83,12 @@ function itemMeta(i: MoneyItem): string {
   return RF.lMeta(i.amount < 0 ? R.fromBalance : R.toBalance, t);
 }
 
+/** The history's failed-read row: rider screens retry by themselves and say so (empty-states v2, D-78). */
+function LedgerRetryRow({ onRetry }: { onRetry: () => void }): React.ReactElement {
+  const left = useAutoRetry(onRetry);
+  return <EmptyRow disc icon="circle-alert" text={fillEmpty(emptyCopy.rider.retrying, { s: left })} style={{ paddingVertical: 4 }} />;
+}
+
 /** Bars for the week strip: today's bar is accent with a 700 label, the rest accent-wash. */
 function WeekBars({ byDay, todayIdx }: { byDay: number[]; todayIdx: number }): React.ReactElement {
   const max = Math.max(1, ...byDay);
@@ -113,7 +120,7 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
   const { merchantDispatchAutoEnabled: foodOn } = useFeatureFlags();
   const { config } = useWalletConfig();
   const { wallet, isLoading, isError } = useWallet();
-  const { entries, isLoading: ledgerLoading, hasMore, isLoadingMore, loadMore } = useWalletLedger();
+  const { entries, isLoading: ledgerLoading, isError: ledgerError, refetch: refetchLedger, hasMore, isLoadingMore, loadMore } = useWalletLedger();
   const { rows: history } = useHistoryFeed();
   const pending = usePendingTopupReconciliation();
   const [range, setRange] = useState<"today" | "week">("today");
@@ -271,6 +278,9 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
         ) : null}
         {ledgerLoading ? (
           <SkeletonRows count={3} />
+        ) : feed.length === 0 && ledgerError && entries.length === 0 ? (
+          // A FAILED ledger read is not "No jobs yet today" (LC-D-SIB-1): the rider error line, no Retry.
+          <LedgerRetryRow onRetry={refetchLedger} />
         ) : feed.length === 0 ? (
           // M9 — one quiet row (empty-states v2, D-78).
           <EmptyRow disc icon="receipt" text={emptyCopy.rider.noJobsToday} style={{ paddingVertical: 4 }} />
