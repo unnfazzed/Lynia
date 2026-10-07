@@ -2849,4 +2849,7 @@ Source: `docs/e2e-runs/2026-10-07-merchant/REPORT.md` (live browser run of the m
 | MJ-H5 | Pharmacy with no pharmacist can list Rx items that can never be packed. | `merchant.service.ts:1110` | High | **OPEN** |
 | MJ-M1…M16 | Auto-accept copy contradiction, lost decline reason, fee-less change total, open redirect, alarm after sign-out, socket auth, onboarding lockout, Android back, scheduled-ring issues, silent cancels, Rx page gaps, Book-a-rider dead-end copy, join bounce. | see report | Medium | **OPEN** |
 | MJ-P1…P3 | Socket event ignored + 5 s poll all day; duplicate calls; proof photos re-downloaded every 5 s. | see report | Medium/Low | **OPEN** |
+| MJ-RB1 | Customer cancels after the rider collected: the merchant has no next action, the food's return can't be recorded, and the rider is locked out. | `orders-view.ts:86` | Blocker | **OPEN** (review addendum) |
+| MJ-RH1…RH4 | "It wasn't returned" instantly writes off the debt and suspends the rider; ended bookings vanish from the board; hours page shows 08:00–22:00 when none were saved, while customers see 24/7; a 5xx on /merchant/me leaves the board and alarm off. | see report addendum | High | **OPEN** |
+| MJ-RM1…RM19, MJ-RL1…RL28 | Review addendum: lifecycle, booking, Money in UTC not Harare time, listing, branches, speed and attack findings. | `docs/e2e-runs/2026-10-07-merchant/REPORT.md` addendum | Medium/Low | **OPEN** |
 
