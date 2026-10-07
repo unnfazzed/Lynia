@@ -6,7 +6,8 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-10-06 (**`MOB-MAP-04` FIXED** — interactive session. The Android map was blank on every
+**Last consolidated:** 2026-10-07 (**Rider UI/UX audit**: 65 of 68 findings fixed across #1106–#1109 and #1112; B6, FJ-H2, FJ-H4 open, not selected. See the "Rider UI/UX audit 2026-10-07" entry at the end.)
+Prior: 2026-10-06 (**`MOB-MAP-04` FIXED** — interactive session. The Android map was blank on every
 phone on Android 16 or older: Play signs the app with three certificates (hybrid signing) and the Maps key allowlisted
 only the Android 17+ one. Fixed in GCP with no build; Maps Key Doctor now tests the allowlist, Terraform refuses a
 partial certificate list, and a tap on an unloaded map can no longer pin the Pacific. See the `MOB-MAP-04` row.)
@@ -2804,3 +2805,30 @@ without GPS; FS-1 key code checks by phone with a ~10x per-IP ceiling.
 | E2E-P-12 | Hand-over checklist fragments for an unnamed rider. | merchant `orders-view.ts`, `queue/[id]/page.tsx` | Polish | **FIXED**: a blank name falls back to "the rider". |
 | E2E-DEP-01 | Two High/Critical advisories published 2026-10-06 (`proxy-addr` GHSA-jqcg-44mw-7w3h, `source-map-js` GHSA-68fv-2mgg-jv7q) turned the dependency audit red everywhere. | root `package.json` overrides | HIGH (CI red) | **FIXED** (#1081): patch overrides. |
 
+
+---
+
+## Rider UI/UX audit 2026-10-07 (interactive)
+
+Source: a read-only code audit of the rider side of `apps/mobile` (board, parcel job, merchant job, Money & Account,
+first run), 68 findings. The owner selected 65 to fix, one PR per area. Owner constraints for the fixes: no new screens
+or features, short copy. Not selected, and still open: **B6** (no working top-up route once commission > 0%: the phone
+top-up card is gone and every self-serve top-up expires; see `PAYMENT-RAIL-OUTSTANDING.md`), **FJ-H2** (door cash
+handshake has no waiting state, countdown or dispute), **FJ-H4** (a cancelled food order gives the parcel instruction
+after collection and no reason before it).
+
+| ID | Finding | Location | Severity | Status |
+|----|---------|----------|----------|--------|
+| B1 | Rider with notifications blocked could never pass R3 (P11 had no "Not now"). | `app/permissions.tsx` | Blocker | **FIXED** (#1108) |
+| B2 | A failed auto status step was never retried; Collect/Confirm stuck disabled. | `app/rider/job.tsx`, `food-job.tsx` | Blocker | **FIXED** (#1109 parcel, #1112 food) |
+| B3 | Camera denied: pickup photo impossible, only exit was a strike-costing cancel. | `job.tsx`, `use-pickup-photo.ts` | Blocker | **FIXED** (#1109; food side FJ-H6 #1112) |
+| B4 | A support-resolved frozen cash handshake never unlocked the delivery code. | `src/logic/food-doorstep.ts` | Blocker | **FIXED** (#1112) |
+| B5 | Board stopped retrying go-online after 4 failures. | `app/rider/(tabs)/index.tsx` | Blocker | **FIXED** (#1107) |
+| B6 | No working top-up route once commission > 0%. | `TopUpFlow.tsx`, board G14 | Blocker (dormant) | **OPEN — not selected** |
+| BD-H1…BD-L3 | Board: stale location, swallowed withdraw, silent active-job/open-jobs failures, "picked you" over food jobs, blank board, taken toast, cooldown facts, pin scroll, duplicate offer screens, a11y, cancelled bar, tokens. | board files | High–Low | **FIXED** (#1107). Partial: BD-M3 (hold reason / suspended-until have no field or copy), BD-L3 (17/13px have no token). |
+| PJ-H1…PJ-L4 | Parcel: lost pickup photo, one-way Can't reach, locked code never unlocking, offline cold start, stale offer price, refusal copy, early wrong-code, repeat confirm, lost queued confirm, font scale, phantom calls, cancel landing, fare/copy drift. | parcel files | High–Low | **FIXED** (#1109). Undrawn additions logged as D-85. |
+| FJ-H1…FJ-L2 (ex. H2, H4) | Merchant job: queued bag photo never confirming pickup, lost return legs, carried balance missing from collect amounts, camera denied, door photo, code auto-send, locked pickup code, legacy reach/return cards, wrong copy, tokens. | food files | High–Low | **FIXED** (#1112). Partial: FJ-H3 (Back/"Next jobs" still leave, as drawn), FJ-M1 (no server idempotency key), FJ-M3 (no merchant "code ok, photo pending" state), FJ-L1 (shared ProblemSheet food line; hand-over tap not sent to server). A typed pickup code is lost if the app is killed while the bag photo is queued. |
+| FJ-H2 | Door cash handshake: no waiting state, countdown or dispute. | `food-job.tsx` | High | **OPEN — not selected** |
+| FJ-H4 | Cancelled food order: wrong instruction after collection, none before. | `food-job.tsx`, `copy.ts` | High | **OPEN — not selected** |
+| MA-H1…MA-L2 | Money: merchant jobs paid at the customer's bill, false "below floor", unsaved role switch, sign-out left online, top-up amounts/polling/success balance, history without cancels, unreadable wallet as $0, delete-account ignoring rider job, decimals, copy. | money files, `orders.service.ts` | High–Low | **FIXED** (#1106). Partial: MA-H4 (no active-job warning on sign-out: would need a new sheet). D-84 logged. |
+| FR-H1…FR-L5 | First run: location order before R3, camera denied in Bike & documents, upload shown failed mid-flight, couldn't-load state, offline splash hold (owner chose: proceed after timeout), double tap, link target, icon contrast, duplicate placeholder, busy CTA, back on name step. | first-run files | High–Low | **FIXED** (#1108). Gaps: no camera settings steps list, no E6 discard (would be new controls). Kit defects logged under D-82 §4. |
