@@ -534,6 +534,9 @@ export const FoodOfferResponse = z
         scheduledFor: z.string().nullable(),
         /** A prescription order: the rider must see the original at the door (RD3). */
         rx: z.boolean(),
+        /** BRIEF D3f: an earlier owed balance this order collects at the door on top of the goods and fee
+         *  (the order's `previousBalanceUsd`). Absent when there is none. */
+        carriedUsd: z.number().optional(),
       })
       .strict()
       .optional(),

@@ -1519,14 +1519,18 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         merchant: { select: { businessType: true, shopKind: true } },
         schedule: { select: { scheduledFor: true } },
         prescription: { select: { status: true } },
+        carriedBalance: { select: { amount: true } },
       },
     });
     if (!o?.merchant) return null;
+    // FJ-H5: the rider's "collect at the door" figure includes what this order carries.
+    const carried = addMoney(0, ...(o.carriedBalance ?? []).map((b) => Number(b.amount)));
     return {
       businessType: o.merchant.businessType,
       shopKind: o.merchant.shopKind ?? null,
       scheduledFor: o.schedule?.scheduledFor.toISOString() ?? null,
       rx: o.prescription?.status === "approved",
+      ...(carried > 0 ? { carriedUsd: carried } : {}),
     };
   }
 

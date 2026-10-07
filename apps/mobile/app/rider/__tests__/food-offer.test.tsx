@@ -119,7 +119,8 @@ describe("FoodOffer (Rider v2 F1–F4)", () => {
     expect(text).toContain("Belgravia");
     expect(text).toContain("Your fare");
     expect(text).toContain("$2.40");
-    expect(text).toContain("Passing or missing a food offer doesn't affect your standing.");
+    // FJ-L1: RD1's hint, verbatim (`O.rd.passing`).
+    expect(text).toContain("Passing or missing an offer doesn’t affect your standing.");
     expect(text).not.toContain("Pay the kitchen");
   });
 
