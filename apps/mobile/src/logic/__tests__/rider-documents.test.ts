@@ -18,11 +18,12 @@ jest.mock("expo-image-picker", () => ({
   CameraType: { front: "front", back: "back" },
   requestCameraPermissionsAsync: jest.fn(async () => ({ granted: false })),
   requestMediaLibraryPermissionsAsync: jest.fn(async () => ({ granted: true })),
+  getCameraPermissionsAsync: jest.fn(async () => ({ granted: true })),
   launchCameraAsync: jest.fn(),
   launchImageLibraryAsync: jest.fn(async () => ({ canceled: false, assets: [{ uri: "file:///p.png", width: 3000, height: 4000, mimeType: "image/png" }] })),
 }));
 
-import { bikeDocsProgress, bikeVerified, maskNationalId, normalizePlate, parseRiderPhotoDraft, pickRiderPhoto, plateIsValid, plateMatchesFormat, saveRiderPhoto } from "../rider-documents";
+import { bikeDocsProgress, bikeVerified, maskNationalId, normalizePlate, parseRiderPhotoDraft, pickRiderPhoto, plateIsValid, plateMatchesFormat, riderPhotoAllowed, saveRiderPhoto } from "../rider-documents";
 
 describe("First Run v2 E1/E4/E6 rules (D-82)", () => {
   it("E4: plates look like ABC 1234 (an optional space), after normalising", () => {
@@ -81,6 +82,17 @@ describe("maskNationalId", () => {
 describe("pickRiderPhoto", () => {
   it("reports a refused camera permission", async () => {
     expect(await pickRiderPhoto("camera")).toBe("denied");
+  });
+  it("FR-H2: a refusal the phone won't ask again is 'blocked' (only phone settings can turn it on)", async () => {
+    const picker = jest.requireMock("expo-image-picker") as { requestCameraPermissionsAsync: jest.Mock };
+    picker.requestCameraPermissionsAsync.mockResolvedValueOnce({ granted: false, canAskAgain: false });
+    expect(await pickRiderPhoto("camera")).toBe("blocked");
+  });
+  it("FR-H2: riderPhotoAllowed re-reads the access without asking", async () => {
+    const picker = jest.requireMock("expo-image-picker") as { getCameraPermissionsAsync: jest.Mock; requestCameraPermissionsAsync: jest.Mock };
+    picker.requestCameraPermissionsAsync.mockClear();
+    expect(await riderPhotoAllowed("camera")).toBe(true);
+    expect(picker.requestCameraPermissionsAsync).not.toHaveBeenCalled();
   });
   it("hands back the gallery pick with its real content type", async () => {
     expect(await pickRiderPhoto("gallery")).toEqual({ uri: "file:///p.png", width: 3000, height: 4000, contentType: "image/png" });

@@ -117,6 +117,17 @@ completed the verification pass):
   push-registration timing vs first paint; KYC 5s→mode-aware poll and dead `events[].lat/lng`
   were self-verified and shipped in the main wave-2 PR (PERF19-03/04).
 
+## Wave 3 (2026-10-07): offline web, quicker reconnect, a lighter menu scroll
+
+| Change | Where | Effect |
+|---|---|---|
+| **Offline shell for app.lyniago.com** (service worker) | `apps/customer-web/public/sw.js`, `sw-register.js`, `finish-build.mjs` | An offline reload used to show `ERR_INTERNET_DISCONNECTED`. It now boots the app with its offline UI (checked in Chromium at 360×720). On a slow link the page falls back to the saved copy after 4 s, and repeat visits load the 3.97 MB bundle and fonts from cache. See `docs/CUSTOMER-WEB.md` § Offline. |
+| **Web warm boot + saved order copies** | `src/net/web-kv.ts`, `src/query/persist.ts`, `src/net/order-copy-store.ts` | expo-file-system rejects every call on the web, so the persisted query cache and the order screen's offline copy did nothing there. Both now go to localStorage (best-effort, namespaced, cleared at sign-out, national ID still redacted). |
+| **Re-probe on foreground / browser `online`; browser `offline` flips at once** | `src/net/reachability-signals.ts`, `app/_layout.tsx` | After a long outage the `/health` probe sat on a 30 s backoff, so coming back into coverage could leave up to 30 s of "Offline" over a working link. Phone and web now re-check the moment the app is foregrounded. |
+| **Restaurant menu body memoized** | `app/food/[id].tsx` | The scroll-spy and the collapsing bar re-rendered every dish row and photo at each section crossing. Now only the tabs re-render, which removes a hitch mid-fling on low-end Android. |
+
+All JS-only: OTA-able on the phone, with no fingerprint change.
+
 ## Cold start
 
 Launch was, until `MOB-BOOT-03` (2026-08-12), the one thing the client RUM taxonomy never recorded —

@@ -1,0 +1,142 @@
+name: Deploy merchant web (Cloudflare)
+
+# Publishes merchant.lyniago.com, the merchant web app (docs/MERCHANT-WEB.md), to Cloudflare Workers:
+# apps/merchant's static export (`next build`, output: "export") served by an ASSETS-ONLY Worker on the
+# merchant.lyniago.com Custom Domain, the same way as app.lyniago.com. No server: the browser talks to
+# the API directly. It replaces the Azure container (deploy-merchant-azure.yml, removed).
+#
+# TRIGGERS: a push to main that changes what the build is made from (apps/merchant, @lynia/shared, the
+# lockfile, this workflow), and workflow_dispatch to redeploy by hand. It waits for the `production`
+# environment's approval. The newest run replaces older ones (concurrency below).
+#
+# DORMANT UNTIL ARMED: skipped until the Variable CLOUDFLARE_ACCOUNT_ID is set (it is, for lyniago.com
+# and app.lyniago.com). Same Workers token as deploy-website.yml / deploy-customer-web.yml:
+# CLOUDFLARE_WORKERS_API_TOKEN, a `production` ENVIRONMENT secret.
+#
+# CUTOVER: a Custom Domain can't be attached while the hostname has a CNAME, and merchant.lyniago.com
+# had a DNS-only CNAME to the Azure container (dns-bind-azure.yml). The "Release the Azure record" step
+# deletes that one record, and only while it still points at *.azurecontainerapps.io, with the DNS
+# token CLOUDFLARE_API_TOKEN (Edit zone DNS, lyniago.com). After the first deploy it finds nothing to do.
+#
+# BUILD-TIME VALUES (inlined into the browser bundle, none of them secret): NEXT_PUBLIC_API_BASE_URL from
+# MERCHANT_API_BASE_URL (default https://api.lyniago.com), the Help WhatsApp number from
+# MERCHANT_SUPPORT_WHATSAPP, the referrer-restricted Places key from MERCHANT_GOOGLE_PLACES_KEY. The
+# same Variables the Azure image used, so the deployed app is unchanged.
+#
+# SUPPLY CHAIN: wrangler from apps/website/deploy/package-lock.json, installed with --ignore-scripts in a
+# step with no token. Only the two Cloudflare steps see a token. Never write `${{ }}` inside a run: block.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/merchant/**"
+      - "!apps/merchant/**/*.test.ts"
+      - "!apps/merchant/**/*.test.tsx"
+      - "packages/shared/**"
+      - "!packages/shared/**/*.spec.ts"
+      - "!packages/shared/**/*.test.ts"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/deploy-merchant-web.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-merchant-web
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: build · deploy · smoke (merchant.lyniago.com)
+    if: vars.CLOUDFLARE_ACCOUNT_ID != ''
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    env:
+      WRANGLER: apps/website/deploy/node_modules/.bin/wrangler
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: "false"
+      HOST: merchant.lyniago.com
+      ZONE: lyniago.com
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Guard — main only, token present
+        env:
+          REF: ${{ github.ref }}
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [ "$REF" = "refs/heads/main" ] || { echo "::error::The merchant web deploys from main only (got ${REF})."; exit 1; }
+          [ -n "$CF_TOKEN" ] || { echo "::error::CLOUDFLARE_WORKERS_API_TOKEN is not set. It must be a production ENVIRONMENT secret (docs/WEBSITE.md § One-time setup)."; exit 1; }
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install workspace (no token in this step)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the static export
+        env:
+          NEXT_PUBLIC_API_BASE_URL: ${{ vars.MERCHANT_API_BASE_URL || 'https://api.lyniago.com' }}
+          NEXT_PUBLIC_SUPPORT_WHATSAPP: ${{ vars.MERCHANT_SUPPORT_WHATSAPP }}
+          NEXT_PUBLIC_GOOGLE_PLACES_KEY: ${{ vars.MERCHANT_GOOGLE_PLACES_KEY }}
+        run: |
+          set -euo pipefail
+          pnpm --filter @lynia/shared build
+          pnpm --filter @lynia/merchant build
+          test -f apps/merchant/out/index.html || { echo "::error::next build wrote no out/index.html (is output: \"export\" still set?)"; exit 1; }
+
+      - name: Install pinned wrangler (lockfile, no install scripts, no token)
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix apps/website/deploy
+
+      - name: Release the Azure record (first deploy only)
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          api() { # api METHOD PATH
+            local out
+            out=$(curl -sS -X "$1" "https://api.cloudflare.com/client/v4$2" -H "Authorization: Bearer ${CF_TOKEN}")
+            if [ "$(printf '%s' "$out" | jq -r '.success')" != "true" ]; then
+              echo "::error::Cloudflare $1 $2 failed: $(printf '%s' "$out" | jq -c '.errors')" >&2
+              return 1
+            fi
+            printf '%s' "$out"
+          }
+          if [ -z "$CF_TOKEN" ]; then
+            echo "CLOUDFLARE_API_TOKEN is not set: nothing to release (fine once the Worker owns ${HOST})."
+            exit 0
+          fi
+          ZID=$(api GET "/zones?name=${ZONE}" | jq -r '.result[0].id // empty')
+          [ -n "$ZID" ] || { echo "::error::Zone ${ZONE} not visible to CLOUDFLARE_API_TOKEN."; exit 1; }
+          records=$(api GET "/zones/${ZID}/dns_records?type=CNAME&name=${HOST}")
+          ids=$(printf '%s' "$records" | jq -r '.result[] | select(.content | endswith(".azurecontainerapps.io")) | .id')
+          if [ -z "$ids" ]; then
+            echo "No Azure CNAME at ${HOST}: nothing to release."
+            exit 0
+          fi
+          for id in $ids; do
+            api DELETE "/zones/${ZID}/dns_records/${id}" >/dev/null
+            echo "Released the Azure CNAME at ${HOST} (${id}); the Worker's Custom Domain takes the name next."
+          done
+
+      - name: Deploy merchant.lyniago.com (static assets)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_API_TOKEN }}
+        run: '"$WRANGLER" deploy --config apps/merchant/wrangler.jsonc'
+
+      - name: Smoke — what a visitor gets
+        run: bash apps/merchant/smoke.sh https://merchant.lyniago.com
+
+      - name: Summary
+        if: ${{ success() }}
+        run: echo "merchant.lyniago.com deployed from ${GITHUB_SHA::7} and passed the smoke checks." >> "$GITHUB_STEP_SUMMARY"

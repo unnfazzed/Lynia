@@ -1,4 +1,4 @@
-import { AUTO_ADVANCE, parcelStage, parseArrival, stepFor } from "../rider-job-stage";
+import { AUTO_ADVANCE, parcelStage, parseArrival, parseDeliverOutbox, parseReach, stepFor } from "../rider-job-stage";
 
 describe("parcelStage (Rider v2 A1–A8, ledger D-54)", () => {
   it.each([
@@ -36,5 +36,23 @@ describe("parseArrival", () => {
     expect(parseArrival(JSON.stringify({ at: "pickup" }))).toBeNull();
     expect(parseArrival("not json")).toBeNull();
     expect(parseArrival(null)).toBeNull();
+  });
+});
+
+describe("rider audit: persisted reach wait and delivery outbox", () => {
+  it("parseReach keeps a well-formed mark and rejects junk", () => {
+    expect(parseReach(JSON.stringify({ orderId: "o1", startedAt: 1000, calls: 2, wa: 1 }))).toEqual({ orderId: "o1", startedAt: 1000, calls: 2, wa: 1 });
+    expect(parseReach(JSON.stringify({ orderId: "o1", startedAt: 1000 }))).toEqual({ orderId: "o1", startedAt: 1000, calls: 0, wa: 0 });
+    expect(parseReach(JSON.stringify({ orderId: "", startedAt: 1000 }))).toBeNull();
+    expect(parseReach(JSON.stringify({ orderId: "o1", startedAt: "x" }))).toBeNull();
+    expect(parseReach("{")).toBeNull();
+    expect(parseReach(null)).toBeNull();
+  });
+
+  it("parseDeliverOutbox only accepts a 6-digit code for an order", () => {
+    expect(parseDeliverOutbox(JSON.stringify({ orderId: "o1", code: "123456" }))).toEqual({ orderId: "o1", code: "123456" });
+    expect(parseDeliverOutbox(JSON.stringify({ orderId: "o1", code: "12345" }))).toBeNull();
+    expect(parseDeliverOutbox(JSON.stringify({ code: "123456" }))).toBeNull();
+    expect(parseDeliverOutbox("nope")).toBeNull();
   });
 });

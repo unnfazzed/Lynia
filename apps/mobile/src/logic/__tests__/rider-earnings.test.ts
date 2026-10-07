@@ -37,17 +37,12 @@ describe("rider earnings", () => {
     expect(paidFare(row({ agreedFare: null }))).toBe(3);
   });
 
-  it("LC-B-SIB-4: a rider's food job earns its delivery fee, not the customer's goods+delivery total", () => {
-    const food = row({ orderType: "merchant", merchantName: "Sadza Republic", agreedFare: "20.00", deliveryFee: "2.50" });
-    expect(paidFare(food)).toBe(2.5);
-    // The EARNINGS card adds the fee, not $20 of dishes that went back to the kitchen.
-    expect(summarise([row({}), food], "today", NOW).total).toBeCloseTo(5.7);
-    // The Money feed's fare row says the same.
-    const feed = buildMoneyFeed([food], []);
-    expect(feed.find((i) => i.kind === "fare")?.amount).toBe(2.5);
-    // A customer's own food order keeps what they paid; an older API with no deliveryFee keeps the old reading.
-    expect(paidFare(row({ role: "customer", orderType: "merchant", agreedFare: "20.00", deliveryFee: "2.50" }))).toBe(20);
-    expect(paidFare(row({ orderType: "merchant", agreedFare: "20.00" }))).toBe(20);
+  it("MA-H1: a merchant job pays the rider's fare, not the customer's whole bill", () => {
+    expect(paidFare(row({ orderType: "merchant", agreedFare: "15.50", riderFare: "2.50" }))).toBe(2.5);
+    // A parcel's agreed fare is the rider's fare; an older server without riderFare keeps the old read.
+    expect(paidFare(row({ riderFare: null }))).toBe(3.2);
+    expect(paidFare(row({ orderType: "merchant", agreedFare: "15.50" }))).toBe(15.5);
+    expect(summarise([row({ orderType: "merchant", agreedFare: "15.50", riderFare: "2.50", createdAt: at(1, 9) })], "today", NOW).total).toBe(2.5);
   });
 
   it("weeks start on Monday", () => {

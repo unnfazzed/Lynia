@@ -2,14 +2,16 @@
 
 Cloudflare is used for **DNS**, and since 2026-09-28 it also **hosts the marketing
 site at `lyniago.com` / `www.lyniago.com`** on Workers static assets. That hosting
-has its own deploy token and workflow; see [`docs/WEBSITE.md`](WEBSITE.md). The app
-hostnames (`api.`, `admin.`, `merchant.lyniago.com`) are unchanged: DNS-only
-(grey-cloud) records pointing at Azure, managed by `dns-bind-azure.yml`.
+has its own deploy token and workflow; see [`docs/WEBSITE.md`](WEBSITE.md). It hosts
+the customer web app `app.lyniago.com` ([`CUSTOMER-WEB.md`](CUSTOMER-WEB.md)) the same
+way and, since 2026-10-07, the merchant web app `merchant.lyniago.com`
+([`MERCHANT-WEB.md`](MERCHANT-WEB.md)). `api.` and `admin.lyniago.com` are unchanged:
+DNS-only (grey-cloud) records pointing at Azure, managed by `dns-bind-azure.yml`.
 
 | GitHub secret | Scope | Used by |
 | --- | --- | --- |
-| `CLOUDFLARE_API_TOKEN` | Edit zone DNS, lyniago.com | `dns-bind-azure.yml` |
-| `CLOUDFLARE_WORKERS_API_TOKEN` (+ Variable `CLOUDFLARE_ACCOUNT_ID`) | Edit Cloudflare Workers, account + lyniago.com | `deploy-website.yml` |
+| `CLOUDFLARE_API_TOKEN` | Edit zone DNS, lyniago.com | `dns-bind-azure.yml`; `deploy-merchant-web.yml` (deletes the old Azure CNAME at `merchant.` once, at the cutover) |
+| `CLOUDFLARE_WORKERS_API_TOKEN` (+ Variable `CLOUDFLARE_ACCOUNT_ID`) | Edit Cloudflare Workers, account + lyniago.com | `deploy-website.yml`, `deploy-customer-web.yml`, `deploy-merchant-web.yml` |
 
 This doc covers how the Cloudflare agent tooling is wired into the repo so Claude
 Code sessions can manage DNS records (and read Cloudflare docs) through the

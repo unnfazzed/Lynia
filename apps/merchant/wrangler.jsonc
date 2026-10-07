@@ -1,0 +1,22 @@
+// merchant.lyniago.com — the merchant web app (docs/MERCHANT-WEB.md). An ASSETS-ONLY Worker, like
+// app.lyniago.com and lyniago.com: no script, so every request is a free static-asset request served
+// from Cloudflare's edge. `out/` is apps/merchant's static export (`next build`, output: "export"); it
+// is built in CI and never committed. The browser talks to api.lyniago.com directly.
+//
+// Deployed by .github/workflows/deploy-merchant-web.yml.
+{
+  "name": "lyniago-merchant-web",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./out",
+    // `/queue` is out/queue.html. An address with no page gets out/404.html (app/not-found.tsx), which
+    // forwards an old path-style link (`/queue/<id>`) to its new address and anything else home.
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+  // Custom Domain: Cloudflare creates the DNS record and the edge certificate itself. The old DNS-only
+  // record pointing at Azure has to go first; the deploy workflow removes it.
+  "routes": [{ "pattern": "merchant.lyniago.com", "custom_domain": true }],
+  "workers_dev": false,
+  "preview_urls": false
+}

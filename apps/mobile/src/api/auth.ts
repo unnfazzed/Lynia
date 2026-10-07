@@ -127,6 +127,11 @@ export interface Me {
      * `expired` (null otherwise). Absent on an older server — F6 then drops the date.
      */
     kycExpiredOn?: string | null;
+    /**
+     * Rider v2 G10 "Clears at" (rider audit BD-M3): when the rider's cancel cooldown ends (ISO), while it is
+     * still running; null otherwise. Absent on an older server — G10 then draws no facts box.
+     */
+    cooldownUntil?: string | null;
   } | null;
 }
 

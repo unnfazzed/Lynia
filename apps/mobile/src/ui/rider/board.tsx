@@ -1,7 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
 import { FirstRunToast } from "../firstrun/toast";
 import React, { useEffect, useMemo, useRef } from "react";
-import { ActivityIndicator, ScrollView, Text, View } from "react-native";
+import { type AccessibilityActionEvent, ActivityIndicator, ScrollView, Text, View, type ViewStyle } from "react-native";
 import MapView, { Circle, type LatLng, Marker, Polyline, type Region } from "react-native-maps";
 import { Icon, type IconName } from "../Icon";
 import { Tappable } from "../Tappable";
@@ -92,20 +92,31 @@ export const BoardJobCard = React.memo(function BoardJobCard({
   offer?: { fare: number };
   onWithdraw?: () => void;
 }): React.ReactElement {
-  return (
-    <Tappable
-      onPress={onSelect}
-      disabled={!onSelect}
-      accessibilityLabel={`${job.kind === "food" ? R.food : job.kind === "shop" ? R.shop : job.kind === "pharmacy" ? R.pharmacy : R.parcel}, ${job.pickup.landmark} to ${job.dropoff.landmark}, ${usd(offer ? offer.fare : job.asking)}`}
-      style={{
-        borderWidth: selected ? 2 : 1,
-        borderColor: selected ? tokens.color.accentText : tokens.color.line,
-        borderRadius: 12,
-        padding: selected ? 11 : 12,
-        gap: 8,
-        backgroundColor: tokens.color.bg,
-      }}
-    >
+  // BD-L1: the card is one accessible element, so its buttons ride along as named actions (a screen reader
+  // can't reach a button nested in a grouped card), and "selected" is announced, not shown by colour alone.
+  const offerLabel = job.kind === "food" ? R.accept : R.makeOffer;
+  const actions = [...(!offer && onOffer ? [{ name: "offer", label: offerLabel }] : []), ...(offer && onWithdraw ? [{ name: "withdraw", label: R.withdraw }] : [])];
+  const a11y = {
+    accessible: true,
+    accessibilityState: { selected: !!selected },
+    accessibilityActions: actions,
+    onAccessibilityAction: (e: AccessibilityActionEvent): void => {
+      if (e.nativeEvent.actionName === "offer") onOffer?.();
+      else if (e.nativeEvent.actionName === "withdraw") onWithdraw?.();
+      else if (e.nativeEvent.actionName === "activate") onSelect?.();
+    },
+    accessibilityLabel: `${job.kind === "food" ? R.food : job.kind === "shop" ? R.shop : job.kind === "pharmacy" ? R.pharmacy : R.parcel}, ${job.pickup.landmark} to ${job.dropoff.landmark}, ${usd(offer ? offer.fare : job.asking)}`,
+  };
+  const style: ViewStyle = {
+    borderWidth: selected ? 2 : 1,
+    borderColor: selected ? tokens.color.accentText : tokens.color.line,
+    borderRadius: 12,
+    padding: selected ? 11 : 12,
+    gap: 8,
+    backgroundColor: tokens.color.bg,
+  };
+  const content = (
+    <>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
         <JTag kind={job.kind} />
         <Text style={{ flex: 1, fontSize: 13, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink, ...TABULAR }} numberOfLines={1}>
@@ -134,10 +145,22 @@ export const BoardJobCard = React.memo(function BoardJobCard({
         </View>
       ) : onOffer ? (
         <View style={{ flexDirection: "row" }}>
-          <SmBtn kind="fill" flex={1} label={job.kind === "food" ? R.accept : R.makeOffer} onPress={onOffer} />
+          <SmBtn kind="fill" flex={1} label={offerLabel} onPress={onOffer} />
         </View>
       ) : null}
+
+    </>
+  );
+  // The offer variant isn't selectable: a plain view, so it neither dims on touch nor reads as disabled
+  // while its Withdraw is live.
+  return onSelect ? (
+    <Tappable onPress={onSelect} {...a11y} style={style}>
+      {content}
     </Tappable>
+  ) : (
+    <View {...a11y} style={style}>
+      {content}
+    </View>
   );
 });
 

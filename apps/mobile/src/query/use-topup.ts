@@ -1,7 +1,8 @@
 import type { Topup, TopupRail, TopupStatus } from "@lynia/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
-import { createTopup, getTopup } from "../api/wallet";
+import { ApiError } from "../api/client";
+import { createTopup, getTopup, getWallet } from "../api/wallet";
 import { clearPendingTopup, savePendingTopup } from "../auth/session";
 import { walletKey, walletLedgerKey } from "./use-wallet";
 
@@ -37,6 +38,8 @@ export interface TopUpController {
   status: TopupStatus | undefined;
   /** True once an intent has been opened, whatever its status. */
   hasIntent: boolean;
+  /** MA-M3: true once the wallet was re-read after a `succeeded` — only then is the balance the new one. */
+  walletFresh: boolean;
   isStarting: boolean;
   start: (input: TopUpStart, options?: { onSettled?: () => void }) => void;
   /** Drop the current intent from view so the rider can begin a fresh attempt. Does not cancel the
@@ -49,15 +52,24 @@ export interface TopUpController {
  *  cheap endpoint — responsive enough that a confirmation feels immediate without hammering. */
 const POLL_MS = 2_500;
 
-export function useTopUp(options?: { onStartError?: () => void }): TopUpController {
+/** MA-L1: the server's own words for a refused request (a bad amount, the rate limit), when it gave any. */
+export function topupStartMessage(e: unknown): string | null {
+  return e instanceof ApiError && e.status >= 400 && e.status < 500 && e.message.trim() ? e.message : null;
+}
+
+export function useTopUp(options?: { onStartError?: (serverMessage: string | null) => void }): TopUpController {
   const qc = useQueryClient();
   const [topupId, setTopupId] = useState<string | null>(null);
+  const [okAt, setOkAt] = useState<number | null>(null);
   const onStartError = options?.onStartError;
 
   const create = useMutation({
     mutationFn: (input: TopUpStart) => createTopup(input),
-    onError: () => onStartError?.(),
+    onError: (e) => onStartError?.(topupStartMessage(e)),
     onSuccess: (topup) => {
+      // MA-M4: seed the poll with the intent we already hold, so a dropped first read still shows the
+      // countdown and the poll keeps going.
+      qc.setQueryData(["wallet", "topup", topup.id], topup);
       setTopupId(topup.id);
       // Durable marker BEFORE the rider can leave for their mobile-money app: if the OS reclaims the
       // process mid-approval, the Money tab reconciles this on next open (`reconcilePendingTopup`)
@@ -71,15 +83,19 @@ export function useTopUp(options?: { onStartError?: () => void }): TopUpControll
     queryKey: ["wallet", "topup", topupId],
     queryFn: () => getTopup(topupId as string),
     enabled: topupId != null,
-    refetchInterval: (q) => (q.state.data?.status === "pending" ? POLL_MS : false),
+    // MA-M4: keep polling while there's no answer yet, not only while the answer is `pending`.
+    refetchInterval: (q) => (q.state.data == null || q.state.data.status === "pending" ? POLL_MS : false),
   });
   const status = poll.data?.status;
+  // Observes the wallet read without starting one of its own (the screen's `useWallet` drives it).
+  const walletUpdatedAt = useQuery({ queryKey: walletKey, queryFn: getWallet, enabled: false }).dataUpdatedAt;
 
   // Terminal handling. `succeeded` is the ONLY branch that touches the balance — and it does so by
   // invalidating, never by writing a number the client guessed.
   useEffect(() => {
     if (status == null || status === "pending") return;
     if (status === "succeeded") {
+      setOkAt(Date.now());
       void qc.invalidateQueries({ queryKey: walletKey });
       void qc.invalidateQueries({ queryKey: walletLedgerKey });
     }
@@ -88,6 +104,7 @@ export function useTopUp(options?: { onStartError?: () => void }): TopUpControll
 
   const reset = useCallback(() => {
     setTopupId(null);
+    setOkAt(null);
     create.reset();
   }, [create]);
 
@@ -95,6 +112,7 @@ export function useTopUp(options?: { onStartError?: () => void }): TopUpControll
     topup: poll.data,
     status,
     hasIntent: topupId != null,
+    walletFresh: okAt != null && walletUpdatedAt >= okAt,
     isStarting: create.isPending,
     start: create.mutate,
     reset,

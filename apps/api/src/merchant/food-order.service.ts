@@ -1088,7 +1088,9 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     const token = `${orderId}.${exp}.${this.handoverSig(orderId, order.riderId, exp, order.pickupCodeHash)}`;
     await this.prisma.auditLog.create({ data: { actor: profileId, action: "order.handover_link", target: orderId } });
     return {
-      link: `${base.replace(/\/+$/, "")}/h/${token}`,
+      // `/h?t=<token>`: the merchant web is a static export, so the token rides in the query string
+      // (apps/merchant/app/lib/routes.ts); the old `/h/<token>` form still forwards there.
+      link: `${base.replace(/\/+$/, "")}/h?t=${encodeURIComponent(token)}`,
       expiresAt: new Date(exp * 1000).toISOString(),
       riderPhone: order.rider?.profile?.phone || null,
     };
@@ -1522,14 +1524,18 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         merchant: { select: { businessType: true, shopKind: true } },
         schedule: { select: { scheduledFor: true } },
         prescription: { select: { status: true } },
+        carriedBalance: { select: { amount: true } },
       },
     });
     if (!o?.merchant) return null;
+    // FJ-H5: the rider's "collect at the door" figure includes what this order carries.
+    const carried = addMoney(0, ...(o.carriedBalance ?? []).map((b) => Number(b.amount)));
     return {
       businessType: o.merchant.businessType,
       shopKind: o.merchant.shopKind ?? null,
       scheduledFor: o.schedule?.scheduledFor.toISOString() ?? null,
       rx: o.prescription?.status === "approved",
+      ...(carried > 0 ? { carriedUsd: carried } : {}),
     };
   }
 

@@ -4,6 +4,7 @@ import { ActivityIndicator, Modal, ScrollView, Text, type TextStyle, View, type 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon, type IconName } from "../Icon";
 import { Tappable } from "../Tappable";
+import { SHEET_DIM } from "../firstrun/sheet";
 import { MoonSticker, SunSticker } from "../home/ServiceStickers";
 import { IconDisc, RiderAvatar, SmBtn, VerifiedTag } from "../order/kit";
 import { OrderHeader } from "../order/panels";
@@ -423,7 +424,7 @@ export function MSheet({
           accessibilityLabel={R.close}
           disabled={locked}
           onPress={onClose}
-          style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(20,24,27,0.45)" }}
+          style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: SHEET_DIM }}
         />
         <View style={{ maxHeight: "92%", backgroundColor: tokens.color.bg, borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingHorizontal: 16, paddingBottom: 12 + insets.bottom }}>
           <View style={{ height: 28, alignItems: "center", justifyContent: "center" }}>
@@ -497,7 +498,7 @@ export function Chips<T extends string>({ list, value, onChange }: { list: reado
 }
 
 /** "YOURS" (accent-text) | "OWED TO KITCHEN" (ink) on a surface box, optional title. */
-export function CashSplit({ yours, owed, title }: { yours: number; owed: number; title?: string }): React.ReactElement {
+export function CashSplit({ yours, owed, title, owedLabel = R.owed }: { yours: number; owed: number; title?: string; owedLabel?: string }): React.ReactElement {
   return (
     <View style={{ backgroundColor: tokens.color.surface, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, gap: 6 }}>
       {title ? <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>{title}</Text> : null}
@@ -508,7 +509,7 @@ export function CashSplit({ yours, owed, title }: { yours: number; owed: number;
         </View>
         <View style={{ width: 1, backgroundColor: tokens.color.line }} />
         <View style={{ flex: 1, paddingLeft: 4 }}>
-          <RLabel>{R.owed}</RLabel>
+          <RLabel>{owedLabel}</RLabel>
           <Text style={{ fontSize: 20, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, ...TABULAR }}>{usd(owed)}</Text>
         </View>
       </View>

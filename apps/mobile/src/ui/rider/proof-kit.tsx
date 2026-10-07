@@ -102,10 +102,10 @@ export function CameraStep({
             padding instead, or the keyboard covers the "who took it" field and the shutter. */}
         <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
           <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingTop: 4 }}>
-            <Tappable accessibilityRole="button" accessibilityLabel={R.close} onPress={onClose} style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}>
+            <Tappable accessibilityRole="button" accessibilityLabel={R.close} onPress={onClose} style={{ width: tokens.touchTargetMin, height: tokens.touchTargetMin, alignItems: "center", justifyContent: "center" }}>
               <Icon name="x" size={22} color={tokens.color.onAccent} />
             </Tappable>
-            <Text accessibilityRole="header" style={{ flex: 1, marginRight: 44, textAlign: "center", fontSize: 16, fontWeight: tokens.font.weight.bold, color: tokens.color.onAccent }}>
+            <Text accessibilityRole="header" style={{ flex: 1, marginRight: tokens.touchTargetMin, textAlign: "center", fontSize: 16, fontWeight: tokens.font.weight.bold, color: tokens.color.onAccent }}>
               {title}
             </Text>
           </View>

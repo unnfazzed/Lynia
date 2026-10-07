@@ -46,6 +46,8 @@ export interface OrderSheetHandle {
   /** True when the sheet is at FULL (Back collapses it before leaving). */
   isFull: () => boolean;
   collapse: () => void;
+  /** Scrolls the content so `y` (in content coordinates) sits at the top — the Jobs board's pin tap (BD-M4). */
+  scrollTo: (y: number) => void;
 }
 
 export const OrderSheet = React.forwardRef<
@@ -88,6 +90,7 @@ export const OrderSheet = React.forwardRef<
   const [full, setFull] = useState(false);
   const fullRef = useRef(false);
   fullRef.current = full;
+  const scrollRef = useRef<ScrollView>(null);
   const current = useRef(peekTop);
 
   const animateTo = (to: number, isFull: boolean): void => {
@@ -112,6 +115,7 @@ export const OrderSheet = React.forwardRef<
   useImperativeHandle(ref, () => ({
     isFull: () => fullRef.current,
     collapse: () => animateTo(peekTop, false),
+    scrollTo: (y: number) => scrollRef.current?.scrollTo({ y: Math.max(0, y), animated: !reduceMotion }),
   }));
 
   const toggle = (): void => (fullRef.current ? animateTo(peekTop, false) : animateTo(fullTop, fullTop !== peekTop));
@@ -166,6 +170,7 @@ export const OrderSheet = React.forwardRef<
           <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: tokens.color.line }} />
         </View>
         <ScrollView
+          ref={scrollRef}
           style={{ flex: 1, marginBottom: bottomInset }}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 16 }}
           showsVerticalScrollIndicator={false}

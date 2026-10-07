@@ -1,7 +1,7 @@
 /**
  * Fail-closed access policy for the merchant tablet (Lane E, E1). Mirrors the shape of
  * apps/admin/app/lib/console-auth.ts: a pure, synchronous truth table over an already-resolved
- * signal, so `middleware.ts` stays a thin adapter and the policy itself is unit-testable with no
+ * signal, so `components/AccessGate.tsx` stays a thin adapter and the policy itself is unit-testable with no
  * Next/Node imports.
  *
  * Unlike the admin console (a shared operator token behind an identity-aware proxy), a merchant
@@ -20,8 +20,8 @@ export interface MerchantAccessDecision {
   redirectTo?: string;
 }
 
-/** Paths that must always load with no session: the login screen itself, Next's static asset
- *  pipeline, and the unauthenticated health probe. */
+/** Paths that must always load with no session: the login screen itself and Next's static asset
+ *  pipeline. */
 export function isPublicMerchantPath(pathname: string): boolean {
   return (
     pathname === "/login" ||
@@ -30,18 +30,20 @@ export function isPublicMerchantPath(pathname: string): boolean {
     pathname.startsWith("/icon.") ||
     pathname.startsWith("/brand/") ||
     pathname.startsWith("/fonts/") ||
-    pathname === "/api/healthz" ||
     // Merchant v2 (D-77): a rider's signed hand-over link — the token is the authority, no session.
+    // `/h?t=<token>` now; `/h/<token>` is the old form, which the 404 page forwards (lib/routes.ts).
+    pathname === "/h" ||
     pathname.startsWith("/h/")
   );
 }
 
-export function evaluateMerchantAccess(input: { pathname: string; hasSession: boolean }): MerchantAccessDecision {
+export function evaluateMerchantAccess(input: { pathname: string; search?: string; hasSession: boolean }): MerchantAccessDecision {
   if (isPublicMerchantPath(input.pathname)) return { allow: true };
   if (input.hasSession) return { allow: true };
   // Fail closed: no session cookie at all → straight to sign-in. `next` lets the login screen return
   // the merchant to what they were trying to open once they've signed in (best-effort, not required).
-  const next = encodeURIComponent(input.pathname);
+  // The query string comes along: an order's or a booking's id lives there (lib/routes.ts).
+  const next = encodeURIComponent(input.pathname + (input.search ?? ""));
   return { allow: false, redirectTo: `/login?next=${next}` };
 }
 

@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, deriveMerchantOrderTrack, isBusinessBookingAccountPhone, isCodItem, type LatLng, OFFER_WINDOW_MS, type OrderItem, PHONE_REVEAL_STATUSES, isInServiceArea, quoteFare, serviceTownsLabel, summarizeItems } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, deriveMerchantOrderTrack, isBusinessBookingAccountPhone, isCodItem, type LatLng, OFFER_WINDOW_MS, OrderStatus, type OrderItem, PHONE_REVEAL_STATUSES, isInServiceArea, quoteFare, serviceTownsLabel, summarizeItems } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush, maxBroadcastRadiusM } from "../common/broadcast-policy";
 import { MicroCache } from "../common/micro-cache";
@@ -17,6 +17,9 @@ import { customerSafeCancelReason } from "./cancel-reason";
 import { buildBoardNewOrderEvent, pickupPoint, publicWaypoint } from "./waypoints";
 
 const REVEAL = new Set<string>(PHONE_REVEAL_STATUSES);
+
+/** MA-M5: a rider's Job history rows — completed jobs plus the ones that ended cancelled or undelivered. */
+export const RIDER_HISTORY_STATUSES: OrderStatus[] = [...COMPLETED_ORDER_STATUSES, OrderStatus.CANCELLED, OrderStatus.UNDELIVERED];
 
 /** R8: how far back activeForRider looks for a cancelled-but-collected order to surface the hand-back
  *  state on reopen (a job the rider still physically holds after a missed `job:cancelled`). One day. */
@@ -842,7 +845,16 @@ export class OrdersService {
       // after the fact) keeps the `take: 50` cap meaningful: 50 completed rows, not 50 recent-of-any-
       // status of which only a handful are completed. Same set `earningsSummary` credits, so the
       // Trips list and the earnings trip-count never disagree.
-      where: { AND: [{ OR: [{ customerId: userId }, { riderId: userId }] }, { status: { in: COMPLETED_ORDER_STATUSES } }] },
+      //
+      // MA-M5: the rider's own cancelled and undelivered jobs come back too, so Job history can show why a
+      // cooldown landed (its cancelled / undelivered branches). They carry no fare (`paidFare` is null),
+      // so earnings and the Money feed are unchanged. The customer side stays completed-only.
+      where: {
+        OR: [
+          { customerId: userId, status: { in: COMPLETED_ORDER_STATUSES } },
+          { riderId: userId, status: { in: RIDER_HISTORY_STATUSES } },
+        ],
+      },
       orderBy: { createdAt: "desc" },
       take: 50,
       select: {
@@ -884,9 +896,10 @@ export class OrdersService {
         note: o.note,
         proposedFare: o.proposedFare.toString(),
         agreedFare: o.agreedFare ? o.agreedFare.toString() : null,
-        // LC-B-SIB-4: a merchant order's agreedFare is the customer's goods+delivery total; the rider keeps
-        // only this (schema D-08/D-71). The rider's Money tab / Job history credit a food job with it.
-        deliveryFee: o.deliveryFee ? o.deliveryFee.toString() : null,
+        // MA-H1: what the rider earns. On a merchant order `agreedFare` is the customer's whole bill (goods +
+        // delivery); the rider keeps the delivery fee (`foodOrderMoney().riderFare`). Null on a parcel,
+        // where the agreed fare IS the rider's fare.
+        riderFare: o.orderType === "merchant" && o.deliveryFee != null ? o.deliveryFee.toString() : null,
         status: o.status,
         createdAt: o.createdAt.toISOString(),
         // `rating` is a to-many relation since two-way rating (migration 0015): both the customer's

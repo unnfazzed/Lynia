@@ -4942,6 +4942,21 @@ _Filled in phase by phase._
   (`geocode.ts`), "Notify me" for a Soon service (`service-interest.ts`) and the rider's job-start stream
   (`use-rider-location.ts`, normally granted by P1 by then). **Left as they are — owner decision 2026-10-06
   (answer 2).**
+- **P11 and P6 gain a "Not now" (rider audit B1, 2026-10-07) — UPSTREAM KIT GAP.** P11 (notifications blocked) and P6
+  (location blocked) were drawn with only "Open phone settings" and "I've turned it on". The handoff's own brief says
+  every "Not now" moves on, and R3 is only marked seen at P13, so a rider with blocked notifications looped R3 → P11
+  forever and never reached the board. Both screens now add **"Not now"** (`RP.notNow`, verbatim) under "I've turned it
+  on"; it moves to the next step (P6 → the notification step, P11 → P13; a single step reopened from the board leaves),
+  the same pattern D-83 used for P12. **Report upstream** so the next export draws the link on P6 / P11.
+- **R3's "Add your photo and bike papers later" link — UPSTREAM KIT DEFECT (rider audit FR-L2, 2026-10-07).** The kit
+  draws it as bare 13/24 text: a 24px tap target, under `--target-min`. Per CLAUDE.md D2 the app keeps the drawn look
+  (same text, same 24 line, no layout change) and reaches the token by touch slop only
+  (`(tokens.touchTargetMin − 24) / 2` above and below, `src/ui/onboarding/rider.tsx`). **Report upstream**: the kit
+  should give the link a `var(--target-min)` row.
+- **E2b capture-guide tip glyphs — UPSTREAM KIT DEFECT (rider audit FR-L3, 2026-10-07).** The kit draws the three tip
+  icons in the dark accent text green on a 12% white chip over `ink` — about 1.8:1, under the 3:1 non-text minimum. The
+  app draws them in the brand green (`tokens.color.accent`, the same green the guide's title half uses on ink).
+  **Report upstream** so the kit uses a light glyph on dark.
 
 **Screen-local toasts (owner, 2026-10-06: "move all five to the new bar").** `OrderToast`, `BrowseToast`,
 `ReviewToast`, the rider board's `RToast` and `SendToast` now draw the shared First Run v2 bar
@@ -4950,3 +4965,42 @@ CTA and its action ("Try again", "Undo") as a 44 mint pill on the right, which t
 Failure toasts show the `circle-alert` in highlight (the owner-approved error toast); the others keep their glyph
 (bell, check, undo) in brand green.
 
+
+## D-83 · No test ping / test alarm buttons anywhere — APPROVED (2026-10-06)
+
+**Owner instruction, this session (2026-10-06):** *"Remove any buttons for test ping or test alarm. Unnecessary."*
+
+- **Settings (rider):** the white Test ping / Test alarm soft pills under ALERTS (kept by D-82 §2 #1) are removed.
+  Every other kept row stays.
+- **P9 (rider first run, notifications):** the drawn "Play a test ping" soft pill is not rendered.
+- **P12 (job alerts muted):** the drawn "Play a test ping" link is replaced by **"Not now"** (`RP.notNow`), which
+  moves the flow on like every other step's "Not now" — P12 has no back button, so the link is the rider's only way
+  past the screen without opening phone settings.
+- `playTestAlert` (the local notification behind those buttons) is deleted. `RP.testPing` and `R.testPing` /
+  `R.testAlarm` stay in the copy files because those mirror the handoffs verbatim; nothing renders them.
+
+## D-84 · Top up: the drawn $2 quick chip sits below the $5 minimum — UPSTREAM KIT DEFECT (2026-10-07)
+
+**Found by the rider audit (MA-M1, 2026-10-07).** Rider v2 T2 (`packages/design/handoff/rider-v2/`) draws the
+amount step's quick chips as **$2 · $5 · $10 · $20**, but the server's minimum top-up (`CommissionConfig.minTopUp`)
+is **$5**. Tapping the drawn $2 chip could only ever produce "Enter at least $5.00".
+
+- **App:** `src/ui/rider/TopUpFlow.tsx` hides any quick chip below the served `minTopUp` (today: the $2 chip; the
+  row shows $5 · $10 · $20). The chips still come from the drawing; none is invented.
+- **App:** the low-balance wall's "Top up at least" (Rider v2 J-gate `gTopK2`) shows
+  `max(minTopUp, floor − balance)`, so it never asks for an amount the top-up screen refuses.
+- **Upstream:** the kit should draw chips at or above the minimum. Reported upstream; the kit is not edited here.
+
+## D-85 · Rider audit 2026-10-07, parcel job: two undrawn controls — PENDING OWNER REVIEW
+
+Fixes from the rider UI/UX audit that needed an element the Rider v2 handoff (`handoff/rider-v2/`, D-54) does not draw.
+Both reuse existing strings; both are reported upstream as missing states.
+
+- **X3 Can't reach → back to the code (PJ-H2).** The handoff's Can't-reach stage has no exit: a recipient who answers on
+  the second call left the rider stuck until they backed out to the board. A ghost soft pill **"Enter the delivery code"**
+  (`R.door3`, Order flow v2's door card) sits under Call / WhatsApp and returns to A8. The wait itself now persists per
+  order like the arrival mark (the handoff's state model already says `reach` persists).
+- **A2 camera refused (B3).** The handoff draws no camera-off state for the pickup photo, which Collect requires. A warn
+  `Notice` with `R.docPhotoDenied` and a soft pill **"Open phone settings"** (`R.sOpenSettings`) shows under the photo row
+  while the camera permission is refused; it clears when the rider comes back with it on.
+- With no recipient number, X3's Call / WhatsApp pills draw disabled (PJ-L2) instead of counting calls that never happened.

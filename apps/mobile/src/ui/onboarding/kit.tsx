@@ -1,7 +1,7 @@
 import { formatPhoneDisplay } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import React, { useRef } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Icon, type IconName } from "../Icon";
 import { Tappable } from "../Tappable";
@@ -229,14 +229,15 @@ export function Cta({
         height: tokens.touchTargetPrimary,
         borderRadius: tokens.radius.button,
         backgroundColor: tokens.color.cta,
-        opacity: off ? 0.5 : 1,
+        // FR-L5: busy shows a spinner at full strength; only a disabled button fades.
+        opacity: disabled && !busy ? 0.5 : 1,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
         gap: 8,
       }}
     >
-      {icon ? <Icon name={icon} size={18} color={tokens.color.onAccent} /> : null}
+      {busy ? <ActivityIndicator testID="cta-busy" size="small" color={tokens.color.onAccent} /> : icon ? <Icon name={icon} size={18} color={tokens.color.onAccent} /> : null}
       <Text style={{ fontSize: 16, fontWeight: tokens.font.weight.semibold, color: tokens.color.onAccent }}>{label}</Text>
     </Tappable>
   );

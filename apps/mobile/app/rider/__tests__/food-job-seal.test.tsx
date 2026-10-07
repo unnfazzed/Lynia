@@ -70,6 +70,7 @@ jest.mock("../../../src/query/use-wallet", () => ({ useWalletConfig: () => ({ co
 jest.mock("../../../src/ui/safety", () => ({ ReportSheet: () => null }));
 
 import RiderFoodJob from "../food-job";
+import { ApiError } from "../../../src/api/client";
 
 async function settle(): Promise<void> {
   await act(async () => {
@@ -234,16 +235,21 @@ describe("RD2a / RD2b · a shop's pickup waits on the sealed-bag photo (Order fl
       pickupProofRequired: true,
       venue: { name: "Avondale Fresh", businessType: "shop", shopKind: "grocery", kycVerified: false },
     } as MerchantOrderResponse);
+    // FJ-M3: the code is checked before the photo; a right one answers "photo needed first".
+    mockConfirmFoodPickup.mockRejectedValue(new ApiError(409, "Take a photo of the sealed bag before you collect the order.", "pickup_photo_required"));
     const tree = await render();
-    for (let i = 0; i < 20 && !textOf(tree).includes("I'm at the kitchen"); i++) await settle();
+    // FJ-L1: a shop's job speaks of the shop, not a kitchen.
+    for (let i = 0; i < 20 && !textOf(tree).includes("I'm at the shop"); i++) await settle();
     for (let i = 0; i < 5; i++) await settle();
-    await press(tree, "I'm at the kitchen");
-    for (let i = 0; i < 5 && textOf(tree).includes("I'm at the kitchen"); i++) await press(tree, "I'm at the kitchen");
+    await press(tree, "I'm at the shop");
+    for (let i = 0; i < 5 && textOf(tree).includes("I'm at the shop"); i++) await press(tree, "I'm at the shop");
     let text = textOf(tree);
     expect(text).toContain("At the shop");
     expect(text).toContain("Ask the shop for the pickup code");
+    expect(text).not.toContain("kitchen");
     await typeCode(tree, "Ask the shop for the pickup code", "731604");
     await pressCta(tree, "Photo of the sealed bag");
+    expect(mockConfirmFoodPickup).toHaveBeenCalledWith("order-1", "731604");
     text = textOf(tree);
     expect(text).toContain("Bag is sealed");
     expect(text).toContain("Sticker or stapled receipt across the opening");

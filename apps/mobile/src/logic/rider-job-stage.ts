@@ -78,3 +78,99 @@ export async function clearArrival(): Promise<void> {
     /* best-effort */
   }
 }
+
+/**
+ * The "can't reach the recipient" wait (X3), kept per order like the arrival mark so an app kill doesn't
+ * restart the 8-minute timer (handoff § 2 state model: `reach` persists).
+ */
+export interface ReachMark {
+  orderId: string;
+  startedAt: number;
+  calls: number;
+  wa: number;
+}
+
+export const RIDER_JOB_REACH_KEY = "lynia.riderJobReach";
+
+export function parseReach(raw: string | null | undefined): ReachMark | null {
+  if (!raw) return null;
+  try {
+    const d = JSON.parse(raw) as Partial<ReachMark> | null;
+    if (!d || typeof d.orderId !== "string" || !d.orderId || typeof d.startedAt !== "number" || !Number.isFinite(d.startedAt)) return null;
+    const n = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0);
+    return { orderId: d.orderId, startedAt: d.startedAt, calls: n(d.calls), wa: n(d.wa) };
+  } catch {
+    return null;
+  }
+}
+
+export async function loadReach(): Promise<ReachMark | null> {
+  try {
+    return parseReach(await SecureStore.getItemAsync(RIDER_JOB_REACH_KEY));
+  } catch {
+    return null;
+  }
+}
+
+export async function saveReach(mark: ReachMark): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(RIDER_JOB_REACH_KEY, JSON.stringify(mark));
+  } catch {
+    /* best-effort */
+  }
+}
+
+export async function clearReach(): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(RIDER_JOB_REACH_KEY);
+  } catch {
+    /* best-effort */
+  }
+}
+
+/**
+ * The delivery-code confirmation the rider sent while offline (the handoff's `outbox[]`): written when the
+ * confirm fires and cleared once it settles, so an app kill while it waits for data re-sends it on the next
+ * launch instead of losing it ("Saved. Syncs when you're back online.").
+ */
+export interface DeliverOutbox {
+  orderId: string;
+  code: string;
+}
+
+export const RIDER_JOB_DELIVER_OUTBOX_KEY = "lynia.riderJobDeliverOutbox";
+
+export function parseDeliverOutbox(raw: string | null | undefined): DeliverOutbox | null {
+  if (!raw) return null;
+  try {
+    const d = JSON.parse(raw) as Partial<DeliverOutbox> | null;
+    if (!d || typeof d.orderId !== "string" || !d.orderId || typeof d.code !== "string" || !/^\d{6}$/.test(d.code)) return null;
+    return { orderId: d.orderId, code: d.code };
+  } catch {
+    return null;
+  }
+}
+
+export async function loadDeliverOutbox(): Promise<DeliverOutbox | null> {
+  try {
+    return parseDeliverOutbox(await SecureStore.getItemAsync(RIDER_JOB_DELIVER_OUTBOX_KEY));
+  } catch {
+    return null;
+  }
+}
+
+export async function saveDeliverOutbox(entry: DeliverOutbox): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(RIDER_JOB_DELIVER_OUTBOX_KEY, JSON.stringify(entry));
+  } catch {
+    /* best-effort */
+  }
+}
+
+export async function clearDeliverOutbox(): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(RIDER_JOB_DELIVER_OUTBOX_KEY);
+  } catch {
+    /* best-effort */
+  }
+}

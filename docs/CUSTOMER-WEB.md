@@ -69,6 +69,22 @@ Harare renders inside the Send screen with no CSP violations; a map tap places t
 suggestions; the Maps JavaScript Geocoder names a Harare point ("Jason Moyo Avenue"). The Geocoding web service
 returned REQUEST_DENIED for the referrer-restricted key, which is why pin → address uses the Geocoder.
 
+## Offline and slow links
+
+- **Offline shell** (`apps/customer-web/public/sw.js`, registered by `sw-register.js` after load). Pages are
+  network-first: a deploy reaches everyone on their next visit, a slow link falls back to the saved page after
+  4 s, and offline falls back at once. Before this an offline reload showed the browser's own
+  `ERR_INTERNET_DISCONNECTED` page. Hashed bundles and `/assets/*` are cache-first. `finish-build.mjs` stamps
+  each export's build id and precache list (entry bundle, the ~0.5 MB of fonts and images, the icons) into
+  `sw.js`, so each deploy installs a new worker and drops the old bundles. Other origins (the API, Google Maps)
+  are never cached. `sw.js` is served `no-cache`; `smoke.sh` checks that, and that it was stamped.
+  **Kill switch:** deploy a `sw.js` whose install handler calls `self.registration.unregister()`.
+- **Warm boot and saved order copies** use browser storage (`src/net/web-kv.ts`), since expo-file-system has no
+  web implementation. Before, the query cache never restored on the web and the order screen's offline copy was
+  never written. The national-ID redaction still runs before anything is stored, and sign-out clears both.
+- **Network back:** the browser's `offline` event shows the offline strip at once, and `online` checks the API
+  straight away instead of waiting out the backoff (`src/net/reachability-signals.ts`).
+
 ## Not yet
 
 - **Web push** (plan P5): needs a Web Push sender in the API.

@@ -7,7 +7,7 @@ import type { NotificationsService } from "../notifications/notifications.servic
 import { PrismaService } from "../prisma/prisma.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
 import type { NearbyRider, TrackingService } from "../tracking/tracking.service";
-import { OrdersService } from "./orders.service";
+import { OrdersService, RIDER_HISTORY_STATUSES } from "./orders.service";
 
 const orderInput: CreateOrderRequest = {
   pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate", contactPhone: "+263771111111" },
@@ -1232,41 +1232,49 @@ describe("OrdersService.historyForUser", () => {
     ...over,
   });
 
-  it("LC-B-SIB-4: carries a merchant order's deliveryFee (what its rider keeps) beside agreedFare", async () => {
-    const out = await svc([
-      row({ orderType: "merchant", agreedFare: { toString: () => "20.00" }, deliveryFee: { toString: () => "2.50" } }),
-      row({ id: "o2" }),
-    ]).historyForUser("rider-1");
-    expect(out[0]).toMatchObject({ agreedFare: "20.00", deliveryFee: "2.50" });
-    expect(out[1]).toMatchObject({ deliveryFee: null });
-  });
-
   it("queries both roles (OR customer/rider), newest first, capped at 50 (UX-2026-07-15, was 100)", async () => {
     // Regression guard: a metered-data mobile list (shared by trip history AND earnings) has no use for
     // a full 100-row fetch on every open — halved to 50 without any contract/shape change.
     let args: { where: unknown; orderBy: unknown; take: unknown } | undefined;
     await svc([row()], (a) => (args = a)).historyForUser("cust-1");
     expect(args!.where).toEqual({
-      AND: [{ OR: [{ customerId: "cust-1" }, { riderId: "cust-1" }] }, { status: { in: COMPLETED_ORDER_STATUSES } }],
+      OR: [
+        { customerId: "cust-1", status: { in: COMPLETED_ORDER_STATUSES } },
+        { riderId: "cust-1", status: { in: RIDER_HISTORY_STATUSES } },
+      ],
     });
     expect(args!.orderBy).toEqual({ createdAt: "desc" });
     expect(args!.take).toBe(50);
   });
 
-  it("scopes to completed trips — a delivered trip counts even before it is rated; drafts/in-flight, cancelled, expired and undelivered are excluded", async () => {
-    // The customer Orders tab and the rider Trips list read this feed; both show completed trips, and
-    // a `delivered` trip is completed even before the customer rates it (owner decision 2026-08-12).
-    // Same set earningsSummary credits, so the Trips list and earnings trip-count never disagree.
-    let args: { where: { AND: [unknown, { status: { in: string[] } }] } } | undefined;
+  it("scopes the customer side to completed trips — a delivered trip counts even before it is rated", async () => {
+    // A `delivered` trip is completed even before the customer rates it (owner decision 2026-08-12).
+    let args: { where: { OR: [{ status: { in: string[] } }, { status: { in: string[] } }] } } | undefined;
     await svc([row()], (a) => (args = a as typeof args)).historyForUser("cust-1");
-    const statuses = args!.where.AND[1].status.in;
+    const statuses = args!.where.OR[0].status.in;
     expect(statuses).toEqual(COMPLETED_ORDER_STATUSES);
-    expect(statuses).toContain("completed");
-    expect(statuses).toContain("delivered");
     expect(statuses).not.toContain("cancelled");
     expect(statuses).not.toContain("expired");
     expect(statuses).not.toContain("undelivered");
     expect(statuses).not.toContain("requested");
+  });
+
+  it("MA-M5: the rider side also returns their cancelled and undelivered jobs (Job history explains a cooldown)", async () => {
+    let args: { where: { OR: [unknown, { status: { in: string[] } }] } } | undefined;
+    await svc([row()], (a) => (args = a as typeof args)).historyForUser("rider-1");
+    const statuses = args!.where.OR[1].status.in;
+    expect(statuses).toEqual(expect.arrayContaining(["delivered", "completed", "cancelled", "undelivered"]));
+    expect(statuses).not.toContain("expired");
+    expect(statuses).not.toContain("requested");
+  });
+
+  it("MA-H1: a merchant row carries the rider's fare (the delivery fee), not the customer's whole bill", async () => {
+    const food = await svc([
+      row({ orderType: "merchant", merchant: { name: "Sadza Republic" }, agreedFare: { toString: () => "15.50" }, deliveryFee: { toString: () => "2.50" } }),
+    ]).historyForUser("rider-1");
+    expect(food[0]).toMatchObject({ agreedFare: "15.50", riderFare: "2.50" });
+    const parcel = await svc([row({ deliveryFee: null })]).historyForUser("rider-1");
+    expect(parcel[0]!.riderFare).toBeNull();
   });
 
   it("serializes fares, redacts contactPhone, and names the counterparty by viewpoint", async () => {

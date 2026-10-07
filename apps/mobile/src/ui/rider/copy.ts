@@ -45,6 +45,8 @@ export const RIDER_COPY = {
   openJob: "Open job",
   taken: "That parcel was taken by another rider.",
   withdrawn: "Offer withdrawn.",
+  /** Undrawn (rider audit BD-H2): the withdraw didn't reach the server, so the offer still stands. */
+  withdrawFail: "Couldn't withdraw. Check your data.",
   undo: "Undo",
   /* make an offer */
   /** Not drawn: stands in for the sender's name when the API sends none (ledger D-54 §4). */
@@ -77,6 +79,8 @@ export const RIDER_COPY = {
   sending: "Sending…",
   skip: "Skip this job",
   sendFail: "Couldn't send your offer. Check your data.",
+  /** Undrawn (MA-H3): the switch to customer couldn't take the rider offline. */
+  offFail: "Couldn't go offline. Check your data.",
   tryAgain: "Try again",
   /* gates */
   /*
@@ -211,6 +215,8 @@ export const RIDER_COPY = {
   undelPick: "Pick a reason to continue.",
   undelDoneT: "Marked undelivered",
   undelNoStrike: "This doesn't count against you.",
+  /** FJ-M5: the return card once the venue confirmed the order is back. */
+  backDoneT: "Handed back",
   cxT: "Cancel this job?",
   cxFinal: "You're one strike from a pause. Cancelling now pauses jobs for 24 hours.",
   cxKeep: "Keep the job",
@@ -223,6 +229,8 @@ export const RIDER_COPY = {
   offlineJob: "No connection. Your job is saved on this phone — keep riding.",
   offlineLong: "Still offline after 4 min. Your job is safe. The delivery code works without data; it syncs when you're back.",
   offlineCode: "Saved. Syncs when you're back online.",
+  /** Undrawn (rider audit 2026-10-07): a job step that failed with no server message. */
+  jobFail: "Couldn't update the job. Check your data.",
   sosT: "Call 999?",
   sosB: "This calls the emergency line and tells our safety team where you are.",
   sosCall: "Call 999",
@@ -383,6 +391,8 @@ export const RIDER_COPY = {
   docBikeLabel: "Number plate",
   docBikeHint: "As it's written on the plate, like AEE 4471.",
   docBikeErr: "Couldn't save your plate. Check your connection and try again.",
+  /* FR-M2 (D-78 shape): Bike & documents couldn't load `me`. */
+  docLoadErr: "Couldn't load your documents",
   /* D-79 (owner 2026-10-06): Personal details. Row label and sub are the handoff's (mint2.js Account). */
   sPersonal: "Personal details",
   sPersonalS: "Name, phone, optional ID",
@@ -473,6 +483,16 @@ export const RF = {
   codeT: (recipient: string): string => `Ask ${recipient} for the delivery code`,
   codeB: "The 6-digit code proves you handed it over. Hand over the parcel only after it's accepted.",
   triesLeft: (n: number): string => `Wrong code. ${n} tries left.`,
+  /** FJ-M5: X5 for a venue's order — the first line of `undelDoneB`, the return itself is on the card. */
+  undelFoodB: (customer: string): string => `${customer} has been told.`,
+  /** FJ-M5: the return card (`ReturnToRestaurantCard`) — short, with the venue's own name. */
+  backT: (name: string): string => `Take it back to ${name}`,
+  backB: (name: string): string => `${name} confirms it in their app.`,
+  backRefund: (paid: number, name: string): string => `Ask ${name} for the ${usd(paid)} you paid.`,
+  backDoneB: (name: string): string => `${name} has it back.`,
+  navTo: (name: string): string => `Navigate to ${name}`,
+  /** FJ-M3: the pickup code locked — a fresh reveal at the counter resets the tries. */
+  pickupLockedB: (place: string): string => `Ask the ${place} to show the code again.`,
   triesLast: (recipient: string): string => `Wrong code. 1 try left — check every digit with ${recipient}.`,
   lockedB: (sender: string, recipient: string): string => `Ask ${sender} to send ${recipient} a new code. Keep the parcel until it arrives.`,
   askResend: (sender: string): string => `Call ${sender} to re-send`,
@@ -510,8 +530,8 @@ export const RF = {
   balanceB: (ratePct: number, floor: number): string => `${ratePct}% comes off when a job closes. Below ${usd(floor)} you can't take jobs.`,
   floorB: (floor: number): string => `Below the ${usd(floor)} floor. Top up to keep riding.`,
   pendingOk: (amt: number): string => `Your ${usd(amt)} top-up went through while the app was closed.`,
-  pendingWait: (provider: string): string => `Waiting for ${provider} to confirm your top-up…`,
-  pendingFail: "Your top-up didn't go through. Nothing was taken.",
+  pendingWait: (provider: string, amt: number): string => `Waiting for ${provider} to confirm your ${usd(amt)} top-up…`,
+  pendingFail: (amt: number): string => `Your ${usd(amt)} top-up didn't go through. Nothing was taken.`,
   cashOnly: (amt: number): string => `Cash with you now: ${usd(amt)}. It's all yours.`,
   lTop: (provider: string): string => `Top-up · ${provider}`,
   lMeta: (kind: string, time: string): string => `${kind} · ${time}`,
@@ -560,3 +580,18 @@ export const KYF = {
   expBody: (d: Date | null): string => (d ? KY.expBody.replace(/^Expired [^.]+\./, `Expired ${dayMonthYear(d)}.`) : KY.expBody.replace(/^Expired [^.]+\.\s*/, "")),
   unfName: (firstName: string | null | undefined): string => firstName?.trim() ?? "",
 };
+
+/**
+ * FJ-L1: a kitchen's Rider v2 line, worded for a shop or a pharmacy (`O.svc[…].place`). A kitchen keeps
+ * the handoff's words verbatim; elsewhere "kitchen" / "restaurant" become the venue's noun and "the food"
+ * becomes "the order".
+ */
+export function venueCopy(text: string, place: string): string {
+  if (place === "kitchen") return text;
+  const Place = place.charAt(0).toUpperCase() + place.slice(1);
+  return text
+    .replace(/\bKITCHEN\b/g, place.toUpperCase())
+    .replace(/\bKitchen\b/g, Place)
+    .replace(/\b(kitchen|restaurant)\b/g, place)
+    .replace(/\bthe food\b/g, "the order");
+}

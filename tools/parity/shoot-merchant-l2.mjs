@@ -287,17 +287,17 @@ try {
   app.deliveriesEmpty = await shoot(browser, { name: "deliveries-empty-tablet", path: "/deliveries", viewport: TABLET, scenario: SCENARIOS.newShop, before: waitFor("Book your first rider") });
   app.form = await shoot(browser, { name: "book-form-tablet", path: "/deliveries/new", viewport: TABLET, full: true, before: fillForm });
   app.formPhone = await shoot(browser, { name: "book-form-320", path: "/deliveries/new", viewport: PHONE, full: true, before: fillForm });
-  app.pick = await shoot(browser, { name: "pick-tablet", path: `/deliveries/${IDS.finding}`, viewport: TABLET, full: true, before: waitFor("Stay here to pick a rider") });
-  app.pickPhone = await shoot(browser, { name: "pick-320", path: `/deliveries/${IDS.finding}`, viewport: PHONE, full: true, before: waitFor("Stay here to pick a rider") });
+  app.pick = await shoot(browser, { name: "pick-tablet", path: `/deliveries/booking?id=${IDS.finding}`, viewport: TABLET, full: true, before: waitFor("Stay here to pick a rider") });
+  app.pickPhone = await shoot(browser, { name: "pick-320", path: `/deliveries/booking?id=${IDS.finding}`, viewport: PHONE, full: true, before: waitFor("Stay here to pick a rider") });
   app.code = await shoot(browser, {
     name: "code-tablet",
-    path: `/deliveries/${IDS.coming}`,
+    path: `/deliveries/booking?id=${IDS.coming}`,
     viewport: TABLET,
     full: true,
     codes: { [IDS.coming]: "482910" },
     before: waitFor("Send the code to the buyer on WhatsApp"),
   });
-  app.expired = await shoot(browser, { name: "expired-tablet", path: `/deliveries/${IDS.expired}`, viewport: TABLET, before: waitFor("Try again") });
+  app.expired = await shoot(browser, { name: "expired-tablet", path: `/deliveries/booking?id=${IDS.expired}`, viewport: TABLET, before: waitFor("Try again") });
   app.items = await shoot(browser, { name: "items-shop-tablet", path: "/menu", viewport: TABLET, before: waitFor("Brake pads (front)") });
   app.itemsEmpty = await shoot(browser, { name: "items-empty-shop-tablet", path: "/menu", viewport: TABLET, scenario: SCENARIOS.newShop, before: waitFor("+ Engine") });
   app.shopProfile = await shoot(browser, { name: "shop-profile-shop-tablet", path: "/shop", viewport: TABLET, full: true, before: waitFor("WHAT YOU SELL") });

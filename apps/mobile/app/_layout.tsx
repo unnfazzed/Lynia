@@ -15,6 +15,7 @@ import { reportBootRoute } from "../src/boot/boot-readiness";
 import { prewarmBootReads } from "../src/boot/prewarm";
 import { isUpdateRequired, isVersionBelow } from "../src/config";
 import { useOfflineBannerClaimed } from "../src/net/offline-banner-owner";
+import { wireReachabilitySignals } from "../src/net/reachability-signals";
 import { useReachability } from "../src/net/use-reachability";
 import { useServerMinVersion } from "../src/net/use-server-version-gate";
 import { queryClient, wireFocusManager } from "../src/query/client";
@@ -316,6 +317,9 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps): React.React
 function RootLayout(): React.ReactElement | null {
   // Pause React Query's refetchInterval polling while backgrounded (see wireFocusManager).
   useEffect(() => wireFocusManager(), []);
+  // Re-probe the API the moment the app returns to the foreground or the browser reports the network
+  // back, instead of waiting out reachability's backoff (see reachability-signals.ts).
+  useEffect(() => wireReachabilitySignals(), []);
 
   // NOTE: this deliberately does NOT `return null` while the fonts load, which is what it did until the
   // cold-start work. Returning null unmounted the whole provider tree, so the session read, the

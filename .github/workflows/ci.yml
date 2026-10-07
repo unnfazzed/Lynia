@@ -108,7 +108,11 @@ jobs:
       # Import-boundary + cycle enforcement (roadmap 3.2). Baselined: fails only on a NEW circular
       # import or a NEW mobile ui→api coupling, never on the pre-existing knots being worked down.
       - run: pnpm run depcruise
+      # The merchant web is a static export (docs/MERCHANT-WEB.md): its build prerenders every page, and
+      # app/lib/config.ts fails a production build with no API URL, so give it the real one.
       - run: pnpm run build
+        env:
+          NEXT_PUBLIC_API_BASE_URL: https://api.lyniago.com
       - run: pnpm --filter @lynia/api test
       - run: pnpm --filter @lynia/mobile test
       # Admin typecheck/lint/build already run above via `turbo run …`; its tests do not (turbo run

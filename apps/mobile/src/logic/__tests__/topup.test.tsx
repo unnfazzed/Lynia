@@ -1,4 +1,4 @@
-import { reconcilePendingTopup, validateTopupAmount } from "../topup";
+import { acceptAmountInput, floorApplies, topUpAtLeast, reconcilePendingTopup, validateTopupAmount } from "../topup";
 
 describe("validateTopupAmount (WD-009 — follows the bounds it's given, not a bundled constant)", () => {
   it("is valid within [minTopUp, maxTopUp]", () => {
@@ -44,5 +44,31 @@ describe("reconcilePendingTopup (UX-2026-07-16 — wallet-screen recovery for an
   it("treats both terminal-no-money-moved statuses (declined, expired) as safe to clear", () => {
     expect(reconcilePendingTopup("declined")).toBe("terminal");
     expect(reconcilePendingTopup("expired")).toBe("terminal");
+  });
+});
+
+describe("MA-L1: the amount takes at most two decimals", () => {
+  it("ignores a third decimal and reads a comma as the point", () => {
+    expect(acceptAmountInput("5.55", "5.555")).toBe("5.55");
+    expect(acceptAmountInput("5", "5,5")).toBe("5.5");
+    expect(acceptAmountInput("", "12.50")).toBe("12.50");
+    expect(validateTopupAmount("5.555", 5, 50)).not.toBeNull();
+    expect(validateTopupAmount("5.50", 5, 50)).toBeNull();
+  });
+});
+
+describe("MA-H2: floorApplies mirrors the server's online gate", () => {
+  it("binds only with commission on and no free jobs left", () => {
+    expect(floorApplies(0, 0)).toBe(false);
+    expect(floorApplies(10, 3)).toBe(false);
+    expect(floorApplies(10, 0)).toBe(true);
+    expect(floorApplies(10, undefined)).toBe(true);
+  });
+});
+
+describe("MA-M1: the wall never asks for less than the minimum top-up", () => {
+  it("is max(minTopUp, floor - balance)", () => {
+    expect(topUpAtLeast(2, 0.6, 5)).toBe(5);
+    expect(topUpAtLeast(20, 1, 5)).toBe(19);
   });
 });

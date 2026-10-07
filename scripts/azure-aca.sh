@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Azure Container Apps helpers shared by the *-azure.yml workflows
 # (docs/plans/2026-09-24-gcp-to-azure-migration.md §6). One place for the revision / traffic / job
-# mechanics, so release-azure.yml, deploy-staging-azure.yml, deploy-admin-azure.yml,
-# deploy-merchant-azure.yml and rollback-azure.yml cannot drift apart on the parts that decide where
+# mechanics, so release-azure.yml, deploy-staging-azure.yml, deploy-admin-azure.yml and
+# rollback-azure.yml cannot drift apart on the parts that decide where
 # production traffic goes.
 #
 # Usage: bash scripts/azure-aca.sh <command> [args...]   (every argument is positional; nothing here
@@ -33,7 +33,7 @@ die() { echo "::error::$*" >&2; exit 1; }
 
 traffic_json() { az containerapp ingress traffic show -n "$1" -g "$2" -o json 2>/dev/null || echo '[]'; }
 
-# "Multiple" (the API: canary by revision weights) or "Single" (admin, merchant: the platform swaps
+# "Multiple" (the API: canary by revision weights) or "Single" (admin: the platform swaps
 # to a new revision only once it is ready and keeps the old one serving if it never gets there).
 revision_mode() {
   az containerapp show -n "$1" -g "$2" --query properties.configuration.activeRevisionsMode -o tsv 2>/dev/null || echo Unknown

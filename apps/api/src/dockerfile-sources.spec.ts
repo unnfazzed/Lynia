@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
  * before a revision was created. patches/.gitkeep keeps the directory; this test keeps it honest.
  */
 const REPO_ROOT = resolve(__dirname, "../../..");
-const DOCKERFILES = ["apps/api/Dockerfile", "apps/admin/Dockerfile", "apps/merchant/Dockerfile"];
+const DOCKERFILES = ["apps/api/Dockerfile", "apps/admin/Dockerfile"];
 
 /** Sources of each COPY/ADD that reads the build context. `--from=` copies read another stage. */
 function copySources(dockerfile: string): string[] {

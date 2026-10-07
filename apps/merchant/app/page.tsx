@@ -1,11 +1,17 @@
-import { redirect } from "next/navigation";
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
 /**
- * Root route. The fail-closed middleware (middleware.ts, E1) already redirected an unauthenticated
- * request to /login before this ever renders — an authenticated request just needs to land on the
- * dashboard's home section. See docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md Lane E,
- * E1: this replaces the P0 scaffold placeholder now that the first authenticated surface exists.
+ * Root route. AccessGate (components/AccessGate.tsx) has already sent a signed-out visitor to /login
+ * before this renders; a signed-in one lands on the dashboard's home section. A static export has no
+ * server redirect, so this one happens in the browser.
  */
 export default function RootPage() {
-  redirect("/queue");
+  const router = useRouter();
+  useEffect(() => {
+    router.replace("/queue");
+  }, [router]);
+  return null;
 }

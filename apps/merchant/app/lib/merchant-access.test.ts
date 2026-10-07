@@ -7,7 +7,7 @@ import {
 } from "./merchant-access";
 
 describe("isPublicMerchantPath", () => {
-  it("lets the login screen, static assets, and the health probe through", () => {
+  it("lets the login screen, static assets and the hand-over link through", () => {
     for (const p of [
       "/login",
       "/_next/static/chunk.js",
@@ -15,7 +15,7 @@ describe("isPublicMerchantPath", () => {
       "/icon.png",
       "/brand/logo.svg",
       "/fonts/inter.woff2",
-      "/api/healthz",
+      "/h",
       "/h/a1b20000-0000-4000-8000-000000000000.1790000000.0123456789abcdef0123456789abcdef",
     ]) {
       expect(isPublicMerchantPath(p)).toBe(true);
@@ -42,6 +42,13 @@ describe("evaluateMerchantAccess", () => {
     expect(evaluateMerchantAccess({ pathname: "/queue", hasSession: false })).toEqual({
       allow: false,
       redirectTo: "/login?next=%2Fqueue",
+    });
+  });
+
+  it("keeps the query string in the return target (an order's id lives there)", () => {
+    expect(evaluateMerchantAccess({ pathname: "/queue/order", search: "?id=o1", hasSession: false })).toEqual({
+      allow: false,
+      redirectTo: "/login?next=%2Fqueue%2Forder%3Fid%3Do1",
     });
   });
 });

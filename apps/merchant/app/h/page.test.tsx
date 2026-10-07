@@ -2,11 +2,11 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import HandoverLinkPage from "./page";
-import { ApiError, confirmHandoverLink, getHandoverLink } from "../../lib/api-client";
+import { ApiError, confirmHandoverLink, getHandoverLink } from "../lib/api-client";
 
-vi.mock("next/navigation", () => ({ useParams: () => ({ token: "tok" }) }));
-vi.mock("../../lib/api-client", async (orig) => ({
-  ...(await orig<typeof import("../../lib/api-client")>()),
+vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams({ t: "tok" }) }));
+vi.mock("../lib/api-client", async (orig) => ({
+  ...(await orig<typeof import("../lib/api-client")>()),
   getHandoverLink: vi.fn(),
   confirmHandoverLink: vi.fn(),
 }));

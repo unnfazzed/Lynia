@@ -1,7 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { BackHandler, Image, Modal, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getMe, type Me } from "../../src/api/auth";
@@ -16,13 +16,15 @@ import {
   normalizePlate,
   pickRiderPhoto,
   PLATE_MAX,
+  riderPhotoAllowed,
   plateMatchesFormat,
   saveRiderPhoto,
   saveRiderPhotoDraft,
   type PhotoSource,
 } from "../../src/logic/rider-documents";
 import type { UploadImageSource } from "../../src/logic/image-downscale";
-import { Icon, type IconName, SkeletonList, useActionError } from "../../src/ui";
+import { openPhoneSettings, useOnAppActive } from "../../src/permissions/location";
+import { EmptyState, Icon, type IconName, SkeletonList, useActionError } from "../../src/ui";
 import {
   BackHeader,
   Body,
@@ -38,9 +40,8 @@ import {
   PinnedFooter,
   SplitTitle,
 } from "../../src/ui/firstrun";
-import { BD } from "../../src/ui/firstrun/copy";
+import { BD, RP } from "../../src/ui/firstrun/copy";
 import { RIDER_COPY as R } from "../../src/ui/rider/copy";
-import { Notice } from "../../src/ui/send/kit";
 
 /**
  * E1's in-row "+ Add" pill height. The handoff drew it 36, under the tap-target floor; the owner had the
@@ -55,6 +56,69 @@ const PREVIEW_TITLE = { a: "Looking", b: "good" } as const;
 /** The E2b capture guide's translucent chip fill and the dashed oval (drawn values, on the dark ink). */
 const GUIDE_CHIP_BG = "rgba(255,255,255,0.12)";
 const GUIDE_OVAL = "rgba(255,255,255,0.7)";
+
+/**
+ * FR-M1: the photo upload in flight lives at module scope, not in the screen — a rider who backs out
+ * mid-upload and comes back sees it still uploading (not E6 "didn't finish"), and can't send it twice.
+ */
+type UploadOutcome = { ok: true } | { ok: false; refused?: string };
+interface PhotoUpload {
+  shot: UploadImageSource;
+  progress: number;
+  done: Promise<UploadOutcome>;
+}
+let photoUpload: PhotoUpload | null = null;
+const uploadListeners = new Set<() => void>();
+function setPhotoUpload(next: PhotoUpload | null): void {
+  photoUpload = next;
+  uploadListeners.forEach((l) => l());
+}
+function subscribePhotoUpload(l: () => void): () => void {
+  uploadListeners.add(l);
+  return () => void uploadListeners.delete(l);
+}
+const getPhotoUpload = (): PhotoUpload | null => photoUpload;
+
+/** Writes the rider's new record into the cached `me` and lets `/auth/me` confirm it. */
+function applyRiderTo(qc: QueryClient, next: Partial<NonNullable<Me["rider"]>>, confirm = true): void {
+  qc.setQueryData<Me>(["me"], (cur) => (cur?.rider ? { ...cur, rider: { ...cur.rider, ...next } } : cur));
+  if (confirm) void qc.invalidateQueries({ queryKey: ["me"] });
+}
+
+/** Runs the E2d chain once; the draft is kept on the phone until the attach lands (E6). */
+function startPhotoUpload(qc: QueryClient, shot: UploadImageSource): PhotoUpload {
+  const upload: PhotoUpload = {
+    shot,
+    progress: 0,
+    done: (async (): Promise<UploadOutcome> => {
+      await saveRiderPhotoDraft(shot);
+      try {
+        const next = await saveRiderPhoto(shot, (progress) => {
+          if (photoUpload?.shot === shot) setPhotoUpload({ ...photoUpload, progress });
+        });
+        await clearRiderPhotoDraft();
+        applyRiderTo(qc, next);
+        return { ok: true };
+      } catch (e) {
+        // A refused photo (wrong type, too large) is not a connection problem: say so and drop the draft.
+        if (e instanceof ApiError && e.status === 422) {
+          await clearRiderPhotoDraft();
+          return { ok: false, refused: e.message };
+        }
+        return { ok: false };
+      } finally {
+        if (photoUpload?.shot === shot) setPhotoUpload(null);
+      }
+    })(),
+  };
+  setPhotoUpload(upload);
+  return upload;
+}
+
+/** Test seam: forget an in-flight upload between tests. */
+export function __resetPhotoUploadForTest(): void {
+  setPhotoUpload(null);
+}
 
 type Stage =
   | { kind: "list" }
@@ -91,18 +155,45 @@ export default function DocumentsScreen(): React.ReactElement {
   const [plateSheet, setPlateSheet] = useState(false);
   const [plateDraft, setPlateDraft] = useState("");
   const [plateError, setPlateError] = useState<string | null>(null);
-  const [upload, setUpload] = useState<{ shot: UploadImageSource; progress: number } | null>(null);
-
-  // E6 survives a relaunch: a photo whose upload never finished is still on this phone.
+  const upload = useSyncExternalStore(subscribePhotoUpload, getPhotoUpload, getPhotoUpload);
+  // FR-H2: camera / gallery access the phone will no longer ask for — the settings sheet, re-read on return.
+  const [blocked, setBlocked] = useState<PhotoSource | null>(null);
+  const alive = useRef(true);
   useEffect(() => {
-    let alive = true;
-    void loadRiderPhotoDraft().then((shot) => {
-      if (alive && shot) setStage((s) => (s.kind === "list" ? { kind: "failed", shot } : s));
-    });
+    alive.current = true;
     return () => {
-      alive = false;
+      alive.current = false;
     };
   }, []);
+
+  /** An upload's end, while this screen is up: E6 on a connection failure, the toast on a refusal. */
+  const follow = useCallback(
+    (u: PhotoUpload): void => {
+      void u.done.then((o) => {
+        if (!alive.current || o.ok) return;
+        if (o.refused) setError(o.refused);
+        else setStage({ kind: "failed", shot: u.shot });
+      });
+    },
+    [setError],
+  );
+
+  // E6 survives a relaunch: a photo whose upload never finished is still on this phone. One still
+  // uploading (the rider left and came back, FR-M1) is followed instead of shown as failed.
+  useEffect(() => {
+    let live = true;
+    const inFlight = getPhotoUpload();
+    if (inFlight) {
+      follow(inFlight);
+      return;
+    }
+    void loadRiderPhotoDraft().then((shot) => {
+      if (live && shot && !getPhotoUpload()) setStage((s) => (s.kind === "list" ? { kind: "failed", shot } : s));
+    });
+    return () => {
+      live = false;
+    };
+  }, [follow]);
 
   // Android back on a full-screen step returns to the list instead of leaving the screen.
   useEffect(() => {
@@ -118,25 +209,33 @@ export default function DocumentsScreen(): React.ReactElement {
    * Write into the cached `me`. With `confirm` (what the server answered), let `/auth/me` confirm it; an
    * optimistic write (E4's instant plate) must not refetch, or the still-old server copy would undo it.
    */
-  const applyRider = useCallback(
-    (next: Partial<NonNullable<Me["rider"]>>, confirm = true): void => {
-      qc.setQueryData<Me>(["me"], (cur) => (cur?.rider ? { ...cur, rider: { ...cur.rider, ...next } } : cur));
-      if (confirm) void qc.invalidateQueries({ queryKey: ["me"] });
-    },
-    [qc],
-  );
+  const applyRider = useCallback((next: Partial<NonNullable<Me["rider"]>>, confirm = true): void => applyRiderTo(qc, next, confirm), [qc]);
 
   const pick = (from: PhotoSource): void => {
     void (async () => {
       const shot = await pickRiderPhoto(from).catch(() => null);
       if (shot === null) return;
-      if (shot === "denied") {
-        setError(R.docPhotoDenied);
+      if (shot === "denied" || shot === "blocked") {
+        // FR-H2: close the full-screen guide first — the toast and the sheet draw under its modal.
+        setStage({ kind: "list" });
+        if (shot === "blocked") setBlocked(from);
+        else setError(R.docPhotoDenied);
         return;
       }
       setStage({ kind: "preview", shot, from });
     })();
   };
+
+  // Back from phone settings with access on: carry on where the rider was.
+  useOnAppActive(() => {
+    const from = blocked;
+    if (!from) return;
+    void riderPhotoAllowed(from).then((ok) => {
+      if (!ok || !alive.current) return;
+      setBlocked(null);
+      pick(from);
+    });
+  });
 
   const choose = (from: PhotoSource): void => {
     setPhotoSheet(false);
@@ -146,25 +245,9 @@ export default function DocumentsScreen(): React.ReactElement {
 
   const sendPhoto = (shot: UploadImageSource): void => {
     setStage({ kind: "list" });
-    setUpload({ shot, progress: 0 });
-    void (async () => {
-      await saveRiderPhotoDraft(shot);
-      try {
-        const next = await saveRiderPhoto(shot, (progress) => setUpload((u) => (u ? { ...u, progress } : u)));
-        await clearRiderPhotoDraft();
-        applyRider(next);
-        setUpload(null);
-      } catch (e) {
-        setUpload(null);
-        // A refused photo (wrong type, too large) is not a connection problem: say so and drop the draft.
-        if (e instanceof ApiError && e.status === 422) {
-          await clearRiderPhotoDraft();
-          setError(e.message);
-        } else {
-          setStage({ kind: "failed", shot });
-        }
-      }
-    })();
+    // FR-M1: one upload at a time — "Try again" while the first is still going never sends it twice.
+    if (getPhotoUpload()) return;
+    follow(startPhotoUpload(qc, shot));
   };
 
   const openPlate = (): void => {
@@ -293,7 +376,8 @@ export default function DocumentsScreen(): React.ReactElement {
         {meQ.isLoading ? (
           <SkeletonList count={2} />
         ) : !rider ? (
-          <Notice icon="wifi-off" text="Couldn't load your documents. Check your connection and try again." />
+          // FR-M2 (D-78): the one couldn't-load state, with a soft "Try again".
+          <EmptyState testID="documents-error" tone="error" icon="wifi-off" offsetTop={24} title={R.docLoadErr} primary={{ label: R.tryAgain, onPress: () => void meQ.refetch() }} />
         ) : allSet ? (
           // E5: the hero rides up under the back header (`margin-top:-28`).
           <View testID="documents-all-set">
@@ -335,7 +419,6 @@ export default function DocumentsScreen(): React.ReactElement {
             setPlateDraft(v.toUpperCase());
             setPlateError(null);
           }}
-          placeholder={BD.plateSub}
           helper={BD.plateSub}
           error={plateError}
           autoCapitalize="characters"
@@ -347,6 +430,12 @@ export default function DocumentsScreen(): React.ReactElement {
           inputStyle={{ fontWeight: tokens.font.weight.semibold, letterSpacing: 0.96 }}
         />
         <PinnedFooter inline primary={{ label: BD.plateSave, onPress: savePlate, testID: "plate-save" }} />
+      </FrSheet>
+
+      {/* FR-H2 — access the phone won't ask for again: open phone settings; it re-reads on return. */}
+      <FrSheet visible={blocked != null} onClose={() => setBlocked(null)} testID="photo-blocked">
+        <Body>{R.docPhotoDenied}</Body>
+        <PinnedFooter inline primary={{ label: RP.openSettings, onPress: openPhoneSettings, testID: "photo-settings" }} />
       </FrSheet>
 
       {/* E2b — the capture guide. */}
@@ -441,7 +530,8 @@ function CaptureGuide({ visible, onClose, onShoot }: { visible: boolean; onClose
         <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 8, marginTop: 24, paddingHorizontal: 16 }}>
           {GUIDE_TIPS.map((t) => (
             <View key={t.label} style={{ minHeight: 32, paddingHorizontal: 12, borderRadius: tokens.radius.pill, backgroundColor: GUIDE_CHIP_BG, flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <Icon name={t.icon} size={16} color={tokens.color.accentText} />
+              {/* FR-L3 (D-82 §4, kit defect): the drawn dark-green glyph is ~1.8:1 on the ink; the brand green clears 3:1. */}
+              <Icon name={t.icon} size={16} color={tokens.color.accent} />
               <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.semibold, color: tokens.color.onAccent }}>{t.label}</Text>
             </View>
           ))}

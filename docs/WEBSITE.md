@@ -138,7 +138,8 @@ Done once; after that every merge that touches `apps/website/` deploys by itself
    → **Deploy website (Cloudflare)** → **Run workflow** (a Claude session can dispatch it). The first run
    waits up to ten minutes for Cloudflare to issue the certificates.
 
-Do not reuse or widen `CLOUDFLARE_API_TOKEN`. That is the DNS-only token for `dns-bind-azure.yml`.
+Do not reuse or widen `CLOUDFLARE_API_TOKEN`. That is the DNS-only token for `dns-bind-azure.yml` (and the
+merchant web's one-time cutover step, [`MERCHANT-WEB.md`](MERCHANT-WEB.md)).
 
 ## Deploying, verifying, rolling back
 

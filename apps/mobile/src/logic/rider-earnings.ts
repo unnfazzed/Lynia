@@ -16,14 +16,8 @@ export function isRiderRow(r: OrderHistoryRow): boolean {
 
 export function paidFare(r: OrderHistoryRow): number | null {
   if (r.status !== "delivered" && r.status !== "completed") return null;
-  // LC-B-SIB-4: on a food job the rider earns the delivery fee, not the agreedFare — that is the
-  // customer's goods+delivery total, and the dish cost goes back to the kitchen. (A customer's own row
-  // keeps agreedFare: it is what they paid.) An older API without deliveryFee keeps the old reading.
-  if (r.role === "rider" && r.orderType === "merchant" && r.deliveryFee != null) {
-    const fee = Number(r.deliveryFee);
-    return Number.isFinite(fee) ? fee : null;
-  }
-  const n = Number(r.agreedFare ?? r.proposedFare);
+  // MA-H1: on a merchant job the agreed fare is the customer's whole bill; the rider earns `riderFare`.
+  const n = Number((r.orderType === "merchant" ? r.riderFare : null) ?? r.agreedFare ?? r.proposedFare);
   return Number.isFinite(n) ? n : null;
 }
 

@@ -454,4 +454,16 @@ describe("BootSplash · the rider boot keeps its card (First Run v2 H1/H2, ledge
     expect(riderRows(tree).length).toBe(2);
     act(() => tree.unmount());
   });
+
+  it("FR-M3: an offline rider boot lets the rider through to the cached board after the give-up", () => {
+    __setProbeFetch(async () => false);
+    const tree = mount();
+    act(() => reportBootDestination("/rider"));
+    act(() => reportUnreachable());
+    advance(GIVE_UP_MS - 500);
+    expect(released()).toBe(false); // still the offline row inside the bound
+    advance(1000);
+    expect(released()).toBe(true);
+    act(() => tree.unmount());
+  });
 });

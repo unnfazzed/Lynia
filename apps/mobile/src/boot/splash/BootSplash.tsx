@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Path, Polygon } from "react-native-svg";
 import { probeNow } from "../../net/reachability";
 import { useReachability } from "../../net/use-reachability";
+import { ArcRing } from "../../ui/ArcSpinner";
 import { Wordmark } from "../../ui/Brand";
 import { DOVE_BODY_POLYGONS, DOVE_CREASE_PATHS, DOVE_CREASE_WIDTH, DOVE_KEEL_POLYGON, DOVE_VIEWBOX } from "../../ui/dove-paths";
 import { useBootPhase } from "../boot-phase";
@@ -253,7 +254,9 @@ export function BootSplash(): React.ReactElement {
   const [offlineSince, setOfflineSince] = useState<number | null>(null);
   const [offlineTotal, setOfflineTotal] = useState(0);
   const giveUpAt = GIVE_UP_MS + offlineTotal + (offlineSince != null ? Math.max(0, t - offlineSince) : 0);
-  const doneAt = readyDoneAt ?? (offline ? null : giveUpAt);
+  // FR-M3 (owner decision): a rider boot never holds forever offline. Its bound is wall-clock, so after the
+  // give-up the rider reaches the board / active job from the cache instead of waiting on the network.
+  const doneAt = readyDoneAt ?? (riderBoot ? GIVE_UP_MS : offline ? null : giveUpAt);
   const done = doneLatch.current || (doneAt != null && t >= doneAt);
   if (done) doneLatch.current = true;
   useEffect(() => {
@@ -888,7 +891,10 @@ const StepRow = memo(function StepRow({
           <Animated.View style={[styles.tick, { transform: [{ scale: tick }, { rotate: "45deg" }] }]} />
         </View>
       ) : state === "active" ? (
-        <Animated.View style={[styles.ring, styles.ringActive, { transform: [{ rotate: still ? "0deg" : rotate }] }]} />
+        // A 2px green ring with a transparent top quarter — drawn as SVG, not a bordered View (see ArcRing).
+        <Animated.View testID="splash-step-active" style={[styles.ringBox, { transform: [{ rotate: still ? "0deg" : rotate }] }]}>
+          <ArcRing size={22} width={2} arc={C.accent} sweep={0.75} centreDeg={90} />
+        </Animated.View>
       ) : (
         <View style={styles.ring} />
       )}
@@ -964,7 +970,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: C.line,
   },
-  ringActive: { borderColor: C.accent, borderTopColor: "transparent" },
+  ringBox: { width: 22, height: 22 },
   ringDone: { backgroundColor: C.accent, borderColor: C.accent },
   tick: {
     position: "absolute",

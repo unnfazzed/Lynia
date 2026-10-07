@@ -30,7 +30,7 @@ import {
   FORWARD,
   type ForwardStatus,
   type LifecycleResult,
-  PICKUP_PHOTO_STATUSES,
+  PARCEL_PICKUP_PHOTO_STATUSES,
   POST_PICKUP_FOR_UNDELIVERED,
   QUEUE_NAME,
   RATE_LATE_WINDOW_MS,
@@ -283,7 +283,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
   /** Rider attaches the optional proof-of-pickup photo (§5c "parcel is with your rider — photo
    *  attached"). `key` is the object key from POST /uploads/pickup-photo after the signed PUT; the
    *  snapshot mints a read URL from it for BOTH parties. Guarded to the assigned rider and to the
-   *  attach window ({@link PICKUP_PHOTO_STATUSES}); does NOT advance the status. Idempotent by
+   *  attach window ({@link PARCEL_PICKUP_PHOTO_STATUSES}); does NOT advance the status. Idempotent by
    *  design — re-attaching simply replaces the key (a retake wins, no duplicate-photo state). */
   async attachPickupPhoto(
     orderId: string,
@@ -309,7 +309,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       const o = rows[0];
       if (!o) throw new NotFoundException("Order not found");
       if (o.rider_id !== riderId) throw new ForbiddenException("Not the assigned rider");
-      if (!PICKUP_PHOTO_STATUSES.includes(o.status as OrderStatus)) {
+      if (!PARCEL_PICKUP_PHOTO_STATUSES.includes(o.status as OrderStatus)) {
         throw new ConflictException("A pickup photo can only be added while collecting the parcel");
       }
       // The key must live under this caller's own pickup namespace — POST /uploads/pickup-photo mints
@@ -1436,6 +1436,15 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       if (claimed.count === 0) throw new ConflictException("Order changed, retry");
       await tx.$executeRaw`UPDATE orders SET delivery_code_rotated_at = now() WHERE id = ${orderId}::uuid`;
     });
+    // Rider audit PJ-H3: tell an open rider screen the code changed. The status is unchanged, but
+    // `order:status` is the signal the rider app refetches on — without it a locked code page stayed
+    // locked until the app was backgrounded. WS only (no push: nothing for the rider to be told), and
+    // best-effort like every emit here.
+    try {
+      this.gateway.emitOrderStatus(orderId, order.status);
+    } catch (err) {
+      this.logger.warn(`code-rotation emit failed for order ${orderId}: ${(err as Error).message}`);
+    }
     return { deliveryCode };
   }
 

@@ -1,19 +1,20 @@
 "use client";
 
-import { useParams, useRouter } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MerchantOrderResponse, PrescriptionPhotosResponse, RxDeclineReason } from "@lynia/shared";
-import { Icon } from "../../../../components/icons";
-import { Kitchen } from "../../../../components/Kitchen";
-import { useKitchenConnection } from "../../../../components/KitchenConnectionProvider";
-import { AppBar } from "../../../../components/m/AppBar";
-import { useToast } from "../../../../components/m/Toast";
-import { RetryableError } from "../../../../components/RetryableError";
-import { ApiError } from "../../../../lib/api-client";
-import { useBusiness } from "../../../../lib/business";
-import { approvePrescription, declinePrescription, getOrder, getPrescriptionPhotos } from "../../../../lib/orders-api";
-import { orderLabel } from "../../../../lib/orders-view";
-import { ORDER_FLOW as OF } from "../../../../lib/vocabulary";
+import { Icon } from "../../../components/icons";
+import { Kitchen } from "../../../components/Kitchen";
+import { useKitchenConnection } from "../../../components/KitchenConnectionProvider";
+import { AppBar } from "../../../components/m/AppBar";
+import { useToast } from "../../../components/m/Toast";
+import { RetryableError } from "../../../components/RetryableError";
+import { ApiError } from "../../../lib/api-client";
+import { useBusiness } from "../../../lib/business";
+import { approvePrescription, declinePrescription, getOrder, getPrescriptionPhotos } from "../../../lib/orders-api";
+import { orderLabel } from "../../../lib/orders-view";
+import { ORDER_FLOW as OF } from "../../../lib/vocabulary";
+import { orderHref } from "../../../lib/routes";
 
 type Load = { status: "loading" } | { status: "ready"; order: MerchantOrderResponse; photos: PrescriptionPhotosResponse["photos"] } | { status: "error"; message: string };
 
@@ -39,7 +40,7 @@ const PREFILL: Record<keyof Checks, { reason: RxDeclineReason; note: string }> =
   recentDate: { reason: "expired", note: "It’s more than 6 months old." },
 };
 export default function PrescriptionCheckPage() {
-  const { id } = useParams<{ id: string }>();
+  const id = useSearchParams().get("id") ?? "";
   const router = useRouter();
   const toast = useToast();
   const business = useBusiness();
@@ -76,7 +77,7 @@ export default function PrescriptionCheckPage() {
     try {
       await action();
       toast(done);
-      router.replace(`/queue/${id}`);
+      router.replace(orderHref(id));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "That didn't work. Try again.");
     } finally {
@@ -85,7 +86,7 @@ export default function PrescriptionCheckPage() {
     }
   }
 
-  const back = `/queue/${id}`;
+  const back = orderHref(id);
   if (load.status !== "ready") {
     return (
       <Kitchen active="queue" tabs={false}>

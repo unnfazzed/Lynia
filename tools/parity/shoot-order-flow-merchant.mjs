@@ -195,31 +195,31 @@ const MERCHANT2_ROWS = [
     steps: [tap("Bread (Lobels 700g)"), tapRole("button", "Swap for…"), tap("Bakers Inn 700g")],
   }),
   m("M1c", "M1c · Scheduled order rings at start", "/queue", KITCHEN, "an auto-accepting kitchen: 'Start cooking · ready …'"),
-  m("M2", "M2 · Waiting for the customer", `/queue/${ORDERS.M2.id}`, SHOP, "'the customer' for the handoff's Rudo"),
-  m("M3b", "M3b · Packing ticket · pharmacy (seal note)", `/queue/${ORDERS.M3b.id}`, PHARMACY, "", { name: "M3b-2" }),
-  m("M4b", "M4b · Hand-over · waiting for photo", `/queue/${ORDERS.M4b.id}`, SHOP, "the code isn't typed yet (a shop's pickup needs the photo first)"),
-  m("M4", "M4 · Hand-over with the sealed-bag photo", `/queue/${ORDERS.M4p.id}`, SHOP, "", { name: "M4-photo", order: "M4p" }),
-  m("M5b", "M5b · Tracking · door photo", `/queue/${ORDERS.M5b.id}`, KITCHEN, "on the way: the photo is evidence only, the order isn't delivered by it"),
+  m("M2", "M2 · Waiting for the customer", `/queue/order?id=${ORDERS.M2.id}`, SHOP, "'the customer' for the handoff's Rudo"),
+  m("M3b", "M3b · Packing ticket · pharmacy (seal note)", `/queue/order?id=${ORDERS.M3b.id}`, PHARMACY, "", { name: "M3b-2" }),
+  m("M4b", "M4b · Hand-over · waiting for photo", `/queue/order?id=${ORDERS.M4b.id}`, SHOP, "the code isn't typed yet (a shop's pickup needs the photo first)"),
+  m("M4", "M4 · Hand-over with the sealed-bag photo", `/queue/order?id=${ORDERS.M4p.id}`, SHOP, "", { name: "M4-photo", order: "M4p" }),
+  m("M5b", "M5b · Tracking · door photo", `/queue/order?id=${ORDERS.M5b.id}`, KITCHEN, "on the way: the photo is evidence only, the order isn't delivered by it"),
   m("M7a", "M7a · Scheduled list", "/queue", KITCHEN, "", {
     orders: [ORDERS.M3a],
     scheduled: SCHEDULED,
     steps: [tapRole("tab", /Scheduled/)],
   }),
-  m("M7b", "M7b · Scheduled ticket", `/queue/${ORDERS.M7b.id}`, KITCHEN),
-  m("M8a", "M8a · Prescription check", `/queue/${ORDERS.M8a.id}/rx`, PHARMACY, "photo stand-in"),
-  m("M8b", "M8b · Decline a prescription", `/queue/${ORDERS.M8a.id}/rx`, PHARMACY, "", {
+  m("M7b", "M7b · Scheduled ticket", `/queue/order?id=${ORDERS.M7b.id}`, KITCHEN),
+  m("M8a", "M8a · Prescription check", `/queue/rx?id=${ORDERS.M8a.id}`, PHARMACY, "photo stand-in"),
+  m("M8b", "M8b · Decline a prescription", `/queue/rx?id=${ORDERS.M8a.id}`, PHARMACY, "", {
     order: "M8a",
     steps: [tapRole("button", "Decline"), tapRole("radio", "Expired"), (page) => page.getByLabel("Note for the customer").fill("Dated March 2026")],
   }),
 ];
 const MERCHANT_ROWS = [
   m("M1a", "M1a · Ringing, auto-accepted", "/queue", KITCHEN, "no customer name on a merchant order, so no '· Rudo'; the countdown is the 1 h auto-cancel"),
-  m("M3a", "M3a · Cooking ticket", `/queue/${ORDERS.M3a.id}`, KITCHEN),
-  m("M3b", "M3b · Packing ticket · pharmacy", `/queue/${ORDERS.M3b.id}`, PHARMACY, "seal note not drawn: it promises the pickup photo (needs backend)"),
-  m("M4", "M4 · Hand-over", `/queue/${ORDERS.M4.id}`, KITCHEN, "before the rider types it; the sealed-bag photo row needs the backend; no rider number, so no call"),
-  m("M5", "M5 · Tracking", `/queue/${ORDERS.M5.id}`, KITCHEN, "OSM map around the kitchen; no ETA pill or destination (not on the merchant read)"),
-  m("M6a", "M6a · Cash back", `/queue/${ORDERS.M6a.id}`, KITCHEN),
-  m("M6b", "M6b · Goods back", `/queue/${ORDERS.M6b.id}`, KITCHEN, "no delivery-attempt photo yet (needs backend)"),
+  m("M3a", "M3a · Cooking ticket", `/queue/order?id=${ORDERS.M3a.id}`, KITCHEN),
+  m("M3b", "M3b · Packing ticket · pharmacy", `/queue/order?id=${ORDERS.M3b.id}`, PHARMACY, "seal note not drawn: it promises the pickup photo (needs backend)"),
+  m("M4", "M4 · Hand-over", `/queue/order?id=${ORDERS.M4.id}`, KITCHEN, "before the rider types it; the sealed-bag photo row needs the backend; no rider number, so no call"),
+  m("M5", "M5 · Tracking", `/queue/order?id=${ORDERS.M5.id}`, KITCHEN, "OSM map around the kitchen; no ETA pill or destination (not on the merchant read)"),
+  m("M6a", "M6a · Cash back", `/queue/order?id=${ORDERS.M6a.id}`, KITCHEN),
+  m("M6b", "M6b · Goods back", `/queue/order?id=${ORDERS.M6b.id}`, KITCHEN, "no delivery-attempt photo yet (needs backend)"),
 ];
 
 // ── Rider ─────────────────────────────────────────────────────────────────────────────────────────
