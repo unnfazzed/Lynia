@@ -6,7 +6,7 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-10-07 (**Rider UI/UX audit**: 65 of 68 findings fixed across #1106–#1109 and #1112; B6, FJ-H2, FJ-H4 open, not selected. See the "Rider UI/UX audit 2026-10-07" entry at the end.)
+**Last consolidated:** 2026-10-07 (**Merchant journey audit**: 1 blocker, 5 high, 16 medium OPEN; see `docs/e2e-runs/2026-10-07-merchant/REPORT.md` and the entry at the end.) Earlier the same day: (**Rider UI/UX audit**: 65 of 68 findings fixed across #1106–#1109 and #1112; B6, FJ-H2, FJ-H4 open, not selected. See the "Rider UI/UX audit 2026-10-07" entry at the end.)
 Prior: 2026-10-06 (**`MOB-MAP-04` FIXED** — interactive session. The Android map was blank on every
 phone on Android 16 or older: Play signs the app with three certificates (hybrid signing) and the Maps key allowlisted
 only the Android 17+ one. Fixed in GCP with no build; Maps Key Doctor now tests the allowlist, Terraform refuses a
@@ -2832,3 +2832,21 @@ after collection and no reason before it).
 | FJ-H4 | Cancelled food order: wrong instruction after collection, none before. | `food-job.tsx`, `copy.ts` | High | **OPEN — not selected** |
 | MA-H1…MA-L2 | Money: merchant jobs paid at the customer's bill, false "below floor", unsaved role switch, sign-out left online, top-up amounts/polling/success balance, history without cancels, unreadable wallet as $0, delete-account ignoring rider job, decimals, copy. | money files, `orders.service.ts` | High–Low | **FIXED** (#1106). Partial: MA-H4 (no active-job warning on sign-out: would need a new sheet). D-84 logged. |
 | FR-H1…FR-L5 | First run: location order before R3, camera denied in Bike & documents, upload shown failed mid-flight, couldn't-load state, offline splash hold (owner chose: proceed after timeout), double tap, link target, icon contrast, duplicate placeholder, busy CTA, back on name step. | first-run files | High–Low | **FIXED** (#1108). Gaps: no camera settings steps list, no E6 discard (would be new controls). Kit defects logged under D-82 §4. |
+
+---
+
+## Merchant journey audit 2026-10-07 (interactive, report only)
+
+Source: `docs/e2e-runs/2026-10-07-merchant/REPORT.md` (live browser run of the merchant web + a partial adversarial code review). Nothing fixed yet; awaiting the owner's selection.
+
+| ID | Finding | Location | Severity | Status |
+|----|---------|----------|----------|--------|
+| MJ-B1 | New orders don't show or ring on pushed screens; the open tab counts as online, so they auto-cancel `shop_closed`. | `components/Kitchen.tsx`, `use-queue-poll.ts` | Blocker | **OPEN** (live-confirmed) |
+| MJ-H1 | Pickup code re-minted on every hand-over open; other phones show a dead code. | `queue/order/page.tsx` `usePickupCode` | High | **OPEN** (live-confirmed) |
+| MJ-H2 | Order rung during a data drop cancels ~20 s after reconnect. | `food-order.service.ts:1236` | High | **OPEN** |
+| MJ-H3 | Add-dish on phones: Save sits above the required photo → hidden drafts. | `DishEditorSheet.tsx:77` | High | **OPEN** (live-confirmed) |
+| MJ-H4 | Pharmacy swap can add Rx-only items with no prescription check. | `order-substitution.service.ts:196` | High | **OPEN** |
+| MJ-H5 | Pharmacy with no pharmacist can list Rx items that can never be packed. | `merchant.service.ts:1110` | High | **OPEN** |
+| MJ-M1…M16 | Auto-accept copy contradiction, lost decline reason, fee-less change total, open redirect, alarm after sign-out, socket auth, onboarding lockout, Android back, scheduled-ring issues, silent cancels, Rx page gaps, Book-a-rider dead-end copy, join bounce. | see report | Medium | **OPEN** |
+| MJ-P1…P3 | Socket event ignored + 5 s poll all day; duplicate calls; proof photos re-downloaded every 5 s. | see report | Medium/Low | **OPEN** |
+
