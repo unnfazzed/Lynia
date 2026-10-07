@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PushAdapter, PushMessage } from "../adapters/push/push.interface";
 import type { PrismaService } from "../prisma/prisma.service";
-import { NotificationsService } from "./notifications.service";
+import { merchantCustomerCopy, NotificationsService } from "./notifications.service";
 
 function makeDeps() {
   const prisma = {
@@ -168,20 +168,27 @@ describe("NotificationsService — order-status notices", () => {
     expect(push.sendEach).not.toHaveBeenCalled();
   });
 
-  it("C5: notifies the CUSTOMER on a food order's `en_route_dropoff` with the door-arrival copy, not the parcel copy", async () => {
+  // U12 (2026-10-07): `en_route_dropoff` fires right after pickup (the rider app steps on to it at once),
+  // so a food order's "{n} is at your door · Have $X cash ready" reached the customer ~20 min early.
+  it("U12: sends NO push for a food order's `en_route_dropoff` — the rider has only just collected", async () => {
     const { prisma, push, service } = makeDeps();
     prisma.order.findUnique.mockResolvedValue({ customerId: "cust", orderType: "merchant", riderId: "rider" });
     prisma.deviceToken.findMany.mockResolvedValue([{ token: "c1" }]);
 
     await service.notifyOrderStatus("o1", "en_route_dropoff");
 
-    expect(prisma.deviceToken.findMany).toHaveBeenCalledWith({
-      where: { profileId: { in: ["cust"] } },
-      select: { token: true, profileId: true, platform: true },
-    });
+    expect(push.sendEach).not.toHaveBeenCalled();
+  });
+
+  it("U12: a parcel's `en_route_dropoff` push is unchanged ('On the way to drop-off', never an arrival)", async () => {
+    const { prisma, push, service } = makeDeps();
+    prisma.order.findUnique.mockResolvedValue({ customerId: "cust", orderType: "parcel", riderId: "rider" });
+    prisma.deviceToken.findMany.mockResolvedValue([{ token: "c1" }]);
+
+    await service.notifyOrderStatus("o1", "en_route_dropoff");
+
     expect(push.sendEach).toHaveBeenCalledWith([
-      // P0-2: the food order stamps orderType:"merchant" so the tap opens /food/order/:id, not the parcel tracker.
-      expect.objectContaining({ token: "c1", title: "Your rider is at your door", data: { orderId: "o1", status: "en_route_dropoff", to: "customer", orderType: "merchant" } }),
+      expect.objectContaining({ token: "c1", title: "On the way to drop-off", data: { orderId: "o1", status: "en_route_dropoff", to: "customer", orderType: "parcel" } }),
     ]);
   });
 
@@ -533,15 +540,20 @@ describe("NotificationsService — parcel customer stage copy (after-send v2)", 
   });
 
   it("leaves the food-order copy alone (a merchant order speaks O.g.push, not the parcel copy)", async () => {
-    const [sent] = await sentFor("en_route_dropoff", parcel({ orderType: "merchant", agreedFare: "16.50", merchant: { name: "Gava’s Kitchen" } }));
-    expect(sent).toMatchObject({ title: "Tendai is at your door", body: "Have $16.50 cash ready." });
+    const [sent] = await sentFor("picked_up", parcel({ orderType: "merchant", agreedFare: "16.50", merchant: { name: "Gava’s Kitchen" } }));
+    expect(sent).toMatchObject({ title: "Tendai has your order", body: "On the way." });
+    // U12: the at-door beat is no longer pushed on `en_route_dropoff`; its words stay for the feed's step.
+    expect(await sentFor("en_route_dropoff", parcel({ orderType: "merchant", agreedFare: "16.50", merchant: { name: "Gava’s Kitchen" } }))).toEqual([]);
+    expect(merchantCustomerCopy("en_route_dropoff", { agreedFare: "16.50", rider: { profile: { firstName: "Tendai" } } })).toEqual({
+      title: "Tendai is at your door",
+      body: "Have $16.50 cash ready.",
+    });
   });
 
   // Order flow v2 G3a (ledger D-59): a merchant order's customer stage pushes, O.g.push.c verbatim with the
   // order's own names. No ETA exists server-side, so the "Arrives …" sentence is dropped, never invented.
   it.each([
     ["picked_up", "Tendai has your order", "On the way."],
-    ["en_route_dropoff", "Tendai is at your door", "Have $16.50 cash ready."],
     ["delivered", "Delivered", "Enjoy! Tap to rate Gava’s Kitchen and Tendai."],
     ["undelivered", "Your order wasn’t delivered", "Tendai couldn’t reach you. Nothing was charged."],
   ])("merchant %s → O.g.push.c", async (status, title, body) => {

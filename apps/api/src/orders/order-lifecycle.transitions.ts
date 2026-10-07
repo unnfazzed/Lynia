@@ -451,7 +451,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     to: "cancelled",
     actor: "customer",
     guard:
-      "caller === order.customerId; merchantPhase ∈ {awaiting_accept, awaiting_item_approval, awaiting_payment} (R-17: free, any time before paying — once preparing/ready_for_pickup the kitchen has committed, no free cancel); guarded CAS on status=requested",
+      "caller === order.customerId; merchantPhase ∈ {awaiting_accept, awaiting_item_approval, awaiting_payment} (R-17: free, any time before paying — once preparing/ready_for_pickup the kitchen has committed, no free cancel), OR the D-34 no-rider hold (U11: merchantPhase=ready_for_pickup, noRiderHoldAt set, no rider — guarded on both); guarded CAS on status=requested",
     sideEffect: "set cancelledAt/cancelledBy=customer; clear merchantPhase; OrderEvent(cancelled)",
     source: "merchant/food-order.service.ts:cancelUnpaid",
     orderType: "merchant",
@@ -495,7 +495,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     to: "open_for_offers",
     actor: "system",
     guard:
-      "merchantPhase=ready_for_pickup; noRiderHoldAt IS NULL; dispatchAttempt+1 <= RESTAURANTS_DISPATCH.maxAttempts (N-07); DispatchStrategy finds at least one rider within RESTAURANTS_DISPATCH.radiusM — the best firstRoundSize (10) on round 1, everyone eligible after (owner 2026-10-01, D-54); guarded CAS on status=requested AND dispatchAttempt=(observed) AND noRiderHoldAt IS NULL",
+      "merchantPhase=ready_for_pickup, OR (MJ-RM1/U32) an auto-accepted, kitchen-confirmed order still `preparing` within RESTAURANTS_AUTO_ACCEPT.dispatchLeadMs of its ready time with no open substitution round (earlyDispatchDue; the phase is never written); noRiderHoldAt IS NULL; dispatchAttempt+1 <= RESTAURANTS_DISPATCH.maxAttempts (N-07; a cooking order past the cap parks until its ready time instead of holding); the business's own team (merchantMember) is never a candidate (MJ-RM18); DispatchStrategy finds at least one rider within RESTAURANTS_DISPATCH.radiusM — the best firstRoundSize (10) on round 1, everyone eligible after (owner 2026-10-01, D-54); guarded CAS on status=requested AND dispatchAttempt=(observed) AND noRiderHoldAt IS NULL",
     sideEffect:
       "set dispatchOfferExpiresAt(+60s, the round's end)/dispatchNextCheckAt(same), dispatchOfferedRiderId=null; dispatchAttempt+=1; dispatchStartedAt stamped on the FIRST attempt only; UPSERT one FoodDispatchAttempt(pending, this round's expiry) per rider on the round — a rider who let an earlier round run out is re-offered on the same row; OrderEvent(open_for_offers) on attempt 1 only; best-effort push + food:offer alarm to every rider on the round. A write failure on the rows closes the round again at once",
     source: "merchant/food-dispatch.service.ts:tick",
@@ -548,7 +548,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     actor: "rider",
     guard: "caller holds a pending, unexpired FoodDispatchAttempt on this round; first to accept wins — guarded CAS on status=open_for_offers AND dispatchOfferExpiresAt=(observed round end); one_active_ride partial-unique blocks a rider already on another ride (same P2002 handling as matching.service.ts:selectOffer)",
     sideEffect:
-      "D-04 \"rider secured\": set riderId=caller, mint otpHash (delivery code, mirrors selectOffer — the food order rides the SAME assigned→…→confirm_delivery edges as a parcel from here on, orderType:\"both\"), deliveryOtpAttempts=0, deliveryCodeRotatedAt; clear merchantPhase to null (hand-off out of the merchant-phase machine — no MERCHANT_PHASE_TRANSITIONS row, same shape as every other exit) and every dispatch field; FoodDispatchAttempt(caller, pending)→accepted, every other rider's pending row→expired and their food:offer alarm closed; OrderEvent(assigned); post-commit emitOrderStatus(assigned) to the order room (reaches customer+rider) + push to both — no merchant-side push yet (Lane C5's job; the kitchen tablet has no realtime channel until then, sees it via REST poll)",
+      "D-04 \"rider secured\": set riderId=caller, mint otpHash (delivery code, mirrors selectOffer — the food order rides the SAME assigned→…→confirm_delivery edges as a parcel from here on, orderType:\"both\"), deliveryOtpAttempts=0, deliveryCodeRotatedAt; clear merchantPhase to null (hand-off out of the merchant-phase machine — no MERCHANT_PHASE_TRANSITIONS row, same shape as every other exit) — except an order found early while still `preparing`, which keeps its phase until mark_ready (MJ-RM1) — and every dispatch field; a member of the business's own team is refused 409 own_member (MJ-RM18); FoodDispatchAttempt(caller, pending)→accepted, every other rider's pending row→expired and their food:offer alarm closed; OrderEvent(assigned); post-commit emitOrderStatus(assigned) to the order room (reaches customer+rider) + push to both — no merchant-side push yet (Lane C5's job; the kitchen tablet has no realtime channel until then, sees it via REST poll)",
     compensation: "CAS count 0 / P2002 one_active_ride → ConflictException; nothing persisted, the rider stays free for their next offer",
     source: "merchant/food-dispatch.service.ts:acceptDispatch",
     orderType: "merchant",
@@ -588,7 +588,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
       actor: "rider",
       guard: `caller === order.riderId; status=${from}; orderType=merchant; guarded CAS on the observed status`,
       sideEffect:
-        "re-enter dispatch on the SAME order: merchantPhase restored to ready_for_pickup, riderId/otpHash cleared, dispatchAttempt reset to 0 (fresh NO_RIDER budget) with the dropped rider added to dispatchExcludedRiderIds; OrderEvent(requested); reliability penalty IDENTICAL to order-lifecycle.service.ts:cancel's rider branch (prePickupCancel, cancelStrikes+=1, CANCEL_STRIKE_LIMIT→cooldown+offline+evictRiderFromSupply — the SAME axis, not a second counter, so \"three drops in a week pauses offers\" (D-33) composes with a rider's parcel cancel strikes); customer notified (no charge, re-dispatching)",
+        "re-enter dispatch on the SAME order: merchantPhase restored to ready_for_pickup (kept `preparing` when the kitchen is still cooking, MJ-RM1), riderId/otpHash cleared, the rider's counter state (riderArrivedAt, riderEtaAt, pickup photo + seal) cleared (MJ-RM2), dispatchAttempt reset to 0 (fresh NO_RIDER budget) with the dropped rider added to dispatchExcludedRiderIds; OrderEvent(requested); reliability penalty IDENTICAL to order-lifecycle.service.ts:cancel's rider branch (prePickupCancel, cancelStrikes+=1, CANCEL_STRIKE_LIMIT→cooldown+offline+evictRiderFromSupply — the SAME axis, not a second counter, so \"three drops in a week pauses offers\" (D-33) composes with a rider's parcel cancel strikes); customer notified (no charge, re-dispatching)",
       source: "merchant/food-dispatch.service.ts:dropDispatch",
       orderType: "merchant",
     }),
@@ -688,9 +688,9 @@ export const MERCHANT_PHASE_TRANSITIONS: readonly MerchantPhaseTransition[] = [
     event: "mark_ready",
     to: ["ready_for_pickup"],
     actor: "merchant",
-    guard: "caller owns the merchant; guarded CAS on merchantPhase=preparing",
+    guard: "caller owns the merchant; guarded CAS on merchantPhase=preparing AND the status read (requested / open_for_offers, or a rider already holding an order found early, MJ-RM1); also fired by sweepAutoAccepted once an auto-accepted order's ready time has passed",
     sideEffect:
-      "readyAt=now; mint pickupCodeHash (N-16, 6-digit since D-59, hashed like otpHash) so it exists by the time C3's dispatch assigns a rider and confirmPickup can verify it. Hand-off point to C3: broadcasting this order (status requested -> open_for_offers) is dispatch's job, not this method's.",
+      "ready_for_pickup while dispatch looks; null once a rider holds it (MJ-RM1). readyAt=now; mint pickupCodeHash (N-16, 6-digit since D-59, hashed like otpHash) so it exists by the time C3's dispatch assigns a rider and confirmPickup can verify it. Hand-off point to C3: broadcasting this order (status requested -> open_for_offers) is dispatch's job, not this method's.",
     source: "merchant/food-order.service.ts:markReady",
   },
 ];

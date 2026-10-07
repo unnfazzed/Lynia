@@ -703,7 +703,7 @@ describe("FoodOrderService.confirmPickup — N-16, mirrors confirmDelivery one h
     });
     const res = await svc.confirmPickup("o1", "r1", "424242");
     expect(res).toEqual({ orderId: "o1", status: "picked_up" });
-    expect(updateData).toEqual({ status: "picked_up", collectedAt: expect.any(Date) });
+    expect(updateData).toEqual({ status: "picked_up", collectedAt: expect.any(Date), merchantPhase: null });
   });
 
   // C4: R-01 wiring — confirmPickup must hand the row's merchant/payment/cashRule/goodsTotal snapshot
@@ -1337,7 +1337,7 @@ describe("FoodOrderService.cancelPreparing — B3 'Can't finish this order' (D-4
       orderEvent: { create: async (args: unknown) => events.push(args) },
     });
     const res = await svc.cancelPreparing("p1", "o1");
-    expect(where).toMatchObject({ id: "o1", merchantId: "m1", status: "requested", merchantPhase: "preparing", merchantPaymentMethod: "cash" });
+    expect(where).toMatchObject({ id: "o1", merchantId: "m1", status: { in: ["requested", "open_for_offers"] }, riderId: null, merchantPhase: "preparing", merchantPaymentMethod: "cash" });
     expect(data).toMatchObject({ status: "cancelled", merchantPhase: null, rejectionReason: "other" });
     expect(events).toHaveLength(1);
     expect(res.status).toBe("cancelled");
@@ -1363,6 +1363,42 @@ describe("FoodOrderService.cancelPreparing — B3 'Can't finish this order' (D-4
     await svc.cancelPreparing("p1", "o1", "kitchen_problem", "  Gas ran out  ");
     expect(data).toMatchObject({ rejectionReason: "kitchen_problem", cancelReason: "Gas ran out" });
     expect(pushes[0]!.body).toMatch(/“Gas ran out”$/);
+  });
+
+  // MJ-RM1: an auto-accepted order's rider search starts in the last minutes of cooking, so "Problem with
+  // this order?" must also work while a round is live — and quiet the riders still being asked.
+  it("MJ-RM1: cancels a cooking order in a live rider round (no rider yet) and closes the riders' offers", async () => {
+    const closed: Array<[string, string]> = [];
+    const attemptUpdates: Array<Record<string, unknown>> = [];
+    let data: Record<string, unknown> | undefined;
+    const { svc } = build(
+      {
+        merchant: { findUnique: async () => ({ id: "m1" }) },
+        order: {
+          updateMany: async (args: { data: Record<string, unknown> }) => {
+            data = args.data;
+            return { count: 1 };
+          },
+          findUnique: async () => ({ id: "o1", merchantId: "m1", customerId: "c1", status: "cancelled", merchantItems: [], pickupCodeAttempts: 0, noShowCallTimestamps: [] }),
+        },
+        foodDispatchAttempt: {
+          findMany: async () => [{ riderId: "r1" }, { riderId: "r2" }],
+          updateMany: async (args: Record<string, unknown>) => {
+            attemptUpdates.push(args);
+            return { count: 2 };
+          },
+        },
+        orderEvent: { create: async () => ({}) },
+      },
+      fakeGateway({ emitFoodOfferClosed: async (riderId: string, orderId: string) => void closed.push([riderId, orderId]) }),
+    );
+    await svc.cancelPreparing("p1", "o1", "kitchen_problem");
+    expect(data).toMatchObject({ status: "cancelled", dispatchOfferExpiresAt: null, dispatchNextCheckAt: null });
+    expect(attemptUpdates).toEqual([{ where: { orderId: "o1", outcome: "pending" }, data: expect.objectContaining({ outcome: "expired" }) }]);
+    expect(closed).toEqual([
+      ["r1", "o1"],
+      ["r2", "o1"],
+    ]);
   });
 
   it("refuses anything else — a wallet order (refund path), one already at dispatch, or one not cooking", async () => {

@@ -30,6 +30,7 @@ import {
   awaitingKitchenConfirm,
   codeCopied,
   type Eta,
+  isNoRiderHold,
   isOpenRound,
   isRiderStage,
   isScheduledWaiting,
@@ -699,7 +700,10 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       return false;
     }
   };
-  const freeCancel = !!order && (canCancelFreely(order.merchantPhase) || awaitingKitchenConfirm(order));
+  // U11: the D-34 no-rider hold. Dispatch stopped and only the venue could end it; T11a/T11b draw
+  // "Cancel order · free" (`O.t.cancelFree`), and the server now takes that cancel (cancelUnpaid).
+  const noRiderHold = !!order && isNoRiderHold(order);
+  const freeCancel = !!order && (canCancelFreely(order.merchantPhase) || awaitingKitchenConfirm(order) || noRiderHold);
   // T15b: after the rider collects, the customer can still cancel — it costs the full total (D3f).
   const afterPickup = !!order && (order.status === "picked_up" || order.status === "en_route_dropoff");
   const orderTotal = order ? (order.total ?? (order.merchantGoodsTotal ?? 0) + customerFeeOf(order)) : 0;
@@ -1416,6 +1420,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
           ) : null}
           <PeekMark />
           {venueRow}
+          {noRiderHold ? cancelLink(O.t.cancelFree) : null}
         </>
       );
       break;
@@ -1430,6 +1435,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
           </View>
           <PeekMark />
           {summary}
+          {noRiderHold ? cancelLink(O.t.cancelFree) : null}
         </>
       );
       break;

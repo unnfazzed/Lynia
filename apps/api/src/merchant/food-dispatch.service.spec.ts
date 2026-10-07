@@ -6,7 +6,7 @@ import type { NotificationsService } from "../notifications/notifications.servic
 import { PrismaService } from "../prisma/prisma.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
 import type { DispatchStrategy } from "./dispatch-strategy";
-import { FoodDispatchService } from "./food-dispatch.service";
+import { earlyDispatchDue, FoodDispatchService } from "./food-dispatch.service";
 import { withMembershipShim } from "./testing/membership-shim";
 
 const tokens = new TokenService({ JWT_SIGNING_SECRET: "food-dispatch-test-secret-0123456789", ACCESS_TTL_SECONDS: 900 } as Env);
@@ -594,5 +594,183 @@ describe("FoodDispatchService — merchant D-34 hold-screen decisions", () => {
     expect(res).toEqual({ orderId, status: "cancelled" });
     expect(updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "cancelled", rejectionReason: "no_rider" }) }));
     expect(notified).toEqual([expect.objectContaining({ profileIds: ["cust-1"] })]);
+  });
+});
+
+// ── Wave 1 (reviewed list 2026-10-07): C2 = MJ-RM1 + U32, C14 = MJ-RM2, C16 = MJ-RM18 ─────────────────
+
+const MIN = 60_000;
+/** An auto-accepted, kitchen-confirmed order still cooking, ready in `readyInMin` minutes. */
+const cookingOrder = (readyInMin: number, over: Record<string, unknown> = {}) =>
+  baseOrder({
+    merchantPhase: "preparing",
+    autoAccepted: true,
+    kitchenConfirmedAt: new Date(Date.now() - 10 * MIN),
+    prepStartedAt: new Date(Date.now() - (20 - readyInMin) * MIN),
+    prepMinutes: 20,
+    substitutionRounds: [],
+    ...over,
+  });
+
+describe("earlyDispatchDue — MJ-RM1 / U32", () => {
+  const now = Date.now();
+  it("is due inside the 8-minute lead, not before; never unconfirmed, never mid-substitution, never a non-cooking phase", () => {
+    expect(earlyDispatchDue(cookingOrder(7) as never, now)).toBe(true);
+    expect(earlyDispatchDue(cookingOrder(9) as never, now)).toBe(false);
+    expect(earlyDispatchDue(cookingOrder(2, { kitchenConfirmedAt: null }) as never, now)).toBe(false);
+    expect(earlyDispatchDue(cookingOrder(2, { autoAccepted: false }) as never, now)).toBe(false);
+    expect(earlyDispatchDue(cookingOrder(2, { substitutionRounds: [{ id: "s1" }] }) as never, now)).toBe(false);
+    expect(earlyDispatchDue(cookingOrder(2, { merchantPhase: "awaiting_item_approval" }) as never, now)).toBe(false);
+  });
+});
+
+describe("FoodDispatchService.sweepSearch — MJ-RM1 / U32: the early search leaves the kitchen's phase alone", () => {
+  function world(order: Record<string, unknown>, strategy = pick(one("r1"))) {
+    const orderUpdateMany = vi.fn(async (_args: { where: Record<string, unknown>; data: Record<string, unknown> }) => ({ count: 1 }));
+    const findMany = vi.fn(async ({ where }: { where: { merchantPhase?: string } }) =>
+      where.merchantPhase === "preparing" ? [{ id: orderId, ...order }] : [],
+    );
+    const built = build(
+      {
+        order: { findMany, findUnique: async () => order, updateMany: orderUpdateMany },
+        merchant: { findUnique: async () => ({ location: { point: HARARE_CBD } }) },
+        orderEvent: { create: async () => ({}) },
+        foodDispatchAttempt: { upsert: vi.fn(async () => ({})), findMany: async () => [], updateMany: async () => ({ count: 0 }) },
+      },
+      strategy,
+    );
+    return { ...built, orderUpdateMany, findMany, strategy };
+  }
+
+  it("offers a cooking order inside the lead WITHOUT writing merchantPhase or readyAt, guarded on it still cooking", async () => {
+    const { svc, orderUpdateMany, findMany } = world(cookingOrder(7));
+    expect(await svc.sweepSearch()).toEqual({ offered: 1, held: 0 });
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ merchantPhase: "preparing", autoAccepted: true, kitchenConfirmedAt: { not: null }, substitutionRounds: { none: { status: "open" } } }),
+      }),
+    );
+    const claim = orderUpdateMany.mock.calls[0]![0];
+    expect(claim.where).toMatchObject({ status: "requested", merchantPhase: "preparing" });
+    expect(claim.data).toMatchObject({ status: "open_for_offers", dispatchAttempt: 1 });
+    expect(claim.data).not.toHaveProperty("merchantPhase");
+    expect(claim.data).not.toHaveProperty("readyAt");
+  });
+
+  it("does not search for a cooking order outside the lead (ready in 15 min)", async () => {
+    const { svc, strategy } = world(cookingOrder(15));
+    expect(await svc.sweepSearch()).toEqual({ offered: 0, held: 0 });
+    expect(strategy.pickCandidates).not.toHaveBeenCalled();
+  });
+
+  it("past the NO_RIDER cap while still cooking: parks until the ready time — no D-34 hold on food that isn't ready", async () => {
+    const { svc, orderUpdateMany } = world(cookingOrder(3, { dispatchAttempt: 6 }), pick([]));
+    expect(await svc.sweepSearch()).toEqual({ offered: 0, held: 0 });
+    const park = orderUpdateMany.mock.calls[0]![0];
+    expect(park.where).toMatchObject({ merchantPhase: "preparing", dispatchAttempt: 6, noRiderHoldAt: null });
+    expect(park.data).not.toHaveProperty("noRiderHoldAt");
+    expect((park.data.dispatchNextCheckAt as Date).getTime()).toBeGreaterThan(Date.now() + 2 * MIN);
+  });
+});
+
+describe("FoodDispatchService.acceptDispatch — MJ-RM1: a rider found early leaves the cooking ticket alone", () => {
+  it("keeps merchantPhase 'preparing' (guarded on it) when the order is still cooking", async () => {
+    const orderUpdateMany = vi.fn(async (_args: { where: Record<string, unknown>; data: Record<string, unknown> }) => ({ count: 1 }));
+    const { svc } = build(
+      {
+        order: { findFirst: async () => ({ ...liveOrder, merchantPhase: "preparing" }), updateMany: orderUpdateMany, findUnique: async () => ({ customerId: "cust-1" }) },
+        foodDispatchAttempt: { findUnique: async () => pendingRow, findMany: async () => [], updateMany: async () => ({ count: 1 }) },
+        orderEvent: { create: async () => ({}) },
+      },
+      NONE,
+    );
+    await svc.acceptDispatch(orderId, "r1");
+    expect(orderUpdateMany).toHaveBeenCalledTimes(1);
+    expect(orderUpdateMany.mock.calls[0]![0]).toMatchObject({
+      where: { status: "open_for_offers", merchantPhase: "preparing" },
+      data: { status: "assigned", riderId: "r1", merchantPhase: "preparing" },
+    });
+  });
+
+  it("the kitchen tapped 'Food is ready' in between: secured as a ready order (phase cleared), not written back to cooking", async () => {
+    const orderUpdateMany = vi.fn(async (args: { where: Record<string, unknown> }) => ({ count: args.where.merchantPhase === "ready_for_pickup" ? 1 : 0 }));
+    const { svc } = build(
+      {
+        order: { findFirst: async () => ({ ...liveOrder, merchantPhase: "preparing" }), updateMany: orderUpdateMany, findUnique: async () => ({ customerId: "cust-1" }) },
+        foodDispatchAttempt: { findUnique: async () => pendingRow, findMany: async () => [], updateMany: async () => ({ count: 1 }) },
+        orderEvent: { create: async () => ({}) },
+      },
+      NONE,
+    );
+    expect(await svc.acceptDispatch(orderId, "r1")).toEqual({ orderId, status: "assigned" });
+    expect(orderUpdateMany.mock.calls[1]![0]).toMatchObject({ where: { merchantPhase: "ready_for_pickup" }, data: { merchantPhase: null } });
+  });
+});
+
+describe("FoodDispatchService.dropDispatch — MJ-RM2 (C14) + MJ-RM1", () => {
+  function world(row: Record<string, unknown>) {
+    const orderUpdateMany = vi.fn(async (_args: { where: Record<string, unknown>; data: Record<string, unknown> }) => ({ count: 1 }));
+    const built = build(
+      {
+        order: { findFirst: async () => row, updateMany: orderUpdateMany, findUnique: async () => ({ customerId: "cust-1" }) },
+        orderEvent: { create: async () => ({}) },
+        rider: { findUnique: async () => ({ cancelStrikes: 0, reliabilityScore: 100, onHold: false, heldReason: null, cooldownUntil: null }), update: async () => ({}) },
+      },
+      NONE,
+    );
+    return { ...built, orderUpdateMany };
+  }
+
+  it("MJ-RM2: clears the dropped rider's counter state — arrival, ETA, pickup photo and seal — in the same guarded write", async () => {
+    const { svc, orderUpdateMany } = world({ status: "en_route_pickup", merchantPhase: null, dispatchExcludedRiderIds: [], merchantId: MERCHANT_ID });
+    await svc.dropDispatch(orderId, "r1");
+    expect(orderUpdateMany.mock.calls[0]![0]).toMatchObject({
+      where: { id: orderId, status: "en_route_pickup", riderId: "r1", merchantPhase: null },
+      data: { merchantPhase: "ready_for_pickup", riderArrivedAt: null, riderEtaAt: null, pickupPhotoKey: null, pickupPhotoAt: null, pickupBagSealed: null },
+    });
+  });
+
+  it("MJ-RM1: a rider found early drops while the kitchen is still cooking — it stays 'preparing', not 'ready'", async () => {
+    const { svc, orderUpdateMany } = world({ status: "assigned", merchantPhase: "preparing", dispatchExcludedRiderIds: [], merchantId: MERCHANT_ID });
+    await svc.dropDispatch(orderId, "r1");
+    expect(orderUpdateMany.mock.calls[0]![0]).toMatchObject({ where: { merchantPhase: "preparing" }, data: { status: "requested", merchantPhase: "preparing" } });
+  });
+});
+
+describe("FoodDispatchService — MJ-RM18 (C16): never the business's own team", () => {
+  it("leaves every merchantMember of the order's business out of the round", async () => {
+    const strategy = pick(one("outsider"));
+    const memberFindMany = vi.fn(async () => [{ profileId: "cashier" }, { profileId: "owner" }]);
+    const { svc } = build(
+      {
+        order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder({ dispatchExcludedRiderIds: ["passed"] }), updateMany: async () => ({ count: 1 }) },
+        merchant: { findUnique: async () => ({ location: { point: HARARE_CBD } }) },
+        merchantMember: { findMany: memberFindMany, findFirst: async () => null },
+        merchantPreferredRider: { findMany: async () => [] },
+        orderEvent: { create: async () => ({}) },
+        foodDispatchAttempt: { upsert: vi.fn(async () => ({})) },
+      },
+      strategy,
+    );
+    await svc.sweepSearch();
+    expect(memberFindMany).toHaveBeenCalledWith({ where: { merchantId: MERCHANT_ID }, select: { profileId: true } });
+    expect(strategy.pickCandidates).toHaveBeenCalledWith(expect.objectContaining({ excludeRiderIds: ["passed", "cashier", "owner"] }));
+  });
+
+  it("acceptDispatch backstop: a team member holding an offer is refused 409 own_member and nothing is written", async () => {
+    const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
+    const { svc } = build(
+      {
+        order: { findFirst: async () => liveOrder, updateMany: orderUpdateMany },
+        foodDispatchAttempt: { findUnique: async () => pendingRow },
+        merchantMember: {
+          findFirst: async (args: { where: { merchantId: string; profileId: string } }) =>
+            args.where.profileId === "cashier" && args.where.merchantId === MERCHANT_ID ? { id: "mm1" } : null,
+        },
+      },
+      NONE,
+    );
+    await expect(svc.acceptDispatch(orderId, "cashier")).rejects.toMatchObject({ status: 409, response: { reason: "own_member" } });
+    expect(orderUpdateMany).not.toHaveBeenCalled();
   });
 });

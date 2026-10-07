@@ -166,6 +166,20 @@ export function pickupRevealWhere(
   return null;
 }
 
+/** U11: the D-34 no-rider hold: the food is ready, dispatch stopped after its last round, no rider has it. */
+export function noRiderHeld(order: Pick<OrderWithItems, "status" | "merchantPhase" | "noRiderHoldAt" | "riderId">): boolean {
+  return order.status === "requested" && order.merchantPhase === "ready_for_pickup" && order.noRiderHoldAt != null && order.riderId == null;
+}
+
+/** MJ-RM1: the kitchen phase a cooking order moves to when its food is ready: `ready_for_pickup` while
+ *  dispatch is still looking (requested / a live round), null once a rider holds it (the hand-off out of
+ *  the merchant-phase machine). Undefined for any other status: nothing to mark ready. */
+export function readyPhaseFor(status: string): "ready_for_pickup" | null | undefined {
+  if (status === "requested" || status === "open_for_offers") return "ready_for_pickup";
+  if ((RIDER_PRE_PICKUP_STATUSES as readonly string[]).includes(status)) return null;
+  return undefined;
+}
+
 function lineTotal(priceUsd: Prisma.Decimal | number, quantity: number): number {
   return fromCents(toCents(Number(priceUsd)) * quantity);
 }
@@ -632,7 +646,8 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     return this.toResponse(await this.mustFindWithItems(orderId));
   }
 
-  /** R-17: free, any time before paying — once preparing/ready the kitchen has committed. */
+  /** R-17: free, any time before paying — once preparing/ready the kitchen has committed. Also free in the
+   *  no-rider hold (U11): nobody is coming for the food, so the customer is never stuck waiting on it. */
   async cancelUnpaid(orderId: string, customerId: string): Promise<MerchantOrderResponse> {
     const order = await this.findOwnAsCustomer(orderId, customerId);
     const cancellable = new Set(["awaiting_accept", "awaiting_item_approval", "awaiting_payment"]);
@@ -645,7 +660,10 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     // Order flow v2 (BRIEF §8): while a substitution round is open, "Cancel the whole order — free" is
     // always there, mid-prep included.
     const openRound = order.merchantPhase === "preparing" && (await this.substitutions?.hasOpenRound(orderId)) === true;
-    if (!unconfirmedAuto && !openRound && !rxDeclinedRest && (!order.merchantPhase || !cancellable.has(order.merchantPhase))) {
+    // U11 (order flow v2 T11a/T11b "Cancel order · free"): dispatch gave up (the D-34 no-rider hold) and
+    // nobody is searching until the venue decides. The customer may leave free rather than wait on it.
+    const noRiderHold = noRiderHeld(order);
+    if (!unconfirmedAuto && !openRound && !rxDeclinedRest && !noRiderHold && (!order.merchantPhase || !cancellable.has(order.merchantPhase))) {
       throw new ConflictException("This order can't be cancelled anymore — the kitchen has started");
     }
     const claimed = await this.prisma.order.updateMany({
@@ -654,6 +672,8 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         status: "requested",
         merchantPhase: order.merchantPhase,
         ...(unconfirmedAuto && !openRound && !rxDeclinedRest ? { kitchenConfirmedAt: null } : {}),
+        // Still held, still riderless: a "Keep searching" or a rider racing the cancel wins.
+        ...(noRiderHold ? { noRiderHoldAt: { not: null }, riderId: null } : {}),
       },
       data: { status: "cancelled", cancelledAt: new Date(), cancelledBy: customerId, merchantPhase: null },
     });
@@ -930,17 +950,52 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     const merchantId = await this.ownMerchantId(profileId);
     // Merchant v2 follow-ups (D-77, K3b): why it can't be finished, and "Something else"'s note.
     const said = note?.trim() || null;
+    // MJ-RM1: an auto-accepted order's rider search runs during the last minutes of cooking, so the K3
+    // "Problem with this order?" also covers a live round (no rider has it yet). Once a rider holds it,
+    // as before, it can't be cancelled here.
     const claimed = await this.prisma.order.updateMany({
-      where: { id: orderId, merchantId, orderType: "merchant", status: "requested", merchantPhase: "preparing", merchantPaymentMethod: "cash" },
-      data: { status: "cancelled", cancelledAt: new Date(), rejectionReason: reason, merchantPhase: null, cancelReason: said },
+      where: {
+        id: orderId,
+        merchantId,
+        orderType: "merchant",
+        status: { in: ["requested", "open_for_offers"] },
+        riderId: null,
+        merchantPhase: "preparing",
+        merchantPaymentMethod: "cash",
+      },
+      data: {
+        status: "cancelled",
+        cancelledAt: new Date(),
+        rejectionReason: reason,
+        merchantPhase: null,
+        cancelReason: said,
+        dispatchOfferedRiderId: null,
+        dispatchOfferExpiresAt: null,
+        dispatchNextCheckAt: null,
+      },
     });
     if (claimed.count === 0) {
       throw new ConflictException({ reason: "not_cancellable", message: "This order can no longer be cancelled here." });
     }
+    await this.closeOpenOffers(orderId);
     await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
     await this.notifyCancelledCustomer(orderId, reason, said);
     this.notifyQueue(merchantId, orderId);
     return this.toResponse(await this.mustFindWithItems(orderId));
+  }
+
+  /** A cancelled order's riders still deciding on a live round: their offers end now and their alarms
+   *  stop (acceptDispatch already refuses a cancelled order; this only quiets the phones). Best effort. */
+  private async closeOpenOffers(orderId: string): Promise<void> {
+    try {
+      const where = { orderId, outcome: "pending" as const };
+      const open = await this.prisma.foodDispatchAttempt.findMany({ where, select: { riderId: true } });
+      if (open.length === 0) return;
+      await this.prisma.foodDispatchAttempt.updateMany({ where, data: { outcome: "expired", respondedAt: new Date() } });
+      for (const { riderId } of open) void this.gateway.emitFoodOfferClosed(riderId, orderId);
+    } catch (err) {
+      this.logger.warn(`closing open offers failed for order ${orderId}: ${(err as Error).message}`);
+    }
   }
 
   /** R-16: logged before the request-payment button unlocks. */
@@ -1017,11 +1072,16 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     }
     // Order flow v2 (BRIEF §8): the order can't go to a rider while the customer is answering changes.
     await this.substitutions?.assertNoOpenRound(orderId);
+    // MJ-RM1: an auto-accepted order's rider search starts before the food is ready, so a cooking order
+    // may already be in a live round or held by its rider. Searching -> ready_for_pickup as before; a rider
+    // already holding it -> the phase clears (the same hand-off acceptDispatch makes for a ready order).
+    const next = readyPhaseFor(order.status);
+    if (next === undefined) throw new ConflictException("This order isn't in prep");
     const pickupCode = this.tokens.randomPickupCode();
     const claimed = await this.prisma.order.updateMany({
-      where: { id: orderId, status: "requested", merchantPhase: "preparing" },
+      where: { id: orderId, status: order.status, merchantPhase: "preparing" },
       data: {
-        merchantPhase: "ready_for_pickup",
+        merchantPhase: next,
         readyAt: new Date(),
         pickupCodeHash: this.tokens.hash(pickupCode),
         pickupCodeAttempts: 0,
@@ -1262,7 +1322,10 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
   ): Promise<void> {
     // Order flow v2 (BRIEF §9): shops and pharmacies need the sealed-bag photo before pickup completes.
     await assertPickupProofIfRequired(tx, orderId);
-    await tx.order.update({ where: { id: orderId }, data: { status: "picked_up", collectedAt: new Date() } });
+    // merchantPhase: an order collected while its kitchen phase still read `preparing` (an auto-accepted
+    // order found early, "Collected" before anyone tapped "Food is ready") leaves the kitchen's machine
+    // here, so the board moves it to ON THE WAY instead of keeping a cooking ticket (MJ-RM1).
+    await tx.order.update({ where: { id: orderId }, data: { status: "picked_up", collectedAt: new Date(), merchantPhase: null } });
     await tx.orderEvent.create({ data: { orderId, status: "picked_up" } });
     await this.debt.openDebtIfNeeded(tx, {
       id: orderId,
@@ -1462,9 +1525,11 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
    *    the ops call list (once).
    *  - Cancel: still unconfirmed RESTAURANTS_AUTO_ACCEPT.autoCancelAfterMs after placement → cancelled,
    *    customer told nothing was charged (a cash order has taken no money yet).
-   *  - Send a rider: once CONFIRMED, the order goes to `ready_for_pickup` (which starts dispatch)
-   *    RESTAURANTS_AUTO_ACCEPT.dispatchLeadMs before prep time runs out, or straight away if confirmed
-   *    later than that. An unconfirmed order never reaches dispatch.
+   *  - Food is ready: once CONFIRMED and the prep time has run out with nobody tapping "Food is ready",
+   *    the order is marked ready (`ready_for_pickup` while dispatch looks, null once a rider holds it).
+   *    The rider search itself starts RESTAURANTS_AUTO_ACCEPT.dispatchLeadMs earlier, without touching
+   *    the kitchen's phase (FoodDispatchService.sweepSearch, MJ-RM1 / U32). An unconfirmed order never
+   *    reaches dispatch.
    */
   async sweepAutoAccepted(now: Date = new Date()): Promise<{ escalated: number; released: number; cancelled: number }> {
     const escalated = await this.prisma.order.updateMany({
@@ -1505,28 +1570,35 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     }
     if (cancelled > 0) this.logger.warn(`auto-accept: ${cancelled} order(s) never confirmed by the kitchen — cancelled`);
 
+    // MJ-RM1 / U32: the rider search starts dispatchLeadMs early on its own (FoodDispatchService.
+    // sweepSearch, phase untouched); the kitchen's ticket only becomes "ready" once the ready time itself
+    // has passed and nobody tapped "Food is ready", so readyAt is the real ready time, not 8 min early.
     let released = 0;
     const cooking = await this.prisma.order.findMany({
       where: {
         orderType: "merchant",
-        status: "requested",
+        status: { in: ["requested", "open_for_offers", ...RIDER_PRE_PICKUP_STATUSES] },
         merchantPhase: "preparing",
         autoAccepted: true,
         kitchenConfirmedAt: { not: null },
         // Order flow v2 (BRIEF §8): never to a rider while the customer is answering changes.
         substitutionRounds: { none: { status: "open" } },
       },
-      select: { id: true, merchantId: true, prepStartedAt: true, prepMinutes: true },
+      select: { id: true, merchantId: true, status: true, prepStartedAt: true, prepMinutes: true },
+      orderBy: { prepStartedAt: "asc" },
       take: 200,
     });
     for (const o of cooking) {
       const readyAt = (o.prepStartedAt?.getTime() ?? now.getTime()) + (o.prepMinutes ?? 0) * 60_000;
-      if (readyAt - RESTAURANTS_AUTO_ACCEPT.dispatchLeadMs > now.getTime()) continue;
+      if (readyAt > now.getTime()) continue;
+      const status = o.status ?? "requested";
+      const next = readyPhaseFor(status);
+      if (next === undefined) continue;
       try {
         const pickupCode = this.tokens.randomPickupCode();
         const claimed = await this.prisma.order.updateMany({
-          where: { id: o.id, status: "requested", merchantPhase: "preparing", kitchenConfirmedAt: { not: null } },
-          data: { merchantPhase: "ready_for_pickup", readyAt: now, pickupCodeHash: this.tokens.hash(pickupCode), pickupCodeAttempts: 0 },
+          where: { id: o.id, status, merchantPhase: "preparing", kitchenConfirmedAt: { not: null } },
+          data: { merchantPhase: next, readyAt: now, pickupCodeHash: this.tokens.hash(pickupCode), pickupCodeAttempts: 0 },
         });
         if (claimed.count > 0) {
           released++;
