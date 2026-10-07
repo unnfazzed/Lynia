@@ -1152,6 +1152,10 @@ export const MerchantDishResponse = z
     description: z.string().nullable(),
     priceUsd: z.number(),
     photoUrl: z.string().nullable(),
+    /** D7 (2026-10-07): a signed URL of the photo's small variant (shorter side 400 px), for list rows,
+     *  tiles and thumbnails; the full `photoUrl` stays for the large views. Absent until the thumb exists
+     *  (and from older servers): use `thumbUrl ?? photoUrl`. */
+    thumbUrl: z.string().optional(),
     isDraft: z.boolean(),
     outOfStock: z.boolean(),
     /** D-48 C1: when an off dish comes back on its own (ISO). Absent on older servers; null when on.
@@ -1172,6 +1176,11 @@ export const RestaurantListItem = z
     name: z.string(),
     coverPhotoUrl: z.string().nullable(),
     logoUrl: z.string().nullable(),
+    /** D7 (2026-10-07): signed URLs of the cover's and logo's small variants (shorter side 400 px), for the
+     *  small venue tiles and the logo disc; the 16:9 card and the storefront cover keep `coverPhotoUrl`.
+     *  Absent until the thumb exists (and from older servers): use `coverThumbUrl ?? coverPhotoUrl`. */
+    coverThumbUrl: z.string().optional(),
+    logoThumbUrl: z.string().optional(),
     cuisineTags: z.array(z.string()),
     priceLevel: z.number().int().nullable(),
     // D1 (browse): open/closed + "closing soon"/"opens at" are derived client-side from this via
@@ -1219,6 +1228,10 @@ export const RestaurantSearchDish = z
     name: z.string(),
     priceUsd: z.number(),
     photoUrl: z.string().nullable(),
+    /** D7 (2026-10-07): a signed URL of the photo's small variant (shorter side 400 px), for list rows,
+     *  tiles and thumbnails; the full `photoUrl` stays for the large views. Absent until the thumb exists
+     *  (and from older servers): use `thumbUrl ?? photoUrl`. */
+    thumbUrl: z.string().optional(),
     merchantId: z.string().uuid(),
     merchantName: z.string(),
   })
@@ -1260,6 +1273,10 @@ export const RestaurantMenuDish = z
     description: z.string().nullable(),
     priceUsd: z.number(),
     photoUrl: z.string().nullable(),
+    /** D7 (2026-10-07): a signed URL of the photo's small variant (shorter side 400 px), for list rows,
+     *  tiles and thumbnails; the full `photoUrl` stays for the large views. Absent until the thumb exists
+     *  (and from older servers): use `thumbUrl ?? photoUrl`. */
+    thumbUrl: z.string().optional(),
     outOfStock: z.boolean(),
     /** Order flow v2 (BRIEF §13): sent (true) only on a pharmacy item that needs a prescription, and only
      *  while RX_ENABLED is on — with it off such items are not listed at all. Absent = no. */

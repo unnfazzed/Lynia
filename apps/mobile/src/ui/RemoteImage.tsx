@@ -56,6 +56,9 @@ export function RemoteImage(props: {
    *  imagery (e.g. proof-of-pickup photos) must pass "memory" so its bytes never persist to the
    *  on-device disk cache. */
   cachePolicy?: "memory" | "memory-disk";
+  /** P11 (D7): expo-image's load priority; 'low' queues an off-screen row behind what the customer can
+   *  see (on web it becomes the `<img>`'s fetchpriority). Default "normal". */
+  priority?: "low" | "normal" | "high";
 }): React.ReactElement {
   // expo-image has no "center"; "none" (natural size, centered) is its closest equivalent.
   const contentFit =
@@ -67,6 +70,7 @@ export function RemoteImage(props: {
       contentFit={contentFit}
       cachePolicy={props.cachePolicy ?? "memory-disk"}
       recyclingKey={props.recyclingKey}
+      priority={props.priority ?? "normal"}
       onError={props.onError ? () => props.onError?.() : undefined}
       accessibilityElementsHidden={props.accessibilityElementsHidden}
       importantForAccessibility={props.importantForAccessibility}

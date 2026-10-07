@@ -118,6 +118,19 @@ export class AzureBlobStorage implements StorageAdapter {
     }
   }
 
+  async readObject(key: string): Promise<Buffer | null> {
+    try {
+      return await this.blob(key).downloadToBuffer();
+    } catch (err) {
+      if (isNotFound(err)) return null;
+      throw err;
+    }
+  }
+
+  async writeObject(key: string, body: Buffer, contentType: string): Promise<void> {
+    await this.blob(key).uploadData(body, { blobHTTPHeaders: { blobContentType: contentType } });
+  }
+
   async *listObjects(prefix: string): AsyncIterable<StoredObject> {
     for await (const item of this.service.getContainerClient(this.opts.container).listBlobsFlat({ prefix })) {
       yield { key: item.name, createdAt: item.properties.createdOn ?? item.properties.lastModified };

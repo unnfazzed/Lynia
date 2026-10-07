@@ -71,6 +71,35 @@ describe("StorageSweeper.sweepOrphans (C1 / E2)", () => {
     expect(res).toEqual({ scanned: 12, deleted: 5 });
   });
 
+  it("D7: keeps a referenced photo's thumbnail and sweeps the thumbnail of a replaced photo", async () => {
+    const deleted: string[] = [];
+    const objects: StoredObject[] = [
+      { key: "dish/o1/a.jpg", createdAt: old },
+      { key: "dish/o1/a.jpg.thumb.jpg", createdAt: old },
+      { key: "dish/o1/gone.jpg.thumb.jpg", createdAt: old },
+      { key: "banner/o1/c.jpg", createdAt: old },
+      { key: "banner/o1/c.jpg.thumb.jpg", createdAt: old },
+      { key: "banner/o1/l.jpg.thumb.jpg", createdAt: old },
+    ];
+    const storage = {
+      listObjects: (prefix: string) =>
+        (async function* () {
+          for (const o of objects) if (o.key.startsWith(prefix)) yield o;
+        })(),
+      deleteObject: vi.fn(async (k: string) => void deleted.push(k)),
+    } as unknown as StorageAdapter;
+    const prisma = {
+      rider: table([]),
+      profile: table([]),
+      order: table([]),
+      orderPrescription: { findMany: vi.fn(async () => []) },
+      merchantDish: table([{ photoUrl: "dish/o1/a.jpg", photoThumbKey: "dish/o1/a.jpg.thumb.jpg" }]),
+      merchant: table([{ coverPhotoUrl: "banner/o1/c.jpg", logoUrl: null, coverThumbKey: "banner/o1/c.jpg.thumb.jpg", logoThumbKey: null }]),
+    } as unknown as PrismaService;
+    await new StorageSweeper(prisma, storage).sweepOrphans(NOW);
+    expect(deleted.sort()).toEqual(["banner/o1/l.jpg.thumb.jpg", "dish/o1/gone.jpg.thumb.jpg"]);
+  });
+
   it("never touches an object younger than 24 h, even unreferenced (an upload mid-flow)", async () => {
     const { sweeper, deleted } = harness([{ key: "dish/o1/new.jpg", createdAt: fresh }]);
     await expect(sweeper.sweepOrphans(NOW)).resolves.toEqual({ scanned: 1, deleted: 0 });

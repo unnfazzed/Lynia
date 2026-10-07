@@ -281,7 +281,8 @@ export function popularNearYou(
     return {
       id: r.id,
       name: r.name,
-      photoUrl: r.coverPhotoUrl,
+      // D7: the rail card is 148 x 96, well inside the cover's thumbnail.
+      photoUrl: r.coverThumbUrl ?? r.coverPhotoUrl,
       rating: r.ratingCount > 0 && r.ratingAvg != null ? r.ratingAvg.toFixed(1) : null,
       etaMinutes: roadKm == null ? null : prep + Math.max(1, Math.ceil((roadKm / ETA_SPEED_KMH) * 60)),
       deliveryFee: distanceKm == null ? null : formatMoney(deliveryFeeForDistance(distanceKm)),

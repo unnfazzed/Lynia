@@ -61,6 +61,16 @@ export interface StorageAdapter {
    */
   listObjects(prefix: string): AsyncIterable<StoredObject>;
   /**
+   * The whole object, or `null` on 404 (D7 thumbnails: the server reads a menu/shop photo, at most
+   * MAX_DISH_PHOTO_BYTES, to make its small variant). Throws on any other failure, like {@link stat}.
+   */
+  readObject(key: string): Promise<Buffer | null>;
+  /**
+   * Write `body` at `key` from the server (D7: the `<key>.thumb.jpg` variant). Overwrites an existing
+   * object. Throws on failure — the caller decides whether that matters.
+   */
+  writeObject(key: string, body: Buffer, contentType: string): Promise<void>;
+  /**
    * Hard-delete the underlying object (DS15-03). Used by right-to-erasure to purge the KYC selfie /
    * ID-document (and profile photo) from the bucket after the DB pointers are nulled — the signed-URL
    * seam above only ever *references* objects, so without this the media outlived the erasure forever.

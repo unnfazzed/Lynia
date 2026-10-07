@@ -32,6 +32,7 @@ import {
   OpenLine,
   OtcNotice,
   PharmacyRow,
+  photoPriority,
   SectionHeading,
   ShopGrid,
   ShopTile,
@@ -64,6 +65,7 @@ function storeItem(d: RestaurantMenuDish, served: boolean, rxEnabled: boolean): 
     description: d.description,
     priceUsd: d.priceUsd,
     photoUrl: d.photoUrl,
+    thumbUrl: d.thumbUrl ?? null,
     unavailable: d.outOfStock || !served,
     outOfStock: d.outOfStock,
     rxRequired: rxEnabled && d.rxRequired === true,
@@ -158,6 +160,15 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
       })
       .filter((c) => c.items.length > 0);
   }, [catalogue, now, rxEnabled]);
+  // P11: each section's first catalogue ordinal (the photo-priority cut-off counts across sections).
+  const sectionFirst = useMemo(() => {
+    let n = 0;
+    return sections.map((x) => {
+      const at = n;
+      n += x.items.length;
+      return at;
+    });
+  }, [sections]);
 
   const hasCart = cart.itemCount > 0 && cart.cart.restaurantId === id;
   const canAdd = open && sectionOn;
@@ -190,14 +201,17 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
     if (line) cart.setQuantity(line.dishId, line.note, line.quantity - 1);
   };
 
-  const renderItems = (items: StoreItem[], highlight?: string): React.ReactElement =>
+  // P11: `firstOrdinal` is the catalogue ordinal of `items[0]`, so rows past the first screen and a half load
+  // their photos at low priority.
+  const renderItems = (items: StoreItem[], highlight?: string, firstOrdinal = 0): React.ReactElement =>
     service === "pharmacy" ? (
       <View>
-        {items.map((it) => (
+        {items.map((it, i) => (
           <PharmacyRow
             key={it.id}
             item={it}
             highlight={highlight}
+            priority={photoPriority(firstOrdinal + i)}
             qty={qtyFor(it.id)}
             canAdd={canAdd}
             onOpen={() => setOpenItem(it)}
@@ -209,7 +223,9 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
     ) : (
       <ShopGrid
         items={items}
-        renderTile={(it) => <ShopTile item={it} qty={qtyFor(it.id)} canAdd={canAdd} onOpen={() => setOpenItem(it)} onAdd={() => add(it)} onMinus={() => minus(it)} />}
+        renderTile={(it, i) => (
+          <ShopTile item={it} qty={qtyFor(it.id)} canAdd={canAdd} priority={photoPriority(firstOrdinal + i)} onOpen={() => setOpenItem(it)} onAdd={() => add(it)} onMinus={() => minus(it)} />
+        )}
       />
     );
 
@@ -412,7 +428,7 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
                 }}
               >
                 <SectionHeading title={x.title} window={x.window} note={x.note} />
-                {renderItems(x.items)}
+                {renderItems(x.items, undefined, sectionFirst[i])}
               </View>
             ))}
           </>

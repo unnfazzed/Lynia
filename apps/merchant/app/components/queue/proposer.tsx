@@ -219,8 +219,17 @@ export function SwapPicker({ item, onPick, onCancel }: { item: MerchantOrderItem
                 onClick={() => setChosen(d.id)}
               >
                 {d.photoUrl ? (
+                  // MJ-RL20 (D7): the 40 px tile draws the server's thumbnail, lazily, never the full photo.
                   // eslint-disable-next-line @next/next/no-img-element -- a signed catalogue URL, not a static asset
-                  <img src={d.photoUrl} alt="" width={40} height={40} style={{ borderRadius: 10, objectFit: "cover", flexShrink: 0 }} />
+                  <img
+                    src={d.thumbUrl ?? d.photoUrl}
+                    alt=""
+                    width={40}
+                    height={40}
+                    loading="lazy"
+                    decoding="async"
+                    style={{ borderRadius: 10, objectFit: "cover", flexShrink: 0 }}
+                  />
                 ) : (
                   <span style={{ width: 40, height: 40, borderRadius: 10, background: "var(--surface)", flexShrink: 0 }} />
                 )}

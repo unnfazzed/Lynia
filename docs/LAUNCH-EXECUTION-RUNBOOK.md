@@ -559,6 +559,30 @@ resubmission: the mobile binary reads the flag remotely, which is why the joint 
 binary ahead of the flip. Cohort-level rollback is finer still — clearing `Merchant.pilotEnabled` on a
 single kitchen removes it without darkening the vertical for everyone.
 
+## 12. D7 — backfill thumbnails for existing menu and shop photos (once, after the deploy)
+
+Since owner decision D7 (2026-10-07) the API makes a small JPEG (`<photo key>.thumb.jpg`, shorter side
+400 px) whenever a dish / shop item / cover / logo photo is saved, and the customer menu, storefront,
+search and the merchant swap picker draw it instead of the full photo. Photos saved **before** that
+deploy have no thumbnail yet; the API keeps serving them in full until this backfill gives them one, so
+it is never urgent and never risky (a photo it cannot thumbnail just stays full-size).
+
+Order: the deploy carrying migration `0082_photo_thumbnails` is live → run this. It needs the service's
+environment (`loadEnv`) and the runtime SA's bucket access (`roles/storage.objectAdmin` on the media
+bucket, which it already has). Idempotent and resumable: an interrupted run is simply run again.
+
+```bash
+export DATABASE_URL='<the prod DATABASE_URL>'   # from Secret Manager; run from a VPC-internal shell
+# …plus the other env vars the API boots with (CLOUD_PROVIDER, STORAGE_BUCKET, secrets — same as §1).
+pnpm --filter @lynia/api thumbs:backfill                               # DRY RUN — counts, writes nothing
+pnpm --filter @lynia/api thumbs:backfill -- --apply --concurrency=3    # APPLY — 3 photos at a time
+```
+
+The summary prints photos scanned, already thumbnailed, made, found-in-storage-and-recorded, and
+failed (a non-zero exit when any failed — re-run to retry; a photo whose object is gone stays failed and
+keeps being served in full). Code: `apps/api/scripts/backfill-photo-thumbnails.ts` →
+`apps/api/src/adapters/storage/photo-thumbnail-backfill.ts`.
+
 ---
 **Where each of these came from:** `docs/DATA-RETENTION.md` (§1–2), `docs/OBSERVABILITY.md` (§3),
 `docs/LOAD-MODEL.md` + `apps/api/load/` (§4), `docs/QA-DEVICE-CHECKLIST.md` (§5), `docs/LAUNCH-READINESS.md`

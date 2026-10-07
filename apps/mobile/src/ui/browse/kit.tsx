@@ -127,6 +127,7 @@ export function VenueImage({
   disc = 0,
   initialSize = 30,
   style,
+  priority,
   children,
 }: {
   photoUrl: string | null;
@@ -137,6 +138,8 @@ export function VenueImage({
   disc?: number;
   initialSize?: number;
   style: ViewStyle;
+  /** P11: "low" for a catalogue row past the first screen (see `photoPriority`). */
+  priority?: "low" | "normal";
   children?: React.ReactNode;
 }): React.ReactElement {
   const [failed, setFailed] = useState(false);
@@ -151,6 +154,7 @@ export function VenueImage({
             onError={() => setFailed(true)}
             accessibilityElementsHidden
             importantForAccessibility="no"
+            priority={priority}
             style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
           />
         ) : disc > 0 ? (
@@ -454,7 +458,7 @@ export function VenueRow({ v, onPress }: { v: VenueView; onPress: () => void }):
   const what = v.categories.join(" · ") || v.sub;
   return (
     <Tappable onPress={onPress} accessibilityRole="button" accessibilityLabel={a11yFor(v)} style={{ flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 10 }}>
-      <VenueImage photoUrl={v.photoUrl} name={v.name} kind={v.kind} dim={!v.open} initialSize={28} style={{ width: 104, height: 104, borderRadius: 16 }}>
+      <VenueImage photoUrl={v.thumbUrl ?? v.photoUrl} name={v.name} kind={v.kind} dim={!v.open} initialSize={28} style={{ width: 104, height: 104, borderRadius: 16 }}>
         {v.open && eta ? <Pill bg={tokens.color.bg} ink={tokens.color.ink} text={eta} size={10.5} pos={{ right: 6, bottom: 6 }} /> : null}
         {v.open && v.closesInMin != null ? (
           <Pill bg={tokens.color.highlight} ink={tokens.color.highlightChipInk} text={fmt(B.list.closesIn, { m: v.closesInMin })} size={10} pos={{ left: 6, bottom: 6 }} />

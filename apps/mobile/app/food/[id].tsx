@@ -28,6 +28,7 @@ import {
   InfoStrip,
   OpenLine,
   PopularCard,
+  photoPriority,
   SectionHeading,
   StoreCover,
   StoreLogo,
@@ -64,7 +65,16 @@ interface Section {
 }
 
 function storeItem(d: RestaurantMenuDish, served: boolean): StoreItem {
-  return { id: d.id, name: d.name, description: d.description, priceUsd: d.priceUsd, photoUrl: d.photoUrl, unavailable: d.outOfStock || !served, outOfStock: d.outOfStock };
+  return {
+    id: d.id,
+    name: d.name,
+    description: d.description,
+    priceUsd: d.priceUsd,
+    photoUrl: d.photoUrl,
+    thumbUrl: d.thumbUrl ?? null,
+    unavailable: d.outOfStock || !served,
+    outOfStock: d.outOfStock,
+  };
 }
 
 /** "Closed · opens 10:00" / "Closed · opens tomorrow 09:00" (a later weekday names the day). */
@@ -193,6 +203,8 @@ export default function RestaurantMenuScreen(): React.ReactElement {
   const menuBody = useMemo(() => {
     const qty = (dishId: string): number =>
       cart.cart.restaurantId === id ? cart.cart.lines.filter((l) => l.dishId === dishId).reduce((s, l) => s + l.quantity, 0) : 0;
+    // P11: rows past the first screen and a half load their photos at low priority.
+    let ordinal = 0;
     return sections.map((s, i) => (
       <View
         key={s.key}
@@ -209,7 +221,16 @@ export default function RestaurantMenuScreen(): React.ReactElement {
           </ScrollView>
         ) : (
           s.items.map((it) => (
-            <DishRow key={it.id} item={it} qty={qty(it.id)} canAdd={open} onOpen={() => setOpenItem(it)} onAdd={() => onRowAdd(it)} onMinus={() => onRowMinus(it)} />
+            <DishRow
+              key={it.id}
+              item={it}
+              qty={qty(it.id)}
+              canAdd={open}
+              priority={photoPriority(ordinal++)}
+              onOpen={() => setOpenItem(it)}
+              onAdd={() => onRowAdd(it)}
+              onMinus={() => onRowMinus(it)}
+            />
           ))
         )}
       </View>

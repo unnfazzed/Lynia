@@ -104,6 +104,21 @@ export class GcsStorage implements StorageAdapter {
     }
   }
 
+  async readObject(key: string): Promise<Buffer | null> {
+    try {
+      const [buf] = await this.storage.bucket(this.bucket).file(key).download();
+      return buf;
+    } catch (err) {
+      if (isNotFound(err)) return null;
+      throw err;
+    }
+  }
+
+  async writeObject(key: string, body: Buffer, contentType: string): Promise<void> {
+    // A thumbnail is a few tens of KB: one simple upload, no resumable session.
+    await this.storage.bucket(this.bucket).file(key).save(body, { contentType, resumable: false });
+  }
+
   async *listObjects(prefix: string): AsyncIterable<StoredObject> {
     const bucket = this.storage.bucket(this.bucket);
     let pageToken: string | undefined;

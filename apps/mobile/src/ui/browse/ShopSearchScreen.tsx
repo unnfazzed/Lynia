@@ -100,7 +100,7 @@ export function ShopSearchScreen({ service }: { service: ShopService }): React.R
               accessibilityLabel={`${v.name}, ${venueMeta(v)}`}
               style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 8, paddingHorizontal: 16, minHeight: 64 }}
             >
-              <VenueImage photoUrl={v.photoUrl} name={v.name} kind={null} dim={!v.open} initialSize={20} style={{ width: 48, height: 48, borderRadius: 12 }} />
+              <VenueImage photoUrl={v.thumbUrl ?? v.photoUrl} name={v.name} kind={null} dim={!v.open} initialSize={20} style={{ width: 48, height: 48, borderRadius: 12 }} />
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text numberOfLines={1} style={{ fontSize: 15, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
                   <Marked text={v.name} q={q} />
@@ -121,7 +121,7 @@ export function ShopSearchScreen({ service }: { service: ShopService }): React.R
               accessibilityLabel={`${it.name}, ${it.merchantName}, ${formatMoney(it.priceUsd)}`}
               style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 8, paddingHorizontal: 16, minHeight: 64 }}
             >
-              <VenueImage photoUrl={it.photoUrl} name={it.name} kind={null} initialSize={20} style={{ width: 48, height: 48, borderRadius: 12 }} />
+              <VenueImage photoUrl={it.thumbUrl ?? it.photoUrl} name={it.name} kind={null} initialSize={20} style={{ width: 48, height: 48, borderRadius: 12 }} />
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text numberOfLines={1} style={{ fontSize: 15, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
                   <Marked text={it.name} q={q} />

@@ -376,13 +376,29 @@ export interface StoreItem {
   name: string;
   description: string | null;
   priceUsd: number;
+  /** The full photo — drawn only where the photo is large (the item sheet). */
   photoUrl: string | null;
+  /** D7: the server's small variant, for every row, tile and card. Absent until the server made it. */
+  thumbUrl?: string | null;
   /** Out of stock today, or its category is outside its serving window. */
   unavailable: boolean;
   /** Only the out-of-stock reason shows the chip; a time window says so on its heading. */
   outOfStock: boolean;
   /** Order flow v2 R8: a pharmacy item that needs a prescription (sent only while `rxEnabled`). */
   rxRequired?: boolean;
+}
+
+/** D7 (P04): the photo a row, tile or card draws — the thumbnail when there is one, else the full photo. */
+export function listPhoto(item: Pick<StoreItem, "photoUrl" | "thumbUrl">): string | null {
+  return item.thumbUrl ?? item.photoUrl;
+}
+
+/** P11 first step: the catalogue's first rows (about a screen and a half) load their photos at normal
+ *  priority; every row after them asks for "low", so the off-screen photos of a long menu queue behind
+ *  the cover, the logo and the rows the customer can see instead of competing with them. */
+export const EAGER_PHOTO_ROWS = 8;
+export function photoPriority(ordinal: number): "low" | "normal" {
+  return ordinal < EAGER_PHOTO_ROWS ? "normal" : "low";
 }
 
 /** README §4b "Dish row": text left, a 112 photo right with the + inside; inset hairline. */
@@ -404,6 +420,7 @@ export function DishRow({
   qty,
   canAdd,
   highlight,
+  priority,
   onOpen,
   onAdd,
   onMinus,
@@ -413,6 +430,8 @@ export function DishRow({
   canAdd: boolean;
   /** A search query to mark in the name. */
   highlight?: string;
+  /** P11: see {@link photoPriority}. */
+  priority?: "low" | "normal";
   onOpen: () => void;
   onAdd: () => void;
   onMinus: () => void;
@@ -440,7 +459,7 @@ export function DishRow({
         {item.outOfStock ? <OosChip /> : null}
         {qty > 0 && canAdd ? <QtyStepper qty={qty} label={item.name} onMinus={onMinus} onPlus={onAdd} /> : null}
       </View>
-      <VenueImage photoUrl={item.photoUrl} name={item.name} kind={null} dim={item.unavailable} style={{ width: 112, height: 112, borderRadius: 14 }}>
+      <VenueImage photoUrl={listPhoto(item)} priority={priority} name={item.name} kind={null} dim={item.unavailable} style={{ width: 112, height: 112, borderRadius: 14 }}>
         {canAdd && !item.unavailable ? <AddButton count={qty} label={item.name} onPress={onAdd} /> : null}
       </VenueImage>
     </Tappable>
@@ -454,6 +473,7 @@ export function ShopTile({
   item,
   qty = 0,
   canAdd = false,
+  priority,
   onOpen,
   onAdd,
   onMinus,
@@ -461,6 +481,7 @@ export function ShopTile({
   item: StoreItem;
   qty?: number;
   canAdd?: boolean;
+  priority?: "low" | "normal";
   onOpen: () => void;
   onAdd?: () => void;
   onMinus?: () => void;
@@ -469,7 +490,7 @@ export function ShopTile({
   return (
     <View style={{ flex: 1, minWidth: 0 }}>
       <Tappable onPress={onOpen} accessibilityRole="button" accessibilityLabel={`${item.name}, ${formatMoney(item.priceUsd)}${item.outOfStock ? `, ${B.store.oos}` : ""}`}>
-        <VenueImage photoUrl={item.photoUrl} name={item.name} kind={null} dim={item.unavailable} style={{ width: "100%", aspectRatio: 1, borderRadius: 16 }}>
+        <VenueImage photoUrl={listPhoto(item)} priority={priority} name={item.name} kind={null} dim={item.unavailable} style={{ width: "100%", aspectRatio: 1, borderRadius: 16 }}>
           {canAdd && !item.unavailable && onAdd ? <AddButton count={qty} label={item.name} onPress={onAdd} /> : null}
         </VenueImage>
         <Text style={{ marginTop: 10, fontSize: 16, fontWeight: tokens.font.weight.bold, color: ink, ...TABULAR }}>{formatMoney(item.priceUsd)}</Text>
@@ -484,15 +505,15 @@ export function ShopTile({
 }
 
 /** Lays `ShopTile`s out two to a row: row gap 20, column gap 12, padding 8 16 0 (README §4b). */
-export function ShopGrid({ items, renderTile }: { items: StoreItem[]; renderTile: (item: StoreItem) => React.ReactElement }): React.ReactElement {
+export function ShopGrid({ items, renderTile }: { items: StoreItem[]; renderTile: (item: StoreItem, index: number) => React.ReactElement }): React.ReactElement {
   const rows: StoreItem[][] = [];
   for (let i = 0; i < items.length; i += 2) rows.push(items.slice(i, i + 2));
   return (
     <View style={{ paddingTop: 8, paddingHorizontal: 16, gap: 20 }}>
-      {rows.map((row) => (
+      {rows.map((row, r) => (
         <View key={row[0]!.id} style={{ flexDirection: "row", gap: 12, alignItems: "flex-start" }}>
-          {row.map((it) => (
-            <React.Fragment key={it.id}>{renderTile(it)}</React.Fragment>
+          {row.map((it, c) => (
+            <React.Fragment key={it.id}>{renderTile(it, r * 2 + c)}</React.Fragment>
           ))}
           {row.length === 1 ? <View style={{ flex: 1 }} /> : null}
         </View>
@@ -510,12 +531,14 @@ export function PharmacyRow({
   highlight,
   qty = 0,
   canAdd = false,
+  priority,
   onOpen,
   onAdd,
   onMinus,
 }: {
   item: StoreItem;
   highlight?: string;
+  priority?: "low" | "normal";
   qty?: number;
   canAdd?: boolean;
   onOpen: () => void;
@@ -531,7 +554,7 @@ export function PharmacyRow({
       accessibilityLabel={`${item.name}, ${formatMoney(item.priceUsd)}${item.outOfStock ? `, ${B.store.oos}` : ""}${item.rxRequired ? `, ${O.r.rxNeed}` : ""}`}
       style={{ flexDirection: "row", alignItems: "center", gap: 14, marginHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: HAIRLINE }}
     >
-      <VenueImage photoUrl={item.photoUrl} name={item.name} kind={null} dim={item.unavailable} style={{ width: 72, height: 72, borderRadius: 14 }} />
+      <VenueImage photoUrl={listPhoto(item)} priority={priority} name={item.name} kind={null} dim={item.unavailable} style={{ width: 72, height: 72, borderRadius: 14 }} />
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={{ fontSize: 15, lineHeight: 19.5, fontWeight: tokens.font.weight.semibold, color: ink }}>
           {highlight ? <Highlighted text={item.name} match={highlight} /> : item.name}
@@ -613,7 +636,7 @@ export function PopularCard({
   return (
     <View style={{ width: POPULAR_CARD }}>
       <Tappable onPress={onOpen} accessibilityRole="button" accessibilityLabel={`${item.name}, ${formatMoney(item.priceUsd)}`}>
-        <VenueImage photoUrl={item.photoUrl} name={item.name} kind={null} dim={item.unavailable} style={{ width: POPULAR_CARD, height: POPULAR_CARD, borderRadius: 16 }}>
+        <VenueImage photoUrl={listPhoto(item)} name={item.name} kind={null} dim={item.unavailable} style={{ width: POPULAR_CARD, height: POPULAR_CARD, borderRadius: 16 }}>
           {canAdd && !item.unavailable ? <AddButton count={qty} label={item.name} onPress={onAdd} /> : null}
         </VenueImage>
         <Text numberOfLines={2} style={{ marginTop: 8, fontSize: 14, lineHeight: 18.2, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>

@@ -42,6 +42,10 @@ export interface VenueView {
   /** A shop's kind label ("Auto parts"), null for a restaurant. Drives the no-photo tint + chip. */
   kind: string | null;
   photoUrl: string | null;
+  /** D7: the cover's small variant, for the 104 row and the 48 search tile (the 16:9 card and the
+   *  storefront cover keep `photoUrl`). Absent until the server has made it. */
+  thumbUrl?: string | null;
+  /** The logo is only ever drawn as a small disc, so this is its thumbnail when the server has one. */
   logoUrl: string | null;
   /** Null until at least one customer has rated ("New", never ★ 0). */
   rating: number | null;
@@ -75,7 +79,8 @@ export function restaurantVenue(r: RestaurantListItem, customer: LatLng | null, 
     sub: [...r.cuisineTags, ...(price ? [price] : [])].join(" · "),
     kind: null,
     photoUrl: r.coverPhotoUrl,
-    logoUrl: r.logoUrl,
+    thumbUrl: r.coverThumbUrl ?? null,
+    logoUrl: r.logoThumbUrl ?? r.logoUrl,
     rating: meta.rating,
     ratingCount: r.ratingCount,
     km: meta.distanceKm,
