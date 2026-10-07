@@ -156,7 +156,7 @@ describe("S4 · what's going + fare", () => {
     const go = screen.getByRole("button", { name: /^Find a rider/ });
     fireEvent.click(go);
     fireEvent.click(go);
-    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/deliveries/b1"));
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/deliveries/booking?id=b1"));
     expect(createBooking).toHaveBeenCalledTimes(1);
     const body = vi.mocked(createBooking).mock.calls[0]![0];
     expect(body.items).toEqual([

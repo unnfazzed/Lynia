@@ -54,3 +54,5 @@ apps/*/CLAUDE.md
 
 # Customer web build output (apps/customer-web, built in CI)
 apps/customer-web/dist/
+# The merchant web's static export (apps/merchant, docs/MERCHANT-WEB.md), built in CI.
+apps/merchant/out/

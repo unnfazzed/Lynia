@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import type { HandoverLinkInfoResponse } from "@lynia/shared";
-import { ApiError, confirmHandoverLink, getHandoverLink } from "../../lib/api-client";
+import { ApiError, confirmHandoverLink, getHandoverLink } from "../lib/api-client";
 
 type State = { kind: "loading" } | { kind: "gone"; message: string } | { kind: "ready"; info: HandoverLinkInfoResponse } | { kind: "done"; info: HandoverLinkInfoResponse };
 
@@ -18,7 +18,7 @@ const GONE = "This link has expired. Ask the counter for a new one.";
  * the handoff; built from the app's own parts (ledger D-77 §4).
  */
 export default function HandoverLinkPage() {
-  const { token } = useParams<{ token: string }>();
+  const token = useSearchParams().get("t") ?? "";
   const [state, setState] = useState<State>({ kind: "loading" });
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);

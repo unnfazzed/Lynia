@@ -1,15 +1,13 @@
-const path = require("node:path");
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
   // Compile the shared workspace package (TS source) through Next — same as apps/admin.
   transpilePackages: ["@lynia/shared"],
-  // Self-contained server bundle for the future Cloud Run image (deploy wiring lands with P3 —
-  // docs/plans/2026-07-26-merchant-verticals-plan.md §2.3). Trace root pinned at the repo root for
-  // the same pnpm-workspace reason as apps/admin.
-  output: "standalone",
-  outputFileTracingRoot: path.join(__dirname, "../../"),
+  // A static export: `next build` writes plain files to out/, which Cloudflare serves from its edge
+  // (apps/merchant/wrangler.jsonc, docs/MERCHANT-WEB.md), the same way as app.lyniago.com. Nothing runs
+  // on a server: every page fetches its data from the API in the browser, a page's id rides in the
+  // query string (app/lib/routes.ts) and the sign-in gate runs in the browser (app/components/AccessGate.tsx).
+  output: "export",
 };
 
 module.exports = nextConfig;

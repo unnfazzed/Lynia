@@ -306,9 +306,9 @@ const comingK1 = { ...BOARD[0], riderEtaAt: ahead(6) };
 const SETS = {
   arrival: [
     { mock: "A1 Arrival states", label: "A1 · Board: the arrived rider on top with Hand over, the coming one with its time", app: { name: "A1-board", path: "/queue", scenario: { me: KITCHEN, orders: [comingK1, { ...arrivedK4, id: "a4450000-0000-4000-8000-000000000000" }, ...BOARD.slice(1, 3)] } } },
-    { mock: "A1 Arrival states", label: "A1 · K4 rider sub-line, arrived", app: { name: "A1-k4", path: `/queue/${handK4.id}`, scenario: { me: KITCHEN, orders: [{ ...handK4, riderArrivedAt: ago(1) }] } } },
-    { mock: "A2 ETA states", label: "A2 · K3 with no estimate", app: { name: "A2-k3", path: `/queue/${cookingK3.id}`, scenario: { me: KITCHEN, orders: [cookingK3] } } },
-    { mock: "A2 ETA states", label: "A2 · K5 with no estimate", app: { name: "A2-k5", path: `/queue/${wayK5.id}`, scenario: { me: KITCHEN, orders: [wayK5] } } },
+    { mock: "A1 Arrival states", label: "A1 · K4 rider sub-line, arrived", app: { name: "A1-k4", path: `/queue/order?id=${handK4.id}`, scenario: { me: KITCHEN, orders: [{ ...handK4, riderArrivedAt: ago(1) }] } } },
+    { mock: "A2 ETA states", label: "A2 · K3 with no estimate", app: { name: "A2-k3", path: `/queue/order?id=${cookingK3.id}`, scenario: { me: KITCHEN, orders: [cookingK3] } } },
+    { mock: "A2 ETA states", label: "A2 · K5 with no estimate", app: { name: "A2-k5", path: `/queue/order?id=${wayK5.id}`, scenario: { me: KITCHEN, orders: [wayK5] } } },
   ],
   moneyx: [
     { mock: "T2 Money", label: "T2 · Money (cash on its way, No sale)", app: { name: "T2", path: "/statement", scenario: { me: KITCHEN, orders: [], summary: MONEY2 } } },
@@ -319,8 +319,8 @@ const SETS = {
     { mock: "T3 Account", label: "T3 · Account with HELP", sub: "the support number comes from config", app: { name: "T3", path: "/account", scenario: { me: KITCHEN, orders: [], branches: BRANCHES } } },
   ],
   k5x: [
-    { mock: "K5b Delivered wallet", label: "K5b · Delivered, nothing to bring back", sub: "door photo: none in the fixture", app: { name: "K5b", path: `/queue/${k5b.id}`, scenario: { me: KITCHEN, orders: [k5b] } } },
-    { mock: "K5c Goods back", label: "K5c · Goods coming back", app: { name: "K5c", path: `/queue/${k5c.id}`, scenario: { me: KITCHEN, orders: [k5c] } } },
+    { mock: "K5b Delivered wallet", label: "K5b · Delivered, nothing to bring back", sub: "door photo: none in the fixture", app: { name: "K5b", path: `/queue/order?id=${k5b.id}`, scenario: { me: KITCHEN, orders: [k5b] } } },
+    { mock: "K5c Goods back", label: "K5c · Goods coming back", app: { name: "K5c", path: `/queue/order?id=${k5c.id}`, scenario: { me: KITCHEN, orders: [k5c] } } },
   ],
   boardx: [
     { mock: "K1b Board cash and scheduled", label: "K1b · Board with cash out and scheduled", app: { name: "K1b", path: "/queue", scenario: { me: KITCHEN, orders: [order("a2220000-0000-4000-8000-000000000000", { items: [line("Mazondo", 5), line("Sadza & greens", 4.5)], merchantGoodsTotal: 9.5, prepMinutes: 15, prepStartedAt: ago(7) }), cashLate, cashOk], scheduled: [sched], summary: { ...SUMMARY, orders: 5, sales: 41, cashDue: 21.5 } } } },
@@ -329,8 +329,8 @@ const SETS = {
   sheets: [
     { mock: "K2a Reasons sheet kitchen", label: "K2a · Why can't you take it? (kitchen)", app: { name: "K2a", path: "/queue", scenario: { me: KITCHEN, orders: [ringingKitchen] }, before: openWhy("Too busy right now") } },
     { mock: "S2a Reasons sheet shop", label: "S2a · Why can't you take it? (shop, with note)", app: { name: "S2a", path: "/queue", scenario: { me: LIVE_SHOP, orders: [ringingShop] }, before: openWhy("Something else", "Closing early for stock-take") } },
-    { mock: "K3a Problem sheet", label: "K3a · Problem with #A222?", app: { name: "K3a", path: `/queue/${cookingK3.id}`, scenario: { me: KITCHEN, orders: [{ ...cookingK3, items: [item("i1000000-0000-4000-8000-000000000000", "Mazondo", 5), item("i2000000-0000-4000-8000-000000000000", "Sadza & greens", 4.5)] }] }, before: openProblem() } },
-    { mock: "K3b Cancel cash order", label: "K3b · Cancel, cash order", sub: "rider estimate from the location pings (B1)", app: { name: "K3b", path: `/queue/${cookingK3.id}`, scenario: { me: KITCHEN, orders: [{ ...cookingK3, riderEtaAt: ahead(11) }] }, before: openProblem(/Kitchen problem/) } },
+    { mock: "K3a Problem sheet", label: "K3a · Problem with #A222?", app: { name: "K3a", path: `/queue/order?id=${cookingK3.id}`, scenario: { me: KITCHEN, orders: [{ ...cookingK3, items: [item("i1000000-0000-4000-8000-000000000000", "Mazondo", 5), item("i2000000-0000-4000-8000-000000000000", "Sadza & greens", 4.5)] }] }, before: openProblem() } },
+    { mock: "K3b Cancel cash order", label: "K3b · Cancel, cash order", sub: "rider estimate from the location pings (B1)", app: { name: "K3b", path: `/queue/order?id=${cookingK3.id}`, scenario: { me: KITCHEN, orders: [{ ...cookingK3, riderEtaAt: ahead(11) }] }, before: openProblem(/Kitchen problem/) } },
   ],
   money: [
     { mock: "T2 Money", label: "T2 · Money", sub: "each row's cash state comes from the API; a rejected order reads —", app: { name: "T2", path: "/statement", scenario: { me: KITCHEN, orders: [], summary: MONEY } } },
@@ -339,13 +339,13 @@ const SETS = {
   ],
   book: [
     { mock: "S4 Book a rider", label: "S4 · Book a rider, one screen", sub: "keyless run: a pasted location reads “Pin the buyer sent”; the fare follows the distance", app: { name: "S4", path: "/deliveries/new", scenario: { me: { ...SHOP, hours: week("00:00", "23:59") } }, before: fillS4 } },
-    { mock: "P1 Prescription check", label: "P1 · Check the prescription", sub: "photo stand-in", app: { name: "P1", path: `/queue/${rxOrder.id}/rx`, scenario: { me: PHARMACY_ME, orders: [rxOrder] }, before: tickTwo } },
+    { mock: "P1 Prescription check", label: "P1 · Check the prescription", sub: "photo stand-in", app: { name: "P1", path: `/queue/rx?id=${rxOrder.id}`, scenario: { me: PHARMACY_ME, orders: [rxOrder] }, before: tickTwo } },
   ],
   ticket: [
-    { mock: "K3 Cooking ticket", label: "K3 · Cooking ticket", sub: "rider line: no arrival time on the read yet (D-77 §4)", app: { name: "K3", path: `/queue/${cookingK3.id}`, scenario: { me: KITCHEN, orders: [cookingK3] } } },
-    { mock: "K4 Hand over", label: "K4 · Hand over", sub: "no “at your counter”: no arrival signal yet", app: { name: "K4", path: `/queue/${handK4.id}`, scenario: { me: KITCHEN, orders: [handK4] } } },
-    { mock: "K5 On the way", label: "K5 · On the way + cash back", sub: "map: OSM around the kitchen; no arrival time on the read", app: { name: "K5", path: `/queue/${wayK5.id}`, scenario: { me: KITCHEN, orders: [wayK5] } } },
-    { mock: "S3 Sealed bag hand over", label: "S3 · Hand over, sealed bag", sub: "photo stand-in (no URL in the fixture)", app: { name: "S3", path: `/queue/${handS3.id}`, scenario: { me: LIVE_SHOP, orders: [handS3], code: "731604" } } },
+    { mock: "K3 Cooking ticket", label: "K3 · Cooking ticket", sub: "rider line: no arrival time on the read yet (D-77 §4)", app: { name: "K3", path: `/queue/order?id=${cookingK3.id}`, scenario: { me: KITCHEN, orders: [cookingK3] } } },
+    { mock: "K4 Hand over", label: "K4 · Hand over", sub: "no “at your counter”: no arrival signal yet", app: { name: "K4", path: `/queue/order?id=${handK4.id}`, scenario: { me: KITCHEN, orders: [handK4] } } },
+    { mock: "K5 On the way", label: "K5 · On the way + cash back", sub: "map: OSM around the kitchen; no arrival time on the read", app: { name: "K5", path: `/queue/order?id=${wayK5.id}`, scenario: { me: KITCHEN, orders: [wayK5] } } },
+    { mock: "S3 Sealed bag hand over", label: "S3 · Hand over, sealed bag", sub: "photo stand-in (no URL in the fixture)", app: { name: "S3", path: `/queue/order?id=${handS3.id}`, scenario: { me: LIVE_SHOP, orders: [handS3], code: "731604" } } },
   ],
   board: [
     { mock: "K1 Orders home", label: "K1 · Orders board", sub: "“coming to your counter” (no arrival signal yet); no arrival ETA on the way (D-77 §4)", app: { name: "K1", path: "/queue", scenario: { me: KITCHEN, orders: BOARD } } },

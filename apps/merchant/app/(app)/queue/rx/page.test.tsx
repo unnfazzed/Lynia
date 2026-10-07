@@ -2,28 +2,28 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import PrescriptionCheckPage from "./page";
-import { ToastProvider } from "../../../../components/m/Toast";
-import { approvePrescription, declinePrescription, getOrder, getPrescriptionPhotos } from "../../../../lib/orders-api";
-import { merchantOrder, merchantProfile } from "../../../../testing/fixtures";
+import { ToastProvider } from "../../../components/m/Toast";
+import { approvePrescription, declinePrescription, getOrder, getPrescriptionPhotos } from "../../../lib/orders-api";
+import { merchantOrder, merchantProfile } from "../../../testing/fixtures";
 
 const ID = "f7c10000-0000-4000-8000-000000000001";
 const { replace } = vi.hoisted(() => ({ replace: vi.fn() }));
 vi.mock("next/navigation", () => {
   const router = { replace, push: vi.fn() };
-  return { useRouter: () => router, useParams: () => ({ id: "f7c10000-0000-4000-8000-000000000001" }) };
+  return { useRouter: () => router, useSearchParams: () => new URLSearchParams({ id: "f7c10000-0000-4000-8000-000000000001" }) };
 });
-vi.mock("../../../../lib/orders-api", () => ({
+vi.mock("../../../lib/orders-api", () => ({
   getOrder: vi.fn(),
   getPrescriptionPhotos: vi.fn(),
   approvePrescription: vi.fn(async () => ({})),
   declinePrescription: vi.fn(async () => ({})),
 }));
 const business = vi.hoisted(() => ({ pharmacist: true }));
-vi.mock("../../../../lib/business", () => ({
+vi.mock("../../../lib/business", () => ({
   useBusiness: () => merchantProfile({ businessType: "shop", shopKind: "pharmacy", myIsPharmacist: business.pharmacist }),
 }));
-vi.mock("../../../../components/KitchenConnectionProvider", () => ({ useKitchenConnection: () => ({ actionsDisabled: false }) }));
-vi.mock("../../../../components/Kitchen", () => ({ Kitchen: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
+vi.mock("../../../components/KitchenConnectionProvider", () => ({ useKitchenConnection: () => ({ actionsDisabled: false }) }));
+vi.mock("../../../components/Kitchen", () => ({ Kitchen: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 
 afterEach(() => {
   cleanup();
@@ -73,7 +73,7 @@ describe("P1 · Check the prescription (Merchant v2, D-77, over Order flow v2's 
     await vi.waitFor(() =>
       expect(approvePrescription).toHaveBeenCalledWith(ID, { checklist: { nameMatches: true, signedStamped: true, recentDate: true } }),
     );
-    expect(replace).toHaveBeenCalledWith(`/queue/${ID}`);
+    expect(replace).toHaveBeenCalledWith(`/queue/order?id=${ID}`);
   });
 
   it("Decline arrives filled in from the unticked box, then tells the customer", async () => {

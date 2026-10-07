@@ -22,6 +22,7 @@ import { Icon } from "../icons";
 import { InfoStrip, ReasonSheet } from "../m/ReasonSheet";
 import { useToast } from "../m/Toast";
 import { SwapPicker, useProposer, type Proposer } from "./proposer";
+import { prescriptionHref } from "../../lib/routes";
 
 type Prep = (typeof PREP_CHIPS_MIN)[number];
 
@@ -223,7 +224,7 @@ export function RingingScreen({
             </span>
           )}
           {rxFirst ? (
-            <Link href={`/queue/${active.id}/rx`} className="m-btn">
+            <Link href={prescriptionHref(active.id)} className="m-btn">
               <Icon name="file-text" size={18} />
               Check the prescription
             </Link>

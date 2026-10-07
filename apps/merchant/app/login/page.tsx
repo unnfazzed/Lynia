@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { getAlarmController } from "../components/alarm-singleton";
 import { AppBar } from "../components/m/AppBar";
 import { MerchantLockup } from "../components/m/Wordmark";
@@ -26,7 +26,6 @@ const DEVICE_CAP_MESSAGE = "This device has added 3 new people today. Sign in on
  */
 export default function LoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [step, setStep] = useState<Step>({ kind: "phone" });
   const [digits, setDigits] = useState("");
   const [code, setCode] = useState("");
@@ -79,7 +78,9 @@ export default function LoginPage() {
       await verifyOtp(step.phone, value);
       // The tap (or the sixth digit) is the user gesture that lets the order alert play later.
       getAlarmController().arm();
-      router.replace(await landingPath(searchParams.get("next")));
+      // Read at sign-in, not with useSearchParams: that would keep this page out of the static HTML, and
+      // sign-in is the one page that should paint before the JS runs (docs/MERCHANT-WEB.md).
+      router.replace(await landingPath(new URLSearchParams(window.location.search).get("next")));
     } catch (err) {
       if (err instanceof ApiError && err.status === 429 && err.reason === "device_signup_cap") setError(DEVICE_CAP_MESSAGE);
       else setError(err instanceof ApiError ? err.message : "That code didn't work. Try again.");

@@ -9,7 +9,6 @@ import { noBusinessPath } from "../lib/team-api";
 const nav = vi.hoisted(() => ({ replace: vi.fn(), next: null as string | null }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: nav.replace, push: vi.fn() }),
-  useSearchParams: () => ({ get: () => nav.next }),
 }));
 
 const alarm = vi.hoisted(() => ({ arm: vi.fn() }));
@@ -37,6 +36,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   nav.next = null;
+  window.history.replaceState(null, "", "/login");
 });
 
 const SESSION = { accessToken: "a", refreshToken: "r", expiresIn: 900, profileId: "p1", role: "customer", needsProfile: true };
@@ -142,6 +142,7 @@ describe("where a fresh sign-in lands", () => {
     vi.mocked(verifyOtp).mockResolvedValue(SESSION as never);
     vi.mocked(getMyMerchant).mockResolvedValue(merchantProfile({ businessType: "shop" }));
     nav.next = "/menu";
+    window.history.replaceState(null, "", `/login?next=${encodeURIComponent(nav.next)}`);
     await signIn();
     await vi.waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/deliveries"));
 
@@ -156,6 +157,7 @@ describe("where a fresh sign-in lands", () => {
     vi.mocked(verifyOtp).mockResolvedValue(SESSION as never);
     vi.mocked(getMyMerchant).mockResolvedValue(merchantProfile({ businessType: "restaurant" }));
     nav.next = "//attacker.example/x";
+    window.history.replaceState(null, "", `/login?next=${encodeURIComponent(nav.next)}`);
     await signIn();
     await vi.waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/queue"));
   });

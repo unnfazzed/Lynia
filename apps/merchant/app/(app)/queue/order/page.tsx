@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { foodOrderMoney, type MerchantOrderResponse, type MerchantProfileResponse } from "@lynia/shared";
 import { Icon } from "../../../components/icons";
@@ -48,6 +48,7 @@ import { detailView, isAfterPickup, money, orderLabel, riderFirstName, slotLabel
 import { changeableLines, openRound, proposalLines } from "../../../lib/substitution";
 import { useNow } from "../../../lib/use-now";
 import { countOf, doorProofLine, ORDER_FLOW as OF, vocabulary, type Vocabulary } from "../../../lib/vocabulary";
+import { prescriptionHref } from "../../../lib/routes";
 
 const POLL_MS = 5_000;
 
@@ -165,7 +166,7 @@ function capitalised(s: string): string {
  * it cooks like any other, its "Can't finish this order" asking for the refund reference.
  */
 export default function OrderPage() {
-  const { id } = useParams<{ id: string }>();
+  const id = useSearchParams().get("id") ?? "";
   const router = useRouter();
   const toast = useToast();
   const business = useBusiness();
@@ -589,7 +590,7 @@ function Cooking(ctx: Ctx) {
           <OrderLines order={order} />
         </div>
         {rxToCheck && (
-          <Link href={`/queue/${order.id}/rx`} className="m-btn m-sm">
+          <Link href={prescriptionHref(order.id)} className="m-btn m-sm">
             <Icon name="file-text" size={18} />
             {OF.rxT}
           </Link>

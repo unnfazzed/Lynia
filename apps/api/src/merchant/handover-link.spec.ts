@@ -40,13 +40,13 @@ function build(over: { order?: Record<string, unknown>; env?: Partial<Env> } = {
   return { svc, audit, row };
 }
 
-const tokenOf = (link: string) => link.split("/h/")[1]!;
+const tokenOf = (link: string) => decodeURIComponent(link.split("/h?t=")[1]!);
 
 describe("the offline-rider hand-over link (Merchant v2, D-77)", () => {
   it("mints a 15-minute link for the assigned rider, with their number, and audit-logs who asked", async () => {
     const { svc, audit } = build();
     const res = await svc.createHandoverLink("owner-1", ORDER, NOW);
-    expect(res.link).toMatch(/^https:\/\/merchant\.example\/h\/a1b20000-0000-4000-8000-000000000000\.\d{10}\.[0-9a-f]{32}$/);
+    expect(res.link).toMatch(/^https:\/\/merchant\.example\/h\?t=a1b20000-0000-4000-8000-000000000000\.\d{10}\.[0-9a-f]{32}$/);
     expect(res.expiresAt).toBe(new Date(NOW.getTime() + HANDOVER_LINK_TTL_S * 1000).toISOString());
     expect(res.riderPhone).toBe("+263772222222");
     expect(audit).toEqual([{ actor: "owner-1", action: "order.handover_link", target: ORDER }]);

@@ -19,7 +19,7 @@ export const API_BASE_URL: string = configured ?? "http://localhost:3000";
  * LyniaGo support on WhatsApp, in international digits (e.g. "263771234567"). Optional: Help opens it
  * (merchant web upgrade L2; help routes to WhatsApp by product decision), and with no number set the Help
  * item hides rather than opening a dead link — the mobile app's help row does the same. Set by the
- * `MERCHANT_SUPPORT_WHATSAPP` repository variable at build time (deploy-merchant-azure.yml).
+ * `MERCHANT_SUPPORT_WHATSAPP` repository variable at build time (deploy-merchant-web.yml).
  */
 export const SUPPORT_WHATSAPP: string | null = (process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP ?? "").replace(/\D/g, "") || null;
 

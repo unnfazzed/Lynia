@@ -31,6 +31,7 @@ import { parseAmountInput } from "../../../lib/money-input";
 import { money } from "../../../lib/orders-view";
 import { formatLocalDigits, localDigits } from "../../../lib/phone-input";
 import { newSessionToken, pinnedLine, type PlaceSuggestion, resolvePlace, reverseGeocode, searchPlaces } from "../../../lib/places";
+import { bookingHref } from "../../../lib/routes";
 
 type Gate = { status: "loading" } | { status: "ready"; business: MerchantProfileResponse; pickup: LatLng } | { status: "no_pin" } | { status: "error"; message: string };
 type Sheet = null | "items" | "type";
@@ -107,7 +108,7 @@ export default function NewBookingPage() {
     setBusy(true);
     try {
       const booking = await createBooking(toBookingRequest(where, phone, lines, shownFare, idempotencyKey.current, collectCash));
-      router.replace(`/deliveries/${booking.id}`);
+      router.replace(bookingHref(booking.id));
     } catch (err) {
       if (redirectIfSessionExpired(err, signOut)) return;
       setBanner(err instanceof ApiError ? err.message : "Couldn't book a rider. Try again.");

@@ -12,7 +12,7 @@ const ID = "11111111-1111-4111-8111-111111111111";
 const nav = vi.hoisted(() => ({ replace: vi.fn() }));
 vi.mock("next/navigation", () => {
   const router = { replace: nav.replace, push: vi.fn() };
-  return { useRouter: () => router, useParams: () => ({ id: "11111111-1111-4111-8111-111111111111" }) };
+  return { useRouter: () => router, useSearchParams: () => new URLSearchParams({ id: "11111111-1111-4111-8111-111111111111" }) };
 });
 
 vi.mock("../../../lib/bookings-api", () => ({
@@ -229,14 +229,14 @@ describe("the other endings", () => {
     expect(await screen.findByText("No rider picked in time")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Offer $0.50 more" }));
     fireEvent.click(screen.getByRole("button", { name: "Try again · $4.00" }));
-    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/deliveries/44444444-4444-4444-8444-444444444444"));
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/deliveries/booking?id=44444444-4444-4444-8444-444444444444"));
     expect(vi.mocked(retryBooking).mock.calls[0]![1]).toMatchObject({ proposedFare: 4 });
   });
 
   it("a rider's cancel leads to Send's re-sent booking", async () => {
     vi.mocked(getBooking).mockResolvedValue(merchantBooking({ state: "cancelled", expiresAt: null, cancelledBy: "rider", rebroadcastedToId: "55555555-5555-4555-8555-555555555555" }));
     render(<Page />);
-    expect((await screen.findByRole("link", { name: /follow it/ })).getAttribute("href")).toBe("/deliveries/55555555-5555-4555-8555-555555555555");
+    expect((await screen.findByRole("link", { name: /follow it/ })).getAttribute("href")).toBe("/deliveries/booking?id=55555555-5555-4555-8555-555555555555");
     expect(screen.queryByRole("button", { name: /Try again/ })).toBeNull();
   });
 

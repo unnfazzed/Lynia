@@ -27,6 +27,7 @@ import { hm, money, orderLabel, riderFirstName } from "../../lib/orders-view";
 import { countOf, ORDER_FLOW as OF, vocabulary } from "../../lib/vocabulary";
 import { useNow } from "../../lib/use-now";
 import { useQueuePoll } from "../../lib/use-queue-poll";
+import { orderHref } from "../../lib/routes";
 
 type LoadState = { status: "loading" } | { status: "ready"; merchant: MerchantProfile } | { status: "error"; message: string };
 
@@ -286,7 +287,7 @@ function ScheduledList({ orders, v }: { orders: readonly MerchantOrderResponse[]
   return (
     <>
       {orders.map((o) => (
-        <Link key={o.id} href={`/queue/${o.id}`} className="m-bc m-row m-dashed">
+        <Link key={o.id} href={orderHref(o.id)} className="m-bc m-row m-dashed">
           <Icon name="clock" size={20} color="var(--muted)" />
           <div className="m-bt">
             <b className="m-num">{[o.scheduledFor ? schedWhen(o.scheduledFor, new Date(now)) : null, orderLabel(o)].filter(Boolean).join(" · ")}</b>

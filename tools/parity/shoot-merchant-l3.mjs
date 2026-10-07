@@ -202,7 +202,7 @@ try {
   app.ridersEmpty = await shoot(browser, { name: "riders-empty-tablet", path: "/riders", viewport: TABLET, scenario: SCENARIOS.newShop, before: waitFor("No riders yet") });
   app.ridersStaff = await shoot(browser, { name: "riders-staff-tablet", path: "/riders", viewport: TABLET, scenario: SCENARIOS.staff, full: true, before: waitFor("Only the owner") });
   app.shopPage = await shoot(browser, { name: "shop-restaurant-tablet", path: "/shop", viewport: TABLET, scenario: SCENARIOS.restaurant, full: true, before: waitFor("Manage riders") });
-  app.pick = await shoot(browser, { name: "pick-your-rider-tablet", path: `/deliveries/${FINDING_ID}`, viewport: TABLET, full: true, before: waitFor("Your rider") });
+  app.pick = await shoot(browser, { name: "pick-your-rider-tablet", path: `/deliveries/booking?id=${FINDING_ID}`, viewport: TABLET, full: true, before: waitFor("Your rider") });
   app.setup = await shoot(browser, { name: "setup-shop-riders-tablet", path: "/setup", viewport: TABLET, scenario: SCENARIOS.newShop, full: true, before: waitFor("Add your riders") });
 } finally {
   await browser.close();
