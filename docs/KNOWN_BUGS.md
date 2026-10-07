@@ -2937,3 +2937,14 @@ U60, U63, P31, P40 negligible; P26/P32 deferred. Three proposed fixes were wrong
 (U02 server backstop would trip the unique index; U33 "other = venue" would mislabel N-18 timeouts; U10 pay bar
 for the whole trip vs. the handshake clock — superseded by owner decision D5). Owner decisions D1–D8 are
 recorded in the same file. Rows above stay **OPEN** until the fix PR that names them lands.
+
+### Fix status (rows are added by each fix PR)
+
+| ID | Finding | Location | Severity | Status |
+|----|---------|----------|----------|--------|
+| U01 | Web: a signed-out page load at any path but "/" stranded the customer on a dead signed-in screen (no way to sign in). | `src/boot/boot-route-watch.tsx`, `src/logic/boot-route.ts` | Blocker | **FIXED** (wave 1): with no session on a route outside `SIGNED_OUT_ROUTES`, `BootRouteWatch` sends the customer to `bootDestination` with the stack cleared (also a signed-out Android deep link/push). Test `src/boot/__tests__/boot-route-watch.test.tsx`. |
+| U03 | Web: a deep-path reload held the splash ~20 s ("Slow network"), forever offline. | `src/boot/boot-route-watch.tsx` | High | **FIXED** (wave 1): same effect reports the landing path (or the U01 redirect target) as the boot destination. Same test. |
+| U05 | Offline cold start into a live order: "Opening your order…" forever, no saved copy or code. | `app/order/[id].tsx` | High | **FIXED** (wave 1): a paused fetch counts as transient. Test `app/order/__tests__/offline-cold-start.test.tsx`. |
+| P07 | Web: the service-worker install downloaded the bundle and fonts a second time (`cache: "reload"`). | `apps/customer-web/public/sw.js` | High | **FIXED** (wave 1): hashed files use the HTTP cache. Test `apps/customer-web/finish-build.test.mjs`. |
+| P27 | Web: no preconnect to the API origin. | `apps/customer-web/finish-build.mjs` | Medium | **FIXED** (wave 1): preconnect + dns-prefetch to `EXPO_PUBLIC_API_URL`'s origin; `smoke.sh` checks it. Same test. |
+| P38 | Web: Inter fonts requested only after the bundle evaluates. | `apps/customer-web/finish-build.mjs` | Low | **FIXED** (wave 1): `<link rel="preload" as="font">` per emitted Inter file. Same test. |

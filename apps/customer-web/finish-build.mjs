@@ -8,8 +8,12 @@
 //      320px screen and focusing it slid the whole page sideways. Native TextInputs have no such minimum.
 //   5. registers the offline shell (public/sw.js, via sw-register.js) and stamps it with this export's build id
 //      and the files its page loads, so each deploy installs a worker that caches that deploy.
-// Usage: node apps/customer-web/finish-build.mjs <export dir>. Idempotent; fails loudly if Expo's
-// index.html no longer has the tags it edits, so a template change can't silently drop them.
+//   6. warms the API connection (preconnect + dns-prefetch to EXPO_PUBLIC_API_URL's origin, the same variable
+//      the export was built with) while the bundle downloads and evaluates (P27), and preloads the Inter fonts
+//      so Home's text doesn't wait for the bundle to ask for them (P38).
+// Usage: EXPO_PUBLIC_API_URL=<api base> node apps/customer-web/finish-build.mjs <export dir>.
+// Idempotent; fails loudly if Expo's index.html no longer has the tags it edits, so a template change can't
+// silently drop them. Tests: node --test apps/customer-web/finish-build.test.mjs
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
@@ -28,6 +32,26 @@ const indexPath = join(out, "index.html");
 let html = readFileSync(indexPath, "utf8");
 const MARK = "<!-- lyniago-customer-web -->";
 
+const assetsDir = join(out, "assets");
+const assetFiles = existsSync(assetsDir)
+  ? readdirSync(assetsDir, { recursive: true, withFileTypes: true })
+      .filter((d) => d.isFile())
+      .map((d) => `/${relative(out, join(d.parentPath, d.name)).split(sep).join("/")}`)
+  : [];
+
+// The API is another origin, so its first request paid DNS + TCP + TLS only after the whole bundle had
+// evaluated. `crossorigin`: apiFetch's requests are CORS, which use the anonymous connection pool.
+const apiUrl = process.env.EXPO_PUBLIC_API_URL;
+const apiOrigin = apiUrl ? new URL(apiUrl).origin : null;
+if (!apiOrigin) console.warn("finish-build: EXPO_PUBLIC_API_URL is not set; no API preconnect");
+const apiHints = apiOrigin ? [`<link rel="preconnect" href="${apiOrigin}" crossorigin />`, `<link rel="dns-prefetch" href="${apiOrigin}" />`] : [];
+// expo-font loads these from the bundle (src/ui/fonts.ts), i.e. only after it has evaluated. Fonts are
+// fetched in CORS mode, so the preload needs `crossorigin` to be reused rather than fetched twice.
+const fontPreloads = assetFiles
+  .filter((p) => /\/Inter-[^/]*\.ttf$/.test(p))
+  .sort()
+  .map((p) => `<link rel="preload" as="font" type="font/ttf" href="${p}" crossorigin />`);
+
 if (!html.includes(MARK)) {
   // viewport-fit=cover lets the app's safe-area insets (notch, home bar) reach the page.
   const viewport = /<meta name="viewport"[^>]*>/;
@@ -36,6 +60,8 @@ if (!html.includes(MARK)) {
 
   const head = [
     MARK,
+    ...apiHints,
+    ...fontPreloads,
     '<meta name="theme-color" content="#00B14F" />',
     '<meta name="description" content="Parcels and food across town." />',
     '<link rel="manifest" href="/manifest.webmanifest" />',
@@ -60,12 +86,6 @@ const swPath = join(out, "sw.js");
 const sw = readFileSync(swPath, "utf8");
 if (!sw.includes('"__LYNIA_BUILD__"') || !sw.includes('["__LYNIA_PRECACHE__"]')) throw new Error("sw.js lost its build placeholders");
 const referenced = [...html.matchAll(/(?:src|href)="(\/[^"/][^"]*)"/g)].map((m) => m[1].split(/[?#]/)[0]);
-const assetsDir = join(out, "assets");
-const assetFiles = existsSync(assetsDir)
-  ? readdirSync(assetsDir, { recursive: true, withFileTypes: true })
-      .filter((d) => d.isFile())
-      .map((d) => `/${relative(out, join(d.parentPath, d.name)).split(sep).join("/")}`)
-  : [];
 const precache = [...new Set([...referenced, ...assetFiles, "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"])]
   .filter((p) => p !== "/sw.js" && existsSync(join(out, p)))
   .sort();

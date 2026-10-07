@@ -1,7 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import Constants from "expo-constants";
-import { Stack, usePathname, type ErrorBoundaryProps } from "expo-router";
+import { Stack, type ErrorBoundaryProps } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useMemo } from "react";
@@ -11,7 +11,7 @@ import { AuthProvider, useAuth } from "../src/auth/auth-context";
 import type { Session } from "../src/auth/session";
 import { SessionGate } from "../src/auth/session-gate";
 import { BootPhaseProvider, useBootPhase } from "../src/boot/boot-phase";
-import { reportBootRoute } from "../src/boot/boot-readiness";
+import { BootRouteWatch } from "../src/boot/boot-route-watch";
 import { prewarmBootReads } from "../src/boot/prewarm";
 import { isUpdateRequired, isVersionBelow } from "../src/config";
 import { useOfflineBannerClaimed } from "../src/net/offline-banner-owner";
@@ -104,21 +104,6 @@ function PushSync(): null {
   const { session } = useAuth();
   const { booting } = useBootPhase();
   usePushRegistration(booting ? null : session);
-  return null;
-}
-
-/**
- * Tells the splash where the app actually is while it boots (src/boot/boot-readiness.ts
- * `reportBootRoute`). A boot bound for Home that is redirected before Home is ready — a session the
- * server rejects (the SessionGate replaces Home with /phone), a route gate — would otherwise hold the
- * splash, waiting on Home's tasks, until its 20s give-up (S-2). Renders nothing.
- */
-function BootRouteWatch(): null {
-  const pathname = usePathname();
-  const { booting } = useBootPhase();
-  useEffect(() => {
-    if (booting) reportBootRoute(pathname);
-  }, [booting, pathname]);
   return null;
 }
 

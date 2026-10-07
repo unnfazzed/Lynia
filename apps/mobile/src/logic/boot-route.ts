@@ -52,3 +52,35 @@ export function bootRedirectTarget(params: {
   const deepLink = session ? pushDestination(coldStartData, session.role === "rider") : null;
   return deepLink ?? bootDestination(params);
 }
+
+/**
+ * U01 (customer review 2026-10-07): the routes that work WITHOUT a session. Anything else reached with
+ * no session (a web page load at a deep path after Safari wiped storage, a bookmark, a signed-out
+ * Android deep link or push) is a dead signed-in screen whose every request fails, so the boot route
+ * watch (src/boot/boot-route-watch.tsx) sends it to {@link bootDestination} instead.
+ *
+ * - `/` is the boot route itself (app/index.tsx makes the decision there).
+ * - `/onboarding`, `/phone`, `/verify` are the sign-in flow; `/settings/privacy` is linked from the phone
+ *   screen and renders a signed-out variant.
+ * - `/profile/setup` comes straight after sign-in (verify.tsx); listed so a session still committing can
+ *   never bounce a just-verified account back to the phone screen.
+ * - `/force-update`, `/permissions` and `/order-updates` are the update screen and the permission asks.
+ *   They make no authed reads of their own and hand over to a route that is checked in turn.
+ */
+export const SIGNED_OUT_ROUTES: readonly string[] = [
+  "/",
+  "/onboarding",
+  "/phone",
+  "/verify",
+  "/settings/privacy",
+  "/profile/setup",
+  "/force-update",
+  "/permissions",
+  "/order-updates",
+];
+
+/** Whether `pathname` (expo-router's `usePathname()`, no query string) is usable with no session. */
+export function isSignedOutRoute(pathname: string): boolean {
+  const path = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+  return SIGNED_OUT_ROUTES.includes(path);
+}

@@ -550,7 +550,16 @@ function ParcelOrderScreen(): React.ReactElement {
   }, [status]);
 
   // ── which order is on screen: the live one, or the saved copy on an offline cold start (2.4) ──
-  const loadErrorKind = !orderQ.data && orderQ.isError ? orderLoadErrorKind(orderQ.error instanceof ApiError ? orderQ.error.status : undefined) : null;
+  // U05 (customer review 2026-10-07): a fetch PAUSED for the network (an offline cold start) is neither
+  // loading nor an error, so this used to stay null and the screen sat on "Opening your order…" forever,
+  // hiding the saved copy and its delivery code. Paused counts as transient, as app/rider/job.tsx does.
+  const loadErrorKind = orderQ.data
+    ? null
+    : orderQ.isError
+      ? orderLoadErrorKind(orderQ.error instanceof ApiError ? orderQ.error.status : undefined)
+      : orderQ.isPaused
+        ? "transient"
+        : null;
   const saved = loadErrorKind === "transient" && savedCopy != null ? savedCopy : null;
   const order: OrderSnapshot | undefined = orderQ.data ?? (saved ? selectOrderShell(saved.order) : undefined);
   const isRiderViewer = order?.viewerRole === "rider";

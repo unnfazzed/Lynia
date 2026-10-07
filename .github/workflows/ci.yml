@@ -414,6 +414,10 @@ jobs:
         if: steps.changes.outputs.run == 'true'
         run: node apps/customer-web/finish-build.mjs "$RUNNER_TEMP/expo-export-web"
 
+      - name: Customer web build tests (finish-build, offline shell)
+        if: steps.changes.outputs.run == 'true'
+        run: node --test apps/customer-web/finish-build.test.mjs
+
   # Terraform config validation with DEFAULTS ONLY — deliberately no tfvars.
   #
   # This is the condition every human hits and CI never did. gcp-drift-detect.yml is the only other

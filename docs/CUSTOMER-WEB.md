@@ -57,7 +57,8 @@ and code behind `Platform.OS === "android"` never runs on the web.
 ```bash
 npm ci --omit=peer --prefix tools/web-runtime
 cd apps/mobile
-EXPO_PUBLIC_LYNIA_WEB=1 EXPO_NO_WEB_SETUP=1 EXPO_PUBLIC_API_URL=https://api.lyniago.com \
+export EXPO_PUBLIC_API_URL=https://api.lyniago.com   # the export AND finish-build (API preconnect) read it
+EXPO_PUBLIC_LYNIA_WEB=1 EXPO_NO_WEB_SETUP=1 \
   npx expo export --platform web --output-dir ../customer-web/dist
 node ../customer-web/finish-build.mjs ../customer-web/dist
 ```
