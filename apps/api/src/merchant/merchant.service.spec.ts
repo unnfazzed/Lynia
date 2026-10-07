@@ -400,6 +400,33 @@ describe("MerchantService categories (D-29)", () => {
     );
   });
 
+  // MJ-RM12 follow-up: placement now refuses dishes outside the window, so the API must not store an
+  // unusable one (the merchant web already blocks both; this is the server's own enforcement).
+  it("refuses a window whose start isn't before its end, on create and on the MERGED update", async () => {
+    let written: unknown;
+    const s = svc({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      merchantCategory: {
+        findFirst: async () => ({ id: "c1", merchantId: "m1", availableFrom: "07:00", availableTo: "11:00" }),
+        create: async ({ data }: { data: unknown }) => ((written = data), { id: "c2", ...(data as object), _count: { dishes: 0 } }),
+        update: async ({ data }: { data: unknown }) => ((written = data), { id: "c1", name: "Breakfast", _count: { dishes: 0 } }),
+      },
+    });
+    await expect(s.createCategory("p1", { name: "Late", availableFrom: "22:00", availableTo: "02:00" })).rejects.toThrow(/start time must be before the end time/i);
+    await expect(s.createCategory("p1", { name: "Never", availableFrom: "09:00", availableTo: "09:00" })).rejects.toThrow(/start time must be before/i);
+    // Only one end sent: merged with the stored 07:00–11:00 it becomes 12:00–11:00.
+    await expect(s.updateCategory("p1", "c1", { availableFrom: "12:00" })).rejects.toThrow(/start time must be before/i);
+    // Clearing one end only leaves a half window.
+    await expect(s.updateCategory("p1", "c1", { availableTo: null })).rejects.toThrow(/must be set together/i);
+    expect(written).toBeUndefined();
+    // Valid edits still save: a merged 08:00–11:00, clearing both, and a rename that leaves the window alone.
+    await s.updateCategory("p1", "c1", { availableFrom: "08:00" });
+    expect(written).toEqual({ availableFrom: "08:00" });
+    await s.updateCategory("p1", "c1", { availableFrom: null, availableTo: null });
+    await s.updateCategory("p1", "c1", { name: "Brunch" });
+    await s.createCategory("p1", { name: "Breakfast", availableFrom: "07:00", availableTo: "11:00" });
+  });
+
   it("deletes an empty category", async () => {
     let deletedId: string | undefined;
     const s = svc({
@@ -908,6 +935,17 @@ describe("MerchantService customer read API (flag + pilotEnabled allowlist)", ()
       merchantDish: { findMany: async () => [{ id: "d1", name: "Roast chicken" }, { id: "d2", name: "roast chicken" }, { id: "d3", name: "Pizza" }] },
     });
     expect(await s.searchPopular()).toEqual({ terms: ["Roast chicken", "Pizza"] });
+  });
+
+  it("MJ-RM12: searchPopular never suggests a dish from a hidden category", async () => {
+    let where: Record<string, unknown> | undefined;
+    const s = svc({
+      merchant: { findMany: async () => [{ id: "m1" }] },
+      merchantOrderItem: { groupBy: async () => [{ dishId: "d1", _count: { orderId: 9 } }] },
+      merchantDish: { findMany: async (args: { where: Record<string, unknown> }) => ((where = args.where), []) },
+    });
+    await s.searchPopular();
+    expect(where).toMatchObject({ isDraft: false, category: { hidden: false } });
   });
 
   it("searchPopular answers no terms when no restaurant is live", async () => {

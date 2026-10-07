@@ -460,10 +460,7 @@ jobs:
         # Merchant kill switches come in as env, never as ${{ }} inside the script — see the
         # validation loop below for why (delimiter breakout + injection).
         env:
-          # Restaurants is launched, and every Shops / Pharmacy order route sits behind it too
-          # (RestaurantsEnabledGuard), so unset means ON like those two (U65). Set the Variable to "false"
-          # for the kill switch.
-          RESTAURANTS_ENABLED: ${{ vars.RESTAURANTS_ENABLED || 'true' }}
+          RESTAURANTS_ENABLED: ${{ vars.RESTAURANTS_ENABLED }}
           MERCHANT_DISPATCH_AUTO_ENABLED: ${{ vars.MERCHANT_DISPATCH_AUTO_ENABLED }}
           MERCHANT_WALLET_ENABLED: ${{ vars.MERCHANT_WALLET_ENABLED }}
           # Shops and Pharmacy (ledger D-58) are launched, so unset means ON; set the Variable to "false"
@@ -509,8 +506,9 @@ jobs:
 
           # Merchant-vertical kill switches (docs/plans/2026-07-26-merchant-verticals-plan.md §0b.3).
           # Wired NOW, while every flag is off, so going live is a repo-Variable change — never a code
-          # edit to this workflow at the moment you least want one. Unset yields "false" (matching the
-          # env schema's own fail-safe), so today's behaviour is identical to not passing them.
+          # edit to this workflow at the moment you least want one. An unset Variable yields "false"
+          # (matching the env schema's own fail-safe) — except SHOPS_ENABLED, PHARMACY_ENABLED and
+          # RX_ENABLED, which are launched and default to "true" in the env: block above.
           # Restaurants go-live = `gh variable set RESTAURANTS_ENABLED --body "true"` + the next
           # deploy (or an immediate `gcloud run services update`); rollback is the same flip back.
           # The pilot COHORT (which merchants are live) is domain data, not an env var — flipping

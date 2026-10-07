@@ -64,13 +64,15 @@ export default function DeleteAccountScreen({ initialStep = "explain", initialAc
   // deletion through, so it doesn't count as running here either.
   const activeQ = useQuery({ queryKey: ["activeCustomerOrders"], queryFn: getActiveCustomerOrders });
   // MA-M7: a rider's job they're carrying blocks deletion server-side too — check it as well.
-  const isRider = !!useQuery({ queryKey: ["me"], queryFn: getMe }).data?.rider;
+  const meQ = useQuery({ queryKey: ["me"], queryFn: getMe });
+  const isRider = !!meQ.data?.rider;
   const riderJobQ = useQuery({ queryKey: ["activeJob"], queryFn: getActiveOrder, enabled: isRider });
   const riderJob = isRider && riderJobQ.data && riderJobQ.data.status !== "cancelled" ? riderJobQ.data : null;
   const running = (activeQ.data ?? []).some((o) => o.status !== "delivered") || !!riderJob;
-  // U14: until the read has answered, "No delivery running" would be a guess — draw no box and keep the
-  // link off (the server refuses a live order anyway).
-  const known = activeQ.isSuccess;
+  // U14: until every read the box depends on has answered (the customer's orders, who this is, and a
+  // rider's own job), "No delivery running" would be a guess — draw no box and keep the link off (the
+  // server refuses a live order anyway).
+  const known = activeQ.isSuccess && meQ.isSuccess && (!isRider || riderJobQ.isSuccess);
 
   const deleteM = useMutation({
     mutationFn: deleteAccount,

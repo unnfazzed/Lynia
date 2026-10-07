@@ -32,12 +32,16 @@ function order(over: Record<string, unknown> = {}) {
   };
 }
 
-function build(opts: { prescription: { status: string } | null; round?: unknown }) {
+function build(opts: { prescription: { status: string } | null; round?: unknown; pharmacist?: boolean }) {
   const createdItems: Array<Record<string, unknown>> = [];
   const rounds: Array<Record<string, unknown>> = [];
   const tx: Record<string, unknown> = {
     $queryRaw: async () => [],
-    merchantMember: { findFirst: async () => ({ merchantId: "m1", role: "owner", merchant: { businessType: "shop" } }) },
+    merchantMember: {
+      findFirst: async () => ({ merchantId: "m1", role: "owner", merchant: { businessType: "shop" } }),
+      // The proposer's own team row (MJ-H4: only a pharmacist may swap in an Rx item). Default: a pharmacist.
+      findUnique: async () => ({ isPharmacist: opts.pharmacist ?? true }),
+    },
     order: { findFirst: async () => order(), updateMany: async () => ({ count: 1 }) },
     orderPrescription: { findUnique: async () => opts.prescription },
     merchantDish: {
@@ -76,26 +80,36 @@ describe("OrderSubstitutionService — swapping in a 'Prescription needed' item 
     }
   });
 
-  it("allows it on an approved prescription, and a swap to an OTC item never asks", async () => {
-    const approved = build({ prescription: { status: "approved" } });
-    await approved.svc.propose("owner-1", "o1", swapTo("amox"));
-    expect(approved.rounds).toHaveLength(1);
-    const otc = build({ prescription: null });
-    await otc.svc.propose("owner-1", "o1", swapTo("otc"));
-    expect(otc.rounds).toHaveLength(1);
+  it("refuses a swap to an Rx item proposed by a team member who isn't a pharmacist, even on an approved prescription", async () => {
+    const { svc, rounds } = build({ prescription: { status: "approved" }, pharmacist: false });
+    await expect(svc.propose("cashier-1", "o1", swapTo("amox"))).rejects.toMatchObject({ status: 409, response: { reason: "rx_swap_needs_pharmacist" } });
+    expect(rounds).toHaveLength(0);
   });
 
-  it("an accepted swap to an Rx item lands as an rxRequired line; an OTC swap does not", async () => {
-    const round = (dishId: string) => ({
+  it("a pharmacist may on an approved prescription, and the line records it; an OTC swap never asks", async () => {
+    const approved = build({ prescription: { status: "approved" } });
+    await approved.svc.propose("pharmacist-1", "o1", swapTo("amox"));
+    expect(approved.rounds).toHaveLength(1);
+    const rxLines = (approved.rounds[0]!.lines as { create: Array<Record<string, unknown>> }).create;
+    expect(rxLines[0]).toMatchObject({ swapDishId: "amox", swapRxRequired: true });
+    const otc = build({ prescription: null, pharmacist: false });
+    await otc.svc.propose("cashier-1", "o1", swapTo("otc"));
+    expect(otc.rounds).toHaveLength(1);
+    expect((otc.rounds[0]!.lines as { create: Array<Record<string, unknown>> }).create[0]).not.toHaveProperty("swapRxRequired");
+  });
+
+  it("an accepted swap lands as an rxRequired line from what the line RECORDED, not the dish as it reads now", async () => {
+    const round = (dishId: string, swapRxRequired: boolean) => ({
       id: "r1",
       status: "open",
       deadlineAt: new Date(Date.now() + 60_000),
-      lines: [{ id: "sl1", action: "swap", orderItemId: "line1", nameSnapshot: LINE.nameSnapshot, priceUsd: 5, fromQuantity: 1, swapDishId: dishId, swapNameSnapshot: "x", swapPriceUsd: 6.2, swapQuantity: 1 }],
+      lines: [{ id: "sl1", action: "swap", orderItemId: "line1", nameSnapshot: LINE.nameSnapshot, priceUsd: 5, fromQuantity: 1, swapDishId: dishId, swapNameSnapshot: "x", swapPriceUsd: 6.2, swapQuantity: 1, swapRxRequired }],
     });
-    const rx = build({ prescription: { status: "approved" }, round: round("amox") });
+    // Recorded as Rx at propose; the dish has since been edited (here: it now reads OTC) — still Rx.
+    const rx = build({ prescription: { status: "approved" }, round: round("otc", true) });
     await rx.svc.confirm("c1", "o1", { roundId: "r1", answers: [{ lineId: "sl1", accept: true }] });
-    expect(rx.createdItems[0]).toMatchObject({ dishId: "amox", rxRequired: true });
-    const otc = build({ prescription: null, round: round("otc") });
+    expect(rx.createdItems[0]).toMatchObject({ dishId: "otc", rxRequired: true });
+    const otc = build({ prescription: null, round: round("otc", false) });
     await otc.svc.confirm("c1", "o1", { roundId: "r1", answers: [{ lineId: "sl1", accept: true }] });
     expect(otc.createdItems[0]).toMatchObject({ dishId: "otc" });
     expect(otc.createdItems[0]).not.toHaveProperty("rxRequired");

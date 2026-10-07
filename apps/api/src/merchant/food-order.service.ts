@@ -458,8 +458,10 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     for (const item of body.items) {
       const dish = dishById.get(item.dishId)!;
       if (dish.isDraft) throw new ConflictException(`${dish.name} isn't available yet`);
-      if (dish.category.hidden || !categoryServedNow(dish.category.availableFrom, dish.category.availableTo, servedAt)) {
-        throw new ConflictException(`${dish.name} isn't available right now`);
+      if (dish.category.hidden) throw new ConflictException(`${dish.name} isn't available right now`);
+      if (!categoryServedNow(dish.category.availableFrom, dish.category.availableTo, servedAt)) {
+        // True of "now" and of a scheduled slot alike. Review shows a 4xx message verbatim (its toast).
+        throw new ConflictException({ reason: "category_window", message: `${dish.name} isn't served at that time` });
       }
       if (isDishOutOfStock(dish)) throw new ConflictException(`${dish.name} is out of stock right now`);
     }

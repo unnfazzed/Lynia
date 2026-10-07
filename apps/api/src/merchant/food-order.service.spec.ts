@@ -267,7 +267,7 @@ describe("FoodOrderService.placeOrder", () => {
       vi.useFakeTimers({ toFake: ["Date"] });
       // 09:30 UTC is 11:30 in Harare: Breakfast is over (a UTC reading would still say 09:30, served).
       vi.setSystemTime(new Date("2026-07-29T09:30:00Z"));
-      await expect(placeWith(BREAKFAST)).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/isn't available/) });
+      await expect(placeWith(BREAKFAST)).rejects.toMatchObject({ status: 409, response: { reason: "category_window", message: "Sadza & Chicken isn't served at that time" } });
       // 05:30 UTC is 07:30 in Harare: served (a UTC reading would say 05:30, not yet).
       vi.setSystemTime(new Date("2026-07-29T05:30:00Z"));
       await expect(placeWith(BREAKFAST)).resolves.toBe(true);
@@ -277,7 +277,7 @@ describe("FoodOrderService.placeOrder", () => {
       vi.useFakeTimers({ toFake: ["Date"] });
       vi.setSystemTime(new Date("2026-07-29T18:00:00Z")); // 20:00 Harare, Breakfast long over
       await expect(placeWith(BREAKFAST, { scheduledFor: new Date("2026-07-30T06:30:00Z") })).resolves.toBe(true); // 08:30 tomorrow
-      await expect(placeWith(BREAKFAST, { scheduledFor: new Date("2026-07-30T10:00:00Z") })).rejects.toMatchObject({ status: 409 }); // 12:00
+      await expect(placeWith(BREAKFAST, { scheduledFor: new Date("2026-07-30T10:00:00Z") })).rejects.toMatchObject({ status: 409, response: { reason: "category_window", message: expect.stringMatching(/isn't served at that time$/) } }); // 12:00
     });
   });
 

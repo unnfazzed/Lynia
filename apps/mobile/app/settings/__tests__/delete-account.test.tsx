@@ -38,7 +38,10 @@ jest.mock("../../../src/auth/auth-context", () => ({
 }));
 jest.mock("../../../src/api/auth", () => ({
   deleteAccount: () => mockDeleteAccount(),
-  getMe: async () => mockMe,
+  getMe: async () => {
+    if (mockMe instanceof Error) throw mockMe;
+    return mockMe;
+  },
 }));
 jest.mock("../../../src/api/orders", () => ({
   getActiveCustomerOrders: () => mockActiveOrders(),
@@ -173,6 +176,25 @@ describe("delete account — the explainer (First Run v2 I)", () => {
     mockActiveOrders.mockRejectedValue(new Error("offline"));
     const tree = await render();
     await settle();
+    expect(has(tree, "No delivery running")).toBe(false);
+    expect(enabled(tree, "Delete account")).toBe(false);
+  });
+
+  it("U14: every read the box depends on must answer — a failed profile read or rider-job read keeps the link off", async () => {
+    mockMe = new Error("offline");
+    let tree = await render();
+    await settle();
+    expect(has(tree, "No delivery running")).toBe(false);
+    expect(enabled(tree, "Delete account")).toBe(false);
+    act(() => tree.unmount());
+    activeTree = null;
+
+    mockMe = { rider: { kycStatus: "verified" } };
+    mockRiderJob.mockRejectedValue(new Error("offline"));
+    tree = await render();
+    await settle();
+    activeTree = tree;
+    expect(mockRiderJob).toHaveBeenCalled();
     expect(has(tree, "No delivery running")).toBe(false);
     expect(enabled(tree, "Delete account")).toBe(false);
   });

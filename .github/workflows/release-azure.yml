@@ -426,10 +426,7 @@ jobs:
           RECOMMENDED_APP_VERSION_IOS: ${{ vars.RECOMMENDED_APP_VERSION_IOS }}
           APP_WHATS_NEW: ${{ vars.APP_WHATS_NEW }}
           REFRESH_TTL_SECONDS: ${{ vars.REFRESH_TTL_SECONDS }}
-          # Restaurants is launched, and every Shops / Pharmacy order route sits behind it too
-          # (RestaurantsEnabledGuard), so unset means ON like those two (U65). Set the Variable to "false"
-          # for the kill switch.
-          RESTAURANTS_ENABLED: ${{ vars.RESTAURANTS_ENABLED || 'true' }}
+          RESTAURANTS_ENABLED: ${{ vars.RESTAURANTS_ENABLED }}
           MERCHANT_DISPATCH_AUTO_ENABLED: ${{ vars.MERCHANT_DISPATCH_AUTO_ENABLED }}
           MERCHANT_WALLET_ENABLED: ${{ vars.MERCHANT_WALLET_ENABLED }}
           # Shops and Pharmacy (ledger D-58) are launched, so unset means ON; set the Variable to "false"
