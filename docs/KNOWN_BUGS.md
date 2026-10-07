@@ -2914,3 +2914,14 @@ Source: `docs/e2e-runs/2026-10-07-merchant/REPORT.md` (live browser run of the m
 | MJ-RH1…RH4 | "It wasn't returned" instantly writes off the debt and suspends the rider; ended bookings vanish from the board; hours page shows 08:00–22:00 when none were saved, while customers see 24/7; a 5xx on /merchant/me leaves the board and alarm off. | see report addendum | High | **OPEN** |
 | MJ-RM1…RM19, MJ-RL1…RL28 | Review addendum: lifecycle, booking, Money in UTC not Harare time, listing, branches, speed and attack findings. | `docs/e2e-runs/2026-10-07-merchant/REPORT.md` addendum | Medium/Low | **OPEN** |
 
+
+## Reviewed list 2026-10-07 — customer + merchant audits cross-checked (interactive)
+
+`docs/REVIEWED-ISSUES-2026-10-07.md` merges the merchant audit above with the customer UI/UX + speed review
+(`docs/CUSTOMER-UX-PERF-REVIEW-2026-10-07.md`, PR #1118, IDs U01–U67 / P01–P42). Five independent checkers
+re-traced every blocker/high, every cross-side pair and every split verdict against `main` @ `26536c5`.
+Result: ~200 raw findings → ~150 distinct; 22 cross-side clusters (C1–C22) with one fix each; P28 refuted;
+U60, U63, P31, P40 negligible; P26/P32 deferred. Three proposed fixes were wrong and are corrected there
+(U02 server backstop would trip the unique index; U33 "other = venue" would mislabel N-18 timeouts; U10 pay bar
+for the whole trip vs. the handshake clock — superseded by owner decision D5). Owner decisions D1–D8 are
+recorded in the same file. Rows above stay **OPEN** until the fix PR that names them lands.
