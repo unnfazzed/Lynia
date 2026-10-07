@@ -166,4 +166,33 @@ describe("ThrottleGuard", () => {
     await guard.canActivate(makeCtx({ headers: { authorization: "Bearer garbage" }, ip: "3.3.3.3" }));
     expect([...store.counts.keys()].some((k) => k.includes("3.3.3.3"))).toBe(true);
   });
+
+  it("LC-D19: a store error fails OPEN — the request passes and the error is counted, not a 500", async () => {
+    const store = makeStore();
+    store.hit = async () => {
+      throw new Error("Connection is closed.");
+    };
+    const recorded: string[] = [];
+    const metrics = {
+      recordThrottleStoreError: (prefix: string) => recorded.push(prefix),
+    } as unknown as ConstructorParameters<typeof ThrottleGuard>[3];
+    const guard = new ThrottleGuard(
+      makeReflector({ limit: 1, windowSec: 60, keyPrefix: "sos-raise" }),
+      store,
+      makeTokens(),
+      metrics,
+    );
+    const ctx = makeCtx({ ip: "1.1.1.1" });
+    // Past the limit of 1 and still allowed: the counter can't be read, so rate limiting degrades.
+    expect(await guard.canActivate(ctx)).toBe(true);
+    expect(await guard.canActivate(ctx)).toBe(true);
+    expect(recorded).toEqual(["sos-raise", "sos-raise"]);
+  });
+
+  it("LC-D19: fail-open is scoped to store errors — a healthy store over the limit still 429s", async () => {
+    const guard = new ThrottleGuard(makeReflector({ limit: 1, windowSec: 60, keyPrefix: "t" }), makeStore(), makeTokens());
+    const ctx = makeCtx({ ip: "1.1.1.1" });
+    expect(await guard.canActivate(ctx)).toBe(true);
+    await expect(guard.canActivate(ctx)).rejects.toMatchObject({ status: 429 });
+  });
 });

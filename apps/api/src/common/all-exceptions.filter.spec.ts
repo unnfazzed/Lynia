@@ -1,14 +1,18 @@
 import { type ArgumentsHost, ForbiddenException, HttpException, HttpStatus } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
-import { AllExceptionsFilter } from "./all-exceptions.filter";
+import { Prisma } from "@prisma/client";
+import { AllExceptionsFilter, DB_UNAVAILABLE_RETRY_AFTER_SEC } from "./all-exceptions.filter";
 
 /** Builds a fake HTTP ArgumentsHost whose response captures the status + json body. */
 function makeHost(): {
   host: ArgumentsHost;
-  captured: { status?: number; body?: unknown };
+  captured: { status?: number; body?: unknown; headers: Record<string, string> };
 } {
-  const captured: { status?: number; body?: unknown } = {};
+  const captured: { status?: number; body?: unknown; headers: Record<string, string> } = { headers: {} };
   const res = {
+    setHeader(name: string, value: string) {
+      captured.headers[name] = value;
+    },
     status(code: number) {
       captured.status = code;
       return {
@@ -94,5 +98,43 @@ describe("AllExceptionsFilter", () => {
     expect(idA).not.toBe(idB);
 
     errSpy.mockRestore();
+  });
+
+  describe("LC-D22: transient DB-unavailable errors become a 503 with Retry-After", () => {
+    const known = (code: string) =>
+      new Prisma.PrismaClientKnownRequestError("db down", { code, clientVersion: "7.10.0" });
+
+    it.each([
+      ["pg-pool acquire timeout (plain Error, as the pg adapter surfaces it)", new Error("timeout exceeded when trying to connect")],
+      ["pg-pool new-connection timeout", new Error("Connection terminated due to connection timeout")],
+      ["a pool timeout wrapped as a cause", new Error("query failed", { cause: new Error("timeout exceeded when trying to connect") })],
+      ["P1001 can't reach database", known("P1001")],
+      ["P1002 server timed out", known("P1002")],
+      ["P1008 socket timeout", known("P1008")],
+      ["P1017 connection closed", known("P1017")],
+      ["P2024 engine pool timeout", known("P2024")],
+      ["P2037 too many connections", known("P2037")],
+      ["init error P1001", new Prisma.PrismaClientInitializationError("cannot reach", "7.10.0", "P1001")],
+    ])("%s → 503", (_label, err) => {
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const { host, captured } = makeHost();
+      new AllExceptionsFilter().catch(err, host);
+      expect(captured.status).toBe(503);
+      expect(captured.headers["Retry-After"]).toBe(String(DB_UNAVAILABLE_RETRY_AFTER_SEC));
+      const body = captured.body as { statusCode: number; message: string; correlationId: string };
+      expect(body.statusCode).toBe(503);
+      expect(body.correlationId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(JSON.stringify(body)).not.toContain("db down");
+      errSpy.mockRestore();
+    });
+
+    it("a non-transient Prisma error (P2002 unique violation) stays a plain 500 with no Retry-After", () => {
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const { host, captured } = makeHost();
+      new AllExceptionsFilter().catch(known("P2002"), host);
+      expect(captured.status).toBe(500);
+      expect(captured.headers["Retry-After"]).toBeUndefined();
+      errSpy.mockRestore();
+    });
   });
 });

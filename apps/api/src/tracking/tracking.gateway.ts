@@ -328,13 +328,22 @@ export class TrackingGateway
         if (room.startsWith("board:geo:") || room === BOARD_ROOM) await client.leave(room);
       }
 
-      if (lat !== undefined && lng !== undefined) {
-        const rooms = boardCellNeighborhood(lat, lng).map(boardGeoRoom);
-        for (const room of rooms) await client.join(room);
-        return { joined: rooms.length };
+      const rooms =
+        lat !== undefined && lng !== undefined ? boardCellNeighborhood(lat, lng).map(boardGeoRoom) : [BOARD_ROOM];
+      for (const room of rooms) await client.join(room);
+
+      // BH-25-SIB-1: re-check standing AFTER joining. kickRiderFromBoard runs post-commit off a
+      // fetchSockets() snapshot, so a subscribe that passed the gate above before a suspend/hold committed
+      // but joined after the kick's snapshot would otherwise keep those rooms until reconnect. Join-then-
+      // read here vs commit-then-snapshot there means at least one side sees the other: either this read
+      // sees the committed demotion (we leave), or the kick's snapshot is taken after our join (it leaves
+      // for us). No cross-instance lock needed; one PK lookup per subscribe. A failed read fails closed.
+      const stillEligible = await this.tracking.isBoardEligible(user.sub).catch(() => false);
+      if (!stillEligible) {
+        for (const room of rooms) await client.leave(room);
+        return { error: "forbidden" };
       }
-      await client.join(BOARD_ROOM);
-      return { joined: "board" };
+      return lat !== undefined && lng !== undefined ? { joined: rooms.length } : { joined: "board" };
     });
   }
 
@@ -566,7 +575,8 @@ export class TrackingGateway
    * the cluster-wide socket registry (fetchSockets — the same Redis adapter the presence guard uses) to
    * find the rider's sockets on ANY instance, then leaves the city-wide BOARD_ROOM and every board:geo:*
    * cell room — ONLY the board rooms, so an assigned rider still tracking their own delivery keeps that
-   * order room. Never throws.
+   * order room. Never throws. A boardSubscribe racing this kick (joining after the snapshot) is closed
+   * by boardSubscribe's own post-join standing re-check (BH-25-SIB-1).
    */
   async kickRiderFromBoard(riderId: string): Promise<void> {
     if (!this.server) return;

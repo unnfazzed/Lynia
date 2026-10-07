@@ -131,6 +131,42 @@ describe("TrackingGateway.boardSubscribe", () => {
     expect(client.join).not.toHaveBeenCalled();
   });
 
+  it("BH-25-SIB-1: a suspend committed between the gate and the join (kick snapshot already taken) leaves no board room", async () => {
+    const client = fakeSocket({ sub: "rider-1", role: "rider" });
+    let suspended = false;
+    const g = gateway({
+      isBoardEligible: vi.fn(async () => {
+        if (suspended) return false;
+        // The gate read passes; then the standing flip commits and the post-commit kick runs off a
+        // fetchSockets() snapshot taken BEFORE this socket has joined any board room.
+        suspended = true;
+        await g.kickRiderFromBoard("rider-1");
+        return true;
+      }),
+    });
+    g.server = fakeServer([remoteSocket("rider-1", [])]).server as never;
+
+    const res = await g.boardSubscribe(client as never, { lat: -17.8292, lng: 31.0522 });
+
+    expect(res).toEqual({ error: "forbidden" });
+    // The snapshot missed the fresh rooms, so the subscribe side must have left them itself.
+    expect([...client.rooms].filter((r) => r.startsWith("board:") || r === BOARD_ROOM)).toEqual([]);
+  });
+
+  it("BH-25-SIB-1: a failing post-join standing re-check fails closed (rooms left, forbidden)", async () => {
+    const client = fakeSocket({ sub: "rider-1", role: "rider" });
+    const isBoardEligible = vi
+      .fn<() => Promise<boolean>>()
+      .mockResolvedValueOnce(true)
+      .mockRejectedValueOnce(new Error("db down"));
+    const g = gateway({ isBoardEligible } as Partial<TrackingService>);
+
+    const res = await g.boardSubscribe(client as never, {});
+
+    expect(res).toEqual({ error: "forbidden" });
+    expect(client.rooms.has(BOARD_ROOM)).toBe(false);
+  });
+
   it("returns unauthenticated when the socket carries no user", async () => {
     const g = gateway({ isBoardEligible: vi.fn(async () => true) });
     const client = fakeSocket(undefined);
