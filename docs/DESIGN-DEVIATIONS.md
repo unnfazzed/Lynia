@@ -5116,3 +5116,31 @@ already draw, with no new element:
   with this order?" pill. No new element.
 - **Upstream:** the handoffs should draw a locked-code state and the past-cap state on both sides (and decide whether a
   "Send a new code" button belongs on the customer's card). Reported upstream; the kit is not edited here.
+
+## D-92 · Review & place and Shops / Pharmacy browse: wording and states through drawn elements — APPROVED (owner decision D6, 2026-10-07)
+
+**Owner decision D6 (reviewed list 2026-10-07):** *"Copy fixes only. Skip new UI."* — the copy change for U64 goes
+ahead with a ledger line; anything that needs a new element waits for a design export.
+
+Order flow v2 (`handoff/order-flow-v2/`, D-59) and Browse v2 (`handoff/browse-v2/`, D-57 / D-58) leave a few Review &
+place and section-search states unworded or undrawn. Wave 4 lane B (U23–U64) fills them with existing elements only:
+
+- **New copy (U64):** Place stopping on R8b's missing patient name or consent tick used to toast only the field's label
+  ("Patient name", "I'll show the original prescription to the rider"). The R7 ink toast now says what to do, modelled on
+  the drawn `O.r.rxBlocked` ("Add a photo of your prescription to place this order"):
+  **"Add the patient’s name to place this order"** and **"Confirm you’ll show the original prescription to the rider"**
+  (`RX_ASK` in `apps/mobile/app/food/checkout.tsx`). No new element; Place still opens the toast as before.
+- **Composed, not new (U50):** a saved basket whose every line sold out draws R6a's note ("Some things changed since you
+  added them") and its struck "Sold out now — taken off" lines above R9a's empty state. Both are drawn; no frame shows
+  them together. R9a's "Browse places" goes back to the basket's own section (Shops / Pharmacy) instead of Restaurants.
+- **Values, not copy (U27, U30):** a moved Deliver-to pin is named by its coordinates ("-17.82000, 31.04000", Send's
+  `coordName`) until the reverse geocode names it, and R3b names that value when the pin is out of the area; a refused
+  prescription page upload says the server's own message in the R7 toast, as R7b already does for a 4xx.
+- **Drawn copy on a second screen (U55):** a failed Shops / Pharmacy search shows the section's B11 error ("Couldn’t load
+  shops / pharmacies", "Nothing was lost.", Try again — browse-v2 `B.svc[*].err` + empty-states-v2 `browse.error`), as the
+  section list does. X4 draws no search error.
+- **Drawn state reused (U53/U54):** at the 20-per-item cap the storefront steppers' + takes the item sheet's drawn
+  disabled state (`plusDisabled`); the photo disc's + stops answering with no change in look.
+- **Upstream (U29, design-gated):** R8b draws no way to remove a prescription page. The app clears every page back to R8a
+  when placement refuses one (`422 upload_*`), but replacing one blurry page still needs a drawn remove action on the
+  thumbnail (`usePrescriptionPhotos().remove` is ready). Reported upstream; the kit is not edited here.

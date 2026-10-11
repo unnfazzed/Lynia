@@ -9,13 +9,29 @@ import { BackHandler } from "react-native";
 import { usePlacingGuard } from "../use-placing-guard";
 
 const mockSetOptions = jest.fn();
+type BeforeRemove = (e: { preventDefault: () => void }) => void;
+const mockListeners: BeforeRemove[] = [];
+const mockAddListener = jest.fn((_event: string, cb: BeforeRemove) => {
+  mockListeners.push(cb);
+  return () => {
+    mockListeners.splice(mockListeners.indexOf(cb), 1);
+  };
+});
 jest.mock("expo-router", () => ({
-  useNavigation: () => ({ setOptions: mockSetOptions }),
+  useNavigation: () => ({ setOptions: mockSetOptions, addListener: mockAddListener }),
 }));
 
+let release: (() => void) | null = null;
 function Harness({ active }: { active: boolean }): React.ReactElement | null {
-  usePlacingGuard(active);
+  release = usePlacingGuard(active);
   return null;
+}
+
+/** Fire `beforeRemove` the way the navigator does; true when a listener refused the removal. */
+function tryRemove(): boolean {
+  const preventDefault = jest.fn();
+  mockListeners.forEach((cb) => cb({ preventDefault }));
+  return preventDefault.mock.calls.length > 0;
 }
 
 describe("usePlacingGuard", () => {
@@ -24,6 +40,8 @@ describe("usePlacingGuard", () => {
 
   beforeEach(() => {
     mockSetOptions.mockClear();
+    mockAddListener.mockClear();
+    mockListeners.length = 0;
     removeHandler = jest.fn();
     addSpy = jest.spyOn(BackHandler, "addEventListener").mockReturnValue({ remove: removeHandler } as never);
   });
@@ -66,5 +84,37 @@ describe("usePlacingGuard", () => {
     // The active→inactive transition tears down the subscription and re-enables the gesture.
     expect(removeHandler).toHaveBeenCalledTimes(1);
     expect(mockSetOptions).toHaveBeenLastCalledWith({ gestureEnabled: true });
+  });
+
+  // U24 (reviewed list 2026-10-07): the web's browser Back is neither a hardware press nor a swipe — it is a
+  // plain removal of the screen, which `beforeRemove` sees.
+  it("U24: refuses every other removal (the web's browser Back) while active, and lifts it when placing ends", () => {
+    let root!: renderer.ReactTestRenderer;
+    act(() => {
+      root = renderer.create(<Harness active={true} />);
+    });
+    expect(mockAddListener).toHaveBeenCalledWith("beforeRemove", expect.any(Function));
+    expect(tryRemove()).toBe(true);
+    act(() => {
+      root.update(<Harness active={false} />);
+    });
+    expect(mockListeners).toHaveLength(0);
+    expect(tryRemove()).toBe(false);
+  });
+
+  it("U24: release() lets the screen's own exit through (the placed order replacing the stack)", () => {
+    act(() => {
+      renderer.create(<Harness active={true} />);
+    });
+    expect(tryRemove()).toBe(true);
+    release!();
+    expect(tryRemove()).toBe(false);
+  });
+
+  it("is not registered while inactive", () => {
+    act(() => {
+      renderer.create(<Harness active={false} />);
+    });
+    expect(mockAddListener).not.toHaveBeenCalled();
   });
 });

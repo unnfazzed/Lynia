@@ -1,5 +1,6 @@
 import type { ShopCatalogueResponse, ShopListItem, ShopSearchResponse, ShopService } from "@lynia/shared";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useCallback } from "react";
 import { getShopCatalogue, getShops, searchShops } from "../api/shops";
 import type { RestaurantListFeed } from "./use-restaurants";
 
@@ -48,8 +49,15 @@ export function useShopCatalogue(
 }
 
 /** Server search inside one section; idle below two characters (the server answers empty there too). */
-export function useShopSearch(service: ShopService, query: string, enabled: boolean): { data: ShopSearchResponse | undefined; isFetching: boolean; isError: boolean } {
+export function useShopSearch(
+  service: ShopService,
+  query: string,
+  enabled: boolean,
+): { data: ShopSearchResponse | undefined; isFetching: boolean; isError: boolean; refetch: () => void } {
   const q = query.trim();
   const r = useQuery({ queryKey: ["shopSearch", service, q], queryFn: () => searchShops(service, q), enabled: enabled && q.length >= 2 });
-  return { data: r.data, isFetching: r.isFetching, isError: r.isError };
+  const { refetch } = r;
+  // U55: the screen's error state retries with this.
+  const retry = useCallback(() => void refetch(), [refetch]);
+  return { data: r.data, isFetching: r.isFetching, isError: r.isError, refetch: retry };
 }

@@ -182,6 +182,41 @@ describe("Storefront — adding", () => {
   });
 });
 
+// U53 (reviewed list 2026-10-07): past the 20-per-dish cap the sheet's "Add 10" silently added nothing.
+describe("Storefront — the 20-per-dish cap (U53)", () => {
+  const chicken = (quantity: number, note = ""): Line => ({ dishId: "d2", name: "Roast chicken (half)", priceUsd: 6, quantity, note });
+
+  it("the item sheet adds the room left (12 in the cart + 10 → 8), not nothing", () => {
+    setCart("m1", "Gava’s Kitchen", [chicken(12)]);
+    const tree = render();
+    press(tree, /^Roast chicken \(half\), \$6\.00/);
+    const sheet = tree.root.findByType(ItemSheet);
+    act(() => sheet.props.onAdd(10, "no onions"));
+    expect(mockCart.addItem).toHaveBeenCalledTimes(1);
+    expect(mockCart.addItem).toHaveBeenCalledWith("m1", "Gava’s Kitchen", expect.objectContaining({ dishId: "d2", quantity: 8, note: "no onions" }), expect.anything());
+  });
+
+  it("at 20 the + and the stepper's + are disabled, and a row's + (through the stable handler) adds nothing", () => {
+    setCart("m1", "Gava’s Kitchen", [chicken(19)]);
+    const tree = render();
+    setCart("m1", "Gava’s Kitchen", [chicken(15), chicken(5, "spicy")]);
+    act(() =>
+      tree.update(
+        <SafeAreaProvider initialMetrics={TEST_METRICS}>
+          <RestaurantMenuScreen />
+        </SafeAreaProvider>,
+      ),
+    );
+    const plus = tree.root.findAll((n) => typeof n.props.onPress === "function" && /^(Roast chicken \(half\), 20 in cart\. Add one more|One more Roast chicken \(half\))$/.test(n.props.accessibilityLabel ?? ""));
+    expect(plus.length).toBeGreaterThanOrEqual(2);
+    for (const p of plus) expect(p.props.disabled).toBe(true);
+    // The rows' one stable handler reads the cart of THIS render (20), not the one the row was built with.
+    const row = tree.root.findAll((n) => n.props.item?.id === "d2" && typeof n.props.onAdd === "function")[0]!;
+    act(() => row.props.onAdd(row.props.item));
+    expect(mockCart.addItem).not.toHaveBeenCalled();
+  });
+});
+
 describe("Storefront — cart bar", () => {
   it("under $4.00 says how much more skips the small-order fee, and opens the cart", () => {
     setCart("m1", "Gava’s Kitchen", [{ dishId: "d0", name: "Chips", priceUsd: 3.3, quantity: 1, note: "" }]);

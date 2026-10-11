@@ -2,15 +2,15 @@ import { isMerchantOpenNow, normalizePhone } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, TextInput, View } from "react-native";
+import { BackHandler, Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getMe, type Me } from "../../src/api/auth";
 import { ApiError } from "../../src/api/client";
 import { placeFoodOrder } from "../../src/api/food-orders";
 import { useFoodCart } from "../../src/food/cart-context";
-import { addLine, cartService, foodOrderIdempotencyKey, MAX_ITEM_QTY, removeLine, type FoodCartLine } from "../../src/logic/food-cart";
+import { addLine, cartService, foodOrderIdempotencyKey, MAX_ITEM_QTY, removeLine, type FoodCartLine, type FoodCartState } from "../../src/logic/food-cart";
 import { estimateDeliveryFee, goToPlacedFoodOrder } from "../../src/logic/food-checkout";
 import { deliverToLabel, etaRange, restaurantMeta } from "../../src/logic/food-list";
 import { isWithinServiceCorridor } from "../../src/logic/gates";
@@ -34,6 +34,7 @@ import {
   type ReconcileResult,
 } from "../../src/logic/review";
 import { loadMyPickupPhone, saveMyPickupPhone } from "../../src/logic/saved-recipients";
+import { coordName } from "../../src/logic/send-steps";
 import { useAddressSuggest, type SuggestRow } from "../../src/logic/use-address-suggest";
 import { usePlacingGuard } from "../../src/logic/use-placing-guard";
 import { useNow } from "../../src/logic/use-now";
@@ -95,6 +96,19 @@ const HOURS_RECHECK_MS = 60_000;
 const LOCATE_TIMEOUT_MS = 9_000;
 /** R3b's bar hint — drawn in of-screens-rt.js `addrEdit(out)`, not a key in `O`. */
 const outAreaBlock = (v: string): string => `Pick an address ${v} delivers to`;
+/** U64 (ledger D-92, owner decision D6: new wording through an existing element): Place stopping on R8b's
+ *  missing patient name or consent tick says what to do in the R7 ink toast, not just the field's label.
+ *  Modelled on `O.r.rxBlocked` ("Add a photo of your prescription to place this order"). */
+const RX_ASK = {
+  patient: "Add the patient’s name to place this order",
+  consent: "Confirm you’ll show the original prescription to the rider",
+} as const;
+
+/** U23: a failure that may hide an order that landed — no answer at all (timeout, dropped link: status 0
+ *  or no ApiError) or a server / proxy failure (5xx). A 4xx is the server's considered "no". */
+function mayHaveLanded(err: unknown): boolean {
+  return !(err instanceof ApiError) || err.status === 0 || err.status >= 500;
+}
 
 interface Drop {
   lat: number;
@@ -106,12 +120,23 @@ export default function FoodReviewScreen(): React.ReactElement {
   const router = useRouter();
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
-  const cart = useFoodCart();
+  // ── Placing ───────────────────────────────────────────────────────────────────────────────────────
+  // U52: while the order is in flight — and after it lands, while the order screen replaces this one — the
+  // screen keeps drawing the basket that was placed. The live cart empties on success, and an outgoing
+  // screen that re-read it flashed R9a "Your cart is empty" in front of the order.
+  const [busy, setBusy] = useState(false);
+  const placed = useRef<FoodCartState | null>(null);
+  const liveCart = useFoodCart();
+  const cart = busy && placed.current ? { ...liveCart, cart: placed.current } : liveCart;
   const reachable = useReachability();
   const now = useNow(HOURS_RECHECK_MS);
   const home = useHomeLocation();
   const params = useLocalSearchParams<{ schedule?: string }>();
   const service = cartService(cart.cart.venue);
+  // U50: the section this basket came from, remembered past the cart emptying (every dish sold out), so
+  // R9a's "Browse places" goes back to it rather than always to Restaurants.
+  const lastService = useRef(service);
+  if (cart.cart.restaurantId) lastService.current = service;
   const isShop = service !== "food";
   const rid = cart.cart.restaurantId ?? undefined;
   // The venue's latest catalogue: a restaurant's menu, or a shop's / pharmacy's catalogue (same shapes).
@@ -179,8 +204,7 @@ export default function FoodReviewScreen(): React.ReactElement {
   // A line's note, edited in place (the line key it belongs to + the draft text).
   const [lineNote, setLineNote] = useState<{ key: string; text: string } | null>(null);
 
-  // ── Placing, toasts, offline ──────────────────────────────────────────────────────────────────────
-  const [busy, setBusy] = useState(false);
+  // ── Toasts, offline ───────────────────────────────────────────────────────────────────────────────
   // `balance`: U49 — the R7b toast raised because the carried-balance read failed; its Try again re-reads it.
   const [toast, setToast] = useState<{ text: string; retry: boolean; balance?: boolean } | null>(null);
   useEffect(() => {
@@ -193,7 +217,7 @@ export default function FoodReviewScreen(): React.ReactElement {
 
   // P0-3: while the order is in flight the screen is `held` — Android back is swallowed and iOS swipe-back
   // is off, so the request can't be orphaned (R7a: "Don't close the app").
-  usePlacingGuard(busy);
+  const releaseGuard = usePlacingGuard(busy);
   const mounted = useRef(true);
   useEffect(
     () => () => {
@@ -211,7 +235,8 @@ export default function FoodReviewScreen(): React.ReactElement {
     // it onto the line, so a line stamped before the Rx flag loaded still asks for its prescription.
     for (const c of categories)
       for (const d of c.dishes) latest.set(d.id, { priceUsd: d.priceUsd, outOfStock: d.outOfStock, ...(isShop ? { rxRequired: d.rxRequired === true } : {}) });
-    const r = reconcileCart(cart.cart.lines, latest);
+    // The live cart, never the placed snapshot (U52): a refetch landing after Place must not refill it.
+    const r = reconcileCart(liveCart.cart.lines, latest);
     if (r.gone.length === 0 && Object.keys(r.priceChanges).length === 0 && !r.rxChanged) return;
     cart.replaceLines(r.lines);
     if (r.gone.length === 0 && Object.keys(r.priceChanges).length === 0) return;
@@ -257,7 +282,11 @@ export default function FoodReviewScreen(): React.ReactElement {
   const rxDishes = useMemo(() => new Set((categories ?? []).flatMap((c) => c.dishes.filter((d) => d.rxRequired === true).map((d) => d.id))), [categories]);
   const lineNeedsRx = (l: FoodCartLine): boolean => rxOn && (l.rxRequired === true || rxDishes.has(l.dishId));
   const rxNeeded = cart.cart.lines.some(lineNeedsRx);
-  const rx = usePrescriptionPhotos(() => setToast({ text: O.c.noData, retry: false }));
+  // U30: a page the server refused to take (a 4xx such as the upload throttle, or 503 uploads off) says the
+  // server's reason; only a failure with no answer is "No connection. Nothing was sent."
+  const rx = usePrescriptionPhotos((err) =>
+    setToast({ text: err instanceof ApiError && err.status >= 400 && err.message ? err.message : O.c.noData, retry: false }),
+  );
   const [patient, setPatient] = useState("");
   const [consent, setConsent] = useState(false);
   const rxEmpty = rxNeeded && rx.pages.length === 0;
@@ -291,6 +320,18 @@ export default function FoodReviewScreen(): React.ReactElement {
     setQueryTyped(false);
     setEditingAddr(true);
   };
+  // U41: Android Back while the address is being edited closes the editor, as the header's Back does —
+  // it used to pop Review and drop everything only Review holds (phone, note, slot, prescription).
+  useFocusEffect(
+    useCallback(() => {
+      if (!editingAddr) return;
+      const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+        setEditingAddr(false);
+        return true;
+      });
+      return () => sub.remove();
+    }, [editingAddr]),
+  );
   const draftOut = draft != null && !isWithinServiceCorridor(draft);
   const commitAddress = (): void => {
     if (draft && !draftOut) {
@@ -324,7 +365,8 @@ export default function FoodReviewScreen(): React.ReactElement {
       }
       const loc = await withTimeout(Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }), LOCATE_TIMEOUT_MS);
       const p = { lat: loc.coords.latitude, lng: loc.coords.longitude };
-      setDraft({ ...p, label: draft?.label ?? "" });
+      // U27: the pin's coordinates until (unless) the reverse geocode names it — never the old address.
+      setDraft({ ...p, label: coordName(p.lat, p.lng) });
       const res = await withTimeout(Location.reverseGeocodeAsync({ latitude: p.lat, longitude: p.lng }), LOCATE_TIMEOUT_MS).catch(() => []);
       const name = res[0] ? landmarkFromAddress(res[0]) : "";
       if (name && mounted.current) nameDraft(p, name);
@@ -353,47 +395,62 @@ export default function FoodReviewScreen(): React.ReactElement {
   const submit = async (): Promise<void> => {
     setToast(null);
     if (!drop) return openAddress();
+    // U26: a deliver-to outside the area (a home point beyond the towns served) opens R3 on it — R3b's
+    // "{v} doesn't deliver to {a}" with its bar hint — instead of placing and failing after the fact.
+    if (!isWithinServiceCorridor(drop)) return openAddress();
     if (!phoneOk) {
       setEditingPhone(true);
       setPhoneAsk((n) => n + 1);
       return;
     }
-    if (!cart.cart.restaurantId) return;
+    if (!rid) return;
     // R8b: the prescription travels whole — a patient name and the consent tick with the pages. Missing
-    // either is said once in the toast (hints never block except the Rx photo itself).
-    if (rxNeeded && !patient.trim()) return setToast({ text: O.r.rxPatient, retry: false });
-    if (rxNeeded && !consent) return setToast({ text: O.r.rxConsent, retry: false });
+    // either is said once in the toast (hints never block except the Rx photo itself). U64: as a sentence.
+    if (rxNeeded && !patient.trim()) return setToast({ text: RX_ASK.patient, retry: false });
+    if (rxNeeded && !consent) return setToast({ text: RX_ASK.consent, retry: false });
     // U49: never place on a total that hasn't heard the carried balance — the R7b toast, Try again re-reads it.
     if (!balance.settled) {
       balance.refetch();
       return setToast({ text: O.r.failed, retry: true, balance: true });
     }
+    placed.current = cart.cart;
     setBusy(true);
+    const body = placeOrderBody({
+      lines: cart.cart.lines,
+      orderNote: cart.cart.orderNote,
+      drop,
+      riderNote,
+      phone,
+      idempotencyKey,
+      scheduledFor: sched?.slot.start ?? null,
+      outOfStockPref: isShop ? oos : null,
+      prescription: rxNeeded ? { photoKeys: rx.keys, patientName: patient.trim(), consent: true } : null,
+    });
     try {
-      const order = await placeFoodOrder(
-        cart.cart.restaurantId,
-        placeOrderBody({
-          lines: cart.cart.lines,
-          orderNote: cart.cart.orderNote,
-          drop,
-          riderNote,
-          phone,
-          idempotencyKey,
-          scheduledFor: sched?.slot.start ?? null,
-          outOfStockPref: isShop ? oos : null,
-          prescription: rxNeeded ? { photoKeys: rx.keys, patientName: patient.trim(), consent: true } : null,
-        }),
-      );
+      let order: Awaited<ReturnType<typeof placeFoodOrder>>;
+      try {
+        order = await placeFoodOrder(rid, body);
+      } catch (err) {
+        if (!mayHaveLanded(err)) throw err;
+        // U23: the answer was lost, not necessarily the order. The SAME body and idempotency key, once — the
+        // server replays an order it already took — before R7b says "Nothing was ordered".
+        order = await placeFoodOrder(rid, body);
+      }
       void saveMyPickupPhone(phone.trim());
       // P23: the order screen's snapshot too (its map's venue and drop pins), not only the food order.
       seedFoodOrder(queryClient, order, restaurant?.location ? { venue: restaurant.location, venueName: venue, drop, total: money.total } : undefined);
-      cart.clear();
       // D-82 PC8: the "Know when it's at the gate" explainer in front of the order, while it should ask.
-      const next = await routeAfterOrderPlaced(order.id);
-      if (!mounted.current) return;
-      goToPlacedFoodOrder(router, order.id, next);
+      // U52: decided BEFORE the cart empties, so nothing renders an empty Review between the two.
+      const orderId = order.id;
+      const next = await routeAfterOrderPlaced(orderId).catch(() => `/order/${orderId}`);
+      cart.clear();
+      // U24: the order exists — show it even if this screen is already gone (web Back mid-place); the router
+      // is global. The guard lets this exit through; the screen stays `busy` (veiled) while it leaves.
+      releaseGuard();
+      goToPlacedFoodOrder(router, orderId, next);
     } catch (err) {
       if (!mounted.current) return;
+      setBusy(false);
       // A 4xx carries the server's reason (on hold, a dish just sold out); anything else is R7b.
       const told = err instanceof ApiError && err.status >= 400 && err.status < 500 && err.message;
       if (err instanceof ApiError && err.status === 409) {
@@ -401,9 +458,11 @@ export default function FoodReviewScreen(): React.ReactElement {
         // U09: a refusal for a missing prescription means the Rx switch is on — re-ask, so the block shows.
         if (service === "pharmacy") void refreshOrderFlags();
       }
+      // U29: a prescription page placement refused (`upload_missing` / `_empty` / `_too_large` / `_bad_*`):
+      // the server already deleted it, so every retry would fail on it. The pages go, the block is R8a again,
+      // and the toast's "please retake it" can be done.
+      if (err instanceof ApiError && err.status === 422 && err.code?.startsWith("upload_")) rx.clear();
       setToast(told ? { text: err.message, retry: false } : { text: O.r.failed, retry: true });
-    } finally {
-      if (mounted.current) setBusy(false);
     }
   };
 
@@ -412,7 +471,25 @@ export default function FoodReviewScreen(): React.ReactElement {
     return (
       <View style={{ flex: 1, backgroundColor: tokens.color.bg, paddingTop: insets.top }}>
         <ReviewHeader onBack={() => router.back()} />
-        <EmptyState icon="shopping-bag" title={emptyCopy.cart.empty.title} primary={{ label: emptyCopy.cart.empty.primary, onPress: () => router.replace("/food") }} />
+        {/* U50: a saved basket whose every line sold out says why it is empty — R6a's note and its struck
+            "Sold out now — taken off" lines above R9a — instead of R9a alone. */}
+        {changes.gone.length > 0 ? (
+          <View style={{ paddingTop: 12, paddingHorizontal: 16, gap: 12 }}>
+            <ReviewNote tone="hi" icon="circle-alert">
+              <Text style={{ fontWeight: tokens.font.weight.bold }}>{O.r.chgT}</Text>
+            </ReviewNote>
+            <ReviewBlock label={O.r.items}>
+              {changes.gone.map((l) => (
+                <ItemLine key={`gone-${lineKey(l)}`} name={l.name} price={l.priceUsd * l.quantity} gone note="" flag={{ text: O.r.soldOut, tone: "muted" }} />
+              ))}
+            </ReviewBlock>
+          </View>
+        ) : null}
+        <EmptyState
+          icon="shopping-bag"
+          title={emptyCopy.cart.empty.title}
+          primary={{ label: emptyCopy.cart.empty.primary, onPress: () => router.replace(`/${lastService.current}` as never) }}
+        />
       </View>
     );
   }
@@ -459,7 +536,7 @@ export default function FoodReviewScreen(): React.ReactElement {
               draft={draft}
               query={query}
               rows={queryTyped ? suggest.rows : []}
-              outOf={draft && draftOut ? { venue, area: areaOf(draft.label || query) } : null}
+              outOf={draft && draftOut ? { venue, area: draft.label === coordName(draft.lat, draft.lng) ? draft.label : areaOf(draft.label || query) } : null}
               onQuery={(q) => {
                 setQuery(q);
                 setQueryTyped(true);
@@ -470,7 +547,9 @@ export default function FoodReviewScreen(): React.ReactElement {
               }}
               onPick={pickRow}
               onUseCurrent={() => void useCurrent()}
-              onMove={(p) => setDraft((d) => ({ ...p, label: d?.label ?? "" }))}
+              // U27: a moved pin is labelled by its coordinates until the reverse geocode (`onName`) names it,
+              // so the label never names the place the pin left, and is never empty.
+              onMove={(p) => setDraft({ ...p, label: coordName(p.lat, p.lng) })}
               onName={nameDraft}
               onDone={commitAddress}
             />
@@ -520,7 +599,8 @@ export default function FoodReviewScreen(): React.ReactElement {
                       price={l.priceUsd * l.quantity}
                       rx={lineNeedsRx(l)}
                       was={ch ? ch.from * l.quantity : null}
-                      flag={ch ? { text: ofFmt(O.r.priceUp, { a: formatMoney(ch.from), b: formatMoney(ch.to) }), tone: "hi" } : null}
+                      // U51: only a rise is "Price went up"; a drop shows just the struck old price (`was`).
+                      flag={ch && ch.to > ch.from ? { text: ofFmt(O.r.priceUp, { a: formatMoney(ch.from), b: formatMoney(ch.to) }), tone: "hi" } : null}
                       note={l.note}
                       onNote={() => setLineNote({ key: k, text: l.note })}
                       noteEditor={

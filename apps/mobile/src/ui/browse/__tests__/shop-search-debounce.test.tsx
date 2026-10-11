@@ -11,7 +11,7 @@ jest.useFakeTimers();
 const TEST_METRICS = { frame: { x: 0, y: 0, width: 360, height: 720 }, insets: { top: 0, left: 0, right: 0, bottom: 0 } };
 const mockSearchArgs: string[] = [];
 
-jest.mock("expo-router", () => ({ useRouter: () => ({ push: jest.fn(), back: jest.fn(), replace: jest.fn(), canGoBack: () => true }) }));
+jest.mock("expo-router", () => ({ useRouter: () => ({ push: jest.fn(), back: jest.fn(), replace: jest.fn(), canGoBack: () => true }), useLocalSearchParams: () => ({}) }));
 jest.mock("../../../logic/home-location", () => ({ useHomeLocation: () => ({ label: "12 Lanark Rd", point: { lat: -17.8, lng: 31.05 }, source: "gps", locating: false, denied: false }) }));
 jest.mock("../../../net/use-reachable", () => ({ useReachable: () => true }));
 jest.mock("../../../query/use-shops", () => ({

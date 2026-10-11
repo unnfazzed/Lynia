@@ -4,6 +4,7 @@ import React, { useRef, useState } from "react";
 import { ScrollView, Text, View, type LayoutChangeEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { BrowseService, VenueView } from "../../logic/browse";
+import { MAX_ITEM_QTY } from "../../logic/food-cart";
 import { formatMoney } from "../../logic/money";
 import { EmptyRow } from "../EmptyState";
 import { emptyCopy } from "../emptyCopy";
@@ -303,11 +304,13 @@ export function SectionHeading({ title, window, note, onLayout }: { title: strin
 
 // ── Add + stepper ──────────────────────────────────────────────────────────────────────────────
 
-/** The + inside the photo: a 36 brand disc in a 48 target; shows the count once in the cart. */
-export function AddButton({ count, label, onPress }: { count: number; label: string; onPress: () => void }): React.ReactElement {
+/** The + inside the photo: a 36 brand disc in a 48 target; shows the count once in the cart. `disabled`
+ *  (U53/U54): the item is at the 20-per-item cap — the disc still shows the count, a tap adds nothing. */
+export function AddButton({ count, label, onPress, disabled = false }: { count: number; label: string; onPress: () => void; disabled?: boolean }): React.ReactElement {
   return (
     <Tappable
       onPress={onPress}
+      disabled={disabled}
       tone="icon"
       accessibilityRole="button"
       accessibilityLabel={count > 0 ? `${label}, ${count} in cart. Add one more` : `Add ${label}`}
@@ -496,10 +499,10 @@ export const DishRow = React.memo(function DishRow({
         )}
         <Text style={{ fontSize: 15, fontWeight: tokens.font.weight.semibold, color: ink, ...TABULAR }}>{formatMoney(item.priceUsd)}</Text>
         {item.outOfStock ? <OosChip /> : null}
-        {qty > 0 && canAdd ? <QtyStepper qty={qty} label={item.name} onMinus={onMinus} onPlus={onAdd} /> : null}
+        {qty > 0 && canAdd ? <QtyStepper qty={qty} label={item.name} onMinus={onMinus} onPlus={onAdd} plusDisabled={qty >= MAX_ITEM_QTY} /> : null}
       </View>
       <VenueImage photoUrl={listPhoto(item)} fallbackUrl={item.photoUrl} priority={priority} name={item.name} kind={null} dim={item.unavailable} style={{ width: 112, height: 112, borderRadius: 14 }}>
-        {canAdd && !item.unavailable ? <AddButton count={qty} label={item.name} onPress={onAdd} /> : null}
+        {canAdd && !item.unavailable ? <AddButton count={qty} label={item.name} onPress={onAdd} disabled={qty >= MAX_ITEM_QTY} /> : null}
       </VenueImage>
     </Tappable>
   );
@@ -533,7 +536,7 @@ export const ShopTile = React.memo(function ShopTile({
     <View style={{ flex: 1, minWidth: 0 }}>
       <Tappable onPress={onOpen} accessibilityRole="button" accessibilityLabel={`${item.name}, ${formatMoney(item.priceUsd)}${item.outOfStock ? `, ${B.store.oos}` : ""}`}>
         <VenueImage photoUrl={listPhoto(item)} fallbackUrl={item.photoUrl} priority={priority} name={item.name} kind={null} dim={item.unavailable} style={{ width: "100%", aspectRatio: 1, borderRadius: 16 }}>
-          {canAdd && !item.unavailable && onAdd ? <AddButton count={qty} label={item.name} onPress={onAdd} /> : null}
+          {canAdd && !item.unavailable && onAdd ? <AddButton count={qty} label={item.name} onPress={onAdd} disabled={qty >= MAX_ITEM_QTY} /> : null}
         </VenueImage>
         <Text style={{ marginTop: 10, fontSize: 16, fontWeight: tokens.font.weight.bold, color: ink, ...TABULAR }}>{formatMoney(item.priceUsd)}</Text>
         <Text numberOfLines={2} style={{ marginTop: 2, fontSize: 13.5, lineHeight: 18.2, color: ink }}>
@@ -541,7 +544,7 @@ export const ShopTile = React.memo(function ShopTile({
         </Text>
         {item.outOfStock ? <OosChip /> : null}
       </Tappable>
-      {qty > 0 && canAdd && onAdd && onMinus ? <QtyStepper qty={qty} label={item.name} wide onMinus={onMinus} onPlus={onAdd} /> : null}
+      {qty > 0 && canAdd && onAdd && onMinus ? <QtyStepper qty={qty} label={item.name} wide onMinus={onMinus} onPlus={onAdd} plusDisabled={qty >= MAX_ITEM_QTY} /> : null}
     </View>
   );
 });
@@ -611,11 +614,12 @@ export const PharmacyRow = React.memo(function PharmacyRow({
           </View>
         ) : null}
         {item.outOfStock ? <OosChip /> : null}
-        {qty > 0 && plus && onMinus ? <QtyStepper qty={qty} label={item.name} onMinus={onMinus} onPlus={onAdd} /> : null}
+        {qty > 0 && plus && onMinus ? <QtyStepper qty={qty} label={item.name} onMinus={onMinus} onPlus={onAdd} plusDisabled={qty >= MAX_ITEM_QTY} /> : null}
       </View>
       {plus ? (
         <Tappable
           onPress={onAdd}
+          disabled={qty >= MAX_ITEM_QTY}
           tone="icon"
           accessibilityRole="button"
           accessibilityLabel={qty > 0 ? `${item.name}, ${qty} in cart. Add one more` : `Add ${item.name}`}
@@ -685,14 +689,14 @@ export const PopularCard = React.memo(function PopularCard({
     <View style={{ width: POPULAR_CARD }}>
       <Tappable onPress={onOpen} accessibilityRole="button" accessibilityLabel={`${item.name}, ${formatMoney(item.priceUsd)}`}>
         <VenueImage photoUrl={listPhoto(item)} fallbackUrl={item.photoUrl} name={item.name} kind={null} dim={item.unavailable} style={{ width: POPULAR_CARD, height: POPULAR_CARD, borderRadius: 16 }}>
-          {canAdd && !item.unavailable ? <AddButton count={qty} label={item.name} onPress={onAdd} /> : null}
+          {canAdd && !item.unavailable ? <AddButton count={qty} label={item.name} onPress={onAdd} disabled={qty >= MAX_ITEM_QTY} /> : null}
         </VenueImage>
         <Text numberOfLines={2} style={{ marginTop: 8, fontSize: 14, lineHeight: 18.2, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>
           {item.name}
         </Text>
         <Text style={{ marginTop: 2, fontSize: 14, fontWeight: tokens.font.weight.semibold, color: tokens.color.muted, ...TABULAR }}>{formatMoney(item.priceUsd)}</Text>
       </Tappable>
-      {qty > 0 && canAdd ? <QtyStepper qty={qty} label={item.name} wide onMinus={onMinus} onPlus={onAdd} /> : null}
+      {qty > 0 && canAdd ? <QtyStepper qty={qty} label={item.name} wide onMinus={onMinus} onPlus={onAdd} plusDisabled={qty >= MAX_ITEM_QTY} /> : null}
     </View>
   );
 });

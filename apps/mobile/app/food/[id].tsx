@@ -185,8 +185,11 @@ export default function RestaurantMenuScreen(): React.ReactElement {
       setPending({ item, qty, note });
       return;
     }
-    if (qtyFor(item.id) + qty > MAX_ITEM_QTY) return;
-    commit(item, qty, note);
+    // U53: past the 20-per-dish cap, add the room left (12 in the cart + 10 → 8) instead of silently nothing.
+    // Rows reach this through `latest`, so the count is this render's cart, never a stale row's.
+    const room = Math.min(qty, MAX_ITEM_QTY - qtyFor(item.id));
+    if (room <= 0) return;
+    commit(item, room, note);
   };
   const minus = (item: StoreItem): void => {
     const lines = cart.cart.lines.filter((l) => l.dishId === item.id);
@@ -370,7 +373,7 @@ export default function RestaurantMenuScreen(): React.ReactElement {
           onAdd={(qty, note) => {
             const it = openItem;
             setOpenItem(null);
-            if (it) add(it, qty, note);
+            if (it) latest.current.add(it, qty, note);
           }}
           onClose={() => setOpenItem(null)}
         />

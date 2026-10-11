@@ -4,7 +4,7 @@
  * order hint, R6a reconcile, R6b just closed, R7b failed toast, R7c offline, R9a empty, R9b no address,
  * and the exact place-order payload + the replace-into-the-order navigation.
  */
-import { Text } from "react-native";
+import { BackHandler, Text } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import renderer, { act } from "react-test-renderer";
 
@@ -14,7 +14,26 @@ const TEST_METRICS = { frame: { x: 0, y: 0, width: 360, height: 720 }, insets: {
 
 const mockRouter = { back: jest.fn(), push: jest.fn(), replace: jest.fn(), dismissAll: jest.fn(), canGoBack: jest.fn(() => true) };
 let mockParams: { schedule?: string } = {};
-jest.mock("expo-router", () => ({ useRouter: () => mockRouter, useLocalSearchParams: () => mockParams, useNavigation: () => ({ setOptions: () => undefined }), Redirect: () => null }));
+// U24: the placing guard also blocks `beforeRemove`; the listeners are kept so a test can fire one.
+const mockBeforeRemove: ((e: { preventDefault: () => void }) => void)[] = [];
+const mockNavigation = {
+  setOptions: () => undefined,
+  addListener: (_event: string, cb: (e: { preventDefault: () => void }) => void) => {
+    mockBeforeRemove.push(cb);
+    return () => {
+      const i = mockBeforeRemove.indexOf(cb);
+      if (i >= 0) mockBeforeRemove.splice(i, 1);
+    };
+  },
+};
+jest.mock("expo-router", () => ({
+  useRouter: () => mockRouter,
+  useLocalSearchParams: () => mockParams,
+  useNavigation: () => mockNavigation,
+  // U41: a focused screen runs its focus effect like a plain effect.
+  useFocusEffect: (cb: () => void | (() => void)) => require("react").useEffect(cb, [cb]),
+  Redirect: () => null,
+}));
 let mockMe: { phone: string } | undefined;
 jest.mock("@tanstack/react-query", () => ({ useQueryClient: () => ({}), useQuery: () => ({ data: mockMe }) }));
 
@@ -77,8 +96,16 @@ jest.mock("../../../src/query/use-order-flow", () => ({
 }));
 let mockRxEnabled = false;
 jest.mock("../../../src/net/use-order-flags", () => ({ useOrderFlags: () => ({ rxEnabled: mockRxEnabled }) }));
-const mockRx = { pages: [] as { id: string; uri: string; key: string | null }[], uploading: false, keys: [] as string[], add: jest.fn(), remove: jest.fn() };
-jest.mock("../../../src/query/use-prescription-photos", () => ({ RX_MAX_PAGES: 3, usePrescriptionPhotos: () => mockRx }));
+const mockRx = { pages: [] as { id: string; uri: string; key: string | null }[], uploading: false, keys: [] as string[], add: jest.fn(), remove: jest.fn(), clear: jest.fn() };
+// U30: the screen's page-upload error handler, so a test can raise one.
+let mockRxOnError: ((err: unknown) => void) | null = null;
+jest.mock("../../../src/query/use-prescription-photos", () => ({
+  RX_MAX_PAGES: 3,
+  usePrescriptionPhotos: (onError: (err: unknown) => void) => {
+    mockRxOnError = onError;
+    return mockRx;
+  },
+}));
 
 type Line = { dishId: string; name: string; priceUsd: number; quantity: number; note: string; rxRequired?: boolean };
 type Venue = { businessType: "restaurant" | "shop"; shopKind: string | null } | null;
@@ -93,6 +120,8 @@ const mockCart = {
 jest.mock("../../../src/food/cart-context", () => ({ useFoodCart: () => mockCart }));
 
 import { ApiError } from "../../../src/api/client";
+import { routeAfterOrderPlaced } from "../../../src/push/ask-in-context";
+import { ItemLine } from "../../../src/ui/orderflow/review";
 import FoodReviewScreen from "../checkout";
 
 const GAVA: Line[] = [
@@ -153,6 +182,8 @@ beforeEach(() => {
   mockRx.pages = [];
   mockRx.keys = [];
   mockRx.uploading = false;
+  mockCart.replaceLines.mockReset();
+  mockCart.clear.mockReset();
 });
 afterEach(() => {
   if (tree) act(() => tree!.unmount());
@@ -251,6 +282,8 @@ describe("Place order", () => {
     expect(texts(t)).toContain("Couldn’t place your order. Nothing was ordered.");
     expect(texts(t)).toContain("↻ Try again");
     expect(mockRouter.replace).not.toHaveBeenCalled();
+    // U23: a lost answer is replayed once (same body), then R7b — not more.
+    expect(mockPlace).toHaveBeenCalledTimes(2);
   });
 
   it("a 409 from the kitchen speaks the server's reason and refetches the menu", async () => {
@@ -261,6 +294,8 @@ describe("Place order", () => {
     await flush();
     expect(texts(t)).toContain("Sadza & beef stew is out of stock right now");
     expect(mockRefetch).toHaveBeenCalled();
+    // U23: a 4xx is the server's answer — never replayed.
+    expect(mockPlace).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -626,5 +661,244 @@ describe("BRIEF D3f — a balance owed from a cancel after collection", () => {
     press(t, "↻ Try again");
     expect(mockBalanceRefetch).toHaveBeenCalledTimes(1);
     expect(mockPlace).not.toHaveBeenCalled();
+  });
+});
+
+describe("Reviewed list 2026-10-07 — Review & place (wave 4, lane B)", () => {
+  const openEditor = (t: renderer.ReactTestRenderer): void => {
+    const edits = t.root.findAll((n) => typeof n.props.onPress === "function" && n.findAllByType(Text).some((x) => x.props.children === "Edit"));
+    act(() => edits[0]!.props.onPress());
+  };
+
+  it("U23: a lost answer (status 0) replays the SAME body and key once, and the order it lands on is shown", async () => {
+    mockPlace.mockRejectedValueOnce(new ApiError(0, "The network is slow — check your connection and try again.")).mockResolvedValueOnce({ id: "fo-23" });
+    const t = render();
+    await flush();
+    press(t, /^Place order · /);
+    await flush();
+    await flush();
+    expect(mockPlace).toHaveBeenCalledTimes(2);
+    expect(mockPlace.mock.calls[1]![1]).toBe(mockPlace.mock.calls[0]![1]);
+    expect(mockPlace.mock.calls[1]![1].idempotencyKey).toBe(mockPlace.mock.calls[0]![1].idempotencyKey);
+    expect(texts(t)).not.toContain("Couldn’t place your order. Nothing was ordered.");
+    expect(mockRouter.replace).toHaveBeenCalledWith("/order/fo-23");
+  });
+
+  it("U23: a 5xx from a proxy is replayed too", async () => {
+    mockPlace.mockRejectedValueOnce(new ApiError(502, "Bad gateway")).mockResolvedValueOnce({ id: "fo-24" });
+    const t = render();
+    await flush();
+    press(t, /^Place order · /);
+    await flush();
+    await flush();
+    expect(mockPlace).toHaveBeenCalledTimes(2);
+    expect(mockRouter.replace).toHaveBeenCalledWith("/order/fo-24");
+  });
+
+  it("U24: Back can't remove Review while placing, and a placed order is shown even after the screen is gone", async () => {
+    let resolve!: (o: { id: string }) => void;
+    mockPlace.mockReturnValue(new Promise((r) => (resolve = r)));
+    const t = render();
+    await flush();
+    press(t, /^Place order · /);
+    // While the request is out, a removal (the web's browser Back) is refused.
+    const preventDefault = jest.fn();
+    expect(mockBeforeRemove.length).toBeGreaterThan(0);
+    mockBeforeRemove.forEach((cb) => cb({ preventDefault }));
+    expect(preventDefault).toHaveBeenCalled();
+    // The screen goes anyway (a reload, a stack reset): the order still opens once it lands.
+    act(() => t.unmount());
+    tree = null;
+    await act(async () => {
+      resolve({ id: "fo-77" });
+      await Promise.resolve();
+    });
+    await flush();
+    expect(mockRouter.dismissAll).toHaveBeenCalled();
+    expect(mockRouter.replace).toHaveBeenCalledWith("/order/fo-77");
+  });
+
+  it("U26: a deliver-to outside the area opens R3b on Place instead of placing", async () => {
+    mockHome = { label: "Marondera", point: { lat: -18.5, lng: 31.9 }, area: null };
+    const t = render();
+    await flush();
+    press(t, /^Place order · /);
+    await flush();
+    expect(mockPlace).not.toHaveBeenCalled();
+    const all = texts(t);
+    expect(all.some((s) => s.startsWith("Gava’s Kitchen doesn’t deliver to Marondera."))).toBe(true);
+    expect(all).toContain("Pick an address Gava’s Kitchen delivers to");
+    expect(pressable(t, "Use this address")!.props.accessibilityState.disabled).toBe(true);
+  });
+
+  it("U27: a moved pin is labelled by its coordinates until named — never the old address", async () => {
+    mockPlace.mockResolvedValue({ id: "fo-27" });
+    const t = render();
+    await flush();
+    openEditor(t);
+    const edit = t.root.findAll((n) => typeof n.props.onMove === "function")[0]!;
+    act(() => edit.props.onMove({ lat: -17.82, lng: 31.04 }));
+    press(t, "Use this address");
+    expect(texts(t)).toContain("-17.82000, 31.04000");
+    expect(texts(t)).not.toContain("12 Lanark Rd, Belgravia");
+    press(t, /^Place order · /);
+    await flush();
+    expect(mockPlace.mock.calls[0]![1].dropoff).toMatchObject({ point: { lat: -17.82, lng: 31.04 }, landmark: "-17.82000, 31.04000" });
+  });
+
+  it("U27: with no address before, a moved pin is still never blank", async () => {
+    mockHome = { label: "Set your location", point: null, area: null };
+    const t = render();
+    await flush();
+    openEditor(t);
+    const edit = t.root.findAll((n) => typeof n.props.onMove === "function")[0]!;
+    act(() => edit.props.onMove({ lat: -17.8, lng: 31.05 }));
+    press(t, "Use this address");
+    expect(texts(t)).toContain("-17.80000, 31.05000");
+  });
+
+  it("U41: Android Back while editing the address closes the editor and stays on Review", async () => {
+    const handlers: (() => boolean)[] = [];
+    const spy = jest.spyOn(BackHandler, "addEventListener").mockImplementation((event: string, cb: () => boolean | null | undefined) => {
+      if (event === "hardwareBackPress") handlers.push(cb as () => boolean);
+      return { remove: () => handlers.splice(handlers.indexOf(cb as () => boolean), 1) } as never;
+    });
+    try {
+      const t = render();
+      await flush();
+      expect(handlers).toHaveLength(0);
+      openEditor(t);
+      expect(texts(t)).toContain("Where should we deliver?");
+      expect(handlers).toHaveLength(1);
+      let handled: boolean | undefined;
+      act(() => {
+        handled = handlers[handlers.length - 1]!();
+      });
+      expect(handled).toBe(true);
+      expect(texts(t)).not.toContain("Where should we deliver?");
+      expect(texts(t)).toContain("YOUR PHONE");
+      expect(mockRouter.back).not.toHaveBeenCalled();
+      // Closed: Back is the stack's again.
+      expect(handlers).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("U50: a saved basket that all sold out says why above R9a, and Browse goes back to its section", async () => {
+    shopCart("pharmacy");
+    mockShop.categories[0]!.dishes = mockShop.categories[0]!.dishes.map((d) => ({ ...d, outOfStock: true }));
+    mockCart.replaceLines.mockImplementation((lines: Line[]) => {
+      if (lines.length === 0) mockCart.cart = { restaurantId: null, restaurantName: null, lines: [], orderNote: "", venue: null };
+    });
+    const t = render();
+    await flush();
+    const all = texts(t);
+    expect(all).toContain("Your cart is empty");
+    expect(all).toContain("Some things changed since you added them");
+    expect(all).toContain("Bread (Lobels 700g)");
+    expect(all.filter((s) => s === "Sold out now — taken off")).toHaveLength(2);
+    expect(all.indexOf("Some things changed since you added them")).toBeLessThan(all.indexOf("Your cart is empty"));
+    press(t, "Browse places");
+    expect(mockRouter.replace).toHaveBeenCalledWith("/pharmacy");
+  });
+
+  it("U51: a price drop is not flagged “went up” — only the struck old price shows", async () => {
+    mockMenu.categories[0]!.dishes = [dish("d1", "Sadza & beef stew", 4), dish("d2", "Roast chicken (half)", 6)];
+    const t = render();
+    await flush();
+    const all = texts(t);
+    expect(all.some((s) => s.startsWith("Price went up"))).toBe(false);
+    const line = t.root.findAllByType(ItemLine).find((n) => n.props.name === "Sadza & beef stew")!;
+    expect(line.props.was).toBe(9);
+    expect(line.props.flag).toBeNull();
+  });
+
+  it("U52: the cart is cleared only once the order's route is known, and Review never draws R9a on the way out", async () => {
+    mockPlace.mockResolvedValue({ id: "fo-52" });
+    mockCart.clear.mockImplementation(() => {
+      mockCart.cart = { restaurantId: null, restaurantName: null, lines: [], orderNote: "", venue: null };
+    });
+    const t = render();
+    await flush();
+    press(t, /^Place order · /);
+    await flush();
+    await flush();
+    const route = (routeAfterOrderPlaced as jest.Mock).mock;
+    expect(route.calls).toHaveLength(1);
+    expect(mockCart.clear.mock.invocationCallOrder[0]!).toBeGreaterThan(route.invocationCallOrder[0]!);
+    expect(mockRouter.replace).toHaveBeenCalledWith("/order/fo-52");
+    // The outgoing screen re-renders (the exit animation): still the placed basket, not "Your cart is empty".
+    act(() =>
+      t.update(
+        <SafeAreaProvider initialMetrics={TEST_METRICS}>
+          <FoodReviewScreen />
+        </SafeAreaProvider>,
+      ),
+    );
+    expect(texts(t)).not.toContain("Your cart is empty");
+    expect(texts(t)).toContain("Sadza & beef stew");
+  });
+
+  describe("prescription (R8b)", () => {
+    const RX: Line[] = [{ dishId: "i3", name: "Amoxicillin 500mg (21 caps)", priceUsd: 4.2, quantity: 1, note: "", rxRequired: true }];
+    const withPages = (): void => {
+      mockRxEnabled = true;
+      shopCart("pharmacy", RX);
+      mockRx.pages = [{ id: "rx-1", uri: "file:///p1.jpg", key: "rx/u/1.jpg" }];
+      mockRx.keys = ["rx/u/1.jpg"];
+    };
+    const fillRx = (t: renderer.ReactTestRenderer): void => {
+      const field = t.root.findAll((n) => n.props.accessibilityLabel === "Patient name" && typeof n.props.onChangeText === "function")[0]!;
+      act(() => field.props.onChangeText("Rudo Moyo"));
+      press(t, "I’ll show the original prescription to the rider");
+    };
+
+    it("U64: a missing patient name or consent tick is said as a sentence, not the field's label", async () => {
+      withPages();
+      const t = render();
+      await flush();
+      press(t, /^Place order · /);
+      expect(texts(t)).toContain("Add the patient’s name to place this order");
+      const field = t.root.findAll((n) => n.props.accessibilityLabel === "Patient name" && typeof n.props.onChangeText === "function")[0]!;
+      act(() => field.props.onChangeText("Rudo Moyo"));
+      press(t, /^Place order · /);
+      expect(texts(t)).toContain("Confirm you’ll show the original prescription to the rider");
+      expect(mockPlace).not.toHaveBeenCalled();
+    });
+
+    it("U29: a page placement refused (422 upload_*) clears the pages back to R8a and says why — not replayed", async () => {
+      withPages();
+      mockPlace.mockRejectedValue(new ApiError(422, "We couldn’t find that photo — please retake it.", "upload_missing"));
+      const t = render();
+      await flush();
+      fillRx(t);
+      press(t, /^Place order · /);
+      await flush();
+      expect(mockPlace).toHaveBeenCalledTimes(1);
+      expect(mockRx.clear).toHaveBeenCalledTimes(1);
+      expect(texts(t)).toContain("We couldn’t find that photo — please retake it.");
+    });
+
+    it("U29: any other refusal keeps the pages", async () => {
+      withPages();
+      mockPlace.mockRejectedValue(new ApiError(422, "dropoff: Too small", "validation_failed"));
+      const t = render();
+      await flush();
+      fillRx(t);
+      press(t, /^Place order · /);
+      await flush();
+      expect(mockRx.clear).not.toHaveBeenCalled();
+    });
+
+    it("U30: a page the server refused says the server's reason; only a lost answer is “No connection”", async () => {
+      withPages();
+      const t = render();
+      await flush();
+      act(() => mockRxOnError!(new ApiError(503, "Photo uploads are paused — try again in a few minutes.", "uploads_unavailable")));
+      expect(texts(t)).toContain("Photo uploads are paused — try again in a few minutes.");
+      act(() => mockRxOnError!(new ApiError(0, "Can't reach LyniaGo — check your connection and try again.")));
+      expect(texts(t)).toContain("No connection. Nothing was sent.");
+    });
   });
 });
