@@ -44,6 +44,9 @@ export function cancelUnpaidFoodOrder(orderId: string): Promise<MerchantOrderRes
 
 /** D4/C4: the customer's half of the doorstep dual-confirm handshake (R-04 "food first" — always
  *  first). The rider's own confirm/dispute are the RIDER app's job (D5), not this screen's. */
-export function confirmFoodCustomerCash(orderId: string): Promise<{ orderId: string; customerCashConfirmedAt: string }> {
+/** `cashHandshakeAmount` / `cashHandshakeDeadlineAt` are additive (P22 review) — an older API omits them. */
+export function confirmFoodCustomerCash(
+  orderId: string,
+): Promise<{ orderId: string; customerCashConfirmedAt: string; cashHandshakeAmount?: number | null; cashHandshakeDeadlineAt?: string | null }> {
   return apiFetch(`/restaurants/orders/${orderId}/cash/customer-confirm`, { method: "POST" });
 }

@@ -17,6 +17,8 @@ import { held } from "./motion";
  */
 export const ENTRANCE_DELAYS_MS = [800, 870, 940, 1030, 1110] as const;
 const RISE_MS = 450;
+/** When the last section has finished rising, in ms after the splash's exit started. */
+export const ENTRANCE_END_MS = Math.max(...ENTRANCE_DELAYS_MS) + RISE_MS;
 const EASE_OUT = Easing.bezier(0, 0, 0.58, 1);
 
 export function BootEntrance({ index, children }: { index: number; children: React.ReactNode }): React.ReactElement {

@@ -96,6 +96,20 @@ jest.mock("../../../net/use-order-flags", () => ({ useOrderFlags: () => ({ rxEna
 let mockRestaurantsEnabled = true;
 jest.mock("../../../net/use-feature-flags", () => ({ useFeatureFlags: () => ({ restaurantsEnabled: mockRestaurantsEnabled, merchantDispatchAutoEnabled: false, merchantWalletEnabled: false }) }));
 
+// P02 / P14: count each item photo's renders by name — a row that didn't change must not re-render.
+const mockImageRenders: Record<string, number> = {};
+jest.mock("../kit", () => {
+  const actual = jest.requireActual("../kit");
+  const React = jest.requireActual("react");
+  return {
+    ...actual,
+    VenueImage: (p: { name: string }) => {
+      mockImageRenders[p.name] = (mockImageRenders[p.name] ?? 0) + 1;
+      return React.createElement(actual.VenueImage, p);
+    },
+  };
+});
+
 import { ShopListScreen } from "../ShopListScreen";
 import { ShopStoreScreen } from "../ShopStoreScreen";
 
@@ -311,5 +325,36 @@ describe("Shop storefront (S3)", () => {
     expect(texts(tree)).toContain("Order for when they open · 10:30–11:00");
     press(tree, /Order for when they open/);
     expect(mockPush).toHaveBeenCalledWith("/food/checkout?schedule=first");
+  });
+});
+
+describe("P02 — the storefront's catalogue doesn't re-render as a whole", () => {
+  const remount = (t: renderer.ReactTestRenderer): void => {
+    act(() => {
+      t.update(<SafeAreaProvider initialMetrics={TEST_METRICS}>{<ShopStoreScreen service="pharmacy" />}</SafeAreaProvider>);
+    });
+  };
+
+  it("a + re-renders only that row", () => {
+    tree = mount(<ShopStoreScreen service="pharmacy" />);
+    for (const k of Object.keys(mockImageRenders)) delete mockImageRenders[k];
+    setCart("s-1", "Avondale Pharmacy", [{ dishId: "d-1", name: "Paracetamol 500mg (20 tabs)", priceUsd: 1.5, quantity: 1, note: "" }]);
+    remount(tree);
+    expect(mockImageRenders["Paracetamol 500mg (20 tabs)"]).toBeGreaterThan(0);
+    expect(mockImageRenders["Ibuprofen 200mg (24 tabs)"]).toBeUndefined();
+  });
+
+  it("opening the item sheet re-renders no catalogue row", () => {
+    tree = mount(<ShopStoreScreen service="pharmacy" />);
+    for (const k of Object.keys(mockImageRenders)) delete mockImageRenders[k];
+    press(tree, "Paracetamol 500mg (20 tabs), $1.50");
+    expect(mockImageRenders["Ibuprofen 200mg (24 tabs)"]).toBeUndefined();
+  });
+
+  it("a screen re-render with nothing changed re-renders no row", () => {
+    tree = mount(<ShopStoreScreen service="pharmacy" />);
+    for (const k of Object.keys(mockImageRenders)) delete mockImageRenders[k];
+    remount(tree);
+    expect(mockImageRenders).toEqual({});
   });
 });

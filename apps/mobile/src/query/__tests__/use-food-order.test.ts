@@ -24,3 +24,28 @@ describe("pollIntervalFor — owner decision D1: the venue may answer for 24 h",
     expect(pollIntervalFor(order({ status: "cancelled", merchantPhase: null }), NOW)).toBe(false);
   });
 });
+
+describe("pollIntervalFor — P19: no poll once it has ended, a safety net while the socket is up", () => {
+  it.each(["delivered", "completed", "undelivered", "cancelled", "expired"])("stops on a %s order (the rating screen no longer polls)", (status) => {
+    expect(pollIntervalFor(order({ status: status as MerchantOrderResponse["status"], merchantPhase: null }), NOW)).toBe(false);
+    expect(pollIntervalFor(order({ status: status as MerchantOrderResponse["status"], merchantPhase: null }), NOW, true)).toBe(false);
+  });
+
+  it("relaxes the 15 s cadence to a 60 s safety net while the order socket is connected", () => {
+    const cooking = order({ merchantPhase: "preparing" });
+    expect(pollIntervalFor(cooking, NOW)).toBe(15_000);
+    expect(pollIntervalFor(cooking, NOW, true)).toBe(60_000);
+  });
+
+  it("keeps the deadline windows tight even with the socket up (nothing pushes a lapse)", () => {
+    expect(pollIntervalFor(order({ acceptDeadlineAt: at(90_000) }), NOW, true)).toBe(4_000);
+    expect(pollIntervalFor(order({ merchantPhase: "awaiting_item_approval" }), NOW, true)).toBe(4_000);
+  });
+});
+
+describe("pollIntervalFor — P19 review: the door step keeps 15 s with the socket up", () => {
+  it.each(["picked_up", "en_route_dropoff"])("%s: the rider's cash confirm / 'I'm here' / a freeze are seen within 15 s", (status) => {
+    expect(pollIntervalFor(order({ status: status as MerchantOrderResponse["status"], merchantPhase: null }), NOW, true)).toBe(15_000);
+    expect(pollIntervalFor(order({ status: status as MerchantOrderResponse["status"], merchantPhase: null }), NOW, false)).toBe(15_000);
+  });
+});

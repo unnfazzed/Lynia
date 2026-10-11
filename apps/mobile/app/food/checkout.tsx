@@ -385,7 +385,8 @@ export default function FoodReviewScreen(): React.ReactElement {
         }),
       );
       void saveMyPickupPhone(phone.trim());
-      seedFoodOrder(queryClient, order);
+      // P23: the order screen's snapshot too (its map's venue and drop pins), not only the food order.
+      seedFoodOrder(queryClient, order, restaurant?.location ? { venue: restaurant.location, venueName: venue, drop, total: money.total } : undefined);
       cart.clear();
       // D-82 PC8: the "Know when it's at the gate" explainer in front of the order, while it should ask.
       const next = await routeAfterOrderPlaced(order.id);

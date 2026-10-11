@@ -46,6 +46,7 @@ import {
   parcelNowVM,
   searchDate,
   sortNow,
+  type HistoryRowVM,
   type OrdersFilter,
   type OrdersService,
 } from "../../src/ui/orders/model";
@@ -83,7 +84,6 @@ export default function OrdersTabScreen(): React.ReactElement {
   const unread = useNotificationsUnreadCount() > 0;
   const { restaurantsEnabled } = useFeatureFlags();
   const { shopsEnabled, pharmacyEnabled } = useServiceFlags();
-  const now = useNow(15_000);
 
   // Focus-gated polling over the `["activeCustomerOrders"]` entry Home shares (one card per running job).
   const [focused, setFocused] = useState(true);
@@ -94,6 +94,9 @@ export default function OrdersTabScreen(): React.ReactElement {
       return () => setFocused(false);
     }, [qc]),
   );
+  // P15: the tab stays mounted behind every other screen; its 15 s clock runs only while it is in view,
+  // so a hidden tab no longer re-renders its whole history four times a minute.
+  const now = useNow(focused ? 15_000 : null);
   const activeOrdersQ = useQuery({ queryKey: ACTIVE_ORDERS_KEY, queryFn: getActiveCustomerOrders, refetchInterval: focused ? 30_000 : false });
   // Array.isArray, not `?? []`: a malformed 200 body is a truthy non-array (CF-04 / UIP-02).
   // U06: a delivered order leaves NOW at once and becomes a history row (README §5); the shared feed
@@ -114,7 +117,11 @@ export default function OrdersTabScreen(): React.ReactElement {
   const nowCards = sortNow(
     activeOrders.map((o) => (o.orderType === "merchant" ? merchantNowVM(o, foodReads[o.id], now.getTime(), asOf) : parcelNowVM(o, now.getTime(), asOf))),
   );
-  const open = (id: string): void => router.push(`/order/${id}`);
+  // P13: a restaurant / shop / pharmacy row says so (`k=m`), so the order screen mounts the merchant
+  // screen at once instead of loading the generic snapshot first just to learn the order's type.
+  const open = useCallback((id: string, merchant: boolean): void => router.push(merchant ? `/order/${id}?k=m` : `/order/${id}`), [router]);
+  const openRow = useCallback((r: HistoryRowVM): void => open(r.id, r.service !== "send"), [open]);
+  const openNow = (id: string): void => open(id, activeOrders.some((o) => o.id === id && o.orderType === "merchant"));
 
   // ── History: the customer's own orders (carried jobs live in the rider's Job history), minus the running ones ──
   const liveIds = useMemo(() => new Set(activeOrders.map((o) => o.id)), [activeOrders]);
@@ -140,7 +147,11 @@ export default function OrdersTabScreen(): React.ReactElement {
   ];
   const [filter, setFilter] = useState<OrdersFilter>("all");
   const shownFilter: OrdersFilter = filter === "all" || services.includes(filter) ? filter : "all";
-  const filtered = shownFilter === "all" ? history : history.filter((r) => r.service === shownFilter);
+  const filtered = useMemo(() => (shownFilter === "all" ? history : history.filter((r) => r.service === shownFilter)), [history, shownFilter]);
+  // The day groups change only with the rows or the calendar day, not with every 15 s tick.
+  const day = now.toDateString();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the calendar day, not the tick
+  const groups = useMemo(() => groupByDay(filtered, now), [filtered, day]);
   // A chip with no matches in the pages held keeps paging until the end (README §5) before it says "none".
   useEffect(() => {
     if (shownFilter !== "all" && filtered.length === 0 && hasMore && !isLoadingMore && !loadMoreFailed) void older();
@@ -178,7 +189,7 @@ export default function OrdersTabScreen(): React.ReactElement {
         <SectionLabel text={nowCards.length > 1 ? C.nowCount(nowCards.length) : C.now} helper={nowCards.length > 1 && online ? C.nowMany : null} />
         <View style={{ gap: 8, paddingHorizontal: 16 }}>
           {nowCards.map((v) => (
-            <NowCard key={v.id} v={v} onPress={() => open(v.id)} />
+            <NowCard key={v.id} v={v} onPress={() => openNow(v.id)} />
           ))}
         </View>
       </>
@@ -188,7 +199,7 @@ export default function OrdersTabScreen(): React.ReactElement {
       <>
         <SectionLabel text={C.matches(matches.length, q)} />
         {matches.map((r, i) => (
-          <HistoryRow key={r.id} r={r} q={q} when={searchDate(r.createdAt, now)} last={i === matches.length - 1} onPress={() => open(r.id)} />
+          <HistoryRow key={r.id} r={r} q={q} when={searchDate(r.createdAt, now)} last={i === matches.length - 1} onPress={openRow} />
         ))}
       </>
     ) : (
@@ -213,7 +224,7 @@ export default function OrdersTabScreen(): React.ReactElement {
         <SearchBar value={query} onChange={setQuery} onCancel={cancelSearch} />
         {!online ? <OfflineBanner text={C.offlineSearch} /> : null}
         {nowCards.map((v) => (
-          <NowStrip key={v.id} v={v} onPress={() => open(v.id)} />
+          <NowStrip key={v.id} v={v} onPress={() => openNow(v.id)} />
         ))}
         {q ? results() : <NoteRow icon="search" text={C.searchHint} />}
         {q && !online ? <NoteRow center text={C.noMatchOff} /> : null}
@@ -260,7 +271,6 @@ export default function OrdersTabScreen(): React.ReactElement {
         </>
       );
   } else {
-    const groups = groupByDay(filtered, now);
     const none = shownFilter === "all" ? null : shownFilter;
     body = (
       <>
@@ -287,7 +297,7 @@ export default function OrdersTabScreen(): React.ReactElement {
               <View key={g.label}>
                 <DayLabel label={g.label} />
                 {g.rows.map((r, i) => (
-                  <HistoryRow key={r.id} r={r} when={hhmm(r.createdAt)} last={i === g.rows.length - 1} onPress={() => open(r.id)} />
+                  <HistoryRow key={r.id} r={r} when={hhmm(r.createdAt)} last={i === g.rows.length - 1} onPress={openRow} />
                 ))}
               </View>
             ))}

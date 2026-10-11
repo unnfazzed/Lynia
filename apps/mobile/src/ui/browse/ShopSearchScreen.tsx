@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { shopVenue, type VenueView } from "../../logic/browse";
 import { useHomeLocation } from "../../logic/home-location";
 import { formatMoney } from "../../logic/money";
+import { SEARCH_DEBOUNCE_MS, useDebounced } from "../../logic/use-debounced";
 import { useNow } from "../../logic/use-now";
 import { useReachable } from "../../net/use-reachable";
 import { useShopSearch } from "../../query/use-shops";
@@ -56,7 +57,8 @@ export function ShopSearchScreen({ service }: { service: ShopService }): React.R
   const location = useHomeLocation();
   const now = useNow();
   const [query, setQuery] = useState("");
-  const q = query.trim();
+  // P18 — the restaurant search's 300 ms debounce: one `GET /shops/search` per pause, not per keystroke.
+  const q = useDebounced(query.trim(), SEARCH_DEBOUNCE_MS);
   const { data, isFetching } = useShopSearch(service, q, true);
   const s = B.svc[service];
 

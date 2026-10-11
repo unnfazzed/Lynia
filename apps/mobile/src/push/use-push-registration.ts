@@ -44,6 +44,9 @@ const BOOT_REGISTER_DELAY_MS = 250;
  * terminal failure (permission denied, simulator, Expo Go) is NOT retried. A mid-process OS/FCM token
  * rotation re-registers the fresh token. None of this ever throws to the caller or blocks the user.
  */
+/** The door-step push kinds `food-debt.service.ts` sends (see the received listener below). */
+const DOOR_STEP_KINDS: ReadonlySet<string> = new Set(["cash_handshake_rider_confirmed", "cash_handshake_customer_confirmed", "cash_handshake_frozen", "rider_at_dropoff"]);
+
 export function usePushRegistration(session: Session | null): void {
   const profileId = session?.profileId ?? null;
   // Read via a ref inside the handlers below (rather than closing over `pathname` directly) so the
@@ -218,6 +221,14 @@ export function usePushRegistration(session: Session | null): void {
         void qc.invalidateQueries({ queryKey: ["food-order", data.orderId] });
         void qc.invalidateQueries({ queryKey: ["order", data.orderId] });
         void qc.invalidateQueries({ queryKey: ["activeCustomerOrders"] });
+        return;
+      }
+      // P19 review: the door-step pushes (food-debt.service.ts) — the rider's cash confirm (the code is
+      // ready), "I'm here", a frozen handshake, the customer's confirm (to the rider) — change the order
+      // without a status the 60 s socket safety-net poll would wait out. Refresh both reads at once.
+      if (typeof data?.kind === "string" && DOOR_STEP_KINDS.has(data.kind) && typeof data.orderId === "string") {
+        void qc.invalidateQueries({ queryKey: ["food-order", data.orderId] });
+        void qc.invalidateQueries({ queryKey: ["order", data.orderId] });
       }
     });
     return () => sub.remove();

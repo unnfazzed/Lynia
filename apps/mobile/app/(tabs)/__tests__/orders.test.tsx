@@ -275,7 +275,8 @@ describe("(tabs)/orders.tsx — Orders v2", () => {
       expect(has(tree, "Sadza Republic")).toBe(true);
       expect(has(tree, "Sadza & beef stew")).toBe(true);
       press(tree, "Sadza Republic");
-      expect(mockPush).toHaveBeenLastCalledWith("/order/food-1");
+      // P13: the row says it is a merchant order, so the order screen mounts the merchant view at once.
+      expect(mockPush).toHaveBeenLastCalledWith("/order/food-1?k=m");
     });
 
     it("every unpaid outcome reads 'No charge' (owner 2026-10-02: Not delivered too)", async () => {

@@ -418,13 +418,27 @@ function Marked({ text, q, style, lines }: { text: string; q: string; style: Tex
 }
 
 /** History row (README §4): sticker disc · title · items · outcome + rider + stars | amount over time. */
-export function HistoryRow({ r, when, q = "", last, onPress }: { r: HistoryRowVM; when: string; q?: string; last: boolean; onPress: () => void }): React.ReactElement {
+/** P15: memoised, and `onPress` takes the row back, so the tab passes one stable handler and an unchanged
+ *  row skips the tab's re-renders (a filter, a search keystroke, a NOW card update). */
+export const HistoryRow = React.memo(function HistoryRow({
+  r,
+  when,
+  q = "",
+  last,
+  onPress,
+}: {
+  r: HistoryRowVM;
+  when: string;
+  q?: string;
+  last: boolean;
+  onPress: (r: HistoryRowVM) => void;
+}): React.ReactElement {
   const lines = useClamp();
   const Art = STICKER[r.service];
   const amount = r.chargedUsd > 0 ? `$${r.chargedUsd.toFixed(2)}` : C.noCharge;
   return (
     <Tappable
-      onPress={onPress}
+      onPress={() => onPress(r)}
       accessibilityRole="button"
       accessibilityLabel={`${r.title}. ${r.items}. ${outcomeLabel(r.outcome, r.service)}. ${amount}`}
       style={{ flexDirection: "row", gap: 12, paddingHorizontal: 16, alignItems: "stretch" }}
@@ -455,7 +469,7 @@ export function HistoryRow({ r, when, q = "", last, onPress }: { r: HistoryRowVM
       </View>
     </Tappable>
   );
-}
+});
 
 // ── Footers, banners, cards ─────────────────────────────────────────────────────────────────────
 

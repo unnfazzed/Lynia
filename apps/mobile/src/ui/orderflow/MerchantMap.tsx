@@ -1,10 +1,11 @@
 import { tokens } from "@lynia/shared/tokens";
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Easing, Text, View } from "react-native";
-import MapView, { AnimatedRegion, type LatLng, Marker, MarkerAnimated, Polyline, type Region } from "react-native-maps";
+import React, { useEffect, useMemo, useRef } from "react";
+import { Text, View } from "react-native";
+import MapView, { type LatLng, Marker, Polyline, type Region } from "react-native-maps";
 import type { MerchantService } from "../../logic/merchant-order";
 import { Icon } from "../Icon";
 import type { MapPoint } from "../LiveMap";
+import { GlidingMarker, MapGround, useDeferredMapMount } from "../order/map-perf";
 import { ALPHA, SVC_TILE, SvcSticker } from "./kit";
 import { O } from "./copy";
 
@@ -15,11 +16,14 @@ import { O } from "./copy";
  * muted route on a white casing. Rider found: the ink bike disc with the green glow and a dotted line to
  * the venue. Collected: a solid accent route, 6px on an 11px white casing. Re-fits only when the framed
  * set changes (never on a GPS tick); fixes glide over 800ms (snap under reduce motion).
+ *
+ * Performance (customer review 2026-10-07, `../order/map-perf.tsx`): the native map mounts one interaction
+ * after the push and also serves the opening state, so it is created once (P12); the rider glides natively
+ * on Android (P37).
  */
 
 const C = tokens.color;
 const HARARE: Region = { latitude: -17.8292, longitude: 31.0522, latitudeDelta: 0.06, longitudeDelta: 0.06 };
-const RIDER_DELTA = { latitudeDelta: 0.01, longitudeDelta: 0.01 } as const;
 const ll = (p: MapPoint): LatLng => ({ latitude: p.lat, longitude: p.lng });
 
 function VenuePin({ name, svc }: { name: string; svc: MerchantService }): React.ReactElement {
@@ -82,24 +86,11 @@ export const MerchantMap = React.memo(function MerchantMap(props: {
   reduceMotion: boolean;
 }): React.ReactElement {
   const mapRef = useRef<MapView>(null);
-  const riderRegion = useRef<AnimatedRegion | null>(null);
-  const [hasRider, setHasRider] = useState(false);
+  const mapMounted = useDeferredMapMount();
   const { rider, reduceMotion, venue, dropoff } = props;
 
-  useEffect(() => {
-    if (!rider) return;
-    const next: Region = { latitude: rider.lat, longitude: rider.lng, ...RIDER_DELTA };
-    if (!riderRegion.current) {
-      riderRegion.current = new AnimatedRegion(next);
-      setHasRider(true);
-      return;
-    }
-    if (reduceMotion) riderRegion.current.setValue(next);
-    else riderRegion.current.timing({ ...next, duration: 800, easing: Easing.linear, useNativeDriver: false } as Parameters<AnimatedRegion["timing"]>[0]).start();
-  }, [rider?.lat, rider?.lng, reduceMotion]); // eslint-disable-line react-hooks/exhaustive-deps -- glide on a new fix only
-
   const haveRider = props.showRider && rider != null;
-  const fitKey = `${venue?.lat},${venue?.lng}|${dropoff?.lat},${dropoff?.lng}|${haveRider}|${props.collected}|${Math.round(props.padBottom)}`;
+  const fitKey = `${venue?.lat},${venue?.lng}|${dropoff?.lat},${dropoff?.lng}|${haveRider}|${props.collected}|${Math.round(props.padBottom)}|${mapMounted}`;
   const riderRef = useRef(rider);
   riderRef.current = rider;
   useEffect(() => {
@@ -112,34 +103,37 @@ export const MerchantMap = React.memo(function MerchantMap(props: {
 
   return (
     <View style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0 }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-      <MapView ref={mapRef} style={{ flex: 1 }} initialRegion={HARARE} toolbarEnabled={false} showsCompass={false}>
-        {route ? <Polyline coordinates={route} strokeColor={C.bg} strokeWidth={props.collected ? 11 : 8} lineCap="round" /> : null}
-        {route ? (
-          props.collected ? (
-            <Polyline coordinates={route} strokeColor={C.accent} strokeWidth={6} lineCap="round" />
-          ) : (
-            <Polyline coordinates={route} strokeColor={C.muted} strokeWidth={3} lineDashPattern={[7, 7]} lineCap="round" />
-          )
-        ) : null}
-        {props.toVenue && haveRider && venue && rider ? (
-          <Polyline coordinates={[ll(rider), ll(venue)]} strokeColor={C.ink} strokeWidth={3.5} lineDashPattern={[1, 7]} lineCap="round" />
-        ) : null}
-        {venue ? (
-          <Marker key={`venue-${props.svc}`} coordinate={ll(venue)} anchor={{ x: 0.5, y: 0.3 }} tracksViewChanges={false}>
-            <VenuePin name={props.venueName} svc={props.svc} />
-          </Marker>
-        ) : null}
-        {dropoff ? (
-          <Marker coordinate={ll(dropoff)} anchor={{ x: 0.5, y: 0.3 }} tracksViewChanges={false}>
-            <DropPin />
-          </Marker>
-        ) : null}
-        {haveRider && hasRider && riderRegion.current ? (
-          <MarkerAnimated key={`rider-${props.riderPaused ? "p" : "l"}-${props.riderLabel}`} coordinate={riderRegion.current as unknown as LatLng} anchor={{ x: 0.5, y: 0.3 }} tracksViewChanges={false}>
-            <RiderPin label={props.riderLabel} paused={props.riderPaused} />
-          </MarkerAnimated>
-        ) : null}
-      </MapView>
+      {!mapMounted ? <MapGround /> : null}
+      {mapMounted ? (
+        <MapView ref={mapRef} style={{ flex: 1 }} initialRegion={HARARE} toolbarEnabled={false} showsCompass={false}>
+          {route ? <Polyline coordinates={route} strokeColor={C.bg} strokeWidth={props.collected ? 11 : 8} lineCap="round" /> : null}
+          {route ? (
+            props.collected ? (
+              <Polyline coordinates={route} strokeColor={C.accent} strokeWidth={6} lineCap="round" />
+            ) : (
+              <Polyline coordinates={route} strokeColor={C.muted} strokeWidth={3} lineDashPattern={[7, 7]} lineCap="round" />
+            )
+          ) : null}
+          {props.toVenue && haveRider && venue && rider ? (
+            <Polyline coordinates={[ll(rider), ll(venue)]} strokeColor={C.ink} strokeWidth={3.5} lineDashPattern={[1, 7]} lineCap="round" />
+          ) : null}
+          {venue ? (
+            <Marker key={`venue-${props.svc}`} coordinate={ll(venue)} anchor={{ x: 0.5, y: 0.3 }} tracksViewChanges={false}>
+              <VenuePin name={props.venueName} svc={props.svc} />
+            </Marker>
+          ) : null}
+          {dropoff ? (
+            <Marker coordinate={ll(dropoff)} anchor={{ x: 0.5, y: 0.3 }} tracksViewChanges={false}>
+              <DropPin />
+            </Marker>
+          ) : null}
+          {haveRider ? (
+            <GlidingMarker point={rider} markerKey={`rider-${props.riderPaused ? "p" : "l"}-${props.riderLabel}`} anchor={{ x: 0.5, y: 0.3 }} reduceMotion={reduceMotion}>
+              <RiderPin label={props.riderLabel} paused={props.riderPaused} />
+            </GlidingMarker>
+          ) : null}
+        </MapView>
+      ) : null}
     </View>
   );
 });
