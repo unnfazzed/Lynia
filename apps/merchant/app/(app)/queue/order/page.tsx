@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { foodOrderMoney, type MerchantOrderResponse, type MerchantProfileResponse } from "@lynia/shared";
 import { Icon } from "../../../components/icons";
 import { Kitchen } from "../../../components/Kitchen";
@@ -21,6 +21,7 @@ import { RetryableError } from "../../../components/RetryableError";
 import { InfoStrip, PathCard, ReasonSheet, Sheet } from "../../../components/m/ReasonSheet";
 import { ApiError, redirectIfSessionExpired } from "../../../lib/api-client";
 import { useBusiness } from "../../../lib/business";
+import { createCoalescedFetch } from "../../../lib/coalesced-fetch";
 import { formatCountdown } from "../../../lib/countdown";
 import { isNoRiderHold } from "../../../lib/order-groups";
 import {
@@ -44,13 +45,11 @@ import {
   requestPayment,
   revealPickupCode,
 } from "../../../lib/orders-api";
-import { detailView, isAfterPickup, isGoodsReturn, money, orderLabel, riderFirstName, slotLabel } from "../../../lib/orders-view";
+import { detailView, isAfterPickup, isGoodsReturn, money, orderLabel, riderFirstName, slotLabel, ticketPollMs } from "../../../lib/orders-view";
 import { changeableLines, openRound, proposalLines } from "../../../lib/substitution";
 import { useNow } from "../../../lib/use-now";
 import { countOf, doorProofLine, ORDER_FLOW as OF, vocabulary, type Vocabulary } from "../../../lib/vocabulary";
 import { prescriptionHref } from "../../../lib/routes";
-
-const POLL_MS = 5_000;
 
 type Load = { status: "loading" } | { status: "ready"; order: MerchantOrderResponse } | { status: "error"; message: string };
 type Confirm =
@@ -186,21 +185,40 @@ export default function OrderPage() {
   const signOutRef = useRef(signOut);
   signOutRef.current = signOut;
 
-  const refresh = useCallback(async () => {
-    try {
-      const order = await getOrder(id);
-      setLoad({ status: "ready", order });
-    } catch (err) {
-      if (redirectIfSessionExpired(err, () => signOutRef.current())) return;
-      setLoad((prev) => (prev.status === "ready" ? prev : { status: "error", message: err instanceof ApiError ? err.message : "Couldn't load this order." }));
-    }
-  }, [id]);
+  // MJ-RL23 (2026-10-07): the queue poll's rules (coalesced-fetch.ts) — one read at a time, a late answer
+  // never overwrites a newer one, and an action's own refresh waits for a read that shows it.
+  // Each id gets its own fetcher, so an answer for the order this screen showed before (a ticket opened
+  // from another ticket) must not land once the new one is up: only the current id's answer applies.
+  const idRef = useRef(id);
+  idRef.current = id;
+  const refresh = useMemo(
+    () =>
+      createCoalescedFetch(async (isLatest) => {
+        const current = () => isLatest() && idRef.current === id;
+        try {
+          const order = await getOrder(id);
+          if (current()) setLoad({ status: "ready", order });
+        } catch (err) {
+          if (redirectIfSessionExpired(err, () => signOutRef.current())) return;
+          if (!current()) return;
+          setLoad((prev) => (prev.status === "ready" ? prev : { status: "error", message: err instanceof ApiError ? err.message : "Couldn't load this order." }));
+        }
+      }),
+    [id],
+  );
 
   useEffect(() => {
     void refresh();
-    const t = setInterval(() => void refresh(), POLL_MS);
-    return () => clearInterval(t);
   }, [refresh]);
+
+  // …and it stops once nothing more can happen to the order (closed, or delivered with nothing coming
+  // back), and slows to 30 s once the rider has the food (`ticketPollMs`).
+  const pollMs = ticketPollMs(load.status === "ready" ? load.order : null);
+  useEffect(() => {
+    if (pollMs === null) return undefined;
+    const t = setInterval(() => void refresh(), pollMs);
+    return () => clearInterval(t);
+  }, [refresh, pollMs]);
 
   // A ringing order is answered on the Orders home, where the alarm and the takeover are.
   useEffect(() => {

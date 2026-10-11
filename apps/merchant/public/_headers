@@ -12,3 +12,13 @@
 # Cloudflare's default (revalidate every time), so a deploy is visible on the next load.
 /_next/static/*
   Cache-Control: public, max-age=31536000, immutable
+
+# MJ-RL28 (2026-10-07): the fonts and brand SVGs carried no cache header, so every full page load
+# revalidated them. Their names are not versioned (globals.css and the pages name them directly), so not
+# a year and immutable: a day fresh, then up to a week served while it revalidates in the background.
+# Rename a file with a version suffix if it ever needs to change at once.
+/fonts/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/brand/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800

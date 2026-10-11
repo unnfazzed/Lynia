@@ -7,7 +7,7 @@ import { RingingHost } from "../../components/queue/RingingHost";
 import { TOAST_MS, ToastProvider } from "../../components/m/Toast";
 import { ApiError, getMyMerchant } from "../../lib/api-client";
 import { setBusyMode, setOpen } from "../../lib/menu-api";
-import { acceptOrder, cancelPreparing, confirmKitchen, getTodaySummary, listScheduledOrders, proposeSubstitution, rejectOrder } from "../../lib/orders-api";
+import { acceptOrder, cancelPreparing, confirmKitchen, getTodayKpis, listScheduledOrders, proposeSubstitution, rejectOrder } from "../../lib/orders-api";
 import { merchantOrder, merchantProfile, RIDER } from "../../testing/fixtures";
 
 vi.mock("../../lib/api-client", async () => {
@@ -22,7 +22,7 @@ vi.mock("../../lib/orders-api", () => ({
   cancelPreparing: vi.fn(async () => ({})),
   proposeSubstitution: vi.fn(async () => ({})),
   listScheduledOrders: vi.fn(async () => []),
-  getTodaySummary: vi.fn(),
+  getTodayKpis: vi.fn(),
 }));
 vi.mock("../../lib/business", () => ({ primeBusiness: vi.fn(), useBusiness: () => null }));
 
@@ -79,17 +79,12 @@ beforeEach(() => {
   poll.orders = [];
   poll.loaded = true;
   poll.error = null;
-  vi.mocked(getTodaySummary).mockResolvedValue({
+  vi.mocked(getTodayKpis).mockResolvedValue({
     date: "2026-09-30",
-    delivered: 6,
-    rejected: 0,
-    cashTaken: 30,
-    walletTaken: 0,
-    averagePrepMinutes: 15,
     orders: 7,
     sales: 59.5,
+    cashDue: 9.5,
     cashOverdue: 9.5,
-    overdue: [],
   });
 });
 
@@ -241,7 +236,7 @@ describe("B1 · Orders home (merchant mobile, D-48)", () => {
     render(<Page />);
     await screen.findByText("Sadza Republic");
     expect(screen.queryByText("Sales")).toBeNull();
-    expect(getTodaySummary).not.toHaveBeenCalled();
+    expect(getTodayKpis).not.toHaveBeenCalled();
   });
 
   it("K1c: open and quiet says so, and a kitchen checks its menu (D-77 follow-ups)", async () => {
@@ -506,5 +501,31 @@ describe("the open/closed switch (B1 → B5)", () => {
     fireEvent.click(await screen.findByRole("switch", { name: "Closed" }));
     expect(await screen.findByText("Outside your opening hours · change them in Account")).toBeTruthy();
     expect(setOpen).not.toHaveBeenCalled();
+  });
+});
+
+// MJ-P2 + MJ-RL27 (2026-10-07): every Orders load read the KPI strip and Scheduled twice (once on mount,
+// again when the queue's first read changed its size from 0), and the strip read Money's whole Today.
+describe("the Orders home's own reads (MJ-P2, MJ-RL27)", () => {
+  it("reads the lean strip and Scheduled once per load, and again only when the queue really changes", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
+    poll.loaded = false;
+    const { rerender } = render(<Page />);
+    expect(await screen.findByText("$59.50")).toBeTruthy();
+    expect(getTodayKpis).toHaveBeenCalledTimes(1);
+    expect(listScheduledOrders).toHaveBeenCalledTimes(1);
+
+    // The queue's first read lands with an order in it: not a change, no second read.
+    poll.loaded = true;
+    poll.orders = [merchantOrder({ merchantPhase: "preparing", prepMinutes: 15, prepStartedAt: new Date().toISOString() })];
+    await act(async () => rerender(<Page />));
+    expect(getTodayKpis).toHaveBeenCalledTimes(1);
+    expect(listScheduledOrders).toHaveBeenCalledTimes(1);
+
+    // An order leaves: both re-read.
+    poll.orders = [];
+    await act(async () => rerender(<Page />));
+    expect(getTodayKpis).toHaveBeenCalledTimes(2);
+    expect(listScheduledOrders).toHaveBeenCalledTimes(2);
   });
 });

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { MerchantProfileResponse } from "@lynia/shared";
 import { getMerchantProfile } from "./menu-api";
+import { invalidateReads } from "./read-cache";
 
 /**
  * The signed-in person's business, read once per page load and shared by the shell (merchant web upgrade
@@ -47,6 +48,8 @@ export function hasKnownBusiness(): boolean {
 export function clearBusinessCache(): void {
   known = null;
   pending = null;
+  // MJ-P2: and the shared reads under it (sign-out, a branch switch).
+  invalidateReads();
 }
 
 export function useBusiness(): MerchantProfileResponse | null {

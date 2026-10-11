@@ -8,6 +8,7 @@ import type { OrderLifecycleService } from "../orders/order-lifecycle.service";
 import type { OrdersService } from "../orders/orders.service";
 import type { PrismaService } from "../prisma/prisma.service";
 import type { MerchantAccess } from "./merchant-access";
+import { MerchantBookingController } from "./merchant-booking.controller";
 import { bookingStateOf, MerchantBookingService } from "./merchant-booking.service";
 
 /* ── An in-memory slice of the tables Book a rider touches ─────────────────────────────────────── */
@@ -49,6 +50,15 @@ const BUYER = { point: { lat: -17.83, lng: 31.05 }, landmark: "Blue gate, 12 Fif
 
 let seq = 0;
 const id = (p: string) => `${p}-${++seq}`;
+
+/** The slice of Prisma's `where` the live-only list (MJ-RL26) uses: `{ in }`, equality and null. */
+function matchesClause(o: OrderRow, clause: Record<string, unknown>): boolean {
+  return Object.entries(clause).every(([key, want]) => {
+    const have = (o as unknown as Record<string, unknown>)[key] ?? null;
+    if (want !== null && typeof want === "object" && "in" in want) return (want as { in: unknown[] }).in.includes(have);
+    return have === want;
+  });
+}
 
 function makeWorld() {
   const profiles = new Map<string, ProfileRow>();
@@ -138,11 +148,24 @@ function makeWorld() {
         }
         return materialize(o);
       },
-      findMany: async ({ where }: { where: { customerId?: string; rebroadcastOfId?: { in: string[] } } }) => {
+      findMany: vi.fn(async ({ where }: { where: { customerId?: string; rebroadcastOfId?: { in: string[] }; id?: { in: string[] }; OR?: Array<Record<string, unknown>> } }) => {
         const all = [...orders.values()];
-        if (where.customerId) return all.filter((o) => o.customerId === where.customerId).sort((a, b) => +b.createdAt - +a.createdAt).map(materialize);
+        if (where.id) {
+          // bookerNames' batched chain read (MJ-RL26).
+          return where.id.in.flatMap((x) => {
+            const o = orders.get(x);
+            const b = o ? bookings.get(o.id) : undefined;
+            return o ? [{ id: o.id, rebroadcastOfId: o.rebroadcastOfId, merchantBooking: b ? { bookedByProfileId: b.bookedByProfileId } : null }] : [];
+          });
+        }
+        if (where.customerId) {
+          return all
+            .filter((o) => o.customerId === where.customerId && (!where.OR || where.OR.some((clause) => matchesClause(o, clause))))
+            .sort((a, b) => +b.createdAt - +a.createdAt)
+            .map(materialize);
+        }
         return all.filter((o) => o.rebroadcastOfId && where.rebroadcastOfId!.in.includes(o.rebroadcastOfId)).map((o) => ({ id: o.id, rebroadcastOfId: o.rebroadcastOfId }));
-      },
+      }),
       // closeCash's guarded close: only an open, not-yet-closed debt.
       updateMany: async ({ where, data }: { where: { id: string; debtStatus: string; merchantClosedAt: null }; data: Partial<OrderRow> }) => {
         const o = orders.get(where.id);
@@ -380,6 +403,100 @@ describe("the Deliveries list and a booking's detail", () => {
       ["clone-1", "finding_again", null, null, "Tendai"],
       [booking.id, "cancelled", "rider", "clone-1", "Tendai"],
     ]);
+  });
+});
+
+describe("MJ-RL26: the board's live-only list, and who booked a re-sent booking", () => {
+  /** A booking the owner made, then `n` re-broadcasts of it after riders cancelled; returns the ids, oldest first. */
+  async function chain(n: number, idempotencyKey = "11111111-1111-4111-8111-111111111111"): Promise<string[]> {
+    const booking = await w.svc.create(OWNER, "owner", form({ idempotencyKey }));
+    const ids = [booking.id];
+    for (let i = 0; i < n; i++) {
+      const parent = w.orders.get(ids[ids.length - 1]!)!;
+      Object.assign(parent, { status: "cancelled", riderId: "rider-1", cancelledBy: "rider-1" });
+      const clone = { ...parent, id: `${booking.id}-again-${i + 1}`, status: "open_for_offers", riderId: null, cancelledBy: null, rebroadcastOfId: parent.id, createdAt: new Date(Date.now() + 10_000 * (i + 1)) };
+      w.orders.set(clone.id, clone);
+      ids.push(clone.id);
+    }
+    return ids;
+  }
+
+  it("?status=live lists only what the board draws: live bookings, and delivered ones whose cash is still due", async () => {
+    const finding = await w.svc.create(OWNER, "owner", form({ idempotencyKey: "11111111-1111-4111-8111-000000000001" }));
+    const make = async (key: string, over: Partial<OrderRow>) => {
+      const b = await w.svc.create(OWNER, "owner", form({ idempotencyKey: key }));
+      Object.assign(w.orders.get(b.id)!, over);
+      return b.id;
+    };
+    const coming = await make("11111111-1111-4111-8111-000000000002", { status: "en_route_pickup", riderId: "rider-1" });
+    const onTheWay = await make("11111111-1111-4111-8111-000000000003", { status: "en_route_dropoff", riderId: "rider-1" });
+    const cashDue = await make("11111111-1111-4111-8111-000000000004", { status: "delivered", riderId: "rider-1", deliveredAt: new Date(), debtStatus: "open", debtAmount: 45 });
+    await make("11111111-1111-4111-8111-000000000005", { status: "delivered", riderId: "rider-1", deliveredAt: new Date() });
+    await make("11111111-1111-4111-8111-000000000006", { status: "delivered", riderId: "rider-1", deliveredAt: new Date(), debtStatus: "open", debtAmount: 45, merchantClosedAt: new Date() });
+    await make("11111111-1111-4111-8111-000000000007", { status: "delivered", riderId: "rider-1", deliveredAt: new Date(), debtStatus: "settled_cash", debtAmount: 45 });
+    await make("11111111-1111-4111-8111-000000000008", { status: "cancelled", cancelledBy: "x" });
+    await make("11111111-1111-4111-8111-000000000009", { status: "expired" });
+    await make("11111111-1111-4111-8111-000000000010", { status: "undelivered", riderId: "rider-1" });
+
+    const live = await w.svc.list(OWNER, { liveOnly: true });
+    expect(new Set(live.map((b) => b.id))).toEqual(new Set([finding.id, coming, onTheWay, cashDue]));
+    expect(live.find((b) => b.id === cashDue)?.cashOnDelivery?.status).toBe("due");
+    // The Deliveries history still has all ten.
+    expect(await w.svc.list(OWNER)).toHaveLength(10);
+  });
+
+  it("the route reads ?status=live as the live-only list, and anything else as the history", async () => {
+    const bookings = { list: vi.fn(async () => []) };
+    const controller = new MerchantBookingController(bookings as never);
+    await controller.list(OWNER, "live");
+    await controller.list(OWNER, undefined);
+    await controller.list(OWNER, "all");
+    expect(bookings.list.mock.calls).toEqual([
+      [OWNER, { liveOnly: true }],
+      [OWNER, { liveOnly: false }],
+      [OWNER, { liveOnly: false }],
+    ]);
+  });
+
+  it("finds a re-sent booking's booker with one batched read per chain depth, not one walk per row", async () => {
+    const a = await chain(3, "11111111-1111-4111-8111-00000000000a");
+    const b = await chain(2, "11111111-1111-4111-8111-00000000000b");
+    const findUnique = vi.spyOn(w.prisma.order, "findUnique");
+    w.prisma.order.findMany.mockClear();
+
+    // The live list holds only the two newest re-broadcasts; their cancelled parents aren't in it.
+    const live = await w.svc.list(OWNER, { liveOnly: true });
+    expect(live.map((x) => [x.id, x.state, x.bookedBy])).toEqual([
+      [a[3], "finding_again", "Tendai"],
+      [b[2], "finding_again", "Tendai"],
+    ]);
+    const chainReads = w.prisma.order.findMany.mock.calls.map(([args]) => args.where.id?.in).filter(Boolean);
+    // Depth by depth, both chains in one read each: [a2, b1], then [a1, b0], then [a0] (b's root was found).
+    expect(chainReads).toEqual([
+      [a[2], b[1]],
+      [a[1], b[0]],
+      [a[0]],
+    ]);
+    expect(findUnique).not.toHaveBeenCalled();
+  });
+
+  it("reads a parent already in the list from memory: the full history needs no chain reads", async () => {
+    await chain(2);
+    w.prisma.order.findMany.mockClear();
+    const list = await w.svc.list(OWNER);
+    expect(list.map((x) => x.bookedBy)).toEqual(["Tendai", "Tendai", "Tendai"]);
+    expect(w.prisma.order.findMany.mock.calls.filter(([args]) => args.where.id)).toEqual([]);
+  });
+
+  it("stops at the same depth as before, and a chain into a missing order has no booker", async () => {
+    await chain(7);
+    const live = await w.svc.list(OWNER, { liveOnly: true });
+    // Seven hops back to the root is past MAX_REBROADCAST_DEPTH (6 reads), so no name; never a throw.
+    expect(live.map((x) => x.bookedBy)).toEqual([null]);
+
+    const short = await chain(1, "11111111-1111-4111-8111-00000000000c");
+    w.orders.get(short[1]!)!.rebroadcastOfId = "vanished";
+    expect((await w.svc.list(OWNER, { liveOnly: true })).find((x) => x.id === short[1])?.bookedBy).toBeNull();
   });
 });
 

@@ -137,7 +137,9 @@ export default function QueuePage() {
   // Reconnect: count the orders that arrived while offline, for the "Back online" toast.
   const backfillCount = useBackfillCount(orders, reachability.reachable);
 
-  const scheduled = useScheduled(ready, orders.length);
+  // MJ-P2: the queue's size is unknown until its first read lands — not a change worth a second read.
+  const queueSize = loaded ? orders.length : undefined;
+  const scheduled = useScheduled(ready, queueSize);
   // S1 (Merchant v2, D-77): a shop's own rider bookings sit on the same board as its customer orders.
   const shop = ready && state.merchant.businessType === "shop";
   const { bookings } = useBookings(shop && bookingsAvailable(state.status === "ready" ? state.merchant : null));
@@ -171,7 +173,7 @@ export default function QueuePage() {
 
   return (
     <Kitchen active="queue" backfillCount={backfillCount}>
-      <OrdersHeader merchant={state.merchant} open={open} disabled={actionsDisabled} refreshKey={orders.length}>
+      <OrdersHeader merchant={state.merchant} open={open} disabled={actionsDisabled} refreshKey={queueSize}>
         {/* S1: a shop books riders for its own sales from the top card; they join this board as BOOKED. */}
         {shop && <BookRiderCard href="/deliveries/new" />}
       </OrdersHeader>
@@ -211,25 +213,37 @@ export default function QueuePage() {
 
 /** M7a: scheduled orders that haven't rung, polled beside the queue (null until the first read lands,
  *  or when the API has no Scheduled list). Re-read whenever the queue's size changes — a scheduled order
- *  ringing leaves this list for the queue. */
-function useScheduled(enabled: boolean, queueSize: number): MerchantOrderResponse[] | null {
+ *  ringing leaves this list for the queue. MJ-P2: `queueSize` is undefined until the queue's first read
+ *  lands, and that first value is not a change (it used to cost every Orders load a second read). */
+function useScheduled(enabled: boolean, queueSize: number | undefined): MerchantOrderResponse[] | null {
   const [list, setList] = useState<MerchantOrderResponse[] | null>(null);
-  useEffect(() => {
-    if (!enabled) return;
-    let alive = true;
-    const load = () =>
+  const aliveRef = useRef(false);
+  const load = useCallback(
+    () =>
       listScheduledOrders()
         .then((l) => {
-          if (alive) setList(Array.isArray(l) ? l : []);
+          if (aliveRef.current) setList(Array.isArray(l) ? l : []);
         })
-        .catch(() => {});
+        .catch(() => {}),
+    [],
+  );
+  useEffect(() => {
+    if (!enabled) return;
+    aliveRef.current = true;
     void load();
-    const t = setInterval(load, 30_000);
+    const t = setInterval(() => void load(), 30_000);
     return () => {
-      alive = false;
+      aliveRef.current = false;
       clearInterval(t);
     };
-  }, [enabled, queueSize]);
+  }, [enabled, load]);
+  const lastSizeRef = useRef(queueSize);
+  useEffect(() => {
+    const before = lastSizeRef.current;
+    lastSizeRef.current = queueSize;
+    if (!enabled || before === undefined || queueSize === undefined || before === queueSize) return;
+    void load();
+  }, [enabled, queueSize, load]);
   return list;
 }
 

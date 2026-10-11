@@ -8,6 +8,7 @@ import type {
   MerchantDishRequest,
   MerchantDishResponse,
   MerchantEndOfDaySummaryResponse,
+  MerchantTodayKpisResponse,
   MerchantWeekSummaryResponse,
   MerchantHours,
   MerchantMemberRole,
@@ -1084,6 +1085,53 @@ export class MerchantService {
             : 0,
         };
       }),
+    };
+  }
+
+  /**
+   * MJ-RL27 (2026-10-07): `GET /merchant/summary/today?fields=kpis` — the Orders top card's strip (Orders ·
+   * Sales · Cash due), which re-reads every half minute. Before this it downloaded the whole Today payload
+   * — Money's order list and the late-cash rows with their riders — to show three numbers. The figures are
+   * computed exactly as {@link getTodaySummary} computes them (the same `placed` aggregate and the same
+   * owed-cash rows, without their rider join), so the strip and Money never disagree.
+   */
+  async getTodayKpis(profileId: string, date?: string, now = new Date()): Promise<MerchantTodayKpisResponse> {
+    const merchantId = await this.findOwnMerchantIdOrThrow(profileId);
+    const dayKeyHarare = date ?? harareDayKey(now);
+    const { start, end } = parseHarareDay(dayKeyHarare);
+    const overdueBefore = new Date(now.getTime() - RESTAURANTS_DEBT.cashReturnWindowMs);
+    const owedSelect = { debtAmount: true, deliveredAt: true } satisfies Prisma.OrderSelect;
+    const [placed, owedRows, bookingAccountId] = await Promise.all([
+      this.prisma.order.aggregate({
+        where: { merchantId, orderType: "merchant", createdAt: { gte: start, lte: end }, ...SALE_ORDER_WHERE },
+        _count: { _all: true },
+        _sum: { merchantGoodsTotal: true, merchantDeliveryShare: true },
+      }),
+      this.prisma.order.findMany({
+        where: { merchantId, orderType: "merchant", debtStatus: "open", merchantClosedAt: null, deliveredAt: { not: null } },
+        select: owedSelect,
+        orderBy: { deliveredAt: "asc" },
+        take: 50,
+      }),
+      findBookingAccountId(this.prisma, merchantId),
+    ]);
+    const bookingOwed = bookingAccountId
+      ? await this.prisma.order.findMany({
+          where: { customerId: bookingAccountId, orderType: "parcel", debtStatus: "open", merchantClosedAt: null, deliveredAt: { not: null } },
+          select: owedSelect,
+          orderBy: { deliveredAt: "asc" },
+          take: 50,
+        })
+      : [];
+    const owed = [...owedRows, ...bookingOwed];
+    const overdue = owed.filter((o) => o.deliveredAt != null && o.deliveredAt < overdueBefore);
+    return {
+      date: start.toISOString(),
+      dateKey: dayKeyHarare,
+      orders: placed._count._all,
+      sales: subMoney(Number(placed._sum.merchantGoodsTotal ?? 0), Number(placed._sum.merchantDeliveryShare ?? 0)),
+      cashDue: addMoney(0, ...owed.map((o) => Number(o.debtAmount ?? 0))),
+      cashOverdue: addMoney(0, ...overdue.map((o) => Number(o.debtAmount ?? 0))),
     };
   }
 

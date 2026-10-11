@@ -362,3 +362,66 @@ describe("Staff only turn items off and back on (L4)", () => {
     expect(screen.queryByText("+ Mains")).toBeNull();
   });
 });
+
+// MJ-RL22 (2026-10-07): each stock switch waited for a second round trip that re-read the whole menu, and
+// a failed refresh replaced the menu with the error screen.
+describe("MJ-RL22: stock switches and background refreshes", () => {
+  it("turning a dish back on puts the dish the API returns in the list, with no second read", async () => {
+    vi.mocked(listCategories).mockResolvedValue([category()]);
+    vi.mocked(listDishes).mockResolvedValue([dish()]);
+    vi.mocked(clearDishOutOfStock).mockResolvedValueOnce(dish({ outOfStock: false }));
+    render(<Page />);
+    const sw = await screen.findByRole("switch", { name: "Sadza in stock" });
+    expect(sw.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(sw);
+    expect(await screen.findByText("Sadza is back on")).toBeTruthy();
+    expect(screen.getByRole("switch", { name: "Sadza in stock" }).getAttribute("aria-checked")).toBe("true");
+    expect(listDishes).toHaveBeenCalledTimes(1);
+    expect(listCategories).toHaveBeenCalledTimes(1);
+  });
+
+  it("turning one off does the same", async () => {
+    vi.mocked(listCategories).mockResolvedValue([category()]);
+    vi.mocked(listDishes).mockResolvedValue([dish({ outOfStock: false })]);
+    vi.mocked(setDishOutOfStock).mockResolvedValue(dish({ outOfStock: true, outOfStockUntil: null }));
+    render(<Page />);
+    fireEvent.click(await screen.findByRole("switch", { name: "Sadza in stock" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Until I turn it back on" }));
+    fireEvent.click(screen.getByRole("button", { name: "Turn off" }));
+    expect(await screen.findByText("Sadza is off")).toBeTruthy();
+    expect(screen.getByRole("switch", { name: "Sadza in stock" }).getAttribute("aria-checked")).toBe("false");
+    expect(listDishes).toHaveBeenCalledTimes(1);
+  });
+
+  it("a refresh after a save that fails keeps the list on screen and says so in the toast", async () => {
+    vi.mocked(listCategories)
+      .mockResolvedValueOnce([category(), category({ id: "c2", name: "Drinks", sortOrder: 1 })])
+      .mockRejectedValueOnce(new ApiError(503, "Restaurants isn't live on this account yet."));
+    vi.mocked(listDishes).mockResolvedValue([dish()]);
+    vi.mocked(updateCategory).mockResolvedValue(category());
+    render(<Page />);
+    fireEvent.contextMenu(await screen.findByRole("tab", { name: "Drinks 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "← Move earlier" }));
+    expect(await screen.findByText("Restaurants isn't live on this account yet.")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toBe("Restaurants isn't live on this account yet.");
+    expect(screen.getByRole("tab", { name: "Mains 1" })).toBeTruthy();
+    expect(screen.getByRole("switch", { name: "Sadza in stock" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+
+  it("offline, a failed refresh keeps the list and leaves the telling to the connection bar", async () => {
+    vi.mocked(listCategories)
+      .mockResolvedValueOnce([category(), category({ id: "c2", name: "Drinks", sortOrder: 1 })])
+      .mockRejectedValueOnce(new ApiError(0, "Couldn't reach the server — check the connection and try again."));
+    vi.mocked(listDishes).mockResolvedValue([dish()]);
+    vi.mocked(updateCategory).mockResolvedValue(category());
+    render(<Page />);
+    fireEvent.contextMenu(await screen.findByRole("tab", { name: "Drinks 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "← Move earlier" }));
+    await waitFor(() => expect(listCategories).toHaveBeenCalledTimes(2));
+    await screen.findByText("Moved earlier");
+    expect(screen.getByRole("tab", { name: "Mains 1" })).toBeTruthy();
+    expect(screen.queryByText("Couldn't reach the server — check the connection and try again.")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+});

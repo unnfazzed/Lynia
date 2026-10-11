@@ -12,7 +12,7 @@ import type {
   UpdateMerchantOrderSettingsRequest,
   UpdateMerchantProfileRequest,
 } from "@lynia/shared";
-import { authedFetch } from "./api-client";
+import { authedFetch, getMyMerchant } from "./api-client";
 import { API_BASE_URL } from "./config";
 import { getReachabilityStore } from "./reachability";
 
@@ -24,11 +24,10 @@ export type {
 
 // ── Shop profile + hours + busy mode (D-30, R-03, N-17) ─────────────────────────────────────────
 
-/** The full shop-front record (Shop/Hours pages need every field) — `GET /merchant/me` same as
- *  api-client.ts's own getMyMerchant, just typed against the full response instead of that helper's
- *  narrow {id,name} (E1 only ever needed the name for the queue header). */
+/** The full shop-front record (Shop/Hours pages need every field) — `GET /merchant/me`, the same shared
+ *  read as api-client.ts's own {@link getMyMerchant} (MJ-P2: one request for every screen asking at once). */
 export function getMerchantProfile(): Promise<MerchantProfileResponse> {
-  return authedFetch<MerchantProfileResponse>("/merchant/me");
+  return getMyMerchant();
 }
 
 export function updateProfile(body: UpdateMerchantProfileRequest): Promise<MerchantProfileResponse> {

@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
-import type { MerchantEndOfDaySummaryResponse, MerchantProfileResponse } from "@lynia/shared";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { MerchantProfileResponse, MerchantTodayKpisResponse } from "@lynia/shared";
 import { ApiError } from "../../lib/api-client";
 import { showBranchChevron, showNotLiveHome, useBranches } from "../../lib/branches";
 import { primeBusiness } from "../../lib/business";
 import { setBusyMode, setOpen } from "../../lib/menu-api";
-import { getTodaySummary } from "../../lib/orders-api";
+import { getTodayKpis } from "../../lib/orders-api";
 import { money, openStatus } from "../../lib/orders-view";
 import { useNow } from "../../lib/use-now";
 import { BranchSheet } from "../branches/BranchSheet";
@@ -50,7 +50,9 @@ export function useOpenSwitch(merchant: MerchantProfileResponse | null, onMercha
  * The Orders home's mint top card (Merchant v2 K1/S1/T4 — packages/design/handoff/merchant-v2, ledger
  * D-77): the business, "● Open · until 22:00" and the labelled open pill, then (kitchen owners) one KPI
  * strip — Orders · Sales · Cash due, the last in gold when it isn't zero — refreshed every half minute
- * and whenever `refreshKey` changes. Closed by hand, the card greys and the strip goes (T4). A shop's
+ * and whenever `refreshKey` changes (MJ-RL27: the lean `?fields=kpis` read, not Money's whole Today).
+ * MJ-P2: `refreshKey` undefined means "not known yet" (the queue's first read hasn't landed), so its
+ * first value isn't a change and costs no second read on top of the mount's. Closed by hand, the card greys and the strip goes (T4). A shop's
  * card carries "Book a rider" (`children`) where the kitchen has the strip (S1 draws no strip).
  *
  * Branches (ledger D-51, README section F): an owner with 2+ branches gets a chevron after the name; the
@@ -72,7 +74,7 @@ export function OrdersHeader({
 }) {
   const owner = merchant.myRole === "owner";
   const shop = merchant.businessType === "shop";
-  const [summary, setSummary] = useState<MerchantEndOfDaySummaryResponse | null>(null);
+  const [summary, setSummary] = useState<MerchantTodayKpisResponse | null>(null);
   const [sheet, setSheet] = useState(false);
   const branches = useBranches(owner);
   const chevron = showBranchChevron(merchant, branches.length);
@@ -82,7 +84,7 @@ export function OrdersHeader({
 
   const loadSummary = useCallback(() => {
     if (!owner) return;
-    getTodaySummary()
+    getTodayKpis()
       .then(setSummary)
       .catch(() => {});
   }, [owner]);
@@ -91,7 +93,15 @@ export function OrdersHeader({
     loadSummary();
     const t = setInterval(loadSummary, SUMMARY_POLL_MS);
     return () => clearInterval(t);
-  }, [kpis, notLive, loadSummary, refreshKey]);
+  }, [kpis, notLive, loadSummary]);
+  // A real change of `refreshKey` (an order came or went) re-reads now, and restarts nothing else.
+  const lastKeyRef = useRef(refreshKey);
+  useEffect(() => {
+    const before = lastKeyRef.current;
+    lastKeyRef.current = refreshKey;
+    if (before === undefined || refreshKey === undefined || Object.is(before, refreshKey)) return;
+    if (!notLive && kpis) loadSummary();
+  }, [refreshKey, kpis, notLive, loadSummary]);
 
   // "Cash due" is all the cash riders still owe back; an API from before D-77 only knows the overdue part.
   const cashDue = summary ? (summary.cashDue ?? summary.cashOverdue ?? 0) : null;

@@ -3,6 +3,7 @@ import { RESTAURANTS_COMMISSION } from "@lynia/shared";
 import { describe, expect, it, vi } from "vitest";
 import type { UploadVerifier } from "../adapters/storage/upload-verifier";
 import { PrismaService } from "../prisma/prisma.service";
+import { MerchantController } from "./merchant.controller";
 import { endOfToday, MerchantService, OUT_OF_STOCK_UNTIL_BACK } from "./merchant.service";
 import { withMembershipShim } from "./testing/membership-shim";
 
@@ -1453,6 +1454,51 @@ describe("MerchantService.getTodaySummary (E3, M4·6; D-48 header tiles)", () =>
     expect(res.lines![1]).toMatchObject({ outcome: "rejected", reason: "too_busy" });
     expect(res.lines![1].dueAt).toBeUndefined();
     expect(res.lines![2].reason).toBeUndefined();
+  });
+
+  // MJ-RL27 (2026-10-07): the Orders top card's strip re-read the whole Today payload every 30 s.
+  it("MJ-RL27: ?fields=kpis is the strip's three figures, the same as Today's, without Money's rows", async () => {
+    const opts = {
+      placed: { count: 7, sum: 59.5 },
+      overdue: [
+        { id: "11111111-1111-4111-8111-111111111111", debtAmount: 9.5, deliveredAt: new Date(Date.now() - 45 * 60_000), rider: { profile: { firstName: "Tino" } } },
+        { id: "22222222-2222-4222-8222-222222222222", debtAmount: 12, deliveredAt: new Date(Date.now() - 5 * 60_000), rider: null },
+      ],
+      bookingOverdue: [{ id: "33333333-3333-4333-8333-333333333333", debtAmount: 51, deliveredAt: new Date(Date.now() - 90 * 60_000), rider: null }],
+    };
+    const full = await svc(summaryPrisma(opts)).getTodaySummary("p1", "2026-10-03");
+
+    const prisma = summaryPrisma(opts);
+    const reads: Array<{ where: Record<string, unknown>; select?: Record<string, unknown> }> = [];
+    const findMany = prisma.order.findMany;
+    prisma.order.findMany = async (args: { where: Record<string, unknown>; select?: Record<string, unknown> }) => {
+      reads.push(args);
+      return findMany(args);
+    };
+    const count = vi.fn(prisma.order.count);
+    prisma.order.count = count;
+    const kpis = await svc(prisma).getTodayKpis("p1", "2026-10-03");
+
+    expect(kpis).toEqual({ date: full.date, dateKey: "2026-10-03", orders: full.orders, sales: full.sales, cashDue: full.cashDue, cashOverdue: full.cashOverdue });
+    expect(kpis).toMatchObject({ orders: 7, sales: 59.5, cashDue: 72.5, cashOverdue: 60.5 });
+    // Lean: only the owed-cash reads (the venue's and the shop bookings'), with no rider join; no day list,
+    // no prep times, no counts.
+    expect(reads.map((r) => r.where.debtStatus)).toEqual(["open", "open"]);
+    expect(reads.every((r) => r.select && !("rider" in r.select))).toBe(true);
+    expect(count).not.toHaveBeenCalled();
+    expect("lines" in kpis || "overdue" in kpis).toBe(false);
+  });
+
+  it("MJ-RL27: the route serves the lean strip only for ?fields=kpis; anything else is the full Today", async () => {
+    const service = { getTodaySummary: vi.fn(async () => "full"), getTodayKpis: vi.fn(async () => "kpis") };
+    const controller = new MerchantController(service as never);
+    await expect(controller.todaySummary("p1", undefined, "kpis")).resolves.toBe("kpis");
+    expect(service.getTodayKpis).toHaveBeenCalledWith("p1", undefined);
+    await expect(controller.todaySummary("p1", "2026-10-03", "kpis")).resolves.toBe("kpis");
+    expect(service.getTodayKpis).toHaveBeenLastCalledWith("p1", "2026-10-03");
+    await expect(controller.todaySummary("p1", undefined, undefined)).resolves.toBe("full");
+    await expect(controller.todaySummary("p1", undefined, "everything")).resolves.toBe("full");
+    expect(service.getTodaySummary).toHaveBeenCalledTimes(2);
   });
 
   it("follow-ups T2b (D-77) + MJ-RM7: ?date= reads that Harare day, and anything else 400s", async () => {
