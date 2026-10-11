@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { UploadVerifier } from "../adapters/storage/upload-verifier";
 import { PrismaService } from "../prisma/prisma.service";
 import { MerchantController } from "./merchant.controller";
+import { harareWallClock } from "./harare-clock";
 import { endOfToday, MerchantService, OUT_OF_STOCK_UNTIL_BACK } from "./merchant.service";
 import { withMembershipShim } from "./testing/membership-shim";
 
@@ -796,7 +797,8 @@ describe("MerchantService customer read API (flag + pilotEnabled allowlist)", ()
   });
 
   it("D-48: a restaurant closed by hand is served with today's window dropped, so every client reads it as closed", async () => {
-    const today = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"][new Date().getDay()]!;
+    // Harare's day, as the service drops it: the runner's UTC day differs from 22:00 to 24:00 UTC.
+    const today = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"][harareWallClock(new Date()).getDay()]!;
     const week = { mon: { open: "09:00", close: "21:00" }, tue: { open: "09:00", close: "21:00" }, wed: { open: "09:00", close: "21:00" }, thu: { open: "09:00", close: "21:00" }, fri: { open: "09:00", close: "21:00" }, sat: { open: "09:00", close: "21:00" }, sun: { open: "09:00", close: "21:00" } };
     const row = { id: "m1", name: "Nandos", coverPhotoUrl: null, logoUrl: null, cuisineTags: [], priceLevel: 2, hours: week };
     const closed = svc({ merchant: { findMany: async () => [{ ...row, closedUntil: new Date(Date.now() + 3_600_000) }] } });
