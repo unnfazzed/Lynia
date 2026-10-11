@@ -45,14 +45,19 @@ async function order(data: Record<string, unknown>): Promise<string> {
 }
 const reasonOf = async (id: string): Promise<string | null> => (await prisma.order.findUniqueOrThrow({ where: { id }, select: { rejectionReason: true } })).rejectionReason;
 
-beforeEach(async () => {
+// The int specs share one database (run in sequence): leave nothing behind for the next file.
+async function clean(): Promise<void> {
   await prisma.auditLog.deleteMany({});
   await prisma.orderEvent.deleteMany({});
   await prisma.order.deleteMany({});
   await prisma.profile.deleteMany({});
+}
+beforeEach(async () => {
+  await clean();
   customerId = (await prisma.profile.create({ data: { role: "customer", firstName: "C", lastName: "C", phone: `c_${crypto.randomUUID()}` }, select: { id: true } })).id;
 });
 afterAll(async () => {
+  await clean();
   await prisma.$disconnect();
 });
 
