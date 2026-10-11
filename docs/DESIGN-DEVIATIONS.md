@@ -5026,3 +5026,39 @@ was cancelled `shop_closed` three minutes later (MJ-B1, live-confirmed).
 - The order being answered keeps the screen until it is resolved; a second ring waits its turn (MJ-M10).
 - **Upstream:** the handoff should draw the ring arriving over a pushed screen. Reported upstream; the kit is not
   edited here.
+
+## D-87 · Merchant waits run 24 h: the "Still waiting for {v}" push and the lapsed accept countdown — APPROVED (owner decision D1, 2026-10-07)
+
+**Owner decision D1 (reviewed list 2026-10-07, C1 = MJ-H2 + U31):** *"we are launching more grace is needed. maybe 24
+hours dont auto cancel orders"* — confirmed as: every merchant-side wait (the 3-minute ring, the 60-minute unconfirmed
+auto-accept, the offline-tablet pause) runs up to 24 h; the customer keeps a free cancel until the venue accepts and is
+pushed "still waiting for {venue}" at 3 and 15 minutes.
+
+Order flow v2 (`handoff/order-flow-v2/`, D-59) and Merchant v2 (`handoff/merchant-v2/`, D-77) were drawn for a 3-minute
+window that cancels at 0:00. Neither draws what happens after 0:00 when the order is still open, and `O.g.push` has no
+"still waiting" push.
+
+- **Customer push (new copy, owner-approved by D1):** title **"Still waiting for {v}"** (the owner's words), body
+  **"They haven’t accepted your order yet. You can cancel free until they do."** — `PUSH_C_STILL_WAITING` in
+  `apps/api/src/notifications/merchant-order-push.ts`. Sent once at 3 min and once at 15 min after the venue's wait
+  started (placement; a scheduled order's ring), while the order is ringing or auto-accepted but unconfirmed. Tapping it
+  opens the order. One tray slot per order (collapse key).
+- **Customer T1 / T3 after 0:00:** the drawn countdown pill and bar run once from 3:00 to 0:00, then the timer row is
+  hidden (no "0:00 left" for hours) and the sub drops its first sentence, reading only the drawn second sentence
+  **"Nothing is ordered until they accept."** (`OX.waitingLapsedSub`). Title, track, venue row and **"Cancel order ·
+  free"** stay as drawn. Only an order still ringing (`awaiting_accept`) shows the countdown or the lapsed sub; a
+  legacy wallet order in `awaiting_payment` keeps the drawn sub without a timer.
+- **Customer D3c (the kitchen never confirmed):** the drawn sub "We waited an hour. Nothing was charged." is no longer
+  true (the cancel now comes at 24 h), so it reads only the drawn second sentence **"Nothing was charged."**
+  (`OX.cxKitchenSub`).
+- **Merchant K2 / S2 after 0:00:** the drawn "M:SS to answer" countdown holds at **0:00** and the order keeps ringing
+  until Accept / Can't take it. README K2a's "the sheet closes (missed)" now happens only when the order is really
+  missed (the 24 h cap): the reasons sheet no longer closes at 0:00. An auto-accepted ring counts the same 3:00 answer
+  window from when it started cooking (it used to count down the old 60-minute cancel, "59:44 to answer"); the T1b
+  live bar's "to answer" countdown uses the same rule (`ringDeadline`).
+- The 3:00 itself is unchanged (owner decision: the 3-minute window stays; the BRIEF's 60 s / 90 s is not adopted here).
+- **Upstream:** the handoffs should draw the post-0:00 waiting state on both sides and the "still waiting" push. Reported
+  upstream; the kit is not edited here.
+- **Owner follow-up (2026-10-07):** the ring has **no cap** — the alarm keeps sounding for the whole 24 h until the
+  order is answered or cancelled (owner chose "ring the full 24 h" over muting after 10 min or outside opening hours),
+  and there is **no age limit on a late accept** (owner chose "no limit" over an age warning or an end-of-day cancel).

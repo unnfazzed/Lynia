@@ -125,14 +125,30 @@ export function merchantAmountDueUsd(o: {
   return addMoney(base, ...(o.carriedBalance ?? []).map((b) => Number(b.amount ?? 0)));
 }
 
+/**
+ * Owner decision D1 (2026-10-07, docs/REVIEWED-ISSUES-2026-10-07.md): "we are launching, more grace is
+ * needed". Every MERCHANT-side wait — the ring / accept window, the unconfirmed auto-accept and the
+ * offline-tablet pause — runs up to this long before the order is cancelled. Nothing auto-cancels a
+ * restaurant, shop or pharmacy order for a merchant wait inside it. The customer keeps a free cancel
+ * until the venue accepts and is pushed "Still waiting for {v}" at `stillWaitingPushAfterMs`.
+ */
+export const MERCHANT_WAIT_CAP_MS = 24 * 60 * 60 * 1000;
+
 export const RESTAURANTS_TIMING = {
-  /** N-03: unanswered merchant accept auto-cancels. */
+  /** N-03: the drawn answer window — the "M:SS to answer" countdown on the ring and the customer's
+   *  "They have 3 minutes" (owner decision: the 3-minute window stays). Since D1 it is NOT a cancel: at
+   *  0:00 the order keeps ringing until the venue answers or `merchantWaitCapMs` runs out. */
   acceptWindowMs: 3 * 60 * 1000,
+  /** D1: how long an order may wait on the merchant before the reconciler cancels it (`shop_closed`). */
+  merchantWaitCapMs: MERCHANT_WAIT_CAP_MS,
+  /** D1: "Still waiting for {v}" pushes to the customer, this long after the venue's wait started
+   *  (placement; a scheduled order's ring), each sent once while the venue hasn't accepted. */
+  stillWaitingPushAfterMs: [3 * 60 * 1000, 15 * 60 * 1000],
   /** D-23/N-18: customer's window to approve a shortened (item-level accept) order. */
   itemApprovalWindowMs: 60 * 1000,
   /** How often the DB reconciler sweeps for accept/approval-window/end-of-day expiries. Tighter than
-   *  the Express rating-autoclose sweep (order-lifecycle.constants RECONCILE_INTERVAL_MS = 15min) —
-   *  N-03's 3:00 window needs sub-minute precision to read as "auto-cancel", not "eventually". */
+   *  the Express rating-autoclose sweep (order-lifecycle.constants RECONCILE_INTERVAL_MS = 15min) — the
+   *  customer-side windows (item approval, substitutions) need sub-minute precision. */
   sweepIntervalMs: 20 * 1000,
   /** N-22: one soft reminder push if a payment request goes unanswered this long — not a clock (R-17
    *  retired those), just a nudge; the order itself never expires from this. */
@@ -153,8 +169,8 @@ export const RESTAURANTS_AUTO_ACCEPT = {
   /** An order still unconfirmed this long after placement turns urgent on the ops call list. */
   escalateAfterMs: 5 * 60 * 1000,
   /** An order nobody confirmed this long after placement is cancelled; the customer is told nothing
-   *  was charged (owner decision 2026-10-01). */
-  autoCancelAfterMs: 60 * 60 * 1000,
+   *  was charged (owner decision 2026-10-01; 60 min until D1 stretched every merchant wait to 24 h). */
+  autoCancelAfterMs: MERCHANT_WAIT_CAP_MS,
   /** The rider search starts this long before prep time runs out (roughly a rider's trip to the
    *  counter), or straight away when the kitchen is confirmed later than that. */
   dispatchLeadMs: 8 * 60 * 1000,

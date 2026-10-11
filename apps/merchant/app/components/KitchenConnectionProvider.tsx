@@ -166,8 +166,9 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
 
   // C5 kitchen queue presence: join the merchant's own queue room on every connect AND every
   // reconnect (Socket.IO doesn't persist room membership across a reconnect) so the server's
-  // `isMerchantOnline` check reflects this tablet for as long as it's signed in — restoring N-03's
-  // auto-cancel guarantee, which was previously unenforceable for any merchant (see queue-socket.ts).
+  // `isMerchantOnline` check reflects this tablet for as long as it's signed in (see queue-socket.ts).
+  // Since owner decision D1 (2026-10-07) the accept sweep no longer reads presence: every merchant wait
+  // runs the same 24 h, online or not (C1 = MJ-H2 + U31).
   // Gated on `session` (not just mount) so a signed-out tablet leaves the room instead of reporting a
   // phantom "online" merchant nobody is actually watching.
   //

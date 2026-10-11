@@ -1,4 +1,4 @@
-import type { MerchantOrderResponse, MerchantProfileResponse } from "@lynia/shared";
+import { RESTAURANTS_TIMING, type MerchantOrderResponse, type MerchantProfileResponse } from "@lynia/shared";
 import { dayKeyFor, DAY_KEYS, type PartialMerchantHours } from "./hours";
 import { countOf, type Vocabulary } from "./vocabulary";
 import { groupQueue, isNoRiderHold, isReadyBucket, needsKitchenConfirm } from "./order-groups";
@@ -229,6 +229,18 @@ export interface LiveBarView {
 }
 
 /**
+ * The ring's "M:SS to answer" deadline — one rule for K2/S2 (RingingScreen) and the live bar. Owner
+ * decision D1 (2026-10-07): every merchant wait runs 24 h, so this is only the drawn answer window. A
+ * manual or scheduled ring reads the server's `acceptDeadlineAt`; an auto-accepted one (no
+ * `acceptDeadlineAt`) counts the same window from when it started cooking.
+ */
+export function ringDeadline(o: Pick<MerchantOrderResponse, "autoAccepted" | "kitchenConfirmedAt" | "merchantPhase" | "acceptDeadlineAt" | "prepStartedAt" | "createdAt">): string | null {
+  if (!needsKitchenConfirm(o)) return o.acceptDeadlineAt ?? null;
+  const opened = o.prepStartedAt ?? o.createdAt;
+  return opened ? new Date(new Date(opened).getTime() + RESTAURANTS_TIMING.acceptWindowMs).toISOString() : null;
+}
+
+/**
  * T1b's live bar (Merchant v2 follow-ups, ledger D-77) for the tabs that aren't Orders: the single
  * highest-priority state — a new order ringing, a rider at the counter (only once `riderArrivedAt` is
  * set), waiting for the customer's OK, or the counts with the next ready time. Hidden with nothing live.
@@ -252,7 +264,7 @@ export function liveBar(orders: readonly MerchantOrderResponse[], v: Vocabulary)
       kind: "ringing",
       title: `New order · ${orderLabel(ringing)}`,
       sub: `${countOf(ringing.items.length, v)} · ${money(ringing.merchantGoodsTotal)}`,
-      deadline: ringing.acceptDeadlineAt ?? null,
+      deadline: ringDeadline(ringing),
       href: "/queue",
     };
   }

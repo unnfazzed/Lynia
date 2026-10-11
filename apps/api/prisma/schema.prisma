@@ -649,9 +649,13 @@ model Order {
   // Kitchen-side sub-state OrderStatus has no room for (plan §0b.1) — null while status is anything
   // other than the merchant's pre-dispatch `requested` phase.
   merchantPhase              MerchantPhase?         @map("merchant_phase")
-  // N-03: 3:00 accept window from order placement — the reconciler auto-cancels an order still
-  // `awaiting_accept` past this stamp.
+  // N-03: the drawn 3:00 answer window from placement (a scheduled order: from its ring) — the
+  // countdown both sides show. Since D1 (2026-10-07) it is not a cancel: the reconciler cancels an order
+  // still `awaiting_accept` only RESTAURANTS_TIMING.merchantWaitCapMs (24 h) after the window opened.
   acceptDeadlineAt           DateTime?              @map("accept_deadline_at")
+  // D1: how many "Still waiting for {v}" pushes (0, 1 at 3 min, 2 at 15 min) the customer has had while
+  // the venue hasn't accepted — the idempotency guard so each is sent once per order.
+  merchantWaitNudges         Int                    @default(0) @map("merchant_wait_nudges")
   // D-23/N-18: 60s the customer has to approve a shortened (item-level accept) order.
   itemApprovalDeadlineAt     DateTime?              @map("item_approval_deadline_at")
   // D-11: the reason a merchant declined or released the order — this string IS the customer copy

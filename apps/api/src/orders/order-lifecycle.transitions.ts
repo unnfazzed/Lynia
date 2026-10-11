@@ -96,7 +96,7 @@ export const ORDER_EVENTS = [
   // ── C2 (merchant orders, pre-dispatch) ──────────────────────────────────────────────────────────
   "place", // FoodOrderService.placeOrder — merchant order born at `requested`, not open_for_offers
   "reject", // FoodOrderService.rejectOrder (D-11, merchant declines while awaiting_accept)
-  "expire_accept", // FoodOrderService.sweepExpiredAcceptWindows (N-03, 3:00 unanswered)
+  "expire_accept", // FoodOrderService.sweepExpiredAcceptWindows (N-03 + D1: unanswered 24 h after the 3:00 answer window opened)
   "decline_items", // FoodOrderService.approveItems(approve=false) (D-23, customer declines the shortened order)
   "expire_item_approval", // FoodOrderService.sweepExpiredItemApprovals (N-18, 60s unanswered)
   "cancel_unpaid", // FoodOrderService.cancelUnpaid (R-17, customer free-cancel any time before paying)
@@ -419,7 +419,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     event: "expire_accept",
     to: "cancelled",
     actor: "system",
-    guard: "merchantPhase=awaiting_accept AND now >= acceptDeadlineAt; guarded CAS on status=requested; fired by the DB reconciler (packages/shared/restaurants-order RESTAURANTS_TIMING.sweepIntervalMs)",
+    guard: "merchantPhase=awaiting_accept AND now >= acceptDeadlineAt - acceptWindowMs + merchantWaitCapMs (owner decision D1: 24 h; the drawn 3:00 is only the countdown, and an offline merchant gets the same 24 h, C1); guarded CAS on status=requested and the stamped acceptDeadlineAt; fired by the DB reconciler (packages/shared/restaurants-order RESTAURANTS_TIMING.sweepIntervalMs)",
     sideEffect: "set cancelledAt/rejectionReason='shop_closed'-shaped N-03 copy; clear merchantPhase; OrderEvent(cancelled); never a silent hang (D-13 apology grammar)",
     source: "merchant/food-order.service.ts:sweepExpiredAcceptWindows",
     orderType: "merchant",

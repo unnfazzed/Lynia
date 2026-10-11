@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
   PREP_CHIPS_MIN,
-  RESTAURANTS_AUTO_ACCEPT,
   type MerchantOrderItemView,
   type MerchantOrderResponse,
   type MerchantRejectionReasonCode,
@@ -14,7 +13,7 @@ import {
 import { useBusiness } from "../../lib/business";
 import { formatCountdown, msUntil } from "../../lib/countdown";
 import { needsKitchenConfirm } from "../../lib/order-groups";
-import { hm, money, orderLabel } from "../../lib/orders-view";
+import { hm, money, orderLabel, ringDeadline } from "../../lib/orders-view";
 import { changeableLines, proposalLines, swapLine } from "../../lib/substitution";
 import { useNow } from "../../lib/use-now";
 import { countOf, ORDER_FLOW as OF, vocabulary } from "../../lib/vocabulary";
@@ -114,17 +113,15 @@ export function RingingScreen({
   const autoReady =
     auto && active.prepStartedAt && active.prepMinutes != null ? new Date(new Date(active.prepStartedAt).getTime() + active.prepMinutes * 60_000) : null;
   const readyAt = autoReady ?? new Date(now + prepMinutes * 60_000);
-  const deadline = auto
-    ? active.createdAt
-      ? new Date(new Date(active.createdAt).getTime() + RESTAURANTS_AUTO_ACCEPT.autoCancelAfterMs).toISOString()
-      : null
-    : active.acceptDeadlineAt;
+  // Owner decision D1 (2026-10-07): every merchant wait runs 24 h, so the countdown is the drawn answer
+  // window only — the same one for all three rings (BRIEF §3: "only the banner line changes"), computed
+  // by `ringDeadline` exactly as the live bar does (an auto-accepted ring used to count down the old
+  // 60-min auto-cancel: "59:44 to answer").
+  // At 0:00 nothing is missed: the countdown holds at 0:00 and the order keeps ringing until it is
+  // answered. Only the server's 24 h cap ends it, and then the order leaves the ring (this screen is
+  // keyed by order, so the reasons sheet goes with it) — README K2a's "the sheet closes (missed)".
+  const deadline = ringDeadline(active);
   const left = deadline ? msUntil(deadline, now) : null;
-  // D-77 K2a: if the ring runs out while "Why can't you take it?" is open, the sheet closes (missed).
-  const expired = left !== null && left <= 0;
-  useEffect(() => {
-    if (expired) setReasons(false);
-  }, [expired]);
 
   const acceptLabel = changing
     ? `Accept with ${lines.length} change${lines.length === 1 ? "" : "s"}`

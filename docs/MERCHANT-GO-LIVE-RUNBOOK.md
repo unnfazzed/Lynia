@@ -86,7 +86,8 @@ riders are given at pickup, plus the pin.
   `merchant_members.is_pharmacist` column) — only a pharmacist can approve or decline a prescription, and
   an Rx order can't be marked packed until one does. The app reads the switch from `GET /app/order-flags`.
 - **Shops and pharmacies take orders like restaurants** (D-59): the same `POST /restaurants/:id/orders`
-  and `/merchant/orders` endpoints, never auto-accept (3 minutes to accept, then it auto-cancels), cash
+  and `/merchant/orders` endpoints, never auto-accept (a 3-minute countdown to accept; since owner decision D1 an unanswered order keeps
+  ringing and is cancelled only after 24 h, the customer free to cancel and nudged at 3 and 15 min), cash
   only. A switched-on shop in a switched-on section is orderable as soon as this API is deployed.
 - **Sign-up refuses** a held account, a banned or suspended rider, and a pin outside the area LyniaGo
   covers (the 25 km Send corridor).

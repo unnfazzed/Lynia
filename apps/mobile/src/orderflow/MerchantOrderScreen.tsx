@@ -129,6 +129,16 @@ const NOTE_MS = 4_000;
 const RATE_UNDO_S = 10;
 const RATE_LATE_MS = 7 * 24 * 60 * 60 * 1000;
 const ACCEPT_WINDOW_MS = 3 * 60_000;
+
+/** T3's accept countdown in ms (0 once lapsed), or null when the order isn't ringing or has no deadline. */
+export function acceptCountdownMs(
+  order: Pick<MerchantOrderResponse, "merchantPhase" | "acceptDeadlineAt"> | undefined | null,
+  nowMs: number,
+): number | null {
+  if (!order || order.merchantPhase !== "awaiting_accept" || !order.acceptDeadlineAt) return null;
+  const end = Date.parse(order.acceptDeadlineAt);
+  return Number.isFinite(end) ? Math.max(0, end - nowMs) : null;
+}
 const ITEM_WINDOW_MS = 60_000;
 /** The rider tags, index-aligned with `O.d.tagsR` (On time · Friendly · Careful with food · Easy to reach). */
 const RIDER_TAGS: readonly RatingTag[] = ["on_time", "friendly", "careful_with_food", "easy_to_reach"];
@@ -598,8 +608,14 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     : null;
   const stage: MerchantStage | null = res?.stage ?? null;
 
-  // Clocks: a 1 s tick for the countdowns, 15 s to re-check the GPS-paused rule.
-  const needsSecond = stage === "waiting" || stage === "itemApproval" || isOpenRound(round) || (stage === "door" && handshake === "waiting_rider");
+  // T3's accept countdown — only for an order still ringing (`awaiting_accept`): a legacy wallet order in
+  // `awaiting_payment` also reads as "waiting" and keeps a stale `acceptDeadlineAt` (acceptOrder never
+  // clears it). Null = no countdown; 0 = the drawn 3:00 has lapsed (owner decision D1, ledger D-87).
+  const acceptLeftMs = acceptCountdownMs(order, nowMs);
+
+  // Clocks: a 1 s tick for the countdowns, 15 s to re-check the GPS-paused rule. T3 ticks only while its
+  // countdown runs: once it has lapsed nothing on screen moves (D1 — the venue may answer for 24 h).
+  const needsSecond = (stage === "waiting" && acceptLeftMs != null && acceptLeftMs > 0) || stage === "itemApproval" || isOpenRound(round) || (stage === "door" && handshake === "waiting_rider");
   const needsSlow = stage != null && (isRiderStage(stage) || stage === "cooking" || stage === "confirming" || stage === "rxCheck" || stage === "rxDeclined");
   useEffect(() => {
     if (!needsSecond && !needsSlow) return;
@@ -1073,7 +1089,8 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     } else if (reason === "kitchen_unconfirmed") {
       icon = "clock";
       title = ofFmt(O.d.cxKitchen, { v: venueName });
-      sub = O.d.cxKitchenSub;
+      // D1 (ledger D-87): the drawn "We waited an hour." is no longer true — the wait is 24 h.
+      sub = OX.cxKitchenSub;
       primary = others;
       secondary = { label: ofFmt(O.d.tryAgain, { v: venueName }), go: () => router.push(`${section}/${order.merchantId}` as never) };
     } else if (reason) {
@@ -1274,12 +1291,16 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       );
       break;
     case "waiting": {
-      const end = order.acceptDeadlineAt ? Date.parse(order.acceptDeadlineAt) : NaN;
-      const leftMs = Number.isFinite(end) ? Math.max(0, end - nowMs) : null;
+      // Owner decision D1 (2026-10-07, ledger D-87): the drawn 3:00 is the venue's answer window, not a
+      // cancel — they may still accept for 24 h. So the countdown runs once, and at 0:00 the timer row
+      // goes (never "0:00 left" for hours, never a restart: C1/U31's 0:20 → 0:00 loop) and the sub drops
+      // "They have 3 minutes." The title, the venue row and the free cancel stay as drawn.
+      const leftMs = acceptLeftMs;
+      const lapsed = leftMs === 0;
       content = (
         <>
-          <StageTop title={ofFmt(O.t.waiting, { v: venueName })} eta={null} sub={O.t.waitingSub} />
-          {leftMs != null ? (
+          <StageTop title={ofFmt(O.t.waiting, { v: venueName })} eta={null} sub={lapsed ? OX.waitingLapsedSub : O.t.waitingSub} />
+          {leftMs != null && !lapsed ? (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
               <View style={{ height: 28, flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 9, borderRadius: tokens.radius.pill, backgroundColor: C.surface }}>
                 <Icon name="timer" size={14} color={C.muted} />

@@ -5,6 +5,8 @@ import {
   smallOrderFeeForSubtotal,
   merchantAmountDueUsd,
   RESTAURANTS_TIMING,
+  RESTAURANTS_AUTO_ACCEPT,
+  MERCHANT_WAIT_CAP_MS,
   PREP_CHIPS_MIN,
   BUSY_MODE_EXTRA_MIN,
   MERCHANT_REJECTION_REASONS,
@@ -106,6 +108,13 @@ describe("timing + prep chip config", () => {
   it("pins N-03 (3:00 accept window) and D-23/N-18 (60s item-approval window)", () => {
     expect(RESTAURANTS_TIMING.acceptWindowMs).toBe(3 * 60 * 1000);
     expect(RESTAURANTS_TIMING.itemApprovalWindowMs).toBe(60 * 1000);
+  });
+
+  it("D1 (2026-10-07): every merchant-side wait runs 24 h; the customer is nudged at 3 and 15 min", () => {
+    expect(MERCHANT_WAIT_CAP_MS).toBe(24 * 60 * 60 * 1000);
+    expect(RESTAURANTS_TIMING.merchantWaitCapMs).toBe(MERCHANT_WAIT_CAP_MS);
+    expect(RESTAURANTS_AUTO_ACCEPT.autoCancelAfterMs).toBe(MERCHANT_WAIT_CAP_MS);
+    expect(RESTAURANTS_TIMING.stillWaitingPushAfterMs).toEqual([3 * 60 * 1000, 15 * 60 * 1000]);
   });
 
   it("pins N-04's five prep chips and N-17's busy-mode bump", () => {
