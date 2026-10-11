@@ -3,6 +3,8 @@ import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { KitchenConnectionProvider } from "./KitchenConnectionProvider";
 import { hasKnownBusiness } from "../lib/business";
+import { takeSignOutNotice } from "../lib/session";
+import { noBusinessPath } from "../lib/team-api";
 
 /**
  * Merchant web upgrade L4 ("Shared devices"): removing someone signs them out on their next tap and stops
@@ -35,6 +37,8 @@ vi.mock("../lib/business", async () => {
   const actual = await vi.importActual<typeof import("../lib/business")>("../lib/business");
   return { ...actual, hasKnownBusiness: vi.fn() };
 });
+// MJ-L1: where a number that isn't on a business goes (Join when an invite waits for it).
+vi.mock("../lib/team-api", () => ({ noBusinessPath: vi.fn(async () => "/join") }));
 
 afterEach(() => {
   cleanup();
@@ -53,9 +57,11 @@ describe("KitchenConnectionProvider — someone removed from the team", () => {
     act(() => captured.listener!());
     expect(stop).toHaveBeenCalled();
     expect(replace).toHaveBeenCalledWith("/login");
+    // MJ-L2: and the sign-in screen says why.
+    expect(takeSignOutNotice()).toBe("removed");
   });
 
-  it("leaves a number that never had a business to the screen that asked (the sign-up)", () => {
+  it("MJ-L1: sends a number that never had a business to Join / the sign-up — not to 'check your data connection'", async () => {
     vi.mocked(hasKnownBusiness).mockReturnValue(false);
     render(
       <KitchenConnectionProvider>
@@ -63,8 +69,12 @@ describe("KitchenConnectionProvider — someone removed from the team", () => {
       </KitchenConnectionProvider>,
     );
     act(() => captured.listener!());
+    act(() => captured.listener!()); // the queue poll's refusal too: one move
     expect(stop).not.toHaveBeenCalled();
-    expect(replace).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith("/join"));
+    expect(noBusinessPath).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(takeSignOutNotice()).toBeNull();
   });
 
   it("stops listening when the shell goes away", () => {

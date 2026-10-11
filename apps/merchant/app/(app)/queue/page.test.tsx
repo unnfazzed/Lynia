@@ -380,7 +380,8 @@ describe("K2 / S2 · the order rings full screen until it's answered (Merchant v
     fireEvent.click(within(takeover).getByRole("button", { name: /Bread/ }));
     expect(within(takeover).getByRole("button", { name: "Swap for…" })).toBeTruthy();
     fireEvent.click(within(takeover).getByRole("button", { name: "Remove it" }));
-    expect(within(takeover).getByText("Rudo has 3 min to OK the changes. Start packing now.")).toBeTruthy();
+    // MJ-M4: a removal applies at once — nothing for the customer to OK, so no "3 min" promise.
+    expect(within(takeover).queryByText("Rudo has 3 min to OK the changes. Start packing now.")).toBeNull();
     fireEvent.click(within(takeover).getByRole("button", { name: "Accept with 1 change" }));
     await vi.waitFor(() =>
       expect(proposeSubstitution).toHaveBeenCalledWith("a1110000-0000-4000-8000-000000000001", { lines: [{ action: "remove", itemId: BREAD }], prepMinutes: 15 }),
@@ -454,7 +455,7 @@ describe("M1a · an auto-accepted order rings on the same screen until the kitch
       createdAt: new Date(Date.now() - 2 * 60_000).toISOString(),
     });
 
-  it("the banner line says 'LyniaGo accepted this for you' with the time left; Accept confirms the kitchen", async () => {
+  it("the banner line says 'LyniaGo accepted this for you' with the time left; 'Got it, we’re making it' confirms the kitchen", async () => {
     vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
     poll.orders = [auto()];
     render(<Page />);
@@ -465,18 +466,31 @@ describe("M1a · an auto-accepted order rings on the same screen until the kitch
     // count down the old 60-minute cancel); prepStartedAt is "now" here.
     expect(within(takeover).getByLabelText("Time left to answer").textContent).toMatch(/^(3:00|2:5\d)$/);
     expect(within(takeover).queryByRole("radiogroup", { name: "Ready in" })).toBeNull();
-    fireEvent.click(within(takeover).getByRole("button", { name: /^Accept · ready \d\d:\d\d$/ }));
+    // MJ-M1: it is already accepted — M1a's CTA (O.m.confirm), never "Accept · ready".
+    expect(within(takeover).queryByRole("button", { name: /^Accept/ })).toBeNull();
+    fireEvent.click(within(takeover).getByRole("button", { name: "Got it, we’re making it" }));
     await vi.waitFor(() => expect(confirmKitchen).toHaveBeenCalledWith("a1110000-0000-4000-8000-000000000001"));
   });
 
-  it("'Can’t take it' cancels it, whatever the reason picked", async () => {
+  it("'Can’t take it' cancels it with the reason picked (MJ-M2: the customer is told why)", async () => {
     vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
     poll.orders = [auto()];
     render(<Page />);
     fireEvent.click(await screen.findByRole("button", { name: "Can’t take it" }));
     fireEvent.click(screen.getByRole("radio", { name: "Closing soon" }));
     fireEvent.click(screen.getByRole("button", { name: "Turn down #A111" }));
-    await vi.waitFor(() => expect(cancelPreparing).toHaveBeenCalledWith("a1110000-0000-4000-8000-000000000001"));
+    await vi.waitFor(() => expect(cancelPreparing).toHaveBeenCalledWith("a1110000-0000-4000-8000-000000000001", { reason: "closing_soon" }));
+  });
+
+  it("'Something else' carries its note to the customer (MJ-M2)", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
+    poll.orders = [auto()];
+    render(<Page />);
+    fireEvent.click(await screen.findByRole("button", { name: "Can’t take it" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Something else" }));
+    fireEvent.change(await screen.findByRole("textbox"), { target: { value: "Gas ran out" } });
+    fireEvent.click(screen.getByRole("button", { name: "Turn down #A111" }));
+    await vi.waitFor(() => expect(cancelPreparing).toHaveBeenCalledWith("a1110000-0000-4000-8000-000000000001", { reason: "other", note: "Gas ran out" }));
   });
 
   it("a new order still rings first", async () => {

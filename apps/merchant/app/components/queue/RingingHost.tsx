@@ -1,11 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import type { PREP_CHIPS_MIN, SubstitutionProposalLine } from "@lynia/shared";
+import type { MerchantOrderResponse, MerchantRejectionReasonCode, PREP_CHIPS_MIN, SubstitutionProposalLine } from "@lynia/shared";
+import { ApiError } from "../../lib/api-client";
+import { useBranchEpoch } from "../../lib/branches";
 import { acceptOrder, cancelPreparing, confirmKitchen, proposeSubstitution, rejectOrder } from "../../lib/orders-api";
+import { orderLabel } from "../../lib/orders-view";
 import { pickTakeover, takeoverCandidates } from "../../lib/takeover";
 import { useKitchenConnection } from "../KitchenConnectionProvider";
+import { useToast } from "../m/Toast";
 import { RingingScreen } from "./RingingScreen";
+
+/** MJ-M2 (C8): the reasons an auto-accepted order's "Can't take it" can carry to `POST …/cancel`. */
+type CancelReason = "out_of_ingredient" | "out_of_stock" | "too_busy" | "closing_soon" | "other";
+const CANCEL_REASONS: ReadonlySet<string> = new Set<CancelReason>(["out_of_ingredient", "out_of_stock", "too_busy", "closing_soon", "other"]);
+
+/** MJ-M12: the toast for a ringing order that ended before anyone here answered it (ledger D-90). */
+export const RING_ENDED = (label: string) => `${label} was cancelled`;
 
 /**
  * K2 / S2 over whatever screen is open (C20 / MJ-B1; owner decision D4, ledger D-86). README T1b says "A
@@ -17,57 +28,86 @@ import { RingingScreen } from "./RingingScreen";
  * MJ-M10: the order being answered keeps the screen until it is resolved (`pickTakeover`); a newer ring
  * — or an older scheduled order that has just started ringing — waits its turn instead of remounting the
  * screen mid-tap. An order a screen answers itself (the Rx check, `holdTakeover`) never covers it.
+ *
+ * MJ-M12 (2026-10-07): an order that leaves the ring without being answered here used to vanish with the
+ * screen. Now, when it goes: an answer this screen sent says its own toast; an answer the server refused
+ * (a teammate's accept won the race, the customer cancelled first) toasts the server's sentence, which the
+ * screen's alert would have shown had the screen stayed; and an order that left the queue altogether (the
+ * customer cancelled, or the 24 h cap) toasts "#A1B2 was cancelled". A branch switch or sign-out says nothing.
  */
 export function RingingHost() {
   const { session, queue, actionsDisabled, heldOrderIds } = useKitchenConnection();
   const { orders, loaded, refetch } = queue;
+  const toast = useToast();
+  const epoch = useBranchEpoch();
   const currentRef = useRef<string | null>(null);
   const active = session && loaded ? pickTakeover(takeoverCandidates(orders, heldOrderIds), currentRef.current) : null;
+
+  // What the order on screen was (its label, the branch it rang on), and how this host's own answers went.
+  const shownRef = useRef<{ order: MerchantOrderResponse; epoch: number } | null>(null);
+  const answeredRef = useRef(new Set<string>());
+  const refusedRef = useRef(new Map<string, string>());
+
   useEffect(() => {
+    const shown = shownRef.current;
+    if (shown && shown.order.id !== active?.id) {
+      const id = shown.order.id;
+      const refused = refusedRef.current.get(id);
+      if (session && shown.epoch === epoch && !answeredRef.current.has(id)) {
+        if (refused) toast(refused);
+        else if (!orders.some((o) => o.id === id)) toast(RING_ENDED(orderLabel(shown.order)));
+      }
+      answeredRef.current.delete(id);
+      refusedRef.current.delete(id);
+    }
+    shownRef.current = active ? { order: active, epoch: shown && shown.order.id === active.id ? shown.epoch : epoch } : null;
     currentRef.current = active?.id ?? null;
   });
 
+  /** Runs one answer to `orderId`: a success marks it answered here; a refusal (not a dropped connection)
+   *  is kept, so the toast can say it if the order leaves the ring with the screen. */
+  const answer = useCallback(
+    async (orderId: string, send: () => Promise<unknown>) => {
+      try {
+        await send();
+        answeredRef.current.add(orderId);
+        refusedRef.current.delete(orderId);
+      } catch (err) {
+        answeredRef.current.delete(orderId);
+        if (err instanceof ApiError && err.status !== 0 && !err.validation) refusedRef.current.set(orderId, err.message);
+        throw err;
+      }
+      await refetch();
+    },
+    [refetch],
+  );
+
   const handleAccept = useCallback(
-    async (orderId: string, prepMinutes: (typeof PREP_CHIPS_MIN)[number], unavailableDishIds: string[]) => {
-      await acceptOrder(orderId, { prepMinutes, unavailableDishIds: unavailableDishIds.length > 0 ? unavailableDishIds : undefined });
-      await refetch();
-    },
-    [refetch],
+    (orderId: string, prepMinutes: (typeof PREP_CHIPS_MIN)[number], unavailableDishIds: string[]) =>
+      answer(orderId, () => acceptOrder(orderId, { prepMinutes, unavailableDishIds: unavailableDishIds.length > 0 ? unavailableDishIds : undefined })),
+    [answer],
   );
-  const handleConfirm = useCallback(
-    async (orderId: string) => {
-      await confirmKitchen(orderId);
-      await refetch();
-    },
-    [refetch],
-  );
+  const handleConfirm = useCallback((orderId: string) => answer(orderId, () => confirmKitchen(orderId)), [answer]);
+  // MJ-M2 (C8): the reason and the note the reasons sheet promises the customer sees, not a bare cancel.
   const handleCancel = useCallback(
-    async (orderId: string) => {
-      await cancelPreparing(orderId);
-      await refetch();
+    (orderId: string, reason: MerchantRejectionReasonCode, note?: string) => {
+      const why = (CANCEL_REASONS.has(reason) ? reason : "other") as CancelReason;
+      return answer(orderId, () => cancelPreparing(orderId, note ? { reason: why, note } : { reason: why }));
     },
-    [refetch],
+    [answer],
   );
   const handlePropose = useCallback(
-    async (orderId: string, prepMinutes: (typeof PREP_CHIPS_MIN)[number], lines: SubstitutionProposalLine[]) => {
-      await proposeSubstitution(orderId, { lines, prepMinutes });
-      await refetch();
-    },
-    [refetch],
+    (orderId: string, prepMinutes: (typeof PREP_CHIPS_MIN)[number], lines: SubstitutionProposalLine[]) =>
+      answer(orderId, () => proposeSubstitution(orderId, { lines, prepMinutes })),
+    [answer],
   );
   const handleEditItems = useCallback(
-    async (orderId: string, lines: SubstitutionProposalLine[]) => {
-      await proposeSubstitution(orderId, { lines });
-      await refetch();
-    },
-    [refetch],
+    (orderId: string, lines: SubstitutionProposalLine[]) => answer(orderId, () => proposeSubstitution(orderId, { lines })),
+    [answer],
   );
   const handleReject = useCallback(
-    async (orderId: string, reason: Parameters<typeof rejectOrder>[1], note?: string) => {
-      await rejectOrder(orderId, reason, note);
-      await refetch();
-    },
-    [refetch],
+    (orderId: string, reason: Parameters<typeof rejectOrder>[1], note?: string) => answer(orderId, () => rejectOrder(orderId, reason, note)),
+    [answer],
   );
 
   if (!active) return null;

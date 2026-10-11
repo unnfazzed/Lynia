@@ -5,6 +5,7 @@ import LoginPage from "./page";
 import { ApiError, getMyMerchant, requestOtp, verifyOtp } from "../lib/api-client";
 import { merchantProfile } from "../testing/fixtures";
 import { noBusinessPath } from "../lib/team-api";
+import { setSignOutNotice } from "../lib/session";
 
 const nav = vi.hoisted(() => ({ replace: vi.fn(), next: null as string | null }));
 vi.mock("next/navigation", () => ({
@@ -101,7 +102,16 @@ describe("A2 · Code", () => {
   it("Wrong number? goes back to the phone step", async () => {
     await toCodeStep();
     fireEvent.click(screen.getByRole("button", { name: "Wrong number?" }));
-    expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Sign in" })).toBeTruthy();
+  });
+
+  it("MJ-M9: the phone's Back on the code step returns to the number — it doesn't leave the app", async () => {
+    expect(window.history.state?.lyniaStep).toBeUndefined();
+    await toCodeStep();
+    expect(window.history.state?.lyniaStep).toBe(true); // the code step is its own entry
+    window.history.back();
+    expect(await screen.findByRole("heading", { name: "Sign in" })).toBeTruthy();
+    expect((screen.getByLabelText("Phone number") as HTMLInputElement).value).toBe("77 333 3333");
   });
 
   it("offers Resend once the countdown runs out", async () => {
@@ -174,6 +184,25 @@ describe("refusals", () => {
     vi.mocked(verifyOtp).mockRejectedValue(new ApiError(429, "Too many attempts. Wait a minute."));
     await signIn();
     expect(await screen.findByText("Too many attempts. Wait a minute.")).toBeTruthy();
+  });
+
+  it("MJ-L10: the five-an-hour code cap says how long to wait", async () => {
+    vi.mocked(requestOtp).mockRejectedValue(Object.assign(new ApiError(429, "Too many requests — try again later", "otp_send_limit"), { retryAfter: 1740 }));
+    render(<LoginPage />);
+    fireEvent.change(screen.getByLabelText("Phone number"), { target: { value: "0773333333" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send code" }));
+    expect(await screen.findByText("Too many tries. Try again in 29 min.")).toBeTruthy();
+  });
+});
+
+describe("MJ-L2 · someone the owner took off the team", () => {
+  it("lands on sign-in told why, once", async () => {
+    setSignOutNotice("removed");
+    render(<LoginPage />);
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "You’re no longer on the team. Ask the owner to add you again.");
+    cleanup();
+    render(<LoginPage />);
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });
 

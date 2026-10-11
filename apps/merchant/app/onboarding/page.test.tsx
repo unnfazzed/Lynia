@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import OnboardingPage from "./page";
 import { ApiError, becomeMerchant, getMyAccount, getMyMerchant } from "../lib/api-client";
@@ -26,6 +26,12 @@ vi.mock("../lib/places", () => ({
   resolvePlace: vi.fn(),
   reverseGeocode: vi.fn(),
 }));
+
+// MJ-L12: the support WhatsApp number is configured (NEXT_PUBLIC_SUPPORT_WHATSAPP).
+vi.mock("../lib/config", async () => {
+  const actual = await vi.importActual<typeof import("../lib/config")>("../lib/config");
+  return { ...actual, supportWhatsAppUrl: () => "https://wa.me/263770000000" };
+});
 
 // L4: whether a team invited the number (Join) or not; the sign-up unless a test says otherwise.
 vi.mock("../lib/team-api", () => ({ noBusinessPath: vi.fn(async () => "/onboarding") }));
@@ -187,17 +193,74 @@ describe("A4 · Your business", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create my business" }));
     expect(await screen.findByText("That pin is outside the area LyniaGo covers for now.")).toBeTruthy();
 
-    vi.mocked(becomeMerchant).mockRejectedValueOnce(new ApiError(403, "This account is on hold.", "on_hold"));
+    vi.mocked(becomeMerchant).mockRejectedValueOnce(new ApiError(403, "This account is on hold. Message LyniaGo on WhatsApp to sort it out.", "on_hold"));
     fireEvent.click(screen.getByRole("button", { name: "Create my business" }));
-    expect((await screen.findByRole("alert")).textContent).toBe("This account is on hold.");
+    const banner = await screen.findByRole("alert");
+    expect(banner.textContent).toBe("This account is on hold. Message LyniaGo on WhatsApp to sort it out. Open WhatsApp");
+    // MJ-L12: told to message WhatsApp, the held number gets the link to do it.
+    expect(within(banner).getByRole("link", { name: "Open WhatsApp" }).getAttribute("href")).toBe("https://wa.me/263770000000");
+  });
+
+  it("MJ-L12: any other refusal has no WhatsApp link", async () => {
+    vi.mocked(becomeMerchant).mockRejectedValueOnce(new ApiError(500, "Something broke."));
+    await toDetailsAs("Restaurant");
+    fireEvent.change(screen.getByLabelText("Business name"), { target: { value: "Sadza Republic" } });
+    fireEvent.click(screen.getByRole("button", { name: "Use my current location" }));
+    await screen.findByText("5th Street, Mbare");
+    fireEvent.click(screen.getByRole("button", { name: "Create my business" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("Something broke.");
+    expect(screen.queryByRole("link", { name: "Open WhatsApp" })).toBeNull();
   });
 
   it("Back returns to step 1 and keeps what was typed", async () => {
     await toDetailsAs("Shop");
     fireEvent.change(screen.getByLabelText("Business name"), { target: { value: "Mbare Auto Spares" } });
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(screen.getByRole("radio", { name: "Shop" }).getAttribute("aria-checked")).toBe("true");
+    expect((await screen.findByRole("radio", { name: "Shop" })).getAttribute("aria-checked")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect((screen.getByLabelText("Business name") as HTMLInputElement).value).toBe("Mbare Auto Spares");
+  });
+
+  it("MJ-M9: the phone's Back on step 2 returns to step 1 — it doesn't leave the app and lose what was typed", async () => {
+    window.history.replaceState(null, "", "/onboarding");
+    await toDetailsAs("Shop");
+    expect(window.history.state?.lyniaStep).toBe(true); // step 2 is its own entry
+    fireEvent.change(screen.getByLabelText("Business name"), { target: { value: "Mbare Auto Spares" } });
+    window.history.back();
+    expect((await screen.findByRole("radio", { name: "Shop" })).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect((screen.getByLabelText("Business name") as HTMLInputElement).value).toBe("Mbare Auto Spares");
+  });
+});
+
+describe("MJ-M8 · the account read failed when the form opened", () => {
+  async function fillAndCreate() {
+    await toDetailsAs("Restaurant");
+    fireEvent.change(screen.getByLabelText("Business name"), { target: { value: "Sadza Republic" } });
+    fireEvent.change(screen.getByLabelText("Your name"), { target: { value: "Tendai Moyo" } });
+    fireEvent.click(screen.getByRole("button", { name: "Use my current location" }));
+    await screen.findByText("5th Street, Mbare");
+    fireEvent.click(screen.getByRole("button", { name: "Create my business" }));
+  }
+
+  it("reads the sign-in number again at Create, and signs up with it", async () => {
+    vi.mocked(getMyAccount).mockRejectedValueOnce(new ApiError(0, "Couldn't reach the server — check the connection and try again."));
+    vi.mocked(becomeMerchant).mockResolvedValue(merchantProfile());
+    await fillAndCreate();
+    await vi.waitFor(() => expect(becomeMerchant).toHaveBeenCalled());
+    expect(vi.mocked(becomeMerchant).mock.calls[0]![0].location.contactPhone).toBe("+263771234567");
+  });
+
+  it("still no number: a plain banner, and nothing is sent (no schema text, no spent sign-up)", async () => {
+    vi.mocked(getMyAccount).mockRejectedValue(new ApiError(0, "Couldn't reach the server — check the connection and try again."));
+    await fillAndCreate();
+    expect((await screen.findByRole("alert")).textContent).toBe("Couldn't set up your business. Try again.");
+    expect(becomeMerchant).not.toHaveBeenCalled();
+  });
+
+  it("an API validation refusal shows the plain banner, never its schema text", async () => {
+    vi.mocked(becomeMerchant).mockRejectedValue(new ApiError(400, "location: Too small: expected string to have >=7 characters", undefined, true));
+    await fillAndCreate();
+    expect((await screen.findByRole("alert")).textContent).toBe("Couldn't set up your business. Try again.");
   });
 });

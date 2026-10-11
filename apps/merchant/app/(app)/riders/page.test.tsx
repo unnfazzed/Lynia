@@ -151,6 +151,14 @@ describe("E4 · Preferred riders (merchant mobile, D-48)", () => {
     expect(screen.queryByRole("button", { name: "Remove Blessing" })).toBeNull();
   });
 
+  it("MJ-RL7: a failed profile read never tells the owner 'Only the owner can add or remove riders'", async () => {
+    vi.mocked(loadBusiness).mockResolvedValue(null);
+    vi.mocked(listRiders).mockResolvedValue({ riders: [rider()], cap: 20 });
+    render(<Page />);
+    expect(await screen.findByText("Blessing")).toBeTruthy();
+    expect(screen.queryByText("Only the owner can add or remove riders.")).toBeNull();
+  });
+
   it("says Your riders is on its way on an API that doesn't keep riders yet", async () => {
     vi.mocked(loadBusiness).mockResolvedValue(SHOP);
     vi.mocked(listRiders).mockRejectedValue(new ApiError(404, "Cannot GET /merchant/riders"));

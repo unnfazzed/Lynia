@@ -16,7 +16,13 @@ import { orderLabel } from "../../../lib/orders-view";
 import { ORDER_FLOW as OF } from "../../../lib/vocabulary";
 import { orderHref } from "../../../lib/routes";
 
-type Load = { status: "loading" } | { status: "ready"; order: MerchantOrderResponse; photos: PrescriptionPhotosResponse["photos"] } | { status: "error"; message: string };
+type Load =
+  | { status: "loading" }
+  | { status: "ready"; order: MerchantOrderResponse; photos: PrescriptionPhotosResponse["photos"]; expiresInSeconds: number }
+  | { status: "error"; message: string };
+
+/** MJ-M13: how long before the signed photo links expire the page asks for fresh ones. */
+const PHOTO_REFRESH_LEAD_S = 30;
 
 /**
  * P1 · Check the prescription (Merchant v2, packages/design/handoff/merchant-v2, ledger D-77) over Order
@@ -59,7 +65,7 @@ export default function PrescriptionCheckPage() {
   const refresh = useCallback(async () => {
     try {
       const [order, photos] = await Promise.all([getOrder(id), getPrescriptionPhotos(id)]);
-      setLoad({ status: "ready", order, photos: [...photos.photos].sort((a, b) => a.page - b.page) });
+      setLoad({ status: "ready", order, photos: [...photos.photos].sort((a, b) => a.page - b.page), expiresInSeconds: photos.expiresInSeconds });
     } catch (err) {
       setLoad({ status: "error", message: err instanceof ApiError ? err.message : "Couldn't load the prescription." });
     }
@@ -68,6 +74,33 @@ export default function PrescriptionCheckPage() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // MJ-M13: the photo links are signed for `expiresInSeconds` (300 s), and a pharmacist can take longer
+  // than that. Fresh links are fetched shortly before they expire, and again if the photo fails to load;
+  // the page keeps what it has if that fetch fails (the next failure tries again).
+  const reloadPhotos = useCallback(async () => {
+    try {
+      const fresh = await getPrescriptionPhotos(id);
+      setLoad((l) => (l.status === "ready" ? { ...l, photos: [...fresh.photos].sort((a, b) => a.page - b.page), expiresInSeconds: fresh.expiresInSeconds } : l));
+    } catch {
+      // Keep the page; the photo's own error (or the next timer) asks again.
+    }
+  }, [id]);
+  const expiresIn = load.status === "ready" ? load.expiresInSeconds : null;
+  const photosKey = load.status === "ready" ? load.photos.map((p) => p.url).join("|") : "";
+  useEffect(() => {
+    if (expiresIn === null) return undefined;
+    const lead = Math.min(PHOTO_REFRESH_LEAD_S, expiresIn / 2);
+    const timer = setTimeout(() => void reloadPhotos(), Math.max(1, expiresIn - lead) * 1000);
+    return () => clearTimeout(timer);
+  }, [expiresIn, photosKey, reloadPhotos]);
+  // One retry per link: a photo that still fails with fresh links is left to the timer.
+  const retriedUrl = useRef<string | null>(null);
+  const onPhotoError = (url: string) => {
+    if (retriedUrl.current === url) return;
+    retriedUrl.current = url;
+    void reloadPhotos();
+  };
 
   // C20 / MJ-M13: this screen IS how a pharmacist answers this order's ring, so the ringing screen (which
   // covers every other screen, D-86) leaves it alone here. The alarm is the shell's: it keeps ringing until
@@ -126,7 +159,7 @@ export default function PrescriptionCheckPage() {
           <div className="m-rxphoto" data-zoom={zoom ? "" : undefined}>
             {shown ? (
               // eslint-disable-next-line @next/next/no-img-element -- a 5-minute signed URL, never cached
-              <img src={shown.url} alt={`Prescription page ${shown.page}`} />
+              <img src={shown.url} alt={`Prescription page ${shown.page}`} onError={() => onPhotoError(shown.url)} />
             ) : null}
             {photos.length > 1 && (
               <button type="button" className="m-rxpage m-num" aria-label="Next page" onClick={() => setPage((p) => (p + 1) % photos.length)}>

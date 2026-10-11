@@ -4,6 +4,7 @@ import {
   ConfirmMerchantPickupRequest,
   CreateOrderRequest,
   MarkUndeliveredRequest,
+  MerchantCancelOrderRequest,
   MerchantLocationInput,
   merchantWaypoint,
   SubscribeOrderEvent,
@@ -122,5 +123,19 @@ describe("SubscribeOrderEvent — the subscribe:order payload is runtime-validat
     expect(SubscribeOrderEvent.safeParse({ orderId: "not-a-uuid" }).success).toBe(false);
     expect(SubscribeOrderEvent.safeParse({}).success).toBe(false);
     expect(SubscribeOrderEvent.safeParse(undefined).success).toBe(false);
+  });
+});
+
+describe("MerchantCancelOrderRequest — MJ-M2 (C8): the auto-accept ring's reasons reach the customer", () => {
+  it("accepts the K2a / S2a reasons and the note, so 'Can't take it' on an auto-accepted order keeps them", () => {
+    for (const reason of ["out_of_ingredient", "out_of_stock", "closing_soon", "too_busy", "other"] as const) {
+      expect(MerchantCancelOrderRequest.safeParse({ reason, note: "Gas ran out" }).success).toBe(true);
+    }
+  });
+
+  it("still accepts K3b's reasons and an older screen's empty body", () => {
+    for (const reason of ["ran_out", "kitchen_problem"] as const) expect(MerchantCancelOrderRequest.safeParse({ reason }).success).toBe(true);
+    expect(MerchantCancelOrderRequest.safeParse({}).success).toBe(true);
+    expect(MerchantCancelOrderRequest.safeParse({ reason: "no_rider" }).success).toBe(false);
   });
 });

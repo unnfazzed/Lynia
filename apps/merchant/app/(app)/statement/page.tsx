@@ -22,8 +22,9 @@ type LoadState =
   | { status: "staff" }
   | { status: "error"; message: string };
 
-/** Today, this week, or (T2b) one earlier day of the week opened in the Today layout. */
-type Period = "today" | "week" | { date: string; summary: MerchantEndOfDaySummaryResponse | null };
+/** Today, this week, or (T2b) one earlier day of the week opened in the Today layout. `error`: that day
+ *  didn't load (MJ-RL9) — the day stays open with Try again, instead of snapping back to the week. */
+type Period = "today" | "week" | { date: string; summary: MerchantEndOfDaySummaryResponse | null; error?: string };
 
 /**
  * T2 · Money (Merchant v2, packages/design/handoff/merchant-v2, ledger D-77) over D-48's C3. The mint top
@@ -72,9 +73,11 @@ export default function MoneyPage() {
       .then((summary) => setPeriod((p) => (typeof p === "object" && p.date === date ? { date, summary } : p)))
       .catch((err: unknown) => {
         if (redirectIfSessionExpired(err, signOut)) return;
-        setPeriod("week");
+        const error = err instanceof ApiError ? err.message : "Couldn't load your money.";
+        setPeriod((p) => (typeof p === "object" && p.date === date ? { date, summary: null, error } : p));
       });
   };
+  const dayError = typeof period === "object" && !period.summary ? (period.error ?? null) : null;
 
   // The day on screen in the Today layout: today, or the week's day that was tapped.
   const day = !ready ? null : period === "today" ? ready.today : period === "week" ? null : period.summary;
@@ -112,8 +115,9 @@ export default function MoneyPage() {
       </div>
 
       <div className="m-bd" style={{ paddingTop: 16 }}>
-        {(state.status === "loading" || (typeof period === "object" && !period.summary)) && <div className="m-hint">Loading…</div>}
+        {(state.status === "loading" || (typeof period === "object" && !period.summary && !dayError)) && <div className="m-hint">Loading…</div>}
         {state.status === "error" && <RetryableError message={state.message} onRetry={refresh} />}
+        {dayError && typeof period === "object" && <RetryableError message={dayError} onRetry={() => openDay(period.date)} />}
         {state.status === "staff" && <OwnerOnlyNotice>Only the owner sees the money.</OwnerOnlyNotice>}
 
         {ready &&

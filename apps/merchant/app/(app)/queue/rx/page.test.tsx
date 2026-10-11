@@ -118,3 +118,32 @@ describe("C20 / MJ-M13: the Rx check is how a pharmacist answers the ring", () =
     expect(release).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("MJ-M13: the prescription photo links outlive their 5-minute signature", () => {
+  afterEach(() => vi.useRealTimers());
+  const photo = () => screen.getByRole("img", { name: "Prescription page 1" }) as HTMLImageElement;
+
+  it("fetches fresh links shortly before they expire, and keeps the screen as it is", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    show();
+    await screen.findByText("Rudo Moyo");
+    expect(getPrescriptionPhotos).toHaveBeenCalledTimes(1);
+    vi.mocked(getPrescriptionPhotos).mockResolvedValue({ photos: [{ page: 1, url: "https://storage.example/rx-1b.jpg" }, { page: 2, url: "https://storage.example/rx-2b.jpg" }], expiresInSeconds: 300 });
+    await vi.advanceTimersByTimeAsync(269_000);
+    expect(getPrescriptionPhotos).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(getPrescriptionPhotos).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(photo().src).toBe("https://storage.example/rx-1b.jpg"));
+    expect(getOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it("a photo that fails to load asks for fresh links once", async () => {
+    show();
+    await screen.findByText("Rudo Moyo");
+    vi.mocked(getPrescriptionPhotos).mockResolvedValue({ photos: [{ page: 1, url: "https://storage.example/rx-1c.jpg" }], expiresInSeconds: 300 });
+    fireEvent.error(photo());
+    fireEvent.error(photo());
+    await vi.waitFor(() => expect(photo().src).toBe("https://storage.example/rx-1c.jpg"));
+    expect(getPrescriptionPhotos).toHaveBeenCalledTimes(2);
+  });
+});

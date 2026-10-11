@@ -1946,10 +1946,13 @@ export const MerchantRejectOrderRequest = z
 export type MerchantRejectOrderRequest = z.infer<typeof MerchantRejectOrderRequest>;
 
 /** `POST /merchant/orders/:orderId/cancel` (K3b, D-77): why a started cash order can't be finished. The
- *  body is optional, so an older screen's empty POST still cancels (reason `other`). */
+ *  body is optional, so an older screen's empty POST still cancels (reason `other`).
+ *  MJ-M2 (C8): an auto-accepted order's ring answers "Can't take it" with the K2a / S2a reasons
+ *  (`out_of_ingredient`, `out_of_stock`, `closing_soon`), so the customer reads the same reason a
+ *  declined ring gives. Additive: the K3b reasons are unchanged. */
 export const MerchantCancelOrderRequest = z
   .object({
-    reason: z.enum(["ran_out", "kitchen_problem", "too_busy", "other"]).optional(),
+    reason: z.enum(["ran_out", "kitchen_problem", "too_busy", "other", "out_of_ingredient", "out_of_stock", "closing_soon"]).optional(),
     note: z.string().trim().max(MERCHANT_REASON_NOTE_MAX).optional(),
   })
   .strict();

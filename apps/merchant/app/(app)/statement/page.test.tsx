@@ -208,3 +208,27 @@ describe("Money is the owner's (merchant web upgrade L4)", () => {
     expect(getWeekSummary).not.toHaveBeenCalled();
   });
 });
+
+describe("MJ-RL9: a day of This week that fails to load", () => {
+  it("stays open with Try again — it doesn't snap back to the week — and Try again opens that day", async () => {
+    const earlier = { ...today(), orders: 6, sales: 48, overdue: [], lines: [] };
+    let failDay = true;
+    vi.mocked(getTodaySummary).mockImplementation(async (date?: string) => {
+      if (!date) return today();
+      if (failDay) throw new ApiError(0, "Couldn't reach the server — check the connection and try again.");
+      return earlier;
+    });
+    vi.mocked(getWeekSummary).mockResolvedValue(statement());
+    render(<MoneyPage />);
+    fireEvent.click(await screen.findByRole("tab", { name: "This week" }));
+    const rows = screen.getAllByRole("button").filter((b) => b.classList.contains("m-dayrow"));
+    fireEvent.click(rows[2]!);
+    expect(await screen.findByText("Couldn't reach the server — check the connection and try again.")).toBeTruthy();
+    expect(screen.queryAllByRole("button").filter((b) => b.classList.contains("m-dayrow"))).toHaveLength(0);
+    expect(screen.queryByText("Loading…")).toBeNull();
+    failDay = false;
+    fireEvent.click(screen.getByRole("button", { name: /Try again/ }));
+    expect(await screen.findByText("SALES · 6 ORDERS")).toBeTruthy();
+    expect(getTodaySummary).toHaveBeenLastCalledWith(key(daysAgo(2)));
+  });
+});

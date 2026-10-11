@@ -7,11 +7,12 @@ import { AppBar } from "../components/m/AppBar";
 import { LocationField } from "../components/m/LocationField";
 import { useToast } from "../components/m/Toast";
 import { RetryableError } from "../components/RetryableError";
-import { ApiError, becomeMerchant, getMyAccount, getMyMerchant } from "../lib/api-client";
+import { ApiError, apiErrorMessage, becomeMerchant, endMerchantSession, getMyAccount, getMyMerchant } from "../lib/api-client";
 import { homePath } from "../lib/booking";
-import { clearMerchantSession } from "../lib/session";
-import { fieldForReason, pickSellChoice, type SellChoice, sellChoice, type SignUpErrors, type SignUpForm, toBecomeRequest, validateDetails } from "../lib/sign-up";
+import { supportWhatsAppUrl } from "../lib/config";
+import { fieldForReason, needsSupport, pickSellChoice, SIGN_UP_FAILED, type SellChoice, sellChoice, type SignUpErrors, type SignUpForm, toBecomeRequest, validateDetails } from "../lib/sign-up";
 import { noBusinessPath } from "../lib/team-api";
+import { useStepBack } from "../lib/use-step-back";
 
 type Gate = { status: "checking" } | { status: "form" } | { status: "error"; message: string };
 
@@ -35,12 +36,15 @@ export default function OnboardingPage() {
   const [step, setStep] = useState<1 | 2>(1);
   const [form, setForm] = useState<SignUpForm>(EMPTY_FORM);
   const [errors, setErrors] = useState<SignUpErrors>({});
-  const [banner, setBanner] = useState<string | null>(null);
+  // `help`: the refusal tells the person to message LyniaGo (a held or restricted number, MJ-L12).
+  const [banner, setBanner] = useState<{ message: string; help: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const submittingRef = useRef(false);
+  // MJ-M9: step 2 is its own history entry, so Back returns to step 1 with what was typed kept.
+  const step2 = useStepBack(step === 2, () => setStep(1));
 
   const signOut = useCallback(() => {
-    clearMerchantSession();
+    endMerchantSession();
     router.replace("/login");
   }, [router]);
 
@@ -107,12 +111,26 @@ export default function OnboardingPage() {
     submittingRef.current = true;
     setBusy(true);
     try {
-      const merchant = await becomeMerchant(toBecomeRequest(form));
+      // MJ-M8: the contact phone is the sign-in number, read from the account when the form opened. If that
+      // read failed, read it again now; without it the API refuses with schema text ("location: Too small…")
+      // and every retry counts toward the hourly sign-up cap. Still nothing: say so, send nothing.
+      let contactPhone = form.contactPhone;
+      if (!contactPhone.trim()) {
+        contactPhone = (await getMyAccount().catch(() => null))?.phone?.trim() ?? "";
+        if (!contactPhone) {
+          setBanner({ message: SIGN_UP_FAILED, help: false });
+          return;
+        }
+        setForm((f) => ({ ...f, contactPhone }));
+      }
+      const merchant = await becomeMerchant(toBecomeRequest({ ...form, contactPhone }));
       toast("Business created");
+      await step2.leave();
       router.replace(homePath(merchant));
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && err.reason === "already_member") {
         // A retry whose first answer was lost: the business exists, so carry on to it.
+        await step2.leave();
         router.replace(form.businessType === "shop" ? "/deliveries" : "/queue");
         return;
       }
@@ -122,7 +140,8 @@ export default function OnboardingPage() {
       }
       const field = err instanceof ApiError ? fieldForReason(err.reason) : null;
       if (field) setErrors((prev) => ({ ...prev, [field]: err instanceof ApiError ? err.message : "" }));
-      else setBanner(err instanceof ApiError ? err.message : "Couldn't set up your business. Try again.");
+      // Never the API's schema text (MJ-M8); a held number gets the WhatsApp link it is told to use (MJ-L12).
+      else setBanner({ message: apiErrorMessage(err, SIGN_UP_FAILED), help: err instanceof ApiError && needsSupport(err.reason) });
     } finally {
       setBusy(false);
       submittingRef.current = false;
@@ -171,9 +190,10 @@ export default function OnboardingPage() {
     );
   }
 
+  const help = banner?.help ? supportWhatsAppUrl() : null;
   return (
     <div className="m-app">
-      <AppBar onBack={() => setStep(1)} center title="Step 2 of 2" />
+      <AppBar onBack={step2.back} center title="Step 2 of 2" />
       <form className="m-bd" style={{ flex: 1, padding: "4px 20px 20px", gap: 14, overflowY: "auto" }} onSubmit={submit} noValidate>
         <div className="m-prog">
           <i className="m-on" />
@@ -194,7 +214,15 @@ export default function OnboardingPage() {
         />
         {banner && (
           <div className="m-alert" role="alert">
-            {banner}
+            {banner.message}
+            {help && (
+              <>
+                {" "}
+                <a href={help} target="_blank" rel="noreferrer">
+                  Open WhatsApp
+                </a>
+              </>
+            )}
           </div>
         )}
         <div style={{ flex: 1 }} />

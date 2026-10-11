@@ -26,6 +26,8 @@ export class ApiError extends Error {
     /** A request-body validation 400 (the API's ZodBody: `{ message, formErrors, fieldErrors }`). Its
      *  message is raw schema text ("priceUsd: Too big…"), never a sentence for a person. */
     public validation = false,
+    /** MJ-L10: seconds until a rate limit lets the caller try again (the API's `retryAfter` on a 429). */
+    public retryAfter: number | null = null,
   ) {
     super(message);
   }
@@ -35,6 +37,12 @@ export class ApiError extends Error {
 function reasonOf(body: unknown): string | undefined {
   const reason = (body as { reason?: unknown } | null)?.reason;
   return typeof reason === "string" ? reason : undefined;
+}
+
+/** The `retryAfter` seconds a 429 body carries (AuthService.enforceRate), if present and sane. */
+function retryAfterOf(status: number, body: unknown): number | null {
+  const v = (body as { retryAfter?: unknown } | null)?.retryAfter;
+  return status === 429 && typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null;
 }
 
 /** The API's ZodBody 400 shape (`apps/api/src/common/zod.pipe.ts`): `flatten()`'s two keys beside `message`. */
@@ -201,9 +209,54 @@ async function rawFetch<T>(
       (typeof body?.message === "string" && body.message) ||
       (Array.isArray(body?.message) && body.message.join("; ")) ||
       (res.status === 503 ? "Restaurants isn't live on this account yet." : `Request failed (HTTP ${res.status}).`);
-    throw new ApiError(res.status, message, reasonOf(body), isValidationBody(res.status, body));
+    throw new ApiError(res.status, message, reasonOf(body), isValidationBody(res.status, body), retryAfterOf(res.status, body));
   }
   return (await res.json()) as T;
+}
+
+/**
+ * MJ-L13: bumped on every sign-out. A refresh that was already in flight when the person signed out must
+ * not write the session cookie back (it would sign them in again, behind the sign-in screen).
+ */
+let signOutEpoch = 0;
+
+/**
+ * MJ-L13 (2026-10-07): sign out on the server too. Sign-out used to clear only the cookie, so the session
+ * stayed valid for its year. Best effort and in the background: the session is cleared here and now, the
+ * revoke (`POST /auth/logout`, which revokes the refresh chain's live head) is sent with the access token
+ * read before it was cleared, and an expired access token is renewed once for the call without saving it.
+ */
+export function endMerchantSession(): void {
+  signOutEpoch += 1;
+  const session = loadMerchantSession();
+  clearMerchantSession();
+  if (session) void revokeOnServer(session).catch(() => undefined);
+}
+
+async function revokeOnServer(session: MerchantSession): Promise<void> {
+  const sessionId = session.refreshToken.split(".")[0] ?? "";
+  if (!sessionId) return;
+  const logout = (token: string) =>
+    fetch(`${API_BASE_URL}/auth/logout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ sessionId }),
+      cache: "no-store",
+      keepalive: true,
+      signal: AbortSignal.timeout(MERCHANT_FETCH_TIMEOUT_MS),
+    });
+  const res = await logout(session.accessToken);
+  if (res.status !== 401) return;
+  const renewed = await fetch(`${API_BASE_URL}/auth/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refreshToken: session.refreshToken }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(MERCHANT_FETCH_TIMEOUT_MS),
+  });
+  if (!renewed.ok) return;
+  const { accessToken } = (await renewed.json()) as { accessToken?: string };
+  if (accessToken) await logout(accessToken);
 }
 
 /** LC-C03: `doRefresh` distinguishes a DEAD refresh token (401/403 — sign out, correctly) from a
@@ -236,6 +289,7 @@ async function refreshSession(refreshToken: string): Promise<RefreshOutcome> {
 }
 
 async function doRefresh(refreshToken: string): Promise<RefreshOutcome> {
+  const epoch = signOutEpoch;
   let res: Response;
   try {
     res = await fetch(`${API_BASE_URL}/auth/refresh`, {
@@ -264,6 +318,8 @@ async function doRefresh(refreshToken: string): Promise<RefreshOutcome> {
   }
   if (!res.ok) return { kind: "transient", networkError: false }; // transient server error — a real response is proof of life
   const data = (await res.json()) as { accessToken: string; refreshToken: string; expiresIn: number };
+  // MJ-L13: signed out while this was in flight — never write the cookie back. The session is over.
+  if (epoch !== signOutEpoch) return { kind: "dead" };
   const prior = loadMerchantSession();
   const next: MerchantSession = {
     accessToken: data.accessToken,
@@ -288,8 +344,14 @@ export async function refreshMerchantSession(): Promise<"refreshed" | "dead" | "
   const session = loadMerchantSession();
   if (!session) return "dead";
   const outcome = await refreshSession(session.refreshToken);
-  if (outcome.kind === "dead") clearMerchantSession();
+  if (outcome.kind === "dead") clearSessionIfStill(session);
   return outcome.kind;
+}
+
+/** MJ-L13: a dead outcome clears the cookie only while it still holds the session that died — never a
+ *  newer sign-in that landed while the refresh was in flight. */
+function clearSessionIfStill(session: MerchantSession): void {
+  if (loadMerchantSession()?.refreshToken === session.refreshToken) clearMerchantSession();
 }
 
 /** Authenticated fetch with refresh-on-401 (single-flight) and sign-out on a definitively dead
@@ -347,7 +409,7 @@ async function authedRequest<T>(path: string, opts: { method?: string; body?: un
     }
     const outcome = await refreshSession(session.refreshToken);
     if (outcome.kind === "dead") {
-      clearMerchantSession();
+      clearSessionIfStill(session);
       throw new ApiError(401, "Your session expired — sign in again.");
     }
     if (outcome.kind === "transient") {

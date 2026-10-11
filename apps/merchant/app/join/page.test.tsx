@@ -20,6 +20,10 @@ vi.mock("../lib/api-client", async () => {
 });
 vi.mock("../lib/team-api", () => ({ listMyInvites: vi.fn(), joinInvite: vi.fn(), declineInvite: vi.fn() }));
 vi.mock("../lib/business", () => ({ primeBusiness: vi.fn() }));
+vi.mock("../lib/config", async () => {
+  const actual = await vi.importActual<typeof import("../lib/config")>("../lib/config");
+  return { ...actual, supportWhatsAppUrl: () => "https://wa.me/263770000000" };
+});
 vi.mock("../components/alarm-singleton", () => ({ getAlarmController: () => ({ arm: vi.fn() }) }));
 
 function invite(over: Partial<MyMerchantInviteResponse> = {}): MyMerchantInviteResponse {
@@ -82,6 +86,18 @@ describe("A5 · Join a team (merchant mobile redesign, D-48)", () => {
       "alert",
     );
     expect(replace).not.toHaveBeenCalled();
+    expect(screen.queryByRole("link", { name: "Open WhatsApp" })).toBeNull();
+  });
+
+  it("MJ-L12: a held number told to message LyniaGo on WhatsApp gets the link", async () => {
+    vi.mocked(listMyInvites).mockResolvedValue({ invites: [invite()] });
+    vi.mocked(joinInvite).mockRejectedValue(new ApiError(403, "This account is on hold. Message LyniaGo on WhatsApp to sort it out.", "on_hold"));
+    render(<JoinPage />);
+    await screen.findByLabelText("Your name");
+    fireEvent.click(screen.getByRole("button", { name: "Join Siyaso Spares" }));
+    const link = await screen.findByRole("link", { name: "Open WhatsApp" });
+    expect(link.getAttribute("href")).toBe("https://wa.me/263770000000");
+    expect(screen.getByRole("alert").textContent).toBe("This account is on hold. Message LyniaGo on WhatsApp to sort it out. Open WhatsApp");
   });
 
   it("drops an expired invite, says whom to ask, and shows the next one", async () => {
