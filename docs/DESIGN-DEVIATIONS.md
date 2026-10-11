@@ -5117,6 +5117,37 @@ already draw, with no new element:
 - **Upstream:** the handoffs should draw a locked-code state and the past-cap state on both sides (and decide whether a
   "Send a new code" button belongs on the customer's card). Reported upstream; the kit is not edited here.
 
+## D-90 · Merchant ring, sign-in and sign-up: undrawn lines through existing elements — APPROVED (owner decision D6, 2026-10-07)
+
+**Owner decision D6 (reviewed list 2026-10-07):** *"Copy fixes only. Skip new UI."* New wording may go through an
+element the screen already has (a toast, a banner, a label, a sub); no new element is added. These are the merchant
+web's lines from wave 4, Lane D (merchant journey audit 2026-10-07: MJ-M4, MJ-M12, MJ-L2, MJ-L10). Each one says
+something true that the drawn copy got wrong or left unsaid.
+
+| String | Screen · element | Why no handoff draws it |
+|---|---|---|
+| **"Cancel the order"** | K2 / S2 ringing screen (Merchant v2) · the primary CTA, when every line is marked removed (MJ-M4) | Order flow v2 U1a / M1a draw the proposer with one line changed; nothing draws every line removed at the ring. The server cancels that order (`all_out_of_stock`), so "Accept with N changes" promised the opposite. |
+| **"Nothing is left, so the order is cancelled."** | K2 / S2 · the CTA hint (`m-ctahint`), same case | Same. It replaces "{customer} has 3 min to OK the changes", which is only true for a swap. |
+| **"Cancelled · the customer was told"** | the toast after that CTA (MJ-M4) | Same; modelled on the existing "Declined · the customer was told". |
+| **"#A1B2 was cancelled"** | the toast over any (app) screen when the order on the ring leaves it unanswered — the customer cancelled, or the 24 h cap (MJ-M12) | README K2a says only "the sheet closes (missed)"; no copy for an order that ends while it rings. A late answer the server refuses toasts the API's own sentence instead (no new copy). |
+| **"You’re no longer on the team. Ask the owner to add you again."** | A1 Sign in (merchant-mobile) · the existing alert, once, after the app signed out someone the owner removed (MJ-L2) | A1 draws no signed-out reason; Merchant v2 Team draws the owner's "Remove", not what the removed person sees. |
+| **"Too many tries. Try again in {N} min."** / **"… in {N} h."** | A1 / A2 Sign in · the existing alert, on the API's code cap (429 with `retryAfter`) (MJ-L10) | A1/A2 draw no rate-limit state. The wording is the customer app's (`apps/mobile/src/logic/otp.ts`, ledger D-55 §4), so both apps say the same. |
+
+Also in this lane, and not new copy:
+
+- **K2 / S2:** an auto-accepted order's CTA is now M1a's **"Got it, we’re making it"** (`O.m.confirm`, order-flow-v2
+  `code/copy.ts`) instead of "Accept · ready HH:MM" (MJ-M1, handoff copy verbatim). A removals-only change keeps
+  "Accept with N changes" and toasts the existing "Accepted · ready HH:MM"; the "3 min to OK" hint and toast stay for a
+  swap. "Accept · ready HH:MM" adds busy mode's 10 minutes, as the server does (MJ-L7).
+- **A4 Your business / A5 Join:** a held or restricted number's refusal ("… Message LyniaGo on WhatsApp …") carries the
+  app's existing **"Open WhatsApp"** link (`supportWhatsAppUrl()`, as Add a branch already does) inside the existing
+  banner (MJ-L12).
+  - **For the owner:** A4 and A5 draw no link in that banner. The "Open WhatsApp" link inside it is a reuse of the
+    existing link element (the one Add a branch's banner already carries, same label and target), not a new element.
+- **T2b Money:** a day that fails to load shows the existing `RetryableError` (MJ-RL9).
+- **Upstream:** the handoffs should draw the ring with every line removed, the ring ending unanswered, the signed-out
+  reason and the code cap on sign-in. Reported upstream; the kit is not edited here.
+
 ## D-91 · Merchant wave 4 (Lane E): copy-only lines for menu photos, hours, Book a rider — APPROVED (owner decision D6, 2026-10-07)
 
 **Owner decision D6 (reviewed list 2026-10-07):** *"Only copy fixes, skip new UI."* The merchant audit's Lane E

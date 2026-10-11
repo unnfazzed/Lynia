@@ -1,6 +1,6 @@
 import { BecomeMerchantRequest } from "@lynia/shared";
 import { describe, expect, it } from "vitest";
-import { fieldForReason, OUTSIDE_AREA_MESSAGE, pickSellChoice, sellChoice, type SignUpForm, toBecomeRequest, validateDetails } from "./sign-up";
+import { fieldForReason, needsSupport, OUTSIDE_AREA_MESSAGE, pickSellChoice, sellChoice, type SignUpForm, toBecomeRequest, validateDetails } from "./sign-up";
 
 const filled: SignUpForm = {
   businessType: "shop",
@@ -70,5 +70,12 @@ describe("sign-up step 2: your business (merchant-mobile A4)", () => {
   it("puts an out-of-area refusal next to the location", () => {
     expect(fieldForReason("outside_service_area")).toBe("location");
     expect(fieldForReason("already_member")).toBeNull();
+  });
+
+  it("MJ-L12: a held or restricted number's refusal gets the WhatsApp link it tells them to use", () => {
+    expect(needsSupport("on_hold")).toBe(true);
+    expect(needsSupport("account_restricted")).toBe(true);
+    expect(needsSupport("outside_service_area")).toBe(false);
+    expect(needsSupport(undefined)).toBe(false);
   });
 });

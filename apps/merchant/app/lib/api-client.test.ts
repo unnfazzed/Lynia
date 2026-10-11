@@ -311,3 +311,99 @@ describe("authedFetch — a removed person's next request (merchant web upgrade 
     expect(lost).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("MJ-L13 · sign-out ends the session on the server, and a refresh in flight can't bring it back", () => {
+  const SID = "5e55a000-0000-4000-8000-000000000001";
+
+  it("clears the cookie at once and revokes the session with the token read before it was cleared", async () => {
+    session = { ...baseSession(), refreshToken: `${SID}.secret` };
+    const { endMerchantSession } = await import("./api-client");
+    fetchMock.mockResolvedValue(makeResponse(200, { revoked: true }));
+    endMerchantSession();
+    expect(clearMerchantSession).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [url, init] = fetchMock.mock.calls[0]! as [string, RequestInit];
+    expect(url).toMatch(/\/auth\/logout$/);
+    expect(JSON.parse(init.body as string)).toEqual({ sessionId: SID });
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer old-access");
+  });
+
+  it("an expired access token is renewed once for the revoke — and the renewed session is never saved", async () => {
+    session = { ...baseSession(), refreshToken: `${SID}.secret` };
+    const { endMerchantSession } = await import("./api-client");
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (url.endsWith("/auth/refresh")) return makeResponse(200, { accessToken: "fresh-access", refreshToken: "x.y", expiresIn: 900 });
+      const auth = (init.headers as Record<string, string>).Authorization;
+      return auth === "Bearer fresh-access" ? makeResponse(200, { revoked: true }) : AUTH_GUARD_401;
+    });
+    endMerchantSession();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect((fetchMock.mock.calls[2]![1] as RequestInit).headers).toMatchObject({ Authorization: "Bearer fresh-access" });
+    expect(saveMerchantSession).not.toHaveBeenCalled();
+    expect(session).toBeNull();
+  });
+
+  it("a refresh already in flight when the person signs out never writes the cookie back", async () => {
+    const { authedFetch, endMerchantSession } = await import("./api-client");
+    let answerRefresh!: (r: Response) => void;
+    fetchMock.mockImplementation((url: string) => {
+      if (url.endsWith("/auth/refresh")) return new Promise<Response>((res) => (answerRefresh = res));
+      if (url.endsWith("/auth/logout")) return Promise.resolve(makeResponse(200, { revoked: true }));
+      return Promise.resolve(AUTH_GUARD_401);
+    });
+    const pending = authedFetch("/merchant/orders");
+    await vi.waitFor(() => expect(answerRefresh).toBeTypeOf("function"));
+    endMerchantSession();
+    answerRefresh(makeResponse(200, { accessToken: "new-access", refreshToken: "new-refresh", expiresIn: 3600 }));
+    // Not a 401: a 401 makes the screen sign out again, which would revoke whatever session is current.
+    await expect(pending).rejects.toMatchObject({ status: 0, reason: "signed_out" });
+    expect(saveMerchantSession).not.toHaveBeenCalled();
+    expect(session).toBeNull();
+  });
+
+  it("a new session's 401 never joins the old session's refresh", async () => {
+    const { authedFetch } = await import("./api-client");
+    const refreshedWith: string[] = [];
+    fetchMock.mockImplementation((url: string, init: RequestInit) => {
+      if (url.endsWith("/auth/refresh")) {
+        const { refreshToken } = JSON.parse(init.body as string) as { refreshToken: string };
+        refreshedWith.push(refreshToken);
+        // The old session's refresh hangs; the new one's answers.
+        if (refreshToken === "old-refresh") return new Promise<Response>(() => {});
+        return Promise.resolve(makeResponse(200, { accessToken: "b-access-2", refreshToken: "b-refresh-2", expiresIn: 3600 }));
+      }
+      const auth = (init.headers as Record<string, string>).Authorization;
+      return Promise.resolve(auth === "Bearer b-access-2" ? makeResponse(200, { ok: true }) : AUTH_GUARD_401);
+    });
+    session = { ...baseSession(), refreshToken: "old-refresh" };
+    void authedFetch("/merchant/orders").catch(() => undefined);
+    await vi.waitFor(() => expect(refreshedWith).toEqual(["old-refresh"]));
+    session = { ...baseSession(), accessToken: "b-access", refreshToken: "b-refresh" };
+    await expect(authedFetch("/merchant/orders")).resolves.toEqual({ ok: true });
+    expect(refreshedWith).toEqual(["old-refresh", "b-refresh"]);
+  });
+
+  it("a dead refresh never clears a newer sign-in that landed while it was in flight", async () => {
+    const { authedFetch } = await import("./api-client");
+    let answerRefresh!: (r: Response) => void;
+    fetchMock.mockImplementation((url: string) => {
+      if (url.endsWith("/auth/refresh")) return new Promise<Response>((res) => (answerRefresh = res));
+      return Promise.resolve(AUTH_GUARD_401);
+    });
+    const pending = authedFetch("/merchant/orders");
+    await vi.waitFor(() => expect(answerRefresh).toBeTypeOf("function"));
+    session = { ...baseSession(), accessToken: "someone-else", refreshToken: "someone-else-refresh" };
+    answerRefresh(makeResponse(401, { statusCode: 401, message: "Invalid or expired refresh token" }));
+    await expect(pending).rejects.toMatchObject({ status: 401 });
+    expect(clearMerchantSession).not.toHaveBeenCalled();
+    expect(session?.accessToken).toBe("someone-else");
+  });
+});
+
+describe("MJ-L10 · a rate limit carries how long to wait", () => {
+  it("keeps the 429's retryAfter on the ApiError", async () => {
+    const { requestOtp } = await import("./api-client");
+    fetchMock.mockResolvedValue(makeResponse(429, { statusCode: 429, message: "Too many requests — try again later", retryAfter: 1740, reason: "otp_send_limit" }));
+    await expect(requestOtp("+263771234567")).rejects.toMatchObject({ status: 429, retryAfter: 1740, reason: "otp_send_limit" });
+  });
+});

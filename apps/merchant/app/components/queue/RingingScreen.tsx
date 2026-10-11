@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
+  BUSY_MODE_EXTRA_MIN,
   PREP_CHIPS_MIN,
   type MerchantOrderItemView,
   type MerchantOrderResponse,
@@ -10,6 +11,7 @@ import {
   type MerchantShopKind,
   type SubstitutionProposalLine,
 } from "@lynia/shared";
+import { ApiError } from "../../lib/api-client";
 import { useBusiness } from "../../lib/business";
 import { formatCountdown, msUntil } from "../../lib/countdown";
 import { needsKitchenConfirm } from "../../lib/order-groups";
@@ -24,6 +26,17 @@ import { SwapPicker, useProposer, type Proposer } from "./proposer";
 import { prescriptionHref } from "../../lib/routes";
 
 type Prep = (typeof PREP_CHIPS_MIN)[number];
+
+/**
+ * The ring's undrawn lines (ledger D-90, owner decision D6: copy through existing elements only).
+ * MJ-M4: removals apply at once (only a swap waits for the customer), and removing every line cancels
+ * the order — the CTA, its hint and the toast say so instead of "Accepted · the customer has 3 minutes".
+ */
+export const RING_COPY = {
+  cancelAll: "Cancel the order",
+  cancelAllHint: "Nothing is left, so the order is cancelled.",
+  cancelled: "Cancelled · the customer was told",
+} as const;
 
 /**
  * K2 / S2 · the order rings (Merchant v2, packages/design/handoff/merchant-v2, ledger D-77). One
@@ -55,7 +68,8 @@ export function RingingScreen({
   onReject: (orderId: string, reason: MerchantRejectionReasonCode, note?: string) => Promise<void>;
   /** Auto-accept: the kitchen confirms it is making it. */
   onConfirm: (orderId: string) => Promise<void>;
-  onCancel: (orderId: string) => Promise<void>;
+  /** Auto-accept's "Can't take it": the reason and note go to the customer (MJ-M2). */
+  onCancel: (orderId: string, reason: MerchantRejectionReasonCode, note?: string) => Promise<void>;
   onEditItems: (orderId: string, lines: SubstitutionProposalLine[]) => Promise<void>;
   refetch: () => Promise<void>;
 }) {
@@ -72,10 +86,24 @@ export function RingingScreen({
   const [prepMinutes, setPrepMinutes] = useState<Prep>(15);
   const [reasons, setReasons] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; network: boolean } | null>(null);
   // Synchronous double-submit guard: two taps in one tick both read `submitting` as false. Order
   // assignment is a sensitive lane, so a fast double-tap must never double-accept or double-reject.
   const submittingRef = useRef(false);
+
+  // MJ-L4: "Couldn't reach the server" is about the connection, so it goes when the connection comes back
+  // (`disabled` is the shell's offline state). A refusal from the server stays until the next answer.
+  const wasDisabled = useRef(disabled);
+  useEffect(() => {
+    if (wasDisabled.current && !disabled) setError((e) => (e?.network ? null : e));
+    wasDisabled.current = disabled;
+  }, [disabled]);
+  // …and when a fresh read of the order lands (the poll keeps an unchanged order's object, so a new one is news).
+  const seenOrder = useRef(active);
+  useEffect(() => {
+    if (seenOrder.current !== active) setError((e) => (e?.network ? null : e));
+    seenOrder.current = active;
+  }, [active]);
 
   // Back is blocked here: the alarm must be answered.
   useEffect(() => {
@@ -96,7 +124,7 @@ export function RingingScreen({
       setReasons(false);
       toast(done);
     } catch (err) {
-      setError(err instanceof Error ? err.message : failed);
+      setError({ message: err instanceof Error ? err.message : failed, network: err instanceof ApiError && err.status === 0 });
       setReasons(false);
       // A refusal (usually a 409: the order already resolved) refetches, so a stale screen clears itself.
       await refetch().catch(() => {});
@@ -108,11 +136,17 @@ export function RingingScreen({
 
   const lines = proposalLines(active, p.changes);
   const changing = lines.length > 0;
+  // MJ-M4: only a swap waits for the customer (removals apply at once), and taking every line off cancels
+  // the order (the server's `all_out_of_stock`).
+  const swapping = lines.some((l) => l.action === "swap");
+  const allGone = changing && !swapping && lines.length === changeableLines(active).length;
   const who = active.customerFirstName?.trim() || null;
   const making = v.making.toLowerCase();
   const autoReady =
     auto && active.prepStartedAt && active.prepMinutes != null ? new Date(new Date(active.prepStartedAt).getTime() + active.prepMinutes * 60_000) : null;
-  const readyAt = autoReady ?? new Date(now + prepMinutes * 60_000);
+  // MJ-L7: busy mode adds 10 min at accept on the server (N-17), so the promised time adds it too.
+  const busyExtra = business?.busy ? BUSY_MODE_EXTRA_MIN : 0;
+  const readyAt = autoReady ?? new Date(now + (prepMinutes + busyExtra) * 60_000);
   // Owner decision D1 (2026-10-07): every merchant wait runs 24 h, so the countdown is the drawn answer
   // window only — the same one for all three rings (BRIEF §3: "only the banner line changes"), computed
   // by `ringDeadline` exactly as the live bar does (an auto-accepted ring used to count down the old
@@ -123,29 +157,40 @@ export function RingingScreen({
   const deadline = ringDeadline(active);
   const left = deadline ? msUntil(deadline, now) : null;
 
-  const acceptLabel = changing
-    ? `Accept with ${lines.length} change${lines.length === 1 ? "" : "s"}`
-    : shop && !auto
-      ? "Accept"
-      : `Accept · ready ${hm(readyAt.toISOString())}`;
+  // MJ-M1: an auto-accepted order is already accepted — its CTA is M1a's "Got it, we’re making it"
+  // (O.m.confirm), never "Accept · ready".
+  const acceptLabel = allGone
+    ? RING_COPY.cancelAll
+    : auto
+      ? OF.confirm
+      : changing
+        ? `Accept with ${lines.length} change${lines.length === 1 ? "" : "s"}`
+        : shop
+          ? "Accept"
+          : `Accept · ready ${hm(readyAt.toISOString())}`;
+  const accepted = `Accepted · ready ${hm(readyAt.toISOString())}`;
 
   function accept() {
     if (auto) {
       return run(
         async () => {
           if (changing) await onEditItems(active.id, lines);
-          await onConfirm(active.id);
+          // Nothing left: the edit itself cancelled the order, so there is nothing to confirm.
+          if (!allGone) await onConfirm(active.id);
         },
-        "Confirmed · we’ll send a rider when it’s nearly ready",
+        allGone ? RING_COPY.cancelled : "Confirmed · we’ll send a rider when it’s nearly ready",
         "Couldn't confirm the order. Try again.",
       );
     }
-    return changing
-      ? run(() => onPropose(active.id, prepMinutes, lines), "Accepted · the customer has 3 minutes for the changes", "Couldn't accept the order. Try again.")
-      : run(() => onAccept(active.id, prepMinutes, []), `Accepted · ready ${hm(readyAt.toISOString())}`, "Couldn't accept the order. Try again.");
+    if (!changing) return run(() => onAccept(active.id, prepMinutes, []), accepted, "Couldn't accept the order. Try again.");
+    return run(
+      () => onPropose(active.id, prepMinutes, lines),
+      allGone ? RING_COPY.cancelled : swapping ? "Accepted · the customer has 3 minutes for the changes" : accepted,
+      "Couldn't accept the order. Try again.",
+    );
   }
   const decline = (reason: MerchantRejectionReasonCode, note?: string) =>
-    run(() => (auto ? onCancel(active.id) : onReject(active.id, reason, note)), "Declined · the customer was told", "Couldn't decline the order. Try again.");
+    run(() => (auto ? onCancel(active.id, reason, note) : onReject(active.id, reason, note)), "Declined · the customer was told", "Couldn't decline the order. Try again.");
 
   const busy = disabled || submitting;
   const pay = active.paymentMethod ?? "cash";
@@ -212,14 +257,15 @@ export function RingingScreen({
         <div className="m-cta">
           {error && (
             <div className="m-alert" role="alert">
-              {error}
+              {error.message}
             </div>
           )}
-          {changing && (
+          {swapping && (
             <span className="m-ctahint">
               {who ?? "The customer"} has 3 min to OK the changes. Start {making} now.
             </span>
           )}
+          {allGone && <span className="m-ctahint">{RING_COPY.cancelAllHint}</span>}
           {rxFirst ? (
             <Link href={prescriptionHref(active.id)} className="m-btn">
               <Icon name="file-text" size={18} />

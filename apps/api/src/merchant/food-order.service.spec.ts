@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BadRequestException, Logger } from "@nestjs/common";
-import { RESTAURANTS_TIMING } from "@lynia/shared";
+import { MerchantCancelOrderRequest, RESTAURANTS_TIMING } from "@lynia/shared";
 import type { Env } from "../config/env";
 import type { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -1669,6 +1669,27 @@ describe("FoodOrderService.cancelPreparing — B3 'Can't finish this order' (D-4
     await svc.cancelPreparing("p1", "o1", "kitchen_problem", "  Gas ran out  ");
     expect(data).toMatchObject({ rejectionReason: "kitchen_problem", cancelReason: "Gas ran out" });
     expect(pushes[0]!.body).toMatch(/“Gas ran out”$/);
+  });
+
+  it("MJ-M2 (C8): the auto-accept ring's 'Can't take it' body {reason, note} passes the endpoint's schema and is stored", async () => {
+    // The controller parses the raw body with MerchantCancelOrderRequest; the ring sends K2a / S2a reasons.
+    const parsed = MerchantCancelOrderRequest.safeParse({ reason: "out_of_ingredient", note: "  No gas  " });
+    expect(parsed.success).toBe(true);
+    let data: Record<string, unknown> | undefined;
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: {
+        updateMany: async (args: { data: Record<string, unknown> }) => {
+          data = args.data;
+          return { count: 1 };
+        },
+        findUnique: async () => ({ id: "o1", merchantId: "m1", customerId: "c1", status: "cancelled", merchantItems: [], pickupCodeAttempts: 0, noShowCallTimestamps: [] }),
+      },
+      orderEvent: { create: async () => ({}) },
+    });
+    const body = parsed.success ? parsed.data : {};
+    await svc.cancelPreparing("p1", "o1", body.reason ?? "other", body.note);
+    expect(data).toMatchObject({ rejectionReason: "out_of_ingredient", cancelReason: "No gas" });
   });
 
   // MJ-RM1: an auto-accepted order's rider search starts in the last minutes of cooking, so "Problem with

@@ -9,10 +9,12 @@ import { API_BASE_URL } from "../lib/config";
 import { createMerchantQueueSocket } from "../lib/queue-socket";
 import { getReachabilityStore, type ReachabilityState } from "../lib/reachability";
 import { onMembershipLost, refreshMerchantSession } from "../lib/api-client";
+import { signOutSession } from "../lib/sign-out";
 import { alarmOrders } from "../lib/alarm";
 import { useQueuePoll, type QueuePollState } from "../lib/use-queue-poll";
-import { clearBusinessCache, hasKnownBusiness } from "../lib/business";
-import { clearMerchantSession, loadMerchantSession, type MerchantSession } from "../lib/session";
+import { hasKnownBusiness } from "../lib/business";
+import { loadMerchantSession, setSignOutNotice, type MerchantSession } from "../lib/session";
+import { noBusinessPath } from "../lib/team-api";
 
 export interface KitchenConnectionValue {
   session: MerchantSession | null;
@@ -138,7 +140,10 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
     };
   }, [arm]);
 
-  const wakeLock = useWakeLock(getAlarmController().isArmed());
+  // MJ-L9 (2026-10-07): the screen stays on for as long as someone is signed in. It was tied to the alarm
+  // being armed, which a reload resets until the next tap, so a tablet reloaded overnight went dark. A wake
+  // lock needs no gesture (only a visible tab, which the hook waits for).
+  const wakeLock = useWakeLock(session !== null);
 
   const testRing = useCallback(() => {
     const controller = getAlarmController();
@@ -170,8 +175,10 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
     controller.stop();
     rangRef.current = false;
     if (wasRinging) setAlarmTick((t) => t + 1);
-    clearMerchantSession();
-    clearBusinessCache();
+    // MJ-L13: the server session is revoked too (best effort), and a refresh already in flight can't
+    // write the cookie back.
+    // MJ-RL16: and the business and branch caches with it (`signOutSession`, shared by every sign-out).
+    signOutSession();
     setSession(null);
     router.replace("/login");
   }, [router]);
@@ -366,18 +373,32 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
   }, [refetchQueue]);
 
   // Merchant web upgrade L4 (Team): someone the owner removed signs out on their next tap and their
-  // device's order alarm stops, so a shared counter tablet goes back to "Sign in" for the next person.
-  // Only for a person this tab knew as a member: a number that never had a business is sent to "Set up
-  // your business" by the screen that asked.
-  useEffect(
-    () =>
-      onMembershipLost(() => {
-        if (!hasKnownBusiness()) return;
-        getAlarmController().stop();
-        signOut();
-      }),
-    [signOut],
-  );
+  // device's order alarm stops, so a shared counter tablet goes back to "Sign in" for the next person —
+  // and sign-in says why (MJ-L2).
+  // MJ-L1 (2026-10-07): a number this tab never knew as a member (a pending invitee, someone who never set
+  // up a business) is sent where such a number belongs — Join when an invite waits for it, else "Set up
+  // your business" — instead of Money, Menu or Hours reading "check your data connection".
+  useEffect(() => {
+    let alive = true;
+    let routing = false; // every refused read (the queue poll's too) fires this; one move is enough
+    const off = onMembershipLost(() => {
+      if (!hasKnownBusiness()) {
+        if (routing) return;
+        routing = true;
+        void noBusinessPath().then((path) => {
+          if (alive) router.replace(path);
+        });
+        return;
+      }
+      getAlarmController().stop();
+      setSignOutNotice("removed");
+      signOut();
+    });
+    return () => {
+      alive = false;
+      off();
+    };
+  }, [signOut, router]);
 
   // Memoized so a re-render that doesn't touch alarm/session/reachability/wakeLock state (e.g. a
   // parent re-render) doesn't hand every context consumer — KitchenBar, ReconnectBanner, the queue

@@ -9,7 +9,9 @@ import { RetryableError } from "../components/RetryableError";
 import { ApiError, getMyMerchant } from "../lib/api-client";
 import { homePath } from "../lib/booking";
 import { primeBusiness } from "../lib/business";
-import { clearMerchantSession } from "../lib/session";
+import { supportWhatsAppUrl } from "../lib/config";
+import { signOutSession } from "../lib/sign-out";
+import { needsSupport } from "../lib/sign-up";
 import { ROLE_LABEL, validateJoinName } from "../lib/team";
 import { declineInvite, joinInvite, listMyInvites } from "../lib/team-api";
 
@@ -34,12 +36,17 @@ export default function JoinPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [errors, setErrors] = useState<{ name?: string }>({});
-  const [banner, setBanner] = useState<string | null>(null);
+  const [banner, setBannerText] = useState<string | null>(null);
+  const [bannerHelp, setBannerHelp] = useState(false);
+  const setBanner = useCallback((text: string | null) => {
+    setBannerText(text);
+    setBannerHelp(false);
+  }, []);
   const [busy, setBusy] = useState<string | null>(null);
   const actingRef = useRef(false);
 
   const signOut = useCallback(() => {
-    clearMerchantSession();
+    signOutSession();
     router.replace("/login");
   }, [router]);
 
@@ -128,6 +135,8 @@ export default function JoinPage() {
         setBanner(err.status === 404 ? "That invite isn't there any more. Ask the owner to send a new one." : message);
       } else {
         setBanner(message);
+        // MJ-L12: a held or restricted number is told to message LyniaGo on WhatsApp — give it the link.
+        setBannerHelp(err instanceof ApiError && needsSupport(err.reason));
       }
       setBusy(null);
       actingRef.current = false;
@@ -153,6 +162,7 @@ export default function JoinPage() {
   }
 
   const invite = state.status === "ready" ? state.invites.find((i) => i.id === openId) : undefined;
+  const help = bannerHelp ? supportWhatsAppUrl() : null;
 
   return (
     <div className="m-app">
@@ -185,6 +195,14 @@ export default function JoinPage() {
           {banner && (
             <div className="m-alert" role="alert">
               {banner}
+              {help && (
+                <>
+                  {" "}
+                  <a href={help} target="_blank" rel="noreferrer">
+                    Open WhatsApp
+                  </a>
+                </>
+              )}
             </div>
           )}
           <div style={{ flex: 1 }} />

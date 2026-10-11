@@ -9,13 +9,19 @@ import { ApiError, getMyMerchant, requestOtp, verifyOtp } from "../lib/api-clien
 import { homePath } from "../lib/booking";
 import { API_BASE_URL } from "../lib/config";
 import { isSafeMerchantRedirectPath } from "../lib/merchant-access";
+import { otpErrorMessage } from "../lib/otp-message";
+import { takeSignOutNotice } from "../lib/session";
 import { noBusinessPath } from "../lib/team-api";
+import { useStepBack } from "../lib/use-step-back";
 import { formatLocalDigits, localDigits, RESEND_AFTER_S, toE164 } from "../lib/phone-input";
 
 type Step = { kind: "phone" } | { kind: "code"; phone: string; deliveryChannel?: "whatsapp" | "sms" };
 
 /** The per-device sign-up cap (the API's `device_signup_cap`: 3 new accounts per device per day). */
 const DEVICE_CAP_MESSAGE = "This device has added 3 new people today. Sign in on your own phone, or try tomorrow.";
+
+/** MJ-L2 (ledger D-90): why the app signed someone out — the owner took them off the team. */
+const REMOVED_MESSAGE = "You’re no longer on the team. Ask the owner to add you again.";
 
 /**
  * A1 · Sign in and A2 · Code (packages/design/handoff/merchant-mobile). "LyniaGo Merchant" lockup, a
@@ -35,6 +41,17 @@ export default function LoginPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   // A ref, not `busy`: two taps in one tick both run the handler before React re-renders.
   const submittingRef = useRef(false);
+  // MJ-M9: the code step is its own history entry, so Back returns to the number instead of leaving.
+  const codeStep = useStepBack(step.kind === "code", () => {
+    setStep({ kind: "phone" });
+    setCode("");
+    setError(null);
+  });
+
+  // MJ-L2: a person the owner took off the team lands here signed out; say why, once.
+  useEffect(() => {
+    if (takeSignOutNotice() === "removed") setError(REMOVED_MESSAGE);
+  }, []);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -62,7 +79,8 @@ export default function LoginPage() {
       setCode("");
       setResendIn(RESEND_AFTER_S);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Couldn't send the code. Try again.");
+      // MJ-L10: the five-an-hour cap says how long to wait.
+      setError(otpErrorMessage(err, "Couldn't send the code. Try again."));
     } finally {
       setBusy(false);
       submittingRef.current = false;
@@ -80,10 +98,13 @@ export default function LoginPage() {
       getAlarmController().arm();
       // Read at sign-in, not with useSearchParams: that would keep this page out of the static HTML, and
       // sign-in is the one page that should paint before the JS runs (docs/MERCHANT-WEB.md).
-      router.replace(await landingPath(new URLSearchParams(window.location.search).get("next")));
+      const landing = await landingPath(new URLSearchParams(window.location.search).get("next"));
+      // The finished code step leaves history first, so Back from the landing screen doesn't reopen it.
+      await codeStep.leave();
+      router.replace(landing);
     } catch (err) {
       if (err instanceof ApiError && err.status === 429 && err.reason === "device_signup_cap") setError(DEVICE_CAP_MESSAGE);
-      else setError(err instanceof ApiError ? err.message : "That code didn't work. Try again.");
+      else setError(otpErrorMessage(err, "That code didn't work. Try again."));
       setBusy(false);
     } finally {
       submittingRef.current = false;
@@ -97,9 +118,7 @@ export default function LoginPage() {
   }
 
   function wrongNumber() {
-    setStep({ kind: "phone" });
-    setCode("");
-    setError(null);
+    codeStep.back();
   }
 
   if (step.kind === "phone") {

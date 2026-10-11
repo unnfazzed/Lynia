@@ -134,7 +134,8 @@ export default function RidersPage() {
               <b>Your riders is on its way.</b> You&apos;ll add the riders you already work with here.
             </p>
           )}
-          {state.status === "ready" && !owner && <p className="m-hint">Only the owner can add or remove riders.</p>}
+          {/* MJ-RL7: only for someone known to be Staff — a failed profile read is not a role. */}
+          {state.status === "ready" && business?.myRole === "staff" && <p className="m-hint">Only the owner can add or remove riders.</p>}
 
           {state.status === "ready" && state.riders.length === 0 && (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 8, paddingTop: 40 }}>

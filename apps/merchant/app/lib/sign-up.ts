@@ -85,3 +85,12 @@ export function toBecomeRequest(form: SignUpForm): BecomeMerchantRequest {
 export function fieldForReason(reason: string | undefined): SignUpField | null {
   return reason === "outside_service_area" ? "location" : null;
 }
+
+/** The banner for a sign-up that failed for no reason the person can act on (and never schema text). */
+export const SIGN_UP_FAILED = "Couldn't set up your business. Try again.";
+
+/** MJ-L12: refusals whose sentence says "Message LyniaGo on WhatsApp" (a held or restricted number), so
+ *  the banner carries the link to do it. */
+export function needsSupport(reason: string | undefined): boolean {
+  return reason === "on_hold" || reason === "account_restricted";
+}

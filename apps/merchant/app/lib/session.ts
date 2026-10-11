@@ -90,3 +90,21 @@ export function clearMerchantSession(): void {
   if (!isBrowser()) return;
   document.cookie = `${SESSION_COOKIE}=; path=/; max-age=0; SameSite=Lax`;
 }
+
+/**
+ * MJ-L2: why the app signed someone out, for the sign-in screen to say once. In memory on purpose: the
+ * sign-out is a client-side navigation to /login, and a later reload has nothing left to explain.
+ */
+export type SignOutNotice = "removed";
+let signOutNotice: SignOutNotice | null = null;
+
+export function setSignOutNotice(notice: SignOutNotice | null): void {
+  signOutNotice = notice;
+}
+
+/** Read and forget. */
+export function takeSignOutNotice(): SignOutNotice | null {
+  const notice = signOutNotice;
+  signOutNotice = null;
+  return notice;
+}
