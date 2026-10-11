@@ -1,25 +1,27 @@
-import { CreateOrderRequest, normalizePhone, quoteFare } from "@lynia/shared";
+import { CreateOrderRequest, formatPhoneDisplay, normalizePhone, quoteFare } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BackHandler, Keyboard, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
+import { AppState, BackHandler, Keyboard, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { getMe } from "../src/api/auth";
-import { ApiError } from "../src/api/client";
+import { getMe, type Me } from "../src/api/auth";
+import { ApiError, currentProfileId } from "../src/api/client";
 import { createOrder, type OrderSnapshot } from "../src/api/orders";
 import { routeAfterOrderPlaced } from "../src/push/ask-in-context";
 import type { ResolvedPlace } from "../src/api/places";
 import { fareBand, isBelowBand, isFarAboveBand } from "../src/logic/fare-band";
 import { landmarkFromAddress } from "../src/logic/geocode";
-import { isAccountOnHold, isOutOfServiceArea } from "../src/logic/gates";
+import { isOutOfServiceArea } from "../src/logic/gates";
 import { draftFromParams, emptyItem, first, type ItemRow, MAX_ITEMS, type RebroadcastParams } from "../src/logic/order-draft";
 import { loadMyPickupPhone, loadRecipients, type Recipient, rememberRecipient, saveMyPickupPhone } from "../src/logic/saved-recipients";
+import { clearSendDraft, loadSendDraft, SEND_DRAFT_DEBOUNCE_MS, type SendDraft, saveSendDraft } from "../src/logic/send-draft";
 import {
   coordName,
   firstIncompleteStep,
   inArea,
+  isDefinitiveSendFailure,
   kmLabel,
   money,
   phoneOk,
@@ -27,15 +29,19 @@ import {
   sanitizePriceText,
   type SendStep,
   sendAgainBanner,
+  sendRefusal,
+  type SendRefusal,
   type Stop,
   stepPrice,
   stopName,
+  tripTooShort,
   whatMissingHint,
   whatOk,
   whereOk,
 } from "../src/logic/send-steps";
 import { useAddressSuggest } from "../src/logic/use-address-suggest";
 import { usePickupAutolocate } from "../src/logic/use-pickup-autolocate";
+import { useWebBackGuard } from "../src/logic/web-back-guard";
 import { useReachability } from "../src/net/use-reachability";
 import { orderKey } from "../src/query/client";
 import { haptic, TestBuildBanner, useActionError } from "../src/ui";
@@ -56,8 +62,9 @@ import { parseNum, randomUuidV4, uuidV4FromSeed, withTimeout } from "../src/util
  * no confirm-pin screen, no landmark field, no declared value and no disclaimer: "Send to riders" on the
  * Review step broadcasts straight to the live auction.
  *
- * Everything entered is kept in memory across steps and app backgrounding; Back walks one step back
- * and leaves the flow from step 1.
+ * Everything entered is kept across steps, app backgrounding, an app kill and a page reload (U17: a
+ * debounced draft in `src/logic/send-draft.ts`, without the phone numbers); Back walks one step back and
+ * leaves the flow from step 1 — the browser's Back too (U40, `useWebBackGuard`).
  */
 
 const LOCATE_TIMEOUT_MS = 9_000;
@@ -66,6 +73,12 @@ const CARD_TOP = 8;
 const CARD_ROWS_H = 117;
 /** Framing both pins must clear the card above and the map pills below. */
 const EDGE_PADDING = { top: CARD_TOP + CARD_ROWS_H + 40, right: 60, bottom: 80, left: 60 };
+
+/** U48: the account's own number in the drawn form ("+263 77 245 1180"), or "" when it isn't a phone. */
+function accountPhoneShown(me: Me | null | undefined): string {
+  const shown = me?.phone ? formatPhoneDisplay(me.phone) : "";
+  return shown && phoneOk(shown) ? shown : "";
+}
 
 
 export default function SendScreen(): React.ReactElement {
@@ -117,6 +130,34 @@ export default function SendScreen(): React.ReactElement {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const [idempotencyNonce, setIdempotencyNonce] = useState<string>(() => randomUuidV4());
+  // U16: the key of a send that got no definitive answer (a timeout, a dropped link, a 5xx). The order may
+  // already be live, so every later send replays THIS key — even after an edit — until a 2xx or 4xx
+  // settles it. Without it an edit minted a new key and opened a second auction for the same parcel.
+  const sentKey = useRef<string | null>(null);
+  /** When `sentKey` last went out — a stored key is only replayed within SEND_DRAFT_SENT_KEY_TTL_MS of it. */
+  const sentAt = useRef<number | null>(null);
+  // U17: the stored draft is read once before anything is written, and a placed order writes nothing more.
+  const draftReady = useRef(false);
+  const draftDone = useRef(false);
+  /** The suggested fare the price was last set from; a restored or Send again price is not re-suggested. */
+  const lastSuggested = useRef<number | null>(null);
+
+  /** U17: put a stored compose back — on the first step still missing something, never past it. */
+  const restoreDraft = (d: SendDraft, myPhone: string): void => {
+    if (d.pickup) pickupTouched.current = true;
+    if (d.pickup && d.drop) {
+      lastSuggested.current = quoteFare({ lat: d.pickup.lat, lng: d.pickup.lng }, { lat: d.drop.lat, lng: d.drop.lng }).suggestedFare;
+    }
+    sentKey.current = d.sentKey;
+    sentAt.current = d.sentAt;
+    setPickup((p) => d.pickup ?? p);
+    setDrop(d.drop);
+    setItems(d.items);
+    setNote(d.note);
+    setPriceText(d.priceText);
+    const open = firstIncompleteStep({ pickup: d.pickup, drop: d.drop, items: d.items, senderPhone: myPhone, recipientPhone: "", price: parseNum(d.priceText) });
+    setStep(Math.min(d.step, open) as SendStep);
+  };
 
   // Account on hold — checked before step 1 opens. Polls once a minute while the hold stands (a lift is
   // an ops action with nothing to push it), and stops the moment it clears.
@@ -125,8 +166,17 @@ export default function SendScreen(): React.ReactElement {
     queryFn: getMe,
     refetchInterval: (q) => (q.state.data?.onHold === true ? 60_000 : false),
   });
-  const [heldFromBroadcast, setHeldFromBroadcast] = useState(false);
-  const accountOnHold = heldFromBroadcast || meQ.data?.onHold === true;
+  // A broadcast the server refused for the account's standing (U45): a hold, or a banned / suspended rider
+  // sending as a customer. `at` is when, so only a /auth/me read AFTER it can lift the wall (U46).
+  const [heldFromBroadcast, setHeldFromBroadcast] = useState<{ reason: SendRefusal; at: number } | null>(null);
+  const accountOnHold = heldFromBroadcast != null || meQ.data?.onHold === true;
+  // U46: support lifted the hold while the wall was up — the minute poll reads onHold false, and the
+  // compose comes back with everything still filled in. (A banned / suspended standing has no field on
+  // /auth/me to watch; that wall stays until the customer leaves.)
+  useEffect(() => {
+    if (heldFromBroadcast?.reason !== "hold") return;
+    if (meQ.data?.onHold === false && meQ.dataUpdatedAt > heldFromBroadcast.at) setHeldFromBroadcast(null);
+  }, [heldFromBroadcast, meQ.data?.onHold, meQ.dataUpdatedAt]);
 
   const goBack = useCallback((): void => {
     if (router.canGoBack()) router.back();
@@ -136,6 +186,7 @@ export default function SendScreen(): React.ReactElement {
   // Prefill: the past order (Send again), the sender's own remembered number, and recent recipients.
   // A Send again lands on the first step still missing something — usually Review, or What when the
   // recipient's number (never carried in route params) is the gap.
+  const [myPhoneLoaded, setMyPhoneLoaded] = useState(false);
   useEffect(() => {
     let alive = true;
     void loadRecipients().then((r) => {
@@ -145,7 +196,24 @@ export default function SendScreen(): React.ReactElement {
       const myPhone = (await loadMyPickupPhone().catch(() => null)) ?? "";
       if (!alive) return;
       if (myPhone) setSenderPhone((p) => p || myPhone);
-      if (!rbDraft) return;
+      setMyPhoneLoaded(true);
+      if (!rbDraft) {
+        // U17: the compose the customer left (app killed, page reloaded, swiped away), when there is one.
+        const saved = await loadSendDraft(currentProfileId());
+        if (!alive) return;
+        if (saved) restoreDraft(saved, myPhone || accountPhoneShown(qc.getQueryData<Me>(["me"])));
+        draftReady.current = true;
+        return;
+      }
+      // Send again replaces the stored compose, but not a send of it that is still unanswered (U16): its key
+      // is carried (while it is live, ≤ 10 min), so a resend can't open a second auction.
+      const stored = await loadSendDraft(currentProfileId());
+      if (!alive) return;
+      if (stored?.sentKey) {
+        sentKey.current = stored.sentKey;
+        sentAt.current = stored.sentAt;
+      }
+      draftReady.current = true;
       const toStop = (pt: PickedPoint | null, name: string): Stop | null =>
         pt ? { lat: pt.lat, lng: pt.lng, name: stopName(name) || coordName(pt.lat, pt.lng), source: "prefill" } : null;
       const p = toStop(rbDraft.pickupPoint, rbDraft.pickupLandmark);
@@ -160,7 +228,7 @@ export default function SendScreen(): React.ReactElement {
           pickup: p,
           drop: d,
           items: rbDraft.items,
-          senderPhone: myPhone,
+          senderPhone: myPhone || accountPhoneShown(qc.getQueryData<Me>(["me"])),
           recipientPhone: "",
           price: parseNum(rbDraft.proposedFare),
         }),
@@ -171,6 +239,16 @@ export default function SendScreen(): React.ReactElement {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, at mount.
   }, []);
+
+  // U48: a first-time sender (no remembered number yet) gets the number they signed in with, as drawn
+  // ("Your phone (sender)" prefilled, state 6). Once, and never over anything already typed.
+  const accountPhone = accountPhoneShown(meQ.data);
+  const accountPhoneSeeded = useRef(false);
+  useEffect(() => {
+    if (!myPhoneLoaded || accountPhoneSeeded.current || !accountPhone) return;
+    accountPhoneSeeded.current = true;
+    setSenderPhone((p) => p || accountPhone);
+  }, [myPhoneLoaded, accountPhone]);
 
   // ── Addresses ─────────────────────────────────────────────────────────────────────────────────────
 
@@ -252,14 +330,6 @@ export default function SendScreen(): React.ReactElement {
     [editing, setStop, finishEdit],
   );
 
-  const onSubmitQuery = useCallback((): void => {
-    const top = suggest.rows[0];
-    if (!top) return;
-    void top.resolve().then((place) => {
-      if (place) onPick(place);
-    });
-  }, [suggest.rows, onPick]);
-
   /** "Use my location" (map pill) / "Use my current location" (dropdown): GPS → pin → reverse geocode. */
   const locate = useCallback(
     async (slot: Slot): Promise<void> => {
@@ -306,6 +376,8 @@ export default function SendScreen(): React.ReactElement {
   const outDrop = drop != null && !inArea(drop);
   const outOfArea = outPickup || outDrop || serverOutOfArea;
   const step1Ok = whereOk(pickup, drop) && !serverOutOfArea;
+  // U47: a drop-off on top of the pickup ("Use my location" twice) is not a drop-off yet.
+  const dropMissing = pickup != null && (drop == null || tripTooShort(pickup, drop));
 
   const quote = pickup && drop ? quoteFare({ lat: pickup.lat, lng: pickup.lng }, { lat: drop.lat, lng: drop.lng }) : null;
   const band = quote ? fareBand(quote.suggestedFare) : null;
@@ -318,7 +390,6 @@ export default function SendScreen(): React.ReactElement {
   // was typed (the trip they priced is no longer the trip on screen). A Send again keeps its own price
   // for the first suggestion — that price is the point of re-sending it.
   const suggested = quote?.suggestedFare ?? null;
-  const lastSuggested = useRef<number | null>(null);
   useEffect(() => {
     if (suggested == null || lastSuggested.current === suggested) return;
     const isFirst = lastSuggested.current === null;
@@ -358,6 +429,14 @@ export default function SendScreen(): React.ReactElement {
       return () => sub.remove();
     }, [back]),
   );
+  // U40: the browser's Back runs the same back() while there is a step (or an address edit) to walk back.
+  const webBack = useWebBackGuard(!accountOnHold && (step > 1 || editing != null), back);
+  const leaveTo = useCallback(
+    (go: () => void): void => {
+      void webBack.release().then(go);
+    },
+    [webBack],
+  );
 
   const goTo = useCallback((s: SendStep): void => {
     Keyboard.dismiss();
@@ -389,9 +468,51 @@ export default function SendScreen(): React.ReactElement {
     [idempotencyNonce, pickup?.lat, pickup?.lng, drop?.lat, drop?.lng, items, note, priceText],
   );
 
+  // ── Draft (U17) ───────────────────────────────────────────────────────────────────────────────────
+  // A 500 ms trailing write after each change, flushed when the app leaves the foreground and when the
+  // screen unmounts (PERF19-02: never a keychain round trip per keystroke). Phones are never in it.
+  // S1: written only while signed in, and tagged with the account. A flush after an app-driven sign-out (an
+  // expired refresh, another tab signing out) must not put the draft back after clearDeviceState wiped it.
+  const draftNow = (profileId: string): SendDraft => ({
+    savedAt: Date.now(),
+    profileId,
+    step,
+    pickup,
+    drop,
+    items,
+    note,
+    priceText,
+    sentKey: sentKey.current,
+    sentAt: sentKey.current ? sentAt.current : null,
+  });
+  const latestDraft = useRef(draftNow);
+  latestDraft.current = draftNow;
+  const flushDraft = useCallback((): Promise<void> => {
+    const profileId = currentProfileId();
+    if (!draftReady.current || draftDone.current || !profileId) return Promise.resolve();
+    return saveSendDraft(latestDraft.current(profileId));
+  }, []);
+  useEffect(() => {
+    if (!draftReady.current || draftDone.current) return;
+    const t = setTimeout(() => void flushDraft(), SEND_DRAFT_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [step, pickup, drop, items, note, priceText, flushDraft]);
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (st) => {
+      if (st !== "active") void flushDraft();
+    });
+    return () => {
+      sub.remove();
+      void flushDraft();
+    };
+  }, [flushDraft]);
+
   const submit = async (): Promise<void> => {
     if (busy || !pickup || !drop || price == null || !step1Ok || !step2Ok || !step3Ok || !online) return;
     setFailed(false);
+    // U16: a send still waiting on its answer is replayed with its own key, edits or not.
+    const replay = sentKey.current != null;
+    const key = sentKey.current ?? idempotencyKey;
     const candidate = {
       pickup: { point: { lat: pickup.lat, lng: pickup.lng }, landmark: pickup.name, contactPhone: normalizePhone(senderPhone) ?? senderPhone.trim() },
       dropoff: { point: { lat: drop.lat, lng: drop.lng }, landmark: drop.name, contactPhone: normalizePhone(recipientPhone) ?? recipientPhone.trim() },
@@ -399,7 +520,7 @@ export default function SendScreen(): React.ReactElement {
       note: note.trim() || undefined,
       declaredValue: 0,
       proposedFare: price,
-      idempotencyKey,
+      idempotencyKey: key,
     };
     const parsed = CreateOrderRequest.safeParse(candidate);
     if (!parsed.success) {
@@ -413,16 +534,27 @@ export default function SendScreen(): React.ReactElement {
       dropoff: drop.placeId ? { ...parsed.data.dropoff, placeId: drop.placeId } : parsed.data.dropoff,
     };
     setBusy(true);
+    // Frozen from the moment it goes out, and on disk before the request (LC-C06): an app killed while the
+    // request is in flight still resends this key after the relaunch.
+    sentKey.current = key;
+    sentAt.current = Date.now();
+    await flushDraft();
     try {
+      // A replay answers with the order the lost send made — that order is the live one, edits or not, so
+      // the app goes to it (a stored key is only replayed within SEND_DRAFT_SENT_KEY_TTL_MS of going out).
       const order = await createOrder(payload);
+      sentKey.current = null;
+      draftDone.current = true;
+      void clearSendDraft();
       haptic("tap");
       void rememberRecipient({ name: "", phone: recipientPhone.trim() });
       void saveMyPickupPhone(senderPhone.trim());
       // D-55 / D-82 PC8: notifications are asked for after the order goes out — an explainer in front of
       // the order screen while the permission is undetermined (at most 3 times per install).
       const next = await routeAfterOrderPlaced(order.id);
-      // Seed the order cache so the auction paints at once ("Finding riders near you…").
-      qc.setQueryData<OrderSnapshot>(orderKey(order.id), {
+      // Seed the order cache so the auction paints at once ("Finding riders near you…"). Not for a replay:
+      // the order that answered may be the first attempt's, sent before an edit, so the screen reads it.
+      if (!replay) qc.setQueryData<OrderSnapshot>(orderKey(order.id), {
         id: order.id,
         status: order.status,
         agreedFare: null,
@@ -437,12 +569,20 @@ export default function SendScreen(): React.ReactElement {
         ridersNearby: order.ridersNearby ?? null,
       });
       setIdempotencyNonce(randomUuidV4());
-      // Replace, not push (After Send handoff, D-53): Back from a live order must never land on Review.
-      router.replace(next as never);
+      // Replace, not push (After Send handoff, D-53): Back from a live order must never land on Review —
+      // nor, in a browser, on a step entry the back guard left behind (U40).
+      leaveTo(() => router.replace(next as never));
     } catch (e) {
-      if (e instanceof ApiError && isAccountOnHold(e)) {
-        setHeldFromBroadcast(true);
-        void meQ.refetch();
+      // A 4xx settles it: nothing was created, so the next send may mint a new key. Anything else keeps it.
+      if (isDefinitiveSendFailure(e)) {
+        sentKey.current = null;
+        sentAt.current = null;
+        void flushDraft();
+      }
+      const refusal = e instanceof ApiError ? sendRefusal(e) : null;
+      if (refusal) {
+        setHeldFromBroadcast({ reason: refusal, at: Date.now() });
+        if (refusal === "hold") void meQ.refetch();
       } else if (e instanceof ApiError && isOutOfServiceArea(e)) {
         setServerOutOfArea(true);
         setStep(1);
@@ -516,7 +656,6 @@ export default function SendScreen(): React.ReactElement {
               dropdownMax={bodyH - CARD_TOP - CARD_ROWS_H - tokens.touchTargetMin}
               onEdit={startEdit}
               onChangeQuery={setQuery}
-              onSubmitQuery={onSubmitQuery}
               onPick={onPick}
               onUseCurrent={() => editing && void locate(editing)}
               onTapMap={armMapTap}
@@ -535,7 +674,7 @@ export default function SendScreen(): React.ReactElement {
               <SendCtaBar
                 label={SEND_COPY.next}
                 disabled={!step1Ok}
-                hint={drop == null && pickup != null ? SEND_COPY.needDrop : null}
+                hint={dropMissing ? SEND_COPY.needDrop : null}
                 onPress={() => goTo(2)}
               />
             </View>
@@ -604,7 +743,9 @@ export default function SendScreen(): React.ReactElement {
           </ScrollView>
           {failed && step === 4 ? (
             <View style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
-              <SendToast text={SEND_COPY.failed} action={SEND_COPY.retry} onAction={() => void submit()} />
+              {/* U16: offline, the banner and the CTA hint already say what to do; a Try again that can't
+                  send would only repeat the toast. */}
+              <SendToast text={SEND_COPY.failed} action={online ? SEND_COPY.retry : undefined} onAction={online ? () => void submit() : undefined} />
             </View>
           ) : null}
           <View style={{ paddingBottom: insets.bottom, backgroundColor: tokens.color.bg }}>

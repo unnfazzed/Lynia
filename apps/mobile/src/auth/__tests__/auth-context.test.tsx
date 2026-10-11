@@ -17,6 +17,7 @@ import type { Session } from "../session";
 type Listener = (state: string) => void;
 let mockAppStateListener: Listener | null = null;
 jest.mock("react-native", () => ({
+  Platform: { OS: "ios" },
   AppState: {
     addEventListener: (_: string, cb: Listener) => {
       mockAppStateListener = cb;

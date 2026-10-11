@@ -1,16 +1,23 @@
+import { ApiError } from "../../api/client";
+import { DRAFT_STOP_NAME_MAX } from "../send-draft";
 import {
   bandScaleMax,
   coordName,
   firstIncompleteStep,
+  isDefinitiveSendFailure,
   kmLabel,
+  MIN_TRIP_KM,
   money,
   priceOk,
   sanitizePriceText,
   sendAgainBanner,
+  sendRefusal,
   type Stop,
+  STOP_NAME_MAX,
   stepPrice,
   stopName,
   trackPos,
+  tripTooShort,
   whatMissingHint,
   whereOk,
 } from "../send-steps";
@@ -66,5 +73,57 @@ describe("send-steps (ledger D-52)", () => {
     expect(stopName(`  ${"x".repeat(200)}`)).toHaveLength(160);
     expect(sendAgainBanner("2026-09-28T09:00:00Z")).toBe("Copied from your order on 28 Sep. Check it, then send.");
     expect(sendAgainBanner("")).toBe("Copied from your order. Check it, then send.");
+  });
+});
+
+describe("send-steps — reviewed list 2026-10-07 (U47, U61, U45, U16)", () => {
+  it("U47: a drop-off on top of the pickup is not a trip — step 1 stays open", () => {
+    const same: Stop = { ...IN, name: "My location", source: "map" };
+    const tenMetres: Stop = { ...IN, lat: IN.lat + 0.00009, source: "map" };
+    expect(tripTooShort(IN, same)).toBe(true);
+    expect(tripTooShort(IN, tenMetres)).toBe(true);
+    expect(whereOk(IN, same)).toBe(false);
+    expect(whereOk(IN, tenMetres)).toBe(false);
+    expect(firstIncompleteStep({ pickup: IN, drop: same, items: [item("Docs")], senderPhone: "0772451180", recipientPhone: "0715550090", price: 2 })).toBe(1);
+    // A real trip still passes, and an unset stop is "missing", not "too short".
+    expect(tripTooShort(IN, IN2)).toBe(false);
+    expect(tripTooShort(IN, null)).toBe(false);
+    expect(MIN_TRIP_KM).toBe(0.05);
+  });
+
+  it("U61: a price above the contract's $100,000 can't reach Review", () => {
+    expect(priceOk(100_000)).toBe(true);
+    expect(priceOk(100_000.01)).toBe(false);
+    expect(priceOk(250_000)).toBe(false);
+    expect(priceOk(9_999_999)).toBe(false);
+  });
+
+  it("U45: a banned or suspended sender is refused for standing, a hold for the hold", () => {
+    expect(sendRefusal(new ApiError(403, "Your account is not in good standing.", "account_banned"))).toBe("standing");
+    expect(sendRefusal(new ApiError(403, "Your account is not in good standing.", "account_suspended"))).toBe("standing");
+    expect(sendRefusal(new ApiError(403, "Your account is on hold.", "on_hold"))).toBe("hold");
+    expect(sendRefusal(new ApiError(422, "Outside the service area", "out_of_area"))).toBeNull();
+    expect(sendRefusal(null)).toBeNull();
+  });
+
+  it("U16: only a 4xx settles a send; a timeout, a dropped link or a 5xx may have created the order", () => {
+    expect(isDefinitiveSendFailure(new ApiError(400, "bad"))).toBe(true);
+    expect(isDefinitiveSendFailure(new ApiError(429, "slow down"))).toBe(true);
+    expect(isDefinitiveSendFailure(new ApiError(0, "The network is slow — check your connection and try again."))).toBe(false);
+    expect(isDefinitiveSendFailure(new ApiError(502, "bad gateway"))).toBe(false);
+    expect(isDefinitiveSendFailure(new Error("network"))).toBe(false);
+  });
+
+  it("U16 review: a standing refusal (hold / banned / suspended) keeps the key — it runs before the replay lookup", () => {
+    expect(isDefinitiveSendFailure(new ApiError(403, "held", "on_hold"))).toBe(false);
+    expect(isDefinitiveSendFailure(new ApiError(403, "held", "account_on_hold"))).toBe(false);
+    expect(isDefinitiveSendFailure(new ApiError(403, "not in good standing", "account_banned"))).toBe(false);
+    expect(isDefinitiveSendFailure(new ApiError(403, "not in good standing", "account_suspended"))).toBe(false);
+    expect(isDefinitiveSendFailure(new ApiError(403, "forbidden"))).toBe(true);
+  });
+
+  it("the draft's stop-name cap matches the flow's", () => {
+    // send-draft.ts keeps its own copy so it stays a leaf module (sign-out imports its key).
+    expect(STOP_NAME_MAX).toBe(DRAFT_STOP_NAME_MAX);
   });
 });

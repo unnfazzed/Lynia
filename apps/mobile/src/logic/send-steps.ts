@@ -1,6 +1,6 @@
-import { normalizePhone } from "@lynia/shared";
+import { normalizePhone, quoteFare } from "@lynia/shared";
 import type { ItemRow } from "./order-draft";
-import { isWithinServiceCorridor } from "./gates";
+import { isAccountOnHold, isWithinServiceCorridor } from "./gates";
 
 /**
  * The pure rules of the stepped Send flow (ledger D-52, packages/design/handoff/send-compose-v2). The
@@ -44,17 +44,37 @@ export function itemsOk(items: ItemRow[]): boolean {
   return items.length > 0 && items.every((it) => it.description.trim().length > 0);
 }
 
-/** Step 1 is done when both stops exist and both sit inside the service corridor. */
+/**
+ * U47: the shortest trip that counts as a trip. "Use my location" can drop the drop-off on the GPS pickup,
+ * a 0.0 km "delivery" that went out to riders. A drop-off within 50 m of the pickup is treated as not set
+ * (the CTA hint asks for a drop-off again, the existing "Add a drop-off to continue.").
+ */
+export const MIN_TRIP_KM = 0.05;
+
+/** True when both stops exist but sit closer together than MIN_TRIP_KM. */
+export function tripTooShort(pickup: Stop | null, drop: Stop | null): boolean {
+  if (!pickup || !drop) return false;
+  return quoteFare({ lat: pickup.lat, lng: pickup.lng }, { lat: drop.lat, lng: drop.lng }).distanceKm < MIN_TRIP_KM;
+}
+
+/** Step 1 is done when both stops exist, both sit inside the service corridor, and they are apart (U47). */
 export function whereOk(pickup: Stop | null, drop: Stop | null): boolean {
-  return pickup != null && drop != null && inArea(pickup) && inArea(drop);
+  return pickup != null && drop != null && inArea(pickup) && inArea(drop) && !tripTooShort(pickup, drop);
 }
 
 export function whatOk(items: ItemRow[], senderPhone: string, recipientPhone: string): boolean {
   return itemsOk(items) && phoneOk(senderPhone) && phoneOk(recipientPhone);
 }
 
+/** The contract's ceiling on `proposedFare` (CreateOrderRequest: `.max(100_000)`). */
+export const PRICE_MAX = 100_000;
+
+/**
+ * A price Review can send. U61: above the contract's $100,000 the create was refused client-side and the
+ * customer got a "Couldn't send" whose Try again failed forever; now Review stays disabled instead.
+ */
 export function priceOk(price: number | null): boolean {
-  return price != null && Number.isFinite(price) && price > 0;
+  return price != null && Number.isFinite(price) && price > 0 && price <= PRICE_MAX;
 }
 
 /**
@@ -74,6 +94,34 @@ export function whatMissingHint(
   if (!phoneOk(recipientPhone) && !shown.recipientShown) missing.push("recipient phone");
   return missing.length > 0 ? `Still needed: ${missing.join(", ")}` : null;
 }
+
+/**
+ * U45: the server refuses a broadcast for the sender's account standing — a customer hold (`on_hold`), or a
+ * banned or suspended rider sending as a customer (`account_banned` / `account_suspended`). Every one of
+ * them lands on the drawn hold wall (state 17); a retry can never succeed.
+ */
+export type SendRefusal = "hold" | "standing";
+export function sendRefusal(err: { code?: string | null; message?: string | null } | null | undefined): SendRefusal | null {
+  if (!err) return null;
+  const code = (err.code ?? "").toLowerCase();
+  if (code === "account_banned" || code === "account_suspended") return "standing";
+  return isAccountOnHold(err) ? "hold" : null;
+}
+
+/**
+ * U16: whether a failed create is a DEFINITIVE answer about this order. A 4xx is: the server judged the
+ * request and refused it, so nothing was created. Anything else — no response (status 0: a timeout, a
+ * dropped link), a 5xx, a non-API error — may have created the order before the answer was lost, so the
+ * idempotency key that went out stays frozen and the next send replays it.
+ */
+export function isDefinitiveSendFailure(err: unknown): boolean {
+  const status = (err as { status?: unknown } | null)?.status;
+  if (typeof status !== "number" || status < 400 || status >= 500) return false;
+  // A standing refusal (U45) is checked BEFORE the server's idempotency lookup, so an order an earlier,
+  // unanswered attempt made under this key may still exist: the key stays frozen behind the hold wall.
+  return sendRefusal(err as { code?: string | null; message?: string | null }) == null;
+}
+
 
 /** The first step that is not yet complete — where a prefilled "Send again" lands. */
 export function firstIncompleteStep(s: {

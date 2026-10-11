@@ -23,6 +23,7 @@ import { JOB_KEY, ORDER_HINT_KEY } from "../../net/last-active-store";
 import { PICKUP_CHECKLIST_DRAFT_KEY } from "../../logic/pickup-checklist-draft";
 import { PICKUP_PHOTO_DRAFT_KEY } from "../../logic/pickup-photo-draft";
 import { RIDER_BID_DRAFT_KEY, RIDER_SENT_OFFERS_KEY } from "../../logic/rider-bid-draft";
+import { SEND_DRAFT_KEY } from "../../logic/send-draft";
 // The restaurant-list store module is deleted (RCA 2026-08-17 §5.2); its key survives only as the
 // legacy-cleanup literal in device-state, and the wipe below must keep covering upgraded installs.
 import { LEGACY_RESTAURANT_LIST_SNAPSHOT_KEY } from "../device-state";
@@ -65,6 +66,14 @@ describe("clearDeviceState (sign-out wipe, BH-17)", () => {
     await clearDeviceState();
     const deletedKeys = mockDeleteItemAsync.mock.calls.map((c) => c[0]);
     expect(deletedKeys).toContain(PICKUP_PHOTO_DRAFT_KEY);
+  });
+
+  // U17: the Send a parcel draft (addresses, items, note) is written again — it must not survive sign-out.
+  it("deletes the Send a parcel draft key", async () => {
+    await clearDeviceState();
+    const deletedKeys = mockDeleteItemAsync.mock.calls.map((c) => c[0]);
+    expect(SEND_DRAFT_KEY).toBe("lynia.orderDraft");
+    expect(deletedKeys).toContain(SEND_DRAFT_KEY);
   });
 });
 

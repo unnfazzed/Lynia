@@ -162,7 +162,10 @@ function grantLocation(): void {
 }
 
 import SendScreen from "../send";
-import { ApiError } from "../../src/api/client";
+import { ApiError, configureApi } from "../../src/api/client";
+
+// The signed-in account the U17 draft is written for (null = signed out).
+let mockProfileId: string | null = "p1";
 
 // ── helpers ─────────────────────────────────────────────────────────────────────────────────────────
 
@@ -175,8 +178,7 @@ async function settle(ms = 0): Promise<void> {
   });
 }
 
-function render(): Tree {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function render(qc: QueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })): Tree {
   let tree!: Tree;
   act(() => {
     tree = renderer.create(
@@ -257,6 +259,12 @@ function completeWhat(tree: Tree): void {
 
 let active: Tree | null = null;
 beforeEach(() => {
+  mockProfileId = "p1";
+  configureApi({
+    getSession: () => (mockProfileId ? { accessToken: "a", refreshToken: "r", expiresIn: 900, profileId: mockProfileId, role: "customer" } : null),
+    onTokens: async () => undefined,
+    onSignOut: () => undefined,
+  });
   mockGetPerm.mockImplementation(async () => DENIED);
   mockRequestPerm.mockImplementation(async () => GRANTED);
   mockLastKnown.mockImplementation(async () => null);
@@ -267,9 +275,13 @@ beforeEach(() => {
   mockDetails.mockImplementation(async () => null);
   mockGeocode.mockImplementation(async () => ({ ok: false, reason: "not-found" }));
 });
-afterEach(() => {
+afterEach(async () => {
   if (active) act(() => active!.unmount());
   active = null;
+  // The unmount's draft flush is queued on send-draft's write chain: let it land before the store resets.
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 0));
+  });
   mockSecureStore = {};
   mockCanGoBack = true;
   mockParams = {};
@@ -301,9 +313,54 @@ describe("send.tsx — account on hold (state 17)", () => {
     completeWhere(active);
     completeWhat(active);
     press(active, "Review");
+    mockGetMe.mockResolvedValue({ onHold: true }); // the hold landed after /auth/me was cached
     press(active, "Send to riders");
     await settle();
     expect(has(active, "Your account is on hold")).toBe(true);
+  });
+
+  it("U46: the wall lifts when support lifts the hold, with the order still filled in", async () => {
+    mockCreateOrder.mockRejectedValueOnce(new ApiError(403, "Your account is paused", "on_hold"));
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    active = render(qc);
+    await settle();
+    completeWhere(active);
+    completeWhat(active);
+    press(active, "Review");
+    mockGetMe.mockResolvedValue({ onHold: true });
+    press(active, "Send to riders");
+    await settle();
+    expect(has(active, "Your account is on hold")).toBe(true);
+    // The wall's minute poll reads the lifted hold.
+    mockGetMe.mockResolvedValue({ onHold: false });
+    await act(async () => {
+      await qc.refetchQueries({ queryKey: ["me"] });
+    });
+    await settle();
+    expect(has(active, "Your account is on hold")).toBe(false);
+    expect(has(active, "Documents envelope × 1")).toBe(true);
+    expect(isDisabled(active, "Send to riders")).toBe(false);
+  });
+
+  it("U45: a banned or suspended sender lands on the hold wall, not a Try again that can't succeed", async () => {
+    for (const code of ["account_suspended", "account_banned"]) {
+      mockCreateOrder.mockRejectedValueOnce(new ApiError(403, "Your account is not in good standing.", code));
+      active = render();
+      await settle();
+      completeWhere(active);
+      completeWhat(active);
+      press(active, "Review");
+      press(active, "Send to riders");
+      await settle();
+      // /auth/me says onHold false for a rider's standing: the wall must stay anyway.
+      expect(has(active, "Your account is on hold")).toBe(true);
+      expect(has(active, "Couldn't send. Check your data and try again.")).toBe(false);
+      act(() => active!.unmount());
+      active = null;
+      // U17: the next round starts from a fresh install, not from this round's saved compose.
+      await settle();
+      mockSecureStore = {};
+    }
   });
 });
 
@@ -334,6 +391,20 @@ describe("send.tsx — step 1 · Where", () => {
     expect(has(active, "Add a drop-off to continue.")).toBe(false);
     expect(isDisabled(active, "Next")).toBe(false);
     expect(testText(active, "map-distance")).toMatch(/^\d+\.\d km$/);
+  });
+
+  it("U47: a drop-off on the pickup (Use my location twice) is not a trip — Next stays off, the hint asks again", async () => {
+    active = render();
+    await settle();
+    pressTestId(active, "test-set-pickup");
+    const stub = active.root.findAll((n) => typeof n.props.onChangeDrop === "function")[0];
+    act(() => stub!.props.onChangeDrop(PICKUP));
+    expect(isDisabled(active, "Next")).toBe(true);
+    expect(has(active, "Add a drop-off to continue.")).toBe(true);
+    expect(testText(active, "map-distance")).toBe("");
+    pressTestId(active, "test-set-drop");
+    expect(isDisabled(active, "Next")).toBe(false);
+    expect(has(active, "Add a drop-off to continue.")).toBe(false);
   });
 
   it("names a pin by its coordinates when the geocoder can't, so the stop is never blank", async () => {
@@ -399,6 +470,58 @@ describe("send.tsx — inline address editing (no search screen, no confirm scre
     await settle(400);
     expect(mockGeocode).toHaveBeenCalledWith("14 Glenaraa");
     expect(has(active, "No matches. Check the spelling, or set the pin on the map.")).toBe(true);
+  });
+
+  it("U18: a tapped suggestion shows it is working, ignores a re-tap, and says No matches when the lookup fails", async () => {
+    mockAutocomplete.mockImplementation(async () => [{ placeId: "p1", primary: "14 Glenara Avenue", secondary: "Avenues, Harare" }]);
+    let finish: (v: null) => void = () => {};
+    mockDetails.mockImplementation(() => new Promise((r) => (finish = r)));
+    active = render();
+    await settle();
+    press(active, "DROP-OFF.", true);
+    type(active, "DROP-OFF address", "14 Glenara");
+    await settle(400);
+    press(active, "14 Glenara Avenue, Avenues, Harare");
+    const row = pressable(active, "14 Glenara Avenue, Avenues, Harare");
+    expect(row.props.accessibilityState).toEqual({ busy: true });
+    press(active, "14 Glenara Avenue, Avenues, Harare");
+    expect(mockDetails).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finish(null);
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(has(active, "No matches. Check the spelling, or set the pin on the map.")).toBe(true);
+    // Still editing: typing again brings the suggestions back.
+    type(active, "DROP-OFF address", "14 Glenara Av");
+    await settle(400);
+    expect(has(active, "14 Glenara Avenue")).toBe(true);
+  });
+
+  it("U18: only the latest pick lands — a slower earlier answer is dropped", async () => {
+    mockAutocomplete.mockImplementation(async () => [
+      { placeId: "pA", primary: "Avenue A", secondary: "Avenues, Harare" },
+      { placeId: "pB", primary: "Avenue B", secondary: "Highlands, Harare" },
+    ]);
+    const pending: Record<string, (v: { lat: number; lng: number; landmark: string; placeId: string }) => void> = {};
+    mockDetails.mockImplementation((id: string) => new Promise((r) => (pending[id] = r)));
+    active = render();
+    await settle();
+    pressTestId(active, "test-set-pickup");
+    press(active, "DROP-OFF.", true);
+    type(active, "DROP-OFF address", "Avenue");
+    await settle(400);
+    press(active, "Avenue A, Avenues, Harare");
+    press(active, "Avenue B, Highlands, Harare");
+    await act(async () => {
+      pending.pB!({ lat: DROPOFF.lat, lng: DROPOFF.lng, landmark: "Avenue B, Highlands", placeId: "pB" });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    await act(async () => {
+      pending.pA!({ lat: DROPOFF_FAR.lat, lng: DROPOFF_FAR.lng, landmark: "Avenue A, Avenues", placeId: "pA" });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(has(active, "Avenue B, Highlands")).toBe(true);
+    expect(has(active, "Avenue A, Avenues")).toBe(false);
   });
 
   it("falls back to the limited (device geocoder) search with no Places key", async () => {
@@ -469,6 +592,22 @@ describe("send.tsx — step 2 · What and who", () => {
     const t = await atStep2();
     expect(input(t, "Your phone (sender)").props.value).toBe("0772451180");
     expect(has(t, "Still needed: what you're sending, recipient phone")).toBe(true);
+  });
+
+  it("U48: a first-time sender gets the account's own number, as drawn", async () => {
+    mockGetMe.mockResolvedValue({ onHold: false, phone: "+263772451180" });
+    const t = await atStep2();
+    await settle();
+    expect(input(t, "Your phone (sender)").props.value).toBe("+263 77 245 1180");
+    expect(has(t, "Still needed: what you're sending, recipient phone")).toBe(true);
+  });
+
+  it("U48: a remembered number wins over the account's", async () => {
+    mockMyPhone = "0712345678";
+    mockGetMe.mockResolvedValue({ onHold: false, phone: "+263772451180" });
+    const t = await atStep2();
+    await settle();
+    expect(input(t, "Your phone (sender)").props.value).toBe("0712345678");
   });
 
   it("adds and removes item cards, and swaps Add for the 10-item notice at the cap", async () => {
@@ -571,6 +710,14 @@ describe("send.tsx — step 3 · Price", () => {
     expect(isDisabled(t, "Review")).toBe(true);
   });
 
+  it("U61: a price above $100,000 keeps Review disabled", async () => {
+    const t = await atStep3();
+    type(t, "Your price in US dollars", "250000");
+    expect(isDisabled(t, "Review")).toBe(true);
+    type(t, "Your price in US dollars", "100000");
+    expect(isDisabled(t, "Review")).toBe(false);
+  });
+
   it("re-suggests over a typed price when a pin moves", async () => {
     const t = await atStep3();
     type(t, "Your price in US dollars", "7.00");
@@ -584,8 +731,8 @@ describe("send.tsx — step 3 · Price", () => {
 });
 
 describe("send.tsx — step 4 · Review and send", () => {
-  async function atReview(): Promise<Tree> {
-    active = render();
+  async function atReview(qc?: QueryClient): Promise<Tree> {
+    active = render(qc);
     await settle();
     completeWhere(active);
     type(active, "Item 1", "Documents envelope");
@@ -647,6 +794,92 @@ describe("send.tsx — step 4 · Review and send", () => {
     // Same order, same idempotency key — a retry can't open a second auction.
     expect(mockCreateOrder.mock.calls[1][0].idempotencyKey).toBe(mockCreateOrder.mock.calls[0][0].idempotencyKey);
     expect(mockReplace).toHaveBeenCalledWith("/order/o-2");
+  });
+
+  it("U16: after a send with no answer, an edit still replays the SAME key — no second auction", async () => {
+    mockCreateOrder.mockRejectedValueOnce(new ApiError(0, "The network is slow — check your connection and try again."));
+    mockCreateOrder.mockResolvedValueOnce({ id: "o-3", status: "open_for_offers", proposedFare: 3.36, expiresAt: new Date().toISOString() });
+    const t = await atReview();
+    press(t, "Send to riders");
+    await settle();
+    expect(has(t, "Couldn't send. Check your data and try again.")).toBe(true);
+    // The customer "checks their data": edits the price, then sends again.
+    press(t, "Edit the price");
+    type(t, "Your price in US dollars", "4.00");
+    press(t, "Review");
+    press(t, "Send to riders");
+    await settle();
+    // The answer is the $3.36 order the lost send made: it is the live one, and the app goes to it.
+    expect(mockCreateOrder).toHaveBeenCalledTimes(2);
+    expect(mockCreateOrder.mock.calls[1][0].idempotencyKey).toBe(mockCreateOrder.mock.calls[0][0].idempotencyKey);
+    expect(mockReplace).toHaveBeenCalledWith("/order/o-3");
+  });
+
+  it("U16: Try again after a lost send replays the key and lands on the order it made", async () => {
+    mockCreateOrder.mockRejectedValueOnce(new ApiError(0, "The network is slow — check your connection and try again."));
+    mockCreateOrder.mockResolvedValueOnce({ id: "o-3", status: "open_for_offers", proposedFare: "3.36", distanceKm: null, expiresAt: new Date().toISOString(), ridersNearby: null });
+    const t = await atReview();
+    press(t, "Send to riders");
+    await settle();
+    press(t, "Try again");
+    await settle();
+    expect(mockCreateOrder).toHaveBeenCalledTimes(2);
+    expect(mockCreateOrder.mock.calls[1][0].idempotencyKey).toBe(mockCreateOrder.mock.calls[0][0].idempotencyKey);
+    expect(mockReplace).toHaveBeenCalledWith("/order/o-3");
+  });
+
+  it("U16 review: a hold refusal keeps the key — after the lift, the resend replays it", async () => {
+    mockCreateOrder.mockRejectedValueOnce(new ApiError(403, "Your account is paused", "on_hold"));
+    mockCreateOrder.mockResolvedValueOnce({ id: "o-h", status: "open_for_offers", proposedFare: 3.36, expiresAt: new Date().toISOString() });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const t = await atReview(qc);
+    mockGetMe.mockResolvedValue({ onHold: true });
+    press(t, "Send to riders");
+    await settle();
+    mockGetMe.mockResolvedValue({ onHold: false });
+    await act(async () => {
+      await qc.refetchQueries({ queryKey: ["me"] });
+    });
+    await settle();
+    press(t, "Send to riders");
+    await settle();
+    expect(mockCreateOrder.mock.calls[1][0].idempotencyKey).toBe(mockCreateOrder.mock.calls[0][0].idempotencyKey);
+  });
+
+  it("U16: a 4xx settles the send — the next one after an edit is a new order with a new key", async () => {
+    mockCreateOrder.mockRejectedValueOnce(new ApiError(400, "Bad request"));
+    mockCreateOrder.mockResolvedValueOnce({ id: "o-4", status: "open_for_offers", proposedFare: 4, expiresAt: new Date().toISOString() });
+    const t = await atReview();
+    press(t, "Send to riders");
+    await settle();
+    press(t, "Edit the price");
+    type(t, "Your price in US dollars", "4.00");
+    press(t, "Review");
+    press(t, "Send to riders");
+    await settle();
+    expect(mockCreateOrder.mock.calls[1][0].idempotencyKey).not.toBe(mockCreateOrder.mock.calls[0][0].idempotencyKey);
+  });
+
+  it("U16: offline after a failed send, the toast drops its Try again (the banner and hint say what to do)", async () => {
+    mockCreateOrder.mockRejectedValueOnce(new ApiError(0, "Can't reach LyniaGo — check your connection and try again."));
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const t = await atReview(qc);
+    press(t, "Send to riders");
+    await settle();
+    expect(has(t, "Try again")).toBe(true);
+    mockOnline = false;
+    act(() =>
+      t.update(
+        <SafeAreaProvider initialMetrics={TEST_METRICS}>
+          <QueryClientProvider client={qc}>
+            <SendScreen />
+          </QueryClientProvider>
+        </SafeAreaProvider>,
+      ),
+    );
+    expect(has(t, "Couldn't send. Check your data and try again.")).toBe(true);
+    expect(has(t, "Try again")).toBe(false);
+    expect(has(t, "Connect to the internet to send.")).toBe(true);
   });
 
   it("returns to step 1 with the out-of-area notice when the server refuses the route", async () => {
@@ -713,8 +946,55 @@ describe("send.tsx — leaving the flow", () => {
     expect(mockReplace).toHaveBeenCalledWith("/home");
   });
 
-  it("never writes a compose draft to storage", async () => {
-    mockCreateOrder.mockReturnValue(new Promise(() => {}));
+});
+
+describe("send.tsx — U17: the compose survives an app kill or a page reload", () => {
+  const DRAFT = "lynia.orderDraft";
+  const stored = () => JSON.parse(mockSecureStore[DRAFT] ?? "null");
+
+  it("saves the compose (debounced) — addresses, items, note, price, step — but never a phone", async () => {
+    active = render();
+    await settle();
+    completeWhere(active);
+    type(active, "Item 1", "Documents envelope");
+    type(active, "Note for the rider (optional)", "Blue gate");
+    type(active, "Your phone (sender)", "0772451180");
+    type(active, "Recipient phone", "0715550090");
+    await settle(600);
+    const d = stored();
+    expect(d.step).toBe(2);
+    expect(d.drop.name).toBe("Test Drop Spot");
+    expect(d.items).toEqual([{ description: "Documents envelope", quantity: 1 }]);
+    expect(d.note).toBe("Blue gate");
+    expect(mockSecureStore[DRAFT]).not.toContain("0772451180");
+    expect(mockSecureStore[DRAFT]).not.toContain("0715550090");
+  });
+
+  it("restores it on the next open, on the first step still missing something (the recipient's phone)", async () => {
+    active = render();
+    await settle();
+    completeWhere(active);
+    completeWhat(active);
+    type(active, "Your price in US dollars", "4.50");
+    press(active, "Review");
+    await settle(600);
+    act(() => active!.unmount());
+    // A cold start: a fresh screen reads the stored draft.
+    mockMyPhone = "0772451180";
+    active = render();
+    await settle();
+    expect(has(active, "What are you sending?")).toBe(true);
+    expect(input(active, "Item 1").props.value).toBe("Documents envelope");
+    expect(input(active, "Recipient phone").props.value).toBe("");
+    type(active, "Recipient phone", "0715550090");
+    press(active, "Next");
+    // The typed price comes back as typed, not re-suggested over.
+    expect(input(active, "Your price in US dollars").props.value).toBe("4.50");
+  });
+
+  it("is written before the request goes out, with the key, and cleared once the order is placed", async () => {
+    let answer: (v: unknown) => void = () => {};
+    mockCreateOrder.mockReturnValue(new Promise((r) => (answer = r)));
     active = render();
     await settle();
     completeWhere(active);
@@ -722,8 +1002,156 @@ describe("send.tsx — leaving the flow", () => {
     press(active, "Review");
     press(active, "Send to riders");
     await settle();
-    expect(mockSecureStore["lynia.orderDraft"]).toBeUndefined();
-    expect(mockSetItemAsync.mock.calls.filter(([k]) => k === "lynia.orderDraft")).toHaveLength(0);
+    const sentKey = mockCreateOrder.mock.calls[0][0].idempotencyKey;
+    expect(stored().sentKey).toBe(sentKey);
+    await act(async () => {
+      answer({ id: "o-9", status: "open_for_offers", proposedFare: 2, expiresAt: new Date().toISOString() });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    await settle();
+    expect(mockSecureStore[DRAFT]).toBeUndefined();
+    act(() => active!.unmount());
+    active = null;
+    expect(mockSecureStore[DRAFT]).toBeUndefined();
+  });
+
+  it("U16 + U17: an app killed while a send had no answer replays its key after the relaunch", async () => {
+    mockCreateOrder.mockReturnValueOnce(new Promise(() => {}));
+    active = render();
+    await settle();
+    completeWhere(active);
+    completeWhat(active);
+    press(active, "Review");
+    press(active, "Send to riders");
+    await settle();
+    const firstKey = mockCreateOrder.mock.calls[0][0].idempotencyKey;
+    act(() => active!.unmount());
+    // The replay answers with the order the first attempt made — the same trip and price.
+    mockCreateOrder.mockImplementationOnce(async (b: { proposedFare: number }) => ({ id: "o-1", status: "open_for_offers", proposedFare: b.proposedFare, expiresAt: new Date().toISOString() }));
+    active = render();
+    await settle();
+    type(active, "Your phone (sender)", "0772451180");
+    type(active, "Recipient phone", "0715550090");
+    press(active, "Next");
+    press(active, "Review");
+    press(active, "Send to riders");
+    await settle();
+    expect(mockCreateOrder.mock.calls[1][0].idempotencyKey).toBe(firstKey);
+    expect(mockReplace).toHaveBeenCalledWith("/order/o-1");
+  });
+
+  it("Send again ignores a stored draft and opens on the past order", async () => {
+    mockSecureStore[DRAFT] = JSON.stringify({
+      savedAt: Date.now(),
+      step: 2,
+      pickup: { lat: PICKUP.lat, lng: PICKUP.lng, name: "Old pickup", source: "map" },
+      drop: { lat: DROPOFF_FAR.lat, lng: DROPOFF_FAR.lng, name: "Old drop", source: "map" },
+      items: [{ description: "Old parcel", quantity: 1 }],
+      note: "",
+      priceText: "9.00",
+      profileId: "p1",
+      sentKey: null,
+      sentAt: null,
+    });
+    mockParams = {
+      rbPickupLat: String(PICKUP.lat),
+      rbPickupLng: String(PICKUP.lng),
+      rbPickupLandmark: "Avondale Shops",
+      rbDropLat: String(DROPOFF.lat),
+      rbDropLng: String(DROPOFF.lng),
+      rbDropLandmark: "Drop Spot",
+      rbItems: JSON.stringify([{ description: "Documents envelope", quantity: 1 }]),
+      rbFare: "4.50",
+    };
+    active = render();
+    await settle();
+    expect(input(active, "Item 1").props.value).toBe("Documents envelope");
+  });
+
+  // ── Review of the U16/U17 fix ──
+  const SEND_AGAIN = (): Record<string, string> => ({
+    rbPickupLat: String(PICKUP.lat),
+    rbPickupLng: String(PICKUP.lng),
+    rbPickupLandmark: "Avondale Shops",
+    rbDropLat: String(DROPOFF.lat),
+    rbDropLng: String(DROPOFF.lng),
+    rbDropLandmark: "Drop Spot",
+    rbItems: JSON.stringify([{ description: "Documents envelope", quantity: 1 }]),
+    rbFare: "4.50",
+  });
+  const storedDraft = (over: Record<string, unknown> = {}): string =>
+    JSON.stringify({
+      savedAt: Date.now(),
+      profileId: "p1",
+      step: 3,
+      pickup: { lat: PICKUP.lat, lng: PICKUP.lng, name: "Old pickup", source: "map" },
+      drop: { lat: DROPOFF.lat, lng: DROPOFF.lng, name: "Old drop", source: "map" },
+      items: [{ description: "Old parcel", quantity: 1 }],
+      note: "",
+      priceText: "9.00",
+      sentKey: null,
+      sentAt: null,
+      ...over,
+    });
+  async function sendFromWhat(t: Tree): Promise<void> {
+    type(t, "Your phone (sender)", "0772451180");
+    type(t, "Recipient phone", "0715550090");
+    press(t, "Next");
+    press(t, "Review");
+    press(t, "Send to riders");
+    await settle();
+  }
+
+  it("S1: a flush after an app-driven sign-out never writes the wiped draft back", async () => {
+    active = render();
+    await settle();
+    completeWhere(active);
+    type(active, "Item 1", "Documents envelope");
+    await settle(600);
+    expect(stored()).not.toBeNull();
+    // The refresh token expired: the app signs out and clearDeviceState deletes the slot.
+    mockProfileId = null;
+    delete mockSecureStore[DRAFT];
+    type(active, "Note for the rider (optional)", "Blue gate");
+    await settle(600);
+    act(() => active!.unmount());
+    active = null;
+    await settle();
+    expect(mockSecureStore[DRAFT]).toBeUndefined();
+  });
+
+  it("S1: another account's draft is never restored", async () => {
+    mockSecureStore[DRAFT] = storedDraft({ step: 2, items: [{ description: "Their parcel", quantity: 1 }] });
+    mockProfileId = "p2";
+    active = render();
+    await settle();
+    expect(has(active, "Their parcel")).toBe(false);
+    expect(has(active, "Old drop")).toBe(false);
+  });
+
+  const LIVE_SENT_ID = "6f1c2a4e-8b3d-4c5e-9f70-1a2b3c4d5e6f";
+  const STALE_SENT_ID = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+
+  it("an unanswered-send key older than 10 minutes is not replayed into the restored compose", async () => {
+    mockSecureStore[DRAFT] = storedDraft({ step: 2, sentKey: STALE_SENT_ID, sentAt: Date.now() - 20 * 60 * 1000 });
+    mockCreateOrder.mockResolvedValueOnce({ id: "o-new", status: "open_for_offers", proposedFare: 9, expiresAt: new Date().toISOString() });
+    active = render();
+    await settle();
+    await sendFromWhat(active);
+    expect(mockCreateOrder).toHaveBeenCalledTimes(1);
+    expect(mockCreateOrder.mock.calls[0][0].idempotencyKey).not.toBe(STALE_SENT_ID);
+  });
+
+  it("Send again keeps a stored, still-unanswered key (and doesn't overwrite it)", async () => {
+    mockSecureStore[DRAFT] = storedDraft({ sentKey: LIVE_SENT_ID, sentAt: Date.now() - 60_000 });
+    mockParams = SEND_AGAIN();
+    mockCreateOrder.mockReturnValueOnce(new Promise(() => {}));
+    active = render();
+    await settle();
+    await settle(600);
+    expect(stored().sentKey).toBe(LIVE_SENT_ID);
+    await sendFromWhat(active);
+    expect(mockCreateOrder.mock.calls[0][0].idempotencyKey).toBe(LIVE_SENT_ID);
   });
 });
 

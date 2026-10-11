@@ -21,6 +21,7 @@ import { RIDER_COPY as R, RF } from "../../src/ui/rider/copy";
 import { Chips, MSheet, Seg } from "../../src/ui/rider/kit";
 import { SendField } from "../../src/ui/send/kit";
 import { ST, toAdd } from "../../src/ui/settings/copy";
+import { isCustomerWebBuild } from "../../src/web-build";
 
 /** D1's "1 to add": the optional photo and plate still missing — the same count Bike & documents' E1 progress
  *  draws (`bikeDocsProgress`, its third item being the ID check itself). */
@@ -52,6 +53,10 @@ function Caption({ children, first }: { children: string; first?: boolean }): Re
  * row turns danger when off (P15) and Battery saver opens P16; the kept rider rows (Navigation app, Top-up
  * number); Sign out and Delete account last. Permissions are re-read on focus
  * and on return to the app — nothing is hardcoded "On".
+ *
+ * The customer web build (D-81) sends no push, so it draws neither the PC11 card nor the Order updates row
+ * (U39): both said "off" with a Turn on that could never work in a browser. With no rider rows on the web,
+ * the ALERTS card and its caption go with them.
  */
 export default function SettingsScreen(): React.ReactElement {
   const router = useRouter();
@@ -75,6 +80,9 @@ export default function SettingsScreen(): React.ReactElement {
   const notifOff = perms != null && !notifOn;
   const locOff = perms != null && !locOn;
   const missing = isRider ? bikeItemsToAdd(me?.rider) : 0;
+  // U39 / D-81: no push on the web build, so no order-updates state to show or switch.
+  const pushless = isCustomerWebBuild();
+  const showAlerts = isRider || !pushless;
 
   const go = useCallback((href: string) => router.push(href as never), [router]);
   // MA-H4: a rider goes offline first (best effort). Signing out ends the heartbeat and the job pings, but
@@ -115,7 +123,7 @@ export default function SettingsScreen(): React.ReactElement {
           </>
         }
       >
-        {notifOff ? (
+        {notifOff && !pushless ? (
           // PC11 — the danger card at the top while order updates are off.
           <View testID="settings-pc11" style={{ marginTop: 4, marginBottom: 20, borderRadius: 20, padding: 16, flexDirection: "row", alignItems: "flex-start", gap: 10, backgroundColor: tokens.color.dangerWash }}>
             <IconDot icon="bell" tone="bad" bg={tokens.color.bg} />
@@ -148,7 +156,8 @@ export default function SettingsScreen(): React.ReactElement {
           <ListRow icon="banknote" title={R.sPay} value={R.sPayV} />
         </ListCard>
 
-        <Caption>{ST.alerts}</Caption>
+        {showAlerts ? <Caption>{ST.alerts}</Caption> : null}
+        {showAlerts ? (
         <ListCard testID="settings-alerts">
           {isRider ? (
             <ListRow
@@ -170,9 +179,12 @@ export default function SettingsScreen(): React.ReactElement {
               testID="settings-location"
             />
           ) : null}
-          <ListRow icon="bell" title={ST.orderUpdates} right={<Toggle value={notifOn} onPress={perms ? orderUpdates : undefined} accessibilityLabel={ST.orderUpdates} testID="toggle-order-updates" />} />
+          {pushless ? null : (
+            <ListRow icon="bell" title={ST.orderUpdates} right={<Toggle value={notifOn} onPress={perms ? orderUpdates : undefined} accessibilityLabel={ST.orderUpdates} testID="toggle-order-updates" />} />
+          )}
           {isRider ? <ListRow icon="battery" title={ST.battery} sub={ST.batterySub} chevron onPress={() => go(RIDER_PERM_ROUTES.battery)} testID="settings-battery" /> : null}
         </ListCard>
+        ) : null}
 
         {isRider ? (
           <>

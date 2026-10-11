@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { AppState } from "react-native";
+import { AppState, Platform } from "react-native";
 import { logout } from "../api/auth";
 import { clearConditionalCache, configureApi } from "../api/client";
 import { queryClient } from "../query/client";
@@ -7,7 +7,7 @@ import { clearPersistedQueries } from "../query/persist";
 import { prewarmBootReads } from "../boot/prewarm";
 import { boundPushToken } from "../push/bound-token";
 import { captureException } from "../telemetry/sentry";
-import { clearDeviceState, clearSession, saveSession, type Session } from "./session";
+import { clearDeviceState, clearSession, loadSession, saveSession, SESSION_KEY, type Session } from "./session";
 
 interface AuthState {
   session: Session | null;
@@ -66,6 +66,44 @@ function persist(): Promise<void> {
   return run;
 }
 
+/** The slice of a browser `storage` event the cross-tab sync reads. */
+export interface SessionStorageEvent {
+  /** The changed key (the web SecureStore shim namespaces it, so it ENDS with SESSION_KEY); null on clear(). */
+  key: string | null;
+}
+
+/**
+ * U15 (web): another tab of the same browser wrote or deleted the shared stored session. Read it back and
+ * follow it, so this tab neither presents a refresh token that tab already rotated away nor stays signed in
+ * after that tab signed out. Exported for tests; the AuthProvider wires it to `window`'s `storage` event.
+ *  - same account, other tokens → adopt them (nothing to write: storage already holds them);
+ *  - deleted → signed out here too: memory only (the other tab already deleted the session and the
+ *    device state), plus this tab's query cache and conditional-GET store;
+ *  - a session appeared, or a different account's → this tab follows it, with a clean query cache.
+ */
+export async function syncSessionFromOtherTab(e: SessionStorageEvent, apply: (s: Session | null) => void): Promise<void> {
+  if (e.key !== null && !e.key.endsWith(SESSION_KEY)) return;
+  if (live === undefined) return; // the launch read hasn't settled; it will read the same storage
+  const stored = await loadSession();
+  const current = live;
+  if (!stored) {
+    if (!current) return;
+    apply(null);
+    queryClient.clear();
+    clearConditionalCache();
+    return;
+  }
+  if (current && current.profileId === stored.profileId) {
+    if (current.refreshToken !== stored.refreshToken || current.accessToken !== stored.accessToken) apply({ ...current, ...stored });
+    return;
+  }
+  if (current) {
+    queryClient.clear();
+    clearConditionalCache();
+  }
+  apply(stored);
+}
+
 /** Test seam: forget the process session and its write queue, as a fresh launch would. Mirrors
  *  `__resetBootReads` in src/boot/prewarm.ts. Never called by app code. */
 export function __resetAuthSession(): void {
@@ -109,6 +147,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
         void clearPersistedQueries();
       },
     });
+  }, [apply]);
+
+  // U15: on the web, follow the session other tabs write to the shared storage (see syncSessionFromOtherTab).
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const w = (globalThis as { window?: { addEventListener?: (t: string, fn: (e: SessionStorageEvent) => void) => void; removeEventListener?: (t: string, fn: (e: SessionStorageEvent) => void) => void } }).window;
+    if (!w?.addEventListener || !w.removeEventListener) return;
+    const onStorage = (e: SessionStorageEvent): void => {
+      void syncSessionFromOtherTab(e, apply);
+    };
+    w.addEventListener("storage", onStorage);
+    return () => w.removeEventListener?.("storage", onStorage);
   }, [apply]);
 
   useEffect(() => {
