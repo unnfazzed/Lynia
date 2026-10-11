@@ -5059,3 +5059,6 @@ window that cancels at 0:00. Neither draws what happens after 0:00 when the orde
 - The 3:00 itself is unchanged (owner decision: the 3-minute window stays; the BRIEF's 60 s / 90 s is not adopted here).
 - **Upstream:** the handoffs should draw the post-0:00 waiting state on both sides and the "still waiting" push. Reported
   upstream; the kit is not edited here.
+- **Owner follow-up (2026-10-07):** the ring has **no cap** — the alarm keeps sounding for the whole 24 h until the
+  order is answered or cancelled (owner chose "ring the full 24 h" over muting after 10 min or outside opening hours),
+  and there is **no age limit on a late accept** (owner chose "no limit" over an age warning or an end-of-day cancel).
