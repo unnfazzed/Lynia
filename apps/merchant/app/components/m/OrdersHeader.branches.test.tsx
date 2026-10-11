@@ -6,7 +6,7 @@ import { OrdersHeader, type useOpenSwitch } from "./OrdersHeader";
 
 const { list } = vi.hoisted(() => ({ list: { branches: [] as MerchantBranchResponse[] } }));
 vi.mock("../../lib/branches", async (orig) => ({ ...(await orig<typeof import("../../lib/branches")>()), useBranches: () => list.branches }));
-vi.mock("../../lib/orders-api", () => ({ getTodaySummary: vi.fn(() => Promise.resolve({ orders: 7, sales: 59.5, cashOverdue: 9.5 })) }));
+vi.mock("../../lib/orders-api", () => ({ getTodayKpis: vi.fn(() => Promise.resolve({ orders: 7, sales: 59.5, cashOverdue: 9.5 })) }));
 vi.mock("../branches/BranchSheet", () => ({ BranchSheet: () => <div role="dialog">Your branches</div> }));
 vi.mock("next/link", () => ({ default: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a> }));
 

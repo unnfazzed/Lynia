@@ -6,7 +6,8 @@ import type {
   MerchantTeamResponse,
   MyMerchantInvitesResponse,
 } from "@lynia/shared";
-import { authedFetch } from "./api-client";
+import { authedFetch, SHARED_READ_FRESH_MS } from "./api-client";
+import { sharedRead } from "./read-cache";
 
 /**
  * Team (merchant web upgrade L4). `/merchant/team` is the owner's (a staff member gets 403 `owner_only`),
@@ -40,7 +41,8 @@ export function leaveBusiness(): Promise<{ ok: true }> {
 }
 
 export function listMyInvites(): Promise<MyMerchantInvitesResponse> {
-  return authedFetch<MyMerchantInvitesResponse>("/merchant/invites");
+  // MJ-P2: sign-in reads it to choose Join, then Join reads it again — one shared read.
+  return sharedRead("/merchant/invites", () => authedFetch<MyMerchantInvitesResponse>("/merchant/invites"), { freshMs: SHARED_READ_FRESH_MS });
 }
 
 export function joinInvite(id: string, body: JoinMerchantInviteRequest): Promise<MerchantProfileResponse> {

@@ -15,8 +15,11 @@ export type { MerchantBookingOffer, MerchantBookingResponse, MerchantBookingStat
  * business books from its own pin; any team member acts on any of them.
  */
 
-export function listBookings(): Promise<MerchantBookingResponse[]> {
-  return authedFetch<MerchantBookingResponse[]>("/merchant/bookings");
+/** The Deliveries history (the latest 50), or with `live` (MJ-RL26) only what the board draws: live
+ *  bookings and delivered ones whose cash is still due. An older API ignores `?status` and sends the
+ *  history, which the board reads the same way. */
+export function listBookings(opts: { live?: boolean } = {}): Promise<MerchantBookingResponse[]> {
+  return authedFetch<MerchantBookingResponse[]>(opts.live ? "/merchant/bookings?status=live" : "/merchant/bookings");
 }
 
 export function getBooking(id: string): Promise<MerchantBookingResponse> {

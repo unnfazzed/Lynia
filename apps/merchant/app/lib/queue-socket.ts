@@ -11,8 +11,9 @@ import { loadMerchantSession } from "./session";
  * guarantee for EVERY merchant, not just genuinely offline ones — a past-deadline order was always
  * treated as "merchant is dark" and had its clock pushed forward instead of resolving.
  *
- * This connection exists purely to make that presence signal true: it does not carry new-order
- * delivery (the 5s poll in `use-queue-poll.ts` stays the source of truth for that, unaffected here).
+ * It also carries the server's `food:queue-changed` push (MJ-P1): a signal only — the shell re-reads the
+ * queue on it and slows the poll in `use-queue-poll.ts` to a backstop while the socket is up; the REST
+ * read stays the only source of the orders themselves.
  * `auth` is a callback (not a captured token) so a reconnect after the original access token has
  * rotated still authenticates with whatever's current in the session cookie.
  */

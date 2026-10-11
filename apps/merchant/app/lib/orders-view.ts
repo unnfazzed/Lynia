@@ -120,6 +120,25 @@ export function detailView(o: MerchantOrderResponse): DetailView {
   return "closed";
 }
 
+/** The order ticket's poll before pickup: the kitchen is acting on it. */
+export const TICKET_POLL_MS = 5_000;
+/** …and once the rider has the food: what's left (delivery, the cash or goods coming back) is slow. */
+export const TICKET_POLL_AFTER_PICKUP_MS = 30_000;
+
+/**
+ * MJ-RL23 (2026-10-07): how often the order ticket re-reads its order, or null for never. It used to poll
+ * every 5 s for as long as it was open — a delivered or closed order opened from Money included. Nothing
+ * more happens to a closed order, nor to a delivered one with nothing coming back; an open debt — cash, or
+ * goods riding back (MJ-RB1 / D-88's goods return, and D3's "not returned" flag, which leaves it open) —
+ * still has a step to come, so it keeps a slow poll. `null` order (still loading, or failed): keep trying.
+ */
+export function ticketPollMs(o: MerchantOrderResponse | null): number | null {
+  if (!o) return TICKET_POLL_MS;
+  const view = detailView(o);
+  if (view === "closed" || (view === "delivered" && o.debtStatus !== "open")) return null;
+  return isAfterPickup(o) ? TICKET_POLL_AFTER_PICKUP_MS : TICKET_POLL_MS;
+}
+
 /** B1's second line for a row on the home. */
 export function rowSub(o: MerchantOrderResponse): string {
   const rider = riderFirstName(o);

@@ -2,6 +2,7 @@ import type { BecomeMerchantRequest, HandoverLinkInfoResponse, MerchantProfileRe
 import { API_BASE_URL } from "./config";
 import { getDeviceId } from "./device-id";
 import { getReachabilityStore } from "./reachability";
+import { invalidateReads, sharedRead } from "./read-cache";
 import {
   clearMerchantSession,
   loadMerchantSession,
@@ -118,6 +119,8 @@ export async function verifyOtp(phone: string, code: string): Promise<VerifyResu
     body: { phone, code },
     headers: { "x-device-id": getDeviceId() },
   });
+  // MJ-P2: a new sign-in starts with nobody's reads (the landing screen reads /merchant/me afresh).
+  invalidateReads();
   saveMerchantSession({
     accessToken: result.accessToken,
     refreshToken: result.refreshToken,
@@ -135,8 +138,16 @@ export type MerchantProfile = MerchantProfileResponse;
  *  never the token's role claim). Throws ApiError(403, reason "not_a_member") for a number that isn't
  *  on a business yet, which is the cue for "Set up your business". */
 export function getMyMerchant(): Promise<MerchantProfile> {
-  return authedFetch<MerchantProfile>("/merchant/me");
+  // MJ-P2: every screen asks this on its own (the board and the tab bar in the same tick; sign-in, then
+  // the landing screen): one shared read answers them. "Not on a business" is an answer, kept as one.
+  return sharedRead("/merchant/me", () => authedFetch<MerchantProfile>("/merchant/me"), {
+    freshMs: SHARED_READ_FRESH_MS,
+    keepError: (err) => err instanceof ApiError && err.status === 403 && err.reason === "not_a_member",
+  });
 }
+
+/** MJ-P2: how long a shared read ({@link sharedRead}) is reused — sign-in to its landing screen. */
+export const SHARED_READ_FRESH_MS = 10_000;
 
 /** L1 self-serve sign-up: creates the business and the caller's owner membership. A 409
  *  `already_member` means this person is already on a business (e.g. a retry of a sign-up whose
@@ -294,6 +305,19 @@ export async function refreshMerchantSession(): Promise<"refreshed" | "dead" | "
  *  every authenticated mutation routes through this one function, wiring it here closes the gap
  *  for the whole surface instead of at each call site. */
 export async function authedFetch<T>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
+  // MJ-P2: a write may change what a shared read said (the business, its invites) — forget them before
+  // it goes and again once it's done, so a read that raced it is never kept.
+  const write = (opts.method ?? "GET") !== "GET";
+  if (!write) return authedRequest<T>(path, opts);
+  invalidateReads();
+  try {
+    return await authedRequest<T>(path, opts);
+  } finally {
+    invalidateReads();
+  }
+}
+
+async function authedRequest<T>(path: string, opts: { method?: string; body?: unknown }): Promise<T> {
   const session = loadMerchantSession();
   if (!session) throw new ApiError(401, "Not signed in.");
   const reachability = getReachabilityStore(API_BASE_URL);

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
 import {
   CancelMerchantBookingRequest,
   CloseMerchantBookingCashRequest,
@@ -30,9 +30,11 @@ import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
 export class MerchantBookingController {
   constructor(private readonly bookings: MerchantBookingService) {}
 
+  // MJ-RL26: `?status=live` is the board's list — only the bookings it can draw (additive; any other value,
+  // or none, is the Deliveries history as before).
   @Get()
-  list(@CurrentMerchantAccess() access: MerchantAccess): Promise<MerchantBookingResponse[]> {
-    return this.bookings.list(access);
+  list(@CurrentMerchantAccess() access: MerchantAccess, @Query("status") status?: string): Promise<MerchantBookingResponse[]> {
+    return this.bookings.list(access, { liveOnly: status === "live" });
   }
 
   // Same budget as Send's own POST /orders ("order-create"): each booking pushes every nearby rider.

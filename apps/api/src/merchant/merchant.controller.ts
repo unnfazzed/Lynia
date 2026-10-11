@@ -62,7 +62,10 @@ export class MerchantController {
   @Get("summary/today")
   @UseGuards(MerchantGuard)
   @OwnerOnly()
-  todaySummary(@CurrentUser() profileId: string, @Query("date") date?: string) {
+  todaySummary(@CurrentUser() profileId: string, @Query("date") date?: string, @Query("fields") fields?: string) {
+    // MJ-RL27: `?fields=kpis` is the Orders top card's strip alone (additive; any other value, or none,
+    // is the full Today payload as before).
+    if (fields === "kpis") return this.merchant.getTodayKpis(profileId, date || undefined);
     // Merchant v2 follow-ups T2b (D-77): `?date=YYYY-MM-DD` opens another day in the Today layout.
     return this.merchant.getTodaySummary(profileId, date || undefined);
   }

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MerchantOrderResponse } from "@lynia/shared";
 import OrderPage from "./page";
@@ -532,5 +532,71 @@ describe("Order flow v2 round 2 (D-59): the wait, photos, Scheduled, Rx", () => 
     show(merchantOrder({ ...cooking(), prescription: { status: "pending", patientName: "Rudo Moyo", pageCount: 2 } }));
     expect(await screen.findByText("Packed")).toBeTruthy();
     expect(screen.queryByRole("link", { name: "Prescription check" })).toBeNull();
+  });
+});
+
+// MJ-RL23 (2026-10-07): the ticket polled every 5 s with no in-flight guard and never stopped — even on a
+// delivered or closed order opened from Money.
+describe("MJ-RL23: how the ticket keeps its order fresh", () => {
+  async function mounted(order: MerchantOrderResponse | (() => Promise<MerchantOrderResponse>)) {
+    vi.useFakeTimers();
+    if (typeof order === "function") vi.mocked(getOrder).mockImplementation(order);
+    else vi.mocked(getOrder).mockResolvedValue(order);
+    await act(async () => {
+      render(
+        <ToastProvider>
+          <OrderPage />
+        </ToastProvider>,
+      );
+    });
+    expect(getOrder).toHaveBeenCalledTimes(1);
+  }
+  const advance = (ms: number) =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("polls every 5 s while the kitchen is on it", async () => {
+    await mounted(cooking());
+    await advance(5_000);
+    expect(getOrder).toHaveBeenCalledTimes(2);
+    await advance(5_000);
+    expect(getOrder).toHaveBeenCalledTimes(3);
+  });
+
+  it("never stacks a second read on one still in flight", async () => {
+    await mounted(() => new Promise<MerchantOrderResponse>(() => {}));
+    await advance(15_000);
+    expect(getOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it("slows to every 30 s once the rider has the food", async () => {
+    await mounted(merchantOrder({ id: ID, ...CASH, merchantPhase: null, status: "en_route_dropoff", riderId: RIDER.profileId, rider: RIDER, debtStatus: "open", debtAmount: 12 }));
+    await advance(25_000);
+    expect(getOrder).toHaveBeenCalledTimes(1);
+    await advance(5_000);
+    expect(getOrder).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a slow poll while goods or cash are still coming back (an open debt, D3 + D5)", async () => {
+    await mounted(merchantOrder({ id: ID, ...CASH, merchantPhase: null, status: "cancelled", riderId: RIDER.profileId, rider: RIDER, debtStatus: "open", debtAmount: 12 }));
+    await advance(30_000);
+    expect(getOrder).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops once nothing more can happen: delivered with nothing coming back", async () => {
+    await mounted(merchantOrder({ id: ID, merchantPhase: null, status: "delivered", paymentMethod: "wallet", merchantGoodsTotal: 14, riderId: RIDER.profileId, rider: RIDER, deliveredAt: new Date().toISOString() }));
+    await advance(120_000);
+    expect(getOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops on a closed order (opened from Money)", async () => {
+    await mounted(merchantOrder({ id: ID, ...CASH, merchantPhase: null, status: "delivered", riderId: RIDER.profileId, rider: RIDER, debtStatus: "settled_cash", merchantClosedAt: new Date().toISOString() }));
+    await advance(120_000);
+    expect(getOrder).toHaveBeenCalledTimes(1);
   });
 });

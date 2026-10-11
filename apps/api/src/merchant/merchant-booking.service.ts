@@ -38,6 +38,19 @@ const MERCHANT_CANCELLABLE = ["open_for_offers", "assigned", "confirmed", "en_ro
 const LIST_LIMIT = 50;
 /** Send's re-broadcast can chain if riders keep cancelling; follow it this far to find the booker. */
 const MAX_REBROADCAST_DEPTH = 5;
+/** Send's statuses while a booking is live for the business: finding, coming or picked up ({@link bookingStateOf}). */
+const LIVE_BOOKING_STATUSES = ["requested", "open_for_offers", "assigned", "confirmed", "en_route_pickup", "picked_up", "en_route_dropoff"] as const;
+/**
+ * MJ-RL26: what the Orders board can draw — a live booking, or a delivered one whose cash on delivery is
+ * still on its way back (`cashOnDelivery.status === "due"`: debt open, not closed by the business). The
+ * board polls this every few seconds; the full 50-row history stays the Deliveries list's.
+ */
+export const LIVE_BOOKING_WHERE = {
+  OR: [
+    { status: { in: [...LIVE_BOOKING_STATUSES] } },
+    { status: { in: ["delivered", "completed"] }, debtStatus: "open", merchantClosedAt: null },
+  ],
+} satisfies Prisma.OrderWhereInput;
 
 const BOOKING_SELECT = {
   id: true,
@@ -163,12 +176,13 @@ export class MerchantBookingService {
     return this.detail(access, created.id);
   }
 
-  /** The business's bookings, newest first. Business-wide: every member sees every booking. */
-  async list(access: MerchantAccess): Promise<MerchantBookingResponse[]> {
+  /** The business's bookings, newest first. Business-wide: every member sees every booking. `liveOnly`
+   *  (MJ-RL26) narrows it to what the Orders board draws ({@link LIVE_BOOKING_WHERE}). */
+  async list(access: MerchantAccess, opts: { liveOnly?: boolean } = {}): Promise<MerchantBookingResponse[]> {
     const accountId = await findBookingAccountId(this.prisma, access.merchantId);
     if (!accountId) return [];
     const rows = await this.prisma.order.findMany({
-      where: { customerId: accountId },
+      where: opts.liveOnly ? { customerId: accountId, ...LIVE_BOOKING_WHERE } : { customerId: accountId },
       orderBy: { createdAt: "desc" },
       take: LIST_LIMIT,
       select: BOOKING_SELECT,
@@ -392,13 +406,42 @@ export class MerchantBookingService {
     return null;
   }
 
-  /** "Booked by …" per booking: the team's name for the person, else their own profile name. */
+  /**
+   * "Booked by …" per booking: the team's name for the person, else their own profile name.
+   *
+   * MJ-RL26 (2026-10-07): a re-sent booking's booker is its chain's root's. That used to be one
+   * {@link rootBooker} walk per row — up to six sequential reads each, on a list the board polled every
+   * 3 s. Now every row walks its chain in step: a parent already in `rows` is read from memory, and each
+   * depth's missing parents are one `findMany`. Same chain, same depth limit as {@link rootBooker}.
+   */
   private async bookerNames(merchantId: string, rows: BookingRow[]): Promise<Map<string, string>> {
     const bookerOf = new Map<string, string>();
+    type Link = { rebroadcastOfId: string | null; booker: string | null };
+    const known = new Map<string, Link>(rows.map((r) => [r.id, { rebroadcastOfId: r.rebroadcastOfId, booker: r.merchantBooking?.bookedByProfileId ?? null }]));
+    // row id → the order its chain is at now (the next one to read).
+    let walking = new Map<string, string>();
     for (const r of rows) {
       const direct = r.merchantBooking?.bookedByProfileId;
-      const booker = direct ?? (r.rebroadcastOfId ? await this.rootBooker(r.rebroadcastOfId) : null);
-      if (booker) bookerOf.set(r.id, booker);
+      if (direct) bookerOf.set(r.id, direct);
+      else if (r.rebroadcastOfId) walking.set(r.id, r.rebroadcastOfId);
+    }
+    for (let depth = 0; walking.size > 0 && depth <= MAX_REBROADCAST_DEPTH; depth++) {
+      const missing = [...new Set(walking.values())].filter((id) => !known.has(id));
+      if (missing.length > 0) {
+        const found = await this.prisma.order.findMany({
+          where: { id: { in: missing } },
+          select: { id: true, rebroadcastOfId: true, merchantBooking: { select: { bookedByProfileId: true } } },
+        });
+        for (const o of found) known.set(o.id, { rebroadcastOfId: o.rebroadcastOfId, booker: o.merchantBooking?.bookedByProfileId ?? null });
+      }
+      const next = new Map<string, string>();
+      for (const [rowId, at] of walking) {
+        const link = known.get(at);
+        if (!link) continue; // the chain points at an order that doesn't exist: no booker, as before
+        if (link.booker) bookerOf.set(rowId, link.booker);
+        else if (link.rebroadcastOfId) next.set(rowId, link.rebroadcastOfId);
+      }
+      walking = next;
     }
     const ids = [...new Set(bookerOf.values())];
     if (ids.length === 0) return new Map();

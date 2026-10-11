@@ -76,15 +76,35 @@ export default function MenuPage() {
   const submittingRef = useRef(false);
   const shop = business?.businessType === "shop";
 
+  // MJ-RL22 (2026-10-07): a refresh that fails while the list is on screen (after a save) keeps the list
+  // and says so in the toast — it used to replace the whole menu with the error screen. Read through refs
+  // so the load doesn't re-run when the words or the toast change.
+  const shownRef = useRef(false);
+  shownRef.current = state.status === "ready";
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
+  const catalogRef = useRef(v.catalogLower);
+  catalogRef.current = v.catalogLower;
   const refresh = useCallback(() => {
     // The business rides along (cached, never rejects) so the list first renders in the right words.
     Promise.all([listCategories(), listDishes(), loadBusiness()])
       .then(([categories, dishes, b]) => setState({ status: "ready", categories, dishes, staff: b?.myRole === "staff" }))
       .catch((err: unknown) => {
         if (redirectIfSessionExpired(err, signOut)) return;
-        setState({ status: "error", message: err instanceof ApiError ? err.message : null });
+        const message = err instanceof ApiError ? err.message : null;
+        if (shownRef.current) {
+          // Offline, the shell's connection bar already says so (D-74's rule for a failed background read).
+          if (!(err instanceof ApiError && err.status === 0)) toastRef.current(message ?? `Couldn't load your ${catalogRef.current}.`);
+          return;
+        }
+        setState({ status: "error", message });
       });
   }, [signOut]);
+
+  /** MJ-RL22: a stock switch's answer is the dish as it now stands — put it in the list, no second read. */
+  const mergeDish = useCallback((dish: MerchantDishResponse) => {
+    setState((s) => (s.status === "ready" ? { ...s, dishes: s.dishes.map((d) => (d.id === dish.id ? dish : d)) } : s));
+  }, []);
 
   useEffect(() => {
     refresh();
@@ -121,12 +141,12 @@ export default function MenuPage() {
     }
   }
 
-  async function withSheet(fn: () => Promise<void>, done?: string): Promise<boolean> {
+  async function withSheet(fn: () => Promise<void>, done?: string, reread = true): Promise<boolean> {
     const ok = await guarded(fn, "Something went wrong — try again.", (m) => setSheetError(m || null));
     if (!ok) return false;
     setSheet({ kind: "none" });
     if (done) toast(done);
-    refresh();
+    if (reread) refresh();
     return true;
   }
 
@@ -146,10 +166,9 @@ export default function MenuPage() {
   }
 
   async function onTurnOn(dish: MerchantDishResponse) {
-    const ok = await guarded(() => clearDishOutOfStock(dish.id).then(() => undefined), "Couldn't update stock — try again.", (m) => setListError(m || null));
+    const ok = await guarded(() => clearDishOutOfStock(dish.id).then(mergeDish), "Couldn't update stock — try again.", (m) => setListError(m || null));
     if (!ok) return;
     toast(`${dish.name} is back on`);
-    refresh();
   }
 
   async function onTurnOff(forHowLong: DishOutOfStockFor) {
@@ -157,8 +176,9 @@ export default function MenuPage() {
     const { dish } = sheet;
     const back = backOnLine(business, new Date()).match(/\d\d:\d\d/)?.[0];
     await withSheet(
-      () => setDishOutOfStock(dish.id, forHowLong).then(() => undefined),
+      () => setDishOutOfStock(dish.id, forHowLong).then(mergeDish),
       forHowLong === "rest_of_today" ? `${dish.name} off until ${back ?? "tomorrow"}` : `${dish.name} is off`,
+      false,
     );
   }
 

@@ -69,6 +69,9 @@ const TEST_RING_DURATION_MS = 3 * 1200 + 2 * 800; // three chime cycles, long en
 const SOCKET_RETRY_BASE_MS = 1_000;
 const SOCKET_RETRY_MAX_MS = 60_000;
 const SOCKET_KICK_RESET_MS = 60_000;
+/** MJ-P1: a burst of `food:queue-changed` pushes (one order's accept, rider and status moves) is one
+ *  queue read, this long after the first of them. */
+export const QUEUE_PUSH_DEBOUNCE_MS = 250;
 
 export function KitchenConnectionProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -178,21 +181,42 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
   // The tablet then read as "dark" for the rest of the shift (feeding MJ-H2). So on that reason the
   // shell refreshes the session and reconnects; the socket's `auth` callback reads the live token
   // (queue-socket.ts, the same pattern as the mobile app's LC-C14). A dead refresh token signs out.
+  //
+  // MJ-P1 (2026-10-07): the same socket carries the server's `food:queue-changed` push the moment an order
+  // changes. The shell used to ignore it and poll the whole queue every 5 s all day; now a push (debounced)
+  // re-reads the queue, a reconnect re-reads it once (pushes sent while it was down are gone), and the
+  // poll backs off to a 30 s backstop while the socket is up (use-queue-poll.ts). Down, it is 5 s again.
   const socketRef = useRef<ReturnType<typeof createMerchantQueueSocket> | null>(null);
   const signOutRef = useRef(signOut);
   signOutRef.current = signOut;
+  const [socketConnected, setSocketConnected] = useState(false);
+  const refetchQueueRef = useRef<() => Promise<void>>(async () => {});
   useEffect(() => {
     if (!session) return undefined;
     const socket = createMerchantQueueSocket();
     socketRef.current = socket;
     let alive = true;
     let retry: ReturnType<typeof setTimeout> | null = null;
+    let pushed: ReturnType<typeof setTimeout> | null = null;
     let kicks = 0;
     let lastKickAt = 0;
+    let connectedBefore = false;
     socket.on("connect", () => {
       socket.emit(WS_EVENTS.merchantQueueSubscribe);
+      setSocketConnected(true);
+      if (connectedBefore) void refetchQueueRef.current();
+      connectedBefore = true;
     });
+    socket.on(WS_EVENTS.foodQueueChanged, () => {
+      if (!alive || pushed) return;
+      pushed = setTimeout(() => {
+        pushed = null;
+        if (alive) void refetchQueueRef.current();
+      }, QUEUE_PUSH_DEBOUNCE_MS);
+    });
+    socket.on("connect_error", () => setSocketConnected(false));
     socket.on("disconnect", (reason: unknown) => {
+      setSocketConnected(false);
       if (!alive || reason !== "io server disconnect" || retry) return;
       const at = Date.now();
       if (at - lastKickAt > SOCKET_KICK_RESET_MS) kicks = 0;
@@ -217,14 +241,17 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
     return () => {
       alive = false;
       if (retry) clearTimeout(retry);
+      if (pushed) clearTimeout(pushed);
       socketRef.current = null;
+      setSocketConnected(false);
       socket.disconnect();
     };
   }, [session]);
 
   // C20 (MJ-B1, MJ-RH4, MJ-M14): one queue poll for the whole signed-in app, from the session on.
-  const poll = useQueuePoll(session !== null);
+  const poll = useQueuePoll(session !== null, { socketConnected });
   const { orders: queueOrders, loading: queueLoading, loaded: queueLoaded, error: queueError, refetch: refetchQueue } = poll;
+  refetchQueueRef.current = refetchQueue;
   const queue = useMemo<QueuePollState>(
     () => ({ orders: queueOrders, loading: queueLoading, loaded: queueLoaded, error: queueError, refetch: refetchQueue }),
     [queueOrders, queueLoading, queueLoaded, queueError, refetchQueue],

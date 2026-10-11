@@ -30,6 +30,8 @@ The merchant app (kitchens, shops, pharmacies) in a browser: `apps/merchant`. De
   the token.
 - `public/_headers`: `nosniff`, `X-Frame-Options: DENY`, HSTS, and a one-year immutable cache for
   `/_next/static/*` (content-hashed names). Pages revalidate on every load, so a deploy shows on the next one.
+  `/fonts/*` and `/brand/*` (names not versioned) are fresh for a day and served stale for up to a week while
+  they revalidate (MJ-RL28).
 
 ## Build-time values
 
