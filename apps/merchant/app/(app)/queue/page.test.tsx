@@ -453,7 +453,9 @@ describe("M1a · an auto-accepted order rings on the same screen until the kitch
     const takeover = await screen.findByRole("alertdialog", { name: "New order #A111" });
     expect(within(takeover).getByText("NEW ORDER · #A111")).toBeTruthy();
     expect(within(takeover).getByText("LyniaGo accepted this for you")).toBeTruthy();
-    expect(within(takeover).getByLabelText("Time left to answer").textContent).toMatch(/^5[78]:\d\d$/);
+    // D1 (D-87): an auto-accepted ring counts the same 3:00 answer window from when it started cooking (it used to
+    // count down the old 60-minute cancel); prepStartedAt is "now" here.
+    expect(within(takeover).getByLabelText("Time left to answer").textContent).toMatch(/^(3:00|2:5\d)$/);
     expect(within(takeover).queryByRole("radiogroup", { name: "Ready in" })).toBeNull();
     fireEvent.click(within(takeover).getByRole("button", { name: /^Accept · ready \d\d:\d\d$/ }));
     await vi.waitFor(() => expect(confirmKitchen).toHaveBeenCalledWith("a1110000-0000-4000-8000-000000000001"));
