@@ -78,9 +78,14 @@ export default function PrescriptionCheckPage() {
   // MJ-M13: the photo links are signed for `expiresInSeconds` (300 s), and a pharmacist can take longer
   // than that. Fresh links are fetched shortly before they expire, and again if the photo fails to load;
   // the page keeps what it has if that fetch fails (the next failure tries again).
-  const reloadPhotos = useCallback(async () => {
+  // One error-driven retry per PAGE (not per URL: every fetch signs new URLs, so a photo that is broken
+  // for good — a 404, an undecodable file — would otherwise refetch for ever). Only the timer's
+  // successful refresh grants the pages a new retry.
+  const retriedPages = useRef<Set<number>>(new Set());
+  const reloadPhotos = useCallback(async (fromTimer: boolean) => {
     try {
       const fresh = await getPrescriptionPhotos(id);
+      if (fromTimer) retriedPages.current.clear();
       setLoad((l) => (l.status === "ready" ? { ...l, photos: [...fresh.photos].sort((a, b) => a.page - b.page), expiresInSeconds: fresh.expiresInSeconds } : l));
     } catch {
       // Keep the page; the photo's own error (or the next timer) asks again.
@@ -91,15 +96,13 @@ export default function PrescriptionCheckPage() {
   useEffect(() => {
     if (expiresIn === null) return undefined;
     const lead = Math.min(PHOTO_REFRESH_LEAD_S, expiresIn / 2);
-    const timer = setTimeout(() => void reloadPhotos(), Math.max(1, expiresIn - lead) * 1000);
+    const timer = setTimeout(() => void reloadPhotos(true), Math.max(1, expiresIn - lead) * 1000);
     return () => clearTimeout(timer);
   }, [expiresIn, photosKey, reloadPhotos]);
-  // One retry per link: a photo that still fails with fresh links is left to the timer.
-  const retriedUrl = useRef<string | null>(null);
-  const onPhotoError = (url: string) => {
-    if (retriedUrl.current === url) return;
-    retriedUrl.current = url;
-    void reloadPhotos();
+  const onPhotoError = (photoPage: number) => {
+    if (retriedPages.current.has(photoPage)) return;
+    retriedPages.current.add(photoPage);
+    void reloadPhotos(false);
   };
 
   // C20 / MJ-M13: this screen IS how a pharmacist answers this order's ring, so the ringing screen (which
@@ -159,7 +162,7 @@ export default function PrescriptionCheckPage() {
           <div className="m-rxphoto" data-zoom={zoom ? "" : undefined}>
             {shown ? (
               // eslint-disable-next-line @next/next/no-img-element -- a 5-minute signed URL, never cached
-              <img src={shown.url} alt={`Prescription page ${shown.page}`} onError={() => onPhotoError(shown.url)} />
+              <img src={shown.url} alt={`Prescription page ${shown.page}`} onError={() => onPhotoError(shown.page)} />
             ) : null}
             {photos.length > 1 && (
               <button type="button" className="m-rxpage m-num" aria-label="Next page" onClick={() => setPage((p) => (p + 1) % photos.length)}>

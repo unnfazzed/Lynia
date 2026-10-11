@@ -6,10 +6,11 @@ import type { MyMerchantInviteResponse } from "@lynia/shared";
 import { getAlarmController } from "../components/alarm-singleton";
 import { AppBar } from "../components/m/AppBar";
 import { RetryableError } from "../components/RetryableError";
-import { ApiError, endMerchantSession, getMyMerchant } from "../lib/api-client";
+import { ApiError, getMyMerchant } from "../lib/api-client";
 import { homePath } from "../lib/booking";
 import { primeBusiness } from "../lib/business";
 import { supportWhatsAppUrl } from "../lib/config";
+import { signOutSession } from "../lib/sign-out";
 import { needsSupport } from "../lib/sign-up";
 import { ROLE_LABEL, validateJoinName } from "../lib/team";
 import { declineInvite, joinInvite, listMyInvites } from "../lib/team-api";
@@ -45,7 +46,7 @@ export default function JoinPage() {
   const actingRef = useRef(false);
 
   const signOut = useCallback(() => {
-    endMerchantSession();
+    signOutSession();
     router.replace("/login");
   }, [router]);
 

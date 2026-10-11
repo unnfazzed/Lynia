@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MyMerchantInviteResponse } from "@lynia/shared";
 import JoinPage from "./page";
 import { ApiError, getMyMerchant } from "../lib/api-client";
-import { primeBusiness } from "../lib/business";
+import { clearBusinessCache, primeBusiness } from "../lib/business";
+import { clearBranchesCache } from "../lib/branches";
 import { declineInvite, joinInvite, listMyInvites } from "../lib/team-api";
 import { merchantProfile } from "../testing/fixtures";
 
@@ -19,7 +20,8 @@ vi.mock("../lib/api-client", async () => {
   return { ...actual, getMyMerchant: vi.fn() };
 });
 vi.mock("../lib/team-api", () => ({ listMyInvites: vi.fn(), joinInvite: vi.fn(), declineInvite: vi.fn() }));
-vi.mock("../lib/business", () => ({ primeBusiness: vi.fn() }));
+vi.mock("../lib/business", () => ({ primeBusiness: vi.fn(), clearBusinessCache: vi.fn() }));
+vi.mock("../lib/branches", () => ({ clearBranchesCache: vi.fn() }));
 vi.mock("../lib/config", async () => {
   const actual = await vi.importActual<typeof import("../lib/config")>("../lib/config");
   return { ...actual, supportWhatsAppUrl: () => "https://wa.me/263770000000" };
@@ -146,5 +148,15 @@ describe("A5 · Join a team (merchant mobile redesign, D-48)", () => {
     vi.mocked(listMyInvites).mockRejectedValue(new ApiError(404, "Cannot GET /merchant/invites"));
     render(<JoinPage />);
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/onboarding?own=1"));
+  });
+});
+
+describe("MJ-RL16: Join's own sign-out clears the business and branch caches too", () => {
+  it("a dead session signs out and forgets the branches and the business", async () => {
+    vi.mocked(getMyMerchant).mockRejectedValue(new ApiError(401, "Your session expired — sign in again."));
+    render(<JoinPage />);
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/login"));
+    expect(clearBranchesCache).toHaveBeenCalled();
+    expect(clearBusinessCache).toHaveBeenCalled();
   });
 });

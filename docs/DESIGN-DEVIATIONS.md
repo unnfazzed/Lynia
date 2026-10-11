@@ -5142,6 +5142,8 @@ Also in this lane, and not new copy:
 - **A4 Your business / A5 Join:** a held or restricted number's refusal ("… Message LyniaGo on WhatsApp …") carries the
   app's existing **"Open WhatsApp"** link (`supportWhatsAppUrl()`, as Add a branch already does) inside the existing
   banner (MJ-L12).
+  - **For the owner:** A4 and A5 draw no link in that banner. The "Open WhatsApp" link inside it is a reuse of the
+    existing link element (the one Add a branch's banner already carries, same label and target), not a new element.
 - **T2b Money:** a day that fails to load shows the existing `RetryableError` (MJ-RL9).
 - **Upstream:** the handoffs should draw the ring with every line removed, the ring ending unanswered, the signed-out
   reason and the code cap on sign-in. Reported upstream; the kit is not edited here.

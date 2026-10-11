@@ -6,6 +6,8 @@ import { ApiError, becomeMerchant, getMyAccount, getMyMerchant } from "../lib/ap
 import { resolvePlace, reverseGeocode, searchPlaces } from "../lib/places";
 import { merchantProfile } from "../testing/fixtures";
 import { noBusinessPath } from "../lib/team-api";
+import { clearBranchesCache } from "../lib/branches";
+import { clearBusinessCache } from "../lib/business";
 
 // One stable router, as Next's own is: the page's account check depends on it.
 const { replace, push } = vi.hoisted(() => ({ replace: vi.fn(), push: vi.fn() }));
@@ -35,6 +37,14 @@ vi.mock("../lib/config", async () => {
 
 // L4: whether a team invited the number (Join) or not; the sign-up unless a test says otherwise.
 vi.mock("../lib/team-api", () => ({ noBusinessPath: vi.fn(async () => "/onboarding") }));
+vi.mock("../lib/branches", async () => {
+  const actual = await vi.importActual<typeof import("../lib/branches")>("../lib/branches");
+  return { ...actual, clearBranchesCache: vi.fn() };
+});
+vi.mock("../lib/business", async () => {
+  const actual = await vi.importActual<typeof import("../lib/business")>("../lib/business");
+  return { ...actual, clearBusinessCache: vi.fn() };
+});
 
 const notAMember = () => new ApiError(403, "This number isn't on a business on LyniaGo yet.", "not_a_member");
 const MBARE = { lat: -17.861, lng: 31.036 };
@@ -262,5 +272,15 @@ describe("MJ-M8 · the account read failed when the form opened", () => {
     vi.mocked(becomeMerchant).mockRejectedValue(new ApiError(400, "location: Too small: expected string to have >=7 characters", undefined, true));
     await fillAndCreate();
     expect((await screen.findByRole("alert")).textContent).toBe("Couldn't set up your business. Try again.");
+  });
+});
+
+describe("MJ-RL16: the sign-up's own sign-out clears the business and branch caches too", () => {
+  it("Back on step 1 signs out and forgets the branches and the business", async () => {
+    render(<OnboardingPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Back" }));
+    expect(clearBranchesCache).toHaveBeenCalled();
+    expect(clearBusinessCache).toHaveBeenCalled();
+    expect(replace).toHaveBeenCalledWith("/login");
   });
 });

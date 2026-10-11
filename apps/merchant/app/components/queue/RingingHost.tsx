@@ -46,6 +46,9 @@ export function RingingHost() {
   // What the order on screen was (its label, the branch it rang on), and how this host's own answers went.
   const shownRef = useRef<{ order: MerchantOrderResponse; epoch: number } | null>(null);
   const answeredRef = useRef(new Set<string>());
+  // An answer in flight: a read that lands before it resolves may already have dropped the order (the
+  // merchant's own decline), and that must not toast "was cancelled".
+  const pendingRef = useRef(new Set<string>());
   const refusedRef = useRef(new Map<string, string>());
 
   useEffect(() => {
@@ -53,7 +56,7 @@ export function RingingHost() {
     if (shown && shown.order.id !== active?.id) {
       const id = shown.order.id;
       const refused = refusedRef.current.get(id);
-      if (session && shown.epoch === epoch && !answeredRef.current.has(id)) {
+      if (session && shown.epoch === epoch && !answeredRef.current.has(id) && !pendingRef.current.has(id)) {
         if (refused) toast(refused);
         else if (!orders.some((o) => o.id === id)) toast(RING_ENDED(orderLabel(shown.order)));
       }
@@ -68,18 +71,25 @@ export function RingingHost() {
    *  is kept, so the toast can say it if the order leaves the ring with the screen. */
   const answer = useCallback(
     async (orderId: string, send: () => Promise<unknown>) => {
+      pendingRef.current.add(orderId);
       try {
         await send();
-        answeredRef.current.add(orderId);
+        pendingRef.current.delete(orderId);
+        // Only while it is still on screen: the leave above clears these, so an order already gone keeps none.
+        if (shownRef.current?.order.id === orderId) answeredRef.current.add(orderId);
         refusedRef.current.delete(orderId);
       } catch (err) {
+        pendingRef.current.delete(orderId);
         answeredRef.current.delete(orderId);
-        if (err instanceof ApiError && err.status !== 0 && !err.validation) refusedRef.current.set(orderId, err.message);
+        const refusal = err instanceof ApiError && err.status !== 0 && !err.validation ? err.message : null;
+        // Still on screen: kept for the leave toast. Already gone (a read dropped it mid-send): say it now.
+        if (refusal && shownRef.current?.order.id === orderId) refusedRef.current.set(orderId, refusal);
+        else if (refusal) toast(refusal);
         throw err;
       }
       await refetch();
     },
-    [refetch],
+    [refetch, toast],
   );
 
   const handleAccept = useCallback(

@@ -95,6 +95,24 @@ describe("RingingHost — MJ-M12: a ring that ends unanswered says so", () => {
     expect(screen.getByRole("status").textContent).toMatch(/^Accepted · ready/);
   });
 
+  it("the merchant's own decline, dropped by a read before the answer returns, is not 'was cancelled'", async () => {
+    let resolve: (v: MerchantOrderResponse) => void = () => {};
+    vi.mocked(rejectOrder).mockImplementation(() => new Promise((r) => (resolve = r)));
+    const order = ringing();
+    setQueue([order]);
+    const { rerender } = render(ui());
+    fireEvent.click(screen.getByRole("button", { name: "Can’t take it" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Too busy right now" }));
+    fireEvent.click(screen.getByRole("button", { name: "Turn down #A111" }));
+    await vi.waitFor(() => expect(rejectOrder).toHaveBeenCalled());
+    // The socket read lands first: the declined order has left the queue.
+    setQueue([]);
+    await act(async () => rerender(ui()));
+    expect(screen.queryByText("#A111 was cancelled")).toBeNull();
+    await act(async () => resolve({ ...order, status: "cancelled" }));
+    expect(screen.queryByText("#A111 was cancelled")).toBeNull();
+  });
+
   it("an order a teammate answered (still on the board) goes quietly", () => {
     const order = ringing();
     setQueue([order]);

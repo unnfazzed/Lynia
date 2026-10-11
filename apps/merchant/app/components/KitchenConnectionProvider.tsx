@@ -8,11 +8,11 @@ import { useWakeLock } from "./use-wake-lock";
 import { API_BASE_URL } from "../lib/config";
 import { createMerchantQueueSocket } from "../lib/queue-socket";
 import { getReachabilityStore, type ReachabilityState } from "../lib/reachability";
-import { endMerchantSession, onMembershipLost, refreshMerchantSession } from "../lib/api-client";
+import { onMembershipLost, refreshMerchantSession } from "../lib/api-client";
+import { signOutSession } from "../lib/sign-out";
 import { alarmOrders } from "../lib/alarm";
 import { useQueuePoll, type QueuePollState } from "../lib/use-queue-poll";
-import { clearBusinessCache, hasKnownBusiness } from "../lib/business";
-import { clearBranchesCache } from "../lib/branches";
+import { hasKnownBusiness } from "../lib/business";
 import { loadMerchantSession, setSignOutNotice, type MerchantSession } from "../lib/session";
 import { noBusinessPath } from "../lib/team-api";
 
@@ -177,10 +177,8 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
     if (wasRinging) setAlarmTick((t) => t + 1);
     // MJ-L13: the server session is revoked too (best effort), and a refresh already in flight can't
     // write the cookie back.
-    endMerchantSession();
-    clearBusinessCache();
-    // MJ-RL16: the next person on this phone must not see the last one's branches.
-    clearBranchesCache();
+    // MJ-RL16: and the business and branch caches with it (`signOutSession`, shared by every sign-out).
+    signOutSession();
     setSession(null);
     router.replace("/login");
   }, [router]);

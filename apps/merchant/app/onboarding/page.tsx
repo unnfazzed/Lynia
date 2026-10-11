@@ -7,9 +7,10 @@ import { AppBar } from "../components/m/AppBar";
 import { LocationField } from "../components/m/LocationField";
 import { useToast } from "../components/m/Toast";
 import { RetryableError } from "../components/RetryableError";
-import { ApiError, apiErrorMessage, becomeMerchant, endMerchantSession, getMyAccount, getMyMerchant } from "../lib/api-client";
+import { ApiError, apiErrorMessage, becomeMerchant, getMyAccount, getMyMerchant } from "../lib/api-client";
 import { homePath } from "../lib/booking";
 import { supportWhatsAppUrl } from "../lib/config";
+import { signOutSession } from "../lib/sign-out";
 import { fieldForReason, needsSupport, pickSellChoice, SIGN_UP_FAILED, type SellChoice, sellChoice, type SignUpErrors, type SignUpForm, toBecomeRequest, validateDetails } from "../lib/sign-up";
 import { noBusinessPath } from "../lib/team-api";
 import { useStepBack } from "../lib/use-step-back";
@@ -44,7 +45,7 @@ export default function OnboardingPage() {
   const step2 = useStepBack(step === 2, () => setStep(1));
 
   const signOut = useCallback(() => {
-    endMerchantSession();
+    signOutSession();
     router.replace("/login");
   }, [router]);
 

@@ -355,9 +355,32 @@ describe("MJ-L13 · sign-out ends the session on the server, and a refresh in fl
     await vi.waitFor(() => expect(answerRefresh).toBeTypeOf("function"));
     endMerchantSession();
     answerRefresh(makeResponse(200, { accessToken: "new-access", refreshToken: "new-refresh", expiresIn: 3600 }));
-    await expect(pending).rejects.toMatchObject({ status: 401 });
+    // Not a 401: a 401 makes the screen sign out again, which would revoke whatever session is current.
+    await expect(pending).rejects.toMatchObject({ status: 0, reason: "signed_out" });
     expect(saveMerchantSession).not.toHaveBeenCalled();
     expect(session).toBeNull();
+  });
+
+  it("a new session's 401 never joins the old session's refresh", async () => {
+    const { authedFetch } = await import("./api-client");
+    const refreshedWith: string[] = [];
+    fetchMock.mockImplementation((url: string, init: RequestInit) => {
+      if (url.endsWith("/auth/refresh")) {
+        const { refreshToken } = JSON.parse(init.body as string) as { refreshToken: string };
+        refreshedWith.push(refreshToken);
+        // The old session's refresh hangs; the new one's answers.
+        if (refreshToken === "old-refresh") return new Promise<Response>(() => {});
+        return Promise.resolve(makeResponse(200, { accessToken: "b-access-2", refreshToken: "b-refresh-2", expiresIn: 3600 }));
+      }
+      const auth = (init.headers as Record<string, string>).Authorization;
+      return Promise.resolve(auth === "Bearer b-access-2" ? makeResponse(200, { ok: true }) : AUTH_GUARD_401);
+    });
+    session = { ...baseSession(), refreshToken: "old-refresh" };
+    void authedFetch("/merchant/orders").catch(() => undefined);
+    await vi.waitFor(() => expect(refreshedWith).toEqual(["old-refresh"]));
+    session = { ...baseSession(), accessToken: "b-access", refreshToken: "b-refresh" };
+    await expect(authedFetch("/merchant/orders")).resolves.toEqual({ ok: true });
+    expect(refreshedWith).toEqual(["old-refresh", "b-refresh"]);
   });
 
   it("a dead refresh never clears a newer sign-in that landed while it was in flight", async () => {

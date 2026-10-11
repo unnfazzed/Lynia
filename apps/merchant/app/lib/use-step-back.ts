@@ -4,14 +4,12 @@ import { useCallback, useEffect, useRef } from "react";
 
 /** Marks the history entry a step pushed, so a re-run of the effect (React StrictMode) doesn't push twice. */
 const STEP_KEY = "lyniaStep";
-/** How long `leave` waits for the browser to pop the step's entry before going on anyway. */
-const LEAVE_WAIT_MS = 300;
 
 export interface StepBack {
   /** The screen's own back arrow: pops the step's entry (Back and the arrow do the same thing). */
   back: () => void;
-  /** Before leaving the page from inside the step (a sign-in that lands): drop the step's entry first, so
-   *  Back from the next page doesn't return to a finished step. */
+  /** Before leaving the page from inside the step with `router.replace` (a sign-in that lands): the
+   *  replace overwrites the step's entry, so Back from the next page doesn't return to a finished step. */
   leave: () => Promise<void>;
 }
 
@@ -22,7 +20,6 @@ export interface StepBack {
  */
 export function useStepBack(active: boolean, onBack: () => void): StepBack {
   const pushed = useRef(false);
-  const leaving = useRef<(() => void) | null>(null);
   const onBackRef = useRef(onBack);
   onBackRef.current = onBack;
 
@@ -34,8 +31,7 @@ export function useStepBack(active: boolean, onBack: () => void): StepBack {
     const onPop = () => {
       if (!pushed.current) return;
       pushed.current = false;
-      if (leaving.current) leaving.current();
-      else onBackRef.current();
+      onBackRef.current();
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -46,26 +42,12 @@ export function useStepBack(active: boolean, onBack: () => void): StepBack {
     else onBackRef.current();
   }, []);
 
-  const leave = useCallback(
-    () =>
-      new Promise<void>((resolve) => {
-        if (!pushed.current) {
-          resolve();
-          return;
-        }
-        let timer: ReturnType<typeof setTimeout> | null = null;
-        const done = () => {
-          if (timer) clearTimeout(timer);
-          pushed.current = false;
-          leaving.current = null;
-          resolve();
-        };
-        timer = setTimeout(done, LEAVE_WAIT_MS);
-        leaving.current = done;
-        window.history.back();
-      }),
-    [],
-  );
+  // The caller replaces the URL next (`router.replace`), which overwrites the step's own entry: no
+  // `history.back()` and no wait for its popstate (a late one used to pop the next page back to the step's
+  // page). The step just stops listening, so nothing that pops later runs `onBack`.
+  const leave = useCallback(async () => {
+    pushed.current = false;
+  }, []);
 
   return { back, leave };
 }

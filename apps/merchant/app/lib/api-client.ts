@@ -273,19 +273,27 @@ type RefreshOutcome =
   // reported the network-throw case into ReachabilityStore (the comment at its call site claimed
   // "this function's own request attempts... distinguish a genuine network-level failure," which is
   // false for a throw inside doRefresh's own fetch — nothing else observes it).
-  | { kind: "transient"; networkError: boolean };
+  | { kind: "transient"; networkError: boolean }
+  // MJ-L13: the person signed out while this refresh was in flight. Not a dead token: the caller must not
+  // sign out (again) — that would revoke whatever session is current now, perhaps a newer sign-in.
+  | { kind: "superseded" };
 
 // Single-flight refresh: several near-simultaneous authed calls hitting a just-expired token must
 // share one /auth/refresh round trip, not each mint their own (mirrors apps/mobile/src/api/client.ts).
-let inflightRefresh: Promise<RefreshOutcome> | null = null;
+// MJ-L13: keyed by the refresh token, so a new session's 401 never joins the old session's refresh.
+let inflightRefresh: { refreshToken: string; outcome: Promise<RefreshOutcome> } | null = null;
 
 async function refreshSession(refreshToken: string): Promise<RefreshOutcome> {
-  if (!inflightRefresh) {
-    inflightRefresh = doRefresh(refreshToken).finally(() => {
-      inflightRefresh = null;
-    });
+  if (inflightRefresh?.refreshToken !== refreshToken) {
+    const flight: { refreshToken: string; outcome: Promise<RefreshOutcome> } = {
+      refreshToken,
+      outcome: doRefresh(refreshToken).finally(() => {
+        if (inflightRefresh === flight) inflightRefresh = null;
+      }),
+    };
+    inflightRefresh = flight;
   }
-  return inflightRefresh;
+  return inflightRefresh.outcome;
 }
 
 async function doRefresh(refreshToken: string): Promise<RefreshOutcome> {
@@ -319,7 +327,7 @@ async function doRefresh(refreshToken: string): Promise<RefreshOutcome> {
   if (!res.ok) return { kind: "transient", networkError: false }; // transient server error — a real response is proof of life
   const data = (await res.json()) as { accessToken: string; refreshToken: string; expiresIn: number };
   // MJ-L13: signed out while this was in flight — never write the cookie back. The session is over.
-  if (epoch !== signOutEpoch) return { kind: "dead" };
+  if (epoch !== signOutEpoch) return { kind: "superseded" };
   const prior = loadMerchantSession();
   const next: MerchantSession = {
     accessToken: data.accessToken,
@@ -345,7 +353,8 @@ export async function refreshMerchantSession(): Promise<"refreshed" | "dead" | "
   if (!session) return "dead";
   const outcome = await refreshSession(session.refreshToken);
   if (outcome.kind === "dead") clearSessionIfStill(session);
-  return outcome.kind;
+  // Signed out mid-refresh: nothing to sign out of here (the shell already did).
+  return outcome.kind === "superseded" ? "transient" : outcome.kind;
 }
 
 /** MJ-L13: a dead outcome clears the cookie only while it still holds the session that died — never a
@@ -411,6 +420,11 @@ async function authedRequest<T>(path: string, opts: { method?: string; body?: un
     if (outcome.kind === "dead") {
       clearSessionIfStill(session);
       throw new ApiError(401, "Your session expired — sign in again.");
+    }
+    if (outcome.kind === "superseded") {
+      // MJ-L13: signed out while this call was refreshing. Not a 401: a 401 makes the screen sign out
+      // again, and that would revoke whatever session is current now.
+      throw new ApiError(0, "You signed out.", "signed_out");
     }
     if (outcome.kind === "transient") {
       // Keep the session — a blip on /auth/refresh is not a revoked token (LC-C03). This one

@@ -146,4 +146,17 @@ describe("MJ-M13: the prescription photo links outlive their 5-minute signature"
     await vi.waitFor(() => expect(photo().src).toBe("https://storage.example/rx-1c.jpg"));
     expect(getPrescriptionPhotos).toHaveBeenCalledTimes(2);
   });
+
+  it("a photo broken for good does not refetch for ever, though every fetch signs a new URL", async () => {
+    show();
+    await screen.findByText("Rudo Moyo");
+    let n = 0;
+    vi.mocked(getPrescriptionPhotos).mockImplementation(async () => ({ photos: [{ page: 1, url: `https://storage.example/rx-1-${++n}.jpg` }], expiresInSeconds: 300 }));
+    for (let i = 0; i < 4; i++) {
+      fireEvent.error(photo());
+      await vi.waitFor(() => expect(photo().src).toBe("https://storage.example/rx-1-1.jpg"));
+    }
+    await new Promise((r) => setTimeout(r, 20));
+    expect(getPrescriptionPhotos).toHaveBeenCalledTimes(2);
+  });
 });
