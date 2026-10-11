@@ -12,7 +12,7 @@ import { JOB_KEY, ORDER_HINT_KEY } from "../net/last-active-store";
 import { RIDER_BID_DRAFT_KEY, RIDER_SENT_OFFERS_KEY } from "../logic/rider-bid-draft";
 import { PICKUP_CHECKLIST_DRAFT_KEY } from "../logic/pickup-checklist-draft";
 import { PICKUP_PHOTO_DRAFT_KEY } from "../logic/pickup-photo-draft";
-import { SEND_DRAFT_KEY } from "../logic/send-draft";
+import { SEND_DRAFT_KEY } from "../logic/send-draft-key";
 import { FOOD_CART_SNAPSHOT_KEY } from "../net/food-cart-store";
 import { FOOD_ORDER_SNAPSHOT_KEY } from "../net/food-order-store";
 import type { UndeliveredReason } from "@lynia/shared";

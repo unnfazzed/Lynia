@@ -1,6 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 import { emptyItem, type ItemRow, MAX_ITEMS, MAX_QTY } from "./order-draft";
-// Type-only: this module stays a leaf, because sign-out's clearDeviceState imports its key.
+import { SEND_DRAFT_KEY } from "./send-draft-key";
 import type { SendStep, Stop } from "./send-steps";
 
 /**
@@ -15,11 +15,11 @@ import type { SendStep, Stop } from "./send-steps";
  * written for a compose in progress.
  *
  * The slot is the old compose-draft key, which sign-out already clears on a shared device
- * (`clearDeviceState` in src/auth/device-state.ts imports SEND_DRAFT_KEY from here). Best-effort like
+ * (`clearDeviceState` in src/auth/device-state.ts imports SEND_DRAFT_KEY from ./send-draft-key). Best-effort like
  * every other draft: a storage failure never rejects, and a draft is a convenience, never load-bearing.
  */
 
-export const SEND_DRAFT_KEY = "lynia.orderDraft";
+export { SEND_DRAFT_KEY };
 /** A draft older than this is dropped on read: a compose from yesterday is not the order of today. */
 export const SEND_DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
 /** Trailing debounce for the write (PERF19-02: never a keychain round trip per keystroke). */
