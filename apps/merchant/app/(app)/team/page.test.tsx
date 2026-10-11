@@ -83,6 +83,39 @@ describe("E2 · Team (merchant mobile, D-48)", () => {
     expect(within(team).queryByRole("button", { name: /Farai/ })).toBeNull();
   });
 
+  it("MJ-RL17: Resend renews an invite within a day of running out (its 14 days start again) as it opens WhatsApp", async () => {
+    vi.mocked(loadBusiness).mockResolvedValue(SHOP);
+    vi.mocked(getTeam).mockResolvedValue({ members: [member()], invites: [invite({ expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString() })] });
+    vi.mocked(invitePerson).mockResolvedValue(invite({ createdAt: new Date().toISOString(), expiresAt: "2026-10-25T10:00:00.000Z" }));
+    render(<Page />);
+    const team = await screen.findByRole("region", { name: "Your team" });
+    fireEvent.click(within(team).getByRole("link", { name: "Resend" }));
+    await waitFor(() => expect(invitePerson).toHaveBeenCalledWith({ name: "Rudo", phone: "+263778889034" }));
+  });
+
+  it("MJ-RL17 review: Resend on a fresh invite only opens the link — no POST, so the day's 10 invites aren't spent", async () => {
+    vi.mocked(loadBusiness).mockResolvedValue(SHOP);
+    vi.mocked(getTeam).mockResolvedValue({ members: [member()], invites: [invite({ expiresAt: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString() })] });
+    render(<Page />);
+    const team = await screen.findByRole("region", { name: "Your team" });
+    fireEvent.click(within(team).getByRole("link", { name: "Resend" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open Rudo's invite" }));
+    fireEvent.click(screen.getByRole("link", { name: "Send the link on WhatsApp" }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(invitePerson).not.toHaveBeenCalled();
+  });
+
+  it("MJ-RL17: the invite sheet's WhatsApp button renews an expired one too, and a refusal is said", async () => {
+    vi.mocked(loadBusiness).mockResolvedValue(SHOP);
+    vi.mocked(getTeam).mockResolvedValue({ members: [member()], invites: [invite({ expiresAt: new Date(Date.now() - 60 * 1000).toISOString() })] });
+    vi.mocked(invitePerson).mockRejectedValue(new ApiError(429, "You've sent 10 invites today. Send more tomorrow.", "too_many_invites"));
+    render(<Page />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open Rudo's invite" }));
+    fireEvent.click(screen.getByRole("link", { name: "Send the link on WhatsApp" }));
+    expect(await screen.findByText("You've sent 10 invites today. Send more tomorrow.")).toBeTruthy();
+    expect(invitePerson).toHaveBeenCalledWith({ name: "Rudo", phone: "+263778889034" });
+  });
+
   it("invites a name and a number from the Add someone sheet, then offers the WhatsApp link", async () => {
     vi.mocked(loadBusiness).mockResolvedValue(SHOP);
     vi.mocked(getTeam).mockResolvedValue({ members: [member()], invites: [] });

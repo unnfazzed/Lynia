@@ -5117,6 +5117,42 @@ already draw, with no new element:
 - **Upstream:** the handoffs should draw a locked-code state and the past-cap state on both sides (and decide whether a
   "Send a new code" button belongs on the customer's card). Reported upstream; the kit is not edited here.
 
+## D-91 · Merchant wave 4 (Lane E): copy-only lines for menu photos, hours, Book a rider — APPROVED (owner decision D6, 2026-10-07)
+
+**Owner decision D6 (reviewed list 2026-10-07):** *"Only copy fixes, skip new UI."* The merchant audit's Lane E
+findings (`docs/e2e-runs/2026-10-07-merchant/REPORT.md`) needed words for states no handoff draws. Each line below
+goes through an element the screen already had; no element was added. Merchant v2 (`handoff/merchant-v2/`, D-77)
+and merchant-mobile (D-48) draw none of these states.
+
+| String | Screen · element | Why no handoff draws it |
+|---|---|---|
+| "Save as draft" | Add / edit a dish (the editor's primary, in place of "Save changes" while the dish has no photo) — MJ-H3 | The editor (M4·2) is undrawn on a phone; the kit only shows the draft notice after a save. A dish with no photo saves as a hidden draft, and the button now says so. |
+| "Not set yet, so customers can order at any time. Check these hours and tap Save hours." | C5 Opening hours · the page's existing `m-hint` line (the one Staff see), shown to the owner when hours were never saved — MJ-RH3 | C5 draws only saved hours. Null hours are open around the clock on the server, while the form starts from 08:00–22:00. |
+| "Turn on at least one day. To close for a while, switch to Closed on Orders." | C5 · the existing `m-err` line under the times; Save stays disabled — MJ-RM9 | C5 draws no all-days-off state. A week with no open day is stored as closed for good; the Orders pill ("Open" / "Closed") is the way to close for a while. |
+| "Hours can't run past midnight. Close at 23:59 at the latest." | C5 · the same `m-err` line, when a closing time is at or before its opening time — MJ-RL13 | C5 draws no validation. Hours are one window a day ending by midnight, and the old line ("the opening time must be before the closing time") didn't say why "18:00 to 02:00" failed. |
+| "Paste the location the buyer sent you, like a Google Maps or WhatsApp location link." | S4 Book a rider · "Going to" field's existing hint line (`note`), when typing an address with no Places key — MJ-M15 | S4 draws the field with search results; with no key, search returns nothing and the field said nothing. |
+| "We couldn't read a location from that link. Ask the buyer to send their location again." | S4 · the same hint line, for an unreadable link when there is no address search — MJ-M15 | The existing line ("… Search for the street instead.") points to a search that isn't there. With search on, the existing line is kept. |
+| "We couldn't read a location from that link." (API `unreadable_link` message, `map-link-resolver.ts`) | S4 · the server's 422 message — MJ-M15 | The old message ended "Drop a pin instead.", naming a control the handoffs removed (merchant-mobile README #7: no pins). The web now shows its own line for this reason; the API keeps only the first sentence. |
+| "Couldn't load your items." | S4 · "Your items" sheet, through the shared `RetryableError` (T14b: wifi-off disc, "Check your data connection and try again.", "↻ Try again") — MJ-RL8 | The sheet draws its list and an empty "No items yet."; a failed read used to show that empty line. The wording follows the app's other first-load lines ("Couldn't load your team.", ledger D-74). |
+| "Food coming back · #A117" | Orders board (K1) · the CASH TO COME BACK row for a kitchen's undelivered order — MJ-RL1 | K5c draws "Goods coming back" (a shop's words) and no board row for it. A kitchen's row uses "Food", the noun of its drawn "I got the food back" button; shops and pharmacies keep "Goods". |
+
+Lines that reuse handoff copy (not new): the board's goods-return row "Goods coming back · #A117" with K5c's
+"Blessing M. brings it back by 07:58" / "Blessing M. is bringing it back" (MJ-RL1; merchant-v2 README K5c), and the live bar's booking states "Car battery · 3 riders
+offered" / "Pick one before the offers expire" (S1) and "Blessing is at your counter" (T1b) (MJ-RM5).
+
+Behaviour that comes with these (no copy): `becomeMerchant` stores 08:00–22:00 every day for a new business, so the
+form and the server agree; null hours keep their server meaning (open around the clock) for existing businesses, with
+no migration (C13).
+
+**Design-gated (not built, no new element under D6):** the ended-booking cards on the board (MJ-RH2), a "Your pick
+went through" line for a lost pick (MJ-RL3 clears the stale error instead), "Unsaved changes" on the shop front
+(MJ-RM14 takes "Saved" down instead), an "Invite expired · Send again" row (MJ-RL17 renews on Resend instead), and a
+split of "18:00–02:00" into two days (MJ-RL13; one window a day can't hold it).
+
+- **Upstream:** the handoffs should draw these states (photo still uploading / draft save, hours not set and no open
+  day, past-midnight hours, Book a rider without address search, the items sheet's failed load). Reported upstream;
+  the kit is not edited here.
+
 ## D-92 · Review & place and Shops / Pharmacy browse: wording and states through drawn elements — APPROVED (owner decision D6, 2026-10-07)
 
 **Owner decision D6 (reviewed list 2026-10-07):** *"Copy fixes only. Skip new UI."* — the copy change for U64 goes

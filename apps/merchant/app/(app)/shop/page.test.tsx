@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MerchantProfileResponse } from "@lynia/shared";
 import ShopPage from "./page";
 import { ApiError } from "../../lib/api-client";
+import { refreshBranches } from "../../lib/branches";
+import { primeBusiness } from "../../lib/business";
 import { getMerchantProfile, updateProfile } from "../../lib/menu-api";
 
 vi.mock("../../lib/menu-api", () => ({
@@ -17,6 +19,28 @@ vi.mock("../../lib/menu-api", () => ({
 const signOut = vi.fn();
 vi.mock("../../components/KitchenConnectionProvider", () => ({
   useKitchenConnection: () => ({ actionsDisabled: false, signOut }),
+}));
+
+vi.mock("../../lib/business", () => ({ primeBusiness: vi.fn() }));
+vi.mock("../../lib/branches", () => ({ refreshBranches: vi.fn(() => Promise.resolve([])) }));
+// The picker is tested on its own: here each one reports an upload starting and landing.
+vi.mock("../../components/menu/PhotoPicker", () => ({
+  PhotoPicker: ({ kind, onBusy, onUploaded }: { kind: string; onBusy?: (b: boolean) => void; onUploaded: (key: string, preview: string) => void }) => (
+    <>
+      <button type="button" onClick={() => onBusy?.(true)}>
+        start {kind}
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          onUploaded(`banner/p1/${kind}.jpg`, `blob:${kind}`);
+          onBusy?.(false);
+        }}
+      >
+        {kind} landed
+      </button>
+    </>
+  ),
 }));
 
 vi.mock("../../components/Kitchen", () => ({
@@ -61,6 +85,64 @@ describe("ShopPage session-expiry on a mutation (LC-D##)", () => {
       expect(signOut).toHaveBeenCalledTimes(1);
     });
     expect(screen.queryByText("Your session expired — sign in again.")).toBeNull();
+  });
+});
+
+describe("MJ-RM14: the shop front's Save, Saved and preview", () => {
+  it("holds Save while a cover is uploading, previews the new cover, and sends it on Save", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ coverPhotoUrl: "https://img/old.jpg" }));
+    vi.mocked(updateProfile).mockResolvedValue(profile({ coverPhotoUrl: "https://img/new.jpg" }));
+    render(<ShopPage />);
+    await screen.findByText("Shop profile");
+    const save = () => screen.getByRole("button", { name: "Save changes" }) as HTMLButtonElement;
+    fireEvent.click(screen.getByRole("button", { name: "start banner" }));
+    expect(save().disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "banner landed" }));
+    expect(save().disabled).toBe(false);
+    // "What customers see" shows the cover that's about to be saved, not the old one.
+    expect(document.querySelector('img[src="blob:banner"]')).toBeTruthy();
+    expect(document.querySelector('img[src="https://img/old.jpg"]')).toBeNull();
+    fireEvent.click(save());
+    await waitFor(() => expect(updateProfile).toHaveBeenCalledWith(expect.objectContaining({ coverPhotoUrl: "banner/p1/banner.jpg" })));
+  });
+
+  it("takes 'Saved' down once anything changes after a save", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile());
+    vi.mocked(updateProfile).mockResolvedValue(profile());
+    render(<ShopPage />);
+    await screen.findByText("Shop profile");
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(await screen.findByText("Saved")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "logo landed" }));
+    expect(screen.queryByText("Saved")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(await screen.findByText("Saved")).toBeTruthy();
+    fireEvent.change(screen.getByDisplayValue("Test Kitchen"), { target: { value: "Test Kitchen 2" } });
+    expect(screen.queryByText("Saved")).toBeNull();
+  });
+});
+
+describe("MJ-RL19: a rename reaches the rest of the app", () => {
+  it("re-primes the shared business and refreshes the branch list after a rename", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile());
+    const renamed = profile({ name: "Mama's Kitchen" });
+    vi.mocked(updateProfile).mockResolvedValue(renamed);
+    render(<ShopPage />);
+    await screen.findByText("Shop profile");
+    fireEvent.change(screen.getByDisplayValue("Test Kitchen"), { target: { value: "Mama's Kitchen" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(primeBusiness).toHaveBeenCalledWith(renamed));
+    expect(refreshBranches).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-primes without re-reading the branches when the name didn't change", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile());
+    vi.mocked(updateProfile).mockResolvedValue(profile({ description: "New line" }));
+    render(<ShopPage />);
+    await screen.findByText("Shop profile");
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(primeBusiness).toHaveBeenCalled());
+    expect(refreshBranches).not.toHaveBeenCalled();
   });
 });
 

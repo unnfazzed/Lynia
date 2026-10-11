@@ -8,6 +8,33 @@ const at = (min: number) => new Date(NOW + min * 60_000).toISOString();
 const kitchen = vocabulary("restaurant");
 const shopV = vocabulary("shop", "grocery");
 
+describe("MJ-RL1: goods coming back under CASH TO COME BACK", () => {
+  const back = (over = {}) =>
+    merchantOrder({ id: "a1170000-0000-4000-8000-000000000000", merchantPhase: null, status: "undelivered", rider: RIDER, riderId: RIDER.profileId, debtStatus: "open", debtAmount: 10, ...over });
+
+  it("names the goods with K5c's line and no amount — food for a kitchen, goods for a shop", () => {
+    const [kitchenCard] = buildBoard({ v: kitchen, shop: false, now: NOW, orders: [back({ cashDueAt: at(20) })] })[0]!.cards;
+    expect(kitchenCard!.title).toBe("Food coming back · #A117");
+    expect(kitchenCard!.sub).toBe(`${RIDER.firstName} ${RIDER.lastName!.charAt(0)}. brings it back by 07:40`);
+    expect(`${kitchenCard!.title} ${kitchenCard!.sub}`).not.toContain("$");
+    const [shopCard] = buildBoard({ v: shopV, shop: true, now: NOW, orders: [back()] })[0]!.cards;
+    expect(shopCard!.title).toBe("Goods coming back · #A117");
+    expect(shopCard!.sub).toBe(`${RIDER.firstName} ${RIDER.lastName!.charAt(0)}. is bringing it back`);
+  });
+
+  it("review: the noun follows the business type, not the wording of the vocabulary's button", () => {
+    const [card] = buildBoard({ v: { ...shopV, goodsBack: "I got the food back" }, shop: true, now: NOW, orders: [back()] })[0]!.cards;
+    expect(card!.title).toBe("Goods coming back · #A117");
+    const [kitchenCard] = buildBoard({ v: { ...kitchen, goodsBack: "I got it back" }, shop: false, now: NOW, orders: [back()] })[0]!.cards;
+    expect(kitchenCard!.title).toBe("Food coming back · #A117");
+  });
+
+  it("cash from a delivered order keeps its amount", () => {
+    const [card] = buildBoard({ v: kitchen, shop: false, now: NOW, orders: [back({ status: "delivered", cashDueAt: at(20) })] })[0]!.cards;
+    expect(card!.title).toBe("$10.00 · #A117");
+  });
+});
+
 describe("the Orders board (Merchant v2 K1/S1, D-77)", () => {
   it("names one line with its quantity and several by name", () => {
     expect(boardItems({ items: [{ dishId: "d", name: "Mazondo", priceUsd: 5, quantity: 1, note: null, available: null }] })).toBe("1× Mazondo");
@@ -167,7 +194,8 @@ describe("the Orders board (Merchant v2 K1/S1, D-77)", () => {
       orders: [back("a1060000-0000-4000-8000-000000000000", "undelivered"), back("a1070000-0000-4000-8000-000000000000", "cancelled")],
     });
     expect(sections.map((s) => s.heading)).toEqual(["CASH TO COME BACK · 2"]);
-    expect(sections[0]!.cards.map((c) => c.title)).toEqual(["$12.00 · #A106", "$12.00 · #A107"]);
+    // MJ-RL1: goods coming back, not a dollar amount of cash.
+    expect(sections[0]!.cards.map((c) => c.title)).toEqual(["Food coming back · #A106", "Food coming back · #A107"]);
     // Once the food is back (debt settled), the cancelled order leaves the board.
     expect(buildBoard({ v: kitchen, shop: false, now: NOW, orders: [merchantOrder({ merchantPhase: null, status: "cancelled", debtStatus: "settled_goods" })] })).toEqual([]);
   });

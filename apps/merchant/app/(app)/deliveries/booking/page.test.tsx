@@ -9,10 +9,10 @@ import { bookingOffer, merchantBooking } from "../../../testing/fixtures";
 
 const ID = "11111111-1111-4111-8111-111111111111";
 
-const nav = vi.hoisted(() => ({ replace: vi.fn() }));
+const nav = vi.hoisted(() => ({ replace: vi.fn(), id: "11111111-1111-4111-8111-111111111111" }));
 vi.mock("next/navigation", () => {
   const router = { replace: nav.replace, push: vi.fn() };
-  return { useRouter: () => router, useSearchParams: () => new URLSearchParams({ id: "11111111-1111-4111-8111-111111111111" }) };
+  return { useRouter: () => router, useSearchParams: () => new URLSearchParams({ id: nav.id }) };
 });
 
 vi.mock("../../../lib/bookings-api", () => ({
@@ -57,6 +57,7 @@ afterEach(() => {
   cleanup();
   window.sessionStorage.clear();
   vi.clearAllMocks();
+  nav.id = ID;
 });
 
 describe("D4 · Pick a rider (merchant mobile, D-48)", () => {
@@ -129,6 +130,19 @@ describe("D4 · Pick a rider (merchant mobile, D-48)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Pick Blessing" }));
     expect((await screen.findByRole("alert")).textContent).toBe("That offer is no longer available.");
     await waitFor(() => expect(getBooking).toHaveBeenCalledTimes(2));
+  });
+
+  it("MJ-RL3: a pick whose answer was lost went through — the reload shows the rider, with no stale error", async () => {
+    vi.mocked(getBooking)
+      .mockResolvedValueOnce(merchantBooking({ expiresAt: new Date(Date.now() + 80_000).toISOString(), offers: [bookingOffer()] }))
+      .mockResolvedValue(merchantBooking({ state: "coming", status: "assigned", expiresAt: null, rider: RIDER, agreedFare: "3.50" }));
+    vi.mocked(pickOffer).mockRejectedValue(new ApiError(0, "Couldn't reach the server — check the connection and try again."));
+    render(<Page />);
+    fireEvent.click(await screen.findByRole("button", { name: "Pick Blessing" }));
+    expect(await screen.findByText("Rider coming to your shop")).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText("Couldn't reach the server — check the connection and try again.")).toBeNull());
+    // No code came back, so a new one is a tap away.
+    expect(screen.getByRole("button", { name: "Get a new code" })).toBeTruthy();
   });
 });
 
@@ -231,6 +245,25 @@ describe("the other endings", () => {
     fireEvent.click(screen.getByRole("button", { name: "Try again · $4.00" }));
     await waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/deliveries/booking?id=44444444-4444-4444-8444-444444444444"));
     expect(vi.mocked(retryBooking).mock.calls[0]![1]).toMatchObject({ proposedFare: 4 });
+  });
+
+  it("MJ-RM3: a second Try again, on the booking the first one made, sends its own retry key", async () => {
+    const ID2 = "44444444-4444-4444-8444-444444444444";
+    vi.mocked(getBooking).mockImplementation(async (id: string) => merchantBooking({ id, state: "expired", expiresAt: null }));
+    vi.mocked(retryBooking).mockResolvedValueOnce(merchantBooking({ id: ID2 })).mockResolvedValueOnce(merchantBooking({ id: "55555555-5555-4555-8555-555555555555" }));
+    const { rerender } = render(<Page />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Try again/ }));
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith(`/deliveries/booking?id=${ID2}`));
+    // The router moves this same page to the new booking: only the query changes.
+    nav.id = ID2;
+    rerender(<Page />);
+    await waitFor(() => expect(getBooking).toHaveBeenLastCalledWith(ID2));
+    fireEvent.click(await screen.findByRole("button", { name: /^Try again/ }));
+    await waitFor(() => expect(retryBooking).toHaveBeenCalledTimes(2));
+    const [first, second] = vi.mocked(retryBooking).mock.calls;
+    expect(first![0]).toBe(ID);
+    expect(second![0]).toBe(ID2);
+    expect(second![1].idempotencyKey).not.toBe(first![1].idempotencyKey);
   });
 
   it("a rider's cancel leads to Send's re-sent booking", async () => {

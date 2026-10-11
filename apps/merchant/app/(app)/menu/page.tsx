@@ -306,7 +306,8 @@ export default function MenuPage() {
           onSave={(body: CategorySave) =>
             void withSheet(async () => {
               if (sheet.category) await updateCategory(sheet.category.id, body);
-              else await createCategory(body);
+              // A null window is an edit's "remove it" (MJ-RM10); a new category simply has none.
+              else await createCategory({ name: body.name, availableFrom: body.availableFrom ?? undefined, availableTo: body.availableTo ?? undefined });
             })
           }
           onDelete={sheet.category ? () => setDeleting({ kind: "category", category: sheet.category! }) : undefined}
@@ -327,7 +328,8 @@ export default function MenuPage() {
           onSave={(body: DishSave) =>
             void withSheet(async () => {
               if (sheet.dish) await updateDish(sheet.dish.id, body);
-              else await createDish(body);
+              // A null description is an edit's "clear it" (MJ-RL12); a new dish simply has none.
+              else await createDish({ ...body, description: body.description ?? undefined });
             })
           }
           onDelete={sheet.dish ? () => setDeleting({ kind: "dish", dish: sheet.dish! }) : undefined}

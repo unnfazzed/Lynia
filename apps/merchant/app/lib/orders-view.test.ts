@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MerchantProfileResponse } from "@lynia/shared";
-import { merchantOrder, merchantProfile, RIDER } from "../testing/fixtures";
+import { merchantBooking, merchantOrder, merchantProfile, RIDER } from "../testing/fixtures";
 import { detailView, homeSections, itemsEditedLabel, itemsLine, liveBar, openStatus, ringDeadline, orderLabel, rowSub, trackStep, cashBackRow, groupCode } from "./orders-view";
 import { alarmOrders } from "./alarm";
 import { vocabulary } from "./vocabulary";
@@ -206,6 +206,48 @@ describe("T1b's live bar (Merchant v2 follow-ups, D-77)", () => {
       substitution: { id: "s1", kind: "at_accept", status: "open", createdAt: null, deadlineAt: "2026-10-05T07:03:00.000Z", resolvedAt: null, lines: [{}, {}], wasTotal: 14.6, keptSubtotal: 11.5 },
     } as never);
     expect(liveBar([waiting], shop)).toMatchObject({ kind: "waiting", title: "Waiting for Rudo's OK", sub: "2 changes on #A1B2 · keep packing", deadline: "2026-10-05T07:03:00.000Z" });
+  });
+
+  describe("MJ-RM5: a shop's own rider bookings", () => {
+    const soon = new Date(Date.now() + 40_000).toISOString();
+    const later = new Date(Date.now() + 80_000).toISOString();
+
+    it("riders' offers about to expire show, soonest first, with their countdown, and open that booking", () => {
+      const view = liveBar(
+        [],
+        shop,
+        [
+          merchantBooking({ id: "b2000000-0000-4000-8000-000000000000", state: "finding", itemsSummary: "Tyres", offerCount: 1, expiresAt: later }),
+          merchantBooking({ id: "b1000000-0000-4000-8000-000000000000", state: "finding", itemsSummary: "Car battery", offerCount: 3, expiresAt: soon }),
+        ],
+      );
+      expect(view).toMatchObject({
+        kind: "waiting",
+        title: "Car battery · 3 riders offered",
+        sub: "Pick one before the offers expire",
+        deadline: soon,
+        href: "/deliveries/booking?id=b1000000-0000-4000-8000-000000000000",
+      });
+    });
+
+    it("a booked rider at the counter comes before offers; one still coming doesn't", () => {
+      const offers = merchantBooking({ id: "b1000000-0000-4000-8000-000000000000", state: "finding", offerCount: 2, expiresAt: soon });
+      const coming = merchantBooking({ id: "b3000000-0000-4000-8000-000000000000", state: "coming", rider: { name: "Blessing Moyo", phone: null, bikeReg: null } as never });
+      expect(liveBar([], shop, [offers, coming])?.kind).toBe("waiting");
+      expect(liveBar([], shop, [offers, { ...coming, riderArrivedAt: "2026-10-05T07:00:00.000Z" }])).toMatchObject({
+        kind: "counter",
+        title: "Blessing is at your counter",
+        href: "/deliveries/booking?id=b3000000-0000-4000-8000-000000000000",
+      });
+    });
+
+    it("a ringing order still comes first; a booking on its way joins the counts; finding with no offers alone shows nothing", () => {
+      const deadline = new Date(Date.now() + 48_000).toISOString();
+      const offers = merchantBooking({ state: "finding", offerCount: 2, expiresAt: soon });
+      expect(liveBar([o({ id: "a1b20000-0000-4000-8000-000000000000", acceptDeadlineAt: deadline })], shop, [offers])?.kind).toBe("ringing");
+      expect(liveBar([], shop, [merchantBooking({ state: "picked_up" })])).toMatchObject({ kind: "counts", title: "1 on the way" });
+      expect(liveBar([], shop, [merchantBooking({ state: "finding", offerCount: 0, expiresAt: soon })])).toBeNull();
+    });
   });
 
   it("4 · counts only, with the next ready time", () => {

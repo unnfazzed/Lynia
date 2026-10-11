@@ -69,19 +69,28 @@ export default function BookingPage() {
   signOutRef.current = signOut;
 
   const load = useCallback(
-    async (quiet = false) => {
+    async (quiet = false): Promise<MerchantBookingResponse | null> => {
       if (!quiet) setState({ status: "loading" });
       try {
-        setState({ status: "ready", booking: await getBooking(id) });
+        const booking = await getBooking(id);
+        setState({ status: "ready", booking });
+        return booking;
       } catch (err) {
-        if (redirectIfSessionExpired(err, signOutRef.current)) return;
+        if (redirectIfSessionExpired(err, signOutRef.current)) return null;
         if (!quiet) setState({ status: "error", message: err instanceof ApiError ? err.message : "Couldn't load this booking." });
+        return null;
       }
     },
     [id],
   );
 
   useEffect(() => {
+    // MJ-RM3: "Try again" moves this same page to the new booking (only the query changes, so nothing
+    // re-mounts). Each booking gets its own retry key: the old one would replay the first retry and
+    // silently drop every later "Try again", a raised fare included. A double tap on one booking still
+    // shares one key.
+    retryKey.current = newIdempotencyKey();
+    setError(null);
     setCode(recallCode(id));
     void load();
   }, [id, load]);
@@ -105,7 +114,10 @@ export default function BookingPage() {
     } catch (err) {
       if (redirectIfSessionExpired(err, signOut)) return;
       setError(err instanceof ApiError ? err.message : "That didn't work. Try again.");
-      void load(true);
+      const fresh = await load(true);
+      // MJ-RL3: a pick whose answer was lost on the way back went through all the same — the booking now
+      // has its rider. The error would be stale; the screen moves on to the rider, with "Get a new code".
+      if (name === "pick" && fresh && !isFinding(fresh.state)) setError(null);
     } finally {
       setBusy(null);
       actingRef.current = false;

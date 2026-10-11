@@ -45,7 +45,7 @@ function profile(over: Partial<MerchantProfileResponse> = {}): MerchantProfileRe
   return {
     id: "m1",
     name: "Test Kitchen",
-    hours: {},
+    hours: { mon: W },
     busy: false,
     cashRule: "cashOnDelivery",
     ...over,
@@ -78,12 +78,71 @@ describe("C5 · Opening hours (merchant mobile, D-48)", () => {
     expect(screen.getByRole("switch", { name: "Open on Sunday" }).getAttribute("aria-checked")).toBe("false");
   });
 
-  it("won't save a window that closes before it opens", async () => {
+  it("won't save a window that closes before it opens, and says hours end by midnight (MJ-RL13)", async () => {
     vi.mocked(getMerchantProfile).mockResolvedValue(profile());
     render(<Page />);
     fireEvent.change(await screen.findByLabelText("Open"), { target: { value: "2300" } });
     expect((screen.getByLabelText("Open") as HTMLInputElement).value).toBe("23:00");
+    expect(screen.getByText("Hours can't run past midnight. Close at 23:59 at the latest.")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Save hours" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("review: equal open and close times keep the 24-hour line, not the past-midnight one", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile());
+    render(<Page />);
+    fireEvent.change(await screen.findByLabelText("Open"), { target: { value: "2200" } });
+    expect((screen.getByLabelText("Open") as HTMLInputElement).value).toBe("22:00");
     expect(screen.getByText("Times are 24-hour, like 08:00, and the opening time must be before the closing time.")).toBeTruthy();
+    expect(screen.queryByText("Hours can't run past midnight. Close at 23:59 at the latest.")).toBeNull();
+    expect((screen.getByRole("button", { name: "Save hours" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("a half-typed time keeps the 24-hour line", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile());
+    render(<Page />);
+    fireEvent.change(await screen.findByLabelText("Close"), { target: { value: "2" } });
+    expect(screen.getByText("Times are 24-hour, like 08:00, and the opening time must be before the closing time.")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Save hours" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe("C13 = MJ-RH3 + MJ-RM9: what saved hours mean", () => {
+  it("MJ-RH3: hours never saved (null, open around the clock on the server) say so, over the 08:00–22:00 the form starts from", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ hours: null }));
+    vi.mocked(updateHours).mockResolvedValue(profile());
+    render(<Page />);
+    expect(await screen.findByText("Not set yet, so customers can order at any time. Check these hours and tap Save hours.")).toBeTruthy();
+    expect((screen.getByLabelText("Open") as HTMLInputElement).value).toBe("08:00");
+    expect(screen.getByRole("button", { name: "Sunday" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Save hours" }));
+    await waitFor(() => expect(updateHours).toHaveBeenCalledWith({ hours: { mon: W, tue: W, wed: W, thu: W, fri: W, sat: W, sun: W } }));
+  });
+
+  it("MJ-RM9: a saved week with no open day shows every day off (not open 08:00–22:00), with no 'not set' line", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ hours: {} }));
+    render(<Page />);
+    await screen.findByRole("button", { name: "Monday" });
+    for (const d of ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]) {
+      expect(screen.getByRole("button", { name: d }).getAttribute("aria-pressed")).toBe("false");
+    }
+    expect(screen.queryByText(/Not set yet/)).toBeNull();
+  });
+
+  it("MJ-RM9: refuses to save a week with no open day, and points to the Closed switch", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ hours: { mon: W } }));
+    render(<Page />);
+    fireEvent.click(await screen.findByRole("button", { name: "Monday" }));
+    expect(screen.getByText("Turn on at least one day. To close for a while, switch to Closed on Orders.")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Save hours" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(updateHours).not.toHaveBeenCalled();
+  });
+
+  it("MJ-RM9: Per day with every day switched off is refused too", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ hours: { mon: W, sat: { open: "10:00", close: "14:00" } } as MerchantProfileResponse["hours"] }));
+    render(<Page />);
+    fireEvent.click(await screen.findByRole("switch", { name: "Open on Monday" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Open on Saturday" }));
+    expect(screen.getByText("Turn on at least one day. To close for a while, switch to Closed on Orders.")).toBeTruthy();
     expect((screen.getByRole("button", { name: "Save hours" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

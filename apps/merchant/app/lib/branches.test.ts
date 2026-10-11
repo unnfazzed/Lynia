@@ -11,10 +11,14 @@ describe("branches rules (ledger D-51)", () => {
   });
 
   it("the header chevron is for an owner with 2+ branches, never staff", () => {
-    expect(showBranchChevron({ myRole: "owner" }, 1)).toBe(false);
-    expect(showBranchChevron({ myRole: "owner" }, 2)).toBe(true);
-    expect(showBranchChevron({ myRole: "staff" }, 2)).toBe(false);
-    expect(showBranchChevron(null, 3)).toBe(false);
+    const owned = { role: "owner" as const };
+    const staffed = { role: "staff" as const };
+    expect(showBranchChevron({ myRole: "owner" }, [owned])).toBe(false);
+    expect(showBranchChevron({ myRole: "owner" }, [owned, owned])).toBe(true);
+    expect(showBranchChevron({ myRole: "staff" }, [staffed, staffed])).toBe(false);
+    expect(showBranchChevron(null, [owned, owned, owned])).toBe(false);
+    // MJ-RM16: an owner who handed this branch over is Staff here and still owns another.
+    expect(showBranchChevron({ myRole: "staff" }, [staffed, owned])).toBe(true);
   });
 
   it("the not-live home is for any business not switched on, whatever its branch count (E2E 2026-10-05 FS-4)", () => {

@@ -53,6 +53,12 @@ export function sharedRead<T>(
   return promise;
 }
 
+/** Bumped by every {@link invalidateReads} (a write, sign-in/out, a branch switch): a copy kept outside
+ *  this cache is only good while this is unchanged. */
+export function readsGeneration(): number {
+  return generation;
+}
+
 /** Forget every shared read: the next caller asks the server. */
 export function invalidateReads(): void {
   generation += 1;

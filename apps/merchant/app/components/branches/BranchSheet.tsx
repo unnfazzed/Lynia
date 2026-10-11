@@ -42,7 +42,9 @@ export function BranchSheet({
   }, [onClose]);
 
   async function pick(branch: MerchantBranchResponse) {
-    if (branch.active || branch.id === business.id) {
+    // MJ-RM15: "current" is the branch this device is showing. The server's `active` can be another one
+    // (switched on another device), and switching to it is how this device catches up.
+    if (branch.id === business.id) {
       onClose();
       return;
     }
@@ -75,7 +77,7 @@ export function BranchSheet({
           )}
           <div className="m-branches-list" aria-disabled={offline || undefined}>
             {branches.map((b) => {
-              const current = b.active || b.id === business.id;
+              const current = b.id === business.id;
               const notLive = !current && !isLive({ pilotEnabled: b.pilotEnabled, businessType: business.businessType });
               const label = [b.name, b.landmark, current ? "current branch" : null, notLive ? "not live yet" : null].filter(Boolean).join(", ");
               return (

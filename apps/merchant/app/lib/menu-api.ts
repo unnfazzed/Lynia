@@ -120,6 +120,10 @@ export function mintBannerPhotoUpload(): Promise<UploadTarget> {
   return authedFetch<UploadTarget>("/uploads/merchant-banner-photo", { method: "POST", body: { contentType: "image/jpeg" } });
 }
 
+/** MJ-RL21: how long one photo PUT may take before it ends in Retry — sized for a 300 KB upload on 2G
+ *  (~5 KB/s). Without it a stalled upload spun "Uploading…" for minutes. */
+export const PHOTO_UPLOAD_TIMEOUT_MS = 60_000;
+
 /** PUT the compressed bytes straight to GCS — NOT via authedFetch: this is a raw binary upload with no
  *  bearer token, the signed URL is its own auth. Mirrors apps/mobile/src/api/uploads.ts's uploadImage.
  *
@@ -128,10 +132,15 @@ export function mintBannerPhotoUpload(): Promise<UploadTarget> {
  *  upload (PhotoPicker's own error+retry UI handles the upload itself fine) left the header's
  *  connectivity pill showing "Connected" for up to the 20s active-probe interval, a blind spot in
  *  the one signal `actionsDisabled` reads app-wide. */
-export async function uploadPhotoBlob(uploadUrl: string, blob: Blob, headers: Record<string, string>): Promise<void> {
+export async function uploadPhotoBlob(
+  uploadUrl: string,
+  blob: Blob,
+  headers: Record<string, string>,
+  timeoutMs: number = PHOTO_UPLOAD_TIMEOUT_MS,
+): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(uploadUrl, { method: "PUT", headers, body: blob });
+    res = await fetch(uploadUrl, { method: "PUT", headers, body: blob, signal: AbortSignal.timeout(timeoutMs) });
   } catch (err) {
     getReachabilityStore(API_BASE_URL).reportUnreachable();
     throw new Error("The upload timed out — check your connection and try again.", { cause: err });

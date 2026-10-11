@@ -49,13 +49,23 @@ export default function AddBranchPage() {
     if (business && business.myRole !== "owner") router.replace("/account");
   }, [business, router]);
 
+  // MJ-RL18: the branch's contact number is the owner's sign-in number. One failed read used to leave
+  // "Create branch" grey for good: it is read again when the connection comes back, and on the tap.
   useEffect(() => {
+    if (phone !== null || actionsDisabled) return undefined;
     let alive = true;
     getMyAccount()
       .then((a) => {
         if (alive) setPhone(a.phone);
       })
       .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [phone, actionsDisabled]);
+
+  useEffect(() => {
+    let alive = true;
     Promise.all([listDishes(), listCategories()])
       .then(([dishes, categories]) => {
         if (alive) setCounts({ items: dishes.length, categories: categories.length });
@@ -67,10 +77,10 @@ export default function AddBranchPage() {
   }, []);
 
   const banner = error?.where === "banner" ? error : null;
-  const canCreate = name.trim() !== "" && location !== null && !actionsDisabled && !banner && phone !== null && !saving;
+  const canCreate = name.trim() !== "" && location !== null && !actionsDisabled && !banner && !saving;
 
   async function create() {
-    if (!canCreate || !location || !phone) return;
+    if (!canCreate || !location) return;
     if (!insideServiceArea(location.point)) {
       setError(BRANCH_ERRORS.outside_service_area);
       return;
@@ -78,7 +88,10 @@ export default function AddBranchPage() {
     setSaving(true);
     setError(null);
     try {
-      const next = await createBranch(toBranchRequest({ name, location, copyMenu: copy, contactPhone: phone }));
+      // MJ-RL18: still no number — read it now; a failure is the screen's generic banner below.
+      const contactPhone = phone ?? (await getMyAccount()).phone;
+      if (phone === null) setPhone(contactPhone);
+      const next = await createBranch(toBranchRequest({ name, location, copyMenu: copy, contactPhone }));
       enterBranch(next, `${next.name} is ready`);
     } catch (err) {
       setSaving(false);

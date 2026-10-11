@@ -61,7 +61,7 @@ describe("resolveMapLink (merchant web upgrade L2, OV-6 / T15)", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
-  it("a place with no coordinates, a non-redirect, or a network failure asks for a pin instead", async () => {
+  it("a place with no coordinates, a non-redirect, or a network failure is unreadable, and the message names no pin control (MJ-M15)", async () => {
     const place = net({ "https://maps.app.goo.gl/AbC123": { status: 302, location: "https://www.google.com/maps/place/Mbare+Musika" } });
     await expect(resolveMapLink("https://maps.app.goo.gl/AbC123", place.fetchImpl)).rejects.toMatchObject(UNREADABLE);
     const ok = net({ "https://maps.app.goo.gl/AbC123": { status: 200 } });
@@ -70,7 +70,7 @@ describe("resolveMapLink (merchant web upgrade L2, OV-6 / T15)", () => {
       throw new Error("timeout");
     });
     await expect(resolveMapLink("https://maps.app.goo.gl/AbC123", down)).rejects.toMatchObject({
-      response: { message: "We couldn't read a location from that link. Drop a pin instead." },
+      response: { message: "We couldn't read a location from that link." },
     });
   });
 });

@@ -7,7 +7,7 @@ import { VALUE_CAP_MESSAGE } from "../../../lib/booking";
 import { createBooking, resolveMapLink } from "../../../lib/bookings-api";
 import { clearBusinessCache } from "../../../lib/business";
 import { getMerchantProfile, listDishes } from "../../../lib/menu-api";
-import { resolvePlace, reverseGeocode, searchPlaces } from "../../../lib/places";
+import { placesEnabled, resolvePlace, reverseGeocode, searchPlaces } from "../../../lib/places";
 import { merchantBooking, merchantProfile } from "../../../testing/fixtures";
 
 const nav = vi.hoisted(() => ({ replace: vi.fn() }));
@@ -18,6 +18,7 @@ vi.mock("next/navigation", () => {
 
 vi.mock("../../../lib/menu-api", () => ({ getMerchantProfile: vi.fn(), listDishes: vi.fn(async () => []) }));
 vi.mock("../../../lib/places", () => ({
+  placesEnabled: vi.fn(() => true),
   newSessionToken: () => "s",
   searchPlaces: vi.fn(async () => []),
   resolvePlace: vi.fn(),
@@ -42,6 +43,7 @@ afterEach(() => {
   cleanup();
   clearBusinessCache();
   vi.clearAllMocks();
+  vi.mocked(placesEnabled).mockReturnValue(true);
 });
 
 async function openForm(overrides: Parameters<typeof merchantProfile>[0] = {}) {
@@ -112,9 +114,22 @@ describe("S4 · Book a rider, one screen (Merchant v2, D-77) — where", () => {
     expect(resolveMapLink).toHaveBeenCalledWith("https://maps.app.goo.gl/AbC123");
 
     fireEvent.click(screen.getByRole("button", { name: "Going to Pin the buyer sent. Change it" }));
+    vi.mocked(resolveMapLink).mockRejectedValueOnce(new ApiError(422, "We couldn't read a location from that link. Drop a pin instead.", "unreadable_link"));
+    type(search(), "https://maps.app.goo.gl/Nope");
+    // MJ-M15: the screen's own line — the server's used to name a pin control that doesn't exist.
+    expect(await screen.findByText("We couldn't read a location from that link. Search for the street instead.")).toBeTruthy();
+    expect(screen.queryByText(/Drop a pin/)).toBeNull();
+  });
+
+  it("MJ-M15: with no address search (no Places key), typing says to paste the buyer's location, and a bad link doesn't send them to a search", async () => {
+    vi.mocked(placesEnabled).mockReturnValue(false);
+    await openForm();
+    type(search(), "Fife Ave");
+    expect(await screen.findByText("Paste the location the buyer sent you, like a Google Maps or WhatsApp location link.")).toBeTruthy();
     vi.mocked(resolveMapLink).mockRejectedValueOnce(new ApiError(422, "We couldn't read a location from that link.", "unreadable_link"));
     type(search(), "https://maps.app.goo.gl/Nope");
-    expect(await screen.findByText("We couldn't read a location from that link.")).toBeTruthy();
+    expect(await screen.findByText("We couldn't read a location from that link. Ask the buyer to send their location again.")).toBeTruthy();
+    expect(screen.queryByText(/Search for the street/)).toBeNull();
   });
 
   it("never lets an older link's late answer move the location", async () => {
@@ -206,6 +221,51 @@ describe("S4 · what's going + fare", () => {
   it("shows no booking-terms UI: Send's terms are part of the T&C accepted at sign-up (D-77 follow-ups)", async () => {
     await openForm({ shopKind: "pharmacy" });
     expect(screen.queryByRole("button", { name: "Booking terms" })).toBeNull();
+  });
+});
+
+describe("MJ-RL5 (not a bug): one key per form, edits included", () => {
+  it("re-sends the first key after a lost answer even when the form changed, so a booking that did land is not doubled", async () => {
+    vi.mocked(createBooking)
+      .mockRejectedValueOnce(new ApiError(0, "Couldn't reach the server — check the connection and try again."))
+      .mockResolvedValueOnce(merchantBooking({ id: "b9" }));
+    await openForm();
+    await fillWhere();
+    addTyped("Oil filter", "7");
+    fireEvent.click(screen.getByRole("button", { name: /^Find a rider/ }));
+    await waitFor(() => expect(createBooking).toHaveBeenCalledTimes(1));
+    await screen.findByRole("alert");
+    await waitFor(() => expect((screen.getByRole("button", { name: /^Find a rider/ }) as HTMLButtonElement).disabled).toBe(false));
+    // The first attempt may have landed: a new key here would book a second rider.
+    fireEvent.click(screen.getByRole("button", { name: "Offer $0.50 more" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Find a rider/ }));
+    await waitFor(() => expect(createBooking).toHaveBeenCalledTimes(2));
+    const keys = vi.mocked(createBooking).mock.calls.map((c) => c[0].idempotencyKey);
+    expect(keys[1]).toBe(keys[0]);
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith(expect.stringContaining("b9")));
+  });
+});
+
+describe("MJ-RL8: Your items when the list doesn't load", () => {
+  it("says it couldn't load them (not 'No items yet.') and Try again reads them again", async () => {
+    vi.mocked(listDishes).mockRejectedValueOnce(new ApiError(0, "offline")).mockResolvedValueOnce([DISH]);
+    await openForm();
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    const sheet = await screen.findByRole("dialog", { name: "Your items" });
+    expect(await within(sheet).findByText("Couldn't load your items.")).toBeTruthy();
+    expect(within(sheet).queryByText("No items yet.")).toBeNull();
+    fireEvent.click(within(sheet).getByRole("button", { name: "Try again" }));
+    expect(await within(sheet).findByRole("button", { name: /Brake pads \(front\)/ })).toBeTruthy();
+    expect(listDishes).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps 'No items yet.' for a real empty list", async () => {
+    vi.mocked(listDishes).mockResolvedValueOnce([]);
+    await openForm();
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    const sheet = await screen.findByRole("dialog", { name: "Your items" });
+    expect(await within(sheet).findByText("No items yet.")).toBeTruthy();
+    expect(within(sheet).queryByText("Couldn't load your items.")).toBeNull();
   });
 });
 

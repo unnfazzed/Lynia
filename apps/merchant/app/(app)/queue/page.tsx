@@ -154,12 +154,14 @@ export default function QueuePage() {
     );
   }
 
-  const nothing = orders.length === 0 && (scheduled?.length ?? 0) === 0 && bookings.length === 0;
   const v = vocabulary(state.merchant.businessType, state.merchant.shopKind);
+  const board = buildBoard({ orders, bookings, v, shop, now });
+  // MJ-RM4: K1c "All quiet" is about what the board draws — an ended booking (or an order the board
+  // doesn't show) used to leave a blank page under the top card instead.
+  const nothing = board.length === 0 && (scheduled?.length ?? 0) === 0;
   // Branches (ledger D-51): a branch not switched on yet, with nothing in its queue, is "Almost ready".
   const notLive = nothing && showNotLiveHome(state.merchant);
   const closed = open.status.closedByHand && !notLive;
-  const board = buildBoard({ orders, bookings, v, shop, now });
   // K1b (D-77 follow-ups): SCHEDULED · n, last on the board, as dashed cards.
   const scheduledSection =
     scheduled && scheduled.length > 0 ? (

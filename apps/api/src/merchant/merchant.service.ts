@@ -162,6 +162,13 @@ export function endOfToday(now: Date = new Date()): Date {
  *  "Back in stock" clears it. No new column, no reset job. */
 export const OUT_OF_STOCK_UNTIL_BACK = new Date(Date.UTC(9999, 11, 31, 23, 59, 59));
 
+/** MJ-RH3 (C13, 2026-10-07): a new business starts with 08:00–22:00 every day stored — the hours its form
+ *  shows — instead of null, which every read takes as open around the clock (and an auto-accepting
+ *  kitchen then cooks a 2 a.m. order nobody is there for). Null keeps that meaning for existing rows. */
+export const SIGN_UP_HOURS: MerchantHours = Object.fromEntries(
+  (["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const).map((d) => [d, { open: "08:00", close: "22:00" }]),
+) as MerchantHours;
+
 function outOfStockUntil(forHowLong: DishOutOfStockFor = "rest_of_today"): Date {
   if (forHowLong === "until_back") return OUT_OF_STOCK_UNTIL_BACK;
   if (forHowLong === "one_hour") return new Date(Date.now() + 60 * 60 * 1000);
@@ -310,6 +317,7 @@ export class MerchantService {
             // D-48: the mobile sign-up asks only restaurant or shop, so a shop without a kind is `other`.
             shopKind: body.businessType === "shop" ? (body.shopKind ?? "other") : null,
             location: merchantWaypoint(body.location, body.name) as Prisma.InputJsonValue,
+            hours: SIGN_UP_HOURS as Prisma.InputJsonValue,
           },
           select: { id: true },
         });
