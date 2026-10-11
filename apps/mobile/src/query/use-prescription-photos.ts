@@ -22,6 +22,8 @@ export interface PrescriptionPhotos {
   keys: string[];
   add: (from: "camera" | "gallery") => void;
   remove: (id: string) => void;
+  /** U29: drop every page (the block goes back to R8a) — placement refused one of them (`upload_*`). */
+  clear: () => void;
 }
 
 /**
@@ -30,8 +32,12 @@ export interface PrescriptionPhotos {
  * /uploads/prescription-photo` + the signed PUT — the same mint → PUT → key pattern as the rider's pickup
  * photo and KYC. A page whose upload fails is dropped with `onError`, so the block never shows a page the
  * order can't carry; the customer simply adds it again.
+ *
+ * U30 (reviewed list 2026-10-07): a refused camera falls back to the gallery (it used to do nothing, and
+ * the + tile for pages 2–3 only opens the camera), and `onError` gets the failure, so the screen can say
+ * the server's reason for a refused mint (4xx / 503) instead of "No connection" every time.
  */
-export function usePrescriptionPhotos(onError: () => void): PrescriptionPhotos {
+export function usePrescriptionPhotos(onError: (err: unknown) => void): PrescriptionPhotos {
   const [pages, setPages] = useState<RxPage[]>([]);
   const seq = useRef(0);
   const count = useRef(0);
@@ -44,19 +50,21 @@ export function usePrescriptionPhotos(onError: () => void): PrescriptionPhotos {
       const { uploadUrl, key, headers } = await requestPrescriptionPhotoUpload(asset.contentType);
       await uploadImage(uploadUrl, asset.uri, headers ?? { "Content-Type": asset.contentType });
       setPages((cur) => cur.map((p) => (p.id === id ? { ...p, key } : p)));
-    } catch {
+    } catch (err) {
       setPages((cur) => cur.filter((p) => p.id !== id));
-      errRef.current();
+      errRef.current(err);
     }
   }, []);
 
   const add = useCallback(
     (from: "camera" | "gallery") => {
       void (async () => {
-        const perm = from === "camera" ? await ImagePicker.requestCameraPermissionsAsync() : await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (!perm.granted) return;
+        // U30: no camera (refused, or refused for good) → the gallery, which R8a draws beside it.
+        let source = from;
+        if (source === "camera" && !(await ImagePicker.requestCameraPermissionsAsync()).granted) source = "gallery";
+        if (source === "gallery" && !(await ImagePicker.requestMediaLibraryPermissionsAsync()).granted) return;
         const opts = { mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 };
-        const result = from === "camera" ? await ImagePicker.launchCameraAsync(opts) : await ImagePicker.launchImageLibraryAsync(opts);
+        const result = source === "camera" ? await ImagePicker.launchCameraAsync(opts) : await ImagePicker.launchImageLibraryAsync(opts);
         if (result.canceled) return;
         const a = result.assets[0];
         if (!a) return;
@@ -79,8 +87,9 @@ export function usePrescriptionPhotos(onError: () => void): PrescriptionPhotos {
   );
 
   const remove = useCallback((id: string) => setPages((cur) => cur.filter((p) => p.id !== id)), []);
+  const clear = useCallback(() => setPages([]), []);
 
   const uploading = pages.some((p) => p.key == null);
   const keys = !uploading ? pages.map((p) => p.key as string) : [];
-  return { pages, uploading, keys, add, remove };
+  return { pages, uploading, keys, add, remove, clear };
 }

@@ -194,8 +194,11 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
       setPending({ item, qty, note });
       return;
     }
-    if (qtyFor(item.id) + qty > MAX_ITEM_QTY) return;
-    commit(item, qty, note);
+    // U54: past the 20-per-item cap, add the room left (15 in the cart + 6 → 5) instead of silently nothing.
+    // Rows reach this through `latest`, so the count is this render's cart, never a stale row's.
+    const room = Math.min(qty, MAX_ITEM_QTY - qtyFor(item.id));
+    if (room <= 0) return;
+    commit(item, room, note);
   };
   const minus = (item: StoreItem): void => {
     const lines = cart.cart.lines.filter((l) => l.dishId === item.id);
@@ -290,7 +293,7 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
           onAdd={(qty, note) => {
             const it = openItem;
             setOpenItem(null);
-            if (it) add(it, qty, note);
+            if (it) latest.current.add(it, qty, note);
           }}
           onClose={() => setOpenItem(null)}
         />
@@ -389,7 +392,8 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
             tone="info"
             title={fillEmpty(emptyCopy.store.noMatch.title, { q })}
             body={emptyCopy.store.noMatch.body.replace("restaurants", s.noun)}
-            secondary={{ label: emptyCopy.store.noMatch.secondary.replace("restaurants", s.noun), onPress: () => router.push(`/${service}/search`) }}
+            // U55: the section search opens on what was typed here, as the Restaurants storefront's does.
+            secondary={{ label: emptyCopy.store.noMatch.secondary.replace("restaurants", s.noun), onPress: () => router.push(`/${service}/search?q=${encodeURIComponent(q)}` as never) }}
           />
         ) : (
           <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: bottomPad }}>

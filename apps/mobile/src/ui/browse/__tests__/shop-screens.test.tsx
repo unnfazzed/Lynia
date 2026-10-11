@@ -296,6 +296,61 @@ describe("Pharmacy storefront (S4) — ordering (Order flow v2, D-59)", () => {
   });
 });
 
+// U54 (reviewed list 2026-10-07): past the 20-per-item cap the sheet's "Add 6" and the + silently added nothing.
+describe("Storefront — the 20-per-item cap (U54)", () => {
+  const para = (quantity: number, note = ""): Line => ({ dishId: "d-1", name: "Paracetamol 500mg (20 tabs)", priceUsd: 1.5, quantity, note });
+
+  it("the item sheet adds the room left (15 in the cart + 6 → 5), not nothing", () => {
+    setCart("s-1", "Avondale Pharmacy", [para(15)]);
+    tree = mount(<ShopStoreScreen service="pharmacy" />);
+    press(tree, "Paracetamol 500mg (20 tabs), $1.50");
+    const sheet = tree.root.findAll((n) => typeof n.props.onAdd === "function" && n.props.service === "pharmacy" && "item" in n.props)[0]!;
+    act(() => sheet.props.onAdd(6, ""));
+    expect(mockCart.addItem).toHaveBeenCalledTimes(1);
+    expect(mockCart.addItem).toHaveBeenCalledWith("s-1", "Avondale Pharmacy", expect.objectContaining({ dishId: "d-1", quantity: 5 }), expect.anything());
+  });
+
+  it("at 20 the row's + and the stepper's + are disabled, and the stable row handler adds nothing", () => {
+    setCart("s-1", "Avondale Pharmacy", [para(19)]);
+    tree = mount(<ShopStoreScreen service="pharmacy" />);
+    setCart("s-1", "Avondale Pharmacy", [para(20)]);
+    act(() => {
+      tree!.update(<SafeAreaProvider initialMetrics={TEST_METRICS}>{<ShopStoreScreen service="pharmacy" />}</SafeAreaProvider>);
+    });
+    expect(pressable(tree, "Paracetamol 500mg (20 tabs), 20 in cart. Add one more")!.props.disabled).toBe(true);
+    expect(pressable(tree, "One more Paracetamol 500mg (20 tabs)")!.props.disabled).toBe(true);
+    // Not at the cap: still enabled.
+    expect(pressable(tree, "Add Ibuprofen 200mg (24 tabs)")!.props.disabled).toBe(false);
+    const row = tree.root.findAll((n) => n.props.item?.id === "d-1" && typeof n.props.onAdd === "function")[0]!;
+    act(() => row.props.onAdd(row.props.item));
+    expect(mockCart.addItem).not.toHaveBeenCalled();
+  });
+
+  it("a shop tile's + is disabled at the cap too", () => {
+    mockCatalogue = {
+      shop: shop("s-1", "Avondale Fresh", "grocery"),
+      categories: [{ id: "c-1", name: "Bakery & eggs", availableFrom: null, availableTo: null, dishes: [item("d-2", "Eggs (tray of 30)", 5)] }],
+    };
+    setCart("s-1", "Avondale Fresh", [{ dishId: "d-2", name: "Eggs (tray of 30)", priceUsd: 5, quantity: 20, note: "" }]);
+    tree = mount(<ShopStoreScreen service="shops" />);
+    expect(pressable(tree, "Eggs (tray of 30), 20 in cart. Add one more")!.props.disabled).toBe(true);
+    expect(pressable(tree, "One more Eggs (tray of 30)")!.props.disabled).toBe(true);
+  });
+});
+
+// U55: "Search all pharmacies" from a no-match inside the store carries what was typed.
+describe("Storefront search — no match (S12b)", () => {
+  it("Search all pharmacies opens the section search on the same query", () => {
+    tree = mount(<ShopStoreScreen service="pharmacy" />);
+    press(tree, "Search Avondale Pharmacy");
+    const input = tree.root.findAll((n) => typeof n.props.onChangeText === "function" && n.props.accessibilityLabel === "Search Avondale Pharmacy")[0]!;
+    act(() => input.props.onChangeText("amoxi"));
+    expect(texts(tree)).toContain("No “amoxi” here");
+    press(tree, "Search all pharmacies");
+    expect(mockPush).toHaveBeenCalledWith("/pharmacy/search?q=amoxi");
+  });
+});
+
 describe("Shop storefront (S3)", () => {
   it("lays items out as price-first tiles with the + inside the photo", () => {
     mockCatalogue = {

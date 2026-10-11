@@ -1,6 +1,6 @@
 import type { ShopService } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -48,7 +48,8 @@ function venueMeta(v: VenueView): string {
  * Search inside Shops or Pharmacy — Browse v2 X3 (`packages/design/handoff/browse-v2`, ledgers D-57 /
  * D-58) scoped to one section: PLACES (shop names) then ITEMS (catalogue items across its shops),
  * served by `GET /shops/search`. A place opens its storefront; an item opens the storefront it's in.
- * X4a no results, X4b offline.
+ * X4a no results, X4b offline. U55: `?q=` (the storefront's "Search all shops / pharmacies") seeds the
+ * field, as the restaurant search's `initialQuery` does; a failed search is the section's B11 error.
  */
 export function ShopSearchScreen({ service }: { service: ShopService }): React.ReactElement {
   const router = useRouter();
@@ -56,10 +57,11 @@ export function ShopSearchScreen({ service }: { service: ShopService }): React.R
   const reachable = useReachable();
   const location = useHomeLocation();
   const now = useNow();
-  const [query, setQuery] = useState("");
+  const params = useLocalSearchParams<{ q?: string }>();
+  const [query, setQuery] = useState(typeof params.q === "string" ? params.q : "");
   // P18 — the restaurant search's 300 ms debounce: one `GET /shops/search` per pause, not per keystroke.
   const q = useDebounced(query.trim(), SEARCH_DEBOUNCE_MS);
-  const { data, isFetching } = useShopSearch(service, q, true);
+  const { data, isFetching, isError, refetch } = useShopSearch(service, q, true);
   const s = B.svc[service];
 
   const places = useMemo(() => (data?.shops ?? []).map((x) => shopVenue(x, location.point, now)), [data, location.point, now]);
@@ -89,7 +91,17 @@ export function ShopSearchScreen({ service }: { service: ShopService }): React.R
       {q.length < 2 ? (
         // Nothing typed yet: say what this search finds (empty-states v2; it was a blank screen).
         <EmptyState icon="search" tone="info" title={idle.title} body={idle.body} />
-      ) : !reachable && data == null ? null : searched && places.length === 0 && items.length === 0 && !isFetching ? (
+      ) : !reachable && data == null ? null : isError && data == null ? (
+        // U55: a failed search (5xx, 503, a timeout while online) was a blank screen. The section's B11 error
+        // (browse-v2 `B.svc[*].err` + empty-states-v2 `browse.error`), as on the Shops / Pharmacy list.
+        <EmptyState
+          icon="circle-alert"
+          tone="error"
+          title={s.err}
+          body={emptyCopy.browse.error.body}
+          primary={{ label: emptyCopy.browse.error.primary, icon: "refresh-cw", disabled: isFetching, onPress: refetch }}
+        />
+      ) : searched && places.length === 0 && items.length === 0 && !isFetching ? (
         <EmptyState icon="search" tone="info" title={fillEmpty(emptyCopy.search.noMatch.title, { q })} body={emptyCopy.search.noMatch.body} />
       ) : (
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 + insets.bottom }}>
