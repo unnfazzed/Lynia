@@ -197,16 +197,23 @@ describe("geocodeAddress (the expo-location edge)", () => {
   it("reports permission — and never geocodes — when foreground location is refused", async () => {
     // Android requires foreground location permission before `Geocoder` may be used, so a refusal is
     // its own reason: telling the customer "couldn't find that address" would be a lie.
-    mockGetPermissions.mockResolvedValue({ status: "denied" });
+    mockGetPermissions.mockResolvedValue({ status: "denied", canAskAgain: false });
     await expect(geocodeAddress("14 Glenara Ave")).resolves.toEqual({ ok: false, reason: "permission" });
     expect(mockGeocode).not.toHaveBeenCalled();
   });
 
-  it("P41: an undecided permission is CHECKED, never requested — no OS dialog without the D-82 explainer", async () => {
-    mockGetPermissions.mockResolvedValue({ status: "undetermined", canAskAgain: true });
-    await expect(geocodeAddress("14 Glenara Ave")).resolves.toEqual({ ok: false, reason: "permission" });
+  it("P41: an undecided permission is never requested and never sends the customer to Settings — the lookup just runs", async () => {
+    mockGetPermissions.mockResolvedValue({ status: "undetermined", granted: false, canAskAgain: true });
+    mockGeocode.mockResolvedValueOnce(HIT);
+    await expect(geocodeAddress("14 Glenara Ave")).resolves.toEqual({ ok: true, place: PLACE });
     expect(mockRequestPermissions).not.toHaveBeenCalled();
-    expect(mockGeocode).not.toHaveBeenCalled();
+  });
+
+  it("P41: where the platform geocoder refuses without the permission, an undecided one reads 'unavailable', not 'permission'", async () => {
+    mockGetPermissions.mockResolvedValue({ status: "undetermined", granted: false, canAskAgain: true });
+    mockGeocode.mockRejectedValue(new Error("E_NO_PERMISSIONS"));
+    await expect(geocodeAddress("14 Glenara Ave")).resolves.toEqual({ ok: false, reason: "unavailable" });
+    expect(mockRequestPermissions).not.toHaveBeenCalled();
   });
 
   it("P41: a granted permission geocodes without ever calling the request API", async () => {

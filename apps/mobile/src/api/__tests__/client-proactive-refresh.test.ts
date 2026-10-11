@@ -128,17 +128,26 @@ describe("P09 — proactive access-token refresh", () => {
     expect(refreshCalls()).toBe(0);
   });
 
-  it("a proactive refresh that hits a flaky link falls through: request still sent, nobody signed out", async () => {
+  it("a proactive refresh that hits a flaky link fails the request retryably — no send with the expired token, nobody signed out", async () => {
     fetchMock.mockImplementation(async (url: string) => {
       if (isRefresh(url)) throw new TypeError("Network request failed");
-      return makeResponse(200, { ok: true }); // the server still accepted the token (clock skew)
+      return makeResponse(200, { ok: true });
     });
-    await expect(apiFetch("/me")).resolves.toEqual({ ok: true });
+    await expect(apiFetch("/me")).rejects.toMatchObject({ status: 0 });
+    expect(refreshCalls()).toBe(1);
+    expect(apiCalls()).toHaveLength(0);
     expect(onSignOut).not.toHaveBeenCalled();
     expect(session).not.toBeNull();
   });
 
-  it("a proactive refresh never signs out by itself — only the reactive path's definitive rejection does", async () => {
+  it("a 5xx from the proactive refresh is transient too: rejected retryably, session kept", async () => {
+    fetchMock.mockImplementation(async (url: string) => (isRefresh(url) ? makeResponse(502, "Bad gateway") : makeResponse(200, {})));
+    await expect(apiFetch("/me")).rejects.toMatchObject({ status: 0 });
+    expect(apiCalls()).toHaveLength(0);
+    expect(onSignOut).not.toHaveBeenCalled();
+  });
+
+  it("a proactive refresh never signs out by itself, and a rejected one is not asked again on the guard's 401", async () => {
     let refreshes = 0;
     fetchMock.mockImplementation(async (url: string) => {
       if (isRefresh(url)) {
@@ -150,8 +159,16 @@ describe("P09 — proactive access-token refresh", () => {
     await expect(apiFetch("/me")).rejects.toMatchObject({ status: 401 });
     // The request still went out with the old token and got the guard's 401 before the sign-out.
     expect(apiCalls()).toHaveLength(1);
-    expect(refreshes).toBe(2);
+    expect(refreshes).toBe(1);
     expect(onSignOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("a rejected proactive refresh still lets the request through when the server accepts the token (skewed clock)", async () => {
+    fetchMock.mockImplementation(async (url: string) =>
+      isRefresh(url) ? makeResponse(401, { statusCode: 401, message: "Invalid or expired refresh token" }) : makeResponse(200, { ok: true }),
+    );
+    await expect(apiFetch("/me")).resolves.toEqual({ ok: true });
+    expect(onSignOut).not.toHaveBeenCalled();
   });
 
   it("a device clock running an hour fast costs one refresh, not one per request", async () => {
@@ -206,5 +223,34 @@ describe("P35 — the request deadline covers the body read", () => {
     const settled = expect(p).rejects.toMatchObject({ status: 0 });
     await jest.advanceTimersByTimeAsync(STANDARD_TIMEOUT_MS + 1);
     await settled;
+  });
+
+  it("an ERROR body the deadline cuts off fails as a stalled link, not as a bodiless 401", async () => {
+    session = { ...session!, accessToken: jwt({ iat: SERVER_NOW_S - 60, exp: SERVER_NOW_S + 840 }) };
+    fetchMock.mockImplementation(async (_url: string, init: RequestInit) => ({
+      ok: false,
+      status: 401,
+      text: () =>
+        new Promise<string>((_resolve, reject) => {
+          (init.signal as AbortSignal).addEventListener("abort", () => {
+            const e = new Error("Aborted");
+            e.name = "AbortError";
+            reject(e);
+          });
+        }),
+    }));
+
+    const p = apiFetch("/me");
+    const settled = expect(p).rejects.toMatchObject({ status: 0 });
+    await jest.advanceTimersByTimeAsync(STANDARD_TIMEOUT_MS + 1);
+    await settled;
+    expect(onSignOut).not.toHaveBeenCalled();
+  });
+
+  it("an unreadable error body that wasn't aborted still degrades to the status alone", async () => {
+    session = null;
+    fetchMock.mockResolvedValue({ ok: false, status: 500, text: () => Promise.reject(new Error("decode failed")) });
+    const p = apiFetch("/restaurants");
+    await expect(p).rejects.toMatchObject({ status: 500 });
   });
 });

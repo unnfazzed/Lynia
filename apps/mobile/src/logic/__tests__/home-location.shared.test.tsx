@@ -221,4 +221,67 @@ describe("useHomeLocation · one detection per session (P06)", () => {
     await settle();
     expect(apis["next-user"]!.label).toBe("Set your location");
   });
+
+  it("denied → granted: once location is turned on, the next screen clears 'location is off' and finds the address", async () => {
+    getPerm.mockResolvedValue({ status: "denied", granted: false, canAskAgain: false });
+    await mount("home");
+    await settle();
+    expect(apis.home!.denied).toBe(true);
+    expect(current).not.toHaveBeenCalled();
+
+    // The customer turns location on in Settings and comes back to another screen.
+    getPerm.mockResolvedValue({ status: "granted", granted: true, canAskAgain: true });
+    await mount("food");
+    await settle();
+    expect(apis.food!.denied).toBe(false);
+    expect(apis.home!.denied).toBe(false);
+    expect(apis.food!.label).toBe("12 Lanark Rd");
+  });
+
+  it("a keychain read that never answers can't hang the shared detection (or the screens that join it)", async () => {
+    jest.useFakeTimers();
+    getItem.mockImplementation(() => new Promise(() => undefined));
+    await mount("home");
+    await settle();
+    expect(current).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(5_001);
+    });
+    await settle();
+    expect(current).toHaveBeenCalledTimes(1);
+    expect(apis.home!.label).toBe("12 Lanark Rd");
+    expect(apis.home!.locating).toBe(false);
+  });
+
+  it("a permission read that never answers settles the row instead of leaving every mount joined forever", async () => {
+    jest.useFakeTimers();
+    getPerm.mockImplementation(() => new Promise(() => undefined));
+    await mount("home");
+    await settle();
+    expect(apis.home!.locating).toBe(true);
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(5_001);
+    });
+    await settle();
+    expect(apis.home!.locating).toBe(false);
+
+    // The chain finished, so a later mount starts a fresh one (here with a healthy permission).
+    getPerm.mockReset().mockResolvedValue({ status: "granted", granted: true, canAskAgain: true });
+    await mount("food");
+    await settle();
+    expect(current).toHaveBeenCalledTimes(1);
+  });
+
+  it("a cached-fix read that never answers doesn't stop the live fix", async () => {
+    jest.useFakeTimers();
+    lastKnown.mockImplementation(() => new Promise(() => undefined));
+    await mount("home");
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(5_001);
+    });
+    await settle();
+    expect(current).toHaveBeenCalledTimes(1);
+    expect(apis.home!.label).toBe("12 Lanark Rd");
+  });
 });

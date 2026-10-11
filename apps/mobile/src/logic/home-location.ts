@@ -35,6 +35,12 @@ export const HOME_LOCATION_KEY = "lynia.homeLocation.v1";
 /** GPS fix bound — the same 9s ceiling ComposeMap / MapPicker / the pickup auto-locate hook use. */
 const FIX_TIMEOUT_MS = 9_000;
 
+/** The longest a DEVICE read (the keychain slot, the permission state, the platform's cached fix) may
+ *  take before it counts as "nothing there". These normally answer in milliseconds; the bound only
+ *  stops a hung native call from holding the shared detection — and every screen that joins it —
+ *  forever (P06). Same 5 s as the boot reads (src/boot/prewarm.ts BOOT_READ_TIMEOUT_MS). */
+const DEVICE_READ_TIMEOUT_MS = 5_000;
+
 /** How stale a cached platform fix may be and still be worth painting while the live one lands. */
 const LAST_KNOWN_MAX_AGE_MS = 120_000;
 
@@ -165,7 +171,7 @@ export function parseStoredPlace(raw: string | null): { place: HomePlace; manual
 
 export async function loadStoredLocation(): Promise<{ place: HomePlace; manual: boolean } | null> {
   try {
-    return parseStoredPlace(await SecureStore.getItemAsync(HOME_LOCATION_KEY));
+    return parseStoredPlace(await withTimeout(SecureStore.getItemAsync(HOME_LOCATION_KEY), DEVICE_READ_TIMEOUT_MS));
   } catch {
     return null;
   }
@@ -188,7 +194,7 @@ export async function saveStoredLocation(place: HomePlace, manual: boolean): Pro
  */
 async function readGrant(): Promise<LocState> {
   try {
-    return classifyLocation(await Location.getForegroundPermissionsAsync());
+    return classifyLocation(await withTimeout(Location.getForegroundPermissionsAsync(), DEVICE_READ_TIMEOUT_MS));
   } catch {
     return "denied";
   }
@@ -198,7 +204,7 @@ const usable = (loc: LocState): boolean => loc === "granted" || loc === "coarse"
 
 async function cachedPoint(): Promise<{ lat: number; lng: number } | null> {
   try {
-    const last = await Location.getLastKnownPositionAsync({ maxAge: LAST_KNOWN_MAX_AGE_MS });
+    const last = await withTimeout(Location.getLastKnownPositionAsync({ maxAge: LAST_KNOWN_MAX_AGE_MS }), DEVICE_READ_TIMEOUT_MS);
     return last ? { lat: last.coords.latitude, lng: last.coords.longitude } : null;
   } catch {
     return null;
@@ -335,7 +341,11 @@ function ensureDetection(face: Face): void {
   const store = stores[face];
   if (store.run || store.manual) return;
   if (store.detectedAt !== null && Date.now() - store.detectedAt < DETECT_TTL_MS) return;
-  const run = detect(face, store);
+  // Every step of the chain is time-bounded, so `run` always settles; `finally` (not `then`) clears it
+  // even if a step throws, so a broken chain can never leave later mounts joined to nothing.
+  const run = detect(face, store).catch(() => {
+    if (store.run === run) publish(store, { locating: false });
+  });
   store.run = run;
   void run.finally(() => {
     if (store.run === run) store.run = null;
@@ -378,6 +388,9 @@ async function detect(face: Face, store: Store): Promise<void> {
     publish(store, { denied: permission === "blocked", locating: false });
     return;
   }
+  // Usable now — clear a "location is off" left by an earlier detection in this session (the customer
+  // turned it on in Settings, or granted it from PC1).
+  if (store.snap.denied) publish(store, { denied: false });
 
   // The live fix starts NOW, not after the cached fix's geocode (which used to be awaited first).
   const liveFix = livePoint();

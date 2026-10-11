@@ -128,8 +128,15 @@ async function fetchWithTimeout(input: string, init: RequestInit): Promise<Fetch
     let text = "";
     if (res.status !== 204 && res.status !== 304) {
       // An unreadable ERROR body degrades to "" (the status alone still answers the caller); an
-      // unreadable SUCCESS body is a stalled/dropped link and fails like one, below.
-      text = res.ok ? await res.text() : await res.text().catch(() => "");
+      // unreadable SUCCESS body is a stalled/dropped link and fails like one, below. So does an error
+      // body the DEADLINE cut off: "" would read a stalled auth-guard 401 as a domain 401 (no refresh,
+      // no offline flag), so an abort is rethrown whatever the status.
+      text = res.ok
+        ? await res.text()
+        : await res.text().catch((err: unknown) => {
+            if (controller.signal.aborted) throw err;
+            return "";
+          });
     }
     return { status: res.status, ok: res.ok, headers: res.headers, text };
   } catch (err) {
@@ -232,13 +239,19 @@ async function apiFetchInner<T>(path: string, opts: RequestOpts = {}): Promise<T
   // P09: the 15-minute access token has expired on almost every cold start. Refresh it BEFORE sending
   // instead of spending a 401 round trip per boot request (and queueing the refresh behind them at
   // Android's 5-per-host limit). Single-flight with the reactive path below, so the whole boot burst
-  // waits on ONE refresh in JS. Any doubt — no refresh token, an unreadable token, a refresh that
-  // throws (flaky link) or is rejected — falls through to the unchanged reactive path, which owns the
-  // sign-out decision.
+  // waits on ONE refresh in JS.
+  //  - A refresh that fails TRANSIENTLY (status-0 ApiError: a flaky link, a 5xx) rejects the request the
+  //    same retryable way the reactive path does — sending a token we know is expired over that same
+  //    link would only buy a second timeout and a second refresh. The session is left intact.
+  //  - A DEFINITIVE rejection (null) does not sign out here: the request still goes out with the old
+  //    token (a skewed clock may have misjudged it). If the API answers with the auth guard's 401, the
+  //    reactive path below signs out without asking the refresh endpoint a second time.
   let active = session;
+  let proactiveRejected = false;
   if (auth && active?.refreshToken && accessTokenNeedsRefresh(active.accessToken)) {
-    const refreshed = await refreshSession(active.refreshToken).catch(() => null);
+    const refreshed = await refreshSession(active.refreshToken);
     if (refreshed) active = refreshed;
+    else proactiveRejected = true;
   }
 
   let res = await send(active?.accessToken);
@@ -259,7 +272,7 @@ async function apiFetchInner<T>(path: string, opts: RequestOpts = {}): Promise<T
     // A transient failure (network/timeout/5xx/429) instead REJECTS with a status-0 ApiError, which
     // propagates out of here untouched — the request fails as an ordinary retryable network error and
     // the session is left intact, so a flaky link can't force a mid-delivery re-auth.
-    const refreshed = await refreshSession(active.refreshToken);
+    const refreshed = proactiveRejected ? null : await refreshSession(active.refreshToken);
     if (refreshed) {
       res = await send(refreshed.accessToken);
     } else {

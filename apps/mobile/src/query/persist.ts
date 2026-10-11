@@ -103,27 +103,50 @@ export function redactBeforePersist(client: PersistedClient): PersistedClient {
 /**
  * Drop the saved cache on restore once it is older than a WEEK (P08). It was a day, which meant any
  * customer who orders less than daily booted with an empty cache and the splash (D-64, which waits for
- * Home's profile + rails) held on network round trips. Everything allowlisted revalidates on mount
- * anyway, and /food shows its own "Showing what we had at HH:MM", so a week-old browse list is a fine
- * first paint. Money is the exception — see {@link MONEY_MAX_AGE_MS}. (Restore-time only; live
- * refetching is governed by staleTime as usual.)
+ * Home's profile + rails) held on network round trips. The browse LISTS revalidate on mount and /food
+ * shows its own "Showing what we had at HH:MM", so a week-old list is a fine first paint. Anything that
+ * carries money, a price or account state keeps the old one-day ceiling — see {@link isDayLimited}.
+ * (Restore-time only; live refetching is governed by staleTime as usual.)
  */
 export const PERSIST_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** Query-key roots that carry money (wallet balance/ledger, rider earnings). */
-export const MONEY_KEY_ROOTS: ReadonlySet<string> = new Set(["wallet", "earnings"]);
-
-/** Money entries keep the old one-day ceiling: yesterday's balance is a fine first paint, last
- *  week's is a lie. */
-export const MONEY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+/** The ceiling for {@link isDayLimited} entries: yesterday's balance or price is a fine first paint,
+ *  last week's is a lie. */
+export const DAY_LIMITED_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Restore-time filter: drop money-carrying entries whose data is older than {@link MONEY_MAX_AGE_MS},
- * so raising the whole-cache ceiling to a week never paints a week-old balance. Exported for tests.
+ * Query-key roots whose WHOLE subtree keeps the one-day ceiling:
+ *  - `wallet`, `earnings` — balances, the ledger, the rider's earnings;
+ *  - `history` — trip / order rows with their fares; rider Money's "this week" and cash-held totals are
+ *    summed from them, and `["history", "customer"]` is the Orders tab;
+ *  - `me` — account state (KYC status, the free-jobs count) that gates what a screen offers.
  */
-export function dropStaleMoney(client: PersistedClient, now: number = Date.now()): PersistedClient {
+export const DAY_LIMITED_KEY_ROOTS: ReadonlySet<string> = new Set(["wallet", "earnings", "history", "me"]);
+
+/**
+ * Entries restored for at most a day (P08). Besides {@link DAY_LIMITED_KEY_ROOTS}, every PRICED browse
+ * entry: a restaurant menu (`["restaurants", id, "menu"]`) and a shop / pharmacy catalogue
+ * (`["shops", "catalogue", id]`) — Review & place totals the cart from their prices while the server
+ * prices from dish ids, so a week-old price would put the wrong "Place · $X" under the customer's
+ * thumb. The venue LISTS (`["restaurants"]`, `["shops", service]` incl. pharmacy) carry no item prices
+ * (Review & place reads its venue from the menu / catalogue), so they keep the week.
+ */
+export function isDayLimited(queryKey: readonly unknown[]): boolean {
+  const root = String(queryKey[0]);
+  if (DAY_LIMITED_KEY_ROOTS.has(root)) return true;
+  if (root === "restaurants" && queryKey[2] === "menu") return true;
+  if (root === "shops" && queryKey[1] === "catalogue") return true;
+  return false;
+}
+
+/**
+ * Restore-time filter: drop {@link isDayLimited} entries whose data is older than
+ * {@link DAY_LIMITED_MAX_AGE_MS}, so raising the whole-cache ceiling to a week never paints a week-old
+ * balance, fare or price. Exported for tests.
+ */
+export function dropStaleDayLimited(client: PersistedClient, now: number = Date.now()): PersistedClient {
   const queries = client.clientState.queries.filter(
-    (q) => !MONEY_KEY_ROOTS.has(String(q.queryKey[0])) || now - q.state.dataUpdatedAt <= MONEY_MAX_AGE_MS,
+    (q) => !isDayLimited(q.queryKey) || now - q.state.dataUpdatedAt <= DAY_LIMITED_MAX_AGE_MS,
   );
   if (queries.length === client.clientState.queries.length) return client;
   return { ...client, clientState: { ...client.clientState, queries } };
@@ -167,8 +190,8 @@ export const queryPersister = createAsyncStoragePersister({
   // The ONE hook every write passes through, so there is no second path that could reach the file
   // with an un-redacted payload. See {@link redactBeforePersist}.
   serialize: (client) => JSON.stringify(redactBeforePersist(client)),
-  // The ONE hook every restore passes through: money entries keep a one-day ceiling (P08).
-  deserialize: (cached) => dropStaleMoney(JSON.parse(cached) as PersistedClient),
+  // The ONE hook every restore passes through: money, price and account entries keep a one-day ceiling (P08).
+  deserialize: (cached) => dropStaleDayLimited(JSON.parse(cached) as PersistedClient),
   // Batch bursts of cache updates into one disk write every few seconds — a screen-load fires
   // several queries back-to-back and serialising the cache per update would churn the flash for
   // nothing. Loss window on a hard kill is one interval of the least-fresh data: acceptable for an
