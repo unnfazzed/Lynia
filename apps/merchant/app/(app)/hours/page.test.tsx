@@ -87,6 +87,16 @@ describe("C5 · Opening hours (merchant mobile, D-48)", () => {
     expect((screen.getByRole("button", { name: "Save hours" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("review: equal open and close times keep the 24-hour line, not the past-midnight one", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile());
+    render(<Page />);
+    fireEvent.change(await screen.findByLabelText("Open"), { target: { value: "2200" } });
+    expect((screen.getByLabelText("Open") as HTMLInputElement).value).toBe("22:00");
+    expect(screen.getByText("Times are 24-hour, like 08:00, and the opening time must be before the closing time.")).toBeTruthy();
+    expect(screen.queryByText("Hours can't run past midnight. Close at 23:59 at the latest.")).toBeNull();
+    expect((screen.getByRole("button", { name: "Save hours" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("a half-typed time keeps the 24-hour line", async () => {
     vi.mocked(getMerchantProfile).mockResolvedValue(profile());
     render(<Page />);

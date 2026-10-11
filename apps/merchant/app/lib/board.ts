@@ -230,7 +230,7 @@ function orderCards(
           key: o.id,
           href,
           tag,
-          title: goods ? `${goodsNoun(v)} coming back · ${label}` : `${money(owed)} · ${label}`,
+          title: goods ? `${goodsNoun(shop)} coming back · ${label}` : `${money(owed)} · ${label}`,
           sub: late
             ? `${who} · was due ${hm(due!.toISOString())}`
             : goods
@@ -323,10 +323,11 @@ function bookingCard(b: MerchantBookingResponse, now: number): { section: BoardS
   return null;
 }
 
-/** K5c "Goods coming back" (merchant-v2 README): "Food" for a kitchen, "Goods" for a shop — the noun of
- *  its `goodsBack` button ("I got the food back" / "I got the goods back"). */
-function goodsNoun(v: Vocabulary): string {
-  return v.goodsBack === "I got the food back" ? "Food" : "Goods";
+/** K5c "Goods coming back" (merchant-v2 README): "Goods" for a shop or pharmacy (the drawn title); "Food"
+ *  for a kitchen, matching its "I got the food back" button (DESIGN-DEVIATIONS D-91). Decided by the
+ *  business type, not by the wording of a vocabulary string. */
+function goodsNoun(shop: boolean): string {
+  return shop ? "Goods" : "Food";
 }
 
 /** K1b: late rows first, then the rest; the oldest due first within each. */

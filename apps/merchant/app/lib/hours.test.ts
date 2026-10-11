@@ -19,9 +19,9 @@ describe("C13 = MJ-RH3 + MJ-RM9: the form's week from saved hours", () => {
 });
 
 describe("MJ-RL13: crossesMidnight", () => {
-  it("is a close at or before the open, like 18:00 to 02:00", () => {
+  it("is a close before the open, like 18:00 to 02:00 — equal times are not", () => {
     expect(crossesMidnight({ open: "18:00", close: "02:00" })).toBe(true);
-    expect(crossesMidnight({ open: "18:00", close: "18:00" })).toBe(true);
+    expect(crossesMidnight({ open: "18:00", close: "18:00" })).toBe(false);
     expect(crossesMidnight({ open: "18:00", close: "23:59" })).toBe(false);
   });
 });

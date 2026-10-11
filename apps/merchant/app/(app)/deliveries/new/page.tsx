@@ -77,9 +77,9 @@ export default function NewBookingPage() {
   const submittingRef = useRef(false);
   // One key per form: a double tap, or a retry after a lost answer, books once (Send dedupes on it).
   const idempotencyKey = useRef(newIdempotencyKey());
-  // MJ-RL5: the booking the key was last sent with. A changed form after a lost answer is a new booking
-  // (a new key) — the old key would replay the first one, with its old address, fare and items.
-  const keyBody = useRef<string | null>(null);
+  // MJ-RL5 (not a bug): the key stays for the whole form, edits included. Send stores a key only when it
+  // created a booking, so an edit after a refused attempt is already a fresh booking; after a lost success
+  // the same key lands the merchant on the booking that exists instead of booking a second rider.
 
   const load = useCallback(async () => {
     setGate({ status: "loading" });
@@ -120,9 +120,6 @@ export default function NewBookingPage() {
     submittingRef.current = true;
     setBusy(true);
     try {
-      const body = JSON.stringify(toBookingRequest(where, phone, lines, shownFare, "", collectCash));
-      if (keyBody.current !== null && keyBody.current !== body) idempotencyKey.current = newIdempotencyKey();
-      keyBody.current = body;
       const booking = await createBooking(toBookingRequest(where, phone, lines, shownFare, idempotencyKey.current, collectCash));
       router.replace(bookingHref(booking.id));
     } catch (err) {

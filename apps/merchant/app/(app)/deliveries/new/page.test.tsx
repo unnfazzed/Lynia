@@ -224,10 +224,9 @@ describe("S4 · what's going + fare", () => {
   });
 });
 
-describe("MJ-RL5: a changed form after a lost answer is a new booking", () => {
-  it("keeps the key for an identical retry, and mints a new one once the booking changed", async () => {
+describe("MJ-RL5 (not a bug): one key per form, edits included", () => {
+  it("re-sends the first key after a lost answer even when the form changed, so a booking that did land is not doubled", async () => {
     vi.mocked(createBooking)
-      .mockRejectedValueOnce(new ApiError(0, "Couldn't reach the server — check the connection and try again."))
       .mockRejectedValueOnce(new ApiError(0, "Couldn't reach the server — check the connection and try again."))
       .mockResolvedValueOnce(merchantBooking({ id: "b9" }));
     await openForm();
@@ -236,18 +235,14 @@ describe("MJ-RL5: a changed form after a lost answer is a new booking", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Find a rider/ }));
     await waitFor(() => expect(createBooking).toHaveBeenCalledTimes(1));
     await screen.findByRole("alert");
-    // The same booking again: the same key, so a first attempt that did land is answered, not doubled.
-    fireEvent.click(screen.getByRole("button", { name: /^Find a rider/ }));
-    await waitFor(() => expect(createBooking).toHaveBeenCalledTimes(2));
     await waitFor(() => expect((screen.getByRole("button", { name: /^Find a rider/ }) as HTMLButtonElement).disabled).toBe(false));
-    // A raised fare is a different booking: a new key, or Send would replay the first one.
+    // The first attempt may have landed: a new key here would book a second rider.
     fireEvent.click(screen.getByRole("button", { name: "Offer $0.50 more" }));
     fireEvent.click(screen.getByRole("button", { name: /^Find a rider/ }));
-    await waitFor(() => expect(createBooking).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(createBooking).toHaveBeenCalledTimes(2));
     const keys = vi.mocked(createBooking).mock.calls.map((c) => c[0].idempotencyKey);
     expect(keys[1]).toBe(keys[0]);
-    expect(keys[2]).not.toBe(keys[0]);
-    expect(vi.mocked(createBooking).mock.calls[2]![0].proposedFare).toBe(vi.mocked(createBooking).mock.calls[0]![0].proposedFare + 0.5);
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith(expect.stringContaining("b9")));
   });
 });
 

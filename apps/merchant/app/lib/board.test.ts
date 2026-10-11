@@ -22,6 +22,13 @@ describe("MJ-RL1: goods coming back under CASH TO COME BACK", () => {
     expect(shopCard!.sub).toBe(`${RIDER.firstName} ${RIDER.lastName!.charAt(0)}. is bringing it back`);
   });
 
+  it("review: the noun follows the business type, not the wording of the vocabulary's button", () => {
+    const [card] = buildBoard({ v: { ...shopV, goodsBack: "I got the food back" }, shop: true, now: NOW, orders: [back()] })[0]!.cards;
+    expect(card!.title).toBe("Goods coming back · #A117");
+    const [kitchenCard] = buildBoard({ v: { ...kitchen, goodsBack: "I got it back" }, shop: false, now: NOW, orders: [back()] })[0]!.cards;
+    expect(kitchenCard!.title).toBe("Food coming back · #A117");
+  });
+
   it("cash from a delivered order keeps its amount", () => {
     const [card] = buildBoard({ v: kitchen, shop: false, now: NOW, orders: [back({ status: "delivered", cashDueAt: at(20) })] })[0]!.cards;
     expect(card!.title).toBe("$10.00 · #A117");

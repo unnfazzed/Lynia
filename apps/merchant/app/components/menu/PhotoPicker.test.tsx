@@ -84,4 +84,15 @@ describe("PhotoPicker", () => {
     expect(vi.mocked(uploadPhotoBlob).mock.calls[1]![1]).toBe(BLOB);
     expect(mintDishPhotoUpload).toHaveBeenCalledTimes(2);
   });
+
+  it("review: unmounting mid-upload reports not busy, so the form's Save isn't held for good", async () => {
+    vi.mocked(uploadPhotoBlob).mockImplementation(() => new Promise<void>(() => {}));
+    const { onBusy } = renderPicker();
+    pick("dish.jpg", "image/jpeg");
+    fireEvent.click(screen.getByRole("button", { name: "Frame dish.jpg" }));
+    await waitFor(() => expect(onBusy).toHaveBeenLastCalledWith(true));
+    cleanup();
+    expect(onBusy).toHaveBeenLastCalledWith(false);
+  });
 });
+

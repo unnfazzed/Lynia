@@ -82,10 +82,11 @@ export function noOpenDay(hours: PartialMerchantHours): boolean {
   return DAY_KEYS.every((d) => !hours[d]);
 }
 
-/** MJ-RL13: a day whose closing time is at or before its opening time — "18:00 to 02:00". The hours
- *  are one window a day that ends by midnight, so the form says so rather than a bare "must be before". */
+/** MJ-RL13: a day whose closing time is before its opening time — "18:00 to 02:00". The hours are one
+ *  window a day that ends by midnight, so the form says so rather than a bare "must be before". Equal
+ *  times are a plain mistake, not a night shift: they keep the "must be before" line. */
 export function crossesMidnight(window: MerchantHoursWindow): boolean {
-  return window.close <= window.open;
+  return window.close < window.open;
 }
 
 export function fromSameEveryDay({ window, days }: SameEveryDay): PartialMerchantHours {

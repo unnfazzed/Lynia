@@ -6,6 +6,7 @@ import { ApiError } from "./api-client";
 import { isLiveBooking, pollIntervalMs } from "./booking";
 import { listBookings } from "./bookings-api";
 import { createCoalescedFetch } from "./coalesced-fetch";
+import { readsGeneration } from "./read-cache";
 
 /** How often to re-read the bookings: the fastest any live booking needs, else every 30 s (MJ-RM6: a
  *  quiet list still hears about a teammate's new booking, its rider and its cash). */
@@ -41,6 +42,22 @@ export function mergeLiveBookings(full: readonly MerchantBookingResponse[], live
   return [...merged, ...added].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
 
+/** MJ-RM5 review: the last list any screen read, shared by every `useBookings` (the live bar on each tab,
+ *  Orders, Deliveries). A tab hop starts from it and reads only the live bookings, instead of the whole
+ *  50-booking history again. Dropped after a write, a branch switch or sign-out (`readsGeneration`). */
+const SNAPSHOT_FRESH_MS = 60_000;
+let snapshot: { list: MerchantBookingResponse[]; at: number; gen: number } | null = null;
+
+function freshSnapshot(): MerchantBookingResponse[] | null {
+  if (!snapshot || snapshot.gen !== readsGeneration() || Date.now() - snapshot.at > SNAPSHOT_FRESH_MS) return null;
+  return snapshot.list;
+}
+
+/** For tests. */
+export function clearBookingsSnapshot(): void {
+  snapshot = null;
+}
+
 /**
  * A shop's own rider bookings, polled for its board (Merchant v2 S1, ledger D-77: BOOKED cards sit in the
  * same list as its customer orders) — on Orders and on the Deliveries home.
@@ -53,21 +70,24 @@ export function mergeLiveBookings(full: readonly MerchantBookingResponse[], live
  *  - one read at a time (`createCoalescedFetch`, the queue poll's rules).
  */
 export function useBookings(enabled: boolean): { bookings: MerchantBookingResponse[]; loaded: boolean; error: ApiError | null; reload: () => Promise<void> } {
-  const [bookings, setBookings] = useState<MerchantBookingResponse[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const [seed] = useState(freshSnapshot);
+  const [bookings, setBookings] = useState<MerchantBookingResponse[]>(seed ?? []);
+  const [loaded, setLoaded] = useState(seed !== null);
   const [error, setError] = useState<ApiError | null>(null);
-  const fullRef = useRef<MerchantBookingResponse[] | null>(null);
-  const wantFullRef = useRef(true);
+  const fullRef = useRef<MerchantBookingResponse[] | null>(seed);
+  const wantFullRef = useRef(seed === null);
 
   const read = useMemo(
     () =>
       createCoalescedFetch(async (isLatest) => {
         const full = wantFullRef.current ? null : fullRef.current;
         wantFullRef.current = false;
+        const gen = readsGeneration();
         try {
           const next = full ? (mergeLiveBookings(full, await listBookings({ live: true })) ?? (await listBookings())) : await listBookings();
           if (!isLatest()) return;
           fullRef.current = next;
+          snapshot = { list: next, at: Date.now(), gen };
           setBookings(next);
           setLoaded(true);
           setError(null);
@@ -88,13 +108,14 @@ export function useBookings(enabled: boolean): { bookings: MerchantBookingRespon
 
   useEffect(() => {
     if (!enabled) return undefined;
-    void reload();
+    // Seeded from another screen's fresh list: a live-only read brings it up to date.
+    void (fullRef.current !== null && !wantFullRef.current ? read() : reload());
     const onVisible = () => {
       if (document.visibilityState === "visible") void reload();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [enabled, reload]);
+  }, [enabled, read, reload]);
 
   const interval = bookingsPollMs(bookings);
   useEffect(() => {

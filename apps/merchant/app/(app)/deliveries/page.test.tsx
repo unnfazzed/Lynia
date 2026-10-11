@@ -5,6 +5,7 @@ import DeliveriesPage from "./page";
 import { ToastProvider } from "../../components/m/Toast";
 import { listBookings } from "../../lib/bookings-api";
 import { clearBusinessCache } from "../../lib/business";
+import { clearBookingsSnapshot } from "../../lib/use-bookings";
 import { getMerchantProfile } from "../../lib/menu-api";
 import { merchantBooking, merchantProfile } from "../../testing/fixtures";
 
@@ -37,6 +38,7 @@ const Page = () => (
 afterEach(() => {
   cleanup();
   clearBusinessCache();
+  clearBookingsSnapshot();
   vi.clearAllMocks();
 });
 

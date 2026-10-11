@@ -89,8 +89,11 @@ export default function TeamPage() {
   /** MJ-RL17: "Resend" (and the invite sheet's WhatsApp button) renews the invite as it opens WhatsApp —
    *  the same POST as Add someone, which refreshes its 14 days — so the link it sends still works. The
    *  link opens at once (a pop-up must come from the tap itself); the renewal runs beside it, and a refusal
-   *  is said in the toast. */
+   *  is said in the toast. Review follow-up: every POST writes an invite row that counts against the day's
+   *  10 (MERCHANT_INVITES_PER_DAY), so it only renews an invite that has run out or is within a day of it;
+   *  a fresher one just opens the link. */
   function renew(i: MerchantTeamInviteResponse) {
+    if (!inviteNeedsRenewal(i, Date.now())) return;
     void invitePerson({ name: i.name, phone: `+${i.invitePhone}` }).then(
       (fresh) => setState((s) => (s.status === "ready" ? { ...s, invites: s.invites.map((x) => (x.id === i.id ? fresh : x)) } : s)),
       (err: unknown) => {
@@ -400,4 +403,11 @@ function PharmacistRows({
       ))}
     </>
   );
+}
+
+/** MJ-RL17: an invite worth renewing on Resend — run out, or within {@link INVITE_RENEW_WINDOW_MS} of it. */
+const INVITE_RENEW_WINDOW_MS = 24 * 60 * 60 * 1000;
+function inviteNeedsRenewal(i: Pick<MerchantTeamInviteResponse, "expiresAt">, now: number): boolean {
+  const ends = Date.parse(i.expiresAt);
+  return !Number.isFinite(ends) || ends - now <= INVITE_RENEW_WINDOW_MS;
 }

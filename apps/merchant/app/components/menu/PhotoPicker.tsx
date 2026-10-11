@@ -102,6 +102,15 @@ export function PhotoPicker({
   useEffect(() => {
     onBusyRef.current?.(busy);
   }, [busy]);
+  // A picker that goes away mid-upload (its sheet closed) must not leave the form's Save held for good.
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
+  useEffect(
+    () => () => {
+      if (busyRef.current) onBusyRef.current?.(false);
+    },
+    [],
+  );
 
   const showUrl = previewUrl ?? currentUrl;
   const frameHeight = aspect >= 2 ? 100 : 140;
