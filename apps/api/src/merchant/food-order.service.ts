@@ -18,6 +18,7 @@ import {
   isInServiceArea,
   serviceTownsLabel,
   DELIVERY_OTP_MAX_ATTEMPTS,
+  HANDOVER_CODE_MAX_REISSUES,
   deliveryFeeForDistance,
   deriveMerchantOrderTrack,
   foodOrderMoney,
@@ -60,6 +61,8 @@ import {
 import { PAYMENT_RAIL, type PaymentRail } from "../adapters/payments/payment-rail.interface";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { TokenService } from "../auth/token.service";
+import { openHandoverCode, sealHandoverCode } from "../common/handover-code";
+import { PiiCryptoService } from "../common/pii-crypto.service";
 import { pushCopy, PUSH_C, PUSH_C_STILL_WAITING } from "../notifications/merchant-order-push";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -245,6 +248,9 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     // C4: the photo-URL caches' metrics and shared L2 — both @Global-provided, optional like the rest.
     @Optional() private readonly metricsSvc?: MetricsService,
     @Optional() private readonly l2?: MicroCacheL2Provider,
+    // D2 (owner 2026-10-07): seals the pickup code next to its hash so a reveal is repeatable. @Global in
+    // the app; optional only for the positional unit harnesses (without it a row is hash-only, pre-D2).
+    @Optional() private readonly codeCrypto?: PiiCryptoService,
   ) {}
 
   /** The MICRO_CACHE_DISABLED kill-switch plus "TTL 0 disables it" — OrdersService.microCacheBypassed. */
@@ -1106,6 +1112,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         // resume now the food is ready, not at the old ready time (review of wave 1 C2).
         ...(next === "ready_for_pickup" ? { dispatchNextCheckAt: new Date() } : {}),
         pickupCodeHash: this.tokens.hash(pickupCode),
+        pickupCodeCipher: sealHandoverCode(this.codeCrypto, "pickup", orderId, pickupCode),
         pickupCodeAttempts: 0,
         // A restaurant tapping "Food is ready" plainly knows about the order: that confirms the kitchen.
         ...(order.autoAccepted && !order.kitchenConfirmedAt ? { kitchenConfirmedAt: new Date(), kitchenConfirmedBy: "merchant" } : {}),
@@ -1146,27 +1153,81 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     return this.forMerchant(await this.mustFindWithItems(orderId));
   }
 
-  /** N-16 reveal: `markReady` hashes the code it mints and discards the plaintext, so this is the
-   *  ONLY way the tablet can learn (or re-learn, after a reload) the current code to read out to the
-   *  rider at the counter. Mints a fresh code every call — mirrors `rotateDeliveryCode`'s own
-   *  reveal-by-rotation shape — which is safe here because the code is only ever communicated live,
-   *  never queued up ahead of time, so nothing depends on a stale value surviving a re-reveal.
+  /** N-16 reveal: the ONLY way the tablet learns (or re-learns, after a reload or on a second staff phone)
+   *  the current code to read out to the rider at the counter.
+   *
+   *  D2 (owner 2026-10-07, MJ-H1): idempotent. The code is stored sealed next to its hash (markReady /
+   *  sweepAutoAccepted), so every reveal returns the SAME code and leaves the attempt counter alone — a
+   *  second phone or Back-and-reopen no longer kills the code the first phone is showing. A new code is
+   *  minted only:
+   *   - on a lockout re-issue: the rider used every try (`pickupCodeAttempts` at the cap; confirmPickup tells
+   *     the rider to "ask the kitchen to re-check the code"), which also resets the counter. Capped per order
+   *     at HANDOVER_CODE_MAX_REISSUES (D2 review: otherwise every reveal at the cap bought the rider 5 more
+   *     guesses); past it, 409 `pickup_code_reissue_limit`;
+   *   - on a legacy row with no (or an unreadable) ciphertext: mint once, store both, stable from then on.
+   *     The tries are NOT reset by this (only a capped lockout re-issue resets them).
+   *  A mint is CAS-guarded on the hash it replaces (and a lockout one on the lock and the re-issue count), so
+   *  two phones racing it both show the winner's code and only one re-issue happens.
+   *
    *  Two windows: `ready_for_pickup` while dispatch searches, and — once a rider accepts, which clears
-   *  `merchantPhase` (`FoodDispatchService.acceptDispatch`) — any pre-pickup rider status with a
-   *  minted code. The second window is the one the merchant web actually asks in (it reveals only once a
-   *  rider is assigned); without it no shop, pharmacy or hand-accepted kitchen order could be collected
-   *  (E2E 2026-10-05 LB-1). It only ever re-mints an existing code: an order with no code stays codeless. */
+   *  `merchantPhase` (`FoodDispatchService.acceptDispatch`) — any pre-pickup rider status with a minted
+   *  code. The second window is the one the merchant web actually asks in (it reveals only once a rider is
+   *  assigned); without it no shop, pharmacy or hand-accepted kitchen order could be collected (E2E
+   *  2026-10-05 LB-1). It only ever re-mints an existing code: an order with no code stays codeless. */
   async revealPickupCode(profileId: string, orderId: string): Promise<{ pickupCode: string }> {
     const order = await this.findOwnAsMerchant(profileId, orderId);
     const where = pickupRevealWhere(order);
     if (!where) throw new ConflictException("This order isn't ready for pickup yet");
-    const pickupCode = this.tokens.randomPickupCode();
-    const claimed = await this.prisma.order.updateMany({
-      where: { id: orderId, ...where },
-      data: { pickupCodeHash: this.tokens.hash(pickupCode), pickupCodeAttempts: 0 },
+    const locked = order.pickupCodeAttempts >= DELIVERY_OTP_MAX_ATTEMPTS;
+    const stored = openHandoverCode(this.codeCrypto, this.tokens, "pickup", orderId, order.pickupCodeCipher, order.pickupCodeHash);
+    if (stored && !locked) return { pickupCode: stored };
+    if (locked && order.pickupCodeReissues >= HANDOVER_CODE_MAX_REISSUES) {
+      throw new ConflictException({
+        reason: "pickup_code_reissue_limit",
+        message: "The rider used every try on this code. Call LyniaGo support to hand this order over.",
+      });
+    }
+    const minted = await this.mintPickupCode(orderId, where, order.pickupCodeHash, locked ? order.pickupCodeReissues : null);
+    if (minted) return { pickupCode: minted };
+    // Lost the mint race (another phone minted first): show the code it minted, while it still stands.
+    const fresh = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { pickupCodeHash: true, pickupCodeCipher: true, pickupCodeAttempts: true },
     });
-    if (claimed.count === 0) throw new ConflictException("Order changed, retry");
-    return { pickupCode };
+    const winner =
+      fresh && fresh.pickupCodeAttempts < DELIVERY_OTP_MAX_ATTEMPTS
+        ? openHandoverCode(this.codeCrypto, this.tokens, "pickup", orderId, fresh.pickupCodeCipher, fresh.pickupCodeHash)
+        : null;
+    if (winner) return { pickupCode: winner };
+    throw new ConflictException("Order changed, retry");
+  }
+
+  /** D2: a fresh pickup code (hash + ciphertext), CAS-guarded on the reveal window AND on the hash it
+   *  replaces. `lockoutReissues` (the count read with the lock) makes it a lockout re-issue: pinned on the
+   *  lock and that count, it resets the tries and counts the re-issue. Without it (the legacy one-time mint)
+   *  the tries stay as they are. Null when the row moved under us. */
+  private async mintPickupCode(
+    orderId: string,
+    where: Prisma.OrderWhereInput,
+    replacesHash: string | null,
+    lockoutReissues: number | null,
+  ): Promise<string | null> {
+    const pickupCode = this.tokens.randomPickupCode();
+    const lockout = lockoutReissues != null;
+    const claimed = await this.prisma.order.updateMany({
+      where: {
+        id: orderId,
+        ...where,
+        pickupCodeHash: replacesHash,
+        ...(lockoutReissues != null ? { pickupCodeAttempts: { gte: DELIVERY_OTP_MAX_ATTEMPTS }, pickupCodeReissues: lockoutReissues } : {}),
+      },
+      data: {
+        pickupCodeHash: this.tokens.hash(pickupCode),
+        pickupCodeCipher: sealHandoverCode(this.codeCrypto, "pickup", orderId, pickupCode),
+        ...(lockout ? { pickupCodeAttempts: 0, pickupCodeReissues: { increment: 1 } } : {}),
+      },
+    });
+    return claimed.count === 0 ? null : pickupCode;
   }
 
   // ── Rider (N-16 pickup — mechanic only; C3's dispatch owns getting a rider assigned) ───────────────
@@ -1347,7 +1408,8 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     // merchantPhase: an order collected while its kitchen phase still read `preparing` (an auto-accepted
     // order found early, "Collected" before anyone tapped "Food is ready") leaves the kitchen's machine
     // here, so the board moves it to ON THE WAY instead of keeping a cooking ticket (MJ-RM1).
-    await tx.order.update({ where: { id: orderId }, data: { status: "picked_up", collectedAt: new Date(), merchantPhase: null } });
+    // D2: the code has done its job — its ciphertext goes, so it can never be shown again.
+    await tx.order.update({ where: { id: orderId }, data: { status: "picked_up", collectedAt: new Date(), merchantPhase: null, pickupCodeCipher: null } });
     await tx.orderEvent.create({ data: { orderId, status: "picked_up" } });
     await this.debt.openDebtIfNeeded(tx, {
       id: orderId,
@@ -1676,6 +1738,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
             merchantPhase: next,
             readyAt: now,
             pickupCodeHash: this.tokens.hash(pickupCode),
+            pickupCodeCipher: sealHandoverCode(this.codeCrypto, "pickup", o.id, pickupCode),
             pickupCodeAttempts: 0,
             // As markReady: a parked search resumes now (and the D-34 cap then applies as usual).
             ...(next === "ready_for_pickup" ? { dispatchNextCheckAt: now } : {}),

@@ -18,7 +18,8 @@ const mockRateVenue = jest.fn(async (..._a: unknown[]) => ({ score: 5, tags: [],
 const mockConfirmCash = jest.fn(async (..._a: unknown[]) => ({ orderId: "order-1", customerCashConfirmedAt: new Date().toISOString() }));
 const mockGetOrder = jest.fn();
 const mockCancelOrder = jest.fn(async (..._a: unknown[]) => ({ orderId: "order-1", status: "cancelled", cancelledBy: "customer", cooldownUntil: null }));
-const mockRotate = jest.fn(async (..._a: unknown[]) => ({ deliveryCode: "418290" }));
+const mockRotate = jest.fn(async (..._a: unknown[]) => ({ deliveryCode: "604117" }));
+const mockReveal = jest.fn(async (..._a: unknown[]) => ({ deliveryCode: "418290" }));
 const mockRate = jest.fn(async (..._a: unknown[]) => ({}));
 const mockPush = jest.fn();
 
@@ -44,6 +45,7 @@ jest.mock("../../../src/api/orders", () => ({
   getOrder: (...a: unknown[]) => mockGetOrder(...a),
   cancelOrder: (...a: unknown[]) => mockCancelOrder(...a),
   rotateDeliveryCode: (...a: unknown[]) => mockRotate(...a),
+  revealDeliveryCode: (...a: unknown[]) => mockReveal(...a),
   rateOrder: (...a: unknown[]) => mockRate(...a),
   notifyWhenRiderOnline: jest.fn(),
   raiseOrderPrice: jest.fn(),
@@ -174,10 +176,12 @@ function press(t: renderer.ReactTestRenderer, label: string | RegExp): void {
 }
 
 let active: renderer.ReactTestRenderer | null = null;
+let lastClient: QueryClient | null = null;
+
 async function render(food: MerchantOrderResponse, snap: OrderSnapshot): Promise<renderer.ReactTestRenderer> {
   mockGetFoodOrder.mockResolvedValue(food);
   mockGetOrder.mockResolvedValue(snap);
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false, gcTime: 0 } } });
+  const client = (lastClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false, gcTime: 0 } } }));
   let tree!: renderer.ReactTestRenderer;
   await act(async () => {
     tree = renderer.create(
@@ -425,6 +429,7 @@ describe("merchant order — one order screen (D-59)", () => {
     expect(has(t, "Tendai M.")).toBe(true);
     expect(has(t, "Delivery code")).toBe(false);
     expect(mockRotate).not.toHaveBeenCalled();
+    expect(mockReveal).not.toHaveBeenCalled();
   });
 
   it("T12a: no fix — no ETA, only the sentence", async () => {
@@ -448,17 +453,19 @@ describe("merchant order — one order screen (D-59)", () => {
     expect(has(t, "Tendai hands it over first")).toBe(true);
     expect(has(t, "Shows here once you and Tendai both confirm the cash")).toBe(true);
     expect(mockRotate).not.toHaveBeenCalled();
+    expect(mockReveal).not.toHaveBeenCalled();
     press(t, "I’ve paid $16.50");
     await act(async () => undefined);
     expect(mockConfirmCash).toHaveBeenCalledWith("order-1");
   });
 
-  it("P2: both confirmed — the code is issued and shown 3+3 on the forest panel", async () => {
+  it("P2: both confirmed — the code is read (D2: never rotated just to show it) and shown 3+3 on the forest panel", async () => {
     const t = await render(
       foodOrder({ status: "en_route_dropoff", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003", customerCashConfirmedAt: iso(-60_000), riderCashConfirmedAt: iso(-30_000) }),
       snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, rider: { profileId: "r", currentLat: -17.83, currentLng: 31.05, updatedAt: iso(-2_000) } }),
     );
-    expect(mockRotate).toHaveBeenCalledWith("order-1");
+    expect(mockReveal).toHaveBeenCalledWith("order-1");
+    expect(mockRotate).not.toHaveBeenCalled();
     for (let i = 0; i < 2; i++) await act(async () => new Promise((r) => setTimeout(r, 0)));
     expect(has(t, "418")).toBe(true);
     expect(has(t, "290")).toBe(true);
@@ -471,10 +478,66 @@ describe("merchant order — one order screen (D-59)", () => {
       foodOrder({ status: "en_route_dropoff", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003", customerCashConfirmedAt: iso(-300_000), cashHandshakeFrozenAt: iso(-120_000), riderCashConfirmedAt: iso(-30_000) }),
       snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, rider: { profileId: "r", currentLat: -17.83, currentLng: 31.05, updatedAt: iso(-2_000) } }),
     );
-    expect(mockRotate).toHaveBeenCalledWith("order-1");
+    expect(mockReveal).toHaveBeenCalledWith("order-1");
     for (let i = 0; i < 2; i++) await act(async () => new Promise((r) => setTimeout(r, 0)));
     expect(has(t, "Delivery code")).toBe(true);
     expect(has(t, "418")).toBe(true);
+  });
+
+  it("U04: the rider's tries ran out — the code is re-issued once (the explicit rotate) and the new one shown", async () => {
+    const t = await render(
+      foodOrder({ status: "en_route_dropoff", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003", customerCashConfirmedAt: iso(-60_000), riderCashConfirmedAt: iso(-30_000) }),
+      snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, deliveryOtpAttempts: 5, codeRotatedAt: iso(-600_000), rider: { profileId: "r", currentLat: -17.83, currentLng: 31.05, updatedAt: iso(-2_000) } }),
+    );
+    for (let i = 0; i < 3; i++) await act(async () => new Promise((r) => setTimeout(r, 0)));
+    expect(mockRotate).toHaveBeenCalledTimes(1);
+    // A locked code is dead: it is never read back to be shown.
+    expect(mockReveal).not.toHaveBeenCalled();
+    expect(has(t, "604")).toBe(true);
+    expect(has(t, "117")).toBe(true);
+  });
+
+  // D2 review item 1: the server caps lockout re-issues per order. Past the cap the screen says so once
+  // (the server's text, like every 4xx here) and never asks again for the same lock.
+  it("U04 past the server's re-issue cap: the server's message, no code card, no second re-issue", async () => {
+    const { ApiError } = jest.requireActual("../../../src/api/client") as typeof import("../../../src/api/client");
+    const msg = "Too many wrong tries on this code. Call LyniaGo support to finish this delivery.";
+    mockRotate.mockRejectedValueOnce(new ApiError(409, msg, "code_reissue_limit"));
+    const t = await render(
+      foodOrder({ status: "en_route_dropoff", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003", customerCashConfirmedAt: iso(-60_000), riderCashConfirmedAt: iso(-30_000) }),
+      snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, deliveryOtpAttempts: 5, codeRotatedAt: iso(-600_000), rider: { profileId: "r", currentLat: -17.83, currentLng: 31.05, updatedAt: iso(-2_000) } }),
+    );
+    for (let i = 0; i < 4; i++) await act(async () => new Promise((r) => setTimeout(r, 0)));
+    expect(mockRotate).toHaveBeenCalledTimes(1);
+    expect(mockReveal).not.toHaveBeenCalled();
+    expect(has(t, msg)).toBe(true);
+    expect(has(t, "Delivery code")).toBe(false);
+  });
+
+  // D2 second review F3: a non-cap failure used to clear the lock key and bump a settle counter that re-ran
+  // the effect at once — a request loop at network speed. Now it waits for a LATER snapshot and a back-off.
+  it("U04: a failed re-issue (5xx) is not retried until a later snapshot after the back-off — then once", async () => {
+    const { ApiError } = jest.requireActual("../../../src/api/client") as typeof import("../../../src/api/client");
+    mockRotate.mockRejectedValueOnce(new ApiError(503, "Service unavailable"));
+    await render(
+      foodOrder({ status: "en_route_dropoff", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003", customerCashConfirmedAt: iso(-60_000), riderCashConfirmedAt: iso(-30_000) }),
+      snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, deliveryOtpAttempts: 5, codeRotatedAt: iso(-600_000), rider: { profileId: "r", currentLat: -17.83, currentLng: 31.05, updatedAt: iso(-2_000) } }),
+    );
+    for (let i = 0; i < 20; i++) await act(async () => new Promise((r) => setTimeout(r, 0)));
+    expect(mockRotate).toHaveBeenCalledTimes(1);
+
+    // A later snapshot, past the back-off: one more try.
+    const now = Date.now();
+    const clock = jest.spyOn(Date, "now").mockReturnValue(now + 61_000);
+    try {
+      await act(async () => {
+        await lastClient!.refetchQueries();
+      });
+      for (let i = 0; i < 6; i++) await act(async () => new Promise((r) => setTimeout(r, 0)));
+      expect(mockRotate).toHaveBeenCalledTimes(2);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   // ── round 3: per service, scheduled, Rx (README "Per service", BRIEF §12–13) ──

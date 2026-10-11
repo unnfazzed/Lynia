@@ -143,7 +143,54 @@ describe("K4 · hand over (Merchant v2, D-77)", () => {
     expect(screen.queryByRole("button", { name: "Hand over" })).toBeNull();
   });
 
-  it("with a rider coming, says the six-digit code 3+3 — asked for once, since asking rotates it", async () => {
+  // D2 (owner 2026-10-07, MJ-H1): the reveal is idempotent server-side, so a poll that changes nothing
+  // doesn't ask again; when the rider's tries run out the next poll asks once more — the lockout re-issue —
+  // and the screen shows the new code.
+  it("asks again only when the rider's tries run out, and shows the re-issued code (MJ-H1 lockout re-issue)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const coming = merchantOrder({ id: ID, merchantPhase: null, status: "assigned", riderId: RIDER.profileId, rider: RIDER, pickupCodeAttempts: 0 });
+      show(coming);
+      expect(await screen.findByLabelText("Pickup code 7 3 1 6 0 4")).toBeTruthy();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(revealPickupCode).toHaveBeenCalledTimes(1);
+      vi.mocked(getOrder).mockResolvedValue({ ...coming, pickupCodeAttempts: 5 });
+      vi.mocked(revealPickupCode).mockResolvedValueOnce({ pickupCode: "204118" });
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await screen.findByLabelText("Pickup code 2 0 4 1 1 8")).toBeTruthy();
+      expect(revealPickupCode).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // D2 review item 1: the server caps lockout re-issues per order. Once it refuses (past the cap) the screen
+  // hides the dead code and stops asking for that lock — no 409 on every poll.
+  it("past the server's re-issue cap, the dead code is hidden and the lock isn't asked about again", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const coming = merchantOrder({ id: ID, merchantPhase: null, status: "assigned", riderId: RIDER.profileId, rider: RIDER, pickupCodeAttempts: 0 });
+      show(coming);
+      expect(await screen.findByLabelText("Pickup code 7 3 1 6 0 4")).toBeTruthy();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(revealPickupCode).toHaveBeenCalledTimes(1);
+      // A fresh object per poll, as the network gives (the hook re-runs on every new order snapshot).
+      vi.mocked(getOrder).mockImplementation(async () => ({ ...coming, pickupCodeAttempts: 5 }));
+      vi.mocked(revealPickupCode).mockRejectedValue(
+        new ApiError(409, "The rider used every try on this code. Call LyniaGo support to hand this order over.", "pickup_code_reissue_limit"),
+      );
+      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.waitFor(() => expect(screen.queryByLabelText("Pickup code 7 3 1 6 0 4")).toBeNull());
+      expect(revealPickupCode).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(revealPickupCode).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.mocked(revealPickupCode).mockResolvedValue({ pickupCode: "731604" });
+      vi.useRealTimers();
+    }
+  });
+
+  it("with a rider coming, says the six-digit code 3+3 — asked for once per rider", async () => {
     show(merchantOrder({ id: ID, merchantPhase: null, status: "assigned", riderId: RIDER.profileId, rider: RIDER, riderPhone: "+263772222222" }));
     expect(await screen.findByText("Blessing M.")).toBeTruthy();
     expect(screen.getByText("Hand over #A111")).toBeTruthy();

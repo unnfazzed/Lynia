@@ -146,7 +146,7 @@ export function stage({
     globalThis.fetch = (input, init) => {
       const url = typeof input === "string" ? input : input.url;
       if (hang && /\/orders\/[^/]+$/.test(new URL(url, "http://p").pathname)) return new Promise(() => undefined);
-      if (codeIssuing && /delivery-code\/rotate/.test(url)) return new Promise(() => undefined);
+      if (codeIssuing && /delivery-code\/(rotate|reveal)/.test(url)) return new Promise(() => undefined);
       return routed(input, init);
     };
   }

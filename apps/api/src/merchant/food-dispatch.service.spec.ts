@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
 import type { Env } from "../config/env";
 import { TokenService } from "../auth/token.service";
+import { PiiCryptoService } from "../common/pii-crypto.service";
 import type { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
@@ -36,14 +37,14 @@ function fakeGateway() {
 
 /** Fake Prisma where `$transaction(cb)` runs the callback against the same fake (tx === prisma),
  *  mirroring food-order.service.spec.ts's `build()`. */
-function build(methods: Record<string, unknown>, strategy: DispatchStrategy, gateway = fakeGateway()) {
+function build(methods: Record<string, unknown>, strategy: DispatchStrategy, gateway = fakeGateway(), codeCrypto?: PiiCryptoService) {
   notified.length = 0;
   const prisma = withMembershipShim({ ...methods } as Record<string, unknown>);
   prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
   // The tick's post-write "is the round still live?" re-check: live unless a test says otherwise.
   const order = prisma.order as Record<string, unknown> | undefined;
   if (order && !order.count) order.count = async () => 1;
-  const svc = new FoodDispatchService(prisma as unknown as PrismaService, tokens, notifications, gateway, strategy);
+  const svc = new FoodDispatchService(prisma as unknown as PrismaService, tokens, notifications, gateway, strategy, codeCrypto);
   return { svc, prisma, gateway };
 }
 
@@ -814,6 +815,74 @@ describe("FoodDispatchService.dropDispatch — MJ-RM2 (C14) + MJ-RM1", () => {
     const { svc, orderUpdateMany } = world({ status: "assigned", merchantPhase: "preparing", dispatchExcludedRiderIds: [], merchantId: MERCHANT_ID });
     await svc.dropDispatch(orderId, "r1");
     expect(orderUpdateMany.mock.calls[0]![0]).toMatchObject({ where: { merchantPhase: "preparing" }, data: { status: "requested", merchantPhase: "preparing" } });
+  });
+});
+
+/** D2 (owner 2026-10-07): the food order's delivery code is sealed next to its hash at accept, so the
+ *  customer's reveal (OrderLifecycleService.revealDeliveryCode) is repeatable; a drop clears both. */
+describe("FoodDispatchService — D2 sealed delivery code", () => {
+  const pii = new PiiCryptoService({ PII_ENCRYPTION_KEY: "food-dispatch-d2-pii-key-0123456789abcdef" } as Env);
+
+  it("acceptDispatch stores the minted code sealed next to its hash", async () => {
+    const orderUpdateMany = vi.fn(async (_a: { where: Record<string, unknown>; data: Record<string, unknown> }) => ({ count: 1 }));
+    const { svc } = build(
+      {
+        order: { findFirst: async () => liveOrder, updateMany: orderUpdateMany, findUnique: async () => ({ customerId: "cust-1" }) },
+        foodDispatchAttempt: { findUnique: async () => pendingRow, findMany: async () => [], updateMany: vi.fn(async () => ({ count: 1 })) },
+        orderEvent: { create: async () => ({}) },
+      },
+      NONE,
+      fakeGateway(),
+      pii,
+    );
+    await svc.acceptDispatch(orderId, "r1");
+    const data = orderUpdateMany.mock.calls[0]![0].data;
+    const code = pii.decryptCode(data.otpCipher as string, `delivery:${orderId}`);
+    expect(code).toMatch(/^\d{6}$/);
+    expect(data.otpHash).toBe(tokens.hash(code!));
+  });
+
+  const dropHarness = (pickupCodeAttempts: number) => {
+    const orderUpdateMany = vi.fn(async (_a: { where: Record<string, unknown>; data: Record<string, unknown> }) => ({ count: 1 }));
+    const { svc } = build(
+      {
+        order: {
+          findFirst: async () => ({ status: "assigned", merchantPhase: null, dispatchExcludedRiderIds: [], merchantId: MERCHANT_ID, pickupCodeAttempts }),
+          updateMany: orderUpdateMany,
+          findUnique: async () => ({ customerId: "cust-1" }),
+        },
+        orderEvent: { create: async () => ({}) },
+        rider: { findUnique: async () => ({ cancelStrikes: 0, reliabilityScore: 100, onHold: false, heldReason: null, cooldownUntil: null }), update: async () => ({}) },
+      },
+      NONE,
+      fakeGateway(),
+      pii,
+    );
+    return { svc, orderUpdateMany };
+  };
+
+  it("dropDispatch clears the delivery ciphertext with the hash; with no pickup try spent the pickup code and tries stay", async () => {
+    const { svc, orderUpdateMany } = dropHarness(0);
+    await svc.dropDispatch(orderId, "r1");
+    const { where, data } = orderUpdateMany.mock.calls[0]![0];
+    expect(data).toMatchObject({ otpHash: null, otpCipher: null });
+    expect(data).not.toHaveProperty("pickupCodeHash");
+    expect(data).not.toHaveProperty("pickupCodeCipher");
+    expect(data).not.toHaveProperty("pickupCodeAttempts");
+    expect(where).toMatchObject({ pickupCodeAttempts: 0 });
+  });
+
+  // D2 second review F2: resetting the tries on the SAME code handed each new (colluding) rider 5 more guesses.
+  it("a drop after spent pickup tries mints a NEW pickup code (AAD-bound) with the tries at 0 — not counted as a re-issue", async () => {
+    const { svc, orderUpdateMany } = dropHarness(3);
+    await svc.dropDispatch(orderId, "r1");
+    const { where, data } = orderUpdateMany.mock.calls[0]![0];
+    expect(where).toMatchObject({ pickupCodeAttempts: 3 });
+    expect(data).toMatchObject({ pickupCodeAttempts: 0 });
+    const code = pii.decryptCode(data.pickupCodeCipher as string, `pickup:${orderId}`);
+    expect(code).toMatch(/^\d{6}$/);
+    expect(data.pickupCodeHash).toBe(tokens.hash(code!));
+    expect(data).not.toHaveProperty("pickupCodeReissues");
   });
 });
 

@@ -205,7 +205,9 @@ export class MerchantOrderController {
   }
 
   // N-16: the assigned RIDER's action, not the merchant's — no MerchantGuard (see class docstring).
+  // D2 review: throttled per signed-in rider on top of the per-order try cap.
   @Post(":orderId/confirm-pickup")
+  @Throttle({ limit: 10, windowSec: 60, keyPrefix: "pickup-code-confirm" })
   confirmPickup(
     @Param("orderId", ParseUUIDPipe) orderId: string,
     @Body(new ZodBody(ConfirmMerchantPickupRequest)) body: ConfirmMerchantPickupRequest,

@@ -36,6 +36,14 @@ export const PRESENCE_ESCALATION_MS = 120_000;
  *  source so the two can't drift apart. */
 export const DELIVERY_OTP_MAX_ATTEMPTS = 5;
 
+/** D2 review (2026-10-11): how many times one order's hand-over code may be re-issued after a LOCKOUT
+ *  (every try used). Each lockout re-issue resets the tries, so without a cap a rider could cycle
+ *  5 guesses → re-issue → 5 guesses for ever. With it, an order allows at most
+ *  DELIVERY_OTP_MAX_ATTEMPTS × (1 + this) guesses; past it the server refuses (`code_reissue_limit` /
+ *  `pickup_code_reissue_limit`) and the order goes to support / not delivered. Server-enforced per order,
+ *  separately for the delivery code and the pickup code. */
+export const HANDOVER_CODE_MAX_REISSUES = 2;
+
 export const LatLng = z.object({
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
@@ -1702,7 +1710,8 @@ export const MerchantOrderResponse = z
     noRiderHoldAt: z.string().nullable(),
     // N-16: the server-committed pickup-code attempt count, mirroring `deliveryOtpAttempts` on the
     // generic OrderSnapshot — lets the rider's pickup screen resync its lockout state from the server
-    // (a merchant re-reveal resets this to 0) instead of trusting a purely local counter.
+    // (a merchant's lockout re-reveal resets this to 0; since D2 an ordinary reveal returns the same code
+    // and leaves it alone) instead of trusting a purely local counter.
     pickupCodeAttempts: z.number().int(),
     // C4: doorstep handshake (R-04/R-05/N-19) — CASH orders only, null otherwise. R-12: WALLET orders
     // show PAID via merchantPaymentConfirmedAt/merchantPaymentReference above; this is CASH's mirror.

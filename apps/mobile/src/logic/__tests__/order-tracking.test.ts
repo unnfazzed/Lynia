@@ -10,7 +10,7 @@
  * The end-to-end render behaviour is covered in src/ui/order/__tests__/live-tracking-isolation.test.tsx.
  */
 import type { OrderSnapshot } from "../../api/orders";
-import { expiredTerminalKind, orderLoadErrorKind, reconcileDeliveryCode, reconcilePendingRating, selectOfferReconciled, selectOrderShell, selectRiderTelemetry, shouldCancelBeforeRebroadcast } from "../order-tracking";
+import { deliveryCodeLockout, expiredTerminalKind, orderLoadErrorKind, reconcileDeliveryCode, reconcilePendingRating, selectOfferReconciled, selectOrderShell, selectRiderTelemetry, shouldCancelBeforeRebroadcast } from "../order-tracking";
 
 const base: OrderSnapshot = {
   id: "order-1",
@@ -138,6 +138,27 @@ describe("expiredTerminalKind", () => {
 // so the customer stops relaying a dead code. deliveryOtpAttempts is the only rotation signal (no timestamp
 // in the snapshot); it's monotonic while a code is current and resets to 0 on rotation, so a drop below the
 // high-water mark is the tell.
+describe("deliveryCodeLockout (U04 / D2)", () => {
+  const at = "2026-10-07T09:00:00.000Z";
+  it("is quiet below the cap or with no count", () => {
+    expect(deliveryCodeLockout({ attempts: 4, codeRotatedAt: at, reissuedFor: null })).toEqual({ action: "none" });
+    expect(deliveryCodeLockout({ attempts: null, codeRotatedAt: at, reissuedFor: null })).toEqual({ action: "none" });
+    expect(deliveryCodeLockout({ attempts: undefined, codeRotatedAt: at, reissuedFor: null })).toEqual({ action: "none" });
+  });
+  it("re-issues a locked code once, keyed by its issue stamp", () => {
+    expect(deliveryCodeLockout({ attempts: 5, codeRotatedAt: at, reissuedFor: null })).toEqual({ action: "reissue", key: at });
+    expect(deliveryCodeLockout({ attempts: 5, codeRotatedAt: at, reissuedFor: at })).toEqual({ action: "none" });
+  });
+  it("a code locked again after a re-issue is re-issued again", () => {
+    const later = "2026-10-07T09:05:00.000Z";
+    expect(deliveryCodeLockout({ attempts: 5, codeRotatedAt: later, reissuedFor: at })).toEqual({ action: "reissue", key: later });
+  });
+  it("an unstamped (older API) lock is still re-issued once", () => {
+    expect(deliveryCodeLockout({ attempts: 5, codeRotatedAt: null, reissuedFor: null })).toEqual({ action: "reissue", key: "unstamped" });
+    expect(deliveryCodeLockout({ attempts: 5, codeRotatedAt: null, reissuedFor: "unstamped" })).toEqual({ action: "none" });
+  });
+});
+
 describe("reconcileDeliveryCode", () => {
   it("does nothing when there is no local code to protect", () => {
     expect(reconcileDeliveryCode({ hasLocalCode: false, storedAttemptsHighWater: 5, snapshotAttempts: 0 })).toEqual({ action: "none" });

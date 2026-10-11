@@ -69,8 +69,11 @@ export class LifecycleController {
     return this.lifecycle.attachDeliveryProof(orderId, riderId, body.key, body.lat, body.lng);
   }
 
-  /** Rider confirms the handover with the recipient's delivery code → delivered. */
+  /** Rider confirms the handover with the recipient's delivery code → delivered. D2 review: throttled per
+   *  signed-in rider (the default key) on top of the per-order try cap, so code guessing is slow on every
+   *  order at once. Generous for a real rider: 5 tries per code, one code per stop. */
   @Post("deliver")
+  @Throttle({ limit: 10, windowSec: 60, keyPrefix: "delivery-code-confirm" })
   deliver(
     @Param("orderId", ParseUUIDPipe) orderId: string,
     @Body(new ZodBody(ConfirmDeliveryRequest)) body: ConfirmDeliveryRequest,
@@ -109,8 +112,18 @@ export class LifecycleController {
     return this.lifecycle.rateSender(orderId, riderId, body.score, body.comment);
   }
 
-  /** Customer re-issues the delivery code (after a lockout or a lost code). Throttled so rotation
-   *  can't be used to trivially reset the OTP attempt cap (F-03). */
+  /** D2 (owner 2026-10-07): the customer's CURRENT delivery code — the same one on every call and device;
+   *  never rotates, never resets the attempt cap. Throttled anyway: a legacy (pre-0086) row's first reveal
+   *  mints once. */
+  @Post("delivery-code/reveal")
+  @Throttle({ limit: 30, windowSec: 60, keyPrefix: "delivery-code-reveal" })
+  reveal(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() customerId: string) {
+    return this.lifecycle.revealDeliveryCode(orderId, customerId);
+  }
+
+  /** Customer re-issues the delivery code — the explicit re-issue only (a lockout, U04), never just to
+   *  show it (that is `reveal` above, D2). Throttled so rotation can't be used to trivially reset the OTP
+   *  attempt cap (F-03). */
   @Post("delivery-code/rotate")
   @Throttle({ limit: 10, windowSec: 60, keyPrefix: "delivery-code-rotate" })
   rotate(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() customerId: string) {

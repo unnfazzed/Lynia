@@ -8,7 +8,7 @@ import { AccessibilityInfo, ActivityIndicator, BackHandler, Linking, ScrollView,
 import { SafeAreaInsetsContext, SafeAreaView } from "react-native-safe-area-context";
 import { ApiError } from "../api/client";
 import { cancelUnpaidFoodOrder, changeFoodOrderSchedule, confirmFoodCustomerCash, confirmFoodSubstitution, rateFoodVenue, respondToFoodOrderItems } from "../api/food-orders";
-import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, rotateDeliveryCode } from "../api/orders";
+import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, revealDeliveryCode, rotateDeliveryCode } from "../api/orders";
 import { raiseIssue, raiseSos } from "../api/safety";
 import {
   clearDeliveryCode,
@@ -54,7 +54,7 @@ import {
 import { goHomeClearingStack } from "../logic/nav";
 import type { ChosenSlot } from "../logic/review";
 import { minutesSince } from "../logic/order-stage";
-import { reconcileDeliveryCode, reconcilePendingRating, selectOrderShell, selectRiderTelemetry } from "../logic/order-tracking";
+import { deliveryCodeLockout, reconcileDeliveryCode, reconcilePendingRating, selectOrderShell, selectRiderTelemetry } from "../logic/order-tracking";
 import { loadFoodOrderSnapshot, saveFoodOrderSnapshot } from "../net/food-order-store";
 import { useClaimOfflineBanner } from "../net/offline-banner-owner";
 import { useReachability } from "../net/use-reachability";
@@ -388,24 +388,92 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     setCode(null);
     void clearDeliveryCode(orderId);
   }, [riderDropped, code, orderId]);
-  // The code is issued only once both cash confirms have landed (R-09, server-enforced).
+  // The code shows only once both cash confirms have landed (R-09, server-enforced). D2 (owner 2026-10-07;
+  // U19): showing it is a READ — the same code on every device, never a rotation; a failed read retries on
+  // the next order refresh.
   const codeInFlight = useRef(false);
+  // D2 review: bumped whenever a code read/re-issue settles, so a lock that arrived while one was in flight
+  // is acted on as soon as it settles (not only on the next order refresh).
+  const [codeSettled, setCodeSettled] = useState(0);
+  // The screen's toast (declared further down with the screen state); read through a ref by the effects here.
+  const toastRef = useRef<((t: Toast) => void) | null>(null);
+  const adoptCode = useCallback(
+    (deliveryCode: string) => {
+      setCode(deliveryCode);
+      setAttemptsSeen(0);
+      setRotatedSeen(null);
+      void saveDeliveryCode(orderId, deliveryCode);
+    },
+    [orderId],
+  );
+  const codeLocked = deliveryCodeLockout({ attempts: snap?.deliveryOtpAttempts, codeRotatedAt: snap?.codeRotatedAt, reissuedFor: null }).action === "reissue";
   useEffect(() => {
-    if (!order || order.status !== "en_route_dropoff" || !codeRestored || code || !online || codeInFlight.current) return;
+    if (!order || order.status !== "en_route_dropoff" || !codeRestored || code || codeLocked || !online || codeInFlight.current) return;
     if (!codeEligible(cashOf(order))) return;
     codeInFlight.current = true;
-    void rotateDeliveryCode(orderId)
-      .then((res) => {
-        setCode(res.deliveryCode);
-        setAttemptsSeen(0);
-        setRotatedSeen(null);
-        void saveDeliveryCode(orderId, res.deliveryCode);
-      })
+    void revealDeliveryCode(orderId)
+      .then((res) => adoptCode(res.deliveryCode))
       .catch(() => undefined)
       .finally(() => {
         codeInFlight.current = false;
+        setCodeSettled((n) => n + 1);
       });
-  }, [order, codeRestored, code, online, orderId]);
+  }, [order, codeRestored, code, codeLocked, online, orderId, adoptCode]);
+  // U04 (D2): the rider's tries ran out — re-issue once per locked code (the explicit rotate: a new code,
+  // tries reset), shown through the same code card. No locked state and no "new code" button are drawn, so
+  // nothing new renders and the re-issue stays automatic; the server caps it per order
+  // (HANDOVER_CODE_MAX_REISSUES) and pins it on the lock, so a second device can't double it.
+  const reissuedFor = useRef<string | null>(null);
+  // D2 second review F3: a failed re-issue (offline, 5xx, a lost race, a 429) is retried only on a LATER
+  // order snapshot and after a back-off (2 s doubling to 60 s, or the 429's Retry-After) — never straight
+  // from its own settle, which looped at network speed. The snapshot's update time is read from the cache,
+  // never subscribed to (P42: `snapQ.dataUpdatedAt` would re-render the screen on every GPS push); only while
+  // a failed re-issue waits does a cache listener watch for the later snapshot, and it re-renders once, when
+  // the retry is due.
+  const snapAtNow = useCallback((): number => qc.getQueryState(orderKey(orderId))?.dataUpdatedAt ?? 0, [qc, orderId]);
+  const reissueBackoff = useRef<{ failures: number; snapAt: number; until: number } | null>(null);
+  const [reissueWaiting, setReissueWaiting] = useState(false);
+  const [reissueDue, setReissueDue] = useState(0);
+  useEffect(() => {
+    if (!reissueWaiting) return;
+    return qc.getQueryCache().subscribe(() => {
+      const wait = reissueBackoff.current;
+      if (!wait || snapAtNow() <= wait.snapAt || Date.now() < wait.until) return;
+      setReissueWaiting(false);
+      setReissueDue((n) => n + 1);
+    });
+  }, [reissueWaiting, qc, snapAtNow]);
+  useEffect(() => {
+    if (!order || order.status !== "en_route_dropoff" || !codeRestored || !online || codeInFlight.current) return;
+    const lockout = deliveryCodeLockout({ attempts: snap?.deliveryOtpAttempts, codeRotatedAt: snap?.codeRotatedAt, reissuedFor: reissuedFor.current });
+    if (lockout.action !== "reissue") return;
+    const wait = reissueBackoff.current;
+    if (wait && (snapAtNow() <= wait.snapAt || Date.now() < wait.until)) return;
+    reissuedFor.current = lockout.key;
+    codeInFlight.current = true;
+    setCode(null);
+    void rotateDeliveryCode(orderId)
+      .then((res) => {
+        reissueBackoff.current = null;
+        adoptCode(res.deliveryCode);
+      })
+      .catch((e: unknown) => {
+        if (e instanceof ApiError && e.code === "code_reissue_limit") {
+          // Past the server's cap no new code can come: say so (the server's text, as every 4xx here), once.
+          toastRef.current?.({ text: e.message || O.c.noData, icon: "circle-alert" });
+          return;
+        }
+        const failures = (reissueBackoff.current?.failures ?? 0) + 1;
+        const retryAfterMs = e instanceof ApiError && e.status === 429 && e.retryAfter != null ? e.retryAfter * 1000 : 0;
+        const backoffMs = Math.min(60_000, 2_000 * 2 ** (failures - 1));
+        reissueBackoff.current = { failures, snapAt: snapAtNow(), until: Date.now() + Math.max(retryAfterMs, backoffMs) };
+        reissuedFor.current = null;
+        setReissueWaiting(true);
+      })
+      .finally(() => {
+        codeInFlight.current = false;
+      });
+  }, [order, snap?.deliveryOtpAttempts, snap?.codeRotatedAt, codeRestored, online, orderId, adoptCode, codeSettled, reissueDue, snapAtNow]);
 
   // ── screen state ──
   const [panel, setPanel] = useState<Panel>(null);
@@ -419,6 +487,9 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     setToast(t);
     AccessibilityInfo.announceForAccessibility(t.text);
   }, []);
+  useEffect(() => {
+    toastRef.current = showToast;
+  }, [showToast]);
   useEffect(() => {
     if (!toast || toast.ttl === 0) return;
     const t = setTimeout(() => setToast(null), toast.ttl ?? NOTE_MS);

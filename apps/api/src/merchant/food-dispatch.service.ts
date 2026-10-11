@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit, Optional } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import {
   dispatchRoundSize,
@@ -11,6 +11,8 @@ import {
   type Waypoint,
 } from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
+import { sealHandoverCode } from "../common/handover-code";
+import { PiiCryptoService } from "../common/pii-crypto.service";
 import { CANCEL_STRIKE_LIMIT } from "../orders/order-lifecycle.constants";
 import { pushCopy, PUSH_C, pushMoney, riderJobTemplate } from "../notifications/merchant-order-push";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -103,6 +105,9 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     private readonly notifications: NotificationsService,
     private readonly gateway: TrackingGateway,
     @Inject(DISPATCH_STRATEGY) private readonly strategy: DispatchStrategy,
+    // D2 (owner 2026-10-07): seals the delivery code next to its hash so the customer's reveal is
+    // repeatable. @Global in the app; optional only for the positional unit harnesses.
+    @Optional() private readonly codeCrypto?: PiiCryptoService,
   ) {}
 
   onModuleInit(): void {
@@ -591,6 +596,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       // until it taps "Food is ready" (or the ready time passes), which then clears it.
       merchantPhase: keepCooking ? ("preparing" as const) : null,
       otpHash: this.tokens.hash(deliveryCode),
+      otpCipher: sealHandoverCode(this.codeCrypto, "delivery", orderId, deliveryCode),
       deliveryOtpAttempts: 0,
       deliveryCodeRotatedAt: new Date(),
       dispatchOfferedRiderId: null,
@@ -694,9 +700,15 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
   async dropDispatch(orderId: string, riderId: string): Promise<{ orderId: string; status: "requested" }> {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, orderType: "merchant", riderId },
-      select: { status: true, merchantPhase: true, dispatchExcludedRiderIds: true, merchantId: true },
+      select: { status: true, merchantPhase: true, dispatchExcludedRiderIds: true, merchantId: true, pickupCodeAttempts: true },
     });
     if (!order) throw new NotFoundException("Order not found");
+    // D2 second review F2: a rider who spent tries on the pickup code and then drops must not hand the next
+    // rider fresh guesses at the SAME code (colluding accounts: 15 + 5×N). So if any try was spent, the drop
+    // mints a NEW pickup code (hash + AAD-bound ciphertext) with the tries at 0 — not a lockout re-issue, so
+    // not counted. With no try spent the code and its tries stay as they are (the counter may be reading it).
+    const spentTries = (order.pickupCodeAttempts ?? 0) > 0;
+    const pickupCode = spentTries ? this.tokens.randomPickupCode() : null;
     const droppable = new Set(["assigned", "confirmed", "en_route_pickup"]);
     if (!droppable.has(order.status)) {
       throw new ConflictException("This job can't be dropped anymore — the food is already with you");
@@ -710,7 +722,8 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       const claimed = await tx.order.updateMany({
         // Guarded on the phase read above too: a kitchen marking a still-cooking order ready in between
         // must not be overwritten back to `preparing`.
-        where: { id: orderId, status: order.status, riderId, merchantPhase: order.merchantPhase },
+        // …and on the pickup tries read with it, so a guess landing in between isn't carried or lost.
+        where: { id: orderId, status: order.status, riderId, merchantPhase: order.merchantPhase, pickupCodeAttempts: order.pickupCodeAttempts },
         data: {
           status: "requested",
           // MJ-RM1: a rider found early drops while the kitchen is still cooking — it keeps cooking, and
@@ -718,7 +731,15 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
           merchantPhase: order.merchantPhase === "preparing" ? "preparing" : "ready_for_pickup",
           riderId: null,
           otpHash: null,
+          otpCipher: null,
           deliveryOtpAttempts: 0,
+          ...(pickupCode
+            ? {
+                pickupCodeHash: this.tokens.hash(pickupCode),
+                pickupCodeCipher: sealHandoverCode(this.codeCrypto, "pickup", orderId, pickupCode),
+                pickupCodeAttempts: 0,
+              }
+            : {}),
           dispatchExcludedRiderIds: excluded,
           dispatchAttempt: 0,
           dispatchStartedAt: null,

@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, Logger } from "@nestjs/common";
 import { RESTAURANTS_TIMING } from "@lynia/shared";
 import type { Env } from "../config/env";
 import type { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TokenService } from "../auth/token.service";
+import { PiiCryptoService } from "../common/pii-crypto.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
 import type { PaymentRail } from "../adapters/payments/payment-rail.interface";
 import type { FoodDebtService } from "./food-debt.service";
@@ -756,7 +757,7 @@ describe("FoodOrderService.confirmPickup — N-16, mirrors confirmDelivery one h
     });
     const res = await svc.confirmPickup("o1", "r1", "424242");
     expect(res).toEqual({ orderId: "o1", status: "picked_up" });
-    expect(updateData).toEqual({ status: "picked_up", collectedAt: expect.any(Date), merchantPhase: null });
+    expect(updateData).toEqual({ status: "picked_up", collectedAt: expect.any(Date), merchantPhase: null, pickupCodeCipher: null });
   });
 
   // C4: R-01 wiring — confirmPickup must hand the row's merchant/payment/cashRule/goodsTotal snapshot
@@ -843,12 +844,12 @@ describe("FoodOrderService.revealPickupCode — N-16 reveal-by-rotation", () => 
     await expect(svc.revealPickupCode("p1", "o1")).rejects.toThrow(/isn't ready for pickup/);
   });
 
-  it("mints a fresh code, stores its hash, resets attempts, and returns the raw code", async () => {
+  it("a legacy row (no ciphertext, no crypto wired) mints once: stores its hash, keeps the tries (D2 review), returns the raw code", async () => {
     let updateArgs: Record<string, unknown> | undefined;
     const { svc } = build({
       merchant: { findUnique: async () => ({ id: "m1" }) },
       order: {
-        findFirst: async () => ({ id: "o1", merchantId: "m1", merchantPhase: "ready_for_pickup", merchantItems: [] }),
+        findFirst: async () => ({ id: "o1", merchantId: "m1", merchantPhase: "ready_for_pickup", pickupCodeHash: "old", pickupCodeAttempts: 0, merchantItems: [] }),
         updateMany: async (a: Record<string, unknown>) => {
           updateArgs = a;
           return { count: 1 };
@@ -858,19 +859,20 @@ describe("FoodOrderService.revealPickupCode — N-16 reveal-by-rotation", () => 
     const res = await svc.revealPickupCode("p1", "o1");
     expect(res.pickupCode).toMatch(/^\d{6}$/);
     expect(updateArgs).toEqual({
-      where: { id: "o1", merchantPhase: "ready_for_pickup" },
-      data: { pickupCodeHash: tokens.hash(res.pickupCode), pickupCodeAttempts: 0 },
+      // D2: pinned on the hash it replaces, so two phones racing the one-time mint can't both win.
+      where: { id: "o1", merchantPhase: "ready_for_pickup", pickupCodeHash: "old" },
+      data: { pickupCodeHash: tokens.hash(res.pickupCode), pickupCodeCipher: null },
     });
   });
 
   // E2E 2026-10-05 LB-1: a rider's acceptance clears merchantPhase, and the merchant web reveals only
   // once a rider is assigned — so this window is the one every shop and pharmacy order needs.
-  it.each(["assigned", "confirmed", "en_route_pickup"])("re-mints the code after a rider accepts (status %s)", async (status) => {
+  it.each(["assigned", "confirmed", "en_route_pickup"])("a legacy row mints once after a rider accepts (status %s)", async (status) => {
     let updateArgs: Record<string, unknown> | undefined;
     const { svc } = build({
       merchant: { findUnique: async () => ({ id: "m1" }) },
       order: {
-        findFirst: async () => ({ id: "o1", merchantId: "m1", status, merchantPhase: null, riderId: "r1", pickupCodeHash: "old", merchantItems: [] }),
+        findFirst: async () => ({ id: "o1", merchantId: "m1", status, merchantPhase: null, riderId: "r1", pickupCodeHash: "old", pickupCodeAttempts: 0, merchantItems: [] }),
         updateMany: async (a: Record<string, unknown>) => {
           updateArgs = a;
           return { count: 1 };
@@ -880,8 +882,8 @@ describe("FoodOrderService.revealPickupCode — N-16 reveal-by-rotation", () => 
     const res = await svc.revealPickupCode("p1", "o1");
     expect(res.pickupCode).toMatch(/^\d{6}$/);
     expect(updateArgs).toEqual({
-      where: { id: "o1", status, riderId: "r1", merchantPhase: null, pickupCodeHash: { not: null } },
-      data: { pickupCodeHash: tokens.hash(res.pickupCode), pickupCodeAttempts: 0 },
+      where: { id: "o1", status, riderId: "r1", merchantPhase: null, pickupCodeHash: "old" },
+      data: { pickupCodeHash: tokens.hash(res.pickupCode), pickupCodeCipher: null },
     });
   });
 
@@ -901,15 +903,276 @@ describe("FoodOrderService.revealPickupCode — N-16 reveal-by-rotation", () => 
     await expect(svc.revealPickupCode("p1", "o1")).rejects.toThrow(/isn't ready for pickup/);
   });
 
-  it("409s on a lost CAS race (order changed between the read and the update)", async () => {
+  it("409s on a lost CAS race when the row has no showable code either", async () => {
     const { svc } = build({
       merchant: { findUnique: async () => ({ id: "m1" }) },
       order: {
-        findFirst: async () => ({ id: "o1", merchantId: "m1", merchantPhase: "ready_for_pickup", merchantItems: [] }),
+        findFirst: async () => ({ id: "o1", merchantId: "m1", merchantPhase: "ready_for_pickup", pickupCodeHash: "old", pickupCodeAttempts: 0, merchantItems: [] }),
         updateMany: async () => ({ count: 0 }),
+        findUnique: async () => ({ pickupCodeHash: "other", pickupCodeCipher: null, pickupCodeAttempts: 0 }),
       },
     });
     await expect(svc.revealPickupCode("p1", "o1")).rejects.toThrow(/Order changed, retry/);
+  });
+});
+
+/**
+ * Owner decision D2 (2026-10-07) / MJ-H1: the pickup code is stored sealed next to its hash, so the
+ * reveal is idempotent. Before, every reveal minted a new code and reset the attempts: a second staff
+ * phone (or Back and reopen) killed the code on the first phone and the rider got "That code doesn't
+ * match" and a lockout. These run against a stateful fake order row and a real PiiCryptoService.
+ */
+describe("FoodOrderService.revealPickupCode — D2 idempotent reveal (MJ-H1)", () => {
+  const pii = new PiiCryptoService({ PII_ENCRYPTION_KEY: "food-order-test-pii-key-0123456789abcdef" } as Env);
+
+  type Row = {
+    id: string;
+    merchantId: string;
+    status: string;
+    merchantPhase: string | null;
+    riderId: string | null;
+    pickupCodeHash: string | null;
+    pickupCodeCipher: string | null;
+    pickupCodeAttempts: number;
+    pickupCodeReissues: number;
+    merchantItems: unknown[];
+  };
+
+  /** Prisma `where` equality for the flat fields the reveal CAS uses (`{ not: null }`, `{ gte }` included). */
+  function matches(row: Row, where: Record<string, unknown>): boolean {
+    return Object.entries(where).every(([k, v]) => {
+      const cur = (row as unknown as Record<string, unknown>)[k];
+      if (v && typeof v === "object" && "not" in (v as object)) return cur !== (v as { not: unknown }).not;
+      if (v && typeof v === "object" && "gte" in (v as object)) return (cur as number) >= (v as { gte: number }).gte;
+      return cur === v;
+    });
+  }
+
+  /** Applies a Prisma `data` object, `{ increment }` included. */
+  function apply(row: Row, data: Record<string, unknown>): void {
+    const r = row as unknown as Record<string, unknown>;
+    for (const [k, v] of Object.entries(data)) {
+      r[k] = v && typeof v === "object" && "increment" in (v as object) ? (r[k] as number) + (v as { increment: number }).increment : v;
+    }
+  }
+
+  function harness(seed: Partial<Row>, opts: { crypto?: boolean } = {}) {
+    const row: Row = {
+      id: "o1",
+      merchantId: "m1",
+      status: "assigned",
+      merchantPhase: null,
+      riderId: "r1",
+      pickupCodeHash: null,
+      pickupCodeCipher: null,
+      pickupCodeAttempts: 0,
+      pickupCodeReissues: 0,
+      merchantItems: [],
+      ...seed,
+    };
+    const writes: Array<Record<string, unknown>> = [];
+    const prisma = withMembershipShim({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: {
+        findFirst: async () => ({ ...row }),
+        findUnique: async () => ({ ...row }),
+        updateMany: async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+          if (!matches(row, where)) return { count: 0 };
+          writes.push(data);
+          apply(row, data);
+          return { count: 1 };
+        },
+      },
+    } as Record<string, unknown>);
+    prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
+    const svc = new FoodOrderService(
+      prisma as unknown as PrismaService,
+      tokens,
+      notifications,
+      debt,
+      fakeGateway(),
+      fakeRail(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      opts.crypto === false ? undefined : pii,
+    );
+    return { svc, row, writes, prisma: prisma as Record<string, unknown> & { order: Record<string, unknown> } };
+  }
+
+  const sealed = (code: string) => ({ pickupCodeHash: tokens.hash(code), pickupCodeCipher: pii.encryptCode(code, "pickup:o1") });
+
+  it("reveal twice (and from a second staff phone) → the same code, attempts unchanged, nothing written", async () => {
+    const { svc, row, writes } = harness({ ...sealed("482913"), pickupCodeAttempts: 2 });
+    const phoneA = await svc.revealPickupCode("p1", "o1");
+    const phoneB = await svc.revealPickupCode("p2", "o1");
+    const phoneAReopened = await svc.revealPickupCode("p1", "o1");
+    expect(phoneA.pickupCode).toBe("482913");
+    expect(phoneB.pickupCode).toBe("482913");
+    expect(phoneAReopened.pickupCode).toBe("482913");
+    expect(writes).toEqual([]);
+    expect(row.pickupCodeAttempts).toBe(2);
+  });
+
+  it("is idempotent in the ready_for_pickup window too", async () => {
+    const { svc, writes } = harness({ status: "requested", merchantPhase: "ready_for_pickup", riderId: null, ...sealed("100200") });
+    expect((await svc.revealPickupCode("p1", "o1")).pickupCode).toBe("100200");
+    expect((await svc.revealPickupCode("p1", "o1")).pickupCode).toBe("100200");
+    expect(writes).toEqual([]);
+  });
+
+  it("legacy row without ciphertext → the first reveal mints once and stores both; every later reveal is stable", async () => {
+    const { svc, row, writes } = harness({ pickupCodeHash: tokens.hash("111111"), pickupCodeAttempts: 1 });
+    const first = await svc.revealPickupCode("p1", "o1");
+    expect(first.pickupCode).toMatch(/^\d{6}$/);
+    expect(row.pickupCodeHash).toBe(tokens.hash(first.pickupCode));
+    expect(pii.decryptCode(row.pickupCodeCipher, "pickup:o1")).toBe(first.pickupCode);
+    // D2 review: this one-time mint is not a lockout re-issue — it keeps the rider's spent tries.
+    expect(row.pickupCodeAttempts).toBe(1);
+    expect(row.pickupCodeReissues).toBe(0);
+    expect(writes).toHaveLength(1);
+    const second = await svc.revealPickupCode("p2", "o1");
+    const third = await svc.revealPickupCode("p1", "o1");
+    expect(second.pickupCode).toBe(first.pickupCode);
+    expect(third.pickupCode).toBe(first.pickupCode);
+    expect(writes).toHaveLength(1);
+  });
+
+  it("a ciphertext that doesn't match the hash (a hash-only writer moved on) is never shown — it mints instead", async () => {
+    const { svc, row } = harness({ pickupCodeHash: tokens.hash("222222"), pickupCodeCipher: pii.encryptCode("999999", "pickup:o1") });
+    const res = await svc.revealPickupCode("p1", "o1");
+    expect(res.pickupCode).not.toBe("999999");
+    expect(row.pickupCodeHash).toBe(tokens.hash(res.pickupCode));
+  });
+
+  it("a tampered ciphertext reads as no code (no throw) and mints once", async () => {
+    const { svc, row } = harness({ pickupCodeHash: tokens.hash("333333"), pickupCodeCipher: "c1:AAAAtampered" });
+    const res = await svc.revealPickupCode("p1", "o1");
+    expect(row.pickupCodeHash).toBe(tokens.hash(res.pickupCode));
+  });
+
+  it("lockout re-issue: at the attempt cap the reveal mints a NEW code and resets the attempts; then it's stable again", async () => {
+    const { svc, row } = harness({ ...sealed("482913"), pickupCodeAttempts: 5 });
+    const reissued = await svc.revealPickupCode("p1", "o1");
+    expect(reissued.pickupCode).not.toBe("482913");
+    expect(row.pickupCodeAttempts).toBe(0);
+    expect(row.pickupCodeReissues).toBe(1);
+    expect(row.pickupCodeHash).toBe(tokens.hash(reissued.pickupCode));
+    // A second phone that still saw the lock gets the re-issued code, not a third one.
+    expect((await svc.revealPickupCode("p2", "o1")).pickupCode).toBe(reissued.pickupCode);
+  });
+
+  // D2 review (item 1): each lockout re-issue resets the tries, so without a cap a rider could cycle
+  // 5 guesses → re-issue → 5 guesses for ever.
+  it("refuses a lockout re-issue past HANDOVER_CODE_MAX_REISSUES (2) — nothing written, tries stay locked", async () => {
+    const { svc, row, writes } = harness({ ...sealed("482913"), pickupCodeAttempts: 5, pickupCodeReissues: 2 });
+    await expect(svc.revealPickupCode("p1", "o1")).rejects.toMatchObject({ status: 409, response: { reason: "pickup_code_reissue_limit" } });
+    expect(writes).toEqual([]);
+    expect(row.pickupCodeAttempts).toBe(5);
+    expect(row.pickupCodeHash).toBe(tokens.hash("482913"));
+  });
+
+  it("re-issue 1 and 2 are allowed, the third lock is refused (at most 15 guesses per order)", async () => {
+    const { svc, row } = harness({ ...sealed("482913"), pickupCodeAttempts: 5 });
+    await svc.revealPickupCode("p1", "o1");
+    row.pickupCodeAttempts = 5;
+    await svc.revealPickupCode("p1", "o1");
+    expect(row.pickupCodeReissues).toBe(2);
+    row.pickupCodeAttempts = 5;
+    await expect(svc.revealPickupCode("p1", "o1")).rejects.toMatchObject({ response: { reason: "pickup_code_reissue_limit" } });
+  });
+
+  it("two phones racing a re-issue on the same lock produce ONE new code (the CAS pins the lock and the count)", async () => {
+    const { svc, row, prisma, writes } = harness({ ...sealed("482913"), pickupCodeAttempts: 5 });
+    const realFind = prisma.order.findFirst as () => Promise<Row>;
+    let raced = false;
+    prisma.order.findFirst = async () => {
+      const snapshot = await realFind();
+      if (!raced) {
+        raced = true;
+        // The other phone's re-issue lands between this reveal's read (locked) and its write.
+        Object.assign(row, sealed("600700"), { pickupCodeAttempts: 0, pickupCodeReissues: 1 });
+      }
+      return snapshot;
+    };
+    expect((await svc.revealPickupCode("p1", "o1")).pickupCode).toBe("600700");
+    expect(writes).toEqual([]);
+    expect(row.pickupCodeReissues).toBe(1);
+  });
+
+  it("a ciphertext sealed for ANOTHER order doesn't open here (AAD) — it mints instead, and says so in the log without the value", async () => {
+    const warn = vi.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
+    try {
+      const { svc, row } = harness({ pickupCodeHash: tokens.hash("482913"), pickupCodeCipher: pii.encryptCode("482913", "pickup:o2") });
+      const res = await svc.revealPickupCode("p1", "o1");
+      expect(res.pickupCode).not.toBe("482913");
+      expect(row.pickupCodeHash).toBe(tokens.hash(res.pickupCode));
+      const logged = warn.mock.calls.map((c) => String(c[0])).join("\n");
+      expect(logged).toMatch(/did not authenticate \(kind=pickup, order=o1\)/);
+      expect(logged).not.toContain("482913");
+      expect(logged).not.toContain("c1:");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("two phones racing the legacy mint both show the winner's code", async () => {
+    const { svc, row, prisma } = harness({ pickupCodeHash: tokens.hash("444444") });
+    // The other phone's mint lands between this reveal's read and its write.
+    const realFind = prisma.order.findFirst as () => Promise<Row>;
+    prisma.order.findFirst = async () => {
+      const snapshot = await realFind();
+      Object.assign(row, sealed("555666"));
+      return snapshot;
+    };
+    expect((await svc.revealPickupCode("p1", "o1")).pickupCode).toBe("555666");
+  });
+
+  it("markReady seals the code it mints, so the first reveal returns that code without minting", async () => {
+    const { svc, row, writes } = harness({ status: "requested", merchantPhase: "preparing", riderId: null });
+    await svc.markReady("p1", "o1").catch(() => undefined); // only the write matters here, not the response mapping
+    expect(row.merchantPhase).toBe("ready_for_pickup");
+    const minted = writes[0]!;
+    const code = pii.decryptCode(minted.pickupCodeCipher as string, "pickup:o1");
+    expect(code).toMatch(/^\d{6}$/);
+    expect(minted.pickupCodeHash).toBe(tokens.hash(code!));
+    expect((await svc.revealPickupCode("p1", "o1")).pickupCode).toBe(code);
+    expect(writes).toHaveLength(1);
+  });
+
+  it("the revealed code verifies at the counter; a wrong code counts an attempt (verification is still the hash)", async () => {
+    const { svc, row, prisma } = harness({ status: "en_route_pickup", ...sealed("482913") });
+    const { pickupCode } = await svc.revealPickupCode("p1", "o1");
+    const queryRow = () => [
+      {
+        status: row.status,
+        rider_id: row.riderId,
+        pickup_code_hash: row.pickupCodeHash,
+        pickup_code_attempts: row.pickupCodeAttempts,
+        merchant_id: "m1",
+        merchant_payment_method: null,
+        merchant_cash_rule: null,
+        merchant_goods_total: null,
+        delivery_fee: null,
+        merchant_delivery_share: null,
+      },
+    ];
+    prisma.$queryRaw = async () => queryRow();
+    prisma.orderEvent = { create: async () => ({}) };
+    prisma.order.update = async ({ data }: { data: Record<string, unknown> }) => {
+      const inc = data.pickupCodeAttempts as { increment: number } | undefined;
+      if (inc) row.pickupCodeAttempts += inc.increment;
+      else Object.assign(row, data);
+    };
+    await expect(svc.confirmPickup("o1", "r1", "000001")).rejects.toThrow(/doesn't match/);
+    expect(row.pickupCodeAttempts).toBe(1);
+    expect(await svc.confirmPickup("o1", "r1", pickupCode)).toEqual({ orderId: "o1", status: "picked_up" });
+    // A used code is never shown again.
+    expect(row.pickupCodeCipher).toBeNull();
   });
 });
 

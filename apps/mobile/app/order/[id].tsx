@@ -8,7 +8,7 @@ import { AccessibilityInfo, BackHandler, Linking, PixelRatio, Share, useWindowDi
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ApiError } from "../../src/api/client";
 import { listOffers, selectOffer } from "../../src/api/offers";
-import { cancelOrder, getOrder, notifyWhenRiderOnline, type OrderSnapshot, raiseOrderPrice, rateOrder, resendOrder, rotateDeliveryCode } from "../../src/api/orders";
+import { cancelOrder, getOrder, notifyWhenRiderOnline, type OrderSnapshot, raiseOrderPrice, rateOrder, resendOrder, revealDeliveryCode, rotateDeliveryCode } from "../../src/api/orders";
 import { raiseIssue, raiseSos } from "../../src/api/safety";
 import { clearDeliveryCode, clearPendingRating, loadDeliveryCode, loadDeliveryCodeAttempts, loadDeliveryCodeRotatedAt, loadPendingRating, savePendingRating, saveDeliveryCode, saveDeliveryCodeAttempts, saveDeliveryCodeRotatedAt, type PendingRating } from "../../src/auth/session";
 import { mapsDirectionsUrl } from "../../src/logic/maps";
@@ -17,6 +17,7 @@ import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { orderOffers } from "../../src/logic/order-offers";
 import { isLiveStage, minutesSince, type OrderStage, phoneMasked, resolveStage, showsHelp, stageMapShare, stagePeekFloor, stageTitleKey, stepIndex, suggestedRetryPrice } from "../../src/logic/order-stage";
 import {
+  deliveryCodeLockout,
   liveOrderFromResendError,
   orderLoadErrorKind,
   reconcileDeliveryCode,
@@ -317,9 +318,12 @@ function ParcelOrderScreen(): React.ReactElement {
     enabled: status === "open_for_offers",
     refetchInterval: status === "open_for_offers" ? 15_000 : false,
   });
+  // U20: coming back to the app also retries a delivery-code read that failed.
+  const [foregroundTick, setForegroundTick] = useState(0);
   useForegroundRefetch(() => {
     void qc.invalidateQueries({ queryKey: orderKey(orderId) });
     if (status === "open_for_offers") void qc.invalidateQueries({ queryKey: offersKey(orderId) });
+    setForegroundTick((n) => n + 1);
   });
   const offers = useMemo(() => (Array.isArray(offersQ.data) ? offersQ.data : []), [offersQ.data]);
 
@@ -419,13 +423,79 @@ function ParcelOrderScreen(): React.ReactElement {
     return () => clearTimeout(t);
   }, [choosingId]);
 
+  const adoptCode = (code: string): void => {
+    setDeliveryCode(code);
+    setCodeAttemptsSeen(0);
+    setCodeRotatedAtSeen(null);
+    void saveDeliveryCode(orderId, code);
+  };
+  // D2 (owner 2026-10-07; U19): showing the code is a READ. The server keeps the code sealed next to its
+  // hash and returns the SAME code on every device, so opening the order on a second phone no longer kills
+  // the code the recipient already has. U20: a failed read never leaves "Getting your code…" for good — the
+  // toast retries now, and the next status change, code change or return to the app retries by itself.
+  // `codeAskedFor` is the retry key the last read was made under, so a failure never loops on its own.
+  const codeAskedFor = useRef<string | null>(null);
+  const [codeWanted, setCodeWanted] = useState(false);
+  // D2 review: a read that was in flight when a re-issue started may answer with the OLD (dead) code — every
+  // re-issue bumps this epoch and a read's answer from an earlier epoch is dropped.
+  const codeEpoch = useRef(0);
+  const revealM = useMutation({
+    mutationFn: () => revealDeliveryCode(orderId),
+    onMutate: () => ({ epoch: codeEpoch.current }),
+    onSuccess: (res, _v, ctx) => {
+      // Second review F5: also not while a re-issue is in flight (a Try again racing it) — its code wins.
+      if (ctx?.epoch === codeEpoch.current && !rotatePending.current) adoptCode(res.deliveryCode);
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.epoch !== codeEpoch.current) return;
+      showToast({ text: A.sendFail, action: A.tryAgain, actionIcon: "refresh-cw", onAction: () => revealM.mutate(), ttl: 0 });
+    },
+  });
+  // U04: the explicit re-issue — only when the rider's tries ran out (see the lockout effect below).
+  const reissuedFor = useRef<string | null>(null);
+  const rotatePending = useRef(false);
+  // Second review F4: a re-issue that failed (not the cap) leaves the lock "handled" and the read blocked
+  // (a locked code is never read), so without this the card sat on "Getting your code…". Coming back to
+  // the app or a status change forgets that attempt, and the lockout effect tries once more.
+  const reissueFailed = useRef(false);
+  const [reissueRetry, setReissueRetry] = useState(0);
+  useEffect(() => {
+    if (!reissueFailed.current) return;
+    reissueFailed.current = false;
+    reissuedFor.current = null;
+    setReissueRetry((n) => n + 1);
+  }, [foregroundTick, status]);
+  // A re-match lands on a new order id on this same screen: its code is asked for afresh.
+  useEffect(() => {
+    codeAskedFor.current = null;
+    reissuedFor.current = null;
+    setCodeWanted(false);
+  }, [orderId]);
   const rotateM = useMutation({
     mutationFn: () => rotateDeliveryCode(orderId),
-    onSuccess: (res) => {
-      setDeliveryCode(res.deliveryCode);
-      setCodeAttemptsSeen(0);
-      setCodeRotatedAtSeen(null);
-      void saveDeliveryCode(orderId, res.deliveryCode);
+    onMutate: () => {
+      codeEpoch.current += 1;
+      rotatePending.current = true;
+      reissueFailed.current = false;
+    },
+    onSettled: () => {
+      rotatePending.current = false;
+    },
+    onSuccess: (res) => adoptCode(res.deliveryCode),
+    // Not re-armed by itself (a locked code must not loop on a failing rotate): the toast's Try again retries.
+    onError: (e) => {
+      // D2 review: the server caps lockout re-issues per order (HANDOVER_CODE_MAX_REISSUES). Past it no new
+      // code can come, so no Try again and no "Getting your code…" card: the server's message (shown
+      // verbatim, like other 4xx; ledger D-89) and the drawn "Call support" action. After Send v2 draws that
+      // button as a phone call (design/as-screens.jsx:230, `S.call` + Phone), so it dials the support line,
+      // exactly as the undelivered bar's "Call support" and the Help panel's support row already do.
+      if (e instanceof ApiError && e.code === "code_reissue_limit") {
+        setCodeWanted(false);
+        showToast({ text: e.message, action: A.callSupport, onAction: () => dial(SOS_POLICY.safetyLine), ttl: 0 });
+        return;
+      }
+      reissueFailed.current = true;
+      showToast({ text: A.sendFail, action: A.tryAgain, actionIcon: "refresh-cw", onAction: () => rotateM.mutate(), ttl: 0 });
     },
   });
   // "+ $0.50" (and state 13's "Raise to $X"): the new price shows only once the server confirms (2.5);
@@ -598,9 +668,11 @@ function ParcelOrderScreen(): React.ReactElement {
 
   const selectRace = selectM.error instanceof ApiError && selectM.error.status === 409;
   // The failures with their own "Try again" toast (raise, cancel, rate, resend) don't speak twice.
-  useActionErrorEffect((selectRace ? null : selectM.error) ?? rotateM.error ?? null);
+  // The code reads/re-issues (revealM, rotateM) also carry their own "Try again" toast (U20).
+  useActionErrorEffect((selectRace ? null : selectM.error) ?? null);
   useEffect(() => {
     selectM.reset();
+    revealM.reset();
     rotateM.reset();
     rateM.reset();
     cancelM.reset();
@@ -678,17 +750,39 @@ function ParcelOrderScreen(): React.ReactElement {
     if (stage === "retryRiderCancelled" && order?.rebroadcastedToId && !isRiderViewer && !saved) followReopened(order.rebroadcastedToId);
   }, [stage, order?.rebroadcastedToId, isRiderViewer, saved, followReopened]);
 
-  // A live order with no local handover code (a dropped select response, a rotation while killed):
-  // issue a fresh one once; the card shows "Getting your code…" meanwhile (2.14). No "Re-issue" button.
-  const rotatedOnce = useRef(false);
+  // A live order with no local handover code (another device, a dropped select response, a rotation while
+  // killed): read the current one; the card shows "Getting your code…" meanwhile (2.14). No "Re-issue"
+  // button. D2: a read, never a rotation (U19). A restaurant order (the route hands it to
+  // MerchantOrderScreen as soon as its type is known) never gets a code from here (R-09).
+  const lockout = deliveryCodeLockout({ attempts: order?.deliveryOtpAttempts, codeRotatedAt: order?.codeRotatedAt, reissuedFor: reissuedFor.current });
+  const lockKey = lockout.action === "reissue" ? lockout.key : null;
+  // A locked code is never READ back (it's dead) — only the lockout re-issue below replaces it.
+  const codeLocked = deliveryCodeLockout({ attempts: order?.deliveryOtpAttempts, codeRotatedAt: order?.codeRotatedAt, reissuedFor: null }).action === "reissue";
+  const reveal = revealM.mutate;
   const rotate = rotateM.mutate;
+  const codeBusy = revealM.isPending || rotateM.isPending;
+  const codeRetryKey = `${status ?? ""}|${order?.codeRotatedAt ?? ""}|${foregroundTick}`;
   useEffect(() => {
-    // A restaurant order (the route hands it to MerchantOrderScreen as soon as its type is known) never
-    // gets a code from here: its code waits for both cash confirms (R-09).
-    if (!live || isRiderViewer || saved || !codeRestored || deliveryCode || rotatedOnce.current || !online || order?.orderType === "merchant") return;
-    rotatedOnce.current = true;
+    if (!live || isRiderViewer || saved || !codeRestored || deliveryCode || codeBusy || codeLocked || !online || order?.orderType === "merchant") return;
+    if (codeAskedFor.current === codeRetryKey) return;
+    codeAskedFor.current = codeRetryKey;
+    setCodeWanted(true);
+    reveal();
+  }, [live, isRiderViewer, saved, codeRestored, deliveryCode, codeBusy, codeLocked, online, reveal, order?.orderType, codeRetryKey]);
+  // U04 (D2): the rider used every try, so the server locked the code and told them to ask the sender for a
+  // new one. Re-issue it once per locked code — the explicit rotate (a new code, tries reset) — through the
+  // drawn 2.14 "Getting your code…" state; the existing Share code button then sends it. The after-send-v2
+  // handoff draws no locked state, so nothing new is rendered here.
+  useEffect(() => {
+    // D2 review: not while a read or a re-issue is in flight (codeBusy) — the effect re-runs when it settles.
+    // The server caps these per order and pins each one on the lock, so two devices make one new code.
+    if (!live || isRiderViewer || saved || !codeRestored || !online || order?.orderType === "merchant" || codeBusy) return;
+    if (lockKey == null) return;
+    reissuedFor.current = lockKey;
+    setDeliveryCode(null); // the dead code isn't shown while the new one is issued
+    setCodeWanted(true);
     rotate();
-  }, [live, isRiderViewer, saved, codeRestored, deliveryCode, online, rotate, order?.orderType]);
+  }, [live, isRiderViewer, saved, codeRestored, online, order?.orderType, lockKey, rotate, codeBusy, reissueRetry]);
 
   // ── Back: close a panel → collapse a full sheet → leave ──
   const leave = useCallback(() => (router.canGoBack() ? router.back() : goHomeClearingStack(router)), [router]);
@@ -998,7 +1092,9 @@ function ParcelOrderScreen(): React.ReactElement {
     rider,
     riderFirst,
     code: deliveryCode,
-    showCode: !isRiderViewer && codeRestored && (deliveryCode != null || rotateM.isPending || (saved == null && rotatedOnce.current && !rotateM.isError)),
+    // U20: once a code has been asked for, the card stays (2.14 "Getting your code…") through a failure — the
+    // toast and the automatic retries bring the digits — instead of vanishing.
+    showCode: !isRiderViewer && codeRestored && (deliveryCode != null || codeBusy || (saved == null && codeWanted)),
     photo: order.pickupPhotoUrl ? { url: order.pickupPhotoUrl, sub: orderText.photoSub(riderFirst, hhmm(pickedUpAt)) } : null,
     hasPhone: !!phone,
     sosSent,

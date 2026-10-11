@@ -11,11 +11,14 @@ import {
   Optional,
   UnauthorizedException,
 } from "@nestjs/common";
-import { ACTIVE_RIDE_STATUSES, codAmount, customerRatingCarriesWeight, DELIVERY_OTP_MAX_ATTEMPTS, HeldReason, isBusinessBookingAccountPhone, OFFER_WINDOW_MS, RELIABILITY, RIDER_STRIKE_COOLDOWN_MS, roundToCents, UNDELIVERED_ABUSE } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, codAmount, customerRatingCarriesWeight, DELIVERY_OTP_MAX_ATTEMPTS, HANDOVER_CODE_MAX_REISSUES, HeldReason, isBusinessBookingAccountPhone, OFFER_WINDOW_MS, RELIABILITY, RIDER_STRIKE_COOLDOWN_MS, roundToCents, UNDELIVERED_ABUSE } from "@lynia/shared";
 import { type OrderStatus, Prisma } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 import { applyReliabilityDelta, shouldFlagUndeliveredVelocity, undeliveredPenalty } from "../riders/reliability";
 import { Queue, Worker } from "bullmq";
 import { TokenService } from "../auth/token.service";
+import { openHandoverCode, sealHandoverCode } from "../common/handover-code";
+import { PiiCryptoService } from "../common/pii-crypto.service";
 import { sampleQueueDepth } from "../common/queue-metrics";
 import { bullmqConnectionFromUrl, pingQueueClient } from "../common/redis";
 import { ENV } from "../config/config.module";
@@ -102,6 +105,9 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     // provider fails boot instead of silently accepting unverified photos. TS-optional only so the
     // existing positional unit harnesses stay valid.
     private readonly uploads?: UploadVerifier,
+    // D2 (owner 2026-10-07): seals the delivery code next to its hash so revealDeliveryCode is repeatable.
+    // @Global in the app; optional only for the positional unit harnesses (hash-only without it, pre-D2).
+    @Optional() private readonly codeCrypto?: PiiCryptoService,
   ) {}
 
   /**
@@ -468,7 +474,8 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       const owed = cod === null ? null : Number(o.declared_value ?? cod) || cod;
       await tx.order.update({
         where: { id: orderId },
-        data: { status: "delivered", deliveredAt, ...(owed ? { debtStatus: "open", debtAmount: owed, debtOpenedAt: deliveredAt } : {}) },
+        // D2: the code has done its job — its ciphertext goes, so it can never be shown again.
+        data: { status: "delivered", deliveredAt, otpCipher: null, ...(owed ?{ debtStatus: "open", debtAmount: owed, debtOpenedAt: deliveredAt } : {}) },
       });
       await tx.orderEvent.create({ data: { orderId, status: "delivered" } });
       return { ok: true as const };
@@ -476,6 +483,16 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
 
     if (!outcome.ok) {
       const remaining = Math.max(0, DELIVERY_OTP_MAX_ATTEMPTS - outcome.attemptsUsed);
+      // U04: the try that locks the code tells an open customer screen at once (status unchanged, but
+      // `order:status` is what it refetches on), so its lockout re-issue runs while the rider is still at
+      // the door. WS only, best-effort, like rotateDeliveryCode's emit.
+      if (remaining === 0) {
+        try {
+          this.gateway.emitOrderStatus(orderId, "en_route_dropoff");
+        } catch (err) {
+          this.logger.warn(`code-lockout emit failed for order ${orderId}: ${(err as Error).message}`);
+        }
+      }
       throw new UnauthorizedException(
         remaining > 0
           ? `That code doesn't match. ${remaining} attempt${remaining === 1 ? "" : "s"} left.`
@@ -990,6 +1007,11 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
           orderType: true,
           merchantId: true,
           agreedFare: true,
+          // U22 / D2: read before the CAS (the 0086 trigger drops the ciphertext as the row turns
+          // `cancelled`) so a rider-bail clone can carry the trip's code. Never logged.
+          otpHash: true,
+          otpCipher: true,
+          deliveryCodeRotatedAt: true,
         },
       });
       if (!order) throw new NotFoundException("Order not found");
@@ -1011,7 +1033,9 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       }
 
       const claimed = await tx.order.updateMany({
-        where: { id: orderId, status: order.status },
+        // D2 second review F6: pinned on the delivery code read above too, so a rider-bail clone carries the
+        // code the customer was actually shown — a re-issue landing in between makes this a retry instead.
+        where: { id: orderId, status: order.status, otpHash: order.otpHash },
         data: { status: "cancelled", cancelledAt: new Date(), cancelledBy: callerId, cancelReason: reason ?? null },
       });
       if (claimed.count === 0) throw new ConflictException("Order changed, retry");
@@ -1078,7 +1102,14 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         // F-01: the rider bailed on an assigned-but-not-collected job (rider cancels are blocked
         // post-pickup, so it's never collected here) — clone the job back onto the board as a NEW
         // open order in the SAME transaction. The old row stays terminal; never reopened.
-        rebroadcastId = (await this.cloneForRebroadcast(tx, orderId)).id;
+        // U22 / D2: the clone keeps this trip's delivery code — the customer may already have sent it to
+        // the recipient — so the next rider is matched to the same code (MatchingService.selectOffer).
+        // Carried only when it can be shown again (opens under this order's AAD and matches the hash); a
+        // legacy hash-only code is left behind and selectOffer mints a fresh one, the pre-D2 behaviour.
+        const tripCode = openHandoverCode(this.codeCrypto, this.tokens, "delivery", orderId, order.otpCipher, order.otpHash);
+        rebroadcastId = (
+          await this.cloneForRebroadcast(tx, orderId, tripCode ? { keepCode: { code: tripCode, rotatedAt: order.deliveryCodeRotatedAt } } : undefined)
+        ).id;
       } else if (isCustomer && order.riderId) {
         // C3: a rider was already working this job — signal them the customer pulled out.
         jobCancelledCollected = collected;
@@ -1292,7 +1323,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
   private async cloneForRebroadcast(
     tx: Prisma.TransactionClient,
     sourceOrderId: string,
-    overrides?: { proposedFare?: Prisma.Decimal },
+    overrides?: { proposedFare?: Prisma.Decimal; keepCode?: { code: string; rotatedAt: Date | null } },
   ): Promise<{ id: string; createdAt: Date }> {
     const src = await tx.order.findUnique({
       where: { id: sourceOrderId },
@@ -1323,6 +1354,23 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     if (src.orderType !== "parcel") {
       throw new ConflictException("Merchant order re-dispatch is not available yet");
     }
+    // U22 / D2: a rider bailed before pickup (so no hand-off attempt was ever made against the code) —
+    // the trip keeps its delivery code, which the recipient may already hold. `keepCode` is the code the
+    // cancel read (and opened) BEFORE its CAS — migration 0086's trigger drops the source's ciphertext as it
+    // turns `cancelled`. The ciphertext is bound to its order id, so the clone gets its id up front and the
+    // code is re-sealed under it (a copied ciphertext would not open there). The customer's re-send (no
+    // keepCode) never carries a code: that source may be `undelivered`, with tries already spent against it.
+    const carried = overrides?.keepCode;
+    const cloneId = carried ? randomUUID() : undefined;
+    const keptCode =
+      carried && cloneId
+        ? {
+            id: cloneId,
+            otpHash: this.tokens.hash(carried.code),
+            otpCipher: sealHandoverCode(this.codeCrypto, "delivery", cloneId, carried.code),
+            deliveryCodeRotatedAt: carried.rotatedAt,
+          }
+        : {};
 
     const clone = await tx.order.create({
       data: {
@@ -1346,6 +1394,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         disclaimerAcceptedAt: src.disclaimerAcceptedAt,
         status: "open_for_offers",
         rebroadcastOfId: sourceOrderId,
+        ...keptCode,
         events: { create: { status: "open_for_offers" } },
       },
       select: { id: true, createdAt: true },
@@ -1415,14 +1464,88 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     return { completed: done };
   }
 
-  /** Customer re-issues the delivery code (e.g. after a lockout or a lost code). CAS-guarded on the
-   *  observed status like every sibling transition in this file — without it, a rotate that read a
-   *  valid status can still land its write after a concurrent confirmDelivery has already moved the
-   *  order to `delivered` (confirmDelivery's `FOR UPDATE` transaction only blocks this call's own
-   *  UPDATE while it holds the lock; it doesn't make the earlier, already-stale status read atomic
-   *  with this write). Harmless today (nothing reads `otpHash` post-delivery), but a silent TOCTOU
-   *  inconsistent with the pattern everywhere else in this file. */
-  async rotateDeliveryCode(orderId: string, customerId: string): Promise<{ deliveryCode: string }> {
+  /** Customer re-issues the delivery code — the EXPLICIT re-issue only (D2, owner 2026-10-07); just showing
+   *  the code is {@link revealDeliveryCode}, which never rotates.
+   *
+   *  D2 review (2026-10-11): only a LOCKOUT re-issue (every try used) resets the tries, and an order gets at
+   *  most HANDOVER_CODE_MAX_REISSUES of those — otherwise a rider could cycle 5 guesses → re-issue → 5 more
+   *  for ever. Past the cap: 409 `code_reissue_limit` (support / not delivered from there).
+   *
+   *  A rotate while the code is NOT locked mints nothing (second review F1, 2026-10-11): it returns the
+   *  CURRENT code, exactly as {@link revealDeliveryCode}. Two callers send one: a second device whose
+   *  snapshot still shows the lock another device has just re-issued, and older app builds that rotate on
+   *  every open — a fresh code there would kill the one the recipient already holds. The only unlocked
+   *  "new code" is the merchant booking's explicit "Send a new code" (`opts.replace`), which keeps the tries.
+   *
+   *  CAS-guarded on the observed status like every sibling transition in this file — without it, a rotate
+   *  that read a valid status can still land its write after a concurrent confirmDelivery has already moved
+   *  the order to `delivered` — and on the hash it replaces (plus, for a lockout re-issue, the lock and the
+   *  re-issue count it read), so two devices re-issuing on the same lock produce ONE new code: the loser is
+   *  handed the winner's code. */
+  async rotateDeliveryCode(orderId: string, customerId: string, opts: { replace?: boolean } = {}): Promise<{ deliveryCode: string }> {
+    const order = await this.codeOrderForCustomer(orderId, customerId);
+    const locked = order.deliveryOtpAttempts >= DELIVERY_OTP_MAX_ATTEMPTS;
+    if (!locked && !opts.replace) return this.currentCodeFor(orderId, order);
+    if (locked && order.deliveryCodeReissues >= HANDOVER_CODE_MAX_REISSUES) {
+      throw new ConflictException({
+        reason: "code_reissue_limit",
+        message: "Too many wrong tries on this code. Call LyniaGo support to finish this delivery.",
+      });
+    }
+    const minted = await this.mintDeliveryCode(orderId, order.status, {
+      replacesHash: order.otpHash,
+      lockoutReissues: locked ? order.deliveryCodeReissues : null,
+    });
+    if (minted) return { deliveryCode: minted };
+    // Lost the CAS: another device re-issued first (or the row moved). Hand back its code while it stands.
+    const winner = await this.currentShowableCode(orderId);
+    if (winner) return { deliveryCode: winner };
+    throw new ConflictException("Order changed, retry");
+  }
+
+  /**
+   * D2 (owner 2026-10-07; U19, U20): show the customer the CURRENT delivery code — the same one on every
+   * call and on every device, so opening the order on a second phone (or after a reinstall) no longer kills
+   * the code already sent to the recipient. Never resets the attempt counter, never stamps
+   * `deliveryCodeRotatedAt`, never emits: nothing changed. Same guards as {@link rotateDeliveryCode}
+   * (own order, live trip, R-09 cash gate).
+   *
+   * A legacy row (hash only, minted before migration 0086) or an unreadable ciphertext falls back to the old
+   * behaviour ONCE: mint, store hash + ciphertext, and from then on it is stable. That one-time mint keeps
+   * the tries as they are (D2 review: it must not reset them) and is CAS-guarded on the hash it replaces, so
+   * two devices racing it both get the winner's code. A LOCKED code is still returned as-is: re-issuing
+   * after a lockout is the explicit, capped rotate.
+   */
+  async revealDeliveryCode(orderId: string, customerId: string): Promise<{ deliveryCode: string }> {
+    return this.currentCodeFor(orderId, await this.codeOrderForCustomer(orderId, customerId));
+  }
+
+  /** The reveal itself, on an order {@link codeOrderForCustomer} has already guarded. */
+  private async currentCodeFor(
+    orderId: string,
+    order: { status: OrderStatus; otpHash: string | null; otpCipher: string | null },
+  ): Promise<{ deliveryCode: string }> {
+    const stored = openHandoverCode(this.codeCrypto, this.tokens, "delivery", orderId, order.otpCipher, order.otpHash);
+    if (stored) return { deliveryCode: stored };
+    const minted = await this.mintDeliveryCode(orderId, order.status, { replacesHash: order.otpHash, lockoutReissues: null });
+    if (minted) return { deliveryCode: minted };
+    const winner = await this.currentShowableCode(orderId);
+    if (winner) return { deliveryCode: winner };
+    throw new ConflictException("Order changed, retry");
+  }
+
+  /** The order's delivery code as it stands now, when it can be shown and isn't locked; else null. */
+  private async currentShowableCode(orderId: string): Promise<string | null> {
+    const fresh = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { otpHash: true, otpCipher: true, deliveryOtpAttempts: true },
+    });
+    if (!fresh || fresh.deliveryOtpAttempts >= DELIVERY_OTP_MAX_ATTEMPTS) return null;
+    return openHandoverCode(this.codeCrypto, this.tokens, "delivery", orderId, fresh.otpCipher, fresh.otpHash);
+  }
+
+  /** The order a customer's code read/rotate acts on, with every guard both share. */
+  private async codeOrderForCustomer(orderId: string, customerId: string) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       select: {
@@ -1432,6 +1555,10 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         merchantPaymentMethod: true,
         customerCashConfirmedAt: true,
         riderCashConfirmedAt: true,
+        otpHash: true,
+        otpCipher: true,
+        deliveryOtpAttempts: true,
+        deliveryCodeReissues: true,
       },
     });
     if (!order) throw new NotFoundException("Order not found");
@@ -1443,32 +1570,52 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     if (order.orderType === "merchant" && order.merchantPaymentMethod === "cash" && !(order.customerCashConfirmedAt && order.riderCashConfirmedAt)) {
       throw new ConflictException("The code appears once you both confirm the cash exchange");
     }
+    // A pre-0086 / hand-built row may not carry the counters: read them as 0.
+    return { ...order, deliveryOtpAttempts: order.deliveryOtpAttempts ?? 0, deliveryCodeReissues: order.deliveryCodeReissues ?? 0 };
+  }
 
+  /** Mint a fresh delivery code (hash + D2 ciphertext, both in one write), stamp the rotation and tell the
+   *  rider's screen. Pinned on the observed status and on `replacesHash`. `lockoutReissues` (the count read
+   *  with the lock) makes it a lockout re-issue: also pinned on the lock and that count, it resets the tries
+   *  and counts the re-issue. Without it the tries stay as they are. Null when the row moved under us. */
+  private async mintDeliveryCode(
+    orderId: string,
+    status: OrderStatus,
+    pin: { replacesHash: string | null; lockoutReissues: number | null },
+  ): Promise<string | null> {
     const deliveryCode = this.tokens.randomOtp();
-    // KB-DELIVERY-CODE-ROTATION-SIGNAL: rotate the hash, zero the attempt counter, and stamp
-    // deliveryCodeRotatedAt (DB now() — the same clock domain fix 2 unifies the heartbeat writers
-    // onto) so the rider app can robustly detect this re-issue. CAS-guarded on the observed status
-    // like every sibling transition in this file (see doc comment above) — a concurrent
-    // confirmDelivery landing between the read and this write must not silently re-arm a code for
-    // an already-delivered order.
-    await this.prisma.$transaction(async (tx) => {
+    const lockout = pin.lockoutReissues != null;
+    // KB-DELIVERY-CODE-ROTATION-SIGNAL: stamp deliveryCodeRotatedAt (DB now()) so the rider app can robustly
+    // detect this re-issue.
+    const minted = await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.order.updateMany({
-        where: { id: orderId, status: { in: [...ACTIVE_FOR_CODE] } },
-        data: { otpHash: this.tokens.hash(deliveryCode), deliveryOtpAttempts: 0 },
+        where: {
+          id: orderId,
+          status: { in: [...ACTIVE_FOR_CODE] },
+          otpHash: pin.replacesHash,
+          ...(pin.lockoutReissues != null ? { deliveryOtpAttempts: { gte: DELIVERY_OTP_MAX_ATTEMPTS }, deliveryCodeReissues: pin.lockoutReissues } : {}),
+        },
+        data: {
+          otpHash: this.tokens.hash(deliveryCode),
+          otpCipher: sealHandoverCode(this.codeCrypto, "delivery", orderId, deliveryCode),
+          ...(lockout ? { deliveryOtpAttempts: 0, deliveryCodeReissues: { increment: 1 } } : {}),
+        },
       });
-      if (claimed.count === 0) throw new ConflictException("Order changed, retry");
+      if (claimed.count === 0) return false;
       await tx.$executeRaw`UPDATE orders SET delivery_code_rotated_at = now() WHERE id = ${orderId}::uuid`;
+      return true;
     });
+    if (!minted) return null;
     // Rider audit PJ-H3: tell an open rider screen the code changed. The status is unchanged, but
     // `order:status` is the signal the rider app refetches on — without it a locked code page stayed
     // locked until the app was backgrounded. WS only (no push: nothing for the rider to be told), and
     // best-effort like every emit here.
     try {
-      this.gateway.emitOrderStatus(orderId, order.status);
+      this.gateway.emitOrderStatus(orderId, status);
     } catch (err) {
       this.logger.warn(`code-rotation emit failed for order ${orderId}: ${(err as Error).message}`);
     }
-    return { deliveryCode };
+    return deliveryCode;
   }
 
   private async scheduleAutoClose(orderId: string): Promise<void> {
