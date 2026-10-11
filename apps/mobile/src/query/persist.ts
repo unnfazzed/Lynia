@@ -118,10 +118,11 @@ export const DAY_LIMITED_MAX_AGE_MS = 24 * 60 * 60 * 1000;
  * Query-key roots whose WHOLE subtree keeps the one-day ceiling:
  *  - `wallet`, `earnings` — balances, the ledger, the rider's earnings;
  *  - `history` — trip / order rows with their fares; rider Money's "this week" and cash-held totals are
- *    summed from them, and `["history", "customer"]` is the Orders tab;
- *  - `me` — account state (KYC status, the free-jobs count) that gates what a screen offers.
+ *    summed from them, and `["history", "customer"]` is the Orders tab.
+ * `me` deliberately keeps the week: it carries no money, it revalidates on mount, and Home's profile
+ * is what the splash waits for — a one-day ceiling on it would put most cold starts back on the network.
  */
-export const DAY_LIMITED_KEY_ROOTS: ReadonlySet<string> = new Set(["wallet", "earnings", "history", "me"]);
+export const DAY_LIMITED_KEY_ROOTS: ReadonlySet<string> = new Set(["wallet", "earnings", "history"]);
 
 /**
  * Entries restored for at most a day (P08). Besides {@link DAY_LIMITED_KEY_ROOTS}, every PRICED browse

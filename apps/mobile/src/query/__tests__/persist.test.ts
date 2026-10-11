@@ -205,7 +205,7 @@ describe("P08 — a week-long warm boot that never paints a stale balance", () =
     expect(keys(out)).toEqual(["restaurants", "popularity"]);
   });
 
-  it("history (fares, rider Money totals, the Orders tab) and me (KYC, free jobs) keep the one-day ceiling", () => {
+  it("history (fares, rider Money totals, the Orders tab) keeps the one-day ceiling; me keeps the week (the splash waits on it)", () => {
     const out = dropStaleDayLimited(
       client([
         entry(["history"], 2 * DAY),
@@ -216,7 +216,7 @@ describe("P08 — a week-long warm boot that never paints a stale balance", () =
       ]),
       NOW,
     );
-    expect(keys(out)).toEqual(["notifications", "popularity"]);
+    expect(keys(out)).toEqual(["me", "notifications", "popularity"]);
   });
 
   it("priced browse entries (menus, shop and pharmacy catalogues) keep the one-day ceiling; venue lists keep the week", () => {
