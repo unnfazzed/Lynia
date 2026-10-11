@@ -19,7 +19,7 @@ const mockSetOnline = jest.fn(async (online: boolean) => ({ online }));
 const mockPush = jest.fn();
 const mockReplace = jest.fn();
 
-jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush, replace: mockReplace }) }));
+jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush, replace: mockReplace }), useFocusEffect: () => undefined }));
 const mockStoreWrites: Array<[string, string]> = [];
 jest.mock("expo-secure-store", () => ({
   getItemAsync: async () => null,

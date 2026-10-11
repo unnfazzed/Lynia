@@ -162,8 +162,10 @@ export class AdminOrdersService {
           cancelledAt: new Date(),
           // Food orders: leave no kitchen or dispatch state behind on a dead order (the kitchen board and
           // the rider-offer screen key off these), and record why for the customer's cancelled screen.
+          // U33 (C8): LyniaGo's own reason, not the venue's `other` — the shared classifier (order-outcome.ts)
+          // reads it as "LyniaGo cancelled this order" on the order screen, the Orders tab and the feed.
           ...(order.orderType === "merchant"
-            ? { merchantPhase: null, rejectionReason: "other", dispatchOfferedRiderId: null, dispatchOfferExpiresAt: null, dispatchNextCheckAt: null }
+            ? { merchantPhase: null, rejectionReason: "lynia_cancelled", dispatchOfferedRiderId: null, dispatchOfferExpiresAt: null, dispatchNextCheckAt: null }
             : {}),
         },
       });

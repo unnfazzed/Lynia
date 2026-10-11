@@ -149,7 +149,10 @@ describe("customerOrderOutcome", () => {
     [{ rejectionReason: "no_rider" }, "no_rider"],
     [{ rejectionReason: "all_out_of_stock" }, "venue_declined"],
     [{ rejectionReason: "rx_declined" }, "venue_declined"],
-    [{ rejectionReason: "other" }, "cancelled_by_lynia"],
+    // U33 (C8): the venue's "Something else" is the venue's; N-18's no-answer and an ops cancel are LyniaGo's.
+    [{ rejectionReason: "other" }, "venue_declined"],
+    [{ rejectionReason: "item_approval_expired" }, "cancelled_by_lynia"],
+    [{ rejectionReason: "lynia_cancelled" }, "cancelled_by_lynia"],
     [{}, "cancelled_by_lynia"],
   ] as const)("%o → %s", (over, outcome) => {
     expect(customerOrderOutcome(o(over), ME)).toBe(outcome);

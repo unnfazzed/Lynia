@@ -493,7 +493,7 @@ describe("AdminOrdersService mutations (Item 1 — mutation + audit in ONE $tran
     };
     const svc = new AdminOrdersService(prisma as unknown as PrismaService, gateway as unknown as TrackingGateway, notifications as never);
     await svc.cancelOrder("admin-1", "o1", { reason: "restaurant can't make it" });
-    expect(calls.orderUpdate!.data).toMatchObject({ status: "cancelled", merchantPhase: null, dispatchOfferedRiderId: null, rejectionReason: "other" });
+    expect(calls.orderUpdate!.data).toMatchObject({ status: "cancelled", merchantPhase: null, dispatchOfferedRiderId: null, rejectionReason: "lynia_cancelled" });
     expect(gateway.emitFoodQueueChanged).toHaveBeenCalledWith("m1", "o1");
     expect(pushed.map((p) => p.ids[0])).toEqual(["c1", "r1"]);
   });

@@ -217,6 +217,10 @@ export const MERCHANT_REJECTION_REASONS = {
   out_of_stock: "The shop is out of stock of something in your order.",
   ran_out: "They ran out of something in your order and couldn't swap it. Nothing was charged.",
   kitchen_problem: "They had a problem and can't finish your order. Nothing was charged.",
+  // U33 (C8, ledger D-94): N-18 — the customer didn't answer the 60 s item-approval window. Its own reason
+  // now (it borrowed `other`, so its push blamed the venue); the sentence is O.u.timeout's "No answer in
+  // time." and O.d.cxYouSub's "Nothing was charged." (order-flow-v2 copy.ts), verbatim.
+  item_approval_expired: "No answer in time. Nothing was charged.",
   other: "The restaurant couldn't take this order.",
 } as const;
 

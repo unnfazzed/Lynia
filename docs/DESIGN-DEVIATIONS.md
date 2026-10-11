@@ -5211,3 +5211,30 @@ place and section-search states unworded or undrawn. Wave 4 lane B (U23–U64) f
 - **Upstream (U29, design-gated):** R8b draws no way to remove a prescription page. The app clears every page back to R8a
   when placement refuses one (`422 upload_*`), but replacing one blurry page still needs a drawn remove action on the
   thumbnail (`usePrescriptionPhotos().remove` is ready). Reported upstream; the kit is not edited here.
+## D-94 · Wave 4 lane C: cancel outcomes, the select-race toast, the D5b reason card — APPROVED (owner decision D6, 2026-10-07)
+
+**Owner decision D6 (reviewed list 2026-10-07):** *"Copy fixes only. Skip new UI."* — copy shown through an element a
+handoff already draws is allowed; no new element. Each line below is copy in a drawn element, or a drawn element reused
+on a sibling state of the same screen.
+
+- **U33 (C8), who cancelled.** One shared classifier (`packages/shared/src/order-outcome.ts`) now reads every cancel
+  for the Orders tab, the Notifications feed, the push and the order screen. A venue's "Something else" (`other`) is the
+  venue's ("{v} couldn't take your order", `O.d.cxVenue`), not "Cancelled by LyniaGo". N-18 (the customer didn't answer
+  the 60 s item approval) and an ops cancel stamp LyniaGo's own reasons (`item_approval_expired`, `lynia_cancelled`)
+  and show the drawn LyniaGo ending (`O.d.cxLynia`). For N-18 the drawn sub ("The {place} reported a problem…") would be
+  untrue, so its sub and its push body read **"No answer in time. Nothing was charged."** — `O.u.timeout`'s first
+  sentence and `O.d.cxYouSub`, verbatim (`OX.cxNoAnswerSub`, `MERCHANT_REJECTION_REASONS.item_approval_expired`).
+- **U28, D5b.** The cancelled ending of an all-prescription order keeps D5a's drawn "Reason from the pharmacist" card
+  (the chip's words and the pharmacist's note) under the hero. D5b draws no reason; the card is D5a's, unchanged.
+- **U62 + MJ-RL2 (C10), the select race.** After Send v2 draws one select-race toast, "{name} was just taken by another
+  customer. Pick another rider." (`A.taken`). It is now shown only when that is true (the rider was just assigned
+  elsewhere, 409 `rider_taken`, or an older API). A rider who went offline or lost standing, or whose offer closed,
+  reads **"{name} isn't available any more. Pick another rider."** (`orderText.gone`) in the same toast; the drawn
+  second sentence is kept. A time to choose that ran out shows no toast (nobody is left to pick; the screen moves to
+  No rider yet). At the drawn "Choose in 0:00" the order is re-read; Choose stays enabled (the phone clock is not the server's), and a late pick gets the silent `choose_ended` refusal. Offers
+  the server would refuse are no longer listed (no new element).
+- **MJ-RM19, merchant "+5 min".** A retry of a "+5 min" that already landed is refused by the API (409 `prep_changed`,
+  message "The ready time already moved. Check it before adding more."). The page doesn't show that message: it shows
+  the drawn success toast ("Ready time pushed back 5 min · customer told"), since the first tap did land.
+- **Upstream:** order-flow-v2 should draw the N-18 ending and a D5b reason; after-send-v2 should draw the "rider no
+  longer available" variant of the select race. Reported upstream; the kit is not edited here.

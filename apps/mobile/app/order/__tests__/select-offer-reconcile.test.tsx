@@ -183,3 +183,91 @@ describe("selectOffer 409 reconciliation (LC-C08)", () => {
     expect(has(tree, "Tapiwa M. was just taken by another customer. Pick another rider.")).toBe(true);
   });
 });
+
+describe("U62 (C10): the 409's reason picks the words; the grace end re-reads the order", () => {
+  async function refuse(code: string): Promise<renderer.ReactTestRenderer> {
+    mockGetOrder.mockResolvedValue(openOrder());
+    mockListOffers.mockResolvedValue([baseOffer()]);
+    const { ApiError } = require("../../../src/api/client");
+    mockSelectOffer.mockRejectedValue(new ApiError(409, "Rider just became unavailable, pick another", code));
+    const tree = await render();
+    press(tree, "Choose Tapiwa M.");
+    await settle();
+    await settle();
+    return tree;
+  }
+
+  it("a rider who went offline or lost standing isn't 'taken by another customer'", async () => {
+    const tree = await refuse("rider_unavailable");
+    expect(has(tree, "Tapiwa M. isn't available any more. Pick another rider.")).toBe(true);
+    expect(has(tree, "Tapiwa M. was just taken by another customer. Pick another rider.")).toBe(false);
+  });
+
+  it("the rider really was assigned elsewhere — the drawn 'taken' toast", async () => {
+    const tree = await refuse("rider_taken");
+    expect(has(tree, "Tapiwa M. was just taken by another customer. Pick another rider.")).toBe(true);
+  });
+
+  it("the time to choose ran out — no 'pick another rider' at all", async () => {
+    const tree = await refuse("choose_ended");
+    expect(has(tree, "Tapiwa M. was just taken by another customer. Pick another rider.")).toBe(false);
+    expect(has(tree, "Tapiwa M. isn't available any more. Pick another rider.")).toBe(false);
+  });
+
+  it("an order that left offers by the time it's re-read gets no 'pick another rider'", async () => {
+    let calls = 0;
+    mockGetOrder.mockImplementation(async () => (++calls === 1 ? openOrder() : openOrder({ status: "expired" })));
+    mockListOffers.mockResolvedValue([baseOffer()]);
+    const { ApiError } = require("../../../src/api/client");
+    mockSelectOffer.mockRejectedValue(new ApiError(409, "Order was just taken, pick another", "Conflict"));
+    const tree = await render();
+    press(tree, "Choose Tapiwa M.");
+    await settle();
+    await settle();
+    expect(has(tree, "Tapiwa M. was just taken by another customer. Pick another rider.")).toBe(false);
+  });
+
+  it("at 'Choose in 0:00' on the phone's clock Choose stays live (no server clock offset); the order is re-read, and a late pick's choose_ended says nothing", async () => {
+    // The window ended 20 s ago on this phone's clock: the grace (15 s) reads over here.
+    mockGetOrder.mockResolvedValue(openOrder({ expiresAt: new Date(Date.now() - 20_000).toISOString() }));
+    mockListOffers.mockResolvedValue([baseOffer()]);
+    const { ApiError } = require("../../../src/api/client");
+    mockSelectOffer.mockRejectedValue(new ApiError(409, "This order is no longer open for offers — the time to choose has ended", "choose_ended"));
+    const tree = await render();
+    expect(mockGetOrder.mock.calls.length).toBeGreaterThanOrEqual(2);
+    const choose = tree.root.findAll((n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("Choose Tapiwa M.") && typeof n.props.onPress === "function")[0]!;
+    expect(choose.props.disabled).toBeFalsy();
+    press(tree, "Choose Tapiwa M.");
+    await settle();
+    await settle();
+    // A phone clock running fast mustn't block a pick the server still takes: the tap reaches the server.
+    expect(mockSelectOffer).toHaveBeenCalled();
+    expect(has(tree, "Tapiwa M. was just taken by another customer. Pick another rider.")).toBe(false);
+  });
+});
+
+describe("review: a new bid is announced by its id, not by the count", () => {
+  it("an offer that leaves and comes back is not announced again; a genuinely new one is", async () => {
+    const spy = jest.spyOn(require("react-native").AccessibilityInfo, "announceForAccessibility");
+    const second = baseOffer({ id: "offer-2", rider: { ...baseOffer().rider, profileId: "r2", profile: { firstName: "Farai", lastName: "K", photoUrl: null } } });
+    mockGetOrder.mockResolvedValue(openOrder());
+    mockListOffers.mockResolvedValue([baseOffer(), second]);
+    const tree = await render();
+    const qc = tree.root.findByType(require("@tanstack/react-query").QueryClientProvider).props.client;
+    const refetchOffers = async (rows: OfferRow[]): Promise<void> => {
+      mockListOffers.mockResolvedValue(rows);
+      await act(async () => {
+        await qc.refetchQueries({ queryKey: ["offers", "order-1"] });
+      });
+      await settle();
+    };
+    const bidAnnouncements = (): number => spy.mock.calls.filter((c) => /^\d+ offers?$/.test(String(c[0]))).length;
+    expect(bidAnnouncements()).toBe(0);
+    await refetchOffers([baseOffer()]); // Farai's offer drops out (a stale heartbeat)…
+    await refetchOffers([baseOffer(), second]); // …and comes back: not a new bid.
+    expect(bidAnnouncements()).toBe(0);
+    await refetchOffers([baseOffer(), second, baseOffer({ id: "offer-3" })]);
+    expect(bidAnnouncements()).toBe(1);
+    spy.mockRestore();
+  });
+});

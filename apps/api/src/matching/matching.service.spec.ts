@@ -1,4 +1,5 @@
 import { ForbiddenException } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { OFFER_CHOOSE_GRACE_MS, OFFER_WINDOW_MS } from "@lynia/shared";
 import { describe, expect, it, vi } from "vitest";
 import { TokenService } from "../auth/token.service";
@@ -668,5 +669,57 @@ describe("MatchingService.selectOffer — block enforcement (a blocked pair neve
     // Enforcement fires before the assignment CAS — the order is never claimed.
     expect(orderUpdateMany).not.toHaveBeenCalled();
     expect(metrics.recordMatchSelect).toHaveBeenCalledWith(7, "forbidden" satisfies MatchSelectOutcome);
+  });
+});
+
+describe("MatchingService.selectOffer — U62 + MJ-RL2 (C10): every 409 says why", () => {
+  const live = { isOnline: true, lastHeartbeatAt: new Date(), kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null };
+  function sel(over: { offer?: Record<string, unknown>; order?: Record<string, unknown>; rider?: Record<string, unknown>; obligation?: boolean; claim?: () => Promise<{ count: number }> }) {
+    return svc({
+      offer: {
+        findFirst: async () => ({
+          status: "pending",
+          riderId: "r1",
+          offeredFare: { toString: () => "2.50" },
+          order: { status: "open_for_offers", customerId: "cust", createdAt: new Date(), ...over.order },
+          rider: { ...live, ...over.rider },
+          ...over.offer,
+        }),
+        update: async () => ({}),
+        updateMany: async () => ({ count: 0 }),
+      },
+      order: { updateMany: over.claim ?? (async () => ({ count: 1 })), findFirst: async () => (over.obligation ? { id: "debt" } : null) },
+      orderEvent: { create: async () => ({}) },
+      block: { findFirst: async () => null },
+    }).service;
+  }
+  async function reasonOf(p: Promise<unknown>): Promise<unknown> {
+    try {
+      await p;
+    } catch (e) {
+      return ((e as { getResponse?: () => unknown }).getResponse?.() as { reason?: unknown } | undefined)?.reason;
+    }
+    throw new Error("expected a refusal");
+  }
+
+  it("names the cause on the body, keeping the message", async () => {
+    expect(await reasonOf(sel({ order: { status: "expired" } }).selectOffer(orderId, offerId, "cust"))).toBe("order_closed");
+    expect(await reasonOf(sel({ order: { createdAt: new Date(Date.now() - OFFER_WINDOW_MS - OFFER_CHOOSE_GRACE_MS - 1_000) } }).selectOffer(orderId, offerId, "cust"))).toBe("choose_ended");
+    expect(await reasonOf(sel({ offer: { status: "declined" } }).selectOffer(orderId, offerId, "cust"))).toBe("offer_gone");
+    expect(await reasonOf(sel({ rider: { isOnline: false } }).selectOffer(orderId, offerId, "cust"))).toBe("rider_unavailable");
+    expect(await reasonOf(sel({ rider: { onHold: true } }).selectOffer(orderId, offerId, "cust"))).toBe("rider_unavailable");
+    expect(await reasonOf(sel({ obligation: true }).selectOffer(orderId, offerId, "cust"))).toBe("rider_unavailable");
+    expect(await reasonOf(sel({ claim: async () => ({ count: 0 }) }).selectOffer(orderId, offerId, "cust"))).toBe("order_closed");
+    await expect(sel({ rider: { isOnline: false } }).selectOffer(orderId, offerId, "cust")).rejects.toThrow("Rider just became unavailable, pick another");
+  });
+
+  it("the rider was just assigned elsewhere (one_active_ride) — the one true 'taken by another customer'", async () => {
+    const taken = new Prisma.PrismaClientKnownRequestError("unique", { code: "P2002", clientVersion: "test" });
+    const service = sel({
+      claim: async () => {
+        throw taken;
+      },
+    });
+    expect(await reasonOf(service.selectOffer(orderId, offerId, "cust"))).toBe("rider_taken");
   });
 });

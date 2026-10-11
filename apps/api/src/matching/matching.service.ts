@@ -1,32 +1,24 @@
 import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { BROADCAST, broadcastRadiusAtMs, OFFER_CHOOSE_GRACE_MS, OFFER_WINDOW_MS } from "@lynia/shared";
+import { BROADCAST, broadcastRadiusAtMs, OFFER_CHOOSE_GRACE_MS, OFFER_WINDOW_MS, type SelectOfferConflictReason } from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush } from "../common/broadcast-policy";
 import { openHandoverCode, sealHandoverCode } from "../common/handover-code";
 import { hasOpenMerchantObligation } from "../common/merchant-debt-lock";
+import { riderSelectableNow, SELECTABLE_RIDER_SELECT } from "../common/rider-selectable";
 import { PiiCryptoService } from "../common/pii-crypto.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { MetricsService, type MatchSelectOutcome } from "../observability/metrics.service";
 import { buildBoardNewOrderEvent, pickupPoint } from "../orders/waypoints";
 import { PrismaService } from "../prisma/prisma.service";
 import { blockedPairWhere } from "../reports/blocks";
-import { onlineRefusalReason } from "../riders/rider.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { TrackingService } from "../tracking/tracking.service";
 
-/**
- * Rider must have a heartbeat newer than this to be selectable at the moment a customer taps "select"
- * (ET3 liveness). Widened 30s → 60s (KB-HEARTBEAT-MARGIN): the mobile client's heartbeat cadence is 20s
- * with a 15s request timeout, so the old 30s TTL left only a ~10s margin — a single delayed/dropped
- * heartbeat on a flaky connection could make a live, foregrounded rider look stale right at selection
- * time, throwing a spurious "rider just became unavailable" that steers the customer to a worse offer.
- * 60s clears a fully-missed heartbeat cycle (20s + the next 20s + the 15s timeout ≈ 55s) with margin,
- * while still catching a genuinely-gone rider within a minute. Distinct from BR-01's separate 120s
- * ghost-supply-count cutoff (tracking.service) — that counts live supply for the broadcast; this gates
- * one selection moment.
- */
-const HEARTBEAT_TTL_MS = 60_000;
+/** U62 + MJ-RL2 (C10): a select refusal with its machine `reason` (additive; the message is unchanged). */
+function selectConflict(reason: SelectOfferConflictReason, message: string): ConflictException {
+  return new ConflictException({ reason, message });
+}
 
 export interface SelectResult {
   orderId: string;
@@ -76,16 +68,7 @@ export class MatchingService {
             // account-standing fields (origin/main) gate a banned/suspended/held rider at select time.
             // otpHash/otpCipher: U22 — a rider-bail re-broadcast clone carries the trip's code (D2).
             order: { select: { status: true, customerId: true, pickup: true, createdAt: true, otpHash: true, otpCipher: true } },
-            rider: {
-              select: {
-                isOnline: true,
-                lastHeartbeatAt: true,
-                kycStatus: true,
-                accountStatus: true,
-                onHold: true,
-                cooldownUntil: true,
-              },
-            },
+            rider: { select: SELECTABLE_RIDER_SELECT },
           },
         });
 
@@ -105,35 +88,30 @@ export class MatchingService {
         if (blocked) throw new ForbiddenException("You've blocked this rider — pick another offer");
 
         if (offer.order.status !== "open_for_offers") {
-          throw new ConflictException("This order is no longer open for offers");
+          throw selectConflict("order_closed", "This order is no longer open for offers");
         }
         // After-send v2 choose grace: the offers already on screen stay choosable for
         // OFFER_CHOOSE_GRACE_MS after the window ends (createdAt + OFFER_WINDOW_MS); past that the
         // expiry job owns the order even if the status hasn't flipped yet. Also pinned in the CAS below.
         const chooseCutoff = new Date(Date.now() - OFFER_WINDOW_MS - OFFER_CHOOSE_GRACE_MS);
         if (offer.order.createdAt && offer.order.createdAt <= chooseCutoff) {
-          throw new ConflictException("This order is no longer open for offers — the time to choose has ended");
+          throw selectConflict("choose_ended", "This order is no longer open for offers — the time to choose has ended");
         }
         pickupPt = (offer.order.pickup as { point?: { lat: number; lng: number } } | null)?.point;
-        if (offer.status !== "pending") throw new ConflictException("That offer is no longer available");
+        if (offer.status !== "pending") throw selectConflict("offer_gone", "That offer is no longer available");
 
-        const hb = offer.rider.lastHeartbeatAt?.getTime() ?? 0;
-        const fresh = Date.now() - hb < HEARTBEAT_TTL_MS;
-        if (!offer.rider.isOnline || !fresh) {
-          throw new ConflictException("Rider just became unavailable, pick another");
-        }
-        // P2-1 account-standing gate (ET3): a rider banned/suspended/put on-hold/cooled-down AFTER
-        // bidding (e.g. an admin ban while they were still flagged online) must not be selectable.
-        // Same shared online-gate as makeOffer/setOnline; surfaced as the same "pick another" conflict
-        // as a liveness miss, since the customer isn't at fault.
-        if (onlineRefusalReason(offer.rider)) {
-          throw new ConflictException("Rider just became unavailable, pick another");
+        // ET3 liveness (a fresh heartbeat, SELECT_HEARTBEAT_TTL_MS) and the P2-1 account-standing gate: a
+        // rider banned/suspended/put on-hold/cooled-down AFTER bidding (e.g. an admin ban while they were
+        // still flagged online) must not be selectable. One shared gate (common/rider-selectable.ts) that
+        // `listForOrder` also applies, so such an offer leaves the list too (MJ-RL2).
+        if (!riderSelectableNow(offer.rider)) {
+          throw selectConflict("rider_unavailable", "Rider just became unavailable, pick another");
         }
 
         // C4 soft-lock: a rider owing a merchant collect-and-return cash debt, or mid-doorstep
         // handshake, takes no new jobs until it's settled (N-20/R-05) — same "pick another" shape.
         if (await hasOpenMerchantObligation(tx, offer.riderId)) {
-          throw new ConflictException("Rider just became unavailable, pick another");
+          throw selectConflict("rider_unavailable", "Rider just became unavailable, pick another");
         }
 
         // The delivery handover code. ET7: the verifier is its hash; D2 (owner 2026-10-07) also stores it
@@ -174,7 +152,7 @@ export class MatchingService {
             ...codeData,
           },
         });
-        if (claimed.count === 0) throw new ConflictException("Order was just taken, pick another");
+        if (claimed.count === 0) throw selectConflict("order_closed", "Order was just taken, pick another");
 
         await tx.offer.update({ where: { id: offerId }, data: { status: "selected" } });
         await tx.offer.updateMany({
@@ -209,7 +187,8 @@ export class MatchingService {
         // Record the metric, then RE-THROW the domain error — the "rider just taken" rollback UX
         // depends on this ConflictException still propagating; the metric wrapper must NOT swallow it.
         this.metrics.recordMatchSelect(done(), "unavailable");
-        throw new ConflictException("Rider just became unavailable, pick another");
+        // U62: the one case the customer's "taken by another customer" toast is true for.
+        throw selectConflict("rider_taken", "Rider just became unavailable, pick another");
       }
       // Map the thrown domain exception to an outcome label, then RE-THROW so the caller still sees it.
       this.metrics.recordMatchSelect(done(), this.selectOutcome(err));

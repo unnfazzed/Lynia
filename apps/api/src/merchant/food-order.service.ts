@@ -41,6 +41,7 @@ import {
   type MerchantConfirmPaymentRequest,
   type MerchantOrderItemView,
   type MerchantOrderResponse,
+  type LyniaCancelReason,
   type MerchantRejectionReasonCode,
   type PaymentPromptRail,
   type PlaceMerchantOrderRequest,
@@ -149,6 +150,9 @@ const SECTIONS_OFF = { SHOPS_ENABLED: "false", PHARMACY_ENABLED: "false" } as co
 /** D-48: the statuses after the rider has the food — when the merchant may close its side. */
 const AFTER_PICKUP_STATUSES: ReadonlySet<string> = new Set(["picked_up", "en_route_dropoff", "delivered", "completed", "undelivered"]);
 /** The reasons a venue itself turned the order down (G3a "{v} couldn’t take your order"). */
+/** A merchant's reason, or one only the server stamps (U33: N-18's `item_approval_expired`). */
+type StampedRejectionReason = MerchantRejectionReasonCode | LyniaCancelReason;
+
 const VENUE_DECLINED: ReadonlySet<string> = new Set(["out_of_ingredient", "out_of_stock", "too_busy", "closing_soon", "shop_closed", "ran_out", "kitchen_problem", "other"]);
 
 /** E2 listQueue visibility — see the doc comment on the call site. */
@@ -1129,9 +1133,15 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
    * customer gets a silent push with the new time (owner decision 2026-10-04). A cap keeps a slow order
    * from drifting for ever: past it, the kitchen calls the customer.
    */
-  async extendPrep(profileId: string, orderId: string): Promise<MerchantOrderResponse> {
+  async extendPrep(profileId: string, orderId: string, expectedPrepMinutes?: number): Promise<MerchantOrderResponse> {
     const order = await this.findOwnAsMerchant(profileId, orderId);
     if (order.merchantPhase !== "preparing" || !order.prepStartedAt) throw new ConflictException("This order isn't in prep");
+    // MJ-RM19: the page says which prep time it was adding five to. A retry of a tap that already landed
+    // (2G: the client timed out, the POST still arrived) finds it moved and adds nothing — the CAS below
+    // pins the same value, so two racing taps can't both land either. An older page sends none.
+    if (expectedPrepMinutes !== undefined && (order.prepMinutes ?? 0) !== expectedPrepMinutes) {
+      throw new ConflictException({ reason: "prep_changed", message: "The ready time already moved. Check it before adding more." });
+    }
     const prepMinutes = (order.prepMinutes ?? 0) + PREP_EXTEND_MIN;
     if (prepMinutes > PREP_MAX_MIN) {
       throw new ConflictException({ reason: "prep_too_long", message: "That’s as late as it can go. Call the customer if it needs longer." });
@@ -1528,15 +1538,16 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** N-18: unanswered 60s item-approval window — mocked default (surfaced in the PR): treated as a
-   *  decline, same as the customer declining explicitly. */
+   *  decline, same as the customer declining explicitly. U33 (C8): it stamps its own reason, not the
+   *  venue's `other`, so the history, the feed, the push and the order screen don't blame the venue. */
   async sweepExpiredItemApprovals(): Promise<{ cancelled: number }> {
-    return this.sweepExpiredPhase("awaiting_item_approval", "itemApprovalDeadlineAt", "other");
+    return this.sweepExpiredPhase("awaiting_item_approval", "itemApprovalDeadlineAt", "item_approval_expired");
   }
 
   private async sweepExpiredPhase(
     phase: "awaiting_accept" | "awaiting_item_approval",
     deadlineField: "acceptDeadlineAt" | "itemApprovalDeadlineAt",
-    reason: MerchantRejectionReasonCode,
+    reason: StampedRejectionReason,
   ): Promise<{ cancelled: number }> {
     let cancelled = 0;
     const stale = await this.prisma.order.findMany({
@@ -1573,7 +1584,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     orderId: string,
     merchantId: string | null | undefined,
     whereExtra: Prisma.OrderWhereInput,
-    reason: MerchantRejectionReasonCode,
+    reason: StampedRejectionReason,
   ): Promise<boolean> {
     const claimed = await this.prisma.order.updateMany({
       where: { id: orderId, status: "requested", ...whereExtra },
@@ -1880,7 +1891,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  private async notifyCancelledCustomer(orderId: string, reason: MerchantRejectionReasonCode, note: string | null = null): Promise<void> {
+  private async notifyCancelledCustomer(orderId: string, reason: StampedRejectionReason, note: string | null = null): Promise<void> {
     const order = await this.prisma.order.findUnique({ where: { id: orderId }, select: { customerId: true, merchant: { select: { name: true } } } });
     if (!order) return;
     // Order flow v2 G3a (O.g.push.c[8]/[9]): the venue declined → "{v} couldn’t take your order"; no

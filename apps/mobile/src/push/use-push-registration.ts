@@ -211,6 +211,10 @@ export function usePushRegistration(session: Session | null): void {
   useEffect(() => {
     const sub = Notifications.addNotificationReceivedListener((notification) => {
       const data = notification.request.content.data;
+      // U57: every order or account push is also a new feed row — re-read the bell's unread dot now. The
+      // key is `NOTIFICATIONS_UNREAD_COUNT_KEY` (query/use-notifications-unread.ts), spelled out so this
+      // hook stays off that module's API-client import chain (see above).
+      if (typeof data?.orderId === "string" || typeof data?.kind === "string") void qc.invalidateQueries({ queryKey: ["notifications-unread-count"] });
       if (data?.kind === "account") {
         void qc.invalidateQueries({ queryKey: ["me"] });
         return;

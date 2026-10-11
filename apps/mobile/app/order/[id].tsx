@@ -327,22 +327,24 @@ function ParcelOrderScreen(): React.ReactElement {
   });
   const offers = useMemo(() => (Array.isArray(offersQ.data) ? offersQ.data : []), [offersQ.data]);
 
-  // Announce a newly-arrived bid (not the ones already there on open).
-  const prevBidCount = useRef(0);
-  const bidsSeeded = useRef(false);
+  // Announce a newly-arrived bid (not the ones already there on open). Review (U62/MJ-RL2): keyed on the
+  // offer ids seen this visit, not the count — the server now drops an offer whose rider is briefly
+  // unchoosable (a stale heartbeat), and its return must not buzz and announce as a new bid.
+  const seenBids = useRef<Set<string> | null>(null);
   useEffect(() => {
     if (status !== "open_for_offers" || !offersQ.isSuccess) return;
-    if (!bidsSeeded.current) {
-      bidsSeeded.current = true;
-      prevBidCount.current = offers.length;
+    if (seenBids.current === null) {
+      seenBids.current = new Set(offers.map((o) => o.id));
       return;
     }
-    if (offers.length > prevBidCount.current) {
+    const seen = seenBids.current;
+    const fresh = offers.filter((o) => !seen.has(o.id));
+    for (const o of fresh) seen.add(o.id);
+    if (fresh.length > 0) {
       haptic("notify");
       AccessibilityInfo.announceForAccessibility(orderText.offers(offers.length));
     }
-    prevBidCount.current = offers.length;
-  }, [offers.length, status, offersQ.isSuccess]);
+  }, [offers, status, offersQ.isSuccess]);
 
   // A success cue at the two moments that land: matched, and delivered.
   const prevStatus = useRef<string | undefined>(undefined);
@@ -352,8 +354,7 @@ function ParcelOrderScreen(): React.ReactElement {
     prevStatus.current = status;
   }, [status]);
   useEffect(() => {
-    prevBidCount.current = 0;
-    bidsSeeded.current = false;
+    seenBids.current = null;
     prevStatus.current = undefined;
     setPanel(null);
     setPrevPrice(null);
@@ -378,7 +379,14 @@ function ParcelOrderScreen(): React.ReactElement {
     const o = offers.find((x) => x.id === offerId);
     return o ? riderShortName(o.rider.profile.firstName, o.rider.profile.lastName) : A.rider;
   };
-  const showTaken = (offerId: string): void => showToast({ text: orderText.taken(offerName(offerId)) });
+  // U62 (C10): the toast follows the server's 409 `reason` — "taken by another customer" only when the rider
+  // really was (`rider_taken`, or an older API that sends no reason); a rider who went or an offer that closed
+  // gets its own line; a time to choose that ran out says nothing (the refetch moves the screen on).
+  const showTaken = (offerId: string, code: string | null): void => {
+    const name = offerName(offerId);
+    if (code === "choose_ended" || code === "order_closed") return;
+    showToast({ text: code === "rider_unavailable" || code === "offer_gone" ? orderText.gone(name) : orderText.taken(name) });
+  };
 
   const selectM = useMutation({
     mutationFn: (offerId: string) => selectOffer(orderId, offerId),
@@ -398,16 +406,20 @@ function ParcelOrderScreen(): React.ReactElement {
     onError: (e, offerId, ctx) => {
       if (ctx?.prev !== undefined) qc.setQueryData(orderKey(orderId), ctx.prev);
       if (!(e instanceof ApiError) || e.status !== 409) return;
+      const code = e.code;
       // LC-C08: a 409 can be our own pick landing after a lost response — confirm before saying "taken".
+      // U62: and a refusal for an order that has left offers (the time to choose ran out) has nobody left to
+      // pick — no "pick another rider" then.
       if (ctx?.selectedRiderId == null) {
-        showTaken(offerId);
+        showTaken(offerId, code);
         return;
       }
       void getOrder(orderId)
         .then((fresh) => {
-          if (!selectOfferReconciled({ freshStatus: fresh.status, freshRiderId: fresh.rider?.profileId, selectedRiderId: ctx.selectedRiderId })) showTaken(offerId);
+          if (selectOfferReconciled({ freshStatus: fresh.status, freshRiderId: fresh.rider?.profileId, selectedRiderId: ctx.selectedRiderId })) return;
+          if (fresh.status === "open_for_offers") showTaken(offerId, code);
         })
-        .catch(() => showTaken(offerId));
+        .catch(() => showTaken(offerId, code));
     },
     onSettled: () => {
       setChoosingId(null);
@@ -743,6 +755,15 @@ function ParcelOrderScreen(): React.ReactElement {
     return undefined;
   }, [stage, windowEnd, nowMs]);
   const graceLeftMs = stage === "offers" && Number.isFinite(windowEnd) && nowMs >= windowEnd ? Math.max(0, windowEnd + CHOOSE_GRACE_MS - nowMs) : null;
+  // U62: the grace ran out on this phone's clock — re-read the order at once (the expiry job flips it to No
+  // rider yet) instead of waiting for the next poll. Choose stays enabled: the app has no server clock
+  // offset, so a fast phone clock must not block a pick the server would still take; a late pick gets the
+  // server's `choose_ended` 409, which says nothing and moves on.
+  const graceOver = graceLeftMs === 0;
+  useEffect(() => {
+    if (graceOver) void orderQ.refetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per grace end; refetch is stable
+  }, [graceOver]);
 
   // A rider who cancels before pickup: the server has already re-broadcast the order at the same price —
   // follow it, and show it as state 13 there (a finding state with the reason).

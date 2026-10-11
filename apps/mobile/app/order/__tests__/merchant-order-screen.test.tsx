@@ -6,7 +6,7 @@
  * Done with the rider rating, the endings, and no wallet / mobile-money / refund copy anywhere.
  */
 import renderer, { act } from "react-test-renderer";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { onlineManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { MerchantOrderResponse, SubstitutionRoundView } from "@lynia/shared";
 import type { OrderSnapshot } from "../../../src/api/orders";
 
@@ -459,6 +459,34 @@ describe("merchant order — one order screen (D-59)", () => {
     expect(mockConfirmCash).toHaveBeenCalledWith("order-1");
   });
 
+  it("U59: offline, \"I've paid\" doesn't spin forever — it says No connection once, a second tap queues nothing, it goes on reconnect", async () => {
+    const near = { profileId: "r", currentLat: -17.8106, currentLng: 31.0705, updatedAt: iso(-2_000) };
+    const t = await render(
+      foodOrder({ status: "en_route_dropoff", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003" }),
+      snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, rider: near, counterpartyPhone: "+263771234580" }),
+    );
+    try {
+      act(() => onlineManager.setOnline(false));
+      press(t, "I’ve paid $16.50");
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+      expect(mockConfirmCash).not.toHaveBeenCalled();
+      expect(has(t, "No connection. Nothing was sent.")).toBe(true);
+      const btn = t.root.findAll((n) => n.props.accessibilityLabel === "I’ve paid $16.50" && typeof n.props.onPress === "function")[0]!;
+      expect(btn.props.disabled).toBeFalsy();
+      press(t, "I’ve paid $16.50");
+      await act(async () => undefined);
+      act(() => onlineManager.setOnline(true));
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+      expect(mockConfirmCash).toHaveBeenCalledTimes(1);
+    } finally {
+      onlineManager.setOnline(true);
+    }
+  });
+
   it("P2: both confirmed — the code is read (D2: never rotated just to show it) and shown 3+3 on the forest panel", async () => {
     const t = await render(
       foodOrder({ status: "en_route_dropoff", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003", customerCashConfirmedAt: iso(-60_000), riderCashConfirmedAt: iso(-30_000) }),
@@ -790,6 +818,53 @@ describe("merchant order — one order screen (D-59)", () => {
     await act(async () => undefined);
     expect(mockCancelOrder).toHaveBeenCalledWith("order-1", {});
     expect(mockCancelUnpaid).not.toHaveBeenCalled();
+  });
+
+  it("U56: the after-pickup cancel quotes this order's own total, not a balance it carried from before", async () => {
+    // Due at the door $18.50 = this order's $16.50 + a carried $2.00 (which stays owed whatever happens).
+    const t = await render(
+      foodOrder({ status: "en_route_dropoff", merchantPhase: null, riderId: "r", amountDueUsd: 18.5, previousBalanceUsd: 2 }),
+      snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, rider: { profileId: "r", currentLat: -17.83, currentLng: 31.05, updatedAt: iso(-2_000) } }),
+    );
+    press(t, "Cancel order");
+    expect(has(t, "Cancelling now costs the full $16.50")).toBe(true);
+    expect(has(t, "$18.50 —")).toBe(false);
+    expect(t.root.findAll((n) => n.props.accessibilityLabel === "Cancel and pay $16.50").length).toBeGreaterThan(0);
+  });
+
+  it("U33 (C8): a venue's 'Something else' is the venue's ending; LyniaGo's own reasons are LyniaGo's", async () => {
+    const v = await render(foodOrder({ status: "cancelled", merchantPhase: null, rejectionReason: "other" }), snapshot({ status: "cancelled", cancelledBy: null }));
+    expect(has(v, "Gava’s Kitchen couldn’t take your order")).toBe(true);
+    expect(has(v, "LyniaGo cancelled this order")).toBe(false);
+    act(() => v.unmount());
+    active = null;
+    // N-18: the customer didn't answer the item approval — not the venue, and no untrue "reported a problem".
+    const n = await render(foodOrder({ status: "cancelled", merchantPhase: null, rejectionReason: "item_approval_expired" }), snapshot({ status: "cancelled", cancelledBy: null }));
+    expect(has(n, "LyniaGo cancelled this order")).toBe(true);
+    expect(has(n, "No answer in time. Nothing was charged.")).toBe(true);
+    expect(has(n, "couldn’t take your order")).toBe(false);
+    expect(has(n, "reported a problem")).toBe(false);
+    act(() => n.unmount());
+    active = null;
+    const o = await render(foodOrder({ status: "cancelled", merchantPhase: null, rejectionReason: "lynia_cancelled" }), snapshot({ status: "cancelled", cancelledBy: null }));
+    expect(has(o, "LyniaGo cancelled this order")).toBe(true);
+    expect(has(o, "couldn’t take your order")).toBe(false);
+  });
+
+  it("U28: the D5b decline ending keeps the pharmacist's reason and note", async () => {
+    const t = await render(
+      foodOrder({
+        venue: PHARMACY,
+        status: "cancelled",
+        merchantPhase: null,
+        rejectionReason: "rx_declined",
+        prescription: { status: "declined", patientName: "Rudo", pageCount: 1, declineReason: "expired", declineNote: "dated March 2026" },
+      }),
+      snapshot({ status: "cancelled", cancelledBy: null }),
+    );
+    expect(has(t, "Your prescription wasn’t approved")).toBe(true);
+    expect(has(t, "Reason from the pharmacist")).toBe(true);
+    expect(has(t, "Expired · dated March 2026")).toBe(true);
   });
 
   it("D3f: cancelled after pickup — the owed line from the server", async () => {

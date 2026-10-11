@@ -1,7 +1,8 @@
 import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { type MakeOfferRequest, OFFER_WINDOW_MS } from "@lynia/shared";
-import { hasOpenMerchantObligation } from "../common/merchant-debt-lock";
+import { ACTIVE_RIDE_STATUSES, type MakeOfferRequest, OFFER_WINDOW_MS } from "@lynia/shared";
+import { hasOpenMerchantObligation, OPEN_MERCHANT_OBLIGATION_OR } from "../common/merchant-debt-lock";
+import { riderSelectableNow, SELECTABLE_RIDER_SELECT } from "../common/rider-selectable";
 import { NotificationsService } from "../notifications/notifications.service";
 import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -251,10 +252,36 @@ export class OffersService {
             ratingCount: true,
             tripsCount: true,
             profile: { select: { firstName: true, lastName: true, photoUrl: true } },
+            ...SELECTABLE_RIDER_SELECT,
           },
         },
       },
     });
-    return offers.map((o) => ({ ...o, offeredFare: o.offeredFare.toString() }));
+    // MJ-RL2 / U62 (C10): an offer selectOffer would refuse — its rider went offline, lost standing, or owes
+    // a venue cash (the same three gates, common/rider-selectable.ts + the merchant-debt soft-lock) — stays
+    // pending, but it isn't choosable, so it leaves the list instead of drawing a Choose that only 409s.
+    // The gate fields are read for the check only; the wire shape is unchanged.
+    // Review (MJ-RL2 / U62): a rider already on an active ride elsewhere (the `one_active_ride` index's
+    // statuses, ACTIVE_RIDE_STATUSES) can't be assigned either — selectOffer 409s `rider_taken` on every
+    // Choose — so they leave too. One batched read for every rider on the list covers both that and the
+    // merchant-debt soft-lock (the same OR arms hasOpenMerchantObligation uses), not one query per offer.
+    const now = Date.now();
+    const live = offers.filter((o) => riderSelectableNow(o.rider, now));
+    const riderIds = [...new Set(live.map((o) => o.rider.profileId))];
+    const held =
+      riderIds.length === 0
+        ? []
+        : await this.prisma.order.findMany({
+            where: { riderId: { in: riderIds }, OR: [{ status: { in: ACTIVE_RIDE_STATUSES } }, ...OPEN_MERCHANT_OBLIGATION_OR] },
+            select: { riderId: true },
+          });
+    const busy = new Set(held.map((h) => h.riderId));
+    return live
+      .filter((o) => !busy.has(o.rider.profileId))
+      .map(({ rider, ...o }) => ({
+        ...o,
+        offeredFare: o.offeredFare.toString(),
+        rider: { profileId: rider.profileId, ratingAvg: rider.ratingAvg, ratingCount: rider.ratingCount, tripsCount: rider.tripsCount, profile: rider.profile },
+      }));
   }
 }

@@ -426,3 +426,23 @@ describe("(tabs)/orders.tsx — Orders v2", () => {
     });
   });
 });
+
+describe("U38: an order that ends while the tab is in view moves to history instead of vanishing", () => {
+  it("re-reads history on focus, and when a running id drops out of NOW", async () => {
+    const { invalidateCustomerOrderHistory } = require("../../../src/query/use-history-feed") as { invalidateCustomerOrderHistory: jest.Mock };
+    mockUseHistoryFeed.mockReturnValue(emptyHistory);
+    mockGetActiveCustomerOrders.mockResolvedValue([parcel]);
+    activeTree = renderOrders();
+    await settle();
+    // The focus effect read history with the NOW list.
+    expect(invalidateCustomerOrderHistory).toHaveBeenCalledTimes(1);
+    // The order ended (the venue declined / no rider / LyniaGo): the next NOW read has no running job.
+    mockGetActiveCustomerOrders.mockResolvedValue([]);
+    const qc = activeTree.root.findByType(require("@tanstack/react-query").QueryClientProvider).props.client as QueryClient;
+    await act(async () => {
+      await qc.refetchQueries({ queryKey: ["activeCustomerOrders"] });
+    });
+    await settle();
+    expect(invalidateCustomerOrderHistory).toHaveBeenCalledTimes(2);
+  });
+});

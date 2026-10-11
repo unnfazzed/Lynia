@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { KYC_DECLINE_REASON_LABELS, merchantAmountDueUsd } from "@lynia/shared";
+import { cancelledByOf as sharedCancelledByOf, KYC_DECLINE_REASON_LABELS, merchantAmountDueUsd } from "@lynia/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { MERCHANT_STATUS_NOTICES, merchantCustomerCopy } from "./notifications.service";
 import { pushCopy, pushMoney, PUSH_C } from "./merchant-order-push";
@@ -123,21 +123,13 @@ function kycReasonOf(code: string | null | undefined): string | undefined {
 }
 
 /**
- * Who ended a cancelled order. Same reading as Orders v2's `customerOrderOutcome`
- * (orders.service.ts): a customer or rider cancel stamps their profile id on `cancelledBy`; a venue
- * declining stamps a `rejectionReason`; ops and the system leave `cancelledBy` null.
+ * Who ended a cancelled order — U33 (C8): the one shared reading (`@lynia/shared` order-outcome.ts) that the
+ * Orders tab, the push and the order screen use too. A customer or rider cancel stamps their profile id on
+ * `cancelledBy`; a venue declining (its "Something else" `other` included) stamps a `rejectionReason`; the
+ * sweeps, dispatch and ops stamp LyniaGo's own reasons or leave both empty.
  */
-export function cancelledByOf(o: {
-  cancelledBy?: string | null;
-  customerId?: string | null;
-  riderId?: string | null;
-  rejectionReason?: string | null;
-}): CancelledBy {
-  if (o.cancelledBy && o.cancelledBy === o.customerId) return "customer";
-  if (o.cancelledBy && o.cancelledBy === o.riderId) return "rider";
-  const r = o.rejectionReason;
-  if (r && r !== "other" && r !== "no_rider" && r !== "kitchen_unconfirmed") return "merchant";
-  return "lynia";
+export function cancelledByOf(o: { cancelledBy?: string | null; customerId?: string | null; riderId?: string | null; rejectionReason?: string | null }): CancelledBy {
+  return sharedCancelledByOf(o);
 }
 
 export type FeedRowType = "status" | "offer" | "fare" | "riders_available" | "account" | "sos" | "standing" | "standing_resolved" | "issue" | "swap";

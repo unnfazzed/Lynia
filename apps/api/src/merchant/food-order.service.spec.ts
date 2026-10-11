@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BadRequestException, Logger } from "@nestjs/common";
-import { MerchantCancelOrderRequest, RESTAURANTS_TIMING } from "@lynia/shared";
+import { cancelledByOf, customerOrderOutcome, MerchantCancelOrderRequest, RESTAURANTS_TIMING } from "@lynia/shared";
 import type { Env } from "../config/env";
 import type { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -1233,17 +1233,41 @@ describe("FoodOrderService reconciler sweeps", () => {
   });
 
   it("N-18: an unanswered item-approval window is treated as a decline (named mocked default)", async () => {
+    let data: Record<string, unknown> | undefined;
     const { svc } = build({
       order: {
         findMany: async () => [{ id: "o1", merchantId: "m1" }],
-        updateMany: async () => ({ count: 1 }),
-        findUnique: async () => ({ customerId: "c1" }),
+        updateMany: async (a: { data: Record<string, unknown> }) => {
+          data = a.data;
+          return { count: 1 };
+        },
+        findUnique: async () => ({ customerId: "c1", merchant: { name: "Mama's Kitchen" } }),
       },
       orderEvent: { create: async () => ({}) },
     });
     const res = await svc.sweepExpiredItemApprovals();
     expect(res).toEqual({ cancelled: 1 });
     expect(queueChanges).toEqual([{ merchantId: "m1", orderId: "o1" }]);
+    // U33 (C8): its own reason, not the venue's `other` — so the push doesn't say the venue couldn't take it.
+    expect(data).toMatchObject({ status: "cancelled", rejectionReason: "item_approval_expired" });
+    expect(cancelledByOf({ cancelledBy: null, customerId: "c1", rejectionReason: data!.rejectionReason as string })).toBe("lynia");
+    expect(notified).toEqual([expect.objectContaining({ profileIds: ["c1"], title: "Your order was cancelled", body: "No answer in time. Nothing was charged." })]);
+    expect(notified[0]!.title).not.toMatch(/couldn.t take/);
+  });
+
+  it("U33 (C8): a venue's 'Something else' push names the venue, and the feed and history agree", async () => {
+    const { svc } = build({
+      order: {
+        updateMany: async () => ({ count: 1 }),
+        findUnique: async () => ({ id: "o1", customerId: "c1", merchantId: "m1", status: "cancelled", merchant: { name: "Mama's Kitchen" }, merchantItems: [], pickupCodeAttempts: 0, noShowCallTimestamps: [] }),
+      },
+      merchant: { findUnique: async () => ({ id: "m1" }), findFirst: async () => ({ id: "m1" }) },
+      orderEvent: { create: async () => ({}) },
+    });
+    await svc.rejectOrder("p1", "o1", "other", "Gas ran out");
+    expect(notified[0]!.title).toMatch(/Mama's Kitchen couldn.t take your order/);
+    expect(cancelledByOf({ cancelledBy: null, customerId: "c1", rejectionReason: "other" })).toBe("merchant");
+    expect(customerOrderOutcome({ status: "cancelled", cancelledBy: null, customerId: "c1", rejectionReason: "other" })).toBe("venue_declined");
   });
 
   it("N-23: end-of-day close only fires once the shop's own closing time has passed", async () => {
