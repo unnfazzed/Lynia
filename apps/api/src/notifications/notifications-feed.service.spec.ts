@@ -1279,7 +1279,10 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       expect(cancelledByOf({ cancelledBy: null, rejectionReason: "rx_declined" })).toBe("merchant");
       expect(cancelledByOf({ cancelledBy: null, rejectionReason: "kitchen_unconfirmed" })).toBe("lynia");
       expect(cancelledByOf({ cancelledBy: null, rejectionReason: "no_rider" })).toBe("lynia");
-      expect(cancelledByOf({ cancelledBy: null, rejectionReason: "other" })).toBe("lynia");
+      // U33 (C8): "Something else" (`other`) is the venue's own answer; N-18 and ops stamp LyniaGo's reasons.
+      expect(cancelledByOf({ cancelledBy: null, rejectionReason: "other" })).toBe("merchant");
+      expect(cancelledByOf({ cancelledBy: null, rejectionReason: "item_approval_expired" })).toBe("lynia");
+      expect(cancelledByOf({ cancelledBy: null, rejectionReason: "lynia_cancelled" })).toBe("lynia");
       expect(cancelledByOf({ cancelledBy: null })).toBe("lynia");
 
       // On the row: the rider whose customer cancelled is told it was the customer.

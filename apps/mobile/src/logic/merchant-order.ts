@@ -247,11 +247,13 @@ export function merchantEta(i: {
   return { kind: "range", fromMs, toMs: fromMs + RANGE_MIN * MIN_MS };
 }
 
-/** The prep bar: whole minutes left (≥ 1 while cooking) and the share done (0–100), or null. */
+/** The prep bar: whole minutes left (≥ 1 while cooking) and the share done (0–100), or null — also once
+ *  the ready time has passed (U34): a venue running late isn't "about 1 min left" for as long as it takes,
+ *  so the bar goes and the stage title and the ETA range carry on. */
 export function prepProgress(o: { readyAt?: string | null; prepStartedAt?: string | null; prepMinutes?: number | null }, nowMs: number): { minutesLeft: number; pct: number } | null {
   const start = o.prepStartedAt ? Date.parse(o.prepStartedAt) : NaN;
   const end = readyAtMs(o);
-  if (!Number.isFinite(start) || end == null || end <= start) return null;
+  if (!Number.isFinite(start) || end == null || end <= start || nowMs >= end) return null;
   const left = Math.max(1, Math.ceil((end - nowMs) / MIN_MS));
   const pct = Math.max(0, Math.min(100, Math.round(((nowMs - start) / (end - start)) * 100)));
   return { minutesLeft: left, pct };

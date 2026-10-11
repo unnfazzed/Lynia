@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { ACTIVE_RIDE_STATUSES, type BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, deriveMerchantOrderTrack, isBusinessBookingAccountPhone, isCodItem, type LatLng, merchantAmountDueUsd, OFFER_WINDOW_MS, OrderStatus, type OrderItem, PHONE_REVEAL_STATUSES, isInServiceArea, quoteFare, roundToCents, serviceTownsLabel, summarizeItems } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, type CustomerOrderOutcome as SharedCustomerOrderOutcome, customerOrderOutcome as sharedCustomerOrderOutcome, type BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, deriveMerchantOrderTrack, isBusinessBookingAccountPhone, isCodItem, type LatLng, merchantAmountDueUsd, OFFER_WINDOW_MS, OrderStatus, type OrderItem, PHONE_REVEAL_STATUSES, isInServiceArea, quoteFare, roundToCents, serviceTownsLabel, summarizeItems } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush, maxBroadcastRadiusM } from "../common/broadcast-policy";
 import { MicroCache } from "../common/micro-cache";
@@ -1336,34 +1336,19 @@ export const CUSTOMER_ORDERS_PAGE = 50;
 export const CUSTOMER_TERMINAL_STATUSES = ["delivered", "completed", "cancelled", "expired", "undelivered"] as const;
 
 /** How a customer order ended, as the Orders tab names it (handoff README §4 outcome table). */
-export type CustomerOrderOutcome =
-  | "delivered"
-  | "cancelled_by_you"
-  | "cancelled_by_rider"
-  | "cancelled_by_lynia"
-  | "kitchen_timeout"
-  | "venue_declined"
-  | "no_rider"
-  | "not_delivered";
+export type CustomerOrderOutcome = SharedCustomerOrderOutcome;
 
 /**
- * Who or what ended the order. A customer or rider cancel stamps `cancelledBy` with their profile id; an
- * ops cancel stores null `cancelledBy` with a `cancelReason` (admin-orders.service.ts); a venue or the
- * dispatcher letting a food order go stamps `rejectionReason` (MERCHANT_REJECTION_REASONS) instead.
+ * Who or what ended the order — U33 (C8): the one shared reading (`@lynia/shared` order-outcome.ts) the
+ * Notifications feed, the push and the order screen use too. A customer or rider cancel stamps
+ * `cancelledBy` with their profile id; an ops cancel stores null `cancelledBy` and `lynia_cancelled`; a venue
+ * (its "Something else" `other` included) or a sweep letting a food order go stamps `rejectionReason`.
  */
 export function customerOrderOutcome(
   o: { status: string; cancelledBy: string | null; riderId: string | null; rejectionReason: string | null },
   customerId: string,
 ): CustomerOrderOutcome {
-  if (o.status === "delivered" || o.status === "completed") return "delivered";
-  if (o.status === "expired") return "no_rider";
-  if (o.status === "undelivered") return "not_delivered";
-  if (o.cancelledBy === customerId) return "cancelled_by_you";
-  if (o.cancelledBy && o.cancelledBy === o.riderId) return "cancelled_by_rider";
-  if (o.rejectionReason === "kitchen_unconfirmed") return "kitchen_timeout";
-  if (o.rejectionReason === "no_rider") return "no_rider";
-  if (o.rejectionReason && o.rejectionReason !== "other") return "venue_declined";
-  return o.cancelledBy ? "cancelled_by_rider" : "cancelled_by_lynia";
+  return sharedCustomerOrderOutcome({ ...o, customerId });
 }
 
 /** A merchant order's service from its venue (restaurant / shop / pharmacy). */

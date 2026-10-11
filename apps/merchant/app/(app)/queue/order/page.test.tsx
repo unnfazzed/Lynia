@@ -95,8 +95,39 @@ describe("K3 · the cooking ticket (Merchant v2, D-77)", () => {
   it("'+5 min' pushes the ready time back", async () => {
     show(cooking());
     fireEvent.click(await screen.findByRole("button", { name: "+5 min" }));
-    await vi.waitFor(() => expect(extendPrep).toHaveBeenCalledWith(ID));
+    // MJ-RM19: it says which prep time it was adding to.
+    await vi.waitFor(() => expect(extendPrep).toHaveBeenCalledWith(ID, 15));
     expect(await screen.findByText("Ready time pushed back 5 min · customer told")).toBeTruthy();
+  });
+
+  it("MJ-RM19: a +5 that timed out re-reads the order, so the next tap adds to what the server has", async () => {
+    show(cooking());
+    // 2G: the client gave up, but the POST landed — the server now has 20.
+    vi.mocked(extendPrep).mockRejectedValueOnce(new ApiError(0, "Couldn't reach the server — check the connection and try again."));
+    vi.mocked(getOrder).mockResolvedValue({ ...cooking(), prepMinutes: 20 });
+    fireEvent.click(await screen.findByRole("button", { name: "+5 min" }));
+    expect(await screen.findByText("Couldn't reach the server — check the connection and try again.")).toBeTruthy();
+    await vi.waitFor(() => expect(getOrder).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole("button", { name: "+5 min" }));
+    await vi.waitFor(() => expect(extendPrep).toHaveBeenLastCalledWith(ID, 20));
+  });
+
+  it("MJ-RM19: a retry the server refuses as already applied (prep_changed) is no error", async () => {
+    show(cooking());
+    vi.mocked(extendPrep).mockRejectedValueOnce(new ApiError(409, "The ready time already moved. Check it before adding more.", "prep_changed"));
+    fireEvent.click(await screen.findByRole("button", { name: "+5 min" }));
+    expect(await screen.findByText("Ready time pushed back 5 min · customer told")).toBeTruthy();
+    expect(screen.queryByText("The ready time already moved. Check it before adding more.")).toBeNull();
+  });
+
+  it("MJ-RM19: an error doesn't ride onto the next step", async () => {
+    show(cooking());
+    vi.mocked(markReady).mockRejectedValueOnce(new ApiError(409, "This order isn't in prep"));
+    // The order had already moved on (another phone marked it ready).
+    vi.mocked(getOrder).mockResolvedValue(merchantOrder({ id: ID, merchantPhase: "ready_for_pickup", status: "requested", readyAt: new Date().toISOString() }));
+    fireEvent.click(await screen.findByRole("button", { name: "Food is ready" }));
+    await vi.waitFor(() => expect(getOrder).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(screen.queryByText("This order isn't in prep")).toBeNull());
   });
 
   it("K3a → K3b: the Problem sheet's 'Can't finish this order' cancels a cash order with a reason (D-77)", async () => {

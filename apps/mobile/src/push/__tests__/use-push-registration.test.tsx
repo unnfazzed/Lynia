@@ -227,6 +227,29 @@ describe("usePushRegistration account-standing arrivals", () => {
   });
 
 
+  it("U57: an order or account push re-reads the bell's unread dot", async () => {
+    let tree!: ReturnType<typeof create>;
+    act(() => {
+      tree = create(<Harness role="customer" />);
+    });
+    await flush();
+    const invalidate = jest.spyOn(harnessQc!, "invalidateQueries");
+    act(() => {
+      receivedListener?.({ request: { content: { data: { orderId: "o7", status: "cancelled", to: "customer" } } } });
+    });
+    await flush();
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["notifications-unread-count"] });
+    invalidate.mockClear();
+    act(() => {
+      receivedListener?.({ request: { content: { data: {} } } });
+    });
+    await flush();
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ["notifications-unread-count"] });
+    act(() => {
+      tree.unmount();
+    });
+  });
+
   it("refreshes the food order when the kitchen pushes its ready time back (+5 min, silent)", async () => {
     let tree!: ReturnType<typeof create>;
     act(() => {
@@ -291,7 +314,8 @@ describe("usePushRegistration account-standing arrivals", () => {
     });
     await flush();
 
-    expect(invalidate).not.toHaveBeenCalled();
+    // U57: only the bell's cheap unread count is re-read — never ["me"].
+    expect(invalidate.mock.calls).toEqual([[{ queryKey: ["notifications-unread-count"] }]]);
     act(() => {
       tree.unmount();
     });

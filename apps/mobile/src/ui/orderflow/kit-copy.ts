@@ -56,6 +56,11 @@ export const OX = {
   /** D3c's `O.d.cxKitchenSub` without "We waited an hour." — since D1 the kitchen-unconfirmed cancel comes
    *  at 24 h, so that sentence is untrue. The handoff's own second sentence. Ledger D-87. */
   cxKitchenSub: "Nothing was charged.",
+  /** U33 (C8): the LyniaGo ending (D3, `O.d.cxLynia`) for N-18 — the customer didn't answer the item
+   *  approval in time — whose drawn sub ("The {place} reported a problem…") would be untrue. `O.u.timeout`'s
+   *  "No answer in time." and `O.d.cxYouSub`, verbatim; the same sentence as its push
+   *  (`MERCHANT_REJECTION_REASONS.item_approval_expired`). Ledger D-94. */
+  cxNoAnswerSub: "No answer in time. Nothing was charged.",
 } as const;
 
 /**

@@ -602,6 +602,21 @@ describe("Merchant v2 K3 · +5 min (ledger D-77)", () => {
     expect(data!.dispatchNextCheckAt instanceof Date).toBe(phase === "ready_for_pickup");
   });
 
+  it("MJ-RM19: a retried tap (the page still showed 15 min, the first +5 landed) adds nothing — 409 prep_changed", async () => {
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1" }) },
+      order: { findFirst: async () => ({ ...cooking, prepMinutes: 20 }), findUnique: async () => ({ ...cooking, prepMinutes: 25 }), updateMany },
+    });
+    (svc as unknown as { notifications: { notifyProfiles: () => Promise<void> } }).notifications = { notifyProfiles: async () => undefined };
+    const err = await svc.extendPrep("owner-1", "o1", 15).catch((e: unknown) => e);
+    expect((err as { getResponse: () => { reason: string } }).getResponse().reason).toBe("prep_changed");
+    expect(updateMany).not.toHaveBeenCalled();
+    // The page that saw 20 adds five, guarded on 20.
+    await expect(svc.extendPrep("owner-1", "o1", 20)).resolves.toBeTruthy();
+    expect(updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ prepMinutes: 20 }), data: { prepMinutes: 25 } }));
+  });
+
   it("refuses an order that isn't cooking, and past the two-hour cap", async () => {
     const { svc } = build({ merchant: { findUnique: async () => ({ id: "m1" }) }, order: { findFirst: async () => ({ ...cooking, merchantPhase: "ready_for_pickup" }) } });
     await expect(svc.extendPrep("owner-1", "o1")).rejects.toThrow("This order isn't in prep");

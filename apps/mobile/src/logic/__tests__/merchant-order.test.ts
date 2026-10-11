@@ -166,8 +166,17 @@ describe("prep progress", () => {
     const o = { prepStartedAt: new Date(NOW - 8 * 60_000).toISOString(), prepMinutes: 20 };
     expect(prepProgress(o, NOW)).toEqual({ minutesLeft: 12, pct: 40 });
     expect(readyAtMs(o)).toBe(NOW + 12 * 60_000);
-    expect(prepProgress({ ...o, prepMinutes: 5 }, NOW)?.minutesLeft).toBe(1);
+    // U34: a prep time already past reads no bar (it used to clamp to "1 min left").
+    expect(prepProgress({ ...o, prepMinutes: 5 }, NOW)).toBeNull();
     expect(prepProgress({ prepStartedAt: null, prepMinutes: 20 }, NOW)).toBeNull();
+  });
+
+  it("U34: no bar once the ready time has passed (never 'about 1 min left' for an hour)", () => {
+    const o = { prepStartedAt: new Date(NOW - 20 * 60_000).toISOString(), prepMinutes: 20 };
+    expect(prepProgress(o, NOW)).toBeNull();
+    expect(prepProgress(o, NOW + 60 * 60_000)).toBeNull();
+    // A minute before ready it still reads 1 min left.
+    expect(prepProgress(o, NOW - 60_000)).toEqual({ minutesLeft: 1, pct: 95 });
   });
 });
 

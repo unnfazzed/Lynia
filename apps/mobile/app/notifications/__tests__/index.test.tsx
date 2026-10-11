@@ -140,6 +140,21 @@ describe("Notifications v1 screen", () => {
     expect(has("Parcel to Glenara Ave")).toBe(true);
   });
 
+  it("U67: a feed that failed to load stamps nothing; the stamp waits for the feed", async () => {
+    mockGetNotificationsFeed.mockRejectedValue(new Error("timeout"));
+    await renderScreen();
+    expect(mockMarkNotificationsRead).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+    // A feed still in flight: no stamp yet (the POST could otherwise beat the GET's read of the watermark).
+    let resolve!: (rows: NotificationRow[]) => void;
+    mockGetNotificationsFeed.mockReturnValue(new Promise<NotificationRow[]>((r) => (resolve = r)));
+    await renderScreen();
+    expect(mockMarkNotificationsRead).not.toHaveBeenCalled();
+    await act(async () => resolve([PARCEL("s1", 5, { unread: true })]));
+    await settle();
+    expect(mockMarkNotificationsRead).toHaveBeenCalledTimes(1);
+  });
+
   it("follows the side: the rider sees jobs, both sides see account rows", async () => {
     const rows = [
       PARCEL("s1", 5),

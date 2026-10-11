@@ -8,6 +8,7 @@ import type {
   EditMerchantOrderItemsRequest,
   MerchantAcceptOrderRequest,
   MerchantConfirmPaymentRequest,
+  MerchantExtendPrepRequest,
   MerchantEndOfDaySummaryResponse,
   MerchantTodayKpisResponse,
   MerchantWeekSummaryResponse,
@@ -177,9 +178,11 @@ export function getOrderFlags(): Promise<OrderFlagsResponse> {
   return authedFetch<OrderFlagsResponse>("/app/order-flags");
 }
 
-/** Merchant v2 K3 (ledger D-77): "+5 min" pushes the ready time back five minutes. */
-export function extendPrep(orderId: string): Promise<MerchantOrderResponse> {
-  return authedFetch<MerchantOrderResponse>(`/merchant/orders/${orderId}/extend-prep`, { method: "POST" });
+/** Merchant v2 K3 (ledger D-77): "+5 min" pushes the ready time back five minutes. MJ-RM19: it says which
+ *  prep time it saw, so a retry of a tap that already landed adds nothing (409 `prep_changed`). */
+export function extendPrep(orderId: string, expectedPrepMinutes?: number | null): Promise<MerchantOrderResponse> {
+  const body: MerchantExtendPrepRequest = expectedPrepMinutes == null ? {} : { expectedPrepMinutes };
+  return authedFetch<MerchantOrderResponse>(`/merchant/orders/${orderId}/extend-prep`, { method: "POST", body });
 }
 
 /**

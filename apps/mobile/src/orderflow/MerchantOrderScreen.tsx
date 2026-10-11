@@ -1,4 +1,4 @@
-import { type MerchantOrderResponse, type MerchantOrderTrackView, ORDER_SCHEDULE, type OrderStatusEvent, type RatingTag, RESTAURANTS_DEBT, RESTAURANTS_TIMING, SOS_POLICY, type VenueRatingTag } from "@lynia/shared";
+import { cancelReasonParty, type MerchantOrderResponse, type MerchantOrderTrackView, ORDER_SCHEDULE, type OrderStatusEvent, type RatingTag, RESTAURANTS_DEBT, RESTAURANTS_TIMING, SOS_POLICY, type VenueRatingTag } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -58,7 +58,7 @@ import { deliveryCodeLockout, reconcileDeliveryCode, reconcilePendingRating, sel
 import { loadFoodOrderSnapshot, saveFoodOrderSnapshot } from "../net/food-order-store";
 import { useClaimOfflineBanner } from "../net/offline-banner-owner";
 import { useReachability } from "../net/use-reachability";
-import { orderKey } from "../query/client";
+import { orderKey, pendingOrQueued } from "../query/client";
 import { seedFromActiveOrders } from "../query/seed-order";
 import { foodOrderKey, useFoodOrder } from "../query/use-food-order";
 import { useScheduleSlots } from "../query/use-order-flow";
@@ -163,6 +163,9 @@ const customerFeeOf = (o: MerchantOrderResponse): number => o.customerDeliveryFe
 /** C9 (U35/U37): what the customer pays at the door — the server's one `amountDueUsd` (the agreed total plus
  *  any carried owed balance, the figure the handshake collects); an older API's `total`, else goods + fee. */
 const amountDueOf = (o: MerchantOrderResponse): number => o.amountDueUsd ?? o.total ?? (o.merchantGoodsTotal ?? 0) + customerFeeOf(o);
+/** U56 (T15b): what cancelling after collection adds to the customer's balance — this order's own goods +
+ *  delivery (the server records `agreedFare`), not a balance it carried from before, which stays owed. */
+const cancelAfterPickupCost = (o: MerchantOrderResponse): number => Math.max(0, Math.round((amountDueOf(o) - (o.previousBalanceUsd ?? 0)) * 100) / 100);
 /** D-71: the receipt's Delivery fee value — "Free, paid by {venue}" when the venue paid it. */
 const feeTextOf = (o: MerchantOrderResponse, venue: string): string =>
   o.merchantDeliveryShare != null && customerFeeOf(o) === 0 ? ofFmt(O_ADDED.r.freePaidBy, { v: venue }) : usd(customerFeeOf(o));
@@ -597,6 +600,21 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       invalidate();
     },
   });
+  // U59 (ALR-09): offline, a mutation PAUSES (TanStack's online network mode) rather than failing, so its
+  // spinner used to run forever and the "No data" toast never came. A queued action stops spinning and says
+  // O.c.noData once; it goes out on reconnect. A second tap while it waits doesn't queue a duplicate.
+  const queued = pendingOrQueued(cashM, itemsM, cancelM, subM, scheduleM) === "queued";
+  useEffect(() => {
+    if (queued) showToast({ text: O.c.noData });
+  }, [queued, showToast]);
+  const sending = (m: { isPending: boolean; isPaused: boolean }): boolean => pendingOrQueued(m) === true;
+  const once =
+    (m: { isPaused: boolean }, run: () => void) =>
+    (): void => {
+      if (m.isPaused) showToast({ text: O.c.noData });
+      else run();
+    };
+
   // U3: a round that ran out is said once, while it is news.
   const timeoutSaid = useRef<string | null>(null);
   const roundStatus = round?.status;
@@ -903,7 +921,9 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   const freeCancel = !!order && (canCancelFreely(order.merchantPhase) || awaitingKitchenConfirm(order) || noRiderHold);
   // T15b: after the rider collects, the customer can still cancel — it costs the full total (D3f).
   const afterPickup = !!order && (order.status === "picked_up" || order.status === "en_route_dropoff");
-  const orderTotal = order ? amountDueOf(order) : 0;
+  // U56: the cancel costs this order's own total — the amount due less a balance it was carrying from an
+  // earlier order (that stays owed as it was). The same figure the ending's `owedUsd` then reads.
+  const cancelCost = order ? cancelAfterPickupCost(order) : 0;
   const riderCancel = !!order && order.riderId != null && (order.status === "assigned" || order.status === "confirmed" || order.status === "en_route_pickup");
   const panels = (
     <>
@@ -932,10 +952,10 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       <CancelSheet
         visible={panel === "cancel"}
         venue={venueName}
-        busy={cancelM.isPending}
+        busy={sending(cancelM)}
         onKeep={() => setPanel(null)}
-        onCancel={(reason) => cancelM.mutate({ free: freeCancel && !afterPickup, reason })}
-        full={afterPickup ? { text: withRider(ofFmt(O.t.cxFull, { p: usd(orderTotal), place: S.place }), riderFirst), amount: usd(orderTotal) } : null}
+        onCancel={(reason) => once(cancelM, () => cancelM.mutate({ free: freeCancel && !afterPickup, reason }))()}
+        full={afterPickup ? { text: withRider(ofFmt(O.t.cxFull, { p: usd(cancelCost), place: S.place }), riderFirst), amount: usd(cancelCost) } : null}
       />
     </>
   );
@@ -1043,6 +1063,13 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   const riderCard = rider ? <RiderCard r={rider} onCall={phone ? () => dial(phone) : null} onWhatsApp={phone ? whatsapp : null} /> : null;
   const venueRow = <VenueRow svc={svc} name={venueName} sub={orderNo} onCall={order.restaurantPhone ? () => dial(order.restaurantPhone) : null} />;
   const summary = <OrderSummary svc={svc} count={count} total={total} lines={lines} open={summaryOpen} onToggle={() => setSummaryOpen((o) => !o)} />;
+  // D5a's "Reason from the pharmacist" card (the chip's words, then the pharmacist's note) — also on D5b (U28).
+  const rxReasonCard = (
+    <Card style={{ gap: 4 }}>
+      <Text style={{ fontSize: 12, fontWeight: "600", letterSpacing: 0.4, textTransform: "uppercase", color: C.muted }}>{O.d.rxNoReason}</Text>
+      <Text style={{ fontSize: 15, fontWeight: "700", color: C.ink }}>{rxReasonLabel(order.prescription?.declineReason, order.prescription?.declineNote)}</Text>
+    </Card>
+  );
   const trackView = socketTrack ?? order.track;
   const step = serverTrackStep(order, trackView);
   // BRIEF §4: pharmacy step 1 reads "Prescription checked" once the Rx was approved.
@@ -1257,6 +1284,9 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       title = reason === "rx_declined" ? O.d.rxNo : O.d.rxNoCx;
       sub = reason === "rx_declined" ? O.d.cxYouSub : O.d.rxNoCxSub;
       primary = { label: OXS.otherPharmacies, go: () => router.push(section as never) };
+      // U28: the pharmacist's reason and note — D5a's drawn card ("Reason from the pharmacist"), so an
+      // all-prescription order that ended here still tells the customer what to fix. Ledger D-94.
+      more = rxReasonCard;
     } else if (byYou && collected) {
       // D3f — the owed balance needs a ledger line on the customer account (NEEDS BACKEND): the owed
       // sentence and the "owed" amount are not rendered until it exists.
@@ -1284,15 +1314,17 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       sub = OX.cxKitchenSub;
       primary = others;
       secondary = { label: ofFmt(O.d.tryAgain, { v: venueName }), go: () => router.push(`${section}/${order.merchantId}` as never) };
-    } else if (reason) {
+    } else if (cancelReasonParty(reason) === "merchant") {
+      // U33 (C8): the one shared reading — the venue's own reasons, its "Something else" (`other`) included.
       icon = "store";
       title = ofFmt(O.d.cxVenue, { v: venueName });
       sub = reason === "too_busy" ? O.d.cxVenueSub : O.d.cxYouSub;
       primary = others;
     } else {
+      // LyniaGo's: an ops cancel (`lynia_cancelled`), N-18's unanswered approval, or no reason at all.
       icon = "shield-check";
       title = O.d.cxLynia;
-      sub = ofFmt(O.d.cxLyniaSub, { place: S.place });
+      sub = reason === "item_approval_expired" ? OX.cxNoAnswerSub : ofFmt(O.d.cxLyniaSub, { place: S.place });
       primary = whatsApp ?? others;
       secondary = whatsApp ? others : null;
     }
@@ -1417,7 +1449,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   const payBar = (): React.ReactNode =>
     handshake === "pending" ? (
       <Bar>
-        <Btn icon="banknote" label={ofFmt(O.p.s2Btn, { p: usd(order.cashHandshakeAmount ?? total) })} onPress={() => cashM.mutate()} loading={cashM.isPending} />
+        <Btn icon="banknote" label={ofFmt(O.p.s2Btn, { p: usd(order.cashHandshakeAmount ?? total) })} onPress={once(cashM, () => cashM.mutate())} loading={sending(cashM)} />
       </Bar>
     ) : null;
   const shareCode = (): void => {
@@ -1470,7 +1502,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
           <KV k={OX.was} v={usd(st.was)} />
           <KV k={O.u.newTotal} v={usd(st.newTotal)} total />
         </View>
-        <LinkRow label={O.u.cancelAll} onPress={() => cancelM.mutate({ free: true })} loading={cancelM.isPending} />
+        <LinkRow label={O.u.cancelAll} onPress={once(cancelM, () => cancelM.mutate({ free: true }))} loading={sending(cancelM)} />
       </>
     );
     bar = (
@@ -1478,13 +1510,13 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
         <Btn
           label={ofFmt(O.u.confirm, { p: usd(st.newTotal) })}
           disabled={st.unanswered > 0 || out}
-          loading={subM.isPending}
-          onPress={() =>
+          loading={sending(subM)}
+          onPress={once(subM, () =>
             subM.mutate({
               roundId: openRound.id,
               answers: openRound.lines.filter((l) => l.action === "swap").map((l) => ({ lineId: l.id, accept: (answers[l.id] ?? l.answer) === "accept" })),
-            })
-          }
+            }),
+          )}
         />
       </Bar>
     );
@@ -1568,12 +1600,12 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
             <KV k={OX.was} v={usd(was)} />
             <KV k={O.u.newTotal} v={usd(total)} total />
           </View>
-          <LinkRow label={O.u.cancelAll} onPress={() => itemsM.mutate(false)} loading={itemsM.isPending && itemsM.variables === false} />
+          <LinkRow label={O.u.cancelAll} onPress={once(itemsM, () => itemsM.mutate(false))} loading={sending(itemsM) && itemsM.variables === false} />
         </>
       );
       bar = (
         <Bar>
-          <Btn label={ofFmt(O.u.confirm, { p: usd(total) })} onPress={() => itemsM.mutate(true)} loading={itemsM.isPending && itemsM.variables === true} disabled={leftMs <= 0} />
+          <Btn label={ofFmt(O.u.confirm, { p: usd(total) })} onPress={once(itemsM, () => itemsM.mutate(true))} loading={sending(itemsM) && itemsM.variables === true} disabled={leftMs <= 0} />
         </Bar>
       );
       break;
@@ -1645,15 +1677,12 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       content = (
         <>
           <StageTop title={O.d.rxNo} eta={eta} />
-          <Card style={{ gap: 4 }}>
-            <Text style={{ fontSize: 12, fontWeight: "600", letterSpacing: 0.4, textTransform: "uppercase", color: C.muted }}>{O.d.rxNoReason}</Text>
-            <Text style={{ fontSize: 15, fontWeight: "700", color: C.ink }}>{rxReasonLabel(order.prescription?.declineReason, order.prescription?.declineNote)}</Text>
-          </Card>
+          {rxReasonCard}
           {goes ? <Note icon="circle-alert">{ofFmt(goes, { p: usd(total) })}</Note> : null}
           {track}
           <PeekMark />
           {summary}
-          <LinkRow label={O.d.rxCancel} onPress={() => cancelM.mutate({ free: true })} loading={cancelM.isPending} />
+          <LinkRow label={O.d.rxCancel} onPress={once(cancelM, () => cancelM.mutate({ free: true }))} loading={sending(cancelM)} />
         </>
       );
       break;

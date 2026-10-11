@@ -91,6 +91,8 @@ export default function OrdersTabScreen(): React.ReactElement {
     useCallback(() => {
       setFocused(true);
       void qc.invalidateQueries({ queryKey: ACTIVE_ORDERS_KEY });
+      // U38: an order that ended while the tab was hidden is a history row now — read it with the NOW list.
+      invalidateCustomerOrderHistory(qc);
       return () => setFocused(false);
     }, [qc]),
   );
@@ -107,6 +109,16 @@ export default function OrdersTabScreen(): React.ReactElement {
     focused,
   );
   const { rows, isFetching, refetch, savedAt, hasMore, isLoadingMore, loadMoreFailed, loadMore } = useCustomerOrders();
+  // U38: an order that ends while the tab is in view leaves NOW on the 30 s poll — and, with history read
+  // before it ended, used to vanish from both lists. When a running id drops out, history is re-read.
+  const prevLive = useRef<ReadonlySet<string> | null>(null);
+  useEffect(() => {
+    if (!Array.isArray(activeOrdersQ.data)) return;
+    const ids = new Set(activeOrders.map((o) => o.id));
+    const prev = prevLive.current;
+    prevLive.current = ids;
+    if (prev && [...prev].some((id) => !ids.has(id))) invalidateCustomerOrderHistory(qc);
+  }, [activeOrdersQ.data, activeOrders, qc]);
   useForegroundRefetch(() => {
     void qc.invalidateQueries({ queryKey: ACTIVE_ORDERS_KEY });
     invalidateCustomerOrderHistory(qc);

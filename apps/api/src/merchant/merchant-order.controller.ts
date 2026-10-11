@@ -11,6 +11,7 @@ import {
   type FoodOfferResponse,
   MerchantAcceptOrderRequest,
   MerchantConfirmPaymentRequest,
+  MerchantExtendPrepRequest,
   MerchantRejectOrderRequest,
   MerchantReleaseUnpaidRequest,
   MerchantRequestPaymentRequest,
@@ -126,8 +127,13 @@ export class MerchantOrderController {
   // Merchant v2 K3 (ledger D-77): "+5 min" — push the ready time back without cancelling.
   @Post(":orderId/extend-prep")
   @UseGuards(MerchantGuard)
-  extendPrep(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
-    return this.foodOrders.extendPrep(profileId, orderId);
+  extendPrep(
+    @Param("orderId", ParseUUIDPipe) orderId: string,
+    // MJ-RM19: optional (an older page posts no body); `expectedPrepMinutes` makes a retried tap idempotent.
+    @Body(new ZodBody(MerchantExtendPrepRequest.optional())) body: MerchantExtendPrepRequest | undefined,
+    @CurrentUser() profileId: string,
+  ) {
+    return this.foodOrders.extendPrep(profileId, orderId, body?.expectedPrepMinutes);
   }
 
   // Merchant v2 K4/S3 (ledger D-77): "Rider can't enter code" — a signed link for the assigned rider.

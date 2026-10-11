@@ -76,14 +76,25 @@ export default function NotificationsScreen(): React.ReactElement {
     const fresh = rows.filter((r) => r.unread && !visitUnread.has(r.id));
     if (fresh.length) setVisitUnread((prev) => new Set([...prev, ...fresh.map((r) => r.id)]));
   }, [rows, visitUnread]);
+  // U67: the watermark is stamped only once this visit's feed has loaded — not alongside the read. A feed
+  // that failed (N10) no longer clears every dot unseen, and a stamp that beat the GET to the server can't
+  // erase the first open's new-dots. Once per visit (a focus).
+  const [visit, setVisit] = React.useState(0);
+  const stampedFor = React.useRef(0);
   useFocusEffect(
     React.useCallback(() => {
-      void markNotificationsRead()
-        .then(() => qc.invalidateQueries({ queryKey: ["notifications-unread-count"] }))
-        .catch(() => undefined);
+      setVisit((v) => v + 1);
       return () => setVisitUnread(new Set());
-    }, [qc]),
+    }, []),
   );
+  const feedLoaded = feedQ.isSuccess && !feedQ.isFetching;
+  React.useEffect(() => {
+    if (visit === 0 || !feedLoaded || stampedFor.current === visit) return;
+    stampedFor.current = visit;
+    void markNotificationsRead()
+      .then(() => qc.invalidateQueries({ queryKey: ["notifications-unread-count"] }))
+      .catch(() => undefined);
+  }, [visit, feedLoaded, qc]);
 
   // N6: the phone's notification permission. Re-checked on focus and when the app comes back.
   const [notifOff, setNotifOff] = React.useState(false);

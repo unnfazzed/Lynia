@@ -124,6 +124,16 @@ export const SelectOfferRequest = z.object({
 });
 export type SelectOfferRequest = z.infer<typeof SelectOfferRequest>;
 
+/**
+ * U62 + MJ-RL2 (C10): why a select was refused (409), on the error body's `reason` (additive — an older
+ * API sends none, and the message is unchanged). `rider_taken`: the rider was just assigned to another
+ * order (the one case the drawn "taken by another customer" toast is true for). `rider_unavailable`: the
+ * rider went offline, lost standing or owes cash. `offer_gone`: the offer was withdrawn or closed.
+ * `choose_ended` / `order_closed`: the time to choose ran out, or the order already left offers.
+ */
+export const SELECT_OFFER_CONFLICT_REASONS = ["rider_taken", "rider_unavailable", "offer_gone", "choose_ended", "order_closed"] as const;
+export type SelectOfferConflictReason = (typeof SELECT_OFFER_CONFLICT_REASONS)[number];
+
 /** Rider advances the trip one step (the OTP-gated `delivered` step uses ConfirmDeliveryRequest). */
 export const AdvanceStatusRequest = z.object({
   to: z.enum(["confirmed", "en_route_pickup", "picked_up", "en_route_dropoff"]),
@@ -1982,6 +1992,15 @@ export type SubmitMerchantPaymentReferenceRequest = z.infer<typeof SubmitMerchan
 /** R-16: the request-payment button unlocks after a logged call; `overrideCallLog` is the named
  *  escape hatch for regulars and in-person confirms. */
 export const MerchantRequestPaymentRequest = z.object({ overrideCallLog: z.boolean().optional() }).strict();
+
+/**
+ * MJ-RM19 (2026-10-07): "+5 min" with the prep minutes the kitchen's screen showed (additive — an older
+ * merchant page sends no body). The API adds five only while the order still has that many, so a retried
+ * tap (a 2G POST the client gave up on that still landed) can't push the ready time back twice: it 409s
+ * `prep_changed` instead.
+ */
+export const MerchantExtendPrepRequest = z.object({ expectedPrepMinutes: z.number().int().min(0).max(1_440).optional() }).strict();
+export type MerchantExtendPrepRequest = z.infer<typeof MerchantExtendPrepRequest>;
 export type MerchantRequestPaymentRequest = z.infer<typeof MerchantRequestPaymentRequest>;
 
 /** N-16: the rider's pickup code, checked against the one the merchant reads out at the counter. Six

@@ -2,6 +2,7 @@ import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundExce
 import { Prisma } from "@prisma/client";
 import { type MakeOfferRequest, OFFER_WINDOW_MS } from "@lynia/shared";
 import { hasOpenMerchantObligation } from "../common/merchant-debt-lock";
+import { riderSelectableNow, SELECTABLE_RIDER_SELECT } from "../common/rider-selectable";
 import { NotificationsService } from "../notifications/notifications.service";
 import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -251,10 +252,25 @@ export class OffersService {
             ratingCount: true,
             tripsCount: true,
             profile: { select: { firstName: true, lastName: true, photoUrl: true } },
+            ...SELECTABLE_RIDER_SELECT,
           },
         },
       },
     });
-    return offers.map((o) => ({ ...o, offeredFare: o.offeredFare.toString() }));
+    // MJ-RL2 / U62 (C10): an offer selectOffer would refuse — its rider went offline, lost standing, or owes
+    // a venue cash (the same three gates, common/rider-selectable.ts + the merchant-debt soft-lock) — stays
+    // pending, but it isn't choosable, so it leaves the list instead of drawing a Choose that only 409s.
+    // The gate fields are read for the check only; the wire shape is unchanged.
+    const now = Date.now();
+    const choosable = await Promise.all(
+      offers.map(async (o) => riderSelectableNow(o.rider, now) && !(await hasOpenMerchantObligation(this.prisma, o.rider.profileId))),
+    );
+    return offers
+      .filter((_, i) => choosable[i])
+      .map(({ rider, ...o }) => ({
+        ...o,
+        offeredFare: o.offeredFare.toString(),
+        rider: { profileId: rider.profileId, ratingAvg: rider.ratingAvg, ratingCount: rider.ratingCount, tripsCount: rider.tripsCount, profile: rider.profile },
+      }));
   }
 }

@@ -378,7 +378,14 @@ function ParcelOrderScreen(): React.ReactElement {
     const o = offers.find((x) => x.id === offerId);
     return o ? riderShortName(o.rider.profile.firstName, o.rider.profile.lastName) : A.rider;
   };
-  const showTaken = (offerId: string): void => showToast({ text: orderText.taken(offerName(offerId)) });
+  // U62 (C10): the toast follows the server's 409 `reason` — "taken by another customer" only when the rider
+  // really was (`rider_taken`, or an older API that sends no reason); a rider who went or an offer that closed
+  // gets its own line; a time to choose that ran out says nothing (the refetch moves the screen on).
+  const showTaken = (offerId: string, code: string | null): void => {
+    const name = offerName(offerId);
+    if (code === "choose_ended" || code === "order_closed") return;
+    showToast({ text: code === "rider_unavailable" || code === "offer_gone" ? orderText.gone(name) : orderText.taken(name) });
+  };
 
   const selectM = useMutation({
     mutationFn: (offerId: string) => selectOffer(orderId, offerId),
@@ -398,16 +405,20 @@ function ParcelOrderScreen(): React.ReactElement {
     onError: (e, offerId, ctx) => {
       if (ctx?.prev !== undefined) qc.setQueryData(orderKey(orderId), ctx.prev);
       if (!(e instanceof ApiError) || e.status !== 409) return;
+      const code = e.code;
       // LC-C08: a 409 can be our own pick landing after a lost response — confirm before saying "taken".
+      // U62: and a refusal for an order that has left offers (the time to choose ran out) has nobody left to
+      // pick — no "pick another rider" then.
       if (ctx?.selectedRiderId == null) {
-        showTaken(offerId);
+        showTaken(offerId, code);
         return;
       }
       void getOrder(orderId)
         .then((fresh) => {
-          if (!selectOfferReconciled({ freshStatus: fresh.status, freshRiderId: fresh.rider?.profileId, selectedRiderId: ctx.selectedRiderId })) showTaken(offerId);
+          if (selectOfferReconciled({ freshStatus: fresh.status, freshRiderId: fresh.rider?.profileId, selectedRiderId: ctx.selectedRiderId })) return;
+          if (fresh.status === "open_for_offers") showTaken(offerId, code);
         })
-        .catch(() => showTaken(offerId));
+        .catch(() => showTaken(offerId, code));
     },
     onSettled: () => {
       setChoosingId(null);
@@ -743,6 +754,13 @@ function ParcelOrderScreen(): React.ReactElement {
     return undefined;
   }, [stage, windowEnd, nowMs]);
   const graceLeftMs = stage === "offers" && Number.isFinite(windowEnd) && nowMs >= windowEnd ? Math.max(0, windowEnd + CHOOSE_GRACE_MS - nowMs) : null;
+  // U62: the grace ran out — the server refuses a pick now (`choose_ended`), so Choose is disabled and the
+  // order is re-read at once (the expiry job flips it to No rider yet) instead of waiting for the next poll.
+  const graceOver = graceLeftMs === 0;
+  useEffect(() => {
+    if (graceOver) void orderQ.refetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per grace end; refetch is stable
+  }, [graceOver]);
 
   // A rider who cancels before pickup: the server has already re-broadcast the order at the same price —
   // follow it, and show it as state 13 there (a finding state with the reason).

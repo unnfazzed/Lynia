@@ -245,12 +245,28 @@ export default function OrderPage() {
       if (leave) router.replace("/queue");
       else await refresh();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "That didn't work. Try again.");
+      // MJ-RM19: a +5 retry that finds its first tap already landed (409 `prep_changed`) did what was asked —
+      // say so, not an error.
+      if (err instanceof ApiError && err.reason === "prep_changed") {
+        setConfirm(null);
+        toast(done);
+      } else {
+        setError(err instanceof ApiError ? err.message : "That didn't work. Try again.");
+      }
+      // MJ-RM19: a failed or timed-out action may still have landed (a 2G POST the client gave up on), or the
+      // order moved under it — re-read it, so the next tap starts from what the server has (as RingingScreen).
+      await refresh();
     } finally {
       setBusy(false);
       busyRef.current = false;
     }
   }
+
+  // MJ-RM19: an error belongs to the step it happened on — it doesn't ride onto the next one.
+  const viewNow = load.status === "ready" ? detailView(load.order) : null;
+  useEffect(() => {
+    setError(null);
+  }, [viewNow]);
 
   if (load.status !== "ready") {
     return (
@@ -614,7 +630,7 @@ function Cooking(ctx: Ctx) {
           </Link>
         )}
         <div className="m-pillrow">
-          <button type="button" className="m-gh" disabled={disabled} onClick={() => void act(() => extendPrep(order.id), "Ready time pushed back 5 min · customer told")}>
+          <button type="button" className="m-gh" disabled={disabled} onClick={() => void act(() => extendPrep(order.id, order.prepMinutes), "Ready time pushed back 5 min · customer told")}>
             <Icon name="clock" size={16} />
             +5 min
           </button>

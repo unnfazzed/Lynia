@@ -18,7 +18,7 @@ const mockGetMe = jest.fn<Promise<Me>, []>();
 const mockPush = jest.fn();
 const mockReplace = jest.fn();
 
-jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush, replace: mockReplace, back: jest.fn() }) }));
+jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush, replace: mockReplace, back: jest.fn() }), useFocusEffect: () => undefined }));
 const mockStoreWrites: Array<[string, string]> = [];
 jest.mock("expo-secure-store", () => ({
   getItemAsync: async () => null,
