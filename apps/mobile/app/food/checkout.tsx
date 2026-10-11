@@ -218,6 +218,8 @@ export default function FoodReviewScreen(): React.ReactElement {
   // P0-3: while the order is in flight the screen is `held` — Android back is swallowed and iOS swipe-back
   // is off, so the request can't be orphaned (R7a: "Don't close the app").
   const releaseGuard = usePlacingGuard(busy);
+  /** U23 review: the Place whose answer was lost (both tries) — resent as-is until the server answers. */
+  const unsettled = useRef<{ rid: string; body: ReturnType<typeof placeOrderBody> } | null>(null);
   const mounted = useRef(true);
   useEffect(
     () => () => {
@@ -227,6 +229,7 @@ export default function FoodReviewScreen(): React.ReactElement {
   );
 
   // ── R6a: reconcile against the latest menu, once per fetch ──────────────────────────────────────
+  const [soldOutEmpty, setSoldOutEmpty] = useState(false);
   const [changes, setChanges] = useState<Pick<ReconcileResult, "gone" | "priceChanges">>({ gone: [], priceChanges: {} });
   useEffect(() => {
     if (!categories) return;
@@ -239,6 +242,9 @@ export default function FoodReviewScreen(): React.ReactElement {
     const r = reconcileCart(liveCart.cart.lines, latest);
     if (r.gone.length === 0 && Object.keys(r.priceChanges).length === 0 && !r.rxChanged) return;
     cart.replaceLines(r.lines);
+    // U50 review: R9a explains itself only when THIS reconcile emptied the basket, not when the customer
+    // takes the rest off after an earlier sell-out.
+    setSoldOutEmpty(r.gone.length > 0 && r.lines.length === 0);
     if (r.gone.length === 0 && Object.keys(r.priceChanges).length === 0) return;
     setChanges((prev) => ({ gone: [...prev.gone, ...r.gone], priceChanges: { ...prev.priceChanges, ...r.priceChanges } }));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per fetched menu, not per cart edit.
@@ -283,9 +289,9 @@ export default function FoodReviewScreen(): React.ReactElement {
   const lineNeedsRx = (l: FoodCartLine): boolean => rxOn && (l.rxRequired === true || rxDishes.has(l.dishId));
   const rxNeeded = cart.cart.lines.some(lineNeedsRx);
   // U30: a page the server refused to take (a 4xx such as the upload throttle, or 503 uploads off) says the
-  // server's reason; only a failure with no answer is "No connection. Nothing was sent."
+  // server's reason; anything else (no answer, another 5xx) is "No connection. Nothing was sent."
   const rx = usePrescriptionPhotos((err) =>
-    setToast({ text: err instanceof ApiError && err.status >= 400 && err.message ? err.message : O.c.noData, retry: false }),
+    setToast({ text: err instanceof ApiError && ((err.status >= 400 && err.status < 500) || err.status === 503) && err.message ? err.message : O.c.noData, retry: false }),
   );
   const [patient, setPatient] = useState("");
   const [consent, setConsent] = useState(false);
@@ -350,8 +356,13 @@ export default function FoodReviewScreen(): React.ReactElement {
       Keyboard.dismiss();
     });
   };
+  // The pin as last rendered: a reverse geocode answering for a position the pin has since left names nothing.
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
   const nameDraft = useCallback((p: { lat: number; lng: number }, name: string): void => {
-    setDraft((d) => (d && d.lat === p.lat && d.lng === p.lng ? { ...d, label: name } : d));
+    const d = draftRef.current;
+    if (!d || d.lat !== p.lat || d.lng !== p.lng) return;
+    setDraft((cur) => (cur && cur.lat === p.lat && cur.lng === p.lng ? { ...cur, label: name } : cur));
     setQuery(name);
     setQueryTyped(false);
   }, []);
@@ -415,7 +426,12 @@ export default function FoodReviewScreen(): React.ReactElement {
     }
     placed.current = cart.cart;
     setBusy(true);
-    const body = placeOrderBody({
+    // U23 review: an attempt whose answer was lost twice may still have landed. Until a definitive answer
+    // (2xx or 4xx) the next Place resends THAT body and key — even if the basket, slot or address changed
+    // since (they feed the key) — so the server replays the order it may already hold instead of taking a
+    // second one. Only a different venue's basket starts afresh.
+    const pin = unsettled.current && unsettled.current.rid === rid ? unsettled.current : null;
+    const body = pin ? pin.body : placeOrderBody({
       lines: cart.cart.lines,
       orderNote: cart.cart.orderNote,
       drop,
@@ -426,6 +442,7 @@ export default function FoodReviewScreen(): React.ReactElement {
       outOfStockPref: isShop ? oos : null,
       prescription: rxNeeded ? { photoKeys: rx.keys, patientName: patient.trim(), consent: true } : null,
     });
+    unsettled.current = null;
     try {
       let order: Awaited<ReturnType<typeof placeFoodOrder>>;
       try {
@@ -434,7 +451,13 @@ export default function FoodReviewScreen(): React.ReactElement {
         if (!mayHaveLanded(err)) throw err;
         // U23: the answer was lost, not necessarily the order. The SAME body and idempotency key, once — the
         // server replays an order it already took — before R7b says "Nothing was ordered".
-        order = await placeFoodOrder(rid, body);
+        try {
+          order = await placeFoodOrder(rid, body);
+        } catch (again) {
+          // Lost again: the order may exist. Pin what was sent; the next Place resends it.
+          if (mayHaveLanded(again)) unsettled.current = { rid, body };
+          throw again;
+        }
       }
       void saveMyPickupPhone(phone.trim());
       // P23: the order screen's snapshot too (its map's venue and drop pins), not only the food order.
@@ -473,7 +496,7 @@ export default function FoodReviewScreen(): React.ReactElement {
         <ReviewHeader onBack={() => router.back()} />
         {/* U50: a saved basket whose every line sold out says why it is empty — R6a's note and its struck
             "Sold out now — taken off" lines above R9a — instead of R9a alone. */}
-        {changes.gone.length > 0 ? (
+        {soldOutEmpty && changes.gone.length > 0 ? (
           <View style={{ paddingTop: 12, paddingHorizontal: 16, gap: 12 }}>
             <ReviewNote tone="hi" icon="circle-alert">
               <Text style={{ fontWeight: tokens.font.weight.bold }}>{O.r.chgT}</Text>

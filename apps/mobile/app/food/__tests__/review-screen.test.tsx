@@ -695,6 +695,63 @@ describe("Reviewed list 2026-10-07 — Review & place (wave 4, lane B)", () => {
     expect(mockRouter.replace).toHaveBeenCalledWith("/order/fo-24");
   });
 
+  it("U23 review: an attempt lost twice is resent as-is (same body and key) after an edit, until the server answers", async () => {
+    const lost = (): ApiError => new ApiError(0, "Can't reach LyniaGo — check your connection and try again.");
+    mockPlace.mockRejectedValueOnce(lost()).mockRejectedValueOnce(lost());
+    const t = render();
+    await flush();
+    press(t, /^Place order · /);
+    await flush();
+    await flush();
+    expect(mockPlace).toHaveBeenCalledTimes(2);
+    expect(texts(t)).toContain("Couldn’t place your order. Nothing was ordered.");
+    const sent = mockPlace.mock.calls[0]![1];
+    // The customer changes the basket (the key would change with it) and places again.
+    mockCart.cart = { ...mockCart.cart, lines: [{ ...GAVA[0]!, quantity: 3 }, { ...GAVA[1]! }] };
+    const rerender = (): void =>
+      act(() =>
+        t.update(
+          <SafeAreaProvider initialMetrics={TEST_METRICS}>
+            <FoodReviewScreen />
+          </SafeAreaProvider>,
+        ),
+      );
+    rerender();
+    // The server answers this time — a definitive "no" (4xx).
+    mockPlace.mockRejectedValueOnce(new ApiError(409, "Sadza & beef stew just sold out."));
+    press(t, /^Place order · /);
+    await flush();
+    await flush();
+    expect(mockPlace).toHaveBeenCalledTimes(3);
+    expect(mockPlace.mock.calls[2]![1]).toBe(sent);
+    // Settled: the next Place is the basket on screen, under its own key.
+    mockPlace.mockResolvedValueOnce({ id: "fo-23b" });
+    press(t, /^Place order · /);
+    await flush();
+    await flush();
+    expect(mockPlace).toHaveBeenCalledTimes(4);
+    const fresh = mockPlace.mock.calls[3]![1];
+    expect(fresh).not.toBe(sent);
+    expect(fresh.idempotencyKey).not.toBe(sent.idempotencyKey);
+    expect(fresh.items[0]).toMatchObject({ quantity: 3 });
+  });
+
+  it("U23 review: a lost answer then a 4xx on the replay is definitive — the next Place builds a new body", async () => {
+    mockPlace.mockRejectedValueOnce(new ApiError(0, "lost")).mockRejectedValueOnce(new ApiError(409, "Sadza & beef stew just sold out."));
+    const t = render();
+    await flush();
+    press(t, /^Place order · /);
+    await flush();
+    await flush();
+    expect(mockPlace).toHaveBeenCalledTimes(2);
+    mockPlace.mockResolvedValueOnce({ id: "fo-23c" });
+    press(t, /^Place order · /);
+    await flush();
+    await flush();
+    expect(mockPlace).toHaveBeenCalledTimes(3);
+    expect(mockPlace.mock.calls[2]![1]).not.toBe(mockPlace.mock.calls[0]![1]);
+  });
+
   it("U24: Back can't remove Review while placing, and a placed order is shown even after the screen is gone", async () => {
     let resolve!: (o: { id: string }) => void;
     mockPlace.mockReturnValue(new Promise((r) => (resolve = r)));
@@ -757,6 +814,23 @@ describe("Reviewed list 2026-10-07 — Review & place (wave 4, lane B)", () => {
     expect(texts(t)).toContain("-17.80000, 31.05000");
   });
 
+  it("U27 review: a reverse geocode for a position the pin has left names nothing — not the label, not the field", async () => {
+    const t = render();
+    await flush();
+    openEditor(t);
+    const editor = (): renderer.ReactTestInstance => t.root.findAll((n) => typeof n.props.onMove === "function")[0]!;
+    act(() => editor().props.onMove({ lat: -17.82, lng: 31.04 }));
+    act(() => editor().props.onMove({ lat: -17.83, lng: 31.03 }));
+    // The answer for the first position arrives late.
+    act(() => editor().props.onName({ lat: -17.82, lng: 31.04 }, "Avondale Shops"));
+    expect(editor().props.query).not.toBe("Avondale Shops");
+    expect(editor().props.draft).toMatchObject({ lat: -17.83, lng: 31.03, label: "-17.83000, 31.03000" });
+    // The answer for where the pin is now names both.
+    act(() => editor().props.onName({ lat: -17.83, lng: 31.03 }, "Marlborough"));
+    expect(editor().props.query).toBe("Marlborough");
+    expect(editor().props.draft).toMatchObject({ label: "Marlborough" });
+  });
+
   it("U41: Android Back while editing the address closes the editor and stays on Review", async () => {
     const handlers: (() => boolean)[] = [];
     const spy = jest.spyOn(BackHandler, "addEventListener").mockImplementation((event: string, cb: () => boolean | null | undefined) => {
@@ -801,6 +875,29 @@ describe("Reviewed list 2026-10-07 — Review & place (wave 4, lane B)", () => {
     expect(all.indexOf("Some things changed since you added them")).toBeLessThan(all.indexOf("Your cart is empty"));
     press(t, "Browse places");
     expect(mockRouter.replace).toHaveBeenCalledWith("/pharmacy");
+  });
+
+  it("U50 review: a basket the customer emptied after an earlier sell-out is plain R9a", async () => {
+    mockMenu.categories[0]!.dishes = [dish("d1", "Sadza & beef stew", 4.5), dish("d2", "Roast chicken (half)", 6, { outOfStock: true })];
+    mockCart.replaceLines.mockImplementation((lines: Line[]) => {
+      mockCart.cart = { ...mockCart.cart, lines };
+    });
+    const t = render();
+    await flush();
+    expect(texts(t)).toContain("Some things changed since you added them");
+    // The customer takes the last line off themselves.
+    mockCart.cart = { restaurantId: null, restaurantName: null, lines: [], orderNote: "", venue: null };
+    act(() =>
+      t.update(
+        <SafeAreaProvider initialMetrics={TEST_METRICS}>
+          <FoodReviewScreen />
+        </SafeAreaProvider>,
+      ),
+    );
+    const all = texts(t);
+    expect(all).toContain("Your cart is empty");
+    expect(all).not.toContain("Some things changed since you added them");
+    expect(all).not.toContain("Sold out now — taken off");
   });
 
   it("U51: a price drop is not flagged “went up” — only the struck old price shows", async () => {
@@ -898,6 +995,15 @@ describe("Reviewed list 2026-10-07 — Review & place (wave 4, lane B)", () => {
       act(() => mockRxOnError!(new ApiError(503, "Photo uploads are paused — try again in a few minutes.", "uploads_unavailable")));
       expect(texts(t)).toContain("Photo uploads are paused — try again in a few minutes.");
       act(() => mockRxOnError!(new ApiError(0, "Can't reach LyniaGo — check your connection and try again.")));
+      expect(texts(t)).toContain("No connection. Nothing was sent.");
+    });
+
+    it("U30 review: any other 5xx is not shown raw — it is the fallback copy", async () => {
+      withPages();
+      const t = render();
+      await flush();
+      act(() => mockRxOnError!(new ApiError(500, "Internal server error")));
+      expect(texts(t)).not.toContain("Internal server error");
       expect(texts(t)).toContain("No connection. Nothing was sent.");
     });
   });
