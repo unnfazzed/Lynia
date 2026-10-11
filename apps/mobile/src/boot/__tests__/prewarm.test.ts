@@ -15,7 +15,9 @@
 const mockLoadSession = jest.fn();
 const mockLoadOnboardingSeen = jest.fn();
 const mockLoadRolePreference = jest.fn();
+const mockGetDeviceId = jest.fn(() => Promise.resolve("device-1"));
 jest.mock("../../auth/session", () => ({
+  getDeviceId: () => mockGetDeviceId(),
   loadSession: () => mockLoadSession(),
   loadOnboardingSeen: () => mockLoadOnboardingSeen(),
   loadRolePreference: () => mockLoadRolePreference(),
@@ -64,6 +66,14 @@ describe("prewarmBootReads", () => {
     // the entire point of prewarming rather than reading from a mount effect.
     expect(mockLoadSession).toHaveBeenCalledTimes(1);
     expect(mockConsumeColdStart).toHaveBeenCalledTimes(1);
+  });
+
+  it("P39: starts the install-id read with the session read, once per launch", () => {
+    happyPath();
+    prewarmBootReads();
+    prewarmBootReads();
+    // Kicked off at module evaluation so /app/bootstrap (the first apiFetch) finds it settled.
+    expect(mockGetDeviceId).toHaveBeenCalledTimes(1);
   });
 
   it("unwraps the cold-start notification to its data payload, and to null when there was no tap", async () => {

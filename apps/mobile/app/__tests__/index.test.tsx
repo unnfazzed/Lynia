@@ -31,6 +31,8 @@ jest.mock("../../src/auth/auth-context", () => ({
 let resolveOnboarding!: (v: boolean) => void;
 let resolveRolePref!: (v: string | null) => void;
 jest.mock("../../src/auth/session", () => ({
+  // prewarm.ts also starts the install-id read (P39).
+  getDeviceId: () => Promise.resolve("device-1"),
   loadOnboardingSeen: () => new Promise((res) => (resolveOnboarding = res)),
   loadRolePreference: () => new Promise((res) => (resolveRolePref = res)),
   // The boot reads are now started together by src/boot/prewarm.ts, so the session read is part of

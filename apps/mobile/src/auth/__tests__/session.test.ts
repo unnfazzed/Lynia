@@ -164,6 +164,24 @@ describe("getDeviceId (keystore resilience)", () => {
     const second = await freshGetDeviceId();
     expect(second).toBe(first);
   });
+
+  it("P39: concurrent first calls share ONE keystore read and mint ONE id on a first install", async () => {
+    jest.resetModules();
+    mockGetItemAsync.mockClear();
+    mockSetItemAsync.mockClear();
+    let releaseRead!: (v: string | null) => void;
+    mockGetItemAsync.mockImplementationOnce(() => new Promise<string | null>((r) => (releaseRead = r)));
+    mockSetItemAsync.mockResolvedValue(undefined);
+    const { getDeviceId: freshGetDeviceId } = require("../session") as typeof import("../session");
+    // The boot burst: bootstrap, the rails and the flags all ask before the first read settles.
+    const burst = [freshGetDeviceId(), freshGetDeviceId(), freshGetDeviceId(), freshGetDeviceId()];
+    releaseRead(null);
+    const ids = await Promise.all(burst);
+    expect(new Set(ids).size).toBe(1);
+    expect(mockGetItemAsync).toHaveBeenCalledTimes(1);
+    expect(mockSetItemAsync).toHaveBeenCalledTimes(1);
+    expect(mockSetItemAsync).toHaveBeenCalledWith("lynia.deviceId", ids[0]);
+  });
 });
 
 // Regression guard: the getItemAsync read itself can THROW (not just JSON.parse) when the keystore

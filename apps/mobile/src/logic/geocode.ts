@@ -1,4 +1,5 @@
 import * as Location from "expo-location";
+import { Platform } from "react-native";
 import { FAST_TIMEOUT_MS } from "../net/network-policy";
 import type { ResolvedPlace } from "./places";
 import { withTimeout } from "../util";
@@ -166,8 +167,16 @@ export type GeocodeOutcome = { ok: true; place: ResolvedPlace } | { ok: false; r
  * Resolve a typed address to a point using the device's own geocoder.
  *
  * Android requires foreground location permission before `Geocoder` may be used (expo-location's own
- * documented constraint), so this asks for it — and reports `"permission"` rather than a confusing
- * "not found" when it is refused. The suffixed retry only runs when the verbatim attempt finds nothing
+ * documented constraint), so this CHECKS it — a check, never a request (P41): since First Run v2 (ledger
+ * D-82) the OS dialog only opens from the PC1 explainer's own button, and this runs from as-you-type
+ * address search, where a dialog would pop over a screen that never said why.
+ *
+ * `"permission"` ("Turn it on in Settings") is reported ONLY for a permission refused for good
+ * (`canAskAgain: false`) — the one case where Settings is the honest next step. An undecided (or
+ * still-askable) permission goes ahead and asks the geocoder anyway: iOS's geocoder needs no permission,
+ * and where Android's refuses, that lands as `"unavailable"` ("tap the map") rather than pointing at a
+ * Settings toggle iOS doesn't even show before the first ask. The web build's geocoder is Google's
+ * (metro-shims/expo-location-web.js), which needs no permission at all, so the web skips the check. The suffixed retry only runs when the verbatim attempt finds nothing
  * in Zimbabwe, so a verbatim hit costs exactly one round trip, and a hit abroad is a miss like any
  * other: it never becomes the answer.
  */
@@ -175,11 +184,13 @@ export async function geocodeAddress(query: string): Promise<GeocodeOutcome> {
   const queries = geocodeQueries(query);
   if (queries.length === 0) return { ok: false, reason: "not-found" };
 
-  try {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== "granted") return { ok: false, reason: "permission" };
-  } catch {
-    return { ok: false, reason: "unavailable" };
+  if (Platform.OS !== "web") {
+    try {
+      const { status, canAskAgain } = await Location.getForegroundPermissionsAsync();
+      if (status !== "granted" && canAskAgain === false) return { ok: false, reason: "permission" };
+    } catch {
+      return { ok: false, reason: "unavailable" };
+    }
   }
 
   for (const q of queries) {

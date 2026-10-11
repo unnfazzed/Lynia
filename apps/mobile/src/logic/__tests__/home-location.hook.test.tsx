@@ -9,7 +9,7 @@
  */
 import * as Location from "expo-location";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
-import { useHomeLocation, type HomeLocationApi } from "../home-location";
+import { resetHomeLocationCache, useHomeLocation, type HomeLocationApi } from "../home-location";
 
 jest.mock("expo-location", () => ({
   Accuracy: { Balanced: 3 },
@@ -52,6 +52,7 @@ async function settle(): Promise<void> {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  resetHomeLocationCache();
   // Permission refused, so the mount-time detection stops immediately and these tests are only
   // about the manual pick.
   getPerm.mockResolvedValue({ status: "denied", granted: false, canAskAgain: false });

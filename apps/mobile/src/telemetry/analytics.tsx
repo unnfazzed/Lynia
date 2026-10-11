@@ -81,11 +81,26 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }): 
     };
   }, []);
 
-  if (!Provider) return <>{children}</>;
+  // P01: `children` keeps the SAME slot before and after the deferred load. Wrapping them in the
+  // provider once it arrived changed the element type in that slot, so React unmounted and remounted
+  // the whole app under it mid-boot (splash replay, repeated bootstrap/flags/location work). The
+  // provider now mounts as a SIBLING around the one context consumer, ScreenTracker, inside a 0×0
+  // absolutely-positioned host view (the SDK renders a View with `style`) so it draws nothing.
   return (
-    <Provider apiKey={POSTHOG_API_KEY as string} options={{ host: POSTHOG_HOST }} autocapture={false}>
-      <ScreenTracker />
+    <>
+      {Provider ? (
+        <Provider
+          apiKey={POSTHOG_API_KEY as string}
+          options={{ host: POSTHOG_HOST }}
+          autocapture={false}
+          style={TRACKER_HOST_STYLE}
+        >
+          <ScreenTracker />
+        </Provider>
+      ) : null}
       {children}
-    </Provider>
+    </>
   );
 }
+
+const TRACKER_HOST_STYLE = { position: "absolute", width: 0, height: 0 } as const;

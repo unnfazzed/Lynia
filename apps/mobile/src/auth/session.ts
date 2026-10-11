@@ -61,10 +61,27 @@ async function withKeychainRetry<T>(op: () => Promise<T>): Promise<T> {
 // not the user's, and clearing it would defeat the per-device signup cap on the very next signup.
 const DEVICE_ID_KEY = "lynia.deviceId";
 let deviceIdCache: string | null = null;
+/** The ONE read in flight (P39): every caller before it settles joins it instead of starting its own. */
+let deviceIdInflight: Promise<string> | null = null;
 
-/** The device's stable install id (created + persisted on first use). Cached in-memory after first read. */
-export async function getDeviceId(): Promise<string> {
-  if (deviceIdCache) return deviceIdCache;
+/**
+ * The device's stable install id (created + persisted on first use). Cached in-memory after first read.
+ *
+ * P39: single-flight, and started early. Every apiFetch awaits this before sending, so the boot burst
+ * (bootstrap, the rails, flags) used to issue one concurrent keystore read per request until the first
+ * settled — and on a FIRST install each of them could mint and save a DIFFERENT uuid, so the server saw
+ * one device under several ids. Now every caller shares one read, and `prewarmBootReads` starts it at
+ * module evaluation next to the session read, so /app/bootstrap finds it already settled.
+ */
+export function getDeviceId(): Promise<string> {
+  if (deviceIdCache) return Promise.resolve(deviceIdCache);
+  deviceIdInflight ??= readOrMintDeviceId().finally(() => {
+    deviceIdInflight = null;
+  });
+  return deviceIdInflight;
+}
+
+async function readOrMintDeviceId(): Promise<string> {
   try {
     let id = await SecureStore.getItemAsync(DEVICE_ID_KEY);
     if (!id) {
