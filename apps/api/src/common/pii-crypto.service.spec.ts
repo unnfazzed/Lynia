@@ -34,27 +34,38 @@ describe("PiiCryptoService", () => {
   });
 
   // D2 (owner 2026-10-07): hand-over codes are sealed so a reveal can show the SAME code again.
+  const AAD = "delivery:11111111-1111-4111-8111-111111111111";
+
+  // D2 review: a ciphertext is bound to its kind and order — copied onto another order (or the other code
+  // column) it must not open.
+  it("decryptCode refuses a ciphertext sealed under another order or kind (AAD binding)", () => {
+    const ct = svc.encryptCode("418290", AAD);
+    expect(svc.decryptCode(ct, "delivery:22222222-2222-4222-8222-222222222222")).toBeNull();
+    expect(svc.decryptCode(ct, "pickup:11111111-1111-4111-8111-111111111111")).toBeNull();
+    expect(svc.decryptCode(ct, AAD)).toBe("418290");
+  });
+
   it("encryptCode/decryptCode round-trip with a fresh IV, and never leak the code", () => {
-    const a = svc.encryptCode("418290");
-    const b = svc.encryptCode("418290");
+    const a = svc.encryptCode("418290", AAD);
+    const b = svc.encryptCode("418290", AAD);
     expect(a.startsWith("c1:")).toBe(true);
     expect(a).not.toContain("418290");
     expect(a).not.toBe(b);
-    expect(svc.decryptCode(a)).toBe("418290");
-    expect(svc.decryptCode(b)).toBe("418290");
+    expect(svc.decryptCode(a, AAD)).toBe("418290");
+    expect(svc.decryptCode(b, AAD)).toBe("418290");
   });
 
   it("decryptCode reads anything else as no code (null, plaintext, a national-ID ciphertext, tampering, another key) — never throws", () => {
-    expect(svc.decryptCode(null)).toBeNull();
-    expect(svc.decryptCode(undefined)).toBeNull();
-    expect(svc.decryptCode("418290")).toBeNull();
-    expect(svc.decryptCode(svc.encryptId("418290"))).toBeNull();
-    expect(svc.decryptCode("c1:AAAA")).toBeNull();
-    const ct = svc.encryptCode("418290");
+    expect(svc.decryptCode(null, AAD)).toBeNull();
+    expect(svc.decryptCode(undefined, AAD)).toBeNull();
+    expect(svc.decryptCode("418290", AAD)).toBeNull();
+    expect(svc.decryptCode(svc.encryptId("418290"), AAD)).toBeNull();
+    expect(svc.decryptCode("c1:AAAA", AAD)).toBeNull();
+    const ct = svc.encryptCode("418290", AAD);
     const flipped = ct.slice(0, -2) + (ct.endsWith("A") ? "B" : "A") + ct.slice(-1);
-    expect(svc.decryptCode(flipped)).toBeNull();
+    expect(svc.decryptCode(flipped, AAD)).toBeNull();
     const other = new PiiCryptoService({ PII_ENCRYPTION_KEY: "a-different-test-pii-key-0123456789abcdef" } as Env);
-    expect(other.decryptCode(ct)).toBeNull();
+    expect(other.decryptCode(ct, AAD)).toBeNull();
     // The national-ID decrypt can't open a code ciphertext either (separate key, separate prefix).
     expect(() => svc.decryptId(ct)).not.toThrow();
     expect(svc.decryptId(ct)).toBe(ct);

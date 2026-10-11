@@ -584,6 +584,9 @@ model Order {
   // pre-0086 rows: the first reveal mints once and stores both.
   otpCipher             String?                                @map("otp_cipher")
   deliveryOtpAttempts   Int                                    @default(0) @map("delivery_otp_attempts")
+  // D2 review: lockout re-issues of the delivery code (rotateDeliveryCode at the try cap), capped at
+  // HANDOVER_CODE_MAX_REISSUES so the tries can't be reset for ever.
+  deliveryCodeReissues  Int                                    @default(0) @map("delivery_code_reissues")
   // KB-DELIVERY-CODE-ROTATION-SIGNAL: when the delivery code was last (re)issued — stamped at
   // assignment (matching.selectOffer) and on every rotateDeliveryCode. Lets the rider app robustly
   // detect a code rotation (customer re-issued after a lockout) across an app-kill, more robustly than
@@ -698,6 +701,9 @@ model Order {
   // D2: the pickup code sealed next to its hash, so a reveal on a second staff phone shows the same code.
   pickupCodeCipher           String?                @map("pickup_code_cipher")
   pickupCodeAttempts         Int                    @default(0) @map("pickup_code_attempts")
+  // D2 review: lockout re-issues of the pickup code (revealPickupCode at the try cap), capped at
+  // HANDOVER_CODE_MAX_REISSUES so the tries can't be reset for ever.
+  pickupCodeReissues         Int                    @default(0) @map("pickup_code_reissues")
   // D-08: money and delivery money are never merged into one figure for the merchant — this is what's
   // OWED TO THE MERCHANT (dish subtotal + N-15 small-order fee); deliveryFee is what the rider keeps.
   // agreedFare (existing column, reused) carries the grand total the customer pays (goods + delivery).

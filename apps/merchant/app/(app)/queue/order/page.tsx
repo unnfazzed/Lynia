@@ -1000,10 +1000,14 @@ function usePickupCode(order: MerchantOrderResponse): string | null {
     askedFor.current = key;
     revealPickupCode(order.id)
       .then((res) => setCode(res.pickupCode))
-      .catch(() => {
+      .catch((e: unknown) => {
+        setCode(null);
+        // D2 review: the server re-issues a locked code at most HANDOVER_CODE_MAX_REISSUES times per order.
+        // Past that it refuses for good, so this lock is not asked about again (no 409 on every poll); the
+        // dead code stays hidden and the order goes through "Problem with this order?" / support.
+        if (e instanceof ApiError && e.reason === "pickup_code_reissue_limit") return;
         // Not silent for good: the next order refresh asks again (E2E 2026-10-05 LB-1 hid behind this).
         askedFor.current = null;
-        setCode(null);
       });
   }, [codeless, order]);
   return code;

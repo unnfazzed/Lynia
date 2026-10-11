@@ -140,13 +140,13 @@ export class MatchingService {
         // sealed (otpCipher) so the customer can be shown the SAME code again. U22: a re-broadcast clone of
         // a trip whose rider bailed carries that trip's code (cloneForRebroadcast keepCode) — the recipient
         // may already hold it, so it is kept, not re-minted. Any other order gets a fresh code here.
-        const keptCode = openHandoverCode(this.codeCrypto, this.tokens, offer.order.otpCipher, offer.order.otpHash);
+        const keptCode = openHandoverCode(this.codeCrypto, this.tokens, "delivery", orderId, offer.order.otpCipher, offer.order.otpHash);
         const deliveryCode = keptCode ?? this.tokens.randomOtp();
         const codeData = keptCode
           ? {}
           : {
               otpHash: this.tokens.hash(deliveryCode),
-              otpCipher: sealHandoverCode(this.codeCrypto, deliveryCode),
+              otpCipher: sealHandoverCode(this.codeCrypto, "delivery", orderId, deliveryCode),
               deliveryOtpAttempts: 0,
               // KB-DELIVERY-CODE-ROTATION-SIGNAL: stamp the code-issued time at assignment (the code's
               // FIRST issue) so `codeRotatedAt` is never confusingly null once an order has a code, and the

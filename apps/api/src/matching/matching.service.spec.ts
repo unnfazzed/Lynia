@@ -305,12 +305,12 @@ describe("MatchingService.selectOffer — D2 sealed delivery code, kept across a
     expect(res.deliveryCode).toMatch(/^\d{6}$/);
     const data = writes[0]!.data;
     expect(data.otpHash).toBe(realTokens.hash(res.deliveryCode));
-    expect(pii.decryptCode(data.otpCipher as string)).toBe(res.deliveryCode);
+    expect(pii.decryptCode(data.otpCipher as string, `delivery:${orderId}`)).toBe(res.deliveryCode);
     expect(data).toMatchObject({ deliveryOtpAttempts: 0, deliveryCodeRotatedAt: expect.any(Date) });
   });
 
   it("U22: a re-broadcast clone carrying the trip's code keeps it — same code returned, hash/cipher/stamp untouched", async () => {
-    const carried = { otpHash: realTokens.hash("418290"), otpCipher: pii.encryptCode("418290") };
+    const carried = { otpHash: realTokens.hash("418290"), otpCipher: pii.encryptCode("418290", `delivery:${orderId}`) };
     const { service, writes } = selectHarness(carried);
     const res = await service.selectOffer(orderId, offerId, "cust");
     expect(res.deliveryCode).toBe("418290");
@@ -324,9 +324,18 @@ describe("MatchingService.selectOffer — D2 sealed delivery code, kept across a
   });
 
   it("an unreadable or mismatched carried code is replaced by a fresh one (never returns a code the hash won't accept)", async () => {
-    const { service, writes } = selectHarness({ otpHash: realTokens.hash("418290"), otpCipher: pii.encryptCode("999999") });
+    const { service, writes } = selectHarness({ otpHash: realTokens.hash("418290"), otpCipher: pii.encryptCode("999999", `delivery:${orderId}`) });
     const res = await service.selectOffer(orderId, offerId, "cust");
     expect(writes[0]!.data.otpHash).toBe(realTokens.hash(res.deliveryCode));
+  });
+
+  it("D2 review: a ciphertext copied from ANOTHER order (sealed under its id) is not kept — a fresh code is minted", async () => {
+    const otherOrder = "33333333-3333-4333-8333-333333333333";
+    const { service, writes } = selectHarness({ otpHash: realTokens.hash("418290"), otpCipher: pii.encryptCode("418290", `delivery:${otherOrder}`) });
+    const res = await service.selectOffer(orderId, offerId, "cust");
+    expect(res.deliveryCode).not.toBe("418290");
+    expect(writes[0]!.data.otpHash).toBe(realTokens.hash(res.deliveryCode));
+    expect(pii.decryptCode(writes[0]!.data.otpCipher as string, `delivery:${orderId}`)).toBe(res.deliveryCode);
   });
 });
 

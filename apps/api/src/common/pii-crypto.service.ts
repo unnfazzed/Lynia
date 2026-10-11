@@ -39,22 +39,27 @@ export class PiiCryptoService {
   }
 
   /** D2: AES-256-GCM seal of a hand-over code → `c1:` + base64(iv | tag | ciphertext). The hash stays the
-   *  verifier; this only lets the server show the SAME code again. Never log the input or the output. */
-  encryptCode(code: string): string {
+   *  verifier; this only lets the server show the SAME code again. Never log the input or the output.
+   *  `aad` binds the ciphertext to where it lives (`"<kind>:<orderId>"`, see common/handover-code.ts):
+   *  copied onto another order or the other code column, it no longer opens. */
+  encryptCode(code: string, aad: string): string {
     const iv = randomBytes(IV_LEN);
     const cipher = createCipheriv("aes-256-gcm", this.codeKey, iv);
+    cipher.setAAD(Buffer.from(aad, "utf8"));
     const ct = Buffer.concat([cipher.update(code, "utf8"), cipher.final()]);
     return CODE_PREFIX + Buffer.concat([iv, cipher.getAuthTag(), ct]).toString("base64");
   }
 
-  /** D2: open a `c1:` code ciphertext. Anything else — null, no prefix, a tampered or foreign-key value —
-   *  is null, never a throw: the caller treats it as "no stored code" and mints a fresh one. */
-  decryptCode(stored: string | null | undefined): string | null {
+  /** D2: open a `c1:` code ciphertext sealed under the same `aad`. Anything else — null, no prefix, a
+   *  tampered, foreign-key or foreign-AAD value — is null, never a throw: the caller treats it as "no
+   *  stored code". */
+  decryptCode(stored: string | null | undefined, aad: string): string | null {
     if (typeof stored !== "string" || !stored.startsWith(CODE_PREFIX)) return null;
     try {
       const raw = Buffer.from(stored.slice(CODE_PREFIX.length), "base64");
       if (raw.length <= IV_LEN + TAG_LEN) return null;
       const decipher = createDecipheriv("aes-256-gcm", this.codeKey, raw.subarray(0, IV_LEN));
+      decipher.setAAD(Buffer.from(aad, "utf8"));
       decipher.setAuthTag(raw.subarray(IV_LEN, IV_LEN + TAG_LEN));
       return Buffer.concat([decipher.update(raw.subarray(IV_LEN + TAG_LEN)), decipher.final()]).toString("utf8");
     } catch {

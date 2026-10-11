@@ -495,6 +495,23 @@ describe("merchant order — one order screen (D-59)", () => {
     expect(has(t, "117")).toBe(true);
   });
 
+  // D2 review item 1: the server caps lockout re-issues per order. Past the cap the screen says so once
+  // (the server's text, like every 4xx here) and never asks again for the same lock.
+  it("U04 past the server's re-issue cap: the server's message, no code card, no second re-issue", async () => {
+    const { ApiError } = jest.requireActual("../../../src/api/client") as typeof import("../../../src/api/client");
+    const msg = "Too many wrong tries on this code. Call LyniaGo support to finish this delivery.";
+    mockRotate.mockRejectedValueOnce(new ApiError(409, msg, "code_reissue_limit"));
+    const t = await render(
+      foodOrder({ status: "en_route_dropoff", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003", customerCashConfirmedAt: iso(-60_000), riderCashConfirmedAt: iso(-30_000) }),
+      snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, deliveryOtpAttempts: 5, codeRotatedAt: iso(-600_000), rider: { profileId: "r", currentLat: -17.83, currentLng: 31.05, updatedAt: iso(-2_000) } }),
+    );
+    for (let i = 0; i < 4; i++) await act(async () => new Promise((r) => setTimeout(r, 0)));
+    expect(mockRotate).toHaveBeenCalledTimes(1);
+    expect(mockReveal).not.toHaveBeenCalled();
+    expect(has(t, msg)).toBe(true);
+    expect(has(t, "Delivery code")).toBe(false);
+  });
+
   // ── round 3: per service, scheduled, Rx (README "Per service", BRIEF §12–13) ──
   const SHOP = { name: "Avondale Fresh", businessType: "shop" as const, shopKind: "grocery" };
   const PHARMACY = { name: "Avondale Pharmacy", businessType: "shop" as const, shopKind: "pharmacy" };

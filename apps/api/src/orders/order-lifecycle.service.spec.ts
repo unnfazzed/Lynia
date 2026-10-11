@@ -1127,12 +1127,12 @@ describe("OrderLifecycleService.reconcileStaleDeliveries", () => {
 });
 
 describe("OrderLifecycleService.rotateDeliveryCode", () => {
-  it("issues a fresh 6-digit code, resets attempts under a CAS guard, and stamps the rotation time (DB now())", async () => {
+  it("a lockout re-issue: a fresh 6-digit code, attempts reset under a CAS guard, and stamps the rotation time (DB now())", async () => {
     let args: { where: Record<string, unknown>; data: Record<string, unknown> } | undefined;
     let sql = "";
     const { svc } = build({
       order: {
-        findUnique: async () => ({ customerId: "c1", status: "en_route_dropoff" }),
+        findUnique: async () => ({ customerId: "c1", status: "en_route_dropoff", deliveryOtpAttempts: 5, deliveryCodeReissues: 0 }),
         updateMany: async (a: typeof args) => { args = a; return { count: 1 }; },
       },
       // KB-DELIVERY-CODE-ROTATION-SIGNAL: the timestamp stamp is a raw write so delivery_code_rotated_at

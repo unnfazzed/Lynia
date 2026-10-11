@@ -596,7 +596,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       // until it taps "Food is ready" (or the ready time passes), which then clears it.
       merchantPhase: keepCooking ? ("preparing" as const) : null,
       otpHash: this.tokens.hash(deliveryCode),
-      otpCipher: sealHandoverCode(this.codeCrypto, deliveryCode),
+      otpCipher: sealHandoverCode(this.codeCrypto, "delivery", orderId, deliveryCode),
       deliveryOtpAttempts: 0,
       deliveryCodeRotatedAt: new Date(),
       dispatchOfferedRiderId: null,
@@ -726,6 +726,9 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
           otpHash: null,
           otpCipher: null,
           deliveryOtpAttempts: 0,
+          // D2 review: the pickup code stays (the counter may already be reading it out), but the dropped
+          // rider's spent tries don't carry over to the next rider. Lockout re-issues stay counted per order.
+          pickupCodeAttempts: 0,
           dispatchExcludedRiderIds: excluded,
           dispatchAttempt: 0,
           dispatchStartedAt: null,

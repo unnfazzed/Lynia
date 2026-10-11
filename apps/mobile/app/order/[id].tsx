@@ -436,10 +436,17 @@ function ParcelOrderScreen(): React.ReactElement {
   // `codeAskedFor` is the retry key the last read was made under, so a failure never loops on its own.
   const codeAskedFor = useRef<string | null>(null);
   const [codeWanted, setCodeWanted] = useState(false);
+  // D2 review: a read that was in flight when a re-issue started may answer with the OLD (dead) code — every
+  // re-issue bumps this epoch and a read's answer from an earlier epoch is dropped.
+  const codeEpoch = useRef(0);
   const revealM = useMutation({
     mutationFn: () => revealDeliveryCode(orderId),
-    onSuccess: (res) => adoptCode(res.deliveryCode),
-    onError: () => {
+    onMutate: () => ({ epoch: codeEpoch.current }),
+    onSuccess: (res, _v, ctx) => {
+      if (ctx?.epoch === codeEpoch.current) adoptCode(res.deliveryCode);
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.epoch !== codeEpoch.current) return;
       showToast({ text: A.sendFail, action: A.tryAgain, actionIcon: "refresh-cw", onAction: () => revealM.mutate(), ttl: 0 });
     },
   });
@@ -453,9 +460,21 @@ function ParcelOrderScreen(): React.ReactElement {
   }, [orderId]);
   const rotateM = useMutation({
     mutationFn: () => rotateDeliveryCode(orderId),
+    onMutate: () => {
+      codeEpoch.current += 1;
+    },
     onSuccess: (res) => adoptCode(res.deliveryCode),
     // Not re-armed by itself (a locked code must not loop on a failing rotate): the toast's Try again retries.
-    onError: () => {
+    onError: (e) => {
+      // D2 review: the server caps lockout re-issues per order (HANDOVER_CODE_MAX_REISSUES). Past it no new
+      // code can come, so no Try again and no "Getting your code…" card: the server's message (shown
+      // verbatim, like other 4xx) and the drawn "Call support" action (A.callSupport → the safety line, as on
+      // the undelivered screen).
+      if (e instanceof ApiError && e.code === "code_reissue_limit") {
+        setCodeWanted(false);
+        showToast({ text: e.message, action: A.callSupport, onAction: () => dial(SOS_POLICY.safetyLine), ttl: 0 });
+        return;
+      }
       showToast({ text: A.sendFail, action: A.tryAgain, actionIcon: "refresh-cw", onAction: () => rotateM.mutate(), ttl: 0 });
     },
   });
@@ -735,14 +754,15 @@ function ParcelOrderScreen(): React.ReactElement {
   // drawn 2.14 "Getting your code…" state; the existing Share code button then sends it. The after-send-v2
   // handoff draws no locked state, so nothing new is rendered here.
   useEffect(() => {
-    if (!live || isRiderViewer || saved || !codeRestored || !online || order?.orderType === "merchant" || rotateM.isPending) return;
+    // D2 review: not while a read or a re-issue is in flight (codeBusy) — the effect re-runs when it settles.
+    // The server caps these per order and pins each one on the lock, so two devices make one new code.
+    if (!live || isRiderViewer || saved || !codeRestored || !online || order?.orderType === "merchant" || codeBusy) return;
     if (lockKey == null) return;
     reissuedFor.current = lockKey;
     setDeliveryCode(null); // the dead code isn't shown while the new one is issued
     setCodeWanted(true);
     rotate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- rotateM.isPending is read as a guard only.
-  }, [live, isRiderViewer, saved, codeRestored, online, order?.orderType, lockKey, rotate]);
+  }, [live, isRiderViewer, saved, codeRestored, online, order?.orderType, lockKey, rotate, codeBusy]);
 
   // ── Back: close a panel → collapse a full sheet → leave ──
   const leave = useCallback(() => (router.canGoBack() ? router.back() : goHomeClearingStack(router)), [router]);

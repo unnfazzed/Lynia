@@ -392,6 +392,11 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   // U19): showing it is a READ — the same code on every device, never a rotation; a failed read retries on
   // the next order refresh.
   const codeInFlight = useRef(false);
+  // D2 review: bumped whenever a code read/re-issue settles, so a lock that arrived while one was in flight
+  // is acted on as soon as it settles (not only on the next order refresh).
+  const [codeSettled, setCodeSettled] = useState(0);
+  // The screen's toast (declared further down with the screen state); read through a ref by the effects here.
+  const toastRef = useRef<((t: Toast) => void) | null>(null);
   const adoptCode = useCallback(
     (deliveryCode: string) => {
       setCode(deliveryCode);
@@ -411,10 +416,13 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       .catch(() => undefined)
       .finally(() => {
         codeInFlight.current = false;
+        setCodeSettled((n) => n + 1);
       });
   }, [order, codeRestored, code, codeLocked, online, orderId, adoptCode]);
   // U04 (D2): the rider's tries ran out — re-issue once per locked code (the explicit rotate: a new code,
-  // tries reset), shown through the same code card. No locked state is drawn, so nothing new renders.
+  // tries reset), shown through the same code card. No locked state and no "new code" button are drawn, so
+  // nothing new renders and the re-issue stays automatic; the server caps it per order
+  // (HANDOVER_CODE_MAX_REISSUES) and pins it on the lock, so a second device can't double it.
   const reissuedFor = useRef<string | null>(null);
   useEffect(() => {
     if (!order || order.status !== "en_route_dropoff" || !codeRestored || !online || codeInFlight.current) return;
@@ -425,11 +433,20 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     setCode(null);
     void rotateDeliveryCode(orderId)
       .then((res) => adoptCode(res.deliveryCode))
-      .catch(() => undefined)
+      .catch((e: unknown) => {
+        if (e instanceof ApiError && e.code === "code_reissue_limit") {
+          // Past the server's cap no new code can come: say so (the server's text, as every 4xx here), once.
+          toastRef.current?.({ text: e.message || O.c.noData, icon: "circle-alert" });
+          return;
+        }
+        // Anything else (offline, a lost race): the next order refresh tries again — never a tight loop.
+        reissuedFor.current = null;
+      })
       .finally(() => {
         codeInFlight.current = false;
+        setCodeSettled((n) => n + 1);
       });
-  }, [order, snap?.deliveryOtpAttempts, snap?.codeRotatedAt, codeRestored, online, orderId, adoptCode]);
+  }, [order, snap?.deliveryOtpAttempts, snap?.codeRotatedAt, codeRestored, online, orderId, adoptCode, codeSettled]);
 
   // ── screen state ──
   const [panel, setPanel] = useState<Panel>(null);
@@ -443,6 +460,9 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     setToast(t);
     AccessibilityInfo.announceForAccessibility(t.text);
   }, []);
+  useEffect(() => {
+    toastRef.current = showToast;
+  }, [showToast]);
   useEffect(() => {
     if (!toast || toast.ttl === 0) return;
     const t = setTimeout(() => setToast(null), toast.ttl ?? NOTE_MS);

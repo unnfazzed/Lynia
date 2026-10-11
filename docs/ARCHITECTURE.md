@@ -542,7 +542,7 @@ Load-bearing schema invariants (all enforced in the database, not just app code)
 | `one_active_ride` — partial-unique index on `orders(rider_id)` over active statuses | A rider can be on **at most one active ride** at a time. The DB rejects a double-assign even under a race (ET2). |
 | `offers` unique `(order_id, rider_id)` | **One offer per rider per order** — the "one round" rule as a constraint (ET7). |
 | `riders_geog_gist` — GiST on `geog geography(Point,4326)` | Fast nearby-rider radius search via `ST_DWithin` (ET6). |
-| `orders.otp_hash` + `otp_cipher` + `delivery_otp_attempts` | Delivery handover code: verified only against its HMAC hash, with a 5-attempt cap (ET7). Since owner decision D2 (2026-10-07, migration 0086) it is also stored AES-GCM-sealed (`PiiCryptoService.encryptCode`, its own key) so "show the code" returns the same code on every device instead of minting a new one; never plaintext, never logged, cleared at delivery. `pickup_code_hash` + `pickup_code_cipher` do the same for the N-16 pickup code (cleared at pickup). |
+| `orders.otp_hash` + `otp_cipher` + `delivery_otp_attempts` | Delivery handover code: verified only against its HMAC hash, with a 5-attempt cap (ET7). Since owner decision D2 (2026-10-07, migration 0086) it is also stored AES-GCM-sealed (`PiiCryptoService.encryptCode`, its own key) so "show the code" returns the same code on every device instead of minting a new one; never plaintext, never logged. Each ciphertext is bound (AES-GCM AAD `"<kind>:<orderId>"`) to its order and code kind, so it can't be replayed onto another row; a rider-bail clone re-seals the carried code under its own id. A trigger from the same migration (`orders_clear_handover_ciphers`) nulls both ciphertexts on every terminal status and the pickup one once collected. `pickup_code_hash` + `pickup_code_cipher` do the same for the N-16 pickup code. A lockout re-issue (every try used) resets the tries, so it is capped per order and per code at `HANDOVER_CODE_MAX_REISSUES` (2; `delivery_code_reissues` / `pickup_code_reissues`), pinned on the lock so two devices make one new code; past it the API refuses (`code_reissue_limit` / `pickup_code_reissue_limit`). `POST /orders/:id/deliver` and `/merchant/orders/:id/confirm-pickup` are throttled per rider (10/min). |
 | `sessions.refreshTokenHash` (hashed) + `revokedAt` | Server-owned sessions → real revoke/logout/ban (ET5). |
 
 ---
@@ -1270,7 +1270,7 @@ require the `admin` role.
 | `POST /orders/:id/rating` | Lifecycle | Customer rates → `completed` |
 | `POST /orders/:id/sender-rating` | Lifecycle | Rider rates the sender (recorded-only, rider-journey 4·7) |
 | `POST /orders/:id/delivery-code/reveal` | Lifecycle | Customer reads the current delivery code (D2: same code every call/device, no rotation) |
-| `POST /orders/:id/delivery-code/rotate` | Lifecycle | Customer re-issues delivery code (explicit only: the lockout re-issue, U04) |
+| `POST /orders/:id/delivery-code/rotate` | Lifecycle | Customer re-issues delivery code (explicit only: the lockout re-issue, U04; capped per order at `HANDOVER_CODE_MAX_REISSUES`, resets the tries only on a lockout) |
 | `POST /orders/:id/cancel` | Lifecycle | Either party cancels (rider = strike) |
 | `POST /orders/:orderId/issues` | Issues | Party-facing "get help with this trip" (A-05) |
 | `POST /orders/:orderId/report` | Reports | Report the order counterparty after a trip (A-05 adjacent) |

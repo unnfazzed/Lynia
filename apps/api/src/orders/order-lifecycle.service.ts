@@ -11,8 +11,9 @@ import {
   Optional,
   UnauthorizedException,
 } from "@nestjs/common";
-import { ACTIVE_RIDE_STATUSES, codAmount, customerRatingCarriesWeight, DELIVERY_OTP_MAX_ATTEMPTS, HeldReason, isBusinessBookingAccountPhone, OFFER_WINDOW_MS, RELIABILITY, RIDER_STRIKE_COOLDOWN_MS, roundToCents, UNDELIVERED_ABUSE } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, codAmount, customerRatingCarriesWeight, DELIVERY_OTP_MAX_ATTEMPTS, HANDOVER_CODE_MAX_REISSUES, HeldReason, isBusinessBookingAccountPhone, OFFER_WINDOW_MS, RELIABILITY, RIDER_STRIKE_COOLDOWN_MS, roundToCents, UNDELIVERED_ABUSE } from "@lynia/shared";
 import { type OrderStatus, Prisma } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 import { applyReliabilityDelta, shouldFlagUndeliveredVelocity, undeliveredPenalty } from "../riders/reliability";
 import { Queue, Worker } from "bullmq";
 import { TokenService } from "../auth/token.service";
@@ -1006,6 +1007,11 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
           orderType: true,
           merchantId: true,
           agreedFare: true,
+          // U22 / D2: read before the CAS (the 0086 trigger drops the ciphertext as the row turns
+          // `cancelled`) so a rider-bail clone can carry the trip's code. Never logged.
+          otpHash: true,
+          otpCipher: true,
+          deliveryCodeRotatedAt: true,
         },
       });
       if (!order) throw new NotFoundException("Order not found");
@@ -1096,7 +1102,12 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         // open order in the SAME transaction. The old row stays terminal; never reopened.
         // U22 / D2: the clone keeps this trip's delivery code — the customer may already have sent it to
         // the recipient — so the next rider is matched to the same code (MatchingService.selectOffer).
-        rebroadcastId = (await this.cloneForRebroadcast(tx, orderId, { keepCode: true })).id;
+        // Carried only when it can be shown again (opens under this order's AAD and matches the hash); a
+        // legacy hash-only code is left behind and selectOffer mints a fresh one, the pre-D2 behaviour.
+        const tripCode = openHandoverCode(this.codeCrypto, this.tokens, "delivery", orderId, order.otpCipher, order.otpHash);
+        rebroadcastId = (
+          await this.cloneForRebroadcast(tx, orderId, tripCode ? { keepCode: { code: tripCode, rotatedAt: order.deliveryCodeRotatedAt } } : undefined)
+        ).id;
       } else if (isCustomer && order.riderId) {
         // C3: a rider was already working this job — signal them the customer pulled out.
         jobCancelledCollected = collected;
@@ -1310,15 +1321,11 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
   private async cloneForRebroadcast(
     tx: Prisma.TransactionClient,
     sourceOrderId: string,
-    overrides?: { proposedFare?: Prisma.Decimal; keepCode?: boolean },
+    overrides?: { proposedFare?: Prisma.Decimal; keepCode?: { code: string; rotatedAt: Date | null } },
   ): Promise<{ id: string; createdAt: Date }> {
     const src = await tx.order.findUnique({
       where: { id: sourceOrderId },
       select: {
-        // U22 / D2: read only for the rider-bail clone (keepCode). Never logged.
-        otpHash: true,
-        otpCipher: true,
-        deliveryCodeRotatedAt: true,
         customerId: true,
         orderType: true,
         pickup: true,
@@ -1346,13 +1353,21 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       throw new ConflictException("Merchant order re-dispatch is not available yet");
     }
     // U22 / D2: a rider bailed before pickup (so no hand-off attempt was ever made against the code) —
-    // the trip keeps its delivery code, which the recipient may already hold. Carried only when it can be
-    // shown again (a readable ciphertext that matches the hash); a legacy hash-only code is left behind and
-    // selectOffer mints a fresh one, the pre-D2 behaviour. The customer's re-send (no keepCode) never
-    // carries a code: that source may be `undelivered`, with tries already spent against it.
+    // the trip keeps its delivery code, which the recipient may already hold. `keepCode` is the code the
+    // cancel read (and opened) BEFORE its CAS — migration 0086's trigger drops the source's ciphertext as it
+    // turns `cancelled`. The ciphertext is bound to its order id, so the clone gets its id up front and the
+    // code is re-sealed under it (a copied ciphertext would not open there). The customer's re-send (no
+    // keepCode) never carries a code: that source may be `undelivered`, with tries already spent against it.
+    const carried = overrides?.keepCode;
+    const cloneId = carried ? randomUUID() : undefined;
     const keptCode =
-      overrides?.keepCode && openHandoverCode(this.codeCrypto, this.tokens, src.otpCipher, src.otpHash)
-        ? { otpHash: src.otpHash, otpCipher: src.otpCipher, deliveryCodeRotatedAt: src.deliveryCodeRotatedAt }
+      carried && cloneId
+        ? {
+            id: cloneId,
+            otpHash: this.tokens.hash(carried.code),
+            otpCipher: sealHandoverCode(this.codeCrypto, "delivery", cloneId, carried.code),
+            deliveryCodeRotatedAt: carried.rotatedAt,
+          }
         : {};
 
     const clone = await tx.order.create({
@@ -1447,18 +1462,38 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     return { completed: done };
   }
 
-  /** Customer re-issues the delivery code. D2 (owner 2026-10-07): this is the EXPLICIT re-issue only — a
-   *  lockout re-issue (U04) or a tap — and it resets the attempt counter; just showing the code is
-   *  {@link revealDeliveryCode}, which never rotates. CAS-guarded on the
-   *  observed status like every sibling transition in this file — without it, a rotate that read a
-   *  valid status can still land its write after a concurrent confirmDelivery has already moved the
-   *  order to `delivered` (confirmDelivery's `FOR UPDATE` transaction only blocks this call's own
-   *  UPDATE while it holds the lock; it doesn't make the earlier, already-stale status read atomic
-   *  with this write). Harmless today (nothing reads `otpHash` post-delivery), but a silent TOCTOU
-   *  inconsistent with the pattern everywhere else in this file. */
+  /** Customer re-issues the delivery code — the EXPLICIT re-issue only (D2, owner 2026-10-07); just showing
+   *  the code is {@link revealDeliveryCode}, which never rotates.
+   *
+   *  D2 review (2026-10-11): only a LOCKOUT re-issue (every try used) resets the tries, and an order gets at
+   *  most HANDOVER_CODE_MAX_REISSUES of those — otherwise a rider could cycle 5 guesses → re-issue → 5 more
+   *  for ever. Past the cap: 409 `code_reissue_limit` (support / not delivered from there). A rotate while
+   *  the code is NOT locked (an older app fetching its code this way) gives a new code but keeps the tries,
+   *  so it buys no guesses.
+   *
+   *  CAS-guarded on the observed status like every sibling transition in this file — without it, a rotate
+   *  that read a valid status can still land its write after a concurrent confirmDelivery has already moved
+   *  the order to `delivered` — and on the hash it replaces (plus, for a lockout re-issue, the lock and the
+   *  re-issue count it read), so two devices re-issuing on the same lock produce ONE new code: the loser is
+   *  handed the winner's code. */
   async rotateDeliveryCode(orderId: string, customerId: string): Promise<{ deliveryCode: string }> {
     const order = await this.codeOrderForCustomer(orderId, customerId);
-    return { deliveryCode: await this.mintDeliveryCode(orderId, order.status) };
+    const locked = order.deliveryOtpAttempts >= DELIVERY_OTP_MAX_ATTEMPTS;
+    if (locked && order.deliveryCodeReissues >= HANDOVER_CODE_MAX_REISSUES) {
+      throw new ConflictException({
+        reason: "code_reissue_limit",
+        message: "Too many wrong tries on this code. Call LyniaGo support to finish this delivery.",
+      });
+    }
+    const minted = await this.mintDeliveryCode(orderId, order.status, {
+      replacesHash: order.otpHash,
+      lockoutReissues: locked ? order.deliveryCodeReissues : null,
+    });
+    if (minted) return { deliveryCode: minted };
+    // Lost the CAS: another device re-issued first (or the row moved). Hand back its code while it stands.
+    const winner = await this.currentShowableCode(orderId);
+    if (winner) return { deliveryCode: winner };
+    throw new ConflictException("Order changed, retry");
   }
 
   /**
@@ -1469,25 +1504,30 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
    * (own order, live trip, R-09 cash gate).
    *
    * A legacy row (hash only, minted before migration 0086) or an unreadable ciphertext falls back to the old
-   * behaviour ONCE: mint, store hash + ciphertext, and from then on it is stable. That one-time mint is
-   * CAS-guarded on the hash it replaces, so two devices racing it both get the winner's code. A LOCKED
-   * code is still returned as-is: re-issuing after a lockout is the explicit rotate.
+   * behaviour ONCE: mint, store hash + ciphertext, and from then on it is stable. That one-time mint keeps
+   * the tries as they are (D2 review: it must not reset them) and is CAS-guarded on the hash it replaces, so
+   * two devices racing it both get the winner's code. A LOCKED code is still returned as-is: re-issuing
+   * after a lockout is the explicit, capped rotate.
    */
   async revealDeliveryCode(orderId: string, customerId: string): Promise<{ deliveryCode: string }> {
     const order = await this.codeOrderForCustomer(orderId, customerId);
-    const stored = openHandoverCode(this.codeCrypto, this.tokens, order.otpCipher, order.otpHash);
+    const stored = openHandoverCode(this.codeCrypto, this.tokens, "delivery", orderId, order.otpCipher, order.otpHash);
     if (stored) return { deliveryCode: stored };
-    if (order.otpHash != null) {
-      // Legacy hash-only row: mint once, pinned on the hash it replaces.
-      const minted = await this.mintDeliveryCode(orderId, order.status, order.otpHash);
-      if (minted) return { deliveryCode: minted };
-      const fresh = await this.prisma.order.findUnique({ where: { id: orderId }, select: { otpHash: true, otpCipher: true } });
-      const winner = fresh ? openHandoverCode(this.codeCrypto, this.tokens, fresh.otpCipher, fresh.otpHash) : null;
-      if (winner) return { deliveryCode: winner };
-      throw new ConflictException("Order changed, retry");
-    }
-    // A live trip with no code at all (shouldn't happen: every assignment mints one) — issue one.
-    return { deliveryCode: await this.mintDeliveryCode(orderId, order.status) };
+    const minted = await this.mintDeliveryCode(orderId, order.status, { replacesHash: order.otpHash, lockoutReissues: null });
+    if (minted) return { deliveryCode: minted };
+    const winner = await this.currentShowableCode(orderId);
+    if (winner) return { deliveryCode: winner };
+    throw new ConflictException("Order changed, retry");
+  }
+
+  /** The order's delivery code as it stands now, when it can be shown and isn't locked; else null. */
+  private async currentShowableCode(orderId: string): Promise<string | null> {
+    const fresh = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { otpHash: true, otpCipher: true, deliveryOtpAttempts: true },
+    });
+    if (!fresh || fresh.deliveryOtpAttempts >= DELIVERY_OTP_MAX_ATTEMPTS) return null;
+    return openHandoverCode(this.codeCrypto, this.tokens, "delivery", orderId, fresh.otpCipher, fresh.otpHash);
   }
 
   /** The order a customer's code read/rotate acts on, with every guard both share. */
@@ -1503,6 +1543,8 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         riderCashConfirmedAt: true,
         otpHash: true,
         otpCipher: true,
+        deliveryOtpAttempts: true,
+        deliveryCodeReissues: true,
       },
     });
     if (!order) throw new NotFoundException("Order not found");
@@ -1514,33 +1556,38 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     if (order.orderType === "merchant" && order.merchantPaymentMethod === "cash" && !(order.customerCashConfirmedAt && order.riderCashConfirmedAt)) {
       throw new ConflictException("The code appears once you both confirm the cash exchange");
     }
-    return order;
+    // A pre-0086 / hand-built row may not carry the counters: read them as 0.
+    return { ...order, deliveryOtpAttempts: order.deliveryOtpAttempts ?? 0, deliveryCodeReissues: order.deliveryCodeReissues ?? 0 };
   }
 
-  /** Mint a fresh delivery code (hash + D2 ciphertext), zero the attempts, stamp the rotation and tell the
-   *  rider's screen. `replacesHash` (the legacy reveal) pins the write to the hash it replaces and returns
-   *  null instead of throwing when another device got there first. */
-  private async mintDeliveryCode(orderId: string, status: OrderStatus): Promise<string>;
-  private async mintDeliveryCode(orderId: string, status: OrderStatus, replacesHash: string): Promise<string | null>;
-  private async mintDeliveryCode(orderId: string, status: OrderStatus, replacesHash?: string): Promise<string | null> {
+  /** Mint a fresh delivery code (hash + D2 ciphertext, both in one write), stamp the rotation and tell the
+   *  rider's screen. Pinned on the observed status and on `replacesHash`. `lockoutReissues` (the count read
+   *  with the lock) makes it a lockout re-issue: also pinned on the lock and that count, it resets the tries
+   *  and counts the re-issue. Without it the tries stay as they are. Null when the row moved under us. */
+  private async mintDeliveryCode(
+    orderId: string,
+    status: OrderStatus,
+    pin: { replacesHash: string | null; lockoutReissues: number | null },
+  ): Promise<string | null> {
     const deliveryCode = this.tokens.randomOtp();
-    // KB-DELIVERY-CODE-ROTATION-SIGNAL: rotate the hash, zero the attempt counter, and stamp
-    // deliveryCodeRotatedAt (DB now() — the same clock domain fix 2 unifies the heartbeat writers
-    // onto) so the rider app can robustly detect this re-issue. CAS-guarded on the observed status
-    // like every sibling transition in this file (see doc comment above) — a concurrent
-    // confirmDelivery landing between the read and this write must not silently re-arm a code for
-    // an already-delivered order.
-    // D2: the ciphertext lands in the same write as the hash, so the two can never disagree. The legacy
-    // reveal's one-time mint is the old reveal-by-rotation, so it resets the attempts the same way.
+    const lockout = pin.lockoutReissues != null;
+    // KB-DELIVERY-CODE-ROTATION-SIGNAL: stamp deliveryCodeRotatedAt (DB now()) so the rider app can robustly
+    // detect this re-issue.
     const minted = await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.order.updateMany({
-        where: { id: orderId, status: { in: [...ACTIVE_FOR_CODE] }, ...(replacesHash !== undefined ? { otpHash: replacesHash } : {}) },
-        data: { otpHash: this.tokens.hash(deliveryCode), otpCipher: sealHandoverCode(this.codeCrypto, deliveryCode), deliveryOtpAttempts: 0 },
+        where: {
+          id: orderId,
+          status: { in: [...ACTIVE_FOR_CODE] },
+          otpHash: pin.replacesHash,
+          ...(pin.lockoutReissues != null ? { deliveryOtpAttempts: { gte: DELIVERY_OTP_MAX_ATTEMPTS }, deliveryCodeReissues: pin.lockoutReissues } : {}),
+        },
+        data: {
+          otpHash: this.tokens.hash(deliveryCode),
+          otpCipher: sealHandoverCode(this.codeCrypto, "delivery", orderId, deliveryCode),
+          ...(lockout ? { deliveryOtpAttempts: 0, deliveryCodeReissues: { increment: 1 } } : {}),
+        },
       });
-      if (claimed.count === 0) {
-        if (replacesHash !== undefined) return false;
-        throw new ConflictException("Order changed, retry");
-      }
+      if (claimed.count === 0) return false;
       await tx.$executeRaw`UPDATE orders SET delivery_code_rotated_at = now() WHERE id = ${orderId}::uuid`;
       return true;
     });

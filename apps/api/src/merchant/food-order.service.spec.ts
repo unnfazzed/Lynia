@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, Logger } from "@nestjs/common";
 import { RESTAURANTS_TIMING } from "@lynia/shared";
 import type { Env } from "../config/env";
 import type { NotificationsService } from "../notifications/notifications.service";
@@ -844,7 +844,7 @@ describe("FoodOrderService.revealPickupCode — N-16 reveal-by-rotation", () => 
     await expect(svc.revealPickupCode("p1", "o1")).rejects.toThrow(/isn't ready for pickup/);
   });
 
-  it("a legacy row (no ciphertext, no crypto wired) mints once: stores its hash, resets attempts, returns the raw code", async () => {
+  it("a legacy row (no ciphertext, no crypto wired) mints once: stores its hash, keeps the tries (D2 review), returns the raw code", async () => {
     let updateArgs: Record<string, unknown> | undefined;
     const { svc } = build({
       merchant: { findUnique: async () => ({ id: "m1" }) },
@@ -861,7 +861,7 @@ describe("FoodOrderService.revealPickupCode — N-16 reveal-by-rotation", () => 
     expect(updateArgs).toEqual({
       // D2: pinned on the hash it replaces, so two phones racing the one-time mint can't both win.
       where: { id: "o1", merchantPhase: "ready_for_pickup", pickupCodeHash: "old" },
-      data: { pickupCodeHash: tokens.hash(res.pickupCode), pickupCodeCipher: null, pickupCodeAttempts: 0 },
+      data: { pickupCodeHash: tokens.hash(res.pickupCode), pickupCodeCipher: null },
     });
   });
 
@@ -883,7 +883,7 @@ describe("FoodOrderService.revealPickupCode — N-16 reveal-by-rotation", () => 
     expect(res.pickupCode).toMatch(/^\d{6}$/);
     expect(updateArgs).toEqual({
       where: { id: "o1", status, riderId: "r1", merchantPhase: null, pickupCodeHash: "old" },
-      data: { pickupCodeHash: tokens.hash(res.pickupCode), pickupCodeCipher: null, pickupCodeAttempts: 0 },
+      data: { pickupCodeHash: tokens.hash(res.pickupCode), pickupCodeCipher: null },
     });
   });
 
@@ -934,16 +934,26 @@ describe("FoodOrderService.revealPickupCode — D2 idempotent reveal (MJ-H1)", (
     pickupCodeHash: string | null;
     pickupCodeCipher: string | null;
     pickupCodeAttempts: number;
+    pickupCodeReissues: number;
     merchantItems: unknown[];
   };
 
-  /** Prisma `where` equality for the flat fields the reveal CAS uses (`{ not: null }` included). */
+  /** Prisma `where` equality for the flat fields the reveal CAS uses (`{ not: null }`, `{ gte }` included). */
   function matches(row: Row, where: Record<string, unknown>): boolean {
     return Object.entries(where).every(([k, v]) => {
       const cur = (row as unknown as Record<string, unknown>)[k];
       if (v && typeof v === "object" && "not" in (v as object)) return cur !== (v as { not: unknown }).not;
+      if (v && typeof v === "object" && "gte" in (v as object)) return (cur as number) >= (v as { gte: number }).gte;
       return cur === v;
     });
+  }
+
+  /** Applies a Prisma `data` object, `{ increment }` included. */
+  function apply(row: Row, data: Record<string, unknown>): void {
+    const r = row as unknown as Record<string, unknown>;
+    for (const [k, v] of Object.entries(data)) {
+      r[k] = v && typeof v === "object" && "increment" in (v as object) ? (r[k] as number) + (v as { increment: number }).increment : v;
+    }
   }
 
   function harness(seed: Partial<Row>, opts: { crypto?: boolean } = {}) {
@@ -956,6 +966,7 @@ describe("FoodOrderService.revealPickupCode — D2 idempotent reveal (MJ-H1)", (
       pickupCodeHash: null,
       pickupCodeCipher: null,
       pickupCodeAttempts: 0,
+      pickupCodeReissues: 0,
       merchantItems: [],
       ...seed,
     };
@@ -968,7 +979,7 @@ describe("FoodOrderService.revealPickupCode — D2 idempotent reveal (MJ-H1)", (
         updateMany: async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
           if (!matches(row, where)) return { count: 0 };
           writes.push(data);
-          Object.assign(row, data);
+          apply(row, data);
           return { count: 1 };
         },
       },
@@ -993,7 +1004,7 @@ describe("FoodOrderService.revealPickupCode — D2 idempotent reveal (MJ-H1)", (
     return { svc, row, writes, prisma: prisma as Record<string, unknown> & { order: Record<string, unknown> } };
   }
 
-  const sealed = (code: string) => ({ pickupCodeHash: tokens.hash(code), pickupCodeCipher: pii.encryptCode(code) });
+  const sealed = (code: string) => ({ pickupCodeHash: tokens.hash(code), pickupCodeCipher: pii.encryptCode(code, "pickup:o1") });
 
   it("reveal twice (and from a second staff phone) → the same code, attempts unchanged, nothing written", async () => {
     const { svc, row, writes } = harness({ ...sealed("482913"), pickupCodeAttempts: 2 });
@@ -1019,8 +1030,10 @@ describe("FoodOrderService.revealPickupCode — D2 idempotent reveal (MJ-H1)", (
     const first = await svc.revealPickupCode("p1", "o1");
     expect(first.pickupCode).toMatch(/^\d{6}$/);
     expect(row.pickupCodeHash).toBe(tokens.hash(first.pickupCode));
-    expect(pii.decryptCode(row.pickupCodeCipher)).toBe(first.pickupCode);
-    expect(row.pickupCodeAttempts).toBe(0);
+    expect(pii.decryptCode(row.pickupCodeCipher, "pickup:o1")).toBe(first.pickupCode);
+    // D2 review: this one-time mint is not a lockout re-issue — it keeps the rider's spent tries.
+    expect(row.pickupCodeAttempts).toBe(1);
+    expect(row.pickupCodeReissues).toBe(0);
     expect(writes).toHaveLength(1);
     const second = await svc.revealPickupCode("p2", "o1");
     const third = await svc.revealPickupCode("p1", "o1");
@@ -1030,7 +1043,7 @@ describe("FoodOrderService.revealPickupCode — D2 idempotent reveal (MJ-H1)", (
   });
 
   it("a ciphertext that doesn't match the hash (a hash-only writer moved on) is never shown — it mints instead", async () => {
-    const { svc, row } = harness({ pickupCodeHash: tokens.hash("222222"), pickupCodeCipher: pii.encryptCode("999999") });
+    const { svc, row } = harness({ pickupCodeHash: tokens.hash("222222"), pickupCodeCipher: pii.encryptCode("999999", "pickup:o1") });
     const res = await svc.revealPickupCode("p1", "o1");
     expect(res.pickupCode).not.toBe("999999");
     expect(row.pickupCodeHash).toBe(tokens.hash(res.pickupCode));
@@ -1047,9 +1060,64 @@ describe("FoodOrderService.revealPickupCode — D2 idempotent reveal (MJ-H1)", (
     const reissued = await svc.revealPickupCode("p1", "o1");
     expect(reissued.pickupCode).not.toBe("482913");
     expect(row.pickupCodeAttempts).toBe(0);
+    expect(row.pickupCodeReissues).toBe(1);
     expect(row.pickupCodeHash).toBe(tokens.hash(reissued.pickupCode));
     // A second phone that still saw the lock gets the re-issued code, not a third one.
     expect((await svc.revealPickupCode("p2", "o1")).pickupCode).toBe(reissued.pickupCode);
+  });
+
+  // D2 review (item 1): each lockout re-issue resets the tries, so without a cap a rider could cycle
+  // 5 guesses → re-issue → 5 guesses for ever.
+  it("refuses a lockout re-issue past HANDOVER_CODE_MAX_REISSUES (2) — nothing written, tries stay locked", async () => {
+    const { svc, row, writes } = harness({ ...sealed("482913"), pickupCodeAttempts: 5, pickupCodeReissues: 2 });
+    await expect(svc.revealPickupCode("p1", "o1")).rejects.toMatchObject({ status: 409, response: { reason: "pickup_code_reissue_limit" } });
+    expect(writes).toEqual([]);
+    expect(row.pickupCodeAttempts).toBe(5);
+    expect(row.pickupCodeHash).toBe(tokens.hash("482913"));
+  });
+
+  it("re-issue 1 and 2 are allowed, the third lock is refused (at most 15 guesses per order)", async () => {
+    const { svc, row } = harness({ ...sealed("482913"), pickupCodeAttempts: 5 });
+    await svc.revealPickupCode("p1", "o1");
+    row.pickupCodeAttempts = 5;
+    await svc.revealPickupCode("p1", "o1");
+    expect(row.pickupCodeReissues).toBe(2);
+    row.pickupCodeAttempts = 5;
+    await expect(svc.revealPickupCode("p1", "o1")).rejects.toMatchObject({ response: { reason: "pickup_code_reissue_limit" } });
+  });
+
+  it("two phones racing a re-issue on the same lock produce ONE new code (the CAS pins the lock and the count)", async () => {
+    const { svc, row, prisma, writes } = harness({ ...sealed("482913"), pickupCodeAttempts: 5 });
+    const realFind = prisma.order.findFirst as () => Promise<Row>;
+    let raced = false;
+    prisma.order.findFirst = async () => {
+      const snapshot = await realFind();
+      if (!raced) {
+        raced = true;
+        // The other phone's re-issue lands between this reveal's read (locked) and its write.
+        Object.assign(row, sealed("600700"), { pickupCodeAttempts: 0, pickupCodeReissues: 1 });
+      }
+      return snapshot;
+    };
+    expect((await svc.revealPickupCode("p1", "o1")).pickupCode).toBe("600700");
+    expect(writes).toEqual([]);
+    expect(row.pickupCodeReissues).toBe(1);
+  });
+
+  it("a ciphertext sealed for ANOTHER order doesn't open here (AAD) — it mints instead, and says so in the log without the value", async () => {
+    const warn = vi.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
+    try {
+      const { svc, row } = harness({ pickupCodeHash: tokens.hash("482913"), pickupCodeCipher: pii.encryptCode("482913", "pickup:o2") });
+      const res = await svc.revealPickupCode("p1", "o1");
+      expect(res.pickupCode).not.toBe("482913");
+      expect(row.pickupCodeHash).toBe(tokens.hash(res.pickupCode));
+      const logged = warn.mock.calls.map((c) => String(c[0])).join("\n");
+      expect(logged).toMatch(/did not authenticate \(kind=pickup, order=o1\)/);
+      expect(logged).not.toContain("482913");
+      expect(logged).not.toContain("c1:");
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("two phones racing the legacy mint both show the winner's code", async () => {
@@ -1069,7 +1137,7 @@ describe("FoodOrderService.revealPickupCode — D2 idempotent reveal (MJ-H1)", (
     await svc.markReady("p1", "o1").catch(() => undefined); // only the write matters here, not the response mapping
     expect(row.merchantPhase).toBe("ready_for_pickup");
     const minted = writes[0]!;
-    const code = pii.decryptCode(minted.pickupCodeCipher as string);
+    const code = pii.decryptCode(minted.pickupCodeCipher as string, "pickup:o1");
     expect(code).toMatch(/^\d{6}$/);
     expect(minted.pickupCodeHash).toBe(tokens.hash(code!));
     expect((await svc.revealPickupCode("p1", "o1")).pickupCode).toBe(code);

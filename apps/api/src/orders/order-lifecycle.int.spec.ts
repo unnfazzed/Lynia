@@ -418,6 +418,24 @@ describe("seam-contract transitions", () => {
     expect(clones[0]!.proposedFare.equals(orig!.proposedFare)).toBe(true);
   });
 
+  it("D2 / U22: the re-matched clone keeps the trip's delivery code; the cancelled source's ciphertext is dropped (0086 trigger)", async () => {
+    const customer = await makeCustomer();
+    const rider = await makeRider();
+    const { orderId, deliveryCode } = await assign(customer, rider);
+
+    await lifecycle.cancel(orderId, rider, "cannot make it");
+    const source = await prisma.order.findUniqueOrThrow({ where: { id: orderId }, select: { otpCipher: true, otpHash: true } });
+    expect(source.otpCipher).toBeNull(); // a code that can't be used any more isn't kept decryptable
+    const clone = await prisma.order.findFirstOrThrow({ where: { rebroadcastOfId: orderId }, select: { id: true, otpCipher: true } });
+    expect(clone.otpCipher).not.toBeNull();
+
+    const rider2 = await makeRider();
+    const offerId = await makeOffer(clone.id, rider2);
+    const sel = await matching.selectOffer(clone.id, offerId, customer);
+    expect(sel.deliveryCode).toBe(deliveryCode);
+    expect(await lifecycle.revealDeliveryCode(clone.id, customer)).toEqual({ deliveryCode });
+  });
+
   it("C3: a rider cancel is BLOCKED once the parcel is collected (post-pickup is undelivered, not cancel)", async () => {
     const customer = await makeCustomer();
     const rider = await makeRider();
@@ -477,6 +495,24 @@ describe("seam-contract transitions", () => {
     // The fresh code now works — the lockout recovered because the counter was reset.
     await lifecycle.confirmDelivery(orderId, rider, fresh);
     expect(await statusOf(orderId)).toBe("delivered");
+  });
+
+  it("D2 review: lockout re-issues are capped per order (HANDOVER_CODE_MAX_REISSUES) — at most 15 guesses, then refused", async () => {
+    const customer = await makeCustomer();
+    const rider = await makeRider();
+    const { orderId } = await driveTo(customer, rider, "en_route_dropoff");
+    const burn = async () => {
+      for (let i = 0; i < 5; i++) await expect(lifecycle.confirmDelivery(orderId, rider, "999999")).rejects.toThrow();
+    };
+    await burn();
+    await lifecycle.rotateDeliveryCode(orderId, customer);
+    await burn();
+    const { deliveryCode: last } = await lifecycle.rotateDeliveryCode(orderId, customer);
+    await burn();
+    await expect(lifecycle.rotateDeliveryCode(orderId, customer)).rejects.toMatchObject({ response: { reason: "code_reissue_limit" } });
+    const row = await prisma.order.findUniqueOrThrow({ where: { id: orderId }, select: { deliveryOtpAttempts: true, deliveryCodeReissues: true } });
+    expect(row).toEqual({ deliveryOtpAttempts: 5, deliveryCodeReissues: 2 });
+    await expect(lifecycle.confirmDelivery(orderId, rider, last)).rejects.toThrow(/too many attempts/i);
   });
 
   it("D2 (U19): reveal returns the code minted at assignment on every call, sealed in otp_cipher, tries untouched", async () => {

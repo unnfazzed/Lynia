@@ -69,8 +69,11 @@ export class LifecycleController {
     return this.lifecycle.attachDeliveryProof(orderId, riderId, body.key, body.lat, body.lng);
   }
 
-  /** Rider confirms the handover with the recipient's delivery code → delivered. */
+  /** Rider confirms the handover with the recipient's delivery code → delivered. D2 review: throttled per
+   *  signed-in rider (the default key) on top of the per-order try cap, so code guessing is slow on every
+   *  order at once. Generous for a real rider: 5 tries per code, one code per stop. */
   @Post("deliver")
+  @Throttle({ limit: 10, windowSec: 60, keyPrefix: "delivery-code-confirm" })
   deliver(
     @Param("orderId", ParseUUIDPipe) orderId: string,
     @Body(new ZodBody(ConfirmDeliveryRequest)) body: ConfirmDeliveryRequest,

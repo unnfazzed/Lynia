@@ -837,12 +837,12 @@ describe("FoodDispatchService — D2 sealed delivery code", () => {
     );
     await svc.acceptDispatch(orderId, "r1");
     const data = orderUpdateMany.mock.calls[0]![0].data;
-    const code = pii.decryptCode(data.otpCipher as string);
+    const code = pii.decryptCode(data.otpCipher as string, `delivery:${orderId}`);
     expect(code).toMatch(/^\d{6}$/);
     expect(data.otpHash).toBe(tokens.hash(code!));
   });
 
-  it("dropDispatch clears the ciphertext with the hash", async () => {
+  it("dropDispatch clears the ciphertext with the hash, and the dropped rider's spent pickup tries (D2 review)", async () => {
     const orderUpdateMany = vi.fn(async (_a: { where: Record<string, unknown>; data: Record<string, unknown> }) => ({ count: 1 }));
     const { svc } = build(
       {
@@ -855,7 +855,7 @@ describe("FoodDispatchService — D2 sealed delivery code", () => {
       pii,
     );
     await svc.dropDispatch(orderId, "r1");
-    expect(orderUpdateMany.mock.calls[0]![0].data).toMatchObject({ otpHash: null, otpCipher: null });
+    expect(orderUpdateMany.mock.calls[0]![0].data).toMatchObject({ otpHash: null, otpCipher: null, pickupCodeAttempts: 0 });
   });
 });
 

@@ -115,8 +115,10 @@ async function settle(): Promise<void> {
 
 let activeTree: renderer.ReactTestRenderer | null = null;
 
+let lastClient: QueryClient | null = null;
+
 async function render(): Promise<renderer.ReactTestRenderer> {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } });
+  const client = (lastClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } }));
   let tree!: renderer.ReactTestRenderer;
   await act(async () => {
     tree = renderer.create(
@@ -273,6 +275,68 @@ describe("delivery code — D2 (U20 failed read, U04 lockout re-issue)", () => {
     expect(mockRevealDeliveryCode).not.toHaveBeenCalled();
     expect(codeShown(tree, "604117")).toBe(true);
     expect(codeShown(tree, "482913")).toBe(false);
+  });
+
+  // D2 review item 4: a re-issue that started while a read was in flight could be overwritten by the read's
+  // late answer — the OLD, dead code. The re-issue now waits for the read to settle.
+  it("a lock that arrives while the code read is in flight re-issues only after the read settles; the new code wins", async () => {
+    mockGetOrder.mockResolvedValue(assignedOrder({ deliveryOtpAttempts: 0, codeRotatedAt: "2026-10-07T09:00:00.000Z" }));
+    let releaseReveal: ((v: { deliveryCode: string }) => void) | null = null;
+    mockRevealDeliveryCode.mockImplementation(() => new Promise((resolve) => (releaseReveal = resolve)));
+    mockRotateDeliveryCode.mockResolvedValue({ deliveryCode: "604117" });
+
+    const tree = await render();
+    await act(async () => {
+      releaseCodeRead?.(null);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await settle();
+    expect(mockRevealDeliveryCode).toHaveBeenCalledTimes(1);
+
+    // The rider burns the last try while the read is still out.
+    const locked = assignedOrder({ deliveryOtpAttempts: 5, codeRotatedAt: "2026-10-07T09:00:00.000Z" });
+    mockGetOrder.mockResolvedValue(locked);
+    await act(async () => {
+      lastClient!.setQueryData(["order", "order-1"], locked);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await settle();
+    expect(mockRotateDeliveryCode).not.toHaveBeenCalled();
+
+    await act(async () => {
+      releaseReveal?.({ deliveryCode: "482913" });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await settle();
+    await settle();
+
+    expect(mockRotateDeliveryCode).toHaveBeenCalledTimes(1);
+    expect(codeShown(tree, "604117")).toBe(true);
+    expect(codeShown(tree, "482913")).toBe(false);
+  });
+
+  // D2 review item 1: the server caps lockout re-issues per order; past it the app must not offer a retry
+  // that can't succeed.
+  it("past the server's re-issue cap: no Try again — the server's message and Call support; it doesn't loop", async () => {
+    mockGetOrder.mockResolvedValue(assignedOrder({ deliveryOtpAttempts: 5, codeRotatedAt: "2026-10-07T09:00:00.000Z" }));
+    const { ApiError } = jest.requireActual("../../../src/api/client") as typeof import("../../../src/api/client");
+    mockRotateDeliveryCode.mockRejectedValue(
+      new ApiError(409, "Too many wrong tries on this code. Call LyniaGo support to finish this delivery.", "code_reissue_limit"),
+    );
+
+    const tree = await render();
+    await act(async () => {
+      releaseCodeRead?.("482913");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await settle();
+    await settle();
+
+    expect(mockRotateDeliveryCode).toHaveBeenCalledTimes(1);
+    expect(textHits(tree, "Too many wrong tries on this code. Call LyniaGo support to finish this delivery.")).toBeGreaterThan(0);
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Call support" && typeof n.props.onPress === "function").length).toBeGreaterThan(0);
+    expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Try again" && typeof n.props.onPress === "function")).toHaveLength(0);
+    expect(mockRevealDeliveryCode).not.toHaveBeenCalled();
   });
 
   it("a code that isn't locked is never re-issued, however many snapshots arrive", async () => {
