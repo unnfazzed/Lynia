@@ -23,17 +23,22 @@ export function isBoardBooking(b: Pick<MerchantBookingResponse, "state" | "cashO
 }
 
 /**
- * MJ-RL26: fold a live-only read into the last full list — or null when the live set itself changed (one
- * started, ended, or a teammate booked one), which only a full read can show: an ended booking keeps its
- * place in the day's list, and a re-sent one marks the booking it replaced.
+ * MJ-RL26: fold a live-only read into the last full list. A live booking the list doesn't hold — a new
+ * one, or one older than the history's newest 50 (a delivery whose cash is still due) — is added in its
+ * place by time. Null when a booking the list had as live is no longer live: only a full read shows how
+ * it ended (and a re-sent one marking the booking it replaced).
  */
 export function mergeLiveBookings(full: readonly MerchantBookingResponse[], liveRead: readonly MerchantBookingResponse[]): MerchantBookingResponse[] | null {
   // An API from before `?status=live` sends the whole history: only its live rows count here.
   const live = liveRead.filter(isBoardBooking);
-  const before = full.filter(isBoardBooking);
   const byId = new Map(live.map((b) => [b.id, b]));
-  if (before.length !== live.length || before.some((b) => !byId.has(b.id))) return null;
-  return full.map((b) => byId.get(b.id) ?? b);
+  if (full.some((b) => isBoardBooking(b) && !byId.has(b.id))) return null;
+  const known = new Set(full.map((b) => b.id));
+  const added = live.filter((b) => !known.has(b.id));
+  const merged = full.map((b) => byId.get(b.id) ?? b);
+  if (added.length === 0) return merged;
+  // Newest first, as the API lists them (a stable sort keeps the API's order among equal times).
+  return [...merged, ...added].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
 
 /**

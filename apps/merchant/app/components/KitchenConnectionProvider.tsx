@@ -72,6 +72,15 @@ const SOCKET_KICK_RESET_MS = 60_000;
 /** MJ-P1: a burst of `food:queue-changed` pushes (one order's accept, rider and status moves) is one
  *  queue read, this long after the first of them. */
 export const QUEUE_PUSH_DEBOUNCE_MS = 250;
+/** MJ-P1 review: how long the shell waits for the server to answer a queue-room join before it counts
+ *  the join as failed (a throw in the gateway answers nothing; Socket.IO has no default timeout). */
+export const QUEUE_JOIN_ACK_TIMEOUT_MS = 3_000;
+
+/** The gateway's answer to `merchant:queue-subscribe` (`TrackingGateway.subscribeMerchantQueue`):
+ *  `{ joined: merchantId }` once the socket is in the room, `{ error }` when it was refused. */
+export function isQueueJoinAck(ack: unknown): boolean {
+  return typeof ack === "object" && ack !== null && typeof (ack as { joined?: unknown }).joined === "string";
+}
 
 export function KitchenConnectionProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -184,28 +193,63 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
   //
   // MJ-P1 (2026-10-07): the same socket carries the server's `food:queue-changed` push the moment an order
   // changes. The shell used to ignore it and poll the whole queue every 5 s all day; now a push (debounced)
-  // re-reads the queue, a reconnect re-reads it once (pushes sent while it was down are gone), and the
-  // poll backs off to a 30 s backstop while the socket is up (use-queue-poll.ts). Down, it is 5 s again.
+  // re-reads the queue, and the poll backs off to a 15 s backstop — but only while the server has said the
+  // socket is IN the queue room. A connected socket proves nothing: the join can be refused or throw, a
+  // teammate's branch switch evicts every socket of that person (`evictFromMerchantQueue`), a Redis
+  // adapter can drop pub/sub, a half-open TCP looks connected for ~45 s. So:
+  //  - every join is emitted with an ack, and only `{ joined }` within QUEUE_JOIN_ACK_TIMEOUT_MS counts;
+  //    anything else (refused, thrown, unanswered, disconnected) keeps the 5 s poll;
+  //  - every poll tick re-joins first (the server's join is idempotent; an evicted socket is back in by the
+  //    next tick), and a re-join that isn't answered as joined drops the poll back to 5 s;
+  //  - the queue is re-read once the join is answered — on the first connect and on every reconnect — so
+  //    an order placed between the read and the join is never left to the backstop.
   const socketRef = useRef<ReturnType<typeof createMerchantQueueSocket> | null>(null);
   const signOutRef = useRef(signOut);
   signOutRef.current = signOut;
-  const [socketConnected, setSocketConnected] = useState(false);
+  const [pushBacked, setPushBacked] = useState(false);
   const refetchQueueRef = useRef<() => Promise<void>>(async () => {});
+  /** Join (or re-join) the queue room; resolves whether the server said it joined. */
+  const joinQueueRef = useRef<() => Promise<boolean>>(async () => false);
   useEffect(() => {
     if (!session) return undefined;
     const socket = createMerchantQueueSocket();
     socketRef.current = socket;
     let alive = true;
+    let connected = false;
     let retry: ReturnType<typeof setTimeout> | null = null;
     let pushed: ReturnType<typeof setTimeout> | null = null;
     let kicks = 0;
     let lastKickAt = 0;
-    let connectedBefore = false;
+    const join = (): Promise<boolean> =>
+      new Promise<boolean>((resolve) => {
+        if (!alive || !connected) {
+          resolve(false);
+          return;
+        }
+        let settled = false;
+        const finish = (joined: boolean) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(joined);
+        };
+        const timer = setTimeout(() => finish(false), QUEUE_JOIN_ACK_TIMEOUT_MS);
+        try {
+          socket.emit(WS_EVENTS.merchantQueueSubscribe, (ack: unknown) => finish(isQueueJoinAck(ack)));
+        } catch {
+          finish(false);
+        }
+      }).then((joined) => {
+        const backed = joined && alive && connected;
+        if (alive) setPushBacked(backed);
+        return backed;
+      });
+    joinQueueRef.current = join;
     socket.on("connect", () => {
-      socket.emit(WS_EVENTS.merchantQueueSubscribe);
-      setSocketConnected(true);
-      if (connectedBefore) void refetchQueueRef.current();
-      connectedBefore = true;
+      connected = true;
+      void join().then((joined) => {
+        if (joined) void refetchQueueRef.current();
+      });
     });
     socket.on(WS_EVENTS.foodQueueChanged, () => {
       if (!alive || pushed) return;
@@ -214,9 +258,13 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
         if (alive) void refetchQueueRef.current();
       }, QUEUE_PUSH_DEBOUNCE_MS);
     });
-    socket.on("connect_error", () => setSocketConnected(false));
+    socket.on("connect_error", () => {
+      connected = false;
+      setPushBacked(false);
+    });
     socket.on("disconnect", (reason: unknown) => {
-      setSocketConnected(false);
+      connected = false;
+      setPushBacked(false);
       if (!alive || reason !== "io server disconnect" || retry) return;
       const at = Date.now();
       if (at - lastKickAt > SOCKET_KICK_RESET_MS) kicks = 0;
@@ -243,13 +291,15 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
       if (retry) clearTimeout(retry);
       if (pushed) clearTimeout(pushed);
       socketRef.current = null;
-      setSocketConnected(false);
+      joinQueueRef.current = async () => false;
+      setPushBacked(false);
       socket.disconnect();
     };
   }, [session]);
 
   // C20 (MJ-B1, MJ-RH4, MJ-M14): one queue poll for the whole signed-in app, from the session on.
-  const poll = useQueuePoll(session !== null, { socketConnected });
+  const beforeTick = useCallback(() => joinQueueRef.current().then(() => undefined), []);
+  const poll = useQueuePoll(session !== null, { pushBacked, beforeTick });
   const { orders: queueOrders, loading: queueLoading, loaded: queueLoaded, error: queueError, refetch: refetchQueue } = poll;
   refetchQueueRef.current = refetchQueue;
   const queue = useMemo<QueuePollState>(
@@ -311,9 +361,8 @@ export function KitchenConnectionProvider({ children }: { children: React.ReactN
   // The server picks the room from the person's current branch, so the same subscribe joins the new one.
   // Not yet connected: the `connect` handler above subscribes when it is. The queue is re-read for it.
   const rejoinQueue = useCallback(() => {
-    const socket = socketRef.current;
-    if (socket?.connected) socket.emit(WS_EVENTS.merchantQueueSubscribe);
-    void refetchQueue();
+    // MJ-P1 review: join first (acked), then read, so nothing lands between the read and the join.
+    void joinQueueRef.current().then(() => refetchQueue());
   }, [refetchQueue]);
 
   // Merchant web upgrade L4 (Team): someone the owner removed signs out on their next tap and their

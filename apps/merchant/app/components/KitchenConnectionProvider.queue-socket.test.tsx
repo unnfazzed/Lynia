@@ -99,7 +99,7 @@ describe("KitchenConnectionProvider queue-socket presence (LC-C C-T4)", () => {
     await act(async () => {
       lastSocket.trigger("connect");
     });
-    expect(lastSocket.emit).toHaveBeenCalledWith("merchant:queue-subscribe");
+    expect(lastSocket.emit).toHaveBeenCalledWith("merchant:queue-subscribe", expect.any(Function));
   });
 
   it("re-joins the room on every reconnect, not only the first connect", async () => {
@@ -113,8 +113,8 @@ describe("KitchenConnectionProvider queue-socket presence (LC-C C-T4)", () => {
     });
 
     expect((lastSocket.emit as ReturnType<typeof vi.fn>).mock.calls).toEqual([
-      ["merchant:queue-subscribe"],
-      ["merchant:queue-subscribe"],
+      ["merchant:queue-subscribe", expect.any(Function)],
+      ["merchant:queue-subscribe", expect.any(Function)],
     ]);
   });
 

@@ -187,15 +187,20 @@ export default function OrderPage() {
 
   // MJ-RL23 (2026-10-07): the queue poll's rules (coalesced-fetch.ts) — one read at a time, a late answer
   // never overwrites a newer one, and an action's own refresh waits for a read that shows it.
+  // Each id gets its own fetcher, so an answer for the order this screen showed before (a ticket opened
+  // from another ticket) must not land once the new one is up: only the current id's answer applies.
+  const idRef = useRef(id);
+  idRef.current = id;
   const refresh = useMemo(
     () =>
       createCoalescedFetch(async (isLatest) => {
+        const current = () => isLatest() && idRef.current === id;
         try {
           const order = await getOrder(id);
-          if (isLatest()) setLoad({ status: "ready", order });
+          if (current()) setLoad({ status: "ready", order });
         } catch (err) {
           if (redirectIfSessionExpired(err, () => signOutRef.current())) return;
-          if (!isLatest()) return;
+          if (!current()) return;
           setLoad((prev) => (prev.status === "ready" ? prev : { status: "error", message: err instanceof ApiError ? err.message : "Couldn't load this order." }));
         }
       }),

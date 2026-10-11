@@ -102,7 +102,6 @@ export function refundOrder(orderId: string, reference: string, amount: number):
 
 // ── E3: end-of-day summary (N-13); Merchant v2 T2b's week ────────────────────────────────────────────────
 
-/** Today's summary, or (Merchant v2 follow-ups T2b) another day of this week, `YYYY-MM-DD`. */
 /** MJ-RL27: the Orders top card's strip (Orders · Sales · Cash due) — `?fields=kpis`, three figures
  *  instead of Money's whole Today. An API from before it ignores `fields` and sends the full Today, whose
  *  same fields the strip reads the same way. */
@@ -110,6 +109,7 @@ export function getTodayKpis(): Promise<MerchantTodayKpisResponse> {
   return authedFetch<MerchantTodayKpisResponse>("/merchant/summary/today?fields=kpis");
 }
 
+/** Today's summary, or (Merchant v2 follow-ups T2b) another day of this week, `YYYY-MM-DD`. */
 export function getTodaySummary(date?: string): Promise<MerchantEndOfDaySummaryResponse> {
   return authedFetch<MerchantEndOfDaySummaryResponse>(date ? `/merchant/summary/today?date=${encodeURIComponent(date)}` : "/merchant/summary/today");
 }

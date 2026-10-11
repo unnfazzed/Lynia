@@ -27,10 +27,10 @@ import {
 import { merchantOrder, merchantProfile, RIDER } from "../../../testing/fixtures";
 
 const ID = "a1110000-0000-4000-8000-000000000001";
-const { replace } = vi.hoisted(() => ({ replace: vi.fn() }));
+const { replace, params } = vi.hoisted(() => ({ replace: vi.fn(), params: { id: "a1110000-0000-4000-8000-000000000001" } }));
 vi.mock("next/navigation", () => {
   const router = { replace, push: vi.fn() };
-  return { useRouter: () => router, useSearchParams: () => new URLSearchParams({ id: "a1110000-0000-4000-8000-000000000001" }) };
+  return { useRouter: () => router, useSearchParams: () => new URLSearchParams({ id: params.id }) };
 });
 vi.mock("../../../lib/orders-api", () => ({
   getOrder: vi.fn(),
@@ -592,6 +592,35 @@ describe("MJ-RL23: how the ticket keeps its order fresh", () => {
     await mounted(merchantOrder({ id: ID, merchantPhase: null, status: "delivered", paymentMethod: "wallet", merchantGoodsTotal: 14, riderId: RIDER.profileId, rider: RIDER, deliveredAt: new Date().toISOString() }));
     await advance(120_000);
     expect(getOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it("a late answer for the order shown before never replaces the one now open", async () => {
+    vi.useRealTimers();
+    const B = "b2220000-0000-4000-8000-000000000002";
+    const onTheWay = (id: string) => merchantOrder({ id, ...CASH, merchantPhase: null, status: "en_route_dropoff", riderId: RIDER.profileId, rider: RIDER, debtStatus: "open", debtAmount: 12 });
+    let answerA!: (o: MerchantOrderResponse) => void;
+    vi.mocked(getOrder).mockImplementation((orderId: string) =>
+      orderId === ID ? new Promise<MerchantOrderResponse>((resolve) => (answerA = resolve)) : Promise.resolve(onTheWay(B)),
+    );
+    const page = () => (
+      <ToastProvider>
+        <OrderPage />
+      </ToastProvider>
+    );
+    try {
+      const { rerender } = render(page());
+      params.id = B;
+      rerender(page());
+      expect(await screen.findByText("#B222 on the way")).toBeTruthy();
+      await act(async () => {
+        answerA(onTheWay(ID));
+        await Promise.resolve();
+      });
+      expect(screen.queryByText("#A111 on the way")).toBeNull();
+      expect(screen.getByText("#B222 on the way")).toBeTruthy();
+    } finally {
+      params.id = ID;
+    }
   });
 
   it("stops on a closed order (opened from Money)", async () => {

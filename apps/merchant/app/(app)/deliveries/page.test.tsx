@@ -119,8 +119,8 @@ describe("D1 · Shop Orders home (merchant mobile, D-48)", () => {
       await advance(29_000);
       expect(listBookings).toHaveBeenCalledTimes(1);
       await advance(1_000);
-      // The live read shows a new booking, so the whole list is read once to place it.
-      expect(vi.mocked(listBookings).mock.calls).toEqual([[], [{ live: true }], []]);
+      // The live read brings the new booking, and it is added to the list (no second, full read).
+      expect(vi.mocked(listBookings).mock.calls).toEqual([[], [{ live: true }]]);
       expect(screen.getByText("Car battery · 3 riders offered")).toBeTruthy();
     });
 
