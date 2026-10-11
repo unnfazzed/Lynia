@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { centerCropRect, nextQuality, outputDimensions } from "./image-compress";
+import { centerCropRect, dimensionLadder, encodeUnderBudget, MAX_DIMENSION_BY_KIND, nextQuality, outputDimensions } from "./image-compress";
 
 describe("nextQuality", () => {
   it("steps down by a fixed ratio", () => {
@@ -37,5 +37,47 @@ describe("outputDimensions", () => {
 
   it("scales the long edge down to the cap, preserving aspect", () => {
     expect(outputDimensions(2400, 800, 1200)).toEqual({ width: 1200, height: 400 });
+  });
+});
+
+describe("encodeUnderBudget (MJ-RL11: a photo still over budget at the quality floor steps its size down)", () => {
+  /** A fake encoder: bytes grow with pixel area and quality, like a JPEG does. */
+  const fakeEncoder = (bytesPerMegapixelAtFullQuality: number) => {
+    const calls: Array<[number, number]> = [];
+    const encode = async (dimension: number, quality: number) => {
+      calls.push([dimension, Number(quality.toFixed(3))]);
+      const megapixels = (dimension * dimension) / 1_000_000;
+      return new Blob([new Uint8Array(Math.round(megapixels * bytesPerMegapixelAtFullQuality * quality))]);
+    };
+    return { encode, calls };
+  };
+
+  it("an ordinary photo fits at full size by lowering quality only", async () => {
+    const { encode, calls } = fakeEncoder(150_000);
+    const blob = await encodeUnderBudget(encode, 300_000, 1600);
+    expect(blob.size).toBeLessThanOrEqual(300_000);
+    expect(new Set(calls.map(([d]) => d))).toEqual(new Set([1600]));
+  });
+
+  it("a detailed photo that won't fit at 1600 px / q0.35 is re-encoded at 1200, then 800, until it fits", async () => {
+    // At 1600 px the floor is 2.56 MP x 600 KB x 0.35 = 537 KB; at 1200 px, 302 KB; at 800 px, 134 KB.
+    const { encode, calls } = fakeEncoder(600_000);
+    const blob = await encodeUnderBudget(encode, 250_000, 1600);
+    expect(blob.size).toBeLessThanOrEqual(250_000);
+    expect([...new Set(calls.map(([d]) => d))]).toEqual([1600, 1200, 800]);
+    // The quality floor is tried once per size, not re-encoded over and over.
+    expect(calls.filter(([d, q]) => d === 1600 && q === 0.35)).toHaveLength(1);
+  });
+
+  it("the ladder starts at the kind's own cap", () => {
+    expect(dimensionLadder(1600)).toEqual([1600, 1200, 800, 600, 400]);
+    expect(dimensionLadder(MAX_DIMENSION_BY_KIND.dish)).toEqual([1200, 800, 600, 400]);
+    expect(dimensionLadder(MAX_DIMENSION_BY_KIND.logo)).toEqual([512, 400]);
+  });
+});
+
+describe("MAX_DIMENSION_BY_KIND (P04: no kind is uploaded bigger than it is drawn)", () => {
+  it("dish 1200, cover 1600, logo 512", () => {
+    expect(MAX_DIMENSION_BY_KIND).toEqual({ dish: 1200, banner: 1600, logo: 512 });
   });
 });

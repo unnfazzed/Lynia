@@ -1,7 +1,7 @@
 import { ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ObjectStat, StorageAdapter } from "./storage.interface";
-import { MAX_BANNER_PHOTO_BYTES, MAX_DISH_PHOTO_BYTES, MAX_PHOTO_BYTES } from "./upload-kinds";
+import { MAX_BANNER_PHOTO_BYTES, MAX_DISH_PHOTO_BYTES, MAX_PHOTO_BYTES, UPLOAD_KINDS } from "./upload-kinds";
 import { MAGIC_HEAD_BYTES, STORAGE_VERIFY_TIMEOUT_MS, UploadVerifier } from "./upload-verifier";
 
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01]);
@@ -75,10 +75,24 @@ describe("UploadVerifier — the attach-time stat matrix (C1 / E8)", () => {
     ["dish", MAX_DISH_PHOTO_BYTES],
     ["banner", MAX_BANNER_PHOTO_BYTES],
   ] as const)("%s: exactly the cap passes, one byte over → delete, then 422", async (kind, cap) => {
-    await expect(fake(async () => ok({ size: cap })).verifier.verify(KEY, kind)).resolves.toBeTruthy();
+    const key = `${UPLOAD_KINDS[kind].prefix}rider-1/a.jpg`;
+    await expect(fake(async () => ok({ size: cap })).verifier.verify(key, kind)).resolves.toBeTruthy();
     const over = fake(async () => ok({ size: cap + 1 }));
-    await expect(rejection(over.verifier.verify(KEY, kind))).resolves.toEqual({ status: 422, reason: "upload_too_large" });
-    expect(over.deleted).toEqual([KEY]);
+    await expect(rejection(over.verifier.verify(key, kind))).resolves.toEqual({ status: 422, reason: "upload_too_large" });
+    expect(over.deleted).toEqual([key]);
+  });
+
+  it.each([
+    ["dish/me/../../kyc/victim/selfie.jpg", "dish"],
+    ["dish/me/..%2f..%2fkyc/victim/selfie.jpg", "dish"],
+    ["/kyc/victim/selfie.jpg", "kyc"],
+    ["kyc//victim/selfie.jpg", "kyc"],
+    ["kyc/victim/selfie.jpg", "dish"],
+  ] as const)("D7 review: an unsafe or wrong-kind key %s is refused (400) before any storage call, so it can never be deleted", async (key, kind) => {
+    const { verifier, deleted, storage } = fake(async () => ok({ size: 0 }));
+    await expect(verifier.verify(key, kind)).rejects.toMatchObject({ status: 400 });
+    expect(storage.stat).not.toHaveBeenCalled();
+    expect(deleted).toEqual([]);
   });
 
   it.each(["text/html", "image/gif", "application/octet-stream", null])("Content-Type %s → delete, then 422", async (contentType) => {

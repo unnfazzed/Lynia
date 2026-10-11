@@ -74,6 +74,9 @@ export class MerchantController {
     return this.merchant.getWeekSummary(profileId);
   }
 
+  // D7 review: a new cover/logo makes a server-side thumbnail (a storage read, an image decode and a
+  // write), so the photo-saving routes are rate-limited per caller.
+  @Throttle({ limit: 20, windowSec: 60, keyPrefix: "merchant-profile-update" })
   @Patch("profile")
   @UseGuards(MerchantGuard)
   @OwnerOnly()
@@ -182,6 +185,7 @@ export class MerchantController {
     return this.merchant.listDishes(profileId);
   }
 
+  @Throttle({ limit: 30, windowSec: 60, keyPrefix: "merchant-dish-create" })
   @Post("dishes")
   @UseGuards(MerchantGuard)
   @OwnerOnly()
@@ -189,6 +193,7 @@ export class MerchantController {
     return this.merchant.createDish(profileId, body);
   }
 
+  @Throttle({ limit: 30, windowSec: 60, keyPrefix: "merchant-dish-update" })
   @Patch("dishes/:id")
   @UseGuards(MerchantGuard)
   @OwnerOnly()

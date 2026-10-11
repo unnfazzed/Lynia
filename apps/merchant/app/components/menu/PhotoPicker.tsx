@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { compressImage, type CropRect } from "../../lib/image-compress";
+import { compressImage, MAX_DIMENSION_BY_KIND, type CropRect } from "../../lib/image-compress";
 import { mintBannerPhotoUpload, mintDishPhotoUpload, uploadPhotoBlob } from "../../lib/menu-api";
 import { useVocabulary } from "../../lib/vocabulary";
 import { ghostButtonStyle } from "../queue/styles";
@@ -61,7 +61,7 @@ export function PhotoPicker({
     setStatus({ kind: "compressing" });
     let blob: Blob;
     try {
-      blob = await compressImage(file, { maxBytes, aspect, maxDimension: 1600, crop });
+      blob = await compressImage(file, { maxBytes, aspect, maxDimension: MAX_DIMENSION_BY_KIND[kind], crop });
     } catch (err) {
       setStatus({ kind: "error", message: err instanceof Error ? err.message : "Couldn't prepare that photo.", retryFile: file, retryCrop: crop });
       return;

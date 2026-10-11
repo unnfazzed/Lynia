@@ -1,8 +1,9 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
-import { PlateStatus } from "@lynia/shared";
+import { PlateStatus, UploadObjectKey } from "@lynia/shared";
 import { z } from "zod";
 import { auditData } from "../admin/admin.shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
+import { isOwnedUploadKey } from "../adapters/storage/upload-kinds";
 import { UploadVerifier } from "../adapters/storage/upload-verifier";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -24,7 +25,7 @@ export const BikeRegSchema = z
  */
 export const UpdateRiderProfile = z
   .object({
-    photoUrl: z.string().min(1).max(256).optional(),
+    photoUrl: UploadObjectKey.optional(),
     bikeReg: BikeRegSchema.optional(),
   })
   .strict()
@@ -66,7 +67,7 @@ export class RiderProfileService {
     // point their row at someone else's object), and it must really be a JPEG/PNG in budget. The
     // namespace check comes first because a rejected verify DELETES the object.
     if (data.photoUrl !== undefined) {
-      if (!data.photoUrl.startsWith(`kyc/${profileId}/`)) throw new BadRequestException("Invalid photo key");
+      if (!isOwnedUploadKey("kyc", profileId, data.photoUrl)) throw new BadRequestException("Invalid photo key");
       await this.uploads?.verify(data.photoUrl, "kyc");
     }
 
@@ -95,7 +96,7 @@ export class RiderProfileService {
     // The replaced photo is no longer referenced by anything: remove it (best-effort, after the commit,
     // never for a key outside this rider's own namespace).
     const oldPhoto = rider.photoUrl;
-    if (changed.includes("photo") && oldPhoto && oldPhoto.startsWith(`kyc/${profileId}/`) && this.storage) {
+    if (changed.includes("photo") && oldPhoto && isOwnedUploadKey("kyc", profileId, oldPhoto) && this.storage) {
       try {
         await this.storage.deleteObject(oldPhoto);
       } catch (err) {

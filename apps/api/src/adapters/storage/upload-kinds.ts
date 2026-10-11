@@ -1,3 +1,5 @@
+import { posix } from "node:path";
+
 /**
  * The one table of upload kinds (C1): the key prefix each mint route writes under and the per-kind
  * size cap. The mint side (uploads.controller.ts) binds the cap into the signed URL where the provider
@@ -38,4 +40,44 @@ export const UPLOAD_KINDS: Readonly<Record<UploadKind, UploadKindSpec>> = {
 /** The caller-owned namespace for a kind: `<prefix><ownerId>/`. */
 export function ownNamespace(kind: UploadKind, ownerId: string): string {
   return `${UPLOAD_KINDS[kind].prefix}${ownerId}/`;
+}
+
+/**
+ * D7 review (2026-10-07): a key that is safe to hand to a storage SDK. The Azure SDK normalises
+ * `dish/me/../../kyc/victim/x.jpg` to `kyc/victim/x.jpg`, so a key that merely STARTS with the caller's
+ * namespace could still address another user's object. Refused: a leading `/`, `..`, `//`, `\`, `%`,
+ * control characters, and any key that path normalisation would change.
+ */
+export function isSafeObjectKey(key: string): boolean {
+  if (!key || key.length > 512) return false;
+  if (key.startsWith("/") || key.includes("..") || key.includes("//") || key.includes("\\") || key.includes("%")) return false;
+  // oxlint-disable-next-line no-control-regex -- control characters are exactly what this refuses
+  if (/[\u0000-\u001f\u007f]/.test(key)) return false;
+  return posix.normalize(key) === key;
+}
+
+/** A key directly inside the caller's own namespace for `kind` (`<prefix><ownerId>/<one name>`), and safe. */
+export function isOwnedUploadKey(kind: UploadKind, ownerId: string, key: string): boolean {
+  const ns = ownNamespace(kind, ownerId);
+  return isSafeObjectKey(key) && key.startsWith(ns) && key.length > ns.length && !key.slice(ns.length).includes("/");
+}
+
+/** The exact name `POST /uploads/*` mints (uploads.controller.ts): a lower-case `randomUUID()` + `.jpg|.png`. */
+const MINTED_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png)$/;
+
+/** Exactly a key the API minted for this owner and kind: `<prefix><ownerId>/<uuid>.(jpg|png)`. */
+export function isMintedUploadKey(kind: UploadKind, ownerId: string, key: string): boolean {
+  return isOwnedUploadKey(kind, ownerId, key) && MINTED_NAME.test(key.slice(ownNamespace(kind, ownerId).length));
+}
+
+/** Throws unless {@link isSafeObjectKey}: the storage adapters' own guard, for every caller. */
+export function assertSafeObjectKey(key: string): void {
+  if (!isSafeObjectKey(key)) throw new UnsafeObjectKeyError(key);
+}
+
+export class UnsafeObjectKeyError extends Error {
+  constructor(key: string) {
+    super(`Refused an unsafe storage key: ${JSON.stringify(key.slice(0, 80))}`);
+    this.name = "UnsafeObjectKeyError";
+  }
 }

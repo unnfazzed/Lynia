@@ -308,6 +308,7 @@ export function kindColors(kind: string | null): { bg: string; ink: string } {
 export function VenueCard({
   name,
   photoUrl,
+  fallbackUrl,
   kind = null,
   rating,
   etaMinutes,
@@ -318,6 +319,8 @@ export function VenueCard({
 }: {
   name: string;
   photoUrl: string | null;
+  /** D7 review: the full cover, tried if `photoUrl` (its thumbnail) fails to load. */
+  fallbackUrl?: string | null;
   /** A shop's kind label ("Pharmacy"); null for a restaurant. */
   kind?: string | null;
   rating: string | null;
@@ -341,6 +344,7 @@ export function VenueCard({
         {photo ? (
           <RemoteImage
             source={{ uri: photoUrl! }}
+            fallbackUri={fallbackUrl}
             onError={() => setFailed(true)}
             accessibilityElementsHidden
             importantForAccessibility="no"

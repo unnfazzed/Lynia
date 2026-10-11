@@ -11,6 +11,7 @@ import {
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { freeJobsLeft, isCommissionActive, isInServiceArea, normalizeNationalId, resolveCommissionRatePct } from "@lynia/shared";
+import { isOwnedUploadKey } from "../adapters/storage/upload-kinds";
 import { UploadVerifier } from "../adapters/storage/upload-verifier";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
@@ -291,7 +292,9 @@ export class RiderService {
     // KYC object (harmless until the reviewer console mints a signed read URL from the stored key).
     // The photo itself is optional (owner 2026-10-02): sign-up no longer asks for it; when a client sends
     // one, it is still checked here.
-    if (data.photoUrl !== undefined && !data.photoUrl.startsWith(`kyc/${profileId}/`)) {
+    // D7 review: directly in the caller's own namespace AND free of `..`/`//`/`%` — a prefix match alone let
+    // `kyc/<me>/../../<victim>` through, which the Azure SDK resolves to the victim's blob.
+    if (data.photoUrl !== undefined && !isOwnedUploadKey("kyc", profileId, data.photoUrl)) {
       throw new BadRequestException("Invalid photo key");
     }
 

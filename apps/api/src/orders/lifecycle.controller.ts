@@ -1,5 +1,5 @@
 import { Body, Controller, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
-import { AdvanceStatusRequest, CancelRequest, ConfirmDeliveryRequest, ConfirmItemsRequest, MarkUndeliveredRequest, RateRequest, RateSenderRequest, ResendOrderRequest } from "@lynia/shared";
+import { AdvanceStatusRequest, CancelRequest, ConfirmDeliveryRequest, ConfirmItemsRequest, MarkUndeliveredRequest, RateRequest, RateSenderRequest, ResendOrderRequest, UploadObjectKey } from "@lynia/shared";
 import { z } from "zod";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
@@ -10,11 +10,11 @@ import { OrderLifecycleService } from "./order-lifecycle.service";
 // Local zod body like riders.controller.ts's `Become` — a rider-only additive endpoint old clients
 // never call, so no shared-contract change is needed (the wire stays a pure superset). The key length
 // bound matches the KYC photoUrl cap.
-const AttachPickupPhotoRequest = z.object({ key: z.string().min(1).max(256) });
+const AttachPickupPhotoRequest = z.object({ key: UploadObjectKey });
 // KB-POD-DISPUTE Phase A: proof-of-drop attach — the object key plus the rider's GPS at the door. lat/lng
 // are optional (a denied/failed fix must never block attaching the photo evidence) and range-bounded.
 const AttachDeliveryProofRequest = z.object({
-  key: z.string().min(1).max(256),
+  key: UploadObjectKey,
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
 });

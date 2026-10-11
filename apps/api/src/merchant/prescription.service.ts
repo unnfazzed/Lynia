@@ -21,7 +21,7 @@ import {
   toCents,
 } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
-import { ownNamespace } from "../adapters/storage/upload-kinds";
+import { isOwnedUploadKey } from "../adapters/storage/upload-kinds";
 import { UploadVerifier } from "../adapters/storage/upload-verifier";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
@@ -97,10 +97,9 @@ export class PrescriptionService {
     if (!prescription) {
       throw new ConflictException({ reason: "prescription_required", message: "Add a photo of your prescription to place this order" });
     }
-    const namespace = ownNamespace("rx", customerId);
     for (const key of prescription.photoKeys) {
       // The namespace check comes first: a failed verification deletes the object.
-      if (!key.startsWith(namespace)) throw new BadRequestException("Invalid photo key");
+      if (!isOwnedUploadKey("rx", customerId, key)) throw new BadRequestException("Invalid photo key");
     }
     for (const key of prescription.photoKeys) await this.uploads?.verify(key, "rx");
     return { photoKeys: [...prescription.photoKeys], patientName: prescription.patientName, consentAt: new Date(), status: "pending" };

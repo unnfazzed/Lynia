@@ -231,3 +231,28 @@ describe("AzureBlobStorage.listObjects / deleteObject", () => {
     expect(harness().storage.provider()).toBe("azure");
   });
 });
+
+describe("AzureBlobStorage refuses unsafe keys, and caps readObject (D7 review)", () => {
+  // The SDK resolves this to `kyc/victim/selfie.jpg`: the whole reason for the guard.
+  const TRAVERSAL = "dish/me/../../kyc/victim/selfie.jpg";
+
+  it("never builds a blob client (or a SAS) for a traversal key", async () => {
+    const { storage, blobCalls, getUserDelegationKey } = harness();
+    await expect(storage.createReadUrl(TRAVERSAL)).rejects.toThrow(/unsafe storage key/);
+    await expect(storage.createUploadUrl(TRAVERSAL, "image/jpeg")).rejects.toThrow(/unsafe storage key/);
+    await expect(storage.stat(TRAVERSAL)).rejects.toThrow(/unsafe storage key/);
+    await expect(storage.readHead(TRAVERSAL, 12)).rejects.toThrow(/unsafe storage key/);
+    await expect(storage.readObject(TRAVERSAL, 1000)).rejects.toThrow(/unsafe storage key/);
+    await expect(storage.writeObject(TRAVERSAL, Buffer.alloc(1), "image/jpeg")).rejects.toThrow(/unsafe storage key/);
+    await expect(storage.deleteObject(TRAVERSAL)).resolves.toBeUndefined();
+    expect(blobCalls).toEqual([]);
+    expect(getUserDelegationKey).not.toHaveBeenCalled();
+  });
+
+  it("readObject checks the size first and refuses an object over the cap without downloading it", async () => {
+    const downloadToBuffer = vi.fn(async () => Buffer.alloc(10));
+    const { storage } = harness({ blob: { getProperties: async () => ({ contentLength: 5_000_000 }), downloadToBuffer } });
+    await expect(storage.readObject("dish/p1/a.jpg", 2 * 1024 * 1024)).rejects.toThrow(/over the .* read cap/);
+    expect(downloadToBuffer).not.toHaveBeenCalled();
+  });
+});

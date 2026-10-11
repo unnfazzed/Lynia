@@ -1,6 +1,6 @@
-import { Inject, Injectable, Logger, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Logger, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
 import { STORAGE, type StorageAdapter } from "./storage.interface";
-import { UPLOAD_KINDS, type UploadKind } from "./upload-kinds";
+import { isSafeObjectKey, UPLOAD_KINDS, type UploadKind } from "./upload-kinds";
 
 /** Bytes 0–11 cover both signatures below (E8). */
 export const MAGIC_HEAD_BYTES = 12;
@@ -40,7 +40,10 @@ export class UploadVerifier {
   constructor(@Inject(STORAGE) private readonly storage: StorageAdapter) {}
 
   async verify(key: string, kind: UploadKind): Promise<VerifiedUpload> {
-    const { maxBytes } = UPLOAD_KINDS[kind];
+    const { maxBytes, prefix } = UPLOAD_KINDS[kind];
+    // D7 review, defence in depth behind each caller's own-namespace check: never stat — and so never
+    // delete — a key that could resolve outside its kind's namespace (`dish/me/../../kyc/victim/x.jpg`).
+    if (!isSafeObjectKey(key) || !key.startsWith(prefix)) throw new BadRequestException("Invalid photo key");
     const stat = await this.guarded("stat", key, () => this.storage.stat(key));
     if (!stat) throw missing();
     if (stat.size <= 0) return this.reject(key, "upload_empty", "That photo didn't upload — please retake it.");

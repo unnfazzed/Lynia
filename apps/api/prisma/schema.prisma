@@ -1059,6 +1059,10 @@ model Merchant {
   // D-30 shop front: 3:1 cover banner + round logo, up to 3 cuisine tags, price level 1-3.
   coverPhotoUrl  String?          @map("cover_photo_url")
   logoUrl        String?          @map("logo_url")
+  // D7 (2026-10-07): the small JPEG variant of the cover/logo (`<key>.thumb.jpg`, photo-thumbnail.ts).
+  // Set only once the thumb is written, and only trusted while it is the thumb OF the current key.
+  coverThumbKey  String?          @map("cover_thumb_key")
+  logoThumbKey   String?          @map("logo_thumb_key")
   cuisineTags    String[]         @map("cuisine_tags")
   priceLevel     Int?             @map("price_level")
   // Weekly open/close windows, e.g. {"mon": {"open": "08:00", "close": "22:00"}, ...}. Nullable —
@@ -1318,6 +1322,8 @@ model MerchantDish {
   description     String?
   priceUsd        Decimal          @map("price_usd") @db.Decimal(10, 2)
   photoUrl        String?          @map("photo_url")
+  // D7 (2026-10-07): the dish photo's thumbnail key (see Merchant.coverThumbKey).
+  photoThumbKey   String?          @map("photo_thumb_key")
   isDraft         Boolean          @default(true) @map("is_draft")
   outOfStockUntil DateTime?        @map("out_of_stock_until")
   sortOrder       Int              @default(0) @map("sort_order")

@@ -145,7 +145,7 @@ export function BrowseSearchScreen({ scope, initialQuery = "" }: { scope: Search
     return (
       <Row key={r.id} onPress={() => openVenue(`${base}/${r.id}`)} label={r.name}>
         {/* No kind chip: it doesn't fit a 48px thumb (as ShopSearchScreen). */}
-        <VenueImage photoUrl={r.coverPhotoUrl} name={r.name} kind={null} initialSize={18} style={{ width: 48, height: 48, borderRadius: 12 }} />
+        <VenueImage photoUrl={r.coverThumbUrl ?? r.coverPhotoUrl} fallbackUrl={r.coverPhotoUrl} name={r.name} kind={null} initialSize={18} style={{ width: 48, height: 48, borderRadius: 12 }} />
         <View style={{ flex: 1, minWidth: 0 }}>
           <Marked text={r.name} q={q} style={{ fontSize: 15, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }} />
           {sub ? (
@@ -161,7 +161,7 @@ export function BrowseSearchScreen({ scope, initialQuery = "" }: { scope: Search
 
   const dishHit = (d: SearchItemHit): React.ReactElement => (
     <Row key={`${d.path}:${d.dishId}`} onPress={() => openVenue(d.path)} label={`${d.name}, ${d.merchantName}, ${formatMoney(d.priceUsd)}`}>
-      <VenueImage photoUrl={d.photoUrl} name={d.name} kind={null} initialSize={18} style={{ width: 48, height: 48, borderRadius: 12 }} />
+      <VenueImage photoUrl={d.thumbUrl ?? d.photoUrl} fallbackUrl={d.photoUrl} name={d.name} kind={null} initialSize={18} style={{ width: 48, height: 48, borderRadius: 12 }} />
       <View style={{ flex: 1, minWidth: 0 }}>
         <Marked text={d.name} q={q} style={{ fontSize: 15, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }} />
         <Text numberOfLines={1} style={{ fontSize: 12.5, color: tokens.color.muted }}>

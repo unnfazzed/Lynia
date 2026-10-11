@@ -320,4 +320,5 @@ export const NON_PII_COLUMNS: Readonly<Record<string, string>> = {
   "merchants.cover_photo_url": "Merchant.coverPhotoUrl is the shop's public cover banner (D-30) — a storefront photo of the business, not of or about a person.",
   "merchant_dishes.description": "MerchantDish.description is the menu-item description on the public menu — business content, not personal data.",
   "merchant_dishes.photo_url": "MerchantDish.photoUrl is the dish's own menu photo (D-31/D-32) — a photo of food, not of or about a person.",
+  "merchant_dishes.photo_thumb_key": "MerchantDish.photoThumbKey is the object key of that same menu photo's small variant (D7, 2026-10-07) — a photo of food, not of or about a person.",
 } as const;
