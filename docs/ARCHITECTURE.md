@@ -1270,7 +1270,7 @@ require the `admin` role.
 | `POST /orders/:id/rating` | Lifecycle | Customer rates → `completed` |
 | `POST /orders/:id/sender-rating` | Lifecycle | Rider rates the sender (recorded-only, rider-journey 4·7) |
 | `POST /orders/:id/delivery-code/reveal` | Lifecycle | Customer reads the current delivery code (D2: same code every call/device, no rotation) |
-| `POST /orders/:id/delivery-code/rotate` | Lifecycle | Customer re-issues delivery code (explicit only: the lockout re-issue, U04; capped per order at `HANDOVER_CODE_MAX_REISSUES`, resets the tries only on a lockout) |
+| `POST /orders/:id/delivery-code/rotate` | Lifecycle | Customer re-issues delivery code — only a LOCKED code (the lockout re-issue, U04; capped per order at `HANDOVER_CODE_MAX_REISSUES`, resets the tries); while unlocked it returns the current code like reveal (a stale second device or an old build never kills the code). The merchant booking's "Send a new code" is the one unlocked replace (keeps the tries) |
 | `POST /orders/:id/cancel` | Lifecycle | Either party cancels (rider = strike) |
 | `POST /orders/:orderId/issues` | Issues | Party-facing "get help with this trip" (A-05) |
 | `POST /orders/:orderId/report` | Reports | Report the order counterparty after a trip (A-05 adjacent) |

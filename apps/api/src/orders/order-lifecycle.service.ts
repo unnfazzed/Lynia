@@ -1033,7 +1033,9 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       }
 
       const claimed = await tx.order.updateMany({
-        where: { id: orderId, status: order.status },
+        // D2 second review F6: pinned on the delivery code read above too, so a rider-bail clone carries the
+        // code the customer was actually shown — a re-issue landing in between makes this a retry instead.
+        where: { id: orderId, status: order.status, otpHash: order.otpHash },
         data: { status: "cancelled", cancelledAt: new Date(), cancelledBy: callerId, cancelReason: reason ?? null },
       });
       if (claimed.count === 0) throw new ConflictException("Order changed, retry");
@@ -1467,18 +1469,23 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
    *
    *  D2 review (2026-10-11): only a LOCKOUT re-issue (every try used) resets the tries, and an order gets at
    *  most HANDOVER_CODE_MAX_REISSUES of those — otherwise a rider could cycle 5 guesses → re-issue → 5 more
-   *  for ever. Past the cap: 409 `code_reissue_limit` (support / not delivered from there). A rotate while
-   *  the code is NOT locked (an older app fetching its code this way) gives a new code but keeps the tries,
-   *  so it buys no guesses.
+   *  for ever. Past the cap: 409 `code_reissue_limit` (support / not delivered from there).
+   *
+   *  A rotate while the code is NOT locked mints nothing (second review F1, 2026-10-11): it returns the
+   *  CURRENT code, exactly as {@link revealDeliveryCode}. Two callers send one: a second device whose
+   *  snapshot still shows the lock another device has just re-issued, and older app builds that rotate on
+   *  every open — a fresh code there would kill the one the recipient already holds. The only unlocked
+   *  "new code" is the merchant booking's explicit "Send a new code" (`opts.replace`), which keeps the tries.
    *
    *  CAS-guarded on the observed status like every sibling transition in this file — without it, a rotate
    *  that read a valid status can still land its write after a concurrent confirmDelivery has already moved
    *  the order to `delivered` — and on the hash it replaces (plus, for a lockout re-issue, the lock and the
    *  re-issue count it read), so two devices re-issuing on the same lock produce ONE new code: the loser is
    *  handed the winner's code. */
-  async rotateDeliveryCode(orderId: string, customerId: string): Promise<{ deliveryCode: string }> {
+  async rotateDeliveryCode(orderId: string, customerId: string, opts: { replace?: boolean } = {}): Promise<{ deliveryCode: string }> {
     const order = await this.codeOrderForCustomer(orderId, customerId);
     const locked = order.deliveryOtpAttempts >= DELIVERY_OTP_MAX_ATTEMPTS;
+    if (!locked && !opts.replace) return this.currentCodeFor(orderId, order);
     if (locked && order.deliveryCodeReissues >= HANDOVER_CODE_MAX_REISSUES) {
       throw new ConflictException({
         reason: "code_reissue_limit",
@@ -1510,7 +1517,14 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
    * after a lockout is the explicit, capped rotate.
    */
   async revealDeliveryCode(orderId: string, customerId: string): Promise<{ deliveryCode: string }> {
-    const order = await this.codeOrderForCustomer(orderId, customerId);
+    return this.currentCodeFor(orderId, await this.codeOrderForCustomer(orderId, customerId));
+  }
+
+  /** The reveal itself, on an order {@link codeOrderForCustomer} has already guarded. */
+  private async currentCodeFor(
+    orderId: string,
+    order: { status: OrderStatus; otpHash: string | null; otpCipher: string | null },
+  ): Promise<{ deliveryCode: string }> {
     const stored = openHandoverCode(this.codeCrypto, this.tokens, "delivery", orderId, order.otpCipher, order.otpHash);
     if (stored) return { deliveryCode: stored };
     const minted = await this.mintDeliveryCode(orderId, order.status, { replacesHash: order.otpHash, lockoutReissues: null });

@@ -176,10 +176,12 @@ function press(t: renderer.ReactTestRenderer, label: string | RegExp): void {
 }
 
 let active: renderer.ReactTestRenderer | null = null;
+let lastClient: QueryClient | null = null;
+
 async function render(food: MerchantOrderResponse, snap: OrderSnapshot): Promise<renderer.ReactTestRenderer> {
   mockGetFoodOrder.mockResolvedValue(food);
   mockGetOrder.mockResolvedValue(snap);
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false, gcTime: 0 } } });
+  const client = (lastClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false, gcTime: 0 } } }));
   let tree!: renderer.ReactTestRenderer;
   await act(async () => {
     tree = renderer.create(
@@ -510,6 +512,32 @@ describe("merchant order — one order screen (D-59)", () => {
     expect(mockReveal).not.toHaveBeenCalled();
     expect(has(t, msg)).toBe(true);
     expect(has(t, "Delivery code")).toBe(false);
+  });
+
+  // D2 second review F3: a non-cap failure used to clear the lock key and bump a settle counter that re-ran
+  // the effect at once — a request loop at network speed. Now it waits for a LATER snapshot and a back-off.
+  it("U04: a failed re-issue (5xx) is not retried until a later snapshot after the back-off — then once", async () => {
+    const { ApiError } = jest.requireActual("../../../src/api/client") as typeof import("../../../src/api/client");
+    mockRotate.mockRejectedValueOnce(new ApiError(503, "Service unavailable"));
+    await render(
+      foodOrder({ status: "en_route_dropoff", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003", customerCashConfirmedAt: iso(-60_000), riderCashConfirmedAt: iso(-30_000) }),
+      snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, deliveryOtpAttempts: 5, codeRotatedAt: iso(-600_000), rider: { profileId: "r", currentLat: -17.83, currentLng: 31.05, updatedAt: iso(-2_000) } }),
+    );
+    for (let i = 0; i < 20; i++) await act(async () => new Promise((r) => setTimeout(r, 0)));
+    expect(mockRotate).toHaveBeenCalledTimes(1);
+
+    // A later snapshot, past the back-off: one more try.
+    const now = Date.now();
+    const clock = jest.spyOn(Date, "now").mockReturnValue(now + 61_000);
+    try {
+      await act(async () => {
+        await lastClient!.refetchQueries();
+      });
+      for (let i = 0; i < 6; i++) await act(async () => new Promise((r) => setTimeout(r, 0)));
+      expect(mockRotate).toHaveBeenCalledTimes(2);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   // ── round 3: per service, scheduled, Rx (README "Per service", BRIEF §12–13) ──

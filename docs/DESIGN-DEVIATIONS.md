@@ -5086,3 +5086,33 @@ decides."*
   action lives. The console's dispute page is not a gallery screen.
 - **Upstream:** the handoffs should draw the door card during the ride and a K5c variant for a cancel after pickup.
   Reported upstream; the kit is not edited here.
+
+## D-89 · Hand-over codes past the re-issue cap: the server's message in the drawn toast — APPROVED (owner decisions D2 + D6, 2026-10-07)
+
+**Owner decision D2 (reviewed list 2026-10-07, C7):** *"Yes: store them encrypted next to the hash. Reveal is
+idempotent. Rotate happens only on an explicit tap or a lockout re-issue."* The security review of that change capped
+the lockout re-issue at `HANDOVER_CODE_MAX_REISSUES` (2) per order and per code, so a rider can't buy 5 more guesses
+for ever. **Owner decision D6:** *"Copy fixes only. Skip new UI."* — copy shown through an existing drawn element is
+allowed; no new element.
+
+After Send v2 (`handoff/after-send-v2/`, D-53) and Order flow v2 (`handoff/order-flow-v2/`, D-59) draw no state for a
+code the rider has locked, and none for the moment the server refuses a further re-issue (2.14 "Getting your code…"
+says "No Re-issue"; the re-issue itself stays automatic, U04). So past the cap the apps say so through the toast they
+already draw, with no new element:
+
+- **Customer, parcel order screen (After Send v2):** the drawn bottom toast shows the API's 409 message verbatim, as
+  the order screens already do for every 4xx — **"Too many wrong tries on this code. Call LyniaGo support to finish
+  this delivery."** (`code_reissue_limit`, `OrderLifecycleService.rotateDeliveryCode`) — with the drawn **"Call
+  support"** action (`A.callSupport`). It is a phone call to the support line (`dial(SOS_POLICY.safetyLine)`, 077 883
+  1938, the same number as the WhatsApp support chat) because After Send v2 draws "Call support" as a Phone button
+  (`design/as-screens.jsx:230`, `S.call` with `icon="Phone"`; the Help panel's `A.support` row is also a Phone row,
+  `as-screens.jsx:132`), and the app already routes both there. No Try again (no new code can come), and the code card
+  drops back out instead of staying on "Getting your code…".
+- **Customer, restaurant / shop / pharmacy order screen (Order flow v2):** the same 409 message in the drawn order
+  toast, once, with no action (that screen's help route is the drawn T16a Get help panel, unchanged).
+- **Merchant web (Merchant v2) pickup code:** the server refuses with **"The rider used every try on this code. Call
+  LyniaGo support to hand this order over."** (`pickup_code_reissue_limit`, `FoodOrderService.revealPickupCode`). The
+  hand-over screen shows no code (the dead one is hidden) and stops asking; the order goes through the drawn "Problem
+  with this order?" pill. No new element.
+- **Upstream:** the handoffs should draw a locked-code state and the past-cap state on both sides (and decide whether a
+  "Send a new code" button belongs on the customer's card). Reported upstream; the kit is not edited here.

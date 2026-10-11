@@ -240,10 +240,12 @@ export class MerchantBookingService {
     return this.detail(access, orderId);
   }
 
-  /** "Send a new code": Send's rotation, which replaces the old code (any member, any time before delivery). */
+  /** "Send a new code": Send's rotation, which replaces the old code (any member, any time before delivery).
+   *  An explicit tap, so it asks for a fresh code even while the code isn't locked (`replace`, D2 second
+   *  review F1); the customer rotate route only re-issues a LOCKED code. */
   async rotateCode(access: MerchantAccess, orderId: string): Promise<RotateMerchantBookingCodeResponse> {
     const { accountId } = await this.ownedBooking(access, orderId);
-    return this.lifecycle.rotateDeliveryCode(orderId, accountId);
+    return this.lifecycle.rotateDeliveryCode(orderId, accountId, { replace: true });
   }
 
   /**

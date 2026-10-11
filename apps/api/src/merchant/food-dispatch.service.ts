@@ -700,9 +700,15 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
   async dropDispatch(orderId: string, riderId: string): Promise<{ orderId: string; status: "requested" }> {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, orderType: "merchant", riderId },
-      select: { status: true, merchantPhase: true, dispatchExcludedRiderIds: true, merchantId: true },
+      select: { status: true, merchantPhase: true, dispatchExcludedRiderIds: true, merchantId: true, pickupCodeAttempts: true },
     });
     if (!order) throw new NotFoundException("Order not found");
+    // D2 second review F2: a rider who spent tries on the pickup code and then drops must not hand the next
+    // rider fresh guesses at the SAME code (colluding accounts: 15 + 5×N). So if any try was spent, the drop
+    // mints a NEW pickup code (hash + AAD-bound ciphertext) with the tries at 0 — not a lockout re-issue, so
+    // not counted. With no try spent the code and its tries stay as they are (the counter may be reading it).
+    const spentTries = (order.pickupCodeAttempts ?? 0) > 0;
+    const pickupCode = spentTries ? this.tokens.randomPickupCode() : null;
     const droppable = new Set(["assigned", "confirmed", "en_route_pickup"]);
     if (!droppable.has(order.status)) {
       throw new ConflictException("This job can't be dropped anymore — the food is already with you");
@@ -716,7 +722,8 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       const claimed = await tx.order.updateMany({
         // Guarded on the phase read above too: a kitchen marking a still-cooking order ready in between
         // must not be overwritten back to `preparing`.
-        where: { id: orderId, status: order.status, riderId, merchantPhase: order.merchantPhase },
+        // …and on the pickup tries read with it, so a guess landing in between isn't carried or lost.
+        where: { id: orderId, status: order.status, riderId, merchantPhase: order.merchantPhase, pickupCodeAttempts: order.pickupCodeAttempts },
         data: {
           status: "requested",
           // MJ-RM1: a rider found early drops while the kitchen is still cooking — it keeps cooking, and
@@ -726,9 +733,13 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
           otpHash: null,
           otpCipher: null,
           deliveryOtpAttempts: 0,
-          // D2 review: the pickup code stays (the counter may already be reading it out), but the dropped
-          // rider's spent tries don't carry over to the next rider. Lockout re-issues stay counted per order.
-          pickupCodeAttempts: 0,
+          ...(pickupCode
+            ? {
+                pickupCodeHash: this.tokens.hash(pickupCode),
+                pickupCodeCipher: sealHandoverCode(this.codeCrypto, "pickup", orderId, pickupCode),
+                pickupCodeAttempts: 0,
+              }
+            : {}),
           dispatchExcludedRiderIds: excluded,
           dispatchAttempt: 0,
           dispatchStartedAt: null,

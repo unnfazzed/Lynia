@@ -443,7 +443,8 @@ function ParcelOrderScreen(): React.ReactElement {
     mutationFn: () => revealDeliveryCode(orderId),
     onMutate: () => ({ epoch: codeEpoch.current }),
     onSuccess: (res, _v, ctx) => {
-      if (ctx?.epoch === codeEpoch.current) adoptCode(res.deliveryCode);
+      // Second review F5: also not while a re-issue is in flight (a Try again racing it) — its code wins.
+      if (ctx?.epoch === codeEpoch.current && !rotatePending.current) adoptCode(res.deliveryCode);
     },
     onError: (_e, _v, ctx) => {
       if (ctx?.epoch !== codeEpoch.current) return;
@@ -452,6 +453,18 @@ function ParcelOrderScreen(): React.ReactElement {
   });
   // U04: the explicit re-issue — only when the rider's tries ran out (see the lockout effect below).
   const reissuedFor = useRef<string | null>(null);
+  const rotatePending = useRef(false);
+  // Second review F4: a re-issue that failed (not the cap) leaves the lock "handled" and the read blocked
+  // (a locked code is never read), so without this the card sat on "Getting your code…". Coming back to
+  // the app or a status change forgets that attempt, and the lockout effect tries once more.
+  const reissueFailed = useRef(false);
+  const [reissueRetry, setReissueRetry] = useState(0);
+  useEffect(() => {
+    if (!reissueFailed.current) return;
+    reissueFailed.current = false;
+    reissuedFor.current = null;
+    setReissueRetry((n) => n + 1);
+  }, [foregroundTick, status]);
   // A re-match lands on a new order id on this same screen: its code is asked for afresh.
   useEffect(() => {
     codeAskedFor.current = null;
@@ -462,19 +475,26 @@ function ParcelOrderScreen(): React.ReactElement {
     mutationFn: () => rotateDeliveryCode(orderId),
     onMutate: () => {
       codeEpoch.current += 1;
+      rotatePending.current = true;
+      reissueFailed.current = false;
+    },
+    onSettled: () => {
+      rotatePending.current = false;
     },
     onSuccess: (res) => adoptCode(res.deliveryCode),
     // Not re-armed by itself (a locked code must not loop on a failing rotate): the toast's Try again retries.
     onError: (e) => {
       // D2 review: the server caps lockout re-issues per order (HANDOVER_CODE_MAX_REISSUES). Past it no new
       // code can come, so no Try again and no "Getting your code…" card: the server's message (shown
-      // verbatim, like other 4xx) and the drawn "Call support" action (A.callSupport → the safety line, as on
-      // the undelivered screen).
+      // verbatim, like other 4xx; ledger D-89) and the drawn "Call support" action. After Send v2 draws that
+      // button as a phone call (design/as-screens.jsx:230, `S.call` + Phone), so it dials the support line,
+      // exactly as the undelivered bar's "Call support" and the Help panel's support row already do.
       if (e instanceof ApiError && e.code === "code_reissue_limit") {
         setCodeWanted(false);
         showToast({ text: e.message, action: A.callSupport, onAction: () => dial(SOS_POLICY.safetyLine), ttl: 0 });
         return;
       }
+      reissueFailed.current = true;
       showToast({ text: A.sendFail, action: A.tryAgain, actionIcon: "refresh-cw", onAction: () => rotateM.mutate(), ttl: 0 });
     },
   });
@@ -762,7 +782,7 @@ function ParcelOrderScreen(): React.ReactElement {
     setDeliveryCode(null); // the dead code isn't shown while the new one is issued
     setCodeWanted(true);
     rotate();
-  }, [live, isRiderViewer, saved, codeRestored, online, order?.orderType, lockKey, rotate, codeBusy]);
+  }, [live, isRiderViewer, saved, codeRestored, online, order?.orderType, lockKey, rotate, codeBusy, reissueRetry]);
 
   // ── Back: close a panel → collapse a full sheet → leave ──
   const leave = useCallback(() => (router.canGoBack() ? router.back() : goHomeClearingStack(router)), [router]);

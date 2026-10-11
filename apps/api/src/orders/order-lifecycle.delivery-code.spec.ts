@@ -161,10 +161,34 @@ describe("OrderLifecycleService.revealDeliveryCode / rotateDeliveryCode — D2",
     await expect(h.svc.rotateDeliveryCode(ORDER, "c1")).rejects.toMatchObject({ response: { reason: "code_reissue_limit" } });
   });
 
-  it("a rotate while the code is NOT locked (an older app fetching its code) gives a new code but keeps the tries", async () => {
+  // Second review F1: an unlocked rotate must not kill the code the recipient already holds.
+  it("an old-client rotate-on-open (code not locked) returns the CURRENT code — nothing minted, written, stamped or emitted", async () => {
     const h = codeHarness({ ...sealed("418290"), deliveryOtpAttempts: 3 });
-    const { deliveryCode } = await h.svc.rotateDeliveryCode(ORDER, "c1");
+    expect(await h.svc.rotateDeliveryCode(ORDER, "c1")).toEqual({ deliveryCode: "418290" });
+    expect(h.writes).toEqual([]);
+    expect(h.stamps).toEqual([]);
+    expect(h.emits).toEqual([]);
+    expect(h.row.deliveryOtpAttempts).toBe(3);
+    expect(h.row.deliveryCodeReissues).toBe(0);
+  });
+
+  it("F1: a second device on a stale (locked) snapshot rotating after the first re-issued gets the SAME re-issued code", async () => {
+    const h = codeHarness({ ...sealed("418290"), deliveryOtpAttempts: 5 });
+    const a = await h.svc.rotateDeliveryCode(ORDER, "c1"); // device A: the lockout re-issue
+    expect(a.deliveryCode).not.toBe("418290");
+    expect(h.row.deliveryOtpAttempts).toBe(0);
+    const b = await h.svc.rotateDeliveryCode(ORDER, "c1"); // device B still saw 5 tries
+    expect(b).toEqual(a);
+    expect(h.writes).toHaveLength(1);
+    expect(h.row.deliveryCodeReissues).toBe(1);
+    expect(h.row.otpHash).toBe(tokens.hash(a.deliveryCode));
+  });
+
+  it("F1: the merchant booking's explicit \"Send a new code\" (replace) still mints while unlocked, keeping the tries", async () => {
+    const h = codeHarness({ ...sealed("418290"), deliveryOtpAttempts: 3 });
+    const { deliveryCode } = await h.svc.rotateDeliveryCode(ORDER, "c1", { replace: true });
     expect(deliveryCode).not.toBe("418290");
+    expect(h.row.otpHash).toBe(tokens.hash(deliveryCode));
     expect(h.row.deliveryOtpAttempts).toBe(3);
     expect(h.row.deliveryCodeReissues).toBe(0);
   });
@@ -329,12 +353,16 @@ describe("D2 review: code-entry routes are rate-limited per rider", () => {
 });
 
 describe("U22: a rider-bail re-broadcast keeps the trip's delivery code", () => {
-  function bail(src: Record<string, unknown>) {
+  function bail(src: Record<string, unknown>, live: Record<string, unknown> = {}) {
     const created: Array<Record<string, unknown>> = [];
+    // `live` is the row as it stands at the CAS (e.g. a re-issue landed after the cancel's read).
+    const row = { status: "assigned", ...src, ...live } as Record<string, unknown>;
     const h = build({
       order: {
         findUnique: async () => ({ status: "assigned", orderType: "parcel", customerId: "c1", riderId: "r1", collectedAt: null, ...src }),
-        updateMany: async () => ({ count: 1 }),
+        updateMany: async ({ where }: { where: Record<string, unknown> }) => ({
+          count: Object.entries(where).every(([k, v]) => k === "id" || v === undefined || row[k] === v) ? 1 : 0,
+        }),
         create: async (a: { data: Record<string, unknown> }) => {
           created.push(a.data);
           return { id: (a.data.id as string | undefined) ?? "rebroadcast-1" };
@@ -359,6 +387,13 @@ describe("U22: a rider-bail re-broadcast keeps the trip's delivery code", () => 
     expect(clone.otpCipher).not.toBe(source.otpCipher);
     expect(pii.decryptCode(clone.otpCipher as string, `delivery:${clone.id as string}`)).toBe("418290");
     expect(pii.decryptCode(clone.otpCipher as string, `delivery:${ORDER}`)).toBeNull();
+  });
+
+  // D2 second review F6: the clone must carry the code the customer was shown, not one a re-issue replaced.
+  it("a re-issue landing between the cancel's read and its CAS makes the cancel a retry — no clone with a dead code", async () => {
+    const h = bail({ ...sealed("418290"), deliveryCodeRotatedAt: new Date() }, sealed("604117"));
+    await expect(h.svc.cancel(ORDER, "r1")).rejects.toThrow(/order changed, retry/i);
+    expect(h.created).toEqual([]);
   });
 
   it("a legacy hash-only code is not carried (selectOffer then mints a fresh one, the pre-D2 behaviour)", async () => {

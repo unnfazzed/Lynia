@@ -546,6 +546,8 @@ describe("pick, cancel, a new code, try again", () => {
   it("a new code is Send's rotation as the business", async () => {
     const booking = await w.svc.create(OWNER, "owner", form());
     await expect(w.svc.rotateCode(STAFF, booking.id)).resolves.toEqual({ deliveryCode: "105377" });
+    // An explicit "Send a new code" tap: a fresh code even while unlocked (D2 second review F1).
+    expect(w.lifecycle.rotateDeliveryCode).toHaveBeenCalledWith(booking.id, expect.any(String), { replace: true });
   });
 
   it("try again re-sends an expired booking's details from the current pin, at a raised fare if asked", async () => {

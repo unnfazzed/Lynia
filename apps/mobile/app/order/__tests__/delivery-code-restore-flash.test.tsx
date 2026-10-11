@@ -68,8 +68,12 @@ jest.mock("../../../src/api/offers", () => ({
 jest.mock("../../../src/realtime/use-order-socket", () => ({
   useOrderSocket: () => ({ connected: false }),
 }));
+// The screen's "came back to the app" callback, so a test can fire it.
+let mockForeground: (() => void) | null = null;
 jest.mock("../../../src/realtime/use-foreground-refetch", () => ({
-  useForegroundRefetch: () => undefined,
+  useForegroundRefetch: (cb: () => void) => {
+    mockForeground = cb;
+  },
 }));
 jest.mock("../../../src/ui/order/OrderMap", () => ({
   OrderMap: () => null,
@@ -146,6 +150,7 @@ function codeShown(tree: renderer.ReactTestRenderer, code: string): boolean {
 }
 
 beforeEach(() => {
+  mockForeground = null;
   releaseCodeRead = null;
   rejectCodeRead = null;
   mockGetOrder.mockReset();
@@ -337,6 +342,81 @@ describe("delivery code — D2 (U20 failed read, U04 lockout re-issue)", () => {
     expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Call support" && typeof n.props.onPress === "function").length).toBeGreaterThan(0);
     expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Try again" && typeof n.props.onPress === "function")).toHaveLength(0);
     expect(mockRevealDeliveryCode).not.toHaveBeenCalled();
+  });
+
+  // Second review F4: a failed re-issue (not the cap) left the lock "handled" while a locked code is never
+  // read — the card sat on "Getting your code…" for good. Coming back to the app tries once more.
+  it("a failed re-issue is retried when the customer comes back to the app, and the new code shows", async () => {
+    mockGetOrder.mockResolvedValue(assignedOrder({ deliveryOtpAttempts: 5, codeRotatedAt: "2026-10-07T09:00:00.000Z" }));
+    mockRotateDeliveryCode.mockRejectedValueOnce(new Error("timeout")).mockResolvedValueOnce({ deliveryCode: "604117" });
+
+    const tree = await render();
+    await act(async () => {
+      releaseCodeRead?.("482913");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await settle();
+    await settle();
+    expect(mockRotateDeliveryCode).toHaveBeenCalledTimes(1);
+    await settle();
+    expect(mockRotateDeliveryCode).toHaveBeenCalledTimes(1); // no loop on its own
+
+    await act(async () => {
+      mockForeground?.();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await settle();
+    await settle();
+
+    expect(mockRotateDeliveryCode).toHaveBeenCalledTimes(2);
+    expect(codeShown(tree, "604117")).toBe(true);
+    expect(mockRevealDeliveryCode).not.toHaveBeenCalled();
+  });
+
+  // Second review F5: a Try again on a failed read, tapped while a lockout re-issue is in flight, must not
+  // land the old (dead) code.
+  it("a read answered while a re-issue is in flight is dropped; the re-issued code shows", async () => {
+    mockGetOrder.mockResolvedValue(assignedOrder({ deliveryOtpAttempts: 0, codeRotatedAt: "2026-10-07T09:00:00.000Z" }));
+    mockRevealDeliveryCode.mockRejectedValueOnce(new Error("timeout"));
+    let releaseRotate: ((v: { deliveryCode: string }) => void) | null = null;
+    mockRotateDeliveryCode.mockImplementation(() => new Promise((resolve) => (releaseRotate = resolve)));
+
+    const tree = await render();
+    await act(async () => {
+      releaseCodeRead?.(null);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await settle();
+    expect(mockRevealDeliveryCode).toHaveBeenCalledTimes(1);
+    const tryAgain = tree.root.findAll((n) => n.props.accessibilityLabel === "Try again" && typeof n.props.onPress === "function");
+    expect(tryAgain.length).toBeGreaterThan(0);
+
+    // The rider burns the last try: the re-issue starts and is still out.
+    const locked = assignedOrder({ deliveryOtpAttempts: 5, codeRotatedAt: "2026-10-07T09:00:00.000Z" });
+    mockGetOrder.mockResolvedValue(locked);
+    await act(async () => {
+      lastClient!.setQueryData(["order", "order-1"], locked);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await settle();
+    expect(mockRotateDeliveryCode).toHaveBeenCalledTimes(1);
+
+    // The customer taps the old Try again; the read answers with the old code before the re-issue lands.
+    mockRevealDeliveryCode.mockResolvedValueOnce({ deliveryCode: "482913" });
+    await act(async () => {
+      tryAgain[0]!.props.onPress();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await settle();
+    expect(mockRevealDeliveryCode).toHaveBeenCalledTimes(2);
+    expect(codeShown(tree, "482913")).toBe(false);
+
+    await act(async () => {
+      releaseRotate?.({ deliveryCode: "604117" });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await settle();
+    expect(codeShown(tree, "604117")).toBe(true);
   });
 
   it("a code that isn't locked is never re-issued, however many snapshots arrive", async () => {
