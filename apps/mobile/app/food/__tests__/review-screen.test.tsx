@@ -708,7 +708,7 @@ describe("Reviewed list 2026-10-07 — Review & place (wave 4, lane B)", () => {
     const sent = mockPlace.mock.calls[0]![1];
     // The customer changes the basket (the key would change with it) and places again.
     mockCart.cart = { ...mockCart.cart, lines: [{ ...GAVA[0]!, quantity: 3 }, { ...GAVA[1]! }] };
-    const rerender = (): void =>
+    const rerender = (): void => {
       act(() =>
         t.update(
           <SafeAreaProvider initialMetrics={TEST_METRICS}>
@@ -716,6 +716,7 @@ describe("Reviewed list 2026-10-07 — Review & place (wave 4, lane B)", () => {
           </SafeAreaProvider>,
         ),
       );
+    };
     rerender();
     // The server answers this time — a definitive "no" (4xx).
     mockPlace.mockRejectedValueOnce(new ApiError(409, "Sadza & beef stew just sold out."));
