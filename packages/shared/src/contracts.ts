@@ -15,6 +15,7 @@ export const OFFER_WINDOW_MS = 90_000;
  * the caller's namespace is refused at the edge: a leading `/`, `..`, `//`, `\`, `%` (pre-encoded
  * escapes) and control characters. The API also checks the exact minted shape and the owner.
  */
+// oxlint-disable-next-line no-control-regex -- control characters are exactly what this refuses
 export const SAFE_OBJECT_KEY_RE = /^(?!\/)(?!.*\.\.)(?!.*\/\/)[^\\%\u0000-\u001f\u007f]+$/;
 export const UploadObjectKey = z.string().min(1).max(256).regex(SAFE_OBJECT_KEY_RE, "Invalid photo key");
 
