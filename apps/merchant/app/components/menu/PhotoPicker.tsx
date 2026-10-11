@@ -1,17 +1,19 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { compressImage, MAX_DIMENSION_BY_KIND, type CropRect } from "../../lib/image-compress";
 import { mintBannerPhotoUpload, mintDishPhotoUpload, uploadPhotoBlob } from "../../lib/menu-api";
 import { useVocabulary } from "../../lib/vocabulary";
 import { ghostButtonStyle } from "../queue/styles";
 import { PhotoCropSheet } from "./PhotoCropSheet";
 
-type Status = { kind: "idle" } | { kind: "compressing" } | { kind: "uploading" } | { kind: "error"; message: string; retryFile: File; retryCrop?: CropRect };
-
-/** The only two formats the compress/upload path handles. Mirrors the input's `accept`, which is
- *  advisory only — every OS file dialog offers an "All files" escape — so this is the real check. */
-const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png"];
+/** A failed run keeps what it needs to go again: the chosen file and its framing and, once compressed,
+ *  the compressed bytes, so Retry only re-mints and re-PUTs (MJ-RL21) instead of re-decoding the photo. */
+type Status =
+  | { kind: "idle" }
+  | { kind: "compressing" }
+  | { kind: "uploading" }
+  | { kind: "error"; message: string; retryFile: File; retryCrop?: CropRect; retryBlob?: Blob };
 
 /**
  * D-32 "we compress on the merchant's behalf and say so" + D-31's REQUIRED dish photo. Uploads
@@ -22,6 +24,11 @@ const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png"];
  * M4·6/M5·2: choosing a file now opens the reposition frame (`PhotoCropSheet`) before anything is
  * compressed or uploaded — cancelling there uploads nothing at all. The crop it returns is a real
  * source-pixel rectangle handed to `compressImage`, replacing the automatic centre crop.
+ *
+ * MJ-RM11 / MJ-RM17 (2026-10-07): the form's Save used to stay live while the photo was still on its way,
+ * so a dish saved without the photo the merchant was looking at. `onBusy` reports the shrink + upload, and
+ * the form holds its Save until it settles. MJ-RL21: the PUT gives up after 60 s and Retry reuses the
+ * compressed bytes. MJ-RL14: any image the browser can decode is taken (a phone's WebP or HEIC too).
  *
  * Still flagged: no reboot-surviving offline upload queue. A failed upload (network drop mid-PUT)
  * surfaces a Retry button and keeps the chosen file AND its framing in memory for this session, but a
@@ -38,6 +45,7 @@ export function PhotoPicker({
   required,
   disabled,
   onUploaded,
+  onBusy,
 }: {
   kind: "dish" | "banner" | "logo";
   aspect: number;
@@ -47,26 +55,34 @@ export function PhotoPicker({
   shopName?: string;
   required?: boolean;
   disabled?: boolean;
-  onUploaded: (key: string) => void;
+  /** The storage key to save, and a local preview of what was uploaded (MJ-RM14: the shop front's
+   *  "What customers see" card shows the new photo, not the saved one). */
+  onUploaded: (key: string, previewUrl: string) => void;
+  /** True while a photo is being shrunk or uploaded (MJ-RM11 / MJ-RM14 / MJ-RM17). */
+  onBusy?: (busy: boolean) => void;
 }) {
   const v = useVocabulary();
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [cropping, setCropping] = useState<File | null>(null);
-  // A rejected file type never reaches `status`, which is keyed to the compress/upload lifecycle.
-  const [typeError, setTypeError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  async function runUpload(file: File, crop?: CropRect) {
-    setStatus({ kind: "compressing" });
+  async function runUpload(file: File, crop?: CropRect, compressed?: Blob) {
     let blob: Blob;
-    try {
-      blob = await compressImage(file, { maxBytes, aspect, maxDimension: MAX_DIMENSION_BY_KIND[kind], crop });
-    } catch (err) {
-      setStatus({ kind: "error", message: err instanceof Error ? err.message : "Couldn't prepare that photo.", retryFile: file, retryCrop: crop });
-      return;
+    let preview = previewUrl;
+    if (compressed) {
+      blob = compressed;
+    } else {
+      setStatus({ kind: "compressing" });
+      try {
+        blob = await compressImage(file, { maxBytes, aspect, maxDimension: MAX_DIMENSION_BY_KIND[kind], crop });
+      } catch (err) {
+        setStatus({ kind: "error", message: err instanceof Error ? err.message : "Couldn't prepare that photo.", retryFile: file, retryCrop: crop });
+        return;
+      }
+      preview = URL.createObjectURL(blob);
+      setPreviewUrl(preview);
     }
-    setPreviewUrl(URL.createObjectURL(blob));
     setStatus({ kind: "uploading" });
     try {
       // The logo shares the banner's mint endpoint (same size budget, same guard chain) — the backend
@@ -74,13 +90,19 @@ export function PhotoPicker({
       const target = kind === "dish" ? await mintDishPhotoUpload() : await mintBannerPhotoUpload();
       await uploadPhotoBlob(target.uploadUrl, blob, target.headers);
       setStatus({ kind: "idle" });
-      onUploaded(target.key);
+      onUploaded(target.key, preview ?? "");
     } catch (err) {
-      setStatus({ kind: "error", message: err instanceof Error ? err.message : "Upload failed.", retryFile: file, retryCrop: crop });
+      setStatus({ kind: "error", message: err instanceof Error ? err.message : "Upload failed.", retryFile: file, retryCrop: crop, retryBlob: blob });
     }
   }
 
   const busy = status.kind === "compressing" || status.kind === "uploading";
+  const onBusyRef = useRef(onBusy);
+  onBusyRef.current = onBusy;
+  useEffect(() => {
+    onBusyRef.current?.(busy);
+  }, [busy]);
+
   const showUrl = previewUrl ?? currentUrl;
   const frameHeight = aspect >= 2 ? 100 : 140;
 
@@ -126,21 +148,15 @@ export function PhotoPicker({
       <input
         ref={inputRef}
         type="file"
-        accept="image/jpeg,image/png"
+        // MJ-RL14: any image. The upload is always re-encoded to JPEG, so the only real test is whether
+        // this browser can decode the file: the crop frame says so when it can't ("That file couldn't be
+        // opened as a photo…"), and the compress step's own error covers the rest.
+        accept="image/*"
         style={{ display: "none" }}
         onChange={(e) => {
           const file = e.target.files?.[0];
           e.target.value = "";
           if (!file) return;
-          // `accept` is advisory only — every OS file dialog lets you switch to "All files" — so the
-          // picked type is checked here rather than trusted. Anything that isn't one of the two formats
-          // the upload path actually supports is refused with a reason, instead of being object-URL'd
-          // into the crop frame where it would silently fail to decode and show an empty box.
-          if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
-            setTypeError("That file isn't a JPEG or PNG — pick one of those and we'll frame it.");
-            return;
-          }
-          setTypeError(null);
           // M4·6/M5·2: frame it first — nothing is compressed or uploaded until the crop is confirmed.
           setCropping(file);
         }}
@@ -157,16 +173,12 @@ export function PhotoPicker({
         </button>
       </div>
 
-      {typeError && (
-        <div style={{ marginTop: 8, fontSize: 12.5, color: "var(--danger-ink)", lineHeight: 1.4 }}>{typeError}</div>
-      )}
-
       {status.kind === "error" && (
         <div style={{ marginTop: 8, fontSize: 12.5, color: "var(--danger-ink)", lineHeight: 1.4 }}>
           {status.message}{" "}
           <button
             type="button"
-            onClick={() => void runUpload(status.retryFile, status.retryCrop)}
+            onClick={() => void runUpload(status.retryFile, status.retryCrop, status.retryBlob)}
             style={{ fontWeight: 700, color: "var(--danger-ink)", background: "none", border: "none", textDecoration: "underline", cursor: "pointer", padding: 0 }}
           >
             Retry

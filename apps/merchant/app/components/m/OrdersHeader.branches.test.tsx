@@ -57,8 +57,18 @@ describe("B1 / D1 header · branches (ledger D-51)", () => {
   });
 
   it("staff never see the chevron", () => {
-    list.branches = [branch("m1"), branch("m2")];
+    list.branches = [
+      { ...branch("m1"), role: "staff" },
+      { ...branch("m2"), role: "staff" },
+    ];
     render(<OrdersHeader merchant={merchant({ myRole: "staff" })} open={open} disabled={false} />);
     expect(screen.queryByRole("button", { name: "Sadza Republic" })).toBeNull();
+  });
+
+  it("MJ-RM16: an owner who handed this branch over (Staff here, owner of another) keeps the chevron", () => {
+    list.branches = [{ ...branch("m1"), role: "staff" }, branch("m2")];
+    render(<OrdersHeader merchant={merchant({ myRole: "staff" })} open={open} disabled={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "Sadza Republic" }));
+    expect(screen.getByRole("dialog").textContent).toBe("Your branches");
   });
 });

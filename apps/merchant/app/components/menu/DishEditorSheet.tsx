@@ -17,7 +17,8 @@ const MAX_DISH_PHOTO_BYTES = 300 * 1024;
 
 export interface DishSave {
   name: string;
-  description?: string;
+  /** MJ-RL12: null clears an existing dish's description (an edit only — a new dish just omits it). */
+  description?: string | null;
   priceUsd: number;
   categoryId: string;
   photoUrl?: string;
@@ -60,9 +61,13 @@ export function DishEditorSheet({
   const pharmacy = business?.businessType === "shop" && business.shopKind === "pharmacy";
   const rxOn = useRxEnabled(pharmacy);
   const [rxRequired, setRxRequired] = useState(dish?.rxRequired === true);
+  // MJ-RM11: Save waits for a photo still on its way, or the dish saves without it.
+  const [photoBusy, setPhotoBusy] = useState(false);
 
   const price = parseAmountInput(priceText, DISH_PRICE_MAX_USD);
-  const canSave = name.trim().length > 0 && price != null && !!categoryId && !disabled && !submitting;
+  const canSave = name.trim().length > 0 && price != null && !!categoryId && !disabled && !submitting && !photoBusy;
+  // MJ-H3: with no photo the dish saves as a hidden draft, and the button says so (DESIGN-DEVIATIONS D-91).
+  const noPhoto = !photoKey && !dish?.photoUrl;
   // "Saved, but customers can't see it yet" is about a saved draft — never a new dish not saved yet
   // (E2E 2026-10-05 P-3: it read beside a failed first save).
   const isDraft = dish != null && (dish.isDraft ?? (!photoKey && !dish.photoUrl));
@@ -148,7 +153,7 @@ export function DishEditorSheet({
                   price != null &&
                   onSave({
                     name: name.trim(),
-                    description: description.trim() || undefined,
+                    description: description.trim() || (dish?.description ? null : undefined),
                     priceUsd: price,
                     categoryId,
                     photoUrl: photoKey ?? undefined,
@@ -157,7 +162,7 @@ export function DishEditorSheet({
                 }
                 style={{ ...primaryButtonStyle, flex: 1, opacity: canSave ? 1 : 0.5 }}
               >
-                {submitting ? "Saving…" : "Save changes"}
+                {submitting ? "Saving…" : noPhoto ? "Save as draft" : "Save changes"}
               </button>
             </div>
 
@@ -173,7 +178,8 @@ export function DishEditorSheet({
             )}
           </div>
 
-          <div className="kitchen-aside" style={{ width: 260 }}>
+          {/* MJ-H3: stacked on a phone, the required photo comes first, above Save (`kitchen-aside-first`). */}
+          <div className="kitchen-aside kitchen-aside-first" data-testid="dish-photo-slot" style={{ width: 260 }}>
             {/* M4·5 labels the slot, with REQUIRED beside it (r-merchant.jsx:1134-1136 — the pill
              *  itself lives in PhotoPicker). */}
             <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--muted)", marginBottom: 8 }}>{v.item.toUpperCase()} PHOTO</div>
@@ -188,6 +194,7 @@ export function DishEditorSheet({
                 setPhotoKey(key);
                 setPhotoPreviewUrl(null);
               }}
+              onBusy={setPhotoBusy}
             />
             <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.45, marginTop: 10 }}>{v.itemPhotoNote}</div>
           </div>

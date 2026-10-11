@@ -6,7 +6,7 @@ import MenuPage from "./page";
 import { ToastProvider } from "../../components/m/Toast";
 import { ApiError } from "../../lib/api-client";
 import { clearBusinessCache, primeBusiness } from "../../lib/business";
-import { clearDishOutOfStock, createCategory, deleteCategory, deleteDish, listCategories, listDishes, setDishOutOfStock, updateCategory, updateDish } from "../../lib/menu-api";
+import { clearDishOutOfStock, createCategory, createDish, deleteCategory, deleteDish, listCategories, listDishes, setDishOutOfStock, updateCategory, updateDish } from "../../lib/menu-api";
 import { merchantProfile } from "../../testing/fixtures";
 
 vi.mock("../../lib/menu-api", () => ({
@@ -222,7 +222,8 @@ describe("the dish editor (E2E 2026-10-05 P-2, P-3)", () => {
     vi.mocked(updateDish).mockRejectedValue(new ApiError(400, "priceUsd: Too big: expected number to be <=1000", undefined, true));
     render(<Page />);
     fireEvent.click(await screen.findByRole("button", { name: "Edit Sadza" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    // MJ-H3: a dish with no photo saves as a draft, and the button says so.
+    fireEvent.click(screen.getByRole("button", { name: "Save as draft" }));
     expect(await screen.findByText("Something went wrong — try again.")).toBeTruthy();
     expect(screen.queryByText(/priceUsd/)).toBeNull();
   });
@@ -237,6 +238,71 @@ describe("the dish editor (E2E 2026-10-05 P-2, P-3)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add a dish" }));
     expect(screen.getByText("DISH PHOTO")).toBeTruthy();
     expect(screen.queryByText(/Saved, but customers can.t see it yet/)).toBeNull();
+  });
+});
+
+describe("the editors can take a value away (MJ-RM10, MJ-RL12)", () => {
+  it("MJ-RM10: turning a category's time window off removes it (null), so its dishes sell all day again", async () => {
+    vi.mocked(listCategories).mockResolvedValue([category({ dishCount: 0, availableFrom: "07:00", availableTo: "11:00" })]);
+    vi.mocked(listDishes).mockResolvedValue([]);
+    vi.mocked(updateCategory).mockResolvedValue(category());
+    render(<Page />);
+    fireEvent.contextMenu(await screen.findByRole("tab", { name: "Mains 0" }));
+    fireEvent.click(screen.getByRole("button", { name: "Only available at certain times" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(updateCategory).toHaveBeenCalledWith("c1", { name: "Mains", availableFrom: null, availableTo: null, hidden: false }));
+  });
+
+  it("MJ-RM10: a category that never had a window sends nothing about one, and a new one never sends null", async () => {
+    vi.mocked(listCategories).mockResolvedValue([category({ dishCount: 0 })]);
+    vi.mocked(listDishes).mockResolvedValue([]);
+    vi.mocked(updateCategory).mockResolvedValue(category());
+    render(<Page />);
+    fireEvent.contextMenu(await screen.findByRole("tab", { name: "Mains 0" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(updateCategory).toHaveBeenCalledWith("c1", { name: "Mains", hidden: false }));
+  });
+
+  it("MJ-RL12: clearing a dish's description saves null, which removes it", async () => {
+    vi.mocked(listCategories).mockResolvedValue([category()]);
+    vi.mocked(listDishes).mockResolvedValue([dish({ outOfStock: false, description: "Soft and white", photoUrl: "https://img/x.jpg" })]);
+    vi.mocked(updateDish).mockResolvedValue(dish());
+    render(<Page />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Sadza" }));
+    fireEvent.change(screen.getByDisplayValue("Soft and white"), { target: { value: "  " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(updateDish).toHaveBeenCalled());
+    expect(vi.mocked(updateDish).mock.calls[0]![1]).toMatchObject({ description: null });
+  });
+
+  it("MJ-RL12: a new dish with no description just leaves it out", async () => {
+    vi.mocked(listCategories).mockResolvedValue([category()]);
+    vi.mocked(listDishes).mockResolvedValue([]);
+    vi.mocked(createDish).mockResolvedValue(dish());
+    render(<Page />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add a dish" }));
+    const sheet = screen.getByText("DISH PHOTO").closest(".kitchen-sheet") as HTMLElement;
+    const [nameField, , priceField] = within(sheet).getAllByRole("textbox");
+    fireEvent.change(nameField!, { target: { value: "Rice" } });
+    fireEvent.change(priceField!, { target: { value: "2" } });
+    fireEvent.click(within(sheet).getByRole("button", { name: "Save as draft" }));
+    await waitFor(() => expect(createDish).toHaveBeenCalled());
+    expect(vi.mocked(createDish).mock.calls[0]![0].description).toBeUndefined();
+  });
+});
+
+describe("MJ-H3: the dish editor on a phone", () => {
+  it("the photo slot leads the stacked layout, and Save names a draft honestly until a photo is there", async () => {
+    vi.mocked(listCategories).mockResolvedValue([category()]);
+    vi.mocked(listDishes).mockResolvedValue([dish({ outOfStock: false, photoUrl: "https://img/x.jpg" })]);
+    render(<Page />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add a dish" }));
+    expect(screen.getByTestId("dish-photo-slot").className).toContain("kitchen-aside-first");
+    expect(screen.getByRole("button", { name: "Save as draft" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    // A dish that has its photo keeps "Save changes".
+    fireEvent.click(screen.getByRole("button", { name: "Edit Sadza" }));
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeTruthy();
   });
 });
 

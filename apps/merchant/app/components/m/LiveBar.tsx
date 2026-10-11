@@ -2,8 +2,11 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
+import { bookingsAvailable } from "../../lib/booking";
+import { useBusiness } from "../../lib/business";
 import { formatCountdown, msUntil } from "../../lib/countdown";
 import { liveBar, type LiveBarView } from "../../lib/orders-view";
+import { useBookings } from "../../lib/use-bookings";
 import { useNow } from "../../lib/use-now";
 import { useVocabulary } from "../../lib/vocabulary";
 import { Icon } from "../icons";
@@ -15,11 +18,16 @@ import { useKitchenConnection } from "../KitchenConnectionProvider";
  * rider at the counter is never hidden. Tapping it opens that order. It reads the shell's one queue poll
  * (C20, `KitchenConnectionProvider`) — the same copy as the Orders home; the alarm and the ringing screen
  * are the shell's, so this bar neither polls nor rings by itself any more.
+ *
+ * MJ-RM5: a shop's own rider bookings are read too (the board's `useBookings`, as Orders reads them), so
+ * riders' offers running out and a booked rider at the counter show on every tab.
  */
 export function LiveBar({ onShown }: { onShown?: (shown: boolean) => void }) {
   const { queue } = useKitchenConnection();
   const v = useVocabulary();
-  const view = liveBar(queue.orders, v);
+  const business = useBusiness();
+  const { bookings } = useBookings(business?.businessType === "shop" && bookingsAvailable(business));
+  const view = liveBar(queue.orders, v, bookings);
 
   useEffect(() => {
     onShown?.(view !== null);

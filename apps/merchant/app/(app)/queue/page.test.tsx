@@ -8,7 +8,7 @@ import { TOAST_MS, ToastProvider } from "../../components/m/Toast";
 import { ApiError, getMyMerchant } from "../../lib/api-client";
 import { setBusyMode, setOpen } from "../../lib/menu-api";
 import { acceptOrder, cancelPreparing, confirmKitchen, getTodayKpis, listScheduledOrders, proposeSubstitution, rejectOrder } from "../../lib/orders-api";
-import { merchantOrder, merchantProfile, RIDER } from "../../testing/fixtures";
+import { merchantBooking, merchantOrder, merchantProfile, RIDER } from "../../testing/fixtures";
 
 vi.mock("../../lib/api-client", async () => {
   const actual = await vi.importActual<typeof import("../../lib/api-client")>("../../lib/api-client");
@@ -25,6 +25,8 @@ vi.mock("../../lib/orders-api", () => ({
   getTodayKpis: vi.fn(),
 }));
 vi.mock("../../lib/business", () => ({ primeBusiness: vi.fn(), useBusiness: () => null }));
+const bk = vi.hoisted(() => ({ bookings: [] as import("@lynia/shared").MerchantBookingResponse[] }));
+vi.mock("../../lib/use-bookings", () => ({ useBookings: () => ({ bookings: bk.bookings, loaded: true, error: null, reload: async () => {} }) }));
 
 // One router object for the whole run: the page's load callback depends on it.
 const { replace } = vi.hoisted(() => ({ replace: vi.fn() }));
@@ -92,6 +94,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   reachable = true;
+  bk.bookings = [];
 });
 
 describe("loading the Orders home", () => {
@@ -245,6 +248,16 @@ describe("B1 · Orders home (merchant mobile, D-48)", () => {
     expect(await screen.findByText("All quiet for now")).toBeTruthy();
     expect(screen.getByText("You're open. New orders ring here with sound, so keep the volume up.")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Check your menu" }).getAttribute("href")).toBe("/menu");
+  });
+
+  it("MJ-RM4: a live shop whose only booking has ended still gets K1c, not a blank board", async () => {
+    vi.mocked(getMyMerchant).mockResolvedValue(
+      kitchen({ businessType: "shop", shopKind: "auto_parts", location: { point: { lat: -17.83, lng: 31.05 }, landmark: "Mbare", contactPhone: "+263771234567" } }),
+    );
+    bk.bookings = [merchantBooking({ state: "cancelled", cancelledBy: "business", createdAt: new Date(Date.now() - 3600_000).toISOString() })];
+    render(<Page />);
+    expect(await screen.findByText("All quiet for now")).toBeTruthy();
+    expect(screen.getAllByRole("link", { name: "Book a rider" }).some((a) => a.getAttribute("href") === "/deliveries/new")).toBe(true);
   });
 
   it("a new business ops haven't switched on is 'Almost ready', not 'You're open' (E2E 2026-10-05 FS-4)", async () => {

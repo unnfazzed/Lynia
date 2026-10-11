@@ -76,8 +76,9 @@ export function OrdersHeader({
   const shop = merchant.businessType === "shop";
   const [summary, setSummary] = useState<MerchantTodayKpisResponse | null>(null);
   const [sheet, setSheet] = useState(false);
-  const branches = useBranches(owner);
-  const chevron = showBranchChevron(merchant, branches.length);
+  // MJ-RM16: everyone's branch list, so a handed-over owner working here as Staff can get back.
+  const branches = useBranches(true);
+  const chevron = showBranchChevron(merchant, branches);
   const notLive = showNotLiveHome(merchant);
   const closed = open.status.closedByHand && !notLive;
   const kpis = owner && !shop && !closed && !notLive;

@@ -1,5 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { dayKeyFor, formatWindow, isValidWindow, rightNowStatus, type PartialMerchantHours } from "./hours";
+import { asSameEveryDay, crossesMidnight, DAY_KEYS, dayKeyFor, formatWindow, isValidWindow, noOpenDay, rightNowStatus, type PartialMerchantHours } from "./hours";
+
+describe("C13 = MJ-RH3 + MJ-RM9: the form's week from saved hours", () => {
+  const W = { open: "09:00", close: "17:00" };
+  it("only never-saved hours (null) start from 08:00–22:00 every day", () => {
+    expect(asSameEveryDay(null)).toEqual({ window: { open: "08:00", close: "22:00" }, days: [...DAY_KEYS] });
+  });
+  it("a saved week with no open day is every day off, not every day open", () => {
+    expect(asSameEveryDay({})).toEqual({ window: { open: "08:00", close: "22:00" }, days: [] });
+  });
+  it("a saved week keeps its days", () => {
+    expect(asSameEveryDay({ mon: W, fri: W })).toEqual({ window: W, days: ["mon", "fri"] });
+  });
+  it("noOpenDay is a week the server reads as closed every day", () => {
+    expect(noOpenDay({})).toBe(true);
+    expect(noOpenDay({ sun: W })).toBe(false);
+  });
+});
+
+describe("MJ-RL13: crossesMidnight", () => {
+  it("is a close at or before the open, like 18:00 to 02:00", () => {
+    expect(crossesMidnight({ open: "18:00", close: "02:00" })).toBe(true);
+    expect(crossesMidnight({ open: "18:00", close: "18:00" })).toBe(true);
+    expect(crossesMidnight({ open: "18:00", close: "23:59" })).toBe(false);
+  });
+});
 
 describe("dayKeyFor", () => {
   it("maps JS Sunday (0) to sun and Monday (1) to mon", () => {

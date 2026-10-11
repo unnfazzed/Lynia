@@ -1,7 +1,8 @@
-import { RESTAURANTS_TIMING, type MerchantOrderResponse, type MerchantProfileResponse } from "@lynia/shared";
+import { RESTAURANTS_TIMING, type MerchantBookingResponse, type MerchantOrderResponse, type MerchantProfileResponse } from "@lynia/shared";
 import { dayKeyFor, DAY_KEYS, type PartialMerchantHours } from "./hours";
 import { countOf, type Vocabulary } from "./vocabulary";
 import { groupQueue, isNoRiderHold, isReadyBucket, needsKitchenConfirm } from "./order-groups";
+import { bookingHref } from "./routes";
 
 /**
  * The merchant mobile Orders screens' logic (packages/design/handoff/merchant-mobile B1–B7, ledger
@@ -280,18 +281,29 @@ export function ringDeadline(o: Pick<MerchantOrderResponse, "autoAccepted" | "ki
  * highest-priority state — a new order ringing, a rider at the counter (only once `riderArrivedAt` is
  * set), waiting for the customer's OK, or the counts with the next ready time. Hidden with nothing live.
  * `v` is the vocabulary (its "Cooking" / "Packing" and the dish / item count).
+ *
+ * MJ-RM5 (2026-10-07): a shop's own rider bookings count too (BRIEF T1: "so a rider at the counter is
+ * never hidden"), ranked as K1 ranks them: a booked rider at the counter with the orders' one, then riders'
+ * offers about to expire (S1's "Car battery · 3 riders offered" / "Pick one before the offers expire",
+ * with the offers' countdown), each opening that booking; a booking on its way joins "on the way".
  */
-export function liveBar(orders: readonly MerchantOrderResponse[], v: Vocabulary): LiveBarView | null {
+export function liveBar(orders: readonly MerchantOrderResponse[], v: Vocabulary, bookings: readonly MerchantBookingResponse[] = []): LiveBarView | null {
   const s = homeSections(orders);
   const making = v.making.toLowerCase();
   const ringing = s.new.find((o) => o.merchantPhase === "awaiting_accept" || needsKitchenConfirm(o));
   const answering = s.new.find((o) => o.merchantPhase === "awaiting_item_approval");
   const counter = s.ready.find((o) => o.riderId && o.riderArrivedAt && riderFirstName(o));
+  const live = bookings.filter((b) => !b.rebroadcastedToId);
+  const bookedAtCounter = live.find((b) => b.state === "coming" && b.riderArrivedAt);
+  const offered = live
+    .filter((b) => (b.state === "finding" || b.state === "finding_again") && b.offerCount > 0)
+    .sort((a, b) => (a.expiresAt ? Date.parse(a.expiresAt) : Infinity) - (b.expiresAt ? Date.parse(b.expiresAt) : Infinity))[0];
   const onTheWay = s.outForDelivery.filter((o) => o.status !== "delivered" && o.status !== "completed" && !isGoodsReturn(o));
+  const bookedOnTheWay = live.filter((b) => b.state === "picked_up").length;
   const counts = [
     s.cooking.length > 0 ? `${s.cooking.length} ${making}` : null,
     s.ready.length > 0 ? `${s.ready.length} ready` : null,
-    onTheWay.length > 0 ? `${onTheWay.length} on the way` : null,
+    onTheWay.length + bookedOnTheWay > 0 ? `${onTheWay.length + bookedOnTheWay} on the way` : null,
   ].filter((c): c is string => c !== null);
   const countLine = counts.length > 0 ? counts.join(" · ") : null;
   if (ringing) {
@@ -305,6 +317,19 @@ export function liveBar(orders: readonly MerchantOrderResponse[], v: Vocabulary)
   }
   if (counter) {
     return { kind: "counter", title: `${counter.rider!.firstName} is at your counter`, sub: countLine, deadline: null, href: `/queue#o-${counter.id}` };
+  }
+  const bookedRider = bookedAtCounter?.rider?.name.trim().split(/\s+/)[0];
+  if (bookedAtCounter && bookedRider) {
+    return { kind: "counter", title: `${bookedRider} is at your counter`, sub: countLine, deadline: null, href: bookingHref(bookedAtCounter.id) };
+  }
+  if (offered) {
+    return {
+      kind: "waiting",
+      title: `${offered.itemsSummary} · ${offered.offerCount} rider${offered.offerCount === 1 ? "" : "s"} offered`,
+      sub: "Pick one before the offers expire",
+      deadline: offered.expiresAt ?? null,
+      href: bookingHref(offered.id),
+    };
   }
   if (answering) {
     const round = answering.substitution?.status === "open" ? answering.substitution : null;

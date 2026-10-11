@@ -106,6 +106,13 @@ describe("MerchantService.becomeMerchant (L1 self-serve sign-up)", () => {
     expect(res.myName).toBe("Farai Moyo");
   });
 
+  it("MJ-RH3 (C13): stores 08:00–22:00 every day, the hours the form shows, instead of null (open 24/7)", async () => {
+    const h = harness();
+    await h.s.becomeMerchant("p1", body());
+    const W = { open: "08:00", close: "22:00" };
+    expect(h.merchant()!.hours).toEqual({ mon: W, tue: W, wed: W, thu: W, fri: W, sat: W, sun: W });
+  });
+
   it("fills an EMPTY profile name from 'Your name' (first word, then the rest)", async () => {
     const h = harness();
     await h.s.becomeMerchant("p1", body());

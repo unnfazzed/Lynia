@@ -10,6 +10,8 @@ import { RetryableError } from "../../components/RetryableError";
 import { cardStyle, primaryButtonStyle } from "../../components/queue/styles";
 import { AppBar } from "../../components/m/AppBar";
 import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
+import { refreshBranches } from "../../lib/branches";
+import { primeBusiness } from "../../lib/business";
 import { getMerchantProfile, updateProfile } from "../../lib/menu-api";
 import { vocabulary } from "../../lib/vocabulary";
 
@@ -33,6 +35,19 @@ export default function ShopPage() {
   const [priceLevel, setPriceLevel] = useState<number | null>(null);
   const [coverKey, setCoverKey] = useState<string | undefined>(undefined);
   const [logoKey, setLogoKey] = useState<string | undefined>(undefined);
+  // MJ-RM14: the "What customers see" card previews a cover that was uploaded but not saved yet.
+  const [coverPreview, setCoverPreview] = useState<string | null>(null);
+  // MJ-RM14: Save waits for a cover or logo still on its way, so it can't go out without it.
+  const [coverBusy, setCoverBusy] = useState(false);
+  const [logoBusy, setLogoBusy] = useState(false);
+  // MJ-RM14: "Saved" is about the form as it stands — any edit or upload after a save takes it down.
+  const [dirty, setDirty] = useState(false);
+  const edit =
+    <T,>(set: (value: T) => void) =>
+    (value: T) => {
+      set(value);
+      setDirty(true);
+    };
 
   const refresh = useCallback(() => {
     setState({ status: "loading" });
@@ -59,6 +74,7 @@ export default function ShopPage() {
     if (!t || tags.length >= 3 || tags.includes(t)) return;
     setTags([...tags, t.slice(0, 24)]);
     setTagDraft("");
+    setDirty(true);
   }
 
   async function onSave() {
@@ -74,8 +90,15 @@ export default function ShopPage() {
         ...(logoKey ? { logoUrl: logoKey } : {}),
       });
       setState({ status: "ready", profile });
+      // MJ-RL19: Account, the team's invite message and the branch list read the business from these
+      // shared copies; a rename has to reach them, not just this page.
+      const renamed = state.status === "ready" && state.profile.name !== profile.name;
+      primeBusiness(profile);
+      if (renamed) void refreshBranches();
       setCoverKey(undefined);
       setLogoKey(undefined);
+      setCoverPreview(null);
+      setDirty(false);
       setSavedTick((t) => t + 1);
     } catch (err) {
       if (redirectIfSessionExpired(err, signOut)) return;
@@ -86,6 +109,7 @@ export default function ShopPage() {
   }
 
   const disabled = actionsDisabled || saving;
+  const uploading = coverBusy || logoBusy;
   // A shop's own words (merchant web upgrade L2, D-44); a restaurant's are the drawn M5 copy.
   const v = state.status === "ready" ? vocabulary(state.profile.businessType, state.profile.shopKind) : vocabulary(null);
 
@@ -124,7 +148,12 @@ export default function ShopPage() {
                       currentUrl={state.profile.coverPhotoUrl}
                       shopName={name}
                       disabled={disabled}
-                      onUploaded={setCoverKey}
+                      onUploaded={(key, preview) => {
+                        setCoverKey(key);
+                        setCoverPreview(preview || null);
+                        setDirty(true);
+                      }}
+                      onBusy={setCoverBusy}
                     />
                   </div>
                   <div style={{ width: 140, maxWidth: "100%" }}>
@@ -136,7 +165,11 @@ export default function ShopPage() {
                       currentUrl={state.profile.logoUrl}
                       shopName={name}
                       disabled={disabled}
-                      onUploaded={setLogoKey}
+                      onUploaded={(key) => {
+                        setLogoKey(key);
+                        setDirty(true);
+                      }}
+                      onBusy={setLogoBusy}
                     />
                   </div>
                 </div>
@@ -145,11 +178,11 @@ export default function ShopPage() {
 
                 <label style={labelStyle}>
                   Shop name
-                  <input value={name} onChange={(e) => setName(e.target.value)} maxLength={120} style={inputStyle} disabled={disabled} />
+                  <input value={name} onChange={(e) => edit(setName)(e.target.value)} maxLength={120} style={inputStyle} disabled={disabled} />
                 </label>
                 <label style={labelStyle}>
                   One line customers read
-                  <input value={description} onChange={(e) => setDescription(e.target.value)} maxLength={500} style={inputStyle} disabled={disabled} />
+                  <input value={description} onChange={(e) => edit(setDescription)(e.target.value)} maxLength={500} style={inputStyle} disabled={disabled} />
                 </label>
 
                 <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
@@ -175,7 +208,7 @@ export default function ShopPage() {
                           {t}
                           <button
                             type="button"
-                            onClick={() => setTags(tags.filter((x) => x !== t))}
+                            onClick={() => edit(setTags)(tags.filter((x) => x !== t))}
                             disabled={disabled}
                             style={{ border: "none", background: "none", cursor: "pointer", color: "var(--accent-text)", fontWeight: 800 }}
                           >
@@ -209,7 +242,7 @@ export default function ShopPage() {
                           key={level}
                           type="button"
                           disabled={disabled}
-                          onClick={() => setPriceLevel(level)}
+                          onClick={() => edit(setPriceLevel)(level)}
                           style={{
                             flex: 1,
                             minHeight: 40,
@@ -232,10 +265,15 @@ export default function ShopPage() {
                 {saveError && <div style={{ fontSize: 13, color: "var(--danger-ink)", marginTop: 12, fontWeight: 700 }}>{saveError}</div>}
 
                 <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16, flexWrap: "wrap" }}>
-                  <button type="button" disabled={disabled || !name.trim()} onClick={onSave} style={{ ...primaryButtonStyle, opacity: disabled || !name.trim() ? 0.5 : 1 }}>
+                  <button
+                    type="button"
+                    disabled={disabled || uploading || !name.trim()}
+                    onClick={onSave}
+                    style={{ ...primaryButtonStyle, opacity: disabled || uploading || !name.trim() ? 0.5 : 1 }}
+                  >
                     {saving ? "Saving…" : "Save changes"}
                   </button>
-                  {savedTick > 0 && !saving && <span style={{ fontSize: 12.5, color: "var(--accent-text)", fontWeight: 700 }}>Saved</span>}
+                  {savedTick > 0 && !saving && !dirty && <span style={{ fontSize: 12.5, color: "var(--accent-text)", fontWeight: 700 }}>Saved</span>}
                 </div>
               </div>
 
@@ -243,9 +281,9 @@ export default function ShopPage() {
                 <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--muted)", marginBottom: 8 }}>WHAT CUSTOMERS SEE</div>
                 <div style={{ ...cardStyle, padding: 0, overflow: "hidden" }}>
                   <div style={{ height: 78, background: "var(--surface)", position: "relative" }}>
-                    {state.profile.coverPhotoUrl && (
+                    {(coverPreview ?? state.profile.coverPhotoUrl) && (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={state.profile.coverPhotoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      <img src={(coverPreview ?? state.profile.coverPhotoUrl)!} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                     )}
                   </div>
                   <div style={{ padding: "24px 14px 14px" }}>

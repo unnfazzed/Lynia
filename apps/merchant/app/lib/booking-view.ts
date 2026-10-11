@@ -13,11 +13,17 @@ export function shortName(name: string | null | undefined): string | null {
   return last ? `${first} ${last.charAt(0).toUpperCase()}.` : first;
 }
 
-/** Bookings worth a tracker: live ones, and ones that ended in the last day (so a delivery can be
- *  opened for its result). A booking Send re-sent after its rider cancelled lives on as the new one. */
+/** Bookings worth a tracker: live ones, ones that ended in the last day (so a delivery can be opened for
+ *  its result), and — MJ-RL4 — a delivered one whose cash is still due, however old: the board's CASH TO
+ *  COME BACK row is the only way to confirm that cash. A booking Send re-sent after its rider cancelled
+ *  lives on as the new one. */
 export function trackedBookings(bookings: readonly MerchantBookingResponse[], now: number): MerchantBookingResponse[] {
   const day = 24 * 60 * 60 * 1000;
-  return bookings.filter((b) => !b.rebroadcastedToId && (isLiveBooking(b.state) || now - new Date(b.createdAt).getTime() < day));
+  return bookings.filter(
+    (b) =>
+      !b.rebroadcastedToId &&
+      (isLiveBooking(b.state) || (b.state === "delivered" && b.cashOnDelivery?.status === "due") || now - new Date(b.createdAt).getTime() < day),
+  );
 }
 
 export interface Tracker {

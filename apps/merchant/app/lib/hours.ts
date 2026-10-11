@@ -61,18 +61,49 @@ export interface SameEveryDay {
   days: DayKey[];
 }
 
-/** C5 opens on "Same every day" when every open day shares one window (or none is set), else "Per day". */
+/** The form's starting window: for hours that were never saved, and for a day switched on. */
+export const DEFAULT_WINDOW: MerchantHoursWindow = { open: "08:00", close: "22:00" };
+
+/** C5 opens on "Same every day" when every open day shares one window (or none is set), else "Per day".
+ *  MJ-RH3 / MJ-RM9 (C13): only hours that were never saved (null) start from 08:00–22:00 every day; a
+ *  saved week with no open day shows every day off, as the server reads it (closed every day). */
 export function asSameEveryDay(hours: PartialMerchantHours | null): SameEveryDay | null {
-  const open = DAY_KEYS.filter((d) => hours?.[d]);
-  if (open.length === 0) return { window: { open: "08:00", close: "22:00" }, days: [...DAY_KEYS] };
+  if (hours === null) return { window: { ...DEFAULT_WINDOW }, days: [...DAY_KEYS] };
+  const open = DAY_KEYS.filter((d) => hours[d]);
+  if (open.length === 0) return { window: { ...DEFAULT_WINDOW }, days: [] };
   const first = hours![open[0]!]!;
   const same = open.every((d) => hours![d]!.open === first.open && hours![d]!.close === first.close);
   return same ? { window: { ...first }, days: open } : null;
 }
 
+/** MJ-RM9: a week with no open day. The server stores it as closed every day, for good — the Closed
+ *  switch is the way to close for a while, so the hours form refuses it. */
+export function noOpenDay(hours: PartialMerchantHours): boolean {
+  return DAY_KEYS.every((d) => !hours[d]);
+}
+
+/** MJ-RL13: a day whose closing time is at or before its opening time — "18:00 to 02:00". The hours
+ *  are one window a day that ends by midnight, so the form says so rather than a bare "must be before". */
+export function crossesMidnight(window: MerchantHoursWindow): boolean {
+  return window.close <= window.open;
+}
+
 export function fromSameEveryDay({ window, days }: SameEveryDay): PartialMerchantHours {
   return Object.fromEntries(days.map((d) => [d, { ...window }])) as PartialMerchantHours;
 }
+
+/** DESIGN-DEVIATIONS D-91 (owner decision D6: copy only, through the screen's own lines). C5 draws none of
+ *  these states. */
+export const HOURS_COPY = {
+  /** MJ-RH3: hours never saved — the server reads that as open around the clock. */
+  notSet: "Not set yet, so customers can order at any time. Check these hours and tap Save hours.",
+  /** MJ-RM9: a week with no open day is stored as closed for good. */
+  noOpenDay: "Turn on at least one day. To close for a while, switch to Closed on Orders.",
+  /** MJ-RL13: one window a day, ending by midnight. */
+  pastMidnight: "Hours can't run past midnight. Close at 23:59 at the latest.",
+  /** The drawn-era line for a mistyped time (unchanged). */
+  badTime: "Times are 24-hour, like 08:00, and the opening time must be before the closing time.",
+} as const;
 
 /** "M T W T F S S" — the days-open chips. */
 export const DAY_INITIALS: Record<DayKey, string> = { mon: "M", tue: "T", wed: "W", thu: "T", fri: "F", sat: "S", sun: "S" };

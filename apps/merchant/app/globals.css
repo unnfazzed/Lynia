@@ -163,6 +163,11 @@ input:focus-visible,
   .kitchen-aside {
     width: 100% !important;
   }
+  /* MJ-H3: a sidebar that holds something the form needs before Save (the dish editor's required
+   * photo) leads the stack instead of trailing it under the buttons. */
+  .kitchen-aside-first {
+    order: -1;
+  }
 
   /* iOS Safari zooms the whole page in when a focused field's text is under 16px. The kit draws
    * these at 14-15px, which is right for the tablet; on a phone the zoom-and-pan that costs is

@@ -61,3 +61,22 @@ describe("uploadPhotoBlob feeds the shared ReachabilityStore (LC-D##)", () => {
     expect(reportUnreachable).not.toHaveBeenCalled();
   });
 });
+
+describe("MJ-RL21: a stalled photo PUT ends instead of spinning for minutes", () => {
+  it("gives the PUT a 60 s deadline", async () => {
+    const { uploadPhotoBlob, PHOTO_UPLOAD_TIMEOUT_MS } = await import("./menu-api");
+    fetchMock.mockResolvedValue({ ok: true, status: 200 } as Response);
+    await uploadPhotoBlob("https://upload", new Blob(["x"]), {});
+    expect(PHOTO_UPLOAD_TIMEOUT_MS).toBe(60_000);
+    expect(fetchMock.mock.calls[0]![1].signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("a PUT that outlives the deadline is aborted and ends in the retryable timeout line", async () => {
+    const { uploadPhotoBlob } = await import("./menu-api");
+    fetchMock.mockImplementation(
+      (_url: string, init: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => init.signal.addEventListener("abort", () => reject(init.signal.reason))),
+    );
+    await expect(uploadPhotoBlob("https://upload", new Blob(["x"]), {}, 20)).rejects.toThrow("The upload timed out — check your connection and try again.");
+  });
+});

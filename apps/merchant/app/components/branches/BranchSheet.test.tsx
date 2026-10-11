@@ -80,6 +80,20 @@ describe("C6 · Branches (ledger D-51)", () => {
     expect((screen.getByRole("button", { name: "Add a branch" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("MJ-RM15: the branch this device shows is current, even when another device made a different one active, and tapping the other switches back", async () => {
+    // Device A shows m2; the server's active branch is m1 (switched on the owner's phone).
+    const here = business({ id: "m2", name: "Sadza Republic · Avondale" });
+    vi.mocked(switchBranch).mockResolvedValue(business());
+    const onClose = open(here);
+    expect(screen.getByRole("button", { name: "Sadza Republic · Avondale, Fife Ave, Avondale, current branch" }).getAttribute("aria-current")).toBe("true");
+    const other = screen.getByRole("button", { name: "Sadza Republic, 5th Street, Mbare" });
+    expect(other.getAttribute("aria-current")).toBeNull();
+    fireEvent.click(other);
+    await vi.waitFor(() => expect(enterBranch).toHaveBeenCalledWith(business(), "Now at Sadza Republic"));
+    expect(switchBranch).toHaveBeenCalledWith("m1");
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it("staff don't get Add a branch", () => {
     open(business({ myRole: "staff" }));
     expect(screen.queryByText("Add a branch")).toBeNull();

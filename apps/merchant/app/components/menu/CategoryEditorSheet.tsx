@@ -8,8 +8,9 @@ import { dangerGhostButtonStyle, ghostButtonStyle, primaryButtonStyle } from "..
 
 export interface CategorySave {
   name: string;
-  availableFrom?: string;
-  availableTo?: string;
+  /** MJ-RM10: null (an edit only) removes the category's time window. */
+  availableFrom?: string | null;
+  availableTo?: string | null;
   hidden?: boolean;
 }
 
@@ -184,8 +185,13 @@ export function CategoryEditorSheet({
             onClick={() =>
               onSave({
                 name: name.trim(),
-                availableFrom: timeLimited ? from : undefined,
-                availableTo: timeLimited ? to : undefined,
+                // MJ-RM10: switching the window off on a category that has one sends null, which removes it
+                // (leaving the fields out kept the old window, so the dishes stayed off sale outside it).
+                ...(timeLimited
+                  ? { availableFrom: from, availableTo: to }
+                  : category?.availableFrom || category?.availableTo
+                    ? { availableFrom: null, availableTo: null }
+                    : {}),
                 ...(category ? { hidden } : {}),
               })
             }

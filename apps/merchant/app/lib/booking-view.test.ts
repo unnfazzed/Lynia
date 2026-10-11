@@ -32,6 +32,20 @@ describe("D1 trackers", () => {
     );
     expect(kept.map((b) => b.id)).toEqual(["a", "c"]);
   });
+
+  it("MJ-RL4: keeps a delivered booking whose cash is still due, however old, so the cash can be confirmed", () => {
+    const now = Date.now();
+    const old = new Date(now - 3 * 86_400_000).toISOString();
+    const due = { amount: "51.00", status: "due", dueAt: old } as never;
+    const kept = trackedBookings(
+      [
+        merchantBooking({ id: "due", state: "delivered", createdAt: old, cashOnDelivery: due }),
+        merchantBooking({ id: "done", state: "delivered", createdAt: old, cashOnDelivery: { amount: "51.00", status: "returned", dueAt: old } as never }),
+      ],
+      now,
+    );
+    expect(kept.map((b) => b.id)).toEqual(["due"]);
+  });
 });
 
 describe("D4 offers", () => {

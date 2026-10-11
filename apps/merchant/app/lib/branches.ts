@@ -15,9 +15,22 @@ export function isLive(b: { pilotEnabled: boolean; businessType: MerchantBusines
   return b.pilotEnabled;
 }
 
-/** The header chevron (README §1): an owner with 2+ branches. Staff never have a second branch. */
-export function showBranchChevron(business: Pick<MerchantProfileResponse, "myRole"> | null, branchCount: number): boolean {
-  return business?.myRole === "owner" && branchCount >= 2;
+/** The header chevron (README §1): an owner with 2+ branches. MJ-RM16: an owner of ANY of them, not only
+ *  of this one — an owner who handed this branch over works in it as Staff and still owns the rest, and the
+ *  chevron is their only way back. Plain staff (no owner row) never get it. */
+export function showBranchChevron(
+  business: Pick<MerchantProfileResponse, "myRole"> | null,
+  branches: readonly Pick<MerchantBranchResponse, "role">[],
+): boolean {
+  if (!business || branches.length < 2) return false;
+  return business.myRole === "owner" || branches.some((b) => b.role === "owner");
+}
+
+/** MJ-RM15: the queue is the server's current branch for this person. When it carries another branch's
+ *  orders, another device switched branch: the id this screen should move to, else null. */
+export function driftedBranchId(orders: readonly { merchantId: string }[], businessId: string | null | undefined): string | null {
+  if (!businessId) return null;
+  return orders.find((o) => o.merchantId !== businessId)?.merchantId ?? null;
 }
 
 /** The Orders home's not-live state (README §5, ledger D-51). E2E 2026-10-05 FS-4 (owner: "Reuse 'Almost

@@ -115,7 +115,8 @@ export default function DeliveriesPage() {
             </p>
           )}
 
-          {state.status === "ready" && shown.length === 0 && (
+          {/* MJ-RM4: empty when the board draws nothing — an ended booking from today used to blank it. */}
+          {state.status === "ready" && board.length === 0 && (
             <div
               style={{
                 display: "flex",

@@ -4,6 +4,7 @@ import { Fragment, useEffect } from "react";
 import { useBranchEpoch } from "../lib/branches";
 import { KitchenConnectionProvider, useKitchenConnection } from "../components/KitchenConnectionProvider";
 import { RingingHost } from "../components/queue/RingingHost";
+import { BranchDriftWatch } from "../components/branches/BranchDriftWatch";
 
 /** Client-side safety net: if the session is cleared while a page is mounted (an API call's
  *  refresh-then-fail path calls clearMerchantSession + signOut already, which redirects — this
@@ -37,7 +38,13 @@ function SessionGuard({ children }: { children: React.ReactNode }) {
  *  screen re-reads its data for the new branch. The provider above it (socket, alarm) stays up. */
 function BranchScope({ children }: { children: React.ReactNode }) {
   const epoch = useBranchEpoch();
-  return <Fragment key={epoch}>{children}</Fragment>;
+  return (
+    <Fragment key={epoch}>
+      {children}
+      {/* MJ-RM15: another device switched this person's branch — follow it. */}
+      <BranchDriftWatch />
+    </Fragment>
+  );
 }
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {

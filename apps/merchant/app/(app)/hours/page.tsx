@@ -14,11 +14,15 @@ import { ApiError, apiErrorMessage, redirectIfSessionExpired } from "../../lib/a
 import { primeBusiness } from "../../lib/business";
 import {
   asSameEveryDay,
+  crossesMidnight,
   DAY_INITIALS,
   DAY_KEYS,
   DAY_LABELS,
+  DEFAULT_WINDOW,
   fromSameEveryDay,
   isValidWindow,
+  HOURS_COPY,
+  noOpenDay,
   type DayKey,
   type PartialMerchantHours,
   type SameEveryDay,
@@ -28,7 +32,6 @@ import { getMerchantProfile, setBusyMode, updateHours } from "../../lib/menu-api
 type LoadState = { status: "loading" } | { status: "ready"; profile: MerchantProfileResponse } | { status: "error"; message: string };
 type Mode = "same" | "per_day";
 
-const DEFAULT_WINDOW = { open: "08:00", close: "22:00" };
 const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 /** C5 draws "08:00" as plain 24-hour text: a phone's own time picker shows "08:00 AM" and a clock in
@@ -79,7 +82,20 @@ export default function HoursPage() {
   }, [refresh]);
 
   const draft = mode === "same" ? fromSameEveryDay(same) : perDay;
-  const allValid = DAY_KEYS.every((d) => !draft[d] || (HM.test(draft[d]!.open) && HM.test(draft[d]!.close) && isValidWindow(draft[d]!)));
+  const typed = DAY_KEYS.every((d) => !draft[d] || (HM.test(draft[d]!.open) && HM.test(draft[d]!.close)));
+  const windowsValid = typed && DAY_KEYS.every((d) => !draft[d] || isValidWindow(draft[d]!));
+  // MJ-RM9: an all-closed week is refused (the Closed switch closes for a while).
+  const noOpen = noOpenDay(draft);
+  const allValid = windowsValid && !noOpen;
+  const hoursProblem = !typed
+    ? HOURS_COPY.badTime
+    : !windowsValid
+      ? DAY_KEYS.some((d) => draft[d] && crossesMidnight(draft[d]!))
+        ? HOURS_COPY.pastMidnight
+        : HOURS_COPY.badTime
+      : noOpen
+        ? HOURS_COPY.noOpenDay
+        : null;
 
   function switchMode(next: Mode) {
     // Carry what's on screen across, so switching never loses an edit.
@@ -138,6 +154,8 @@ export default function HoursPage() {
           {state.status === "ready" && (
             <>
               {staff && <p className="m-hint">Only the owner changes the opening hours. You can turn busy mode on and off.</p>}
+              {/* MJ-RH3: nothing saved yet means open around the clock on the server, not the 08:00–22:00 shown. */}
+              {state.profile.hours == null && !staff && <p className="m-hint">{HOURS_COPY.notSet}</p>}
               <Segmented
                 label="Hours"
                 value={mode}
@@ -196,7 +214,7 @@ export default function HoursPage() {
                   ))}
                 </div>
               )}
-              {!allValid && <div className="m-err">Times are 24-hour, like 08:00, and the opening time must be before the closing time.</div>}
+              {!staff && hoursProblem && <div className="m-err">{hoursProblem}</div>}
 
               <div className="m-card" style={{ flexDirection: "row", alignItems: "center", minHeight: 56, padding: "0 14px" }}>
                 <b style={{ flex: 1, fontSize: 15 }}>Busy mode (+10 min)</b>

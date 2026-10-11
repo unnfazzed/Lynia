@@ -62,6 +62,15 @@ describe("D1 · Shop Orders home (merchant mobile, D-48)", () => {
     expect(screen.getByTestId("kitchen-shell").getAttribute("data-active")).toBe("deliveries");
   });
 
+  it("MJ-RM4: a booking that ended today draws no card, so the empty state shows instead of a blank page", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(merchantProfile({ businessType: "shop", location: PIN }));
+    vi.mocked(listBookings).mockResolvedValue([
+      merchantBooking({ id: "ended", state: "cancelled", cancelledBy: "business", itemsSummary: "Car battery", createdAt: new Date(Date.now() - 3600_000).toISOString() }),
+    ]);
+    render(<Page />);
+    expect(await screen.findByText("No riders booked yet")).toBeTruthy();
+  });
+
   it("with none yet, says so", async () => {
     vi.mocked(getMerchantProfile).mockResolvedValue(merchantProfile({ businessType: "shop", location: PIN }));
     vi.mocked(listBookings).mockResolvedValue([]);

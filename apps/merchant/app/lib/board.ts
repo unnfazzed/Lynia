@@ -220,6 +220,9 @@ function orderCards(
       const due = o.cashDueAt ? new Date(o.cashDueAt) : null;
       const late = due !== null && due.getTime() < now;
       const who = rider ?? "Your rider";
+      // MJ-RL1: goods on their way back are not cash — no dollar figure, the goods noun, and K5c's own
+      // line ("Blessing M. brings it back by 07:58" / "… is bringing it back").
+      const goods = isGoodsReturn(o);
       return {
         section: "cash",
         rank: cashRank(late, due),
@@ -227,10 +230,14 @@ function orderCards(
           key: o.id,
           href,
           tag,
-          title: `${money(owed)} · ${label}`,
+          title: goods ? `${goodsNoun(v)} coming back · ${label}` : `${money(owed)} · ${label}`,
           sub: late
             ? `${who} · was due ${hm(due!.toISOString())}`
-            : [who, o.deliveredAt ? `delivered ${hm(o.deliveredAt)}` : null, due ? `back by ${hm(due.toISOString())}` : null].filter(Boolean).join(" · "),
+            : goods
+              ? due
+                ? `${who} brings it back by ${hm(due.toISOString())}`
+                : `${who} is bringing it back`
+              : [who, o.deliveredAt ? `delivered ${hm(o.deliveredAt)}` : null, due ? `back by ${hm(due.toISOString())}` : null].filter(Boolean).join(" · "),
           subTone: late ? "gold" : undefined,
           cash: { late, phone: o.riderPhone ?? null },
           chevron: !late,
@@ -314,6 +321,12 @@ function bookingCard(b: MerchantBookingResponse, now: number): { section: BoardS
     };
   }
   return null;
+}
+
+/** K5c "Goods coming back" (merchant-v2 README): "Food" for a kitchen, "Goods" for a shop — the noun of
+ *  its `goodsBack` button ("I got the food back" / "I got the goods back"). */
+function goodsNoun(v: Vocabulary): string {
+  return v.goodsBack === "I got the food back" ? "Food" : "Goods";
 }
 
 /** K1b: late rows first, then the rest; the oldest due first within each. */

@@ -142,6 +142,54 @@ describe("C7 · Add a branch (ledger D-51)", () => {
     expect(primary().disabled).toBe(true);
   });
 
+  it("MJ-RL18: one failed number lookup doesn't grey Create out — the tap reads it again and creates", async () => {
+    vi.mocked(getMyAccount).mockRejectedValueOnce(new ApiError(0, "Couldn't reach the server — check the connection and try again."));
+    const created = { ...owner, id: "m2", name: "Sadza Republic · CBD", pilotEnabled: false };
+    vi.mocked(createBranch).mockResolvedValue(created);
+    open();
+    await vi.waitFor(() => expect(getMyAccount).toHaveBeenCalledTimes(1));
+    fireEvent.change(nameField(), { target: { value: "Sadza Republic · CBD" } });
+    fireEvent.click(screen.getByText("Use my current location"));
+    expect(primary().disabled).toBe(false);
+    fireEvent.click(primary());
+    await vi.waitFor(() => expect(enterBranch).toHaveBeenCalledWith(created, "Sadza Republic · CBD is ready"));
+    expect(getMyAccount).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(createBranch).mock.calls[0]![0].location.contactPhone).toBe("+263771234567");
+  });
+
+  it("MJ-RL18: a number that still can't be read is the screen's banner, not a silent grey button", async () => {
+    vi.mocked(getMyAccount).mockRejectedValue(new ApiError(0, "Couldn't reach the server — check the connection and try again."));
+    open();
+    fireEvent.change(nameField(), { target: { value: "Sadza Republic · CBD" } });
+    fireEvent.click(screen.getByText("Use my current location"));
+    fireEvent.click(primary());
+    expect(await screen.findByText(/Couldn't reach the server/)).toBeTruthy();
+    expect(createBranch).not.toHaveBeenCalled();
+  });
+
+  it("MJ-RL18: the number is read again when the connection comes back", async () => {
+    vi.mocked(getMyAccount).mockRejectedValueOnce(new ApiError(0, "offline"));
+    const view = render(
+      <ToastProvider>
+        <AddBranchPage />
+      </ToastProvider>,
+    );
+    await vi.waitFor(() => expect(getMyAccount).toHaveBeenCalledTimes(1));
+    connection.actionsDisabled = true;
+    view.rerender(
+      <ToastProvider>
+        <AddBranchPage />
+      </ToastProvider>,
+    );
+    connection.actionsDisabled = false;
+    view.rerender(
+      <ToastProvider>
+        <AddBranchPage />
+      </ToastProvider>,
+    );
+    await vi.waitFor(() => expect(getMyAccount).toHaveBeenCalledTimes(2));
+  });
+
   it("staff are sent back to Account", () => {
     current.business = { ...owner, myRole: "staff" };
     open();

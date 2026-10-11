@@ -14,7 +14,7 @@ export type MapLinkFetch = (
 function unreadable(): UnprocessableEntityException {
   return new UnprocessableEntityException({
     reason: "unreadable_link",
-    message: "We couldn't read a location from that link. Drop a pin instead.",
+    message: "We couldn't read a location from that link.",
   });
 }
 
@@ -29,7 +29,7 @@ function unreadable(): UnprocessableEntityException {
  *  - at most two hops, each with a 3-second timeout;
  *  - only the `Location` header is read — the body is never downloaded;
  *  - the coordinates come out of the Google Maps URL the redirect lands on.
- * Anything else is a 422 `unreadable_link`, and the business drops a pin instead.
+ * Anything else is a 422 `unreadable_link` (MJ-M15: its message names no control — there is no pin to drop).
  */
 export async function resolveMapLink(text: string, fetchImpl: MapLinkFetch = fetch as unknown as MapLinkFetch): Promise<LatLng> {
   const direct = parseMapLocation(text);

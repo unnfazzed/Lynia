@@ -30,13 +30,23 @@ import { getMerchantProfile, listDishes } from "../../../lib/menu-api";
 import { parseAmountInput } from "../../../lib/money-input";
 import { money } from "../../../lib/orders-view";
 import { formatLocalDigits, localDigits } from "../../../lib/phone-input";
-import { newSessionToken, pinnedLine, type PlaceSuggestion, resolvePlace, reverseGeocode, searchPlaces } from "../../../lib/places";
+import { newSessionToken, pinnedLine, placesEnabled, type PlaceSuggestion, resolvePlace, reverseGeocode, searchPlaces } from "../../../lib/places";
 import { bookingHref } from "../../../lib/routes";
 
 type Gate = { status: "loading" } | { status: "ready"; business: MerchantProfileResponse; pickup: LatLng } | { status: "no_pin" } | { status: "error"; message: string };
 type Sheet = null | "items" | "type";
 
 const UNREADABLE_LINK = "We couldn't read a location from that link. Search for the street instead.";
+/** MJ-M15 (DESIGN-DEVIATIONS D-91): without a Places key typing an address finds nothing, so the field says
+ *  what does work — the location the buyer sent — and an unreadable link doesn't send them to a search. */
+const NO_SEARCH_HINT = "Paste the location the buyer sent you, like a Google Maps or WhatsApp location link.";
+const UNREADABLE_LINK_NO_SEARCH = "We couldn't read a location from that link. Ask the buyer to send their location again.";
+/** MJ-RL8 (D-91): the item list didn't load — not "No items yet." */
+const ITEMS_LOAD_FAILED = "Couldn't load your items.";
+
+function unreadableLink(): string {
+  return placesEnabled() ? UNREADABLE_LINK : UNREADABLE_LINK_NO_SEARCH;
+}
 /** A typed short link is resolved once typing stops; a paste lands whole, so it resolves right after. */
 const RESOLVE_DELAY_MS = 400;
 
@@ -67,6 +77,9 @@ export default function NewBookingPage() {
   const submittingRef = useRef(false);
   // One key per form: a double tap, or a retry after a lost answer, books once (Send dedupes on it).
   const idempotencyKey = useRef(newIdempotencyKey());
+  // MJ-RL5: the booking the key was last sent with. A changed form after a lost answer is a new booking
+  // (a new key) — the old key would replay the first one, with its old address, fare and items.
+  const keyBody = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     setGate({ status: "loading" });
@@ -107,6 +120,9 @@ export default function NewBookingPage() {
     submittingRef.current = true;
     setBusy(true);
     try {
+      const body = JSON.stringify(toBookingRequest(where, phone, lines, shownFare, "", collectCash));
+      if (keyBody.current !== null && keyBody.current !== body) idempotencyKey.current = newIdempotencyKey();
+      keyBody.current = body;
       const booking = await createBooking(toBookingRequest(where, phone, lines, shownFare, idempotencyKey.current, collectCash));
       router.replace(bookingHref(booking.id));
     } catch (err) {
@@ -330,13 +346,17 @@ function WhereSearch({ value, error, signOut, onChange }: { value: Where | null;
           },
           (err: unknown) => {
             if (seq !== linkSeq.current || redirectIfSessionExpired(err, signOut)) return;
-            setNote(err instanceof ApiError ? err.message : UNREADABLE_LINK);
+            // MJ-M15: an unreadable link is this screen's own line (the server's used to name a pin control
+            // that doesn't exist); any other refusal is said as the server says it.
+            setNote(err instanceof ApiError && err.reason !== "unreadable_link" ? err.message : unreadableLink());
           },
         );
       }, RESOLVE_DELAY_MS);
       return;
     }
-    if (/https?:\/\//i.test(text)) setNote(UNREADABLE_LINK);
+    if (/https?:\/\//i.test(text)) setNote(unreadableLink());
+    // MJ-M15: no Places key, so a typed address finds nothing — say what does work.
+    else if (!placesEnabled() && text.trim().length >= 3) setNote(NO_SEARCH_HINT);
   }
 
   async function pick(s: PlaceSuggestion) {
@@ -417,16 +437,24 @@ function WhereSearch({ value, error, signOut, onChange }: { value: Where | null;
 
 function ItemsPicker({ onPick, onType, onDone }: { onPick: (d: MerchantDishResponse) => void; onType: () => void; onDone: () => void }) {
   const [dishes, setDishes] = useState<MerchantDishResponse[] | null>(null);
-  useEffect(() => {
+  // MJ-RL8: a failed read is its own state, never "No items yet."
+  const [failed, setFailed] = useState(false);
+  const load = useCallback(() => {
+    setFailed(false);
+    setDishes(null);
     listDishes()
       .then((ds) => setDishes(ds.filter((d) => !d.isDraft)))
-      .catch(() => setDishes([]));
+      .catch(() => setFailed(true));
   }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
   return (
     <>
       <b style={{ fontSize: 18 }}>Your items</b>
       <div style={{ maxHeight: "50dvh", overflowY: "auto" }}>
-        {dishes === null && <div className="m-hint">Loading…</div>}
+        {failed && <RetryableError message={ITEMS_LOAD_FAILED} onRetry={load} />}
+        {dishes === null && !failed && <div className="m-hint">Loading…</div>}
         {dishes?.length === 0 && <div className="m-hint">No items yet.</div>}
         {dishes?.map((d) => (
           <button key={d.id} type="button" className="m-li" onClick={() => onPick(d)}>
