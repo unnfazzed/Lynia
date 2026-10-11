@@ -12,6 +12,7 @@ import { JOB_KEY, ORDER_HINT_KEY } from "../net/last-active-store";
 import { RIDER_BID_DRAFT_KEY, RIDER_SENT_OFFERS_KEY } from "../logic/rider-bid-draft";
 import { PICKUP_CHECKLIST_DRAFT_KEY } from "../logic/pickup-checklist-draft";
 import { PICKUP_PHOTO_DRAFT_KEY } from "../logic/pickup-photo-draft";
+import { SEND_DRAFT_KEY } from "../logic/send-draft";
 import { FOOD_CART_SNAPSHOT_KEY } from "../net/food-cart-store";
 import { FOOD_ORDER_SNAPSHOT_KEY } from "../net/food-order-store";
 import type { UndeliveredReason } from "@lynia/shared";
@@ -528,9 +529,9 @@ export async function loadAcknowledgedHandbacks(): Promise<string[]> {
   return readHandbackAcks();
 }
 
-// The saved order-compose draft (home.tsx owns the write under this same key). Named here so sign-out
-// can clear it — on a shared device the next user must not rehydrate the previous user's addresses.
-const DRAFT_KEY = "lynia.orderDraft";
+// The saved Send a parcel draft (U17; src/logic/send-draft.ts owns the write). Cleared on sign-out — on a
+// shared device the next user must not rehydrate the previous user's addresses, items or note.
+const DRAFT_KEY = SEND_DRAFT_KEY;
 
 // Wipe all per-device, per-user state that must NOT survive a sign-out on a shared device (S1): the
 // saved order draft (addresses), the accepted-disclaimer flag (so the next user still sees the

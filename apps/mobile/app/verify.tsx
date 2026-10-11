@@ -10,6 +10,7 @@ import { loadRolePreference, saveRolePreference } from "../src/auth/session";
 import { replaceClearingStack } from "../src/logic/nav";
 import { RESEND_COOLDOWN_S, formatCountdown, otpErrorMessage, otpFailure } from "../src/logic/otp";
 import { parseSignInIntent, signedInDestination, startRoleFor } from "../src/logic/sign-in-route";
+import { useReachability } from "../src/net/use-reachability";
 import { DismissKeyboardArea, Icon, Tappable, useActionError } from "../src/ui";
 import { OB } from "../src/ui/onboarding/copy";
 import { BackButton, Cta, H2, OnbScreen, Pad } from "../src/ui/onboarding/kit";
@@ -97,13 +98,16 @@ function ResendRow({ endsAt, label, resending, onResend }: { endsAt: number; lab
  * code has expired" and "Send a new code".
  *
  * The channel line follows the real send (D-40): Bird Verify is WhatsApp-first and can fall back to SMS
- * per number, so "Sent by SMS" when it did. The input keeps the platform autofill hints (`sms-otp`,
- * `oneTimeCode`), which is what "fills in by itself" rests on.
+ * per number, so "Sent by SMS" when it did. The input keeps the platform autofill hints (Android `sms-otp`,
+ * iOS `oneTimeCode`, and the browser's `one-time-code` on web — U44), which is what "fills in by itself"
+ * rests on.
  *
  * Submitting (start-up review 2026-10-06, C-5): the latest complete code is sent as soon as nothing is in
  * flight, so a code corrected while a request runs is not dropped. A definitive "wrong code" is never
  * re-sent as is (it would only burn an attempt); after a non-answer (no network, a timeout, a 5xx, a rate
- * limit) the same code can be sent again by retyping it, which is what the server's same-code grace is for.
+ * limit) the same code can be sent again by retyping it, which is what the server's same-code grace is for —
+ * and it IS sent again, once, when the link comes back or the app returns to the foreground (U42), since
+ * nothing on the screen tells the customer to retype it.
  */
 export default function VerifyScreen({ initialCooldownS = RESEND_COOLDOWN_S, initialLocked = false }: VerifyScreenProps = {}): React.ReactElement {
   const router = useRouter();
@@ -131,6 +135,9 @@ export default function VerifyScreen({ initialCooldownS = RESEND_COOLDOWN_S, ini
   const inFlight = useRef(false);
   // The code the server last called wrong: retyping it shows the danger line again instead of nothing.
   const wrongCode = useRef<string | null>(null);
+  // U42: bumped to re-run the auto-submit effect once a non-answer's cause may have gone away.
+  const [rearm, setRearm] = useState(0);
+  const online = useReachability();
 
   // iOS has no live regions: say the error lines out loud there (Android's accessibilityLiveRegion does).
   useEffect(() => {
@@ -218,7 +225,28 @@ export default function VerifyScreen({ initialCooldownS = RESEND_COOLDOWN_S, ini
   useEffect(() => {
     if (busy || locked || code.length !== CODE_LENGTH || tried.current === code) return;
     void submit(code);
-  }, [code, locked, busy]);
+  }, [code, locked, busy, rearm]);
+
+  // U42: after a non-answer (a timeout, no network, a 5xx, a rate limit) the full code sat in the boxes and
+  // was never sent again unless a digit was retyped. Re-arm it once when the link comes back or the app
+  // returns to the foreground; the effect above then sends it once. A wrong code is never re-sent.
+  const rearmRetry = useRef((): void => {
+    if (!retryable.current) return;
+    retryable.current = false;
+    tried.current = null;
+    setRearm((n) => n + 1);
+  });
+  const wasOnline = useRef(online);
+  useEffect(() => {
+    if (online && !wasOnline.current) rearmRetry.current();
+    wasOnline.current = online;
+  }, [online]);
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (st) => {
+      if (st === "active") rearmRetry.current();
+    });
+    return () => sub.remove();
+  }, []);
 
   const back = (): void => {
     if (router.canGoBack()) router.back();
@@ -308,7 +336,8 @@ export default function VerifyScreen({ initialCooldownS = RESEND_COOLDOWN_S, ini
             autoFocus={!prefilled}
             keyboardType="number-pad"
             maxLength={CODE_LENGTH}
-            autoComplete="sms-otp"
+            // U44: browsers know "one-time-code" (iPhone Safari's "From Messages"), not Android's "sms-otp".
+            autoComplete={Platform.OS === "web" ? "one-time-code" : "sms-otp"}
             textContentType="oneTimeCode"
             accessibilityLabel="6-digit code"
             accessibilityElementsHidden

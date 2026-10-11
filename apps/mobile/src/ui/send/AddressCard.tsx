@@ -1,6 +1,6 @@
 import { tokens } from "@lynia/shared/tokens";
-import React, { useEffect, useRef } from "react";
-import { ActivityIndicator, ScrollView, Text, TextInput, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Keyboard, ScrollView, Text, TextInput, View } from "react-native";
 import type { ResolvedPlace } from "../../api/places";
 import type { Stop } from "../../logic/send-steps";
 import type { SuggestRow, SuggestStatus } from "../../logic/use-address-suggest";
@@ -14,7 +14,12 @@ import { Dot, LABEL_STYLE, SEND_COPY, Sq, TextAction } from "./kit";
  * dropdown opens directly under it inside the same card, with the live map still showing around it.
  * There is no search screen, no confirm-pin screen and no landmark line, ever.
  *
- * Stateless: the screen owns which row is editing, the query, and what a pick does.
+ * The screen owns which row is editing, the query, and what a pick does. The card owns one thing: the
+ * suggestion being resolved (U18 / P29). A tap closes the keyboard at once and turns that row's icon into
+ * the drawn small spinner while its Places Details lookup runs; a second tap on it is ignored; only the
+ * LATEST pick (or the keyboard's search key) may land — a slower earlier answer, or one that arrives after
+ * the customer edited the text or left the row, is dropped; and a lookup that fails says the drawn
+ * "No matches. Check the spelling, or set the pin on the map." instead of nothing.
  */
 
 export type Slot = "pickup" | "drop";
@@ -152,6 +157,8 @@ function SugRow(props: {
   title: string;
   sub?: string;
   action?: boolean;
+  /** Its lookup is running: the icon disc shows the small spinner (U18). */
+  busy?: boolean;
   onPress: () => void;
 }): React.ReactElement {
   return (
@@ -159,6 +166,7 @@ function SugRow(props: {
       onPress={props.onPress}
       accessibilityRole="button"
       accessibilityLabel={props.sub ? `${props.title}, ${props.sub}` : props.title}
+      accessibilityState={props.busy ? { busy: true } : undefined}
       style={{
         minHeight: 48,
         flexDirection: "row",
@@ -179,7 +187,11 @@ function SugRow(props: {
           backgroundColor: props.action ? tokens.color.accentWash : tokens.color.surface,
         }}
       >
-        <Icon name={props.icon} size={16} color={props.action ? tokens.color.accentText : tokens.color.muted} />
+        {props.busy ? (
+          <ActivityIndicator size="small" color={tokens.color.muted} style={{ transform: [{ scale: 0.6 }] }} />
+        ) : (
+          <Icon name={props.icon} size={16} color={props.action ? tokens.color.accentText : tokens.color.muted} />
+        )}
       </View>
       <View style={{ flex: 1, minWidth: 0, paddingVertical: 6 }}>
         <Text
@@ -206,8 +218,18 @@ function SkeletonRow(): React.ReactElement {
   );
 }
 
-function Middle({ status, rows, onPick }: { status: SuggestStatus; rows: SuggestRow[]; onPick: (r: SuggestRow) => void }): React.ReactElement | null {
-  const list = rows.map((r) => <SugRow key={r.key} icon="map-pin" title={r.title} sub={r.sub || undefined} onPress={() => onPick(r)} />);
+function Middle({
+  status,
+  rows,
+  busyKey,
+  onPick,
+}: {
+  status: SuggestStatus;
+  rows: SuggestRow[];
+  busyKey: string | null;
+  onPick: (r: SuggestRow) => void;
+}): React.ReactElement | null {
+  const list = rows.map((r) => <SugRow key={r.key} icon="map-pin" title={r.title} sub={r.sub || undefined} busy={r.key === busyKey} onPress={() => onPick(r)} />);
   if (status === "slow") {
     return (
       <View>
@@ -259,20 +281,42 @@ export function AddressCard(props: {
   dropdownMax: number;
   onEdit: (slot: Slot) => void;
   onChangeQuery: (t: string) => void;
-  onSubmitQuery: () => void;
   onPick: (place: ResolvedPlace) => void;
   onUseCurrent: () => void;
   onTapMap: () => void;
 }): React.ReactElement {
   const editing = props.editing;
+  // U18 / P29: one pick at a time, and only the latest one lands.
+  const pickSeq = useRef(0);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [pickFailed, setPickFailed] = useState(false);
+  // Editing the text, switching rows or closing the editor retires any lookup still running.
+  useEffect(() => {
+    pickSeq.current += 1;
+    setBusyKey(null);
+    setPickFailed(false);
+  }, [editing, props.query]);
   const pick = (r: SuggestRow): void => {
-    void r.resolve().then((place) => {
+    if (busyKey === r.key) return; // re-tap of the row already resolving
+    Keyboard.dismiss();
+    const seq = ++pickSeq.current;
+    setBusyKey(r.key);
+    setPickFailed(false);
+    const settle = (place: ResolvedPlace | null): void => {
+      if (seq !== pickSeq.current) return; // a later pick, an edit or a closed row won
+      setBusyKey(null);
       if (place) props.onPick(place);
-    });
+      else setPickFailed(true);
+    };
+    void r.resolve().then(settle, () => settle(null));
+  };
+  const submitTop = (): void => {
+    const top = props.rows[0];
+    if (top) pick(top);
   };
   const row = (slot: Slot, divider: boolean): React.ReactElement =>
     editing === slot ? (
-      <EditRow key={slot} slot={slot} query={props.query} divider={divider} onChangeQuery={props.onChangeQuery} onSubmit={props.onSubmitQuery} />
+      <EditRow key={slot} slot={slot} query={props.query} divider={divider} onChangeQuery={props.onChangeQuery} onSubmit={submitTop} />
     ) : (
       <IdleRow
         key={slot}
@@ -299,7 +343,7 @@ export function AddressCard(props: {
         <View style={{ maxHeight: Math.max(96, props.dropdownMax) }}>
           <SugRow icon="navigation" title={SEND_COPY.useCur} action onPress={props.onUseCurrent} />
           <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled">
-            <Middle status={props.status} rows={props.rows} onPick={pick} />
+            <Middle status={pickFailed ? "empty" : props.status} rows={props.rows} busyKey={busyKey} onPick={pick} />
           </ScrollView>
           <SugRow icon="map-pin" title={SEND_COPY.tapMap} action onPress={props.onTapMap} />
         </View>

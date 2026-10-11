@@ -300,3 +300,33 @@ describe("Sign out (MA-H4)", () => {
     expect(mockCalls).toEqual(["signOut"]);
   });
 });
+
+// Reviewed list 2026-10-07 U39: the customer web build (D-81) sends no push, so the PC11 card and the
+// Order updates row said "off" with a Turn on that could never work in a browser.
+describe("U39 · the customer web build draws no push state", () => {
+  const { Platform } = require("react-native") as typeof import("react-native");
+  const realOS = Platform.OS;
+  const realFlag = process.env.EXPO_PUBLIC_LYNIA_WEB;
+  beforeEach(() => {
+    Object.defineProperty(Platform, "OS", { value: "web", configurable: true });
+    process.env.EXPO_PUBLIC_LYNIA_WEB = "1";
+  });
+  afterEach(() => {
+    Object.defineProperty(Platform, "OS", { value: realOS, configurable: true });
+    if (realFlag === undefined) delete process.env.EXPO_PUBLIC_LYNIA_WEB;
+    else process.env.EXPO_PUBLIC_LYNIA_WEB = realFlag;
+  });
+
+  it("no PC11 card, no Order updates row and no empty ALERTS card, even with notifications 'denied'", async () => {
+    mockNotifPerms.mockResolvedValue({ status: "denied", granted: false, canAskAgain: true });
+    const t = await render(CUSTOMER);
+    const s = out(t);
+    expect(t.root.findAll((n) => n.props.testID === "settings-pc11")).toHaveLength(0);
+    expect(s).not.toContain('"Order updates are off"');
+    expect(s).not.toContain('"Order updates"');
+    expect(s).not.toContain('"ALERTS"');
+    expect(t.root.findAll((n) => n.props.testID === "settings-alerts")).toHaveLength(0);
+    // The rest of the screen is unchanged.
+    expect(s).toContain('"Personal details"');
+  });
+});

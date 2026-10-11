@@ -280,3 +280,91 @@ describe("C4 · accessibility", () => {
     expect((input.props.style as { opacity: number }).opacity).toBeGreaterThan(0);
   });
 });
+
+// Reviewed list 2026-10-07 U42: after a non-answer the full code sat in the boxes and was never sent again.
+describe("C4 · U42: a code that got no answer is re-sent once the link or the app comes back", () => {
+  const { AppState } = require("react-native") as typeof import("react-native");
+  const reach = require("../../src/net/reachability") as typeof import("../../src/net/reachability");
+  let appStateListeners: ((s: string) => void)[] = [];
+  beforeEach(() => {
+    appStateListeners = [];
+    jest.spyOn(AppState, "addEventListener").mockImplementation(((_e: string, cb: (s: string) => void) => {
+      appStateListeners.push(cb);
+      return { remove: () => (appStateListeners = appStateListeners.filter((l) => l !== cb)) };
+    }) as never);
+  });
+  afterEach(() => {
+    jest.restoreAllMocks();
+    reach.__resetReachability();
+  });
+  const flush = async (): Promise<void> => {
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+  };
+
+  it("re-sends the same code when the network comes back", async () => {
+    reach.__setProbeFetch(() => new Promise(() => undefined));
+    mockVerifyOtp.mockRejectedValueOnce(new ApiError(0, "The network is slow — check your connection and try again.")).mockResolvedValueOnce(okRes);
+    const t = mount({ initialCooldownS: 30 });
+    await act(async () => {
+      reach.reportUnreachable();
+    });
+    await type(t, "418210");
+    expect(mockVerifyOtp).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      reach.reportReachable();
+      await flush();
+    });
+    expect(mockVerifyOtp).toHaveBeenCalledTimes(2);
+    expect(mockVerifyOtp).toHaveBeenLastCalledWith("+263772451180", "418210");
+    expect(mockReplace).toHaveBeenCalledWith("/home");
+  });
+
+  it("re-sends it once when the app returns to the foreground after a rate limit", async () => {
+    mockVerifyOtp.mockRejectedValueOnce(new ApiError(429, "Too many requests — try again later")).mockResolvedValueOnce(okRes);
+    const t = mount({ initialCooldownS: 30 });
+    await type(t, "418210");
+    expect(mockVerifyOtp).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      appStateListeners.forEach((l) => l("active"));
+      await flush();
+    });
+    expect(mockVerifyOtp).toHaveBeenCalledTimes(2);
+    // Once only: a second foreground with the answer already in sends nothing more.
+    await act(async () => {
+      appStateListeners.forEach((l) => l("active"));
+      await flush();
+    });
+    expect(mockVerifyOtp).toHaveBeenCalledTimes(2);
+  });
+
+  it("never re-sends a definitive wrong code", async () => {
+    mockVerifyOtp.mockRejectedValue(new ApiError(401, "Invalid code", "otp_invalid"));
+    const t = mount({ initialCooldownS: 30 });
+    await type(t, "000000");
+    await act(async () => {
+      appStateListeners.forEach((l) => l("active"));
+      await flush();
+    });
+    expect(mockVerifyOtp).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Reviewed list 2026-10-07 U44: browsers ignore Android's "sms-otp"; they autofill "one-time-code".
+describe("C4 · U44: the code input's autofill hint per platform", () => {
+  const { Platform } = require("react-native") as typeof import("react-native");
+  const realOS = Platform.OS;
+  afterEach(() => Object.defineProperty(Platform, "OS", { value: realOS, configurable: true }));
+  const hint = (t: renderer.ReactTestRenderer): unknown =>
+    t.root.find((n) => n.props?.accessibilityLabel === "6-digit code" && typeof n.props?.onChangeText === "function").props.autoComplete;
+
+  it("web: one-time-code", () => {
+    Object.defineProperty(Platform, "OS", { value: "web", configurable: true });
+    expect(hint(mount({ initialCooldownS: 30 }))).toBe("one-time-code");
+  });
+
+  it("Android: sms-otp", () => {
+    Object.defineProperty(Platform, "OS", { value: "android", configurable: true });
+    expect(hint(mount({ initialCooldownS: 30 }))).toBe("sms-otp");
+  });
+});

@@ -1,5 +1,6 @@
+import { Platform } from "react-native";
 import { jwtTimes } from "../auth/jwt-exp";
-import { getDeviceId, type Session } from "../auth/session";
+import { getDeviceId, loadSession, type Session } from "../auth/session";
 import { API_CONFIG_ERROR, API_URL } from "../config";
 import { STANDARD_TIMEOUT_MS } from "../net/network-policy";
 import { reportReachable, reportUnreachable } from "../net/reachability";
@@ -24,6 +25,12 @@ export function configureApi(h: ApiHooks): void {
  */
 export function currentAccessToken(): string | null {
   return hooks?.getSession()?.accessToken ?? null;
+}
+
+/** The account the session holds RIGHT NOW, or null when signed out (or before the AuthProvider registered).
+ *  Per-account device drafts (Send a parcel's, U17) key on it and write nothing without it. */
+export function currentProfileId(): string | null {
+  return hooks?.getSession()?.profileId ?? null;
 }
 
 export class ApiError extends Error {
@@ -353,11 +360,49 @@ async function refreshSession(staleToken: string): Promise<Session | null> {
   const current = hooks?.getSession();
   if (current && current.refreshToken !== staleToken) return current; // someone else already rotated
   if (!inflightRefresh) {
-    inflightRefresh = doRefresh(staleToken).finally(() => {
+    inflightRefresh = refreshLatest(staleToken).finally(() => {
       inflightRefresh = null;
     });
   }
   return inflightRefresh;
+}
+
+/**
+ * U15 (web): every tab of app.lyniago.com shares ONE stored session but holds its own copy in memory. A
+ * tab left in the background still holds a refresh token another tab has since rotated (twice, after ~30
+ * minutes of use): presenting it is a definitive 401, and the sign-out that followed deleted the shared
+ * session and ran clearDeviceState over the shared storage — signing the customer out of every tab and
+ * wiping the other tab's saved places, deliver-to and draft.
+ *
+ * So on the web the stored session is read before refreshing. When it holds a NEWER refresh token for the
+ * same account, that one is adopted (handed to the AuthProvider, which persists the same value back) and,
+ * if its access token has also run out, refreshed in place of the stale one. A definitive rejection is
+ * checked against storage once more, for the tab that rotated in the very moment this one asked.
+ * Native apps have one process, so nothing changes there.
+ */
+async function refreshLatest(staleToken: string): Promise<Session | null> {
+  if (Platform.OS !== "web") return doRefresh(staleToken);
+  let presented = staleToken;
+  const adopted = await adoptStoredSession(presented);
+  if (adopted) {
+    if (!accessTokenNeedsRefresh(adopted.accessToken)) return adopted;
+    presented = adopted.refreshToken;
+  }
+  const refreshed = await doRefresh(presented);
+  if (refreshed) return refreshed;
+  return adoptStoredSession(presented);
+}
+
+/** The stored session when it carries a newer refresh token for the account this tab holds, applied. */
+async function adoptStoredSession(presented: string): Promise<Session | null> {
+  const current = hooks?.getSession();
+  if (!current) return null;
+  const stored = await loadSession();
+  if (!stored || stored.profileId !== current.profileId || !stored.refreshToken || stored.refreshToken === presented) return null;
+  // Rotated in this tab meanwhile (another request of ours): already applied.
+  if (hooks?.getSession()?.refreshToken === stored.refreshToken) return stored;
+  await hooks?.onTokens(stored);
+  return stored;
 }
 
 async function doRefresh(refreshToken: string): Promise<Session | null> {

@@ -26,7 +26,8 @@ export interface Session {
   signupIntent?: "rider";
 }
 
-const KEY = "lynia.session";
+export const SESSION_KEY = "lynia.session";
+const KEY = SESSION_KEY;
 
 // Keychain calls can fail TRANSIENTLY — the Android Keystore is briefly unavailable right after boot or
 // under memory pressure on low-end handsets. A session read that fails is believed as "signed out" and
