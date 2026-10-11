@@ -327,22 +327,24 @@ function ParcelOrderScreen(): React.ReactElement {
   });
   const offers = useMemo(() => (Array.isArray(offersQ.data) ? offersQ.data : []), [offersQ.data]);
 
-  // Announce a newly-arrived bid (not the ones already there on open).
-  const prevBidCount = useRef(0);
-  const bidsSeeded = useRef(false);
+  // Announce a newly-arrived bid (not the ones already there on open). Review (U62/MJ-RL2): keyed on the
+  // offer ids seen this visit, not the count — the server now drops an offer whose rider is briefly
+  // unchoosable (a stale heartbeat), and its return must not buzz and announce as a new bid.
+  const seenBids = useRef<Set<string> | null>(null);
   useEffect(() => {
     if (status !== "open_for_offers" || !offersQ.isSuccess) return;
-    if (!bidsSeeded.current) {
-      bidsSeeded.current = true;
-      prevBidCount.current = offers.length;
+    if (seenBids.current === null) {
+      seenBids.current = new Set(offers.map((o) => o.id));
       return;
     }
-    if (offers.length > prevBidCount.current) {
+    const seen = seenBids.current;
+    const fresh = offers.filter((o) => !seen.has(o.id));
+    for (const o of fresh) seen.add(o.id);
+    if (fresh.length > 0) {
       haptic("notify");
       AccessibilityInfo.announceForAccessibility(orderText.offers(offers.length));
     }
-    prevBidCount.current = offers.length;
-  }, [offers.length, status, offersQ.isSuccess]);
+  }, [offers, status, offersQ.isSuccess]);
 
   // A success cue at the two moments that land: matched, and delivered.
   const prevStatus = useRef<string | undefined>(undefined);
@@ -352,8 +354,7 @@ function ParcelOrderScreen(): React.ReactElement {
     prevStatus.current = status;
   }, [status]);
   useEffect(() => {
-    prevBidCount.current = 0;
-    bidsSeeded.current = false;
+    seenBids.current = null;
     prevStatus.current = undefined;
     setPanel(null);
     setPrevPrice(null);
@@ -754,8 +755,10 @@ function ParcelOrderScreen(): React.ReactElement {
     return undefined;
   }, [stage, windowEnd, nowMs]);
   const graceLeftMs = stage === "offers" && Number.isFinite(windowEnd) && nowMs >= windowEnd ? Math.max(0, windowEnd + CHOOSE_GRACE_MS - nowMs) : null;
-  // U62: the grace ran out — the server refuses a pick now (`choose_ended`), so Choose is disabled and the
-  // order is re-read at once (the expiry job flips it to No rider yet) instead of waiting for the next poll.
+  // U62: the grace ran out on this phone's clock — re-read the order at once (the expiry job flips it to No
+  // rider yet) instead of waiting for the next poll. Choose stays enabled: the app has no server clock
+  // offset, so a fast phone clock must not block a pick the server would still take; a late pick gets the
+  // server's `choose_ended` 409, which says nothing and moves on.
   const graceOver = graceLeftMs === 0;
   useEffect(() => {
     if (graceOver) void orderQ.refetch();

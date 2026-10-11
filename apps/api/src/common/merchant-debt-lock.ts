@@ -16,19 +16,19 @@ import type { PrismaService } from "../prisma/prisma.service";
  * but the rider hasn't confirmed yet (`customerCashConfirmedAt` set, `riderCashConfirmedAt` still
  * null) — frozen is a marked sub-case of the same condition, so it needs no separate check.
  */
+/** The orders that hold a rider back (one query's OR arms, shared by the single and the batched read). */
+export const OPEN_MERCHANT_OBLIGATION_OR: Prisma.OrderWhereInput[] = [
+  { orderType: "merchant", debtStatus: "open", merchantClosedAt: null },
+  // D5 review (item 3c): only on a live ride — the customer may now confirm on the way, and a
+  // cancelled / undelivered order's leftover confirm must never keep the rider off new jobs.
+  { orderType: "merchant", status: { in: ["picked_up", "en_route_dropoff"] }, customerCashConfirmedAt: { not: null }, riderCashConfirmedAt: null },
+  // D-48 PR 4b: a shop booking's cash on delivery the rider still owes back.
+  { orderType: "parcel", debtStatus: "open", merchantClosedAt: null },
+];
+
 export async function hasOpenMerchantObligation(prisma: PrismaService | Prisma.TransactionClient, riderId: string): Promise<boolean> {
   const stuck = await prisma.order.findFirst({
-    where: {
-      riderId,
-      OR: [
-        { orderType: "merchant", debtStatus: "open", merchantClosedAt: null },
-        // D5 review (item 3c): only on a live ride — the customer may now confirm on the way, and a
-        // cancelled / undelivered order's leftover confirm must never keep the rider off new jobs.
-        { orderType: "merchant", status: { in: ["picked_up", "en_route_dropoff"] }, customerCashConfirmedAt: { not: null }, riderCashConfirmedAt: null },
-        // D-48 PR 4b: a shop booking's cash on delivery the rider still owes back.
-        { orderType: "parcel", debtStatus: "open", merchantClosedAt: null },
-      ],
-    },
+    where: { riderId, OR: OPEN_MERCHANT_OBLIGATION_OR },
     select: { id: true },
   });
   return stuck !== null;

@@ -167,7 +167,7 @@ export function OffersSheet(p: {
             best={o.id === p.bestId}
             onChoose={() => p.onChoose(o.id)}
             choosing={p.choosingId === o.id}
-            disabled={(busy && p.choosingId !== o.id) || p.graceLeftMs === 0}
+            disabled={busy && p.choosingId !== o.id}
             confirming={p.choosingId === o.id ? p.confirming : null}
           />
           {i === 0 ? <PeekMark /> : null}

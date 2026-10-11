@@ -350,9 +350,10 @@ const LIVE = (over: Record<string, unknown> = {}) => ({
 
 describe("OffersService.listForOrder", () => {
   it("MJ-RL2 / U62: drops an offer selectOffer would refuse (offline, stale, held, owing cash); the wire shape is unchanged", async () => {
+    const heldQuery = vi.fn(async () => [{ riderId: "r-owes" }, { riderId: "r-busy" }]);
     const offer = (id: string, rider: Record<string, unknown>) => ({ id, type: "accept", offeredFare: { toString: () => "3.00" }, etaMinutes: 8, rider: { ratingAvg: 4.5, ratingCount: 3, tripsCount: 9, profile: { firstName: "A", lastName: "B", photoUrl: null }, ...rider } });
     const { service } = svc({
-      order: { findUnique: async () => ({ customerId: "cust-1" }), findFirst: async (a: { where: { riderId: string } }) => (a.where.riderId === "r-owes" ? { id: "debt" } : null) },
+      order: { findUnique: async () => ({ customerId: "cust-1" }), findMany: heldQuery },
       block: { findMany: async () => [] },
       offer: {
         findMany: async () => [
@@ -361,18 +362,27 @@ describe("OffersService.listForOrder", () => {
           offer("o-stale", { profileId: "r-stale", ...LIVE({ lastHeartbeatAt: new Date(Date.now() - 5 * 60_000) }) }),
           offer("o-held", { profileId: "r-held", ...LIVE({ onHold: true }) }),
           offer("o-owes", { profileId: "r-owes", ...LIVE() }),
+          // On another customer's ride right now: selectOffer would 409 rider_taken on every Choose.
+          offer("o-busy", { profileId: "r-busy", ...LIVE() }),
         ],
       },
     });
     const res = await service.listForOrder("order-1", "cust-1");
     expect(res.map((o) => o.id)).toEqual(["o-ok"]);
+    // Review: ONE batched read over the live riders (no per-offer query), covering an active ride elsewhere
+    // (the one_active_ride statuses) and the merchant-debt soft-lock.
+    expect(heldQuery).toHaveBeenCalledTimes(1);
+    const where = (heldQuery.mock.calls[0] as unknown as [{ where: { riderId: { in: string[] }; OR: Array<Record<string, unknown>> } }])[0].where;
+    expect(where.riderId.in.sort()).toEqual(["r-busy", "r-ok", "r-owes"]);
+    expect(where.OR[0]).toEqual({ status: { in: ["assigned", "confirmed", "en_route_pickup", "picked_up", "en_route_dropoff"] } });
+    expect(where.OR).toHaveLength(4);
     // The gate's fields are read for the check only — never sent to the customer.
     expect(Object.keys(res[0]!.rider).sort()).toEqual(["profile", "profileId", "ratingAvg", "ratingCount", "tripsCount"]);
   });
 
   it("serializes each offer's Decimal fare to a string", async () => {
     const { service } = svc({
-      order: { findUnique: async () => ({ customerId: "cust-1" }), findFirst: async () => null },
+      order: { findUnique: async () => ({ customerId: "cust-1" }), findMany: async () => [] },
       block: { findMany: async () => [] },
       offer: {
         findMany: async () => [
@@ -387,7 +397,7 @@ describe("OffersService.listForOrder", () => {
   it("excludes a pending offer from a rider the customer blocked AFTER the offer was placed", async () => {
     let capturedWhere: unknown;
     const { service } = svc({
-      order: { findUnique: async () => ({ customerId: "cust-1" }), findFirst: async () => null },
+      order: { findUnique: async () => ({ customerId: "cust-1" }), findMany: async () => [] },
       // cust-1 blocked r-blocked (customer-initiated direction).
       block: { findMany: async () => [{ blockerProfileId: "cust-1", blockedProfileId: "r-blocked" }] },
       offer: {
@@ -409,7 +419,7 @@ describe("OffersService.listForOrder", () => {
   it("also excludes a rider who blocked the customer (the other block direction)", async () => {
     let capturedWhere: unknown;
     const { service } = svc({
-      order: { findUnique: async () => ({ customerId: "cust-1" }), findFirst: async () => null },
+      order: { findUnique: async () => ({ customerId: "cust-1" }), findMany: async () => [] },
       block: { findMany: async () => [{ blockerProfileId: "r-blocked", blockedProfileId: "cust-1" }] },
       offer: {
         findMany: async (args: { where: unknown }) => {

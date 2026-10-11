@@ -5231,7 +5231,7 @@ on a sibling state of the same screen.
   elsewhere, 409 `rider_taken`, or an older API). A rider who went offline or lost standing, or whose offer closed,
   reads **"{name} isn't available any more. Pick another rider."** (`orderText.gone`) in the same toast; the drawn
   second sentence is kept. A time to choose that ran out shows no toast (nobody is left to pick; the screen moves to
-  No rider yet). Choose is disabled once the drawn "Choose in 0:00" pill reaches zero (the drawn disabled button). Offers
+  No rider yet). At the drawn "Choose in 0:00" the order is re-read; Choose stays enabled (the phone clock is not the server's), and a late pick gets the silent `choose_ended` refusal. Offers
   the server would refuse are no longer listed (no new element).
 - **MJ-RM19, merchant "+5 min".** A retry of a "+5 min" that already landed is refused by the API (409 `prep_changed`,
   message "The ready time already moved. Check it before adding more."). The page doesn't show that message: it shows
