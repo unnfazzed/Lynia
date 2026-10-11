@@ -118,8 +118,9 @@ export const MERCHANT_STATUS_NOTICES: Partial<Record<string, Notice>> = {
   // delivered and not delivered, in `O.g.push.c`'s words (merchantCustomerCopy fills the names). The
   // static title/body here is the no-name fallback.
   picked_up: { to: ["customer"], title: "Your rider has your order", body: "On the way." },
-  // Feed-only (U12): `en_route_dropoff` fires right after pickup, so it is never pushed (MERCHANT_SILENT_PUSH);
-  // the feed keeps the drawn "At your door" step.
+  // U12: the `en_route_dropoff` STATUS fires right after pickup, so it is never pushed (MERCHANT_SILENT_PUSH).
+  // The drawn "At your door" push is sent when the rider says "I'm here" (FoodDebtService.markAtDropoff, D5),
+  // and the feed's step follows that stamp (notifications-feed.service.ts).
   en_route_dropoff: { to: ["customer"], title: "Your rider is at your door", body: "Have your cash ready." },
   delivered: { to: ["customer"], title: "Delivered", body: "Enjoy!" },
   undelivered: { to: ["customer"], title: "Your order wasn’t delivered", body: "Nothing was charged." },
@@ -246,8 +247,8 @@ export class NotificationsService {
       // U12 (2026-10-07): no push for a merchant order's `en_route_dropoff`. The rider app steps
       // picked_up → en_route_dropoff right after collecting, so "{n} is at your door · Have $X cash
       // ready" landed seconds after "{n} has your order · On the way", maybe 20 minutes before the
-      // rider arrived. The picked_up push already says "On the way"; the server has no drop-off arrival
-      // to push on yet. The feed's step table (MERCHANT_STATUS_NOTICES) is left as drawn.
+      // rider arrived. The picked_up push already says "On the way"; the at-door push now rides the
+      // rider's own "I'm here" (FoodDebtService.markAtDropoff, D5), not this status.
       if (order.orderType === "merchant" && MERCHANT_SILENT_PUSH.has(status)) return;
       // Fix 3: stamp each recipient's PER-ORDER role (`to`) onto the push so the client routes by the
       // order relationship, not the account's global session role — a rider-role account acting as the

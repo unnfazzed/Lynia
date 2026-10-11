@@ -63,6 +63,20 @@ const LINEAGE_MAX_DEPTH = 50;
  * mirroring MatchingService.selectOffer: it flips the order only from the expected prior state and
  * only for the assigned rider, so concurrent/duplicate calls can never skip or repeat a step.
  */
+/**
+ * D5 review (2026-10-08, item 3): a CASH doorstep handshake the customer started but the rider never
+ * confirmed is voided when the order ends without delivery (cancel / markUndelivered): the customer's
+ * confirm and its deadline are cleared, so the N-19 sweep can't freeze it and the rider's job lock
+ * (common/merchant-debt-lock.ts) can't hold on it. A frozen one is left alone — that is support's dispute
+ * (X1 queue); a resolved one (rider confirmed) is the record of money that changed hands. No-op otherwise.
+ */
+async function closeUnresolvedHandshake(tx: Prisma.TransactionClient, orderId: string): Promise<void> {
+  await tx.order.updateMany({
+    where: { id: orderId, customerCashConfirmedAt: { not: null }, riderCashConfirmedAt: null, cashHandshakeFrozenAt: null },
+    data: { customerCashConfirmedAt: null, cashHandshakeDeadlineAt: null },
+  });
+}
+
 @Injectable()
 export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OrderLifecycleService.name);
@@ -522,6 +536,9 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       });
       if (claimed.count === 0) throw new ConflictException("Order changed, retry");
       await tx.orderEvent.create({ data: { orderId, status: "undelivered" } });
+      // D5 review (item 3): the hand-off failed, so an unresolved doorstep handshake is void — in the same
+      // transaction (a refusal after an early "I've paid" doesn't leave a confirm behind to freeze or lock).
+      await closeUnresolvedHandshake(tx, orderId);
 
       // Reliability (Q2): a failed hand-off dings the rider only when it's their fault — `breakdown`
       // (post-pickup bail) → postPickupCancel, `unreachable` (recipient no-show) → noShow; `refused`
@@ -999,6 +1016,9 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       });
       if (claimed.count === 0) throw new ConflictException("Order changed, retry");
       await tx.orderEvent.create({ data: { orderId, status: "cancelled" } });
+      // D5 review (item 3): a cancel on the way voids a customer's early "I've paid" (no money changed hands
+      // until the rider confirms) — nothing left to freeze, page support about, or lock the rider with.
+      await closeUnresolvedHandshake(tx, orderId);
       // Release any offers still pending against this order.
       await tx.offer.updateMany({ where: { orderId, status: "pending" }, data: { status: "declined" } });
 

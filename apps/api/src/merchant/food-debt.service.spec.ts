@@ -3,7 +3,7 @@ import type { NotificationsService } from "../notifications/notifications.servic
 import type { OrderLifecycleService } from "../orders/order-lifecycle.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { RESTAURANTS_DEBT } from "@lynia/shared";
-import { FoodDebtService, handshakeDeadline } from "./food-debt.service";
+import { FoodDebtService, handshakeDeadline, plausiblyAtDropoff } from "./food-debt.service";
 import { withMembershipShim } from "./testing/membership-shim";
 
 const notified: Array<{ profileIds: string[]; title: string; body: string }> = [];
@@ -192,11 +192,24 @@ describe("FoodDebtService — doorstep handshake (R-04/R-05/N-19)", () => {
     expect(RESTAURANTS_DEBT.handshakeTripCeilingMs).toBeGreaterThan(RESTAURANTS_DEBT.handshakeWindowMs);
   });
 
-  it("D5: the rider's \"I'm here\" stamps once and starts the 2:00 window on a customer confirm made on the way", async () => {
+  /** An en_route_dropoff order the rider is stamping "I'm here" on (review items 1 + 2). */
+  const AT_DOOR_ORDER = (over: Record<string, unknown> = {}) => ({
+    status: "en_route_dropoff",
+    riderAtDropoffAt: null,
+    dropoff: { point: { lat: -17.8105, lng: 31.0705 } },
+    customerId: "c1",
+    agreedFare: 15.5,
+    carriedBalance: [],
+    merchant: { name: "Gava's Kitchen" },
+    rider: { currentLat: -17.811, currentLng: 31.071, positionUpdatedAt: new Date(), profile: { firstName: "Tendai" } },
+    ...over,
+  });
+
+  it("D5: the rider's \"I'm here\" stamps once, only in en_route_dropoff, and restarts a customer's early confirm on the longer door window", async () => {
     const updates: Array<{ where: Record<string, unknown>; data: Record<string, unknown> }> = [];
     const { svc } = build({
       order: {
-        findFirst: async () => ({ status: "en_route_dropoff", riderAtDropoffAt: null }),
+        findFirst: async () => AT_DOOR_ORDER(),
         updateMany: async (a: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
           updates.push(a);
           return { count: 1 };
@@ -207,12 +220,65 @@ describe("FoodDebtService — doorstep handshake (R-04/R-05/N-19)", () => {
     const res = await svc.markAtDropoff(orderId, "r1");
     expect(res.riderAtDropoffAt).toBeTruthy();
     expect(updates[0]).toEqual({
-      where: { id: orderId, riderId: "r1", riderAtDropoffAt: null, status: { in: ["picked_up", "en_route_dropoff"] } },
+      where: { id: orderId, riderId: "r1", riderAtDropoffAt: null, status: "en_route_dropoff" },
       data: { riderAtDropoffAt: expect.any(Date) },
     });
-    // The window restarts only on an unresolved handshake the customer already started.
-    expect(updates[1]!.where).toEqual({ id: orderId, customerCashConfirmedAt: { not: null }, riderCashConfirmedAt: null, cashHandshakeFrozenAt: null });
+    // Review item 1: only a confirm made BEFORE the stamp, still unresolved, is restarted — and on the longer
+    // window (the customer hears about the arrival from the push and still has to come out), not 2:00.
+    expect(updates[1]!.where).toEqual({ id: orderId, customerCashConfirmedAt: { lt: expect.any(Date) }, riderCashConfirmedAt: null, cashHandshakeFrozenAt: null });
     const left = (updates[1]!.data.cashHandshakeDeadlineAt as Date).getTime() - before;
+    expect(left).toBeGreaterThanOrEqual(RESTAURANTS_DEBT.handshakeAfterArrivalMs - 1000);
+    expect(left).toBeLessThanOrEqual(RESTAURANTS_DEBT.handshakeAfterArrivalMs + 1000);
+    expect(RESTAURANTS_DEBT.handshakeAfterArrivalMs).toBe(RESTAURANTS_DEBT.noShowWindowMs);
+  });
+
+  it("D5 review (item 1): the stamp pushes the customer the drawn \"{n} is at your door · Have $X cash ready\"", async () => {
+    const { svc } = build({ order: { findFirst: async () => AT_DOOR_ORDER(), updateMany: async () => ({ count: 1 }) } });
+    await svc.markAtDropoff(orderId, "r1");
+    expect(notified).toEqual([expect.objectContaining({ profileIds: ["c1"], title: "Tendai is at your door", body: "Have $15.50 cash ready." })]);
+  });
+
+  it("D5 review (item 2): an early tap — a FRESH ping more than ~1 km off the pin — is refused, with no stamp and no push", async () => {
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const far = { currentLat: -17.83, currentLng: 31.05, positionUpdatedAt: new Date(), profile: { firstName: "Tendai" } };
+    const { svc } = build({ order: { findFirst: async () => AT_DOOR_ORDER({ rider: far }), updateMany } });
+    await expect(svc.markAtDropoff(orderId, "r1")).rejects.toThrow(/not at the drop-off/i);
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(notified).toEqual([]);
+  });
+
+  it("D5 review (item 2): no recent ping (offline / stale GPS) — the stamp is taken on trust", async () => {
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const stale = { currentLat: -17.83, currentLng: 31.05, positionUpdatedAt: new Date(Date.now() - 30 * 60_000), profile: { firstName: "Tendai" } };
+    const { svc } = build({ order: { findFirst: async () => AT_DOOR_ORDER({ rider: stale }), updateMany } });
+    await expect(svc.markAtDropoff(orderId, "r1")).resolves.toMatchObject({ orderId });
+    expect(plausiblyAtDropoff(null, { point: { lat: 0, lng: 0 } }, Date.now())).toBe(true);
+    expect(plausiblyAtDropoff({ currentLat: 1, currentLng: 1, positionUpdatedAt: new Date() }, null, Date.now())).toBe(true);
+  });
+
+  it("D5 review (item 2): \"I'm here\" is refused at picked_up — only on the ride to the customer", async () => {
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const { svc } = build({ order: { findFirst: async () => AT_DOOR_ORDER({ status: "picked_up" }), updateMany } });
+    await expect(svc.markAtDropoff(orderId, "r1")).rejects.toThrow(/taking the order to the customer/i);
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("D5 review (item 4): a stamp landing between the confirm's read and write — the ceiling CAS misses and the confirm retries on the door window", async () => {
+    const writes: Array<{ where: Record<string, unknown>; data: Record<string, unknown> }> = [];
+    const { svc } = build({
+      order: {
+        findFirst: async () => ({ status: "en_route_dropoff", merchantPaymentMethod: "cash", agreedFare: 15.5, customerCashConfirmedAt: null, riderId: "r1", riderAtDropoffAt: null }),
+        updateMany: async (a: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+          writes.push(a);
+          // The rider stamped after the read: the ceiling write (riderAtDropoffAt: null) no longer matches.
+          return { count: a.where.riderAtDropoffAt === null ? 0 : 1 };
+        },
+      },
+    });
+    const before = Date.now();
+    await svc.confirmCustomerCash(orderId, "c1");
+    expect(writes.map((w) => w.where.riderAtDropoffAt)).toEqual([null, { not: null }]);
+    const left = (writes[1]!.data.cashHandshakeDeadlineAt as Date).getTime() - before;
     expect(left).toBeLessThanOrEqual(RESTAURANTS_DEBT.handshakeWindowMs + 1000);
   });
 
@@ -226,7 +292,7 @@ describe("FoodDebtService — doorstep handshake (R-04/R-05/N-19)", () => {
   });
 
   it("D5: \"I'm here\" is refused before the rider has the food", async () => {
-    const { svc } = build({ order: { findFirst: async () => ({ status: "en_route_pickup", riderAtDropoffAt: null }) } });
+    const { svc } = build({ order: { findFirst: async () => AT_DOOR_ORDER({ status: "en_route_pickup" }) } });
     await expect(svc.markAtDropoff(orderId, "r1")).rejects.toThrow(/taking the order to the customer/i);
   });
 
@@ -299,6 +365,13 @@ describe("FoodDebtService — doorstep handshake (R-04/R-05/N-19)", () => {
     const res = await svc.disputeCash(orderId, "r1");
     expect(res.frozen).toBe(true);
     expect(frozen).toBe(true);
+  });
+
+  it("D5 review (item 3): the N-19 sweep only looks at rides still at the door (en_route_dropoff)", async () => {
+    let where: Record<string, unknown> | undefined;
+    const { svc } = build({ order: { findMany: async (a: { where: Record<string, unknown> }) => ((where = a.where), []) } });
+    await svc.sweepFrozenHandshakes();
+    expect(where).toMatchObject({ status: "en_route_dropoff", riderCashConfirmedAt: null, cashHandshakeFrozenAt: null });
   });
 
   it("sweepFrozenHandshakes freezes every handshake past its N-19 deadline and notifies both parties", async () => {
@@ -428,9 +501,29 @@ describe("FoodDebtService — doorstep failure paths (N-10/R-08), reusing markUn
     expect(banned).toMatchObject({ cashBanned: true });
   });
 
-  it("reportCustomerRefused refuses once the customer already confirmed payment", async () => {
-    const { svc } = build({ order: { findFirst: async () => ({ customerId: "c1", customerCashConfirmedAt: new Date() }) } });
-    await expect(svc.reportCustomerRefused(orderId, "r1")).rejects.toThrow(/already confirmed/i);
+  it("D5 review (item 3a): a customer who tapped \"I've paid\" on the way can still be reported as refusing — and is cash-banned", async () => {
+    const markUndelivered = vi.fn(async () => ({ orderId, status: "undelivered" as const }));
+    const profileUpdate = vi.fn(async () => ({ count: 1 }));
+    const { svc } = build(
+      {
+        order: { findFirst: async () => ({ customerId: "c1", customerCashConfirmedAt: new Date(), riderCashConfirmedAt: null, cashHandshakeFrozenAt: null }) },
+        profile: { updateMany: profileUpdate },
+      },
+      { markUndelivered },
+    );
+    await svc.reportCustomerRefused(orderId, "r1");
+    // markUndelivered voids the customer's confirm in its own transaction (order-lifecycle.service.spec).
+    expect(markUndelivered).toHaveBeenCalledWith(orderId, "r1", "refused");
+    expect(profileUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ cashBanned: true }) }));
+  });
+
+  it("reportCustomerRefused refuses once the RIDER confirmed the cash, or while the handshake is frozen", async () => {
+    const markUndelivered = vi.fn();
+    const confirmed = build({ order: { findFirst: async () => ({ customerId: "c1", customerCashConfirmedAt: new Date(), riderCashConfirmedAt: new Date(), cashHandshakeFrozenAt: null }) } }, { markUndelivered });
+    await expect(confirmed.svc.reportCustomerRefused(orderId, "r1")).rejects.toThrow(/already confirmed the cash/i);
+    const frozen = build({ order: { findFirst: async () => ({ customerId: "c1", customerCashConfirmedAt: new Date(), riderCashConfirmedAt: null, cashHandshakeFrozenAt: new Date() }) } }, { markUndelivered });
+    await expect(frozen.svc.reportCustomerRefused(orderId, "r1")).rejects.toThrow(/frozen/i);
+    expect(markUndelivered).not.toHaveBeenCalled();
   });
 });
 
@@ -573,6 +666,20 @@ describe("FoodDebtService — merchant debt settlement (R-06/R-07/N-20/N-21, D-0
     const second = await h.svc.reportNonReturn("p1", orderId);
     expect(second.reportedAt).toBe(first.reportedAt);
     expect(h.auditCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("D5 review (item 6): nothing to report while the rider is still riding to the customer", async () => {
+    for (const status of ["picked_up", "en_route_dropoff"]) {
+      const h = nonReturnHarness({ status });
+      await expect(h.svc.reportNonReturn("p1", orderId)).rejects.toThrow(/still on the way/i);
+      expect(h.orderUpdateMany).not.toHaveBeenCalled();
+    }
+    // A plain cancel the rider never collected is not a goods return either.
+    const neverCollected = nonReturnHarness({ status: "cancelled", collectedAt: null });
+    await expect(neverCollected.svc.reportNonReturn("p1", orderId)).rejects.toThrow(/still on the way/i);
+    // Delivered (cash due back) and a cancel after pickup (goods due back) can be reported.
+    await expect(nonReturnHarness({ status: "delivered" }).svc.reportNonReturn("p1", orderId)).resolves.toMatchObject({ debtStatus: "open" });
+    await expect(nonReturnHarness({ status: "cancelled", collectedAt: new Date() }).svc.reportNonReturn("p1", orderId)).resolves.toMatchObject({ debtStatus: "open" });
   });
 
   it("D3: nothing to report once the debt is settled", async () => {

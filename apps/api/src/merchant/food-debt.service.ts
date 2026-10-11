@@ -1,7 +1,7 @@
 import { ConflictException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { foodOrderMoney, merchantAmountDueUsd, RESTAURANTS_DEBT, roundToCents } from "@lynia/shared";
-import { NotificationsService } from "../notifications/notifications.service";
+import { foodOrderMoney, haversineKm, merchantAmountDueUsd, RESTAURANTS_DEBT, roundToCents } from "@lynia/shared";
+import { merchantCustomerCopy, MERCHANT_STATUS_NOTICES, NotificationsService } from "../notifications/notifications.service";
 import { OrderLifecycleService } from "../orders/order-lifecycle.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { resolveOwnMerchantId } from "./merchant-lookup.util";
@@ -52,6 +52,24 @@ const GOODS_RETURN_STATUS: Prisma.OrderWhereInput = {
 export function handshakeDeadline(confirmedAt: Date, riderAtDropoffAt: Date | null | undefined): Date {
   const span = riderAtDropoffAt ? RESTAURANTS_DEBT.handshakeWindowMs : RESTAURANTS_DEBT.handshakeTripCeilingMs;
   return new Date(confirmedAt.getTime() + span);
+}
+
+/**
+ * D5 review (item 2): is the rider's "I'm here" plausible? Only a FRESH last ping (≤ atDropoffPingFreshMs)
+ * more than atDropoffSanityRadiusM from the drop pin says no; no ping, a stale one or no pin says yes (the
+ * stamp is a hint, and the rider may be offline).
+ */
+export function plausiblyAtDropoff(
+  rider: { currentLat: number | null; currentLng: number | null; positionUpdatedAt: Date | null } | null | undefined,
+  dropoff: unknown,
+  nowMs: number,
+): boolean {
+  const pin = (dropoff as { point?: { lat?: unknown; lng?: unknown } } | null | undefined)?.point;
+  if (!rider || rider.currentLat == null || rider.currentLng == null || !rider.positionUpdatedAt) return true;
+  if (nowMs - rider.positionUpdatedAt.getTime() > RESTAURANTS_DEBT.atDropoffPingFreshMs) return true;
+  if (!pin || typeof pin.lat !== "number" || typeof pin.lng !== "number") return true;
+  const metres = haversineKm({ lat: rider.currentLat, lng: rider.currentLng }, { lat: pin.lat, lng: pin.lng }) * 1000;
+  return metres <= RESTAURANTS_DEBT.atDropoffSanityRadiusM;
 }
 
 @Injectable()
@@ -151,14 +169,20 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
     // Orders history show.
     const amount = merchantAmountDueUsd(order) ?? 0;
     const now = new Date();
-    const claimed = await this.prisma.order.updateMany({
-      where: { id: orderId, status: "en_route_dropoff", customerCashConfirmedAt: null },
-      data: {
-        customerCashConfirmedAt: now,
-        cashHandshakeAmount: amount,
-        cashHandshakeDeadlineAt: handshakeDeadline(now, order.riderAtDropoffAt),
-      },
-    });
+    // D5 review (item 4): the deadline depends on whether the rider has stamped "I'm here", read above,
+    // outside the write. The CAS carries that same condition, so a stamp landing in between makes the
+    // ceiling write a miss and the confirm is retried once with the stamp's (short) window.
+    const confirm = (arrived: boolean) =>
+      this.prisma.order.updateMany({
+        where: { id: orderId, status: "en_route_dropoff", customerCashConfirmedAt: null, riderAtDropoffAt: arrived ? { not: null } : null },
+        data: {
+          customerCashConfirmedAt: now,
+          cashHandshakeAmount: amount,
+          cashHandshakeDeadlineAt: handshakeDeadline(now, arrived ? now : null),
+        },
+      });
+    let claimed = await confirm(order.riderAtDropoffAt != null);
+    if (claimed.count === 0 && order.riderAtDropoffAt == null) claimed = await confirm(true);
     if (claimed.count === 0) throw new ConflictException("Order changed, retry");
     if (order.riderId) {
       void this.notifications.notifyProfiles([order.riderId], {
@@ -224,6 +248,9 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
     const stale = await this.prisma.order.findMany({
       where: {
         orderType: "merchant",
+        // D5 review (item 3): only a ride still at the door can freeze — a cancelled / undelivered order's
+        // handshake is closed by the lifecycle, and must never page support "something didn't match".
+        status: "en_route_dropoff",
         customerCashConfirmedAt: { not: null },
         riderCashConfirmedAt: null,
         cashHandshakeFrozenAt: null,
@@ -316,10 +343,15 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
   async reportCustomerRefused(orderId: string, riderId: string): Promise<{ orderId: string; status: "undelivered" }> {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, riderId, orderType: "merchant" },
-      select: { customerId: true, customerCashConfirmedAt: true },
+      select: { customerId: true, customerCashConfirmedAt: true, riderCashConfirmedAt: true, cashHandshakeFrozenAt: true },
     });
     if (!order) throw new NotFoundException("Order not found");
-    if (order.customerCashConfirmedAt) throw new ConflictException("The customer already confirmed payment");
+    // D5 review (item 3a): the customer can now tap "I've paid" on the way, so their confirm alone no
+    // longer blocks a refusal (it would let a customer confirm early, then refuse and dodge R-08). Only the
+    // RIDER's confirm (the cash really changed hands) or a frozen dispute (support has it) blocks it.
+    // markUndelivered voids the customer's unresolved confirm in the same transaction as the undelivered CAS.
+    if (order.riderCashConfirmedAt) throw new ConflictException("You already confirmed the cash");
+    if (order.cashHandshakeFrozenAt) throw new ConflictException("This handshake is frozen — support has been notified");
     await this.lifecycle.markUndelivered(orderId, riderId, "refused");
     await this.prisma.profile.updateMany({
       where: { id: order.customerId, cashBanned: false },
@@ -383,10 +415,15 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
     const merchantId = await this.ownMerchantId(profileId);
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, merchantId, orderType: "merchant" },
-      select: { debtStatus: true, riderId: true, debtNonReturnReportedAt: true },
+      select: { debtStatus: true, riderId: true, debtNonReturnReportedAt: true, status: true, collectedAt: true },
     });
     if (!order) throw new NotFoundException("Order not found");
     if (order.debtStatus !== "open") throw new ConflictException("This order has no open debt to report");
+    // D5 review (item 6): only once something is due back — the cash after a delivery, or the goods after a
+    // failed delivery / a cancel after pickup. Never while the rider is still riding to the customer.
+    const dueBack =
+      order.status === "delivered" || order.status === "completed" || order.status === "undelivered" || (order.status === "cancelled" && order.collectedAt != null);
+    if (!dueBack) throw new ConflictException("Nothing is due back yet — the rider is still on the way");
     if (!order.riderId) throw new ConflictException("No rider on this order");
     if (order.debtNonReturnReportedAt) return { orderId, debtStatus: "open", reportedAt: order.debtNonReturnReportedAt.toISOString() };
     const now = new Date();
@@ -421,16 +458,33 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
   async markAtDropoff(orderId: string, riderId: string): Promise<{ orderId: string; riderAtDropoffAt: string }> {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, riderId, orderType: "merchant" },
-      select: { status: true, riderAtDropoffAt: true },
+      select: {
+        status: true,
+        riderAtDropoffAt: true,
+        dropoff: true,
+        customerId: true,
+        agreedFare: true,
+        carriedBalance: { select: { amount: true } },
+        merchant: { select: { name: true } },
+        rider: { select: { currentLat: true, currentLng: true, positionUpdatedAt: true, profile: { select: { firstName: true } } } },
+      },
     });
     if (!order) throw new NotFoundException("Order not found");
     if (order.riderAtDropoffAt) return { orderId, riderAtDropoffAt: order.riderAtDropoffAt.toISOString() };
-    if (order.status !== "picked_up" && order.status !== "en_route_dropoff") {
+    // D5 review (item 2): only on the ride to the customer — the rider app steps picked_up → en_route_dropoff
+    // right after collecting, so a stamp at picked_up could only be an early (mistaken) tap.
+    if (order.status !== "en_route_dropoff") {
       throw new ConflictException("You can only arrive while taking the order to the customer");
+    }
+    // D5 review (item 2): a sanity check, not a geofence — a FRESH last ping more than ~1 km from the drop
+    // pin means the tap was early (it would start the customer's handshake clock mid-ride). No fresh ping
+    // (offline, GPS off): the stamp is taken on trust; it is only a hint.
+    if (!plausiblyAtDropoff(order.rider, order.dropoff, Date.now())) {
+      throw new ConflictException("You're not at the drop-off yet");
     }
     const now = new Date();
     const claimed = await this.prisma.order.updateMany({
-      where: { id: orderId, riderId, riderAtDropoffAt: null, status: { in: ["picked_up", "en_route_dropoff"] } },
+      where: { id: orderId, riderId, riderAtDropoffAt: null, status: "en_route_dropoff" },
       data: { riderAtDropoffAt: now },
     });
     if (claimed.count === 0) {
@@ -438,11 +492,24 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
       if (fresh?.riderAtDropoffAt) return { orderId, riderAtDropoffAt: fresh.riderAtDropoffAt.toISOString() };
       throw new ConflictException("Order changed, retry");
     }
-    // The customer already confirmed on the way (D5): their confirm set only the trip ceiling, so the real
-    // 2:00 window starts now that both are at the door. Guarded on the handshake still being unresolved.
+    // The customer confirmed on the way, BEFORE this stamp (D5): their confirm set only the trip ceiling, so
+    // the window starts now — the longer `handshakeAfterArrivalMs` (item 1), since the customer only learns
+    // the rider is here from the push below and still has to come out. Guarded on the handshake still being
+    // unresolved and on the confirm predating the stamp (a confirm after it already has its own window).
     await this.prisma.order.updateMany({
-      where: { id: orderId, customerCashConfirmedAt: { not: null }, riderCashConfirmedAt: null, cashHandshakeFrozenAt: null },
-      data: { cashHandshakeDeadlineAt: new Date(now.getTime() + RESTAURANTS_DEBT.handshakeWindowMs) },
+      where: { id: orderId, customerCashConfirmedAt: { lt: now }, riderCashConfirmedAt: null, cashHandshakeFrozenAt: null },
+      data: { cashHandshakeDeadlineAt: new Date(now.getTime() + RESTAURANTS_DEBT.handshakeAfterArrivalMs) },
+    });
+    // D5 review (item 1): the drawn "{n} is at your door · Have $X cash ready" push (G3a `atDoor`), sent on
+    // the rider's arrival — never on the `en_route_dropoff` status, which fires right after pickup (U12,
+    // MERCHANT_SILENT_PUSH). Best-effort, post-commit.
+    const fallback = MERCHANT_STATUS_NOTICES.en_route_dropoff!;
+    const copy = merchantCustomerCopy("en_route_dropoff", order) ?? fallback;
+    void this.notifications.notifyProfiles([order.customerId], {
+      title: copy.title,
+      body: copy.body,
+      data: { orderId, status: "en_route_dropoff", to: "customer", orderType: "merchant", kind: "rider_at_dropoff" },
+      collapseKey: `order:${orderId}:en_route_dropoff`,
     });
     return { orderId, riderAtDropoffAt: now.toISOString() };
   }

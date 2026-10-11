@@ -699,6 +699,21 @@ describe("merchant order — one order screen (D-59)", () => {
       snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, rider: far }),
     );
     expect(has(u, /\b1:[0-3]\d\b/)).toBe(true);
+    act(() => u.unmount());
+    // D5 review (item 1): after an early confirm the stamp starts the longer door window — counted down too.
+    const w = await render(
+      foodOrder({
+        status: "en_route_dropoff",
+        merchantPhase: null,
+        riderId: "0a1b2c3d-0000-4000-8000-000000000003",
+        customerCashConfirmedAt: iso(-120_000),
+        cashHandshakeAmount: 16.5,
+        cashHandshakeDeadlineAt: iso(7 * 60_000),
+        riderAtDropoffAt: iso(-60_000),
+      }),
+      snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, rider: far }),
+    );
+    expect(has(w, /\b[67]:\d\d\b/)).toBe(true);
   });
 
   it("T15b: after collection the cancel costs the full total — through the generic cancel", async () => {

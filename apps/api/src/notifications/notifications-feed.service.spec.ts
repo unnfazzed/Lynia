@@ -999,11 +999,13 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
           kitchenConfirmedAt: t("12:02"),
           prepStartedAt: t("12:05"),
           prepMinutes: 15,
+          // D5: the at-door beat is the rider's "I'm here" stamp.
+          riderAtDropoffAt: t("12:30"),
           merchant: { name: "Sadza Republic", businessType: "restaurant", shopKind: null },
           rider: { profile: { firstName: "Tendai" } },
           pickup: {},
           dropoff: { landmark: "Avondale" },
-          events: [{ status: "en_route_dropoff", createdAt: t("12:30") }],
+          events: [{ status: "en_route_dropoff", createdAt: t("12:10") }],
         },
       ]);
       const [row] = await service.feedForUser("cust", NOW);
@@ -1218,6 +1220,32 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       const [row] = await service.feedForUser("cust", NOW);
       expect(row).toMatchObject({ beat: "picked_up", title: "Tendai has your order" });
       expect(row!.steps!.map((s) => s.beat)).toEqual(["picked_up", "preparing", "accepted"]);
+    });
+
+    it("D5 review (item 5): an ended order from a rider app that never stamps keeps the event's \"at your door\" step", async () => {
+      const { prisma, service } = makeDeps();
+      prisma.order.findMany.mockResolvedValue([
+        {
+          id: "m3",
+          riderId: "rider",
+          customerId: "cust",
+          orderType: "merchant",
+          status: "delivered",
+          agreedFare: dec("16.5"),
+          kitchenConfirmedAt: t("18:38"),
+          prepStartedAt: t("18:41"),
+          riderAtDropoffAt: null,
+          merchant: { name: "Mama's Kitchen", businessType: "restaurant", shopKind: null },
+          rider: { profile: { firstName: "Tendai" } },
+          events: [
+            { status: "picked_up", createdAt: t("18:55") },
+            { status: "en_route_dropoff", createdAt: t("18:56") },
+            { status: "delivered", createdAt: t("19:14") },
+          ],
+        },
+      ]);
+      const [row] = await service.feedForUser("cust", NOW);
+      expect(row!.steps!.map((s) => s.beat)).toEqual(["delivered", "en_route_dropoff", "picked_up", "preparing", "accepted"]);
     });
 
     it("every order step: an override beat keeps its override in the steps (rider bail → rebroadcast)", async () => {

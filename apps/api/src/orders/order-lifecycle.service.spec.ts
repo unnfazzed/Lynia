@@ -1297,6 +1297,23 @@ describe("OrderLifecycleService.cancel", () => {
     expect(jobCancelled).toEqual([["o1", false, "customer"]]);
   });
 
+  it("D5 review (item 3b): a cancel voids an unresolved doorstep handshake (a customer's early \"I've paid\")", async () => {
+    const updates: Array<{ where: Record<string, unknown>; data: Record<string, unknown> }> = [];
+    const base = cancellable();
+    const { svc } = build({
+      ...base,
+      order: {
+        ...base.order,
+        updateMany: async (a: { where: Record<string, unknown>; data: Record<string, unknown> }) => { updates.push(a); return { count: 1 }; },
+      },
+    });
+    await svc.cancel("o1", "c1");
+    expect(updates).toContainEqual({
+      where: { id: "o1", customerCashConfirmedAt: { not: null }, riderCashConfirmedAt: null, cashHandshakeFrozenAt: null },
+      data: { customerCashConfirmedAt: null, cashHandshakeDeadlineAt: null },
+    });
+  });
+
   it("customer cancel AFTER pickup pushes job:cancelled with collected:true (hand-back path)", async () => {
     const { svc, jobCancelled } = build(
       // Customer may cancel at any live status; collectedAt set ⇒ post-pickup.
@@ -1537,7 +1554,7 @@ describe("OrderLifecycleService.markUndelivered", () => {
     const { svc, emits } = build({
       order: {
         findUnique: async () => row({ status: "en_route_dropoff" }),
-        updateMany: async (a: { data: Record<string, unknown> }) => { data = a.data; return { count: 1 }; },
+        updateMany: async (a: { data: Record<string, unknown> }) => { if (a.data.status) data = a.data; return { count: 1 }; },
         // FRAUD P0-3 velocity read — a single recent undelivered is below the floor, so no auto-hold.
         count: async () => 1,
       },
@@ -1557,6 +1574,24 @@ describe("OrderLifecycleService.markUndelivered", () => {
     expect(emits).toEqual([["o1", "undelivered"]]);
     // No score penalty AND velocity not tripped → the rider row is not mutated.
     expect(riderUpdated).toBe(false);
+  });
+
+  it("D5 review (item 3b): the failed hand-off voids an unresolved doorstep handshake in the same transaction", async () => {
+    const updates: Array<{ where: Record<string, unknown>; data: Record<string, unknown> }> = [];
+    const { svc } = build({
+      order: {
+        findUnique: async () => row({ status: "en_route_dropoff" }),
+        updateMany: async (a: { where: Record<string, unknown>; data: Record<string, unknown> }) => { updates.push(a); return { count: 1 }; },
+        count: async () => 0,
+      },
+      orderEvent: { create: async () => ({}) },
+      rider: { findUnique: async () => ({ reliabilityScore: 90, onHold: false, heldReason: null }), update: async () => ({}) },
+    });
+    await svc.markUndelivered("o1", "r1", "refused");
+    expect(updates).toContainEqual({
+      where: { id: "o1", customerCashConfirmedAt: { not: null }, riderCashConfirmedAt: null, cashHandshakeFrozenAt: null },
+      data: { customerCashConfirmedAt: null, cashHandshakeDeadlineAt: null },
+    });
   });
 
   it("Q2: a breakdown (post-pickup bail) applies -postPickupCancel to reliability", async () => {

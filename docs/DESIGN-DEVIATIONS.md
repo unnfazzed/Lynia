@@ -5063,7 +5063,7 @@ window that cancels at 0:00. Neither draws what happens after 0:00 when the orde
   order is answered or cancelled (owner chose "ring the full 24 h" over muting after 10 min or outside opening hours),
   and there is **no age limit on a late accept** (owner chose "no limit" over an age warning or an end-of-day cancel).
 
-## D-87 · Pay at the door on the whole ride; a cancel after pickup is a goods return; non-return is a flag — APPROVED (owner decisions D3 + D5, 2026-10-07)
+## D-88 · Pay at the door on the whole ride; a cancel after pickup is a goods return; non-return is a flag — APPROVED (owner decisions D3 + D5, 2026-10-07)
 
 **Owner decision D5 (reviewed list 2026-10-07, C19 / U10):** *"dont gate this to meters because rider may be offline."*
 **Owner decision D3 (C6 / MJ-RH1):** *"Never automatically. It flags support, the debt stays open, and only an admin
@@ -5073,9 +5073,10 @@ decides."*
   "On the way to you" sheet for the whole `en_route_dropoff` ride, not only once the rider's GPS is within ~150 m of
   the pin. Before D5 the app already composed them this way for a ride with no fix; now it does for every ride.
   "Rider is at your door" (P) follows the 150 m geofence, the rider's "I'm here" (now stamped on the server,
-  `riderAtDropoffAt`) or a started handshake. The handshake's countdown chip shows only once it is the real 2:00
-  window — a confirm made on the way runs on a long server ceiling until the rider says "I'm here". No new element or
-  copy.
+  `riderAtDropoffAt`) or a started handshake. The handshake's countdown chip shows only once it is a door window
+  (2:00, or 8:00 when the customer confirmed before the rider's "I'm here") — a confirm made on the way runs on a long
+  server ceiling until then. The rider's "I'm here" sends the drawn G3a `atDoor` push ("{n} is at your door · Have $X
+  cash ready"), which the `en_route_dropoff` status no longer does (U12). No new element or copy.
 - **Merchant (Merchant v2, D-77):** an order the customer cancelled after the rider collected it opens the drawn K5c
   goods-return screen ("#A117 couldn't be delivered", GOODS BACK TO YOU, "I got the food back" / "It wasn't
   returned") and sits under CASH TO COME BACK on the board, like an undelivered order, instead of "This order was

@@ -1194,10 +1194,10 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     const paid = handshake === "waiting_rider" || handshake === "confirmed" || handshake === "frozen";
     const both = handshake === "confirmed";
     const p = usd(order.cashHandshakeAmount ?? total);
-    // D5: a confirm made on the way carries the long trip ceiling until the rider says "I'm here" — only
-    // the real N-19 window is a countdown worth showing.
+    // D5: a confirm made on the way carries the long trip ceiling until the rider says "I'm here" — only a
+    // door window (2:00, or the longer one the stamp starts after an early confirm) is worth counting down.
     const leftMs = order.cashHandshakeDeadlineAt ? Date.parse(order.cashHandshakeDeadlineAt) - nowMs : null;
-    const left = leftMs != null && leftMs <= RESTAURANTS_DEBT.handshakeWindowMs ? clock(leftMs) : null;
+    const left = leftMs != null && leftMs <= RESTAURANTS_DEBT.handshakeAfterArrivalMs ? clock(leftMs) : null;
     return [
       { state: paid ? "done" : "current", title: O.p.s1, sub: paid ? null : sealed ? O.p.s1Seal : withRider(O.p.s1Sub, rFirst) },
       {

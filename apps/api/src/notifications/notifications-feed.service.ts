@@ -747,9 +747,12 @@ export class NotificationsFeedService {
       // U12 follow-up (2026-10-07): for the merchant customer the drawn "{rider} is at your door" step
       // (`en_route_dropoff`) is the rider's "I'm here" stamp, not the en_route_dropoff event — the rider app
       // steps to en_route_dropoff right after collecting, maybe 20 minutes before the door.
-      const beats: { status: string; createdAt: Date; synthetic?: true }[] = merchantCustomer
-        ? order.events.filter((e) => e.status !== "en_route_dropoff")
-        : [...order.events];
+      // D5 review (item 5): a rider app from before the stamp never sends it, so once such an order has
+      // ENDED (no stamp) the event keeps its "At your door" step as history. While it is live, no stamp
+      // means nobody is at the door yet, so the event never headlines (that was U12).
+      const doorFromEvent = merchantCustomer && !order.riderAtDropoffAt && !LIVE_STATUSES.has(order.status);
+      const beats: { status: string; createdAt: Date; synthetic?: true }[] =
+        merchantCustomer && !doorFromEvent ? order.events.filter((e) => e.status !== "en_route_dropoff") : [...order.events];
       if (merchantCustomer) {
         if (order.kitchenConfirmedAt && order.kitchenConfirmedAt >= cutoff) beats.push({ status: "accepted", createdAt: order.kitchenConfirmedAt, synthetic: true });
         if (order.prepStartedAt && order.prepStartedAt >= cutoff) beats.push({ status: "preparing", createdAt: order.prepStartedAt, synthetic: true });

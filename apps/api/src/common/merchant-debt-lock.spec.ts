@@ -17,6 +17,13 @@ describe("hasOpenMerchantObligation (C4 soft-lock)", () => {
     for (const branch of or.filter((b) => b.debtStatus === "open")) expect(branch.merchantClosedAt).toBeNull();
   });
 
+  it("D5 review (item 3c): an unconfirmed doorstep handshake holds the rider only on a live ride", async () => {
+    const c = capture();
+    await hasOpenMerchantObligation(c.prisma, "r1");
+    const handshake = (c.where().OR as Array<Record<string, unknown>>).find((b) => "customerCashConfirmedAt" in b)!;
+    expect(handshake).toEqual({ orderType: "merchant", status: { in: ["picked_up", "en_route_dropoff"] }, customerCashConfirmedAt: { not: null }, riderCashConfirmedAt: null });
+  });
+
   it("also holds a rider who owes a shop booking's cash on delivery back (D-48 PR 4b)", async () => {
     const c = capture();
     await hasOpenMerchantObligation(c.prisma, "r1");

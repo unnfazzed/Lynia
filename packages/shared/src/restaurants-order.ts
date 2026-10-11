@@ -281,6 +281,15 @@ export const RESTAURANTS_DEBT = {
    *  instead; the rider's "I'm here" (FoodDebtService.markAtDropoff) then starts the real
    *  `handshakeWindowMs`. The ceiling only bites for a rider app that never stamps "I'm here". */
   handshakeTripCeilingMs: 60 * 60 * 1000,
+  /** D5 review (2026-10-08): when the customer confirmed BEFORE the rider's "I'm here", the window the stamp
+   *  starts is this longer one, not `handshakeWindowMs` — the customer only hears "{n} is at your door" from
+   *  that stamp's push and still has to come out. Same as the N-10 no-show wait (`noShowWindowMs`). */
+  handshakeAfterArrivalMs: 8 * 60 * 1000,
+  /** D5 review: the rider's "I'm here" is refused when their last location ping, if fresh, is further
+   *  than this from the drop pin (a generous radius — geocoded pins can be well off the gate). */
+  atDropoffSanityRadiusM: 1000,
+  /** D5 review: a ping older than this is ignored by the sanity check (no recent ping ⇒ no check). */
+  atDropoffPingFreshMs: 5 * 60 * 1000,
   /** D-48 (merchant mobile B7): how long the rider has, after delivery, to bring the merchant's cash
    *  back before it shows as overdue ("Due by 13:00 · 22 min left"). Shown, never chased: no penalty
    *  or reminder hangs off it. */
