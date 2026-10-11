@@ -18,7 +18,17 @@ jest.mock("expo-file-system/legacy", () => ({
 
 import * as FileSystem from "expo-file-system/legacy";
 import type { PersistedClient } from "@tanstack/react-query-persist-client";
-import { clearPersistedQueries, fileStorage, PERSISTED_KEY_ROOTS, redactBeforePersist, shouldPersistQuery } from "../persist";
+import {
+  clearPersistedQueries,
+  dropStaleMoney,
+  fileStorage,
+  MONEY_MAX_AGE_MS,
+  PERSIST_MAX_AGE_MS,
+  PERSISTED_KEY_ROOTS,
+  queryPersister,
+  redactBeforePersist,
+  shouldPersistQuery,
+} from "../persist";
 
 const fs = jest.mocked(FileSystem);
 
@@ -161,5 +171,52 @@ describe("fileStorage — best-effort file adapter", () => {
     fs.deleteAsync.mockResolvedValue(undefined);
     await clearPersistedQueries();
     expect(fs.deleteAsync).toHaveBeenCalledWith("file:///docs/rq-cache.json", { idempotent: true });
+  });
+});
+
+describe("P08 — a week-long warm boot that never paints a stale balance", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const NOW = 1_800_000_000_000;
+  const entry = (queryKey: unknown[], ageMs: number) => ({
+    queryKey,
+    queryHash: JSON.stringify(queryKey),
+    state: { data: { ok: true }, dataUpdatedAt: NOW - ageMs, status: "success" },
+  });
+  const client = (queries: unknown[]): PersistedClient =>
+    ({ timestamp: NOW, buster: "1", clientState: { mutations: [], queries } }) as unknown as PersistedClient;
+  const keys = (c: PersistedClient) => c.clientState.queries.map((q) => q.queryKey[0]);
+
+  it("keeps the whole cache for a week, money for a day", () => {
+    expect(PERSIST_MAX_AGE_MS).toBe(7 * DAY);
+    expect(MONEY_MAX_AGE_MS).toBe(DAY);
+  });
+
+  it("drops wallet and earnings entries older than a day, keeps browse data that old", () => {
+    const out = dropStaleMoney(
+      client([
+        entry(["wallet", "balance"], 2 * DAY),
+        entry(["wallet", "ledger"], 3 * DAY),
+        entry(["earnings", "summary"], 2 * DAY),
+        entry(["restaurants"], 5 * DAY),
+        entry(["me"], 6 * DAY),
+      ]),
+      NOW,
+    );
+    expect(keys(out)).toEqual(["restaurants", "me"]);
+  });
+
+  it("keeps a money entry that is younger than a day", () => {
+    const out = dropStaleMoney(client([entry(["wallet", "balance"], DAY - 1000), entry(["earnings", "summary"], 60_000)]), NOW);
+    expect(keys(out)).toEqual(["wallet", "earnings"]);
+  });
+
+  it("the persister's restore path runs the money filter", async () => {
+    const stale = client([entry(["wallet", "balance"], 2 * DAY), entry(["shops"], 2 * DAY)]);
+    // Make the filter's clock agree with the fixture.
+    const spy = jest.spyOn(Date, "now").mockReturnValue(NOW);
+    fs.readAsStringAsync.mockResolvedValue(JSON.stringify(stale));
+    const restored = await queryPersister.restoreClient();
+    spy.mockRestore();
+    expect(restored && keys(restored)).toEqual(["shops"]);
   });
 });

@@ -11,11 +11,12 @@
  * runs on the first `require("posthog-react-native")` and never if the module is never reached.
  */
 const mockRequirePostHog = jest.fn();
+const mockScreen = jest.fn();
 jest.mock("posthog-react-native", () => {
   mockRequirePostHog();
   return {
     PostHogProvider: ({ children }: { children: React.ReactNode }) => children,
-    usePostHog: () => ({ screen: jest.fn() }),
+    usePostHog: () => ({ screen: mockScreen }),
   };
 });
 
@@ -71,7 +72,9 @@ describe("AnalyticsProvider — PostHog stays off the startup path", () => {
     expect(mockRequirePostHog).not.toHaveBeenCalled();
     // Not even scheduled — an unconfigured build pays nothing, not even a deferred cost.
     expect(mockDeferred).toBeNull();
-    tree.unmount();
+    act(() => {
+      tree.unmount();
+    });
   });
 
   it("with a key, still does not load the SDK during the first render", () => {
@@ -87,12 +90,54 @@ describe("AnalyticsProvider — PostHog stays off the startup path", () => {
       mockDeferred?.();
     });
     expect(mockRequirePostHog).toHaveBeenCalledTimes(1);
-    tree.unmount();
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("P01: loading the SDK does not remount the app under the provider", () => {
+    mockEnabled = true;
+    let mounts = 0;
+    let unmounts = 0;
+    function Child(): null {
+      React.useEffect(() => {
+        mounts += 1;
+        return () => {
+          unmounts += 1;
+        };
+      }, []);
+      return null;
+    }
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(
+        <AnalyticsProvider>
+          <Child />
+        </AnalyticsProvider>,
+      );
+    });
+    expect(mounts).toBe(1);
+
+    act(() => {
+      mockDeferred?.();
+    });
+    // The provider really mounted (its ScreenTracker captured the launch screen)…
+    expect(mockScreen).toHaveBeenCalledWith("/(tabs)/home");
+    // …but the app below it kept its fiber: still one mount, no unmount.
+    expect(mounts).toBe(1);
+    expect(unmounts).toBe(0);
+    act(() => {
+      tree.unmount();
+    });
+    expect(unmounts).toBe(1);
   });
 
   it("cancels the deferred load if the tree unmounts first", () => {
     mockEnabled = true;
-    renderProvider().unmount();
+    const tree = renderProvider();
+    act(() => {
+      tree.unmount();
+    });
     expect(mockCancel).toHaveBeenCalled();
   });
 });

@@ -52,6 +52,7 @@ import { SmBtn } from "../../src/ui/order/kit";
 import { RIDER_COPY as R, RF } from "../../src/ui/rider/copy";
 import { ServiceSoonSheet, type SoonService } from "../../src/ui/home/ServiceSoonSheet";
 import { usePrewarmRoutes, type PrewarmRoute } from "../../src/boot/prewarm-routes";
+import { prewarmGoogleMapsOnWeb } from "../../src/web/maps-prewarm";
 
 const ACTIVE_ORDERS_KEY = ["activeCustomerOrders"] as const;
 
@@ -83,7 +84,8 @@ const HOME_PREWARM: readonly PrewarmRoute[] = ["send", "order", "foodOrder"];
  * Deliberately bounded on every axis:
  *  - **Android only, checked BEFORE anything is scheduled** — iOS renders Apple Maps (cheap init, no
  *    key), and the check-first shape also means jest (which runs as iOS) and iOS sessions schedule
- *    zero extra interactions.
+ *    zero extra interactions. The customer web build takes its own branch: it idle-loads the Maps JS
+ *    script and mounts no map (`prewarmGoogleMapsOnWeb`, P21/P33).
  *  - **Lazy `require`, same as the route prewarm** — a top-level react-native-maps import here would
  *    drag its 29 modules back into the LAUNCH graph and re-open MOB-BOOT-03.
  *  - **Transient** — the 1×1 map unmounts the moment `onMapReady` fires (SDK initialised; the native
@@ -102,6 +104,8 @@ function MapsSdkPrewarm(): React.ReactElement | null {
   }> | null>(null);
   const [done, setDone] = useState(false);
   useEffect(() => {
+    // The customer web build warms the Maps JS script instead (P21/P33) — no hidden map needed there.
+    if (Platform.OS === "web") return prewarmGoogleMapsOnWeb();
     if (Platform.OS !== "android") return; // nothing scheduled at all off-Android (incl. jest)
     const handle = InteractionManager.runAfterInteractions(() => {
       try {

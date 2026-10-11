@@ -1,3 +1,4 @@
+import { jwtTimes } from "../auth/jwt-exp";
 import { getDeviceId, type Session } from "../auth/session";
 import { API_CONFIG_ERROR, API_URL } from "../config";
 import { STANDARD_TIMEOUT_MS } from "../net/network-policy";
@@ -95,11 +96,28 @@ interface RequestOpts {
   auth?: boolean;
 }
 
+/**
+ * A response whose body has ALREADY been read, inside the request deadline (P35). `headers` may be
+ * absent on test stubs, hence optional.
+ */
+interface FetchedResponse {
+  status: number;
+  ok: boolean;
+  headers?: { get(name: string): string | null } | null;
+  /** The body as text — "" for 204/304 and for an error body that couldn't be read. */
+  text: string;
+}
+
 // On a constrained mobile link (the target market) a request to the remote API can hang for the
 // OS default (tens of seconds) with only an in-button spinner showing. Bound every request so a
 // slow/stalled network fails into the friendly-error path within a few seconds instead of hanging.
 // STANDARD_TIMEOUT_MS is the central policy (net/network-policy.ts, C-O2) — not a local constant.
-async function fetchWithTimeout(input: string, init: RequestInit): Promise<Response> {
+//
+// P35: the deadline covers the BODY too. React Native's fetch resolves only once the whole body is in
+// (XHR onload), but a browser's resolves at the response HEADERS — clearing the timer there left a body
+// that stalled mid-download on app.lyniago.com hanging the screen until the browser's socket timeout
+// (minutes). The body is now read here, with the abort still armed. Native behaviour is unchanged.
+async function fetchWithTimeout(input: string, init: RequestInit): Promise<FetchedResponse> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), STANDARD_TIMEOUT_MS);
   try {
@@ -107,7 +125,13 @@ async function fetchWithTimeout(input: string, init: RequestInit): Promise<Respo
     // We got an HTTP response — even a 4xx/5xx proves the link is alive. Clears the offline state and
     // cancels the recovery probe, so a passing request is all it takes to come back online.
     reportReachable();
-    return res;
+    let text = "";
+    if (res.status !== 204 && res.status !== 304) {
+      // An unreadable ERROR body degrades to "" (the status alone still answers the caller); an
+      // unreadable SUCCESS body is a stalled/dropped link and fails like one, below.
+      text = res.ok ? await res.text() : await res.text().catch(() => "");
+    }
+    return { status: res.status, ok: res.ok, headers: res.headers, text };
   } catch (err) {
     // No response at all (DNS / connection refused / aborted timeout): the network is down or stalled.
     // Flip the app to offline so React Query stops hammering the dead link and the banner shows, then
@@ -193,7 +217,7 @@ async function apiFetchInner<T>(path: string, opts: RequestOpts = {}): Promise<T
   // end (see session.ts's getDeviceId for the full story).
   const deviceId = await getDeviceId().catch(() => null);
 
-  const send = (accessToken?: string): Promise<Response> =>
+  const send = (accessToken?: string): Promise<FetchedResponse> =>
     fetchWithTimeout(`${API_URL}${path}`, {
       method,
       headers: {
@@ -205,14 +229,26 @@ async function apiFetchInner<T>(path: string, opts: RequestOpts = {}): Promise<T
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
 
-  let res = await send(session?.accessToken);
+  // P09: the 15-minute access token has expired on almost every cold start. Refresh it BEFORE sending
+  // instead of spending a 401 round trip per boot request (and queueing the refresh behind them at
+  // Android's 5-per-host limit). Single-flight with the reactive path below, so the whole boot burst
+  // waits on ONE refresh in JS. Any doubt — no refresh token, an unreadable token, a refresh that
+  // throws (flaky link) or is rejected — falls through to the unchanged reactive path, which owns the
+  // sign-out decision.
+  let active = session;
+  if (auth && active?.refreshToken && accessTokenNeedsRefresh(active.accessToken)) {
+    const refreshed = await refreshSession(active.refreshToken).catch(() => null);
+    if (refreshed) active = refreshed;
+  }
 
-  if (res.status === 401 && auth && session?.refreshToken) {
+  let res = await send(active?.accessToken);
+
+  if (res.status === 401 && auth && active?.refreshToken) {
     // Not every 401 is an expired session: domain code answers 401 too (a wrong delivery code from
     // the order-lifecycle service). Refresh-and-retry on those would RE-SUBMIT the business action
     // — a wrong OTP would burn a second attempt toward the lockout — so only the auth guard's own
     // 401s take the refresh path; everything else surfaces as the domain error it is.
-    const text = await res.text().catch(() => "");
+    const text = res.text;
     if (!isAuthGuard401(text)) {
       // Carry the machine-readable code (same as the generic error path below) so domain screens can
       // branch on err.code for a 401-tagged business error (e.g. a wrong delivery code).
@@ -223,7 +259,7 @@ async function apiFetchInner<T>(path: string, opts: RequestOpts = {}): Promise<T
     // A transient failure (network/timeout/5xx/429) instead REJECTS with a status-0 ApiError, which
     // propagates out of here untouched — the request fails as an ordinary retryable network error and
     // the session is left intact, so a flaky link can't force a mid-delivery re-auth.
-    const refreshed = await refreshSession(session.refreshToken);
+    const refreshed = await refreshSession(active.refreshToken);
     if (refreshed) {
       res = await send(refreshed.accessToken);
     } else {
@@ -243,13 +279,13 @@ async function apiFetchInner<T>(path: string, opts: RequestOpts = {}): Promise<T
   }
 
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
+    const text = res.text;
     throw new ApiError(res.status, friendlyMessage(res.status, text), errorCode(text), errorRetryAfter(text), errorBody(text));
   }
   // Parse via text so an empty body (e.g. /orders/mine/active with no job) doesn't throw — it
   // yields undefined, and a literal "null" parses to null, both of which callers treat as "none".
   if (res.status === 204) return undefined as T;
-  const text = await res.text();
+  const text = res.text;
   // Remember the validator for the next poll of this path. `?.` tolerates header-less Response
   // stubs in tests; a response with no ETag simply isn't revalidatable and is served fresh next time.
   if (method === "GET" && text) {
@@ -257,6 +293,43 @@ async function apiFetchInner<T>(path: string, opts: RequestOpts = {}): Promise<T
     if (etag) rememberEtag(path, etag, text);
   }
   return (text ? JSON.parse(text) : undefined) as T;
+}
+
+// ---------------------------------------------------------------------------
+// P09 — proactive refresh. A token is refreshed before sending when its `exp` is within
+// REFRESH_LEEWAY_S of the SERVER's clock, estimated as the device clock minus the skew learned from the
+// `iat` of the last token this process received. Without the skew correction a phone whose clock runs
+// ahead (common: manual time, no network time) would see every fresh token as expired and refresh
+// before every request; with it, at most the first request after launch pays one extra refresh.
+// ---------------------------------------------------------------------------
+const REFRESH_LEEWAY_S = 30;
+/** Device clock minus server clock, in ms, learned from the last refresh. 0 until then. */
+let clockSkewMs = 0;
+/** Set when a just-refreshed token still looks expired and carries no `iat` to correct by — proactive
+ *  refresh is then off for the rest of the process (the reactive path still works). */
+let proactiveDisabled = false;
+
+function accessTokenNeedsRefresh(accessToken: string | null | undefined): boolean {
+  if (proactiveDisabled) return false;
+  const t = jwtTimes(accessToken);
+  if (!t) return false;
+  return (Date.now() - clockSkewMs) / 1000 >= t.exp - REFRESH_LEEWAY_S;
+}
+
+function learnClockSkew(accessToken: string): void {
+  const t = jwtTimes(accessToken);
+  if (!t) return;
+  if (t.iat !== null) {
+    clockSkewMs = Date.now() - t.iat * 1000;
+    return;
+  }
+  if (accessTokenNeedsRefresh(accessToken)) proactiveDisabled = true;
+}
+
+/** Test seam: forget the learned clock skew. */
+export function __resetTokenClock(): void {
+  clockSkewMs = 0;
+  proactiveDisabled = false;
 }
 
 /**
@@ -290,16 +363,17 @@ async function doRefresh(refreshToken: string): Promise<Session | null> {
   // the API — a WAF or proxy block page, a captive portal, a load balancer's empty reply — says nothing
   // about the token; signing out on it would wipe a valid session and send the user back through OTP.
   if (res.status === 401 || res.status === 403) {
-    if (isApiErrorBody(res.status, await res.text().catch(() => ""))) return null;
+    if (isApiErrorBody(res.status, res.text)) return null;
     throw new ApiError(0, "The network is unstable — check your connection and try again.");
   }
   // Any OTHER non-OK status (a proxy/LB 502/504, a 500, a 429) is transient, NOT a rejection: the
   // token is very likely still valid. Surface it as the same status-0 network error a stalled link
   // produces, so the caller fails the request retryably instead of forcibly signing the user out.
   if (!res.ok) throw new ApiError(0, "The network is unstable — check your connection and try again.");
-  const data = (await res.json()) as { accessToken: string; refreshToken: string; expiresIn: number };
+  const data = JSON.parse(res.text) as { accessToken: string; refreshToken: string; expiresIn: number };
   const current = hooks?.getSession();
   if (!current) return null;
+  learnClockSkew(data.accessToken);
   const next: Session = {
     ...current,
     accessToken: data.accessToken,

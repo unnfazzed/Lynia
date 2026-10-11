@@ -7,7 +7,7 @@ import { MY_PICKUP_PHONE_KEY, RECIPIENTS_KEY } from "../logic/saved-recipients";
 import { KYC_DRAFT_KEY } from "../logic/kyc-draft";
 import { PROFILE_DRAFT_KEY } from "../logic/profile-draft";
 import { RIDER_IDENTITY_KEY } from "../logic/rider-identity";
-import { HOME_LOCATION_KEY } from "../logic/home-location";
+import { HOME_LOCATION_KEY, resetHomeLocationCache } from "../logic/home-location";
 import { JOB_KEY, ORDER_HINT_KEY } from "../net/last-active-store";
 import { RIDER_BID_DRAFT_KEY, RIDER_SENT_OFFERS_KEY } from "../logic/rider-bid-draft";
 import { PICKUP_CHECKLIST_DRAFT_KEY } from "../logic/pickup-checklist-draft";
@@ -538,6 +538,9 @@ const DRAFT_KEY = "lynia.orderDraft";
 // cleared separately by `clearSession()`. Best-effort — a native failure must never trap sign-out.
 export async function clearDeviceState(): Promise<void> {
   try {
+    // The deliver-to the session store holds in memory (P06) goes with the slot deleted below —
+    // synchronously, so no screen mounted after sign-out can paint the previous account's address.
+    resetHomeLocationCache();
     const codes = await readCodeIndex();
     await Promise.all([
       SecureStore.deleteItemAsync(DRAFT_KEY),

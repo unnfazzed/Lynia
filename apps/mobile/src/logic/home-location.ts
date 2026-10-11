@@ -1,6 +1,6 @@
 import * as Location from "expo-location";
 import * as SecureStore from "expo-secure-store";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { classifyLocation, type LocState } from "../permissions/location";
 import { withTimeout } from "../util";
 
@@ -16,7 +16,8 @@ import { withTimeout } from "../util";
  *   1. MANUAL — a place the customer chose in the location sheet. It wins for as long as it stands,
  *      because a customer who has said "deliver here" must not be silently overruled by a GPS fix
  *      from wherever they happen to be standing. "Use my current location" in the sheet clears it.
- *   2. GPS — the live fix, reverse-geocoded. Refreshed each time the home screen mounts.
+ *   2. GPS — the live fix, reverse-geocoded. Shared by every screen for the session and refreshed by
+ *      the first mount after it is two minutes old (P06 — see the session store below).
  *   3. LAST KNOWN — whatever (1) or (2) last resolved to, persisted, so a cold start with no
  *      permission (or no fix yet) paints an address instead of a blank row.
  * With none of the three the row becomes the prompt itself ("Set your location"), which opens the
@@ -232,6 +233,15 @@ export async function addressFor(point: { lat: number; lng: number }): Promise<{
   }
 }
 
+/**
+ * {@link addressFor}, bounded (P06): the platform geocoder is a network call, and on a stalled link it
+ * waits out its own timeout (or, on the web shim, never settles). A lookup that hasn't answered within
+ * the fix bound resolves to the empty label callers already treat as "the geocoder couldn't help".
+ */
+function boundedAddressFor(point: { lat: number; lng: number }): Promise<{ label: string; area?: string }> {
+  return withTimeout(addressFor(point), FIX_TIMEOUT_MS).catch(() => ({ label: "" }));
+}
+
 /** Detect → reverse-geocode → a place, or null on any failure (no permission included — it never asks).
  *  Exported for the location sheet's "Use my current location", which needs the same resolution
  *  without mounting the hook again. */
@@ -239,9 +249,168 @@ export async function detectHomePlace(): Promise<HomePlace | null> {
   if (!usable(await readGrant())) return null;
   const point = (await livePoint()) ?? (await cachedPoint());
   if (!isUsablePoint(point)) return null;
-  const resolved = await addressFor(point);
+  const resolved = await boundedAddressFor(point);
   if (!resolved.label) return null;
   return { ...resolved, ...point };
+}
+
+// ---------------------------------------------------------------------------
+// The shared session store (P06)
+//
+// Nine screens mount `useHomeLocation` (Home, Account, the food list / menu / Review & place, the shop
+// and pharmacy list / store / search). Each used to run the whole chain on mount — a keychain read, a
+// permission read, a GPS fix and two reverse geocodes — so a four-screen food journey cost four fixes
+// and up to eight geocodes, and Review & place's drop flipped under the customer's thumb as its own
+// copy of the chain landed (refetching schedule slots on each flip). Now ONE store per face holds the
+// answer for the session: a later mount paints it on its first frame, a mount while a detection is in
+// flight joins it, and a mount only re-detects once the last GPS answer is older than
+// {@link DETECT_TTL_MS}. A manual pick and "Use my current location" write the store, so every mounted
+// screen agrees on the deliver-to.
+//
+// Two faces, two stores: the customer's (adopts and persists a manual pick) and the detect-only one
+// (the rider board — paints the stored slot as a last-known label but never adopts a manual pick and
+// never writes; see `HomeLocationOptions.detectOnly`).
+// ---------------------------------------------------------------------------
+
+/** How long a GPS answer stands before a newly mounted screen re-detects — the same two minutes a
+ *  cached platform fix is trusted for. */
+const DETECT_TTL_MS = LAST_KNOWN_MAX_AGE_MS;
+
+type Face = "customer" | "detect";
+
+interface Snapshot {
+  place: HomePlace | null;
+  source: HomeLocationSource;
+  locating: boolean;
+  denied: boolean;
+}
+
+interface Store {
+  snap: Snapshot;
+  /** A manual pick stands (customer face only) — no detection may overwrite it. */
+  manual: boolean;
+  /** Bumped by every manual pick, re-detect and reset: a detection chain started under an older
+   *  generation never publishes. */
+  gen: number;
+  /** Bumped per manual pick, so a slow suburb lookup for pick N can never land on top of pick N+1. */
+  pickSeq: number;
+  /** When the last detection produced a GPS answer; null until one has. */
+  detectedAt: number | null;
+  /** The detection chain in flight, which a mounting screen joins instead of starting its own. */
+  run: Promise<void> | null;
+  listeners: Set<() => void>;
+}
+
+const INITIAL_SNAPSHOT: Snapshot = { place: null, source: "none", locating: true, denied: false };
+
+function newStore(): Store {
+  return { snap: INITIAL_SNAPSHOT, manual: false, gen: 0, pickSeq: 0, detectedAt: null, run: null, listeners: new Set() };
+}
+
+const stores: Record<Face, Store> = { customer: newStore(), detect: newStore() };
+
+function publish(store: Store, patch: Partial<Snapshot>): void {
+  store.snap = { ...store.snap, ...patch };
+  for (const listener of store.listeners) listener();
+}
+
+/**
+ * Forget the session's location — sign-out (`clearDeviceState`) calls this next to deleting the stored
+ * slot, so the next account on a shared handset never paints the previous one's address. Also the
+ * test seam.
+ */
+export function resetHomeLocationCache(): void {
+  for (const store of Object.values(stores)) {
+    store.gen += 1;
+    store.pickSeq += 1;
+    store.manual = false;
+    store.detectedAt = null;
+    store.run = null;
+    publish(store, INITIAL_SNAPSHOT);
+  }
+}
+
+/** Start a detection for `face` unless one is running, a manual pick stands, or the last answer is fresh. */
+function ensureDetection(face: Face): void {
+  const store = stores[face];
+  if (store.run || store.manual) return;
+  if (store.detectedAt !== null && Date.now() - store.detectedAt < DETECT_TTL_MS) return;
+  const run = detect(face, store);
+  store.run = run;
+  void run.finally(() => {
+    if (store.run === run) store.run = null;
+  });
+}
+
+/**
+ * The detection chain. Paints in up to three beats so the row is never empty and never stale for
+ * long: the persisted last-known address (first run of the session only), the platform's cached fix,
+ * and the live fix — each reverse-geocoded. The cached fix's geocode runs ALONGSIDE the live fix
+ * rather than ahead of it, and both geocodes are bounded, so a stalled geocoder can neither delay the
+ * live fix nor hold the row (P06/P21). Failure at any beat leaves the previous beat's answer standing.
+ */
+async function detect(face: Face, store: Store): Promise<void> {
+  const gen = store.gen;
+  const current = (): boolean => store.gen === gen && !store.manual;
+  publish(store, { locating: true });
+
+  if (!store.snap.place) {
+    const stored = await loadStoredLocation();
+    if (store.gen !== gen) return;
+    if (stored) {
+      // A stored MANUAL pick belongs to the customer face. Detect-only paints it as a last-known
+      // label (better than an empty row for the beat before the fix lands) but never adopts it as
+      // this face's answer, and never stops detecting because of it.
+      store.manual = stored.manual && face === "customer";
+      publish(store, { place: stored.place, source: store.manual ? "manual" : "last-known" });
+    }
+    // A manual choice is the customer's answer; do not go looking for a different one.
+    if (store.manual) {
+      publish(store, { locating: false });
+      return;
+    }
+  }
+
+  // A read, never an ask (D-82): without a grant the row stays on its prompt and H6 offers PC1.
+  const permission = await readGrant();
+  if (!current()) return;
+  if (!usable(permission)) {
+    publish(store, { denied: permission === "blocked", locating: false });
+    return;
+  }
+
+  // The live fix starts NOW, not after the cached fix's geocode (which used to be awaited first).
+  const liveFix = livePoint();
+  let liveLanded = false;
+  const cached = await cachedPoint();
+  if (!current()) return;
+  if (isUsablePoint(cached)) {
+    void boundedAddressFor(cached).then((resolved) => {
+      // Dropped once the live answer has landed — a late cached label must never replace it.
+      if (!current() || liveLanded || !resolved.label) return;
+      publish(store, { place: { ...resolved, ...cached }, source: "gps" });
+    });
+  }
+
+  const live = await liveFix;
+  if (!current()) return;
+  if (!isUsablePoint(live)) {
+    publish(store, { locating: false });
+    return;
+  }
+  const resolved = await boundedAddressFor(live);
+  if (!current()) return;
+  if (resolved.label) {
+    liveLanded = true;
+    const next = { ...resolved, ...live };
+    store.detectedAt = Date.now();
+    publish(store, { place: next, source: "gps", locating: false });
+    // Detect-only never writes: the slot holds the customer's deliver-to, and persisting a
+    // rider's GPS fix over it would silently discard a manual pick they made on the other face.
+    if (face === "customer") void saveStoredLocation(next, false);
+    return;
+  }
+  publish(store, { locating: false });
 }
 
 // ---------------------------------------------------------------------------
@@ -268,157 +437,94 @@ export interface HomeLocationApi extends HomeLocation {
 }
 
 /**
- * The home's deliver-to location.
- *
- * Paints in three beats so the row is never empty and never stale for long: the persisted last-known
- * address lands synchronously-ish from SecureStore, the platform's cached fix refines it, and the
- * live fix (reverse-geocoded) replaces both. Failure at any beat leaves the previous beat's answer
- * standing — this must never turn into an error state on a working home screen.
- *
- * Runs its detection ONCE per mount (ref-guarded, not dep-driven), like the pickup auto-locate hook:
- * nothing about a re-render may re-drive a location the customer has since overridden.
+ * The home's deliver-to location, from the session store above: the first screen to mount detects,
+ * every other screen paints the same answer on its first frame (P06). A re-render never re-drives a
+ * detection; only a mount past the TTL does, and never over a standing manual pick.
  */
 export function useHomeLocation({ detectOnly = false }: HomeLocationOptions = {}): HomeLocationApi {
-  const [place, setPlace] = useState<HomePlace | null>(null);
-  const [source, setSource] = useState<HomeLocationSource>("none");
-  const [locating, setLocating] = useState(true);
-  const [denied, setDenied] = useState(false);
-  // Set the moment the customer picks a place in the sheet, so a GPS fix that resolves a beat later
-  // cannot overwrite their explicit choice.
-  const manualRef = useRef(false);
-  // Bumped per manual pick, so a slow suburb lookup for pick N can never land on top of pick N+1.
-  const pickSeq = useRef(0);
-  // Read through a ref so the one-shot detection effect below can stay dependency-free.
-  const detectOnlyRef = useRef(detectOnly);
-  detectOnlyRef.current = detectOnly;
-  const alive = useRef(true);
-  const started = useRef(false);
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
+  const face: Face = detectOnly ? "detect" : "customer";
+  const store = stores[face];
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      store.listeners.add(listener);
+      return () => {
+        store.listeners.delete(listener);
+      };
+    },
+    [store],
+  );
+  const getSnapshot = useCallback(() => store.snap, [store]);
+  const snap = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   useEffect(() => {
-    if (started.current) return;
-    started.current = true;
-    void (async () => {
-      const stored = await loadStoredLocation();
-      if (!alive.current) return;
-      if (stored) {
-        // A stored MANUAL pick belongs to the customer face. Detect-only paints it as a last-known
-        // label (better than an empty row for the beat before the fix lands) but never adopts it as
-        // this face's answer, and never stops detecting because of it.
-        manualRef.current = stored.manual && !detectOnlyRef.current;
-        setPlace(stored.place);
-        setSource(manualRef.current ? "manual" : "last-known");
-      }
-      // A manual choice is the customer's answer; do not go looking for a different one.
-      if (manualRef.current) {
-        setLocating(false);
-        return;
-      }
-
-      // A read, never an ask (D-82): without a grant the row stays on its prompt and H6 offers PC1.
-      const permission = await readGrant();
-      if (!alive.current) return;
-      if (!usable(permission)) {
-        setDenied(permission === "blocked");
-        setLocating(false);
-        return;
-      }
-
-      const cached = await cachedPoint();
-      if (!alive.current || manualRef.current) return;
-      if (isUsablePoint(cached)) {
-        const resolved = await addressFor(cached);
-        if (!alive.current || manualRef.current) return;
-        if (resolved.label) {
-          setPlace({ ...resolved, ...cached });
-          setSource("gps");
-        }
-      }
-
-      const live = await livePoint();
-      if (!alive.current || manualRef.current) return;
-      if (!isUsablePoint(live)) {
-        setLocating(false);
-        return;
-      }
-      const resolved = await addressFor(live);
-      if (!alive.current || manualRef.current) {
-        setLocating(false);
-        return;
-      }
-      if (resolved.label) {
-        const next = { ...resolved, ...live };
-        setPlace(next);
-        setSource("gps");
-        // Detect-only never writes: the slot holds the customer's deliver-to, and persisting a
-        // rider's GPS fix over it would silently discard a manual pick they made on the other face.
-        if (!detectOnlyRef.current) void saveStoredLocation(next, false);
-      }
-      setLocating(false);
-    })();
-  }, []);
+    ensureDetection(face);
+  }, [face]);
 
   const useCurrentLocation = useCallback(async (): Promise<HomePlace | null> => {
-    manualRef.current = false;
-    setLocating(true);
+    // Clears the manual override and supersedes any detection (or suburb lookup) in flight.
+    store.manual = false;
+    const gen = ++store.gen;
+    publish(store, { locating: true });
     const detected = await detectHomePlace();
-    if (!alive.current) return detected;
-    setLocating(false);
+    if (store.gen !== gen) return detected;
     if (!detected) {
-      setDenied((await readGrant()) === "blocked");
+      const blocked = (await readGrant()) === "blocked";
+      if (store.gen === gen) publish(store, { locating: false, denied: blocked });
       return null;
     }
-    setDenied(false);
-    setPlace(detected);
-    setSource("gps");
-    if (!detectOnlyRef.current) void saveStoredLocation(detected, false);
+    store.detectedAt = Date.now();
+    publish(store, { place: detected, source: "gps", locating: false, denied: false });
+    if (face === "customer") void saveStoredLocation(detected, false);
     return detected;
-  }, []);
+  }, [store, face]);
 
-  const setManualPlace = useCallback((next: HomePlace): void => {
-    manualRef.current = true;
-    const seq = ++pickSeq.current;
-    setPlace(next);
-    setSource("manual");
-    setLocating(false);
-    void saveStoredLocation(next, true);
+  const setManualPlace = useCallback(
+    (next: HomePlace): void => {
+      store.manual = true;
+      store.gen += 1;
+      const seq = ++store.pickSeq;
+      publish(store, { place: next, source: "manual", locating: false });
+      void saveStoredLocation(next, true);
 
-    // The sheet hands back a label + point and nothing else: a saved Home/Work slot and an address
-    // search both resolve a `ResolvedPlace` (lat/lng/landmark/placeId), which has no suburb to give.
-    // Without this, every pick blanked `area` and the food list's deliver-to silently fell back to a
-    // bare street plus "N places deliver here".
-    //
-    // Resolving it HERE rather than plumbing `area` through saved-places + the Places API keeps
-    // geocoding in the one module that owns it (LocationSheet is presentational by contract — the
-    // `mobile-ui-no-api` boundary) and needs no change to the persisted ResolvedPlace shape.
-    //
-    // The customer's LABEL is their choice and is never touched; only the AREA is filled in, because
-    // the suburb is a fact about the coordinates rather than a thing they chose.
-    if (next.area) return;
-    void (async () => {
-      const resolved = await addressFor({ lat: next.lat, lng: next.lng });
-      // Drop the answer if the screen is gone, the geocoder had no area, a LATER pick superseded
-      // this one, or a re-detect cleared the manual override while this was in flight.
-      if (!alive.current || !resolved.area) return;
-      if (pickSeq.current !== seq || !manualRef.current) return;
-      const patched: HomePlace = { ...next, area: resolved.area };
-      setPlace(patched);
-      void saveStoredLocation(patched, true);
-    })();
-  }, []);
+      // The sheet hands back a label + point and nothing else: a saved Home/Work slot and an address
+      // search both resolve a `ResolvedPlace` (lat/lng/landmark/placeId), which has no suburb to give.
+      // Without this, every pick blanked `area` and the food list's deliver-to silently fell back to a
+      // bare street plus "N places deliver here".
+      //
+      // Resolving it HERE rather than plumbing `area` through saved-places + the Places API keeps
+      // geocoding in the one module that owns it (LocationSheet is presentational by contract — the
+      // `mobile-ui-no-api` boundary) and needs no change to the persisted ResolvedPlace shape.
+      //
+      // The customer's LABEL is their choice and is never touched; only the AREA is filled in, because
+      // the suburb is a fact about the coordinates rather than a thing they chose.
+      if (next.area) return;
+      void (async () => {
+        const resolved = await addressFor({ lat: next.lat, lng: next.lng });
+        // Drop the answer if the geocoder had no area, a LATER pick superseded this one, or a
+        // re-detect / sign-out cleared the manual override while this was in flight.
+        if (!resolved.area) return;
+        if (store.pickSeq !== seq || !store.manual) return;
+        const patched: HomePlace = { ...next, area: resolved.area };
+        publish(store, { place: patched });
+        void saveStoredLocation(patched, true);
+      })();
+    },
+    [store],
+  );
+
+  const { place } = snap;
+  const lat = place?.lat;
+  const lng = place?.lng;
+  // One object per coordinate, not per render (P06): consumers memoise on it (distance sorts, fees).
+  const point = useMemo(() => (lat !== undefined && lng !== undefined ? { lat, lng } : null), [lat, lng]);
 
   return {
     label: place?.label ?? SET_LOCATION_PROMPT,
-    point: place ? { lat: place.lat, lng: place.lng } : null,
+    point,
     area: place?.area ?? null,
-    source: place ? source : "none",
-    locating,
-    denied,
+    source: place ? snap.source : "none",
+    locating: snap.locating,
+    denied: snap.denied,
     useCurrentLocation,
     setManualPlace,
   };

@@ -1,5 +1,5 @@
 import * as SecureStore from "expo-secure-store";
-import { loadOnboardingSeen, loadRolePreference, loadSession, type Session, type StartRole } from "../auth/session";
+import { getDeviceId, loadOnboardingSeen, loadRolePreference, loadSession, type Session, type StartRole } from "../auth/session";
 import { consumeColdStartResponse } from "../push/push";
 
 /**
@@ -95,6 +95,11 @@ export function prewarmBootReads(): BootReads {
   // key mirrors LEGACY_RESTAURANT_LIST_SNAPSHOT_KEY (auth/device-state.ts) — kept as a literal so the
   // boot path doesn't grow a device-state import for a temporary janitor line.
   void SecureStore.deleteItemAsync("lynia.restaurants.list-snapshot.v1").catch(() => undefined);
+  // P39: every API request waits for the install id (x-device-id) before it is sent. Start that keystore
+  // read now, alongside the session read, so the boot's first request (/app/bootstrap, sent as soon as
+  // the session settles) finds it already resolved instead of waiting on one more read in series.
+  // getDeviceId is single-flight and never rejects; nothing here awaits it.
+  void getDeviceId().catch(() => undefined);
   reads = {
     session: bounded(
       loadSession().catch(() => null),

@@ -8,7 +8,7 @@ import * as Location from "expo-location";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { BootPhaseProvider } from "../../boot/boot-phase";
 import { resetBootReadinessForTest } from "../../boot/boot-readiness";
-import { type HomeLocationApi, useHomeLocation } from "../home-location";
+import { type HomeLocationApi, resetHomeLocationCache, useHomeLocation } from "../home-location";
 
 jest.mock("expo-location", () => ({
   Accuracy: { Balanced: 3 },
@@ -47,6 +47,7 @@ async function mount(underSplash: boolean): Promise<void> {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  resetHomeLocationCache();
   resetBootReadinessForTest();
   requestPerm.mockResolvedValue({ status: "denied", granted: false });
 });

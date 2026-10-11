@@ -100,9 +100,34 @@ export function redactBeforePersist(client: PersistedClient): PersistedClient {
   return { ...client, clientState: { ...client.clientState, queries } };
 }
 
-/** Drop cache entries older than a day on restore — yesterday's balance is a fine first paint,
- *  last month's is a lie. (Restore-time only; live refetching is governed by staleTime as usual.) */
-export const PERSIST_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+/**
+ * Drop the saved cache on restore once it is older than a WEEK (P08). It was a day, which meant any
+ * customer who orders less than daily booted with an empty cache and the splash (D-64, which waits for
+ * Home's profile + rails) held on network round trips. Everything allowlisted revalidates on mount
+ * anyway, and /food shows its own "Showing what we had at HH:MM", so a week-old browse list is a fine
+ * first paint. Money is the exception — see {@link MONEY_MAX_AGE_MS}. (Restore-time only; live
+ * refetching is governed by staleTime as usual.)
+ */
+export const PERSIST_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Query-key roots that carry money (wallet balance/ledger, rider earnings). */
+export const MONEY_KEY_ROOTS: ReadonlySet<string> = new Set(["wallet", "earnings"]);
+
+/** Money entries keep the old one-day ceiling: yesterday's balance is a fine first paint, last
+ *  week's is a lie. */
+export const MONEY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Restore-time filter: drop money-carrying entries whose data is older than {@link MONEY_MAX_AGE_MS},
+ * so raising the whole-cache ceiling to a week never paints a week-old balance. Exported for tests.
+ */
+export function dropStaleMoney(client: PersistedClient, now: number = Date.now()): PersistedClient {
+  const queries = client.clientState.queries.filter(
+    (q) => !MONEY_KEY_ROOTS.has(String(q.queryKey[0])) || now - q.state.dataUpdatedAt <= MONEY_MAX_AGE_MS,
+  );
+  if (queries.length === client.clientState.queries.length) return client;
+  return { ...client, clientState: { ...client.clientState, queries } };
+}
 
 /** Cache-buster: a new app version starts cold rather than hydrating shapes an old build wrote. */
 export const persistBuster: string = Constants.expoConfig?.version ?? "dev";
@@ -142,6 +167,8 @@ export const queryPersister = createAsyncStoragePersister({
   // The ONE hook every write passes through, so there is no second path that could reach the file
   // with an un-redacted payload. See {@link redactBeforePersist}.
   serialize: (client) => JSON.stringify(redactBeforePersist(client)),
+  // The ONE hook every restore passes through: money entries keep a one-day ceiling (P08).
+  deserialize: (cached) => dropStaleMoney(JSON.parse(cached) as PersistedClient),
   // Batch bursts of cache updates into one disk write every few seconds — a screen-load fires
   // several queries back-to-back and serialising the cache per update would churn the flash for
   // nothing. Loss window on a hard kill is one interval of the least-fresh data: acceptable for an

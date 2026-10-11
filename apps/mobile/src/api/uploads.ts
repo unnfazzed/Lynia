@@ -1,4 +1,4 @@
-import { STANDARD_TIMEOUT_MS } from "../net/network-policy";
+import { uploadTimeoutMs } from "../net/network-policy";
 import { apiFetch } from "./client";
 import { fetchSignal } from "../net/fetch-signal";
 
@@ -51,11 +51,11 @@ export async function uploadImage(
   headers: Record<string, string>,
 ): Promise<void> {
   const blob = await (await fetch(fileUri)).blob();
-  // Same STANDARD_TIMEOUT_MS bound apiFetch puts on every request (net/network-policy.ts, C-O2): on
-  // a constrained link a stalled PUT would otherwise hang behind the in-button spinner for the OS
-  // default (tens of seconds, or forever).
+  // Bounded (net/network-policy.ts, C-O2) so a stalled PUT can't hang behind the in-button spinner for
+  // the OS default — but by the BODY's size, not the JSON tier (P05): a fixed 15 s could never carry a
+  // 150-400 KB photo over a slow uplink, so every attempt aborted and the page was thrown away.
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), STANDARD_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), uploadTimeoutMs(blob.size));
   let res: Response;
   try {
     res = await fetch(uploadUrl, { method: "PUT", headers, body: blob, signal: fetchSignal(controller) });

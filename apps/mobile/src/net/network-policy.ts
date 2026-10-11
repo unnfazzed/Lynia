@@ -21,13 +21,34 @@
 export const RTT_BUDGET_MS = 600;
 
 /**
- * Standard authenticated Lynia API call (`apiFetch` in `api/client.ts`, and the raw-binary photo
- * PUT in `uploads.ts` that bypasses `apiFetch` but must fail into the same friendly-error path just
- * as fast). ~25x RTT: generous enough that a real 2-5s degraded round trip (the audit's own
+ * Standard authenticated Lynia API call (`apiFetch` in `api/client.ts`; the raw-binary photo PUT in
+ * `uploads.ts` starts from it and adds time for its body — see {@link uploadTimeoutMs}). ~25x RTT: generous enough that a real 2-5s degraded round trip (the audit's own
  * adversarial condition (a)) still completes, tight enough that a truly stalled link fails into the
  * retry/offline UI within a few seconds, not the OS default of tens of seconds.
  */
 export const STANDARD_TIMEOUT_MS = 15_000;
+
+/**
+ * P05: the uplink floor a photo PUT is sized against — 10 KB/s (~80 kbps), a poor 3G / EDGE uplink.
+ * A raw binary upload is not a JSON round trip: its cost is the BODY, so one fixed tier either aborts
+ * every upload on a slow uplink (15 s could never carry a 150-400 KB photo below ~20 KB/s) or leaves a
+ * truly stalled one hanging. {@link uploadTimeoutMs} scales with the bytes instead.
+ */
+export const UPLOAD_FLOOR_BYTES_PER_S = 10_000;
+
+/** The longest a photo PUT may run — past two minutes the link is stalled, not slow. */
+export const UPLOAD_TIMEOUT_CAP_MS = 120_000;
+
+/**
+ * The deadline for a raw photo PUT (`uploadImage` in `api/uploads.ts` — prescription pages, rider
+ * proof-of-pickup / proof-of-drop, the rider's own photo): the standard tier for the connection set-up
+ * and the server's answer, plus the time {@link UPLOAD_FLOOR_BYTES_PER_S} needs to carry the body,
+ * capped at {@link UPLOAD_TIMEOUT_CAP_MS}. An unknown size gets the standard tier alone.
+ */
+export function uploadTimeoutMs(bytes: number | null | undefined): number {
+  const size = typeof bytes === "number" && Number.isFinite(bytes) && bytes > 0 ? bytes : 0;
+  return Math.min(UPLOAD_TIMEOUT_CAP_MS, STANDARD_TIMEOUT_MS + Math.ceil((size * 1000) / UPLOAD_FLOOR_BYTES_PER_S));
+}
 
 /**
  * A latency-sensitive THIRD-PARTY call the UI is actively blocking on while the user is mid-typing
