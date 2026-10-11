@@ -1,6 +1,7 @@
 import type { MerchantOrderResponse } from "@lynia/shared";
 import { useQueries, useQuery, type QueryClient } from "@tanstack/react-query";
 import { getFoodOrder } from "../api/food-orders";
+import { type MerchantSnapshotSeed, seedMerchantSnapshot } from "./seed-order";
 
 export const foodOrderKey = (orderId: string): readonly ["food-order", string] => ["food-order", orderId];
 
@@ -12,11 +13,15 @@ export const foodOrderKey = (orderId: string): readonly ["food-order", string] =
 // within a few seconds of it happening, not a stale half-minute later.
 const TIGHT_POLL_MS = 4_000;
 const RELAXED_POLL_MS = 15_000;
+/** P19: while the order socket is up its pushes refetch this read, so the poll is only a safety net. */
+export const SOCKET_SAFETY_POLL_MS = 60_000;
+/** P19: nothing left to observe — the rating screen of a delivered order no longer polls. */
+const TERMINAL = new Set(["cancelled", "expired", "delivered", "completed", "undelivered"]);
 
-/** Exported for tests. `nowMs` defaults to the wall clock. */
-export function pollIntervalFor(order: MerchantOrderResponse | undefined, nowMs: number = Date.now()): number | false {
+/** Exported for tests. `nowMs` defaults to the wall clock; `connected` is the order socket being up (P19). */
+export function pollIntervalFor(order: MerchantOrderResponse | undefined, nowMs: number = Date.now(), connected = false): number | false {
   if (!order) return TIGHT_POLL_MS;
-  if (order.status === "cancelled") return false; // terminal — nothing left to observe
+  if (TERMINAL.has(order.status)) return false;
   // Owner decision D1 (2026-10-07): the venue may answer for 24 h. Tight while the drawn 3:00 runs (the
   // accept usually lands inside it); once it has lapsed, nothing is racing a deadline, so a 15 s poll
   // notices the accept (or the 24 h cancel) without hammering the API for a day.
@@ -27,10 +32,9 @@ export function pollIntervalFor(order: MerchantOrderResponse | undefined, nowMs:
   if (order.merchantPhase === "awaiting_item_approval") return TIGHT_POLL_MS;
   // Order flow v2 (BRIEF §8): a mid-prep substitution round has a 3-minute answer window too.
   if (order.substitution?.status === "open") return TIGHT_POLL_MS;
-  if (order.merchantPhase === "awaiting_payment") return RELAXED_POLL_MS;
-  // preparing / ready_for_pickup / null (handed off to C3 dispatch): D3's job from here — stop
-  // tightening the poll, a relaxed cadence is enough to notice the hand-off.
-  return RELAXED_POLL_MS;
+  // awaiting_payment / preparing / ready_for_pickup / null (handed off to C3 dispatch): a relaxed cadence
+  // is enough to notice the hand-off — and with the socket live, a push does that, so only a safety net.
+  return connected ? SOCKET_SAFETY_POLL_MS : RELAXED_POLL_MS;
 }
 
 export interface FoodOrderFeed {
@@ -43,13 +47,14 @@ export interface FoodOrderFeed {
 
 /** D2 (checkout + kitchen-confirms): the customer's live view of a placed food order, polling at a
  *  cadence that tightens around the two server-enforced deadlines (N-03/N-18) and relaxes once
- *  there's nothing left to race (R-17 — no payment clock). */
-export function useFoodOrder(orderId: string | undefined, enabled: boolean): FoodOrderFeed {
+ *  there's nothing left to race (R-17 — no payment clock); a safety net only while the order socket is
+ *  `connected`, and none once the order has ended (P19). */
+export function useFoodOrder(orderId: string | undefined, enabled: boolean, connected = false): FoodOrderFeed {
   const q = useQuery({
     queryKey: foodOrderKey(orderId ?? ""),
     queryFn: () => getFoodOrder(orderId as string),
     enabled: enabled && !!orderId,
-    refetchInterval: (query) => pollIntervalFor(query.state.data),
+    refetchInterval: (query) => pollIntervalFor(query.state.data, Date.now(), connected),
   });
   return { order: q.data, isLoading: q.isLoading, isFetching: q.isFetching, isError: q.isError, refetch: () => void q.refetch() };
 }
@@ -78,7 +83,9 @@ export function useFoodOrdersPeek(orderIds: readonly string[], focused: boolean)
 }
 
 /** Seed the query cache with a just-created order (from `placeOrder`'s response) so the order
- *  screen paints instantly instead of a loading skeleton on first mount. */
-export function seedFoodOrder(queryClient: QueryClient, order: MerchantOrderResponse): void {
+ *  screen paints instantly instead of a loading skeleton on first mount — and, given where it goes
+ *  (`place`), the generic snapshot its map reads too (P23). */
+export function seedFoodOrder(queryClient: QueryClient, order: MerchantOrderResponse, place?: MerchantSnapshotSeed): void {
   queryClient.setQueryData(foodOrderKey(order.id), order);
+  if (place) seedMerchantSnapshot(queryClient, order, place);
 }

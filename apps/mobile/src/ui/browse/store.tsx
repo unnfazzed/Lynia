@@ -1,6 +1,6 @@
 import { tokens } from "@lynia/shared/tokens";
 import { FirstRunToast } from "../firstrun/toast";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { ScrollView, Text, View, type LayoutChangeEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { BrowseService, VenueView } from "../../logic/browse";
@@ -417,6 +417,22 @@ export function photoPriority(ordinal: number): "low" | "normal" {
   return ordinal < EAGER_PHOTO_ROWS ? "normal" : "low";
 }
 
+const ITEM_FIELDS = ["id", "name", "description", "priceUsd", "photoUrl", "thumbUrl", "unavailable", "outOfStock", "rxRequired"] as const;
+
+/**
+ * Keeps a `StoreItem`'s identity across section rebuilds while nothing in it changed (P02 / P14): the 60 s
+ * clock and every catalogue refetch rebuild the sections, and a fresh object would defeat the memoised rows.
+ */
+export function useStableItems(): (next: StoreItem) => StoreItem {
+  const seen = useRef(new Map<string, StoreItem>());
+  return useRef((next: StoreItem): StoreItem => {
+    const prev = seen.current.get(next.id);
+    if (prev && ITEM_FIELDS.every((k) => prev[k] === next[k])) return prev;
+    seen.current.set(next.id, next);
+    return next;
+  }).current;
+}
+
 /** README §4b "Dish row": text left, a 112 photo right with the + inside; inset hairline. */
 /** The name with the search match in green-text (S12a). */
 function Highlighted({ text, match }: { text: string; match?: string }): React.ReactElement {
@@ -431,15 +447,19 @@ function Highlighted({ text, match }: { text: string; match?: string }): React.R
   );
 }
 
-export function DishRow({
+/** Item-taking row handlers: the screen passes ONE stable callback for every row (P02 / P14), so a memoised
+ *  row re-renders only when its own item, quantity or `canAdd` changes — not on every + elsewhere. */
+export type ItemHandler = (item: StoreItem) => void;
+
+export const DishRow = React.memo(function DishRow({
   item,
   qty,
   canAdd,
   highlight,
   priority,
-  onOpen,
-  onAdd,
-  onMinus,
+  onOpen: onOpenItem,
+  onAdd: onAddItem,
+  onMinus: onMinusItem,
 }: {
   item: StoreItem;
   qty: number;
@@ -448,11 +468,14 @@ export function DishRow({
   highlight?: string;
   /** P11: see {@link photoPriority}. */
   priority?: "low" | "normal";
-  onOpen: () => void;
-  onAdd: () => void;
-  onMinus: () => void;
+  onOpen: ItemHandler;
+  onAdd: ItemHandler;
+  onMinus: ItemHandler;
 }): React.ReactElement {
   const ink = item.unavailable ? tokens.color.muted : tokens.color.ink;
+  const onOpen = (): void => onOpenItem(item);
+  const onAdd = (): void => onAddItem(item);
+  const onMinus = (): void => onMinusItem(item);
   return (
     <Tappable
       onPress={onOpen}
@@ -480,29 +503,32 @@ export function DishRow({
       </VenueImage>
     </Tappable>
   );
-}
+});
 
 /** README §4 "Item tile (shops)" with the §4b values: a square photo (radius 16) with the + inside, price
  *  first 16/700, then the name 13.5/400 on two lines, and a full-width stepper once it's in the cart (S5).
  *  Two to a row (`ShopGrid`). */
-export function ShopTile({
+export const ShopTile = React.memo(function ShopTile({
   item,
   qty = 0,
   canAdd = false,
   priority,
-  onOpen,
-  onAdd,
-  onMinus,
+  onOpen: onOpenItem,
+  onAdd: onAddItem,
+  onMinus: onMinusItem,
 }: {
   item: StoreItem;
   qty?: number;
   canAdd?: boolean;
   priority?: "low" | "normal";
-  onOpen: () => void;
-  onAdd?: () => void;
-  onMinus?: () => void;
+  onOpen: ItemHandler;
+  onAdd?: ItemHandler;
+  onMinus?: ItemHandler;
 }): React.ReactElement {
   const ink = item.unavailable ? tokens.color.muted : tokens.color.ink;
+  const onOpen = (): void => onOpenItem(item);
+  const onAdd = onAddItem ? (): void => onAddItem(item) : undefined;
+  const onMinus = onMinusItem ? (): void => onMinusItem(item) : undefined;
   return (
     <View style={{ flex: 1, minWidth: 0 }}>
       <Tappable onPress={onOpen} accessibilityRole="button" accessibilityLabel={`${item.name}, ${formatMoney(item.priceUsd)}${item.outOfStock ? `, ${B.store.oos}` : ""}`}>
@@ -518,7 +544,7 @@ export function ShopTile({
       {qty > 0 && canAdd && onAdd && onMinus ? <QtyStepper qty={qty} label={item.name} wide onMinus={onMinus} onPlus={onAdd} /> : null}
     </View>
   );
-}
+});
 
 /** Lays `ShopTile`s out two to a row: row gap 20, column gap 12, padding 8 16 0 (README §4b). */
 export function ShopGrid({ items, renderTile }: { items: StoreItem[]; renderTile: (item: StoreItem, index: number) => React.ReactElement }): React.ReactElement {
@@ -542,26 +568,29 @@ export function ShopGrid({ items, renderTile }: { items: StoreItem[]; renderTile
  *  15/600 (the pack size is part of the name), price 15/700, the stepper under it once in the cart (S6),
  *  and the + on the right (a 36 disc in a 48 target, `.ir .plus`); inset hairline. With `rxEnabled`, an
  *  Rx item carries the "Prescription needed" pill (R8). */
-export function PharmacyRow({
+export const PharmacyRow = React.memo(function PharmacyRow({
   item,
   highlight,
   qty = 0,
   canAdd = false,
   priority,
-  onOpen,
-  onAdd,
-  onMinus,
+  onOpen: onOpenItem,
+  onAdd: onAddItem,
+  onMinus: onMinusItem,
 }: {
   item: StoreItem;
   highlight?: string;
   priority?: "low" | "normal";
   qty?: number;
   canAdd?: boolean;
-  onOpen: () => void;
-  onAdd?: () => void;
-  onMinus?: () => void;
+  onOpen: ItemHandler;
+  onAdd?: ItemHandler;
+  onMinus?: ItemHandler;
 }): React.ReactElement {
   const ink = item.unavailable ? tokens.color.muted : tokens.color.ink;
+  const onOpen = (): void => onOpenItem(item);
+  const onAdd = onAddItem ? (): void => onAddItem(item) : undefined;
+  const onMinus = onMinusItem ? (): void => onMinusItem(item) : undefined;
   const plus = canAdd && !item.unavailable && onAdd;
   return (
     <Tappable
@@ -603,7 +632,7 @@ export function PharmacyRow({
       ) : null}
     </Tappable>
   );
-}
+});
 
 /** README §4 "OTC notice": surface, radius 12, padding 12 14, circle-alert 18 green-text, the first
  *  sentence bold. Text, not a gate. On the Pharmacy list (margin 12 16 0) and storefront (10 16 0).
@@ -634,21 +663,24 @@ export function OosChip(): React.ReactElement {
 export const POPULAR_CARD = 148;
 
 /** README §4b "Popular (restaurants)": a 148 square card with the + inside; stepper under when in cart. */
-export function PopularCard({
+export const PopularCard = React.memo(function PopularCard({
   item,
   qty,
   canAdd,
-  onOpen,
-  onAdd,
-  onMinus,
+  onOpen: onOpenItem,
+  onAdd: onAddItem,
+  onMinus: onMinusItem,
 }: {
   item: StoreItem;
   qty: number;
   canAdd: boolean;
-  onOpen: () => void;
-  onAdd: () => void;
-  onMinus: () => void;
+  onOpen: ItemHandler;
+  onAdd: ItemHandler;
+  onMinus: ItemHandler;
 }): React.ReactElement {
+  const onOpen = (): void => onOpenItem(item);
+  const onAdd = (): void => onAddItem(item);
+  const onMinus = (): void => onMinusItem(item);
   return (
     <View style={{ width: POPULAR_CARD }}>
       <Tappable onPress={onOpen} accessibilityRole="button" accessibilityLabel={`${item.name}, ${formatMoney(item.priceUsd)}`}>
@@ -663,7 +695,7 @@ export function PopularCard({
       {qty > 0 && canAdd ? <QtyStepper qty={qty} label={item.name} wide onMinus={onMinus} onPlus={onAdd} /> : null}
     </View>
   );
-}
+});
 
 // ── Cart bar + toast ───────────────────────────────────────────────────────────────────────────
 

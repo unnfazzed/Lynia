@@ -11,13 +11,21 @@ import { listOffers, selectOffer } from "../../src/api/offers";
 import { cancelOrder, getOrder, notifyWhenRiderOnline, type OrderSnapshot, raiseOrderPrice, rateOrder, resendOrder, rotateDeliveryCode } from "../../src/api/orders";
 import { raiseIssue, raiseSos } from "../../src/api/safety";
 import { clearDeliveryCode, clearPendingRating, loadDeliveryCode, loadDeliveryCodeAttempts, loadDeliveryCodeRotatedAt, loadPendingRating, savePendingRating, saveDeliveryCode, saveDeliveryCodeAttempts, saveDeliveryCodeRotatedAt, type PendingRating } from "../../src/auth/session";
-import { liveEta } from "../../src/logic/eta";
 import { mapsDirectionsUrl } from "../../src/logic/maps";
 import { goHomeClearingStack } from "../../src/logic/nav";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { orderOffers } from "../../src/logic/order-offers";
 import { isLiveStage, minutesSince, type OrderStage, phoneMasked, resolveStage, showsHelp, stageMapShare, stagePeekFloor, stageTitleKey, stepIndex, suggestedRetryPrice } from "../../src/logic/order-stage";
-import { liveOrderFromResendError, orderLoadErrorKind, reconcileDeliveryCode, reconcilePendingRating, selectOfferReconciled, selectOrderShell, selectRiderTelemetry } from "../../src/logic/order-tracking";
+import {
+  liveOrderFromResendError,
+  orderLoadErrorKind,
+  reconcileDeliveryCode,
+  reconcilePendingRating,
+  selectOfferReconciled,
+  selectOrderShell,
+  selectParcelGlance,
+  selectRiderTelemetry,
+} from "../../src/logic/order-tracking";
 import { loadRiderIdentity, type RiderIdentity, saveRiderIdentity } from "../../src/logic/rider-identity";
 import { clearLastActiveOrder, saveLastActiveOrder } from "../../src/net/last-active-store";
 import { useClaimOfflineBanner } from "../../src/net/offline-banner-owner";
@@ -30,7 +38,7 @@ import { haptic, useActionErrorEffect, useDial } from "../../src/ui";
 import { type OfferView, type ReceiptView, type RiderView } from "../../src/ui/order/cards";
 import { hhmm, initials, maskPhone, ORDER_COPY as A, orderText, riderShortName } from "../../src/ui/order/copy";
 import { CtaBar, CtaButton, OrderToast } from "../../src/ui/order/kit";
-import { BlankMap, type MapFrame, OrderMap } from "../../src/ui/order/OrderMap";
+import { type MapFrame, OrderMap } from "../../src/ui/order/OrderMap";
 import { OrderSheet, type OrderSheetHandle } from "../../src/ui/order/OrderSheet";
 import { HelpPanel, OrderHeader, PhotoViewer, ReconnectBanner, ReportPanel } from "../../src/ui/order/panels";
 import {
@@ -60,6 +68,7 @@ import {
   TwoButtonBar,
 } from "../../src/ui/order/stages";
 import { isCachedMerchantOrder, MerchantOrderScreen } from "../../src/orderflow/MerchantOrderScreen";
+import { seedFromActiveOrders } from "../../src/query/seed-order";
 import { useReduceMotion } from "../../src/ui/useReduceMotion";
 import { uuidV4FromSeed } from "../../src/util";
 
@@ -72,7 +81,8 @@ import { uuidV4FromSeed } from "../../src/util";
  * stages: it closes a panel, collapses a full sheet, then leaves.
  *
  * The data plumbing: the snapshot is subscribed through the telemetry-stripped shell (GPS ticks reach
- * the map + stage via `selectRiderTelemetry`), the order socket streams status / offers / positions with
+ * the stage only as `selectParcelGlance`'s display-granularity glance, and the map leaf `LiveOrderMap`
+ * via `selectRiderTelemetry` — P42), the order socket streams status / offers / positions with
  * a socket-gated poll fallback, the handover code is restored from SecureStore and reconciled against
  * server rotations, a select 409 is reconciled before the "just taken" toast, and a rating armed before
  * an app kill is re-sent on the next start (BH-06). The last snapshot is kept on disk so an offline cold
@@ -106,19 +116,43 @@ type Toast = { text: string; icon?: "circle-alert" | "circle-check"; action?: st
  * checkout) or the snapshot's `orderType`; until it is known the parcel screen's opening state shows.
  */
 export default function OrderRoute(): React.ReactElement {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, k } = useLocalSearchParams<{ id: string; k?: string }>();
   const orderId = typeof id === "string" ? id : "";
   const qc = useQueryClient();
-  const cachedFood = isCachedMerchantOrder((k) => qc.getQueryData<MerchantOrderResponse>(k), orderId);
+  const cachedFood = isCachedMerchantOrder((key) => qc.getQueryData<MerchantOrderResponse>(key), orderId);
+  // P13: a caller that already knows this is a restaurant / shop / pharmacy order says so (`k=m`, the
+  // Orders tab's rows), so the merchant screen mounts at once and fires both of its reads in parallel —
+  // not a generic snapshot read first just to learn the type.
+  const knownMerchant = cachedFood || k === "m";
   const typeQ = useQuery({
     queryKey: orderKey(orderId),
     queryFn: () => getOrder(orderId),
-    enabled: orderId !== "" && !cachedFood,
+    enabled: orderId !== "" && !knownMerchant,
+    // P34: the first observer creates the cache entry, so a running order the Orders tab / Home already
+    // hold opens on that snapshot instead of a skeleton (initialData applies only to a NEW entry, so the
+    // socket's merges and staleness revalidation are unchanged).
+    ...seedFromActiveOrders(qc, orderId),
     // A rider viewing a food job they carried keeps the After Send rider view.
     select: (s: OrderSnapshot) => (s.orderType === "merchant" && s.viewerRole !== "rider" ? "merchant" : "parcel"),
   });
-  if (cachedFood || typeQ.data === "merchant") return <MerchantOrderScreen key={orderId} orderId={orderId} />;
+  if (knownMerchant || typeQ.data === "merchant") return <MerchantOrderScreen key={orderId} orderId={orderId} />;
   return <ParcelOrderScreen />;
+}
+
+type OrderMapProps = React.ComponentProps<typeof OrderMap>;
+
+/**
+ * P42: the one part of the parcel screen that moves on every GPS push — the map, subscribed to the rider's
+ * telemetry slice (`selectRiderTelemetry`) with the fix memoised on its coordinates, so `OrderMap`'s memo
+ * holds on every other render. The screen itself reads the position only through `selectParcelGlance`.
+ * Also the opening state's map (no stops yet, P12), so the native map is created once per open.
+ */
+function LiveOrderMap({ orderId, follow, ...props }: Omit<OrderMapProps, "rider"> & { orderId: string; follow: boolean }): React.ReactElement {
+  const t = useQuery({ queryKey: orderKey(orderId), queryFn: () => getOrder(orderId), enabled: orderId !== "", select: selectRiderTelemetry, refetchOnMount: false }).data;
+  const lat = follow ? t?.lat : null;
+  const lng = follow ? t?.lng : null;
+  const rider = useMemo(() => (lat != null && lng != null ? { lat, lng } : null), [lat, lng]);
+  return <OrderMap {...props} rider={rider} />;
 }
 
 function ParcelOrderScreen(): React.ReactElement {
@@ -211,13 +245,6 @@ function ParcelOrderScreen(): React.ReactElement {
       return false;
     },
   });
-  const telemetry = useQuery({
-    queryKey: orderKey(orderId),
-    queryFn: () => getOrder(orderId),
-    enabled: orderId !== "",
-    select: selectRiderTelemetry,
-    refetchOnMount: false,
-  }).data;
   const status = orderQ.data?.status;
   const isActive = status !== undefined && ACTIVE.has(status);
 
@@ -500,7 +527,10 @@ function ParcelOrderScreen(): React.ReactElement {
   // Cancel (1b, 10a/b): a failure keeps the panel open with "Try again" (2.22).
   const cancelM = useMutation({
     mutationFn: (reason: string | undefined) => cancelOrder(orderId, reason ? { reason } : {}),
-    onSuccess: () => {
+    onSuccess: (res) => {
+      // P24: the server's answer IS the new state — write it before the panel closes, so the cancelled
+      // ending shows at once instead of the live stage (with an armed Cancel) until the refetch lands.
+      qc.setQueryData<OrderSnapshot>(orderKey(orderId), (o) => (o ? { ...o, status: res.status, cancelledBy: res.cancelledBy } : o));
       setPanel(null);
       setCancelReason(null);
       void qc.invalidateQueries({ queryKey: orderKey(orderId) });
@@ -521,6 +551,36 @@ function ParcelOrderScreen(): React.ReactElement {
     onSuccess: (res) => {
       haptic("tap");
       void qc.invalidateQueries({ queryKey: ["history"] });
+      // P25: the clone carries this order's stops and items (the server copies them), so seed it from the
+      // snapshot on screen, as Send seeds a new order — the new screen paints "Finding riders" and its map
+      // on the first frame; the auction's own poll replaces the seed.
+      const cur = qc.getQueryData<OrderSnapshot>(orderKey(orderId));
+      if (cur && qc.getQueryData(orderKey(res.id)) === undefined) {
+        qc.setQueryData<OrderSnapshot>(orderKey(res.id), {
+          ...cur,
+          id: res.id,
+          status: res.status,
+          proposedFare: res.proposedFare,
+          agreedFare: null,
+          expiresAt: res.expiresAt,
+          rider: null,
+          riderCard: null,
+          events: [],
+          counterpartyPhone: null,
+          cancelledBy: null,
+          cancelReason: null,
+          ridersNearby: null,
+          rating: null,
+          rebroadcastedToId: null,
+          pickupPhotoUrl: null,
+          undeliveredReason: null,
+          undeliveredAttempts: null,
+          deliveryOtpAttempts: 0,
+          codeRotatedAt: null,
+          expiryNoSupply: null,
+          hadOffers: null,
+        });
+      }
       router.replace(`/order/${res.id}`);
     },
     onError: (e, price) => {
@@ -563,21 +623,29 @@ function ParcelOrderScreen(): React.ReactElement {
   const saved = loadErrorKind === "transient" && savedCopy != null ? savedCopy : null;
   const order: OrderSnapshot | undefined = orderQ.data ?? (saved ? selectOrderShell(saved.order) : undefined);
   const isRiderViewer = order?.viewerRole === "rider";
-  const riderPoint = !saved && telemetry && telemetry.lat != null && telemetry.lng != null ? { lat: telemetry.lat, lng: telemetry.lng } : null;
-  const { stage, gpsPaused, offline, noFix } = order
-    ? resolveStage({
-        status: order.status,
-        offerCount: offers.length,
-        ridersNearby: order.ridersNearby,
-        cancelledBy: order.cancelledBy,
-        events: order.events ?? [],
-        rider: riderPoint ? { ...riderPoint, at: telemetry?.updatedAt ?? null } : null,
-        dropoff: order.dropoff.point,
-        online,
-        nowMs,
-        reopened: reopenedFrom != null,
-      })
-    : { stage: "finding" as OrderStage, gpsPaused: false, offline: !online, noFix: false };
+  // P42: the position reaches the screen only as this glance (stage, flags, ETA minutes, "last seen"),
+  // so a GPS push that changes none of it doesn't re-render the screen — the map leaf moves alone.
+  const offerCount = offers.length;
+  const reopened = reopenedFrom != null;
+  const glanceSelect = useCallback((s: OrderSnapshot) => selectParcelGlance(s, { offerCount, online, nowMs, reopened }), [offerCount, online, nowMs, reopened]);
+  const glanceQ = useQuery({ queryKey: orderKey(orderId), queryFn: () => getOrder(orderId), enabled: orderId !== "", select: glanceSelect, refetchOnMount: false });
+  const glance = !saved ? glanceQ.data : undefined;
+  const { stage, gpsPaused, offline, noFix } = glance
+    ? glance
+    : order
+      ? resolveStage({
+          status: order.status,
+          offerCount,
+          ridersNearby: order.ridersNearby,
+          cancelledBy: order.cancelledBy,
+          events: order.events ?? [],
+          rider: null,
+          dropoff: order.dropoff.point,
+          online,
+          nowMs,
+          reopened,
+        })
+      : { stage: "finding" as OrderStage, gpsPaused: false, offline: !online, noFix: false };
   const live = isLiveStage(stage);
   // Re-evaluate the 60s GPS-paused rule even when no new fix arrives.
   useEffect(() => {
@@ -697,10 +765,28 @@ function ParcelOrderScreen(): React.ReactElement {
     </SafeAreaView>
   );
 
-  // 2.1 · 2.2 · 2.3 — opening / couldn't load / not found.
+  // 2.1 · 2.2 · 2.3 — opening / couldn't load / not found. P12: the same map component the order will
+  // use, with no stops yet, so its native view survives the order arriving (no second map, no jump).
+  const blankMap = (
+    <LiveOrderMap
+      orderId={orderId}
+      follow={false}
+      pickup={null}
+      dropoff={null}
+      riderLabel=""
+      riderPaused={false}
+      showRider={false}
+      toPickupLine={false}
+      rings={false}
+      dim={false}
+      frame="route"
+      padBottom={0}
+      reduceMotion={reduceMotion}
+    />
+  );
   if (!order) {
     if (orderQ.isLoading || !loadErrorKind) {
-      return frame({ title: "", map: <BlankMap />, content: <OpeningSheet />, bar: null, floor: 0, fallbackShare: 0.34, contentKey: "opening" });
+      return frame({ title: "", map: blankMap, content: <OpeningSheet />, bar: null, floor: 0, fallbackShare: 0.34, contentKey: "opening" });
     }
     const gone = loadErrorKind !== "transient";
     const bar = gone ? null : (
@@ -709,7 +795,7 @@ function ParcelOrderScreen(): React.ReactElement {
         <CtaButton ghost label={A.home} onPress={() => goHomeClearingStack(router)} />
       </CtaBar>
     );
-    return frame({ title: "", map: <BlankMap />, content: <LoadErrorSheet gone={gone} onHome={() => goHomeClearingStack(router)} />, bar, floor: 0, fallbackShare: 0.36, contentKey: gone ? "gone" : "fail" });
+    return frame({ title: "", map: blankMap, content: <LoadErrorSheet gone={gone} onHome={() => goHomeClearingStack(router)} />, bar, floor: 0, fallbackShare: 0.36, contentKey: gone ? "gone" : "fail" });
   }
 
   // ── view model ──
@@ -747,7 +833,7 @@ function ParcelOrderScreen(): React.ReactElement {
   const pickedUpAt = eventAt("picked_up");
   const deliveredAt = eventAt("delivered");
   const toPickup = stage === "toPickup";
-  const eta = live && !saved ? liveEta({ status: order.status, rider: riderPoint, pickup: order.pickup.point, dropoff: order.dropoff.point }) : null;
+  const etaMinutes = live && !saved ? (glance?.etaMinutes ?? null) : null;
   const receipt: ReceiptView = {
     ref: orderText.ref(order.id),
     pickup: order.pickup.landmark,
@@ -823,6 +909,10 @@ function ParcelOrderScreen(): React.ReactElement {
   };
   const openMaps = (): void => {
     const target = toPickup ? order.pickup.point : order.dropoff.point;
+    // The fix is read at tap time (the screen doesn't subscribe to it — P42).
+    const raw = saved ? undefined : qc.getQueryData<OrderSnapshot>(orderKey(orderId));
+    const t = raw ? selectRiderTelemetry(raw) : null;
+    const riderPoint = t && t.lat != null && t.lng != null ? { lat: t.lat, lng: t.lng } : null;
     const origin = riderPoint ?? (toPickup ? target : order.pickup.point);
     void Linking.openURL(mapsDirectionsUrl(origin, target)).catch(() => undefined);
   };
@@ -891,14 +981,14 @@ function ParcelOrderScreen(): React.ReactElement {
   const mapFrame: MapFrame = toPickup ? "pickupRider" : live || stage === "undelivered" || stage === "delivered" ? "riderDrop" : "route";
   const dim = cancelPanel || stage === "retryNoMatch" || stage === "retryRiderCancelled" || stage === "cancelled";
   const showRider = !saved && (live || stage === "undelivered" || stage === "delivered");
-  const riderLabel = gpsPaused || offline ? orderText.lastSeen(minutesSince(telemetry?.updatedAt, nowMs)) : riderFirst;
+  const riderLabel = gpsPaused || offline ? orderText.lastSeen(glance?.lastSeenMin ?? minutesSince(null, nowMs)) : riderFirst;
   const suggested = suggestedRetryPrice(price);
   const savedAtText = saved ? hhmm(saved.at) : null;
 
   const trackVM: TrackVM = {
     status: order.status,
     toPickup,
-    etaMinutes: eta?.minutes ?? null,
+    etaMinutes,
     stopName: toPickup ? order.pickup.landmark : order.dropoff.landmark,
     step: stepIndex(order.status),
     gpsPaused,
@@ -1062,7 +1152,7 @@ function ParcelOrderScreen(): React.ReactElement {
   const banner = saved
     ? orderText.savedCopy(savedAtText ?? "")
     : offline || (live && frozen)
-      ? orderText.offline(hhmm(telemetry?.updatedAt ?? (orderQ.dataUpdatedAt ? new Date(orderQ.dataUpdatedAt).toISOString() : null)))
+      ? orderText.offline(hhmm(glance?.fixAtMinute ?? (orderQ.dataUpdatedAt ? new Date(orderQ.dataUpdatedAt).toISOString() : null)))
       : null;
   const undoToast: Toast | null =
     rated && undoLeft > 0 ? { text: orderText.rated(riderFirst, rated.stars), icon: "circle-check", action: orderText.undo(undoLeft), actionIcon: "undo-2", onAction: undoRating, ttl: 0 } : null;
@@ -1072,10 +1162,11 @@ function ParcelOrderScreen(): React.ReactElement {
     title,
     help,
     map: (
-      <OrderMap
+      <LiveOrderMap
+        orderId={orderId}
+        follow={!saved}
         pickup={order.pickup.point}
         dropoff={order.dropoff.point}
-        rider={riderPoint}
         riderLabel={riderLabel}
         riderPaused={gpsPaused || offline}
         showRider={showRider}

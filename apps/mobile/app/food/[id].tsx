@@ -35,6 +35,7 @@ import {
   StoreSkeleton,
   StoreTabs,
   StoreTitle,
+  useStableItems,
   type StoreItem,
 } from "../../src/ui/browse/store";
 
@@ -140,6 +141,7 @@ export default function RestaurantMenuScreen(): React.ReactElement {
     prevOpen.current = v.open;
   }, [v]);
 
+  const stable = useStableItems();
   const sections = useMemo<Section[]>(() => {
     if (!menu) return [];
     const out: Section[] = [];
@@ -154,14 +156,14 @@ export default function RestaurantMenuScreen(): React.ReactElement {
         popular: false,
         window: windowed ? fmt(B.store.window, { a: c.availableFrom!, b: c.availableTo! }) : null,
         note: windowed ? fmt(B.store.windowNote, { a: windowLaterToday(c.availableFrom!, now) ? c.availableFrom! : `${c.availableFrom!} tomorrow` }) : null,
-        items: c.dishes.map((d) => storeItem(d, served)),
+        items: c.dishes.map((d) => stable(storeItem(d, served))),
       };
     });
     const popular = (menu.popularDishIds ?? []).map((pid) => byId.get(pid)).filter((x): x is { d: RestaurantMenuDish; served: boolean } => x != null);
     // "Popular" is the drawn tab label (S1); the rail only shows with two or more dishes.
-    if (popular.length >= 2) out.push({ key: "popular", title: "Popular", popular: true, window: null, note: null, items: popular.map((p) => storeItem(p.d, p.served)) });
+    if (popular.length >= 2) out.push({ key: "popular", title: "Popular", popular: true, window: null, note: null, items: popular.map((p) => stable(storeItem(p.d, p.served))) });
     return [...out, ...cats.filter((c) => c.items.length > 0)];
-  }, [menu, now]);
+  }, [menu, now, stable]);
 
   const qtyFor = (dishId: string): number => (cart.cart.restaurantId === id ? cart.cart.lines.filter((l) => l.dishId === dishId).reduce((s, l) => s + l.quantity, 0) : 0);
   const hasCart = cart.itemCount > 0 && cart.cart.restaurantId === id;
@@ -200,6 +202,8 @@ export default function RestaurantMenuScreen(): React.ReactElement {
   latest.current = { add, minus };
   const onRowAdd = useCallback((it: StoreItem) => latest.current.add(it), []);
   const onRowMinus = useCallback((it: StoreItem) => latest.current.minus(it), []);
+  // P14: rows are React.memo and take the item back in their handlers, so a + re-renders only that row.
+  const onRowOpen = useCallback((it: StoreItem) => setOpenItem(it), []);
   const menuBody = useMemo(() => {
     const qty = (dishId: string): number =>
       cart.cart.restaurantId === id ? cart.cart.lines.filter((l) => l.dishId === dishId).reduce((s, l) => s + l.quantity, 0) : 0;
@@ -216,26 +220,17 @@ export default function RestaurantMenuScreen(): React.ReactElement {
         {s.popular ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingVertical: 6, paddingHorizontal: 16 }}>
             {s.items.map((it) => (
-              <PopularCard key={it.id} item={it} qty={qty(it.id)} canAdd={open} onOpen={() => setOpenItem(it)} onAdd={() => onRowAdd(it)} onMinus={() => onRowMinus(it)} />
+              <PopularCard key={it.id} item={it} qty={qty(it.id)} canAdd={open} onOpen={onRowOpen} onAdd={onRowAdd} onMinus={onRowMinus} />
             ))}
           </ScrollView>
         ) : (
           s.items.map((it) => (
-            <DishRow
-              key={it.id}
-              item={it}
-              qty={qty(it.id)}
-              canAdd={open}
-              priority={photoPriority(ordinal++)}
-              onOpen={() => setOpenItem(it)}
-              onAdd={() => onRowAdd(it)}
-              onMinus={() => onRowMinus(it)}
-            />
+            <DishRow key={it.id} item={it} qty={qty(it.id)} canAdd={open} priority={photoPriority(ordinal++)} onOpen={onRowOpen} onAdd={onRowAdd} onMinus={onRowMinus} />
           ))
         )}
       </View>
     ));
-  }, [sections, cart.cart, id, open, onRowAdd, onRowMinus]);
+  }, [sections, cart.cart, id, open, onRowOpen, onRowAdd, onRowMinus]);
 
   // ── Loading / error ──────────────────────────────────────────────────────────────────────────
   if (isLoading && !menu) return <StoreSkeleton />;
@@ -319,7 +314,7 @@ export default function RestaurantMenuScreen(): React.ReactElement {
               </Text>
             ) : null}
             {hits.map((it) => (
-              <DishRow key={it.id} item={it} qty={qtyFor(it.id)} canAdd={canAdd} highlight={q} onOpen={() => setOpenItem(it)} onAdd={() => add(it)} onMinus={() => minus(it)} />
+              <DishRow key={it.id} item={it} qty={qtyFor(it.id)} canAdd={canAdd} highlight={q} onOpen={onRowOpen} onAdd={onRowAdd} onMinus={onRowMinus} />
             ))}
           </ScrollView>
         )}

@@ -79,8 +79,11 @@ export function useOrderSocket(
     // Background refetch — keeps previous data on screen (no flash) while the snapshot re-loads. WD-022:
     // also invalidate Trip History — a terminal transition (delivered/cancelled/undelivered) self-healed
     // here rather than through a mutation's own onSuccess must still land in the customer's Trip History.
-    const refetchOrder = (): void => {
-      void qc.invalidateQueries({ queryKey: orderKey(orderId) }).then(reconcileAfterRefetch);
+    // `join`: a reconnect self-heal joins a read already in flight instead of cancelling and restarting
+    // it (TanStack's default `cancelRefetch`, P19) — a real server push still forces a fresh read.
+    const refetchOrder = (join = false): void => {
+      const filter = { queryKey: orderKey(orderId) };
+      void (join ? qc.invalidateQueries(filter, { cancelRefetch: false }) : qc.invalidateQueries(filter)).then(reconcileAfterRefetch);
       invalidateCustomerOrderHistory(qc);
     };
     const refetchOffers = (): void => void qc.invalidateQueries({ queryKey: offersKey(orderId) });
@@ -88,7 +91,7 @@ export function useOrderSocket(
     // flaps — gate the reconnect-driven refetch so a flapping episode pays it once, not once per
     // attempt. Real server pushes (order:status, presence:recovered) refetch ungated below — those
     // are genuine events, not reconnect noise.
-    const gatedRefetchOrder = createSelfHealGate(refetchOrder);
+    const gatedRefetchOrder = createSelfHealGate(() => refetchOrder(true));
 
     const onConnect = () => {
       socket.emit(WS_EVENTS.subscribeOrder, { orderId });

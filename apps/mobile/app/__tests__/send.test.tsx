@@ -82,6 +82,8 @@ jest.mock("../../src/logic/saved-recipients", () => ({
 }));
 // The native map is stubbed: plain testID Pressables call the screen's real map callbacks, and the
 // props the screen hands the map (hint, distance, labels) are echoed back as testIDs to assert on.
+// `mockMapLife` counts mounts / unmounts (P36: one native map for the whole compose session).
+const mockMapLife = { mounts: 0, unmounts: 0, hidden: [] as boolean[] };
 jest.mock("../../src/ui/ComposeMap", () => {
   const React_ = require("react");
   const { Pressable, Text } = require("react-native");
@@ -93,6 +95,17 @@ jest.mock("../../src/ui/ComposeMap", () => {
     hint?: string | null;
     distanceLabel?: string | null;
     labels?: boolean;
+    hidden?: boolean;
+  };
+  const Life = ({ hidden }: { hidden?: boolean }) => {
+    mockMapLife.hidden.push(!!hidden);
+    React_.useEffect(() => {
+      mockMapLife.mounts++;
+      return () => {
+        mockMapLife.unmounts++;
+      };
+    }, []);
+    return null;
   };
   const btn = (testID: string, onPress: () => void) => React_.createElement(Pressable, { key: testID, testID, onPress });
   return {
@@ -100,6 +113,7 @@ jest.mock("../../src/ui/ComposeMap", () => {
       React_.createElement(
         React_.Fragment,
         null,
+        React_.createElement(Life, { key: "life", hidden: props.hidden }),
         btn("test-set-pickup", () => {
           props.onChangePickup(PICKUP);
           props.onReverseGeocodePickup?.("Test Pickup Spot");
@@ -409,6 +423,22 @@ describe("send.tsx — inline address editing (no search screen, no confirm scre
     press(active, "Back");
     expect(mockBack).not.toHaveBeenCalled();
     expect(has(active, "Where")).toBe(true);
+  });
+});
+
+describe("send.tsx — P36: the step-1 map survives Next and Back", () => {
+  it("is mounted once for the session — hidden on step 2, the same map again on Back", async () => {
+    mockMapLife.mounts = 0;
+    mockMapLife.unmounts = 0;
+    active = render();
+    await settle();
+    completeWhere(active);
+    expect(has(active, "What are you sending?")).toBe(true);
+    expect(mockMapLife.hidden[mockMapLife.hidden.length - 1]).toBe(true);
+    press(active, "Back");
+    expect(mockMapLife.hidden[mockMapLife.hidden.length - 1]).toBe(false);
+    expect(mockMapLife.mounts).toBe(1);
+    expect(mockMapLife.unmounts).toBe(0);
   });
 });
 

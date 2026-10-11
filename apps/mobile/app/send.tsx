@@ -472,53 +472,64 @@ export default function SendScreen(): React.ReactElement {
       {/* Android resizes the window for the keyboard (Expo's default adjustResize); iOS needs padding so
           the CTA bar rides above the keyboard and the dropdown measures the space actually left. */}
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      {/* P36: the step-1 map stays mounted for the life of the screen — hidden, not torn down, on steps
+          2–4 — so Back / Edit return to the same native map (its tiles, camera and two-pin fit) instead of
+          a fresh one. Only the map is kept; the card and the CTA are step 1's alone. */}
+      <View
+        style={{ flex: 1, display: step === 1 ? "flex" : "none" }}
+        onLayout={(e) => {
+          if (e.nativeEvent.layout.height > 0) setBodyH(e.nativeEvent.layout.height);
+        }}
+      >
+        <View style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0 }}>
+          <ComposeMap
+            pickup={pickup}
+            drop={drop}
+            active={mapSlot}
+            onChangePickup={onMapPickup}
+            onChangeDrop={onMapDrop}
+            onReverseGeocodePickup={onGeoPickup}
+            onReverseGeocodeDrop={onGeoDrop}
+            topOffset={CARD_TOP + CARD_ROWS_H + (outOfArea || !online ? 96 : 12)}
+            bottomOffset={12}
+            hint={!editing && pickup && !drop ? SEND_COPY.mapHintDrop : null}
+            labels={editing == null}
+            distanceLabel={!editing && step1Ok && km ? km : null}
+            onUseMyLocation={editing ? undefined : locateMapSlot}
+            locating={locating}
+            edgePadding={EDGE_PADDING}
+            hidden={step !== 1}
+          />
+        </View>
+        {step === 1 ? (
+          <View pointerEvents="box-none" style={{ position: "absolute", left: 12, right: 12, top: CARD_TOP }}>
+            <AddressCard
+              pickup={pickup}
+              drop={drop}
+              pickupMeta={pickup?.source === "gps" && drop == null ? SEND_COPY.fromGps : null}
+              editing={editing}
+              query={query}
+              status={suggest.status}
+              rows={suggest.rows}
+              outPickup={outPickup || (serverOutOfArea && !outDrop)}
+              outDrop={outDrop}
+              dropdownMax={bodyH - CARD_TOP - CARD_ROWS_H - tokens.touchTargetMin}
+              onEdit={startEdit}
+              onChangeQuery={setQuery}
+              onSubmitQuery={onSubmitQuery}
+              onPick={onPick}
+              onUseCurrent={() => editing && void locate(editing)}
+              onTapMap={armMapTap}
+            />
+            {!editing && outOfArea ? (
+              <Notice icon="map-pin" text={SEND_COPY.outArea} style={{ marginTop: 14, backgroundColor: tokens.color.bg, borderWidth: 0, ...tokens.shadow.card }} />
+            ) : null}
+            {!editing && !online && !outOfArea ? <Notice icon="wifi-off" text={SEND_COPY.offline} style={{ marginTop: 14, ...tokens.shadow.card }} /> : null}
+          </View>
+        ) : null}
+      </View>
       {step === 1 ? (
         <>
-          <View style={{ flex: 1 }} onLayout={(e) => setBodyH(e.nativeEvent.layout.height)}>
-            <View style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0 }}>
-              <ComposeMap
-                pickup={pickup}
-                drop={drop}
-                active={mapSlot}
-                onChangePickup={onMapPickup}
-                onChangeDrop={onMapDrop}
-                onReverseGeocodePickup={onGeoPickup}
-                onReverseGeocodeDrop={onGeoDrop}
-                topOffset={CARD_TOP + CARD_ROWS_H + (outOfArea || !online ? 96 : 12)}
-                bottomOffset={12}
-                hint={!editing && pickup && !drop ? SEND_COPY.mapHintDrop : null}
-                labels={editing == null}
-                distanceLabel={!editing && step1Ok && km ? km : null}
-                onUseMyLocation={editing ? undefined : locateMapSlot}
-                locating={locating}
-                edgePadding={EDGE_PADDING}
-              />
-            </View>
-            <View pointerEvents="box-none" style={{ position: "absolute", left: 12, right: 12, top: CARD_TOP }}>
-              <AddressCard
-                pickup={pickup}
-                drop={drop}
-                pickupMeta={pickup?.source === "gps" && drop == null ? SEND_COPY.fromGps : null}
-                editing={editing}
-                query={query}
-                status={suggest.status}
-                rows={suggest.rows}
-                outPickup={outPickup || (serverOutOfArea && !outDrop)}
-                outDrop={outDrop}
-                dropdownMax={bodyH - CARD_TOP - CARD_ROWS_H - tokens.touchTargetMin}
-                onEdit={startEdit}
-                onChangeQuery={setQuery}
-                onSubmitQuery={onSubmitQuery}
-                onPick={onPick}
-                onUseCurrent={() => editing && void locate(editing)}
-                onTapMap={armMapTap}
-              />
-              {!editing && outOfArea ? (
-                <Notice icon="map-pin" text={SEND_COPY.outArea} style={{ marginTop: 14, backgroundColor: tokens.color.bg, borderWidth: 0, ...tokens.shadow.card }} />
-              ) : null}
-              {!editing && !online && !outOfArea ? <Notice icon="wifi-off" text={SEND_COPY.offline} style={{ marginTop: 14, ...tokens.shadow.card }} /> : null}
-            </View>
-          </View>
           {editing ? null : (
             <View style={{ paddingBottom: insets.bottom, backgroundColor: tokens.color.bg }}>
               <SendCtaBar

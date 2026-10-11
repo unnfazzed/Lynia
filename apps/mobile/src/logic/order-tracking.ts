@@ -7,9 +7,13 @@
 // the kind of work a low-end Android can't hide. The split: the SCREEN subscribes through
 // `selectOrderShell` (telemetry stripped, so a GPS-only cache write leaves its selected data deep-equal
 // and — via React Query's structural sharing — referentially identical, meaning no re-render), while
-// the extracted LiveTrackingCard subscribes through `selectRiderTelemetry` (the per-tick slice) and is
-// the ONLY thing that re-renders on a position push.
+// the map leaf (`LiveOrderMap` / `MerchantLiveMap`) subscribes through `selectRiderTelemetry` (the
+// per-tick slice) and is the ONLY thing that re-renders on a position push. What the screen itself
+// draws from the position (stage, ETA minutes, "last seen") reaches it as a display-granularity glance
+// (`selectParcelGlance`, P42), so a fix that changes none of that leaves the screen still.
 import type { OrderSnapshot } from "../api/orders";
+import { liveEta } from "./eta";
+import { isLiveStage, minutesSince, resolveStage, type StageInput, type StageResult } from "./order-stage";
 
 /**
  * The screen's view of the snapshot: everything EXCEPT the per-tick rider telemetry, which is pinned
@@ -45,6 +49,51 @@ export function selectRiderTelemetry(o: OrderSnapshot): RiderTelemetry {
     lat: o.rider?.currentLat ?? null,
     lng: o.rider?.currentLng ?? null,
     updatedAt: o.rider?.updatedAt ?? null,
+  };
+}
+
+/**
+ * P42 (customer review 2026-10-07): what the parcel order SCREEN draws from the rider's position, at
+ * display granularity and as primitives — the stage (a fix within ~150 m of the drop is the hand-off), the
+ * GPS-paused / no-fix flags, the ETA minutes and the "Last seen N min" minutes. A position push that
+ * changes none of these selects to a deep-equal glance, so structural sharing keeps the screen still; only
+ * the map leaf (through `selectRiderTelemetry`) moves per fix. The screen's own inputs (`ctx`) are closed
+ * over by the select, so a change in them re-runs it.
+ */
+export interface ParcelGlance extends StageResult {
+  /** A live fix is on the order. */
+  hasFix: boolean;
+  /** Live-stage ETA in minutes from the fix, else null. */
+  etaMinutes: number | null;
+  /** Whole minutes since the last fix (≥ 1) — the "Last seen" pin. */
+  lastSeenMin: number;
+  /** The last fix's time, floored to the minute (ISO) — the offline banner's "as of HH:MM". */
+  fixAtMinute: string | null;
+}
+
+export function selectParcelGlance(o: OrderSnapshot, ctx: Pick<StageInput, "offerCount" | "online" | "nowMs" | "reopened">): ParcelGlance {
+  const t = selectRiderTelemetry(o);
+  const rider = t.lat != null && t.lng != null ? { lat: t.lat, lng: t.lng } : null;
+  const r = resolveStage({
+    status: o.status,
+    offerCount: ctx.offerCount,
+    ridersNearby: o.ridersNearby,
+    cancelledBy: o.cancelledBy,
+    events: o.events ?? [],
+    rider: rider ? { ...rider, at: t.updatedAt } : null,
+    dropoff: o.dropoff.point,
+    online: ctx.online,
+    nowMs: ctx.nowMs,
+    reopened: ctx.reopened,
+  });
+  const eta = isLiveStage(r.stage) ? liveEta({ status: o.status, rider, pickup: o.pickup.point, dropoff: o.dropoff.point }) : null;
+  const at = t.updatedAt ? Date.parse(t.updatedAt) : NaN;
+  return {
+    ...r,
+    hasFix: rider != null,
+    etaMinutes: eta?.minutes ?? null,
+    lastSeenMin: minutesSince(t.updatedAt, ctx.nowMs),
+    fixAtMinute: Number.isFinite(at) ? new Date(Math.floor(at / 60_000) * 60_000).toISOString() : null,
   };
 }
 

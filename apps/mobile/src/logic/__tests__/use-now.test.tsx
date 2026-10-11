@@ -42,4 +42,26 @@ describe("useNow", () => {
     expect(seen).toHaveLength(5);
     expect(seen[4]!.getTime()).toBeGreaterThan(seen[1]!.getTime());
   });
+
+  // P15 (customer review 2026-10-07): the Orders tab stays mounted while hidden; `null` stops its clock.
+  it("null pauses the clock (no re-render), and resuming jumps to the current time at once", () => {
+    const seen: Date[] = [];
+    function Paused({ ms }: { ms: number | null }): null {
+      seen.push(useNow(ms));
+      return null;
+    }
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<Paused ms={1_000} />);
+    });
+    act(() => tree.update(<Paused ms={null} />));
+    const paused = seen.length;
+    act(() => jest.advanceTimersByTime(10_000));
+    expect(seen).toHaveLength(paused);
+    act(() => tree.update(<Paused ms={1_000} />));
+    act(() => undefined);
+    const resumed = seen[seen.length - 1]!;
+    expect(resumed.getTime() - seen[0]!.getTime()).toBeGreaterThanOrEqual(10_000);
+    act(() => tree.unmount());
+  });
 });

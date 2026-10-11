@@ -53,7 +53,7 @@ jest.mock("../../../src/api/offers", () => ({ listOffers: async () => [], select
 jest.mock("../../../src/api/safety", () => ({ raiseIssue: jest.fn(async () => ({})), raiseSos: jest.fn(async () => ({})) }));
 jest.mock("../../../src/realtime/use-order-socket", () => ({ useOrderSocket: () => ({ connected: false }) }));
 jest.mock("../../../src/realtime/use-foreground-refetch", () => ({ useForegroundRefetch: () => undefined }));
-jest.mock("../../../src/ui/order/OrderMap", () => ({ OrderMap: () => null, BlankMap: () => null }));
+jest.mock("../../../src/ui/order/OrderMap", () => ({ OrderMap: () => null }));
 jest.mock("../../../src/ui/orderflow/MerchantMap", () => ({ MerchantMap: () => null }));
 
 import OrderRoute from "../[id]";

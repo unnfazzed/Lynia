@@ -1,10 +1,11 @@
 import { tokens } from "@lynia/shared/tokens";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { Animated, Easing, Text, View } from "react-native";
-import MapView, { AnimatedRegion, type LatLng, Marker, MarkerAnimated, Polyline, type Region } from "react-native-maps";
+import MapView, { type LatLng, Marker, Polyline, type Region } from "react-native-maps";
 import { PinView } from "../ComposeMap";
 import { Icon } from "../Icon";
 import type { MapPoint } from "../LiveMap";
+import { GlidingMarker, MapGround, RINGS_AS_OVERLAY, useDeferredMapMount, useProjectedPoint } from "./map-perf";
 
 /**
  * The order screen's full-bleed map (After Send handoff "Map", ledger D-53). It sits behind the sheet:
@@ -16,12 +17,17 @@ import type { MapPoint } from "../LiveMap";
  * The camera fits per stage with bottom padding equal to the sheet, so pins never hide under it, and
  * re-fits only when the framed SET changes (a stage change), never on a GPS tick. GPS fixes glide the
  * marker over 800ms (snap under reduce motion). No Expand / Recenter: the sheet does that job.
+ *
+ * Performance (customer review 2026-10-07, `map-perf.tsx`): the native map mounts one interaction after
+ * the push (P12) — and with no stops yet it is the opening state's map too, so the same native view
+ * survives the order arriving; the finding rings are a plain view over the map on native (P20); the
+ * rider glides natively on Android (P37).
  */
 
 /** Harare CBD — the initial region before the first fit. */
 const HARARE: Region = { latitude: -17.8292, longitude: 31.0522, latitudeDelta: 0.06, longitudeDelta: 0.06 };
-const RIDER_DELTA = { latitudeDelta: 0.01, longitudeDelta: 0.01 } as const;
-const GLIDE_MS = 800;
+/** The rings' box (two 40 rings scaled to 3.2 fit in it). */
+const RINGS_BOX = 132;
 
 const toLatLng = (p: MapPoint): LatLng => ({ latitude: p.lat, longitude: p.lng });
 
@@ -97,7 +103,7 @@ function FindingRings({ reduceMotion }: { reduceMotion: boolean }): React.ReactE
     />
   );
   return (
-    <View style={{ width: 132, height: 132, alignItems: "center", justifyContent: "center" }} pointerEvents="none">
+    <View style={{ width: RINGS_BOX, height: RINGS_BOX, alignItems: "center", justifyContent: "center" }} pointerEvents="none">
       {reduceMotion ? ring(null) : (
         <>
           {ring(a)}
@@ -109,8 +115,9 @@ function FindingRings({ reduceMotion }: { reduceMotion: boolean }): React.ReactE
 }
 
 export const OrderMap = React.memo(function OrderMap(props: {
-  pickup: MapPoint;
-  dropoff: MapPoint;
+  /** Null while the order is opening (v2 2.1–2.3): the same map, no pins yet. */
+  pickup: MapPoint | null;
+  dropoff: MapPoint | null;
   rider: MapPoint | null;
   riderLabel: string;
   riderPaused: boolean;
@@ -126,37 +133,19 @@ export const OrderMap = React.memo(function OrderMap(props: {
   reduceMotion: boolean;
 }): React.ReactElement {
   const mapRef = useRef<MapView>(null);
-  const riderRegion = useRef<AnimatedRegion | null>(null);
-  const [hasRider, setHasRider] = useState(false);
-  const { rider, reduceMotion } = props;
-  const riderLat = rider?.lat;
-  const riderLng = rider?.lng;
-
-  useEffect(() => {
-    if (riderLat == null || riderLng == null) return;
-    const next: Region = { latitude: riderLat, longitude: riderLng, ...RIDER_DELTA };
-    if (!riderRegion.current) {
-      riderRegion.current = new AnimatedRegion(next);
-      setHasRider(true);
-      return;
-    }
-    if (reduceMotion) riderRegion.current.setValue(next);
-    else
-      riderRegion.current
-        .timing({ ...next, duration: GLIDE_MS, easing: Easing.linear, useNativeDriver: false } as Parameters<AnimatedRegion["timing"]>[0])
-        .start();
-  }, [riderLat, riderLng, reduceMotion]);
+  const mapMounted = useDeferredMapMount();
+  const { rider, reduceMotion, pickup, dropoff } = props;
 
   // The framed set per stage. The rider joins it only when the stage asks for it; the fit runs when the
   // frame, the stops or the sheet padding change — a later GPS tick never re-frames the camera.
   const haveRider = rider != null;
-  const fitKey = `${props.frame}|${props.pickup.lat},${props.pickup.lng}|${props.dropoff.lat},${props.dropoff.lng}|${Math.round(props.padBottom)}|${haveRider}`;
+  const fitKey = `${props.frame}|${pickup?.lat},${pickup?.lng}|${dropoff?.lat},${dropoff?.lng}|${Math.round(props.padBottom)}|${haveRider}|${mapMounted}`;
   const riderRef = useRef(rider);
   riderRef.current = rider;
   useEffect(() => {
+    if (!pickup || !dropoff) return;
     const r = riderRef.current;
-    const pts: MapPoint[] =
-      props.frame === "pickupRider" && r ? [props.pickup, r] : props.frame === "riderDrop" && r ? [r, props.dropoff] : [props.pickup, props.dropoff];
+    const pts: MapPoint[] = props.frame === "pickupRider" && r ? [pickup, r] : props.frame === "riderDrop" && r ? [r, dropoff] : [pickup, dropoff];
     mapRef.current?.fitToCoordinates(pts.map(toLatLng), {
       edgePadding: { top: 56, right: 48, bottom: props.padBottom + 24, left: 48 },
       animated: !reduceMotion,
@@ -164,49 +153,65 @@ export const OrderMap = React.memo(function OrderMap(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fitKey is the deliberate trigger (see above).
   }, [fitKey, reduceMotion]);
 
-  const route = useMemo(() => [toLatLng(props.pickup), toLatLng(props.dropoff)], [props.pickup, props.dropoff]);
+  const route = useMemo(() => (pickup && dropoff ? [toLatLng(pickup), toLatLng(dropoff)] : null), [pickup, dropoff]);
+  const ringsOverlay = RINGS_AS_OVERLAY && props.rings && pickup != null;
+  const projected = useProjectedPoint(mapRef, pickup, ringsOverlay && mapMounted);
 
   return (
     <View style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0 }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-      <MapView ref={mapRef} style={{ flex: 1 }} initialRegion={HARARE} toolbarEnabled={false} showsCompass={false}>
-        <Polyline coordinates={route} strokeColor={tokens.color.accent} strokeWidth={5} lineCap="round" />
-        {props.rings ? (
-          <Marker key={`rings-${reduceMotion ? "s" : "a"}`} coordinate={toLatLng(props.pickup)} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={!reduceMotion}>
-            <FindingRings reduceMotion={reduceMotion} />
-          </Marker>
-        ) : null}
-        <Marker coordinate={toLatLng(props.pickup)} anchor={{ x: 0.5, y: 0.25 }} tracksViewChanges={false}>
-          <PinView kind="pickup" label="Pickup" />
-        </Marker>
-        <Marker coordinate={toLatLng(props.dropoff)} anchor={{ x: 0.5, y: 0.25 }} tracksViewChanges={false}>
-          <PinView kind="drop" label="Drop-off" />
-        </Marker>
-        {props.showRider && props.toPickupLine && rider ? (
-          <Polyline coordinates={[toLatLng(rider), toLatLng(props.pickup)]} strokeColor={tokens.color.ink} strokeWidth={3} lineDashPattern={[2, 6]} lineCap="round" />
-        ) : null}
-        {props.showRider && hasRider && riderRegion.current ? (
-          <MarkerAnimated
-            // Remount on a label / paused change: tracksViewChanges is off, so a new key repaints the bitmap.
-            key={`rider-${props.riderPaused ? "p" : "l"}-${props.riderLabel}`}
-            coordinate={riderRegion.current as unknown as LatLng}
-            anchor={{ x: 0.5, y: 0.3 }}
-            tracksViewChanges={false}
-          >
-            <RiderMarkerView label={props.riderLabel} paused={props.riderPaused} />
-          </MarkerAnimated>
-        ) : null}
-      </MapView>
+      {!mapMounted ? <MapGround /> : null}
+      {mapMounted ? (
+        <MapView
+          ref={mapRef}
+          style={{ flex: 1 }}
+          initialRegion={HARARE}
+          toolbarEnabled={false}
+          showsCompass={false}
+          onRegionChange={ringsOverlay ? projected.reproject : undefined}
+          onRegionChangeComplete={ringsOverlay ? projected.reproject : undefined}
+        >
+          {route ? <Polyline coordinates={route} strokeColor={tokens.color.accent} strokeWidth={5} lineCap="round" /> : null}
+          {props.rings && pickup && !RINGS_AS_OVERLAY ? (
+            <Marker key={`rings-${reduceMotion ? "s" : "a"}`} coordinate={toLatLng(pickup)} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={!reduceMotion}>
+              <FindingRings reduceMotion={reduceMotion} />
+            </Marker>
+          ) : null}
+          {pickup ? (
+            <Marker coordinate={toLatLng(pickup)} anchor={{ x: 0.5, y: 0.25 }} tracksViewChanges={false}>
+              <PinView kind="pickup" label="Pickup" />
+            </Marker>
+          ) : null}
+          {dropoff ? (
+            <Marker coordinate={toLatLng(dropoff)} anchor={{ x: 0.5, y: 0.25 }} tracksViewChanges={false}>
+              <PinView kind="drop" label="Drop-off" />
+            </Marker>
+          ) : null}
+          {props.showRider && props.toPickupLine && rider && pickup ? (
+            <Polyline coordinates={[toLatLng(rider), toLatLng(pickup)]} strokeColor={tokens.color.ink} strokeWidth={3} lineDashPattern={[2, 6]} lineCap="round" />
+          ) : null}
+          {props.showRider ? (
+            <GlidingMarker
+              point={rider}
+              // Remount on a label / paused change: tracksViewChanges is off, so a new key repaints the bitmap.
+              markerKey={`rider-${props.riderPaused ? "p" : "l"}-${props.riderLabel}`}
+              anchor={{ x: 0.5, y: 0.3 }}
+              reduceMotion={reduceMotion}
+            >
+              <RiderMarkerView label={props.riderLabel} paused={props.riderPaused} />
+            </GlidingMarker>
+          ) : null}
+        </MapView>
+      ) : null}
+      {ringsOverlay && projected.point ? (
+        <View
+          testID="finding-rings"
+          pointerEvents="none"
+          style={{ position: "absolute", left: projected.point.x - RINGS_BOX / 2, top: projected.point.y - RINGS_BOX / 2 }}
+        >
+          <FindingRings key={reduceMotion ? "s" : "a"} reduceMotion={reduceMotion} />
+        </View>
+      ) : null}
       {props.dim ? <View pointerEvents="none" style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, backgroundColor: "rgba(255,255,255,0.45)" }} /> : null}
     </View>
   );
 });
-
-/** The map with no pins — while an order is opening or failed to load (v2 2.1–2.3). */
-export function BlankMap(): React.ReactElement {
-  return (
-    <View style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0 }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-      <MapView style={{ flex: 1 }} initialRegion={HARARE} toolbarEnabled={false} showsCompass={false} />
-    </View>
-  );
-}
-

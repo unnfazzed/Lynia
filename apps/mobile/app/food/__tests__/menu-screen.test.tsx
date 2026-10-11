@@ -72,6 +72,20 @@ jest.mock("../../../src/food/cart-context", () => ({ useFoodCart: () => mockCart
 let mockSlots: unknown = undefined;
 jest.mock("../../../src/query/use-order-flow", () => ({ useScheduleSlots: () => ({ slots: mockSlots, isLoading: false, isError: false }) }));
 
+// P02 / P14: count each item photo's renders by name — a row that didn't change must not re-render.
+const mockImageRenders: Record<string, number> = {};
+jest.mock("../../../src/ui/browse/kit", () => {
+  const actual = jest.requireActual("../../../src/ui/browse/kit");
+  const React = jest.requireActual("react");
+  return {
+    ...actual,
+    VenueImage: (p: { name: string }) => {
+      mockImageRenders[p.name] = (mockImageRenders[p.name] ?? 0) + 1;
+      return React.createElement(actual.VenueImage, p);
+    },
+  };
+});
+
 import RestaurantMenuScreen from "../[id]";
 
 function render(): renderer.ReactTestRenderer {
@@ -219,5 +233,36 @@ describe("Storefront — closed with a basket (R5c, Order flow v2)", () => {
     const tree = render();
     press(tree, "Add Roast chicken (half)");
     expect(mockCart.addItem).toHaveBeenCalledWith("m1", "Gava’s Kitchen", expect.objectContaining({ dishId: "d2" }), { businessType: "restaurant", shopKind: null });
+  });
+});
+
+describe("P14 — a + re-renders only the row it changed", () => {
+  it("the other dish rows (and their photos) stay put when one quantity changes", () => {
+    const tree = render();
+    for (const k of Object.keys(mockImageRenders)) delete mockImageRenders[k];
+    setCart("m1", "Gava’s Kitchen", [{ dishId: "d2", name: "Roast chicken (half)", priceUsd: 6, quantity: 1, note: "" }]);
+    act(() =>
+      tree.update(
+        <SafeAreaProvider initialMetrics={TEST_METRICS}>
+          <RestaurantMenuScreen />
+        </SafeAreaProvider>,
+      ),
+    );
+    expect(mockImageRenders["Roast chicken (half)"]).toBeGreaterThan(0);
+    expect(mockImageRenders["Sadza & beef stew"]).toBeUndefined();
+    expect(mockImageRenders["T-bone & sadza"]).toBeUndefined();
+  });
+
+  it("re-rendering the screen with nothing changed (scroll-spy, collapse, the clock) re-renders no row", () => {
+    const tree = render();
+    for (const k of Object.keys(mockImageRenders)) delete mockImageRenders[k];
+    act(() =>
+      tree.update(
+        <SafeAreaProvider initialMetrics={TEST_METRICS}>
+          <RestaurantMenuScreen />
+        </SafeAreaProvider>,
+      ),
+    );
+    expect(mockImageRenders).toEqual({});
   });
 });

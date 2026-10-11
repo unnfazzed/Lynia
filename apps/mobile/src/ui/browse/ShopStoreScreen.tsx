@@ -2,7 +2,7 @@ import type { RestaurantMenuDish, ShopService } from "@lynia/shared";
 import { RESTAURANTS_PRICING } from "@lynia/shared/restaurants-order";
 import { tokens } from "@lynia/shared/tokens";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, Text, TextInput, View, useWindowDimensions, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoodCart } from "../../food/cart-context";
@@ -41,6 +41,7 @@ import {
   StoreSkeleton,
   StoreTabs,
   StoreTitle,
+  useStableItems,
   type StoreItem,
 } from "./store";
 
@@ -144,6 +145,7 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
     prevOpen.current = v.open;
   }, [v, cart.itemCount, cart.cart.restaurantId, id]);
 
+  const stable = useStableItems();
   const sections = useMemo<Section[]>(() => {
     if (!catalogue) return [];
     return catalogue.categories
@@ -155,11 +157,11 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
           title: c.name,
           window: windowed ? fmt(B.store.window, { a: c.availableFrom!, b: c.availableTo! }) : null,
           note: windowed ? fmt(B.store.windowNote, { a: windowLaterToday(c.availableFrom!, now) ? c.availableFrom! : `${c.availableFrom!} tomorrow` }) : null,
-          items: c.dishes.map((d) => storeItem(d, served, rxEnabled)),
+          items: c.dishes.map((d) => stable(storeItem(d, served, rxEnabled))),
         };
       })
       .filter((c) => c.items.length > 0);
-  }, [catalogue, now, rxEnabled]);
+  }, [catalogue, now, rxEnabled, stable]);
   // P11: each section's first catalogue ordinal (the photo-priority cut-off counts across sections).
   const sectionFirst = useMemo(() => {
     let n = 0;
@@ -201,33 +203,63 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
     if (line) cart.setQuantity(line.dishId, line.note, line.quantity - 1);
   };
 
-  // P11: `firstOrdinal` is the catalogue ordinal of `items[0]`, so rows past the first screen and a half load
-  // their photos at low priority.
-  const renderItems = (items: StoreItem[], highlight?: string, firstOrdinal = 0): React.ReactElement =>
-    service === "pharmacy" ? (
-      <View>
-        {items.map((it, i) => (
-          <PharmacyRow
-            key={it.id}
-            item={it}
-            highlight={highlight}
-            priority={photoPriority(firstOrdinal + i)}
-            qty={qtyFor(it.id)}
-            canAdd={canAdd}
-            onOpen={() => setOpenItem(it)}
-            onAdd={() => add(it)}
-            onMinus={() => minus(it)}
-          />
-        ))}
-      </View>
-    ) : (
-      <ShopGrid
-        items={items}
-        renderTile={(it, i) => (
-          <ShopTile item={it} qty={qtyFor(it.id)} canAdd={canAdd} priority={photoPriority(firstOrdinal + i)} onOpen={() => setOpenItem(it)} onAdd={() => add(it)} onMinus={() => minus(it)} />
-        )}
-      />
-    );
+  // P11: `firstOrdinal` is the catalogue ordinal of `items[0]`, so rows past the first screen and a half
+  // load their photos at low priority.
+  // P02 — the Wave 3 menu memo, applied to the shop / pharmacy storefront. Rows are React.memo and get ONE
+  // stable handler each (taking the item back), reading the latest add/minus through a ref; the catalogue
+  // body is built once per catalogue / basket change, so scroll-spy, the collapsing bar, the sheet opening
+  // and closing, a toast and the 60 s tick no longer reconcile every tile — and a + re-renders one row.
+  const latest = useRef({ add, minus });
+  latest.current = { add, minus };
+  const onRowAdd = useCallback((it: StoreItem) => latest.current.add(it), []);
+  const onRowMinus = useCallback((it: StoreItem) => latest.current.minus(it), []);
+  const onRowOpen = useCallback((it: StoreItem) => setOpenItem(it), []);
+  const lines = cart.cart.restaurantId === id ? cart.cart.lines : null;
+  const renderItems = useCallback(
+    (items: StoreItem[], highlight?: string, firstOrdinal = 0): React.ReactElement => {
+      const qty = (itemId: string): number => (lines ? lines.filter((l) => l.dishId === itemId).reduce((n, l) => n + l.quantity, 0) : 0);
+      return service === "pharmacy" ? (
+        <View>
+          {items.map((it, i) => (
+            <PharmacyRow
+              key={it.id}
+              item={it}
+              highlight={highlight}
+              priority={photoPriority(firstOrdinal + i)}
+              qty={qty(it.id)}
+              canAdd={canAdd}
+              onOpen={onRowOpen}
+              onAdd={onRowAdd}
+              onMinus={onRowMinus}
+            />
+          ))}
+        </View>
+      ) : (
+        <ShopGrid
+          items={items}
+          renderTile={(it, i) => (
+            <ShopTile item={it} qty={qty(it.id)} canAdd={canAdd} priority={photoPriority(firstOrdinal + i)} onOpen={onRowOpen} onAdd={onRowAdd} onMinus={onRowMinus} />
+          )}
+        />
+      );
+    },
+    [lines, service, canAdd, onRowOpen, onRowAdd, onRowMinus],
+  );
+  const catalogueBody = useMemo(
+    () =>
+      sections.map((x, i) => (
+        <View
+          key={x.key}
+          onLayout={(e) => {
+            sectionY.current[i] = e.nativeEvent.layout.y;
+          }}
+        >
+          <SectionHeading title={x.title} window={x.window} note={x.note} />
+          {renderItems(x.items, undefined, sectionFirst[i])}
+        </View>
+      )),
+    [sections, sectionFirst, renderItems],
+  );
 
   function renderOverlays(): React.ReactElement {
     const showBar = hasCart && sectionOn && !openItem && !pending;
@@ -420,17 +452,7 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
             >
               <StoreTabs names={tabNames} active={active} onPick={jump} />
             </View>
-            {sections.map((x, i) => (
-              <View
-                key={x.key}
-                onLayout={(e) => {
-                  sectionY.current[i] = e.nativeEvent.layout.y;
-                }}
-              >
-                <SectionHeading title={x.title} window={x.window} note={x.note} />
-                {renderItems(x.items, undefined, sectionFirst[i])}
-              </View>
-            ))}
+            {catalogueBody}
           </>
         )}
       </ScrollView>

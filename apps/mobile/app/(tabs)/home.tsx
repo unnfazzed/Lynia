@@ -27,6 +27,7 @@ import { enqueueBoot } from "../../src/telemetry/rum";
 import { useBootPhase } from "../../src/boot/boot-phase";
 import { reportBootReady } from "../../src/boot/boot-readiness";
 import { BootEntrance } from "../../src/boot/splash/BootEntrance";
+import { useBootSettled } from "../../src/boot/use-boot-settled";
 import { statusPillLabel, useTabRoot } from "../../src/ui";
 import { ScreenStatusBar } from "../../src/boot/ScreenStatusBar";
 import { H } from "../../src/ui/home/copy";
@@ -129,6 +130,8 @@ function MapsSdkPrewarm(): React.ReactElement | null {
   );
 }
 
+const NO_PREWARM: readonly PrewarmRoute[] = [];
+
 /**
  * The rider's first name per live order, for the live bar's "Tendai is on the way" (Calm Mint v2 H1).
  *
@@ -204,7 +207,8 @@ export default function LauncherHomeScreen(): React.ReactElement {
   const qc = useQueryClient();
   const { restaurantsEnabled } = useFeatureFlags();
   const { shopsEnabled, pharmacyEnabled } = useServiceFlags();
-  usePrewarmRoutes(HOME_PREWARM);
+  const bootSettled = useBootSettled();
+  usePrewarmRoutes(bootSettled ? HOME_PREWARM : NO_PREWARM);
   useBootHomePaintMark();
   const { width } = useWindowDimensions();
   const narrow = width < NARROW_MAX;
@@ -462,7 +466,7 @@ export default function LauncherHomeScreen(): React.ReactElement {
       ) : null}
       {/* D3: throwaway 1×1 map that pays the Android Maps SDK's first-in-process init during launcher
           idle, then unmounts — see MapsSdkPrewarm's header. Renders null off-Android and after warm. */}
-      <MapsSdkPrewarm />
+      {bootSettled ? <MapsSdkPrewarm /> : null}
       <LocationSheet
         visible={locationOpen}
         denied={location.denied}

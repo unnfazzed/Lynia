@@ -54,11 +54,12 @@ import {
 import { goHomeClearingStack } from "../logic/nav";
 import type { ChosenSlot } from "../logic/review";
 import { minutesSince } from "../logic/order-stage";
-import { reconcileDeliveryCode, reconcilePendingRating } from "../logic/order-tracking";
+import { reconcileDeliveryCode, reconcilePendingRating, selectOrderShell, selectRiderTelemetry } from "../logic/order-tracking";
 import { loadFoodOrderSnapshot, saveFoodOrderSnapshot } from "../net/food-order-store";
 import { useClaimOfflineBanner } from "../net/offline-banner-owner";
 import { useReachability } from "../net/use-reachability";
 import { orderKey } from "../query/client";
+import { seedFromActiveOrders } from "../query/seed-order";
 import { foodOrderKey, useFoodOrder } from "../query/use-food-order";
 import { useScheduleSlots } from "../query/use-order-flow";
 import { useForegroundRefetch } from "../realtime/use-foreground-refetch";
@@ -67,7 +68,6 @@ import { emptyCopy, EmptyState, haptic, useDial } from "../ui/index";
 import { Icon } from "../ui/Icon";
 import { clock, hhmm, initials, riderShortName } from "../ui/order/copy";
 import { OrderToast } from "../ui/order/kit";
-import { BlankMap } from "../ui/order/OrderMap";
 import { OrderSheet, type OrderSheetHandle, PeekMark } from "../ui/order/OrderSheet";
 import { OrderHeader } from "../ui/order/panels";
 import { useReduceMotion } from "../ui/useReduceMotion";
@@ -184,6 +184,75 @@ const dayTime = (iso: string | null | undefined, nowMs: number): string => {
   return `${same ? O.r.today : DAYS[d.getDay()]} ${hhmm(iso)}`;
 };
 
+/** P19: an echo refetch joins a read already in flight instead of cancelling and restarting it. */
+const JOIN = { cancelRefetch: false } as const;
+
+/**
+ * P42 / P30 (customer review 2026-10-07): what the screen draws from the rider's position — the stage
+ * (≤150 m of the venue is "collecting", of the door "door"), the no-fix / GPS-paused flags, the ETA and the
+ * "Last seen" minutes — as plain values. Selected from the snapshot with the food order's inputs closed
+ * over, so a GPS push that changes none of it selects deep-equal and the screen stays still; only the map
+ * leaf (`MerchantLiveMap`) follows every fix.
+ */
+interface MerchantGlance {
+  res: { stage: MerchantStage; noFix: boolean; gpsPaused: boolean };
+  eta: Eta | null;
+  lastSeenMin: number;
+}
+function merchantGlance(snap: OrderSnapshot | undefined, order: MerchantOrderResponse, ctx: { sawRider: boolean; handshakeStarted: boolean; nowMs: number }): MerchantGlance {
+  const t = snap ? selectRiderTelemetry(snap) : null;
+  const rider = t && t.lat != null && t.lng != null ? { lat: t.lat, lng: t.lng, at: t.updatedAt } : null;
+  const venue = snap?.pickup.point ?? null;
+  const dropoff = snap?.dropoff.point ?? null;
+  const res = resolveMerchantStage({
+    status: order.status,
+    merchantPhase: order.merchantPhase,
+    autoAccepted: order.autoAccepted,
+    kitchenConfirmedAt: order.kitchenConfirmedAt,
+    scheduled: isScheduledWaiting(order),
+    rxStatus: order.prescription?.status ?? null,
+    riderId: order.riderId,
+    sawRider: ctx.sawRider,
+    rider,
+    venue,
+    dropoff,
+    assignedAt: snap?.events.find((e) => e.status === "assigned")?.createdAt ?? null,
+    handshakeStarted: ctx.handshakeStarted,
+    riderAtDropoff: !!order.riderAtDropoffAt,
+    nowMs: ctx.nowMs,
+  });
+  const eta = merchantEta({ stage: res.stage, noFix: res.noFix, nowMs: ctx.nowMs, readyMs: readyAtMs(order), venue, dropoff, rider });
+  return { res, eta, lastSeenMin: minutesSince(t?.updatedAt, ctx.nowMs) };
+}
+
+/**
+ * P30: a once-a-second display — a countdown chip, bar or clock — re-renders on its own; the 1,600-line
+ * screen around it no longer does (PERF20-02's `<AuctionClock/>` pattern, applied to Order flow v2).
+ */
+function Ticking({ children }: { children: (nowMs: number) => React.ReactNode }): React.ReactElement {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const iv = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(iv);
+  }, []);
+  return <>{children(nowMs)}</>;
+}
+
+type MerchantMapProps = React.ComponentProps<typeof MerchantMap>;
+
+/**
+ * P42: the map, subscribed to the rider's telemetry alone with the fix memoised on its coordinates, so
+ * `MerchantMap`'s memo holds on every other render and the screen doesn't re-render per GPS push. Also the
+ * opening state's map (P12): the native map is created once per open.
+ */
+function MerchantLiveMap({ orderId, ...props }: Omit<MerchantMapProps, "rider"> & { orderId: string }): React.ReactElement {
+  const t = useQuery({ queryKey: orderKey(orderId), queryFn: () => getOrder(orderId), enabled: orderId !== "", select: selectRiderTelemetry, refetchOnMount: false }).data;
+  const lat = t?.lat;
+  const lng = t?.lng;
+  const rider = useMemo(() => (lat != null && lng != null ? { lat, lng } : null), [lat, lng]);
+  return <MerchantMap {...props} rider={rider} />;
+}
+
 export function MerchantOrderScreen({ orderId }: { orderId: string }): React.ReactElement {
   const qc = useQueryClient();
   const router = useRouter();
@@ -194,7 +263,10 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   useClaimOfflineBanner(true);
 
   // ── the two reads: the food order (phase, items, cash) + the generic snapshot (map, events, rider) ──
-  const food = useFoodOrder(orderId, orderId !== "");
+  // P19: the socket's `connected` relaxes the food poll to a safety net (declared before the socket hook
+  // below, so it is fed back through a ref-backed state).
+  const [socketUp, setSocketUp] = useState(false);
+  const food = useFoodOrder(orderId, orderId !== "", socketUp);
   const order = food.order;
   const status = order?.status;
   // README "Per service": Cooking vs Packing, dishes vs items, the pin's tile and sticker.
@@ -209,11 +281,12 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   const onStatus = useCallback(
     (e: OrderStatusEvent) => {
       if (e.track) setSocketTrack(e.track);
-      void qc.invalidateQueries({ queryKey: foodOrderKey(orderId) });
+      void qc.invalidateQueries({ queryKey: foodOrderKey(orderId) }, JOIN);
     },
     [qc, orderId],
   );
   const { connected } = useOrderSocket(socketExpected ? orderId : null, undefined, () => setNowMs(Date.now()), onStatus);
+  useEffect(() => setSocketUp(connected), [connected]);
   const foodUpdatedAt = qc.getQueryState(foodOrderKey(orderId))?.dataUpdatedAt ?? 0;
   useEffect(() => {
     setSocketTrack(null);
@@ -222,6 +295,10 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     queryKey: orderKey(orderId),
     queryFn: () => getOrder(orderId),
     enabled: orderId !== "",
+    // P34: a running order the Orders tab / Home hold opens on that copy (a new cache entry only).
+    ...seedFromActiveOrders(qc, orderId),
+    // P42: the screen reads the snapshot without the rider's coordinates; they reach it only as the glance.
+    select: selectOrderShell,
     refetchInterval: () => (status === "cancelled" || status === "completed" ? false : connected ? false : status && LIVE_STATUS.has(status) ? 5_000 : 15_000),
   });
   const snap: OrderSnapshot | undefined = snapQ.data;
@@ -232,12 +309,13 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   // Keep the two reads in step: a status the socket brings to the snapshot refetches the food order, and
   // a phase / status change on the food order refetches the snapshot.
   const snapStatus = snap?.status;
+  // P19: these echoes JOIN a read already in flight — they used to cancel and restart each other's fetch.
   useEffect(() => {
-    if (snapStatus) void qc.invalidateQueries({ queryKey: foodOrderKey(orderId) });
+    if (snapStatus) void qc.invalidateQueries({ queryKey: foodOrderKey(orderId) }, JOIN);
   }, [snapStatus, qc, orderId]);
   const phaseKey = `${order?.status}|${order?.merchantPhase}|${order?.riderId}`;
   useEffect(() => {
-    void qc.invalidateQueries({ queryKey: orderKey(orderId) });
+    void qc.invalidateQueries({ queryKey: orderKey(orderId) }, JOIN);
   }, [phaseKey, qc, orderId]);
 
   // ── the rider-drop latch (a ready order with no rider looks the same before and after a drop) ──
@@ -351,25 +429,36 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     void qc.invalidateQueries({ queryKey: foodOrderKey(orderId) });
     void qc.invalidateQueries({ queryKey: orderKey(orderId) });
   };
+  // P22: each commit writes what the server returned before the authoritative refetch, so the screen
+  // moves to the next stage at once (scheduleM / subM below already did).
   const cashM = useMutation({
     mutationFn: () => confirmFoodCustomerCash(orderId),
-    onSuccess: () => {
+    onSuccess: (res) => {
       haptic("tap");
+      qc.setQueryData<MerchantOrderResponse>(foodOrderKey(orderId), (o) => (o ? { ...o, customerCashConfirmedAt: res.customerCashConfirmedAt } : o));
       invalidate();
     },
     onError: (e) => showToast({ text: failText(e, O.c.noData) }),
   });
   const itemsM = useMutation({
     mutationFn: (approve: boolean) => respondToFoodOrderItems(orderId, approve),
-    onSuccess: () => invalidate(),
+    onSuccess: (o) => {
+      qc.setQueryData(foodOrderKey(orderId), o);
+      invalidate();
+    },
     onError: (e) => showToast({ text: failText(e, O.c.noData) }),
   });
   const cancelM = useMutation({
-    mutationFn: async (p: { free: boolean; reason?: string }): Promise<void> => {
-      if (p.free) await cancelUnpaidFoodOrder(orderId);
-      else await cancelOrder(orderId, p.reason ? { reason: p.reason } : {});
+    mutationFn: async (p: { free: boolean; reason?: string }): Promise<MerchantOrderResponse | null> => {
+      if (p.free) return cancelUnpaidFoodOrder(orderId);
+      await cancelOrder(orderId, p.reason ? { reason: p.reason } : {});
+      return null;
     },
-    onSuccess: () => {
+    onSuccess: (o) => {
+      // P22: the customer's own cancel — never "LyniaGo cancelled this order" while the reads catch up.
+      if (o) qc.setQueryData(foodOrderKey(orderId), o);
+      else qc.setQueryData<MerchantOrderResponse>(foodOrderKey(orderId), (cur) => (cur ? { ...cur, status: "cancelled", merchantPhase: null } : cur));
+      qc.setQueryData<OrderSnapshot>(orderKey(orderId), (cur) => (cur ? { ...cur, status: "cancelled", cancelledBy: "customer" } : cur));
       setPanel(null);
       invalidate();
       void qc.invalidateQueries({ queryKey: ["history"] });
@@ -586,28 +675,15 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   // ── stage ──
   const venue = snap?.pickup.point ?? null;
   const dropoff = snap?.dropoff.point ?? null;
-  const riderFix =
-    snap?.rider && snap.rider.currentLat != null && snap.rider.currentLng != null ? { lat: snap.rider.currentLat, lng: snap.rider.currentLng, at: snap.rider.updatedAt } : null;
   const handshake = order ? handshakeState(cashOf(order)) : "pending";
-  const res = order
-    ? resolveMerchantStage({
-        status: order.status,
-        merchantPhase: order.merchantPhase,
-        autoAccepted: order.autoAccepted,
-        kitchenConfirmedAt: order.kitchenConfirmedAt,
-        scheduled: isScheduledWaiting(order),
-        rxStatus: order.prescription?.status ?? null,
-        riderId: order.riderId,
-        sawRider,
-        rider: riderFix,
-        venue,
-        dropoff,
-        assignedAt: snap?.events.find((e) => e.status === "assigned")?.createdAt ?? null,
-        handshakeStarted: handshake === "waiting_rider" || handshake === "confirmed" || handshake === "frozen",
-        riderAtDropoff: !!order.riderAtDropoffAt,
-        nowMs,
-      })
-    : null;
+  const handshakeStarted = handshake === "waiting_rider" || handshake === "confirmed" || handshake === "frozen";
+  const glanceSelect = useCallback(
+    (s: OrderSnapshot): MerchantGlance | null => (order ? merchantGlance(s, order, { sawRider, handshakeStarted, nowMs }) : null),
+    [order, sawRider, handshakeStarted, nowMs],
+  );
+  const glanceQ = useQuery({ queryKey: orderKey(orderId), queryFn: () => getOrder(orderId), enabled: orderId !== "", select: glanceSelect, refetchOnMount: false });
+  const glance = glanceQ.data ?? (order ? merchantGlance(undefined, order, { sawRider, handshakeStarted, nowMs }) : null);
+  const res = glance?.res ?? null;
   const stage: MerchantStage | null = res?.stage ?? null;
 
   // T3's accept countdown — only for an order still ringing (`awaiting_accept`): a legacy wallet order in
@@ -615,15 +691,37 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   // clears it). Null = no countdown; 0 = the drawn 3:00 has lapsed (owner decision D1, ledger D-87).
   const acceptLeftMs = acceptCountdownMs(order, nowMs);
 
-  // Clocks: a 1 s tick for the countdowns, 15 s to re-check the GPS-paused rule. T3 ticks only while its
-  // countdown runs: once it has lapsed nothing on screen moves (D1 — the venue may answer for 24 h).
+  // Clocks: the per-second countdowns tick in their own `<Ticking>` leaves (P30); the screen re-checks the
+  // GPS-paused rule and the minute-level times every 15 s, and wakes once at a countdown's end so what
+  // depends on it (T3's lapsed sub, a disabled Confirm) flips on time. T3 needs nothing once it has lapsed
+  // (D1 — the venue may answer for 24 h).
   const needsSecond = (stage === "waiting" && acceptLeftMs != null && acceptLeftMs > 0) || stage === "itemApproval" || isOpenRound(round) || (stage === "door" && handshake === "waiting_rider");
   const needsSlow = stage != null && (isRiderStage(stage) || stage === "cooking" || stage === "confirming" || stage === "rxCheck" || stage === "rxDeclined");
   useEffect(() => {
     if (!needsSecond && !needsSlow) return;
-    const iv = setInterval(() => setNowMs(Date.now()), needsSecond ? 1000 : 15_000);
+    const iv = setInterval(() => setNowMs(Date.now()), 15_000);
     return () => clearInterval(iv);
   }, [needsSecond, needsSlow]);
+  // The open round leads the sheet when there is one (see `openRound` below), so its deadline wins.
+  const deadlineIso =
+    isOpenRound(round) && status != null && !AFTER_PICKUP.has(status)
+      ? round?.deadlineAt
+      : stage === "waiting"
+        ? order?.acceptDeadlineAt
+        : stage === "itemApproval"
+          ? order?.itemApprovalDeadlineAt
+          : stage === "door" && handshake === "waiting_rider"
+            ? order?.cashHandshakeDeadlineAt
+            : null;
+  const deadlineMs = deadlineIso ? Date.parse(deadlineIso) : NaN;
+  useEffect(() => {
+    if (!Number.isFinite(deadlineMs)) return;
+    const wait = deadlineMs - Date.now();
+    // (A setTimeout past ~24.8 days overflows and fires at once.)
+    if (wait < 0 || wait > 2_147_000_000) return;
+    const t = setTimeout(() => setNowMs(Date.now()), wait + 50);
+    return () => clearTimeout(t);
+  }, [deadlineMs]);
 
   // T11b: say once that the rider had to cancel.
   const droppedSaid = useRef(false);
@@ -671,7 +769,9 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   const venueName = order?.venue?.name || snap?.merchantName || snap?.pickup.landmark || "";
   const area = areaH || Math.max(0, height - 80);
   // T14d: offline keeps the last state under an ink banner with the time of the last update.
-  const lastUpdateMs = Math.max(snapQ.dataUpdatedAt || 0, qc.getQueryState(foodOrderKey(orderId))?.dataUpdatedAt || 0);
+  // Read from the cache, not `snapQ.dataUpdatedAt`: subscribing to that re-rendered the whole screen on every
+  // GPS push (P42) — the banner only shows offline, where nothing new arrives anyway.
+  const lastUpdateMs = Math.max(qc.getQueryState(orderKey(orderId))?.dataUpdatedAt || 0, qc.getQueryState(foodOrderKey(orderId))?.dataUpdatedAt || 0);
   const offlineBanner = !online && lastUpdateMs > 0 ? ofFmt(O.c.offline, { t: hhmm(new Date(lastUpdateMs).toISOString()) }) : null;
 
   const header = (help: boolean): React.ReactElement => <OrderHeader heavy title={venueName} help={help} onBack={() => onBack()} onHelp={() => setPanel("help")} />;
@@ -802,7 +902,20 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1, backgroundColor: C.bg }}>
         <OrderHeader heavy title="" help={false} onBack={() => onBack()} onHelp={() => undefined} />
         <View style={{ flex: 1 }}>
-          <BlankMap />
+          <MerchantLiveMap
+            orderId={orderId}
+            venue={null}
+            venueName=""
+            svc={svc}
+            dropoff={null}
+            riderLabel=""
+            riderPaused={false}
+            showRider={false}
+            toVenue={false}
+            collected={false}
+            padBottom={0}
+            reduceMotion={reduceMotion}
+          />
           <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: "40%", backgroundColor: C.bg, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 16, paddingTop: 28, gap: 14, ...tokens.shadow.sheet }}>
             <View style={{ height: 20, width: "70%", borderRadius: 8, backgroundColor: C.surface }} />
             <View style={{ height: 12, width: "45%", borderRadius: 8, backgroundColor: C.surface }} />
@@ -868,7 +981,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       }
     : null;
   const prep = prepProgress(order, nowMs);
-  const etaRaw = stage ? merchantEta({ stage, noFix: res?.noFix ?? false, nowMs, readyMs: readyAtMs(order), venue, dropoff, rider: riderFix }) : null;
+  const etaRaw = stage ? (glance?.eta ?? null) : null;
   const eta: EtaView | null = !etaRaw
     ? null
     : etaRaw.kind === "range"
@@ -1196,8 +1309,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     const p = usd(order.cashHandshakeAmount ?? total);
     // D5: a confirm made on the way carries the long trip ceiling until the rider says "I'm here" — only a
     // door window (2:00, or the longer one the stamp starts after an early confirm) is worth counting down.
-    const leftMs = order.cashHandshakeDeadlineAt ? Date.parse(order.cashHandshakeDeadlineAt) - nowMs : null;
-    const left = leftMs != null && leftMs <= RESTAURANTS_DEBT.handshakeAfterArrivalMs ? clock(leftMs) : null;
+    const deadline = order.cashHandshakeDeadlineAt ? Date.parse(order.cashHandshakeDeadlineAt) : null;
     return [
       { state: paid ? "done" : "current", title: O.p.s1, sub: paid ? null : sealed ? O.p.s1Seal : withRider(O.p.s1Sub, rFirst) },
       {
@@ -1209,10 +1321,16 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
               <ActivityIndicator size="small" color={C.accent} />
               <Text style={{ fontSize: 13, fontWeight: "600", color: C.ink }}>{withRider(ofFmt(O.p.s2Wait, { p }), rFirst)}</Text>
-              {left ? (
-                <View style={{ height: 24, paddingHorizontal: 9, borderRadius: tokens.radius.pill, backgroundColor: C.surface, justifyContent: "center" }}>
-                  <Text style={{ fontSize: 12, fontWeight: "700", color: C.ink, ...TAB }}>{left}</Text>
-                </View>
+              {deadline != null ? (
+                <Ticking>
+                  {(now) =>
+                    deadline - now <= RESTAURANTS_DEBT.handshakeAfterArrivalMs ? (
+                      <View style={{ height: 24, paddingHorizontal: 9, borderRadius: tokens.radius.pill, backgroundColor: C.surface, justifyContent: "center" }}>
+                        <Text style={{ fontSize: 12, fontWeight: "700", color: C.ink, ...TAB }}>{clock(deadline - now)}</Text>
+                      </View>
+                    ) : null
+                  }
+                </Ticking>
               ) : null}
             </View>
           ) : null,
@@ -1238,7 +1356,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   // is answered or runs out — a v2 round only; the legacy 60 s approval keeps its own case below.
   const openRound = round && isOpenRound(round) && !AFTER_PICKUP.has(order.status) ? round : null;
   if (openRound) {
-    const { leftMs, pct } = roundClock(openRound, nowMs);
+    const { leftMs } = roundClock(openRound, nowMs);
     // C9: the sheet quotes the door amount — a carried owed balance included.
     const st = substitutionState(openRound, customerFeeOf(order), answers, order.previousBalanceUsd ?? 0);
     const subLines = substitutionLines(openRound);
@@ -1248,12 +1366,19 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     tall = true;
     content = (
       <>
-        <AnswerHead
-          title={ofFmt(mid ? O.u.mid : O.u.t, { v: venueName })}
-          left={clock(leftMs)}
-          pct={pct}
-          sub={mid ? ofFmt(O.u.midSub, { making: S.making.toLowerCase(), t: answerIn }) : ofFmt(O.u.sub, { t: answerIn })}
-        />
+        <Ticking>
+          {(now) => {
+            const c = roundClock(openRound, now);
+            return (
+              <AnswerHead
+                title={ofFmt(mid ? O.u.mid : O.u.t, { v: venueName })}
+                left={clock(c.leftMs)}
+                pct={c.pct}
+                sub={mid ? ofFmt(O.u.midSub, { making: S.making.toLowerCase(), t: answerIn }) : ofFmt(O.u.sub, { t: answerIn })}
+              />
+            );
+          }}
+        </Ticking>
         {subLines.map((l, k) => (
           <React.Fragment key={l.id}>
             <SubCard
@@ -1304,22 +1429,31 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       // Owner decision D1 (2026-10-07, ledger D-87): the drawn 3:00 is the venue's answer window, not a
       // cancel — they may still accept for 24 h. So the countdown runs once, and at 0:00 the timer row
       // goes (never "0:00 left" for hours, never a restart: C1/U31's 0:20 → 0:00 loop) and the sub drops
-      // "They have 3 minutes." The title, the venue row and the free cancel stay as drawn.
+      // "They have 3 minutes." The title, the venue row and the free cancel stay as drawn. P30: the row
+      // ticks in its own leaf; the screen wakes once at the deadline to drop it and swap the sub.
       const leftMs = acceptLeftMs;
       const lapsed = leftMs === 0;
       content = (
         <>
           <StageTop title={ofFmt(O.t.waiting, { v: venueName })} eta={null} sub={lapsed ? OX.waitingLapsedSub : O.t.waitingSub} />
           {leftMs != null && !lapsed ? (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-              <View style={{ height: 28, flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 9, borderRadius: tokens.radius.pill, backgroundColor: C.surface }}>
-                <Icon name="timer" size={14} color={C.muted} />
-                <Text style={{ fontSize: 12, fontWeight: "700", color: C.ink, ...TAB }}>{`${clock(leftMs)} ${O.t.left}`}</Text>
-              </View>
-              <View style={{ flex: 1, height: 6, borderRadius: 3, backgroundColor: C.line, overflow: "hidden" }}>
-                <View style={{ width: `${Math.round((leftMs / ACCEPT_WINDOW_MS) * 100)}%`, height: 6, backgroundColor: C.accent }} />
-              </View>
-            </View>
+            <Ticking>
+              {(now) => {
+                const left = acceptCountdownMs(order, now);
+                if (!left) return null;
+                return (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                    <View style={{ height: 28, flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 9, borderRadius: tokens.radius.pill, backgroundColor: C.surface }}>
+                      <Icon name="timer" size={14} color={C.muted} />
+                      <Text style={{ fontSize: 12, fontWeight: "700", color: C.ink, ...TAB }}>{`${clock(left)} ${O.t.left}`}</Text>
+                    </View>
+                    <View style={{ flex: 1, height: 6, borderRadius: 3, backgroundColor: C.line, overflow: "hidden" }}>
+                      <View style={{ width: `${Math.round((left / ACCEPT_WINDOW_MS) * 100)}%`, height: 6, backgroundColor: C.accent }} />
+                    </View>
+                  </View>
+                );
+              }}
+            </Ticking>
           ) : null}
           {track}
           {venueRow}
@@ -1339,7 +1473,12 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       tall = true;
       content = (
         <>
-          <AnswerHead title={ofFmt(O.u.t, { v: venueName })} left={clock(leftMs)} pct={(leftMs / ITEM_WINDOW_MS) * 100} />
+          <Ticking>
+            {(now) => {
+              const left = Number.isFinite(end) ? Math.max(0, end - now) : 0;
+              return <AnswerHead title={ofFmt(O.u.t, { v: venueName })} left={clock(left)} pct={(left / ITEM_WINDOW_MS) * 100} />;
+            }}
+          </Ticking>
           {removed.map((i, k) => (
             <React.Fragment key={`${i.name}-${k}`}>
               <SubCard
@@ -1564,13 +1703,13 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1, backgroundColor: C.bg }}>
       {header(true)}
       <View style={{ flex: 1 }} onLayout={(e) => setAreaH(e.nativeEvent.layout.height)}>
-        <MerchantMap
+        <MerchantLiveMap
+          orderId={orderId}
           venue={venue}
           venueName={venueName}
           svc={svc}
           dropoff={dropoff}
-          rider={riderFix}
-          riderLabel={paused ? O.t.lastSeen.replace(/\d+ min/, `${minutesSince(riderFix?.at, nowMs)} min`) : rFirst}
+          riderLabel={paused ? O.t.lastSeen.replace(/\d+ min/, `${glance?.lastSeenMin ?? 1} min`) : rFirst}
           riderPaused={paused}
           showRider={showRider}
           toVenue={stage === "toVenue"}

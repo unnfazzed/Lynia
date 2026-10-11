@@ -120,10 +120,13 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
   locating?: boolean;
   /** Padding for framing both pins — must clear the address card and the CTA bar. */
   edgePadding?: { top: number; right: number; bottom: number; left: number };
+  /** P36: kept mounted but out of view (Send steps 2–4). A hidden map has no size to draw tiles into, so
+   *  its load watch waits until it is shown again — a quick Next must not come back to "didn't load". */
+  hidden?: boolean;
 }): React.ReactElement {
   const topOffset = props.topOffset ?? tokens.space.md;
   const bottomOffset = props.bottomOffset ?? tokens.space.md;
-  const { pickup, drop, active } = props;
+  const { pickup, drop, active, hidden = false } = props;
   const labels = props.labels ?? true;
   const mapRef = useRef<MapView>(null);
   // Map-load fallback (C1 / kit `LJ.map_failed`). On Android the signal is `onMapLoaded` — "the map
@@ -177,7 +180,7 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
   useEffect(() => {
     // The clocks start when the MAP does, not when the screen does — the deferral above must not eat
     // into the tile budget and turn a merely slow map into a "didn't load" card.
-    if (!mapMounted || considerLoaded) return;
+    if (!mapMounted || considerLoaded || hidden) return;
     attemptStartedAt.current = Date.now();
     // Two stages, one attempt: the passive admission at 9 s, the actionable card at 22 s. The card
     // still clears itself the moment tiles arrive, so erring late costs nothing while erring early
@@ -188,7 +191,7 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
       clearTimeout(slow);
       clearTimeout(fail);
     };
-  }, [mapMounted, considerLoaded, mapNonce]);
+  }, [mapMounted, considerLoaded, mapNonce, hidden]);
   // Recovery trail: tiles arriving AFTER the screen admitted slowness is the datum that separates
   // "slow link" from "never loads" in the field — the failure event alone can't (it fires at a fixed
   // elapsed by construction). A breadcrumb, not an event: it costs nothing unless something else is

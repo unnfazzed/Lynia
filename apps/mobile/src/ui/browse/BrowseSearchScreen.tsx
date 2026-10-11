@@ -8,6 +8,7 @@ import { restaurantVenue, shopVenue } from "../../logic/browse";
 import { useHomeLocation } from "../../logic/home-location";
 import { formatMoney } from "../../logic/money";
 import { loadRecentSearches, saveRecentSearches, withRecent } from "../../logic/recent-searches";
+import { SEARCH_DEBOUNCE_MS, useDebounced } from "../../logic/use-debounced";
 import { useNow } from "../../logic/use-now";
 import { useReachable } from "../../net/use-reachable";
 import { useServiceFlags } from "../../net/use-service-flags";
@@ -31,19 +32,10 @@ export type { SearchScope };
 
 /** Work order §3: words that sound like a parcel bring up the Send a parcel row (X2b). */
 const PARCEL_WORDS = /parcel|document|send|deliver|keys|package/i;
-const DEBOUNCE_MS = 300;
+const DEBOUNCE_MS = SEARCH_DEBOUNCE_MS;
 const MIN_CHARS = 2;
 /** A group shows this many hits, and "See all n" opens the rest in place. */
 const GROUP_PREVIEW = 3;
-
-function useDebounced(value: string, ms: number): string {
-  const [v, setV] = useState(value);
-  useEffect(() => {
-    const t = setTimeout(() => setV(value), ms);
-    return () => clearTimeout(t);
-  }, [value, ms]);
-  return v;
-}
 
 /** The name with the query marked in green-text. */
 function Marked({ text, q, style }: { text: string; q: string; style: object }): React.ReactElement {
