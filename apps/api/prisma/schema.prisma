@@ -758,6 +758,10 @@ model Order {
   debtAmount              Decimal?            @map("debt_amount") @db.Decimal(10, 2)
   debtOpenedAt            DateTime?           @map("debt_opened_at")
   debtSettledAt           DateTime?           @map("debt_settled_at")
+  // Owner decision D3 (2026-10-07, MJ-RH1): the merchant's "It wasn't returned" — a flag for support, never
+  // a write-off or a suspension. The debt stays `open` (so "I got the food back" still settles it); an admin
+  // reads the flag in the dispute queue and decides (write-off and rider suspension are admin actions).
+  debtNonReturnReportedAt DateTime?           @map("debt_non_return_reported_at")
   // D-48: the merchant closed its side after pickup without counting cash ("no_cash" | "force").
   merchantClosedAt        DateTime?           @map("merchant_closed_at")
   merchantCloseReason     String?             @map("merchant_close_reason")
@@ -802,6 +806,10 @@ model Order {
   // arrival at their next stop (the pickup, then the drop-off), refreshed from their location pings.
   riderArrivedAt          DateTime?           @map("rider_arrived_at")
   riderEtaAt              DateTime?           @map("rider_eta_at")
+  // Owner decision D5 (2026-10-07, U10): the rider's "I'm here" tap at the drop-off, stamped once. A hint,
+  // never a gate: the customer's pay step opens at en_route_dropoff with or without it. It starts the cash
+  // handshake's N-19 window when the customer confirmed first, and drives the "at your door" feed step.
+  riderAtDropoffAt        DateTime?           @map("rider_at_dropoff_at")
 
   merchantDebtLedger MerchantDebtLedger[]
   substitutionRounds MerchantOrderSubstitution[]

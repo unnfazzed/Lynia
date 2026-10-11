@@ -69,7 +69,8 @@ export type TransitionFrom = OrderState | InitialState;
 
 /** Who drives a transition. `system` = an offer-window timer, the auto-close worker, or the reconciler.
  *  `merchant` (C2) = the kitchen tablet. */
-export type TransitionActor = "customer" | "rider" | "system" | "merchant";
+/** `admin`: a console action (D3, 2026-10-07: a food debt is only written off by an admin). */
+export type TransitionActor = "customer" | "rider" | "system" | "merchant" | "admin";
 
 /** C2 (docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md §5 Lane C, status-keyed-query-audit
  *  A-11): which `Order.orderType` a transition applies to. `"both"` covers the Class-(b) edges the
@@ -717,7 +718,7 @@ export const MERCHANT_DEBT_STATES = ["open", "settled_cash", "settled_goods", "w
 export type MerchantDebtState = (typeof MERCHANT_DEBT_STATES)[number];
 export type MerchantDebtFrom = MerchantDebtState | InitialState;
 
-export const MERCHANT_DEBT_EVENTS = ["open_debt", "confirm_returned_cash", "confirm_goods_returned", "report_non_return"] as const;
+export const MERCHANT_DEBT_EVENTS = ["open_debt", "confirm_returned_cash", "confirm_goods_returned", "admin_write_off"] as const;
 export type MerchantDebtEvent = (typeof MERCHANT_DEBT_EVENTS)[number];
 
 export interface MerchantDebtTransition {
@@ -757,19 +758,22 @@ export const MERCHANT_DEBT_TRANSITIONS: readonly MerchantDebtTransition[] = [
     to: "settled_goods",
     actor: "merchant",
     guard:
-      "caller owns the merchant; debtStatus=open; order.status=undelivered (the food itself came back — no cash was ever collected, refusal R-08 or no-show N-10); guarded CAS on debtStatus=open",
+      "caller owns the merchant; debtStatus=open; the food itself came back with no cash collected — order.status=undelivered (refusal R-08 or no-show N-10) OR order.status=cancelled with collectedAt set (MJ-RB1: the customer cancelled after the rider collected); guarded CAS on debtStatus=open AND that same status condition",
     sideEffect: "debtStatus=settled_goods, debtSettledAt=now; MerchantDebtLedger(type=settled_goods, amount=-debtAmount) — nets to zero via a physical return, not cash",
     source: "merchant/food-debt.service.ts:confirmGoodsReturned",
   },
+  // Owner decision D3 (2026-10-07, MJ-RH1): the merchant's "It wasn't returned" is NOT a transition — it
+  // only stamps debtNonReturnReportedAt (FoodDebtService.reportNonReturn) and the debt stays `open`. Only an
+  // admin writes the debt off; suspending the rider is the separate rider console action.
   {
     from: "open",
-    event: "report_non_return",
+    event: "admin_write_off",
     to: "written_off",
-    actor: "merchant",
-    guard: "caller owns the merchant; debtStatus=open; a rider is assigned; guarded CAS on debtStatus=open",
+    actor: "admin",
+    guard: "an admin, reason required; order is a merchant order; debtStatus=open; guarded CAS on debtStatus=open",
     sideEffect:
-      "R-07: debtStatus=written_off, debtSettledAt=now; MerchantDebtLedger(type=written_off, amount=-debtAmount) — the merchant eats the loss, by their own cashRule choice; SAME transaction: rider.accountStatus=suspended (unless already banned), suspendReason=food_debt_non_return, isOnline=false, live sessions revoked (mirrors admin-riders.service.ts:suspendRider's shape), AuditLog(rider.suspend_food_debt)",
-    source: "merchant/food-debt.service.ts:reportNonReturn",
+      "R-07: debtStatus=written_off, debtSettledAt=now; MerchantDebtLedger(type=written_off, amount=-debtAmount, actor=admin) — the merchant eats the loss, by their own cashRule choice; AuditLog(order.debt_write_off) in the same transaction. No suspension here — that stays the admin's separate rider action",
+    source: "admin/admin-merchants.service.ts:writeOffDebt",
   },
 ];
 

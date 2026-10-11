@@ -19,6 +19,22 @@ export async function resolveHandshake(orderId: string, reasonCode: string | nul
 }
 
 /**
+ * D3 (2026-10-07, MJ-RH1): the only write-off of a food debt — `POST /admin/orders/:id/write-off-debt`,
+ * after support followed up a merchant's non-return report. The endpoint writes the `order.debt_write_off`
+ * audit row in the SAME transaction (A-01), so the modal sets `auditInEndpoint`. It does not suspend the
+ * rider: that stays the rider console action. Fails closed, like resolveHandshake.
+ */
+export async function writeOffDebt(orderId: string, reasonCode: string | null, note: string): Promise<void> {
+  const res = await adminPostResult(`/admin/orders/${orderId}/write-off-debt`, {
+    reason: reasonCode ?? "",
+    note: note || null,
+  });
+  if (!res.ok) throw new Error(`Failed to write off the debt on order ${orderId}: ${describeAdminPostFailure(res)}`);
+  revalidatePath(`/orders/${orderId}`);
+  revalidatePath("/merchants/disputes");
+}
+
+/**
  * Merchant web upgrade L1: the go-live switch — `POST /admin/merchants/:id/pilot`, the only writer of
  * `pilotEnabled`. The endpoint writes the `merchant.go_live` / `merchant.go_dormant` audit row in the
  * SAME transaction (A-01), so the modal sets `auditInEndpoint`. The endpoint takes no reason field, so

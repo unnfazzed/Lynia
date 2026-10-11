@@ -256,6 +256,7 @@ describe("AdminMerchantsService.listDisputes (X1 — R-05 handshake freezes + N-
       order: {
         findMany: async (args: { where: { cashHandshakeFrozenAt?: unknown } }) => {
           if ("cashHandshakeFrozenAt" in args.where) return [];
+          if ("debtNonReturnReportedAt" in args.where) return [];
           return [
             {
               id: "overdue-1",
@@ -285,6 +286,95 @@ describe("AdminMerchantsService.listDisputes (X1 — R-05 handshake freezes + N-
     const fresh = refundsOverdue.find((r) => r.orderId === "fresh-1")!;
     expect(overdue.overdue).toBe(true);
     expect(fresh.overdue).toBe(false);
+  });
+});
+
+describe("AdminMerchantsService — D3 (2026-10-07, MJ-RH1): a merchant's non-return report is a flag an admin decides", () => {
+  it("listDisputes surfaces a flagged open debt with merchant, rider (id + name), amount and when it was reported", async () => {
+    let nonReturnWhere: Record<string, unknown> | undefined;
+    const prisma = {
+      order: {
+        findMany: async (args: { where: Record<string, unknown> }) => {
+          if (!("debtNonReturnReportedAt" in args.where)) return [];
+          nonReturnWhere = args.where;
+          return [
+            {
+              id: "o9",
+              status: "undelivered",
+              debtAmount: dec("13.00"),
+              debtNonReturnReportedAt: new Date("2026-10-07T09:30:00Z"),
+              riderId: "r1",
+              merchant: { name: "Mama's Kitchen" },
+              rider: { profile: { firstName: "Tendai", lastName: "M" } },
+            },
+          ];
+        },
+      },
+    };
+    const svc = new AdminMerchantsService(prisma as unknown as PrismaService);
+    const { nonReturnReports } = await svc.listDisputes();
+    // Only a still-open, not-closed debt: "I got the food back" (or a cash count) takes it off the queue.
+    expect(nonReturnWhere).toEqual({ orderType: "merchant", debtStatus: "open", merchantClosedAt: null, debtNonReturnReportedAt: { not: null } });
+    expect(nonReturnReports).toEqual([
+      {
+        orderId: "o9",
+        merchant: "Mama's Kitchen",
+        riderId: "r1",
+        rider: "Tendai M",
+        amount: "13.00",
+        orderStatus: "undelivered",
+        reportedAt: "2026-10-07T09:30:00.000Z",
+      },
+    ]);
+  });
+
+  function writeOffTx(order: unknown = { orderType: "merchant", debtStatus: "open", debtAmount: dec("13.00"), merchantId: "m1", riderId: "r1" }, updateCount = 1) {
+    const calls: { update?: { where: Record<string, unknown>; data: Record<string, unknown> }; ledger?: { data: Record<string, unknown> }; audit?: { data: Record<string, unknown> }; riderTouched: boolean } = { riderTouched: false };
+    const tx = {
+      order: {
+        findUnique: async () => order,
+        updateMany: async (a: { where: Record<string, unknown>; data: Record<string, unknown> }) => { calls.update = a; return { count: updateCount }; },
+      },
+      merchantDebtLedger: { create: async (a: { data: Record<string, unknown> }) => { calls.ledger = a; return {}; } },
+      auditLog: { create: async (a: { data: Record<string, unknown> }) => { calls.audit = a; return { id: "audit-9" }; } },
+      rider: { updateMany: async () => { calls.riderTouched = true; return { count: 1 }; } },
+      session: { updateMany: async () => { calls.riderTouched = true; return { count: 1 }; } },
+    };
+    const prisma = { $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
+    return { prisma, calls };
+  }
+
+  it("writeOffDebt: an admin writes the open debt off — settle CAS, negative ledger row and audit in one transaction", async () => {
+    const { prisma, calls } = writeOffTx();
+    const svc = new AdminMerchantsService(prisma as unknown as PrismaService);
+    const res = await svc.writeOffDebt("admin-1", "o9", { reason: "Rider admitted keeping the food", note: "called 10:05" });
+    expect(res).toEqual({ id: "o9", debtStatus: "written_off", auditId: "audit-9" });
+    expect(calls.update).toEqual({ where: { id: "o9", debtStatus: "open" }, data: { debtStatus: "written_off", debtSettledAt: expect.any(Date) } });
+    expect(calls.ledger!.data).toMatchObject({ orderId: "o9", merchantId: "m1", riderId: "r1", type: "written_off", amount: -13, actor: "admin-1" });
+    expect(calls.audit!.data).toMatchObject({ actor: "admin-1", action: "order.debt_write_off", target: "o9", reasonCode: "Rider admitted keeping the food" });
+  });
+
+  it("writeOffDebt never suspends the rider — that stays the separate rider console action", async () => {
+    const { prisma, calls } = writeOffTx();
+    const svc = new AdminMerchantsService(prisma as unknown as PrismaService);
+    await svc.writeOffDebt("admin-1", "o9", { reason: "x" });
+    expect(calls.riderTouched).toBe(false);
+  });
+
+  it("writeOffDebt 409s with nothing open (already settled by the merchant) and 404s a non-merchant order", async () => {
+    const settled = writeOffTx({ orderType: "merchant", debtStatus: "settled_goods", debtAmount: dec("13.00"), merchantId: "m1", riderId: "r1" });
+    await expect(new AdminMerchantsService(settled.prisma as unknown as PrismaService).writeOffDebt("admin-1", "o9", { reason: "x" })).rejects.toThrow(/no open debt/i);
+    expect(settled.calls.audit).toBeUndefined();
+    const parcel = writeOffTx({ orderType: "parcel" });
+    await expect(new AdminMerchantsService(parcel.prisma as unknown as PrismaService).writeOffDebt("admin-1", "o9", { reason: "x" })).rejects.toThrow(/order not found/i);
+  });
+
+  it("writeOffDebt: a settle racing the write-off (CAS miss) is a 409 with no ledger or audit row", async () => {
+    const { prisma, calls } = writeOffTx(undefined, 0);
+    const svc = new AdminMerchantsService(prisma as unknown as PrismaService);
+    await expect(svc.writeOffDebt("admin-1", "o9", { reason: "x" })).rejects.toThrow(/refresh and try again/i);
+    expect(calls.ledger).toBeUndefined();
+    expect(calls.audit).toBeUndefined();
   });
 });
 

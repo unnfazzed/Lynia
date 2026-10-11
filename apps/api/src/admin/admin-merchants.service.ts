@@ -6,6 +6,9 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { auditData, fmtDate, routeOf } from "./admin.shared";
 
+/** D3 (2026-10-07): an admin's write-off of an open food debt, audit-logged in the same transaction. */
+export const DEBT_WRITE_OFF_ACTION = "order.debt_write_off";
+
 /** Merchant web upgrade L4: support's handover of a business, audit-logged in the same transaction. */
 export const OWNER_TRANSFER_ACTION = "merchant.owner_transfer";
 
@@ -43,9 +46,13 @@ const MERCHANT_DIRECTORY_SELECT = {
  *
  * Merchant has no `accountStatus`/suspend field in the schema (unlike Rider) — "cash-ban/suspension
  * actions" in the plan's one-liner is the customer cash-ban (R-08, admin-customers.service.ts) and the
- * rider suspension C4's `reportNonReturn` already writes (`rider.suspend_food_debt`, reused verbatim via
- * the existing rider suspend/lift console actions) — both surfaced here via the debt ledger + dispute
- * queue, not a new merchant-standing state machine (flagged as a scope cut, not silently decided).
+ * existing rider suspend/lift console actions — both surfaced here via the debt ledger + dispute queue,
+ * not a new merchant-standing state machine (flagged as a scope cut, not silently decided).
+ *
+ * Owner decision D3 (2026-10-07, MJ-RH1): a merchant's "It wasn't returned" no longer writes off the debt
+ * or suspends the rider by itself. It is a flag (`debtNonReturnReportedAt`) that lands in this dispute
+ * queue (`nonReturnReports`); support follows it up and an admin decides — `writeOffDebt` below closes the
+ * debt, and the rider suspend console action (admin-riders.service.ts) is the only suspension path.
  */
 @Injectable()
 export class AdminMerchantsService {
@@ -177,7 +184,7 @@ export class AdminMerchantsService {
    * mocked default is escalate-to-support-no-penalty, so nothing here moves money automatically).
    */
   async listDisputes() {
-    const [frozen, refundCandidates] = await Promise.all([
+    const [frozen, refundCandidates, nonReturned] = await Promise.all([
       this.prisma.order.findMany({
         where: { orderType: "merchant", cashHandshakeFrozenAt: { not: null }, riderCashConfirmedAt: null },
         orderBy: { cashHandshakeFrozenAt: "asc" },
@@ -216,6 +223,23 @@ export class AdminMerchantsService {
           customer: { select: { firstName: true, lastName: true } },
         },
       }),
+      // D3 (MJ-RH1): the merchant flagged goods / cash as not returned. The debt is still open (the
+      // merchant's "I got the food back" or a cash count clears it from here), and the rider is not
+      // suspended — support follows it up, an admin decides (writeOffDebt / the rider suspend action).
+      this.prisma.order.findMany({
+        where: { orderType: "merchant", debtStatus: "open", merchantClosedAt: null, debtNonReturnReportedAt: { not: null } },
+        orderBy: { debtNonReturnReportedAt: "asc" },
+        take: 100,
+        select: {
+          id: true,
+          status: true,
+          debtAmount: true,
+          debtNonReturnReportedAt: true,
+          riderId: true,
+          merchant: { select: { name: true } },
+          rider: { select: { profile: { select: { firstName: true, lastName: true } } } },
+        },
+      }),
     ]);
 
     const now = Date.now();
@@ -241,7 +265,51 @@ export class AdminMerchantsService {
         overdueMinutes: Math.max(0, Math.round(overdueMs / 60000)),
       };
     });
-    return { handshakeDisputes, refundsOverdue };
+    const nonReturnReports = nonReturned.map((o) => ({
+      orderId: o.id,
+      merchant: o.merchant?.name ?? "—",
+      riderId: o.riderId,
+      rider: o.rider ? `${o.rider.profile.firstName} ${o.rider.profile.lastName}`.trim() : null,
+      amount: o.debtAmount?.toString() ?? null,
+      orderStatus: o.status,
+      reportedAt: o.debtNonReturnReportedAt!.toISOString(),
+    }));
+    return { handshakeDisputes, refundsOverdue, nonReturnReports };
+  }
+
+  /**
+   * Owner decision D3 (2026-10-07, MJ-RH1): the only way a food debt is written off — an admin, after
+   * support followed up a merchant's non-return report (or any other open debt that will never come back).
+   * Mirrors resolveHandshake's shape: reason required, CAS on `debtStatus: "open"`, the settle + its
+   * append-only ledger row + the audit row in ONE transaction. It writes off only — the merchant eats the
+   * loss by their own cashRule choice (R-07) and the rider's job lock lifts with the debt. Suspending the
+   * rider stays the separate, existing rider console action: deciding the money and deciding the rider's
+   * standing are two decisions. 404 when not a merchant order; 409 when nothing is open (settled or
+   * already written off), so a stale queue row can't be double-actioned.
+   */
+  async writeOffDebt(actor: string, orderId: string, input: { reason: string; note?: string | null }) {
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        select: { orderType: true, debtStatus: true, debtAmount: true, merchantId: true, riderId: true },
+      });
+      if (!order || order.orderType !== "merchant") throw new NotFoundException("Order not found");
+      if (order.debtStatus !== "open" || !order.merchantId || !order.riderId) throw new ConflictException("This order has no open debt to write off");
+      const claimed = await tx.order.updateMany({
+        where: { id: orderId, debtStatus: "open" },
+        data: { debtStatus: "written_off", debtSettledAt: new Date() },
+      });
+      if (claimed.count === 0) throw new ConflictException("Order changed — refresh and try again");
+      const amount = Number(order.debtAmount ?? 0);
+      await tx.merchantDebtLedger.create({
+        data: { orderId, merchantId: order.merchantId, riderId: order.riderId, type: "written_off", amount: -amount, note: input.note ?? input.reason, actor },
+      });
+      const audit = await tx.auditLog.create({
+        data: auditData(actor, DEBT_WRITE_OFF_ACTION, orderId, input.reason, input.note),
+        select: { id: true },
+      });
+      return { id: orderId, debtStatus: "written_off" as const, auditId: audit.id };
+    });
   }
 
   /**

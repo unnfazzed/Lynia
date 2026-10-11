@@ -425,9 +425,23 @@ export interface RefundOverdueRow {
   overdueMinutes: number;
 }
 
+/** D3 (2026-10-07, MJ-RH1): a merchant reported goods / cash as not returned. The debt is still open and
+ *  the rider is not suspended — support follows it up and an admin decides (write off, suspend the rider). */
+export interface NonReturnReportRow {
+  orderId: string;
+  merchant: string;
+  riderId: string | null;
+  rider: string | null;
+  amount: string | null;
+  orderStatus: string;
+  reportedAt: string;
+}
+
 export interface FoodDisputes {
   handshakeDisputes: HandshakeDisputeRow[];
   refundsOverdue: RefundOverdueRow[];
+  /** Absent on an API from before D3. */
+  nonReturnReports?: NonReturnReportRow[];
 }
 
 /* ── Rider detail (kit riders.html) ────────────────────────── */

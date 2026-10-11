@@ -647,6 +647,75 @@ describe("merchant order — one order screen (D-59)", () => {
     expect(t.root.findAll((n) => n.props.visible === true && n.props.animationType === "fade").length).toBeGreaterThan(0);
   });
 
+  it("U10 / D5: on the way and far from the pin (fresh GPS) — the customer can still pay; the trip stays 'On the way'", async () => {
+    const far = { profileId: "r", currentLat: -17.83, currentLng: 31.05, updatedAt: iso(-2_000) };
+    const t = await render(
+      foodOrder({ status: "en_route_dropoff", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003" }),
+      snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, rider: far }),
+    );
+    expect(has(t, "Rider is at your door")).toBe(false);
+    expect(has(t, "Take your order")).toBe(true);
+    press(t, "I’ve paid $16.50");
+    await act(async () => undefined);
+    expect(mockConfirmCash).toHaveBeenCalledWith("order-1");
+  });
+
+  it("U10 / D5: the rider's server-stamped \"I'm here\" is the door, even with the GPS far off the pin", async () => {
+    const far = { profileId: "r", currentLat: -17.83, currentLng: 31.05, updatedAt: iso(-2_000) };
+    const t = await render(
+      foodOrder({ status: "en_route_dropoff", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003", riderAtDropoffAt: iso(-30_000) }),
+      snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, rider: far }),
+    );
+    expect(has(t, "Rider is at your door")).toBe(true);
+    expect(has(t, "I’ve paid $16.50")).toBe(true);
+  });
+
+  it("U10 / D5: a confirm made on the way shows no countdown while the clock is the long trip ceiling", async () => {
+    const far = { profileId: "r", currentLat: -17.83, currentLng: 31.05, updatedAt: iso(-2_000) };
+    const t = await render(
+      foodOrder({
+        status: "en_route_dropoff",
+        merchantPhase: null,
+        riderId: "0a1b2c3d-0000-4000-8000-000000000003",
+        customerCashConfirmedAt: iso(-60_000),
+        cashHandshakeAmount: 16.5,
+        cashHandshakeDeadlineAt: iso(59 * 60_000),
+      }),
+      snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, rider: far }),
+    );
+    expect(has(t, /\b5\d:\d\d\b/)).toBe(false);
+    act(() => t.unmount());
+    // Once the rider said "I'm here" the server restarts the real 2:00 window — that one counts down.
+    const u = await render(
+      foodOrder({
+        status: "en_route_dropoff",
+        merchantPhase: null,
+        riderId: "0a1b2c3d-0000-4000-8000-000000000003",
+        customerCashConfirmedAt: iso(-60_000),
+        cashHandshakeAmount: 16.5,
+        cashHandshakeDeadlineAt: iso(90_000),
+        riderAtDropoffAt: iso(-10_000),
+      }),
+      snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, rider: far }),
+    );
+    expect(has(u, /\b1:[0-3]\d\b/)).toBe(true);
+    act(() => u.unmount());
+    // D5 review (item 1): after an early confirm the stamp starts the longer door window — counted down too.
+    const w = await render(
+      foodOrder({
+        status: "en_route_dropoff",
+        merchantPhase: null,
+        riderId: "0a1b2c3d-0000-4000-8000-000000000003",
+        customerCashConfirmedAt: iso(-120_000),
+        cashHandshakeAmount: 16.5,
+        cashHandshakeDeadlineAt: iso(7 * 60_000),
+        riderAtDropoffAt: iso(-60_000),
+      }),
+      snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, rider: far }),
+    );
+    expect(has(w, /\b[67]:\d\d\b/)).toBe(true);
+  });
+
   it("T15b: after collection the cancel costs the full total — through the generic cancel", async () => {
     const t = await render(
       foodOrder({ status: "en_route_dropoff", merchantPhase: null, riderId: "r" }),

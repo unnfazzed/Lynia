@@ -16,6 +16,7 @@ import {
   dropFoodDispatch,
   getFoodOrderAsRider,
   logFoodDoorstepCall,
+  markFoodAtDropoff,
   reportFoodCustomerRefused,
   reportFoodNoShow,
 } from "../../src/api/food-rider";
@@ -815,6 +816,14 @@ export default function RiderFoodJob(): React.ReactElement {
     setRestoreDismissed(true);
     haptic("tap");
   };
+  /** D5 (2026-10-07, U10): the explicit "I'm at the drop-off" CTA also tells the server — the customer's
+   *  "at your door" push and the cash-handshake clock follow it. Only this CTA: the Problem sheet's "can't
+   *  reach" (X3) marks the drop locally but is no arrival claim (review item 2). Best-effort, never a gate:
+   *  offline (or refused as too far), the rider's own flow carries on unchanged. */
+  const arriveAtDrop = (): void => {
+    markArrived("drop");
+    if (orderId) void Promise.resolve(orderId).then(markFoodAtDropoff).catch(() => undefined);
+  };
   const [sheet, setSheet] = useState<null | "problem" | "drop" | "undeliver" | "report" | "sos" | "why">(null);
   // FJ-M4: Rider v2 X3 (can't reach — on the stage sheet) and X4 (why can't you deliver) on food jobs
   // too, wired to the venue flow's own server rules (2 logged calls + 8 min before a no-show).
@@ -1598,7 +1607,7 @@ export default function RiderFoodJob(): React.ReactElement {
     );
     bar = (
       <CtaBar>
-        <CtaButton label={kit ? v(R.atKitchenCta) : R.atDropCta} onPress={() => markArrived(kit ? "pickup" : "drop")} />
+        <CtaButton label={kit ? v(R.atKitchenCta) : R.atDropCta} onPress={() => (kit ? markArrived("pickup") : arriveAtDrop())} />
       </CtaBar>
     );
   }

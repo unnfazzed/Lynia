@@ -2,7 +2,7 @@ import type { MerchantBookingResponse, MerchantOrderResponse } from "@lynia/shar
 import { isFinding } from "./booking";
 import { shortName } from "./booking-view";
 import { isNoRiderHold, isReadyBucket, needsKitchenConfirm } from "./order-groups";
-import { hm, isAfterPickup, money, orderLabel, riderFirstName } from "./orders-view";
+import { hm, isAfterPickup, isGoodsReturn, money, orderLabel, riderFirstName } from "./orders-view";
 import { openRound } from "./substitution";
 import { countOf, type Vocabulary } from "./vocabulary";
 import { bookingHref, orderHref } from "./routes";
@@ -200,7 +200,8 @@ function orderCards(
   if (isAfterPickup(o) && !o.merchantClosedAt) {
     const rider = riderFirstName(o);
     const owed = o.debtStatus === "open" && o.debtAmount ? o.debtAmount : null;
-    const delivered = o.status === "delivered" || o.status === "completed" || o.status === "undelivered";
+    // MJ-RB1: a cancel after pickup is a goods return like an undelivered order — CASH TO COME BACK.
+    const delivered = o.status === "delivered" || o.status === "completed" || isGoodsReturn(o);
     if (!delivered) {
       return {
         section: "way",

@@ -22,7 +22,9 @@ export async function hasOpenMerchantObligation(prisma: PrismaService | Prisma.T
       riderId,
       OR: [
         { orderType: "merchant", debtStatus: "open", merchantClosedAt: null },
-        { orderType: "merchant", customerCashConfirmedAt: { not: null }, riderCashConfirmedAt: null },
+        // D5 review (item 3c): only on a live ride — the customer may now confirm on the way, and a
+        // cancelled / undelivered order's leftover confirm must never keep the rider off new jobs.
+        { orderType: "merchant", status: { in: ["picked_up", "en_route_dropoff"] }, customerCashConfirmedAt: { not: null }, riderCashConfirmedAt: null },
         // D-48 PR 4b: a shop booking's cash on delivery the rider still owes back.
         { orderType: "parcel", debtStatus: "open", merchantClosedAt: null },
       ],

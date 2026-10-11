@@ -1822,6 +1822,9 @@ export const MerchantOrderResponse = z
     /** Merchant v2 (ledger D-77): the rider's estimated arrival at their next stop — the counter before
      *  pickup, the customer after ("arrives 07:38"). Absent while unknown. */
     riderEtaAt: z.string().optional(),
+    /** Owner decision D5 (2026-10-07, U10): when the rider tapped "I'm here" at the drop-off. A hint only —
+     *  the customer's pay step never waits on it. Absent until then. */
+    riderAtDropoffAt: z.string().nullable().optional(),
     // ── Order flow v2 (ledger D-59, backend B). All optional and additive: an installed app ignores them.
     // (The venue kind — Cooking vs Packing, the tile colour — is backend A's `venue.businessType/shopKind`.)
     /** BRIEF §12: the slot's start (ISO) of a scheduled order; omitted for an ASAP order. */

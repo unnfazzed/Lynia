@@ -261,12 +261,18 @@ describe("C4 — MERCHANT_DEBT_TRANSITIONS (the collect-and-return debt ledger's
 
   it("the debt opens once, then settles exactly one of three ways — no path strands it", () => {
     expect(findMerchantDebtTransition(INITIAL, "open_debt")?.to).toBe("open");
-    const settlingEvents = ["confirm_returned_cash", "confirm_goods_returned", "report_non_return"] as const;
+    const settlingEvents = ["confirm_returned_cash", "confirm_goods_returned", "admin_write_off"] as const;
     for (const event of settlingEvents) {
       const t = findMerchantDebtTransition("open", event);
       expect(t, `open/${event} should exist`).toBeDefined();
       expect(t!.to).not.toBe("open");
     }
+  });
+
+  it("D3 (MJ-RH1): only an admin writes a debt off — no merchant or system edge reaches written_off", () => {
+    const writeOffs = MERCHANT_DEBT_TRANSITIONS.filter((t) => t.to === "written_off");
+    expect(writeOffs.length).toBeGreaterThan(0);
+    for (const t of writeOffs) expect(t.actor).toBe("admin");
   });
 
   it("every non-open settled/written-off state has no outgoing edge — each is terminal for the debt", () => {

@@ -117,6 +117,7 @@ export function merchantLive(
     assignedAt: null,
     handshakeStarted:
       !!order?.customerCashConfirmedAt || !!order?.riderCashConfirmedAt,
+    riderAtDropoff: !!order?.riderAtDropoffAt,
     nowMs,
   });
   const stage = res.stage;

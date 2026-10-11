@@ -54,6 +54,7 @@ jest.mock("../../../src/api/orders", () => ({
   advanceStatus: (...args: unknown[]) => mockAdvance(...args),
   rateSender: jest.fn(),
 }));
+const mockMarkAtDropoff = jest.fn(async (..._args: unknown[]) => ({}));
 jest.mock("../../../src/api/food-rider", () => ({
   getFoodOrderAsRider: (...args: unknown[]) => mockGetFoodOrderAsRider(...args),
   confirmFoodPickup: (...args: unknown[]) => mockConfirmFoodPickup(...args),
@@ -64,6 +65,7 @@ jest.mock("../../../src/api/food-rider", () => ({
   disputeFoodCash: jest.fn(),
   dropFoodDispatch: jest.fn(),
   logFoodDoorstepCall: (...args: unknown[]) => mockLogCall(...args),
+  markFoodAtDropoff: (...args: unknown[]) => mockMarkAtDropoff(...args),
   reportFoodCustomerRefused: (...args: unknown[]) => mockRefused(...args),
   reportFoodNoShow: (...args: unknown[]) => mockNoShow(...args),
 }));
@@ -231,6 +233,7 @@ async function mount(order: Partial<OrderSnapshot>, food: Partial<MerchantOrderR
 beforeEach(() => {
   for (const m of [mockGetActiveOrder, mockGetOrder, mockAdvance, mockGetFoodOrderAsRider, mockConfirmFoodPickup, mockConfirmDelivery, mockRefused, mockNoShow, mockLogCall]) m.mockReset();
   mockStore.clear();
+  mockMarkAtDropoff.mockClear();
   mockSocketConnected = false;
   Object.assign(mockPhoto, { uri: null, uploaded: false, denied: false });
   mockPhoto.flush.mockReset();
@@ -371,6 +374,10 @@ describe("FJ-M4 / FJ-M5 / FJ-H3 · can't reach, can't deliver, and the return le
     expect(textOf(tree)).toContain("Rudo isn't answering");
     expect(cta(tree, "Mark undelivered")!.props.disabled).toBe(true);
     expect(textOf(tree)).toContain("Available after 8 minutes of trying.");
+    // D5 review (item 2): "can't reach" marks the drop locally but is no arrival claim — no server stamp
+    // (it would start the customer's handshake clock and push "at your door").
+    for (let i = 0; i < 3; i++) await act(async () => undefined);
+    expect(mockMarkAtDropoff).not.toHaveBeenCalled();
   });
 
   it("X4 → X5: refused, then the venue's name, Call, and no mobile money", async () => {

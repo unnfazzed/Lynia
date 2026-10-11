@@ -19,6 +19,7 @@ const mockConfirmFoodPickup = jest.fn();
 const mockConfirmFoodRiderCash = jest.fn();
 const mockConfirmDelivery = jest.fn();
 const mockRxSaw = jest.fn();
+const mockMarkAtDropoff = jest.fn();
 
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
@@ -44,6 +45,7 @@ jest.mock("../../../src/api/food-rider", () => ({
   disputeFoodCash: jest.fn(),
   dropFoodDispatch: jest.fn(),
   logFoodDoorstepCall: jest.fn(),
+  markFoodAtDropoff: (...args: unknown[]) => mockMarkAtDropoff(...args),
   reportFoodCustomerRefused: jest.fn(),
   reportFoodNoShow: jest.fn(),
 }));
@@ -189,6 +191,8 @@ beforeEach(() => {
   mockConfirmFoodRiderCash.mockReset();
   mockConfirmDelivery.mockReset();
   mockRxSaw.mockReset();
+  mockMarkAtDropoff.mockReset();
+  mockMarkAtDropoff.mockResolvedValue({ orderId: "order-1", riderAtDropoffAt: new Date().toISOString() });
 });
 
 afterEach(() => {
@@ -252,6 +256,21 @@ describe("RD4a · the door card", () => {
     text = textOf(tree);
     expect(text).toMatch(/Handed over \d\d:\d\d/);
     expect(text).toContain("Collect $17.50 cash at the door");
+    await pressCta(tree, "I received $17.50");
+    expect(mockConfirmFoodRiderCash).toHaveBeenCalledWith("order-1");
+  });
+
+  it("D5: \"I'm at the drop-off\" also stamps the server (a hint for the customer, never a gate)", async () => {
+    const tree = await atDoor(CASH);
+    expect(mockMarkAtDropoff).toHaveBeenCalledWith("order-1");
+    expect(textOf(tree)).toContain("Hand over the order");
+  });
+
+  it("D5: the door still works when the server stamp fails (offline) — the rider's flow never waits on it", async () => {
+    mockMarkAtDropoff.mockRejectedValue(new Error("offline"));
+    mockConfirmFoodRiderCash.mockResolvedValue({ orderId: "order-1", riderCashConfirmedAt: new Date().toISOString() });
+    const tree = await atDoor({ ...CASH, customerCashConfirmedAt: new Date().toISOString() });
+    expect(textOf(tree)).toContain("I received $17.50");
     await pressCta(tree, "I received $17.50");
     expect(mockConfirmFoodRiderCash).toHaveBeenCalledWith("order-1");
   });

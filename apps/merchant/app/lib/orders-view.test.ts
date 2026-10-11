@@ -62,6 +62,22 @@ describe("which screen an order opens on", () => {
     expect(detailView(o({ merchantPhase: null, status: "delivered", debtStatus: "open", merchantClosedAt: "2026-09-30T13:00:00Z" }))).toBe("closed");
     expect(detailView(o({ merchantPhase: null, status: "cancelled" }))).toBe("closed");
   });
+
+  it("MJ-RB1: a cancel after the rider collected opens the K5c goods return (like undelivered) until the food is back", () => {
+    const back = { merchantPhase: null, status: "cancelled", paymentMethod: "cash", merchantCashRule: "collect_and_return", debtAmount: 12 } as const;
+    expect(detailView(o({ ...back, debtStatus: "open" }))).toBe("delivered");
+    expect(rowSub(o({ ...back, debtStatus: "open" }))).toBe("Not delivered · cash back $12.00");
+    // "I got the food back" settled it, or the merchant closed its side: the plain cancelled screen.
+    expect(detailView(o({ ...back, debtStatus: "settled_goods" }))).toBe("closed");
+    expect(detailView(o({ ...back, debtStatus: "open", merchantClosedAt: "2026-09-30T13:00:00Z" }))).toBe("closed");
+  });
+
+  it("MJ-RB1: it stays on the Orders home with the other goods returns, and never counts as on the way", () => {
+    const back = o({ id: "a0000007-0000-4000-8000-000000000000", merchantPhase: null, status: "cancelled", debtStatus: "open", debtAmount: 12 });
+    const s = homeSections([back]);
+    expect(s.outForDelivery.map((x) => x.id.slice(0, 8))).toEqual(["a0000007"]);
+    expect(liveBar([back], vocabulary("restaurant"))).toBeNull();
+  });
 });
 
 describe("the merchant track (Order flow v2 M3–M6, D-59)", () => {
