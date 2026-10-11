@@ -55,7 +55,13 @@ jest.mock("../../../src/api/food-orders", () => ({
 }));
 jest.mock("../../../src/api/offers", () => ({ listOffers: async () => [], selectOffer: jest.fn() }));
 jest.mock("../../../src/api/safety", () => ({ raiseIssue: jest.fn(async () => ({})), raiseSos: jest.fn(async () => ({})) }));
-jest.mock("../../../src/realtime/use-order-socket", () => ({ useOrderSocket: () => ({ connected: false }) }));
+let mockOnStatus: ((e: { orderId: string; status: string }) => void) | undefined;
+jest.mock("../../../src/realtime/use-order-socket", () => ({
+  useOrderSocket: (...a: unknown[]) => {
+    mockOnStatus = a[3] as typeof mockOnStatus;
+    return { connected: false };
+  },
+}));
 jest.mock("../../../src/realtime/use-foreground-refetch", () => ({ useForegroundRefetch: () => undefined }));
 jest.mock("../../../src/ui/useReduceMotion", () => ({
   useReduceMotion: () => {
@@ -200,8 +206,14 @@ afterEach(() => {
 const snap = (over: Partial<OrderSnapshot> = {}): OrderSnapshot =>
   parcel({ orderType: "merchant", merchantName: "Gava’s Kitchen", status: "requested", expiresAt: null, ridersNearby: null, ...over } as Partial<OrderSnapshot>);
 
+const restoreAfter: Array<{ mockRestore: () => void }> = [];
+afterEach(() => {
+  while (restoreAfter.length) restoreAfter.pop()!.mockRestore();
+});
+
 function captureTicks(): { spy: jest.SpyInstance; tick: () => void } {
   const spy = jest.spyOn(global, "setInterval");
+  restoreAfter.push(spy);
   return {
     spy,
     tick: () => {
@@ -220,13 +232,29 @@ describe("P30 — countdowns tick in their own leaves", () => {
     const screenBefore = mockScreenRenders;
     const mapBefore = mockMerchantMapProps.length;
     const real = Date.now();
-    const now = jest.spyOn(Date, "now").mockReturnValue(real + 60_000);
+    restoreAfter.push(jest.spyOn(Date, "now").mockReturnValue(real + 60_000));
     act(() => ticks.tick());
     expect(has(t, "1:")).toBe(true);
     expect(mockScreenRenders).toBe(screenBefore);
     expect(mockMerchantMapProps.length).toBe(mapBefore);
-    now.mockRestore();
-    ticks.spy.mockRestore();
+  });
+
+  it("T3: the screen wakes once at the 3:00 deadline — the timer row goes and the lapsed sub shows", async () => {
+    const timeouts = jest.spyOn(global, "setTimeout");
+    restoreAfter.push(timeouts);
+    mockGetFoodOrder.mockResolvedValue(food({ merchantPhase: "awaiting_accept", acceptDeadlineAt: new Date(Date.now() + 150_000).toISOString(), prepStartedAt: null }));
+    mockGetOrder.mockResolvedValue(snap());
+    const t = await render();
+    expect(has(t, "They have 3 minutes.")).toBe(true);
+    // The one-shot wake armed for the deadline (~150 s out).
+    const wake = timeouts.mock.calls.find((c) => typeof c[1] === "number" && c[1] > 140_000 && c[1] < 151_000);
+    expect(wake).toBeTruthy();
+    const real = Date.now();
+    restoreAfter.push(jest.spyOn(Date, "now").mockReturnValue(real + 151_000));
+    act(() => (wake![0] as () => void)());
+    expect(has(t, "They have 3 minutes.")).toBe(false);
+    expect(has(t, "Nothing is ordered until they accept.")).toBe(true);
+    expect(has(t, " left")).toBe(false);
   });
 
   it("the screen keeps only a slow clock (no 1 s interval of its own while cooking)", async () => {
@@ -235,7 +263,6 @@ describe("P30 — countdowns tick in their own leaves", () => {
     mockGetOrder.mockResolvedValue(snap());
     await render();
     expect(ticks.spy.mock.calls.filter((c) => c[1] === 1000).length).toBe(0);
-    ticks.spy.mockRestore();
   });
 });
 
@@ -295,10 +322,13 @@ describe("P22 — commit actions write the server's answer", () => {
     expect(has(t, "I’ve paid")).toBe(true);
     mockGetFoodOrder.mockImplementation(() => never());
     mockGetOrder.mockImplementation(() => never());
-    mockConfirmCash.mockResolvedValue({ orderId: "order-1", customerCashConfirmedAt: new Date().toISOString() });
+    const deadline = new Date(Date.now() + 60 * 60_000).toISOString();
+    mockConfirmCash.mockResolvedValue({ orderId: "order-1", customerCashConfirmedAt: new Date().toISOString(), cashHandshakeAmount: 10.5, cashHandshakeDeadlineAt: deadline });
     press(t, "I’ve paid");
     await settle(2);
     expect(mockConfirmCash).toHaveBeenCalledWith("order-1");
+    // The whole handshake the server stamped lands in the cache, not just the confirm time.
+    expect(client.getQueryData<MerchantOrderResponse>(["food-order", "order-1"])).toMatchObject({ cashHandshakeAmount: 10.5, cashHandshakeDeadlineAt: deadline, id: "order-1" });
     expect(client.getQueryData<MerchantOrderResponse>(["food-order", "order-1"])?.customerCashConfirmedAt).toBeTruthy();
     expect(has(t, "I’ve paid")).toBe(false);
   });
@@ -307,6 +337,7 @@ describe("P22 — commit actions write the server's answer", () => {
 describe("P19 — the two reads stop cancelling each other", () => {
   it("the mount-time echo refetches join a read in flight (cancelRefetch: false)", async () => {
     const spy = jest.spyOn(QueryClient.prototype, "invalidateQueries");
+    restoreAfter.push(spy);
     mockGetFoodOrder.mockResolvedValue(food());
     mockGetOrder.mockResolvedValue(snap());
     await render();
@@ -316,7 +347,18 @@ describe("P19 — the two reads stop cancelling each other", () => {
     });
     expect(echoes.length).toBeGreaterThan(0);
     for (const [, opts] of echoes) expect(opts).toEqual({ cancelRefetch: false });
-    spy.mockRestore();
+  });
+
+  it("a genuine order:status push cancels a stale in-flight food read and refetches (no cancelRefetch: false)", async () => {
+    mockGetFoodOrder.mockResolvedValue(food());
+    mockGetOrder.mockResolvedValue(snap());
+    await render();
+    const spy = jest.spyOn(client, "invalidateQueries");
+    restoreAfter.push(spy);
+    act(() => mockOnStatus?.({ orderId: "order-1", status: "requested" }));
+    const pushed = spy.mock.calls.find(([f]) => (f as { queryKey?: unknown[] }).queryKey?.[0] === "food-order");
+    expect(pushed).toBeTruthy();
+    expect(pushed![1]).toBeUndefined();
   });
 });
 

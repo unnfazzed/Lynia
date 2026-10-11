@@ -302,7 +302,8 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
     // "done" would leave the framing permanently unapplied and the customer looking at a two-pin route
     // framed on whatever `initialRegion` happened to be.
     const map = mapRef.current;
-    if (!map) return;
+    // P36: a hidden map (Send steps 2–4) is 0×0 — a fit there frames nothing, so wait until it is shown.
+    if (!map || hidden) return;
     if (key === lastKey.current) return;
     lastKey.current = key;
     if (pickup && drop) {
@@ -320,7 +321,7 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on a stable string of the coords + active slot.
-  }, [key, mapMounted]);
+  }, [key, mapMounted, hidden]);
 
   const initialRegion: Region = pickup
     ? { latitude: pickup.lat, longitude: pickup.lng, latitudeDelta: 0.04, longitudeDelta: 0.04 }

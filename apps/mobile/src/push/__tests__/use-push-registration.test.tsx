@@ -255,6 +255,27 @@ describe("usePushRegistration account-standing arrivals", () => {
     });
     expect(mockReceivedRemove.mock.calls.length).toBe(removesBefore + 1);
   });
+  it.each(["cash_handshake_rider_confirmed", "rider_at_dropoff", "cash_handshake_frozen", "cash_handshake_customer_confirmed"])(
+    "P19 review: a door-step push (%s) refreshes the order's food read and snapshot at once",
+    async (kind) => {
+      let tree!: ReturnType<typeof create>;
+      act(() => {
+        tree = create(<Harness role="customer" />);
+      });
+      await flush();
+      const invalidate = jest.spyOn(harnessQc!, "invalidateQueries");
+      act(() => {
+        receivedListener?.({ request: { content: { data: { kind, orderId: "o7" } } } });
+      });
+      await flush();
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: ["food-order", "o7"] });
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: ["order", "o7"] });
+      act(() => {
+        tree.unmount();
+      });
+    },
+  );
+
   it("leaves the cache alone for a push that is not about account standing", async () => {
     // Scoping guard: every order/bid push would otherwise force a ["me"] round trip on arrival — a
     // per-notification refetch of an unrelated resource on a metered corridor link.

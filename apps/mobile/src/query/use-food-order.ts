@@ -17,6 +17,8 @@ const RELAXED_POLL_MS = 15_000;
 export const SOCKET_SAFETY_POLL_MS = 60_000;
 /** P19: nothing left to observe — the rating screen of a delivered order no longer polls. */
 const TERMINAL = new Set(["cancelled", "expired", "delivered", "completed", "undelivered"]);
+/** P19 review: the statuses the door-step handshake runs in (see `pollIntervalFor`). */
+const DOOR_STEP = new Set(["picked_up", "en_route_dropoff"]);
 
 /** Exported for tests. `nowMs` defaults to the wall clock; `connected` is the order socket being up (P19). */
 export function pollIntervalFor(order: MerchantOrderResponse | undefined, nowMs: number = Date.now(), connected = false): number | false {
@@ -32,6 +34,9 @@ export function pollIntervalFor(order: MerchantOrderResponse | undefined, nowMs:
   if (order.merchantPhase === "awaiting_item_approval") return TIGHT_POLL_MS;
   // Order flow v2 (BRIEF §8): a mid-prep substitution round has a 3-minute answer window too.
   if (order.substitution?.status === "open") return TIGHT_POLL_MS;
+  // On the ride to the door, the handshake moves on writes an older server never pushed (the rider's cash
+  // confirm → the code, "I'm here", a freeze): keep the 15 s cadence there even with the socket up.
+  if (DOOR_STEP.has(order.status)) return RELAXED_POLL_MS;
   // awaiting_payment / preparing / ready_for_pickup / null (handed off to C3 dispatch): a relaxed cadence
   // is enough to notice the hand-off — and with the socket live, a push does that, so only a safety net.
   return connected ? SOCKET_SAFETY_POLL_MS : RELAXED_POLL_MS;

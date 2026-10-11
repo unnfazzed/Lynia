@@ -1,9 +1,10 @@
-import { ConflictException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
+import { ConflictException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit, Optional } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { foodOrderMoney, haversineKm, merchantAmountDueUsd, RESTAURANTS_DEBT, roundToCents } from "@lynia/shared";
 import { merchantCustomerCopy, MERCHANT_STATUS_NOTICES, NotificationsService } from "../notifications/notifications.service";
 import { OrderLifecycleService } from "../orders/order-lifecycle.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { TrackingGateway } from "../tracking/tracking.gateway";
 import { resolveOwnMerchantId } from "./merchant-lookup.util";
 
 /**
@@ -81,7 +82,21 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly lifecycle: OrderLifecycleService,
+    @Optional() private readonly gateway?: TrackingGateway,
   ) {}
+
+  /** P19 review (2026-10-07): the door-step writes (the rider's cash confirm, "I'm here", a freeze) change
+   *  what the customer's order screen draws but no status, so nothing told an open screen to refetch — with
+   *  the socket up its food read only polls as a safety net. Nudge the order room (customer + rider) with
+   *  the existing `order:status` event. Best-effort and post-commit: a failed emit never touches the write. */
+  private emitDoorStep(orderId: string, status: string | null | undefined): void {
+    if (!status) return;
+    try {
+      this.gateway?.emitOrderStatus(orderId, status);
+    } catch (err) {
+      this.logger.warn(`status emit failed for order ${orderId}: ${(err as Error).message}`);
+    }
+  }
 
   onModuleInit(): void {
     void this.sweepFrozenHandshakes();
@@ -143,7 +158,10 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
    *  THEN the confirms"). D5 (2026-10-07, U10): the customer's pay step is open for the whole ride to the
    *  door (no distance gate), so the N-19 clock only starts here when the rider has already said "I'm
    *  here"; otherwise it waits for the rider's "I'm here" ({@link markAtDropoff}) — see handshakeDeadline. */
-  async confirmCustomerCash(orderId: string, customerId: string): Promise<{ orderId: string; customerCashConfirmedAt: string }> {
+  async confirmCustomerCash(
+    orderId: string,
+    customerId: string,
+  ): Promise<{ orderId: string; customerCashConfirmedAt: string; cashHandshakeAmount: number; cashHandshakeDeadlineAt: string }> {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, customerId, orderType: "merchant" },
       select: {
@@ -181,9 +199,14 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
           cashHandshakeDeadlineAt: handshakeDeadline(now, arrived ? now : null),
         },
       });
-    let claimed = await confirm(order.riderAtDropoffAt != null);
-    if (claimed.count === 0 && order.riderAtDropoffAt == null) claimed = await confirm(true);
+    let arrived = order.riderAtDropoffAt != null;
+    let claimed = await confirm(arrived);
+    if (claimed.count === 0 && !arrived) {
+      arrived = true;
+      claimed = await confirm(true);
+    }
     if (claimed.count === 0) throw new ConflictException("Order changed, retry");
+    this.emitDoorStep(orderId, order.status);
     if (order.riderId) {
       void this.notifications.notifyProfiles([order.riderId], {
         title: "Customer confirmed payment",
@@ -191,7 +214,13 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
         data: { orderId, kind: "cash_handshake_customer_confirmed" },
       });
     }
-    return { orderId, customerCashConfirmedAt: now.toISOString() };
+    // P22 review: the whole handshake the write stamped (additive fields), so the app can show it at once.
+    return {
+      orderId,
+      customerCashConfirmedAt: now.toISOString(),
+      cashHandshakeAmount: amount,
+      cashHandshakeDeadlineAt: handshakeDeadline(now, arrived ? now : null).toISOString(),
+    };
   }
 
   /** Rider taps "I received $X" — second (R-04). This is what unlocks the code (R-09) — enforced in
@@ -199,7 +228,7 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
   async confirmRiderCash(orderId: string, riderId: string): Promise<{ orderId: string; riderCashConfirmedAt: string }> {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, riderId, orderType: "merchant" },
-      select: { customerCashConfirmedAt: true, riderCashConfirmedAt: true, cashHandshakeFrozenAt: true, customerId: true },
+      select: { status: true, customerCashConfirmedAt: true, riderCashConfirmedAt: true, cashHandshakeFrozenAt: true, customerId: true },
     });
     if (!order) throw new NotFoundException("Order not found");
     if (!order.customerCashConfirmedAt) throw new ConflictException("Waiting on the customer's confirm first");
@@ -211,6 +240,8 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
       data: { riderCashConfirmedAt: now },
     });
     if (claimed.count === 0) throw new ConflictException("Order changed, retry");
+    // The code is unlocked: the customer's screen shows it at once rather than on its next poll.
+    this.emitDoorStep(orderId, order.status ?? "en_route_dropoff");
     void this.notifications.notifyProfiles([order.customerId], {
       title: "Confirmed",
       body: "Your delivery code is ready.",
@@ -279,8 +310,9 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
       data: { cashHandshakeFrozenAt: new Date() },
     });
     if (claimed.count === 0) return false;
-    const order = await this.prisma.order.findUnique({ where: { id: orderId }, select: { customerId: true, riderId: true } });
+    const order = await this.prisma.order.findUnique({ where: { id: orderId }, select: { customerId: true, riderId: true, status: true } });
     if (order) {
+      this.emitDoorStep(orderId, order.status ?? "en_route_dropoff");
       const targets = order.riderId ? [order.customerId, order.riderId] : [order.customerId];
       void this.notifications.notifyProfiles(targets, {
         title: "We've flagged this order",
@@ -503,6 +535,8 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
     // D5 review (item 1): the drawn "{n} is at your door · Have $X cash ready" push (G3a `atDoor`), sent on
     // the rider's arrival — never on the `en_route_dropoff` status, which fires right after pickup (U12,
     // MERCHANT_SILENT_PUSH). Best-effort, post-commit.
+    // "At your door" (the stage the stamp drives) shows on an open screen at once.
+    this.emitDoorStep(orderId, "en_route_dropoff");
     const fallback = MERCHANT_STATUS_NOTICES.en_route_dropoff!;
     const copy = merchantCustomerCopy("en_route_dropoff", order) ?? fallback;
     void this.notifications.notifyProfiles([order.customerId], {

@@ -185,6 +185,24 @@ describe("FoodDebtService — doorstep handshake (R-04/R-05/N-19)", () => {
     expect(left).toBeGreaterThan(RESTAURANTS_DEBT.handshakeWindowMs - 1000);
   });
 
+  it("P22 review: the confirm returns the handshake it stamped (amount + the deadline actually written)", async () => {
+    const writes: Array<{ where: Record<string, unknown>; data: Record<string, unknown> }> = [];
+    const { svc } = build({
+      order: {
+        findFirst: async () => ({ status: "en_route_dropoff", merchantPaymentMethod: "cash", agreedFare: 15.5, customerCashConfirmedAt: null, riderId: "r1", riderAtDropoffAt: null }),
+        // The rider stamps "I'm here" between the read and the write: the ceiling write misses, the retry wins.
+        updateMany: async (a: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+          writes.push(a);
+          return { count: writes.length === 1 ? 0 : 1 };
+        },
+      },
+    });
+    const res = await svc.confirmCustomerCash(orderId, "c1");
+    expect(res.cashHandshakeAmount).toBe(15.5);
+    expect(res.cashHandshakeDeadlineAt).toBe((writes[1]!.data.cashHandshakeDeadlineAt as Date).toISOString());
+    expect(Date.parse(res.cashHandshakeDeadlineAt) - Date.parse(res.customerCashConfirmedAt)).toBe(RESTAURANTS_DEBT.handshakeWindowMs);
+  });
+
   it("D5: handshakeDeadline is the 2:00 window at the door and the long ceiling on the road", () => {
     const t = new Date("2026-10-07T10:00:00Z");
     expect(handshakeDeadline(t, new Date()).getTime() - t.getTime()).toBe(RESTAURANTS_DEBT.handshakeWindowMs);
@@ -800,5 +818,106 @@ describe("FoodDebtService.refundOrder — D-12", () => {
     expect(res).toEqual({ orderId, status: "cancelled" });
     expect(updateData).toMatchObject({ status: "cancelled", refundReference: "REF-1", refundAmount: 13 });
     expect(notified).toEqual([expect.objectContaining({ profileIds: ["c1"] })]);
+  });
+});
+
+describe("FoodDebtService — door-step writes nudge the order room (P19 review)", () => {
+  // The rider's cash confirm, "I'm here" and a freeze change what the customer's screen draws (the code,
+  // "at your door", the frozen note) without a status change; with the socket up the app's food read only
+  // polls as a 60 s safety net, so each emits the existing `order:status` to the order room.
+  function withGateway(methods: Record<string, unknown>) {
+    const emitOrderStatus = vi.fn();
+    const prisma = withMembershipShim({ ...methods } as Record<string, unknown>);
+    prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
+    const svc = new FoodDebtService(prisma as unknown as PrismaService, notifications, {} as OrderLifecycleService, {
+      emitOrderStatus,
+    } as unknown as ConstructorParameters<typeof FoodDebtService>[3]);
+    return { svc, emitOrderStatus };
+  }
+
+  it("confirmRiderCash emits order:status once the code is unlocked", async () => {
+    const { svc, emitOrderStatus } = withGateway({
+      order: {
+        findFirst: async () => ({ status: "en_route_dropoff", customerCashConfirmedAt: new Date(), riderCashConfirmedAt: null, cashHandshakeFrozenAt: null, customerId: "c1" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+    });
+    await svc.confirmRiderCash(orderId, "r1");
+    expect(emitOrderStatus).toHaveBeenCalledWith(orderId, "en_route_dropoff");
+  });
+
+  it("a confirm that loses its CAS emits nothing", async () => {
+    const { svc, emitOrderStatus } = withGateway({
+      order: {
+        findFirst: async () => ({ status: "en_route_dropoff", customerCashConfirmedAt: new Date(), riderCashConfirmedAt: null, cashHandshakeFrozenAt: null, customerId: "c1" }),
+        updateMany: async () => ({ count: 0 }),
+      },
+    });
+    await expect(svc.confirmRiderCash(orderId, "r1")).rejects.toThrow();
+    expect(emitOrderStatus).not.toHaveBeenCalled();
+  });
+
+  it("markAtDropoff emits order:status (the 'at your door' stage)", async () => {
+    const { svc, emitOrderStatus } = withGateway({
+      order: {
+        findFirst: async () => ({
+          status: "en_route_dropoff",
+          riderAtDropoffAt: null,
+          dropoff: { point: { lat: -17.8105, lng: 31.0705 } },
+          customerId: "c1",
+          agreedFare: 15.5,
+          carriedBalance: [],
+          merchant: { name: "Gava's Kitchen" },
+          rider: { currentLat: -17.811, currentLng: 31.071, positionUpdatedAt: new Date(), profile: { firstName: "Tendai" } },
+        }),
+        updateMany: async () => ({ count: 1 }),
+      },
+    });
+    await svc.markAtDropoff(orderId, "r1");
+    expect(emitOrderStatus).toHaveBeenCalledWith(orderId, "en_route_dropoff");
+  });
+
+  it("the N-19 sweep's freeze emits order:status; a missed freeze emits nothing", async () => {
+    const hit = withGateway({
+      order: {
+        findMany: async () => [{ id: orderId }],
+        updateMany: async () => ({ count: 1 }),
+        findUnique: async () => ({ customerId: "c1", riderId: "r1", status: "en_route_dropoff" }),
+      },
+    });
+    await hit.svc.sweepFrozenHandshakes();
+    expect(hit.emitOrderStatus).toHaveBeenCalledWith(orderId, "en_route_dropoff");
+    const miss = withGateway({
+      order: { findMany: async () => [{ id: orderId }], updateMany: async () => ({ count: 0 }), findUnique: async () => ({}) },
+    });
+    await miss.svc.sweepFrozenHandshakes();
+    expect(miss.emitOrderStatus).not.toHaveBeenCalled();
+  });
+
+  it("the rider's dispute (an immediate freeze) emits order:status too", async () => {
+    const { svc, emitOrderStatus } = withGateway({
+      order: {
+        findFirst: async () => ({ customerCashConfirmedAt: new Date(), riderCashConfirmedAt: null }),
+        updateMany: async () => ({ count: 1 }),
+        findUnique: async () => ({ customerId: "c1", riderId: "r1", status: "en_route_dropoff" }),
+      },
+    });
+    await svc.disputeCash(orderId, "r1");
+    expect(emitOrderStatus).toHaveBeenCalledWith(orderId, "en_route_dropoff");
+  });
+
+  it("a throwing gateway never fails the write", async () => {
+    const prisma = withMembershipShim({
+      order: {
+        findFirst: async () => ({ status: "en_route_dropoff", customerCashConfirmedAt: new Date(), riderCashConfirmedAt: null, cashHandshakeFrozenAt: null, customerId: "c1" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+    } as Record<string, unknown>);
+    const svc = new FoodDebtService(prisma as unknown as PrismaService, notifications, {} as OrderLifecycleService, {
+      emitOrderStatus: () => {
+        throw new Error("socket down");
+      },
+    } as unknown as ConstructorParameters<typeof FoodDebtService>[3]);
+    await expect(svc.confirmRiderCash(orderId, "r1")).resolves.toMatchObject({ orderId });
   });
 });

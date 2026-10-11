@@ -281,7 +281,9 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   const onStatus = useCallback(
     (e: OrderStatusEvent) => {
       if (e.track) setSocketTrack(e.track);
-      void qc.invalidateQueries({ queryKey: foodOrderKey(orderId) }, JOIN);
+      // A real server push: cancel a read already in flight (it may predate the change) and refetch.
+      // Only the echo invalidations below join one (P19).
+      void qc.invalidateQueries({ queryKey: foodOrderKey(orderId) });
     },
     [qc, orderId],
   );
@@ -435,7 +437,10 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     mutationFn: () => confirmFoodCustomerCash(orderId),
     onSuccess: (res) => {
       haptic("tap");
-      qc.setQueryData<MerchantOrderResponse>(foodOrderKey(orderId), (o) => (o ? { ...o, customerCashConfirmedAt: res.customerCashConfirmedAt } : o));
+      // P22: merge everything the confirm stamped (the confirm time, the amount, the window) — not one field.
+      const { orderId: _id, ...stamped } = res;
+      const patch = Object.fromEntries(Object.entries(stamped).filter(([, v]) => v !== undefined)) as Partial<MerchantOrderResponse>;
+      qc.setQueryData<MerchantOrderResponse>(foodOrderKey(orderId), (o) => (o ? { ...o, ...patch } : o));
       invalidate();
     },
     onError: (e) => showToast({ text: failText(e, O.c.noData) }),
