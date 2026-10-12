@@ -57,24 +57,56 @@ with insufficient balance. Together they cover T4 → T5, a slow T4 → T5, T4 �
 
 ---
 
-## 2. What already exists, and why most of it doesn't change
+## 2. What the code does today (verified against `main` @ 2026-10-12, not the docs)
 
-The repo was built for a live payment rail to drop in later:
+Every line below was read in the code. Where an older plan or doc says otherwise, the code wins.
 
-- **UI:** Rider v2 **T1–T6** (`handoff/rider-v2/`, ledger D-54) is fully built in `TopUpFlow.tsx`: Provider → Amount →
-  Phone → Approve, then Done or Failed. The Money tab shows **M10–M12** pending notices when the app closed during T4.
-  The **"Top up to keep riding" gate** (G14) leads into T1. Since 2026-10-12 (#1154) it no longer fires on a balance floor
-  (`COMMISSION.lowBalanceBlockBelow` is 0). It fires when the server refuses a job with `commission_low_balance`, because
-  the job's commission is more than the biker's balance. That check runs on a bid, on the customer's pick and on a dispatch
-  accept, and is skipped during the biker's first 10 jobs. **Settings › Top-up number** prefills T1 and T3.
-- **Data:** `useTopUp` already opens the intent, polls `GET /wallet/topups/:id` every 2.5 s, keeps a durable
-  recovery marker, and renders a success **only when the server says `succeeded`**.
-- **Backend seam:** `PaymentRail` (`apps/api/src/adapters/payments/payment-rail.interface.ts`) is bound to an inert
-  `StubPaymentRail`. `WalletService.creditFromTopup` is the exactly-once credit path, and nothing calls it yet. That is why
-  every top-up today runs down its 90 s and comes back `expired`.
+**Mobile (`apps/mobile`)**
+- `app/wallet/top-up.tsx` → `src/ui/rider/TopUpFlow.tsx` is the built T1–T6. Steps 1–3 are local state. Step 3's CTA is
+  `RF.requestCta(amount)`, using the **client's** typed amount. T4 renders while `status` is `pending` or not yet known, with title
+  `RF.waitT(topup?.amount ?? amount)` and a 90 s bar computed from the **shared constant** `TOPUP_WINDOW_MS`, not from the intent.
+  T5 shows on `succeeded` only, and T6 on `declined | expired`.
+- T1 maps `TOPUP_PROVIDERS` (`src/logic/rider-prefs.ts`: ecocash, innbucks, omari). Every card is always selectable, and there is **no
+  disabled state**. The default comes from `prefs.topupProvider`, which is stored **on the device** (`lynia.riderPrefs.v1`).
+- Settings › Top-up number (`app/settings/index.tsx:237`) uses the rider-kit `Chips` (`src/ui/rider/kit.tsx:470`), which has **no
+  disabled prop**.
+- `src/query/use-topup.ts` POSTs the intent, seeds the poll with the response, polls `GET /wallet/topups/:id` every 2.5 s while
+  pending, invalidates the wallet on `succeeded`, and writes a device marker (`savePendingTopup`) that holds only the `topupId`.
+- Money M10–M12 (`app/rider/(tabs)/money.tsx:230–234`) re-read that intent on mount (`reconcilePendingTopup`) and show
+  `pending.amount`. That is the intent's `amount`.
+- Entry points: Money's "+ Top up" (`money.tsx:293`, hidden for unverified bikers) and the `topup` gate (`app/rider/(tabs)/index.tsx:937`).
+  The gate fires on the server refusal `commission_low_balance` (`src/logic/rider-gate.ts:70`) or on `floorApplies`.
+- `src/api/wallet.ts` casts responses and does **not** zod-parse them, so new response fields don't break installed apps.
 
-So **for EcoCash, the approval flow itself needs no UI change.** The only UI change is the fee lines from the owner's decision that the biker pays the fee (§ 3). A `PaynowRail` behind the seam, plus a `resulturl`
-handler that calls `creditFromTopup`, makes T4 → T5 work as drawn. InnBucks and O'mari are the only parts that need new UI.
+**API (`apps/api`)**
+- `WalletController` (`wallet/wallet.controller.ts`): `GET /wallet/config`, `GET /wallet`, `GET /wallet/ledger`, `POST /wallet/topups`
+  (throttled to 10/hour) and `GET /wallet/topups/:id`.
+- `WalletService.createTopup` (`wallet/wallet.service.ts:377`): KYC-verified bikers only (`reason: "kyc"`); dedupes on
+  `idempotencyKey`; **silently clamps** the amount to [`minTopUp` $5, `maxTopUp` $50]; inserts a `pending` row with
+  `expiresAt = now + 90 s`. **It calls no rail.** Nothing is pushed to the phone.
+- `getTopup` (`:407`) marks a row `expired` **only when someone polls it** after the window. There is no background expiry or
+  reconcile job for top-ups.
+- **Nothing ever writes `declined`.** The enum value exists, but no code path sets it.
+- `creditFromTopup(topUpId, providerRef?)` (`:499`) moves `pending|expired → confirmed` by CAS and credits **`topUp.amount`**. It does
+  **not** check the amount the rail reports. It has no production caller. `creditManual` is the only live credit path (admin).
+- Ledger receipts are built server-side in `toEntry` (`:125`). A top-up row reads title "Top-up" and meta `RAIL_LABEL[rail]`
+  ("EcoCash"). `providerRef` is selected but **not shown**.
+- `PaymentsModule` (`adapters/payments/payments.module.ts`) **hard-binds** `StubPaymentRail`, and nothing injects `PAYMENT_RAIL`.
+  The selector pattern to copy is `selectKycVendor` (`kyc/kyc.module.ts:14`) or `selectPush` (`adapters/push/push.module.ts:82`).
+- Webhook precedent: `webhooks/bird` (`auth/bird-webhook.controller.ts`) and `/kyc/callback`. Controllers have no global auth guard
+  (only `ThrottleGuard` is an `APP_GUARD`). `main.ts` already enables `rawBody` and the `urlencoded` body parser, which is what Paynow posts.
+  The lost-webhook sweep to copy is `kyc/kyc-reconcile.service.ts` (`setInterval` reconcile timer).
+
+**Schema and contracts**
+- `TopUp` (`prisma/schema.prisma:500`): `rail`, `amount`, `phone` (stored **as typed**), `providerRef` (unique), `status`,
+  `initiatedAt`, `expiresAt`, `resolvedAt`, `idempotencyKey`. It has **no** columns for a poll URL, fee, charged amount or raw rail payload.
+- `Topup` wire type (`packages/shared/src/contracts.ts:822`, `.strict()`): `id, status, amount, rail, phone, expiresAt, createdAt`.
+  `CreateTopupRequest` (`:838`) still accepts `innbucks|omari`. `CommissionConfig` has no fee field.
+- `COMMISSION` (`packages/shared/src/policy.ts`): `ratePct` 10 (overridable by `COMMISSION_RATE_PCT`), `freeFirstJobs` 10,
+  `lowBalanceBlockBelow` 0, `minTopUp` 5, `maxTopUp` 50.
+
+**What this means:** the UI shell is real, but the money path behind it is not. Phase 1 is more backend work than "drop a rail into
+the seam". It needs the first writer of `declined`, a top-up sweep, a migration and an amount check, as listed in § 4.
 
 ---
 
@@ -158,7 +190,8 @@ It updates live as the amount changes, and is hidden while the amount is invalid
   > **"$5.00 to your balance + $0.13 transaction fee (2.5%)."**
 
 Paynow requires `phone` for every mobile-money method, InnBucks included, so the step stays for all three.
-The server normalises `077…` to the format Paynow expects. The biker never types `+263`.
+Today the server stores `phone` **as typed** (`CreateTopupRequest.phone` only requires 6–20 characters). Phase 1 adds normalisation to `07XXXXXXXX`
+for Paynow in `PaynowRail.initiate`. The biker never types `+263`.
 **Paynow's `authemail` is required for express checkout, but it is not a field the biker fills in.** Bikers sign up with a phone,
 not an email. The server sends the merchant account's email, as Paynow's test mode requires. **No email field gets added to the UI.**
 
@@ -204,8 +237,9 @@ For later, if design wants it: a reason-specific T6 line for "Insufficient balan
 `PaymentRailResult.reason` already carries it. It isn't drawn, so it isn't in this plan.
 
 ### Money tab M10–M12, G14, Settings: no change
-They read the same `pendingTopUp` and `TopupStatus`. A Paynow top-up's ledger row shows `lTop("EcoCash")` with the
-Paynow reference as the receipt `meta`, so the biker can quote it to support. The row's amount is the credit (+$5.00). Its
+They re-read the intent via the device marker and show its `amount`, which is the credit. A Paynow top-up's ledger row is built
+server-side (`WalletService.toEntry`): title "Top-up", meta `RAIL_LABEL[rail]` ("EcoCash"). Phase 1 extends that meta with the
+Paynow reference, which is selected today but not shown, so the biker can quote it to support. The row's amount is the credit (+$5.00). Its
 `meta` adds **"You paid $5.13 (incl. 2.5% fee)"**, so the receipt reconciles with the biker's EcoCash statement. M10–M12 keep the
 credited amount.
 
@@ -213,13 +247,48 @@ credited amount.
 
 ## 4. Phasing (recommended)
 
-**Phase 1: EcoCash through Paynow. Backend, plus the fee lines on T2, T3 and T4 (§ 3).**
-1. Write `PaynowRail implements PaymentRail`: `initiate` calls `remotetransaction`, `confirm`/`reconcile` POST the `pollurl` (or `trace`), and every
-   outgoing and incoming message is SHA512-hashed. The raw payload is kept, as the seam requires.
-2. Add `POST /webhooks/paynow/result`, which validates the hash, re-polls to confirm, then calls `creditFromTopup` (already exactly-once).
-3. Add a sweep that polls still-`pending` intents in case a `resulturl` delivery is missed.
-4. Add an env selector (`PAYMENT_RAIL=paynow|stub`), `PAYNOW_INTEGRATION_ID`/`KEY` (USD), and a kill-switch flag.
-5. QA with the four test numbers; each one lands on its T-state. Then ask Paynow to go live.
+**Phase 1: EcoCash through Paynow. Backend, plus the fee lines on T2, T3 and T4 (§ 3).** These are concrete changes against today's code:
+
+*API*
+1. `adapters/payments/paynow-rail.ts`: `PaynowRail implements PaymentRail`. `initiate` POSTs `remotetransaction` (with `method=ecocash`,
+   the normalised phone, `authemail` = the merchant email, and a `merchanttrace` of our `topUpId`). `confirm` and `reconcile` POST the
+   stored poll URL, falling back to `/interface/trace`. Every message is SHA512-hashed both ways, and a 10 s timeout is enforced
+   (`PAYMENT_RAIL_DEFAULT_TIMEOUT_MS`).
+2. `payments.module.ts`: replace the hard-bound stub with a `selectPaymentRail(env)` modelled on `selectKycVendor`. Add env keys
+   `PAYMENT_RAIL=stub|paynow`, `PAYNOW_INTEGRATION_ID`, `PAYNOW_INTEGRATION_KEY` (secret store), `PAYNOW_AUTH_EMAIL` and
+   `PAYNOW_RESULT_URL`. Production boot fails loudly if `paynow` is selected without them, like the existing `superRefine` guards.
+3. `WalletService.createTopup`: refuse `rail: innbucks|omari` with a structured reason (Phase 1 "Coming soon"). After the insert,
+   call `rail.initiate`, then persist `providerRef`, the poll URL and the raw payload. On `status=Error`, mark the row **`declined`**.
+   That is the first writer of that status, and it moves the row by CAS from `pending`. The response then carries `declined`, and the app
+   goes straight to T6.
+4. `wallet/paynow-webhook.controller.ts`: `POST /webhooks/paynow`, modelled on `bird-webhook.controller.ts` (unguarded, `rawBody`,
+   urlencoded). Validate the hash, re-poll, then:
+   - `Paid`, `Awaiting Delivery` or `Delivered` → check the amount, then `creditFromTopup(id, paynowreference)`;
+   - `Cancelled` or `Failed` → `declined`.
+   Always answer 200 once the hash is valid, so Paynow stops retrying.
+5. `wallet/topup-reconcile.service.ts`: a `setInterval` sweep, modelled on `kyc-reconcile.service.ts`. It polls `pending` and recently
+   `expired` Paynow intents. Today expiry happens only when the app polls, so an intent from an app that was killed would otherwise stay
+   `pending` in the DB forever.
+6. **Amount check:** `creditFromTopup` credits `topUp.amount` blindly. The webhook and sweep must compare Paynow's reported amount
+   first: against `amount` or `charged`, depending on the fee-mechanism test (§ 3, (c)). On a mismatch, don't credit; flag it for ops.
+7. `toEntry`: top-up meta becomes "EcoCash · <paynow ref>", plus the fee line from § 3.
+
+*Schema and contracts* (expand-only migration; additive optional fields; `pnpm contract:check` snapshot updated)
+8. `TopUp`: add `pollUrl`, `fee`, `charged` and `railPayload` (jsonb), all nullable.
+9. `Topup` wire type: optional `fee` and `charged`. `CommissionConfig`: optional `topupFeePct` (per rail). Installed apps ignore
+   them, because `src/api/wallet.ts` doesn't parse responses.
+
+*Mobile*
+10. `TopUpFlow` T1: a disabled "Coming soon" card for InnBucks and O'mari. If `prefs.topupProvider` is one of them, fall back to
+    EcoCash.
+11. `TopUpFlow` T2, T3 and T4: the fee line, the split line, `requestCta(charged)` and `waitT(topup.charged)` (§ 3). Keep
+    `okB(amount)`.
+12. Rider-kit `Chips`: add a per-item `disabled` (and a "Coming soon" label). Use it in `app/settings/index.tsx:237`.
+13. Copy goes in `src/ui/rider/copy.ts`, behind the D-102 ledger entry.
+
+*QA*
+14. Run the four Paynow test numbers through to T5, slow T5, T6 and immediate T6. Run the § 3 fee-mechanism checks, then one live $5
+    top-up. Then ask Paynow to go live.
 
 In Phase 1, InnBucks and O'mari show on T1 as "Coming soon" and can't be selected (§ 3 T1; owner decision, § 6 Q1).
 
@@ -228,6 +297,9 @@ In Phase 1, InnBucks and O'mari show on T1 as "Coming soon" and can't be selecte
   They follow that export verbatim, per the pixel-parity rules.
 - Contract: `Topup` gains optional `authCode`, `authExpiresAt`, `otpReference`, `otpTriesLeft`. Add `POST /wallet/topups/:id/otp`.
 - `TopUpFlow` branches T4 on `rail`. `useTopUp` gains `submitOtp`.
+- The window must become per intent. Today `createTopup` hardcodes `expiresAt = now + TOPUP_WINDOW_MS` (90 s), and `ApproveProgress`
+  in `TopUpFlow.tsx` divides by that same constant. InnBucks needs `expiresAt` from Paynow's `authorizationexpires`, and the bar needs
+  the intent's own start and end.
 
 **Phase 3 (only if wanted): OneMoney and cards.** OneMoney reuses T4 exactly and only needs a T1 card drawn. Cards need the
 hosted-page tokenise step, which is a bigger UX decision.
