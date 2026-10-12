@@ -5279,3 +5279,19 @@ been read, and asking the reviewer to "compare the two photos" when there was us
 - **Upstream:** the admin kit should draw per-check rows fed by vendor data, the vendor link and the unfinished-check
   state. The kit is not edited.
 
+
+## D-97 · Customer briefs 06–09: late-cancel rider contact, the venue's note, code changed, remove an Rx page — APPROVED (owner, 2026-10-12)
+
+**Owner approval (2026-10-12):** "here is design screens for coding." A new handoff,
+`packages/design/handoff/customer-briefs-06-09/`, draws the four customer gaps that were design-gated under D6
+(`docs/design-briefs-2026-10-12/` 06–09). It adds states to existing screens and supersedes nothing:
+
+- **06 (U21), After Send v2 18d / 18e / 18b / 18f.** After a cancel post-pickup: rider card, Call / WhatsApp, a gold
+  "still has your parcel" strip, Call {rider} primary. The before-pickup 18a is unchanged.
+- **07 (U66), Order flow v2 D3g.** The venue's own note sits inside the D3b venue card.
+- **08 (U04), After Send v2 2.14b / c / d.** The CodeCard shows code changed, new code failed, and limit reached
+  (this replaces the old sticky toast).
+- **09 (U29), Order flow v2 R8c / R8d / R8e.** Remove badges on the Rx thumbnails, an Undo toast and a page viewer.
+
+Strings come from the handoff's `copy.ts`, verbatim. Where the HTML and an existing component disagree on a pixel,
+the existing component wins (handoff README). Not drawn, so not built: per-page pharmacist refusal.
