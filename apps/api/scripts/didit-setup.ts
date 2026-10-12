@@ -14,10 +14,9 @@
  *   pnpm didit:setup webhook         # just register the webhook destination (needs DIDIT_API_KEY)
  *
  * Inputs come from env (or the interactive prompts). If you already have a key, set DIDIT_API_KEY and
- * the register step is skipped. Nothing here is persisted — copy the printed values into your secret
- * store. This talks to the LIVE Didit API and creates a real account/destination.
+ * the register step is skipped. Nothing here is persisted, and secrets are never printed — copy them into your
+ * secret store from the Didit console. This talks to the LIVE Didit API and creates a real account/destination.
  */
-import { chmodSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 
@@ -159,37 +158,21 @@ async function registerWebhook(apiKey: string, url: string): Promise<string> {
 }
 
 /**
- * KYC-R26-09: the summary used to print the FULL API key and webhook signing secret to stdout, so they
- * landed in terminal scrollback, CI logs and screen shares. Only a masked fingerprint is printed now (enough
- * to tell two keys apart). The values themselves go to a file ONLY when the operator asks for one with
- * DIDIT_SETUP_SECRETS_FILE, written owner-read-only (0600) and never echoed; copy them into Secret Manager
- * from there and delete the file.
+ * KYC-R26-09: the summary used to print the FULL API key and webhook signing secret to stdout, so they landed
+ * in terminal scrollback, CI logs and screen shares. Neither value (nor any slice of it) is printed or written
+ * anywhere now: the script only says whether each is set. You already hold the API key you signed in with, and
+ * the webhook signing secret is shown on the destination in the Didit console (Settings → Webhooks) — copy both
+ * into the secret store from there.
  */
-function maskSecret(s?: string): string {
-  if (!s) return "(unset)";
-  // Short values would be mostly revealed by a 6+4 window; show length only.
-  return s.length < 16 ? `(set, ${s.length} chars)` : `${s.slice(0, 4)}…${s.slice(-2)} (${s.length} chars)`;
+function presence(s?: string): string {
+  return s ? "set — copy it from the Didit console" : "(unset)";
 }
 
 function summary(vals: { apiKey?: string; workflowId?: string; webhookSecret?: string; callbackUrl?: string }): void {
-  const out = process.env.DIDIT_SETUP_SECRETS_FILE?.trim();
-  if (out) {
-    const lines = [
-      vals.apiKey ? `DIDIT_API_KEY=${vals.apiKey}` : null,
-      vals.webhookSecret ? `DIDIT_WEBHOOK_SECRET=${vals.webhookSecret}` : null,
-    ].filter(Boolean);
-    writeFileSync(out, `${lines.join("\n")}\n`, { mode: 0o600 });
-    chmodSync(out, 0o600); // an existing file keeps its old mode under writeFileSync
-  }
   console.log("\n──────────── Didit wiring — store these, then flip DIDIT_ENABLED=true ────────────");
   console.log("Secrets → Secret Manager (see docs/PILOT-READINESS.md §2):");
-  console.log(`  DIDIT_API_KEY        = ${maskSecret(vals.apiKey)}`);
-  console.log(`  DIDIT_WEBHOOK_SECRET = ${maskSecret(vals.webhookSecret)}`);
-  console.log(
-    out
-      ? `  → full values written to ${out} (mode 0600). Copy them into Secret Manager, then delete the file.`
-      : "  → values are not printed. Re-run with DIDIT_SETUP_SECRETS_FILE=<path> to write them to a 0600 file.",
-  );
+  console.log(`  DIDIT_API_KEY        = ${presence(vals.apiKey)}`);
+  console.log(`  DIDIT_WEBHOOK_SECRET = ${presence(vals.webhookSecret)}`);
   console.log("Plain repo Variables:");
   console.log(`  DIDIT_WORKFLOW_ID    = ${vals.workflowId ?? "(unset)"}`);
   console.log(`  DIDIT_CALLBACK_URL   = ${vals.callbackUrl ?? "(optional — post-verification redirect)"}`);
