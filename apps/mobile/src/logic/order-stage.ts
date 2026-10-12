@@ -1,4 +1,4 @@
-import { haversineKm } from "@lynia/shared";
+import { haversineKm, OFFER_WINDOW_MS } from "@lynia/shared";
 
 /**
  * The After Send order screen (ledger D-53) is ONE screen whose title, map mode, sheet content and CTA
@@ -228,4 +228,18 @@ export function minutesSince(iso: string | null | undefined, nowMs: number): num
   const t = iso ? Date.parse(iso) : NaN;
   if (!Number.isFinite(t)) return 1;
   return Math.max(1, Math.floor((nowMs - t) / 60_000));
+}
+
+/**
+ * How long this order's auction runs, for the share-of-window bar. Since 2026-10-12 it isn't always
+ * OFFER_WINDOW_MS: a quiet market opens a longer window and a raise can push the end out. The snapshot
+ * carries the end (`expiresAt`); the start is its `open_for_offers` event. Falls back to the fixed window
+ * when either is missing, and never reports less than it (a bar over 100% just reads full).
+ */
+export function offerWindowLengthMs(expiresAt: string | null | undefined, events: ReadonlyArray<{ status: string; createdAt: string }> | null | undefined): number {
+  const end = expiresAt ? Date.parse(expiresAt) : NaN;
+  const opened = events?.find((e) => e.status === "open_for_offers");
+  const start = opened ? Date.parse(opened.createdAt) : NaN;
+  if (!Number.isFinite(end) || !Number.isFinite(start)) return OFFER_WINDOW_MS;
+  return Math.max(OFFER_WINDOW_MS, end - start);
 }

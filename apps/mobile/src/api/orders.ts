@@ -17,7 +17,7 @@ export interface CreateOrderResult {
   proposedFare: string;
   suggestedFare: string;
   distanceKm: number;
-  /** ISO end of the offer window (createdAt + OFFER_WINDOW_MS) — drives the auction countdown. */
+  /** ISO end of the offer window (the order's stored end; longer in a quiet market) — drives the auction countdown. */
   expiresAt: string | null;
   /** Online riders within the broadcast radius at broadcast time (2·b1); null = supply unknown. */
   ridersNearby?: number | null;
@@ -155,6 +155,9 @@ export interface OpenOrder {
   proposedFare: string;
   distanceKm: number | null;
   createdAt: string;
+  /** When bidding closes — the order's stored end, no longer always createdAt + OFFER_WINDOW_MS (owner
+   *  2026-10-12). Absent on older APIs → createdAt + OFFER_WINDOW_MS (openOrderClosesAt). */
+  expiresAt?: string | null;
   /** The sender's first name ("Rudo is asking"). Absent on a live board push and on older APIs. */
   customerFirstName?: string | null;
   /** The board tag (owner 2026-10-01): "shop" for a business's booking. Absent on older APIs → parcel. */

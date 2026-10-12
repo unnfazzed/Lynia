@@ -1,4 +1,4 @@
-import { type MerchantOrderResponse, OFFER_WINDOW_MS, type RatingTag, SOS_POLICY } from "@lynia/shared";
+import { type MerchantOrderResponse, type RatingTag, SOS_POLICY } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -30,7 +30,7 @@ import { mapsDirectionsUrl } from "../../src/logic/maps";
 import { goHomeClearingStack } from "../../src/logic/nav";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { orderOffers } from "../../src/logic/order-offers";
-import { isLiveStage, minutesSince, type OrderStage, phoneMasked, resolveStage, showsHelp, stageMapShare, stagePeekFloor, stageTitleKey, stepIndex, suggestedRetryPrice } from "../../src/logic/order-stage";
+import { isLiveStage, minutesSince, offerWindowLengthMs, type OrderStage, phoneMasked, resolveStage, showsHelp, stageMapShare, stagePeekFloor, stageTitleKey, stepIndex, suggestedRetryPrice } from "../../src/logic/order-stage";
 import {
   codeCardStatus,
   deliveryCodeLockout,
@@ -1246,7 +1246,7 @@ function ParcelOrderScreen(): React.ReactElement {
       <FindingSheet
         noRiders={stage === "noRiders"}
         expiresAt={order.expiresAt}
-        windowMs={OFFER_WINDOW_MS}
+        windowMs={offerWindowLengthMs(order.expiresAt, order.events)}
         frozen={frozen}
         onZero={() => void orderQ.refetch()}
         ridersNearby={order.ridersNearby ?? null}
@@ -1264,7 +1264,7 @@ function ParcelOrderScreen(): React.ReactElement {
     );
     bar = isRiderViewer ? null : findingBar;
   } else if (stage === "reopened") {
-    content = <ReopenedSheet riderFirst={reopenedFrom ?? A.rider} price={ask} next={nextPrice} expiresAt={order.expiresAt} windowMs={OFFER_WINDOW_MS} frozen={frozen} onZero={() => void orderQ.refetch()} />;
+    content = <ReopenedSheet riderFirst={reopenedFrom ?? A.rider} price={ask} next={nextPrice} expiresAt={order.expiresAt} windowMs={offerWindowLengthMs(order.expiresAt, order.events)} frozen={frozen} onZero={() => void orderQ.refetch()} />;
     bar = panel === "cancelRequest" ? findingBar : <ReopenedBar next={nextPrice} onRaise={raise} raising={raiseM.isPending} onCancel={() => setPanel("cancelRequest")} />;
   } else if (stage === "offers") {
     const chooser = choosingId ? offerViews.find((o) => o.id === choosingId)?.name ?? A.rider : null;

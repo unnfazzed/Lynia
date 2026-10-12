@@ -70,7 +70,7 @@ export async function saveRiderBidDraft(draft: RiderBidDraft): Promise<void> {
  * screen or mocking Date.
  */
 export function isRiderBidDraftExpired(draft: RiderBidDraft, now: number): boolean {
-  const closesAt = new Date(draft.selected.createdAt).getTime() + OFFER_WINDOW_MS;
+  const closesAt = openOrderClosesAt(draft.selected);
   if (Number.isNaN(closesAt)) return true; // an unparseable createdAt can't be trusted as still-open
   return closesAt <= now;
 }
@@ -88,7 +88,7 @@ export interface SentOffer {
   order: OpenOrder;
   fare: string;
   etaMinutes: number;
-  /** ISO auction close — createdAt + OFFER_WINDOW_MS, the same window the customer sees. */
+  /** ISO auction close — the order's own end (openOrderClosesAt), the same window the customer sees. */
   expiresAt: string;
 }
 
@@ -101,8 +101,29 @@ export interface SentOffer {
  * so this invariant (params win, not ambient state) is unit-testable without mounting the screen.
  */
 export function buildSentOfferEntry(order: OpenOrder, sentFare: string, sentEtaNum: number): SentOffer {
-  const expiresAt = new Date(new Date(order.createdAt).getTime() + OFFER_WINDOW_MS).toISOString();
+  const expiresAt = new Date(openOrderClosesAt(order)).toISOString();
   return { order, fare: sentFare, etaMinutes: Math.round(sentEtaNum), expiresAt };
+}
+
+/**
+ * When bidding on a board job closes (epoch ms; NaN for an unparseable date). Since 2026-10-12 the API
+ * sends the order's stored end — longer in a quiet market, pushed out by a raise; an older API (or a
+ * board push from one) doesn't, and the job falls back to createdAt + OFFER_WINDOW_MS as before.
+ */
+export function openOrderClosesAt(order: Pick<OpenOrder, "createdAt" | "expiresAt">): number {
+  if (order.expiresAt) return Date.parse(order.expiresAt);
+  return new Date(order.createdAt).getTime() + OFFER_WINDOW_MS;
+}
+
+/**
+ * The customer raised the price after this rider bid (owner 2026-10-12): the API lets a rider whose offer
+ * predates a raise answer the new price, so the job comes back onto the board. Judged on the asking price
+ * the rider bid against (the sent entry's order) versus the board's current one.
+ */
+export function wasRaisedSinceBid(sent: SentOffer, current: Pick<OpenOrder, "proposedFare">): boolean {
+  const before = Number(sent.order.proposedFare);
+  const now = Number(current.proposedFare);
+  return Number.isFinite(before) && Number.isFinite(now) && now > before;
 }
 
 /**

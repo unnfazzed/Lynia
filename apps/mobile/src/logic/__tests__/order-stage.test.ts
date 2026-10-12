@@ -1,4 +1,5 @@
-import { GPS_PAUSED_MS, phoneMasked, resolveStage, type StageInput, stageMapShare, stagePeekFloor, stageTitleKey, stepIndex, suggestedRetryPrice } from "../order-stage";
+import { OFFER_WINDOW_MS } from "@lynia/shared";
+import { GPS_PAUSED_MS, offerWindowLengthMs, phoneMasked, resolveStage, type StageInput, stageMapShare, stagePeekFloor, stageTitleKey, stepIndex, suggestedRetryPrice } from "../order-stage";
 
 const NOW = Date.parse("2026-10-01T09:30:00Z");
 const DROP = { lat: -17.8105, lng: 31.0705 };
@@ -144,5 +145,22 @@ describe("stage helpers", () => {
   it("suggested retry price is last + $0.50", () => {
     expect(suggestedRetryPrice(3.36)).toBe(3.86);
     expect(suggestedRetryPrice(4)).toBe(4.5);
+  });
+});
+
+describe("offerWindowLengthMs", () => {
+  const opened = [{ status: "open_for_offers", createdAt: "2026-10-12T10:00:00.000Z" }];
+
+  it("is the stored end minus the order's open event (a quiet-market or raised window)", () => {
+    expect(offerWindowLengthMs("2026-10-12T10:04:00.000Z", opened)).toBe(4 * 60_000);
+  });
+
+  it("falls back to the fixed window without an end or an open event", () => {
+    expect(offerWindowLengthMs(null, opened)).toBe(OFFER_WINDOW_MS);
+    expect(offerWindowLengthMs("2026-10-12T10:04:00.000Z", [])).toBe(OFFER_WINDOW_MS);
+  });
+
+  it("never reports less than the fixed window", () => {
+    expect(offerWindowLengthMs("2026-10-12T10:00:30.000Z", opened)).toBe(OFFER_WINDOW_MS);
   });
 });

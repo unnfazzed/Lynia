@@ -42,7 +42,7 @@ import { useSettled } from "../../../src/logic/use-settled";
 import { RIDER_PERM_ROUTES, startRiderPermFlow } from "../../../src/logic/rider-perm-flow";
 import { RiderLocEmpty, RiderNotifOffRow } from "../../../src/ui/firstrun/RiderPermBoard";
 import { SoftUpdateBanner } from "../../../src/ui/firstrun/SoftUpdateBanner";
-import { isSentOfferExpired, isSentOfferStale } from "../../../src/logic/rider-bid-draft";
+import { isSentOfferExpired, isSentOfferStale, wasRaisedSinceBid } from "../../../src/logic/rider-bid-draft";
 import { type GateId, kycTriesLeft, resolveGate } from "../../../src/logic/rider-gate";
 import { telUri } from "../../../src/logic/safety";
 import { useFeatureFlags } from "../../../src/net/use-feature-flags";
@@ -136,6 +136,7 @@ export default function RiderHome(): React.ReactElement {
   const { offers: sentOffers, setOffers: setSentOffers } = useSentOffers();
   const { skipped, skip } = useSkippedJobs();
   const bidIds = useMemo(() => new Set(sentOffers.map((s) => s.order.id)), [sentOffers]);
+  const sentById = useMemo(() => new Map(sentOffers.map((s) => [s.order.id, s])), [sentOffers]);
   // Offers withdrawn but still inside their 5 s Undo window — hidden now, sent to the API after.
   const [withdrawing, setWithdrawing] = useState<ReadonlySet<string>>(new Set());
 
@@ -569,7 +570,12 @@ export default function RiderHome(): React.ReactElement {
   const foodOffer = foodOn && foodOfferQ.data && new Date(foodOfferQ.data.expiresAt).getTime() > Date.now() ? foodOfferQ.data : null;
   const jobs: BoardJob[] = useMemo(() => {
     const parcels = (Array.isArray(openQ.data) ? openQ.data : [])
-      .filter((o) => !bidIds.has(o.id) && !skipped.has(o.id))
+      // A job the rider already bid on stays off the board — unless the sender has since raised the
+      // price, which lets the rider answer the new one (owner 2026-10-12; the API replaces their offer).
+      .filter((o) => {
+        const sent = sentById.get(o.id);
+        return (!sent || wasRaisedSinceBid(sent, o)) && !skipped.has(o.id);
+      })
       .map((o) => toBoardJob(o, loc));
     const food: BoardJob[] = foodOffer
       ? [
@@ -586,7 +592,7 @@ export default function RiderHome(): React.ReactElement {
         ]
       : [];
     return [...food, ...parcels].sort((a, b) => (a.toPickupKm ?? Number.MAX_SAFE_INTEGER) - (b.toPickupKm ?? Number.MAX_SAFE_INTEGER));
-  }, [openQ.data, bidIds, skipped, loc, foodOffer]);
+  }, [openQ.data, sentById, skipped, loc, foodOffer]);
   const mixedKinds = jobs.some((j) => j.kind === "food" || j.kind === "shop");
   const effectiveSelected = selectedId && jobs.some((j) => j.id === selectedId) ? selectedId : (jobs[0]?.id ?? null);
 

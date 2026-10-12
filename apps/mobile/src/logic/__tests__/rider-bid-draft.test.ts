@@ -3,10 +3,13 @@ import {
   isRiderBidDraftExpired,
   isSentOfferExpired,
   isSentOfferStale,
+  openOrderClosesAt,
   parseRiderBidDraft,
   parseRiderSentOffers,
   SENT_OFFER_RETENTION_MS,
+  wasRaisedSinceBid,
 } from "../rider-bid-draft";
+import { OFFER_WINDOW_MS } from "@lynia/shared";
 
 const validSelected = {
   id: "order-1",
@@ -190,5 +193,35 @@ describe("isSentOfferStale (B-T3: resolved sent-offers must not accumulate for t
   it("treats an unparseable expiresAt as stale rather than trusting it", () => {
     const bad = { ...offer, expiresAt: "not-a-date" };
     expect(isSentOfferStale(bad, Date.now())).toBe(true);
+  });
+});
+
+describe("openOrderClosesAt", () => {
+  it("reads the order's stored end (a quiet-market or raised window)", () => {
+    expect(openOrderClosesAt({ createdAt: "2026-10-12T10:00:00.000Z", expiresAt: "2026-10-12T10:04:00.000Z" })).toBe(Date.parse("2026-10-12T10:04:00.000Z"));
+  });
+
+  it("falls back to createdAt + OFFER_WINDOW_MS for an older API", () => {
+    expect(openOrderClosesAt({ createdAt: "2026-10-12T10:00:00.000Z" })).toBe(Date.parse("2026-10-12T10:00:00.000Z") + OFFER_WINDOW_MS);
+    expect(openOrderClosesAt({ createdAt: "2026-10-12T10:00:00.000Z", expiresAt: null })).toBe(Date.parse("2026-10-12T10:00:00.000Z") + OFFER_WINDOW_MS);
+  });
+
+  it("drives the sent-offer countdown", () => {
+    const order = { ...validSelected, expiresAt: "2026-10-12T10:04:00.000Z" };
+    expect(buildSentOfferEntry(order, "3.00", 10).expiresAt).toBe("2026-10-12T10:04:00.000Z");
+  });
+});
+
+describe("wasRaisedSinceBid", () => {
+  const sent = buildSentOfferEntry({ ...validSelected, proposedFare: "3.00" }, "3.00", 10);
+
+  it("is true once the board's asking price is above the one the rider bid against", () => {
+    expect(wasRaisedSinceBid(sent, { proposedFare: "3.50" })).toBe(true);
+  });
+
+  it("is false for the same or a lower price, or an unreadable one", () => {
+    expect(wasRaisedSinceBid(sent, { proposedFare: "3.00" })).toBe(false);
+    expect(wasRaisedSinceBid(sent, { proposedFare: "2.50" })).toBe(false);
+    expect(wasRaisedSinceBid(sent, { proposedFare: "abc" })).toBe(false);
   });
 });
