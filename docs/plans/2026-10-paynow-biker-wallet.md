@@ -63,7 +63,10 @@ The repo was built for a live payment rail to drop in later:
 
 - **UI:** Rider v2 **T1–T6** (`handoff/rider-v2/`, ledger D-54) is fully built in `TopUpFlow.tsx`: Provider → Amount →
   Phone → Approve, then Done or Failed. The Money tab shows **M10–M12** pending notices when the app closed during T4.
-  **G14** (the "Balance too low" gate) leads into T1. **Settings › Top-up number** prefills T1 and T3.
+  The **"Top up to keep riding" gate** (G14) leads into T1. Since 2026-10-12 (#1154) it no longer fires on a balance floor
+  (`COMMISSION.lowBalanceBlockBelow` is 0). It fires when the server refuses a job with `commission_low_balance`, because
+  the job's commission is more than the biker's balance. That check runs on a bid, on the customer's pick and on a dispatch
+  accept, and is skipped during the biker's first 10 jobs. **Settings › Top-up number** prefills T1 and T3.
 - **Data:** `useTopUp` already opens the intent, polls `GET /wallet/topups/:id` every 2.5 s, keeps a durable
   recovery marker, and renders a success **only when the server says `succeeded`**.
 - **Backend seam:** `PaymentRail` (`apps/api/src/adapters/payments/payment-rail.interface.ts`) is bound to an inert
@@ -79,7 +82,7 @@ handler that calls `creditFromTopup`, makes T4 → T5 work as drawn. InnBucks an
 
 ```
 Money tab ──"+ Top up"──┐
-G14 gate ──"Top up now"─┤
+G14 gate ──"Top up now"─┤   (G14 = a job was refused with commission_low_balance)
                         ▼
    T1 Provider ─► T2 Amount ─► T3 Phone ─"Request $5.00"─► POST /wallet/topups
                                                                  │
@@ -208,7 +211,9 @@ hosted-page tokenise step, which is a bigger UX decision.
    page confirms the merchant can absorb the fee, add it on top, or split it.
    With no fixed part, the minimum top-up doesn't need to change. A $5 top-up costs Lynia $0.13, $10 costs $0.25, $20 costs $0.50 and $50 costs $1.25.
    Top-up money is prepaid commission, so absorbing the fee lowers Lynia's net commission revenue by 2.5% across the board.
-   At a 5% commission rate, the effective take is ~4.875% of the fare.
+   Against the real policy (`COMMISSION` in `packages/shared/src/policy.ts`, owner 2026-10-12: **10%** of what the biker
+   earns, after their first 10 jobs, live rate from `COMMISSION_RATE_PCT`), the effective take is **~9.75%**. A $5 top-up
+   (`minTopUp`) covers $50 of biker earnings. `minTopUp` $5 and `maxTopUp` $50 are code constants, and the server clamps to them.
    How to absorb it: set the integration so the merchant pays the fee, request the biker's exact amount, credit the
    **gross** amount Paynow reports as paid (not the net settled to the bank), and book the gross-minus-net difference as a
    processing cost at reconciliation.
