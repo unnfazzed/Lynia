@@ -1,7 +1,12 @@
 import { WS_EVENTS } from "@lynia/shared";
 import * as Location from "expo-location";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
-import { handleBackgroundLocations, RIDER_LOCATION_TASK } from "../background-location-task";
+import {
+  handleBackgroundLocations,
+  RIDER_LOCATION_TASK,
+  startRiderOnlineUpdates,
+  stopRiderOnlineUpdates,
+} from "../background-location-task";
 import { useRiderLocationStream } from "../use-rider-location";
 
 jest.mock("../../auth/auth-context", () => ({
@@ -151,6 +156,24 @@ describe("useRiderLocationStream background continuation", () => {
     // …and a straggler task invocation racing the async native stop goes nowhere (privacy gate).
     deliverBackgroundFix(-17.85, 31.07);
     expect(emit).not.toHaveBeenCalledWith(WS_EVENTS.riderLocation, expect.objectContaining({ lat: -17.85 }));
+  });
+
+  it("the job's end hands an ONLINE rider's service back to the heartbeat rate instead of stopping it", async () => {
+    // The board (use-rider-heartbeat.ts) holds the online intent; the job switches the same task up.
+    await startRiderOnlineUpdates();
+    const tree = await mountStream("order-1");
+    expect(startUpdatesMock).toHaveBeenLastCalledWith(RIDER_LOCATION_TASK, expect.objectContaining({ timeInterval: 10_000 }));
+    act(() => mockLastSocket.trigger("connect"));
+    const emit = mockLastSocket.emit;
+
+    await act(async () => tree.unmount());
+
+    expect(startUpdatesMock).toHaveBeenLastCalledWith(RIDER_LOCATION_TASK, expect.objectContaining({ timeInterval: 25_000 }));
+    expect(stopUpdatesMock).not.toHaveBeenCalled();
+    // The service runs on, but the job's bridge is unhooked: no fix reaches the old order's room.
+    deliverBackgroundFix(-17.85, 31.07);
+    expect(emit).not.toHaveBeenCalledWith(WS_EVENTS.riderLocation, expect.objectContaining({ lat: -17.85 }));
+    await stopRiderOnlineUpdates();
   });
 
   it("never attempts background updates when foreground permission is denied (PR #188 path intact)", async () => {
