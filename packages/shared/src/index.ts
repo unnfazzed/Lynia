@@ -2,6 +2,7 @@ export * from "./enums";
 export * from "./contracts";
 export * from "./money";
 export * from "./policy";
+export * from "./offer-window";
 export * from "./geo";
 export * from "./pricing";
 export * from "./service-area";

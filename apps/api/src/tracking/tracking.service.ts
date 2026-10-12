@@ -78,6 +78,8 @@ const NOTIFY_CLAIM_TTL_S = 60;
  *  set self-evicts long after the last possible tick. */
 const BROADCAST_SENT_PREFIX = "broadcast:sent:";
 const BROADCAST_SENT_TTL_S = 600;
+/** Demand nudge (owner 2026-10-12): one "jobs near you" push per offline rider per window, at most. */
+const RIDER_NUDGE_PREFIX = "rider:nudged:";
 
 @Injectable()
 export class TrackingService implements OnModuleDestroy {
@@ -595,6 +597,50 @@ export class TrackingService implements OnModuleDestroy {
         const [err, added] = replies[i];
         if (err) return null;
         if (added === 1) claimed.push(profileIds[i]);
+      }
+      return claimed;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Offline riders who could take a job at this point (owner 2026-10-12, cold start): verified, in good
+   * standing, not cooling down, whose LAST known position (riders.geog, kept when they go offline) is within
+   * `radiusM`. Nearest first, capped. The audience for the demand nudge — never for dispatch.
+   */
+  async offlineRidersNear(lat: number, lng: number, radiusM: number, limit = 30): Promise<string[]> {
+    const rows = await this.prisma.$queryRaw<Array<{ profile_id: string }>>`
+      SELECT profile_id
+      FROM riders
+      WHERE is_online = false
+        AND account_status = 'active'
+        AND on_hold = false
+        AND kyc_status = 'verified'
+        AND (cooldown_until IS NULL OR cooldown_until < now())
+        AND geog IS NOT NULL
+        AND ST_DWithin(geog, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusM})
+      ORDER BY ST_Distance(geog, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) ASC
+      LIMIT ${limit}`;
+    return rows.map((r) => r.profile_id);
+  }
+
+  /** Claim the riders not nudged in the last `ttlS` (SET NX per rider) — the rest were nudged recently and
+   *  are skipped. null = no Redis / a Redis error: the caller sends nothing rather than risk spamming. */
+  async claimRiderNudges(profileIds: string[], ttlS: number): Promise<string[] | null> {
+    if (profileIds.length === 0) return [];
+    const redis = this.getRedis();
+    if (!redis) return null;
+    try {
+      const pipeline = redis.pipeline();
+      for (const id of profileIds) pipeline.set(`${RIDER_NUDGE_PREFIX}${id}`, "1", "EX", ttlS, "NX");
+      const replies = await pipeline.exec();
+      if (!replies) return null;
+      const claimed: string[] = [];
+      for (let i = 0; i < profileIds.length; i++) {
+        const [err, ok] = replies[i];
+        if (err) return null;
+        if (ok === "OK") claimed.push(profileIds[i]);
       }
       return claimed;
     } catch {

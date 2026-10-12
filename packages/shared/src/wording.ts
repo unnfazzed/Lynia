@@ -1,5 +1,5 @@
 /**
- * "Rider" → "Biker", app-wide (owner, 2026-10-12; ledger D-100). The design handoffs still say "rider";
+ * "Rider" → "Biker", app-wide (owner, 2026-10-12; ledger D-101). The design handoffs still say "rider";
  * the app shows "biker". Tests that compare app copy to a handoff verbatim compare it to
  * `bikerWording(handoff)`, so the handoff stays the authority for every other word.
  */

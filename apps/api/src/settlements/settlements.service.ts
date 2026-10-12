@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { addMoney, COMMISSION, commissionBasis, perRideCommission, roundToCents } from "@lynia/shared";
+import { addMoney, COMMISSION, jobCommissionBasis, perRideCommission, roundToCents } from "@lynia/shared";
 import { PrismaService } from "../prisma/prisma.service";
 
 /**
@@ -32,7 +32,7 @@ export interface CommissionOverview {
     rides: number;
     /** Total gross agreed fares delivered in the window. */
     fares: string;
-    /** Total commission accrued at the current rate — $0.00 while the launch rate is 0%. */
+    /** Total commission accrued at the current rate (10% by default, owner 2026-10-12). */
     commission: string;
   };
   rows: CommissionRiderRow[];
@@ -51,7 +51,7 @@ function fmtDate(d: Date): string {
  *
  * The revenue model is **prepaid per-ride** (see @lynia/shared `COMMISSION`): riders pre-fund a
  * commission account and each completed ride debits {@link perRideCommission} of the amount paid. The
- * rate is **0% for the launch period**, so nothing is collected yet — this console is purely a
+ * rate is 10% by default (owner 2026-10-12, after the rider's first 10 jobs) — this console is purely a
  * read-only view of ride volume and the commission that *would* accrue at the current rate.
  *
  * This deliberately does NOT bill, settle, net refunds, mark payments or auto-pause riders: those were
@@ -86,17 +86,15 @@ export class SettlementsService {
     // wallet, which debits per completed ride. Applying the rate to a rider's ROUNDED aggregate fare
     // instead diverges by rounding once the rate is non-zero, so the console would never reconcile with
     // the ledger. At the 7-day window's pilot volume this per-ride read is cheap.
-    // A-10 (status-keyed-query-audit): this console projects Express ride-commission (chargeCommission's
-    // fare basis) — a merchant order's own commission reads C4's ledger on its own basis, never this
-    // parcel bid-floor projection.
+    // Every job type is commissioned (owner 2026-10-12), each on chargeCommission's own basis
+    // (jobCommissionBasis): a parcel's floored agreed fare, a merchant job's delivery fee.
     const orders = await this.prisma.order.findMany({
       where: {
         status: "completed",
         completedAt: { gte: periodStart, lt: periodEnd },
         riderId: { not: null },
-        orderType: "parcel",
       },
-      select: { id: true, riderId: true, agreedFare: true, suggestedFare: true },
+      select: { id: true, riderId: true, orderType: true, agreedFare: true, suggestedFare: true, deliveryFee: true },
     });
 
     // WD-006: prefer what was ACTUALLY charged per order (the ledger — `ride_commission` plus any
@@ -124,7 +122,15 @@ export class SettlementsService {
     const byRider = new Map<string, { rides: number; fares: number; commission: number }>();
     for (const o of orders) {
       if (!o.riderId) continue;
-      const fare = Number(o.agreedFare ?? 0);
+      // The rider's fare on the job: a parcel's agreed fare, a merchant job's delivery fee (its agreedFare
+      // is the customer's goods+delivery total, money the rider only carries).
+      const fare = Number((o.orderType === "merchant" ? o.deliveryFee : o.agreedFare) ?? 0);
+      const basis = jobCommissionBasis({
+        orderType: o.orderType,
+        agreedFare: o.agreedFare != null ? Number(o.agreedFare) : null,
+        suggestedFare: o.suggestedFare != null ? Number(o.suggestedFare) : null,
+        deliveryFee: o.deliveryFee != null ? Number(o.deliveryFee) : null,
+      });
       const agg = byRider.get(o.riderId) ?? { rides: 0, fares: 0, commission: 0 };
       agg.rides += 1;
       agg.fares += fare;
@@ -134,7 +140,7 @@ export class SettlementsService {
       // basis the same way chargeCommission now does, so this console's "would accrue" figure doesn't
       // silently diverge from what a flip would actually charge on a lowballed agreedFare.
       //
-      // WD-NEW-A: a completed order with a NULL agreedFare is one chargeCommission deliberately SKIPS
+      // WD-NEW-A: a completed order with no basis (a parcel's NULL agreedFare) is one chargeCommission deliberately SKIPS
       // (commission_skip_null_fare) — it will NEVER carry a ledger row, at any rate. Without this guard
       // the `charged == null` projection branch fires and floors commissionBasis(0, suggestedFare) to a
       // non-zero figure, so post-flip the KPI would show accrued commission for an order the ledger never
@@ -142,8 +148,8 @@ export class SettlementsService {
       // Match the debit path: a null-fare order contributes 0 projected commission.
       if (charged != null) {
         agg.commission += -charged;
-      } else if (o.agreedFare != null) {
-        agg.commission += perRideCommission(commissionBasis(fare, o.suggestedFare != null ? Number(o.suggestedFare) : null), ratePct);
+      } else if (basis != null) {
+        agg.commission += perRideCommission(basis, ratePct);
       }
       byRider.set(o.riderId, agg);
     }

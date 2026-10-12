@@ -370,7 +370,7 @@ describe("rendered conformance — mock structure + verbatim copy", () => {
       const expected = loadExpected(key);
       const { texts } = await renderWired(key, new Set(expected.texts));
       const result = conformance({
-        // The mocks say "rider"; the app says "biker" (owner, 2026-10-12; ledger D-100).
+        // The mocks say "rider"; the app says "biker" (owner, 2026-10-12; ledger D-101).
         expected: expected.texts.map((text, i) => ({ text: bikerWording(text), path: expected.textPaths[i] })),
         actual: texts,
         groups: expected.groups,

@@ -3,10 +3,10 @@ import {
   addMoney,
   COMMISSION,
   type CommissionConfig,
-  commissionBasis,
   type CreateTopupRequest,
   isCommissionActive,
   isFreeJob,
+  jobCommissionBasis,
   perRideCommission,
   resolveCommissionRatePct,
   roundToCents,
@@ -182,54 +182,58 @@ export class WalletService {
   // ── The per-ride debit (called from BOTH completion paths, inside the completion transaction) ──
 
   /**
-   * Debit the ride's commission from the rider's prepaid balance, in the SAME transaction that completes
-   * the order (design eng 1A: same-transaction, unfailable-by-design). At the launch rate (0%) this
-   * writes NO ledger row — only the shadow-accrual log fires. Never blocks completion; the balance may
-   * cross the floor and go negative (design Premise 3) — the online-gate stops the NEXT ride.
+   * Debit the job's commission from the rider's prepaid balance, in the SAME transaction that completes
+   * the order (design eng 1A: same-transaction, unfailable-by-design). Every job type is charged (owner
+   * 2026-10-12): a parcel on its agreed fare (floored, WD-012), a restaurant / shop / pharmacy job on its
+   * delivery fee — see `jobCommissionBasis`. At a 0% rate this writes NO ledger row — only the
+   * shadow-accrual log fires. Never blocks completion; the per-job check (common/commission-cover) means
+   * the rider held enough when they took the job.
    *
    * Idempotent under retries: a check-then-insert under the account row lock, backed by the UNIQUE
    * (riderId, orderId, ride_commission) constraint, so a replayed completion never double-charges.
-   * A completed order with a null `agreedFare` is a data anomaly — it skips the debit and logs an alert
-   * rather than throwing (a delivered parcel must still complete).
+   * A completed order with no basis (a parcel without `agreedFare`, a merchant job without `deliveryFee`)
+   * is a data anomaly — it skips the debit and logs an alert rather than throwing (a delivered job must
+   * still complete).
    */
   async chargeCommission(
     tx: Prisma.TransactionClient,
     args: {
       orderId: string;
       riderId: string;
+      orderType?: string;
       agreedFare: Prisma.Decimal | number | null;
       suggestedFare?: Prisma.Decimal | number | null;
+      deliveryFee?: Prisma.Decimal | number | null;
     },
   ): Promise<void> {
-    const { orderId, riderId, agreedFare } = args;
-    const suggestedFare = args.suggestedFare != null ? Number(args.suggestedFare) : null;
+    const { orderId, riderId } = args;
+    const orderType = args.orderType ?? "parcel";
+    const basis = jobCommissionBasis({
+      orderType,
+      agreedFare: args.agreedFare != null ? Number(args.agreedFare) : null,
+      suggestedFare: args.suggestedFare != null ? Number(args.suggestedFare) : null,
+      deliveryFee: args.deliveryFee != null ? Number(args.deliveryFee) : null,
+    });
 
     // Shadow accrual (OV-5A): compute the would-be commission on every completion for calibration,
-    // regardless of the live rate — never a ledger row, just a measured signal during the 0% period.
-    // WD-012: floored via commissionBasis so the calibration signal isn't itself distorted by lowballed
-    // agreedFare — an unfloored shadow number would understate the real take-rate the exploit hides.
-    if (agreedFare != null) {
+    // regardless of the live rate — never a ledger row, just a measured signal.
+    if (basis != null) {
       const shadowRate = this.env.COMMISSION_SHADOW_RATE_PCT;
-      const wouldCharge = perRideCommission(commissionBasis(Number(agreedFare), suggestedFare), shadowRate);
+      const wouldCharge = perRideCommission(basis, shadowRate);
       this.logger.log(
-        `commission_shadow orderId=${orderId} riderId=${riderId} fare=${Number(agreedFare)} shadowRatePct=${shadowRate} wouldCharge=${wouldCharge}`,
+        `commission_shadow orderId=${orderId} riderId=${riderId} type=${orderType} basis=${basis} shadowRatePct=${shadowRate} wouldCharge=${wouldCharge}`,
       );
     }
 
     const rate = this.ratePct;
-    if (!isCommissionActive(rate)) return; // 0% launch — nothing is deducted, no ledger row.
+    if (!isCommissionActive(rate)) return; // 0% — nothing is deducted, no ledger row.
 
-    if (agreedFare == null) {
+    if (basis == null) {
       this.logger.warn(
-        `commission_skip_null_fare orderId=${orderId} riderId=${riderId} — completed order has no agreedFare; debit skipped`,
+        `commission_skip_null_fare orderId=${orderId} riderId=${riderId} type=${orderType} — completed job has no fare to charge on; debit skipped`,
       );
       return;
     }
-    const fare = Number(agreedFare);
-    // WD-012 (DOC-16-04 / FRAUD-REVIEW P0-2): bill on max(agreedFare, basisFloorPct × suggestedFare), not
-    // the raw fare — closes the lowball-to-evade-commission gap. The rider still keeps the real agreedFare;
-    // only the commission CALCULATION is floored. suggestedFare unset/invalid falls back to the raw fare.
-    const basis = commissionBasis(fare, suggestedFare);
     const amount = perRideCommission(basis, rate);
     if (amount <= 0) return;
 

@@ -153,8 +153,8 @@ function capitalised(s: string): string {
  * An auto-accepted order the kitchen hasn't confirmed rings on the Orders home (M1a), like a new one.
  *
  * Round 2: "Change items" is the proposer (U4a); while the customer answers, the ticket waits (M2) with
- * the round's countdown and "Order is packed" held. Shops get the seal reminder (M3b) and hand over only
- * once the rider's sealed-bag photo is in (M4b → M4); a door photo shows on tracking (M5b) and on goods
+ * the round's countdown and "Order is packed" held. Shops get the seal reminder (M3b) and the rider's
+ * sealed-bag photo when one is taken (M4b → M4; optional since D-100); a door photo shows on tracking (M5b) and on goods
  * back (M6b). A scheduled order that hasn't rung opens on its ticket (M7b). A pharmacy order with a
  * prescription to check offers the pharmacist the Prescription check (M8a). The ETA pill on M5 is not on
  * the merchant read, so it is not drawn.

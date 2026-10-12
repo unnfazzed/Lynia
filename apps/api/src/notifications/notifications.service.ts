@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { merchantAmountDueUsd, OFFER_WINDOW_MS } from "@lynia/shared";
+import { merchantAmountDueUsd, OFFER_WINDOW_MS, offerWindowEndsAt } from "@lynia/shared";
 import { androidChannelFor, PUSH, type PushAdapter } from "../adapters/push/push.interface";
 import { PrismaService } from "../prisma/prisma.service";
 import { auditData } from "../admin/admin.shared";
@@ -412,19 +412,19 @@ export class NotificationsService {
       // back on that auction); everything else keeps today's generic re-broadcast nudge with no orderId.
       const orderIds = [...new Set(waiters.map((w) => w.orderId).filter((id): id is string => !!id))];
       const openIds = new Set<string>();
-      // DS17-01: alongside "is this order still open" also capture its createdAt, so the live-order push
-      // below can compute how much of THAT order's own 90s window is left and set a TTL that tracks order
-      // age rather than send time — a flat OFFER_WINDOW TTL on a push sent late in the window outlives the
+      // DS17-01: alongside "is this order still open" also capture its window end, so the live-order push
+      // below can compute how much of THAT order's own window is left and set a TTL that tracks the auction
+      // rather than send time — a flat OFFER_WINDOW TTL on a push sent late in the window outlives the
       // auction it points at.
-      const createdAtByOrder = new Map<string, Date>();
+      const windowEndByOrder = new Map<string, Date>();
       if (orderIds.length > 0) {
         const openOrders = await this.prisma.order.findMany({
           where: { id: { in: orderIds }, status: "open_for_offers" },
-          select: { id: true, createdAt: true },
+          select: { id: true, createdAt: true, offerWindowEndsAt: true },
         });
         for (const o of openOrders) {
           openIds.add(o.id);
-          createdAtByOrder.set(o.id, o.createdAt);
+          windowEndByOrder.set(o.id, offerWindowEndsAt(o));
         }
       }
 
@@ -461,8 +461,8 @@ export class NotificationsService {
         // time. A push sent late in the window with a full-window TTL stays valid in the provider past the
         // moment the order's auction closes; if the window has already elapsed, don't push a dead reference
         // at all (the waiter stays queued for the next nearby rider — F-18 at-least-once).
-        const createdAt = createdAtByOrder.get(w.orderId);
-        const remainingMs = createdAt ? createdAt.getTime() + OFFER_WINDOW_MS - Date.now() : BROADCAST_PUSH_TTL_SECONDS * 1000;
+        const windowEnd = windowEndByOrder.get(w.orderId);
+        const remainingMs = windowEnd ? windowEnd.getTime() - Date.now() : BROADCAST_PUSH_TTL_SECONDS * 1000;
         if (remainingMs <= 0) continue;
         const got = await this.send([w.profileId], {
           title: "A biker's online near you",

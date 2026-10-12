@@ -1,7 +1,8 @@
 import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit, Optional } from "@nestjs/common";
-import { BROADCAST, OFFER_WINDOW_MS } from "@lynia/shared";
+import { BROADCAST, OFFER_CHOOSE_GRACE_MS, OFFER_WINDOW_MS } from "@lynia/shared";
 import { Queue, Worker } from "bullmq";
 import { sampleQueueDepth } from "../common/queue-metrics";
+import { offerWindowEndedBy } from "../common/offer-window";
 import { bullmqConnectionFromUrl, pingQueueClient } from "../common/redis";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
@@ -23,22 +24,23 @@ const JITTER_MAX_MS = 10_000;
  *  countdown freezing at 0:00 is the single most anxious moment in the customer journey, so a lost
  *  BullMQ job here shouldn't leave it frozen for a quarter of an hour. */
 const RECONCILE_INTERVAL_MS = 2 * 60 * 1000;
-/** A little grace past the window (covers the primary job's own jitter) before the reconciler treats
+/** A little grace past the window end (covers the primary job's own jitter) before the reconciler treats
  *  an `open_for_offers` order as stuck rather than just about to expire on schedule. Also past the
  *  choose grace (OFFER_CHOOSE_GRACE_MS, 15 s) so the sweep never meets an order expireOrder would defer. */
-const RECONCILE_GRACE_MS = OFFER_WINDOW_MS + JITTER_MAX_MS + 15_000;
-/** Added to the choose-grace follow-up's delay so it lands just after the grace, never just before. */
+const RECONCILE_GRACE_MS = JITTER_MAX_MS + OFFER_CHOOSE_GRACE_MS;
+/** Added to the follow-up's delay so it lands just after the retry moment, never just before. */
 const GRACE_FOLLOW_UP_MARGIN_MS = 1_000;
 
 /**
- * Expiry delay with ADDITIVE-ONLY jitter (0–10s) on top of the base window. Bursts of orders created
- * together otherwise fire their expiry CAS transactions simultaneously (thundering herd). The jitter
- * MUST never subtract: the customer-facing countdown renders `createdAt + OFFER_WINDOW_MS`, so the job
- * must never fire BEFORE the countdown hits zero. (Math.random is fine here — this is the API service,
- * not a workflow script.)
+ * Expiry delay with ADDITIVE-ONLY jitter (0–10s) on top of the time left in the window (`windowMs`, the
+ * order's own length since 2026-10-12 — OFFER_WINDOW_MS when omitted). Bursts of orders created together
+ * otherwise fire their expiry CAS transactions simultaneously (thundering herd). The jitter MUST never
+ * subtract: the customer-facing countdown renders the order's window end, so the job must never fire
+ * BEFORE the countdown hits zero. (Math.random is fine here — this is the API service, not a workflow
+ * script.)
  */
-export function jitteredDelayMs(): number {
-  return OFFER_WINDOW_MS + Math.floor(Math.random() * JITTER_MAX_MS);
+export function jitteredDelayMs(windowMs: number = OFFER_WINDOW_MS): number {
+  return windowMs + Math.floor(Math.random() * JITTER_MAX_MS);
 }
 
 @Injectable()
@@ -142,20 +144,21 @@ export class OfferExpiryService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * The expire job's body. An order still holding pending offers inside the choose grace isn't expired
-   * yet (MatchingService.expireOrder) — re-enqueue one follow-up for the grace end. Its own jobId, since
-   * the job running this still owns `orderId`; a 1 s margin keeps it from firing a hair early and
-   * deferring again. A lost follow-up is covered by reconcileStaleOffers (its cutoff is past the grace).
+   * The expire job's body. An order that isn't due yet (MatchingService.expireOrder) — pending offers
+   * inside the choose grace, or a window a price raise pushed out — gets one follow-up at `retryAt`. Its
+   * own jobId per moment, since the job running this still owns its id and a second raise can need a
+   * second follow-up; a 1 s margin keeps it from firing a hair early and deferring again. A lost follow-up
+   * is covered by reconcileStaleOffers (its cutoff is past the window end + grace).
    */
   async expireOrDefer(orderId: string): Promise<{ expired: boolean }> {
     const res = await this.matching.expireOrder(orderId);
-    if (!res.expired && res.graceEndsAt && this.queue) {
+    if (!res.expired && res.retryAt && this.queue) {
       await this.queue.add(
         "expire",
         { orderId },
         {
-          delay: Math.max(0, res.graceEndsAt.getTime() - Date.now()) + GRACE_FOLLOW_UP_MARGIN_MS,
-          jobId: `grace-${orderId}`,
+          delay: Math.max(0, res.retryAt.getTime() - Date.now()) + GRACE_FOLLOW_UP_MARGIN_MS,
+          jobId: `retry-${orderId}-${res.retryAt.getTime()}`,
           removeOnComplete: true,
           removeOnFail: 100,
           attempts: 3,
@@ -176,12 +179,12 @@ export class OfferExpiryService implements OnModuleInit, OnModuleDestroy {
     // fleet-wide. Mirrors the tracking.gateway disconnect-flush guard. On a top-level failure we log
     // and fall through to the zero result, keeping the { expired } return-shape contract intact.
     try {
-      const cutoff = new Date(Date.now() - RECONCILE_GRACE_MS);
+      const cutoffMs = Date.now() - RECONCILE_GRACE_MS;
       // A-1 (status-keyed-query-audit): a merchant order never carries Express's 90s auction timing —
       // once C3's dispatch broadcasts a food order to open_for_offers, this sweep must not force-expire
       // it on the Express clock. orderType:"parcel" makes expireOrder's CAS unreachable for one.
       const stale = await this.prisma.order.findMany({
-        where: { status: "open_for_offers", orderType: "parcel", createdAt: { lt: cutoff } },
+        where: { status: "open_for_offers", orderType: "parcel", ...offerWindowEndedBy(cutoffMs) },
         select: { id: true },
         take: 500,
       });

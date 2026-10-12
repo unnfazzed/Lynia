@@ -3,7 +3,7 @@
  * Drives a full trip assigned → … → completed through the guarded transitions, and proves the
  * CAS guards reject out-of-order/wrong-actor moves and that `delivered` frees the rider.
  */
-import { CUSTOMER_TRUST } from "@lynia/shared";
+import { CUSTOMER_TRUST, OFFER_WINDOW_MS } from "@lynia/shared";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { TokenService } from "../auth/token.service";
 import type { Env } from "../config/env";
@@ -60,8 +60,9 @@ const matching = new MatchingService(prisma, tokens, noopNotifications, new Metr
 // (the new open_for_offers row) without a live socket/Redis, mirroring how notifications are stubbed.
 const noopOrders = { announceOpenOrder: async () => {} } as unknown as OrdersService;
 // No onModuleInit() → no Redis queue; scheduleAutoClose() no-ops, which is what we want under test.
-// A real WalletService (rate 0 via empty env) exercises the commission-debit call in the completion
-// path as a no-op — the R1 regression that both completion paths still complete with wallet tables present.
+// A real WalletService (the 10% default via empty env) exercises the commission-debit call in the
+// completion path; the fixture riders are on their first, commission-free jobs, so it writes no row —
+// the R1 regression that both completion paths still complete with wallet tables present.
 const wallet = new WalletService({ ...MERCHANT_FLAGS_OFF } as Env, prisma);
 // DS21-01: capture superseded-photo GCS deletes so the concurrent-attach race test can prove the loser's
 // object is purged (no orphan). A missing storage adapter would just no-op the best-effort cleanup.
@@ -589,6 +590,8 @@ describe("resend — one live auction per trip (DRS-02)", () => {
     announceOpenOrder: async () => {},
     announcePriceChange: async () => {},
     assertCustomerMayBroadcast: async () => {},
+    // The cold-start window sizing (owner 2026-10-12) — a fixed length here; supply sizing is unit-tested.
+    offerWindowMsForPickup: async () => OFFER_WINDOW_MS,
   } as unknown as OrdersService;
   const resender = new OrderLifecycleService({ ...MERCHANT_FLAGS_OFF } as Env, prisma, tokens, gateway, noopNotifications, resendOrders, wallet, storageStub);
 

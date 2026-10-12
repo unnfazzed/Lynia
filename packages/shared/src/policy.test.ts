@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   COMMISSION,
+  canCoverJobCommission,
+  jobCommissionBasis,
   perRideCommission,
   commissionBasis,
   resolveCommissionRatePct,
@@ -9,6 +11,8 @@ import {
   broadcastRadiusAtMs,
   BROADCAST,
   STUCK_AFTER_MINUTES,
+  estimatePickupEtaMinutes,
+  PICKUP_ETA,
 } from "./policy";
 import { NATIONWIDE_REACH_M } from "./service-area";
 
@@ -19,10 +23,39 @@ import { NATIONWIDE_REACH_M } from "./service-area";
  */
 
 describe("COMMISSION constants", () => {
-  it("pins the launch-period defaults", () => {
-    expect(COMMISSION.ratePct).toBe(0); // 0% during the pilot — nothing deducted
+  it("pins the owner's policy (2026-10-12): 10% after 10 free jobs, no minimum balance", () => {
+    expect(COMMISSION.ratePct).toBe(10);
+    expect(COMMISSION.freeFirstJobs).toBe(10);
+    expect(COMMISSION.lowBalanceBlockBelow).toBe(0);
     expect(COMMISSION.basisFloorPct).toBe(0.5);
     expect(COMMISSION.model).toBe("prepaid_per_ride");
+  });
+});
+
+describe("jobCommissionBasis — what each job type is charged on", () => {
+  it("a parcel: the agreed fare, floored at half the suggested fare", () => {
+    expect(jobCommissionBasis({ orderType: "parcel", agreedFare: 4, suggestedFare: 4 })).toBe(4);
+    expect(jobCommissionBasis({ orderType: "parcel", agreedFare: 1, suggestedFare: 10 })).toBe(5);
+  });
+  it("a merchant job: the delivery fee, never the goods+delivery agreed total", () => {
+    expect(jobCommissionBasis({ orderType: "merchant", agreedFare: 25, deliveryFee: 3 })).toBe(3);
+  });
+  it("null when the figure is missing", () => {
+    expect(jobCommissionBasis({ orderType: "merchant", agreedFare: 25, deliveryFee: null })).toBeNull();
+    expect(jobCommissionBasis({ orderType: "parcel", agreedFare: null })).toBeNull();
+  });
+});
+
+describe("canCoverJobCommission — a biker can't take a job whose commission is more than their balance", () => {
+  it("free jobs left (0–9 completed) → always", () => {
+    expect(canCoverJobCommission({ ratePct: 10, tripsCount: 9, balance: 0, commission: 5 })).toBe(true);
+  });
+  it("past the free jobs → only when the balance covers it (equal is enough)", () => {
+    expect(canCoverJobCommission({ ratePct: 10, tripsCount: 10, balance: 0.3, commission: 0.3 })).toBe(true);
+    expect(canCoverJobCommission({ ratePct: 10, tripsCount: 10, balance: 0.29, commission: 0.3 })).toBe(false);
+  });
+  it("commission off → always", () => {
+    expect(canCoverJobCommission({ ratePct: 0, tripsCount: 99, balance: 0, commission: 1 })).toBe(true);
   });
 });
 
@@ -52,9 +85,9 @@ describe("perRideCommission — golden cases across rates", () => {
     expect(perRideCommission(amount, rate)).toBe(expected);
   });
 
-  it("defaults to the launch rate (0%) when no rate is passed", () => {
-    expect(perRideCommission(10)).toBe(0);
-    expect(perRideCommission(999.99)).toBe(0);
+  it("defaults to 10% (owner 2026-10-12) when no rate is passed", () => {
+    expect(perRideCommission(10)).toBe(1);
+    expect(perRideCommission(999.99)).toBe(100);
   });
 
   it("rounds half a cent UP (Math.round, away from zero) — not banker's rounding", () => {
@@ -134,15 +167,15 @@ describe("commissionBasis — anti-collusion floor", () => {
 
 describe("resolveCommissionRatePct — the flip override", () => {
   const cases: [string | number | null | undefined, number][] = [
-    [undefined, 0], // unset -> launch default
-    [null, 0],
-    ["", 0],
+    [undefined, 10], // unset -> the 10% default (owner 2026-10-12)
+    [null, 10],
+    ["", 10],
     ["20", 20],
     [20, 20],
     ["12.5", 12.5],
     ["12.345", 12.35], // WD-010: rounded to 2dp
-    ["-5", 0], // negative -> fail-safe default
-    ["abc", 0], // non-numeric -> fail-safe default
+    ["-5", 10], // negative -> the default
+    ["abc", 10], // non-numeric -> the default
     ["150", 100], // clamped to 100
     [150, 100],
     ["0", 0],
@@ -207,5 +240,21 @@ describe("broadcastRadiusAtMs — nationwide reach (D-99)", () => {
       expect(r).toBeGreaterThanOrEqual(prev);
       prev = r;
     }
+  });
+});
+
+describe("estimatePickupEtaMinutes", () => {
+  it("is the start time for a biker at the pickup (or a bad distance)", () => {
+    expect(estimatePickupEtaMinutes(0)).toBe(PICKUP_ETA.startMinutes);
+    expect(estimatePickupEtaMinutes(Number.NaN)).toBe(PICKUP_ETA.startMinutes);
+  });
+
+  it("adds riding time at the town speed", () => {
+    // 5 km at 25 km/h = 12 min, plus the start.
+    expect(estimatePickupEtaMinutes(5_000)).toBe(PICKUP_ETA.startMinutes + 12);
+  });
+
+  it("caps a cross-country distance", () => {
+    expect(estimatePickupEtaMinutes(NATIONWIDE_REACH_M)).toBe(PICKUP_ETA.maxMinutes);
   });
 });

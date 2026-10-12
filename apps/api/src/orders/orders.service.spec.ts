@@ -1,4 +1,4 @@
-import { BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, OFFER_CHOOSE_GRACE_MS, OFFER_WINDOW_MS, quoteFare } from "@lynia/shared";
+import { BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, OFFER_CHOOSE_GRACE_MS, OFFER_WINDOW_MS, OFFER_WINDOW_POLICY, quoteFare } from "@lynia/shared";
 import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 import type { StorageAdapter } from "../adapters/storage/storage.interface";
@@ -6,6 +6,7 @@ import type { OfferExpiryService } from "../matching/offer-expiry.service";
 import type { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
+import type { RiderNudgeService } from "../tracking/rider-nudge.service";
 import type { NearbyRider, TrackingService } from "../tracking/tracking.service";
 import { OrdersService, RIDER_HISTORY_STATUSES } from "./orders.service";
 
@@ -386,9 +387,53 @@ describe("OrdersService.create", () => {
     await expect(svc.create(orderInput, "cust-1")).resolves.toMatchObject({ id: "ord-1" });
     await flush();
 
-    expect(schedule).toHaveBeenCalledWith("ord-1");
+    // One rider online → a quiet market → the long window (OFFER_WINDOW_POLICY), scheduled from create.
+    expect(schedule).toHaveBeenCalledWith("ord-1", expect.any(Number));
+    expect((schedule.mock.calls[0] as unknown as [string, number])[1]).toBeGreaterThanOrEqual(OFFER_WINDOW_POLICY.quietWindowMs);
     // The rider fan-out ran regardless of the failed enqueue — never gated behind a hanging schedule.
     expect(notifyNewBroadcast).toHaveBeenCalledWith("ord-1", ["rider-1"], { pickup: "Eastgate", fare: "2.50" });
+  });
+
+  it("cold start: a quiet market also nudges the offline bikers near the pickup; a busy one doesn't", async () => {
+    const make = (online: number) => {
+      const prisma = {
+        profile: { findUnique: async () => ({ onHold: false }) },
+        order: {
+          create: async () => ({
+            id: "ord-1",
+            status: "open_for_offers",
+            itemDesc: "Documents",
+            proposedFare: { toString: () => "2.50" },
+            suggestedFare: { toString: () => "2.40" },
+            distanceKm: 1.5,
+            createdAt: new Date(),
+          }),
+        },
+      };
+      const riders = Array.from({ length: online }, (_, i) => ({ profileId: `r${i}`, distanceM: 500 }) as NearbyRider);
+      const tracking = { nearbyRiders: async () => riders, claimBroadcastRecipients: async () => null } as unknown as TrackingService;
+      const nudgeOfflineRiders = vi.fn(async () => {});
+      const svc = new OrdersService(
+        prisma as unknown as PrismaService,
+        { schedule: async () => {} } as unknown as OfferExpiryService,
+        tracking,
+        { notifyNewBroadcast: async () => {} } as unknown as NotificationsService,
+        noGateway,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { nudgeOfflineRiders } as unknown as RiderNudgeService,
+      );
+      return { svc, nudgeOfflineRiders };
+    };
+    const quiet = make(2);
+    await quiet.svc.create(orderInput, "cust-1");
+    expect(quiet.nudgeOfflineRiders).toHaveBeenCalledWith(orderInput.pickup.point, "parcel");
+
+    const busy = make(OFFER_WINDOW_POLICY.quietBelowRiders);
+    await busy.svc.create(orderInput, "cust-1");
+    expect(busy.nudgeOfflineRiders).not.toHaveBeenCalled();
   });
 
   it("never fails the create when the board push throws", async () => {
@@ -1685,6 +1730,7 @@ describe("OrdersService.raisePrice (raise the fare in place on an open auction)"
     orderType: "parcel",
     proposedFare: new Prisma.Decimal("2.50"),
     createdAt: new Date(now - 30_000),
+    offerWindowEndsAt: null,
     ...overrides,
   });
   function harness(row: unknown, casCount = 1) {
@@ -1733,17 +1779,36 @@ describe("OrdersService.raisePrice (raise the fare in place on an open auction)"
     await expect(harness(openRow()).svc.raisePrice("ord-1", "cust-1", 2)).rejects.toThrow(/must be higher/i);
   });
 
-  it("CAS-updates ONLY proposedFare (never createdAt — the countdown keeps running) and returns the new fare", async () => {
-    const h = harness(openRow());
+  it("CAS-updates the fare, stamps the raise and leaves bikers a minute — never touching createdAt — and returns the new fare", async () => {
+    // 80 s into a legacy 90 s window: 10 s left, so the raise pushes the end to a minute from now.
+    const createdAt = new Date(Date.now() - 80_000);
+    const h = harness(openRow({ createdAt }));
+    const before = Date.now();
     await expect(h.svc.raisePrice("ord-1", "cust-1", 3.75)).resolves.toEqual({ orderId: "ord-1", proposedFare: "3.75" });
     expect(h.updates).toHaveLength(1);
     const { where, data } = h.updates[0] as { where: Record<string, unknown>; data: Record<string, unknown> };
     expect(where).toMatchObject({ id: "ord-1", status: "open_for_offers", customerId: "cust-1" });
-    // Window + monotonic guards ride the same CAS so a racing expiry or a lower concurrent raise loses.
-    expect(where.createdAt).toHaveProperty("gt");
+    // The stored end + monotonic guards ride the same CAS so a racing raise/expiry or a lower raise loses.
+    expect(where).toHaveProperty("offerWindowEndsAt", null);
     expect(String((where.proposedFare as { lt: unknown }).lt)).toBe("3.75");
-    expect(Object.keys(data)).toEqual(["proposedFare"]);
+    expect(Object.keys(data).sort()).toEqual(["fareRaisedAt", "offerWindowEndsAt", "proposedFare"]);
     expect(String(data.proposedFare)).toBe("3.75");
+    expect((data.offerWindowEndsAt as Date).getTime()).toBeGreaterThanOrEqual(before + OFFER_WINDOW_POLICY.raiseMinRemainingMs);
+    expect((data.fareRaisedAt as Date).getTime()).toBeGreaterThanOrEqual(before);
+  });
+
+  it("never shortens a long (quiet-market) window", async () => {
+    const end = new Date(Date.now() + 3 * 60_000);
+    const h = harness(openRow({ createdAt: new Date(Date.now() - 60_000), offerWindowEndsAt: end }));
+    await h.svc.raisePrice("ord-1", "cust-1", 3.75);
+    const { where, data } = h.updates[0] as { where: Record<string, unknown>; data: Record<string, unknown> };
+    expect(where.offerWindowEndsAt).toEqual(end);
+    expect((data.offerWindowEndsAt as Date).getTime()).toBe(end.getTime());
+  });
+
+  it("takes a raise past the old 90 s mark while the stored window is still open", async () => {
+    const h = harness(openRow({ createdAt: new Date(Date.now() - OFFER_WINDOW_MS - 30_000), offerWindowEndsAt: new Date(Date.now() + 20_000) }));
+    await expect(h.svc.raisePrice("ord-1", "cust-1", 3.75)).resolves.toMatchObject({ proposedFare: "3.75" });
   });
 
   it("409s when the CAS loses (picked / cancelled / expired / out-raised in between)", async () => {
@@ -1799,7 +1864,7 @@ describe("OrdersService.announcePriceChange", () => {
     return { svc, gateway, notifyNewBroadcast };
   }
 
-  it("re-emits the board card at the new fare and pings not-yet-pinged bikers with the REMAINING-window TTL", async () => {
+  it("re-emits the board card at the new fare and pings EVERY biker in reach (not only the not-yet-pinged) with the REMAINING-window TTL", async () => {
     const h = harness(order());
     await h.svc.announcePriceChange("0a1b2c3d-0000-4000-8000-000000000001");
     await flush();
@@ -1810,7 +1875,8 @@ describe("OrdersService.announcePriceChange", () => {
     expect(h.notifyNewBroadcast).toHaveBeenCalledTimes(1);
     const [id, ids, info, ttl] = h.notifyNewBroadcast.mock.calls[0] as unknown as [string, string[], { fare: string }, number];
     expect(id).toBe("0a1b2c3d-0000-4000-8000-000000000001");
-    expect(ids).toEqual(["r2"]);
+    // Cold start (owner 2026-10-12): r1 was pinged at create but is pinged again — the new price is news.
+    expect(ids).toEqual(["r1", "r2"]);
     expect(info.fare).toBe("3.75");
     // ~60s left of a 90s window — never the flat full-window default.
     expect(ttl).toBeGreaterThan(0);

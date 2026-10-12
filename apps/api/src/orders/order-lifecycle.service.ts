@@ -11,7 +11,7 @@ import {
   Optional,
   UnauthorizedException,
 } from "@nestjs/common";
-import { ACTIVE_RIDE_STATUSES, codAmount, customerRatingCarriesWeight, DELIVERY_OTP_MAX_ATTEMPTS, HANDOVER_CODE_MAX_REISSUES, HeldReason, isBusinessBookingAccountPhone, OFFER_WINDOW_MS, RELIABILITY, RIDER_STRIKE_COOLDOWN_MS, roundToCents, UNDELIVERED_ABUSE } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, codAmount, customerRatingCarriesWeight, DELIVERY_OTP_MAX_ATTEMPTS, HANDOVER_CODE_MAX_REISSUES, HeldReason, isBusinessBookingAccountPhone, offerWindowEndAfterRaise, offerWindowEndsAt, RELIABILITY, RIDER_STRIKE_COOLDOWN_MS, roundToCents, UNDELIVERED_ABUSE } from "@lynia/shared";
 import { type OrderStatus, Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { penaltiesSuspended } from "../common/penalties";
@@ -681,6 +681,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
             merchantId: true,
             agreedFare: true,
             suggestedFare: true,
+            deliveryFee: true,
             orderType: true,
             deliveredAt: true,
             completedAt: true,
@@ -868,17 +869,20 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
             }
           }
           // Prepaid commission debit (design Flow 1): same transaction as completion, after the rider row
-          // lock above. No-op at ratePct 0. Never blocks a delivered parcel from completing. Uses the
+          // lock above. No-op at ratePct 0. Never blocks a delivered job from completing. Uses the
           // re-read `agreedFare` (WD-005), not the pre-CAS snapshot. `suggestedFare` feeds the WD-012
-          // commission-basis floor.
-          // A-5 (status-keyed-query-audit): a merchant order's own commission/settlement is C4's ledger,
-          // not the Express ride-commission wallet — chargeCommission assumes a parcel fare basis
-          // (suggestedFare/agreedFare mean something different for a food order's goods+delivery total).
-          // Guarded rather than left latent: a merchant order can't reach `delivered` without C3's
-          // dispatch yet, but the branch belongs here now, not deferred to when it becomes reachable.
+          // commission-basis floor. Every job type is charged (owner 2026-10-12): a merchant job on its
+          // delivery fee, never its goods+delivery `agreedFare` (jobCommissionBasis).
           // Late path: the auto-close (or ops' adjudication) already debited it — never charge twice.
-          if (order.orderType === "parcel" && !late) {
-            await this.wallet.chargeCommission(tx, { orderId, riderId: order.riderId, agreedFare, suggestedFare: order.suggestedFare });
+          if (!late) {
+            await this.wallet.chargeCommission(tx, {
+              orderId,
+              riderId: order.riderId,
+              orderType: order.orderType,
+              agreedFare,
+              suggestedFare: order.suggestedFare,
+              deliveryFee: order.deliveryFee,
+            });
           }
         }
       });
@@ -1260,6 +1264,9 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     if (pickup && dropoff) assertWithinServiceCorridor(pickup, dropoff);
 
     const fare = new Prisma.Decimal(proposedFare);
+    // Cold start (owner 2026-10-12): a fresh clone's auction is sized from supply like create() — read
+    // before the transaction (a cached geo count; never a reason to hold the lineage lock longer).
+    const windowMs = await this.orders.offerWindowMsForPickup(source.pickup);
     const { clone, created } = await this.prisma.$transaction(async (tx) => {
       // One trip = one re-broadcast lineage (orders linked by rebroadcast_of_id). The guarantee is one live
       // auction per TRIP, not per source row: resending two different finished orders of the same lineage
@@ -1291,16 +1298,22 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         throw new ConflictException({ reason: "trip_in_progress", message: "This delivery is already on its way.", orderId: inProgress.id });
       }
       const live = lineage.find((r) => r.status === "open_for_offers");
-      const existing = live ? { id: live.id, createdAt: live.created_at } : null;
-      if (existing) {
+      if (live) {
+        // Re-pricing the live clone is a raise in all but name: a higher fare leaves riders a minute to
+        // answer it and lets a rider who answered the old price bid again (same rule as raisePrice).
+        const row = await tx.order.findUnique({ where: { id: live.id }, select: { createdAt: true, offerWindowEndsAt: true, proposedFare: true } });
+        if (!row) throw new ConflictException("Order changed, retry");
+        const now = Date.now();
+        const raised = fare.gt(row.proposedFare);
+        const end = raised ? offerWindowEndAfterRaise(row.createdAt, offerWindowEndsAt(row), now) : row.offerWindowEndsAt;
         const claimed = await tx.order.updateMany({
-          where: { id: existing.id, status: "open_for_offers", customerId },
-          data: { proposedFare: fare },
+          where: { id: live.id, status: "open_for_offers", customerId },
+          data: { proposedFare: fare, ...(raised ? { fareRaisedAt: new Date(now), offerWindowEndsAt: end } : {}) },
         });
         if (claimed.count === 0) throw new ConflictException("Order changed, retry");
-        return { clone: existing, created: false };
+        return { clone: { id: live.id, createdAt: row.createdAt, offerWindowEndsAt: end }, created: false };
       }
-      return { clone: await this.cloneForRebroadcast(tx, orderId, { proposedFare: fare }), created: true };
+      return { clone: await this.cloneForRebroadcast(tx, orderId, { proposedFare: fare, windowMs }), created: true };
     });
 
     // Post-commit, best-effort — mirrors the rider-bail rebroadcast (cancel) for a fresh clone, and the
@@ -1323,8 +1336,8 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       id: clone.id,
       status: "open_for_offers",
       proposedFare: fare.toString(),
-      // Same derivation as the create response / snapshot (createdAt + OFFER_WINDOW_MS).
-      expiresAt: clone.createdAt ? new Date(clone.createdAt.getTime() + OFFER_WINDOW_MS).toISOString() : null,
+      // Same derivation as the create response / snapshot (offerWindowEndsAt).
+      expiresAt: clone.createdAt ? offerWindowEndsAt(clone).toISOString() : null,
     };
   }
 
@@ -1339,8 +1352,10 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
   private async cloneForRebroadcast(
     tx: Prisma.TransactionClient,
     sourceOrderId: string,
-    overrides?: { proposedFare?: Prisma.Decimal; keepCode?: { code: string; rotatedAt: Date | null } },
-  ): Promise<{ id: string; createdAt: Date }> {
+    // windowMs: the auction length a customer resend sized from supply. Absent (the rider-bail clone) →
+    // no end yet; OrdersService.announceOpenOrder sizes it post-commit, before the board sees the order.
+    overrides?: { proposedFare?: Prisma.Decimal; keepCode?: { code: string; rotatedAt: Date | null }; windowMs?: number },
+  ): Promise<{ id: string; createdAt: Date; offerWindowEndsAt: Date | null }> {
     const src = await tx.order.findUnique({
       where: { id: sourceOrderId },
       select: {
@@ -1410,10 +1425,11 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         disclaimerAcceptedAt: src.disclaimerAcceptedAt,
         status: "open_for_offers",
         rebroadcastOfId: sourceOrderId,
+        offerWindowEndsAt: overrides?.windowMs ? new Date(Date.now() + overrides.windowMs) : null,
         ...keptCode,
         events: { create: { status: "open_for_offers" } },
       },
-      select: { id: true, createdAt: true },
+      select: { id: true, createdAt: true, offerWindowEndsAt: true },
     });
     return clone;
   }
@@ -1431,7 +1447,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       await tx.orderEvent.create({ data: { orderId, status: "completed" } });
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        select: { riderId: true, agreedFare: true, suggestedFare: true, orderType: true },
+        select: { riderId: true, agreedFare: true, suggestedFare: true, deliveryFee: true, orderType: true },
       });
       if (order?.riderId) {
         // A delivered order that auto-closes with no complaint is a clean completion → slow
@@ -1462,16 +1478,15 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         // Prepaid commission debit (design Flow 1) — the auto-close counterpart to rate()'s debit. The
         // two completion edges are mutually exclusive (both CAS on status=delivered), so it fires once
         // per order. No-op at ratePct 0; idempotent (unique (riderId, orderId, ride_commission)).
-        // A-5: same merchant guard as rate() above — a merchant order's commission is C4's ledger, not
-        // this Express wallet debit.
-        if (order.orderType === "parcel") {
-          await this.wallet.chargeCommission(tx, {
-            orderId,
-            riderId: order.riderId,
-            agreedFare: order.agreedFare,
-            suggestedFare: order.suggestedFare,
-          });
-        }
+        // Every job type, as rate() above (a merchant job on its delivery fee).
+        await this.wallet.chargeCommission(tx, {
+          orderId,
+          riderId: order.riderId,
+          orderType: order.orderType,
+          agreedFare: order.agreedFare,
+          suggestedFare: order.suggestedFare,
+          deliveryFee: order.deliveryFee,
+        });
       }
       return true;
     });

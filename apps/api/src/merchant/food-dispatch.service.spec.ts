@@ -8,6 +8,7 @@ import type { NotificationsService } from "../notifications/notifications.servic
 import { PrismaService } from "../prisma/prisma.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
 import type { DispatchStrategy } from "./dispatch-strategy";
+import type { RiderNudgeService } from "../tracking/rider-nudge.service";
 import { earlyDispatchDue, FoodDispatchService } from "./food-dispatch.service";
 import { withMembershipShim } from "./testing/membership-shim";
 
@@ -38,14 +39,17 @@ function fakeGateway() {
 
 /** Fake Prisma where `$transaction(cb)` runs the callback against the same fake (tx === prisma),
  *  mirroring food-order.service.spec.ts's `build()`. */
-function build(methods: Record<string, unknown>, strategy: DispatchStrategy, gateway = fakeGateway(), codeCrypto?: PiiCryptoService) {
+function build(methods: Record<string, unknown>, strategy: DispatchStrategy, gateway = fakeGateway(), codeCrypto?: PiiCryptoService, nudge?: RiderNudgeService) {
   notified.length = 0;
   const prisma = withMembershipShim({ ...methods } as Record<string, unknown>);
   prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
   // The tick's post-write "is the round still live?" re-check: live unless a test says otherwise.
   const order = prisma.order as Record<string, unknown> | undefined;
   if (order && !order.count) order.count = async () => 1;
-  const svc = new FoodDispatchService(prisma as unknown as PrismaService, tokens, notifications, gateway, strategy, codeCrypto);
+  // The tick's read of riders still cooling down after a pass: nobody, unless a test says otherwise.
+  const attempts = (prisma.foodDispatchAttempt ??= {}) as Record<string, unknown>;
+  if (!attempts.findMany) attempts.findMany = async () => [];
+  const svc = new FoodDispatchService(prisma as unknown as PrismaService, tokens, notifications, gateway, strategy, codeCrypto, nudge);
   return { svc, prisma, gateway };
 }
 
@@ -64,6 +68,7 @@ const baseOrder = (over: Record<string, unknown> = {}) => ({
   status: "requested",
   merchantPhase: "ready_for_pickup",
   merchantId: MERCHANT_ID,
+  customerId: "cust-1",
   noRiderHoldAt: null,
   dispatchAttempt: 0,
   dispatchExcludedRiderIds: [] as string[],
@@ -145,7 +150,7 @@ describe("FoodDispatchService.sweepSearch — rounds (owner 2026-10-01: the best
     const { svc, gateway, attemptUpsert, orderUpdateMany, strategy } = world({}, pick(riders));
 
     expect(await svc.sweepSearch()).toEqual({ offered: 1, held: 0 });
-    expect(strategy.pickCandidates).toHaveBeenCalledWith(expect.objectContaining({ limit: 10, radiusM: RESTAURANTS_DISPATCH.radiusM, excludeRiderIds: [] }));
+    expect(strategy.pickCandidates).toHaveBeenCalledWith(expect.objectContaining({ limit: 10, radiusM: RESTAURANTS_DISPATCH.pickupReachM, excludeRiderIds: [] }));
     expect(orderUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ id: orderId, status: "requested", dispatchAttempt: 0, noRiderHoldAt: null }),
@@ -156,7 +161,7 @@ describe("FoodDispatchService.sweepSearch — rounds (owner 2026-10-01: the best
     expect(attemptUpsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { orderId_riderId: { orderId, riderId: "r0" } },
-        create: expect.objectContaining({ orderId, riderId: "r0", attemptNumber: 1, radiusM: RESTAURANTS_DISPATCH.radiusM }),
+        create: expect.objectContaining({ orderId, riderId: "r0", attemptNumber: 1, radiusM: RESTAURANTS_DISPATCH.pickupReachM }),
         update: expect.objectContaining({ attemptNumber: 1, outcome: "pending", respondedAt: null }),
       }),
     );
@@ -183,13 +188,34 @@ describe("FoodDispatchService.sweepSearch — rounds (owner 2026-10-01: the best
     expect(offerPayload.dropoff.contactPhone).toBeUndefined();
   });
 
-  it("offers every later round to everyone eligible (no cap), passing bikers who passed as excluded", async () => {
+  it("offers every later round to everyone eligible (no cap), passing bikers who dropped it as excluded", async () => {
     const { svc, strategy, attemptUpsert } = world({
-      order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder({ dispatchAttempt: 1, dispatchExcludedRiderIds: ["passed"] }), updateMany: async () => ({ count: 1 }) },
+      order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder({ dispatchAttempt: 1, dispatchExcludedRiderIds: ["dropped"] }), updateMany: async () => ({ count: 1 }) },
     });
     await svc.sweepSearch();
-    expect(strategy.pickCandidates).toHaveBeenCalledWith(expect.objectContaining({ limit: null, excludeRiderIds: ["passed"] }));
+    expect(strategy.pickCandidates).toHaveBeenCalledWith(expect.objectContaining({ limit: null, excludeRiderIds: ["dropped"] }));
     expect(attemptUpsert).toHaveBeenCalledWith(expect.objectContaining({ update: expect.objectContaining({ attemptNumber: 2, outcome: "pending" }) }));
+  });
+
+  // Owner 2026-10-12: a pass keeps a rider off the order for declineCooldownMs (10 min), not for ever.
+  it("leaves out a biker who passed within the decline cooldown, and asks one whose pass has lapsed", async () => {
+    const declined = [
+      { riderId: "just-passed", respondedAt: new Date(Date.now() - 2 * 60_000) },
+      { riderId: "passed-long-ago", respondedAt: new Date(Date.now() - 11 * 60_000) },
+    ];
+    const attemptFindMany = vi.fn(async ({ where }: { where: { outcome?: string; respondedAt?: { gt: Date } } }) =>
+      where.outcome === "declined" ? declined.filter((d) => d.respondedAt > where.respondedAt!.gt).map(({ riderId }) => ({ riderId })) : [],
+    );
+    const { svc, strategy } = world({
+      order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder({ dispatchAttempt: 1, dispatchExcludedRiderIds: ["dropped"] }), updateMany: async () => ({ count: 1 }) },
+      foodDispatchAttempt: { upsert: vi.fn(async () => ({})), findMany: attemptFindMany, updateMany: async () => ({ count: 0 }) },
+    });
+    const before = Date.now();
+    await svc.sweepSearch();
+    expect(strategy.pickCandidates).toHaveBeenCalledWith(expect.objectContaining({ excludeRiderIds: ["dropped", "just-passed"] }));
+    const cutoff = (attemptFindMany.mock.calls[0]![0].where.respondedAt!.gt as Date).getTime();
+    expect(cutoff).toBeGreaterThanOrEqual(before - RESTAURANTS_DISPATCH.declineCooldownMs);
+    expect(cutoff).toBeLessThanOrEqual(Date.now() - RESTAURANTS_DISPATCH.declineCooldownMs);
   });
 
   it("parks for the next poll (dispatch_search self-loop) when nobody is found, without touching the cap", async () => {
@@ -213,6 +239,75 @@ describe("FoodDispatchService.sweepSearch — rounds (owner 2026-10-01: the best
       expect.objectContaining({ data: expect.objectContaining({ noRiderHoldAt: expect.any(Date), dispatchNextCheckAt: null }) }),
     );
     expect(gateway.emitFoodQueueChanged).toHaveBeenCalledWith(MERCHANT_ID, orderId);
+  });
+
+  // Owner 2026-10-12: the customer hears about the hold too — the order screen's T11a copy, verbatim.
+  it("pushes the customer once the hold commits: still looking, the tap opens the order (and its free cancel)", async () => {
+    const { svc } = build(
+      { order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder({ dispatchAttempt: 6 }), updateMany: async () => ({ count: 1 }) } },
+      NONE,
+    );
+    await svc.sweepSearch();
+    expect(notified).toEqual([
+      {
+        profileIds: ["cust-1"],
+        title: "Finding a biker is taking longer",
+        body: "We’re asking more bikers now. Your food is kept warm — same food, same price, nothing extra to pay.",
+        data: { orderId, status: "requested", to: "customer", orderType: "merchant", kind: "food_no_rider_hold" },
+        collapseKey: `order:${orderId}:no_rider_hold`,
+      },
+    ]);
+  });
+
+  // Owner 2026-10-12: nobody online took it, so the offline riders near the pickup are asked to come online.
+  it("nudges the offline bikers near the pickup when the hold commits (and not when it loses the race)", async () => {
+    const nudgeOfflineRiders = vi.fn(async () => {});
+    const nudge = { nudgeOfflineRiders } as unknown as RiderNudgeService;
+    const held = build(
+      { order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder({ dispatchAttempt: 6 }), updateMany: async () => ({ count: 1 }) } },
+      NONE,
+      undefined,
+      undefined,
+      nudge,
+    );
+    await held.svc.sweepSearch();
+    expect(nudgeOfflineRiders).toHaveBeenCalledWith(expect.objectContaining(PICKUP.point), "job");
+
+    nudgeOfflineRiders.mockClear();
+    const lost = build(
+      { order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder({ dispatchAttempt: 6 }), updateMany: async () => ({ count: 0 }) } },
+      NONE,
+      undefined,
+      undefined,
+      nudge,
+    );
+    await lost.svc.sweepSearch();
+    expect(nudgeOfflineRiders).not.toHaveBeenCalled();
+  });
+
+  it("nudges the offline bikers near the venue when a round finds nobody in reach", async () => {
+    const nudgeOfflineRiders = vi.fn(async () => {});
+    const { svc } = build(
+      {
+        order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder(), updateMany: async () => ({ count: 1 }) },
+        merchant: { findUnique: async () => ({ location: { point: HARARE_CBD } }) },
+      },
+      NONE,
+      undefined,
+      undefined,
+      { nudgeOfflineRiders } as unknown as RiderNudgeService,
+    );
+    await svc.sweepSearch();
+    expect(nudgeOfflineRiders).toHaveBeenCalledWith(HARARE_CBD, "job");
+  });
+
+  it("no hold push when the hold CAS loses a race (someone else moved the order first)", async () => {
+    const { svc } = build(
+      { order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder({ dispatchAttempt: 6 }), updateMany: async () => ({ count: 0 }) } },
+      NONE,
+    );
+    expect(await svc.sweepSearch()).toEqual({ offered: 0, held: 0 });
+    expect(notified).toEqual([]);
   });
 
   // LM-02: a second tick can land between tick's read and the offer CAS. A lost CAS degrades to
@@ -343,6 +438,23 @@ describe("FoodDispatchService.acceptDispatch — D-04 biker secured, first to ac
     expect(notified.map((n) => n.profileIds)).toEqual([["r1"], ["cust-1"]]);
   });
 
+  it("owner 2026-10-12: refuses a biker whose balance doesn't cover 10% of the delivery fee — nothing is written", async () => {
+    vi.stubEnv("COMMISSION_RATE_PCT", "10");
+    const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
+    const { svc } = build(
+      {
+        order: { findFirst: async () => ({ ...liveOrder, deliveryFee: 3 }), updateMany: orderUpdateMany },
+        foodDispatchAttempt: { findUnique: async () => pendingRow },
+        rider: { findMany: async () => [{ profileId: "r1", tripsCount: 30 }] },
+        commissionAccount: { findMany: async () => [{ riderId: "r1", balance: 0.29 }] },
+      },
+      NONE,
+    );
+    await expect(svc.acceptDispatch(orderId, "r1")).rejects.toMatchObject({ response: { reason: "commission_low_balance" } });
+    expect(orderUpdateMany).not.toHaveBeenCalled();
+    vi.unstubAllEnvs();
+  });
+
   it("409s the second biker to accept: the first already took it (lost CAS)", async () => {
     const { svc } = build(
       { order: { findFirst: async () => liveOrder, updateMany: async () => ({ count: 0 }) }, foodDispatchAttempt: { findUnique: async () => pendingRow } },
@@ -405,11 +517,12 @@ describe("FoodDispatchService.declineDispatch — \"Not this one\"", () => {
     return { ...built, orderUpdate, orderUpdateMany, attemptUpdateMany };
   }
 
-  it("marks the biker's row declined and never offers them this order again; the round stays live for the others", async () => {
+  it("marks the biker's row declined (off this order for the cooldown); the round stays live for the others", async () => {
     const { svc, gateway, orderUpdate, orderUpdateMany, attemptUpdateMany } = world(3);
     expect(await svc.declineDispatch(orderId, "r1")).toEqual({ orderId, declined: true });
     expect(attemptUpdateMany).toHaveBeenCalledWith({ where: { orderId, riderId: "r1", outcome: "pending" }, data: expect.objectContaining({ outcome: "declined" }) });
-    expect(orderUpdate).toHaveBeenCalledWith({ where: { id: orderId }, data: { dispatchExcludedRiderIds: { push: "r1" } } });
+    // Not pushed into dispatchExcludedRiderIds (that list is for drops): the declined row is the cooldown.
+    expect(orderUpdate).not.toHaveBeenCalled();
     expect(orderUpdateMany).not.toHaveBeenCalled();
     expect(gateway.emitFoodOfferClosed).toHaveBeenCalledWith("r1", orderId);
   });
@@ -429,6 +542,7 @@ describe("FoodDispatchService.declineDispatch — \"Not this one\"", () => {
 });
 
 describe("FoodDispatchService.dropDispatch — D-33 pre-pickup only", () => {
+  // Dropping is not passing: a rider who dropped an accepted job stays off this order (no cooldown).
   it("re-dispatches in place: requested/ready_for_pickup, biker cleared, excluded, fresh budget, strike applied", async () => {
     const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
     const riderUpdate = vi.fn(async () => ({}));
@@ -564,10 +678,11 @@ describe("FoodDispatchService.getOfferForRider — C5 biker offer alarm channel 
 });
 
 describe("FoodDispatchService — merchant D-34 hold-screen decisions", () => {
-  it("resumeSearch clears the hold and resets the attempt budget", async () => {
-    const updateMany = vi.fn(async () => ({ count: 1 }));
+  it("resumeSearch clears the hold, resets the attempt budget and ends every pass's cooldown — drops stay excluded", async () => {
+    const updateMany = vi.fn(async (_a: { where: Record<string, unknown>; data: Record<string, unknown> }) => ({ count: 1 }));
+    const attemptUpdateMany = vi.fn(async () => ({ count: 2 }));
     const { svc } = build(
-      { merchant: { findUnique: async () => ({ id: "m1" }) }, order: { updateMany } },
+      { merchant: { findUnique: async () => ({ id: "m1" }) }, order: { updateMany }, foodDispatchAttempt: { updateMany: attemptUpdateMany } },
       NONE,
     );
     const res = await svc.resumeSearch("owner-1", orderId);
@@ -575,14 +690,18 @@ describe("FoodDispatchService — merchant D-34 hold-screen decisions", () => {
     expect(updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: { noRiderHoldAt: null, dispatchAttempt: 0, dispatchStartedAt: null, dispatchNextCheckAt: null } }),
     );
+    expect(updateMany.mock.calls[0]![0].data).not.toHaveProperty("dispatchExcludedRiderIds");
+    expect(attemptUpdateMany).toHaveBeenCalledWith({ where: { orderId, outcome: "declined" }, data: { outcome: "expired" } });
   });
 
-  it("resumeSearch 409s when the order isn't actually on hold", async () => {
+  it("resumeSearch 409s when the order isn't actually on hold, and leaves the passes alone", async () => {
+    const attemptUpdateMany = vi.fn(async () => ({ count: 0 }));
     const { svc } = build(
-      { merchant: { findUnique: async () => ({ id: "m1" }) }, order: { updateMany: async () => ({ count: 0 }) } },
+      { merchant: { findUnique: async () => ({ id: "m1" }) }, order: { updateMany: async () => ({ count: 0 }) }, foodDispatchAttempt: { updateMany: attemptUpdateMany } },
       NONE,
     );
     await expect(svc.resumeSearch("owner-1", orderId)).rejects.toThrow(/waiting on a biker decision/i);
+    expect(attemptUpdateMany).not.toHaveBeenCalled();
   });
 
   it("cancelFromHold: no-fault D-13 cancel, apology copy, rejectionReason=no_rider", async () => {
@@ -693,13 +812,55 @@ describe("FoodDispatchService.sweepSearch — MJ-RM1 / U32: the early search lea
     expect(strategy.pickCandidates).not.toHaveBeenCalled();
   });
 
-  it("past the NO_RIDER cap while still cooking: parks until the ready time — no D-34 hold on food that isn't ready", async () => {
+  it("past the NO_RIDER cap while still cooking: parks until the ready time, counted past the cap — no D-34 hold on food that isn't ready", async () => {
     const { svc, orderUpdateMany } = world(cookingOrder(3, { dispatchAttempt: 6 }), pick([]));
     expect(await svc.sweepSearch()).toEqual({ offered: 0, held: 0 });
     const park = orderUpdateMany.mock.calls[0]![0];
     expect(park.where).toMatchObject({ merchantPhase: "preparing", dispatchAttempt: 6, noRiderHoldAt: null });
     expect(park.data).not.toHaveProperty("noRiderHoldAt");
+    // The marker the ready-time tick reads: only this park writes the count past the cap.
+    expect(park.data).toMatchObject({ dispatchAttempt: RESTAURANTS_DISPATCH.maxAttempts + 1 });
     expect((park.data.dispatchNextCheckAt as Date).getTime()).toBeGreaterThan(Date.now() + 2 * MIN);
+    expect(notified).toEqual([]);
+  });
+
+  // Owner 2026-10-12: before, the order kept its spent count and went straight into the hold the moment
+  // it was ready, with no search after the food was actually ready.
+  it("once ready, an order whose budget ran out while cooking gets a fresh budget instead of the hold", async () => {
+    const readyAfterCooking = baseOrder({ dispatchAttempt: RESTAURANTS_DISPATCH.maxAttempts + 1, dispatchStartedAt: new Date(Date.now() - 15 * MIN) });
+    const orderUpdateMany = vi.fn(async (_args: { where: Record<string, unknown>; data: Record<string, unknown> }) => ({ count: 1 }));
+    const strategy = pick(one("r1"));
+    const { svc } = build(
+      {
+        order: { findMany: async () => [{ id: orderId }], findUnique: async () => readyAfterCooking, updateMany: orderUpdateMany },
+        merchant: { findUnique: async () => ({ location: { point: HARARE_CBD } }) },
+        orderEvent: { create: async () => ({}) },
+        foodDispatchAttempt: { upsert: vi.fn(async () => ({})), findMany: async () => [], updateMany: async () => ({ count: 0 }) },
+      },
+      strategy,
+    );
+    const before = Date.now();
+    expect(await svc.sweepSearch()).toEqual({ offered: 1, held: 0 });
+    expect(strategy.pickCandidates).toHaveBeenCalledWith(expect.objectContaining({ limit: RESTAURANTS_DISPATCH.firstRoundSize }));
+    const claim = orderUpdateMany.mock.calls[0]![0];
+    expect(claim.where).toMatchObject({ merchantPhase: "ready_for_pickup", dispatchAttempt: RESTAURANTS_DISPATCH.maxAttempts + 1, noRiderHoldAt: null });
+    expect(claim.data).toMatchObject({ status: "open_for_offers", dispatchAttempt: 1 });
+    expect(claim.data).not.toHaveProperty("noRiderHoldAt");
+    expect((claim.data.dispatchStartedAt as Date).getTime()).toBeGreaterThanOrEqual(before);
+  });
+
+  it("…and with nobody around it searches its fresh rounds, holding only after they run out too", async () => {
+    const orderUpdateMany = vi.fn(async (_args: { where: Record<string, unknown>; data: Record<string, unknown> }) => ({ count: 1 }));
+    const { svc } = build(
+      {
+        order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder({ dispatchAttempt: RESTAURANTS_DISPATCH.maxAttempts + 1 }), updateMany: orderUpdateMany },
+        merchant: { findUnique: async () => ({ location: { point: HARARE_CBD } }) },
+      },
+      pick([]),
+    );
+    expect(await svc.sweepSearch()).toEqual({ offered: 0, held: 0 });
+    expect(orderUpdateMany.mock.calls[0]![0].data).toMatchObject({ dispatchAttempt: 1, dispatchNextCheckAt: expect.any(Date) });
+    expect(notified).toEqual([]);
   });
 });
 

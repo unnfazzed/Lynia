@@ -1,4 +1,4 @@
-import { BoardNewOrderEvent, OFFER_WINDOW_MS } from "@lynia/shared";
+import { BoardNewOrderEvent, offerWindowEndsAt } from "@lynia/shared";
 import type { Prisma } from "@prisma/client";
 
 /**
@@ -31,6 +31,8 @@ export interface BroadcastMeta {
   proposedFare: string;
   distanceKm: number | null;
   createdAt: string;
+  /** When bidding closes (the order's offerWindowEndsAt). Absent → the legacy createdAt + OFFER_WINDOW_MS. */
+  expiresAt?: string;
 }
 
 /**
@@ -54,6 +56,6 @@ export function buildBoardNewOrderEvent(
     proposedFare: meta.proposedFare,
     distanceKm: meta.distanceKm,
     createdAt: meta.createdAt,
-    expiresAt: new Date(new Date(meta.createdAt).getTime() + OFFER_WINDOW_MS).toISOString(),
+    expiresAt: meta.expiresAt ?? offerWindowEndsAt({ createdAt: meta.createdAt }).toISOString(),
   });
 }

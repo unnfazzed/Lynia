@@ -137,7 +137,16 @@ export function useRiderBoard(
       // screen's haversine sort reconciles the two visually (nearest first). No change needed here.
       qc.setQueryData<OpenOrder[]>(["openOrders"], (prev) => {
         if (!prev) return [order];
-        if (prev.some((o) => o.id === order.id)) return prev; // dedupe: poll may have it already
+        // dedupe: the poll may have it already. A re-emit after a price raise carries the new fare and
+        // window end, so it replaces the cached card in place (same position) rather than being dropped.
+        const i = prev.findIndex((o) => o.id === order.id);
+        const old = prev[i];
+        if (old) {
+          if (old.proposedFare === order.proposedFare && (old.expiresAt ?? null) === (order.expiresAt ?? null)) return prev;
+          const next = [...prev];
+          next[i] = { ...old, ...order };
+          return next;
+        }
         return [order, ...prev].slice(0, OPEN_ORDERS_CACHE_CAP);
       });
     };

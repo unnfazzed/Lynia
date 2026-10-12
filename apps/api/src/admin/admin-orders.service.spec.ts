@@ -837,21 +837,24 @@ describe("AdminOrdersService.adjudicateDelivered (KB-POD-DISPUTE Phase B)", () =
     expect(args.suggestedFare.toString()).toBe("20.00");
   });
 
-  it("LC-B-SIB-1: a merchant order adjudicated delivered charges NO Express commission (C4's ledger) but still completes and credits the biker; a parcel still charges", async () => {
+  it("LC-B-SIB-1 / owner 2026-10-12: a merchant order adjudicated delivered is charged on its delivery fee (never its goods+delivery agreedFare), completes and credits the biker; a parcel still charges", async () => {
     wallet.chargeCommission.mockClear();
+    const deliveryFee = dec("3.00");
     const { prisma, calls } = makeTx({
-      // A food order's agreedFare is its goods+delivery total — never an Express ride-commission basis.
-      order: { status: "undelivered", riderId: "r1", customerId: "c1", agreedFare: dec("25.00"), suggestedFare: dec("25.00"), orderType: "merchant" },
+      // A food order's agreedFare is its goods+delivery total — the charge is on the delivery fee.
+      order: { status: "undelivered", riderId: "r1", customerId: "c1", agreedFare: dec("25.00"), suggestedFare: dec("25.00"), deliveryFee, orderType: "merchant" },
     });
     const svc = new AdminOrdersService(prisma as unknown as PrismaService, undefined, undefined, wallet as unknown as WalletService);
     const res = await svc.adjudicateDelivered("admin-1", "o1", { reason: "x" });
-    expect(wallet.chargeCommission).not.toHaveBeenCalled();
+    expect(wallet.chargeCommission).toHaveBeenCalledTimes(1);
+    expect(wallet.chargeCommission).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ orderId: "o1", riderId: "r1", orderType: "merchant", deliveryFee }));
     expect(calls.orderUpdate!.data).toMatchObject({ status: "completed" });
     expect(calls.riderUpdate!.data).toMatchObject({ tripsCount: { increment: 1 } });
     expect(calls.audit!.data).toMatchObject({ action: "order.adjudicate_delivered", target: "o1" });
     expect(res).toMatchObject({ id: "o1", status: "completed" });
 
     // The parcel path is unchanged — the debit still fires.
+    wallet.chargeCommission.mockClear();
     const parcel = makeTx();
     const svc2 = new AdminOrdersService(parcel.prisma as unknown as PrismaService, undefined, undefined, wallet as unknown as WalletService);
     await svc2.adjudicateDelivered("admin-1", "o1", { reason: "x" });

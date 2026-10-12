@@ -16,7 +16,7 @@ be reported back to Design) · **PROPOSED** (built in an open PR that waits on t
 screenshot sheet; it becomes APPROVED when the owner approves that PR, which doesn't merge before —
 merchant web upgrade plan §10, OV-11).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-18, D-19, D-23, D-24, D-27, D-29, D-30, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48, D-49, D-50, D-51, D-52, D-53, D-54, D-55, D-77, D-80, D-81, D-100.** D-100 is "Rider" → "Biker" app-wide (2026-10-12): every user-visible "rider" now reads "biker"; code, routes and data keep "rider". D-81 is the customer web app for iPhone users (2026-10-06): the same customer screens in a browser at app.lyniago.com, with a few web-only differences. D-80 is Google Maps on the web (2026-10-06): the merchant web and the planned customer web app draw maps with Google, replacing D-48's OpenStreetMap. D-77 is Merchant v2 (2026-10-04): the owner's merchant-v2 handoff gives kitchens, shops and pharmacies one shell and one five-step order lifecycle, on top of D-48. D-55 is Calm Mint v2 (2026-10-01): the owner's calm-mint-v2 handoff becomes the authority for the customer Home, customer onboarding and the rider's first run; it retires D-28 for Home and moves `--highlight` to #FFD23F. D-54 is Rider v2 (2026-10-01): the owner's rider-v2 handoff becomes the authority for the rider app and for BOTH Account tabs and Settings; it retires D-15, D-16, D-17, D-22, D-25 and D-26. D-53 is the customer order screen redesign (2026-10-01, with its v2 round the same day): the owner's after-send handoff replaces the gallery's separate auction / tracking / delivered / failure screens with one screen — a full-bleed map and a sheet that follows the order's stage. D-52 is the Send a parcel redesign (2026-10-01): the owner's send-compose-v2 handoff replaces the gallery's one-sheet composer with four steps (Where · What · Price · Review), edits addresses inline on the map, and drops landmarks, declared value and the disclaimer; it retires D-14, D-21 and D-31. D-51 is merchant branches (2026-10-01): the branch switcher, Add a branch, and the not-live Orders home. D-50 is restaurant auto-accept (2026-09-30): for restaurants still taking orders by phone, orders skip the accept window and LyniaGo ops confirm them by phone before a rider is sent. D-49 is the terms & conditions page (2026-09-30): one set of terms for customers, riders and businesses, linked from Settings in the app and the merchant sign-in line. D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-18, D-19, D-23, D-24, D-27, D-29, D-30, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48, D-49, D-50, D-51, D-52, D-53, D-54, D-55, D-77, D-80, D-81, D-101.** D-101 is "Rider" → "Biker" app-wide (2026-10-12): every user-visible "rider" now reads "biker"; code, routes and data keep "rider". D-81 is the customer web app for iPhone users (2026-10-06): the same customer screens in a browser at app.lyniago.com, with a few web-only differences. D-80 is Google Maps on the web (2026-10-06): the merchant web and the planned customer web app draw maps with Google, replacing D-48's OpenStreetMap. D-77 is Merchant v2 (2026-10-04): the owner's merchant-v2 handoff gives kitchens, shops and pharmacies one shell and one five-step order lifecycle, on top of D-48. D-55 is Calm Mint v2 (2026-10-01): the owner's calm-mint-v2 handoff becomes the authority for the customer Home, customer onboarding and the rider's first run; it retires D-28 for Home and moves `--highlight` to #FFD23F. D-54 is Rider v2 (2026-10-01): the owner's rider-v2 handoff becomes the authority for the rider app and for BOTH Account tabs and Settings; it retires D-15, D-16, D-17, D-22, D-25 and D-26. D-53 is the customer order screen redesign (2026-10-01, with its v2 round the same day): the owner's after-send handoff replaces the gallery's separate auction / tracking / delivered / failure screens with one screen — a full-bleed map and a sheet that follows the order's stage. D-52 is the Send a parcel redesign (2026-10-01): the owner's send-compose-v2 handoff replaces the gallery's one-sheet composer with four steps (Where · What · Price · Review), edits addresses inline on the map, and drops landmarks, declared value and the disclaimer; it retires D-14, D-21 and D-31. D-51 is merchant branches (2026-10-01): the branch switcher, Add a branch, and the not-live Orders home. D-50 is restaurant auto-accept (2026-09-30): for restaurants still taking orders by phone, orders skip the accept window and LyniaGo ops confirm them by phone before a rider is sent. D-49 is the terms & conditions page (2026-09-30): one set of terms for customers, riders and businesses, linked from Settings in the app and the merchant sign-in line. D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
 merchant web upgrade (L1–L5: sign-up, Book a rider and the shop's shell, Your riders, Team, and the drawn
 restaurant screens), approved by the owner with PR #986 (2026-09-29). D-42 is the lyniago.com marketing website: the design handoff shipped as-is, with four owner-decided launch items (2026-09-28). D-41 is the iPhone app shipping customer-only (2026-09-27). D-40 reopens D-01
 (WhatsApp OTP copy again, now that Bird Verify can deliver over WhatsApp) on an explicit 2026-09-01 user
@@ -5330,10 +5330,35 @@ every online rider gets the push and the board card for every new order.
   retired, every rider joins the single board room, and venue dispatch reaches the whole country (round 1 still
   offers the nearest 10). The board stays nearest-first.
 - **Upstream:** the kit's out-of-area lines should name the country. The kit is not edited.
+- **Amended (owner, 2026-10-12, cold-start review): venue dispatch is capped at 15 km from the venue**
+  (`RESTAURANTS_DISPATCH.pickupReachM`). "It's up to the user to decide" holds for parcels, where the customer picks
+  among bids. A restaurant, shop or pharmacy order goes to the first rider who accepts, with no customer choice, so a
+  rider in another town could win a Harare pickup. Parcel reach stays nationwide. The same review made a bid's ETA
+  never shorter than the rider's straight-line distance to the pickup allows (`PICKUP_ETA`), so the customer choosing
+  among nationwide bids sees an honest number in the ETA slot the offer card already draws.
+
+## D-100 · The sealed-bag photo at pickup is optional for shops and pharmacies too — APPROVED (owner, 2026-10-12)
+
+**Owner instruction (2026-10-12):** "make pictures optional for shops and pharmacies too." Order flow v2 (D-59,
+BRIEF §9) made the rider's sealed-bag photo a condition of a shop's or pharmacy's pickup; restaurants were
+already optional. Now every venue collects on the pickup code alone.
+
+- **Server.** The pickup no longer checks for the photo (`assertPickupProofIfRequired` and its 409
+  `pickup_photo_required` are gone), and the order read no longer sends `pickupProofRequired`. The contract keeps
+  the field for installed apps, which read an absent flag as "optional".
+- **Rider (RD2b–RD2d).** A shop's or pharmacy's pickup takes the restaurant's layout: "I've collected the order" is
+  the primary button and "Photo of the sealed bag" the ghost one. The camera's shutter no longer waits on "Bag is
+  sealed". The hint under it reads **"Optional"** for a shop or pharmacy (replacing the handoff's "Needed for shops
+  and pharmacies"); a restaurant keeps "Optional for restaurants". A photo that can't upload never holds the
+  pickup; the photo hook keeps re-sending it.
+- **Unchanged.** The photo, when taken, is still attached and shown to the customer and the merchant. The "Bag is
+  sealed" tick, the board card's "Sealed bag · photo at pickup" note and the merchant's S3 checklist stay as drawn.
+  The door photo when the delivery code can't be used is still required.
+- **Upstream:** Order flow v2 should draw the shop pickup without the photo gate. The kit is not edited.
 
 ---
 
-## D-100 · "Rider" → "Biker", app-wide — APPROVED (owner, 2026-10-12)
+## D-101 · "Rider" → "Biker", app-wide — APPROVED (owner, 2026-10-12)
 
 **Owner instruction (2026-10-12):** "change app wide wording from RIDER to BIKER". Every user-visible "rider" /
 "riders" (any case) in the mobile app, merchant web, admin, customer web and the API's user-facing copy (push and

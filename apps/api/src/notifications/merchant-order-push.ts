@@ -47,6 +47,17 @@ export const PUSH_C_STILL_WAITING = {
   body: ["They haven’t accepted your order yet.", "You can cancel free until they do."],
 } as const satisfies Template;
 
+/**
+ * Not in `O.g.push` — owner decision 2026-10-12: when a ready order enters the D-34 no-rider hold, the
+ * customer is pushed too (FoodDispatchService.tick). No push was drawn for it, so this is the screen's own
+ * copy, verbatim: the T11a stage the tap opens (`O.t.slowRider` / `O.t.slowRiderSub`), which carries the
+ * hold's free "Cancel order · free".
+ */
+export const PUSH_C_SLOW_RIDER = {
+  title: "Finding a biker is taking longer",
+  body: ["We’re asking more bikers now.", "Your food is kept warm — same food, same price, nothing extra to pay."],
+} as const satisfies Template;
+
 /** Merchant (G3b), index-aligned with `O.g.push.m`. */
 export const PUSH_M = {
   newOrder: { title: "New order #{id} · {p}", body: ["{n} {items}.", "Confirm you’re making it."] },

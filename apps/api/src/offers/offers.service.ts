@@ -1,6 +1,7 @@
 import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { ACTIVE_RIDE_STATUSES, type MakeOfferRequest, OFFER_WINDOW_MS } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, estimatePickupEtaMinutes, type MakeOfferRequest, offerWindowEndsAt } from "@lynia/shared";
+import { assertRiderCoversCommission, jobCommission, ridersWhoCoverCommission } from "../common/commission-cover";
 import { hasOpenMerchantObligation, openMerchantObligationOr } from "../common/merchant-debt-lock";
 import { riderSelectableNow, SELECTABLE_RIDER_SELECT } from "../common/rider-selectable";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -12,10 +13,11 @@ import { REFUSAL_MESSAGE } from "../riders/online-gate";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 
 const WINDOW_CLOSED = "The offer window has closed. This order isn't taking new offers.";
+const ONE_ROUND = "You already responded to this order (one round only)";
 
-/** True once the order's offer window (createdAt + OFFER_WINDOW_MS) has run out. */
-function windowClosed(createdAt: Date): boolean {
-  return Date.now() >= new Date(createdAt).getTime() + OFFER_WINDOW_MS;
+/** True once the order's offer window (offerWindowEndsAt, else createdAt + OFFER_WINDOW_MS) has run out. */
+function windowClosed(order: { createdAt: Date; offerWindowEndsAt: Date | null }): boolean {
+  return Date.now() >= offerWindowEndsAt(order).getTime();
 }
 
 @Injectable()
@@ -29,22 +31,27 @@ export class OffersService {
     private readonly metrics: MetricsService,
   ) {}
 
-  /** Rider responds once — accept the proposed fare or counter. One round per rider (ET7). */
+  /**
+   * Rider responds once — accept the proposed fare or counter. One round per rider (ET7), with one
+   * exception (owner 2026-10-12, cold start): once the customer RAISES the price (`fareRaisedAt`), a rider
+   * whose offer predates the raise — still pending, or withdrawn — may answer the new price. Their row is
+   * replaced in place, so the unique (order, rider) index still means one live offer per rider.
+   */
   async makeOffer(input: MakeOfferRequest, riderId: string) {
     const done = this.metrics.startTimer();
     const order = await this.prisma.order.findUnique({
       where: { id: input.orderId },
-      select: { status: true, customerId: true, proposedFare: true, orderType: true, createdAt: true },
+      select: { status: true, customerId: true, proposedFare: true, suggestedFare: true, orderType: true, createdAt: true, offerWindowEndsAt: true },
     });
     if (!order) throw new NotFoundException("Order not found");
     if (order.status !== "open_for_offers") {
       throw new ConflictException("This order is not open for offers");
     }
-    // After-send v2 choose grace: once the window ends (createdAt + OFFER_WINDOW_MS, the snapshot's
-    // expiresAt) the customer may still pick from the offers already on screen for OFFER_CHOOSE_GRACE_MS,
+    // After-send v2 choose grace: once the window ends (offerWindowEndsAt, the snapshot's expiresAt) the
+    // customer may still pick from the offers already on screen for OFFER_CHOOSE_GRACE_MS,
     // and the order stays `open_for_offers` meanwhile — so a status check alone would let a bid slip in
     // during the grace. New bids close at the window end. Re-checked under the row lock below.
-    if (windowClosed(order.createdAt)) {
+    if (windowClosed(order)) {
       this.metrics.incOffersMade("conflict");
       throw new ConflictException(WINDOW_CLOSED);
     }
@@ -121,6 +128,20 @@ export class OffersService {
       throw new ForbiddenException("An accept must match the customer's proposed fare");
     }
 
+    // Owner 2026-10-12: a rider can't take a job whose commission (10% of this fare, once their free jobs
+    // are used) is more than their wallet balance. selectOffer re-checks at the pick.
+    try {
+      await assertRiderCoversCommission(this.prisma, riderId, jobCommission({ orderType: "parcel", agreedFare: input.offeredFare, suggestedFare: order.suggestedFare }));
+    } catch (err) {
+      this.metrics.incOffersMade("forbidden");
+      throw err;
+    }
+
+    // The ETA the customer reads and ranks on (owner 2026-10-12): never shorter than the rider's straight-line
+    // distance to the pickup allows. Since D-99 a rider anywhere in the country can bid, and the app's ETA
+    // is a tapped chip nothing checks. Best-effort: with no known position the rider's own claim stands.
+    const etaMinutes = Math.max(input.etaMinutes, (await this.estimatedEtaMinutes(input.orderId, riderId)) ?? 0);
+
     try {
       const offer = await this.prisma.$transaction(async (tx) => {
         // Re-lock the order row and re-verify it's still open INSIDE the transaction. The status read
@@ -131,8 +152,10 @@ export class OffersService {
         // row-locks the order, so taking FOR UPDATE here serializes the two: either the assign commits
         // first (we then read a non-open status and reject) or it waits for us (and its decline-pending
         // sweep then includes our just-created offer).
-        const locked = await tx.$queryRaw<Array<{ status: string; order_type: string; created_at: Date }>>(
-          Prisma.sql`SELECT status, order_type, created_at FROM orders WHERE id = ${input.orderId}::uuid FOR UPDATE`,
+        const locked = await tx.$queryRaw<
+          Array<{ status: string; order_type: string; created_at: Date; offer_window_ends_at: Date | null; fare_raised_at: Date | null }>
+        >(
+          Prisma.sql`SELECT status, order_type, created_at, offer_window_ends_at, fare_raised_at FROM orders WHERE id = ${input.orderId}::uuid FOR UPDATE`,
         );
         // A-2: re-check orderType under the lock too — the pre-lock read above can't observe a
         // concurrent write, but orderType is immutable post-create, so this is belt-and-braces
@@ -142,17 +165,22 @@ export class OffersService {
         }
         // The window can end between the pre-check and the lock; the expiry job counts on no new bid
         // landing after it (an order with no pending offer at the window end expires right away).
-        if (windowClosed(locked[0].created_at)) throw new ConflictException(WINDOW_CLOSED);
-        return tx.offer.create({
-          data: {
-            orderId: input.orderId,
-            riderId,
-            type: input.type,
-            offeredFare: input.offeredFare,
-            etaMinutes: input.etaMinutes,
-          },
-          select: { id: true, type: true, offeredFare: true, etaMinutes: true, status: true },
+        if (windowClosed({ createdAt: locked[0].created_at, offerWindowEndsAt: locked[0].offer_window_ends_at })) {
+          throw new ConflictException(WINDOW_CLOSED);
+        }
+        const select = { id: true, type: true, offeredFare: true, etaMinutes: true, status: true } as const;
+        const bid = { type: input.type, offeredFare: input.offeredFare, etaMinutes };
+        const prior = await tx.offer.findUnique({
+          where: { orderId_riderId: { orderId: input.orderId, riderId } },
+          select: { id: true, status: true, createdAt: true },
         });
+        if (!prior) return tx.offer.create({ data: { orderId: input.orderId, riderId, ...bid }, select });
+        // Answering a raise: only an offer from BEFORE the latest raise, and only one still open to change
+        // (pending, or withdrawn → `declined` while the order is open). Anything else is the one-round rule.
+        const raisedAt = locked[0].fare_raised_at;
+        const answersRaise = raisedAt !== null && prior.createdAt < raisedAt && (prior.status === "pending" || prior.status === "declined");
+        if (!answersRaise) throw new ConflictException(ONE_ROUND);
+        return tx.offer.update({ where: { id: prior.id }, data: { ...bid, status: "pending", createdAt: new Date() }, select });
       });
       // Post-commit, best-effort: nudge the customer that an offer arrived (§5c).
       void this.notifications.notifyNewOffer(input.orderId, order.customerId);
@@ -167,7 +195,7 @@ export class OffersService {
       // The unique (order_id, rider_id) index enforces the one-round rule.
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
         this.metrics.incOffersMade("conflict");
-        throw new ConflictException("You already responded to this order (one round only)");
+        throw new ConflictException(ONE_ROUND);
       }
       // Lost the race under the row lock — the order closed between the pre-check and the insert. That's
       // a conflict (the rider just missed the window), not a server error.
@@ -180,10 +208,28 @@ export class OffersService {
     }
   }
 
+  /** Minutes for the rider to reach this order's pickup from their last known position (PICKUP_ETA), or
+   *  null when either point is unknown or the read fails — never a reason to refuse the bid. */
+  private async estimatedEtaMinutes(orderId: string, riderId: string): Promise<number | null> {
+    try {
+      const rows = await this.prisma.$queryRaw<Array<{ distance_m: number | null }>>(
+        Prisma.sql`SELECT ST_Distance(r.geog, o.pickup_geog) AS distance_m
+                   FROM riders r, orders o
+                   WHERE r.profile_id = ${riderId}::uuid AND o.id = ${orderId}::uuid`,
+      );
+      const d = rows[0]?.distance_m;
+      return d == null ? null : estimatePickupEtaMinutes(Number(d));
+    } catch (err) {
+      this.logger.warn(`pickup ETA estimate failed for order ${orderId}: ${(err as Error).message}`);
+      return null;
+    }
+  }
+
   /**
    * Rider v2 J10: the rider withdraws their own pending offer while the customer is still choosing. The
    * offer is marked `declined` (it leaves the customer's list, which shows pending offers only) rather
-   * than deleted, so the one-round rule — the unique (order, rider) index — still stops a second bid.
+   * than deleted, so the one-round rule — the unique (order, rider) index — still stops a second bid
+   * (until the customer raises the price: makeOffer then lets the rider answer the new one).
    * Allowed only while the order is open and the offer still pending; serialised against selectOffer
    * by the same order-row lock makeOffer takes, so a withdraw can never race a pick.
    */
@@ -224,7 +270,7 @@ export class OffersService {
   async listForOrder(orderId: string, callerId: string) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      select: { customerId: true },
+      select: { customerId: true, suggestedFare: true },
     });
     if (!order) throw new NotFoundException("Order not found");
     if (order.customerId !== callerId) throw new ForbiddenException("Not your order");
@@ -276,8 +322,14 @@ export class OffersService {
             select: { riderId: true },
           });
     const busy = new Set(held.map((h) => h.riderId));
+    // Owner 2026-10-12: a rider whose wallet no longer covers the commission on their own offered fare
+    // can't be picked (selectOffer refuses), so their offer leaves the list too.
+    const fareBy = new Map(live.map((o) => [o.rider.profileId, Number(o.offeredFare)]));
+    const covering = await ridersWhoCoverCommission(this.prisma, riderIds, (id) =>
+      jobCommission({ orderType: "parcel", agreedFare: fareBy.get(id), suggestedFare: order.suggestedFare }),
+    );
     return live
-      .filter((o) => !busy.has(o.rider.profileId))
+      .filter((o) => !busy.has(o.rider.profileId) && covering.has(o.rider.profileId))
       .map(({ rider, ...o }) => ({
         ...o,
         offeredFare: o.offeredFare.toString(),

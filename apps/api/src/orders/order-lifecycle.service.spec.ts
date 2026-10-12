@@ -913,7 +913,7 @@ describe("OrderLifecycleService.rate", () => {
       },
     });
     await svc.rate("o1", "c1", 5);
-    expect(wallet.chargeCommission).toHaveBeenCalledWith(expect.anything(), { orderId: "o1", riderId: "r1", agreedFare: 7 });
+    expect(wallet.chargeCommission).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ orderId: "o1", riderId: "r1", agreedFare: 7 }));
   });
 
   // DS19-01: a low rating whose penalty NEWLY trips onHold is a standing demotion — like markUndelivered's
@@ -2043,7 +2043,7 @@ describe("OrderLifecycleService.resend (one-tap resend at a new fare)", () => {
   function harness(
     opts: {
       src?: Record<string, unknown> | null;
-      existing?: { id: string; createdAt: Date } | null;
+      existing?: { id: string; createdAt: Date; proposedFare?: number } | null;
       casCount?: number;
       /** The lineage root (default: the source itself). */
       rootId?: string;
@@ -2058,10 +2058,19 @@ describe("OrderLifecycleService.resend (one-tap resend at a new fare)", () => {
     const locks: unknown[] = [];
     const h = build({
       order: {
-        // First read = the guard read in resend(); later reads = cloneForRebroadcast's source read.
-        findUnique: async () => (reads++ === 0 ? (opts.src === undefined ? source() : opts.src) : cloneSource),
+        // First read = the guard read in resend(); a read of the live clone = its window/fare for the
+        // re-price; later reads = cloneForRebroadcast's source read.
+        findUnique: async (args: { where: { id: string } }) => {
+          if (opts.existing && args.where.id === opts.existing.id) {
+            return { createdAt: opts.existing.createdAt, offerWindowEndsAt: null, proposedFare: new Prisma.Decimal(opts.existing.proposedFare ?? 5) };
+          }
+          return reads++ === 0 ? (opts.src === undefined ? source() : opts.src) : cloneSource;
+        },
         updateMany: async (args: Record<string, unknown>) => { updates.push(args); return { count: opts.casCount ?? 1 }; },
-        create: async (args: { data: Record<string, unknown> }) => { created.push(args.data); return { id: "clone-new", createdAt }; },
+        create: async (args: { data: Record<string, unknown> }) => {
+          created.push(args.data);
+          return { id: "clone-new", createdAt, offerWindowEndsAt: args.data.offerWindowEndsAt ?? null };
+        },
       },
       $executeRaw: async (...args: unknown[]) => { locks.push(args); return 1; },
       // 1st $queryRaw = the lineage-root walk; 2nd = the lineage rows (newest first).
@@ -2075,7 +2084,9 @@ describe("OrderLifecycleService.resend (one-tap resend at a new fare)", () => {
     });
     const gate = vi.fn(async () => {});
     const announcePriceChange = vi.fn(async () => {});
-    Object.assign(h.orders, { assertCustomerMayBroadcast: gate, announcePriceChange });
+    // Cold start: the resend sizes a fresh clone's auction from supply (a quiet market → the long window).
+    const offerWindowMsForPickup = vi.fn(async () => 240_000);
+    Object.assign(h.orders, { assertCustomerMayBroadcast: gate, announcePriceChange, offerWindowMsForPickup });
     return { ...h, created, updates, locks, gate, announcePriceChange };
   }
 
@@ -2110,12 +2121,17 @@ describe("OrderLifecycleService.resend (one-tap resend at a new fare)", () => {
 
   it.each(["expired", "cancelled", "undelivered"])("clones a %s order at the NEW fare (suggested anchor kept) and announces it post-commit", async (status) => {
     const h = harness({ src: source({ status }) });
+    const before = Date.now();
     const res = await h.svc.resend("o1", "c1", 4.25);
+    // The clone's auction is sized from supply (offerWindowMsForPickup), stored, and echoed as expiresAt.
+    const end = h.created[0].offerWindowEndsAt as Date;
+    expect(end.getTime()).toBeGreaterThanOrEqual(before + 240_000);
+    expect(end.getTime()).toBeLessThanOrEqual(Date.now() + 240_000);
     expect(res).toEqual({
       id: "clone-new",
       status: "open_for_offers",
       proposedFare: "4.25",
-      expiresAt: new Date(createdAt.getTime() + 90_000).toISOString(),
+      expiresAt: end.toISOString(),
     });
     expect(h.created).toHaveLength(1);
     expect(String(h.created[0].proposedFare)).toBe("4.25");
@@ -2128,23 +2144,31 @@ describe("OrderLifecycleService.resend (one-tap resend at a new fare)", () => {
   });
 
   it("re-prices an already-open clone (rider-bail clone / double-tap) via a CAS on open_for_offers instead of cloning again", async () => {
-    const existingAt = new Date("2026-10-01T09:59:30Z");
-    const h = harness({ src: source({ status: "cancelled" }), existing: { id: "clone-old", createdAt: existingAt } });
+    // 80 s into the clone's (legacy 90 s) window: a higher fare is a raise — it leaves riders a minute.
+    const existingAt = new Date(Date.now() - 80_000);
+    const h = harness({ src: source({ status: "cancelled" }), existing: { id: "clone-old", createdAt: existingAt, proposedFare: 5 } });
     const res = await h.svc.resend("o1", "c1", 6);
-    expect(res).toEqual({
-      id: "clone-old",
-      status: "open_for_offers",
-      proposedFare: "6",
-      // The existing clone's window is NOT reset — expiresAt stays anchored on its own createdAt.
-      expiresAt: new Date(existingAt.getTime() + 90_000).toISOString(),
-    });
+    const data = h.updates[0].data as { proposedFare: unknown; offerWindowEndsAt: Date; fareRaisedAt: Date };
+    expect(res).toEqual({ id: "clone-old", status: "open_for_offers", proposedFare: "6", expiresAt: data.offerWindowEndsAt.toISOString() });
+    expect(data.offerWindowEndsAt.getTime()).toBeGreaterThanOrEqual(Date.now() + 59_000);
+    expect(data.fareRaisedAt).toBeInstanceOf(Date);
     expect(h.created).toHaveLength(0);
     expect(h.updates).toHaveLength(1);
     expect(h.updates[0]).toMatchObject({ where: { id: "clone-old", status: "open_for_offers", customerId: "c1" } });
-    expect(String((h.updates[0].data as { proposedFare: unknown }).proposedFare)).toBe("6");
+    expect(String(data.proposedFare)).toBe("6");
+    // The window is never reset from scratch — createdAt stays the clone's own.
     expect(h.updates[0].data).not.toHaveProperty("createdAt");
     expect(h.announcePriceChange).toHaveBeenCalledWith("clone-old");
     expect(h.orders.announceOpenOrder).not.toHaveBeenCalled();
+  });
+
+  it("re-pricing the open clone DOWN is not a raise: the window and the one-round rule stay as they were", async () => {
+    const existingAt = new Date(Date.now() - 30_000);
+    const h = harness({ src: source({ status: "cancelled" }), existing: { id: "clone-old", createdAt: existingAt, proposedFare: 5 } });
+    const res = await h.svc.resend("o1", "c1", 4);
+    expect(h.updates[0].data).not.toHaveProperty("fareRaisedAt");
+    expect(h.updates[0].data).not.toHaveProperty("offerWindowEndsAt");
+    expect(res.expiresAt).toBe(new Date(existingAt.getTime() + 90_000).toISOString());
   });
 
   it("re-prices the lineage's open auction when resending a DIFFERENT finished order of the same trip", async () => {

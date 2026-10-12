@@ -407,12 +407,40 @@ describe("MatchingService — the 15 s choose grace after the offer window (afte
   it("still assigns an offer chosen inside the grace (window over, grace not), and pins the grace in the CAS", async () => {
     const { service, orderUpdateMany } = selectSvc(OFFER_WINDOW_MS + 5_000);
     await expect(service.selectOffer(orderId, offerId, "cust")).resolves.toMatchObject({ status: "assigned", riderId: "r1" });
-    const where = (orderUpdateMany.mock.calls[0] as unknown as [{ where: { createdAt: { gt: Date } } }])[0].where;
+    type Arm = { offerWindowEndsAt: { gt: Date } | null; createdAt?: { gt: Date } };
+    const where = (orderUpdateMany.mock.calls[0] as unknown as [{ where: { OR: [Arm, Arm] } }])[0].where;
     expect(where).toMatchObject({ id: orderId, status: "open_for_offers" });
-    // The CAS cutoff is window + grace ago — an order older than that can't be claimed even if it's still open.
-    const cutoffAgo = Date.now() - where.createdAt.gt.getTime();
+    // The CAS pins the window end + grace: a stored end later than grace-ago, or (no stored end, a pre-0089
+    // row) a createdAt later than window + grace ago — an order past that can't be claimed even if still open.
+    const [stored, legacy] = where.OR;
+    const storedAgo = Date.now() - (stored.offerWindowEndsAt as { gt: Date }).gt.getTime();
+    expect(storedAgo).toBeGreaterThanOrEqual(OFFER_CHOOSE_GRACE_MS);
+    expect(storedAgo).toBeLessThan(OFFER_CHOOSE_GRACE_MS + 1_000);
+    expect(legacy.offerWindowEndsAt).toBeNull();
+    const cutoffAgo = Date.now() - (legacy.createdAt as { gt: Date }).gt.getTime();
     expect(cutoffAgo).toBeGreaterThanOrEqual(OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS);
     expect(cutoffAgo).toBeLessThan(OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS + 1_000);
+  });
+
+  it("reads the stored window end: an order past the old 90 s mark whose raised window is still open is choosable", async () => {
+    const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
+    const { service } = svc({
+      offer: {
+        findFirst: async () => ({
+          status: "pending",
+          riderId: "r1",
+          offeredFare: { toString: () => "3.00" },
+          order: { status: "open_for_offers", customerId: "cust", createdAt: new Date(Date.now() - 4 * 60_000), offerWindowEndsAt: new Date(Date.now() + 30_000) },
+          rider: { isOnline: true, lastHeartbeatAt: new Date(), kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null },
+        }),
+        update: async () => ({}),
+        updateMany: async () => ({ count: 0 }),
+      },
+      order: { updateMany: orderUpdateMany, findFirst: async () => null },
+      orderEvent: { create: async () => ({}) },
+      block: { findFirst: async () => null },
+    });
+    await expect(service.selectOffer(orderId, offerId, "cust")).resolves.toMatchObject({ status: "assigned" });
   });
 
   it("409s once the grace has run out, without touching the order — even though it's still open_for_offers", async () => {
@@ -423,7 +451,7 @@ describe("MatchingService — the 15 s choose grace after the offer window (afte
   });
 
   /** expireOrder's tx: `claim` is the expiry CAS's count; `stillOpen` is the order the deferral re-read finds. */
-  function expireSvc(claim: number, stillOpen: { createdAt: Date } | null) {
+  function expireSvc(claim: number, stillOpen: { createdAt: Date; offerWindowEndsAt?: Date | null } | null) {
     const updateMany = vi.fn(async () => ({ count: claim }));
     const offerUpdateMany = vi.fn(async () => ({ count: 0 }));
     const eventCreate = vi.fn(async () => ({}));
@@ -441,31 +469,43 @@ describe("MatchingService — the 15 s choose grace after the offer window (afte
     return { service, updateMany, offerUpdateMany, eventCreate, notifyOrderExpired };
   }
 
-  it("the expiry CAS only claims an order past the grace OR with no pending offer", async () => {
+  it("the expiry CAS only claims an order past its window end + grace, OR past its window end with no pending offer", async () => {
     const { service, updateMany } = expireSvc(1, null);
     await expect(service.expireOrder(orderId)).resolves.toEqual({ expired: true });
-    const where = (updateMany.mock.calls[0] as unknown as [{ where: { OR: [{ createdAt: { lte: Date } }, unknown] } }])[0].where;
-    expect(where).toMatchObject({
-      id: orderId,
-      status: "open_for_offers",
-      OR: [{ createdAt: { lte: expect.any(Date) } }, { offers: { none: { status: "pending" } } }],
-    });
-    const cutoffAgo = Date.now() - where.OR[0].createdAt.lte.getTime();
-    expect(cutoffAgo).toBeGreaterThanOrEqual(OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS);
-    expect(cutoffAgo).toBeLessThan(OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS + 1_000);
+    type Ended = { OR: [{ offerWindowEndsAt: { lte: Date } }, { offerWindowEndsAt: null; createdAt: { lte: Date } }] };
+    const where = (updateMany.mock.calls[0] as unknown as [{ where: { id: string; status: string; OR: [Ended, { AND: [Ended, unknown] }] } }])[0].where;
+    expect(where).toMatchObject({ id: orderId, status: "open_for_offers" });
+    const [pastGrace, endedNoPending] = where.OR;
+    const graceAgo = Date.now() - pastGrace.OR[0].offerWindowEndsAt.lte.getTime();
+    expect(graceAgo).toBeGreaterThanOrEqual(OFFER_CHOOSE_GRACE_MS);
+    expect(graceAgo).toBeLessThan(OFFER_CHOOSE_GRACE_MS + 1_000);
+    const legacyAgo = Date.now() - pastGrace.OR[1].createdAt.lte.getTime();
+    expect(legacyAgo).toBeGreaterThanOrEqual(OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS);
+    expect(legacyAgo).toBeLessThan(OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS + 1_000);
+    // The no-pending arm still needs the window to have ENDED — a raise can push the end past the job.
+    const [ended, noPending] = endedNoPending.AND;
+    expect(Date.now() - ended.OR[0].offerWindowEndsAt.lte.getTime()).toBeLessThan(1_000);
+    expect(noPending).toEqual({ offers: { none: { status: "pending" } } });
   });
 
-  it("defers (no expiry, no push) an order still holding pending offers inside the grace, and says when the grace ends", async () => {
+  it("defers (no expiry, no push) an order still holding pending offers inside the grace, and says to retry at the grace end", async () => {
     const createdAt = new Date(Date.now() - OFFER_WINDOW_MS - 2_000);
     const { service, offerUpdateMany, eventCreate, notifyOrderExpired } = expireSvc(0, { createdAt });
     const res = await service.expireOrder(orderId);
-    expect(res).toEqual({ expired: false, graceEndsAt: new Date(createdAt.getTime() + OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS) });
+    expect(res).toEqual({ expired: false, retryAt: new Date(createdAt.getTime() + OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS) });
     expect(offerUpdateMany).not.toHaveBeenCalled();
     expect(eventCreate).not.toHaveBeenCalled();
     expect(notifyOrderExpired).not.toHaveBeenCalled();
   });
 
-  it("is a plain no-op (no graceEndsAt) once the order already left open_for_offers", async () => {
+  it("defers to the NEW window end when a raise pushed it past the queued job", async () => {
+    const offerWindowEndsAt = new Date(Date.now() + 45_000);
+    const { service, notifyOrderExpired } = expireSvc(0, { createdAt: new Date(Date.now() - OFFER_WINDOW_MS), offerWindowEndsAt });
+    await expect(service.expireOrder(orderId)).resolves.toEqual({ expired: false, retryAt: offerWindowEndsAt });
+    expect(notifyOrderExpired).not.toHaveBeenCalled();
+  });
+
+  it("is a plain no-op (no retryAt) once the order already left open_for_offers", async () => {
     const { service } = expireSvc(0, null);
     await expect(service.expireOrder(orderId)).resolves.toEqual({ expired: false });
   });

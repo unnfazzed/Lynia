@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { BROADCAST } from "@lynia/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import type { TrackingService } from "../tracking/tracking.service";
 import { NearestRiderDispatchStrategy } from "./dispatch-strategy";
@@ -9,7 +10,7 @@ function build(
   owingDebtIds: string[] = [],
   ratings: Record<string, number> = {},
 ) {
-  const tracking = { nearbyRiders: async () => nearby } as unknown as TrackingService;
+  const tracking = { nearbyRiders: vi.fn(async () => nearby) } as unknown as TrackingService;
   const prisma = {
     order: {
       // Two lookups, told apart by their WHERE shape: the C4 debt/handshake query has an `OR`.
@@ -21,7 +22,7 @@ function build(
         where.profileId.in.map((profileId) => ({ profileId, ratingAvg: ratings[profileId] ?? 0 })),
     },
   } as unknown as PrismaService;
-  return new NearestRiderDispatchStrategy(tracking, prisma);
+  return Object.assign(new NearestRiderDispatchStrategy(tracking, prisma), { geo: tracking as unknown as { nearbyRiders: ReturnType<typeof vi.fn> } });
 }
 
 const ids = (list: Array<{ riderId: string }>) => list.map((c) => c.riderId);
@@ -131,5 +132,28 @@ describe("NearestRiderDispatchStrategy.pickCandidates", () => {
 
   it("returns nobody when every nearby biker is excluded/busy", async () => {
     expect(await build([{ profileId: "r1", distanceM: 400 }], ["r1"]).pickCandidates(at)).toEqual([]);
+  });
+
+  // Owner 2026-10-12: a rider with the app in their pocket stops heartbeating ~2 min after backgrounding
+  // but is still online, and the offer's push wakes the phone — so food uses the parcel push cutoff, not
+  // the strict ~120 s one, and the rest of nearbyRiders' filter (online, standing, KYC) still applies.
+  describe("heartbeat cutoff", () => {
+    afterEach(() => {
+      delete process.env[BROADCAST.heartbeatMaxAgeForPushEnv];
+    });
+
+    it("asks nearbyRiders with the permissive push cutoff, within the round's radius", async () => {
+      const strategy = build([{ profileId: "r1", distanceM: 400 }]);
+      await strategy.pickCandidates(at);
+      expect(strategy.geo.nearbyRiders).toHaveBeenCalledWith(0, 0, 1000, BROADCAST.heartbeatMaxAgeMsForPush);
+      expect(BROADCAST.heartbeatMaxAgeMsForPush).toBeGreaterThan(BROADCAST.heartbeatMaxAgeMs);
+    });
+
+    it("follows the push cutoff's env override, like the parcel broadcast", async () => {
+      process.env[BROADCAST.heartbeatMaxAgeForPushEnv] = "600000";
+      const strategy = build([{ profileId: "r1", distanceM: 400 }]);
+      await strategy.pickCandidates(at);
+      expect(strategy.geo.nearbyRiders).toHaveBeenCalledWith(0, 0, 1000, 600_000);
+    });
   });
 });

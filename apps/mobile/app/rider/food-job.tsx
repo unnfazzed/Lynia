@@ -94,8 +94,8 @@ import { ReportSheet } from "../../src/ui/safety";
  * correctness for bytes on a money-adjacent path.
  *
  * Order flow v2 round 2 (ledger D-59): at the venue the rider ticks "Bag is sealed" and photographs the
- * bag (RD2b–RD2d) — required for shops and pharmacies (the server won't complete their pickup without
- * it, so the code waits on the photo), optional for restaurants; at a pharmacy order's door the rider
+ * bag (RD2b–RD2d) — optional for every venue (ledger D-100: restaurants, shops and pharmacies all
+ * collect on the code alone); at a pharmacy order's door the rider
  * ticks "I saw the original prescription" before handing over (RD3); and when the code can't be used,
  * "Can't use the code?" asks why and who, then takes the door photo (RD4c/RD4d) — evidence for our team,
  * who then finish the delivery.
@@ -300,14 +300,9 @@ export default function RiderFoodJob(): React.ReactElement {
       setPickupAttempts(0);
       setError(null);
       setCamera(null);
-      setPhotoQueued(false);
       refresh();
     },
     onError: (e) => {
-      // FJ-M3: the server checks the code BEFORE the sealed-bag photo, so a right code sent ahead of the
-      // photo answers 409 `pickup_photo_required` — not a failure: the code is good, and the pickup goes
-      // through once the photo is up (FJ-H1, below).
-      if (isPhotoRequired(e)) return;
       // confirmPickup's own error shapes differ from confirmDelivery's: a wrong code is 400
       // (BadRequestException), the lockout is 403 (ForbiddenException) — not 401/403.
       if (e instanceof ApiError && e.status === 403) {
@@ -336,11 +331,9 @@ export default function RiderFoodJob(): React.ReactElement {
       setCollectedError(null);
       setError(null);
       setCamera(null);
-      setPhotoQueued(false);
       refresh();
     },
     onError: (e) => {
-      if (isPhotoRequired(e)) return;
       haptic("warning");
       setCamera(null);
       if (e instanceof ApiError && e.status === 409 && e.code === "not_at_restaurant") {
@@ -374,7 +367,6 @@ export default function RiderFoodJob(): React.ReactElement {
   const bagPhoto = usePickupPhoto(order?.orderType === "merchant" ? orderId : null, foodOrder?.pickupProof?.photoUrl, (id, key) =>
     attachFoodPickupProof(id, { key, bagSealed: bagSealedRef.current }),
   );
-  const [photoQueued, setPhotoQueued] = useState(false);
   // The phone's camera hands the shot back as a preview; on the camera step it is used straight away.
   useEffect(() => {
     if (camera === "bag" && bagPhoto.preview && !bagPhoto.saving) bagPhoto.use();
@@ -385,32 +377,13 @@ export default function RiderFoodJob(): React.ReactElement {
     setBagSealed(next);
     if (orderId) void attachFoodPickupProof(orderId, { bagSealed: next }).catch(() => undefined);
   };
-  // "I've collected the order": the photo goes up first (a shop's pickup needs it), then the code.
-  const sendPickup = (): void => {
+  // "I've collected the order" with a photo taken: the photo goes up first, then the code. The photo is
+  // optional (D-100), so a failed upload never holds the pickup — the hook keeps re-sending it.
+  const collectAfterPhoto = async (): Promise<void> => {
+    await bagPhoto.flush();
     if (foodOrderRef.current?.autoAccepted) onCollected();
     else confirmPickupM.mutate();
   };
-  const collectAfterPhoto = async (): Promise<void> => {
-    const ok = await bagPhoto.flush();
-    if (!ok && foodOrderRef.current?.pickupProofRequired) {
-      setPhotoQueued(true);
-      // FJ-M3: check the code now — a wrong one shows at once instead of after the ride.
-      if (!foodOrderRef.current?.autoAccepted) confirmPickupM.mutate();
-      return;
-    }
-    setPhotoQueued(false);
-    sendPickup();
-  };
-  // FJ-H1: a queued photo ("you can ride") still has to finish the pickup. Once the photo is up (the
-  // photo hook re-sends it when data is back), send the code — the merchant's Hand over and this screen
-  // move on together.
-  useEffect(() => {
-    // A code already on its way (sent while offline) finishes the pickup by itself once it lands.
-    if (!photoQueued || !bagPhoto.uploaded || confirmPickupM.isPending || collectedM.isPending) return;
-    setPhotoQueued(false);
-    if (orderRef.current?.status === "en_route_pickup") sendPickup();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires when the queued photo lands.
-  }, [photoQueued, bagPhoto.uploaded, confirmPickupM.isPending, collectedM.isPending]);
 
   // ── Order flow v2 RD3: "I saw the original prescription" at a prescription order's door ─────────
   const rxM = useMutation({
@@ -1104,7 +1077,6 @@ export default function RiderFoodJob(): React.ReactElement {
   const v = (text: string): string => venueCopy(text, venuePlace);
   const kitchen = kitchenName(order, venuePlace);
   const venueTag = venueKind === "pharmacy" ? R.pharmacy : venueKind === "shops" ? R.shop : undefined;
-  const photoRequired = foodOrder.pickupProofRequired === true;
   const codeReady = foodOrder.autoAccepted === true || (pickupCode.trim().length === PICKUP_CODE_DIGITS && pickupAttempts < DELIVERY_OTP_MAX_ATTEMPTS);
   const canCollectNow = order.status === "en_route_pickup" && codeReady;
   const rx = foodOrder.prescription?.status === "approved" ? foodOrder.prescription : null;
@@ -1256,7 +1228,7 @@ export default function RiderFoodJob(): React.ReactElement {
         <TickRow title={O.rd.sealed} sub={bagPhoto.uri ? null : O.rd.sealedSub} on={bagSealed} onPress={() => tickBag(!bagSealed)} />
         {bagPhoto.uri ? (
           <>
-            {photoQueued || (!bagPhoto.uploaded && liveReconnecting) ? <OfNote icon="clock" text={O.rd.queued} /> : null}
+            {!bagPhoto.uploaded && liveReconnecting ? <OfNote icon="clock" text={O.rd.queued} /> : null}
             <CtaButton ghost icon="camera" label={O.rd.retake} onPress={bagPhoto.retake} />
             <CtaButton
               label={O.rd.collected}
@@ -1267,9 +1239,9 @@ export default function RiderFoodJob(): React.ReactElement {
           </>
         ) : (
           <>
-            <Text style={{ fontSize: 13, lineHeight: 18, color: tokens.color.muted, textAlign: "center" }}>{photoRequired ? O.rd.photoReq : O.rd.photoOpt}</Text>
+            <Text style={{ fontSize: 13, lineHeight: 18, color: tokens.color.muted, textAlign: "center" }}>{venueKind === "food" ? O.rd.photoOpt : PHOTO_OPTIONAL}</Text>
             {bagPhoto.denied ? cameraOff : null}
-            <Shutter label={O.rd.photoT} disabled={(photoRequired && !bagSealed) || bagPhoto.saving} onPress={bagPhoto.take} />
+            <Shutter label={O.rd.photoT} disabled={bagPhoto.saving} onPress={bagPhoto.take} />
           </>
         )}
       </CameraStep>
@@ -1548,35 +1520,20 @@ export default function RiderFoodJob(): React.ReactElement {
         <ProblemLink onPress={() => setSheet("problem")} />
       </>
     );
-    // RD2b: a shop's pickup waits on the sealed-bag photo, so its code leads to the camera; a restaurant
-    // may add one (optional) before collecting.
-    const needPhoto = photoRequired && !bagPhoto.uri;
+    // RD2b: the sealed-bag photo is optional for every venue (D-100) — collect on the code, or add one first.
     bar = (
       <CtaBar>
-        {needPhoto ? (
-          <CtaButton
-            icon="camera"
-            label={O.rd.photoT}
-            disabled={!canCollect}
-            onPress={() => {
-              setCamera("bag");
-              // FJ-M3: check the code before the photo — a wrong one closes the camera and says so.
-              if (!auto) confirmPickupM.mutate();
-            }}
-          />
-        ) : (
-          <CtaButton
-            label={upfront ? v(R.paidCta) : photoRequired ? O.rd.collected : v(R.collectedFood)}
-            disabled={!canCollect}
-            loading={!!pendingOrQueued(auto ? collectedM : confirmPickupM)}
-            onPress={() => {
-              if (bagPhoto.uri) void collectAfterPhoto();
-              else if (auto) onCollected();
-              else confirmPickupM.mutate();
-            }}
-          />
-        )}
-        {!photoRequired && !bagPhoto.uri ? <CtaButton ghost icon="camera" label={O.rd.photoT} onPress={() => setCamera("bag")} /> : null}
+        <CtaButton
+          label={upfront ? v(R.paidCta) : v(R.collectedFood)}
+          disabled={!canCollect}
+          loading={!!pendingOrQueued(auto ? collectedM : confirmPickupM)}
+          onPress={() => {
+            if (bagPhoto.uri) void collectAfterPhoto();
+            else if (auto) onCollected();
+            else confirmPickupM.mutate();
+          }}
+        />
+        {!bagPhoto.uri ? <CtaButton ghost icon="camera" label={O.rd.photoT} onPress={() => setCamera("bag")} /> : null}
       </CtaBar>
     );
   } else {
@@ -1690,10 +1647,9 @@ function placeOf(fo: MerchantOrderResponse | null): string {
   return O.svc[venueKindOf(fo)].place;
 }
 
-/** 409 `pickup_photo_required`: the code was right, the shop's sealed-bag photo isn't on the server yet. */
-function isPhotoRequired(e: unknown): boolean {
-  return e instanceof ApiError && e.status === 409 && e.code === "pickup_photo_required";
-}
+/** Ledger D-100: the sealed-bag hint for a shop or pharmacy, now that their photo is optional too (the
+ *  handoff's "Needed for shops and pharmacies" no longer holds; a restaurant keeps "Optional for restaurants"). */
+const PHOTO_OPTIONAL = "Optional";
 
 /** RD4c's three answers, in `O.rd.why`'s order. */
 const DOOR_REASONS: readonly DoorProofReason[] = ["customer_unreachable", "handed_to_someone_else", "left_at_gate"];
