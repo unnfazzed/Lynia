@@ -1203,13 +1203,17 @@ export class RiderService {
       // counter, no audit, no push. A held verify (pending, resolved, vendor status Approved) counts as a
       // resolved `verified` here. A DIFFERENT outcome on the same check (Approved months later followed by
       // Kyc Expired, a Didit reviewer overturning a decline) still applies through the guard below.
+      // KYC-R26-12: a verify the one-ID-one-account checks turned into a decline keeps Didit's Approved too,
+      // so it reads as the vendor's `verified` here and a retried Approved is the same repeat.
       const resolvedOutcome =
         current?.kycResolvedAt == null
           ? null
-          : current.kycStatus === "pending"
+          : current.kycStatus === "pending" || current.kycStatus === "failed"
             ? current.kycVendorStatus === DIDIT_APPROVED_STATUS
               ? "verified"
-              : null
+              : current.kycStatus === "failed"
+                ? "failed"
+                : null
             : current.kycStatus;
       if (current && resolvedOutcome === status) {
         this.logger.log(`KYC ${kycRef}: repeat delivery of the ${status} this check already resolved to — no-op (KYC-R26-01)`);
@@ -1283,6 +1287,21 @@ export class RiderService {
           this.logger.warn(`KYC ${kycRef}: a national ID landed on the account during the check and does not match the document — held for review (D-75)`);
         }
       }
+      // KYC-R26-12 (owner 2026-10-12: "even the In Review to be fully automatic"): a verify that our own
+      // one-ID-one-account checks refuse is DECLINED, not held for a human. A national ID already on another
+      // account (duplicateIdFlag, a vendor-document collision, an adoption the live-ID index refused) is
+      // `duplicate`; a document whose number differs from the account's national ID is `id_mismatch`. The
+      // vendor-verified hash is still persisted below, so the next applicant showing this document collides
+      // too. `kycVendorStatus` keeps Didit's Approved on such a decline: it is what the KYC-R26-01 repeat guard
+      // reads to tell a retried Approved for this check from a new outcome (Didit re-signs retries with a
+      // fresh timestamp), so a retry can't count as a second decline.
+      const refusedVerify = holdForReview;
+      const outcome: "verified" | "failed" | "expired" = refusedVerify ? "failed" : status;
+      const outReason = refusedVerify ? (docMismatch ? KycDeclineReason.ID_MISMATCH : KycDeclineReason.DUPLICATE) : reason;
+      if (refusedVerify) {
+        holdForReview = false;
+        this.logger.warn(`KYC ${kycRef}: approved by the vendor, declined ${outReason} by the one-ID-one-account checks (KYC-R26-12)`);
+      }
       const res = await tx.rider.updateMany({
         where: { kycRef, OR: [{ kycResolvedAt: null }, { kycResolvedAt: { lt: eventAt } }] },
         data: {
@@ -1290,7 +1309,7 @@ export class RiderService {
           // rider remains in the manual-review queue (admin.getKycReview) instead of going online on an
           // identity that already collides with another account. kycResolvedAt still advances (below) so
           // the same webhook delivery can't be reprocessed.
-          ...(holdForReview ? {} : { kycStatus: status, idVerified: status === "verified" }),
+          ...(holdForReview ? {} : { kycStatus: outcome, idVerified: outcome === "verified" }),
           kycResolvedAt: eventAt,
           // KYC-R26-02: the vendor resolved this check (a hold too: it is the vendor's verdict we hold).
           kycResolvedBy: KYC_RESOLVED_BY_VENDOR,
@@ -1298,7 +1317,7 @@ export class RiderService {
           // used to read it as "unfinished" — the rider was told to finish a check they had finished, and
           // a retry bought a fresh paid session. Record what the vendor said (it approved; WE hold), which
           // /auth/me reads as held → the "under review" wall. A decided check needs no vendor status.
-          ...(holdForReview
+          ...(holdForReview || refusedVerify
             ? { kycVendorStatus: DIDIT_APPROVED_STATUS, kycVendorStatusAt: eventAt }
             : { kycVendorStatus: null, kycVendorStatusAt: null }),
           // The session token dies with the decision it belonged to. Every outcome that reaches here is
@@ -1328,7 +1347,7 @@ export class RiderService {
           // why, and clear any stale reason on a verify/expiry (unchanged for `expired`; a flagged
           // `verified` held for review isn't a resolved decision yet, so its stale decline reason, if
           // any, is deliberately left in place rather than cleared).
-          ...(status === "failed" ? { kycDeclineReason: reason ?? null } : holdForReview ? {} : { kycDeclineReason: null }),
+          ...(outcome === "failed" ? { kycDeclineReason: outReason ?? null } : holdForReview ? {} : { kycDeclineReason: null }),
           // F-13: a vendor DECLINE bumps the A-02 attempt counter too, so the auto path throttles retries
           // exactly like the manual admin decline does — without this, auto-mode retries were uncapped,
           // each minting a fresh paid vendor session. The increment rides the SAME monotonic guard as the
@@ -1336,7 +1355,7 @@ export class RiderService {
           // out-of-order delivery matches 0 rows (an exact replay has the same eventAt → not `lt` → no
           // match), so it can't double-count. Only a genuinely new decline on a fresh ref (retryKyc mints
           // a new kycRef and clears kycResolvedAt) increments again → the second decline locks at >= 2.
-          ...(status === "failed" ? { kycAttempts: { increment: 1 } } : {}),
+          ...(outcome === "failed" ? { kycAttempts: { increment: 1 } } : {}),
           // An expiry (1·b2) is not a decline: reset the A-02 attempt counter so re-verification isn't
           // trapped by an ancient decline the rider already recovered from before they were verified.
           // DS17-03: but ONLY when the rider isn't already locked (kycAttempts < 2). A stale vendor session
@@ -1344,20 +1363,20 @@ export class RiderService {
           // permanent two-decline lock (retryKyc's A-02 gate) — that would hand a locked applicant a third
           // attempt. An admin choosing to reset the lock goes through adminSetKyc's manual expire path,
           // which is a deliberate human decision and keeps its own unconditional reset.
-          ...(status === "expired" && (current?.kycAttempts ?? 0) < 2 ? { kycAttempts: 0 } : {}),
+          ...(outcome === "expired" && (current?.kycAttempts ?? 0) < 2 ? { kycAttempts: 0 } : {}),
           // Standing-demotion (Class-B sibling of BR-01/DS15-05): a rider verified+online at the moment
           // their KYC lapses to failed/expired can no longer bid (onlineRefusalReason gates on
           // kyc=verified), so leaving them isOnline:true keeps them counted in the customer-facing
           // ridersNearby supply and still receiving broadcasts/board pushes. Force offline in the same
           // write; the post-commit evictRiderFromSupply below clears the Redis geo index + board rooms.
           // (verified/holdForReview never demote — they don't set this.)
-          ...(status === "failed" || status === "expired" ? { isOnline: false } : {}),
+          ...(outcome === "failed" || outcome === "expired" ? { isOnline: false } : {}),
           // First Run v2 F6 (D-82 §4): the ID's expiry day — the document's, from a verified decision that
           // carries it; on an expiry, the day it lapsed (or the document's day when that is earlier).
-          ...(status === "verified" && documentExpiresOn ? { kycIdExpiresOn: documentExpiresOn } : {}),
+          ...(outcome === "verified" && documentExpiresOn ? { kycIdExpiresOn: documentExpiresOn } : {}),
           // KYC-R26-08: an expired-document decline records the day the document expired, for the decline copy.
           ...(expiredDocument && documentExpiresOn ? { kycIdExpiresOn: documentExpiresOn } : {}),
-          ...(status === "expired" ? { kycIdExpiresOn: kycIdExpiryOnLapse(current?.kycIdExpiresOn, eventAt) } : {}),
+          ...(outcome === "expired" ? { kycIdExpiresOn: kycIdExpiryOnLapse(current?.kycIdExpiresOn, eventAt) } : {}),
         },
       });
       // Only when the update actually applied (res.count > 0 — not a stale/replayed webhook). `expired`
@@ -1385,7 +1404,7 @@ export class RiderService {
         }
         // No notifyProfileId: the rider isn't told anything changed — they're still `pending`, same as
         // before this webhook arrived, until a human resolves the flag via adminSetKyc.
-      } else if (res.count > 0 && (status === "verified" || status === "failed")) {
+      } else if (res.count > 0 && (outcome === "verified" || outcome === "failed")) {
         const rider = await tx.rider.findFirst({ where: { kycRef }, select: { profileId: true } });
         if (rider) {
           // KB-FEED-SYNTH: the AUTOMATED vendor path must ALSO write an AuditLog row (only the manual
@@ -1393,9 +1412,9 @@ export class RiderService {
           // Reuse the SAME action strings as adminSetKyc (rider.kyc_approve / rider.kyc_decline), but
           // mark the actor as automated ("system:kyc-webhook") so admin audit views can still tell manual
           // from automated decisions. Same transaction as the status write — never one without the other.
-          const action = status === "verified" ? "rider.kyc_approve" : "rider.kyc_decline";
+          const action = outcome === "verified" ? "rider.kyc_approve" : "rider.kyc_decline";
           // D-75: an approval with no number to dedupe on is flagged here rather than held (see idMissing).
-          const auditReason = reason ?? (idMissing ? "verified_id_missing" : null);
+          const auditReason = outReason ?? (idMissing ? "verified_id_missing" : null);
           await tx.auditLog.create({
             data: auditData("system:kyc-webhook", action, rider.profileId, auditReason, null),
           });
@@ -1405,12 +1424,12 @@ export class RiderService {
       // Class-B eviction: a lapse (failed/expired) that actually applied needs the profileId post-commit
       // so we can pull the (now non-verified) rider out of the live-supply planes. `failed` already has it
       // (resolvedProfileId); `expired` never fetched it (it takes no verified/failed branch), so fetch here.
-      let demotedId: string | null = status === "failed" ? resolvedProfileId : null;
-      if (res.count > 0 && status === "expired") {
+      let demotedId: string | null = outcome === "failed" ? resolvedProfileId : null;
+      if (res.count > 0 && outcome === "expired") {
         const rider = await tx.rider.findFirst({ where: { kycRef }, select: { profileId: true } });
         demotedId = rider?.profileId ?? null;
       }
-      return { updated: res.count, notifyProfileId: resolvedProfileId, demotedProfileId: demotedId, skipped: undefined };
+      return { updated: res.count, notifyProfileId: resolvedProfileId, demotedProfileId: demotedId, skipped: undefined, outcome };
     });
     let decided: Awaited<ReturnType<typeof decide>>;
     try {
@@ -1422,8 +1441,8 @@ export class RiderService {
       this.logger.warn(`KYC ${kycRef}: the verified ID number is already on another live account — decision re-applied, held for review (D-75)`);
       decided = await decide(true);
     }
-    const { updated, notifyProfileId, demotedProfileId, skipped } = decided;
-    if (skipped) return { updated: 0, skipped };
+    if (decided.skipped) return { updated: 0, skipped: decided.skipped };
+    const { updated, notifyProfileId, demotedProfileId, outcome } = decided;
     // R-4: the session is decided (or held); nothing cached about it as "in progress" may outlive that.
     if (updated > 0) this.pendingStates?.invalidate(kycRef);
     // Class-B sibling of BR-01/DS15-05: a KYC lapse pulled the rider offline in PG above; now evict them
@@ -1433,8 +1452,10 @@ export class RiderService {
     // Best-effort, post-commit: tell the rider their ID check resolved (nothing surfaced this before). A
     // notify miss can NEVER affect the committed KYC write above (notifyKycDecision is fire-and-forget).
     // notifyProfileId is set only for a committed verified/failed decision, so this reaches only those two.
-    if (notifyProfileId && (status === "verified" || status === "failed")) {
-      this.notifyKycDecision(notifyProfileId, status);
+    // KYC-R26-12: the OUTCOME, not the vendor's status — a verify the one-ID-one-account checks declined is told
+    // it was declined, never "You're verified".
+    if (notifyProfileId && (outcome === "verified" || outcome === "failed")) {
+      this.notifyKycDecision(notifyProfileId, outcome);
     }
     return { updated };
   }

@@ -56,6 +56,8 @@ describe("kycScreenFor — server state → First Run v2 page", () => {
     expect(declined("id_expired")).toEqual({ kind: "outcome", id: "F4c" });
     expect(declined("doc_tampered")).toEqual({ kind: "outcome", id: "F4c" });
     expect(declined("name_mismatch")).toEqual({ kind: "outcome", id: "F4d" });
+    // KYC-R26-12: the check read a different national ID than the account's — the document was fine, so F4d.
+    expect(declined("id_mismatch")).toEqual({ kind: "outcome", id: "F4d" });
     // Owner 2026-10-06 (D-82 §4): a duplicate can't be fixed by a retry — F5's WhatsApp-only shell.
     expect(declined("duplicate")).toEqual({ kind: "outcome", id: "F5dup" });
     expect(declined("other")).toEqual({ kind: "outcome", id: "F4d" });

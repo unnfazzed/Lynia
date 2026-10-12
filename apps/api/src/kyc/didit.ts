@@ -176,35 +176,79 @@ function percentToUnit(v: unknown): number | null {
 }
 
 /**
- * Auto-decision for a Didit KYC result (NOTE: thresholds live in packages/shared/src/policy.ts
+ * Auto-decision for a Didit KYC result (NOTE: the threshold lives in packages/shared/src/policy.ts
  * `KYC_THRESHOLDS` — no magic numbers).
  *
  * The face-match score can only make Didit's verdict STRICTER, never looser (IR26-07). It measures one
  * feature, while Didit's status covers all of them: document validity, liveness (the anti-spoofing
  * check), AML, and anything its workflow flagged. A spoof that fails liveness can still match the
- * document's face, so a high score must never turn a decline into a verify. Per Didit status:
- *   - Approved   score >= autoApprove → `verified`; [needsReview, autoApprove) → `pending` (held for a
- *                human reviewer — NEVER auto-verified); < needsReview → `failed` (auto-decline)
- *   - Declined   always `failed`, with the face-mismatch reason when score < needsReview
- *   - In Review  `pending` — Didit wants a human, and a strong face match doesn't clear warnings it
- *                didn't raise; < needsReview still auto-declines
+ * document's face, so a high score must never turn a decline into a verify.
+ *
+ * KYC-R26-12 (owner 2026-10-12): the decision is FULLY AUTOMATIC — nothing a vendor judged waits for a human.
+ * Per Didit status:
+ *   - Approved   score >= the threshold (or no score) → `verified`; below it → `failed` (face_mismatch)
+ *   - Declined   `failed`, with the face-mismatch reason when the score is below the threshold, else the
+ *                reason Didit's warnings point at ({@link extractDiditDeclineReason})
+ *   - In Review  `failed` the same way. The live workflow routes its review cases to Declined, so this is the
+ *                backstop for one that still arrives (a reviewer re-opening a session in the console, an old
+ *                workflow version): a check Didit would not pass on its own is not passed by us either.
  *   - anything else (Abandoned, Expired, Kyc Expired, non-terminal) → the status mapping, score ignored:
  *                a partial result from a session Didit never finished judging decides nothing
- * With NO score, Didit's status alone decides ({@link mapDiditStatus}). A `reason` is returned only on
- * a score-driven decline, for the rider-facing decline copy + audit log.
+ * `payload` is the decision payload, read only for the decline reason; a `reason` is returned only on a decline.
  */
-export function decideDiditKyc(status: string, score: number | null): { status: RiderKyc; reason?: string } {
+export function decideDiditKyc(status: string, score: number | null, payload?: unknown): { status: RiderKyc; reason?: string } {
   const vendor = mapDiditStatus(status);
   const inReview = isDiditInReview(status);
-  if (score === null || !(vendor === "verified" || vendor === "failed" || inReview)) return { status: vendor };
-  if (score < KYC_THRESHOLDS.needsReview) {
+  if (!(vendor === "verified" || vendor === "failed" || inReview)) return { status: vendor };
+  if (score !== null && score < KYC_THRESHOLDS.needsReview) {
     // Store a canonical KycDeclineReason KEY (not a sentence) so the rider app resolves it via
     // KYC_DECLINE_REASON_LABELS, same as an admin decline — a sub-threshold face-match is a mismatch.
     return { status: "failed", reason: KycDeclineReason.FACE_MISMATCH };
   }
-  if (vendor === "failed") return { status: "failed" };
-  if (vendor === "verified" && score >= KYC_THRESHOLDS.autoApprove) return { status: "verified" };
-  return { status: "pending" }; // needs human review — held for the admin backstop, no auto-verify
+  if (vendor === "failed" || inReview) {
+    const reason = extractDiditDeclineReason(payload) ?? (inReview ? KycDeclineReason.OTHER : undefined);
+    return reason ? { status: "failed", reason } : { status: "failed" };
+  }
+  return { status: "verified" };
+}
+
+/**
+ * KYC-R26-12: the decline reason a Didit decision points at, read from the `warnings[]` its features attach
+ * (`decision.id_verifications[].warnings[].risk`, and the same on liveness / face-match entries). Now that every
+ * review case is an automatic decline, the rider's decline screen (F4a–d, F5dup) is the only explanation they
+ * get, so a duplicate face should read as a duplicate and a blurry card as unreadable, not as "something went
+ * wrong". Matched on keywords rather than an exact list, because Didit adds and renames risk codes; the most
+ * serious match wins. FAIL-OPEN: no warnings, or none recognised → null (the caller's own default applies).
+ */
+export function extractDiditDeclineReason(payload: unknown): string | null {
+  const risks: string[] = [];
+  const walk = (v: unknown, depth: number): void => {
+    if (depth > 6 || v === null || typeof v !== "object") return;
+    if (Array.isArray(v)) {
+      for (const item of v) walk(item, depth + 1);
+      return;
+    }
+    for (const [key, value] of Object.entries(v as Record<string, unknown>)) {
+      if (key === "warnings" && Array.isArray(value)) {
+        for (const w of value) {
+          const risk = w && typeof w === "object" ? (w as Record<string, unknown>).risk : w;
+          if (typeof risk === "string") risks.push(risk.toUpperCase());
+        }
+      } else {
+        walk(value, depth + 1);
+      }
+    }
+  };
+  walk(payload, 0);
+  if (risks.length === 0) return null;
+  const has = (re: RegExp) => risks.some((r) => re.test(r));
+  if (has(/DUPLICAT|BLOCKLIST|FRAUD/)) return KycDeclineReason.DUPLICATE;
+  if (has(/TAMPER|ALTER|PRINTED|SCREEN_REPLAY|PORTRAIT_REPLACE|INVALID_MRZ|INCONSISTENT|INVALID_VALIDATION/)) return KycDeclineReason.DOC_TAMPERED;
+  if (has(/LIVENESS|SPOOF|INJECT|VIRTUAL_CAMERA|SCREEN_CAPTURE|VIDEO_ANOMALY|MULTIPLE_FACES/)) return KycDeclineReason.LIVENESS_FAILED;
+  if (has(/FACE_MATCH|SIMILARITY|FACE_MISMATCH/)) return KycDeclineReason.FACE_MISMATCH;
+  if (has(/EXPIRED|EXPIRATION/)) return KycDeclineReason.ID_EXPIRED;
+  if (has(/BLUR|QUALITY|DARK|BRIGHT|UNREADABLE|NOT_DETECTED|NOT_READ|OCCLU|PORTRAIT/)) return KycDeclineReason.ID_UNREADABLE;
+  return null;
 }
 
 /** Didit's "In Review", with the same separator-tolerant normalisation as mapDiditPendingState: Didit has
@@ -223,6 +267,9 @@ function isDiditInReview(status: string): boolean {
  * Every other `pending` is a session Didit never finished judging: Abandoned, Expired, In Progress, or
  * Resubmitted (its reviewer asked for the document again). A number in that partial data verified nothing,
  * so it is not stored.
+ *
+ * KYC-R26-12: with the decision fully automatic nothing is held any more, so this is false for every status
+ * today. It stays the single definition of "held" should a hold band ever return.
  */
 export function isDiditReviewHold(status: string, score: number | null): boolean {
   if (decideDiditKyc(status, score).status !== "pending") return false;

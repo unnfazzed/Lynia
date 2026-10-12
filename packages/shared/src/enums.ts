@@ -198,6 +198,8 @@ export const KycDeclineReason = {
   DOC_TAMPERED: "doc_tampered",
   NAME_MISMATCH: "name_mismatch",
   DUPLICATE: "duplicate",
+  /** KYC-R26-12: the ID check read a different national ID number than the one already on the account. */
+  ID_MISMATCH: "id_mismatch",
   OTHER: "other",
 } as const;
 export type KycDeclineReason = (typeof KycDeclineReason)[keyof typeof KycDeclineReason];
@@ -211,6 +213,7 @@ export const KYC_DECLINE_REASON_LABELS: Record<KycDeclineReason, string> = {
   doc_tampered: "Document looks altered",
   name_mismatch: "Name doesn't match registration",
   duplicate: "Already registered on another account",
+  id_mismatch: "ID number doesn't match your account",
   other: "Other (see notes)",
 };
 

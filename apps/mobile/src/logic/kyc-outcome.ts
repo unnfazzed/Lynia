@@ -43,11 +43,13 @@ export type DeclineVariant = "F4a" | "F4b" | "F4c" | "F4d" | "F5dup";
  *   id_unreadable                       F4a "Your photo was blurry"   — the ID photo couldn't be read
  *   face_mismatch, liveness_failed      F4b "Your face didn't match"  — both are the selfie step; the face tips fit
  *   id_expired, doc_tampered            F4c "We can't use this document" — "national ID card · not expired"
- *   name_mismatch, other, ?             F4d "We couldn't verify your ID" — "try again, or message us"
+ *   name_mismatch, id_mismatch, other, ? F4d "We couldn't verify your ID" — "try again, or message us"
  *   duplicate                           F5dup — WhatsApp only: the ID is on another account, a retry can't fix it
  *
  * `name_mismatch` goes to F4d, not F4c: the document itself was fine, so "use your national ID card" would be
- * wrong advice; F4d's "message us and we'll help" is the honest route. `duplicate` gets F5's WhatsApp-only
+ * wrong advice; F4d's "message us and we'll help" is the honest route. `id_mismatch` (KYC-R26-12: the check read
+ * a different national ID number than the one on the account) is F4d for the same reason: the document was fine,
+ * and a retry with the right card, or a message to us, is the way forward. `duplicate` gets F5's WhatsApp-only
  * shell (owner 2026-10-06, ledger D-82 §4).
  */
 export function declineVariant(reason: KycDeclineReason | string | null | undefined): DeclineVariant {
@@ -62,6 +64,10 @@ export function declineVariant(reason: KycDeclineReason | string | null | undefi
       return "F4c";
     case "duplicate":
       return "F5dup";
+    case "name_mismatch":
+    case "id_mismatch":
+    case "other":
+      return "F4d";
     default:
       return "F4d";
   }

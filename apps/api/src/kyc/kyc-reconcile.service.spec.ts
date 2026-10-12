@@ -52,11 +52,18 @@ describe("KycReconcileService.reconcileLostWebhooks (KYC-R26-03)", () => {
     expect((expiry as Date).toISOString()).toBe("2031-01-01T00:00:00.000Z");
   });
 
-  it("a review-band score holds (never verifies), and a sub-threshold one declines face_mismatch — same bands as the webhook", async () => {
+  it("KYC-R26-12: nothing is held — an old review-band score verifies, a sub-threshold one declines face_mismatch, In Review declines — same cut as the webhook", async () => {
     const band = fakeRiders([{ profileId: "p1", kycRef: "sess_1", kycVendorStatus: null }]);
     await new KycReconcileService(band.riders, vendorWith({ sess_1: { status: "Approved", face_matches: [{ score: 72 }] } }), DIDIT).reconcileLostWebhooks();
-    expect(band.applied).toEqual([]);
-    expect(band.vendorStatuses[0]!.slice(0, 2)).toEqual(["sess_1", "Approved"]);
+    expect(band.applied[0]!.slice(0, 2)).toEqual(["sess_1", "verified"]);
+    expect(band.vendorStatuses).toEqual([]);
+    expect(band.held).toEqual([]);
+
+    const review = fakeRiders([{ profileId: "p1", kycRef: "sess_1", kycVendorStatus: null }]);
+    await new KycReconcileService(review.riders, vendorWith({ sess_1: { status: "In Review", face_matches: [{ score: 95 }] } }), DIDIT).reconcileLostWebhooks();
+    expect(review.applied[0]!.slice(0, 2)).toEqual(["sess_1", "failed"]);
+    expect(review.applied[0]![3]).toBe("other");
+    expect(review.held).toEqual([]);
 
     const low = fakeRiders([{ profileId: "p1", kycRef: "sess_1", kycVendorStatus: null }]);
     await new KycReconcileService(low.riders, vendorWith({ sess_1: { status: "Approved", face_matches: [{ score: 20 }] } }), DIDIT).reconcileLostWebhooks();
@@ -82,17 +89,24 @@ describe("KycReconcileService.reconcileLostWebhooks (KYC-R26-03)", () => {
     expect(vendorStatuses.map((a) => a.slice(0, 2))).toEqual([["s_ab", "Abandoned"], ["s_exp", "Expired"]]);
   });
 
-  it("leaves a check still in the rider's hands alone, and doesn't rewrite a hold it already recorded", async () => {
+  it("leaves a check still in the rider's hands alone", async () => {
     const { riders, applied, vendorStatuses } = fakeRiders([
       { profileId: "p1", kycRef: "s_ip", kycVendorStatus: null },
       { profileId: "p2", kycRef: "s_rs", kycVendorStatus: null },
-      { profileId: "p3", kycRef: "s_ir", kycVendorStatus: "In Review" },
       { profileId: "p4", kycRef: "s_gone", kycVendorStatus: null },
     ]);
-    const vendor = vendorWith({ s_ip: { status: "In Progress" }, s_rs: { status: "Resubmitted" }, s_ir: { status: "In Review" } });
-    expect(await new KycReconcileService(riders, vendor, DIDIT).reconcileLostWebhooks()).toEqual({ checked: 4, applied: 0 });
+    const vendor = vendorWith({ s_ip: { status: "In Progress" }, s_rs: { status: "Resubmitted" } });
+    expect(await new KycReconcileService(riders, vendor, DIDIT).reconcileLostWebhooks()).toEqual({ checked: 3, applied: 0 });
     expect(applied).toEqual([]);
     expect(vendorStatuses).toEqual([]);
+  });
+
+  it("KYC-R26-12: drains a rider stored as In Review before decisions went automatic — declined, not skipped", async () => {
+    const { riders, applied } = fakeRiders([{ profileId: "p3", kycRef: "s_ir", kycVendorStatus: "In Review" }]);
+    const vendor = vendorWith({ s_ir: { status: "In Review" } });
+    expect(await new KycReconcileService(riders, vendor, DIDIT).reconcileLostWebhooks()).toEqual({ checked: 1, applied: 1 });
+    const [ref, status, , reason] = applied[0]!;
+    expect([ref, status, reason]).toEqual(["s_ir", "failed", "other"]);
   });
 
   it("refuses a decision whose vendor_data names another rider (KYC-R26-07, shared path)", async () => {

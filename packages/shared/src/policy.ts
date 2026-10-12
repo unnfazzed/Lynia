@@ -76,15 +76,17 @@ export const UNDELIVERED_ABUSE = {
 } as const;
 
 /**
- * KYC (Didit) face-match auto-decision thresholds, score in [0,1]. ≥ autoApprove → auto-verify;
- * [needsReview, autoApprove) → hold for a human reviewer; < needsReview → auto-decline. Didit reports
- * face-match similarity on 0–100 (extractDiditScore divides by 100, so 0.85 = 85/100), and the bands
- * can only tighten Didit's own verdict, never loosen it (decideDiditKyc, IR26-07). Didit's own default
- * face-match decline threshold is 30/100. NOTE (product): confirm the real thresholds and what a human
- * reviewer may override.
+ * KYC (Didit) face-match auto-decision threshold, score in [0,1]. ≥ autoApprove → auto-verify; < needsReview →
+ * auto-decline. Didit reports face-match similarity on 0–100 (extractDiditScore divides by 100), and this can
+ * only tighten Didit's own verdict, never loosen it (decideDiditKyc, IR26-07).
+ *
+ * KYC-R26-12 (owner 2026-10-12: "even the In Review to be fully automatic"): the two values are EQUAL, so there
+ * is no hold-for-a-human band — the one cut is 0.60, the same line as the live Didit workflow's face-match
+ * review threshold (60/100), which now routes its own review cases to Declined. The old 0.85 band held riders
+ * Didit had already approved for a second, manual review.
  */
 export const KYC_THRESHOLDS = {
-  autoApprove: 0.85,
+  autoApprove: 0.6,
   needsReview: 0.6,
 } as const;
 
