@@ -46,7 +46,7 @@
 export const LEGAL_LAST_UPDATED = "29 September 2026";
 
 /** Stamped on the terms page. Bump when the terms materially change, and tell users in the app. */
-export const TERMS_LAST_UPDATED = "30 September 2026";
+export const TERMS_LAST_UPDATED = "12 October 2026";
 
 /** The company behind LyniaGo, as the website footer names it. */
 export const OPERATOR_NAME = "FortyoneX Studio (Private) Limited";
@@ -656,8 +656,9 @@ keep. None of it identifies you after your profile is anonymised:</p>
  *     directly between the people involved (docs/CONCEPT.md §6).
  *   • Declared value cap US$150 and the prohibited-items list (packages/shared contracts, CONCEPT §3.5).
  *   • Riders: KYC before going online; a rider cancellation is a strike and every third strike takes the
- *     rider offline for 2 hours (order-lifecycle.service.ts); commission comes from a prepaid wallet and
- *     is 0% today (COMMISSION.ratePct), so the terms promise notice before it applies instead of a rate.
+ *     rider offline for 2 hours (order-lifecycle.service.ts); commission comes from a prepaid wallet:
+ *     10% after the first 10 jobs (COMMISSION.ratePct / freeFirstJobs, owner 2026-10-12), and a rider
+ *     can't take a job whose commission is more than their balance (common/commission-cover.ts).
  *   • Food cash: the rider collects the food money at the door and returns it to the restaurant, keeping
  *     the delivery fee; not returning it gets the rider suspended (food-debt.service.ts, R-06/R-07).
  *   • A failed food delivery: the food goes back to the restaurant and the rider keeps the delivery fee
@@ -832,9 +833,11 @@ enforced, the rest still applies.</p>
 </ul>
 
 <h3>18. Commission and your wallet</h3>
-<p>LyniaGo may charge riders a commission on completed jobs, taken from a prepaid wallet you top up.
-<strong>The commission is 0% today.</strong> Before it changes, we will tell you the rate in the app.
-When a commission applies, you may not be able to go online while your wallet balance is too low.</p>
+<p>LyniaGo charges riders a commission on completed jobs, taken from a prepaid wallet you top up.
+<strong>Your first 10 completed jobs are commission-free. After that, the commission is 10%</strong> of
+your fare on a parcel, or of the delivery fee on a restaurant, shop or pharmacy order. There is no
+minimum balance to go online, but you can't take a job whose commission is more than your wallet
+balance. Before the rate changes, we will tell you the new rate in the app.</p>
 
 <h2 id="businesses">Part D · For businesses</h2>
 

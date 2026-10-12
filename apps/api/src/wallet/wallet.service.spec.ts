@@ -16,19 +16,23 @@ function build(env: Partial<Env> = {}, prisma: Record<string, unknown> = {}, not
 }
 
 describe("resolveCommissionRatePct (the flip is one server value, never hardcoded)", () => {
-  it("defaults to the launch rate (0) when the env override is unset/blank", () => {
-    expect(resolveCommissionRatePct(undefined)).toBe(COMMISSION.ratePct);
-    expect(resolveCommissionRatePct("")).toBe(0);
-    expect(resolveCommissionRatePct(null)).toBe(0);
+  it("defaults to 10% (owner 2026-10-12) when the env override is unset/blank", () => {
+    expect(COMMISSION.ratePct).toBe(10);
+    expect(resolveCommissionRatePct(undefined)).toBe(10);
+    expect(resolveCommissionRatePct("")).toBe(10);
+    expect(resolveCommissionRatePct(null)).toBe(10);
+  });
+  it("an explicit 0 switches commission off", () => {
+    expect(resolveCommissionRatePct("0")).toBe(0);
   });
   it("applies a valid override (the flip to 10)", () => {
     expect(resolveCommissionRatePct("10")).toBe(10);
     expect(resolveCommissionRatePct(10)).toBe(10);
   });
-  it("clamps to [0,100] and fails safe to the default on garbage (never over-charges)", () => {
+  it("clamps to [0,100] and falls back to the default on garbage", () => {
     expect(resolveCommissionRatePct("999")).toBe(100);
-    expect(resolveCommissionRatePct("-5")).toBe(0);
-    expect(resolveCommissionRatePct("abc")).toBe(0);
+    expect(resolveCommissionRatePct("-5")).toBe(COMMISSION.ratePct);
+    expect(resolveCommissionRatePct("abc")).toBe(COMMISSION.ratePct);
   });
 
   it("WD-010: rounds to 2dp — CommissionLedger.ratePct is Decimal(5,2), so an over-precise ops override can't diverge from what's stamped on the ride's receipt row", () => {
@@ -55,9 +59,10 @@ describe("perRideCommission (reads the resolved rate, not a constant)", () => {
 });
 
 describe("WalletService.getConfig (server-authoritative)", () => {
-  it("serves the launch rate + policy at 0% (pre-flip)", () => {
+  it("serves 10% with no env override, and no minimum balance (floor 0)", () => {
     const cfg = build({ COMMISSION_RATE_PCT: undefined } as Partial<Env>).getConfig();
-    expect(cfg.ratePct).toBe(0);
+    expect(cfg.ratePct).toBe(10);
+    expect(cfg.floor).toBe(0);
     expect(cfg.floor).toBe(COMMISSION.lowBalanceBlockBelow);
     expect(cfg.minTopUp).toBe(COMMISSION.minTopUp);
     expect(cfg.maxTopUp).toBe(COMMISSION.maxTopUp);
@@ -155,7 +160,7 @@ describe("WalletService.createTopup (server-side clamp)", () => {
 });
 
 describe("WalletService.chargeCommission (0% is a no-op; shadow accrual still fires)", () => {
-  it("writes NO ledger row at the launch rate but logs the shadow accrual", async () => {
+  it("writes NO ledger row at a 0% rate but logs the shadow accrual", async () => {
     const create = vi.fn();
     const tx = {
       commissionLedger: { create, findFirst: async () => null },
@@ -163,7 +168,7 @@ describe("WalletService.chargeCommission (0% is a no-op; shadow accrual still fi
       $executeRaw: vi.fn(),
       $queryRaw: vi.fn(async () => [{ balance: "0" }]),
     };
-    const svc = build({ COMMISSION_RATE_PCT: undefined });
+    const svc = build({ COMMISSION_RATE_PCT: 0 });
     await svc.chargeCommission(tx as never, { orderId: "o1", riderId: "r1", agreedFare: 3 });
     expect(create).not.toHaveBeenCalled();
     expect(tx.$executeRaw).not.toHaveBeenCalled();
@@ -300,10 +305,10 @@ describe("WalletService.chargeCommission — D-70 commission-free first jobs", (
 
   it("serves the allowance on /wallet/config", () => {
     expect(build().getConfig().freeFirstJobs).toBe(COMMISSION.freeFirstJobs);
-    expect(COMMISSION.freeFirstJobs).toBe(5); // the handoff's drawn "5 of 5 left"
+    expect(COMMISSION.freeFirstJobs).toBe(10); // owner 2026-10-12 (was the handoff's drawn "5 of 5 left")
   });
 
-  it("a new rider's 1st…5th completed jobs carry no debit and write no ledger row, even at a live rate and a $0 balance", async () => {
+  it("a new rider's 1st…10th completed jobs carry no debit and write no ledger row, even at a live rate and a $0 balance", async () => {
     const svc = build({ COMMISSION_RATE_PCT: 10 });
     for (let job = 1; job <= COMMISSION.freeFirstJobs; job++) {
       const tx = txFor(job);
@@ -315,12 +320,12 @@ describe("WalletService.chargeCommission — D-70 commission-free first jobs", (
     }
   });
 
-  it("the 6th completed job is charged normally — the allowance is spent", async () => {
+  it("the 11th completed job is charged normally — the allowance is spent", async () => {
     const svc = build({ COMMISSION_RATE_PCT: 10 });
     const tx = txFor(COMMISSION.freeFirstJobs + 1);
-    await svc.chargeCommission(tx as never, { orderId: "o6", riderId: "r1", agreedFare: 8 });
+    await svc.chargeCommission(tx as never, { orderId: "o11", riderId: "r1", agreedFare: 8 });
     expect(tx.commissionLedger.create).toHaveBeenCalledWith({
-      data: { riderId: "r1", orderId: "o6", type: "ride_commission", amount: -0.8, balanceAfter: -0.8, ratePct: 10, fare: 8, actor: "system" },
+      data: { riderId: "r1", orderId: "o11", type: "ride_commission", amount: -0.8, balanceAfter: -0.8, ratePct: 10, fare: 8, actor: "system" },
     });
   });
 
@@ -338,11 +343,35 @@ describe("WalletService.chargeCommission — D-70 commission-free first jobs", (
     expect(tx.commissionLedger.create).toHaveBeenCalled();
   });
 
-  it("at the 0% launch rate nothing changes — no rider read, no row", async () => {
-    const svc = build({ COMMISSION_RATE_PCT: undefined });
+  it("at a 0% rate nothing changes — no rider read, no row", async () => {
+    const svc = build({ COMMISSION_RATE_PCT: 0 });
     const tx = txFor(1);
     await svc.chargeCommission(tx as never, { orderId: "o1", riderId: "r1", agreedFare: 3 });
     expect(tx.rider.findUnique).not.toHaveBeenCalled();
+    expect(tx.commissionLedger.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("WalletService.chargeCommission — every job type (owner 2026-10-12)", () => {
+  function txPast() {
+    return {
+      commissionLedger: { create: vi.fn(), findFirst: async () => null },
+      rider: PAST_FREE_JOBS,
+      commissionAccount: { update: vi.fn() },
+      $executeRaw: vi.fn(),
+      $queryRaw: vi.fn(async () => [{ balance: "5" }]),
+    };
+  }
+  it("charges a restaurant/shop/pharmacy job 10% of its delivery fee, never its goods+delivery agreedFare", async () => {
+    const tx = txPast();
+    await build().chargeCommission(tx as never, { orderId: "m1", riderId: "r1", orderType: "merchant", agreedFare: 23.5, deliveryFee: 3.5 });
+    expect(tx.commissionLedger.create).toHaveBeenCalledWith({
+      data: { riderId: "r1", orderId: "m1", type: "ride_commission", amount: -0.35, balanceAfter: 4.65, ratePct: 10, fare: 3.5, actor: "system" },
+    });
+  });
+  it("skips (never throws) a merchant job with no delivery fee", async () => {
+    const tx = txPast();
+    await build().chargeCommission(tx as never, { orderId: "m1", riderId: "r1", orderType: "merchant", agreedFare: 23.5, deliveryFee: null });
     expect(tx.commissionLedger.create).not.toHaveBeenCalled();
   });
 });

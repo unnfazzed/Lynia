@@ -204,7 +204,8 @@ describe("terms page", () => {
   it("matches the policy the code enforces", () => {
     expect(html).toContain("US$150"); // declaredValue .max(150) in @lynia/shared contracts
     expect(html).toMatch(/third strike takes you\s+offline for 2 hours/); // RIDER_STRIKE_LIMIT / COOLDOWN
-    expect(html).toMatch(/commission is 0% today/i); // COMMISSION.ratePct
+    expect(html).toMatch(/first 10 completed jobs are commission-free/i); // COMMISSION.freeFirstJobs
+    expect(html).toMatch(/the commission is 10%/i); // COMMISSION.ratePct
   });
 
   it("links the privacy notice and deletion page, and names Zimbabwean law", () => {

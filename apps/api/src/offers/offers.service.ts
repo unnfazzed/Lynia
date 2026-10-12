@@ -1,6 +1,7 @@
 import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { ACTIVE_RIDE_STATUSES, type MakeOfferRequest, OFFER_WINDOW_MS } from "@lynia/shared";
+import { assertRiderCoversCommission, jobCommission, ridersWhoCoverCommission } from "../common/commission-cover";
 import { hasOpenMerchantObligation, openMerchantObligationOr } from "../common/merchant-debt-lock";
 import { riderSelectableNow, SELECTABLE_RIDER_SELECT } from "../common/rider-selectable";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -34,7 +35,7 @@ export class OffersService {
     const done = this.metrics.startTimer();
     const order = await this.prisma.order.findUnique({
       where: { id: input.orderId },
-      select: { status: true, customerId: true, proposedFare: true, orderType: true, createdAt: true },
+      select: { status: true, customerId: true, proposedFare: true, suggestedFare: true, orderType: true, createdAt: true },
     });
     if (!order) throw new NotFoundException("Order not found");
     if (order.status !== "open_for_offers") {
@@ -119,6 +120,15 @@ export class OffersService {
     ) {
       this.metrics.incOffersMade("forbidden");
       throw new ForbiddenException("An accept must match the customer's proposed fare");
+    }
+
+    // Owner 2026-10-12: a rider can't take a job whose commission (10% of this fare, once their free jobs
+    // are used) is more than their wallet balance. selectOffer re-checks at the pick.
+    try {
+      await assertRiderCoversCommission(this.prisma, riderId, jobCommission({ orderType: "parcel", agreedFare: input.offeredFare, suggestedFare: order.suggestedFare }));
+    } catch (err) {
+      this.metrics.incOffersMade("forbidden");
+      throw err;
     }
 
     try {
@@ -224,7 +234,7 @@ export class OffersService {
   async listForOrder(orderId: string, callerId: string) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      select: { customerId: true },
+      select: { customerId: true, suggestedFare: true },
     });
     if (!order) throw new NotFoundException("Order not found");
     if (order.customerId !== callerId) throw new ForbiddenException("Not your order");
@@ -276,8 +286,14 @@ export class OffersService {
             select: { riderId: true },
           });
     const busy = new Set(held.map((h) => h.riderId));
+    // Owner 2026-10-12: a rider whose wallet no longer covers the commission on their own offered fare
+    // can't be picked (selectOffer refuses), so their offer leaves the list too.
+    const fareBy = new Map(live.map((o) => [o.rider.profileId, Number(o.offeredFare)]));
+    const covering = await ridersWhoCoverCommission(this.prisma, riderIds, (id) =>
+      jobCommission({ orderType: "parcel", agreedFare: fareBy.get(id), suggestedFare: order.suggestedFare }),
+    );
     return live
-      .filter((o) => !busy.has(o.rider.profileId))
+      .filter((o) => !busy.has(o.rider.profileId) && covering.has(o.rider.profileId))
       .map(({ rider, ...o }) => ({
         ...o,
         offeredFare: o.offeredFare.toString(),

@@ -103,45 +103,42 @@ export const SERVICE_CORRIDOR = {
 } as const;
 
 /**
- * Rider commission — the revenue model (CONCEPT §6). Lynia takes a **percentage of the amount paid**
- * on each completed parcel delivery (per ride, inDrive-style, deducted from the rider's side — not a
- * customer surcharge).
+ * Rider commission — the revenue model (CONCEPT §6). Lynia takes a **percentage of the amount the rider
+ * earns** on each completed job — a parcel's agreed fare, or a restaurant/shop/pharmacy job's delivery
+ * fee (see {@link jobCommissionBasis}) — deducted from the rider's side, never a customer surcharge.
  *
- * COLLECTION MODEL = **prepaid per-ride**: the rider pre-funds a commission account; when a ride
- * completes, {@link perRideCommission} is deducted from that balance. When the balance falls below
- * {@link COMMISSION.lowBalanceBlockBelow} the rider is gated from going online until they top up. This
- * is the ONLY commission model — it fully replaces the earlier post-paid weekly cash-settlement engine
- * (removed: no more `SETTLEMENT`/`commissionOn`, no weekly billing, refund-netting, record-payment or
- * overdue auto-pause). A prepaid float suits a cash, low-trust market: no per-rider credit risk, no
- * weekly collection/chasing, no negative balances.
+ * COLLECTION MODEL = **prepaid per-ride**: the rider pre-funds a commission account; when a job
+ * completes, {@link perRideCommission} is deducted from that balance. It is the ONLY commission model —
+ * it fully replaces the earlier post-paid weekly cash-settlement engine (removed: no more
+ * `SETTLEMENT`/`commissionOn`, no weekly billing, refund-netting, record-payment or overdue auto-pause).
  *
- * **ratePct is 0 for the launch period** (~6–8 months): riders keep the full agreed fare while the
- * pilot builds supply/demand/liquidity. Nothing is deducted at 0%. Product/finance calibrate the real
- * take-rate on corridor data before switching it on — change it here, in one place.
- *
- * SCOPE: the prepaid **wallet itself (balance ledger, top-ups, payment rails) is NOT built yet** — see
- * docs/plans/2026-biker-prepaid-commission.md. These constants define the rate and gating policy so
- * the deduction logic and UI copy can be written against a single source of truth ahead of that build.
+ * **Owner policy (2026-10-12): 10%, after the rider's first 10 completed jobs.** Every job type counts
+ * toward the 10 and every job type is charged. There is NO minimum wallet balance; instead a rider can't
+ * take a job whose commission is more than their balance ({@link canCoverJobCommission}) — checked when
+ * they bid on a parcel, when the customer picks them, and when they accept a food/shop dispatch.
  */
 export const COMMISSION = {
   /** How commission is collected. `prepaid_per_ride` = deducted per completed ride from a pre-funded balance. */
   model: "prepaid_per_ride" as const,
   /**
-   * DEFAULT commission rate as a percentage of the amount paid per ride — the bundled fallback the
-   * mobile app reads OFFLINE. `0` during the launch period (nothing deducted). **This is never the
+   * DEFAULT commission rate as a percentage of the amount the rider earns per job — the bundled fallback
+   * the mobile app reads OFFLINE, and the server's rate when `COMMISSION_RATE_PCT` is unset (owner
+   * 2026-10-12: 10%). **This is never the
    * authoritative rate at runtime:** the server resolves the live rate from the `COMMISSION_RATE_PCT`
    * env override ({@link resolveCommissionRatePct}) and hands it to every client in the `/wallet/config`
    * payload (design decision 2A — server-authoritative rate). The "flip" (0 → e.g. 10) is that env
    * change, not a code deploy. Nothing else in the codebase may hardcode a percentage — read the
    * resolved rate instead.
    */
-  ratePct: 0,
+  ratePct: 10,
   /**
-   * Minimum commission-account balance (USD) to stay online. Below this a rider on a >0% rate is
-   * prompted to top up and blocked from going online (the gate stops the NEXT ride, never a parcel
-   * already delivered). Unconfirmed assumption — tune before the flip.
+   * Minimum commission-account balance (USD) to stay online — **0: there is no minimum** (owner
+   * 2026-10-12). Going online is never refused for the balance; the per-job check
+   * ({@link canCoverJobCommission}) stops a rider taking a job whose commission is more than they hold.
+   * Still served to clients as `CommissionConfig.floor`, so an app build that warns below the floor only
+   * warns on a negative balance.
    */
-  lowBalanceBlockBelow: 2,
+  lowBalanceBlockBelow: 0,
   /** Minimum top-up (USD) — the floor for the top-up flow, and the per-active-rider grace credit size. */
   minTopUp: 5,
   /** Maximum top-up (USD) per request — clamps a single prepaid deposit. */
@@ -164,15 +161,14 @@ export const COMMISSION = {
    */
   basisFloorPct: 0.5,
   /**
-   * Commission-free first jobs (Calm Mint v2 R1/R3, ledger D-55 → D-70; owner decision 2026-10-02).
-   * A rider's first `freeFirstJobs` COMPLETED jobs carry no commission debit, and while any remain the
-   * low-balance top-up gate does not apply — so a newly verified rider at a $0 balance can go online and
-   * work straight away ("No top-up to start. Your first jobs are commission-free." / "Commission-free
-   * jobs · 5 of 5 left"). The number is the handoff's drawn "5 of 5" (the README leaves N open).
+   * Commission-free first jobs (owner 2026-10-12: 10; was 5, the Calm Mint v2 R1/R3 "5 of 5" drawing,
+   * ledger D-55 → D-70). A rider's first `freeFirstJobs` COMPLETED jobs — parcel or merchant, both count —
+   * carry no commission debit, and while any remain the per-job balance check does not apply, so a newly
+   * verified rider at a $0 balance can work straight away.
    * Derived from `Rider.tripsCount` (incremented once per completed job, never on a cancel/undelivered),
    * so it needs no extra state — see {@link freeJobsLeft}.
    */
-  freeFirstJobs: 5,
+  freeFirstJobs: 10,
 } as const;
 
 /**
@@ -242,6 +238,38 @@ export function commissionBasis(agreedFare: number, suggestedFare: number | null
   if (suggestedFare == null || !Number.isFinite(suggestedFare) || suggestedFare <= 0) return agreedFare;
   const floor = roundToCents(suggestedFare * COMMISSION.basisFloorPct);
   return Math.max(agreedFare, floor);
+}
+
+/**
+ * The amount a job's commission is charged on. A parcel is billed on its agreed fare, floored by
+ * {@link commissionBasis}; a restaurant / shop / pharmacy job on its delivery fee — the rider's fare on
+ * that order (`foodOrderMoney().riderFare`), never the goods total the rider only carries back to the
+ * venue. Null when the figure it needs is missing (a data anomaly): the caller skips the charge.
+ */
+export function jobCommissionBasis(job: {
+  orderType: string;
+  agreedFare: number | null | undefined;
+  suggestedFare?: number | null;
+  deliveryFee?: number | null;
+}): number | null {
+  if (job.orderType === "merchant") {
+    if (job.deliveryFee == null || !Number.isFinite(job.deliveryFee)) return null;
+    return roundToCents(Math.max(0, job.deliveryFee));
+  }
+  if (job.agreedFare == null || !Number.isFinite(job.agreedFare)) return null;
+  return commissionBasis(job.agreedFare, job.suggestedFare);
+}
+
+/**
+ * Owner rule (2026-10-12): a rider can't take a job whose commission is more than their wallet balance.
+ * True when commission is off, when the job is one of the rider's commission-free first jobs (they have
+ * free jobs left before taking it), or when the balance covers the commission. `tripsCount` is the
+ * rider's completed jobs BEFORE this one.
+ */
+export function canCoverJobCommission(args: { ratePct: number; tripsCount: number | null | undefined; balance: number; commission: number }): boolean {
+  if (!isCommissionActive(args.ratePct)) return true;
+  if (freeJobsLeft(args.tripsCount) > 0) return true;
+  return args.commission <= args.balance;
 }
 
 /**
