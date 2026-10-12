@@ -649,6 +649,13 @@ model Order {
   // "nobody was online" copy (feed + snapshot) over the default "raise your price" nudge. Nullable:
   // pre-migration rows and normal expiries stay null (= default copy).
   expiryNoSupply        Boolean?                               @map("expiry_no_supply")
+  // When the parcel auction stops taking bids (owner 2026-10-12, cold start): longer when few riders are
+  // online, pushed out by a price raise (offerWindowEndAfterRaise). Null on rows from before 0089 = the
+  // old createdAt + OFFER_WINDOW_MS (offerWindowEndsAt in @lynia/shared).
+  offerWindowEndsAt     DateTime?                              @map("offer_window_ends_at")
+  // The customer's last in-window price raise. A rider whose offer predates it may bid again at the new
+  // price (OffersService.makeOffer). Null = never raised.
+  fareRaisedAt          DateTime?                              @map("fare_raised_at")
   // Client-generated create-request dedup key (one per compose attempt). A unique index scoped to the
   // customer lets a timeout+retry or a double-tap on "Broadcast" hit the same row (P2002) instead of
   // opening a second live auction for the same trip. Nullable — old clients that don't send one just

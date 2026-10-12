@@ -3,7 +3,7 @@
  * Drives a full trip assigned → … → completed through the guarded transitions, and proves the
  * CAS guards reject out-of-order/wrong-actor moves and that `delivered` frees the rider.
  */
-import { CUSTOMER_TRUST } from "@lynia/shared";
+import { CUSTOMER_TRUST, OFFER_WINDOW_MS } from "@lynia/shared";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { TokenService } from "../auth/token.service";
 import type { Env } from "../config/env";
@@ -590,6 +590,8 @@ describe("resend — one live auction per trip (DRS-02)", () => {
     announceOpenOrder: async () => {},
     announcePriceChange: async () => {},
     assertCustomerMayBroadcast: async () => {},
+    // The cold-start window sizing (owner 2026-10-12) — a fixed length here; supply sizing is unit-tested.
+    offerWindowMsForPickup: async () => OFFER_WINDOW_MS,
   } as unknown as OrdersService;
   const resender = new OrderLifecycleService({ ...MERCHANT_FLAGS_OFF } as Env, prisma, tokens, gateway, noopNotifications, resendOrders, wallet, storageStub);
 

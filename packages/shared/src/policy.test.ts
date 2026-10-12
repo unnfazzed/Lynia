@@ -11,6 +11,8 @@ import {
   broadcastRadiusAtMs,
   BROADCAST,
   STUCK_AFTER_MINUTES,
+  estimatePickupEtaMinutes,
+  PICKUP_ETA,
 } from "./policy";
 import { NATIONWIDE_REACH_M } from "./service-area";
 
@@ -238,5 +240,21 @@ describe("broadcastRadiusAtMs — nationwide reach (D-99)", () => {
       expect(r).toBeGreaterThanOrEqual(prev);
       prev = r;
     }
+  });
+});
+
+describe("estimatePickupEtaMinutes", () => {
+  it("is the start time for a rider at the pickup (or a bad distance)", () => {
+    expect(estimatePickupEtaMinutes(0)).toBe(PICKUP_ETA.startMinutes);
+    expect(estimatePickupEtaMinutes(Number.NaN)).toBe(PICKUP_ETA.startMinutes);
+  });
+
+  it("adds riding time at the town speed", () => {
+    // 5 km at 25 km/h = 12 min, plus the start.
+    expect(estimatePickupEtaMinutes(5_000)).toBe(PICKUP_ETA.startMinutes + 12);
+  });
+
+  it("caps a cross-country distance", () => {
+    expect(estimatePickupEtaMinutes(NATIONWIDE_REACH_M)).toBe(PICKUP_ETA.maxMinutes);
   });
 });

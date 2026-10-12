@@ -155,7 +155,7 @@ describe("OfferExpiryService worker dispatch", () => {
 });
 
 describe("OfferExpiryService.expireOrDefer — the choose grace follow-up (after-send v2)", () => {
-  function makeService(result: { expired: boolean; graceEndsAt?: Date }) {
+  function makeService(result: { expired: boolean; retryAt?: Date }) {
     const add = vi.fn().mockResolvedValue(undefined);
     const expireOrder = vi.fn().mockResolvedValue(result);
     const service = new OfferExpiryService({ REDIS_URL: "redis://localhost:6379" } as Env, { expireOrder } as unknown as MatchingService, {} as PrismaService);
@@ -164,15 +164,16 @@ describe("OfferExpiryService.expireOrDefer — the choose grace follow-up (after
   }
 
   it("re-enqueues ONE follow-up expire just after the grace ends when expireOrder deferred (pending offers in the grace)", async () => {
-    const graceEndsAt = new Date(Date.now() + 9_000);
-    const { service, add } = makeService({ expired: false, graceEndsAt });
+    const retryAt = new Date(Date.now() + 9_000);
+    const { service, add } = makeService({ expired: false, retryAt });
     await expect(service.expireOrDefer("order-1")).resolves.toEqual({ expired: false });
     expect(add).toHaveBeenCalledOnce();
     const [name, data, opts] = add.mock.calls[0];
     expect(name).toBe("expire");
     expect(data).toEqual({ orderId: "order-1" });
     // Its own id (the running job still owns `order-1`), and no ':' (BullMQ rejects most custom ids with one).
-    expect(opts.jobId).toBe("grace-order-1");
+    // One id per retry moment, so a second raise's later end still gets its own follow-up.
+    expect(opts.jobId).toBe(`retry-order-1-${retryAt.getTime()}`);
     expect(opts.delay).toBeGreaterThan(9_000);
     expect(opts.delay).toBeLessThanOrEqual(10_000);
     expect(opts.attempts).toBe(3);

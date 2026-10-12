@@ -206,7 +206,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     to: "expired",
     actor: "system",
     guard:
-      "guarded CAS status=open_for_offers AND (no pending offer OR createdAt older than OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS) — an order with pending offers stays choosable through the 15 s grace, and the timer re-runs at its end; same CAS as selection, so a just-selected order no-ops; fired by the offer-window timer / reconciler",
+      "guarded CAS status=open_for_offers AND (window end (offerWindowEndsAt, else createdAt + OFFER_WINDOW_MS) passed with no pending offer OR window end + OFFER_CHOOSE_GRACE_MS passed) — an order with pending offers stays choosable through the 15 s grace, a raise can push the end later, and the timer re-runs at whichever moment is next; same CAS as selection, so a just-selected order no-ops; fired by the offer-window timer / reconciler",
     sideEffect:
       "pending offers→expired; OrderEvent(expired); post-commit emitBidExpired + emitOrderStatus(expired) + notifyOrderExpired; persists expiryNoSupply when zero bids AND nobody online nearby",
     source: "matching.service.ts:expireOrder",
@@ -496,7 +496,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     to: "open_for_offers",
     actor: "system",
     guard:
-      "merchantPhase=ready_for_pickup, OR (MJ-RM1/U32) an auto-accepted, kitchen-confirmed order still `preparing` within RESTAURANTS_AUTO_ACCEPT.dispatchLeadMs of its ready time with no open substitution round (earlyDispatchDue; the phase is never written); noRiderHoldAt IS NULL; dispatchAttempt+1 <= RESTAURANTS_DISPATCH.maxAttempts (N-07; a cooking order past the cap parks until its ready time instead of holding); the business's own team (merchantMember) is never a candidate (MJ-RM18); DispatchStrategy finds at least one rider within RESTAURANTS_DISPATCH.radiusM — the best firstRoundSize (10) on round 1, everyone eligible after (owner 2026-10-01, D-54); guarded CAS on status=requested AND dispatchAttempt=(observed) AND noRiderHoldAt IS NULL",
+      "merchantPhase=ready_for_pickup, OR (MJ-RM1/U32) an auto-accepted, kitchen-confirmed order still `preparing` within RESTAURANTS_AUTO_ACCEPT.dispatchLeadMs of its ready time with no open substitution round (earlyDispatchDue; the phase is never written); noRiderHoldAt IS NULL; dispatchAttempt+1 <= RESTAURANTS_DISPATCH.maxAttempts (N-07; a cooking order past the cap parks until its ready time instead of holding, and gets a fresh budget once ready — owner 2026-10-12); the business's own team (merchantMember) is never a candidate (MJ-RM18); DispatchStrategy finds at least one rider within RESTAURANTS_DISPATCH.pickupReachM (15 km — food is first-accept-wins, so it does not take D-99's nationwide reach; riders who declined within declineCooldownMs sit the round out) — the best firstRoundSize (10) on round 1, everyone eligible after (owner 2026-10-01, D-54); guarded CAS on status=requested AND dispatchAttempt=(observed) AND noRiderHoldAt IS NULL",
     sideEffect:
       "set dispatchOfferExpiresAt(+60s, the round's end)/dispatchNextCheckAt(same), dispatchOfferedRiderId=null; dispatchAttempt+=1; dispatchStartedAt stamped on the FIRST attempt only; UPSERT one FoodDispatchAttempt(pending, this round's expiry) per rider on the round — a rider who let an earlier round run out is re-offered on the same row; OrderEvent(open_for_offers) on attempt 1 only; best-effort push + food:offer alarm to every rider on the round. A write failure on the rows closes the round again at once",
     source: "merchant/food-dispatch.service.ts:tick",
@@ -538,7 +538,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     to: "requested",
     actor: "rider",
     guard: "caller holds a pending, unexpired FoodDispatchAttempt on this round (else 403 not offered / 409 no longer live) AND they are the LAST rider still deciding — otherwise the decline is a status self-loop that only marks their row; close is a guarded CAS on status=open_for_offers AND dispatchOfferExpiresAt=(observed round end)",
-    sideEffect: "the caller's FoodDispatchAttempt→declined and the caller appended to dispatchExcludedRiderIds (never re-offered this cycle); when nobody is left deciding, the round closes exactly as dispatch_expire (shared closeRound) rather than making the kitchen wait out the 60s",
+    sideEffect: "the caller's FoodDispatchAttempt→declined (respondedAt stamped); the rider sits out later rounds for RESTAURANTS_DISPATCH.declineCooldownMs (10 min), then may be offered it again (owner 2026-10-12); when nobody is left deciding, the round closes exactly as dispatch_expire (shared closeRound) rather than making the kitchen wait out the 60s",
     source: "merchant/food-dispatch.service.ts:declineDispatch",
     orderType: "merchant",
   },
@@ -560,7 +560,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     to: "requested",
     actor: "merchant",
     guard: "caller owns the merchant; merchantPhase=ready_for_pickup; noRiderHoldAt IS NOT NULL; guarded CAS on status=requested",
-    sideEffect: "D-34 \"keep searching\": clear noRiderHoldAt, reset dispatchAttempt=0/dispatchStartedAt=null/dispatchNextCheckAt=null — a fresh NO_RIDER budget; dispatchExcludedRiderIds is NOT reset (already-tried riders stay excluded); sweepSearch's next pass resumes",
+    sideEffect: "D-34 \"keep searching\": clear noRiderHoldAt, reset dispatchAttempt=0/dispatchStartedAt=null/dispatchNextCheckAt=null — a fresh NO_RIDER budget; every declined attempt on the order → expired so riders who passed can be asked again (owner 2026-10-12); dispatchExcludedRiderIds (riders who DROPPED the job) is NOT reset; sweepSearch's next pass resumes",
     source: "merchant/food-dispatch.service.ts:resumeSearch",
     orderType: "merchant",
   },

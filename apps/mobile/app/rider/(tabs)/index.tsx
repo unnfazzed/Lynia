@@ -12,7 +12,7 @@ import { withdrawOffer } from "../../../src/api/offers";
 import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../../src/api/orders";
 import { getFoodDispatchOffer } from "../../../src/api/food-rider";
 import { getDemandZones } from "../../../src/api/rider-v2";
-import { noteKycLaunched, retryKyc, sendHeartbeat, setOnline } from "../../../src/api/riders";
+import { noteKycLaunched, retryKyc, setOnline } from "../../../src/api/riders";
 import { loadAcknowledgedHandbacks, saveRolePreference } from "../../../src/auth/session";
 import { loadRiderFoodReturn } from "../../../src/auth/device-state";
 import { usePrewarmRoutes, type PrewarmRoute } from "../../../src/boot/prewarm-routes";
@@ -42,7 +42,7 @@ import { useSettled } from "../../../src/logic/use-settled";
 import { RIDER_PERM_ROUTES, startRiderPermFlow } from "../../../src/logic/rider-perm-flow";
 import { RiderLocEmpty, RiderNotifOffRow } from "../../../src/ui/firstrun/RiderPermBoard";
 import { SoftUpdateBanner } from "../../../src/ui/firstrun/SoftUpdateBanner";
-import { isSentOfferExpired, isSentOfferStale } from "../../../src/logic/rider-bid-draft";
+import { isSentOfferExpired, isSentOfferStale, wasRaisedSinceBid } from "../../../src/logic/rider-bid-draft";
 import { type GateId, kycTriesLeft, resolveGate } from "../../../src/logic/rider-gate";
 import { telUri } from "../../../src/logic/safety";
 import { useFeatureFlags } from "../../../src/net/use-feature-flags";
@@ -53,6 +53,7 @@ import { useTabTop } from "../../../src/query/use-tab-top";
 import { useWallet, useWalletConfig } from "../../../src/query/use-wallet";
 import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refetch";
 import { useRiderBoard } from "../../../src/realtime/use-rider-board";
+import { useRiderHeartbeat } from "../../../src/realtime/use-rider-heartbeat";
 import { AppScreen, EmptyRow, EmptyState, emptyCopy, fillEmpty, haptic, Icon, type IconName, statusPillLabel, useActionError, useHideTabBar, useTabBarSpace, useToast } from "../../../src/ui";
 import { IdCheckOutcome } from "../../../src/ui/firstrun";
 import { CtaButton, SkeletonOffer, SmBtn } from "../../../src/ui/order/kit";
@@ -136,6 +137,7 @@ export default function RiderHome(): React.ReactElement {
   const { offers: sentOffers, setOffers: setSentOffers } = useSentOffers();
   const { skipped, skip } = useSkippedJobs();
   const bidIds = useMemo(() => new Set(sentOffers.map((s) => s.order.id)), [sentOffers]);
+  const sentById = useMemo(() => new Map(sentOffers.map((s) => [s.order.id, s])), [sentOffers]);
   // Offers withdrawn but still inside their 5 s Undo window — hidden now, sent to the API after.
   const [withdrawing, setWithdrawing] = useState<ReadonlySet<string>>(new Set());
 
@@ -514,35 +516,19 @@ export default function RiderHome(): React.ReactElement {
     return () => clearTimeout(t);
   }, [activationRetry]);
 
-  // Heartbeat: only a 403 takes the rider offline; two failed beats show "Reconnecting…".
-  const [beatStale, setBeatStale] = useState(false);
-  useEffect(() => {
-    if (!online) {
-      setBeatStale(false);
-      return;
-    }
-    let failures = 0;
-    const t = setInterval(() => {
-      sendHeartbeat(locRef.current ?? undefined)
-        .then(() => {
-          failures = 0;
-          setBeatStale(false);
-        })
-        .catch((e: unknown) => {
-          if (e instanceof ApiError && e.status === 403) {
-            setOnlineState(false);
-            autoOnlineRef.current = false;
-            const reason = onlineGateReason(e);
-            setServerGate(reason);
-            if (reason === "kyc") void qc.invalidateQueries({ queryKey: ["me"] });
-          } else {
-            failures += 1;
-            if (failures >= 2) setBeatStale(true);
-          }
-        });
-    }, 20_000);
-    return () => clearInterval(t);
-  }, [online, qc]);
+  // Heartbeat: only a 403 takes the rider offline; two failed beats show "Reconnecting…". While online it
+  // also keeps beating with the phone locked (the background location task; see use-rider-heartbeat.ts).
+  const { stale: beatStale } = useRiderHeartbeat(
+    online,
+    () => locRef.current,
+    (e) => {
+      setOnlineState(false);
+      autoOnlineRef.current = false;
+      const reason = onlineGateReason(e);
+      setServerGate(reason);
+      if (reason === "kyc") void qc.invalidateQueries({ queryKey: ["me"] });
+    },
+  );
 
   // ── Open jobs ────────────────────────────────────────────────────────────────────────────────────
   const openQ = useQuery({
@@ -569,7 +555,12 @@ export default function RiderHome(): React.ReactElement {
   const foodOffer = foodOn && foodOfferQ.data && new Date(foodOfferQ.data.expiresAt).getTime() > Date.now() ? foodOfferQ.data : null;
   const jobs: BoardJob[] = useMemo(() => {
     const parcels = (Array.isArray(openQ.data) ? openQ.data : [])
-      .filter((o) => !bidIds.has(o.id) && !skipped.has(o.id))
+      // A job the rider already bid on stays off the board — unless the sender has since raised the
+      // price, which lets the rider answer the new one (owner 2026-10-12; the API replaces their offer).
+      .filter((o) => {
+        const sent = sentById.get(o.id);
+        return (!sent || wasRaisedSinceBid(sent, o)) && !skipped.has(o.id);
+      })
       .map((o) => toBoardJob(o, loc));
     const food: BoardJob[] = foodOffer
       ? [
@@ -586,7 +577,7 @@ export default function RiderHome(): React.ReactElement {
         ]
       : [];
     return [...food, ...parcels].sort((a, b) => (a.toPickupKm ?? Number.MAX_SAFE_INTEGER) - (b.toPickupKm ?? Number.MAX_SAFE_INTEGER));
-  }, [openQ.data, bidIds, skipped, loc, foodOffer]);
+  }, [openQ.data, sentById, skipped, loc, foodOffer]);
   const mixedKinds = jobs.some((j) => j.kind === "food" || j.kind === "shop");
   const effectiveSelected = selectedId && jobs.some((j) => j.id === selectedId) ? selectedId : (jobs[0]?.id ?? null);
 

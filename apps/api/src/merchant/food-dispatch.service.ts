@@ -16,9 +16,10 @@ import { sealHandoverCode } from "../common/handover-code";
 import { penaltiesSuspended } from "../common/penalties";
 import { PiiCryptoService } from "../common/pii-crypto.service";
 import { CANCEL_STRIKE_LIMIT } from "../orders/order-lifecycle.constants";
-import { pushCopy, PUSH_C, pushMoney, riderJobTemplate } from "../notifications/merchant-order-push";
+import { pushCopy, PUSH_C, PUSH_C_SLOW_RIDER, pushMoney, riderJobTemplate } from "../notifications/merchant-order-push";
 import { NotificationsService } from "../notifications/notifications.service";
-import { publicWaypoint } from "../orders/waypoints";
+import { pickupPoint, publicWaypoint } from "../orders/waypoints";
+import { RiderNudgeService } from "../tracking/rider-nudge.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { applyReliabilityDelta } from "../riders/reliability";
 import { TrackingGateway } from "../tracking/tracking.gateway";
@@ -45,8 +46,9 @@ import { preferredRiderIds } from "./preferred-riders";
  * once — the best `RESTAURANTS_DISPATCH.firstRoundSize` on the first round (the restaurant's own riders
  * first, then the nearest), everyone eligible on every round after — and the first to accept gets it.
  * A rider's live offer is their own `FoodDispatchAttempt` row (`pending`, unexpired) on an order at
- * `open_for_offers`; the order's `dispatchOfferExpiresAt` is the round's end. A rider who passes (or
- * drops the job) is never offered it again this cycle; one who simply let a round run out is.
+ * `open_for_offers`; the order's `dispatchOfferExpiresAt` is the round's end. A rider who passes is not
+ * offered it again for `RESTAURANTS_DISPATCH.declineCooldownMs` (or until the merchant's "Keep
+ * searching"); one who drops the job never is; one who simply let a round run out is, next round.
  *
  * State model (reuses OrderStatus, no new values — plan §0b.1): a merchant order sits at `requested`
  * while dispatch is either searching (no live round) or holding (NO_RIDER cap exhausted, D-34), and
@@ -110,6 +112,9 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     // D2 (owner 2026-10-07): seals the delivery code next to its hash so the customer's reveal is
     // repeatable. @Global in the app; optional only for the positional unit harnesses.
     @Optional() private readonly codeCrypto?: PiiCryptoService,
+    // Demand nudge (owner 2026-10-12): offline riders near a food job nobody in range can take. Always
+    // provided by TrackingModule; optional only for the positional unit harnesses.
+    @Optional() private readonly nudge?: RiderNudgeService,
   ) {}
 
   onModuleInit(): void {
@@ -252,6 +257,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
         status: true,
         merchantPhase: true,
         merchantId: true,
+        customerId: true,
         noRiderHoldAt: true,
         dispatchAttempt: true,
         dispatchExcludedRiderIds: true,
@@ -284,18 +290,23 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       return "skipped"; // raced with a concurrent accept/drop/cancel — the next relevant sweep re-evaluates.
     }
 
-    const attempt = order.dispatchAttempt + 1;
-    if (attempt > RESTAURANTS_DISPATCH.maxAttempts && cooking) {
+    const max = RESTAURANTS_DISPATCH.maxAttempts;
+    // Only the cooking park below writes dispatchAttempt past the cap, so a READY order found there spent
+    // its whole budget while the kitchen was still cooking (owner 2026-10-12): the food is ready now and
+    // nobody has looked since, so it gets a fresh budget of rounds rather than going straight to the hold.
+    const freshAfterCooking = !cooking && order.dispatchAttempt > max;
+    const attempt = freshAfterCooking ? 1 : order.dispatchAttempt + 1;
+    if (attempt > max && cooking) {
       // MJ-RM1: nobody took it while the kitchen is still cooking. The D-34 hold is a decision about food
       // that is READY (the merchant's hold card lives on the hand-over screen), so park until the ready
-      // time; by then the kitchen (or sweepAutoAccepted) has marked it ready and the cap applies as usual.
+      // time, counting this tick past the cap (the marker `freshAfterCooking` reads once it is ready).
       const claimed = await this.prisma.order.updateMany({
         where: { id: orderId, status: "requested", merchantPhase: "preparing", dispatchAttempt: order.dispatchAttempt, noRiderHoldAt: null },
-        data: { dispatchNextCheckAt: new Date(Math.max(prepReadyMs(order, nowMs), nowMs + RESTAURANTS_DISPATCH.offerWindowMs)) },
+        data: { dispatchAttempt: attempt, dispatchNextCheckAt: new Date(Math.max(prepReadyMs(order, nowMs), nowMs + RESTAURANTS_DISPATCH.offerWindowMs)) },
       });
       return claimed.count > 0 ? "searching" : "skipped";
     }
-    if (attempt > RESTAURANTS_DISPATCH.maxAttempts) {
+    if (attempt > max) {
       const claimed = await this.prisma.order.updateMany({
         where: { id: orderId, status: "requested", dispatchAttempt: order.dispatchAttempt, noRiderHoldAt: null },
         data: { noRiderHoldAt: new Date(), dispatchNextCheckAt: null },
@@ -303,6 +314,18 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       if (claimed.count === 0) return "skipped";
       this.logger.log(`order ${orderId}: NO_RIDER cap reached — merchant hold (D-34)`);
       this.notifyQueue(order.merchantId, orderId);
+      // The customer too (owner 2026-10-12), post-commit and best effort (notifyProfiles never throws): the
+      // order screen's T11a hold copy, verbatim — the tap opens it, with its free "Cancel order".
+      if (order.customerId) {
+        void this.notifications.notifyProfiles([order.customerId], {
+          ...pushCopy(PUSH_C_SLOW_RIDER, {}),
+          data: { orderId, status: "requested", to: "customer", orderType: "merchant", kind: "food_no_rider_hold" },
+          collapseKey: `order:${orderId}:no_rider_hold`,
+        });
+      }
+      // And the offline riders near the pickup (owner 2026-10-12) — the hold means nobody online took it.
+      const holdPoint = pickupPoint(order.pickup);
+      if (holdPoint) void this.nudge?.nudgeOfflineRiders(holdPoint, "job");
       return "held";
     }
 
@@ -316,7 +339,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       return "skipped";
     }
 
-    const radiusM = RESTAURANTS_DISPATCH.radiusM;
+    const radiusM = RESTAURANTS_DISPATCH.pickupReachM;
     // MJ-RM18: never offer a business's order to someone on its own team (they could reveal the pickup
     // code themselves and, on collect-and-return, settle their own cash debt). Not persisted in
     // dispatchExcludedRiderIds: membership is re-read every round, so a later leave/join applies.
@@ -328,9 +351,11 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     // makes them eligible again — and the search looks past them, a couple of passes at most.
     const commission = jobCommission({ orderType: "merchant", deliveryFee: order.deliveryFee });
     const skipped = new Set<string>();
+    // Riders who passed on this order in the last declineCooldownMs sit this round out (coolingDownRiderIds).
+    const cooling = await this.coolingDownRiderIds(orderId, nowMs);
     let candidates: Awaited<ReturnType<DispatchStrategy["pickCandidates"]>> = [];
     for (let pass = 0; pass < 3; pass++) {
-      const excluded = [...new Set([...order.dispatchExcludedRiderIds, ...teamIds, ...skipped])];
+      const excluded = [...new Set([...order.dispatchExcludedRiderIds, ...teamIds, ...cooling, ...skipped])];
       const picked = await this.strategy.pickCandidates({ lat: point.lat, lng: point.lng, radiusM, excludeRiderIds: excluded, preferredRiderIds: preferred, limit });
       const covering = await ridersWhoCoverCommission(this.prisma, picked.map((c) => c.riderId), commission);
       candidates = picked.filter((c) => covering.has(c.riderId));
@@ -342,7 +367,8 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       if (c.preferred) this.logger.log(`merchant.dispatch.preferred order=${orderId} rider=${c.riderId} distanceM=${Math.round(c.distanceM)}`);
     }
     const now = new Date();
-    const startedAt = order.dispatchStartedAt ?? now;
+    // A fresh budget after cooking is a new search, stamped like one after "Keep searching" or a drop.
+    const startedAt = freshAfterCooking ? now : (order.dispatchStartedAt ?? now);
 
     // Both claims also guard on the phase read above, so a cooking order the kitchen marked ready (or
     // cancelled) in between is re-read on the next pass rather than offered on a stale view.
@@ -366,6 +392,9 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
           dispatchNextCheckAt: new Date(now.getTime() + RESTAURANTS_DISPATCH.offerWindowMs),
         },
       });
+      // Nobody online in reach could take it: ask the offline riders nearby to come online. Throttled per
+      // rider (RIDER_NUDGE), so the 60 s re-check doesn't re-ask; post-commit and never throws.
+      if (claimed.count > 0) void this.nudge?.nudgeOfflineRiders(point, "job");
       return claimed.count > 0 ? "searching" : "skipped";
     }
 
@@ -443,6 +472,22 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       this.logger.warn(`merchant.dispatch.preferred lookup failed for merchant ${merchantId}: ${(err as Error).message}`);
       return [];
     }
+  }
+
+  /**
+   * Riders who passed on this order within `RESTAURANTS_DISPATCH.declineCooldownMs` (owner 2026-10-12: a
+   * pass is "not right now", not "never"). Read from their own `FoodDispatchAttempt` row — `declined`
+   * with its `respondedAt` — rather than pushed into `dispatchExcludedRiderIds`: the row already records
+   * who passed and when, so the cooldown is one indexed read with no migration and nothing to sweep, and
+   * it lapses on its own. `dispatchExcludedRiderIds` keeps only riders who DROPPED the job (D-33), who
+   * stay off it. Once re-offered, the row is reset to `pending` like any other.
+   */
+  private async coolingDownRiderIds(orderId: string, nowMs: number): Promise<string[]> {
+    const rows = await this.prisma.foodDispatchAttempt.findMany({
+      where: { orderId, outcome: "declined", respondedAt: { gt: new Date(nowMs - RESTAURANTS_DISPATCH.declineCooldownMs) } },
+      select: { riderId: true },
+    });
+    return rows.map((r) => r.riderId);
   }
 
   /** MJ-RM18: everyone on the business's own team (owner, manager, staff), whatever their role. Unlike
@@ -530,10 +575,10 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
   private async liveOffer(
     orderId: string,
     riderId: string,
-  ): Promise<{ merchantId: string | null; merchantPhase: string | null; roundExpiresAt: Date | null; excluded: string[]; deliveryFee: Prisma.Decimal | null }> {
+  ): Promise<{ merchantId: string | null; merchantPhase: string | null; roundExpiresAt: Date | null; deliveryFee: Prisma.Decimal | null }> {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, orderType: "merchant" },
-      select: { status: true, merchantId: true, merchantPhase: true, dispatchOfferExpiresAt: true, dispatchExcludedRiderIds: true, deliveryFee: true },
+      select: { status: true, merchantId: true, merchantPhase: true, dispatchOfferExpiresAt: true, deliveryFee: true },
     });
     if (!order) throw new NotFoundException("Order not found");
     const offer = await this.prisma.foodDispatchAttempt.findUnique({
@@ -547,7 +592,6 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       merchantId: order.merchantId,
       merchantPhase: order.merchantPhase ?? null,
       roundExpiresAt: order.dispatchOfferExpiresAt,
-      excluded: order.dispatchExcludedRiderIds,
       deliveryFee: order.deliveryFee ?? null,
     };
   }
@@ -680,8 +724,9 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     return { orderId, status: "assigned" };
   }
 
-  /** The rider's "Not this one": they're never offered this order again this cycle. When they were the
-   *  last rider still deciding, the round closes now rather than making the kitchen wait out the 60s. */
+  /** The rider's "Not this one": their row turns `declined`, which keeps them off this order for
+   *  `RESTAURANTS_DISPATCH.declineCooldownMs` (see coolingDownRiderIds). When they were the last rider
+   *  still deciding, the round closes now rather than making the kitchen wait out the 60s. */
   async declineDispatch(orderId: string, riderId: string): Promise<{ orderId: string; declined: true }> {
     const order = await this.liveOffer(orderId, riderId);
     const marked = await this.prisma.foodDispatchAttempt.updateMany({
@@ -689,9 +734,6 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       data: { outcome: "declined", respondedAt: new Date() },
     });
     if (marked.count === 0) throw new ConflictException("This offer is no longer live");
-    if (!order.excluded.includes(riderId)) {
-      await this.prisma.order.update({ where: { id: orderId }, data: { dispatchExcludedRiderIds: { push: riderId } } });
-    }
     void this.gateway.emitFoodOfferClosed(riderId, orderId);
     const deciding = await this.prisma.foodDispatchAttempt.count({ where: { orderId, outcome: "pending", expiresAt: { gt: new Date() } } });
     if (deciding === 0 && order.roundExpiresAt) await this.closeRound(orderId, order.roundExpiresAt);
@@ -827,15 +869,21 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
 
   // ── Merchant actions (D-34 hold-screen decisions) ───────────────────────────────────────────────
 
-  /** "Keep searching" — resets the NO_RIDER budget and lets sweepSearch resume on its next pass.
-   *  Already-tried riders (dispatchExcludedRiderIds) stay excluded. */
+  /** "Keep searching" — resets the NO_RIDER budget and lets sweepSearch resume on its next pass. Every
+   *  rider who passed can be asked again at once (owner 2026-10-12: with a handful of riders, the ones
+   *  who passed are most of the supply); a rider who dropped it (dispatchExcludedRiderIds) stays off. */
   async resumeSearch(profileId: string, orderId: string): Promise<{ orderId: string; resumed: true }> {
     const merchantId = await this.ownMerchantId(profileId);
-    const claimed = await this.prisma.order.updateMany({
-      where: { id: orderId, merchantId, orderType: "merchant", status: "requested", merchantPhase: "ready_for_pickup", noRiderHoldAt: { not: null } },
-      data: { noRiderHoldAt: null, dispatchAttempt: 0, dispatchStartedAt: null, dispatchNextCheckAt: null },
+    await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.order.updateMany({
+        where: { id: orderId, merchantId, orderType: "merchant", status: "requested", merchantPhase: "ready_for_pickup", noRiderHoldAt: { not: null } },
+        data: { noRiderHoldAt: null, dispatchAttempt: 0, dispatchStartedAt: null, dispatchNextCheckAt: null },
+      });
+      if (claimed.count === 0) throw new ConflictException("This order isn't waiting on a rider decision");
+      // Ends every pass's cooldown, with the resume (one transaction, so the next tick sees both). `expired`
+      // is what the round would have read had they not answered; the next offer resets it to `pending`.
+      await tx.foodDispatchAttempt.updateMany({ where: { orderId, outcome: "declined" }, data: { outcome: "expired" } });
     });
-    if (claimed.count === 0) throw new ConflictException("This order isn't waiting on a rider decision");
     return { orderId, resumed: true };
   }
 
