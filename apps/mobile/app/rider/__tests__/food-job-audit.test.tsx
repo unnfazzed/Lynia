@@ -385,6 +385,10 @@ describe("FJ-M4 / FJ-M5 / FJ-H3 · can't reach, can't deliver, and the return le
     expect(textOf(tree)).toContain("Why can't you deliver?");
     expect(cta(tree, "Send")!.props.disabled).toBe(true);
     await press(tree, "Recipient refused it");
+    // What the server answers once the refusal lands: undelivered, the venue's goods owed back. With the
+    // base fixture's `debtStatus: null` the goods-return poll reads "nothing owed" and (correctly) clears
+    // the stored leg, so the assertion below raced that poll and failed whenever it resolved first.
+    mockGetFoodOrderAsRider.mockResolvedValue({ ...BASE_FOOD_ORDER, ...CASH, status: "undelivered", debtStatus: "open" } as MerchantOrderResponse);
     await act(async () => {
       cta(tree, "Send")!.props.onPress();
     });
