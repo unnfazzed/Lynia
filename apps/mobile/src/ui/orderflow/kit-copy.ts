@@ -111,3 +111,23 @@ export function rxReasonLabel(reason: string | null | undefined, note: string | 
   const n = note?.trim();
   return n ? ofFmt(OXS.rxReason, { r, n }) : r;
 }
+
+/**
+ * Customer briefs 07 + 09 (ledger D-97, `packages/design/handoff/customer-briefs-06-09/copy.ts`): the new
+ * strings for D3g (the venue's own note) and R8c–R8e (remove / view a prescription page) — verbatim, with
+ * the handoff's key names.
+ */
+export const OB = {
+  // 07 · D3g
+  venueNoteLabel: "Note from {venue}",
+  rejectedSubWithNote: "Nothing was charged.",
+  // 09 · R8c / R8d / R8e
+  removePageA11y: "Remove page {n}",
+  openPageA11y: "Page {n}, open",
+  pageOf: "Page {n} of {total}",
+  pageRemoved: "Page removed",
+  undo: "Undo",
+  remove: "Remove",
+  retake: "Retake",
+  close: "Close",
+} as const;

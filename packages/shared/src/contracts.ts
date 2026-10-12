@@ -1696,6 +1696,9 @@ export const MerchantOrderResponse = z
     prepStartedAt: z.string().nullable(),
     readyAt: z.string().nullable(),
     rejectionReason: z.string().nullable(),
+    /** Customer brief 07 (U66, ledger D-97 D3g): the venue's own note on a "Something else" (`other`)
+     *  rejection — plain text, trimmed, at most MERCHANT_REASON_NOTE_MAX. Omitted when there is none. */
+    venueNote: z.string().nullable().optional(),
     paymentCallLoggedAt: z.string().nullable(),
     paymentRequestedAt: z.string().nullable(),
     merchantPaymentReference: z.string().nullable(),

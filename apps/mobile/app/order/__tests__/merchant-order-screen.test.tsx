@@ -851,6 +851,29 @@ describe("merchant order — one order screen (D-59)", () => {
     expect(has(o, "couldn’t take your order")).toBe(false);
   });
 
+  it("U66 (brief 07, D-97 D3g): the venue's own note sits in its card, and replaces the reason line", async () => {
+    const note = "We’ve run out of chicken for today. Sorry, please try us tomorrow.";
+    const t = await render(
+      foodOrder({ status: "cancelled", merchantPhase: null, rejectionReason: "other", venueNote: note }),
+      snapshot({ status: "cancelled", cancelledBy: null }),
+    );
+    expect(has(t, "Gava’s Kitchen couldn’t take your order")).toBe(true);
+    expect(has(t, "Nothing was charged.")).toBe(true);
+    expect(has(t, "Note from Gava’s Kitchen")).toBe(true);
+    expect(has(t, note)).toBe(true);
+    expect(has(t, `“${note}”`)).toBe(false);
+    const noteText = t.root.findAll((n) => n.props.numberOfLines === 3 && n.props.children === note);
+    expect(noteText.length).toBeGreaterThan(0);
+    expect(has(t, "No charge")).toBe(true);
+    act(() => t.unmount());
+    active = null;
+    // No note → D3b unchanged.
+    const d = await render(foodOrder({ status: "cancelled", merchantPhase: null, rejectionReason: "other" }), snapshot({ status: "cancelled", cancelledBy: null }));
+    expect(has(d, "Gava’s Kitchen couldn’t take your order")).toBe(true);
+    expect(has(d, "Note from")).toBe(false);
+    expect(d.root.findAll((n) => n.props.testID === "venue-note")).toHaveLength(0);
+  });
+
   it("U28: the D5b decline ending keeps the pharmacist's reason and note", async () => {
     const t = await render(
       foodOrder({

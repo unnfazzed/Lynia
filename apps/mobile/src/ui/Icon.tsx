@@ -86,6 +86,7 @@ import VolumeX from "lucide-react-native/dist/cjs/icons/volume-x";
 import Sun from "lucide-react-native/dist/cjs/icons/sun";
 import Battery from "lucide-react-native/dist/cjs/icons/battery";
 import Upload from "lucide-react-native/dist/cjs/icons/upload";
+import RotateCcw from "lucide-react-native/dist/cjs/icons/rotate-ccw";
 import type { LucideIcon } from "lucide-react-native";
 import React from "react";
 import type { StyleProp, ViewStyle } from "react-native";
@@ -178,6 +179,8 @@ const ICONS = {
   sun: Sun,
   battery: Battery,
   upload: Upload,
+  // Customer brief 09 (ledger D-97): R8e's Retake.
+  "rotate-ccw": RotateCcw,
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;

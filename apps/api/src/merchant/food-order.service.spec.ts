@@ -1389,6 +1389,23 @@ describe("FoodOrderService.toResponse — A-O14 (LC-A06) null-padding omission",
   });
 });
 
+describe("FoodOrderService.toResponse — brief 07 (U66, D-97 D3g) the venue's note", () => {
+  const rejected = { id: "o1", merchantId: "m1", status: "cancelled", merchantPhase: null, merchantItems: [], pickupCodeAttempts: 0, noShowCallTimestamps: [] };
+
+  it("carries the venue's 'Something else' note to the customer's order read", async () => {
+    const { svc } = build({ order: { findFirst: async () => ({ ...rejected, rejectionReason: "other", cancelReason: "  Gas ran out, sorry  " }) } });
+    const res = await svc.getMyOrder("o1", "c1");
+    expect(res.venueNote).toBe("Gas ran out, sorry");
+  });
+
+  it("omits it without a note, or when the cancel wasn't the venue's 'Something else'", async () => {
+    const none = build({ order: { findFirst: async () => ({ ...rejected, rejectionReason: "other", cancelReason: null }) } });
+    expect(await none.svc.getMyOrder("o1", "c1")).not.toHaveProperty("venueNote");
+    const customers = build({ order: { findFirst: async () => ({ ...rejected, rejectionReason: null, cancelReason: "changed my mind" }) } });
+    expect(await customers.svc.getMyOrder("o1", "c1")).not.toHaveProperty("venueNote");
+  });
+});
+
 describe("FoodOrderService.toResponse — #671 assigned-rider identity block", () => {
   const riderJoin = {
     profileId: "r1",
