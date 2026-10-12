@@ -173,4 +173,4 @@ built").
 - [ ] 2.2 P26: yes / no / later
 - [ ] 2.3 P32: defer (recommended) or do
 - [ ] 3.x Say "go" for MJ-RL6, MJ-RL15, MJ-M11 test and any extras
-- [ ] 4 Send the design list to the designer
+- [ ] 4 Send the design list to the designer (briefs ready: `docs/design-briefs-2026-10-12/`)
