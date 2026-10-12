@@ -207,7 +207,7 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
   const balance = wallet?.balance ?? 0;
   // MA-H2: commission only binds once it is on AND the rider's free first jobs are used up. Below the
   // floor otherwise, the rider still rides: no alarm. With no floor (PR #1154) `belowFloor` never fires:
-  // under $0 is `owes`, under $1 is `low`, and the line states the per-job rule (D-103).
+  // under $0 is `owes`, under $1 is `low`, and the line states the per-job rule (D-104).
   const gated = floorApplies(rate, me?.rider?.freeJobs?.left);
   // Known unverified (a pending, declined or expired check) → no Top up; while `me` loads it stays drawn.
   const canTopUp = !(me?.rider && me.rider.kycStatus !== "verified");

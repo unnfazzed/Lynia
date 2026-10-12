@@ -118,7 +118,7 @@ describe("Money · the floor follows the server's online gate (MA-H2)", () => {
   });
 });
 
-describe("Money · no floor: the per-job commission rule (PR #1154, D-103)", () => {
+describe("Money · no floor: the per-job commission rule (PR #1154, D-104)", () => {
   // The floor model's lines, at any amount: "Below $0.00 you can't take jobs." / "Below the $0.00 floor."
   const FLOOR_CLAIM = /floor|Below \$/i;
   beforeEach(() => {
