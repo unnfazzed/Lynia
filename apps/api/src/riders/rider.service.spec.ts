@@ -1645,73 +1645,40 @@ describe("onlineRefusalReason (pure online-gate, Q2)", () => {
   it("treats an elapsed cooldown as passed", () => {
     expect(onlineRefusalReason({ ...base, cooldownUntil: new Date(Date.now() - 60_000) })).toBeNull();
   });
-
-  it("blocks a below-floor rider ONLY when commission is active (never during the 0% launch)", () => {
-    // Commission off (rate 0 → commissionActive false): a $0 balance never gates — the pilot is untouched.
-    expect(onlineRefusalReason({ ...base, commissionActive: false, commissionBalance: 0 })).toBeNull();
-    // Commission on + balance below the $2 floor → the top-up gate fires.
-    expect(onlineRefusalReason({ ...base, commissionActive: true, commissionBalance: 1.5 })).toBe("commission_low_balance");
-    // Commission on + balance at/above the floor → passes.
-    expect(onlineRefusalReason({ ...base, commissionActive: true, commissionBalance: 2 })).toBeNull();
-    // Commission on but this call site didn't load the balance (undefined) → not gated (standing-only).
-    expect(onlineRefusalReason({ ...base, commissionActive: true })).toBeNull();
-  });
-
-  it("ranks the commission floor BELOW the standing reasons", () => {
-    // A suspended rider who is also below the floor is reported as suspended, not commission_low_balance.
-    expect(
-      onlineRefusalReason({ ...base, accountStatus: "suspended", commissionActive: true, commissionBalance: 0 }),
-    ).toBe("suspended");
-  });
 });
 
-describe("onlineRefusalReason — D-70 commission-free first jobs", () => {
+describe("onlineRefusalReason — no minimum wallet balance (owner 2026-10-12)", () => {
   const base = { kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null };
-  it("a new rider with free jobs left is NOT top-up gated at a $0 balance, even with commission live", () => {
-    expect(onlineRefusalReason({ ...base, commissionActive: true, commissionBalance: 0, freeJobsLeft: COMMISSION.freeFirstJobs })).toBeNull();
-    expect(onlineRefusalReason({ ...base, commissionActive: true, commissionBalance: 0, freeJobsLeft: 1 })).toBeNull();
+  it("the wallet balance is not a go-online condition — the commission check is per job", () => {
+    expect(onlineRefusalReason(base)).toBeNull();
   });
-  it("the gate returns once the free jobs are used up", () => {
-    expect(onlineRefusalReason({ ...base, commissionActive: true, commissionBalance: 0, freeJobsLeft: 0 })).toBe("commission_low_balance");
-    expect(onlineRefusalReason({ ...base, commissionActive: true, commissionBalance: 2, freeJobsLeft: 0 })).toBeNull();
-  });
-  it("free jobs never waive a STANDING reason", () => {
-    expect(onlineRefusalReason({ ...base, accountStatus: "suspended", commissionActive: true, commissionBalance: 0, freeJobsLeft: 5 })).toBe("suspended");
-    expect(onlineRefusalReason({ ...base, kycStatus: "pending", freeJobsLeft: 5 })).toBe("kyc");
-  });
-  it("freeJobsLeft derives from completed jobs: 0 trips → 5, 4 → 1, 5+ → 0 (cancels never count — tripsCount only moves on completion)", () => {
-    expect(freeJobsLeft(0)).toBe(5);
-    expect(freeJobsLeft(null)).toBe(5);
-    expect(freeJobsLeft(4)).toBe(1);
-    expect(freeJobsLeft(5)).toBe(0);
+  it("freeJobsLeft derives from completed jobs: 0 trips → 10, 9 → 1, 10+ → 0 (cancels never count — tripsCount only moves on completion)", () => {
+    expect(COMMISSION.freeFirstJobs).toBe(10);
+    expect(freeJobsLeft(0)).toBe(10);
+    expect(freeJobsLeft(null)).toBe(10);
+    expect(freeJobsLeft(9)).toBe(1);
+    expect(freeJobsLeft(10)).toBe(0);
     expect(freeJobsLeft(312)).toBe(0);
   });
 });
 
-describe("RiderService.setOnline — D-70 commission-free first jobs", () => {
+describe("RiderService.setOnline — no minimum wallet balance", () => {
   const HARARE = { lat: -17.83, lng: 31.05 };
   function onlineSvc(tripsCount: number, balance: number) {
     const prisma = {
       rider: { findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null, tripsCount }) },
       commissionAccount: { findUnique: async () => ({ balance }) },
+      $executeRaw: async () => 1,
     };
     return svc(prisma, { COMMISSION_RATE_PCT: 10 } as Partial<Env>);
   }
-  it("a newly verified rider (0 jobs, $0 balance) goes online with commission live", async () => {
+  it("a rider past their free jobs goes online at a $0 balance, with commission live", async () => {
+    expect(await onlineSvc(80, 0).setOnline("p1", true, HARARE)).toEqual({ online: true });
+  });
+  it("a newly verified rider (0 jobs, $0 balance) goes online", async () => {
     expect(await onlineSvc(0, 0).setOnline("p1", true, HARARE)).toEqual({ online: true });
   });
-  it("a rider on their 5th free job (4 completed) still goes online at $0", async () => {
-    expect(await onlineSvc(4, 0).setOnline("p1", true, HARARE)).toEqual({ online: true });
-  });
-  it("after the 5th completed job a $0 rider meets the top-up gate again", async () => {
-    await expect(onlineSvc(5, 0).setOnline("p1", true, HARARE)).rejects.toMatchObject({ response: { reason: "commission_low_balance" } });
-  });
-  it("an existing rider past the allowance is gated exactly as before", async () => {
-    await expect(onlineSvc(80, 1.5).setOnline("p1", true, HARARE)).rejects.toMatchObject({ response: { reason: "commission_low_balance" } });
-    expect(await onlineSvc(80, 2).setOnline("p1", true, HARARE)).toEqual({ online: true });
-  });
 });
-
 describe("RiderService.applyKycResult", () => {
   // The rider's account already carries a national ID — every rider onboarded before D-75 does (it was
   // required at become). An account with NONE on file takes the D-75 path (adopt / hold), tested below.

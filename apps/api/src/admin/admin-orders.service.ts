@@ -240,7 +240,7 @@ export class AdminOrdersService {
    * On adjudication the order is force-completed and the rider is credited exactly like a normal
    * completion — a successful trip (tripsCount + reliability recovery, mirroring completeOrder) and the
    * prepaid commission debit (no-op at rate 0; the delivery IS commissionable — the rider did the work;
-   * parcel orders only, like rate()/completeOrder() — a merchant order's commission is C4's ledger).
+   * every job type, like rate()/completeOrder()).
    * The customer is notified and can contest via the existing "report a problem" (raise an issue) path,
    * which lands in the disputes queue where ops can refund/re-adjudicate — `IssuesService.raise` has no
    * time-based gating, so this stays open indefinitely; the push/feed copy must not claim a deadline the
@@ -291,19 +291,20 @@ export class AdminOrdersService {
       // reconciliation can never detect or repair, since it computes `oldFare` from the order's CURRENT
       // (already-corrected) `agreedFare`. Mirrors WD-005 (`rate()` re-reads `agreedFare` post-CAS) and
       // WD-013 (`adjustFare` re-reads `status`/`riderId` post-CAS) — re-read fresh here too before charging.
-      const freshFare = await tx.order.findUnique({ where: { id: orderId }, select: { agreedFare: true, suggestedFare: true } });
+      const freshFare = await tx.order.findUnique({ where: { id: orderId }, select: { agreedFare: true, suggestedFare: true, deliveryFee: true } });
 
       // Prepaid commission debit — commissionable per the Phase-B decision; no-op at rate 0, idempotent
       // (unique (riderId, orderId, ride_commission)). Guarded on wallet presence for test construction.
-      // LC-B-SIB-1: the same A-5 merchant guard as OrderLifecycleService.rate()/completeOrder() — a
-      // merchant order's own commission is C4's ledger, not the Express wallet, and chargeCommission
-      // assumes a parcel fare basis (a merchant order's agreedFare is its goods+delivery total).
-      if (this.wallet && order.orderType === "parcel") {
+      // Every job type is charged (owner 2026-10-12); a merchant job on its delivery fee, never its
+      // goods+delivery agreedFare (LC-B-SIB-1 — chargeCommission picks the basis by orderType).
+      if (this.wallet) {
         await this.wallet.chargeCommission(tx, {
           orderId,
           riderId: order.riderId,
+          orderType: order.orderType,
           agreedFare: freshFare?.agreedFare ?? order.agreedFare,
           suggestedFare: freshFare?.suggestedFare ?? order.suggestedFare,
+          deliveryFee: freshFare?.deliveryFee ?? null,
         });
       }
 

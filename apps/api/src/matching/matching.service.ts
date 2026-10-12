@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { BROADCAST, broadcastRadiusAtMs, OFFER_CHOOSE_GRACE_MS, OFFER_WINDOW_MS, type SelectOfferConflictReason } from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush } from "../common/broadcast-policy";
+import { jobCommission, ridersWhoCoverCommission } from "../common/commission-cover";
 import { openHandoverCode, sealHandoverCode } from "../common/handover-code";
 import { hasOpenMerchantObligation } from "../common/merchant-debt-lock";
 import { riderSelectableNow, SELECTABLE_RIDER_SELECT } from "../common/rider-selectable";
@@ -67,7 +68,7 @@ export class MatchingService {
             // `pickup` (HEAD) feeds the post-commit order:taken board emit; the expanded rider
             // account-standing fields (origin/main) gate a banned/suspended/held rider at select time.
             // otpHash/otpCipher: U22 — a rider-bail re-broadcast clone carries the trip's code (D2).
-            order: { select: { status: true, customerId: true, pickup: true, createdAt: true, otpHash: true, otpCipher: true } },
+            order: { select: { status: true, customerId: true, pickup: true, createdAt: true, otpHash: true, otpCipher: true, suggestedFare: true } },
             rider: { select: SELECTABLE_RIDER_SELECT },
           },
         });
@@ -111,6 +112,13 @@ export class MatchingService {
         // C4 soft-lock: a rider owing a merchant collect-and-return cash debt, or mid-doorstep
         // handshake, takes no new jobs until it's settled (N-20/R-05) — same "pick another" shape.
         if (await hasOpenMerchantObligation(tx, offer.riderId)) {
+          throw selectConflict("rider_unavailable", "Rider just became unavailable, pick another");
+        }
+
+        // Owner 2026-10-12: the rider's wallet must cover this job's commission (10% of their offered fare,
+        // once their free jobs are used). Checked at the bid too; a balance can move in between.
+        const owed = jobCommission({ orderType: "parcel", agreedFare: offer.offeredFare, suggestedFare: offer.order.suggestedFare });
+        if (!(await ridersWhoCoverCommission(tx, [offer.riderId], owed)).has(offer.riderId)) {
           throw selectConflict("rider_unavailable", "Rider just became unavailable, pick another");
         }
 

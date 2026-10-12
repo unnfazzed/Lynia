@@ -11,6 +11,7 @@ import {
   type Waypoint,
 } from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
+import { assertRiderCoversCommission, jobCommission, ridersWhoCoverCommission } from "../common/commission-cover";
 import { sealHandoverCode } from "../common/handover-code";
 import { penaltiesSuspended } from "../common/penalties";
 import { PiiCryptoService } from "../common/pii-crypto.service";
@@ -320,14 +321,23 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     // code themselves and, on collect-and-return, settle their own cash debt). Not persisted in
     // dispatchExcludedRiderIds: membership is re-read every round, so a later leave/join applies.
     const teamIds = await this.teamProfileIds(order.merchantId);
-    const candidates = await this.strategy.pickCandidates({
-      lat: point.lat,
-      lng: point.lng,
-      radiusM,
-      excludeRiderIds: teamIds.length > 0 ? [...new Set([...order.dispatchExcludedRiderIds, ...teamIds])] : order.dispatchExcludedRiderIds,
-      preferredRiderIds: await this.preferredFor(order.merchantId),
-      limit: dispatchRoundSize(attempt),
-    });
+    const preferred = await this.preferredFor(order.merchantId);
+    const limit = dispatchRoundSize(attempt);
+    // Owner 2026-10-12: a rider whose wallet doesn't cover this job's commission (10% of the delivery fee,
+    // once their free jobs are used) isn't offered it. They're dropped from this round only — a top-up
+    // makes them eligible again — and the search looks past them, a couple of passes at most.
+    const commission = jobCommission({ orderType: "merchant", deliveryFee: order.deliveryFee });
+    const skipped = new Set<string>();
+    let candidates: Awaited<ReturnType<DispatchStrategy["pickCandidates"]>> = [];
+    for (let pass = 0; pass < 3; pass++) {
+      const excluded = [...new Set([...order.dispatchExcludedRiderIds, ...teamIds, ...skipped])];
+      const picked = await this.strategy.pickCandidates({ lat: point.lat, lng: point.lng, radiusM, excludeRiderIds: excluded, preferredRiderIds: preferred, limit });
+      const covering = await ridersWhoCoverCommission(this.prisma, picked.map((c) => c.riderId), commission);
+      candidates = picked.filter((c) => covering.has(c.riderId));
+      for (const c of picked) if (!covering.has(c.riderId)) skipped.add(c.riderId);
+      if (candidates.length > 0 || picked.length === covering.size) break;
+    }
+    if (skipped.size > 0) this.logger.log(`merchant.dispatch.commission_skip order=${orderId} riders=${skipped.size} commission=${commission}`);
     for (const c of candidates) {
       if (c.preferred) this.logger.log(`merchant.dispatch.preferred order=${orderId} rider=${c.riderId} distanceM=${Math.round(c.distanceM)}`);
     }
@@ -520,10 +530,10 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
   private async liveOffer(
     orderId: string,
     riderId: string,
-  ): Promise<{ merchantId: string | null; merchantPhase: string | null; roundExpiresAt: Date | null; excluded: string[] }> {
+  ): Promise<{ merchantId: string | null; merchantPhase: string | null; roundExpiresAt: Date | null; excluded: string[]; deliveryFee: Prisma.Decimal | null }> {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, orderType: "merchant" },
-      select: { status: true, merchantId: true, merchantPhase: true, dispatchOfferExpiresAt: true, dispatchExcludedRiderIds: true },
+      select: { status: true, merchantId: true, merchantPhase: true, dispatchOfferExpiresAt: true, dispatchExcludedRiderIds: true, deliveryFee: true },
     });
     if (!order) throw new NotFoundException("Order not found");
     const offer = await this.prisma.foodDispatchAttempt.findUnique({
@@ -538,6 +548,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       merchantPhase: order.merchantPhase ?? null,
       roundExpiresAt: order.dispatchOfferExpiresAt,
       excluded: order.dispatchExcludedRiderIds,
+      deliveryFee: order.deliveryFee ?? null,
     };
   }
 
@@ -581,6 +592,9 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
    *  the same way); every other rider on the round is told it's gone. */
   async acceptDispatch(orderId: string, riderId: string): Promise<{ orderId: string; status: "assigned" }> {
     const order = await this.liveOffer(orderId, riderId);
+    // Owner 2026-10-12: the rider's wallet must cover this job's commission (the round only rang riders
+    // who could, but a balance can move between the ring and the tap).
+    await assertRiderCoversCommission(this.prisma, riderId, jobCommission({ orderType: "merchant", deliveryFee: order.deliveryFee }));
     // MJ-RM18 backstop (the round already leaves the team out): someone on the business's own team never
     // takes its order — same guard as MerchantBookingService.pick.
     if (order.merchantId && (await this.prisma.merchantMember.findFirst({ where: { merchantId: order.merchantId, profileId: riderId }, select: { id: true } }))) {

@@ -343,6 +343,23 @@ describe("FoodDispatchService.acceptDispatch — D-04 rider secured, first to ac
     expect(notified.map((n) => n.profileIds)).toEqual([["r1"], ["cust-1"]]);
   });
 
+  it("owner 2026-10-12: refuses a rider whose balance doesn't cover 10% of the delivery fee — nothing is written", async () => {
+    vi.stubEnv("COMMISSION_RATE_PCT", "10");
+    const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
+    const { svc } = build(
+      {
+        order: { findFirst: async () => ({ ...liveOrder, deliveryFee: 3 }), updateMany: orderUpdateMany },
+        foodDispatchAttempt: { findUnique: async () => pendingRow },
+        rider: { findMany: async () => [{ profileId: "r1", tripsCount: 30 }] },
+        commissionAccount: { findMany: async () => [{ riderId: "r1", balance: 0.29 }] },
+      },
+      NONE,
+    );
+    await expect(svc.acceptDispatch(orderId, "r1")).rejects.toMatchObject({ response: { reason: "commission_low_balance" } });
+    expect(orderUpdateMany).not.toHaveBeenCalled();
+    vi.unstubAllEnvs();
+  });
+
   it("409s the second rider to accept: the first already took it (lost CAS)", async () => {
     const { svc } = build(
       { order: { findFirst: async () => liveOrder, updateMany: async () => ({ count: 0 }) }, foodDispatchAttempt: { findUnique: async () => pendingRow } },
