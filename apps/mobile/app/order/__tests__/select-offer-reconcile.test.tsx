@@ -199,7 +199,7 @@ describe("U62 (C10): the 409's reason picks the words; the grace end re-reads th
 
   it("a rider who went offline or lost standing isn't 'taken by another customer'", async () => {
     const tree = await refuse("rider_unavailable");
-    expect(has(tree, "Tapiwa M. isn't available any more. Pick another rider.")).toBe(true);
+    expect(has(tree, "Tapiwa M. is unavailable. Pick another rider.")).toBe(true);
     expect(has(tree, "Tapiwa M. was just taken by another customer. Pick another rider.")).toBe(false);
   });
 
@@ -211,7 +211,7 @@ describe("U62 (C10): the 409's reason picks the words; the grace end re-reads th
   it("the time to choose ran out — no 'pick another rider' at all", async () => {
     const tree = await refuse("choose_ended");
     expect(has(tree, "Tapiwa M. was just taken by another customer. Pick another rider.")).toBe(false);
-    expect(has(tree, "Tapiwa M. isn't available any more. Pick another rider.")).toBe(false);
+    expect(has(tree, "Tapiwa M. is unavailable. Pick another rider.")).toBe(false);
   });
 
   it("an order that left offers by the time it's re-read gets no 'pick another rider'", async () => {
