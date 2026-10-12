@@ -131,7 +131,7 @@ describe("placeOrder — opening hours enforced in Harare time (safeguard 3)", (
   });
 });
 
-describe("sweepAutoAccepted — no rider until the kitchen is confirmed (safeguard 1)", () => {
+describe("sweepAutoAccepted — no biker until the kitchen is confirmed (safeguard 1)", () => {
   const NOW = new Date("2026-09-30T10:00:00Z");
 
   it("marks orders unconfirmed for 5 minutes as urgent, once", async () => {
@@ -308,14 +308,14 @@ describe("customer cancel — free until the kitchen confirms", () => {
     expect(queueChanges).toEqual(["o1"]);
   });
 
-  it("U11: still refuses a ready order while dispatch is searching (no hold), or once a rider has it", async () => {
+  it("U11: still refuses a ready order while dispatch is searching (no hold), or once a biker has it", async () => {
     const searching = build({ order: { findFirst: async () => held({ noRiderHoldAt: null }) } });
     await expect(searching.svc.cancelUnpaid("o1", "c1")).rejects.toThrow(/kitchen has started/);
     const riding = build({ order: { findFirst: async () => held({ status: "assigned", merchantPhase: null, riderId: "r1" }) } });
     await expect(riding.svc.cancelUnpaid("o1", "c1")).rejects.toThrow(/kitchen has started/);
   });
 
-  it("U11: a 'Keep searching' (or a rider) racing the cancel wins: the guarded write misses → 409", async () => {
+  it("U11: a 'Keep searching' (or a biker) racing the cancel wins: the guarded write misses → 409", async () => {
     const { svc } = build({ order: { findFirst: async () => held(), updateMany: async () => ({ count: 0 }) } });
     await expect(svc.cancelUnpaid("o1", "c1")).rejects.toThrow(/Order changed/);
   });
@@ -367,7 +367,7 @@ describe("confirmCollected — the no-code pickup, only at the restaurant (safeg
     expect(updated).toMatchObject({ status: "picked_up", merchantPhase: null });
   });
 
-  it("refuses a rider who isn't at the restaurant", async () => {
+  it("refuses a biker who isn't at the restaurant", async () => {
     const { svc } = build({ $queryRaw: async () => row(), merchant });
     // ~1 km away.
     await expect(svc.confirmCollected("o1", "r1", { lat: CBD.lat + 0.009, lng: CBD.lng })).rejects.toMatchObject({
@@ -380,9 +380,9 @@ describe("confirmCollected — the no-code pickup, only at the restaurant (safeg
     await expect(svc.confirmCollected("o1", "r1", CBD)).rejects.toMatchObject({ response: { reason: "code_required" } });
   });
 
-  it("refuses anyone but the assigned rider", async () => {
+  it("refuses anyone but the assigned biker", async () => {
     const { svc } = build({ $queryRaw: async () => row(), merchant });
-    await expect(svc.confirmCollected("o1", "other", CBD)).rejects.toThrow(/assigned rider/);
+    await expect(svc.confirmCollected("o1", "other", CBD)).rejects.toThrow(/assigned biker/);
   });
 });
 
@@ -430,7 +430,7 @@ describe("phone numbers (safeguard 5)", () => {
     expect((await svc.getMyOrder("o1", "c1")).customerFirstName).toBeUndefined();
   });
 
-  it("Merchant v2 (D-77): the merchant's own view carries the assigned rider's phone; the customer's doesn't", async () => {
+  it("Merchant v2 (D-77): the merchant's own view carries the assigned biker's phone; the customer's doesn't", async () => {
     const rider = { profileId: "r1", bikeReg: "AFG 2231", vehicleInfo: null, ratingAvg: 4.9, ratingCount: 3, tripsCount: 9, kycStatus: "verified", photoUrl: null, profile: { firstName: "Blessing", lastName: "Moyo", phone: "+263772222222" } };
     const order = { ...base, riderId: "r1", rider, merchant: shop(false) };
     const { svc } = build({ merchant: { findUnique: async () => ({ id: "m1" }) }, order: { findMany: async () => [order], findFirst: async () => order } });
@@ -497,7 +497,7 @@ describe("food-order-ops — shared by the restaurant and ops (safeguards 1 and 
     expect(pushes[0]).toMatchObject({ body: expect.stringContaining("$10.00") });
   });
 
-  it("D-71: an edit that drops the goods below the fee caps the venue's share (the rider is never short)", async () => {
+  it("D-71: an edit that drops the goods below the fee caps the venue's share (the biker is never short)", async () => {
     // Keep 1 × $3 → $3 goods + $1 small-order fee = $4 goods; fee $5 → share capped at $4, customer pays $1 delivery.
     const { prisma, orderData } = prismaFor(order({ deliveryFee: 5, merchantDeliveryShare: 5 }));
     await editOrderItems(prisma, notifications, gateway, "o1", { lines: [{ itemId: "i1", quantity: 0 }] });
@@ -511,7 +511,7 @@ describe("food-order-ops — shared by the restaurant and ops (safeguards 1 and 
     ).rejects.toMatchObject({ response: { reason: "no_items_left" } });
   });
 
-  it("won't change the items once the rider has the food", async () => {
+  it("won't change the items once the biker has the food", async () => {
     const { prisma } = prismaFor(order({ status: "picked_up", merchantPhase: null }));
     await expect(editOrderItems(prisma, notifications, gateway, "o1", { lines: [{ itemId: "i1", quantity: 1 }] })).rejects.toMatchObject({
       response: { reason: "not_editable" },

@@ -17,6 +17,12 @@ const mockSaveSeen = jest.fn(async () => undefined);
 jest.mock("../../src/auth/session", () => ({
   saveOnboardingSeen: () => mockSaveSeen(),
 }));
+const mockSaveIntent = jest.fn(async (_i: string) => undefined);
+const mockClearIntent = jest.fn(async () => undefined);
+jest.mock("../../src/auth/device-state", () => ({
+  saveSignupIntent: (i: string) => mockSaveIntent(i),
+  clearSignupIntent: () => mockClearIntent(),
+}));
 jest.mock("../../src/rider-mode", () => ({ riderModeAvailable: jest.fn(() => true) }));
 
 import { riderModeAvailable } from "../../src/rider-mode";
@@ -64,13 +70,23 @@ describe("C1 · Welcome", () => {
     expect(mockReplace).toHaveBeenCalledWith("/phone");
   });
 
-  it("'Ride with LyniaGo' carries a rider intent into sign-in", () => {
+  it("'Ride with LyniaGo' carries a biker intent into sign-in", () => {
     const tree = renderWelcome();
     pressLabel(tree, "Want to earn? Ride with LyniaGo");
     expect(mockReplace).toHaveBeenCalledWith({ pathname: "/phone", params: { intent: "rider" } });
+    // Kept on the device too, so an app killed on C2 / C4 still signs up as a biker.
+    expect(mockSaveIntent).toHaveBeenCalledWith("rider");
+    expect(mockClearIntent).not.toHaveBeenCalled();
   });
 
-  it("draws no rider link on the customer-only iPhone app (D-41)", () => {
+  it("'Continue with your number' drops any biker intent an earlier tap left on the device", () => {
+    const tree = renderWelcome();
+    pressLabel(tree, "Continue with your number");
+    expect(mockClearIntent).toHaveBeenCalled();
+    expect(mockSaveIntent).not.toHaveBeenCalled();
+  });
+
+  it("draws no biker link on the customer-only iPhone app (D-41)", () => {
     jest.mocked(riderModeAvailable).mockReturnValue(false);
     expect(rendered(renderWelcome())).not.toContain("Ride with LyniaGo");
   });

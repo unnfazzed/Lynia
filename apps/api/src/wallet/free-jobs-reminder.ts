@@ -36,11 +36,11 @@ export const FREE_JOBS_ACTION: Record<FreeJobsMilestone, string> = {
 export const FREE_JOBS_COPY: Record<FreeJobsMilestone, { title: string; body: string }> = {
   one_left: {
     title: "One commission-free job left",
-    body: "After your next job, commission comes off your prepaid balance. Top up in Money so you can keep going online.",
+    body: "After your next job, commission comes off your prepaid balance. Top up in Money so you can keep taking jobs.",
   },
   used_up: {
     title: "Your free jobs are used up",
-    body: "Commission now comes off your prepaid balance. Top up in Money to keep going online.",
+    body: "Commission now comes off your prepaid balance. Top up in Money to keep taking jobs.",
   },
 };
 

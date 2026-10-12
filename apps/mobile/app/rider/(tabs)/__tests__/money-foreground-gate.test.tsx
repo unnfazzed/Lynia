@@ -101,7 +101,7 @@ describe("Money tab · the app-foreground re-read is gated on focus (D-30 follow
     expect(mockEnabledArgs.at(-1)).toBe(false);
   });
 
-  it("focused (the rider is looking at Money): the foreground re-read is ENABLED", () => {
+  it("focused (the biker is looking at Money): the foreground re-read is ENABLED", () => {
     mockScreenIsFocused = true;
     activeTree = renderScreen();
 

@@ -100,7 +100,7 @@ describe("history rows", () => {
     expect(historyRowVM(full({ status: "cancelled", outcome: "kitchen_timeout", chargedTotal: null })).outcome).toBe("kitchenTimeout");
   });
 
-  it("search matches the title, the drop-off area and the rider, case-insensitively", () => {
+  it("search matches the title, the drop-off area and the biker, case-insensitively", () => {
     const v = historyRowVM(row());
     expect(matchesQuery(v, "belgr")).toBe(true);
     expect(matchesQuery(v, "harare")).toBe(true);
@@ -119,21 +119,21 @@ describe("parcel Now cards", () => {
 
   it("finding: the asking price and the time left; nothing lit", () => {
     const v = parcelNowVM(snap({ status: "open_for_offers", agreedFare: null, riderCard: null, expiresAt: new Date(nowMs + 252_000).toISOString() }), nowMs, null);
-    expect(v.title).toBe("Finding a rider");
+    expect(v.title).toBe("Finding a biker");
     expect(v.sub).toBe("Parcel to Belgravia · asking $3.00");
     expect(v.pill).toBe("4:12 left");
     expect(v.lit).toBe(0);
   });
 
   it("each stage says who is doing what, on the four-step track", () => {
-    expect(parcelNowVM(snap({ status: "assigned" }), nowMs, null)).toMatchObject({ title: "Tendai M. is your rider", lit: 1, icon: "package" });
+    expect(parcelNowVM(snap({ status: "assigned" }), nowMs, null)).toMatchObject({ title: "Tendai M. is your biker", lit: 1, icon: "package" });
     expect(parcelNowVM(snap({ status: "en_route_pickup" }), nowMs, null)).toMatchObject({ title: "Tendai is heading to pickup", sub: "Eastgate Mall, CBD → Belgravia", lit: 1 });
     expect(parcelNowVM(snap({ status: "picked_up" }), nowMs, null)).toMatchObject({ title: "Tendai has your parcel", lit: 2, icon: "bike" });
     expect(parcelNowVM(snap({ status: "en_route_dropoff" }), nowMs, null)).toMatchObject({ title: "Tendai is on the way", sub: "Parcel to Belgravia · $3.36", lit: 3, icon: "bike" });
   });
 
-  it("before the rider's name reaches the phone, the After Send stage name stands in", () => {
-    expect(parcelNowVM(snap({ status: "assigned", riderCard: null }), nowMs, null).title).toBe("Rider assigned");
+  it("before the biker's name reaches the phone, the After Send stage name stands in", () => {
+    expect(parcelNowVM(snap({ status: "assigned", riderCard: null }), nowMs, null).title).toBe("Biker assigned");
     expect(parcelNowVM(snap({ riderCard: null }), nowMs, null).title).toBe("On the way");
   });
 

@@ -68,7 +68,8 @@ function cancelledOrder(overrides: Partial<OrderSnapshot> = {}): OrderSnapshot {
 }
 
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace, push: jest.fn(), dismissAll: jest.fn(), dismissTo: jest.fn() }),
+  useNavigation: () => ({ getState: () => undefined }),
   useLocalSearchParams: () => ({}),
 }));
 jest.mock("expo-secure-store", () => ({
@@ -153,7 +154,7 @@ afterEach(() => {
   }
 });
 
-describe("rider job — no hand-back terminal flashes before the acknowledged list is read (MOB-BOOT-02)", () => {
+describe("biker job — no hand-back terminal flashes before the acknowledged list is read (MOB-BOOT-02)", () => {
   it("holds the skeleton while the acknowledged-handbacks read is in flight, instead of asserting the cancel is unacknowledged", async () => {
     mockGetActiveOrder.mockResolvedValue(cancelledOrder());
 

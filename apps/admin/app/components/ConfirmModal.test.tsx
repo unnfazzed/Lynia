@@ -29,10 +29,10 @@ describe("ConfirmModal dismissal guards — D-D0c (LC-D06, sensitive: money)", (
       <ConfirmModal
         action="rider.wallet_credit"
         auditInEndpoint
-        target="Rider A"
+        target="Biker A"
         path="/riders/1"
         triggerLabel="Credit account…"
-        title="Credit Rider A's commission account?"
+        title="Credit Biker A's commission account?"
         consequence="Adds a manual prepaid credit."
         amount={{ label: "Amount", prefix: "$", placeholder: "0.00", required: true }}
         confirmLabel="Credit account"
@@ -97,24 +97,24 @@ describe("ConfirmModal dismissal guards — D-D0c (LC-D06, sensitive: money)", (
       <ConfirmModal
         action="rider.suspend"
         auditInEndpoint
-        target="Rider C"
+        target="Biker C"
         path="/riders/3"
-        triggerLabel="Suspend rider…"
-        title="Suspend Rider C?"
-        consequence="Suspends the rider."
-        confirmLabel="Suspend rider"
+        triggerLabel="Suspend biker…"
+        title="Suspend Biker C?"
+        consequence="Suspends the biker."
+        confirmLabel="Suspend biker"
         onConfirm={onConfirm}
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Suspend rider…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Suspend biker…" }));
 
     // Two native click events dispatched inside ONE `act()` call — React only flushes/re-renders
     // AFTER the act() callback returns, so both onClick handlers run against the SAME pre-update
     // `submitting === false` closure, exactly like two real taps landing in the same event-loop
     // tick before the browser lets React commit. Two separate `fireEvent.click()` statements would
     // NOT reproduce this: each wraps its own act() and flushes in between, masking the race.
-    const confirmButton = screen.getByRole("button", { name: "Suspend rider" });
+    const confirmButton = screen.getByRole("button", { name: "Suspend biker" });
     act(() => {
       confirmButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       confirmButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -123,7 +123,7 @@ describe("ConfirmModal dismissal guards — D-D0c (LC-D06, sensitive: money)", (
     expect(onConfirm).toHaveBeenCalledTimes(1);
 
     gate.resolve();
-    await screen.findByRole("button", { name: "Suspend rider…" });
+    await screen.findByRole("button", { name: "Suspend biker…" });
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 
@@ -132,11 +132,11 @@ describe("ConfirmModal dismissal guards — D-D0c (LC-D06, sensitive: money)", (
     render(
       <ConfirmModal
         action="rider.suspend"
-        target="Rider B"
+        target="Biker B"
         path="/riders/2"
         triggerLabel="Suspend"
-        title="Suspend Rider B?"
-        consequence="Suspends the rider."
+        title="Suspend Biker B?"
+        consequence="Suspends the biker."
         confirmLabel="Suspend"
         onConfirm={onConfirm}
       />,

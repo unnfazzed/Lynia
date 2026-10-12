@@ -53,11 +53,14 @@ function mockCreateFakeSocket(): FakeSocket {
 }
 
 let mockLastSocket: FakeSocket;
+// When true, the next acquired socket is ALREADY connected — the shared-socket late-subscriber case.
+let mockPreConnected = false;
 // A-O17: the hook now acquires/releases a shared connection instead of creating/disconnecting its
 // own — see use-rider-board.test.tsx's matching comment.
 jest.mock("../socket", () => ({
   acquireSocket: jest.fn(() => {
     mockLastSocket = mockCreateFakeSocket();
+    (mockLastSocket as FakeSocket & { connected?: boolean }).connected = mockPreConnected;
     return mockLastSocket;
   }),
   releaseSocket: jest.fn(),
@@ -179,6 +182,24 @@ describe("useRiderLocationStream background continuation", () => {
       lng: 31.1,
     });
 
+    await act(async () => tree.unmount());
+  });
+});
+
+// Shared-socket late subscriber: the board/job hooks already hold a CONNECTED socket, so this hook never
+// sees "connect" — it used to stay "disconnected" and buffer every fix forever, never emitting one.
+describe("useRiderLocationStream on an already-connected shared socket", () => {
+  afterEach(() => {
+    mockPreConnected = false;
+  });
+
+  it("emits fixes live without waiting for a connect event", async () => {
+    mockPreConnected = true;
+    const tree = await mountStream("order-7");
+
+    deliverBackgroundFix(-17.8, 31.0);
+
+    expect(mockLastSocket.emit).toHaveBeenCalledWith(WS_EVENTS.riderLocation, { orderId: "order-7", lat: -17.8, lng: 31.0 });
     await act(async () => tree.unmount());
   });
 });

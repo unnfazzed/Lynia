@@ -12,7 +12,7 @@ const NEVER_OPEN = {} as RestaurantListItem["hours"];
 /** Harare CBD — inside the service area. */
 const CUSTOMER = { lat: -17.8292, lng: 31.0522 };
 /** Bulawayo — outside it. */
-const FAR_AWAY = { lat: -20.15, lng: 28.58 };
+const FAR_AWAY = { lat: -26.2, lng: 28.05 }; // Johannesburg — browsing for family back home
 const KM_PER_DEG_LAT = 111.195;
 const NOW = new Date(2026, 9, 2, 12, 0, 0);
 
@@ -82,11 +82,11 @@ describe("comparePopularity / mergePopularity / rankedVenueMissing", () => {
 });
 
 describe("deliversTo", () => {
-  it("needs the venue's pin, and a customer inside the service area (or not located yet)", () => {
+  it("needs only the venue's pin — wherever the customer is browsing from (D-99)", () => {
     expect(deliversTo(CUSTOMER, CUSTOMER)).toBe(true);
     expect(deliversTo(CUSTOMER, null)).toBe(true);
     expect(deliversTo(null, CUSTOMER)).toBe(false);
-    expect(deliversTo(CUSTOMER, FAR_AWAY)).toBe(false);
+    expect(deliversTo(CUSTOMER, FAR_AWAY)).toBe(true);
   });
 });
 
@@ -123,9 +123,9 @@ describe("popularNearYou with a ranking (Home rails)", () => {
     const pinless = venue("pinless", 0, { location: null });
     const idx = ranking(["pinless", 50], ["far", 1]);
     expect(ids(popularNearYou([pinless, near, far], NOW, CUSTOMER, 8, idx))).toEqual(["far", "near", "pinless"]);
-    // A customer outside the service area: nothing delivers there, so nothing ranks — nearest-open order.
+    // Browsing from far away (D-99): the same venues still rank, popular first.
     const fromAfar = popularNearYou([near, far], NOW, FAR_AWAY, 8, ranking(["near", 1], ["far", 5]));
-    expect(ids(fromAfar)).toEqual(["near", "far"]);
+    expect(ids(fromAfar)).toEqual(["far", "near"]);
   });
 
   it("still caps at the limit, popular first", () => {

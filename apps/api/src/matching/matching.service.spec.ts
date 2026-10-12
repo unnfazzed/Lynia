@@ -1,7 +1,7 @@
 import { ForbiddenException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { OFFER_CHOOSE_GRACE_MS, OFFER_WINDOW_MS } from "@lynia/shared";
-import { describe, expect, it, vi } from "vitest";
+import { BROADCAST, OFFER_CHOOSE_GRACE_MS, OFFER_WINDOW_MS } from "@lynia/shared";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { TokenService } from "../auth/token.service";
 import { PiiCryptoService } from "../common/pii-crypto.service";
 import type { Env } from "../config/env";
@@ -125,10 +125,9 @@ describe("MatchingService.selectOffer — metric wrapper re-throws domain errors
     expect(metrics.recordMatchSelect).toHaveBeenCalledWith(7, "assigned" satisfies MatchSelectOutcome);
   });
 
-  it("KB-HEARTBEAT-MARGIN: a rider heartbeat 45s old is still selectable (widened 30s→60s TTL)", async () => {
-    // 45s exceeds the OLD 30s TTL (would have thrown a spurious "rider just became unavailable") but is
-    // comfortably inside the widened 60s window — a single delayed heartbeat on the 20s cadence no longer
-    // steers the customer off a live rider.
+  it("a bid counts as presence (owner 2026-10-12): a biker who bid and locked the phone 5 min ago is still selectable", async () => {
+    // The foreground heartbeat stops when the phone locks. 5 min is far past the old 60s TTL (which dropped
+    // the bid) but inside the push cutoff the bid is now held to.
     const { service, metrics } = svc({
       offer: {
         findFirst: async () => ({
@@ -138,7 +137,7 @@ describe("MatchingService.selectOffer — metric wrapper re-throws domain errors
           order: { status: "open_for_offers", customerId: "cust" },
           rider: {
             isOnline: true,
-            lastHeartbeatAt: new Date(Date.now() - 45_000),
+            lastHeartbeatAt: new Date(Date.now() - 5 * 60_000),
             kycStatus: "verified",
             accountStatus: "active",
             onHold: false,
@@ -157,8 +156,8 @@ describe("MatchingService.selectOffer — metric wrapper re-throws domain errors
     expect(metrics.recordMatchSelect).toHaveBeenCalledWith(7, "assigned" satisfies MatchSelectOutcome);
   });
 
-  it("KB-HEARTBEAT-MARGIN: a genuinely-gone rider (heartbeat 90s old) is still rejected as unavailable", async () => {
-    // The widened TTL must still catch a real dropout — 90s is past even the 60s window.
+  it("a genuinely-gone biker (no heartbeat for 20 min, past the push cutoff) is still rejected as unavailable", async () => {
+    // Longer than any auction window plus grace, so only a rider silent since before the order existed.
     const { service } = svc({
       offer: {
         findFirst: async () => ({
@@ -168,7 +167,7 @@ describe("MatchingService.selectOffer — metric wrapper re-throws domain errors
           order: { status: "open_for_offers", customerId: "cust" },
           rider: {
             isOnline: true,
-            lastHeartbeatAt: new Date(Date.now() - 90_000),
+            lastHeartbeatAt: new Date(Date.now() - 20 * 60_000),
             kycStatus: "verified",
             accountStatus: "active",
             onHold: false,
@@ -222,7 +221,7 @@ describe("MatchingService.selectOffer — C4 soft-lock vs an open merchant debt 
     };
   }
 
-  it("rejects selection when the offer's rider owes a merchant a collect-and-return debt (N-20)", async () => {
+  it("rejects selection when the offer's biker owes a merchant a collect-and-return debt (N-20)", async () => {
     const { service, metrics } = svc({
       offer: {
         findFirst: async () => ({
@@ -240,7 +239,7 @@ describe("MatchingService.selectOffer — C4 soft-lock vs an open merchant debt 
     expect(metrics.recordMatchSelect).toHaveBeenCalledWith(7, "unavailable" satisfies MatchSelectOutcome);
   });
 
-  it("allows selection once the rider's debt/handshake is settled (the soft-lock query finds nothing open)", async () => {
+  it("allows selection once the biker's debt/handshake is settled (the soft-lock query finds nothing open)", async () => {
     const { service } = svc({
       offer: {
         findFirst: async () => ({
@@ -407,12 +406,40 @@ describe("MatchingService — the 15 s choose grace after the offer window (afte
   it("still assigns an offer chosen inside the grace (window over, grace not), and pins the grace in the CAS", async () => {
     const { service, orderUpdateMany } = selectSvc(OFFER_WINDOW_MS + 5_000);
     await expect(service.selectOffer(orderId, offerId, "cust")).resolves.toMatchObject({ status: "assigned", riderId: "r1" });
-    const where = (orderUpdateMany.mock.calls[0] as unknown as [{ where: { createdAt: { gt: Date } } }])[0].where;
+    type Arm = { offerWindowEndsAt: { gt: Date } | null; createdAt?: { gt: Date } };
+    const where = (orderUpdateMany.mock.calls[0] as unknown as [{ where: { OR: [Arm, Arm] } }])[0].where;
     expect(where).toMatchObject({ id: orderId, status: "open_for_offers" });
-    // The CAS cutoff is window + grace ago — an order older than that can't be claimed even if it's still open.
-    const cutoffAgo = Date.now() - where.createdAt.gt.getTime();
+    // The CAS pins the window end + grace: a stored end later than grace-ago, or (no stored end, a pre-0089
+    // row) a createdAt later than window + grace ago — an order past that can't be claimed even if still open.
+    const [stored, legacy] = where.OR;
+    const storedAgo = Date.now() - (stored.offerWindowEndsAt as { gt: Date }).gt.getTime();
+    expect(storedAgo).toBeGreaterThanOrEqual(OFFER_CHOOSE_GRACE_MS);
+    expect(storedAgo).toBeLessThan(OFFER_CHOOSE_GRACE_MS + 1_000);
+    expect(legacy.offerWindowEndsAt).toBeNull();
+    const cutoffAgo = Date.now() - (legacy.createdAt as { gt: Date }).gt.getTime();
     expect(cutoffAgo).toBeGreaterThanOrEqual(OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS);
     expect(cutoffAgo).toBeLessThan(OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS + 1_000);
+  });
+
+  it("reads the stored window end: an order past the old 90 s mark whose raised window is still open is choosable", async () => {
+    const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
+    const { service } = svc({
+      offer: {
+        findFirst: async () => ({
+          status: "pending",
+          riderId: "r1",
+          offeredFare: { toString: () => "3.00" },
+          order: { status: "open_for_offers", customerId: "cust", createdAt: new Date(Date.now() - 4 * 60_000), offerWindowEndsAt: new Date(Date.now() + 30_000) },
+          rider: { isOnline: true, lastHeartbeatAt: new Date(), kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null },
+        }),
+        update: async () => ({}),
+        updateMany: async () => ({ count: 0 }),
+      },
+      order: { updateMany: orderUpdateMany, findFirst: async () => null },
+      orderEvent: { create: async () => ({}) },
+      block: { findFirst: async () => null },
+    });
+    await expect(service.selectOffer(orderId, offerId, "cust")).resolves.toMatchObject({ status: "assigned" });
   });
 
   it("409s once the grace has run out, without touching the order — even though it's still open_for_offers", async () => {
@@ -423,7 +450,7 @@ describe("MatchingService — the 15 s choose grace after the offer window (afte
   });
 
   /** expireOrder's tx: `claim` is the expiry CAS's count; `stillOpen` is the order the deferral re-read finds. */
-  function expireSvc(claim: number, stillOpen: { createdAt: Date } | null) {
+  function expireSvc(claim: number, stillOpen: { createdAt: Date; offerWindowEndsAt?: Date | null } | null) {
     const updateMany = vi.fn(async () => ({ count: claim }));
     const offerUpdateMany = vi.fn(async () => ({ count: 0 }));
     const eventCreate = vi.fn(async () => ({}));
@@ -441,37 +468,60 @@ describe("MatchingService — the 15 s choose grace after the offer window (afte
     return { service, updateMany, offerUpdateMany, eventCreate, notifyOrderExpired };
   }
 
-  it("the expiry CAS only claims an order past the grace OR with no pending offer", async () => {
+  it("the expiry CAS only claims an order past its window end + grace, OR past its window end with no pending offer", async () => {
     const { service, updateMany } = expireSvc(1, null);
     await expect(service.expireOrder(orderId)).resolves.toEqual({ expired: true });
-    const where = (updateMany.mock.calls[0] as unknown as [{ where: { OR: [{ createdAt: { lte: Date } }, unknown] } }])[0].where;
-    expect(where).toMatchObject({
-      id: orderId,
-      status: "open_for_offers",
-      OR: [{ createdAt: { lte: expect.any(Date) } }, { offers: { none: { status: "pending" } } }],
-    });
-    const cutoffAgo = Date.now() - where.OR[0].createdAt.lte.getTime();
-    expect(cutoffAgo).toBeGreaterThanOrEqual(OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS);
-    expect(cutoffAgo).toBeLessThan(OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS + 1_000);
+    type Ended = { OR: [{ offerWindowEndsAt: { lte: Date } }, { offerWindowEndsAt: null; createdAt: { lte: Date } }] };
+    const where = (updateMany.mock.calls[0] as unknown as [{ where: { id: string; status: string; OR: [Ended, { AND: [Ended, unknown] }] } }])[0].where;
+    expect(where).toMatchObject({ id: orderId, status: "open_for_offers" });
+    const [pastGrace, endedNoPending] = where.OR;
+    const graceAgo = Date.now() - pastGrace.OR[0].offerWindowEndsAt.lte.getTime();
+    expect(graceAgo).toBeGreaterThanOrEqual(OFFER_CHOOSE_GRACE_MS);
+    expect(graceAgo).toBeLessThan(OFFER_CHOOSE_GRACE_MS + 1_000);
+    const legacyAgo = Date.now() - pastGrace.OR[1].createdAt.lte.getTime();
+    expect(legacyAgo).toBeGreaterThanOrEqual(OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS);
+    expect(legacyAgo).toBeLessThan(OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS + 1_000);
+    // The no-pending arm still needs the window to have ENDED — a raise can push the end past the job.
+    const [ended, noPending] = endedNoPending.AND;
+    expect(Date.now() - ended.OR[0].offerWindowEndsAt.lte.getTime()).toBeLessThan(1_000);
+    expect(noPending).toEqual({ offers: { none: { status: "pending" } } });
   });
 
-  it("defers (no expiry, no push) an order still holding pending offers inside the grace, and says when the grace ends", async () => {
+  it("defers (no expiry, no push) an order still holding pending offers inside the grace, and says to retry at the grace end", async () => {
     const createdAt = new Date(Date.now() - OFFER_WINDOW_MS - 2_000);
     const { service, offerUpdateMany, eventCreate, notifyOrderExpired } = expireSvc(0, { createdAt });
     const res = await service.expireOrder(orderId);
-    expect(res).toEqual({ expired: false, graceEndsAt: new Date(createdAt.getTime() + OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS) });
+    expect(res).toEqual({ expired: false, retryAt: new Date(createdAt.getTime() + OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS) });
     expect(offerUpdateMany).not.toHaveBeenCalled();
     expect(eventCreate).not.toHaveBeenCalled();
     expect(notifyOrderExpired).not.toHaveBeenCalled();
   });
 
-  it("is a plain no-op (no graceEndsAt) once the order already left open_for_offers", async () => {
+  it("defers to the NEW window end when a raise pushed it past the queued job", async () => {
+    const offerWindowEndsAt = new Date(Date.now() + 45_000);
+    const { service, notifyOrderExpired } = expireSvc(0, { createdAt: new Date(Date.now() - OFFER_WINDOW_MS), offerWindowEndsAt });
+    await expect(service.expireOrder(orderId)).resolves.toEqual({ expired: false, retryAt: offerWindowEndsAt });
+    expect(notifyOrderExpired).not.toHaveBeenCalled();
+  });
+
+  it("is a plain no-op (no retryAt) once the order already left open_for_offers", async () => {
     const { service } = expireSvc(0, null);
     await expect(service.expireOrder(orderId)).resolves.toEqual({ expired: false });
   });
 });
 
 describe("MatchingService.expandBroadcast — widening ticks push only the new ring", () => {
+  // D-99 made the reach nationwide, so BROADCAST.expansion ships empty and these ticks are a dormant hook.
+  // Re-arm the old 5 → 8 → 12 km schedule here so the mechanism stays proven if a narrower reach returns.
+  const steps = BROADCAST.expansion as { atMs: number; radiusM: number }[];
+  beforeAll(() => {
+    process.env[BROADCAST.baseRadiusEnv] = "5000";
+    steps.push({ atMs: 30_000, radiusM: 8_000 }, { atMs: 60_000, radiusM: 12_000 });
+  });
+  afterAll(() => {
+    delete process.env[BROADCAST.baseRadiusEnv];
+    steps.length = 0;
+  });
   // A version/variant-valid UUID — the board event's `.strict()` contract parses the id as a uuid.
   const expandOrderId = "33333333-3333-4333-8333-333333333333";
   // DS17-01: createdAt is now load-bearing — expandBroadcast sizes the rebroadcast push TTL to the order's
@@ -646,7 +696,7 @@ describe("MatchingService.expandBroadcast — widening ticks push only the new r
 });
 
 describe("MatchingService.selectOffer — block enforcement (a blocked pair never re-matches)", () => {
-  it("rejects selecting an offer from a blocked rider and never assigns the order", async () => {
+  it("rejects selecting an offer from a blocked biker and never assigns the order", async () => {
     const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
     // A block row exists between this customer and rider — the symmetric predicate matches either
     // direction, so the offer can't be selected.
@@ -710,10 +760,10 @@ describe("MatchingService.selectOffer — U62 + MJ-RL2 (C10): every 409 says why
     expect(await reasonOf(sel({ rider: { onHold: true } }).selectOffer(orderId, offerId, "cust"))).toBe("rider_unavailable");
     expect(await reasonOf(sel({ obligation: true }).selectOffer(orderId, offerId, "cust"))).toBe("rider_unavailable");
     expect(await reasonOf(sel({ claim: async () => ({ count: 0 }) }).selectOffer(orderId, offerId, "cust"))).toBe("order_closed");
-    await expect(sel({ rider: { isOnline: false } }).selectOffer(orderId, offerId, "cust")).rejects.toThrow("Rider just became unavailable, pick another");
+    await expect(sel({ rider: { isOnline: false } }).selectOffer(orderId, offerId, "cust")).rejects.toThrow("Biker just became unavailable, pick another");
   });
 
-  it("the rider was just assigned elsewhere (one_active_ride) — the one true 'taken by another customer'", async () => {
+  it("the biker was just assigned elsewhere (one_active_ride) — the one true 'taken by another customer'", async () => {
     const taken = new Prisma.PrismaClientKnownRequestError("unique", { code: "P2002", clientVersion: "test" });
     const service = sel({
       claim: async () => {

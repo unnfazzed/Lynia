@@ -404,8 +404,8 @@ const PILL_TONE: Record<PillTone, { text: string; bg: string; dot: string }> = {
 // not "Rate your rider"). Unknown values (e.g. a pre-humanized "Verified") fall through untouched.
 const STATUS_PILL_LABELS: Record<string, string> = {
   requested: "Getting ready",
-  open_for_offers: "Finding riders",
-  assigned: "Rider assigned",
+  open_for_offers: "Finding bikers",
+  assigned: "Biker assigned",
   confirmed: "Confirmed",
   en_route_pickup: "Heading to pickup",
   picked_up: "Parcel collected",
@@ -514,7 +514,7 @@ const STEP_LABELS: Record<"customer" | "rider", Partial<Record<JobType, Record<s
     parcel: {
       assigned: "Ride accepted",
       confirmed: "Items & note confirmed",
-      en_route_pickup: "Rider on the way to pickup",
+      en_route_pickup: "Biker on the way to pickup",
       picked_up: "Items collected",
       en_route_dropoff: "On the way to drop-off",
       delivered: "Delivered",
@@ -526,8 +526,8 @@ const STEP_LABELS: Record<"customer" | "rider", Partial<Record<JobType, Record<s
     // D-03: "the tracker grammar is Express's, re-labelled" — same seven dots, food-voiced copy.
     // Positional sibling to STEP_LABELS.rider.food below (D3, Lane D's own customer tracker).
     food: {
-      assigned: "Rider secured",
-      confirmed: "Rider at the restaurant",
+      assigned: "Biker secured",
+      confirmed: "Biker at the restaurant",
       en_route_pickup: "Picking up your order",
       picked_up: "Picked up",
       en_route_dropoff: "On the way",
@@ -572,8 +572,8 @@ const STEP_LABELS: Record<"customer" | "rider", Partial<Record<JobType, Record<s
 const FOOD_CUSTOMER_STEPS = [
   { key: "placed", label: "Order placed" },
   { key: "accepted", label: "Restaurant accepted" },
-  { key: "assigned", label: "Rider secured" },
-  { key: "confirmed", label: "Rider at the restaurant" },
+  { key: "assigned", label: "Biker secured" },
+  { key: "confirmed", label: "Biker at the restaurant" },
   { key: "picked_up", label: "Picked up" },
   { key: "en_route_dropoff", label: "On the way" },
   { key: "delivered", label: "Delivered" },

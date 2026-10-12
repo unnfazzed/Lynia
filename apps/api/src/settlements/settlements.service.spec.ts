@@ -70,8 +70,8 @@ describe("SettlementsService.commissionOverview (prepaid per-ride)", () => {
       fares: "100.00",
       commission: perRideCommission(100).toFixed(2),
     });
-    // Commission accrues at the configured rate — $0.00 while the launch rate is 0%.
-    expect(view.rows[0]!.commission).toBe(COMMISSION.ratePct === 0 ? "0.00" : perRideCommission(100).toFixed(2));
+    // Commission accrues at the configured rate (10% by default, owner 2026-10-12).
+    expect(view.rows[0]!.commission).toBe("10.00");
     expect(view.kpis).toMatchObject({
       ratePct: COMMISSION.ratePct,
       rides: 7,
@@ -104,7 +104,7 @@ describe("SettlementsService.commissionOverview (prepaid per-ride)", () => {
     expect(range.lt.toISOString()).toBe("2026-07-03T00:00:00.000Z");
   });
 
-  it("returns an empty overview (no riders, zeroed KPIs) when nothing completed in the window", async () => {
+  it("returns an empty overview (no bikers, zeroed KPIs) when nothing completed in the window", async () => {
     const { prisma } = overviewPrisma([], []);
     const svc = new SettlementsService(prisma as unknown as PrismaService);
     const view = await svc.commissionOverview(new Date("2026-07-06T00:00:00Z"));

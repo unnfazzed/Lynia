@@ -195,7 +195,7 @@ describe("R1 — Review · restaurant", () => {
     const t = render();
     await flush();
     const all = texts(t);
-    const order = ["Review order", "Gava’s Kitchen", "ITEMS", "Sadza & beef stew", "+ Add more items", "DELIVER TO", "12 Lanark Rd, Belgravia", "WHEN", "As soon as possible", "YOUR PHONE", "0771 234 567", "NOTE FOR THE RIDER", "PAY", "Cash at the door", "Food", "Delivery fee", "Total", "Free to cancel until the rider collects your order."];
+    const order = ["Review order", "Gava’s Kitchen", "ITEMS", "Sadza & beef stew", "+ Add more items", "DELIVER TO", "12 Lanark Rd, Belgravia", "WHEN", "As soon as possible", "YOUR PHONE", "0771 234 567", "NOTE FOR THE BIKER", "PAY", "Cash at the door", "Food", "Delivery fee", "Total", "Free to cancel until the biker collects your order."];
     let at = -1;
     for (const s of order) {
       const i = all.indexOf(s, at + 1);
@@ -421,7 +421,7 @@ describe("States", () => {
     expect(pressable(t, "Use this address")!.props.accessibilityState.disabled).toBe(false);
     // Move the draft far outside the corridor.
     const edit = t.root.findAll((n) => typeof n.props.onMove === "function")[0]!;
-    act(() => edit.props.onMove({ lat: -18.5, lng: 31.9 }));
+    act(() => edit.props.onMove({ lat: -15.4167, lng: 28.2833 }));
     all = texts(t);
     expect(all.some((s) => /doesn’t deliver to/.test(s))).toBe(true);
     expect(all).toContain("Pick an address Gava’s Kitchen delivers to");
@@ -617,9 +617,9 @@ describe("R8a / R8b — prescription (behind rxEnabled)", () => {
     press(t, /^Place order · /);
     await flush();
     all = texts(t);
-    expect(all).toContain("I’ll show the original prescription to the rider");
+    expect(all).toContain("I’ll show the original prescription to the biker");
     expect(mockPlace).not.toHaveBeenCalled();
-    press(t, "I’ll show the original prescription to the rider");
+    press(t, "I’ll show the original prescription to the biker");
     press(t, /^Place order · /);
     await flush();
     expect(mockPlace.mock.calls[0]![1].prescription).toEqual({ photoKeys: ["rx/u/1.jpg", "rx/u/2.jpg"], patientName: "Rudo Moyo", consent: true });
@@ -828,14 +828,14 @@ describe("Reviewed list 2026-10-07 — Review & place (wave 4, lane B)", () => {
   });
 
   it("U26: a deliver-to outside the area opens R3b on Place instead of placing", async () => {
-    mockHome = { label: "Marondera", point: { lat: -18.5, lng: 31.9 }, area: null };
+    mockHome = { label: "Lusaka", point: { lat: -15.4167, lng: 28.2833 }, area: null };
     const t = render();
     await flush();
     press(t, /^Place order · /);
     await flush();
     expect(mockPlace).not.toHaveBeenCalled();
     const all = texts(t);
-    expect(all.some((s) => s.startsWith("Gava’s Kitchen doesn’t deliver to Marondera."))).toBe(true);
+    expect(all.some((s) => s.startsWith("Gava’s Kitchen doesn’t deliver to Lusaka."))).toBe(true);
     expect(all).toContain("Pick an address Gava’s Kitchen delivers to");
     expect(pressable(t, "Use this address")!.props.accessibilityState.disabled).toBe(true);
   });
@@ -1000,7 +1000,7 @@ describe("Reviewed list 2026-10-07 — Review & place (wave 4, lane B)", () => {
     const fillRx = (t: renderer.ReactTestRenderer): void => {
       const field = t.root.findAll((n) => n.props.accessibilityLabel === "Patient name" && typeof n.props.onChangeText === "function")[0]!;
       act(() => field.props.onChangeText("Rudo Moyo"));
-      press(t, "I’ll show the original prescription to the rider");
+      press(t, "I’ll show the original prescription to the biker");
     };
 
     it("U64: a missing patient name or consent tick is said as a sentence, not the field's label", async () => {
@@ -1012,7 +1012,7 @@ describe("Reviewed list 2026-10-07 — Review & place (wave 4, lane B)", () => {
       const field = t.root.findAll((n) => n.props.accessibilityLabel === "Patient name" && typeof n.props.onChangeText === "function")[0]!;
       act(() => field.props.onChangeText("Rudo Moyo"));
       press(t, /^Place order · /);
-      expect(texts(t)).toContain("Confirm you’ll show the original prescription to the rider");
+      expect(texts(t)).toContain("Confirm you’ll show the original prescription to the biker");
       expect(mockPlace).not.toHaveBeenCalled();
     });
 

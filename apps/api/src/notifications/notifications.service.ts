@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { merchantAmountDueUsd, OFFER_WINDOW_MS } from "@lynia/shared";
+import { merchantAmountDueUsd, OFFER_WINDOW_MS, offerWindowEndsAt } from "@lynia/shared";
 import { androidChannelFor, PUSH, type PushAdapter } from "../adapters/push/push.interface";
 import { PrismaService } from "../prisma/prisma.service";
 import { auditData } from "../admin/admin.shared";
@@ -27,17 +27,17 @@ interface Notice {
  */
 export const STATUS_NOTICES: Record<string, Notice> = {
   assigned: { to: ["rider"], title: "You got the job", body: "You've been selected for a delivery — open it to confirm the details." },
-  confirmed: { to: ["customer"], title: "Rider confirmed your items", body: "Your rider has reviewed the parcel details." },
-  en_route_pickup: { to: ["customer"], title: "Rider on the way", body: "Your rider is heading to the pickup point." },
-  picked_up: { to: ["customer"], title: "Parcel collected", body: "Your rider has your parcel and is on the move." },
+  confirmed: { to: ["customer"], title: "Biker confirmed your items", body: "Your biker has reviewed the parcel details." },
+  en_route_pickup: { to: ["customer"], title: "Biker on the way", body: "Your biker is heading to the pickup point." },
+  picked_up: { to: ["customer"], title: "Parcel collected", body: "Your biker has your parcel and is on the move." },
   en_route_dropoff: { to: ["customer"], title: "On the way to drop-off", body: "Your parcel is on the way to drop-off." },
-  delivered: { to: ["customer"], title: "Delivered", body: "Your parcel was delivered — tap to rate your rider." },
+  delivered: { to: ["customer"], title: "Delivered", body: "Your parcel was delivered — tap to rate your biker." },
   completed: { to: ["rider"], title: "Delivery complete", body: "Nice work — you're free for the next job." },
-  expired: { to: ["customer"], title: "No riders yet", body: "No rider took your price yet. Try raising it and sending again." },
+  expired: { to: ["customer"], title: "No bikers yet", body: "No biker took your price yet. Try raising it and sending again." },
   // Terminal hand-off failure (C6/F-02): the RIDER marked it (they already know), so this pushes the
   // CUSTOMER only — the party who must learn their parcel wasn't delivered. Mirrors the FEED_NOTICES
   // `undelivered` copy so the in-app feed row matches the push the customer saw (the feed↔push contract).
-  undelivered: { to: ["customer"], title: "Delivery couldn't be completed", body: "Your rider couldn't hand the parcel over — tap for details." },
+  undelivered: { to: ["customer"], title: "Delivery couldn't be completed", body: "Your biker couldn't hand the parcel over — tap for details." },
   cancelled: { to: ["customer", "rider"], title: "Order cancelled", body: "This delivery was cancelled." },
 };
 
@@ -80,20 +80,20 @@ function parcelCustomerCopy(status: string, order: ParcelCopyOrder): { title: st
   const first = order.rider?.profile?.firstName?.trim() || null;
   switch (status) {
     case "en_route_pickup":
-      return { title: `${first ?? "Your rider"} is on the way to pickup`, body: "Open to see your delivery code." };
+      return { title: `${first ?? "Your biker"} is on the way to pickup`, body: "Open to see your delivery code." };
     case "picked_up": {
       const landmark = (order.dropoff as { landmark?: unknown } | null | undefined)?.landmark;
       const where = typeof landmark === "string" && landmark.trim() ? landmark.trim() : "the drop-off";
-      return { title: `${first ?? "Your rider"} has your parcel`, body: `On the way to ${where}.` };
+      return { title: `${first ?? "Your biker"} has your parcel`, body: `On the way to ${where}.` };
     }
     case "delivered": {
-      const rate = `Tap to rate ${first ?? "your rider"}.`;
+      const rate = `Tap to rate ${first ?? "your biker"}.`;
       return { title: "Parcel delivered", body: order.deliveredAt ? `Handed over at ${harareTime(new Date(order.deliveredAt))}. ${rate}` : rate };
     }
     case "undelivered": {
       const reason = (order.undeliveredReason && UNDELIVERED_REASON_COPY[order.undeliveredReason]) || null;
-      const call = `Call ${first ?? "your rider"} to sort it out.`;
-      return { title: `${first ?? "Your rider"} couldn't deliver your parcel`, body: reason ? `${reason} ${call}` : call };
+      const call = `Call ${first ?? "your biker"} to sort it out.`;
+      return { title: `${first ?? "Your biker"} couldn't deliver your parcel`, body: reason ? `${reason} ${call}` : call };
     }
     // The customer is excluded from a cancel they made, and a rider's cancel sends the rebroadcast
     // notice instead (OrderLifecycleService.cancel) — so the customer hears this when LyniaGo cancels.
@@ -117,11 +117,11 @@ export const MERCHANT_STATUS_NOTICES: Partial<Record<string, Notice>> = {
   // Order flow v2 G3a (ledger D-59, BRIEF §15 "push follows the stage"): collected, at the door,
   // delivered and not delivered, in `O.g.push.c`'s words (merchantCustomerCopy fills the names). The
   // static title/body here is the no-name fallback.
-  picked_up: { to: ["customer"], title: "Your rider has your order", body: "On the way." },
+  picked_up: { to: ["customer"], title: "Your biker has your order", body: "On the way." },
   // U12: the `en_route_dropoff` STATUS fires right after pickup, so it is never pushed (MERCHANT_SILENT_PUSH).
   // The drawn "At your door" push is sent when the rider says "I'm here" (FoodDebtService.markAtDropoff, D5),
   // and the feed's step follows that stamp (notifications-feed.service.ts).
-  en_route_dropoff: { to: ["customer"], title: "Your rider is at your door", body: "Have your cash ready." },
+  en_route_dropoff: { to: ["customer"], title: "Your biker is at your door", body: "Have your cash ready." },
   delivered: { to: ["customer"], title: "Delivered", body: "Enjoy!" },
   undelivered: { to: ["customer"], title: "Your order wasn’t delivered", body: "Nothing was charged." },
 };
@@ -145,7 +145,7 @@ interface MerchantCopyOrder {
 export function merchantCustomerCopy(status: string, order: MerchantCopyOrder): { title: string; body: string } | null {
   const n = order.rider?.profile?.firstName?.trim() || null;
   const v = order.merchant?.name?.trim() || null;
-  const fallback = { n: "Your rider" };
+  const fallback = { n: "Your biker" };
   switch (status) {
     case "picked_up":
       return pushCopy(PUSH_C.collected, { n }, fallback);
@@ -301,11 +301,11 @@ export class NotificationsService {
       const fare = order.proposedFare == null ? NaN : Number(order.proposedFare);
       const msg = noSupply
         ? {
-            title: "No riders online nearby",
-            body: "Nobody was online near your pickup just now — tap to get pinged when a rider comes online.",
+            title: "No bikers online nearby",
+            body: "Nobody was online near your pickup just now — tap to get pinged when a biker comes online.",
           }
         : Number.isFinite(fare)
-          ? { title: `No rider took ${money(fare)}`, body: `Send again at ${money(fare + RESEND_STEP)} in one tap.` }
+          ? { title: `No biker took ${money(fare)}`, body: `Send again at ${money(fare + RESEND_STEP)} in one tap.` }
           : { title: STATUS_NOTICES.expired.title, body: STATUS_NOTICES.expired.body };
       await this.send([order.customerId], { ...msg, data: { orderId, status: "expired" } });
     } catch (err) {
@@ -334,7 +334,7 @@ export class NotificationsService {
   /** The new-offer copy off the order's live pending offers. A lookup failure falls back to the count
    *  copy's wording, so the push still goes out. */
   private async newOfferCopy(orderId: string): Promise<{ title: string; body: string }> {
-    const fallback = { title: "New offer for your parcel", body: "Choose a rider before the timer ends." };
+    const fallback = { title: "New offer for your parcel", body: "Choose a biker before the timer ends." };
     try {
       const pending = await this.prisma.offer.findMany({
         where: { orderId, status: "pending" },
@@ -349,13 +349,13 @@ export class NotificationsService {
       if (pending.length === 0) return fallback;
       if (pending.length > 1) {
         const count = await this.prisma.offer.count({ where: { orderId, status: "pending" } });
-        return { title: `${count} offers for your parcel`, body: "Choose a rider before the timer ends." };
+        return { title: `${count} offers for your parcel`, body: "Choose a biker before the timer ends." };
       }
       const [offer] = pending;
       const profile = offer.rider?.profile;
       const first = profile?.firstName?.trim();
       const initial = profile?.lastName?.trim().charAt(0);
-      const who = first ? (initial ? `${first} ${initial.toUpperCase()}.` : first) : "A rider";
+      const who = first ? (initial ? `${first} ${initial.toUpperCase()}.` : first) : "A biker";
       return {
         title: `New offer: ${money(offer.offeredFare)}`,
         body: `${who} can pick up in ${offer.etaMinutes} min. Choose before the timer ends.`,
@@ -412,19 +412,19 @@ export class NotificationsService {
       // back on that auction); everything else keeps today's generic re-broadcast nudge with no orderId.
       const orderIds = [...new Set(waiters.map((w) => w.orderId).filter((id): id is string => !!id))];
       const openIds = new Set<string>();
-      // DS17-01: alongside "is this order still open" also capture its createdAt, so the live-order push
-      // below can compute how much of THAT order's own 90s window is left and set a TTL that tracks order
-      // age rather than send time — a flat OFFER_WINDOW TTL on a push sent late in the window outlives the
+      // DS17-01: alongside "is this order still open" also capture its window end, so the live-order push
+      // below can compute how much of THAT order's own window is left and set a TTL that tracks the auction
+      // rather than send time — a flat OFFER_WINDOW TTL on a push sent late in the window outlives the
       // auction it points at.
-      const createdAtByOrder = new Map<string, Date>();
+      const windowEndByOrder = new Map<string, Date>();
       if (orderIds.length > 0) {
         const openOrders = await this.prisma.order.findMany({
           where: { id: { in: orderIds }, status: "open_for_offers" },
-          select: { id: true, createdAt: true },
+          select: { id: true, createdAt: true, offerWindowEndsAt: true },
         });
         for (const o of openOrders) {
           openIds.add(o.id);
-          createdAtByOrder.set(o.id, o.createdAt);
+          windowEndByOrder.set(o.id, offerWindowEndsAt(o));
         }
       }
 
@@ -461,12 +461,12 @@ export class NotificationsService {
         // time. A push sent late in the window with a full-window TTL stays valid in the provider past the
         // moment the order's auction closes; if the window has already elapsed, don't push a dead reference
         // at all (the waiter stays queued for the next nearby rider — F-18 at-least-once).
-        const createdAt = createdAtByOrder.get(w.orderId);
-        const remainingMs = createdAt ? createdAt.getTime() + OFFER_WINDOW_MS - Date.now() : BROADCAST_PUSH_TTL_SECONDS * 1000;
+        const windowEnd = windowEndByOrder.get(w.orderId);
+        const remainingMs = windowEnd ? windowEnd.getTime() - Date.now() : BROADCAST_PUSH_TTL_SECONDS * 1000;
         if (remainingMs <= 0) continue;
         const got = await this.send([w.profileId], {
-          title: "A rider's online near you",
-          body: "Riders are being pinged on your live request — tap to follow the offers.",
+          title: "A biker's online near you",
+          body: "Bikers are being pinged on your live request — tap to follow the offers.",
           data: { kind: "riders_available", orderId: w.orderId },
           // Fix 5: time-critical — a rider being online is a fleeting signal, so a push that lands long
           // after the window is stale (they may be offline again). Drop it rather than deliver it late.
@@ -479,8 +479,8 @@ export class NotificationsService {
       const genericIds = waiters.filter((w) => !w.orderId || !openIds.has(w.orderId)).map((w) => w.profileId);
       if (genericIds.length > 0) {
         const got = await this.send(genericIds, {
-          title: "A rider's online near you",
-          body: "Riders are back near your pickup — send your parcel again to get offers.",
+          title: "A biker's online near you",
+          body: "Bikers are back near your pickup — send your parcel again to get offers.",
           data: { kind: "riders_available" },
           ttlSeconds: BROADCAST_PUSH_TTL_SECONDS,
         });
@@ -531,15 +531,20 @@ export class NotificationsService {
   /**
    * Best-effort push to an explicit set of profiles (trust & safety fan-outs — e.g. the SOS
    * counterparty alert). Empty/duplicate ids are handled by `send`. Never throws.
+   *
+   * Resolves to the profiles the provider accepted at least one device for (empty on a failure), so a
+   * caller whose message must not vanish (a KYC outcome — RiderService.notifyKycDecision) can see that it
+   * reached nobody. Callers that don't care ignore it, as before.
    */
   async notifyProfiles(
     profileIds: string[],
     msg: { title: string; body: string; data?: Record<string, string>; collapseKey?: string; silent?: boolean },
-  ): Promise<void> {
+  ): Promise<Set<string>> {
     try {
-      await this.send(profileIds, msg);
+      return await this.send(profileIds, msg);
     } catch (err) {
       this.logger.warn(`notifyProfiles failed: ${(err as Error).message}`);
+      return new Set();
     }
   }
 
@@ -584,7 +589,12 @@ export class NotificationsService {
       // `platform` routes each device to its transport — iOS tokens are raw APNs tokens (PlatformRoutedPush).
       select: { token: true, profileId: true, platform: true },
     });
-    if (tokens.length === 0) return new Set();
+    if (tokens.length === 0) {
+      // Not an error (a customer who never allowed notifications), but never silent either: a caller that
+      // needs the message to land reads the empty set; this line is for whoever greps the log after.
+      this.logger.debug(`push "${msg.data?.kind ?? "untyped"}" reached no device: ${profileIds.length} profile(s), no registered token`);
+      return new Set();
+    }
 
     // One batched provider call (FCM sendEach, chunked ≤500) instead of a per-token round-trip fan-out.
     // Results align with `tokens` order, so a dead token is pruned — and a delivery credited — by position.

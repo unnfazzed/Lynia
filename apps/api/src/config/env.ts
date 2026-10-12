@@ -373,11 +373,10 @@ export const envSchema = z.object({
     z.coerce.number().int().positive().optional(),
   ),
   // --- Commission wallet (policy COMMISSION, docs/plans/2026-rider-wallet-design.md) ---
-  // The commission "flip" is an ENV change, not a code deploy (design OV-2A): this overrides the
-  // bundled COMMISSION.ratePct default (0). Launch = unset/0 (no debits, wallet hidden); the flip sets
-  // it to the calibrated take-rate (e.g. 10). Clamped [0,100] and resolved in ONE place
-  // (resolveCommissionRatePct); a malformed value falls back to the launch default rather than charging
-  // a wrong rate. "" (deploy injects it when the Variable is unset) coerces to absent. NEVER hardcode a
+  // Overrides the bundled COMMISSION.ratePct default — 10% since owner 2026-10-12 (unset = 10; "0"
+  // switches commission off, an env change, not a code deploy — design OV-2A). Clamped [0,100] and resolved in ONE place
+  // (resolveCommissionRatePct); a malformed value falls back to the bundled default rather than
+  // charging a wrong rate. "" (deploy injects it when the Variable is unset) coerces to absent. NEVER hardcode a
   // percentage anywhere else — read the resolved rate the API serves in /wallet/config.
   COMMISSION_RATE_PCT: z.preprocess(
     (v) => (v === "" ? undefined : v),
@@ -497,8 +496,8 @@ export const envSchema = z.object({
       const diditMissing = (name: string, breaks: string): void =>
         reject(name, `Missing ${name}: ${breaks}. Fix: set it (and DIDIT_ENABLED=true in the deploy), or run KYC_MODE=manual until Didit is wired.`);
       if (!env.DIDIT_API_KEY) diditMissing("DIDIT_API_KEY", "KYC_PROVIDER=didit can't create a single verification session");
-      if (!env.DIDIT_WORKFLOW_ID) diditMissing("DIDIT_WORKFLOW_ID", "every Didit session create fails, so no rider can start the ID check");
-      if (!env.DIDIT_WEBHOOK_SECRET) diditMissing("DIDIT_WEBHOOK_SECRET", "every Didit decision webhook is refused (503), so no rider is ever verified");
+      if (!env.DIDIT_WORKFLOW_ID) diditMissing("DIDIT_WORKFLOW_ID", "every Didit session create fails, so no biker can start the ID check");
+      if (!env.DIDIT_WEBHOOK_SECRET) diditMissing("DIDIT_WEBHOOK_SECRET", "every Didit decision webhook is refused (503), so no biker is ever verified");
     }
     // Launch-hygiene guards: scoped to the PRODUCTION tier only. The staging tier (APP_ENV=staging,
     // its own service/DB/secrets — never the live one) legitimately runs the QA bypasses so load

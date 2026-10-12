@@ -82,8 +82,8 @@ export default async function CustomerProfilePage({ params }: { params: Promise<
       <section className="panels" style={{ marginBottom: tokens.space.lg }}>
         <KpiCard label="Orders" value={c.orders} hint={`since ${c.joined}`} size={22} />
         <KpiCard label="Spend" value={`$${c.spend}`} hint="agreed fares, cash" size={22} />
-        <KpiCard label="Cancel rate" value={`${c.cancelRatePct}%`} hint="after a rider accepted" size={22} />
-        <KpiCard label="Reports" value={c.flags || 0} hint="from riders or recipients" size={22} />
+        <KpiCard label="Cancel rate" value={`${c.cancelRatePct}%`} hint="after a biker accepted" size={22} />
+        <KpiCard label="Reports" value={c.flags || 0} hint="from bikers or recipients" size={22} />
       </section>
 
       <div className="detail-grid">
@@ -119,7 +119,7 @@ export default async function CustomerProfilePage({ params }: { params: Promise<
                   label: "Public name",
                   value: (
                     <span>
-                      {c.publicName} <span className="mut" style={{ fontSize: 11 }}>what riders see</span>
+                      {c.publicName} <span className="mut" style={{ fontSize: 11 }}>what bikers see</span>
                     </span>
                   ),
                 },
@@ -156,7 +156,7 @@ export default async function CustomerProfilePage({ params }: { params: Promise<
               ))
             ) : (
               <div className="mut" style={{ fontSize: 13 }}>
-                No reports. Riders can report a customer from the app after a no-show or unsafe pickup.
+                No reports. Bikers can report a customer from the app after a no-show or unsafe pickup.
               </div>
             )}
           </section>

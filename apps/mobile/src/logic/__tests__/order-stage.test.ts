@@ -1,4 +1,5 @@
-import { GPS_PAUSED_MS, phoneMasked, resolveStage, type StageInput, stageMapShare, stagePeekFloor, stageTitleKey, stepIndex, suggestedRetryPrice } from "../order-stage";
+import { OFFER_WINDOW_MS } from "@lynia/shared";
+import { GPS_PAUSED_MS, offerWindowLengthMs, phoneMasked, resolveStage, type StageInput, stageMapShare, stagePeekFloor, stageTitleKey, stepIndex, suggestedRetryPrice } from "../order-stage";
 
 const NOW = Date.parse("2026-10-01T09:30:00Z");
 const DROP = { lat: -17.8105, lng: 31.0705 };
@@ -17,7 +18,7 @@ const at = (msAgo: number): string => new Date(NOW - msAgo).toISOString();
 const stage = (over: Partial<StageInput>) => resolveStage({ ...base, ...over });
 
 describe("resolveStage", () => {
-  it("open_for_offers: finding, no riders, or offers", () => {
+  it("open_for_offers: finding, no bikers, or offers", () => {
     expect(stage({}).stage).toBe("finding");
     expect(stage({ ridersNearby: 0 }).stage).toBe("noRiders");
     // Unknown supply is never "nobody online".
@@ -27,7 +28,7 @@ describe("resolveStage", () => {
     expect(stage({ offerCount: 2, ridersNearby: 0 }).stage).toBe("offers");
   });
 
-  it.each(["assigned", "confirmed", "en_route_pickup"])("%s → rider on the way to pickup", (status) => {
+  it.each(["assigned", "confirmed", "en_route_pickup"])("%s → biker on the way to pickup", (status) => {
     expect(stage({ status, rider: { lat: -17.83, lng: 31.05, at: at(5_000) } }).stage).toBe("toPickup");
   });
 
@@ -48,7 +49,7 @@ describe("resolveStage", () => {
     expect(stage({ status: "expired" }).stage).toBe("retryNoMatch");
   });
 
-  it("cancelled: a rider bail before pickup is the retry; anything else the cancelled terminal", () => {
+  it("cancelled: a biker bail before pickup is the retry; anything else the cancelled terminal", () => {
     expect(stage({ status: "cancelled", cancelledBy: "rider" }).stage).toBe("retryRiderCancelled");
     expect(stage({ status: "cancelled", cancelledBy: "rider", events: [{ status: "picked_up", createdAt: at(60_000) }] }).stage).toBe("cancelled");
     expect(stage({ status: "cancelled", cancelledBy: "customer" }).stage).toBe("cancelled");
@@ -73,7 +74,7 @@ describe("resolveStage", () => {
     expect(stage({ status: "open_for_offers", rider: stale }).gpsPaused).toBe(false);
   });
 
-  it("v2 state 13: the re-broadcast after a rider cancel is a finding state until an offer lands", () => {
+  it("v2 state 13: the re-broadcast after a biker cancel is a finding state until an offer lands", () => {
     expect(stage({ reopened: true }).stage).toBe("reopened");
     expect(stage({ reopened: true, ridersNearby: 0 }).stage).toBe("reopened");
     expect(stage({ reopened: true, offerCount: 1 }).stage).toBe("offers");
@@ -144,5 +145,22 @@ describe("stage helpers", () => {
   it("suggested retry price is last + $0.50", () => {
     expect(suggestedRetryPrice(3.36)).toBe(3.86);
     expect(suggestedRetryPrice(4)).toBe(4.5);
+  });
+});
+
+describe("offerWindowLengthMs", () => {
+  const opened = [{ status: "open_for_offers", createdAt: "2026-10-12T10:00:00.000Z" }];
+
+  it("is the stored end minus the order's open event (a quiet-market or raised window)", () => {
+    expect(offerWindowLengthMs("2026-10-12T10:04:00.000Z", opened)).toBe(4 * 60_000);
+  });
+
+  it("falls back to the fixed window without an end or an open event", () => {
+    expect(offerWindowLengthMs(null, opened)).toBe(OFFER_WINDOW_MS);
+    expect(offerWindowLengthMs("2026-10-12T10:04:00.000Z", [])).toBe(OFFER_WINDOW_MS);
+  });
+
+  it("never reports less than the fixed window", () => {
+    expect(offerWindowLengthMs("2026-10-12T10:00:30.000Z", opened)).toBe(OFFER_WINDOW_MS);
   });
 });

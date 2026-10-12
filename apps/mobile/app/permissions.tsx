@@ -19,6 +19,7 @@ import {
 } from "../src/permissions/state";
 import { markRiderPermFlowDone } from "../src/permissions/store";
 import { requestPushRegistration } from "../src/push/push-kick";
+import { EVENTS, track } from "../src/telemetry/events";
 import { TrustVerifiedArt } from "../src/ui/art/TrustVerifiedArt";
 import { PC, RP } from "../src/ui/firstrun/copy";
 import {
@@ -100,6 +101,16 @@ export default function RiderPermissionsScreen(): React.ReactElement {
   }, []);
 
   const next = useCallback((): void => void enter(stepIdx + 1), [enter, stepIdx]);
+  // Funnel analytics: every P screen is `/permissions` to the screen tracker — name the step and its answer.
+  const answer = useCallback((value: string, at: RiderPermScreen | null = screen): void => track(EVENTS.permAnswer, { screen: at, answer: value, flow }), [screen, flow]);
+  /** "Not now" / "Continue" past a step without granting it. */
+  const skip = useCallback((): void => {
+    answer("not_now");
+    next();
+  }, [answer, next]);
+  useEffect(() => {
+    if (screen) track(EVENTS.permScreen, { screen, flow });
+  }, [screen, flow]);
 
   // P13 marks the flow done for this install (README §4 `riderPermFlowDone`).
   useEffect(() => {
@@ -114,6 +125,7 @@ export default function RiderPermissionsScreen(): React.ReactElement {
 
   /** P2's answer (and every re-read of location) → the next screen; precise + GPS = P3 with the P8 toast. */
   const onLocation = (loc: Parameters<typeof afterLocationAnswer>[0], gps: boolean, from: RiderPermScreen): void => {
+    answer(gps || loc !== "granted" ? loc : "granted_gps_off", from);
     const to = afterLocationAnswer(loc, gps);
     if (to === "granted") {
       toast.show(RP.grantedToast, "success");
@@ -124,6 +136,7 @@ export default function RiderPermissionsScreen(): React.ReactElement {
 
   /** P10's answer (and every re-read of notifications). */
   const onNotif = async (granted: boolean): Promise<void> => {
+    answer(granted ? "granted" : "denied");
     if (!granted) return setScreen("P11");
     requestPushRegistration();
     const muted = await mutedJobChannel();
@@ -165,7 +178,7 @@ export default function RiderPermissionsScreen(): React.ReactElement {
   switch (screen) {
     case "P1":
       return (
-        <FirstRunScreen testID="P1" footer={<PinnedFooter primary={{ label: RP.locCta, onPress: askLocation, loading: busy, testID: "p-cta" }} link={{ label: RP.notNow, onPress: next, testID: "p-link" }} />}>
+        <FirstRunScreen testID="P1" footer={<PinnedFooter primary={{ label: RP.locCta, onPress: askLocation, loading: busy, testID: "p-cta" }} link={{ label: RP.notNow, onPress: skip, testID: "p-link" }} />}>
           <HeroPanel tone="violet">
             <HeroDisc icon="map-pin" />
           </HeroPanel>
@@ -192,7 +205,7 @@ export default function RiderPermissionsScreen(): React.ReactElement {
       );
     case "P4":
       return (
-        <FirstRunScreen testID="P4" footer={<PinnedFooter primary={{ label: RP.approxCta, icon: "navigation", onPress: askLocation, loading: busy, testID: "p-cta" }} link={{ label: RP.notNow, onPress: next, testID: "p-link" }} />}>
+        <FirstRunScreen testID="P4" footer={<PinnedFooter primary={{ label: RP.approxCta, icon: "navigation", onPress: askLocation, loading: busy, testID: "p-cta" }} link={{ label: RP.notNow, onPress: skip, testID: "p-link" }} />}>
           <HeroPanel tone="violet">
             <HeroDisc icon="map-pin" />
           </HeroPanel>
@@ -202,7 +215,7 @@ export default function RiderPermissionsScreen(): React.ReactElement {
       );
     case "P5":
       return (
-        <FirstRunScreen testID="P5" footer={<PinnedFooter primary={{ label: RP.askAgain, onPress: askLocation, loading: busy, testID: "p-cta" }} link={{ label: RP.continue, onPress: next, testID: "p-link" }} />}>
+        <FirstRunScreen testID="P5" footer={<PinnedFooter primary={{ label: RP.askAgain, onPress: askLocation, loading: busy, testID: "p-cta" }} link={{ label: RP.continue, onPress: skip, testID: "p-link" }} />}>
           <HeroPanel tone="danger">
             <HeroDisc icon="map-pin" />
           </HeroPanel>
@@ -216,7 +229,7 @@ export default function RiderPermissionsScreen(): React.ReactElement {
           testID="P6"
           // B1 (D-82 §4): "Not now" moves on like every other step's, so a blocked permission never traps the rider.
           footer={
-            <PinnedFooter primary={{ label: RP.openSettings, onPress: openPhoneSettings, testID: "p-cta" }} link={{ label: RP.notNow, onPress: next, testID: "p-not-now" }}>
+            <PinnedFooter primary={{ label: RP.openSettings, onPress: openPhoneSettings, testID: "p-cta" }} link={{ label: RP.notNow, onPress: skip, testID: "p-not-now" }}>
               <TextLinkButton label={RP.turnedOn} onPress={() => void recheckLocation(true)} testID="p-link" />
             </PinnedFooter>
           }
@@ -245,7 +258,7 @@ export default function RiderPermissionsScreen(): React.ReactElement {
                 loading: busy,
                 testID: "p-cta",
               }}
-              link={{ label: RP.notNow, onPress: next, testID: "p-link" }}
+              link={{ label: RP.notNow, onPress: skip, testID: "p-link" }}
             />
           }
         >
@@ -265,7 +278,7 @@ export default function RiderPermissionsScreen(): React.ReactElement {
               primary={{ label: RP.notifCta, icon: "bell", onPress: withBusy(async () => {
                   await onNotif((await requestNotif()) === "granted");
                 }), loading: busy, testID: "p-cta" }}
-              link={{ label: RP.notNow, onPress: next, testID: "p-link" }}
+              link={{ label: RP.notNow, onPress: skip, testID: "p-link" }}
             />
           }
         >
@@ -282,7 +295,7 @@ export default function RiderPermissionsScreen(): React.ReactElement {
           testID="P11"
           // B1 (D-82 §4): "Not now" moves on — without it a rider with blocked notifications never reached the board.
           footer={
-            <PinnedFooter primary={{ label: RP.openSettings, onPress: openPhoneSettings, testID: "p-cta" }} link={{ label: RP.notNow, onPress: next, testID: "p-not-now" }}>
+            <PinnedFooter primary={{ label: RP.openSettings, onPress: openPhoneSettings, testID: "p-cta" }} link={{ label: RP.notNow, onPress: skip, testID: "p-not-now" }}>
               <TextLinkButton label={RP.turnedOn} onPress={() => void recheckNotif(true)} testID="p-link" />
             </PinnedFooter>
           }
@@ -299,7 +312,7 @@ export default function RiderPermissionsScreen(): React.ReactElement {
       return (
         <FirstRunScreen
           testID="P12"
-          footer={<PinnedFooter primary={{ label: RP.openSettings, onPress: () => openChannelSettings(mutedChannel), testID: "p-cta" }} link={{ label: RP.notNow, onPress: next, testID: "p-link" }} />}
+          footer={<PinnedFooter primary={{ label: RP.openSettings, onPress: () => openChannelSettings(mutedChannel), testID: "p-cta" }} link={{ label: RP.notNow, onPress: skip, testID: "p-link" }} />}
         >
           <HeroPanel tone="danger" height={180}>
             <HeroDisc icon="volume-x" />

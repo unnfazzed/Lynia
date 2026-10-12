@@ -18,7 +18,7 @@ describe("migration 0086 — orders_clear_handover_ciphers trigger", () => {
     expect(statuses.sort()).toEqual(["cancelled", "completed", "delivered", "expired", "undelivered"]);
   });
 
-  it("drops the pickup ciphertext once the rider has collected", () => {
+  it("drops the pickup ciphertext once the biker has collected", () => {
     expect(sql).toMatch(/ELSIF NEW\."status" IN \('picked_up', 'en_route_dropoff'\) THEN\s+NEW\."pickup_code_cipher" := NULL;/);
   });
 

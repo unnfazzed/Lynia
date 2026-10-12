@@ -39,7 +39,7 @@ export default async function SosPage() {
       cell: (s) => (
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
           <span className="mono">{s.raisedByProfileId}</span>
-          <Pill>{s.raisedByRole}</Pill>
+          <Pill>{s.raisedByRole === "rider" ? "biker" : s.raisedByRole}</Pill>
         </span>
       ),
     },

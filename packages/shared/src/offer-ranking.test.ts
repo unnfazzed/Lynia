@@ -130,7 +130,7 @@ describe("rankOffers — property tests", () => {
   });
 });
 
-describe("rankOffers — a business's own riders (merchant web upgrade L3)", () => {
+describe("rankOffers — a business's own bikers (merchant web upgrade L3)", () => {
   const base = { ratingAvg: 4.5, ratingCount: 20 };
 
   it("changes nothing without the merchant weights, even when an offer is flagged", () => {
@@ -142,7 +142,7 @@ describe("rankOffers — a business's own riders (merchant web upgrade L3)", () 
     expect(rankOffers(offers.map(({ preferred: _p, ...o }) => o)).map((r) => r.score)).toEqual(rankOffers(offers).map((r) => r.score));
   });
 
-  it("lists the business's rider first when another offer is only cheaper", () => {
+  it("lists the business's biker first when another offer is only cheaper", () => {
     const offers: OfferRankInput[] = [
       { offeredFare: 4, etaMinutes: 8, ...base },
       { offeredFare: 5, etaMinutes: 8, ...base, preferred: true },
@@ -150,7 +150,7 @@ describe("rankOffers — a business's own riders (merchant web upgrade L3)", () 
     expect(rankOffers(offers, MERCHANT_OFFER_WEIGHTS).map((r) => r.index)).toEqual([1, 0]);
   });
 
-  it("lists the business's rider first when another offer is only sooner, or only better rated", () => {
+  it("lists the business's biker first when another offer is only sooner, or only better rated", () => {
     const sooner: OfferRankInput[] = [
       { offeredFare: 5, etaMinutes: 3, ...base },
       { offeredFare: 5, etaMinutes: 12, ...base, preferred: true },
@@ -173,7 +173,7 @@ describe("rankOffers — a business's own riders (merchant web upgrade L3)", () 
     expect(PREFERRED_OFFER_BONUS).toBeLessThan(DEFAULT_OFFER_WEIGHTS.price + DEFAULT_OFFER_WEIGHTS.eta);
   });
 
-  it("ranks several of the business's riders among themselves on the usual blend", () => {
+  it("ranks several of the business's bikers among themselves on the usual blend", () => {
     const offers: OfferRankInput[] = [
       { offeredFare: 5, etaMinutes: 6, ...base, preferred: true },
       { offeredFare: 4.5, etaMinutes: 5, ...base, preferred: true },
@@ -182,7 +182,7 @@ describe("rankOffers — a business's own riders (merchant web upgrade L3)", () 
     expect(rankOffers(offers, MERCHANT_OFFER_WEIGHTS).map((r) => r.index)).toEqual([1, 0, 2]);
   });
 
-  it("lets a clearly better offer sit above a weaker one of the business's riders", () => {
+  it("lets a clearly better offer sit above a weaker one of the business's bikers", () => {
     const offers: OfferRankInput[] = [
       { offeredFare: 5, etaMinutes: 10, ...base, preferred: true },
       { offeredFare: 4, etaMinutes: 5, ...base, preferred: true },

@@ -12,6 +12,9 @@ import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { auditData, fmtDate, fmtUntil, reportsFor, round, toTripRow } from "./admin.shared";
 
+/** Rows per page of GET /admin/riders. The admin console relies on a full page meaning "there may be more". */
+export const RIDER_LIST_PAGE_SIZE = 100;
+
 @Injectable()
 export class AdminRidersService {
   private readonly logger = new Logger(AdminRidersService.name);
@@ -25,13 +28,21 @@ export class AdminRidersService {
     private readonly gateway: TrackingGateway,
   ) {}
 
-  /** Rider roster for ops — the KYC review queue when filtered to `pending`. */
-  async listRiders(kyc?: KycStatus, plate?: PlateStatus) {
+  /**
+   * Rider roster for ops — the KYC review queue when filtered to `pending`. Pages of
+   * {@link RIDER_LIST_PAGE_SIZE} (`page` is 1-based; a full page means there may be another).
+   *
+   * The `pending` queue is served OLDEST-WAITING FIRST (updatedAt asc): newest-first put the riders who had
+   * waited longest past the 100-row cut, where nobody ever saw them. Every other view stays newest-first.
+   */
+  async listRiders(kyc?: KycStatus, plate?: PlateStatus, page = 1) {
     const riders = await this.prisma.rider.findMany({
       // First Run v2 E4 (D-82): `plate` = the plate review queue (`checking`).
       where: { ...(kyc ? { kycStatus: kyc } : {}), ...(plate ? { plateStatus: plate } : {}) },
-      orderBy: { updatedAt: "desc" },
-      take: 100,
+      // profileId breaks updatedAt ties so a page boundary never repeats or skips a row.
+      orderBy: [{ updatedAt: kyc === "pending" ? "asc" : "desc" }, { profileId: "asc" }],
+      skip: (Math.max(1, Math.floor(page)) - 1) * RIDER_LIST_PAGE_SIZE,
+      take: RIDER_LIST_PAGE_SIZE,
       select: {
         profileId: true,
         bikeReg: true,
@@ -164,11 +175,11 @@ export class AdminRidersService {
     const copy = resolved
       ? {
           title: "Your delivery is back on track",
-          body: "The review of your assigned rider is complete — your delivery is continuing as normal.",
+          body: "The review of your assigned biker is complete — your delivery is continuing as normal.",
         }
       : {
           title: "An update on your delivery",
-          body: "There's a change with your assigned rider — our team is reviewing this trip.",
+          body: "There's a change with your assigned biker — our team is reviewing this trip.",
         };
     try {
       const activeOrders = await this.prisma.order.findMany({
@@ -214,21 +225,21 @@ export class AdminRidersService {
   async suspendRider(actor: string, profileId: string, input: { reason: string; note?: string | null }) {
     const result = await this.prisma.$transaction(async (tx) => {
       const rider = await tx.rider.findUnique({ where: { profileId }, select: { accountStatus: true } });
-      if (!rider) throw new NotFoundException("Rider not found");
+      if (!rider) throw new NotFoundException("Biker not found");
       // A permanent ban outranks a suspension and is only undone by a deliberate dedicated action — never
       // downgraded as a side effect. Without this guard, `ban → suspend` silently demotes banned→suspended,
       // and a subsequent `liftRider` (whose ban-permanence check only fires on accountStatus===BANNED) then
       // reinstates the rider to active — defeating the very invariant liftRider exists to protect. Mirror
       // that guard here so a banned rider can't be laundered back to active through two ordinary actions.
       if (rider.accountStatus === RiderAccountStatus.BANNED) {
-        throw new ConflictException("A banned rider can't be suspended — reinstating a ban is a separate action.");
+        throw new ConflictException("A banned biker can't be suspended — reinstating a ban is a separate action.");
       }
       // LC-D-SIB-2: the CAS below guards on the OBSERVED status, which trivially matches when that status
       // already IS the target — so an admin's lost-response retry of an already-applied suspend wrote a
       // second `rider.suspend` audit row (with the retry's own reason), re-ran the session revocation and
       // re-fired the rider + every active-order customer push. Refuse the no-op re-apply up front, mirroring
       // liftRider/clearHold's explicit precondition (409, nothing written, nothing pushed).
-      if (rider.accountStatus === RiderAccountStatus.SUSPENDED) throw new ConflictException("Rider is already suspended");
+      if (rider.accountStatus === RiderAccountStatus.SUSPENDED) throw new ConflictException("Biker is already suspended");
       // DS13-04: CAS on the observed accountStatus instead of a blind update-by-id (mirrors DS-03 in
       // admin-orders.service). The findUnique takes no row lock, so a concurrent standing change (e.g. a
       // ban committing between the read and this write) would otherwise be silently clobbered back to
@@ -240,7 +251,7 @@ export class AdminRidersService {
         // against an already-online rider).
         data: { accountStatus: RiderAccountStatus.SUSPENDED, suspendReason: input.reason, isOnline: false },
       });
-      if (changed.count === 0) throw new ConflictException("Rider changed — refresh and try again");
+      if (changed.count === 0) throw new ConflictException("Biker changed — refresh and try again");
       // FRAUD P2-3: revoke every live refresh session in the SAME transaction. JwtAuthGuard only verifies
       // the access-token signature — it never re-reads accountStatus — so without this a suspended rider
       // keeps minting fresh access tokens via /auth/refresh indefinitely (the short access-token TTL is the
@@ -280,17 +291,17 @@ export class AdminRidersService {
         where: { profileId },
         select: { accountStatus: true, onHold: true, reliabilityScore: true },
       });
-      if (!rider) throw new NotFoundException("Rider not found");
+      if (!rider) throw new NotFoundException("Biker not found");
       // A lift restores access and clears a reliability hold. It does NOT undo a permanent ban —
       // reinstating a banned rider must be a separate, deliberate action, not a side effect of "lift".
       if (rider.accountStatus === RiderAccountStatus.BANNED) {
-        throw new ConflictException("A banned rider can't be lifted — reinstating a ban is a separate action.");
+        throw new ConflictException("A banned biker can't be lifted — reinstating a ban is a separate action.");
       }
       // Lift is an un-suspend, not a hold-clear — an active-but-on_hold rider (never suspended) uses
       // `clearHold` below instead, so the two audit trails ("suspension lifted" vs "hold cleared")
       // stay distinct.
       if (rider.accountStatus !== RiderAccountStatus.SUSPENDED) {
-        throw new ConflictException("Rider is not suspended");
+        throw new ConflictException("Biker is not suspended");
       }
       // DS13-04: CAS on the FULL observed state the guard + score recompute depend on (accountStatus +
       // onHold + reliabilityScore). Without it, op B's ban committing after the BANNED check above would be
@@ -315,7 +326,7 @@ export class AdminRidersService {
           reliabilityScore: Math.max(rider.reliabilityScore, RELIABILITY.ON_HOLD_CLEAR_AT),
         },
       });
-      if (changed.count === 0) throw new ConflictException("Rider changed — refresh and try again");
+      if (changed.count === 0) throw new ConflictException("Biker changed — refresh and try again");
       const audit = await tx.auditLog.create({
         data: auditData(actor, "rider.lift", profileId, input.reason, input.note),
         select: { id: true },
@@ -343,10 +354,10 @@ export class AdminRidersService {
   async banRider(actor: string, profileId: string, input: { reason: string; note?: string | null }) {
     const result = await this.prisma.$transaction(async (tx) => {
       const rider = await tx.rider.findUnique({ where: { profileId }, select: { accountStatus: true } });
-      if (!rider) throw new NotFoundException("Rider not found");
+      if (!rider) throw new NotFoundException("Biker not found");
       // LC-D-SIB-2: refuse re-banning an already-banned rider (see suspendRider) — the observed-status CAS
       // below would otherwise match and double-write the `rider.ban` audit row + re-fire every push.
-      if (rider.accountStatus === RiderAccountStatus.BANNED) throw new ConflictException("Rider is already banned");
+      if (rider.accountStatus === RiderAccountStatus.BANNED) throw new ConflictException("Biker is already banned");
       // DS13-04: CAS on the observed accountStatus (mirrors DS-03) so a concurrent standing change can't
       // be silently clobbered between the read and this write. 0 rows ⇒ the row moved ⇒ 409.
       const changed = await tx.rider.updateMany({
@@ -355,7 +366,7 @@ export class AdminRidersService {
         // immediately and can't keep bidding/being selected.
         data: { accountStatus: RiderAccountStatus.BANNED, suspendReason: input.reason, isOnline: false },
       });
-      if (changed.count === 0) throw new ConflictException("Rider changed — refresh and try again");
+      if (changed.count === 0) throw new ConflictException("Biker changed — refresh and try again");
       // FRAUD P2-3: revoke every live refresh session in the same transaction (see suspendRider) — a ban
       // must not leave the rider able to renew access tokens indefinitely via /auth/refresh.
       await tx.session.updateMany({ where: { profileId, revokedAt: null }, data: { revokedAt: new Date() } });
@@ -399,8 +410,8 @@ export class AdminRidersService {
   async verifyPlate(actor: string, profileId: string, input: { plate: string; reason?: string | null; note?: string | null }) {
     return this.prisma.$transaction(async (tx) => {
       const rider = await tx.rider.findUnique({ where: { profileId }, select: { bikeReg: true, plateStatus: true } });
-      if (!rider) throw new NotFoundException("Rider not found");
-      if (!rider.bikeReg) throw new ConflictException("Rider has no plate on file");
+      if (!rider) throw new NotFoundException("Biker not found");
+      if (!rider.bikeReg) throw new ConflictException("Biker has no plate on file");
       if (rider.plateStatus !== PlateStatus.CHECKING) throw new ConflictException(`Plate is not waiting for a check (status: ${rider.plateStatus})`);
       const changed = await tx.rider.updateMany({
         where: { profileId, bikeReg: input.plate, plateStatus: PlateStatus.CHECKING },
@@ -421,11 +432,11 @@ export class AdminRidersService {
         where: { profileId },
         select: { accountStatus: true, onHold: true, reliabilityScore: true },
       });
-      if (!rider) throw new NotFoundException("Rider not found");
+      if (!rider) throw new NotFoundException("Biker not found");
       if (rider.accountStatus !== RiderAccountStatus.ACTIVE) {
-        throw new ConflictException("Clear-hold only applies to an active rider — use lift/ban for suspended/banned.");
+        throw new ConflictException("Clear-hold only applies to an active biker — use lift/ban for suspended/banned.");
       }
-      if (!rider.onHold) throw new ConflictException("Rider is not on hold");
+      if (!rider.onHold) throw new ConflictException("Biker is not on hold");
       // DS13-04: CAS on the FULL observed state (accountStatus + onHold + reliabilityScore) the guard +
       // score recompute depend on. The velocity auto-hold (markUndelivered, FRAUD P0-3 #198) takes
       // lockRiderRow and sets onHold=true; an admin clear racing it must not overwrite that just-committed
@@ -441,7 +452,7 @@ export class AdminRidersService {
         // hold that the score hysteresis deliberately never self-clears — so reset heldReason to null too.
         data: { onHold: false, heldReason: null, reliabilityScore: Math.max(rider.reliabilityScore, RELIABILITY.ON_HOLD_CLEAR_AT) },
       });
-      if (changed.count === 0) throw new ConflictException("Rider changed — refresh and try again");
+      if (changed.count === 0) throw new ConflictException("Biker changed — refresh and try again");
       const audit = await tx.auditLog.create({
         data: auditData(actor, "rider.clear_hold", profileId, input.reason, input.note),
         select: { id: true },

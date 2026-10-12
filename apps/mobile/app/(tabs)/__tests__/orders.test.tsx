@@ -237,18 +237,18 @@ describe("(tabs)/orders.tsx — Orders v2", () => {
       expect(has(tree, "Tendai is heading to pickup")).toBe(true);
     });
 
-    it("a parcel still finding a rider reads 'Finding a rider' with the asking price", async () => {
+    it("a parcel still finding a biker reads 'Finding a biker' with the asking price", async () => {
       const tree = await open(emptyHistory, [{ ...parcel, status: "open_for_offers", riderCard: null, dropoff: { point: { lat: 0, lng: 0 }, landmark: "Belgravia, Harare" } }]);
-      expect(has(tree, "Finding a rider")).toBe(true);
+      expect(has(tree, "Finding a biker")).toBe(true);
       expect(has(tree, "Parcel to Belgravia · asking $12.00")).toBe(true);
     });
 
-    it("U06: a delivered, unrated parcel leaves NOW and is a history row (README §5), not 'Rider assigned'", async () => {
+    it("U06: a delivered, unrated parcel leaves NOW and is a history row (README §5), not 'Biker assigned'", async () => {
       const delivered = { ...parcel, id: "order-1", status: "delivered" };
       const tree = await open(history([histRow("order-1")]), [delivered]);
       expect(has(tree, "NOW")).toBe(false);
-      expect(has(tree, /is your rider/)).toBe(false);
-      expect(has(tree, "Rider assigned")).toBe(false);
+      expect(has(tree, /is your biker/)).toBe(false);
+      expect(has(tree, "Biker assigned")).toBe(false);
       expect(hosts(tree, (n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("Parcel to Borrowdale")).length).toBe(1);
     });
 
@@ -259,7 +259,7 @@ describe("(tabs)/orders.tsx — Orders v2", () => {
   });
 
   describe("history rows", () => {
-    it("a parcel row: 'Parcel to <area>', '<item> · from <pickup>', the outcome, the rider and what was paid", async () => {
+    it("a parcel row: 'Parcel to <area>', '<item> · from <pickup>', the outcome, the biker and what was paid", async () => {
       const tree = await open(history([histRow("parcel-1")]));
       expect(has(tree, "Parcel to Borrowdale")).toBe(true);
       expect(has(tree, "Documents · from Avondale Shops")).toBe(true);
@@ -281,7 +281,7 @@ describe("(tabs)/orders.tsx — Orders v2", () => {
 
     it("every unpaid outcome reads 'No charge' (owner 2026-10-02: Not delivered too)", async () => {
       const tree = await open(history([histRow("a", { status: "expired" }), histRow("b", { status: "undelivered" })]));
-      expect(has(tree, "No rider found")).toBe(true);
+      expect(has(tree, "No biker found")).toBe(true);
       expect(has(tree, "Not delivered")).toBe(true);
       expect(hosts(tree, (n) => flat(n) === "No charge").length).toBe(2);
       expect(has(tree, "$4.50")).toBe(false);
@@ -293,7 +293,7 @@ describe("(tabs)/orders.tsx — Orders v2", () => {
       expect(hosts(tree, (n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.endsWith(" stars")).length).toBe(1);
     });
 
-    it("drops jobs the user carried as a rider; a rider-only history is the empty card", async () => {
+    it("drops jobs the user carried as a biker; a rider-only history is the empty card", async () => {
       let tree = await open(history([histRow("parcel-1"), histRow("rider-1", { role: "rider", dropoff: { point: { lat: 0, lng: 0 }, landmark: "Mbare" } })]));
       expect(has(tree, "Parcel to Borrowdale")).toBe(true);
       expect(has(tree, "Parcel to Mbare")).toBe(false);
@@ -333,7 +333,7 @@ describe("(tabs)/orders.tsx — Orders v2", () => {
           full("e", { orderType: "merchant", merchantName: "Sadza Republic", service: "food", chargedTotal: "16.50" }),
         ]),
       );
-      expect(has(tree, "Rider cancelled")).toBe(true);
+      expect(has(tree, "Biker cancelled")).toBe(true);
       expect(has(tree, "Restaurant couldn’t take it")).toBe(true);
       expect(has(tree, "Pharmacy didn’t confirm")).toBe(true);
       expect(has(tree, "Cancelled by LyniaGo")).toBe(true);
@@ -408,7 +408,7 @@ describe("(tabs)/orders.tsx — Orders v2", () => {
   });
 
   describe("search", () => {
-    it("matches the area and the rider, marks the count, and says when nothing matches", async () => {
+    it("matches the area and the biker, marks the count, and says when nothing matches", async () => {
       const tree = await open(history([histRow("a"), histRow("b", { dropoff: { point: { lat: 0, lng: 0 }, landmark: "Belgravia" }, counterpartyName: null })]), [parcel]);
       press(tree, "Search your orders");
       const [input] = tree.root.findAll((n) => n.props.accessibilityLabel === "Search your orders" && typeof n.props.onChangeText === "function");

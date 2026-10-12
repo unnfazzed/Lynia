@@ -25,7 +25,7 @@ function ctrl(role: "customer" | "rider", riderActive: unknown, customerActives:
 }
 
 describe("AppBootstrapController.bootstrap", () => {
-  it("serves a customer their active order (rider read ran in parallel but doesn't ship)", async () => {
+  it("serves a customer their active order (biker read ran in parallel but doesn't ship)", async () => {
     const { c, activeForRider, activeOrdersForCustomer } = ctrl("customer", null, [{ id: "ord-1", status: "assigned" }]);
     const res = await c.bootstrap("p1");
     expect(res.me).toMatchObject({ id: "p1", role: "customer" });
@@ -59,11 +59,19 @@ describe("AppBootstrapController.bootstrap", () => {
     expect(res.activeOrder).toEqual(parcel);
   });
 
-  it("serves a rider their active job (and an empty activeOrders list)", async () => {
+  it("serves a biker their active job (and an empty activeOrders list when they have no orders)", async () => {
     const { c } = ctrl("rider", { id: "job-1", status: "picked_up" }, []);
     const res = await c.bootstrap("p1");
     expect(res.activeOrder).toEqual({ id: "job-1", status: "picked_up" });
     expect(res.activeOrders).toEqual([]);
+  });
+
+  it("keeps a biker's OWN live customer orders alongside their job (owner 2026-10-12: they must not vanish)", async () => {
+    const ownFood = { id: "ord-own", status: "picked_up", orderType: "merchant" };
+    const { c } = ctrl("rider", { id: "job-1", status: "assigned" }, [ownFood]);
+    const res = await c.bootstrap("p1");
+    expect(res.activeOrder).toEqual({ id: "job-1", status: "assigned" });
+    expect(res.activeOrders).toEqual([ownFood]);
   });
 
   it("carries the server version-gate minimum so a future client can skip the separate probe", async () => {

@@ -1,3 +1,4 @@
+import { WS_EVENTS } from "@lynia/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, create } from "react-test-renderer";
 import { useRiderBoard } from "../use-rider-board";
@@ -16,7 +17,7 @@ jest.mock("../../telemetry/rum", () => ({
 type FakeSocket = {
   on: (event: string, cb: (...args: unknown[]) => void) => FakeSocket;
   off: (event: string, cb: (...args: unknown[]) => void) => FakeSocket;
-  emit: () => FakeSocket;
+  emit: jest.Mock;
   disconnect: () => void;
   trigger: (event: string, ...args: unknown[]) => void;
 };
@@ -32,7 +33,7 @@ function mockCreateFakeSocket(): FakeSocket {
       handlers[event] = (handlers[event] ?? []).filter((h) => h !== cb);
       return socket;
     },
-    emit: () => socket,
+    emit: jest.fn(() => socket),
     disconnect: () => {},
     trigger: (event, ...args) => (handlers[event] ?? []).forEach((cb) => cb(...args)),
   };
@@ -40,12 +41,15 @@ function mockCreateFakeSocket(): FakeSocket {
 }
 
 let mockLastSocket: FakeSocket;
+// When true, the next acquired socket is ALREADY connected — the shared-socket late-subscriber case.
+let mockPreConnected = false;
 // A-O17: the hook now acquires/releases a shared connection instead of creating/disconnecting its
 // own — the mock doesn't need real ref-counting, just a socket per acquire and a no-op release, so
 // existing assertions against `mockLastSocket` keep working unchanged.
 jest.mock("../socket", () => ({
   acquireSocket: jest.fn(() => {
     mockLastSocket = mockCreateFakeSocket();
+    (mockLastSocket as FakeSocket & { connected?: boolean }).connected = mockPreConnected;
     return mockLastSocket;
   }),
   releaseSocket: jest.fn(),
@@ -339,5 +343,27 @@ describe("useRiderBoard food:offer", () => {
     });
 
     expect(onFoodOffer).not.toHaveBeenCalled();
+  });
+});
+
+// Shared-socket late subscriber: when the job/location hooks already hold a CONNECTED socket, the board
+// gets no "connect" event — it must still join the board and report connected.
+describe("useRiderBoard on an already-connected shared socket", () => {
+  afterEach(() => {
+    mockPreConnected = false;
+  });
+
+  it("subscribes to the board and reports connected without waiting for a connect event", () => {
+    mockPreConnected = true;
+    const qc = new QueryClient();
+    act(() => {
+      create(
+        <QueryClientProvider client={qc}>
+          <CaptureHarness online={true} />
+        </QueryClientProvider>,
+      );
+    });
+    expect(mockLastSocket.emit).toHaveBeenCalledWith(WS_EVENTS.boardSubscribe, {});
+    expect(latestBoard?.connected).toBe(true);
   });
 });

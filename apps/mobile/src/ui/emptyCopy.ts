@@ -12,7 +12,7 @@ export const emptyCopy = {
     none: { title: "No orders yet", body: "Your orders will show here." },
     noneParcels: { title: "No parcels yet", body: "Parcels you send show here." },
     noneService: { title: "No {service} orders yet", body: "Orders you place show here.", primary: "Show all orders" },
-    noMatch: { title: "No orders match “{q}”", body: "Try a place or rider name.", secondary: "Clear search" },
+    noMatch: { title: "No orders match “{q}”", body: "Try a place or biker name.", secondary: "Clear search" },
     offline: { title: "You’re offline", body: "Orders show when you’re back." },
     error: { title: "Couldn’t load orders", body: "Your orders are safe.", primary: "Try again" },
     noHistoryNote: "Past orders show here.",

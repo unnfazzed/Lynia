@@ -178,7 +178,7 @@ export function RingingScreen({
           // Nothing left: the edit itself cancelled the order, so there is nothing to confirm.
           if (!allGone) await onConfirm(active.id);
         },
-        allGone ? RING_COPY.cancelled : "Confirmed · we’ll send a rider when it’s nearly ready",
+        allGone ? RING_COPY.cancelled : "Confirmed · we’ll send a biker when it’s nearly ready",
         "Couldn't confirm the order. Try again.",
       );
     }
@@ -243,7 +243,7 @@ export function RingingScreen({
                   </button>
                 ))}
               </div>
-              <span>min · we book the rider to arrive as it&apos;s ready</span>
+              <span>min · we book the biker to arrive as it&apos;s ready</span>
             </div>
           )}
           {!shop && (

@@ -153,19 +153,21 @@ export class AdminController {
   }
 
   /** Rider roster / KYC review queue. `?kyc=pending|verified|failed` filters; unknown values are ignored.
-   *  First Run v2 E4 (D-82): `?plate=checking` is the plate review queue (also none|verified). */
+   *  First Run v2 E4 (D-82): `?plate=checking` is the plate review queue (also none|verified).
+   *  `?page=N` (1-based, default 1) pages through it, 100 rows a page; the pending queue is oldest-first. */
   @Get("riders")
-  riders(@Query("kyc") kyc?: string, @Query("plate") plate?: string) {
+  riders(@Query("kyc") kyc?: string, @Query("plate") plate?: string, @Query("page") page?: string) {
     const filter = kyc && KYC_VALUES.includes(kyc) ? (kyc as KycStatus) : undefined;
     const plateFilter = plate && (Object.values(PlateStatus) as string[]).includes(plate) ? (plate as PlateStatus) : undefined;
-    return this.ridersService.listRiders(filter, plateFilter);
+    const parsed = page != null ? Number.parseInt(page, 10) : Number.NaN;
+    return this.ridersService.listRiders(filter, plateFilter, Number.isFinite(parsed) && parsed >= 1 ? Math.min(parsed, 10_000) : 1);
   }
 
   /** KYC doc-review detail for one rider (A-02). 404s when the profile isn't a rider. */
   @Get("riders/:profileId/kyc")
   async kycReview(@Param("profileId", ParseUUIDPipe) profileId: string) {
     const review = await this.kycReviewService.getKycReview(profileId);
-    if (!review) throw new NotFoundException("Rider not found");
+    if (!review) throw new NotFoundException("Biker not found");
     return review;
   }
 
@@ -196,7 +198,7 @@ export class AdminController {
   @Get("riders/:profileId")
   async riderDetail(@Param("profileId", ParseUUIDPipe) profileId: string) {
     const rider = await this.ridersService.getRiderDetail(profileId);
-    if (!rider) throw new NotFoundException("Rider not found");
+    if (!rider) throw new NotFoundException("Biker not found");
     return rider;
   }
 

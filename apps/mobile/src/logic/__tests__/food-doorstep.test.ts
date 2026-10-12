@@ -26,13 +26,13 @@ describe("handshakeState", () => {
     ).toBe("confirmed");
   });
 
-  it("is frozen (R-05) once the window lapses or the rider disputes, even with a customer confirm on record", () => {
+  it("is frozen (R-05) once the window lapses or the biker disputes, even with a customer confirm on record", () => {
     expect(handshakeState({ ...base, customerCashConfirmedAt: "2026-07-31T10:14:00Z", cashHandshakeFrozenAt: "2026-07-31T10:16:00Z" })).toBe(
       "frozen",
     );
   });
 
-  it("is confirmed once support resolves a frozen handshake (the resolve sets the rider confirm and keeps the frozen record)", () => {
+  it("is confirmed once support resolves a frozen handshake (the resolve sets the biker confirm and keeps the frozen record)", () => {
     expect(
       handshakeState({
         ...base,
@@ -60,7 +60,7 @@ describe("codeEligible", () => {
     ).toBe(true);
   });
 
-  it("is false for a frozen CASH handshake with no rider confirm", () => {
+  it("is false for a frozen CASH handshake with no biker confirm", () => {
     expect(codeEligible({ ...base, customerCashConfirmedAt: "2026-07-31T10:14:00Z", cashHandshakeFrozenAt: "2026-07-31T10:16:00Z" })).toBe(false);
   });
 

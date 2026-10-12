@@ -25,7 +25,7 @@ interface NavEntry {
 const NAV: NavEntry[] = [
   { label: "Overview", href: "/", icon: <IconNavigation />, match: "/" },
   { label: "Orders", href: "/orders", icon: <IconPackage />, match: "/orders" },
-  { label: "Riders", href: "/riders", icon: <IconBike />, match: "/riders" },
+  { label: "Bikers", href: "/riders", icon: <IconBike />, match: "/riders" },
   { label: "KYC review", href: "/riders?kyc=pending", icon: <IconIdCard />, match: "/kyc", badge: "kycPending" },
   { label: "Customers", href: "/customers", icon: <IconUser />, match: "/customers" },
   { label: "Merchants", href: "/merchants", icon: <IconStore />, match: "/merchants" },

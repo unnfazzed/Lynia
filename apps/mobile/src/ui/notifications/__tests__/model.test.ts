@@ -1,6 +1,6 @@
 import type { NotificationRow } from "../../../api/notifications";
 import { earlier, N, NF } from "../copy";
-import { buildFeed, dayLabel, timeLabel } from "../model";
+import { buildFeed, dayLabel, kycSelfRetryOpen, timeLabel } from "../model";
 
 /** Notifications v1 (ledger D-66): the view-model rules, README "Behaviour" / "Tones" / "Time". */
 
@@ -126,7 +126,7 @@ describe("side, pin and needs-you", () => {
   const mine = row({ id: "c", orderId: "o6", to: "customer", type: "status", beat: "picked_up", venue: "Sadza Republic", service: "restaurants", riderName: "Tendai" });
   const acct = row({ id: "a", type: "account", action: "rider.lift" });
 
-  it("the rider sees jobs + account rows, the customer orders + account rows", () => {
+  it("the biker sees jobs + account rows, the customer orders + account rows", () => {
     const r = feedOf([job, mine, acct], "rider").days.flatMap((d) => d.items);
     expect(r.map((i) => i.title).sort()).toEqual([N.aRestoredT, N.tJobGlenara].sort());
     expect(r.find((i) => i.key === "o5")).toMatchObject({ line: N.rDelivered, tone: "good", rider: true });
@@ -162,8 +162,43 @@ describe("side, pin and needs-you", () => {
     const swap = row({ id: "sw", orderId: "o9", to: "customer", type: "swap", active: true, venue: "Healthwise Pharmacy", service: "pharmacy", swap: { item: "Panado 24s", sub: "Paracetamol 24s", diff: "same price" } });
     expect(feedOf([swap]).days[0]!.items[0]).toMatchObject({ title: N.tPharm, line: N.mSwap, action: { label: N.reviewSwap } });
 
+    // A KYC decline's "Try again" opens the rider side (its F page owns the retry), and only while the rider
+    // can still retry — see the KYC decline block below.
     const kyc = row({ id: "k", type: "account", action: "rider.kyc_decline" });
-    expect(feedOf([kyc], "rider").days[0]!.items[0]).toMatchObject({ title: N.aIdT, tone: "warn", action: { label: N.tryAgain, to: "/rider/become" } });
+    const live = buildFeed([kyc], { side: "rider", now: NOW, unreadIds: new Set(), dest, kycRetry: true });
+    expect(live.days[0]!.items[0]).toMatchObject({ title: N.aIdT, tone: "warn", action: { label: N.tryAgain, to: "/rider" } });
+  });
+
+  describe("a KYC decline's Try again", () => {
+    const decline = (id: string, d: number, extra: Partial<NotificationRow> = {}) => row({ id, type: "account", action: "rider.kyc_decline", at: at(d, 9), ...extra });
+    const feed = (rows: NotificationRow[], kycRetry: boolean) => buildFeed(rows, { side: "rider", now: NOW, unreadIds: new Set(), dest, kycRetry });
+    const items = (rows: NotificationRow[], kycRetry: boolean) => feed(rows, kycRetry).days.flatMap((d) => d.items);
+
+    it("never routes to R1 (/rider/become) — that only re-registers into a 409", () => {
+      for (const i of items([decline("k", 2)], true)) expect(i.action?.to).not.toBe("/rider/become");
+    });
+
+    it("is not offered when the rider can't retry (locked, final, verified since)", () => {
+      expect(items([decline("k", 2)], false)[0]!.action).toBeUndefined();
+    });
+
+    it("goes only on the newest decline, and not on one marked inactive", () => {
+      const [newer, older] = items([decline("old", 1), decline("new", 2)], true);
+      expect(newer!.key).toBe("new");
+      expect(newer!.action).toEqual({ label: N.tryAgain, to: "/rider" });
+      expect(older!.action).toBeUndefined();
+      expect(items([decline("k", 2, { active: false })], true)[0]!.action).toBeUndefined();
+    });
+
+    it("kycSelfRetryOpen: declined, under two strikes, and not an under-age or duplicate decline", () => {
+      expect(kycSelfRetryOpen({ kycStatus: "failed", kycAttempts: 1, kycDeclineReason: "id_unreadable" })).toBe(true);
+      expect(kycSelfRetryOpen({ kycStatus: "failed", kycAttempts: 2, kycDeclineReason: "id_unreadable" })).toBe(false);
+      expect(kycSelfRetryOpen({ kycStatus: "failed", kycAttempts: 0, kycDeclineReason: "underage" })).toBe(false);
+      expect(kycSelfRetryOpen({ kycStatus: "failed", kycAttempts: 0, kycDeclineReason: "duplicate" })).toBe(false);
+      expect(kycSelfRetryOpen({ kycStatus: "verified", kycAttempts: 1 })).toBe(false);
+      expect(kycSelfRetryOpen({ kycStatus: "pending" })).toBe(false);
+      expect(kycSelfRetryOpen(null)).toBe(false);
+    });
   });
 
   it("swiped rows are hidden until committed", () => {
@@ -172,8 +207,8 @@ describe("side, pin and needs-you", () => {
   });
 
   it("an older API (no structured fields) still renders, on the server's copy", () => {
-    const old = row({ id: "x", orderId: "o1", status: "en_route_pickup", title: "Rider on the way", message: "Your rider is heading to the pickup point.", to: "customer" });
-    expect(feedOf([old]).days[0]!.items[0]).toMatchObject({ title: "Rider on the way", line: "Your rider is heading to the pickup point.", service: "send" });
+    const old = row({ id: "x", orderId: "o1", status: "en_route_pickup", title: "Biker on the way", message: "Your biker is heading to the pickup point.", to: "customer" });
+    expect(feedOf([old]).days[0]!.items[0]).toMatchObject({ title: "Biker on the way", line: "Your biker is heading to the pickup point.", service: "send" });
   });
 });
 
@@ -213,7 +248,7 @@ describe("every order step (owner 2026-10-02)", () => {
     expect(feedOf([r]).days[0]!.items[0]!.steps.map((s) => s.label)).toEqual([N.tlDelivered, N.tlToDrop, N.tlCollected, N.tlOnWay, N.tlAssigned, N.tlPosted]);
   });
 
-  it("a rider's job reads got the job · heading to pickup · collected · delivered", () => {
+  it("a biker's job reads got the job · heading to pickup · collected · delivered", () => {
     const r = row({
       id: "j",
       orderId: "o2",
@@ -277,7 +312,7 @@ describe("detail fields (owner 2026-10-02): rows read as the handoff's sentences
     expect(one(row({ id: "w", type: "account", action: "wallet.credit" })).line).toBe("server message");
   });
 
-  it("a rider is told it was the customer who cancelled; anyone else keeps the push's line", () => {
+  it("a biker is told it was the customer who cancelled; anyone else keeps the push's line", () => {
     const cx = row({ id: "c", orderId: "o4", to: "rider", type: "status", beat: "cancelled", service: "restaurants", venue: "Mama's Kitchen", dropoffArea: "Avondale", customerName: "Nyasha", cancelledBy: "customer" });
     expect(one(cx)).toMatchObject({ title: N.tJobAvondale, line: N.rCancelled });
     expect(one({ ...cx, cancelledBy: "lynia" }).line).toBe("server message");

@@ -38,6 +38,22 @@ export async function decideKyc(
 }
 
 /**
+ * Give a biker their ID-check tries back (owner 2026-10-12): `POST /admin/riders/:id/kyc { status: "pending",
+ * resetAttempts: true }`. The endpoint zeroes the attempt counter, clears the decline reason and reopens the
+ * check in one transaction, with its `rider.kyc_reset` audit row (A-01), so <KycDecision> sets
+ * `auditInEndpoint`. The biker gets a "Finish your ID check" push. A refusal comes back as a failed
+ * `KycWriteResult`, like decideKyc.
+ */
+export async function resetKycAttempts(profileId: string, note?: string): Promise<KycWriteResult> {
+  const res = await adminPostResult(`/admin/riders/${profileId}/kyc`, { status: "pending", resetAttempts: true, note: note || null });
+  if (!res.ok) return { ok: false, message: describeAdminPostFailure(res) };
+  revalidatePath(`/riders/${profileId}/kyc`);
+  revalidatePath(`/riders/${profileId}`);
+  revalidatePath("/riders");
+  return { ok: true };
+}
+
+/**
  * Rider account-status mutations (item 1) — suspend / lift / ban via
  * `POST /admin/riders/:id/{suspend|lift|ban}`. The domain half of a <ConfirmModal> confirm (the audit
  * row is already written by submitAdminAction). `action` is the endpoint segment; the body carries the
@@ -54,7 +70,7 @@ export async function mutateRider(
 ): Promise<void> {
   // Defense-in-depth: `action` is interpolated into the endpoint path, so refuse anything outside the
   // known set even though every caller passes a literal (the type already constrains compile-time callers).
-  if (!(RIDER_ACTIONS as readonly string[]).includes(action)) throw new Error(`Unknown rider action: ${action}`);
+  if (!(RIDER_ACTIONS as readonly string[]).includes(action)) throw new Error(`Unknown biker action: ${action}`);
   // The suspend/ban/lift/clear-hold endpoints bind ReasonRequired/ReasonOptional = { reason, note? } —
   // NOT the audit envelope. Send `reason` (the reason-code radio), not `reasonCode`, or the write 400s
   // (suspend/ban need a non-empty reason, which the modal enforces; lift/clear-hold's is optional).
@@ -62,7 +78,7 @@ export async function mutateRider(
     reason: reasonCode ?? "",
     note: note || null,
   });
-  if (!res.ok) throw new Error(`Failed to ${action} rider ${profileId}: ${describeAdminPostFailure(res)}`);
+  if (!res.ok) throw new Error(`Failed to ${action} biker ${profileId}: ${describeAdminPostFailure(res)}`);
   revalidatePath(`/riders/${profileId}`);
   revalidatePath("/riders");
 }
@@ -75,7 +91,7 @@ export async function mutateRider(
  * <ConfirmModal> keeps the dialog open with the API's words.
  */
 export async function verifyPlate(profileId: string, plate: string, reasonCode: string | null, note: string): Promise<void> {
-  if (!profileId || !plate) throw new Error("This rider has no plate to confirm — reload the page.");
+  if (!profileId || !plate) throw new Error("This biker has no plate to confirm — reload the page.");
   const res = await adminPostResult(`/admin/riders/${profileId}/plate-verify`, {
     plate,
     reason: reasonCode ?? null,
@@ -116,6 +132,6 @@ export async function creditRiderWallet(
     idempotencyKey: idempotencyKey && idempotencyKey.length > 0 ? idempotencyKey : crypto.randomUUID(),
     note: note || null,
   });
-  if (!res.ok) throw new Error(`Failed to credit rider ${profileId}'s wallet: ${describeAdminPostFailure(res)}`);
+  if (!res.ok) throw new Error(`Failed to credit biker ${profileId}'s wallet: ${describeAdminPostFailure(res)}`);
   revalidatePath(`/riders/${profileId}`);
 }

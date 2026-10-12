@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# What a visitor to app.lyniago.com gets (docs/CUSTOMER-WEB.md). Usage: smoke.sh https://app.lyniago.com
+# What a visitor to app.lyniago.com gets (docs/CUSTOMER-WEB.md). Usage: smoke.sh https://app.lyniago.com [export dir]
+# With the export dir, it first waits until the site serves THAT build's index.html: right after `wrangler deploy` the
+# edge can still answer with the previous one for a moment (seen 2026-10-12: the new phone-frame.js check failed 1s
+# after a successful upload, and passed against the same URL minutes later).
 set -euo pipefail
-BASE="${1:?usage: smoke.sh <base url>}"
+BASE="${1:?usage: smoke.sh <base url> [export dir]}"
+DIST="${2:-}"
 fail() { echo "::error::$1"; exit 1; }
 
 # A first deploy waits for Cloudflare to issue the certificate: retry for up to ~5 minutes.
@@ -13,11 +17,23 @@ for i in $(seq 1 20); do
   sleep 15
 done
 [ -n "$page" ] || fail "$BASE/ did not answer 200"
+if [ -n "$DIST" ]; then
+  want="$(cat "$DIST/index.html")"
+  for i in $(seq 1 20); do
+    [ "$page" = "$want" ] && break
+    echo "waiting for $BASE to serve the new build ($i/20)…"
+    sleep 15
+    page="$(curl -fsS --max-time 20 -H 'Cache-Control: no-cache' "$BASE/")" || page=""
+  done
+  [ "$page" = "$want" ] || fail "$BASE/ still serves a different index.html than the build just deployed"
+fi
 grep -q '<title>LyniaGo</title>' <<<"$page" || fail "the page title is not LyniaGo"
 grep -q 'rel="manifest"' <<<"$page" || fail "the Add to Home Screen manifest link is missing"
 grep -q '/_expo/static/js/web/entry-' <<<"$page" || fail "the app bundle is not referenced"
 grep -q 'src="/ios-viewport.js"' <<<"$page" || fail "ios-viewport.js (no zoom on focus) is not loaded"
 grep -q 'input, textarea { min-width: 0; }' <<<"$page" || fail "text fields can overflow the screen (min-width rule missing)"
+grep -q 'src="/phone-frame.js"' <<<"$page" || fail "phone-frame.js (phone column on a wide screen) is not loaded"
+grep -q 'max-width: 480px' <<<"$page" || fail "the page is not held to a phone column on a wide screen"
 grep -q 'rel="preconnect"' <<<"$page" || fail "no API preconnect (finish-build ran without EXPO_PUBLIC_API_URL)"
 
 # One-page app: a deep link is served the same page, not a 404.
@@ -27,6 +43,7 @@ grep -q '<title>LyniaGo</title>' <<<"$deep" || fail "$BASE/send is not the app p
 curl -fsS --max-time 20 -o /dev/null "$BASE/manifest.webmanifest" || fail "manifest.webmanifest is missing"
 curl -fsS --max-time 20 -o /dev/null "$BASE/apple-touch-icon.png" || fail "apple-touch-icon.png is missing"
 curl -fsS --max-time 20 -o /dev/null "$BASE/ios-viewport.js" || fail "ios-viewport.js is missing"
+curl -fsS --max-time 20 -o /dev/null "$BASE/phone-frame.js" || fail "phone-frame.js is missing"
 
 # Offline shell (docs/CUSTOMER-WEB.md § Offline): registered, stamped by finish-build, never cached by HTTP.
 grep -q 'src="/sw-register.js"' <<<"$page" || fail "sw-register.js (offline shell) is not loaded"

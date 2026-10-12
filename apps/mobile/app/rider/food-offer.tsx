@@ -1,6 +1,6 @@
 import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import { ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -17,6 +17,7 @@ import { JTag, StopLine } from "../../src/ui/rider/board";
 import { O, ofFmt } from "../../src/ui/orderflow/copy";
 import { OfNote } from "../../src/ui/rider/proof-kit";
 import { RiderErrorState } from "../../src/ui/rider/RiderErrorState";
+import { useBackToBoard } from "../../src/ui/rider/use-back-to-board";
 import type { IconName } from "../../src/ui";
 import { RIDER_COPY as R, RF, usd, venueCopy } from "../../src/ui/rider/copy";
 import { TerminalBody } from "../../src/ui/rider/job-kit";
@@ -39,6 +40,12 @@ const OFFER_WINDOW_S = 60;
  */
 export default function FoodOffer(): React.ReactElement {
   const router = useRouter();
+  const toBoard = useBackToBoard();
+  // The order this screen was opened for (a board card, the `food:offer` socket, a push tap). Several
+  // orders can ring one rider at once, so the read is pinned to it; without one (an older push), the
+  // offer running out first, as before.
+  const { orderId: orderParam } = useLocalSearchParams<{ orderId?: string }>();
+  const pinned = typeof orderParam === "string" && orderParam !== "" ? orderParam : undefined;
   const qc = useQueryClient();
   const reduceMotion = useReduceMotion();
   const { height: winH } = useWindowDimensions();
@@ -48,8 +55,8 @@ export default function FoodOffer(): React.ReactElement {
   // 3 s poll would otherwise keep re-firing and, since a refetch with no data flips the query back to
   // pending, swap the error state for a skeleton every few seconds.
   const offerQ = useQuery({
-    queryKey: ["foodOfferJob"],
-    queryFn: getFoodDispatchOfferWithJob,
+    queryKey: ["foodOfferJob", pinned ?? null],
+    queryFn: () => getFoodDispatchOfferWithJob(pinned),
     refetchInterval: (q) => (q.state.data === undefined && q.state.errorUpdateCount > 0 ? false : 3000),
     enabled: restaurantsEnabled,
   });
@@ -75,7 +82,10 @@ export default function FoodOffer(): React.ReactElement {
   });
   const declineM = useMutation({
     mutationFn: (orderId: string) => declineFoodDispatch(orderId),
-    onSuccess: () => router.replace("/rider"),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["foodOffers"] });
+      toBoard();
+    },
   });
   // Accept/decline failures speak once as an auto-dismissing toast (owner instruction 2026-08-12).
   useActionErrorEffect(acceptM.error ?? declineM.error);
@@ -106,7 +116,7 @@ export default function FoodOffer(): React.ReactElement {
   if (!restaurantsEnabled) {
     return (
       <Screen>
-        <AppBar onBack={() => router.replace("/rider")} />
+        <AppBar onBack={() => toBoard()} />
         <EmptyState icon="utensils" tone="info" title="Restaurants isn't available yet" body="Check back soon." />
       </Screen>
     );
@@ -119,7 +129,7 @@ export default function FoodOffer(): React.ReactElement {
   if (!offerQ.data && (offerQ.isError || offerQ.isPaused || offerQ.errorUpdateCount > 0)) {
     return (
       <Screen>
-        <RiderErrorState onRetry={() => void offerQ.refetch()} retrying={offerQ.isFetching} onBack={() => router.replace("/rider")} />
+        <RiderErrorState onRetry={() => void offerQ.refetch()} retrying={offerQ.isFetching} onBack={() => toBoard()} />
       </Screen>
     );
   }
@@ -143,7 +153,7 @@ export default function FoodOffer(): React.ReactElement {
           <TerminalBody icon="clock" title={R.expT} body={kind === "food" ? R.expB : R.expB.replace("Food offers", "Offers")} />
         </ScrollView>
         <CtaBar>
-          <CtaButton label={R.backBoard} onPress={() => router.replace("/rider")} />
+          <CtaButton label={R.backBoard} onPress={() => toBoard()} />
         </CtaBar>
       </SafeAreaView>
     );

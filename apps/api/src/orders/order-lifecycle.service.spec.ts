@@ -83,9 +83,9 @@ describe("OrderLifecycleService.advance", () => {
     await expect(svc.advance("o1", "r1", "confirmed")).rejects.toThrow(/not found/i);
   });
 
-  it("403s when the caller is not the assigned rider", async () => {
+  it("403s when the caller is not the assigned biker", async () => {
     const { svc } = build({ order: { findUnique: async () => ({ status: "assigned", riderId: "r1" }) } });
-    await expect(svc.advance("o1", "other", "confirmed")).rejects.toThrow(/assigned rider/i);
+    await expect(svc.advance("o1", "other", "confirmed")).rejects.toThrow(/assigned biker/i);
   });
 
   it("409s when the order is not in the expected prior state", async () => {
@@ -121,11 +121,11 @@ describe("OrderLifecycleService.confirmItems", () => {
     await expect(svc.confirmItems("o1", "r1", [0])).rejects.toThrow(/not found/i);
   });
 
-  it("403s when the caller is not the assigned rider", async () => {
+  it("403s when the caller is not the assigned biker", async () => {
     const { svc } = build({
       order: { findUnique: async () => ({ status: "en_route_pickup", riderId: "r1", items: [{}, {}] }) },
     });
-    await expect(svc.confirmItems("o1", "other", [0])).rejects.toThrow(/assigned rider/i);
+    await expect(svc.confirmItems("o1", "other", [0])).rejects.toThrow(/assigned biker/i);
   });
 
   it("409s when the order is not at the pickup", async () => {
@@ -176,9 +176,9 @@ describe("OrderLifecycleService.attachPickupPhoto", () => {
     await expect(svc.attachPickupPhoto("o1", "r1", key)).rejects.toThrow(/not found/i);
   });
 
-  it("403s when the caller is not the assigned rider", async () => {
+  it("403s when the caller is not the assigned biker", async () => {
     const { svc } = build({ $queryRaw: async () => row() });
-    await expect(svc.attachPickupPhoto("o1", "other", key)).rejects.toThrow(/assigned rider/i);
+    await expect(svc.attachPickupPhoto("o1", "other", key)).rejects.toThrow(/assigned biker/i);
   });
 
   it("409s outside the attach window (before the pickup leg, and once the hand-off is over)", async () => {
@@ -188,7 +188,7 @@ describe("OrderLifecycleService.attachPickupPhoto", () => {
     }
   });
 
-  it("400s a key outside the rider's own pickup namespace (can't persist someone else's object)", async () => {
+  it("400s a key outside the biker's own pickup namespace (can't persist someone else's object)", async () => {
     const { svc } = build({ $queryRaw: async () => row() });
     await expect(svc.attachPickupPhoto("o1", "r1", "pickup/victim/photo.jpg")).rejects.toThrow(/invalid photo key/i);
     await expect(svc.attachPickupPhoto("o1", "r1", "kyc/r1/photo.jpg")).rejects.toThrow(/invalid photo key/i);
@@ -332,9 +332,9 @@ describe("OrderLifecycleService.attachDeliveryProof (KB-POD-DISPUTE Phase A)", (
     await expect(svc.attachDeliveryProof("o1", "r1", key)).rejects.toThrow(/not found/i);
   });
 
-  it("403s when the caller is not the assigned rider", async () => {
+  it("403s when the caller is not the assigned biker", async () => {
     const { svc } = build({ $queryRaw: async () => row() });
-    await expect(svc.attachDeliveryProof("o1", "other", key)).rejects.toThrow(/assigned rider/i);
+    await expect(svc.attachDeliveryProof("o1", "other", key)).rejects.toThrow(/assigned biker/i);
   });
 
   it("409s outside the attach window (only at the door or right after undelivered)", async () => {
@@ -344,7 +344,7 @@ describe("OrderLifecycleService.attachDeliveryProof (KB-POD-DISPUTE Phase A)", (
     }
   });
 
-  it("400s a key outside the rider's own delivery-proof namespace", async () => {
+  it("400s a key outside the biker's own delivery-proof namespace", async () => {
     const { svc } = build({ $queryRaw: async () => row() });
     await expect(svc.attachDeliveryProof("o1", "r1", "delivery-proof/victim/p.jpg")).rejects.toThrow(/invalid photo key/i);
     await expect(svc.attachDeliveryProof("o1", "r1", "pickup/r1/p.jpg")).rejects.toThrow(/invalid photo key/i);
@@ -501,7 +501,7 @@ describe("OrderLifecycleService.confirmDelivery", () => {
     expect(incremented).toBe(true);
   });
 
-  it("tells the rider no attempts are left on the final wrong guess", async () => {
+  it("tells the biker no attempts are left on the final wrong guess", async () => {
     const { svc } = build({
       // Fourth attempt already recorded (0-indexed: 4 used) — this wrong guess is the 5th and last.
       $queryRaw: async () => row({ otp_hash: tokens.hash("111111"), delivery_otp_attempts: 4 }),
@@ -520,7 +520,7 @@ describe("OrderLifecycleService.confirmDelivery", () => {
     expect(emits).toEqual([["o1", "delivered"]]);
   });
 
-  it("D-48 PR 4b: a shop booking with cash on delivery opens the rider's debt for its value, in the same commit", async () => {
+  it("D-48 PR 4b: a shop booking with cash on delivery opens the biker's debt for its value, in the same commit", async () => {
     const updates: Array<Record<string, unknown>> = [];
     const { svc } = build({
       $queryRaw: async () =>
@@ -542,7 +542,7 @@ describe("OrderLifecycleService.confirmDelivery", () => {
     expect(updates[0]!.debtOpenedAt).toBe(updates[0]!.deliveredAt);
   });
 
-  it("a plain customer parcel whose free-text item mimics the cash line opens NO debt on the rider", async () => {
+  it("a plain customer parcel whose free-text item mimics the cash line opens NO debt on the biker", async () => {
     // The cash line is free text, so any customer can type it. Only a booking (customer = the business's
     // booking account) may open a debt — otherwise one parcel parks a permanent, unsettleable debt on the
     // rider that the debt lock then uses to keep them off new jobs.
@@ -605,7 +605,7 @@ describe("OrderLifecycleService.confirmDelivery", () => {
   const paidRx = () =>
     row({ order_type: "merchant", merchant_payment_method: "cash", customer_cash_confirmed_at: new Date(), rider_cash_confirmed_at: new Date() });
 
-  it("refuses an approved-prescription order until the rider ticked “I saw the original prescription”", async () => {
+  it("refuses an approved-prescription order until the biker ticked “I saw the original prescription”", async () => {
     const { svc } = build({
       $queryRaw: async () => paidRx(),
       order: { update: async () => ({}) },
@@ -648,7 +648,7 @@ describe("OrderLifecycleService.rate", () => {
     await expect(svc.rate("o1", "other", 5)).rejects.toThrow(/not your order/i);
   });
 
-  it("completes the order and updates the rider's running average", async () => {
+  it("completes the order and updates the biker's running average", async () => {
     let riderData: Record<string, unknown> | undefined;
     const { svc, emits } = build({
       order: {
@@ -673,7 +673,7 @@ describe("OrderLifecycleService.rate", () => {
     expect(emits).toEqual([["o1", "completed"]]);
   });
 
-  it("#672/#673: a food order persists foodScore + tags, moves the RESTAURANT rating by foodScore, and the rider aggregate by the rider score — independently", async () => {
+  it("#672/#673: a food order persists foodScore + tags, moves the RESTAURANT rating by foodScore, and the biker aggregate by the biker score — independently", async () => {
     let riderData: Record<string, unknown> | undefined;
     let ratingData: Record<string, unknown> | undefined;
     const venueRows: Array<Record<string, unknown>> = [];
@@ -786,7 +786,7 @@ describe("OrderLifecycleService.rate", () => {
     expect(ratingData).toMatchObject({ score: 5, foodScore: null, tags: [] });
   });
 
-  it("Q2: a low rating (<= LOW_RATING_AT) penalises the rider and can trip on_hold", async () => {
+  it("Q2: a low rating (<= LOW_RATING_AT) penalises the biker and can trip on_hold", async () => {
     let riderData: Record<string, unknown> | undefined;
     const { svc } = build({
       order: {
@@ -807,7 +807,7 @@ describe("OrderLifecycleService.rate", () => {
     expect(riderData).toMatchObject({ reliabilityScore: 58, onHold: true });
   });
 
-  it("P1-6: a REPEAT (same customer→rider) 5-star does NOT inflate the aggregate or recover reliability (anti-collusion)", async () => {
+  it("P1-6: a REPEAT (same customer→biker) 5-star does NOT inflate the aggregate or recover reliability (anti-collusion)", async () => {
     let riderData: Record<string, unknown> | undefined;
     const { svc } = build({
       order: {
@@ -913,13 +913,13 @@ describe("OrderLifecycleService.rate", () => {
       },
     });
     await svc.rate("o1", "c1", 5);
-    expect(wallet.chargeCommission).toHaveBeenCalledWith(expect.anything(), { orderId: "o1", riderId: "r1", agreedFare: 7 });
+    expect(wallet.chargeCommission).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ orderId: "o1", riderId: "r1", agreedFare: 7 }));
   });
 
   // DS19-01: a low rating whose penalty NEWLY trips onHold is a standing demotion — like markUndelivered's
   // velocity hold and cancel()'s strike limit it must force the rider offline in the same write AND evict
   // them from the live-supply planes post-commit, else a rating-held rider stays isOnline:true, a board/geo ghost.
-  it("DS19-01: a low rating that newly trips onHold forces the rider offline and evicts them from supply", async () => {
+  it("DS19-01: a low rating that newly trips onHold forces the biker offline and evicts them from supply", async () => {
     let riderData: Record<string, unknown> | undefined;
     const { svc, evictedFromSupply } = build({
       order: {
@@ -994,7 +994,7 @@ describe("OrderLifecycleService.rateSender", () => {
     await expect(svc.rateSender("o1", "r1", 5)).rejects.toThrow(/not found/i);
   });
 
-  it("403s when the caller is not the assigned rider", async () => {
+  it("403s when the caller is not the assigned biker", async () => {
     const { svc } = build({ order: { findUnique: async () => ({ status: "delivered", riderId: "r1" }) } });
     await expect(svc.rateSender("o1", "other", 5)).rejects.toThrow(/not your order/i);
   });
@@ -1153,7 +1153,7 @@ describe("OrderLifecycleService.rotateDeliveryCode", () => {
     expect(sql).toContain("delivery_code_rotated_at = now()");
   });
 
-  it("pushes order:status (unchanged status) so an open rider screen refetches the reset attempts (PJ-H3)", async () => {
+  it("pushes order:status (unchanged status) so an open biker screen refetches the reset attempts (PJ-H3)", async () => {
     const { svc, emits } = build({
       order: {
         findUnique: async () => ({ customerId: "c1", status: "en_route_dropoff" }),
@@ -1209,7 +1209,7 @@ describe("OrderLifecycleService.rotateDeliveryCode", () => {
     await expect(svc.rotateDeliveryCode("o1", "c1")).rejects.toThrow(/confirm the cash exchange/i);
   });
 
-  it("still blocks reveal when only the customer has confirmed (rider hasn't yet)", async () => {
+  it("still blocks reveal when only the customer has confirmed (biker hasn't yet)", async () => {
     const { svc } = build({
       order: {
         findUnique: async () => ({
@@ -1291,7 +1291,7 @@ describe("OrderLifecycleService.cancel", () => {
     await expect(svc.cancel("o1", "stranger")).rejects.toThrow(/not your order/i);
   });
 
-  it("lets the customer cancel before pickup and tells the assigned rider (collected:false)", async () => {
+  it("lets the customer cancel before pickup and tells the assigned biker (collected:false)", async () => {
     const { svc, emits, jobCancelled } = build(cancellable());
     const res = await svc.cancel("o1", "c1", "changed my mind");
     expect(res).toMatchObject({ status: "cancelled", cancelledBy: "customer", cooldownUntil: null });
@@ -1335,7 +1335,7 @@ describe("OrderLifecycleService.cancel", () => {
   });
 
   it("merchant web upgrade L2 (OV-8): a caller can narrow the statuses it cancels at; the check runs in the transaction", async () => {
-    const narrowed = { allowedStatuses: ["open_for_offers", "assigned", "confirmed", "en_route_pickup"], refusal: { reason: "picked_up", message: "The rider has it now. Call the rider." } };
+    const narrowed = { allowedStatuses: ["open_for_offers", "assigned", "confirmed", "en_route_pickup"], refusal: { reason: "picked_up", message: "The biker has it now. Call the biker." } };
     const { svc } = build(
       cancellable({
         order: {
@@ -1362,7 +1362,7 @@ describe("OrderLifecycleService.cancel", () => {
     expect(res).toMatchObject({ status: "cancelled", cancelledBy: "customer" });
   });
 
-  it("blocks a RIDER cancel once the parcel is collected (post-pickup is undelivered, not cancel)", async () => {
+  it("blocks a BIKER cancel once the parcel is collected (post-pickup is undelivered, not cancel)", async () => {
     const { svc } = build({ order: { findUnique: async () => order({ status: "picked_up" }) } });
     await expect(svc.cancel("o1", "r1")).rejects.toThrow(/can't be cancelled anymore/i);
   });
@@ -1388,7 +1388,7 @@ describe("OrderLifecycleService.cancel", () => {
     expect(bidExpired).toEqual([]);
   });
 
-  it("counts a rider cancel as a strike (below the limit) and re-broadcasts a new open order (F-01)", async () => {
+  it("counts a biker cancel as a strike (below the limit) and re-broadcasts a new open order (F-01)", async () => {
     let riderData: Record<string, unknown> | undefined;
     const { svc, orders, jobCancelled, rebroadcasts } = build(
       cancellable({
@@ -1412,7 +1412,7 @@ describe("OrderLifecycleService.cancel", () => {
     expect(rebroadcasts).toEqual([["o1", "rebroadcast-1"]]);
   });
 
-  it("tells the customer, in the after-send v2 copy, that other riders are being asked at the same price", async () => {
+  it("tells the customer, in the after-send v2 copy, that other bikers are being asked at the same price", async () => {
     const notifyProfiles = vi.spyOn(noopNotifications, "notifyProfiles");
     try {
       const { svc } = build(
@@ -1430,8 +1430,8 @@ describe("OrderLifecycleService.cancel", () => {
       );
       await svc.cancel("o1", "r1");
       expect(notifyProfiles).toHaveBeenCalledWith(["c1"], {
-        title: "Your rider cancelled",
-        body: "We're asking other riders at $3.36.",
+        title: "Your biker cancelled",
+        body: "We're asking other bikers at $3.36.",
         // The tap lands on the NEW clone's order screen.
         data: { orderId: "rebroadcast-1", kind: "rebroadcast" },
       });
@@ -1440,7 +1440,7 @@ describe("OrderLifecycleService.cancel", () => {
     }
   });
 
-  it("F-12: a rejected post-commit announceOpenOrder is caught — the rider cancel still resolves", async () => {
+  it("F-12: a rejected post-commit announceOpenOrder is caught — the biker cancel still resolves", async () => {
     const { svc, orders } = build(
       cancellable({
         rider: {
@@ -1457,7 +1457,7 @@ describe("OrderLifecycleService.cancel", () => {
     expect(orders.announceOpenOrder).toHaveBeenCalledWith("rebroadcast-1");
   });
 
-  it("puts the rider on cooldown and forces them offline at the strike limit", async () => {
+  it("puts the biker on cooldown and forces them offline at the strike limit", async () => {
     let riderData: Record<string, unknown> | undefined;
     const { svc, evictedFromSupply } = build(
       cancellable({
@@ -1478,7 +1478,7 @@ describe("OrderLifecycleService.cancel", () => {
     expect(evictedFromSupply).toEqual(["r1"]);
   });
 
-  it("DS17-02: a rider cancel BELOW the strike limit does NOT evict from supply (they stay online)", async () => {
+  it("DS17-02: a biker cancel BELOW the strike limit does NOT evict from supply (they stay online)", async () => {
     const { svc, evictedFromSupply } = build(
       cancellable({
         rider: {
@@ -1542,9 +1542,9 @@ describe("OrderLifecycleService.markUndelivered", () => {
     await expect(svc.markUndelivered("o1", "r1", "unreachable")).rejects.toThrow(/not found/i);
   });
 
-  it("403s when the caller is not the assigned rider", async () => {
+  it("403s when the caller is not the assigned biker", async () => {
     const { svc } = build({ order: { findUnique: async () => row() } });
-    await expect(svc.markUndelivered("o1", "other", "unreachable")).rejects.toThrow(/assigned rider/i);
+    await expect(svc.markUndelivered("o1", "other", "unreachable")).rejects.toThrow(/assigned biker/i);
   });
 
   it("409s before pickup — a hand-off can only fail post-pickup", async () => {
@@ -1636,7 +1636,7 @@ describe("OrderLifecycleService.markUndelivered", () => {
     expect(riderData).toMatchObject({ reliabilityScore: 55, onHold: true });
   });
 
-  it("FRAUD P0-3: auto-holds a rider whose recent undelivered rate is abnormally high — even for a penalty-free `refused`", async () => {
+  it("FRAUD P0-3: auto-holds a biker whose recent undelivered rate is abnormally high — even for a penalty-free `refused`", async () => {
     let riderData: Record<string, unknown> | undefined;
     // count() is called for undelivered then completed: 3 undelivered vs 1 completed = 75% ≥ rate(0.5)
     // and ≥ minCount(3) → the velocity guard trips.
@@ -1683,7 +1683,7 @@ describe("OrderLifecycleService.markUndelivered", () => {
   // BR-01: an automated hold must ALSO pull the rider offline (isOnline:false) and evict them from the
   // geo index — like the admin suspend/ban paths — so a held rider actually leaves the live-supply plane
   // instead of relying solely on the nearbyRiders query filter.
-  it("BR-01: a newly auto-held rider is forced offline and evicted from the geo index", async () => {
+  it("BR-01: a newly auto-held biker is forced offline and evicted from the geo index", async () => {
     let riderData: Record<string, unknown> | undefined;
     const counts = [3, 0]; // velocity trip
     let call = 0;
@@ -1757,7 +1757,7 @@ describe("OrderLifecycleService RH-01 — a velocity/fraud hold survives a recov
     expect(riderData).toMatchObject({ onHold: true, heldReason: "velocity" });
   });
 
-  it("rate() recovery does NOT clear a velocity hold (a good rating no longer un-holds a flagged rider)", async () => {
+  it("rate() recovery does NOT clear a velocity hold (a good rating no longer un-holds a flagged biker)", async () => {
     let riderData: Record<string, unknown> | undefined;
     const { svc } = build({
       order: {
@@ -2043,7 +2043,7 @@ describe("OrderLifecycleService.resend (one-tap resend at a new fare)", () => {
   function harness(
     opts: {
       src?: Record<string, unknown> | null;
-      existing?: { id: string; createdAt: Date } | null;
+      existing?: { id: string; createdAt: Date; proposedFare?: number } | null;
       casCount?: number;
       /** The lineage root (default: the source itself). */
       rootId?: string;
@@ -2058,10 +2058,19 @@ describe("OrderLifecycleService.resend (one-tap resend at a new fare)", () => {
     const locks: unknown[] = [];
     const h = build({
       order: {
-        // First read = the guard read in resend(); later reads = cloneForRebroadcast's source read.
-        findUnique: async () => (reads++ === 0 ? (opts.src === undefined ? source() : opts.src) : cloneSource),
+        // First read = the guard read in resend(); a read of the live clone = its window/fare for the
+        // re-price; later reads = cloneForRebroadcast's source read.
+        findUnique: async (args: { where: { id: string } }) => {
+          if (opts.existing && args.where.id === opts.existing.id) {
+            return { createdAt: opts.existing.createdAt, offerWindowEndsAt: null, proposedFare: new Prisma.Decimal(opts.existing.proposedFare ?? 5) };
+          }
+          return reads++ === 0 ? (opts.src === undefined ? source() : opts.src) : cloneSource;
+        },
         updateMany: async (args: Record<string, unknown>) => { updates.push(args); return { count: opts.casCount ?? 1 }; },
-        create: async (args: { data: Record<string, unknown> }) => { created.push(args.data); return { id: "clone-new", createdAt }; },
+        create: async (args: { data: Record<string, unknown> }) => {
+          created.push(args.data);
+          return { id: "clone-new", createdAt, offerWindowEndsAt: args.data.offerWindowEndsAt ?? null };
+        },
       },
       $executeRaw: async (...args: unknown[]) => { locks.push(args); return 1; },
       // 1st $queryRaw = the lineage-root walk; 2nd = the lineage rows (newest first).
@@ -2075,7 +2084,9 @@ describe("OrderLifecycleService.resend (one-tap resend at a new fare)", () => {
     });
     const gate = vi.fn(async () => {});
     const announcePriceChange = vi.fn(async () => {});
-    Object.assign(h.orders, { assertCustomerMayBroadcast: gate, announcePriceChange });
+    // Cold start: the resend sizes a fresh clone's auction from supply (a quiet market → the long window).
+    const offerWindowMsForPickup = vi.fn(async () => 240_000);
+    Object.assign(h.orders, { assertCustomerMayBroadcast: gate, announcePriceChange, offerWindowMsForPickup });
     return { ...h, created, updates, locks, gate, announcePriceChange };
   }
 
@@ -2110,12 +2121,17 @@ describe("OrderLifecycleService.resend (one-tap resend at a new fare)", () => {
 
   it.each(["expired", "cancelled", "undelivered"])("clones a %s order at the NEW fare (suggested anchor kept) and announces it post-commit", async (status) => {
     const h = harness({ src: source({ status }) });
+    const before = Date.now();
     const res = await h.svc.resend("o1", "c1", 4.25);
+    // The clone's auction is sized from supply (offerWindowMsForPickup), stored, and echoed as expiresAt.
+    const end = h.created[0].offerWindowEndsAt as Date;
+    expect(end.getTime()).toBeGreaterThanOrEqual(before + 240_000);
+    expect(end.getTime()).toBeLessThanOrEqual(Date.now() + 240_000);
     expect(res).toEqual({
       id: "clone-new",
       status: "open_for_offers",
       proposedFare: "4.25",
-      expiresAt: new Date(createdAt.getTime() + 90_000).toISOString(),
+      expiresAt: end.toISOString(),
     });
     expect(h.created).toHaveLength(1);
     expect(String(h.created[0].proposedFare)).toBe("4.25");
@@ -2128,23 +2144,31 @@ describe("OrderLifecycleService.resend (one-tap resend at a new fare)", () => {
   });
 
   it("re-prices an already-open clone (rider-bail clone / double-tap) via a CAS on open_for_offers instead of cloning again", async () => {
-    const existingAt = new Date("2026-10-01T09:59:30Z");
-    const h = harness({ src: source({ status: "cancelled" }), existing: { id: "clone-old", createdAt: existingAt } });
+    // 80 s into the clone's (legacy 90 s) window: a higher fare is a raise — it leaves riders a minute.
+    const existingAt = new Date(Date.now() - 80_000);
+    const h = harness({ src: source({ status: "cancelled" }), existing: { id: "clone-old", createdAt: existingAt, proposedFare: 5 } });
     const res = await h.svc.resend("o1", "c1", 6);
-    expect(res).toEqual({
-      id: "clone-old",
-      status: "open_for_offers",
-      proposedFare: "6",
-      // The existing clone's window is NOT reset — expiresAt stays anchored on its own createdAt.
-      expiresAt: new Date(existingAt.getTime() + 90_000).toISOString(),
-    });
+    const data = h.updates[0].data as { proposedFare: unknown; offerWindowEndsAt: Date; fareRaisedAt: Date };
+    expect(res).toEqual({ id: "clone-old", status: "open_for_offers", proposedFare: "6", expiresAt: data.offerWindowEndsAt.toISOString() });
+    expect(data.offerWindowEndsAt.getTime()).toBeGreaterThanOrEqual(Date.now() + 59_000);
+    expect(data.fareRaisedAt).toBeInstanceOf(Date);
     expect(h.created).toHaveLength(0);
     expect(h.updates).toHaveLength(1);
     expect(h.updates[0]).toMatchObject({ where: { id: "clone-old", status: "open_for_offers", customerId: "c1" } });
-    expect(String((h.updates[0].data as { proposedFare: unknown }).proposedFare)).toBe("6");
+    expect(String(data.proposedFare)).toBe("6");
+    // The window is never reset from scratch — createdAt stays the clone's own.
     expect(h.updates[0].data).not.toHaveProperty("createdAt");
     expect(h.announcePriceChange).toHaveBeenCalledWith("clone-old");
     expect(h.orders.announceOpenOrder).not.toHaveBeenCalled();
+  });
+
+  it("re-pricing the open clone DOWN is not a raise: the window and the one-round rule stay as they were", async () => {
+    const existingAt = new Date(Date.now() - 30_000);
+    const h = harness({ src: source({ status: "cancelled" }), existing: { id: "clone-old", createdAt: existingAt, proposedFare: 5 } });
+    const res = await h.svc.resend("o1", "c1", 4);
+    expect(h.updates[0].data).not.toHaveProperty("fareRaisedAt");
+    expect(h.updates[0].data).not.toHaveProperty("offerWindowEndsAt");
+    expect(res.expiresAt).toBe(new Date(existingAt.getTime() + 90_000).toISOString());
   });
 
   it("re-prices the lineage's open auction when resending a DIFFERENT finished order of the same trip", async () => {
@@ -2165,7 +2189,7 @@ describe("OrderLifecycleService.resend (one-tap resend at a new fare)", () => {
     expect(h.locks).toHaveLength(2);
   });
 
-  it("409s when another order of the same trip already has a rider (no second dispatch)", async () => {
+  it("409s when another order of the same trip already has a biker (no second dispatch)", async () => {
     const h = harness({
       src: source({ status: "expired" }),
       rootId: "order-a",

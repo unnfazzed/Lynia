@@ -46,7 +46,7 @@ async function show(d: RiderDetail): Promise<void> {
   render(await RiderProfilePage({ params: Promise.resolve({ id: d.id }), searchParams: Promise.resolve({}) }));
 }
 
-describe("Rider profile — plate check (D-82)", () => {
+describe("Biker profile — plate check (D-82)", () => {
   it("a plate waiting on review reads 'checking' and offers Confirm plate", async () => {
     await show(detail());
     expect(screen.getByText("checking")).toBeTruthy();

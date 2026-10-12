@@ -8,6 +8,8 @@ import { getMe } from "../../src/api/auth";
 import { openSupportWhatsApp } from "../../src/config";
 import { saveRolePreference } from "../../src/auth/session";
 import { becomeStateFor } from "../../src/logic/become-state";
+import { useStoredKycLaunch } from "../../src/kyc/launch-hint";
+import { replaceClearingStack } from "../../src/logic/nav";
 import { riderDeclineLabel } from "../../src/logic/gates";
 import { useHomeLocation } from "../../src/logic/home-location";
 import { useNotificationsUnreadCount } from "../../src/query/use-notifications-unread";
@@ -39,7 +41,9 @@ export default function AccountTabScreen(): React.ReactElement {
   const name = me ? `${me.firstName} ${me.lastName}`.trim() || R.tabAccount : R.tabAccount;
   // Withheld until `me` resolves: guessing the role from a stale session flashed "Become a rider" on a
   // rider's own account (MOB-BOOT-02-SIB-3).
-  const become = me && meQ.isSuccess && riderModeAvailable() ? becomeStateFor(me) : null;
+  // A check this phone just completed reads "in review", not "finish your check", while the vendor catches up.
+  const launch = useStoredKycLaunch(me?.profileId ?? null);
+  const become = me && meQ.isSuccess && riderModeAvailable() ? becomeStateFor(me, launch) : null;
   const left = Math.max(0, 2 - (me?.rider?.kycAttempts ?? 0));
   const declineLabel = riderDeclineLabel(me?.rider?.kycDeclineReason);
   // Held for a person or in manual (ops) review — hours, not the automated check's minute.
@@ -47,7 +51,9 @@ export default function AccountTabScreen(): React.ReactElement {
   // R-5: the side the rider picks is the side the next cold start opens on.
   const toRiderSide = (): void => {
     void saveRolePreference("rider");
-    router.replace("/rider");
+    // Cleared, not a bare replace: customer Home left under the board made Back jump sides (and kept its
+    // queries running).
+    replaceClearingStack(router, "/rider");
   };
 
   return (

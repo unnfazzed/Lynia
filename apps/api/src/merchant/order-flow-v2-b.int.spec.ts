@@ -252,7 +252,7 @@ describe("prescriptions (BRIEF §13)", () => {
     ).rejects.toThrow(/invalid photo key/i);
   });
 
-  it("pharmacist check: only a pharmacist approves; packing waits for it; the rider's tick is recorded; photos only for the parties", async () => {
+  it("pharmacist check: only a pharmacist approves; packing waits for it; the biker's tick is recorded; photos only for the parties", async () => {
     const pharmacy = await makeVenue({ businessType: "shop", shopKind: "pharmacy" });
     // MJ-H5: an Rx order needs a ticked pharmacist on the team — here a second member, not the owner.
     const pharmacistId = await makeProfile("pharmacist");

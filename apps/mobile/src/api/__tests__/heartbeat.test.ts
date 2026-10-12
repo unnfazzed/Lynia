@@ -57,7 +57,7 @@ describe("sendHeartbeat — lightweight beat with legacy fallback", () => {
     expect(JSON.parse(init.body as string)).toEqual({ online: true, lat: -17.83, lng: 31.05 });
   });
 
-  it("does NOT fall back on a 403 online-gate refusal — the rider screen must see the real reason", async () => {
+  it("does NOT fall back on a 403 online-gate refusal — the biker screen must see the real reason", async () => {
     fetchMock.mockResolvedValueOnce(
       makeResponse(403, { reason: "on_hold", message: "Your account is on hold — contact support to get back on the road" }),
     );

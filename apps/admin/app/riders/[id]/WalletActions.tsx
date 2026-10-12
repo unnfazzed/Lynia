@@ -23,7 +23,7 @@ export function WalletCreditButton({ id, name, connected }: { id: string; name: 
       triggerVariant="solid"
       disabled={!connected}
       title={`Credit ${name}'s commission account?`}
-      consequence="Adds a manual prepaid credit to this rider's commission balance (e.g. a launch grace credit or a support correction). It lands on the wallet ledger below, attributed to you."
+      consequence="Adds a manual prepaid credit to this biker's commission balance (e.g. a launch grace credit or a support correction). It lands on the wallet ledger below, attributed to you."
       amount={{ label: "Amount", prefix: "$", placeholder: "0.00", required: true }}
       noteRequired
       notePlaceholder="Why this credit — shows on the ledger (e.g. launch grace, support adjustment)."
@@ -84,8 +84,8 @@ export function WalletFreezeActions({
           <b>Not yet wired — there is no wallet-freeze endpoint.</b> The API never sets or reports a{" "}
           <span className="mono">commission_freeze</span> hold, so the console can neither apply one nor
           tell you whether one is already in place, and a freeze would not currently block top-ups. These
-          controls stay disabled until that ships. To stop a rider earning today, use{" "}
-          <b>Suspend rider…</b> above — that is enforced.
+          controls stay disabled until that ships. To stop a biker earning today, use{" "}
+          <b>Suspend biker…</b> above — that is enforced.
         </span>
       </div>
 
@@ -102,7 +102,7 @@ export function WalletFreezeActions({
           title={`Freeze ${name}'s wallet?`}
           consequence={
             <span>
-              Places a <b>commission_freeze</b> hold. Top-ups are disabled and the rider can&apos;t clear it
+              Places a <b>commission_freeze</b> hold. Top-ups are disabled and the biker can&apos;t clear it
               themselves — an admin must lift it. Existing balance and ledger are untouched.
             </span>
           }

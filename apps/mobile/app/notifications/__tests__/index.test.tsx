@@ -21,11 +21,13 @@ const mockGetNotificationsFeed = jest.fn();
 const mockMarkNotificationsRead = jest.fn();
 const mockDismissNotification = jest.fn();
 const mockPush = jest.fn();
+const mockDismissTo = jest.fn();
+let mockMe: Record<string, unknown> = { firstName: "Nyasha", rider: null };
 let mockParams: { side?: string } = {};
 let mockPermission = { granted: true };
 
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockPush, back: jest.fn(), replace: jest.fn() }),
+  useRouter: () => ({ push: mockPush, back: jest.fn(), replace: jest.fn(), dismissAll: jest.fn(), dismissTo: mockDismissTo }),
   useLocalSearchParams: () => mockParams,
   // Same immediate-invoke stub the other focus-effect suites use — there is no navigator to fire focus.
   useFocusEffect: (cb: () => void | (() => void)) => {
@@ -45,7 +47,7 @@ jest.mock("../../../src/api/notifications", () => ({
   markNotificationsRead: (...args: unknown[]) => mockMarkNotificationsRead(...args),
   dismissNotification: (...args: unknown[]) => mockDismissNotification(...args),
 }));
-jest.mock("../../../src/api/auth", () => ({ getMe: () => Promise.resolve({ firstName: "Nyasha", rider: null }) }));
+jest.mock("../../../src/api/auth", () => ({ getMe: () => Promise.resolve(mockMe) }));
 jest.mock("../../../src/api/orders", () => ({ getActiveOrder: () => Promise.resolve(null) }));
 jest.mock("../../../src/api/riders", () => ({ setOnline: () => Promise.resolve({}) }));
 
@@ -101,6 +103,8 @@ beforeEach(() => {
   mockParams = {};
   mockPermission = { granted: true };
   mockPush.mockReset();
+  mockDismissTo.mockReset();
+  mockMe = { firstName: "Nyasha", rider: null };
   mockGetNotificationsFeed.mockReset();
   mockMarkNotificationsRead.mockReset().mockResolvedValue({ readAt: NOW.toISOString() });
   mockDismissNotification.mockReset().mockResolvedValue({ ok: true });
@@ -155,7 +159,7 @@ describe("Notifications v1 screen", () => {
     expect(mockMarkNotificationsRead).toHaveBeenCalledTimes(1);
   });
 
-  it("follows the side: the rider sees jobs, both sides see account rows", async () => {
+  it("follows the side: the biker sees jobs, both sides see account rows", async () => {
     const rows = [
       PARCEL("s1", 5),
       row({ id: "r1", orderId: "o2", to: "rider", type: "status", beat: "assigned", status: "assigned", amount: "3.20", pickupArea: "Eastgate", dropoffArea: "Belgravia", service: "send" }),
@@ -182,6 +186,26 @@ describe("Notifications v1 screen", () => {
     await renderScreen();
     expect(has(N.aPausedT)).toBe(true);
     expect(has(N.dToday)).toBe(false);
+  });
+
+  it("a KYC decline's Try again opens the biker side it came from (dismissed back to, never a second board, never R1)", async () => {
+    mockMe = { firstName: "Nyasha", role: "rider", rider: { kycStatus: "failed", kycAttempts: 1, kycDeclineReason: "id_unreadable" } };
+    mockGetNotificationsFeed.mockResolvedValue([row({ id: "k1", type: "account", action: "rider.kyc_decline", reason: "id_unreadable" })]);
+    mockParams = { side: "rider" };
+    await renderScreen();
+    const btn = tree.root.findAll((n) => n.props.accessibilityRole === "button" && n.props.accessibilityLabel === N.tryAgain)[0];
+    expect(btn).toBeTruthy();
+    act(() => btn!.props.onPress());
+    expect(mockDismissTo).toHaveBeenCalledWith("/rider");
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("a locked KYC decline offers no Try again", async () => {
+    mockMe = { firstName: "Nyasha", role: "rider", rider: { kycStatus: "failed", kycAttempts: 2, kycDeclineReason: "id_unreadable" } };
+    mockGetNotificationsFeed.mockResolvedValue([row({ id: "k1", type: "account", action: "rider.kyc_decline", reason: "id_unreadable" })]);
+    mockParams = { side: "rider" };
+    await renderScreen();
+    expect(tree.root.findAll((n) => n.props.accessibilityRole === "button" && n.props.accessibilityLabel === N.tryAgain)).toHaveLength(0);
   });
 
   it("a needs-you row has its button, and it deep-links", async () => {

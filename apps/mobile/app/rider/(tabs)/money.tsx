@@ -192,12 +192,13 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
   const rows = useMemo(() => history ?? [], [history]);
   const earned = summarise(rows, range, now);
   const today = range === "today" ? earned : summarise(rows, "today", now);
-  const feed = useMemo(() => {
+  const allFeed = useMemo(() => {
     const all = buildMoneyFeed(rows, entries);
     // Fares older than the history we hold would misplace among older wallet pages; cut them there.
     const cut = rows.length >= 50 ? oldestHistoryAt(rows) : null;
-    return filterMoneyFeed(cut ? all.filter((i) => i.kind !== "fare" || i.at >= cut) : all, foodOn ? filter : "all");
-  }, [rows, entries, filter, foodOn]);
+    return cut ? all.filter((i) => i.kind !== "fare" || i.at >= cut) : all;
+  }, [rows, entries]);
+  const feed = useMemo(() => filterMoneyFeed(allFeed, foodOn ? filter : "all"), [allFeed, filter, foodOn]);
   const groups = groupByDay(feed, (i) => i.at, now, R.todayH, R.yesterday);
 
   const floor = config?.floor ?? 2;
@@ -206,6 +207,8 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
   // MA-H2: the server's online gate — the floor only binds once commission is on AND the rider's free
   // first jobs are used up (online-gate.ts). Below it otherwise, the rider still rides: no alarm.
   const gated = floorApplies(rate, me?.rider?.freeJobs?.left);
+  // Known unverified (a pending, declined or expired check) → no Top up; while `me` loads it stays drawn.
+  const canTopUp = !(me?.rider && me.rider.kycStatus !== "verified");
   const owes = !unreadable && balance < 0;
   const belowFloor = gated && !unreadable && !owes && balance < floor;
   const low = gated && !unreadable && !owes && !belowFloor && balance < floor + 1;
@@ -286,7 +289,8 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
             ) : (
               <Text style={{ flex: 1, fontSize: 28, fontWeight: tokens.font.weight.bold, color: danger ? tokens.color.dangerInk : tokens.color.ink, fontVariant: ["tabular-nums"] }}>{unreadable ? "—" : usd(balance)}</Text>
             )}
-            <SmBtn kind="fill" icon="plus" label={R.topUp} onPress={() => router.push("/wallet/top-up")} />
+            {/* An unverified rider can't top up yet (the server refuses: reason `kyc`) — no Top up until verified. */}
+            {canTopUp ? <SmBtn kind="fill" icon="plus" label={R.topUp} onPress={() => router.push("/wallet/top-up")} /> : null}
           </View>
           {/* M9 draws the balance and Top up only; a low or blocked balance still says why. */}
           {unreadable && focused ? (
@@ -303,7 +307,8 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
         )}
 
         <RLabel style={{ marginTop: 4 }}>{R.history}</RLabel>
-        {foodOn && feed.length > 0 ? (
+        {/* Gated on the unfiltered feed: a filter that matches nothing must keep its way back to All. */}
+        {foodOn && allFeed.length > 0 ? (
           <Chips
             list={[
               { id: "all", label: R.all },

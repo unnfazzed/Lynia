@@ -16,6 +16,12 @@ import renderer, { act, type ReactTestRenderer } from "react-test-renderer";
 
 import { canPresentKycCheck, KycCheckHost, presentKycCheck, resetKycCheckHostForTests } from "../KycCheckHost";
 
+const mockTrack = jest.fn();
+jest.mock("../../telemetry/events", () => ({
+  ...jest.requireActual("../../telemetry/events"),
+  track: (...a: unknown[]) => mockTrack(...a),
+}));
+
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { WebView: MockWebView, __refCalls: refCalls } = require("react-native-webview") as { WebView: React.ComponentType; __refCalls: string[] };
 
@@ -157,7 +163,7 @@ describe("KycCheckSheet outcomes", () => {
     });
     expect(alertSpy).toHaveBeenCalledWith(
       "Leave the ID check?",
-      expect.stringContaining("rider board"),
+      expect.stringContaining("biker board"),
       expect.any(Array),
     );
     const buttons = alertSpy.mock.calls[0]![2] as Array<{ text: string; onPress?: () => void }>;
@@ -264,5 +270,21 @@ describe("KycCheckSheet outcomes", () => {
       webViewProps(tree).onHttpError!({ nativeEvent: { url: URL } } as never);
     });
     await expect(pending).resolves.toBe("failed");
+  });
+
+  it("funnel analytics: a main-document http error / a load error is reported (no URL sent)", async () => {
+    mockTrack.mockClear();
+    const first = openSheet();
+    act(() => {
+      webViewProps(first.tree).onHttpError!({ nativeEvent: { url: URL, statusCode: 503 } } as never);
+    });
+    await expect(first.pending).resolves.toBe("failed");
+    expect(mockTrack).toHaveBeenCalledWith("kyc_web_error", { kind: "http_error", status: 503 });
+    const second = openSheet();
+    act(() => {
+      webViewProps(second.tree).onError!({ nativeEvent: { url: URL } } as never);
+    });
+    await expect(second.pending).resolves.toBe("failed");
+    expect(mockTrack).toHaveBeenCalledWith("kyc_web_error", { kind: "error" });
   });
 });

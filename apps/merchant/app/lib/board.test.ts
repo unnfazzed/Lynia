@@ -88,14 +88,14 @@ describe("the Orders board (Merchant v2 K1/S1, D-77)", () => {
     // A2: no estimate yet — no time, never "Arrives —".
     expect(sections[0]!.cards[0]).toMatchObject({ counter: true, arrived: false, urgent: false, title: `${RIDER.firstName} M. is coming to your counter`, sub: "#A444 · $9.00" });
     const [first, second] = sections[1]!.cards;
-    expect(first).toMatchObject({ title: "#A222 · 2× Sadza & beef stew", right: "8 min", sub: "Ready 07:28 · rider booked" });
+    expect(first).toMatchObject({ title: "#A222 · 2× Sadza & beef stew", right: "8 min", sub: "Ready 07:28 · biker booked" });
     expect(second).toMatchObject({ right: "13 min", sub: "Ready 07:33" });
     expect(sections[2]!.cards[0]).toMatchObject({ title: "#A111 · Blessing M.", sub: "On the way · then brings you $12.00" });
     // K1b (D-77 follow-ups): "$9.50 · #A098", gold with a LATE chip, "Blessing M. · was due 07:15".
     expect(sections[3]!.cards[0]).toMatchObject({ title: "$9.50 · #A098", subTone: "gold", sub: "Blessing M. · was due 07:15", cash: { late: true } });
   });
 
-  it("once the rider's location says so: 'at your counter', and the on-the-way arrival time (D-77)", () => {
+  it("once the biker's location says so: 'at your counter', and the on-the-way arrival time (D-77)", () => {
     const sections = buildBoard({
       v: kitchen,
       shop: false,
@@ -118,7 +118,7 @@ describe("the Orders board (Merchant v2 K1/S1, D-77)", () => {
     expect(sections[1]!.cards[0]).toMatchObject({ sub: "Arrives 07:38 · then brings you $12.00" });
   });
 
-  it("A1: before arrival the counter card says when the rider arrives; once here it moves to the top of NEEDS YOU", () => {
+  it("A1: before arrival the counter card says when the biker arrives; once here it moves to the top of NEEDS YOU", () => {
     const coming = merchantOrder({ id: "a4440000-0000-4000-8000-000000000000", merchantPhase: null, status: "assigned", riderId: RIDER.profileId, rider: RIDER, riderEtaAt: at(11) });
     const here = merchantOrder({ id: "a5550000-0000-4000-8000-000000000000", merchantPhase: null, status: "assigned", riderId: RIDER.profileId, rider: RIDER, riderArrivedAt: at(-1) });
     const [needs] = buildBoard({ v: kitchen, shop: false, now: NOW, orders: [coming, here] });
@@ -152,7 +152,7 @@ describe("the Orders board (Merchant v2 K1/S1, D-77)", () => {
       ],
     });
     expect(sections.map((s) => s.heading)).toEqual(["NEEDS YOU", "PACKING · 1", "ON THE WAY · 1"]);
-    expect(sections[0]!.cards.map((c) => c.title)).toEqual(["Car battery · 3 riders offered", "#A1B2 · Rudo asked for 1 item"]);
+    expect(sections[0]!.cards.map((c) => c.title)).toEqual(["Car battery · 3 bikers offered", "#A1B2 · Rudo asked for 1 item"]);
     expect(sections[0]!.cards[1]).toMatchObject({ tag: "APP", sub: "Waiting for Rudo’s OK", subDeadline: at(2.5) });
     expect(sections[1]!.cards[0]!.tag).toBe("APP");
     expect(sections[2]!.cards[0]).toMatchObject({ tag: "BOOKED", title: "Brake pads · Blessing M.", bar: { steps: 4 }, sub: "Brings you $51.00 by 07:50" });
@@ -184,7 +184,7 @@ describe("the Orders board (Merchant v2 K1/S1, D-77)", () => {
     expect(section!.cards[1]).toMatchObject({ cash: { late: false }, chevron: true });
   });
 
-  it("MJ-RB1: a cancel after the rider collected sits under CASH TO COME BACK with the undelivered goods returns", () => {
+  it("MJ-RB1: a cancel after the biker collected sits under CASH TO COME BACK with the undelivered goods returns", () => {
     const back = (id: string, status: string) =>
       merchantOrder({ id, merchantPhase: null, status, rider: RIDER, riderId: RIDER.profileId, debtStatus: "open", debtAmount: 12 });
     const sections = buildBoard({

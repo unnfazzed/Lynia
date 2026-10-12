@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { ACTIVE_RIDE_STATUSES } from "@lynia/shared";
+import { heartbeatMaxAgeMsForPush } from "../common/broadcast-policy";
 import { penaltiesSuspended } from "../common/penalties";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingService } from "../tracking/tracking.service";
@@ -27,10 +28,10 @@ const PREFERRED_DISTANCE_BUCKET_M = 100;
  * round/retry/cap machinery.
  */
 export interface DispatchStrategy {
-  /** Eligible riders within `radiusM` of `(lat, lng)`, best first, excluding `excludeRiderIds` (passed or
-   *  dropped this dispatch cycle) and anyone busy/ineligible; at most `limit` of them (all when null).
-   *  `preferredRiderIds` (L3) are the restaurant's own riders: they only reorder riders who are already
-   *  eligible, never let anyone else in. */
+  /** Eligible riders within `radiusM` of `(lat, lng)`, best first, excluding `excludeRiderIds` (dropped it,
+   *  passed on it within the decline cooldown, or on the business's own team) and anyone busy/ineligible;
+   *  at most `limit` of them (all when null). `preferredRiderIds` (L3) are the restaurant's own riders:
+   *  they only reorder riders who are already eligible, never let anyone else in. */
   pickCandidates(params: {
     lat: number;
     lng: number;
@@ -45,11 +46,11 @@ export const DISPATCH_STRATEGY = Symbol("DISPATCH_STRATEGY");
 
 /**
  * Default strategy: nearest eligible online riders. "Eligible" narrows TrackingService.nearbyRiders'
- * online/standing/KYC/heartbeat filter with what a food offer additionally can't tolerate: a rider
- * already mid-ride (ACTIVE_RIDE_STATUSES — one_active_ride would reject the accept anyway) and a rider
- * owing a restaurant cash (the C4 soft-lock). A rider already ringing for ANOTHER food order is still
- * offered this one: with every round going to several riders, locking them out would starve a second
- * order at the same kitchen.
+ * online/standing/KYC/heartbeat filter (at the push cutoff) with what a food offer additionally can't
+ * tolerate: a rider already mid-ride (ACTIVE_RIDE_STATUSES — one_active_ride would reject the accept
+ * anyway) and a rider owing a restaurant cash (the C4 soft-lock). A rider already ringing for ANOTHER
+ * food order is still offered this one: with every round going to several riders, locking them out
+ * would starve a second order at the same kitchen.
  */
 @Injectable()
 export class NearestRiderDispatchStrategy implements DispatchStrategy {
@@ -66,7 +67,10 @@ export class NearestRiderDispatchStrategy implements DispatchStrategy {
     preferredRiderIds?: readonly string[];
     limit: number | null;
   }): Promise<DispatchCandidate[]> {
-    const nearby = await this.tracking.nearbyRiders(params.lat, params.lng, params.radiusM);
+    // The permissive push heartbeat cutoff (~15 min), as the parcel broadcast uses: a rider with the app
+    // in their pocket stops heartbeating ~2 min after backgrounding but is still online, and the offer's
+    // FCM push wakes the phone. The strict ~120 s cutoff dropped them from food dispatch (owner 2026-10-12).
+    const nearby = await this.tracking.nearbyRiders(params.lat, params.lng, params.radiusM, heartbeatMaxAgeMsForPush());
     if (nearby.length === 0) return [];
     const exclude = new Set(params.excludeRiderIds);
     const candidateIds = nearby.map((r) => r.profileId).filter((id) => !exclude.has(id));

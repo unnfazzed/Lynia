@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { makingWord, pushCopy, PUSH_C, PUSH_M, PUSH_R, riderJobTemplate } from "./merchant-order-push";
+import { bikerWording } from "@lynia/shared";
+import { makingWord, pushCopy, PUSH_C, PUSH_C_SLOW_RIDER, PUSH_M, PUSH_R, riderJobTemplate } from "./merchant-order-push";
 
 /**
  * Order flow v2 G3a–c (ledger D-59): the merchant-order push templates are the handoff's `O.g.push`
@@ -9,10 +10,14 @@ import { makingWord, pushCopy, PUSH_C, PUSH_M, PUSH_R, riderJobTemplate } from "
  * byte for byte — read from the design package itself, so a re-export that changes the copy fails here.
  */
 
-function drawnPush(): { c: [string, string][]; m: [string, string][]; r: [string, string][] } {
-  const src = readFileSync(resolve(__dirname, "../../../../packages/design/handoff/order-flow-v2/code/copy.ts"), "utf8");
+function drawnO(): { g: { push: { c: [string, string][]; m: [string, string][]; r: [string, string][] } }; t: Record<string, string> } {
+  const src = bikerWording(readFileSync(resolve(__dirname, "../../../../packages/design/handoff/order-flow-v2/code/copy.ts"), "utf8"));
   const json = src.slice(src.indexOf("export const O = ") + "export const O = ".length, src.indexOf("} as const;") + 1);
-  return (JSON.parse(json) as { g: { push: { c: [string, string][]; m: [string, string][]; r: [string, string][] } } }).g.push;
+  return JSON.parse(json);
+}
+
+function drawnPush(): { c: [string, string][]; m: [string, string][]; r: [string, string][] } {
+  return drawnO().g.push;
 }
 
 const SAMPLE_C = [
@@ -62,18 +67,24 @@ describe("merchant-order push copy = O.g.push (G3a–c), verbatim", () => {
     });
   });
 
+  // Owner 2026-10-12: the no-rider hold's customer push has no drawn push, so it reuses the T11a stage copy.
+  it("the no-rider hold push is the order screen's T11a copy, byte for byte (O.t.slowRider / slowRiderSub)", () => {
+    const { t } = drawnO();
+    expect(pushCopy(PUSH_C_SLOW_RIDER, {})).toEqual({ title: t.slowRider, body: t.slowRiderSub });
+  });
+
   it("drops a sentence whose value the server doesn't have (no ETA ⇒ no 'Arrives …')", () => {
-    expect(pushCopy(PUSH_C.making, { v: "Avondale Fresh", making: "packing" })).toEqual({ title: "Avondale Fresh is packing", body: "We’ll tell you when a rider has it." });
+    expect(pushCopy(PUSH_C.making, { v: "Avondale Fresh", making: "packing" })).toEqual({ title: "Avondale Fresh is packing", body: "We’ll tell you when a biker has it." });
     expect(pushCopy(PUSH_C.collected, { n: "Tendai" })).toEqual({ title: "Tendai has your order", body: "On the way." });
     expect(pushCopy(PUSH_C.notDelivered, {})).toEqual({ title: "Your order wasn’t delivered", body: "Nothing was charged." });
   });
 
   it("a title slot falls back when the name is unknown", () => {
-    expect(pushCopy(PUSH_C.atDoor, { p: "$6.80" }, { n: "Your rider" })).toEqual({ title: "Your rider is at your door", body: "Have $6.80 cash ready." });
+    expect(pushCopy(PUSH_C.atDoor, { p: "$6.80" }, { n: "Your biker" })).toEqual({ title: "Your biker is at your door", body: "Have $6.80 cash ready." });
   });
 
   it("never carries a delivery or pickup code (no 3+3 or 6-digit run in any template)", () => {
-    for (const t of [...Object.values(PUSH_C), ...Object.values(PUSH_M), ...Object.values(PUSH_R)]) {
+    for (const t of [...Object.values(PUSH_C), PUSH_C_SLOW_RIDER, ...Object.values(PUSH_M), ...Object.values(PUSH_R)]) {
       expect(`${t.title} ${t.body.join(" ")}`).not.toMatch(/\d{3}\s?\d{3}|\{code\}/);
     }
   });

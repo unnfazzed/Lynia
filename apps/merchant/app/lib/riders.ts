@@ -19,7 +19,7 @@ export function riderPill(r: Pick<MerchantPreferredRiderResponse, "status" | "on
 
 /** The message the owner sends from their own WhatsApp to a rider who isn't on LyniaGo yet. */
 export function riderInviteMessage(label: string, businessName: string): string {
-  return `Hi ${label}, it's ${businessName}. We'd like you to deliver for us on LyniaGo. Sign up as a rider with this number: ${RIDER_SIGNUP_URL}`;
+  return `Hi ${label}, it's ${businessName}. We'd like you to deliver for us on LyniaGo. Sign up as a biker with this number: ${RIDER_SIGNUP_URL}`;
 }
 
 /** The WhatsApp chat with the rider, the message ready to send. */

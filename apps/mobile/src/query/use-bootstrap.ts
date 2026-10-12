@@ -10,18 +10,18 @@ import type { Session } from "../auth/session";
  * the entries fresh (dataUpdatedAt = now), so the home/rider screens mounting moments later render
  * this data immediately and, within the global 30s staleTime, skip their own initial fetches: the
  * whole signed-in boot becomes ONE compressed request instead of a per-screen fan-out. Only the
- * role-appropriate active key is seeded — the other role's key stays untouched so a dual-role user's
- * live state can't be cross-painted. Exported pure for unit tests.
+ * role-appropriate single active key is seeded — the other role's key stays untouched so a dual-role
+ * user's live state can't be cross-painted. The live-orders LIST is the profile's own orders and is
+ * seeded for both roles. Exported pure for unit tests.
  */
 export function seedQueryCacheFromBootstrap(qc: QueryClient, b: BootstrapResponse): void {
   qc.setQueryData(["me"], b.me);
   if (b.me.role === "rider") qc.setQueryData(["activeJob"], b.activeOrder);
-  else {
-    qc.setQueryData(["activeCustomerOrder"], b.activeOrder);
-    // RC.home multi-card: seed the full list too when the API ships it (older deploys don't —
-    // the home screen then just fetches its own list, exactly like every other unseeded key).
-    if (b.activeOrders) qc.setQueryData(["activeCustomerOrders"], b.activeOrders);
-  }
+  else qc.setQueryData(["activeCustomerOrder"], b.activeOrder);
+  // RC.home multi-card: seed the full live list too when the API ships it (older deploys don't —
+  // the home screen then just fetches its own list, exactly like every other unseeded key). It is the
+  // profile's OWN customer orders, so it is seeded for a biker too: their orders stay visible.
+  if (b.activeOrders) qc.setQueryData(["activeCustomerOrders"], b.activeOrders);
 }
 
 /**

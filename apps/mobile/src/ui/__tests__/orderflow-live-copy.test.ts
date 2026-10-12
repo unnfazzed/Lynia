@@ -64,7 +64,7 @@ describe("merchantLive — G1 bar / G2 Now card", () => {
       "Tendai",
       NOW,
     );
-    expect(door.title).toBe("Rider is at your door");
+    expect(door.title).toBe("Biker is at your door");
     expect(door.sub).toBe("Check the seal · pay $6.80");
     expect(door.line).toBe("Avondale Pharmacy · check the seal · pay $6.80");
     expect(door.lit).toBe(4);

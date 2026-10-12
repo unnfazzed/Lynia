@@ -280,7 +280,7 @@ export const ISSUE_TYPE_LABELS: Record<IssueType, string> = {
   wrong_item: "Wrong item collected/delivered",
   damaged: "Parcel damaged",
   payment_dispute: "Payment dispute",
-  rider_conduct: "Problem with the rider",
+  rider_conduct: "Problem with the biker",
   customer_conduct: "Problem with the sender/recipient",
   other: "Something else",
 };

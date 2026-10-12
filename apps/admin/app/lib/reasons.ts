@@ -18,7 +18,7 @@ export const REASONS = {
     "Wrong fare agreed / overcharge",
     "Service failure — late or incomplete",
   ],
-  orderCancel: ["Rider unreachable", "Customer asked ops to cancel", "Safety concern", "Suspected fraud"],
+  orderCancel: ["Biker unreachable", "Customer asked ops to cancel", "Safety concern", "Suspected fraud"],
   // Auto-accept: "Can't make it" on the Orders to confirm list — why the kitchen can't take the order.
   kitchenCancel: [
     "The restaurant can't make it",
@@ -60,23 +60,23 @@ export const REASONS = {
     "Suspected fare fraud",
     "Failed re-verification",
   ],
-  riderLift: ["Issue resolved with the rider", "Report not substantiated", "Suspension period served"],
+  riderLift: ["Issue resolved with the biker", "Report not substantiated", "Suspension period served"],
   riderBan: ["Confirmed fraud", "Serious safety incident", "Repeat offences after suspension"],
   riderClearHold: ["Reliability recovered", "Hold applied in error", "Manual override — ops discretion"],
   // First Run v2 E4 (D-82): how ops checked a plate the rider saved from Bike & documents.
-  riderPlateVerify: ["Matches the bike photo", "Checked in person", "Checked with the rider on a call"],
+  riderPlateVerify: ["Matches the bike photo", "Checked in person", "Checked with the biker on a call"],
 
   // customers.html
   customerFlag: [
-    "Cancel pattern hurting riders",
-    "Rider report — no-show at pickup",
+    "Cancel pattern hurting bikers",
+    "Biker report — no-show at pickup",
     "Abusive behaviour reported",
     "Suspected fraud",
   ],
   customerClearFlag: ["Behaviour improved", "Reports not substantiated"],
-  customerBan: ["Confirmed fraud", "Repeated no-shows after warnings", "Abuse of riders", "Safety incident"],
+  customerBan: ["Confirmed fraud", "Repeated no-shows after warnings", "Abuse of bikers", "Safety incident"],
   // S·2 customer hold — a reversible pause on broadcasting while ops reviews recent activity.
-  customerHold: ["Cancel pattern hurting riders", "Suspected fraud — under review", "Payment dispute open", "Awaiting identity check"],
+  customerHold: ["Cancel pattern hurting bikers", "Suspected fraud — under review", "Payment dispute open", "Awaiting identity check"],
   customerLift: ["Review complete — no issue", "Dispute resolved", "Customer contacted and cleared"],
 
   // issues.html
@@ -106,14 +106,14 @@ export const REASONS = {
 
   // X1 — merchant vertical admin alignment
   handshakeResolve: [
-    "Called both parties — the amount matches, rider was just slow to confirm",
-    "Called both parties — resolved the mismatch, releasing the rider",
-    "Rider unreachable — releasing on the customer's confirm alone after follow-up",
+    "Called both parties — the amount matches, biker was just slow to confirm",
+    "Called both parties — resolved the mismatch, releasing the biker",
+    "Biker unreachable — releasing on the customer's confirm alone after follow-up",
   ],
   // D3 (2026-10-07, MJ-RH1): closing a merchant's non-return report after support followed it up.
   debtWriteOff: [
-    "Rider confirmed they kept the goods or the cash",
-    "Rider unreachable after follow-up",
+    "Biker confirmed they kept the goods or the cash",
+    "Biker unreachable after follow-up",
     "Goods spoiled or lost on the way back",
   ],
   cashBanLift: ["Customer contacted and cleared", "Payment issue resolved", "Ban applied in error"],

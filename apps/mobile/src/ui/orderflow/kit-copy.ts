@@ -28,8 +28,8 @@ export const OX = {
   /** of-screens-upd.js D1 / D4 — the help link and button. */
   helpWithOrder: "Get help with this order",
   /** of-screens-rt.js T11b — the searching line and the toast. */
-  asking: "Asking riders near {v}…",
-  droppedToast: "{n} had to cancel. Finding another rider — same price.",
+  asking: "Asking bikers near {v}…",
+  droppedToast: "{n} had to cancel. Finding another biker — same price.",
   /** of-screens-rt.js T7 sub. */
   atVenue: "{n} is at {v}.",
   /** of-screens-rt.js T11a — the ready line. */

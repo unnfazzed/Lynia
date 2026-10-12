@@ -1,4 +1,4 @@
-import { COMMISSION, KycStatus, RiderAccountStatus, serviceTownsLabel } from "@lynia/shared";
+import { KycStatus, RiderAccountStatus, serviceTownsLabel } from "@lynia/shared";
 import { penaltiesSuspended } from "../common/penalties";
 
 /**
@@ -27,35 +27,17 @@ export type OnlineRefusal =
   | "location_required"
   | "commission_low_balance";
 
-/** The commission side of the gate: whether commission is switched on (rate > 0) and the rider's
- *  current prepaid balance. Optional on the rider input so existing call sites (matching/offers/
- *  tracking board-eligibility) compile unchanged — those evaluate standing only. The authoritative
- *  go-online path (rider.service.setOnline) supplies these so the low-balance block is enforced. At
- *  rate 0 (`commissionActive` false/absent) the commission branch never fires — the pilot is untouched. */
-export interface CommissionGateInput {
-  /** True only when the resolved commission rate is > 0 (the flip has happened). */
-  commissionActive?: boolean;
-  /** The rider's prepaid commission balance (USD); undefined when not loaded by this call site. */
-  commissionBalance?: number;
-  /**
-   * D-70: commission-free first jobs the rider still has (`freeJobsLeft(tripsCount)`). While > 0 the
-   * low-balance branch is waived — a new rider at $0 goes online and works their free jobs; the gate
-   * returns once they run out. Undefined (a call site that didn't load it) keeps the pre-D-70 behavior.
-   */
-  freeJobsLeft?: number;
-}
-
 /**
  * The online-gate (Q2): the FIRST failed precondition, or null when the rider may go online. A rider
  * goes online only when KYC is verified, the account is `active` (admin-owned — read here, never
- * written), reliability is not `on_hold`, any no-show cooldown has elapsed, and — once commission is
- * switched on — the prepaid balance is at or above the floor. Pure for unit tests.
+ * written), reliability is not `on_hold` and any no-show cooldown has elapsed. Pure for unit tests.
+ *
+ * The wallet balance is NOT a go-online condition (owner 2026-10-12: no minimum balance). A rider who
+ * can't cover a job's commission is refused that job (`commission_low_balance`, common/commission-cover).
  *
  * A `banned` account is reported as its own `banned` reason (a terminal, non-appealable state) so the
  * app shows the right copy — it is checked before the catch-all `suspended` branch, which then only
- * ever fires for a genuine suspension. The commission branch is LAST (the standing reasons are more
- * fundamental) and fires only when commission is active AND a balance was supplied AND it is below the
- * floor — so a call site that doesn't load the balance, or the whole 0% launch period, is never gated.
+ * ever fires for a genuine suspension.
  */
 export function onlineRefusalReason(
   rider: {
@@ -63,7 +45,7 @@ export function onlineRefusalReason(
     accountStatus: string;
     onHold: boolean;
     cooldownUntil: Date | null;
-  } & CommissionGateInput,
+  },
   now: Date = new Date(),
 ): OnlineRefusal | null {
   // A lapsed ID (1·b2) gets its own reason before the generic KYC branch, so a rider who was verified
@@ -78,32 +60,23 @@ export function onlineRefusalReason(
     if (rider.onHold) return "on_hold";
     if (rider.cooldownUntil && rider.cooldownUntil > now) return "cooldown";
   }
-  // Prepaid commission floor (design Flow 2): only once commission is switched on AND this call site
-  // loaded the balance. Literal guard — at ratePct 0 `commissionActive` is false, so a $0 launch
-  // balance below the floor never blocks the pilot.
-  // D-70: the rider's commission-free first jobs waive the floor until they are used up.
-  if (
-    rider.commissionActive &&
-    rider.commissionBalance != null &&
-    rider.commissionBalance < COMMISSION.lowBalanceBlockBelow &&
-    !(rider.freeJobsLeft != null && rider.freeJobsLeft > 0)
-  ) {
-    return "commission_low_balance";
-  }
   return null;
 }
 
 /** Rider-facing copy per refusal reason. The structured `reason` (not this string) is the contract. */
 export const REFUSAL_MESSAGE: Record<OnlineRefusal, string> = {
-  kyc: "Rider is not verified yet",
+  kyc: "Biker is not verified yet",
   kyc_expired: "Your ID has expired — re-verify to keep riding",
-  banned: "Your rider account has been banned",
-  suspended: "Your rider account is suspended",
+  banned: "Your biker account has been banned",
+  suspended: "Your biker account is suspended",
   on_hold: "Your account is on hold — contact support to get back on the road",
   cooldown: "On cooldown after repeated cancellations — try again later",
   out_of_area: `You're outside the service area — go online from ${serviceTownsLabel()}`,
   // E2E 2026-10-05 FS-7: the rider app's own no-GPS gate copy (R.gGpsT + R.gGpsB), so an older build that
   // can't read the `reason` still has a human sentence to show.
   location_required: "Can't find your location. Jobs are matched by distance, so location must be on while you ride.",
-  commission_low_balance: "Top up your commission balance to keep riding",
+  // Not a go-online refusal any more (owner 2026-10-12): the per-job check (common/commission-cover.ts)
+  // throws it, with this reason, when a rider's balance doesn't cover a job's commission. "Top up" keeps
+  // older app builds, which sniff the message, on the top-up state.
+  commission_low_balance: "Your wallet balance doesn't cover this job's commission — top up to take it",
 };

@@ -39,7 +39,7 @@ export function tracker(b: MerchantBookingResponse): Tracker {
   const rider = shortName(b.rider?.name);
   if (isFinding(b.state)) {
     const offers = b.offerCount > 0 ? ` · ${b.offerCount} offer${b.offerCount === 1 ? "" : "s"}` : "";
-    return { icon: "timer", title: `${b.itemsSummary}${offers}`, sub: b.offerCount > 0 ? "Pick a rider" : "Waiting for offers", progress: null };
+    return { icon: "timer", title: `${b.itemsSummary}${offers}`, sub: b.offerCount > 0 ? "Pick a biker" : "Waiting for offers", progress: null };
   }
   const title = rider ? `${b.itemsSummary} · ${rider}` : b.itemsSummary;
   if (b.state === "coming") return { icon: "bike", title, sub: null, progress: 2 };

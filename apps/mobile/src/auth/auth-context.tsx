@@ -7,7 +7,7 @@ import { clearPersistedQueries } from "../query/persist";
 import { prewarmBootReads } from "../boot/prewarm";
 import { boundPushToken } from "../push/bound-token";
 import { captureException } from "../telemetry/sentry";
-import { clearDeviceState, clearSession, loadSession, saveSession, SESSION_KEY, type Session } from "./session";
+import { clearDeviceState, clearSession, loadSession, saveSession, saveSignupAt, SESSION_KEY, type Session } from "./session";
 
 interface AuthState {
   session: Session | null;
@@ -183,6 +183,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     async (s: Session): Promise<void> => {
       apply(s);
       await persist();
+      // Funnel analytics: a sign-in that still needs a profile is a sign-up — stamp when, on this phone, so
+      // the rider's first time online can report "time from sign-up" (an account id and a time; no PII).
+      if (s.needsProfile && s.profileId) {
+        try {
+          void saveSignupAt(s.profileId);
+        } catch {
+          /* analytics only — never in the way of a sign-in */
+        }
+      }
     },
     [apply],
   );

@@ -55,7 +55,7 @@ describe("AdminCustomersService.listCustomers + getCustomerDetail (D-2)", () => 
     expect(rows[0]!.phoneMasked).not.toContain("111");
   });
 
-  it("NEW-3: a cancel the RIDER (or admin) made doesn't count toward the customer's own cancel rate", async () => {
+  it("NEW-3: a cancel the BIKER (or admin) made doesn't count toward the customer's own cancel rate", async () => {
     const prisma = {
       profile: { findMany: async () => [profile] },
       order: {
@@ -412,5 +412,53 @@ describe("AdminCustomersService.liftCashBan (X1/R-08 — mutation + audit in ONE
     expect(notified).toHaveLength(1);
     expect(notified[0]!.profileIds).toEqual(["c1"]);
     expect(notified[0]!.msg).toMatchObject({ title: "Cash orders re-enabled" });
+  });
+});
+
+describe("AdminCustomersService reaches a biker's customer side (owner 2026-10-12)", () => {
+  // Becoming a biker flips `role` to `rider`; their customer standing (hold, cash-ban) must stay
+  // moderatable, and their customer page must still open. Admin/merchant profiles stay out.
+  const bothRoles = { in: ["customer", "rider"] };
+
+  it("detail looks the id up across customer AND rider roles", async () => {
+    let where: Record<string, unknown> | undefined;
+    const svc = new AdminCustomersService({
+      profile: {
+        findFirst: async (args: { where: Record<string, unknown> }) => {
+          where = args.where;
+          return null;
+        },
+      },
+    } as unknown as PrismaService);
+    await svc.getCustomerDetail("r1");
+    expect(where).toEqual({ id: "r1", role: bothRoles });
+  });
+
+  it("hold, lift and cash-ban lift read and CAS across customer AND rider roles", async () => {
+    const reads: unknown[] = [];
+    const writes: unknown[] = [];
+    // hold sees an un-held profile; lift then sees it held (lift refuses a no-op, LC-D-SIB-2).
+    const onHoldByCall = [false, true, true];
+    const tx = {
+      profile: {
+        findFirst: async (args: { where: unknown }) => {
+          reads.push(args.where);
+          return { onHold: onHoldByCall[reads.length - 1], cashBanned: true };
+        },
+        updateMany: async (args: { where: unknown }) => {
+          writes.push(args.where);
+          return { count: 1 };
+        },
+      },
+      auditLog: { create: async () => ({ id: "a" }) },
+    };
+    const prisma = { $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
+    const svc = new AdminCustomersService(prisma as unknown as PrismaService);
+    await svc.holdCustomer("admin-1", "r1", { reason: "x" });
+    await svc.liftCustomerHold("admin-1", "r1", {});
+    await svc.liftCashBan("admin-1", "r1", {});
+    for (const w of [...reads, ...writes]) expect(w).toMatchObject({ id: "r1", role: bothRoles });
+    expect(reads).toHaveLength(3);
+    expect(writes).toHaveLength(3);
   });
 });

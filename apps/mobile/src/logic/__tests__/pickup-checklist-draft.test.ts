@@ -1,6 +1,6 @@
 import { parsePickupChecklistDraft } from "../pickup-checklist-draft";
 
-describe("parsePickupChecklistDraft (rider pickup-verification ticks had no persistence)", () => {
+describe("parsePickupChecklistDraft (biker pickup-verification ticks had no persistence)", () => {
   it("returns null when there's nothing stored", () => {
     expect(parsePickupChecklistDraft(null)).toBeNull();
     expect(parsePickupChecklistDraft(undefined)).toBeNull();

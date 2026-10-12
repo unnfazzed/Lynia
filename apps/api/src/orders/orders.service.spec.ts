@@ -1,4 +1,4 @@
-import { BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, OFFER_CHOOSE_GRACE_MS, OFFER_WINDOW_MS, quoteFare } from "@lynia/shared";
+import { BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, OFFER_CHOOSE_GRACE_MS, OFFER_WINDOW_MS, OFFER_WINDOW_POLICY, quoteFare } from "@lynia/shared";
 import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 import type { StorageAdapter } from "../adapters/storage/storage.interface";
@@ -6,6 +6,7 @@ import type { OfferExpiryService } from "../matching/offer-expiry.service";
 import type { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
+import type { RiderNudgeService } from "../tracking/rider-nudge.service";
 import type { NearbyRider, TrackingService } from "../tracking/tracking.service";
 import { OrdersService, RIDER_HISTORY_STATUSES } from "./orders.service";
 
@@ -165,7 +166,7 @@ describe("OrdersService.create", () => {
     expect(created!.itemDesc).toBe("2× Documents · 1× Phone charger");
   });
 
-  it("pushes the new order to nearby online riders post-commit (CONCEPT §3.10), best-effort", async () => {
+  it("pushes the new order to nearby online bikers post-commit (CONCEPT §3.10), best-effort", async () => {
     const prisma = {
       profile: { findUnique: async () => ({ onHold: false }) },
       order: {
@@ -196,7 +197,7 @@ describe("OrdersService.create", () => {
     expect(notifyNewBroadcast).toHaveBeenCalledWith("ord-1", ["rider-1"], { pickup: "Eastgate", fare: "2.50" });
   });
 
-  it("seeds the per-order sent set and pushes only the CLAIMED riders (widening-broadcast dedupe)", async () => {
+  it("seeds the per-order sent set and pushes only the CLAIMED bikers (widening-broadcast dedupe)", async () => {
     const prisma = {
       profile: { findUnique: async () => ({ onHold: false }) },
       order: {
@@ -358,7 +359,7 @@ describe("OrdersService.create", () => {
     expect(() => BoardNewOrderEvent.parse(leaky)).toThrow();
   });
 
-  it("F-17: still broadcasts to nearby riders when expiry.schedule rejects (a Redis outage must not skip the fan-out)", async () => {
+  it("F-17: still broadcasts to nearby bikers when expiry.schedule rejects (a Redis outage must not skip the fan-out)", async () => {
     const prisma = {
       profile: { findUnique: async () => ({ onHold: false }) },
       order: {
@@ -386,9 +387,53 @@ describe("OrdersService.create", () => {
     await expect(svc.create(orderInput, "cust-1")).resolves.toMatchObject({ id: "ord-1" });
     await flush();
 
-    expect(schedule).toHaveBeenCalledWith("ord-1");
+    // One rider online → a quiet market → the long window (OFFER_WINDOW_POLICY), scheduled from create.
+    expect(schedule).toHaveBeenCalledWith("ord-1", expect.any(Number));
+    expect((schedule.mock.calls[0] as unknown as [string, number])[1]).toBeGreaterThanOrEqual(OFFER_WINDOW_POLICY.quietWindowMs);
     // The rider fan-out ran regardless of the failed enqueue — never gated behind a hanging schedule.
     expect(notifyNewBroadcast).toHaveBeenCalledWith("ord-1", ["rider-1"], { pickup: "Eastgate", fare: "2.50" });
+  });
+
+  it("cold start: a quiet market also nudges the offline bikers near the pickup; a busy one doesn't", async () => {
+    const make = (online: number) => {
+      const prisma = {
+        profile: { findUnique: async () => ({ onHold: false }) },
+        order: {
+          create: async () => ({
+            id: "ord-1",
+            status: "open_for_offers",
+            itemDesc: "Documents",
+            proposedFare: { toString: () => "2.50" },
+            suggestedFare: { toString: () => "2.40" },
+            distanceKm: 1.5,
+            createdAt: new Date(),
+          }),
+        },
+      };
+      const riders = Array.from({ length: online }, (_, i) => ({ profileId: `r${i}`, distanceM: 500 }) as NearbyRider);
+      const tracking = { nearbyRiders: async () => riders, claimBroadcastRecipients: async () => null } as unknown as TrackingService;
+      const nudgeOfflineRiders = vi.fn(async () => {});
+      const svc = new OrdersService(
+        prisma as unknown as PrismaService,
+        { schedule: async () => {} } as unknown as OfferExpiryService,
+        tracking,
+        { notifyNewBroadcast: async () => {} } as unknown as NotificationsService,
+        noGateway,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { nudgeOfflineRiders } as unknown as RiderNudgeService,
+      );
+      return { svc, nudgeOfflineRiders };
+    };
+    const quiet = make(2);
+    await quiet.svc.create(orderInput, "cust-1");
+    expect(quiet.nudgeOfflineRiders).toHaveBeenCalledWith(orderInput.pickup.point, "parcel");
+
+    const busy = make(OFFER_WINDOW_POLICY.quietBelowRiders);
+    await busy.svc.create(orderInput, "cust-1");
+    expect(busy.nudgeOfflineRiders).not.toHaveBeenCalled();
   });
 
   it("never fails the create when the board push throws", async () => {
@@ -549,9 +594,21 @@ describe("OrdersService.create service-corridor gate (Q1)", () => {
     expect(created).toBe(true);
   });
 
-  it("the out-of-area message names the towns we serve", async () => {
+  it("the out-of-area message names where we serve", async () => {
     const s = svc(() => ({}));
-    await expect(s.create({ ...orderInput, dropoff: wp(farPoint) }, "cust-1")).rejects.toThrow(/We deliver across Harare, Chitungwiza, Norton/);
+    await expect(s.create({ ...orderInput, dropoff: wp(farPoint) }, "cust-1")).rejects.toThrow(/We deliver across Zimbabwe/);
+  });
+
+  it("serves all of Zimbabwe: a Mutare pickup to a Chivhu drop-off is allowed (owner 2026-10-12, D-99)", async () => {
+    let created = false;
+    const s = svc(() => {
+      created = true;
+      return { id: "ord-3", status: "open_for_offers", itemDesc: "Documents", proposedFare: { toString: () => "90.00" }, suggestedFare: { toString: () => "90.00" }, distanceKm: 230, createdAt: new Date("2026-10-12T00:00:00Z") };
+    });
+    await expect(
+      s.create({ ...orderInput, pickup: wp({ lat: -18.9707, lng: 32.6709 }), dropoff: wp({ lat: -19.0211, lng: 30.8922 }) }, "cust-1"),
+    ).resolves.toMatchObject({ id: "ord-3" });
+    expect(created).toBe(true);
   });
 
   it("allows an order with both waypoints inside the corridor", async () => {
@@ -642,7 +699,7 @@ describe("OrdersService.getSnapshot", () => {
     expect(legacy.items).toBeNull();
   });
 
-  it("reveals the rider's phone to the customer during the active window", async () => {
+  it("reveals the biker's phone to the customer during the active window", async () => {
     const snap = await svc(row()).getSnapshot("ord-1", "cust-1");
     expect(snap.counterpartyPhone).toBe("+263782000000");
     expect(snap.rider).toMatchObject({ profileId: "rider-1" });
@@ -656,12 +713,12 @@ describe("OrdersService.getSnapshot", () => {
     expect(snap.dropoff).not.toHaveProperty("contactPhone");
   });
 
-  it("reveals the customer's phone to the assigned rider", async () => {
+  it("reveals the customer's phone to the assigned biker", async () => {
     const snap = await svc(row()).getSnapshot("ord-1", "rider-1");
     expect(snap.counterpartyPhone).toBe("+263771111111");
   });
 
-  it("merchant web upgrade L2: a business's booking gives the rider the business's pickup contact phone, not the booking account's", async () => {
+  it("merchant web upgrade L2: a business's booking gives the biker the business's pickup contact phone, not the booking account's", async () => {
     const booking = row({
       customer: { phone: "business:m1" },
       pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Mbare Musika, stall 14", contactPhone: "+263773333333" },
@@ -670,13 +727,13 @@ describe("OrdersService.getSnapshot", () => {
     expect(snap.counterpartyPhone).toBe("+263773333333");
   });
 
-  it("reveals the waypoint contactPhones to the ASSIGNED rider inside the reveal window (E1)", async () => {
+  it("reveals the waypoint contactPhones to the ASSIGNED biker inside the reveal window (E1)", async () => {
     const snap = await svc(row()).getSnapshot("ord-1", "rider-1");
     expect(snap.pickup).toEqual({ point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate", contactPhone: "+263771111111" });
     expect(snap.dropoff).toEqual({ point: { lat: -17.82, lng: 31.06 }, landmark: "Avenues", contactPhone: "+263772222222" });
   });
 
-  it("keeps waypoint contactPhones redacted from the rider OUTSIDE the reveal window", async () => {
+  it("keeps waypoint contactPhones redacted from the biker OUTSIDE the reveal window", async () => {
     const snap = await svc(row({ status: "open_for_offers" })).getSnapshot("ord-1", "rider-1");
     expect(snap.pickup).not.toHaveProperty("contactPhone");
     expect(snap.dropoff).not.toHaveProperty("contactPhone");
@@ -718,12 +775,12 @@ describe("OrdersService.getSnapshot", () => {
     expect(snap.counterpartyPhone).toBe("+263782000000");
   });
 
-  it("still reveals the counterparty phone on `undelivered` (failed hand-off — customer may need to reach the rider, C6)", async () => {
+  it("still reveals the counterparty phone on `undelivered` (failed hand-off — customer may need to reach the biker, C6)", async () => {
     const snap = await svc(row({ status: "undelivered" })).getSnapshot("ord-1", "cust-1");
     expect(snap.counterpartyPhone).toBe("+263782000000");
   });
 
-  it("U21 (D-97): reveals the rider's phone to the customer on a cancel after pickup, for 24 h only", async () => {
+  it("U21 (D-97): reveals the biker's phone to the customer on a cancel after pickup, for 24 h only", async () => {
     const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
     const lateCancel = (cancelledAt: Date | null, collectedAt: Date | null) => row({ status: "cancelled", collectedAt, cancelledAt });
     // A cancelled snapshot also looks up its rebroadcast clone (none here).
@@ -923,7 +980,7 @@ describe("OrdersService.getSnapshot", () => {
     }
   });
 
-  it("prefers the Redis live rider position over the stale PG columns", async () => {
+  it("prefers the Redis live biker position over the stale PG columns", async () => {
     const tracking = {
       nearbyRiders: async (): Promise<NearbyRider[]> => [],
       getLivePosition: async () => ({ lat: -17.9, lng: 31.1, at: 1_700_000_000_000 }),
@@ -962,12 +1019,12 @@ describe("OrdersService.getSnapshot", () => {
     expect(snap.cancelledBy).toBe("customer");
   });
 
-  it("cancelledBy: \"rider\" when the assigned rider's own id cancelled", async () => {
+  it("cancelledBy: \"biker\" when the assigned biker's own id cancelled", async () => {
     const snap = await svcCancelled("rider-1").getSnapshot("ord-1", "cust-1");
     expect(snap.cancelledBy).toBe("rider");
   });
 
-  it("cancelledBy: null for an ADMIN cancel — the actor id matches neither party, so it must NOT default to \"rider\"", async () => {
+  it("cancelledBy: null for an ADMIN cancel — the actor id matches neither party, so it must NOT default to \"biker\"", async () => {
     const snap = await svcCancelled("admin-9").getSnapshot("ord-1", "cust-1");
     expect(snap.cancelledBy).toBeNull();
   });
@@ -1028,18 +1085,18 @@ describe("OrdersService.getSnapshot", () => {
   it("Fix 6: passes a user-safe cancel reason through unchanged", async () => {
     const prisma = {
       order: {
-        findUnique: async () => row({ status: "cancelled", cancelReason: "Rider unreachable", cancelledBy: "admin-9" }),
+        findUnique: async () => row({ status: "cancelled", cancelReason: "Biker unreachable", cancelledBy: "admin-9" }),
         findFirst: async () => null,
       },
     } as unknown as PrismaService;
     const s = new OrdersService(prisma, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
     const snap = await s.getSnapshot("ord-1", "cust-1");
-    expect(snap.cancelReason).toBe("Rider unreachable");
+    expect(snap.cancelReason).toBe("Biker unreachable");
   });
 });
 
 describe("OrdersService.listOpen", () => {
-  it("lists open orders for riders, serializing fares", async () => {
+  it("lists open orders for bikers, serializing fares", async () => {
     let where: unknown;
     const prisma = {
       profile: { findUnique: async () => ({ onHold: false }) },
@@ -1068,7 +1125,7 @@ describe("OrdersService.listOpen", () => {
     expect(rows[0]).toMatchObject({ id: "o1", itemDesc: "Documents", suggestedFare: "2.40", proposedFare: "2.50", distanceKm: 1.5 });
   });
 
-  it("redacts contactPhone from pickup/dropoff — a browsing rider gets point + landmark only (§5d)", async () => {
+  it("redacts contactPhone from pickup/dropoff — a browsing biker gets point + landmark only (§5d)", async () => {
     const prisma = {
       profile: { findUnique: async () => ({ onHold: false }) },
       order: {
@@ -1126,7 +1183,7 @@ describe("OrdersService.listOpen", () => {
     expect(JSON.stringify(rows[0])).not.toContain("+263");
   });
 
-  it("geo path shows an order beyond the caller's radius once its broadcast has widened to reach them", async () => {
+  it("geo path shows every open order nationwide, fresh or not (owner 2026-10-12, D-99)", async () => {
     const mkRow = (id: string, createdAt: Date) => ({
       id,
       pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate" },
@@ -1136,19 +1193,19 @@ describe("OrdersService.listOpen", () => {
       proposed_fare: { toString: () => "2.50" },
       distance_km: 1.5,
       created_at: createdAt,
-      // 7 km out: past the 5 km caller radius, inside the 12 km final expansion ring.
-      pickup_distance_m: 7000,
+      // Mutare from Harare: ~230 km, far past the caller's own 5 km.
+      pickup_distance_m: 230_000,
     });
     const queryRaw = vi.fn(async () => [
-      mkRow("o-fresh", new Date()), // t≈0 → reach still 5 km → hidden
-      mkRow("o-widened", new Date(Date.now() - 61_000)), // past the 60 s step → reach 12 km → shown
+      mkRow("o-fresh", new Date()),
+      mkRow("o-older", new Date(Date.now() - 61_000)),
     ]);
     const prisma = { order: { findMany: vi.fn(async () => []) }, $queryRaw: queryRaw };
     const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
 
     const rows = await svc.listOpen(-17.83, 31.05, 5000);
 
-    expect(rows.map((r) => r.id)).toEqual(["o-widened"]);
+    expect(rows.map((r) => r.id)).toEqual(["o-fresh", "o-older"]);
   });
 
   it("without lat/lng falls back to the city-wide findMany path", async () => {
@@ -1282,7 +1339,7 @@ describe("OrdersService.historyForUser", () => {
     expect(statuses).not.toContain("requested");
   });
 
-  it("MA-M5: the rider side also returns their cancelled and undelivered jobs (Job history explains a cooldown)", async () => {
+  it("MA-M5: the biker side also returns their cancelled and undelivered jobs (Job history explains a cooldown)", async () => {
     let args: { where: { OR: [unknown, { status: { in: string[] } }] } } | undefined;
     await svc([row()], (a) => (args = a as typeof args)).historyForUser("rider-1");
     const statuses = args!.where.OR[1].status.in;
@@ -1291,7 +1348,7 @@ describe("OrdersService.historyForUser", () => {
     expect(statuses).not.toContain("requested");
   });
 
-  it("MA-H1: a merchant row carries the rider's fare (the delivery fee), not the customer's whole bill", async () => {
+  it("MA-H1: a merchant row carries the biker's fare (the delivery fee), not the customer's whole bill", async () => {
     const food = await svc([
       row({ orderType: "merchant", merchant: { name: "Sadza Republic" }, agreedFare: { toString: () => "15.50" }, deliveryFee: { toString: () => "2.50" } }),
     ]).historyForUser("rider-1");
@@ -1363,7 +1420,7 @@ describe("OrdersService.earningsSummary (WD-004 — a full aggregate, not a sum 
     _count: { _all: n },
   });
 
-  it("aggregates over ALL matching orders (not capped at 50), scoped to this rider's completed/delivered orders", async () => {
+  it("aggregates over ALL matching orders (not capped at 50), scoped to this biker's completed/delivered orders", async () => {
     let args: unknown;
     // A rider with well over 50 lifetime deliveries — the aggregate must reflect all of them, not a page.
     await svc([parcel("6234.50", 187)], (a) => (args = a)).earningsSummary("r1");
@@ -1380,7 +1437,7 @@ describe("OrdersService.earningsSummary (WD-004 — a full aggregate, not a sum 
     expect(result).toEqual({ total: "123.45", count: 12 });
   });
 
-  it("returns $0/0 for a rider with no completed trips yet (SQL SUM of nothing is NULL)", async () => {
+  it("returns $0/0 for a biker with no completed trips yet (SQL SUM of nothing is NULL)", async () => {
     expect(await svc([]).earningsSummary("r1")).toEqual({ total: "0", count: 0 });
     expect(await svc([parcel(null, 0)]).earningsSummary("r1")).toEqual({ total: "0", count: 0 });
   });
@@ -1402,7 +1459,7 @@ describe("OrdersService.earningsSummary (WD-004 — a full aggregate, not a sum 
 });
 
 describe("OrdersService.activeForRider", () => {
-  it("returns null when the rider has no active order", async () => {
+  it("returns null when the biker has no active order", async () => {
     const prisma = { order: { findFirst: async () => null } };
     const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
     expect(await svc.activeForRider("rider-1")).toBeNull();
@@ -1463,7 +1520,7 @@ describe("OrdersService.activeForRider", () => {
     expect(res?.counterpartyPhone).toBe("+263771111111");
   });
 
-  it("DS16-02: surfaces the OLDEST outstanding hand-back first when the rider has two stuck parcels", async () => {
+  it("DS16-02: surfaces the OLDEST outstanding hand-back first when the biker has two stuck parcels", async () => {
     // Two collected-then-cancelled parcels for the same rider inside the lookback window. The query must
     // order by cancelledAt ASC so the longest-outstanding parcel ("old", the one physically stuck the
     // longest) gets first claim on the rider's attention — not the most recently cancelled ("new"), which
@@ -1673,6 +1730,7 @@ describe("OrdersService.raisePrice (raise the fare in place on an open auction)"
     orderType: "parcel",
     proposedFare: new Prisma.Decimal("2.50"),
     createdAt: new Date(now - 30_000),
+    offerWindowEndsAt: null,
     ...overrides,
   });
   function harness(row: unknown, casCount = 1) {
@@ -1721,17 +1779,36 @@ describe("OrdersService.raisePrice (raise the fare in place on an open auction)"
     await expect(harness(openRow()).svc.raisePrice("ord-1", "cust-1", 2)).rejects.toThrow(/must be higher/i);
   });
 
-  it("CAS-updates ONLY proposedFare (never createdAt — the countdown keeps running) and returns the new fare", async () => {
-    const h = harness(openRow());
+  it("CAS-updates the fare, stamps the raise and leaves bikers a minute — never touching createdAt — and returns the new fare", async () => {
+    // 80 s into a legacy 90 s window: 10 s left, so the raise pushes the end to a minute from now.
+    const createdAt = new Date(Date.now() - 80_000);
+    const h = harness(openRow({ createdAt }));
+    const before = Date.now();
     await expect(h.svc.raisePrice("ord-1", "cust-1", 3.75)).resolves.toEqual({ orderId: "ord-1", proposedFare: "3.75" });
     expect(h.updates).toHaveLength(1);
     const { where, data } = h.updates[0] as { where: Record<string, unknown>; data: Record<string, unknown> };
     expect(where).toMatchObject({ id: "ord-1", status: "open_for_offers", customerId: "cust-1" });
-    // Window + monotonic guards ride the same CAS so a racing expiry or a lower concurrent raise loses.
-    expect(where.createdAt).toHaveProperty("gt");
+    // The stored end + monotonic guards ride the same CAS so a racing raise/expiry or a lower raise loses.
+    expect(where).toHaveProperty("offerWindowEndsAt", null);
     expect(String((where.proposedFare as { lt: unknown }).lt)).toBe("3.75");
-    expect(Object.keys(data)).toEqual(["proposedFare"]);
+    expect(Object.keys(data).sort()).toEqual(["fareRaisedAt", "offerWindowEndsAt", "proposedFare"]);
     expect(String(data.proposedFare)).toBe("3.75");
+    expect((data.offerWindowEndsAt as Date).getTime()).toBeGreaterThanOrEqual(before + OFFER_WINDOW_POLICY.raiseMinRemainingMs);
+    expect((data.fareRaisedAt as Date).getTime()).toBeGreaterThanOrEqual(before);
+  });
+
+  it("never shortens a long (quiet-market) window", async () => {
+    const end = new Date(Date.now() + 3 * 60_000);
+    const h = harness(openRow({ createdAt: new Date(Date.now() - 60_000), offerWindowEndsAt: end }));
+    await h.svc.raisePrice("ord-1", "cust-1", 3.75);
+    const { where, data } = h.updates[0] as { where: Record<string, unknown>; data: Record<string, unknown> };
+    expect(where.offerWindowEndsAt).toEqual(end);
+    expect((data.offerWindowEndsAt as Date).getTime()).toBe(end.getTime());
+  });
+
+  it("takes a raise past the old 90 s mark while the stored window is still open", async () => {
+    const h = harness(openRow({ createdAt: new Date(Date.now() - OFFER_WINDOW_MS - 30_000), offerWindowEndsAt: new Date(Date.now() + 20_000) }));
+    await expect(h.svc.raisePrice("ord-1", "cust-1", 3.75)).resolves.toMatchObject({ proposedFare: "3.75" });
   });
 
   it("409s when the CAS loses (picked / cancelled / expired / out-raised in between)", async () => {
@@ -1787,7 +1864,7 @@ describe("OrdersService.announcePriceChange", () => {
     return { svc, gateway, notifyNewBroadcast };
   }
 
-  it("re-emits the board card at the new fare and pings not-yet-pinged riders with the REMAINING-window TTL", async () => {
+  it("re-emits the board card at the new fare and pings EVERY biker in reach (not only the not-yet-pinged) with the REMAINING-window TTL", async () => {
     const h = harness(order());
     await h.svc.announcePriceChange("0a1b2c3d-0000-4000-8000-000000000001");
     await flush();
@@ -1798,7 +1875,8 @@ describe("OrdersService.announcePriceChange", () => {
     expect(h.notifyNewBroadcast).toHaveBeenCalledTimes(1);
     const [id, ids, info, ttl] = h.notifyNewBroadcast.mock.calls[0] as unknown as [string, string[], { fare: string }, number];
     expect(id).toBe("0a1b2c3d-0000-4000-8000-000000000001");
-    expect(ids).toEqual(["r2"]);
+    // Cold start (owner 2026-10-12): r1 was pinged at create but is pinged again — the new price is news.
+    expect(ids).toEqual(["r1", "r2"]);
     expect(info.fare).toBe("3.75");
     // ~60s left of a 90s window — never the flat full-window default.
     expect(ttl).toBeGreaterThan(0);
@@ -1818,7 +1896,7 @@ describe("OrdersService.announcePriceChange", () => {
   });
 });
 
-describe("OrdersService.getSnapshot riderCard (customer's rider identity card)", () => {
+describe("OrdersService.getSnapshot riderCard (customer's biker identity card)", () => {
   const row = (overrides: Record<string, unknown> = {}) => ({
     id: "ord-1",
     status: "en_route_pickup",
@@ -1862,7 +1940,7 @@ describe("OrdersService.getSnapshot riderCard (customer's rider identity card)",
       noGateway,
     );
 
-  it("gives the customer the rider's public card — name, photo, rating, trips, trimmed plate, verified — and no phone", async () => {
+  it("gives the customer the biker's public card — name, photo, rating, trips, trimmed plate, verified — and no phone", async () => {
     const snap = await svc(row()).getSnapshot("ord-1", "cust-1");
     expect(snap.riderCard).toEqual({
       firstName: "Tendai",
@@ -1890,7 +1968,7 @@ describe("OrdersService.getSnapshot riderCard (customer's rider identity card)",
     expect(snap.riderCard).toMatchObject({ plate: null, photoUrl: null, verified: false });
   });
 
-  it("is null for the rider viewing their own job, and when no rider is assigned", async () => {
+  it("is null for the biker viewing their own job, and when no biker is assigned", async () => {
     expect((await svc(row()).getSnapshot("ord-1", "rider-1")).riderCard).toBeNull();
     expect((await svc(row({ status: "open_for_offers", riderId: null, rider: null })).getSnapshot("ord-1", "cust-1")).riderCard).toBeNull();
   });
@@ -1940,7 +2018,7 @@ describe("OrdersService.getSnapshot rating (the customer's own rating, after-sen
     expect((await svc.getSnapshot("ord-1", "cust-1")).rating).toBeNull();
   });
 
-  it("is null for the rider viewer, without reading the rating", async () => {
+  it("is null for the biker viewer, without reading the rating", async () => {
     const { svc, ratingFindUnique } = harness(row(), { score: 2, tags: ["late"] });
     expect((await svc.getSnapshot("ord-1", "rider-1")).rating).toBeNull();
     expect(ratingFindUnique).not.toHaveBeenCalled();

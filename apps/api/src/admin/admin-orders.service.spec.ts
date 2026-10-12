@@ -468,7 +468,7 @@ describe("AdminOrdersService mutations (Item 1 — mutation + audit in ONE $tran
     expect(calls.audit!.data).toMatchObject({ actor: operator, action: "order.cancel" });
   });
 
-  it("cancelOrder pushes job:cancelled to an assigned rider post-commit (P2-3), with the collected flag", async () => {
+  it("cancelOrder pushes job:cancelled to an assigned biker post-commit (P2-3), with the collected flag", async () => {
     const { prisma } = makeTx({ order: { id: "o1", status: "picked_up", riderId: "r1", collectedAt: new Date() } });
     const gateway = { emitOrderStatus: vi.fn(), emitJobCancelled: vi.fn(), emitBidExpired: vi.fn() };
     const svc = new AdminOrdersService(prisma as unknown as PrismaService, gateway as unknown as TrackingGateway);
@@ -481,7 +481,7 @@ describe("AdminOrdersService mutations (Item 1 — mutation + audit in ONE $tran
     expect(gateway.emitBidExpired).not.toHaveBeenCalled();
   });
 
-  it("cancelOrder on a FOOD order clears the kitchen/dispatch state and tells the customer, rider and restaurant", async () => {
+  it("cancelOrder on a FOOD order clears the kitchen/dispatch state and tells the customer, biker and restaurant", async () => {
     const { prisma, calls } = makeTx({
       order: { id: "o1", status: "en_route_pickup", riderId: "r1", collectedAt: null, orderType: "merchant", merchantId: "m1", customerId: "c1" },
     });
@@ -498,7 +498,7 @@ describe("AdminOrdersService mutations (Item 1 — mutation + audit in ONE $tran
     expect(pushed.map((p) => p.ids[0])).toEqual(["c1", "r1"]);
   });
 
-  it("cancelOrder does NOT push job:cancelled when no rider is assigned", async () => {
+  it("cancelOrder does NOT push job:cancelled when no biker is assigned", async () => {
     const { prisma } = makeTx({ order: { id: "o1", status: "open_for_offers", riderId: null, collectedAt: null } });
     const gateway = { emitOrderStatus: vi.fn(), emitJobCancelled: vi.fn(), emitBidExpired: vi.fn() };
     const svc = new AdminOrdersService(prisma as unknown as PrismaService, gateway as unknown as TrackingGateway);
@@ -578,7 +578,7 @@ describe("AdminOrdersService mutations (Item 1 — mutation + audit in ONE $tran
     expect(notified.find((n) => n.profileIds[0] === "r1")!.msg).toMatchObject({ title: "A delivery's fare was updated" });
   });
 
-  it("UX26-03: adjustFare's rider push carries the order's current status (routes to /rider/job when assigned), but the customer push never does", async () => {
+  it("UX26-03: adjustFare's biker push carries the order's current status (routes to /rider/job when assigned), but the customer push never does", async () => {
     const { prisma } = makeTx({
       order: { id: "o1", status: "assigned", agreedFare: dec("6.00"), riderId: "r1", customerId: "c1" },
     });
@@ -800,7 +800,7 @@ describe("AdminOrdersService.adjudicateDelivered (KB-POD-DISPUTE Phase B)", () =
   }
   const wallet = { chargeCommission: vi.fn(async () => {}), noteFreeJobsMilestone: vi.fn(async () => null), sendFreeJobsReminder: vi.fn() };
 
-  it("force-completes an undelivered order, credits the rider (trip + reliability recovery), charges commission, audits in one tx", async () => {
+  it("force-completes an undelivered order, credits the biker (trip + reliability recovery), charges commission, audits in one tx", async () => {
     wallet.chargeCommission.mockClear();
     const { prisma, calls } = makeTx();
     const svc = new AdminOrdersService(prisma as unknown as PrismaService, undefined, undefined, wallet as unknown as WalletService);
@@ -837,21 +837,24 @@ describe("AdminOrdersService.adjudicateDelivered (KB-POD-DISPUTE Phase B)", () =
     expect(args.suggestedFare.toString()).toBe("20.00");
   });
 
-  it("LC-B-SIB-1: a merchant order adjudicated delivered charges NO Express commission (C4's ledger) but still completes and credits the rider; a parcel still charges", async () => {
+  it("LC-B-SIB-1 / owner 2026-10-12: a merchant order adjudicated delivered is charged on its delivery fee (never its goods+delivery agreedFare), completes and credits the biker; a parcel still charges", async () => {
     wallet.chargeCommission.mockClear();
+    const deliveryFee = dec("3.00");
     const { prisma, calls } = makeTx({
-      // A food order's agreedFare is its goods+delivery total — never an Express ride-commission basis.
-      order: { status: "undelivered", riderId: "r1", customerId: "c1", agreedFare: dec("25.00"), suggestedFare: dec("25.00"), orderType: "merchant" },
+      // A food order's agreedFare is its goods+delivery total — the charge is on the delivery fee.
+      order: { status: "undelivered", riderId: "r1", customerId: "c1", agreedFare: dec("25.00"), suggestedFare: dec("25.00"), deliveryFee, orderType: "merchant" },
     });
     const svc = new AdminOrdersService(prisma as unknown as PrismaService, undefined, undefined, wallet as unknown as WalletService);
     const res = await svc.adjudicateDelivered("admin-1", "o1", { reason: "x" });
-    expect(wallet.chargeCommission).not.toHaveBeenCalled();
+    expect(wallet.chargeCommission).toHaveBeenCalledTimes(1);
+    expect(wallet.chargeCommission).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ orderId: "o1", riderId: "r1", orderType: "merchant", deliveryFee }));
     expect(calls.orderUpdate!.data).toMatchObject({ status: "completed" });
     expect(calls.riderUpdate!.data).toMatchObject({ tripsCount: { increment: 1 } });
     expect(calls.audit!.data).toMatchObject({ action: "order.adjudicate_delivered", target: "o1" });
     expect(res).toMatchObject({ id: "o1", status: "completed" });
 
     // The parcel path is unchanged — the debit still fires.
+    wallet.chargeCommission.mockClear();
     const parcel = makeTx();
     const svc2 = new AdminOrdersService(parcel.prisma as unknown as PrismaService, undefined, undefined, wallet as unknown as WalletService);
     await svc2.adjudicateDelivered("admin-1", "o1", { reason: "x" });
@@ -867,10 +870,10 @@ describe("AdminOrdersService.adjudicateDelivered (KB-POD-DISPUTE Phase B)", () =
     }
   });
 
-  it("409s when the undelivered order has no assigned rider to credit", async () => {
+  it("409s when the undelivered order has no assigned biker to credit", async () => {
     const { prisma } = makeTx({ order: { status: "undelivered", riderId: null, customerId: "c1", agreedFare: dec("6"), suggestedFare: dec("6") } });
     const svc = new AdminOrdersService(prisma as unknown as PrismaService, undefined, undefined, wallet as unknown as WalletService);
-    await expect(svc.adjudicateDelivered("admin-1", "o1", { reason: "x" })).rejects.toThrow(/no assigned rider/i);
+    await expect(svc.adjudicateDelivered("admin-1", "o1", { reason: "x" })).rejects.toThrow(/no assigned biker/i);
   });
 
   it("409s on a CAS conflict (order moved between the read and the write)", async () => {
@@ -879,7 +882,7 @@ describe("AdminOrdersService.adjudicateDelivered (KB-POD-DISPUTE Phase B)", () =
     await expect(svc.adjudicateDelivered("admin-1", "o1", { reason: "x" })).rejects.toThrow(/refresh and try again/i);
   });
 
-  it("notifies the customer with an honest, undated report path, and the rider, post-commit (UX19-02/04)", async () => {
+  it("notifies the customer with an honest, undated report path, and the biker, post-commit (UX19-02/04)", async () => {
     const notified: Array<{ ids: string[]; msg: Record<string, unknown> }> = [];
     const notifications = {
       notifyProfiles: async (ids: string[], msg: Record<string, unknown>) => { notified.push({ ids, msg }); },

@@ -17,13 +17,20 @@ import type { FoodOfferEvent } from "@lynia/shared";
 
 jest.useFakeTimers();
 
-const mockGetOffer = jest.fn<Promise<FoodOfferEvent | null>, []>();
+const mockGetOffer = jest.fn<Promise<FoodOfferEvent | null>, [string | undefined]>();
+let mockParams: { orderId?: string } = {};
 let mockJob: Record<string, unknown> | null = null;
 const mockAccept = jest.fn<Promise<unknown>, [string]>();
 const mockDecline = jest.fn<Promise<unknown>, [string]>();
+const mockReplace = jest.fn();
+const mockDismissTo = jest.fn();
+const mockDismissAll = jest.fn();
+let mockStackRoutes: { name: string }[] | undefined;
 
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  useRouter: () => ({ push: jest.fn(), replace: mockReplace, dismissTo: mockDismissTo, dismissAll: mockDismissAll }),
+  useNavigation: () => ({ getState: () => (mockStackRoutes ? { routes: mockStackRoutes } : undefined) }),
+  useLocalSearchParams: () => mockParams,
 }));
 jest.mock("expo-secure-store", () => ({
   getItemAsync: async () => null,
@@ -31,7 +38,7 @@ jest.mock("expo-secure-store", () => ({
   deleteItemAsync: async () => undefined,
 }));
 jest.mock("../../../src/api/food-rider", () => ({
-  getFoodDispatchOfferWithJob: () => mockGetOffer().then((o) => ({ offer: o, job: mockJob })),
+  getFoodDispatchOfferWithJob: (orderId?: string) => mockGetOffer(orderId).then((o) => ({ offer: o, job: mockJob })),
   acceptFoodDispatch: (orderId: string) => mockAccept(orderId),
   declineFoodDispatch: (orderId: string) => mockDecline(orderId),
 }));
@@ -99,16 +106,34 @@ async function press(tree: renderer.ReactTestRenderer, label: string): Promise<v
 
 beforeEach(() => {
   mockJob = null;
+  mockParams = {};
   mockGetOffer.mockReset();
   mockAccept.mockReset();
   mockDecline.mockReset();
+  mockReplace.mockClear();
+  mockDismissTo.mockClear();
+  mockDismissAll.mockClear();
+  mockStackRoutes = undefined;
   // Keep the mutations pending so onSuccess (haptic / nav / invalidate) never fires — we only assert
   // the mutationFn was invoked with the right orderId.
   mockAccept.mockReturnValue(new Promise(() => {}));
   mockDecline.mockReturnValue(new Promise(() => {}));
 });
 
-describe("FoodOffer (Rider v2 F1–F4)", () => {
+describe("FoodOffer (Biker v2 F1–F4)", () => {
+  // Owner 2026-10-12: several orders can ring one rider at once — the screen reads the one it was opened for.
+  it("reads the offer for the order it was opened with, and the soonest one without", async () => {
+    mockGetOffer.mockResolvedValue(offer());
+    mockParams = { orderId: "food-2" };
+    await render();
+    expect(mockGetOffer).toHaveBeenCalledWith("food-2");
+
+    mockGetOffer.mockClear();
+    mockParams = {};
+    await render();
+    expect(mockGetOffer).toHaveBeenCalledWith(undefined);
+  });
+
   it("F1: the kitchen, the fare, both stops — no pay-the-kitchen tiles at a collect-and-return kitchen", async () => {
     mockGetOffer.mockResolvedValue(offer());
     const tree = await render();
@@ -173,19 +198,19 @@ describe("FoodOffer (Rider v2 F1–F4)", () => {
     const tree = await render();
     const text = textOf(tree);
 
-    expect(text).toContain("That one went to another rider");
+    expect(text).toContain("That one went to another biker");
     expect(tree.root.findAll((n) => n.props.label === "Back to jobs" && typeof n.props.onPress === "function").length).toBe(1);
     expect(tree.root.findAll((n) => n.props.label === "Accept this job")).toHaveLength(0);
   });
 
-  it("a FAILED offer read is the couldn't-load state, not F4's 'went to another rider' (LC-D-SIB-1)", async () => {
+  it("a FAILED offer read is the couldn't-load state, not F4's 'went to another biker' (LC-D-SIB-1)", async () => {
     mockGetOffer.mockRejectedValue(new Error("network"));
     const tree = await render();
     const text = textOf(tree);
 
     expect(text).toContain("Something went wrong");
     expect(text).toContain("Trying again in 10 s");
-    expect(text).not.toContain("That one went to another rider");
+    expect(text).not.toContain("That one went to another biker");
     expect(tree.root.findAll((n) => n.props.label === "Accept this job")).toHaveLength(0);
   });
 
@@ -239,5 +264,35 @@ describe("FoodOffer (Rider v2 F1–F4)", () => {
     const text = textOf(await render());
     expect(text).toContain("Prescription order · see the original at the door");
     expect(text).not.toContain("Sealed bag · photo at pickup");
+  });
+});
+
+describe("FoodOffer — back to the board does not stack a second board", () => {
+  it("F4's Back to jobs pops back to the rider tabs when they are already in the history", async () => {
+    mockStackRoutes = [{ name: "rider/(tabs)" }, { name: "rider/food-offer" }];
+    mockGetOffer.mockResolvedValue(offer({ expiresAt: new Date(Date.now() - 1000).toISOString() }));
+    const tree = await render();
+
+    await press(tree, "Back to jobs");
+
+    expect(mockDismissTo).toHaveBeenCalledWith("/rider");
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("a declined offer replaces the whole stack with the board when the rider tabs are not in the history", async () => {
+    mockStackRoutes = [{ name: "rider/food-offer" }];
+    mockDecline.mockResolvedValue({});
+    mockGetOffer.mockResolvedValue(offer());
+    const tree = await render();
+
+    await press(tree, "Not this one");
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockDismissTo).not.toHaveBeenCalled();
+    expect(mockDismissAll).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith("/rider");
   });
 });

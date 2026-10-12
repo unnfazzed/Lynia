@@ -112,7 +112,7 @@ describe("illegal transitions are rejected (the guards the code enforces)", () =
     expect(isLegalTransition("picked_up", "auto_close")).toBe(false);
   });
 
-  it("a rider cannot cancel post-pickup (that failure mode is mark_undelivered, not cancel)", () => {
+  it("a biker cannot cancel post-pickup (that failure mode is mark_undelivered, not cancel)", () => {
     expect(isLegalTransition("picked_up", "cancel_rider")).toBe(false);
     expect(isLegalTransition("en_route_dropoff", "cancel_rider")).toBe(false);
     // …but the customer still can cancel post-pickup:
@@ -149,7 +149,7 @@ describe("C2/A-11 — orderType dimension", () => {
     expect(appliesToOrderType(findTransition(INITIAL, "create")!, "merchant")).toBe(false);
   });
 
-  it("the class-b rider CAS / cancel / undelivered / delivery edges apply to both order types", () => {
+  it("the class-b biker CAS / cancel / undelivered / delivery edges apply to both order types", () => {
     for (const [from, event] of [
       ["assigned", "confirmed"],
       ["confirmed", "en_route_pickup"],

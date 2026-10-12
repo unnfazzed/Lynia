@@ -176,7 +176,7 @@ async function makeCustomer(): Promise<string> {
 /** An online, KYC-verified rider with a fresh heartbeat — the liveness selectOffer/makeOffer demand. */
 async function makeRider(): Promise<string> {
   const p = await prisma.profile.create({
-    data: { role: "rider", firstName: "Rider", lastName: "R", phone: `r_${crypto.randomUUID()}` },
+    data: { role: "rider", firstName: "Biker", lastName: "R", phone: `r_${crypto.randomUUID()}` },
     select: { id: true },
   });
   await prisma.rider.create({
@@ -532,7 +532,7 @@ describe("X2 · flags ON — NO_RIDER holds only after the attempt cap", () => {
 
 // ── Leg 4: race test — a food round goes to several riders, and the C4 debt lock ──────────────────
 describe("X2 · flags ON — food rounds vs parcel bids", () => {
-  it("rounds: every rider rings at once, the first to accept wins, and a ringing offer never blocks a parcel", async () => {
+  it("rounds: every biker rings at once, the first to accept wins, and a ringing offer never blocks a parcel", async () => {
     const kitchen = await makeKitchen();
     const foodCustomer = await makeCustomer();
     const parcelCustomer = await makeCustomer();
@@ -572,7 +572,7 @@ describe("X2 · flags ON — food rounds vs parcel bids", () => {
     expect(Object.fromEntries(rows.map((r) => [r.riderId, r.outcome]))).toEqual({ [a]: "expired", [b]: "accepted", [c]: "declined" });
   });
 
-  it("a rider who let a round run out is offered the next one; a rider who passed is not", async () => {
+  it("a biker who let a round run out is offered the next one; a biker who passed is not", async () => {
     const kitchen = await makeKitchen();
     const foodCustomer = await makeCustomer();
     const slow = await makeRider();
@@ -596,7 +596,7 @@ describe("X2 · flags ON — food rounds vs parcel bids", () => {
     expect(await dispatch.getOfferForRider(passed)).toBeNull();
   });
 
-  it("C4: an open collect-and-return debt blocks the rider from any new job until the cash is back", async () => {
+  it("C4: an open collect-and-return debt blocks the biker from any new job until the cash is back", async () => {
     const kitchen = await makeKitchen();
     const foodCustomer = await makeCustomer();
     const parcelCustomer = await makeCustomer();

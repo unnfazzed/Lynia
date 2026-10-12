@@ -131,7 +131,7 @@ const config: ExpoConfig = {
   // (first Mobile Release dispatch failed exactly here — run 30852221217).
   owner: "lyniago",
   scheme: "lynia",
-  version: "0.51.0", // x-release-please-version
+  version: "0.52.0", // x-release-please-version
   // OTA compatibility key (expo-updates): `fingerprint` hashes the native layer (deps + native
   // config), so an OTA bundle can only ever land on a binary it was actually built against —
   // a JS update can't brick an older native install. Native changes shift the fingerprint and
@@ -255,7 +255,7 @@ const config: ExpoConfig = {
         // First Run v2 `RP.manifestRationale` (ledger D-82), verbatim. NATIVE: the permission rationale is
         // baked into the binary — it reaches devices only with the next store build (not OTA-able).
         locationWhenInUsePermission:
-          "LyniaGo uses your location to set pickup pins and, for riders, to show nearby jobs and share your position with the customer during their job.",
+          "LyniaGo uses your location to set pickup pins and, for bikers, to show nearby jobs and share your position with the customer during their job.",
         // Rider GPS must keep streaming while the app is backgrounded behind "Follow route in Google
         // Maps" (src/realtime/background-location-task.ts). This flag makes the plugin add the
         // FOREGROUND_SERVICE + FOREGROUND_SERVICE_LOCATION manifest permissions (verified against the

@@ -49,7 +49,7 @@ export function pickSurvivor(rows: ProfileForBackfill[], target: string): Profil
 function reason(r: ProfileForBackfill, survivorId: string): string {
   if (r.id === survivorId) return "survivor (kept)";
   if (isEmpty(r)) return "empty loser — but group blocked by a non-empty sibling";
-  return `has ${r.hasRider ? "rider record; " : ""}${r.ordersAsCustomer} orders; ${r.ratingsGiven} ratings`;
+  return `has ${r.hasRider ? "biker record; " : ""}${r.ordersAsCustomer} orders; ${r.ratingsGiven} ratings`;
 }
 
 export function plan(rows: ProfileForBackfill[]): BackfillPlan {

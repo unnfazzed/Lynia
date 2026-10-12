@@ -6,7 +6,7 @@ import { adminFetchResult } from "../../../lib/api";
 import type { KycReview } from "../../../lib/adminTypes";
 
 vi.mock("../../../lib/api", () => ({ adminFetchResult: vi.fn() }));
-vi.mock("../../actions", () => ({ decideKyc: vi.fn() }));
+vi.mock("../../actions", () => ({ decideKyc: vi.fn(), resetKycAttempts: vi.fn(async () => ({ ok: true })) }));
 vi.mock("../../../actions/audit", () => ({ submitAdminAction: vi.fn() }));
 
 afterEach(() => {
@@ -60,9 +60,9 @@ describe("KYC review: no national ID on file (D-75)", () => {
     expect(notice()).not.toContain("Approving makes");
   });
 
-  it("with no ID-check number to adopt (manual review), says approving leaves the rider without one and is flagged", async () => {
+  it("with no ID-check number to adopt (manual review), says approving leaves the biker without one and is flagged", async () => {
     await open(review({ verifiedIdNumber: null }));
-    expect(notice()).toContain("approving verifies this rider without a national ID");
+    expect(notice()).toContain("approving verifies this biker without a national ID");
     expect(notice()).toContain("flagged in the audit log for follow-up");
   });
 
@@ -86,7 +86,7 @@ describe("KYC review: no national ID on file (D-75)", () => {
       review({
         verifiedIdInUse: true,
         duplicateIdAccounts: [
-          { id: "p-2", name: "Other Rider", phone: "+263•••••0999", role: "rider", kycStatus: "verified", accountStatus: "active" },
+          { id: "p-2", name: "Other Biker", phone: "+263•••••0999", role: "rider", kycStatus: "verified", accountStatus: "active" },
         ],
       }),
     );
@@ -98,7 +98,7 @@ describe("KYC review: no national ID on file (D-75)", () => {
 /** The text of the warnbar whose bold title is `title`, or null. */
 const warnbar = (title: string) => screen.queryByText(title)?.closest(".warnbar")?.textContent ?? null;
 
-describe("KYC review: where the rider is in the Didit check", () => {
+describe("KYC review: where the biker is in the Didit check", () => {
   it("a held check reads as finished, with no unfinished warning", async () => {
     await open(review({ kycHeld: true, kycVendorStatus: "In Review" }));
     expect(screen.getByText(/Finished at Didit — held for a manual review \(Didit: In Review\)\./)).toBeTruthy();
@@ -121,8 +121,8 @@ describe("KYC review: where the rider is in the Didit check", () => {
 
   it("approving an unfinished check requires a note in the confirm modal", async () => {
     await open(review({ kycHeld: false, kycVendorStatus: "Abandoned" }));
-    fireEvent.click(screen.getByRole("button", { name: "Approve rider" }));
-    expect(screen.getByText(/This rider hasn.t finished the Didit ID check\./)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Approve biker" }));
+    expect(screen.getByText(/This biker hasn.t finished the Didit ID check\./)).toBeTruthy();
     const confirm = screen.getByRole("button", { name: "Approve without the ID check" }) as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);
     fireEvent.change(screen.getByLabelText(/Note/), { target: { value: "Checked the ID in person" } });
@@ -131,14 +131,14 @@ describe("KYC review: where the rider is in the Didit check", () => {
 
   it("approving a finished check needs no note", async () => {
     await open(review({ kycHeld: true, kycVendorStatus: "In Review" }));
-    fireEvent.click(screen.getByRole("button", { name: "Approve rider" }));
-    const buttons = screen.getAllByRole("button", { name: "Approve rider" }) as HTMLButtonElement[];
+    fireEvent.click(screen.getByRole("button", { name: "Approve biker" }));
+    const buttons = screen.getAllByRole("button", { name: "Approve biker" }) as HTMLButtonElement[];
     expect(buttons.at(-1)?.disabled).toBe(false);
   });
 });
 
 describe("KYC review: evidence and verdict", () => {
-  it("links to the rider's Didit session", async () => {
+  it("links to the biker's Didit session", async () => {
     await open(review({ kycRef: "sess_1" }));
     const links = screen.getAllByRole("link", { name: "Open in Didit ↗" });
     expect(links.length).toBeGreaterThan(0);
@@ -163,7 +163,7 @@ describe("KYC review: decided states", () => {
   it("an expired check reads as expired, not declined", async () => {
     await open(review({ status: "expired" }));
     expect(screen.getByText("Expired.")).toBeTruthy();
-    expect(screen.getByText("The rider must re-verify before they can go online.")).toBeTruthy();
+    expect(screen.getByText("The biker must re-verify before they can go online.")).toBeTruthy();
     expect(screen.queryByText("Declined.")).toBeNull();
     expect(screen.queryByText(/resubmit once/)).toBeNull();
   });
@@ -183,6 +183,71 @@ describe("KYC review: decided states", () => {
   it("the resubmission warning names the previous decline by its label", async () => {
     await open(review({ attempt: 2, kycAttempts: 1, declineReason: "liveness_failed" }));
     expect(warnbar("Resubmission — attempt 2.")).toContain("Previously declined: Liveness check failed.");
+  });
+});
+
+// Owner 2026-10-12: the decision actions are no longer pending-only, and a locked biker can be given their
+// tries back from the same ConfirmModal pattern.
+describe("KYC review: decisions on a declined / expired biker, and resetting attempts", () => {
+  const button = (name: string) => screen.queryByRole("button", { name });
+
+  it.each(["failed", "expired"] as const)("a %s biker can be approved or reset — not declined again", async (status) => {
+    await open(review({ status, kycAttempts: 1, attempt: 2 }));
+    expect(button("Approve biker")).toBeTruthy();
+    expect(button("Reset attempts…")).toBeTruthy();
+    expect(button("Decline…")).toBeNull();
+  });
+
+  it("a locked biker keeps the actions, and the lock copy points at the reset", async () => {
+    await open(review({ status: "failed", kycAttempts: 2, attempt: 2, locked: true, declineReason: "doc_tampered" }));
+    expect(button("Reset attempts…")).toBeTruthy();
+    expect(warnbar("Locked — two attempts used.")).toContain("until you reset its attempts");
+  });
+
+  it("a verified biker has nothing left to decide", async () => {
+    await open(review({ status: "verified" }));
+    expect(button("Approve biker")).toBeNull();
+    expect(button("Reset attempts…")).toBeNull();
+  });
+
+  it("a pending biker offers the reset only once they've used a try", async () => {
+    await open(review());
+    expect(button("Decline…")).toBeTruthy();
+    expect(button("Reset attempts…")).toBeNull();
+    cleanup();
+    await open(review({ kycAttempts: 1, attempt: 2 }));
+    expect(button("Reset attempts…")).toBeTruthy();
+  });
+
+  it("resetting needs a note and calls the reset action (attempts → 0, reason cleared)", async () => {
+    const { resetKycAttempts } = await import("../../actions");
+    await open(review({ status: "failed", kycAttempts: 2, attempt: 2, locked: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset attempts…" }));
+    expect(screen.getByText(/Their attempts go back to/)).toBeTruthy();
+    const confirm = screen.getByRole("button", { name: "Reset attempts" }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText(/Note/), { target: { value: "Verified on WhatsApp" } });
+    expect(confirm.disabled).toBe(false);
+    fireEvent.click(confirm);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(resetKycAttempts).toHaveBeenCalledWith("r-1", "Verified on WhatsApp");
+  });
+});
+
+describe("KYC review: copy matches how decisions are made now", () => {
+  it("states the one automatic cut (KYC_THRESHOLDS), with no human review band", async () => {
+    await open(review());
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("Decisions are automatic: a face match of 0.6 or more passes, below 0.6 is declined");
+    expect(text).not.toContain("0.85");
+    expect(text).not.toMatch(/needs a human compare/);
+  });
+
+  it("counts tries used, and says fixable declines don't count", async () => {
+    await open(review({ kycAttempts: 1, attempt: 2 }));
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("1 of 2 · fixable declines don't count");
+    expect(text).not.toMatch(/Attempt\s*2 of 2/);
   });
 });
 

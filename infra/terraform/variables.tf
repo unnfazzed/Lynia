@@ -399,6 +399,12 @@ variable "queue_alerts_enabled" {
   default     = false
 }
 
+variable "kyc_alerts_enabled" {
+  description = "Create the KYC-pipeline PromQL alert policies (monitoring.tf: kyc_webhook_rejected_total, kyc_decision_unmatched_total, kyc_oldest_pending_age_seconds, push_undelivered_total). Same metric-name-validation constraint as slo_alerts_enabled, and a SEPARATE gate because these series ship later (2026-10-12): flip to true only after Metrics Explorer shows them."
+  type        = bool
+  default     = false
+}
+
 # --- Cloud Scheduler cron jobs (scheduler.tf) ---
 variable "scheduler_jobs_enabled" {
   description = "Create the daily retention-purge Cloud Scheduler job (LR8, docs/LAUNCH-EXECUTION-RUNBOOK.md §2). ON by default: the API side (AdminOrSchedulerGuard + SCHEDULER_SERVICE_ACCOUNT injection) has been live since 2026-07-08 while the job itself was never created, so the purge has never run — the next apply closes that gap. Requires DNS for api_domain to be live (the OIDC audience is pinned to the public URL)."

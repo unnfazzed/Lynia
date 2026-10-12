@@ -8,7 +8,7 @@ describe("customerSafeCancelReason (extracted, roadmap 3.4 — Fix 6)", () => {
   });
 
   it("passes through already-safe and free-text reasons unchanged", () => {
-    expect(customerSafeCancelReason("Rider unreachable")).toBe("Rider unreachable");
+    expect(customerSafeCancelReason("Biker unreachable")).toBe("Biker unreachable");
     expect(customerSafeCancelReason("Customer asked ops to cancel")).toBe("Customer asked ops to cancel");
     expect(customerSafeCancelReason("changed my mind")).toBe("changed my mind");
   });

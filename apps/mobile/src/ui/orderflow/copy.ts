@@ -99,12 +99,12 @@ export const O = {
     "schedule": "Schedule",
     "asapSub": "Arrives {a}–{b}",
     "phone": "YOUR PHONE",
-    "phoneSub": "The rider calls this number",
-    "riderNote": "NOTE FOR THE RIDER",
+    "phoneSub": "The biker calls this number",
+    "riderNote": "NOTE FOR THE BIKER",
     "riderNoteEmpty": "Add directions, like “Blue gate, 3rd house on the left”",
     "pay": "PAY",
     "cash": "Cash at the door",
-    "cashSub": "Have {p} ready — riders carry little change.",
+    "cashSub": "Have {p} ready — bikers carry little change.",
     "oos": "IF SOMETHING’S OUT OF STOCK",
     "oosAsk": "Ask me",
     "oosRemove": "Remove it",
@@ -115,7 +115,7 @@ export const O = {
     "fee": "Delivery fee",
     "small": "Small-order fee",
     "total": "Total",
-    "cancelRule": "Free to cancel until the rider collects your order.",
+    "cancelRule": "Free to cancel until the biker collects your order.",
     "place": "Place order · {p} cash",
     "placing": "Placing your order…",
     "placingSub": "Don’t close the app. If this fails, nothing is ordered and nothing is paid.",
@@ -152,7 +152,7 @@ export const O = {
     "rxCamera": "Take photo",
     "rxGallery": "From gallery",
     "rxPatient": "Patient name",
-    "rxConsent": "I’ll show the original prescription to the rider",
+    "rxConsent": "I’ll show the original prescription to the biker",
     "rxBlocked": "Add a photo of your prescription to place this order",
     "rxPage": "Page {n}",
     "empty": "Your cart is empty",
@@ -174,16 +174,16 @@ export const O = {
     "rxCheckSub": "Usually under 10 minutes. Packing starts once it’s approved.",
     "making": "{making} your order",
     "prepLeft": "{making} · about {m} min left",
-    "prepNote": "We find a rider about 8 minutes before it’s ready.",
-    "riderToVenue": "Rider on the way to {v}",
-    "collecting": "Rider is collecting your order",
+    "prepNote": "We find a biker about 8 minutes before it’s ready.",
+    "riderToVenue": "Biker on the way to {v}",
+    "collecting": "Biker is collecting your order",
     "collected": "Collected · sealed bag photo",
     "collectedAt": "{n} took this at {t} at {v}",
     "onWay": "On the way to you",
-    "atDoor": "Rider is at your door",
+    "atDoor": "Biker is at your door",
     "etaRange": "Arrives {a}–{b}",
     "etaOne": "Arrives in ~{m} min · {t}",
-    "etaNone": "Arrival time shows once the rider’s phone sends a location",
+    "etaNone": "Arrival time shows once the biker’s phone sends a location",
     "etaSched": "Arrives {s} {d}",
     "callV": "Call {v}",
     "cancelFree": "Cancel order · free",
@@ -191,10 +191,10 @@ export const O = {
     "order": "Your order",
     "viewOrder": "See order",
     "hideOrder": "Hide",
-    "codeHelp": "Say this code to your rider after you’ve paid. Push messages never show it.",
-    "slowRider": "Finding a rider is taking longer",
-    "slowRiderSub": "We’re asking more riders now. Your food is kept warm — same food, same price, nothing extra to pay.",
-    "dropped": "Your rider had to cancel",
+    "codeHelp": "Say this code to your biker after you’ve paid. Push messages never show it.",
+    "slowRider": "Finding a biker is taking longer",
+    "slowRiderSub": "We’re asking more bikers now. Your food is kept warm — same food, same price, nothing extra to pay.",
+    "dropped": "Your biker had to cancel",
     "droppedSub": "Finding another one now — same food, same price, nothing extra to pay.",
     "noFix": "Tendai is heading to {v}",
     "paused": "Tendai’s location hasn’t updated — call to check in.",
@@ -210,8 +210,8 @@ export const O = {
     "notFoundSub": "It may be on another account, or the link is old.",
     "home": "Back to home",
     "cxT": "Cancel this order?",
-    "cxFree": "It’s free. {v} hasn’t handed your order to a rider yet.",
-    "cxFull": "Tendai already has your order. Cancelling now costs the full {p} — the {place} has made it and the rider has carried it.",
+    "cxFree": "It’s free. {v} hasn’t handed your order to a biker yet.",
+    "cxFull": "Tendai already has your order. Cancelling now costs the full {p} — the {place} has made it and the biker has carried it.",
     "cxReason": "Reason (optional)",
     "cxR": [
       "Ordered by mistake",
@@ -240,7 +240,7 @@ export const O = {
       "Missing item",
       "Damaged",
       "Seal broken",
-      "Rider",
+      "Biker",
       "Other"
     ],
     "rpWhich": "Which items?",
@@ -291,7 +291,7 @@ export const O = {
     "s1Seal": "Check the seal is unbroken before you pay",
     "s1Sub": "Tendai hands it over first",
     "s2": "Pay {p} cash",
-    "s2Sub": "Have the exact amount if you can — riders carry little change.",
+    "s2Sub": "Have the exact amount if you can — bikers carry little change.",
     "s2Btn": "I’ve paid {p}",
     "s2Wait": "Waiting for Tendai to confirm {p}",
     "s3": "Say your code",
@@ -310,7 +310,7 @@ export const O = {
     "deliveredSub": "{p} paid in cash · {v}",
     "receipt": "Receipt",
     "paidCash": "Paid in cash to Tendai",
-    "rider": "Rider",
+    "rider": "Biker",
     "venue": "From",
     "orderNo": "Order",
     "delAt": "Delivered",
@@ -357,8 +357,8 @@ export const O = {
     "cxVenueSub": "They’re too busy right now. Nothing was charged.",
     "cxKitchen": "{v} didn’t confirm your order in time",
     "cxKitchenSub": "We waited an hour. Nothing was charged.",
-    "cxNoRider": "We couldn’t find a rider",
-    "cxNoRiderSub": "No rider took your order in time. Nothing was charged — sorry about that.",
+    "cxNoRider": "We couldn’t find a biker",
+    "cxNoRiderSub": "No biker took your order in time. Nothing was charged — sorry about that.",
     "cxLynia": "LyniaGo cancelled this order",
     "cxLyniaSub": "The {place} reported a problem with the order. Nothing was charged. Message us if this looks wrong.",
     "cxPaid": "You cancelled after pickup",
@@ -379,7 +379,7 @@ export const O = {
     "newOrder": "NEW ORDER",
     "scheduled": "SCHEDULED · START NOW",
     "auto": "LyniaGo accepted this for you",
-    "autoSub": "Confirm you’re making it so we can send a rider.",
+    "autoSub": "Confirm you’re making it so we can send a biker.",
     "confirm": "Got it, we’re making it",
     "accept": "Accept · ready in {m} min",
     "readyIn": "READY IN (MIN)",
@@ -387,7 +387,7 @@ export const O = {
     "total": "Order total",
     "ticket": "#{id}",
     "prepRing": "{m}:00",
-    "riderFound": "Rider found 8 min before ready",
+    "riderFound": "Biker found 8 min before ready",
     "ready": "{ready}",
     "cantFinish": "Can’t finish this order",
     "hand": "Hand over to Tendai",
@@ -420,7 +420,7 @@ export const O = {
     "rxT": "Prescription check",
     "rxPatient": "Patient",
     "rxItems": "Needs a prescription",
-    "rxConsent": "Customer will show the original to the rider",
+    "rxConsent": "Customer will show the original to the biker",
     "rxApprove": "Approve prescription",
     "rxDecline": "Decline",
     "rxWhy": "Why are you declining?",
@@ -489,7 +489,7 @@ export const O = {
           "Arrives 12:40–12:55"
         ],
         [
-          "Rider on the way to Gava’s Kitchen",
+          "Biker on the way to Gava’s Kitchen",
           "Arrives 12:40–12:55"
         ],
         [
@@ -497,7 +497,7 @@ export const O = {
           "Arrives in ~9 min · 12:47"
         ],
         [
-          "Rider is at your door",
+          "Biker is at your door",
           "Pay $16.50 · then say your code"
         ],
         [
@@ -529,7 +529,7 @@ export const O = {
           "Arrives 12:40–12:55"
         ],
         [
-          "Rider is at your door",
+          "Biker is at your door",
           "Check the seal · pay $6.80"
         ]
       ],
@@ -548,7 +548,7 @@ export const O = {
         ],
         [
           "Gava’s Kitchen is cooking",
-          "Arrives 12:40–12:55. We’ll tell you when a rider has it."
+          "Arrives 12:40–12:55. We’ll tell you when a biker has it."
         ],
         [
           "Avondale Fresh needs your answer",
@@ -579,7 +579,7 @@ export const O = {
           "Nothing was charged. Tap to order somewhere else."
         ],
         [
-          "We couldn’t find a rider",
+          "We couldn’t find a biker",
           "Nothing was charged. Tap to try again."
         ],
         [

@@ -520,6 +520,12 @@ export const FoodOfferResponse = z
   .strict();
 export type FoodOfferResponse = z.infer<typeof FoodOfferResponse>;
 
+/** Every live food-dispatch offer ringing the rider, the one running out first first
+ *  (`GET /merchant/orders/dispatch/offers`). Several orders can ring one rider at once, and the board
+ *  lists each as its own card; the offer screen then reads one by `?orderId=` on `dispatch/offer`. */
+export const FoodOffersResponse = z.object({ offers: z.array(FoodOfferEvent) }).strict();
+export type FoodOffersResponse = z.infer<typeof FoodOffersResponse>;
+
 /** `food:offer-closed` payload (C5) — the recipient's live food-dispatch offer stopped being live
  *  (expiry, decline, or otherwise). Signal only, mirrors `bid:expired`'s shape. */
 export const FoodOfferClosedEvent = z.object({ orderId: z.string().uuid(), at: z.string() });
@@ -1822,7 +1828,8 @@ export const MerchantOrderResponse = z
     outOfStockPref: OutOfStockPref.optional(),
     /** BRIEF §8: the latest substitution round (omitted when the order never had one). */
     substitution: SubstitutionRoundView.nullable().optional(),
-    /** BRIEF §9: shops and pharmacies need the pickup photo before pickup completes. */
+    /** Retired (ledger D-100): the pickup photo is optional for every venue, so the server no longer sends
+     *  this. Kept in the contract for installed apps, which read an absent flag as "optional". */
     pickupProofRequired: z.boolean().optional(),
     /** BRIEF §9: the pickup photo + sealed tick (single-order reads; omitted until there is one). */
     pickupProof: MerchantPickupProofView.nullable().optional(),

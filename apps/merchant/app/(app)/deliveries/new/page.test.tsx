@@ -74,10 +74,10 @@ function addTyped(name: string, price: string) {
   fireEvent.click(within(sheet).getByRole("button", { name: "Add" }));
 }
 
-describe("S4 · Book a rider, one screen (Merchant v2, D-77) — where", () => {
+describe("S4 · Book a biker, one screen (Merchant v2, D-77) — where", () => {
   it("won't book without somewhere to go and the buyer's number", async () => {
     await openForm();
-    fireEvent.click(screen.getByRole("button", { name: /^Find a rider/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Find a biker/ }));
     expect(await screen.findByText("Search for the buyer's street, or paste the location they sent.")).toBeTruthy();
     expect(screen.getByText("Enter the buyer's number, like 77 123 4567.")).toBeTruthy();
   });
@@ -142,7 +142,7 @@ describe("S4 · Book a rider, one screen (Merchant v2, D-77) — where", () => {
     answerOld({ lat: -17.7, lng: 30.9 });
     addTyped("Oil filter", "7");
     vi.mocked(createBooking).mockResolvedValue(merchantBooking());
-    fireEvent.click(screen.getByRole("button", { name: /^Find a rider/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Find a biker/ }));
     await waitFor(() => expect(createBooking).toHaveBeenCalled());
     expect(vi.mocked(createBooking).mock.calls[0]![0].dropoff.point).toEqual({ lat: -17.8, lng: 31.05 });
   });
@@ -163,12 +163,12 @@ describe("S4 · what's going + fare", () => {
     expect(screen.getByText("What’s going · $51.00")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Remove 2× Brake pads (front)" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Remove 1× Oil filter" })).toBeTruthy();
-    const find = screen.getByRole("button", { name: /^Find a rider · \$\d+\.\d\d$/ });
+    const find = screen.getByRole("button", { name: /^Find a biker · \$\d+\.\d\d$/ });
     const before = Number(find.textContent!.split("$")[1]);
     fireEvent.click(screen.getByRole("button", { name: "Offer $0.50 more" }));
-    expect(screen.getByRole("button", { name: `Find a rider · $${(before + 0.5).toFixed(2)}` })).toBeTruthy();
+    expect(screen.getByRole("button", { name: `Find a biker · $${(before + 0.5).toFixed(2)}` })).toBeTruthy();
 
-    const go = screen.getByRole("button", { name: /^Find a rider/ });
+    const go = screen.getByRole("button", { name: /^Find a biker/ });
     fireEvent.click(go);
     fireEvent.click(go);
     await waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/deliveries/booking?id=b1"));
@@ -183,16 +183,16 @@ describe("S4 · what's going + fare", () => {
     expect(body.dropoff).toMatchObject({ point: { lat: -17.8, lng: 31.05 }, contactPhone: "+263779982210" });
   });
 
-  it("the buyer can pay cash on delivery: the booking asks the rider to bring the worth back", async () => {
+  it("the buyer can pay cash on delivery: the booking asks the biker to bring the worth back", async () => {
     vi.mocked(createBooking).mockResolvedValue(merchantBooking({ id: "b2" }));
     await openForm();
     await fillWhere();
     addTyped("Oil filter", "7");
     expect(screen.getByText("and brings it back to you")).toBeTruthy();
-    const sw = screen.getByRole("switch", { name: "Rider collects $7.00" });
+    const sw = screen.getByRole("switch", { name: "Biker collects $7.00" });
     expect(sw.getAttribute("aria-checked")).toBe("false");
     fireEvent.click(sw);
-    fireEvent.click(screen.getByRole("button", { name: /^Find a rider/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Find a biker/ }));
     await waitFor(() => expect(createBooking).toHaveBeenCalled());
     expect(vi.mocked(createBooking).mock.calls[0]![0]).toMatchObject({ collectCash: true, declaredValue: 7 });
   });
@@ -200,10 +200,10 @@ describe("S4 · what's going + fare", () => {
   it("books nothing without items, and blocks goods over $150", async () => {
     await openForm();
     await fillWhere();
-    fireEvent.click(screen.getByRole("button", { name: /^Find a rider/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Find a biker/ }));
     expect(await screen.findByText("Add what's going: from your items, or type one.")).toBeTruthy();
     addTyped("Engine", "200");
-    fireEvent.click(screen.getByRole("button", { name: /^Find a rider/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Find a biker/ }));
     expect(await screen.findByText(VALUE_CAP_MESSAGE)).toBeTruthy();
     expect(createBooking).not.toHaveBeenCalled();
   });
@@ -213,7 +213,7 @@ describe("S4 · what's going + fare", () => {
     await openForm();
     await fillWhere();
     addTyped("Oil filter", "7");
-    fireEvent.click(screen.getByRole("button", { name: /^Find a rider/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Find a biker/ }));
     expect((await screen.findByRole("alert")).textContent).toBe("Bookings for this business are on hold. Message LyniaGo.");
     expect(nav.replace).not.toHaveBeenCalled();
   });
@@ -232,13 +232,13 @@ describe("MJ-RL5 (not a bug): one key per form, edits included", () => {
     await openForm();
     await fillWhere();
     addTyped("Oil filter", "7");
-    fireEvent.click(screen.getByRole("button", { name: /^Find a rider/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Find a biker/ }));
     await waitFor(() => expect(createBooking).toHaveBeenCalledTimes(1));
     await screen.findByRole("alert");
-    await waitFor(() => expect((screen.getByRole("button", { name: /^Find a rider/ }) as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() => expect((screen.getByRole("button", { name: /^Find a biker/ }) as HTMLButtonElement).disabled).toBe(false));
     // The first attempt may have landed: a new key here would book a second rider.
     fireEvent.click(screen.getByRole("button", { name: "Offer $0.50 more" }));
-    fireEvent.click(screen.getByRole("button", { name: /^Find a rider/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Find a biker/ }));
     await waitFor(() => expect(createBooking).toHaveBeenCalledTimes(2));
     const keys = vi.mocked(createBooking).mock.calls.map((c) => c[0].idempotencyKey);
     expect(keys[1]).toBe(keys[0]);
@@ -273,8 +273,8 @@ describe("the gate", () => {
   it("has no form for a business without a pin, and sends everyone back when the API can't book yet", async () => {
     vi.mocked(getMerchantProfile).mockResolvedValue(merchantProfile({ location: null }));
     render(<NewBookingPage />);
-    expect(await screen.findByText("Set your shop's location first, so riders know where to collect.")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /^Find a rider/ })).toBeNull();
+    expect(await screen.findByText("Set your shop's location first, so bikers know where to collect.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Find a biker/ })).toBeNull();
 
     cleanup();
     vi.mocked(getMerchantProfile).mockResolvedValue(merchantProfile());

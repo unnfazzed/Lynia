@@ -10,31 +10,38 @@ import { reportReachable } from "../net/reachability";
  * which was the silent-dead-socket risk of a websocket-only transport).
  *
  * A-O17: during an active rider job up to three hooks (board, job, location) want a connection
- * for the SAME token concurrently — `io()` (socket.io-client v4) opens a brand-new transport
+ * for the SAME account concurrently — `io()` (socket.io-client v4) opens a brand-new transport
  * handshake + its own engine.io keepalive ping/pong per call, no manager caching, unlike v2's
  * default. `acquireSocket`/`releaseSocket` below multiplex those callers onto ONE underlying
- * connection per token (ref-counted), so a rider mid-job pays one handshake and one keepalive
+ * connection per signed-in identity (ref-counted), so a rider mid-job pays one handshake and one keepalive
  * stream instead of three. All realtime hooks build their socket through here so a transport/auth
  * change is one edit, not several.
  */
 interface SharedEntry {
   socket: Socket;
   refCount: number;
+  /** The newest token an acquirer passed — the handshake's fallback when there is no live session. */
+  token: string;
 }
 
 const shared = new Map<string, SharedEntry>();
 
 /**
- * Acquire a shared Socket.IO connection for `token`, opening a fresh one if none is live for that
- * exact token yet. Every caller MUST pair this with a matching `releaseSocket(token, socket)` in
- * its own cleanup — the connection only actually disconnects once every acquirer has released it.
- * Keyed by token (not a single global slot) so a token rotation never tears down a connection
- * still in use by a caller that hasn't re-run its effect yet — the stale entry simply drains to 0
- * refs on its own and closes then.
+ * Acquire a shared Socket.IO connection for the signed-in `identity` (the profile id — see
+ * socket-identity.ts), opening a fresh one if none is live for it yet. Every caller MUST pair this with
+ * a matching `releaseSocket(identity, socket)` in its own cleanup — the connection only actually
+ * disconnects once every acquirer has released it.
+ *
+ * Keyed by IDENTITY, not the raw access token: the token rotates every ~15 min, and keying on it (with
+ * every hook's effect depending on it) tore the board/job/location sockets down and re-handshook them on
+ * each rotation. The handshake already reads the live token (LC-C14 below), so a rotation needs no new
+ * connection. A sign-out nulls the identity, every hook releases, and the last release disconnects.
  */
-export function acquireSocket(token: string): Socket {
-  let entry = shared.get(token);
+export function acquireSocket(identity: string, token: string): Socket {
+  let entry = shared.get(identity);
+  if (entry) entry.token = token;
   if (!entry) {
+    const fresh: SharedEntry = { socket: undefined as unknown as Socket, refCount: 0, token };
     // LC-C14: `auth` is a callback (not a captured `{ token }`) — Socket.IO calls it on EVERY
     // handshake, including its own internal auto-reconnect after a bare network drop. A captured
     // object replayed the original token on each retry, so a dead zone longer than the 15-minute
@@ -43,7 +50,7 @@ export function acquireSocket(token: string): Socket {
     // fix as apps/merchant/app/lib/queue-socket.ts); the acquirer's `token` is only the fallback for
     // a moment with no live session.
     const socket = io(WS_URL, {
-      auth: (cb) => cb({ token: currentAccessToken() ?? token }),
+      auth: (cb) => cb({ token: currentAccessToken() ?? fresh.token }),
       transports: ["websocket", "polling"],
     });
     // A successful (re)connect is a second, independent proof the network is back — on a tracking
@@ -53,25 +60,26 @@ export function acquireSocket(token: string): Socket {
     // can be auth, so those stay off the reachability path (the REST choke point + probe own
     // "offline"). Owned by this module, not any one caller, so it's never `.off()`'d per-release.
     socket.on("connect", reportReachable);
-    entry = { socket, refCount: 0 };
-    shared.set(token, entry);
+    fresh.socket = socket;
+    entry = fresh;
+    shared.set(identity, entry);
   }
   entry.refCount++;
   return entry.socket;
 }
 
 /**
- * Release a socket acquired via `acquireSocket(token)`. Decrements the ref count and only
+ * Release a socket acquired via `acquireSocket(identity, …)`. Decrements the ref count and only
  * disconnects the underlying connection once the last acquirer has released it. A mismatched
- * (token, socket) pair — e.g. a caller releasing after the token already rotated to a new entry —
- * is a safe no-op: the stale entry it actually belongs to (if still tracked) is unaffected.
+ * (identity, socket) pair — e.g. a caller releasing after its entry was already replaced — is a safe
+ * no-op: the stale entry it actually belongs to (if still tracked) is unaffected.
  */
-export function releaseSocket(token: string, socket: Socket): void {
-  const entry = shared.get(token);
+export function releaseSocket(identity: string, socket: Socket): void {
+  const entry = shared.get(identity);
   if (!entry || entry.socket !== socket) return;
   entry.refCount--;
   if (entry.refCount <= 0) {
     entry.socket.disconnect();
-    shared.delete(token);
+    shared.delete(identity);
   }
 }

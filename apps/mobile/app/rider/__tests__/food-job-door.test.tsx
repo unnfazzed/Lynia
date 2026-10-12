@@ -22,7 +22,8 @@ const mockRxSaw = jest.fn();
 const mockMarkAtDropoff = jest.fn();
 
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  useRouter: () => ({ push: jest.fn(), replace: jest.fn(), dismissAll: jest.fn(), dismissTo: jest.fn() }),
+  useNavigation: () => ({ getState: () => undefined }),
 }));
 jest.mock("expo-secure-store", () => ({
   getItemAsync: async () => null,
@@ -266,7 +267,7 @@ describe("RD4a · the door card", () => {
     expect(textOf(tree)).toContain("Hand over the order");
   });
 
-  it("D5: the door still works when the server stamp fails (offline) — the rider's flow never waits on it", async () => {
+  it("D5: the door still works when the server stamp fails (offline) — the biker's flow never waits on it", async () => {
     mockMarkAtDropoff.mockRejectedValue(new Error("offline"));
     mockConfirmFoodRiderCash.mockResolvedValue({ orderId: "order-1", riderCashConfirmedAt: new Date().toISOString() });
     const tree = await atDoor({ ...CASH, customerCashConfirmedAt: new Date().toISOString() });

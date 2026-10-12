@@ -28,9 +28,16 @@ interface Rider {
 }
 
 const KYC_TABS = ["pending", "verified", "failed", "expired", "all"] as const;
+/** Rows per page of `GET /admin/riders` (AdminRidersService RIDER_LIST_PAGE_SIZE). */
+const PAGE_SIZE = 100;
+/** `?page=` as a 1-based page number; anything else is page 1. */
+function pageParam(raw: string | string[] | undefined): number {
+  const n = typeof raw === "string" ? Number.parseInt(raw, 10) : Number.NaN;
+  return Number.isFinite(n) && n >= 1 ? n : 1;
+}
 /** First Run v2 E4 (D-82): the directory vs the plate review queue (`?plate=checking`). */
 const PLATE_TABS = [
-  { value: "all", label: "all riders" },
+  { value: "all", label: "all bikers" },
   { value: "checking", label: "plates to check" },
 ] as const;
 
@@ -88,7 +95,11 @@ export default async function RidersPage({
   const kycMode = typeof raw === "string" && (KYC_TABS as readonly string[]).includes(raw);
   const kycFilter = kycMode ? (raw as string) : "";
   const query = kycMode && kycFilter !== "all" ? `?kyc=${kycFilter}` : plateMode ? "?plate=checking" : "";
-  const res = await adminFetchResult<Rider[]>(`/admin/riders${query}`);
+  // Pages of PAGE_SIZE (1-based `?page=`). The pending queue comes back oldest-waiting first, so page 1 is
+  // always who has waited longest; a full page means there may be another.
+  const page = pageParam(sp.page);
+  const withPage = (n: number) => `${query}${query ? "&" : "?"}page=${n}`;
+  const res = await adminFetchResult<Rider[]>(`/admin/riders${page > 1 ? withPage(page) : query}`);
   const riders = "data" in res ? res.data : null;
   const reason = "data" in res ? undefined : res.reason;
   const connected = riders !== null;
@@ -96,7 +107,7 @@ export default async function RidersPage({
   // Column set + ORDER follow the kit's directory table (riders.html `<thead>`): Rider · Phone · Bike ·
   // KYC · Trips / rating · Strikes · Status — standing is the row's verdict, so it reads last.
   const directoryColumns: Column<Rider>[] = [
-    { key: "name", header: "Rider", cell: riderName },
+    { key: "name", header: "Biker", cell: riderName },
     { key: "phone", header: "Phone", className: "mono", cell: (r) => formatPhoneLocal(r.phone) },
     { key: "bike", header: "Bike", className: "mono", cell: (r) => r.bikeReg },
     { key: "kyc", header: "KYC", cell: (r) => kycPill(r.kycStatus) },
@@ -106,7 +117,7 @@ export default async function RidersPage({
   ];
 
   const kycColumns: Column<Rider>[] = [
-    { key: "name", header: "Rider", cell: riderName },
+    { key: "name", header: "Biker", cell: riderName },
     { key: "phone", header: "Phone", className: "mono", cell: (r) => formatPhoneLocal(r.phone) },
     // Kit's KYC queue names this column "Bike reg" (kyc.html), matching the review screen's KeyValue.
     { key: "bike", header: "Bike reg", className: "mono", cell: (r) => r.bikeReg },
@@ -116,7 +127,7 @@ export default async function RidersPage({
   ];
 
   const plateColumns: Column<Rider>[] = [
-    { key: "name", header: "Rider", cell: riderName },
+    { key: "name", header: "Biker", cell: riderName },
     { key: "phone", header: "Phone", className: "mono", cell: (r) => formatPhoneLocal(r.phone) },
     { key: "plate", header: "Plate", className: "mono", cell: (r) => r.bikeReg },
     { key: "kyc", header: "KYC", cell: (r) => kycPill(r.kycStatus) },
@@ -131,13 +142,13 @@ export default async function RidersPage({
   return (
     <main className="content">
       <header className="page">
-        <h1>{kycMode ? "Riders — KYC review" : plateMode ? "Riders — plate review" : "Riders"}</h1>
+        <h1>{kycMode ? "Bikers — KYC review" : plateMode ? "Bikers — plate review" : "Bikers"}</h1>
         <span className="sub">
           {kycMode
             ? "Didit verification queue — approve or review each application"
             : plateMode
-              ? "Plates riders added or changed — check each against the bike, then confirm"
-              : "Rider directory — standing, KYC, trips & strikes"}
+              ? "Plates bikers added or changed — check each against the bike, then confirm"
+              : "Biker directory — standing, KYC, trips & strikes"}
         </span>
         <Conn connected={connected} reason={reason} />
       </header>
@@ -172,20 +183,33 @@ export default async function RidersPage({
               plateMode ? (
                 <EmptyState icon={<IconBike />} title="No plates to check" line="New and changed plates appear here until you confirm them." />
               ) : (
-                <EmptyState icon={<IconBike />} title={kycMode ? "No riders in this view" : "No riders yet"} line={kycMode ? "Try a different KYC filter." : "Riders appear here once they sign up."} />
+                <EmptyState icon={<IconBike />} title={kycMode ? "No bikers in this view" : "No bikers yet"} line={kycMode ? "Try a different KYC filter." : "Bikers appear here once they sign up."} />
               )
             ) : (
               <EmptyState
                 icon={<IconBike />}
-                title={reasonTitle(reason ?? "unconfigured", "Riders")}
-                line={reasonLine(reason ?? "unconfigured", "riders")}
+                title={reasonTitle(reason ?? "unconfigured", "Bikers")}
+                line={reasonLine(reason ?? "unconfigured", "bikers")}
               />
             )
           }
         />
-        {riders && riders.length >= 100 ? (
-          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 12 }}>
-            Showing the latest 100 riders — older records aren&apos;t listed. Filter to narrow the view.
+        {riders && (riders.length >= PAGE_SIZE || page > 1) ? (
+          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 12, display: "flex", gap: 12, alignItems: "center" }}>
+            <span>
+              Page {page}
+              {kycFilter === "pending" ? " · oldest waiting first" : ""}
+            </span>
+            {page > 1 ? (
+              <a href={`/riders${withPage(page - 1)}`} style={{ color: "var(--accent-text)", textDecoration: "none" }}>
+                ← Previous
+              </a>
+            ) : null}
+            {riders.length >= PAGE_SIZE ? (
+              <a href={`/riders${withPage(page + 1)}`} style={{ color: "var(--accent-text)", textDecoration: "none" }}>
+                Next →
+              </a>
+            ) : null}
           </div>
         ) : null}
       </section>

@@ -40,7 +40,8 @@ const mockPhoto = {
 };
 
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  useRouter: () => ({ push: jest.fn(), replace: jest.fn(), dismissAll: jest.fn(), dismissTo: jest.fn() }),
+  useNavigation: () => ({ getState: () => undefined }),
 }));
 jest.mock("expo-secure-store", () => ({
   getItemAsync: async (k: string) => mockStore.get(k) ?? null,
@@ -273,28 +274,25 @@ describe("B2 (food) · the automatic status step", () => {
   });
 });
 
-describe("FJ-H1 / FJ-M3 · the sealed-bag photo and the pickup code", () => {
-  it("sends the code once a queued photo goes up", async () => {
+describe("FJ-M3 / D-100 · the sealed-bag photo and the pickup code", () => {
+  it("a photo that can't go up never holds a shop's pickup", async () => {
     Object.assign(mockPhoto, { uri: "file:///bag.jpg", uploaded: false });
-    mockConfirmFoodPickup.mockRejectedValueOnce(new ApiError(409, "Take a photo", "pickup_photo_required")).mockResolvedValue({ orderId: "order-1", status: "picked_up" });
-    const tree = await mount({ status: "en_route_pickup" }, { ...SHOP, status: "en_route_pickup", pickupProofRequired: true });
+    mockConfirmFoodPickup.mockResolvedValue({ orderId: "order-1", status: "picked_up" });
+    const tree = await mount({ status: "en_route_pickup" }, { ...SHOP, status: "en_route_pickup" });
     await arrive(tree, "I'm at the shop");
     await typeCode(tree, "Ask the shop for the pickup code", "731604");
     await act(async () => {
-      cta(tree, "I’ve collected the order")!.props.onPress();
+      cta(tree, "I've collected the order")!.props.onPress();
     });
     for (let i = 0; i < 5; i++) await settle();
-    // No connection for the photo: the code is still checked now (a right one waits on the photo).
+    // No connection for the photo: it's tried, and the code goes anyway (the photo is optional).
+    expect(mockPhoto.flush).toHaveBeenCalled();
     expect(mockConfirmFoodPickup).toHaveBeenCalledTimes(1);
-    mockPhoto.uploaded = true;
-    await rerender(tree);
-    for (let i = 0; i < 10 && mockConfirmFoodPickup.mock.calls.length < 2; i++) await settle();
-    expect(mockConfirmFoodPickup).toHaveBeenCalledTimes(2);
     expect(mockConfirmFoodPickup).toHaveBeenLastCalledWith("order-1", "731604");
   });
 
   it("a locked pickup code says so, with the way out", async () => {
-    const tree = await mount({ status: "en_route_pickup" }, { ...SHOP, status: "en_route_pickup", pickupProofRequired: true, pickupCodeAttempts: 5 });
+    const tree = await mount({ status: "en_route_pickup" }, { ...SHOP, status: "en_route_pickup", pickupCodeAttempts: 5 });
     await arrive(tree, "I'm at the shop");
     await waitFor(tree, "Code locked after 5 tries");
     const text = textOf(tree);
@@ -306,9 +304,8 @@ describe("FJ-H1 / FJ-M3 · the sealed-bag photo and the pickup code", () => {
 describe("FJ-H6 · camera refused", () => {
   it("says the camera is off and opens the phone's settings", async () => {
     const open = jest.spyOn(Linking, "openSettings").mockResolvedValue(undefined);
-    mockConfirmFoodPickup.mockRejectedValue(new ApiError(409, "Take a photo", "pickup_photo_required"));
     Object.assign(mockPhoto, { denied: true });
-    const tree = await mount({ status: "en_route_pickup" }, { ...SHOP, status: "en_route_pickup", pickupProofRequired: true });
+    const tree = await mount({ status: "en_route_pickup" }, { ...SHOP, status: "en_route_pickup" });
     await arrive(tree, "I'm at the shop");
     await typeCode(tree, "Ask the shop for the pickup code", "731604");
     await press(tree, "Photo of the sealed bag");
@@ -320,7 +317,7 @@ describe("FJ-H6 · camera refused", () => {
 });
 
 describe("FJ-H5 · a carried balance", () => {
-  it("is collected at the door and is never the rider's", async () => {
+  it("is collected at the door and is never the biker's", async () => {
     const tree = await mount({ status: "en_route_dropoff" }, { ...CASH, previousBalanceUsd: 16.5 });
     await waitFor(tree, "Collect $34.00 cash at the door");
     const text = textOf(tree);
@@ -389,6 +386,10 @@ describe("FJ-M4 / FJ-M5 / FJ-H3 · can't reach, can't deliver, and the return le
     expect(textOf(tree)).toContain("Why can't you deliver?");
     expect(cta(tree, "Send")!.props.disabled).toBe(true);
     await press(tree, "Recipient refused it");
+    // What the server answers once the refusal lands: undelivered, the venue's goods owed back. With the
+    // base fixture's `debtStatus: null` the goods-return poll reads "nothing owed" and (correctly) clears
+    // the stored leg, so the assertion below raced that poll and failed whenever it resolved first.
+    mockGetFoodOrderAsRider.mockResolvedValue({ ...BASE_FOOD_ORDER, ...CASH, status: "undelivered", debtStatus: "open" } as MerchantOrderResponse);
     await act(async () => {
       cta(tree, "Send")!.props.onPress();
     });

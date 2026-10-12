@@ -3,7 +3,7 @@ import { tokens } from "@lynia/shared/tokens";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo } from "react";
 import { KeyboardAvoidingView, Linking, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { getMe } from "../../src/api/auth";
@@ -37,6 +37,15 @@ export default function TopUpScreen(): React.ReactElement {
     if (router.canGoBack()) router.back();
     else router.replace("/rider/money");
   }, [router]);
+
+  // Top-up is for a verified rider only (the server refuses anyone else with reason `kyc`): an unverified
+  // rider reaching this route (a deep link, a stale screen) is sent straight back instead of walking a flow
+  // that can only fail at the end.
+  const unverified = me != null && me.rider?.kycStatus !== "verified";
+  useEffect(() => {
+    if (unverified) exit();
+  }, [unverified, exit]);
+  if (unverified) return <SafeAreaView edges={["bottom"]} style={{ flex: 1, backgroundColor: tokens.color.bg }} />;
 
   return (
     // TopUpFlow's header owns the top inset; this root owns the bottom one, so the CTA bar clears the

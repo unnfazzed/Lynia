@@ -19,7 +19,15 @@ import { Icon } from "../../ui/Icon";
 import { RIDER_OFFLINE, RIDER_STEPS, S } from "./copy";
 import { held, keyframesEasing, keyframesInput, popEasing } from "./motion";
 import { CARD_BOTTOM, CARD_H_ESTIMATE, PANEL_H_ESTIMATE, splashGeometry } from "./geometry";
-import { EXIT, GIVE_UP_MS, INTRO_MS, SLOW_AFTER_MS, type StepState, isRiderBoot, nextStepChange, pendingTasks, riderStepTimes, splashDoneAt, stepStates } from "./timeline";
+import { EXIT, GIVE_UP_MS, INTRO_MS, SLOW_AFTER_MS, type StepState, isRiderBoot, nextStepChange, pendingTasks, riderStepTimes, splashDestination, splashDoneAt, stepStates } from "./timeline";
+import type { Me } from "../../api/auth";
+import { loadRiderVerifiedHint } from "../../auth/device-state";
+
+/** Whether the `["me"]` already in the cache (persisted, or prewarmed by the boot aggregate) is a verified biker. */
+function cachedRiderVerified(): boolean | undefined {
+  const me = queryClient.getQueryData<Me>(["me"]);
+  return me ? me.rider?.kycStatus === "verified" : undefined;
+}
 
 /**
  * The cold-start splash — "1a Sun & orbit" (`packages/design/handoff/splash-v1`, ledger D-64; it
@@ -237,13 +245,29 @@ export function BootSplash(): React.ReactElement {
   }, [readiness, t0]);
   // A rider boot shows its two steps in a card; the board mounts underneath, and step 2 ticks when its
   // first reads settle.
-  const riderBoot = isRiderBoot(readiness.destination);
+  // Only a verified biker's boot is the rider boot (src/boot/splash/timeline.ts splashDestination): mid-ID-check
+  // the board shows an F page, so "Getting jobs near you" would be false — that boot gets the plain splash.
+  const [riderVerified, setRiderVerified] = useState<boolean | null | undefined>(cachedRiderVerified);
+  useEffect(() => {
+    if (riderVerified !== undefined) return;
+    let alive = true;
+    void loadRiderVerifiedHint().then((hint) => {
+      if (alive) setRiderVerified(cachedRiderVerified() ?? hint);
+    });
+    return () => {
+      alive = false;
+    };
+    // Read once, at mount: the splash's rider/plain decision must not flip mid-animation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const destination = splashDestination(readiness.destination, riderVerified);
+  const riderBoot = isRiderBoot(destination);
   useEffect(() => (riderBoot ? watchRiderBoardReady(queryClient) : undefined), [riderBoot]);
   const riderTimes = useMemo(() => riderStepTimes(tasks), [tasks]);
   const steps: StepState[] = riderBoot ? stepStates(riderTimes, t) : [];
-  const waiting = pendingTasks(tasks, readiness.destination).length > 0;
+  const waiting = pendingTasks(tasks, destination).length > 0;
   const loading = t >= INTRO_MS;
-  const readyDoneAt = splashDoneAt(tasks, readiness.destination);
+  const readyDoneAt = splashDoneAt(tasks, destination);
   // `done` is one-way: once the exit (or the cut) has started it never flips back — a request failing
   // mid-exit (offline) must not stop the exit and snap Home into place. Latched in render (idempotent)
   // because the flip-back render would otherwise reach the exit effect's cleanup before any effect could.

@@ -68,11 +68,11 @@ describe("resolveHandshake (R-05 admin dispute resolution)", () => {
 
 describe("writeOffDebt (D3, 2026-10-07: the only write-off of a food debt)", () => {
   it("posts the reason/note to write-off-debt and revalidates the order and the disputes queue", async () => {
-    await writeOffDebt("order-1", "Rider unreachable after follow-up", "called twice");
+    await writeOffDebt("order-1", "Biker unreachable after follow-up", "called twice");
     const c = lastCall();
     expect(c.url).toBe("https://api.test/admin/orders/order-1/write-off-debt");
     expect(c.method).toBe("POST");
-    expect(c.body).toEqual({ reason: "Rider unreachable after follow-up", note: "called twice" });
+    expect(c.body).toEqual({ reason: "Biker unreachable after follow-up", note: "called twice" });
     expect(revalidateMock).toHaveBeenCalledWith("/orders/order-1");
     expect(revalidateMock).toHaveBeenCalledWith("/merchants/disputes");
   });

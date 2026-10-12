@@ -15,9 +15,6 @@ import {
   type BidExpiredEvent,
   type BoardNewOrderEvent,
   BoardSubscribeEvent,
-  boardCell,
-  boardCellNeighborhood,
-  boardCellsCoveringRadius,
   type FoodOfferClosedEvent,
   type FoodOfferEvent,
   type FoodQueueChangedEvent,
@@ -33,13 +30,12 @@ import {
   WS_EVENTS,
 } from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
-import { maxBroadcastRadiusM } from "../common/broadcast-policy";
 import { corsOriginResolver } from "../common/cors";
 import { createRedisClient } from "../common/redis";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService } from "../observability/metrics.service";
-import { BOARD_ROOM, boardGeoRoom, merchantQueueRoom, orderRoom, parseBearer } from "./tracking.constants";
+import { BOARD_ROOM, merchantQueueRoom, orderRoom, parseBearer } from "./tracking.constants";
 import { PositionCoalescer, POSITION_COALESCE_MS, POSITION_ROOM_TTL_MS, type PositionPayload } from "./position-coalescer";
 import { TrackingService } from "./tracking.service";
 
@@ -299,11 +295,10 @@ export class TrackingGateway
   }
 
   /**
-   * A KYC-verified, online rider subscribes to the new-order board (§3.10). With a position (lat &
-   * lng) the board is geo-scoped: the rider joins its cell + 8 neighbours (3×3), so it only receives
-   * pushes for pickups nearby. Without a position it falls back to the city-wide BOARD_ROOM (mirrors
-   * the REST `GET /orders/open` city-wide fallback). A re-subscribe on move re-scopes cleanly: we
-   * first leave every board room the socket is currently in, then join the fresh set.
+   * A KYC-verified, online rider subscribes to the new-order board (§3.10). The board is nationwide
+   * (owner 2026-10-12, D-99: "Bikers can get any order despite their location"), so every rider joins the
+   * one BOARD_ROOM wherever they are; a position, if sent, is accepted and ignored. A re-subscribe still
+   * leaves every board room first (a socket from an older server may sit in a `board:geo:*` cell room).
    */
   @SubscribeMessage(WS_EVENTS.boardSubscribe)
   async boardSubscribe(
@@ -314,7 +309,7 @@ export class TrackingGateway
     if (!user) return { error: "unauthenticated" };
     if (!(await this.tracking.isBoardEligible(user.sub))) return { error: "forbidden" };
 
-    const { lat, lng } = BoardSubscribeEvent.parse(body ?? {});
+    BoardSubscribeEvent.parse(body ?? {});
 
     // BH-25: the leave/join loops below are serialized per-socket (see runBoardOpSerialized) — Socket.IO
     // does not queue concurrent event invocations for the same client, so two board:subscribe calls (or
@@ -328,8 +323,7 @@ export class TrackingGateway
         if (room.startsWith("board:geo:") || room === BOARD_ROOM) await client.leave(room);
       }
 
-      const rooms =
-        lat !== undefined && lng !== undefined ? boardCellNeighborhood(lat, lng).map(boardGeoRoom) : [BOARD_ROOM];
+      const rooms = [BOARD_ROOM];
       for (const room of rooms) await client.join(room);
 
       // BH-25-SIB-1: re-check standing AFTER joining. kickRiderFromBoard runs post-commit off a
@@ -343,7 +337,7 @@ export class TrackingGateway
         for (const room of rooms) await client.leave(room);
         return { error: "forbidden" };
       }
-      return lat !== undefined && lng !== undefined ? { joined: rooms.length } : { joined: "board" };
+      return { joined: "board" };
     });
   }
 
@@ -550,7 +544,7 @@ export class TrackingGateway
         if (sub === riderId) s.emit(event, payload);
       }
     } catch (err) {
-      this.logger.warn(`emitToRider(${event}) failed for rider ${riderId}: ${(err as Error).message}`);
+      this.logger.warn(`emitToRider(${event}) failed for biker ${riderId}: ${(err as Error).message}`);
     }
   }
 
@@ -594,7 +588,7 @@ export class TrackingGateway
         }
       }
     } catch (err) {
-      this.logger.warn(`board kick failed for rider ${riderId}: ${(err as Error).message}`);
+      this.logger.warn(`board kick failed for biker ${riderId}: ${(err as Error).message}`);
     }
   }
 
@@ -613,7 +607,7 @@ export class TrackingGateway
   async evictRiderFromSupply(riderId: string): Promise<void> {
     await this.kickRiderFromBoard(riderId);
     await this.evictRiderFromGeo(riderId).catch((err) =>
-      this.logger.warn(`geo eviction (supply demotion) failed for rider ${riderId}: ${(err as Error).message}`),
+      this.logger.warn(`geo eviction (supply demotion) failed for biker ${riderId}: ${(err as Error).message}`),
     );
   }
 
@@ -629,17 +623,12 @@ export class TrackingGateway
   }
 
   /**
-   * Push a new (redacted) open order to riders watching its pickup area. Emits to BOTH the pickup's
-   * geo-cell room (geo-scoped subscribers) AND the city-wide BOARD_ROOM (loc-less subscribers) in one
-   * chained call — Socket.IO unions + dedupes the target sockets, so a rider in either room gets
-   * exactly one event, and the client dedupes by id regardless. Best-effort; a gateway failure must
-   * never affect the order the customer just created.
+   * Push a new (redacted) open order to every rider on the board — the nationwide BOARD_ROOM (D-99), so
+   * the pickup's position no longer narrows the audience. Best-effort; a gateway failure must never
+   * affect the order the customer just created.
    */
-  emitBoardNewOrder(payload: BoardNewOrderEvent, pickupLat: number, pickupLng: number): void {
-    this.server
-      ?.to(boardGeoRoom(boardCell(pickupLat, pickupLng)))
-      .to(BOARD_ROOM)
-      .emit(WS_EVENTS.boardNewOrder, payload);
+  emitBoardNewOrder(payload: BoardNewOrderEvent, _pickupLat: number, _pickupLng: number): void {
+    this.server?.to(BOARD_ROOM).emit(WS_EVENTS.boardNewOrder, payload);
   }
 
   /**
@@ -649,13 +638,9 @@ export class TrackingGateway
    * create-time emit already covered receive it again harmlessly (clients dedupe by id, same contract
    * as emitBoardNewOrder's geo-cell + BOARD_ROOM union). Best-effort; never throws.
    */
-  emitBoardNewOrderToCells(payload: BoardNewOrderEvent, pickupLat: number, pickupLng: number, radiusM: number): void {
-    let target = this.server?.to(BOARD_ROOM);
-    if (!target) return;
-    for (const cell of boardCellsCoveringRadius(pickupLat, pickupLng, radiusM)) {
-      target = target.to(boardGeoRoom(cell));
-    }
-    target.emit(WS_EVENTS.boardNewOrder, payload);
+  emitBoardNewOrderToCells(payload: BoardNewOrderEvent, _pickupLat: number, _pickupLng: number, _radiusM: number): void {
+    // D-99: the board is one nationwide room, so a widened reach has no extra cells to cover.
+    this.server?.to(BOARD_ROOM).emit(WS_EVENTS.boardNewOrder, payload);
   }
 
   /**
@@ -666,17 +651,10 @@ export class TrackingGateway
    * from `offers:changed`/`not_chosen` (someone else was picked). The server is the single expiry timer
    * authority; clients never drive this. Best-effort; never throws.
    */
-  emitBidExpired(orderId: string, pickupLat?: number, pickupLng?: number): void {
+  emitBidExpired(orderId: string, _pickupLat?: number, _pickupLng?: number): void {
     const payload: BidExpiredEvent = { orderId, at: new Date().toISOString() };
-    let target = this.server?.to(BOARD_ROOM);
-    if (target && Number.isFinite(pickupLat) && Number.isFinite(pickupLng)) {
-      // Cover the WIDEST disc the broadcast can have reached (policy BROADCAST.expansion), not just
-      // the pickup's own cell — a rider who saw the card via an expansion tick must see it close too.
-      for (const cell of boardCellsCoveringRadius(pickupLat as number, pickupLng as number, maxBroadcastRadiusM())) {
-        target = target.to(boardGeoRoom(cell));
-      }
-    }
-    target?.emit(WS_EVENTS.bidExpired, payload);
+    // D-99: every rider who saw the card is in the nationwide BOARD_ROOM, so that is the whole audience.
+    this.server?.to(BOARD_ROOM).emit(WS_EVENTS.bidExpired, payload);
   }
 
   /**
@@ -686,16 +664,10 @@ export class TrackingGateway
    * (distinct from `bid:expired`, where NObody was picked). The selected rider learns they won via
    * the `assigned` push + their active-job feed, not this event. Best-effort; never throws.
    */
-  emitOrderTaken(orderId: string, pickupLat?: number, pickupLng?: number): void {
+  emitOrderTaken(orderId: string, _pickupLat?: number, _pickupLng?: number): void {
     const payload: OrderTakenEvent = { orderId, at: new Date().toISOString() };
-    let target = this.server?.to(BOARD_ROOM);
-    if (target && Number.isFinite(pickupLat) && Number.isFinite(pickupLng)) {
-      // Same widened distribution as emitBidExpired — every ring the broadcast may have reached.
-      for (const cell of boardCellsCoveringRadius(pickupLat as number, pickupLng as number, maxBroadcastRadiusM())) {
-        target = target.to(boardGeoRoom(cell));
-      }
-    }
-    target?.emit(WS_EVENTS.orderTaken, payload);
+    // Same nationwide distribution as emitBidExpired.
+    this.server?.to(BOARD_ROOM).emit(WS_EVENTS.orderTaken, payload);
   }
 
   /**
@@ -794,7 +766,7 @@ export class TrackingGateway
           try {
             await this.tracking.touchRiderHeartbeat(s.riderId);
           } catch (err) {
-            this.logger.warn(`heartbeat touch failed for rider ${s.riderId}: ${(err as Error).message}`);
+            this.logger.warn(`heartbeat touch failed for biker ${s.riderId}: ${(err as Error).message}`);
           }
           continue;
         }

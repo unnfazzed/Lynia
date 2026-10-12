@@ -28,7 +28,7 @@ afterEach(() => {
 });
 
 describe("T1 · the live bar (MJ-RM5)", () => {
-  it("a shop's riders' offers show on the other tabs and open that booking", () => {
+  it("a shop's bikers' offers show on the other tabs and open that booking", () => {
     state.business = merchantProfile({ businessType: "shop", shopKind: "auto_parts", location: PIN });
     state.bookings = [
       merchantBooking({ id: "b1000000-0000-4000-8000-000000000000", state: "finding", itemsSummary: "Car battery", offerCount: 3, expiresAt: new Date(Date.now() + 60_000).toISOString() }),
@@ -37,7 +37,7 @@ describe("T1 · the live bar (MJ-RM5)", () => {
     expect(vi.mocked(useBookings)).toHaveBeenCalledWith(true);
     const bar = screen.getByRole("link");
     expect(bar.getAttribute("href")).toBe("/deliveries/booking?id=b1000000-0000-4000-8000-000000000000");
-    expect(screen.getByText(/^Car battery · 3 riders offered · \d:\d\d$/)).toBeTruthy();
+    expect(screen.getByText(/^Car battery · 3 bikers offered · \d:\d\d$/)).toBeTruthy();
     expect(screen.getByText("Pick one before the offers expire")).toBeTruthy();
   });
 

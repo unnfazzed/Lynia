@@ -155,7 +155,7 @@ beforeEach(() => {
 describe("C5 · Name (Calm Mint v2, D-55)", () => {
   it("draws the handoff's copy: two name fields, the verified row, the no-ID note — and no ID field", async () => {
     const out = text(await mountSetup());
-    for (const s of ["What should riders call you?", "First name", "Surname", "+263 77 245 1180", "Verified", "No ID needed.", "Start using LyniaGo"]) {
+    for (const s of ["What should bikers call you?", "First name", "Surname", "+263 77 245 1180", "Verified", "No ID needed.", "Start using LyniaGo"]) {
       expect(out).toContain(s);
     }
     expect(out).not.toContain("National ID number");
@@ -173,7 +173,7 @@ describe("C5 · Name (Calm Mint v2, D-55)", () => {
     expect(mockReplace).toHaveBeenCalledWith("/home");
   });
 
-  it("a rider intent from C1 starts the account as a rider", async () => {
+  it("a biker intent from C1 starts the account as a biker, straight on R1 (no board hop)", async () => {
     mockLocalSearchParams = { phone: "+263 77 245 1180", intent: "rider" };
     const tree = await mountSetup();
     setFieldByAccessibilityLabel(tree, "First name", "Tendai");
@@ -181,7 +181,26 @@ describe("C5 · Name (Calm Mint v2, D-55)", () => {
     await settle();
     await pressStart(tree);
     expect(mockSaveRole).toHaveBeenCalledWith("rider");
+    expect(mockReplace).toHaveBeenCalledWith("/rider/become");
+    expect(mockReplace).not.toHaveBeenCalledWith("/rider");
+  });
+
+  it("a biker intent on an account that already has a rider record lands on the board", async () => {
+    mockLocalSearchParams = { phone: "+263 77 245 1180", intent: "rider" };
+    mockUpdateProfile.mockResolvedValue({ profileId: "p1", role: "rider", firstName: "Tendai", lastName: "Moyo", phone: "+263772451180", rider: { kycStatus: "pending" } });
+    const tree = await mountSetup();
+    setFieldByAccessibilityLabel(tree, "First name", "Tendai");
+    setFieldByAccessibilityLabel(tree, "Surname", "Moyo");
+    await settle();
+    await pressStart(tree);
     expect(mockReplace).toHaveBeenCalledWith("/rider");
+  });
+
+  it("the biker path draws no \"No ID needed\" note — its next step is the ID check", async () => {
+    mockLocalSearchParams = { phone: "+263 77 245 1180", intent: "rider" };
+    const out = text(await mountSetup());
+    expect(out).not.toContain("No ID needed.");
+    expect(out).toContain("What should bikers call you?");
   });
 
   // E2E 2026-10-05 FS-9: a stale nameless `me` made R1 ("Ride with LyniaGo") ask for the name a second time.
@@ -260,7 +279,7 @@ describe("profile setup — finishing clears the stack", () => {
 
 // C-4: an app killed on C5 relaunches here with no route params.
 describe("profile setup — relaunched with no route params", () => {
-  it("keeps the C1 rider intent from the session and finishes as a rider", async () => {
+  it("keeps the C1 biker intent from the session and finishes as a biker", async () => {
     mockLocalSearchParams = {} as typeof mockLocalSearchParams;
     mockSession = { profileId: "p1", role: "customer", needsProfile: true, signupIntent: "rider" };
     const tree = await mountSetup();
@@ -269,7 +288,7 @@ describe("profile setup — relaunched with no route params", () => {
     await settle();
     await pressStart(tree);
     expect(mockSaveRole).toHaveBeenCalledWith("rider");
-    expect(mockReplace).toHaveBeenCalledWith("/rider");
+    expect(mockReplace).toHaveBeenCalledWith("/rider/become");
     // …and the intent goes with the profile step it belonged to.
     expect(mockUpdateSession).toHaveBeenCalledWith(expect.objectContaining({ needsProfile: false, signupIntent: undefined }));
   });

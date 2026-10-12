@@ -31,7 +31,7 @@ export function ReportsCallout({ reports, subject }: { reports?: ReportEntry[]; 
           <b>
             Reported {n} {n === 1 ? "time" : "times"}.
           </b>
-          This {subject} has been reported for conduct or safety by the other party. {breakdown.join(" · ")}.
+          This {subject === "rider" ? "biker" : subject} has been reported for conduct or safety by the other party. {breakdown.join(" · ")}.
         </span>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 0, width: "100%" }}>

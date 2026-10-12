@@ -16,19 +16,23 @@ function build(env: Partial<Env> = {}, prisma: Record<string, unknown> = {}, not
 }
 
 describe("resolveCommissionRatePct (the flip is one server value, never hardcoded)", () => {
-  it("defaults to the launch rate (0) when the env override is unset/blank", () => {
-    expect(resolveCommissionRatePct(undefined)).toBe(COMMISSION.ratePct);
-    expect(resolveCommissionRatePct("")).toBe(0);
-    expect(resolveCommissionRatePct(null)).toBe(0);
+  it("defaults to 10% (owner 2026-10-12) when the env override is unset/blank", () => {
+    expect(COMMISSION.ratePct).toBe(10);
+    expect(resolveCommissionRatePct(undefined)).toBe(10);
+    expect(resolveCommissionRatePct("")).toBe(10);
+    expect(resolveCommissionRatePct(null)).toBe(10);
+  });
+  it("an explicit 0 switches commission off", () => {
+    expect(resolveCommissionRatePct("0")).toBe(0);
   });
   it("applies a valid override (the flip to 10)", () => {
     expect(resolveCommissionRatePct("10")).toBe(10);
     expect(resolveCommissionRatePct(10)).toBe(10);
   });
-  it("clamps to [0,100] and fails safe to the default on garbage (never over-charges)", () => {
+  it("clamps to [0,100] and falls back to the default on garbage", () => {
     expect(resolveCommissionRatePct("999")).toBe(100);
-    expect(resolveCommissionRatePct("-5")).toBe(0);
-    expect(resolveCommissionRatePct("abc")).toBe(0);
+    expect(resolveCommissionRatePct("-5")).toBe(COMMISSION.ratePct);
+    expect(resolveCommissionRatePct("abc")).toBe(COMMISSION.ratePct);
   });
 
   it("WD-010: rounds to 2dp — CommissionLedger.ratePct is Decimal(5,2), so an over-precise ops override can't diverge from what's stamped on the ride's receipt row", () => {
@@ -55,9 +59,10 @@ describe("perRideCommission (reads the resolved rate, not a constant)", () => {
 });
 
 describe("WalletService.getConfig (server-authoritative)", () => {
-  it("serves the launch rate + policy at 0% (pre-flip)", () => {
+  it("serves 10% with no env override, and no minimum balance (floor 0)", () => {
     const cfg = build({ COMMISSION_RATE_PCT: undefined } as Partial<Env>).getConfig();
-    expect(cfg.ratePct).toBe(0);
+    expect(cfg.ratePct).toBe(10);
+    expect(cfg.floor).toBe(0);
     expect(cfg.floor).toBe(COMMISSION.lowBalanceBlockBelow);
     expect(cfg.minTopUp).toBe(COMMISSION.minTopUp);
     expect(cfg.maxTopUp).toBe(COMMISSION.maxTopUp);
@@ -78,7 +83,7 @@ describe("WalletService.createTopup (server-side clamp)", () => {
     const svc = build(
       {},
       {
-        rider: { findUnique: async () => ({ profileId: "r1" }) },
+        rider: { findUnique: async () => ({ profileId: "r1", kycStatus: "verified" }) },
         topUp: {
           create: async ({ data }: { data: Record<string, unknown> }) => {
             created.push(data);
@@ -97,7 +102,36 @@ describe("WalletService.createTopup (server-side clamp)", () => {
 
   it("rejects a top-up from a non-rider", async () => {
     const svc = build({}, { rider: { findUnique: async () => null } });
-    await expect(svc.createTopup("x", { amount: 10, rail: "ecocash", phone: "0770000000" })).rejects.toThrow(/not a rider/i);
+    await expect(svc.createTopup("x", { amount: 10, rail: "ecocash", phone: "0770000000" })).rejects.toThrow(/not a biker/i);
+  });
+
+  it.each(["pending", "failed", "expired"])("refuses to START a top-up for a %s (unverified) rider — 403 { reason: kyc }, no intent", async (kycStatus) => {
+    const create = vi.fn();
+    const findFirst = vi.fn();
+    const svc = build({}, { rider: { findUnique: async () => ({ profileId: "r1", kycStatus }) }, topUp: { create, findFirst } });
+    let threw: unknown;
+    try {
+      await svc.createTopup("r1", { amount: 10, rail: "ecocash", phone: "0770000000", idempotencyKey: "k" });
+    } catch (e) {
+      threw = e;
+    }
+    expect((threw as { getStatus: () => number }).getStatus()).toBe(403);
+    expect((threw as { getResponse: () => unknown }).getResponse()).toMatchObject({ reason: "kyc", message: expect.any(String) });
+    expect(create).not.toHaveBeenCalled();
+    expect(findFirst).not.toHaveBeenCalled();
+  });
+
+  it("still lets an unverified rider read their wallet and ledger (only initiation is gated)", async () => {
+    const svc = build(
+      {},
+      {
+        rider: { findUnique: async () => ({ profileId: "r1", kycStatus: "pending" }) },
+        commissionAccount: { findUnique: async () => null },
+        commissionLedger: { findMany: async () => [] },
+      },
+    );
+    await expect(svc.getWallet("r1")).resolves.toBeDefined();
+    await expect(svc.getLedger("r1")).resolves.toBeDefined();
   });
 
   it("BH-09: a retry with the same idempotency key returns the original pending intent, not a second one", async () => {
@@ -106,7 +140,7 @@ describe("WalletService.createTopup (server-side clamp)", () => {
     const svc = build(
       {},
       {
-        rider: { findUnique: async () => ({ profileId: "r1" }) },
+        rider: { findUnique: async () => ({ profileId: "r1", kycStatus: "verified" }) },
         topUp: { findFirst: async () => existing, create },
       },
     );
@@ -121,7 +155,7 @@ describe("WalletService.createTopup (server-side clamp)", () => {
     const svc = build(
       {},
       {
-        rider: { findUnique: async () => ({ profileId: "r1" }) },
+        rider: { findUnique: async () => ({ profileId: "r1", kycStatus: "verified" }) },
         topUp: {
           findFirst: async () => {
             findFirstCalls += 1;
@@ -146,7 +180,7 @@ describe("WalletService.createTopup (server-side clamp)", () => {
     }));
     const svc = build(
       {},
-      { rider: { findUnique: async () => ({ profileId: "r1" }) }, topUp: { findFirst: async () => null, create } },
+      { rider: { findUnique: async () => ({ profileId: "r1", kycStatus: "verified" }) }, topUp: { findFirst: async () => null, create } },
     );
     await svc.createTopup("r1", { amount: 10, rail: "ecocash", phone: "0770000000" });
     await svc.createTopup("r1", { amount: 10, rail: "ecocash", phone: "0770000000", idempotencyKey: "key-3" });
@@ -155,7 +189,7 @@ describe("WalletService.createTopup (server-side clamp)", () => {
 });
 
 describe("WalletService.chargeCommission (0% is a no-op; shadow accrual still fires)", () => {
-  it("writes NO ledger row at the launch rate but logs the shadow accrual", async () => {
+  it("writes NO ledger row at a 0% rate but logs the shadow accrual", async () => {
     const create = vi.fn();
     const tx = {
       commissionLedger: { create, findFirst: async () => null },
@@ -163,7 +197,7 @@ describe("WalletService.chargeCommission (0% is a no-op; shadow accrual still fi
       $executeRaw: vi.fn(),
       $queryRaw: vi.fn(async () => [{ balance: "0" }]),
     };
-    const svc = build({ COMMISSION_RATE_PCT: undefined });
+    const svc = build({ COMMISSION_RATE_PCT: 0 });
     await svc.chargeCommission(tx as never, { orderId: "o1", riderId: "r1", agreedFare: 3 });
     expect(create).not.toHaveBeenCalled();
     expect(tx.$executeRaw).not.toHaveBeenCalled();
@@ -225,7 +259,7 @@ describe("WalletService.chargeCommission — WD-012 commission-basis floor (DOC-
     });
   });
 
-  it("LC-B-SIB-3: the rider's receipt math matches the debit when the floor bites — \"10% of $5.00\" beside −$0.50, not \"10% of $1.00\"", async () => {
+  it("LC-B-SIB-3: the biker's receipt math matches the debit when the floor bites — \"10% of $5.00\" beside −$0.50, not \"10% of $1.00\"", async () => {
     const create = vi.fn();
     const tx = {
       commissionLedger: { create, findFirst: async () => null },
@@ -300,10 +334,10 @@ describe("WalletService.chargeCommission — D-70 commission-free first jobs", (
 
   it("serves the allowance on /wallet/config", () => {
     expect(build().getConfig().freeFirstJobs).toBe(COMMISSION.freeFirstJobs);
-    expect(COMMISSION.freeFirstJobs).toBe(5); // the handoff's drawn "5 of 5 left"
+    expect(COMMISSION.freeFirstJobs).toBe(10); // owner 2026-10-12 (was the handoff's drawn "5 of 5 left")
   });
 
-  it("a new rider's 1st…5th completed jobs carry no debit and write no ledger row, even at a live rate and a $0 balance", async () => {
+  it("a new biker's 1st…10th completed jobs carry no debit and write no ledger row, even at a live rate and a $0 balance", async () => {
     const svc = build({ COMMISSION_RATE_PCT: 10 });
     for (let job = 1; job <= COMMISSION.freeFirstJobs; job++) {
       const tx = txFor(job);
@@ -315,34 +349,58 @@ describe("WalletService.chargeCommission — D-70 commission-free first jobs", (
     }
   });
 
-  it("the 6th completed job is charged normally — the allowance is spent", async () => {
+  it("the 11th completed job is charged normally — the allowance is spent", async () => {
     const svc = build({ COMMISSION_RATE_PCT: 10 });
     const tx = txFor(COMMISSION.freeFirstJobs + 1);
-    await svc.chargeCommission(tx as never, { orderId: "o6", riderId: "r1", agreedFare: 8 });
+    await svc.chargeCommission(tx as never, { orderId: "o11", riderId: "r1", agreedFare: 8 });
     expect(tx.commissionLedger.create).toHaveBeenCalledWith({
-      data: { riderId: "r1", orderId: "o6", type: "ride_commission", amount: -0.8, balanceAfter: -0.8, ratePct: 10, fare: 8, actor: "system" },
+      data: { riderId: "r1", orderId: "o11", type: "ride_commission", amount: -0.8, balanceAfter: -0.8, ratePct: 10, fare: 8, actor: "system" },
     });
   });
 
-  it("an existing rider past the allowance is unaffected — charged exactly as before", async () => {
+  it("an existing biker past the allowance is unaffected — charged exactly as before", async () => {
     const svc = build({ COMMISSION_RATE_PCT: 10 });
     const tx = txFor(240);
     await svc.chargeCommission(tx as never, { orderId: "o1", riderId: "r1", agreedFare: 3 });
     expect(tx.commissionLedger.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ amount: -0.3 }) }));
   });
 
-  it("a missing rider row falls back to the pre-D-70 charge (never silently free)", async () => {
+  it("a missing biker row falls back to the pre-D-70 charge (never silently free)", async () => {
     const svc = build({ COMMISSION_RATE_PCT: 10 });
     const tx = txFor(null);
     await svc.chargeCommission(tx as never, { orderId: "o1", riderId: "r1", agreedFare: 3 });
     expect(tx.commissionLedger.create).toHaveBeenCalled();
   });
 
-  it("at the 0% launch rate nothing changes — no rider read, no row", async () => {
-    const svc = build({ COMMISSION_RATE_PCT: undefined });
+  it("at a 0% rate nothing changes — no biker read, no row", async () => {
+    const svc = build({ COMMISSION_RATE_PCT: 0 });
     const tx = txFor(1);
     await svc.chargeCommission(tx as never, { orderId: "o1", riderId: "r1", agreedFare: 3 });
     expect(tx.rider.findUnique).not.toHaveBeenCalled();
+    expect(tx.commissionLedger.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("WalletService.chargeCommission — every job type (owner 2026-10-12)", () => {
+  function txPast() {
+    return {
+      commissionLedger: { create: vi.fn(), findFirst: async () => null },
+      rider: PAST_FREE_JOBS,
+      commissionAccount: { update: vi.fn() },
+      $executeRaw: vi.fn(),
+      $queryRaw: vi.fn(async () => [{ balance: "5" }]),
+    };
+  }
+  it("charges a restaurant/shop/pharmacy job 10% of its delivery fee, never its goods+delivery agreedFare", async () => {
+    const tx = txPast();
+    await build().chargeCommission(tx as never, { orderId: "m1", riderId: "r1", orderType: "merchant", agreedFare: 23.5, deliveryFee: 3.5 });
+    expect(tx.commissionLedger.create).toHaveBeenCalledWith({
+      data: { riderId: "r1", orderId: "m1", type: "ride_commission", amount: -0.35, balanceAfter: 4.65, ratePct: 10, fare: 3.5, actor: "system" },
+    });
+  });
+  it("skips (never throws) a merchant job with no delivery fee", async () => {
+    const tx = txPast();
+    await build().chargeCommission(tx as never, { orderId: "m1", riderId: "r1", orderType: "merchant", agreedFare: 23.5, deliveryFee: null });
     expect(tx.commissionLedger.create).not.toHaveBeenCalled();
   });
 });
@@ -472,7 +530,7 @@ describe("WalletService.creditManual (WD-002/WD-003 — atomic audit + idempoten
 
   it("credits the balance and writes the AuditLog row in the SAME transaction (WD-002)", async () => {
     const { calls, tx } = makeTx();
-    const prisma = { rider: { findUnique: async () => ({ profileId: "r1" }) }, $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
+    const prisma = { rider: { findUnique: async () => ({ profileId: "r1", kycStatus: "verified" }) }, $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
     const svc = build({}, prisma);
     const result = await svc.creditManual({ riderId: "r1", amount: 10, rail: "manual", idemKey: "key-1", actorProfileId: "admin-1" });
     expect(result.balance).toBe(10);
@@ -482,7 +540,7 @@ describe("WalletService.creditManual (WD-002/WD-003 — atomic audit + idempoten
 
   it("a retry with the same idempotency key returns the current balance instead of a 500 (WD-003)", async () => {
     const prisma = {
-      rider: { findUnique: async () => ({ profileId: "r1" }) },
+      rider: { findUnique: async () => ({ profileId: "r1", kycStatus: "verified" }) },
       $transaction: async () => {
         throw new Prisma.PrismaClientKnownRequestError("Unique constraint failed on the fields: (`provider_ref`)", {
           code: "P2002",
@@ -497,13 +555,13 @@ describe("WalletService.creditManual (WD-002/WD-003 — atomic audit + idempoten
   });
 
   it("rejects an amount above the manual-credit cap (unrelated to the idempotency path)", async () => {
-    const svc = build({ WALLET_MANUAL_CREDIT_CAP_USD: 50 }, { rider: { findUnique: async () => ({ profileId: "r1" }) } });
+    const svc = build({ WALLET_MANUAL_CREDIT_CAP_USD: 50 }, { rider: { findUnique: async () => ({ profileId: "r1", kycStatus: "verified" }) } });
     await expect(svc.creditManual({ riderId: "r1", amount: 999, rail: "manual", idemKey: "key-1", actorProfileId: "admin-1" })).rejects.toThrow(/between/i);
   });
 
-  it("UX18-04: pushes the rider a best-effort 'Wallet credited' notice — previously zero push AND zero feed row", async () => {
+  it("UX18-04: pushes the biker a best-effort 'Wallet credited' notice — previously zero push AND zero feed row", async () => {
     const { tx } = makeTx();
-    const prisma = { rider: { findUnique: async () => ({ profileId: "r1" }) }, $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
+    const prisma = { rider: { findUnique: async () => ({ profileId: "r1", kycStatus: "verified" }) }, $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
     const notified: Array<{ profileIds: string[]; msg: { title: string; body: string } }> = [];
     const notifications = {
       notifyProfiles: async (profileIds: string[], msg: { title: string; body: string }) => {

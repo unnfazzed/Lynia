@@ -33,9 +33,9 @@ export function FareAdjust({
       title="Adjust fare / record refund"
       consequence={
         <span>
-          Order <b>{id}</b> · current fare <b>${agreedOrProposed}</b>. Any cash refund between customer and rider
+          Order <b>{id}</b> · current fare <b>${agreedOrProposed}</b>. Any cash refund between customer and biker
           happens outside the app — this only corrects the recorded fare. If the order is already completed, the
-          rider&apos;s prepaid commission balance is adjusted automatically in the same step to match the corrected
+          biker&apos;s prepaid commission balance is adjusted automatically in the same step to match the corrected
           fare.
         </span>
       }
@@ -83,7 +83,7 @@ export function AdjudicateDelivered({
           ) : null}
           Overturns the <b>undelivered</b> outcome on order <b>{id}</b> to <b>delivered</b>
           {hasEvidence ? " — only when the proof above confirms the drop and the recipient withheld the code" : ""}. The
-          rider is credited a completed trip and commission; the customer is notified and can report a problem via the
+          biker is credited a completed trip and commission; the customer is notified and can report a problem via the
           app at any time. Recorded in the audit log.
         </span>
       }
@@ -109,7 +109,7 @@ export function CancelOrder({ id, connected }: { id: string; connected: boolean 
       consequence={
         <span>
           Order <b>{id}</b> will be cancelled for both sides. The customer is notified and can re-broadcast. This
-          action never strikes the rider — a strike is only recorded when a rider cancels their own job, never from
+          action never strikes the biker — a strike is only recorded when a biker cancels their own job, never from
           an ops-initiated cancellation.
         </span>
       }

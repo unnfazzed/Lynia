@@ -8,6 +8,7 @@ import {
   decideDiditKyc,
   diditEventAt,
   diditTimestampFresh,
+  isDiditDecisionStatus,
   isDiditDocumentExpired,
   extractDiditDocumentExpiry,
   extractDiditDeclineReason,
@@ -22,7 +23,7 @@ import {
 } from "./didit";
 
 describe("mapDiditStatus", () => {
-  it("maps Didit statuses to rider kyc_status", () => {
+  it("maps Didit statuses to biker kyc_status", () => {
     expect(mapDiditStatus("Approved")).toBe("verified");
     expect(mapDiditStatus("approved")).toBe("verified");
     expect(mapDiditStatus("Declined")).toBe("failed");
@@ -37,6 +38,21 @@ describe("mapDiditStatus", () => {
     expect(mapDiditStatus("Resubmitted")).toBe("pending");
     expect(mapDiditStatus("Abandoned")).toBe("pending");
     expect(mapDiditStatus("Not Started")).toBe("pending");
+  });
+
+  it("normalises separators like classifyDiditSession: KYC_EXPIRED is Kyc Expired", () => {
+    expect(mapDiditStatus("KYC_EXPIRED")).toBe("expired");
+    expect(mapDiditStatus("kyc-expired")).toBe("expired");
+    expect(mapDiditStatus(" APPROVED ")).toBe("verified");
+  });
+});
+
+describe("isDiditDecisionStatus (item 1: what the poll's read applies)", () => {
+  it("Approved, Declined, Kyc Expired and In Review decide; everything still open, or dead, does not", () => {
+    for (const s of ["Approved", "Declined", "Kyc Expired", "In Review", "in_review"]) expect(isDiditDecisionStatus(s)).toBe(true);
+    for (const s of ["Not Started", "In Progress", "Awaiting User", "Resubmitted", "Abandoned", "Expired", "", null, undefined]) {
+      expect(isDiditDecisionStatus(s)).toBe(false);
+    }
   });
 });
 
@@ -57,7 +73,7 @@ describe("classifyDiditSession / classifyStoredDiditStatus", () => {
     expect(classifyDiditSession("Brand New Status")).toBe("unfinished");
   });
 
-  it("a STORED Approved on a still-pending rider is a hold — that webhook already ran and held it", () => {
+  it("a STORED Approved on a still-pending biker is a hold — that webhook already ran and held it", () => {
     expect(classifyStoredDiditStatus("Approved")).toBe("held");
     expect(classifyStoredDiditStatus("In Review")).toBe("held");
     expect(classifyStoredDiditStatus("Expired")).toBe("dead");
@@ -71,7 +87,7 @@ describe("mapDiditPendingState", () => {
     expect(mapDiditPendingState("In Review")).toBe("in_flight");
   });
 
-  it("KYC-R26-11: Resubmitted (Didit asked the rider to redo steps) is the rider's move — unfinished, with a resume", () => {
+  it("KYC-R26-11: Resubmitted (Didit asked the biker to redo steps) is the biker's move — unfinished, with a resume", () => {
     expect(mapDiditPendingState("Resubmitted")).toBe("unfinished");
     expect(mapDiditPendingState("RESUBMITTED")).toBe("unfinished");
   });
@@ -79,7 +95,7 @@ describe("mapDiditPendingState", () => {
   // A terminal decision the webhook hasn't delivered yet. The row still says pending, and the honest
   // read of "with Didit, nothing for you to do" is in_flight — showing "Finish verifying" to a rider
   // who is seconds from being verified would be worse than one wasted poll.
-  it("treats an already-decided session as in flight, not as the rider's move", () => {
+  it("treats an already-decided session as in flight, not as the biker's move", () => {
     expect(mapDiditPendingState("Approved")).toBe("in_flight");
     expect(mapDiditPendingState("Declined")).toBe("in_flight");
   });

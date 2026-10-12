@@ -44,14 +44,14 @@ describe("riderShortName", () => {
 });
 
 describe("liveOrderPillModel (home 8c tracker pill)", () => {
-  it("draws the mock's line verbatim once the rider is heading to the customer", () => {
+  it("draws the mock's line verbatim once the biker is heading to the customer", () => {
     const pill = liveOrderPillModel(parcel(), "On the way to drop-off", "Tendai M.");
     expect(pill.title).toBe("Tendai M. · on the way");
     expect(pill.icon).toBe("bike");
     expect(pill.route).toBe("/order/o-parcel");
   });
 
-  it("falls back to honest service copy when no rider identity is cached for that order", () => {
+  it("falls back to honest service copy when no biker identity is cached for that order", () => {
     expect(liveOrderPillModel(parcel(), "On the way to drop-off", null).title).toBe("Your parcel · on the way");
     const food = parcel({ id: "o-food", orderType: "merchant", status: "picked_up", merchantName: "Sadza Republic" });
     expect(liveOrderPillModel(food, "Parcel collected", null).title).toBe("Sadza Republic · on the way");
@@ -66,7 +66,7 @@ describe("liveOrderPillModel (home 8c tracker pill)", () => {
       "Tendai M. · Heading to pickup",
     );
     const food = parcel({ orderType: "merchant", status: "assigned", merchantName: "Sadza Republic" });
-    expect(liveOrderPillModel(food, "Rider assigned", null).title).toBe("Sadza Republic · Rider secured");
+    expect(liveOrderPillModel(food, "Biker assigned", null).title).toBe("Sadza Republic · Biker secured");
   });
 
   it("carries the 7-segment progress the mock draws, per service vocabulary", () => {
@@ -76,10 +76,10 @@ describe("liveOrderPillModel (home 8c tracker pill)", () => {
   });
 
   it("lights no segment before assignment rather than clamping to the first", () => {
-    expect(liveOrderPillModel(parcel({ status: "open_for_offers" }), "Finding riders", null).step).toBe(-1);
+    expect(liveOrderPillModel(parcel({ status: "open_for_offers" }), "Finding bikers", null).step).toBe(-1);
   });
 
-  it("fills the gold ETA chip from the live rider fix, and leaves it EMPTY without one", () => {
+  it("fills the gold ETA chip from the live biker fix, and leaves it EMPTY without one", () => {
     expect(liveOrderPillModel(parcel(), "x", null).etaMinutes).toBeNull();
     const withRider = parcel({ rider: { currentLat: -17.828, currentLng: 31.058 } });
     expect(liveOrderPillModel(withRider, "x", null).etaMinutes).toBeGreaterThan(0);

@@ -15,9 +15,11 @@ let mockProps: Record<string, unknown> = {};
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: jest.fn(), back: () => mockBack(), replace: (...a: [string]) => mockReplace(...a), canGoBack: () => mockCanGoBack }),
 }));
+const VERIFIED_ME = { phone: "+263772451180", rider: { kycStatus: "verified" } };
+let mockMe: Record<string, unknown> = VERIFIED_ME;
 jest.mock("@tanstack/react-query", () => ({
   ...jest.requireActual<Record<string, unknown>>("@tanstack/react-query"),
-  useQuery: () => ({ data: { phone: "+263772451180" } }),
+  useQuery: () => ({ data: mockMe }),
 }));
 jest.mock("../../../src/query/use-wallet", () => ({
   useWalletConfig: () => ({ config: { minTopUp: 2, maxTopUp: 100, ratePct: 10 } }),
@@ -51,10 +53,11 @@ afterEach(() => {
   if (tree) act(() => tree!.unmount());
   tree = null;
   mockCanGoBack = true;
+  mockMe = VERIFIED_ME;
   jest.clearAllMocks();
 });
 
-describe("rider top-up screen", () => {
+describe("biker top-up screen", () => {
   it("pops the stack on exit", () => {
     const t = render();
     act(() => t.root.findByProps({ testID: "topup-flow-exit" }).props.onPress());
@@ -73,5 +76,12 @@ describe("rider top-up screen", () => {
     expect(mockProps.defaultProvider).toBe("innbucks");
     expect(mockProps.defaultPhone).toBe("0772451180");
     expect(mockProps.ratePct).toBe(10);
+  });
+
+  it("an unverified biker is sent straight back — top-up is for verified bikers only (the server refuses: kyc)", () => {
+    mockMe = { phone: "+263772451180", rider: { kycStatus: "pending" } };
+    const t = render();
+    expect(mockBack).toHaveBeenCalledTimes(1);
+    expect(t.root.findAll((n) => n.props.testID === "topup-flow-exit")).toHaveLength(0);
   });
 });

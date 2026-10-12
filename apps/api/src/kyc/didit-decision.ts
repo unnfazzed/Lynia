@@ -29,6 +29,9 @@ export interface DiditDecisionInput {
   eventAt: Date;
   /** For the log lines: where the decision came from. */
   source: "webhook" | "reconcile";
+  /** Called once when a decided verdict names a session no biker holds — the caller counts it
+   *  (`kyc_decision_unmatched_total`), labelled with what it knows about where the verdict came from. */
+  onUnmatched?: () => void;
 }
 
 /**
@@ -52,7 +55,7 @@ export async function applyDiditDecision(
   if (typeof vendorData === "string" && vendorData.trim() !== "") {
     const owner = await riders.kycSessionOwner(sessionId);
     if (owner && owner !== vendorData.trim()) {
-      logger.warn(`KYC ${source} for session ${sessionId}: vendor_data names a different rider than the session's owner — not applied (KYC-R26-07)`);
+      logger.warn(`KYC ${source} for session ${sessionId}: vendor_data names a different biker than the session's owner — not applied (KYC-R26-07)`);
       return { ignored: true, reason: "vendor_data_mismatch" };
     }
   }
@@ -113,9 +116,18 @@ export async function applyDiditDecision(
     extractDiditDocumentExpiry(payload),
   );
   if (res.updated === 0 && !res.skipped) {
-    // No rider has this ref, or the event was stale — surface for reconciliation. (A KYC-R26-01 repeat or a
-    // KYC-R26-02 admin-decided check is logged by applyKycResult itself and is expected, not a warning.)
-    logger.warn(`KYC ${source} for session ${sessionId} (${decision.status}) matched no rider or was stale`);
+    // No rider has this ref, or the event was stale. (A KYC-R26-01 repeat or a KYC-R26-02 admin-decided check
+    // is logged by applyKycResult itself and is expected, not a warning.) Told apart, because they mean
+    // different things: a stale delivery is ordinary; a verdict for a session NO biker holds is a decision we
+    // are dropping on the floor (a replaced session's late verdict, an erased account, another environment's
+    // webhook, a misrouted workflow) — counted, so a run of them is visible.
+    const owner = await riders.kycSessionOwner(sessionId);
+    if (owner === null) {
+      logger.warn(`KYC ${source} for session ${sessionId} (${decision.status}) matched no biker — verdict not applied`);
+      input.onUnmatched?.();
+    } else {
+      logger.log(`KYC ${source} for session ${sessionId} (${decision.status}) was stale — not applied`);
+    }
   }
   return res;
 }

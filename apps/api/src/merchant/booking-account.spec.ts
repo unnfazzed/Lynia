@@ -27,7 +27,7 @@ describe("a business's booking account (merchant web upgrade L2, D9)", () => {
     await expect(ensureBookingAccount(prisma as unknown as PrismaService, { id: "m1", name: "Mbare Auto Spares" })).resolves.toBe("acct-winner");
   });
 
-  it("follows a renamed business, since riders see the account's name as the sender", async () => {
+  it("follows a renamed business, since bikers see the account's name as the sender", async () => {
     const update = vi.fn(async () => ({}));
     const prisma = { profile: { findUnique: async () => ({ id: "acct-1", firstName: "Old Name" }), update } };
     await ensureBookingAccount(prisma as unknown as PrismaService, { id: "m1", name: "New Name" });

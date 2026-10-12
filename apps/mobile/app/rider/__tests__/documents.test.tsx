@@ -91,12 +91,12 @@ afterEach(() => {
   }
 });
 
-describe("E1 · new rider", () => {
+describe("E1 · new biker", () => {
   it("draws the title, '1 of 3', the three rows with '+ Add' and the footnote — no Re-verify, no licence", async () => {
     const tree = render();
     await loaded(tree);
     const s = text(tree);
-    for (const k of ["Bike & documents", "1", "of 3", "National ID", "Verified", "Rider photo", "Customers see it on their job", "Bike plate", "e.g. ABC 1234", "Optional. You can take jobs now."]) expect(s).toContain(k);
+    for (const k of ["Bike & documents", "1", "of 3", "National ID", "Verified", "Biker photo", "Customers see it on their job", "Bike plate", "e.g. ABC 1234", "Optional. You can take jobs now."]) expect(s).toContain(k);
     expect(bars(tree)).toEqual({ done: 1, open: 2 });
     expect(has(tree, "add-photo")).toBe(true);
     expect(has(tree, "add-plate")).toBe(true);
@@ -112,12 +112,23 @@ describe("E1 · new rider", () => {
     expect(pill.props.style({ pressed: false }).minHeight).toBe(44);
   });
 
-  it("an unverified rider's ID row says nothing — 'Verified' only for what was checked", async () => {
+  it("an unverified biker's ID row says nothing — 'Verified' only for what was checked", async () => {
     mockRider = { kycStatus: "pending", bikeReg: null, hasPhoto: false };
     const tree = render();
     await loaded(tree);
     expect(text(tree)).not.toContain('"Verified"');
     expect(bars(tree)).toEqual({ done: 0, open: 3 });
+    // …and it is never told it "can take jobs now", nor drawn in the ok tone, before the ID is verified.
+    expect(text(tree)).not.toContain("Optional. You can take jobs now.");
+    const idRow = tree.root.findAll((n) => n.props.testID === "row-id" && n.props.iconTone !== undefined)[0]!;
+    expect(idRow.props.iconTone).not.toBe("ok");
+  });
+
+  it("a verified biker's ID row is in the ok tone", async () => {
+    const tree = render();
+    await loaded(tree);
+    const idRow = tree.root.findAll((n) => n.props.testID === "row-id" && n.props.iconTone !== undefined)[0]!;
+    expect(idRow.props.iconTone).toBe("ok");
   });
 });
 
@@ -194,7 +205,7 @@ describe("E2 · photo", () => {
   });
 });
 
-describe("rider audit — Bike & documents", () => {
+describe("biker audit — Bike & documents", () => {
   const shot = { uri: "file:///p.jpg", contentType: "image/jpeg" };
 
   it("FR-H2: camera denied in the guide closes the guide first, so the toast is seen", async () => {

@@ -20,7 +20,8 @@ export function baseBroadcastRadiusM(): number {
 }
 
 /** Ghost cutoff: max heartbeat age (ms) for a rider to count as reachable — env-overridable. Strict
- *  (~120 s): used for the customer-facing "riders nearby" count and the offer-selection gate. */
+ *  (~120 s): used for the customer-facing "riders nearby" count. A bid is held to the push cutoff below
+ *  (common/rider-selectable.ts). */
 export function heartbeatMaxAgeMs(): number {
   return envPositiveInt(BROADCAST.heartbeatMaxAgeEnv) ?? BROADCAST.heartbeatMaxAgeMs;
 }

@@ -36,6 +36,8 @@ import { API_URL } from "../config";
 import type { KycSdkResult } from "../logic/gates";
 import { Icon, Tappable } from "../ui";
 import { resolveKycWebNavigation } from "./navigation";
+import { EVENTS, track } from "../telemetry/events";
+import { addBreadcrumb } from "../telemetry/sentry";
 
 /** The sheet's outcome — the non-null arm of the gate's SDK result union. */
 export type KycCheckOutcome = Exclude<KycSdkResult, null>;
@@ -217,7 +219,7 @@ function KycCheckSheet({
    * easy, and the copy mirrors become.tsx's "pick it up again" line.
    */
   const requestClose = (): void => {
-    Alert.alert("Leave the ID check?", "You can pick it up again from your rider board.", [
+    Alert.alert("Leave the ID check?", "You can pick it up again from your biker board.", [
       { text: "Keep going", style: "cancel" },
       { text: "Leave", style: "destructive", onPress: () => done("cancelled") },
     ]);
@@ -350,12 +352,22 @@ function KycCheckSheet({
               // (Android: ERR_UNKNOWN_URL_SCHEME) — that is the check finishing, not breaking.
               const errUrl = e?.nativeEvent?.url;
               if (errUrl && resolveKycWebNavigation(url, errUrl, API_URL) === "completed") done("completed");
-              else failed();
+              else {
+                // Funnel analytics: why the sheet failed (no URL — it can carry the session).
+                track(EVENTS.kycWebError, { kind: "error" });
+                addBreadcrumb("kyc.web_error", { kind: "error" });
+                failed();
+              }
             }}
-            onHttpError={(e: { nativeEvent: { url?: string } }) => {
+            onHttpError={(e: { nativeEvent: { url?: string; statusCode?: number } }) => {
               // Main-document failure only: a 4xx/5xx subresource inside a working flow is the
               // vendor's business, not a reason to close the rider's check.
-              if (e.nativeEvent.url === url) failed();
+              if (e.nativeEvent.url === url) {
+                const status = typeof e.nativeEvent.statusCode === "number" ? e.nativeEvent.statusCode : null;
+                track(EVENTS.kycWebError, { kind: "http_error", status });
+                addBreadcrumb("kyc.web_error", { kind: "http_error", status });
+                failed();
+              }
             }}
             style={{ flex: 1, backgroundColor: tokens.color.bg }}
           />

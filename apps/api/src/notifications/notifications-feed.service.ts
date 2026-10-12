@@ -107,7 +107,7 @@ const STANDING_REASONS: Record<string, StandingReason> = {
   "Serious safety incident": "safety_incident",
   "Repeat offences after suspension": "repeat_offences",
   // customerHold
-  "Cancel pattern hurting riders": "cancellations",
+  "Cancel pattern hurting bikers": "cancellations",
   "Suspected fraud — under review": "fraud_review",
   "Payment dispute open": "payment_dispute",
   "Awaiting identity check": "identity_check",
@@ -148,15 +148,15 @@ export interface FeedStep {
  * when the viewing user is the order's customer.
  */
 const FEED_NOTICES: Record<string, { icon: string; title: string; message: string }> = {
-  assigned: { icon: "bike", title: "Rider assigned", message: "A rider took your delivery and is confirming the details." },
-  confirmed: { icon: "check", title: "Rider confirmed your items", message: "Your rider has reviewed the parcel details." },
-  en_route_pickup: { icon: "bike", title: "Rider on the way", message: "Your rider is heading to the pickup point." },
-  picked_up: { icon: "check", title: "Parcel collected", message: "Your rider has your parcel and is on the move." },
+  assigned: { icon: "bike", title: "Biker assigned", message: "A biker took your delivery and is confirming the details." },
+  confirmed: { icon: "check", title: "Biker confirmed your items", message: "Your biker has reviewed the parcel details." },
+  en_route_pickup: { icon: "bike", title: "Biker on the way", message: "Your biker is heading to the pickup point." },
+  picked_up: { icon: "check", title: "Parcel collected", message: "Your biker has your parcel and is on the move." },
   en_route_dropoff: { icon: "navigation", title: "On the way to drop-off", message: "Your parcel is on the way to drop-off." },
-  delivered: { icon: "check", title: "Delivered", message: "Your parcel was delivered — rate your rider." },
+  delivered: { icon: "check", title: "Delivered", message: "Your parcel was delivered — rate your biker." },
   completed: { icon: "check", title: "Delivery complete", message: "This trip is done. Thanks for using LyniaGo." },
-  expired: { icon: "clock", title: "No riders yet", message: "No rider took your price yet. Try raising it and sending again." },
-  undelivered: { icon: "triangle-alert", title: "Delivery couldn't be completed", message: "Your rider couldn't hand the parcel over — tap for details." },
+  expired: { icon: "clock", title: "No bikers yet", message: "No biker took your price yet. Try raising it and sending again." },
+  undelivered: { icon: "triangle-alert", title: "Delivery couldn't be completed", message: "Your biker couldn't hand the parcel over — tap for details." },
   cancelled: { icon: "triangle-alert", title: "Order cancelled", message: "This delivery was cancelled." },
 };
 
@@ -240,8 +240,8 @@ const ACCOUNT_FEED_COPY: Record<string, { icon: string; title: string; message: 
   // an account-level row (orderId: null) like the standing/KYC rows above. Copy mirrors the push.
   "customer.riders_available_notify": {
     icon: "bike",
-    title: "A rider's online near you",
-    message: "Riders are back near your pickup — send your parcel again to get offers.",
+    title: "A biker's online near you",
+    message: "Bikers are back near your pickup — send your parcel again to get offers.",
   },
   // D-79 (owner 2026-10-06): the free-jobs top-up reminder Calm Mint v2 R3 promises. Written by
   // WalletService.noteFreeJobsMilestone in the completion transaction; copy mirrors the push verbatim.
@@ -323,8 +323,8 @@ const FEED_ROW_CAP = 100;
  * rider's beats on a merchant job are the parcel rider beats (FEED_NOTICES_RIDER), gated as for parcels.
  */
 const MERCHANT_FEED_NOTICES: Record<string, { icon: string; title: string; message: string }> = {
-  accepted: { icon: "check", title: "Order accepted", message: "We’ll tell you when a rider has it." },
-  preparing: { icon: "clock", title: "Being prepared", message: "We’ll tell you when a rider has it." },
+  accepted: { icon: "check", title: "Order accepted", message: "We’ll tell you when a biker has it." },
+  preparing: { icon: "clock", title: "Being prepared", message: "We’ll tell you when a biker has it." },
   ...Object.fromEntries(
     Object.entries(MERCHANT_STATUS_NOTICES).map(([k, n]) => [k, { icon: k === "undelivered" ? "triangle-alert" : "check", title: n!.title, message: n!.body }]),
   ),
@@ -802,9 +802,9 @@ export class NotificationsFeedService {
             if (cloneId) {
               notice = {
                 icon: "bike",
-                title: "Your rider had to cancel",
+                title: "Your biker had to cancel",
                 message:
-                  "We've already sent your request back out to nearby riders at the same price — tap to follow it.",
+                  "We've already sent your request back out to nearby bikers at the same price — tap to follow it.",
               };
               orderId = cloneId;
               beat = "rebroadcast";
@@ -813,7 +813,7 @@ export class NotificationsFeedService {
             // No-supply expiry: nobody was online near the pickup, so "raise your price" would be a lie.
             notice = {
               icon: "bike",
-              title: "No riders online nearby",
+              title: "No bikers online nearby",
               message:
                 "Nobody was online near your pickup when the window closed — raising the price wasn't the problem. Try sending again in a bit.",
             };
@@ -824,7 +824,7 @@ export class NotificationsFeedService {
             notice = {
               icon: "clock",
               title: "The window closed",
-              message: "Riders offered but the window closed before you picked — send it again, no need to raise the price.",
+              message: "Bikers offered but the window closed before you picked — send it again, no need to raise the price.",
             };
             beat = "window_closed";
           }
@@ -945,8 +945,8 @@ export class NotificationsFeedService {
         // states the count instead of repeating the singular line N times.
         message:
           bucket.length === 1
-            ? "A rider responded to your delivery — tap to compare offers."
-            : `${bucket.length} riders responded to your delivery — tap to compare offers.`,
+            ? "A biker responded to your delivery — tap to compare offers."
+            : `${bucket.length} bikers responded to your delivery — tap to compare offers.`,
         at,
         unread: isUnread(newest.createdAt),
         ...orderData(orderId),
@@ -1004,8 +1004,8 @@ export class NotificationsFeedService {
         orderId: a.target,
         to: "customer",
         icon: "bike",
-        title: "A rider's online near you",
-        message: "Riders are being pinged on your live request — tap to follow the offers.",
+        title: "A biker's online near you",
+        message: "Bikers are being pinged on your live request — tap to follow the offers.",
         at,
         unread: isUnread(a.createdAt),
         ...orderData(a.target),
@@ -1107,7 +1107,7 @@ export class NotificationsFeedService {
         orderId: a.target,
         icon: "triangle-alert",
         title: "An update on your delivery",
-        message: "There's a change with your assigned rider — our team is reviewing this trip.",
+        message: "There's a change with your assigned biker — our team is reviewing this trip.",
         at,
         unread: isUnread(a.createdAt),
         ...orderData(a.target),
@@ -1128,7 +1128,7 @@ export class NotificationsFeedService {
         orderId: a.target,
         icon: "check",
         title: "Your delivery is back on track",
-        message: "The review of your assigned rider is complete — your delivery is continuing as normal.",
+        message: "The review of your assigned biker is complete — your delivery is continuing as normal.",
         at,
         unread: isUnread(a.createdAt),
         ...orderData(a.target),

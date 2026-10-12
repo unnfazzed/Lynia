@@ -24,7 +24,7 @@ import {
 
 const IN: Stop = { lat: -17.8292, lng: 31.0522, name: "Eastgate Mall, CBD", source: "search" };
 const IN2: Stop = { lat: -17.82, lng: 31.06, name: "14 Glenara Ave, Avenues", source: "search" };
-const OUT: Stop = { lat: -18.3, lng: 31.3, name: "Seke Rd, Chitungwiza", source: "search" };
+const OUT: Stop = { lat: -15.4167, lng: 28.2833, name: "Cairo Rd, Lusaka", source: "search" };
 const item = (description: string) => ({ description, quantity: 1 });
 
 describe("send-steps (ledger D-52)", () => {

@@ -7,34 +7,34 @@
 export const ORDER_COPY = {
   back: "Back",
   /* titles per stage */
-  tFinding: "Finding a rider",
-  tNoOnline: "No riders online",
-  tChoose: "Choose a rider",
-  tOnWay: "Rider on the way",
+  tFinding: "Finding a biker",
+  tNoOnline: "No bikers online",
+  tChoose: "Choose a biker",
+  tOnWay: "Biker on the way",
   tToDrop: "Parcel on the way",
   tHandoff: "Arriving now",
-  tNoRider: "No rider yet",
-  tRiderCx: "Rider cancelled",
+  tNoRider: "No biker yet",
+  tRiderCx: "Biker cancelled",
   tDelivered: "Delivered",
   tComplete: "Trip complete",
   tNotDel: "Not delivered",
   tCancelled: "Order cancelled",
   /* finding */
-  finding: "Finding riders near you…",
+  finding: "Finding bikers near you…",
   left: "left",
-  seen0: "No riders nearby yet",
-  offersHere: "Offers show here as riders reply.",
+  seen0: "No bikers nearby yet",
+  offersHere: "Offers show here as bikers reply.",
   yourPrice: "YOUR PRICE",
-  cash: "Cash to your rider",
+  cash: "Cash to your biker",
   plus: "+ $0.50",
   cancelReq: "Cancel request",
-  cancelReqQ: "Stop looking for a rider? Nothing to pay.",
+  cancelReqQ: "Stop looking for a biker? Nothing to pay.",
   keepLooking: "Keep looking",
   yesCancel: "Yes, cancel",
-  noOnline: "No riders are online near you right now.",
+  noOnline: "No bikers are online near you right now.",
   // Owner 2026-10-02 (ledger D-60): the handoff's "Most riders are online 7–9am and 5–7pm." is cut.
   noOnlineHint: "We'll keep looking until the timer ends.",
-  notify: "Notify me when a rider's online",
+  notify: "Notify me when a biker's online",
   /* offers */
   bestMatch: "Best match",
   choose: "Choose",
@@ -42,7 +42,7 @@ export const ORDER_COPY = {
   eta: "ETA",
   min: "min",
   newRider: "New",
-  bestWhy: "Best match weighs price, how close the rider is, and rating.",
+  bestWhy: "Best match weighs price, how close the biker is, and rating.",
   /* tracking */
   stMatched: "Matched",
   stPicked: "Picked up",
@@ -53,22 +53,22 @@ export const ORDER_COPY = {
   whatsapp: "WhatsApp",
   bike: "Bike",
   code: "DELIVERY CODE",
-  codeHelp: "Give this code to the recipient. The rider enters it at hand-off.",
-  codeHand: "The recipient tells the rider this code. Only then is your parcel handed over.",
+  codeHelp: "Give this code to the recipient. The biker enters it at hand-off.",
+  codeHand: "The recipient tells the biker this code. Only then is your parcel handed over.",
   shareCode: "Share code",
   gmaps: "Follow route in Google Maps",
-  gmapsSub: "The same route your rider is using",
+  gmapsSub: "The same route your biker is using",
   cancelFree: "Cancel order · free until pickup",
   cancelOrder: "Cancel order",
   photo: "Pickup photo",
   view: "View",
-  gpsPaused: "Your rider's location hasn't updated — call them to check in.",
+  gpsPaused: "Your biker's location hasn't updated — call them to check in.",
   codeOffline: "Your code works without data.",
   /* cancel */
   cancelQ: "Cancel this order?",
   reason: "Reason (optional)",
   r1: "Sending it another way",
-  r2: "Rider is too far",
+  r2: "Biker is too far",
   r3: "Changed my mind",
   r4: "Other",
   keep: "Keep order",
@@ -84,10 +84,10 @@ export const ORDER_COPY = {
   shareTrip: "Share my trip",
   shareTripSub: "Send trip details to someone you trust",
   report: "Report a problem",
-  reportSub: "Wrong item, damage, rider behaviour",
+  reportSub: "Wrong item, damage, biker behaviour",
   close: "Close",
   /* retry */
-  noTookSub: "Riders nearby usually take a little more for this trip.",
+  noTookSub: "Bikers nearby usually take a little more for this trip.",
   suggested: "SUGGESTED PRICE",
   sugNote: "$0.50 more than last time",
   editOrder: "Edit order",
@@ -106,10 +106,10 @@ export const ORDER_COPY = {
   receipt: "Receipt",
   ref: "Ref",
   items: "Items",
-  rider: "Rider",
-  riderPhone: "Rider phone",
+  rider: "Biker",
+  riderPhone: "Biker phone",
   price: "Agreed price",
-  paidCash: "Paid cash to rider",
+  paidCash: "Paid cash to biker",
   masked: "Numbers are hidden now the trip's over.",
   shareReceipt: "Share receipt",
   home: "Back to home",
@@ -117,8 +117,8 @@ export const ORDER_COPY = {
   youRated: "You rated",
   getHelp: "Get help with this order",
   /* not delivered / cancelled */
-  notDelReason: "REASON FROM YOUR RIDER",
-  callRider: "Call rider",
+  notDelReason: "REASON FROM YOUR BIKER",
+  callRider: "Call biker",
   cxYou: "You cancelled this order",
   cxLynia: "LyniaGo cancelled this order",
   reasonP: "Reason",
@@ -137,7 +137,7 @@ export const ORDER_COPY = {
   notFoundSub: "It may be on another account, or the link is old.",
   /* 2.5–2.11 finding / offers */
   raiseFail: "Couldn't update the price. Try again.",
-  notifyOn: "We'll tell you when a rider's online.",
+  notifyOn: "We'll tell you when a biker's online.",
   notifyFail: "Reminders aren't working right now. We'll keep looking until the timer ends.",
   timeUp: "Time's up for new offers. You can still choose from these.",
   chooseIn: "Choose in",
@@ -146,7 +146,7 @@ export const ORDER_COPY = {
   reportT: "Report a problem",
   reportSub2: "Your trip keeps running. We'll reply by phone.",
   reportType: "What happened?",
-  rp: ["Wrong item", "Damaged", "Rider behaviour", "Payment", "Other"] as const,
+  rp: ["Wrong item", "Damaged", "Biker behaviour", "Payment", "Other"] as const,
   tellMore: "Tell us more",
   tellMorePh: "What happened, and when?",
   sendTeam: "Send to our team",
@@ -155,7 +155,7 @@ export const ORDER_COPY = {
   sosSent: "Our safety team has been told. They'll call you shortly.",
   codeIssuing: "Getting your code…",
   /* 2.20–2.23 retry / cancel */
-  stillFinding: "Still finding a rider",
+  stillFinding: "Still finding a biker",
   sendFail: "Couldn't send. Check your data and try again.",
   cancelFail: "Couldn't cancel. Your order is still active.",
   /* 2.24–2.28 delivered / completed */
@@ -214,9 +214,9 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 /** The dynamic strings of `A`, one formatter each (sample values in the handoff → arguments here). */
 export const orderText = {
   /** "3 riders have seen it" — the handoff's `seen`. */
-  seen: (n: number): string => `${n} ${n === 1 ? "rider has" : "riders have"} seen it`,
+  seen: (n: number): string => `${n} ${n === 1 ? "biker has" : "bikers have"} seen it`,
   /** "Price raised to $3.86. Riders have been told." */
-  raised: (price: number): string => `Price raised to ${usd(price)}. Riders have been told.`,
+  raised: (price: number): string => `Price raised to ${usd(price)}. Bikers have been told.`,
   /** "was $3.36" */
   was: (price: number): string => `was ${usd(price)}`,
   /** "3 offers" */
@@ -224,10 +224,10 @@ export const orderText = {
   /** "+$0.64 over your price. Choose to accept $4.00." */
   over: (diff: number, price: number): string => `+${usd(diff)} over your price. Choose to accept ${usd(price)}.`,
   /** "Tendai was just taken by another customer. Pick another rider." */
-  taken: (name: string): string => `${name} was just taken by another customer. Pick another rider.`,
+  taken: (name: string): string => `${name} was just taken by another customer. Pick another biker.`,
   /** U62 (C10, ledger D-94 — copy only, in the select-race toast): the rider went offline or their offer
    *  closed, so "taken by another customer" would be untrue. The drawn toast's second sentence, verbatim. */
-  gone: (name: string): string => `${name} is unavailable. Pick another rider.`,
+  gone: (name: string): string => `${name} is unavailable. Pick another biker.`,
   /** "Arriving at pickup in 6 min" */
   etaPickup: (min: number): string => `Arriving at pickup in ${min} min`,
   /** "Arriving at drop-off in 12 min" */
@@ -236,7 +236,7 @@ export const orderText = {
   atDrop: (name: string): string => `${name} is at the drop-off`,
   /** "Your LyniaGo parcel is on its way with Tendai (bike ABH 4721). Give the rider this code at hand-off: 418290" */
   shareMsg: (name: string, plate: string | null, code: string): string =>
-    `Your LyniaGo parcel is on its way with ${name}${plate ? ` (bike ${plate})` : ""}. Give the rider this code at hand-off: ${code}`,
+    `Your LyniaGo parcel is on its way with ${name}${plate ? ` (bike ${plate})` : ""}. Give the biker this code at hand-off: ${code}`,
   /** "Taken by Tendai at 09:12" */
   photoSub: (name: string, at: string): string => (at ? `Taken by ${name} at ${at}` : `Taken by ${name}`),
   /** "Last seen 3 min ago" */
@@ -250,7 +250,7 @@ export const orderText = {
   /** "Emergency? Call 999" */
   emergency: (num: string): string => `Emergency? Call ${num}`,
   /** "No rider took $3.36 this time." */
-  noTook: (price: number): string => `No rider took ${usd(price)} this time.`,
+  noTook: (price: number): string => `No biker took ${usd(price)} this time.`,
   /** "Send again at $3.86" */
   sendAgainAt: (price: number): string => `Send again at ${usd(price)}`,
   /** "Handed over at 09:31 with code 418290." */
@@ -307,7 +307,7 @@ export const orderText = {
   },
   /** "I'm sending a parcel with LyniaGo from … to …. My rider is Tendai M. (bike ABH 4721). Order ref 8F3A-91C2." */
   shareTrip: (pickup: string, dropoff: string, rider: string | null, plate: string | null, ref: string): string =>
-    `I'm sending a parcel with LyniaGo from ${pickup} to ${dropoff}.${rider ? ` My rider is ${rider}${plate ? ` (bike ${plate})` : ""}.` : ""} Order ${ref.charAt(0).toLowerCase()}${ref.slice(1)}.`,
+    `I'm sending a parcel with LyniaGo from ${pickup} to ${dropoff}.${rider ? ` My biker is ${rider}${plate ? ` (bike ${plate})` : ""}.` : ""} Order ${ref.charAt(0).toLowerCase()}${ref.slice(1)}.`,
   /** The "Share receipt" text. */
   receiptText: (r: { ref: string; pickup: string; dropoff: string; items: string[]; rider: string | null; price: number }): string =>
     [
@@ -321,10 +321,10 @@ export const orderText = {
       .join("\n"),
   /** "Tendai had to cancel." / "We're already asking other riders at $3.36." (state 13, v2) */
   riderCx: (name: string): string => `${name} had to cancel.`,
-  riderCxSub: (price: number): string => `We're already asking other riders at ${usd(price)}.`,
+  riderCxSub: (price: number): string => `We're already asking other bikers at ${usd(price)}.`,
   /** "Raise to $3.86" / "Riders may reply faster at $3.86." */
   raiseTo: (price: number): string => `Raise to ${usd(price)}`,
-  fasterAt: (price: number): string => `Riders may reply faster at ${usd(price)}.`,
+  fasterAt: (price: number): string => `Bikers may reply faster at ${usd(price)}.`,
   /** "Confirming with Farai…" (2.9a) / slow variant after 5 s (2.9b) */
   choosing: (name: string): string => `Confirming with ${name}…`,
   choosingSlow: (name: string): string => `Still confirming with ${name}. This can take a few seconds on slow data.`,

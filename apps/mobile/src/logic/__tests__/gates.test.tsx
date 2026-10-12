@@ -2,7 +2,7 @@ import { KYC_DECLINE_REASON_LABELS } from "@lynia/shared";
 import { ACCOUNT_ON_HOLD_COPY, freshKycLaunch, KYC_COMPLETED_HOLD_MS, kycLaunchForGate, isAccountOnHold, ONLINE_GATE_COPY, isKycLocked, isOutOfServiceArea, isWithinServiceCorridor, KYC_COMPLETED_HINT_MS, KYC_FAST_POLL_WINDOW_MS, KYC_LOCK_ATTEMPTS, kycDeclineLabel, kycPollMs, onlineGateReason, resolveKycGate, resolveKycRetryFeedback, riderDeclineLabel, isKycRetryRateLimited } from "../gates";
 import { resolveGate } from "../rider-gate";
 
-describe("onlineGateReason (rider online-gate refusal)", () => {
+describe("onlineGateReason (biker online-gate refusal)", () => {
   it("reads a machine reason code (case-insensitive)", () => {
     expect(onlineGateReason({ code: "on_hold" })).toBe("on_hold");
     expect(onlineGateReason({ code: "SUSPENDED" })).toBe("suspended");
@@ -13,7 +13,7 @@ describe("onlineGateReason (rider online-gate refusal)", () => {
     expect(onlineGateReason({ code: "out_of_area" })).toBe("out_of_area");
   });
 
-  it("distinguishes a lapsed ID (kyc_expired) from a first-time unverified rider (1·b2)", () => {
+  it("distinguishes a lapsed ID (kyc_expired) from a first-time unverified biker (1·b2)", () => {
     // The expired copy says "re-verify" (contains `verif`) — the sniff must not collapse it into `kyc`.
     expect(onlineGateReason({ message: "Your ID has expired — re-verify to keep riding" })).toBe("kyc_expired");
     expect(onlineGateReason({ code: "kyc_expired", message: "whatever" })).toBe("kyc_expired");
@@ -127,18 +127,16 @@ describe("service-corridor gate (Q1)", () => {
     expect(isOutOfServiceArea(null)).toBe(false);
   });
 
-  it("pre-check: a Harare point is inside, a far point is outside", () => {
-    // Harare CBD ≈ the corridor centre → inside.
-    expect(isWithinServiceCorridor({ lat: -17.8292, lng: 31.0522 })).toBe(true);
-    // Bulawayo (~370km away) → outside every town disc.
-    expect(isWithinServiceCorridor({ lat: -20.15, lng: 28.58 })).toBe(false);
+  it("pre-check: a Harare point is inside, a point outside Zimbabwe is outside", () => {
+    expect(isWithinServiceCorridor({ lat: -17.8292, lng: 31.0522 })).toBe(true); // Harare CBD
+    expect(isWithinServiceCorridor({ lat: -15.4167, lng: 28.2833 })).toBe(false); // Lusaka, Zambia
   });
 
-  it("pre-check: the satellite towns are inside (owner 2026-10-02), Marondera is not", () => {
-    expect(isWithinServiceCorridor({ lat: -17.8833, lng: 30.7 })).toBe(true); // Norton, ~38 km out
-    expect(isWithinServiceCorridor({ lat: -18.0127, lng: 31.0756 })).toBe(true); // Chitungwiza
-    expect(isWithinServiceCorridor({ lat: -17.8897, lng: 31.2447 })).toBe(true); // Ruwa
-    expect(isWithinServiceCorridor({ lat: -18.185, lng: 31.55 })).toBe(false); // Marondera
+  it("pre-check: every town in Zimbabwe is inside (owner 2026-10-12, D-99)", () => {
+    expect(isWithinServiceCorridor({ lat: -19.0211, lng: 30.8922 })).toBe(true); // Chivhu
+    expect(isWithinServiceCorridor({ lat: -18.9707, lng: 32.6709 })).toBe(true); // Mutare
+    expect(isWithinServiceCorridor({ lat: -20.15, lng: 28.58 })).toBe(true); // Bulawayo
+    expect(isWithinServiceCorridor({ lat: -18.185, lng: 31.55 })).toBe(true); // Marondera
   });
 });
 
@@ -241,7 +239,7 @@ describe("resolveKycRetryFeedback (JOURNEY-BUGS: 'Continue verification' silent 
  * a rider who cancelled at step one on a screen reading "your ID check is with Didit".
  */
 describe("resolveKycGate (P0-1 / D6)", () => {
-  it("sends an account with no rider record to onboarding, not to a wall", () => {
+  it("sends an account with no biker record to onboarding, not to a wall", () => {
     expect(resolveKycGate(null).kind).toBe("not_a_rider");
     expect(resolveKycGate(undefined).kind).toBe("not_a_rider");
   });
@@ -363,7 +361,7 @@ describe("kycPollMs (R-3 / §5 poll back-off)", () => {
     expect(kycPollMs({ kind: "held" }, false, 0)).toBe(60_000);
     expect(kycPollMs({ kind: "manual_review" }, false, 0)).toBe(60_000);
   });
-  it("the rider's move: 30 s; terminal walls 60 s; verified: no poll", () => {
+  it("the biker's move: 30 s; terminal walls 60 s; verified: no poll", () => {
     expect(kycPollMs({ kind: "unfinished" }, false, 0)).toBe(30_000);
     expect(kycPollMs({ kind: "cant_start" }, false, 0)).toBe(30_000);
     expect(kycPollMs({ kind: "declined", reasonLabel: null }, false, 0)).toBe(60_000);

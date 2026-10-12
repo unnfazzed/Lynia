@@ -101,3 +101,20 @@ test("P07: the install takes hashed files from the HTTP cache and reloads only t
   assert.equal(byUrl.get("/manifest.webmanifest"), "reload");
   assert.equal(byUrl.get("/sw-register.js"), "reload");
 });
+
+test("wide screens keep the phone layout: a 480px column, measured at 480 by the app", () => {
+  const out = fakeExport();
+  const html = finish(out);
+  assert.ok(html.indexOf('src="/phone-frame.js"') < html.indexOf(ENTRY), "phone-frame.js must run before the app bundle");
+  assert.match(html, /@media \(min-width: 481px\) \{[^}]*\}\s*body \{ max-width: 480px; margin: 0 auto;[^}]*transform: translateZ\(0\); \} \}/);
+
+  // The bundle's Dimensions reads window.visualViewport: run the script against a 1440px desktop and a 360px phone.
+  const src = readFileSync(join(out, "phone-frame.js"), "utf8");
+  for (const [width, scale, expected] of [[1440, 1, 480], [360, 1, 360], [1440, 2, 240]]) {
+    const real = { width, height: 900, scale, addEventListener() {}, removeEventListener() {} };
+    const window = { visualViewport: real };
+    vm.runInNewContext(src, { window });
+    assert.equal(window.visualViewport.width, expected, `${width}@${scale}x`);
+    assert.equal(window.visualViewport.height, 900);
+  }
+});

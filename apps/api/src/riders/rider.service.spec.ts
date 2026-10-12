@@ -1,8 +1,9 @@
-import { COMMISSION, freeJobsLeft } from "@lynia/shared";
+import { COMMISSION, freeJobsLeft, NATIONWIDE_REACH_M } from "@lynia/shared";
 import { ConflictException, InternalServerErrorException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
+import { classifyDiditSession, DIDIT_DEAD_STATUSES_NORMALISED } from "../kyc/didit";
 import type { KycVendor } from "../kyc/kyc-vendor";
 import { StubKycVendor } from "../kyc/kyc-vendor";
 import { PrismaService } from "../prisma/prisma.service";
@@ -12,11 +13,11 @@ import { canGoOnline, KYC_RESOLVED_BY_VENDOR, onlineRefusalReason, RiderService 
 /** Real crypto with a fixed test key so hashId(...) is deterministic across the assertions below. */
 const pii = new PiiCryptoService({ PII_ENCRYPTION_KEY: "test-pii-key-0123456789abcdefghij" } as Env);
 
-describe("canGoOnline (rider gating, §5d)", () => {
-  it("allows only verified riders online", () => {
+describe("canGoOnline (biker gating, §5d)", () => {
+  it("allows only verified bikers online", () => {
     expect(canGoOnline("verified")).toBe(true);
   });
-  it("blocks pending, failed and expired riders", () => {
+  it("blocks pending, failed and expired bikers", () => {
     expect(canGoOnline("pending")).toBe(false);
     expect(canGoOnline("failed")).toBe(false);
     expect(canGoOnline("expired")).toBe(false);
@@ -61,11 +62,13 @@ function svc(prisma: Partial<Record<string, unknown>>, env: Partial<Env>, vendor
   // None unless a test says otherwise.
   const audit = (p.auditLog ??= {}) as Record<string, unknown>;
   if (!audit.count) audit.count = async () => 0;
+  // becomeRider writes `rider.become` in its claim commit, and every paid mint writes `rider.kyc_session_minted`.
+  if (!audit.create) audit.create = async () => ({});
   return new RiderService(p as unknown as PrismaService, env as Env, vendor, pii, trackingStub, gatewayStub, notificationsStub);
 }
 
 describe("RiderService.becomeRider", () => {
-  it("409s if already registered as a rider", async () => {
+  it("409s if already registered as a biker", async () => {
     const s = svc({ rider: { findUnique: async () => ({ profileId: "p1" }) } }, { KYC_MODE: "auto" });
     await expect(s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "kyc/p1/photo.jpg" })).rejects.toThrow(/already registered/i);
   });
@@ -93,7 +96,8 @@ describe("RiderService.becomeRider", () => {
   describe("attach-time photo verification (C1 / E8)", () => {
     const livePrisma = () => ({
       rider: { findUnique: async () => null, create: vi.fn(async () => ({})), updateMany: vi.fn(async () => ({ count: 1 })) },
-      profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
+      profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
+      auditLog: { create: vi.fn(async () => ({})), count: async () => 0 },
       $transaction: vi.fn(async (ops: unknown[]) => ops),
     });
     const withVerifier = (prisma: Record<string, unknown>, verify: (key: string, kind: string) => Promise<unknown>, vendor: KycVendor) =>
@@ -109,7 +113,7 @@ describe("RiderService.becomeRider", () => {
       expect(order).toEqual(["verify:kyc/p1/photo.jpg:kyc", "submit"]);
     });
 
-    it("a rejected photo (422) blocks onboarding: no paid vendor session, no rider row", async () => {
+    it("a rejected photo (422) blocks onboarding: no paid vendor session, no biker row", async () => {
       const submit = vi.fn();
       const prisma = livePrisma();
       const { UnprocessableEntityException } = await import("@nestjs/common");
@@ -148,7 +152,7 @@ describe("RiderService.becomeRider", () => {
     };
     const prisma = {
       rider: { findUnique: async () => null, create: async () => ({}), updateMany: async () => ({ count: 1 }) },
-      profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
+      profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
       $transaction: async () => [],
     };
     const s = svc(prisma, { KYC_MODE: "auto" }, vendor);
@@ -157,7 +161,7 @@ describe("RiderService.becomeRider", () => {
     expect(res).toEqual({ kycStatus: "pending", mode: "auto", verificationUrl: "https://verify.didit.me/sess_1" });
   });
 
-  it("stub provider in auto mode auto-verifies the rider so it can go online (QA/test)", async () => {
+  it("stub provider in auto mode auto-verifies the biker so it can go online (QA/test)", async () => {
     let created: Record<string, unknown> | undefined;
     const prisma = {
       rider: {
@@ -168,7 +172,7 @@ describe("RiderService.becomeRider", () => {
         },
         updateMany: async () => ({ count: 1 }),
       },
-      profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
+      profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
       $transaction: async (ops: unknown[]) => ops,
     };
     const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "stub" }, new StubKycVendor());
@@ -181,7 +185,7 @@ describe("RiderService.becomeRider", () => {
   // One-ID-one-account (2026-07-26): a national ID already on another LIVE account hard-blocks rider
   // onboarding — the ban-evasion second-SIM path (banned original can't self-erase, so it stays live
   // and keeps blocking). Refused BEFORE vendor.submit, so no paid Didit session is ever minted for it.
-  it("409s (id_in_use) when the national ID is already on another LIVE account — no vendor call, no rider row", async () => {
+  it("409s (id_in_use) when the national ID is already on another LIVE account — no vendor call, no biker row", async () => {
     let created = false;
     let submitted = false;
     const vendor: KycVendor = {
@@ -200,7 +204,7 @@ describe("RiderService.becomeRider", () => {
       },
       profile: {
         update: async () => ({}),
-        findUnique: async () => ({ idNumberHash: pii.hashId("63-123456-A-42") }),
+        findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: pii.hashId("63-123456-A-42") }),
         count: async (args: { where: Record<string, unknown> }) => {
           // The BLOCK count is the live one — it must exclude erased tombstones and self.
           expect(args.where).toMatchObject({
@@ -238,7 +242,7 @@ describe("RiderService.becomeRider", () => {
       },
       profile: {
         update: async () => ({}),
-        findUnique: async () => ({ idNumberHash: pii.hashId("63-123456-A-42") }),
+        findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: pii.hashId("63-123456-A-42") }),
         // Live count (has the erased-exclusion NOT clause) → 0; reviewer-flag count (all accounts,
         // incl. tombstones) → 1. DS15-02b keeps the hash on erasure precisely for this signal.
         count: async (args: { where: Record<string, unknown> }) => ("NOT" in args.where ? 0 : 1),
@@ -256,13 +260,13 @@ describe("RiderService.becomeRider", () => {
   // D-75 (owner 2026-10-03): new riders no longer type their national ID before the ID check — the
   // number is confirmed from the check afterwards (applyKycResult adopts the vendor-verified number and
   // dedupes it there). Before D-75 this 400'd "Add your national ID to your profile…".
-  it("D-75: registers a rider with NO national ID on the profile — the vendor session opens, nothing to dedupe yet", async () => {
+  it("D-75: registers a biker with NO national ID on the profile — the vendor session opens, nothing to dedupe yet", async () => {
     const create = vi.fn(async () => ({}));
     const count = vi.fn(async () => 0);
     const submit = vi.fn(async () => ({ ref: "sess_1", status: "pending" as const, url: "https://verify.didit.me/sess_1", token: "tok" }));
     const prisma = {
       rider: { findUnique: async () => null, create, updateMany: async () => ({ count: 1 }) },
-      profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: null }), count },
+      profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: null }), count },
       $transaction: async (ops: unknown[]) => ops,
     };
     const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, { submit } as unknown as KycVendor);
@@ -280,7 +284,7 @@ describe("RiderService.becomeRider", () => {
     const submit = vi.fn();
     const prisma = {
       rider: { findUnique: async () => null, create: vi.fn() },
-      profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: pii.hashId("63-123456-A-42") }), count: async () => 1 },
+      profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: pii.hashId("63-123456-A-42") }), count: async () => 1 },
       $transaction: async (ops: unknown[]) => ops,
     };
     const s = svc(prisma, { KYC_MODE: "auto" }, { submit } as unknown as KycVendor);
@@ -307,7 +311,7 @@ describe("RiderService.becomeRider", () => {
     };
     const prisma = {
       rider: { findUnique: async () => null, create: async () => ({}), updateMany: async () => ({ count: 1 }) },
-      profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
+      profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
       $transaction: async () => [],
     };
     const s = svc(prisma, { KYC_MODE: "manual" }, vendor);
@@ -315,11 +319,11 @@ describe("RiderService.becomeRider", () => {
     expect(res).toEqual({ kycStatus: "pending", mode: "manual", verificationUrl: undefined });
   });
 
-  it("registers a rider with no bike plate (D-55: the plate is added later) — stores null", async () => {
+  it("registers a biker with no bike plate (D-55: the plate is added later) — stores null", async () => {
     const create = vi.fn(async () => ({}));
     const prisma = {
       rider: { findUnique: async () => null, create },
-      profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
+      profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
       $transaction: async (arg: unknown) => (Array.isArray(arg) ? arg : []),
     };
     const s = svc(prisma, { KYC_MODE: "manual" });
@@ -337,17 +341,17 @@ describe("RiderService.becomeRider", () => {
     });
     const prisma = {
       rider: { findUnique: async () => null, create: async () => ({}), updateMany: async () => ({ count: 1 }) },
-      profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
+      profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
       // The create transaction loses the race and throws a P2002.
       $transaction: async () => { throw p2002; },
     };
     const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "stub" }, new StubKycVendor());
     await expect(s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "kyc/p1/photo.jpg" })).rejects.toThrow(
-      /already a rider/i,
+      /already a biker/i,
     );
   });
 
-  it("surfaces a vendor outage as a 503 and leaves no rider row (KYC-R26-10: the claim is handed back)", async () => {
+  it("surfaces a vendor outage as a 503 and leaves no biker row (KYC-R26-10: the claim is handed back)", async () => {
     let created = false;
     const roles: unknown[] = [];
     const deleteMany = vi.fn(async () => ({ count: 1 }));
@@ -356,10 +360,11 @@ describe("RiderService.becomeRider", () => {
       rider: { findUnique: async () => null, create: async () => { created = true; return {}; }, deleteMany },
       profile: {
         update: async (a: { data: { role: unknown } }) => (roles.push(a.data.role), {}),
-        findUnique: async () => ({ idNumberHash: pii.hashId("63-1-A"), role: "customer" }),
+        findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: pii.hashId("63-1-A"), role: "customer" }),
         count: async () => 0,
       },
-      $transaction: async (ops: unknown[]) => ops,
+      // The claim is an array transaction; its release is one callback transaction (delete + role restore).
+      $transaction: async (ops: unknown): Promise<unknown> => (typeof ops === "function" ? ops(prisma) : ops),
     };
     const s = svc(prisma, { KYC_MODE: "auto" }, vendor);
     await expect(s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "kyc/p1/photo.jpg" })).rejects.toThrow(
@@ -375,7 +380,7 @@ describe("RiderService.becomeRider", () => {
   // KYC-R26-10: a double submit used to buy TWO paid Didit sessions — both calls passed the findUnique
   // pre-check and both minted before the loser's create hit the primary key. The row is now the claim, taken
   // before vendor.submit, so the loser never reaches the vendor.
-  describe("KYC-R26-10: one paid session per rider, however many submits race", () => {
+  describe("KYC-R26-10: one paid session per biker, however many submits race", () => {
     const racePrisma = (liveRow: Record<string, unknown> | null) => {
       const p2002 = new Prisma.PrismaClientKnownRequestError("Unique constraint failed", { code: "P2002", clientVersion: "test" });
       let claimed = false;
@@ -387,7 +392,7 @@ describe("RiderService.becomeRider", () => {
           create: async () => ({}),
           updateMany: vi.fn(async (a: { data: Record<string, unknown> }) => ((stored = { kycStatus: "pending", ...a.data }), { count: 1 })),
         },
-        profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: null, role: "customer" }), count: async () => 0 },
+        profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: null, role: "customer" }), count: async () => 0 },
         $transaction: vi.fn(async (ops: unknown[]) => {
           if (claimed) throw p2002;
           claimed = true;
@@ -419,7 +424,7 @@ describe("RiderService.becomeRider", () => {
       const live = { kycStatus: "pending", kycRef: "sess_1", kycSessionToken: "tok_1", kycSessionUrl: "https://verify.didit.me/sess_1" };
       const prisma = {
         rider: { findUnique: async () => ({ profileId: "p1", ...live }), create: vi.fn() },
-        profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: null }), count: async () => 0 },
+        profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: null }), count: async () => 0 },
       };
       const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, { submit } as unknown as KycVendor);
       expect(await s.becomeRider("p1", {})).toEqual({ kycStatus: "pending", mode: "auto", verificationUrl: live.kycSessionUrl, sessionToken: "tok_1" });
@@ -533,7 +538,7 @@ describe("RiderService.completeProfile (A-04 duplicate-ID signal)", () => {
   // Fix 2: the KYC-freeze bypass. PATCH /auth/me already blocks a verified rider from swapping their
   // national ID; this sibling route (PATCH /riders/profile → completeProfile) previously had NO guard,
   // so a banned rider could launder in a different ID through it. Both routes must enforce it identically.
-  it("blocks a verified rider from changing their frozen national ID (anti-ban-evasion)", async () => {
+  it("blocks a verified biker from changing their frozen national ID (anti-ban-evasion)", async () => {
     let wrote = false;
     const prisma = {
       profile: {
@@ -552,7 +557,7 @@ describe("RiderService.completeProfile (A-04 duplicate-ID signal)", () => {
     expect(wrote).toBe(false);
   });
 
-  it("allows a verified rider to re-submit the SAME ID (idempotent, not a change)", async () => {
+  it("allows a verified biker to re-submit the SAME ID (idempotent, not a change)", async () => {
     let wrote = false;
     let liveCounted = false;
     const prisma = {
@@ -599,9 +604,9 @@ describe("RiderService.completeProfile (A-04 duplicate-ID signal)", () => {
 });
 
 describe("RiderService.retryKyc", () => {
-  it("404s when the caller is not a rider", async () => {
+  it("404s when the caller is not a biker", async () => {
     const s = svc({ rider: { findUnique: async () => null } }, { KYC_MODE: "auto" });
-    await expect(s.retryKyc("p1")).rejects.toThrow(/not a rider/i);
+    await expect(s.retryKyc("p1")).rejects.toThrow(/not a biker/i);
   });
 
   it("409s when already verified", async () => {
@@ -609,29 +614,137 @@ describe("RiderService.retryKyc", () => {
     await expect(s.retryKyc("p1")).rejects.toThrow(/already verified/i);
   });
 
-  it("mints a fresh session and resets a failed rider to pending", async () => {
-    let data: Record<string, unknown> | undefined;
+  it("mints a fresh session and resets a failed biker to pending", async () => {
     const vendor: KycVendor = {
       submit: async () => ({ ref: "sess_new", status: "pending", url: "https://verify.didit.me/sess_new" }),
     };
-    let where: Record<string, unknown> | undefined;
+    const calls: Array<{ where: Record<string, unknown>; data: Record<string, unknown> }> = [];
     const prisma = {
       rider: {
-        findUnique: async () => ({ kycStatus: "failed", kycAttempts: 1 }),
+        findUnique: async () => ({ kycStatus: "failed", kycAttempts: 1, kycRef: "sess_old" }),
         // Fix 1: the reset is now a CAS updateMany guarded on the observed (kycStatus, kycAttempts).
         updateMany: async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
-          where = args.where;
-          data = args.data;
+          calls.push(args);
           return { count: 1 };
         },
       },
     };
     const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, vendor);
     expect(await s.retryKyc("p1")).toEqual({ kycStatus: "pending", mode: "auto", verificationUrl: "https://verify.didit.me/sess_new" });
-    // New ref, reset to pending, and kycResolvedAt cleared so the fresh webhook resolves it.
-    expect(data).toMatchObject({ kycStatus: "pending", idVerified: false, kycRef: "sess_new", kycResolvedAt: null });
-    // Guarded on exactly what was read so a concurrent webhook/admin decision can't be clobbered.
-    expect(where).toMatchObject({ profileId: "p1", kycStatus: "failed", kycAttempts: 1 });
+    expect(calls).toHaveLength(2);
+    // The claim, BEFORE the paid call: guarded on exactly what was read, it swaps the old ref for a mint-claim marker.
+    const [claim, rotation] = calls;
+    expect(claim!.where).toEqual({ profileId: "p1", kycStatus: "failed", kycAttempts: 1, kycRef: "sess_old" });
+    expect(claim!.data).toMatchObject({ kycStatus: "pending", kycSessionToken: null, kycSessionUrl: null });
+    expect(String(claim!.data.kycRef)).toMatch(/^claim:\d+:/);
+    // The rotation: new ref, reset to pending, and kycResolvedAt cleared so the fresh webhook resolves it —
+    // CAS on the claim it took, so nothing that replaced the claim meanwhile is overwritten.
+    expect(rotation!.data).toMatchObject({ kycStatus: "pending", idVerified: false, kycRef: "sess_new", kycResolvedAt: null });
+    expect(rotation!.where).toEqual({ profileId: "p1", kycStatus: "pending", kycAttempts: 1, kycRef: claim!.data.kycRef });
+  });
+
+  describe("claims before paying (double tap after a decline buys one session)", () => {
+    /** An in-memory rider row whose updateMany honours its `where` exactly like Postgres would. */
+    const rowPrisma = (initial: Record<string, unknown>) => {
+      const row: Record<string, unknown> = { kycStatus: "failed", kycAttempts: 1, kycRef: "sess_old", kycSessionToken: null, kycSessionUrl: null, updatedAt: new Date(0), ...initial };
+      const prisma = {
+        rider: {
+          findUnique: async () => ({ ...row }),
+          updateMany: async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+            const { profileId: _p, ...w } = where;
+            if (!Object.entries(w).every(([k, v]) => row[k] === v)) return { count: 0 };
+            Object.assign(row, data);
+            return { count: 1 };
+          },
+        },
+      };
+      return { row, prisma };
+    };
+
+    it("two concurrent retries after a decline: one vendor session, the loser 409s kyc_in_progress", async () => {
+      const { row, prisma } = rowPrisma({});
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      const submit = vi.fn(async () => (await gate, { ref: "sess_new", status: "pending" as const, url: "u", token: "t" }));
+      const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, { submit });
+      const first = s.retryKyc("p1");
+      await new Promise((r) => setTimeout(r, 0));
+      // The first tap holds the claim while its vendor call is out.
+      expect(String(row.kycRef)).toMatch(/^claim:/);
+      await expect(s.retryKyc("p1")).rejects.toMatchObject({ response: { reason: "kyc_in_progress" } });
+      release();
+      await expect(first).resolves.toMatchObject({ kycStatus: "pending", verificationUrl: "u" });
+      expect(submit).toHaveBeenCalledTimes(1);
+      expect(row.kycRef).toBe("sess_new");
+    });
+
+    it("a vendor failure puts the row back as it was (declined, old ref) — the next tap claims afresh", async () => {
+      const { row, prisma } = rowPrisma({});
+      const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, { submit: async () => { throw new Error("didit 503"); } });
+      await expect(s.retryKyc("p1")).rejects.toThrow(/couldn't restart id verification/i);
+      expect(row).toMatchObject({ kycStatus: "failed", kycRef: "sess_old" });
+    });
+
+    it("a stale claim (a crashed request) does not strand the biker: it is claimed afresh", async () => {
+      const { row, prisma } = rowPrisma({ kycStatus: "pending", kycRef: `claim:${Date.now() - 10 * 60_000}:x` });
+      const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, { submit: async () => ({ ref: "sess_new", status: "pending" as const, url: "u" }) });
+      await expect(s.retryKyc("p1")).resolves.toMatchObject({ verificationUrl: "u" });
+      expect(row.kycRef).toBe("sess_new");
+    });
+
+    it("KYC item 2: become hasn't attached its session yet (kycRef null, row fresh) → 409 kyc_in_progress, no second session", async () => {
+      const submit = vi.fn();
+      const { prisma } = rowPrisma({ kycStatus: "pending", kycRef: null, updatedAt: new Date() });
+      await expect(svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, { submit }).retryKyc("p1")).rejects.toMatchObject({
+        response: { reason: "kyc_in_progress" },
+      });
+      expect(submit).not.toHaveBeenCalled();
+    });
+
+    it("…but a session-less row older than the claim window (a become whose release failed) is minted for", async () => {
+      const { row, prisma } = rowPrisma({ kycStatus: "pending", kycRef: null, updatedAt: new Date(Date.now() - 10 * 60_000) });
+      const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, { submit: async () => ({ ref: "sess_new", status: "pending" as const, url: "u" }) });
+      await expect(s.retryKyc("p1")).resolves.toMatchObject({ verificationUrl: "u" });
+      expect(row.kycRef).toBe("sess_new");
+    });
+
+    it("the rotation CAS includes the kycRef: a session another request rotated in meanwhile is never overwritten", async () => {
+      const { row, prisma } = rowPrisma({});
+      const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, {
+        submit: async () => {
+          // While this call is out, another request replaced the claim with its own session (same status/attempts).
+          row.kycRef = "sess_theirs";
+          return { ref: "sess_mine", status: "pending" as const, url: "u" };
+        },
+      });
+      await expect(s.retryKyc("p1")).rejects.toThrow(/just changed/i);
+      expect(row.kycRef).toBe("sess_theirs");
+    });
+
+    it("item 14 + item 4: each paid mint writes rider.kyc_session_minted (never the token); 5 in the hour refuse the 6th with a 429", async () => {
+      const { prisma } = rowPrisma({});
+      const created: unknown[] = [];
+      let minted = 0;
+      Object.assign(prisma, {
+        auditLog: {
+          create: async (a: { data: unknown }) => (created.push(a.data), {}),
+          count: async (a: { where: { action?: string } }) => (a.where.action === "rider.kyc_session_minted" ? minted : 0),
+        },
+      });
+      const submit = vi.fn(async () => ({ ref: "sess_new", status: "pending" as const, url: "u", token: "SECRET_TOKEN" }));
+      const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, { submit });
+      await s.retryKyc("p1");
+      expect(created).toEqual([expect.objectContaining({ action: "rider.kyc_session_minted", target: "p1", reasonCode: "retry" })]);
+      expect(JSON.stringify(created)).not.toContain("SECRET_TOKEN");
+      minted = 5;
+      const { prisma: again } = rowPrisma({});
+      Object.assign(again, { auditLog: (prisma as unknown as { auditLog: unknown }).auditLog });
+      await expect(svc(again, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, { submit }).retryKyc("p1")).rejects.toMatchObject({
+        status: 429,
+        response: { reason: "kyc_mint_limit" },
+      });
+      expect(submit).toHaveBeenCalledTimes(1);
+    });
   });
 
   // ── P0-2 / D7: resume a live session instead of minting a paid one ──────────────────────────────
@@ -666,7 +779,7 @@ describe("RiderService.retryKyc", () => {
     expect(res.sessionToken).toBe("tok_live");
   });
 
-  it("mints when a pending rider has a token but NO url — never returns a response the app can't act on", async () => {
+  it("mints when a pending biker has a token but NO url — never returns a response the app can't act on", async () => {
     let submitCalls = 0;
     const vendor: KycVendor = {
       submit: async () => {
@@ -687,7 +800,7 @@ describe("RiderService.retryKyc", () => {
     expect(submitCalls).toBe(1);
   });
 
-  it("resumes a pending rider's live session — hands back the stored token, mints NOTHING", async () => {
+  it("resumes a pending biker's live session — hands back the stored token, mints NOTHING", async () => {
     let submitCalls = 0;
     const vendor: KycVendor = {
       submit: async () => {
@@ -947,7 +1060,7 @@ describe("RiderService.retryKyc", () => {
   // The claim CASes on the snapshot retryKyc read, for the same reason the rotation does: findUnique
   // takes no row lock, so a terminal webhook can land in between. Without it that race wins the claim
   // and pays for a session the rotation then refuses to store.
-  it("loses the claim when a webhook resolved the rider between the read and the claim", async () => {
+  it("loses the claim when a webhook resolved the biker between the read and the claim", async () => {
     let submitCalls = 0;
     const vendor: KycVendor = {
       submit: async () => {
@@ -1006,7 +1119,7 @@ describe("RiderService.retryKyc", () => {
     expect(claims).toBe(0);
   });
 
-  it("mints when a pending rider has a ref but NO token (older session, pre-token or vendor omitted it)", async () => {
+  it("mints when a pending biker has a ref but NO token (older session, pre-token or vendor omitted it)", async () => {
     let submitCalls = 0;
     const vendor: KycVendor = {
       submit: async () => {
@@ -1030,7 +1143,7 @@ describe("RiderService.retryKyc", () => {
     expect(data).toMatchObject({ kycRef: "sess_new", kycSessionToken: "tok_new" });
   });
 
-  it("does NOT resume a failed rider — a decided session cannot be reopened, so it mints", async () => {
+  it("does NOT resume a failed biker — a decided session cannot be reopened, so it mints", async () => {
     let submitCalls = 0;
     const vendor: KycVendor = {
       submit: async () => {
@@ -1115,12 +1228,21 @@ describe("RiderService.retryKyc", () => {
     const prisma = {
       rider: {
         findUnique: async () => ({ kycStatus: "failed", kycAttempts: 1 }),
-        // A concurrent webhook/admin decision moved the row between the read and this write → 0 rows.
-        updateMany: async () => ({ count: 0 }),
+        // The claim wins; then a concurrent webhook/admin decision moved the row before the rotation → 0 rows.
+        updateMany: vi.fn().mockResolvedValueOnce({ count: 1 }).mockResolvedValue({ count: 0 }),
       },
     };
     const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, vendor);
     await expect(s.retryKyc("p1")).rejects.toThrow(/just changed|refresh and try again/i);
+  });
+
+  it("409s kyc_in_progress, before paying, when the row moved before the claim (CAS claims zero rows)", async () => {
+    const submit = vi.fn();
+    const prisma = { rider: { findUnique: async () => ({ kycStatus: "failed", kycAttempts: 1 }), updateMany: async () => ({ count: 0 }) } };
+    await expect(svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, { submit }).retryKyc("p1")).rejects.toMatchObject({
+      response: { reason: "kyc_in_progress" },
+    });
+    expect(submit).not.toHaveBeenCalled();
   });
 
   it("returns 503 when the vendor is down on retry", async () => {
@@ -1130,7 +1252,7 @@ describe("RiderService.retryKyc", () => {
       },
     };
     const s = svc(
-      { rider: { findUnique: async () => ({ kycStatus: "failed" }) } },
+      { rider: { findUnique: async () => ({ kycStatus: "failed" }), updateMany: async () => ({ count: 1 }) } },
       { KYC_MODE: "auto", KYC_PROVIDER: "didit" },
       vendor,
     );
@@ -1165,7 +1287,7 @@ describe("RiderService.retryKyc", () => {
     expect(await s.retryKyc("p1")).toEqual({ kycStatus: "pending", mode: "auto", verificationUrl: "https://verify.didit.me/sess_2" });
   });
 
-  it("leaves a manual-mode rider pending without calling the vendor, and tells the client it's manual mode", async () => {
+  it("leaves a manual-mode biker pending without calling the vendor, and tells the client it's manual mode", async () => {
     const vendor: KycVendor = {
       submit: async () => {
         throw new Error("vendor must not be called in manual mode");
@@ -1185,7 +1307,7 @@ describe("RiderService.retryKyc", () => {
 
   // E2E 2026-10-05 FS-2: production runs KYC_MODE=manual. A declined rider's retry answered `pending` but
   // wrote nothing, so the row stayed `failed` — outside the admin queue (`listRiders("pending")`).
-  it.each(["failed", "expired"] as const)("manual mode: a retry from %s really puts the rider back in the pending queue (CAS on the observed state)", async (from) => {
+  it.each(["failed", "expired"] as const)("manual mode: a retry from %s really puts the biker back in the pending queue (CAS on the observed state)", async (from) => {
     const writes: Array<{ where: unknown; data: unknown }> = [];
     const prisma = {
       rider: {
@@ -1210,12 +1332,12 @@ describe("RiderService.retryKyc", () => {
     expect(writes[0].data).not.toHaveProperty("kycAttempts");
   });
 
-  it("manual mode: an already-pending rider's retry writes nothing", async () => {
+  it("manual mode: an already-pending biker's retry writes nothing", async () => {
     const prisma = {
       rider: {
         findUnique: async () => ({ kycStatus: "pending", kycAttempts: 0 }),
         updateMany: async () => {
-          throw new Error("a pending rider is already in the queue — nothing to write");
+          throw new Error("a pending biker is already in the queue — nothing to write");
         },
       },
     };
@@ -1239,17 +1361,17 @@ describe("RiderService.setOnline", () => {
   // E2E 2026-10-05 FS-7: going online needs a position now, so the eligible paths send one (central Harare).
   const HARARE = { lat: -17.83, lng: 31.05 };
 
-  it("403s when the caller is not a rider", async () => {
+  it("403s when the caller is not a biker", async () => {
     const s = svc({ rider: { findUnique: async () => null } }, {});
-    await expect(s.setOnline("p1", true)).rejects.toThrow(/not a rider/i);
+    await expect(s.setOnline("p1", true)).rejects.toThrow(/not a biker/i);
   });
 
-  it("403s when an unverified rider tries to go online", async () => {
+  it("403s when an unverified biker tries to go online", async () => {
     const s = svc({ rider: { findUnique: async () => ({ kycStatus: "pending" }) } }, {});
     await expect(s.setOnline("p1", true)).rejects.toThrow(/not verified/i);
   });
 
-  it("lets a verified rider go online, stamping the heartbeat with DB now() under the standing CAS", async () => {
+  it("lets a verified biker go online, stamping the heartbeat with DB now() under the standing CAS", async () => {
     let sql = "";
     const prisma = {
       rider: {
@@ -1324,17 +1446,17 @@ describe("RiderService.setOnline", () => {
     } as unknown as import("../notifications/notifications.service").NotificationsService;
     const s = new RiderService(prisma as unknown as PrismaService, {} as Env, new StubKycVendor(), pii, tracking, gatewayStub, notifications);
 
-    // Inside the Harare corridor so the online gate passes.
+    // Inside Zimbabwe so the online gate passes.
     expect(await s.setOnline("p1", true, { lat: -17.83, lng: 31.05 })).toEqual({ online: true });
     // The drain is fire-and-forget — let the microtask settle, then assert it pinged the waiters.
     await new Promise((r) => setTimeout(r, 0));
-    expect(drainedAt).toEqual({ lat: -17.83, lng: 31.05, radius: 5000 });
+    expect(drainedAt).toEqual({ lat: -17.83, lng: 31.05, radius: NATIONWIDE_REACH_M });
     expect(pushed).toEqual(["cust-1", "cust-2"]);
     // F-18: delivered waiters are cleared from the list; a miss would be left queued.
     expect(cleared).toEqual(["cust-1", "cust-2"]);
   });
 
-  it("leaves an UNDELIVERED notify-me waiter queued (not cleared) so the next rider re-pings — F-18 at-least-once", async () => {
+  it("leaves an UNDELIVERED notify-me waiter queued (not cleared) so the next biker re-pings — F-18 at-least-once", async () => {
     const prisma = {
       rider: {
         findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false }),
@@ -1397,12 +1519,12 @@ describe("RiderService.setOnline", () => {
     expect(drained).toBe(false);
   });
 
-  it("an ineligible rider without a location still sees their standing refusal, not location_required", async () => {
+  it("an ineligible biker without a location still sees their standing refusal, not location_required", async () => {
     const s = svc({ rider: { findUnique: async () => ({ kycStatus: "verified", accountStatus: "suspended", onHold: false, cooldownUntil: null }) } }, {});
     await expect(s.setOnline("p1", true)).rejects.toMatchObject({ response: { reason: "suspended" } });
   });
 
-  it("lets any rider go offline regardless of verification", async () => {
+  it("lets any biker go offline regardless of verification", async () => {
     const prisma = {
       rider: { findUnique: async () => ({ kycStatus: "pending" }), update: async () => ({}) },
     };
@@ -1546,7 +1668,7 @@ describe("RiderService.heartbeat (wave-2 W3 — the lightweight 20s beat)", () =
     expect(findUnique).not.toHaveBeenCalled();
   });
 
-  it("REGRESSION (standing enforcement): a rider demoted mid-shift cannot keep beating — the miss re-derives the precise refusal", async () => {
+  it("REGRESSION (standing enforcement): a biker demoted mid-shift cannot keep beating — the miss re-derives the precise refusal", async () => {
     let threw: unknown;
     const s = svc(
       {
@@ -1563,7 +1685,7 @@ describe("RiderService.heartbeat (wave-2 W3 — the lightweight 20s beat)", () =
     expect((threw as { getResponse: () => { reason: string } }).getResponse().reason).toBe("on_hold");
   });
 
-  it("403s generically when standing is clean but the rider simply isn't online (toggled off elsewhere)", async () => {
+  it("403s generically when standing is clean but the biker simply isn't online (toggled off elsewhere)", async () => {
     const s = svc(
       {
         rider: { findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null }) },
@@ -1574,9 +1696,9 @@ describe("RiderService.heartbeat (wave-2 W3 — the lightweight 20s beat)", () =
     await expect(s.heartbeat("p1")).rejects.toThrow(/go online/i);
   });
 
-  it("403s 'not a rider' when the profile has no rider row at all", async () => {
+  it("403s 'not a biker' when the profile has no biker row at all", async () => {
     const s = svc({ rider: { findUnique: async () => null }, $executeRaw: async () => 0 }, {});
-    await expect(s.heartbeat("p1")).rejects.toThrow(/not a rider/i);
+    await expect(s.heartbeat("p1")).rejects.toThrow(/not a biker/i);
   });
 
   it("persists the beat's position via recordFix, and skips the waitlist GEOSEARCH when the O(1) probe says empty", async () => {
@@ -1645,73 +1767,40 @@ describe("onlineRefusalReason (pure online-gate, Q2)", () => {
   it("treats an elapsed cooldown as passed", () => {
     expect(onlineRefusalReason({ ...base, cooldownUntil: new Date(Date.now() - 60_000) })).toBeNull();
   });
-
-  it("blocks a below-floor rider ONLY when commission is active (never during the 0% launch)", () => {
-    // Commission off (rate 0 → commissionActive false): a $0 balance never gates — the pilot is untouched.
-    expect(onlineRefusalReason({ ...base, commissionActive: false, commissionBalance: 0 })).toBeNull();
-    // Commission on + balance below the $2 floor → the top-up gate fires.
-    expect(onlineRefusalReason({ ...base, commissionActive: true, commissionBalance: 1.5 })).toBe("commission_low_balance");
-    // Commission on + balance at/above the floor → passes.
-    expect(onlineRefusalReason({ ...base, commissionActive: true, commissionBalance: 2 })).toBeNull();
-    // Commission on but this call site didn't load the balance (undefined) → not gated (standing-only).
-    expect(onlineRefusalReason({ ...base, commissionActive: true })).toBeNull();
-  });
-
-  it("ranks the commission floor BELOW the standing reasons", () => {
-    // A suspended rider who is also below the floor is reported as suspended, not commission_low_balance.
-    expect(
-      onlineRefusalReason({ ...base, accountStatus: "suspended", commissionActive: true, commissionBalance: 0 }),
-    ).toBe("suspended");
-  });
 });
 
-describe("onlineRefusalReason — D-70 commission-free first jobs", () => {
+describe("onlineRefusalReason — no minimum wallet balance (owner 2026-10-12)", () => {
   const base = { kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null };
-  it("a new rider with free jobs left is NOT top-up gated at a $0 balance, even with commission live", () => {
-    expect(onlineRefusalReason({ ...base, commissionActive: true, commissionBalance: 0, freeJobsLeft: COMMISSION.freeFirstJobs })).toBeNull();
-    expect(onlineRefusalReason({ ...base, commissionActive: true, commissionBalance: 0, freeJobsLeft: 1 })).toBeNull();
+  it("the wallet balance is not a go-online condition — the commission check is per job", () => {
+    expect(onlineRefusalReason(base)).toBeNull();
   });
-  it("the gate returns once the free jobs are used up", () => {
-    expect(onlineRefusalReason({ ...base, commissionActive: true, commissionBalance: 0, freeJobsLeft: 0 })).toBe("commission_low_balance");
-    expect(onlineRefusalReason({ ...base, commissionActive: true, commissionBalance: 2, freeJobsLeft: 0 })).toBeNull();
-  });
-  it("free jobs never waive a STANDING reason", () => {
-    expect(onlineRefusalReason({ ...base, accountStatus: "suspended", commissionActive: true, commissionBalance: 0, freeJobsLeft: 5 })).toBe("suspended");
-    expect(onlineRefusalReason({ ...base, kycStatus: "pending", freeJobsLeft: 5 })).toBe("kyc");
-  });
-  it("freeJobsLeft derives from completed jobs: 0 trips → 5, 4 → 1, 5+ → 0 (cancels never count — tripsCount only moves on completion)", () => {
-    expect(freeJobsLeft(0)).toBe(5);
-    expect(freeJobsLeft(null)).toBe(5);
-    expect(freeJobsLeft(4)).toBe(1);
-    expect(freeJobsLeft(5)).toBe(0);
+  it("freeJobsLeft derives from completed jobs: 0 trips → 10, 9 → 1, 10+ → 0 (cancels never count — tripsCount only moves on completion)", () => {
+    expect(COMMISSION.freeFirstJobs).toBe(10);
+    expect(freeJobsLeft(0)).toBe(10);
+    expect(freeJobsLeft(null)).toBe(10);
+    expect(freeJobsLeft(9)).toBe(1);
+    expect(freeJobsLeft(10)).toBe(0);
     expect(freeJobsLeft(312)).toBe(0);
   });
 });
 
-describe("RiderService.setOnline — D-70 commission-free first jobs", () => {
+describe("RiderService.setOnline — no minimum wallet balance", () => {
   const HARARE = { lat: -17.83, lng: 31.05 };
   function onlineSvc(tripsCount: number, balance: number) {
     const prisma = {
       rider: { findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null, tripsCount }) },
       commissionAccount: { findUnique: async () => ({ balance }) },
+      $executeRaw: async () => 1,
     };
     return svc(prisma, { COMMISSION_RATE_PCT: 10 } as Partial<Env>);
   }
-  it("a newly verified rider (0 jobs, $0 balance) goes online with commission live", async () => {
+  it("a biker past their free jobs goes online at a $0 balance, with commission live", async () => {
+    expect(await onlineSvc(80, 0).setOnline("p1", true, HARARE)).toEqual({ online: true });
+  });
+  it("a newly verified biker (0 jobs, $0 balance) goes online", async () => {
     expect(await onlineSvc(0, 0).setOnline("p1", true, HARARE)).toEqual({ online: true });
   });
-  it("a rider on their 5th free job (4 completed) still goes online at $0", async () => {
-    expect(await onlineSvc(4, 0).setOnline("p1", true, HARARE)).toEqual({ online: true });
-  });
-  it("after the 5th completed job a $0 rider meets the top-up gate again", async () => {
-    await expect(onlineSvc(5, 0).setOnline("p1", true, HARARE)).rejects.toMatchObject({ response: { reason: "commission_low_balance" } });
-  });
-  it("an existing rider past the allowance is gated exactly as before", async () => {
-    await expect(onlineSvc(80, 1.5).setOnline("p1", true, HARARE)).rejects.toMatchObject({ response: { reason: "commission_low_balance" } });
-    expect(await onlineSvc(80, 2).setOnline("p1", true, HARARE)).toEqual({ online: true });
-  });
 });
-
 describe("RiderService.applyKycResult", () => {
   // The rider's account already carries a national ID — every rider onboarded before D-75 does (it was
   // required at become). An account with NONE on file takes the D-75 path (adopt / hold), tested below.
@@ -1793,7 +1882,7 @@ describe("RiderService.applyKycResult", () => {
     expect(evicted).toBe("p1");
   });
 
-  it("DS17-03: an `expired` webhook does NOT reset kycAttempts when the rider is already locked (kycAttempts >= 2)", async () => {
+  it("DS17-03: an `expired` webhook does NOT reset kycAttempts when the biker is already locked (kycAttempts >= 2)", async () => {
     // Race: rider declined twice by an admin (kycAttempts=2 → locked, retryKyc refuses a 3rd attempt). A
     // stale vendor session then times out and fires `expired` AFTER the admin's second decline, whose
     // monotonic guard matches. The automated reset must NOT wipe the admin-established two-decline lock —
@@ -1959,7 +2048,7 @@ describe("RiderService.applyKycResult", () => {
     expect(audit).toMatchObject({ actor: "system:kyc-webhook", action: "rider.kyc_decline", target: "p1", reasonCode: "score_below_threshold" });
   });
 
-  it("DOC-16-05: a `verified` webhook for a duplicateIdFlag rider does NOT auto-verify — declined `duplicate` (KYC-R26-12)", async () => {
+  it("DOC-16-05: a `verified` webhook for a duplicateIdFlag biker does NOT auto-verify — declined `duplicate` (KYC-R26-12)", async () => {
     let data: Record<string, unknown> | undefined;
     let audit: Record<string, unknown> | undefined;
     const prisma = {
@@ -1969,9 +2058,11 @@ describe("RiderService.applyKycResult", () => {
           return { count: 1 };
         },
         // Same findFirst mock answers both the pre-flag read and the post-update audit-target read —
-        // duplicateIdFlag:true refuses the verify.
+        // duplicateIdFlag:true refuses the verify — while the other account holding the ID is LIVE.
         findFirst: async () => ({ profileId: "p1", duplicateIdFlag: true, ...ON_FILE }),
       },
+      // The live re-count under the row lock: the colliding account is still live.
+      profile: { count: async () => 1 },
       auditLog: { create: async (args: { data: Record<string, unknown> }) => { audit = args.data; return {}; } },
     };
     const notifyProfiles = vi.fn(async () => {});
@@ -1998,7 +2089,57 @@ describe("RiderService.applyKycResult", () => {
     expect(evictRiderFromSupply).toHaveBeenCalledWith("p1");
   });
 
-  it("DOC-16-05: a `verified` webhook for a NON-flagged rider still auto-verifies as before", async () => {
+  // Owner 2026-10-12 ("let them through"): duplicateIdFlag was set at onboarding by ANY other account holding
+  // the ID, erased tombstones included, so every returning user was auto-declined `duplicate`. Only a LIVE
+  // collision declines now; a tombstone-only one verifies, audit-flagged verified_id_returning.
+  it("returning user: a flagged biker whose ID is on an ERASED account only verifies, audit-flagged verified_id_returning", async () => {
+    let data: Record<string, unknown> | undefined;
+    let audit: Record<string, unknown> | undefined;
+    const counted: unknown[] = [];
+    const full: Record<string, unknown> = {
+      rider: {
+        updateMany: async (args: { data: Record<string, unknown> }) => ((data = args.data), { count: 1 }),
+        findFirst: async () => ({ profileId: "p1", duplicateIdFlag: true, ...ON_FILE }),
+      },
+      // The live re-count leaves tombstones out — and finds nothing.
+      profile: { count: async (a: unknown) => (counted.push(a), 0) },
+      auditLog: { create: async (args: { data: Record<string, unknown> }) => ((audit = args.data), {}) },
+      $executeRaw: async () => 1,
+    };
+    full.$transaction = async (fn: (tx: unknown) => unknown) => fn(full);
+    const notifyProfiles = vi.fn(async () => new Set(["p1"]));
+    const s = svc(full, {}, new StubKycVendor());
+    (s as unknown as { notifications: unknown }).notifications = { ...notificationsStub, notifyProfiles };
+    await s.applyKycResult("sess_1", "verified", new Date());
+    expect(data).toMatchObject({ kycStatus: "verified", idVerified: true });
+    expect(audit).toMatchObject({ action: "rider.kyc_approve", reasonCode: "verified_id_returning" });
+    expect(counted[0]).toMatchObject({ where: { NOT: { phone: { startsWith: "erased:" } } } });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(notifyProfiles).toHaveBeenCalledWith(["p1"], expect.objectContaining({ title: "You're verified" }));
+  });
+
+  it("returning user: a document number on an ERASED account only (no live one) verifies, audit-flagged verified_id_returning", async () => {
+    let data: Record<string, unknown> | undefined;
+    let audit: Record<string, unknown> | undefined;
+    const live = (w: { where: Record<string, unknown> }) => JSON.stringify(w.where).includes("erased:");
+    const full: Record<string, unknown> = {
+      rider: {
+        updateMany: async (args: { data: Record<string, unknown> }) => ((data = args.data), { count: 1 }),
+        findFirst: async () => ({ profileId: "p1", duplicateIdFlag: false, kycAttempts: 0, kycResolvedAt: null, kycStatus: "pending", profile: { idNumberHash: pii.hashId("63-123456-A-42") } }),
+        // A tombstone holds the number (any = 1); no live account does (live = 0).
+        count: async (w: { where: Record<string, unknown> }) => (live(w) ? 0 : 1),
+      },
+      profile: { count: async (w: { where: Record<string, unknown> }) => (live(w) ? 0 : 1) },
+      auditLog: { create: async (args: { data: Record<string, unknown> }) => ((audit = args.data), {}) },
+      $executeRaw: async () => 1,
+    };
+    full.$transaction = async (fn: (tx: unknown) => unknown) => fn(full);
+    await svc(full, {}, new StubKycVendor()).applyKycResult("sess_1", "verified", new Date(), null, "63-123456-A-42");
+    expect(data).toMatchObject({ kycStatus: "verified", idVerified: true });
+    expect(audit).toMatchObject({ action: "rider.kyc_approve", reasonCode: "verified_id_returning" });
+  });
+
+  it("DOC-16-05: a `verified` webhook for a NON-flagged biker still auto-verifies as before", async () => {
     let data: Record<string, unknown> | undefined;
     let audit: Record<string, unknown> | undefined;
     const prisma = {
@@ -2016,7 +2157,7 @@ describe("RiderService.applyKycResult", () => {
     expect(audit).toMatchObject({ action: "rider.kyc_approve" });
   });
 
-  it("DOC-16-05: a duplicateIdFlag rider's `failed`/`expired` webhooks are unaffected (flag only gates auto-APPROVE)", async () => {
+  it("DOC-16-05: a duplicateIdFlag biker's `failed`/`expired` webhooks are unaffected (flag only gates auto-APPROVE)", async () => {
     let data: Record<string, unknown> | undefined;
     const prisma = {
       rider: {
@@ -2045,6 +2186,7 @@ describe("RiderService.applyKycResult", () => {
       profileHits?: number;
       riderHits?: number;
       duplicateIdFlag?: boolean;
+      flagLiveHits?: number;
       kycResolvedAt?: Date | null;
       adoptCount?: number;
       onFileAfter?: string | null;
@@ -2095,7 +2237,12 @@ describe("RiderService.applyKycResult", () => {
         count: async () => over.riderHits ?? 0,
       },
       profile: {
-        count: async () => over.profileHits ?? 0,
+        // A flagged account's typed ID is re-counted against LIVE accounts (owner 2026-10-12): `flagLiveHits`
+        // (default 1 — the flag's other account is still live) answers that count; profileHits every other one.
+        count: async (a?: { where?: { idNumberHash?: string } }) =>
+          over.duplicateIdFlag && a?.where?.idNumberHash === (over.typedHash === undefined ? pii.hashId("63-123456-A-42") : over.typedHash)
+            ? (over.flagLiveHits ?? 1)
+            : (over.profileHits ?? 0),
         updateMany: async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
           rec.calls.push("adopt");
           rec.adopt.push(args);
@@ -2189,7 +2336,7 @@ describe("RiderService.applyKycResult", () => {
     expectRefusedVerify(rec.data, rec.audit, "duplicate");
   });
 
-  it("KYC-R26-14: no replacement for a flagged account, a colliding number, a verified rider or a stale decision", async () => {
+  it("KYC-R26-14: no replacement for a flagged account, a colliding number, a verified biker or a stale decision", async () => {
     const flagged = docPrisma({ duplicateIdFlag: true });
     await svc(flagged.prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63-999999-Z-99");
     expectRefusedVerify(flagged.rec.data, flagged.rec.audit, "id_mismatch");
@@ -2241,7 +2388,7 @@ describe("RiderService.applyKycResult", () => {
     expect(rec.raw[0]!.values).toEqual([pii.hashId("63-123456-A-42")]);
   });
 
-  it("D-75: a vendor number on another account's profile (live OR erased) declines the rider `duplicate` — no adoption", async () => {
+  it("D-75: a vendor number on another account's profile (live OR erased) declines the biker `duplicate` — no adoption", async () => {
     const { prisma, rec } = docPrisma({ typedHash: null, profileHits: 1 });
     await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42");
     // Declined for the collision alone — nothing on file, so it is never an id_mismatch.
@@ -2251,18 +2398,31 @@ describe("RiderService.applyKycResult", () => {
     expect(rec.data).toMatchObject({ verifiedIdHash: pii.hashId("63-123456-A-42") });
   });
 
-  it("D-75: a vendor number another RIDER already verified declines the rider `duplicate` too — no adoption", async () => {
+  it("D-75: a vendor number another BIKER already verified declines the biker `duplicate` too — no adoption", async () => {
     const { prisma, rec } = docPrisma({ typedHash: null, riderHits: 1 });
     await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42");
     expectRefusedVerify(rec.data, rec.audit, "duplicate");
     expect(rec.adopt).toHaveLength(0);
   });
 
-  it("D-75: a rider flagged duplicateIdFlag is declined `duplicate` and nothing is adopted", async () => {
-    const { prisma, rec } = docPrisma({ typedHash: null, duplicateIdFlag: true });
+  it("D-75: a biker flagged duplicateIdFlag is declined `duplicate` while the flag's other account is LIVE — nothing adopted", async () => {
+    const { prisma, rec } = docPrisma({ duplicateIdFlag: true, typedHash: pii.hashId("63123456A42") });
     await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42");
     expectRefusedVerify(rec.data, rec.audit, "duplicate");
     expect(rec.adopt).toHaveLength(0);
+  });
+
+  it("owner 2026-10-12: a flag with NO live account behind it (a tombstone, or no ID on file any more) verifies and adopts — verified_id_returning", async () => {
+    const { prisma, rec } = docPrisma({ typedHash: null, duplicateIdFlag: true });
+    await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42");
+    expect(rec.data).toMatchObject({ kycStatus: "verified", idVerified: true });
+    expect(rec.adopt).toHaveLength(1);
+    expect(rec.audit).toMatchObject({ action: "rider.kyc_approve", reasonCode: "verified_id_returning" });
+
+    const tomb = docPrisma({ duplicateIdFlag: true, flagLiveHits: 0, typedHash: pii.hashId("63123456A42") });
+    await svc(tomb.prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42");
+    expect(tomb.rec.data).toMatchObject({ kycStatus: "verified", idVerified: true });
+    expect(tomb.rec.audit).toMatchObject({ reasonCode: "verified_id_returning" });
   });
 
   it("KYC-R26-12: a mismatch AND a collision on the same verify reads as id_mismatch (the account's own number disagrees)", async () => {
@@ -2352,7 +2512,7 @@ describe("RiderService.applyKycResult", () => {
     expectRefusedVerify(rec.data, rec.audit, "duplicate");
   });
 
-  it("IR26-04: a verified doc number colliding with another RIDER's vendor-verified hash is declined `duplicate` too", async () => {
+  it("IR26-04: a verified doc number colliding with another BIKER's vendor-verified hash is declined `duplicate` too", async () => {
     const { prisma, rec } = docPrisma({ riderHits: 1 });
     await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42");
     expectRefusedVerify(rec.data, rec.audit, "duplicate");
@@ -2572,7 +2732,7 @@ describe("RiderService.recordHeldVerifiedId", () => {
           return { count: 1 };
         },
         update: async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
-          if (!matches(where)) throw new Error("rowPrisma: no such rider");
+          if (!matches(where)) throw new Error("rowPrisma: no such biker");
           apply(data);
           return { kycAttempts: row.kycAttempts };
         },
@@ -2599,7 +2759,7 @@ describe("RiderService.recordHeldVerifiedId", () => {
     return { prisma, row, profile, audit };
   }
 
-  it("the point: a band-held rider approved by hand adopts the stored number instead of being flagged verified_id_missing", async () => {
+  it("the point: a band-held biker approved by hand adopts the stored number instead of being flagged verified_id_missing", async () => {
     const { prisma, row, profile, audit } = rowPrisma();
     const s = svc(prisma, {});
     // A Didit approval whose face match fell in the review band: held (still pending), its number stored.
@@ -2655,7 +2815,8 @@ describe("RiderService.recordHeldVerifiedId", () => {
   // session dies with the decision and the rider reads the `duplicate` decline — one attempt burnt, like any decline.
   it("KYC-R26-12: a duplicate-ID verify is declined — the finished session dies with it, and it counts as one attempt", async () => {
     const live = { kycSessionToken: "tok_live", kycSessionUrl: "https://verify.didit.me/sess_1" };
-    const { prisma, row, audit } = rowPrisma({ duplicateIdFlag: true, isOnline: true, ...live });
+    // The document's number is on another LIVE account (a tombstone alone would verify — owner 2026-10-12).
+    const { prisma, row, audit } = rowPrisma({ isOnline: true, ...live }, { collisions: 1 });
     const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" });
     await s.applyKycResult("sess_1", "verified", new Date(), null, "63-123456-A-42");
     expect(row).toMatchObject({
@@ -2746,9 +2907,9 @@ describe("RiderService.recordHeldVerifiedId", () => {
 });
 
 describe("RiderService.adminSetKyc (A-02 decision state machine)", () => {
-  it("404s for an unknown rider", async () => {
+  it("404s for an unknown biker", async () => {
     const s = svc({ rider: { findUnique: async () => null } }, {});
-    await expect(s.adminSetKyc("p1", "verified")).rejects.toThrow(/rider not found/i);
+    await expect(s.adminSetKyc("p1", "verified")).rejects.toThrow(/biker not found/i);
   });
 
   it("approve → verified + idVerified, and clears any prior decline reason", async () => {
@@ -3117,7 +3278,7 @@ describe("RiderService.adminSetKyc — D-75: a hand approval settles the nationa
     expect(rec.audit).toBeUndefined();
   });
 
-  it("D-75: refuses when another live rider's ID check verified the same number (the vendor-hash axis)", async () => {
+  it("D-75: refuses when another live biker's ID check verified the same number (the vendor-hash axis)", async () => {
     const { prisma, rec } = approvalPrisma({ liveRiders: 1 });
     expect(reasonOf(await refusal(approve(prisma)))).toBe("verified_id_in_use");
     expect(rec.adopt).toHaveLength(0);
@@ -3331,7 +3492,7 @@ describe("RiderService — ID-check session lifecycle (startup review 2026-10-06
 
   // KYC-R26-13: the dead-session replacement is paid, so the daily cap on fixable declines applies to it — and
   // it is checked BEFORE the dead credential is retired, so a refused rider is left exactly as they were.
-  it("KYC-R26-13: a capped rider's dead session is neither retired nor replaced — 429 kyc_daily_limit", async () => {
+  it("KYC-R26-13: a capped biker's dead session is neither retired nor replaced — 429 kyc_daily_limit", async () => {
     const { vendor, submit } = minting();
     const writes: Write[] = [];
     const prisma = {
@@ -3349,7 +3510,7 @@ describe("RiderService — ID-check session lifecycle (startup review 2026-10-06
     expect(writes).toEqual([]);
   });
 
-  it("KYC-R26-13: a capped rider's live session still RESUMES for free — the cap only stops paid sessions", async () => {
+  it("KYC-R26-13: a capped biker's live session still RESUMES for free — the cap only stops paid sessions", async () => {
     const { vendor, submit } = minting();
     const count = vi.fn(async () => 3);
     const prisma = { rider: { findUnique: async () => LIVE, updateMany: async () => ({ count: 1 }) }, auditLog: { count } };
@@ -3440,7 +3601,7 @@ describe("RiderService — ID-check session lifecycle (startup review 2026-10-06
     const p2002 = new Prisma.PrismaClientKnownRequestError("unique", { code: "P2002", clientVersion: "x" });
     const prisma = {
       rider: { findUnique: async () => null, create: () => ({}) },
-      profile: { update: () => ({}), findUnique: async () => ({ idNumberHash: null }), count: async () => 0 },
+      profile: { update: () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: null }), count: async () => 0 },
       $transaction: async () => {
         throw p2002;
       },
@@ -3512,6 +3673,8 @@ describe("RiderService — ID-check session lifecycle (startup review 2026-10-06
           },
           findFirst: async () => ({ profileId: "p1", duplicateIdFlag: flagged, profile: { idNumberHash: pii.hashId("63-1-A") } }),
         },
+        // The flag's other account is still live.
+        profile: { count: async () => (flagged ? 1 : 0) },
         auditLog: { create: async () => ({}) },
       };
       const at = new Date("2026-10-06T10:00:00Z");
@@ -3525,7 +3688,7 @@ describe("RiderService — ID-check session lifecycle (startup review 2026-10-06
     expect(decided.data).toMatchObject({ kycStatus: "verified", kycVendorStatus: null, kycVendorStatusAt: null });
   });
 
-  it("R-3: an admin pending RESET clears the stored vendor status — the rider starts afresh, not on the review wall", async () => {
+  it("R-3: an admin pending RESET clears the stored vendor status — the biker starts afresh, not on the review wall", async () => {
     const updates: Array<Record<string, unknown>> = [];
     const prisma = {
       rider: {
@@ -3549,7 +3712,7 @@ describe("RiderService — ID-check session lifecycle (startup review 2026-10-06
     expect(updates[0]).toMatchObject({ kycStatus: "pending", kycVendorStatus: null, kycVendorStatusAt: null, kycSessionToken: null });
   });
 
-  it("R-4: noteKycLaunched drops the cached state of a pending rider's session and changes nothing", async () => {
+  it("R-4: noteKycLaunched drops the cached state of a pending biker's session and changes nothing", async () => {
     const { states, log } = fakeStates();
     const updateMany = vi.fn();
     const prisma = { rider: { findUnique: async () => ({ kycRef: "sess_1", kycStatus: "pending" }), updateMany } };
@@ -3564,7 +3727,7 @@ describe("RiderService — ID-check session lifecycle (startup review 2026-10-06
 // sequence leaves on file, not the shape of a where clause.
 describe("RiderService — KYC-R26 decision guards", () => {
   type Row = Record<string, unknown> & { kycAttempts: number };
-  function memPrisma(init: Record<string, unknown> = {}) {
+  function memPrisma(init: Record<string, unknown> = {}, opts: { liveDuplicates?: number } = {}) {
     const row: Row = {
       profileId: "p1",
       kycRef: "sess_1",
@@ -3616,14 +3779,15 @@ describe("RiderService — KYC-R26 decision guards", () => {
           return { count: 1 };
         },
         update: async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
-          if (!matches(where)) throw new Error("memPrisma: no such rider");
+          if (!matches(where)) throw new Error("memPrisma: no such biker");
           apply(data);
           return { kycAttempts: row.kycAttempts };
         },
         count: async () => 0,
       },
       profile: {
-        count: async () => 0,
+        // Other LIVE accounts holding a number (the flag's re-count, the document collision count).
+        count: async () => opts.liveDuplicates ?? 0,
         findUnique: async () => ({ idNumberHash: profile.idNumberHash }),
         updateMany: async ({ where, data }: { where: { idNumberHash: string | null }; data: { idNumberHash: string } }) => {
           if (where.idNumberHash !== profile.idNumberHash) return { count: 0 };
@@ -3634,13 +3798,14 @@ describe("RiderService — KYC-R26 decision guards", () => {
       auditLog: {
         create: async ({ data }: { data: Record<string, unknown> }) => (audit.push(data), {}),
         // KYC-R26-13: retryKyc's daily cap — every row here is "today"; filters on actor/action/target/reason.
-        count: async ({ where }: { where: { actor: string; action: string; target: string; OR: ({ reasonCode: { in: string[] } } | { reasonCode: null })[] } }) =>
+        // The paid-mint ceiling counts by action + target only (no actor, no OR).
+        count: async ({ where }: { where: { actor?: string; action: string; target: string; OR?: ({ reasonCode: { in: string[] } } | { reasonCode: null })[] } }) =>
           audit.filter(
             (a) =>
-              a.actor === where.actor &&
+              (where.actor === undefined || a.actor === where.actor) &&
               a.action === where.action &&
               a.target === where.target &&
-              where.OR.some((c) => (c.reasonCode === null ? a.reasonCode == null : c.reasonCode.in.includes(a.reasonCode as string))),
+              (!where.OR || where.OR.some((c) => (c.reasonCode === null ? a.reasonCode == null : c.reasonCode.in.includes(a.reasonCode as string)))),
           ).length,
       },
     };
@@ -3689,7 +3854,7 @@ describe("RiderService — KYC-R26 decision guards", () => {
     // KYC-R26-12: a verify the one-ID-one-account checks refused is a decline that keeps Didit's Approved, so
     // Didit's retry of that same Approved (re-signed with a fresh timestamp) must not count as a second decline.
     it("a retried Approved after a refused-verify decline (duplicate) is a repeat no-op — no second attempt, audit or push", async () => {
-      const { prisma, row, audit } = memPrisma({ duplicateIdFlag: true });
+      const { prisma, row, audit } = memPrisma({ duplicateIdFlag: true }, { liveDuplicates: 1 });
       const { s, notifyProfiles, evictRiderFromSupply } = withSpies(prisma);
       expect(await s.applyKycResult("sess_1", "verified", new Date("2026-10-12T10:00:00Z"))).toEqual({ updated: 1 });
       expect(row).toMatchObject({ kycStatus: "failed", idVerified: false, kycDeclineReason: "duplicate", kycAttempts: 1, isOnline: false, kycVendorStatus: "Approved" });
@@ -3708,7 +3873,7 @@ describe("RiderService — KYC-R26 decision guards", () => {
 
     // KYC-R26-14: a clean mismatch is now a replacement (below); a FLAGGED account still declines id_mismatch.
     it("a verify whose document number disagrees with the ID on file is declined id_mismatch, and its retry is a repeat too", async () => {
-      const { prisma, row, audit } = memPrisma({ duplicateIdFlag: true });
+      const { prisma, row, audit } = memPrisma({ duplicateIdFlag: true }, { liveDuplicates: 1 });
       const { s } = withSpies(prisma);
       expect(await s.applyKycResult("sess_1", "verified", new Date("2026-10-12T10:00:00Z"), null, "63-999999-Z-99")).toEqual({ updated: 1 });
       expect(row).toMatchObject({ kycStatus: "failed", idVerified: false, kycDeclineReason: "id_mismatch", kycAttempts: 1 });
@@ -3826,7 +3991,7 @@ describe("RiderService — KYC-R26 decision guards", () => {
       }
     });
 
-    it("three fixable declines in a day: the rider keeps retrying until the cap, then 429 kyc_daily_limit — never locked", async () => {
+    it("three fixable declines in a day: the biker keeps retrying until the cap, then 429 kyc_daily_limit — never locked", async () => {
       const { prisma, row, audit } = memPrisma();
       const { s, submit } = autoSvc(prisma);
       for (let i = 0; i < 3; i++) {
@@ -3905,7 +4070,7 @@ describe("RiderService — KYC-R26 decision guards", () => {
       expect(row).toMatchObject({ kycStatus: "verified", idVerified: true });
     });
 
-    it("the ID-expiry sweep moves a verified rider whose ID lapsed to `expired`, offline, audited, evicted", async () => {
+    it("the ID-expiry sweep moves a verified biker whose ID lapsed to `expired`, offline, audited, evicted", async () => {
       const lapsed = new Date("2026-10-10T00:00:00Z");
       const { prisma, row, audit } = memPrisma({ kycStatus: "verified", idVerified: true, kycResolvedAt: new Date("2026-01-01T00:00:00Z"), kycResolvedBy: "vendor", kycIdExpiresOn: lapsed, kycAttempts: 1 });
       const { s, evictRiderFromSupply } = withSpies(prisma);
@@ -3931,28 +4096,312 @@ describe("RiderService — KYC-R26 decision guards", () => {
 });
 
 describe("RiderService.kycReconcileCandidates (KYC-R26-03)", () => {
-  it("selects unresolved pending checks on a session, quiet since the cutoff, not known dead — keyset-paged", async () => {
-    let args: { where: Record<string, unknown>; orderBy: unknown; take: number } | undefined;
+  it("selects unresolved pending checks on a session, quiet since the cutoff, not known dead, not backing off — oldest-waiting first", async () => {
+    let sql = "";
+    let values: unknown[] = [];
     const prisma = {
-      rider: {
-        findMany: async (a: typeof args) => {
-          args = a;
-          return [{ profileId: "p2", kycRef: "s2", kycVendorStatus: null }, { profileId: "p3", kycRef: null, kycVendorStatus: null }];
-        },
+      $queryRaw: async (strings: TemplateStringsArray, ...v: unknown[]) => {
+        sql = strings.join("?");
+        values = v;
+        return [{ profileId: "p2", kycRef: "s2", kycVendorStatus: null }, { profileId: "p3", kycRef: null, kycVendorStatus: null }];
       },
     };
     const cutoff = new Date("2026-10-12T09:45:00Z");
-    const rows = await svc(prisma, {}).kycReconcileCandidates(cutoff, 25, "p1");
+    const rows = await svc(prisma, {}).kycReconcileCandidates(cutoff, 25, ["s_backoff"]);
     expect(rows).toEqual([{ profileId: "p2", kycRef: "s2", kycVendorStatus: null }]);
-    expect(args?.where).toEqual({
-      kycStatus: "pending",
-      kycRef: { not: null },
-      kycResolvedAt: null,
-      updatedAt: { lt: cutoff },
-      OR: [{ kycVendorStatus: null }, { kycVendorStatus: { notIn: ["Abandoned", "Expired", "Kyc Expired"] } }],
-      profileId: { gt: "p1" },
+    // Oldest-waiting first, not by profile id.
+    expect(sql).toMatch(/ORDER BY updated_at ASC/);
+    expect(sql).not.toMatch(/profile_id\s*>/);
+    // Mint claims are not vendor sessions.
+    expect(values).toContain("claim:%");
+    expect(values).toContain(cutoff);
+    expect(values).toContainEqual(["s_backoff"]);
+    expect(values).toContain(25);
+    // The dead statuses are compared AFTER normalising case and separators, like classifyDiditSession.
+    expect(sql).toMatch(/regexp_replace\(lower\(btrim\(kyc_vendor_status\)\), '\[\[:space:\]_-\]\+', ' ', 'g'\) <> ALL/);
+    expect(values).toContainEqual(["abandoned", "expired", "kyc expired"]);
+  });
+
+  it("the normalised dead list is exactly what classifyDiditSession calls dead, in every spelling Didit has used", async () => {
+    const norm = (s: string) => s.trim().toLowerCase().replace(/[\s_-]+/g, " ");
+    for (const s of ["Abandoned", "Expired", "Kyc Expired", "KYC_EXPIRED", "kyc-expired", "ABANDONED"]) {
+      expect(classifyDiditSession(s)).toBe("dead");
+      expect(DIDIT_DEAD_STATUSES_NORMALISED).toContain(norm(s));
+    }
+    expect(DIDIT_DEAD_STATUSES_NORMALISED).not.toContain(norm("In Review"));
+  });
+});
+
+// ── KYC pipeline hardening (2026-10-12) ─────────────────────────────────────────────────────────────────
+describe("RiderService — KYC pushes, audit rows and observability (2026-10-12)", () => {
+  /** A RiderService whose push and metrics are spies. `delivered` is what the push provider accepted. */
+  const spied = (prisma: Record<string, unknown>, env: Partial<Env> = {}, delivered: string[] = ["p1"]) => {
+    const notifyProfiles = vi.fn(async (_ids: string[], _msg: unknown) => new Set(delivered));
+    const metrics = { incPushUndelivered: vi.fn(), incKycSessionMinted: vi.fn(), incRiderOnlineWithoutPushToken: vi.fn() };
+    const s = svc(prisma, env);
+    Object.assign(s as unknown as Record<string, unknown>, {
+      notifications: { ...notificationsStub, notifyProfiles },
+      metrics,
     });
-    expect(args?.orderBy).toEqual({ profileId: "asc" });
-    expect(args?.take).toBe(25);
+    return { s, notifyProfiles, metrics };
+  };
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+  type Push = { title: string; body: string; data: Record<string, string> };
+  const pushOf = (spy: { mock: { calls: unknown[][] } }) => spy.mock.calls[0]?.[1] as Push;
+
+  /** One in-memory rider row for the webhook path (kycRef sess_1, an ID on file). */
+  const webhookRow = (init: Record<string, unknown> = {}) => {
+    const row: Record<string, unknown> = {
+      profileId: "p1",
+      kycRef: "sess_1",
+      kycStatus: "pending",
+      kycAttempts: 0,
+      kycResolvedAt: null,
+      kycResolvedBy: null,
+      kycVendorStatus: null,
+      kycIdExpiresOn: null,
+      duplicateIdFlag: false,
+      isOnline: false,
+      ...init,
+    };
+    const prisma: Record<string, unknown> = {
+      $executeRaw: async () => 1,
+      rider: {
+        findFirst: async () => ({ ...row, profile: { idNumberHash: "on-file" } }),
+        updateMany: async ({ data }: { data: Record<string, unknown> }) => {
+          for (const [k, v] of Object.entries(data)) {
+            row[k] = v && typeof v === "object" && "increment" in v ? (row[k] as number) + (v as { increment: number }).increment : v;
+          }
+          return { count: 1 };
+        },
+        count: async () => 0,
+      },
+      profile: { count: async () => 0 },
+      auditLog: { create: async () => ({}) },
+    };
+    prisma.$transaction = async (fn: (tx: unknown) => unknown) => fn(prisma);
+    return { row, prisma };
+  };
+
+  describe("item 10: a decline that leaves the biker locked says so (KY.locked*), not \"try again\"", () => {
+    it("a second strike decline from the webhook → the locked push, data.kyc = locked", async () => {
+      const { prisma } = webhookRow({ kycAttempts: 1 });
+      const { s, notifyProfiles } = spied(prisma);
+      await s.applyKycResult("sess_1", "failed", new Date(), "liveness_failed");
+      await flush();
+      expect(pushOf(notifyProfiles)).toEqual({
+        title: "Let’s finish this together",
+        body: "Both tries are used. Our team will check your ID with you on WhatsApp.",
+        data: { kind: "account", kyc: "locked" },
+      });
+    });
+
+    it("an under-age decline (the `final` class) is locked on the first try", async () => {
+      const { prisma } = webhookRow();
+      const { s, notifyProfiles } = spied(prisma);
+      await s.applyKycResult("sess_1", "failed", new Date(), "underage");
+      await flush();
+      expect(pushOf(notifyProfiles).data.kyc).toBe("locked");
+    });
+
+    it("a first strike, or a fixable decline, is still \"try again\"", async () => {
+      for (const reason of ["liveness_failed", "id_unreadable"]) {
+        const { prisma } = webhookRow();
+        const { s, notifyProfiles } = spied(prisma);
+        await s.applyKycResult("sess_1", "failed", new Date(), reason);
+        await flush();
+        expect(pushOf(notifyProfiles)).toMatchObject({ title: "ID check needs another look", data: { kind: "account", kyc: "failed" } });
+      }
+    });
+
+    it("an admin's second decline → the locked push", async () => {
+      const prisma = {
+        rider: {
+          findUnique: async () => ({ profileId: "p1", kycAttempts: 1, kycStatus: "pending", kycResolvedAt: null }),
+          update: async () => ({ kycAttempts: 2 }),
+        },
+      };
+      const { s, notifyProfiles } = spied(prisma);
+      expect(await s.adminSetKyc("p1", "failed", "doc_tampered", "admin:ops")).toMatchObject({ locked: true });
+      await flush();
+      expect(pushOf(notifyProfiles).data.kyc).toBe("locked");
+    });
+  });
+
+  describe("item 11: expiry and an admin reset push too (KY.exp* / KY.unf*, kind account)", () => {
+    it("Didit's Kyc Expired → \"Your ID has expired\" / \"Re-verify to keep riding.\"", async () => {
+      const { prisma } = webhookRow({ kycStatus: "verified", kycResolvedAt: new Date(0), kycResolvedBy: "vendor" });
+      const { s, notifyProfiles } = spied(prisma);
+      await s.applyKycResult("sess_1", "expired", new Date());
+      await flush();
+      expect(pushOf(notifyProfiles)).toEqual({ title: "Your ID has expired", body: "Re-verify to keep riding.", data: { kind: "account", kyc: "expired" } });
+    });
+
+    it("an ops expire and the ID-expiry sweep push the same", async () => {
+      const prisma = { rider: { findUnique: async () => ({ profileId: "p1", kycAttempts: 0 }), update: async () => ({}) } };
+      const admin = spied(prisma);
+      await admin.s.adminSetKyc("p1", "expired", null, "admin:ops");
+      await flush();
+      expect(pushOf(admin.notifyProfiles).data.kyc).toBe("expired");
+
+      const lapsed = new Date("2026-01-01T00:00:00Z");
+      const sweepPrisma: Record<string, unknown> = {
+        $executeRaw: async () => 1,
+        rider: {
+          findMany: async () => [{ profileId: "p1" }],
+          findUnique: async () => ({ kycStatus: "verified", kycAttempts: 0, kycIdExpiresOn: lapsed }),
+          updateMany: async () => ({ count: 1 }),
+        },
+        auditLog: { create: async () => ({}) },
+      };
+      sweepPrisma.$transaction = async (fn: (tx: unknown) => unknown) => fn(sweepPrisma);
+      const sweep = spied(sweepPrisma);
+      expect(await sweep.s.expireLapsedIds(new Date("2026-10-12T03:00:00Z"))).toEqual({ expired: 1 });
+      await flush();
+      expect(pushOf(sweep.notifyProfiles)).toMatchObject({ title: "Your ID has expired", data: { kind: "account", kyc: "expired" } });
+    });
+
+    it("an admin `pending` reset → \"Almost there,\" / \"Finish your ID check. About 2 minutes.\"", async () => {
+      const prisma = { rider: { findUnique: async () => ({ profileId: "p1", kycAttempts: 0 }), update: async () => ({}) } };
+      const { s, notifyProfiles } = spied(prisma);
+      await s.adminSetKyc("p1", "pending", null, "admin:ops");
+      await flush();
+      expect(pushOf(notifyProfiles)).toEqual({ title: "Almost there,", body: "Finish your ID check. About 2 minutes.", data: { kind: "account", kyc: "reset" } });
+    });
+  });
+
+  describe("item 7: an admin reset can give a locked biker their tries back", () => {
+    it("resetAttempts zeroes kycAttempts and clears the decline reason in the reset's own write, audited rider.kyc_reset", async () => {
+      let data: Record<string, unknown> | undefined;
+      const audits: Record<string, unknown>[] = [];
+      const prisma = {
+        rider: {
+          findUnique: async () => ({ profileId: "p1", kycAttempts: 2, kycStatus: "failed" }),
+          update: async (a: { data: Record<string, unknown> }) => ((data = a.data), {}),
+        },
+        auditLog: { create: async (a: { data: Record<string, unknown> }) => (audits.push(a.data), {}) },
+      };
+      const { s } = spied(prisma);
+      expect(await s.adminSetKyc("p1", "pending", null, "admin:ops", "Checked on WhatsApp", { resetAttempts: true })).toEqual({
+        profileId: "p1",
+        kycStatus: "pending",
+        kycAttempts: 0,
+        locked: false,
+      });
+      expect(data).toMatchObject({ kycStatus: "pending", kycAttempts: 0, kycDeclineReason: null, kycResolvedBy: null });
+      expect(audits).toEqual([
+        expect.objectContaining({ actor: "admin:ops", action: "rider.kyc_reset", reasonCode: "attempts_reset", note: "Checked on WhatsApp" }),
+      ]);
+    });
+
+    it("a plain `pending` reset still keeps the counter (a locked biker stays locked)", async () => {
+      let data: Record<string, unknown> | undefined;
+      const prisma = {
+        rider: { findUnique: async () => ({ profileId: "p1", kycAttempts: 2 }), update: async (a: { data: Record<string, unknown> }) => ((data = a.data), {}) },
+      };
+      expect(await spied(prisma).s.adminSetKyc("p1", "pending", null, "admin:ops")).toMatchObject({ kycAttempts: 2, locked: true });
+      expect(data).not.toHaveProperty("kycAttempts");
+    });
+
+    it("resetAttempts with anything but a pending reset is refused", async () => {
+      const prisma = { rider: { findUnique: async () => ({ profileId: "p1", kycAttempts: 2 }), update: async () => ({}) } };
+      await expect(spied(prisma).s.adminSetKyc("p1", "verified", null, "admin:ops", null, { resetAttempts: true })).rejects.toThrow(/pending reset/);
+    });
+  });
+
+  describe("item 12: a KYC push that reaches no device is counted, never silent", () => {
+    it("no device accepted it → push_undelivered_total{kind=account}", async () => {
+      const prisma = { rider: { findUnique: async () => ({ profileId: "p1", kycAttempts: 0 }), update: async () => ({}) } };
+      const { s, metrics } = spied(prisma, {}, []);
+      await s.adminSetKyc("p1", "verified", null, "admin:ops");
+      await flush();
+      expect(metrics.incPushUndelivered).toHaveBeenCalledWith("account");
+    });
+
+    it("delivered → nothing counted", async () => {
+      const prisma = { rider: { findUnique: async () => ({ profileId: "p1", kycAttempts: 0 }), update: async () => ({}) } };
+      const { s, metrics } = spied(prisma);
+      await s.adminSetKyc("p1", "verified", null, "admin:ops");
+      await flush();
+      expect(metrics.incPushUndelivered).not.toHaveBeenCalled();
+    });
+
+    it("a biker going online with no push token is counted (rider_online_without_push_token_total)", async () => {
+      const at = { lat: -17.8292, lng: 31.0522 };
+      const findUnique = async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null });
+      const none = spied({ rider: { findUnique }, deviceToken: { count: async () => 0 } });
+      await none.s.setOnline("p1", true, at);
+      await flush();
+      expect(none.metrics.incRiderOnlineWithoutPushToken).toHaveBeenCalledTimes(1);
+      const some = spied({ rider: { findUnique }, deviceToken: { count: async () => 1 } });
+      await some.s.setOnline("p1", true, at);
+      await flush();
+      expect(some.metrics.incRiderOnlineWithoutPushToken).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("item 14 / item 5: become's audit rows and the claim release", () => {
+    it("becomeRider writes rider.become in the claim commit and rider.kyc_session_minted once the paid session exists", async () => {
+      const ops: unknown[] = [];
+      const created: Record<string, unknown>[] = [];
+      const prisma: Record<string, unknown> = {
+        rider: { findUnique: async () => null, create: async () => ({}), updateMany: async () => ({ count: 1 }) },
+        profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: null, role: "customer" }), count: async () => 0 },
+        auditLog: { create: async (a: { data: Record<string, unknown> }) => (created.push(a.data), a.data), count: async () => 0 },
+      };
+      prisma.$transaction = async (arg: unknown) => (Array.isArray(arg) ? (ops.push(...arg), arg) : (arg as (tx: unknown) => unknown)(prisma));
+      const { s, metrics } = spied(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" });
+      Object.assign(s as unknown as Record<string, unknown>, { vendor: { submit: async () => ({ ref: "sess_1", status: "pending", url: "u", token: "SECRET" }) } });
+      await s.becomeRider("p1", {});
+      // The claim transaction carried three writes: role, rider row, rider.become.
+      expect(ops).toHaveLength(3);
+      expect(created).toEqual([
+        expect.objectContaining({ actor: "p1", action: "rider.become", target: "p1", reasonCode: "no_id" }),
+        expect.objectContaining({ actor: "p1", action: "rider.kyc_session_minted", target: "p1", reasonCode: "become" }),
+      ]);
+      expect(JSON.stringify(created)).not.toContain("SECRET");
+      expect(metrics.incKycSessionMinted).toHaveBeenCalledWith("become");
+    });
+
+    it("a failed vendor call releases the claim in ONE transaction: the delete and the role restore commit together or not at all", async () => {
+      const outside = { deleteMany: vi.fn(async () => ({ count: 1 })) };
+      const inTx = { deleteMany: vi.fn(async () => ({ count: 1 })) };
+      const roleRestore = vi.fn(async () => {
+        throw new Error("connection reset");
+      });
+      let txCalls = 0;
+      const prisma: Record<string, unknown> = {
+        rider: { findUnique: async () => null, create: async () => ({}), ...outside },
+        profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: null, role: "customer" }), count: async () => 0 },
+        $transaction: async (arg: unknown) => {
+          if (Array.isArray(arg)) return arg;
+          txCalls++;
+          // The release's transaction: a role restore that fails rolls the delete back with it (the throw escapes).
+          return (arg as (tx: unknown) => unknown)({ rider: inTx, profile: { update: roleRestore } });
+        },
+      };
+      const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, {
+        submit: async () => {
+          throw new Error("didit 503");
+        },
+      });
+      await expect(s.becomeRider("p1", {})).rejects.toThrow(/couldn't start id verification/i);
+      expect(txCalls).toBe(1);
+      expect(inTx.deleteMany).toHaveBeenCalledWith({ where: { profileId: "p1", kycRef: null } });
+      expect(roleRestore).toHaveBeenCalledWith({ where: { id: "p1" }, data: { role: "customer" } });
+      // Never outside the transaction.
+      expect(outside.deleteMany).not.toHaveBeenCalled();
+    });
+  });
+
+  it("kycOldestPendingSince: the longest-waiting pending session (mint claims excluded)", async () => {
+    let args: Record<string, unknown> | undefined;
+    const at = new Date("2026-10-12T01:00:00Z");
+    const prisma = { rider: { findFirst: async (a: Record<string, unknown>) => ((args = a), { updatedAt: at }) } };
+    expect(await svc(prisma, {}).kycOldestPendingSince()).toBe(at);
+    expect(args).toMatchObject({
+      where: { kycStatus: "pending", kycRef: { not: null }, kycResolvedAt: null, NOT: { kycRef: { startsWith: "claim:" } } },
+      orderBy: { updatedAt: "asc" },
+    });
   });
 });

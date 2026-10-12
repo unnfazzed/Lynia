@@ -86,7 +86,7 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
-describe("Make an offer (Rider v2 O1)", () => {
+describe("Make an offer (Biker v2 O1)", () => {
   it("draws the sender's asking price and a one-tap Send at that price", () => {
     render();
     expect(text()).toContain("Rudo is asking");
@@ -117,7 +117,7 @@ describe("Make an offer (Rider v2 O1)", () => {
     expect(mockMakeOffer).toHaveBeenCalledWith("order-1", { type: "counter", offeredFare: 3.5, etaMinutes: 15 });
   });
 
-  it("a failed send keeps the rider here with Try again — nothing joins Your offers", async () => {
+  it("a failed send keeps the biker here with Try again — nothing joins Your offers", async () => {
     mockMakeOffer.mockRejectedValue(new Error("network down"));
     render();
     press("Send offer · $3.00");
@@ -144,8 +144,8 @@ describe("isWellAbove (O2 warn notice)", () => {
   });
 });
 
-describe("rider audit — the offer screen", () => {
-  it("PJ-H5: a price the customer raised while the rider was here is read live — the old fare goes as a COUNTER", async () => {
+describe("biker audit — the offer screen", () => {
+  it("PJ-H5: a price the customer raised while the biker was here is read live — the old fare goes as a COUNTER", async () => {
     mockMakeOffer.mockResolvedValue({});
     render();
     // The board refreshes openOrders underneath this screen: the ask is now $4.00.

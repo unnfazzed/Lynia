@@ -13,7 +13,7 @@ describe("foodOrderMoney — the one split", () => {
     });
   });
 
-  it("a free-delivery order: customer pays $0 delivery, rider still earns the fee, venue gets goods − fee", () => {
+  it("a free-delivery order: customer pays $0 delivery, biker still earns the fee, venue gets goods − fee", () => {
     expect(foodOrderMoney({ goodsTotal: 13, deliveryFee: 2.5, merchantDeliveryShare: 2.5 })).toEqual({
       customerDeliveryFee: 0,
       customerTotal: 13,

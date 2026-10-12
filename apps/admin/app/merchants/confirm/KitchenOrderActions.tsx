@@ -94,7 +94,7 @@ export function KitchenOrderActions({
           danger
           disabled={busy}
           title={`Cancel this order from ${restaurantName}?`}
-          consequence="The order is cancelled and the customer is told straight away. No rider is sent."
+          consequence="The order is cancelled and the customer is told straight away. No biker is sent."
           reasons={REASONS.kitchenCancel}
           notePlaceholder="What did the restaurant say? (optional)"
           confirmLabel="Cancel order"

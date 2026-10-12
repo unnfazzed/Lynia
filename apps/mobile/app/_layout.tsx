@@ -10,6 +10,7 @@ import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-cont
 import { AuthProvider, useAuth } from "../src/auth/auth-context";
 import type { Session } from "../src/auth/session";
 import { SessionGate } from "../src/auth/session-gate";
+import { useSessionRoleSync } from "../src/auth/session-role-sync";
 import { BootPhaseProvider, useBootPhase } from "../src/boot/boot-phase";
 import { BootRouteWatch } from "../src/boot/boot-route-watch";
 import { prewarmBootReads } from "../src/boot/prewarm";
@@ -161,6 +162,11 @@ function BootstrapSync(): null {
  * calm ink bar. The ink safe-area pad keeps the strip flush under the notch/status bar. This is the
  * "your app didn't break, the network did" cue that keeps a blip from reading as a crash.
  */
+function SessionRoleSync(): null {
+  useSessionRoleSync();
+  return null;
+}
+
 function ConnectivityBanner(): React.ReactElement | null {
   const reachable = useReachability();
   const insets = useSafeAreaInsets();
@@ -334,6 +340,8 @@ function RootLayout(): React.ReactElement | null {
         >
           <AuthProvider>
             <BootstrapSync />
+            {/* Keeps session.role (and the device's verified-biker flag) in step with `/auth/me`. */}
+            <SessionRoleSync />
             {/* Redirects to /phone when the session drops to null after boot (sign-out or a
                 server-forced 401 logout) — cold-boot routing in app/index.tsx can't reach that
                 transition, so without this the user is stranded on an authless protected screen. */}

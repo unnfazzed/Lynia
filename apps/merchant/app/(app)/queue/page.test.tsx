@@ -162,13 +162,13 @@ describe("loading the Orders home", () => {
     await vi.waitFor(() => expect(replace).toHaveBeenCalledWith("/deliveries"));
   });
 
-  it("keeps a shop live to customers on its Orders home (Order flow v2, D-59), with Book a rider on the top card (S1, D-77)", async () => {
+  it("keeps a shop live to customers on its Orders home (Order flow v2, D-59), with Book a biker on the top card (S1, D-77)", async () => {
     vi.mocked(getMyMerchant).mockResolvedValueOnce(merchantProfile({ name: "Avondale Fresh", businessType: "shop", shopKind: "grocery", pilotEnabled: true, hours: WEEK }));
     render(<Page />);
     expect(await screen.findByText("Avondale Fresh")).toBeTruthy();
     expect(replace).not.toHaveBeenCalledWith("/deliveries");
     // The top card's Book a rider, and K1c's (an open shop with nothing on).
-    expect(screen.getAllByRole("link", { name: /Book a rider/ }).map((l) => l.getAttribute("href"))).toEqual(["/deliveries/new", "/deliveries/new"]);
+    expect(screen.getAllByRole("link", { name: /Book a biker/ }).map((l) => l.getAttribute("href"))).toEqual(["/deliveries/new", "/deliveries/new"]);
   });
 });
 
@@ -196,7 +196,7 @@ describe("a failed queue poll is never a lasting red line (Order flow v2's rule,
       const { container, rerender } = render(<Page />);
       expect((await screen.findByRole("status")).textContent).toBe(SERVER);
       expect(screen.getAllByText(SERVER)).toHaveLength(1);
-      expect(screen.getByText(/finding a rider/)).toBeTruthy();
+      expect(screen.getByText(/finding a biker/)).toBeTruthy();
       expect(container.querySelector(".m-err")).toBeNull();
 
       act(() => vi.advanceTimersByTime(TOAST_MS + 100));
@@ -215,7 +215,7 @@ describe("a failed queue poll is never a lasting red line (Order flow v2's rule,
     poll.orders = [merchantOrder({ merchantPhase: "ready_for_pickup", status: "open_for_offers" })];
     poll.error = new ApiError(0, "Couldn't reach the server.");
     render(<Page />);
-    expect(await screen.findByText(/finding a rider/)).toBeTruthy();
+    expect(await screen.findByText(/finding a biker/)).toBeTruthy();
     expect(screen.queryByText("Couldn't reach the server.")).toBeNull();
   });
 });
@@ -230,7 +230,7 @@ describe("B1 · Orders home (merchant mobile, D-48)", () => {
     expect(await screen.findByText("$59.50")).toBeTruthy();
     expect(screen.getByText("7")).toBeTruthy();
     expect(screen.getByRole("link", { name: /Cash due/ }).getAttribute("href")).toBe("/statement");
-    expect(screen.queryByText(/Book a rider/)).toBeNull();
+    expect(screen.queryByText(/Book a biker/)).toBeNull();
     expect(screen.queryByText(/alarm/i)).toBeNull();
   });
 
@@ -257,7 +257,7 @@ describe("B1 · Orders home (merchant mobile, D-48)", () => {
     bk.bookings = [merchantBooking({ state: "cancelled", cancelledBy: "business", createdAt: new Date(Date.now() - 3600_000).toISOString() })];
     render(<Page />);
     expect(await screen.findByText("All quiet for now")).toBeTruthy();
-    expect(screen.getAllByRole("link", { name: "Book a rider" }).some((a) => a.getAttribute("href") === "/deliveries/new")).toBe(true);
+    expect(screen.getAllByRole("link", { name: "Book a biker" }).some((a) => a.getAttribute("href") === "/deliveries/new")).toBe(true);
   });
 
   it("a new business ops haven't switched on is 'Almost ready', not 'You're open' (E2E 2026-10-05 FS-4)", async () => {
@@ -312,7 +312,7 @@ describe("K2 / S2 · the order rings full screen until it's answered (Merchant v
     const takeover = await screen.findByRole("alertdialog", { name: "New order #A111" });
     expect(within(takeover).getByText("NEW ORDER · #A111")).toBeTruthy();
     expect(within(takeover).getByText("to answer")).toBeTruthy();
-    expect(within(takeover).getByText("min · we book the rider to arrive as it's ready")).toBeTruthy();
+    expect(within(takeover).getByText("min · we book the biker to arrive as it's ready")).toBeTruthy();
     fireEvent.click(within(takeover).getByRole("radio", { name: "20" }));
     fireEvent.click(within(takeover).getByRole("button", { name: /^Accept · ready \d\d:\d\d$/ }));
     await vi.waitFor(() => expect(acceptOrder).toHaveBeenCalledWith("a1110000-0000-4000-8000-000000000001", { prepMinutes: 20, unavailableDishIds: undefined }));

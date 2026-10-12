@@ -37,7 +37,7 @@ describe("applyReliabilityDelta (Q2 clamp + on_hold hysteresis)", () => {
     });
   });
 
-  it("is sticky in the dead-band: a passing rider stays off-hold there, a held rider stays held", () => {
+  it("is sticky in the dead-band: a passing biker stays off-hold there, a held biker stays held", () => {
     // Same score (65, in [60,70)), opposite starting flags → the flag is preserved either way.
     expect(applyReliabilityDelta({ reliabilityScore: 66, onHold: false, heldReason: null }, -1).onHold).toBe(false);
     expect(applyReliabilityDelta({ reliabilityScore: 66, onHold: true, heldReason: "reliability" }, -1).onHold).toBe(true);
@@ -103,13 +103,13 @@ describe("undeliveredPenalty (Q2 reason → penalty)", () => {
 });
 
 describe("shouldFlagUndeliveredVelocity (FRAUD P0-3 auto-hold)", () => {
-  it("does NOT trip below the incident floor, even at a high rate (spares a brand-new rider's 1/1)", () => {
+  it("does NOT trip below the incident floor, even at a high rate (spares a brand-new biker's 1/1)", () => {
     expect(UNDELIVERED_ABUSE.minCount).toBeGreaterThan(1); // guards the intent of this test
     expect(shouldFlagUndeliveredVelocity(1, 0)).toBe(false);
     expect(shouldFlagUndeliveredVelocity(2, 0)).toBe(false);
   });
 
-  it("does NOT trip a high-volume rider with a few genuine failures (low fraction)", () => {
+  it("does NOT trip a high-volume biker with a few genuine failures (low fraction)", () => {
     // 3 undelivered out of 3 + 97 completed = 3% ≪ rate → no hold.
     expect(shouldFlagUndeliveredVelocity(3, 97)).toBe(false);
   });

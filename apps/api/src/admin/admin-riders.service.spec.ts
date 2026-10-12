@@ -36,7 +36,25 @@ describe("AdminRidersService.listRiders", () => {
     ...over,
   });
 
-  it("filters by kyc status and MASKS the phone when the rider isn't on a live order (A-03)", async () => {
+  it("item 9: the pending KYC queue is oldest-waiting first and pages 100 at a time; other views stay newest-first", async () => {
+    const seen: Array<{ orderBy: unknown; skip: number; take: number }> = [];
+    const prisma = {
+      rider: { findMany: async (a: { orderBy: unknown; skip: number; take: number }) => (seen.push(a), []) },
+      order: { findMany: async () => [] },
+    };
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, noNotifications, noGateway);
+    await svc.listRiders("pending");
+    await svc.listRiders("pending", undefined, 3);
+    await svc.listRiders("verified");
+    await svc.listRiders(undefined, undefined, 0);
+    expect(seen[0]).toMatchObject({ orderBy: [{ updatedAt: "asc" }, { profileId: "asc" }], skip: 0, take: 100 });
+    expect(seen[1]).toMatchObject({ skip: 200, take: 100 });
+    expect(seen[2]).toMatchObject({ orderBy: [{ updatedAt: "desc" }, { profileId: "asc" }], skip: 0 });
+    // A nonsense page reads as the first.
+    expect(seen[3]).toMatchObject({ skip: 0 });
+  });
+
+  it("filters by kyc status and MASKS the phone when the biker isn't on a live order (A-03)", async () => {
     let where: unknown;
     const prisma = {
       rider: {
@@ -64,7 +82,7 @@ describe("AdminRidersService.listRiders", () => {
     expect(rows[0]!.phone).not.toContain("78200");
   });
 
-  it("REVEALS the full phone when the rider is a party on a LIVE order right now", async () => {
+  it("REVEALS the full phone when the biker is a party on a LIVE order right now", async () => {
     let orderWhere: { status?: { in: string[] } } = {};
     const prisma = {
       rider: { findMany: async () => [riderRow()] },
@@ -87,7 +105,7 @@ describe("AdminRidersService.listRiders", () => {
     }
   });
 
-  it("returns all riders when no filter is given", async () => {
+  it("returns all bikers when no filter is given", async () => {
     let where: unknown = "unset";
     const prisma = {
       rider: { findMany: async (args: { where: unknown }) => { where = args.where; return []; } },
@@ -151,7 +169,7 @@ describe("AdminRidersService.getRiderDetail (D-2)", () => {
     },
   });
 
-  it("returns null when the id isn't a rider", async () => {
+  it("returns null when the id isn't a biker", async () => {
     const svc = new AdminRidersService({ rider: { findUnique: async () => null } } as unknown as PrismaService, noNotifications, noGateway);
     expect(await svc.getRiderDetail("nope")).toBeNull();
   });
@@ -168,7 +186,7 @@ describe("AdminRidersService.getRiderDetail (D-2)", () => {
     expect(r.trail[0]).toMatchObject({ id: "o9", route: "CBD → Mount Pleasant", fare: "4.50", when: "2026-06-20" });
   });
 
-  it("REVEALS the phone when the rider is on a live order, and reports cooldown", async () => {
+  it("REVEALS the phone when the biker is on a live order, and reports cooldown", async () => {
     const cooldownUntil = new Date(Date.now() + 90 * 60 * 1000);
     const svc = new AdminRidersService(prismaFor(riderRow({ isOnline: false, cooldownUntil }), 1) as unknown as PrismaService, noNotifications, noGateway);
     const r = (await svc.getRiderDetail("r1"))!;
@@ -178,7 +196,7 @@ describe("AdminRidersService.getRiderDetail (D-2)", () => {
     expect(r.activeOrders).toBe(1);
   });
 
-  it("activeOrders surfaces the live-order count so ops sees a live delivery under a suspended/banned rider", async () => {
+  it("activeOrders surfaces the live-order count so ops sees a live delivery under a suspended/banned biker", async () => {
     const svc = new AdminRidersService(prismaFor(riderRow(), 0) as unknown as PrismaService, noNotifications, noGateway);
     const r = (await svc.getRiderDetail("r1"))!;
     expect(r.activeOrders).toBe(0);
@@ -222,7 +240,7 @@ describe("AdminRidersService.getRiderDetail (D-2)", () => {
     expect((await svcCredit.getRiderDetail("r1"))!.commission).toBe("0.00");
   });
 
-  it("reports on_hold for an active rider the reliability engine has locked out, with the score", async () => {
+  it("reports on_hold for an active biker the reliability engine has locked out, with the score", async () => {
     // Distinct from suspended/banned (an admin action) — accountStatus stays "active" while onHold=true.
     const held = riderRow({ onHold: true, reliabilityScore: 42, isOnline: true });
     const svc = new AdminRidersService(prismaFor(held, 0) as unknown as PrismaService, noNotifications, noGateway);
@@ -231,13 +249,13 @@ describe("AdminRidersService.getRiderDetail (D-2)", () => {
     expect(r.reliabilityScore).toBe(42);
   });
 
-  it("omits reliabilityScore when the rider isn't on_hold", async () => {
+  it("omits reliabilityScore when the biker isn't on_hold", async () => {
     const svc = new AdminRidersService(prismaFor(riderRow(), 0) as unknown as PrismaService, noNotifications, noGateway);
     const r = (await svc.getRiderDetail("r1"))!;
     expect(r.reliabilityScore).toBeUndefined();
   });
 
-  it("counts the rider's Report rows and lists the recent ones (repeat-offender signal)", async () => {
+  it("counts the biker's Report rows and lists the recent ones (repeat-offender signal)", async () => {
     const reports = [
       { id: "rep1", reason: "unsafe", note: "cut me off", createdAt: new Date("2026-06-25T00:00:00Z") },
       { id: "rep2", reason: "rude", note: null, createdAt: new Date("2026-06-24T00:00:00Z") },
@@ -295,7 +313,7 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
     expect(res).toEqual({ id: "r1", accountStatus: "suspended", auditId: "audit-9" });
   });
 
-  it("suspendRider refuses a BANNED rider — ban permanence can't be laundered via ban→suspend→lift", async () => {
+  it("suspendRider refuses a BANNED biker — ban permanence can't be laundered via ban→suspend→lift", async () => {
     // Without the guard, an ops `suspend` silently downgrades banned→suspended, and a later `lift` (whose
     // ban-permanence check only fires on accountStatus===BANNED) reinstates the rider to active — defeating
     // the invariant liftRider exists to protect. suspendRider must reject a banned rider outright.
@@ -317,7 +335,7 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
     expect(calls.sessionRevoke!.where).toMatchObject({ profileId: "r1", revokedAt: null });
   });
 
-  it("KB-BOARD-REVOKE + DS15-05: suspend AND ban evict the rider from BOTH supply planes via the funnel", async () => {
+  it("KB-BOARD-REVOKE + DS15-05: suspend AND ban evict the biker from BOTH supply planes via the funnel", async () => {
     // suspend/ban route both board-kick and geo-eviction through the single evictRiderFromSupply funnel
     // (so a new standing path can't half-apply the eviction set). Spy on the funnel method itself.
     const evicted: string[] = [];
@@ -337,7 +355,7 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
     expect(evicted).toEqual(["r1", "r2"]);
   });
 
-  it("a suspend that 409s (CAS 0 rows) does NOT evict from supply — the rider's standing never changed", async () => {
+  it("a suspend that 409s (CAS 0 rows) does NOT evict from supply — the biker's standing never changed", async () => {
     const evicted: string[] = [];
     const gateway = {
       evictRiderFromSupply: async (id: string) => { evicted.push(id); },
@@ -367,13 +385,13 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
     expect(calls.audit!.data).toMatchObject({ action: "rider.lift", reasonCode: null });
   });
 
-  it("liftRider refuses to un-ban a banned rider", async () => {
+  it("liftRider refuses to un-ban a banned biker", async () => {
     const { prisma } = makeTx({ rider: { accountStatus: "banned", reliabilityScore: 100 } });
     const svc = new AdminRidersService(prisma as unknown as PrismaService, noNotifications, noGateway);
     await expect(svc.liftRider("admin-1", "r1", {})).rejects.toThrow(/banned/i);
   });
 
-  it("liftRider refuses an active (not-suspended) rider — won't erase an auto reliability hold", async () => {
+  it("liftRider refuses an active (not-suspended) biker — won't erase an auto reliability hold", async () => {
     // active-but-on_hold: a lift here would silently clear the reliability penalty and reset the score.
     const { prisma, calls } = makeTx({ rider: { accountStatus: "active", reliabilityScore: 55 } });
     const svc = new AdminRidersService(prisma as unknown as PrismaService, noNotifications, noGateway);
@@ -382,7 +400,7 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
     expect(calls.audit).toBeNull();
   });
 
-  it("clearHold clears onHold + raises the score to the clear threshold, audits — the only escape for an active on_hold rider", async () => {
+  it("clearHold clears onHold + raises the score to the clear threshold, audits — the only escape for an active on_hold biker", async () => {
     const { prisma, calls } = makeTx({ rider: { accountStatus: "active", onHold: true, reliabilityScore: 42 } });
     const svc = new AdminRidersService(prisma as unknown as PrismaService, noNotifications, noGateway);
     const res = await svc.clearHold("admin-1", "r1", { reason: "reliability recovered" });
@@ -398,7 +416,7 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
     expect(calls.riderUpdate!.data).toEqual({ onHold: false, heldReason: null, reliabilityScore: 95 });
   });
 
-  it("RH-01: clearHold on a VELOCITY-held rider releases the fraud hold — onHold=false, heldReason=null", async () => {
+  it("RH-01: clearHold on a VELOCITY-held biker releases the fraud hold — onHold=false, heldReason=null", async () => {
     // The FRAUD P0-3 velocity hold (score untouched ~100, heldReason="velocity") never self-clears via the
     // score hysteresis — an explicit admin clear-hold is the only release, and it must drop heldReason too.
     const { prisma, calls } = makeTx({ rider: { accountStatus: "active", onHold: true, reliabilityScore: 100, heldReason: "velocity" } });
@@ -408,7 +426,7 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
     expect(res).toEqual({ id: "r1", onHold: false, auditId: "audit-9" });
   });
 
-  it("clearHold refuses a rider who isn't on hold", async () => {
+  it("clearHold refuses a biker who isn't on hold", async () => {
     const { prisma, calls } = makeTx({ rider: { accountStatus: "active", onHold: false, reliabilityScore: 90 } });
     const svc = new AdminRidersService(prisma as unknown as PrismaService, noNotifications, noGateway);
     await expect(svc.clearHold("admin-1", "r1", {})).rejects.toThrow(/not on hold/i);
@@ -416,7 +434,7 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
     expect(calls.audit).toBeNull();
   });
 
-  it("clearHold refuses a suspended/banned rider — those use lift/ban instead", async () => {
+  it("clearHold refuses a suspended/banned biker — those use lift/ban instead", async () => {
     const { prisma, calls } = makeTx({ rider: { accountStatus: "suspended", onHold: true, reliabilityScore: 40 } });
     const svc = new AdminRidersService(prisma as unknown as PrismaService, noNotifications, noGateway);
     await expect(svc.clearHold("admin-1", "r1", {})).rejects.toThrow(/active/i);
@@ -424,18 +442,18 @@ describe("AdminRidersService mutations (Item 1 — mutation + audit in ONE $tran
     expect(calls.audit).toBeNull();
   });
 
-  it("clearHold 404s when the id isn't a rider and writes NOTHING", async () => {
+  it("clearHold 404s when the id isn't a biker and writes NOTHING", async () => {
     const { prisma, calls } = makeTx({ rider: null });
     const svc = new AdminRidersService(prisma as unknown as PrismaService, noNotifications, noGateway);
-    await expect(svc.clearHold("admin-1", "nope", {})).rejects.toThrow("Rider not found");
+    await expect(svc.clearHold("admin-1", "nope", {})).rejects.toThrow("Biker not found");
     expect(calls.riderUpdate).toBeNull();
     expect(calls.audit).toBeNull();
   });
 
-  it("suspendRider 404s when the id isn't a rider and writes NOTHING", async () => {
+  it("suspendRider 404s when the id isn't a biker and writes NOTHING", async () => {
     const { prisma, calls } = makeTx({ rider: null });
     const svc = new AdminRidersService(prisma as unknown as PrismaService, noNotifications, noGateway);
-    await expect(svc.suspendRider("admin-1", "nope", { reason: "x" })).rejects.toThrow("Rider not found");
+    await expect(svc.suspendRider("admin-1", "nope", { reason: "x" })).rejects.toThrow("Biker not found");
     expect(calls.riderUpdate).toBeNull();
     expect(calls.audit).toBeNull();
   });
@@ -522,7 +540,7 @@ describe("AdminRidersService suspend/ban replay idempotency (LC-D-SIB-2)", () =>
   }
   const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
-  it("replaying suspendRider on an already-suspended rider 409s — no second audit, push, revocation or eviction", async () => {
+  it("replaying suspendRider on an already-suspended biker 409s — no second audit, push, revocation or eviction", async () => {
     const s = makeStateful("active");
     await s.svc.suspendRider("admin-1", "r1", { reason: "safety report" });
     await flush();
@@ -536,7 +554,7 @@ describe("AdminRidersService suspend/ban replay idempotency (LC-D-SIB-2)", () =>
     expect(s.evicted).toEqual(["r1"]);
   });
 
-  it("replaying banRider on an already-banned rider 409s — no second audit, push, revocation or eviction", async () => {
+  it("replaying banRider on an already-banned biker 409s — no second audit, push, revocation or eviction", async () => {
     const s = makeStateful("active");
     await s.svc.banRider("admin-1", "r1", { reason: "fraud" });
     await flush();
@@ -550,7 +568,7 @@ describe("AdminRidersService suspend/ban replay idempotency (LC-D-SIB-2)", () =>
     expect(s.evicted).toEqual(["r1"]);
   });
 
-  it("a suspended rider can still be banned — the guard only refuses the SAME state", async () => {
+  it("a suspended biker can still be banned — the guard only refuses the SAME state", async () => {
     const s = makeStateful("suspended");
     await s.svc.banRider("admin-1", "r1", { reason: "fraud" });
     expect(s.audits.map((a) => a.action)).toEqual(["rider.ban"]);
@@ -608,7 +626,7 @@ describe("AdminRidersService standing-change customer notification", () => {
   const customerNotifies = (notified: Array<{ profileIds: string[]; msg: unknown }>) =>
     notified.filter((n) => (n.msg as { data?: { orderId?: string } }).data?.orderId != null);
 
-  it("suspendRider notifies the customer on the rider's active order", async () => {
+  it("suspendRider notifies the customer on the biker's active order", async () => {
     const { svc, notified } = makeTxWithOrders([{ id: "order-1", customerId: "cust-1" }]);
     await svc.suspendRider("admin-1", "r1", { reason: "safety report" });
     await flush();
@@ -618,7 +636,7 @@ describe("AdminRidersService standing-change customer notification", () => {
     expect(toCustomers[0]!.msg).toMatchObject({ data: { orderId: "order-1", kind: "account" } });
   });
 
-  it("banRider notifies every customer when the rider has multiple active orders", async () => {
+  it("banRider notifies every customer when the biker has multiple active orders", async () => {
     const { svc, notified } = makeTxWithOrders([
       { id: "order-1", customerId: "cust-1" },
       { id: "order-2", customerId: "cust-2" },
@@ -630,7 +648,7 @@ describe("AdminRidersService standing-change customer notification", () => {
     expect(toCustomers.map((n) => n.profileIds[0])).toEqual(["cust-1", "cust-2"]);
   });
 
-  it("suspendRider/banRider notify no customer when the rider has no active order", async () => {
+  it("suspendRider/banRider notify no customer when the biker has no active order", async () => {
     const { svc, notified } = makeTxWithOrders([]);
     await svc.suspendRider("admin-1", "r1", { reason: "x" });
     await flush();
@@ -653,7 +671,7 @@ describe("AdminRidersService standing-change customer notification", () => {
     ]);
   });
 
-  it("UX17-02: banRider writes the standing-notice audit row too, and none when the rider has no active order", async () => {
+  it("UX17-02: banRider writes the standing-notice audit row too, and none when the biker has no active order", async () => {
     const withOrders = makeTxWithOrders([{ id: "order-9", customerId: "cust-9" }]);
     await withOrders.svc.banRider("admin-1", "r1", { reason: "fraud" });
     await flush();
@@ -673,7 +691,7 @@ describe("AdminRidersService standing-change customer notification", () => {
   const riderOwnNotify = (notified: Array<{ profileIds: string[]; msg: unknown }>) =>
     notified.filter((n) => n.profileIds[0] === "r1" && (n.msg as { data?: { orderId?: string } }).data?.orderId == null);
 
-  it("UX18-04: banRider now also pushes the banned rider themselves an 'Account blocked' notice", async () => {
+  it("UX18-04: banRider now also pushes the banned biker themselves an 'Account blocked' notice", async () => {
     const { svc, notified } = makeTxWithOrders([]);
     await svc.banRider("admin-1", "r1", { reason: "fraud" });
     await flush();
@@ -682,7 +700,7 @@ describe("AdminRidersService standing-change customer notification", () => {
     expect(own[0]!.msg).toMatchObject({ title: "Account blocked" });
   });
 
-  it("UX18-05: liftRider resolves the standing notice for the customer on the rider's active order", async () => {
+  it("UX18-05: liftRider resolves the standing notice for the customer on the biker's active order", async () => {
     const { svc, notified, standingAudits } = makeTxWithOrders(
       [{ id: "order-1", customerId: "cust-1" }],
       { accountStatus: "suspended", onHold: false, reliabilityScore: 100 },
@@ -699,7 +717,7 @@ describe("AdminRidersService standing-change customer notification", () => {
     expect(toCustomer!.msg).toMatchObject({ title: "Your delivery is back on track", data: { orderId: "order-1", kind: "account" } });
   });
 
-  it("UX18-05: liftRider is a no-op resolution notice when the rider has no active order", async () => {
+  it("UX18-05: liftRider is a no-op resolution notice when the biker has no active order", async () => {
     const { svc, notified, standingAudits } = makeTxWithOrders([], { accountStatus: "suspended", onHold: false, reliabilityScore: 100 });
     await svc.liftRider("admin-1", "r1", {});
     await flush();
@@ -745,7 +763,7 @@ describe("AdminRidersService.walletView", () => {
     expect(out.nextCursor).toBeNull();
   });
 
-  it("degrades to a zero balance + empty ledger when the rider has no wallet row yet", async () => {
+  it("degrades to a zero balance + empty ledger when the biker has no wallet row yet", async () => {
     const prisma = {
       commissionAccount: { findUnique: async () => null },
       commissionLedger: { findMany: async () => [] },
@@ -757,7 +775,7 @@ describe("AdminRidersService.walletView", () => {
     expect(out.nextCursor).toBeNull();
   });
 
-  it("LC-D07: a rider with more than 20 entries gets a nextCursor instead of silently truncating", async () => {
+  it("LC-D07: a biker with more than 20 entries gets a nextCursor instead of silently truncating", async () => {
     const rows = Array.from({ length: 21 }, (_, i) =>
       row(`l${i + 1}`, new Date(new Date("2026-07-18T10:00:00Z").getTime() - i * 86_400_000).toISOString()),
     );
@@ -823,14 +841,14 @@ describe("AdminRidersService.verifyPlate (First Run v2 E4, D-82)", () => {
     expect(res).toEqual({ id: "r1", bikeReg: "ABZ 4417", plateStatus: "verified", auditId: "audit-p" });
   });
 
-  it("refuses when the rider changed the plate since (0 rows) — nothing unseen is marked verified", async () => {
+  it("refuses when the biker changed the plate since (0 rows) — nothing unseen is marked verified", async () => {
     const { prisma, calls } = plateTx({ bikeReg: "ABZ 9999", plateStatus: "checking" }, 0);
     const svc = new AdminRidersService(prisma as unknown as PrismaService, noNotifications, noGateway);
     await expect(svc.verifyPlate("admin-1", "r1", { plate: "ABZ 4417" })).rejects.toThrow(/changed/i);
     expect(calls.audit).toBeNull();
   });
 
-  it("refuses a plate that isn't waiting for a check, and a rider with none", async () => {
+  it("refuses a plate that isn't waiting for a check, and a biker with none", async () => {
     for (const rider of [{ bikeReg: "ABZ 4417", plateStatus: "verified" }, { bikeReg: "ABZ 4417", plateStatus: "none" }, { bikeReg: null, plateStatus: "none" }]) {
       const { prisma, calls } = plateTx(rider);
       const svc = new AdminRidersService(prisma as unknown as PrismaService, noNotifications, noGateway);

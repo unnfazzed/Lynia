@@ -89,6 +89,17 @@ while read -r ref; do
 done <<< "$refs"
 ok "$count referenced assets checked"
 
+# 3b. The email-signature image: mail clients hotlink it at this exact URL (no redirect, image/png).
+h=$(curl -sS -D - -o /dev/null "$ORIGIN/email/lyniago-signature-logo-tile.png")
+status=$(printf '%s' "$h" | head -1 | awk '{print $2}')
+type=$(header "$h" content-type)
+cache=$(header "$h" cache-control)
+if [ "$status" = 200 ] && [[ "$type" == image/png* ]] && [[ "$cache" == "public, max-age=31536000"* ]]; then
+  ok "/email/lyniago-signature-logo-tile.png is 200 image/png, cached a year"
+else
+  err "/email/lyniago-signature-logo-tile.png: HTTP $status, type '$type', cache-control '$cache'"
+fi
+
 # 4. Routing.
 page404=$(mktemp)
 h=$(curl -sS -D - -o "$page404" "${BROWSER[@]}" "$ORIGIN/about")

@@ -14,6 +14,7 @@ import {
   RESTAURANTS_DISPATCH,
   dispatchRoundSize,
 } from "./restaurants-order";
+import { NATIONWIDE_REACH_M } from "./service-area";
 
 describe("RESTAURANTS_PRICING constants", () => {
   it("pins the N-01/N-15 numbers", () => {
@@ -135,7 +136,7 @@ describe("rejectionCopy — D-11", () => {
   });
 
   it("carries a no_rider apology (D-13) distinct from the generic fallback", () => {
-    expect(rejectionCopy("no_rider")).toMatch(/couldn't find a rider/i);
+    expect(rejectionCopy("no_rider")).toMatch(/couldn't find a biker/i);
     expect(rejectionCopy("no_rider")).not.toBe(MERCHANT_REJECTION_REASONS.other);
   });
 });
@@ -152,5 +153,15 @@ describe("RESTAURANTS_DISPATCH config — C3", () => {
     expect(dispatchRoundSize(1)).toBe(10);
     expect(dispatchRoundSize(2)).toBeNull();
     expect(dispatchRoundSize(RESTAURANTS_DISPATCH.maxAttempts)).toBeNull();
+  });
+
+  it("caps the pickup reach at 15 km — food is first-accept-wins, not D-99's nationwide parcel reach (owner 2026-10-12)", () => {
+    expect(RESTAURANTS_DISPATCH.pickupReachM).toBe(15_000);
+    expect(RESTAURANTS_DISPATCH.pickupReachM).toBeLessThan(NATIONWIDE_REACH_M);
+  });
+
+  it("lets a decline lapse after 10 minutes (owner 2026-10-12) — longer than one full search, so a pass holds for the cycle", () => {
+    expect(RESTAURANTS_DISPATCH.declineCooldownMs).toBe(10 * 60 * 1000);
+    expect(RESTAURANTS_DISPATCH.declineCooldownMs).toBeGreaterThan(RESTAURANTS_DISPATCH.maxAttempts * RESTAURANTS_DISPATCH.offerWindowMs);
   });
 });

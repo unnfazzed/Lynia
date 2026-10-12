@@ -49,7 +49,7 @@ describe("TrackingService.canAccessOrder", () => {
     const s = svc(async () => ({ customerId: "u1", riderId: "r9" }));
     expect(await s.canAccessOrder("u1", "o1")).toBe(true);
   });
-  it("allows the assigned rider", async () => {
+  it("allows the assigned biker", async () => {
     const s = svc(async () => ({ customerId: "c9", riderId: "u1" }));
     expect(await s.canAccessOrder("u1", "o1")).toBe(true);
   });
@@ -94,15 +94,15 @@ describe("TrackingService.isAssignedRider", () => {
   it("denies a missing order", async () => {
     expect(await svc(async () => null).isAssignedRider("u1", "o1")).toBe(false);
   });
-  it("denies a rider who is not assigned", async () => {
+  it("denies a biker who is not assigned", async () => {
     const s = svc(async () => ({ riderId: "r9", status: "assigned" }));
     expect(await s.isAssignedRider("u1", "o1")).toBe(false);
   });
-  it("denies the assigned rider when the ride is not active", async () => {
+  it("denies the assigned biker when the ride is not active", async () => {
     const s = svc(async () => ({ riderId: "u1", status: "completed" }));
     expect(await s.isAssignedRider("u1", "o1")).toBe(false);
   });
-  it("allows the assigned rider on an active ride", async () => {
+  it("allows the assigned biker on an active ride", async () => {
     const s = svc(async () => ({ riderId: "u1", status: "en_route_pickup" }));
     expect(await s.isAssignedRider("u1", "o1")).toBe(true);
   });
@@ -121,34 +121,34 @@ describe("TrackingService.isBoardEligible", () => {
   it("denies a non-rider (no row)", async () => {
     expect(await riderSvc(null).isBoardEligible("u1")).toBe(false);
   });
-  it("denies an unverified rider", async () => {
+  it("denies an unverified biker", async () => {
     expect(await riderSvc({ ...goodStanding, kycStatus: "pending" }).isBoardEligible("u1")).toBe(false);
   });
-  it("denies a verified rider who is offline", async () => {
+  it("denies a verified biker who is offline", async () => {
     expect(await riderSvc({ ...goodStanding, isOnline: false }).isBoardEligible("u1")).toBe(false);
   });
   // The board gate MUST mirror the offer gate (offers.service §5d): a rider who can't make an offer
   // must not receive board broadcasts. These four mirror onlineRefusalReason's standing checks.
-  it("denies a suspended rider (account standing)", async () => {
+  it("denies a suspended biker (account standing)", async () => {
     expect(await riderSvc({ ...goodStanding, accountStatus: "suspended" }).isBoardEligible("u1")).toBe(false);
   });
-  it("denies a banned rider (account standing)", async () => {
+  it("denies a banned biker (account standing)", async () => {
     expect(await riderSvc({ ...goodStanding, accountStatus: "banned" }).isBoardEligible("u1")).toBe(false);
   });
-  it("denies an on_hold rider even though they stay isOnline:true (reliability gate)", async () => {
+  it("denies an on_hold biker even though they stay isOnline:true (reliability gate)", async () => {
     // The exact bug: a reliability drop sets onHold without forcing offline, so an on_hold rider is
     // still isOnline:true and would slip through a kyc+online-only check — but can't make offers.
     expect(await riderSvc({ ...goodStanding, onHold: true }).isBoardEligible("u1")).toBe(false);
   });
-  it("denies a rider on an active no-show cooldown", async () => {
+  it("denies a biker on an active no-show cooldown", async () => {
     const future = new Date(Date.now() + 60_000);
     expect(await riderSvc({ ...goodStanding, cooldownUntil: future }).isBoardEligible("u1")).toBe(false);
   });
-  it("allows a rider on an EXPIRED cooldown (past → no longer gating)", async () => {
+  it("allows a biker on an EXPIRED cooldown (past → no longer gating)", async () => {
     const past = new Date(Date.now() - 60_000);
     expect(await riderSvc({ ...goodStanding, cooldownUntil: past }).isBoardEligible("u1")).toBe(true);
   });
-  it("allows a verified, online rider in good standing", async () => {
+  it("allows a verified, online biker in good standing", async () => {
     expect(await riderSvc(goodStanding).isBoardEligible("u1")).toBe(true);
   });
 });
@@ -233,7 +233,7 @@ describe("TrackingService.recordFix (Redis path — injected fake)", () => {
     expect(positioned).toHaveLength(1); // the last-known position was persisted on disconnect
   });
 
-  it("DS13-02: flushToPg does NOT evict the rider from the geo index (backgrounded-but-online stays a candidate)", async () => {
+  it("DS13-02: flushToPg does NOT evict the biker from the geo index (backgrounded-but-online stays a candidate)", async () => {
     // A socket disconnect (phone backgrounded/locked) must NOT remove an is_online=true rider from the
     // GEOSEARCH candidate set — that set is the primary source of the new-order FCM broadcast + supply
     // counts, and PG is_online is the authority. Eviction happens ONLY on explicit go-offline.
@@ -251,7 +251,7 @@ describe("TrackingService.recordFix (Redis path — injected fake)", () => {
     expect(executeRaw).toHaveBeenCalled();
   });
 
-  it("DS13-02: explicit go-offline eviction still removes the rider (evictFromGeo unchanged)", async () => {
+  it("DS13-02: explicit go-offline eviction still removes the biker (evictFromGeo unchanged)", async () => {
     // The eviction path itself is untouched: setOnline(false) → evictFromGeo → ZREM. Asserted directly
     // so the disconnect-path change above doesn't weaken the go-offline invariant.
     const redis = { ...fakeRedis(), zrem: vi.fn(async () => 1) };
@@ -263,7 +263,7 @@ describe("TrackingService.recordFix (Redis path — injected fake)", () => {
     expect(redis.zrem).toHaveBeenCalledWith("rider:geo", "rider-1");
   });
 
-  it("recordFix GEOADDs the rider into the geo index (best-effort, alongside the position SET)", async () => {
+  it("recordFix GEOADDs the biker into the geo index (best-effort, alongside the position SET)", async () => {
     const redis = fakeRedis();
     const s = new TrackingService({ REDIS_URL: "redis://x" } as Env, { $executeRaw: vi.fn(async () => 1) } as unknown as PrismaService, fakeMetrics());
     s.setRedisClient(redis as never);
@@ -286,7 +286,7 @@ describe("TrackingService.recordFix (Redis path — injected fake)", () => {
 });
 
 describe("TrackingService.nearbyRiders (Redis prefilter path)", () => {
-  it("GEOSEARCHes candidates then keeps only PG-confirmed online riders, preserving nearest-first order", async () => {
+  it("GEOSEARCHes candidates then keeps only PG-confirmed online bikers, preserving nearest-first order", async () => {
     const redis = fakeRedis();
     // GEOSEARCH yields three candidates nearest-first; PG will confirm only two are still online.
     redis.geoResult.push(["rider-near", "100"], ["rider-off", "200"], ["rider-far", "300"]);
@@ -663,7 +663,7 @@ describe("TrackingService.observeRiderLeg (Merchant v2, D-77: 'at your counter' 
     expect(data.riderEtaAt.getTime()).toBeGreaterThan(NOW);
   });
 
-  it("within the arrival radius: marks the rider at the counter once and clears the estimate", async () => {
+  it("within the arrival radius: marks the biker at the counter once and clears the estimate", async () => {
     const { s, updateMany } = legSvc({ riderEtaAt: new Date(NOW + 60_000) });
     await s.observeRiderLeg("o1", { lat: COUNTER.lat + 0.0003, lng: COUNTER.lng }, NOW);
     expect(updateMany.mock.calls[0]![0]).toEqual({ where: { id: "o1", status: "en_route_pickup" }, data: { riderArrivedAt: new Date(NOW), riderEtaAt: null } });

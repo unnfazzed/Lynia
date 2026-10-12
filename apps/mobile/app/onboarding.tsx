@@ -2,6 +2,7 @@ import { tokens } from "@lynia/shared/tokens";
 import { useRouter } from "expo-router";
 import React from "react";
 import { Text, View } from "react-native";
+import { clearSignupIntent, saveSignupIntent } from "../src/auth/device-state";
 import { saveOnboardingSeen } from "../src/auth/session";
 import { riderModeAvailable } from "../src/rider-mode";
 import { DoveMark, Icon, Tappable, Wordmark, type IconName } from "../src/ui";
@@ -34,6 +35,10 @@ export default function OnboardingScreen(): React.ReactElement {
   const router = useRouter();
   const go = (rider: boolean): void => {
     void saveOnboardingSeen();
+    // The rider path is kept on the device until sign-in completes, not only in the route params: an app
+    // killed on C2 or C4 relaunches onto the phone screen with no params, and the sign-up must still end
+    // in the rider app. The customer CTA drops any intent an earlier tap left behind.
+    void (rider ? saveSignupIntent("rider") : clearSignupIntent());
     router.replace(rider ? { pathname: "/phone", params: { intent: "rider" } } : "/phone");
   };
 

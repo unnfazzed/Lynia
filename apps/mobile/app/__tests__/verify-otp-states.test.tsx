@@ -26,6 +26,12 @@ jest.mock("../../src/api/auth", () => ({
 }));
 let mockRole: string | null = null;
 const mockSaveRole = jest.fn(async (_role: string) => undefined);
+let mockStoredIntent: "rider" | null = null;
+const mockClearIntent = jest.fn(async () => undefined);
+jest.mock("../../src/auth/device-state", () => ({
+  loadSignupIntent: async () => mockStoredIntent,
+  clearSignupIntent: () => mockClearIntent(),
+}));
 jest.mock("../../src/auth/session", () => ({
   loadRolePreference: async () => mockRole,
   saveRolePreference: (r: string) => mockSaveRole(r),
@@ -61,6 +67,7 @@ async function type(t: renderer.ReactTestRenderer, value: string): Promise<void>
 beforeEach(() => {
   mockLocalSearchParams = { phone: "+263772451180", deliveryChannel: "whatsapp" };
   mockRole = null;
+  mockStoredIntent = null;
   navCalls.length = 0;
 });
 afterEach(() => {
@@ -114,13 +121,32 @@ describe("C4 · Code — the sixth digit verifies", () => {
     expect(mockReplace).toHaveBeenCalledWith("/home");
   });
 
-  it("the C1 rider path goes OTP → the rider side, no priming (D-82 G1)", async () => {
+  it("the C1 biker path goes OTP → the biker side, no priming (D-82 G1) — straight to R1 for an account with no rider record", async () => {
     mockLocalSearchParams = { phone: "+263772451180", deliveryChannel: "whatsapp", intent: "rider" };
     mockVerifyOtp.mockResolvedValue(ok);
     const t = mount({ initialCooldownS: 30 });
     await type(t, "418210");
     expect(mockSaveRole).toHaveBeenCalledWith("rider");
+    expect(mockReplace).toHaveBeenCalledWith("/rider/become");
+    expect(mockReplace).not.toHaveBeenCalledWith("/rider");
+  });
+
+  it("a returning biker (server role rider) lands on the board", async () => {
+    mockLocalSearchParams = { phone: "+263772451180", deliveryChannel: "whatsapp", intent: "rider" };
+    mockVerifyOtp.mockResolvedValue({ ...ok, role: "rider" });
+    const t = mount({ initialCooldownS: 30 });
+    await type(t, "418210");
     expect(mockReplace).toHaveBeenCalledWith("/rider");
+  });
+
+  it("an app killed on C2/C4 keeps the C1 biker path: read back from the device when the params lost it, then cleared", async () => {
+    mockStoredIntent = "rider";
+    mockVerifyOtp.mockResolvedValue({ ...ok, needsProfile: true });
+    const t = mount({ initialCooldownS: 30 });
+    await type(t, "418210");
+    expect(mockSignIn).toHaveBeenCalledWith(expect.objectContaining({ needsProfile: true, signupIntent: "rider" }));
+    expect(mockReplace).toHaveBeenCalledWith({ pathname: "/profile/setup", params: { phone: "+263772451180", intent: "rider" } });
+    expect(mockClearIntent).toHaveBeenCalled();
   });
 
   it("a new account goes to C5 carrying the phone, channel and intent", async () => {
@@ -170,8 +196,8 @@ describe("C4 · signing in clears the stack", () => {
 });
 
 // C-3: the saved role is wiped by sign-out; a returning rider must not land in the customer app.
-describe("C4 · a returning rider with no saved role", () => {
-  it("follows the server's role into the rider app", async () => {
+describe("C4 · a returning biker with no saved role", () => {
+  it("follows the server's role into the biker app", async () => {
     mockVerifyOtp.mockResolvedValue({ ...okRes, role: "rider" });
     const t = mount({ initialCooldownS: 30 });
     await type(t, "418210");

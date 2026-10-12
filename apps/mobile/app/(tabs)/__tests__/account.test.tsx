@@ -18,7 +18,8 @@ const mockGetMe = jest.fn<Promise<Me>, []>();
 const mockPush = jest.fn();
 const mockReplace = jest.fn();
 
-jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush, replace: mockReplace, back: jest.fn() }), useFocusEffect: () => undefined }));
+const mockDismissAll = jest.fn();
+jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush, replace: mockReplace, dismissAll: mockDismissAll, back: jest.fn() }), useFocusEffect: () => undefined }));
 const mockStoreWrites: Array<[string, string]> = [];
 jest.mock("expo-secure-store", () => ({
   getItemAsync: async () => null,
@@ -138,18 +139,18 @@ describe("customer Account — the Become card and toggle (startup review 2026-1
     expect(has(tree, "The ID photo was blurry. You have 1 try left.")).toBe(true);
   });
 
-  it("R-5: switching to Rider saves the rider side for the next cold start", async () => {
+  it("R-5: switching to Biker saves the biker side for the next cold start", async () => {
     mockStoreWrites.length = 0;
     mockGetMe.mockResolvedValue(me({}));
     tree = renderScreen();
     await settle();
-    press(tree, "Rider");
+    press(tree, "Biker");
     await settle();
     expect(mockStoreWrites).toContainEqual(["lynia.rolePreference", "rider"]);
   });
 });
 
-describe("customer Account (Rider v2 C6–C11)", () => {
+describe("customer Account (Biker v2 C6–C11)", () => {
   it("draws the three customer rows, routed to the customer side (Trip history retired, D-63)", async () => {
     mockGetMe.mockResolvedValue(me(null));
     tree = renderScreen();
@@ -171,20 +172,23 @@ describe("customer Account (Rider v2 C6–C11)", () => {
     // First Run v2 G2 (D-82): the violet card, KY's words, "Start" → R1.
     expect(hasBecomeCard(tree)).toBe(true);
     expect(has(tree, KY.becomeBody)).toBe(true);
-    expect(has(tree, "Rider")).toBe(false);
+    expect(has(tree, "Biker")).toBe(false);
     press(tree, KY.becomeCta);
     expect(mockPush).toHaveBeenCalledWith("/rider/become");
   });
 
-  it("a rider gets the toggle with Customer selected; Rider goes to Jobs", async () => {
+  it("a biker gets the toggle with Customer selected; Biker goes to Jobs", async () => {
     mockGetMe.mockResolvedValue(me({}));
     tree = renderScreen();
     await settle();
     expect(hasBecomeCard(tree)).toBe(false);
     const customer = tree.root.findAll((n) => n.props.accessibilityRole === "radio" && n.props.accessibilityLabel === "Customer")[0]!;
     expect(customer.props.accessibilityState.selected).toBe(true);
-    press(tree, "Rider");
+    press(tree, "Biker");
     expect(mockReplace).toHaveBeenCalledWith("/rider");
+    // Customer Home is cleared from under the board: Back must not jump sides.
+    expect(mockDismissAll).toHaveBeenCalled();
+    expect(mockDismissAll.mock.invocationCallOrder[0]).toBeLessThan(mockReplace.mock.invocationCallOrder[0]!);
   });
 
   it("draws neither the toggle nor the card while the profile is loading", async () => {
@@ -192,7 +196,7 @@ describe("customer Account (Rider v2 C6–C11)", () => {
     tree = renderScreen();
     await settle();
     expect(hasBecomeCard(tree)).toBe(false);
-    expect(has(tree, "Rider")).toBe(false);
+    expect(has(tree, "Biker")).toBe(false);
   });
 
   it("draws neither when the profile fetch fails", async () => {
@@ -200,12 +204,12 @@ describe("customer Account (Rider v2 C6–C11)", () => {
     tree = renderScreen();
     await settle();
     expect(hasBecomeCard(tree)).toBe(false);
-    expect(has(tree, "Rider")).toBe(false);
+    expect(has(tree, "Biker")).toBe(false);
   });
 });
 
 describe("customer Account — First Run v2 G2 / G3 and the copy pass (D-82)", () => {
-  it("G3: mid-check, the card switches to the rider side like the toggle — the board shows the current F page", async () => {
+  it("G3: mid-check, the card switches to the biker side like the toggle — the board shows the current F page", async () => {
     mockStoreWrites.length = 0;
     mockGetMe.mockResolvedValue(me({ kycStatus: "pending", kycPendingState: "unfinished" }));
     tree = renderScreen();

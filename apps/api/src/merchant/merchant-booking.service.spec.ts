@@ -324,7 +324,7 @@ describe("MerchantBookingService.create (merchant web upgrade L2, D9)", () => {
     expect(w.bookings.size).toBe(1);
   });
 
-  it("applies Send's per-person checks to the member booking (OV-5): a held member, a banned or suspended rider", async () => {
+  it("applies Send's per-person checks to the member booking (OV-5): a held member, a banned or suspended biker", async () => {
     w.profiles.get("cashier")!.onHold = true;
     await expect(w.svc.create(STAFF, "cashier", form())).rejects.toMatchObject({ status: 403, response: { reason: "on_hold" } });
     w.profiles.get("cashier")!.onHold = false;
@@ -372,7 +372,7 @@ describe("the Deliveries list and a booking's detail", () => {
     await expect(w.svc.detail(OWNER, "no-such-order")).rejects.toMatchObject({ status: 404 });
   });
 
-  it("while finding a rider, the detail lists the offers and marks a teammate's", async () => {
+  it("while finding a biker, the detail lists the offers and marks a teammate's", async () => {
     const booking = await w.svc.create(OWNER, "owner", form());
     w.offers.push({ id: "offer-1", orderId: booking.id, riderId: "rider-1", status: "pending" }, { id: "offer-2", orderId: booking.id, riderId: "cashier", status: "pending" });
     const detail = await w.svc.detail(STAFF, booking.id);
@@ -383,7 +383,7 @@ describe("the Deliveries list and a booking's detail", () => {
     ]);
   });
 
-  it("marks an offer from one of the business's own riders (L3), matched by the number they sign in with", async () => {
+  it("marks an offer from one of the business's own bikers (L3), matched by the number they sign in with", async () => {
     const booking = await w.svc.create(OWNER, "owner", form());
     w.preferredRiders.push({ merchantId: "m1", phone: "+263774440000" }, { merchantId: "other", phone: "+263771113333" });
     w.offers.push({ id: "offer-1", orderId: booking.id, riderId: "rider-1", status: "pending" });
@@ -391,7 +391,7 @@ describe("the Deliveries list and a booking's detail", () => {
     expect(detail.offers.map((o) => [o.rider.name, o.preferred])).toEqual([["Farai Chari", true]]);
   });
 
-  it("a rider's cancel shows as the cancelled booking pointing at Send's re-broadcast, which keeps the booker", async () => {
+  it("a biker's cancel shows as the cancelled booking pointing at Send's re-broadcast, which keeps the booker", async () => {
     const booking = await w.svc.create(OWNER, "owner", form());
     const original = w.orders.get(booking.id)!;
     Object.assign(original, { status: "cancelled", riderId: "rider-1", cancelledBy: "rider-1" });
@@ -531,7 +531,7 @@ describe("pick, cancel, a new code, try again", () => {
     expect(reason).toBe("Buyer changed their mind");
     expect(opts).toEqual({
       allowedStatuses: ["open_for_offers", "assigned", "confirmed", "en_route_pickup"],
-      refusal: { reason: "picked_up", message: "The rider has it now. Call the rider." },
+      refusal: { reason: "picked_up", message: "The biker has it now. Call the biker." },
     });
     expect(cancelled).toMatchObject({ state: "cancelled", cancelledBy: "business" });
     expect(w.bookings.get(booking.id)?.cancelledByProfileId).toBe("cashier");
@@ -574,7 +574,7 @@ describe("pick, cancel, a new code, try again", () => {
 });
 
 describe("cash on delivery (D-48 PR 4b)", () => {
-  it("adds the cash line riders see, records the choice, and keeps the shop's own summary clean", async () => {
+  it("adds the cash line bikers see, records the choice, and keeps the shop's own summary clean", async () => {
     const booking = await w.svc.create(OWNER, "owner", form({ declaredValue: 51, collectCash: true }));
     const [input] = w.ordersSvc.create.mock.calls[0]!;
     expect(input.items).toEqual([

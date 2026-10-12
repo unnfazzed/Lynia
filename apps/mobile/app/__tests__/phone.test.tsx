@@ -6,6 +6,7 @@
 import { tokens } from "@lynia/shared/tokens";
 import renderer, { act } from "react-test-renderer";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { BackHandler } from "react-native";
 
 const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 360, height: 720 } };
 let mockParams: { intent?: string } = {};
@@ -17,8 +18,11 @@ let mockNavState: { index: number; routes: { name: string }[] } = { index: 0, ro
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: mockPush, replace: mockReplace, back: mockBack, dismissAll: mockDismissAll, canGoBack: () => true, canDismiss: () => true }),
   useLocalSearchParams: () => mockParams,
-  useNavigation: () => ({ getState: () => mockNavState }),
+  useNavigation: () => ({ getState: () => mockNavState, isFocused: () => mockFocused }),
 }));
+let mockFocused = true;
+let mockStoredIntent: "rider" | null = null;
+jest.mock("../../src/auth/device-state", () => ({ loadSignupIntent: async () => mockStoredIntent }));
 let mockSession: object | null = null;
 jest.mock("../../src/auth/auth-context", () => ({ useAuth: () => ({ session: mockSession }) }));
 const mockRequestOtp = jest.fn(async (_phone: string): Promise<unknown> => ({ deliveryChannel: "whatsapp", devCode: null }));
@@ -67,6 +71,8 @@ afterEach(() => {
   mockParams = {};
   mockSession = null;
   mockNavState = { index: 0, routes: [{ name: "phone" }] };
+  mockFocused = true;
+  mockStoredIntent = null;
   jest.clearAllMocks();
 });
 
@@ -89,12 +95,29 @@ describe("C2 / C3 · Phone", () => {
     expect(mockRequestOtp).not.toHaveBeenCalled();
   });
 
-  it("sends E.164 and carries the rider intent to the code screen", async () => {
+  it("sends E.164 and carries the biker intent to the code screen", async () => {
     mockParams = { intent: "rider" };
     const t = mount();
     typeIn(t, "77 245 1180");
     await send(t);
     expect(mockRequestOtp).toHaveBeenCalledWith("+263772451180");
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/verify",
+      params: { phone: "+263772451180", devCode: "", deliveryChannel: "whatsapp", intent: "rider" },
+    });
+  });
+});
+
+// An app killed on C2 / C4 relaunches here with no params: C1's biker path comes back from the device.
+describe("C2 · the biker path survives an app kill", () => {
+  it("carries the device-kept biker intent to the code screen when the params lost it", async () => {
+    mockStoredIntent = "rider";
+    const t = mount();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    typeIn(t, "77 245 1180");
+    await send(t);
     expect(mockPush).toHaveBeenCalledWith({
       pathname: "/verify",
       params: { phone: "+263772451180", devCode: "", deliveryChannel: "whatsapp", intent: "rider" },
@@ -167,6 +190,53 @@ describe("C2 · Back", () => {
     const btn = t.root.find((n) => n.props?.accessibilityLabel === "Back" && typeof n.props?.onPress === "function");
     act(() => btn.props.onPress());
   };
+
+  const hardwareBack = (): { handlers: (() => boolean | null | undefined)[]; restore: () => void } => {
+    const handlers: (() => boolean | null | undefined)[] = [];
+    const spy = jest.spyOn(BackHandler, "addEventListener").mockImplementation((_e, h) => {
+      handlers.push(h);
+      return { remove: () => void handlers.splice(handlers.indexOf(h), 1) } as never;
+    });
+    return { handlers, restore: () => spy.mockRestore() };
+  };
+
+  it("Android Back with nothing behind (C1 replaced itself) does what the arrow does — never closes the app", () => {
+    const hb = hardwareBack();
+    mount();
+    let consumed: boolean | null | undefined;
+    act(() => {
+      consumed = hb.handlers.at(-1)?.();
+    });
+    expect(consumed).toBe(true);
+    expect(mockDismissAll).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith("/onboarding");
+    hb.restore();
+  });
+
+  it("Android Back with C1 behind is an ordinary back", () => {
+    mockNavState = { index: 1, routes: [{ name: "onboarding" }, { name: "phone" }] };
+    const hb = hardwareBack();
+    mount();
+    act(() => {
+      hb.handlers.at(-1)?.();
+    });
+    expect(mockBack).toHaveBeenCalledTimes(1);
+    hb.restore();
+  });
+
+  it("Android Back is left to the code screen while it sits on top", () => {
+    mockFocused = false;
+    const hb = hardwareBack();
+    mount();
+    let consumed: boolean | null | undefined;
+    act(() => {
+      consumed = hb.handlers.at(-1)?.();
+    });
+    expect(consumed).toBe(false);
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
+    hb.restore();
+  });
 
   it("signed out with C1 behind it: an ordinary back", () => {
     mockNavState = { index: 1, routes: [{ name: "onboarding" }, { name: "phone" }] };

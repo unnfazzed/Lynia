@@ -5,7 +5,7 @@ import { isSilentPush, notificationRowDestination, pushDestination, pushOnce } f
 // was a no-op — despite copy like "tap to rate your rider" / "tap for details" on the
 // customer-facing statuses (notifications.service.ts STATUS_NOTICES).
 describe("pushDestination", () => {
-  it("routes the rider's 'you got the job' push to the job screen regardless of the tapping profile's role", () => {
+  it("routes the biker's 'you got the job' push to the job screen regardless of the tapping profile's role", () => {
     expect(pushDestination({ orderId: "o1", status: "assigned" }, false)).toBe("/rider/job");
     expect(pushDestination({ orderId: "o1", status: "assigned" }, true)).toBe("/rider/job");
   });
@@ -14,7 +14,7 @@ describe("pushDestination", () => {
   // push can arrive the job has already left /rider/job's active feed — routing there rendered a bare
   // "No active job" dead end for a push whose whole point ("you're free for the next job") is to send
   // the rider toward their NEXT job, i.e. the board.
-  it("routes the rider's 'delivery complete' push to the board, not the (by-then-dead) job screen", () => {
+  it("routes the biker's 'delivery complete' push to the board, not the (by-then-dead) job screen", () => {
     expect(pushDestination({ orderId: "o1", status: "completed" }, false)).toBe("/rider");
   });
 
@@ -59,7 +59,7 @@ describe("pushDestination", () => {
     expect(pushDestination({ orderId: "o1", status: "cancelled", to: 7 }, true)).toBe("/rider/job");
   });
 
-  it("routes a new-broadcast alert to the rider board, not the order (a rider who hasn't bid 403s on /order/:id)", () => {
+  it("routes a new-broadcast alert to the biker board, not the order (a biker who hasn't bid 403s on /order/:id)", () => {
     // notifyNewBroadcast sends { orderId, kind: "broadcast" } to nearby riders who haven't bid yet.
     expect(pushDestination({ orderId: "o1", kind: "broadcast" }, true)).toBe("/rider");
     expect(pushDestination({ kind: "broadcast" }, true)).toBe("/rider");
@@ -67,7 +67,9 @@ describe("pushDestination", () => {
 
   it("routes a food-dispatch offer to the offer intake screen (D5)", () => {
     // food-dispatch.service.ts tick() sends { orderId, kind: "food_offer" } to the one candidate rider.
-    expect(pushDestination({ orderId: "o1", kind: "food_offer" }, true)).toBe("/rider/food-offer");
+    // Pinned to the push's own order: several orders can ring one rider at once (owner 2026-10-12).
+    expect(pushDestination({ orderId: "o1", kind: "food_offer" }, true)).toBe("/rider/food-offer?orderId=o1");
+    // No orderId (an older push): the offer running out first, as before.
     expect(pushDestination({ kind: "food_offer" }, true)).toBe("/rider/food-offer");
   });
 
@@ -79,12 +81,12 @@ describe("pushDestination", () => {
     expect(pushDestination(data, true)).toBe("/order/o1");
   });
 
-  it("routes the 'a rider's online near you' push home so the customer can re-broadcast", () => {
+  it("routes the 'a biker's online near you' push home so the customer can re-broadcast", () => {
     // notifyRidersAvailable carries no orderId — before this it dead-ended to null.
     expect(pushDestination({ kind: "riders_available" }, false)).toBe("/home");
   });
 
-  it("KB-NOTIFY-ORDERID: routes a 'rider's online' push to the live order when it carries an orderId", () => {
+  it("KB-NOTIFY-ORDERID: routes a 'biker's online' push to the live order when it carries an orderId", () => {
     // When the customer's original auction is still open, the push carries its orderId → follow it there.
     expect(pushDestination({ kind: "riders_available", orderId: "o1" }, false)).toBe("/order/o1");
     // An empty/absent orderId keeps the prior home-route behaviour.
@@ -104,7 +106,7 @@ describe("pushDestination", () => {
     expect(pushDestination({ kind: "account", orderId: "o1" }, false)).toBe("/order/o1");
   });
 
-  it("falls back to /rider for an account-kind push with no orderId (the rider's own KYC/standing case)", () => {
+  it("falls back to /rider for an account-kind push with no orderId (the biker's own KYC/standing case)", () => {
     expect(pushDestination({ kind: "account" }, false)).toBe("/rider");
     expect(pushDestination({ kind: "account", orderId: "" }, true)).toBe("/rider");
   });
@@ -130,7 +132,7 @@ describe("pushDestination", () => {
     }
   });
 
-  it("routes a food 'Rider secured' (assigned) push to the food tracker for the customer, NOT /rider/job", () => {
+  it("routes a food 'Biker secured' (assigned) push to the food tracker for the customer, NOT /rider/job", () => {
     // The customer-targeted food `assigned` push carries to:"customer" + orderType:"merchant".
     expect(pushDestination({ orderId: "o1", status: "assigned", to: "customer", orderType: "merchant" }, false)).toBe("/order/o1");
     // Even for a dual-role account currently in rider mode — `to` is per-push authoritative.
@@ -143,12 +145,12 @@ describe("pushDestination", () => {
     );
   });
 
-  it("routes SOS on a food order to the food tracker for the customer, and to /rider/job for the rider", () => {
+  it("routes SOS on a food order to the food tracker for the customer, and to /rider/job for the biker", () => {
     expect(pushDestination({ orderId: "o1", kind: "sos", to: "customer", orderType: "merchant" }, false)).toBe("/order/o1");
     expect(pushDestination({ orderId: "o1", kind: "sos", to: "rider", orderType: "merchant" }, true)).toBe("/rider/job");
   });
 
-  it("keeps the rider on /rider/job for a merchant order pushed to the rider (only the customer gets the food tracker)", () => {
+  it("keeps the biker on /rider/job for a merchant order pushed to the biker (only the customer gets the food tracker)", () => {
     expect(pushDestination({ orderId: "o1", status: "assigned", to: "rider", orderType: "merchant" }, true)).toBe("/rider/job");
   });
 
@@ -210,11 +212,11 @@ describe("notificationRowDestination", () => {
   // push opens (pushDestination's RIDER_JOB_SCREEN_STATUSES / cancelled branches), not the dead-control
   // /order/:id detour (no pickup/confirm/bail controls for an active job; no call button for a cancelled
   // one — CancelledHandback's hand-back guidance only renders at /rider/job).
-  it("routes a rider's own 'assigned' row to /rider/job, mirroring pushDestination", () => {
+  it("routes a biker's own 'assigned' row to /rider/job, mirroring pushDestination", () => {
     expect(notificationRowDestination({ orderId: "o1", to: "rider", status: "assigned" })).toBe("/rider/job");
   });
 
-  it("routes a rider's own 'cancelled' row to /rider/job, mirroring pushDestination", () => {
+  it("routes a biker's own 'cancelled' row to /rider/job, mirroring pushDestination", () => {
     expect(notificationRowDestination({ orderId: "o1", to: "rider", status: "cancelled" })).toBe("/rider/job");
   });
 
@@ -266,7 +268,7 @@ describe("isSilentPush (Merchant v2 +5 min)", () => {
 });
 
 describe("free-jobs top-up reminder (D-79)", () => {
-  it("opens the rider's Money tab from the push and from its feed row", () => {
+  it("opens the biker's Money tab from the push and from its feed row", () => {
     expect(pushDestination({ kind: "free_jobs", milestone: "one_left" }, true)).toBe("/rider/money");
     expect(notificationRowDestination({ orderId: null, to: "rider", action: "rider.free_jobs_one_left" })).toBe("/rider/money");
     expect(notificationRowDestination({ orderId: null, to: "rider", action: "rider.free_jobs_used_up" })).toBe("/rider/money");

@@ -58,7 +58,7 @@ describe("WalletService.noteFreeJobsMilestone (D-79, inside the completion trans
     expect(t.created[0]).toMatchObject({ action: FREE_JOBS_ACTION.used_up });
   });
 
-  it("is idempotent per rider and milestone: an existing row means no second reminder", async () => {
+  it("is idempotent per biker and milestone: an existing row means no second reminder", async () => {
     const t = tx(TOTAL, [{ target: "r1", action: FREE_JOBS_ACTION.used_up }]);
     expect(await wallet("10").noteFreeJobsMilestone(t.client as never, "r1")).toBeNull();
     expect(t.created).toEqual([]);
@@ -72,9 +72,9 @@ describe("WalletService.noteFreeJobsMilestone (D-79, inside the completion trans
     }
   });
 
-  it("stays silent while commission is off (the 0% launch rate): there is nothing to top up for", async () => {
+  it("stays silent while commission is off (a 0% rate): there is nothing to top up for", async () => {
     const t = tx(TOTAL - 1);
-    expect(await wallet(undefined).noteFreeJobsMilestone(t.client as never, "r1")).toBeNull();
+    expect(await wallet("0").noteFreeJobsMilestone(t.client as never, "r1")).toBeNull();
     expect(t.client.rider.findUnique).not.toHaveBeenCalled();
     expect(t.created).toEqual([]);
   });
@@ -87,13 +87,13 @@ describe("WalletService.sendFreeJobsReminder (D-79, after commit)", () => {
     w.sendFreeJobsReminder("r1", "one_left");
     expect(notifyProfiles).toHaveBeenCalledWith(["r1"], {
       title: "One commission-free job left",
-      body: "After your next job, commission comes off your prepaid balance. Top up in Money so you can keep going online.",
+      body: "After your next job, commission comes off your prepaid balance. Top up in Money so you can keep taking jobs.",
       data: { kind: "free_jobs", milestone: "one_left" },
     });
     w.sendFreeJobsReminder("r1", "used_up");
     expect(notifyProfiles).toHaveBeenLastCalledWith(["r1"], {
       title: "Your free jobs are used up",
-      body: "Commission now comes off your prepaid balance. Top up in Money to keep going online.",
+      body: "Commission now comes off your prepaid balance. Top up in Money to keep taking jobs.",
       data: { kind: "free_jobs", milestone: "used_up" },
     });
   });

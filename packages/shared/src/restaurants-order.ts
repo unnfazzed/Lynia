@@ -206,7 +206,7 @@ export const MERCHANT_REJECTION_REASONS = {
   // D-13/C3: NO_RIDER is an apology, not an error — nothing charged, doesn't count against the
   // merchant. Reached either by the reconciler (cap exhausted, never held) or the merchant's own
   // "cancel" choice from the D-34 hold screen.
-  no_rider: "We couldn't find a rider for your order in time — nothing was charged, sorry about that.",
+  no_rider: "We couldn't find a biker for your order in time — nothing was charged, sorry about that.",
   // Auto-accept: nobody confirmed the kitchen within RESTAURANTS_AUTO_ACCEPT.autoCancelAfterMs.
   kitchen_unconfirmed: "The restaurant didn't confirm your order in time — nothing was charged, sorry about that.",
   // Order flow v2 (BRIEF §13): every line needed the prescription the pharmacist declined.
@@ -239,8 +239,17 @@ export const RESTAURANTS_DISPATCH = {
   /** N-07: six 60s rounds total (whether or not each finds a rider) is the NO_RIDER cap, about 6:00
    *  end to end. */
   maxAttempts: 6,
-  /** How far from the kitchen a rider can be offered the job (meters). */
-  radiusM: 8000,
+  /** How far from the kitchen a rider can be offered the job (meters): 15 km (owner, 2026-10-12). Food
+   *  differs from D-99's nationwide parcel reach on purpose: a parcel goes to a board where the CUSTOMER
+   *  picks among bids ("It's up to the user to decide who they want"), but a food job is first-accept-wins
+   *  with no customer choice, so a rider in another city must never win a Harare pickup while the food
+   *  goes cold. Round 1 still offers the nearest {@link RESTAURANTS_DISPATCH.firstRoundSize}; later rounds
+   *  reach every eligible rider inside this reach. */
+  pickupReachM: 15_000,
+  /** How long a rider's "Not this one" keeps them off that order (owner, 2026-10-12): with only a handful
+   *  of riders at launch, a pass is "not right now", not "never" — after this they can be asked again.
+   *  The merchant's "Keep searching" clears it at once. A rider who DROPPED an accepted job stays off it. */
+  declineCooldownMs: 10 * 60 * 1000,
   /** Owner decision 2026-10-01 (ledger D-54): the first round offers the job to this many of the best
    *  nearby riders at once (the restaurant's own riders first, then the nearest); every later round
    *  offers it to everyone eligible. The first rider to accept gets it. */

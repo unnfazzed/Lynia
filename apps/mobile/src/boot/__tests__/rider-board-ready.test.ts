@@ -36,7 +36,7 @@ describe("watchRiderBoardReady", () => {
     expect(report).toHaveBeenCalledTimes(1);
   });
 
-  it("an active-job read the board mounted disabled (unverified rider) counts as settled", async () => {
+  it("an active-job read the board mounted disabled (unverified biker) counts as settled", async () => {
     const client = new QueryClient();
     const report = jest.fn();
     watchRiderBoardReady(client, report);

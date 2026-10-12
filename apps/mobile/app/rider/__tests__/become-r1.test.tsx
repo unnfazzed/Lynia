@@ -5,7 +5,7 @@ import React from "react";
  * without a name sees C5's name step first; and however the check ends, the rider lands on the board.
  */
 import renderer, { act } from "react-test-renderer";
-import { BackHandler } from "react-native";
+import { AppState, BackHandler } from "react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { resolveKycGate, type KycGateRider, type KycSdkResult } from "../../../src/logic/gates";
@@ -16,9 +16,11 @@ const mockReplace = jest.fn();
 let mockSecureStore: Record<string, string> = {};
 
 const mockBack = jest.fn();
+const mockDismissAll = jest.fn();
+let mockCanGoBack = true;
 let mockParams: Record<string, string> = {};
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ replace: mockReplace, back: mockBack, canGoBack: () => true }),
+  useRouter: () => ({ replace: mockReplace, back: mockBack, dismissAll: mockDismissAll, canDismiss: () => mockCanGoBack, canGoBack: () => mockCanGoBack }),
   useLocalSearchParams: () => mockParams,
 }));
 /**
@@ -43,8 +45,14 @@ jest.mock("../../../src/api/riders", () => ({
   completeProfile: (...a: unknown[]) => mockCompleteProfile(...a),
   noteKycLaunched: () => mockNoteLaunched(),
 }));
+const mockUpdateSession = jest.fn(async (_p: unknown) => undefined);
+jest.mock("../../../src/auth/auth-context", () => ({ useOptionalAuth: () => ({ updateSession: (p: unknown) => mockUpdateSession(p) }) }));
 const mockRunKyc = jest.fn();
-jest.mock("../../../src/kyc/verify", () => ({ runKycVerification: (...a: unknown[]) => mockRunKyc(...a) }));
+const mockPrimeCamera = jest.fn(async () => true);
+jest.mock("../../../src/kyc/verify", () => ({
+  runKycVerification: (...a: unknown[]) => mockRunKyc(...a),
+  primeKycCamera: () => mockPrimeCamera(),
+}));
 // A marker in place of the sheet host, so a test can see where it is mounted.
 jest.mock("../../../src/kyc/KycCheckHost", () => ({ KycCheckHost: () => require("react").createElement("KycCheckHostMarker") }));
 let mockMe: Record<string, unknown> = {};
@@ -124,8 +132,8 @@ const RETIRED = [
   "The 8–12 digits on your national ID card.",
   "We verify your national ID",
   "Verification submitted",
-  "You didn't finish verifying. Pick it up again from your rider board.",
-  "We couldn't open the ID check. Try again from your rider board.",
+  "You didn't finish verifying. Pick it up again from your biker board.",
+  "We couldn't open the ID check. Try again from your biker board.",
 ];
 
 const NAMED = { profileId: "p1", role: "customer", firstName: "Tendai", lastName: "Moyo", phone: "+263772451180", rider: null };
@@ -135,6 +143,8 @@ beforeEach(() => {
   mockWalletConfig = null;
   mockReplace.mockClear();
   mockBack.mockClear();
+  mockDismissAll.mockClear();
+  mockCanGoBack = true;
   mockNoteLaunched.mockClear();
   mockParams = {};
   takeKycLaunch();
@@ -142,6 +152,8 @@ beforeEach(() => {
   mockCompleteProfile.mockReset().mockResolvedValue({});
   mockUpdateProfile.mockReset().mockImplementation(async (body: Record<string, unknown>) => ({ ...mockMe, ...body }));
   mockRunKyc.mockReset().mockResolvedValue({ outcome: "completed", sessionUnusable: false });
+  mockPrimeCamera.mockClear();
+  (jest.requireMock("../../../src/api/auth") as { getMe: jest.Mock }).getMe.mockImplementation(async () => mockMe);
 });
 
 describe("BecomeRiderScreen — R1, no photo step (D-55, D-62)", () => {
@@ -150,7 +162,7 @@ describe("BecomeRiderScreen — R1, no photo step (D-55, D-62)", () => {
     const tree = await mount();
     const r1 = text(tree);
     for (const s of ["Ride with LyniaGo.", "Your account", "ID check", "Your photo and bike papers can wait.", "Start ID check"]) expect(r1).toContain(s);
-    expect(r1).not.toContain("Rider photo for your profile");
+    expect(r1).not.toContain("Biker photo for your profile");
     // The vendor is never named (D-38), and an older server without the free-jobs rule gets no promise.
     expect(r1).not.toContain("Didit");
     expect(r1).not.toContain("commission-free");
@@ -179,7 +191,7 @@ describe("BecomeRiderScreen — no national ID before the check (D-75)", () => {
     const tree = await mount();
     await tapStart(tree);
     expect(mockBecomeRider).toHaveBeenCalledWith({});
-    expect(mockRunKyc).toHaveBeenCalledWith({ sessionToken: "tok", verificationUrl: "https://verify.didit.me/s" });
+    expect(mockRunKyc).toHaveBeenCalledWith({ sessionToken: "tok", verificationUrl: "https://verify.didit.me/s" }, { camera: expect.any(Promise) });
     expect(mockUpdateProfile).not.toHaveBeenCalled();
     expect(mockCompleteProfile).not.toHaveBeenCalled();
     expect(mockReplace).toHaveBeenCalledWith(BOARD);
@@ -243,7 +255,7 @@ describe("BecomeRiderScreen — no national ID before the check (D-75)", () => {
 
   it("BH-04: a lost-response retry (already_rider) goes to the board", async () => {
     mockMe = { ...NAMED, idNumber: null };
-    mockBecomeRider.mockRejectedValue(new ApiError(409, "Already registered as a rider", "already_rider"));
+    mockBecomeRider.mockRejectedValue(new ApiError(409, "Already registered as a biker", "already_rider"));
     const tree = await mount();
     await tapStart(tree);
     expect(mockReplace).toHaveBeenCalledWith(BOARD);
@@ -259,7 +271,7 @@ describe("BecomeRiderScreen — the name step (legacy accounts without a name), 
     const tree = await mount();
     await tapStart(tree);
     const step = text(tree);
-    for (const s of ["What should riders call you?", "Your name shows on your rider’s screen and your receipts.", "First name", "Surname", "+263 77 245 1180", "Verified", "Start ID check"]) {
+    for (const s of ["What should bikers call you?", "Your name shows on your biker’s screen and your receipts.", "First name", "Surname", "+263 77 245 1180", "Verified", "Start ID check"]) {
       expect(step).toContain(s);
     }
     // C5's "No ID needed" note would be false here — the ID check is the next step.
@@ -282,7 +294,7 @@ describe("BecomeRiderScreen — the name step (legacy accounts without a name), 
     });
     const tree = await mount();
     await tapStart(tree);
-    expect(text(tree)).toContain("What should riders call you?");
+    expect(text(tree)).toContain("What should bikers call you?");
     let consumed: boolean | null | undefined;
     await act(async () => {
       consumed = handlers.at(-1)?.();
@@ -290,7 +302,48 @@ describe("BecomeRiderScreen — the name step (legacy accounts without a name), 
     await flush();
     expect(consumed).toBe(true);
     expect(tree.root.findAllByType(RiderIntro)).toHaveLength(1);
-    expect(text(tree)).not.toContain("What should riders call you?");
+    expect(text(tree)).not.toContain("What should bikers call you?");
+    spy.mockRestore();
+    act(() => tree.unmount());
+  });
+
+  it("Android back on R1 goes back when there is a screen behind (reached from the customer side)", async () => {
+    mockMe = { ...NAMED };
+    const handlers: (() => boolean | null | undefined)[] = [];
+    const spy = jest.spyOn(BackHandler, "addEventListener").mockImplementation((_e, h) => {
+      handlers.push(h);
+      return { remove: () => void handlers.splice(handlers.indexOf(h), 1) } as never;
+    });
+    const tree = await mount();
+    let consumed: boolean | null | undefined;
+    await act(async () => {
+      consumed = handlers.at(-1)?.();
+    });
+    expect(consumed).toBe(true);
+    expect(mockBack).toHaveBeenCalledTimes(1);
+    expect(mockReplace).not.toHaveBeenCalled();
+    spy.mockRestore();
+    act(() => tree.unmount());
+  });
+
+  it("Android back on R1 with nothing behind (the Ride path) leaves for customer Home, saved, stack cleared — never closes the app", async () => {
+    mockMe = { ...NAMED };
+    mockCanGoBack = false;
+    const handlers: (() => boolean | null | undefined)[] = [];
+    const spy = jest.spyOn(BackHandler, "addEventListener").mockImplementation((_e, h) => {
+      handlers.push(h);
+      return { remove: () => void handlers.splice(handlers.indexOf(h), 1) } as never;
+    });
+    const tree = await mount();
+    let consumed: boolean | null | undefined;
+    await act(async () => {
+      consumed = handlers.at(-1)?.();
+    });
+    await flush();
+    expect(consumed).toBe(true);
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledWith("/home");
+    expect(mockSecureStore["lynia.rolePreference"]).toBe("customer");
     spy.mockRestore();
     act(() => tree.unmount());
   });
@@ -316,12 +369,43 @@ describe("BecomeRiderScreen — the name step (legacy accounts without a name), 
     act(() => tree.unmount());
   });
 
+  it("the name draft is written once typing pauses — not per keystroke — and flushed when the app backgrounds", async () => {
+    let appStateCb: ((st: string) => void) | null = null;
+    const original = AppState.addEventListener;
+    AppState.addEventListener = ((_e: string, cb: (st: string) => void) => {
+      appStateCb = cb;
+      return { remove: () => undefined };
+    }) as never;
+    mockMe = { ...NAMELESS };
+    const tree = await mount();
+    await tapStart(tree);
+    await type(tree, "First name", "C");
+    await type(tree, "First name", "Ch");
+    await type(tree, "First name", "Chi");
+    // Nothing written mid-typing.
+    expect(mockSecureStore[KYC_DRAFT_KEY]).toBeUndefined();
+    // The app goes to the background: the pending write lands now.
+    await act(async () => {
+      appStateCb?.("background");
+    });
+    await flush();
+    expect(JSON.parse(mockSecureStore[KYC_DRAFT_KEY]!)).toEqual({ firstName: "Chi", lastName: "" });
+    // A pause in typing writes it too.
+    await type(tree, "Surname", "M");
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 600));
+    });
+    expect(JSON.parse(mockSecureStore[KYC_DRAFT_KEY]!)).toEqual({ firstName: "Chi", lastName: "M" });
+    act(() => tree.unmount());
+    AppState.addEventListener = original;
+  });
+
   it("an app kill keeps the half-typed name: the draft restores straight onto the name step", async () => {
     mockMe = { ...NAMELESS };
     mockSecureStore[KYC_DRAFT_KEY] = JSON.stringify({ firstName: "Chipo", lastName: "" });
     const tree = await mount();
     const step = text(tree);
-    expect(step).toContain("What should riders call you?");
+    expect(step).toContain("What should bikers call you?");
     expect(step).toContain("We saved what you’d filled in — pick up where you left off.");
     const first = tree.root.findAll((n) => n.props.accessibilityLabel === "First name" && typeof n.props.onChangeText === "function")[0]!;
     expect(first.props.value).toBe("Chipo");
@@ -351,7 +435,7 @@ describe("BecomeRiderScreen — the name step (legacy accounts without a name), 
 describe("BecomeRiderScreen — after the check, the board (D-75: the old outcome page is gone)", () => {
   const cases: { name: string; res: Record<string, unknown>; outcome: KycSdkResult | "none" }[] = [
     { name: "the check went through", res: { kycStatus: "pending", mode: "auto", sessionToken: "tok", verificationUrl: "https://verify.didit.me/s" }, outcome: "completed" },
-    { name: "the rider closed the check", res: { kycStatus: "pending", mode: "auto", sessionToken: "tok", verificationUrl: "https://verify.didit.me/s" }, outcome: "cancelled" },
+    { name: "the biker closed the check", res: { kycStatus: "pending", mode: "auto", sessionToken: "tok", verificationUrl: "https://verify.didit.me/s" }, outcome: "cancelled" },
     { name: "the check couldn't open", res: { kycStatus: "pending", mode: "auto", sessionToken: "tok", verificationUrl: "https://verify.didit.me/s" }, outcome: "failed" },
     { name: "the vendor returned no session", res: { kycStatus: "pending", mode: "auto" }, outcome: "none" },
     { name: "manual review", res: { kycStatus: "pending", mode: "manual" }, outcome: "none" },
@@ -369,12 +453,12 @@ describe("BecomeRiderScreen — after the check, the board (D-75: the old outcom
       expect(mockReplace).toHaveBeenCalledWith(BOARD);
       const after = text(tree);
       for (const gone of RETIRED) expect(after).not.toContain(gone);
-      expect(after).not.toContain("Rider setup");
+      expect(after).not.toContain("Biker setup");
       act(() => tree.unmount());
     });
   }
 
-  it("refreshes `me` once registered, so the board reads the rider record, not the cached customer", async () => {
+  it("refreshes `me` once registered, so the board reads the biker record, not the cached customer", async () => {
     mockMe = { ...NAMED, idNumber: null };
     const tree = await mount();
     const spy = jest.spyOn(qc, "invalidateQueries");
@@ -426,9 +510,33 @@ describe("BecomeRiderScreen — the hand-over to the board (startup review 2026-
     act(() => tree.unmount());
   });
 
+  it("the hand-over clears the stack under the board and records the biker role in the session", async () => {
+    mockMe = { ...NAMED, idNumber: null };
+    mockUpdateSession.mockClear();
+    mockBecomeRider.mockResolvedValue({ mode: "auto", kycStatus: "verified" });
+    const tree = await mount();
+    await tapStart(tree);
+    expect(mockDismissAll).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith("/rider");
+    expect(mockDismissAll.mock.invocationCallOrder[0]).toBeLessThan(mockReplace.mock.invocationCallOrder[0]!);
+    expect(mockUpdateSession).toHaveBeenCalledWith({ role: "rider" });
+    act(() => tree.unmount());
+  });
+
+  it("the already_rider (409) hand-over records the biker role too", async () => {
+    mockMe = { ...NAMED, idNumber: null };
+    mockUpdateSession.mockClear();
+    mockBecomeRider.mockRejectedValue(new ApiError(409, "already", "already_rider"));
+    const tree = await mount();
+    await tapStart(tree);
+    expect(mockUpdateSession).toHaveBeenCalledWith({ role: "rider" });
+    expect(mockReplace).toHaveBeenCalledWith("/rider");
+    act(() => tree.unmount());
+  });
+
   it("G1: the already_rider path replaces itself with the board too", async () => {
     mockMe = { ...NAMED, idNumber: null };
-    mockBecomeRider.mockRejectedValue(new ApiError(409, "You're already a rider", "already_rider"));
+    mockBecomeRider.mockRejectedValue(new ApiError(409, "You're already a biker", "already_rider"));
     const tree = await mount();
     await tapStart(tree);
     expect(mockReplace).toHaveBeenCalledWith("/rider");
@@ -436,13 +544,49 @@ describe("BecomeRiderScreen — the hand-over to the board (startup review 2026-
     act(() => tree.unmount());
   });
 
-  it("R-5: the hand-over saves the rider side for the next cold start, after re-reading `me`", async () => {
+  it("R-5: the hand-over saves the biker side for the next cold start", async () => {
     mockMe = { ...NAMED, idNumber: null };
     const tree = await mount();
-    const refetch = jest.spyOn(qc, "refetchQueries");
     await tapStart(tree);
-    expect(refetch).toHaveBeenCalledWith({ queryKey: ["me"] });
     expect(mockSecureStore["lynia.rolePreference"]).toBe("rider");
+    act(() => tree.unmount());
+  });
+
+  it("R1 spinner: the hand-over doesn't wait on a fresh /auth/me — a biker stub from the become answer is in the cache", async () => {
+    mockMe = { ...NAMED, idNumber: null };
+    mockBecomeRider.mockResolvedValue({ kycStatus: "pending", mode: "auto", sessionToken: "tok", verificationUrl: "https://verify.didit.me/s" });
+    mockRunKyc.mockResolvedValue({ outcome: "completed", sessionUnusable: false });
+    const tree = await mount();
+    // From here on `/auth/me` never answers (the vendor read is slow) — the hand-over must not wait on it.
+    const { getMe } = jest.requireMock("../../../src/api/auth") as { getMe: jest.Mock };
+    getMe.mockImplementation(() => new Promise(() => undefined));
+    await tapStart(tree);
+    // Handed over while `/auth/me` is still out.
+    expect(mockReplace).toHaveBeenCalledWith(BOARD);
+    const cached = qc.getQueryData<{ rider: { kycStatus: string; kycMode: string; kycPendingState: string | null } | null }>(["me"]);
+    expect(cached?.rider).toMatchObject({ kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight" });
+    act(() => tree.unmount());
+  });
+
+  it("the camera permission is settled alongside the become call, and handed to the launch", async () => {
+    mockMe = { ...NAMED, idNumber: null };
+    let answer!: (v: unknown) => void;
+    mockBecomeRider.mockImplementation(() => new Promise((r) => (answer = r)));
+    mockRunKyc.mockResolvedValue({ outcome: "completed", sessionUnusable: false });
+    const tree = await mount();
+    const start = startButton(tree);
+    await act(async () => {
+      start.props.onPress();
+    });
+    await flush();
+    // The become call is still out — the camera ask has already started.
+    expect(mockPrimeCamera).toHaveBeenCalledTimes(1);
+    expect(mockRunKyc).not.toHaveBeenCalled();
+    await act(async () => {
+      answer({ kycStatus: "pending", mode: "auto", sessionToken: "tok", verificationUrl: "https://verify.didit.me/s" });
+    });
+    await flush();
+    expect(mockRunKyc).toHaveBeenCalledWith(expect.anything(), { camera: expect.any(Promise) });
     act(() => tree.unmount());
   });
 
@@ -492,7 +636,7 @@ describe("BecomeRiderScreen — the hand-over to the board (startup review 2026-
     }
   });
 
-  it("the rider side is saved BEFORE the check opens, so an app killed mid-check reopens on the rider side", async () => {
+  it("the biker side is saved BEFORE the check opens, so an app killed mid-check reopens on the biker side", async () => {
     mockMe = { ...NAMED, idNumber: null };
     let atLaunch: string | undefined;
     mockRunKyc.mockImplementation(async () => {
@@ -513,7 +657,7 @@ describe("BecomeRiderScreen — the hand-over to the board (startup review 2026-
     const spy = jest.spyOn(ui, "useActionError").mockReturnValue((m?: string | null) => void (m && show(m)));
     try {
       const cases: [ApiError, string][] = [
-        [new ApiError(503, "KYC submit failed: Didit 502"), "Couldn't start rider setup."],
+        [new ApiError(503, "KYC submit failed: Didit 502"), "Couldn't start biker setup."],
         [new ApiError(429, "ThrottlerException: Too Many Requests"), KYC_RETRY_TRY_LATER],
         [new ApiError(409, "This national ID is already linked to another account.", "id_in_use"), `${PD.takenA} ${PD.takenB}. ${PD.takenBody}`],
       ];

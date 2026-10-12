@@ -497,6 +497,56 @@ export async function loadRolePreference(): Promise<StartRole | null> {
   }
 }
 
+// The C1 rider path ("Ride with LyniaGo") of a device that has not signed in yet. Route params alone lose
+// it when the app is killed on C2 / C4 (a relaunch boots onto /phone with no params), so it is kept here
+// from the C1 tap until sign-in completes; C5 keeps its own copy with the session (`signupIntent`).
+// Cleared by the customer CTA on C1, after sign-in, and by sign-out. Best-effort like the role above.
+const SIGNUP_INTENT_KEY = "lynia.signupIntent";
+
+export async function saveSignupIntent(intent: "rider"): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(SIGNUP_INTENT_KEY, intent);
+  } catch {
+    /* best-effort */
+  }
+}
+export async function loadSignupIntent(): Promise<"rider" | null> {
+  try {
+    return (await SecureStore.getItemAsync(SIGNUP_INTENT_KEY)) === "rider" ? "rider" : null;
+  } catch {
+    return null;
+  }
+}
+export async function clearSignupIntent(): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(SIGNUP_INTENT_KEY);
+  } catch {
+    /* best-effort */
+  }
+}
+
+// The last-known "this account is a verified biker" flag, written whenever `["me"]` loads
+// (src/auth/session-role-sync.ts). The cold-start splash reads it before the board has fetched anything:
+// only a verified rider's boot is "Getting jobs near you" (First Run v2 H1); a rider mid-ID-check gets the
+// plain splash. `null` = never written on this device. Best-effort.
+const RIDER_VERIFIED_KEY = "lynia.riderVerified";
+
+export async function saveRiderVerifiedHint(verified: boolean): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(RIDER_VERIFIED_KEY, verified ? "1" : "0");
+  } catch {
+    /* best-effort */
+  }
+}
+export async function loadRiderVerifiedHint(): Promise<boolean | null> {
+  try {
+    const v = await SecureStore.getItemAsync(RIDER_VERIFIED_KEY);
+    return v === "1" ? true : v === "0" ? false : null;
+  } catch {
+    return null;
+  }
+}
+
 // Whether the first-install onboarding carousel (customer/rider 0·2) has been shown on this device.
 // Persisted so the intro appears exactly once per install, before auth. Best-effort — a read failure
 // just re-shows the carousel once (harmless) and a write failure never traps the hand-off to /phone.
@@ -564,6 +614,70 @@ export async function loadAcknowledgedHandbacks(): Promise<string[]> {
 // shared device the next user must not rehydrate the previous user's addresses, items or note.
 const DRAFT_KEY = SEND_DRAFT_KEY;
 
+// The last completed ID-check launch (R-4 / F8 → R2 hold, gates.ts kycLaunchForGate), per account. It used
+// to live only in memory (src/kyc/launch-hint.ts), so an app restart — or the board mounting fresh — in the
+// minutes the vendor still reads "In Progress" dropped a rider who had JUST finished the check onto F3
+// "Finish your ID check". Holds no PII: an account id, an outcome word and a timestamp.
+const KYC_LAUNCH_MARK_KEY = "lynia.kycLaunchMark";
+export interface StoredKycLaunchMark {
+  profileId: string;
+  outcome: "completed" | "cancelled" | "failed";
+  at: number;
+}
+export async function saveKycLaunchMark(mark: StoredKycLaunchMark): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(KYC_LAUNCH_MARK_KEY, JSON.stringify(mark));
+  } catch {
+    /* best-effort */
+  }
+}
+export async function loadKycLaunchMark(): Promise<StoredKycLaunchMark | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(KYC_LAUNCH_MARK_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as Partial<StoredKycLaunchMark> | null;
+    if (!v || typeof v.profileId !== "string" || typeof v.at !== "number") return null;
+    if (v.outcome !== "completed" && v.outcome !== "cancelled" && v.outcome !== "failed") return null;
+    return { profileId: v.profileId, outcome: v.outcome, at: v.at };
+  } catch {
+    return null;
+  }
+}
+export async function clearKycLaunchMark(): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(KYC_LAUNCH_MARK_KEY);
+  } catch {
+    /* best-effort */
+  }
+}
+
+// When this account signed up on this phone (funnel analytics: sign-up → first time online). Written once
+// at sign-up, read and deleted the first time the rider goes online. An account id and a timestamp only.
+const SIGNUP_AT_KEY = "lynia.signupAt";
+export async function saveSignupAt(profileId: string, at: number = Date.now()): Promise<void> {
+  try {
+    // A second "needs a profile" sign-in (C5 abandoned, OTP again) keeps the first stamp.
+    const raw = await SecureStore.getItemAsync(SIGNUP_AT_KEY);
+    if (raw && (JSON.parse(raw) as { profileId?: unknown } | null)?.profileId === profileId) return;
+    await SecureStore.setItemAsync(SIGNUP_AT_KEY, JSON.stringify({ profileId, at }));
+  } catch {
+    /* best-effort */
+  }
+}
+/** The sign-up time stamped for `profileId`, removed as it is read (null when none, or another account's). */
+export async function takeSignupAt(profileId: string): Promise<number | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(SIGNUP_AT_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as { profileId?: unknown; at?: unknown } | null;
+    if (!v || v.profileId !== profileId || typeof v.at !== "number") return null;
+    await SecureStore.deleteItemAsync(SIGNUP_AT_KEY);
+    return v.at;
+  } catch {
+    return null;
+  }
+}
+
 // Wipe all per-device, per-user state that must NOT survive a sign-out on a shared device (S1): the
 // saved order draft (addresses), the accepted-disclaimer flag (so the next user still sees the
 // liability gate), the role preference, and every stored one-time delivery code. The session key is
@@ -578,6 +692,8 @@ export async function clearDeviceState(): Promise<void> {
       SecureStore.deleteItemAsync(DRAFT_KEY),
       SecureStore.deleteItemAsync(DISCLAIMER_KEY),
       SecureStore.deleteItemAsync(ROLE_PREF_KEY),
+      SecureStore.deleteItemAsync(SIGNUP_INTENT_KEY),
+      SecureStore.deleteItemAsync(RIDER_VERIFIED_KEY),
       SecureStore.deleteItemAsync(CODE_INDEX_KEY),
       SecureStore.deleteItemAsync(HANDBACK_ACK_KEY),
       // The rider's durable confirmItems-pending marker (a job id + collected item indexes) must not
@@ -596,6 +712,9 @@ export async function clearDeviceState(): Promise<void> {
       SecureStore.deleteItemAsync(PENDING_SENDER_RATING_KEY),
       // The rider's durable pending-topup marker — same shared-device hazard as above.
       SecureStore.deleteItemAsync(PENDING_TOPUP_KEY),
+      // The last ID-check launch mark and the sign-up stamp are this account's, not the next user's.
+      SecureStore.deleteItemAsync(KYC_LAUNCH_MARK_KEY),
+      SecureStore.deleteItemAsync(SIGNUP_AT_KEY),
       // Address book: the saved Home/Work + recent places (addresses) and the recent recipients (the one
       // place we hold contact PII) must not survive to the next user on a shared device — exactly the
       // "next user must not rehydrate the previous user's addresses" rule above, now including recipients.

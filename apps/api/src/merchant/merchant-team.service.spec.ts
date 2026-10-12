@@ -413,7 +413,7 @@ describe("MerchantInvitesService (the invited person's side)", () => {
     expect(w.invites).toHaveLength(1);
   });
 
-  it("refuses a held account or a restricted rider, as opening a business does", async () => {
+  it("refuses a held account or a restricted biker, as opening a business does", async () => {
     const inv = w.invite("m1", "+263773000003", "Chipo");
     w.people.get("chipo")!.onHold = true;
     await expect(w.invitesSvc.join("chipo", inv.id, { name: "Chipo", termsAccepted: true })).rejects.toMatchObject({ status: 403, response: { reason: "on_hold" } });

@@ -49,7 +49,7 @@ describe("legal copy ↔ PII manifest", () => {
     }
   });
 
-  it("treats the rider's national ID and face photo as sensitive data resting on explicit consent", () => {
+  it("treats the biker's national ID and face photo as sensitive data resting on explicit consent", () => {
     // The Act singles out sensitive personal information (which these are) as needing the data
     // subject's explicit consent — a contract/legitimate-interest basis would not be lawful here, so
     // this category's basis must not silently drift to one.
@@ -204,7 +204,8 @@ describe("terms page", () => {
   it("matches the policy the code enforces", () => {
     expect(html).toContain("US$150"); // declaredValue .max(150) in @lynia/shared contracts
     expect(html).toMatch(/third strike takes you\s+offline for 2 hours/); // RIDER_STRIKE_LIMIT / COOLDOWN
-    expect(html).toMatch(/commission is 0% today/i); // COMMISSION.ratePct
+    expect(html).toMatch(/first 10 completed jobs are commission-free/i); // COMMISSION.freeFirstJobs
+    expect(html).toMatch(/the commission is 10%/i); // COMMISSION.ratePct
   });
 
   it("links the privacy notice and deletion page, and names Zimbabwean law", () => {

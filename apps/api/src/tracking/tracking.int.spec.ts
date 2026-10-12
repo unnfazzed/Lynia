@@ -31,7 +31,7 @@ async function clean(): Promise<void> {
 /** A rider with a chosen online state and no position yet (geog NULL until located). */
 async function makeRider(isOnline: boolean): Promise<string> {
   const p = await prisma.profile.create({
-    data: { role: "rider", firstName: "Rider", lastName: "R", phone: `r_${crypto.randomUUID()}` },
+    data: { role: "rider", firstName: "Biker", lastName: "R", phone: `r_${crypto.randomUUID()}` },
     select: { id: true },
   });
   await prisma.rider.create({
@@ -68,7 +68,7 @@ describe("TrackingService geo queries (ET6)", () => {
     expect(hits.find((h) => h.profileId === rider)!.distanceM).toBeLessThan(1);
   });
 
-  it("returns online, in-radius riders ordered nearest-first", async () => {
+  it("returns online, in-radius bikers ordered nearest-first", async () => {
     const near = await makeRider(true); // ~0.33 km north
     const far = await makeRider(true); // ~1.66 km north (still inside 3 km)
     await tracking.updateRiderLocation(near, CENTER.lat + 0.003, CENTER.lng);
@@ -80,7 +80,7 @@ describe("TrackingService geo queries (ET6)", () => {
     expect(hits[0]!.distanceM).toBeLessThan(hits[1]!.distanceM);
   });
 
-  it("excludes riders outside the radius", async () => {
+  it("excludes bikers outside the radius", async () => {
     const inside = await makeRider(true); // ~0.33 km
     const outside = await makeRider(true); // ~11 km — beyond a 3 km query
     await tracking.updateRiderLocation(inside, CENTER.lat + 0.003, CENTER.lng);
@@ -91,7 +91,7 @@ describe("TrackingService geo queries (ET6)", () => {
     expect(ids).not.toContain(outside);
   });
 
-  it("excludes offline riders even when in range", async () => {
+  it("excludes offline bikers even when in range", async () => {
     const offline = await makeRider(false);
     await tracking.updateRiderLocation(offline, CENTER.lat, CENTER.lng);
 
@@ -99,7 +99,7 @@ describe("TrackingService geo queries (ET6)", () => {
     expect(ids).not.toContain(offline);
   });
 
-  it("excludes online riders with no position (NULL geog)", async () => {
+  it("excludes online bikers with no position (NULL geog)", async () => {
     const located = await makeRider(true);
     const noGeog = await makeRider(true); // online but never located
     await tracking.updateRiderLocation(located, CENTER.lat, CENTER.lng);
@@ -109,7 +109,7 @@ describe("TrackingService geo queries (ET6)", () => {
     expect(ids).not.toContain(noGeog);
   });
 
-  it("excludes an in-range online rider whose heartbeat is stale (ghost filter, policy BROADCAST)", async () => {
+  it("excludes an in-range online biker whose heartbeat is stale (ghost filter, policy BROADCAST)", async () => {
     const fresh = await makeRider(true);
     const ghost = await makeRider(true); // app died with is_online stuck true
     await tracking.updateRiderLocation(fresh, CENTER.lat, CENTER.lng);
@@ -176,17 +176,18 @@ describe("orders.pickup_geog generated column (migration 0006) + listOpenNearby"
     expect(byId.get(bad)).toBe(false);
   });
 
-  it("listOpenNearby returns in-radius orders nearest-first and skips malformed pickups", async () => {
+  it("listOpenNearby returns every open order nearest-first (nationwide, D-99) and skips malformed pickups", async () => {
     const cust = await makeCustomer();
     const near = await makeOrder(cust, { lat: CENTER.lat + 0.003, lng: CENTER.lng }); // ~0.33 km
     const far = await makeOrder(cust, { lat: CENTER.lat + 0.015, lng: CENTER.lng }); // ~1.66 km
-    await makeOrder(cust, { lat: CENTER.lat + 0.1, lng: CENTER.lng }); // ~11 km — outside 3 km
-    await makeOrder(cust, null); // malformed — must not 500 the board
+    const town = await makeOrder(cust, { lat: CENTER.lat + 0.1, lng: CENTER.lng }); // ~11 km — past the caller's 3 km
+    const bad = await makeOrder(cust, null); // malformed — must not 500 the board
 
     const list = await orders.listOpen(CENTER.lat, CENTER.lng, 3000);
-    const ids = list.map((o) => o.id);
+    const mine = new Set([near, far, town, bad]);
+    const ids = list.map((o) => o.id).filter((id) => mine.has(id));
 
-    expect(ids).toEqual([near, far]); // nearest-first, outside-radius + malformed excluded
+    expect(ids).toEqual([near, far, town]); // nearest-first; the board reach is the whole country, malformed excluded
     // Redaction preserved on the geo path — point + landmark only, never contactPhone.
     expect(list[0]!.pickup).not.toHaveProperty("contactPhone");
     expect(JSON.stringify(list[0])).not.toContain("+263");

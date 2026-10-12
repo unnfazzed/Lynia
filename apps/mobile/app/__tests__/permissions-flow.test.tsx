@@ -52,6 +52,11 @@ jest.mock("expo-secure-store", () => ({
 }));
 const mockKick = jest.fn();
 jest.mock("../../src/push/push-kick", () => ({ requestPushRegistration: () => mockKick() }));
+const mockTrack = jest.fn();
+jest.mock("../../src/telemetry/events", () => ({
+  ...jest.requireActual("../../src/telemetry/events"),
+  track: (...a: unknown[]) => mockTrack(...a),
+}));
 
 import { finishRiderPermFlow, startRiderPermFlow } from "../../src/logic/rider-perm-flow";
 import { RIDER_PERM_FLOW_KEY } from "../../src/permissions/store";
@@ -141,6 +146,16 @@ describe("the flow from R3 (?from=flow)", () => {
     expect(screen()).toBe("P13");
   });
 
+  it("funnel analytics: each P screen and each answer is reported (P1 all `/permissions` to the screen tracker)", async () => {
+    await mount();
+    expect(mockTrack).toHaveBeenCalledWith("rider_perm_screen", { screen: "P1", flow: true });
+    await press("p-link");
+    expect(mockTrack).toHaveBeenCalledWith("rider_perm_answer", { screen: "P1", answer: "not_now", flow: true });
+    await press("p-cta");
+    expect(mockTrack).toHaveBeenCalledWith("rider_perm_answer", { screen: "P9", answer: "granted", flow: true });
+    expect(mockTrack).toHaveBeenCalledWith("rider_perm_screen", { screen: "P13", flow: true });
+  });
+
   it("approximate → P4; keeping it on the upgrade dialog moves on", async () => {
     mockLocReq = { ...GRANTED, android: { accuracy: "coarse" } };
     await mount();
@@ -206,7 +221,7 @@ describe("the flow from R3 (?from=flow)", () => {
     expect(screen()).toBe("P13");
   });
 
-  it("B1: blocked notifications → P11's 'Not now' moves on to P13 (the rider is never trapped)", async () => {
+  it("B1: blocked notifications → P11's 'Not now' moves on to P13 (the biker is never trapped)", async () => {
     mockLocGet = GRANTED;
     mockNotifGet = BLOCKED;
     await mount();

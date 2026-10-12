@@ -132,7 +132,7 @@ describe("FoodOrderService.placeOrder", () => {
       return run.then((res) => ({ res, created: created! }));
     }
 
-    it("customer pays $0 delivery: total = goods, rider's deliveryFee unchanged, venue's share = the fee", async () => {
+    it("customer pays $0 delivery: total = goods, biker's deliveryFee unchanged, venue's share = the fee", async () => {
       const { res, created } = await placeWith({ freeDelivery: true }, 12);
       const fee = res.deliveryFee!;
       expect(fee).toBeGreaterThan(0);
@@ -177,21 +177,21 @@ describe("FoodOrderService.placeOrder", () => {
     await expect(place(null)).rejects.toMatchObject({ status: 404, message: "Restaurant not found" });
   });
 
-  it("rejects a drop-off outside the service area server-side, naming the towns we serve (owner 2026-10-02)", async () => {
+  it("rejects a drop-off outside Zimbabwe server-side, naming where we serve (owner 2026-10-12, D-99)", async () => {
     let created = false;
     const { svc } = build({
       order: { findFirst: async () => null, create: async () => { created = true; return {}; } },
       merchant: { findFirst: async () => ({ id: "m1", location: { point: HARARE_CBD } }) },
       merchantDish: { findMany: async () => [dish()] },
     });
-    // Marondera, ~66 km out — beyond every town disc.
+    // Lusaka, Zambia — outside the country.
     const threw = await svc
-      .placeOrder("c1", "m1", { items: [{ dishId: "d1", quantity: 1 }], dropoff: { point: { lat: -18.185, lng: 31.55 } }, paymentMethod: "cash" } as never)
+      .placeOrder("c1", "m1", { items: [{ dishId: "d1", quantity: 1 }], dropoff: { point: { lat: -15.4167, lng: 28.2833 } }, paymentMethod: "cash" } as never)
       .then(() => null)
       .catch((e: unknown) => e);
     const body = (threw as { getResponse: () => { reason: string; message: string } }).getResponse();
     expect(body.reason).toBe("outside_service_area");
-    expect(body.message).toMatch(/Chitungwiza, Norton, Ruwa/);
+    expect(body.message).toMatch(/We deliver across Zimbabwe/);
     expect(created).toBe(false);
   });
 
@@ -341,7 +341,7 @@ describe("FoodOrderService.placeOrder — account standing (FOOD-STANDING-01)", 
     expect(create).not.toHaveBeenCalled();
   });
 
-  it("a banned or suspended rider can't order food either (F-01, same as Send)", async () => {
+  it("a banned or suspended biker can't order food either (F-01, same as Send)", async () => {
     for (const [status, reason] of [["banned", "account_banned"], ["suspended", "account_suspended"]] as const) {
       const { svc, create } = standingHarness({ onHold: false, cashBanned: false, rider: { accountStatus: status } });
       await expect(svc.placeOrder("c1", "m1", walletOrder)).rejects.toMatchObject({ response: { reason }, status: 403 });
@@ -368,7 +368,7 @@ describe("FoodOrderService.placeOrder — account standing (FOOD-STANDING-01)", 
     expect(create).not.toHaveBeenCalled();
   });
 
-  it("a customer in good standing (and an active rider ordering food) is unchanged", async () => {
+  it("a customer in good standing (and an active biker ordering food) is unchanged", async () => {
     for (const account of [{ onHold: false, cashBanned: false, rider: null }, { onHold: false, cashBanned: false, rider: { accountStatus: "active" } }]) {
       const { svc, create } = standingHarness(account);
       const res = await svc.placeOrder("c1", "m1", cashOrder);
@@ -692,9 +692,9 @@ describe("FoodOrderService.confirmPickup — N-16, mirrors confirmDelivery one h
     await expect(svc.confirmPickup("o1", "r1", "424242")).rejects.toThrow(/not found/i);
   });
 
-  it("403s a caller who isn't the assigned rider", async () => {
+  it("403s a caller who isn't the assigned biker", async () => {
     const { svc } = build({ $queryRaw: async () => row() });
-    await expect(svc.confirmPickup("o1", "other", "424242")).rejects.toThrow(/assigned rider/i);
+    await expect(svc.confirmPickup("o1", "other", "424242")).rejects.toThrow(/assigned biker/i);
   });
 
   it("409s outside en_route_pickup", async () => {
@@ -867,7 +867,7 @@ describe("FoodOrderService.revealPickupCode — N-16 reveal-by-rotation", () => 
 
   // E2E 2026-10-05 LB-1: a rider's acceptance clears merchantPhase, and the merchant web reveals only
   // once a rider is assigned — so this window is the one every shop and pharmacy order needs.
-  it.each(["assigned", "confirmed", "en_route_pickup"])("a legacy row mints once after a rider accepts (status %s)", async (status) => {
+  it.each(["assigned", "confirmed", "en_route_pickup"])("a legacy row mints once after a biker accepts (status %s)", async (status) => {
     let updateArgs: Record<string, unknown> | undefined;
     const { svc } = build({
       merchant: { findUnique: async () => ({ id: "m1" }) },
@@ -887,7 +887,7 @@ describe("FoodOrderService.revealPickupCode — N-16 reveal-by-rotation", () => 
     });
   });
 
-  it("409s after a rider accepts when the order never had a code (codeless stays codeless)", async () => {
+  it("409s after a biker accepts when the order never had a code (codeless stays codeless)", async () => {
     const { svc } = build({
       merchant: { findUnique: async () => ({ id: "m1" }) },
       order: { findFirst: async () => ({ id: "o1", merchantId: "m1", status: "assigned", merchantPhase: null, riderId: "r1", pickupCodeHash: null, merchantItems: [] }) },
@@ -895,7 +895,7 @@ describe("FoodOrderService.revealPickupCode — N-16 reveal-by-rotation", () => 
     await expect(svc.revealPickupCode("p1", "o1")).rejects.toThrow(/isn't ready for pickup/);
   });
 
-  it("409s once the rider has picked up", async () => {
+  it("409s once the biker has picked up", async () => {
     const { svc } = build({
       merchant: { findUnique: async () => ({ id: "m1" }) },
       order: { findFirst: async () => ({ id: "o1", merchantId: "m1", status: "picked_up", merchantPhase: null, riderId: "r1", pickupCodeHash: "h", merchantItems: [] }) },
@@ -1433,7 +1433,7 @@ describe("FoodOrderService.toResponse — #671 assigned-rider identity block", (
     rider,
   });
 
-  it("maps the joined rider to the public identity block (plate=bike_reg, kycVerified from kyc_status)", async () => {
+  it("maps the joined biker to the public identity block (plate=bike_reg, kycVerified from kyc_status)", async () => {
     const { svc } = build({ order: { findFirst: async () => assignedOrder(riderJoin) } });
     const res = await svc.getAsRider("o1", "r1");
     expect(res.rider).toEqual({
@@ -1450,13 +1450,13 @@ describe("FoodOrderService.toResponse — #671 assigned-rider identity block", (
     });
   });
 
-  it("reports kycVerified=false for a non-verified rider (pending/failed/expired)", async () => {
+  it("reports kycVerified=false for a non-verified biker (pending/failed/expired)", async () => {
     const { svc } = build({ order: { findFirst: async () => assignedOrder({ ...riderJoin, kycStatus: "pending" }) } });
     const res = await svc.getAsRider("o1", "r1");
     expect(res.rider?.kycVerified).toBe(false);
   });
 
-  it("omits the rider block entirely before a rider is assigned (null join)", async () => {
+  it("omits the biker block entirely before a biker is assigned (null join)", async () => {
     const { svc } = build({ order: { findFirst: async () => assignedOrder(null) } });
     const res = await svc.getAsRider("o1", "r1");
     expect(res).not.toHaveProperty("rider");
@@ -1577,7 +1577,7 @@ describe("D-48 · merchant mobile redesign: open switch, cash only, closing an o
     expect(reopened.created()).toBeDefined();
   });
 
-  it("makes every cash order collect-and-return — the rider brings the cash back — whatever the shop's old rule", async () => {
+  it("makes every cash order collect-and-return — the biker brings the cash back — whatever the shop's old rule", async () => {
     const h = placing({ cashRule: "pay_upfront" });
     await h.svc.placeOrder("c1", "m1", cash);
     expect(h.created()!.merchantCashRule).toBe("collect_and_return");
@@ -1612,7 +1612,7 @@ describe("D-48 · merchant mobile redesign: open switch, cash only, closing an o
     expect((await riding.svc.closeOrder("p1", "o1", "force")).merchantCloseReason).toBe("force");
   });
 
-  it("never closes before the rider has the food (owner decision: that would be a cancel)", async () => {
+  it("never closes before the biker has the food (owner decision: that would be a cancel)", async () => {
     for (const status of ["requested", "open_for_offers", "assigned", "en_route_pickup"]) {
       const h = closing({ status });
       await expect(h.svc.closeOrder("p1", "o1", "force")).rejects.toMatchObject({ response: { reason: "not_picked_up" }, status: 409 });
@@ -1735,7 +1735,7 @@ describe("FoodOrderService.cancelPreparing — B3 'Can't finish this order' (D-4
 
   // MJ-RM1: an auto-accepted order's rider search starts in the last minutes of cooking, so "Problem with
   // this order?" must also work while a round is live — and quiet the riders still being asked.
-  it("MJ-RM1: cancels a cooking order in a live rider round (no rider yet) and closes the riders' offers", async () => {
+  it("MJ-RM1: cancels a cooking order in a live biker round (no biker yet) and closes the bikers' offers", async () => {
     const closed: Array<[string, string]> = [];
     const attemptUpdates: Array<Record<string, unknown>> = [];
     let data: Record<string, unknown> | undefined;

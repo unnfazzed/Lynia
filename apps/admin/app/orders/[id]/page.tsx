@@ -13,7 +13,7 @@ const DEBT_STATUS_LABEL: Record<string, string> = {
   open: "Open — awaiting settlement",
   settled_cash: "Settled — cash returned",
   settled_goods: "Settled — goods returned",
-  written_off: "Written off — rider suspended",
+  written_off: "Written off — biker suspended",
 };
 
 /** Order detail (kit `orders.html` detail): 8-step delivery timeline, parcel line items, people
@@ -98,7 +98,7 @@ function deriveSteps(o: OrderDetail): Step[] {
     };
   });
   if (o.status === "expired")
-    steps.push({ label: "Expired", state: "stall", mark: "✕", note: "No rider took this price — customer can re-broadcast" });
+    steps.push({ label: "Expired", state: "stall", mark: "✕", note: "No biker took this price — customer can re-broadcast" });
   if (o.status === "cancelled") steps.push({ label: "Cancelled", state: "", mark: "✕" });
   return steps;
 }
@@ -163,7 +163,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           <span className="t">
             <b>This order may be stuck.</b> {o.stuckNote ?? "No recent status update."}{" "}Currently at &ldquo;
             {STEPS[idx] ?? o.status}&rdquo;.{" "}
-            {o.hasOpenIssue ? "The customer or rider has already filed a report — check Issues." : "No one has reported a problem yet."}
+            {o.hasOpenIssue ? "The customer or biker has already filed a report — check Issues." : "No one has reported a problem yet."}
           </span>
         </div>
       ) : null}
@@ -221,7 +221,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
                 // A short-lived signed GCS URL (mirrors the KYC photo), so a plain <img>, not next/image.
                 <img
                   src={o.deliveryProof.photoUrl}
-                  alt="Rider's proof of drop-off at the recipient"
+                  alt="Biker's proof of drop-off at the recipient"
                   style={{ width: "100%", borderRadius: tokens.radius.input, border: `1px solid ${tokens.color.line}` }}
                 />
               ) : (
@@ -291,7 +291,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
                   ),
                 },
                 {
-                  label: "Rider",
+                  label: "Biker",
                   value: o.rider ? (
                     <span>
                       {o.rider} <span className="mono mut">{o.riderPhone ? formatPhoneLocal(o.riderPhone) : o.riderPhone}</span>
@@ -357,7 +357,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
                     <div className="warnbar" style={{ marginBottom: 8 }}>
                       <IconAlert />
                       <span className="t">
-                        <b>Frozen — the rider didn&apos;t confirm.</b> Locked out of new jobs since{" "}
+                        <b>Frozen — the biker didn&apos;t confirm.</b> Locked out of new jobs since{" "}
                         {new Date(o.food.handshake.frozenAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}.
                       </span>
                     </div>
@@ -366,7 +366,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
                     rows={[
                       { label: "Amount", value: o.food.handshake.amount ? `$${o.food.handshake.amount}` : "—" },
                       { label: "Customer confirmed", value: o.food.handshake.customerConfirmedAt ? "Yes" : "Not yet" },
-                      { label: "Rider confirmed", value: o.food.handshake.riderConfirmedAt ? "Yes" : "Not yet" },
+                      { label: "Biker confirmed", value: o.food.handshake.riderConfirmedAt ? "Yes" : "Not yet" },
                     ]}
                   />
                   {o.food.handshake.frozenAt && !o.food.handshake.riderConfirmedAt ? (
@@ -426,7 +426,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
                     {prov.count ? <> — adjusted {prov.count} times, latest shown</> : null}.
                   </>
                 ) : prov?.kind === "rider_counter" ? (
-                  <>Agreed via rider counter-offer (${prov.offeredFare} vs ${prov.ask} ask).</>
+                  <>Agreed via biker counter-offer (${prov.offeredFare} vs ${prov.ask} ask).</>
                 ) : prov?.kind === "customer_ask" ? (
                   <>Customer&rsquo;s asking price, accepted as-is.</>
                 ) : (
@@ -449,7 +449,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
                       <span style={{ display: "inline-flex", fontSize: 14 }}>
                         <IconPhone />
                       </span>
-                      Call rider
+                      Call biker
                     </a>
                   ) : null}
                   {/* The order id is a server-bound prop (not a client-supplied hidden input, F-07), so

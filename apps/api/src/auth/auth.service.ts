@@ -250,8 +250,9 @@ export class AuthService {
             ratingAvg: p.rider.ratingAvg,
             ratingCount: p.rider.ratingCount,
             tripsCount: p.rider.tripsCount,
-            // D-70: the commission-free first jobs (Calm Mint v2 R3 "Commission-free jobs · N of 5
-            // left"), derived from completed jobs — the same count the debit and the online-gate use.
+            // D-70: the commission-free first jobs (Calm Mint v2 R3 "Commission-free jobs · N of M left",
+            // M = COMMISSION.freeFirstJobs, currently 10), derived from completed jobs — the same count the
+            // debit and the online-gate use.
             freeJobs: { left: freeJobsLeft(p.rider.tripsCount), total: COMMISSION.freeFirstJobs },
             isOnline: p.rider.isOnline,
             kycDeclineReason: p.rider.kycDeclineReason,
