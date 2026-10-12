@@ -429,8 +429,9 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
           items: unknown;
           declared_value: Prisma.Decimal | string | number | null;
           customer_phone: string | null;
+          customer_id: string | null;
         }>
-      >`SELECT status, rider_id, otp_hash, delivery_otp_attempts, order_type, merchant_payment_method, customer_cash_confirmed_at, rider_cash_confirmed_at, items, declared_value, (SELECT phone FROM profiles WHERE profiles.id = orders.customer_id) AS customer_phone FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
+      >`SELECT status, rider_id, otp_hash, delivery_otp_attempts, order_type, merchant_payment_method, customer_cash_confirmed_at, rider_cash_confirmed_at, items, declared_value, (SELECT phone FROM profiles WHERE profiles.id = orders.customer_id) AS customer_phone, customer_id FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
       const o = rows[0];
       if (!o) throw new NotFoundException("Order not found");
       if (o.rider_id !== riderId) throw new ForbiddenException("Not the assigned rider");
@@ -458,7 +459,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         await tx.order.update({ where: { id: orderId }, data: { deliveryOtpAttempts: { increment: 1 } } });
         // Committed count AFTER this failure — the 401 message tells the rider how many tries remain
         // before the lockout (rider-journey 4·b1 "That code doesn't match. N attempts left.").
-        return { ok: false as const, attemptsUsed: o.delivery_otp_attempts + 1 };
+        return { ok: false as const, attemptsUsed: o.delivery_otp_attempts + 1, customerId: o.customer_id };
       }
       // Row is locked and validated en_route_dropoff — safe to flip directly.
       const deliveredAt = new Date();
@@ -491,6 +492,15 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
           this.gateway.emitOrderStatus(orderId, "en_route_dropoff");
         } catch (err) {
           this.logger.warn(`code-lockout emit failed for order ${orderId}: ${(err as Error).message}`);
+        }
+        // D-97 (2.14b): a closed app hears it by push — the new code is waiting to be shared again. The
+        // copy never carries digits (a lock screen shows the push). Best-effort; notifyProfiles never throws.
+        if (outcome.customerId) {
+          void this.notifications.notifyProfiles([outcome.customerId], {
+            title: "Your code changed",
+            body: "Open to share it again.",
+            data: { orderId, kind: "code_changed" },
+          });
         }
       }
       throw new UnauthorizedException(

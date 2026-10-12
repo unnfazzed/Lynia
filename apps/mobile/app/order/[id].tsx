@@ -10,14 +10,32 @@ import { ApiError } from "../../src/api/client";
 import { listOffers, selectOffer } from "../../src/api/offers";
 import { cancelOrder, getOrder, notifyWhenRiderOnline, type OrderSnapshot, raiseOrderPrice, rateOrder, resendOrder, revealDeliveryCode, rotateDeliveryCode } from "../../src/api/orders";
 import { raiseIssue, raiseSos } from "../../src/api/safety";
-import { clearDeliveryCode, clearPendingRating, loadDeliveryCode, loadDeliveryCodeAttempts, loadDeliveryCodeRotatedAt, loadPendingRating, savePendingRating, saveDeliveryCode, saveDeliveryCodeAttempts, saveDeliveryCodeRotatedAt, type PendingRating } from "../../src/auth/session";
+import {
+  clearDeliveryCode,
+  clearPendingRating,
+  type CodeShared,
+  loadCodeShared,
+  loadDeliveryCode,
+  loadDeliveryCodeAttempts,
+  loadDeliveryCodeRotatedAt,
+  loadPendingRating,
+  savePendingRating,
+  saveCodeShared,
+  saveDeliveryCode,
+  saveDeliveryCodeAttempts,
+  saveDeliveryCodeRotatedAt,
+  type PendingRating,
+} from "../../src/auth/session";
 import { mapsDirectionsUrl } from "../../src/logic/maps";
 import { goHomeClearingStack } from "../../src/logic/nav";
 import { buildRebroadcastParams } from "../../src/logic/order-draft";
 import { orderOffers } from "../../src/logic/order-offers";
 import { isLiveStage, minutesSince, type OrderStage, phoneMasked, resolveStage, showsHelp, stageMapShare, stagePeekFloor, stageTitleKey, stepIndex, suggestedRetryPrice } from "../../src/logic/order-stage";
 import {
+  codeCardStatus,
   deliveryCodeLockout,
+  LATE_CANCEL_REACH_MS,
+  lateCancelVariant,
   liveOrderFromResendError,
   orderLoadErrorKind,
   reconcileDeliveryCode,
@@ -36,7 +54,7 @@ import { offersKey, orderKey, pendingOrQueued } from "../../src/query/client";
 import { useForegroundRefetch } from "../../src/realtime/use-foreground-refetch";
 import { useOrderSocket } from "../../src/realtime/use-order-socket";
 import { haptic, useActionErrorEffect, useDial } from "../../src/ui";
-import { type OfferView, type ReceiptView, type RiderView } from "../../src/ui/order/cards";
+import { type CodeStatus, type OfferView, type ReceiptView, type RiderView } from "../../src/ui/order/cards";
 import { hhmm, initials, maskPhone, ORDER_COPY as A, orderText, riderShortName } from "../../src/ui/order/copy";
 import { CtaBar, CtaButton, OrderToast } from "../../src/ui/order/kit";
 import { type MapFrame, OrderMap } from "../../src/ui/order/OrderMap";
@@ -51,6 +69,7 @@ import {
   FindingBar,
   FindingSheet,
   HandoffSheet,
+  LateCancelSheet,
   LoadErrorSheet,
   NotDeliveredSheet,
   OffersSheet,
@@ -174,6 +193,11 @@ function ParcelOrderScreen(): React.ReactElement {
   const [codeRestored, setCodeRestored] = useState(false);
   const [codeAttemptsSeen, setCodeAttemptsSeen] = useState<number | null>(null);
   const [codeRotatedAtSeen, setCodeRotatedAtSeen] = useState<string | null>(null);
+  // D-97 (2.14b): the code version the customer has (first seen, or last shared) — persisted per order.
+  const [codeShared, setCodeShared] = useState<CodeShared | null>(null);
+  // 2.14d: the server refused another re-issue; 2.14c: the automatic new-code fetch failed.
+  const [codeLimit, setCodeLimit] = useState(false);
+  const [newCodeFailed, setNewCodeFailed] = useState(false);
   const [riderIdentity, setRiderIdentity] = useState<RiderIdentity | null>(null);
   const [savedCopy, setSavedCopy] = useState<OrderCopy | null>(null);
 
@@ -199,12 +223,14 @@ function ParcelOrderScreen(): React.ReactElement {
 
   useEffect(() => {
     let alive = true;
-    void Promise.all([loadDeliveryCode(orderId), loadDeliveryCodeAttempts(orderId), loadDeliveryCodeRotatedAt(orderId)])
-      .then(([c, hw, rotAt]) => {
+    setCodeShared(null);
+    void Promise.all([loadDeliveryCode(orderId), loadDeliveryCodeAttempts(orderId), loadDeliveryCodeRotatedAt(orderId), loadCodeShared(orderId)])
+      .then(([c, hw, rotAt, shared]) => {
         if (!alive) return;
         if (c) setDeliveryCode(c);
         setCodeAttemptsSeen(hw);
         setCodeRotatedAtSeen(rotAt);
+        setCodeShared(shared);
         setCodeRestored(true);
       })
       .catch(() => {
@@ -482,6 +508,8 @@ function ParcelOrderScreen(): React.ReactElement {
     codeAskedFor.current = null;
     reissuedFor.current = null;
     setCodeWanted(false);
+    setCodeLimit(false);
+    setNewCodeFailed(false);
   }, [orderId]);
   const rotateM = useMutation({
     mutationFn: () => rotateDeliveryCode(orderId),
@@ -489,25 +517,33 @@ function ParcelOrderScreen(): React.ReactElement {
       codeEpoch.current += 1;
       rotatePending.current = true;
       reissueFailed.current = false;
+      setNewCodeFailed(false);
+      // D-97: no version on record yet (first open on this phone was the locked code) — the one being
+      // replaced is the baseline, so the new code still shows as "New code" until it's shared.
+      if (!codeShared) {
+        const old = { version: qc.getQueryData<OrderSnapshot>(orderKey(orderId))?.codeRotatedAt ?? "", sharedAt: null };
+        setCodeShared(old);
+        void saveCodeShared(orderId, old);
+      }
     },
     onSettled: () => {
       rotatePending.current = false;
     },
     onSuccess: (res) => adoptCode(res.deliveryCode),
-    // Not re-armed by itself (a locked code must not loop on a failing rotate): the toast's Try again retries.
+    // Not re-armed by itself (a locked code must not loop on a failing rotate): the card's "Send a new code"
+    // retries (and a return to the app or a status change tries once more — reissueFailed above).
     onError: (e) => {
       // D2 review: the server caps lockout re-issues per order (HANDOVER_CODE_MAX_REISSUES). Past it no new
-      // code can come, so no Try again and no "Getting your code…" card: the server's message (shown
-      // verbatim, like other 4xx; ledger D-89) and the drawn "Call support" action. After Send v2 draws that
-      // button as a phone call (design/as-screens.jsx:230, `S.call` + Phone), so it dials the support line,
-      // exactly as the undelivered bar's "Call support" and the Help panel's support row already do.
+      // code can come. D-97 (2.14d): the card shows the limit with Call support — it dials the support line,
+      // as the undelivered bar's "Call support" and the Help panel's support row do (no sticky toast now).
       if (e instanceof ApiError && e.code === "code_reissue_limit") {
         setCodeWanted(false);
-        showToast({ text: e.message, action: A.callSupport, onAction: () => dial(SOS_POLICY.safetyLine), ttl: 0 });
+        setCodeLimit(true);
         return;
       }
+      // 2.14c: the card shows "A new one needs data" and its own "Send a new code" (no toast).
       reissueFailed.current = true;
-      showToast({ text: A.sendFail, action: A.tryAgain, actionIcon: "refresh-cw", onAction: () => rotateM.mutate(), ttl: 0 });
+      setNewCodeFailed(true);
     },
   });
   // "+ $0.50" (and state 13's "Raise to $X"): the new price shows only once the server confirms (2.5);
@@ -805,6 +841,26 @@ function ParcelOrderScreen(): React.ReactElement {
     rotate();
   }, [live, isRiderViewer, saved, codeRestored, online, order?.orderType, lockKey, rotate, codeBusy, reissueRetry]);
 
+  // D-97 (2.14b): the first code version this phone sees is the one the customer has; a later version
+  // (a re-issue here or anywhere) is "New code" until it's shared. Persisted so it survives a restart.
+  const codeVersion = order?.codeRotatedAt ?? null;
+  useEffect(() => {
+    if (!codeRestored || codeShared || !codeVersion || !deliveryCode || isRiderViewer || codeBusy) return;
+    const baseline = { version: codeVersion, sharedAt: null };
+    setCodeShared(baseline);
+    void saveCodeShared(orderId, baseline);
+  }, [codeRestored, codeShared, codeVersion, deliveryCode, isRiderViewer, codeBusy, orderId]);
+
+  // D-97 (18f): a cancel after pickup hides the rider's number a day on — re-render at that moment.
+  const cancelledAtIso = order?.status === "cancelled" ? (order.events?.find((e) => e.status === "cancelled")?.createdAt ?? null) : null;
+  useEffect(() => {
+    if (!cancelledAtIso) return;
+    const left = Date.parse(cancelledAtIso) + LATE_CANCEL_REACH_MS - Date.now();
+    if (!(left > 0) || left > 2_147_000_000) return;
+    const t = setTimeout(() => setNowMs(Date.now()), left + 50);
+    return () => clearTimeout(t);
+  }, [cancelledAtIso]);
+
   // ── Back: close a panel → collapse a full sheet → leave ──
   const leave = useCallback(() => (router.canGoBack() ? router.back() : goHomeClearingStack(router)), [router]);
   const onBack = useCallback((): boolean => {
@@ -947,6 +1003,19 @@ function ParcelOrderScreen(): React.ReactElement {
   const eventAt = (s: string): string | null => order.events?.find((e) => e.status === s)?.createdAt ?? null;
   const pickedUpAt = eventAt("picked_up");
   const deliveredAt = eventAt("delivered");
+
+  // D-97 (brief 08): the code card's state. A locked code not yet replaced from here is dead — never shown;
+  // offline it can't be replaced either, so the card says a new one needs data (2.14c).
+  const lockPending = lockKey != null;
+  const codeStatus: CodeStatus = codeCardStatus({ hasCode: deliveryCode != null, lockPending, limit: codeLimit, newCodeFailed, online });
+  const codeChanged = codeStatus === "ok" && codeVersion != null && codeShared != null && codeShared.version !== codeVersion;
+  const codeSharedAt = codeStatus === "ok" && codeShared?.sharedAt && codeShared.version === codeVersion ? codeShared.sharedAt : null;
+
+  // D-97 (brief 06): a cancel after pickup — the rider still has the parcel (18d / 18b / 18e / 18f). A
+  // LyniaGo cancel keeps 18c (its reason and Call support); before pickup stays 18a.
+  const lateVariant = saved
+    ? null
+    : lateCancelVariant({ status: stage, riderViewer: isRiderViewer, pickedUpAt, cancelledBy: order.cancelledBy, cancelledAt: cancelledAtIso, phone, nowMs });
   const toPickup = stage === "toPickup";
   const etaMinutes = live && !saved ? (glance?.etaMinutes ?? null) : null;
   const receipt: ReceiptView = {
@@ -1016,11 +1085,19 @@ function ParcelOrderScreen(): React.ReactElement {
   };
   const share = (message: string): void => void Share.share({ message }).catch(() => undefined);
   const shareCode = (): void => {
-    if (deliveryCode) share(orderText.shareMsg(riderFirst, rider?.plate ?? null, deliveryCode));
+    if (!deliveryCode) return;
+    // 2.14b exit: tapping Share code clears the strip; the card keeps "New code · shared 09:14".
+    if (codeChanged && codeVersion) {
+      const v = { version: codeVersion, sharedAt: new Date().toISOString() };
+      setCodeShared(v);
+      void saveCodeShared(orderId, v);
+    }
+    share(orderText.shareMsg(riderFirst, rider?.plate ?? null, deliveryCode));
   };
-  const whatsapp = (): void => {
+  // `text` prefills the chat (18d: the order ref, so the rider knows which parcel).
+  const whatsapp = (text?: string): void => {
     const digits = (phone ?? "").replace(/\D/g, "");
-    if (digits) void Linking.openURL(`https://wa.me/${digits}`).catch(() => undefined);
+    if (digits) void Linking.openURL(`https://wa.me/${digits}${text ? `?text=${encodeURIComponent(text)}` : ""}`).catch(() => undefined);
   };
   const openMaps = (): void => {
     const target = toPickup ? order.pickup.point : order.dropoff.point;
@@ -1092,11 +1169,17 @@ function ParcelOrderScreen(): React.ReactElement {
   const cancelPanel = panel === "cancel" && live && !saved;
   const afterPickup = order.status === "picked_up" || order.status === "en_route_dropoff";
   const title = cancelPanel ? A[stageTitleKey(afterPickup ? "toDropoff" : "toPickup")] : A[stageTitleKey(stage)];
-  const help = showsHelp(stage) && !isRiderViewer;
-  const mapFrame: MapFrame = toPickup ? "pickupRider" : live || stage === "undelivered" || stage === "delivered" ? "riderDrop" : "route";
+  const help = (showsHelp(stage) && !isRiderViewer) || lateVariant != null;
+  // 18d / 18e: the dimmed map keeps the rider's pin at their last known position, labelled with its time.
+  const latePin = lateVariant === "reach" || lateVariant === "pending";
+  const mapFrame: MapFrame = toPickup ? "pickupRider" : live || stage === "undelivered" || stage === "delivered" || latePin ? "riderDrop" : "route";
   const dim = cancelPanel || stage === "retryNoMatch" || stage === "retryRiderCancelled" || stage === "cancelled";
-  const showRider = !saved && (live || stage === "undelivered" || stage === "delivered");
-  const riderLabel = gpsPaused || offline ? orderText.lastSeen(glance?.lastSeenMin ?? minutesSince(null, nowMs)) : riderFirst;
+  const showRider = !saved && (live || stage === "undelivered" || stage === "delivered" || latePin);
+  const riderLabel = latePin
+    ? orderText.riderLastSeen(riderFirst, hhmm(glance?.fixAtMinute))
+    : gpsPaused || offline
+      ? orderText.lastSeen(glance?.lastSeenMin ?? minutesSince(null, nowMs))
+      : riderFirst;
   const suggested = suggestedRetryPrice(price);
   const savedAtText = saved ? hhmm(saved.at) : null;
 
@@ -1112,10 +1195,16 @@ function ParcelOrderScreen(): React.ReactElement {
     savedAt: savedAtText,
     rider,
     riderFirst,
-    code: deliveryCode,
     // U20: once a code has been asked for, the card stays (2.14 "Getting your code…") through a failure — the
     // toast and the automatic retries bring the digits — instead of vanishing.
-    showCode: !isRiderViewer && codeRestored && (deliveryCode != null || codeBusy || (saved == null && codeWanted)),
+    showCode: !isRiderViewer && codeRestored && (deliveryCode != null || codeBusy || codeStatus === "failed" || codeStatus === "limit" || (saved == null && codeWanted)),
+    code: codeStatus === "ok" ? deliveryCode : null,
+    codeStatus,
+    codeFresh: lockPending || rotateM.isPending || newCodeFailed,
+    codeChanged,
+    codeSharedAt,
+    canSendNewCode: newCodeFailed,
+    sendingNewCode: rotateM.isPending,
     photo: order.pickupPhotoUrl ? { url: order.pickupPhotoUrl, sub: orderText.photoSub(riderFirst, hhmm(pickedUpAt)) } : null,
     hasPhone: !!phone,
     sosSent,
@@ -1123,8 +1212,10 @@ function ParcelOrderScreen(): React.ReactElement {
   };
   const trackA: TrackActions = {
     onCall: () => dial(phone),
-    onWhatsApp: whatsapp,
+    onWhatsApp: () => whatsapp(),
     onShareCode: shareCode,
+    onSendNewCode: () => rotate(),
+    onCallSupport: () => dial(SOS_POLICY.safetyLine),
     onMaps: openMaps,
     onViewPhoto: () => setPanel("photo"),
     onCancel: () => {
@@ -1252,6 +1343,30 @@ function ParcelOrderScreen(): React.ReactElement {
     bar = isRiderViewer ? null : (
       <TwoButtonBar primary={{ label: A.callRider, icon: "phone", onPress: () => dial(phone) }} secondary={{ label: A.sendAgain, icon: "refresh-cw", onPress: () => sendFlow(order.proposedFare) }} />
     );
+  } else if (lateVariant) {
+    const supportCall = (): void => dial(SOS_POLICY.safetyLine);
+    content = (
+      <LateCancelSheet
+        title={order.cancelledBy === "rider" ? orderText.lateCancelRiderTitle(riderFirst) : A.lateCancelYouTitle}
+        rider={rider}
+        riderFirst={riderFirst}
+        variant={lateVariant}
+        stackButtons={width < 340 || fontScale > 1}
+        onCall={() => dial(phone)}
+        onWhatsApp={() => whatsapp(orderText.ref(order.id))}
+        onSupport={supportCall}
+      />
+    );
+    const again = { label: A.sendAgain, onPress: () => sendFlow(order.proposedFare) };
+    bar =
+      lateVariant === "hidden" ? (
+        <OneButtonBar {...again} />
+      ) : (
+        <TwoButtonBar
+          primary={lateVariant === "reach" ? { label: orderText.callRiderCta(riderFirst), icon: "phone", onPress: () => dial(phone) } : { label: A.callSupport, icon: "phone", onPress: supportCall }}
+          secondary={again}
+        />
+      );
   } else {
     const by = order.cancelledBy;
     const lynia = by !== "customer" && by !== "rider";
@@ -1285,7 +1400,7 @@ function ParcelOrderScreen(): React.ReactElement {
         pickup={order.pickup.point}
         dropoff={order.dropoff.point}
         riderLabel={riderLabel}
-        riderPaused={gpsPaused || offline}
+        riderPaused={gpsPaused || offline || latePin}
         showRider={showRider}
         toPickupLine={toPickup}
         rings={stage === "finding" || stage === "reopened"}
@@ -1300,7 +1415,7 @@ function ParcelOrderScreen(): React.ReactElement {
     bar,
     floor: stagePeekFloor(peekStage, height, fontScale),
     fallbackShare: stageMapShare(peekStage),
-    contentKey: `${stage}|${cancelPanel ? "c" : ""}|${rated ? "r" : ""}|${skipped ? "s" : ""}|${noFix ? "n" : ""}|${saved ? "v" : ""}`,
+    contentKey: `${stage}|${cancelPanel ? "c" : ""}|${rated ? "r" : ""}|${skipped ? "s" : ""}|${noFix ? "n" : ""}|${saved ? "v" : ""}|${lateVariant ?? ""}`,
     toast: undoToast ?? toast,
     overlays: (
       <>

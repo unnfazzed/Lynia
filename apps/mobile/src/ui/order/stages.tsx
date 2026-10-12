@@ -5,7 +5,7 @@ import { EmptyState } from "../EmptyState";
 import { emptyCopy } from "../emptyCopy";
 import { Icon } from "../Icon";
 import { Notice } from "../send/kit";
-import { CentredHead, CodeBig, CodeCard, GMapsRow, LabelBox, OfferCard, type OfferView, PickupPhotoRow, PriceBox, Receipt, type ReceiptView, RiderCard, type RiderView } from "./cards";
+import { CentredHead, CodeBig, CodeCard, type CodeStatus, GMapsRow, LabelBox, OfferCard, type OfferView, PickupPhotoRow, PriceBox, Receipt, type ReceiptView, RiderCard, type RiderView } from "./cards";
 import { clock, ORDER_COPY as A, orderText, usd } from "./copy";
 import { Countdown, CtaBar, CtaButton, Divider, H2, IconDisc, MiniStars, Muted, OkNote, RiderAvatar, Row, SkeletonOffer, SmBtn, Stars, StepTrack, StopLine, Tags, TABULAR, TextLink, WindowProgress } from "./kit";
 import { PeekMark } from "./OrderSheet";
@@ -231,6 +231,16 @@ export interface TrackVM {
   code: string | null;
   /** The customer sees the code card at all (never a rider viewer). */
   showCode: boolean;
+  /** D-97 (2.14b–d): the card's state, and whether the code being fetched replaces a dead one. */
+  codeStatus: CodeStatus;
+  codeFresh: boolean;
+  /** 2.14b: a new code the customer hasn't shared yet. */
+  codeChanged: boolean;
+  /** When the new code was shared ("New code · shared 09:14"), until delivered; else null. */
+  codeSharedAt: string | null;
+  /** 2.14c: the automatic fetch failed, so "Send a new code" shows; it's in flight. */
+  canSendNewCode: boolean;
+  sendingNewCode: boolean;
   photo: { url: string; sub: string } | null;
   /** The rider's number has come through. */
   hasPhone: boolean;
@@ -243,10 +253,30 @@ export interface TrackActions {
   onCall: () => void;
   onWhatsApp: () => void;
   onShareCode: () => void;
+  onSendNewCode: () => void;
+  onCallSupport: () => void;
   onMaps: () => void;
   onViewPhoto: () => void;
   onCancel: () => void;
   onEmergency: () => void;
+}
+
+function codeCard(vm: TrackVM, a: TrackActions, offline: boolean): React.ReactElement {
+  return (
+    <CodeCard
+      code={vm.code}
+      offline={offline}
+      onShare={a.onShareCode}
+      status={vm.codeStatus}
+      fresh={vm.codeFresh}
+      changed={vm.codeChanged}
+      sharedAt={vm.codeSharedAt}
+      riderFirst={vm.riderFirst}
+      onSendNew={vm.canSendNewCode ? a.onSendNewCode : null}
+      sendingNew={vm.sendingNewCode}
+      onCallSupport={a.onCallSupport}
+    />
+  );
 }
 
 function riderCard(vm: TrackVM, a: TrackActions): React.ReactElement | null {
@@ -287,7 +317,7 @@ export function TrackSheet({ vm, a }: { vm: TrackVM; a: TrackActions }): React.R
       <PeekMark />
       {!vm.toPickup && vm.photo ? <PickupPhotoRow url={vm.photo.url} sub={vm.photo.sub} onView={a.onViewPhoto} /> : null}
       {riderCard(vm, a)}
-      {vm.showCode ? <CodeCard code={vm.code} offline={vm.offline || vm.savedAt != null} onShare={a.onShareCode} /> : null}
+      {vm.showCode ? codeCard(vm, a, vm.offline || vm.savedAt != null) : null}
       {vm.sosSent ? <TextLink label={orderText.sosAgain(vm.emergencyNumber)} icon="phone" color={tokens.color.danger} center onPress={a.onEmergency} /> : <GMapsRow onPress={a.onMaps} />}
       {vm.savedAt ? null : <TextLink label={vm.toPickup ? A.cancelFree : A.cancelOrder} icon="x" color={tokens.color.muted} center onPress={a.onCancel} />}
     </>
@@ -306,7 +336,13 @@ export function HandoffSheet({ vm, a, screenWidth }: { vm: TrackVM; a: TrackActi
         </View>
       </View>
       <StepTrack current={vm.step} />
-      {vm.showCode ? vm.code ? <CodeBig code={vm.code} screenWidth={screenWidth} /> : <CodeCard code={null} offline={vm.offline} onShare={a.onShareCode} /> : null}
+      {vm.showCode ? (
+        vm.code && vm.codeStatus === "ok" ? (
+          <CodeBig code={vm.code} screenWidth={screenWidth} isNew={vm.codeChanged || vm.codeSharedAt != null} />
+        ) : (
+          codeCard(vm, a, vm.offline)
+        )
+      ) : null}
       <PeekMark />
       {riderCard(vm, a)}
     </>
@@ -578,6 +614,60 @@ export function CancelledSheet({ headline, reason, extra }: { headline: string; 
         <Icon name="banknote" size={15} color={tokens.color.muted} />
         <Muted>{A.nothingOwed}</Muted>
       </Row>
+    </>
+  );
+}
+
+/* ───────────────────────── cancelled after pickup (18d · 18e · 18b · 18f, D-97) ───────────────────────── */
+
+/**
+ * Customer brief 06: the order was cancelled after the rider picked the parcel up, so the rider still
+ * has it. `reach` (18d / 18b): the gold strip, the rider card with Call / WhatsApp, "Not answering? Call
+ * support". `pending` (18e): the number hasn't come through — Call / WhatsApp off, the reason in the meta
+ * line. `hidden` (18f): a day on, no strip, no buttons, "Still need your parcel? Call support".
+ */
+export function LateCancelSheet({
+  title,
+  rider,
+  riderFirst,
+  variant,
+  stackButtons,
+  onCall,
+  onWhatsApp,
+  onSupport,
+}: {
+  title: string;
+  rider: RiderView | null;
+  riderFirst: string;
+  variant: "reach" | "pending" | "hidden";
+  stackButtons: boolean;
+  onCall: () => void;
+  onWhatsApp: () => void;
+  onSupport: () => void;
+}): React.ReactElement {
+  const hidden = variant === "hidden";
+  return (
+    <>
+      <View>
+        <H2>{title}</H2>
+        <Muted size={14} style={{ marginTop: 2 }}>
+          {A.nothingToPay}
+        </Muted>
+      </View>
+      {hidden ? null : <Notice tone="gold" icon="package" lead={orderText.lateCancelStripBold(riderFirst)} text={A.lateCancelStripRest} />}
+      <PeekMark />
+      {rider ? (
+        <RiderCard
+          rider={rider}
+          buttons={!hidden}
+          noPhone={variant === "pending"}
+          meta={hidden ? A.numbersHidden : variant === "pending" ? orderText.riderNumberPending(riderFirst) : undefined}
+          stack={stackButtons}
+          onCall={onCall}
+          onWhatsApp={onWhatsApp}
+        />
+      ) : null}
+      <TextLink label={hidden ? A.stillNeedParcel : A.riderNoAnswer} icon="life-buoy" center onPress={onSupport} />
     </>
   );
 }

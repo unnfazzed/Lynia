@@ -32,6 +32,7 @@ const sealed = (code: string, orderId = ORDER) => ({ otpHash: tokens.hash(code),
 /** Fake Prisma where `$transaction(cb)` runs the callback against the same fake (tx === prisma). */
 function build(methods: Record<string, unknown>, opts: { crypto?: false } = {}) {
   const emits: Array<[string, string]> = [];
+  const pushes: Array<{ to: string[]; title: string; body: string; data?: Record<string, string> }> = [];
   const gateway = {
     emitOrderStatus: (id: string, s: string) => emits.push([id, s]),
     emitJobCancelled: () => undefined,
@@ -47,7 +48,10 @@ function build(methods: Record<string, unknown>, opts: { crypto?: false } = {}) 
     prisma as unknown as PrismaService,
     tokens,
     gateway as unknown as TrackingGateway,
-    { notifyOrderStatus: async () => {}, notifyProfiles: async () => {} } as unknown as NotificationsService,
+    {
+      notifyOrderStatus: async () => {},
+      notifyProfiles: async (to: string[], msg: { title: string; body: string; data?: Record<string, string> }) => void pushes.push({ to, ...msg }),
+    } as unknown as NotificationsService,
     { announceOpenOrder: vi.fn(async () => {}) } as unknown as OrdersService,
     { chargeCommission: vi.fn(async () => {}) } as unknown as WalletService,
     undefined,
@@ -55,7 +59,7 @@ function build(methods: Record<string, unknown>, opts: { crypto?: false } = {}) 
     undefined,
     opts.crypto === false ? undefined : pii,
   );
-  return { svc, emits, prisma };
+  return { svc, emits, pushes, prisma };
 }
 
 type Row = Record<string, unknown> & {
@@ -326,10 +330,18 @@ describe("OrderLifecycleService.confirmDelivery against a revealed code — D2",
     expect(emits).toEqual([[ORDER, "en_route_dropoff"]]);
   });
 
-  it("an earlier wrong try does not emit", async () => {
-    const { svc, emits } = build({ $queryRaw: async () => rawRow({ delivery_otp_attempts: 1 }), order: { update: async () => ({}) } });
+  it("D-97 (2.14b): the try that locks the code pushes the customer “Your code changed” — never the digits", async () => {
+    const { svc, pushes } = build({ $queryRaw: async () => rawRow({ delivery_otp_attempts: 4, customer_id: "c1" }), order: { update: async () => ({}) } });
+    await expect(svc.confirmDelivery(ORDER, "r1", "000001")).rejects.toThrow(/no attempts left/i);
+    expect(pushes).toEqual([{ to: ["c1"], title: "Your code changed", body: "Open to share it again.", data: { orderId: ORDER, kind: "code_changed" } }]);
+    expect(JSON.stringify(pushes)).not.toMatch(/\d{3}/);
+  });
+
+  it("an earlier wrong try does not emit or push", async () => {
+    const { svc, emits, pushes } = build({ $queryRaw: async () => rawRow({ delivery_otp_attempts: 1, customer_id: "c1" }), order: { update: async () => ({}) } });
     await expect(svc.confirmDelivery(ORDER, "r1", "000001")).rejects.toThrow(/3 attempts left/i);
     expect(emits).toEqual([]);
+    expect(pushes).toEqual([]);
   });
 });
 

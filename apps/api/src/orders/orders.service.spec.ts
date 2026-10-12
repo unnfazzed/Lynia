@@ -723,6 +723,29 @@ describe("OrdersService.getSnapshot", () => {
     expect(snap.counterpartyPhone).toBe("+263782000000");
   });
 
+  it("U21 (D-97): reveals the rider's phone to the customer on a cancel after pickup, for 24 h only", async () => {
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const lateCancel = (cancelledAt: Date | null, collectedAt: Date | null) => row({ status: "cancelled", collectedAt, cancelledAt });
+    // A cancelled snapshot also looks up its rebroadcast clone (none here).
+    const cancelledSvc = (snap: unknown) =>
+      new OrdersService(
+        { order: { findUnique: async () => snap, findFirst: async () => null }, rating: { findUnique: async () => null } } as unknown as PrismaService,
+        {} as OfferExpiryService,
+        noTracking,
+        noNotifications,
+        noGateway,
+      );
+    // 18d: the rider still holds the parcel — the sender can call them to get it back.
+    expect((await cancelledSvc(lateCancel(hourAgo, hourAgo)).getSnapshot("ord-1", "cust-1")).counterpartyPhone).toBe("+263782000000");
+    // 18a: a cancel before pickup reveals nothing (the rider has nothing of the sender's).
+    expect((await cancelledSvc(lateCancel(hourAgo, null)).getSnapshot("ord-1", "cust-1")).counterpartyPhone).toBeNull();
+    // 18f: a day after the cancel the number goes.
+    const dayAgo = new Date(Date.now() - 25 * 60 * 60 * 1000);
+    expect((await cancelledSvc(lateCancel(dayAgo, dayAgo)).getSnapshot("ord-1", "cust-1")).counterpartyPhone).toBeNull();
+    // No cancel time recorded (an old row): fail closed.
+    expect((await cancelledSvc(lateCancel(null, hourAgo)).getSnapshot("ord-1", "cust-1")).counterpartyPhone).toBeNull();
+  });
+
   it("rejects a third-party caller entirely (P2-2 — no snapshot to a non-party)", async () => {
     // A caller who is neither the customer nor the assigned rider gets no snapshot at all — the
     // response carries live rider GPS + waypoint coordinates, so it's party-gated, not just phone-redacted.

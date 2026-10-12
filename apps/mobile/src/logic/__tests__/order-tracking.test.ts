@@ -10,7 +10,7 @@
  * The end-to-end render behaviour is covered in src/ui/order/__tests__/live-tracking-isolation.test.tsx.
  */
 import type { OrderSnapshot } from "../../api/orders";
-import { deliveryCodeLockout, expiredTerminalKind, orderLoadErrorKind, reconcileDeliveryCode, reconcilePendingRating, selectOfferReconciled, selectOrderShell, selectRiderTelemetry, shouldCancelBeforeRebroadcast } from "../order-tracking";
+import { codeCardStatus, deliveryCodeLockout, expiredTerminalKind, lateCancelVariant, orderLoadErrorKind, reconcileDeliveryCode, reconcilePendingRating, selectOfferReconciled, selectOrderShell, selectRiderTelemetry, shouldCancelBeforeRebroadcast } from "../order-tracking";
 
 const base: OrderSnapshot = {
   id: "order-1",
@@ -366,5 +366,50 @@ describe("liveOrderFromResendError (DRS-02 resend refused: the trip already has 
     expect(liveOrderFromResendError(new ApiError(0, "offline"))).toBeNull();
     expect(liveOrderFromResendError(new ApiError(409, "x", "trip_in_progress", null, null))).toBeNull();
     expect(liveOrderFromResendError(new Error("boom"))).toBeNull();
+  });
+});
+
+describe("codeCardStatus (D-97, 2.14b–d)", () => {
+  const ok = { hasCode: true, lockPending: false, limit: false, newCodeFailed: false, online: true };
+  it("a live code is ok", () => expect(codeCardStatus(ok)).toBe("ok"));
+  it("the re-issue limit wins over everything (2.14d)", () => expect(codeCardStatus({ ...ok, limit: true })).toBe("limit"));
+  it("a locked code not yet replaced is never shown — fetching online, failed offline (2.14c)", () => {
+    expect(codeCardStatus({ ...ok, lockPending: true })).toBe("fetching");
+    expect(codeCardStatus({ ...ok, lockPending: true, online: false })).toBe("failed");
+  });
+  it("a failed new-code fetch is failed until a code lands", () => {
+    expect(codeCardStatus({ ...ok, hasCode: false, newCodeFailed: true })).toBe("failed");
+    expect(codeCardStatus({ ...ok, hasCode: false })).toBe("fetching");
+  });
+});
+
+describe("lateCancelVariant (D-97, 18d / 18e / 18b / 18f)", () => {
+  const now = Date.parse("2026-10-12T12:00:00Z");
+  const cx = {
+    status: "cancelled",
+    riderViewer: false,
+    pickedUpAt: "2026-10-12T09:10:00Z",
+    cancelledBy: "customer" as string | null,
+    cancelledAt: "2026-10-12T09:20:00Z" as string | null,
+    phone: "+263782000000" as string | null,
+    nowMs: now,
+  };
+  it("before pickup stays 18a", () => expect(lateCancelVariant({ ...cx, pickedUpAt: null })).toBeNull());
+  it("a LyniaGo cancel stays 18c, a rider viewer keeps their own screen", () => {
+    expect(lateCancelVariant({ ...cx, cancelledBy: null })).toBeNull();
+    expect(lateCancelVariant({ ...cx, riderViewer: true })).toBeNull();
+  });
+  it("18d / 18b with the rider's number, 18e without it", () => {
+    expect(lateCancelVariant(cx)).toBe("reach");
+    expect(lateCancelVariant({ ...cx, cancelledBy: "rider" })).toBe("reach");
+    expect(lateCancelVariant({ ...cx, phone: null })).toBe("pending");
+  });
+  it("18f more than 24 h after the cancel, whatever the snapshot still says", () => {
+    expect(lateCancelVariant({ ...cx, cancelledAt: "2026-10-11T11:59:00Z" })).toBe("hidden");
+    expect(lateCancelVariant({ ...cx, cancelledAt: "2026-10-11T12:01:00Z" })).toBe("reach");
+  });
+  it("no cancel time: the number's presence decides (no promise of a number that won't come)", () => {
+    expect(lateCancelVariant({ ...cx, cancelledAt: null })).toBe("reach");
+    expect(lateCancelVariant({ ...cx, cancelledAt: null, phone: null })).toBe("hidden");
   });
 });

@@ -4,8 +4,9 @@ import { Text, View } from "react-native";
 import { Icon } from "../Icon";
 import { RemoteImage } from "../RemoteImage";
 import { Tappable } from "../Tappable";
-import { ORDER_COPY as A, orderText, usd } from "./copy";
-import { H2, LABEL, Muted, Plate, RatingLine, RiderAvatar, Row, SmBtn, TABULAR, VerifiedTag } from "./kit";
+import { Notice } from "../send/kit";
+import { hhmm, ORDER_COPY as A, orderText, usd } from "./copy";
+import { CtaButton, H2, LABEL, Muted, Plate, RatingLine, RiderAvatar, Row, SmBtn, TABULAR, VerifiedTag } from "./kit";
 
 /**
  * The After Send order screen's cards (ledger D-53, handoff `as-kit.jsx`): offer card, rider card,
@@ -114,6 +115,8 @@ export function OfferCard({
  * Rider card: photo, name + Verified, rating · Bike plate; Call / WhatsApp, or the masked number.
  * v2: no plate → "Bike" only; not verified → no tag; no photo → initials; the name and plate wrap;
  * no number yet → Call / WhatsApp disabled with a reason line (2.13, 2.15).
+ * D-97 (18e / 18f): `meta` replaces the rating · plate line (and the reason line under the buttons);
+ * `stack` puts Call and WhatsApp full width, one under the other (320dp, or a font scale over 1.0).
  */
 export function RiderCard({
   rider,
@@ -123,6 +126,8 @@ export function RiderCard({
   onCall,
   onWhatsApp,
   noPhone,
+  meta,
+  stack,
 }: {
   rider: RiderView;
   masked?: boolean;
@@ -132,6 +137,9 @@ export function RiderCard({
   onWhatsApp?: () => void;
   /** The rider's number hasn't come through yet. */
   noPhone?: boolean;
+  /** A muted line in place of the rating · plate line. */
+  meta?: string;
+  stack?: boolean;
 }): React.ReactElement {
   const noop = (): void => undefined;
   return (
@@ -143,20 +151,24 @@ export function RiderCard({
             <Text style={{ fontSize: 16, lineHeight: 21, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, flexShrink: 1 }}>{rider.name}</Text>
             {rider.verified ? <VerifiedTag /> : null}
           </View>
-          <View style={{ flexDirection: "row", alignItems: "center", columnGap: 10, rowGap: 4, flexWrap: "wrap" }}>
-            <RatingLine text={orderText.rating(rider.ratingAvg, rider.trips)} />
-            <Plate plate={rider.plate} />
-          </View>
+          {meta ? (
+            <Muted size={12}>{meta}</Muted>
+          ) : (
+            <View style={{ flexDirection: "row", alignItems: "center", columnGap: 10, rowGap: 4, flexWrap: "wrap" }}>
+              <RatingLine text={orderText.rating(rider.ratingAvg, rider.trips)} />
+              <Plate plate={rider.plate} />
+            </View>
+          )}
           {masked && maskedPhone ? <Text style={{ fontSize: 13, color: tokens.color.muted, ...TABULAR }}>{maskedPhone}</Text> : null}
         </View>
       </Row>
       {buttons && !masked ? (
-        <View style={{ flexDirection: "row", gap: 8 }}>
-          <SmBtn flex={1} label={A.call} icon="phone" onPress={onCall ?? noop} disabled={noPhone || !onCall} accessibilityLabel={`${A.call} ${rider.firstName}`} />
-          <SmBtn flex={1} label={A.whatsapp} icon="message-circle" onPress={onWhatsApp ?? noop} disabled={noPhone || !onWhatsApp} accessibilityLabel={`${A.whatsapp} ${rider.firstName}`} />
+        <View style={{ flexDirection: stack ? "column" : "row", gap: 8 }}>
+          <SmBtn flex={stack ? undefined : 1} label={A.call} icon="phone" onPress={onCall ?? noop} disabled={noPhone || !onCall} accessibilityLabel={`${A.call} ${rider.firstName}`} />
+          <SmBtn flex={stack ? undefined : 1} label={A.whatsapp} icon="message-circle" onPress={onWhatsApp ?? noop} disabled={noPhone || !onWhatsApp} accessibilityLabel={`${A.whatsapp} ${rider.firstName}`} />
         </View>
       ) : null}
-      {buttons && !masked && noPhone ? <Text style={{ fontSize: 12, lineHeight: 16, color: tokens.color.muted, marginTop: -2 }}>{orderText.noPhone(rider.firstName)}</Text> : null}
+      {buttons && !masked && noPhone && !meta ? <Text style={{ fontSize: 12, lineHeight: 16, color: tokens.color.muted, marginTop: -2 }}>{orderText.noPhone(rider.firstName)}</Text> : null}
     </View>
   );
 }
@@ -195,44 +207,120 @@ function SkelDigits({ h = 28 }: { h?: number }): React.ReactElement {
   );
 }
 
+/** What the code card can show (D-97): the code, being fetched, the new one couldn't come, or no more re-issues. */
+export type CodeStatus = "ok" | "fetching" | "failed" | "limit";
+
 /**
  * Delivery code card (6, 7, 9, 19, 2.4): "DELIVERY CODE" over 28/800 digits in 3+3, the white "Share
  * code" on the same row — measured: when the digits and the button overflow the row (a large font
  * scale), Share code drops under the digits at full width. `code` null = being issued (2.14).
+ *
+ * Customer brief 08 (D-97), all optional so a caller that passes none renders 2.14 unchanged:
+ *   - 2.14b `changed`: a 1px gold border, the gold "New code" strip on top, Share code filled. After the
+ *     new code is shared (`sharedAt`) the card is normal again with a muted "New code · shared 09:14".
+ *   - 2.14c `status: "failed"`: the grey bars, Share code off, the neutral wifi-off strip, and "Send a new
+ *     code" once the automatic fetch has failed (`onSendNew`). `fresh` = fetching a NEW code (2.14 copy).
+ *   - 2.14d `status: "limit"`: no digits, the warn strip and Call support (replaces the old sticky toast).
  */
-export function CodeCard({ code, offline, onShare }: { code: string | null; offline: boolean; onShare: () => void }): React.ReactElement {
+export function CodeCard({
+  code,
+  offline,
+  onShare,
+  status = "ok",
+  fresh,
+  changed,
+  sharedAt,
+  riderFirst,
+  onSendNew,
+  sendingNew,
+  onCallSupport,
+}: {
+  code: string | null;
+  offline: boolean;
+  onShare: () => void;
+  status?: CodeStatus;
+  fresh?: boolean;
+  changed?: boolean;
+  sharedAt?: string | null;
+  riderFirst?: string;
+  onSendNew?: (() => void) | null;
+  sendingNew?: boolean;
+  onCallSupport?: () => void;
+}): React.ReactElement {
   const [rowW, setRowW] = React.useState(0);
   const [digitsW, setDigitsW] = React.useState(0);
   const [btnW, setBtnW] = React.useState(0);
+  const limit = status === "limit";
+  const failed = status === "failed";
+  const isNew = !!changed && !!code && status === "ok";
   // Label column + gap 8 + button must fit the row; the label is narrower than the digits.
   const stack = rowW > 0 && digitsW > 0 && btnW > 0 && digitsW + 8 + btnW > rowW;
-  const share = <SmBtn kind="white" label={A.shareCode} icon="share-2" onPress={onShare} disabled={!code} flex={stack ? 1 : undefined} />;
+  const share = <SmBtn kind={isNew ? "fill" : "white"} label={A.shareCode} icon="share-2" onPress={onShare} disabled={!code || failed} flex={stack ? 1 : undefined} />;
+  const shown = failed ? null : code;
+  const help = !code ? (fresh ? A.codeGettingNew : A.codeIssuing) : offline ? `${A.codeOffline} ${A.codeHelp}` : A.codeHelp;
   return (
-    <View style={{ backgroundColor: tokens.color.accentWash, borderRadius: tokens.radius.input, paddingVertical: 12, paddingLeft: 14, paddingRight: 12, gap: 8 }}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }} onLayout={(e) => setRowW(e.nativeEvent.layout.width)}>
-        <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+    <View
+      style={{
+        backgroundColor: tokens.color.accentWash,
+        borderRadius: tokens.radius.input,
+        borderWidth: isNew ? 1 : 0,
+        borderColor: tokens.color.highlight,
+        paddingVertical: 12,
+        paddingLeft: 14,
+        paddingRight: 12,
+        gap: 8,
+      }}
+    >
+      {isNew ? <Notice tone="gold" icon="refresh-cw" stack lead={A.codeChangedTitle} text={orderText.codeChangedSub()} /> : null}
+      {limit ? (
+        <>
           <Text style={{ ...LABEL, color: tokens.color.accentText }}>{A.code}</Text>
-          <View style={{ alignSelf: "flex-start" }} onLayout={(e) => setDigitsW(e.nativeEvent.layout.width)}>
-            {code ? <CodeDigits code={code} size={28} gap={10} maxScale={1.15} /> : <SkelDigits />}
+          <Notice tone="warn" icon="circle-alert" stack lead={A.codeLimitTitle} text={orderText.codeLimitSub(riderFirst ?? A.rider)} />
+          {onCallSupport ? <CtaButton ghost label={A.callSupport} icon="phone" onPress={onCallSupport} /> : null}
+        </>
+      ) : (
+        <>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }} onLayout={(e) => setRowW(e.nativeEvent.layout.width)}>
+            <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+              <Text style={{ ...LABEL, color: tokens.color.accentText }}>{A.code}</Text>
+              <View style={{ alignSelf: "flex-start" }} onLayout={(e) => setDigitsW(e.nativeEvent.layout.width)}>
+                {shown ? <CodeDigits code={shown} size={28} gap={10} maxScale={1.15} /> : <SkelDigits />}
+              </View>
+            </View>
+            {stack ? null : <View onLayout={(e) => setBtnW(e.nativeEvent.layout.width)}>{share}</View>}
           </View>
-        </View>
-        {stack ? null : <View onLayout={(e) => setBtnW(e.nativeEvent.layout.width)}>{share}</View>}
-      </View>
-      {stack ? <View style={{ flexDirection: "row" }}>{share}</View> : null}
-      <Text style={{ fontSize: 13, lineHeight: 18, color: tokens.color.ink }}>{!code ? A.codeIssuing : offline ? `${A.codeOffline} ${A.codeHelp}` : A.codeHelp}</Text>
+          {stack ? <View style={{ flexDirection: "row" }}>{share}</View> : null}
+          {failed ? (
+            <>
+              <Notice icon="wifi-off" text={A.codeNeedsData} />
+              {onSendNew ? <CtaButton ghost label={A.sendNewCode} icon="refresh-cw" onPress={onSendNew} loading={sendingNew} /> : null}
+            </>
+          ) : isNew ? null : (
+            <Text style={{ fontSize: 13, lineHeight: 18, color: tokens.color.ink }}>{help}</Text>
+          )}
+          {!failed && !isNew && code && sharedAt ? <Muted size={12}>{orderText.codeSharedLine(hhmm(sharedAt))}</Muted> : null}
+        </>
+      )}
     </View>
   );
 }
 
 /**
  * Hand-off (state 8): one white panel with a 2px accent-text border, the code at 56/800 in 3+3 (48 and
- * a 16 gap under 340dp) — the biggest thing on the sheet; it ignores the system font scale.
+ * a 16 gap under 340dp) — the biggest thing on the sheet; it ignores the system font scale. D-97: a code
+ * that changed on this trip carries the gold "New code" chip above the digits until delivered.
  */
-export function CodeBig({ code, screenWidth }: { code: string; screenWidth: number }): React.ReactElement {
+export function CodeBig({ code, screenWidth, isNew }: { code: string; screenWidth: number; isNew?: boolean }): React.ReactElement {
   const sm = screenWidth < 340;
   return (
     <View style={{ backgroundColor: tokens.color.accentWash, borderRadius: 16, paddingTop: 14, paddingHorizontal: 14, paddingBottom: 16, alignItems: "center", gap: 10 }}>
       <Text style={{ ...LABEL, color: tokens.color.accentText }}>{A.code}</Text>
+      {isNew ? (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: tokens.color.highlightWash, borderWidth: 1, borderColor: tokens.color.highlightBorder, borderRadius: tokens.radius.pill, paddingHorizontal: 8, paddingVertical: 2 }}>
+          <Icon name="refresh-cw" size={12} color={tokens.color.highlightInk} />
+          <Text style={{ fontSize: 12, lineHeight: 16, fontWeight: tokens.font.weight.bold, color: tokens.color.highlightInk }}>{A.codeNewChip}</Text>
+        </View>
+      ) : null}
       <View style={{ alignSelf: "stretch", backgroundColor: tokens.color.bg, borderWidth: 2, borderColor: tokens.color.accentText, borderRadius: 12, paddingVertical: 8, alignItems: "center" }}>
         <CodeDigits code={code} size={sm ? 48 : 56} gap={sm ? 16 : 20} maxScale={1} />
       </View>
