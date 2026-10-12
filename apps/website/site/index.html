@@ -139,8 +139,8 @@ section{position:relative}
 .phones{position:relative;height:520px}
 .phones .b1{width:420px;aspect-ratio:1;background:var(--yel);right:-80px;top:40px}
 .phones .b2{width:90px;aspect-ratio:1;background:var(--coral);left:30px;top:20px}
-.ph{position:absolute;width:200px;height:382px;border-radius:34px;background:var(--ink);padding:9px;box-shadow:0 30px 50px -18px rgba(0,0,0,.45)}
-.ph img{width:100%;height:100%;object-fit:contain;object-position:top;border-radius:24px;display:block;background:#F4F5F7}
+.ph{position:absolute;width:200px;height:382px;border-radius:0;background:var(--ink);padding:9px;box-shadow:0 30px 50px -18px rgba(0,0,0,.45)}
+.ph img{width:100%;height:100%;object-fit:contain;object-position:top;border-radius:0;display:block;background:#F4F5F7}
 .ph{box-shadow:0 30px 50px -18px rgba(0,0,0,.45),inset 0 0 0 2px rgba(255,255,255,.28)}.ph.p1{background:var(--vio);left:6%;top:120px;transform:rotate(-9deg);z-index:1}
 .ph.p2{background:var(--coral);left:28%;top:40px;transform:rotate(3deg);z-index:3}
 .ph.p3{background:var(--sky);left:51%;top:150px;transform:rotate(-4deg);z-index:2}
@@ -177,7 +177,7 @@ h1,h2{text-wrap:balance}
 .trust{padding-bottom:80px}.t{padding:20px;gap:14px}.t b{font-size:17px}
 .call{padding:72px 0}.zmap{max-width:min(440px,calc(100vh - 200px));justify-self:center;width:100%}
 .app{padding-top:80px}.appbox{padding:56px 0 0 56px}.appbox h2{font-size:clamp(34px,3.8vw,50px)}.appbox .txt{padding-bottom:56px}
-.phones{height:420px}.ph{width:164px;height:312px;border-radius:28px;padding:8px}.ph img{border-radius:21px}.ph{box-shadow:0 30px 50px -18px rgba(0,0,0,.45),inset 0 0 0 2px rgba(255,255,255,.28)}.ph.p1{background:var(--vio);top:96px}.ph.p2{background:var(--coral);top:30px}.ph.p3{background:var(--sky);top:116px}.ph.p4{background:var(--pink);top:54px}.phones .b1{width:340px}
+.phones{height:420px}.ph{width:164px;height:312px;border-radius:0;padding:8px}.ph img{border-radius:0}.ph{box-shadow:0 30px 50px -18px rgba(0,0,0,.45),inset 0 0 0 2px rgba(255,255,255,.28)}.ph.p1{background:var(--vio);top:96px}.ph.p2{background:var(--coral);top:30px}.ph.p3{background:var(--sky);top:116px}.ph.p4{background:var(--pink);top:54px}.phones .b1{width:340px}
 footer{padding:56px 0 36px}
 }
 /* responsive */
@@ -191,7 +191,7 @@ footer{padding:56px 0 36px}
 .appbox{padding:48px 28px 0}
 .appbox .txt{padding-bottom:0}
 .phones{height:420px;margin:0 -28px}
-.ph{width:150px;height:286px;border-radius:26px;padding:7px}.ph img{border-radius:19px}
+.ph{width:150px;height:286px;border-radius:0;padding:7px}.ph img{border-radius:0}
 .ph{box-shadow:0 30px 50px -18px rgba(0,0,0,.45),inset 0 0 0 2px rgba(255,255,255,.28)}.ph.p1{background:var(--vio);left:2%;top:90px}.ph.p2{background:var(--coral);left:24%;top:30px}.ph.p3{background:var(--sky);left:48%;top:110px}.ph.p4{background:var(--pink);left:70%;top:50px}
 }
 @media (max-width:600px){
@@ -214,7 +214,7 @@ footer{padding:56px 0 36px}
 .appbox{border-radius:32px;margin:0 -8px}
 .app{padding-top:80px}
 .phones{height:330px}
-.ph{width:118px;height:224px;border-radius:22px;padding:6px}.ph img{border-radius:16px}
+.ph{width:118px;height:224px;border-radius:0;padding:6px}.ph img{border-radius:0}
 .ph{box-shadow:0 30px 50px -18px rgba(0,0,0,.45),inset 0 0 0 2px rgba(255,255,255,.28)}.ph.p1{background:var(--vio);top:70px}.ph.p2{background:var(--coral);top:20px}.ph.p3{background:var(--sky);top:84px}.ph.p4{background:var(--pink);top:36px}
 .phones .b1{width:260px;right:-60px}
 .hero-art .c1{left:0}.hero-art .c2{right:0}
@@ -222,11 +222,14 @@ footer{padding:56px 0 36px}
 .form input{flex:none;height:52px}.flinks{gap:0 24px}.flinks a{display:inline-flex;align-items:center;min-height:44px}.wa .num a,.or a{display:inline-block;padding:10px 0}
 .form .btn{justify-content:center}
 }
+/* hero collage: no phone frames, rounded screen corners only (2026-10) */
+.phones .ph{background:none;padding:0;height:auto;aspect-ratio:1/2;border-radius:0;box-shadow:0 30px 50px -18px rgba(0,0,0,.45)}
+.phones .ph img{height:auto;aspect-ratio:1/2;border-radius:0;background:none}
 </style></head><body>
 
 <header class="nav"><div class="wrap">
 <a class="logo" href="#top"><img src="assets/brand/lyniago-mark.svg" alt="">LyniaGo</a>
-<nav class="links"><a href="#send">Send a parcel</a><a href="#business">For businesses</a><a href="#riders">Become a rider</a></nav>
+<nav class="links"><a href="#send">Send a parcel</a><a href="#business">For businesses</a><a href="#riders">Become a biker</a></nav>
 <a class="btn b-g" href="#app"><i data-i="play"></i>Download the app</a>
 </div></header>
 
@@ -238,8 +241,8 @@ footer{padding:56px 0 36px}
 </div>
 <div class="hero-art">
 <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
-<img fetchpriority="high" class="hero-ill" src="assets/illustrations/hero-rider.svg" alt="LyniaGo rider on a motorbike in Harare">
-<div class="chip c1"><span class="dot"></span><div>Rider 4 min away<small>Tendai · Honda Ace</small></div></div>
+<img fetchpriority="high" class="hero-ill" src="assets/illustrations/hero-rider.svg" alt="LyniaGo biker on a motorbike in Harare">
+<div class="chip c1"><span class="dot"></span><div>Biker 4 min away<small>Tendai · Honda Ace</small></div></div>
 <div class="chip c2"><i data-i="check" style="color:var(--yel)"></i>Delivered</div>
 </div>
 </div><div class="wave"></div></section>
@@ -262,9 +265,9 @@ footer{padding:56px 0 36px}
 <section class="how" id="send"><div class="wrap">
 <div class="head"><h2>Send in three steps</h2><a class="btn b-ink" href="#app"><i data-i="play"></i>Download the app</a></div>
 <div class="steps">
-<div class="step"><span class="n">1</span><h3>Set pickup and drop-off</h3><div class="shot" style="--c:#FFE7E0;--a:var(--coral);--r:-2deg"><span class="sb"></span><img loading="lazy" decoding="async" class="sp" src="assets/screens/step-1-phone.webp" width="500" height="605" alt=""><img loading="lazy" decoding="async" class="sh" src="assets/screens/step-1-hl.webp" width="600" height="186" alt="Set pickup and drop-off — app screen"></div></div>
-<div class="step"><span class="n">2</span><h3>Name your price, pick a rider</h3><div class="shot" style="--c:#E3F6FE;--a:var(--sky);--r:1.5deg"><span class="sb"></span><img loading="lazy" decoding="async" class="sp" src="assets/screens/step-2-phone.webp" width="500" height="537" alt=""><img loading="lazy" decoding="async" class="sh" src="assets/screens/step-2-hl.webp" width="600" height="318" alt="Name your price, pick a rider — app screen"></div></div>
-<div class="step"><span class="n">3</span><h3>Track live, share the code at hand-off</h3><div class="shot" style="--c:#ECE8FF;--a:var(--vio);--r:-1.5deg"><span class="sb"></span><img loading="lazy" decoding="async" class="sp" src="assets/screens/step-3-phone.webp" width="500" height="537" alt=""><img loading="lazy" decoding="async" class="sh" src="assets/screens/step-3-hl.webp" width="600" height="289" alt="Track live, share the code at hand-off — app screen"></div></div>
+<div class="step"><span class="n">1</span><h3>Set pickup and drop-off</h3><div class="shot" style="--c:#FFE7E0;--a:var(--coral);--r:-2deg"><span class="sb"></span><img loading="lazy" decoding="async" class="sp" src="assets/screens/step-1-phone-2026-10.webp" width="500" height="605" alt=""><img loading="lazy" decoding="async" class="sh" src="assets/screens/step-1-hl-2026-10.webp" width="600" height="228" alt="Set pickup and drop-off — app screen"></div></div>
+<div class="step"><span class="n">2</span><h3>Name your price, pick a biker</h3><div class="shot" style="--c:#E3F6FE;--a:var(--sky);--r:1.5deg"><span class="sb"></span><img loading="lazy" decoding="async" class="sp" src="assets/screens/step-2-phone-2026-10.webp" width="500" height="537" alt=""><img loading="lazy" decoding="async" class="sh" src="assets/screens/step-2-hl-2026-10.webp" width="600" height="233" alt="Name your price, pick a biker — app screen"></div></div>
+<div class="step"><span class="n">3</span><h3>Track live, share the code at hand-off</h3><div class="shot" style="--c:#ECE8FF;--a:var(--vio);--r:-1.5deg"><span class="sb"></span><img loading="lazy" decoding="async" class="sp" src="assets/screens/step-3-phone-2026-10.webp" width="500" height="537" alt=""><img loading="lazy" decoding="async" class="sh" src="assets/screens/step-3-hl-2026-10.webp" width="600" height="234" alt="Track live, share the code at hand-off — app screen"></div></div>
 </div>
 </div></section>
 
@@ -280,32 +283,32 @@ footer{padding:56px 0 36px}
 </ul>
 <div class="wa"><a class="btn b-yel" href="https://wa.me/263778831938?text=Hi%20LyniaGo%2C%20I%27d%20like%20to%20onboard%20my%20business." target="_blank" rel="noopener"><i data-i="msg"></i>Onboard on WhatsApp</a><span class="num">or call <a href="tel:+263778831938">077 883 1938</a></span></div>
 </div>
-<img loading="lazy" decoding="async" class="biz-ill" src="assets/illustrations/biz-scooter-rider.svg" width="460" height="460" alt="LyniaGo rider on a scooter with a delivery box">
+<img loading="lazy" decoding="async" class="biz-ill" src="assets/illustrations/biz-scooter-rider.svg" width="460" height="460" alt="LyniaGo biker on a scooter with a delivery box">
 </div>
 </div></section>
 
 <section class="ride" id="riders"><div class="wrap">
 <div class="ride-art">
 <div class="blob b1"></div><div class="blob b2"></div>
-<img loading="lazy" decoding="async" class="ride-ill" src="assets/illustrations/rider-night.svg" alt="LyniaGo rider with delivery box on a Harare street at night">
+<img loading="lazy" decoding="async" class="ride-ill" src="assets/illustrations/rider-night.svg" alt="LyniaGo biker with delivery box on a Harare street at night">
 <div class="chip earn"><div>+ $10.00<small>Job done</small></div></div>
 </div>
 <div>
-<span class="eyebrow" style="color:var(--vio)"><i data-i="bike" style="width:18px;height:18px"></i>For riders</span>
+<span class="eyebrow" style="color:var(--vio)"><i data-i="bike" style="width:18px;height:18px"></i>For bikers</span>
 <h2 style="margin-top:20px">Ride with LyniaGo. <span>Earn on your terms.</span></h2>
 <p class="lead">Got a bike? Turn your hours into income.</p>
 <div class="perks">
 <div class="perk"><span class="ill"><img loading="lazy" decoding="async" src="assets/illustrations/hours.svg" alt=""></span><div><b>Your hours</b><span>Go online when it suits you.</span></div></div>
 <div class="perk"><span class="ill"><img loading="lazy" decoding="async" src="assets/illustrations/price.svg" alt=""></span><div><b>Your price</b><span>Accept the fare or counter it.</span></div></div>
 </div>
-<div class="btns"><a class="btn b-vio" href="#app">Become a rider</a><a class="btn b-vline" href="#riders">How it works</a></div>
+<div class="btns"><a class="btn b-vio" href="#app">Become a biker</a><a class="btn b-vline" href="#riders">How it works</a></div>
 </div>
 </div></section>
 
 <section class="trust"><div class="wrap">
 <div class="head"><h2>Safe from pickup to door</h2></div>
 <div class="tgrid">
-<div class="t"><span class="ill"><img loading="lazy" decoding="async" src="assets/illustrations/trust-verified.svg" alt=""></span><b>Verified riders</b></div>
+<div class="t"><span class="ill"><img loading="lazy" decoding="async" src="assets/illustrations/trust-verified.svg" alt=""></span><b>Verified bikers</b></div>
 <div class="t"><span class="ill"><img loading="lazy" decoding="async" src="assets/illustrations/trust-tracking.svg" alt=""></span><b>Live tracking</b></div>
 <div class="t"><span class="ill"><img loading="lazy" decoding="async" src="assets/illustrations/trust-code.svg" alt=""></span><b>Delivery code</b></div>
 <div class="t"><span class="ill"><img loading="lazy" decoding="async" src="assets/illustrations/trust-payment.svg" alt=""></span><b>Cash or any mobile money</b></div>
@@ -327,10 +330,10 @@ footer{padding:56px 0 36px}
 <div class="txt"><h2>Everything you send, in your pocket</h2><p>Book, track and pay in a few taps.</p><a class="btn b-yel" href="#app"><i data-i="play"></i>Download the app</a></div>
 <div class="phones">
 <div class="blob b1"></div><div class="blob b2"></div>
-<div class="ph p1"><img loading="lazy" decoding="async" src="assets/screens/app-splash.webp" width="265" height="530" alt="LyniaGo splash screen"></div>
-<div class="ph p2"><img loading="lazy" decoding="async" src="assets/screens/app-send.webp" width="265" height="530" alt="Send a parcel: map with pickup and drop-off"></div>
-<div class="ph p3"><img loading="lazy" decoding="async" src="assets/screens/app-tracking.webp" width="265" height="530" alt="Live tracking with delivery code"></div>
-<div class="ph p4"><img loading="lazy" decoding="async" src="assets/screens/app-rider.webp" width="265" height="530" alt="Rider app: open orders nearby"></div>
+<div class="ph p1"><img loading="lazy" decoding="async" src="assets/screens/app-splash-2026-10.webp" srcset="assets/screens/app-splash-2026-10.webp 1x, assets/screens/app-splash-2026-10-2x.webp 2x" width="265" height="530" alt="LyniaGo splash screen"></div>
+<div class="ph p2"><img loading="lazy" decoding="async" src="assets/screens/app-send-2026-10.webp" srcset="assets/screens/app-send-2026-10.webp 1x, assets/screens/app-send-2026-10-2x.webp 2x" width="265" height="530" alt="Send a parcel: map with pickup and drop-off"></div>
+<div class="ph p3"><img loading="lazy" decoding="async" src="assets/screens/app-tracking-2026-10.webp" srcset="assets/screens/app-tracking-2026-10.webp 1x, assets/screens/app-tracking-2026-10-2x.webp 2x" width="265" height="530" alt="Live tracking with delivery code"></div>
+<div class="ph p4"><img loading="lazy" decoding="async" src="assets/screens/app-rider-2026-10.webp" srcset="assets/screens/app-rider-2026-10.webp 1x, assets/screens/app-rider-2026-10-2x.webp 2x" width="265" height="530" alt="Biker app: jobs nearby"></div>
 </div>
 </div>
 </div></section>
@@ -338,7 +341,7 @@ footer{padding:56px 0 36px}
 <footer><div class="wrap">
 <div class="fgrid">
 <div><a class="logo" href="#top"><img src="assets/brand/lyniago-mark.svg" alt="">LyniaGo</a><p class="tag">On-demand delivery for local businesses.</p></div>
-<div class="flinks"><a href="#riders">Become a rider</a><a href="#business">For businesses</a><a href="https://wa.me/263778831938" target="_blank" rel="noopener">Help</a><a href="https://api.lyniago.com/legal/terms">Terms</a><a href="https://api.lyniago.com/legal/privacy">Privacy</a></div>
+<div class="flinks"><a href="#riders">Become a biker</a><a href="#business">For businesses</a><a href="https://wa.me/263778831938" target="_blank" rel="noopener">Help</a><a href="https://api.lyniago.com/legal/terms">Terms</a><a href="https://api.lyniago.com/legal/privacy">Privacy</a></div>
 </div>
 <div class="legal"><span>© 2026 LyniaGo</span><span>Operated by FortyoneX Studio (Private) Limited.</span></div>
 </div></footer>

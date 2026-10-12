@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>lyniago.com — app screens source (2026-10)</title>
+<link rel="stylesheet" href="../../../styles.css">
+<style>body{margin:0;background:#eef0f2;font-family:var(--font-sans)}a{color:#006630}a:hover{color:#063b22}</style>
+<script src="https://unpkg.com/lucide@0.454.0/dist/umd/lucide.min.js"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script>
+window.lucide={icons:Object.fromEntries(Object.entries(window.lucide.icons).map(([k,v])=>[k,typeof v[0]==="string"?(v[2]||[]):v]))};
+window.TBReady=fetch("../../../components/shell/TabBar.jsx").then(r=>r.text()).then(src=>{src=src.replace(/^import .*$/gm,"").replace(/^export /gm,"");const code=Babel.transform(src,{presets:["react"]}).code;return new Function("React",code+";return {TabBar:TabBar,TabIllus:TabIllus};")(React)});
+</script>
+</head><body><div id="root"></div>
+<script type="text/babel" src="sc2-kit.jsx"></script>
+<script type="text/babel" src="as-kit.jsx"></script>
+<script type="text/babel" src="rv-kit.jsx"></script>
+<script type="text/babel" src="screens.jsx"></script>
+</body></html>
