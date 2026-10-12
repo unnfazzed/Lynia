@@ -155,7 +155,8 @@ merchant web's one-time cutover step, [`MERCHANT-WEB.md`](MERCHANT-WEB.md)).
 
 1. Replace `packages/design/handoff/lyniago-website/` with the new export, wholesale.
 2. Copy its `site/` over `apps/website/site/`. Keep `404.html`, `_headers`, `robots.txt`,
-   `sitemap.xml` and `assets/og-image.png`.
+   `sitemap.xml`, `assets/og-image.png` and `email/lyniago-signature-logo-tile.png` (the email-signature
+  logo, owner 2026-10-12: a fixed URL mail clients hotlink, so it is cached a year but not immutable).
 3. Re-apply the launch edits. If an edit's `from` text changed in the new export, update `LAUNCH_EDITS`
    (and D-42).
 4. **Assets:** if the export changed a file under `site/assets/` but kept its name, the
