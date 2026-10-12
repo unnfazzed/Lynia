@@ -91,7 +91,7 @@ spacing, colour) so they read as the same product. The happy path stays 100% moc
 - Offline / reconnecting banners, stale-cache headers, degraded-network variants
 - Draft restore ("Draft restored" chip + Clear) on the send composer
 - Keyless address-search fallback ("Address search is unavailable — tap the map to set this pin") —
-  removing it restores the silent-`null` P0 that `docs/UI-KIT-VS-SHIPPED-AUDIT-2026-08-05.md` was
+  removing it restores the silent-`null` P0 that `docs/archive/UI-KIT-VS-SHIPPED-AUDIT-2026-08-05.md` was
   written to fix
 - "Map didn't load" fallback, location-permission-off hints
 - Feature-flag degradations (`getServiceTiles(flag)`, flag-off onboarding and role sets) — the kit has
@@ -1534,7 +1534,7 @@ gallery the source of truth, and the gallery currently draws the browser step. S
 recorded here rather than argued in a code comment.
 
 **The deviation.** The three browser exits are removed. Verification runs inside the app through
-Didit's native SDK (Route A, `docs/plans/2026-08-20-kyc-in-app-plan.md` §3). Concretely:
+Didit's native SDK (Route A, `docs/archive/plans/2026-08-20-kyc-in-app-plan.md` §3). Concretely:
 `kyc_pending` loses its "Continue in browser" action and becomes a wait state with at most a
 *Check status* refresh; `kyc_failed` / `kyc_expired` re-enter the capture step instead of minting a
 session and opening a tab; and `kyc_form`'s consent card drops "You'll finish in your browser" while
@@ -1565,7 +1565,7 @@ unaffected (BH-03).
 > because the upstream sync below is still owed.
 
 Commissioned by the navigation review (N-01, N-02) and the KYC plan (P0-1), with decisions D2/D3/D4
-recorded in `docs/plans/2026-08-20-navigation-fix-forward.md`.
+recorded in `docs/archive/plans/2026-08-20-navigation-fix-forward.md`.
 
 **Added — `RJ kyc_unfinished` (1·3b) and `RJ kyc_cant_start` (1·3c).** `kyc_pending` assumed the happy
 path: it says *"your ID check is with Didit"*, which is false for a rider who backed out of the SDK
@@ -1978,7 +1978,7 @@ the Terms link and drops About us (then `terms-link` and `about-removed` retire)
 **Owner instruction (2026-09-29):** *"upgrade the merchant web side. It needs to enable both restaurants
 and shops … simple for informal businesses in Zimbabwe … log in is by mobile number and whatsapp otp."*
 The product spec is `docs/designs/merchant-web-upgrade.md` (L1, "Front door"); the plan is
-`docs/plans/2026-09-29-merchant-web-upgrade-plan.md` (§10 lists this entry). **No RM mock draws sign-up,
+`docs/archive/plans/2026-09-29-merchant-web-upgrade-plan.md` (§10 lists this entry). **No RM mock draws sign-up,
 business type or shops**, so these screens are built from RM primitives and ledgered here. The entry was
 PROPOSED until the owner approved the web PR and its screenshot sheet (OV-11); **the owner approved it on
 2026-09-29 with PR #986**. Nothing in
@@ -5158,7 +5158,7 @@ Also in this lane, and not new copy:
 ## D-91 · Merchant wave 4 (Lane E): copy-only lines for menu photos, hours, Book a rider — APPROVED (owner decision D6, 2026-10-07)
 
 **Owner decision D6 (reviewed list 2026-10-07):** *"Only copy fixes, skip new UI."* The merchant audit's Lane E
-findings (`docs/e2e-runs/2026-10-07-merchant/REPORT.md`) needed words for states no handoff draws. Each line below
+findings (`docs/archive/e2e-runs/2026-10-07-merchant/REPORT.md`) needed words for states no handoff draws. Each line below
 goes through an element the screen already had; no element was added. Merchant v2 (`handoff/merchant-v2/`, D-77)
 and merchant-mobile (D-48) draw none of these states.
 

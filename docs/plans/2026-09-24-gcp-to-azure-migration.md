@@ -78,7 +78,7 @@ last real GCP bill was **$189.68/month** (SKU export 2026-08-17..09-15, from the
 - The same log line binds `projects/407250490173` to `lynia-deployer@lynia-500911.iam.gserviceaccount.com`,
   which confirms the project number maps to `lynia-500911`.
 - **Billing failed first.** A billing-account problem (failed payment, closed or suspended billing account,
-  or the billing-admin change attempted in `docs/GCP-BILLING-DOMAIN-SETUP.md` / #911) usually clears when the
+  or the billing-admin change attempted in the retired GCP billing/domain runbook (`GCP-BILLING-DOMAIN-SETUP.md`, in git history) / #911) usually clears when the
   billing account is fixed. A policy suspension needs an appeal. **The Google Cloud email sent to the owner
   says which it is and whether a deletion date applies.** A project suspension notice comes from
   `google-cloud-compliance@google.com`; billing notices come from Google Payments. We could not read the inbox:
@@ -206,7 +206,7 @@ every SKU is offered in South Africa North. Azure Managed Redis is the one to ch
 | D7 | Edge / WAF | **Cutover:** Container Apps ingress + managed cert, **Cloudflare DNS-only**. That keeps the `TRUST_PROXY=1` hop count, and matches today, since the OWASP rules were off. **Launch prep:** Cloudflare proxied + a rate-limit rule (cheapest; then set `TRUST_PROXY=2` or key on `CF-Connecting-IP`), **or** Front Door Standard + WAF custom rules (~$35/mo+) | Front Door Premium for managed OWASP rules: ~$330/mo, oversized for the pilot |
 | D8 | Scheduler | **Container Apps scheduled jobs → curl with an Entra managed-identity token → the existing endpoints.** The guard gains an Entra verifier | BullMQ repeatable jobs: no execution history, and the schedules vanish on a Redis flush. GitHub cron: unreliable, and it would need a prod admin token in GitHub |
 | D9 | Admin auth | **Easy Auth + an Entra ID app with "Assignment required = Yes"**, only named operators assigned; `ADMIN_CONSOLE_PROXY_HEADER=x-ms-client-principal-name`; an app-level allowlist as defence in depth; sign-out → `/.auth/logout` | Easy Auth with Google as the IdP: works, but needs an OAuth client in the new Google project and a mandatory allowlist |
-| D10 | Google platform | **A new Google Cloud project, owned by a Google identity for the company domain (`lyniago.com` since 2026-10), via Cloud Identity Free** (CEO-8). Mail already runs on Spacemail (MX `mx1/mx2.spacemail.com`), so **do not switch MX**. The runbook is `docs/GCP-BILLING-DOMAIN-SETUP.md`, but its "no mailbox exists" premise is wrong. The project gets **2 owners** and its own billing account (Maps needs billing; FCM doesn't) | Reusing the suspended consumer Gmail. Workspace with Gmail: it would take over MX and break Spacemail. Azure Maps: deferred (see G2) |
+| D10 | Google platform | **A new Google Cloud project, owned by a Google identity for the company domain (`lyniago.com` since 2026-10), via Cloud Identity Free** (CEO-8). Mail already runs on Spacemail (MX `mx1/mx2.spacemail.com`), so **do not switch MX**. The runbook is the retired GCP billing/domain runbook (`GCP-BILLING-DOMAIN-SETUP.md`, in git history), but its "no mailbox exists" premise is wrong. The project gets **2 owners** and its own billing account (Maps needs billing; FCM doesn't) | Reusing the suspended consumer Gmail. Workspace with Gmail: it would take over MX and break Spacemail. Azure Maps: deferred (see G2) |
 | D11 | IaC | **Terraform azurerm (+ azapi where azurerm lacks coverage)** in a new `infra/azure/`. Same ownership split as today: Terraform owns infra and app shells with `ignore_changes` on template, image and traffic; CI owns revisions. **Keep `infra/terraform/`** because API specs read it (`src/infra/lb-log-sampling.spec.ts:36-37`, `src/infra/maps-tfvars.spec.ts:21`) | Bicep: a second IaC language in the repo |
 | D12 | Registry | **ACR Basic** (~$5/mo) with managed-identity pull | GHCR: Container Apps needs a long-lived PAT to pull private images |
 | D13 | Observability | Logs to Log Analytics with a cap; an **external uptime monitor** (outside Azure, so it still alerts if Azure itself goes away); Azure Monitor metric alerts; Sentry unchanged. When armed, OTLP goes to Grafana Cloud or App Insights | The Container Apps managed OTel agent: gRPC only, and it can't send metrics to App Insights, while the app exports OTLP/**HTTP** |
@@ -721,7 +721,7 @@ decision.
 
 | ID | Correction | Evidence |
 |---|---|---|
-| CEO-8 | D10 said "Google Workspace". **The domain already has mail:** MX points at `mx1/mx2.spacemail.com`. A Workspace setup that switches MX would break it. By `docs/GCP-BILLING-DOMAIN-SETUP.md`'s own rule ("Cloud Identity Free … if email for this domain is hosted elsewhere"), the Google identity should be **Cloud Identity Free**. That runbook's statement that no mailbox exists is also wrong | Live DoH query, 2026-09-24 |
+| CEO-8 | D10 said "Google Workspace". **The domain already has mail:** MX points at `mx1/mx2.spacemail.com`. A Workspace setup that switches MX would break it. By the retired GCP billing/domain runbook (`GCP-BILLING-DOMAIN-SETUP.md`, in git history)'s own rule ("Cloud Identity Free … if email for this domain is hosted elsewhere"), the Google identity should be **Cloud Identity Free**. That runbook's statement that no mailbox exists is also wrong | Live DoH query, 2026-09-24 |
 | CEO-9 | The repo is **public** (`visibility: public`), so Actions logs are public. `eas-build-status.yml:97` prints the *values* of plaintext EAS variables (Places key, PostHog key, Sentry DSN). These already ship in the APK, and the Places key is dead, so there is no new exposure. That is why every new key must be created `sensitive` (§7 M2 step 3 already says so) | GitHub API; [RUN] 36014729687 |
 | CEO-10 | 0G(c) is verified. No code selects a Redis DB index, and Terraform's `REDIS_URL` carries no DB path (`infra/terraform/secrets.tf:21-27`), so Azure Managed Redis's "database 0 only" limit is satisfied | grep: `common/redis.ts`, `offer-expiry.service.ts`, `order-lifecycle.constants.ts`, `tracking.gateway.ts` |
 | CEO-11 | No CAA record existed on the old domain, so Azure managed certificates (DigiCert) can issue. 4 hostnames point at the dead GCP IP `8.232.107.208`: `lyniago`, `lyniagoadmin`, `lyniagomerchant`, `staging` | Live DoH query, 2026-09-24 |
@@ -1559,7 +1559,7 @@ A mobile-friendly web dashboard (X5 covers it). `azd` templates (a second IaC pa
 - The repo-Variable gating pattern (§6).
 - `deploy-failure` issue label (E7).
 - `infra/scripts/arm-admin.sh` shape for secret minting.
-- `docs/GCP-BILLING-DOMAIN-SETUP.md` domain-verification steps (reused by X1, with the CEO-8 correction).
+- the retired GCP billing/domain runbook (`GCP-BILLING-DOMAIN-SETUP.md`, in git history) domain-verification steps (reused by X1, with the CEO-8 correction).
 
 #### Implementation tasks (DX review)
 

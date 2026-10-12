@@ -747,7 +747,7 @@
 > **never been built before this run**.
 >
 > **This build carried a risk the plan had explicitly wanted sequenced away.** Phase 2 of
-> `docs/plans/2026-08-20-kyc-in-app-plan.md` asked for the New Architecture to be proven on a device
+> `docs/archive/plans/2026-08-20-kyc-in-app-plan.md` asked for the New Architecture to be proven on a device
 > *before* a line of KYC code, so a failed migration could not strand finished KYC work. The owner
 > directed the KYC code first, so the two rode the same build. **That risk did not land** — the build
 > is green — but it was real when dispatched, and the plan records why it stayed survivable: the flag
@@ -777,7 +777,7 @@
 > does not prove the SDK's camera and liveness UI actually *runs* on a handset, which is the whole
 > point of Route A. That is the device smoke in `docs/QA-DEVICE-CHECKLIST.md` — on a real phone, by a
 > human — and it is the only remaining **runtime** gate for this build. It is not the only open item
-> on the KYC work: Phase 1 of `docs/plans/2026-08-20-kyc-in-app-plan.md` is still open because the new
+> on the KYC work: Phase 1 of `docs/archive/plans/2026-08-20-kyc-in-app-plan.md` is still open because the new
 > mocks were drawn in-repo and never exported from the design tool (D-33 / D-35 / D-36 each carry
 > `UPSTREAM SYNC OWED`), which no build can close.
 
@@ -830,7 +830,7 @@
 > than to ship a feature. Both halves FINISHED.**
 >
 > What shipped: `main`@`f86e3e1` — PR **#854**, the `MOB-BOOT-04` cold-start fix and its RCA
-> (`docs/COLD-START-CRASH-RCA-2026-08-21.md`). **JS-only.** No native input moved: `app.config.ts`,
+> (`docs/archive/COLD-START-CRASH-RCA-2026-08-21.md`). **JS-only.** No native input moved: `app.config.ts`,
 > `package.json`, `pnpm-lock.yaml`, `plugins/**`, `eas.json` and `fingerprint.config.js` are all
 > byte-identical to build #32, which is why the release job's *strict* frozen install could not
 > drift the way it did for build `5906d2f0`.
@@ -963,7 +963,7 @@
 > This is the build meant to end the cold-start crash on builds #31–#34.**
 >
 > What shipped: `main`@`1e6ee80` — PR **#863**, executing RCA §8.2
-> (`docs/COLD-START-CRASH-RCA-2026-08-21.md`): `newArchEnabled: false` **and** the Didit SDK removed
+> (`docs/archive/COLD-START-CRASH-RCA-2026-08-21.md`): `newArchEnabled: false` **and** the Didit SDK removed
 > together (dependency, config plugin, R8 keep rules), back to build #30's proven native surface,
 > plus §8.2 step 2 (never-throwing `src/kyc/verify.ts` stub; `src/config.ts` module-scope throws
 > deferred to a per-request `API_CONFIG_ERROR` with loopback-host detection). NATIVE change — new
@@ -1732,7 +1732,7 @@ Once §7.1 and §7.2 are closed:
    production-access card (Google has adjusted the figure before; ~20 at the time the policy
    shipped). Recruit the internal riders/testers early, keep them opted in for the full window, and
    **count this 14-day clock into the mid-August Play-approval tripwire**
-   (`docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §8). While the clock runs:
+   (`docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §8). While the clock runs:
    promote the internal build here and run `docs/QA-DEVICE-CHECKLIST.md` on real handsets on the
    target network. This is also where the sensitive-permission review usually surfaces questions.
    When the window completes, **apply for production access** and answer the questionnaire about

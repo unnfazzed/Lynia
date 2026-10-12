@@ -24,7 +24,7 @@ export const CurrentMerchantAccess = createParamDecorator((_data: unknown, ctx: 
 
 /**
  * Requires the caller to be ON a business — a `merchant_members` row, resolved per request
- * (docs/plans/2026-09-29-merchant-web-upgrade-plan.md D2). The JWT `role` claim is deliberately NOT
+ * (docs/archive/plans/2026-09-29-merchant-web-upgrade-plan.md D2). The JWT `role` claim is deliberately NOT
  * read: it lags a change by up to the token's 15 minutes, and `become` no longer writes it (RCA
  * 2026-08-18 C-1/C-2/C-4). So a new owner is let in on their very next request, and a removed member
  * is refused on theirs. Fail-closed: no resolvable member → 403. Use after RestaurantsEnabledGuard +

@@ -1,6 +1,6 @@
 # Pending work: 2026-10-11
 
-What is still open after waves 0–4 of the 2026-10-07 reviewed list (`docs/REVIEWED-ISSUES-2026-10-07.md`).
+What is still open after waves 0–4 of the 2026-10-07 reviewed list (`docs/archive/REVIEWED-ISSUES-2026-10-07.md`).
 Every item names its ID, what is wrong, and how to fix it.
 
 ## Where things stand

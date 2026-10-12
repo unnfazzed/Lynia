@@ -15,7 +15,7 @@ import { Icon, type IconName, Label } from "./index";
  *
  * KEY-GATED, but never SILENT and never DEAD. With no Places key configured this first rendered
  * `null` (a build whose address rows advertise a search magnifier and then offer only pins — the
- * mismatch reported from the store build, docs/UI-KIT-VS-SHIPPED-AUDIT-2026-08-05.md §2), then a
+ * mismatch reported from the store build, docs/archive/UI-KIT-VS-SHIPPED-AUDIT-2026-08-05.md §2), then a
  * visibly disabled explainer field. The explainer was honest but still a dead end in the one case that
  * matters: with the map's tiles ALSO not rendering there was no way left to produce a coordinate at
  * all, so `coordsOk` could never be satisfied and Broadcast stayed permanently disabled. An unkeyed

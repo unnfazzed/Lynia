@@ -1,5 +1,5 @@
 /**
- * MOB-BOOT-04 regression (docs/COLD-START-CRASH-RCA-2026-08-21.md).
+ * MOB-BOOT-04 regression (docs/archive/COLD-START-CRASH-RCA-2026-08-21.md).
  *
  * Internal-track build #31 installed and then died on every cold start. The fault was native, but the
  * FATALITY was this file's shape: `app/_layout.tsx` runs Sentry init, the splash hold and the font /

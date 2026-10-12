@@ -1,6 +1,6 @@
 /**
  * Central client reliability policy (C-O2, DoorDash lesson 6: "client reliability policy belongs
- * to the contract, not call sites" — docs/plans/2026-08-01-low-connectivity-program.md §3). Before
+ * to the contract, not call sites" — docs/archive/plans/2026-08-01-low-connectivity-program.md §3). Before
  * this module, every network edge in `apps/mobile` picked its own timeout constant by feel
  * (`client.ts` 15s, `uploads.ts` 15s "mirroring" it by comment rather than by reference,
  * `places.ts` 8s, `use-feature-flags.ts`/`use-server-version-gate.ts` 10s, `reachability.ts`'s

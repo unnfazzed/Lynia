@@ -134,6 +134,6 @@ top-up screen work.** No app change is required for it — `succeeded` is alread
 ## Related
 
 - `docs/KNOWN_BUGS.md` → `DOC-16-02` (the original always-expires flow, and why this is not a return to it)
-- `docs/plans/2026-rider-wallet-design.md` — the wallet design brief
+- `docs/archive/plans/2026-rider-wallet-design.md` — the wallet design brief
 - `apps/api/src/adapters/payments/payment-rail.interface.ts` — the seam, and its scope guardrails
 - `docs/PLAY-STORE-SUBMISSION.md` — build/submit mechanics and the current internal-testing phase

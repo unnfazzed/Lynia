@@ -27,7 +27,7 @@ const MERCHANT_DIRECTORY_SELECT = {
 } as const;
 
 /**
- * X1 — admin alignment for the merchant vertical (docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md
+ * X1 — admin alignment for the merchant vertical (docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md
  * §5 Cross-cutting). Owns three surfaces the console had zero visibility into before this:
  *
  *  1. Merchant directory + detail (list/detail, open-debt total, recent orders, debt ledger).

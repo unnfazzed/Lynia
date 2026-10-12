@@ -83,7 +83,7 @@ function update(next: (prev: FoodCartState) => FoodCartState): void {
   // Persist once the initial load has landed (so a load-in-progress can't be clobbered by writing the
   // still-default EMPTY_CART over a just-restored draft).
   //
-  // DEBOUNCED (docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.5). `saveFoodCart` is a SecureStore
+  // DEBOUNCED (docs/archive/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.5). `saveFoodCart` is a SecureStore
   // write — AndroidKeyStore AES encryption plus a SharedPreferences commit — and it used to fire on EVERY
   // cart mutation: each `+`/`-` on the quantity stepper, and each keystroke of the order note. The write
   // is async, but it queues on the native-modules thread every other native call shares, so a burst of

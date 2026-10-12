@@ -6,7 +6,7 @@ trip runs through an OTP-gated delivery lifecycle with live tracking.
 
 This document is the engineering map of the system: how the pieces fit, where the data lives,
 how the hard flows work, and how it deploys. It complements the product/plan docs
-([CONCEPT](CONCEPT.md), [ENG-REVIEW](ENG-REVIEW.md), [PILOT-READINESS](PILOT-READINESS.md)) —
+([CONCEPT](CONCEPT.md), [ENG-REVIEW](archive/ENG-REVIEW.md), [PILOT-READINESS](PILOT-READINESS.md)) —
 those cover *why*; this covers *how it is wired*.
 
 > Diagrams are [Mermaid](https://mermaid.js.org/). GitHub renders them inline; in an editor use a
@@ -1121,7 +1121,7 @@ provider event id.
 
 **Central client reliability policy (C-O2, mobile).** DoorDash lesson 6 ("client reliability policy
 belongs to the contract, not call sites") and lesson 7 (jitter over synchronized retries — see
-`docs/plans/2026-08-01-low-connectivity-program.md` §3). Before this, every mobile network edge
+`docs/archive/plans/2026-08-01-low-connectivity-program.md` §3). Before this, every mobile network edge
 picked its own timeout constant independently (`client.ts` 15s, `uploads.ts` a duplicated "mirrors
 client.ts" 15s, `places.ts` 8s, the feature-flags/version-gate boot checks 10s, the reachability
 probe 5s) and TanStack Query's retry backoff was left at the library's un-jittered default.
@@ -1198,7 +1198,7 @@ every PR/push, and **Release** (`release.yml`), which ships the API container to
 **armed and live**: `GCP_DEPLOY_ENABLED` is set, WIF is active, and a push to `main` deploys to the
 running service at `https://api.lyniago.com`. The other two are out of scope for this
 diagram: `codeql.yml` (weekly + per-PR SAST, [SECURITY.md](./SECURITY.md) P1-1) and
-`android-test-apk.yml` (manual, sideloadable QA APK build — see `docs/plans/TEST-APK-BUILD-PLAN.md`).
+`android-test-apk.yml` (manual, sideloadable QA APK build — see `docs/archive/plans/TEST-APK-BUILD-PLAN.md`).
 
 ```mermaid
 graph LR

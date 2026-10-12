@@ -7,7 +7,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { WalletService } from "./wallet.service";
 
 /**
- * Rider-facing prepaid commission wallet (design docs/plans/2026-rider-wallet-design.md). The signed-in
+ * Rider-facing prepaid commission wallet (design docs/archive/plans/2026-rider-wallet-design.md). The signed-in
  * profile IS the rider (riderId == profileId). Every route is read-mostly; the one write, `POST topups`,
  * is throttled and creates a bounded, server-clamped intent. Money never moves through the client — the
  * per-ride debit and every credit are server-authoritative (the app only reads the ledger).

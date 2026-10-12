@@ -91,7 +91,7 @@ remain the source of truth until the import lands.
 > current restrictions; four Actions *variables* (`TF_MAPS_KEY_ID`, `TF_PLACES_KEY_ID`,
 > `TF_MAPS_SHA1_PLAY`, `TF_MAPS_SHA1_UPLOAD`) supply the values; and `Maps Keys — arm Terraform`
 > imports, plans and applies, refusing any plan that is not a pure in-place update. Step-by-step:
-> `docs/MOB-MAP-02-RUNBOOK.md` §4. **Prefer it to hand-editing the console** — a hand-edit is what
+> `docs/archive/MOB-MAP-02-RUNBOOK.md` §4. **Prefer it to hand-editing the console** — a hand-edit is what
 > left the Maps key at `Application restrictions: None` from at least 2026-08-16 to 2026-08-17 with
 > no diff, no alert and no record.
 
@@ -139,7 +139,7 @@ Contain them in the GCP console:
    > call made with the Maps key, the one web call that reaches the allowlist on this project) and
    > prints `ALLOWLIST_OK`, or names each missing certificate. `workflow_dispatch`, so it runs from a
    > phone. (`adb logcat | grep -i "Google Android Maps SDK"` prints the certificate a given phone
-   > presents, if you have a terminal and a cable.) Ordered fix: `docs/MOB-MAP-02-RUNBOOK.md`. See also
+   > presents, if you have a terminal and a cable.) Ordered fix: `docs/archive/MOB-MAP-02-RUNBOOK.md`. See also
    > `MOB-MAP-02` and `MOB-MAP-04` in `docs/KNOWN_BUGS.md`.
 2. The **Places** key → **Application restrictions: None** (a client-side key can't be IP-restricted).
    Compensate with a tight **API restriction** (**Places API (New)** *only*, `places.googleapis.com`)

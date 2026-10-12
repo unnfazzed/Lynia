@@ -234,7 +234,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   // and the actions re-created inline would defeat the memo anyway. Not a hot path today
   // (the provider only re-renders when `session` or `loading` changes), which is exactly why it is
   // worth pinning now: it is a latent hazard the moment any other state joins this provider.
-  // docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.6.
+  // docs/archive/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.6.
   const value = useMemo<AuthState>(
     () => ({ session, loading, signIn, updateSession, signOut }),
     [session, loading, signIn, updateSession, signOut],

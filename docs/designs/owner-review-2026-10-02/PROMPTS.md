@@ -75,7 +75,7 @@ Bike & documents** (Rider v2 S5), whose "Rider photo" row currently reads **"Not
 
 ## Prompt 2 · Orders tab: empty states
 
-**There's already a full brief for this:** `docs/designs/orders-v2/PROMPT.md` (owner-answered
+**There's already a full brief for this:** `packages/design/handoff/orders-v2/PROMPT-original-brief.md` (owner-answered
 2026-10-01). It covers the whole Orders tab. Its frames **O15–O17** are the empty states:
 
 - O15: first open, loading;
@@ -104,7 +104,7 @@ The recommendation is to send that whole brief, so the empty states come with th
 > - Use only Calm Mint v2 tokens.
 > - Also show the floating tab bar (`tab-bar-v1`) so the bottom padding is right.
 
-**Attach:** `docs/designs/orders-v2/PROMPT.md` and the files its Part 3 lists (at least
+**Attach:** `packages/design/handoff/orders-v2/PROMPT-original-brief.md` and the files its Part 3 lists (at least
 `calm-mint-v2-2026-10/`, `tab-bar-v1/` and `rider-v2/` README + design files), plus
 `packages/design/tokens/*.css`.
 

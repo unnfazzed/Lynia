@@ -1,6 +1,6 @@
 name: Android Test APK
 
-# Builds a sideloadable Android APK for QA (docs/plans/TEST-APK-BUILD-PLAN.md). It runs the WHOLE
+# Builds a sideloadable Android APK for QA (docs/archive/plans/TEST-APK-BUILD-PLAN.md). It runs the WHOLE
 # customer + rider journey against the LIVE API with no WhatsApp/Didit vendors — the backend bypass is
 # config-only and already ships (OTP_CHANNEL=console + OTP_TEST_PHONES; stub KYC auto-verifies riders),
 # turned on via the PILOT-READINESS "Vendor-free QA testing" runbook. This workflow only produces the

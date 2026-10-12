@@ -149,7 +149,7 @@ export const COMMISSION = {
    */
   graceCredit: 5,
   /**
-   * WD-012 (docs/KNOWN_BUGS.md DOC-16-04 / docs/FRAUD-REVIEW.md P0-2): the COMMISSION-BASIS floor, as a
+   * WD-012 (docs/KNOWN_BUGS.md DOC-16-04 / docs/archive/FRAUD-REVIEW.md P0-2): the COMMISSION-BASIS floor, as a
    * fraction of `suggestedFare` (the system's own fair-price anchor — see pricing.ts). `agreedFare` is
    * copied verbatim from the rider's `offeredFare`, whose only bound is "positive, ≤ 100000, 2dp" — a
    * colluding customer+rider pair could agree the real fare off-app and record a near-zero `offeredFare`

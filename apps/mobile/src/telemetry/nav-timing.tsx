@@ -8,7 +8,7 @@ import { consumeTouch } from "./tap-signal";
  * Tap → destination screen on glass (`nav_open`).
  *
  * WHY IT IS SHAPED THIS WAY. The number worth having is "I pressed a thing and the next screen took
- * N ms to appear" — the segment `docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md` §2.1 attributes
+ * N ms to appear" — the segment `docs/archive/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md` §2.1 attributes
  * to a route's module graph being evaluated inside the tap handler. Timing that from the call sites
  * would mean editing all 111 `router.push` calls and keeping them edited forever. Instead this pairs
  * two things the app already has in exactly one place each: the LAST TOUCH (recorded by the one

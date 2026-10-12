@@ -1,6 +1,6 @@
 /**
  * C2 (food order lifecycle) — pricing + timing config, as config not constants
- * (docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md §5 Lane C, packages/design/
+ * (docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md §5 Lane C, packages/design/
  * RESTAURANTS-DECISIONS.md). Mirrors the ./pricing.ts pattern (a single named FARE-shaped object +
  * pure functions), so a future tuning pass or per-corridor override touches this file, not a sweep
  * through the service. Money math goes through ./money (roundToCents) — the one arithmetic seam.
@@ -126,7 +126,7 @@ export function merchantAmountDueUsd(o: {
 }
 
 /**
- * Owner decision D1 (2026-10-07, docs/REVIEWED-ISSUES-2026-10-07.md): "we are launching, more grace is
+ * Owner decision D1 (2026-10-07, docs/archive/REVIEWED-ISSUES-2026-10-07.md): "we are launching, more grace is
  * needed". Every MERCHANT-side wait — the ring / accept window, the unconfirmed auto-accept and the
  * offline-tablet pause — runs up to this long before the order is cancelled. Nothing auto-cancels a
  * restaurant, shop or pharmacy order for a merchant wait inside it. The customer keeps a free cancel

@@ -1,7 +1,7 @@
 /**
  * Golden-matrix tripwire: merchant surfaces are DEAD while the vertical is disabled, and provably
- * ALIVE (guards + real routes) once it's flagged on (docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md
- * §5 Lane C; audit doc docs/plans/2026-07-27-status-keyed-query-audit.md "P0 exit-gate status").
+ * ALIVE (guards + real routes) once it's flagged on (docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md
+ * §5 Lane C; audit doc docs/archive/plans/2026-07-27-status-keyed-query-audit.md "P0 exit-gate status").
  *
  * C1 landed the first real merchant controllers (MerchantController + RestaurantsController,
  * registered unconditionally in AppModule — see merchant.module.ts), so "dead while off" can no

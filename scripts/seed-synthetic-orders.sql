@@ -1,5 +1,5 @@
 -- Synthetic dataset for migration-lock rehearsal on the STAGING clone.
--- Plan reference: docs/plans/2026-07-26-merchant-verticals-plan.md §0b.9 — prod is empty
+-- Plan reference: docs/archive/plans/2026-07-26-merchant-verticals-plan.md §0b.9 — prod is empty
 -- pre-launch, so "no long lock on a prod-sized clone" needs a seeded dataset. This creates
 -- ~100k orders + 500 riders + 5k customers shaped like real Harare traffic, so ALTER TABLE
 -- rehearsals on `orders` measure something.

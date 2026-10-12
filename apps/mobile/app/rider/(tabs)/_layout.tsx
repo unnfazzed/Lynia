@@ -4,7 +4,7 @@ import { ensureJobAlertChannel } from "../../../src/permissions/notifications";
 import { RIDER_TABS, ShellTabBar, TabBarSpaceProvider, useRiderTabBadges } from "../../../src/ui";
 
 /**
- * Rider tab shell (plan `docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §5 Lane B1):
+ * Rider tab shell (plan `docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §5 Lane B1):
  * Jobs | Money | Account. Nested under the existing `/rider` segment (not the app root) — the board tab
  * is `index.tsx`, so its route stays exactly `"/rider"`. Mirrors `app/(tabs)/_layout.tsx` with
  * `RIDER_TABS` and the rider badges (new jobs, top-up needed, verification).

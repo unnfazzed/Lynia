@@ -66,7 +66,7 @@ the ceiling, OTEL as truth:
    STRESS=5 k6 run apps/api/load/offer-loop.js   # ×5 — triage breaches into LR14 ceilings
    k6 run apps/api/load/abuse.js          # throttle proof (429s, no 5xx)
    ```
-4. **Record** the p95s + any breach into `docs/ENG-REVIEW.md`; breaches become LR14 capacity ceilings
+4. **Record** the p95s + any breach into `docs/archive/ENG-REVIEW.md`; breaches become LR14 capacity ceilings
    (with a lever + a metric trigger) or fixes.
 
 ## What stays open (LR13–LR15, need the runs above)

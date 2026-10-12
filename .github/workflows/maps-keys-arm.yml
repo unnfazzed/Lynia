@@ -1,7 +1,7 @@
 name: Maps Keys — arm Terraform (import + plan + apply)
 
 # Brings the two live Google Maps Platform client keys under Terraform, applying the
-# docs/SECURITY-OPS.md §B restrictions — the Route-B fix for MOB-MAP-02 (docs/MOB-MAP-02-RUNBOOK.md
+# docs/SECURITY-OPS.md §B restrictions — the Route-B fix for MOB-MAP-02 (docs/archive/MOB-MAP-02-RUNBOOK.md
 # §4). It is the ONLY safe way to arm infra/terraform/apikeys.tf, and it exists because every other
 # way to do it needs a laptop:
 #

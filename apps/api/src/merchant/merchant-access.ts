@@ -3,7 +3,7 @@ import type { MerchantBusinessType, MerchantMemberRole } from "@lynia/shared";
 import type { PrismaService } from "../prisma/prisma.service";
 
 /** Which business the caller works at, and as what — the ONLY answer merchant access reads
- *  (docs/plans/2026-09-29-merchant-web-upgrade-plan.md D2). */
+ *  (docs/archive/plans/2026-09-29-merchant-web-upgrade-plan.md D2). */
 export interface MerchantAccess {
   merchantId: string;
   role: MerchantMemberRole;

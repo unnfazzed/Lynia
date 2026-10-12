@@ -255,7 +255,7 @@ export const PARITY_STATUS = {
     reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-82 (owner, 2026-10-06): the First Run v2 handoff (packages/design/handoff/first-run-v2, F1–F8) draws every ID-check outcome in one full-screen shell on the rider board (app/rider/(tabs)/index.tsx, src/ui/firstrun/IdCheckOutcome.tsx) — this one is F1 (manual review), F2 (held) and F8 (just sent); the automated check keeps Calm Mint v2 R2. Not aligned to.",
   }, // Verification pending
   // The two new pending states (P0-1). Adopted into the kit here; the app side is PR 3 of
-  // docs/plans/2026-08-20-navigation-fix-forward.md, which wires all three through resolveKycGate.
+  // docs/archive/plans/2026-08-20-navigation-fix-forward.md, which wires all three through resolveKycGate.
   "RJ.kyc_unfinished": {
     status: "PENDING",
     reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-82 (owner, 2026-10-06): the First Run v2 handoff (packages/design/handoff/first-run-v2, F1–F8) draws every ID-check outcome in one full-screen shell on the rider board (app/rider/(tabs)/index.tsx, src/ui/firstrun/IdCheckOutcome.tsx) — this one is F3 ‘Almost there, {firstName}’. Not aligned to.",

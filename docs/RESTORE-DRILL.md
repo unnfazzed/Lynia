@@ -2,7 +2,7 @@
 
 Prove the Cloud SQL backups are real by restoring one. PITR + automated backups are enabled on
 `lynia-pg` (`infra/terraform/sql.tf`) but have **never been exercised** — *a backup that has never
-restored is a hope* (`docs/LAUNCH-READINESS.md` LR7). This runbook restores production data into a
+restored is a hope* (`docs/archive/LAUNCH-READINESS.md` LR7). This runbook restores production data into a
 throwaway scratch instance, boots verification against it, records the **RTO**, and tears the scratch
 instance down so it costs nothing. It never touches production.
 
@@ -18,7 +18,7 @@ Companion to the incident runbook (`docs/IR-RUNBOOK.md` §3 recover) and the pro
 
 | Mark | Meaning |
 |---|---|
-| 🧑‍✈️ **FOUNDER-EXECUTED** | Spends money and/or mutates cloud resources against project `lynia-500911`. Only the founder runs these (per `docs/LAUNCH-READINESS.md` §1 "Prod is founder-touched only"). Agents prepare; they do not run `gcloud`. |
+| 🧑‍✈️ **FOUNDER-EXECUTED** | Spends money and/or mutates cloud resources against project `lynia-500911`. Only the founder runs these (per `docs/archive/LAUNCH-READINESS.md` §1 "Prod is founder-touched only"). Agents prepare; they do not run `gcloud`. |
 | 💵 | This step provisions a billable resource. The teardown step (§7) removes it — do not skip teardown. |
 | 🖥️ | Local/read-only — safe to run from any authenticated workstation. |
 
@@ -242,7 +242,7 @@ gcloud sql instances list --project=lynia-500911 --format='value(name)' | grep r
 - [ ] `T1` recorded; **RTO computed** (§6)
 - [ ] 💵🧑‍✈️ Scratch instance **deleted**; `gcloud sql instances list` confirms it is gone (§7)
 - [ ] RTO + gotchas written into §9 and the LR7 exit-test line (`ENG-REVIEW.md`, per LR7)
-- [ ] LR7 box ticked in `docs/LAUNCH-READINESS.md` **only after this drill actually ran**
+- [ ] LR7 box ticked in `docs/archive/LAUNCH-READINESS.md` **only after this drill actually ran**
 
 ---
 
@@ -281,4 +281,4 @@ are worth a founder decision before LR7 closes:
 ---
 
 *Exit test (LR7): this drill performed once, RTO + gotchas recorded above and in `ENG-REVIEW.md`, then
-the LR7 box ticked in `docs/LAUNCH-READINESS.md`.*
+the LR7 box ticked in `docs/archive/LAUNCH-READINESS.md`.*

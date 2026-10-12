@@ -9,7 +9,7 @@ import { enqueueNavOpen, enqueueTapAck, flush, start, stop } from "../rum";
 import { consumeTouch, noteTouch, __resetTapSignal } from "../tap-signal";
 
 /**
- * The two tap metrics (docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §3). Before these the RUM
+ * The two tap metrics (docs/archive/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §3). Before these the RUM
  * taxonomy had seven events and not one of them measured a tap, so the reported symptom was not
  * falsifiable from the fleet at all — every fix in this program could only be judged by feel.
  */

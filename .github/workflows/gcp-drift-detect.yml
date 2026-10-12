@@ -3,7 +3,7 @@ name: GCP Drift Detect
 # Nightly READ-ONLY audit of live GCP state vs the codebase, so "someone changed something in the
 # console" or "an apply is pending" surfaces as a next-morning issue instead of a silent time bomb
 # (the 2026-07-08 out-of-band service edits went unnoticed for two days —
-# docs/GCP-PENDING-REVIEW-2026-07-13.md). Two independent probes:
+# docs/archive/GCP-PENDING-REVIEW-2026-07-13.md). Two independent probes:
 #
 #   1. scripts/gcp-provisioning-verify.sh — does everything the code/CI/Terraform expect actually
 #      exist and match live? (services, APIs, IAM, secrets freshness, scheduler jobs, sidecars…)
