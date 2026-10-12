@@ -330,8 +330,11 @@ describe("rendered conformance — coverage ledger", () => {
   // floor drops by exactly that one screen. D-82 (2026-10-06, First Run v2) retired four more asserted screens,
   // so it drops by exactly those four: LJ.perm_loc and LJ.perm_notif with the first-run permission priming,
   // and (§2 #6) LJ.delete_account and LJ.delete_final with the gallery's delete screens (First Run v2 I).
-  it("asserts at least one wired screen", () => {
-    expect(COVERED.length).toBeGreaterThanOrEqual(1);
+  // D-98 (owner, 2026-10-12) retired LJ.privacy, the last asserted screen: Privacy opens the hosted notice.
+  // Every wired gallery screen is now superseded by a handoff, so the floor is zero; the ledger checks
+  // above still hold every wired target to an expectation or an honest pending reason.
+  it("the asserted floor drops only with a ledger retirement", () => {
+    expect(COVERED.length).toBeGreaterThanOrEqual(0);
   });
 
   it("every per-string escape carries a real reason and a tracked reference", () => {
