@@ -43,7 +43,7 @@ import { markRiderWelcomeSeen, riderWelcomeSeen, riderWelcomeSeenCached } from "
 import { boardPollMs } from "../../../src/logic/board-poll";
 import { isRecentFix, LAST_KNOWN_MAX_ACCURACY_M, LAST_KNOWN_MAX_AGE_MS } from "../../../src/logic/last-known-fix";
 import { EVENTS, track } from "../../../src/telemetry/events";
-import { topUpAtLeast } from "../../../src/logic/topup";
+import { refusedJobCommission, topUpGate } from "../../../src/logic/topup";
 import { useSettled } from "../../../src/logic/use-settled";
 import { RIDER_PERM_ROUTES, startRiderPermFlow } from "../../../src/logic/rider-perm-flow";
 import { RiderLocEmpty, RiderNotifOffRow } from "../../../src/ui/firstrun/RiderPermBoard";
@@ -467,6 +467,9 @@ export default function RiderHome(): React.ReactElement {
   // The server's last refusal (go-online / heartbeat 403). Cleared on focus and on resume, so a lifted
   // gate re-tests without a tap.
   const [serverGate, setServerGate] = useState<OnlineGateReason | null>(null);
+  // The commission a `commission_low_balance` refusal names (null when it names none) — the top-up wall's
+  // "Top up at least" covers that job, not a floor (D-102).
+  const [refusedCommission, setRefusedCommission] = useState<number | null>(null);
   // B5: a rider who should be online but isn't (failed go-online, a bare heartbeat 403) tries again now.
   const reactivate = useCallback((): void => {
     if (onlineRef.current) return;
@@ -521,6 +524,7 @@ export default function RiderHome(): React.ReactElement {
       track(EVENTS.goOnline, { ok: false, reason: reason ?? (e instanceof ApiError ? `http_${e.status}` : "network") });
       if (reason) {
         setServerGate(reason);
+        setRefusedCommission(e instanceof ApiError ? refusedJobCommission(e.body) : null);
         // The cooldown wall's "Clears at" reads `me` too — and a verified rider's `me` isn't re-read on focus.
         if (reason === "kyc" || reason === "cooldown") void qc.invalidateQueries({ queryKey: ["me"] });
         return;
@@ -621,6 +625,7 @@ export default function RiderHome(): React.ReactElement {
       autoOnlineRef.current = false;
       const reason = onlineGateReason(e);
       setServerGate(reason);
+      setRefusedCommission(refusedJobCommission(e.body));
       if (reason === "kyc") void qc.invalidateQueries({ queryKey: ["me"] });
     },
   );
@@ -881,7 +886,7 @@ export default function RiderHome(): React.ReactElement {
   const gateView = gate ? renderGate(gate) : null;
   function renderGate(g: GateId): React.ReactElement | null {
     const call: GateAction = { label: R.callSupport, icon: "phone", onPress: callSupport };
-    const floor = walletConfig?.floor ?? 2;
+    const floor = walletConfig?.floor ?? COMMISSION.lowBalanceBlockBelow;
     const balance = wallet?.balance ?? null;
     switch (g) {
       // The KYC gates (Rider v2 G1–G7) are retired: `kycScreen` draws R1 / R2 / F1–F8 in their place (D-82).
@@ -934,18 +939,21 @@ export default function RiderHome(): React.ReactElement {
         return <Gate icon="ban" tone="danger" title={R.gSuspT} body={RF.gSuspB(null)} primary={call} bridge={leaveForCustomer} />;
       case "banned":
         return <Gate icon="ban" tone="danger" title={R.gBanT} body={R.gBanB} ghost={call} bridge={leaveForCustomer} />;
-      case "topup":
+      case "topup": {
+        // No floor any more (PR #1154): the drawn floor sentence only while the server serves one above $0.
+        const top = topUpGate({ floor, balance: balance ?? 0, minTopUp: walletConfig?.minTopUp ?? COMMISSION.minTopUp, commission: refusedCommission });
         return (
           <Gate
             icon="wallet"
             tone="danger"
             title={R.gTopT}
-            body={RF.gTopB(floor)}
-            facts={balance != null ? [[R.gTopK, usd(balance)], [R.gTopK2, usd(topUpAtLeast(floor, balance, walletConfig?.minTopUp ?? COMMISSION.minTopUp))]] : null}
+            body={top.body}
+            facts={balance != null ? [[R.gTopK, usd(balance)], [R.gTopK2, usd(top.atLeast)]] : null}
             factsDanger
             primary={{ label: R.goTopUp, icon: "plus", onPress: () => router.push("/wallet/top-up") }}
           />
         );
+      }
     }
   }
 

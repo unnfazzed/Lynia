@@ -1,3 +1,4 @@
+import { COMMISSION } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -201,7 +202,7 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
   const feed = useMemo(() => filterMoneyFeed(allFeed, foodOn ? filter : "all"), [allFeed, filter, foodOn]);
   const groups = groupByDay(feed, (i) => i.at, now, R.todayH, R.yesterday);
 
-  const floor = config?.floor ?? 2;
+  const floor = config?.floor ?? COMMISSION.lowBalanceBlockBelow;
   const rate = config?.ratePct ?? 0;
   const balance = wallet?.balance ?? 0;
   // MA-H2: the server's online gate — the floor only binds once commission is on AND the rider's free

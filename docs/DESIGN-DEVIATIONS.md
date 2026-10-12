@@ -5378,3 +5378,20 @@ reads "biker" / "bikers". It overrides the copy every handoff draws: the handoff
   `packages/design/**` (never edited to match the app).
 - **Native string.** The `app.config.ts` location rationale only reaches devices with the next store build;
   everything else ships by OTA.
+
+## D-102 · The biker's top-up wall (Rider v2 G14) under the per-job commission rule — APPROVED (owner, 2026-10-12)
+
+**Why:** PR #1154 removed the balance floor (`COMMISSION.lowBalanceBlockBelow` = 0). The server now refuses a
+job with `commission_low_balance` when that job's commission is more than the biker's balance
+(`apps/api/src/common/commission-cover.ts`). G14's drawn body, "Your commission balance is below the $2.00
+floor. Top up and jobs show again straight away.", rendered "below the $0.00 floor" for a biker with a
+positive balance, which is false. No handoff draws the per-job case.
+
+| Element | Drawn (G14) | Shipped |
+|---|---|---|
+| Body | "Your commission balance is below the {floor} floor. Top up and jobs show again straight away." | **"Your balance doesn't cover this job's commission. Top up and you can take it straight away."** (`R.gTopJobB`). The drawn sentence stays only while the server serves a floor above $0 and the refusal names no job commission. |
+| "Top up at least" | floor − balance (at least the minimum top-up) | The refused job's commission − balance when the refusal body carries `commission`, never under the minimum top-up (`topUpGate`, `src/logic/topup.ts`). |
+| Title, Balance fact, Top up button | as drawn | unchanged |
+
+The offline fallback for the floor reads `COMMISSION.lowBalanceBlockBelow`, not the old literal `2`. The owner
+chose this wording (2026-10-12) over reusing the API's `commission_low_balance` message or dropping the body.
