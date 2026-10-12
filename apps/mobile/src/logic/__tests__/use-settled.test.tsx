@@ -1,4 +1,3 @@
-import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { useSettled } from "../use-settled";
 
