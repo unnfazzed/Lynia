@@ -72,7 +72,7 @@ export type TransitionFrom = OrderState | InitialState;
 /** `admin`: a console action (D3, 2026-10-07: a food debt is only written off by an admin). */
 export type TransitionActor = "customer" | "rider" | "system" | "merchant" | "admin";
 
-/** C2 (docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md §5 Lane C, status-keyed-query-audit
+/** C2 (docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md §5 Lane C, status-keyed-query-audit
  *  A-11): which `Order.orderType` a transition applies to. `"both"` covers the Class-(b) edges the
  *  audit verified are reusable unmodified (forward rider CAS, cancel matrix, undelivered, the
  *  OTP-gated delivery). Omitted defaults to `"parcel"` (every row that predates this dimension). */

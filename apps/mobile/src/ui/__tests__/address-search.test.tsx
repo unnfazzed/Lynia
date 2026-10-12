@@ -4,7 +4,7 @@
  * The shipped store build rendered zero address-search UI because no Places key was provisioned, and
  * nothing caught it: `AddressSearch` returned `null` when unkeyed, and app/__tests__/send.test.tsx
  * mocks this component out wholesale. So a build that silently dropped the entire search path stayed
- * green. See docs/UI-KIT-VS-SHIPPED-AUDIT-2026-08-05.md §2.
+ * green. See docs/archive/UI-KIT-VS-SHIPPED-AUDIT-2026-08-05.md §2.
  *
  * The unkeyed half of the gate has since been raised twice. `null` became a visible-but-DEAD explainer
  * field, which was honest and still a dead end: with the compose map's tiles also failing to render

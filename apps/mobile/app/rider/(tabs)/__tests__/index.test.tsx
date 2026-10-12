@@ -509,7 +509,7 @@ function activeJobFixture(): OrderSnapshot {
 
 // A-O4: `activeJob`'s REST poll used to have no `online`/active-job gate at all — it ran the 8s
 // self-heal poll indefinitely even while the rider was fully offline with no job to track, forever
-// (KNOWN backlog, `docs/plans/2026-08-01-low-connectivity-program.md` §5 Lane A). The fix can't just
+// (KNOWN backlog, `docs/archive/plans/2026-08-01-low-connectivity-program.md` §5 Lane A). The fix can't just
 // flip to `enabled: online` (the sibling pattern `openOrders` uses) because the "Go offline" button has
 // no active-job guard, so a rider can go offline mid-delivery and still needs this poll to track that
 // job to completion — and a cold app open while offline still needs its one-shot mount fetch to

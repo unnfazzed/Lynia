@@ -1,4 +1,4 @@
-# Admin console tier (docs/plans/2026-admin-console-deployment.md) — a second Cloud Run service
+# Admin console tier (docs/archive/plans/2026-admin-console-deployment.md) — a second Cloud Run service
 # (lynia-admin) in the SAME project/VPC, exposed through the EXISTING external ALB under
 # var.admin_domain, with IAP in front. The console holds a privileged admin token, so IAP (Workspace
 # SSO + MFA) is the human-auth boundary; the app middleware additionally VERIFIES the IAP JWT.
@@ -85,7 +85,7 @@ resource "google_compute_backend_service" "admin" {
   # Google-managed client only admits in-directory users — it would lock everyone out, including the
   # consumer-gmail owner. The custom client is created by hand in the console (the IAP OAuth Admin API
   # was shut down 2026-03-19) against an EXTERNAL, published consent screen, and its id/secret are
-  # supplied as sensitive vars. See docs/plans/2026-admin-console-arming.md §1.
+  # supplied as sensitive vars. See docs/archive/plans/2026-admin-console-arming.md §1.
   iap {
     enabled              = true
     oauth2_client_id     = var.admin_iap_oauth_client_id

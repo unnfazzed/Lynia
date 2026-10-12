@@ -131,7 +131,7 @@ and a wash for selected states — the token file and kit just drifted). `--dang
 promoted from an `admin.css` literal to a real token (the DS3 handoff itself requested this) across
 CSS + `dangerWash` in `design-tokens.ts` + admin `globals.css` + `docs/DESIGN.md`. The full
 inconsistency register and phased execution plan live in
-**[`docs/plans/DESIGN-SYSTEM-3-IMPLEMENTATION-PLAN.md`](plans/DESIGN-SYSTEM-3-IMPLEMENTATION-PLAN.md)**.
+**[`docs/archive/plans/DESIGN-SYSTEM-3-IMPLEMENTATION-PLAN.md`](archive/plans/DESIGN-SYSTEM-3-IMPLEMENTATION-PLAN.md)**.
 
 ## Remaining (genuinely needs a device)
 
@@ -148,7 +148,7 @@ The design's original alignment review carried a P0/P1 app-logic ticket list —
 both contact phones on submit (P0), bounded request timeouts + error states on every async action,
 select-offer 409 rollback copy, delivery-OTP 401/403 lockout + re-issue, one-round-per-rider board
 hiding, and phone-reveal gated to the active window. These predate the current code — see
-`docs/plans/DESIGN-SYSTEM-3-IMPLEMENTATION-PLAN.md` for what shipped; the review itself is retired
+`docs/archive/plans/DESIGN-SYSTEM-3-IMPLEMENTATION-PLAN.md` for what shipped; the review itself is retired
 to git history.
 
 ## Keeping tokens in sync

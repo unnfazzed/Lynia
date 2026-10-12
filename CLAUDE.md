@@ -63,7 +63,7 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
 
 - **Copy-string matching is not parity.** Two 2026-08 audits reported ✅ by grepping copy strings and
   route existence; the pixel audit that followed found **1 of 244 screens matched**
-  (`docs/UI-KIT-VS-SHIPPED-VISUAL-AUDIT-2026-08-05.md`). A screen matches only when structure,
+  (`docs/archive/UI-KIT-VS-SHIPPED-VISUAL-AUDIT-2026-08-05.md`). A screen matches only when structure,
   geometry, colour, type **and** copy match.
 - **The code argues against the design; the code is wrong.** Divergences are defended in comments as
   "the equivalent", "deliberate", "deferred re-architecture". **A code comment justifying a
@@ -94,7 +94,7 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
   handoffs still say "rider"; user-visible copy says "biker" (code, routes and data keep `rider`).
   Verbatim tests compare against `bikerWording(handoff)` from `@lynia/shared`.
 - **Strict mock sizes.** Where a mock draws a control smaller than the old 44px floor, the mock wins;
-  `docs/DESIGN-KIT-A11Y-OVERRIDES.md` no longer overrides drawn geometry (user decision 2026-08-10).
+  `docs/archive/DESIGN-KIT-A11Y-OVERRIDES.md` no longer overrides drawn geometry (user decision 2026-08-10).
   **That rule is scoped to the APP, and it is not licence for the KIT to draw an unusable control**
   (owner decision D2, 2026-08-20). Read against `docs/DESIGN.md` § Responsive & accessibility, which
   requires targets **≥ `--target-min` (44px), 52px for primary**, the two used to contradict each

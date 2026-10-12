@@ -86,7 +86,7 @@ populated mock states (`queue_board`, `catalog`, `shop`, …). **They cannot be 
 container** and are left ⬜ in the tracker with a seeded-instance note. To shoot them: point
 `PARITY_MERCHANT_URL` at a seeded instance and add their `app-targets.mjs` entries.
 
-**Read-only structural check against `docs/plans/2026-07-27-merchant-design-brief.md` (§4B) + the RM
+**Read-only structural check against `docs/archive/plans/2026-07-27-merchant-design-brief.md` (§4B) + the RM
 mocks — no edits made** (the routes are gated + unshootable, so speculative structural edits couldn't
 be visually validated; anything below is a follow-up for the seeded pass):
 

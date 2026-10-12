@@ -9,7 +9,7 @@
 #   • the expected tables exist (a partial/failed restore is caught here);
 #   • row counts are reported and the DB is non-empty as expected;
 #   • the money invariants hold — the SAME assertions the roadmap's ledger
-#     integrity job (item 1.3, docs/plans/2026-rider-wallet-design.md step 6)
+#     integrity job (item 1.3, docs/archive/plans/2026-rider-wallet-design.md step 6)
 #     specifies, run against the restored bytes:
 #       A. every CommissionAccount.balance == SUM(its CommissionLedger.amount)
 #       A2. every CommissionAccount.balance == its latest ledger balanceAfter

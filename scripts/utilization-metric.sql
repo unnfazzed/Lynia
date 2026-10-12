@@ -1,5 +1,5 @@
 -- Rider-utilization metric: orders per active rider per day.
--- Plan reference: docs/plans/2026-07-26-merchant-verticals-plan.md §0a (new P0 task) —
+-- Plan reference: docs/archive/plans/2026-07-26-merchant-verticals-plan.md §0a (new P0 task) —
 -- the tripwire for the merchant-vertical thesis is a fleet average < 1 order/active-rider/day
 -- by Sep 15 (revisit rider-recruitment pacing and Restaurants launch scope before P5).
 --

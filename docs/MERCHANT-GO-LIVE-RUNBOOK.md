@@ -1,7 +1,7 @@
 # Merchant go-live runbook (ops)
 
 **What this covers:** switching a self-signed-up business live, the ops queue, and the pilot numbers.
-**Source:** merchant web upgrade L1, `docs/plans/2026-09-29-merchant-web-upgrade-plan.md` (D5, §11
+**Source:** merchant web upgrade L1, `docs/archive/plans/2026-09-29-merchant-web-upgrade-plan.md` (D5, §11
 CEO-10) and `docs/designs/merchant-web-upgrade.md` L1.5.
 
 Two sections arrive later. Holds and prohibited goods on bookings come with L2 (Book a rider). Owner

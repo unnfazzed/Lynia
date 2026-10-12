@@ -8,7 +8,7 @@ It provisions the target architecture from `CONCEPT.md` §10 — **Cloud Run + C
 
 This replaces the manual click-runbook with something reviewable, version-controlled,
 and re-runnable. It went through an engineering/cloud review pass —
-`docs/ENG-REVIEW.md` §3b (Ship), incl. the post-apply addendum.
+`docs/archive/ENG-REVIEW.md` §3b (Ship), incl. the post-apply addendum.
 
 ## What it creates
 
@@ -31,7 +31,7 @@ and re-runnable. It went through an engineering/cloud review pass —
 > file.** `TF_MAPS_KEY_ID`, `TF_PLACES_KEY_ID`, `TF_MAPS_SHA1_PLAY` and `TF_MAPS_SHA1_UPLOAD` are
 > rendered into `maps.auto.tfvars` by `scripts/tf-maps-tfvars.mjs` at plan time (and therefore
 > override anything `terraform.tfvars` says about them). Unset = `apikeys.tf` stays gated off and the
-> diff is zero. Arming sequence, all dispatchable from a phone: `docs/MOB-MAP-02-RUNBOOK.md` §4.
+> diff is zero. Arming sequence, all dispatchable from a phone: `docs/archive/MOB-MAP-02-RUNBOOK.md` §4.
 
 > **Live state ≠ committed defaults.** The applied `terraform.tfvars` is gitignored, so
 > flag defaults in `variables.tf` (e.g. `staging_enabled = false`) do NOT describe the
@@ -89,7 +89,7 @@ Push to `main` → first Cloud Run deploy.
 ## Hardening follow-ups (deliberately deferred)
 
 Every deferral is coded behind a flag; the sequenced flip plan (order, blast radius,
-rollback) is `docs/INFRA-HARDENING-ROLLOUT.md`. Current flags and defaults:
+rollback) is `docs/archive/INFRA-HARDENING-ROLLOUT.md`. Current flags and defaults:
 
 - **Drop Cloud SQL public IP** — `db_public_ip_enabled` (default `true`). It exists only
   so the GitHub-hosted runner's Auth Proxy can migrate. First set the `DB_PRIVATE_ONLY=true`

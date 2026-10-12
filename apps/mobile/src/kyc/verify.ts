@@ -7,7 +7,7 @@
  *     chrome. This is the owner's instruction (2026-08-20/22: riders never do KYC on the Didit
  *     website outside the app) delivered WITHOUT the native SDK + New Architecture pair that killed
  *     cold start on every build carrying it (MOB-BOOT-04,
- *     docs/COLD-START-CRASH-RCA-2026-08-21.md). The webhook stays the verdict lane; the sheet only
+ *     docs/archive/COLD-START-CRASH-RCA-2026-08-21.md). The webhook stays the verdict lane; the sheet only
  *     reports how the launch went.
  *  2. **In-app browser tab** (expo-web-browser, part of build #30's proven-good native surface) —
  *     the fallback when the sheet cannot present: no host mounted, the WebView native module is

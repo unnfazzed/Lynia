@@ -2,7 +2,7 @@
 
 > Seeded by the gstack `/plan-design-review` stage. This is the living design **system/spec**: every screen
 > and future design review calibrates against it. The **review history** (verdicts, scores, findings) lives
-> in `docs/DESIGN-REVIEW.md`; this file is the baseline it measures against. Direction: **Grab-style clean
+> in `docs/archive/DESIGN-REVIEW.md`; this file is the baseline it measures against. Direction: **Grab-style clean
 > utility** — trust through clarity, tuned for a low-trust cash market on cheap Android phones in bright
 > sunlight. Light theme, data-light, white cards on soft shadows, a bright Grab-green with a dark text-green
 > for legibility, one sparing gold marker.
@@ -225,8 +225,8 @@ components; none needs a device to design.
 ## Earnings / wallet — payment-agnostic (open §6 dependency)
 
 > **Superseded (2026-07-13):** §6's revenue mechanism was decided and the prepaid commission wallet was
-> subsequently designed and built as its own dedicated screen — `docs/plans/2026-rider-wallet-design.md`
-> (explicitly calibrated against this section) + `docs/plans/2026-rider-wallet-design-brief.md`. The
+> subsequently designed and built as its own dedicated screen — `docs/archive/plans/2026-rider-wallet-design.md`
+> (explicitly calibrated against this section); the wallet screens are now drawn by `packages/design/handoff/rider-v2/`. The
 > stance below (cash-first, mechanism-free earnings ledger) is preserved as the pre-wallet baseline this
 > screen was calibrated against; it no longer describes the shipped Earnings/Wallet split.
 
@@ -343,7 +343,7 @@ changing the app to a single word would introduce drift, not remove it.
 | DT8 | P1 | Rider IA + screens specced & calibrated to as-built `app/rider/*` | ✅ done |
 | DT9 | P1 | Rider interaction-states + two rider empty-states (no-orders / not-verified) | ✅ done |
 | DT10 | P2 | Cross-cutting flows: history, profile/settings, rider rating profile, notifications, support | ◐ **partial** — history/profile/earnings/notifications/support shipped; only the *public* rider rating profile (tap-to-expand card with bike reg) not yet |
-| DT11 | P2 | Earnings ledger — payment-agnostic | ✅ done, then superseded — §6 decided (rider commission, 0% for ~6–8 months); the prepaid wallet + ledger shipped as its own screen (`docs/plans/2026-rider-wallet-design.md`), not a line grafted onto Earnings as originally sketched here — see the section above |
+| DT11 | P2 | Earnings ledger — payment-agnostic | ✅ done, then superseded — §6 decided (rider commission, 0% for ~6–8 months); the prepaid wallet + ledger shipped as its own screen (`docs/archive/plans/2026-rider-wallet-design.md`), not a line grafted onto Earnings as originally sketched here — see the section above |
 | DT12 | P1 | Drift fixes: §5c stepper (both sides), designed empty-states, surface/defer contract-only fields, move sign-out to profile | ◐ **partial** — customer-side `Stepper` built (`order/[id].tsx`); rider-side `job.tsx` still shows a single `StatusPill`, not the timeline (contract-only fields + rider pickup-photo also still deferred) |
 | DT13 | P2 | Post-Phase-3: regen `/design-html`, then DT7 visual review + `/qa` on a device build | ⬜ deferred (device-gated) |
 

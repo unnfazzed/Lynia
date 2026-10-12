@@ -4,7 +4,7 @@ import { InteractionManager } from "react-native";
 /**
  * Route prewarm registry — the generalisation of PERF-SEND-01.
  *
- * THE MECHANISM (docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.1). expo-router loads route
+ * THE MECHANISM (docs/archive/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.1). expo-router loads route
  * components lazily: `useScreens` passes `getComponent={() => getQualifiedRouteComponent(route)}`,
  * so a route's module graph is EVALUATED on the first navigation to it — synchronously, inside the
  * tap handler. That is why the first tap into a screen is the slow one and later taps to the same

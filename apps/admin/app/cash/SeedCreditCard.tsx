@@ -8,7 +8,7 @@ import { IconWifiOff } from "../components/icons";
 
 /**
  * Bulk seed-credit — the flip-day tooling from the kit (`packages/design/ui_kits/admin/cash.html`
- * lines 35-51 / 117-160) and `docs/plans/2026-rider-wallet-design.md` Premise 5.
+ * lines 35-51 / 117-160) and `docs/archive/plans/2026-rider-wallet-design.md` Premise 5.
  *
  * ─── WIRING STATUS: THE APPLY ACTION IS DELIBERATELY DEAD ──────────────────────────────────────
  * There is NO bulk/campaign credit endpoint. `apps/api/src/admin/admin.controller.ts` exposes exactly

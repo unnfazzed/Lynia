@@ -254,7 +254,7 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
     // child-management path. An unhandled `com.facebook.infer.annotation.Assertions` AssertionError was
     // reported from this app with no message and no context, and a native crash carries no JS state on
     // its own — so if a remount preceded the next one, this is what will say so, at zero upload cost
-    // when nothing is reported. See docs/SENTRY-TRIAGE-2026-08-17.md §2.
+    // when nothing is reported. See docs/archive/SENTRY-TRIAGE-2026-08-17.md §2.
     addBreadcrumb("compose-map-retry", { attempt: mapNonce + 1 });
     setMapReady(false);
     setMapLoaded(false);

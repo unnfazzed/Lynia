@@ -3,7 +3,7 @@ import React from "react";
 import { APP_TABS, ShellTabBar, TabBarSpaceProvider, useCustomerTabBadges } from "../../src/ui";
 
 /**
- * Root tab shell (plan `docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §5 Lane A1):
+ * Root tab shell (plan `docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §5 Lane A1):
  * Home | Orders | Account. Routes inside this `(tabs)` group keep the segment name in their path (e.g.
  * `app/(tabs)/home.tsx` → `/home`) — the group folder itself is invisible to the URL.
  *

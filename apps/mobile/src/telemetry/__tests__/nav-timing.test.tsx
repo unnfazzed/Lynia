@@ -24,7 +24,7 @@ import { noteTouch, __resetTapSignal } from "../tap-signal";
  * REFUSES to measure: a route change nobody pressed for is a redirect, a deep link or a
  * socket-driven navigation, and filing those under "how long the tap took" would make the histogram
  * describe a latency no person ever waited through
- * (docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §3).
+ * (docs/archive/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §3).
  */
 
 /** Flush the post-interaction callbacks the probe scheduled. */

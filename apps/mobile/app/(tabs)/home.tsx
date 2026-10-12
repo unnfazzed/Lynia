@@ -60,7 +60,7 @@ const ACTIVE_ORDERS_KEY = ["activeCustomerOrders"] as const;
 /**
  * PERF-SEND-01 (second half), generalised. expo-router evaluates a route's module graph on the FIRST
  * navigation to it — synchronously, inside the tap handler — which is why the first tap into a screen
- * is the slow one (docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.1). The launcher warms the
+ * is the slow one (docs/archive/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.1). The launcher warms the
  * routes it can actually reach, from its own idle time:
  *
  *   - `send`      — the Send tile (the original PERF-SEND-01 case: 32 modules + react-native-maps);

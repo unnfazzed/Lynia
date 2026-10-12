@@ -53,7 +53,7 @@ function isLoopbackHost(host: string): boolean {
  * the splash. These conditions used to be module-scope `throw`s, and this module sits in the root
  * layout's eager import graph, where expo-router evaluates it BEFORE the error boundary it derives
  * from that same load exists — so a throw here was a cold-start process kill, not an error screen
- * (MOB-BOOT-04, docs/COLD-START-CRASH-RCA-2026-08-21.md §2 and §8.2 step 2). The check now lives
+ * (MOB-BOOT-04, docs/archive/COLD-START-CRASH-RCA-2026-08-21.md §2 and §8.2 step 2). The check now lives
  * here as a value and fires at first use: `apiFetch` refuses every request with this message, so the
  * app boots, renders, and each screen's normal error path names the misconfiguration instead.
  *

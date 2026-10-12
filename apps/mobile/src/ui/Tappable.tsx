@@ -7,7 +7,7 @@ import { noteTouch } from "../telemetry/tap-signal";
 /**
  * The one tappable primitive — a `Pressable` that always acknowledges the touch.
  *
- * WHY THIS EXISTS (docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §1). 90 of the app's 127
+ * WHY THIS EXISTS (docs/archive/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §1). 90 of the app's 127
  * `<Pressable>` call sites rendered a byte-identical frame on touch-down: nothing changed until the
  * action itself completed, so the whole of the action's latency read as "the button didn't work".
  * That is the reported symptom — "if I click a button it takes time to respond" — and it is a
@@ -82,7 +82,7 @@ export function Tappable({ tone = "row", style, onPressIn, ...rest }: TappablePr
 
   /**
    * Every press goes through here, which makes it the one place the two tap metrics can be armed
-   * without touching a single call site (docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §3):
+   * without touching a single call site (docs/archive/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §3):
    * `noteTouch` is a clock read and an assignment, and `enqueueTapAck` is a no-op on 3 presses in 4
    * (and always, until the RUM buffer is armed). The caller's own `onPressIn` still runs, last.
    */

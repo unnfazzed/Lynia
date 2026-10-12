@@ -26,14 +26,10 @@ allowlisted, so this tracker can never silently fall behind the gallery.
 phase begins by verifying build status for its own screens against source — a screen is never
 dropped from scope on the strength of a stale audit line.
 
-**Standing drift watch (added 2026-08-23).** Between full alignment passes, the weekly **UI Parity
-Audit** routine (`docs/ROUTINES.md` §"UI Parity Audit (report-only)", prompt mirror
-`docs/routines/ui-parity-audit.md`) re-renders every wired screen against its mock and re-runs the
-structural-conformance suite, specifically watching for a screen that regresses after being marked
-👁/✅ here. It is **report-only** — it never edits this tracker's status marks or any app/design code,
-only the dated `docs/UI-PARITY-AUDIT-<date>.md` report and `docs/KNOWN_BUGS.md` (`UIP-` rows). Treat a
-`UIP-` ledger row as a signal to re-open this tracker's row for that screen, not as the tracker having
-already been updated.
+**Drift watch.** A weekly UI Parity Audit routine was specified on 2026-08-23 but never ran, and its
+prompt was removed on 2026-10-12. Drift is caught by the guardrail suite in CI (`CLAUDE.md` §"Pixel
+parity"). Existing `UIP-` rows in `docs/KNOWN_BUGS.md` are signals to re-open this tracker's row for
+that screen.
 
 Retired designs (`LJ home_launcher`; the nine `RJ` originals) are **absent from the gallery by
 design** and therefore absent below — never align to them. Note `RJM board` and `LJ profile` ARE
@@ -48,7 +44,7 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 
 ## Foundation-F codegen adoption — final status (2026-08-12)
 
-The mobile **structural-snapshot codegen** adoption (`docs/plans/2026-08-11-mock-adoption-program.md`)
+The mobile **structural-snapshot codegen** adoption (`docs/archive/plans/2026-08-11-mock-adoption-program.md`)
 ran to its ceiling. **32 mobile views are guardrail-proven congruent** to their mocks
 (`node tools/parity/codegen/cli.mjs check` = 32/32; the structural-snapshot spec asserts each tree ≡
 the mock's). Foundation tooling built across a→e: render-helper/SHELL unwrap, W-KIT member-tag

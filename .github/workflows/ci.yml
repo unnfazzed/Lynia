@@ -150,6 +150,21 @@ jobs:
           git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
             | node scripts/check-design-freeze.mjs
 
+  # Docs link guard: fails when code, a workflow or a doc points at a docs/ file that no longer
+  # exists, so deleting or moving a doc means fixing what cites it in the same PR (docs/README.md).
+  doc-links:
+    name: docs links resolve
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Every docs/ reference points at a file that exists
+        run: node scripts/check-doc-links.mjs
+      - name: Guard tests
+        run: node --test scripts/check-doc-links.test.mjs
+
   # lyniago.com marketing site (apps/website, docs/WEBSITE.md) — the design handoff shipped AS-IS.
   # Fails when the deployed site drifts from packages/design/handoff/lyniago-website beyond the
   # owner-approved launch edits, when the derived 404 page or CSP hashes are stale, when a link does

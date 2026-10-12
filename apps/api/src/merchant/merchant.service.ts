@@ -273,7 +273,7 @@ export class MerchantService {
   }
 
   /**
-   * L1 self-serve sign-up (docs/plans/2026-09-29-merchant-web-upgrade-plan.md D5). Creates the business
+   * L1 self-serve sign-up (docs/archive/plans/2026-09-29-merchant-web-upgrade-plan.md D5). Creates the business
    * and the caller's OWNER membership in one transaction, dormant (`pilotEnabled` stays an ops switch).
    *
    * It never writes `profiles.role` (RCA 2026-08-18 C-4): access is the membership row, which

@@ -13,7 +13,7 @@ import { foodOrderIdempotencyKey } from "../../logic/food-cart";
 import { CART_PERSIST_DEBOUNCE_MS, FoodCartProvider, useFoodCart, type FoodCartApi } from "../cart-context";
 
 /**
- * Cart persistence is debounced (docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.5).
+ * Cart persistence is debounced (docs/archive/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.5).
  *
  * `saveFoodCart` is a SecureStore write — AndroidKeyStore AES encryption plus a SharedPreferences
  * commit — and it used to fire on EVERY cart mutation: every `+`/`-` on the quantity stepper, and

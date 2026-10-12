@@ -7,7 +7,7 @@ import { join, relative, resolve } from "node:path";
  * This is the test that would have caught the reported bug. 90 of the app's 127 `<Pressable>` call
  * sites rendered a byte-identical frame on touch-down, so nothing changed until the action itself
  * completed and the whole of the action's latency read as "the button didn't work" (the owner report
- * of 2026-08-19; docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §1.1). Nothing in the suite
+ * of 2026-08-19; docs/archive/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §1.1). Nothing in the suite
  * noticed, because every one of those screens rendered, navigated and passed its own assertions
  * perfectly — the defect was in a frame nobody asserted on.
  *

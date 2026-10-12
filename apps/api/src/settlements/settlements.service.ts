@@ -57,7 +57,7 @@ function fmtDate(d: Date): string {
  * This deliberately does NOT bill, settle, net refunds, mark payments or auto-pause riders: those were
  * the old post-paid weekly cash-settlement mechanics, which the prepaid model replaces. The prepaid
  * wallet itself (balance ledger, top-ups, per-ride deduction — `apps/api/src/wallet/*`) shipped
- * 2026-07-15 (docs/plans/2026-rider-wallet-design.md); this console stays read-only by design (it never
+ * 2026-07-15 (docs/archive/plans/2026-rider-wallet-design.md); this console stays read-only by design (it never
  * bills/mints — that's `WalletService`'s job), and no money moves through it, but it's not "not built" —
  * it's a deliberately separate reporting surface over the live wallet.
  */
