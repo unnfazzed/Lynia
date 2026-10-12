@@ -24,7 +24,7 @@ export interface IdCheckOutcomeProps {
   firstName?: string | null;
   /** F4: self-serve tries left (the meter is drawn at 1 left — the only state a decline can be in). */
   triesLeft?: number;
-  /** F6: when the ID expired. Not served yet (NEEDS BACKEND, D-82 §4) — the body drops the date then. */
+  /** F6: when the ID expired (`/auth/me` `rider.kycExpiredOn`, D-82 §4). An older server omits it and the body drops the date. */
   expiredAt?: Date | null;
   /** ✕: switch to the customer side (Home). */
   onExit: () => void;
