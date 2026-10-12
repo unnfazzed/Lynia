@@ -18,7 +18,7 @@ Update the LyniaGo marketing site (`apps/website/site/`) with the 2026-10 design
    - `step-1-phone-2026-10.webp` (500×605), `step-2-phone-2026-10.webp` and `step-3-phone-2026-10.webp` (500×537). These are the bare app screen with rounded phone-style corners (radius 54) on a transparent background. **There is no phone frame or notch any more.** The existing `.shot .sp` drop-shadow follows the rounded edge, so no CSS change is needed.
    - `step-1-hl-2026-10.webp` (600×228), `step-2-hl-2026-10.webp` (600×233), `step-3-hl-2026-10.webp` (600×234). The `height=""` attributes in `index.html` are already updated to match.
    - `app-splash-2026-10.webp`, `app-send-2026-10.webp`, `app-tracking-2026-10.webp`, `app-rider-2026-10.webp` at 265×530, plus 2× files `app-*-2026-10-2x.webp` at 530×1060. The hero `<img>` tags have `srcset="….webp 1x, …-2x.webp 2x"` with the new names. Every `src` and `srcset` in `index.html` already uses the new names.
-2. **Hero collage frames removed.** A CSS block at the end of `<style>` in `index.html` ("hero collage: no phone frames") removes the coloured frame fill, padding and inner ring from `.phones .ph`. Each phone is now the bare screen (1:2 ratio) with rounded corners (the existing 34/28/26/22px radius per breakpoint), plus the same tilt, position, z-order and drop shadow. Don't re-add the frame colours.
+2. **Hero collage frames removed.** A CSS block at the end of `<style>` in `index.html` ("hero collage: no phone frames") removes the coloured frame fill, padding and inner ring from `.phones .ph`. Each phone is now the bare screen (1:2 ratio) with **square corners** (`border-radius:0` on `.phones .ph` and `.phones .ph img` at every breakpoint), plus the same tilt, position, z-order and drop shadow. Don't re-add the frame colours or the radius.
 3. **Copy: "rider" becomes "biker"** in visible text and alt text only: nav, hero alt text and chip, card 2 headline and alt text, business and riders alt text, the "For bikers" eyebrow, the "Become a biker" buttons (nav, section, footer), "Verified bikers", and the phone 4 alt text "Biker app: jobs nearby". Keep "Ride with LyniaGo. Earn on your terms."
 
 **Tasks**
@@ -29,7 +29,7 @@ Update the LyniaGo marketing site (`apps/website/site/`) with the 2026-10 design
    - "Send in three steps"
    - the "Everything you send, in your pocket" phone collage
    
-   Confirm the step phones and the 4 hero phones show rounded screen corners with no frame, and that the highlight cards aren't stretched.
+   Confirm the step phones show rounded screen corners with no frame, the 4 app-section phones are square with no frame, and that the highlight cards aren't stretched.
 5. Run the `website` CI job and report the result.
 
 Source of the screens (for reference only, nothing to build): `screens-src/Website Screens.html` renders every export at its exact size from the app kits. The PNG masters are in `screens-src/png/`.
