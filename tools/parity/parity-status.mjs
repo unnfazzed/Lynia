@@ -61,6 +61,10 @@ export const PARITY_STATUS = {
     status: "PENDING",
     reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-55 (owner, 2026-10-01): the Calm Mint v2 handoff (packages/design/handoff/calm-mint-v2-2026-10) removes the role choice screen — every account starts as a customer, and the rider path is 'Want to earn? Ride with LyniaGo' on C1 or the Account card. app/role.tsx was deleted; there is no screen to wire. Not aligned to.",
   }, // Choose your role · food off
+  "LJ.privacy": {
+    status: "PENDING",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-98 (owner, 2026-10-12): the Settings 'Privacy notice' row and the phone screen's 'Privacy policy' link open the hosted notice (api.lyniago.com/legal/privacy) in the browser; account deletion lives in Settings. app/settings/privacy.tsx was deleted; there is no screen to wire. Not aligned to.",
+  }, // Privacy
   "LJ.help": {
     status: "PENDING",
     reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-60 (owner, 2026-10-02): Help & support on both Account tabs opens the support WhatsApp chat (wa.me/263778831938) directly — 'no thing else'. app/help (and the rider S6 screen) were deleted; there is no screen to wire. Not aligned to.",

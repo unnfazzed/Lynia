@@ -5295,3 +5295,17 @@ been read, and asking the reviewer to "compare the two photos" when there was us
 
 Strings come from the handoff's `copy.ts`, verbatim. Where the HTML and an existing component disagree on a pixel,
 the existing component wins (handoff README). Not drawn, so not built: per-page pharmacist refusal.
+
+## D-98 · Privacy opens the hosted notice; the in-app privacy screen is retired — APPROVED (owner, 2026-10-12)
+
+**Owner instruction (2026-10-12):** "privacy notice still shows outdated UI. Make it link to
+https://api.lyniago.com/legal/privacy .. the delete account that still shows is now under settings no longer
+needed."
+
+- The Settings "Privacy notice" row and the phone screen's "Privacy policy" link open the API-served notice
+  (`PRIVACY_URL` = `${API_URL}/legal/privacy`, apps/mobile/src/config.ts) in the browser, the same way Terms does
+  (D-42 / D-49). That page is the canonical notice; Play's in-app reachability is met by the link.
+- The drawn in-app screen `LJ privacy` (`app/settings/privacy.tsx`: three disclosure cards, "Request a copy of my
+  data", "Delete my account") is deleted. Deletion stays reachable from Settings (`/settings/delete-account`).
+- Parity: `LJ.privacy` moves from `app-targets.mjs` to `parity-status.mjs` as superseded; its fixture and expected
+  file are removed. `/settings/privacy` leaves the signed-out route list.
