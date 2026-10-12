@@ -520,6 +520,12 @@ export const FoodOfferResponse = z
   .strict();
 export type FoodOfferResponse = z.infer<typeof FoodOfferResponse>;
 
+/** Every live food-dispatch offer ringing the rider, the one running out first first
+ *  (`GET /merchant/orders/dispatch/offers`). Several orders can ring one rider at once, and the board
+ *  lists each as its own card; the offer screen then reads one by `?orderId=` on `dispatch/offer`. */
+export const FoodOffersResponse = z.object({ offers: z.array(FoodOfferEvent) }).strict();
+export type FoodOffersResponse = z.infer<typeof FoodOffersResponse>;
+
 /** `food:offer-closed` payload (C5) — the recipient's live food-dispatch offer stopped being live
  *  (expiry, decline, or otherwise). Signal only, mirrors `bid:expired`'s shape. */
 export const FoodOfferClosedEvent = z.object({ orderId: z.string().uuid(), at: z.string() });

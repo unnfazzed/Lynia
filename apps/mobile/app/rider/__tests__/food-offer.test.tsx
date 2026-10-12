@@ -17,13 +17,15 @@ import type { FoodOfferEvent } from "@lynia/shared";
 
 jest.useFakeTimers();
 
-const mockGetOffer = jest.fn<Promise<FoodOfferEvent | null>, []>();
+const mockGetOffer = jest.fn<Promise<FoodOfferEvent | null>, [string | undefined]>();
+let mockParams: { orderId?: string } = {};
 let mockJob: Record<string, unknown> | null = null;
 const mockAccept = jest.fn<Promise<unknown>, [string]>();
 const mockDecline = jest.fn<Promise<unknown>, [string]>();
 
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  useLocalSearchParams: () => mockParams,
 }));
 jest.mock("expo-secure-store", () => ({
   getItemAsync: async () => null,
@@ -31,7 +33,7 @@ jest.mock("expo-secure-store", () => ({
   deleteItemAsync: async () => undefined,
 }));
 jest.mock("../../../src/api/food-rider", () => ({
-  getFoodDispatchOfferWithJob: () => mockGetOffer().then((o) => ({ offer: o, job: mockJob })),
+  getFoodDispatchOfferWithJob: (orderId?: string) => mockGetOffer(orderId).then((o) => ({ offer: o, job: mockJob })),
   acceptFoodDispatch: (orderId: string) => mockAccept(orderId),
   declineFoodDispatch: (orderId: string) => mockDecline(orderId),
 }));
@@ -99,6 +101,7 @@ async function press(tree: renderer.ReactTestRenderer, label: string): Promise<v
 
 beforeEach(() => {
   mockJob = null;
+  mockParams = {};
   mockGetOffer.mockReset();
   mockAccept.mockReset();
   mockDecline.mockReset();
@@ -109,6 +112,19 @@ beforeEach(() => {
 });
 
 describe("FoodOffer (Biker v2 F1–F4)", () => {
+  // Owner 2026-10-12: several orders can ring one rider at once — the screen reads the one it was opened for.
+  it("reads the offer for the order it was opened with, and the soonest one without", async () => {
+    mockGetOffer.mockResolvedValue(offer());
+    mockParams = { orderId: "food-2" };
+    await render();
+    expect(mockGetOffer).toHaveBeenCalledWith("food-2");
+
+    mockGetOffer.mockClear();
+    mockParams = {};
+    await render();
+    expect(mockGetOffer).toHaveBeenCalledWith(undefined);
+  });
+
   it("F1: the kitchen, the fare, both stops — no pay-the-kitchen tiles at a collect-and-return kitchen", async () => {
     mockGetOffer.mockResolvedValue(offer());
     const tree = await render();

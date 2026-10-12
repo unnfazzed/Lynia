@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import { estimatePickupEtaMinutes, type MakeOfferRequest, OFFER_WINDOW_MS } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, estimatePickupEtaMinutes, type MakeOfferRequest, OFFER_WINDOW_MS } from "@lynia/shared";
 import { makeOffer } from "@lynia/shared/fixtures";
 import { describe, expect, it, vi } from "vitest";
 import type { NotificationsService } from "../notifications/notifications.service";
@@ -401,6 +401,23 @@ describe("OffersService.makeOffer", () => {
     });
     await expect(service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/still settling with a restaurant/i);
     expect(create).not.toHaveBeenCalled();
+    expect(metrics.incOffersMade).toHaveBeenCalledWith("forbidden");
+  });
+
+  // Owner 2026-10-12: a rider already on a job can't bid. The offer could never be picked (the list hides
+  // it, selectOffer 409s rider_taken) but used up the rider's one round on the order.
+  it("403s a rider who is already on a job, before any offer is written", async () => {
+    const create = vi.fn();
+    const findFirst = vi.fn(async (a: { where: { status?: { in: string[] } } }) => (a.where.status ? { id: "their-current-job" } : null));
+    const { service, metrics, gateway } = svc({
+      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel" }), findFirst },
+      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }) },
+      offer: { create },
+    });
+    await expect(service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/finish your current job/i);
+    expect(findFirst).toHaveBeenCalledWith({ where: { riderId: "rider-1", status: { in: ACTIVE_RIDE_STATUSES } }, select: { id: true } });
+    expect(create).not.toHaveBeenCalled();
+    expect(gateway.emitOffersChanged).not.toHaveBeenCalled();
     expect(metrics.incOffersMade).toHaveBeenCalledWith("forbidden");
   });
 });

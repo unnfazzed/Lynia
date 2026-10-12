@@ -207,8 +207,9 @@ function pushRoute(data: unknown, isRider: boolean): string | null {
   if (kind === FREE_JOBS_KIND) return "/rider/money";
   // D5: a food-dispatch offer push (`food-dispatch.service.ts` `tick()`) lands the rider on the offer
   // intake screen, which reads the live offer straight off the poll-fallback GET rather than trusting
-  // this push's own payload — a stale/lost push can never show a dead offer there.
-  if (kind === "food_offer") return "/rider/food-offer";
+  // this push's own payload — a stale/lost push can never show a dead offer there. The push's orderId
+  // pins that read to its own order (several can ring one rider at once); none → the soonest, as before.
+  if (kind === "food_offer") return typeof orderId === "string" && orderId !== "" ? `/rider/food-offer?orderId=${encodeURIComponent(orderId)}` : "/rider/food-offer";
   // KB-NOTIFY-ORDERID: a "rider's online near you" push now carries the still-open orderId when the
   // customer's original auction is still live — route the tap back to that running request (the
   // destination is viewer-role-aware from earlier fixes, so this is safe). Absent orderId keeps the

@@ -10,7 +10,7 @@ import { ApiError } from "../../../src/api/client";
 import { getMe, type Me } from "../../../src/api/auth";
 import { withdrawOffer } from "../../../src/api/offers";
 import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../../src/api/orders";
-import { getFoodDispatchOffer } from "../../../src/api/food-rider";
+import { getFoodDispatchOffers } from "../../../src/api/food-rider";
 import { getDemandZones } from "../../../src/api/rider-v2";
 import { noteKycLaunched, retryKyc, setOnline } from "../../../src/api/riders";
 import { loadAcknowledgedHandbacks, saveRolePreference } from "../../../src/auth/session";
@@ -311,9 +311,11 @@ export default function RiderHome(): React.ReactElement {
     loc,
     bidIds,
     foodOn
-      ? () => {
+      ? (orderId: string) => {
+          void qc.invalidateQueries({ queryKey: ["foodOffers"] });
+          // An offer already on screen stays there (it refreshes); the new one waits on the board as its card.
           if (pathname === "/rider/food-offer") void qc.invalidateQueries({ queryKey: ["foodOfferJob"] });
-          else pushOnce(router, pathname, "/rider/food-offer");
+          else router.push({ pathname: "/rider/food-offer", params: { orderId } });
         }
       : undefined,
   );
@@ -552,11 +554,18 @@ export default function RiderHome(): React.ReactElement {
     void qc.invalidateQueries({ queryKey: ["activeJob"] });
   }, online);
 
-  // Owner 2026-10-01: food, shop and parcel jobs all show on the board, tagged. A food job is the
-  // live dispatch offer the server is holding for THIS rider (food is offered to one rider at a time);
-  // it still rings full screen, and its card opens the same offer.
-  const foodOfferQ = useQuery({ queryKey: ["foodOffer"], queryFn: getFoodDispatchOffer, enabled: online && !!foodOn, refetchInterval: online && foodOn ? 15_000 : false });
-  const foodOffer = foodOn && foodOfferQ.data && new Date(foodOfferQ.data.expiresAt).getTime() > Date.now() ? foodOfferQ.data : null;
+  // Owner 2026-10-01: food, shop and parcel jobs all show on the board, tagged. A food job is a live
+  // dispatch offer the server is holding for THIS rider. Several orders can ring one rider at once (each
+  // round goes to several riders), so each gets its own card (owner 2026-10-12); a new one still rings
+  // full screen, and a card opens its own offer.
+  const foodOffersQ = useQuery({ queryKey: ["foodOffers"], queryFn: getFoodDispatchOffers, enabled: online && !!foodOn, refetchInterval: online && foodOn ? 15_000 : false });
+  // Expiry is re-checked on every render (an offer drops off as soon as it runs out, as before); the list
+  // itself only changes when the set of live offers does, so `jobs` below stays memoised.
+  const liveFoodIds = foodOn ? (foodOffersQ.data ?? []).filter((o) => new Date(o.expiresAt).getTime() > Date.now()).map((o) => o.orderId).join(",") : "";
+  const foodOffers = useMemo(() => {
+    const live = new Set(liveFoodIds.split(","));
+    return (foodOffersQ.data ?? []).filter((o) => live.has(o.orderId));
+  }, [liveFoodIds, foodOffersQ.data]);
   const jobs: BoardJob[] = useMemo(() => {
     const parcels = (Array.isArray(openQ.data) ? openQ.data : [])
       // A job the rider already bid on stays off the board — unless the sender has since raised the
@@ -566,22 +575,18 @@ export default function RiderHome(): React.ReactElement {
         return (!sent || wasRaisedSinceBid(sent, o)) && !skipped.has(o.id);
       })
       .map((o) => toBoardJob(o, loc));
-    const food: BoardJob[] = foodOffer
-      ? [
-          {
-            id: `food:${foodOffer.orderId}`,
-            pickup: { ...foodOffer.pickup.point, landmark: foodOffer.pickup.landmark },
-            dropoff: { ...foodOffer.dropoff.point, landmark: foodOffer.dropoff.landmark },
-            toPickupKm: loc ? haversineKm(loc, foodOffer.pickup.point) : null,
-            tripKm: foodOffer.distanceKm,
-            item: foodOffer.itemDesc,
-            asking: foodOffer.deliveryFee ?? 0,
-            kind: "food",
-          },
-        ]
-      : [];
+    const food: BoardJob[] = foodOffers.map((o) => ({
+      id: `food:${o.orderId}`,
+      pickup: { ...o.pickup.point, landmark: o.pickup.landmark },
+      dropoff: { ...o.dropoff.point, landmark: o.dropoff.landmark },
+      toPickupKm: loc ? haversineKm(loc, o.pickup.point) : null,
+      tripKm: o.distanceKm,
+      item: o.itemDesc,
+      asking: o.deliveryFee ?? 0,
+      kind: "food",
+    }));
     return [...food, ...parcels].sort((a, b) => (a.toPickupKm ?? Number.MAX_SAFE_INTEGER) - (b.toPickupKm ?? Number.MAX_SAFE_INTEGER));
-  }, [openQ.data, sentById, skipped, loc, foodOffer]);
+  }, [openQ.data, sentById, skipped, loc, foodOffers]);
   const mixedKinds = jobs.some((j) => j.kind === "food" || j.kind === "shop");
   const effectiveSelected = selectedId && jobs.some((j) => j.id === selectedId) ? selectedId : (jobs[0]?.id ?? null);
 
@@ -758,7 +763,7 @@ export default function RiderHome(): React.ReactElement {
 
   const offerFor = (j: BoardJob): void => {
     if (j.kind === "food") {
-      router.push("/rider/food-offer");
+      router.push({ pathname: "/rider/food-offer", params: { orderId: j.id.slice("food:".length) } });
       return;
     }
     router.push({ pathname: "/rider/offer/[jobId]", params: { jobId: j.id, toKm: j.toPickupKm != null ? j.toPickupKm.toFixed(1) : "" } });

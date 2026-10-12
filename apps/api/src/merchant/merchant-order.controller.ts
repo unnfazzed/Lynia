@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
 import {
   MerchantCancelOrderRequest,
   AttachMerchantDoorProofRequest,
@@ -9,6 +9,7 @@ import {
   ConfirmMerchantReturnedCashRequest,
   EditMerchantOrderItemsRequest,
   type FoodOfferResponse,
+  type FoodOffersResponse,
   MerchantAcceptOrderRequest,
   MerchantConfirmPaymentRequest,
   MerchantExtendPrepRequest,
@@ -239,13 +240,25 @@ export class MerchantOrderController {
   // static two-segment path, so it can never collide with the single-segment `:orderId` route above.
   // Wrapped in `{ offer }` (FoodOfferResponse) so "no live offer" round-trips as a real `{"offer":
   // null}` JSON body — a bare `null` return sends NO body at all (Nest's isNil short-circuit).
+  // `?orderId=` pins the read to one of the orders ringing this rider (several can at once); without it,
+  // the one running out first — what an older rider app, which never sends it, has always read.
   @Get("dispatch/offer")
-  async getMyDispatchOffer(@CurrentUser() profileId: string): Promise<FoodOfferResponse> {
-    const offer = await this.dispatch.getOfferForRider(profileId);
+  async getMyDispatchOffer(
+    @CurrentUser() profileId: string,
+    @Query("orderId", new ParseUUIDPipe({ optional: true })) orderId?: string,
+  ): Promise<FoodOfferResponse> {
+    const offer = await this.dispatch.getOfferForRider(profileId, orderId);
     if (!offer) return { offer: null };
     // Order flow v2 (RD1a–d): the SHOP / PHARMACY / Scheduled / Rx tags, beside the strict socket payload.
     const job = await this.foodOrders.offerJobInfo(offer.orderId);
     return job ? { offer, job } : { offer };
+  }
+
+  // Every live offer ringing this rider (the board's food cards), soonest to run out first. Static
+  // two-segment path, like `dispatch/offer` above.
+  @Get("dispatch/offers")
+  async getMyDispatchOffers(@CurrentUser() profileId: string): Promise<FoodOffersResponse> {
+    return { offers: await this.dispatch.getOffersForRider(profileId) };
   }
 
   @Post(":orderId/dispatch/accept")

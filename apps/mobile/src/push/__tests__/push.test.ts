@@ -67,7 +67,9 @@ describe("pushDestination", () => {
 
   it("routes a food-dispatch offer to the offer intake screen (D5)", () => {
     // food-dispatch.service.ts tick() sends { orderId, kind: "food_offer" } to the one candidate rider.
-    expect(pushDestination({ orderId: "o1", kind: "food_offer" }, true)).toBe("/rider/food-offer");
+    // Pinned to the push's own order: several orders can ring one rider at once (owner 2026-10-12).
+    expect(pushDestination({ orderId: "o1", kind: "food_offer" }, true)).toBe("/rider/food-offer?orderId=o1");
+    // No orderId (an older push): the offer running out first, as before.
     expect(pushDestination({ kind: "food_offer" }, true)).toBe("/rider/food-offer");
   });
 

@@ -644,8 +644,8 @@ describe("FoodDispatchService.getOfferForRider — C5 biker offer alarm channel 
   };
 
   it("returns the biker's own live offer, redacted, soonest to run out first", async () => {
-    const findFirst = vi.fn(async () => liveRow);
-    const { svc } = build({ foodDispatchAttempt: { findFirst } }, NONE);
+    const findMany = vi.fn(async () => [liveRow]);
+    const { svc } = build({ foodDispatchAttempt: { findMany } }, NONE);
     const offer = await svc.getOfferForRider("r1");
     expect(offer).toEqual(
       expect.objectContaining({
@@ -663,17 +663,53 @@ describe("FoodDispatchService.getOfferForRider — C5 biker offer alarm channel 
     // Never contactPhone on the wire — same guarantee as the WS push (D-17/board redaction).
     expect((offer as { pickup: Record<string, unknown> }).pickup.contactPhone).toBeUndefined();
     expect((offer as { dropoff: Record<string, unknown> }).dropoff.contactPhone).toBeUndefined();
-    expect(findFirst).toHaveBeenCalledWith(
+    expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ riderId: "r1", outcome: "pending", order: { orderType: "merchant", status: "open_for_offers" } }),
         orderBy: { expiresAt: "asc" },
+        take: 1,
       }),
     );
   });
 
   it("returns null when this biker holds no live offer", async () => {
-    const { svc } = build({ foodDispatchAttempt: { findFirst: async () => null } }, NONE);
+    const { svc } = build({ foodDispatchAttempt: { findMany: async () => [] } }, NONE);
     await expect(svc.getOfferForRider("r1")).resolves.toBeNull();
+  });
+
+  // Owner 2026-10-12: several orders can ring one rider at once — the screen opened from one must show THAT one.
+  it("pins the read to one order when asked", async () => {
+    const findMany = vi.fn(async () => [liveRow]);
+    const { svc } = build({ foodDispatchAttempt: { findMany } }, NONE);
+    await svc.getOfferForRider("r1", orderId);
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ riderId: "r1", orderId }), take: 1 }));
+  });
+});
+
+describe("FoodDispatchService.getOffersForRider — every food job ringing the rider (owner 2026-10-12)", () => {
+  const row = (id: string, inMs: number) => ({
+    expiresAt: new Date(Date.now() + inMs),
+    order: { id, merchantId: MERCHANT_ID, pickup: PICKUP, dropoff: DROPOFF, itemDesc: "Sadza", merchantGoodsTotal: 10, deliveryFee: 2, distanceKm: 2 },
+  });
+  const second = "00000000-0000-4000-8000-0000000000b2";
+
+  it("lists every live offer, soonest to run out first", async () => {
+    const findMany = vi.fn(async (_a: { where: Record<string, unknown> }) => [row(orderId, 20_000), row(second, 50_000)]);
+    const { svc } = build({ foodDispatchAttempt: { findMany } }, NONE);
+    const offers = await svc.getOffersForRider("r1");
+    expect(offers.map((o) => o.orderId)).toEqual([orderId, second]);
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ riderId: "r1", outcome: "pending", order: { orderType: "merchant", status: "open_for_offers" } }),
+        orderBy: { expiresAt: "asc" },
+      }),
+    );
+    expect(findMany.mock.calls[0][0].where).not.toHaveProperty("orderId");
+  });
+
+  it("is empty when nothing is ringing", async () => {
+    const { svc } = build({ foodDispatchAttempt: { findMany: async () => [] } }, NONE);
+    await expect(svc.getOffersForRider("r1")).resolves.toEqual([]);
   });
 });
 

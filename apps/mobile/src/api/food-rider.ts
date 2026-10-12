@@ -4,9 +4,10 @@ import type {
   ConfirmCollectedRequest,
   FoodOfferEvent,
   FoodOfferResponse,
+  FoodOffersResponse,
   MerchantOrderResponse,
 } from "@lynia/shared";
-import { apiFetch } from "./client";
+import { ApiError, apiFetch } from "./client";
 
 /**
  * D5 (rider food jobs) — the RIDER's own actions against a merchant order, all under
@@ -27,8 +28,22 @@ export function getFoodDispatchOffer(): Promise<FoodOfferEvent | null> {
  *  PHARMACY), a scheduled slot, a prescription order. `job` is a sibling of `offer`, absent on an older
  *  API, and never on the `food:offer` socket payload. */
 export type FoodOfferJob = NonNullable<FoodOfferResponse["job"]>;
-export function getFoodDispatchOfferWithJob(): Promise<{ offer: FoodOfferEvent | null; job: FoodOfferJob | null }> {
-  return apiFetch<FoodOfferResponse>("/merchant/orders/dispatch/offer").then((r) => ({ offer: r.offer, job: r.job ?? null }));
+export function getFoodDispatchOfferWithJob(orderId?: string): Promise<{ offer: FoodOfferEvent | null; job: FoodOfferJob | null }> {
+  // `orderId` pins the read to the offer the rider opened: several orders can ring one rider at once.
+  const q = orderId ? `?orderId=${encodeURIComponent(orderId)}` : "";
+  return apiFetch<FoodOfferResponse>(`/merchant/orders/dispatch/offer${q}`).then((r) => ({ offer: r.offer, job: r.job ?? null }));
+}
+
+/** Every food offer ringing the rider right now, soonest to run out first — one board card each. */
+export function getFoodDispatchOffers(): Promise<FoodOfferEvent[]> {
+  return apiFetch<FoodOffersResponse>("/merchant/orders/dispatch/offers").then(
+    (r) => r.offers,
+    // An API from before the list read (404): the one offer it can name, as before.
+    (e: unknown) => {
+      if (e instanceof ApiError && e.status === 404) return getFoodDispatchOffer().then((o) => (o ? [o] : []));
+      throw e;
+    },
+  );
 }
 
 export function acceptFoodDispatch(orderId: string): Promise<{ orderId: string; status: "assigned" }> {

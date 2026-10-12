@@ -27,6 +27,10 @@ import { DISPATCH_STRATEGY, type DispatchStrategy } from "./dispatch-strategy";
 import { notifyFoodQueueChanged, resolveOwnMerchantId } from "./merchant-lookup.util";
 import { preferredRiderIds } from "./preferred-riders";
 
+/** Ceiling on the live offers listed to one rider at once (the board's food cards). Each order rings a
+ *  rider at most once per round, so this is a guard on the payload, not a product limit. */
+const MAX_LIVE_OFFERS_LISTED = 20;
+
 /**
  * C3 — food dispatch. Owns the hand-off `ready_for_pickup` → assigned a merchant order's kitchen
  * phase (C2) leaves open ("Hand-off point to C3: broadcasting this order... is dispatch's job, not
@@ -602,12 +606,31 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
    *  offer `food:offer` announces: a rider whose socket was down when the offer landed, or who just
    *  opened the app cold, can ask "do I have a live offer right now?" without knowing an orderId up
    *  front (unlike every other dispatch action here, which is `:orderId`-scoped). Null when this
-   *  rider holds no live offer — not an error, since "nothing right now" is the normal state. */
-  async getOfferForRider(riderId: string): Promise<FoodOfferEvent | null> {
-    // Several orders can ring the same rider at once; the one running out first is shown first.
-    const offer = await this.prisma.foodDispatchAttempt.findFirst({
-      where: { riderId, outcome: "pending", expiresAt: { gt: new Date() }, order: { orderType: "merchant", status: "open_for_offers" } },
+   *  rider holds no live offer — not an error, since "nothing right now" is the normal state.
+   *  `orderId` pins the read to one order: several orders can ring the same rider at once (see
+   *  NearestRiderDispatchStrategy), and the offer screen opened from one of them must show that one. */
+  async getOfferForRider(riderId: string, orderId?: string): Promise<FoodOfferEvent | null> {
+    const [offer] = await this.liveOffersForRider(riderId, orderId, 1);
+    return offer ?? null;
+  }
+
+  /** Every live offer ringing this rider, the one running out first first — the board lists each as its
+   *  own card (owner 2026-10-12: a rider offered two food jobs at once must see both). */
+  async getOffersForRider(riderId: string): Promise<FoodOfferEvent[]> {
+    return this.liveOffersForRider(riderId, undefined, MAX_LIVE_OFFERS_LISTED);
+  }
+
+  private async liveOffersForRider(riderId: string, orderId: string | undefined, take: number): Promise<FoodOfferEvent[]> {
+    const rows = await this.prisma.foodDispatchAttempt.findMany({
+      where: {
+        riderId,
+        outcome: "pending",
+        expiresAt: { gt: new Date() },
+        ...(orderId ? { orderId } : {}),
+        order: { orderType: "merchant", status: "open_for_offers" },
+      },
       orderBy: { expiresAt: "asc" },
+      take,
       select: {
         expiresAt: true,
         order: {
@@ -627,8 +650,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
         },
       },
     });
-    if (!offer || !offer.order.merchantId) return null;
-    return this.buildFoodOfferEvent(offer.order.id, offer.order.merchantId, offer.order, offer.expiresAt);
+    return rows.flatMap((r) => (r.order.merchantId ? [this.buildFoodOfferEvent(r.order.id, r.order.merchantId, r.order, r.expiresAt)] : []));
   }
 
   /** D-04 "rider secured" — a rider on the live round accepts, and the first to do so gets it. Mirrors
