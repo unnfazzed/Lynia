@@ -18,7 +18,8 @@ const mockGetLastFix = jest.fn<{ lat: number; lng: number } | null, []>();
 const mockConfirmFoodPickup = jest.fn();
 
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  useRouter: () => ({ push: jest.fn(), replace: jest.fn(), dismissAll: jest.fn(), dismissTo: jest.fn() }),
+  useNavigation: () => ({ getState: () => undefined }),
 }));
 jest.mock("expo-secure-store", () => ({
   getItemAsync: async () => null,

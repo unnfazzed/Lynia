@@ -17,6 +17,7 @@ import { JTag, StopLine } from "../../src/ui/rider/board";
 import { O, ofFmt } from "../../src/ui/orderflow/copy";
 import { OfNote } from "../../src/ui/rider/proof-kit";
 import { RiderErrorState } from "../../src/ui/rider/RiderErrorState";
+import { useBackToBoard } from "../../src/ui/rider/use-back-to-board";
 import type { IconName } from "../../src/ui";
 import { RIDER_COPY as R, RF, usd, venueCopy } from "../../src/ui/rider/copy";
 import { TerminalBody } from "../../src/ui/rider/job-kit";
@@ -39,6 +40,7 @@ const OFFER_WINDOW_S = 60;
  */
 export default function FoodOffer(): React.ReactElement {
   const router = useRouter();
+  const toBoard = useBackToBoard();
   // The order this screen was opened for (a board card, the `food:offer` socket, a push tap). Several
   // orders can ring one rider at once, so the read is pinned to it; without one (an older push), the
   // offer running out first, as before.
@@ -82,7 +84,7 @@ export default function FoodOffer(): React.ReactElement {
     mutationFn: (orderId: string) => declineFoodDispatch(orderId),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["foodOffers"] });
-      router.replace("/rider");
+      toBoard();
     },
   });
   // Accept/decline failures speak once as an auto-dismissing toast (owner instruction 2026-08-12).
@@ -114,7 +116,7 @@ export default function FoodOffer(): React.ReactElement {
   if (!restaurantsEnabled) {
     return (
       <Screen>
-        <AppBar onBack={() => router.replace("/rider")} />
+        <AppBar onBack={() => toBoard()} />
         <EmptyState icon="utensils" tone="info" title="Restaurants isn't available yet" body="Check back soon." />
       </Screen>
     );
@@ -127,7 +129,7 @@ export default function FoodOffer(): React.ReactElement {
   if (!offerQ.data && (offerQ.isError || offerQ.isPaused || offerQ.errorUpdateCount > 0)) {
     return (
       <Screen>
-        <RiderErrorState onRetry={() => void offerQ.refetch()} retrying={offerQ.isFetching} onBack={() => router.replace("/rider")} />
+        <RiderErrorState onRetry={() => void offerQ.refetch()} retrying={offerQ.isFetching} onBack={() => toBoard()} />
       </Screen>
     );
   }
@@ -151,7 +153,7 @@ export default function FoodOffer(): React.ReactElement {
           <TerminalBody icon="clock" title={R.expT} body={kind === "food" ? R.expB : R.expB.replace("Food offers", "Offers")} />
         </ScrollView>
         <CtaBar>
-          <CtaButton label={R.backBoard} onPress={() => router.replace("/rider")} />
+          <CtaButton label={R.backBoard} onPress={() => toBoard()} />
         </CtaBar>
       </SafeAreaView>
     );

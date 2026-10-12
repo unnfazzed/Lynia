@@ -70,6 +70,7 @@ import {
 import { ReturnToRestaurantCard } from "../../src/ui/rider/ReturnToRestaurantCard";
 import { type DoorRow, RiderDoorCard } from "../../src/ui/rider/RiderDoorCard";
 import { RiderErrorState } from "../../src/ui/rider/RiderErrorState";
+import { useBackToBoard } from "../../src/ui/rider/use-back-to-board";
 import { wasJobRestored } from "../../src/ui/rider/job-resume";
 import { clearLastActiveJob, loadLastActiveJob, saveLastActiveJob } from "../../src/net/last-active-store";
 import { RiderCashHandshakeCard } from "../../src/ui/food/RiderCashHandshakeCard";
@@ -102,6 +103,7 @@ import { ReportSheet } from "../../src/ui/safety";
  */
 export default function RiderFoodJob(): React.ReactElement {
   const router = useRouter();
+  const toBoard = useBackToBoard();
   const qc = useQueryClient();
   const toast = useToast();
   // Action errors speak once as an auto-dismissing toast, never as a persistent card
@@ -219,7 +221,7 @@ export default function RiderFoodJob(): React.ReactElement {
     onSuccess: () => {
       void clearArrival();
       toast.show(venueCopy("Job dropped — it's back with the kitchen for another biker.", placeOf(foodOrderRef.current)), "warning");
-      router.replace("/rider");
+      toBoard();
     },
     onError: (e) => fail(e),
   });
@@ -833,7 +835,7 @@ export default function RiderFoodJob(): React.ReactElement {
   }, [liveReconnecting]);
   const backToJobs = (): void => {
     void clearArrival();
-    router.replace("/rider");
+    toBoard();
   };
   const dial = (phone: string | null | undefined): void => {
     if (phone) void Linking.openURL(`tel:${phone}`).catch(() => undefined);
@@ -863,7 +865,7 @@ export default function RiderFoodJob(): React.ReactElement {
         <JobPage
           title={R.tReturn}
           help
-          onBack={() => router.replace("/rider")}
+          onBack={() => toBoard()}
           onHelp={() => setSheet("problem")}
           centred
           bar={
@@ -1017,7 +1019,7 @@ export default function RiderFoodJob(): React.ReactElement {
             void foodQ.refetch();
           }}
           retrying={jobQ.isFetching || foodQ.isFetching}
-          onBack={() => router.replace("/rider")}
+          onBack={() => toBoard()}
         />
       </Screen>
     );
@@ -1026,7 +1028,7 @@ export default function RiderFoodJob(): React.ReactElement {
   if (!order || order.status === "cancelled") {
     return (
       <Screen>
-        <AppBar onBack={() => router.replace("/rider")} />
+        <AppBar onBack={() => toBoard()} />
         <EmptyState icon="bike" title={emptyCopy.rider.noActiveJob.title} body={emptyCopy.rider.noActiveJob.body} />
       </Screen>
     );
@@ -1401,7 +1403,7 @@ export default function RiderFoodJob(): React.ReactElement {
     return (
       <JobShell
         title={R.tAtDrop}
-        onBack={() => router.replace("/rider")}
+        onBack={() => toBoard()}
         onHelp={() => setSheet("problem")}
         contentKey={`code|${handshake ? hState : "code"}|${liveReconnecting ? "o" : ""}`}
         toast={jobToast}
@@ -1572,7 +1574,7 @@ export default function RiderFoodJob(): React.ReactElement {
   return (
     <JobShell
       // X3's Back returns to the drop-off stage (the customer answered) rather than leaving the job.
-      onBack={() => (reaching ? setReaching(false) : router.replace("/rider"))}
+      onBack={() => (reaching ? setReaching(false) : toBoard())}
       title={reaching ? R.tArriving : stage === "toKitchen" ? v(R.tToKitchen) : stage === "atKitchen" ? atVenueT : R.tToDrop}
       onHelp={() => setSheet("problem")}
       contentKey={`${stage}|${reaching ? "r" : ""}|${liveReconnecting ? "o" : ""}|${upfront ? "u" : ""}`}

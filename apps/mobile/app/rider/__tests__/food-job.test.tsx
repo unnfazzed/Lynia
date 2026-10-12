@@ -15,9 +15,14 @@ import type { MerchantOrderResponse } from "@lynia/shared";
 
 const mockGetActiveOrder = jest.fn<Promise<OrderSnapshot | null>, []>();
 const mockGetFoodOrderAsRider = jest.fn<Promise<MerchantOrderResponse>, unknown[]>();
+const mockReplace = jest.fn();
+const mockDismissTo = jest.fn();
+const mockDismissAll = jest.fn();
+let mockStackRoutes: { name: string }[] | undefined;
 
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  useRouter: () => ({ push: jest.fn(), replace: mockReplace, dismissTo: mockDismissTo, dismissAll: mockDismissAll }),
+  useNavigation: () => ({ getState: () => (mockStackRoutes ? { routes: mockStackRoutes } : undefined) }),
 }));
 jest.mock("expo-secure-store", () => ({
   getItemAsync: async () => null,
@@ -150,6 +155,10 @@ const BASE_FOOD_ORDER: MerchantOrderResponse = {
 beforeEach(() => {
   mockGetActiveOrder.mockReset();
   mockGetFoodOrderAsRider.mockReset();
+  mockReplace.mockClear();
+  mockDismissTo.mockClear();
+  mockDismissAll.mockClear();
+  mockStackRoutes = undefined;
 });
 
 afterEach(() => {
@@ -175,5 +184,32 @@ describe("biker food job — B-O8 countdown ticker gating", () => {
     await render();
     expect(intervalSpy.mock.calls.some(([, delay]) => delay === 1000)).toBe(false);
     intervalSpy.mockRestore();
+  });
+});
+
+describe("biker food job — back to the board does not stack a second board", () => {
+  function pressBack(tree: renderer.ReactTestRenderer): void {
+    const node = tree.root.findAll((n) => n.props.accessibilityLabel === "Back" && typeof n.props.onPress === "function")[0];
+    if (!node) throw new Error("no Back button");
+    act(() => node.props.onPress());
+  }
+
+  it("pops back to the rider tabs when they are already in the history", async () => {
+    mockStackRoutes = [{ name: "rider/(tabs)" }, { name: "rider/food-job" }];
+    mockGetActiveOrder.mockResolvedValue(null);
+    const tree = await render();
+    pressBack(tree);
+    expect(mockDismissTo).toHaveBeenCalledWith("/rider");
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("replaces the whole stack with the board when the rider tabs are not in the history", async () => {
+    mockStackRoutes = [{ name: "rider/food-job" }];
+    mockGetActiveOrder.mockResolvedValue(null);
+    const tree = await render();
+    pressBack(tree);
+    expect(mockDismissTo).not.toHaveBeenCalled();
+    expect(mockDismissAll).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith("/rider");
   });
 });

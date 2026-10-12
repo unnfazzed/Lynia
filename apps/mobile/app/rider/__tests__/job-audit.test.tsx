@@ -52,7 +52,8 @@ function baseOrder(overrides: Partial<OrderSnapshot> = {}): OrderSnapshot {
 }
 
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace, push: jest.fn(), dismissAll: jest.fn(), dismissTo: jest.fn() }),
+  useNavigation: () => ({ getState: () => undefined }),
 }));
 jest.mock("expo-secure-store", () => ({
   getItemAsync: async (key: string) => mockSecureStore[key] ?? null,

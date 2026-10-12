@@ -91,12 +91,14 @@ import {
   TerminalBody,
 } from "../../src/ui/rider/job-kit";
 import { RiderErrorState } from "../../src/ui/rider/RiderErrorState";
+import { useBackToBoard } from "../../src/ui/rider/use-back-to-board";
 import { wasJobRestored } from "../../src/ui/rider/job-resume";
 import { ReportSheet } from "../../src/ui/safety";
 
 /** A short local clock label (e.g. "3:40 PM") for a cooldown-until timestamp; empty on a bad date. */
 export default function RiderJob(): React.ReactElement {
   const router = useRouter();
+  const toBoard = useBackToBoard();
   const qc = useQueryClient();
   const toast = useToast();
   const [code, setCode] = useState("");
@@ -540,7 +542,7 @@ export default function RiderJob(): React.ReactElement {
       // PJ-L3: the job is gone — back to the board (which shows the cooldown gate, if any), not "No active job".
       void clearArrival();
       void clearReach();
-      router.replace("/rider");
+      toBoard();
     },
     onError: (e) => {
       // A timed-out/dropped response can land here after the server already committed the cancel — the
@@ -915,7 +917,7 @@ export default function RiderJob(): React.ReactElement {
     void clearRiderJobTerminal();
     void clearArrival();
     void clearReach();
-    router.replace("/rider");
+    toBoard();
   };
 
   // D5 redirect (see the effect above) — render nothing of this parcel screen for a food order; the
@@ -955,7 +957,7 @@ export default function RiderJob(): React.ReactElement {
       void acknowledgeHandback(snap.id);
       void clearArrival();
       void clearReach();
-      router.replace("/rider");
+      toBoard();
     };
     return (
       <JobPage
@@ -1055,7 +1057,7 @@ export default function RiderJob(): React.ReactElement {
     // An offline cold start with a saved copy never gets here — `order` is that copy (see offlineCopy).
     return (
       <Screen>
-        <RiderErrorState onRetry={() => void jobQ.refetch()} retrying={jobQ.isFetching} onBack={() => router.replace("/rider")} />
+        <RiderErrorState onRetry={() => void jobQ.refetch()} retrying={jobQ.isFetching} onBack={() => toBoard()} />
       </Screen>
     );
   }
@@ -1071,7 +1073,7 @@ export default function RiderJob(): React.ReactElement {
   if (!order || order.status === "cancelled") {
     return (
       <Screen>
-        <AppBar onBack={() => router.replace("/rider")} />
+        <AppBar onBack={() => toBoard()} />
         <EmptyState icon="bike" title={emptyCopy.rider.noActiveJob.title} body={emptyCopy.rider.noActiveJob.body} />
       </Screen>
     );
@@ -1204,7 +1206,7 @@ export default function RiderJob(): React.ReactElement {
       <JobPage
         title={R.tArriving}
         help
-        onBack={() => router.replace("/rider")}
+        onBack={() => toBoard()}
         onHelp={() => setSheet("problem")}
         overlays={overlays}
         toast={jobToast}
@@ -1363,7 +1365,7 @@ export default function RiderJob(): React.ReactElement {
   return (
     <JobShell
       title={title}
-      onBack={() => router.replace("/rider")}
+      onBack={() => toBoard()}
       onHelp={() => setSheet("problem")}
       contentKey={`${stage}|${reach ? "r" : ""}|${liveReconnecting ? "o" : ""}`}
       toast={jobToast}

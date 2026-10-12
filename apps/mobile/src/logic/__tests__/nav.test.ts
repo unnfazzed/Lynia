@@ -1,4 +1,4 @@
-import { goHomeClearingStack, replaceClearingStack } from "../nav";
+import { backToRiderBoard, goHomeClearingStack, replaceClearingStack } from "../nav";
 
 describe("goHomeClearingStack (P2: Back home must not leave a stale composer beneath)", () => {
   it("drops everything above the tab shell (dismissAll) BEFORE selecting home (replace)", () => {
@@ -37,5 +37,32 @@ describe("replaceClearingStack (C-1 / C-2: auth transitions leave nothing behind
     const router = { dismissAll: jest.fn(), replace: jest.fn(), canDismiss: () => true };
     replaceClearingStack(router, "/home");
     expect(router.dismissAll).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("backToRiderBoard (a job screen must not stack a second board)", () => {
+  const nav = () => ({ dismissTo: jest.fn(), dismissAll: jest.fn(), replace: jest.fn() });
+
+  it("pops back to the rider tabs when they are in the history", () => {
+    const router = nav();
+    backToRiderBoard(router, [{ name: "rider/(tabs)" }, { name: "rider/job" }]);
+    expect(router.dismissTo).toHaveBeenCalledWith("/rider");
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(router.dismissAll).not.toHaveBeenCalled();
+  });
+
+  it("clears the stack onto the board when the rider tabs are not in the history", () => {
+    const router = nav();
+    backToRiderBoard(router, [{ name: "(tabs)" }, { name: "rider/job" }]);
+    expect(router.dismissTo).not.toHaveBeenCalled();
+    expect(router.dismissAll).toHaveBeenCalledTimes(1);
+    expect(router.replace).toHaveBeenCalledWith("/rider");
+  });
+
+  it("clears the stack onto the board when the stack is unknown", () => {
+    const router = nav();
+    backToRiderBoard(router, undefined);
+    expect(router.dismissTo).not.toHaveBeenCalled();
+    expect(router.replace).toHaveBeenCalledWith("/rider");
   });
 });
