@@ -103,8 +103,18 @@ G14 gate ──"Top up now"─┤   (G14 = a job was refused with commission_low
 App closed during T4/T4b/T4c → next open, Money shows M10 (went through) / M11 (waiting) / M12 (didn't go through)
 ```
 
-### T1 Provider: no change
-Three drawn radio cards: EcoCash, InnBucks, O'mari, each with the sub-line "Approve on your phone". The default comes from Settings.
+### T1 Provider: InnBucks and O'mari read "Coming soon" (owner decision, 2026-10-12)
+Three drawn radio cards: EcoCash, InnBucks, O'mari. The default comes from Settings. In Phase 1:
+- **EcoCash** stays as drawn: selectable, with the sub-line "Approve on your phone".
+- **InnBucks and O'mari** keep their drawn card and position, but are **not selectable**. Their sub-line reads **"Coming soon"** in
+  place of "Approve on your phone". They are drawn muted: no ring dot, the name in `--muted`, and the smartphone icon dropped.
+  They carry `accessibilityState={{ disabled: true }}`, and a tap does nothing. They never open a dead-end state. This beats
+  letting the biker pick one and then refusing it at T3/T4.
+- **Defaults:** if Settings › Top-up number holds `innbucks` or `omari`, T1 opens on **EcoCash** instead. The Settings edit sheet's
+  provider chips get the same treatment: InnBucks and O'mari show as disabled chips labelled "Coming soon". The server refuses
+  `rail: innbucks|omari` on `POST /wallet/topups` until Phase 2, so an old app build can't open an intent on them either.
+- In Phase 2 the label and the disabled state are removed, and the cards return to the drawn look.
+- "Coming soon" isn't drawn, so it goes into the same **D-102** ledger entry as the fee copy.
 - Paynow also supports **OneMoney** and **cards**, but neither is drawn. Not drawn ⇒ not rendered. Adding them needs a
   design export (see § 6, Q3).
 - The sub-line "Approve on your phone" is accurate for EcoCash. For InnBucks it's roughly true: you approve in the InnBucks app. For O'mari it's
@@ -211,7 +221,7 @@ credited amount.
 4. Add an env selector (`PAYMENT_RAIL=paynow|stub`), `PAYNOW_INTEGRATION_ID`/`KEY` (USD), and a kill-switch flag.
 5. QA with the four test numbers; each one lands on its T-state. Then ask Paynow to go live.
 
-What's still open in Phase 1 is what InnBucks and O'mari do on T1 before their T4 states exist (§ 6, Q1).
+In Phase 1, InnBucks and O'mari show on T1 as "Coming soon" and can't be selected (§ 3 T1; owner decision, § 6 Q1).
 
 **Phase 2: InnBucks (T4b) and O'mari (T4c).** This needs a design export first.
 - Get T4b and T4c drawn (and T1's per-provider sub-line), either as a rider-v2 addendum or a small `topup-paynow-v1` handoff.
@@ -235,12 +245,9 @@ hosted-page tokenise step, which is a bigger UX decision.
 
 ## 6. Owner decisions needed
 
-1. **InnBucks and O'mari in Phase 1.** Choose one:
-   (a) Ship EcoCash live first. InnBucks and O'mari stay on T1, and choosing one opens a **"Coming soon, use EcoCash or call support"**
-   state. That state isn't drawn, so it needs a ledger entry.
-   (b) Hide them on T1 until T4b and T4c are drawn. That also needs a ledger entry, since it removes drawn elements.
-   (c) Hold Phase 1 until T4b and T4c are drawn, and ship all three together. *Recommended if design can turn them around quickly;
-   otherwise (a).*
+1. ~~**InnBucks and O'mari in Phase 1.**~~ **DECIDED (owner, 2026-10-12): they show as "Coming soon".** EcoCash ships live
+   first. InnBucks and O'mari stay on T1 and in Settings as disabled "Coming soon" options (§ 3 T1) until T4b and T4c are drawn and
+   built in Phase 2.
 2. ~~**Paynow's fee: who pays it?**~~ **DECIDED (owner, 2026-10-12): the biker pays it, and the copy states the 2.5% fee.**
    See § 3, "The biker pays the 2.5% transaction fee". Still open: confirm the InnBucks and O'mari rates with Paynow, and
    approve the proposed copy for the D-102 ledger entry.
