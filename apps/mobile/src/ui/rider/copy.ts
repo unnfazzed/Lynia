@@ -109,6 +109,8 @@ export const RIDER_COPY = {
   gTopT: "Top up to keep riding",
   gTopK: "Balance",
   gTopK2: "Top up at least",
+  /** Undrawn (owner 2026-10-12, ledger D-102): G14's body under the per-job commission rule — no floor. */
+  gTopJobB: "Your balance doesn't cover this job's commission. Top up and you can take it straight away.",
   goTopUp: "Top up now",
   gUpdateT: "Update LyniaGo to keep riding",
   gUpdateB: "This version can't take jobs any more. The update is about 18 MB.",

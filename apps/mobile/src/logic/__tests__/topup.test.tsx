@@ -1,4 +1,6 @@
-import { acceptAmountInput, floorApplies, topUpAtLeast, reconcilePendingTopup, validateTopupAmount } from "../topup";
+import { COMMISSION } from "@lynia/shared";
+import { RIDER_COPY as R, RF } from "../../ui/rider/copy";
+import { acceptAmountInput, floorApplies, refusedJobCommission, topUpAtLeast, topUpGate, reconcilePendingTopup, validateTopupAmount } from "../topup";
 
 describe("validateTopupAmount (WD-009 — follows the bounds it's given, not a bundled constant)", () => {
   it("is valid within [minTopUp, maxTopUp]", () => {
@@ -70,5 +72,40 @@ describe("MA-M1: the wall never asks for less than the minimum top-up", () => {
   it("is max(minTopUp, floor - balance)", () => {
     expect(topUpAtLeast(2, 0.6, 5)).toBe(5);
     expect(topUpAtLeast(20, 1, 5)).toBe(19);
+  });
+});
+
+describe("D-102: the top-up wall never claims a floor that doesn't exist (PR #1154)", () => {
+  it("policy has no floor", () => {
+    expect(COMMISSION.lowBalanceBlockBelow).toBe(0);
+  });
+
+  it("a biker holding $0.20 refused a $0.30 job is told the job's commission, not a $0.00 floor", () => {
+    const g = topUpGate({ floor: COMMISSION.lowBalanceBlockBelow, balance: 0.2, minTopUp: 5, commission: 0.3 });
+    expect(g.body).not.toMatch(/floor/i);
+    expect(g.body).not.toContain("$0.00");
+    expect(g.body).toBe(R.gTopJobB);
+    expect(g.atLeast).toBe(5);
+  });
+
+  it("with no floor and no commission on the refusal, still the per-job line", () => {
+    expect(topUpGate({ floor: 0, balance: 0.2, minTopUp: 5, commission: null }).body).toBe(R.gTopJobB);
+  });
+
+  it("'Top up at least' covers the refused job's commission when that is more than the minimum top-up", () => {
+    expect(topUpGate({ floor: 0, balance: 1, minTopUp: 5, commission: 8 }).atLeast).toBe(7);
+  });
+
+  it("keeps the drawn floor sentence only while the server serves a floor above $0", () => {
+    const g = topUpGate({ floor: 2, balance: 0.6, minTopUp: 5, commission: null });
+    expect(g.body).toBe(RF.gTopB(2));
+    expect(g.atLeast).toBe(5);
+  });
+
+  it("reads the commission off the refusal body", () => {
+    expect(refusedJobCommission({ reason: "commission_low_balance", commission: 0.3 })).toBe(0.3);
+    expect(refusedJobCommission({ commission: "0.30" })).toBe(0.3);
+    expect(refusedJobCommission({ reason: "commission_low_balance" })).toBeNull();
+    expect(refusedJobCommission(null)).toBeNull();
   });
 });

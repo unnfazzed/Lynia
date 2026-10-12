@@ -1,4 +1,5 @@
 import type { TopupStatus } from "@lynia/shared";
+import { RIDER_COPY as R, RF } from "../ui/rider/copy";
 import { formatMoney } from "./money";
 
 const TWO_DP = /^\d*(\.\d{0,2})?$/;
@@ -44,8 +45,33 @@ export function floorApplies(ratePct: number, freeJobsLeft: number | null | unde
   return ratePct > 0 && !(freeJobsLeft != null && freeJobsLeft > 0);
 }
 
-/** MA-M1: the low-balance wall's "Top up at least" — what clears the floor, but never under the minimum
- *  top-up the server accepts (the wall must not ask for an amount the top-up screen refuses). */
-export function topUpAtLeast(floor: number, balance: number, minTopUp: number): number {
-  return Math.max(minTopUp, floor - balance, 0.01);
+/** MA-M1: the low-balance wall's "Top up at least" — what lifts the balance to `need` (the floor, or the
+ *  refused job's commission), but never under the minimum top-up the server accepts (the wall must not
+ *  ask for an amount the top-up screen refuses). */
+export function topUpAtLeast(need: number, balance: number, minTopUp: number): number {
+  return Math.max(minTopUp, need - balance, 0.01);
+}
+
+/** The commission a `commission_low_balance` refusal names (`common/commission-cover.ts` puts it on the
+ *  403 body), or null when the body doesn't carry one. */
+export function refusedJobCommission(body: unknown): number | null {
+  const c = body != null && typeof body === "object" ? (body as { commission?: unknown }).commission : undefined;
+  const n = typeof c === "string" ? Number(c) : c;
+  return typeof n === "number" && Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/**
+ * The top-up wall (Rider v2 G14) under the per-job rule (owner 2026-10-12, PR #1154): there is no
+ * balance floor; the server refuses a job whose commission is more than the balance. The drawn floor
+ * sentence is only true while the server serves a floor above $0 and the refusal isn't about one job;
+ * otherwise the wall says the balance doesn't cover the job's commission (ledger D-102). "Top up at
+ * least" lifts the balance over whichever bar applies.
+ */
+export function topUpGate(input: { floor: number; balance: number; minTopUp: number; commission: number | null }): {
+  body: string;
+  atLeast: number;
+} {
+  const { floor, balance, minTopUp, commission } = input;
+  const body = commission == null && floor > 0 ? RF.gTopB(floor) : R.gTopJobB;
+  return { body, atLeast: topUpAtLeast(Math.max(floor, commission ?? 0), balance, minTopUp) };
 }
