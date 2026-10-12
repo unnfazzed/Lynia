@@ -124,7 +124,7 @@ export default function NewBookingPage() {
       router.replace(bookingHref(booking.id));
     } catch (err) {
       if (redirectIfSessionExpired(err, signOut)) return;
-      setBanner(err instanceof ApiError ? err.message : "Couldn't book a rider. Try again.");
+      setBanner(err instanceof ApiError ? err.message : "Couldn't book a biker. Try again.");
     } finally {
       setBusy(false);
       submittingRef.current = false;
@@ -136,12 +136,12 @@ export default function NewBookingPage() {
   return (
     <Kitchen active={shop ? "deliveries" : "queue"} tabs={false}>
       <div className="m-page">
-        <AppBar back="/deliveries" title="Book a rider" />
+        <AppBar back="/deliveries" title="Book a biker" />
 
         <div className="m-bd m-s4" style={{ gap: 14, paddingTop: 4 }}>
           {gate.status === "loading" && <div className="m-hint">Loading…</div>}
           {gate.status === "error" && <RetryableError message={gate.message} onRetry={() => void load()} />}
-          {gate.status === "no_pin" && <p className="m-sub">Set your shop&apos;s location first, so riders know where to collect.</p>}
+          {gate.status === "no_pin" && <p className="m-sub">Set your shop&apos;s location first, so bikers know where to collect.</p>}
 
           {gate.status === "ready" && (
             <>
@@ -203,10 +203,10 @@ export default function NewBookingPage() {
 
               <div className="m-collect">
                 <div>
-                  <b>Rider collects {money(worth(lines))}</b>
+                  <b>Biker collects {money(worth(lines))}</b>
                   <span>and brings it back to you</span>
                 </div>
-                <Switch checked={collectCash} label={`Rider collects ${money(worth(lines))}`} onChange={setCollectCash} />
+                <Switch checked={collectCash} label={`Biker collects ${money(worth(lines))}`} onChange={setCollectCash} />
               </div>
 
               {shownFare !== null && (
@@ -244,7 +244,7 @@ export default function NewBookingPage() {
         {gate.status === "ready" && (
           <div className="m-cta m-cta-pin">
             <button type="button" className="m-btn" disabled={busy || actionsDisabled} onClick={() => void book()}>
-              {busy ? "Booking…" : shownFare !== null ? `Find a rider · ${money(shownFare)}` : "Find a rider"}
+              {busy ? "Booking…" : shownFare !== null ? `Find a biker · ${money(shownFare)}` : "Find a biker"}
             </button>
           </div>
         )}

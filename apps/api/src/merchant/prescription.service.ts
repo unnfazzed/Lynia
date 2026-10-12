@@ -225,7 +225,7 @@ export class PrescriptionService {
       select: { status: true, riderSawOriginalAt: true, order: { select: { riderId: true, status: true } } },
     });
     if (!rx) throw new NotFoundException({ reason: "no_prescription", message: "This order has no prescription." });
-    if (rx.order.riderId !== riderId) throw new ForbiddenException("Not the assigned rider");
+    if (rx.order.riderId !== riderId) throw new ForbiddenException("Not the assigned biker");
     if (rx.riderSawOriginalAt) return { orderId, riderSawOriginalAt: rx.riderSawOriginalAt.toISOString() };
     if (!RIDER_TICK_STATUSES.has(rx.order.status)) throw new ConflictException("Tick this at the customer's door.");
     const now = new Date();

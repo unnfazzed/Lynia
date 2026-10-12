@@ -18,7 +18,7 @@ export class TrackingController {
     @CurrentUser() callerId: string,
     @Query("radius") radius?: string,
   ): Promise<NearbyRider[]> {
-    if (!(await this.tracking.isBoardEligible(callerId))) throw new ForbiddenException("Riders only");
+    if (!(await this.tracking.isBoardEligible(callerId))) throw new ForbiddenException("Bikers only");
     const r = radius ? Number(radius) : 3000;
     return this.tracking.nearbyRiders(lat, lng, Number.isFinite(r) ? r : 3000);
   }

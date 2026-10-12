@@ -217,7 +217,7 @@ function KycCheckSheet({
    * easy, and the copy mirrors become.tsx's "pick it up again" line.
    */
   const requestClose = (): void => {
-    Alert.alert("Leave the ID check?", "You can pick it up again from your rider board.", [
+    Alert.alert("Leave the ID check?", "You can pick it up again from your biker board.", [
       { text: "Keep going", style: "cancel" },
       { text: "Leave", style: "destructive", onPress: () => done("cancelled") },
     ]);

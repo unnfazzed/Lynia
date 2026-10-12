@@ -4,5 +4,5 @@ import { PageSkeleton } from "../components/skeletons";
 // weak connectivity it otherwise renders a blank page during the fetch. Show the shared table skeleton
 // instead (cols = the queue's 7 columns).
 export default function Loading() {
-  return <PageSkeleton title="Riders — KYC review" cols={7} />;
+  return <PageSkeleton title="Bikers — KYC review" cols={7} />;
 }

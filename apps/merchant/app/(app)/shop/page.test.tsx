@@ -170,7 +170,7 @@ describe("A shop's profile (merchant web upgrade L2, D-44)", () => {
 
     expect(await screen.findByText("WHAT YOU SELL · up to 3")).toBeTruthy();
     expect(screen.getByText("This is your shop front. Changes go live straight away.")).toBeTruthy();
-    expect(screen.queryByText("How riders pay you")).toBeNull();
+    expect(screen.queryByText("How bikers pay you")).toBeNull();
     expect(screen.queryAllByText(/food|cook/i)).toHaveLength(0);
   });
 
@@ -181,15 +181,15 @@ describe("A shop's profile (merchant web upgrade L2, D-44)", () => {
 
     expect(await screen.findByText("WHAT YOU COOK · up to 3")).toBeTruthy();
     expect(screen.getByText("This is your shop front. Changes go live straight away.")).toBeTruthy();
-    expect(screen.queryByText("How riders pay you")).toBeNull();
+    expect(screen.queryByText("How bikers pay you")).toBeNull();
   });
 
-  it("is a pushed screen off Account; riders and team live on Account now", async () => {
+  it("is a pushed screen off Account; bikers and team live on Account now", async () => {
     vi.mocked(getMerchantProfile).mockResolvedValue(profile({ businessType: "restaurant", myRole: "owner" }));
     render(<ShopPage />);
     expect((await screen.findByRole("link", { name: "Back" })).getAttribute("href")).toBe("/account");
     expect(screen.queryByRole("link", { name: "Manage team" })).toBeNull();
-    expect(screen.queryByRole("link", { name: "Manage riders" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Manage bikers" })).toBeNull();
   });
 
   it("Staff who reach Shop get one line, not the owner's editor (L4)", async () => {
@@ -198,6 +198,6 @@ describe("A shop's profile (merchant web upgrade L2, D-44)", () => {
     expect(await screen.findByText("Only the owner changes the shop front.")).toBeTruthy();
     expect(screen.queryByText("Shop profile")).toBeNull();
     expect(screen.queryByRole("link", { name: "Manage team" })).toBeNull();
-    expect(screen.queryByRole("link", { name: "Manage riders" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Manage bikers" })).toBeNull();
   });
 });

@@ -3,7 +3,7 @@ import { mapsDirectionsUrl, mapsPlaceUrl } from "../maps";
 const pickup = { lat: -17.8292, lng: 31.0522 };
 const dropoff = { lat: -17.8145, lng: 31.0611 };
 
-describe("mapsDirectionsUrl (rider leg — turn-by-turn)", () => {
+describe("mapsDirectionsUrl (biker leg — turn-by-turn)", () => {
   it("builds a driving directions URL with origin + destination", () => {
     const url = mapsDirectionsUrl(pickup, dropoff);
     expect(url).toBe(

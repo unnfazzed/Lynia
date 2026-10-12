@@ -42,7 +42,7 @@ describe("rankOffers", () => {
     expect(ranked[0]!.index).toBe(1); // best-match, not the cheapest
   });
 
-  it("does not let an unrated rider out-rank a lone proven 5★ rider (regression: P2)", () => {
+  it("does not let an unrated biker out-rank a lone proven 5★ biker (regression: P2)", () => {
     // Only one rated rider in the batch → its rating min===max collapses to neutral 0.5; the new-rider
     // baseline must not exceed that, so with identical fare/ETA the proven rider wins the tie-break.
     const offers = [
@@ -54,7 +54,7 @@ describe("rankOffers", () => {
     expect(NEW_RIDER_RATING_SCORE).toBeLessThanOrEqual(0.5);
   });
 
-  it("scores a new rider (no ratings) at the neutral baseline, not bottom", () => {
+  it("scores a new biker (no ratings) at the neutral baseline, not bottom", () => {
     // The new rider is cheapest + fastest; the neutral rating baseline must not bury it.
     const offers = [
       o({ offeredFare: 4.0, ratingAvg: 5.0, ratingCount: 200, etaMinutes: 14 }),
@@ -64,7 +64,7 @@ describe("rankOffers", () => {
     expect(ranked[0]!.index).toBe(1);
   });
 
-  it("uses the neutral baseline constant for an unrated rider's rating dimension", () => {
+  it("uses the neutral baseline constant for an unrated biker's rating dimension", () => {
     // Two identical offers except ratings: one rated 5.0, one unrated. With only these two, the rated
     // rider's normalized rating is 1.0 (it's the only rated point → max===min → 0.5)... so make it 3 offers.
     const offers = [

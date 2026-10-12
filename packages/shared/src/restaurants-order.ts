@@ -206,7 +206,7 @@ export const MERCHANT_REJECTION_REASONS = {
   // D-13/C3: NO_RIDER is an apology, not an error — nothing charged, doesn't count against the
   // merchant. Reached either by the reconciler (cap exhausted, never held) or the merchant's own
   // "cancel" choice from the D-34 hold screen.
-  no_rider: "We couldn't find a rider for your order in time — nothing was charged, sorry about that.",
+  no_rider: "We couldn't find a biker for your order in time — nothing was charged, sorry about that.",
   // Auto-accept: nobody confirmed the kitchen within RESTAURANTS_AUTO_ACCEPT.autoCancelAfterMs.
   kitchen_unconfirmed: "The restaurant didn't confirm your order in time — nothing was charged, sorry about that.",
   // Order flow v2 (BRIEF §13): every line needed the prescription the pharmacist declined.

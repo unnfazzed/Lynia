@@ -48,7 +48,7 @@ export default async function IssuesPage({
     <main className="content">
       <header className="page">
         <h1>Issues</h1>
-        <span className="sub">Disputes and reports from customers, recipients and riders</span>
+        <span className="sub">Disputes and reports from customers, recipients and bikers</span>
         <Conn connected={connected} reason={reason} />
       </header>
 

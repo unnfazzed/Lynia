@@ -2,7 +2,7 @@ import { KYC_DECLINE_REASON_LABELS } from "@lynia/shared";
 import { ACCOUNT_ON_HOLD_COPY, freshKycLaunch, KYC_COMPLETED_HOLD_MS, kycLaunchForGate, isAccountOnHold, ONLINE_GATE_COPY, isKycLocked, isOutOfServiceArea, isWithinServiceCorridor, KYC_COMPLETED_HINT_MS, KYC_FAST_POLL_WINDOW_MS, KYC_LOCK_ATTEMPTS, kycDeclineLabel, kycPollMs, onlineGateReason, resolveKycGate, resolveKycRetryFeedback, riderDeclineLabel, isKycRetryRateLimited } from "../gates";
 import { resolveGate } from "../rider-gate";
 
-describe("onlineGateReason (rider online-gate refusal)", () => {
+describe("onlineGateReason (biker online-gate refusal)", () => {
   it("reads a machine reason code (case-insensitive)", () => {
     expect(onlineGateReason({ code: "on_hold" })).toBe("on_hold");
     expect(onlineGateReason({ code: "SUSPENDED" })).toBe("suspended");
@@ -13,7 +13,7 @@ describe("onlineGateReason (rider online-gate refusal)", () => {
     expect(onlineGateReason({ code: "out_of_area" })).toBe("out_of_area");
   });
 
-  it("distinguishes a lapsed ID (kyc_expired) from a first-time unverified rider (1·b2)", () => {
+  it("distinguishes a lapsed ID (kyc_expired) from a first-time unverified biker (1·b2)", () => {
     // The expired copy says "re-verify" (contains `verif`) — the sniff must not collapse it into `kyc`.
     expect(onlineGateReason({ message: "Your ID has expired — re-verify to keep riding" })).toBe("kyc_expired");
     expect(onlineGateReason({ code: "kyc_expired", message: "whatever" })).toBe("kyc_expired");
@@ -239,7 +239,7 @@ describe("resolveKycRetryFeedback (JOURNEY-BUGS: 'Continue verification' silent 
  * a rider who cancelled at step one on a screen reading "your ID check is with Didit".
  */
 describe("resolveKycGate (P0-1 / D6)", () => {
-  it("sends an account with no rider record to onboarding, not to a wall", () => {
+  it("sends an account with no biker record to onboarding, not to a wall", () => {
     expect(resolveKycGate(null).kind).toBe("not_a_rider");
     expect(resolveKycGate(undefined).kind).toBe("not_a_rider");
   });
@@ -361,7 +361,7 @@ describe("kycPollMs (R-3 / §5 poll back-off)", () => {
     expect(kycPollMs({ kind: "held" }, false, 0)).toBe(60_000);
     expect(kycPollMs({ kind: "manual_review" }, false, 0)).toBe(60_000);
   });
-  it("the rider's move: 30 s; terminal walls 60 s; verified: no poll", () => {
+  it("the biker's move: 30 s; terminal walls 60 s; verified: no poll", () => {
     expect(kycPollMs({ kind: "unfinished" }, false, 0)).toBe(30_000);
     expect(kycPollMs({ kind: "cant_start" }, false, 0)).toBe(30_000);
     expect(kycPollMs({ kind: "declined", reasonLabel: null }, false, 0)).toBe(60_000);

@@ -628,6 +628,6 @@ export class WalletService {
 
   private async assertRider(riderId: string): Promise<void> {
     const rider = await this.prisma.rider.findUnique({ where: { profileId: riderId }, select: { profileId: true } });
-    if (!rider) throw new ForbiddenException("Not a rider");
+    if (!rider) throw new ForbiddenException("Not a biker");
   }
 }

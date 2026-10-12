@@ -163,7 +163,7 @@ afterEach(() => {
   }
 });
 
-describe("rider delivery-confirm terminal marker survives an app kill mid-request (LC-C07)", () => {
+describe("biker delivery-confirm terminal marker survives an app kill mid-request (LC-C07)", () => {
   it("writes the durable marker BEFORE confirmDelivery resolves, so a kill in that gap still recovers the acknowledgement screen on relaunch", async () => {
     mockGetActiveOrder.mockResolvedValue(baseOrder());
     // The delivery-confirm request never settles this session — mirrors an app kill strictly between
@@ -213,7 +213,7 @@ describe("rider delivery-confirm terminal marker survives an app kill mid-reques
   });
 });
 
-describe("Rider v2 parcel job stages (A1 → A2, ledger D-54)", () => {
+describe("Biker v2 parcel job stages (A1 → A2, ledger D-54)", () => {
   it("an accepted job heads to pickup on its own — the server steps the handoff draws no tap for", async () => {
     secureStore = {};
     mockGetActiveOrder.mockResolvedValue(baseOrder({ status: "assigned" }));

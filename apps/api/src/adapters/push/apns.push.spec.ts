@@ -35,10 +35,10 @@ describe("buildApnsRequest — payload contract", () => {
   });
 
   it("posts an alert to the device path with the app's topic", () => {
-    const req = buildApnsRequest({ token, title: "Rider arriving", body: "Tendai is 2 minutes away" }, "zw.co.lynia", 1_000);
+    const req = buildApnsRequest({ token, title: "Biker arriving", body: "Tendai is 2 minutes away" }, "zw.co.lynia", 1_000);
     expect(req.path).toBe(`/3/device/${token}`);
     expect(req.headers).toEqual({ "apns-topic": "zw.co.lynia", "apns-push-type": "alert", "apns-priority": "10" });
-    expect(JSON.parse(req.body)).toEqual({ aps: { alert: { title: "Rider arriving", body: "Tendai is 2 minutes away" }, sound: "default" } });
+    expect(JSON.parse(req.body)).toEqual({ aps: { alert: { title: "Biker arriving", body: "Tendai is 2 minutes away" }, sound: "default" } });
   });
 
   // expo-notifications (iOS) reads a remote notification's data from userInfo["body"]; anywhere else and

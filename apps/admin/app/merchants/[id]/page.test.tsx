@@ -63,9 +63,9 @@ describe("Merchant profile: holding a business's bookings (merchant web upgrade 
     expect(screen.getByText("No bookings yet")).toBeTruthy();
   });
 
-  it("shows nothing about bookings on an API that can't book riders yet", async () => {
+  it("shows nothing about bookings on an API that can't book bikers yet", async () => {
     await open(detail());
-    expect(screen.queryByText("Book a rider")).toBeNull();
+    expect(screen.queryByText("Book a biker")).toBeNull();
   });
 });
 

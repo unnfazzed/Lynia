@@ -37,7 +37,7 @@ import { useWalletConfig } from "../../src/query/use-wallet";
 function becomeErrorMessage(e: unknown): string {
   if (e instanceof ApiError && e.status === 429) return KYC_RETRY_TRY_LATER;
   if (e instanceof ApiError && e.code === "id_in_use") return `${PD.takenA} ${PD.takenB}. ${PD.takenBody}`;
-  return "Couldn't start rider setup.";
+  return "Couldn't start biker setup.";
 }
 
 export default function BecomeRiderScreen(): React.ReactElement {
@@ -202,7 +202,7 @@ export default function BecomeRiderScreen(): React.ReactElement {
       }
     }
     if (!current) {
-      setError("Couldn't start rider setup.");
+      setError("Couldn't start biker setup.");
       return;
     }
     if (!current.firstName?.trim() || !current.lastName?.trim()) {

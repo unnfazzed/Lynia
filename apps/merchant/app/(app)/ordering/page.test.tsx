@@ -50,7 +50,7 @@ describe("Taking orders (auto-accept, owner only)", () => {
     expect(sw.getAttribute("aria-checked")).toBe("true");
   });
 
-  it("D-71: turns free delivery on (the business pays the rider's fee)", async () => {
+  it("D-71: turns free delivery on (the business pays the biker's fee)", async () => {
     vi.mocked(getMerchantProfile).mockResolvedValue(profile({ freeDelivery: false }));
     vi.mocked(updateOrderSettings).mockResolvedValue(profile({ freeDelivery: true }));
     open();

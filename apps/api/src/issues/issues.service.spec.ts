@@ -30,7 +30,7 @@ const raiseBody: RaiseIssueRequest = {
 describe("IssuesService.raise", () => {
   const order = { id: "ord-1", customerId: "cust-1", riderId: "rider-1" };
 
-  it("rejects a caller who isn't the order's customer or rider", async () => {
+  it("rejects a caller who isn't the order's customer or biker", async () => {
     const prisma = { order: { findUnique: async () => order }, issue: { create: vi.fn() } };
     const svc = new IssuesService(prisma as unknown as PrismaService, noNotifications, fakeGateway());
     await expect(svc.raise("ord-1", raiseBody, "stranger")).rejects.toBeInstanceOf(ForbiddenException);
@@ -293,7 +293,7 @@ describe("IssuesService.resolve — side-effect + audit in one transaction", () 
     expect((call.data.cooldownUntil as Date).getTime()).toBeGreaterThan(shortExisting.getTime());
   });
 
-  it("DS17-02: a dispute strike BELOW the limit does NOT evict from supply (the rider stays online)", async () => {
+  it("DS17-02: a dispute strike BELOW the limit does NOT evict from supply (the biker stays online)", async () => {
     const tx = {
       issue: {
         findUnique: async () => ({ id: "iss-1", status: "investigating", orderId: "ord-1", openedByProfileId: "cust-1" }),
@@ -388,7 +388,7 @@ describe("IssuesService.resolve — notifies the opener post-commit", () => {
     }
   });
 
-  it("notifies the RIDER opener when a rider raised the issue, not the customer, and passes the order's current status", async () => {
+  it("notifies the BIKER opener when a biker raised the issue, not the customer, and passes the order's current status", async () => {
     const notifyIssueResolved = vi.fn(async () => {});
     const notifications = { notifyOps: vi.fn(async () => {}), notifyIssueResolved } as unknown as NotificationsService;
     const tx = {

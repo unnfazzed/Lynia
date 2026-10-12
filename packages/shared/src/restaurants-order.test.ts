@@ -136,7 +136,7 @@ describe("rejectionCopy — D-11", () => {
   });
 
   it("carries a no_rider apology (D-13) distinct from the generic fallback", () => {
-    expect(rejectionCopy("no_rider")).toMatch(/couldn't find a rider/i);
+    expect(rejectionCopy("no_rider")).toMatch(/couldn't find a biker/i);
     expect(rejectionCopy("no_rider")).not.toBe(MERCHANT_REJECTION_REASONS.other);
   });
 });

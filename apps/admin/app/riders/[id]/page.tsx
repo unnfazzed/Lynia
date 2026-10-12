@@ -62,9 +62,9 @@ export default async function RiderProfilePage({
       <main className="content">
         <header className="page">
           <a className="back" href="/riders">
-            ← Riders
+            ← Bikers
           </a>
-          <h1 style={{ fontSize: 18 }}>Rider profile</h1>
+          <h1 style={{ fontSize: 18 }}>Biker profile</h1>
           <Conn connected={false} reason={reason} />
         </header>
         <OfflineBanner reason={reason} />
@@ -72,7 +72,7 @@ export default async function RiderProfilePage({
           <EmptyState
             icon={<IconBike />}
             title={reasonTitle(reason, "Profile")}
-            line={reasonLine(reason, "this rider")}
+            line={reasonLine(reason, "this biker")}
           />
         </section>
       </main>
@@ -131,7 +131,7 @@ export default async function RiderProfilePage({
     <main className="content">
       <header className="page">
         <a className="back" href="/riders">
-          ← Riders
+          ← Bikers
         </a>
         <h1 style={{ fontSize: 18 }}>{r.name}</h1>
         <span style={{ display: "flex", gap: 6 }}>
@@ -145,7 +145,7 @@ export default async function RiderProfilePage({
         <div className="warnbar">
           <IconAlert />
           <span className="t">
-            <b>Suspended.</b> {r.suspendReason ? `Reason: ${r.suspendReason}. ` : ""}The rider cannot go online until
+            <b>Suspended.</b> {r.suspendReason ? `Reason: ${r.suspendReason}. ` : ""}The biker cannot go online until
             the suspension is lifted.
           </span>
         </div>
@@ -167,7 +167,7 @@ export default async function RiderProfilePage({
           <span className="t">
             <b>On hold.</b> Reliability score {r.reliabilityScore}{" "}is below the threshold to go online — and
             completing deliveries is the only way it recovers, which going online would let them do. Without
-            &ldquo;Clear hold&rdquo; below, this rider is stuck permanently.
+            &ldquo;Clear hold&rdquo; below, this biker is stuck permanently.
           </span>
         </div>
       ) : null}
@@ -176,7 +176,7 @@ export default async function RiderProfilePage({
         <div className="warnbar">
           <IconAlert />
           <span className="t">
-            <b>Still on a live delivery.</b> This rider has {r.activeOrders} order{r.activeOrders > 1 ? "s" : ""} in
+            <b>Still on a live delivery.</b> This biker has {r.activeOrders} order{r.activeOrders > 1 ? "s" : ""} in
             progress — {suspended ? "suspending" : "banning"} them does not cancel or reassign it. Check the trip
             below and cancel it from the order page if it shouldn&apos;t continue.
           </span>
@@ -209,7 +209,7 @@ export default async function RiderProfilePage({
             getRowHref={(t) => `/orders/${t.id}`}
             empty={
               <div className="mut" style={{ textAlign: "center", padding: 20 }}>
-                No trips yet — this rider hasn&apos;t gone online.
+                No trips yet — this biker hasn&apos;t gone online.
               </div>
             }
           />

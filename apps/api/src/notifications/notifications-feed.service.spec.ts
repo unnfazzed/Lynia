@@ -158,10 +158,10 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     const feed = await service.feedForUser("me", NOW);
 
     expect(feed.find((r) => r.title === "Delivered")?.orderId).toBe("o1");
-    expect(feed.find((r) => r.title === "Rider on the way")?.orderId).toBe("o2");
+    expect(feed.find((r) => r.title === "Biker on the way")?.orderId).toBe("o2");
   });
 
-  it("reads orders across both roles (customer OR rider), newest first, capped", async () => {
+  it("reads orders across both roles (customer OR biker), newest first, capped", async () => {
     const { prisma, service } = makeDeps();
     await service.feedForUser("me", NOW);
     const arg = prisma.order.findMany.mock.calls[0][0];
@@ -353,7 +353,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     // timed by the NEWEST bid — so a later bid produces a NEW id, re-sorting it up and surviving an
     // earlier dismissal.
     const offerRow = feed.find((r) => r.title === "New offer")!;
-    expect(offerRow.message).toBe("3 riders responded to your delivery — tap to compare offers.");
+    expect(offerRow.message).toBe("3 bikers responded to your delivery — tap to compare offers.");
     expect(offerRow.id).toBe("offers:of3");
     expect(offerRow.at).toBe("2026-07-06T09:55:00.000Z");
   });
@@ -377,7 +377,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       },
     ]);
     const feed = await service.feedForUser("me", NOW);
-    const row = feed.find((r) => r.title === "Your rider had to cancel");
+    const row = feed.find((r) => r.title === "Your biker had to cancel");
     expect(row).toBeDefined();
     expect(row?.message).toContain("sent your request back out");
     // Tap routes to the LIVE clone, not the dead original…
@@ -388,7 +388,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     expect(feed.some((r) => r.title === "Order cancelled")).toBe(false);
   });
 
-  it("suppresses the cancelled row for the rider who bailed (a row about your own action is noise)", async () => {
+  it("suppresses the cancelled row for the biker who bailed (a row about your own action is noise)", async () => {
     const { prisma, service } = makeDeps();
     // Viewer is the rider on o1 AND the one who cancelled it (cancelledBy is the canceller's profile id).
     prisma.order.findMany.mockResolvedValue([
@@ -435,7 +435,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     expect(riderFeed.map((r) => r.title)).toEqual(["Order cancelled"]);
   });
 
-  it("suppresses a customer's self-cancel row, but the assigned rider still sees it", async () => {
+  it("suppresses a customer's self-cancel row, but the assigned biker still sees it", async () => {
     const { prisma, service } = makeDeps();
     const orderRows = [
       {
@@ -466,7 +466,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
         orderType: "parcel", events: [{ status: "expired", createdAt: new Date("2026-07-06T11:00:00.000Z") }],
       },
     ]);
-    expect((await service.feedForUser("me", NOW))[0]).toMatchObject({ title: "No riders online nearby", icon: "bike" });
+    expect((await service.feedForUser("me", NOW))[0]).toMatchObject({ title: "No bikers online nearby", icon: "bike" });
 
     // A normal expiry (had riders / not flagged) keeps the default "No riders yet" copy.
     prisma.order.findMany.mockResolvedValue([
@@ -477,7 +477,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
         orderType: "parcel", events: [{ status: "expired", createdAt: new Date("2026-07-06T11:00:00.000Z") }],
       },
     ]);
-    expect((await service.feedForUser("me", NOW))[0]).toMatchObject({ title: "No riders yet", icon: "clock" });
+    expect((await service.feedForUser("me", NOW))[0]).toMatchObject({ title: "No bikers yet", icon: "clock" });
   });
 
   it("Fix 1: an expired order that DID attract bids gets the honest 'window closed' copy, not 'raise your price'", async () => {
@@ -504,7 +504,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     );
     // …and the offer row synthesized from the same bid keeps the singular push copy verbatim.
     expect((await service.feedForUser("me", NOW)).find((r) => r.title === "New offer")?.message).toBe(
-      "A rider responded to your delivery — tap to compare offers.",
+      "A biker responded to your delivery — tap to compare offers.",
     );
   });
 
@@ -526,7 +526,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     const offerRow = feed.find((r) => r.title === "New offer");
     expect(offerRow).toMatchObject({ orderId: "o1", message: expect.stringContaining("compare offers"), unread: true });
     // Merged and sorted by time: the 10:30 offer sorts above the 10:00 confirmed event.
-    expect(feed.map((r) => r.title)).toEqual(["New offer", "Rider confirmed your items"]);
+    expect(feed.map((r) => r.title)).toEqual(["New offer", "Biker confirmed your items"]);
     // Batched query over the caller's own (customer-view) order ids — not N+1.
     expect(prisma.offer.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ orderId: { in: ["o1"] } }) }),
@@ -572,7 +572,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     });
   });
 
-  it("UX26-03 sibling: the resolved-issue row carries to/status for a rider opener whose order is still in the retention window, routing them to /rider/job", async () => {
+  it("UX26-03 sibling: the resolved-issue row carries to/status for a biker opener whose order is still in the retention window, routing them to /rider/job", async () => {
     const { prisma, service } = makeDeps();
     prisma.order.findMany.mockResolvedValue([
       { id: "o1", riderId: "me", orderType: "parcel", status: "assigned", events: [{ status: "assigned", createdAt: new Date("2026-07-06T10:00:00.000Z") }] },
@@ -651,7 +651,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     expect(riderFeed.some((r) => r.title === "SOS on your delivery")).toBe(false);
   });
 
-  it("UX17-02: synthesizes a rider-standing-notice row for the affected CUSTOMER (not the rider)", async () => {
+  it("UX17-02: synthesizes a rider-standing-notice row for the affected CUSTOMER (not the biker)", async () => {
     const { prisma, service } = makeDeps();
     // The customer's own order (riderId != viewer → customer view).
     prisma.order.findMany.mockResolvedValue([
@@ -672,7 +672,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       id: "rider-standing:au1",
       orderId: "o1",
       icon: "triangle-alert",
-      message: "There's a change with your assigned rider — our team is reviewing this trip.",
+      message: "There's a change with your assigned biker — our team is reviewing this trip.",
       unread: true,
     });
 
@@ -704,7 +704,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
   // BH-18: `to` distinguishes a `customer.hold`/`customer.lift` row (about the viewing CUSTOMER) from
   // every other account-status row (about the viewing RIDER) — the client uses it to avoid routing a
   // tap on a customer's own hold/lift notice to the rider-onboarding screen (the push.ts sibling fix).
-  it("BH-18: tags customer.hold/lift rows to:'customer' and every other account row to:'rider'", async () => {
+  it("BH-18: tags customer.hold/lift rows to:'customer' and every other account row to:'biker'", async () => {
     const { prisma, service } = makeDeps();
     prisma.order.findMany.mockResolvedValue([]);
     prisma.auditLog.findMany.mockResolvedValue([
@@ -740,12 +740,12 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       id: "rider-standing-resolved:au2",
       orderId: "o1",
       icon: "check",
-      message: "The review of your assigned rider is complete — your delivery is continuing as normal.",
+      message: "The review of your assigned biker is complete — your delivery is continuing as normal.",
       unread: true,
     });
   });
 
-  it("UX17-03: an adjudicated `completed` shows the ops-override copy (customer + rider), a plain completion stays generic", async () => {
+  it("UX17-03: an adjudicated `completed` shows the ops-override copy (customer + biker), a plain completion stays generic", async () => {
     const { prisma, service } = makeDeps();
     // o1 was ops-adjudicated to complete; o2 is an ordinary completion.
     prisma.auditLog.findMany.mockImplementation(async ({ where }: { where: { action?: string } }) =>
@@ -829,7 +829,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
     );
   });
 
-  it("UX26-03: the fare-adjust row carries the order's current status, so a rider viewer routes straight to /rider/job", async () => {
+  it("UX26-03: the fare-adjust row carries the order's current status, so a biker viewer routes straight to /rider/job", async () => {
     const { prisma, service } = makeDeps();
     prisma.order.findMany.mockResolvedValue([
       {
@@ -876,8 +876,8 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       orderId: "o1",
       to: "customer",
       icon: "bike",
-      title: "A rider's online near you",
-      message: "Riders are being pinged on your live request — tap to follow the offers.",
+      title: "A biker's online near you",
+      message: "Bikers are being pinged on your live request — tap to follow the offers.",
       unread: true,
     });
     expect(prisma.auditLog.findMany).toHaveBeenCalledWith(
@@ -899,8 +899,8 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       orderId: null,
       to: "customer",
       icon: "bike",
-      title: "A rider's online near you",
-      message: "Riders are back near your pickup — send your parcel again to get offers.",
+      title: "A biker's online near you",
+      message: "Bikers are back near your pickup — send your parcel again to get offers.",
       unread: true,
     });
   });
@@ -1015,7 +1015,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       expect(select.carriedBalance).toEqual({ select: { amount: true } });
     });
 
-    it("a rider's merchant job reads in rider voice, gated like a parcel job", async () => {
+    it("a biker's merchant job reads in biker voice, gated like a parcel job", async () => {
       const { prisma, service } = makeDeps();
       prisma.order.findMany.mockResolvedValue([
         {
@@ -1039,17 +1039,17 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       expect(row!.steps!.map((s) => s.beat)).toEqual(["completed", "picked_up", "assigned"]);
     });
 
-    it("marks a status override's beat (rider bail → rebroadcast)", async () => {
+    it("marks a status override's beat (biker bail → rebroadcast)", async () => {
       const { prisma, service } = makeDeps();
       prisma.order.findMany.mockResolvedValue([
         { id: "orig", riderId: "r", orderType: "parcel", status: "cancelled", events: [{ status: "cancelled", createdAt: t("10:00") }] },
         { id: "clone", rebroadcastOfId: "orig", riderId: null, orderType: "parcel", status: "open_for_offers", events: [{ status: "open_for_offers", createdAt: t("10:00") }] },
       ]);
       const feed = await service.feedForUser("cust", NOW);
-      expect(feed.find((r) => r.title === "Your rider had to cancel")).toMatchObject({ beat: "rebroadcast", orderId: "clone" });
+      expect(feed.find((r) => r.title === "Your biker had to cancel")).toMatchObject({ beat: "rebroadcast", orderId: "clone" });
     });
 
-    it("an offer row quotes the newest offer's rider and fare, and is active only while offers are open", async () => {
+    it("an offer row quotes the newest offer's biker and fare, and is active only while offers are open", async () => {
       const { prisma, service } = makeDeps();
       prisma.order.findMany.mockResolvedValue([{ id: "o1", riderId: null, orderType: "parcel", status: "open_for_offers", events: [] }]);
       prisma.offer.findMany.mockResolvedValue([
@@ -1222,7 +1222,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       expect(row!.steps!.map((s) => s.beat)).toEqual(["picked_up", "preparing", "accepted"]);
     });
 
-    it("D5 review (item 5): an ended order from a rider app that never stamps keeps the event's \"at your door\" step", async () => {
+    it("D5 review (item 5): an ended order from a biker app that never stamps keeps the event's \"at your door\" step", async () => {
       const { prisma, service } = makeDeps();
       prisma.order.findMany.mockResolvedValue([
         {
@@ -1248,7 +1248,7 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       expect(row!.steps!.map((s) => s.beat)).toEqual(["delivered", "en_route_dropoff", "picked_up", "preparing", "accepted"]);
     });
 
-    it("every order step: an override beat keeps its override in the steps (rider bail → rebroadcast)", async () => {
+    it("every order step: an override beat keeps its override in the steps (biker bail → rebroadcast)", async () => {
       const { prisma, service } = makeDeps();
       prisma.order.findMany.mockResolvedValue([
         {
@@ -1266,13 +1266,13 @@ describe("NotificationsFeedService — derived in-app feed (A·3)", () => {
       ]);
       const row = (await service.feedForUser("cust", NOW)).find((r) => r.beat === "rebroadcast")!;
       expect(row.steps!.map((s) => [s.beat, s.title])).toEqual([
-        ["rebroadcast", "Your rider had to cancel"],
-        ["assigned", "Rider assigned"],
+        ["rebroadcast", "Your biker had to cancel"],
+        ["assigned", "Biker assigned"],
       ]);
       expect(row.cancelledBy).toBe("rider");
     });
 
-    it("who cancelled: customer, rider, merchant or LyniaGo", async () => {
+    it("who cancelled: customer, biker, merchant or LyniaGo", async () => {
       expect(cancelledByOf({ cancelledBy: "c", customerId: "c", riderId: "r" })).toBe("customer");
       expect(cancelledByOf({ cancelledBy: "r", customerId: "c", riderId: "r" })).toBe("rider");
       expect(cancelledByOf({ cancelledBy: null, rejectionReason: "out_of_stock" })).toBe("merchant");

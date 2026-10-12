@@ -399,7 +399,7 @@ describe("Proof at hand-over (BRIEF §9)", () => {
     expect(view.venue).toEqual({ name: "Avondale Fresh", businessType: "shop", shopKind: "grocery" });
   });
 
-  it("a photo the rider does take is attached and shown", async () => {
+  it("a photo the biker does take is attached and shown", async () => {
     const shop = await makeVenue({ businessType: "shop" });
     const job = await jobAt(shop, "en_route_pickup");
     const res = await proof.attachPickupProof(job.orderId, job.riderId, { key: `pickup/${job.riderId}/bag.jpg`, bagSealed: true });
@@ -410,11 +410,11 @@ describe("Proof at hand-over (BRIEF §9)", () => {
     expect(view.pickupProof!.takenAt).not.toBeNull();
   });
 
-  it("another rider can't attach, and a foreign photo key is refused", async () => {
+  it("another biker can't attach, and a foreign photo key is refused", async () => {
     const v = await makeVenue();
     const job = await jobAt(v, "en_route_pickup");
     const other = await profile("rider");
-    await expect(proof.attachPickupProof(job.orderId, other, { bagSealed: true })).rejects.toThrow(/assigned rider/);
+    await expect(proof.attachPickupProof(job.orderId, other, { bagSealed: true })).rejects.toThrow(/assigned biker/);
     await expect(proof.attachPickupProof(job.orderId, job.riderId, { key: `pickup/${other}/x.jpg` })).rejects.toThrow(/Invalid photo key/);
   });
 

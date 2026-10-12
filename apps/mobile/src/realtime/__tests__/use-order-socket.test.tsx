@@ -204,7 +204,7 @@ describe("useOrderSocket Trip History self-heal (WD-022)", () => {
   });
 });
 
-describe("useOrderSocket rider presence recovery (BH-25)", () => {
+describe("useOrderSocket biker presence recovery (BH-25)", () => {
   // Regression guard: the server now pushes presence:recovered role:"rider" when a previously-escalated
   // rider is no longer dark (either a fresh GPS fix resumed, already handled by the `position` handler,
   // or a heartbeat-lag self-heal with NO fresh GPS push coming at all). Before this fix the customer's
@@ -236,7 +236,7 @@ describe("useOrderSocket rider presence recovery (BH-25)", () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: orderKey(ORDER_4) });
   });
 
-  it("ignores presence:recovered role:customer (that's this app's OWN staleness, not the rider's)", () => {
+  it("ignores presence:recovered role:customer (that's this app's OWN staleness, not the biker's)", () => {
     const qc = new QueryClient();
 
     act(() => {
@@ -319,7 +319,7 @@ describe("useOrderSocket on an already-connected shared socket (U07)", () => {
     expect(emit).toHaveBeenCalledWith("subscribe:order", { orderId: "order-B" });
   });
 
-  it("ignores a position fix from another order's rider (riderId differs), applies its own", () => {
+  it("ignores a position fix from another order's biker (riderId differs), applies its own", () => {
     const qc = new QueryClient();
     qc.setQueryData(orderKey("order-1"), baseSnapshot); // rider r1
     act(() => {
@@ -338,7 +338,7 @@ describe("useOrderSocket on an already-connected shared socket (U07)", () => {
     expect(rider?.currentLng).toBe(4);
   });
 
-  it("lets the first fix through while this order's rider isn't known yet", () => {
+  it("lets the first fix through while this order's biker isn't known yet", () => {
     const qc = new QueryClient();
     qc.setQueryData(orderKey("order-1"), { ...baseSnapshot, rider: null });
     act(() => {

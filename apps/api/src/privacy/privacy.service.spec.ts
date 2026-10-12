@@ -179,7 +179,7 @@ describe("PrivacyService.eraseAccount", () => {
       expect((await blocks(mine("open_for_offers"))).preflight).toBe(true);
     });
 
-    it("a ride in progress blocks it, as customer or as rider", async () => {
+    it("a ride in progress blocks it, as customer or as biker", async () => {
       expect((await blocks(mine("picked_up"))).preflight).toBe(true);
       expect((await blocks({ status: "en_route_dropoff", orderType: "merchant", customerId: "other", riderId: "p1" })).preflight).toBe(true);
     });
@@ -193,7 +193,7 @@ describe("PrivacyService.eraseAccount", () => {
     });
   });
 
-  it("anonymises the profile, scrubs rider PII + GPS, and deletes addresses/tokens/sessions", async () => {
+  it("anonymises the profile, scrubs biker PII + GPS, and deletes addresses/tokens/sessions", async () => {
     // DOC-16-01's TopUp.phone scrub is gated on isRider — give this fixture a rider row (it already
     // asserts rider-scrub behavior below) so that gate is exercised for real, not just recorded blind.
     const { svc, calls, tx } = eraseHarness({ phone: "+263771234567", rider: {} }, false);
@@ -246,7 +246,7 @@ describe("PrivacyService.eraseAccount", () => {
     expect(data).toMatchObject({ kycIdExpiresOn: null, kycVendorStatus: null, kycVendorStatusAt: null });
   });
 
-  it("KYC-R26-05: asks the vendor to delete the rider's ID-check session — after the erasure committed", async () => {
+  it("KYC-R26-05: asks the vendor to delete the biker's ID-check session — after the erasure committed", async () => {
     const order: string[] = [];
     const deleteSession = vi.fn(async (ref: string) => (order.push(`delete:${ref}`), true));
     const kycVendor = { submit: vi.fn(), deleteSession } as unknown as KycVendor;
@@ -266,7 +266,7 @@ describe("PrivacyService.eraseAccount", () => {
     }
   });
 
-  it("KYC-R26-05: no session to delete for a customer, or a rider with no kycRef", async () => {
+  it("KYC-R26-05: no session to delete for a customer, or a biker with no kycRef", async () => {
     const deleteSession = vi.fn(async () => true);
     const kycVendor = { submit: vi.fn(), deleteSession } as unknown as KycVendor;
     await eraseHarness({ phone: "+263771234567", rider: null }, false, [], false, { kycVendor }).svc.eraseAccount("p1");
@@ -274,7 +274,7 @@ describe("PrivacyService.eraseAccount", () => {
     expect(deleteSession).not.toHaveBeenCalled();
   });
 
-  it("KB-POD-DISPUTE Phase A: nulls the rider's delivery-proof columns (photo/GPS/time) on erasure, scoped to riderId", async () => {
+  it("KB-POD-DISPUTE Phase A: nulls the biker's delivery-proof columns (photo/GPS/time) on erasure, scoped to riderId", async () => {
     const { svc, orderUpdateManys } = eraseHarness({ phone: "+263771234567", rider: {} }, false);
     await svc.eraseAccount("p1");
     const proofScrub = orderUpdateManys.find((u) => u.data.deliveryProofKey === null);
@@ -289,7 +289,7 @@ describe("PrivacyService.eraseAccount", () => {
     });
   });
 
-  it("DS18-01: nulls pickupPhotoKey on the rider's orders AND deletes its GCS object post-commit, scoped to riderId", async () => {
+  it("DS18-01: nulls pickupPhotoKey on the biker's orders AND deletes its GCS object post-commit, scoped to riderId", async () => {
     const deleted: string[] = [];
     const storage = { deleteObject: vi.fn(async (k: string) => { deleted.push(k); }) } as unknown as StorageAdapter;
     const { svc, orderUpdateManys } = eraseHarness(
@@ -326,7 +326,7 @@ describe("PrivacyService.eraseAccount", () => {
     expect(calls.reportUpdate).toEqual({ where: { reporterProfileId: "p1", NOT: { note: null } }, data: { note: null } });
   });
 
-  it("DS18-02: nulls orders.cancelReason when the erasing user is EITHER party (customer OR rider)", async () => {
+  it("DS18-02: nulls orders.cancelReason when the erasing user is EITHER party (customer OR biker)", async () => {
     const { svc, orderUpdateManys } = eraseHarness({ phone: "+263771234567" }, false);
     await svc.eraseAccount("p1");
     const cancelScrub = orderUpdateManys.find((u) => u.data.cancelReason === null);
@@ -347,7 +347,7 @@ describe("PrivacyService.eraseAccount", () => {
     expect(refScrub!.where).toEqual({ customerId: "p1", NOT: { merchantPaymentReference: null } });
   });
 
-  it("DOC-16-01: does NOT touch top_ups for a plain customer (no rider row — no TopUp rows can exist)", async () => {
+  it("DOC-16-01: does NOT touch top_ups for a plain customer (no biker row — no TopUp rows can exist)", async () => {
     const { svc, tx } = eraseHarness({ phone: "+263771234567", rider: null }, false);
     await svc.eraseAccount("p1");
     expect(tx.topUp.updateMany).not.toHaveBeenCalled();
@@ -438,15 +438,15 @@ describe("PrivacyService.eraseAccount", () => {
     expect(tx.profile.updateMany).not.toHaveBeenCalled();
   };
 
-  it("refuses erasure for a BANNED rider (ban-evasion via delete-then-reregister)", async () => {
+  it("refuses erasure for a BANNED biker (ban-evasion via delete-then-reregister)", async () => {
     await expectRejectedNoWrite({ phone: "+263771234567", rider: { accountStatus: "banned" } }, "account_banned");
   });
 
-  it("refuses erasure for a SUSPENDED rider", async () => {
+  it("refuses erasure for a SUSPENDED biker", async () => {
     await expectRejectedNoWrite({ phone: "+263771234567", rider: { accountStatus: "suspended" } }, "account_suspended");
   });
 
-  it("refuses erasure for a rider under a (sticky VELOCITY) reliability hold — RH-01", async () => {
+  it("refuses erasure for a biker under a (sticky VELOCITY) reliability hold — RH-01", async () => {
     await expectRejectedNoWrite({ phone: "+263771234567", rider: { onHold: true } }, "account_on_hold");
   });
 
@@ -459,7 +459,7 @@ describe("PrivacyService.eraseAccount", () => {
     await expectRejectedNoWrite({ phone: "+263771234567", rider: { cooldownUntil } }, "cooldown_active");
   });
 
-  it("refuses erasure for a KYC-locked rider (two declines — A-02)", async () => {
+  it("refuses erasure for a KYC-locked biker (two declines — A-02)", async () => {
     await expectRejectedNoWrite({ phone: "+263771234567", rider: { kycAttempts: 2 } }, "kyc_locked");
   });
 
@@ -482,7 +482,7 @@ describe("PrivacyService.eraseAccount", () => {
 
   /* ── DS18-04: the erasing WRITES are CAS updateManys re-asserting standing (TOCTOU past the in-tx read) ── */
 
-  it("DS18-04: a rider-standing change landing between the freshStanding read and the CAS write aborts (0-row rider scrub)", async () => {
+  it("DS18-04: a rider-standing change landing between the freshStanding read and the CAS write aborts (0-row biker scrub)", async () => {
     // freshStanding re-read is CLEAN (active) — so assertErasableStanding passes — but the rider-scrub CAS
     // matches 0 rows because a ban/suspend/hold/cooldown/kyc-lock committed in the gap before this write.
     // The old code (blind updateMany by profileId, no standing predicate) would have anonymised anyway.
@@ -526,7 +526,7 @@ describe("PrivacyService.eraseAccount", () => {
 
   /* ── DS15-03: right-to-erasure purges the underlying GCS objects ───────────────────────────────── */
 
-  it("deletes the rider's KYC document + the profile photo from storage after nulling the DB pointers", async () => {
+  it("deletes the biker's KYC document + the profile photo from storage after nulling the DB pointers", async () => {
     const deleted: string[] = [];
     const storage = {
       deleteObject: vi.fn(async (key: string) => {
@@ -591,7 +591,7 @@ describe("PrivacyService.eraseAccount", () => {
   // DS19-02: erasure must funnel through evictRiderFromSupply (geo + board), not the geo-only DS15-05 call —
   // sessions are revoked in-tx but an already-open WebSocket keeps its board rooms until it disconnects, so a
   // geo-only eviction left the erased rider a board ghost. Every OTHER demotion path evicts both planes.
-  it("evicts an erased RIDER from BOTH supply planes post-commit (geo + board, via the funnel)", async () => {
+  it("evicts an erased BIKER from BOTH supply planes post-commit (geo + board, via the funnel)", async () => {
     const evicted: string[] = [];
     const gateway = {
       evictRiderFromSupply: vi.fn(async (id: string) => {
@@ -603,7 +603,7 @@ describe("PrivacyService.eraseAccount", () => {
     expect(evicted).toEqual(["p1"]);
   });
 
-  it("does NOT evict a plain CUSTOMER (no rider row) from the supply planes", async () => {
+  it("does NOT evict a plain CUSTOMER (no biker row) from the supply planes", async () => {
     const gateway = { evictRiderFromSupply: vi.fn(async () => {}) } as unknown as TrackingGateway;
     const { svc } = eraseHarness({ phone: "+263771234567" }, false, [], false, { gateway });
     await expect(svc.eraseAccount("p1")).resolves.toEqual({ erased: true });

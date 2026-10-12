@@ -42,7 +42,7 @@ const late = (variant: "reach" | "pending" | "hidden", title: string = A.lateCan
   render(<LateCancelSheet title={title} rider={rider} riderFirst="Tendai" variant={variant} stackButtons={false} onCall={noop} onWhatsApp={noop} onSupport={noop} />);
 
 describe("late cancel (brief 06)", () => {
-  it("18d: the gold strip, the rider card with Call / WhatsApp, and Not answering? Call support", () => {
+  it("18d: the gold strip, the biker card with Call / WhatsApp, and Not answering? Call support", () => {
     const r = late("reach");
     const t = textOf(r);
     expect(t).toContain(A.lateCancelYouTitle);
@@ -52,7 +52,7 @@ describe("late cancel (brief 06)", () => {
     expect(buttons(r)).toMatchObject({ "Call Tendai": false, "WhatsApp Tendai": false, [A.riderNoAnswer]: false });
   });
 
-  it("18b: the rider's own title", () => {
+  it("18b: the biker's own title", () => {
     expect(textOf(late("reach", orderText.lateCancelRiderTitle("Tendai")))).toContain("Tendai cancelled the trip");
   });
 

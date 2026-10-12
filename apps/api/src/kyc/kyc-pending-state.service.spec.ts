@@ -58,7 +58,7 @@ describe("KycPendingStateService", () => {
     expect(calls).toHaveLength(2);
   });
 
-  it("keeps sessions apart — one rider's answer is never served to another", async () => {
+  it("keeps sessions apart — one biker's answer is never served to another", async () => {
     const { vendor, calls } = vendorReturning("in_flight", "unfinished");
     const svc = new KycPendingStateService(vendor);
     expect(await svc.get("sess_a")).toBe("in_flight");
@@ -175,7 +175,7 @@ describe("KycPendingStateService — session class, invalidation and webhook pri
   });
 
   // KYC-R26-11: "Resubmitted" means Didit's reviewer sent steps back to the rider — a resume, not a wait.
-  it("KYC-R26-11: a Resubmitted session reads `unfinished` (the rider owes the next step), primed or polled", async () => {
+  it("KYC-R26-11: a Resubmitted session reads `unfinished` (the biker owes the next step), primed or polled", async () => {
     const vendor: KycVendor = {
       async submit(): Promise<KycSubmission> {
         throw new Error("not used");
@@ -188,7 +188,7 @@ describe("KycPendingStateService — session class, invalidation and webhook pri
     expect(await svc.read("s_p")).toBe("unfinished");
   });
 
-  it("KYC-R26-11: the cache window is 30s — one decision read per pending rider per half-minute at most", () => {
+  it("KYC-R26-11: the cache window is 30s — one decision read per pending biker per half-minute at most", () => {
     expect(KYC_PENDING_STATE_TTL_MS).toBe(30_000);
   });
 });

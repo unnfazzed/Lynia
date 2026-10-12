@@ -138,7 +138,7 @@ describe("AdminAuditService.recordAuditAction (A-01)", () => {
 
   // Merchant web upgrade L3 + L4: the business's own Riders/Team endpoints write these beside their change,
   // and two of them are counted for daily limits, so a forged row would also spend a business's allowance.
-  it("reserves every action the merchant Riders and Team endpoints write", () => {
+  it("reserves every action the merchant Bikers and Team endpoints write", () => {
     const merchantActions = [
       RIDER_ADD_ACTION,
       RIDER_REMOVE_ACTION,

@@ -38,8 +38,8 @@ export function liveOrderStepIndex(status: string): number {
 const FOOD_LIVE_ORDER_STEPS = [
   { key: "placed", label: "Order placed" },
   { key: "accepted", label: "Restaurant accepted" },
-  { key: "assigned", label: "Rider secured" },
-  { key: "confirmed", label: "Rider at the restaurant" },
+  { key: "assigned", label: "Biker secured" },
+  { key: "confirmed", label: "Biker at the restaurant" },
   { key: "picked_up", label: "Picked up" },
   { key: "en_route_dropoff", label: "On the way" },
   { key: "delivered", label: "Delivered" },
@@ -117,7 +117,7 @@ export function liveOrderCardModel(order: LiveOrderLike, statusLabel: string, de
     };
   }
 
-  const suffix = eta ? `rider ${eta.minutes} min away` : statusLabel;
+  const suffix = eta ? `biker ${eta.minutes} min away` : statusLabel;
   return {
     id: order.id,
     icon: "bike",

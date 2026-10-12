@@ -43,7 +43,7 @@ afterEach(() => {
 });
 
 describe("D1 · Shop Orders home (merchant mobile, D-48)", () => {
-  it("draws S1's top card with Book a rider and no KPI strip (Merchant v2, D-77), and the bookings as trackers", async () => {
+  it("draws S1's top card with Book a biker and no KPI strip (Merchant v2, D-77), and the bookings as trackers", async () => {
     vi.mocked(getMerchantProfile).mockResolvedValue(merchantProfile({ name: "Mbare Auto Spares", businessType: "shop", location: PIN }));
     vi.mocked(listBookings).mockResolvedValue([
       merchantBooking({ id: "live", state: "finding", itemsSummary: "Car battery", offerCount: 3, expiresAt: new Date(Date.now() + 62_000).toISOString() }),
@@ -52,11 +52,11 @@ describe("D1 · Shop Orders home (merchant mobile, D-48)", () => {
     ]);
     render(<Page />);
     expect(await screen.findByText("Mbare Auto Spares")).toBeTruthy();
-    expect(await screen.findByText("Car battery · 3 riders offered")).toBeTruthy();
+    expect(await screen.findByText("Car battery · 3 bikers offered")).toBeTruthy();
     expect(screen.queryByText("Sales")).toBeNull();
-    expect(screen.getByRole("link", { name: /Book a rider/ }).getAttribute("href")).toBe("/deliveries/new");
+    expect(screen.getByRole("link", { name: /Book a biker/ }).getAttribute("href")).toBe("/deliveries/new");
     const needs = screen.getByRole("region", { name: "NEEDS YOU" });
-    expect(within(needs).getByText("Car battery · 3 riders offered")).toBeTruthy();
+    expect(within(needs).getByText("Car battery · 3 bikers offered")).toBeTruthy();
     expect(within(needs).getByText("Pick one before the offers expire")).toBeTruthy();
     expect(within(needs).getByText(/^1:0\d$/)).toBeTruthy();
     expect(within(needs).getByText("Blessing M. is coming to your counter")).toBeTruthy();
@@ -70,21 +70,21 @@ describe("D1 · Shop Orders home (merchant mobile, D-48)", () => {
       merchantBooking({ id: "ended", state: "cancelled", cancelledBy: "business", itemsSummary: "Car battery", createdAt: new Date(Date.now() - 3600_000).toISOString() }),
     ]);
     render(<Page />);
-    expect(await screen.findByText("No riders booked yet")).toBeTruthy();
+    expect(await screen.findByText("No bikers booked yet")).toBeTruthy();
   });
 
   it("with none yet, says so", async () => {
     vi.mocked(getMerchantProfile).mockResolvedValue(merchantProfile({ businessType: "shop", location: PIN }));
     vi.mocked(listBookings).mockResolvedValue([]);
     render(<Page />);
-    expect(await screen.findByText("No riders booked yet")).toBeTruthy();
+    expect(await screen.findByText("No bikers booked yet")).toBeTruthy();
   });
 
-  it("says booking is on its way, and offers nothing, on an API that can't book riders yet", async () => {
+  it("says booking is on its way, and offers nothing, on an API that can't book bikers yet", async () => {
     vi.mocked(getMerchantProfile).mockResolvedValue(merchantProfile({ businessType: "shop" }));
     render(<Page />);
-    expect(await screen.findByText("Booking riders is on its way.")).toBeTruthy();
-    expect(screen.queryByRole("link", { name: /Book a rider/ })).toBeNull();
+    expect(await screen.findByText("Booking bikers is on its way.")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Book a biker/ })).toBeNull();
     expect(listBookings).not.toHaveBeenCalled();
   });
 
@@ -106,11 +106,11 @@ describe("D1 · Shop Orders home (merchant mobile, D-48)", () => {
       });
     const finding = () => merchantBooking({ id: "live", state: "finding", itemsSummary: "Car battery", offerCount: 3, expiresAt: new Date(Date.now() + 62_000).toISOString() });
 
-    it("reads the business once, then polls only the live bookings while a rider is being found", async () => {
+    it("reads the business once, then polls only the live bookings while a biker is being found", async () => {
       vi.mocked(getMerchantProfile).mockResolvedValue(merchantProfile({ businessType: "shop", location: PIN }));
       vi.mocked(listBookings).mockResolvedValue([finding()]);
       await mounted();
-      expect(screen.getByText("Car battery · 3 riders offered")).toBeTruthy();
+      expect(screen.getByText("Car battery · 3 bikers offered")).toBeTruthy();
       expect(vi.mocked(listBookings).mock.calls).toEqual([[]]);
 
       await advance(3_000);
@@ -123,7 +123,7 @@ describe("D1 · Shop Orders home (merchant mobile, D-48)", () => {
       vi.mocked(getMerchantProfile).mockResolvedValue(merchantProfile({ businessType: "shop", location: PIN }));
       vi.mocked(listBookings).mockResolvedValue([]);
       await mounted();
-      expect(screen.getByText("No riders booked yet")).toBeTruthy();
+      expect(screen.getByText("No bikers booked yet")).toBeTruthy();
 
       // The owner books one from their own phone.
       vi.mocked(listBookings).mockResolvedValue([finding()]);
@@ -132,7 +132,7 @@ describe("D1 · Shop Orders home (merchant mobile, D-48)", () => {
       await advance(1_000);
       // The live read brings the new booking, and it is added to the list (no second, full read).
       expect(vi.mocked(listBookings).mock.calls).toEqual([[], [{ live: true }]]);
-      expect(screen.getByText("Car battery · 3 riders offered")).toBeTruthy();
+      expect(screen.getByText("Car battery · 3 bikers offered")).toBeTruthy();
     });
 
     it("re-reads the list when the tab comes back to the front", async () => {

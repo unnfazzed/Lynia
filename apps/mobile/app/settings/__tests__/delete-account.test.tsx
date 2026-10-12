@@ -199,7 +199,7 @@ describe("delete account — the explainer (First Run v2 I)", () => {
     expect(enabled(tree, "Delete account")).toBe(false);
   });
 
-  it("MA-M7: a rider's job they're carrying blocks the step too", async () => {
+  it("MA-M7: a biker's job they're carrying blocks the step too", async () => {
     mockMe = { rider: { kycStatus: "verified" } };
     mockRiderJob.mockResolvedValue({ id: "job-1", status: "picked_up" });
     const tree = await render();
@@ -208,7 +208,7 @@ describe("delete account — the explainer (First Run v2 I)", () => {
     expect(enabled(tree, "Delete account")).toBe(false);
   });
 
-  it("MA-M7: a customer never asks for a rider job", async () => {
+  it("MA-M7: a customer never asks for a biker job", async () => {
     const tree = await render();
     await settle();
     expect(mockRiderJob).not.toHaveBeenCalled();

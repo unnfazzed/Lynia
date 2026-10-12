@@ -18,7 +18,7 @@ describe("MarkUndeliveredRequest (UNDELIVERED-NOTE-01)", () => {
     expect(Object.keys(MarkUndeliveredRequest.shape)).toEqual(["reason"]);
   });
 
-  it("strips a note a stale client still sends, instead of 400ing the rider out of a terminal hand-off", () => {
+  it("strips a note a stale client still sends, instead of 400ing the biker out of a terminal hand-off", () => {
     expect(MarkUndeliveredRequest.parse({ reason: "refused", note: "left it at the gate" })).toEqual({ reason: "refused" });
   });
 
@@ -61,7 +61,7 @@ describe("ConfirmMerchantPickupRequest (N-16, six digits since D-59)", () => {
   it("takes the six-digit pickup code", () => {
     expect(ConfirmMerchantPickupRequest.safeParse({ code: "731604" }).success).toBe(true);
   });
-  it("still parses an installed rider app's four digits, so the service answers it as a wrong code", () => {
+  it("still parses an installed biker app's four digits, so the service answers it as a wrong code", () => {
     expect(ConfirmMerchantPickupRequest.safeParse({ code: "7316" }).success).toBe(true);
   });
   it("refuses any other shape", () => {

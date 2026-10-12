@@ -55,7 +55,7 @@ export default async function OverviewPage() {
       {/* Headline KPIs — the two the design leads with (completed + fares today) sit beside live supply. */}
       <section className="panels" style={{ marginBottom: tokens.space.md }}>
         <KpiCard label="Live orders" value={data ? liveOrders(data.ordersByStatus) : "—"} hint="open for offers + in delivery" />
-        <KpiCard label="Riders online" value={data ? `${data.riders.online}/${data.riders.verified}` : "—"} hint="online / verified" />
+        <KpiCard label="Bikers online" value={data ? `${data.riders.online}/${data.riders.verified}` : "—"} hint="online / verified" />
         <KpiCard
           label="Completed today"
           value={data ? data.today.completed : "—"}
@@ -131,7 +131,7 @@ export default async function OverviewPage() {
                 <th>Order</th>
                 <th>Route</th>
                 <th>Status</th>
-                <th>Rider</th>
+                <th>Biker</th>
                 <th>Fare</th>
                 <th>Created</th>
               </tr>
@@ -207,7 +207,7 @@ function buildAttention(data: Overview): AttentionRow[] {
   if (openIssues > 0) {
     rows.push({
       title: `${openIssues} open dispute${openIssues === 1 ? "" : "s"}`,
-      detail: "a customer or rider is waiting on a resolution.",
+      detail: "a customer or biker is waiting on a resolution.",
       action: "Investigate",
       href: "/issues",
       icon: <IconAlert />,
@@ -215,7 +215,7 @@ function buildAttention(data: Overview): AttentionRow[] {
   }
   if (kycPending > 0) {
     rows.push({
-      title: `${kycPending} rider${kycPending === 1 ? "" : "s"} waiting on KYC`,
+      title: `${kycPending} biker${kycPending === 1 ? "" : "s"} waiting on KYC`,
       detail: "verification review is holding them off the road.",
       action: "Review queue",
       href: "/riders?kyc=pending",
@@ -229,7 +229,7 @@ function buildAttention(data: Overview): AttentionRow[] {
     data.commissionRatePct > 0
       ? {
           title: `Commission is ${data.commissionRatePct}%`,
-          detail: "being deducted per ride from riders' prepaid balance.",
+          detail: "being deducted per ride from bikers' prepaid balance.",
           action: "View",
           href: "/cash",
           icon: <IconBanknote />,

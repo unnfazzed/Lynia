@@ -33,7 +33,7 @@ describe("toLastActive", () => {
     expect(toLastActive(snapshot({ agreedFare: null }), "t").fare).toBe("5.00");
   });
 
-  it("keeps rider null until there is a full GPS fix", () => {
+  it("keeps biker null until there is a full GPS fix", () => {
     const noFix = snapshot({ rider: { profileId: "r1", currentLat: null, currentLng: null, updatedAt: null } });
     expect(toLastActive(noFix, "t").rider).toBeNull();
     expect(toLastActive(snapshot({ rider: null }), "t").rider).toBeNull();
@@ -57,7 +57,7 @@ describe("serialize / deserialize", () => {
     expect(deserializeLastActive(JSON.stringify({ id: 1, status: "x", fare: "1" }))).toBeNull();
   });
 
-  it("drops a malformed rider but keeps the rest", () => {
+  it("drops a malformed biker but keeps the rest", () => {
     const raw = JSON.stringify({ id: "o1", status: "assigned", fare: "3.00", rider: { lat: "nope" } });
     expect(deserializeLastActive(raw)).toEqual({
       id: "o1",

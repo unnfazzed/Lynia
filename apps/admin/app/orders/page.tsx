@@ -44,7 +44,7 @@ const FILTERS = [{ value: "", label: "all" }, ...STATUSES.map((s) => ({ value: s
  *  carries is the cancellation, rendered in the kit's own shape: "cancelled (customer): change of plans". */
 function noteFor(o: Order): string {
   if (!o.cancelReason) return "—";
-  return o.cancelledByRole ? `cancelled (${o.cancelledByRole}): ${o.cancelReason}` : `cancelled: ${o.cancelReason}`;
+  return o.cancelledByRole ? `cancelled (${o.cancelledByRole === "rider" ? "biker" : o.cancelledByRole}): ${o.cancelReason}` : `cancelled: ${o.cancelReason}`;
 }
 
 export default async function OrdersPage({
@@ -79,7 +79,7 @@ export default async function OrdersPage({
     { key: "type", header: "Type", cell: (o) => (o.orderType === "merchant" ? <Pill kind="mut">food</Pill> : <Pill kind="mut">parcel</Pill>) },
     { key: "route", header: "Route / merchant", cell: (o) => (o.orderType === "merchant" ? o.merchant ?? o.route : o.route) },
     { key: "status", header: "Status", cell: (o) => <StatusPill status={o.status} /> },
-    { key: "rider", header: "Rider", className: "mut", cell: (o) => o.rider ?? "—" },
+    { key: "rider", header: "Biker", className: "mut", cell: (o) => o.rider ?? "—" },
     { key: "fare", header: "Fare", className: "num", cell: (o) => `$${o.agreedFare ?? o.proposedFare}` },
     // Distance + Note are kit columns (orders.html `<thead>`: Order · Route · Status · Rider · Fare ·
     // Distance · Note · Created). Both read fields the list response already carries — no extra query.

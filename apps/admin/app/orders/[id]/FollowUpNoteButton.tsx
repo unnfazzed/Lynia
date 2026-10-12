@@ -43,7 +43,7 @@ export function FollowUpNoteButton({ orderId, disabled }: { orderId: string; dis
           });
         }}
       >
-        {pending ? "Recording…" : "Log a follow-up note (doesn't contact the rider)"}
+        {pending ? "Recording…" : "Log a follow-up note (doesn't contact the biker)"}
       </button>
       {error ? (
         <span role="alert" style={{ fontSize: 11, color: "var(--danger)" }}>

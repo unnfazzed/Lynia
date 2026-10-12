@@ -50,7 +50,7 @@ describe("riderModeAvailable (the real platform switch)", () => {
 });
 
 describe("isRiderOnlyRoute", () => {
-  it("matches the rider app and the commission wallet, and nothing that merely starts with the letters", () => {
+  it("matches the biker app and the commission wallet, and nothing that merely starts with the letters", () => {
     for (const path of ["/rider", "/rider/job", "/rider/food-offer", "/rider?tab=money", "/wallet/top-up"]) {
       expect(actual.isRiderOnlyRoute(path)).toBe(true);
     }
@@ -70,7 +70,7 @@ describe("RiderRouteGate", () => {
 
   beforeEach(() => mockReplace.mockClear());
 
-  it("sends a rider route home on the customer-only iPhone app", () => {
+  it("sends a biker route home on the customer-only iPhone app", () => {
     jest.mocked(riderModeAvailable).mockReturnValue(false);
     mountAt(["rider", "(tabs)"]);
     expect(mockReplace).toHaveBeenCalledWith("/home");
@@ -86,12 +86,12 @@ describe("RiderRouteGate", () => {
     expect(mockReplace).not.toHaveBeenCalled();
   });
 
-  it("is inert wherever rider mode exists", () => {
+  it("is inert wherever biker mode exists", () => {
     mountAt(["rider", "(tabs)"]);
     expect(mockReplace).not.toHaveBeenCalled();
   });
 
-  it("recognises only the rider and wallet route segments", () => {
+  it("recognises only the biker and wallet route segments", () => {
     expect(isRiderRouteSegment("rider")).toBe(true);
     expect(isRiderRouteSegment("wallet")).toBe(true);
     expect(isRiderRouteSegment("(tabs)")).toBe(false);

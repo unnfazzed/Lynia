@@ -111,7 +111,7 @@ beforeEach(() => {
   mockDecline.mockReturnValue(new Promise(() => {}));
 });
 
-describe("FoodOffer (Rider v2 F1–F4)", () => {
+describe("FoodOffer (Biker v2 F1–F4)", () => {
   // Owner 2026-10-12: several orders can ring one rider at once — the screen reads the one it was opened for.
   it("reads the offer for the order it was opened with, and the soonest one without", async () => {
     mockGetOffer.mockResolvedValue(offer());
@@ -189,19 +189,19 @@ describe("FoodOffer (Rider v2 F1–F4)", () => {
     const tree = await render();
     const text = textOf(tree);
 
-    expect(text).toContain("That one went to another rider");
+    expect(text).toContain("That one went to another biker");
     expect(tree.root.findAll((n) => n.props.label === "Back to jobs" && typeof n.props.onPress === "function").length).toBe(1);
     expect(tree.root.findAll((n) => n.props.label === "Accept this job")).toHaveLength(0);
   });
 
-  it("a FAILED offer read is the couldn't-load state, not F4's 'went to another rider' (LC-D-SIB-1)", async () => {
+  it("a FAILED offer read is the couldn't-load state, not F4's 'went to another biker' (LC-D-SIB-1)", async () => {
     mockGetOffer.mockRejectedValue(new Error("network"));
     const tree = await render();
     const text = textOf(tree);
 
     expect(text).toContain("Something went wrong");
     expect(text).toContain("Trying again in 10 s");
-    expect(text).not.toContain("That one went to another rider");
+    expect(text).not.toContain("That one went to another biker");
     expect(tree.root.findAll((n) => n.props.label === "Accept this job")).toHaveLength(0);
   });
 

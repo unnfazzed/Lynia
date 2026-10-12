@@ -52,7 +52,7 @@ describe("phone-backfill plan", () => {
     expect(p.merges).toHaveLength(0);
     expect(p.manual).toHaveLength(1);
     expect(p.manual[0].target).toBe("+263771234567");
-    expect(p.manual[0].rows.find((r) => r.id === "rider")?.reason).toContain("rider record");
+    expect(p.manual[0].rows.find((r) => r.id === "rider")?.reason).toContain("biker record");
   });
 
   it("quarantines unparseable phones and still processes the rest", () => {
@@ -69,7 +69,7 @@ describe("phone-backfill plan", () => {
     expect(pickSurvivor([withData, empty, canon], "+263771234567").id).toBe("canon");
   });
 
-  it("isEmpty is true only with no rider, orders, or ratings", () => {
+  it("isEmpty is true only with no biker, orders, or ratings", () => {
     expect(isEmpty(row({ id: "a", phone: "x" }))).toBe(true);
     expect(isEmpty(row({ id: "a", phone: "x", hasRider: true }))).toBe(false);
     expect(isEmpty(row({ id: "a", phone: "x", ordersAsCustomer: 1 }))).toBe(false);

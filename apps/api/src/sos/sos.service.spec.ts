@@ -68,7 +68,7 @@ describe("SosService.raise", () => {
     expect(res.safetyLine).not.toBe(res.emergencyNumber);
   });
 
-  it("Fix 3: a RIDER's SOS pushes the customer, stamped to: 'customer'", async () => {
+  it("Fix 3: a BIKER's SOS pushes the customer, stamped to: 'customer'", async () => {
     const notifications = makeNotifications();
     const s = svc(liveOrder, notifications);
     await s.raise("ord-1", body, "rider-1");

@@ -37,7 +37,7 @@ export function PlateConfirmButton({
       title={`Confirm ${name}'s plate ${plate}?`}
       consequence={
         <span>
-          The rider&apos;s app shows <b className="mono">{plate}</b> as <b>Verified</b>. Check it against the bike first. If
+          The biker&apos;s app shows <b className="mono">{plate}</b> as <b>Verified</b>. Check it against the bike first. If
           they change it again before you confirm, the confirmation is refused and it stays in the queue.
         </span>
       }

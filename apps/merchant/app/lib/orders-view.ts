@@ -152,8 +152,8 @@ export function rowSub(o: MerchantOrderResponse): string {
     return ready ? `Cooking · ready by ${ready}` : "Cooking";
   }
   if (isReadyBucket(o)) {
-    if (isNoRiderHold(o)) return "No rider yet · decide what to do";
-    if (!rider) return "Finding a rider";
+    if (isNoRiderHold(o)) return "No biker yet · decide what to do";
+    if (!rider) return "Finding a biker";
     // No "arrived" signal exists before the code is typed, so the rider is only ever on the way.
     return `${rider} coming to your counter`;
   }
@@ -325,7 +325,7 @@ export function liveBar(orders: readonly MerchantOrderResponse[], v: Vocabulary,
   if (offered) {
     return {
       kind: "waiting",
-      title: `${offered.itemsSummary} · ${offered.offerCount} rider${offered.offerCount === 1 ? "" : "s"} offered`,
+      title: `${offered.itemsSummary} · ${offered.offerCount} biker${offered.offerCount === 1 ? "" : "s"} offered`,
       sub: "Pick one before the offers expire",
       deadline: offered.expiresAt ?? null,
       href: bookingHref(offered.id),

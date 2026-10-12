@@ -307,7 +307,7 @@ beforeAll(async () => {
   jest.clearAllMocks();
 }, 60_000);
 
-describe("rider board (Rider v2 J1/J3: the board draws every job as a card, and only when it's actually shown)", () => {
+describe("biker board (Biker v2 J1/J3: the board draws every job as a card, and only when it's actually shown)", () => {
   it("online + verified + no gate: every open order is a card in the sheet", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
@@ -336,7 +336,7 @@ describe("rider board (Rider v2 J1/J3: the board draws every job as a card, and 
     expect(treeText(activeTree)).toContain("No jobs nearby"); // empty-states v2 J4 (D-78)
   });
 
-  it("not yet a verified rider (G1): renders no job cards and does not leak open-order data", async () => {
+  it("not yet a verified biker (G1): renders no job cards and does not leak open-order data", async () => {
     mockGetMe.mockResolvedValue({ ...meFixture(), rider: null });
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([openOrderFixture("should-not-appear")]);
@@ -370,7 +370,7 @@ describe("rider board (Rider v2 J1/J3: the board draws every job as a card, and 
  * compose card, and a sent offer moves the job from NEARBY JOBS to YOUR OFFERS — the one-offer-per-job
  * rule, now drawn. Withdraw (J10) hides it at once, offers Undo for 5 s, and only then calls the API.
  */
-describe("rider board (Rider v2 O1/J9/J10: make an offer, your offers, withdraw)", () => {
+describe("biker board (Biker v2 O1/J9/J10: make an offer, your offers, withdraw)", () => {
   it("'Make an offer' opens the offer screen for THAT job — no inline compose card", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
@@ -400,7 +400,7 @@ describe("rider board (Rider v2 O1/J9/J10: make an offer, your offers, withdraw)
     };
   }
 
-  it("a job the rider already offered on sits under YOUR OFFERS, never again under NEARBY JOBS", async () => {
+  it("a job the biker already offered on sits under YOUR OFFERS, never again under NEARBY JOBS", async () => {
     const bid = { ...openOrderFixture("order-0"), createdAt: new Date().toISOString() };
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
@@ -492,7 +492,7 @@ async function wait(ms: number): Promise<void> {
   });
 }
 
-describe("rider board (A-O4: activeJob self-heal poll must stop once offline confirms no active job)", () => {
+describe("biker board (A-O4: activeJob self-heal poll must stop once offline confirms no active job)", () => {
   it(
     "gated (so not online), no active job: fetches once on mount, then the 8s poll never fires again",
     async () => {
@@ -553,7 +553,7 @@ describe("rider board (A-O4: activeJob self-heal poll must stop once offline con
  * button already survived #755's sweep once, because it is labelled plain "Refresh" rather than
  * "Refresh status".
  */
-describe("rider board (RJM.board_empty + offline: no manual refresh, online-toggle wiring intact)", () => {
+describe("biker board (RJM.board_empty + offline: no manual refresh, online-toggle wiring intact)", () => {
   it("online + verified + empty board: offers NO refresh affordance (D-30)", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
@@ -619,14 +619,14 @@ describe("rider board (RJM.board_empty + offline: no manual refresh, online-togg
  * committed and painted before the effect could flip it. A rider relaunching mid-shift watched their
  * own board blink through Offline. Seeding the state from the warm cache closes the gap at the source.
  */
-describe("rider board — a mid-shift relaunch never flashes Offline (MOB-BOOT-02)", () => {
+describe("biker board — a mid-shift relaunch never flashes Offline (MOB-BOOT-02)", () => {
   const OFFLINE_COPY = "Go online to see and bid on nearby orders.";
 
   function offlineCopyHits(tree: renderer.ReactTestRenderer): number {
     return tree.root.findAll((n) => typeof n.props.children === "string" && n.props.children.includes(OFFLINE_COPY)).length;
   }
 
-  it("renders online from the FIRST frame when a warm ['me'] already says the rider is on shift", async () => {
+  it("renders online from the FIRST frame when a warm ['me'] already says the biker is on shift", async () => {
     const me = meFixture({ isOnline: true });
     mockGetMe.mockResolvedValue(me);
     mockGetActiveOrder.mockResolvedValue(null);
@@ -643,7 +643,7 @@ describe("rider board — a mid-shift relaunch never flashes Offline (MOB-BOOT-0
     expect(offlineCopyHits(activeTree)).toBe(0);
   });
 
-  it("ignores a server 'off shift' — the rider is always online (owner 2026-08-17)", async () => {
+  it("ignores a server 'off shift' — the biker is always online (owner 2026-08-17)", async () => {
     // `is_online` only ever flipped on an explicit toggle, and there is no toggle any more. A warm
     // cache saying "off shift" is therefore a stale fact about a control that no longer exists; the
     // rider is online because they are VERIFIED, and the board must not blink through an offline
@@ -663,7 +663,7 @@ describe("rider board — a mid-shift relaunch never flashes Offline (MOB-BOOT-0
     expect(mockSetOnline.mock.calls.some((c) => c[0] === true)).toBe(true);
   });
 
-  it("does NOT go online behind a wall — an unverified rider stays off", async () => {
+  it("does NOT go online behind a wall — an unverified biker stays off", async () => {
     const me = meFixture({ kycStatus: "pending" });
     mockGetMe.mockResolvedValue(me);
     mockGetActiveOrder.mockResolvedValue(null);
@@ -688,7 +688,7 @@ describe("rider board — a mid-shift relaunch never flashes Offline (MOB-BOOT-0
  * ScrollView branch), and pins that nothing else regressed with it: a SUCCESSFUL check still renders
  * the "You have an active job" way-back card, which is the safety net UX20-01 actually cared about.
  */
-describe("rider board (owner 2026-08-12: a failing background active-job check must raise no error card)", () => {
+describe("biker board (owner 2026-08-12: a failing background active-job check must raise no error card)", () => {
   const FAILED_CHECK_COPY = "Couldn't check for an active job";
   function failedCheckHits(tree: renderer.ReactTestRenderer): number {
     return tree.root.findAll((n) => {
@@ -713,7 +713,7 @@ describe("rider board (owner 2026-08-12: a failing background active-job check m
     expect(cardIds(activeTree)).toEqual(["order-0"]);
   });
 
-  it("KYC-gated rider (the state in the photo), active-job check errors: renders no error card over the gate", async () => {
+  it("KYC-gated biker (the state in the photo), active-job check errors: renders no error card over the gate", async () => {
     mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto" }));
     mockGetActiveOrder.mockRejectedValue(new Error("network down"));
     mockGetOpenOrders.mockResolvedValue([]);
@@ -750,7 +750,7 @@ describe("rider board (owner 2026-08-12: a failing background active-job check m
 // where the rider can do nothing but wait. What survives here is everything that was NOT reversed —
 // "Refresh status" is still gone everywhere, the OLD bridge name and its confirm sheet are still
 // gone, and the walls that have a real action still carry no competing exit.
-describe("rider board (owner 2026-08-16: no manual refresh; bridge scoped, not restored wholesale)", () => {
+describe("biker board (owner 2026-08-16: no manual refresh; bridge scoped, not restored wholesale)", () => {
   function labelHits(tree: renderer.ReactTestRenderer, label: string): number {
     // Buttons carry their copy as a `label` prop; the copy also renders as a Text child, so check both.
     return (
@@ -761,7 +761,7 @@ describe("rider board (owner 2026-08-16: no manual refresh; bridge scoped, not r
 
   // Every state that used to draw its own "Refresh status", including the exact one in the photo.
   const WALLS: ReadonlyArray<[string, Parameters<typeof meFixture>[0] | "no-rider"]> = [
-    ["not a rider yet", "no-rider"],
+    ["not a biker yet", "no-rider"],
     ["KYC pending, auto mode (the screen in the photo)", { kycStatus: "pending", kycMode: "auto" }],
     ["KYC pending, manual/ops review", { kycStatus: "pending", kycMode: "manual" }],
     ["ID expired", { kycStatus: "expired" }],
@@ -839,7 +839,7 @@ describe("rider board (owner 2026-08-16: no manual refresh; bridge scoped, not r
   const WALL_ACTIONS: ReadonlyArray<[string, Parameters<typeof meFixture>[0], string[]]> = [
     // Calm Mint v2 R2 (D-55): in flight is "Rider setup", whose only action is its ghost.
     ["in flight — with the vendor, only the R2 ghost", { kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight" }, ["Send a parcel while you wait"]],
-    ["F3 unfinished — the rider's move", { kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }, [KY.unfCta]],
+    ["F3 unfinished — the biker's move", { kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }, [KY.unfCta]],
     // R-3: a check held for a human review is F2 — not R2, no retry; WhatsApp only.
     ["F2 held for review — WhatsApp only", { kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight", kycHeld: true }, [KY.help]],
     ["F1 manual/ops review — nothing to press", { kycStatus: "pending", kycMode: "manual" }, []],
@@ -873,7 +873,7 @@ describe("rider board (owner 2026-08-16: no manual refresh; bridge scoped, not r
  * says something the other two must not, so assert the COPY, not just the action count: a regression
  * that renders the right buttons under the wrong sentence is exactly the failure being fixed.
  */
-describe("rider board — the three KYC pending states (P0-1)", () => {
+describe("biker board — the three KYC pending states (P0-1)", () => {
   async function wall(patch: Parameters<typeof meFixture>[0]): Promise<string> {
     mockGetMe.mockResolvedValue(meFixture(patch));
     mockGetActiveOrder.mockResolvedValue(null);
@@ -884,9 +884,9 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
     return treeText(activeTree);
   }
 
-  it("in flight: R2 'Rider setup' says the check is under way, and asks nothing of the rider", async () => {
+  it("in flight: R2 'Biker setup' says the check is under way, and asks nothing of the biker", async () => {
     const text = await wall({ kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight" });
-    expect(text).toContain("Rider setup");
+    expect(text).toContain("Biker setup");
     expect(text).toContain("We\u2019re checking your ID");
     expect(text).toContain("In review");
     expect(text).not.toContain(KY.unfBody);
@@ -1057,7 +1057,7 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
         land(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
       });
       await settle();
-      expect(treeText(activeTree)).toContain("Rider setup");
+      expect(treeText(activeTree)).toContain("Biker setup");
       expect(treeText(activeTree)).not.toContain(KY.unfBody);
       expect(treeText(activeTree)).not.toContain(KY.justBody);
 
@@ -1398,8 +1398,8 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
  * The shift state moved off the list and into the header's sub-row, so these pin the pieces that
  * would otherwise be easy to lose in a later refactor of this very large screen.
  */
-describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
-  it("greets the rider by first name, on every screen state the tab can be in", async () => {
+describe("biker board — the 8c mint header (owner 2026-08-17)", () => {
+  it("greets the biker by first name, on every screen state the tab can be in", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([openOrderFixture("o-1")]);
@@ -1410,7 +1410,7 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
     expect(treeText(activeTree)).toMatch(/Good (morning|afternoon|evening),\s*Tapiwa/);
   });
 
-  it("renders NO search bar — a rider has nothing to search from the board", async () => {
+  it("renders NO search bar — a biker has nothing to search from the board", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([openOrderFixture("o-1")]);
@@ -1531,7 +1531,7 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
   });
 
   it(
-    "retries a TRANSIENT activation failure instead of stranding the rider offline",
+    "retries a TRANSIENT activation failure instead of stranding the biker offline",
     async () => {
       // One failed setOnline at launch used to leave the rider offline for the life of the screen:
       // the auto-online effect had consumed its ref and nothing re-armed it. REAL timers here — fake
@@ -1576,8 +1576,8 @@ describe("rider board — the 8c mint header (owner 2026-08-17)", () => {
 });
 
 /** Calm Mint v2 R3 (D-55): "You're verified" takes the board's place once, for a new rider only. */
-describe("rider board — R3 'You're verified' (Calm Mint v2)", () => {
-  it("a verified rider with no trips yet sees R3; 'Go online' starts the rider permission flow (D-82 §2 #5)", async () => {
+describe("biker board — R3 'You're verified' (Calm Mint v2)", () => {
+  it("a verified biker with no trips yet sees R3; 'Go online' starts the biker permission flow (D-82 §2 #5)", async () => {
     mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 0 }));
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);
@@ -1626,7 +1626,7 @@ describe("rider board — R3 'You're verified' (Calm Mint v2)", () => {
     expect(treeText(activeTree)).not.toContain("Jobs need your location.");
   });
 
-  it("FR-H1: a denied location still walls a rider past R3", async () => {
+  it("FR-H1: a denied location still walls a biker past R3", async () => {
     mockLocPermission = "denied";
     mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 0 }));
     mockGetActiveOrder.mockResolvedValue(null);
@@ -1637,7 +1637,7 @@ describe("rider board — R3 'You're verified' (Calm Mint v2)", () => {
     expect(treeText(activeTree)).toContain("Turn on location");
   });
 
-  it("a rider with trips behind them never sees R3", async () => {
+  it("a biker with trips behind them never sees R3", async () => {
     mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 20 }));
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);
@@ -1648,7 +1648,7 @@ describe("rider board — R3 'You're verified' (Calm Mint v2)", () => {
   });
 });
 
-describe("rider board — tagged jobs and demand (owner 2026-10-01)", () => {
+describe("biker board — tagged jobs and demand (owner 2026-10-01)", () => {
   it("a business's booking wears the SHOP tag beside PARCEL jobs, and the count says jobs", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
@@ -1735,10 +1735,10 @@ describe("rider board — tagged jobs and demand (owner 2026-10-01)", () => {
 });
 
 /** Startup review 2026-10-06 — the rider registration / ID-check fixes on the board. */
-describe("rider board — startup review 2026-10-06", () => {
+describe("biker board — startup review 2026-10-06", () => {
   const PENDING_UNFINISHED = { kycStatus: "pending" as const, kycMode: "auto" as const, kycPendingState: "unfinished" as const };
 
-  it("R-10: a launch Become a rider couldn't open lands on F7 (with WhatsApp help), not F3", async () => {
+  it("R-10: a launch Become a biker couldn't open lands on F7 (with WhatsApp help), not F3", async () => {
     recordKycLaunch("failed");
     mockGetMe.mockResolvedValue(meFixture(PENDING_UNFINISHED));
     mockGetActiveOrder.mockResolvedValue(null);
@@ -1750,7 +1750,7 @@ describe("rider board — startup review 2026-10-06", () => {
     expect(treeText(activeTree)).not.toContain(KY.unfBody);
   });
 
-  it("R-4: a check Become a rider just completed shows F8 'Sending your ID', not the stale 'unfinished'", async () => {
+  it("R-4: a check Become a biker just completed shows F8 'Sending your ID', not the stale 'unfinished'", async () => {
     recordKycLaunch("completed");
     mockGetMe.mockResolvedValue(meFixture(PENDING_UNFINISHED));
     mockGetActiveOrder.mockResolvedValue(null);
@@ -1771,10 +1771,10 @@ describe("rider board — startup review 2026-10-06", () => {
     await settle();
     expect(mockReplace).toHaveBeenCalledWith("/rider/become");
     expect(mockPush).not.toHaveBeenCalled();
-    expect(activeTree.root.findAll((n) => n.props.label === "Become a rider")).toHaveLength(0);
+    expect(activeTree.root.findAll((n) => n.props.label === "Become a biker")).toHaveLength(0);
   });
 
-  it("G1: a cached customer `me` doesn't bounce a rider who just registered — R1 only once the re-read agrees", async () => {
+  it("G1: a cached customer `me` doesn't bounce a biker who just registered — R1 only once the re-read agrees", async () => {
     // The warm cache still says "no rider"; the server (mid re-read) says pending.
     let land!: (me: Me) => void;
     mockGetMe.mockImplementation(() => new Promise<Me>((resolve) => (land = resolve)));
@@ -1799,7 +1799,7 @@ describe("rider board — startup review 2026-10-06", () => {
     await settle();
     await settle();
     expect(treeText(activeTree)).toContain(KY.heldBody);
-    expect(treeText(activeTree)).not.toContain("Rider setup");
+    expect(treeText(activeTree)).not.toContain("Biker setup");
   });
 
   // R-6 → First Run v2 BRIEF 15 (D-82): each decline reason gets its own page and advice.
@@ -1819,7 +1819,7 @@ describe("rider board — startup review 2026-10-06", () => {
     expect(treeText(activeTree)).toContain(KY.triesLeft);
   });
 
-  it("R-7: the rider is not put online behind R3 — its 'Go online' hands over to the permission flow first", async () => {
+  it("R-7: the biker is not put online behind R3 — its 'Go online' hands over to the permission flow first", async () => {
     mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 0 }));
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);
@@ -1842,7 +1842,7 @@ describe("rider board — startup review 2026-10-06", () => {
     expect(treeText(activeTree)).toContain("You’re verified");
   });
 
-  it("R-9: a failed re-read keeps the rider behind their wall (the last known `me` stands)", async () => {
+  it("R-9: a failed re-read keeps the biker behind their wall (the last known `me` stands)", async () => {
     const declined = meFixture({ kycStatus: "failed", kycAttempts: 2 });
     mockGetMe.mockRejectedValue(new Error("503"));
     mockGetActiveOrder.mockResolvedValue(null);
@@ -1936,7 +1936,7 @@ describe("rider board — startup review 2026-10-06", () => {
 });
 
 /** First Run v2 F (ledger D-82 §2 #3): the outcome pages are full screens, and ✕ goes to the customer side. */
-describe("rider board — First Run v2 ID-check outcome pages (D-82)", () => {
+describe("biker board — First Run v2 ID-check outcome pages (D-82)", () => {
   it("an F page draws no mint top card and no tab bar slot; ✕ switches to the customer side (Home)", async () => {
     mockGetMe.mockResolvedValue(meFixture({ kycStatus: "failed", kycAttempts: 1, kycDeclineReason: "id_unreadable" }));
     mockGetActiveOrder.mockResolvedValue(null);
@@ -1980,7 +1980,7 @@ describe("rider board — First Run v2 ID-check outcome pages (D-82)", () => {
     expect(treeText(activeTree)).toContain("Expired 2 Oct 2026. Re-verify to keep riding.");
   });
 
-  it("reopening the rider side re-resolves the same page from the server (G3)", async () => {
+  it("reopening the biker side re-resolves the same page from the server (G3)", async () => {
     mockGetMe.mockResolvedValue(meFixture({ kycStatus: "expired" }));
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);
@@ -1995,7 +1995,7 @@ describe("rider board — First Run v2 ID-check outcome pages (D-82)", () => {
     expect(treeText(activeTree)).toContain("Re-verify to keep riding.");
   });
 
-  it("the non-KYC gates keep their Rider v2 walls (here: suspended), with the tab bar", async () => {
+  it("the non-KYC gates keep their Biker v2 walls (here: suspended), with the tab bar", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);
@@ -2015,7 +2015,7 @@ describe("rider board — First Run v2 ID-check outcome pages (D-82)", () => {
  * Rider audit 2026-10-07, Board & Jobs (B5, BD-H1–H5, BD-M1–M5, BD-L1–L2). Each case pins the fixed
  * behaviour on the real board.
  */
-describe("rider board — rider audit fixes (Board & Jobs)", () => {
+describe("biker board — biker audit fixes (Board & Jobs)", () => {
   const { onlineManager } = jest.requireActual("@tanstack/react-query") as typeof import("@tanstack/react-query");
 
   function renderWithClient(): { tree: renderer.ReactTestRenderer; qc: QueryClient } {
@@ -2078,7 +2078,7 @@ describe("rider board — rider audit fixes (Board & Jobs)", () => {
     15000,
   );
 
-  it("BD-H1: while online the board follows the rider, and the open-jobs read uses the new position", async () => {
+  it("BD-H1: while online the board follows the biker, and the open-jobs read uses the new position", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);
@@ -2202,7 +2202,7 @@ describe("rider board — rider audit fixes (Board & Jobs)", () => {
     expect(activeTree.root.findAll((n) => n.props.testID === "rider-board-area")).toHaveLength(0);
   });
 
-  it("BD-M2: the selected card taken by another rider shows 'That parcel was taken', even though the card left first", async () => {
+  it("BD-M2: the selected card taken by another biker shows 'That parcel was taken', even though the card left first", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([openOrderFixture("order-0"), openOrderFixture("order-1")]);
@@ -2212,11 +2212,11 @@ describe("rider board — rider audit fixes (Board & Jobs)", () => {
     await settle();
     // The socket drops the card from the cache first…
     act(() => void qc.setQueryData<OpenOrder[]>(["openOrders"], (prev) => prev?.filter((o) => o.id !== "order-0")));
-    expect(treeText(tree)).not.toContain("That parcel was taken by another rider.");
+    expect(treeText(tree)).not.toContain("That parcel was taken by another biker.");
     // …and marks it taken only after the active-job re-read.
     mockUseRiderBoard.mockReturnValue({ connected: true, expiredOrderIds: new Set<string>(), takenOrderIds: new Set(["order-0"]), boardTakenNudge: 1 });
     rerender(tree, qc);
-    expect(treeText(tree)).toContain("That parcel was taken by another rider.");
+    expect(treeText(tree)).toContain("That parcel was taken by another biker.");
   });
 
   it("BD-M3: the cooldown wall says when it clears (G10 'Clears at')", async () => {

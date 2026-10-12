@@ -76,7 +76,7 @@ describe("resolveMerchantStage", () => {
     expect(resolveMerchantStage(base({ merchantPhase: "ready_for_pickup", sawRider: true })).stage).toBe("riderDropped");
   });
 
-  it("a rider heading to the venue is T6, and T7 once within ~150 m of it", () => {
+  it("a biker heading to the venue is T6, and T7 once within ~150 m of it", () => {
     const fix = { lat: -17.84, lng: 31.04, at: new Date(NOW - 5_000).toISOString() };
     expect(resolveMerchantStage(base({ status: "assigned", merchantPhase: null, riderId: "r1", rider: fix })).stage).toBe("toVenue");
     const there = { lat: VENUE.lat + 0.0005, lng: VENUE.lng, at: new Date(NOW - 5_000).toISOString() };
@@ -100,7 +100,7 @@ describe("resolveMerchantStage", () => {
     expect(resolveMerchantStage(base({ status: "picked_up", merchantPhase: null, riderId: "r1", rider: near })).stage).toBe("onWay");
   });
 
-  it("D5 (U10): the rider's server-stamped \"I'm here\" is the door even when their GPS is far off the pin", () => {
+  it("D5 (U10): the biker's server-stamped \"I'm here\" is the door even when their GPS is far off the pin", () => {
     const far = { lat: -17.83, lng: 31.05, at: new Date(NOW).toISOString() };
     expect(resolveMerchantStage(base({ status: "en_route_dropoff", merchantPhase: null, riderId: "r1", rider: far, riderAtDropoff: true })).stage).toBe("door");
     expect(resolveMerchantStage(base({ status: "en_route_dropoff", merchantPhase: null, riderId: "r1", rider: null, riderAtDropoff: true })).stage).toBe("door");
@@ -142,17 +142,17 @@ describe("merchantEta — a range until collection, one time after, none without
     expect(e.fromMs).toBeGreaterThanOrEqual(Math.floor(readyMs / 300_000) * 300_000);
   });
 
-  it("no prep data before a rider ⇒ no ETA", () => {
+  it("no prep data before a biker ⇒ no ETA", () => {
     expect(merchantEta({ stage: "cooking", noFix: false, nowMs: NOW, readyMs: null, venue: VENUE, dropoff: DROP, rider: null })).toBeNull();
     expect(merchantEta({ stage: "waiting", noFix: false, nowMs: NOW, readyMs, venue: VENUE, dropoff: DROP, rider: null })).toBeNull();
   });
 
-  it("a rider stage without a fix ⇒ no ETA (the sentence only)", () => {
+  it("a biker stage without a fix ⇒ no ETA (the sentence only)", () => {
     expect(merchantEta({ stage: "toVenue", noFix: true, nowMs: NOW, readyMs, venue: VENUE, dropoff: DROP, rider: null })).toBeNull();
     expect(merchantEta({ stage: "onWay", noFix: true, nowMs: NOW, readyMs, venue: VENUE, dropoff: DROP, rider: null })).toBeNull();
   });
 
-  it("after collection: one time from the rider's fix", () => {
+  it("after collection: one time from the biker's fix", () => {
     const e = merchantEta({ stage: "onWay", noFix: false, nowMs: NOW, readyMs, venue: VENUE, dropoff: DROP, rider: { lat: -17.82, lng: 31.06 } });
     expect(e?.kind).toBe("one");
     if (e?.kind !== "one") throw new Error("one");

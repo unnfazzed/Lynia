@@ -544,7 +544,7 @@ export class TrackingGateway
         if (sub === riderId) s.emit(event, payload);
       }
     } catch (err) {
-      this.logger.warn(`emitToRider(${event}) failed for rider ${riderId}: ${(err as Error).message}`);
+      this.logger.warn(`emitToRider(${event}) failed for biker ${riderId}: ${(err as Error).message}`);
     }
   }
 
@@ -588,7 +588,7 @@ export class TrackingGateway
         }
       }
     } catch (err) {
-      this.logger.warn(`board kick failed for rider ${riderId}: ${(err as Error).message}`);
+      this.logger.warn(`board kick failed for biker ${riderId}: ${(err as Error).message}`);
     }
   }
 
@@ -607,7 +607,7 @@ export class TrackingGateway
   async evictRiderFromSupply(riderId: string): Promise<void> {
     await this.kickRiderFromBoard(riderId);
     await this.evictRiderFromGeo(riderId).catch((err) =>
-      this.logger.warn(`geo eviction (supply demotion) failed for rider ${riderId}: ${(err as Error).message}`),
+      this.logger.warn(`geo eviction (supply demotion) failed for biker ${riderId}: ${(err as Error).message}`),
     );
   }
 
@@ -766,7 +766,7 @@ export class TrackingGateway
           try {
             await this.tracking.touchRiderHeartbeat(s.riderId);
           } catch (err) {
-            this.logger.warn(`heartbeat touch failed for rider ${s.riderId}: ${(err as Error).message}`);
+            this.logger.warn(`heartbeat touch failed for biker ${s.riderId}: ${(err as Error).message}`);
           }
           continue;
         }

@@ -25,7 +25,7 @@ function ctrl(role: "customer" | "rider", riderActive: unknown, customerActives:
 }
 
 describe("AppBootstrapController.bootstrap", () => {
-  it("serves a customer their active order (rider read ran in parallel but doesn't ship)", async () => {
+  it("serves a customer their active order (biker read ran in parallel but doesn't ship)", async () => {
     const { c, activeForRider, activeOrdersForCustomer } = ctrl("customer", null, [{ id: "ord-1", status: "assigned" }]);
     const res = await c.bootstrap("p1");
     expect(res.me).toMatchObject({ id: "p1", role: "customer" });
@@ -59,7 +59,7 @@ describe("AppBootstrapController.bootstrap", () => {
     expect(res.activeOrder).toEqual(parcel);
   });
 
-  it("serves a rider their active job (and an empty activeOrders list)", async () => {
+  it("serves a biker their active job (and an empty activeOrders list)", async () => {
     const { c } = ctrl("rider", { id: "job-1", status: "picked_up" }, []);
     const res = await c.bootstrap("p1");
     expect(res.activeOrder).toEqual({ id: "job-1", status: "picked_up" });

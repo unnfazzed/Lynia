@@ -18,10 +18,10 @@ export const ordersCopy = {
   outcome: {
     delivered: 'Delivered',
     cancelledByYou: 'Cancelled by you',
-    cancelledByRider: 'Rider cancelled',
+    cancelledByRider: 'Biker cancelled',
     kitchenTimeout: 'Restaurant didn’t confirm',
     shopTimeout: 'Shop didn’t confirm',
-    noRider: 'No rider found',
+    noRider: 'No biker found',
     notDelivered: 'Not delivered',
     refunded: 'Refunded',
   },
@@ -45,10 +45,10 @@ export const ordersCopy = {
   offT: 'You’re offline',
   offB: 'Your orders will show as soon as you’re back online. There’s nothing you need to do.',
   // search
-  searchHint: 'Search by restaurant, shop, area or rider',
+  searchHint: 'Search by restaurant, shop, area or biker',
   matches: (n: number, q: string) => `${n} order${n === 1 ? '' : 's'} match “${q}”`,
   noMatch: (q: string) => `No orders match “${q}”`,
-  noMatchSub: 'Try a restaurant or shop name, an area like Belgravia, or your rider’s name.',
+  noMatchSub: 'Try a restaurant or shop name, an area like Belgravia, or your biker’s name.',
   clearSearch: 'Clear search',
   noMatchOff: 'Only orders saved on this phone were searched. We’ll search everything when you’re back online.',
   // filters
@@ -66,11 +66,11 @@ export const ordersCopy = {
   errB: 'Something went wrong on our side. Your orders are safe.',
   // Now card titles + subs
   now_: {
-    findingT: 'Finding a rider',
+    findingT: 'Finding a biker',
     findingS: (area: string, asking: string) => `Parcel to ${area} · asking ${asking}`,
     timeLeft: (mmss: string) => `${mmss} left`,
-    assignedT: (rider: string) => `${rider} is your rider`,
-    assignedS: (area: string) => `Parcel to ${area} · Rider assigned`,
+    assignedT: (rider: string) => `${rider} is your biker`,
+    assignedS: (area: string) => `Parcel to ${area} · Biker assigned`,
     toPickupT: (first: string) => `${first} is heading to pickup`,
     toPickupS: (pickup: string, area: string) => `${pickup} → ${area}`,
     collectedT: (first: string) => `${first} has your parcel`,
@@ -86,7 +86,7 @@ export const ordersCopy = {
     waitingShopS: (price: string) => `Shops usually confirm in 5 min · ${price}`,
     cookingT: (venue: string) => `${venue} is cooking`,
     packingT: (venue: string) => `${venue} is packing`,
-    preparingS: 'Preparing · a rider is sent near the end',
+    preparingS: 'Preparing · a biker is sent near the end',
     readyFoodT: 'Your food is ready',
     readyShopT: 'Your order is ready',
     readyS: (first: string) => `Ready for pickup · ${first} is collecting`,
@@ -104,7 +104,7 @@ export const OX = {
   pharmacyNone: 'No pharmacy orders yet',
   pharmacyTimeout: 'Pharmacy didn’t confirm',
   /** Parcel Now titles when no rider name is known yet (After Send v2 stage names). */
-  assignedNoName: 'Rider assigned',
+  assignedNoName: 'Biker assigned',
   toPickupNoName: 'Heading to pickup',
   collectedNoName: 'Parcel collected',
   onWayNoName: 'On the way',

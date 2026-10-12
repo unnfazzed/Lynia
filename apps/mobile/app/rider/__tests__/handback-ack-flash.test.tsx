@@ -153,7 +153,7 @@ afterEach(() => {
   }
 });
 
-describe("rider job — no hand-back terminal flashes before the acknowledged list is read (MOB-BOOT-02)", () => {
+describe("biker job — no hand-back terminal flashes before the acknowledged list is read (MOB-BOOT-02)", () => {
   it("holds the skeleton while the acknowledged-handbacks read is in flight, instead of asserting the cancel is unacknowledged", async () => {
     mockGetActiveOrder.mockResolvedValue(cancelledOrder());
 

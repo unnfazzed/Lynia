@@ -205,7 +205,7 @@ describe("P08 — a week-long warm boot that never paints a stale balance", () =
     expect(keys(out)).toEqual(["restaurants", "popularity"]);
   });
 
-  it("history (fares, rider Money totals, the Orders tab) keeps the one-day ceiling; me keeps the week (the splash waits on it)", () => {
+  it("history (fares, biker Money totals, the Orders tab) keeps the one-day ceiling; me keeps the week (the splash waits on it)", () => {
     const out = dropStaleDayLimited(
       client([
         entry(["history"], 2 * DAY),

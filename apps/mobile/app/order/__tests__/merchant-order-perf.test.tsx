@@ -286,7 +286,7 @@ describe("P42 — a GPS push moves the merchant map only", () => {
     expect(mockScreenRenders).toBe(screenBefore);
   });
 
-  it("a screen render that isn't a fix hands the map the same rider object", async () => {
+  it("a screen render that isn't a fix hands the map the same biker object", async () => {
     onWay();
     await render();
     const first = lastMap().rider;

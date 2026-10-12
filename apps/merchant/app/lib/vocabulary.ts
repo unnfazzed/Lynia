@@ -134,11 +134,11 @@ function shopVocabulary(kind: MerchantShopKind | null | undefined): Vocabulary {
 export const ORDER_FLOW = {
   newOrder: "NEW ORDER", // O.m.newOrder
   auto: "LyniaGo accepted this for you", // O.m.auto
-  autoSub: "Confirm you’re making it so we can send a rider.", // O.m.autoSub
+  autoSub: "Confirm you’re making it so we can send a biker.", // O.m.autoSub
   confirm: "Got it, we’re making it", // O.m.confirm
   decline: "Can’t take it", // O.m.decline
   total: "Order total", // O.m.total
-  riderFound: "Rider found 8 min before ready", // O.m.riderFound
+  riderFound: "Biker found 8 min before ready", // O.m.riderFound
   cantFinish: "Can’t finish this order", // O.m.cantFinish
   codeOk: (rider: string) => `${rider} entered the code`, // O.m.codeOk
   code: (rider: string) => `Read this pickup code to ${rider}`, // O.m.code
@@ -206,7 +206,7 @@ export const ORDER_FLOW = {
   rxT: "Prescription check", // O.m.rxT
   rxPatient: "Patient", // O.m.rxPatient
   rxItems: "Needs a prescription", // O.m.rxItems
-  rxConsent: "Customer will show the original to the rider", // O.m.rxConsent
+  rxConsent: "Customer will show the original to the biker", // O.m.rxConsent
   rxApprove: "Approve prescription", // O.m.rxApprove
   rxDecline: "Decline", // O.m.rxDecline
   rxWhy: "Why are you declining?", // O.m.rxWhy

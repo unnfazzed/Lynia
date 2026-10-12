@@ -41,7 +41,7 @@ describe("homePath (where a signed-in business lands)", () => {
 });
 
 describe("states and polling", () => {
-  it("polls every 3 s while finding a rider, every 15 s once one is coming, and stops when it's over", () => {
+  it("polls every 3 s while finding a biker, every 15 s once one is coming, and stops when it's over", () => {
     expect(pollIntervalMs("finding")).toBe(3_000);
     expect(pollIntervalMs("finding_again")).toBe(3_000);
     expect(pollIntervalMs("coming")).toBe(15_000);
@@ -54,8 +54,8 @@ describe("states and polling", () => {
 
   it("names Send's undelivered reason in the business's words, with a fallback for anything new", () => {
     expect(undeliveredText("refused")).toBe("The buyer refused the delivery.");
-    expect(undeliveredText("something_new")).toBe("The rider couldn't complete the delivery.");
-    expect(undeliveredText(null)).toBe("The rider couldn't complete the delivery.");
+    expect(undeliveredText("something_new")).toBe("The biker couldn't complete the delivery.");
+    expect(undeliveredText(null)).toBe("The biker couldn't complete the delivery.");
   });
 });
 
@@ -73,9 +73,9 @@ describe("the fare", () => {
 describe("the delivery code", () => {
   it("writes a message that reads the same on WhatsApp, in an SMS or out loud", () => {
     expect(codeMessage({ businessName: "Mbare Auto Spares", riderName: "Blessing", bikeReg: "ABC 1234", code: "482910" })).toBe(
-      "Hi, it's Mbare Auto Spares. Blessing (ABC 1234) is bringing your order. When it arrives, give the rider this code: 482910",
+      "Hi, it's Mbare Auto Spares. Blessing (ABC 1234) is bringing your order. When it arrives, give the biker this code: 482910",
     );
-    expect(codeMessage({ businessName: "Shop", riderName: null, bikeReg: null, code: "1" })).toContain("A LyniaGo rider is bringing");
+    expect(codeMessage({ businessName: "Shop", riderName: null, bikeReg: null, code: "1" })).toContain("A LyniaGo biker is bringing");
   });
 
   it("opens the buyer's WhatsApp by their international number, or not at all", () => {
@@ -90,10 +90,10 @@ describe("the delivery code", () => {
   });
 });
 
-describe("orderOffers (L3: the business's own riders first)", () => {
+describe("orderOffers (L3: the business's own bikers first)", () => {
   const rider = (name: string) => ({ name, photoUrl: null, ratingAvg: 4.5, ratingCount: 20, tripsCount: 50 });
 
-  it("lists the business's own rider first when another offer is only cheaper, and a teammate last", () => {
+  it("lists the business's own biker first when another offer is only cheaper, and a teammate last", () => {
     const offers = [
       bookingOffer({ id: "cheap", offeredFare: "3.00", etaMinutes: 6, rider: rider("Cheap") }),
       bookingOffer({ id: "mine", offeredFare: "3.80", etaMinutes: 6, rider: rider("Mine"), preferred: true }),
@@ -102,7 +102,7 @@ describe("orderOffers (L3: the business's own riders first)", () => {
     expect(orderOffers(offers).map((o) => o.id)).toEqual(["mine", "cheap", "team"]);
   });
 
-  it("is the plain blend with none of the business's riders", () => {
+  it("is the plain blend with none of the business's bikers", () => {
     const offers = [
       bookingOffer({ id: "slow", offeredFare: "3.00", etaMinutes: 12, rider: rider("Slow") }),
       bookingOffer({ id: "fast", offeredFare: "3.00", etaMinutes: 3, rider: rider("Fast") }),

@@ -28,7 +28,7 @@ describe("buildReceiptText", () => {
     expect(t).toContain("Fare: $3.50");
   });
 
-  it("includes the rider line only when a name is given", () => {
+  it("includes the biker line only when a name is given", () => {
     expect(buildReceiptText(base)).toContain("Rider: Tinashe M");
     expect(buildReceiptText({ ...base, riderName: null })).not.toContain("Rider:");
     expect(buildReceiptText({ ...base, riderName: "   " })).not.toContain("Rider:");

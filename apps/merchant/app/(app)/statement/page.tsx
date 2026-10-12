@@ -132,7 +132,7 @@ export default function MoneyPage() {
                 </div>
               </Link>
               {o.riderPhone && (
-                <a href={`tel:${o.riderPhone}`} className="m-callpill" aria-label={`Call ${o.riderName ?? "the rider"}`}>
+                <a href={`tel:${o.riderPhone}`} className="m-callpill" aria-label={`Call ${o.riderName ?? "the biker"}`}>
                   <Icon name="phone" size={16} />
                   Call
                 </a>

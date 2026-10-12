@@ -28,7 +28,7 @@ afterEach(() => {
 });
 
 describe("seedQueryCacheFromBootstrap", () => {
-  it("seeds ['me'] + ['activeCustomerOrder'] for a customer and leaves the rider key untouched", () => {
+  it("seeds ['me'] + ['activeCustomerOrder'] for a customer and leaves the biker key untouched", () => {
     const qc = new QueryClient();
     seedQueryCacheFromBootstrap(qc, {
       minSupportedVersion: "0.0.0",
@@ -56,7 +56,7 @@ describe("seedQueryCacheFromBootstrap", () => {
     expect(qcOld.getQueryData(["activeCustomerOrders"])).toBeUndefined();
   });
 
-  it("seeds ['activeJob'] for a rider and leaves the customer key untouched", () => {
+  it("seeds ['activeJob'] for a biker and leaves the customer key untouched", () => {
     const qc = new QueryClient();
     seedQueryCacheFromBootstrap(qc, { minSupportedVersion: "0.0.0", me: riderMe, activeOrder: null });
     expect(qc.getQueryData(["me"])).toEqual(riderMe);

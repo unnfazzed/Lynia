@@ -113,7 +113,7 @@ describe("creditRiderWallet (manual prepaid credit — the launch top-up rail)",
     expect(revalidateMock).not.toHaveBeenCalled();
   });
 
-  it("no-ops on a missing rider id without hitting the API", async () => {
+  it("no-ops on a missing biker id without hitting the API", async () => {
     await expect(creditRiderWallet("", "25", "n", "k")).resolves.toBeUndefined();
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -131,7 +131,7 @@ const verifiedIdInUse = {
   status: 409,
   json: async () => ({
     reason: "verified_id_in_use",
-    message: "Can't approve: the national ID from this rider's ID check is already on another live account. Resolve that account first.",
+    message: "Can't approve: the national ID from this biker's ID check is already on another live account. Resolve that account first.",
   }),
 };
 
@@ -146,7 +146,7 @@ describe("decideKyc (A-02 KYC decision — gates who can earn)", () => {
     expect(revalidateMock).toHaveBeenCalledWith("/riders");
   });
 
-  it("decline → failed carries the reason code (recorded on rider + audit) and null note when blank", async () => {
+  it("decline → failed carries the reason code (recorded on biker + audit) and null note when blank", async () => {
     await decideKyc("p1", "failed", "blurry_document");
     expect(lastCall().body).toEqual({ status: "failed", reasonCode: "blurry_document", note: null });
   });
@@ -164,13 +164,13 @@ describe("decideKyc (A-02 KYC decision — gates who can earn)", () => {
     fetchMock.mockResolvedValue(verifiedIdInUse);
     await expect(decideKyc("p1", "verified", null)).resolves.toEqual({
       ok: false,
-      message: "Can't approve: the national ID from this rider's ID check is already on another live account. Resolve that account first.",
+      message: "Can't approve: the national ID from this biker's ID check is already on another live account. Resolve that account first.",
     });
     expect(revalidateMock).not.toHaveBeenCalled();
   });
 });
 
-describe("verifyPlate (First Run v2 E4, D-82 — ops confirm a rider's plate)", () => {
+describe("verifyPlate (First Run v2 E4, D-82 — ops confirm a biker's plate)", () => {
   it("posts the plate ops looked at, with the reason and note, and refreshes the profile + list", async () => {
     await verifyPlate("rider-1", "ABZ 4417", "Matches the bike photo", "seen on WhatsApp");
     const c = lastCall();
@@ -182,7 +182,7 @@ describe("verifyPlate (First Run v2 E4, D-82 — ops confirm a rider's plate)", 
     expect(revalidateMock).toHaveBeenCalledWith("/riders");
   });
 
-  it("a refusal (the rider changed the plate since: 409) throws so the modal stays open, and refreshes nothing", async () => {
+  it("a refusal (the biker changed the plate since: 409) throws so the modal stays open, and refreshes nothing", async () => {
     fetchMock.mockResolvedValueOnce(res(409));
     await expect(verifyPlate("rider-1", "ABZ 4417", null, "")).rejects.toThrow(/Couldn't confirm the plate/);
     expect(revalidateMock).not.toHaveBeenCalled();

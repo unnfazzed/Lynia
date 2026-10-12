@@ -135,7 +135,7 @@ export function LiveMap(props: {
       {hasRider && riderRegion.current ? (
         <MarkerAnimated
           coordinate={riderRegion.current as unknown as LatLng}
-          title="Rider"
+          title="Biker"
           // Rider presence is green — gold (`highlight`) is reserved for the recommended marker.
           pinColor={tokens.color.accent}
           opacity={riderMuted ? 0.5 : 1}

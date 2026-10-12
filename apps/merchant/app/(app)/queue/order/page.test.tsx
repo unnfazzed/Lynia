@@ -80,16 +80,16 @@ function show(order: MerchantOrderResponse) {
 const cooking = () => merchantOrder({ id: ID, merchantPhase: "preparing", prepMinutes: 15, prepStartedAt: new Date(Date.now() - 5 * 60_000).toISOString() });
 
 describe("K3 · the cooking ticket (Merchant v2, D-77)", () => {
-  it("shows Step 2 of 5, the big countdown with the ready time, the lines; 'Food is ready' finds a rider", async () => {
+  it("shows Step 2 of 5, the big countdown with the ready time, the lines; 'Food is ready' finds a biker", async () => {
     show(cooking());
     expect(await screen.findByText(/^left · ready \d\d:\d\d$/)).toBeTruthy();
     expect(screen.getByText(/^9:5\d|^10:00/)).toBeTruthy();
     expect(screen.getByText("Step 2 of 5 ·", { exact: false })).toBeTruthy();
-    expect(screen.getByText("We book the rider to arrive as it’s ready")).toBeTruthy();
+    expect(screen.getByText("We book the biker to arrive as it’s ready")).toBeTruthy();
     expect(screen.getByText("Sadza & beef stew")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Food is ready" }));
     await vi.waitFor(() => expect(markReady).toHaveBeenCalledWith(ID));
-    expect(await screen.findByText("Marked ready · finding a rider")).toBeTruthy();
+    expect(await screen.findByText("Marked ready · finding a biker")).toBeTruthy();
   });
 
   it("'+5 min' pushes the ready time back", async () => {
@@ -147,8 +147,8 @@ describe("K3 · the cooking ticket (Merchant v2, D-77)", () => {
   });
 });
 
-describe("arrival from the rider's location (D-77)", () => {
-  it("K3 names when the booked rider arrives; K4 says they're at the counter", async () => {
+describe("arrival from the biker's location (D-77)", () => {
+  it("K3 names when the booked biker arrives; K4 says they're at the counter", async () => {
     show({ ...cooking(), riderId: RIDER.profileId, rider: RIDER, riderEtaAt: "2026-10-05T07:31:00" });
     expect(await screen.findByText("Blessing M. arrives 07:31")).toBeTruthy();
     cleanup();
@@ -167,9 +167,9 @@ describe("K3 · a shop packs", () => {
 });
 
 describe("K4 · hand over (Merchant v2, D-77)", () => {
-  it("before a rider takes it, says a rider is being found — no code yet, and no hand-over button", async () => {
+  it("before a biker takes it, says a biker is being found — no code yet, and no hand-over button", async () => {
     show(merchantOrder({ id: ID, merchantPhase: "ready_for_pickup", status: "open_for_offers" }));
-    expect(await screen.findByText("Finding a rider. The code appears once one takes it.")).toBeTruthy();
+    expect(await screen.findByText("Finding a biker. The code appears once one takes it.")).toBeTruthy();
     expect(revealPickupCode).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Hand over" })).toBeNull();
   });
@@ -177,7 +177,7 @@ describe("K4 · hand over (Merchant v2, D-77)", () => {
   // D2 (owner 2026-10-07, MJ-H1): the reveal is idempotent server-side, so a poll that changes nothing
   // doesn't ask again; when the rider's tries run out the next poll asks once more — the lockout re-issue —
   // and the screen shows the new code.
-  it("asks again only when the rider's tries run out, and shows the re-issued code (MJ-H1 lockout re-issue)", async () => {
+  it("asks again only when the biker's tries run out, and shows the re-issued code (MJ-H1 lockout re-issue)", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       const coming = merchantOrder({ id: ID, merchantPhase: null, status: "assigned", riderId: RIDER.profileId, rider: RIDER, pickupCodeAttempts: 0 });
@@ -208,7 +208,7 @@ describe("K4 · hand over (Merchant v2, D-77)", () => {
       // A fresh object per poll, as the network gives (the hook re-runs on every new order snapshot).
       vi.mocked(getOrder).mockImplementation(async () => ({ ...coming, pickupCodeAttempts: 5 }));
       vi.mocked(revealPickupCode).mockRejectedValue(
-        new ApiError(409, "The rider used every try on this code. Call LyniaGo support to hand this order over.", "pickup_code_reissue_limit"),
+        new ApiError(409, "The biker used every try on this code. Call LyniaGo support to hand this order over.", "pickup_code_reissue_limit"),
       );
       await vi.advanceTimersByTimeAsync(5_000);
       await vi.waitFor(() => expect(screen.queryByLabelText("Pickup code 7 3 1 6 0 4")).toBeNull());
@@ -221,7 +221,7 @@ describe("K4 · hand over (Merchant v2, D-77)", () => {
     }
   });
 
-  it("with a rider coming, says the six-digit code 3+3 — asked for once per rider", async () => {
+  it("with a biker coming, says the six-digit code 3+3 — asked for once per biker", async () => {
     show(merchantOrder({ id: ID, merchantPhase: null, status: "assigned", riderId: RIDER.profileId, rider: RIDER, riderPhone: "+263772222222" }));
     expect(await screen.findByText("Blessing M.")).toBeTruthy();
     expect(screen.getByText("Hand over #A111")).toBeTruthy();
@@ -244,7 +244,7 @@ describe("K4 · hand over (Merchant v2, D-77)", () => {
     expect(screen.queryByText(/SAY THIS CODE/)).toBeNull();
   });
 
-  it("the rider's code entry moves the screen on by itself, and says so", async () => {
+  it("the biker's code entry moves the screen on by itself, and says so", async () => {
     show(merchantOrder({ id: ID, merchantPhase: null, status: "picked_up", riderId: RIDER.profileId, rider: RIDER, debtStatus: "open" }));
     expect(await screen.findByText("#A111 on the way")).toBeTruthy();
   });
@@ -263,12 +263,12 @@ describe("K4 · hand over (Merchant v2, D-77)", () => {
 const CASH = { paymentMethod: "cash", merchantCashRule: "collect_and_return" } as const;
 
 describe("K5 · on the way + cash back, one screen (Merchant v2, D-77)", () => {
-  it("on the way: Step 4 of 5, the cash card (food only, delivery as the rider's) and 'I got $12.00 · after delivery' held", async () => {
+  it("on the way: Step 4 of 5, the cash card (food only, delivery as the biker's) and 'I got $12.00 · after delivery' held", async () => {
     show(merchantOrder({ id: ID, ...CASH, merchantPhase: null, status: "en_route_dropoff", riderId: RIDER.profileId, rider: RIDER, debtStatus: "open", debtAmount: 12, deliveryFee: 3.2 }));
     expect(await screen.findByText("#A111 on the way")).toBeTruthy();
     expect(screen.getByLabelText("4 of 5 steps")).toBeTruthy();
     expect(screen.getByText("CASH BACK TO YOU")).toBeTruthy();
-    expect(screen.getByText("Delivery $3.20 · rider's")).toBeTruthy();
+    expect(screen.getByText("Delivery $3.20 · biker's")).toBeTruthy();
     expect(screen.getByText("Blessing brings it back after delivery")).toBeTruthy();
     expect(screen.getByText("The door photo shows here once it’s delivered")).toBeTruthy();
     expect((screen.getByRole("button", { name: "I got $12.00 · after delivery" }) as HTMLButtonElement).disabled).toBe(true);
@@ -325,7 +325,7 @@ describe("K5 · on the way + cash back, one screen (Merchant v2, D-77)", () => {
     await vi.waitFor(() => expect(confirmGoodsReturned).toHaveBeenCalledWith(ID));
   });
 
-  it("MJ-RB1: cancelled after the rider collected — the same K5c goods return, and 'I got the food back' settles it", async () => {
+  it("MJ-RB1: cancelled after the biker collected — the same K5c goods return, and 'I got the food back' settles it", async () => {
     show(merchantOrder({ id: ID, ...CASH, merchantPhase: null, status: "cancelled", riderId: RIDER.profileId, rider: RIDER, debtStatus: "open", debtAmount: 12 }));
     expect(await screen.findByText("#A111 couldn't be delivered")).toBeTruthy();
     expect(screen.queryByText("This order was cancelled")).toBeNull();
@@ -533,7 +533,7 @@ describe("Order flow v2 round 2 (D-59): the wait, photos, Scheduled, Rx", () => 
     expect(replace).not.toHaveBeenCalledWith("/queue");
   });
 
-  it("S3: a shop hands over on a 3-step checklist — seal, the rider's photo, then the code", async () => {
+  it("S3: a shop hands over on a 3-step checklist — seal, the biker's photo, then the code", async () => {
     show(merchantOrder({ id: ID, merchantPhase: null, status: "en_route_pickup", riderId: RIDER.profileId, rider: RIDER, pickupProofRequired: true }));
     expect(await screen.findByText("Seal the bag")).toBeTruthy();
     expect(screen.getByText("Sticker or stapled receipt")).toBeTruthy();
@@ -545,13 +545,13 @@ describe("Order flow v2 round 2 (D-59): the wait, photos, Scheduled, Rx", () => 
     expect(screen.queryByRole("button", { name: "Hand over" })).toBeNull();
   });
 
-  it("S3: a rider with no name is 'the rider', never a fragment (E2E 2026-10-05 P-12)", async () => {
+  it("S3: a biker with no name is 'the biker', never a fragment (E2E 2026-10-05 P-12)", async () => {
     const nameless = { ...RIDER, firstName: "", lastName: "" };
     show(merchantOrder({ id: ID, merchantPhase: null, status: "en_route_pickup", riderId: RIDER.profileId, rider: nameless, pickupProofRequired: true }));
-    expect(await screen.findByText("The rider photographs it")).toBeTruthy();
-    expect(screen.getByText("Waiting for the rider’s photo of the sealed bag")).toBeTruthy();
-    expect(screen.getByText("Say the code to the rider")).toBeTruthy();
-    expect(screen.getByText("The order moves on when the rider types the code.")).toBeTruthy();
+    expect(await screen.findByText("The biker photographs it")).toBeTruthy();
+    expect(screen.getByText("Waiting for the biker’s photo of the sealed bag")).toBeTruthy();
+    expect(screen.getByText("Say the code to the biker")).toBeTruthy();
+    expect(screen.getByText("The order moves on when the biker types the code.")).toBeTruthy();
   });
 
   it("S3: once the photo is in, step 2 is ticked with the time and the thumbnail", async () => {
@@ -652,7 +652,7 @@ describe("MJ-RL23: how the ticket keeps its order fresh", () => {
     expect(getOrder).toHaveBeenCalledTimes(1);
   });
 
-  it("slows to every 30 s once the rider has the food", async () => {
+  it("slows to every 30 s once the biker has the food", async () => {
     await mounted(merchantOrder({ id: ID, ...CASH, merchantPhase: null, status: "en_route_dropoff", riderId: RIDER.profileId, rider: RIDER, debtStatus: "open", debtAmount: 12 }));
     await advance(25_000);
     expect(getOrder).toHaveBeenCalledTimes(1);

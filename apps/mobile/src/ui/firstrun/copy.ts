@@ -1,10 +1,10 @@
 // LyniaGo · First Run v2 — final copy (2026-10-06). Ship verbatim. Flat keys per area.
-// PC customer permissions · RP rider permissions · UP update · PD personal details · BD bike & documents · KY ID-check outcomes + rider entry · SP splash
+// PC customer permissions · RP biker permissions · UP update · PD personal details · BD bike & documents · KY ID-check outcomes + biker entry · SP splash
 // Interpolation: none yet. Hard-coded sample values in the design (names, dates, fares) are NOT copy — they come from data.
 export const PC = {
 locA:'Deliver to',locB:'your door',locBody:'Your location sets the pin. Used only while you order.',locCta:'Use my location',locAlt:'Type an address',
-approxA:'Turn on',approxB:'precise location',approxBody:'Approximate can be 3 km off. Your rider needs your gate.',approxCta:'Use precise location',approxAlt:'Type an address instead',
-deniedA:'No problem.',deniedB:'Type your address',deniedBody:'Without location, your rider relies on the address you type.',searchPh:'Street, suburb or landmark',
+approxA:'Turn on',approxB:'precise location',approxBody:'Approximate can be 3 km off. Your biker needs your gate.',approxCta:'Use precise location',approxAlt:'Type an address instead',
+deniedA:'No problem.',deniedB:'Type your address',deniedBody:'Without location, your biker relies on the address you type.',searchPh:'Street, suburb or landmark',
 foreverA:'Location is',foreverB:'blocked',foreverBody:'Turn it on in phone settings, or type your address.',
 step1:'Tap Open phone settings',step2:'Permissions → Location',step3:'Allow only while using · Precise on',openSettings:'Open phone settings',
 gpsA:'Your phone’s',gpsB:'location is off',gpsBody:'Swipe down and tap Location.',gpsCta:'Turn on location',
@@ -12,14 +12,14 @@ grantedToast:'Delivering to 12 Samora Machel Ave',
 notifA:'Know when it’s',notifB:'at the gate',notifBody:'Pickup, arriving, your code, delivered. Nothing else.',notifCta:'Turn on updates',notifAlt:'Not now',
 ex1T:'Tafara picked it up',ex1B:'On the way · 12 min',ex2T:'Arriving now',ex2B:'Your delivery code is 4821',ex3T:'Delivered',ex3B:'Enjoy, Rudo',
 offA:'Updates',offB:'are off',offBody:'Keep this screen open for your code. Turn on anytime in Settings.',offCta:'Back to my order',
-setOffTitle:'Order updates are off',setOffBody:'You won’t hear when your rider arrives.',setOffCta:'Turn on',
+setOffTitle:'Order updates are off',setOffBody:'You won’t hear when your biker arrives.',setOffCta:'Turn on',
 placed:'Order placed'
 } as const;
 export const RP = {
 locA:'Jobs start',locB:'with location',loc1:'Shows jobs near you',loc2:'Customers see you only on their job',loc3:'Stops when you go offline',locCta:'Allow location',notNow:'Not now',
 tripA:'Navigate in Maps.',tripB:'We share the trip.',tripBody:'Only that job’s customer sees you. It ends when the job does.',tripTag:'You’ll see this on a job',tripCta:'Got it',
 fgsTitle:'LyniaGo — delivery in progress',fgsBody:'Sharing your location with the customer for this delivery.',
-manifestRationale:'LyniaGo uses your location to set pickup pins and, for riders, to show nearby jobs and share your position with the customer during their job.',
+manifestRationale:'LyniaGo uses your location to set pickup pins and, for bikers, to show nearby jobs and share your position with the customer during their job.',
 approxA:'Turn on',approxB:'precise location',approxBody:'Approximate can be 3 km off. Pickups need your exact spot.',approxCta:'Use precise location',
 deniedA:'No location,',deniedB:'no jobs',deniedBody:'You can look around, but jobs need location.',askAgain:'Allow location',continue:'Continue without jobs',
 foreverBody:'Turn it on in your phone’s settings.',step1:'Tap Open phone settings',step2:'Permissions → Location',step3:'Allow only while using · Precise on',openSettings:'Open phone settings',turnedOn:'I’ve turned it on',
@@ -46,7 +46,7 @@ takenA:'This ID is on',takenB:'another account',takenBody:'One ID, one account. 
 invalid:'Use the format 63-123456A78',idVerified:'From your ID check'
 } as const;
 export const BD = {
-title:'Bike & documents',id:'National ID',photo:'Rider photo',photoSub:'Customers see it on their job',plate:'Bike plate',plateSub:'e.g. ABC 1234',add:'Add',change:'Change',edit:'Edit',
+title:'Bike & documents',id:'National ID',photo:'Biker photo',photoSub:'Customers see it on their job',plate:'Bike plate',plateSub:'e.g. ABC 1234',add:'Add',change:'Change',edit:'Edit',
 progress:'of 3',optional:'Optional. You can take jobs now.',
 photoSheet:'Add a photo',camera:'Take a photo',gallery:'Choose from gallery',
 guideA:'Face the',guideB:'camera',guide1:'Plain background',guide2:'No helmet or cap',guide3:'Good light',shoot:'Take photo',

@@ -21,16 +21,16 @@ describe("shouldShowOffersError (customer auction honesty)", () => {
 });
 
 describe("noRidersOnline (customer supply-empty state, 2·b1)", () => {
-  it("fires only when open, no bids, and the server reported zero riders nearby", () => {
+  it("fires only when open, no bids, and the server reported zero bikers nearby", () => {
     expect(noRidersOnline(0, 0, true)).toBe(true);
   });
 
-  it("stays calm ('finding riders') when supply is unknown (null) — a geo blip must not lie", () => {
+  it("stays calm ('finding bikers') when supply is unknown (null) — a geo blip must not lie", () => {
     expect(noRidersOnline(null, 0, true)).toBe(false);
     expect(noRidersOnline(undefined, 0, true)).toBe(false);
   });
 
-  it("never fires when riders are nearby, or once any bid has landed", () => {
+  it("never fires when bikers are nearby, or once any bid has landed", () => {
     expect(noRidersOnline(3, 0, true)).toBe(false); // riders present, just no bid yet
     expect(noRidersOnline(0, 1, true)).toBe(false); // a bid overrides the empty state
   });
@@ -40,21 +40,21 @@ describe("noRidersOnline (customer supply-empty state, 2·b1)", () => {
   });
 });
 
-describe("shouldNoticeTakenOrder (rider board 'order taken first', 2·b1)", () => {
+describe("shouldNoticeTakenOrder (biker board 'order taken first', 2·b1)", () => {
   it("notices an un-bid board order taken by someone else", () => {
     expect(shouldNoticeTakenOrder(true, false)).toBe(true);
   });
 
-  it("stays silent for a bid the rider LOST (its sent-offer card shows 'not chosen' instead)", () => {
+  it("stays silent for a bid the biker LOST (its sent-offer card shows 'not chosen' instead)", () => {
     expect(shouldNoticeTakenOrder(true, true)).toBe(false);
   });
 
-  it("stays silent for an order that was never on this rider's board", () => {
+  it("stays silent for an order that was never on this biker's board", () => {
     expect(shouldNoticeTakenOrder(false, false)).toBe(false);
   });
 });
 
-describe("shouldShowJobError (rider cold-start honesty)", () => {
+describe("shouldShowJobError (biker cold-start honesty)", () => {
   // Decision table: isError + no data → error; no-error + no data → calm empty; data present → normal.
   it("is an honest error on a cold-start fetch failure with no data", () => {
     expect(shouldShowJobError(true, false)).toBe(true);

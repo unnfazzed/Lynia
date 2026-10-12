@@ -52,7 +52,7 @@ export function stepFare(fare: number, direction: -1 | 1): number {
 export function typicalLine(suggested: number): string {
   const low = Math.max(1, Math.floor(suggested));
   const high = Math.max(low + 1, Math.ceil(suggested));
-  return `Riders usually get $${low}–${high}`;
+  return `Bikers usually get $${low}–${high}`;
 }
 
 export type WhereErrors = Partial<Record<"where" | "phone", string>>;

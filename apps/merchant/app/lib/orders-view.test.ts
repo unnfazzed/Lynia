@@ -33,8 +33,8 @@ describe("the Orders home's lists (merchant mobile B1, D-48)", () => {
   it("says where a waiting or delivered order stands", () => {
     expect(rowSub(o({ merchantPhase: "preparing", prepMinutes: null }))).toBe("Cooking");
     expect(rowSub(o({ merchantPhase: "preparing", prepMinutes: 15, prepStartedAt: new Date(2026, 8, 30, 12, 0).toISOString() }))).toBe("Cooking · ready by 12:15");
-    expect(rowSub(o({ merchantPhase: "ready_for_pickup", status: "open_for_offers" }))).toBe("Finding a rider");
-    expect(rowSub(o({ merchantPhase: "ready_for_pickup", status: "open_for_offers", noRiderHoldAt: "2026-09-30T12:20:00Z" }))).toBe("No rider yet · decide what to do");
+    expect(rowSub(o({ merchantPhase: "ready_for_pickup", status: "open_for_offers" }))).toBe("Finding a biker");
+    expect(rowSub(o({ merchantPhase: "ready_for_pickup", status: "open_for_offers", noRiderHoldAt: "2026-09-30T12:20:00Z" }))).toBe("No biker yet · decide what to do");
     expect(rowSub(o({ merchantPhase: null, status: "assigned", riderId: RIDER.profileId, rider: RIDER }))).toBe("Blessing M. coming to your counter");
     expect(rowSub(o({ merchantPhase: null, status: "en_route_dropoff", debtStatus: "open", debtAmount: 12 }))).toBe("On the way · cash back $12.00");
     expect(rowSub(o({ merchantPhase: null, status: "delivered", debtStatus: "open", debtAmount: 12 }))).toBe("Delivered · cash back $12.00");
@@ -63,7 +63,7 @@ describe("which screen an order opens on", () => {
     expect(detailView(o({ merchantPhase: null, status: "cancelled" }))).toBe("closed");
   });
 
-  it("MJ-RB1: a cancel after the rider collected opens the K5c goods return (like undelivered) until the food is back", () => {
+  it("MJ-RB1: a cancel after the biker collected opens the K5c goods return (like undelivered) until the food is back", () => {
     const back = { merchantPhase: null, status: "cancelled", paymentMethod: "cash", merchantCashRule: "collect_and_return", debtAmount: 12 } as const;
     expect(detailView(o({ ...back, debtStatus: "open" }))).toBe("delivered");
     expect(rowSub(o({ ...back, debtStatus: "open" }))).toBe("Not delivered · cash back $12.00");
@@ -81,7 +81,7 @@ describe("which screen an order opens on", () => {
 });
 
 describe("the merchant track (Order flow v2 M3–M6, D-59)", () => {
-  it("is the customer's four steps: confirmed, cooking until the rider has it, on the way, then all done", () => {
+  it("is the customer's four steps: confirmed, cooking until the biker has it, on the way, then all done", () => {
     expect(trackStep(o())).toBe(0);
     expect(trackStep(o({ merchantPhase: "preparing", autoAccepted: true, kitchenConfirmedAt: null }))).toBe(0);
     expect(trackStep(o({ merchantPhase: "preparing" }))).toBe(1);
@@ -92,7 +92,7 @@ describe("the merchant track (Order flow v2 M3–M6, D-59)", () => {
     expect(trackStep(o({ merchantPhase: null, status: "delivered" }))).toBe(4);
   });
 
-  it("adds 'Cash back to you' only when the rider brings the money back: after delivery, then due, then done", () => {
+  it("adds 'Cash back to you' only when the biker brings the money back: after delivery, then due, then done", () => {
     const cash = { paymentMethod: "cash", merchantCashRule: "collect_and_return", merchantPhase: null } as const;
     expect(cashBackRow(o({ ...cash, status: "en_route_dropoff", debtStatus: "open" }))).toEqual({ state: "after", dueAt: null });
     const due = new Date(2026, 9, 2, 13, 17).toISOString();
@@ -186,7 +186,7 @@ describe("T1b's live bar (Merchant v2 follow-ups, D-77)", () => {
     expect(view?.deadline).toBe(ringDeadline(ring));
   });
 
-  it("2 · a rider at the counter only once they've arrived; heading there, the counts lead", () => {
+  it("2 · a biker at the counter only once they've arrived; heading there, the counts lead", () => {
     const coming = o({ id: "a0000004-0000-4000-8000-000000000000", merchantPhase: null, status: "assigned", riderId: RIDER.profileId, rider: RIDER });
     expect(liveBar([coming, cooking("a0000001-0000-4000-8000-000000000000"), onTheWay], kitchen)?.kind).toBe("counts");
     const arrived = { ...coming, riderArrivedAt: "2026-10-05T07:00:00.000Z" };
@@ -208,11 +208,11 @@ describe("T1b's live bar (Merchant v2 follow-ups, D-77)", () => {
     expect(liveBar([waiting], shop)).toMatchObject({ kind: "waiting", title: "Waiting for Rudo's OK", sub: "2 changes on #A1B2 · keep packing", deadline: "2026-10-05T07:03:00.000Z" });
   });
 
-  describe("MJ-RM5: a shop's own rider bookings", () => {
+  describe("MJ-RM5: a shop's own biker bookings", () => {
     const soon = new Date(Date.now() + 40_000).toISOString();
     const later = new Date(Date.now() + 80_000).toISOString();
 
-    it("riders' offers about to expire show, soonest first, with their countdown, and open that booking", () => {
+    it("bikers' offers about to expire show, soonest first, with their countdown, and open that booking", () => {
       const view = liveBar(
         [],
         shop,
@@ -223,14 +223,14 @@ describe("T1b's live bar (Merchant v2 follow-ups, D-77)", () => {
       );
       expect(view).toMatchObject({
         kind: "waiting",
-        title: "Car battery · 3 riders offered",
+        title: "Car battery · 3 bikers offered",
         sub: "Pick one before the offers expire",
         deadline: soon,
         href: "/deliveries/booking?id=b1000000-0000-4000-8000-000000000000",
       });
     });
 
-    it("a booked rider at the counter comes before offers; one still coming doesn't", () => {
+    it("a booked biker at the counter comes before offers; one still coming doesn't", () => {
       const offers = merchantBooking({ id: "b1000000-0000-4000-8000-000000000000", state: "finding", offerCount: 2, expiresAt: soon });
       const coming = merchantBooking({ id: "b3000000-0000-4000-8000-000000000000", state: "coming", rider: { name: "Blessing Moyo", phone: null, bikeReg: null } as never });
       expect(liveBar([], shop, [offers, coming])?.kind).toBe("waiting");

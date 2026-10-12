@@ -59,6 +59,6 @@ describe("isFarAboveBand", () => {
 
 describe("fareBandHint", () => {
   it("formats both edges to 2dp", () => {
-    expect(fareBandHint({ low: 2.1, high: 3 })).toBe("Riders usually accept around $2.10–$3.00");
+    expect(fareBandHint({ low: 2.1, high: 3 })).toBe("Bikers usually accept around $2.10–$3.00");
   });
 });

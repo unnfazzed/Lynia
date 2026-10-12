@@ -45,7 +45,7 @@ export function RiderActions({
           <span style={{ display: "inline-flex", fontSize: 14 }}>
             <IconPhone />
           </span>
-          Call rider
+          Call biker
         </a>
         <div style={{ fontSize: 12, color: "var(--muted)" }}>
           This account is permanently banned. A ban can&apos;t be reversed from the console.
@@ -91,7 +91,7 @@ export function RiderActions({
           reasons={REASONS.riderBan}
           noteRequired
           notePlaceholder="Required — describe the incident and evidence."
-          confirmLabel="Ban rider"
+          confirmLabel="Ban biker"
           onConfirm={(r) => mutateRider(id, "ban", r.reasonCode, r.note)}
         />
       </>
@@ -104,7 +104,7 @@ export function RiderActions({
         <span style={{ display: "inline-flex", fontSize: 14 }}>
           <IconPhone />
         </span>
-        Call rider
+        Call biker
       </a>
       {onHold ? (
         <ConfirmModal
@@ -127,7 +127,7 @@ export function RiderActions({
         auditInEndpoint // endpoint writes the audit row in-tx (A-01) — don't double-record
         target={name}
         path={`/riders/${id}`}
-        triggerLabel="Suspend rider…"
+        triggerLabel="Suspend biker…"
         triggerVariant="danger"
         danger
         disabled={!connected}
@@ -140,8 +140,8 @@ export function RiderActions({
         }
         reasons={REASONS.riderSuspend}
         noteRequired
-        notePlaceholder="What happened? The rider sees this context when they contact support."
-        confirmLabel="Suspend rider"
+        notePlaceholder="What happened? The biker sees this context when they contact support."
+        confirmLabel="Suspend biker"
         onConfirm={(r) => mutateRider(id, "suspend", r.reasonCode, r.note)}
       />
     </>

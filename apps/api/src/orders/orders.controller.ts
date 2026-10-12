@@ -65,7 +65,7 @@ export class OrdersController {
   @Get("demand")
   @Throttle({ limit: 30, windowSec: 60, keyPrefix: "order-demand" })
   async demand(@CurrentUser() callerId: string, @Query("lat") lat?: string, @Query("lng") lng?: string) {
-    if (!(await this.tracking.isBoardEligible(callerId))) throw new ForbiddenException("Riders only");
+    if (!(await this.tracking.isBoardEligible(callerId))) throw new ForbiddenException("Bikers only");
     const latN = Number(lat);
     const lngN = Number(lng);
     if (!Number.isFinite(latN) || !Number.isFinite(lngN) || Math.abs(latN) > 90 || Math.abs(lngN) > 180) return [];
@@ -79,7 +79,7 @@ export class OrdersController {
     @Query("lng") lng?: string,
     @Query("radiusM") radiusM?: string,
   ) {
-    if (!(await this.tracking.isBoardEligible(callerId))) throw new ForbiddenException("Riders only");
+    if (!(await this.tracking.isBoardEligible(callerId))) throw new ForbiddenException("Bikers only");
     const latN = Number(lat);
     const lngN = Number(lng);
     if (Number.isFinite(latN) && Number.isFinite(lngN)) {

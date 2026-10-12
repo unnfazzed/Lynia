@@ -104,7 +104,7 @@ describe("SettlementsService.commissionOverview (prepaid per-ride)", () => {
     expect(range.lt.toISOString()).toBe("2026-07-03T00:00:00.000Z");
   });
 
-  it("returns an empty overview (no riders, zeroed KPIs) when nothing completed in the window", async () => {
+  it("returns an empty overview (no bikers, zeroed KPIs) when nothing completed in the window", async () => {
     const { prisma } = overviewPrisma([], []);
     const svc = new SettlementsService(prisma as unknown as PrismaService);
     const view = await svc.commissionOverview(new Date("2026-07-06T00:00:00Z"));

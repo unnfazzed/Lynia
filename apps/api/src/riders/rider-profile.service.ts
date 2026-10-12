@@ -61,7 +61,7 @@ export class RiderProfileService {
       where: { profileId },
       select: { photoUrl: true, bikeReg: true, plateStatus: true },
     });
-    if (!rider) throw new NotFoundException("Not a rider");
+    if (!rider) throw new NotFoundException("Not a biker");
 
     // Same rules as becomeRider: the key must sit under the caller's own KYC namespace (so a rider can't
     // point their row at someone else's object), and it must really be a JPEG/PNG in budget. The
@@ -100,7 +100,7 @@ export class RiderProfileService {
       try {
         await this.storage.deleteObject(oldPhoto);
       } catch (err) {
-        this.logger.warn(`Couldn't remove replaced rider photo for ${profileId}: ${(err as Error).message}`);
+        this.logger.warn(`Couldn't remove replaced biker photo for ${profileId}: ${(err as Error).message}`);
       }
     }
 

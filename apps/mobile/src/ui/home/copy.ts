@@ -45,7 +45,7 @@ export const H = {
   deliverTo: "Deliver to",
   sheetSearch: "Search street, suburb or landmark",
   useCurrent: "Use my current location",
-  useCurrentSub: "Most accurate for your rider",
+  useCurrentSub: "Most accurate for your biker",
   home: "Home",
   work: "Work",
   addPlace: "Add a place",

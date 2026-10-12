@@ -43,7 +43,7 @@ function build(over: { order?: Record<string, unknown>; env?: Partial<Env> } = {
 const tokenOf = (link: string) => decodeURIComponent(link.split("/h?t=")[1]!);
 
 describe("the offline-rider hand-over link (Merchant v2, D-77)", () => {
-  it("mints a 15-minute link for the assigned rider, with their number, and audit-logs who asked", async () => {
+  it("mints a 15-minute link for the assigned biker, with their number, and audit-logs who asked", async () => {
     const { svc, audit } = build();
     const res = await svc.createHandoverLink("owner-1", ORDER, NOW);
     expect(res.link).toMatch(/^https:\/\/merchant\.example\/h\?t=a1b20000-0000-4000-8000-000000000000\.\d{10}\.[0-9a-f]{32}$/);
@@ -52,12 +52,12 @@ describe("the offline-rider hand-over link (Merchant v2, D-77)", () => {
     expect(audit).toEqual([{ actor: "owner-1", action: "order.handover_link", target: ORDER }]);
   });
 
-  it("is unavailable without MERCHANT_WEB_URL, and only while a rider is on the way to the counter", async () => {
+  it("is unavailable without MERCHANT_WEB_URL, and only while a biker is on the way to the counter", async () => {
     await expect(build({ env: { MERCHANT_WEB_URL: undefined } }).svc.createHandoverLink("owner-1", ORDER, NOW)).rejects.toThrow("This isn't available yet.");
-    await expect(build({ order: { status: "picked_up" } }).svc.createHandoverLink("owner-1", ORDER, NOW)).rejects.toThrow("There's no rider on the way");
+    await expect(build({ order: { status: "picked_up" } }).svc.createHandoverLink("owner-1", ORDER, NOW)).rejects.toThrow("There's no biker on the way");
   });
 
-  it("names the order and venue on the rider's page", async () => {
+  it("names the order and venue on the biker's page", async () => {
     const { svc } = build();
     const token = tokenOf((await svc.createHandoverLink("owner-1", ORDER, NOW)).link);
     expect(await svc.handoverLinkInfo(token, NOW)).toEqual({ orderLabel: "#A1B2", venueName: "Sadza Republic", expiresAt: expect.any(String) });

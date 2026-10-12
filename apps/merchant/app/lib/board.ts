@@ -136,7 +136,7 @@ function orderCards(
       return {
         section: "needs",
         rank: 1,
-        card: { key: o.id, href, urgent: true, tag, title: `${label} · No rider yet`, sub: "Decide what to do", chevron: true },
+        card: { key: o.id, href, urgent: true, tag, title: `${label} · No biker yet`, sub: "Decide what to do", chevron: true },
       };
     }
     const rider = riderFirstName(o);
@@ -171,7 +171,7 @@ function orderCards(
         title: `${label} · ${boardItems(o)}`,
         right: "Ready",
         bar: { fraction: 1 },
-        sub: [ready ? `Ready ${hm(ready.toISOString())}` : null, "finding a rider"].filter(Boolean).join(" · "),
+        sub: [ready ? `Ready ${hm(ready.toISOString())}` : null, "finding a biker"].filter(Boolean).join(" · "),
       },
     };
   }
@@ -181,7 +181,7 @@ function orderCards(
     const total = (o.prepMinutes ?? 0) * 60_000;
     const left = ready ? ready.getTime() - now : null;
     const fraction = ready && total > 0 ? Math.min(1, Math.max(0, 1 - (left ?? 0) / total)) : 0;
-    const rider = o.riderId ? "rider booked" : o.dispatchAttempt > 0 ? "finding a rider" : null;
+    const rider = o.riderId ? "biker booked" : o.dispatchAttempt > 0 ? "finding a biker" : null;
     return {
       section: "making",
       rank: ready?.getTime() ?? Number.MAX_SAFE_INTEGER,
@@ -219,7 +219,7 @@ function orderCards(
     if (owed) {
       const due = o.cashDueAt ? new Date(o.cashDueAt) : null;
       const late = due !== null && due.getTime() < now;
-      const who = rider ?? "Your rider";
+      const who = rider ?? "Your biker";
       // MJ-RL1: goods on their way back are not cash — no dollar figure, the goods noun, and K5c's own
       // line ("Blessing M. brings it back by 07:58" / "… is bringing it back").
       const goods = isGoodsReturn(o);
@@ -262,13 +262,13 @@ function bookingCard(b: MerchantBookingResponse, now: number): { section: BoardS
           key: b.id,
           href,
           urgent: true,
-          title: `${b.itemsSummary} · ${b.offerCount} rider${b.offerCount === 1 ? "" : "s"} offered`,
+          title: `${b.itemsSummary} · ${b.offerCount} biker${b.offerCount === 1 ? "" : "s"} offered`,
           sub: "Pick one before the offers expire",
           chipDeadline: b.expiresAt,
         },
       };
     }
-    return { section: "making", rank: now, card: { key: b.id, href, tag: "BOOKED", title: b.itemsSummary, sub: "Finding a rider", chipDeadline: b.expiresAt } };
+    return { section: "making", rank: now, card: { key: b.id, href, tag: "BOOKED", title: b.itemsSummary, sub: "Finding a biker", chipDeadline: b.expiresAt } };
   }
   if (b.state === "coming") {
     return {
@@ -281,7 +281,7 @@ function bookingCard(b: MerchantBookingResponse, now: number): { section: BoardS
         arrived: !!b.riderArrivedAt,
         urgent: !!b.riderArrivedAt,
         tag: "BOOKED",
-        title: `${rider ?? "A rider"} is ${b.riderArrivedAt ? "at" : "coming to"} your counter`,
+        title: `${rider ?? "A biker"} is ${b.riderArrivedAt ? "at" : "coming to"} your counter`,
         sub: [counterWhen(b), b.itemsSummary].filter(Boolean).join(" · "),
       },
     };
@@ -304,7 +304,7 @@ function bookingCard(b: MerchantBookingResponse, now: number): { section: BoardS
   if (b.state === "delivered" && cod?.status === "due") {
     const dueAt = cod.dueAt ? new Date(cod.dueAt) : null;
     const late = dueAt !== null && dueAt.getTime() < now;
-    const who = rider ?? "Your rider";
+    const who = rider ?? "Your biker";
     return {
       section: "cash",
       rank: cashRank(late, dueAt),

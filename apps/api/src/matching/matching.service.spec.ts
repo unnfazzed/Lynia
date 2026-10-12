@@ -125,7 +125,7 @@ describe("MatchingService.selectOffer — metric wrapper re-throws domain errors
     expect(metrics.recordMatchSelect).toHaveBeenCalledWith(7, "assigned" satisfies MatchSelectOutcome);
   });
 
-  it("KB-HEARTBEAT-MARGIN: a rider heartbeat 45s old is still selectable (widened 30s→60s TTL)", async () => {
+  it("KB-HEARTBEAT-MARGIN: a biker heartbeat 45s old is still selectable (widened 30s→60s TTL)", async () => {
     // 45s exceeds the OLD 30s TTL (would have thrown a spurious "rider just became unavailable") but is
     // comfortably inside the widened 60s window — a single delayed heartbeat on the 20s cadence no longer
     // steers the customer off a live rider.
@@ -157,7 +157,7 @@ describe("MatchingService.selectOffer — metric wrapper re-throws domain errors
     expect(metrics.recordMatchSelect).toHaveBeenCalledWith(7, "assigned" satisfies MatchSelectOutcome);
   });
 
-  it("KB-HEARTBEAT-MARGIN: a genuinely-gone rider (heartbeat 90s old) is still rejected as unavailable", async () => {
+  it("KB-HEARTBEAT-MARGIN: a genuinely-gone biker (heartbeat 90s old) is still rejected as unavailable", async () => {
     // The widened TTL must still catch a real dropout — 90s is past even the 60s window.
     const { service } = svc({
       offer: {
@@ -222,7 +222,7 @@ describe("MatchingService.selectOffer — C4 soft-lock vs an open merchant debt 
     };
   }
 
-  it("rejects selection when the offer's rider owes a merchant a collect-and-return debt (N-20)", async () => {
+  it("rejects selection when the offer's biker owes a merchant a collect-and-return debt (N-20)", async () => {
     const { service, metrics } = svc({
       offer: {
         findFirst: async () => ({
@@ -240,7 +240,7 @@ describe("MatchingService.selectOffer — C4 soft-lock vs an open merchant debt 
     expect(metrics.recordMatchSelect).toHaveBeenCalledWith(7, "unavailable" satisfies MatchSelectOutcome);
   });
 
-  it("allows selection once the rider's debt/handshake is settled (the soft-lock query finds nothing open)", async () => {
+  it("allows selection once the biker's debt/handshake is settled (the soft-lock query finds nothing open)", async () => {
     const { service } = svc({
       offer: {
         findFirst: async () => ({
@@ -697,7 +697,7 @@ describe("MatchingService.expandBroadcast — widening ticks push only the new r
 });
 
 describe("MatchingService.selectOffer — block enforcement (a blocked pair never re-matches)", () => {
-  it("rejects selecting an offer from a blocked rider and never assigns the order", async () => {
+  it("rejects selecting an offer from a blocked biker and never assigns the order", async () => {
     const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
     // A block row exists between this customer and rider — the symmetric predicate matches either
     // direction, so the offer can't be selected.
@@ -761,10 +761,10 @@ describe("MatchingService.selectOffer — U62 + MJ-RL2 (C10): every 409 says why
     expect(await reasonOf(sel({ rider: { onHold: true } }).selectOffer(orderId, offerId, "cust"))).toBe("rider_unavailable");
     expect(await reasonOf(sel({ obligation: true }).selectOffer(orderId, offerId, "cust"))).toBe("rider_unavailable");
     expect(await reasonOf(sel({ claim: async () => ({ count: 0 }) }).selectOffer(orderId, offerId, "cust"))).toBe("order_closed");
-    await expect(sel({ rider: { isOnline: false } }).selectOffer(orderId, offerId, "cust")).rejects.toThrow("Rider just became unavailable, pick another");
+    await expect(sel({ rider: { isOnline: false } }).selectOffer(orderId, offerId, "cust")).rejects.toThrow("Biker just became unavailable, pick another");
   });
 
-  it("the rider was just assigned elsewhere (one_active_ride) — the one true 'taken by another customer'", async () => {
+  it("the biker was just assigned elsewhere (one_active_ride) — the one true 'taken by another customer'", async () => {
     const taken = new Prisma.PrismaClientKnownRequestError("unique", { code: "P2002", clientVersion: "test" });
     const service = sel({
       claim: async () => {

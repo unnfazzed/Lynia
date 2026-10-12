@@ -40,7 +40,7 @@ describe("job-alerts Android channel", () => {
     return { push, service: new NotificationsService(prisma as unknown as PrismaService, push) };
   }
 
-  it("the new-delivery ping to nearby riders goes on job-alerts", async () => {
+  it("the new-delivery ping to nearby bikers goes on job-alerts", async () => {
     const { push, service } = deps();
     await service.notifyNewBroadcast("o1", ["rider"], { pickup: "Avondale", fare: "3.50" });
     expect(push.sendEach).toHaveBeenCalledWith([expect.objectContaining({ token: "r1", channelId: "job-alerts", data: { orderId: "o1", kind: "broadcast" } })]);
