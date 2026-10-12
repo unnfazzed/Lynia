@@ -913,7 +913,7 @@ describe("OrderLifecycleService.rate", () => {
       },
     });
     await svc.rate("o1", "c1", 5);
-    expect(wallet.chargeCommission).toHaveBeenCalledWith(expect.anything(), { orderId: "o1", riderId: "r1", agreedFare: 7 });
+    expect(wallet.chargeCommission).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ orderId: "o1", riderId: "r1", agreedFare: 7 }));
   });
 
   // DS19-01: a low rating whose penalty NEWLY trips onHold is a standing demotion — like markUndelivered's

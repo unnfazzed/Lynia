@@ -104,7 +104,7 @@ export function reportFoodCustomerRefused(orderId: string): Promise<{ orderId: s
 // ── Order flow v2 (ledger D-59): proof at hand-over, the prescription tick ─────────────────────────
 
 /** RD2b: the sealed-bag photo (key from `POST /uploads/pickup-photo`) and/or the "Bag is sealed" tick.
- *  Shops and pharmacies need the photo before the pickup completes (409 `pickup_photo_required`). */
+ *  Optional for every venue (ledger D-100). */
 export function attachFoodPickupProof(orderId: string, body: AttachMerchantPickupProofRequest): Promise<{ orderId: string; photoAttached: boolean; bagSealed: boolean }> {
   return apiFetch(`/merchant/orders/${orderId}/pickup-proof`, { method: "POST", body });
 }

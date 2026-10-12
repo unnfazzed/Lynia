@@ -395,17 +395,17 @@ describe("AuthService.getProfile", () => {
     await expect(svc.getProfile("nope")).rejects.toThrow(/not found/i);
   });
 
-  // D-70: the R3 "Commission-free jobs · N of 5 left" meter, from the same completed-job count the
-  // debit and the online-gate use.
+  // D-70: the R3 "Commission-free jobs · N of 10 left" meter (10 since owner 2026-10-12), from the same
+  // completed-job count the debit uses.
   it("D-70: reports the commission-free first jobs left for a rider", async () => {
     const fresh = { ...riderRow, rider: { ...riderRow.rider, tripsCount: 0 } };
     const { svc: a } = make(baseEnv, { profile: { findUnique: async () => fresh } });
-    expect((await a.getProfile("p2")).rider).toMatchObject({ freeJobs: { left: 5, total: 5 } });
+    expect((await a.getProfile("p2")).rider).toMatchObject({ freeJobs: { left: 10, total: 10 } });
     const two = { ...riderRow, rider: { ...riderRow.rider, tripsCount: 2 } };
     const { svc: b } = make(baseEnv, { profile: { findUnique: async () => two } });
-    expect((await b.getProfile("p2")).rider).toMatchObject({ freeJobs: { left: 3, total: 5 } });
+    expect((await b.getProfile("p2")).rider).toMatchObject({ freeJobs: { left: 8, total: 10 } });
     const { svc: c } = make(baseEnv, { profile: { findUnique: async () => riderRow } });
-    expect((await c.getProfile("p2")).rider).toMatchObject({ freeJobs: { left: 0, total: 5 } });
+    expect((await c.getProfile("p2")).rider).toMatchObject({ freeJobs: { left: 0, total: 10 } });
   });
 
   // D-70 "Didit ID prefill": the number the ID check verified, decrypted, only to its owner and only

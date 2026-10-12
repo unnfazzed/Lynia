@@ -501,6 +501,68 @@ describe("OffersService.listForOrder", () => {
   });
 });
 
+describe("OffersService — the per-job commission check (owner 2026-10-12, rate 10%)", () => {
+  const RIDER = { kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null };
+  const wallets = (riders: Record<string, { tripsCount: number; balance: number }>) => ({
+    findMany: async ({ where }: { where: { profileId: { in: string[] } } }) =>
+      where.profileId.in.map((id) => ({ profileId: id, tripsCount: riders[id]!.tripsCount })),
+  });
+  const accounts = (riders: Record<string, { tripsCount: number; balance: number }>) => ({
+    findMany: async ({ where }: { where: { riderId: { in: string[] } } }) => where.riderId.in.map((id) => ({ riderId: id, balance: riders[id]!.balance })),
+  });
+
+  it("refuses a bid whose 10% commission is more than the rider's balance (past their free jobs) — no offer written", async () => {
+    vi.stubEnv("COMMISSION_RATE_PCT", "10");
+    const create = vi.fn();
+    const riders = { "rider-1": { tripsCount: 25, balance: 0.2 } };
+    const { service } = svc({
+      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel", proposedFare: 2.5, suggestedFare: 2.5 }), findFirst: async () => null },
+      rider: { findUnique: async () => RIDER, ...wallets(riders) },
+      commissionAccount: accounts(riders),
+      offer: { create },
+    });
+    // $2.50 fare → $0.25 commission > $0.20 balance.
+    await expect(service.makeOffer(offerInput, "rider-1")).rejects.toMatchObject({ response: { reason: "commission_low_balance" } });
+    expect(create).not.toHaveBeenCalled();
+    vi.unstubAllEnvs();
+  });
+
+  it("takes the bid when the balance covers it, or while the rider still has free jobs", async () => {
+    vi.stubEnv("COMMISSION_RATE_PCT", "10");
+    for (const state of [{ tripsCount: 25, balance: 0.25 }, { tripsCount: 3, balance: 0 }]) {
+      const riders = { "rider-1": state };
+      const { service } = svc({
+        order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel", proposedFare: 2.5, suggestedFare: 2.5 }), findFirst: async () => null },
+        rider: { findUnique: async () => RIDER, ...wallets(riders) },
+        commissionAccount: accounts(riders),
+        offer: { create: async () => ({ id: "o1", type: "accept", offeredFare: { toString: () => "2.50" }, etaMinutes: 10, status: "pending" }) },
+      });
+      await expect(service.makeOffer(offerInput, "rider-1")).resolves.toMatchObject({ id: "o1" });
+    }
+    vi.unstubAllEnvs();
+  });
+
+  it("drops an offer from the customer's list once its rider can't cover the commission on their own fare", async () => {
+    vi.stubEnv("COMMISSION_RATE_PCT", "10");
+    const riders = { "r-ok": { tripsCount: 25, balance: 1 }, "r-short": { tripsCount: 25, balance: 0.1 } };
+    const { service } = svc({
+      order: { findUnique: async () => ({ customerId: "cust-1", suggestedFare: 3 }), findMany: async () => [] },
+      block: { findMany: async () => [] },
+      rider: wallets(riders),
+      commissionAccount: accounts(riders),
+      offer: {
+        findMany: async () => [
+          { id: "o1", type: "accept", offeredFare: { toString: () => "3.00" }, etaMinutes: 8, rider: { profileId: "r-ok", ...LIVE() } },
+          { id: "o2", type: "accept", offeredFare: { toString: () => "3.00" }, etaMinutes: 8, rider: { profileId: "r-short", ...LIVE() } },
+        ],
+      },
+    });
+    const res = await service.listForOrder("order-1", "cust-1");
+    expect(res.map((o) => o.rider.profileId)).toEqual(["r-ok"]);
+    vi.unstubAllEnvs();
+  });
+});
+
 describe("OffersService.withdrawOffer (Rider v2 J10)", () => {
   const ORDER = "0a1b2c3d-0000-4000-8000-000000000001";
 

@@ -1822,7 +1822,8 @@ export const MerchantOrderResponse = z
     outOfStockPref: OutOfStockPref.optional(),
     /** BRIEF §8: the latest substitution round (omitted when the order never had one). */
     substitution: SubstitutionRoundView.nullable().optional(),
-    /** BRIEF §9: shops and pharmacies need the pickup photo before pickup completes. */
+    /** Retired (ledger D-100): the pickup photo is optional for every venue, so the server no longer sends
+     *  this. Kept in the contract for installed apps, which read an absent flag as "optional". */
     pickupProofRequired: z.boolean().optional(),
     /** BRIEF §9: the pickup photo + sealed tick (single-order reads; omitted until there is one). */
     pickupProof: MerchantPickupProofView.nullable().optional(),

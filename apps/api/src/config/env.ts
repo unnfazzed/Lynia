@@ -373,11 +373,10 @@ export const envSchema = z.object({
     z.coerce.number().int().positive().optional(),
   ),
   // --- Commission wallet (policy COMMISSION, docs/plans/2026-rider-wallet-design.md) ---
-  // The commission "flip" is an ENV change, not a code deploy (design OV-2A): this overrides the
-  // bundled COMMISSION.ratePct default (0). Launch = unset/0 (no debits, wallet hidden); the flip sets
-  // it to the calibrated take-rate (e.g. 10). Clamped [0,100] and resolved in ONE place
-  // (resolveCommissionRatePct); a malformed value falls back to the launch default rather than charging
-  // a wrong rate. "" (deploy injects it when the Variable is unset) coerces to absent. NEVER hardcode a
+  // Overrides the bundled COMMISSION.ratePct default — 10% since owner 2026-10-12 (unset = 10; "0"
+  // switches commission off, an env change, not a code deploy — design OV-2A). Clamped [0,100] and resolved in ONE place
+  // (resolveCommissionRatePct); a malformed value falls back to the bundled default rather than
+  // charging a wrong rate. "" (deploy injects it when the Variable is unset) coerces to absent. NEVER hardcode a
   // percentage anywhere else — read the resolved rate the API serves in /wallet/config.
   COMMISSION_RATE_PCT: z.preprocess(
     (v) => (v === "" ? undefined : v),

@@ -13,14 +13,11 @@ import {
 } from "@nestjs/common";
 import { Prisma, type Role } from "@prisma/client";
 import {
-  freeJobsLeft,
-  isCommissionActive,
   isInServiceArea,
   KYC_DECLINE_CLASS,
   KycDeclineReason,
   kycDeclineClass,
   normalizeNationalId,
-  resolveCommissionRatePct,
 } from "@lynia/shared";
 import { isOwnedUploadKey } from "../adapters/storage/upload-kinds";
 import { UploadVerifier } from "../adapters/storage/upload-verifier";
@@ -982,17 +979,6 @@ export class RiderService {
     return { expired };
   }
 
-  /** The rider's prepaid commission balance for the online-gate, or undefined when commission is off
-   *  (rate 0) so the gate skips the commission branch entirely. A never-touched account reads as $0. */
-  private async loadCommissionBalance(profileId: string, commissionActive: boolean): Promise<number | undefined> {
-    if (!commissionActive) return undefined;
-    const account = await this.prisma.commissionAccount.findUnique({
-      where: { riderId: profileId },
-      select: { balance: true },
-    });
-    return account ? Number(account.balance) : 0;
-  }
-
   async setOnline(
     profileId: string,
     online: boolean,
@@ -1000,21 +986,15 @@ export class RiderService {
   ): Promise<{ online: boolean }> {
     const rider = await this.prisma.rider.findUnique({
       where: { profileId },
-      select: { kycStatus: true, accountStatus: true, onHold: true, cooldownUntil: true, tripsCount: true },
+      select: { kycStatus: true, accountStatus: true, onHold: true, cooldownUntil: true },
     });
     if (!rider) throw new ForbiddenException("Not a rider");
-    // Prepaid commission floor (design Flow 2): only load the balance — and only gate on it — once
-    // commission is switched on. At the launch rate (0%) `commissionActive` is false, so this is a
-    // no-op read-skip and the $0 pilot balance never blocks going online.
-    const commissionActive = isCommissionActive(resolveCommissionRatePct(this.env.COMMISSION_RATE_PCT));
-    const commissionBalance = await this.loadCommissionBalance(profileId, commissionActive);
-    // D-70: commission-free first jobs waive the floor while any remain (derived from completed jobs).
-    const commissionGate = { commissionActive, commissionBalance, freeJobsLeft: freeJobsLeft(rider.tripsCount) };
-    // Full online-gate (Q2): kyc + account standing + reliability on_hold + cooldown + commission floor.
+    // Full online-gate (Q2): kyc + account standing + reliability on_hold + cooldown. No wallet minimum
+    // (owner 2026-10-12) — the commission check is per job (common/commission-cover.ts).
     // Only enforced when going ONLINE — a rider can always go offline. The refusal carries a structured
     // `reason` so the app renders the correct blocked state instead of a generic 403.
     if (online) {
-      const reason = onlineRefusalReason({ ...rider, ...commissionGate });
+      const reason = onlineRefusalReason(rider);
       if (reason) throw new ForbiddenException({ reason, message: REFUSAL_MESSAGE[reason] });
       // Service area: refuse going online outside it so a rider can't take jobs we can't route; the same
       // isInServiceArea the customer order-create gate uses (all of Zimbabwe, D-99).
@@ -1056,7 +1036,7 @@ export class RiderService {
           where: { profileId },
           select: { kycStatus: true, accountStatus: true, onHold: true, cooldownUntil: true },
         });
-        const reason = now ? onlineRefusalReason({ ...now, ...commissionGate }) : null;
+        const reason = now ? onlineRefusalReason(now) : null;
         if (reason) throw new ForbiddenException({ reason, message: REFUSAL_MESSAGE[reason] });
         throw new ConflictException("Your account status just changed — refresh and try again.");
       }
@@ -1126,12 +1106,10 @@ export class RiderService {
       // the client maps to "You were taken offline. Tap Go online to retry."
       const now = await this.prisma.rider.findUnique({
         where: { profileId },
-        select: { kycStatus: true, accountStatus: true, onHold: true, cooldownUntil: true, tripsCount: true },
+        select: { kycStatus: true, accountStatus: true, onHold: true, cooldownUntil: true },
       });
       if (!now) throw new ForbiddenException("Not a rider");
-      const commissionActive = isCommissionActive(resolveCommissionRatePct(this.env.COMMISSION_RATE_PCT));
-      const commissionBalance = await this.loadCommissionBalance(profileId, commissionActive);
-      const reason = onlineRefusalReason({ ...now, commissionActive, commissionBalance, freeJobsLeft: freeJobsLeft(now.tripsCount) });
+      const reason = onlineRefusalReason(now);
       if (reason) throw new ForbiddenException({ reason, message: REFUSAL_MESSAGE[reason] });
       throw new ForbiddenException("You're offline — go online to keep receiving jobs.");
     }

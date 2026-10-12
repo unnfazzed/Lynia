@@ -19,7 +19,7 @@ import type { TrackingGateway } from "../tracking/tracking.gateway";
 import { WalletService } from "../wallet/wallet.service";
 import { FoodDebtService } from "./food-debt.service";
 import { FoodOrderService } from "./food-order.service";
-import { assertPickupProofIfRequired, MerchantOrderProofService } from "./merchant-order-proof.service";
+import { MerchantOrderProofService } from "./merchant-order-proof.service";
 import { OrderSubstitutionService } from "./order-substitution.service";
 import { VenueRatingService } from "./venue-rating.service";
 
@@ -387,25 +387,27 @@ describe("Proof at hand-over (BRIEF §9)", () => {
     return { orderId: o.id, customerId, riderId };
   }
 
-  it("a shop's order can't be collected without the sealed-bag photo; a restaurant's can", async () => {
+  it("the sealed-bag photo is optional everywhere (D-100): a shop's order is collected on the code alone", async () => {
     const shop = await makeVenue({ businessType: "shop" });
     const job = await jobAt(shop, "en_route_pickup");
-    await expect(prisma.$transaction((tx) => assertPickupProofIfRequired(tx, job.orderId))).rejects.toMatchObject({
-      response: { reason: "pickup_photo_required" },
-    });
-    const res = await proof.attachPickupProof(job.orderId, job.riderId, { key: `pickup/${job.riderId}/bag.jpg`, bagSealed: true });
-    expect(res).toEqual({ orderId: job.orderId, photoAttached: true, bagSealed: true });
-    await prisma.$transaction((tx) => assertPickupProofIfRequired(tx, job.orderId));
+    await prisma.order.update({ where: { id: job.orderId }, data: { pickupCodeHash: tokens.hash("123456") } });
+    expect(await foodOrders.confirmPickup(job.orderId, job.riderId, "123456")).toEqual({ orderId: job.orderId, status: "picked_up" });
 
     const view = await foodOrders.getMyOrder(job.orderId, job.customerId);
-    expect(view.pickupProofRequired).toBe(true);
+    expect(view.pickupProofRequired).toBeUndefined();
+    expect(view.pickupProof ?? null).toBeNull();
+    expect(view.venue).toEqual({ name: "Avondale Fresh", businessType: "shop", shopKind: "grocery" });
+  });
+
+  it("a photo the rider does take is attached and shown", async () => {
+    const shop = await makeVenue({ businessType: "shop" });
+    const job = await jobAt(shop, "en_route_pickup");
+    const res = await proof.attachPickupProof(job.orderId, job.riderId, { key: `pickup/${job.riderId}/bag.jpg`, bagSealed: true });
+    expect(res).toEqual({ orderId: job.orderId, photoAttached: true, bagSealed: true });
+
+    const view = await foodOrders.getMyOrder(job.orderId, job.customerId);
     expect(view.pickupProof).toMatchObject({ photoUrl: `https://signed.example/pickup/${job.riderId}/bag.jpg`, bagSealed: true });
     expect(view.pickupProof!.takenAt).not.toBeNull();
-    expect(view.venue).toEqual({ name: "Avondale Fresh", businessType: "shop", shopKind: "grocery" });
-
-    const restaurant = await makeVenue();
-    const rjob = await jobAt(restaurant, "en_route_pickup");
-    await prisma.$transaction((tx) => assertPickupProofIfRequired(tx, rjob.orderId));
   });
 
   it("another rider can't attach, and a foreign photo key is refused", async () => {

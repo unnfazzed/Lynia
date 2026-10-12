@@ -681,6 +681,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
             merchantId: true,
             agreedFare: true,
             suggestedFare: true,
+            deliveryFee: true,
             orderType: true,
             deliveredAt: true,
             completedAt: true,
@@ -868,17 +869,20 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
             }
           }
           // Prepaid commission debit (design Flow 1): same transaction as completion, after the rider row
-          // lock above. No-op at ratePct 0. Never blocks a delivered parcel from completing. Uses the
+          // lock above. No-op at ratePct 0. Never blocks a delivered job from completing. Uses the
           // re-read `agreedFare` (WD-005), not the pre-CAS snapshot. `suggestedFare` feeds the WD-012
-          // commission-basis floor.
-          // A-5 (status-keyed-query-audit): a merchant order's own commission/settlement is C4's ledger,
-          // not the Express ride-commission wallet — chargeCommission assumes a parcel fare basis
-          // (suggestedFare/agreedFare mean something different for a food order's goods+delivery total).
-          // Guarded rather than left latent: a merchant order can't reach `delivered` without C3's
-          // dispatch yet, but the branch belongs here now, not deferred to when it becomes reachable.
+          // commission-basis floor. Every job type is charged (owner 2026-10-12): a merchant job on its
+          // delivery fee, never its goods+delivery `agreedFare` (jobCommissionBasis).
           // Late path: the auto-close (or ops' adjudication) already debited it — never charge twice.
-          if (order.orderType === "parcel" && !late) {
-            await this.wallet.chargeCommission(tx, { orderId, riderId: order.riderId, agreedFare, suggestedFare: order.suggestedFare });
+          if (!late) {
+            await this.wallet.chargeCommission(tx, {
+              orderId,
+              riderId: order.riderId,
+              orderType: order.orderType,
+              agreedFare,
+              suggestedFare: order.suggestedFare,
+              deliveryFee: order.deliveryFee,
+            });
           }
         }
       });
@@ -1443,7 +1447,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       await tx.orderEvent.create({ data: { orderId, status: "completed" } });
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        select: { riderId: true, agreedFare: true, suggestedFare: true, orderType: true },
+        select: { riderId: true, agreedFare: true, suggestedFare: true, deliveryFee: true, orderType: true },
       });
       if (order?.riderId) {
         // A delivered order that auto-closes with no complaint is a clean completion → slow
@@ -1474,16 +1478,15 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         // Prepaid commission debit (design Flow 1) — the auto-close counterpart to rate()'s debit. The
         // two completion edges are mutually exclusive (both CAS on status=delivered), so it fires once
         // per order. No-op at ratePct 0; idempotent (unique (riderId, orderId, ride_commission)).
-        // A-5: same merchant guard as rate() above — a merchant order's commission is C4's ledger, not
-        // this Express wallet debit.
-        if (order.orderType === "parcel") {
-          await this.wallet.chargeCommission(tx, {
-            orderId,
-            riderId: order.riderId,
-            agreedFare: order.agreedFare,
-            suggestedFare: order.suggestedFare,
-          });
-        }
+        // Every job type, as rate() above (a merchant job on its delivery fee).
+        await this.wallet.chargeCommission(tx, {
+          orderId,
+          riderId: order.riderId,
+          orderType: order.orderType,
+          agreedFare: order.agreedFare,
+          suggestedFare: order.suggestedFare,
+          deliveryFee: order.deliveryFee,
+        });
       }
       return true;
     });

@@ -70,8 +70,8 @@ describe("SettlementsService.commissionOverview (prepaid per-ride)", () => {
       fares: "100.00",
       commission: perRideCommission(100).toFixed(2),
     });
-    // Commission accrues at the configured rate — $0.00 while the launch rate is 0%.
-    expect(view.rows[0]!.commission).toBe(COMMISSION.ratePct === 0 ? "0.00" : perRideCommission(100).toFixed(2));
+    // Commission accrues at the configured rate (10% by default, owner 2026-10-12).
+    expect(view.rows[0]!.commission).toBe("10.00");
     expect(view.kpis).toMatchObject({
       ratePct: COMMISSION.ratePct,
       rides: 7,
