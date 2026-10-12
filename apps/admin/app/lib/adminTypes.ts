@@ -153,7 +153,7 @@ export interface ReportEntry {
  * volume and the commission that *would* accrue at the current rate. There is no weekly billing,
  * refund-netting, record-payment or overdue state (all removed with the old cash-settlement engine).
  * The prepaid wallet + top-ups shipped 2026-07-15 (`apps/api/src/wallet/*`,
- * docs/plans/2026-rider-wallet-design.md) — only the rate itself is still 0%. All monetary values are
+ * docs/archive/plans/2026-rider-wallet-design.md) — only the rate itself is still 0%. All monetary values are
  * API-owned strings.
  */
 export interface CommissionRiderRow {

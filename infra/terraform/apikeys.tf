@@ -77,7 +77,7 @@
 #
 # ⚠️ YOU PROBABLY DO NOT NEED THE COMMANDS ABOVE. They are the laptop route, kept because they are
 # what the workflow runs. The supported way to arm this file is dispatchable from a phone and does
-# every step above with the guards attached — docs/MOB-MAP-02-RUNBOOK.md §4:
+# every step above with the guards attached — docs/archive/MOB-MAP-02-RUNBOOK.md §4:
 #
 #   1. Actions -> "GCP Diagnose (read-only)"  ........ prints both KEY_IDs (labelled against `uid`,
 #                                                      which the import path rejects) and both keys'

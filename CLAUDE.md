@@ -94,7 +94,7 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
   handoffs still say "rider"; user-visible copy says "biker" (code, routes and data keep `rider`).
   Verbatim tests compare against `bikerWording(handoff)` from `@lynia/shared`.
 - **Strict mock sizes.** Where a mock draws a control smaller than the old 44px floor, the mock wins;
-  `docs/DESIGN-KIT-A11Y-OVERRIDES.md` no longer overrides drawn geometry (user decision 2026-08-10).
+  `docs/archive/DESIGN-KIT-A11Y-OVERRIDES.md` no longer overrides drawn geometry (user decision 2026-08-10).
   **That rule is scoped to the APP, and it is not licence for the KIT to draw an unusable control**
   (owner decision D2, 2026-08-20). Read against `docs/DESIGN.md` § Responsive & accessibility, which
   requires targets **≥ `--target-min` (44px), 52px for primary**, the two used to contradict each

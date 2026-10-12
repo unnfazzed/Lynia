@@ -234,7 +234,7 @@ jobs:
           # OTP must actually be able to SEND, not just boot. These two misconfigs pass the env-schema
           # boot-guards and the canary /healthz gate, then 503 every requestOtp at runtime — production
           # shipped exactly this way twice (2026-07-08 un-armed, 2026-07-13 half-armed with empty vars;
-          # docs/GCP-PENDING-REVIEW-2026-07-13.md §3). WhatsAppOtpSender.send() requires phone-number-id,
+          # docs/archive/GCP-PENDING-REVIEW-2026-07-13.md §3). WhatsAppOtpSender.send() requires phone-number-id,
           # token, and template (apps/api/src/auth/otp-sender.ts), so guard all of them here.
           #
           # Pre-launch exception: OTP_WHATSAPP_UNARMED_ACK=true plus a not-yet-passed

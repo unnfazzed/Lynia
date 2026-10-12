@@ -2,7 +2,7 @@
 
 > **Status:** first full security review of the platform. This document is the engineering
 > map of *how Lynia is attacked, how it defends, and what we harden next*. It complements
-> [ARCHITECTURE](ARCHITECTURE.md) (how the system is wired) and [ENG-REVIEW](ENG-REVIEW.md)
+> [ARCHITECTURE](ARCHITECTURE.md) (how the system is wired) and [ENG-REVIEW](archive/ENG-REVIEW.md)
 > (why the core is built the way it is). Line references point at the real code as of this
 > review so remediations are unambiguous.
 

@@ -28,7 +28,7 @@ const MAX_REPORTED = 100;
 
 /**
  * The nightly wallet ledger integrity job (roadmap 1.3 — implements the completeness invariant
- * docs/plans/2026-rider-wallet-design.md step 6 specifies but the wallet build never shipped).
+ * docs/archive/plans/2026-rider-wallet-design.md step 6 specifies but the wallet build never shipped).
  *
  * The ledger is the source of truth; `CommissionAccount.balance` is a cached running total. This
  * sweep asserts the ledger's *completeness*, not just that it internally balances — the Uber

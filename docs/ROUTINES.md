@@ -1,217 +1,41 @@
 # Scheduled Claude Routines — canonical spec
 
-This file is the single source of truth for the eight recurring Claude routines that run
-against this repo. Each routine's cron prompt is kept **self-contained** (a routine must not
-depend on this file existing to function), but this spec is authoritative when a prompt and
-this file disagree — the next prompt revision must be reconciled against it.
+This file is the spec for the recurring Claude routines that work on this repo: the policies every
+routine follows (merge-on-green, ledger write-back, the bug-dedup protocol) and each lane's scope.
+The prompt text for each routine is mirrored under **`docs/routines/*.md`**. When a prompt and this
+spec disagree, the spec wins and the prompt is reconciled to it. `docs/routines/README.md` covers
+how to paste a prompt into a trigger.
 
-The live cron prompts are version-controlled mirrors under **`docs/routines/*.md`** (one file per
-routine). Those files are the reviewable source of truth for the prompt *text*; this file is the
-authoritative spec for the *policy*. When any of the three (spec, mirror file, live trigger)
-disagree, the **live trigger is what actually runs** — reconcile toward it or push the change into
-it. See `docs/routines/README.md` for how to update a live trigger's prompt safely (its
-`session_context` cannot be reproduced by delete+recreate from a routine session).
+## Status (2026-10-12): dormant
 
-Last reconciled: 2026-10-05 (code-as-source-of-truth): per owner instruction *"update my routines so
-that they check the code base as source of truth rather than just rely on documentation only"*, added
-universal policy 5 and a matching section to every live prompt mirror under `docs/routines/`; the
-bug-finders' Phase-0 ledger skip now requires code confirmation. **Live triggers still need the
-updated prompt bodies pasted in the claude.ai Routines UI** (see `docs/routines/README.md`).
-Prior: 2026-08-04 (weekly cadence): per user instruction *"i now want these claude
-routines to be run once a week on Sunday"*, every routine moved from the paced all-day chain to a
-single **Sunday** chain — see §"Weekly Sunday chain" below and `docs/routines/routine-chain.md` for
-the grid, the exact old→new crons, and what was applied vs. what still needs the claude.ai Routines
-UI. Also recorded: the five Restaurants + Send build loops finished (triggers gone), and the
-2026-08-04 23:00 UTC sprint-revert reminder was deleted because it would have put the LC lanes back
-on daily crons hours after the weekly move.
-Prior: 2026-07-16 (routines audit): (a) propagated the previously doc-only learnings —
-Phase-0.5 cluster-claim re-verification, the deep-sweep-owned cross-lane seams pass, the evidenced
-mandatory sibling-sweep, and the agentic-loop hunt — into the actual bug-finder prompts (they had
-drifted behind this spec); (b) gave the bug-hunt prompt the Fable/Opus model split the other
-bug-finders already had; (c) added a Phase-0 "read tonight's not-yet-merged sibling PRs" step to
-every bug-finder so dedup no longer depends purely on the 2h gap being enough for the prior PR to
-merge; (d) moved the PR-health watchdog off the routine-boundary hours (`0 */6` → `0 2,8,14,20`) so
-it stops colliding with in-flight routine sessions; (e) added `DOC-`/`RF-` to the ledger prefix list.
-Prior: 2026-07-16 (interactive-review learnings: first documented Phase-0.5, the seams pass, and the
-mandatory sibling-sweep — the two blind spots that let IR16-01…06 sit live under "→ FIXED" cluster
-headers and in the seams between lanes).
-Prior: 2026-07-15 (added the wallet & data-lifecycle audit routine).
+No routine trigger exists on the owner's account, and no routine has opened a PR since late July 2026
+(last runs: deep sweep #393, PR health #397, doc sync #374). Nothing below runs on its own. To restart
+a lane, create a trigger from its prompt mirror and the schedule below.
 
-## The eight routines
+The four Sunday-night lanes added 2026-08-16 (crash fuzzing, logic-model audit, flag retirement,
+useless-test pruning), the UI Parity Audit added 2026-08-23, the weekly Sunday chain and the temporary
+Restaurants + Send build loops and Harare low-connectivity loops never ran or have finished. Their
+prompts were removed on 2026-10-12 (git history has them; the low-connectivity loops are in
+`docs/archive/routines/harare-loops.md`).
 
-**All eight run weekly, on Sunday (UTC)** — user instruction 2026-08-04, *"i now want these claude
-routines to be run once a week on Sunday."* The full Sunday grid (including the LC lanes that
-interleave on the even hours) and the apply/revert procedure live in `docs/routines/routine-chain.md`.
+## The routines
 
-| Routine | Cron (UTC) | Environment | Lane |
+Last schedule (weekly on Sunday, UTC, user instruction 2026-08-04), in firing order. The four
+bug-finders run first and 2 h apart, so each one's ledger PR merges before the next starts.
+
+| Routine | Cron (UTC) | Lane | Prompt mirror |
 |---|---|---|---|
-| Bug hunting | `0 1 * * 0` | env_01B3aX… | Mobile-app journeys + app↔API contract seams |
-| User experience improvements | `0 3 * * 0` | env_01B3aX… | UX friction, copy, recoverability, blockers |
-| Deep bug sweep | `0 5 * * 0` | env_01V3Lw… | Backend correctness, concurrency, security, adversarial API |
-| Documentation update | `0 7 * * 0` | env_01B3aX… | Doc ⇄ code reconciliation (runs **after** the day's fix routines) |
-| Wallet & data-lifecycle audit | `0 9 * * 0` | env_01V3Lw… | Wallet/earnings/admin data-lifecycle correctness — money & reporting integrity |
-| Performance watch | `0 11 * * 0` | env_01V3Lw… | Latency / bandwidth / battery / server-cost regressions + new perf wins (mobile + API) — see `docs/PERFORMANCE.md` |
-| Refactoring | `0 13 * * 0` | env_01B3aX… | Behavior-preserving code-health work: hotspots, duplication, dead code, complexity |
-| PR health & delivery watchdog | `0 22 * * 0` | env_01V3Lw… | CI/merge/deploy babysitting for **all** PRs |
+| Bug hunting | `0 1 * * 0` | Mobile-app journeys + app↔API contract seams | `docs/routines/bug-hunting.md` |
+| User experience improvements | `0 3 * * 0` | UX friction, copy, recoverability, blockers | `docs/routines/ux-improvements.md` |
+| Deep bug sweep | `0 5 * * 0` | Backend correctness, concurrency, security, adversarial API | `docs/routines/deep-bug-sweep.md` |
+| Documentation update | `0 7 * * 0` | Doc ⇄ code reconciliation (after the day's fix routines) | `docs/routines/documentation-update.md` |
+| Wallet & data-lifecycle audit | `0 9 * * 0` | Wallet/earnings/admin data-lifecycle correctness | `docs/routines/wallet-data-audit.md` |
+| Performance watch | `0 11 * * 0` | Latency / bandwidth / battery / server-cost regressions (`docs/PERFORMANCE.md`) | none (spec below) |
+| Refactoring | `0 13 * * 0` | Behaviour-preserving code health: hotspots, duplication, dead code | `docs/routines/refactoring.md` |
+| PR health & delivery watchdog | `0 22 * * 0` | CI/merge/deploy babysitting for **all** PRs | `docs/routines/pr-health-watchdog.md` |
 
-> The rows are listed in **firing order**, which is also the dependency order: the four bug-finders
-> first and 2 h apart (so each one's ledger PR merges before the next starts), then doc
-> reconciliation, then the weekly perf pass, then refactoring on the most-settled tree, then the
-> watchdog to close the day out.
-
-> **Temporary build loops (2026-07-28, not part of the eight): finished.** All five lanes of the
-> joint Restaurants + Send launch completed 2026-07-31 and their triggers no longer exist. Spec:
-> `docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §6; prompt mirrors:
-> `docs/routines/build-loops-restaurants-send.md`, kept as history.
-
-> **Temporary LC loops (2026-08-01, not part of the eight):** four audit→optimize loops + a steer
-> + a refactoring loop run the **Harare low-connectivity program** (low-end Android Go-class
-> devices, metered prepaid 2G/3G) until their lane checklists complete and they self-disable.
-> Spec: `docs/archive/plans/2026-08-01-low-connectivity-program.md`; prompt mirrors:
-> `docs/routines/harare-loops.md`. **As of 2026-08-04 they are weekly too**, interleaved on the
-> Sunday grid's even hours (00 steer, 02 LC-A, 04 LC-B, 06 LC-C, 08 LC-D, 10 LC-R — see
-> `docs/routines/routine-chain.md`). Lane D completed and its trigger is disabled. They follow the
-> universal policies below (merge-on-green, docs-in-same-PR, never-merge-red), the sensitive-lane
-> doctrine, and the bug-dedup protocol (ledger prefixes `LC-A`/`LC-B`/`LC-C`/`LC-D`). Their PRs use
-> `claude/lc-*` branches; bug-finder Phase-0 sibling reads cover them like any other `claude/*` PR.
-> Infra findings from LC loop D are **report-only** (read-only doctrine — never terraform edits).
-> Model split (user directive 2026-08-01): lanes A/B on Opus 5, lanes C/D on Opus 4.8, the
-> steer on Fable (planning only) — intended assignment, applied by the founder in the
-> claude.ai Routines UI (programmatic pinning is `model_update_disabled`; see
-> `docs/routines/routine-chain.md`).
-
-## Four Sunday-night maintenance lanes — added 2026-08-16
-
-Owner instruction (2026-08-16): four new weekly lanes, adapted from the "Claude maintains apps"
-routine set (crash fuzzer / flag hygiene / useless-test pruner / logic modeling), run **every Sunday
-from 22:00 Harare time (20:00 UTC — Harare is CAT, UTC+2, no DST)**, one per hour, on the
-cost-effective model: **Sonnet 5 (`claude-sonnet-5`), explicitly not Fable**. The model is pinned
-programmatically on each trigger (`session_context.model` — pinning works now; the 2026-08-01
-`model_update_disabled` caveat in `routine-chain.md` no longer applies) and restated inside each
-prompt. The 22:00 UTC slot is deliberately skipped — the PR-health watchdog owns it, and it
-conveniently babysits the first two lanes' PRs mid-chain.
-
-| Routine | trigger_id | Cron (UTC) | Harare | Environment | Mirror file |
-|---|---|---|---|---|---|
-| Crash fuzzing | `trig_01GRX63yw2A4GvuyBiCmTbZv` | `0 20 * * 0` | Sun 22:00 | env_01B3aX… | `docs/routines/crash-fuzzing.md` |
-| Logic model audit | `trig_01VH6RpSakGCFhdoAYaNftvp` | `0 21 * * 0` | Sun 23:00 | env_01V3Lw… | `docs/routines/logic-model-audit.md` |
-| Flag retirement | `trig_01M2ktaNdry3zxpXpLmkvwKP` | `0 23 * * 0` | Mon 01:00 | env_01B3aX… | `docs/routines/flag-retirement.md` |
-| Useless-test pruning | `trig_01U7RohvvYy1yp4j2LPJQ6GE` | `0 0 * * 1` | Mon 02:00 | env_01V3Lw… | `docs/routines/useless-test-pruning.md` |
-
-Lane scopes (full prompts in the mirror files): **Crash fuzzing** — runtime failures found by
-running the real apps (no mocks) through `tools/parity/` + Playwright at the canonical viewports;
-the MOB-BOOT bug class. Ledger prefix `CF-`. **Logic model audit** — one sensitive lane per run
-(bids → assignment → agreed-price → KYC → wallet → cancellation), full (state × actor × action)
-truth table posted to the PR; every logic claim becomes a truth table. Prefix `LM-`. **Flag
-retirement** — inventory + classify every feature flag; inline shipped ones (the MOB-BOOT-02
-class), verify unlaunched seeds, report forgotten ones for a ship-or-delete decision. Prefix
-`FLAG-`. **Useless-test pruning** — find tests that can't fail, prove it by mutation, strengthen or
-delete; guardrail suite and failing tests are untouchable. Prefix `TP-`.
-
-All four follow the universal policies unchanged: Phase-0 `KNOWN_BUGS.md` read + sibling-PR read,
-fix-in-same-run, ledger + dated report in the same PR, sensitive-lane doctrine, merge-on-green,
-never merge red. They dedupe through `docs/KNOWN_BUGS.md` like the existing bug-finders.
-
-## UI Parity Audit (report-only) — added 2026-08-23
-
-User instruction (2026-08-23): a thirteenth routine dedicated to comparing the shipped app against
-its design mocks and **reporting** the result — never implementing it. Runs weekly, **Sunday 11:00
-UTC = Sunday 13:00 Harare** (the requested "1pm Zimbabwean time"; Harare is CAT, UTC+2, no DST — see
-the overlap note below). Model pinned programmatically like the four 2026-08-16 lanes. Created via
-the in-session `create_trigger` MCP path; prompt mirror `docs/routines/ui-parity-audit.md`.
-
-| Routine | trigger_id | Cron (UTC) | Harare | Environment | Mirror file |
-|---|---|---|---|---|---|
-| UI Parity Audit | `trig_0127SoaWZoTXA7Xjvo6DPVsb` | `0 11 * * 0` | Sun 13:00 | env_01V3Lw… | `docs/routines/ui-parity-audit.md` |
-
-> **Known overlap with Performance watch.** `0 11 * * 0` UTC is also the Performance watch slot (see
-> that section below) — the one hour on the "serial by construction" Sunday grid (§"Weekly Sunday
-> chain") this lane does not keep clear, because the requested time ("1pm Zimbabwean time") lands
-> exactly on it. Accepted deliberately rather than silently moving the requested time: this lane never
-> writes app/design code and touches no shared runtime state outside its own docs-only PR, so the
-> collision's cost is two concurrent sessions billing at once, not a correctness hazard. Move one of
-> the two lanes by an hour if that turns out to matter in practice.
-
-**Mission:** the mocks in `packages/design/` are the source of truth for structure, card design and
-every UI element (`CLAUDE.md` → "Pixel parity"). This lane renders every wired screen's mock next to
-its app render (`tools/parity/pair.mjs`), runs the existing machine-checkable structural-conformance
-suite (`tools/parity/codegen/cli.mjs check`, `extract-expected.mjs --check`, the mobile
-`rendered-conformance` jest spec) across the full wired set every run to catch **regressions** on
-already-aligned screens, and — on a rotating one-category-per-week deep dive (customer food →
-customer send/auth/account → rider → merchant → admin) — does a full structure/geometry/colour/
-type/copy comparison against the mock at the same bar as an alignment PR. Every mismatch found gets a
-root-cause explanation and a concrete recommendation; **none get implemented.**
-
-**Report-only is a permanent, explicit exception** to universal policy 2 ("no deferred bug fixes") —
-modeled on the existing LC-loop-D infra carve-out above, not a precedent for any other lane to invoke.
-Findings are logged in `docs/KNOWN_BUGS.md` under a new **`UIP-`** prefix, status OPEN, owner
-"design/alignment — report-only, no autonomous fix"; a `UIP-` row is a recommendation for a future
-alignment PR (or the user) to act on, not a bug another routine should silently patch on this lane's
-behalf. The dated report (`docs/UI-PARITY-AUDIT-<date>.md`) follows the same report-retention
-convention as every other lane (only the newest stays on `main`). The routine never edits
-`packages/design/**`, app/shared code, `docs/PIXEL-PARITY-TRACKER.md`'s status marks (that tracker's
-✅ is a machine-guardrail state owned by the alignment workflow, not this audit — see
-`docs/PIXEL-PARITY-TRACKER.md` → "Standing drift watch"), or `docs/DESIGN-DEVIATIONS.md` (new
-deviations need the user's explicit approval) — its PR is docs-only by construction, so merge-on-green
-(universal policy 1) still applies but is trivially satisfied.
-
-## Weekly Sunday chain — 2026-08-04
-
-Per user instruction (2026-08-04): **run these routines once a week, on Sunday.** This replaces the
-paced all-day chain of 2026-07-30 (24 sessions/day) with a single Sunday chain of 14 hourly slots —
-roughly a 92% cut in scheduled sessions. The mechanism is unchanged: a fixed grid of pre-scheduled
-trigger firings, so the schedule *is* the cap and there is no runaway path. The grid, the apply /
-revert procedure, the exact trigger IDs, and the frequency dial live in
-**`docs/routines/routine-chain.md`** (the reviewable source of truth for this schedule). Summary:
-
-- **Serial by construction.** Slots are spaced 1 h apart and never share an hour, so at most one
-  heavy session bills at a time — the single biggest credit-protection lever, unchanged.
-- **Standing routines on the odd hours** (01 → 13, plus the watchdog at 22), in dependency order.
-- **LC lanes interleave on the even hours** (00 steer, 02 LC-A, 04 LC-B, 06 LC-C, 08 LC-D, 10 LC-R),
-  deduping through `docs/KNOWN_BUGS.md` exactly as before.
-- **Hours 12, 14–21 and 23 are idle** — overrun margin, and the first headroom the frequency dial
-  spends if the cadence is ever raised again.
-- **Frequency dial.** To turn it up: add a mid-week watchdog slot, then a second day (`* * 0,3`),
-  then fill the idle hours. To turn it down: disable individual LC lanes or standing lanes. One edit
-  per lever, all reversible.
-
-**The grid (UTC, Sundays, one session per hour):**
-
-| Hour | 00 | 01 | 02 | 03 | 04 | 05 | 06 | 07 | 08 | 09 | 10 | 11 | 13 | 22 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Lane | steer | BH | LA | UX | LB | DS | LC | DOC | LD† | WD | LR | PW | RF | watchdog |
-
-`BH/UX/DS/DOC/WD/PW/RF` = the standing bug-hunting, UX, deep-sweep, documentation, wallet,
-performance-watch and refactoring routines. `LA/LB/LC/LD/LR` + `steer` = the temporary LC loops;
-† Lane D completed, so its slot is currently dark. The LC crons are applied in place via
-`update_trigger` (schedule-only edit — preserves each loop's bound `session_context`); the eight
-standing routines were created via `meta_mcp` and **do not surface as editable triggers from a
-session on this account**, so their re-timing is done in the claude.ai Routines UI (see
-`docs/routines/routine-chain.md` §"Applying / reverting" for the exact old→new crons).
-
-The four bug-finding routines run 2 hours apart (01:00 → 03:00 → 05:00, then the wallet audit at
-09:00) **by design**: each one's ledger/report PR must be merged before the next routine starts, so
-the next routine inherits the previous one's findings and does not rediscover them. The wallet &
-data-lifecycle audit runs last among the bug-finders — after doc-sync (07:00) — so it starts from a
-fully settled tree and inherits everything the earlier lanes merged. Refactoring runs last of all
-(13:00), which satisfies its "start from a settled tree" requirement better than its old mid-chain
-slot and keeps a 3 h gap from LC-R (10:00) so the two refactoring lanes never hold two open refactor
-PRs against the same hotspot.
-
-**The "merged before the next starts" guarantee is timing-only, so it is not trusted alone.** A
-full hunt+fix+CI+merge can overrun the 2h gap; if it does, the next fresh session would read a
-`main` that lacks the prior PR and re-derive its findings. Belt-and-suspenders: every bug-finder's
-Phase 0 also reads that day's **open** `claude/*` PRs (their `KNOWN_BUGS.md` + report diffs) and
-treats a finding claimed on an unmerged sibling branch as already-covered — so dedup holds even when
-a prior PR is still in flight. The **PR-health watchdog runs at `0 22 * * 0`**, offset from every
-routine-boundary hour so it does not rebase or merge a routine's PR while that routine's session is
-still pushing to the same branch, and late enough to sweep the whole day's output.
-
-> **Known trade-off of the weekly cadence:** the watchdog used to run 4×/day and caught a stalled or
-> red PR within hours; now a PR that goes red on Monday sits until the next Sunday. This is
-> tolerable because every routine merges its own PR on green (universal policy 1) and the watchdog
-> is only a backstop — but if PRs start stalling, the cheapest fix is a single mid-week watchdog
-> slot (`0 22 * * 0,3`), which costs almost nothing next to restoring a hunting lane.
+Since 2026-10-05 every prompt tells the routine to treat the code as the source of truth and docs as
+claims to verify (universal policy 5).
 
 ## Universal policies (apply to every routine — user instruction 2026-07-14; policy 5 added 2026-10-05)
 

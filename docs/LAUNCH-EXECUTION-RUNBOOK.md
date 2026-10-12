@@ -585,7 +585,7 @@ keeps being served in full). Code: `apps/api/scripts/backfill-photo-thumbnails.t
 
 ---
 **Where each of these came from:** `docs/DATA-RETENTION.md` (§1–2), `docs/OBSERVABILITY.md` (§3),
-`docs/LOAD-MODEL.md` + `apps/api/load/` (§4), `docs/QA-DEVICE-CHECKLIST.md` (§5), `docs/LAUNCH-READINESS.md`
+`docs/LOAD-MODEL.md` + `apps/api/load/` (§4), `docs/QA-DEVICE-CHECKLIST.md` (§5), `docs/archive/LAUNCH-READINESS.md`
 scorecard (all), `docs/LAUNCH-DEPLOYMENT-STRATEGY.md` (§8),
 `docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §5 X2 (§11). Nothing here changes app
 code — it's the founder-gated execution the agent work prepared.

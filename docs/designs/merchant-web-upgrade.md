@@ -14,7 +14,7 @@ simple for informal businesses in Zimbabwe … i want simple straightforward UI.
 also to simplify. Shops will be diverse to pharmacies, parts shops, fashion shops, etc .. log in is by
 mibile number and whatsapp otp."*
 
-What the code says today (`docs/plans/2026-09-29-merchant-web-upgrade-plan.md` §1):
+What the code says today (`docs/archive/plans/2026-09-29-merchant-web-upgrade-plan.md` §1):
 
 - **Nobody can join.** `POST /merchant/become` has zero callers. Every merchant so far was made by a
   developer with curl, and each call flipped that person's `Profile.role` for good. The go-live flag

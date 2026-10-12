@@ -18,7 +18,7 @@ starts from reasoning, not archaeology.
   disputes into a lookup.
 - **Cons:** Needs statement-export access from Econet; meaningless at pilot volume.
 - **Context:** Deliberately cut from the wallet build (Approach A, design doc
-  `docs/plans/2026-rider-wallet-design.md`). The wallet ships with an internal
+  `docs/archive/plans/2026-rider-wallet-design.md`). The wallet ships with an internal
   ledger-vs-balance integrity job only — that job (design step 6) was specified but unbuilt
   until roadmap item 1.3 landed it; this remaining item is the *external* statement-matching half.
 - **Trigger / blocked by:** EcoCash rail live (wallet PR2) AND commission rate flipped
@@ -46,7 +46,7 @@ starts from reasoning, not archaeology.
 ### 3. Generate wallet visual mockups with the gstack designer
 
 - **What:** Run `$D variants` against the wallet screens now fully specified in
-  `docs/plans/2026-rider-wallet-design.md` (UI Specification block): Wallet balance
+  `docs/archive/plans/2026-rider-wallet-design.md` (UI Specification block): Wallet balance
   hero, show-the-math receipt rows, USSD wait state, gate state — pick a direction on
   the comparison board.
 - **Why:** The 2026-07-13 design review ran text-only — the designer binary was
@@ -125,7 +125,7 @@ starts from reasoning, not archaeology.
 - **Trigger / blocked by:** Any decision to schedule commission rate > 0% — settlement must be
   built BEFORE the rate flips.
 
-## Merchant web upgrade (from /plan-ceo-review 2026-09-29, `docs/plans/2026-09-29-merchant-web-upgrade-plan.md` §11)
+## Merchant web upgrade (from /plan-ceo-review 2026-09-29, `docs/archive/plans/2026-09-29-merchant-web-upgrade-plan.md` §11)
 
 ### TODO-1 · Retire the `owner_profile_id` fallback and repair flipped roles
 

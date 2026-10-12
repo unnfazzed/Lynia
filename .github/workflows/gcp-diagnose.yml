@@ -1,5 +1,5 @@
 # Read-only production diagnosis for the post-2026-07-08 deploy crash-loop
-# (docs/GCP-PENDING-REVIEW-2026-07-13.md; the 07-10 provisioning review is in git history) AND admin-console IAP sign-in failures
+# (docs/archive/GCP-PENDING-REVIEW-2026-07-13.md; the 07-10 provisioning review is in git history) AND admin-console IAP sign-in failures
 # (e.g. IAP "Error code 11" — incorrectly configured OAuth client). Dispatch-only;
 # makes NO changes. Auths with the same keyless WIF deployer identity as release.yml.
 # Every probe is best-effort: where the deployer SA lacks a role, the step records
@@ -65,7 +65,7 @@ jobs:
             --format 'value(timestamp, severity, textPayload, jsonPayload.message)' \
             || echo "RESULT: logging.read DENIED for the deployer SA (grant roles/logging.viewer to read crash logs from CI)"
 
-      # MOB-MAP-02 / docs/MOB-MAP-02-RUNBOOK.md. Two questions this answers that previously needed
+      # MOB-MAP-02 / docs/archive/MOB-MAP-02-RUNBOOK.md. Two questions this answers that previously needed
       # either the GCP console on a desktop or `gcloud` on a laptop:
       #
       #   1. WHAT ARE THE KEY IDS? Arming infra/terraform/apikeys.tf needs the final component of

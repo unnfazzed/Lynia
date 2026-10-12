@@ -47,7 +47,7 @@ const RAIL_LABEL: Record<TopupRail, string> = {
 };
 
 /**
- * The prepaid commission wallet (design docs/plans/2026-rider-wallet-design.md — PR1 core).
+ * The prepaid commission wallet (design docs/archive/plans/2026-rider-wallet-design.md — PR1 core).
  *
  * Owns the rider's commission float: the per-ride debit written in the completion transaction
  * ({@link chargeCommission}), the balance + append-only ledger reads, the top-up intents, and the

@@ -372,7 +372,7 @@ export const envSchema = z.object({
     (v) => (v === "" ? undefined : v),
     z.coerce.number().int().positive().optional(),
   ),
-  // --- Commission wallet (policy COMMISSION, docs/plans/2026-rider-wallet-design.md) ---
+  // --- Commission wallet (policy COMMISSION, docs/archive/plans/2026-rider-wallet-design.md) ---
   // Overrides the bundled COMMISSION.ratePct default — 10% since owner 2026-10-12 (unset = 10; "0"
   // switches commission off, an env change, not a code deploy — design OV-2A). Clamped [0,100] and resolved in ONE place
   // (resolveCommissionRatePct); a malformed value falls back to the bundled default rather than

@@ -728,7 +728,7 @@ export const OrderFlagsResponse = z.object({ rxEnabled: z.boolean() });
 export type OrderFlagsResponse = z.infer<typeof OrderFlagsResponse>;
 
 // ---------------------------------------------------------------------------
-// Rider prepaid commission wallet (docs/plans/2026-rider-wallet-design.md)
+// Rider prepaid commission wallet (docs/archive/plans/2026-rider-wallet-design.md)
 // ---------------------------------------------------------------------------
 // A prepaid float a rider tops up; each completed ride debits `perRideCommission(agreedFare)` from it.
 // Ships inert at ratePct 0 (no debits, wallet hidden). Money values on the wire are plain JS numbers
@@ -872,7 +872,7 @@ export type MerchantHoursWindow = z.infer<typeof MerchantHoursWindow>;
 export const MerchantHours = z.partialRecord(z.enum(DAY_KEYS), MerchantHoursWindow);
 export type MerchantHours = z.infer<typeof MerchantHours>;
 
-/** Merchant web upgrade L1 (docs/plans/2026-09-29-merchant-web-upgrade-plan.md): what a business sells,
+/** Merchant web upgrade L1 (docs/archive/plans/2026-09-29-merchant-web-upgrade-plan.md): what a business sells,
  *  chosen once at sign-up. There is no endpoint that changes it — a wrong pick is a support fix. */
 export const MerchantBusinessType = z.enum(["restaurant", "shop"]);
 export type MerchantBusinessType = z.infer<typeof MerchantBusinessType>;
@@ -2198,7 +2198,7 @@ export const MerchantWeekSummaryResponse = z
   .strict();
 export type MerchantWeekSummaryResponse = z.infer<typeof MerchantWeekSummaryResponse>;
 
-/* ── Merchant web upgrade L2: Book a rider (docs/plans/2026-09-29-merchant-web-upgrade-plan.md D9) ──
+/* ── Merchant web upgrade L2: Book a rider (docs/archive/plans/2026-09-29-merchant-web-upgrade-plan.md D9) ──
  * A business books a Send delivery from its own pin. The order's customer of record is the business's
  * booking account (phone `business:<merchantId>`), so every booking is business-wide and the customer
  * app never sees one. These are the merchant-scoped shapes; Send's own contracts are unchanged. */

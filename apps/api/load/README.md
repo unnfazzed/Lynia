@@ -40,4 +40,4 @@ BASE_URL=https://<staging-host> k6 run apps/api/load/abuse.js
   `match_select_total{outcome}` on the dashboard.
 - `abuse.js`: `throttled_429 > 0` and `server_5xx < 0.01` = the throttle + exception filter hold.
 
-Record p95s + breaches into `docs/ENG-REVIEW.md`; breaches become LR14 ceilings or fixes.
+Record p95s + breaches into `docs/archive/ENG-REVIEW.md`; breaches become LR14 ceilings or fixes.

@@ -1,4 +1,4 @@
-# Merchant dashboard tier (docs/plans/2026-merchant-console-deployment.md) — a third Cloud Run
+# Merchant dashboard tier (docs/archive/plans/2026-merchant-console-deployment.md) — a third Cloud Run
 # service (lynia-merchant) in the SAME project/VPC, exposed through the EXISTING external ALB under
 # var.merchant_domain. Companion to lb.tf (the API) and admin.tf (the admin console).
 #
