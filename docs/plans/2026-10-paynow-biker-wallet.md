@@ -1,13 +1,14 @@
 # Plan: Paynow top-ups for the biker wallet — UI flow first
 
-Status: **DRAFT — remaining owner calls in § 6 (copy approval, recording the D2 reversal)**
+Status: **APPROVED (owner, 2026-10-12)**: Paynow, the biker pays a 2.5% fee, InnBucks and O'mari "Coming soon", current design first, and the copy in § 3.
 Date: 2026-10-12
 Scope: the biker's commission-wallet top-up (`app/wallet/top-up.tsx`, `src/ui/rider/TopUpFlow.tsx`, the
 Money tab's pending notices). This plan covers the **UI flow**. Backend work is listed only where the UI depends on it.
 
 > **This reverses an earlier owner call.** `docs/plans/2026-rider-wallet-design.md` Premise 4 / D2 said
 > "No Paynow / aggregator", and the plan was to integrate EcoCash directly. Choosing Paynow now removes the Econet merchant
-> onboarding, which was that build's critical path. Record the reversal there when this plan is approved.
+> onboarding, which was that build's critical path. This plan supersedes that premise. Nothing in the code depends on it
+> (`PaymentRail` is provider-agnostic), so the July doc is left as the historical record.
 
 > **Design rule for this feature (owner, 2026-10-12):** *"we are using current design and if current design is not enough we
 > do new screens."* Wherever the drawn Rider v2 top-up (T1–T6) covers a state, the app uses it as drawn. Where it doesn't (the fee
@@ -326,8 +327,8 @@ hosted-page tokenise step, which is a bigger UX decision.
    first. InnBucks and O'mari stay on T1 and in Settings as disabled "Coming soon" options (§ 3 T1) until T4b and T4c are drawn and
    built in Phase 2.
 2. ~~**Paynow's fee: who pays it?**~~ **DECIDED (owner, 2026-10-12): the biker pays it, and the copy states the 2.5% fee.**
-   See § 3, "The biker pays the 2.5% transaction fee". Still open: confirm the InnBucks and O'mari rates with Paynow, and
-   approve the proposed copy for the D-103 ledger entry.
+   See § 3, "The biker pays the 2.5% transaction fee". **Copy approved by the owner (2026-10-12)** for the D-103 ledger entry.
+   Still open before Phase 2: confirm the InnBucks and O'mari rates with Paynow.
    **The rates** (paynow.co.zw/Home/Fees, read 2026-10-12): **EcoCash 2.5%**, a flat percentage with no fixed part, the same as
    OneMoney and Telecash. Cards are 3.5% + 50c. InnBucks and O'mari aren't listed, so confirm those with Paynow. Paynow's
    page confirms the merchant can absorb the fee, add it on top, or split it.
@@ -341,7 +342,7 @@ hosted-page tokenise step, which is a bigger UX decision.
    processing cost at reconciliation.
 3. ~~**OneMoney and cards.**~~ **Out, following the owner's design rule (2026-10-12):** the current design draws EcoCash, InnBucks
    and O'mari, which is enough. Adding OneMoney later would be a new T1 card under the same rule.
-4. **Record the reversal of D2** ("no Paynow") in `2026-rider-wallet-design.md` and the ledger.
+4. ~~**Record the reversal of D2.**~~ **Not needed.** This plan records it (see the note at the top), and no code depends on the July premise.
 5. **Paynow account:** a USD integration ID with EcoCash (plus InnBucks and O'mari for Phase 2) enabled, and the merchant login email for
    `authemail`. The integration keys go into the API's secret store, never into the repo.
 
