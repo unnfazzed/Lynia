@@ -203,6 +203,15 @@ hosted-page tokenise step, which is a bigger UX decision.
    otherwise (a).*
 2. **Paynow's fee: who pays it?** *Recommended:* Lynia absorbs it, so "$5 charged = $5 credited" and T2/T3 copy stays
    true. If the biker pays it, T2 needs a drawn fee line.
+   **The rates** (paynow.co.zw/Home/Fees, read 2026-10-12): **EcoCash 2.5%**, a flat percentage with no fixed part, the same as
+   OneMoney and Telecash. Cards are 3.5% + 50c. InnBucks and O'mari aren't listed, so confirm those with Paynow. Paynow's
+   page confirms the merchant can absorb the fee, add it on top, or split it.
+   With no fixed part, the minimum top-up doesn't need to change. A $5 top-up costs Lynia $0.13, $10 costs $0.25, $20 costs $0.50 and $50 costs $1.25.
+   Top-up money is prepaid commission, so absorbing the fee lowers Lynia's net commission revenue by 2.5% across the board.
+   At a 5% commission rate, the effective take is ~4.875% of the fare.
+   How to absorb it: set the integration so the merchant pays the fee, request the biker's exact amount, credit the
+   **gross** amount Paynow reports as paid (not the net settled to the bank), and book the gross-minus-net difference as a
+   processing cost at reconciliation.
 3. **OneMoney and cards.** Add them to T1 (needs a design export), or leave them out? *Recommended:* leave them out for now, because EcoCash
    dominates the pilot corridor.
 4. **Record the reversal of D2** ("no Paynow") in `2026-rider-wallet-design.md` and the ledger.
@@ -218,3 +227,4 @@ hosted-page tokenise step, which is a bigger UX decision.
 - Polling: https://developers.paynow.co.zw/docs/paynow/polling_status/
 - Generating a hash: https://developers.paynow.co.zw/docs/paynow/generating_hash/
 - Test mode: https://developers.paynow.co.zw/docs/paynow/test_mode/
+- Fees: https://www.paynow.co.zw/Home/Fees
