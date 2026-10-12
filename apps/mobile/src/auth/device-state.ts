@@ -169,6 +169,37 @@ export async function saveCodeRevealedAt(orderId: string, at: string): Promise<v
   }
 }
 
+// D-97 (2.14b): the code version (`OrderSnapshot.codeRotatedAt`) the customer last shared or was first
+// shown, and when it was shared — so "New code · share it again" survives an app restart and goes once the
+// new code has been sent. Deliberately NOT cleared by clearDeliveryCode: a rotation clears the code, and
+// this is how the card knows the next one is new. Swept at sign-out with the codes (same index).
+const codeSharedKey = (orderId: string): string => `lynia.deliveryCodeShared.${orderId}`;
+
+export interface CodeShared {
+  /** The `codeRotatedAt` the customer has (the first one seen, or the one they last shared). */
+  version: string;
+  /** When they shared it; null for a first-seen baseline. */
+  sharedAt: string | null;
+}
+
+export async function saveCodeShared(orderId: string, v: CodeShared): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(codeSharedKey(orderId), JSON.stringify(v));
+  } catch {
+    /* best-effort */
+  }
+}
+export async function loadCodeShared(orderId: string): Promise<CodeShared | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(codeSharedKey(orderId));
+    if (!raw) return null;
+    const v = JSON.parse(raw) as Partial<CodeShared>;
+    return typeof v.version === "string" ? { version: v.version, sharedAt: typeof v.sharedAt === "string" ? v.sharedAt : null } : null;
+  } catch {
+    return null;
+  }
+}
+
 // A durable "confirmItems still needs to reach the server for order X" marker (KB-CONFIRMITEMS-RETRY). The
 // rider's pickup-item confirmation is fired as the rider advances to `picked_up`; if that POST's response
 // is lost (or the app is killed) right then, the order is left permanently missing its confirmed-items
@@ -626,6 +657,8 @@ export async function clearDeviceState(): Promise<void> {
       ...codes.map((id) => SecureStore.deleteItemAsync(codeRotatedAtKey(id))),
       // D4: ...and each code's companion press-and-hold reveal log (same order ids in the index).
       ...codes.map((id) => SecureStore.deleteItemAsync(codeRevealedKey(id))),
+      // D-97: ...and each code's last-shared version (same order ids in the index).
+      ...codes.map((id) => SecureStore.deleteItemAsync(codeSharedKey(id))),
     ]);
   } catch {
     /* best-effort */

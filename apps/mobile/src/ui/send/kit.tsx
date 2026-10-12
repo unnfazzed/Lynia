@@ -368,17 +368,23 @@ export function Notice({
   text,
   lead,
   tone = "calm",
+  stack,
   style,
 }: {
   icon?: IconName;
   text: string;
   /** A bold first sentence before `text` (the order screen's no-riders notice, D-53). */
   lead?: string;
-  tone?: "calm" | "warn" | "wash";
+  /** gold: the highlight strip (customer briefs 06 / 08, D-97) — gold wash, gold border, gold ink. */
+  tone?: "calm" | "warn" | "wash" | "gold";
+  /** The bold `lead` on a line of its own, `text` under it (2.14b, 2.14d). */
+  stack?: boolean;
   style?: ViewStyle;
 }): React.ReactElement {
   const warn = tone === "warn";
   const wash = tone === "wash";
+  const gold = tone === "gold";
+  const ink = gold ? tokens.color.highlightInk : tokens.color.ink;
   return (
     <View
       accessibilityRole={warn ? "alert" : "text"}
@@ -386,18 +392,18 @@ export function Notice({
         flexDirection: "row",
         alignItems: "flex-start",
         gap: 10,
-        backgroundColor: warn ? tokens.color.bg : wash ? tokens.color.accentWash : tokens.color.surface,
+        backgroundColor: warn ? tokens.color.bg : wash ? tokens.color.accentWash : gold ? tokens.color.highlightWash : tokens.color.surface,
         borderWidth: wash ? 0 : 1,
-        borderColor: warn ? tokens.color.danger : tokens.color.line,
+        borderColor: warn ? tokens.color.danger : gold ? tokens.color.highlightBorder : tokens.color.line,
         borderRadius: tokens.radius.input,
         paddingVertical: 10,
         paddingHorizontal: 12,
         ...style,
       }}
     >
-      <Icon name={icon} size={18} color={warn ? tokens.color.danger : tokens.color.muted} />
-      <Text style={{ flex: 1, fontSize: 13, lineHeight: 19, color: tokens.color.ink }}>
-        {lead ? <Text style={{ fontWeight: tokens.font.weight.bold }}>{lead} </Text> : null}
+      <Icon name={icon} size={18} color={warn ? tokens.color.danger : gold ? tokens.color.highlightInk : tokens.color.muted} />
+      <Text style={{ flex: 1, fontSize: 13, lineHeight: 19, color: ink }}>
+        {lead ? <Text style={{ fontWeight: tokens.font.weight.bold }}>{stack ? `${lead}\n` : `${lead} `}</Text> : null}
         {text}
       </Text>
     </View>

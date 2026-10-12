@@ -96,7 +96,7 @@ jest.mock("../../../src/query/use-order-flow", () => ({
 }));
 let mockRxEnabled = false;
 jest.mock("../../../src/net/use-order-flags", () => ({ useOrderFlags: () => ({ rxEnabled: mockRxEnabled }) }));
-const mockRx = { pages: [] as { id: string; uri: string; key: string | null }[], uploading: false, keys: [] as string[], add: jest.fn(), remove: jest.fn(), clear: jest.fn() };
+const mockRx = { pages: [] as { id: string; uri: string; key: string | null }[], uploading: false, keys: [] as string[], add: jest.fn(), remove: jest.fn(), restore: jest.fn(), replace: jest.fn(), clear: jest.fn() };
 // U30: the screen's page-upload error handler, so a test can raise one.
 let mockRxOnError: ((err: unknown) => void) | null = null;
 jest.mock("../../../src/query/use-prescription-photos", () => ({
@@ -623,6 +623,57 @@ describe("R8a / R8b — prescription (behind rxEnabled)", () => {
     press(t, /^Place order · /);
     await flush();
     expect(mockPlace.mock.calls[0]![1].prescription).toEqual({ photoKeys: ["rx/u/1.jpg", "rx/u/2.jpg"], patientName: "Rudo Moyo", consent: true });
+  });
+
+  it("R8c / R8d (brief 09, D-97): each thumb has a 44 'Remove page {n}' badge; remove raises 'Page removed' + Undo", async () => {
+    mockRxEnabled = true;
+    shopCart("pharmacy", RX);
+    const p2 = { id: "rx-2", uri: "file:///p2.jpg", key: null };
+    mockRx.pages = [{ id: "rx-1", uri: "file:///p1.jpg", key: "rx/u/1.jpg" }, p2];
+    mockRx.uploading = true;
+    const t = render();
+    await flush();
+    const badge = pressable(t, "Remove page 2")!;
+    expect(badge.props.accessibilityRole).toBe("button");
+    expect([badge.props.style].flat()).toEqual(expect.arrayContaining([expect.objectContaining({ width: 44, height: 44 })]));
+    expect(pressable(t, "Remove page 1")).toBeTruthy();
+    expect(pressable(t, "Page 1, open")).toBeTruthy();
+    // A page still uploading is removable too.
+    press(t, "Remove page 2");
+    expect(mockRx.remove).toHaveBeenCalledWith("rx-2");
+    expect(texts(t)).toContain("Page removed");
+    press(t, "Undo");
+    expect(mockRx.restore).toHaveBeenCalledWith(p2, 1);
+    expect(texts(t)).not.toContain("Page removed");
+  });
+
+  it("R8e (brief 09, D-97): the thumb opens the page viewer — Page n of total, Remove, Retake, Close", async () => {
+    mockRxEnabled = true;
+    shopCart("pharmacy", RX);
+    mockRx.pages = [
+      { id: "rx-1", uri: "file:///p1.jpg", key: "rx/u/1.jpg" },
+      { id: "rx-2", uri: "file:///p2.jpg", key: "rx/u/2.jpg" },
+    ];
+    mockRx.keys = ["rx/u/1.jpg", "rx/u/2.jpg"];
+    const t = render();
+    await flush();
+    expect(texts(t)).not.toContain("Page 2 of 2");
+    press(t, "Page 2, open");
+    expect(texts(t)).toContain("Page 2 of 2");
+    press(t, "Close");
+    expect(texts(t)).not.toContain("Page 2 of 2");
+    press(t, "Page 2, open");
+    press(t, "Retake");
+    expect(texts(t)).not.toContain("Page 2 of 2");
+    act(() => {
+      jest.advanceTimersByTime(400);
+    });
+    expect(mockRx.replace).toHaveBeenCalledWith("rx-2", "camera");
+    press(t, "Page 1, open");
+    press(t, "Remove");
+    expect(mockRx.remove).toHaveBeenCalledWith("rx-1");
+    expect(texts(t)).not.toContain("Page 1 of 2");
+    expect(texts(t)).toContain("Page removed");
   });
 });
 

@@ -322,7 +322,8 @@ describe("delivery code — D2 (U20 failed read, U04 lockout re-issue)", () => {
 
   // D2 review item 1: the server caps lockout re-issues per order; past it the app must not offer a retry
   // that can't succeed.
-  it("past the server's re-issue cap: no Try again — the server's message and Call support; it doesn't loop", async () => {
+  // D-97 (2.14d) replaced the sticky toast: the card itself says so, with its own Call support.
+  it("past the server's re-issue cap: no Try again — the 2.14d limit card and Call support; it doesn't loop", async () => {
     mockGetOrder.mockResolvedValue(assignedOrder({ deliveryOtpAttempts: 5, codeRotatedAt: "2026-10-07T09:00:00.000Z" }));
     const { ApiError } = jest.requireActual("../../../src/api/client") as typeof import("../../../src/api/client");
     mockRotateDeliveryCode.mockRejectedValue(
@@ -338,7 +339,7 @@ describe("delivery code — D2 (U20 failed read, U04 lockout re-issue)", () => {
     await settle();
 
     expect(mockRotateDeliveryCode).toHaveBeenCalledTimes(1);
-    expect(textHits(tree, "Too many wrong tries on this code. Call LyniaGo support to finish this delivery.")).toBeGreaterThan(0);
+    expect(textHits(tree, "Too many wrong tries · call us to finish")).toBeGreaterThan(0);
     expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Call support" && typeof n.props.onPress === "function").length).toBeGreaterThan(0);
     expect(tree.root.findAll((n) => n.props.accessibilityLabel === "Try again" && typeof n.props.onPress === "function")).toHaveLength(0);
     expect(mockRevealDeliveryCode).not.toHaveBeenCalled();
@@ -371,6 +372,69 @@ describe("delivery code — D2 (U20 failed read, U04 lockout re-issue)", () => {
     expect(mockRotateDeliveryCode).toHaveBeenCalledTimes(2);
     expect(codeShown(tree, "604117")).toBe(true);
     expect(mockRevealDeliveryCode).not.toHaveBeenCalled();
+  });
+
+  // D-97 (2.14c): the failed re-issue no longer leaves a toast — the card says a new code needs data and,
+  // once that automatic fetch has failed, offers "Send a new code".
+  it("D-97 2.14c: a failed re-issue shows the needs-data card; Send a new code brings the new code", async () => {
+    mockGetOrder.mockResolvedValue(assignedOrder({ deliveryOtpAttempts: 5, codeRotatedAt: "2026-10-07T09:00:00.000Z" }));
+    mockRotateDeliveryCode.mockRejectedValueOnce(new Error("timeout")).mockResolvedValueOnce({ deliveryCode: "604117" });
+
+    const tree = await render();
+    await act(async () => {
+      releaseCodeRead?.("482913");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await settle();
+    await settle();
+
+    expect(JSON.stringify(tree.toJSON())).toContain("The old code stopped working. A new one needs data.");
+    expect(codeShown(tree, "482913")).toBe(false);
+    const sendNew = tree.root.findAll((n) => n.props.accessibilityLabel === "Send a new code" && typeof n.props.onPress === "function");
+    expect(sendNew.length).toBeGreaterThan(0);
+    await act(async () => {
+      sendNew[0]!.props.onPress();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await settle();
+    expect(codeShown(tree, "604117")).toBe(true);
+  });
+
+  // D-97 (2.14b): a re-issued code is "New code" until it's shared; sharing it clears the strip.
+  it("D-97 2.14b: the re-issued code shows the New code strip until Share code", async () => {
+    const { Share } = jest.requireActual("react-native") as typeof import("react-native");
+    const shareSpy = jest.spyOn(Share, "share").mockResolvedValue({ action: "sharedAction" });
+    mockGetOrder.mockResolvedValue(assignedOrder({ deliveryOtpAttempts: 5, codeRotatedAt: "2026-10-07T09:00:00.000Z" }));
+    mockRotateDeliveryCode.mockResolvedValue({ deliveryCode: "604117" });
+    // The stale pre-rotation snapshot can re-baseline the stamp, so the next one reads the new code back.
+    mockRevealDeliveryCode.mockResolvedValue({ deliveryCode: "604117" });
+
+    const tree = await render();
+    await act(async () => {
+      releaseCodeRead?.("482913");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await settle();
+    // The server's next snapshot carries the new code's stamp and the reset tries.
+    mockGetOrder.mockResolvedValue(assignedOrder({ deliveryOtpAttempts: 0, codeRotatedAt: "2026-10-07T09:20:00.000Z" }));
+    await act(async () => {
+      mockForeground?.();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await settle();
+    await settle();
+
+    expect(codeShown(tree, "604117")).toBe(true);
+    expect(textHits(tree, "New code · the old one stopped working")).toBeGreaterThan(0);
+    const shareBtn = tree.root.findAll((n) => n.props.accessibilityLabel === "Share code" && typeof n.props.onPress === "function");
+    await act(async () => {
+      shareBtn[0]!.props.onPress();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(shareSpy).toHaveBeenCalled();
+    expect(textHits(tree, "New code · the old one stopped working")).toBe(0);
+    expect(textHits(tree, "New code · shared")).toBeGreaterThan(0);
+    shareSpy.mockRestore();
   });
 
   // Second review F5: a Try again on a failed read, tapped while a lockout re-issue is in flight, must not

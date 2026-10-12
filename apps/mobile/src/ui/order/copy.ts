@@ -172,6 +172,22 @@ export const ORDER_COPY = {
   tries1: "1 try",
   triesN: "tries",
   cxLyniaGeneric: "We had to stop this order. Call us if you have questions.",
+
+  /* ───── customer briefs 06 + 08 (`handoff/customer-briefs-06-09/copy.ts`, ledger D-97) ───── */
+  /* 06 · 18d / 18e / 18b / 18f — a cancel after pickup */
+  lateCancelYouTitle: "You cancelled this order",
+  nothingToPay: "Nothing to pay.",
+  lateCancelStripRest: "Call to get it back.",
+  riderNoAnswer: "Not answering? Call support",
+  numbersHidden: "Numbers are hidden now the trip's over.",
+  stillNeedParcel: "Still need your parcel? Call support",
+  /* 08 · 2.14b / 2.14c / 2.14d — the code changed */
+  codeChangedTitle: "New code · the old one stopped working",
+  codeNewChip: "New code",
+  codeGettingNew: "Getting your new code…",
+  codeNeedsData: "The old code stopped working. A new one needs data.",
+  sendNewCode: "Send a new code",
+  codeLimitTitle: "Too many wrong tries · call us to finish",
 } as const;
 
 const A = ORDER_COPY;
@@ -330,6 +346,24 @@ export const orderText = {
   /** "The rider reported the pickup was closed." etc. — an ops reason, as given. */
   /** "ETA 6 min" */
   eta: (min: number): string => `${A.eta} ${min} ${A.min}`,
+
+  /* ───── customer briefs 06 + 08 (D-97): the handoff's `{rider}` / `{time}` / `{recipient}` strings ───── */
+  /** "Tendai cancelled the trip" (18b) */
+  lateCancelRiderTitle: (rider: string): string => `${rider} cancelled the trip`,
+  /** "Tendai still has your parcel." — the gold strip's bold clause (18d) */
+  lateCancelStripBold: (rider: string): string => `${rider} still has your parcel.`,
+  /** "Call Tendai" */
+  callRiderCta: (rider: string): string => `Call ${rider}`,
+  /** "Call and WhatsApp work once Tendai's number comes through." (18e) */
+  riderNumberPending: (rider: string): string => `Call and WhatsApp work once ${rider}'s number comes through.`,
+  /** "Tendai · 09:14" — the dimmed map's last-seen pin */
+  riderLastSeen: (rider: string, time: string): string => (time ? `${rider} · ${time}` : rider),
+  /** "Share it again with Rudo." — the order carries no recipient name, so "the recipient" stands in. */
+  codeChangedSub: (recipient = "the recipient"): string => `Share it again with ${recipient}.`,
+  /** "New code · shared 09:14" */
+  codeSharedLine: (time: string): string => `New code · shared ${time}`,
+  /** "Your parcel is safe with Tendai." (2.14d) */
+  codeLimitSub: (rider: string): string => `Your parcel is safe with ${rider}.`,
 } as const;
 
 /** "Tendai M." — first name + last initial, the handoff's rider label. */

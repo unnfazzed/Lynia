@@ -1,17 +1,25 @@
 import type { ScheduleSlot, ScheduleSlotsResponse } from "@lynia/shared";
-import { FirstRunToast } from "../firstrun/toast";
+import { FirstRunToast, type FirstRunToastTone } from "../firstrun/toast";
 import { tokens } from "@lynia/shared/tokens";
 import React from "react";
-import { ActivityIndicator, Image, Modal, ScrollView, Text, TextInput, View, type LayoutChangeEvent, type TextInputProps, type TextStyle, type ViewStyle } from "react-native";
+import { ActivityIndicator, Image, Modal, ScrollView, Text, TextInput, useWindowDimensions, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type TextInputProps, type TextStyle, type ViewStyle } from "react-native";
 import { formatMoney } from "../../logic/money";
 import { firstSlot, type ChosenSlot, type SlotDay } from "../../logic/review";
 import { GRAB, HAIRLINE, RADIO_OFF, TABULAR } from "../browse/kit";
 import { Icon, type IconName } from "../Icon";
 import { Tappable } from "../Tappable";
 import { O, O_ADDED, ofFmt } from "./copy";
+import { OB } from "./kit-copy";
 
 /** `ofAlpha.scrim` — the modal dim the handoff draws. */
 const SCRIM = "rgba(20,24,27,0.45)";
+/** R8c (brief 09, D-97): the spinner veil on a page still uploading — `#ffffffb3` in the handoff. */
+const UPLOAD_VEIL = "rgba(255,255,255,0.7)";
+/** R8e's Close pill on ink. The handoff draws `#2a3036` (no token); the existing ink photo viewer's pill
+ *  (`src/ui/order/panels.tsx` PhotoViewer) is white 12% on ink — the existing component wins. */
+const ON_INK_PILL = "rgba(255,255,255,0.12)";
+/** R8c: the ✕ badge's 44 hit area, centred on the thumb's top-right corner. */
+const RX_HIT = tokens.touchTargetMin;
 
 /**
  * Review & place parts (Order flow v2.1 R1–R9, ledger D-59) — `of-kit.js` + the v2.1 `of-polish.js`
@@ -192,6 +200,10 @@ export function SmButton({ label, icon, filled, onPress, disabled }: { label: st
  * RxBlock (R8a / R8b, behind `rxEnabled`). Empty: a 1.5 green border, "Up to 3 pages. A pharmacist checks
  * it before packing." and Take photo (filled) / From gallery. Added: 64×80 page thumbs + a dashed add
  * tile (while under 3 pages), the patient name field and the consent tick.
+ *
+ * R8c (brief 09, ledger D-97): with `onRemove`, each thumb wears a ✕ badge — a 24 ink disc in a 2px white
+ * ring, centred on its top-right corner, with a 44×44 hit area — and the row's gap is 16. A page still
+ * uploading (white 70% veil + spinner) is removable too. With `onOpen`, tapping the thumb opens R8e.
  */
 export function RxBlock({
   pages,
@@ -201,6 +213,8 @@ export function RxBlock({
   onPatient,
   consent,
   onConsent,
+  onRemove,
+  onOpen,
 }: {
   pages: readonly { id: string; uri: string; uploading: boolean }[];
   canAddMore: boolean;
@@ -209,6 +223,10 @@ export function RxBlock({
   onPatient: (t: string) => void;
   consent: boolean;
   onConsent: () => void;
+  /** R8c: the ✕ badge — drop this page (the screen raises R8d's Undo toast). */
+  onRemove?: (id: string) => void;
+  /** R8c: tap the thumb itself — R8e's page viewer. */
+  onOpen?: (id: string) => void;
 }): React.ReactElement {
   if (pages.length === 0) {
     return (
@@ -223,18 +241,55 @@ export function RxBlock({
   }
   return (
     <ReviewBlock label={O.r.rxT}>
-      <View style={{ flexDirection: "row", gap: 8 }}>
-        {pages.map((p, i) => (
-          <View
-            key={p.id}
-            accessible
-            accessibilityLabel={ofFmt(O.r.rxPage, { n: i + 1 })}
-            style={{ width: 64, height: 80, borderRadius: 12, overflow: "hidden", backgroundColor: tokens.color.surface, alignItems: "center", justifyContent: "center" }}
-          >
-            <Image source={{ uri: p.uri }} style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }} />
-            {p.uploading ? <ActivityIndicator size="small" color={tokens.color.accentText} /> : null}
-          </View>
-        ))}
+      <View
+        style={
+          onRemove
+            ? // R8c: the 44 badges stand 22 above the thumbs; the row keeps them inside its own bounds (a touch
+              // outside a parent's bounds never reaches Android) and draws only the handoff's 8 above.
+              { flexDirection: "row", flexWrap: "wrap", gap: 16, paddingTop: RX_HIT / 2, marginTop: 8 - RX_HIT / 2, paddingRight: 8 }
+            : { flexDirection: "row", gap: 8 }
+        }
+      >
+        {pages.map((p, i) => {
+          const thumb: ViewStyle = { width: 64, height: 80, borderRadius: 12, overflow: "hidden", backgroundColor: tokens.color.surface, alignItems: "center", justifyContent: "center" };
+          const face = (
+            <>
+              <Image source={{ uri: p.uri }} style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }} />
+              {p.uploading ? (
+                <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: onRemove ? UPLOAD_VEIL : "transparent", alignItems: "center", justifyContent: "center" }}>
+                  <ActivityIndicator size="small" color={tokens.color.accentText} />
+                </View>
+              ) : null}
+            </>
+          );
+          const page = onOpen ? (
+            <Tappable tone="icon" onPress={() => onOpen(p.id)} accessibilityRole="button" accessibilityLabel={ofFmt(OB.openPageA11y, { n: i + 1 })} style={thumb}>
+              {face}
+            </Tappable>
+          ) : (
+            <View accessible accessibilityLabel={ofFmt(O.r.rxPage, { n: i + 1 })} style={thumb}>
+              {face}
+            </View>
+          );
+          if (!onRemove) return <React.Fragment key={p.id}>{page}</React.Fragment>;
+          return (
+            // The thumb's footprint stays 64×80; the wrapper reaches up/right to hold the badge's hit area.
+            <View key={p.id} style={{ paddingTop: RX_HIT / 2, paddingRight: RX_HIT / 2, marginTop: -RX_HIT / 2, marginRight: -RX_HIT / 2 }}>
+              {page}
+              <Tappable
+                tone="icon"
+                onPress={() => onRemove(p.id)}
+                accessibilityRole="button"
+                accessibilityLabel={ofFmt(OB.removePageA11y, { n: i + 1 })}
+                style={{ position: "absolute", top: 0, right: 0, width: RX_HIT, height: RX_HIT, alignItems: "center", justifyContent: "center" }}
+              >
+                <View style={{ width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: tokens.color.bg, backgroundColor: tokens.color.ink, alignItems: "center", justifyContent: "center" }}>
+                  <Icon name="x" size={14} strokeWidth={2.5} color={tokens.color.onAccent} />
+                </View>
+              </Tappable>
+            </View>
+          );
+        })}
         {canAddMore ? (
           <Tappable
             tone="icon"
@@ -666,18 +721,22 @@ export function PrimaryButton({
   loading,
   ghost,
   icon,
+  tone,
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
   loading?: boolean;
+  /** R8e (brief 09, D-97) on ink: `danger` = danger fill, white label (Remove); `onInk` = transparent, 1px
+   *  muted border, white label (Retake). */
+  tone?: "danger" | "onInk";
   /** A leading 18 glyph (R6b's "📅 Schedule for …"). */
   icon?: IconName;
   /** `.btn.g` (polish): surface fill, green label, no border. */
   ghost?: boolean;
 }): React.ReactElement {
   const off = !!disabled && !loading;
-  const bg = ghost ? tokens.color.surface : off ? tokens.color.line : tokens.color.cta;
+  const bg = ghost ? tokens.color.surface : off ? tokens.color.line : tone === "danger" ? tokens.color.danger : tone === "onInk" ? "transparent" : tokens.color.cta;
   const fg = ghost ? tokens.color.accentText : off ? tokens.color.muted : tokens.color.onAccent;
   return (
     <Tappable
@@ -691,6 +750,7 @@ export function PrimaryButton({
         minHeight: tokens.touchTargetPrimary,
         borderRadius: tokens.radius.pill,
         backgroundColor: bg,
+        ...(tone === "onInk" ? { borderWidth: 1, borderColor: tokens.color.muted } : null),
         opacity: loading ? 0.55 : 1,
         flexDirection: "row",
         alignItems: "center",
@@ -721,11 +781,120 @@ export function ReviewBar({ hint, bottomInset, children }: { hint?: string | nul
 }
 
 /** `.toast` (polish): ink, r14, 14/16, alert icon + 13 white + the mint "↻ Try again". */
-export function ReviewToast({ text, action, onAction, bottom }: { text: string; action?: string; onAction?: () => void; bottom: number }): React.ReactElement {
+export function ReviewToast({
+  text,
+  action,
+  onAction,
+  bottom,
+  tone = "warning",
+}: {
+  text: string;
+  action?: string;
+  onAction?: () => void;
+  bottom: number;
+  /** R8d (brief 09, D-97): "Page removed" + Undo is a success toast (the check), not a failure. */
+  tone?: FirstRunToastTone;
+}): React.ReactElement {
   // Owner 2026-10-06 (D-82): the app-wide bottom toast's look, kept above the place bar.
   return (
     <View style={{ position: "absolute", left: 12, right: 12, bottom, zIndex: 35 }}>
-      <FirstRunToast text={text} tone="warning" action={action} onAction={onAction} assertive />
+      <FirstRunToast text={text} tone={tone} action={action} onAction={onAction} assertive={tone === "warning"} />
     </View>
+  );
+}
+
+/**
+ * R8e (brief 09, ledger D-97): the prescription page viewer — full screen on ink, a Close pill on the
+ * left and "Page {n} of {total}" centred, the page fit to the width (swipe between pages; pinch zoom on
+ * iOS through the zooming ScrollView — the app has no gesture library), then Remove (52, danger) and
+ * Retake (52, outline). Android back = Close.
+ */
+export function RxPageViewer({
+  pages,
+  openId,
+  onShow,
+  onClose,
+  onRemove,
+  onRetake,
+  topInset,
+  bottomInset,
+}: {
+  pages: readonly { id: string; uri: string }[];
+  /** The page on screen; null (or a page that's gone) = closed. */
+  openId: string | null;
+  /** A swipe brought another page on screen. */
+  onShow: (id: string) => void;
+  onClose: () => void;
+  onRemove: (id: string) => void;
+  onRetake: (id: string) => void;
+  topInset: number;
+  bottomInset: number;
+}): React.ReactElement {
+  const { width } = useWindowDimensions();
+  const index = openId ? pages.findIndex((p) => p.id === openId) : -1;
+  const visible = index >= 0;
+  const pager = React.useRef<ScrollView>(null);
+  const onSettle = (e: NativeSyntheticEvent<NativeScrollEvent>): void => {
+    const i = Math.round(e.nativeEvent.contentOffset.x / Math.max(1, width));
+    const p = pages[i];
+    if (p && p.id !== openId) onShow(p.id);
+  };
+  return (
+    <Modal visible={visible} transparent={false} animationType="fade" onRequestClose={onClose} statusBarTranslucent>
+      <View style={{ flex: 1, backgroundColor: tokens.color.ink, paddingTop: topInset }}>
+        <View style={{ height: 52, flexDirection: "row", alignItems: "center", paddingHorizontal: 12 }}>
+          <Tappable
+            tone="onDark"
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel={OB.close}
+            style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, borderRadius: tokens.radius.pill, backgroundColor: ON_INK_PILL, zIndex: 1 }}
+          >
+            <Icon name="x" size={18} color={tokens.color.onAccent} />
+            <Text style={{ fontSize: 15, fontWeight: tokens.font.weight.semibold, color: tokens.color.onAccent }}>{OB.close}</Text>
+          </Tappable>
+          <Text
+            accessibilityRole="header"
+            numberOfLines={1}
+            style={{ position: "absolute", left: 104, right: 104, textAlign: "center", fontSize: 16, fontWeight: tokens.font.weight.bold, color: tokens.color.onAccent, ...TABULAR }}
+          >
+            {visible ? ofFmt(OB.pageOf, { n: index + 1, total: pages.length }) : ""}
+          </Text>
+        </View>
+        {visible ? (
+          <ScrollView
+            ref={pager}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            contentOffset={{ x: index * width, y: 0 }}
+            onLayout={() => pager.current?.scrollTo({ x: index * width, animated: false })}
+            onMomentumScrollEnd={onSettle}
+            style={{ flex: 1 }}
+          >
+            {pages.map((p, i) => (
+              <ScrollView
+                key={p.id}
+                maximumZoomScale={3}
+                minimumZoomScale={1}
+                centerContent
+                showsHorizontalScrollIndicator={false}
+                showsVerticalScrollIndicator={false}
+                style={{ width }}
+                contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 16, paddingVertical: 12 }}
+              >
+                <Image source={{ uri: p.uri }} resizeMode="contain" accessible accessibilityLabel={ofFmt(OB.pageOf, { n: i + 1, total: pages.length })} style={{ flex: 1, width: width - 32, borderRadius: 16 }} />
+              </ScrollView>
+            ))}
+          </ScrollView>
+        ) : (
+          <View style={{ flex: 1 }} />
+        )}
+        <View style={{ gap: 8, paddingTop: 8, paddingHorizontal: 16, paddingBottom: 12 + bottomInset }}>
+          <PrimaryButton tone="danger" icon="trash" label={OB.remove} onPress={() => openId && onRemove(openId)} />
+          <PrimaryButton tone="onInk" icon="rotate-ccw" label={OB.retake} onPress={() => openId && onRetake(openId)} />
+        </View>
+      </View>
+    </Modal>
   );
 }

@@ -49,6 +49,8 @@ export async function uploadImage(
   uploadUrl: string,
   fileUri: string,
   headers: Record<string, string>,
+  /** Brief 09 (U29, D-97): the caller's cancel — a prescription page removed while it uploads. */
+  signal?: AbortSignal,
 ): Promise<void> {
   const blob = await (await fetch(fileUri)).blob();
   // Bounded (net/network-policy.ts, C-O2) so a stalled PUT can't hang behind the in-button spinner for
@@ -56,6 +58,9 @@ export async function uploadImage(
   // 150-400 KB photo over a slow uplink, so every attempt aborted and the page was thrown away.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), uploadTimeoutMs(blob.size));
+  const cancel = (): void => controller.abort();
+  if (signal?.aborted) cancel();
+  else signal?.addEventListener("abort", cancel, { once: true });
   let res: Response;
   try {
     res = await fetch(uploadUrl, { method: "PUT", headers, body: blob, signal: fetchSignal(controller) });
@@ -66,6 +71,7 @@ export async function uploadImage(
     throw err;
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener("abort", cancel);
   }
   if (!res.ok) throw new Error(`Photo upload failed (${res.status})`);
 }

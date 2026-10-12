@@ -215,6 +215,46 @@ export function deliveryCodeLockout(input: {
 }
 
 /**
+ * D-97 (customer brief 08): the code card's state. `limit` once the server refused another re-issue
+ * (2.14d); `ok` with a live code; `failed` when the automatic new-code fetch failed, or the code is locked
+ * and there's no data to replace it (2.14c); else `fetching` (2.14). A locked code not yet replaced from
+ * this phone (`lockPending`) is dead, so it never counts as a live code.
+ */
+export function codeCardStatus(i: { hasCode: boolean; lockPending: boolean; limit: boolean; newCodeFailed: boolean; online: boolean }): "ok" | "fetching" | "failed" | "limit" {
+  if (i.limit) return "limit";
+  if (i.hasCode && !i.lockPending) return "ok";
+  if (i.newCodeFailed || (i.lockPending && !i.online)) return "failed";
+  return "fetching";
+}
+
+/** D-97 (18f): the server sends the rider's number for a day after a cancel past pickup. */
+export const LATE_CANCEL_REACH_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * D-97 (customer brief 06): which "cancelled after pickup" sheet the customer sees, or null for the
+ * existing cancelled sheets (18a before pickup, 18c a LyniaGo cancel, any rider viewer).
+ *   - "hidden"  (18f): a day after the cancel — or no cancel time and no number — the number's gone.
+ *   - "reach"   (18d / 18b): the rider's number came through.
+ *   - "pending" (18e): not yet.
+ */
+export function lateCancelVariant(i: {
+  status: string;
+  riderViewer: boolean;
+  pickedUpAt: string | null;
+  cancelledBy: string | null | undefined;
+  cancelledAt: string | null;
+  phone: string | null | undefined;
+  nowMs: number;
+}): "reach" | "pending" | "hidden" | null {
+  if (i.status !== "cancelled" || i.riderViewer || i.pickedUpAt == null) return null;
+  if (i.cancelledBy !== "customer" && i.cancelledBy !== "rider") return null;
+  const at = i.cancelledAt ? Date.parse(i.cancelledAt) : NaN;
+  const expired = Number.isFinite(at) ? i.nowMs - at > LATE_CANCEL_REACH_MS : !i.phone;
+  if (expired) return "hidden";
+  return i.phone ? "reach" : "pending";
+}
+
+/**
  * BH-06: decide what to do with a durable "rating still pending for order X" marker (a star tap
  * armed the rating-on-tap undo window, then the app was killed before the timer flushed it) against the
  * current order snapshot. Mirrors reconcileConfirmItemsPending's shape. `rateOrder` moves the order to

@@ -88,6 +88,7 @@ import type { Env } from "../config/env";
 import { carryBalance, customerBalance, openBalance } from "./customer-balance";
 import { OrderScheduleService } from "./order-schedule.service";
 import { PrescriptionService } from "./prescription.service";
+import { venueNoteOf } from "./venue-note";
 
 // D-24 manual rail: the customer needs the shop's OWN payment-receiving number to send mobile
 // money to (never masked — D-17's masking is for a THIRD PARTY's view of the merchant, e.g. a
@@ -1971,6 +1972,8 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       prepStartedAt: order.prepStartedAt?.toISOString() ?? null,
       readyAt: order.readyAt?.toISOString() ?? null,
       rejectionReason: order.rejectionReason,
+      // Brief 07 (U66, D-97): the venue's "Something else" note, for the customer's D3g ending.
+      venueNote: venueNoteOf(order),
       paymentCallLoggedAt: order.paymentCallLoggedAt?.toISOString() ?? null,
       paymentRequestedAt: order.paymentRequestedAt?.toISOString() ?? null,
       merchantPaymentReference: order.merchantPaymentReference,
@@ -2092,6 +2095,8 @@ const RESPONSE_NULL_OMIT_FIELDS = [
   "itemsEditedAt",
   "riderAtDropoffAt",
   "restaurantPhone",
+  // Brief 07 (D-97): absent unless the venue turned the order down with a note.
+  "venueNote",
   // D-71: absent unless the venue funds this order's delivery.
   "merchantDeliveryShare",
   "customerDeliveryFee",

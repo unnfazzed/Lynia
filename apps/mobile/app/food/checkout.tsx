@@ -53,6 +53,7 @@ import { B } from "../../src/ui/browse/copy";
 import { ServiceSticker } from "../../src/ui/browse/kit";
 import { AddressEdit } from "../../src/ui/orderflow/AddressEdit";
 import { O, ofFmt } from "../../src/ui/orderflow/copy";
+import { OB } from "../../src/ui/orderflow/kit-copy";
 import {
   Breakdown,
   ItemLine,
@@ -66,6 +67,7 @@ import {
   ReviewNote,
   ReviewToast,
   RxBlock,
+  RxPageViewer,
   ScheduleSheet,
   WhenAsap,
   WhenScheduled,
@@ -85,6 +87,8 @@ import {
  * collection (BRIEF D3f) is its own breakdown row, inside the total.
  */
 
+/** R8e's Retake: the viewer's fade-out before the camera presents. */
+const RX_VIEWER_FADE_MS = 350;
 /** README "Errors are an ink toast for about 4 s". */
 const TOAST_MS = 4000;
 /** `ofAlpha.scrim` — the modal dim the handoff draws (the browse sheets use the same value). */
@@ -206,7 +210,8 @@ export default function FoodReviewScreen(): React.ReactElement {
 
   // ── Toasts, offline ───────────────────────────────────────────────────────────────────────────────
   // `balance`: U49 — the R7b toast raised because the carried-balance read failed; its Try again re-reads it.
-  const [toast, setToast] = useState<{ text: string; retry: boolean; balance?: boolean } | null>(null);
+  // `undo`: R8d (brief 09, D-97) — "Page removed" + Undo, which puts the page back where it was.
+  const [toast, setToast] = useState<{ text: string; retry: boolean; balance?: boolean; undo?: () => void } | null>(null);
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), TOAST_MS);
@@ -296,6 +301,16 @@ export default function FoodReviewScreen(): React.ReactElement {
   const [patient, setPatient] = useState("");
   const [consent, setConsent] = useState(false);
   const rxEmpty = rxNeeded && rx.pages.length === 0;
+  // R8e (brief 09, D-97): the page on the viewer, by id (a page that goes away closes it).
+  const [rxOpen, setRxOpen] = useState<string | null>(null);
+  // R8c / R8d: drop the page at once (no confirm) and offer Undo for the toast's 4 s.
+  const removeRxPage = (id: string): void => {
+    const index = rx.pages.findIndex((p) => p.id === id);
+    const page = rx.pages[index];
+    if (!page) return;
+    rx.remove(id);
+    setToast({ text: OB.pageRemoved, retry: false, undo: () => rx.restore(page, index) });
+  };
   const rxKeys = rx.keys.join(",");
 
   // ── BRIEF D3f: a balance owed from a cancel after collection rides on this order ──────────────────
@@ -542,6 +557,8 @@ export default function FoodReviewScreen(): React.ReactElement {
       pages={rx.pages.map((p) => ({ id: p.id, uri: p.uri, uploading: p.key == null }))}
       canAddMore={rx.pages.length < RX_MAX_PAGES}
       onAdd={rx.add}
+      onRemove={removeRxPage}
+      onOpen={setRxOpen}
       patient={patient}
       onPatient={setPatient}
       consent={consent}
@@ -797,8 +814,13 @@ export default function FoodReviewScreen(): React.ReactElement {
       {toast ? (
         <ReviewToast
           text={toast.text}
-          action={toast.retry ? O.c.tryAgain : undefined}
+          tone={toast.undo ? "success" : "warning"}
+          action={toast.retry ? O.c.tryAgain : toast.undo ? OB.undo : undefined}
           onAction={() => {
+            if (toast.undo) {
+              toast.undo();
+              return setToast(null);
+            }
             if (!toast.balance) return void submit();
             setToast(null);
             balance.refetch();
@@ -806,6 +828,24 @@ export default function FoodReviewScreen(): React.ReactElement {
           bottom={insets.bottom + 88}
         />
       ) : null}
+
+      <RxPageViewer
+        pages={rx.pages}
+        openId={rxOpen}
+        onShow={setRxOpen}
+        onClose={() => setRxOpen(null)}
+        onRemove={(id) => {
+          setRxOpen(null);
+          removeRxPage(id);
+        }}
+        onRetake={(id) => {
+          // The camera opens once the viewer has closed (a picker can't present over a modal on iOS).
+          setRxOpen(null);
+          setTimeout(() => rx.replace(id, "camera"), RX_VIEWER_FADE_MS);
+        }}
+        topInset={insets.top}
+        bottomInset={insets.bottom}
+      />
 
       <ScheduleSheet
         visible={schedOpen}

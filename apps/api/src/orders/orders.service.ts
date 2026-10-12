@@ -1070,6 +1070,7 @@ export class OrdersService {
         cancelledBy: true,
         expiryNoSupply: true,
         collectedAt: true,
+        cancelledAt: true,
         pickupPhotoKey: true,
         customer: { select: { phone: true, firstName: true } },
         rider: {
@@ -1111,9 +1112,18 @@ export class OrdersService {
     // collected-cancel only — deliberately NOT a broad PHONE_REVEAL_STATUSES change (which would also
     // reveal to the customer and on pre-pickup cancels).
     const handbackReveal = order.status === "cancelled" && isRider && order.collectedAt != null;
+    // U21 (D-97, 18d): the mirror for the CUSTOMER — the rider still holds their parcel after a cancel past
+    // pickup, so the sender sees the rider's phone to get it back. Only for a collected-cancel, and only for
+    // the same day the rider's hand-back lasts (HANDBACK_LOOKBACK_MS): after it the number goes (18f).
+    const handbackRevealCustomer =
+      order.status === "cancelled" &&
+      isCustomer &&
+      order.collectedAt != null &&
+      order.cancelledAt != null &&
+      Date.now() - order.cancelledAt.getTime() <= HANDBACK_LOOKBACK_MS;
     // Only a party on the order, only during the reveal window, sees the other side's phone.
     let counterpartyPhone: string | null = null;
-    if (revealed && isCustomer) counterpartyPhone = order.rider?.profile.phone ?? null;
+    if ((revealed || handbackRevealCustomer) && isCustomer) counterpartyPhone = order.rider?.profile.phone ?? null;
     else if ((revealed || handbackReveal) && isRider) {
       // Merchant web upgrade L2 (D9): a business's booking is sent by its booking account, whose phone is
       // the non-dialable `business:<id>`. The rider calls the business on its pickup contact phone.

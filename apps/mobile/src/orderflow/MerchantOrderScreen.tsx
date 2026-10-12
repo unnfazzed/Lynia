@@ -72,7 +72,7 @@ import { OrderSheet, type OrderSheetHandle, PeekMark } from "../ui/order/OrderSh
 import { OrderHeader } from "../ui/order/panels";
 import { useReduceMotion } from "../ui/useReduceMotion";
 import { O, O_ADDED, ofFmt } from "../ui/orderflow/copy";
-import { doorWhere, OX, OXS, rxReasonLabel, svcCopy, trackLabels, withRider } from "../ui/orderflow/kit-copy";
+import { doorWhere, OB, OX, OXS, rxReasonLabel, svcCopy, trackLabels, withRider } from "../ui/orderflow/kit-copy";
 import {
   AnswerHead,
   Bar,
@@ -1253,6 +1253,8 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
     const whatsApp = waUrl ? { label: O.t.hWa, go: (): void => void Linking.openURL(waUrl).catch(() => undefined) } : null;
     let more: React.ReactNode = null;
     let owedAmt: string | null = null;
+    // D3g (brief 07, U66, ledger D-97): the venue's own "Something else" note, inside its venue card.
+    let venueNote: string | null = null;
     if (stage === "undelivered") {
       icon = "package";
       title = O.d.notDel;
@@ -1318,7 +1320,9 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       // U33 (C8): the one shared reading — the venue's own reasons, its "Something else" (`other`) included.
       icon = "store";
       title = ofFmt(O.d.cxVenue, { v: venueName });
-      sub = reason === "too_busy" ? O.d.cxVenueSub : O.d.cxYouSub;
+      venueNote = order.venueNote?.trim() || null;
+      // D3g: the note replaces the generic reason line.
+      sub = venueNote ? OB.rejectedSubWithNote : reason === "too_busy" ? O.d.cxVenueSub : O.d.cxYouSub;
       primary = others;
     } else {
       // LyniaGo's: an ops cancel (`lynia_cancelled`), N-18's unanswered approval, or no reason at all.
@@ -1355,6 +1359,14 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
                   <Text style={{ fontSize: 15, fontWeight: "700", color: C.ink }}>{OX.noCharge}</Text>
                 ) : null}
               </View>
+              {venueNote ? (
+                <View testID="venue-note" style={{ marginTop: 8, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.line, gap: 4 }}>
+                  <Text style={{ fontSize: 12, fontWeight: "600", letterSpacing: 0.4, textTransform: "uppercase", color: C.muted }}>{ofFmt(OB.venueNoteLabel, { venue: venueName })}</Text>
+                  <Text numberOfLines={3} ellipsizeMode="tail" style={{ fontSize: 14, lineHeight: 19.6, fontWeight: "600", color: C.ink }}>
+                    {venueNote}
+                  </Text>
+                </View>
+              ) : null}
             </Card>
             {more}
           </ScrollView>

@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Customer briefs 06–09 · new frames</title>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#14181b;--muted:#5b6670;--bg:#fff;--surface:#f6f7f8;--line:#e2e6ea;--accent:#00b14f;--accent-text:#006630;--accent-wash:#e9f8ef;--cta-fill:#00812f;--forest:#063b22;--on-forest-muted:#bfe6cd;--highlight:#ffd23f;--highlight-wash:#fffcf2;--highlight-border:#ffd23f66;--highlight-ink:#6b5600;--danger:#c0392b;--danger-wash:#faedeb;--danger-ink:#8f2418;--rider-accent:#4b2fbf;--rider-wash:#ece8ff;--tile-food:#ffd9cc;--fs:1}
+*{box-sizing:border-box;margin:0}
+body{font-family:Inter,system-ui,sans-serif;color:var(--ink);font-variant-numeric:tabular-nums}
+a{color:var(--accent-text);text-decoration:none}a:hover{text-decoration:underline}
+#root{position:absolute;left:80px;top:80px;display:flex;flex-direction:column;gap:96px}
+.row h2{font-size:28px;font-weight:700;margin-bottom:4px}.row>p{font-size:16px;color:var(--muted);margin-bottom:24px;max-width:900px}
+.frames{display:flex;gap:48px;align-items:flex-start}
+.cap{width:360px;margin-bottom:12px;display:flex;flex-direction:column;gap:4px}.cap.s{width:320px}
+.cap b{font-size:14px;display:flex;gap:8px;align-items:center}.cap .id{background:var(--ink);color:#fff;font-size:12px;padding:2px 8px;border-radius:6px}.cap .nw{background:var(--highlight);color:#3d3100;font-size:10px;padding:2px 6px;border-radius:6px;letter-spacing:.06em}
+.cap span{font-size:13px;color:var(--muted);line-height:1.4}
+.ph{width:360px;height:720px;position:relative;overflow:hidden;background:#fff;border-radius:20px;box-shadow:0 0 0 1px var(--line),0 12px 32px #14181b14;display:flex;flex-direction:column}
+.ph.s{width:320px;height:640px}
+.f10{font-size:calc(var(--fs)*10px)}.f12{font-size:calc(var(--fs)*12px)}.f14{font-size:calc(var(--fs)*14px)}.f16{font-size:calc(var(--fs)*16px)}.f18{font-size:calc(var(--fs)*18px)}.f20{font-size:calc(var(--fs)*20px)}.f24{font-size:calc(var(--fs)*24px)}
+.b6{font-weight:600}.b7{font-weight:700}.mu{color:var(--muted)}.at{color:var(--accent-text)}.lh{line-height:1.4}
+.ov{font-size:calc(var(--fs)*12px);font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.sb{height:24px;flex:none;display:flex;justify-content:space-between;align-items:center;padding:0 16px;font-size:12px;font-weight:600}
+.hd{height:52px;flex:none;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;padding:0 12px 0 10px;background:#fff;position:relative;z-index:3;border-bottom:1px solid var(--line)}
+.hd .bk{display:flex;align-items:center;gap:2px;color:var(--accent-text);font-weight:600;min-height:44px;font-size:15px!important}.hd .tt{text-align:center;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.help{display:flex;align-items:center;gap:6px;height:36px;padding:0 12px;border:1px solid var(--danger);border-radius:999px;color:var(--danger-ink);font-weight:600}
+.ic{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.ic.sm{width:16px;height:16px}
+.map{position:absolute;left:0;right:0;top:76px;background-color:#edf0f2;background-image:repeating-linear-gradient(90deg,transparent 0 64px,#fff 64px 74px),repeating-linear-gradient(0deg,transparent 0 78px,#fff 78px 88px)}
+.map.dim::after{content:"";position:absolute;inset:0;background:#ffffff8c}
+.pin{position:absolute;z-index:2;display:flex;flex-direction:column;align-items:center;gap:4px}
+.pin .lbl{background:#fff;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600;box-shadow:0 2px 6px #14181b26;white-space:nowrap}
+.pin .you{width:20px;height:20px;border-radius:3px;background:var(--danger);border:3px solid #fff;box-shadow:0 2px 6px #14181b26}.pin .lbl.dk{background:var(--ink);color:#fff}
+.ava{width:44px;height:44px;border-radius:999px;background:var(--rider-wash);color:var(--rider-accent);display:grid;place-items:center;font-weight:700;font-size:15px;flex:none}
+.pin .ava{width:36px;height:36px;border:3px solid #fff;box-shadow:0 2px 6px #14181b33;font-size:13px}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:#fff;border-radius:20px 20px 0 0;box-shadow:0 -4px 16px #14181b1a;display:flex;flex-direction:column;z-index:4}
+.grab{height:28px;flex:none;display:grid;place-items:center}.grab i{width:36px;height:4px;border-radius:4px;background:var(--line)}
+.body{flex:1;min-height:0;overflow:hidden;-webkit-mask-image:linear-gradient(#000 calc(100% - 28px),transparent);mask-image:linear-gradient(#000 calc(100% - 28px),transparent);padding:0 16px 16px;display:flex;flex-direction:column;gap:12px}
+.page{flex:1;min-height:0;overflow:hidden;background:var(--surface);padding:12px 16px;display:flex;flex-direction:column;gap:12px}
+.bar{flex:none;padding:10px 16px 12px;display:flex;flex-direction:column;gap:8px;background:#fff;box-shadow:0 -4px 16px #14181b14;position:relative;z-index:5}.hint{font-size:13px;color:var(--muted);text-align:center;line-height:18px}
+.cta{min-height:52px;border-radius:999px;background:var(--cta-fill);color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;padding:8px 16px;text-align:center}
+.sec{min-height:52px;border-radius:999px;border:1.5px solid var(--line);color:var(--accent-text);font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px;padding:8px 16px;text-align:center;background:#fff}
+.soft{min-height:44px;border-radius:999px;background:var(--accent-wash);color:var(--accent-text);font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px;padding:6px 16px;flex:1;text-align:center}
+.soft.off{background:var(--surface);color:var(--muted)}
+.soft.fill{background:var(--cta-fill);color:#fff}
+.link{min-height:44px;display:flex;align-items:center;justify-content:center;gap:6px;color:var(--accent-text);font-weight:600}
+.card.rx{border-color:var(--accent-text)}.card{border:1px solid var(--line);border-radius:16px;padding:16px;background:#fff;display:flex;flex-direction:column;gap:12px}
+.strip{border-radius:12px;padding:12px;display:flex;gap:10px;align-items:flex-start;line-height:1.4}
+.strip.n{background:var(--surface);border:1px solid var(--line);color:var(--ink)}.strip.n .ic{color:var(--muted)}.strip.g{background:var(--highlight-wash);border:1px solid var(--highlight-border);color:var(--highlight-ink)}.strip.r{background:#fff;border:1px solid var(--danger);color:var(--ink)}.strip.r .ic{color:var(--danger)}.strip.m{background:var(--accent-wash);color:var(--accent-text)}
+.strip .ic{margin-top:1px}.strip b{color:inherit}
+.rrow{display:flex;gap:12px;align-items:center}.grow{flex:1;min-width:0}
+.tag{display:inline-flex;align-items:center;gap:3px;background:var(--accent-wash);color:var(--accent-text);border-radius:6px;padding:1px 6px;font-weight:600;vertical-align:2px}
+.btns{display:flex;gap:8px}.ph.s .btns,.ph.fs .btns{flex-direction:column}
+.steps{display:grid;grid-template-columns:repeat(4,1fr);background:var(--surface);border-radius:12px;padding:10px 4px;text-align:center;gap:4px;font-weight:600}
+.steps div{display:flex;flex-direction:column;align-items:center;gap:4px}.steps i{width:22px;height:22px;border-radius:999px;border:2px solid var(--line);background:#fff;font-style:normal;font-size:11px;font-weight:700;display:grid;place-items:center;color:var(--muted)}
+.steps i.d{background:var(--accent-text);border-color:var(--accent-text);color:#fff}.steps i.c{background:var(--accent-text);border-color:var(--accent-text);color:#fff;box-shadow:0 0 0 4px #00b14f40}.steps .b6{font-weight:700;color:var(--ink)}
+.code{white-space:nowrap;font-size:calc(min(var(--fs),1.15)*28px);font-weight:700;letter-spacing:.04em;line-height:1.1}
+.cbars{display:flex;gap:6px;align-items:center}.cbars i{width:18px;height:30px;border-radius:6px;background:var(--line)}.cbars i:nth-child(3){margin-right:10px}
+.crow{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.crow .soft{flex:none}
+.ph.fs .crow .soft{flex:1 1 100%}
+.disc{width:64px;height:64px;border-radius:999px;background:var(--surface);display:grid;place-items:center;margin:24px auto 0;color:var(--muted)}.disc .ic{width:28px;height:28px}
+.vd{width:44px;height:44px;border-radius:12px;background:var(--tile-food);display:grid;place-items:center;font-weight:700;color:#c2412a;flex:none}
+.note{padding-top:12px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:4px}
+.note q{quotes:none;display:-webkit-box!important;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;font-weight:600;line-height:1.4;overflow-wrap:anywhere}
+.thumbs{display:flex;gap:16px;flex-wrap:wrap;padding:8px 8px 0 0}
+.th{width:64px;height:80px;border-radius:12px;position:relative;background:repeating-linear-gradient(135deg,#e7eaed 0 6px,#f3f5f6 6px 12px);display:grid;place-items:center;font:500 10px "JetBrains Mono",monospace;color:var(--muted)}
+.th .x{position:absolute;top:-22px;right:-22px;width:44px;height:44px;display:grid;place-items:center}
+.th .x span{width:24px;height:24px;border-radius:999px;background:var(--ink);color:#fff;display:grid;place-items:center;box-shadow:0 0 0 2px #fff}
+.th .x .ic{width:14px;height:14px;stroke-width:2.5}
+.th.hit .x{outline:1px dashed var(--rider-accent);outline-offset:-1px;border-radius:4px}
+.th .up{position:absolute;inset:0;border-radius:12px;background:#ffffffb3;display:grid;place-items:center}
+.spin{width:22px;height:22px;border-radius:999px;border:3px solid var(--line);border-top-color:var(--accent)}
+.add{width:64px;height:80px;border-radius:12px;border:1.5px dashed #aeb6bd;display:grid;place-items:center;color:var(--accent-text)}
+.inp{min-height:52px;border:1px solid var(--line);border-radius:12px;padding:0 16px;display:flex;align-items:center}
+.tick{display:flex;gap:10px;align-items:flex-start}.tick i{width:24px;height:24px;border-radius:6px;background:var(--cta-fill);color:#fff;display:grid;place-items:center;flex:none}
+.toast{position:absolute;left:12px;right:12px;bottom:88px;z-index:6;background:var(--ink);color:#fff;border-radius:12px;padding:6px 6px 6px 14px;display:flex;align-items:center;gap:10px;box-shadow:0 6px 16px #14181b33}.toast>span{flex:1}
+.toast a{background:var(--accent-wash);color:var(--accent-text);font-weight:700;height:44px;padding:0 14px;border-radius:10px;display:grid;place-items:center}
+.view{background:var(--ink);color:#fff}.view .hd{border:0}
+.close{display:flex;align-items:center;gap:6px;min-height:44px;padding:0 14px;border-radius:999px;background:#2a3036;color:#fff;font-weight:600}
+.dz{min-height:52px;border-radius:999px;background:var(--danger);color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px}
+.ow{min-height:48px;border-radius:999px;border:1px solid #5b6670;color:#fff;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px}
+.spec{width:360px;border:1px dashed var(--line);border-radius:16px;padding:20px;font-size:13px;line-height:1.5;color:var(--muted);display:flex;flex-direction:column;gap:10px}.spec b{color:var(--ink)}
+</style></head>
+<body><div id="root"></div>
+<script>
+const I={back:'<path d="m15 18-6-6 6-6"/>',help:'<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><path d="m4.9 4.9 4.2 4.2M14.8 9.2l4.2-4.2M14.8 14.8l4.2 4.2M9.2 14.8l-4.2 4.2"/>',phone:'<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/>',wa:'<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22z"/>',pkg:'<path d="M21 8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7Z"/><path d="M3.3 7 12 12l8.7-5M12 22V12"/>',share:'<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/>',refresh:'<path d="M3 12a9 9 0 0 1 9-9 9.8 9.8 0 0 1 6.7 2.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.8 9.8 0 0 1-6.7-2.7L3 16"/><path d="M8 16H3v5"/>',wifi:'<path d="M12 20h.01M8.5 16.4a5 5 0 0 1 7 0M2 8.8a15 15 0 0 1 4.2-2.8M10.7 5.1A15 15 0 0 1 22 8.8M5 12.9a10 10 0 0 1 5.2-2.7M16.8 11.3A10 10 0 0 1 19 12.9M2 2l20 20"/>',x:'<path d="M18 6 6 18M6 6l12 12"/>',plus:'<path d="M12 5v14M5 12h14"/>',cam:'<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/>',store:'<path d="M3 9 4.5 4h15L21 9M4 9v11h16V9M3 9h18M9 20v-6h6v6"/>',alert:'<circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>',retake:'<path d="M3 12a9 9 0 1 0 9-9 9.8 9.8 0 0 0-6.7 2.7L3 8"/><path d="M3 3v5h5"/>',trash:'<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',check:'<path d="M20 6 9 17l-5-5"/>',clock:'<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>'};
+const ic=(n,c='')=>`<svg class="ic ${c}" viewBox="0 0 24 24">${I[n]}</svg>`;
+const S=o=>o.s;
+function phone(o,inner){const cls=['ph',o.s?'s':'',o.fs?'fs':'',o.cls||''].join(' ');return `<div><div class="cap ${o.s?'s':''}"><b><span class="id">${o.id}</span>${o.name}${o.nw?'<span class="nw">NEW</span>':''}</b><span>${o.note}</span></div><div class="${cls}" style="--fs:${o.fs?1.3:1}">${o.dark?'':'<div class="sb"><span>12:20</span><span>3G 84%</span></div>'}${inner}</div></div>`}
+const hd=(t,help=true)=>`<div class="hd"><span class="bk f16">${ic('back')}Back</span><span class="tt f16">${t}</span>${help?`<span class="help f14">${ic('help','sm')}Help</span>`:'<span style="width:60px"></span>'}</div>`;
+const rider=(o={})=>`<div class="card"><div class="rrow"><div class="ava">TM</div><div class="grow"><div class="f16 b6">Tendai M. <span class="tag f10">${ic('check','sm')}Verified</span></div><div class="f12 mu lh">${o.off?'Call and WhatsApp work once Tendai\u2019s number comes through.':'★ 4.9 · 132 trips · Bike ABH 4721'}</div></div></div><div class="btns"><span class="soft f16 ${o.off?'off':''}">${ic('phone')}Call</span><span class="soft f16 ${o.off?'off':''}">${ic('wa')}WhatsApp</span></div></div>`;
+const mapH=o=>o.s?96:140;
+
+/* 06 */
+function f06(o){const top=76+mapH(o)-20;return phone(o,`${hd(o.mine?'Send a parcel':'Send a parcel')}
+<div class="map dim" style="height:${mapH(o)+20}px"></div>
+<div class="pin" style="left:${o.s?150:180}px;top:${76+mapH(o)/2-24}px"><div class="ava">TM</div><span class="lbl">Tendai · 09:14</span></div>
+<div class="sheet" style="top:${top}px"><div class="grab"><i></i></div><div class="body">
+<div><div class="f20 b7">${o.title}</div><div class="f14 mu lh" style="margin-top:4px">Nothing to pay.</div></div>
+<div class="strip g f14">${ic('pkg')}<span><b>Tendai still has your parcel.</b> Call to get it back.</span></div>
+${rider(o)}
+<span class="link f14">${ic('help','sm')}Not answering? Call support</span>
+</div><div class="bar">${o.off?`<span class="cta f16">${ic('phone')}Call support</span>`:`<span class="cta f16">${ic('phone')}Call Tendai</span>`}<span class="sec f16">Send again</span></div></div>`)}
+function f06g(o){return phone(o,`${hd('Send a parcel')}
+<div class="map dim" style="height:${mapH(o)+20}px"></div>
+<div class="sheet" style="top:${76+mapH(o)-20}px"><div class="grab"><i></i></div><div class="body">
+<div><div class="f20 b7">You cancelled this order</div><div class="f14 mu lh" style="margin-top:4px">Nothing to pay.</div></div>
+<div class="card"><div class="rrow"><div class="ava">TM</div><div class="grow"><div class="f16 b6">Tendai M.</div><div class="f12 mu lh">Numbers are hidden now the trip\u2019s over.</div></div></div></div>
+<span class="link f14">${ic('help','sm')}Still need your parcel? Call support</span>
+</div><div class="bar"><span class="cta f16">Send again</span></div></div>`)}
+
+/* 07 */
+const NOTE2='We\u2019ve run out of chicken for today. Sorry, please try us tomorrow.';
+const NOTE80='Our gas ran out and we can\u2019t cook until 15:00. Please try us again later today.';
+function f07(o){return phone(o,`${hd('Gava\u2019s Kitchen',false)}
+<div class="body" style="padding-top:8px;text-align:center;gap:16px">
+<div class="disc" style="margin-top:${o.s?8:24}px">${ic('store')}</div>
+<div><div class="f24 b7" style="text-wrap:balance;line-height:1.2">Gava\u2019s Kitchen couldn\u2019t take your order</div><div class="f16 mu lh" style="margin-top:8px">Nothing was charged.</div></div>
+<div class="card" style="text-align:left"><div class="rrow"><div class="vd">G</div><div class="grow"><div class="f16 b6">Gava\u2019s Kitchen</div><div class="f12 mu">Order #A1B2 · 12:18</div></div><div class="f14 b7" style="white-space:nowrap">No charge</div></div>
+<div class="note"><span class="ov">Note from Gava\u2019s Kitchen</span><q class="f14">${o.note80?NOTE80:NOTE2}</q></div></div>
+</div><div class="bar"><span class="cta f16">See other places nearby</span></div>`)}
+
+/* 08 */
+function codeCard(st){
+if(st==='changed')return `<div class="card" style="border-color:var(--highlight);gap:10px"><div class="strip g f14" style="margin:-4px -4px 0">${ic('refresh')}<span><b>New code · the old one stopped working</b><br>Share it again with Rudo.</span></div><span class="ov">Delivery code</span><div class="crow"><span class="code">736 051</span><span class="soft fill f16">${ic('share')}Share code</span></div></div>`;
+if(st==='failed')return `<div class="card" style="gap:10px"><span class="ov">Delivery code</span><div class="crow"><span class="cbars"><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="soft off f16">${ic('share')}Share code</span></div><div class="strip n f14">${ic('wifi')}<span>The old code stopped working. A new one needs data.</span></div><span class="sec f16">${ic('refresh')}Send a new code</span></div>`;
+if(st==='limit')return `<div class="card" style="gap:10px"><span class="ov">Delivery code</span><div class="strip r f14">${ic('alert')}<span><b>Too many wrong tries · call us to finish</b><br>Your parcel is safe with Tendai.</span></div><span class="sec f16">${ic('phone')}Call support</span></div>`;}
+function f08(o){return phone(o,`${hd('Parcel to Rudo')}
+<div class="map" style="height:${o.s?120:170}px"></div>
+<div class="pin" style="left:${o.s?120:140}px;top:${o.s?110:130}px"><div class="ava">TM</div></div>
+<div class="pin" style="left:${o.s?250:290}px;top:${o.s?150:190}px"><span class="you"></span><span class="lbl dk">Rudo</span></div>
+<div class="sheet" style="top:${o.s?176:226}px"><div class="grab"><i></i></div><div class="body">
+<div><div class="f20 b7">Tendai is on the way to Rudo</div><div class="f14 mu lh" style="margin-top:2px">About 12 min · 14 Glenara Ave, Avenues</div></div>
+<div class="steps f12"><div><i class="d">✓</i>Confirmed</div><div><i class="d">✓</i>Picked up</div><div class="b6"><i class="c">3</i>On the way</div><div class="mu"><i>4</i>Delivered</div></div>
+${codeCard(o.st)}${rider()}</div></div>`)}
+const miniCard=(t,body)=>`<div><div class="cap"><b>${t}</b></div><div class="spec" style="background:#fff;border-style:solid">${body}</div></div>`;
+
+/* 09 */
+const th=(n,o={})=>`<div class="th ${o.hit?'hit':''}" aria-label="Page ${n}">page ${n}${o.up?'<span class="up"><span class="spin"></span></span>':''}<span class="x" role="button" aria-label="Remove page ${n}"><span>${ic('x')}</span></span></div>`;
+function rx(o){const pages=o.pages||3;let t='';for(let i=1;i<=pages;i++)t+=th(i,{up:o.up&&i===pages,hit:o.hit&&i===1});if(pages<3)t+=`<div class="add" aria-label="Add a page">${ic('plus')}</div>`;
+return phone(o,`${hd('Review order',false)}<div class="page">
+<div class="rrow"><div class="vd" style="background:var(--accent-wash);color:var(--accent-text)">+</div><div class="grow"><div class="f20 b7">Avondale Pharmacy</div><div class="f14 mu">Pharmacy</div></div></div>
+<div class="card rx"><span class="ov">Prescription</span><div class="f14 mu lh" style="margin-top:-6px">${pages}/3 pages · a pharmacist checks it before packing.</div><div class="thumbs">${t}</div>
+<div class="tick f14 lh"><i>${ic('check','sm')}</i>I\u2019ll show the original prescription to the rider</div></div>
+<div class="card" style="gap:6px"><span class="ov">Items</span><div class="f16 b6">Amoxicillin 500mg (21 caps)</div><div class="f14 b6">$4.20</div></div>
+</div>${o.toast?`<div class="toast f14">${ic('check')}<span>Page removed</span><a>Undo</a></div>`:''}<div class="bar"><span class="cta f16">Place order · $11.00 cash</span></div>`)}
+function viewer(o){return phone(Object.assign({dark:1,cls:'view'},o),`<div class="sb" style="color:#fff"><span>12:20</span><span>3G 84%</span></div>
+<div class="hd" style="background:transparent;grid-template-columns:auto 1fr 76px"><span class="close f14">${ic('x','sm')}Close</span><span class="tt f16" style="color:#fff">Page 2 of 3</span><span></span></div>
+<div style="flex:1;margin:8px 24px;border-radius:12px;background:repeating-linear-gradient(135deg,#232a30 0 8px,#1b2126 8px 16px);display:grid;place-items:center;font:500 12px 'JetBrains Mono',monospace;color:#c9d0d6">prescription page 2 · pinch to zoom</div>
+<div class="bar" style="background:transparent;border:0"><span class="dz f16">${ic('trash')}Remove</span><span class="ow f16">${ic('retake')}Retake</span></div>`)}
+
+const rows=[
+{h:'06 · Reach the rider after a late cancel',p:'Variant of 18a, composed like 17. Rider stays reachable; Call is the one primary. Before-pickup 18a unchanged.',f:[
+f06({id:'18d',name:'Cancelled by you · after pickup',nw:1,note:'Map dimmed, rider\u2019s last position. Gold strip = what to agree on.',title:'You cancelled this order',mine:1}),
+f06({id:'18e',name:'Same · no number yet',nw:1,note:'2.15 line. Primary falls back to Call support.',title:'You cancelled this order',off:1}),
+f06({id:'18b',name:'Rider cancelled · after pickup',note:'CHANGED. Same body, own title.',title:'Tendai cancelled the trip'}),
+f06g({id:'18f',name:'24 h later',nw:1,note:'Proposal: numbers hide 24 h after cancel (server). Send again returns as primary.'}),
+f06({id:'18d',name:'320×640',s:1,note:'Actions stack. Body scrolls, CTAs pinned.',title:'You cancelled this order'}),
+f06({id:'18d',name:'320×640 · font 1.3',s:1,fs:1,note:'Map at 96 floor.',title:'You cancelled this order'})]},
+{h:'07 · The venue\u2019s own note on D3b',p:'Note sits inside the venue card, D5a pattern (overline + value). Generic reason line drops to "Nothing was charged." No note → D3b unchanged.',f:[
+f07({id:'D3g',name:'Note · 2 lines',nw:1,note:'Plain text, quoted, max 3 lines.'}),
+f07({id:'D3g',name:'80 chars · 320×640 · font 1.3',nw:1,s:1,fs:1,note8:1,note80:1,note:'CTA stays in first view.'}),
+f07({id:'D3g',name:'80 chars · 360',note80:1,note:'Wraps to 2 lines at 1.0.'})]},
+{h:'08 · Your code changed',p:'Lives on the tracking CodeCard. Gold strip + filled Share code until the sender shares it; then the card returns to normal.',f:[
+f08({id:'2.14b',name:'Code changed',nw:1,st:'changed',note:'Loud but calm: gold border + strip, Share code becomes filled.'}),
+f08({id:'2.14c',name:'New code failed · offline',nw:1,st:'failed',note:'2.14 grey bars. Send a new code only after the auto fetch fails.'}),
+f08({id:'2.14d',name:'Limit reached',nw:1,st:'limit',note:'No digits. Calm red strip + Call support.'}),
+f08({id:'2.14b',name:'320×640',s:1,st:'changed',note:'Share code wraps under the digits.'}),
+miniCard('After sharing',`<span><b>Strip clears on Share code.</b> Card goes back to 6/7 with one muted line: "New code · shared 09:26" until delivered.</span><span><b>Hand-off (8):</b> a gold "New code" chip above the big digits until delivered.</span><span><b>In flight:</b> = 2.14 with "Getting your new code…".</span><span><b>Push:</b> "Your code changed" · "Open to share it again." No digits.</span>`)]},
+{h:'09 · Remove a prescription page',p:'✕ badge on each thumb (24 drawn, 44 hit). Tap the thumb itself to view / Retake / Remove. Instant remove + undo toast.',f:[
+rx({id:'R8c',name:'3 pages · remove visible',nw:1,up:1,note:'Page 3 still uploading, removable too.'}),
+rx({id:'R8d',name:'After removing one',nw:1,pages:2,toast:1,note:'Add tile returns. Toast 4 s (undo needs longer than 2.5).'}),
+viewer({id:'R8e',name:'Page viewer',nw:1,note:'Tap a thumb. Remove = danger fill. Back = Close.'}),
+rx({id:'R8c',name:'320×640',s:1,hit:1,note:'Dashed = 44 hit area. 16 gap keeps hits apart.'}),
+miniCard('Specs',`<span><b>Badge:</b> 24 disc, --ink fill, 2px white ring, ✕ 14. Centre on the thumb\u2019s top-right corner, offset 8 inside. Hit 44×44.</span><span><b>Row:</b> gap 16, wraps. Max 3 items (3 pages, or pages + add tile) = 224 wide; fits 320.</span><span><b>a11y:</b> "Remove page {n}". Thumb: "Page {n}, open".</span><span><b>Refused page:</b> not drawn. Worth asking engineering for a page index; then a 2px --danger ring + "Retake page 2" strip.</span>`)]}
+];
+document.getElementById('root').innerHTML=rows.map(r=>`<section class="row"><h2>${r.h}</h2><p>${r.p}</p><div class="frames">${r.f.join('')}</div></section>`).join('');
+</script></body></html>
