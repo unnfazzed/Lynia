@@ -21,10 +21,11 @@ const mockSetOnline = jest.fn(async (online: boolean, _loc?: unknown) => ({ onli
 const mockPush = jest.fn();
 const mockReplace = jest.fn();
 const mockWithdrawOffer = jest.fn(async (orderId: string) => ({ orderId, withdrawn: true }));
+let mockPathname = "/rider";
 
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: mockPush, replace: mockReplace }),
-  usePathname: () => "/rider",
+  usePathname: () => mockPathname,
   useFocusEffect: (cb: () => void | (() => void)) => {
     const React_ = require("react");
     React_.useEffect(cb, []);
@@ -84,8 +85,8 @@ jest.mock("../../../../src/api/orders", () => ({
 // Owner 2026-10-01: busy zones come from the server's demand feed; food offers ride the dispatch poll.
 const mockGetDemandZones = jest.fn(async (_loc: unknown) => [] as unknown[]);
 jest.mock("../../../../src/api/rider-v2", () => ({ getDemandZones: (loc: unknown) => mockGetDemandZones(loc) }));
-const mockGetFoodOffer = jest.fn(async () => null as unknown);
-jest.mock("../../../../src/api/food-rider", () => ({ getFoodDispatchOffer: () => mockGetFoodOffer() }));
+const mockGetFoodOffers = jest.fn(async () => [] as unknown[]);
+jest.mock("../../../../src/api/food-rider", () => ({ getFoodDispatchOffers: () => mockGetFoodOffers() }));
 let mockFoodOn = false;
 jest.mock("../../../../src/api/offers", () => ({
   makeOffer: jest.fn(),
@@ -272,7 +273,8 @@ afterEach(() => {
   mockNotifGranted = true;
   mockFoodOn = false;
   mockGetDemandZones.mockImplementation(async () => []);
-  mockGetFoodOffer.mockImplementation(async () => null);
+  mockGetFoodOffers.mockImplementation(async () => []);
+  mockPathname = "/rider";
 });
 
 /**
@@ -1664,24 +1666,26 @@ describe("rider board — tagged jobs and demand (owner 2026-10-01)", () => {
     expect(text).toContain("2 jobs near you");
   });
 
+  const foodOfferFixture = (orderId: string, landmark: string, inMs: number) => ({
+    orderId,
+    merchantId: "m1",
+    pickup: { point: { lat: -17.83, lng: 31.05 }, landmark },
+    dropoff: { point: { lat: -17.82, lng: 31.06 }, landmark: "Belgravia" },
+    itemDesc: "2 items",
+    merchantGoodsTotal: 12.5,
+    deliveryFee: 3.2,
+    distanceKm: 3.1,
+    expiresAt: new Date(Date.now() + inMs).toISOString(),
+    merchantPaymentMethod: "cash",
+    merchantCashRule: "collect_and_return",
+  });
+
   it("the live food offer is a FOOD card on the board, and its button opens the offer", async () => {
     mockFoodOn = true;
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([openOrderFixture("parcel-1")]);
-    mockGetFoodOffer.mockImplementation(async () => ({
-      orderId: "food-1",
-      merchantId: "m1",
-      pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Mama's Kitchen" },
-      dropoff: { point: { lat: -17.82, lng: 31.06 }, landmark: "Belgravia" },
-      itemDesc: "2 items",
-      merchantGoodsTotal: 12.5,
-      deliveryFee: 3.2,
-      distanceKm: 3.1,
-      expiresAt: new Date(Date.now() + 40_000).toISOString(),
-      merchantPaymentMethod: "cash",
-      merchantCashRule: "collect_and_return",
-    }));
+    mockGetFoodOffers.mockImplementation(async () => [foodOfferFixture("food-1", "Mama's Kitchen", 40_000)]);
 
     activeTree = renderScreen();
     await settle();
@@ -1692,7 +1696,27 @@ describe("rider board — tagged jobs and demand (owner 2026-10-01)", () => {
     const accept = activeTree.root.findAll((n) => n.props.label === "Accept this job" && typeof n.props.onPress === "function");
     expect(accept.length).toBeGreaterThan(0);
     act(() => accept[0]!.props.onPress());
-    expect(mockPush).toHaveBeenCalledWith("/rider/food-offer");
+    expect(mockPush).toHaveBeenCalledWith({ pathname: "/rider/food-offer", params: { orderId: "food-1" } });
+  });
+
+  // Owner 2026-10-12: several orders can ring one rider at once — each is its own card, and each opens its own.
+  it("two food offers ringing at once are two FOOD cards, each opening its own offer", async () => {
+    mockFoodOn = true;
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    mockGetFoodOffers.mockImplementation(async () => [foodOfferFixture("food-1", "Mama's Kitchen", 40_000), foodOfferFixture("food-2", "Chicken Inn", 55_000)]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+
+    const food = cards(activeTree).filter((n) => n.props.job.kind === "food");
+    expect(food.map((n) => n.props.job.id).sort()).toEqual(["food:food-1", "food:food-2"]);
+    const accept = activeTree.root.findAll((n) => n.props.label === "Accept this job" && typeof n.props.onPress === "function");
+    for (const a of accept) act(() => a.props.onPress());
+    expect(mockPush).toHaveBeenCalledWith({ pathname: "/rider/food-offer", params: { orderId: "food-1" } });
+    expect(mockPush).toHaveBeenCalledWith({ pathname: "/rider/food-offer", params: { orderId: "food-2" } });
   });
 
   it("the busiest demand zone names itself in the sheet", async () => {
@@ -1993,7 +2017,6 @@ describe("rider board — First Run v2 ID-check outcome pages (D-82)", () => {
  */
 describe("rider board — rider audit fixes (Board & Jobs)", () => {
   const { onlineManager } = jest.requireActual("@tanstack/react-query") as typeof import("@tanstack/react-query");
-  const { pushOnce: mockPushOnce } = jest.requireMock("../../../../src/push/push") as { pushOnce: jest.Mock };
 
   function renderWithClient(): { tree: renderer.ReactTestRenderer; qc: QueryClient } {
     let qc!: QueryClient;
@@ -2229,17 +2252,26 @@ describe("rider board — rider audit fixes (Board & Jobs)", () => {
     expect(scroll.scrollTo).toHaveBeenCalledWith(expect.objectContaining({ y: 600 }));
   });
 
-  it("BD-M5: a food-offer push goes through pushOnce, so it never stacks a second offer screen", async () => {
+  it("BD-M5: a food-offer push opens that order's offer from the board, and never stacks a second offer screen", async () => {
     mockFoodOn = true;
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);
     activeTree = renderScreen();
     await settle();
-    const onFoodOffer = mockUseRiderBoard.mock.calls.at(-1)![3] as () => void;
-    act(() => onFoodOffer());
-    expect(mockPushOnce).toHaveBeenCalledWith(expect.anything(), "/rider", "/rider/food-offer");
-    expect(mockPush).not.toHaveBeenCalledWith("/rider/food-offer");
+    const onFoodOffer = mockUseRiderBoard.mock.calls.at(-1)![3] as (orderId: string) => void;
+    act(() => onFoodOffer("food-1"));
+    expect(mockPush).toHaveBeenCalledWith({ pathname: "/rider/food-offer", params: { orderId: "food-1" } });
+
+    // Already on the offer screen: it refreshes in place; nothing is pushed on top of it.
+    mockPush.mockClear();
+    mockPathname = "/rider/food-offer";
+    activeTree.unmount();
+    activeTree = renderScreen();
+    await settle();
+    const onFoodOfferThere = mockUseRiderBoard.mock.calls.at(-1)![3] as (orderId: string) => void;
+    act(() => onFoodOfferThere("food-2"));
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it("BD-L1: the selected card announces it, and its button is reachable as an action", async () => {

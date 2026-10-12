@@ -14,6 +14,7 @@ import { TrackingGateway } from "../tracking/tracking.gateway";
 
 const WINDOW_CLOSED = "The offer window has closed. This order isn't taking new offers.";
 const ONE_ROUND = "You already responded to this order (one round only)";
+const ON_A_JOB = "Finish your current job before making another offer";
 
 /** True once the order's offer window (offerWindowEndsAt, else createdAt + OFFER_WINDOW_MS) has run out. */
 function windowClosed(order: { createdAt: Date; offerWindowEndsAt: Date | null }): boolean {
@@ -113,6 +114,18 @@ export class OffersService {
     if (await hasOpenMerchantObligation(this.prisma, riderId)) {
       this.metrics.incOffersMade("forbidden");
       throw new ForbiddenException("You have a food order still settling with a restaurant — finish that first");
+    }
+
+    // Owner 2026-10-12: a rider already on a job (the `one_active_ride` statuses) takes no new bids. Such an
+    // offer could never be picked (listForOrder hides it, selectOffer 409s `rider_taken`), yet it used up
+    // the rider's one round on the order, which the up-to-4-minute quiet-market window often outlives.
+    const onJob = await this.prisma.order.findFirst({
+      where: { riderId, status: { in: ACTIVE_RIDE_STATUSES } },
+      select: { id: true },
+    });
+    if (onJob) {
+      this.metrics.incOffersMade("forbidden");
+      throw new ForbiddenException(ON_A_JOB);
     }
 
     // An `accept` means "I'll take the customer's proposed price" — bind the fare to `proposedFare`
