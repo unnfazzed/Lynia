@@ -80,7 +80,7 @@ describe("OrdersService.customerOrders", () => {
     expect((await svc([row(1)]).customerOrders(ME)).nextCursor).toBeNull();
   });
 
-  it("serializes a row: service, outcome, the amount charged, my rating, the rider, no phones", async () => {
+  it("serializes a row: service, outcome, the amount charged, my rating, the biker, no phones", async () => {
     const [r] = (await svc([row(1)]).customerOrders(ME)).rows;
     expect(r).toMatchObject({ service: "parcel", outcome: "delivered", chargedTotal: "3.36", role: "customer", rating: { score: 4, comment: null }, counterpartyName: "Tendai Moyo" });
     expect(JSON.stringify(r)).not.toContain("+26377");

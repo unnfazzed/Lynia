@@ -73,7 +73,7 @@ describe("FoodDebtService.openDebtIfNeeded — R-01", () => {
 
   // D-71 regression: free delivery paid by the venue. The customer paid $13 (goods, $0 delivery); the
   // rider keeps the $2.50 fee out of it; the venue is owed back $10.50 — its settlement is reduced by the fare.
-  it("D-71: on a free-delivery order the venue is owed goods − its delivery share, and the rider keeps the fee", async () => {
+  it("D-71: on a free-delivery order the venue is owed goods − its delivery share, and the biker keeps the fee", async () => {
     const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
     const ledgerCreate = vi.fn(async () => ({}));
     const { svc } = build({});
@@ -150,7 +150,7 @@ describe("FoodDebtService — doorstep handshake (R-04/R-05/N-19)", () => {
     expect(notified).toEqual([expect.objectContaining({ profileIds: ["r1"] })]);
   });
 
-  it("D5: a customer confirm made on the way (rider not at the door yet) gets the trip ceiling, not the 2:00 window", async () => {
+  it("D5: a customer confirm made on the way (biker not at the door yet) gets the trip ceiling, not the 2:00 window", async () => {
     let updateData: Record<string, unknown> | undefined;
     const { svc } = build({
       order: {
@@ -167,7 +167,7 @@ describe("FoodDebtService — doorstep handshake (R-04/R-05/N-19)", () => {
     expect(deadline - before).toBeGreaterThanOrEqual(RESTAURANTS_DEBT.handshakeTripCeilingMs - 1000);
   });
 
-  it("D5: once the rider said \"I'm here\", the customer's confirm starts the normal 2:00 window", async () => {
+  it("D5: once the biker said \"I'm here\", the customer's confirm starts the normal 2:00 window", async () => {
     let updateData: Record<string, unknown> | undefined;
     const { svc } = build({
       order: {
@@ -223,7 +223,7 @@ describe("FoodDebtService — doorstep handshake (R-04/R-05/N-19)", () => {
     ...over,
   });
 
-  it("D5: the rider's \"I'm here\" stamps once, only in en_route_dropoff, and restarts a customer's early confirm on the longer door window", async () => {
+  it("D5: the biker's \"I'm here\" stamps once, only in en_route_dropoff, and restarts a customer's early confirm on the longer door window", async () => {
     const updates: Array<{ where: Record<string, unknown>; data: Record<string, unknown> }> = [];
     const { svc } = build({
       order: {
@@ -309,12 +309,12 @@ describe("FoodDebtService — doorstep handshake (R-04/R-05/N-19)", () => {
     expect(updateMany).not.toHaveBeenCalled();
   });
 
-  it("D5: \"I'm here\" is refused before the rider has the food", async () => {
+  it("D5: \"I'm here\" is refused before the biker has the food", async () => {
     const { svc } = build({ order: { findFirst: async () => AT_DOOR_ORDER({ status: "en_route_pickup" }) } });
     await expect(svc.markAtDropoff(orderId, "r1")).rejects.toThrow(/taking the order to the customer/i);
   });
 
-  it("D5: the rider can still complete — after an on-the-way customer confirm, the rider's confirm unlocks the code", async () => {
+  it("D5: the biker can still complete — after an on-the-way customer confirm, the biker's confirm unlocks the code", async () => {
     let updated = false;
     const { svc } = build({
       order: {
@@ -337,14 +337,14 @@ describe("FoodDebtService — doorstep handshake (R-04/R-05/N-19)", () => {
     await expect(svc.confirmCustomerCash(orderId, "c1")).rejects.toThrow(/cash order/i);
   });
 
-  it("rider cannot confirm before the customer does", async () => {
+  it("biker cannot confirm before the customer does", async () => {
     const { svc } = build({
       order: { findFirst: async () => ({ customerCashConfirmedAt: null, riderCashConfirmedAt: null, cashHandshakeFrozenAt: null, customerId: "c1" }) },
     });
     await expect(svc.confirmRiderCash(orderId, "r1")).rejects.toThrow(/waiting on the customer/i);
   });
 
-  it("rider confirms second — unlocked once the customer already confirmed", async () => {
+  it("biker confirms second — unlocked once the customer already confirmed", async () => {
     let updated = false;
     const { svc } = build({
       order: {
@@ -361,14 +361,14 @@ describe("FoodDebtService — doorstep handshake (R-04/R-05/N-19)", () => {
     expect(notified).toEqual([expect.objectContaining({ profileIds: ["c1"] })]);
   });
 
-  it("a frozen handshake blocks the rider's confirm", async () => {
+  it("a frozen handshake blocks the biker's confirm", async () => {
     const { svc } = build({
       order: { findFirst: async () => ({ customerCashConfirmedAt: new Date(), riderCashConfirmedAt: null, cashHandshakeFrozenAt: new Date(), customerId: "c1" }) },
     });
     await expect(svc.confirmRiderCash(orderId, "r1")).rejects.toThrow(/frozen/i);
   });
 
-  it("R-05: the rider's explicit dispute freezes immediately (doesn't wait out N-19)", async () => {
+  it("R-05: the biker's explicit dispute freezes immediately (doesn't wait out N-19)", async () => {
     let frozen = false;
     const { svc } = build({
       order: {
@@ -408,7 +408,7 @@ describe("FoodDebtService — doorstep handshake (R-04/R-05/N-19)", () => {
   // LC-D-SIB-3: the freeze CAS must re-check the handshake is still unresolved, not only `frozenAt: null`.
   const UNRESOLVED_FREEZE_WHERE = { id: orderId, cashHandshakeFrozenAt: null, customerCashConfirmedAt: { not: null }, riderCashConfirmedAt: null };
 
-  it("LC-D-SIB-3: a rider confirm racing the dispute makes it a conflict, not a false freeze — the CAS re-checks riderCashConfirmedAt", async () => {
+  it("LC-D-SIB-3: a biker confirm racing the dispute makes it a conflict, not a false freeze — the CAS re-checks riderCashConfirmedAt", async () => {
     const updateMany = vi.fn(async () => ({ count: 0 })); // confirmRiderCash committed between the read and the CAS
     const { svc } = build({
       order: {
@@ -535,7 +535,7 @@ describe("FoodDebtService — doorstep failure paths (N-10/R-08), reusing markUn
     expect(profileUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ cashBanned: true }) }));
   });
 
-  it("reportCustomerRefused refuses once the RIDER confirmed the cash, or while the handshake is frozen", async () => {
+  it("reportCustomerRefused refuses once the BIKER confirmed the cash, or while the handshake is frozen", async () => {
     const markUndelivered = vi.fn();
     const confirmed = build({ order: { findFirst: async () => ({ customerId: "c1", customerCashConfirmedAt: new Date(), riderCashConfirmedAt: new Date(), cashHandshakeFrozenAt: null }) } }, { markUndelivered });
     await expect(confirmed.svc.reportCustomerRefused(orderId, "r1")).rejects.toThrow(/already confirmed the cash/i);
@@ -660,7 +660,7 @@ describe("FoodDebtService — merchant debt settlement (R-06/R-07/N-20/N-21, D-0
     });
   });
 
-  it("D3: reportNonReturn never suspends the rider, never revokes a session and never pushes the rider", async () => {
+  it("D3: reportNonReturn never suspends the biker, never revokes a session and never pushes the biker", async () => {
     const h = nonReturnHarness();
     await h.svc.reportNonReturn("p1", orderId);
     expect(h.riderUpdateMany).not.toHaveBeenCalled();
@@ -686,7 +686,7 @@ describe("FoodDebtService — merchant debt settlement (R-06/R-07/N-20/N-21, D-0
     expect(h.auditCreate).toHaveBeenCalledTimes(1);
   });
 
-  it("D5 review (item 6): nothing to report while the rider is still riding to the customer", async () => {
+  it("D5 review (item 6): nothing to report while the biker is still riding to the customer", async () => {
     for (const status of ["picked_up", "en_route_dropoff"]) {
       const h = nonReturnHarness({ status });
       await expect(h.svc.reportNonReturn("p1", orderId)).rejects.toThrow(/still on the way/i);
@@ -708,7 +708,7 @@ describe("FoodDebtService — merchant debt settlement (R-06/R-07/N-20/N-21, D-0
 
   // ── MJ-RB1 (2026-10-07): a customer cancel after the rider collected rides the food back (K5c) ──
 
-  it("MJ-RB1: confirmGoodsReturned accepts a cancelled order the rider had collected", async () => {
+  it("MJ-RB1: confirmGoodsReturned accepts a cancelled order the biker had collected", async () => {
     const h = nonReturnHarness({ status: "cancelled", collectedAt: new Date() });
     const res = await h.svc.confirmGoodsReturned("p1", orderId);
     expect(res.debtStatus).toBe("settled_goods");
@@ -894,7 +894,7 @@ describe("FoodDebtService — door-step writes nudge the order room (P19 review)
     expect(miss.emitOrderStatus).not.toHaveBeenCalled();
   });
 
-  it("the rider's dispute (an immediate freeze) emits order:status too", async () => {
+  it("the biker's dispute (an immediate freeze) emits order:status too", async () => {
     const { svc, emitOrderStatus } = withGateway({
       order: {
         findFirst: async () => ({ customerCashConfirmedAt: new Date(), riderCashConfirmedAt: null }),

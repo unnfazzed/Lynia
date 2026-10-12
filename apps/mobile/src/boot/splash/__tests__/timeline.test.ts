@@ -38,7 +38,7 @@ describe("splashDoneAt", () => {
     expect(splashDoneAt(at(0, 0, 1301), "/home")).toBe(1301);
   });
 
-  it("anywhere else hands off once the session check is in (onboarding, sign-in, a deep link — the rider board has its own two)", () => {
+  it("anywhere else hands off once the session check is in (onboarding, sign-in, a deep link — the biker board has its own two)", () => {
     for (const d of ["/onboarding", "/phone", "/rider/job", "/order/abc"]) {
       expect(splashDoneAt(at(0, null, null), d)).toBe(INTRO_MS);
       expect(splashDoneAt(at(2500, null, null), d)).toBe(2500);
@@ -66,8 +66,8 @@ describe("task status", () => {
   });
 });
 
-describe("the rider boot keeps its steps card (First Run v2 H1, ledger D-82 §2 #2)", () => {
-  it("is the rider board only: a push-tap into a rider job hands off after the session", () => {
+describe("the biker boot keeps its steps card (First Run v2 H1, ledger D-82 §2 #2)", () => {
+  it("is the biker board only: a push-tap into a biker job hands off after the session", () => {
     expect(isRiderBoot("/rider")).toBe(true);
     expect(isRiderBoot("/rider/job")).toBe(false);
     expect(isRiderBoot("/home")).toBe(false);
@@ -93,7 +93,7 @@ describe("the rider boot keeps its steps card (First Run v2 H1, ledger D-82 §2 
     expect(splashDoneAt(at(0, null, null, 0), "/rider")).toBe(INTRO_MS + 2 * STEP_MIN_ACTIVE_MS + CUT_AFTER_TICK_MS);
   });
 
-  it("a retry resumes only the rider's unfinished task", () => {
+  it("a retry resumes only the biker's unfinished task", () => {
     expect(pendingTasks(at(0, null, null, null), "/rider")).toEqual(["rider"]);
     expect(pendingTasks(at(null, null, null, null), "/rider")).toEqual(["session", "rider"]);
   });

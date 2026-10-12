@@ -132,7 +132,7 @@ describe("MerchantService.becomeMerchant (L1 self-serve sign-up)", () => {
     expect(h.merchant()).toMatchObject({ businessType: "restaurant", shopKind: null, cashRule: "pay_upfront" });
   });
 
-  it("D-48: takes a location with no landmark, storing the address line — or the business name — as the landmark riders read", async () => {
+  it("D-48: takes a location with no landmark, storing the address line — or the business name — as the landmark bikers read", async () => {
     const h = harness();
     const at = { point: PIN.point, contactPhone: PIN.contactPhone };
     await h.s.becomeMerchant("p1", body({ location: { ...at, address: "5th Street, Mbare" } }));
@@ -181,7 +181,7 @@ describe("MerchantService.becomeMerchant (L1 self-serve sign-up)", () => {
     await expect(s.becomeMerchant("p1", body())).rejects.toMatchObject({ response: { reason: "already_member" } });
   });
 
-  it("refuses a held account, and a banned or suspended rider (OV-5: Send's standing rules)", async () => {
+  it("refuses a held account, and a banned or suspended biker (OV-5: Send's standing rules)", async () => {
     for (const [profile, reason] of [
       [{ firstName: "", lastName: "", onHold: true, rider: null }, "on_hold"],
       [{ firstName: "", lastName: "", onHold: false, rider: { accountStatus: "banned" } }, "account_restricted"],
@@ -193,7 +193,7 @@ describe("MerchantService.becomeMerchant (L1 self-serve sign-up)", () => {
     }
   });
 
-  it("an active rider can open a business", async () => {
+  it("an active biker can open a business", async () => {
     const h = harness({ firstName: "", lastName: "", onHold: false, rider: { accountStatus: "active" } });
     await expect(h.s.becomeMerchant("p1", body())).resolves.toMatchObject({ id: "m-new" });
   });
@@ -1247,7 +1247,7 @@ describe("MerchantService.getWeeklyStatement (E3, N-13)", () => {
     expect(res.lineItems[0]).toMatchObject({ orderId: "o1", paymentMethod: "cash", amount: 13, commission: 0 });
   });
 
-  it("D-71: a free-delivery order's line is the venue's money — goods less the delivery it paid the rider", async () => {
+  it("D-71: a free-delivery order's line is the venue's money — goods less the delivery it paid the biker", async () => {
     const s = svc({
       merchant: { findUnique: async () => ({ id: "m1" }) },
       order: {
@@ -1418,7 +1418,7 @@ describe("MerchantService.getTodaySummary (E3, M4·6; D-48 header tiles)", () =>
     expect(res.overdue).toEqual([{ orderId: "33333333-3333-4333-8333-333333333333", amount: 51, riderName: "Blessing", dueAt: "2026-09-30T11:40:00.000Z", kind: "booking" }]);
   });
 
-  it("D-77 T2: a delivered line says whether its cash is back, on its way or late; a late row carries the rider's phone", async () => {
+  it("D-77 T2: a delivered line says whether its cash is back, on its way or late; a late row carries the biker's phone", async () => {
     const delivered = (id: string, over: Record<string, unknown>) => ({
       id: `${id}0000000-0000-4000-8000-000000000000`,
       status: "delivered",

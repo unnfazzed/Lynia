@@ -290,7 +290,7 @@ describe("AdminMerchantsService.listDisputes (X1 — R-05 handshake freezes + N-
 });
 
 describe("AdminMerchantsService — D3 (2026-10-07, MJ-RH1): a merchant's non-return report is a flag an admin decides", () => {
-  it("listDisputes surfaces a flagged open debt with merchant, rider (id + name), amount and when it was reported", async () => {
+  it("listDisputes surfaces a flagged open debt with merchant, biker (id + name), amount and when it was reported", async () => {
     let nonReturnWhere: Record<string, unknown> | undefined;
     const prisma = {
       order: {
@@ -347,14 +347,14 @@ describe("AdminMerchantsService — D3 (2026-10-07, MJ-RH1): a merchant's non-re
   it("writeOffDebt: an admin writes the open debt off — settle CAS, negative ledger row and audit in one transaction", async () => {
     const { prisma, calls } = writeOffTx();
     const svc = new AdminMerchantsService(prisma as unknown as PrismaService);
-    const res = await svc.writeOffDebt("admin-1", "o9", { reason: "Rider admitted keeping the food", note: "called 10:05" });
+    const res = await svc.writeOffDebt("admin-1", "o9", { reason: "Biker admitted keeping the food", note: "called 10:05" });
     expect(res).toEqual({ id: "o9", debtStatus: "written_off", auditId: "audit-9" });
     expect(calls.update).toEqual({ where: { id: "o9", debtStatus: "open" }, data: { debtStatus: "written_off", debtSettledAt: expect.any(Date) } });
     expect(calls.ledger!.data).toMatchObject({ orderId: "o9", merchantId: "m1", riderId: "r1", type: "written_off", amount: -13, actor: "admin-1" });
-    expect(calls.audit!.data).toMatchObject({ actor: "admin-1", action: "order.debt_write_off", target: "o9", reasonCode: "Rider admitted keeping the food" });
+    expect(calls.audit!.data).toMatchObject({ actor: "admin-1", action: "order.debt_write_off", target: "o9", reasonCode: "Biker admitted keeping the food" });
   });
 
-  it("writeOffDebt never suspends the rider — that stays the separate rider console action", async () => {
+  it("writeOffDebt never suspends the biker — that stays the separate biker console action", async () => {
     const { prisma, calls } = writeOffTx();
     const svc = new AdminMerchantsService(prisma as unknown as PrismaService);
     await svc.writeOffDebt("admin-1", "o9", { reason: "x" });
@@ -405,7 +405,7 @@ describe("AdminMerchantsService.resolveHandshake (X1/R-05 — the only lever out
     return { prisma, calls };
   }
 
-  it("sets riderCashConfirmedAt (the SAME release valve the rider's own confirm uses) and audits atomically", async () => {
+  it("sets riderCashConfirmedAt (the SAME release valve the biker's own confirm uses) and audits atomically", async () => {
     const { prisma, calls } = makeTx();
     const svc = new AdminMerchantsService(prisma as unknown as PrismaService);
     const res = await svc.resolveHandshake("admin-1", "o1", { reason: "Called both parties — amounts matched" });
@@ -452,7 +452,7 @@ describe("AdminMerchantsService.resolveHandshake (X1/R-05 — the only lever out
     expect(calls.audit).toBeNull();
   });
 
-  it("pushes both the rider (jobs unlocked) and customer (code ready) a best-effort notice, post-commit", async () => {
+  it("pushes both the biker (jobs unlocked) and customer (code ready) a best-effort notice, post-commit", async () => {
     const { prisma } = makeTx();
     const notified: Array<{ profileIds: string[]; msg: { title: string } }> = [];
     const notifications = {

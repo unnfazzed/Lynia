@@ -124,15 +124,15 @@ export const LEGAL_DATA_CATEGORIES: readonly LegalDataCategory[] = [
     manifestKeys: ["first_name", "last_name", "email", "phone"],
   },
   {
-    label: "Government ID and vehicle details (riders only)",
+    label: "Government ID and vehicle details (bikers only)",
     collected:
-      "Your national ID number, a photo of your ID and of your face, and your motorbike's registration and vehicle details — collected only if you register as a rider.",
+      "Your national ID number, a photo of your ID and of your face, and your motorbike's registration and vehicle details — collected only if you register as a biker.",
     purpose:
-      "Identity verification (KYC) — a legal and safety requirement before anyone may carry another person's parcel or food — the signal used to stop a banned rider re-registering, and the vehicle record shown to the customer whose order you are carrying.",
+      "Identity verification (KYC) — a legal and safety requirement before anyone may carry another person's parcel or food — the signal used to stop a banned biker re-registering, and the vehicle record shown to the customer whose order you are carrying.",
     basis:
-      "Your explicit consent, given when you start rider verification. Your national ID number and the photograph of your face are SENSITIVE personal information under the Cyber and Data Protection Act, so we ask for them only for verification and never use them for anything else. You can withdraw consent by deleting your rider account.",
+      "Your explicit consent, given when you start biker verification. Your national ID number and the photograph of your face are SENSITIVE personal information under the Cyber and Data Protection Act, so we ask for them only for verification and never use them for anything else. You can withdraw consent by deleting your biker account.",
     retention:
-      "The ID number is encrypted at rest and cleared when you delete your account, along with your vehicle details and your ID's expiry date. When you delete your account we also ask our ID-check provider to delete your verification session. ID and face images are held for the legal minimum after a rider account goes inactive or is rejected, then deleted automatically.",
+      "The ID number is encrypted at rest and cleared when you delete your account, along with your vehicle details and your ID's expiry date. When you delete your account we also ask our ID-check provider to delete your verification session. ID and face images are held for the legal minimum after a biker account goes inactive or is rejected, then deleted automatically.",
     manifestKeys: [
       "id_number",
       "id_number_hash",
@@ -157,13 +157,13 @@ export const LEGAL_DATA_CATEGORIES: readonly LegalDataCategory[] = [
   {
     label: "Precise location",
     collected:
-      "Your device's GPS position: the pickup and drop-off points you set, your saved addresses, and — for riders only, while an order is in progress — a live position trail. Rider location continues to update while the app is in the background so the customer can follow the delivery; this is shown by a persistent Android notification and stops when the delivery ends or you go offline.",
+      "Your device's GPS position: the pickup and drop-off points you set, your saved addresses, and — for bikers only, while an order is in progress — a live position trail. Biker location continues to update while the app is in the background so the customer can follow the delivery; this is shown by a persistent Android notification and stops when the delivery ends or you go offline.",
     purpose:
-      "To match an order to nearby riders, show you restaurants near you, show the customer where their order is, price a trip by distance, and support safety and dispute investigations.",
+      "To match an order to nearby bikers, show you restaurants near you, show the customer where their order is, price a trip by distance, and support safety and dispute investigations.",
     basis:
       "Performance of your contract with us — a delivery cannot be matched, priced or tracked without it. As a customer you may type an address instead of sharing GPS.",
     retention:
-      "Coordinates on delivery events and SOS alerts are erased 90 days after the event. A rider's live position is cleared as soon as they go offline or delete their account. Saved addresses are deleted with your account.",
+      "Coordinates on delivery events and SOS alerts are erased 90 days after the event. A biker's live position is cleared as soon as they go offline or delete their account. Saved addresses are deleted with your account.",
     manifestKeys: [
       "lat",
       "lng",
@@ -195,7 +195,7 @@ export const LEGAL_DATA_CATEGORIES: readonly LegalDataCategory[] = [
   {
     label: "Photos",
     collected:
-      "Photos you choose to attach — an item photo on a delivery request, a pickup or proof-of-delivery photo (with when it was taken, why the delivery code couldn't be used, and the name of the person an order was handed to), and a rider profile photo.",
+      "Photos you choose to attach — an item photo on a delivery request, a pickup or proof-of-delivery photo (with when it was taken, why the delivery code couldn't be used, and the name of the person an order was handed to), and a biker profile photo.",
     purpose: "To describe the parcel, evidence hand-over, and resolve disputes about what was delivered.",
     basis: "Performance of your contract with us; you choose whether to attach one.",
     retention: "Held for the life of the order; the stored images are deleted when you delete your account.",
@@ -204,9 +204,9 @@ export const LEGAL_DATA_CATEGORIES: readonly LegalDataCategory[] = [
   {
     label: "Prescriptions (pharmacy orders)",
     collected:
-      "When you order a medicine that needs a prescription: photos of the prescription, the patient's name, your agreement to show the original to the rider, and the pharmacist's decision and note.",
+      "When you order a medicine that needs a prescription: photos of the prescription, the patient's name, your agreement to show the original to the biker, and the pharmacist's decision and note.",
     purpose:
-      "So the pharmacy's pharmacist can check the prescription before packing the medicine, and the rider can confirm the original at your door.",
+      "So the pharmacy's pharmacist can check the prescription before packing the medicine, and the biker can confirm the original at your door.",
     basis:
       "Your explicit consent, given when you add the prescription. A prescription is health information — SENSITIVE personal information under the Cyber and Data Protection Act — so only you, the pharmacy you ordered from and LyniaGo support can open the photos, through links that expire after a few minutes.",
     retention: "Held with the order as a dispute record; the photos, the patient's name and the pharmacist's note are deleted when you delete your account.",
@@ -227,7 +227,7 @@ export const LEGAL_DATA_CATEGORIES: readonly LegalDataCategory[] = [
   {
     label: "Financial information",
     collected:
-      "For riders: the mobile-money number used to top up the prepaid commission wallet, and that wallet's transaction ledger. Lynia never takes payment for the goods being delivered — customers pay riders, or restaurants, directly.",
+      "For riders: the mobile-money number used to top up the prepaid commission wallet, and that wallet's transaction ledger. Lynia never takes payment for the goods being delivered — customers pay bikers, or restaurants, directly.",
     purpose: "To credit wallet top-ups and charge the per-delivery commission.",
     basis:
       "Performance of your contract with us, and our legal obligation to keep accurate financial records.",
@@ -238,14 +238,14 @@ export const LEGAL_DATA_CATEGORIES: readonly LegalDataCategory[] = [
     manifestKeys: ["phone"],
   },
   {
-    label: "Riders a business calls its own",
+    label: "Bikers a business calls its own",
     collected:
-      "A business on LyniaGo can add a rider's mobile number to its own list of riders, under the name it knows them by. The rider does not have to be on LyniaGo yet.",
+      "A business on LyniaGo can add a biker's mobile number to its own list of bikers, under the name it knows them by. The biker does not have to be on LyniaGo yet.",
     purpose:
-      "To offer that business's deliveries to its own riders first — only when they are eligible and nearby — and to show the business whether the number belongs to a LyniaGo rider who can take jobs.",
+      "To offer that business's deliveries to its own bikers first — only when they are eligible and nearby — and to show the business whether the number belongs to a LyniaGo biker who can take jobs.",
     basis:
-      "Our and the business's legitimate interest in matching a business with riders it already works with. The business sees only whether the number is a LyniaGo rider who can take jobs right now, never why, and sees the rider's LyniaGo name and photo only after they have delivered for it.",
-    retention: "Kept until the business removes the number; deleted from every business's list when the rider deletes their LyniaGo account.",
+      "Our and the business's legitimate interest in matching a business with bikers it already works with. The business sees only whether the number is a LyniaGo biker who can take jobs right now, never why, and sees the biker's LyniaGo name and photo only after they have delivered for it.",
+    retention: "Kept until the business removes the number; deleted from every business's list when the biker deletes their LyniaGo account.",
     manifestKeys: ["preferred_rider_store"],
   },
   {
@@ -279,7 +279,7 @@ const SHARING: readonly { readonly who: string; readonly what: string }[] = [
   {
     who: "The other party to your order",
     what:
-      "A customer sees the assigned rider's first name, photo, rating and live position; a rider sees the customer's first name, the pickup and drop-off points, and the contact number for that order. Neither sees your ID document or your account history.",
+      "A customer sees the assigned biker's first name, photo, rating and live position; a biker sees the customer's first name, the pickup and drop-off points, and the contact number for that order. Neither sees your ID document or your account history.",
   },
   {
     who: "The restaurant or shop you ordered from",
@@ -287,14 +287,14 @@ const SHARING: readonly { readonly who: string; readonly what: string }[] = [
       "A restaurant sees what you ordered, any note you attached to a dish, the delivery point, and — if you submitted one — your payment reference so they can confirm they were paid. They do not see your national ID, your saved addresses, your other orders, or your order history with any other shop.",
   },
   {
-    who: "A business that lists you as one of its riders",
+    who: "A business that lists you as one of its bikers",
     what:
-      "Whether your number belongs to a LyniaGo rider who can take jobs right now (never why), and — once you have delivered for that business — your name, photo, how many of its deliveries you have made and your rating from them.",
+      "Whether your number belongs to a LyniaGo biker who can take jobs right now (never why), and — once you have delivered for that business — your name, photo, how many of its deliveries you have made and your rating from them.",
   },
   {
     who: "The business you work at",
     what:
-      "Its owner sees your name, a masked version of your number and when you joined. When you book a rider or act on an order for the business, the business can see it was you.",
+      "Its owner sees your name, a masked version of your number and when you joined. When you book a biker or act on an order for the business, the business can see it was you.",
   },
   {
     who: "Google (Firebase Cloud Messaging, Google Maps)",
@@ -306,7 +306,7 @@ const SHARING: readonly { readonly who: string; readonly what: string }[] = [
   },
   {
     who: "Our identity-verification provider",
-    what: "Rider ID documents and face photos are checked against the document by a KYC provider.",
+    what: "Biker ID documents and face photos are checked against the document by a KYC provider.",
   },
   {
     who: "Our diagnostics providers (Sentry, PostHog)",
@@ -325,7 +325,7 @@ const NOT_DONE: readonly string[] = [
   "We do not share your data with advertisers or data brokers, or for advertising or marketing by others.",
   "We do not track you across other companies' apps or websites.",
   "We do not send you marketing messages. The messages we send are about your own orders.",
-  "We do not collect background location beyond the order you are actively delivering as a rider.",
+  "We do not collect background location beyond the order you are actively delivering as a biker.",
 ];
 
 /**
@@ -413,8 +413,8 @@ export function privacyPolicyHtml(): string {
 <p class="meta">Last updated ${LEGAL_LAST_UPDATED}</p>
 
 <p>LyniaGo is an on-demand marketplace in Zimbabwe. You can <strong>send a parcel</strong> across town
-by motorbike — naming your own price, with nearby riders accepting or countering and you choosing who
-carries it — and you can <strong>order food from a restaurant</strong> and have a rider bring it to
+by motorbike — naming your own price, with nearby bikers accepting or countering and you choosing who
+carries it — and you can <strong>order food from a restaurant</strong> and have a biker bring it to
 you. This notice explains what personal data we collect to run that service, why, how long we keep
 it, and how you can get it deleted.</p>
 
@@ -425,8 +425,8 @@ Regulatory Authority of Zimbabwe (POTRAZ).</p>
 
 <div class="note">
   <strong>The short version.</strong> We collect what an order needs — who you are, where it is going,
-  and where the rider is while carrying it — and nothing to sell on. We do not process payment for
-  your goods or your food: you pay the rider or the restaurant directly. Our servers are in
+  and where the biker is while carrying it — and nothing to sell on. We do not process payment for
+  your goods or your food: you pay the biker or the restaurant directly. Our servers are in
   ${HOSTING_COUNTRY}. You can delete your account and its personal data from inside the app at any
   time: <strong>Account → Settings → Delete account</strong>.
 </div>
@@ -437,7 +437,7 @@ applies to you — one person can be more than one.</p>
 <ul>
   <li><strong>Customers</strong> send parcels and order food. We hold your name, phone number, the
   points you set, your orders, and any photos or notes you attach.</li>
-  <li><strong>Riders</strong> carry those orders. In addition to the above we hold your identity
+  <li><strong>Bikers</strong> carry those orders. In addition to the above we hold your identity
   documents, your vehicle details, your live position while you are on an order, and your commission
   wallet.</li>
   <li><strong>Restaurant and shop partners</strong> sell through LyniaGo. What we hold about a shop —
@@ -469,9 +469,9 @@ ${rows}
   <li><strong>As a customer</strong>, we use your location only to help you set pickup and drop-off
   points and to show you nearby restaurants, and only while the app is open. You can type an address
   instead — location is not required to use LyniaGo.</li>
-  <li><strong>As a rider</strong>, we use your location to show you nearby orders while you are
+  <li><strong>As a biker</strong>, we use your location to show you nearby orders while you are
   online, and to stream your position to the customer <em>while you are carrying their order</em>.
-  That streaming continues when the app is in the background — otherwise the customer loses the rider
+  That streaming continues when the app is in the background — otherwise the customer loses the biker
   the moment they switch to their maps app for directions — and Android shows a persistent
   notification the whole time it is happening. It stops when the order completes or you go offline.</li>
   <li>We never request Android's "all the time" background location permission, and we do not collect
@@ -487,8 +487,8 @@ you use "I paid another way" and enter a mobile-money reference, the restaurant 
 so they can match it against their own statement. They never see your national ID, your saved
 addresses, or any order you placed with anyone else.</p>
 <p><strong>We are not the payment processor.</strong> Money for your food, and money for the goods in
-a parcel, moves directly between you and the restaurant or the rider. Lynia's only charge is a
-commission it takes from riders through their prepaid wallet.</p>
+a parcel, moves directly between you and the restaurant or the biker. Lynia's only charge is a
+commission it takes from bikers through their prepaid wallet.</p>
 
 <h2>3. Who your data is shared with</h2>
 <ul>
@@ -533,7 +533,7 @@ ${notDone}
   <li><strong>object to</strong> a particular use of it;</li>
   <li>have it <strong>deleted</strong> — see <a href="/legal/account-deletion">Delete your account and
   data</a>. You can do this yourself in the app; you do not need to ask us;</li>
-  <li><strong>withdraw consent</strong> where we relied on it (for example rider ID verification), at
+  <li><strong>withdraw consent</strong> where we relied on it (for example biker ID verification), at
   any time and as easily as you gave it.</li>
 </ul>
 <p>Write to <a href="mailto:${LEGAL_CONTACT_EMAIL}">${LEGAL_CONTACT_EMAIL}</a> to exercise any of
@@ -543,7 +543,7 @@ that nobody else can obtain or delete your data by pretending to be you.</p>
 Zimbabwe's data protection authority.</p>
 
 <h2>8. Children</h2>
-<p>LyniaGo is not intended for anyone under 18, and riders must pass identity verification. We do not
+<p>LyniaGo is not intended for anyone under 18, and bikers must pass identity verification. We do not
 knowingly collect data from children. If you believe a child has created an account, contact us and we
 will remove it.</p>
 
@@ -588,7 +588,7 @@ account.</p>
 
 <div class="note">
   <strong>Finish or cancel any live order first.</strong> If you have an order in progress — as the
-  customer or the rider — deletion is refused until it is completed or cancelled, so that nobody is
+  customer or the biker — deletion is refused until it is completed or cancelled, so that nobody is
   left stranded mid-delivery.
 </div>
 
@@ -603,13 +603,13 @@ within 30 days.</p>
   <li>Your name, email address, and phone number (your number is released so it can be used for a new
   account).</li>
   <li>Your national ID number and any ID or face photographs.</li>
-  <li>Your profile photo, saved addresses, and rider vehicle details.</li>
+  <li>Your profile photo, saved addresses, and biker vehicle details.</li>
   <li>Your last known position, and the GPS trail on all of your orders.</li>
   <li>Item, pickup and proof-of-delivery photos.</li>
   <li>Free text you wrote — order notes, per-dish notes on food orders, rating comments, cancellation
   reasons, support issue descriptions, reports.</li>
   <li>Any mobile-money references you submitted — the transaction reference for a restaurant payment,
-  and the number used to top up a rider commission wallet.</li>
+  and the number used to top up a biker commission wallet.</li>
   <li>Your push-notification tokens and all sign-in sessions on every device.</li>
 </ul>
 
@@ -630,8 +630,8 @@ keep. None of it identifies you after your profile is anonymised:</p>
   <li>Personal data listed under "what is deleted": removed immediately on deletion.</li>
   <li>GPS coordinates on order and SOS events: erased automatically 90 days after the event, whether
   or not you delete your account.</li>
-  <li>Rider ID and face images: deleted automatically after the legally required KYC retention period
-  once a rider account is inactive or rejected.</li>
+  <li>Biker ID and face images: deleted automatically after the legally required KYC retention period
+  once a biker account is inactive or rejected.</li>
   <li>Anonymised financial and audit records: retained for as long as the law requires us to keep them.</li>
 </ul>
 
@@ -678,13 +678,13 @@ Merchant app or lyniago.com. LyniaGo is operated by <strong>${OPERATOR_NAME}</st
 
 <div class="note">
   <strong>The short version.</strong> LyniaGo connects people who need something delivered with
-  independent riders, and connects hungry customers with restaurants and shops. We do not carry the
-  parcel, cook the food or take your money for it: you agree the price and pay the rider or the business
+  independent bikers, and connects hungry customers with restaurants and shops. We do not carry the
+  parcel, cook the food or take your money for it: you agree the price and pay the biker or the business
   directly. Be honest, be safe, be respectful, and pay what you agreed.
 </div>
 
 <p>Part A applies to everyone. Then read the part for how you use LyniaGo: <a href="#customers">Part B
-for customers</a>, <a href="#riders">Part C for riders</a> and <a href="#businesses">Part D for
+for customers</a>, <a href="#riders">Part C for bikers</a> and <a href="#businesses">Part D for
 businesses</a>. One person can be more than one of these.</p>
 
 <h2>Part A · For everyone</h2>
@@ -694,10 +694,10 @@ businesses</a>. One person can be more than one of these.</p>
 <a href="/legal/privacy">privacy notice</a>. If you do not accept them, do not use LyniaGo.</p>
 
 <h3>2. What LyniaGo is</h3>
-<p>LyniaGo is a marketplace. We provide the app that lets customers, riders and businesses find each
-other, agree a price and follow a delivery. Riders are independent: they are not our employees or agents.
+<p>LyniaGo is a marketplace. We provide the app that lets customers, bikers and businesses find each
+other, agree a price and follow a delivery. Bikers are independent: they are not our employees or agents.
 Restaurants and shops sell their own food and goods. The agreement to carry a parcel is between the
-customer and the rider, and the sale of food or goods is between the customer and the business.</p>
+customer and the biker, and the sale of food or goods is between the customer and the business.</p>
 
 <h3>3. Your account</h3>
 <ul>
@@ -711,11 +711,11 @@ customer and the rider, and the sale of food or goods is between the customer an
 
 <h3>4. Prices and payment</h3>
 <ul>
-  <li>For parcels, <strong>you set the price</strong>. We show a suggested fare, riders accept it or
+  <li>For parcels, <strong>you set the price</strong>. We show a suggested fare, bikers accept it or
   counter, and you choose. The price you choose is the agreed price.</li>
   <li>For food and shop orders, the business sets the item prices and the app shows the delivery fee
   before you order.</li>
-  <li><strong>LyniaGo does not take payment for parcels, food or goods.</strong> You pay the rider or
+  <li><strong>LyniaGo does not take payment for parcels, food or goods.</strong> You pay the biker or
   the business directly, in cash or by mobile money, as the order shows. Pay the agreed amount.</li>
   <li>Any fee LyniaGo charges you is shown in the app before it applies.</li>
 </ul>
@@ -731,7 +731,7 @@ customer and the rider, and the sale of food or goods is between the customer an
 </ul>
 
 <h3>6. Ratings and reports</h3>
-<p>After an order, customers and riders rate each other. Ratings must be honest. If something goes wrong,
+<p>After an order, customers and bikers rate each other. Ratings must be honest. If something goes wrong,
 report it in the app or contact us (section 12). We will look into it and may ask everyone involved
 for their side.</p>
 
@@ -749,7 +749,7 @@ the app, but not copy or resell it.</p>
 <ul>
   <li>We are responsible for running the app with reasonable care.</li>
   <li>We are <strong>not</strong> responsible for the quality, safety or legality of food, goods or
-  parcels, or for what riders, customers or businesses do or fail to do. The rider is responsible for
+  parcels, or for what bikers, customers or businesses do or fail to do. The biker is responsible for
   the parcel while carrying it; the business is responsible for its food and goods.</li>
   <li>We are not responsible for losses we could not reasonably foresee, or for lost profits or lost
   business.</li>
@@ -781,10 +781,10 @@ enforced, the rest still applies.</p>
   more than <strong>US$150</strong>.</li>
   <li><strong>Do not send:</strong> cash, weapons, drugs, prescription medicine, stolen goods, anything
   illegal or dangerous (such as fuel, gas or explosives), live animals, or anything worth more than the
-  cap. A rider may refuse or cancel a parcel that breaks these rules.</li>
+  cap. A biker may refuse or cancel a parcel that breaks these rules.</li>
   <li>Pack it properly, be ready at the pickup point, and make sure someone is at the drop-off point
   to receive it.</li>
-  <li>The receiver gives the rider the delivery code. Only share it when the parcel is in your hands
+  <li>The receiver gives the biker the delivery code. Only share it when the parcel is in your hands
   (or theirs).</li>
 </ul>
 
@@ -793,20 +793,20 @@ enforced, the rest still applies.</p>
   <li>The restaurant or shop prepares your order and is responsible for it, including what is in it.
   If you have an allergy, tell the business in the note before you order.</li>
   <li>Once the business starts preparing your order, you may not be able to cancel it.</li>
-  <li>Be at the delivery point and answer your phone. If the rider cannot reach you, or you refuse the
-  order at the door without a good reason, the order goes back to the business, the rider keeps the
+  <li>Be at the delivery point and answer your phone. If the biker cannot reach you, or you refuse the
+  order at the door without a good reason, the order goes back to the business, the biker keeps the
   delivery fee and you may not get a refund.</li>
   <li>If something is missing or wrong, report it in the app or contact us straight away.</li>
 </ul>
 
-<h2 id="riders">Part C · For riders</h2>
+<h2 id="riders">Part C · For bikers</h2>
 
-<h3>15. Becoming a rider</h3>
+<h3>15. Becoming a biker</h3>
 <ul>
   <li>You must pass our ID check (your national ID and a selfie) before you can go online.</li>
   <li>You must hold a valid driving licence, and your motorbike must be registered, roadworthy and
   insured as the law requires.</li>
-  <li>You are an independent rider. You choose when to go online and which jobs to take. You are
+  <li>You are an independent biker. You choose when to go online and which jobs to take. You are
   responsible for your own taxes, fuel, phone and equipment.</li>
 </ul>
 
@@ -832,7 +832,7 @@ enforced, the rest still applies.</p>
 </ul>
 
 <h3>18. Commission and your wallet</h3>
-<p>LyniaGo may charge riders a commission on completed jobs, taken from a prepaid wallet you top up.
+<p>LyniaGo may charge bikers a commission on completed jobs, taken from a prepaid wallet you top up.
 <strong>The commission is 0% today.</strong> Before it changes, we will tell you the rate in the app.
 When a commission applies, you may not be able to go online while your wallet balance is too low.</p>
 
@@ -845,17 +845,17 @@ When a commission applies, you may not be able to go online while your wallet ba
   <li>Keep your menu or items, prices, photos, opening hours and location accurate. Do not charge
   LyniaGo customers more than the price you listed.</li>
   <li>Food must be safe, prepared hygienically and packed so it travels well.</li>
-  <li>Accept or decline orders promptly, and have them ready when the rider arrives.</li>
+  <li>Accept or decline orders promptly, and have them ready when the biker arrives.</li>
   <li>You are responsible for your food and goods, and for the people you add to your team. Remove
   anyone who should no longer have access.</li>
 </ul>
 
-<h3>20. Payment and riders</h3>
+<h3>20. Payment and bikers</h3>
 <ul>
-  <li>Customers pay you directly, or pay the rider, who returns your money to you. Check the amount and
+  <li>Customers pay you directly, or pay the biker, who returns your money to you. Check the amount and
   confirm it in the app.</li>
-  <li>If a rider does not return your money, report it in the app straight away.</li>
-  <li>When you book a rider for your own deliveries, you pay the rider the agreed fare.</li>
+  <li>If a biker does not return your money, report it in the app straight away.</li>
+  <li>When you book a biker for your own deliveries, you pay the biker the agreed fare.</li>
   <li>Any fee LyniaGo charges your business is shown to you in the app, or agreed in writing, before it
   applies.</li>
 </ul>

@@ -20,11 +20,11 @@ function screen(rider: KycGateRider | null, opts: { launch?: "completed" | "fail
 const auto = { kycMode: "auto" as const };
 
 describe("kycScreenFor — server state → First Run v2 page", () => {
-  it("no rider record → R1 (G1: the board's 'Earn with your bike' interstitial is gone)", () => {
+  it("no biker record → R1 (G1: the board's 'Earn with your bike' interstitial is gone)", () => {
     expect(screen(null)).toEqual({ kind: "become" });
   });
 
-  it("F8: a check the rider just submitted (fresh completed launch), before R2", () => {
+  it("F8: a check the biker just submitted (fresh completed launch), before R2", () => {
     expect(screen({ kycStatus: "pending", ...auto, kycPendingState: "unfinished" }, { launch: "completed" })).toEqual({ kind: "outcome", id: "F8" });
     expect(screen({ kycStatus: "pending", ...auto, kycPendingState: "in_flight" }, { launch: "completed" })).toEqual({ kind: "outcome", id: "F8" });
   });
@@ -95,7 +95,7 @@ describe("kycScreenFor — server state → First Run v2 page", () => {
     expect(screen({ kycStatus: "verified", ...auto }, { server: "kyc_expired" })).toEqual({ kind: "outcome", id: "F6" });
   });
 
-  it("F3 for the server's plain KYC refusal on a rider the app still thinks verified", () => {
+  it("F3 for the server's plain KYC refusal on a biker the app still thinks verified", () => {
     expect(screen({ kycStatus: "verified", ...auto }, { server: "kyc" })).toEqual({ kind: "outcome", id: "F3" });
   });
 
@@ -103,7 +103,7 @@ describe("kycScreenFor — server state → First Run v2 page", () => {
     expect(screen({ kycStatus: "pending", ...auto, kycPendingState: "unfinished" }, { launch: "failed" })).toEqual({ kind: "outcome", id: "F7" });
   });
 
-  it("a terminal decline outranks the last launch (the rider must see the decline)", () => {
+  it("a terminal decline outranks the last launch (the biker must see the decline)", () => {
     expect(screen({ kycStatus: "failed", ...auto, kycAttempts: 1, kycDeclineReason: "face_mismatch" }, { launch: "completed" })).toEqual({ kind: "outcome", id: "F4b" });
   });
 

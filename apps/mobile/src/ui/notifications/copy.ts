@@ -17,20 +17,20 @@ export const N = {
   tGlenara: "Parcel to Glenara Ave", tBelgravia: "Parcel to Belgravia", tMbare: "Parcel to Mbare", tAvondaleP: "Parcel to Avondale",
   tSadza: "Sadza Republic", tPharm: "Healthwise Pharmacy", tMama: "Mama's Kitchen", tTM: "TM Pick n Pay, Borrowdale",
   /* order updates · customer voice (row line) */
-  cAssigned: "Tendai is your rider.", cOnWay: "Tendai is heading to pickup.", cCollected: "Tendai has your parcel.",
+  cAssigned: "Tendai is your biker.", cOnWay: "Tendai is heading to pickup.", cCollected: "Tendai has your parcel.",
   cToDrop: "Tendai is on the way to the drop-off.", cDelivered: "Delivered. How was Tendai?",
   cNotDone: "Tendai couldn't complete the delivery. We'll help you get it back.",
-  cCancelled: "Order cancelled. Nothing was charged.", cNoRiders: "No riders yet. We're still asking nearby.",
-  cRiderCx: "Your rider had to cancel. We're finding you another.", cWindow: "No rider took it in time. Post it again when you're ready.",
-  cOffer: "Farai offered $3.20 to carry it.", cFare: "The fare is now $3.50.", cNear: "A rider is online near you.",
+  cCancelled: "Order cancelled. Nothing was charged.", cNoRiders: "No bikers yet. We're still asking nearby.",
+  cRiderCx: "Your biker had to cancel. We're finding you another.", cWindow: "No biker took it in time. Post it again when you're ready.",
+  cOffer: "Farai offered $3.20 to carry it.", cFare: "The fare is now $3.50.", cNear: "A biker is online near you.",
   /* order updates · timeline step labels */
-  tlPosted: "Posted", tlAssigned: "Rider assigned", tlOnWay: "Rider on the way", tlCollected: "Parcel collected", tlToDrop: "On the way to drop-off",
-  tlDelivered: "Delivered", tlCancelled: "Order cancelled", tlNoRiders: "No riders yet", tlOffer: "New offer", tlSos: "SOS on your delivery", tlBack: "Back on track",
+  tlPosted: "Posted", tlAssigned: "Biker assigned", tlOnWay: "Biker on the way", tlCollected: "Parcel collected", tlToDrop: "On the way to drop-off",
+  tlDelivered: "Delivered", tlCancelled: "Order cancelled", tlNoRiders: "No bikers yet", tlOffer: "New offer", tlSos: "SOS on your delivery", tlBack: "Back on track",
   /* merchant orders */
   mAccepted: "Order accepted.", mPreparing: "Being prepared. About 15 min.", mCollected: "Tendai collected your food. On the way.",
-  mDoor: "Your rider is at the door.", mDelivered: "Delivered. Enjoy your meal.", mDeliveredShop: "Delivered.",
+  mDoor: "Your biker is at the door.", mDelivered: "Delivered. Enjoy your meal.", mDeliveredShop: "Delivered.",
   mSwap: "Panado 24s is out. They'd like to send Paracetamol 24s instead, same price.",
-  tmAccepted: "Accepted", tmPreparing: "Being prepared", tmCollected: "Rider collected", tmDoor: "At your door", tmDelivered: "Delivered", tmSwap: "Item swapped",
+  tmAccepted: "Accepted", tmPreparing: "Being prepared", tmCollected: "Biker collected", tmDoor: "At your door", tmDelivered: "Delivered", tmSwap: "Item swapped",
   /* order updates · rider voice */
   rGot: "You got the job. $3.20 cash.", rToPickup: "Heading to pickup.", rCollected: "Parcel collected.",
   rDelivered: "Delivered. The $3.20 cash is yours.", rDelivered2: "Delivered. The $2.50 cash is yours.",
@@ -51,12 +51,12 @@ export const N = {
   /* actions — only rows that need you */
   seeOffer: "See offer", reviewSwap: "Review swap", tryAgain: "Try again",
   /* notifications off (Rider v2 J8 row) */
-  offC: "Notifications are off. You won't hear when a rider offers or your order arrives.",
+  offC: "Notifications are off. You won't hear when a biker offers or your order arrives.",
   offR: "Notifications are off. You won't get new jobs or food offers.", turnOn: "Turn on",
   /* swipe */
   remove: "Remove", removed: "Notification removed", undo: "Undo",
   /* dual role */
-  otherR: "On the Rider side", otherRS: "2 updates · wallet credited, account restored",
+  otherR: "On the Biker side", otherRS: "2 updates · wallet credited, account restored",
   otherC: "On the Customer side", otherCS: "1 update · Sadza Republic is on the way",
   /* empty */
   emptyCT: "Nothing here yet", emptyCB: "Updates about your orders and your account show up here.", sendParcel: "Send a parcel",
@@ -77,7 +77,7 @@ export const earlier = (n: number): string => n === 1 ? N.earlier1 : `${n} ${N.e
 export const NF = {
   parcelTo: (area: string) => `Parcel to ${area}`,
   job: (from: string, to: string) => `${from} → ${to}`,
-  cAssigned: (n: string) => `${n} is your rider.`,
+  cAssigned: (n: string) => `${n} is your biker.`,
   cOnWay: (n: string) => `${n} is heading to pickup.`,
   cCollected: (n: string) => `${n} has your parcel.`,
   cToDrop: (n: string) => `${n} is on the way to the drop-off.`,
@@ -109,5 +109,5 @@ export const NX = {
   /** Timeline step for a fare correction (the server row's own title). */
   tlFare: "Fare updated",
   /** Timeline step for a rider bail that was re-sent (After Send v2's stage name). */
-  tlRebroadcast: "Your rider had to cancel",
+  tlRebroadcast: "Your biker had to cancel",
 };

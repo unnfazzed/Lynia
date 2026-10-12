@@ -268,7 +268,7 @@ export class IssuesService {
           where: { id: issue.orderId },
           select: { riderId: true, agreedFare: true, proposedFare: true },
         });
-        if (!order?.riderId) throw new BadRequestException("Can't refund an order with no assigned rider");
+        if (!order?.riderId) throw new BadRequestException("Can't refund an order with no assigned biker");
         // A refund can never exceed what was charged for the trip — bound it by the agreed fare (or the
         // proposed fare if the order never reached an agreed price), so ops can't record a Refund larger
         // than the amount ever paid, which A-06 settlement netting would later debit off the rider.
@@ -281,7 +281,7 @@ export class IssuesService {
         });
       } else if (body.resolution === "rider_strike") {
         const order = await tx.order.findUnique({ where: { id: issue.orderId }, select: { riderId: true } });
-        if (!order?.riderId) throw new BadRequestException("Can't strike an order with no assigned rider");
+        if (!order?.riderId) throw new BadRequestException("Can't strike an order with no assigned biker");
         // FRAUD P2-4: increment the DEDICATED dispute-strike counter (not cancelStrikes — that column is
         // the pre-pickup-cancel axis, which RESETS to 0 at its own limit and would silently wipe a dispute
         // strike sitting alongside it). Read the current value under a row lock, increment, and enforce

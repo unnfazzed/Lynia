@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { bikerWording } from "@lynia/shared";
 import { makingWord, pushCopy, PUSH_C, PUSH_M, PUSH_R, riderJobTemplate } from "./merchant-order-push";
 
 /**
@@ -10,7 +11,7 @@ import { makingWord, pushCopy, PUSH_C, PUSH_M, PUSH_R, riderJobTemplate } from "
  */
 
 function drawnPush(): { c: [string, string][]; m: [string, string][]; r: [string, string][] } {
-  const src = readFileSync(resolve(__dirname, "../../../../packages/design/handoff/order-flow-v2/code/copy.ts"), "utf8");
+  const src = bikerWording(readFileSync(resolve(__dirname, "../../../../packages/design/handoff/order-flow-v2/code/copy.ts"), "utf8"));
   const json = src.slice(src.indexOf("export const O = ") + "export const O = ".length, src.indexOf("} as const;") + 1);
   return (JSON.parse(json) as { g: { push: { c: [string, string][]; m: [string, string][]; r: [string, string][] } } }).g.push;
 }
@@ -63,13 +64,13 @@ describe("merchant-order push copy = O.g.push (G3a–c), verbatim", () => {
   });
 
   it("drops a sentence whose value the server doesn't have (no ETA ⇒ no 'Arrives …')", () => {
-    expect(pushCopy(PUSH_C.making, { v: "Avondale Fresh", making: "packing" })).toEqual({ title: "Avondale Fresh is packing", body: "We’ll tell you when a rider has it." });
+    expect(pushCopy(PUSH_C.making, { v: "Avondale Fresh", making: "packing" })).toEqual({ title: "Avondale Fresh is packing", body: "We’ll tell you when a biker has it." });
     expect(pushCopy(PUSH_C.collected, { n: "Tendai" })).toEqual({ title: "Tendai has your order", body: "On the way." });
     expect(pushCopy(PUSH_C.notDelivered, {})).toEqual({ title: "Your order wasn’t delivered", body: "Nothing was charged." });
   });
 
   it("a title slot falls back when the name is unknown", () => {
-    expect(pushCopy(PUSH_C.atDoor, { p: "$6.80" }, { n: "Your rider" })).toEqual({ title: "Your rider is at your door", body: "Have $6.80 cash ready." });
+    expect(pushCopy(PUSH_C.atDoor, { p: "$6.80" }, { n: "Your biker" })).toEqual({ title: "Your biker is at your door", body: "Have $6.80 cash ready." });
   });
 
   it("never carries a delivery or pickup code (no 3+3 or 6-digit run in any template)", () => {

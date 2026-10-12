@@ -97,7 +97,7 @@ describe("WalletService.createTopup (server-side clamp)", () => {
 
   it("rejects a top-up from a non-rider", async () => {
     const svc = build({}, { rider: { findUnique: async () => null } });
-    await expect(svc.createTopup("x", { amount: 10, rail: "ecocash", phone: "0770000000" })).rejects.toThrow(/not a rider/i);
+    await expect(svc.createTopup("x", { amount: 10, rail: "ecocash", phone: "0770000000" })).rejects.toThrow(/not a biker/i);
   });
 
   it("BH-09: a retry with the same idempotency key returns the original pending intent, not a second one", async () => {
@@ -225,7 +225,7 @@ describe("WalletService.chargeCommission — WD-012 commission-basis floor (DOC-
     });
   });
 
-  it("LC-B-SIB-3: the rider's receipt math matches the debit when the floor bites — \"10% of $5.00\" beside −$0.50, not \"10% of $1.00\"", async () => {
+  it("LC-B-SIB-3: the biker's receipt math matches the debit when the floor bites — \"10% of $5.00\" beside −$0.50, not \"10% of $1.00\"", async () => {
     const create = vi.fn();
     const tx = {
       commissionLedger: { create, findFirst: async () => null },
@@ -303,7 +303,7 @@ describe("WalletService.chargeCommission — D-70 commission-free first jobs", (
     expect(COMMISSION.freeFirstJobs).toBe(5); // the handoff's drawn "5 of 5 left"
   });
 
-  it("a new rider's 1st…5th completed jobs carry no debit and write no ledger row, even at a live rate and a $0 balance", async () => {
+  it("a new biker's 1st…5th completed jobs carry no debit and write no ledger row, even at a live rate and a $0 balance", async () => {
     const svc = build({ COMMISSION_RATE_PCT: 10 });
     for (let job = 1; job <= COMMISSION.freeFirstJobs; job++) {
       const tx = txFor(job);
@@ -324,21 +324,21 @@ describe("WalletService.chargeCommission — D-70 commission-free first jobs", (
     });
   });
 
-  it("an existing rider past the allowance is unaffected — charged exactly as before", async () => {
+  it("an existing biker past the allowance is unaffected — charged exactly as before", async () => {
     const svc = build({ COMMISSION_RATE_PCT: 10 });
     const tx = txFor(240);
     await svc.chargeCommission(tx as never, { orderId: "o1", riderId: "r1", agreedFare: 3 });
     expect(tx.commissionLedger.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ amount: -0.3 }) }));
   });
 
-  it("a missing rider row falls back to the pre-D-70 charge (never silently free)", async () => {
+  it("a missing biker row falls back to the pre-D-70 charge (never silently free)", async () => {
     const svc = build({ COMMISSION_RATE_PCT: 10 });
     const tx = txFor(null);
     await svc.chargeCommission(tx as never, { orderId: "o1", riderId: "r1", agreedFare: 3 });
     expect(tx.commissionLedger.create).toHaveBeenCalled();
   });
 
-  it("at the 0% launch rate nothing changes — no rider read, no row", async () => {
+  it("at the 0% launch rate nothing changes — no biker read, no row", async () => {
     const svc = build({ COMMISSION_RATE_PCT: undefined });
     const tx = txFor(1);
     await svc.chargeCommission(tx as never, { orderId: "o1", riderId: "r1", agreedFare: 3 });
@@ -501,7 +501,7 @@ describe("WalletService.creditManual (WD-002/WD-003 — atomic audit + idempoten
     await expect(svc.creditManual({ riderId: "r1", amount: 999, rail: "manual", idemKey: "key-1", actorProfileId: "admin-1" })).rejects.toThrow(/between/i);
   });
 
-  it("UX18-04: pushes the rider a best-effort 'Wallet credited' notice — previously zero push AND zero feed row", async () => {
+  it("UX18-04: pushes the biker a best-effort 'Wallet credited' notice — previously zero push AND zero feed row", async () => {
     const { tx } = makeTx();
     const prisma = { rider: { findUnique: async () => ({ profileId: "r1" }) }, $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
     const notified: Array<{ profileIds: string[]; msg: { title: string; body: string } }> = [];

@@ -861,7 +861,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     const order = await this.findOwnAsMerchant(profileId, orderId);
     if (order.merchantClosedAt) return this.toResponse(order);
     if (!AFTER_PICKUP_STATUSES.has(order.status)) {
-      throw new ConflictException({ reason: "not_picked_up", message: "You can close this once the rider has the food." });
+      throw new ConflictException({ reason: "not_picked_up", message: "You can close this once the biker has the food." });
     }
     if (order.debtStatus && order.debtStatus !== "open") return this.toResponse(order);
     const updated = await this.prisma.order.update({
@@ -1195,7 +1195,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     if (locked && order.pickupCodeReissues >= HANDOVER_CODE_MAX_REISSUES) {
       throw new ConflictException({
         reason: "pickup_code_reissue_limit",
-        message: "The rider used every try on this code. Call LyniaGo support to hand this order over.",
+        message: "The biker used every try on this code. Call LyniaGo support to hand this order over.",
       });
     }
     const minted = await this.mintPickupCode(orderId, where, order.pickupCodeHash, locked ? order.pickupCodeReissues : null);
@@ -1265,7 +1265,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       >`SELECT status, rider_id, pickup_code_hash, pickup_code_attempts, merchant_id, merchant_payment_method, merchant_cash_rule, merchant_goods_total, delivery_fee, merchant_delivery_share FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
       const o = rows[0];
       if (!o) throw new NotFoundException("Order not found");
-      if (o.rider_id !== riderId) throw new ForbiddenException("Not the assigned rider");
+      if (o.rider_id !== riderId) throw new ForbiddenException("Not the assigned biker");
       if (o.status !== "en_route_pickup") throw new ConflictException("Order is not ready for pickup");
       if (o.pickup_code_attempts >= DELIVERY_OTP_MAX_ATTEMPTS) {
         throw new ForbiddenException("Too many attempts — ask the kitchen to re-check the code");
@@ -1304,7 +1304,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     if (!base) throw new ServiceUnavailableException({ reason: "handover_link_unavailable", message: "This isn't available yet." });
     const order = await this.findOwnAsMerchant(profileId, orderId);
     if (order.status !== "en_route_pickup" || !order.riderId || !order.pickupCodeHash) {
-      throw new ConflictException({ reason: "not_at_handover", message: "There's no rider on the way for this order." });
+      throw new ConflictException({ reason: "not_at_handover", message: "There's no biker on the way for this order." });
     }
     const exp = Math.floor(now.getTime() / 1000) + HANDOVER_LINK_TTL_S;
     const token = `${orderId}.${exp}.${this.handoverSig(orderId, order.riderId, exp, order.pickupCodeHash)}`;
@@ -1375,7 +1375,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       >`SELECT status, rider_id, auto_accepted, merchant_id, merchant_payment_method, merchant_cash_rule, merchant_goods_total, delivery_fee, merchant_delivery_share FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
       const o = rows[0];
       if (!o) throw new NotFoundException("Order not found");
-      if (o.rider_id !== riderId) throw new ForbiddenException("Not the assigned rider");
+      if (o.rider_id !== riderId) throw new ForbiddenException("Not the assigned biker");
       if (o.status !== "en_route_pickup") throw new ConflictException("Order is not ready for pickup");
       if (!o.auto_accepted) {
         throw new ConflictException({ reason: "code_required", message: "Ask the kitchen for the pickup code." });

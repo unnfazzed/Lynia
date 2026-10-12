@@ -15,7 +15,7 @@ const DEBT_TYPE_LABEL: Record<MerchantDebtLedgerRow["type"], string> = {
   opened: "Debt opened",
   settled_cash: "Settled — cash returned",
   settled_goods: "Settled — goods returned",
-  written_off: "Written off — rider suspended",
+  written_off: "Written off — biker suspended",
 };
 
 /** Merchant profile (X1): cash rule, pilot status, recent orders, and the full append-only
@@ -97,7 +97,7 @@ export default async function MerchantProfilePage({
     },
     {
       key: "rider",
-      header: "Rider",
+      header: "Biker",
       className: "mono mut",
       cell: (l) => (
         <a href={`/riders/${l.riderId}`} style={{ color: tokens.color.accentText }}>
@@ -140,8 +140,8 @@ export default async function MerchantProfilePage({
           <IconStore />
           <span className="t">
             <b>${m.openDebtAmount} in open collect-and-return debt</b> across {m.openDebtCount} order
-            {m.openDebtCount > 1 ? "s" : ""}. A rider owing this merchant takes no new jobs until it settles — see the
-            ledger below for which rider and order.
+            {m.openDebtCount > 1 ? "s" : ""}. A biker owing this merchant takes no new jobs until it settles — see the
+            ledger below for which biker and order.
           </span>
         </div>
       ) : null}
@@ -208,7 +208,7 @@ export default async function MerchantProfilePage({
                 ...(m.bookingAccount !== undefined
                   ? [
                       {
-                        label: "Book a rider",
+                        label: "Book a biker",
                         value: m.bookingAccount ? (
                           <a href={`/customers/${m.bookingAccount.id}`} style={{ color: tokens.color.accentText }}>
                             {m.bookingAccount.onHold ? "On hold — lift it on the booking account →" : "Active — hold it on the booking account →"}
@@ -225,11 +225,11 @@ export default async function MerchantProfilePage({
             />
           </section>
           <div style={{ fontSize: 11, color: tokens.color.muted }}>
-            No standing action lives on the merchant itself — a rider who doesn&apos;t return owed cash is suspended
-            from the <a href="/riders" style={{ color: tokens.color.accentText }}>Riders</a> console (the ledger
+            No standing action lives on the merchant itself — a biker who doesn&apos;t return owed cash is suspended
+            from the <a href="/riders" style={{ color: tokens.color.accentText }}>Bikers</a> console (the ledger
             row below names them); a customer who refuses to pay is cash-banned from their own{" "}
             <a href="/customers" style={{ color: tokens.color.accentText }}>Customers</a> profile. The business&apos;s
-            bookings are held on its booking account (Book a rider, above).
+            bookings are held on its booking account (Book a biker, above).
           </div>
         </div>
       </div>

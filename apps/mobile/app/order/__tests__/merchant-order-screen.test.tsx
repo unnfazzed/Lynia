@@ -275,15 +275,15 @@ describe("merchant order — one order screen (D-59)", () => {
   });
 
   // U11 (2026-10-07): the D-34 no-rider hold had no customer exit — T11a/T11b draw "Cancel order · free".
-  it("U11 T11a: food ready, slow rider search — no cancel while dispatch is still searching", async () => {
+  it("U11 T11a: food ready, slow biker search — no cancel while dispatch is still searching", async () => {
     const t = await render(foodOrder({ merchantPhase: "ready_for_pickup", readyAt: iso(-60_000), noRiderHoldAt: null }), snapshot());
-    expect(has(t, "Finding a rider is taking longer")).toBe(true);
+    expect(has(t, "Finding a biker is taking longer")).toBe(true);
     expect(has(t, "Cancel order · free")).toBe(false);
   });
 
   it("U11 T11a: in the no-rider hold, the drawn free cancel goes through the unpaid-cancel endpoint", async () => {
     const t = await render(foodOrder({ merchantPhase: "ready_for_pickup", readyAt: iso(-8 * 60_000), noRiderHoldAt: iso(-60_000), dispatchAttempt: 6 }), snapshot());
-    expect(has(t, "Finding a rider is taking longer")).toBe(true);
+    expect(has(t, "Finding a biker is taking longer")).toBe(true);
     press(t, "Cancel order · free");
     expect(has(t, "Cancel this order?")).toBe(true);
     press(t, "Cancel order");
@@ -420,12 +420,12 @@ describe("merchant order — one order screen (D-59)", () => {
     expect(t.root.findAll((n) => n.props.accessibilityLabel === "Step 2 of 4, Cooking").length).toBeGreaterThan(0);
   });
 
-  it("T6: a rider heading to the venue — the rider card, no delivery code yet (cash: code only after both confirms)", async () => {
+  it("T6: a biker heading to the venue — the biker card, no delivery code yet (cash: code only after both confirms)", async () => {
     const t = await render(
       foodOrder({ status: "en_route_pickup", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003" }),
       snapshot({ status: "en_route_pickup", riderCard: RIDER_CARD, rider: { profileId: "r", currentLat: -17.84, currentLng: 31.04, updatedAt: iso(-3_000) } }),
     );
-    expect(has(t, "Rider on the way to Gava’s Kitchen")).toBe(true);
+    expect(has(t, "Biker on the way to Gava’s Kitchen")).toBe(true);
     expect(has(t, "Tendai M.")).toBe(true);
     expect(has(t, "Delivery code")).toBe(false);
     expect(mockRotate).not.toHaveBeenCalled();
@@ -438,7 +438,7 @@ describe("merchant order — one order screen (D-59)", () => {
       snapshot({ status: "assigned", riderCard: RIDER_CARD, rider: { profileId: "r", currentLat: null, currentLng: null, updatedAt: null } }),
     );
     expect(has(t, "Tendai is heading to Gava’s Kitchen")).toBe(true);
-    expect(has(t, "Arrival time shows once the rider’s phone sends a location")).toBe(true);
+    expect(has(t, "Arrival time shows once the biker’s phone sends a location")).toBe(true);
     expect(has(t, "Estimated arrival")).toBe(false);
   });
 
@@ -448,7 +448,7 @@ describe("merchant order — one order screen (D-59)", () => {
       foodOrder({ status: "en_route_dropoff", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003" }),
       snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, rider: near, counterpartyPhone: "+263771234580" }),
     );
-    expect(has(t, "Rider is at your door")).toBe(true);
+    expect(has(t, "Biker is at your door")).toBe(true);
     expect(has(t, "Take your order")).toBe(true);
     expect(has(t, "Tendai hands it over first")).toBe(true);
     expect(has(t, "Shows here once you and Tendai both confirm the cash")).toBe(true);
@@ -512,7 +512,7 @@ describe("merchant order — one order screen (D-59)", () => {
     expect(has(t, "418")).toBe(true);
   });
 
-  it("U04: the rider's tries ran out — the code is re-issued once (the explicit rotate) and the new one shown", async () => {
+  it("U04: the biker's tries ran out — the code is re-issued once (the explicit rotate) and the new one shown", async () => {
     const t = await render(
       foodOrder({ status: "en_route_dropoff", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003", customerCashConfirmedAt: iso(-60_000), riderCashConfirmedAt: iso(-30_000) }),
       snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, deliveryOtpAttempts: 5, codeRotatedAt: iso(-600_000), rider: { profileId: "r", currentLat: -17.83, currentLng: 31.05, updatedAt: iso(-2_000) } }),
@@ -665,7 +665,7 @@ describe("merchant order — one order screen (D-59)", () => {
     expect(has(u, "$16.50 paid in cash · Gava’s Kitchen")).toBe(true);
   });
 
-  it("D1: delivered — hero, the two-row rating (venue + rider), the receipt, Order again; D1b toast + Undo", async () => {
+  it("D1: delivered — hero, the two-row rating (venue + biker), the receipt, Order again; D1b toast + Undo", async () => {
     const t = await render(
       foodOrder({ status: "delivered", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003", deliveredAt: iso(-60_000), shortId: "A1B2", itemsSubtotal: 15, smallOrderFee: 0 }),
       snapshot({ status: "delivered", riderCard: RIDER_CARD }),
@@ -744,20 +744,20 @@ describe("merchant order — one order screen (D-59)", () => {
       foodOrder({ status: "en_route_dropoff", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003" }),
       snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, rider: far }),
     );
-    expect(has(t, "Rider is at your door")).toBe(false);
+    expect(has(t, "Biker is at your door")).toBe(false);
     expect(has(t, "Take your order")).toBe(true);
     press(t, "I’ve paid $16.50");
     await act(async () => undefined);
     expect(mockConfirmCash).toHaveBeenCalledWith("order-1");
   });
 
-  it("U10 / D5: the rider's server-stamped \"I'm here\" is the door, even with the GPS far off the pin", async () => {
+  it("U10 / D5: the biker's server-stamped \"I'm here\" is the door, even with the GPS far off the pin", async () => {
     const far = { profileId: "r", currentLat: -17.83, currentLng: 31.05, updatedAt: iso(-2_000) };
     const t = await render(
       foodOrder({ status: "en_route_dropoff", merchantPhase: null, riderId: "0a1b2c3d-0000-4000-8000-000000000003", riderAtDropoffAt: iso(-30_000) }),
       snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, rider: far }),
     );
-    expect(has(t, "Rider is at your door")).toBe(true);
+    expect(has(t, "Biker is at your door")).toBe(true);
     expect(has(t, "I’ve paid $16.50")).toBe(true);
   });
 
@@ -813,7 +813,7 @@ describe("merchant order — one order screen (D-59)", () => {
       snapshot({ status: "en_route_dropoff", riderCard: RIDER_CARD, rider: { profileId: "r", currentLat: -17.83, currentLng: 31.05, updatedAt: iso(-2_000) } }),
     );
     press(t, "Cancel order");
-    expect(has(t, "Tendai already has your order. Cancelling now costs the full $16.50 — the kitchen has made it and the rider has carried it.")).toBe(true);
+    expect(has(t, "Tendai already has your order. Cancelling now costs the full $16.50 — the kitchen has made it and the biker has carried it.")).toBe(true);
     press(t, "Cancel and pay $16.50");
     await act(async () => undefined);
     expect(mockCancelOrder).toHaveBeenCalledWith("order-1", {});
@@ -908,9 +908,9 @@ describe("merchant order — one order screen (D-59)", () => {
     expect(has(t, "No charge")).toBe(true);
   });
 
-  it("D3d: no rider found — the apology ending, nothing charged", async () => {
+  it("D3d: no biker found — the apology ending, nothing charged", async () => {
     const t = await render(foodOrder({ status: "cancelled", merchantPhase: null, rejectionReason: "no_rider" }), snapshot({ status: "cancelled", cancelledBy: null }));
-    expect(has(t, "We couldn’t find a rider")).toBe(true);
+    expect(has(t, "We couldn’t find a biker")).toBe(true);
     expect(has(t, "No charge")).toBe(true);
   });
 

@@ -80,7 +80,7 @@ export async function editOrderItems(
   });
   if (!order) throw new NotFoundException("Order not found");
   if (!(EDITABLE_STATUSES as readonly string[]).includes(order.status)) {
-    throw new ConflictException({ reason: "not_editable", message: "The rider has the food now, so the items can't change." });
+    throw new ConflictException({ reason: "not_editable", message: "The biker has the food now, so the items can't change." });
   }
   if (order.status === "requested" && (!order.merchantPhase || !EDITABLE_PHASES.has(order.merchantPhase))) {
     throw new ConflictException({ reason: "not_editable", message: "Accept the order first, then change the items." });

@@ -65,16 +65,16 @@ describe("OffersService.makeOffer", () => {
     expect(gateway.emitOffersChanged).not.toHaveBeenCalled();
   });
 
-  it("403s when the caller is not a rider", async () => {
+  it("403s when the caller is not a biker", async () => {
     const { service, gateway } = svc({
       order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel" }), findFirst: async () => null },
       rider: { findUnique: async () => null },
     });
-    await expect(service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/not a rider/i);
+    await expect(service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/not a biker/i);
     expect(gateway.emitOffersChanged).not.toHaveBeenCalled();
   });
 
-  it("403s when the rider is not verified", async () => {
+  it("403s when the biker is not verified", async () => {
     const { service, gateway } = svc({
       order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel" }), findFirst: async () => null },
       rider: { findUnique: async () => ({ kycStatus: "pending", isOnline: true }) },
@@ -83,7 +83,7 @@ describe("OffersService.makeOffer", () => {
     expect(gateway.emitOffersChanged).not.toHaveBeenCalled();
   });
 
-  it("403s when the rider is offline", async () => {
+  it("403s when the biker is offline", async () => {
     const { service, gateway } = svc({
       order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel" }), findFirst: async () => null },
       rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: false, accountStatus: "active", onHold: false, cooldownUntil: null }) },
@@ -255,7 +255,7 @@ describe("OffersService.makeOffer", () => {
     expect(gateway.emitOffersChanged).toHaveBeenCalled();
   });
 
-  it("403s a rider bidding on their own order (no self-bid)", async () => {
+  it("403s a biker bidding on their own order (no self-bid)", async () => {
     const { service, gateway } = svc({
       order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel", customerId: "rider-1", proposedFare: 2.5 }) },
     });
@@ -263,7 +263,7 @@ describe("OffersService.makeOffer", () => {
     expect(gateway.emitOffersChanged).not.toHaveBeenCalled();
   });
 
-  it("403s a rider bidding on an order whose customer is a blocked pair (no offer inserted)", async () => {
+  it("403s a biker bidding on an order whose customer is a blocked pair (no offer inserted)", async () => {
     const create = vi.fn();
     const { service, gateway } = svc({
       order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel", customerId: "cust-1", proposedFare: 2.5 }) },
@@ -321,7 +321,7 @@ describe("OffersService.makeOffer", () => {
 
   // C4: a rider owing a merchant a collect-and-return debt (or mid-handshake) can't bid on a parcel
   // either.
-  it("403s a rider with an open merchant debt / pending handshake (C4 soft-lock)", async () => {
+  it("403s a biker with an open merchant debt / pending handshake (C4 soft-lock)", async () => {
     const create = vi.fn();
     const { service, metrics } = svc({
       order: {
@@ -394,7 +394,7 @@ describe("OffersService.listForOrder", () => {
     expect(res[0]!.offeredFare).toBe("3.00");
   });
 
-  it("excludes a pending offer from a rider the customer blocked AFTER the offer was placed", async () => {
+  it("excludes a pending offer from a biker the customer blocked AFTER the offer was placed", async () => {
     let capturedWhere: unknown;
     const { service } = svc({
       order: { findUnique: async () => ({ customerId: "cust-1" }), findMany: async () => [] },
@@ -416,7 +416,7 @@ describe("OffersService.listForOrder", () => {
     expect(res.map((o) => o.rider.profileId)).toEqual(["r-ok"]);
   });
 
-  it("also excludes a rider who blocked the customer (the other block direction)", async () => {
+  it("also excludes a biker who blocked the customer (the other block direction)", async () => {
     let capturedWhere: unknown;
     const { service } = svc({
       order: { findUnique: async () => ({ customerId: "cust-1" }), findMany: async () => [] },
@@ -433,10 +433,10 @@ describe("OffersService.listForOrder", () => {
   });
 });
 
-describe("OffersService.withdrawOffer (Rider v2 J10)", () => {
+describe("OffersService.withdrawOffer (Biker v2 J10)", () => {
   const ORDER = "0a1b2c3d-0000-4000-8000-000000000001";
 
-  it("marks the rider's own pending offer declined and signals the customer's list", async () => {
+  it("marks the biker's own pending offer declined and signals the customer's list", async () => {
     const update = vi.fn(async () => ({}));
     const { service, gateway } = svc({
       $queryRaw: async () => [{ status: "open_for_offers" }],
@@ -454,7 +454,7 @@ describe("OffersService.withdrawOffer (Rider v2 J10)", () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  it("404s with no offer from this rider, 409s on an offer already closed", async () => {
+  it("404s with no offer from this biker, 409s on an offer already closed", async () => {
     const none = svc({ $queryRaw: async () => [{ status: "open_for_offers" }], offer: { findUnique: async () => null } });
     await expect(none.service.withdrawOffer(ORDER, "rider-1")).rejects.toThrow(/no offer/i);
     const closed = svc({ $queryRaw: async () => [{ status: "open_for_offers" }], offer: { findUnique: async () => ({ id: "off-1", status: "declined" }) } });

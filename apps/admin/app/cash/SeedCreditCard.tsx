@@ -91,8 +91,8 @@ export function SeedCreditCard({ eligibleCount, rosterCapped }: SeedCreditCardPr
       </div>
 
       <p style={{ fontSize: 13, color: tokens.color.muted, margin: "0 0 16px", maxWidth: 640 }}>
-        Before the rate flips off 0%, every rider&apos;s balance is $0 — below the $2 floor, which would gate the
-        whole fleet offline. Seed a grace credit to every eligible rider first. Each row is keyed{" "}
+        Before the rate flips off 0%, every biker&apos;s balance is $0 — below the $2 floor, which would gate the
+        whole fleet offline. Seed a grace credit to every eligible biker first. Each row is keyed{" "}
         <span className="mono">(campaign, riderId)</span> on the ledger&apos;s unique{" "}
         <span className="mono">idemKey</span>, so re-running the same campaign never double-grants.
       </p>
@@ -106,8 +106,8 @@ export function SeedCreditCard({ eligibleCount, rosterCapped }: SeedCreditCardPr
           <b>Not yet wired — the bulk-credit endpoint doesn&apos;t exist yet.</b> The API has only the
           single-rider <span className="mono">POST /admin/riders/:id/wallet-credit</span>; there is no
           campaign/bulk route to call. You can size a campaign here, but <b>nothing can be applied</b> — the
-          apply button stays disabled until that endpoint ships. To seed a rider today, use{" "}
-          <b>Credit account…</b> on their profile, one rider at a time.
+          apply button stays disabled until that endpoint ships. To seed a biker today, use{" "}
+          <b>Credit account…</b> on their profile, one biker at a time.
         </span>
       </div>
 
@@ -136,7 +136,7 @@ export function SeedCreditCard({ eligibleCount, rosterCapped }: SeedCreditCardPr
         </div>
         <div>
           <label style={labelStyle} htmlFor="seed-amount">
-            Per rider (USD)
+            Per biker (USD)
           </label>
           <input
             id="seed-amount"
@@ -163,7 +163,7 @@ export function SeedCreditCard({ eligibleCount, rosterCapped }: SeedCreditCardPr
           title={`Seed grace credits — ${name || "campaign"}`}
           consequence={
             <span>
-              Credits <b>{eligibleCount ?? "—"} eligible riders</b> {money(amt > 0 ? amt : 0)} each (
+              Credits <b>{eligibleCount ?? "—"} eligible bikers</b> {money(amt > 0 ? amt : 0)} each (
               <b>{eligibleCount !== null && amt > 0 ? money(eligibleCount * amt) : "—"}</b> total) as{" "}
               <span className="mono">adjustment</span> rows, keyed{" "}
               <span className="mono">({name || "…"}, riderId)</span> so a re-run never double-grants.
@@ -172,7 +172,7 @@ export function SeedCreditCard({ eligibleCount, rosterCapped }: SeedCreditCardPr
           reasons={REASONS.walletSeedCampaign}
           noteRequired
           notePlaceholder="Why this campaign is being run — recorded against every row it writes."
-          confirmLabel={`Apply to ${eligibleCount ?? 0} riders`}
+          confirmLabel={`Apply to ${eligibleCount ?? 0} bikers`}
           onConfirm={() => {
             // Unreachable while the trigger is disabled. Kept as a live tripwire: if the trigger is
             // ever enabled before the endpoint exists, this surfaces an error in the dialog instead of
@@ -190,11 +190,11 @@ export function SeedCreditCard({ eligibleCount, rosterCapped }: SeedCreditCardPr
         <div style={{ fontSize: 13, color: tokens.color.ink, marginTop: 14 }}>
           {eligibleCount === null ? (
             <span style={{ color: tokens.color.muted }}>
-              Rider roster unavailable — can&apos;t size this campaign. Reload the page to try again.
+              Biker roster unavailable — can&apos;t size this campaign. Reload the page to try again.
             </span>
           ) : (
             <>
-              Would credit <b>{eligibleCount} eligible riders</b> {money(amt)} each — total{" "}
+              Would credit <b>{eligibleCount} eligible bikers</b> {money(amt)} each — total{" "}
               <b>{money(eligibleCount * amt)}</b>. Each row keyed{" "}
               <span className="mono">({name}, riderId)</span>.
             </>
@@ -217,15 +217,15 @@ export function SeedCreditCard({ eligibleCount, rosterCapped }: SeedCreditCardPr
 
       <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: 12 }}>
         &ldquo;Eligible&rdquo; = standing <span className="mono">active</span>, not on a reliability hold, KYC{" "}
-        <span className="mono">verified</span> — the riders the online-gate would otherwise admit, and who a
+        <span className="mono">verified</span> — the bikers the online-gate would otherwise admit, and who a
         $0 balance would therefore push under the floor.{" "}
         {rosterCapped ? (
           <b>
-            Counted from the rider directory, which returns at most 100 riders — {eligibleCount} is a floor, not
+            Counted from the biker directory, which returns at most 100 bikers — {eligibleCount} is a floor, not
             a fleet total.
           </b>
         ) : (
-          <>Counted from the rider directory (`GET /admin/riders`).</>
+          <>Counted from the biker directory (`GET /admin/riders`).</>
         )}
       </div>
     </section>

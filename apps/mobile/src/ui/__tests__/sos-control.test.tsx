@@ -84,7 +84,7 @@ describe("SosControl confirm gate (kit sos_confirm)", () => {
 });
 
 describe("SosControl location capture", () => {
-  it("uses the caller-supplied live point as-is (rider job screen) without touching device location", async () => {
+  it("uses the caller-supplied live point as-is (biker job screen) without touching device location", async () => {
     const tree = renderSos({ orderId: "o1", lat: -17.8, lng: 31.05 });
     tapSos(tree);
     confirmSos(tree);

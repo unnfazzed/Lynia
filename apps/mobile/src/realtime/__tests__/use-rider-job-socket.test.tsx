@@ -230,7 +230,7 @@ describe("useRiderJobSocket customer presence (BH-08)", () => {
     expect(recovered).toHaveBeenCalledTimes(1);
   });
 
-  it("ignores a presence:recovered for a different order or the rider's own role", () => {
+  it("ignores a presence:recovered for a different order or the biker's own role", () => {
     const qc = new QueryClient();
     const recovered = jest.fn();
     act(() => {

@@ -22,7 +22,7 @@ export function selectKycVendor(env: Env): KycVendor {
     if (env.NODE_ENV === "production" && env.KYC_MODE === "auto") {
       throw new Error("KYC_PROVIDER=didit in production requires DIDIT_API_KEY — refusing to fall back to the stub vendor");
     }
-    log.warn("KYC_PROVIDER=didit but DIDIT_API_KEY is unset — falling back to the STUB vendor; riders will NOT be Didit-verified.");
+    log.warn("KYC_PROVIDER=didit but DIDIT_API_KEY is unset — falling back to the STUB vendor; bikers will NOT be Didit-verified.");
     return new StubKycVendor();
   }
   if (env.NODE_ENV === "production") {

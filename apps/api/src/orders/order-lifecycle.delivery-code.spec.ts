@@ -345,13 +345,13 @@ describe("OrderLifecycleService.confirmDelivery against a revealed code — D2",
   });
 });
 
-describe("D2 review: code-entry routes are rate-limited per rider", () => {
+describe("D2 review: code-entry routes are rate-limited per biker", () => {
   const throttleOf = (fn: unknown): ThrottleOptions[] => {
     const meta = Reflect.getMetadata(THROTTLE_KEY, fn as object) as ThrottleOptions | ThrottleOptions[] | undefined;
     return meta == null ? [] : Array.isArray(meta) ? meta : [meta];
   };
 
-  it("POST /orders/:id/deliver carries a throttle keyed by the signed-in rider (no IP key)", () => {
+  it("POST /orders/:id/deliver carries a throttle keyed by the signed-in biker (no IP key)", () => {
     const rules = throttleOf(LifecycleController.prototype.deliver);
     expect(rules.map((r) => r.keyPrefix)).toContain("delivery-code-confirm");
     for (const r of rules) expect(r.key).toBeUndefined();

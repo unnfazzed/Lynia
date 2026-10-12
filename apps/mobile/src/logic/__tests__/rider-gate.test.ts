@@ -1,9 +1,9 @@
 import { kycTriesLeft, resolveGate } from "../rider-gate";
 
-describe("resolveGate (Rider v2 G1–G14 priority, ledger D-54)", () => {
+describe("resolveGate (Biker v2 G1–G14 priority, ledger D-54)", () => {
   const none = { kyc: null, server: null, locDenied: false } as const;
 
-  it("no wall for a verified rider with nothing refused", () => {
+  it("no wall for a verified biker with nothing refused", () => {
     expect(resolveGate(none)).toBeNull();
   });
 

@@ -43,8 +43,8 @@ export const OB = {
   testBuild: "Test build: code pre-filled.",
 
   // C5 · Name
-  nameTitle: "What should riders call you?",
-  nameSub: "Your name shows on your rider’s screen and your receipts.",
+  nameTitle: "What should bikers call you?",
+  nameSub: "Your name shows on your biker’s screen and your receipts.",
   firstName: "First name",
   surname: "Surname",
   verified: "Verified",
@@ -78,7 +78,7 @@ export const RO = {
   startIdCheck: "Start ID check",
 
   // R2 · ID pending
-  setupTitle: "Rider setup",
+  setupTitle: "Biker setup",
   checking: "Checking",
   /** D-55 (D-38 stands): the handoff draws "Didit is checking your ID". */
   diditChecking: "We\u2019re checking your ID",

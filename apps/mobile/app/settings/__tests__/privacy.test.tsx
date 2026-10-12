@@ -45,7 +45,7 @@ describe("privacy screen matches its mock", () => {
     expect(out).toContain("What we collect");
     expect(out).toContain("Your name, phone number and the pins on your deliveries. No ID documents for customers.");
     expect(out).toContain("What others see");
-    expect(out).toContain("First name + last initial only. Your phone is shared with your rider just while a delivery runs — then it's masked.");
+    expect(out).toContain("First name + last initial only. Your phone is shared with your biker just while a delivery runs — then it's masked.");
     expect(out).toContain("How long we keep it");
     expect(out).toContain("Order records 12 months · SOS logs 90 days · a deleted account is erased straight away.");
   });

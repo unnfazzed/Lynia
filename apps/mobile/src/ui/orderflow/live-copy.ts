@@ -29,7 +29,7 @@ export const OG = {
   /** food[1] — "Gava’s Kitchen is confirming" / "Arrives 12:40–12:55". */
   confirming: "{v} is confirming",
   /** food[3] — "Rider on the way to Gava’s Kitchen". */
-  toVenue: "Rider on the way to {v}",
+  toVenue: "Biker on the way to {v}",
   /** food[4] — "On the way to you" / "Arrives in ~9 min · 12:47". */
   onWayEta: "Arrives in ~{m} min · {t}",
   /** food[5] — "Pay $16.50 · then say your code"; pharmacy[2] — "Check the seal · pay $6.80". */

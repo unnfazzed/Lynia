@@ -89,7 +89,7 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
           <EmptyState
             icon={<IconIdCard />}
             title={reasonTitle(reason, "Review")}
-            line={reasonLine(reason, "this rider's KYC review")}
+            line={reasonLine(reason, "this biker's KYC review")}
           />
         </section>
       </main>
@@ -131,7 +131,7 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
         <div className="warnbar">
           <IconAlert />
           <span className="t">
-            <b>Locked — two attempts used.</b> This application declined twice and can&apos;t be resubmitted. The rider
+            <b>Locked — two attempts used.</b> This application declined twice and can&apos;t be resubmitted. The biker
             must contact support to proceed.
           </span>
         </div>
@@ -141,7 +141,7 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
           <span className="t">
             <b>Resubmission — attempt 2.</b>{" "}
             {r.declineReason ? `Previously declined: ${kycDeclineLabel(r.declineReason)}. ` : ""}
-            One resubmit left — a second decline locks the application and the rider must contact support.
+            One resubmit left — a second decline locks the application and the biker must contact support.
           </span>
         </div>
       ) : null}
@@ -150,7 +150,7 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
         <div className="warnbar">
           <IconAlert />
           <span className="t">
-            <b>ID check not finished.</b> {progress} Didit hasn&apos;t checked this rider&apos;s ID document or
+            <b>ID check not finished.</b> {progress} Didit hasn&apos;t checked this biker&apos;s ID document or
             liveness, so there&apos;s nothing to compare. Approving needs a note saying how you verified them.
           </span>
         </div>
@@ -179,7 +179,7 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
             ) : (
               <>
                 There&apos;s no ID-check number to adopt (manual review, or the check returned none), so approving
-                verifies this rider without a national ID. The approval is flagged in the audit log for follow-up.
+                verifies this biker without a national ID. The approval is flagged in the audit log for follow-up.
               </>
             )}
           </span>
@@ -202,12 +202,12 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
                 {r.duplicateIdAccounts
                   .map(
                     (a) =>
-                      `${a.name || "(no name)"} · ${formatPhoneLocal(a.phone)} · ${a.role}${
+                      `${a.name || "(no name)"} · ${formatPhoneLocal(a.phone)} · ${a.role === "rider" ? "biker" : a.role}${
                         a.accountStatus ? ` (${a.accountStatus})` : ""
                       }`,
                   )
                   .join("; ")}
-                . Confirm this isn&apos;t a banned rider re-registering on a new number before approving.
+                . Confirm this isn&apos;t a banned biker re-registering on a new number before approving.
               </>
             ) : (
               <>
@@ -248,12 +248,12 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
                   // image here. A short-lived signed GCS URL, so a plain <img>, not next/image.
                   <img
                     src={r.photoUrl}
-                    alt="The rider, as uploaded in the app"
+                    alt="The biker, as uploaded in the app"
                     style={{ width: "100%", height: 170, objectFit: "cover", borderRadius: tokens.radius.input, border: `1px solid ${tokens.color.line}` }}
                   />
                 ) : (
                   <div className="doc-ph" style={{ height: 170 }}>
-                    rider photo
+                    biker photo
                     <br />
                     {/* Either no photo was ever submitted (legacy/incomplete signup), or the signed
                         URL failed to mint (see AdminRidersService.getKycReview) — either way, the
@@ -262,7 +262,7 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
                   </div>
                 )}
                 <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: 6 }}>
-                  Rider photo (in-app) · National ID no. <span className="mono">{r.idNumber ?? "—"}</span>
+                  Biker photo (in-app) · National ID no. <span className="mono">{r.idNumber ?? "—"}</span>
                 </div>
               </div>
               <div>
@@ -298,7 +298,7 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
             <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: 10 }}>
               Didit auto-approves a face match ≥ 0.85; 0.6–0.85 needs a human compare, below 0.6 auto-declines.
               Lynia doesn&apos;t keep the face-match, document or liveness results — confirm the ID number and check
-              them in the rider&apos;s Didit session before deciding.
+              them in the biker&apos;s Didit session before deciding.
               {r.kycRef ? (
                 <>
                   {" "}
@@ -335,12 +335,12 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
               <div style={{ fontSize: 13 }}>
                 {r.status === "verified" ? (
                   <span style={{ color: tokens.color.accentText, fontWeight: 600 }}>
-                    ✓ Verified — this rider can go online.
+                    ✓ Verified — this biker can go online.
                   </span>
                 ) : r.status === "expired" ? (
                   <span>
                     <span style={{ color: tokens.color.danger, fontWeight: 600 }}>Expired.</span>{" "}
-                    <span className="mut">The rider must re-verify before they can go online.</span>
+                    <span className="mut">The biker must re-verify before they can go online.</span>
                   </span>
                 ) : (
                   <span>
@@ -348,8 +348,8 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
                     <span className="mut">{r.declineReason ? kycDeclineLabel(r.declineReason) : ""}</span>
                     <div style={{ marginTop: 8, color: tokens.color.muted }}>
                       {r.locked
-                        ? "Locked — no further resubmission. Route the rider to support."
-                        : "The rider can fix the issue and resubmit once."}
+                        ? "Locked — no further resubmission. Route the biker to support."
+                        : "The biker can fix the issue and resubmit once."}
                     </div>
                   </span>
                 )}
@@ -357,7 +357,7 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
             ) : (
               <>
                 <div style={{ fontSize: 13, color: tokens.color.muted, marginBottom: 14 }}>
-                  Approving lets this rider go online immediately. Declining shows them the reason in the app; they can
+                  Approving lets this biker go online immediately. Declining shows them the reason in the app; they can
                   resubmit once before the application locks.
                 </div>
                 <KycDecision

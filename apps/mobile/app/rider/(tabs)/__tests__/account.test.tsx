@@ -102,7 +102,7 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
-describe("rider Account (Rider v2 C1)", () => {
+describe("biker Account (Biker v2 C1)", () => {
   it("draws the four rows and none of the retired ones", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
@@ -141,7 +141,7 @@ describe("rider Account (Rider v2 C1)", () => {
     tree = renderScreen();
     await settle();
     expect(has(tree, "Call the safety line")).toBe(true);
-    press(tree, "Call the safety line, 24 hours, for riders in danger");
+    press(tree, "Call the safety line, 24 hours, for bikers in danger");
     expect(openURL.mock.calls.at(-1)![0]).toMatch(/^tel:/);
   });
 
@@ -155,8 +155,8 @@ describe("rider Account (Rider v2 C1)", () => {
   });
 });
 
-describe("the Customer | Rider toggle (C4 / C5)", () => {
-  it("C4: asks first, then takes the rider offline and goes to the customer Home", async () => {
+describe("the Customer | Biker toggle (C4 / C5)", () => {
+  it("C4: asks first, then takes the biker offline and goes to the customer Home", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
     tree = renderScreen();
@@ -178,7 +178,7 @@ describe("the Customer | Rider toggle (C4 / C5)", () => {
     tree = renderScreen();
     await settle();
     press(tree, "Customer");
-    press(tree, "Stay online as a rider");
+    press(tree, "Stay online as a biker");
     await settle();
     expect(mockStoreWrites.filter(([k]) => k === "lynia.rolePreference")).toEqual([]);
     press(tree, "Customer");
@@ -187,18 +187,18 @@ describe("the Customer | Rider toggle (C4 / C5)", () => {
     expect(mockStoreWrites).toContainEqual(["lynia.rolePreference", "customer"]);
   });
 
-  it("C4: 'Stay online as a rider' leaves everything alone", async () => {
+  it("C4: 'Stay online as a biker' leaves everything alone", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
     tree = renderScreen();
     await settle();
     press(tree, "Customer");
-    press(tree, "Stay online as a rider");
+    press(tree, "Stay online as a biker");
     expect(mockSetOnline).not.toHaveBeenCalled();
     expect(mockReplace).not.toHaveBeenCalled();
   });
 
-  it("C5: mid-job the job keeps running — the rider stays online, and can go back to it", async () => {
+  it("C5: mid-job the job keeps running — the biker stays online, and can go back to it", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue({ id: "o1", status: "picked_up", orderType: "parcel", pickup: { landmark: "Eastgate Mall" }, dropoff: { landmark: "14 Glenara Ave" } });
     tree = renderScreen();

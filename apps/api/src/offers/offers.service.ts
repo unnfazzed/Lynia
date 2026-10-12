@@ -87,7 +87,7 @@ export class OffersService {
     const refusal = rider ? onlineRefusalReason(rider) : null;
     if (!rider || refusal || !rider.isOnline) {
       this.metrics.incOffersMade("forbidden");
-      if (!rider) throw new ForbiddenException("Not a rider");
+      if (!rider) throw new ForbiddenException("Not a biker");
       // Throw the SHARED online-gate copy (REFUSAL_MESSAGE) rather than hand-rolled strings, so the offer
       // gate and the go-online gate can't drift. The prior on_hold copy here ("complete deliveries to
       // raise your reliability score") was impossible advice — an on-hold rider can't go online to deliver

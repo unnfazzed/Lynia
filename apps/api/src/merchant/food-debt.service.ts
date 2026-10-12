@@ -181,7 +181,7 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
     });
     if (!order) throw new NotFoundException("Order not found");
     if (order.merchantPaymentMethod !== "cash") throw new ConflictException("This order isn't a cash order");
-    if (order.status !== "en_route_dropoff") throw new ConflictException("The rider hasn't reached you yet");
+    if (order.status !== "en_route_dropoff") throw new ConflictException("The biker hasn't reached you yet");
     if (order.customerCashConfirmedAt) throw new ConflictException("Already confirmed");
     // C9: the one amount due (`merchantAmountDueUsd`) — the same figure the order read, the pushes and the
     // Orders history show.
@@ -455,8 +455,8 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
     // failed delivery / a cancel after pickup. Never while the rider is still riding to the customer.
     const dueBack =
       order.status === "delivered" || order.status === "completed" || order.status === "undelivered" || (order.status === "cancelled" && order.collectedAt != null);
-    if (!dueBack) throw new ConflictException("Nothing is due back yet — the rider is still on the way");
-    if (!order.riderId) throw new ConflictException("No rider on this order");
+    if (!dueBack) throw new ConflictException("Nothing is due back yet — the biker is still on the way");
+    if (!order.riderId) throw new ConflictException("No biker on this order");
     if (order.debtNonReturnReportedAt) return { orderId, debtStatus: "open", reportedAt: order.debtNonReturnReportedAt.toISOString() };
     const now = new Date();
     const reported = await this.prisma.$transaction(async (tx) => {

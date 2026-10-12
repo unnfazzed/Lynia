@@ -51,9 +51,9 @@ describe("liveOrderCardModel (RC.home per-service card copy)", () => {
   // replaying eta.ts's haversine/speed math here.
   const riderAtDropoff = { currentLat: DROPOFF.lat, currentLng: DROPOFF.lng };
 
-  it("parcel card: 'Parcel to {dropoff} · rider N min away', delivery code + total meta, bike icon (mock grammar)", () => {
+  it("parcel card: 'Parcel to {dropoff} · biker N min away', delivery code + total meta, bike icon (mock grammar)", () => {
     const m = liveOrderCardModel(parcel({ rider: riderAtDropoff }), "On the way to drop-off", "4192");
-    expect(m.title).toBe("Parcel to Msasa · rider 1 min away");
+    expect(m.title).toBe("Parcel to Msasa · biker 1 min away");
     expect(m.meta).toBe("Delivery code 4192 · $3.36");
     expect(m.icon).toBe("bike");
     expect(m.step).toBe(4);
@@ -61,9 +61,9 @@ describe("liveOrderCardModel (RC.home per-service card copy)", () => {
     expect(m.route).toBe("/order/o-parcel");
   });
 
-  it("parcel card falls back to the status label without a rider fix, and to the bare fare without a stored code", () => {
-    const m = liveOrderCardModel(parcel({ status: "open_for_offers" }), "Finding riders", null);
-    expect(m.title).toBe("Parcel to Msasa · Finding riders");
+  it("parcel card falls back to the status label without a biker fix, and to the bare fare without a stored code", () => {
+    const m = liveOrderCardModel(parcel({ status: "open_for_offers" }), "Finding bikers", null);
+    expect(m.title).toBe("Parcel to Msasa · Finding bikers");
     expect(m.meta).toBe("$3.36");
     // Pre-assignment renders every progress segment unlit.
     expect(m.step).toBe(-1);
@@ -82,11 +82,11 @@ describe("liveOrderCardModel (RC.home per-service card copy)", () => {
   it("food card never shows kitchen-leg minutes as a doorstep promise — pre-pickup it reads the step label", () => {
     // Rider en route to the RESTAURANT: minutes would be to the kitchen, not the customer.
     const m = liveOrderCardModel(food({ status: "en_route_pickup", rider: riderAtDropoff }), "Heading to pickup", null);
-    expect(m.title).toBe("Sadza Republic · Rider at the restaurant");
+    expect(m.title).toBe("Sadza Republic · Biker at the restaurant");
     expect(m.step).toBe(3);
   });
 
-  it("food card while still with the kitchen: step label from merchantPhase, no rider needed", () => {
+  it("food card while still with the kitchen: step label from merchantPhase, no biker needed", () => {
     const placed = liveOrderCardModel(food({ status: "requested", merchantPhase: "awaiting_accept" }), "Getting ready", null);
     expect(placed.title).toBe("Sadza Republic · Order placed");
     expect(placed.step).toBe(0);
@@ -147,7 +147,7 @@ describe("liveBarModel (Calm Mint v2 H1, D-55)", () => {
     expect(liveBarModel([], label, () => null)).toBeNull();
   });
 
-  it("names the rider once the parcel is moving — the drawn 'Tendai is on the way'", () => {
+  it("names the biker once the parcel is moving — the drawn 'Tendai is on the way'", () => {
     const m = liveBarModel([order()], label, () => "Tendai")!;
     expect(m.title).toBe("Tendai is on the way");
     expect(m.sub).toBe("Parcel to Avondale");

@@ -79,7 +79,7 @@ const baseOrder = (over: Record<string, unknown> = {}) => ({
 /** A strategy that finds nobody — for the paths that never reach it. */
 const NONE: DispatchStrategy = { pickCandidates: async () => [] };
 
-describe("FoodDispatchService.sweepSearch — the restaurant's own riders (merchant web upgrade L3)", () => {
+describe("FoodDispatchService.sweepSearch — the restaurant's own bikers (merchant web upgrade L3)", () => {
   function world(preferred: { findMany: () => Promise<Array<{ phone: string }>> }) {
     const strategy: DispatchStrategy = { pickCandidates: vi.fn(async () => [{ riderId: "mine", distanceM: 900, preferred: true }]) };
     const { svc } = build(
@@ -102,7 +102,7 @@ describe("FoodDispatchService.sweepSearch — the restaurant's own riders (merch
     return { svc, strategy };
   }
 
-  it("hands the strategy the restaurant's riders, matched by phone, never its own team", async () => {
+  it("hands the strategy the restaurant's bikers, matched by phone, never its own team", async () => {
     const { svc, strategy } = world({ findMany: async () => [{ phone: "+263771230000" }, { phone: "+263771239999" }] });
     expect(await svc.sweepSearch()).toEqual({ offered: 1, held: 0 });
     expect(strategy.pickCandidates).toHaveBeenCalledWith(expect.objectContaining({ preferredRiderIds: ["mine"] }));
@@ -182,7 +182,7 @@ describe("FoodDispatchService.sweepSearch — rounds (owner 2026-10-01: the best
     expect(offerPayload.dropoff.contactPhone).toBeUndefined();
   });
 
-  it("offers every later round to everyone eligible (no cap), passing riders who passed as excluded", async () => {
+  it("offers every later round to everyone eligible (no cap), passing bikers who passed as excluded", async () => {
     const { svc, strategy, attemptUpsert } = world({
       order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder({ dispatchAttempt: 1, dispatchExcludedRiderIds: ["passed"] }), updateMany: async () => ({ count: 1 }) },
     });
@@ -310,8 +310,8 @@ const roundEnd = new Date(Date.now() + 30_000);
 const liveOrder = { status: "open_for_offers", merchantId: MERCHANT_ID, dispatchOfferExpiresAt: roundEnd, dispatchExcludedRiderIds: [] as string[] };
 const pendingRow = { outcome: "pending", expiresAt: roundEnd };
 
-describe("FoodDispatchService.acceptDispatch — D-04 rider secured, first to accept wins", () => {
-  it("assigns the rider, mints a delivery code, clears merchantPhase + dispatch fields, tells the round's other riders, pushes rider-secured", async () => {
+describe("FoodDispatchService.acceptDispatch — D-04 biker secured, first to accept wins", () => {
+  it("assigns the biker, mints a delivery code, clears merchantPhase + dispatch fields, tells the round's other bikers, pushes rider-secured", async () => {
     const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
     const attemptUpdateMany = vi.fn(async () => ({ count: 1 }));
     const { svc, gateway } = build(
@@ -342,7 +342,7 @@ describe("FoodDispatchService.acceptDispatch — D-04 rider secured, first to ac
     expect(notified.map((n) => n.profileIds)).toEqual([["r1"], ["cust-1"]]);
   });
 
-  it("409s the second rider to accept: the first already took it (lost CAS)", async () => {
+  it("409s the second biker to accept: the first already took it (lost CAS)", async () => {
     const { svc } = build(
       { order: { findFirst: async () => liveOrder, updateMany: async () => ({ count: 0 }) }, foodDispatchAttempt: { findUnique: async () => pendingRow } },
       NONE,
@@ -350,12 +350,12 @@ describe("FoodDispatchService.acceptDispatch — D-04 rider secured, first to ac
     await expect(svc.acceptDispatch(orderId, "r2")).rejects.toThrow(/no longer live/i);
   });
 
-  it("403s a rider this order was never offered to", async () => {
+  it("403s a biker this order was never offered to", async () => {
     const { svc } = build({ order: { findFirst: async () => liveOrder }, foodDispatchAttempt: { findUnique: async () => null } }, NONE);
     await expect(svc.acceptDispatch(orderId, "someone-else")).rejects.toThrow(/isn't yours/i);
   });
 
-  it("409s a rider whose offer is no longer pending (their round closed, or they passed)", async () => {
+  it("409s a biker whose offer is no longer pending (their round closed, or they passed)", async () => {
     const { svc } = build(
       { order: { findFirst: async () => liveOrder }, foodDispatchAttempt: { findUnique: async () => ({ ...pendingRow, outcome: "expired" }) } },
       NONE,
@@ -371,7 +371,7 @@ describe("FoodDispatchService.acceptDispatch — D-04 rider secured, first to ac
     await expect(svc.acceptDispatch(orderId, "r1")).rejects.toThrow(/just expired/i);
   });
 
-  it("409s (not 500) on the one_active_ride race — the rider got assigned to another job first", async () => {
+  it("409s (not 500) on the one_active_ride race — the biker got assigned to another job first", async () => {
     const p2002 = new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "5.22.0" });
     const { svc } = build(
       {
@@ -404,7 +404,7 @@ describe("FoodDispatchService.declineDispatch — \"Not this one\"", () => {
     return { ...built, orderUpdate, orderUpdateMany, attemptUpdateMany };
   }
 
-  it("marks the rider's row declined and never offers them this order again; the round stays live for the others", async () => {
+  it("marks the biker's row declined and never offers them this order again; the round stays live for the others", async () => {
     const { svc, gateway, orderUpdate, orderUpdateMany, attemptUpdateMany } = world(3);
     expect(await svc.declineDispatch(orderId, "r1")).toEqual({ orderId, declined: true });
     expect(attemptUpdateMany).toHaveBeenCalledWith({ where: { orderId, riderId: "r1", outcome: "pending" }, data: expect.objectContaining({ outcome: "declined" }) });
@@ -413,7 +413,7 @@ describe("FoodDispatchService.declineDispatch — \"Not this one\"", () => {
     expect(gateway.emitFoodOfferClosed).toHaveBeenCalledWith("r1", orderId);
   });
 
-  it("closes the round at once when the last rider still deciding passes", async () => {
+  it("closes the round at once when the last biker still deciding passes", async () => {
     const { svc, orderUpdateMany } = world(0);
     await svc.declineDispatch(orderId, "r1");
     expect(orderUpdateMany).toHaveBeenCalledWith(
@@ -421,14 +421,14 @@ describe("FoodDispatchService.declineDispatch — \"Not this one\"", () => {
     );
   });
 
-  it("403s a rider this order was never offered to", async () => {
+  it("403s a biker this order was never offered to", async () => {
     const { svc } = build({ order: { findFirst: async () => liveOrder }, foodDispatchAttempt: { findUnique: async () => null } }, NONE);
     await expect(svc.declineDispatch(orderId, "r2")).rejects.toThrow(/isn't yours/i);
   });
 });
 
 describe("FoodDispatchService.dropDispatch — D-33 pre-pickup only", () => {
-  it("re-dispatches in place: requested/ready_for_pickup, rider cleared, excluded, fresh budget, strike applied", async () => {
+  it("re-dispatches in place: requested/ready_for_pickup, biker cleared, excluded, fresh budget, strike applied", async () => {
     const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
     const riderUpdate = vi.fn(async () => ({}));
     const { svc, gateway } = build(
@@ -464,7 +464,7 @@ describe("FoodDispatchService.dropDispatch — D-33 pre-pickup only", () => {
     expect(gateway.emitFoodQueueChanged).toHaveBeenCalledWith(MERCHANT_ID, orderId); // C5: merchant sees the drop without waiting for the poll
   });
 
-  it("forces the rider offline + cooldown on the CANCEL_STRIKE_LIMIT-th drop (mirrors order-lifecycle cancel)", async () => {
+  it("forces the biker offline + cooldown on the CANCEL_STRIKE_LIMIT-th drop (mirrors order-lifecycle cancel)", async () => {
     const riderUpdate = vi.fn(async () => ({}));
     const { svc, gateway } = build(
       {
@@ -513,7 +513,7 @@ describe("FoodDispatchService.dropDispatch — D-33 pre-pickup only", () => {
   });
 });
 
-describe("FoodDispatchService.getOfferForRider — C5 rider offer alarm channel (poll/reconnect fallback)", () => {
+describe("FoodDispatchService.getOfferForRider — C5 biker offer alarm channel (poll/reconnect fallback)", () => {
   const liveRow = {
     expiresAt: new Date(Date.now() + 30_000),
     order: {
@@ -528,7 +528,7 @@ describe("FoodDispatchService.getOfferForRider — C5 rider offer alarm channel 
     },
   };
 
-  it("returns the rider's own live offer, redacted, soonest to run out first", async () => {
+  it("returns the biker's own live offer, redacted, soonest to run out first", async () => {
     const findFirst = vi.fn(async () => liveRow);
     const { svc } = build({ foodDispatchAttempt: { findFirst } }, NONE);
     const offer = await svc.getOfferForRider("r1");
@@ -556,7 +556,7 @@ describe("FoodDispatchService.getOfferForRider — C5 rider offer alarm channel 
     );
   });
 
-  it("returns null when this rider holds no live offer", async () => {
+  it("returns null when this biker holds no live offer", async () => {
     const { svc } = build({ foodDispatchAttempt: { findFirst: async () => null } }, NONE);
     await expect(svc.getOfferForRider("r1")).resolves.toBeNull();
   });
@@ -581,7 +581,7 @@ describe("FoodDispatchService — merchant D-34 hold-screen decisions", () => {
       { merchant: { findUnique: async () => ({ id: "m1" }) }, order: { updateMany: async () => ({ count: 0 }) } },
       NONE,
     );
-    await expect(svc.resumeSearch("owner-1", orderId)).rejects.toThrow(/waiting on a rider decision/i);
+    await expect(svc.resumeSearch("owner-1", orderId)).rejects.toThrow(/waiting on a biker decision/i);
   });
 
   it("cancelFromHold: no-fault D-13 cancel, apology copy, rejectionReason=no_rider", async () => {
@@ -736,7 +736,7 @@ describe("FoodDispatchService — a round cancelled while its offers were being 
     expect(notified).toEqual([]);
   });
 
-  it("sweepOrphanedOffers: expires stale pending offers on orders no longer offering — never the rider the order went to", async () => {
+  it("sweepOrphanedOffers: expires stale pending offers on orders no longer offering — never the biker the order went to", async () => {
     const attemptFindMany = vi.fn(async () => [
       { id: "a1", orderId, riderId: "r1", order: { riderId: null } }, // cancelled order
       { id: "a2", orderId: "o2", riderId: "winner", order: { riderId: "winner" } }, // accept still marking its own row
@@ -754,7 +754,7 @@ describe("FoodDispatchService — a round cancelled while its offers were being 
   });
 });
 
-describe("FoodDispatchService.acceptDispatch — MJ-RM1: a rider found early leaves the cooking ticket alone", () => {
+describe("FoodDispatchService.acceptDispatch — MJ-RM1: a biker found early leaves the cooking ticket alone", () => {
   it("keeps merchantPhase 'preparing' (guarded on it) when the order is still cooking", async () => {
     const orderUpdateMany = vi.fn(async (_args: { where: Record<string, unknown>; data: Record<string, unknown> }) => ({ count: 1 }));
     const { svc } = build(
@@ -802,7 +802,7 @@ describe("FoodDispatchService.dropDispatch — MJ-RM2 (C14) + MJ-RM1", () => {
     return { ...built, orderUpdateMany };
   }
 
-  it("MJ-RM2: clears the dropped rider's counter state — arrival, ETA, pickup photo and seal — in the same guarded write", async () => {
+  it("MJ-RM2: clears the dropped biker's counter state — arrival, ETA, pickup photo and seal — in the same guarded write", async () => {
     const { svc, orderUpdateMany } = world({ status: "en_route_pickup", merchantPhase: null, dispatchExcludedRiderIds: [], merchantId: MERCHANT_ID });
     await svc.dropDispatch(orderId, "r1");
     expect(orderUpdateMany.mock.calls[0]![0]).toMatchObject({
@@ -811,7 +811,7 @@ describe("FoodDispatchService.dropDispatch — MJ-RM2 (C14) + MJ-RM1", () => {
     });
   });
 
-  it("MJ-RM1: a rider found early drops while the kitchen is still cooking — it stays 'preparing', not 'ready'", async () => {
+  it("MJ-RM1: a biker found early drops while the kitchen is still cooking — it stays 'preparing', not 'ready'", async () => {
     const { svc, orderUpdateMany } = world({ status: "assigned", merchantPhase: "preparing", dispatchExcludedRiderIds: [], merchantId: MERCHANT_ID });
     await svc.dropDispatch(orderId, "r1");
     expect(orderUpdateMany.mock.calls[0]![0]).toMatchObject({ where: { merchantPhase: "preparing" }, data: { status: "requested", merchantPhase: "preparing" } });

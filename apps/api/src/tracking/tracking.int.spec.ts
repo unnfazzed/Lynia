@@ -31,7 +31,7 @@ async function clean(): Promise<void> {
 /** A rider with a chosen online state and no position yet (geog NULL until located). */
 async function makeRider(isOnline: boolean): Promise<string> {
   const p = await prisma.profile.create({
-    data: { role: "rider", firstName: "Rider", lastName: "R", phone: `r_${crypto.randomUUID()}` },
+    data: { role: "rider", firstName: "Biker", lastName: "R", phone: `r_${crypto.randomUUID()}` },
     select: { id: true },
   });
   await prisma.rider.create({
@@ -68,7 +68,7 @@ describe("TrackingService geo queries (ET6)", () => {
     expect(hits.find((h) => h.profileId === rider)!.distanceM).toBeLessThan(1);
   });
 
-  it("returns online, in-radius riders ordered nearest-first", async () => {
+  it("returns online, in-radius bikers ordered nearest-first", async () => {
     const near = await makeRider(true); // ~0.33 km north
     const far = await makeRider(true); // ~1.66 km north (still inside 3 km)
     await tracking.updateRiderLocation(near, CENTER.lat + 0.003, CENTER.lng);
@@ -80,7 +80,7 @@ describe("TrackingService geo queries (ET6)", () => {
     expect(hits[0]!.distanceM).toBeLessThan(hits[1]!.distanceM);
   });
 
-  it("excludes riders outside the radius", async () => {
+  it("excludes bikers outside the radius", async () => {
     const inside = await makeRider(true); // ~0.33 km
     const outside = await makeRider(true); // ~11 km — beyond a 3 km query
     await tracking.updateRiderLocation(inside, CENTER.lat + 0.003, CENTER.lng);
@@ -91,7 +91,7 @@ describe("TrackingService geo queries (ET6)", () => {
     expect(ids).not.toContain(outside);
   });
 
-  it("excludes offline riders even when in range", async () => {
+  it("excludes offline bikers even when in range", async () => {
     const offline = await makeRider(false);
     await tracking.updateRiderLocation(offline, CENTER.lat, CENTER.lng);
 
@@ -99,7 +99,7 @@ describe("TrackingService geo queries (ET6)", () => {
     expect(ids).not.toContain(offline);
   });
 
-  it("excludes online riders with no position (NULL geog)", async () => {
+  it("excludes online bikers with no position (NULL geog)", async () => {
     const located = await makeRider(true);
     const noGeog = await makeRider(true); // online but never located
     await tracking.updateRiderLocation(located, CENTER.lat, CENTER.lng);
@@ -109,7 +109,7 @@ describe("TrackingService geo queries (ET6)", () => {
     expect(ids).not.toContain(noGeog);
   });
 
-  it("excludes an in-range online rider whose heartbeat is stale (ghost filter, policy BROADCAST)", async () => {
+  it("excludes an in-range online biker whose heartbeat is stale (ghost filter, policy BROADCAST)", async () => {
     const fresh = await makeRider(true);
     const ghost = await makeRider(true); // app died with is_online stuck true
     await tracking.updateRiderLocation(fresh, CENTER.lat, CENTER.lng);

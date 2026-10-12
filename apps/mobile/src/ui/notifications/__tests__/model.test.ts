@@ -126,7 +126,7 @@ describe("side, pin and needs-you", () => {
   const mine = row({ id: "c", orderId: "o6", to: "customer", type: "status", beat: "picked_up", venue: "Sadza Republic", service: "restaurants", riderName: "Tendai" });
   const acct = row({ id: "a", type: "account", action: "rider.lift" });
 
-  it("the rider sees jobs + account rows, the customer orders + account rows", () => {
+  it("the biker sees jobs + account rows, the customer orders + account rows", () => {
     const r = feedOf([job, mine, acct], "rider").days.flatMap((d) => d.items);
     expect(r.map((i) => i.title).sort()).toEqual([N.aRestoredT, N.tJobGlenara].sort());
     expect(r.find((i) => i.key === "o5")).toMatchObject({ line: N.rDelivered, tone: "good", rider: true });
@@ -172,8 +172,8 @@ describe("side, pin and needs-you", () => {
   });
 
   it("an older API (no structured fields) still renders, on the server's copy", () => {
-    const old = row({ id: "x", orderId: "o1", status: "en_route_pickup", title: "Rider on the way", message: "Your rider is heading to the pickup point.", to: "customer" });
-    expect(feedOf([old]).days[0]!.items[0]).toMatchObject({ title: "Rider on the way", line: "Your rider is heading to the pickup point.", service: "send" });
+    const old = row({ id: "x", orderId: "o1", status: "en_route_pickup", title: "Biker on the way", message: "Your biker is heading to the pickup point.", to: "customer" });
+    expect(feedOf([old]).days[0]!.items[0]).toMatchObject({ title: "Biker on the way", line: "Your biker is heading to the pickup point.", service: "send" });
   });
 });
 
@@ -213,7 +213,7 @@ describe("every order step (owner 2026-10-02)", () => {
     expect(feedOf([r]).days[0]!.items[0]!.steps.map((s) => s.label)).toEqual([N.tlDelivered, N.tlToDrop, N.tlCollected, N.tlOnWay, N.tlAssigned, N.tlPosted]);
   });
 
-  it("a rider's job reads got the job · heading to pickup · collected · delivered", () => {
+  it("a biker's job reads got the job · heading to pickup · collected · delivered", () => {
     const r = row({
       id: "j",
       orderId: "o2",
@@ -277,7 +277,7 @@ describe("detail fields (owner 2026-10-02): rows read as the handoff's sentences
     expect(one(row({ id: "w", type: "account", action: "wallet.credit" })).line).toBe("server message");
   });
 
-  it("a rider is told it was the customer who cancelled; anyone else keeps the push's line", () => {
+  it("a biker is told it was the customer who cancelled; anyone else keeps the push's line", () => {
     const cx = row({ id: "c", orderId: "o4", to: "rider", type: "status", beat: "cancelled", service: "restaurants", venue: "Mama's Kitchen", dropoffArea: "Avondale", customerName: "Nyasha", cancelledBy: "customer" });
     expect(one(cx)).toMatchObject({ title: N.tJobAvondale, line: N.rCancelled });
     expect(one({ ...cx, cancelledBy: "lynia" }).line).toBe("server message");

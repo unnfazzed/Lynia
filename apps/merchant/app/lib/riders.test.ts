@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { RIDER_SIGNUP_URL, riderInviteLink, riderInviteMessage, riderLine, riderPill, validateAddRider } from "./riders";
 
-describe("Your riders' rules (merchant web upgrade L3)", () => {
-  it("pills each rider as E4 draws them, and never gives a reason", () => {
+describe("Your bikers' rules (merchant web upgrade L3)", () => {
+  it("pills each biker as E4 draws them, and never gives a reason", () => {
     expect(riderPill({ status: "on_lyniago", online: true })).toEqual({ label: "Online", tone: "online" });
     expect(riderPill({ status: "on_lyniago", online: false })).toEqual({ label: "Offline", tone: "offline" });
     expect(riderPill({ status: "on_lyniago" })).toEqual({ label: "Offline", tone: "offline" });
@@ -10,9 +10,9 @@ describe("Your riders' rules (merchant web upgrade L3)", () => {
     expect(riderPill({ status: "not_on_lyniago" })).toBeNull();
   });
 
-  it("invites a rider who isn't on LyniaGo yet from the owner's own WhatsApp, to the website's rider sign-up", () => {
+  it("invites a biker who isn't on LyniaGo yet from the owner's own WhatsApp, to the website's biker sign-up", () => {
     const text = riderInviteMessage("Blessing", "Mbare Auto Spares");
-    expect(text).toBe(`Hi Blessing, it's Mbare Auto Spares. We'd like you to deliver for us on LyniaGo. Sign up as a rider with this number: ${RIDER_SIGNUP_URL}`);
+    expect(text).toBe(`Hi Blessing, it's Mbare Auto Spares. We'd like you to deliver for us on LyniaGo. Sign up as a biker with this number: ${RIDER_SIGNUP_URL}`);
     expect(RIDER_SIGNUP_URL).toBe("https://lyniago.com/#riders");
     expect(riderInviteLink("263772223333", "Hi")).toBe("https://wa.me/263772223333?text=Hi");
   });
@@ -25,7 +25,7 @@ describe("Your riders' rules (merchant web upgrade L3)", () => {
     expect(riderLine({ status: "unavailable", jobs: 3, ratingAvg: 5 })).toBe("Paused by LyniaGo");
   });
 
-  it("asks for a name and the number the rider signs in with", () => {
+  it("asks for a name and the number the biker signs in with", () => {
     expect(validateAddRider({ label: "Blessing", phone: "0772223333" })).toEqual({});
     expect(validateAddRider({ label: " ", phone: "12" })).toEqual({
       label: "Give them a name you'll recognise.",

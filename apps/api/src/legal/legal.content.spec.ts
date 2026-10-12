@@ -49,7 +49,7 @@ describe("legal copy ↔ PII manifest", () => {
     }
   });
 
-  it("treats the rider's national ID and face photo as sensitive data resting on explicit consent", () => {
+  it("treats the biker's national ID and face photo as sensitive data resting on explicit consent", () => {
     // The Act singles out sensitive personal information (which these are) as needing the data
     // subject's explicit consent — a contract/legitimate-interest basis would not be lawful here, so
     // this category's basis must not silently drift to one.

@@ -29,7 +29,7 @@ async function makeCustomer(): Promise<string> {
 /** A rider with no online state / heartbeat unless given one. */
 async function makeRider(lastHeartbeatAt?: Date): Promise<string> {
   const p = await prisma.profile.create({
-    data: { role: "rider", firstName: "Rider", lastName: "R", phone: `r_${crypto.randomUUID()}` },
+    data: { role: "rider", firstName: "Biker", lastName: "R", phone: `r_${crypto.randomUUID()}` },
     select: { id: true },
   });
   await prisma.rider.create({

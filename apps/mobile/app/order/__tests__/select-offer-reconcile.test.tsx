@@ -156,10 +156,10 @@ describe("selectOffer 409 reconciliation (LC-C08)", () => {
     await settle();
     await settle(); // the reconciliation getOrder() call + onSettled's invalidate both resolve async
 
-    expect(has(tree, "Tapiwa M. was just taken by another customer. Pick another rider.")).toBe(false);
+    expect(has(tree, "Tapiwa M. was just taken by another customer. Pick another biker.")).toBe(false);
   });
 
-  it("shows the 'just taken' notice when a fresh getOrder confirms the auction is still open — the tapped rider genuinely became unavailable", async () => {
+  it("shows the 'just taken' notice when a fresh getOrder confirms the auction is still open — the tapped biker genuinely became unavailable", async () => {
     let getOrderCalls = 0;
     mockGetOrder.mockImplementation(async () => {
       getOrderCalls += 1;
@@ -173,14 +173,14 @@ describe("selectOffer 409 reconciliation (LC-C08)", () => {
     });
     mockListOffers.mockResolvedValue([baseOffer()]);
     const { ApiError } = require("../../../src/api/client");
-    mockSelectOffer.mockRejectedValue(new ApiError(409, "Rider just became unavailable, pick another"));
+    mockSelectOffer.mockRejectedValue(new ApiError(409, "Biker just became unavailable, pick another"));
 
     const tree = await render();
     press(tree, "Choose Tapiwa M.");
     await settle();
     await settle();
 
-    expect(has(tree, "Tapiwa M. was just taken by another customer. Pick another rider.")).toBe(true);
+    expect(has(tree, "Tapiwa M. was just taken by another customer. Pick another biker.")).toBe(true);
   });
 });
 
@@ -189,7 +189,7 @@ describe("U62 (C10): the 409's reason picks the words; the grace end re-reads th
     mockGetOrder.mockResolvedValue(openOrder());
     mockListOffers.mockResolvedValue([baseOffer()]);
     const { ApiError } = require("../../../src/api/client");
-    mockSelectOffer.mockRejectedValue(new ApiError(409, "Rider just became unavailable, pick another", code));
+    mockSelectOffer.mockRejectedValue(new ApiError(409, "Biker just became unavailable, pick another", code));
     const tree = await render();
     press(tree, "Choose Tapiwa M.");
     await settle();
@@ -197,24 +197,24 @@ describe("U62 (C10): the 409's reason picks the words; the grace end re-reads th
     return tree;
   }
 
-  it("a rider who went offline or lost standing isn't 'taken by another customer'", async () => {
+  it("a biker who went offline or lost standing isn't 'taken by another customer'", async () => {
     const tree = await refuse("rider_unavailable");
-    expect(has(tree, "Tapiwa M. is unavailable. Pick another rider.")).toBe(true);
-    expect(has(tree, "Tapiwa M. was just taken by another customer. Pick another rider.")).toBe(false);
+    expect(has(tree, "Tapiwa M. is unavailable. Pick another biker.")).toBe(true);
+    expect(has(tree, "Tapiwa M. was just taken by another customer. Pick another biker.")).toBe(false);
   });
 
-  it("the rider really was assigned elsewhere — the drawn 'taken' toast", async () => {
+  it("the biker really was assigned elsewhere — the drawn 'taken' toast", async () => {
     const tree = await refuse("rider_taken");
-    expect(has(tree, "Tapiwa M. was just taken by another customer. Pick another rider.")).toBe(true);
+    expect(has(tree, "Tapiwa M. was just taken by another customer. Pick another biker.")).toBe(true);
   });
 
-  it("the time to choose ran out — no 'pick another rider' at all", async () => {
+  it("the time to choose ran out — no 'pick another biker' at all", async () => {
     const tree = await refuse("choose_ended");
-    expect(has(tree, "Tapiwa M. was just taken by another customer. Pick another rider.")).toBe(false);
-    expect(has(tree, "Tapiwa M. is unavailable. Pick another rider.")).toBe(false);
+    expect(has(tree, "Tapiwa M. was just taken by another customer. Pick another biker.")).toBe(false);
+    expect(has(tree, "Tapiwa M. is unavailable. Pick another biker.")).toBe(false);
   });
 
-  it("an order that left offers by the time it's re-read gets no 'pick another rider'", async () => {
+  it("an order that left offers by the time it's re-read gets no 'pick another biker'", async () => {
     let calls = 0;
     mockGetOrder.mockImplementation(async () => (++calls === 1 ? openOrder() : openOrder({ status: "expired" })));
     mockListOffers.mockResolvedValue([baseOffer()]);
@@ -224,7 +224,7 @@ describe("U62 (C10): the 409's reason picks the words; the grace end re-reads th
     press(tree, "Choose Tapiwa M.");
     await settle();
     await settle();
-    expect(has(tree, "Tapiwa M. was just taken by another customer. Pick another rider.")).toBe(false);
+    expect(has(tree, "Tapiwa M. was just taken by another customer. Pick another biker.")).toBe(false);
   });
 
   it("at 'Choose in 0:00' on the phone's clock Choose stays live (no server clock offset); the order is re-read, and a late pick's choose_ended says nothing", async () => {
@@ -242,7 +242,7 @@ describe("U62 (C10): the 409's reason picks the words; the grace end re-reads th
     await settle();
     // A phone clock running fast mustn't block a pick the server still takes: the tap reaches the server.
     expect(mockSelectOffer).toHaveBeenCalled();
-    expect(has(tree, "Tapiwa M. was just taken by another customer. Pick another rider.")).toBe(false);
+    expect(has(tree, "Tapiwa M. was just taken by another customer. Pick another biker.")).toBe(false);
   });
 });
 

@@ -141,9 +141,9 @@ describe("buildFcmMessage — payload contract", () => {
   });
 
   it("maps a PushMessage to an FCM message with a notification block", () => {
-    expect(buildFcmMessage({ token: "tok", title: "Order update", body: "Rider en route" })).toEqual({
+    expect(buildFcmMessage({ token: "tok", title: "Order update", body: "Biker en route" })).toEqual({
       token: "tok",
-      notification: { title: "Order update", body: "Rider en route" },
+      notification: { title: "Order update", body: "Biker en route" },
     });
   });
 

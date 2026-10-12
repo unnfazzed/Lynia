@@ -19,7 +19,7 @@ const validSelected = {
   createdAt: "2026-07-12T00:00:00.000Z",
 };
 
-describe("parseRiderBidDraft (JOURNEY-BUGS: rider bid-compose had no persistence)", () => {
+describe("parseRiderBidDraft (JOURNEY-BUGS: biker bid-compose had no persistence)", () => {
   it("returns null when there's nothing stored", () => {
     expect(parseRiderBidDraft(null)).toBeNull();
     expect(parseRiderBidDraft(undefined)).toBeNull();

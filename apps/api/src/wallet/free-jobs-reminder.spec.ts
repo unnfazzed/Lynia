@@ -58,7 +58,7 @@ describe("WalletService.noteFreeJobsMilestone (D-79, inside the completion trans
     expect(t.created[0]).toMatchObject({ action: FREE_JOBS_ACTION.used_up });
   });
 
-  it("is idempotent per rider and milestone: an existing row means no second reminder", async () => {
+  it("is idempotent per biker and milestone: an existing row means no second reminder", async () => {
     const t = tx(TOTAL, [{ target: "r1", action: FREE_JOBS_ACTION.used_up }]);
     expect(await wallet("10").noteFreeJobsMilestone(t.client as never, "r1")).toBeNull();
     expect(t.created).toEqual([]);

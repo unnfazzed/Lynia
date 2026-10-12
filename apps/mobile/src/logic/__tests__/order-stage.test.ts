@@ -17,7 +17,7 @@ const at = (msAgo: number): string => new Date(NOW - msAgo).toISOString();
 const stage = (over: Partial<StageInput>) => resolveStage({ ...base, ...over });
 
 describe("resolveStage", () => {
-  it("open_for_offers: finding, no riders, or offers", () => {
+  it("open_for_offers: finding, no bikers, or offers", () => {
     expect(stage({}).stage).toBe("finding");
     expect(stage({ ridersNearby: 0 }).stage).toBe("noRiders");
     // Unknown supply is never "nobody online".
@@ -27,7 +27,7 @@ describe("resolveStage", () => {
     expect(stage({ offerCount: 2, ridersNearby: 0 }).stage).toBe("offers");
   });
 
-  it.each(["assigned", "confirmed", "en_route_pickup"])("%s → rider on the way to pickup", (status) => {
+  it.each(["assigned", "confirmed", "en_route_pickup"])("%s → biker on the way to pickup", (status) => {
     expect(stage({ status, rider: { lat: -17.83, lng: 31.05, at: at(5_000) } }).stage).toBe("toPickup");
   });
 
@@ -48,7 +48,7 @@ describe("resolveStage", () => {
     expect(stage({ status: "expired" }).stage).toBe("retryNoMatch");
   });
 
-  it("cancelled: a rider bail before pickup is the retry; anything else the cancelled terminal", () => {
+  it("cancelled: a biker bail before pickup is the retry; anything else the cancelled terminal", () => {
     expect(stage({ status: "cancelled", cancelledBy: "rider" }).stage).toBe("retryRiderCancelled");
     expect(stage({ status: "cancelled", cancelledBy: "rider", events: [{ status: "picked_up", createdAt: at(60_000) }] }).stage).toBe("cancelled");
     expect(stage({ status: "cancelled", cancelledBy: "customer" }).stage).toBe("cancelled");
@@ -73,7 +73,7 @@ describe("resolveStage", () => {
     expect(stage({ status: "open_for_offers", rider: stale }).gpsPaused).toBe(false);
   });
 
-  it("v2 state 13: the re-broadcast after a rider cancel is a finding state until an offer lands", () => {
+  it("v2 state 13: the re-broadcast after a biker cancel is a finding state until an offer lands", () => {
     expect(stage({ reopened: true }).stage).toBe("reopened");
     expect(stage({ reopened: true, ridersNearby: 0 }).stage).toBe("reopened");
     expect(stage({ reopened: true, offerCount: 1 }).stage).toBe("offers");

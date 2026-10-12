@@ -200,7 +200,7 @@ export default function QueuePage() {
           <b>All quiet for now</b>
           <p>You&apos;re open. New orders ring here with sound, so keep the volume up.</p>
           <Link href={shop ? "/deliveries/new" : "/menu"} className="m-btn2">
-            {shop ? "Book a rider" : "Check your menu"}
+            {shop ? "Book a biker" : "Check your menu"}
           </Link>
         </div>
       ) : (
@@ -288,7 +288,7 @@ function useOrderToasts(orders: readonly MerchantOrderResponse[], toast: (m: str
     for (const o of orders) {
       const was = before.get(o.id);
       if (!was) continue;
-      if (!was.riderId && o.riderId) toast(`Rider secured · ${riderFirstName(o) ?? "on the way"}`);
+      if (!was.riderId && o.riderId) toast(`Biker secured · ${riderFirstName(o) ?? "on the way"}`);
       else if (was.status !== "picked_up" && o.status === "picked_up") toast(`Handed over · ${orderLabel(o)}`);
     }
   }, [orders, toast]);

@@ -60,9 +60,9 @@ describe("KYC review: no national ID on file (D-75)", () => {
     expect(notice()).not.toContain("Approving makes");
   });
 
-  it("with no ID-check number to adopt (manual review), says approving leaves the rider without one and is flagged", async () => {
+  it("with no ID-check number to adopt (manual review), says approving leaves the biker without one and is flagged", async () => {
     await open(review({ verifiedIdNumber: null }));
-    expect(notice()).toContain("approving verifies this rider without a national ID");
+    expect(notice()).toContain("approving verifies this biker without a national ID");
     expect(notice()).toContain("flagged in the audit log for follow-up");
   });
 
@@ -86,7 +86,7 @@ describe("KYC review: no national ID on file (D-75)", () => {
       review({
         verifiedIdInUse: true,
         duplicateIdAccounts: [
-          { id: "p-2", name: "Other Rider", phone: "+263•••••0999", role: "rider", kycStatus: "verified", accountStatus: "active" },
+          { id: "p-2", name: "Other Biker", phone: "+263•••••0999", role: "rider", kycStatus: "verified", accountStatus: "active" },
         ],
       }),
     );
@@ -98,7 +98,7 @@ describe("KYC review: no national ID on file (D-75)", () => {
 /** The text of the warnbar whose bold title is `title`, or null. */
 const warnbar = (title: string) => screen.queryByText(title)?.closest(".warnbar")?.textContent ?? null;
 
-describe("KYC review: where the rider is in the Didit check", () => {
+describe("KYC review: where the biker is in the Didit check", () => {
   it("a held check reads as finished, with no unfinished warning", async () => {
     await open(review({ kycHeld: true, kycVendorStatus: "In Review" }));
     expect(screen.getByText(/Finished at Didit — held for a manual review \(Didit: In Review\)\./)).toBeTruthy();
@@ -121,8 +121,8 @@ describe("KYC review: where the rider is in the Didit check", () => {
 
   it("approving an unfinished check requires a note in the confirm modal", async () => {
     await open(review({ kycHeld: false, kycVendorStatus: "Abandoned" }));
-    fireEvent.click(screen.getByRole("button", { name: "Approve rider" }));
-    expect(screen.getByText(/This rider hasn.t finished the Didit ID check\./)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Approve biker" }));
+    expect(screen.getByText(/This biker hasn.t finished the Didit ID check\./)).toBeTruthy();
     const confirm = screen.getByRole("button", { name: "Approve without the ID check" }) as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);
     fireEvent.change(screen.getByLabelText(/Note/), { target: { value: "Checked the ID in person" } });
@@ -131,14 +131,14 @@ describe("KYC review: where the rider is in the Didit check", () => {
 
   it("approving a finished check needs no note", async () => {
     await open(review({ kycHeld: true, kycVendorStatus: "In Review" }));
-    fireEvent.click(screen.getByRole("button", { name: "Approve rider" }));
-    const buttons = screen.getAllByRole("button", { name: "Approve rider" }) as HTMLButtonElement[];
+    fireEvent.click(screen.getByRole("button", { name: "Approve biker" }));
+    const buttons = screen.getAllByRole("button", { name: "Approve biker" }) as HTMLButtonElement[];
     expect(buttons.at(-1)?.disabled).toBe(false);
   });
 });
 
 describe("KYC review: evidence and verdict", () => {
-  it("links to the rider's Didit session", async () => {
+  it("links to the biker's Didit session", async () => {
     await open(review({ kycRef: "sess_1" }));
     const links = screen.getAllByRole("link", { name: "Open in Didit ↗" });
     expect(links.length).toBeGreaterThan(0);
@@ -163,7 +163,7 @@ describe("KYC review: decided states", () => {
   it("an expired check reads as expired, not declined", async () => {
     await open(review({ status: "expired" }));
     expect(screen.getByText("Expired.")).toBeTruthy();
-    expect(screen.getByText("The rider must re-verify before they can go online.")).toBeTruthy();
+    expect(screen.getByText("The biker must re-verify before they can go online.")).toBeTruthy();
     expect(screen.queryByText("Declined.")).toBeNull();
     expect(screen.queryByText(/resubmit once/)).toBeNull();
   });

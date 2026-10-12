@@ -138,7 +138,7 @@ export default function BookingPage() {
         rememberCode(id, res.deliveryCode);
         setCode(res.deliveryCode);
         setState({ status: "ready", booking: res.booking });
-        toast(`${shortName(o.rider.name) ?? "Your rider"} is on the way`);
+        toast(`${shortName(o.rider.name) ?? "Your biker"} is on the way`);
       }),
     // MJ-RL6: a new code kills the buyer's, so it asks first (copy: ledger D-95).
     onNewCode: () => setConfirmNewCode(true),
@@ -210,7 +210,7 @@ export default function BookingPage() {
       {confirmCancel && booking && (
         <ConfirmSheet
           title="Cancel this booking?"
-          body="The rider is told. You can book again any time."
+          body="The biker is told. You can book again any time."
           confirmLabel="Cancel booking"
           busy={busy === "cancel"}
           error={error}
@@ -238,7 +238,7 @@ function Offers({ booking, disabled, busy, error, onPick, onCancel }: Ctx) {
     <>
       <AppBar
         back="/deliveries"
-        title="Pick a rider"
+        title="Pick a biker"
         right={
           booking.expiresAt ? (
             <span className={`m-pl m-num ${left < 20_000 ? "m-red" : "m-gold"}`} style={{ height: 32, fontSize: 15, padding: "0 12px" }}>
@@ -249,7 +249,7 @@ function Offers({ booking, disabled, busy, error, onPick, onCancel }: Ctx) {
       />
       <div className="m-bd">
         <p className="m-sub">
-          {booking.state === "finding_again" ? "Your rider cancelled, so LyniaGo sent it out again. " : ""}
+          {booking.state === "finding_again" ? "Your biker cancelled, so LyniaGo sent it out again. " : ""}
           {booking.itemsSummary} → {booking.dropoff.landmark} · you offered <b style={{ color: "var(--ink)" }}>{money(Number(booking.proposedFare))}</b>
         </p>
         <div className="m-chips" role="tablist" aria-label="Sort offers">
@@ -270,7 +270,7 @@ function Offers({ booking, disabled, busy, error, onPick, onCancel }: Ctx) {
             {error}
           </div>
         )}
-        {offers.length === 0 && <div className="m-hint">Waiting for riders&apos; offers…</div>}
+        {offers.length === 0 && <div className="m-hint">Waiting for bikers&apos; offers…</div>}
         {offers.map((o, i) => {
           const name = shortName(o.rider.name) ?? o.rider.name;
           const first = o.preferred || (i === 0 && !o.ownMember && sort === "best" && !offers.some((x) => x.preferred));
@@ -282,7 +282,7 @@ function Offers({ booking, disabled, busy, error, onPick, onCancel }: Ctx) {
                 <div className="m-t" style={{ flex: 1, minWidth: 0 }}>
                   <b style={{ fontSize: 15.5, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                     {name}
-                    {o.preferred && <span className="m-pl m-wal">Preferred rider</span>}
+                    {o.preferred && <span className="m-pl m-wal">Preferred biker</span>}
                   </b>
                   <span className="m-hint m-num" style={{ fontSize: 13 }}>
                     {o.rider.ratingAvg != null ? `★ ${o.rider.ratingAvg.toFixed(1)} · ` : ""}
@@ -330,8 +330,8 @@ function Offers({ booking, disabled, busy, error, onPick, onCancel }: Ctx) {
  */
 function OnTheWay({ booking, business, busy, disabled, error, code, onNewCode, onCancel, onCashReturned, onNoCash }: Ctx) {
   const rider = booking.rider;
-  const name = shortName(rider?.name) ?? "Your rider";
-  const first = rider?.name.trim().split(/\s+/)[0] ?? "The rider";
+  const name = shortName(rider?.name) ?? "Your biker";
+  const first = rider?.name.trim().split(/\s+/)[0] ?? "The biker";
   const delivered = booking.state === "delivered";
   const message = code ? codeMessage({ businessName: business?.name ?? "your shop", riderName: rider?.name ?? null, bikeReg: rider?.bikeReg ?? null, code }) : "";
   const wa = code ? whatsappLink(booking.dropoff.contactPhone, message) : null;
@@ -339,7 +339,7 @@ function OnTheWay({ booking, business, busy, disabled, error, code, onNewCode, o
   const cashOut = cod && (cod.status === "awaiting_delivery" || cod.status === "due");
   const amount = cod ? Number(cod.amount) : 0;
   const fare = Number(booking.agreedFare ?? booking.proposedFare);
-  const title = delivered ? "Delivered" : booking.state === "picked_up" ? "On the way to buyer" : booking.riderArrivedAt ? "Rider at your shop" : "Rider coming to your shop";
+  const title = delivered ? "Delivered" : booking.state === "picked_up" ? "On the way to buyer" : booking.riderArrivedAt ? "Biker at your shop" : "Biker coming to your shop";
   const due = cod?.dueAt ? new Date(cod.dueAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : null;
   return (
     <>
@@ -359,7 +359,7 @@ function OnTheWay({ booking, business, busy, disabled, error, code, onNewCode, o
             <span className="m-rav">{rider.name.charAt(0).toUpperCase()}</span>
             <div>
               <b>{name}</b>
-              <span>{rider.bikeReg ?? "LyniaGo rider"}</span>
+              <span>{rider.bikeReg ?? "LyniaGo biker"}</span>
             </div>
             {rider.phone && (
               <a href={`tel:${rider.phone}`} className="m-call" aria-label={`Call ${name}`}>
@@ -380,7 +380,7 @@ function OnTheWay({ booking, business, busy, disabled, error, code, onNewCode, o
                 </b>
               ) : (
                 <span className="m-hint" style={{ display: "block" }}>
-                  Shown to whoever picked the rider.
+                  Shown to whoever picked the biker.
                 </span>
               )}
             </div>
@@ -459,9 +459,9 @@ function Ended({ booking, disabled, busy, error, onRetry }: Ctx) {
     booking.state === "not_delivered"
       ? "Not delivered"
       : booking.state === "expired"
-        ? "No rider picked in time"
+        ? "No biker picked in time"
         : booking.cancelledBy === "rider"
-          ? "Your rider cancelled"
+          ? "Your biker cancelled"
           : booking.cancelledBy === "business"
             ? "Booking cancelled"
             : "Cancelled by the LyniaGo team";
@@ -475,7 +475,7 @@ function Ended({ booking, disabled, busy, error, onRetry }: Ctx) {
             <b style={{ fontSize: 16, display: "block" }}>{title}</b>
             <span style={{ fontSize: 13, color: "var(--muted)" }}>
               {booking.state === "not_delivered"
-                ? `${undeliveredText(booking.undeliveredReason)} Call the rider to get the goods back.`
+                ? `${undeliveredText(booking.undeliveredReason)} Call the biker to get the goods back.`
                 : booking.state === "cancelled" && booking.cancelledBy === "ops"
                   ? (booking.cancelReason ?? "")
                   : `${booking.itemsSummary} → ${booking.dropoff.landmark}`}
@@ -507,7 +507,7 @@ function Ended({ booking, disabled, busy, error, onRetry }: Ctx) {
                 </button>
                 <div>
                   <b className="m-num">{money(fare)}</b>
-                  {booking.state === "expired" && <span>Raise it if riders didn&apos;t bite</span>}
+                  {booking.state === "expired" && <span>Raise it if bikers didn&apos;t bite</span>}
                 </div>
                 <button type="button" aria-label="Offer $0.50 more" onClick={() => setFare((f) => stepFare(f, 1))}>
                   <Icon name="plus" size={20} />

@@ -44,7 +44,7 @@ describe("pollIntervalFor — P19: no poll once it has ended, a safety net while
 });
 
 describe("pollIntervalFor — P19 review: the door step keeps 15 s with the socket up", () => {
-  it.each(["picked_up", "en_route_dropoff"])("%s: the rider's cash confirm / 'I'm here' / a freeze are seen within 15 s", (status) => {
+  it.each(["picked_up", "en_route_dropoff"])("%s: the biker's cash confirm / 'I'm here' / a freeze are seen within 15 s", (status) => {
     expect(pollIntervalFor(order({ status: status as MerchantOrderResponse["status"], merchantPhase: null }), NOW, true)).toBe(15_000);
     expect(pollIntervalFor(order({ status: status as MerchantOrderResponse["status"], merchantPhase: null }), NOW, false)).toBe(15_000);
   });

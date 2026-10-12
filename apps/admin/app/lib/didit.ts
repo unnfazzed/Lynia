@@ -31,13 +31,13 @@ export function diditProgressLine(held: boolean | undefined, vendorStatus: strin
   if (vendorStatus === undefined && held === undefined) return null;
   const s = vendorStatus?.trim().toLowerCase() ?? null;
   if (held) return `Finished at Didit — held for a manual review${vendorStatus ? ` (Didit: ${vendorStatus})` : ""}.`;
-  if (s === null) return "No ID check on record — the rider hasn't finished a Didit check.";
+  if (s === null) return "No ID check on record — the biker hasn't finished a Didit check.";
   if (s === "approved") return "Finished at Didit — Didit approved it.";
   if (s === "declined") return "Finished at Didit — Didit declined it.";
   if (s === "in review") return "Finished at Didit — waiting in Didit's review.";
-  if (s === "not started") return "Not started — the rider hasn't begun the Didit check.";
-  if (s === "in progress") return "In progress — the rider started the Didit check but hasn't finished it.";
-  if (s === "abandoned") return "Abandoned — the rider left the Didit check unfinished.";
-  if (s === "expired") return "Expired — the Didit session ran out before the rider finished.";
+  if (s === "not started") return "Not started — the biker hasn't begun the Didit check.";
+  if (s === "in progress") return "In progress — the biker started the Didit check but hasn't finished it.";
+  if (s === "abandoned") return "Abandoned — the biker left the Didit check unfinished.";
+  if (s === "expired") return "Expired — the Didit session ran out before the biker finished.";
   return `Didit status: ${vendorStatus}.`;
 }

@@ -52,7 +52,7 @@ export async function applyDiditDecision(
   if (typeof vendorData === "string" && vendorData.trim() !== "") {
     const owner = await riders.kycSessionOwner(sessionId);
     if (owner && owner !== vendorData.trim()) {
-      logger.warn(`KYC ${source} for session ${sessionId}: vendor_data names a different rider than the session's owner — not applied (KYC-R26-07)`);
+      logger.warn(`KYC ${source} for session ${sessionId}: vendor_data names a different biker than the session's owner — not applied (KYC-R26-07)`);
       return { ignored: true, reason: "vendor_data_mismatch" };
     }
   }
@@ -115,7 +115,7 @@ export async function applyDiditDecision(
   if (res.updated === 0 && !res.skipped) {
     // No rider has this ref, or the event was stale — surface for reconciliation. (A KYC-R26-01 repeat or a
     // KYC-R26-02 admin-decided check is logged by applyKycResult itself and is expected, not a warning.)
-    logger.warn(`KYC ${source} for session ${sessionId} (${decision.status}) matched no rider or was stale`);
+    logger.warn(`KYC ${source} for session ${sessionId} (${decision.status}) matched no biker or was stale`);
   }
   return res;
 }

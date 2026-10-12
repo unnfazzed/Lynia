@@ -24,7 +24,7 @@ interface Template {
 /** Customer (G3a), index-aligned with `O.g.push.c`. */
 export const PUSH_C = {
   sent: { title: "Order sent to {v}", body: ["They’re confirming now.", "Arrives {a}–{b}."] },
-  making: { title: "{v} is {making}", body: ["Arrives {a}–{b}.", "We’ll tell you when a rider has it."] },
+  making: { title: "{v} is {making}", body: ["Arrives {a}–{b}.", "We’ll tell you when a biker has it."] },
   answer: { title: "{v} needs your answer", body: ["{i} is out.", "Swap for {s} ({d})?", "Answer in 3 min."] },
   riderToVenue: { title: "{n} is heading to {v}", body: ["He’ll collect your order soon."] },
   collected: { title: "{n} has your order", body: ["On the way.", "Arrives in ~{m} min · {t}."] },
@@ -32,7 +32,7 @@ export const PUSH_C = {
   delivered: { title: "Delivered", body: ["Enjoy!", "Tap to rate {v} and {n}."] },
   notDelivered: { title: "Your order wasn’t delivered", body: ["{n} couldn’t reach you.", "Nothing was charged."] },
   venueCouldnt: { title: "{v} couldn’t take your order", body: ["Nothing was charged.", "Tap to order somewhere else."] },
-  noRider: { title: "We couldn’t find a rider", body: ["Nothing was charged.", "Tap to try again."] },
+  noRider: { title: "We couldn’t find a biker", body: ["Nothing was charged.", "Tap to try again."] },
   rxDeclined: { title: "Your prescription wasn’t approved", body: ["Tap to see why.", "The rest of your order carries on."] },
   schedStarted: { title: "Your scheduled order has started", body: ["{v} is {making}.", "Arrives {s}."] },
 } as const satisfies Record<string, Template>;

@@ -314,7 +314,7 @@ describe("send.tsx — account on hold (state 17)", () => {
     completeWhat(active);
     press(active, "Review");
     mockGetMe.mockResolvedValue({ onHold: true }); // the hold landed after /auth/me was cached
-    press(active, "Send to riders");
+    press(active, "Send to bikers");
     await settle();
     expect(has(active, "Your account is on hold")).toBe(true);
   });
@@ -328,7 +328,7 @@ describe("send.tsx — account on hold (state 17)", () => {
     completeWhat(active);
     press(active, "Review");
     mockGetMe.mockResolvedValue({ onHold: true });
-    press(active, "Send to riders");
+    press(active, "Send to bikers");
     await settle();
     expect(has(active, "Your account is on hold")).toBe(true);
     // The wall's minute poll reads the lifted hold.
@@ -339,7 +339,7 @@ describe("send.tsx — account on hold (state 17)", () => {
     await settle();
     expect(has(active, "Your account is on hold")).toBe(false);
     expect(has(active, "Documents envelope × 1")).toBe(true);
-    expect(isDisabled(active, "Send to riders")).toBe(false);
+    expect(isDisabled(active, "Send to bikers")).toBe(false);
   });
 
   it("U45: a banned or suspended sender lands on the hold wall, not a Try again that can't succeed", async () => {
@@ -350,7 +350,7 @@ describe("send.tsx — account on hold (state 17)", () => {
       completeWhere(active);
       completeWhat(active);
       press(active, "Review");
-      press(active, "Send to riders");
+      press(active, "Send to bikers");
       await settle();
       // /auth/me says onHold false for a rider's standing: the wall must stay anyway.
       expect(has(active, "Your account is on hold")).toBe(true);
@@ -577,7 +577,7 @@ describe("send.tsx — step 2 · What and who", () => {
     const t = await atStep2();
     expect(has(t, "What are you sending?")).toBe(true);
     expect(has(t, "Test Pickup Spot")).toBe(true);
-    expect(has(t, "Note for the rider (optional)")).toBe(true);
+    expect(has(t, "Note for the biker (optional)")).toBe(true);
     expect(has(t, "Still needed: what you're sending, your phone, recipient phone")).toBe(true);
     expect(isDisabled(t, "Next")).toBe(true);
     type(t, "Item 1", "Docs");
@@ -673,11 +673,11 @@ describe("send.tsx — step 3 · Price", () => {
   }
   const priceText = (t: Tree): string => input(t, "Your price in US dollars").props.value;
 
-  it("starts at the suggested fare with the band and Cash to your rider", async () => {
+  it("starts at the suggested fare with the band and Cash to your biker", async () => {
     const t = await atStep3();
     expect(priceText(t)).toBe(suggested.toFixed(2));
-    expect(has(t, "Riders usually accept around $")).toBe(true);
-    expect(has(t, "Cash to your rider")).toBe(true);
+    expect(has(t, "Bikers usually accept around $")).toBe(true);
+    expect(has(t, "Cash to your biker")).toBe(true);
     expect(isDisabled(t, "Review")).toBe(false);
   });
 
@@ -701,7 +701,7 @@ describe("send.tsx — step 3 · Price", () => {
   it("warns softly below the band and far above it, never blocking Review", async () => {
     const t = await atStep3();
     type(t, "Your price in US dollars", "0.50");
-    expect(has(t, "That's below what riders usually take — they may pass. Nudge it up for a faster match.")).toBe(true);
+    expect(has(t, "That's below what bikers usually take — they may pass. Nudge it up for a faster match.")).toBe(true);
     expect(isDisabled(t, "Review")).toBe(false);
     type(t, "Your price in US dollars", "99");
     expect(has(t, "That's a lot more than usual for this trip — double-check you didn't add a digit by mistake.")).toBe(true);
@@ -736,7 +736,7 @@ describe("send.tsx — step 4 · Review and send", () => {
     await settle();
     completeWhere(active);
     type(active, "Item 1", "Documents envelope");
-    type(active, "Note for the rider (optional)", "Blue gate. Ask for Rita.");
+    type(active, "Note for the biker (optional)", "Blue gate. Ask for Rita.");
     type(active, "Your phone (sender)", "0772451180");
     type(active, "Recipient phone", "0715550090");
     press(active, "Next");
@@ -754,7 +754,7 @@ describe("send.tsx — step 4 · Review and send", () => {
     expect(has(t, "Blue gate. Ask for Rita.")).toBe(true);
     expect(has(t, "077 245 1180") || has(t, "0772451180")).toBe(true);
     expect(has(t, "$3.36")).toBe(true);
-    expect(has(t, "Send to riders")).toBe(true);
+    expect(has(t, "Send to bikers")).toBe(true);
     press(t, "Edit the price");
     expect(input(t, "Your price in US dollars")).toBeTruthy();
   });
@@ -762,7 +762,7 @@ describe("send.tsx — step 4 · Review and send", () => {
   it("broadcasts straight to the auction — no disclaimer, address names as labels, declared value 0", async () => {
     mockCreateOrder.mockResolvedValue({ id: "o-1", status: "open_for_offers", proposedFare: 3.36, expiresAt: new Date().toISOString(), ridersNearby: 2 });
     const t = await atReview();
-    press(t, "Send to riders");
+    press(t, "Send to bikers");
     await settle();
     expect(mockCreateOrder).toHaveBeenCalledTimes(1);
     const body = mockCreateOrder.mock.calls[0][0];
@@ -784,7 +784,7 @@ describe("send.tsx — step 4 · Review and send", () => {
     mockCreateOrder.mockRejectedValueOnce(new Error("network"));
     mockCreateOrder.mockResolvedValueOnce({ id: "o-2", status: "open_for_offers", proposedFare: 3.36, expiresAt: new Date().toISOString() });
     const t = await atReview();
-    press(t, "Send to riders");
+    press(t, "Send to bikers");
     await settle();
     expect(has(t, "Couldn't send. Check your data and try again.")).toBe(true);
     expect(has(t, "Documents envelope × 1")).toBe(true);
@@ -800,14 +800,14 @@ describe("send.tsx — step 4 · Review and send", () => {
     mockCreateOrder.mockRejectedValueOnce(new ApiError(0, "The network is slow — check your connection and try again."));
     mockCreateOrder.mockResolvedValueOnce({ id: "o-3", status: "open_for_offers", proposedFare: 3.36, expiresAt: new Date().toISOString() });
     const t = await atReview();
-    press(t, "Send to riders");
+    press(t, "Send to bikers");
     await settle();
     expect(has(t, "Couldn't send. Check your data and try again.")).toBe(true);
     // The customer "checks their data": edits the price, then sends again.
     press(t, "Edit the price");
     type(t, "Your price in US dollars", "4.00");
     press(t, "Review");
-    press(t, "Send to riders");
+    press(t, "Send to bikers");
     await settle();
     // The answer is the $3.36 order the lost send made: it is the live one, and the app goes to it.
     expect(mockCreateOrder).toHaveBeenCalledTimes(2);
@@ -819,7 +819,7 @@ describe("send.tsx — step 4 · Review and send", () => {
     mockCreateOrder.mockRejectedValueOnce(new ApiError(0, "The network is slow — check your connection and try again."));
     mockCreateOrder.mockResolvedValueOnce({ id: "o-3", status: "open_for_offers", proposedFare: "3.36", distanceKm: null, expiresAt: new Date().toISOString(), ridersNearby: null });
     const t = await atReview();
-    press(t, "Send to riders");
+    press(t, "Send to bikers");
     await settle();
     press(t, "Try again");
     await settle();
@@ -834,14 +834,14 @@ describe("send.tsx — step 4 · Review and send", () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const t = await atReview(qc);
     mockGetMe.mockResolvedValue({ onHold: true });
-    press(t, "Send to riders");
+    press(t, "Send to bikers");
     await settle();
     mockGetMe.mockResolvedValue({ onHold: false });
     await act(async () => {
       await qc.refetchQueries({ queryKey: ["me"] });
     });
     await settle();
-    press(t, "Send to riders");
+    press(t, "Send to bikers");
     await settle();
     expect(mockCreateOrder.mock.calls[1][0].idempotencyKey).toBe(mockCreateOrder.mock.calls[0][0].idempotencyKey);
   });
@@ -850,12 +850,12 @@ describe("send.tsx — step 4 · Review and send", () => {
     mockCreateOrder.mockRejectedValueOnce(new ApiError(400, "Bad request"));
     mockCreateOrder.mockResolvedValueOnce({ id: "o-4", status: "open_for_offers", proposedFare: 4, expiresAt: new Date().toISOString() });
     const t = await atReview();
-    press(t, "Send to riders");
+    press(t, "Send to bikers");
     await settle();
     press(t, "Edit the price");
     type(t, "Your price in US dollars", "4.00");
     press(t, "Review");
-    press(t, "Send to riders");
+    press(t, "Send to bikers");
     await settle();
     expect(mockCreateOrder.mock.calls[1][0].idempotencyKey).not.toBe(mockCreateOrder.mock.calls[0][0].idempotencyKey);
   });
@@ -864,7 +864,7 @@ describe("send.tsx — step 4 · Review and send", () => {
     mockCreateOrder.mockRejectedValueOnce(new ApiError(0, "Can't reach LyniaGo — check your connection and try again."));
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const t = await atReview(qc);
-    press(t, "Send to riders");
+    press(t, "Send to bikers");
     await settle();
     expect(has(t, "Try again")).toBe(true);
     mockOnline = false;
@@ -885,19 +885,19 @@ describe("send.tsx — step 4 · Review and send", () => {
   it("returns to step 1 with the out-of-area notice when the server refuses the route", async () => {
     mockCreateOrder.mockRejectedValue(new ApiError(422, "Outside the service area", "out_of_area"));
     const t = await atReview();
-    press(t, "Send to riders");
+    press(t, "Send to bikers");
     await settle();
     expect(has(t, "Couldn't send. Check your data and try again.")).toBe(false);
     expect(has(t, "We don't cover that pickup or drop-off yet. We deliver across Harare, Chitungwiza, Norton, Ruwa, Epworth, Domboshava, Mt Hampden and Goromonzi.")).toBe(true);
     expect(isDisabled(t, "Next")).toBe(true);
   });
 
-  it("offline: says so and keeps Send to riders disabled, while the steps stay usable", async () => {
+  it("offline: says so and keeps Send to bikers disabled, while the steps stay usable", async () => {
     mockOnline = false;
     const t = await atReview();
     expect(has(t, "You're offline. What you've entered is saved.")).toBe(true);
     expect(has(t, "Connect to the internet to send.")).toBe(true);
-    expect(isDisabled(t, "Send to riders")).toBe(true);
+    expect(isDisabled(t, "Send to bikers")).toBe(true);
   });
 });
 
@@ -957,7 +957,7 @@ describe("send.tsx — U17: the compose survives an app kill or a page reload", 
     await settle();
     completeWhere(active);
     type(active, "Item 1", "Documents envelope");
-    type(active, "Note for the rider (optional)", "Blue gate");
+    type(active, "Note for the biker (optional)", "Blue gate");
     type(active, "Your phone (sender)", "0772451180");
     type(active, "Recipient phone", "0715550090");
     await settle(600);
@@ -1000,7 +1000,7 @@ describe("send.tsx — U17: the compose survives an app kill or a page reload", 
     completeWhere(active);
     completeWhat(active);
     press(active, "Review");
-    press(active, "Send to riders");
+    press(active, "Send to bikers");
     await settle();
     const sentKey = mockCreateOrder.mock.calls[0][0].idempotencyKey;
     expect(stored().sentKey).toBe(sentKey);
@@ -1022,7 +1022,7 @@ describe("send.tsx — U17: the compose survives an app kill or a page reload", 
     completeWhere(active);
     completeWhat(active);
     press(active, "Review");
-    press(active, "Send to riders");
+    press(active, "Send to bikers");
     await settle();
     const firstKey = mockCreateOrder.mock.calls[0][0].idempotencyKey;
     act(() => active!.unmount());
@@ -1034,7 +1034,7 @@ describe("send.tsx — U17: the compose survives an app kill or a page reload", 
     type(active, "Recipient phone", "0715550090");
     press(active, "Next");
     press(active, "Review");
-    press(active, "Send to riders");
+    press(active, "Send to bikers");
     await settle();
     expect(mockCreateOrder.mock.calls[1][0].idempotencyKey).toBe(firstKey);
     expect(mockReplace).toHaveBeenCalledWith("/order/o-1");
@@ -1098,7 +1098,7 @@ describe("send.tsx — U17: the compose survives an app kill or a page reload", 
     type(t, "Recipient phone", "0715550090");
     press(t, "Next");
     press(t, "Review");
-    press(t, "Send to riders");
+    press(t, "Send to bikers");
     await settle();
   }
 
@@ -1112,7 +1112,7 @@ describe("send.tsx — U17: the compose survives an app kill or a page reload", 
     // The refresh token expired: the app signs out and clearDeviceState deletes the slot.
     mockProfileId = null;
     delete mockSecureStore[DRAFT];
-    type(active, "Note for the rider (optional)", "Blue gate");
+    type(active, "Note for the biker (optional)", "Blue gate");
     await settle(600);
     act(() => active!.unmount());
     active = null;

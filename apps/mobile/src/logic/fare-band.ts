@@ -41,7 +41,7 @@ export function fareBand(suggestedFare: number): FareBand | null {
 
 /** Human copy for a band, e.g. "Riders usually accept around $2.10–$3.00". */
 export function fareBandHint(band: FareBand): string {
-  return `Riders usually accept around $${band.low.toFixed(2)}–$${band.high.toFixed(2)}`;
+  return `Bikers usually accept around $${band.low.toFixed(2)}–$${band.high.toFixed(2)}`;
 }
 
 /**

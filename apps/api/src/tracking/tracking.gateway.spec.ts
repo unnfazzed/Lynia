@@ -90,7 +90,7 @@ function gateway(tracking: Partial<TrackingService> = {}) {
 }
 
 describe("TrackingGateway.boardSubscribe", () => {
-  it("loc-less: joins the city-wide board room for a verified + online rider", async () => {
+  it("loc-less: joins the city-wide board room for a verified + online biker", async () => {
     const g = gateway({ isBoardEligible: vi.fn(async () => true) });
     const client = fakeSocket({ sub: "rider-1", role: "rider" });
     const res = await g.boardSubscribe(client as never, {});
@@ -279,7 +279,7 @@ describe("TrackingGateway board-room re-scope serialization (BH-25)", () => {
 });
 
 describe("TrackingGateway.kickRiderFromBoard (KB-BOARD-REVOKE)", () => {
-  it("forces the target rider's socket(s) to leave EVERY board room but keeps their order room", async () => {
+  it("forces the target biker's socket(s) to leave EVERY board room but keeps their order room", async () => {
     const kept = orderRoom("their-active-order");
     const sock = remoteSocket("rider-1", [BOARD_ROOM, "board:geo:1:2", "board:geo:1:3", kept]);
     const { server } = fakeServer([sock]);
@@ -297,7 +297,7 @@ describe("TrackingGateway.kickRiderFromBoard (KB-BOARD-REVOKE)", () => {
     expect(sock.rooms.has(kept)).toBe(true);
   });
 
-  it("only kicks the matching rider — a different rider's board rooms are left alone", async () => {
+  it("only kicks the matching biker — a different biker's board rooms are left alone", async () => {
     const target = remoteSocket("rider-1", [BOARD_ROOM]);
     const other = remoteSocket("rider-2", [BOARD_ROOM, "board:geo:9:9"]);
     const { server } = fakeServer([target, other]);
@@ -323,8 +323,8 @@ describe("TrackingGateway.kickRiderFromBoard (KB-BOARD-REVOKE)", () => {
   });
 });
 
-describe("TrackingGateway.emitFoodOffer / emitFoodOfferClosed (C5 rider offer alarm channel)", () => {
-  it("emitFoodOffer pushes food:offer straight to the candidate rider's socket(s), no room", async () => {
+describe("TrackingGateway.emitFoodOffer / emitFoodOfferClosed (C5 biker offer alarm channel)", () => {
+  it("emitFoodOffer pushes food:offer straight to the candidate biker's socket(s), no room", async () => {
     const target = remoteSocket("rider-1", []);
     const other = remoteSocket("rider-2", []);
     const { server } = fakeServer([target, other]);
@@ -339,7 +339,7 @@ describe("TrackingGateway.emitFoodOffer / emitFoodOfferClosed (C5 rider offer al
     expect(other.emit).not.toHaveBeenCalled();
   });
 
-  it("emitFoodOfferClosed pushes food:offer-closed with orderId + at, to the matched rider only", async () => {
+  it("emitFoodOfferClosed pushes food:offer-closed with orderId + at, to the matched biker only", async () => {
     const target = remoteSocket("rider-1", []);
     const { server } = fakeServer([target]);
     const g = gateway();
@@ -499,7 +499,7 @@ describe("TrackingGateway.riderLocation", () => {
     expect(emit).toHaveBeenCalledWith(WS_EVENTS.position, expect.objectContaining({ lat: -17.8, lng: 31.0 }));
   });
 
-  it("Merchant v2 (D-77): pings the merchant's queue when the rider's leg changed (arrival / ETA)", async () => {
+  it("Merchant v2 (D-77): pings the merchant's queue when the biker's leg changed (arrival / ETA)", async () => {
     const { server, to, emit } = fakeServer();
     const observeRiderLeg = vi.fn(async () => ({ merchantId: "m1" }));
     const g = gateway({ isAssignedRider: vi.fn(async () => true), recordFix: vi.fn(async () => {}), observeRiderLeg });
@@ -521,7 +521,7 @@ describe("TrackingGateway.riderLocation", () => {
     expect(await g.riderLocation(fakeSocket({ sub: "rider-1", role: "rider" }) as never, { orderId: ORD_UUID, lat: -17.8, lng: 31.0 })).toEqual({ ok: true });
   });
 
-  it("rejects a non-assigned rider before any emit (auth precedes the push)", async () => {
+  it("rejects a non-assigned biker before any emit (auth precedes the push)", async () => {
     const { server, to } = fakeServer();
     const g = gateway({ isAssignedRider: vi.fn(async () => false) });
     g.server = server as never;
@@ -643,7 +643,7 @@ describe("TrackingGateway.prunePositionRooms", () => {
 });
 
 describe("TrackingGateway.handleDisconnect", () => {
-  it("flushes the rider's last live position to PG (best-effort) when a user is present", () => {
+  it("flushes the biker's last live position to PG (best-effort) when a user is present", () => {
     const flushToPg = vi.fn(async () => {});
     const g = gateway({ flushToPg });
     const client = fakeSocket({ sub: "rider-1", role: "rider" });
@@ -738,7 +738,7 @@ describe("TrackingGateway.emitJobCancelled (C3)", () => {
     expect(emit).toHaveBeenCalledWith(WS_EVENTS.jobCancelled, expect.objectContaining({ collected: false }));
   });
 
-  it("carries cancelledBy:admin for an ops-initiated cancel — the rider terminal must not blame the customer", () => {
+  it("carries cancelledBy:admin for an ops-initiated cancel — the biker terminal must not blame the customer", () => {
     const { server, emit } = fakeServer();
     const g = gateway();
     g.server = server as never;
@@ -767,7 +767,7 @@ describe("TrackingGateway.scanPresence (C5 watchdog)", () => {
     expect(emit).toHaveBeenCalledTimes(1);
   });
 
-  it("re-arms after the order recovers (rider reconnected / ride ended)", async () => {
+  it("re-arms after the order recovers (biker reconnected / ride ended)", async () => {
     const stale = [{ orderId: "ord-1", riderId: "r1", lastSeenAt: null }];
     let round = 0;
     // scan 1: stale → emit; scan 2: recovered (empty) → drop + BH-25 recovery emit; scan 3: stale again → emit.
@@ -847,7 +847,7 @@ describe("TrackingGateway.scanPresence (C5 watchdog)", () => {
     );
   });
 
-  it("does NOT escalate a stale-heartbeat rider whose socket is live in the order room (parked ≠ dark)", async () => {
+  it("does NOT escalate a stale-heartbeat biker whose socket is live in the order room (parked ≠ dark)", async () => {
     // Heartbeat is stale — fixes are distance-gated, the rider just hasn't moved — but the assigned
     // rider's socket sits in the order room cluster-wide. No false "rider went dark" to the customer;
     // the heartbeat is refreshed instead so the DB authority self-heals.
@@ -878,7 +878,7 @@ describe("TrackingGateway.scanPresence (C5 watchdog)", () => {
     );
   });
 
-  it("self-heals a previously-escalated order once the rider's socket returns while still parked", async () => {
+  it("self-heals a previously-escalated order once the biker's socket returns while still parked", async () => {
     // Genuine dark spell → escalated. The rider reconnects but stays parked (heartbeat still stale).
     // The liveness check runs BEFORE the notified-skip, so the returning socket refreshes the heartbeat
     // (self-heal) instead of leaving the order stuck stale — and no repeat emit fires.
@@ -1127,7 +1127,7 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
     }
   });
 
-  it("does not track the order's ASSIGNED RIDER as customer presence (order relationship, not role)", async () => {
+  it("does not track the order's ASSIGNED BIKER as customer presence (order relationship, not role)", async () => {
     vi.useFakeTimers();
     try {
       const { server, emit } = fakeServer();
@@ -1148,8 +1148,8 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
     }
   });
 
-  it("BH-20: a (re)joining rider socket is told presence:stale directly when the customer is currently escalated — " +
-    "closes the gap where the rider's socket was disconnected at the exact moment a presence:stale/recovered fired " +
+  it("BH-20: a (re)joining biker socket is told presence:stale directly when the customer is currently escalated — " +
+    "closes the gap where the biker's socket was disconnected at the exact moment a presence:stale/recovered fired " +
     "to the room, so the rejoin never learned the customer's actual current state", async () => {
     vi.useFakeTimers();
     try {
@@ -1168,8 +1168,8 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
     }
   });
 
-  it("BH-20: a (re)joining rider socket is told presence:recovered directly when the customer is NOT currently stale — " +
-    "closes the gap where a presence:recovered emitted to the room while the rider was disconnected was lost, " +
+  it("BH-20: a (re)joining biker socket is told presence:recovered directly when the customer is NOT currently stale — " +
+    "closes the gap where a presence:recovered emitted to the room while the biker was disconnected was lost, " +
     "leaving the 'customer may be offline' banner stuck", async () => {
     const { server } = fakeServer();
     const g = gateway({ ...customerTracking(), isAssignedRider: vi.fn(async () => true) });
@@ -1210,7 +1210,7 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
     }
   });
 
-  it("DS13-01: still escalates when the only socket in the room IS the assigned rider (customer genuinely dark)", async () => {
+  it("DS13-01: still escalates when the only socket in the room IS the assigned biker (customer genuinely dark)", async () => {
     vi.useFakeTimers();
     try {
       // The customer is genuinely gone; the sole socket in the room is the assigned rider. sub ===

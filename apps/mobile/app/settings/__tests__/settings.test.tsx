@@ -101,7 +101,7 @@ beforeEach(() => {
 });
 
 describe("D1 · the new look, every row kept (D-82 §2 #1)", () => {
-  it("a rider sees YOU → ALERTS → RIDER, then Sign out and Delete account last", async () => {
+  it("a biker sees YOU → ALERTS → BIKER, then Sign out and Delete account last", async () => {
     const s = out(await render(RIDER));
     const order = [
       "Settings",
@@ -130,7 +130,7 @@ describe("D1 · the new look, every row kept (D-82 §2 #1)", () => {
     expect(s).toContain('"Keep trips running"');
   });
 
-  it("a customer sees Order updates under ALERTS and no rider rows", async () => {
+  it("a customer sees Order updates under ALERTS and no biker rows", async () => {
     const s = out(await render(CUSTOMER));
     expect(s).toContain('"ALERTS"');
     expect(s).toContain('"Order updates"');
@@ -167,7 +167,7 @@ describe("Bike & documents · N to add", () => {
     expect(s).toContain('"1 to add"');
   });
 
-  it("with nothing to add, 'Verified' only for a verified rider with a plate (review R-8)", async () => {
+  it("with nothing to add, 'Verified' only for a verified biker with a plate (review R-8)", async () => {
     expect(out(await render(RIDER))).toContain('"Verified"');
   });
 });
@@ -196,7 +196,7 @@ describe("ALERTS toggles mirror the phone", () => {
     expect(mockPush).toHaveBeenCalledWith("/permissions?step=location");
   });
 
-  it("job alerts off reopens P9 (the rider flow's notification step)", async () => {
+  it("job alerts off reopens P9 (the biker flow's notification step)", async () => {
     mockNotifPerms.mockResolvedValue({ status: "undetermined", granted: false, canAskAgain: true });
     const t = await render(RIDER);
     await act(async () => toggle(t, "toggle-job-alerts").props.onPress());
@@ -222,7 +222,7 @@ describe("PC11 · order updates off", () => {
     const t = await render(CUSTOMER);
     const s = out(t);
     expect(s).toContain('"Order updates are off"');
-    expect(s).toContain('"You won’t hear when your rider arrives."');
+    expect(s).toContain('"You won’t hear when your biker arrives."');
     expect(toggle(t, "toggle-order-updates").props.accessibilityState.checked).toBe(false);
     mockNotifRequest.mockImplementation(async () => {
       mockNotifPerms.mockResolvedValue(GRANTED);
@@ -274,7 +274,7 @@ describe("Sign out (MA-H4)", () => {
     mockCalls.length = 0;
   });
 
-  it("a rider goes offline first, then signs out", async () => {
+  it("a biker goes offline first, then signs out", async () => {
     const t = await render(RIDER);
     await act(async () => {
       signOutRow(t).props.onPress();

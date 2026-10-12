@@ -105,7 +105,7 @@ const outAreaBlock = (v: string): string => `Pick an address ${v} delivers to`;
  *  Modelled on `O.r.rxBlocked` ("Add a photo of your prescription to place this order"). */
 const RX_ASK = {
   patient: "Add the patient’s name to place this order",
-  consent: "Confirm you’ll show the original prescription to the rider",
+  consent: "Confirm you’ll show the original prescription to the biker",
 } as const;
 
 /** U23: a failure that may hide an order that landed — no answer at all (timeout, dropped link: status 0

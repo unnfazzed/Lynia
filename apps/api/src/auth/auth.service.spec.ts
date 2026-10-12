@@ -336,7 +336,7 @@ describe("AuthService.getProfile", () => {
     expect(me).toMatchObject({ profileId: "p1", role: "customer", firstName: "Tatenda", phone: "+263771111111", rider: null });
   });
 
-  it("nests the denormalized rider stats when the caller is a rider", async () => {
+  it("nests the denormalized biker stats when the caller is a biker", async () => {
     const { svc } = make(baseEnv, { profile: { findUnique: async () => riderRow } });
     const me = await svc.getProfile("p2");
     expect(me.rider).toMatchObject({ bikeReg: "ABZ 1234", kycStatus: "verified", ratingAvg: 4.8, tripsCount: 30, isOnline: true });
@@ -352,7 +352,7 @@ describe("AuthService.getProfile", () => {
   // object so the mobile client can tell "pending, waiting on a browser vendor flow" (auto) apart from
   // "pending, waiting on manual ops review, no browser step exists" (manual) instead of always
   // assuming auto, which showed manual-mode riders a "finish it in the browser" dead end.
-  it("surfaces the deploy-wide KYC_MODE on the rider object", async () => {
+  it("surfaces the deploy-wide KYC_MODE on the biker object", async () => {
     const { svc } = make({ ...baseEnv, KYC_MODE: "manual" } as Env, { profile: { findUnique: async () => riderRow } });
     const me = await svc.getProfile("p2");
     expect(me.rider).toMatchObject({ kycMode: "manual" });
@@ -397,7 +397,7 @@ describe("AuthService.getProfile", () => {
 
   // D-70: the R3 "Commission-free jobs · N of 5 left" meter, from the same completed-job count the
   // debit and the online-gate use.
-  it("D-70: reports the commission-free first jobs left for a rider", async () => {
+  it("D-70: reports the commission-free first jobs left for a biker", async () => {
     const fresh = { ...riderRow, rider: { ...riderRow.rider, tripsCount: 0 } };
     const { svc: a } = make(baseEnv, { profile: { findUnique: async () => fresh } });
     expect((await a.getProfile("p2")).rider).toMatchObject({ freeJobs: { left: 5, total: 5 } });
@@ -524,7 +524,7 @@ describe("AuthService.updateProfile", () => {
     expect(rec.flag).toEqual({ where: { profileId: "p1" }, data: { duplicateIdFlag: false } });
   });
 
-  it("DS-11 lock: blocks a KYC-verified rider from CHANGING their national ID (locked post-verification)", async () => {
+  it("DS-11 lock: blocks a KYC-verified biker from CHANGING their national ID (locked post-verification)", async () => {
     const { svc, rec } = makeUpdate(0, { kycStatus: "verified", storedIdHash: pii.hashId("63-111111-A-11") });
     await expect(
       svc.updateProfile("p1", { firstName: "Chipo", lastName: "Marufu", idNumber: "63-222222-B-22" }),
@@ -534,7 +534,7 @@ describe("AuthService.updateProfile", () => {
     expect(rec.flag).toBeUndefined();
   });
 
-  it("DS-11 lock: a verified rider RE-SENDING the same ID is a no-op change, not a block", async () => {
+  it("DS-11 lock: a verified biker RE-SENDING the same ID is a no-op change, not a block", async () => {
     const { svc, rec } = makeUpdate(0, { kycStatus: "verified", storedIdHash: pii.hashId("63-111111-A-11") });
     await expect(
       svc.updateProfile("p1", { firstName: "Chipo", lastName: "Marufu", idNumber: "63-111111-A-11" }),
@@ -543,7 +543,7 @@ describe("AuthService.updateProfile", () => {
     expect(rec.written).toMatchObject({ idNumberHash: pii.hashId("63-111111-A-11") });
   });
 
-  it("DS-11 lock: a NOT-yet-verified rider may still change their ID (only verified is frozen)", async () => {
+  it("DS-11 lock: a NOT-yet-verified biker may still change their ID (only verified is frozen)", async () => {
     const { svc, rec } = makeUpdate(0, { kycStatus: "pending", storedIdHash: pii.hashId("63-111111-A-11") });
     await expect(
       svc.updateProfile("p1", { firstName: "Chipo", lastName: "Marufu", idNumber: "63-222222-B-22" }),
@@ -1254,7 +1254,7 @@ describe("AuthService.refresh", () => {
     await expect(svc.refresh(`${id}.${tokens.randomToken()}`)).rejects.toThrow(/invalid or expired/i);
   });
 
-  it("FRAUD P2-3: rejects refresh for a banned rider (standing backstop) — no token renewal", async () => {
+  it("FRAUD P2-3: rejects refresh for a banned biker (standing backstop) — no token renewal", async () => {
     const t = sessionTable("banned");
     const { token } = t.seed();
     const { svc } = make(baseEnv, t.prisma);
@@ -1263,14 +1263,14 @@ describe("AuthService.refresh", () => {
     expect(t.created()).toBe(0);
   });
 
-  it("FRAUD P2-3: rejects refresh for a suspended rider too", async () => {
+  it("FRAUD P2-3: rejects refresh for a suspended biker too", async () => {
     const t = sessionTable("suspended");
     const { token } = t.seed();
     const { svc } = make(baseEnv, t.prisma);
     await expect(svc.refresh(token)).rejects.toThrow(/not active/i);
   });
 
-  it("allows refresh for an active rider (standing backstop is not over-broad)", async () => {
+  it("allows refresh for an active biker (standing backstop is not over-broad)", async () => {
     const t = sessionTable("active");
     const { token } = t.seed();
     const { svc } = make(baseEnv, t.prisma);
@@ -1454,7 +1454,7 @@ describe("AuthService.refresh — replaying a rotation whose response was lost",
     await expect(svc.refresh(old.token)).rejects.toThrow(/invalid or expired/i);
   });
 
-  it("never replays for a banned rider — the standing gate comes first", async () => {
+  it("never replays for a banned biker — the standing gate comes first", async () => {
     const t = sessionTable("active");
     const old = t.seed();
     const { svc } = make(baseEnv, t.prisma);
@@ -1620,7 +1620,7 @@ describe("AuthService.getProfile — kycPendingState (P0-1 / D6)", () => {
     cancelStrikes: 0,
   };
 
-  it("derives the state for an auto-mode pending rider and returns it", async () => {
+  it("derives the state for an auto-mode pending biker and returns it", async () => {
     const spy = spyPendingState("in_flight");
     const { svc } = make(autoEnv, profileWithRider(pendingRider), spy.svc);
     const me = await svc.getProfile("p1");
@@ -1628,7 +1628,7 @@ describe("AuthService.getProfile — kycPendingState (P0-1 / D6)", () => {
     expect(spy.asked).toEqual(["sess_live"]);
   });
 
-  it("skips the derivation for a verified rider — nothing to resume", async () => {
+  it("skips the derivation for a verified biker — nothing to resume", async () => {
     const spy = spyPendingState();
     const { svc } = make(autoEnv, profileWithRider({ ...pendingRider, kycStatus: "verified" }), spy.svc);
     const me = await svc.getProfile("p1");
@@ -1708,7 +1708,7 @@ describe("AuthService.getProfile — kycPendingState (P0-1 / D6)", () => {
       expect(spy.asked).toHaveLength(0);
     });
 
-    it("a stored dead session is the rider's move, with no vendor call", async () => {
+    it("a stored dead session is the biker's move, with no vendor call", async () => {
       const spy = spyPendingState("in_flight");
       const dead = { ...pendingRider, kycSessionToken: null, kycSessionUrl: null, kycVendorStatus: "Expired" };
       const { svc } = make(autoEnv, profileWithRider(dead), spy.svc);

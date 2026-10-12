@@ -184,7 +184,7 @@ describe("useRiderTabBadges", () => {
     return { qc, out, go };
   }
 
-  it("counts jobs that land while the rider is on another tab, and clears on opening Jobs", async () => {
+  it("counts jobs that land while the biker is on another tab, and clears on opening Jobs", async () => {
     const { qc, out, go } = setup("index");
     await settle(() => {
       qc.setQueryData(["openOrders"], [{ id: "j1" }]);

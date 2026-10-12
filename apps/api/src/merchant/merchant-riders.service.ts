@@ -93,10 +93,10 @@ export class MerchantRidersService {
 
   async add(access: MerchantAccess, profileId: string, body: AddMerchantRiderRequest): Promise<MerchantPreferredRiderResponse> {
     const phone = normalizePhone(body.phone);
-    if (!phone) throw new BadRequestException({ reason: "bad_phone", message: "Enter the number the rider signs in with, like 0771234567." });
+    if (!phone) throw new BadRequestException({ reason: "bad_phone", message: "Enter the number the biker signs in with, like 0771234567." });
     const onTeam = await this.prisma.merchantMember.count({ where: { merchantId: access.merchantId, profile: { phone } } });
     if (onTeam > 0) {
-      throw new ConflictException({ reason: "team_member", message: "That number is on your team, so it can't be one of your riders." });
+      throw new ConflictException({ reason: "team_member", message: "That number is on your team, so it can't be one of your bikers." });
     }
 
     let id: string;
@@ -108,7 +108,7 @@ export class MerchantRidersService {
         if (kept >= MERCHANT_PREFERRED_RIDER_CAP) {
           throw new ConflictException({
             reason: "cap_reached",
-            message: `You can keep up to ${MERCHANT_PREFERRED_RIDER_CAP} riders. Remove one to add another.`,
+            message: `You can keep up to ${MERCHANT_PREFERRED_RIDER_CAP} bikers. Remove one to add another.`,
           });
         }
         const addedToday = await tx.auditLog.count({
@@ -116,7 +116,7 @@ export class MerchantRidersService {
         });
         if (addedToday >= MERCHANT_PREFERRED_RIDER_DAILY_ADDS) {
           throw new HttpException(
-            { statusCode: 429, reason: "too_many_adds", message: `You've added ${MERCHANT_PREFERRED_RIDER_DAILY_ADDS} riders today. Add more tomorrow.` },
+            { statusCode: 429, reason: "too_many_adds", message: `You've added ${MERCHANT_PREFERRED_RIDER_DAILY_ADDS} bikers today. Add more tomorrow.` },
             429,
           );
         }
@@ -129,12 +129,12 @@ export class MerchantRidersService {
       });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-        throw new ConflictException({ reason: "already_added", message: "That number is already one of your riders." });
+        throw new ConflictException({ reason: "already_added", message: "That number is already one of your bikers." });
       }
       throw err;
     }
     const added = (await this.list(access)).riders.find((r) => r.id === id);
-    if (!added) throw new NotFoundException("Rider not found");
+    if (!added) throw new NotFoundException("Biker not found");
     return added;
   }
 
@@ -142,7 +142,7 @@ export class MerchantRidersService {
     await this.prisma.$transaction(async (tx) => {
       const gone = await tx.merchantPreferredRider.deleteMany({ where: { id, merchantId: access.merchantId } });
       // Another business's row reads as missing, never as forbidden: no oracle.
-      if (gone.count === 0) throw new NotFoundException("Rider not found");
+      if (gone.count === 0) throw new NotFoundException("Biker not found");
       await tx.auditLog.create({ data: { actor: profileId, action: RIDER_REMOVE_ACTION, target: access.merchantId, note: id } });
     });
     return { ok: true };
@@ -190,7 +190,7 @@ export class MerchantRidersService {
       jobs,
       ratingAvg: jobs > 0 ? (done?.ratingAvg ?? null) : null,
       // Who they are on LyniaGo stays private until they have worked for this business.
-      rider: person && jobs > 0 ? { name: name || "Rider", photoUrl: person.photoUrl ?? null } : null,
+      rider: person && jobs > 0 ? { name: name || "Biker", photoUrl: person.photoUrl ?? null } : null,
       addedAt: row.createdAt.toISOString(),
     };
   }

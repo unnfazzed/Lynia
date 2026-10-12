@@ -26,10 +26,10 @@ function build(
 
 const ids = (list: Array<{ riderId: string }>) => list.map((c) => c.riderId);
 
-describe("NearestRiderDispatchStrategy.pickCandidates — the restaurant's own riders (merchant web upgrade L3)", () => {
+describe("NearestRiderDispatchStrategy.pickCandidates — the restaurant's own bikers (merchant web upgrade L3)", () => {
   const at = { lat: 0, lng: 0, radiusM: 5000, excludeRiderIds: [] as string[], limit: null };
 
-  it("puts one of the restaurant's riders first when they're within 2 km of the nearest", async () => {
+  it("puts one of the restaurant's bikers first when they're within 2 km of the nearest", async () => {
     const strategy = build([
       { profileId: "near", distanceM: 300 },
       { profileId: "mine", distanceM: 2200 },
@@ -48,7 +48,7 @@ describe("NearestRiderDispatchStrategy.pickCandidates — the restaurant's own r
     expect(ids(await strategy.pickCandidates({ ...at, preferredRiderIds: ["mine"] }))).toEqual(["near", "mine"]);
   });
 
-  it("never lets preferred bend eligibility: a busy, excluded or owing rider of the restaurant's is left out", async () => {
+  it("never lets preferred bend eligibility: a busy, excluded or owing biker of the restaurant's is left out", async () => {
     const nearby = [
       { profileId: "near", distanceM: 300 },
       { profileId: "mine", distanceM: 800 },
@@ -60,7 +60,7 @@ describe("NearestRiderDispatchStrategy.pickCandidates — the restaurant's own r
     expect(ids(await build([{ profileId: "near", distanceM: 300 }]).pickCandidates({ ...at, preferredRiderIds: ["mine"] }))).toEqual(["near"]);
   });
 
-  it("orders several of the restaurant's riders by distance, then rating", async () => {
+  it("orders several of the restaurant's bikers by distance, then rating", async () => {
     const nearby = [
       { profileId: "near", distanceM: 200 },
       { profileId: "a", distanceM: 900 },
@@ -73,7 +73,7 @@ describe("NearestRiderDispatchStrategy.pickCandidates — the restaurant's own r
     expect(ids(await build(nearby, [], [], { a: 4.2, c: 5 }).pickCandidates({ ...at, preferredRiderIds: ["a", "c"] }))).toEqual(["a", "c", "near", "b"]);
   });
 
-  it("is exactly nearest-first with no riders of the restaurant's own", async () => {
+  it("is exactly nearest-first with no bikers of the restaurant's own", async () => {
     const strategy = build([
       { profileId: "near", distanceM: 300 },
       { profileId: "far", distanceM: 900 },
@@ -82,7 +82,7 @@ describe("NearestRiderDispatchStrategy.pickCandidates — the restaurant's own r
     expect(ids(await strategy.pickCandidates(at))).toEqual(["near", "far"]);
   });
 
-  it("caps the list at `limit` after ordering, so the restaurant's own riders survive the cut", async () => {
+  it("caps the list at `limit` after ordering, so the restaurant's own bikers survive the cut", async () => {
     const nearby = Array.from({ length: 12 }, (_, i) => ({ profileId: `r${i}`, distanceM: 100 + i * 100 }));
     const top = await build(nearby).pickCandidates({ ...at, preferredRiderIds: ["r11"], limit: 10 });
     expect(top).toHaveLength(10);
@@ -98,7 +98,7 @@ describe("NearestRiderDispatchStrategy.pickCandidates", () => {
     expect(await build([]).pickCandidates(at)).toEqual([]);
   });
 
-  it("lists every eligible rider nearest-first (nearbyRiders is already nearest-first)", async () => {
+  it("lists every eligible biker nearest-first (nearbyRiders is already nearest-first)", async () => {
     const strategy = build([
       { profileId: "r1", distanceM: 400 },
       { profileId: "r2", distanceM: 900 },
@@ -109,7 +109,7 @@ describe("NearestRiderDispatchStrategy.pickCandidates", () => {
     ]);
   });
 
-  it("leaves out a rider who passed on or dropped this order (excluded this cycle)", async () => {
+  it("leaves out a biker who passed on or dropped this order (excluded this cycle)", async () => {
     const strategy = build([
       { profileId: "r1", distanceM: 400 },
       { profileId: "r2", distanceM: 900 },
@@ -117,19 +117,19 @@ describe("NearestRiderDispatchStrategy.pickCandidates", () => {
     expect(ids(await strategy.pickCandidates({ ...at, excludeRiderIds: ["r1"] }))).toEqual(["r2"]);
   });
 
-  it("leaves out a rider currently on an active ride (would fail one_active_ride anyway)", async () => {
+  it("leaves out a biker currently on an active ride (would fail one_active_ride anyway)", async () => {
     const strategy = build([{ profileId: "r1", distanceM: 400 }, { profileId: "r2", distanceM: 900 }], ["r1"]);
     expect(ids(await strategy.pickCandidates(at))).toEqual(["r2"]);
   });
 
   // C4: a rider owing a merchant a collect-and-return debt, or mid-doorstep handshake, isn't offered a
   // SECOND food job until it settles (N-20/R-05).
-  it("leaves out a rider owing an open merchant debt / mid-handshake", async () => {
+  it("leaves out a biker owing an open merchant debt / mid-handshake", async () => {
     const strategy = build([{ profileId: "r1", distanceM: 400 }, { profileId: "r2", distanceM: 900 }], [], ["r1"]);
     expect(ids(await strategy.pickCandidates(at))).toEqual(["r2"]);
   });
 
-  it("returns nobody when every nearby rider is excluded/busy", async () => {
+  it("returns nobody when every nearby biker is excluded/busy", async () => {
     expect(await build([{ profileId: "r1", distanceM: 400 }], ["r1"]).pickCandidates(at)).toEqual([]);
   });
 });

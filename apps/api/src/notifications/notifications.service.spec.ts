@@ -68,7 +68,7 @@ describe("NotificationsService — token registry", () => {
 });
 
 describe("NotificationsService — order-status notices", () => {
-  it("notifies the RIDER on `assigned`, to all their devices in one batch, with order data", async () => {
+  it("notifies the BIKER on `assigned`, to all their devices in one batch, with order data", async () => {
     const { prisma, push, service } = makeDeps();
     prisma.order.findUnique.mockResolvedValue({ customerId: "cust", orderType: "parcel", riderId: "rider" });
     prisma.deviceToken.findMany.mockResolvedValue([{ token: "r1" }, { token: "r2" }]);
@@ -160,7 +160,7 @@ describe("NotificationsService — order-status notices", () => {
     expect(push.sendEach).not.toHaveBeenCalled();
   });
 
-  it("drops a null rider audience (e.g. `completed` on an order with no rider)", async () => {
+  it("drops a null biker audience (e.g. `completed` on an order with no biker)", async () => {
     const { prisma, push, service } = makeDeps();
     prisma.order.findUnique.mockResolvedValue({ customerId: "cust", orderType: "parcel", riderId: null });
     await service.notifyOrderStatus("o1", "completed"); // → rider only, but rider is null
@@ -170,7 +170,7 @@ describe("NotificationsService — order-status notices", () => {
 
   // U12 (2026-10-07): `en_route_dropoff` fires right after pickup (the rider app steps on to it at once),
   // so a food order's "{n} is at your door · Have $X cash ready" reached the customer ~20 min early.
-  it("U12: sends NO push for a food order's `en_route_dropoff` — the rider has only just collected", async () => {
+  it("U12: sends NO push for a food order's `en_route_dropoff` — the biker has only just collected", async () => {
     const { prisma, push, service } = makeDeps();
     prisma.order.findUnique.mockResolvedValue({ customerId: "cust", orderType: "merchant", riderId: "rider" });
     prisma.deviceToken.findMany.mockResolvedValue([{ token: "c1" }]);
@@ -400,7 +400,7 @@ describe("NotificationsService — notifyOrderExpired copy (after-send v2 \"No m
     await service.notifyOrderExpired("o1", false, true);
 
     const sent = (push.sendEach as ReturnType<typeof vi.fn>).mock.calls[0][0][0];
-    expect(sent).toMatchObject({ title: "No rider took $3.36", body: "Send again at $3.86 in one tap.", data: { orderId: "o1", status: "expired" } });
+    expect(sent).toMatchObject({ title: "No biker took $3.36", body: "Send again at $3.86 in one tap.", data: { orderId: "o1", status: "expired" } });
   });
 
   it("uses the same copy with no bids (supply present or unknown)", async () => {
@@ -411,7 +411,7 @@ describe("NotificationsService — notifyOrderExpired copy (after-send v2 \"No m
     await service.notifyOrderExpired("o1", false, false);
 
     const sent = (push.sendEach as ReturnType<typeof vi.fn>).mock.calls[0][0][0];
-    expect(sent).toMatchObject({ title: "No rider took $3.00", body: "Send again at $3.50 in one tap." });
+    expect(sent).toMatchObject({ title: "No biker took $3.00", body: "Send again at $3.50 in one tap." });
   });
 
   it("falls back to the static notice when the price can't be read", async () => {
@@ -422,7 +422,7 @@ describe("NotificationsService — notifyOrderExpired copy (after-send v2 \"No m
     await service.notifyOrderExpired("o1", false, false);
 
     const sent = (push.sendEach as ReturnType<typeof vi.fn>).mock.calls[0][0][0];
-    expect(sent.title).toBe("No riders yet");
+    expect(sent.title).toBe("No bikers yet");
   });
 
   it("no-supply keeps its honest 'nobody was online' copy", async () => {
@@ -433,7 +433,7 @@ describe("NotificationsService — notifyOrderExpired copy (after-send v2 \"No m
     await service.notifyOrderExpired("o1", true, false);
 
     const sent = (push.sendEach as ReturnType<typeof vi.fn>).mock.calls[0][0][0];
-    expect(sent.title).toBe("No riders online nearby");
+    expect(sent.title).toBe("No bikers online nearby");
   });
 });
 
@@ -453,7 +453,7 @@ describe("NotificationsService — new-offer notice", () => {
     ]);
   });
 
-  it("the first offer names the rider (first name + initial), the price and their pickup ETA", async () => {
+  it("the first offer names the biker (first name + initial), the price and their pickup ETA", async () => {
     const { prisma, push, service } = makeDeps();
     Object.assign(prisma, { offer: { findMany: vi.fn().mockResolvedValue([offerRow("3", 6, "Tendai", "Moyo")]), count: vi.fn() } });
     prisma.deviceToken.findMany.mockResolvedValue([{ token: "c1" }]);
@@ -473,7 +473,7 @@ describe("NotificationsService — new-offer notice", () => {
     prisma.deviceToken.findMany.mockResolvedValue([{ token: "c1" }]);
     await service.notifyNewOffer("o1", "cust");
     const sent = (push.sendEach as ReturnType<typeof vi.fn>).mock.calls[0][0][0];
-    expect(sent).toMatchObject({ title: "3 offers for your parcel", body: "Choose a rider before the timer ends." });
+    expect(sent).toMatchObject({ title: "3 offers for your parcel", body: "Choose a biker before the timer ends." });
   });
 
   it("still pushes (generic copy) when the offer lookup fails", async () => {
@@ -517,15 +517,15 @@ describe("NotificationsService — parcel customer stage copy (after-send v2)", 
     expect(sent).toMatchObject({ token: "cust-tok", title, body, data: { orderId: "o1", status, to: "customer", orderType: "parcel" } });
   });
 
-  it("falls back to 'your rider' / 'the drop-off' / no time when the names and stamps are missing", async () => {
+  it("falls back to 'your biker' / 'the drop-off' / no time when the names and stamps are missing", async () => {
     const bare = parcel({ rider: null, dropoff: { point: { lat: 0, lng: 0 } }, deliveredAt: null, undeliveredReason: null });
-    expect((await sentFor("en_route_pickup", bare))[0]).toMatchObject({ title: "Your rider is on the way to pickup" });
-    expect((await sentFor("picked_up", bare))[0]).toMatchObject({ title: "Your rider has your parcel", body: "On the way to the drop-off." });
-    expect((await sentFor("delivered", bare))[0]).toMatchObject({ body: "Tap to rate your rider." });
-    expect((await sentFor("undelivered", bare))[0]).toMatchObject({ body: "Call your rider to sort it out." });
+    expect((await sentFor("en_route_pickup", bare))[0]).toMatchObject({ title: "Your biker is on the way to pickup" });
+    expect((await sentFor("picked_up", bare))[0]).toMatchObject({ title: "Your biker has your parcel", body: "On the way to the drop-off." });
+    expect((await sentFor("delivered", bare))[0]).toMatchObject({ body: "Tap to rate your biker." });
+    expect((await sentFor("undelivered", bare))[0]).toMatchObject({ body: "Call your biker to sort it out." });
   });
 
-  it("cancelled: the customer gets 'Your order was cancelled', the rider keeps the rider copy", async () => {
+  it("cancelled: the customer gets 'Your order was cancelled', the biker keeps the biker copy", async () => {
     const sent = await sentFor("cancelled", parcel());
     expect(sent.find((m) => m.token === "cust-tok")).toMatchObject({ title: "Your order was cancelled", body: "Open to see why. Nothing to pay." });
     expect(sent.find((m) => m.token === "rider-tok")).toMatchObject({ title: "Order cancelled", body: "This delivery was cancelled." });
@@ -592,7 +592,7 @@ describe("NotificationsService — issue-resolved notice (UX26-03)", () => {
     ]);
   });
 
-  it("stamps status + to:'rider' when the opener is the rider, so a rider still on the job routes straight there", async () => {
+  it("stamps status + to:'biker' when the opener is the biker, so a biker still on the job routes straight there", async () => {
     const { prisma, push, service } = makeDeps();
     prisma.deviceToken.findMany.mockResolvedValue([{ token: "r1" }]);
     await service.notifyIssueResolved("rider-1", "o1", "close_no_action", "assigned");
@@ -602,8 +602,8 @@ describe("NotificationsService — issue-resolved notice (UX26-03)", () => {
   });
 });
 
-describe("NotificationsService — new-broadcast notice (rider primary channel, CONCEPT §3.10)", () => {
-  it("pushes the new order to every supplied nearby rider, batched, with a `broadcast` kind", async () => {
+describe("NotificationsService — new-broadcast notice (biker primary channel, CONCEPT §3.10)", () => {
+  it("pushes the new order to every supplied nearby biker, batched, with a `broadcast` kind", async () => {
     const { prisma, push, service } = makeDeps();
     prisma.deviceToken.findMany.mockResolvedValue([{ token: "ra" }, { token: "rb" }]);
     await service.notifyNewBroadcast("o1", ["riderA", "riderB"], { pickup: "Avondale shops", fare: "4.50" });
@@ -617,7 +617,7 @@ describe("NotificationsService — new-broadcast notice (rider primary channel, 
     ]);
   });
 
-  it("is a no-op (no token lookup, no send) when no riders are nearby", async () => {
+  it("is a no-op (no token lookup, no send) when no bikers are nearby", async () => {
     const { prisma, push, service } = makeDeps();
     await service.notifyNewBroadcast("o1", [], { pickup: "Avondale shops", fare: "4.50" });
     expect(prisma.deviceToken.findMany).not.toHaveBeenCalled();

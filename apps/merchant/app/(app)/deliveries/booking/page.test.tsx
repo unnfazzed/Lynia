@@ -60,7 +60,7 @@ afterEach(() => {
   nav.id = ID;
 });
 
-describe("D4 · Pick a rider (merchant mobile, D-48)", () => {
+describe("D4 · Pick a biker (merchant mobile, D-48)", () => {
   it("shows the countdown, what was offered, every offer with its difference, and a teammate's offer can't be picked", async () => {
     vi.mocked(getBooking).mockResolvedValue(
       merchantBooking({
@@ -83,7 +83,7 @@ describe("D4 · Pick a rider (merchant mobile, D-48)", () => {
     expect(screen.getByText("On your team, so they can't take your own delivery.")).toBeTruthy();
   });
 
-  it("puts the business's own rider on top as the Preferred rider, and sorts by cheapest or closest", async () => {
+  it("puts the business's own biker on top as the Preferred biker, and sorts by cheapest or closest", async () => {
     vi.mocked(getBooking).mockResolvedValue(
       merchantBooking({
         expiresAt: new Date(Date.now() + 80_000).toISOString(),
@@ -98,12 +98,12 @@ describe("D4 · Pick a rider (merchant mobile, D-48)", () => {
     expect(picks.map((b) => b.textContent)).toEqual(["Pick Tino", "Pick Blessing"]);
     expect(picks[0]!.className).toBe("m-btn");
     expect(picks[1]!.className).toBe("m-gh");
-    expect(screen.getByText("Preferred rider")).toBeTruthy();
+    expect(screen.getByText("Preferred biker")).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Cheapest" }));
     expect(screen.getAllByRole("button", { name: /^Pick / }).map((b) => b.textContent)).toEqual(["Pick Blessing", "Pick Tino"]);
   });
 
-  it("picking a rider goes to tracking with the buyer's code, kept in this browser, sent on WhatsApp", async () => {
+  it("picking a biker goes to tracking with the buyer's code, kept in this browser, sent on WhatsApp", async () => {
     vi.mocked(getBooking).mockResolvedValue(merchantBooking({ expiresAt: new Date(Date.now() + 80_000).toISOString(), offers: [bookingOffer()] }));
     vi.mocked(pickOffer).mockResolvedValue({
       booking: merchantBooking({ state: "coming", status: "assigned", expiresAt: null, rider: RIDER, agreedFare: "3.50" }),
@@ -118,7 +118,7 @@ describe("D4 · Pick a rider (merchant mobile, D-48)", () => {
     const wa = screen.getByRole("link", { name: "Send to buyer" }).getAttribute("href")!;
     expect(wa.startsWith("https://wa.me/263771234567?text=")).toBe(true);
     expect(decodeURIComponent(wa.split("?text=")[1]!)).toBe(
-      "Hi, it's Mbare Auto Spares. Blessing Moyo (ABC 1234) is bringing your order. When it arrives, give the rider this code: 482915",
+      "Hi, it's Mbare Auto Spares. Blessing Moyo (ABC 1234) is bringing your order. When it arrives, give the biker this code: 482915",
     );
     expect(screen.getByRole("link", { name: "Call Blessing M." }).getAttribute("href")).toBe("tel:+263772222222");
   });
@@ -132,14 +132,14 @@ describe("D4 · Pick a rider (merchant mobile, D-48)", () => {
     await waitFor(() => expect(getBooking).toHaveBeenCalledTimes(2));
   });
 
-  it("MJ-RL3: a pick whose answer was lost went through — the reload shows the rider, with no stale error", async () => {
+  it("MJ-RL3: a pick whose answer was lost went through — the reload shows the biker, with no stale error", async () => {
     vi.mocked(getBooking)
       .mockResolvedValueOnce(merchantBooking({ expiresAt: new Date(Date.now() + 80_000).toISOString(), offers: [bookingOffer()] }))
       .mockResolvedValue(merchantBooking({ state: "coming", status: "assigned", expiresAt: null, rider: RIDER, agreedFare: "3.50" }));
     vi.mocked(pickOffer).mockRejectedValue(new ApiError(0, "Couldn't reach the server — check the connection and try again."));
     render(<Page />);
     fireEvent.click(await screen.findByRole("button", { name: "Pick Blessing" }));
-    expect(await screen.findByText("Rider coming to your shop")).toBeTruthy();
+    expect(await screen.findByText("Biker coming to your shop")).toBeTruthy();
     await waitFor(() => expect(screen.queryByText("Couldn't reach the server — check the connection and try again.")).toBeNull());
     // No code came back, so a new one is a tap away.
     expect(screen.getByRole("button", { name: "Get a new code" })).toBeTruthy();
@@ -151,7 +151,7 @@ describe("D5 · Tracking", () => {
     vi.mocked(getBooking).mockResolvedValue(merchantBooking({ state: "coming", expiresAt: null, rider: RIDER }));
     vi.mocked(rotateBookingCode).mockResolvedValue({ deliveryCode: "105377" });
     render(<Page />);
-    expect(await screen.findByText("Rider coming to your shop")).toBeTruthy();
+    expect(await screen.findByText("Biker coming to your shop")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Get a new code" }));
     // MJ-RL6: the buyer's code dies with it, so it asks first.
     expect(screen.getByText("The buyer's old code stops working.")).toBeTruthy();
@@ -164,20 +164,20 @@ describe("D5 · Tracking", () => {
   it("MJ-RL6: Keep leaves the buyer's code alone", async () => {
     vi.mocked(getBooking).mockResolvedValue(merchantBooking({ state: "coming", expiresAt: null, rider: RIDER }));
     render(<Page />);
-    expect(await screen.findByText("Rider coming to your shop")).toBeTruthy();
+    expect(await screen.findByText("Biker coming to your shop")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Get a new code" }));
     fireEvent.click(screen.getAllByRole("button", { name: "Keep" }).at(-1)!);
     expect(screen.queryByText("The buyer's old code stops working.")).toBeNull();
     expect(rotateBookingCode).not.toHaveBeenCalled();
   });
 
-  it("K5: Step 3 of 5 while the rider comes, and cancels before pickup behind the confirm sheet", async () => {
+  it("K5: Step 3 of 5 while the biker comes, and cancels before pickup behind the confirm sheet", async () => {
     vi.mocked(getBooking).mockResolvedValue(merchantBooking({ state: "coming", expiresAt: null, rider: RIDER }));
     vi.mocked(cancelBooking).mockResolvedValue(merchantBooking({ state: "cancelled", expiresAt: null, cancelledBy: "business" }));
     render(<Page />);
     expect(await screen.findByLabelText("3 of 5 steps")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Cancel booking" }));
-    expect(screen.getByText("The rider is told. You can book again any time.")).toBeTruthy();
+    expect(screen.getByText("The biker is told. You can book again any time.")).toBeTruthy();
     fireEvent.click(screen.getAllByRole("button", { name: "Cancel booking" }).at(-1)!);
     expect(await screen.findByText("Booking cancelled", { selector: "b" })).toBeTruthy();
     expect(cancelBooking).toHaveBeenCalledWith(ID);
@@ -194,7 +194,7 @@ describe("D5 · Tracking", () => {
 });
 
 describe("D7 · Delivered", () => {
-  it("K5 at Step 5 of 5: says so, names the rider and what went, no code, and offers to book again", async () => {
+  it("K5 at Step 5 of 5: says so, names the biker and what went, no code, and offers to book again", async () => {
     vi.mocked(getBooking).mockResolvedValue(merchantBooking({ state: "delivered", expiresAt: null, rider: RIDER, itemsSummary: "2× Brake pads (front) · 1× Oil filter", agreedFare: "3.50" }));
     render(<Page />);
     expect(await screen.findByText("Delivered")).toBeTruthy();
@@ -222,7 +222,7 @@ describe("D7 · cash back to you (D-48 PR 4b)", () => {
     expect(await screen.findByText("CASH BACK TO YOU")).toBeTruthy();
     expect(screen.getByText(/^Blessing brings it back by \d\d:\d\d$/)).toBeTruthy();
     expect(screen.getByText("Goods $51.00")).toBeTruthy();
-    expect(screen.getByText("Delivery $3.50 · rider's")).toBeTruthy();
+    expect(screen.getByText("Delivery $3.50 · biker's")).toBeTruthy();
     expect(screen.queryByRole("link", { name: "Book again" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "I got $51.00" }));
     await waitFor(() => expect(closeBookingCash).toHaveBeenCalledWith(ID, "returned"));
@@ -250,11 +250,11 @@ describe("D7 · cash back to you (D-48 PR 4b)", () => {
 });
 
 describe("the other endings", () => {
-  it("No rider picked in time: Try again, with a higher fare if the booker wants", async () => {
+  it("No biker picked in time: Try again, with a higher fare if the booker wants", async () => {
     vi.mocked(getBooking).mockResolvedValue(merchantBooking({ state: "expired", expiresAt: null }));
     vi.mocked(retryBooking).mockResolvedValue(merchantBooking({ id: "44444444-4444-4444-8444-444444444444" }));
     render(<Page />);
-    expect(await screen.findByText("No rider picked in time")).toBeTruthy();
+    expect(await screen.findByText("No biker picked in time")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Offer $0.50 more" }));
     fireEvent.click(screen.getByRole("button", { name: "Try again · $4.00" }));
     await waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/deliveries/booking?id=44444444-4444-4444-8444-444444444444"));
@@ -280,7 +280,7 @@ describe("the other endings", () => {
     expect(second![1].idempotencyKey).not.toBe(first![1].idempotencyKey);
   });
 
-  it("a rider's cancel leads to Send's re-sent booking", async () => {
+  it("a biker's cancel leads to Send's re-sent booking", async () => {
     vi.mocked(getBooking).mockResolvedValue(merchantBooking({ state: "cancelled", expiresAt: null, cancelledBy: "rider", rebroadcastedToId: "55555555-5555-4555-8555-555555555555" }));
     render(<Page />);
     expect((await screen.findByRole("link", { name: /follow it/ })).getAttribute("href")).toBe("/deliveries/booking?id=55555555-5555-4555-8555-555555555555");
@@ -295,10 +295,10 @@ describe("the other endings", () => {
     expect(screen.queryByRole("button", { name: /Try again/ })).toBeNull();
   });
 
-  it("Not delivered names the rider's reason and lets the business call them", async () => {
+  it("Not delivered names the biker's reason and lets the business call them", async () => {
     vi.mocked(getBooking).mockResolvedValue(merchantBooking({ state: "not_delivered", expiresAt: null, rider: RIDER, undeliveredReason: "unreachable" }));
     render(<Page />);
-    expect(await screen.findByText(/The rider couldn't reach the buyer\./)).toBeTruthy();
+    expect(await screen.findByText(/The biker couldn't reach the buyer\./)).toBeTruthy();
     expect(screen.getByRole("link", { name: /Call Blessing M\./ }).getAttribute("href")).toBe("tel:+263772222222");
   });
 });

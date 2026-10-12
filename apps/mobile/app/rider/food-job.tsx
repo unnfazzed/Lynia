@@ -218,7 +218,7 @@ export default function RiderFoodJob(): React.ReactElement {
     mutationFn: () => dropFoodDispatch(orderId!),
     onSuccess: () => {
       void clearArrival();
-      toast.show(venueCopy("Job dropped — it's back with the kitchen for another rider.", placeOf(foodOrderRef.current)), "warning");
+      toast.show(venueCopy("Job dropped — it's back with the kitchen for another biker.", placeOf(foodOrderRef.current)), "warning");
       router.replace("/rider");
     },
     onError: (e) => fail(e),

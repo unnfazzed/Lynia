@@ -62,7 +62,7 @@ describe("plate rules (as PATCH /riders/me applies them)", () => {
 });
 
 describe("bikeVerified (review R-8)", () => {
-  it("is true only for a verified rider who has a plate", () => {
+  it("is true only for a verified biker who has a plate", () => {
     expect(bikeVerified({ kycStatus: "verified", bikeReg: "AEE 4471" })).toBe(true);
     expect(bikeVerified({ kycStatus: "verified", bikeReg: null })).toBe(false);
     expect(bikeVerified({ kycStatus: "verified", bikeReg: "  " })).toBe(false);

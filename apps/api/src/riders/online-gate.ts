@@ -90,10 +90,10 @@ export function onlineRefusalReason(
 
 /** Rider-facing copy per refusal reason. The structured `reason` (not this string) is the contract. */
 export const REFUSAL_MESSAGE: Record<OnlineRefusal, string> = {
-  kyc: "Rider is not verified yet",
+  kyc: "Biker is not verified yet",
   kyc_expired: "Your ID has expired — re-verify to keep riding",
-  banned: "Your rider account has been banned",
-  suspended: "Your rider account is suspended",
+  banned: "Your biker account has been banned",
+  suspended: "Your biker account is suspended",
   on_hold: "Your account is on hold — contact support to get back on the road",
   cooldown: "On cooldown after repeated cancellations — try again later",
   out_of_area: `You're outside the service area — go online from ${serviceTownsLabel()}`,

@@ -46,7 +46,7 @@ describe("clearDeviceState (sign-out wipe, BH-17)", () => {
   // BH-23: RIDER_SENT_OFFERS_KEY (added by BH-21, after this wipe was last touched) was never added to
   // the delete list — a signed-out rider's already-sent bids on other open orders survived and rehydrated
   // for the next rider on a shared device, painting their fare/eta as the new rider's own pending offers.
-  it("deletes the rider sent-offers key — BH-21's persistence added after this wipe was last updated", async () => {
+  it("deletes the biker sent-offers key — BH-21's persistence added after this wipe was last updated", async () => {
     await clearDeviceState();
     const deletedKeys = mockDeleteItemAsync.mock.calls.map((c) => c[0]);
     expect(deletedKeys).toContain(RIDER_SENT_OFFERS_KEY);

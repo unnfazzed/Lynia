@@ -104,14 +104,14 @@ const FIXABLE_DECLINE_REASONS = (Object.keys(KYC_DECLINE_CLASS) as KycDeclineRea
 const verifiedIdInUse = () =>
   new ConflictException({
     reason: "verified_id_in_use",
-    message: "Can't approve: the national ID from this rider's ID check is already on another live account. Resolve that account first.",
+    message: "Can't approve: the national ID from this biker's ID check is already on another live account. Resolve that account first.",
   });
 
 /** D-75: the rider's ID facts moved while the approval ran, so the reviewer hasn't seen what it would decide. */
 const reviewStale = () =>
   new ConflictException({
     reason: "review_stale",
-    message: "This rider's ID details changed while you were approving. Reload the page and review again.",
+    message: "This biker's ID details changed while you were approving. Reload the page and review again.",
   });
 
 @Injectable()
@@ -347,7 +347,7 @@ export class RiderService {
     if (existing) {
       const replay = await this.liveSessionReplay(profileId);
       if (replay) return replay;
-      throw new ConflictException({ reason: "already_rider", message: "Already registered as a rider" });
+      throw new ConflictException({ reason: "already_rider", message: "Already registered as a biker" });
     }
 
     // The photo key must live under this caller's own KYC namespace — POST /uploads/kyc-photo mints
@@ -384,7 +384,7 @@ export class RiderService {
     if (!profile) throw new NotFoundException("Profile not found");
     const previousRole = profile.role;
     if (profile.idNumberHash && (await this.liveDuplicateIdAccountCount(this.prisma, profileId, profile.idNumberHash)) > 0) {
-      this.logger.warn(`Rider ${profileId} blocked from onboarding: national ID already on another live account (one-ID-one-account)`);
+      this.logger.warn(`Biker ${profileId} blocked from onboarding: national ID already on another live account (one-ID-one-account)`);
       throw new ConflictException({
         reason: "id_in_use",
         message: "This national ID is already linked to another account. Contact support if it's yours.",
@@ -397,7 +397,7 @@ export class RiderService {
 
     const duplicateIdFlag = (await this.duplicateIdAccountCount(profileId, profile.idNumberHash)) > 0;
     if (duplicateIdFlag) {
-      this.logger.warn(`Rider ${profileId} onboarding with a national ID on another erased/legacy account — flagged for KYC review (A-04)`);
+      this.logger.warn(`Biker ${profileId} onboarding with a national ID on another erased/legacy account — flagged for KYC review (A-04)`);
     }
 
     // QA/test: the stub provider has no real vendor and never calls back, so in auto mode it
@@ -441,7 +441,7 @@ export class RiderService {
         // session hands it to the loser too, so both taps open the same check.
         const replay = await this.liveSessionReplay(profileId);
         if (replay) return replay;
-        throw new ConflictException({ reason: "already_rider", message: "You're already a rider" });
+        throw new ConflictException({ reason: "already_rider", message: "You're already a biker" });
       }
       throw err;
     }
@@ -474,7 +474,7 @@ export class RiderService {
     if (attached.count === 0) {
       // Something else put a session on the row while this one was being created (a retry from another
       // device). Theirs is the live one; this one is spent but unused — say so, for the vendor bill.
-      this.logger.warn(`Rider ${profileId}: KYC session ${submission.ref} minted but not attached — the row already had one (KYC-R26-10)`);
+      this.logger.warn(`Biker ${profileId}: KYC session ${submission.ref} minted but not attached — the row already had one (KYC-R26-10)`);
       const replay = await this.liveSessionReplay(profileId);
       if (replay) return replay;
     }
@@ -521,7 +521,7 @@ export class RiderService {
         });
       }
     } catch (err) {
-      this.logger.warn(`Couldn't release the rider claim for ${profileId}: ${err instanceof Error ? err.message : String(err)}`);
+      this.logger.warn(`Couldn't release the biker claim for ${profileId}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -651,7 +651,7 @@ export class RiderService {
         kycVendorStatus: true,
       },
     });
-    if (!rider) throw new NotFoundException("Not a rider");
+    if (!rider) throw new NotFoundException("Not a biker");
     if (rider.kycStatus === "verified") throw new ConflictException("Already verified");
     // R-3: a check HELD for a human (the vendor's In Review, or an approval held in the review band or for
     // an ID collision) is not the rider's move; the app draws no retry on that wall. A retry that still
@@ -974,10 +974,10 @@ export class RiderService {
           void this.gateway.evictRiderFromSupply(profileId);
         }
       } catch (err) {
-        this.logger.error(`ID-expiry sweep failed for rider ${profileId}: ${err instanceof Error ? err.message : String(err)}`);
+        this.logger.error(`ID-expiry sweep failed for biker ${profileId}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
-    if (expired > 0) this.logger.log(`ID-expiry sweep: ${expired} verified rider(s) moved to expired — their ID document lapsed (KYC-R26-08)`);
+    if (expired > 0) this.logger.log(`ID-expiry sweep: ${expired} verified biker(s) moved to expired — their ID document lapsed (KYC-R26-08)`);
     return { expired };
   }
 
@@ -1001,7 +1001,7 @@ export class RiderService {
       where: { profileId },
       select: { kycStatus: true, accountStatus: true, onHold: true, cooldownUntil: true, tripsCount: true },
     });
-    if (!rider) throw new ForbiddenException("Not a rider");
+    if (!rider) throw new ForbiddenException("Not a biker");
     // Prepaid commission floor (design Flow 2): only load the balance — and only gate on it — once
     // commission is switched on. At the launch rate (0%) `commissionActive` is false, so this is a
     // no-op read-skip and the $0 pilot balance never blocks going online.
@@ -1127,7 +1127,7 @@ export class RiderService {
         where: { profileId },
         select: { kycStatus: true, accountStatus: true, onHold: true, cooldownUntil: true, tripsCount: true },
       });
-      if (!now) throw new ForbiddenException("Not a rider");
+      if (!now) throw new ForbiddenException("Not a biker");
       const commissionActive = isCommissionActive(resolveCommissionRatePct(this.env.COMMISSION_RATE_PCT));
       const commissionBalance = await this.loadCommissionBalance(profileId, commissionActive);
       const reason = onlineRefusalReason({ ...now, commissionActive, commissionBalance, freeJobsLeft: freeJobsLeft(now.tripsCount) });
@@ -1706,7 +1706,7 @@ export class RiderService {
     if (!hash) return { outcome: "missing" };
     if (hash !== lockedIdHash) throw reviewStale();
     if ((await this.verifiedIdCollisionCount(tx, rider.profileId, hash, "live")) > 0) {
-      this.logger.warn(`Rider ${rider.profileId}: approval refused — the vendor-verified number is on another live account (D-75)`);
+      this.logger.warn(`Biker ${rider.profileId}: approval refused — the vendor-verified number is on another live account (D-75)`);
       throw verifiedIdInUse();
     }
     // Erasure scrubs the encrypted number and keeps its hash (DS15-02b), and a decision from before D-70
@@ -1722,7 +1722,7 @@ export class RiderService {
     const adopted = await this.adoptVerifiedId(tx, rider.profileId, number);
     if (adopted === "different") throw reviewStale();
     if (adopted === "same") return { outcome: "on_file" };
-    this.logger.log(`Rider ${rider.profileId}: no national ID on file — the approval adopted the vendor-verified number (D-75)`);
+    this.logger.log(`Biker ${rider.profileId}: no national ID on file — the approval adopted the vendor-verified number (D-75)`);
     // IR26-03 parity: an ID write recomputes the A-04 reviewer flag. Only an erased tombstone can still
     // carry this number; a live one was refused above.
     const others = await tx.profile.count({ where: { idNumberHash: hash, id: { not: rider.profileId } } });
@@ -1795,7 +1795,7 @@ export class RiderService {
           profile: { select: { idNumberHash: true } },
         },
       });
-      if (!rider) throw new NotFoundException("Rider not found");
+      if (!rider) throw new NotFoundException("Biker not found");
       // D-75: an approval settles the national ID first (adopts, or refuses with a 409). Every other
       // decision leaves the profile alone.
       const nationalId = status === "verified" ? await this.settleNationalIdOnApproval(tx, rider, lockedIdHash, adoption) : null;
@@ -1897,7 +1897,7 @@ export class RiderService {
       // operator gets the collision count's answer. Anything else, including a P2002 raised before the
       // adoption, propagates unchanged.
       if (adoption.attempted && err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-        this.logger.warn(`Rider ${profileId}: approval refused — the live-ID unique index rejected the vendor-verified number (D-75)`);
+        this.logger.warn(`Biker ${profileId}: approval refused — the live-ID unique index rejected the vendor-verified number (D-75)`);
         throw verifiedIdInUse();
       }
       throw err;

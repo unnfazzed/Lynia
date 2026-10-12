@@ -408,11 +408,11 @@ describe("Proof at hand-over (BRIEF §9)", () => {
     await prisma.$transaction((tx) => assertPickupProofIfRequired(tx, rjob.orderId));
   });
 
-  it("another rider can't attach, and a foreign photo key is refused", async () => {
+  it("another biker can't attach, and a foreign photo key is refused", async () => {
     const v = await makeVenue();
     const job = await jobAt(v, "en_route_pickup");
     const other = await profile("rider");
-    await expect(proof.attachPickupProof(job.orderId, other, { bagSealed: true })).rejects.toThrow(/assigned rider/);
+    await expect(proof.attachPickupProof(job.orderId, other, { bagSealed: true })).rejects.toThrow(/assigned biker/);
     await expect(proof.attachPickupProof(job.orderId, job.riderId, { key: `pickup/${other}/x.jpg` })).rejects.toThrow(/Invalid photo key/);
   });
 

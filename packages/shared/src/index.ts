@@ -15,3 +15,4 @@ export * from "./map-links";
 export * from "./name";
 export * from "./national-id";
 export * as tokens from "./design-tokens";
+export * from "./wording";

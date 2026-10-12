@@ -86,8 +86,8 @@ function cancelSub(order: MerchantOrderResponse): string {
   const rider = riderFirstName(order);
   if (!order.riderId || !rider) return "We tell the customer.";
   return order.riderEtaAt
-    ? `${rider} is booked for ${hm(order.riderEtaAt)}. We call off the rider and tell the customer.`
-    : `${rider} is booked. We call off the rider and tell the customer.`;
+    ? `${rider} is booked for ${hm(order.riderEtaAt)}. We call off the biker and tell the customer.`
+    : `${rider} is booked. We call off the biker and tell the customer.`;
 }
 
 /** K5c's reason line, from the rider's door proof. */
@@ -122,13 +122,13 @@ function hm(iso: string | null | undefined): string {
 
 /** The rider's name as the handoff writes it ("Tendai M."), or "The rider" before one is known. */
 function riderName(order: MerchantOrderResponse): string {
-  return riderFirstName(order) ?? "The rider";
+  return riderFirstName(order) ?? "The biker";
 }
 
 /** The rider's first name inside a sentence ("Say the code to Tendai"), or "the rider" when they have
  *  none (E2E 2026-10-05 P-12: the checklist read "photographs it" / "Say the code to"). */
 function riderInSentence(order: MerchantOrderResponse): string {
-  return order.rider?.firstName.trim() || "the rider";
+  return order.rider?.firstName.trim() || "the biker";
 }
 
 /** The same at the start of a sentence: "The rider photographs it". */
@@ -353,7 +353,7 @@ export default function OrderPage() {
               icon="x"
               tone="red"
               title="Can't finish this order"
-              sub="Cancel with a reason. The customer and rider are told."
+              sub="Cancel with a reason. The customer and biker are told."
               onClick={() => setConfirm(isPaidWallet(order) ? "refund" : "cancel")}
             />
             <div className="m-sheethint">
@@ -467,7 +467,7 @@ export default function OrderPage() {
         return (
           <ConfirmSheet
             title="Cancel this order?"
-            body="No rider took it. The customer is told."
+            body="No biker took it. The customer is told."
             confirmLabel="Cancel order"
             busy={busy}
             error={error}
@@ -506,7 +506,7 @@ export default function OrderPage() {
         return (
           <Sheet
             title={`${v.goodsBack === "I got the food back" ? "Food" : "Goods"} not returned?`}
-            sub="We flag it to LyniaGo support, who follow it up with the rider."
+            sub="We flag it to LyniaGo support, who follow it up with the biker."
             onClose={close}
             actions={
               <>
@@ -603,8 +603,8 @@ function Cooking(ctx: Ctx) {
           : // A2: no estimate — drop the time, keep the sentence whole (muted).
             `${rider} is on the way to you`
       : order.dispatchAttempt > 0
-        ? "Finding a rider"
-        : "We book the rider to arrive as it’s ready";
+        ? "Finding a biker"
+        : "We book the biker to arrive as it’s ready";
   return (
     <Fill>
       <AppBar back="/queue" title={orderLabel(order)} right={<span className="m-num">{money(order.merchantGoodsTotal)}</span>} />
@@ -647,7 +647,7 @@ function Cooking(ctx: Ctx) {
         </button>
       </div>
       <CtaBar>
-        <button type="button" className="m-btn" disabled={disabled} onClick={() => void act(() => markReady(order.id), "Marked ready · finding a rider")}>
+        <button type="button" className="m-btn" disabled={disabled} onClick={() => void act(() => markReady(order.id), "Marked ready · finding a biker")}>
           {v.readyCta}
         </button>
       </CtaBar>
@@ -681,7 +681,7 @@ function Handover({ order, act, disabled, error, setConfirm, business }: Ctx) {
           <RiderCard order={order} />
         ) : hold ? (
           <div className="m-card" style={{ background: "var(--highlight-wash)", borderColor: "var(--highlight-border)" }}>
-            <b style={{ fontSize: 15 }}>No rider yet</b>
+            <b style={{ fontSize: 15 }}>No biker yet</b>
             <span className="m-hint" style={{ fontSize: 13 }}>
               Nobody has taken it so far. Keep searching, or cancel and the customer is told.
             </span>
@@ -695,7 +695,7 @@ function Handover({ order, act, disabled, error, setConfirm, business }: Ctx) {
         ) : (
           <div className="m-waitrow">
             <span className="m-wspin" />
-            Finding a rider. The code appears once one takes it.
+            Finding a biker. The code appears once one takes it.
           </div>
         )}
 
@@ -773,7 +773,7 @@ function Handover({ order, act, disabled, error, setConfirm, business }: Ctx) {
               }, `${capitalised(first)} got a link to finish it`)
             }
           >
-            Rider can’t enter code
+            Biker can’t enter code
           </button>
         )}
         {error && <div className="m-alert" role="alert">{error}</div>}

@@ -255,7 +255,7 @@ const config: ExpoConfig = {
         // First Run v2 `RP.manifestRationale` (ledger D-82), verbatim. NATIVE: the permission rationale is
         // baked into the binary — it reaches devices only with the next store build (not OTA-able).
         locationWhenInUsePermission:
-          "LyniaGo uses your location to set pickup pins and, for riders, to show nearby jobs and share your position with the customer during their job.",
+          "LyniaGo uses your location to set pickup pins and, for bikers, to show nearby jobs and share your position with the customer during their job.",
         // Rider GPS must keep streaming while the app is backgrounded behind "Follow route in Google
         // Maps" (src/realtime/background-location-task.ts). This flag makes the plugin add the
         // FOREGROUND_SERVICE + FOREGROUND_SERVICE_LOCATION manifest permissions (verified against the

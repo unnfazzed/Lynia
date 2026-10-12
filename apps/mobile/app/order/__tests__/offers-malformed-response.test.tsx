@@ -111,7 +111,7 @@ describe("order/[id].tsx — malformed offers response (CF-04)", () => {
     await expect(render()).resolves.toBeTruthy();
     // The screen stayed mounted and rendered the open-auction empty-offers state, not a blank
     // crashed tree.
-    expect(activeTree!.root.findAll((n) => n.props.children === "Offers show here as riders reply.").length).toBeGreaterThan(0);
+    expect(activeTree!.root.findAll((n) => n.props.children === "Offers show here as bikers reply.").length).toBeGreaterThan(0);
     expect(activeTree!.root.findAll((n) => typeof n.props.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("Choose ")).length).toBe(0);
   });
 
@@ -120,6 +120,6 @@ describe("order/[id].tsx — malformed offers response (CF-04)", () => {
     mockListOffers.mockResolvedValue(null as unknown);
 
     await expect(render()).resolves.toBeTruthy();
-    expect(activeTree!.root.findAll((n) => n.props.children === "Offers show here as riders reply.").length).toBeGreaterThan(0);
+    expect(activeTree!.root.findAll((n) => n.props.children === "Offers show here as bikers reply.").length).toBeGreaterThan(0);
   });
 });

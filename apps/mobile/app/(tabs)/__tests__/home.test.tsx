@@ -259,7 +259,7 @@ describe("(tabs)/home.tsx — LC-B05: blurred write-back must not clobber live t
     };
   }
 
-  it("does not overwrite a fresher socket-applied rider position once home is blurred beneath /order/[id]", async () => {
+  it("does not overwrite a fresher socket-applied biker position once home is blurred beneath /order/[id]", async () => {
     mockGetActiveCustomerOrders.mockResolvedValue([orderFixture()]);
 
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -335,8 +335,8 @@ describe("(tabs)/home.tsx — A-O15: a quick re-focus must not force a redundant
   });
 });
 
-describe("(tabs)/home.tsx — Rider v2 C5 live-job bar (ledger D-54)", () => {
-  it("a rider on the customer side mid-job sees the job bar, and it returns to the job", async () => {
+describe("(tabs)/home.tsx — Biker v2 C5 live-job bar (ledger D-54)", () => {
+  it("a biker on the customer side mid-job sees the job bar, and it returns to the job", async () => {
     mockMe = { profileId: "p1", role: "rider", firstName: "Tendai", lastName: "M.", rider: { kycStatus: "verified" } };
     mockGetActiveCustomerOrders.mockResolvedValue([]);
     mockGetActiveOrder.mockImplementation(async () => activeOrderFixture({ status: "en_route_dropoff", orderType: "parcel" }));
@@ -350,7 +350,7 @@ describe("(tabs)/home.tsx — Rider v2 C5 live-job bar (ledger D-54)", () => {
     expect(mockPush).toHaveBeenCalledWith("/rider/job");
   });
 
-  it("a customer who isn't a rider never reads the rider job and sees no bar", async () => {
+  it("a customer who isn't a biker never reads the biker job and sees no bar", async () => {
     mockGetActiveCustomerOrders.mockResolvedValue([]);
     activeTree = renderHome();
     await settle();

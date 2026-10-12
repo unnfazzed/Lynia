@@ -157,7 +157,7 @@ describe("KycCheckSheet outcomes", () => {
     });
     expect(alertSpy).toHaveBeenCalledWith(
       "Leave the ID check?",
-      expect.stringContaining("rider board"),
+      expect.stringContaining("biker board"),
       expect.any(Array),
     );
     const buttons = alertSpy.mock.calls[0]![2] as Array<{ text: string; onPress?: () => void }>;

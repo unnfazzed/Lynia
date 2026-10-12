@@ -16,7 +16,7 @@ function pressButton(tree: renderer.ReactTestRenderer, label: string): void {
 }
 
 describe("RiderCashHandshakeCard", () => {
-  it("pending: tells the rider to hand over the food first, no confirm action yet", () => {
+  it("pending: tells the biker to hand over the food first, no confirm action yet", () => {
     let tree!: renderer.ReactTestRenderer;
     act(() => {
       tree = renderer.create(

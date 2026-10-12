@@ -3,6 +3,7 @@
  * geometry each part's README §1 / fr-kit.js row pins. Geometry is read off the flattened styles.
  */
 import { tokens } from "@lynia/shared/tokens";
+import { bikerWording } from "@lynia/shared";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import React from "react";
@@ -59,7 +60,7 @@ describe("copy — the handoff's copy.ts, verbatim", () => {
   it("is byte-identical to packages/design/handoff/first-run-v2/copy.ts", () => {
     const app = readFileSync(resolve(__dirname, "../copy.ts"), "utf8");
     const handoff = readFileSync(resolve(__dirname, "../../../../../../packages/design/handoff/first-run-v2/copy.ts"), "utf8");
-    expect(app).toBe(handoff);
+    expect(app).toBe(bikerWording(handoff));
   });
 });
 

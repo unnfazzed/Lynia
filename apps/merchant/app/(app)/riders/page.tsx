@@ -56,7 +56,7 @@ export default function RidersPage() {
         setState({ status: "unavailable" });
         return;
       }
-      setState({ status: "error", message: err instanceof ApiError ? err.message : "Couldn't load your riders." });
+      setState({ status: "error", message: err instanceof ApiError ? err.message : "Couldn't load your bikers." });
     }
   }, [signOut]);
 
@@ -107,7 +107,7 @@ export default function RidersPage() {
       setState((s) => (s.status === "ready" ? { ...s, riders: [...s.riders, added] } : s));
       closeAdd();
       toast(`${added.label} added`);
-    }, "Couldn't add the rider. Try again.");
+    }, "Couldn't add the biker. Try again.");
   }
 
   const disabled = actionsDisabled || busy;
@@ -117,7 +117,7 @@ export default function RidersPage() {
       <div className="m-page">
         <AppBar
           back="/account"
-          title="Preferred riders"
+          title="Preferred bikers"
           right={
             state.status === "ready" ? (
               <span className="m-num" style={{ fontSize: 13, color: "var(--muted)" }}>
@@ -127,29 +127,29 @@ export default function RidersPage() {
           }
         />
         <div className="m-bd">
-          {state.status === "loading" && <div className="m-hint">Loading your riders…</div>}
+          {state.status === "loading" && <div className="m-hint">Loading your bikers…</div>}
           {state.status === "error" && <RetryableError message={state.message} onRetry={() => void load()} />}
           {state.status === "unavailable" && (
             <p className="m-sub">
-              <b>Your riders is on its way.</b> You&apos;ll add the riders you already work with here.
+              <b>Your bikers is on its way.</b> You&apos;ll add the bikers you already work with here.
             </p>
           )}
           {/* MJ-RL7: only for someone known to be Staff — a failed profile read is not a role. */}
-          {state.status === "ready" && business?.myRole === "staff" && <p className="m-hint">Only the owner can add or remove riders.</p>}
+          {state.status === "ready" && business?.myRole === "staff" && <p className="m-hint">Only the owner can add or remove bikers.</p>}
 
           {state.status === "ready" && state.riders.length === 0 && (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 8, paddingTop: 40 }}>
               <Icon name="bike" size={32} color="var(--muted)" />
-              <b style={{ fontSize: 17 }}>No riders yet</b>
+              <b style={{ fontSize: 17 }}>No bikers yet</b>
               <p className="m-sub">
-                Add the riders you already use, by the number they sign in to LyniaGo with. Someone who isn&apos;t on LyniaGo yet gets a sign-up link from you on
+                Add the bikers you already use, by the number they sign in to LyniaGo with. Someone who isn&apos;t on LyniaGo yet gets a sign-up link from you on
                 WhatsApp.
               </p>
             </div>
           )}
 
           {state.status === "ready" && state.riders.length > 0 && (
-            <section aria-label="Your riders">
+            <section aria-label="Your bikers">
               {state.riders.map((r) => {
                 const pill = riderPill(r);
                 return (
@@ -189,12 +189,12 @@ export default function RidersPage() {
               })}
             </section>
           )}
-          {full && owner && <p className="m-hint">You have {state.status === "ready" ? state.cap : 20} riders, the most you can keep. Remove one to add another.</p>}
+          {full && owner && <p className="m-hint">You have {state.status === "ready" ? state.cap : 20} bikers, the most you can keep. Remove one to add another.</p>}
         </div>
         {state.status === "ready" && owner && !full && (
           <div className="m-foot">
             <button type="button" className="m-btn" disabled={actionsDisabled} onClick={() => setAdding(true)}>
-              <Icon name="plus" size={20} /> Add a rider
+              <Icon name="plus" size={20} /> Add a biker
             </button>
           </div>
         )}
@@ -214,7 +214,7 @@ export default function RidersPage() {
               setState((s) => (s.status === "ready" ? { ...s, riders: s.riders.filter((x) => x.id !== r.id) } : s));
               setRemoving(null);
               toast(`${r.label} removed`);
-            }, "Couldn't remove the rider. Try again.")
+            }, "Couldn't remove the biker. Try again.")
           }
           onCancel={() => {
             setRemoving(null);
@@ -227,9 +227,9 @@ export default function RidersPage() {
         <div className="m-overlay" style={{ zIndex: 70 }}>
           <div className="m-overlay-frame">
             <button type="button" className="m-scrim" aria-label="Keep" onClick={closeAdd} />
-            <form className="m-sheet" role="dialog" aria-modal="true" aria-label="Add a rider" onSubmit={onAdd} noValidate>
+            <form className="m-sheet" role="dialog" aria-modal="true" aria-label="Add a biker" onSubmit={onAdd} noValidate>
               <div className="m-grab" />
-              <b style={{ fontSize: 18 }}>Add a rider</b>
+              <b style={{ fontSize: 18 }}>Add a biker</b>
               <div className="m-fld">
                 <label htmlFor="rider-label">Their name</label>
                 <span className="m-in" data-invalid={!!errors.label}>
@@ -267,7 +267,7 @@ export default function RidersPage() {
                 </div>
               )}
               <button type="submit" className="m-btn" disabled={disabled}>
-                {busy ? "Adding…" : "Add rider"}
+                {busy ? "Adding…" : "Add biker"}
               </button>
               <button type="button" className="m-lnk" onClick={closeAdd}>
                 Keep

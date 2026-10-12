@@ -40,8 +40,8 @@ export function ResolveActions({
         title={`Refund the customer for order ${order}?`}
         consequence={
           <span>
-            Repay the customer directly for now — this <b>records</b> the amount owed against the rider on order{" "}
-            <b>{order}</b>. Automatic netting off the rider&apos;s settlement arrives with the commission/billing
+            Repay the customer directly for now — this <b>records</b> the amount owed against the biker on order{" "}
+            <b>{order}</b>. Automatic netting off the biker&apos;s settlement arrives with the commission/billing
             infra (not yet live), which will then consume this record.
           </span>
         }
@@ -57,7 +57,7 @@ export function ResolveActions({
         auditInEndpoint
         target={rider}
         path={path}
-        triggerLabel="Strike the rider…"
+        triggerLabel="Strike the biker…"
         triggerVariant="danger"
         danger
         disabled={!connected}
@@ -65,7 +65,7 @@ export function ResolveActions({
         consequence="Three strikes trigger an automatic cooldown. Consider a suspension instead if this involves safety or fraud."
         reasons={REASONS.issueStrike}
         noteRequired
-        notePlaceholder="Required — what the rider did and the evidence."
+        notePlaceholder="Required — what the biker did and the evidence."
         confirmLabel="Add strike"
         onConfirm={(r) => resolveIssue(id, IssueResolution.RIDER_STRIKE, r.note)}
       />

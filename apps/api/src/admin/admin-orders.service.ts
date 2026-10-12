@@ -259,7 +259,7 @@ export class AdminOrdersService {
       if (order.status !== "undelivered") {
         throw new ConflictException("Only an undelivered order can be adjudicated as delivered");
       }
-      if (!order.riderId) throw new ConflictException("Order has no assigned rider to credit");
+      if (!order.riderId) throw new ConflictException("Order has no assigned biker to credit");
       // CAS on the observed `undelivered` status (mirrors cancelOrder/adjustFare) so a concurrent
       // transition can't be clobbered: 0 rows ⇒ the order moved ⇒ conflict.
       const claimed = await tx.order.updateMany({
@@ -671,7 +671,7 @@ export class AdminOrdersService {
     // applies (nudge the rider vs. have the customer re-issue the code).
     const otpMismatchNote =
       order.status === "en_route_dropoff" && order.deliveryOtpAttempts > 0
-        ? `Rider has entered the wrong delivery code ${order.deliveryOtpAttempts} of ${DELIVERY_OTP_MAX_ATTEMPTS} times.`
+        ? `Biker has entered the wrong delivery code ${order.deliveryOtpAttempts} of ${DELIVERY_OTP_MAX_ATTEMPTS} times.`
         : undefined;
 
     // KB-POD-DISPUTE Phase A: the proof-of-drop evidence ops adjudicates on. Mint a short-lived read URL
@@ -747,7 +747,7 @@ export class AdminOrdersService {
       status: order.status,
       stuck,
       stuckNote: stuck
-        ? [otpMismatchNote, `No GPS/status update from the rider for ${stuckMins} minutes.`].filter(Boolean).join(" ")
+        ? [otpMismatchNote, `No GPS/status update from the biker for ${stuckMins} minutes.`].filter(Boolean).join(" ")
         : otpMismatchNote,
       deliveryOtpAttempts: order.deliveryOtpAttempts,
       hasOpenIssue: openIssue != null,

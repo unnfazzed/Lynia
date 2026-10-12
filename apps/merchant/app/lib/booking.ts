@@ -44,26 +44,26 @@ export function homePath(merchant: Pick<MerchantProfileResponse, "businessType">
 }
 
 export const STATE_LABEL: Record<MerchantBookingState, string> = {
-  finding: "Finding a rider",
-  finding_again: "Your rider cancelled. Finding another",
-  coming: "Rider coming to you",
+  finding: "Finding a biker",
+  finding_again: "Your biker cancelled. Finding another",
+  coming: "Biker coming to you",
   picked_up: "Picked up",
   delivered: "Delivered",
   not_delivered: "Not delivered",
-  expired: "No rider picked in time",
+  expired: "No biker picked in time",
   cancelled: "Cancelled",
 };
 
 /** Send's undelivered reasons, in the business's words (the rider picked one at the door). */
 export const UNDELIVERED_LABEL: Record<string, string> = {
-  unreachable: "The rider couldn't reach the buyer.",
+  unreachable: "The biker couldn't reach the buyer.",
   refused: "The buyer refused the delivery.",
   wrong_address: "The address was wrong.",
-  breakdown: "The rider's bike broke down.",
+  breakdown: "The biker's bike broke down.",
 };
 
 export function undeliveredText(reason: string | null): string {
-  return (reason && UNDELIVERED_LABEL[reason]) || "The rider couldn't complete the delivery.";
+  return (reason && UNDELIVERED_LABEL[reason]) || "The biker couldn't complete the delivery.";
 }
 
 export function isLiveBooking(state: MerchantBookingState): boolean {
@@ -111,8 +111,8 @@ export function supersededBy(b: Pick<MerchantBookingResponse, "rebroadcastedToId
  * them. Plain text, so it reads the same in WhatsApp, an SMS or read out loud.
  */
 export function codeMessage(input: { businessName: string; riderName: string | null; bikeReg: string | null; code: string }): string {
-  const rider = input.riderName ? `${input.riderName}${input.bikeReg ? ` (${input.bikeReg})` : ""}` : "A LyniaGo rider";
-  return `Hi, it's ${input.businessName}. ${rider} is bringing your order. When it arrives, give the rider this code: ${input.code}`;
+  const rider = input.riderName ? `${input.riderName}${input.bikeReg ? ` (${input.bikeReg})` : ""}` : "A LyniaGo biker";
+  return `Hi, it's ${input.businessName}. ${rider} is bringing your order. When it arrives, give the biker this code: ${input.code}`;
 }
 
 /** `wa.me` wants the number in international digits only. */

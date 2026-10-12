@@ -35,12 +35,12 @@ const rider = {
   cooldownUntil: null,
 };
 
-describe("Riders — plate review (D-82)", () => {
+describe("Bikers — plate review (D-82)", () => {
   it("asks the API for the checking queue and offers Confirm plate on each row", async () => {
     vi.mocked(adminFetchResult).mockResolvedValue({ data: [rider] } as never);
     render(await RidersPage({ searchParams: Promise.resolve({ plate: "checking" }) }));
     expect(adminFetchResult).toHaveBeenCalledWith("/admin/riders?plate=checking");
-    expect(screen.getByRole("heading", { name: "Riders — plate review" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Bikers — plate review" })).toBeTruthy();
     expect(screen.getAllByText("ABZ 4417").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /Confirm plate/ })).toBeTruthy();
   });
@@ -61,8 +61,8 @@ describe("Riders — plate review (D-82)", () => {
   });
 });
 
-describe("Riders — KYC queue row", () => {
-  it("a pending rider's row offers only Review (no one-click approve that skips the review warnings)", async () => {
+describe("Bikers — KYC queue row", () => {
+  it("a pending biker's row offers only Review (no one-click approve that skips the review warnings)", async () => {
     vi.mocked(adminFetchResult).mockResolvedValue({ data: [{ ...rider, kycStatus: "pending" }] } as never);
     render(await RidersPage({ searchParams: Promise.resolve({ kyc: "pending" }) }));
     expect(screen.queryByRole("button", { name: /Approve/ })).toBeNull();

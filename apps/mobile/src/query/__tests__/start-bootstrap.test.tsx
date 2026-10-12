@@ -92,7 +92,7 @@ describe("startBootstrap", () => {
     qcOld.clear();
   });
 
-  it("a rider's hint answers the job key, never the customer list", async () => {
+  it("a biker's hint answers the job key, never the customer list", async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     mockFetchBootstrap.mockResolvedValue({ minSupportedVersion: "0.0.0", me: riderMe, activeOrder: { id: "job-1" } });
     await startBootstrap(qc, "rider");

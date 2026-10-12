@@ -52,9 +52,9 @@ describe("UpdateRiderProfile (PATCH /riders/me body, D-79)", () => {
 });
 
 describe("RiderProfileService.updateProfile (D-79)", () => {
-  it("404s for a caller who isn't a rider", async () => {
+  it("404s for a caller who isn't a biker", async () => {
     const { svc } = build(null);
-    await expect(svc.updateProfile("r1", { bikeReg: "AEE 4471" })).rejects.toThrow(/not a rider/i);
+    await expect(svc.updateProfile("r1", { bikeReg: "AEE 4471" })).rejects.toThrow(/not a biker/i);
   });
 
   it("refuses a photo key outside the caller's own KYC namespace, before verifying (a rejection deletes)", async () => {

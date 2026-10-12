@@ -2,5 +2,5 @@ import { PageSkeleton } from "../../components/skeletons";
 
 // Route-level loading state — see orders/[id]/loading.tsx for why this exists.
 export default function Loading() {
-  return <PageSkeleton title="Rider profile" cols={3} />;
+  return <PageSkeleton title="Biker profile" cols={3} />;
 }

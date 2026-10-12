@@ -120,7 +120,7 @@ describe("runKycVerification — the browser fallback lane", () => {
   });
 
   it.each(["cancel", "dismiss"] as const)(
-    "maps the rider closing the tab (%s) to cancelled — unfinished, not broken",
+    "maps the biker closing the tab (%s) to cancelled — unfinished, not broken",
     async (type) => {
       mockOpen.mockResolvedValue({ type } as never);
       await expect(runKycVerification(CREDS)).resolves.toEqual({ outcome: "cancelled", sessionUnusable: false });

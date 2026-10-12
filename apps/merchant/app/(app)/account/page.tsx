@@ -139,7 +139,7 @@ export default function AccountPage() {
         <div className="m-group">
           {!owner && <Row href="/hours" icon="clock" label="Opening hours" value={hoursValue} />}
           {owner && <Row href="/ordering" icon="inbox" label="Taking orders" value={takingValue} />}
-          <Row href="/riders" icon="bike" label="Preferred riders" value={riderCount !== null ? String(riderCount) : undefined} />
+          <Row href="/riders" icon="bike" label="Preferred bikers" value={riderCount !== null ? String(riderCount) : undefined} />
           {owner && <Row href="/team" icon="user" label="Team" badge={pendingInvites > 0 ? `${pendingInvites} invite${pendingInvites === 1 ? "" : "s"} open` : undefined} />}
         </div>
         {/* T3 (D-77 follow-ups): a HELP group — "Help & support · WhatsApp", the text prefilled. */}

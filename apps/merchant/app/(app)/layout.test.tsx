@@ -66,7 +66,7 @@ function validSession(): MerchantSession {
 }
 
 describe("app/(app)/layout.tsx SessionGuard — CF-05 (crash-fuzz 2026-08-23)", () => {
-  it("under StrictMode's double-invoked mount effect, a rider who IS signed in is never signed back out", async () => {
+  it("under StrictMode's double-invoked mount effect, a biker who IS signed in is never signed back out", async () => {
     mockSession = validSession();
 
     await act(async () => {

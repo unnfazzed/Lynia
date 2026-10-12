@@ -31,7 +31,7 @@ const ROWS: { icon: IconName; title: string; body: string }[] = [
   {
     icon: "id-card",
     title: "What others see",
-    body: "First name + last initial only. Your phone is shared with your rider just while a delivery runs — then it's masked.",
+    body: "First name + last initial only. Your phone is shared with your biker just while a delivery runs — then it's masked.",
   },
   {
     icon: "history",

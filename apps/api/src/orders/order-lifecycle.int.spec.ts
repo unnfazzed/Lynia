@@ -93,7 +93,7 @@ async function makeCustomer(): Promise<string> {
 
 async function makeRider(): Promise<string> {
   const p = await prisma.profile.create({
-    data: { role: "rider", firstName: "Rider", lastName: "R", phone: `r_${crypto.randomUUID()}` },
+    data: { role: "rider", firstName: "Biker", lastName: "R", phone: `r_${crypto.randomUUID()}` },
     select: { id: true },
   });
   await prisma.rider.create({
@@ -170,7 +170,7 @@ afterAll(async () => {
 beforeEach(clean);
 
 describe("delivery lifecycle", () => {
-  it("drives a full trip assigned → completed and updates the rider's rating", async () => {
+  it("drives a full trip assigned → completed and updates the biker's rating", async () => {
     const customer = await makeCustomer();
     // P1-6 trust tier: an established customer's rating carries weight. Seed enough prior completed orders
     // to cross CUSTOMER_TRUST.minCompletedOrders so this rating moves the rider's aggregate (an untrusted
@@ -201,7 +201,7 @@ describe("delivery lifecycle", () => {
     expect(rating?.score).toBe(5);
   });
 
-  it("guards reject skipping a step and a non-assigned rider", async () => {
+  it("guards reject skipping a step and a non-assigned biker", async () => {
     const customer = await makeCustomer();
     const rider = await makeRider();
     const other = await makeRider();
@@ -210,7 +210,7 @@ describe("delivery lifecycle", () => {
     // Skipping straight to picked_up (needs en_route_pickup) is rejected.
     await expect(lifecycle.advance(orderId, rider, "picked_up")).rejects.toThrow();
     // A different rider cannot advance the order.
-    await expect(lifecycle.advance(orderId, other, "confirmed")).rejects.toThrow(/assigned rider/i);
+    await expect(lifecycle.advance(orderId, other, "confirmed")).rejects.toThrow(/assigned biker/i);
     expect(await statusOf(orderId)).toBe("assigned");
   });
 
@@ -232,7 +232,7 @@ describe("delivery lifecycle", () => {
     expect(await statusOf(orderId)).toBe("delivered");
   });
 
-  it("auto-close completes a delivered-but-unrated order and frees the rider", async () => {
+  it("auto-close completes a delivered-but-unrated order and frees the biker", async () => {
     const customer = await makeCustomer();
     const rider = await makeRider();
     const { orderId, deliveryCode } = await assign(customer, rider);
@@ -250,7 +250,7 @@ describe("delivery lifecycle", () => {
     expect(await statusOf(second.orderId)).toBe("assigned");
   });
 
-  it("a customer cancel frees the order and the rider", async () => {
+  it("a customer cancel frees the order and the biker", async () => {
     const customer = await makeCustomer();
     const rider = await makeRider();
     const { orderId } = await assign(customer, rider);
@@ -264,7 +264,7 @@ describe("delivery lifecycle", () => {
     expect(await statusOf(next.orderId)).toBe("assigned");
   });
 
-  it("three rider cancels trigger a cooldown that blocks going online", async () => {
+  it("three biker cancels trigger a cooldown that blocks going online", async () => {
     const customer = await makeCustomer();
     const rider = await makeRider();
     for (let i = 0; i < 3; i++) {
@@ -361,7 +361,7 @@ describe("seam-contract transitions", () => {
     return { orderId, deliveryCode };
   }
 
-  it("C6/F-02: a rider marks a post-pickup hand-off undelivered — terminal, reason persisted, rider freed", async () => {
+  it("C6/F-02: a biker marks a post-pickup hand-off undelivered — terminal, reason persisted, biker freed", async () => {
     const customer = await makeCustomer();
     const rider = await makeRider();
     const { orderId } = await driveTo(customer, rider, "picked_up");
@@ -382,7 +382,7 @@ describe("seam-contract transitions", () => {
     expect(await statusOf(next.orderId)).toBe("assigned");
   });
 
-  it("C6: undelivered is rejected before pickup and for a non-assigned rider", async () => {
+  it("C6: undelivered is rejected before pickup and for a non-assigned biker", async () => {
     const customer = await makeCustomer();
     const rider = await makeRider();
     const other = await makeRider();
@@ -392,11 +392,11 @@ describe("seam-contract transitions", () => {
     // Advance to a valid post-pickup state, then a stranger still can't mark it.
     await lifecycle.advance(orderId, rider, "en_route_pickup");
     await lifecycle.advance(orderId, rider, "picked_up");
-    await expect(lifecycle.markUndelivered(orderId, other, "breakdown")).rejects.toThrow(/assigned rider/i);
+    await expect(lifecycle.markUndelivered(orderId, other, "breakdown")).rejects.toThrow(/assigned biker/i);
     expect(await statusOf(orderId)).toBe("picked_up");
   });
 
-  it("F-01: a rider cancel re-broadcasts EXACTLY ONE new open order and never reopens the old one", async () => {
+  it("F-01: a biker cancel re-broadcasts EXACTLY ONE new open order and never reopens the old one", async () => {
     const customer = await makeCustomer();
     const rider = await makeRider();
     const { orderId } = await assign(customer, rider);
@@ -436,7 +436,7 @@ describe("seam-contract transitions", () => {
     expect(await lifecycle.revealDeliveryCode(clone.id, customer)).toEqual({ deliveryCode });
   });
 
-  it("C3: a rider cancel is BLOCKED once the parcel is collected (post-pickup is undelivered, not cancel)", async () => {
+  it("C3: a biker cancel is BLOCKED once the parcel is collected (post-pickup is undelivered, not cancel)", async () => {
     const customer = await makeCustomer();
     const rider = await makeRider();
     const { orderId } = await driveTo(customer, rider, "picked_up");
@@ -447,7 +447,7 @@ describe("seam-contract transitions", () => {
     expect(await prisma.order.count({ where: { rebroadcastOfId: orderId } })).toBe(0);
   });
 
-  it("C3: post-pickup CUSTOMER cancel pushes job:cancelled with collected:true and never strikes the rider", async () => {
+  it("C3: post-pickup CUSTOMER cancel pushes job:cancelled with collected:true and never strikes the biker", async () => {
     const customer = await makeCustomer();
     const rider = await makeRider();
     const { orderId } = await driveTo(customer, rider, "picked_up");
@@ -476,7 +476,7 @@ describe("seam-contract transitions", () => {
     expect(jobCancelledEmits).toEqual([{ orderId, collected: false, cancelledBy: "customer" }]);
   });
 
-  it("C4: re-issuing the delivery code resets the attempt counter and unlocks a locked-out rider", async () => {
+  it("C4: re-issuing the delivery code resets the attempt counter and unlocks a locked-out biker", async () => {
     const customer = await makeCustomer();
     const rider = await makeRider();
     const { orderId } = await driveTo(customer, rider, "en_route_dropoff");
@@ -630,7 +630,7 @@ describe("resend — one live auction per trip (DRS-02)", () => {
     expect(await liveInLineage(a)).toHaveLength(1);
   });
 
-  it("a trip that already has a rider refuses another resend with trip_in_progress and the live order id", async () => {
+  it("a trip that already has a biker refuses another resend with trip_in_progress and the live order id", async () => {
     const customer = await makeCustomer();
     const a = await finished(customer, "expired");
     const live = await finished(customer, "cancelled", a);

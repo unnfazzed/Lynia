@@ -642,7 +642,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     this.notifyQueue(order.merchantId, orderId);
     void this.notifications.notifyProfiles([riderId], {
       title: "You got the job",
-      body: "Head to the kitchen — you're the confirmed rider for this order.",
+      body: "Head to the kitchen — you're the confirmed biker for this order.",
       data: { orderId, status: "assigned" },
     });
     const fresh = await this.prisma.order.findUnique({
@@ -655,7 +655,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
         ...pushCopy(
           PUSH_C.riderToVenue,
           { n: fresh.rider?.profile?.firstName?.trim() || null, v: fresh.merchant?.name?.trim() || null },
-          { n: "Your rider", v: "the venue" },
+          { n: "Your biker", v: "the venue" },
         ),
         // to+orderType so the tap opens the food tracker: "assigned" alone routes to /rider/job (the
         // parcel rider's job screen) — a dead end for a food customer. Additive on the wire.
@@ -786,7 +786,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
 
     if (strikeLimitHit) {
       void this.gateway.evictRiderFromSupply(riderId).catch((err) => {
-        this.logger.warn(`evictRiderFromSupply failed for rider ${riderId}: ${(err as Error).message}`);
+        this.logger.warn(`evictRiderFromSupply failed for biker ${riderId}: ${(err as Error).message}`);
       });
     }
     try {
@@ -798,8 +798,8 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     const fresh = await this.prisma.order.findUnique({ where: { id: orderId }, select: { customerId: true } });
     if (fresh) {
       void this.notifications.notifyProfiles([fresh.customerId], {
-        title: "Finding you a new rider",
-        body: "Your rider had to drop off — we're re-dispatching your order now, nothing charged.",
+        title: "Finding you a new biker",
+        body: "Your biker had to drop off — we're re-dispatching your order now, nothing charged.",
         // to+orderType so the tap opens the food tracker, not the parcel /order/:id. Additive.
         data: { orderId, status: "requested", to: "customer", orderType: "merchant" },
       });
@@ -817,7 +817,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       where: { id: orderId, merchantId, orderType: "merchant", status: "requested", merchantPhase: "ready_for_pickup", noRiderHoldAt: { not: null } },
       data: { noRiderHoldAt: null, dispatchAttempt: 0, dispatchStartedAt: null, dispatchNextCheckAt: null },
     });
-    if (claimed.count === 0) throw new ConflictException("This order isn't waiting on a rider decision");
+    if (claimed.count === 0) throw new ConflictException("This order isn't waiting on a biker decision");
     return { orderId, resumed: true };
   }
 
@@ -829,7 +829,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       where: { id: orderId, merchantId, orderType: "merchant", status: "requested", merchantPhase: "ready_for_pickup", noRiderHoldAt: { not: null } },
       data: { status: "cancelled", cancelledAt: new Date(), rejectionReason: "no_rider", merchantPhase: null },
     });
-    if (claimed.count === 0) throw new ConflictException("This order isn't waiting on a rider decision");
+    if (claimed.count === 0) throw new ConflictException("This order isn't waiting on a biker decision");
     await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
     const order = await this.prisma.order.findUnique({ where: { id: orderId }, select: { customerId: true } });
     if (order) {

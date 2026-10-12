@@ -55,7 +55,7 @@ async function makeCustomer(): Promise<string> {
 
 async function makeRider(): Promise<string> {
   const p = await prisma.profile.create({
-    data: { role: "rider", firstName: "Rider", lastName: "R", phone: `r_${crypto.randomUUID()}` },
+    data: { role: "rider", firstName: "Biker", lastName: "R", phone: `r_${crypto.randomUUID()}` },
     select: { id: true },
   });
   await prisma.rider.create({
@@ -106,7 +106,7 @@ afterAll(async () => {
 beforeEach(clean);
 
 describe("offer loop concurrency", () => {
-  it("ET1: two customers selecting the same order assign exactly one rider", async () => {
+  it("ET1: two customers selecting the same order assign exactly one biker", async () => {
     const customer = await makeCustomer();
     const order = await makeOpenOrder(customer);
     const [r1, r2] = [await makeRider(), await makeRider()];
@@ -127,7 +127,7 @@ describe("offer loop concurrency", () => {
     expect(selected).toBe(1);
   });
 
-  it("ET2: a rider selected on two orders at once is assigned to exactly one", async () => {
+  it("ET2: a biker selected on two orders at once is assigned to exactly one", async () => {
     const customer = await makeCustomer();
     const rider = await makeRider();
     const orderA = await makeOpenOrder(customer);

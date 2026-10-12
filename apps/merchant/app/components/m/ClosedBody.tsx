@@ -60,7 +60,7 @@ export function BookRiderCard({ href }: { href: string }) {
         <Icon name="bike" size={20} />
       </i>
       <div>
-        <b>Book a rider</b>
+        <b>Book a biker</b>
         <span>For sales you made by phone or WhatsApp</span>
       </div>
       <Icon name="chevron-right" size={20} color="var(--muted)" />

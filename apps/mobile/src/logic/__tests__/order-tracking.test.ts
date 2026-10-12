@@ -31,7 +31,7 @@ function gpsTick(o: OrderSnapshot, lat: number, lng: number, at: string): OrderS
 }
 
 describe("selectOrderShell", () => {
-  it("strips the per-tick telemetry but keeps rider presence and everything else", () => {
+  it("strips the per-tick telemetry but keeps biker presence and everything else", () => {
     const shell = selectOrderShell(base);
     expect(shell.rider).toEqual({ profileId: "r1", currentLat: null, currentLng: null, updatedAt: null });
     // Everything the screen renders from must survive untouched.
@@ -61,7 +61,7 @@ describe("selectOrderShell", () => {
 });
 
 describe("selectRiderTelemetry", () => {
-  it("carries exactly the per-tick slice: position, updatedAt, and rider presence", () => {
+  it("carries exactly the per-tick slice: position, updatedAt, and biker presence", () => {
     expect(selectRiderTelemetry(base)).toEqual({
       hasRider: true,
       lat: -17.825,
@@ -76,7 +76,7 @@ describe("selectRiderTelemetry", () => {
     expect(selectRiderTelemetry(tick).updatedAt).toBe("2026-07-12T12:00:10.000Z");
   });
 
-  it("reports no rider / no fix honestly (drives 'Waiting for the rider's GPS…')", () => {
+  it("reports no biker / no fix honestly (drives 'Waiting for the biker's GPS…')", () => {
     expect(selectRiderTelemetry({ ...base, rider: null })).toEqual({ hasRider: false, lat: null, lng: null, updatedAt: null });
     expect(selectRiderTelemetry({ ...base, rider: { profileId: "r1", currentLat: null, currentLng: null, updatedAt: null } })).toEqual({
       hasRider: true,
@@ -110,7 +110,7 @@ describe("orderLoadErrorKind", () => {
 // is 0 (the offers query only holds `pending` offers, gone post-expiry), so the server's durable
 // `hadOffers` is what keeps the copy honest. Either signal ⇒ "had-offers".
 describe("expiredTerminalKind", () => {
-  it("says had-offers when the LIVE bidCount shows riders bid (the warm, non-killed case)", () => {
+  it("says had-offers when the LIVE bidCount shows bikers bid (the warm, non-killed case)", () => {
     expect(expiredTerminalKind({ bidCount: 3, hadOffers: null, expiryNoSupply: null })).toBe("had-offers");
   });
 
@@ -174,7 +174,7 @@ describe("reconcileDeliveryCode", () => {
     expect(reconcileDeliveryCode({ hasLocalCode: true, storedAttemptsHighWater: null, snapshotAttempts: 0 })).toEqual({ action: "none" });
   });
 
-  it("advances the high-water as a rider burns attempts against the CURRENT code", () => {
+  it("advances the high-water as a biker burns attempts against the CURRENT code", () => {
     expect(reconcileDeliveryCode({ hasLocalCode: true, storedAttemptsHighWater: 0, snapshotAttempts: 1 })).toEqual({ action: "advance-highwater", attempts: 1 });
     expect(reconcileDeliveryCode({ hasLocalCode: true, storedAttemptsHighWater: 2, snapshotAttempts: 5 })).toEqual({ action: "advance-highwater", attempts: 5 });
   });
@@ -325,7 +325,7 @@ describe("shouldCancelBeforeRebroadcast", () => {
 // or a lost-response retry landing after the customer's OWN pick already committed server-side — the
 // two are indistinguishable from the bare error, so a fresh getOrder() after the 409 has to settle it.
 describe("selectOfferReconciled", () => {
-  it("reconciles true when the fresh order is assigned to the SAME rider whose offer was tapped", () => {
+  it("reconciles true when the fresh order is assigned to the SAME biker whose offer was tapped", () => {
     expect(selectOfferReconciled({ freshStatus: "assigned", freshRiderId: "r1", selectedRiderId: "r1" })).toBe(true);
   });
 
@@ -333,7 +333,7 @@ describe("selectOfferReconciled", () => {
     expect(selectOfferReconciled({ freshStatus: "en_route_pickup", freshRiderId: "r1", selectedRiderId: "r1" })).toBe(true);
   });
 
-  it("stays unreconciled when a DIFFERENT rider ended up assigned — the genuine race-loss case", () => {
+  it("stays unreconciled when a DIFFERENT biker ended up assigned — the genuine race-loss case", () => {
     expect(selectOfferReconciled({ freshStatus: "assigned", freshRiderId: "r2", selectedRiderId: "r1" })).toBe(false);
   });
 
@@ -341,17 +341,17 @@ describe("selectOfferReconciled", () => {
     expect(selectOfferReconciled({ freshStatus: "open_for_offers", freshRiderId: null, selectedRiderId: "r1" })).toBe(false);
   });
 
-  it("stays unreconciled when the fresh order has no rider attached at all", () => {
+  it("stays unreconciled when the fresh order has no biker attached at all", () => {
     expect(selectOfferReconciled({ freshStatus: "assigned", freshRiderId: undefined, selectedRiderId: "r1" })).toBe(false);
   });
 
-  it("stays unreconciled when the tapped offer's rider couldn't be resolved locally — nothing to compare against", () => {
+  it("stays unreconciled when the tapped offer's biker couldn't be resolved locally — nothing to compare against", () => {
     expect(selectOfferReconciled({ freshStatus: "assigned", freshRiderId: "r1", selectedRiderId: null })).toBe(false);
     expect(selectOfferReconciled({ freshStatus: "assigned", freshRiderId: "r1", selectedRiderId: undefined })).toBe(false);
   });
 });
 
-describe("liveOrderFromResendError (DRS-02 resend refused: the trip already has a rider)", () => {
+describe("liveOrderFromResendError (DRS-02 resend refused: the trip already has a biker)", () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { ApiError } = require("../../api/client") as typeof import("../../api/client");
   const { liveOrderFromResendError } = require("../order-tracking") as typeof import("../order-tracking");
@@ -395,11 +395,11 @@ describe("lateCancelVariant (D-97, 18d / 18e / 18b / 18f)", () => {
     nowMs: now,
   };
   it("before pickup stays 18a", () => expect(lateCancelVariant({ ...cx, pickedUpAt: null })).toBeNull());
-  it("a LyniaGo cancel stays 18c, a rider viewer keeps their own screen", () => {
+  it("a LyniaGo cancel stays 18c, a biker viewer keeps their own screen", () => {
     expect(lateCancelVariant({ ...cx, cancelledBy: null })).toBeNull();
     expect(lateCancelVariant({ ...cx, riderViewer: true })).toBeNull();
   });
-  it("18d / 18b with the rider's number, 18e without it", () => {
+  it("18d / 18b with the biker's number, 18e without it", () => {
     expect(lateCancelVariant(cx)).toBe("reach");
     expect(lateCancelVariant({ ...cx, cancelledBy: "rider" })).toBe("reach");
     expect(lateCancelVariant({ ...cx, phone: null })).toBe("pending");

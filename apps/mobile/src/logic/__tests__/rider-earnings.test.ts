@@ -28,8 +28,8 @@ function row(over: Partial<OrderHistoryRow>): OrderHistoryRow {
   };
 }
 
-describe("rider earnings", () => {
-  it("counts only delivered (or rated) rider jobs as a paid fare", () => {
+describe("biker earnings", () => {
+  it("counts only delivered (or rated) biker jobs as a paid fare", () => {
     expect(paidFare(row({}))).toBe(3.2);
     expect(paidFare(row({ status: "completed" }))).toBe(3.2);
     expect(paidFare(row({ status: "undelivered" }))).toBeNull();
@@ -37,7 +37,7 @@ describe("rider earnings", () => {
     expect(paidFare(row({ agreedFare: null }))).toBe(3);
   });
 
-  it("MA-H1: a merchant job pays the rider's fare, not the customer's whole bill", () => {
+  it("MA-H1: a merchant job pays the biker's fare, not the customer's whole bill", () => {
     expect(paidFare(row({ orderType: "merchant", agreedFare: "15.50", riderFare: "2.50" }))).toBe(2.5);
     // A parcel's agreed fare is the rider's fare; an older server without riderFare keeps the old read.
     expect(paidFare(row({ riderFare: null }))).toBe(3.2);
@@ -91,7 +91,7 @@ describe("the Money feed", () => {
   });
 });
 
-describe("rider prefs", () => {
+describe("biker prefs", () => {
   it("parses defensively", () => {
     expect(parseRiderPrefs(null)).toEqual(DEFAULT_RIDER_PREFS);
     expect(parseRiderPrefs("not json")).toEqual(DEFAULT_RIDER_PREFS);
