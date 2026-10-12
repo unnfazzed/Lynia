@@ -316,6 +316,11 @@ model Rider {
   // or out-of-order delivery can't overwrite a newer decision (see RiderService.applyKycResult).
   kycRef            String?                                @unique @map("kyc_ref")
   kycResolvedAt     DateTime?                              @map("kyc_resolved_at")
+  // KYC-R26-02: who resolved the CURRENT check — "admin" (adminSetKyc) or "vendor" (applyKycResult), stamped
+  // with kycResolvedAt; null while unresolved, after a retry mints a new session, after an admin `pending`
+  // reset, and on rows resolved before migration 0088 (read as vendor). A vendor webhook never overturns an
+  // admin decision on the same kycRef. Plain text, not an enum: two values, expand-only, no type to migrate.
+  kycResolvedBy     String?                                @map("kyc_resolved_by")
   // SECRET. The Didit `session_token` for the live session named by kycRef, kept so a rider can RESUME
   // an unfinished check instead of minting a fresh PAID session on every retry tap. Didit returns this
   // only from POST /v3/session/ at create time — the decision endpoint hands back status and a url but

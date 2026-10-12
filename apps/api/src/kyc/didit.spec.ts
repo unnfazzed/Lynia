@@ -6,7 +6,9 @@ import {
   classifyDiditSession,
   classifyStoredDiditStatus,
   decideDiditKyc,
+  diditEventAt,
   diditTimestampFresh,
+  isDiditDocumentExpired,
   extractDiditDocumentExpiry,
   extractDiditDocumentNumber,
   extractDiditScore,
@@ -45,7 +47,8 @@ describe("classifyDiditSession / classifyStoredDiditStatus", () => {
     expect(classifyDiditSession("Abandoned")).toBe("dead");
     expect(classifyDiditSession("expired")).toBe("dead");
     expect(classifyDiditSession("Kyc Expired")).toBe("dead");
-    expect(classifyDiditSession("Resubmitted")).toBe("in_flight");
+    // KYC-R26-11: Didit sent steps back to the rider — their move, so a resume, not a wait.
+    expect(classifyDiditSession("Resubmitted")).toBe("unfinished");
     expect(classifyDiditSession("Approved")).toBe("in_flight");
     expect(classifyDiditSession("In Progress")).toBe("unfinished");
     expect(classifyDiditSession("Not Started")).toBe("unfinished");
@@ -65,7 +68,11 @@ describe("classifyDiditSession / classifyStoredDiditStatus", () => {
 describe("mapDiditPendingState", () => {
   it("treats the statuses where the vendor holds the check as in flight", () => {
     expect(mapDiditPendingState("In Review")).toBe("in_flight");
-    expect(mapDiditPendingState("Resubmitted")).toBe("in_flight");
+  });
+
+  it("KYC-R26-11: Resubmitted (Didit asked the rider to redo steps) is the rider's move — unfinished, with a resume", () => {
+    expect(mapDiditPendingState("Resubmitted")).toBe("unfinished");
+    expect(mapDiditPendingState("RESUBMITTED")).toBe("unfinished");
   });
 
   // A terminal decision the webhook hasn't delivered yet. The row still says pending, and the honest
@@ -423,10 +430,42 @@ describe("diditTimestampFresh", () => {
   it("tolerates epoch-millis so a unit change can't reject everything", () => {
     expect(diditTimestampFresh(String(now), now)).toBe(true);
   });
+  it("KYC-R26-06: accepts the signed body's NUMBER timestamp (seconds or millis) as well as the header string", () => {
+    expect(diditTimestampFresh(nowSec, now)).toBe(true);
+    expect(diditTimestampFresh(now, now)).toBe(true);
+    expect(diditTimestampFresh(nowSec - 600, now)).toBe(false);
+  });
   it("fails closed on a missing or unparseable timestamp", () => {
     expect(diditTimestampFresh(undefined, now)).toBe(false);
     expect(diditTimestampFresh("", now)).toBe(false);
     expect(diditTimestampFresh("not-a-number", now)).toBe(false);
+  });
+});
+
+describe("diditEventAt (KYC-R26-06)", () => {
+  it("reads seconds as seconds and normalises an epoch-millis body timestamp to the same instant", () => {
+    expect(diditEventAt(1_750_000_000)?.toISOString()).toBe(new Date(1_750_000_000_000).toISOString());
+    expect(diditEventAt(1_750_000_000_123)?.toISOString()).toBe(new Date(1_750_000_000_123).toISOString());
+    expect(diditEventAt("1750000000")?.toISOString()).toBe(new Date(1_750_000_000_000).toISOString());
+  });
+  it("is null for a missing, non-numeric or non-positive value", () => {
+    expect(diditEventAt(undefined)).toBeNull();
+    expect(diditEventAt("soon")).toBeNull();
+    expect(diditEventAt(0)).toBeNull();
+    expect(diditEventAt(Number.NaN)).toBeNull();
+  });
+});
+
+describe("isDiditDocumentExpired (KYC-R26-08)", () => {
+  const at = new Date("2026-10-12T15:00:00Z");
+  it("is expired only when the expiry day is strictly before the decision's UTC day", () => {
+    expect(isDiditDocumentExpired(new Date("2026-10-11T00:00:00Z"), at)).toBe(true);
+    expect(isDiditDocumentExpired(new Date("2026-10-12T00:00:00Z"), at)).toBe(false); // valid through its last day
+    expect(isDiditDocumentExpired(new Date("2031-01-01T00:00:00Z"), at)).toBe(false);
+  });
+  it("fails open when the decision carried no date", () => {
+    expect(isDiditDocumentExpired(null, at)).toBe(false);
+    expect(isDiditDocumentExpired(undefined, at)).toBe(false);
   });
 });
 

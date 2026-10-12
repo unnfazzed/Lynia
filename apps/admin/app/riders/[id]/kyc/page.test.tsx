@@ -173,7 +173,7 @@ describe("KYC review: decided states", () => {
     expect(screen.getAllByText("Selfie doesn't match the ID").length).toBeGreaterThan(0);
     expect(screen.queryByText("face_mismatch")).toBeNull();
     cleanup();
-    await open(review({ status: "failed", declineReason: "doc_expired" }));
+    await open(review({ status: "failed", declineReason: "id_expired" }));
     expect(screen.getAllByText("ID document expired").length).toBeGreaterThan(0);
     cleanup();
     await open(review({ status: "failed", declineReason: "some_new_key" }));

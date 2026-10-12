@@ -36,10 +36,15 @@ export function mapDiditStatus(status: string): RiderKyc {
  * kyc_status should be. This one only ever runs while that answer is already `pending`, and asks
  * whether the rider owes the next action:
  *
- *   In Review / Resubmitted                 the vendor holds it            → in_flight
+ *   In Review                               the vendor holds it            → in_flight
  *   Approved / Declined                     terminal; the webhook that flips kycStatus is in flight,
  *                                           so while the row still says pending, so is the check → in_flight
  *   Not Started / In Progress / Awaiting User  never opened, opened and not finished, or backed out → unfinished
+ *   Resubmitted                             KYC-R26-11: Didit's reviewer sent steps BACK to the rider (re-take
+ *                                           the document / selfie) — the rider owes the next move, so it is a
+ *                                           resume (`unfinished`), not "with the vendor". Reading it as in flight
+ *                                           parked the rider on "under review" with no button while Didit
+ *                                           waited on them.
  *
  * "In Progress" is the rider's move, not the vendor's: Didit sets it the moment the hosted page OPENS,
  * before a single document is captured. Reading it as in flight told a rider who opened the check and
@@ -58,11 +63,11 @@ export function mapDiditStatus(status: string): RiderKyc {
 export function mapDiditPendingState(status: string): ServerKycPendingState {
   switch (status.trim().toLowerCase().replace(/[\s_-]+/g, " ")) {
     case "in review":
-    case "resubmitted":
     case "approved":
     case "declined":
       return "in_flight";
     default:
+      // Not Started | In Progress | Awaiting User | Resubmitted (KYC-R26-11) | dead | unknown
       return "unfinished";
   }
 }
@@ -75,9 +80,10 @@ export function mapDiditPendingState(status: string): ServerKycPendingState {
  *              "usually under a minute" is false: the app draws the Rider v2 "under review" wall.
  *   dead       Abandoned / Expired / Kyc Expired — the session can never be finished. Resuming it is the
  *              R-1 loop ("Finish verifying" re-opening a dead page forever); the next attempt must mint.
- *   in_flight  Resubmitted, or a terminal Approved / Declined whose webhook is still on its way.
- *   unfinished Not Started / In Progress / Awaiting User, and anything unknown (the safe default — see
- *              mapDiditPendingState).
+ *   in_flight  A terminal Approved / Declined whose webhook is still on its way.
+ *   unfinished Not Started / In Progress / Awaiting User, Resubmitted (KYC-R26-11: Didit asked the rider to
+ *              redo steps — their move, so the app offers the resume), and anything unknown (the safe default —
+ *              see mapDiditPendingState).
  *
  * `mapDiditPendingState` keeps its two-value answer for the `/auth/me` field older apps read; this one
  * feeds the additive `kycHeld` flag and retryKyc's dead-session check.
@@ -100,11 +106,11 @@ export function classifyDiditSession(status: string | null | undefined): DiditSe
     case "expired":
     case "kyc expired":
       return "dead";
-    case "resubmitted":
     case "approved":
     case "declined":
       return "in_flight";
     default:
+      // Not Started | In Progress | Awaiting User | Resubmitted (KYC-R26-11) | unknown
       return "unfinished";
   }
 }
@@ -377,16 +383,47 @@ export function verifyDiditSignature(rawBody: string, signatureHeader: string | 
 }
 
 /**
+ * KYC-R26-06: a Didit `timestamp` (the SIGNED body field, or the X-Timestamp header) as Unix SECONDS, or null
+ * when it is missing or not a finite positive number. Didit documents seconds; a value past 1e12 can only be
+ * epoch-millis (seconds in 2026 are ~1.8e9, and 1e12 seconds is the year 33658), so it is divided down rather
+ * than read as a date 1000x in the future — which, used as `eventAt`, would have made every later decision on
+ * that check look OLDER than this one to applyKycResult's monotonic guard.
+ */
+export function diditTimestampSeconds(raw: unknown): number | null {
+  const n = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() !== "" ? Number(raw.trim()) : NaN;
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n > 1e12 ? n / 1000 : n;
+}
+
+/** The event time a Didit delivery carries (body `timestamp`, normalised by {@link diditTimestampSeconds}),
+ *  or null when it carries none. */
+export function diditEventAt(raw: unknown): Date | null {
+  const s = diditTimestampSeconds(raw);
+  return s === null ? null : new Date(Math.round(s * 1000));
+}
+
+/**
+ * KYC-R26-08: has the verified document already expired by the day of this decision? The expiry is a UTC
+ * midnight date (extractDiditDocumentExpiry); the document is valid THROUGH that day, so it is expired only
+ * when that day is strictly before the decision's UTC day. A missing date is never expired (fail-open, like
+ * every other extraction here — the vendor's own expiry check stays the primary gate).
+ */
+export function isDiditDocumentExpired(expiresOn: Date | null | undefined, at: Date): boolean {
+  if (!expiresOn) return false;
+  const day = Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate());
+  return expiresOn.getTime() < day;
+}
+
+/**
  * Freshness check (replay protection). Didit sends the send-time in the X-Timestamp header (Unix
  * seconds); reject anything outside a 300s window — a valid HMAC over an old body is still a replay.
  *
  * Fail-closed: a missing or unparseable timestamp is NOT fresh, because a V3 destination always
  * sends one. Epoch-millis is tolerated so a seconds/millis unit difference can't reject everything.
  */
-export function diditTimestampFresh(timestampHeader: string | undefined, nowMs: number, toleranceSec = 300): boolean {
-  if (!timestampHeader) return false;
-  let ts = Number(timestampHeader.trim());
-  if (!Number.isFinite(ts)) return false;
-  if (ts > 1e12) ts = ts / 1000; // tolerate epoch-millis (seconds in 2026 are ~1.7e9)
+export function diditTimestampFresh(timestamp: string | number | undefined, nowMs: number, toleranceSec = 300): boolean {
+  // Epoch-millis tolerated (diditTimestampSeconds), so a seconds/millis unit difference can't reject everything.
+  const ts = diditTimestampSeconds(timestamp);
+  if (ts === null) return false;
   return Math.abs(nowMs / 1000 - ts) <= toleranceSec;
 }

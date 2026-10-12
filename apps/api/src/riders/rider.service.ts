@@ -9,14 +9,14 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
-import { freeJobsLeft, isCommissionActive, isInServiceArea, normalizeNationalId, resolveCommissionRatePct } from "@lynia/shared";
+import { Prisma, type Role } from "@prisma/client";
+import { freeJobsLeft, isCommissionActive, isInServiceArea, KycDeclineReason, normalizeNationalId, resolveCommissionRatePct } from "@lynia/shared";
 import { isOwnedUploadKey } from "../adapters/storage/upload-kinds";
 import { UploadVerifier } from "../adapters/storage/upload-verifier";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { KYC_VENDOR, type KycVendor } from "../kyc/kyc-vendor";
-import { classifyStoredDiditStatus, DIDIT_APPROVED_STATUS, kycIdExpiryOnLapse } from "../kyc/didit";
+import { classifyStoredDiditStatus, DIDIT_APPROVED_STATUS, isDiditDocumentExpired, kycIdExpiryOnLapse } from "../kyc/didit";
 import { KycPendingStateService } from "../kyc/kyc-pending-state.service";
 import { auditData } from "../admin/admin.shared";
 import { baseBroadcastRadiusM } from "../common/broadcast-policy";
@@ -43,6 +43,20 @@ const FORCED_KYC_REPLACEMENT_WINDOW_MS = 60 * 60 * 1000;
 export { canGoOnline, onlineRefusalReason, type OnlineRefusal };
 
 type Kyc = "pending" | "verified" | "failed" | "expired";
+
+/**
+ * KYC-R26-02: who resolved the rider's CURRENT check (riders.kyc_resolved_by, migration 0088). Stamped with
+ * kycResolvedAt by the two writers that resolve a check: `admin` by adminSetKyc (approve / decline / expire),
+ * `vendor` by applyKycResult. Cleared when a check is reopened for a fresh vendor result (retryKyc's new
+ * session, an admin `pending` reset). Null on rows resolved before the column existed — read as `vendor`.
+ */
+export const KYC_RESOLVED_BY_ADMIN = "admin";
+export const KYC_RESOLVED_BY_VENDOR = "vendor";
+/** KYC-R26-08: our own ID-expiry sweep. Like an admin decision, not overturnable by a late vendor delivery. */
+export const KYC_RESOLVED_BY_SYSTEM = "system";
+
+/** KYC-R26-08: audit actor for the daily sweep that expires a verified rider whose ID document has lapsed. */
+const KYC_ID_EXPIRY_ACTOR = "system:kyc-id-expiry";
 
 /**
  * D-75: a hand approval refuses, rather than verifying the rider with nothing adopted, when the number
@@ -285,7 +299,13 @@ export class RiderService {
     // BH-04: structured `reason` (not just a plain message) so the client can special-case this
     // exact conflict — it's the expected shape of a lost-response retry (the FIRST submit landed
     // server-side, the rider only saw the dropped/timed-out response) rather than a generic error.
-    if (existing) throw new ConflictException({ reason: "already_rider", message: "Already registered as a rider" });
+    // KYC-R26-10: when that first submit's session is live, the repeat gets IT back instead (the lost
+    // response it is retrying), so the check opens without a second paid session or a detour via the board.
+    if (existing) {
+      const replay = await this.liveSessionReplay(profileId);
+      if (replay) return replay;
+      throw new ConflictException({ reason: "already_rider", message: "Already registered as a rider" });
+    }
 
     // The photo key must live under this caller's own KYC namespace — POST /uploads/kyc-photo mints
     // keys as `kyc/<callerId>/<uuid>` — so a rider can't persist a key that points at another user's
@@ -315,9 +335,11 @@ export class RiderService {
     // bills a paid Didit session.
     const profile = await this.prisma.profile.findUnique({
       where: { id: profileId },
-      select: { idNumberHash: true },
+      // role: what a failed vendor call restores when it hands the rider claim back (KYC-R26-10).
+      select: { idNumberHash: true, role: true },
     });
     if (!profile) throw new NotFoundException("Profile not found");
+    const previousRole = profile.role;
     if (profile.idNumberHash && (await this.liveDuplicateIdAccountCount(this.prisma, profileId, profile.idNumberHash)) > 0) {
       this.logger.warn(`Rider ${profileId} blocked from onboarding: national ID already on another live account (one-ID-one-account)`);
       throw new ConflictException({
@@ -335,25 +357,6 @@ export class RiderService {
       this.logger.warn(`Rider ${profileId} onboarding with a national ID on another erased/legacy account — flagged for KYC review (A-04)`);
     }
 
-    let kycRef: string | null = null;
-    let verificationUrl: string | undefined;
-    // SECRET, captured here or never — Didit hands `session_token` back only from session-create, so
-    // a token dropped on this path means every later resume mints a fresh paid session (P0-2 / D7).
-    let sessionToken: string | undefined;
-    if (this.env.KYC_MODE === "auto") {
-      // A vendor outage must surface as a retryable 503, not an unhandled 500 — and we throw before
-      // creating the rider row, so a failed submit leaves no half-onboarded rider behind.
-      try {
-        const submission = await this.vendor.submit(profileId);
-        kycRef = submission.ref;
-        verificationUrl = submission.url;
-        sessionToken = submission.token;
-      } catch (err) {
-        this.logger.error(`KYC submit failed for ${profileId}: ${err instanceof Error ? err.message : String(err)}`);
-        throw new ServiceUnavailableException("Couldn't start ID verification. Please try again.");
-      }
-    }
-
     // QA/test: the stub provider has no real vendor and never calls back, so in auto mode it
     // acts as an instant pass — the rider is created already verified and can go online, making
     // the full rider flow (online → bid → deliver → OTP) testable with no Didit account. A real
@@ -362,9 +365,14 @@ export class RiderService {
     const stubAutoPass = this.env.KYC_PROVIDER === "stub" && this.env.KYC_MODE === "auto";
     const initialKyc: Kyc = stubAutoPass ? "verified" : "pending";
 
-    // DS13-06: the findUnique pre-check above races a concurrent duplicate become — the (profileId)
-    // primary key on the rider row is the real guard. Map its P2002 to the same 409 the pre-check raises
-    // (mirrors orders.service/rateSender) instead of leaking a raw 500 to the losers of a parallel burst.
+    // KYC-R26-10: CLAIM the rider row BEFORE the paid vendor call, not after it. The row used to be created
+    // only once vendor.submit() returned, so two near-simultaneous submits (a double tap, a client retry
+    // racing a slow first response) both passed the findUnique pre-check above and BOTH bought a Didit
+    // session; the loser's P2002 came after its money was spent. Now the (profileId) primary key is the claim
+    // (DS13-06's guard, moved ahead of the spend): exactly one caller creates the row, and only that caller
+    // mints. The loser reuses the winner's session when it is already stored, else gets the same
+    // `already_rider` the app treats as "the first submit won — go to the board", where the stored session
+    // is resumed for free (retryKyc). The row starts with no session; it is attached below.
     try {
       await this.prisma.$transaction([
         this.prisma.profile.update({ where: { id: profileId }, data: { role: "rider" } }),
@@ -375,11 +383,9 @@ export class RiderService {
             photoUrl: data.photoUrl ?? null,
             kycStatus: initialKyc,
             idVerified: stubAutoPass,
-            kycRef,
-            // Only ever attached to a still-pending session. The stub auto-pass path lands `verified`
-            // immediately, and a verified rider must carry no live credential.
-            kycSessionToken: stubAutoPass ? null : (sessionToken ?? null),
-            kycSessionUrl: stubAutoPass ? null : (verificationUrl ?? null),
+            kycRef: null,
+            kycSessionToken: null,
+            kycSessionUrl: null,
             duplicateIdFlag,
           },
         }),
@@ -388,12 +394,92 @@ export class RiderService {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
         // R-10: the SAME structured reason as the pre-check above. The loser of a double-tap race lands
         // here, and the app special-cases `already_rider` (the first submit won — go to the board); a
-        // bare message left that rider on R1 with a toast.
+        // bare message left that rider on R1 with a toast. KYC-R26-10: a winner that already stored its
+        // session hands it to the loser too, so both taps open the same check.
+        const replay = await this.liveSessionReplay(profileId);
+        if (replay) return replay;
         throw new ConflictException({ reason: "already_rider", message: "You're already a rider" });
       }
       throw err;
     }
-    return { kycStatus: initialKyc, mode: this.env.KYC_MODE, verificationUrl, sessionToken: stubAutoPass ? undefined : sessionToken };
+
+    if (this.env.KYC_MODE !== "auto") return { kycStatus: initialKyc, mode: this.env.KYC_MODE, verificationUrl: undefined };
+
+    // SECRET, captured here or never — Didit hands `session_token` back only from session-create, so
+    // a token dropped on this path means every later resume mints a fresh paid session (P0-2 / D7).
+    let submission: Awaited<ReturnType<KycVendor["submit"]>>;
+    try {
+      submission = await this.vendor.submit(profileId);
+    } catch (err) {
+      // A vendor outage must surface as a retryable 503, not an unhandled 500 — and the claimed row is
+      // handed back, so a failed submit leaves no half-onboarded rider behind (the next tap claims afresh).
+      this.logger.error(`KYC submit failed for ${profileId}: ${err instanceof Error ? err.message : String(err)}`);
+      await this.releaseRiderClaim(profileId, previousRole);
+      throw new ServiceUnavailableException("Couldn't start ID verification. Please try again.");
+    }
+    // Attach the session to the row this call claimed — only while the row still has none, so nothing that
+    // landed meanwhile is overwritten. Only ever a still-pending session: the stub auto-pass lands `verified`
+    // immediately, and a verified rider must carry no live credential.
+    const attached = await this.prisma.rider.updateMany({
+      where: { profileId, kycRef: null },
+      data: {
+        kycRef: submission.ref,
+        kycSessionToken: stubAutoPass ? null : (submission.token ?? null),
+        kycSessionUrl: stubAutoPass ? null : (submission.url ?? null),
+      },
+    });
+    if (attached.count === 0) {
+      // Something else put a session on the row while this one was being created (a retry from another
+      // device). Theirs is the live one; this one is spent but unused — say so, for the vendor bill.
+      this.logger.warn(`Rider ${profileId}: KYC session ${submission.ref} minted but not attached — the row already had one (KYC-R26-10)`);
+      const replay = await this.liveSessionReplay(profileId);
+      if (replay) return replay;
+    }
+    return {
+      kycStatus: initialKyc,
+      mode: this.env.KYC_MODE,
+      verificationUrl: submission.url,
+      sessionToken: stubAutoPass ? undefined : submission.token,
+    };
+  }
+
+  /**
+   * KYC-R26-10: the live session of a rider whose become-rider already ran, as become-rider's own answer — or
+   * null when there is none to hand back (not pending, manual mode, or the session isn't attached yet). Lets a
+   * repeated submit OPEN the check the first one bought instead of buying another. Only ever the caller's own
+   * row (keyed by their profileId), and the same two credentials getMe / retryKyc already hand to its owner.
+   */
+  private async liveSessionReplay(
+    profileId: string,
+  ): Promise<{ kycStatus: Kyc; mode: Env["KYC_MODE"]; verificationUrl?: string; sessionToken?: string } | null> {
+    if (this.env.KYC_MODE !== "auto") return null;
+    const row = await this.prisma.rider.findUnique({
+      where: { profileId },
+      select: { kycStatus: true, kycRef: true, kycSessionToken: true, kycSessionUrl: true },
+    });
+    if (!row || row.kycStatus !== "pending" || !row.kycRef || !row.kycSessionToken || !row.kycSessionUrl) return null;
+    return { kycStatus: "pending", mode: this.env.KYC_MODE, verificationUrl: row.kycSessionUrl, sessionToken: row.kycSessionToken };
+  }
+
+  /**
+   * KYC-R26-10: undo becomeRider's claim when the vendor call it authorised failed — the row it created (no
+   * session, nothing else references it yet) and the role flip. Guarded on `kycRef: null` so a row that got a
+   * session meanwhile is never removed. Best-effort and never throws: it runs on the error path, and the
+   * vendor failure is the error worth reporting. A release that fails leaves a pending rider with no session,
+   * which the board's "Finish verifying" (retryKyc) mints for — degraded, not stuck.
+   */
+  private async releaseRiderClaim(profileId: string, previousRole: Role | null | undefined): Promise<void> {
+    try {
+      const removed = await this.prisma.rider.deleteMany({ where: { profileId, kycRef: null } });
+      if (removed.count > 0) {
+        await this.prisma.profile.update({
+          where: { id: profileId },
+          data: { role: previousRole ?? "customer" },
+        });
+      }
+    } catch (err) {
+      this.logger.warn(`Couldn't release the rider claim for ${profileId}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /**
@@ -638,6 +724,8 @@ export class RiderService {
         idVerified: stubAutoPass,
         kycRef: submission.ref,
         kycResolvedAt: null,
+        // KYC-R26-02: a fresh check — nobody has resolved it, so the vendor's result for it applies.
+        kycResolvedBy: null,
         // `?? null` rather than an optional spread, for both: a vendor response missing a credential
         // must CLEAR the stale one, never leave the previous session's secret bound to a kycRef it no
         // longer belongs to. They are always written and cleared together.
@@ -695,6 +783,105 @@ export class RiderService {
     // The vendor just told us; serve that rather than asking it again on the next poll.
     if (res.count > 0) this.pendingStates?.prime(kycRef, vendorStatus);
     return { updated: res.count };
+  }
+
+  /**
+   * KYC-R26-07: the profile that owns a KYC session (riders.kyc_ref is unique), or null when no rider holds it
+   * (unknown, replaced by a retry, or erased). The webhook compares it with the delivery's signed
+   * `vendor_data` — the profileId we sent Didit at session-create — before applying anything.
+   */
+  async kycSessionOwner(kycRef: string): Promise<string | null> {
+    const row = await this.prisma.rider.findFirst({ where: { kycRef }, select: { profileId: true } });
+    return row?.profileId ?? null;
+  }
+
+  /**
+   * KYC-R26-03: the pending checks whose terminal webhook may have been lost — riders still `pending` on a
+   * vendor session (kycRef) nobody has resolved (kycResolvedAt null), last touched before `olderThan` (the
+   * row's @updatedAt: any write — the session's own creation included — bumps it, so it lower-bounds the
+   * session's age), excluding sessions the vendor already told us are dead (they can never be decided; the
+   * next retry mints). Keyset-paged by profileId after `afterProfileId` so a bounded batch walks the whole
+   * backlog over successive ticks instead of re-reading the same oldest page forever.
+   */
+  async kycReconcileCandidates(
+    olderThan: Date,
+    limit: number,
+    afterProfileId: string | null,
+  ): Promise<Array<{ profileId: string; kycRef: string; kycVendorStatus: string | null }>> {
+    const rows = await this.prisma.rider.findMany({
+      where: {
+        kycStatus: "pending",
+        kycRef: { not: null },
+        kycResolvedAt: null,
+        updatedAt: { lt: olderThan },
+        OR: [{ kycVendorStatus: null }, { kycVendorStatus: { notIn: ["Abandoned", "Expired", "Kyc Expired"] } }],
+        ...(afterProfileId ? { profileId: { gt: afterProfileId } } : {}),
+      },
+      select: { profileId: true, kycRef: true, kycVendorStatus: true },
+      orderBy: { profileId: "asc" },
+      take: limit,
+    });
+    return rows.filter((r): r is { profileId: string; kycRef: string; kycVendorStatus: string | null } => !!r.kycRef);
+  }
+
+  /**
+   * KYC-R26-08: move VERIFIED riders whose ID document has expired (kycIdExpiresOn before today, UTC) to
+   * `expired` — the same state, and the same write, as a vendor "Kyc Expired" or an ops expire: idVerified
+   * off, the A-02 counter reset unless already locked (DS17-03), forced offline in the same write and evicted
+   * from the live-supply planes post-commit (Class-B), the lapse day kept (kycIdExpiryOnLapse). Before this,
+   * a verified rider kept riding on an expired card unless Didit happened to send "Kyc Expired".
+   *
+   * Each rider is its own transaction: row lock, re-read, CAS on still-verified + still-lapsed, so an admin
+   * decision or a re-verification landing meanwhile wins. Audited as `rider.kyc_expire` by
+   * `system:kyc-id-expiry` with reason `id_expired` (the account-status feed reads it like an ops expire).
+   * Silent like every expiry (the app's F6 screen names the day). Bounded by `limit`; never throws per rider.
+   */
+  async expireLapsedIds(now: Date = new Date(), limit = 200): Promise<{ expired: number }> {
+    const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const lapsed = await this.prisma.rider.findMany({
+      where: { kycStatus: "verified", kycIdExpiresOn: { lt: today } },
+      select: { profileId: true },
+      orderBy: { kycIdExpiresOn: "asc" },
+      take: limit,
+    });
+    let expired = 0;
+    for (const { profileId } of lapsed) {
+      try {
+        const done = await this.prisma.$transaction(async (tx) => {
+          await tx.$executeRaw`SELECT 1 FROM riders WHERE profile_id = ${profileId}::uuid FOR UPDATE`;
+          const cur = await tx.rider.findUnique({ where: { profileId }, select: { kycStatus: true, kycAttempts: true, kycIdExpiresOn: true } });
+          if (!cur || cur.kycStatus !== "verified" || !cur.kycIdExpiresOn || cur.kycIdExpiresOn >= today) return false;
+          const res = await tx.rider.updateMany({
+            where: { profileId, kycStatus: "verified" },
+            data: {
+              kycStatus: "expired",
+              idVerified: false,
+              kycDeclineReason: null,
+              kycResolvedAt: now,
+              kycResolvedBy: KYC_RESOLVED_BY_SYSTEM,
+              kycSessionToken: null,
+              kycSessionUrl: null,
+              kycVendorStatus: null,
+              kycVendorStatusAt: null,
+              ...(cur.kycAttempts < 2 ? { kycAttempts: 0 } : {}),
+              isOnline: false,
+              kycIdExpiresOn: kycIdExpiryOnLapse(cur.kycIdExpiresOn, now),
+            },
+          });
+          if (res.count === 0) return false;
+          await tx.auditLog.create({ data: auditData(KYC_ID_EXPIRY_ACTOR, "rider.kyc_expire", profileId, KycDeclineReason.ID_EXPIRED, null) });
+          return true;
+        });
+        if (done) {
+          expired++;
+          void this.gateway.evictRiderFromSupply(profileId);
+        }
+      } catch (err) {
+        this.logger.error(`ID-expiry sweep failed for rider ${profileId}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    if (expired > 0) this.logger.log(`ID-expiry sweep: ${expired} verified rider(s) moved to expired — their ID document lapsed (KYC-R26-08)`);
+    return { expired };
   }
 
   /** The rider's prepaid commission balance for the online-gate, or undefined when commission is off
@@ -905,9 +1092,9 @@ export class RiderService {
    */
   async applyKycResult(
     kycRef: string,
-    status: "verified" | "failed" | "expired",
+    vendorOutcome: "verified" | "failed" | "expired",
     eventAt: Date,
-    reason?: string | null,
+    vendorReason?: string | null,
     // IR26-04: the document number the vendor actually verified (extractDiditDocumentNumber), when the
     // decision payload exposes one. Only consulted on a `verified` outcome; null degrades to the
     // pre-IR26-04 behavior so a payload-shape mismatch can never wedge real verifications.
@@ -915,7 +1102,19 @@ export class RiderService {
     // First Run v2 F6 (D-82 §4): the verified document's expiry date (extractDiditDocumentExpiry), when the
     // decision payload carries one. Stored on a `verified` outcome; an `expired` one stamps the lapse day.
     documentExpiresOn?: Date | null,
-  ): Promise<{ updated: number }> {
+  ): Promise<{ updated: number; skipped?: "repeat" | "admin_decided" }> {
+    // KYC-R26-08: a verify whose document had ALREADY expired on the day it was decided is a decline, with the
+    // canonical `id_expired` reason (KYC_DECLINE_REASON_LABELS: "ID document expired"). Didit's workflow is
+    // meant to catch this itself, but its document-validity check is configurable per workflow and the date is
+    // right here in the payload, so an expired card can't onboard a rider on a vendor setting. Applied before
+    // anything else, so the outcome is an ordinary decline end to end: the A-02 counter, the audit row, the
+    // push and the offline demotion all follow the `failed` path (no dedupe/adoption — nothing is verified).
+    const expiredDocument = vendorOutcome === "verified" && isDiditDocumentExpired(documentExpiresOn, eventAt);
+    const status: "verified" | "failed" | "expired" = expiredDocument ? "failed" : vendorOutcome;
+    const reason = expiredDocument ? KycDeclineReason.ID_EXPIRED : vendorReason;
+    if (expiredDocument) {
+      this.logger.warn(`KYC ${kycRef}: approved, but the ID document expired before the decision — declined id_expired (KYC-R26-08)`);
+    }
     // DS15-06: the CAS status mutation AND its AuditLog row commit in ONE transaction — matching the
     // manual adminSetKyc path and admin-riders.service's suspend/lift/ban CAS+audit pairs. Previously the
     // audit row was a separate post-commit `create` in its own warn-only try/catch: if that insert failed
@@ -976,9 +1175,46 @@ export class RiderService {
           kycResolvedAt: true,
           // D-82 F6: an `expired` result keeps the document's own expiry day when it is the earlier one.
           kycIdExpiresOn: true,
+          // KYC-R26-01 / -02: what the current check already resolved to, and who resolved it.
+          kycStatus: true,
+          kycVendorStatus: true,
+          kycResolvedBy: true,
           profile: { select: { idNumberHash: true } },
         },
       });
+      // KYC-R26-02: a HUMAN decision on this check is final against the vendor. adminSetKyc stamps kycResolvedAt
+      // with OUR clock and keeps kycRef, so the monotonic guard alone let any later delivery for the same session
+      // (a Didit reviewer's late verdict, a retry Didit re-signed with a fresh timestamp) overturn the
+      // reviewer — re-verifying a rider ops had just declined, or the reverse. The check is read under the row
+      // lock above, so no decision can land between it and the write. A fresh check (retryKyc mints a new
+      // kycRef and clears kycResolvedBy) and an admin `pending` reset (which invites a vendor result and clears
+      // it too) are applied normally.
+      // The ID-expiry sweep (KYC-R26-08, `system`) is held to the same rule: a late Approved for the session
+      // that verified the lapsed card must not re-verify it.
+      if (current?.kycResolvedBy && current.kycResolvedBy !== KYC_RESOLVED_BY_VENDOR) {
+        this.logger.warn(`KYC ${kycRef}: vendor result (${status}) ignored — this check was decided by ${current.kycResolvedBy} (${current.kycStatus}) (KYC-R26-02)`);
+        return { updated: 0, notifyProfileId: null, demotedProfileId: null, skipped: "admin_decided" as const };
+      }
+      // KYC-R26-01: a delivery carrying the outcome this check ALREADY resolved to is a repeat, not a new
+      // decision. The monotonic guard can't see that: Didit re-signs every retry with a fresh body timestamp
+      // (IR26-09), so a retried Declined looked newer than itself and re-incremented kycAttempts — two
+      // deliveries of ONE decline hit the A-02 lock at 2 — and a retried Approved re-wrote the audit row and
+      // re-sent the push. Like adminSetKyc's F-14, the same outcome on the same check (kycRef) is a no-op: no
+      // counter, no audit, no push. A held verify (pending, resolved, vendor status Approved) counts as a
+      // resolved `verified` here. A DIFFERENT outcome on the same check (Approved months later followed by
+      // Kyc Expired, a Didit reviewer overturning a decline) still applies through the guard below.
+      const resolvedOutcome =
+        current?.kycResolvedAt == null
+          ? null
+          : current.kycStatus === "pending"
+            ? current.kycVendorStatus === DIDIT_APPROVED_STATUS
+              ? "verified"
+              : null
+            : current.kycStatus;
+      if (current && resolvedOutcome === status) {
+        this.logger.log(`KYC ${kycRef}: repeat delivery of the ${status} this check already resolved to — no-op (KYC-R26-01)`);
+        return { updated: 0, notifyProfileId: null, demotedProfileId: null, skipped: "repeat" as const };
+      }
       // IR26-04 vendor-document dedupe. The typed-ID gate (IR26-01) blocks reusing a number someone
       // TYPED — a ban-evader's remaining move is typing a DIFFERENT number while showing the same real
       // document to the vendor. When the decision payload exposes the verified document number, hash it
@@ -1056,6 +1292,8 @@ export class RiderService {
           // the same webhook delivery can't be reprocessed.
           ...(holdForReview ? {} : { kycStatus: status, idVerified: status === "verified" }),
           kycResolvedAt: eventAt,
+          // KYC-R26-02: the vendor resolved this check (a hold too: it is the vendor's verdict we hold).
+          kycResolvedBy: KYC_RESOLVED_BY_VENDOR,
           // R-3: a verify HELD for review stays `pending`, and with its credentials cleared below /auth/me
           // used to read it as "unfinished" — the rider was told to finish a check they had finished, and
           // a retry bought a fresh paid session. Record what the vendor said (it approved; WE hold), which
@@ -1117,6 +1355,8 @@ export class RiderService {
           // First Run v2 F6 (D-82 §4): the ID's expiry day — the document's, from a verified decision that
           // carries it; on an expiry, the day it lapsed (or the document's day when that is earlier).
           ...(status === "verified" && documentExpiresOn ? { kycIdExpiresOn: documentExpiresOn } : {}),
+          // KYC-R26-08: an expired-document decline records the day the document expired, for the decline copy.
+          ...(expiredDocument && documentExpiresOn ? { kycIdExpiresOn: documentExpiresOn } : {}),
           ...(status === "expired" ? { kycIdExpiresOn: kycIdExpiryOnLapse(current?.kycIdExpiresOn, eventAt) } : {}),
         },
       });
@@ -1170,7 +1410,7 @@ export class RiderService {
         const rider = await tx.rider.findFirst({ where: { kycRef }, select: { profileId: true } });
         demotedId = rider?.profileId ?? null;
       }
-      return { updated: res.count, notifyProfileId: resolvedProfileId, demotedProfileId: demotedId };
+      return { updated: res.count, notifyProfileId: resolvedProfileId, demotedProfileId: demotedId, skipped: undefined };
     });
     let decided: Awaited<ReturnType<typeof decide>>;
     try {
@@ -1182,7 +1422,8 @@ export class RiderService {
       this.logger.warn(`KYC ${kycRef}: the verified ID number is already on another live account — decision re-applied, held for review (D-75)`);
       decided = await decide(true);
     }
-    const { updated, notifyProfileId, demotedProfileId } = decided;
+    const { updated, notifyProfileId, demotedProfileId, skipped } = decided;
+    if (skipped) return { updated: 0, skipped };
     // R-4: the session is decided (or held); nothing cached about it as "in progress" may outlive that.
     if (updated > 0) this.pendingStates?.invalidate(kycRef);
     // Class-B sibling of BR-01/DS15-05: a KYC lapse pulled the rider offline in PG above; now evict them
@@ -1434,6 +1675,8 @@ export class RiderService {
             // longer flip a manually-declined rider back to verified. retryKyc clears it on a genuine
             // resubmit, so a fresh vendor result still resolves.
             kycResolvedAt: new Date(),
+            // KYC-R26-02: and mark it a HUMAN decision, which applyKycResult will not overturn for this check.
+            kycResolvedBy: KYC_RESOLVED_BY_ADMIN,
             // Class-B demotion: a decline pulls the rider out of good standing, so force offline in the
             // same write (mirrors the webhook path); post-commit evictRiderFromSupply clears geo/board.
             isOnline: false,
@@ -1462,6 +1705,9 @@ export class RiderService {
             // vendor webhook can't override it (mirrors the decline path). A `pending` RESET is
             // deliberately inviting a fresh vendor result, so it leaves kycResolvedAt untouched.
             ...(status === "verified" ? { kycDeclineReason: null, kycResolvedAt: new Date() } : {}),
+            // KYC-R26-02: approve and expire are HUMAN decisions the vendor can't overturn on this check; a
+            // `pending` reset invites a fresh vendor result, so it hands the check back (null).
+            kycResolvedBy: status === "pending" ? null : KYC_RESOLVED_BY_ADMIN,
             // A manual EXPIRE (1·b2 ops backstop) is also terminal: stamp the time, clear any stale
             // decline reason, and reset the A-02 counter so re-verification isn't blocked by an old lock.
             ...(status === "expired"

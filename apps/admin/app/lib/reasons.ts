@@ -124,12 +124,7 @@ export const REASONS = {
   merchantOwnerTransfer: ["Sold or handed over — both people confirmed", "The owner lost their number — ID checked", "Family takeover — ID checked"],
 } as const;
 
-/** Decline keys the API may store that the shared picker list doesn't carry (an expired ID document
- *  found by the ID check). The shared labels win wherever they cover a key. */
-const KYC_EXTRA_REASON_LABELS: Record<string, string> = { doc_expired: "ID document expired" };
-
 /** A stored KYC decline key (e.g. `face_mismatch`) as the reviewer reads it; an unknown key shows as-is. */
 export function kycDeclineLabel(code: string): string {
-  const labels: Record<string, string> = { ...KYC_EXTRA_REASON_LABELS, ...KYC_DECLINE_REASON_LABELS };
-  return labels[code] ?? code;
+  return (KYC_DECLINE_REASON_LABELS as Record<string, string>)[code] ?? code;
 }

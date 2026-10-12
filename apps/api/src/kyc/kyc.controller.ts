@@ -25,17 +25,8 @@ import { ZodBody } from "../common/zod.pipe";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { RiderService } from "../riders/rider.service";
-import {
-  decideDiditKyc,
-  diditTimestampFresh,
-  extractDiditDocumentExpiry,
-  extractDiditDocumentNumber,
-  extractDiditScore,
-  isDiditReviewHold,
-  mapDiditStatus,
-  verifyDiditSignature,
-  verifyDiditSignatureV2,
-} from "./didit";
+import { diditEventAt, diditTimestampFresh, verifyDiditSignature, verifyDiditSignatureV2 } from "./didit";
+import { applyDiditDecision } from "./didit-decision";
 
 // A-02: a decline MUST carry the reason code (recorded on the rider + audit log — a compliance
 // invariant, so it's server-enforced here, not only in the admin ConfirmModal). The admin sends a
@@ -132,85 +123,60 @@ export class KycController {
       if (!ok) {
         throw new UnauthorizedException("Invalid webhook signature");
       }
-      // Replay guard: reject a valid-HMAC body whose X-Timestamp is outside the 300s window.
-      const ts = req.headers["x-timestamp"] as string | undefined;
-      if (!diditTimestampFresh(ts, Date.now())) {
-        throw new UnauthorizedException("Stale webhook timestamp");
-      }
     }
 
-    let payload: { session_id?: string; status?: string; timestamp?: number };
+    let payload: { session_id?: string; status?: string; timestamp?: unknown; webhook_type?: unknown };
     try {
       payload = JSON.parse(raw || "{}");
     } catch {
       throw new BadRequestException("Invalid JSON body");
     }
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw new BadRequestException("Invalid JSON body");
+
+    if (secret) {
+      // Replay guard. KYC-R26-06: freshness is judged on the SIGNED body `timestamp` — the X-Timestamp header
+      // sits outside both HMACs, so a captured, validly signed body could be replayed forever with a freshly
+      // rewritten header. The header is still checked when present (a stale one is refused too), and is the
+      // fallback only for a delivery whose body carries no timestamp (a V3 destination always sends one).
+      // Fail-closed: no timestamp anywhere is not fresh.
+      const now = Date.now();
+      const bodyTs = payload.timestamp;
+      const headerTs = req.headers["x-timestamp"] as string | undefined;
+      const hasBodyTs = typeof bodyTs === "number" || (typeof bodyTs === "string" && bodyTs.trim() !== "");
+      const fresh =
+        (hasBodyTs || headerTs !== undefined) &&
+        (!hasBodyTs || diditTimestampFresh(bodyTs as string | number, now)) &&
+        (headerTs === undefined || diditTimestampFresh(headerTs, now));
+      if (!fresh) {
+        throw new UnauthorizedException("Stale webhook timestamp");
+      }
+    }
+
+    // KYC-R26-07: this route is registered for `status.updated` only. A destination later subscribed to more
+    // event types (data.updated, a business/KYB event…) would otherwise feed those bodies through the status
+    // mapping because they too carry a session_id and a status. Acknowledged with a 200 — Didit must not retry
+    // a delivery we will never apply — and logged. A delivery with no webhook_type keeps the old behaviour.
+    if (payload.webhook_type !== undefined && payload.webhook_type !== "status.updated") {
+      this.logger.log(`KYC webhook of type ${String(payload.webhook_type).slice(0, 40)} ignored — only status.updated is applied (KYC-R26-07)`);
+      return { ignored: true, reason: "webhook_type" };
+    }
     if (!payload.session_id || !payload.status) {
       throw new BadRequestException("Missing session_id or status");
     }
 
-    // Auto-decision (Didit thresholds): the face-match score (KYC_THRESHOLDS bands) can only tighten
-    // Didit's own verdict; with no score the status-string mapping decides. A `needsReview` band — like
-    // any non-terminal status — stays `pending`: it's held for the admin backstop, never auto-verified.
-    // `failed` from a sub-threshold score carries a decline reason for the rider app.
-    const score = extractDiditScore(payload);
-    const decision = decideDiditKyc(payload.status, score);
-    // IR26-07 coverage signals. On a Didit approval our bands are the last check, so say when they
-    // could not run, and when they held a rider Didit approved (nothing else records why it's pending).
-    if (mapDiditStatus(payload.status) === "verified") {
-      if (score === null) {
-        this.logger.log(`KYC webhook for session ${payload.session_id}: approved with no face-match score — bands skipped`);
-      } else if (decision.status === "pending") {
-        this.logger.log(`KYC webhook for session ${payload.session_id}: approved, face match in the review band — held for review`);
-      }
-    }
-    // Event time drives the monotonic guards. The timestamp is part of the signed body (Unix seconds),
-    // so it can't be forged; fall back to now() only if a delivery omits it.
-    const eventAt = typeof payload.timestamp === "number" ? new Date(payload.timestamp * 1000) : new Date();
+    // Event time drives the monotonic guards. The timestamp is part of the signed body (Unix seconds — or
+    // millis, normalised, KYC-R26-06), so it can't be forged; fall back to now() only if a delivery omits it.
+    const eventAt = diditEventAt(payload.timestamp) ?? new Date();
 
-    if (decision.status === "pending") {
-      // R-1 / R-3 (startup review 2026-10-06): every undecided status is the vendor's signed word about
-      // the session, so it is kept — /auth/me reads a hold (In Review, a review-band approval) as the
-      // "under review" wall instead of "usually under a minute", and a dead session (Abandoned, Expired)
-      // loses its stored credentials here so the next retry mints rather than resuming it forever.
-      await this.riders.recordKycVendorStatus(payload.session_id, payload.status, eventAt);
-      // D-75 item 2 (IR26-09): a result held for a human (Didit's In Review, or a Didit approval in the
-      // review band) still carries the number Didit read from the document. It is stored for the reviewer
-      // and the hand approval that adopts it; the decision itself stays unresolved. An unfinished session's
-      // partial data is not a judged result, so its number is not stored.
-      if (!isDiditReviewHold(payload.status, score)) return { ignored: true, status: decision.status };
-      const heldNumber = extractDiditDocumentNumber(payload);
-      if (!heldNumber) {
-        // Coverage signal, like applyKycResult's: approving this rider will adopt no number.
-        this.logger.log(`KYC webhook for session ${payload.session_id}: held for review with no document number — nothing stored`);
-        return { ignored: true, status: decision.status };
-      }
-      const held = await this.riders.recordHeldVerifiedId(payload.session_id, heldNumber);
-      if (held.updated === 0) {
-        // No undecided check has this ref: a superseded or already-decided check (whose own decision keeps
-        // its number), or an unknown session. Expected after a decision; surfaced for reconciliation.
-        this.logger.log(`KYC webhook for session ${payload.session_id}: held result matched no undecided check — nothing stored`);
-      }
-      return { ignored: true, status: decision.status, verifiedIdStored: held.updated > 0 };
-    }
-
-    const res = await this.riders.applyKycResult(
-      payload.session_id,
-      decision.status,
+    // The decision itself — bands, holds, document dedupe, the R26 guards — is shared with the lost-webhook
+    // reconciler (KYC-R26-03), so a reconciled verdict is applied exactly like a delivered one.
+    return applyDiditDecision(this.riders, this.logger, {
+      sessionId: payload.session_id,
+      status: payload.status,
+      payload,
       eventAt,
-      decision.reason ?? null,
-      // IR26-04: the document number the vendor verified (or null when the payload omits it — the
-      // service degrades to typed-ID-only dedupe and logs the coverage gap). Hashed downstream; the
-      // raw number is never persisted or logged.
-      extractDiditDocumentNumber(payload),
-      // First Run v2 F6 (D-82 §4): the document's expiry date, so an expired rider can be told the day.
-      extractDiditDocumentExpiry(payload),
-    );
-    if (res.updated === 0) {
-      // No rider has this ref, or the event was stale/duplicate — surface for reconciliation.
-      this.logger.warn(`KYC webhook for session ${payload.session_id} (${decision.status}) matched no rider or was stale`);
-    }
-    return res;
+      source: "webhook",
+    });
   }
 
   /**

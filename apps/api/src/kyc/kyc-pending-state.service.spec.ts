@@ -173,4 +173,22 @@ describe("KycPendingStateService — session class, invalidation and webhook pri
     expect(await svc.read("s1")).toBe("dead");
     expect(calls).toHaveLength(0);
   });
+
+  // KYC-R26-11: "Resubmitted" means Didit's reviewer sent steps back to the rider — a resume, not a wait.
+  it("KYC-R26-11: a Resubmitted session reads `unfinished` (the rider owes the next step), primed or polled", async () => {
+    const vendor: KycVendor = {
+      async submit(): Promise<KycSubmission> {
+        throw new Error("not used");
+      },
+      sessionStatus: vi.fn(async () => "Resubmitted"),
+    };
+    const svc = new KycPendingStateService(vendor);
+    expect(await svc.get("s_rs")).toBe("unfinished");
+    svc.prime("s_p", "Resubmitted");
+    expect(await svc.read("s_p")).toBe("unfinished");
+  });
+
+  it("KYC-R26-11: the cache window is 30s — one decision read per pending rider per half-minute at most", () => {
+    expect(KYC_PENDING_STATE_TTL_MS).toBe(30_000);
+  });
 });

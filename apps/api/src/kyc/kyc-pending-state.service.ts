@@ -12,8 +12,15 @@ import { KYC_VENDOR, type KycVendor } from "./kyc-vendor";
  * one stale poll) at one vendor call per 15s per rider. The cache is also invalidated when the state is
  * known to have moved (a launch starts or completes, a webhook lands — R-4), so the TTL only bounds the
  * cost, never how long a known change goes unseen.
+ *
+ * KYC-R26-11: 30s, up from 15s. Didit has no status-only read — every refresh pulls the rider's full
+ * decision record (document fields, face data) across the wire just to read `status` — so the poll is held
+ * to the least that still serves the gate. Every change we can know about already bypasses the TTL (a launch
+ * invalidates, a webhook primes), so the longer window only delays the changes we learn of by polling: a
+ * rider's own progress through the hosted flow, which their next launch-complete invalidates anyway. Only
+ * the derived class is cached (CacheEntry), never the payload.
  */
-export const KYC_PENDING_STATE_TTL_MS = 15_000;
+export const KYC_PENDING_STATE_TTL_MS = 30_000;
 
 /** Ceiling on cached entries, so a burst of onboarding riders can't grow this map without bound. */
 const MAX_ENTRIES = 5_000;

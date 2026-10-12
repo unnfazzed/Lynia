@@ -394,6 +394,16 @@ principles. The controls:
 - **Retention & deletion** — define and enforce a retention schedule: KYC media deleted on the
   legal minimum; location traces (`OrderEvent`) aggregated/pruned after the operational window;
   a user-deletion path that tombstones PII while preserving financial-ledger integrity.
+  **KYC on erasure (KYC-R26-05):** the rider row keeps only the one-way hashes (`id_number_hash`,
+  `verified_id_hash` — the ban-evasion signal, DS15-02b) and the decision itself (`kyc_status`);
+  the session credentials, `kyc_ref`, the vendor-verified number ciphertext, the document expiry
+  day and the vendor's last status are nulled in the erasure transaction, and the KYC photo object
+  is deleted. After commit, the API asks Didit to delete the rider's **current** session
+  (`DELETE /v3/session/{id}/delete/` — images, extracted fields, decision; 404 counts as done).
+  That call is best-effort by design: erasure never fails because Didit is down. A failure is
+  logged at ERROR with the session id (`couldn't delete KYC vendor session …`) and must be deleted
+  by hand in the Didit console; sessions an earlier retry replaced are not tracked on the row and
+  fall to Didit's own retention period.
 - **Third-party data flows** — WhatsApp, Bird, the local A2P SMS gateway, FCM, Didit each
   receive the minimum (a phone, a device token, an ID-verification session). Data-processing
   agreements on file; vendor keys are rotatable and least-scope.

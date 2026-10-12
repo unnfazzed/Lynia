@@ -52,6 +52,8 @@ function fakeRiders(updated = 1, heldUpdated = 1) {
       vendorStatuses.push([ref, status, at]);
       return { updated: 1 };
     },
+    // KYC-R26-07: the session's owner, compared with the delivery's vendor_data.
+    kycSessionOwner: async () => "p_owner",
   } as unknown as RiderService;
   return { riders, calls, held, vendorStatuses, eventAt: () => lastEventAt, reason: () => lastReason, docNumber: () => lastDocNumber };
 }
@@ -241,12 +243,96 @@ describe("KycController.callback", () => {
 
   it("passes the signed event timestamp through as the monotonic-guard event time", async () => {
     const { riders, eventAt } = fakeRiders();
-    const ts = 1_750_000_000; // Unix seconds
+    // Unix seconds, and fresh: since KYC-R26-06 the signed body timestamp is what the replay window judges.
+    const ts = Math.floor(Date.now() / 1000) - 30;
     const raw = JSON.stringify({ session_id: "s_5", status: "Approved", timestamp: ts });
     await ctl(riders, { DIDIT_WEBHOOK_SECRET: SECRET }).callback(
       req(raw, { "x-signature-v2": signV2(raw), "x-timestamp": freshTs() }),
     );
     expect(eventAt()).toEqual(new Date(ts * 1000));
+  });
+
+  // KYC-R26-06: the X-Timestamp header is outside both HMACs. A captured, validly signed body replayed with a
+  // freshly rewritten header used to pass the replay window; the window now judges the SIGNED body timestamp.
+  describe("KYC-R26-06: the replay window judges the signed body timestamp", () => {
+    it("refuses an old signed body even when its X-Timestamp header is fresh (header rewritten on replay)", async () => {
+      const { riders, calls } = fakeRiders();
+      const raw = JSON.stringify({ session_id: "s_r", status: "Approved", timestamp: Math.floor(Date.now() / 1000) - 3600 });
+      await expect(
+        ctl(riders, { DIDIT_WEBHOOK_SECRET: SECRET }).callback(req(raw, { "x-signature-v2": signV2(raw), "x-timestamp": freshTs() })),
+      ).rejects.toThrow(/stale webhook timestamp/i);
+      expect(calls).toEqual([]);
+    });
+
+    it("accepts a fresh signed body with no X-Timestamp header at all", async () => {
+      const { riders, calls } = fakeRiders();
+      const raw = JSON.stringify({ session_id: "s_nh", status: "Approved", timestamp: Math.floor(Date.now() / 1000) });
+      await ctl(riders, { DIDIT_WEBHOOK_SECRET: SECRET }).callback(req(raw, { "x-signature-v2": signV2(raw) }));
+      expect(calls).toEqual([["s_nh", "verified"]]);
+    });
+
+    it("still refuses a stale header next to a fresh body, and a delivery with no timestamp anywhere", async () => {
+      const { riders } = fakeRiders();
+      const fresh = JSON.stringify({ session_id: "s_sh", status: "Approved", timestamp: Math.floor(Date.now() / 1000) });
+      const old = String(Math.floor(Date.now() / 1000) - 3600);
+      await expect(
+        ctl(riders, { DIDIT_WEBHOOK_SECRET: SECRET }).callback(req(fresh, { "x-signature-v2": signV2(fresh), "x-timestamp": old })),
+      ).rejects.toThrow(/stale webhook timestamp/i);
+      const bare = JSON.stringify({ session_id: "s_none", status: "Approved" });
+      await expect(ctl(riders, { DIDIT_WEBHOOK_SECRET: SECRET }).callback(req(bare, { "x-signature-v2": signV2(bare) }))).rejects.toThrow(
+        /stale webhook timestamp/i,
+      );
+    });
+
+    it("an epoch-MILLIS body timestamp is normalised to seconds — eventAt is the real instant, not 1000x ahead", async () => {
+      const { riders, eventAt } = fakeRiders();
+      const ms = Date.now() - 5_000;
+      const raw = JSON.stringify({ session_id: "s_ms", status: "Approved", timestamp: ms });
+      await ctl(riders, { DIDIT_WEBHOOK_SECRET: SECRET }).callback(req(raw, { "x-signature-v2": signV2(raw), "x-timestamp": freshTs() }));
+      expect(eventAt()?.getTime()).toBe(ms);
+    });
+  });
+
+  // KYC-R26-07: identity checks on the delivery itself.
+  describe("KYC-R26-07: webhook_type and vendor_data", () => {
+    it("acknowledges (200) and ignores a delivery whose webhook_type is not status.updated", async () => {
+      const { riders, calls, vendorStatuses } = fakeRiders();
+      const raw = JSON.stringify({ session_id: "s_dt", status: "Approved", webhook_type: "data.updated" });
+      const res = await ctl(riders, { DIDIT_WEBHOOK_SECRET: undefined }).callback(req(raw));
+      expect(res).toEqual({ ignored: true, reason: "webhook_type" });
+      expect(calls).toEqual([]);
+      expect(vendorStatuses).toEqual([]);
+    });
+
+    it("still applies status.updated, and a delivery that names no type", async () => {
+      const typed = fakeRiders();
+      await ctl(typed.riders, { DIDIT_WEBHOOK_SECRET: undefined }).callback(
+        req(JSON.stringify({ session_id: "s_t", status: "Declined", webhook_type: "status.updated" })),
+      );
+      expect(typed.calls).toEqual([["s_t", "failed"]]);
+    });
+
+    it("refuses (200, nothing written) when vendor_data names a different rider than the session's owner", async () => {
+      const { riders, calls } = fakeRiders();
+      const raw = JSON.stringify({ session_id: "s_vd", status: "Approved", vendor_data: "p_someone_else" });
+      const res = await ctl(riders, { DIDIT_WEBHOOK_SECRET: undefined }).callback(req(raw));
+      expect(res).toEqual({ ignored: true, reason: "vendor_data_mismatch" });
+      expect(calls).toEqual([]);
+    });
+
+    it("applies when vendor_data matches the owner, or when no rider holds the session (nothing to flip anyway)", async () => {
+      const match = fakeRiders();
+      await ctl(match.riders, { DIDIT_WEBHOOK_SECRET: undefined }).callback(
+        req(JSON.stringify({ session_id: "s_ok", status: "Approved", vendor_data: "p_owner" })),
+      );
+      expect(match.calls).toEqual([["s_ok", "verified"]]);
+      const orphan = fakeRiders();
+      (orphan.riders as unknown as { kycSessionOwner: () => Promise<null> }).kycSessionOwner = async () => null;
+      await ctl(orphan.riders, { DIDIT_WEBHOOK_SECRET: undefined }).callback(
+        req(JSON.stringify({ session_id: "s_gone", status: "Approved", vendor_data: "p_x" })),
+      );
+      expect(orphan.calls).toEqual([["s_gone", "verified"]]);
+    });
   });
 
   // D-75 item 2 (IR26-09): a result held for review still carries the number Didit read from the
