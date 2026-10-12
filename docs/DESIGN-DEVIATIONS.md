@@ -5330,6 +5330,12 @@ every online rider gets the push and the board card for every new order.
   retired, every rider joins the single board room, and venue dispatch reaches the whole country (round 1 still
   offers the nearest 10). The board stays nearest-first.
 - **Upstream:** the kit's out-of-area lines should name the country. The kit is not edited.
+- **Amended (owner, 2026-10-12, cold-start review): venue dispatch is capped at 15 km from the venue**
+  (`RESTAURANTS_DISPATCH.pickupReachM`). "It's up to the user to decide" holds for parcels, where the customer picks
+  among bids. A restaurant, shop or pharmacy order goes to the first rider who accepts, with no customer choice, so a
+  rider in another town could win a Harare pickup. Parcel reach stays nationwide. The same review made a bid's ETA
+  never shorter than the rider's straight-line distance to the pickup allows (`PICKUP_ETA`), so the customer choosing
+  among nationwide bids sees an honest number in the ETA slot the offer card already draws.
 
 ## D-100 · The sealed-bag photo at pickup is optional for shops and pharmacies too — APPROVED (owner, 2026-10-12)
 

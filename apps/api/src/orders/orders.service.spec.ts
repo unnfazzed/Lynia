@@ -6,6 +6,7 @@ import type { OfferExpiryService } from "../matching/offer-expiry.service";
 import type { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
+import type { RiderNudgeService } from "../tracking/rider-nudge.service";
 import type { NearbyRider, TrackingService } from "../tracking/tracking.service";
 import { OrdersService, RIDER_HISTORY_STATUSES } from "./orders.service";
 
@@ -391,6 +392,48 @@ describe("OrdersService.create", () => {
     expect((schedule.mock.calls[0] as unknown as [string, number])[1]).toBeGreaterThanOrEqual(OFFER_WINDOW_POLICY.quietWindowMs);
     // The rider fan-out ran regardless of the failed enqueue — never gated behind a hanging schedule.
     expect(notifyNewBroadcast).toHaveBeenCalledWith("ord-1", ["rider-1"], { pickup: "Eastgate", fare: "2.50" });
+  });
+
+  it("cold start: a quiet market also nudges the offline riders near the pickup; a busy one doesn't", async () => {
+    const make = (online: number) => {
+      const prisma = {
+        profile: { findUnique: async () => ({ onHold: false }) },
+        order: {
+          create: async () => ({
+            id: "ord-1",
+            status: "open_for_offers",
+            itemDesc: "Documents",
+            proposedFare: { toString: () => "2.50" },
+            suggestedFare: { toString: () => "2.40" },
+            distanceKm: 1.5,
+            createdAt: new Date(),
+          }),
+        },
+      };
+      const riders = Array.from({ length: online }, (_, i) => ({ profileId: `r${i}`, distanceM: 500 }) as NearbyRider);
+      const tracking = { nearbyRiders: async () => riders, claimBroadcastRecipients: async () => null } as unknown as TrackingService;
+      const nudgeOfflineRiders = vi.fn(async () => {});
+      const svc = new OrdersService(
+        prisma as unknown as PrismaService,
+        { schedule: async () => {} } as unknown as OfferExpiryService,
+        tracking,
+        { notifyNewBroadcast: async () => {} } as unknown as NotificationsService,
+        noGateway,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { nudgeOfflineRiders } as unknown as RiderNudgeService,
+      );
+      return { svc, nudgeOfflineRiders };
+    };
+    const quiet = make(2);
+    await quiet.svc.create(orderInput, "cust-1");
+    expect(quiet.nudgeOfflineRiders).toHaveBeenCalledWith(orderInput.pickup.point, "parcel");
+
+    const busy = make(OFFER_WINDOW_POLICY.quietBelowRiders);
+    await busy.svc.create(orderInput, "cust-1");
+    expect(busy.nudgeOfflineRiders).not.toHaveBeenCalled();
   });
 
   it("never fails the create when the board push throws", async () => {

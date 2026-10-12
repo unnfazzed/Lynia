@@ -8,6 +8,7 @@ import type { NotificationsService } from "../notifications/notifications.servic
 import { PrismaService } from "../prisma/prisma.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
 import type { DispatchStrategy } from "./dispatch-strategy";
+import type { RiderNudgeService } from "../tracking/rider-nudge.service";
 import { earlyDispatchDue, FoodDispatchService } from "./food-dispatch.service";
 import { withMembershipShim } from "./testing/membership-shim";
 
@@ -38,7 +39,7 @@ function fakeGateway() {
 
 /** Fake Prisma where `$transaction(cb)` runs the callback against the same fake (tx === prisma),
  *  mirroring food-order.service.spec.ts's `build()`. */
-function build(methods: Record<string, unknown>, strategy: DispatchStrategy, gateway = fakeGateway(), codeCrypto?: PiiCryptoService) {
+function build(methods: Record<string, unknown>, strategy: DispatchStrategy, gateway = fakeGateway(), codeCrypto?: PiiCryptoService, nudge?: RiderNudgeService) {
   notified.length = 0;
   const prisma = withMembershipShim({ ...methods } as Record<string, unknown>);
   prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
@@ -48,7 +49,7 @@ function build(methods: Record<string, unknown>, strategy: DispatchStrategy, gat
   // The tick's read of riders still cooling down after a pass: nobody, unless a test says otherwise.
   const attempts = (prisma.foodDispatchAttempt ??= {}) as Record<string, unknown>;
   if (!attempts.findMany) attempts.findMany = async () => [];
-  const svc = new FoodDispatchService(prisma as unknown as PrismaService, tokens, notifications, gateway, strategy, codeCrypto);
+  const svc = new FoodDispatchService(prisma as unknown as PrismaService, tokens, notifications, gateway, strategy, codeCrypto, nudge);
   return { svc, prisma, gateway };
 }
 
@@ -256,6 +257,48 @@ describe("FoodDispatchService.sweepSearch — rounds (owner 2026-10-01: the best
         collapseKey: `order:${orderId}:no_rider_hold`,
       },
     ]);
+  });
+
+  // Owner 2026-10-12: nobody online took it, so the offline riders near the pickup are asked to come online.
+  it("nudges the offline riders near the pickup when the hold commits (and not when it loses the race)", async () => {
+    const nudgeOfflineRiders = vi.fn(async () => {});
+    const nudge = { nudgeOfflineRiders } as unknown as RiderNudgeService;
+    const held = build(
+      { order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder({ dispatchAttempt: 6 }), updateMany: async () => ({ count: 1 }) } },
+      NONE,
+      undefined,
+      undefined,
+      nudge,
+    );
+    await held.svc.sweepSearch();
+    expect(nudgeOfflineRiders).toHaveBeenCalledWith(expect.objectContaining(PICKUP.point), "job");
+
+    nudgeOfflineRiders.mockClear();
+    const lost = build(
+      { order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder({ dispatchAttempt: 6 }), updateMany: async () => ({ count: 0 }) } },
+      NONE,
+      undefined,
+      undefined,
+      nudge,
+    );
+    await lost.svc.sweepSearch();
+    expect(nudgeOfflineRiders).not.toHaveBeenCalled();
+  });
+
+  it("nudges the offline riders near the venue when a round finds nobody in reach", async () => {
+    const nudgeOfflineRiders = vi.fn(async () => {});
+    const { svc } = build(
+      {
+        order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder(), updateMany: async () => ({ count: 1 }) },
+        merchant: { findUnique: async () => ({ location: { point: HARARE_CBD } }) },
+      },
+      NONE,
+      undefined,
+      undefined,
+      { nudgeOfflineRiders } as unknown as RiderNudgeService,
+    );
+    await svc.sweepSearch();
+    expect(nudgeOfflineRiders).toHaveBeenCalledWith(HARARE_CBD, "job");
   });
 
   it("no hold push when the hold CAS loses a race (someone else moved the order first)", async () => {

@@ -18,7 +18,8 @@ import { PiiCryptoService } from "../common/pii-crypto.service";
 import { CANCEL_STRIKE_LIMIT } from "../orders/order-lifecycle.constants";
 import { pushCopy, PUSH_C, PUSH_C_SLOW_RIDER, pushMoney, riderJobTemplate } from "../notifications/merchant-order-push";
 import { NotificationsService } from "../notifications/notifications.service";
-import { publicWaypoint } from "../orders/waypoints";
+import { pickupPoint, publicWaypoint } from "../orders/waypoints";
+import { RiderNudgeService } from "../tracking/rider-nudge.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { applyReliabilityDelta } from "../riders/reliability";
 import { TrackingGateway } from "../tracking/tracking.gateway";
@@ -111,6 +112,9 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     // D2 (owner 2026-10-07): seals the delivery code next to its hash so the customer's reveal is
     // repeatable. @Global in the app; optional only for the positional unit harnesses.
     @Optional() private readonly codeCrypto?: PiiCryptoService,
+    // Demand nudge (owner 2026-10-12): offline riders near a food job nobody in range can take. Always
+    // provided by TrackingModule; optional only for the positional unit harnesses.
+    @Optional() private readonly nudge?: RiderNudgeService,
   ) {}
 
   onModuleInit(): void {
@@ -319,6 +323,9 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
           collapseKey: `order:${orderId}:no_rider_hold`,
         });
       }
+      // And the offline riders near the pickup (owner 2026-10-12) — the hold means nobody online took it.
+      const holdPoint = pickupPoint(order.pickup);
+      if (holdPoint) void this.nudge?.nudgeOfflineRiders(holdPoint, "job");
       return "held";
     }
 
@@ -385,6 +392,9 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
           dispatchNextCheckAt: new Date(now.getTime() + RESTAURANTS_DISPATCH.offerWindowMs),
         },
       });
+      // Nobody online in reach could take it: ask the offline riders nearby to come online. Throttled per
+      // rider (RIDER_NUDGE), so the 60 s re-check doesn't re-ask; post-commit and never throws.
+      if (claimed.count > 0) void this.nudge?.nudgeOfflineRiders(point, "job");
       return claimed.count > 0 ? "searching" : "skipped";
     }
 

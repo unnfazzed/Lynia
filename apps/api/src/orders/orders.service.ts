@@ -1,6 +1,6 @@
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { ACTIVE_RIDE_STATUSES, type CustomerOrderOutcome as SharedCustomerOrderOutcome, customerOrderOutcome as sharedCustomerOrderOutcome, type BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, deriveMerchantOrderTrack, isBusinessBookingAccountPhone, isCodItem, type LatLng, merchantAmountDueUsd, offerWindowEndAfterRaise, offerWindowEndsAt, offerWindowMsForSupply, OrderStatus, type OrderItem, PHONE_REVEAL_STATUSES, isInServiceArea, quoteFare, roundToCents, serviceTownsLabel, summarizeItems } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, type CustomerOrderOutcome as SharedCustomerOrderOutcome, customerOrderOutcome as sharedCustomerOrderOutcome, type BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, deriveMerchantOrderTrack, isBusinessBookingAccountPhone, isCodItem, type LatLng, merchantAmountDueUsd, offerWindowEndAfterRaise, offerWindowEndsAt, offerWindowMsForSupply, OFFER_WINDOW_POLICY, OrderStatus, type OrderItem, PHONE_REVEAL_STATUSES, isInServiceArea, quoteFare, roundToCents, serviceTownsLabel, summarizeItems } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush, maxBroadcastRadiusM } from "../common/broadcast-policy";
 import { MicroCache } from "../common/micro-cache";
@@ -12,6 +12,7 @@ import { TrackingGateway } from "../tracking/tracking.gateway";
 import { jitteredDelayMs, OfferExpiryService } from "../matching/offer-expiry.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { RiderNudgeService } from "../tracking/rider-nudge.service";
 import { TrackingService } from "../tracking/tracking.service";
 import { customerSafeCancelReason } from "./cancel-reason";
 import { type BroadcastMeta, buildBoardNewOrderEvent, pickupPoint, publicWaypoint } from "./waypoints";
@@ -173,6 +174,9 @@ export class OrdersService {
     // D6: the shared Redis L2 (common/micro-cache-l2.provider.ts) — replaces this service's private
     // lazy client verbatim; @Global-provided, TS-optional so existing spec constructions stay valid.
     private readonly l2?: MicroCacheL2Provider,
+    // Demand nudge (owner 2026-10-12): offline riders near a parcel opened in a quiet market. Always
+    // provided by TrackingModule; TS-optional like the rest so existing positional specs stay valid.
+    @Optional() private readonly nudge?: RiderNudgeService,
   ) {}
 
   /** The runtime kill-switch (MICRO_CACHE_DISABLED) plus the per-cache "TTL 0 disables it" rule. */
@@ -316,6 +320,12 @@ export class OrdersService {
 
     // Post-commit, best-effort: push the broadcast to nearby online riders (CONCEPT §3.10 — push is
     // the primary new-order channel for riders, alongside the WS board). Never blocks the create.
+    // Cold start (owner 2026-10-12): a quiet market also asks the offline riders nearby to come online —
+    // the long window gives them time to. Best-effort, never blocks or fails the create.
+    if (ridersNearby !== null && ridersNearby < OFFER_WINDOW_POLICY.quietBelowRiders) {
+      void this.nudge?.nudgeOfflineRiders(input.pickup.point, "parcel");
+    }
+
     void this.broadcastToNearbyRiders(order.id, input.pickup as unknown as Prisma.JsonValue, input.dropoff as unknown as Prisma.JsonValue, {
       itemDesc: order.itemDesc,
       suggestedFare: order.suggestedFare.toString(),
