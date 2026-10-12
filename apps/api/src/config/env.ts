@@ -481,6 +481,21 @@ export const envSchema = z.object({
     if (env.TOKEN_HASH_SECRET !== undefined && weakInProd(env.TOKEN_HASH_SECRET)) {
       reject("TOKEN_HASH_SECRET", `TOKEN_HASH_SECRET, when set, must also be a strong secret (>= ${MIN_PROD_SECRET_LEN} chars)`);
     }
+    // KYC-R26-04: real Didit onboarding with half its wiring missing used to boot and only LOG — a missing
+    // API key silently swapped in the stub vendor (selectKycVendor), so every rider sat `pending` behind a
+    // session nobody could open; a missing workflow id 503'd every "start verification"; a missing webhook
+    // secret 503'd every Didit callback (KycController fails closed), so no decision ever landed. Each is a
+    // dead onboarding funnel that looks healthy from the outside, so it is a boot failure instead, on every
+    // production tier (staging runs the stub, so it never reaches this). Scoped to KYC_MODE=auto: manual mode
+    // mints no vendor session and receives no vendor webhook — ops decide every rider by hand — so a
+    // `didit` provider there needs none of the three (the documented post-migration re-approval window).
+    if (env.KYC_PROVIDER === "didit" && env.KYC_MODE === "auto") {
+      const diditMissing = (name: string, breaks: string): void =>
+        reject(name, `Missing ${name}: ${breaks}. Fix: set it (and DIDIT_ENABLED=true in the deploy), or run KYC_MODE=manual until Didit is wired.`);
+      if (!env.DIDIT_API_KEY) diditMissing("DIDIT_API_KEY", "KYC_PROVIDER=didit can't create a single verification session");
+      if (!env.DIDIT_WORKFLOW_ID) diditMissing("DIDIT_WORKFLOW_ID", "every Didit session create fails, so no rider can start the ID check");
+      if (!env.DIDIT_WEBHOOK_SECRET) diditMissing("DIDIT_WEBHOOK_SECRET", "every Didit decision webhook is refused (503), so no rider is ever verified");
+    }
     // Launch-hygiene guards: scoped to the PRODUCTION tier only. The staging tier (APP_ENV=staging,
     // its own service/DB/secrets — never the live one) legitimately runs the QA bypasses so load
     // tests and QA devices can authenticate vendor-free; every guard ABOVE this line still applies

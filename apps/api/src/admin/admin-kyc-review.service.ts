@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { maskPhone } from "../common/phone-mask";
 import { PiiCryptoService } from "../common/pii-crypto.service";
+import { classifyStoredDiditStatus } from "../kyc/didit";
 import { PrismaService } from "../prisma/prisma.service";
 
 // Long enough that a reviewer working through the queue doesn't have the image expire mid-review;
@@ -36,6 +37,8 @@ export class AdminKycReviewService {
         kycRef: true,
         kycAttempts: true,
         kycDeclineReason: true,
+        // KYC-R26 admin fields: the vendor's last stored status for the current check (kycHeld + display).
+        kycVendorStatus: true,
         idVerified: true,
         duplicateIdFlag: true,
         verifiedIdHash: true,
@@ -136,6 +139,15 @@ export class AdminKycReviewService {
       verifiedIdNumber: this.pii.decryptId(rider.verifiedIdNumber),
       // D-75: approving is refused (409 verified_id_in_use) because that number is on another live account.
       verifiedIdInUse,
+      // KYC-R26: the check FINISHED at Didit and is held for a human — Didit's own In Review, or a Didit
+      // approval WE held (review-band face match, ID collision/mismatch: applyKycResult's holdForReview, which
+      // stores "Approved" on a still-pending row). Derived from the stored webhook status exactly as /auth/me
+      // derives the rider's "under review" wall (classifyStoredDiditStatus), so console and app agree. The
+      // rider owes nothing; the decision is the reviewer's.
+      kycHeld: rider.kycStatus === "pending" && classifyStoredDiditStatus(rider.kycVendorStatus) === "held",
+      // The raw Didit status string last stored for the current check (e.g. "In Review", "Approved",
+      // "Abandoned"), or null when none is stored (no webhook yet, a decided check, an admin reset).
+      kycVendorStatus: rider.kycVendorStatus ?? null,
     };
   }
 }

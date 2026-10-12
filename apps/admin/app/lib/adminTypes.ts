@@ -231,6 +231,12 @@ export interface KycReview {
   /** D-75: true when the account has no national ID and the number the ID check verified is already on
    *  another live account, so the API refuses the approval (409) until that account is resolved. */
   verifiedIdInUse?: boolean;
+  /** True when the rider finished the Didit check and it was held for a manual review. Optional: an
+   *  older API omits it (and `kycVendorStatus`), and the console then makes no claim about progress. */
+  kycHeld?: boolean;
+  /** Didit's own session status ("Approved", "In Review", "Declined", "Not Started", "In Progress",
+   *  "Abandoned", "Expired"), or null when no Didit result was ever recorded. */
+  kycVendorStatus?: string | null;
 }
 
 /** One other account sharing this rider's national ID (A-04 duplicate-account guard). */

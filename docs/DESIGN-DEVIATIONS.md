@@ -1750,6 +1750,12 @@ camera denial), the launch falls back to the in-app browser tab — vendor pixel
 chrome. The API's `GET /kyc/return` landing (brand CTA green, shared tokens) is the branded end of
 that lane for older builds.
 
+**2026-10-12 — the sheet's error state is retired by D-82 F7.** The sheet no longer draws its own
+`kyc_cant_start` error page (that copy and icon belong to the kyc-2026-08 outcome screens D-82
+supersedes). A check that won't load closes the sheet as `failed`, and First Run v2 F7 "Couldn't open
+the ID check" — whose "Try again" reopens a fresh sheet — is the only error the rider sees. The sheet's
+chrome is now header, loading and exit-confirmation only.
+
 **No kit edit was made** for this entry — `packages/design/**` is untouched, so no upstream sync is
 owed. **Retire this entry** if the native SDK re-lands (D-34 then covers its UI again) or if Route B
 (fully Lynia-drawn capture) ships and no vendor-drawn surface remains.
@@ -5254,4 +5260,22 @@ the same pass to **"{name} is unavailable. Pick another rider."**
   never see it. The inviter's side is unchanged on purpose: an invite never reveals that a number works elsewhere
   (`merchant-team.service.ts`, R2-21), so the owner still gets "Invite ready".
 - **Upstream:** merchant-v2 should draw the new-code confirm and the invited-elsewhere line. The kit is not edited.
+
+## D-96 · Admin KYC review: one overall verdict row, the Didit link, no queue approve — APPROVED (owner, 2026-10-12)
+
+**Owner approval (2026-10-12):** the ID-verification review ("proceed with all the fixes"). The kit's
+`ui_kits/admin/kyc.html` draws three per-check rows (document · liveness · face match) and a photo compare. The API
+has only Didit's overall verdict, so the console was printing that one verdict three times as if three checks had
+been read, and asking the reviewer to "compare the two photos" when there was usually one or none.
+
+- **One "Overall verdict" row** replaces the three rows, which are not drawn as separate data until the API carries
+  per-check results.
+- **"Open in Didit ↗"** (the rider's Didit session) fills the ID document & liveness box and sits in the checks card:
+  that is where the document, selfie and liveness evidence actually lives.
+- **The queue row offers only "Review".** The kit's inline Approve skipped the review page's warnings (duplicate ID,
+  ID mismatch, unfinished check). Approving now always goes through the review page's confirm.
+- **An unfinished check** (Didit never finished) shows a warnbar and makes the approve note mandatory.
+- **Expired** is its own decided state, not "Declined."
+- **Upstream:** the admin kit should draw per-check rows fed by vendor data, the vendor link and the unfinished-check
+  state. The kit is not edited.
 

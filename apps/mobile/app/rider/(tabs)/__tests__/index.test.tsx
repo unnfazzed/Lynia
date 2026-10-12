@@ -130,6 +130,7 @@ import { runKycVerification } from "../../../../src/kyc/verify";
 import { retryKyc } from "../../../../src/api/riders";
 import { recordKycLaunch, takeKycLaunch } from "../../../../src/kyc/launch-hint";
 import { KY } from "../../../../src/ui/firstrun/copy";
+import { KYC_RETRY_TRY_LATER, resolveKycRetryFeedback } from "../../../../src/logic/gates";
 
 // The KYC launch lane: `retryKyc` hands back an opaque Didit SESSION TOKEN, and the native SDK either
 // completes, is cancelled by the rider, or fails to launch — the three outcomes the pending walls
@@ -1018,18 +1019,20 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
   });
 
   /**
-   * …and only for that window. A `completed` launch that outranked the server FOREVER would strand a
-   * rider whose completion the vendor never registered: the in-flight wall has no action by design, so
-   * there is nothing to press to get off it. Once the hint is stale, the server pulls them back.
+   * …and past F8's 30 s it holds the check in flight (R2), not F3. Didit keeps reading "In Progress" until
+   * its webhook lands, and the server can't tell that from a check left half-done — so the rider who had
+   * just finished used to drop from F8 to "Finish your ID check". The server's ambiguous `unfinished`
+   * no longer pulls them back; an explicit answer does (here: the session is dead, `kycPendingState: null`).
    */
-  it("but once the hint is stale, the server pulls a completed rider back to the resume", async () => {
+  it("once F8's window passes, a completed check stays in flight (R2) while the server still reads it unfinished", async () => {
     mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);
     mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", sessionToken: "sess_tok_s1" });
     mockRunKyc.mockResolvedValue(LAUNCH_COMPLETED);
 
-    activeTree = renderScreen();
+    let client!: QueryClient;
+    activeTree = renderScreen((qc) => (client = qc));
     await settle();
     await settle();
     // Hold the refetch the launch fires, so it lands only after the window has passed.
@@ -1048,8 +1051,17 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
         land(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
       });
       await settle();
-      expect(treeText(activeTree)).toContain(KY.unfBody);
+      expect(treeText(activeTree)).toContain("Rider setup");
+      expect(treeText(activeTree)).not.toContain(KY.unfBody);
       expect(treeText(activeTree)).not.toContain(KY.justBody);
+
+      // The server says the session is dead — the rider's move, explicitly: F3 with its resume.
+      mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: null }));
+      await renderer.act(async () => {
+        await client.refetchQueries({ queryKey: ["me"] });
+      });
+      await settle();
+      expect(treeText(activeTree)).toContain(KY.unfBody);
     } finally {
       clock.mockRestore();
     }
@@ -1216,13 +1228,13 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
     await settle();
     expect(mockRetryKyc).toHaveBeenNthCalledWith(2, true);
 
-    // The wall is back on `unfinished`, not `cant_start`: a failed REQUEST is not a failed launch —
-    // `onMutate` cleared the launch result, and the error speaks as a toast. So the control here is
-    // the resume primary, not "Try again".
+    // A vendor that is down means the check couldn't open: F7, never a toast with the server's words.
+    // Its "Try again" is the next attempt — still forced.
+    expect(treeText(activeTree)).toContain(KY.cantBody);
     mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto", sessionToken: "sess_tok_s2" });
     mockRunKyc.mockResolvedValue(LAUNCH_CANCELLED);
     await renderer.act(async () => {
-      tree.root.find((n) => n.props.label === KY.unfCta).props.onPress();
+      tree.root.find((n) => n.props.label === KY.tryAgain).props.onPress();
     });
     await settle();
     expect(mockRetryKyc).toHaveBeenNthCalledWith(3, true);
@@ -1280,6 +1292,90 @@ describe("rider board — the three KYC pending states (P0-1)", () => {
     await settle();
 
     expect(treeText(activeTree)).not.toContain(KY.cantBody);
+  });
+
+  async function tapFinish(): Promise<renderer.ReactTestRenderer> {
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    const tree = activeTree;
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === KY.unfCta).props.onPress();
+    });
+    await settle();
+    return tree;
+  }
+  /** The toasts the board raises (info and action errors), captured — the test tree has no ToastProvider. */
+  function captureToasts(): { show: jest.Mock; restore: () => void } {
+    const show = jest.fn();
+    const ui = jest.requireActual("../../../../src/ui/Toast") as typeof import("../../../../src/ui/Toast");
+    const spy = jest.spyOn(ui, "useToast").mockReturnValue({ show });
+    const warn = (m?: string | null): void => void (m && show(m, "warning"));
+    const errSpy = jest.spyOn(ui, "useActionError").mockReturnValue(warn);
+    return {
+      show,
+      restore: () => {
+        spy.mockRestore();
+        errSpy.mockRestore();
+      },
+    };
+  }
+
+  it("a reopen that brings back no session (auto mode) is F7 — the check couldn't open — not a toast over F3", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "auto" });
+    const tree = await tapFinish();
+    expect(mockRunKyc).not.toHaveBeenCalled();
+    expect(treeText(tree)).toContain(KY.cantBody);
+    expect(treeText(tree)).not.toContain(KY.unfBody);
+  });
+
+  it("a vendor 5xx on the reopen is F7 too, and the server's own message is never shown", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    mockRetryKyc.mockRejectedValue(new ApiError(503, "Didit upstream 502: session create failed"));
+    const toasts = captureToasts();
+    try {
+      const tree = await tapFinish();
+      expect(treeText(tree)).toContain(KY.cantBody);
+      expect(toasts.show).not.toHaveBeenCalled();
+    } finally {
+      toasts.restore();
+    }
+  });
+
+  it("a rate-limited reopen stays put and speaks once, in our words", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    mockRetryKyc.mockRejectedValue(new ApiError(429, "ThrottlerException: Too Many Requests", null, 1800));
+    const toasts = captureToasts();
+    try {
+      const tree = await tapFinish();
+      expect(treeText(tree)).toContain(KY.unfBody);
+      expect(treeText(tree)).not.toContain(KY.cantBody);
+      expect(toasts.show).toHaveBeenCalledTimes(1);
+      expect(toasts.show).toHaveBeenCalledWith(KYC_RETRY_TRY_LATER, "warning");
+    } finally {
+      toasts.restore();
+    }
+  });
+
+  it("manual mode's 'nothing to open' line is shown, not dropped", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    mockRetryKyc.mockResolvedValue({ kycStatus: "pending", mode: "manual" });
+    const toasts = captureToasts();
+    try {
+      await tapFinish();
+      expect(toasts.show).toHaveBeenCalledWith(resolveKycRetryFeedback({ mode: "manual" }).info, "info");
+    } finally {
+      toasts.restore();
+    }
   });
 
   // First Run v2 F1: ops review — the rider waits, whatever the vendor's pending state says.

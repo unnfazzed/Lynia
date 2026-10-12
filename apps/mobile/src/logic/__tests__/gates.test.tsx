@@ -1,5 +1,5 @@
 import { KYC_DECLINE_REASON_LABELS } from "@lynia/shared";
-import { ACCOUNT_ON_HOLD_COPY, freshKycLaunch, isAccountOnHold, ONLINE_GATE_COPY, isKycLocked, isOutOfServiceArea, isWithinServiceCorridor, KYC_COMPLETED_HINT_MS, KYC_FAST_POLL_WINDOW_MS, KYC_LOCK_ATTEMPTS, kycDeclineLabel, kycPollMs, onlineGateReason, resolveKycGate, resolveKycRetryFeedback, riderDeclineLabel } from "../gates";
+import { ACCOUNT_ON_HOLD_COPY, freshKycLaunch, KYC_COMPLETED_HOLD_MS, kycLaunchForGate, isAccountOnHold, ONLINE_GATE_COPY, isKycLocked, isOutOfServiceArea, isWithinServiceCorridor, KYC_COMPLETED_HINT_MS, KYC_FAST_POLL_WINDOW_MS, KYC_LOCK_ATTEMPTS, kycDeclineLabel, kycPollMs, onlineGateReason, resolveKycGate, resolveKycRetryFeedback, riderDeclineLabel } from "../gates";
 import { resolveGate } from "../rider-gate";
 
 describe("onlineGateReason (rider online-gate refusal)", () => {
@@ -310,6 +310,33 @@ describe("freshKycLaunch (R-4)", () => {
     expect(freshKycLaunch({ outcome: "failed", at: 0 }, 10 * 60_000)).toBe("failed");
     expect(freshKycLaunch({ outcome: "cancelled", at: 0 }, 10 * 60_000)).toBe("cancelled");
     expect(freshKycLaunch(null, 0)).toBeNull();
+  });
+});
+
+describe("kycLaunchForGate — a completed check is not dropped to F3 while the server still reads In Progress", () => {
+  const AT = 1_000;
+  const done = { outcome: "completed" as const, at: AT };
+  const pending = { kycStatus: "pending" as const, kycMode: "auto" as const, kycAttempts: 0 };
+  const past = AT + KYC_COMPLETED_HINT_MS + 1;
+
+  it("past F8's window, the server's ambiguous `unfinished` (or no answer at all) keeps it in flight — R2, not F3", () => {
+    expect(kycLaunchForGate(done, past, { ...pending, kycPendingState: "unfinished" })).toBe("completed");
+    expect(kycLaunchForGate(done, past, pending)).toBe("completed");
+    expect(resolveKycGate({ ...pending, kycPendingState: "unfinished" }, kycLaunchForGate(done, past, { ...pending, kycPendingState: "unfinished" }))).toEqual({ kind: "in_flight" });
+  });
+
+  it("an explicit answer lets go: a dead session (null), a terminal state, or the ceiling", () => {
+    expect(kycLaunchForGate(done, past, { ...pending, kycPendingState: null })).toBeNull();
+    expect(kycLaunchForGate(done, past, { ...pending, kycStatus: "failed" })).toBeNull();
+    expect(kycLaunchForGate(done, past, { ...pending, kycStatus: "verified" })).toBeNull();
+    expect(kycLaunchForGate(done, AT + KYC_COMPLETED_HOLD_MS, { ...pending, kycPendingState: "unfinished" })).toBeNull();
+  });
+
+  it("inside F8's window it is freshKycLaunch, and other outcomes are untouched", () => {
+    expect(kycLaunchForGate(done, AT + 1, { ...pending, kycPendingState: null })).toBe("completed");
+    expect(kycLaunchForGate({ outcome: "failed", at: AT }, past, pending)).toBe("failed");
+    expect(kycLaunchForGate({ outcome: "cancelled", at: AT }, past, pending)).toBe("cancelled");
+    expect(kycLaunchForGate(null, past, pending)).toBeNull();
   });
 });
 

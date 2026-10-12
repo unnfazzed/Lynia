@@ -203,7 +203,8 @@ export interface KycRetryLaunch {
 export interface KycRetryFeedback {
   /** What to open, or null if there is nothing usable to open. */
   launch: KycRetryLaunch | null;
-  /** An error to surface when there's nothing to launch — never both this and `launch` set. */
+  /** Set when there's nothing to launch in auto mode (the vendor gave no session) — never both this and
+   *  `launch` set. The board treats it as a launch that couldn't open (F7), not as a toast. */
   error: string | null;
   /** A calm (non-error) status line to surface when there's nothing to launch by design (manual review). */
   info: string | null;
@@ -238,8 +239,15 @@ export function resolveKycRetryFeedback(res: {
   if (res.mode === "manual") {
     return { launch: null, error: null, info: "Your ID is still under manual review — we'll notify you once it's checked." };
   }
-  return { launch: null, error: "Couldn't start verification — try again in a moment.", info: null };
+  return { launch: null, error: KYC_RETRY_TRY_LATER, info: null };
 }
+
+/**
+ * The one toast a reopen of the ID check still raises: a rate limit (the server caps resubmits, F-13).
+ * Every other failure to open the check is F7 "Couldn't open the ID check" (D-82), never a toast, and
+ * never the server's own words.
+ */
+export const KYC_RETRY_TRY_LATER = "Couldn't start verification — try again in a moment.";
 
 /**
  * The rider's KYC wall, as a tagged state (P0-1 / D8).
@@ -348,6 +356,39 @@ export function freshKycLaunch(mark: KycLaunchMark | null, now: number): KycSdkR
   if (!mark) return null;
   if (mark.outcome === "completed" && now - mark.at >= KYC_COMPLETED_HINT_MS) return null;
   return mark.outcome;
+}
+
+/**
+ * How long, at most, a `completed` launch keeps the rider on the in-flight page while the server still
+ * reads the vendor's "In Progress" (see {@link kycLaunchForGate}). A ceiling, not the expected wait: a
+ * finished check is normally settled by the vendor's webhook in seconds to minutes, and past this a
+ * completion the vendor never registered must get its resume back (R2 has nothing to press).
+ */
+export const KYC_COMPLETED_HOLD_MS = 10 * 60_000;
+
+/**
+ * The launch result `resolveKycGate` should see right now — {@link freshKycLaunch}, plus one hold.
+ *
+ * F8 lasts {@link KYC_COMPLETED_HINT_MS}; after that the server used to decide again, and its answer for
+ * a check the rider had just finished was usually still `unfinished` — Didit keeps reading "In Progress"
+ * until its webhook lands, and the server can't tell that apart from a check left half-done. So the
+ * rider who had finished dropped from F8 to F3 "Finish your ID check". A completed launch now keeps the
+ * check in flight (R2) for as long as the server's answer is that ambiguous `unfinished` (or absent, on an
+ * older server), and lets go the moment it says anything else:
+ *
+ *   - a terminal or held state (verified / failed / expired / manual / kycHeld) — resolveKycGate puts
+ *     those first anyway;
+ *   - `kycPendingState: null` on a pending rider — the session is dead (the vendor's own webhook said
+ *     Abandoned / Expired), the explicit "it's the rider's move";
+ *   - `in_flight` — the server agrees, and says so itself;
+ *   - or {@link KYC_COMPLETED_HOLD_MS} — the ceiling.
+ */
+export function kycLaunchForGate(mark: KycLaunchMark | null, now: number, rider: KycGateRider | null | undefined): KycSdkResult {
+  const fresh = freshKycLaunch(mark, now);
+  if (fresh || !mark || mark.outcome !== "completed") return fresh;
+  if (now - mark.at >= KYC_COMPLETED_HOLD_MS) return null;
+  if (rider?.kycStatus !== "pending" || rider.kycPendingState === null) return null;
+  return "completed";
 }
 
 /** R-3 / §5 poll back-off: the first minutes of an automated check poll fast, then slow down. */

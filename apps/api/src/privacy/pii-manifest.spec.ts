@@ -45,6 +45,9 @@ const PII_NAME_PATTERNS: RegExp[] = [
   /suspend_reason/,
   /kyc_ref/,
   /kyc_decline_reason/,
+  // KYC-R26-05: every other per-person trace the ID check leaves (session credentials, document expiry day,
+  // vendor status) — a new one fails coverage until erasure is told about it.
+  /kyc_(session_|forced_at|id_expires|vendor_status)/,
   /current_(lat|lng)/,
 ];
 
@@ -110,6 +113,9 @@ describe("PII erasure manifest — schema coverage (Class-C write-time guard)", 
     expect(piiColumns).toContain("reports.note");
     // DS18-01 regression: the object-KEY media column is now caught (the `_url`-only pattern missed it).
     expect(piiColumns).toContain("orders.pickup_photo_key");
+    // KYC-R26-05: the ID check's remaining per-person columns are scanned (and so must be covered).
+    expect(piiColumns).toContain("riders.kyc_id_expires_on");
+    expect(piiColumns).toContain("riders.kyc_vendor_status");
     // L4: a team row's name is scanned as personal data.
     expect(piiColumns).toContain("merchant_members.display_name");
   });
@@ -126,6 +132,7 @@ describe("PII erasure manifest — eraseAccount references every scrub (reverse 
     merchant_invite_name: "merchantInvite.deleteMany",
     merchant_member_name: "merchantMember.deleteMany",
     "kyc-object": "deleteObject",
+    "kyc-vendor-session": "deleteSession",
     rx_photo_keys: "orderPrescription.deleteMany",
     rx_patient_name: "orderPrescription.deleteMany",
     rx_decline_note: "orderPrescription.deleteMany",

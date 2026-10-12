@@ -571,13 +571,15 @@ export const RF = {
 };
 
 /**
- * First Run v2 F (ledger D-82): the two `KY` strings that carry data. `KY.expBody` is drawn with a sample date
+ * First Run v2 F (ledger D-82): the `KY` strings that carry data. `KY.expBody` is drawn with a sample date
  * ("Expired 2 Oct 2026. Re-verify to keep riding.") — the date is the rider's, and until the server serves it
  * (NEEDS BACKEND `kycExpiredAt`, D-82 §4) the sentence after it stands alone. F3's title is "Almost there,"
- * + the rider's first name.
+ * + the rider's first name; the handoff draws no nameless variant, so without a name the comma that led
+ * into it goes and the title is "Almost there" alone (no invented words, no dangling empty second part).
  */
 export const KYF = {
   expBody: (d: Date | null): string => (d ? KY.expBody.replace(/^Expired [^.]+\./, `Expired ${dayMonthYear(d)}.`) : KY.expBody.replace(/^Expired [^.]+\.\s*/, "")),
+  unfA: (firstName: string | null | undefined): string => (firstName?.trim() ? KY.unfA : KY.unfA.replace(/,\s*$/, "")),
   unfName: (firstName: string | null | undefined): string => firstName?.trim() ?? "",
 };
 

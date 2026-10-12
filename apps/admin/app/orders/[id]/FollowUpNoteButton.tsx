@@ -8,7 +8,7 @@ import { logOrderFollowUpNote } from "../../actions/audit";
  * with no client-side error handling — `logOrderFollowUpNote` deliberately throws on a failed audit
  * write, and with zero `error.tsx` anywhere in this app that throw escaped the row straight to Next's
  * generic unstyled crash screen instead of the console's own inline, retryable error text (UX21-01,
- * same class as `KycApproveButton`). Calling the server action directly (not via `<form action>`) lets
+ * same class as the since-removed queue KYC approve button). Calling the server action directly (not via `<form action>`) lets
  * this component catch that throw itself, mirroring `AcknowledgeButton`'s `useTransition` + inline-error
  * pattern.
  */

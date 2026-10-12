@@ -16,6 +16,11 @@ import { IconCheck } from "./icons";
  * On the single-resubmit-left attempt the decline consequence warns that a second decline locks the
  * application → support. When already locked or decided, the parent hides this and shows the terminal
  * state instead, so this component only renders for a pending, still-open review.
+ *
+ * `unfinishedCheck`: the rider never finished the Didit ID check (not started / in progress / abandoned /
+ * expired, and not held). Approving is still possible — ops may have verified them another way — but the
+ * modal says so plainly and REQUIRES a note, which lands on the in-transaction audit row, so an approval
+ * without a finished check is never one click and never unexplained.
  */
 export function KycDecision({
   profileId,
@@ -23,6 +28,7 @@ export function KycDecision({
   face,
   attempt,
   connected,
+  unfinishedCheck = false,
 }: {
   profileId: string;
   name: string;
@@ -30,6 +36,7 @@ export function KycDecision({
   attempt: number;
   face?: string;
   connected: boolean;
+  unfinishedCheck?: boolean;
 }) {
   const path = `/riders/${profileId}/kyc`;
   const isResubmit = attempt >= 2;
@@ -55,11 +62,21 @@ export function KycDecision({
         title={`Approve ${name}?`}
         consequence={
           <span>
+            {unfinishedCheck ? (
+              <>
+                <b>This rider hasn&apos;t finished the Didit ID check.</b> Approve only if you&apos;ve verified their
+                identity another way, and say how in the note.{" "}
+              </>
+            ) : null}
             They&apos;ll be marked <b>verified</b> and can go online right away.
             {face ? <> Face match <b>{face}</b> · attempt {attempt}.</> : <> Attempt {attempt}.</>}
           </span>
         }
-        confirmLabel="Approve rider"
+        noteRequired={unfinishedCheck}
+        notePlaceholder={
+          unfinishedCheck ? "How you verified this rider without a finished ID check" : undefined
+        }
+        confirmLabel={unfinishedCheck ? "Approve without the ID check" : "Approve rider"}
         onConfirm={(r) => decide("verified", null, r.note)}
       />
       <ConfirmModal

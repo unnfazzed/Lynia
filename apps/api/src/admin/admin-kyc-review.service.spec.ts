@@ -100,6 +100,39 @@ describe("AdminKycReviewService.getKycReview (A-04 duplicate ID)", () => {
     expect(r.duplicateIdFlag).toBe(false);
   });
 
+  // KYC-R26: the two fields the admin console's hold banner reads.
+  describe("kycHeld + kycVendorStatus (KYC-R26)", () => {
+    const read = async (over: Record<string, unknown>) => {
+      const prisma = {
+        rider: { findUnique: async () => riderRow({ duplicateIdFlag: false, ...over }) },
+        profile: { findMany: async () => [] },
+      };
+      return (await new AdminKycReviewService(prisma as unknown as PrismaService, pii, noStorage).getKycReview("r1"))!;
+    };
+
+    it("a pending check Didit holds (In Review) is held, and the raw status is passed through", async () => {
+      const r = await read({ kycVendorStatus: "In Review" });
+      expect(r.kycHeld).toBe(true);
+      expect(r.kycVendorStatus).toBe("In Review");
+    });
+
+    it("a Didit approval WE held for review (pending + stored Approved) is held", async () => {
+      expect((await read({ kycVendorStatus: "Approved" })).kycHeld).toBe(true);
+    });
+
+    it("an unfinished or dead session is not held; nor is a decided check whatever was stored", async () => {
+      expect((await read({ kycVendorStatus: "In Progress" })).kycHeld).toBe(false);
+      expect((await read({ kycVendorStatus: "Abandoned" })).kycHeld).toBe(false);
+      expect((await read({ kycStatus: "failed", kycVendorStatus: "Approved" })).kycHeld).toBe(false);
+    });
+
+    it("no stored status: not held, and kycVendorStatus is null (never undefined)", async () => {
+      const r = await read({});
+      expect(r.kycHeld).toBe(false);
+      expect(r.kycVendorStatus).toBeNull();
+    });
+  });
+
   // IR26-04 vendor-document dedupe: the reviewer screen must expose the "typed a fake number, showed a
   // real document" tell, and collide through the verified-document hash even when typed hashes differ.
   it("reports verifiedIdMismatch=true and queries BOTH hashes when the vendor doc disagrees with the typed ID", async () => {

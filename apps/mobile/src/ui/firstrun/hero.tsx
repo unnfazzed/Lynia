@@ -135,7 +135,10 @@ export function SplitTitle({ a, b, tone = "mint", style }: SplitTitleProps): Rea
         style,
       ]}
     >
-      {a} <Text style={{ color: FR_TONES[tone].accent }}>{b}</Text>
+      {/* An empty second part draws nothing — not a trailing space and an empty accent run. */}
+      {a}
+      {b ? " " : null}
+      {b ? <Text style={{ color: FR_TONES[tone].accent }}>{b}</Text> : null}
     </Text>
   );
 }

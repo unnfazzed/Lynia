@@ -14,8 +14,8 @@
  *   pnpm didit:setup webhook         # just register the webhook destination (needs DIDIT_API_KEY)
  *
  * Inputs come from env (or the interactive prompts). If you already have a key, set DIDIT_API_KEY and
- * the register step is skipped. Nothing here is persisted — copy the printed values into your secret
- * store. This talks to the LIVE Didit API and creates a real account/destination.
+ * the register step is skipped. Nothing here is persisted, and secrets are never printed — copy them into your
+ * secret store from the Didit console. This talks to the LIVE Didit API and creates a real account/destination.
  */
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
@@ -103,7 +103,7 @@ async function getApiKey(): Promise<string> {
       body: { email, code },
     });
     const apiKey = pick(verified, "api_key", "apiKey");
-    if (!apiKey) throw new Error(`verify-email succeeded but no api_key in response: ${JSON.stringify(verified).slice(0, 300)}`);
+    if (!apiKey) throw new Error(`verify-email succeeded but no api_key in response (keys: ${Object.keys(verified ?? {}).join(", ")})`);
     return apiKey;
   }
 
@@ -113,7 +113,7 @@ async function getApiKey(): Promise<string> {
     body: { email, password },
   });
   const apiKey = pick(loggedIn, "api_key", "apiKey", "access_token", "access");
-  if (!apiKey) throw new Error(`login succeeded but no api_key/token in response: ${JSON.stringify(loggedIn).slice(0, 300)}`);
+  if (!apiKey) throw new Error(`login succeeded but no api_key/token in response (keys: ${Object.keys(loggedIn ?? {}).join(", ")})`);
   return apiKey;
 }
 
@@ -153,16 +153,26 @@ async function registerWebhook(apiKey: string, url: string): Promise<string> {
     },
   });
   const secret = pick(data, "secret_shared_key", "secret", "signing_secret");
-  if (!secret) throw new Error(`webhook created but no secret in response: ${JSON.stringify(data).slice(0, 300)}`);
+  if (!secret) throw new Error(`webhook created but no secret in response (keys: ${Object.keys(data ?? {}).join(", ")})`);
   return secret;
 }
 
+/**
+ * KYC-R26-09: the summary used to print the FULL API key and webhook signing secret to stdout, so they landed
+ * in terminal scrollback, CI logs and screen shares. Neither value (nor any slice of it) is printed or written
+ * anywhere now: the script only says whether each is set. You already hold the API key you signed in with, and
+ * the webhook signing secret is shown on the destination in the Didit console (Settings → Webhooks) — copy both
+ * into the secret store from there.
+ */
+function presence(s?: string): string {
+  return s ? "set — copy it from the Didit console" : "(unset)";
+}
+
 function summary(vals: { apiKey?: string; workflowId?: string; webhookSecret?: string; callbackUrl?: string }): void {
-  const mask = (s?: string) => (s ? `${s.slice(0, 6)}…${s.slice(-4)}` : "(unset)");
   console.log("\n──────────── Didit wiring — store these, then flip DIDIT_ENABLED=true ────────────");
   console.log("Secrets → Secret Manager (see docs/PILOT-READINESS.md §2):");
-  console.log(`  DIDIT_API_KEY        = ${vals.apiKey ?? "(unset)"}   (${mask(vals.apiKey)})`);
-  console.log(`  DIDIT_WEBHOOK_SECRET = ${vals.webhookSecret ?? "(unset)"}   (${mask(vals.webhookSecret)})`);
+  console.log(`  DIDIT_API_KEY        = ${presence(vals.apiKey)}`);
+  console.log(`  DIDIT_WEBHOOK_SECRET = ${presence(vals.webhookSecret)}`);
   console.log("Plain repo Variables:");
   console.log(`  DIDIT_WORKFLOW_ID    = ${vals.workflowId ?? "(unset)"}`);
   console.log(`  DIDIT_CALLBACK_URL   = ${vals.callbackUrl ?? "(optional — post-verification redirect)"}`);

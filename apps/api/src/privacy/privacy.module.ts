@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { KycModule } from "../kyc/kyc.module";
 import { TrackingModule } from "../tracking/tracking.module";
 import { PrivacyController } from "./privacy.controller";
 import { PrivacyService } from "./privacy.service";
@@ -7,7 +8,8 @@ import { PrivacyService } from "./privacy.service";
  *  eraseAccount can evict an erased rider from the Redis geo index (DS15-05); StorageModule is @Global
  *  so the GCS object purge (DS15-03) needs no import wiring. */
 @Module({
-  imports: [TrackingModule],
+  // KycModule: the KYC vendor, so erasure deletes the rider's ID-check session at the vendor (KYC-R26-05).
+  imports: [TrackingModule, KycModule],
   controllers: [PrivacyController],
   providers: [PrivacyService],
 })

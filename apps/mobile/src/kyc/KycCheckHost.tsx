@@ -9,7 +9,8 @@
  * verdict lane — on build #30's proven native surface plus exactly one mature, old-architecture
  * native module (react-native-webview). The verification pixels inside the sheet are Didit's, which
  * is the already-approved D-34 exemption (extended to this surface by D-37); the chrome around them
- * — header, loading, error, exit — is Lynia's, drawn from tokens.
+ * — header, loading, exit — is Lynia's, drawn from tokens. A check that won't load resolves `failed`
+ * at once: First Run v2 F7 (D-82) is the one screen that says so.
  *
  * Cold-start safety, deliberately layered (the previous in-app attempt is why this file is
  * paranoid):
@@ -33,7 +34,7 @@ import { ActivityIndicator, Alert, Linking, Modal, Text, View } from "react-nati
 import { SafeAreaView } from "react-native-safe-area-context";
 import { API_URL } from "../config";
 import type { KycSdkResult } from "../logic/gates";
-import { Icon, SystemState, Tappable } from "../ui";
+import { Icon, Tappable } from "../ui";
 import { resolveKycWebNavigation } from "./navigation";
 
 /** The sheet's outcome — the non-null arm of the gate's SDK result union. */
@@ -157,13 +158,25 @@ export function KycCheckHost(): React.ReactElement | null {
     setActive(null);
   };
   // Keyed per presentation: replacing an active check renders at the same position, and without the
-  // key React would reuse the sheet instance — carrying the previous check's phase (an old error
-  // state, a spent attempt counter) into the new one instead of loading its URL fresh.
+  // key React would reuse the sheet instance — carrying the previous check's state (a spent outcome,
+  // its back history) into the new one instead of loading its URL fresh.
   return <KycCheckSheet key={active.id} url={active.req.url} WebView={WebView} onDone={finish} />;
 }
 
 /** How long a first load may sit on the spinner before the copy admits it's slow (upload pattern). */
 const SLOW_OPEN_MS = 6000;
+
+/** The imperative surface of the WebView the sheet drives (react-native-webview's ref methods). */
+interface WebViewHandle {
+  goBack?: () => void;
+  stopLoading?: () => void;
+}
+
+/** The parts of react-native-webview's navigation state the sheet reads. */
+interface WebNavState {
+  url?: string;
+  canGoBack?: boolean;
+}
 
 function KycCheckSheet({
   url,
@@ -174,11 +187,14 @@ function KycCheckSheet({
   WebView: WebViewComponent;
   onDone: (outcome: KycCheckOutcome) => void;
 }): React.ReactElement {
-  const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
+  const [loading, setLoading] = useState(true);
   const [slow, setSlow] = useState(false);
-  // Reload key: "Try again" from the error state remounts the WebView for a clean retry.
-  const [attempt, setAttempt] = useState(0);
   const doneRef = useRef(false);
+  const webRef = useRef<WebViewHandle | null>(null);
+  // Whether the page has history to go back to (onNavigationStateChange) — Android back steps through it.
+  const canGoBackRef = useRef(false);
+  // The last link the request handler handed to the OS, so the committed-state backup never opens it twice.
+  const openedRef = useRef<string | null>(null);
 
   const done = (outcome: KycCheckOutcome): void => {
     // Exactly one outcome per presentation — a completion redirect and a close tap can race.
@@ -188,51 +204,86 @@ function KycCheckSheet({
   };
 
   useEffect(() => {
-    if (phase !== "loading") {
+    if (!loading) {
       setSlow(false);
       return;
     }
     const t = setTimeout(() => setSlow(true), SLOW_OPEN_MS);
     return () => clearTimeout(t);
-  }, [phase, attempt]);
+  }, [loading]);
 
   /**
-   * ✕ / Android back. From the error state there is nothing in progress, so it closes as `failed`
-   * (the cant_start wall says the same thing this sheet just did). Otherwise confirm — closing a
-   * camera flow by accident is easy, and the copy mirrors become.tsx's "pick it up again" line.
+   * ✕, and Android back from the check's first page. Confirm — closing a camera flow by accident is
+   * easy, and the copy mirrors become.tsx's "pick it up again" line.
    */
   const requestClose = (): void => {
-    if (phase === "error") {
-      done("failed");
-      return;
-    }
     Alert.alert("Leave the ID check?", "You can pick it up again from your rider board.", [
       { text: "Keep going", style: "cancel" },
       { text: "Leave", style: "destructive", onPress: () => done("cancelled") },
     ]);
   };
 
+  /** Android back: a step back inside the check while it has one, and only then the leave prompt. */
+  const onHardwareBack = (): void => {
+    if (canGoBackRef.current && webRef.current?.goBack) {
+      webRef.current.goBack();
+      return;
+    }
+    requestClose();
+  };
+
   /**
-   * True → let the WebView load it; false → blocked. Completion closes the sheet; an external link (a
-   * policy page, mailto:, a support chat) opens outside the app and the check stays open — it is NOT a
-   * finished check. Only a load request (`fromRequest`) hands a link to the OS: the committed-state
-   * backup below would otherwise open it a second time.
+   * The sheet couldn't show the check. No error page of its own: First Run v2 F7 "Couldn't open the ID
+   * check" (D-82) is the one drawn screen for this fault, and its "Try again" reopens a fresh sheet — the
+   * kyc-2026-08 `kyc_cant_start` page this sheet used to draw first made the rider read the same fault
+   * twice.
    */
-  const onNavigate = (navUrl: string, fromRequest: boolean): boolean => {
+  const failed = (): void => done("failed");
+
+  /**
+   * One decision for every navigation, however it reached us. Completion closes the sheet; an external
+   * link (a policy page, mailto:, a support chat) opens outside the app and the check stays open — it
+   * is NOT a finished check. True → let the WebView load it; false → blocked.
+   */
+  const onRequest = (navUrl: string): boolean => {
     const decision = resolveKycWebNavigation(url, navUrl, API_URL);
     if (decision === "completed") {
       done("completed");
       return false;
     }
     if (decision === "external") {
-      if (fromRequest) void Linking.openURL(navUrl).catch(() => undefined);
+      openedRef.current = navUrl;
+      void Linking.openURL(navUrl).catch(() => undefined);
       return false;
     }
     return true;
   };
 
+  /**
+   * Backup for loads that never asked: Android server-side redirect chains don't always consult
+   * onShouldStartLoadWithRequest, but the committed navigation state names the URL. A completion lands
+   * here too; a redirect to someone else's page is stopped and stepped back from rather than rendered in
+   * the sheet as if it were the check (and opened outside the app, once). With nothing to step back to,
+   * the check itself never showed — that is F7.
+   */
+  const onCommitted = (nav: WebNavState): void => {
+    canGoBackRef.current = nav.canGoBack === true;
+    if (!nav.url) return;
+    const decision = resolveKycWebNavigation(url, nav.url, API_URL);
+    if (decision === "completed") {
+      done("completed");
+      return;
+    }
+    if (decision !== "external" || nav.url === openedRef.current) return;
+    openedRef.current = nav.url;
+    void Linking.openURL(nav.url).catch(() => undefined);
+    webRef.current?.stopLoading?.();
+    if (nav.canGoBack && webRef.current?.goBack) webRef.current.goBack();
+    else failed();
+  };
+
   return (
-    <Modal visible animationType="slide" onRequestClose={requestClose}>
+    <Modal visible animationType="slide" onRequestClose={onHardwareBack}>
       <SafeAreaView style={{ flex: 1, backgroundColor: tokens.color.bg }}>
         <View
           style={{
@@ -273,76 +324,62 @@ function KycCheckSheet({
           <View style={{ width: tokens.touchTargetMin }} />
         </View>
 
-        {phase === "error" ? (
-          // Same copy as the board's cant_start wall (RJ kyc_cant_start) — one voice for one fault.
-          <SystemState
-            icon="triangle-alert"
-            title="We couldn't open the ID check"
-            message="This is usually the camera or the connection. Check both and try again."
-            primary="Try again"
-            onPrimary={() => {
-              setPhase("loading");
-              setAttempt((a) => a + 1);
+        <View style={{ flex: 1 }}>
+          <WebView
+            ref={webRef}
+            source={{ uri: url }}
+            // Didit's flow is camera-driven: inline playback + no user-gesture gate for the video
+            // preview, and grant its getUserMedia asks (the app-level camera permission was
+            // preflighted by runKycVerification before this sheet opened).
+            allowsInlineMediaPlayback
+            mediaPlaybackRequiresUserAction={false}
+            mediaCapturePermissionGrantType="grant"
+            javaScriptEnabled
+            domStorageEnabled
+            // Everything reaches onShouldStartLoadWithRequest: the default https-only whitelist
+            // hands non-matching URLs (the deep-link callback!) to the OS instead of to us.
+            originWhitelist={["*"]}
+            onShouldStartLoadWithRequest={(req: { url: string; isTopFrame?: boolean }) =>
+              // iOS reports iframe loads too; only the top frame can be the completion redirect.
+              req.isTopFrame === false ? true : onRequest(req.url)
+            }
+            onNavigationStateChange={onCommitted}
+            onLoadEnd={() => setLoading(false)}
+            onError={(e: { nativeEvent?: { url?: string } }) => {
+              // A completion redirect to `lynia://` that slipped past the request handler fails to load
+              // (Android: ERR_UNKNOWN_URL_SCHEME) — that is the check finishing, not breaking.
+              const errUrl = e?.nativeEvent?.url;
+              if (errUrl && resolveKycWebNavigation(url, errUrl, API_URL) === "completed") done("completed");
+              else failed();
             }}
-            secondary="Close"
-            onSecondary={() => done("failed")}
+            onHttpError={(e: { nativeEvent: { url?: string } }) => {
+              // Main-document failure only: a 4xx/5xx subresource inside a working flow is the
+              // vendor's business, not a reason to close the rider's check.
+              if (e.nativeEvent.url === url) failed();
+            }}
+            style={{ flex: 1, backgroundColor: tokens.color.bg }}
           />
-        ) : (
-          <View style={{ flex: 1 }}>
-            <WebView
-              key={attempt}
-              source={{ uri: url }}
-              // Didit's flow is camera-driven: inline playback + no user-gesture gate for the video
-              // preview, and grant its getUserMedia asks (the app-level camera permission was
-              // preflighted by runKycVerification before this sheet opened).
-              allowsInlineMediaPlayback
-              mediaPlaybackRequiresUserAction={false}
-              mediaCapturePermissionGrantType="grant"
-              javaScriptEnabled
-              domStorageEnabled
-              // Everything reaches onShouldStartLoadWithRequest: the default https-only whitelist
-              // hands non-matching URLs (the deep-link callback!) to the OS instead of to us.
-              originWhitelist={["*"]}
-              onShouldStartLoadWithRequest={(req: { url: string; isTopFrame?: boolean }) =>
-                // iOS reports iframe loads too; only the top frame can be the completion redirect.
-                req.isTopFrame === false ? true : onNavigate(req.url, true)
-              }
-              // Backup detection: Android server-side redirect chains don't always consult
-              // onShouldStartLoadWithRequest, but the committed navigation state names the URL.
-              onNavigationStateChange={(nav: { url?: string }) => {
-                if (nav.url) onNavigate(nav.url, false);
+          {loading && (
+            <View
+              pointerEvents="none"
+              style={{
+                position: "absolute",
+                top: 0,
+                right: 0,
+                bottom: 0,
+                left: 0,
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: tokens.color.bg,
               }}
-              onLoadEnd={() => setPhase((p) => (p === "loading" ? "ready" : p))}
-              onError={() => setPhase("error")}
-              onHttpError={(e: { nativeEvent: { url?: string } }) => {
-                // Main-document failure only: a 4xx/5xx subresource inside a working flow is the
-                // vendor's business, not a reason to blank the rider's screen.
-                if (e.nativeEvent.url === url) setPhase("error");
-              }}
-              style={{ flex: 1, backgroundColor: tokens.color.bg }}
-            />
-            {phase === "loading" && (
-              <View
-                pointerEvents="none"
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  right: 0,
-                  bottom: 0,
-                  left: 0,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  backgroundColor: tokens.color.bg,
-                }}
-              >
-                <ActivityIndicator size="large" color={tokens.color.cta} />
-                <Text style={{ marginTop: tokens.space.md, fontSize: tokens.font.size.body, color: tokens.color.muted }}>
-                  {slow ? "Still opening — hang on." : "Opening your ID check…"}
-                </Text>
-              </View>
-            )}
-          </View>
-        )}
+            >
+              <ActivityIndicator size="large" color={tokens.color.cta} />
+              <Text style={{ marginTop: tokens.space.md, fontSize: tokens.font.size.body, color: tokens.color.muted }}>
+                {slow ? "Still opening — hang on." : "Opening your ID check…"}
+              </Text>
+            </View>
+          )}
+        </View>
       </SafeAreaView>
     </Modal>
   );

@@ -15,6 +15,13 @@ export function selectKycVendor(env: Env): KycVendor {
   const log = new Logger("KycVendor");
   if (env.KYC_PROVIDER === "didit") {
     if (env.DIDIT_API_KEY) return new DiditKycVendor(env);
+    // KYC-R26-04: in production this is a hard boot failure, never a quiet stub. loadEnv already rejects the
+    // auto-mode shape; this is the backstop for any Env that reached the module another way. The stub here
+    // would mint `kyc_<id>` refs Didit has never heard of: no webhook ever resolves them, and every rider sits
+    // `pending` with a dead "Finish verifying". Manual mode mints no session, so the stub is inert there.
+    if (env.NODE_ENV === "production" && env.KYC_MODE === "auto") {
+      throw new Error("KYC_PROVIDER=didit in production requires DIDIT_API_KEY — refusing to fall back to the stub vendor");
+    }
     log.warn("KYC_PROVIDER=didit but DIDIT_API_KEY is unset — falling back to the STUB vendor; riders will NOT be Didit-verified.");
     return new StubKycVendor();
   }

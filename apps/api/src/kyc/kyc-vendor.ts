@@ -40,6 +40,23 @@ export interface KycVendor {
    * two-value pending state cannot.
    */
   sessionStatus?(ref: string): Promise<string | null>;
+
+  /**
+   * KYC-R26-03: the vendor's FULL decision for a session (Didit: `GET /v3/session/{id}/decision/`), or null
+   * when it can't be read. OPTIONAL; never throws. Used ONLY by the lost-webhook reconciler
+   * (KycReconcileService), which feeds it through the same extraction + applyKycResult path the webhook uses.
+   * The payload is PII (document fields, face-match data): callers must never log, cache or persist it —
+   * only the fields the webhook path already persists (status, score, hashed number, expiry day) leave it.
+   */
+  sessionDecision?(ref: string): Promise<unknown>;
+
+  /**
+   * KYC-R26-05: ask the vendor to delete a session and everything it holds (document images, selfie,
+   * extracted fields), for account erasure. OPTIONAL (a vendor that keeps nothing omits it). Resolves `true`
+   * when the session is gone (a 404 counts — already gone), `false` when the vendor couldn't be reached or
+   * refused; never throws, so erasure can log and carry on (see PrivacyService.eraseAccount).
+   */
+  deleteSession?(ref: string): Promise<boolean>;
 }
 
 export const KYC_VENDOR = Symbol("KYC_VENDOR");
@@ -52,5 +69,10 @@ export const KYC_VENDOR = Symbol("KYC_VENDOR");
 export class StubKycVendor implements KycVendor {
   async submit(riderId: string): Promise<KycSubmission> {
     return { ref: `kyc_${riderId}_${Date.now().toString(36)}`, status: "pending" };
+  }
+
+  /** KYC-R26-05: the stub holds nothing at a vendor, so there is nothing to delete. */
+  async deleteSession(_ref: string): Promise<boolean> {
+    return true;
   }
 }

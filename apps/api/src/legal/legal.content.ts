@@ -132,7 +132,7 @@ export const LEGAL_DATA_CATEGORIES: readonly LegalDataCategory[] = [
     basis:
       "Your explicit consent, given when you start rider verification. Your national ID number and the photograph of your face are SENSITIVE personal information under the Cyber and Data Protection Act, so we ask for them only for verification and never use them for anything else. You can withdraw consent by deleting your rider account.",
     retention:
-      "The ID number is encrypted at rest and cleared when you delete your account, along with your vehicle details. ID and face images are held for the legal minimum after a rider account goes inactive or is rejected, then deleted automatically.",
+      "The ID number is encrypted at rest and cleared when you delete your account, along with your vehicle details and your ID's expiry date. When you delete your account we also ask our ID-check provider to delete your verification session. ID and face images are held for the legal minimum after a rider account goes inactive or is rejected, then deleted automatically.",
     manifestKeys: [
       "id_number",
       "id_number_hash",
@@ -144,6 +144,14 @@ export const LEGAL_DATA_CATEGORIES: readonly LegalDataCategory[] = [
       "kyc_ref",
       "kyc_decline_reason",
       "suspend_reason",
+      // KYC-R26-05: the rest of the ID check's per-person traces, and the session held at the vendor.
+      "kyc_session_token",
+      "kyc_session_url",
+      "kyc_forced_at",
+      "kyc_id_expires_on",
+      "kyc_vendor_status",
+      "kyc_vendor_status_at",
+      "kyc-vendor-session",
     ],
   },
   {

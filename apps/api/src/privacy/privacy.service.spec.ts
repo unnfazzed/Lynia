@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import type { StorageAdapter } from "../adapters/storage/storage.interface";
 import type { Env } from "../config/env";
+import type { KycVendor } from "../kyc/kyc-vendor";
 import { PrismaService } from "../prisma/prisma.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
 import { PrivacyService } from "./privacy.service";
@@ -59,6 +60,8 @@ function eraseHarness(
     ownsBusiness?: string;
     staffAt?: string;
     prescriptions?: Array<{ photoKeys: string[] }>;
+    // KYC-R26-05: the KYC vendor whose session erasure deletes.
+    kycVendor?: KycVendor;
   } = {},
 ) {
   const preflightRider = profile ? buildRider(profile.rider) : null;
@@ -129,7 +132,7 @@ function eraseHarness(
     order: { findFirst: async () => (activeRide ? { id: "o1" } : null) },
     $transaction: async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
   } as unknown as PrismaService;
-  return { svc: new PrivacyService(prisma, env, extras.storage, extras.gateway), calls, tx, orderUpdates, orderUpdateManys };
+  return { svc: new PrivacyService(prisma, env, extras.storage, extras.gateway, extras.kycVendor), calls, tx, orderUpdates, orderUpdateManys };
 }
 
 describe("PrivacyService.eraseAccount", () => {
@@ -233,6 +236,42 @@ describe("PrivacyService.eraseAccount", () => {
     const data = (calls.riderUpdate as { data: Record<string, unknown> }).data;
     expect(data).toMatchObject({ verifiedIdNumber: null, kycRef: null, kycSessionToken: null, kycSessionUrl: null });
     expect(data).not.toHaveProperty("verifiedIdHash");
+  });
+
+  // KYC-R26-05: the rest of the ID check's per-person traces go too; the one-way hash still stays.
+  it("KYC-R26-05: scrubs the document expiry day and the vendor's status + time on erasure", async () => {
+    const { svc, calls } = eraseHarness({ phone: "+263771234567", rider: {} }, false);
+    await svc.eraseAccount("p1");
+    const data = (calls.riderUpdate as { data: Record<string, unknown> }).data;
+    expect(data).toMatchObject({ kycIdExpiresOn: null, kycVendorStatus: null, kycVendorStatusAt: null });
+  });
+
+  it("KYC-R26-05: asks the vendor to delete the rider's ID-check session — after the erasure committed", async () => {
+    const order: string[] = [];
+    const deleteSession = vi.fn(async (ref: string) => (order.push(`delete:${ref}`), true));
+    const kycVendor = { submit: vi.fn(), deleteSession } as unknown as KycVendor;
+    const h = eraseHarness({ phone: "+263771234567", rider: { kycRef: "sess_42" } }, false, [], false, { kycVendor });
+    h.tx.rider.updateMany.mockImplementation(async (a: unknown) => (order.push("scrub"), (h.calls.riderUpdate = a), { count: 1 }));
+    await expect(h.svc.eraseAccount("p1")).resolves.toEqual({ erased: true });
+    expect(deleteSession).toHaveBeenCalledWith("sess_42");
+    expect(order).toEqual(["scrub", "delete:sess_42"]);
+  });
+
+  it("KYC-R26-05: a vendor that is down (false, or a throw) never fails the erasure — logged for manual deletion", async () => {
+    for (const deleteSession of [vi.fn(async () => false), vi.fn(async () => { throw new Error("didit down"); })]) {
+      const kycVendor = { submit: vi.fn(), deleteSession } as unknown as KycVendor;
+      const { svc } = eraseHarness({ phone: "+263771234567", rider: { kycRef: "sess_9" } }, false, [], false, { kycVendor });
+      await expect(svc.eraseAccount("p1")).resolves.toEqual({ erased: true });
+      expect(deleteSession).toHaveBeenCalledWith("sess_9");
+    }
+  });
+
+  it("KYC-R26-05: no session to delete for a customer, or a rider with no kycRef", async () => {
+    const deleteSession = vi.fn(async () => true);
+    const kycVendor = { submit: vi.fn(), deleteSession } as unknown as KycVendor;
+    await eraseHarness({ phone: "+263771234567", rider: null }, false, [], false, { kycVendor }).svc.eraseAccount("p1");
+    await eraseHarness({ phone: "+263771234567", rider: {} }, false, [], false, { kycVendor }).svc.eraseAccount("p1");
+    expect(deleteSession).not.toHaveBeenCalled();
   });
 
   it("KB-POD-DISPUTE Phase A: nulls the rider's delivery-proof columns (photo/GPS/time) on erasure, scoped to riderId", async () => {

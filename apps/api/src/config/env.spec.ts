@@ -14,6 +14,10 @@ const prodBase = {
   PII_ENCRYPTION_KEY: "a-very-long-unique-production-pii-key-value-32+",
   OTP_CHANNEL: "whatsapp",
   KYC_PROVIDER: "didit",
+  // KYC-R26-04: production + didit + auto mode now refuses to boot without all three.
+  DIDIT_API_KEY: "didit-api-key",
+  DIDIT_WORKFLOW_ID: "wf_1",
+  DIDIT_WEBHOOK_SECRET: "didit-webhook-secret",
 } as NodeJS.ProcessEnv;
 
 describe("loadEnv — optional URL fields", () => {
@@ -262,6 +266,23 @@ describe("loadEnv — production launch-hygiene boot-guards", () => {
 
   it("rejects the auto-passing KYC stub in production (auto mode)", () => {
     expect(() => loadEnv({ ...prodBase, KYC_PROVIDER: "stub", KYC_MODE: "auto" })).toThrow(/KYC_PROVIDER/);
+  });
+
+  // KYC-R26-04: a half-wired Didit used to boot and only log (stub fallback / 503 on every webhook).
+  it.each(["DIDIT_API_KEY", "DIDIT_WORKFLOW_ID", "DIDIT_WEBHOOK_SECRET"])(
+    "KYC-R26-04: refuses to boot production KYC_PROVIDER=didit (auto) without %s",
+    (name) => {
+      expect(() => loadEnv({ ...prodBase, KYC_MODE: "auto", [name]: undefined })).toThrow(new RegExp(name));
+    },
+  );
+
+  it("KYC-R26-04: manual mode needs no Didit wiring (no session is minted, no webhook arrives)", () => {
+    const env = loadEnv({ ...prodBase, KYC_MODE: "manual", DIDIT_API_KEY: undefined, DIDIT_WORKFLOW_ID: undefined, DIDIT_WEBHOOK_SECRET: undefined });
+    expect(env.KYC_PROVIDER).toBe("didit");
+  });
+
+  it("KYC-R26-04: outside production a keyless didit config still boots (dev/test unchanged)", () => {
+    expect(loadEnv({ ...base, KYC_PROVIDER: "didit" }).KYC_PROVIDER).toBe("didit");
   });
 
   it("allows the KYC stub in production under manual review", () => {

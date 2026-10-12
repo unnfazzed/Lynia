@@ -10,8 +10,10 @@ import { saveRolePreference } from "../../src/auth/session";
 import { KycCheckHost } from "../../src/kyc/KycCheckHost";
 import { recordKycLaunch } from "../../src/kyc/launch-hint";
 import { runKycVerification } from "../../src/kyc/verify";
+import { KYC_RETRY_TRY_LATER } from "../../src/logic/gates";
 import { clearKycDraft, kycDraftHasContent, loadKycDraft, saveKycDraft } from "../../src/logic/kyc-draft";
 import { DismissKeyboardArea, useActionError } from "../../src/ui";
+import { PD } from "../../src/ui/firstrun/copy";
 import { OB, RO } from "../../src/ui/onboarding/copy";
 import { Cta, H2, NameFields, OnbScreen, Pad, Sub, VerifiedPhoneRow } from "../../src/ui/onboarding/kit";
 import { RiderIntro } from "../../src/ui/onboarding/rider";
@@ -31,6 +33,13 @@ import { useWalletConfig } from "../../src/query/use-wallet";
  * - G1 (D-82): this is the first rider screen. C1 "Ride with LyniaGo" → OTP → here, and a non-rider reaching
  *   the board is sent here; no permission priming before it (the rider permission flow follows R3).
  */
+/** The toast a failed "Start ID check" raises — always app copy, never the server's message. */
+function becomeErrorMessage(e: unknown): string {
+  if (e instanceof ApiError && e.status === 429) return KYC_RETRY_TRY_LATER;
+  if (e instanceof ApiError && e.code === "id_in_use") return `${PD.takenA} ${PD.takenB}. ${PD.takenBody}`;
+  return "Couldn't start rider setup.";
+}
+
 export default function BecomeRiderScreen(): React.ReactElement {
   const router = useRouter();
   const qc = useQueryClient();
@@ -135,6 +144,9 @@ export default function BecomeRiderScreen(): React.ReactElement {
       // The account is a rider now: refresh `me` while the check is open, so the board this hands over
       // to reads the rider record rather than the cached customer one.
       void qc.invalidateQueries({ queryKey: ["me"] });
+      // …and the next cold start opens on the rider side, saved BEFORE the check opens: an app killed
+      // mid-check (the sheet is minutes of camera work) used to come back to customer Home.
+      void saveRolePreference("rider");
       // The check opens over this screen — the in-app ID-check sheet (KycCheckHost, mounted below),
       // falling back to the in-app browser tab when the sheet can't present. `runKycVerification`
       // never throws. Manual review (and the QA stub's instant pass) returns no session to open.
@@ -145,6 +157,10 @@ export default function BecomeRiderScreen(): React.ReactElement {
         // not F3 "Almost there".
         recordKycLaunch(launch.outcome);
         if (launch.outcome === "completed") void noteKycLaunched();
+      } else if (res.mode === "auto" && res.kycStatus === "pending") {
+        // An automated check with no session to open is a check that couldn't open — F7, not a silent
+        // hand-over to F3. (Manual review and the QA stub's instant pass have nothing to open by design.)
+        recordKycLaunch("failed");
       }
       // However it went, the board shows the right page from here: F8 while it is sent, R2 while the
       // automated check runs, R3 once verified, F3 after a cancel, F1 in manual mode (D-82).
@@ -158,7 +174,10 @@ export default function BecomeRiderScreen(): React.ReactElement {
         await handOver();
         return;
       }
-      setError(e instanceof ApiError ? e.message : "Couldn't start rider setup.");
+      // Our words, never the server's: a rate limit, an ID already on another account (PD's drawn
+      // one-ID-one-account line, as F5dup words it), or the plain failure. No rider record exists after
+      // any of these (the server registers only once the vendor answered), so there is no F page yet.
+      setError(becomeErrorMessage(e));
     } finally {
       submitInFlightRef.current = false;
       setBusy(false);

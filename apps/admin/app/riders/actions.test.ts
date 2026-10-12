@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { creditRiderWallet, decideKyc, setKyc, verifyPlate } from "./actions";
+import { creditRiderWallet, decideKyc, verifyPlate } from "./actions";
 
 /**
  * Money + compliance server actions on the rider rail (item 1.6). These are the daily human-in-the-loop
- * MONEY controls: `creditRiderWallet` posts a real prepaid credit, and `decideKyc`/`setKyc` gate who can
+ * MONEY controls: `creditRiderWallet` posts a real prepaid credit, and `decideKyc` gates who can
  * earn. We exercise each action through the REAL admin API client (`adminPost` → `authHeaders` → fetch),
  * mocking only the transport (`fetch`) and Next request hooks — so the tests pin both the exact request
  * body (crucially, idempotency-key forwarding) AND the auth guards (bearer token + operator attribution),
@@ -165,43 +165,6 @@ describe("decideKyc (A-02 KYC decision — gates who can earn)", () => {
     await expect(decideKyc("p1", "verified", null)).resolves.toEqual({
       ok: false,
       message: "Can't approve: the national ID from this rider's ID check is already on another live account. Resolve that account first.",
-    });
-    expect(revalidateMock).not.toHaveBeenCalled();
-  });
-});
-
-describe("setKyc (queue-backstop KYC write, FormData)", () => {
-  const fd = (entries: Record<string, string>) => {
-    const f = new FormData();
-    for (const [k, v] of Object.entries(entries)) f.set(k, v);
-    return f;
-  };
-
-  it("posts a valid decision and revalidates the queue", async () => {
-    await expect(setKyc(fd({ profileId: "p9", status: "verified" }))).resolves.toEqual({ ok: true });
-    const c = lastCall();
-    expect(c.url).toBe("https://api.test/admin/riders/p9/kyc");
-    expect(c.body).toEqual({ status: "verified" });
-    expect(revalidateMock).toHaveBeenCalledWith("/riders");
-  });
-
-  it("refuses an out-of-set status or a missing profile id without writing", async () => {
-    await expect(setKyc(fd({ profileId: "p9", status: "approved" }))).resolves.toMatchObject({ ok: false });
-    await expect(setKyc(fd({ profileId: "", status: "verified" }))).resolves.toMatchObject({ ok: false });
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("FAILS CLOSED on a rejected write", async () => {
-    fetchMock.mockResolvedValue(res(500));
-    await expect(setKyc(fd({ profileId: "p9", status: "failed" }))).resolves.toMatchObject({ ok: false });
-    expect(revalidateMock).not.toHaveBeenCalled();
-  });
-
-  it("D-75: a refused quick approval is RETURNED in the API's own words", async () => {
-    fetchMock.mockResolvedValue(verifiedIdInUse);
-    await expect(setKyc(fd({ profileId: "p9", status: "verified" }))).resolves.toEqual({
-      ok: false,
-      message: expect.stringContaining("already on another live account"),
     });
     expect(revalidateMock).not.toHaveBeenCalled();
   });

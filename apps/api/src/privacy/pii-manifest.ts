@@ -97,6 +97,15 @@ export const PII_MANIFEST: Readonly<Record<string, PiiEntry>> = {
   },
   kyc_ref: { column: "kyc_ref", where: "riders", tables: ["riders"], disposition: "null", note: "Nulled on erase." },
   kyc_decline_reason: { column: "kyc_decline_reason", where: "riders", tables: ["riders"], disposition: "null", note: "Nulled on erase." },
+  // KYC-R26-05: everything else the ID check leaves on the rider row. The session credentials and the forced-
+  // replacement time were already scrubbed by eraseAccount but never recorded here; the document expiry day and
+  // the vendor status/time were not scrubbed at all.
+  kyc_session_token: { column: "kyc_session_token", where: "riders", tables: ["riders"], disposition: "null", note: "Live vendor credential (P0-2) — nulled on erase." },
+  kyc_session_url: { column: "kyc_session_url", where: "riders", tables: ["riders"], disposition: "null", note: "The hosted-check URL for that credential — nulled on erase." },
+  kyc_forced_at: { column: "kyc_forced_at", where: "riders", tables: ["riders"], disposition: "null", note: "Activity timestamp tied to the person — nulled on erase." },
+  kyc_id_expires_on: { column: "kyc_id_expires_on", where: "riders", tables: ["riders"], disposition: "null", note: "KYC-R26-05: the ID document's expiry day (D-82 F6) — an attribute of the person's ID card, nulled on erase." },
+  kyc_vendor_status: { column: "kyc_vendor_status", where: "riders", tables: ["riders"], disposition: "null", note: "KYC-R26-05: the vendor's last status for the person's ID check — nulled on erase." },
+  kyc_vendor_status_at: { column: "kyc_vendor_status_at", where: "riders", tables: ["riders"], disposition: "null", note: "KYC-R26-05: when the vendor reported it — nulled on erase." },
   suspend_reason: { column: "suspend_reason", where: "riders", tables: ["riders"], disposition: "null", note: "Nulled on erase." },
   current_lat: { column: "current_lat", where: "riders", tables: ["riders"], disposition: "null", note: "Readable last-position latitude nulled on erase." },
   current_lng: { column: "current_lng", where: "riders", tables: ["riders"], disposition: "null", note: "Readable last-position longitude nulled on erase." },
@@ -282,6 +291,14 @@ export const PII_MANIFEST: Readonly<Record<string, PiiEntry>> = {
     tables: ["merchant_members"],
     disposition: "delete-row",
     note: "Merchant web upgrade L4: the name a business knows a team member by. A staff member's team row is deleted on erase. An owner can't be erased while they own a business (support hands it over first), so an owner's row is never left orphaned.",
+  },
+  // KYC-R26-05: the ID-check session at the vendor (Didit: document images, selfie, extracted fields, decision).
+  "kyc-vendor-session": {
+    column: "kyc-vendor-session",
+    where: "KYC vendor (Didit session)",
+    tables: ["KYC vendor"],
+    disposition: "delete-object",
+    note: "KYC-R26-05: the rider's current vendor session is deleted at the vendor post-commit (KycVendor.deleteSession; 404 = gone). Best-effort: a failure is logged with the session id for manual deletion, never fails the erasure.",
   },
   "kyc-object": { column: "kyc-object", where: "GCS (KYC photo/selfie)", tables: ["GCS"], disposition: "delete-object", note: "DS15-03: the referenced storage object itself is deleted, not just the DB pointer." },
 } as const;

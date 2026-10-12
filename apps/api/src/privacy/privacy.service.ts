@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
+import { KYC_VENDOR, type KycVendor } from "../kyc/kyc-vendor";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 
@@ -108,6 +109,9 @@ export class PrivacyService {
     // gateway resolves — @Optional() keeps a test harness / trimmed module that omits them from failing.
     @Optional() @Inject(STORAGE) private readonly storage?: StorageAdapter,
     @Optional() private readonly gateway?: TrackingGateway,
+    // KYC-R26-05: the KYC vendor (KycModule), so erasure can ask it to delete the rider's ID-check session.
+    // Optional for the same reason as the two above; absent ⇒ nothing held at a vendor to delete.
+    @Optional() @Inject(KYC_VENDOR) private readonly kycVendor?: KycVendor,
   ) {}
 
   /**
@@ -270,6 +274,12 @@ export class PrivacyService {
         // D-70: the vendor-verified ID number is recoverable PII (ciphertext) — scrubbed, unlike its
         // retained one-way hash verifiedIdHash.
         verifiedIdNumber: null,
+        // KYC-R26-05: the rest of what the ID check left on the row — the document's expiry DAY (an attribute
+        // read off the person's ID card), and the vendor's last word on the session with its time. None of it
+        // is a ban-evasion signal (that is verifiedIdHash / idNumberHash, retained above), so none is kept.
+        kycIdExpiresOn: null,
+        kycVendorStatus: null,
+        kycVendorStatusAt: null,
         kycDeclineReason: null,
         suspendReason: null,
         currentLat: null,
@@ -477,6 +487,22 @@ export class PrivacyService {
     // profile photo) now that the DB pointers are nulled. deleteObject swallows its own errors (404 =
     // success), so awaiting can't hard-fail the already-committed erasure. Without this the media
     // outlived the right-to-erasure request forever.
+    // KYC-R26-05: the ID check itself lives at the vendor too — Didit keeps the session's document images,
+    // selfie, extracted fields and decision until told otherwise. Ask it to delete the rider's session
+    // (DELETE /v3/session/{id}/delete/; 404 = already gone). Post-commit and best-effort, like the object purge
+    // below, by choice: run before the transaction, a refused erasure (standing changed, an order landed) would
+    // already have destroyed a live account's ID evidence; and erasure must never fail permanently because
+    // Didit is down. A failure is logged at ERROR with the session id — the only record of it once kycRef is
+    // nulled — for ops to delete from the Didit console (docs/SECURITY.md, KYC data retention). Scope: the
+    // CURRENT session; sessions a retry replaced are not tracked on the row and age out on Didit's retention.
+    const kycRef = profile.rider?.kycRef;
+    if (isRider && kycRef && this.kycVendor?.deleteSession) {
+      const deleted = await this.kycVendor.deleteSession(kycRef).catch(() => false);
+      if (!deleted) {
+        this.logger.error(`Erasure of ${profileId}: couldn't delete KYC vendor session ${kycRef} — delete it manually at the vendor (KYC-R26-05)`);
+      }
+    }
+
     if (this.storage) {
       const keys = [profile.photoUrl, profile.rider?.photoUrl, ...itemPhotoKeys].filter(
         (k): k is string => typeof k === "string" && k.length > 0,

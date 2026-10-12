@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import KycReviewPage from "./page";
 import { adminFetchResult } from "../../../lib/api";
@@ -94,3 +94,105 @@ describe("KYC review: no national ID on file (D-75)", () => {
     expect(duplicate).toContain("This national ID (63123456A42) is also on 1 other account");
   });
 });
+
+/** The text of the warnbar whose bold title is `title`, or null. */
+const warnbar = (title: string) => screen.queryByText(title)?.closest(".warnbar")?.textContent ?? null;
+
+describe("KYC review: where the rider is in the Didit check", () => {
+  it("a held check reads as finished, with no unfinished warning", async () => {
+    await open(review({ kycHeld: true, kycVendorStatus: "In Review" }));
+    expect(screen.getByText(/Finished at Didit — held for a manual review \(Didit: In Review\)\./)).toBeTruthy();
+    expect(warnbar("ID check not finished.")).toBeNull();
+  });
+
+  it.each(["Not Started", "In Progress", "Abandoned", "Expired", null])(
+    "vendor status %s (not held) warns that the check isn't finished",
+    async (vendor) => {
+      await open(review({ kycHeld: false, kycVendorStatus: vendor }));
+      expect(warnbar("ID check not finished.")).toContain("Approving needs a note");
+    },
+  );
+
+  it("an older API that reports neither field makes no claim", async () => {
+    await open(review());
+    expect(warnbar("ID check not finished.")).toBeNull();
+    expect(screen.queryByText("ID check:")).toBeNull();
+  });
+
+  it("approving an unfinished check requires a note in the confirm modal", async () => {
+    await open(review({ kycHeld: false, kycVendorStatus: "Abandoned" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve rider" }));
+    expect(screen.getByText(/This rider hasn.t finished the Didit ID check\./)).toBeTruthy();
+    const confirm = screen.getByRole("button", { name: "Approve without the ID check" }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText(/Note/), { target: { value: "Checked the ID in person" } });
+    expect(confirm.disabled).toBe(false);
+  });
+
+  it("approving a finished check needs no note", async () => {
+    await open(review({ kycHeld: true, kycVendorStatus: "In Review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve rider" }));
+    const buttons = screen.getAllByRole("button", { name: "Approve rider" }) as HTMLButtonElement[];
+    expect(buttons.at(-1)?.disabled).toBe(false);
+  });
+});
+
+describe("KYC review: evidence and verdict", () => {
+  it("links to the rider's Didit session", async () => {
+    await open(review({ kycRef: "sess_1" }));
+    const links = screen.getAllByRole("link", { name: "Open in Didit ↗" });
+    expect(links.length).toBeGreaterThan(0);
+    for (const l of links) expect(l.getAttribute("href")).toBe("https://business.didit.me/sessions/sess_1");
+  });
+
+  it("says when there's no Didit session to open", async () => {
+    await open(review({ kycRef: null }));
+    expect(screen.queryByRole("link", { name: "Open in Didit ↗" })).toBeNull();
+    expect(screen.getByText(/\(no Didit session on record\)/)).toBeTruthy();
+  });
+
+  it("shows one overall verdict, not three per-check rows", async () => {
+    await open(review());
+    expect(screen.getByText("Overall verdict")).toBeTruthy();
+    expect(screen.queryByText("Liveness")).toBeNull();
+    expect(screen.queryByText("Document authenticity")).toBeNull();
+  });
+});
+
+describe("KYC review: decided states", () => {
+  it("an expired check reads as expired, not declined", async () => {
+    await open(review({ status: "expired" }));
+    expect(screen.getByText("Expired.")).toBeTruthy();
+    expect(screen.getByText("The rider must re-verify before they can go online.")).toBeTruthy();
+    expect(screen.queryByText("Declined.")).toBeNull();
+    expect(screen.queryByText(/resubmit once/)).toBeNull();
+  });
+
+  it("a decline reason shows as its label, and an unknown key as itself", async () => {
+    await open(review({ status: "failed", declineReason: "face_mismatch" }));
+    expect(screen.getAllByText("Selfie doesn't match the ID").length).toBeGreaterThan(0);
+    expect(screen.queryByText("face_mismatch")).toBeNull();
+    cleanup();
+    await open(review({ status: "failed", declineReason: "id_expired" }));
+    expect(screen.getAllByText("ID document expired").length).toBeGreaterThan(0);
+    cleanup();
+    await open(review({ status: "failed", declineReason: "some_new_key" }));
+    expect(screen.getAllByText("some_new_key").length).toBeGreaterThan(0);
+  });
+
+  it("the resubmission warning names the previous decline by its label", async () => {
+    await open(review({ attempt: 2, kycAttempts: 1, declineReason: "liveness_failed" }));
+    expect(warnbar("Resubmission — attempt 2.")).toContain("Previously declined: Liveness check failed.");
+  });
+});
+
+describe("KYC review: ID-check mismatch", () => {
+  it("compares the ID on file with the number the ID check read, never a typed ID", async () => {
+    await open(review({ verifiedIdMismatch: true, idOnFile: true, idNumber: "11111111A11" }));
+    const text = warnbar("ID check doesn't match the ID on file.") ?? "";
+    expect(text).toContain("The ID check read 63123456A42");
+    expect(text).toContain("on file for this account is 11111111A11");
+    expect(text).not.toMatch(/typed/);
+  });
+});
+

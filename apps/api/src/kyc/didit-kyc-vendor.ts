@@ -18,6 +18,10 @@ const DIDIT_SESSION_TIMEOUT_MS = 10_000;
  *  degrade to the `unfinished` default fast rather than hold a screen that polls every 5s. */
 const DIDIT_DECISION_TIMEOUT_MS = 3_000;
 
+/** KYC-R26-03 / -05: the background reconciler and erasure are not on a rider's screen, so they can wait a
+ *  little longer than the `/auth/me` read — still bounded, so a hung vendor can't stall a sweep or an erase. */
+const DIDIT_BACKGROUND_TIMEOUT_MS = 8_000;
+
 
 export class DiditKycVendor implements KycVendor {
   private readonly logger = new Logger(DiditKycVendor.name);
@@ -108,11 +112,64 @@ export class DiditKycVendor implements KycVendor {
         this.logger.debug(`Didit decision read for ${ref}: ${res.status} — no status`);
         return null;
       }
-      const data = (await res.json()) as { status?: string };
-      return typeof data.status === "string" && data.status ? data.status : null;
+      // KYC-R26-11: the decision body is the rider's full verification record (document fields, face data).
+      // This path exists to read ONE field: `status` is copied out and the parsed body goes out of scope
+      // here — nothing else of it is returned, cached (KycPendingStateService keeps only the derived class)
+      // or logged (the log lines in this method carry the ref and an HTTP status, never the body).
+      const data = (await res.json()) as { status?: unknown };
+      const status = data.status;
+      return typeof status === "string" && status ? status.slice(0, 64) : null;
     } catch (err) {
       this.logger.debug(`Didit decision read failed: ${err instanceof Error ? err.message : String(err)}`);
       return null;
+    }
+  }
+
+  /**
+   * KYC-R26-03: the full decision payload for the lost-webhook reconciler (it has the same shape as the
+   * webhook body's decision: `status`, `decision.face_matches[]`, `decision.id_verifications[]`…). PII — the
+   * caller extracts what the webhook path persists and drops the rest. Never throws; never logs the body.
+   */
+  async sessionDecision(ref: string): Promise<unknown> {
+    const apiKey = this.env.DIDIT_API_KEY;
+    if (!apiKey || !ref) return null;
+    try {
+      const res = await fetch(`${this.env.DIDIT_BASE_URL}/v3/session/${encodeURIComponent(ref)}/decision/`, {
+        headers: { "x-api-key": apiKey },
+        signal: AbortSignal.timeout(DIDIT_BACKGROUND_TIMEOUT_MS),
+      });
+      if (!res.ok) {
+        this.logger.debug(`Didit decision read for ${ref} (reconcile): ${res.status}`);
+        return null;
+      }
+      return (await res.json()) as unknown;
+    } catch (err) {
+      this.logger.debug(`Didit decision read failed (reconcile): ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
+  }
+
+  /**
+   * KYC-R26-05: delete a session at Didit (`DELETE /v3/session/{id}/delete/`) — Didit drops the session's
+   * images, extracted data and decision. 404 is success (already deleted, or garbage-collected). Never throws:
+   * erasure must not fail permanently because Didit is down — the caller logs a `false` for follow-up.
+   */
+  async deleteSession(ref: string): Promise<boolean> {
+    const apiKey = this.env.DIDIT_API_KEY;
+    if (!ref) return true;
+    if (!apiKey) return false;
+    try {
+      const res = await fetch(`${this.env.DIDIT_BASE_URL}/v3/session/${encodeURIComponent(ref)}/delete/`, {
+        method: "DELETE",
+        headers: { "x-api-key": apiKey },
+        signal: AbortSignal.timeout(DIDIT_BACKGROUND_TIMEOUT_MS),
+      });
+      if (res.ok || res.status === 404) return true;
+      this.logger.warn(`Didit session delete for ${ref}: ${res.status}`);
+      return false;
+    } catch (err) {
+      this.logger.warn(`Didit session delete for ${ref} failed: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
     }
   }
 }

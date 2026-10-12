@@ -23,6 +23,9 @@ import { runKycVerification } from "../../../src/kyc/verify";
 import {
   freshKycLaunch,
   KYC_COMPLETED_HINT_MS,
+  KYC_COMPLETED_HOLD_MS,
+  KYC_RETRY_TRY_LATER,
+  kycLaunchForGate,
   type KycLaunchMark,
   kycPollMs,
   onlineGateReason,
@@ -48,7 +51,7 @@ import { useTabTop } from "../../../src/query/use-tab-top";
 import { useWallet, useWalletConfig } from "../../../src/query/use-wallet";
 import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refetch";
 import { useRiderBoard } from "../../../src/realtime/use-rider-board";
-import { AppScreen, EmptyRow, EmptyState, emptyCopy, fillEmpty, haptic, Icon, type IconName, statusPillLabel, useActionError, useHideTabBar, useTabBarSpace } from "../../../src/ui";
+import { AppScreen, EmptyRow, EmptyState, emptyCopy, fillEmpty, haptic, Icon, type IconName, statusPillLabel, useActionError, useHideTabBar, useTabBarSpace, useToast } from "../../../src/ui";
 import { IdCheckOutcome } from "../../../src/ui/firstrun";
 import { CtaButton, SkeletonOffer, SmBtn } from "../../../src/ui/order/kit";
 import { OrderSheet, type OrderSheetHandle } from "../../../src/ui/order/OrderSheet";
@@ -105,6 +108,7 @@ export default function RiderHome(): React.ReactElement {
   const { height: winH } = useWindowDimensions();
   const { merchantDispatchAutoEnabled: foodOn } = useFeatureFlags();
   const setError = useActionError();
+  const { show: showNotice } = useToast();
   const [onlineFlag, setOnlineState] = useState(() => qc.getQueryData<Me>(["me"])?.rider?.kycStatus === "verified");
   const autoOnlineRef = useRef(false);
   const [activationRetry, setActivationRetry] = useState(0);
@@ -208,7 +212,7 @@ export default function RiderHome(): React.ReactElement {
       const r = me.rider;
       const isVerified = r?.kycStatus === "verified";
       const now = Date.now();
-      const g = isVerified ? null : resolveKycGate(r, freshKycLaunch(kycLaunchRef.current, now));
+      const g = isVerified ? null : resolveKycGate(r, kycLaunchForGate(kycLaunchRef.current, now, r));
       const since = inFlightSinceRef.current;
       return kycPollMs(g, isVerified, since == null ? 0 : now - since);
     },
@@ -219,18 +223,21 @@ export default function RiderHome(): React.ReactElement {
   const forceFreshSession = useRef(false);
   const spentForce = useRef(false);
   const leaveForCustomer = useCallback((): void => router.replace("/home"), [router]);
-  const kycGate = knownUnverified ? resolveKycGate(rider, freshKycLaunch(kycLaunch, Date.now())) : null;
+  // A completed launch holds the check in flight past F8 while the server can't yet tell it from an
+  // unfinished one (gates.ts kycLaunchForGate) — R2, never a false F3.
+  const kycGate = knownUnverified ? resolveKycGate(rider, kycLaunchForGate(kycLaunch, Date.now(), rider)) : null;
   if (kycGate?.kind === "in_flight") inFlightSinceRef.current ??= Date.now();
   else inFlightSinceRef.current = null;
-  // A `completed` mark stops counting after KYC_COMPLETED_HINT_MS — re-render then, so the server's own
-  // answer takes over even if no poll lands in between.
+  // A `completed` mark is F8 for KYC_COMPLETED_HINT_MS and holds the check in flight for at most
+  // KYC_COMPLETED_HOLD_MS — re-render at each edge, so the next page shows even if no poll lands in between.
   const [, setHintTick] = useState(0);
   useEffect(() => {
     if (kycLaunch?.outcome !== "completed") return;
-    const left = kycLaunch.at + KYC_COMPLETED_HINT_MS - Date.now();
-    if (left <= 0) return;
-    const t = setTimeout(() => setHintTick((n) => n + 1), left + 50);
-    return () => clearTimeout(t);
+    const timers = [KYC_COMPLETED_HINT_MS, KYC_COMPLETED_HOLD_MS]
+      .map((ms) => kycLaunch.at + ms - Date.now())
+      .filter((left) => left > 0)
+      .map((left) => setTimeout(() => setHintTick((n) => n + 1), left + 50));
+    return () => timers.forEach(clearTimeout);
   }, [kycLaunch]);
   // R-4 / R-10: the launch Become a rider just ran, handed over on focus (this board may have been
   // mounted below Become all along). Taken once.
@@ -449,7 +456,10 @@ export default function RiderHome(): React.ReactElement {
     },
     onSuccess: async (res) => {
       const feedback = resolveKycRetryFeedback(res);
-      if (feedback.error) setError(feedback.error);
+      // No session to open in auto mode: the check couldn't open — F7, the page that says so (D-82).
+      if (feedback.error) setKycLaunch({ outcome: "failed", at: Date.now() });
+      // Manual review has nothing to open by design: say so calmly (the board shows F1 once `me` agrees).
+      if (feedback.info) showNotice(feedback.info, "info");
       if (feedback.launch) {
         const launch = await runKycVerification(feedback.launch);
         setKycLaunch({ outcome: launch.outcome, at: Date.now() });
@@ -476,7 +486,14 @@ export default function RiderHome(): React.ReactElement {
       void qc.invalidateQueries({ queryKey: ["me"] });
     },
     onMutate: () => setKycLaunch(null),
-    onError: (e) => setError(e instanceof ApiError ? e.message : "Couldn't restart verification."),
+    // A rate limit is the one toast, in our words. Anything else — the vendor down (a 5xx), no
+    // connection — is the check not opening: F7, whose "Try again" is this mutation again. A terminal
+    // server state (a lock, a decline) still outranks it once `me` is re-read. Never the server's words.
+    onError: (e) => {
+      if (e instanceof ApiError && e.status === 429) setError(KYC_RETRY_TRY_LATER);
+      else setKycLaunch({ outcome: "failed", at: Date.now() });
+      void qc.invalidateQueries({ queryKey: ["me"] });
+    },
   });
 
   // B5: a transient go-online failure retries with a capped backoff and never gives up; the effect above

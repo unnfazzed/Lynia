@@ -9,7 +9,7 @@ import { adminFetchResult } from "../lib/api";
  * or changed, each with "Confirm plate…"; the directory links to it.
  */
 vi.mock("../lib/api", () => ({ adminFetchResult: vi.fn() }));
-vi.mock("./actions", () => ({ setKyc: vi.fn(), verifyPlate: vi.fn() }));
+vi.mock("./actions", () => ({ verifyPlate: vi.fn() }));
 vi.mock("../actions/audit", () => ({ submitAdminAction: vi.fn() }));
 
 afterEach(() => {
@@ -58,5 +58,14 @@ describe("Riders — plate review (D-82)", () => {
     const link = screen.getByRole("link", { name: "plates to check" });
     expect(link.getAttribute("href")).toBe("/riders?plate=checking");
     expect(screen.queryByRole("button", { name: /Confirm plate/ })).toBeNull();
+  });
+});
+
+describe("Riders — KYC queue row", () => {
+  it("a pending rider's row offers only Review (no one-click approve that skips the review warnings)", async () => {
+    vi.mocked(adminFetchResult).mockResolvedValue({ data: [{ ...rider, kycStatus: "pending" }] } as never);
+    render(await RidersPage({ searchParams: Promise.resolve({ kyc: "pending" }) }));
+    expect(screen.queryByRole("button", { name: /Approve/ })).toBeNull();
+    expect(screen.getByRole("link", { name: "Review" }).getAttribute("href")).toBe("/riders/r-1/kyc");
   });
 });

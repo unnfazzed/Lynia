@@ -123,3 +123,8 @@ export const REASONS = {
   // Merchant web upgrade L4: support hands a business over after an identity check (runbook §8).
   merchantOwnerTransfer: ["Sold or handed over — both people confirmed", "The owner lost their number — ID checked", "Family takeover — ID checked"],
 } as const;
+
+/** A stored KYC decline key (e.g. `face_mismatch`) as the reviewer reads it; an unknown key shows as-is. */
+export function kycDeclineLabel(code: string): string {
+  return (KYC_DECLINE_REASON_LABELS as Record<string, string>)[code] ?? code;
+}
