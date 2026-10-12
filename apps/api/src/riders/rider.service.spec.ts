@@ -7,7 +7,7 @@ import type { KycVendor } from "../kyc/kyc-vendor";
 import { StubKycVendor } from "../kyc/kyc-vendor";
 import { PrismaService } from "../prisma/prisma.service";
 import { PiiCryptoService } from "../common/pii-crypto.service";
-import { canGoOnline, onlineRefusalReason, RiderService } from "./rider.service";
+import { canGoOnline, KYC_RESOLVED_BY_VENDOR, onlineRefusalReason, RiderService } from "./rider.service";
 
 /** Real crypto with a fixed test key so hashId(...) is deterministic across the assertions below. */
 const pii = new PiiCryptoService({ PII_ENCRYPTION_KEY: "test-pii-key-0123456789abcdefghij" } as Env);
@@ -1713,6 +1713,25 @@ describe("RiderService.applyKycResult", () => {
   // required at become). An account with NONE on file takes the D-75 path (adopt / hold), tested below.
   const ON_FILE = { profile: { idNumberHash: pii.hashId("63-1-A") } };
 
+  /** KYC-R26-12: a verify the one-ID-one-account checks refuse is an automatic DECLINE (it used to be held for
+   *  a human): failed, the reason key, an attempt burnt, offline, the session dead, Didit's Approved kept for the
+   *  repeat guard, and the same automated decline audit row as any vendor decline. */
+  function expectRefusedVerify(data: Record<string, unknown> | undefined, audit: Record<string, unknown> | undefined, reason: "duplicate" | "id_mismatch") {
+    expect(data).toMatchObject({
+      kycStatus: "failed",
+      idVerified: false,
+      kycDeclineReason: reason,
+      kycAttempts: { increment: 1 },
+      isOnline: false,
+      kycSessionToken: null,
+      kycSessionUrl: null,
+      kycVendorStatus: "Approved",
+      kycResolvedBy: KYC_RESOLVED_BY_VENDOR,
+    });
+    expect(data).toHaveProperty("kycResolvedAt");
+    expect(audit).toMatchObject({ actor: "system:kyc-webhook", action: "rider.kyc_decline", target: "p1", reasonCode: reason });
+  }
+
   it("applies the status, records the event time, and guards monotonically", async () => {
     let where: Record<string, unknown> | undefined;
     let data: Record<string, unknown> | undefined;
@@ -1935,7 +1954,7 @@ describe("RiderService.applyKycResult", () => {
     expect(audit).toMatchObject({ actor: "system:kyc-webhook", action: "rider.kyc_decline", target: "p1", reasonCode: "score_below_threshold" });
   });
 
-  it("DOC-16-05: a `verified` webhook for a duplicateIdFlag rider does NOT auto-verify — held pending for manual review", async () => {
+  it("DOC-16-05: a `verified` webhook for a duplicateIdFlag rider does NOT auto-verify — declined `duplicate` (KYC-R26-12)", async () => {
     let data: Record<string, unknown> | undefined;
     let audit: Record<string, unknown> | undefined;
     const prisma = {
@@ -1945,19 +1964,33 @@ describe("RiderService.applyKycResult", () => {
           return { count: 1 };
         },
         // Same findFirst mock answers both the pre-flag read and the post-update audit-target read —
-        // duplicateIdFlag:true drives holdForReview.
+        // duplicateIdFlag:true refuses the verify.
         findFirst: async () => ({ profileId: "p1", duplicateIdFlag: true, ...ON_FILE }),
       },
       auditLog: { create: async (args: { data: Record<string, unknown> }) => { audit = args.data; return {}; } },
     };
-    const result = await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date());
+    const notifyProfiles = vi.fn(async () => {});
+    const evictRiderFromSupply = vi.fn(async () => {});
+    const full: Record<string, unknown> = { ...prisma, $executeRaw: async () => 1 };
+    full.$transaction = async (fn: (tx: unknown) => unknown) => fn(full);
+    const s = new RiderService(
+      full as unknown as PrismaService,
+      {} as Env,
+      new StubKycVendor(),
+      pii,
+      trackingStub,
+      { ...gatewayStub, evictRiderFromSupply } as unknown as import("../tracking/tracking.gateway").TrackingGateway,
+      { ...notificationsStub, notifyProfiles } as unknown as import("../notifications/notifications.service").NotificationsService,
+    );
+    const result = await s.applyKycResult("sess_1", "verified", new Date());
     expect(result).toEqual({ updated: 1 });
-    // kycStatus/idVerified are NOT flipped — the rider stays pending, still in the review queue.
-    expect(data).not.toHaveProperty("kycStatus");
-    expect(data).not.toHaveProperty("idVerified");
-    expect(data).toHaveProperty("kycResolvedAt");
-    // A distinct audit action (not rider.kyc_approve) so this never masquerades as a real decision.
-    expect(audit).toMatchObject({ actor: "system:kyc-webhook", action: "rider.kyc_review_required", target: "p1", reasonCode: "duplicate_id_flag" });
+    // Never verified: an automatic decline the rider is told about, not a hold in a review queue.
+    expectRefusedVerify(data, audit, "duplicate");
+    await new Promise((r) => setTimeout(r, 0));
+    // Told it was DECLINED (never "You're verified"), and pulled from the live supply like any decline.
+    expect(notifyProfiles).toHaveBeenCalledTimes(1);
+    expect(notifyProfiles).toHaveBeenCalledWith(["p1"], expect.objectContaining({ title: "ID check needs another look" }));
+    expect(evictRiderFromSupply).toHaveBeenCalledWith("p1");
   });
 
   it("DOC-16-05: a `verified` webhook for a NON-flagged rider still auto-verifies as before", async () => {
@@ -2104,14 +2137,13 @@ describe("RiderService.applyKycResult", () => {
     expect(rec.data).not.toHaveProperty("verifiedIdNumber");
   });
 
-  it("IR26-04: a verified doc number that DISAGREES with the typed ID is held for review (typed fake, showed real)", async () => {
+  it("IR26-04: a verified doc number that DISAGREES with the typed ID is declined id_mismatch (typed fake, showed real)", async () => {
     const { prisma, rec } = docPrisma();
     await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63-999999-Z-99");
-    // Held: status not flipped, but the vendor hash IS persisted so future applicants collide with it.
-    expect(rec.data).not.toHaveProperty("kycStatus");
-    expect(rec.data).not.toHaveProperty("idVerified");
+    // Declined, but the vendor hash IS persisted so future applicants collide with it.
+    expectRefusedVerify(rec.data, rec.audit, "id_mismatch");
     expect(rec.data).toMatchObject({ verifiedIdHash: pii.hashId("63-999999-Z-99") });
-    expect(rec.audit).toMatchObject({ action: "rider.kyc_review_required", reasonCode: "verified_id_mismatch" });
+    expect(typeof rec.data?.verifiedIdNumber).toBe("string");
   });
 
   // D-75 (owner 2026-10-03): new riders no longer type their national ID before the check — "the
@@ -2143,32 +2175,34 @@ describe("RiderService.applyKycResult", () => {
     expect(rec.raw[0]!.values).toEqual([pii.hashId("63-123456-A-42")]);
   });
 
-  it("D-75: a vendor number on another account's profile (live OR erased) still holds the rider — no adoption", async () => {
+  it("D-75: a vendor number on another account's profile (live OR erased) declines the rider `duplicate` — no adoption", async () => {
     const { prisma, rec } = docPrisma({ typedHash: null, profileHits: 1 });
     await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42");
-    expect(rec.data).not.toHaveProperty("kycStatus");
-    expect(rec.data).not.toHaveProperty("idVerified");
-    // Held for the collision alone — before D-75 this read verified_id_mismatch+verified_id_collision.
-    expect(rec.audit).toMatchObject({ action: "rider.kyc_review_required", reasonCode: "verified_id_collision" });
+    // Declined for the collision alone — nothing on file, so it is never an id_mismatch.
+    expectRefusedVerify(rec.data, rec.audit, "duplicate");
     expect(rec.adopt).toHaveLength(0);
     // The vendor hash is still persisted on the rider row, so later applicants collide with it too.
     expect(rec.data).toMatchObject({ verifiedIdHash: pii.hashId("63-123456-A-42") });
   });
 
-  it("D-75: a vendor number another RIDER already verified holds the rider too — no adoption", async () => {
+  it("D-75: a vendor number another RIDER already verified declines the rider `duplicate` too — no adoption", async () => {
     const { prisma, rec } = docPrisma({ typedHash: null, riderHits: 1 });
     await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42");
-    expect(rec.data).not.toHaveProperty("kycStatus");
-    expect(rec.audit).toMatchObject({ reasonCode: "verified_id_collision" });
+    expectRefusedVerify(rec.data, rec.audit, "duplicate");
     expect(rec.adopt).toHaveLength(0);
   });
 
-  it("D-75: a rider flagged duplicateIdFlag is held and nothing is adopted", async () => {
+  it("D-75: a rider flagged duplicateIdFlag is declined `duplicate` and nothing is adopted", async () => {
     const { prisma, rec } = docPrisma({ typedHash: null, duplicateIdFlag: true });
     await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42");
-    expect(rec.data).not.toHaveProperty("kycStatus");
-    expect(rec.audit).toMatchObject({ reasonCode: "duplicate_id_flag" });
+    expectRefusedVerify(rec.data, rec.audit, "duplicate");
     expect(rec.adopt).toHaveLength(0);
+  });
+
+  it("KYC-R26-12: a mismatch AND a collision on the same verify reads as id_mismatch (the account's own number disagrees)", async () => {
+    const { prisma, rec } = docPrisma({ profileHits: 1 });
+    await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63-999999-Z-99");
+    expectRefusedVerify(rec.data, rec.audit, "id_mismatch");
   });
 
   it("D-75: no ID on file AND no document number in the decision → verified fail-open, audit-flagged verified_id_missing (never held hostage)", async () => {
@@ -2186,8 +2220,7 @@ describe("RiderService.applyKycResult", () => {
   it("D-75: an account WITH an ID on file keeps the mismatch check and is never overwritten by the vendor number", async () => {
     const { prisma, rec } = docPrisma();
     await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63-999999-Z-99");
-    expect(rec.data).not.toHaveProperty("kycStatus");
-    expect(rec.audit).toMatchObject({ reasonCode: "verified_id_mismatch" });
+    expectRefusedVerify(rec.data, rec.audit, "id_mismatch");
     expect(rec.adopt).toHaveLength(0);
     // And a matching number verifies without touching the profile either.
     const match = docPrisma();
@@ -2216,12 +2249,11 @@ describe("RiderService.applyKycResult", () => {
     }
   });
 
-  it("D-75: a DIFFERENT number that landed on the account mid-check (CAS lost) is held as a mismatch, not verified", async () => {
+  it("D-75: a DIFFERENT number that landed on the account mid-check (CAS lost) is declined id_mismatch, not verified", async () => {
     const { prisma, rec } = docPrisma({ typedHash: null, adoptCount: 0, onFileAfter: pii.hashId("63-999999-Z-99") });
     await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42");
     expect(rec.adopt).toHaveLength(1);
-    expect(rec.data).not.toHaveProperty("kycStatus");
-    expect(rec.audit).toMatchObject({ action: "rider.kyc_review_required", reasonCode: "verified_id_mismatch" });
+    expectRefusedVerify(rec.data, rec.audit, "id_mismatch");
   });
 
   it("D-75: the SAME number already on the account when the CAS lost still verifies", async () => {
@@ -2230,16 +2262,14 @@ describe("RiderService.applyKycResult", () => {
     expect(rec.data).toMatchObject({ kycStatus: "verified", idVerified: true });
   });
 
-  it("D-75: the live-ID unique index refusing the adoption doesn't crash the webhook — re-applied once, held for review", async () => {
+  it("D-75: the live-ID unique index refusing the adoption doesn't crash the webhook — re-applied once, declined `duplicate`", async () => {
     // A writer that skips the advisory lock claimed the number between the count and the write: the
-    // IR26-05 backstop P2002s. The decision is re-run with adoption off and the rider is held.
+    // IR26-05 backstop P2002s. The decision is re-run with adoption off and the rider is declined.
     const { prisma, rec } = docPrisma({ typedHash: null, adoptP2002: 1 });
     await expect(svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42")).resolves.toEqual({ updated: 1 });
     expect(rec.transactions).toBe(2);
     expect(rec.adopt).toHaveLength(1);
-    expect(rec.data).not.toHaveProperty("kycStatus");
-    expect(rec.data).not.toHaveProperty("idVerified");
-    expect(rec.audit).toMatchObject({ action: "rider.kyc_review_required", reasonCode: "verified_id_collision" });
+    expectRefusedVerify(rec.data, rec.audit, "duplicate");
   });
 
   it("D-75: a P2002 that did NOT come from the adoption still propagates (no blanket retry)", async () => {
@@ -2252,18 +2282,16 @@ describe("RiderService.applyKycResult", () => {
     expect(rec.transactions).toBe(1);
   });
 
-  it("IR26-04: a verified doc number colliding with another PROFILE's typed hash is held (reason verified_id_collision)", async () => {
+  it("IR26-04: a verified doc number colliding with another PROFILE's typed hash is declined `duplicate`", async () => {
     const { prisma, rec } = docPrisma({ profileHits: 1 });
     await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42");
-    expect(rec.data).not.toHaveProperty("kycStatus");
-    expect(rec.audit).toMatchObject({ action: "rider.kyc_review_required", reasonCode: "verified_id_collision" });
+    expectRefusedVerify(rec.data, rec.audit, "duplicate");
   });
 
-  it("IR26-04: a verified doc number colliding with another RIDER's vendor-verified hash is held too", async () => {
+  it("IR26-04: a verified doc number colliding with another RIDER's vendor-verified hash is declined `duplicate` too", async () => {
     const { prisma, rec } = docPrisma({ riderHits: 1 });
     await svc(prisma, {}).applyKycResult("sess_1", "verified", new Date(), null, "63123456A42");
-    expect(rec.data).not.toHaveProperty("kycStatus");
-    expect(rec.audit).toMatchObject({ reasonCode: "verified_id_collision" });
+    expectRefusedVerify(rec.data, rec.audit, "duplicate");
   });
 
   it("IR26-04: no document number in the payload degrades to the pre-IR26-04 behavior (auto-verify, nothing persisted)", async () => {
@@ -2546,41 +2574,40 @@ describe("RiderService.recordHeldVerifiedId", () => {
     expect(profile.idNumberHash).toBe(HASH);
   });
 
-  it("a verify held for review (IR26-04) decides the check: a held result after it keeps that decision's number", async () => {
-    // The vendor number collides with another account, so the verified webhook holds the rider (pending)
-    // but stamps kycResolvedAt and stores its own number.
+  it("a verify refused for a collision (IR26-04, KYC-R26-12 decline) decides the check: a held result after it keeps that decision's number", async () => {
+    // The vendor number collides with another account, so the verified webhook declines the rider `duplicate`,
+    // stamps kycResolvedAt and stores its own number.
     const { prisma, row } = rowPrisma({}, { collisions: 1 });
     const s = svc(prisma, {});
     await s.applyKycResult("sess_1", "verified", new Date(), null, "63-123456-A-42");
-    expect(row).toMatchObject({ kycStatus: "pending", verifiedIdHash: HASH });
+    expect(row).toMatchObject({ kycStatus: "failed", kycDeclineReason: "duplicate", verifiedIdHash: HASH });
     expect(row.kycResolvedAt).not.toBeNull();
     expect(await s.recordHeldVerifiedId("sess_1", OTHER)).toEqual({ updated: 0 });
     expect(row.verifiedIdHash).toBe(HASH);
   });
 
-  it("E2E 2026-10-05 FS-11: a duplicate-ID hold keeps the finished session, so the rider reads 'in review' and a retry resumes it for free", async () => {
+  // KYC-R26-12 replaces E2E 2026-10-05 FS-11's duplicate-ID HOLD (which kept the finished session so a retry
+  // resumed it for free while the rider waited on a human): the verify is now an automatic decline, so the
+  // session dies with the decision and the rider reads the `duplicate` decline — one attempt burnt, like any decline.
+  it("KYC-R26-12: a duplicate-ID verify is declined — the finished session dies with it, and it counts as one attempt", async () => {
     const live = { kycSessionToken: "tok_live", kycSessionUrl: "https://verify.didit.me/sess_1" };
-    const { prisma, row } = rowPrisma({ duplicateIdFlag: true, ...live });
-    let minted = 0;
-    const vendor: KycVendor = {
-      submit: async () => {
-        minted += 1;
-        return { ref: "sess_2", status: "pending", url: "https://verify.didit.me/sess_2", token: "tok_2" };
-      },
-    };
-    const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, vendor);
+    const { prisma, row, audit } = rowPrisma({ duplicateIdFlag: true, isOnline: true, ...live });
+    const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" });
     await s.applyKycResult("sess_1", "verified", new Date(), null, "63-123456-A-42");
-    // Held: still pending, decided at the vendor, credentials kept (getProfile derives in_flight from them,
-    // the way it does for a Didit In Review hold).
-    expect(row).toMatchObject({ kycStatus: "pending", idVerified: false, ...live });
+    expect(row).toMatchObject({
+      kycStatus: "failed",
+      idVerified: false,
+      kycDeclineReason: "duplicate",
+      kycAttempts: 1,
+      isOnline: false,
+      // The session is retired with the decision: a retry is an ordinary resubmit on a fresh check.
+      kycSessionToken: null,
+      kycSessionUrl: null,
+      // The number the check read is still kept, so the next applicant showing this document collides too.
+      verifiedIdHash: HASH,
+    });
     expect(row.kycResolvedAt).not.toBeNull();
-    // A tap on retry re-opens the same check — it never buys a second paid session for a finished one.
-    expect(await s.retryKyc("p1")).toEqual({ kycStatus: "pending", mode: "auto", verificationUrl: live.kycSessionUrl, sessionToken: live.kycSessionToken });
-    expect(minted).toBe(0);
-    expect(row.kycRef).toBe("sess_1");
-    // The review's own decision is what retires the credentials.
-    await s.adminSetKyc("p1", "verified", null, "admin:ops");
-    expect(row).toMatchObject({ kycStatus: "verified", kycSessionToken: null, kycSessionUrl: null });
+    expect(audit).toEqual([expect.objectContaining({ actor: "system:kyc-webhook", action: "rider.kyc_decline", reasonCode: "duplicate" })]);
   });
 
   it("a decision that is NOT held still clears the session credentials", async () => {
@@ -3362,7 +3389,7 @@ describe("RiderService — ID-check session lifecycle (startup review 2026-10-06
     });
   });
 
-  it("R-3: applyKycResult's hold for review records the vendor's Approved (read as held); a decision clears it", async () => {
+  it("R-3 / KYC-R26-12: a verify refused by the ID checks is declined and keeps the vendor's Approved (for the repeat guard); a clean verify clears it", async () => {
     const run = async (flagged: boolean) => {
       const writes: Write[] = [];
       const { states, log } = fakeStates();
@@ -3381,8 +3408,7 @@ describe("RiderService — ID-check session lifecycle (startup review 2026-10-06
       return { data: writes[0]?.data, log, at };
     };
     const held = await run(true);
-    expect(held.data).toMatchObject({ kycVendorStatus: "Approved", kycVendorStatusAt: held.at });
-    expect(held.data).not.toHaveProperty("kycStatus");
+    expect(held.data).toMatchObject({ kycStatus: "failed", kycDeclineReason: "duplicate", kycVendorStatus: "Approved", kycVendorStatusAt: held.at });
     expect(held.log).toEqual(["invalidate:sess_1"]);
     const decided = await run(false);
     expect(decided.data).toMatchObject({ kycStatus: "verified", kycVendorStatus: null, kycVendorStatusAt: null });
@@ -3527,12 +3553,44 @@ describe("RiderService — KYC-R26 decision guards", () => {
       expect(notifyProfiles).toHaveBeenCalledTimes(1);
     });
 
-    it("a retried Approved on a check HELD for review is a repeat too (no second review-required row)", async () => {
-      const { prisma, audit } = memPrisma({ duplicateIdFlag: true });
+    // KYC-R26-12: a verify the one-ID-one-account checks refused is a decline that keeps Didit's Approved, so
+    // Didit's retry of that same Approved (re-signed with a fresh timestamp) must not count as a second decline.
+    it("a retried Approved after a refused-verify decline (duplicate) is a repeat no-op — no second attempt, audit or push", async () => {
+      const { prisma, row, audit } = memPrisma({ duplicateIdFlag: true });
+      const { s, notifyProfiles, evictRiderFromSupply } = withSpies(prisma);
+      expect(await s.applyKycResult("sess_1", "verified", new Date("2026-10-12T10:00:00Z"))).toEqual({ updated: 1 });
+      expect(row).toMatchObject({ kycStatus: "failed", idVerified: false, kycDeclineReason: "duplicate", kycAttempts: 1, isOnline: false, kycVendorStatus: "Approved" });
+      expect(await s.applyKycResult("sess_1", "verified", new Date("2026-10-12T10:03:00Z"))).toEqual({ updated: 0, skipped: "repeat" });
+      expect(row.kycAttempts).toBe(1); // NOT 2 — one refused verify must never hit the A-02 lock
+      expect(row.kycStatus).toBe("failed");
+      expect(audit.filter((a) => a.action === "rider.kyc_decline")).toEqual([
+        expect.objectContaining({ actor: "system:kyc-webhook", reasonCode: "duplicate" }),
+      ]);
+      expect(audit.filter((a) => a.action === "rider.kyc_approve" || a.action === "rider.kyc_review_required")).toEqual([]);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(notifyProfiles).toHaveBeenCalledTimes(1);
+      expect(notifyProfiles).toHaveBeenCalledWith(["p1"], expect.objectContaining({ title: "ID check needs another look" }));
+      expect(evictRiderFromSupply).toHaveBeenCalledTimes(1);
+    });
+
+    it("a verify whose document number disagrees with the ID on file is declined id_mismatch, and its retry is a repeat too", async () => {
+      const { prisma, row, audit } = memPrisma();
       const { s } = withSpies(prisma);
-      await s.applyKycResult("sess_1", "verified", new Date("2026-10-12T10:00:00Z"));
-      expect(await s.applyKycResult("sess_1", "verified", new Date("2026-10-12T10:03:00Z"))).toMatchObject({ skipped: "repeat" });
-      expect(audit.filter((a) => a.action === "rider.kyc_review_required")).toHaveLength(1);
+      expect(await s.applyKycResult("sess_1", "verified", new Date("2026-10-12T10:00:00Z"), null, "63-999999-Z-99")).toEqual({ updated: 1 });
+      expect(row).toMatchObject({ kycStatus: "failed", idVerified: false, kycDeclineReason: "id_mismatch", kycAttempts: 1 });
+      expect(row.verifiedIdHash).toBe(pii.hashId("63-999999-Z-99"));
+      expect(await s.applyKycResult("sess_1", "verified", new Date("2026-10-12T10:04:00Z"), null, "63-999999-Z-99")).toEqual({ updated: 0, skipped: "repeat" });
+      expect(row.kycAttempts).toBe(1);
+      expect(audit.filter((a) => a.action === "rider.kyc_decline")).toEqual([expect.objectContaining({ reasonCode: "id_mismatch" })]);
+    });
+
+    it("a plain vendor decline is still not mistaken for a refused verify: a later Approved on that check applies", async () => {
+      const { prisma, row } = memPrisma();
+      const { s } = withSpies(prisma);
+      await s.applyKycResult("sess_1", "failed", new Date("2026-10-12T10:00:00Z"), "face_mismatch");
+      expect(row.kycVendorStatus).toBeNull();
+      expect(await s.applyKycResult("sess_1", "verified", new Date("2026-10-12T11:00:00Z"))).toEqual({ updated: 1 });
+      expect(row.kycStatus).toBe("verified");
     });
 
     it("a DIFFERENT outcome on the same check still applies (verified, later Kyc Expired)", async () => {

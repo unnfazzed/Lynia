@@ -57,12 +57,12 @@ export async function applyDiditDecision(
     }
   }
 
-  // Auto-decision (Didit thresholds): the face-match score (KYC_THRESHOLDS bands) can only tighten
-  // Didit's own verdict; with no score the status-string mapping decides. A `needsReview` band — like
-  // any non-terminal status — stays `pending`: it's held for the admin backstop, never auto-verified.
-  // `failed` from a sub-threshold score carries a decline reason for the rider app.
+  // Auto-decision (Didit thresholds): the face-match score (KYC_THRESHOLDS) can only tighten Didit's own
+  // verdict; with no score the status-string mapping decides. KYC-R26-12: fully automatic — Didit's In Review
+  // and a sub-threshold score are declines, with the reason Didit's warnings point at. Only a session Didit
+  // never finished judging stays `pending`.
   const score = extractDiditScore(payload);
-  const decision = decideDiditKyc(status, score);
+  const decision = decideDiditKyc(status, score, payload);
   // IR26-07 coverage signals. On a Didit approval our bands are the last check, so say when they
   // could not run, and when they held a rider Didit approved (nothing else records why it's pending).
   if (mapDiditStatus(status) === "verified") {

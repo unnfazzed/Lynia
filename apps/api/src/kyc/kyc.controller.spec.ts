@@ -150,33 +150,74 @@ describe("KycController.callback", () => {
   // R-1 / R-3 (startup review 2026-10-06): every undecided status is kept as the vendor's word about the
   // session — a hold reads as "under review", a dead session's credentials are cleared so the next retry
   // mints instead of resuming it forever. With the signed event time, for the monotonic guard.
-  it("records every undecided status (dead and held included) with its event time; a decision records none", async () => {
+  it("records every undecided status (dead and unfinished) with its event time; a decision — In Review included (KYC-R26-12) — records none", async () => {
     const f = fakeRiders();
-    for (const [id, status] of [["s_ab", "Abandoned"], ["s_ex", "Expired"], ["s_ir", "In Review"], ["s_ip", "In Progress"]]) {
+    for (const [id, status] of [["s_ab", "Abandoned"], ["s_ex", "Expired"], ["s_ip", "In Progress"]]) {
       await ctl(f.riders, { DIDIT_WEBHOOK_SECRET: undefined }).callback(req(JSON.stringify({ session_id: id, status, timestamp: 1_790_000_000 })));
     }
     expect(f.vendorStatuses.map(([ref, status]) => [ref, status])).toEqual([
       ["s_ab", "Abandoned"],
       ["s_ex", "Expired"],
-      ["s_ir", "In Review"],
       ["s_ip", "In Progress"],
     ]);
     expect(f.vendorStatuses.every(([, , at]) => at.getTime() === 1_790_000_000_000)).toBe(true);
     expect(f.calls).toEqual([]);
 
-    const decided = fakeRiders();
-    await ctl(decided.riders, { DIDIT_WEBHOOK_SECRET: undefined }).callback(req(JSON.stringify({ session_id: "s_ok", status: "Approved" })));
-    expect(decided.vendorStatuses).toEqual([]);
+    for (const status of ["Approved", "In Review"]) {
+      const decided = fakeRiders();
+      await ctl(decided.riders, { DIDIT_WEBHOOK_SECRET: undefined }).callback(req(JSON.stringify({ session_id: "s_ok", status })));
+      expect(decided.vendorStatuses).toEqual([]);
+      expect(decided.calls).toHaveLength(1);
+    }
   });
 
   it("ignores a non-terminal status without touching the rider", async () => {
     const { riders, calls, held } = fakeRiders();
-    const raw = JSON.stringify({ session_id: "s_3", status: "In Review" });
+    const raw = JSON.stringify({ session_id: "s_3", status: "In Progress" });
     const res = await ctl(riders, {}).callback(req(raw));
     expect(res).toEqual({ ignored: true, status: "pending" });
     expect(calls).toEqual([]);
-    // No document number in the payload, so there is nothing to store either (D-75 item 2).
     expect(held).toEqual([]);
+  });
+
+  it("KYC-R26-12: Didit's In Review is an automatic decline — applied with `other`, or the reason its warnings name", async () => {
+    const plain = fakeRiders();
+    await ctl(plain.riders, {}).callback(req(JSON.stringify({ session_id: "s_ir", status: "In Review" })));
+    expect(plain.calls).toEqual([["s_ir", "failed"]]);
+    expect(plain.reason()).toBe("other");
+    expect(plain.held).toEqual([]);
+
+    const warned = fakeRiders();
+    await ctl(warned.riders, {}).callback(
+      req(
+        JSON.stringify({
+          session_id: "s_ir2",
+          status: "IN_REVIEW",
+          decision: { status: "In Review", liveness_checks: [{ node_id: "l1", status: "In Review", warnings: [{ risk: "LIVENESS_FACE_ATTACK" }] }] },
+        }),
+      ),
+    );
+    expect(warned.calls).toEqual([["s_ir2", "failed"]]);
+    expect(warned.reason()).toBe("liveness_failed");
+  });
+
+  it("KYC-R26-12: a Didit decline carries the reason its warnings name (duplicate beats the rest)", async () => {
+    const f = fakeRiders();
+    await ctl(f.riders, {}).callback(
+      req(
+        JSON.stringify({
+          session_id: "s_dw",
+          status: "Declined",
+          decision: {
+            status: "Declined",
+            id_verifications: [{ status: "Declined", warnings: [{ risk: "ID_DOCUMENT_BLURRY" }, { risk: "POSSIBLE_DUPLICATED_USER" }] }],
+            face_matches: [{ status: "Approved", score: 92, warnings: [] }],
+          },
+        }),
+      ),
+    );
+    expect(f.calls).toEqual([["s_dw", "failed"]]);
+    expect(f.reason()).toBe("duplicate");
   });
 
   it("refuses to process unsigned webhooks when KYC_PROVIDER=didit but no secret is set (fail-closed)", async () => {
@@ -215,11 +256,17 @@ describe("KycController.callback", () => {
     expect(calls).toEqual([["s_v3a", "verified"]]);
   });
 
-  it("holds a V3 Didit approval whose face match is in the review band — no write, never verified", async () => {
-    const { riders, calls } = fakeRiders();
+  it("KYC-R26-12: verifies a V3 Didit approval in the old 0.6–0.85 review band — no hold, one cut at 0.6", async () => {
+    const { riders, calls, vendorStatuses } = fakeRiders();
     const res = await ctl(riders, {}).callback(req(v3("s_v3b", "Approved", 72)));
-    expect(res).toEqual({ ignored: true, status: "pending" });
-    expect(calls).toEqual([]);
+    expect(res).toEqual({ updated: 1 });
+    expect(calls).toEqual([["s_v3b", "verified"]]);
+    expect(vendorStatuses).toEqual([]);
+
+    const below = fakeRiders();
+    await ctl(below.riders, {}).callback(req(v3("s_v3b2", "Approved", 59)));
+    expect(below.calls).toEqual([["s_v3b2", "failed"]]);
+    expect(below.reason()).toBe("face_mismatch");
   });
 
   it("declines a V3 Didit approval whose face match is below needsReview, with the face-mismatch reason", async () => {
@@ -350,44 +397,35 @@ describe("KycController.callback", () => {
       },
     });
 
-  describe("a result held for review (D-75 item 2)", () => {
-    it("a Didit approval in the face-match review band stores the document number — still held, never applied", async () => {
-      const { riders, calls, held } = fakeRiders();
+  // D-75 item 2 stored the document number of a result held for a human (Didit's In Review, an approval in the
+  // face-match review band). KYC-R26-12 made the decision fully automatic, so no judged result is held any more:
+  // each of those is applied — with its document number — through applyKycResult, and recordHeldVerifiedId is
+  // never reached from the webhook.
+  describe("KYC-R26-12: a result that used to be held for review is decided (was D-75 item 2)", () => {
+    it("a Didit approval in the old face-match review band is verified, with its document number — nothing stored on the side", async () => {
+      const { riders, calls, held, docNumber, vendorStatuses } = fakeRiders();
       const res = await ctl(riders, {}).callback(req(heldV3("s_h1", "Approved", 72)));
-      expect(held).toEqual([["s_h1", "63-123456-A-42"]]);
-      expect(calls).toEqual([]);
-      expect(res).toEqual({ ignored: true, status: "pending", verifiedIdStored: true });
+      expect(held).toEqual([]);
+      expect(vendorStatuses).toEqual([]);
+      expect(calls).toEqual([["s_h1", "verified"]]);
+      expect(docNumber()).toBe("63-123456-A-42");
+      expect(res).toEqual({ updated: 1 });
     });
 
-    it("Didit's In Review stores the document number too, whatever its spelling, with or without a score", async () => {
+    it("Didit's In Review is declined whatever its spelling, with or without a score — the number still rides along", async () => {
       for (const [status, score] of [
         ["In Review", null],
         ["In Review", 91],
         ["IN_REVIEW", 75],
+        ["in-review", 60],
       ] as const) {
-        const { riders, calls, held } = fakeRiders();
-        const res = await ctl(riders, {}).callback(req(heldV3("s_h2", status, score)));
-        expect(held).toEqual([["s_h2", "63-123456-A-42"]]);
-        expect(calls).toEqual([]);
-        expect(res).toEqual({ ignored: true, status: "pending", verifiedIdStored: true });
+        const { riders, calls, held, reason, docNumber } = fakeRiders();
+        await ctl(riders, {}).callback(req(heldV3("s_h2", status, score)));
+        expect(held).toEqual([]);
+        expect(calls).toEqual([["s_h2", "failed"]]);
+        expect(reason()).toBe("other");
+        expect(docNumber()).toBe("63-123456-A-42");
       }
-    });
-
-    it("reports nothing stored when no undecided check has the session — still a 200, nothing applied", async () => {
-      // A superseded or already-decided check, or an unknown session: the service matched no row.
-      const { riders, calls, held } = fakeRiders(1, 0);
-      const res = await ctl(riders, {}).callback(req(heldV3("s_h3", "Approved", 72)));
-      expect(held).toEqual([["s_h3", "63-123456-A-42"]]);
-      expect(calls).toEqual([]);
-      expect(res).toEqual({ ignored: true, status: "pending", verifiedIdStored: false });
-    });
-
-    it("a held result with no document number stores nothing (approving it will adopt no number)", async () => {
-      const { riders, calls, held } = fakeRiders();
-      const res = await ctl(riders, {}).callback(req(v3("s_h4", "Approved", 72)));
-      expect(held).toEqual([]);
-      expect(calls).toEqual([]);
-      expect(res).toEqual({ ignored: true, status: "pending" });
     });
 
     it("an unfinished session's partial data is not a judged result — its number is never stored", async () => {
@@ -400,7 +438,7 @@ describe("KycController.callback", () => {
       }
     });
 
-    it("an In Review whose face match is below needsReview is a decline, not a hold — applyKycResult takes it", async () => {
+    it("an In Review whose face match is below needsReview is a face-mismatch decline", async () => {
       const { riders, calls, held, reason } = fakeRiders();
       await ctl(riders, {}).callback(req(heldV3("s_h6", "In Review", 45)));
       expect(held).toEqual([]);
@@ -408,7 +446,7 @@ describe("KycController.callback", () => {
       expect(reason()).toBe("face_mismatch");
     });
 
-    it("a clean Didit approval is applied, not held — the held path never sees it", async () => {
+    it("a clean Didit approval is applied with its number", async () => {
       const { riders, calls, held, docNumber } = fakeRiders();
       await ctl(riders, {}).callback(req(heldV3("s_h7", "Approved", 96)));
       expect(held).toEqual([]);
@@ -416,35 +454,36 @@ describe("KycController.callback", () => {
       expect(docNumber()).toBe("63-123456-A-42");
     });
 
-    it("the signature and replay guards run first: a forged or stale held result stores nothing", async () => {
+    it("the signature and replay guards run first: a forged or stale In Review applies nothing", async () => {
       const forged = fakeRiders();
-      const raw = heldV3("s_h8", "Approved", 72);
+      const raw = heldV3("s_h8", "In Review", 72);
       await expect(
         ctl(forged.riders, { DIDIT_WEBHOOK_SECRET: SECRET }).callback(req(raw, { "x-signature-v2": "deadbeef", "x-timestamp": freshTs() })),
       ).rejects.toThrow(/invalid webhook signature/i);
-      expect(forged.held).toEqual([]);
+      expect(forged.calls).toEqual([]);
 
       const stale = fakeRiders();
       const old = String(Math.floor(Date.now() / 1000) - 600);
       await expect(
         ctl(stale.riders, { DIDIT_WEBHOOK_SECRET: SECRET }).callback(req(raw, { "x-signature-v2": signV2(raw), "x-timestamp": old })),
       ).rejects.toThrow(/stale webhook timestamp/i);
-      expect(stale.held).toEqual([]);
+      expect(stale.calls).toEqual([]);
 
-      // And a validly signed, fresh one is stored.
+      // And a validly signed, fresh one is applied.
       const signed = fakeRiders();
       await ctl(signed.riders, { DIDIT_WEBHOOK_SECRET: SECRET }).callback(
         req(raw, { "x-signature-v2": signV2(raw), "x-timestamp": freshTs() }),
       );
-      expect(signed.held).toEqual([["s_h8", "63-123456-A-42"]]);
+      expect(signed.calls).toEqual([["s_h8", "failed"]]);
+      expect(signed.held).toEqual([]);
     });
 
-    it("a failed write is not swallowed — the webhook errors, so Didit retries the delivery", async () => {
+    it("a failed decline write is not swallowed — the webhook errors, so Didit retries the delivery", async () => {
       const { riders } = fakeRiders();
-      (riders as unknown as { recordHeldVerifiedId: unknown }).recordHeldVerifiedId = async () => {
+      (riders as unknown as { applyKycResult: unknown }).applyKycResult = async () => {
         throw new Error("db down");
       };
-      await expect(ctl(riders, {}).callback(req(heldV3("s_h9", "Approved", 72)))).rejects.toThrow(/db down/);
+      await expect(ctl(riders, {}).callback(req(heldV3("s_h9", "In Review", 72)))).rejects.toThrow(/db down/);
     });
   });
 });

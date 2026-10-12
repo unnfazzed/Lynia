@@ -10,6 +10,7 @@ import {
   diditTimestampFresh,
   isDiditDocumentExpired,
   extractDiditDocumentExpiry,
+  extractDiditDeclineReason,
   extractDiditDocumentNumber,
   extractDiditScore,
   isDiditReviewHold,
@@ -266,9 +267,10 @@ describe("decideDiditKyc (Didit auto-decision bands, KYC_THRESHOLDS)", () => {
     // A spoof that fails liveness can still match the document's face.
     expect(decideDiditKyc("Declined", 0.99)).toEqual({ status: "failed" });
     expect(decideDiditKyc("Declined", 0.7)).toEqual({ status: "failed" });
-    // Didit flagged it for a human: a strong face match doesn't clear warnings it didn't raise.
-    expect(decideDiditKyc("In Review", 0.99)).toEqual({ status: "pending" });
-    expect(decideDiditKyc("IN_REVIEW", 0.99)).toEqual({ status: "pending" });
+    // Didit flagged it for a human: a strong face match doesn't clear warnings it didn't raise. KYC-R26-12:
+    // nothing waits for a human any more — a check Didit wouldn't pass on its own is declined.
+    expect(decideDiditKyc("In Review", 0.99)).toEqual({ status: "failed", reason: "other" });
+    expect(decideDiditKyc("IN_REVIEW", 0.99)).toEqual({ status: "failed", reason: "other" });
     // Abandoned carries a partial decision; it is not a verdict.
     expect(decideDiditKyc("Abandoned", 0.99)).toEqual({ status: "pending" });
     expect(decideDiditKyc("In Progress", 0.99)).toEqual({ status: "pending" });
@@ -299,22 +301,55 @@ describe("decideDiditKyc (Didit auto-decision bands, KYC_THRESHOLDS)", () => {
 
   // End to end over the V3 shape (sample data, as above). Didit's own face-match decline threshold
   // defaults to 30/100, so it approves the 72 and the 45 below — our bands are what catch them.
-  it("bands a V3-shaped webhook: a Didit approval with a weak face match is held or declined", () => {
+  it("bands a V3-shaped webhook: a Didit approval with a weak face match is declined, never held (KYC-R26-12)", () => {
     const v3 = (status: string, score: number) => ({
       status,
       decision: { status, face_matches: [{ node_id: "face_match_1", status, score, warnings: [] }] },
     });
     const decide = (p: { status: string }) => decideDiditKyc(p.status, extractDiditScore(p));
     expect(decide(v3("Approved", 96.1))).toEqual({ status: "verified" });
-    expect(decide(v3("Approved", 72))).toEqual({ status: "pending" });
+    expect(decide(v3("Approved", 72))).toEqual({ status: "verified" });
+    expect(decide(v3("Approved", 59))).toEqual({ status: "failed", reason: "face_mismatch" });
     expect(decide(v3("Approved", 45))).toEqual({ status: "failed", reason: "face_mismatch" });
     expect(decide(v3("Declined", 32))).toEqual({ status: "failed", reason: "face_mismatch" });
     expect(decide(v3("Declined", 97))).toEqual({ status: "failed" });
   });
 
-  it("[needsReview, autoApprove) → pending (human review, never auto-verified)", () => {
-    expect(decideDiditKyc("In Review", KYC_THRESHOLDS.needsReview)).toEqual({ status: "pending" });
-    expect(decideDiditKyc("Approved", 0.7)).toEqual({ status: "pending" });
+  it("KYC-R26-12: there is no hold band — one cut at 0.6, and no judged result is ever `pending`", () => {
+    expect(KYC_THRESHOLDS.autoApprove).toBe(KYC_THRESHOLDS.needsReview);
+    expect(KYC_THRESHOLDS.autoApprove).toBe(0.6);
+    expect(decideDiditKyc("Approved", 0.7)).toEqual({ status: "verified" });
+    expect(decideDiditKyc("Approved", 0.5999)).toEqual({ status: "failed", reason: "face_mismatch" });
+    for (const s of ["Approved", "Declined", "In Review", "IN_REVIEW", "in-review"]) {
+      for (const score of [null, ...Array.from({ length: 101 }, (_, pct) => pct / 100)]) {
+        expect(decideDiditKyc(s, score).status).not.toBe("pending");
+      }
+    }
+  });
+
+  it("KYC-R26-12: In Review is an automatic decline — `other` unless Didit's warnings name a reason, however it's spelled", () => {
+    for (const s of ["In Review", "IN_REVIEW", "in-review", "in_review", "IN REVIEW"]) {
+      expect(decideDiditKyc(s, null)).toEqual({ status: "failed", reason: "other" });
+      expect(decideDiditKyc(s, KYC_THRESHOLDS.needsReview)).toEqual({ status: "failed", reason: "other" });
+      expect(decideDiditKyc(s, 0.95, { decision: { id_verifications: [{ warnings: [] }] } })).toEqual({ status: "failed", reason: "other" });
+      expect(decideDiditKyc(s, 0.95, { decision: { id_verifications: [{ warnings: [{ risk: "ID_DOCUMENT_BLURRY" }] }] } })).toEqual({
+        status: "failed",
+        reason: "id_unreadable",
+      });
+      expect(decideDiditKyc(s, null, { decision: { warnings: [{ risk: "POSSIBLE_DUPLICATED_USER" }] } })).toEqual({ status: "failed", reason: "duplicate" });
+    }
+    // A sub-threshold face match still names the face, whatever the warnings say.
+    expect(decideDiditKyc("In Review", 0.3, { decision: { warnings: [{ risk: "ID_DOCUMENT_BLURRY" }] } })).toEqual({ status: "failed", reason: "face_mismatch" });
+  });
+
+  it("KYC-R26-12: a Didit decline carries the warning-derived reason, and no reason when none is recognised", () => {
+    const payload = { decision: { liveness_checks: [{ warnings: [{ risk: "LIVENESS_FACE_ATTACK" }] }] } };
+    expect(decideDiditKyc("Declined", 0.9, payload)).toEqual({ status: "failed", reason: "liveness_failed" });
+    expect(decideDiditKyc("Declined", null, payload)).toEqual({ status: "failed", reason: "liveness_failed" });
+    expect(decideDiditKyc("Declined", 0.9, { decision: { warnings: [{ risk: "SOMETHING_NEW" }] } })).toEqual({ status: "failed" });
+    // The payload is read only for a decline's reason: it never turns an approval into anything else.
+    expect(decideDiditKyc("Approved", 0.9, payload)).toEqual({ status: "verified" });
+    expect(decideDiditKyc("Abandoned", 0.9, payload)).toEqual({ status: "pending" });
   });
 
   it("score < needsReview → failed (auto-decline) with a reason", () => {
@@ -326,23 +361,21 @@ describe("decideDiditKyc (Didit auto-decision bands, KYC_THRESHOLDS)", () => {
   it("no score → falls back to the status-string mapping", () => {
     expect(decideDiditKyc("Approved", null)).toEqual({ status: "verified" });
     expect(decideDiditKyc("Declined", null)).toEqual({ status: "failed" });
-    expect(decideDiditKyc("In Review", null)).toEqual({ status: "pending" });
+    expect(decideDiditKyc("Abandoned", null)).toEqual({ status: "pending" });
+    expect(decideDiditKyc("Kyc Expired", null)).toEqual({ status: "expired" });
   });
 });
 
 // D-75 item 2 (IR26-09): which held results store their document number. Only a result Didit JUDGED and
-// we hold for a human: In Review, or an approval in the face-match review band.
+// we hold for a human. KYC-R26-12: the decision is fully automatic, so nothing is held any more.
 describe("isDiditReviewHold", () => {
-  it("a Didit approval held in the face-match review band is a review hold", () => {
-    expect(isDiditReviewHold("Approved", 0.72)).toBe(true);
-    expect(isDiditReviewHold("Approved", KYC_THRESHOLDS.needsReview)).toBe(true);
-  });
-
-  it("Didit's In Review is a review hold, with or without a score, however it's spelled", () => {
-    expect(isDiditReviewHold("In Review", null)).toBe(true);
-    expect(isDiditReviewHold("In Review", 0.99)).toBe(true);
-    expect(isDiditReviewHold("IN_REVIEW", 0.7)).toBe(true);
-    expect(isDiditReviewHold("in-review", null)).toBe(true);
+  it("KYC-R26-12: an approval in the old 0.6–0.85 band, and Didit's In Review, are no longer holds", () => {
+    expect(isDiditReviewHold("Approved", 0.72)).toBe(false);
+    expect(isDiditReviewHold("Approved", KYC_THRESHOLDS.needsReview)).toBe(false);
+    expect(isDiditReviewHold("In Review", null)).toBe(false);
+    expect(isDiditReviewHold("In Review", 0.99)).toBe(false);
+    expect(isDiditReviewHold("IN_REVIEW", 0.7)).toBe(false);
+    expect(isDiditReviewHold("in-review", null)).toBe(false);
   });
 
   it("a result the webhook applies is not a hold: verified, declined, auto-declined or expired", () => {
@@ -370,6 +403,59 @@ describe("isDiditReviewHold", () => {
         expect(["Approved", "In Review", "IN_REVIEW"]).toContain(s);
       }
     }
+  });
+});
+
+describe("extractDiditDeclineReason (KYC-R26-12)", () => {
+  const idv = (...risks: string[]) => ({ decision: { id_verifications: [{ status: "Declined", warnings: risks.map((risk) => ({ risk })) }] } });
+
+  it("maps Didit's warning risk codes to a decline reason key", () => {
+    expect(extractDiditDeclineReason(idv("POSSIBLE_DUPLICATED_USER"))).toBe("duplicate");
+    expect(extractDiditDeclineReason(idv("ID_DOCUMENT_IN_BLOCKLIST"))).toBe("duplicate");
+    expect(extractDiditDeclineReason(idv("LIVENESS_FACE_ATTACK"))).toBe("liveness_failed");
+    expect(extractDiditDeclineReason(idv("POSSIBLE_FACE_SPOOF"))).toBe("liveness_failed");
+    expect(extractDiditDeclineReason(idv("DOCUMENT_TAMPERED"))).toBe("doc_tampered");
+    expect(extractDiditDeclineReason(idv("PRINTED_COPY_DETECTED"))).toBe("doc_tampered");
+    expect(extractDiditDeclineReason(idv("ID_DOCUMENT_BLURRY"))).toBe("id_unreadable");
+    expect(extractDiditDeclineReason(idv("LOW_QUALITY_IMAGE"))).toBe("id_unreadable");
+    expect(extractDiditDeclineReason(idv("DOCUMENT_EXPIRED"))).toBe("id_expired");
+    expect(extractDiditDeclineReason(idv("LOW_FACE_MATCH_SIMILARITY"))).toBe("face_mismatch");
+  });
+
+  it("is case-insensitive and accepts a bare string warning", () => {
+    expect(extractDiditDeclineReason(idv("document_expired"))).toBe("id_expired");
+    expect(extractDiditDeclineReason({ decision: { warnings: ["Liveness_Failed"] } })).toBe("liveness_failed");
+  });
+
+  it("the most serious match wins: duplicate beats every other warning, then tampering, then liveness", () => {
+    expect(extractDiditDeclineReason(idv("ID_DOCUMENT_BLURRY", "DOCUMENT_EXPIRED", "LIVENESS_FACE_ATTACK", "POSSIBLE_DUPLICATED_USER"))).toBe("duplicate");
+    expect(extractDiditDeclineReason(idv("ID_DOCUMENT_BLURRY", "LIVENESS_FACE_ATTACK", "DOCUMENT_TAMPERED"))).toBe("doc_tampered");
+    expect(extractDiditDeclineReason(idv("ID_DOCUMENT_BLURRY", "LOW_FACE_MATCH_SIMILARITY", "LIVENESS_FACE_ATTACK"))).toBe("liveness_failed");
+    expect(extractDiditDeclineReason(idv("ID_DOCUMENT_BLURRY", "DOCUMENT_EXPIRED"))).toBe("id_expired");
+  });
+
+  it("finds warnings nested anywhere: id_verifications, liveness_checks, face_matches, top-level", () => {
+    expect(extractDiditDeclineReason({ decision: { liveness_checks: [{ node_id: "l1", warnings: [{ risk: "LIVENESS_FACE_ATTACK" }] }] } })).toBe("liveness_failed");
+    expect(extractDiditDeclineReason({ decision: { face_matches: [{ node_id: "f1", warnings: [{ risk: "LOW_FACE_MATCH_SIMILARITY" }] }] } })).toBe("face_mismatch");
+    expect(
+      extractDiditDeclineReason({
+        decision: {
+          id_verifications: [{ warnings: [{ risk: "ID_DOCUMENT_BLURRY" }] }],
+          liveness_checks: [{ warnings: [] }],
+          face_matches: [{ warnings: [{ risk: "POSSIBLE_DUPLICATED_USER" }] }],
+        },
+      }),
+    ).toBe("duplicate");
+    expect(extractDiditDeclineReason({ warnings: [{ risk: "DOCUMENT_EXPIRED" }] })).toBe("id_expired");
+  });
+
+  it("fails open: no payload, no warnings, or none recognised → null", () => {
+    expect(extractDiditDeclineReason(undefined)).toBeNull();
+    expect(extractDiditDeclineReason(null)).toBeNull();
+    expect(extractDiditDeclineReason("Declined")).toBeNull();
+    expect(extractDiditDeclineReason({ decision: { id_verifications: [{ warnings: [] }] } })).toBeNull();
+    expect(extractDiditDeclineReason(idv("SOMETHING_DIDIT_ADDED_LATER"))).toBeNull();
+    expect(extractDiditDeclineReason({ decision: { warnings: [{ risk: 42 }, { short_description: "blurry" }] } })).toBeNull();
   });
 });
 

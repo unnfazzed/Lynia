@@ -118,8 +118,11 @@ export class KycReconcileService implements OnModuleInit, OnModuleDestroy {
     const cls = classifyDiditSession(status);
     // Still in the rider's or the vendor's hands (Not Started, In Progress, Resubmitted…): nothing was lost.
     if (!terminal && cls !== "dead" && cls !== "held") return false;
-    // A held / dead status we already recorded: nothing new to write (and no reason to bump the row).
-    if (!terminal && storedStatus !== null && storedStatus === status) return false;
+    // A dead status we already recorded: nothing new to write (and no reason to bump the row). KYC-R26-12: a
+    // HELD one (In Review) is no longer left for a human — decideDiditKyc declines it — so it is applied even
+    // when the row already recorded it. That is what drains a rider stored as In Review before the decision
+    // went fully automatic: no reviewer will ever move that session, so no webhook will come for it.
+    if (!terminal && cls !== "held" && storedStatus !== null && storedStatus === status) return false;
     // The decision endpoint returns the per-feature results at the TOP level; the webhook nests them under
     // `decision`. Hand the extractors the webhook shape either way.
     const payload = { ...body, decision: body.decision && typeof body.decision === "object" ? body.decision : body };
