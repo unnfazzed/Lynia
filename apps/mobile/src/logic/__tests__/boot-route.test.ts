@@ -21,7 +21,7 @@ describe("bootDestination (BH-15: cold-start routing gate)", () => {
     expect(bootDestination({ session: { needsProfile: true }, onboardingSeen: true, rolePref: "customer" })).toBe("/profile/setup");
   });
 
-  it("routes a completed-profile rider straight to /rider", () => {
+  it("routes a completed-profile biker straight to /rider", () => {
     expect(bootDestination({ session: { needsProfile: false }, onboardingSeen: true, rolePref: "rider" })).toBe("/rider");
   });
 
@@ -56,7 +56,7 @@ describe("bootRedirectTarget (LC-D-T3: cold-start deep link vs default boot dest
     expect(target).toBe("/order/o1");
   });
 
-  it("a rider's cold-start 'assigned' tap opens the job screen instead of the default /rider board", () => {
+  it("a biker's cold-start 'assigned' tap opens the job screen instead of the default /rider board", () => {
     const target = bootRedirectTarget({
       session: { ...s, role: "rider" },
       onboardingSeen: true,
@@ -96,7 +96,7 @@ describe("signedInDestination (post-sign-in fork, shared by verify.tsx and profi
     expect(signedInDestination(null)).toBe("/home");
   });
 
-  it("the C1 rider path goes straight to the rider app — no priming (First Run v2 G1, D-82 §2 #5)", () => {
+  it("the C1 biker path goes straight to the biker app — no priming (First Run v2 G1, D-82 §2 #5)", () => {
     expect(signedInDestination(null, "rider")).toBe("/rider");
     // A saved role always wins over the C1 intent.
     expect(signedInDestination("customer", "rider")).toBe("/home");
@@ -105,7 +105,7 @@ describe("signedInDestination (post-sign-in fork, shared by verify.tsx and profi
 
   // C-3 (start-up review 2026-10-06): the saved role is wiped by every sign-out and by a reinstall, so a
   // returning rider used to land in the customer app. With no saved role, the server's role decides.
-  it("a returning rider with no saved role goes to the rider app", () => {
+  it("a returning biker with no saved role goes to the biker app", () => {
     expect(signedInDestination(null, null, "rider")).toBe("/rider");
     expect(startRoleFor(null, null, "rider")).toBe("rider");
     expect(startRoleFor(null, null, "customer")).toBe("customer");
@@ -118,11 +118,11 @@ describe("signedInDestination (post-sign-in fork, shared by verify.tsx and profi
 });
 
 describe("bootDestination falls back to the session's server role (C-3)", () => {
-  it("boots a rider session with no saved role into the rider app", () => {
+  it("boots a biker session with no saved role into the biker app", () => {
     expect(bootDestination({ session: { needsProfile: false, role: "rider" }, onboardingSeen: true, rolePref: null })).toBe("/rider");
   });
 
-  it("a saved customer role still wins (a rider browsing as a customer)", () => {
+  it("a saved customer role still wins (a biker browsing as a customer)", () => {
     expect(bootDestination({ session: { needsProfile: false, role: "rider" }, onboardingSeen: true, rolePref: "customer" })).toBe("/home");
   });
 
@@ -138,7 +138,7 @@ describe("sign-in and boot routing on the customer-only iPhone app (D-41)", () =
     jest.mocked(riderModeAvailable).mockReturnValue(false);
   });
 
-  it("has no rider path: every account lands on the customer Home", () => {
+  it("has no biker path: every account lands on the customer Home", () => {
     expect(signedInDestination(null)).toBe("/home");
     expect(signedInDestination(null, "rider")).toBe("/home");
     expect(signedInDestination("customer")).toBe("/home");
@@ -147,14 +147,14 @@ describe("sign-in and boot routing on the customer-only iPhone app (D-41)", () =
     expect(bootDestination({ session: { needsProfile: false, role: "rider" }, onboardingSeen: true, rolePref: null })).toBe("/home");
   });
 
-  it("boots a saved rider role into the customer home", () => {
+  it("boots a saved biker role into the customer home", () => {
     expect(bootDestination({ session: { needsProfile: false }, onboardingSeen: true, rolePref: "rider" })).toBe("/home");
     // Everything before the role check is unchanged.
     expect(bootDestination({ session: { needsProfile: true }, onboardingSeen: true, rolePref: "rider" })).toBe("/profile/setup");
     expect(bootDestination({ session: null, onboardingSeen: false, rolePref: null })).toBe("/onboarding");
   });
 
-  it("never deep-links a cold-start rider push into rider mode", () => {
+  it("never deep-links a cold-start biker push into biker mode", () => {
     const target = bootRedirectTarget({
       session: { ...s, role: "rider" },
       onboardingSeen: true,

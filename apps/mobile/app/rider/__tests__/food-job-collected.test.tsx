@@ -228,7 +228,7 @@ describe("food job — auto-accept Collected pickup", () => {
     expect(mockConfirmFoodPickup).toHaveBeenCalledWith("order-1", "731604");
   });
 
-  it("sends the rider's current position", async () => {
+  it("sends the biker's current position", async () => {
     mockGetLastFix.mockReturnValue({ lat: -17.8201, lng: 31.0502 });
     mockConfirmFoodCollected.mockResolvedValue({ orderId: "order-1", status: "picked_up" });
     const tree = await atRestaurant(true);
@@ -236,7 +236,7 @@ describe("food job — auto-accept Collected pickup", () => {
     expect(mockConfirmFoodCollected).toHaveBeenCalledWith("order-1", { lat: -17.8201, lng: 31.0502 });
   });
 
-  it("says so when the rider isn't at the restaurant yet", async () => {
+  it("says so when the biker isn't at the restaurant yet", async () => {
     const { ApiError } = jest.requireActual("../../../src/api/client");
     mockGetLastFix.mockReturnValue({ lat: -17.9, lng: 31.1 });
     mockConfirmFoodCollected.mockRejectedValue(new ApiError(409, "You're not at the restaurant yet. Move closer and try again.", "not_at_restaurant"));

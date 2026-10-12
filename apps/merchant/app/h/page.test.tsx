@@ -16,7 +16,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("the rider's hand-over page (Merchant v2, D-77)", () => {
+describe("the biker's hand-over page (Merchant v2, D-77)", () => {
   it("names the order, takes the 6-digit code and confirms the pickup", async () => {
     vi.mocked(getHandoverLink).mockResolvedValue({ orderLabel: "#A1B2", venueName: "Sadza Republic", expiresAt: "2026-10-05T10:15:00Z" });
     vi.mocked(confirmHandoverLink).mockResolvedValue({ orderId: "o1", status: "picked_up" });

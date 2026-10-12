@@ -36,6 +36,7 @@
  * not wired into CI, and this ledger exempted pending keys from having a file. Both holes are closed
  * here — the coverage tests below require the file for pending keys too, and CI now runs `--check`.
  */
+import { bikerWording } from "@lynia/shared";
 import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -369,7 +370,8 @@ describe("rendered conformance — mock structure + verbatim copy", () => {
       const expected = loadExpected(key);
       const { texts } = await renderWired(key, new Set(expected.texts));
       const result = conformance({
-        expected: expected.texts.map((text, i) => ({ text, path: expected.textPaths[i] })),
+        // The mocks say "rider"; the app says "biker" (owner, 2026-10-12; ledger D-101).
+        expected: expected.texts.map((text, i) => ({ text: bikerWording(text), path: expected.textPaths[i] })),
         actual: texts,
         groups: expected.groups,
         dynamic: expected.dynamic,

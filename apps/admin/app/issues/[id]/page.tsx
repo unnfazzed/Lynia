@@ -12,7 +12,7 @@ import { IconAlert } from "../../components/icons";
  *  close, each reason-coded through <ConfirmModal>. A resolved issue shows its outcome read-only. */
 const RESOLUTION_LABELS: Record<IssueResolution, string> = {
   refund: "Fare refunded to the customer",
-  rider_strike: "Rider given a strike",
+  rider_strike: "Biker given a strike",
   close_no_action: "Closed — no action",
 };
 
@@ -131,7 +131,7 @@ export default async function IssueDetailPage({ params }: { params: Promise<{ id
                 { label: "Route", value: i.route },
                 { label: "Fare", value: <span className="num">${i.fare} cash</span> },
                 {
-                  label: "Rider",
+                  label: "Biker",
                   value: (
                     <span>
                       {i.rider}
@@ -185,7 +185,7 @@ export default async function IssueDetailPage({ params }: { params: Promise<{ id
             ) : (
               <>
                 <div style={{ fontSize: 13, color: tokens.color.muted, marginBottom: 14 }}>
-                  Pick an outcome — each is recorded on the order, the rider and the customer.
+                  Pick an outcome — each is recorded on the order, the biker and the customer.
                 </div>
                 <ResolveActions id={i.id} order={i.order} rider={i.rider} fare={i.fare} connected={connected} />
               </>

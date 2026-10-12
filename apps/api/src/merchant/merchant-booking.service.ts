@@ -146,7 +146,7 @@ export class MerchantBookingService {
     if (!merchant) throw new NotFoundException("Business not found");
     const pickup = (merchant.location as Waypoint | null) ?? null;
     if (!pickup) {
-      throw new ConflictException({ reason: "no_location", message: "Set your business's pin before booking a rider." });
+      throw new ConflictException({ reason: "no_location", message: "Set your business's pin before booking a biker." });
     }
     // D-48 PR 4b: cash on delivery rides as one more line, so every rider app shows it (booking-cod.ts).
     const collectCash = body.collectCash === true;
@@ -154,7 +154,7 @@ export class MerchantBookingService {
     if (collectCash && (body.declaredValue <= 0 || goods.length > 9)) {
       throw new BadRequestException({
         reason: "bad_cash_on_delivery",
-        message: body.declaredValue <= 0 ? "Say what the buyer pays, so the rider knows what to collect." : "A cash-on-delivery booking carries up to 9 lines.",
+        message: body.declaredValue <= 0 ? "Say what the buyer pays, so the biker knows what to collect." : "A cash-on-delivery booking carries up to 9 lines.",
       });
     }
     const items = collectCash ? [...goods, codItem(body.declaredValue, merchant.name)] : goods;
@@ -221,7 +221,7 @@ export class MerchantBookingService {
   async pick(access: MerchantAccess, profileId: string, orderId: string, offerId: string): Promise<PickMerchantBookingOfferResponse> {
     const { accountId } = await this.ownedBooking(access, orderId);
     const offer = await this.prisma.offer.findFirst({ where: { id: offerId, orderId }, select: { riderId: true } });
-    if (!offer) throw new NotFoundException({ reason: "offer_gone", message: "That rider's offer is gone. Pick another." });
+    if (!offer) throw new NotFoundException({ reason: "offer_gone", message: "That biker's offer is gone. Pick another." });
     if (await this.isMember(access.merchantId, offer.riderId)) {
       throw new ConflictException({ reason: "own_member", message: "Someone on your team can't take your own delivery." });
     }
@@ -235,7 +235,7 @@ export class MerchantBookingService {
     const { accountId } = await this.ownedBooking(access, orderId);
     await this.lifecycle.cancel(orderId, accountId, reason, {
       allowedStatuses: MERCHANT_CANCELLABLE,
-      refusal: { reason: "picked_up", message: "The rider has it now. Call the rider." },
+      refusal: { reason: "picked_up", message: "The biker has it now. Call the biker." },
     });
     await this.recordActor(access.merchantId, orderId, profileId, "cancelledByProfileId");
     return this.detail(access, orderId);
@@ -366,7 +366,7 @@ export class MerchantBookingService {
       offeredFare: o.offeredFare,
       etaMinutes: o.etaMinutes,
       rider: {
-        name: fullName(o.rider.profile) ?? "Rider",
+        name: fullName(o.rider.profile) ?? "Biker",
         photoUrl: o.rider.profile.photoUrl ?? null,
         ratingAvg: o.rider.ratingAvg == null ? null : Number(o.rider.ratingAvg),
         ratingCount: o.rider.ratingCount,
@@ -486,7 +486,7 @@ export class MerchantBookingService {
       bookedBy: extra.bookedBy,
       rider: r.rider
         ? {
-            name: fullName(r.rider.profile) ?? "Rider",
+            name: fullName(r.rider.profile) ?? "Biker",
             phone: reveal ? r.rider.profile.phone : null,
             bikeReg: r.rider.bikeReg ?? null,
           }

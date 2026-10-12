@@ -155,7 +155,7 @@ describe("Notifications v1 screen", () => {
     expect(mockMarkNotificationsRead).toHaveBeenCalledTimes(1);
   });
 
-  it("follows the side: the rider sees jobs, both sides see account rows", async () => {
+  it("follows the side: the biker sees jobs, both sides see account rows", async () => {
     const rows = [
       PARCEL("s1", 5),
       row({ id: "r1", orderId: "o2", to: "rider", type: "status", beat: "assigned", status: "assigned", amount: "3.20", pickupArea: "Eastgate", dropoffArea: "Belgravia", service: "send" }),

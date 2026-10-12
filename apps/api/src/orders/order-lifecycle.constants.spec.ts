@@ -8,7 +8,7 @@ import {
 } from "./order-lifecycle.constants";
 
 describe("order-lifecycle constants (extracted, roadmap 3.4)", () => {
-  it("the cancellation matrix encodes the rider post-pickup block (C3/C6)", () => {
+  it("the cancellation matrix encodes the biker post-pickup block (C3/C6)", () => {
     // Rider may cancel up to arrival at pickup, never once the parcel is on the bike.
     expect(RIDER_CANCELLABLE.has("assigned")).toBe(true);
     expect(RIDER_CANCELLABLE.has("en_route_pickup")).toBe(true);

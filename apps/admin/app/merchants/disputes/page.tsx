@@ -23,7 +23,7 @@ export default async function FoodDisputesPage() {
     { key: "order", header: "Order", className: "mono", cell: (d) => d.orderId.slice(0, 8) },
     { key: "merchant", header: "Merchant", cell: (d) => d.merchant },
     { key: "customer", header: "Customer", className: "mut", cell: (d) => d.customer },
-    { key: "rider", header: "Rider", className: "mut", cell: (d) => d.rider ?? "—" },
+    { key: "rider", header: "Biker", className: "mut", cell: (d) => d.rider ?? "—" },
     { key: "amount", header: "Amount", className: "num", cell: (d) => (d.amount ? `$${d.amount}` : "—") },
     {
       key: "frozenAt",
@@ -39,12 +39,12 @@ export default async function FoodDisputesPage() {
     { key: "merchant", header: "Merchant", cell: (d) => d.merchant },
     {
       key: "rider",
-      header: "Rider",
+      header: "Biker",
       className: "mut",
       cell: (d) =>
         d.riderId ? (
           <a href={`/riders/${d.riderId}`} style={{ color: tokens.color.accentText }}>
-            {d.rider ?? "Rider"}
+            {d.rider ?? "Biker"}
           </a>
         ) : (
           (d.rider ?? "—")
@@ -107,8 +107,8 @@ export default async function FoodDisputesPage() {
       <section className="card" style={{ marginBottom: tokens.space.lg }}>
         <div className="block-title">Frozen payment handshakes</div>
         <div style={{ fontSize: 12, color: tokens.color.muted, marginBottom: 10 }}>
-          The customer confirmed paying cash at the door but the rider didn&apos;t confirm within the 2:00 window (or
-          disputed it) — the rider takes no new jobs and the customer&apos;s delivery code stays masked until this is
+          The customer confirmed paying cash at the door but the biker didn&apos;t confirm within the 2:00 window (or
+          disputed it) — the biker takes no new jobs and the customer&apos;s delivery code stays masked until this is
           resolved.
         </div>
         <DataTable
@@ -136,9 +136,9 @@ export default async function FoodDisputesPage() {
       <section className="card" style={{ marginBottom: tokens.space.lg }}>
         <div className="block-title">Goods or cash not returned</div>
         <div style={{ fontSize: 12, color: tokens.color.muted, marginBottom: 10 }}>
-          The merchant reported that the rider didn&apos;t bring the goods or the cash back. Nothing has happened to the
-          rider yet: the debt stays open (the merchant can still confirm it came back) and the rider takes no new jobs
-          until it&apos;s settled. Call both, then write it off here or suspend the rider from their page.
+          The merchant reported that the biker didn&apos;t bring the goods or the cash back. Nothing has happened to the
+          biker yet: the debt stays open (the merchant can still confirm it came back) and the biker takes no new jobs
+          until it&apos;s settled. Call both, then write it off here or suspend the biker from their page.
         </div>
         <DataTable
           columns={nonReturnCols}

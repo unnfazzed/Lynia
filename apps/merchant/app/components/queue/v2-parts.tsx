@@ -96,7 +96,7 @@ export function CashCard({ amount, food, delivery, line, foodLabel = "Food" }: {
         <span>
           {foodLabel} {money(food)}
         </span>
-        {delivery !== null && <span>Delivery {money(delivery)} · rider&apos;s</span>}
+        {delivery !== null && <span>Delivery {money(delivery)} · biker&apos;s</span>}
       </div>
       <p>{line}</p>
     </div>

@@ -55,7 +55,7 @@ describe("AdminCustomersService.listCustomers + getCustomerDetail (D-2)", () => 
     expect(rows[0]!.phoneMasked).not.toContain("111");
   });
 
-  it("NEW-3: a cancel the RIDER (or admin) made doesn't count toward the customer's own cancel rate", async () => {
+  it("NEW-3: a cancel the BIKER (or admin) made doesn't count toward the customer's own cancel rate", async () => {
     const prisma = {
       profile: { findMany: async () => [profile] },
       order: {

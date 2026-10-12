@@ -34,7 +34,7 @@ describe("AuthController route throttles", () => {
     expect(opts?.key?.({ ip: "1.1.1.1" })).toBeUndefined();
   });
 
-  it("E2E 2026-10-05 FS-1: keeps a per-IP verify ceiling ~10x the per-phone cap (a carrier NAT is many riders)", () => {
+  it("E2E 2026-10-05 FS-1: keeps a per-IP verify ceiling ~10x the per-phone cap (a carrier NAT is many bikers)", () => {
     const ip = rule(AuthController.prototype.verify, "otp-verify-ip");
     const phone = rule(AuthController.prototype.verify, "otp-verify");
     expect(ip?.key?.({ body: { phone: "+263770000001" }, ip: "9.9.9.9" })).toBe("9.9.9.9");

@@ -65,7 +65,7 @@ const released = (): boolean => booting.at(-1) === false;
 /** The splash is `done`: its exit into Home has started (reportSplashExit). */
 const exiting = (): boolean => getBootReadiness().exitAt != null;
 /** The removed steps card's labels (CHANGE-2026-10-06) — never drawn, never announced. */
-const RETIRED_STEP_LABELS = ["Checking it's you", "Loading your saved places", "Finding riders near you"];
+const RETIRED_STEP_LABELS = ["Checking it's you", "Loading your saved places", "Finding bikers near you"];
 /** Whether the host view holding `text` sits inside a subtree hidden from accessibility. */
 const hiddenFromA11y = (tree: renderer.ReactTestRenderer, text: string): boolean => {
   let node: renderer.ReactTestInstance | null = tree.root.findAll((n) => n.type === Text && String(n.props.children) === text)[0] ?? null;
@@ -394,7 +394,7 @@ describe("BootSplash", () => {
   });
 });
 
-describe("BootSplash · the rider boot keeps its card (First Run v2 H1/H2, ledger D-82 §2 #2)", () => {
+describe("BootSplash · the biker boot keeps its card (First Run v2 H1/H2, ledger D-82 §2 #2)", () => {
   const riderRows = (tree: renderer.ReactTestRenderer): string[] =>
     tree.root
       .findAll((n) => typeof n.type === "string" && n.props.accessibilityState != null && (RIDER_STEPS as readonly string[]).includes(n.props.accessibilityLabel))
@@ -409,7 +409,7 @@ describe("BootSplash · the rider boot keeps its card (First Run v2 H1/H2, ledge
     act(() => tree.unmount());
   });
 
-  it("runs the rider's two steps, announces each tick, and cuts only once the board's first reads have settled", () => {
+  it("runs the biker's two steps, announces each tick, and cuts only once the board's first reads have settled", () => {
     const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility");
     announce.mockClear(); // only this boot's announcements
     const tree = mount();
@@ -430,7 +430,7 @@ describe("BootSplash · the rider boot keeps its card (First Run v2 H1/H2, ledge
     act(() => tree.unmount());
   });
 
-  it("a rider boot sent elsewhere before the board mounts (a rejected session → /phone) hands off at once", () => {
+  it("a biker boot sent elsewhere before the board mounts (a rejected session → /phone) hands off at once", () => {
     const tree = mount();
     act(() => reportBootDestination("/rider"));
     advance(2500);
@@ -459,7 +459,7 @@ describe("BootSplash · the rider boot keeps its card (First Run v2 H1/H2, ledge
     act(() => tree.unmount());
   });
 
-  it("FR-M3: an offline rider boot lets the rider through to the cached board after the give-up", () => {
+  it("FR-M3: an offline biker boot lets the biker through to the cached board after the give-up", () => {
     __setProbeFetch(async () => false);
     const tree = mount();
     act(() => reportBootDestination("/rider"));

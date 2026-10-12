@@ -96,7 +96,7 @@ function keep(phone: string, label: string, merchantId = "m1") {
 }
 
 describe("MerchantRidersService.list (merchant web upgrade L3)", () => {
-  it("says only whether each number is an approved rider, can't take jobs right now, or isn't a rider yet", async () => {
+  it("says only whether each number is an approved biker, can't take jobs right now, or isn't a biker yet", async () => {
     w.people.set("ok", w.person({ id: "ok", phone: "+263771000001" }));
     w.people.set("suspended", w.person({ id: "suspended", phone: "+263771000002", rider: { kycStatus: "verified", accountStatus: "suspended", onHold: false } }));
     w.people.set("held", w.person({ id: "held", phone: "+263771000003", rider: { kycStatus: "verified", accountStatus: "active", onHold: true } }));
@@ -104,34 +104,34 @@ describe("MerchantRidersService.list (merchant web upgrade L3)", () => {
     w.people.set("team", w.person({ id: "team", phone: "+263771000005", merchantMemberships: [{ merchantId: "m1" }] }));
     w.people.set("kyc", w.person({ id: "kyc", phone: "+263771000006", rider: { kycStatus: "pending", accountStatus: "active", onHold: false } }));
     w.people.set("customer", w.person({ id: "customer", phone: "+263771000007", rider: null }));
-    for (const n of ["01", "02", "03", "04", "05", "06", "07", "08"]) keep(`+2637710000${n}`, `Rider ${n}`);
+    for (const n of ["01", "02", "03", "04", "05", "06", "07", "08"]) keep(`+2637710000${n}`, `Biker ${n}`);
     keep("+263779999999", "Someone else's", "m2");
 
     const { riders, cap } = await w.svc.list(OWNER);
 
     expect(cap).toBe(20);
     expect(riders.map((r) => [r.label, r.status])).toEqual([
-      ["Rider 01", "on_lyniago"],
-      ["Rider 02", "unavailable"],
-      ["Rider 03", "unavailable"],
-      ["Rider 04", "unavailable"],
-      ["Rider 05", "unavailable"],
-      ["Rider 06", "not_on_lyniago"],
-      ["Rider 07", "not_on_lyniago"],
-      ["Rider 08", "not_on_lyniago"],
+      ["Biker 01", "on_lyniago"],
+      ["Biker 02", "unavailable"],
+      ["Biker 03", "unavailable"],
+      ["Biker 04", "unavailable"],
+      ["Biker 05", "unavailable"],
+      ["Biker 06", "not_on_lyniago"],
+      ["Biker 07", "not_on_lyniago"],
+      ["Biker 08", "not_on_lyniago"],
     ]);
     expect(riders[0]!.phoneMasked).toBe("+263•••••0001");
     // The number comes back whole only where the business needs it to send the sign-up link.
     expect(riders.map((r) => r.invitePhone)).toEqual([null, null, null, null, null, "263771000006", "263771000007", "263771000008"]);
   });
 
-  it("D-48 E4: says Online only for a rider who can take jobs and whose app still heartbeats", async () => {
+  it("D-48 E4: says Online only for a biker who can take jobs and whose app still heartbeats", async () => {
     const live = { kycStatus: "verified", accountStatus: "active", onHold: false, isOnline: true, lastHeartbeatAt: new Date() };
     w.people.set("on", w.person({ id: "on", phone: "+263771000001", rider: live }));
     w.people.set("stale", w.person({ id: "stale", phone: "+263771000002", rider: { ...live, lastHeartbeatAt: new Date(Date.now() - 10 * 60_000) } }));
     w.people.set("off", w.person({ id: "off", phone: "+263771000003", rider: { ...live, isOnline: false } }));
     w.people.set("held", w.person({ id: "held", phone: "+263771000004", rider: { ...live, onHold: true } }));
-    for (const n of ["01", "02", "03", "04"]) keep(`+2637710000${n}`, `Rider ${n}`);
+    for (const n of ["01", "02", "03", "04"]) keep(`+2637710000${n}`, `Biker ${n}`);
 
     const { riders } = await w.svc.list(OWNER);
 
@@ -143,7 +143,7 @@ describe("MerchantRidersService.list (merchant web upgrade L3)", () => {
     ]);
   });
 
-  it("shows the rider's own name, photo, jobs and rating only once they've worked for this business", async () => {
+  it("shows the biker's own name, photo, jobs and rating only once they've worked for this business", async () => {
     w.people.set("new", w.person({ id: "new", phone: "+263771000001", firstName: "Nyasha", lastName: "Banda" }));
     w.people.set("regular", w.person({ id: "regular", phone: "+263771000002", firstName: "Farai", lastName: "Chari", photoUrl: "https://cdn/p.jpg" }));
     keep("+263771000001", "Nyasha");
@@ -156,7 +156,7 @@ describe("MerchantRidersService.list (merchant web upgrade L3)", () => {
     expect(regular).toMatchObject({ label: "Big Farai", jobs: 12, ratingAvg: 4.9, rider: { name: "Farai Chari", photoUrl: "https://cdn/p.jpg" } });
   });
 
-  it("is an empty list, and no stats query, for a business with no riders yet", async () => {
+  it("is an empty list, and no stats query, for a business with no bikers yet", async () => {
     expect(await w.svc.list(OWNER)).toEqual({ riders: [], cap: 20 });
     expect(w.prisma.$queryRaw).not.toHaveBeenCalled();
   });
@@ -189,7 +189,7 @@ describe("MerchantRidersService.add (owner only; the controller's @OwnerOnly)", 
     for (let i = 0; i < 20; i++) keep(`+2637710100${String(i).padStart(2, "0")}`, `R${i}`);
     await expect(w.svc.add(OWNER, "owner", { label: "One more", phone: "0772223333" })).rejects.toMatchObject({
       status: 409,
-      response: { reason: "cap_reached", message: "You can keep up to 20 riders. Remove one to add another." },
+      response: { reason: "cap_reached", message: "You can keep up to 20 bikers. Remove one to add another." },
     });
   });
 

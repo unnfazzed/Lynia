@@ -158,7 +158,7 @@ describe("useRiderLocationStream background continuation", () => {
     expect(emit).not.toHaveBeenCalledWith(WS_EVENTS.riderLocation, expect.objectContaining({ lat: -17.85 }));
   });
 
-  it("the job's end hands an ONLINE rider's service back to the heartbeat rate instead of stopping it", async () => {
+  it("the job's end hands an ONLINE biker's service back to the heartbeat rate instead of stopping it", async () => {
     // The board (use-rider-heartbeat.ts) holds the online intent; the job switches the same task up.
     await startRiderOnlineUpdates();
     const tree = await mountStream("order-1");

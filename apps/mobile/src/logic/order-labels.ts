@@ -7,7 +7,7 @@ export const UNDELIVERED_REASON_LABEL: Record<string, string> = {
   unreachable: "recipient unreachable",
   refused: "recipient refused delivery",
   wrong_address: "address was wrong",
-  breakdown: "rider breakdown",
+  breakdown: "biker breakdown",
 };
 
 // The order screen draws no sort chips any more (After Send, D-53) — it always uses "best"; the other
@@ -61,7 +61,7 @@ export function isRiderTrackingStale(args: {
 export function auctionHeaderText(args: { remainingMs: number | null; bidCount: number; noRiders: boolean; reconnecting: boolean }): string {
   const suffix = args.reconnecting ? " · reconnecting…" : "";
   if (args.remainingMs === 0) return "Window closing — wrapping up…";
-  if (args.bidCount > 0) return `${args.bidCount} ${args.bidCount === 1 ? "rider" : "riders"} bidding${suffix}`;
-  if (args.noRiders) return `No riders online nearby right now${suffix}`;
-  return `Finding riders near you…${args.reconnecting ? " reconnecting…" : ""}`;
+  if (args.bidCount > 0) return `${args.bidCount} ${args.bidCount === 1 ? "biker" : "bikers"} bidding${suffix}`;
+  if (args.noRiders) return `No bikers online nearby right now${suffix}`;
+  return `Finding bikers near you…${args.reconnecting ? " reconnecting…" : ""}`;
 }

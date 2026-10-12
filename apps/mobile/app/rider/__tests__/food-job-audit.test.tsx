@@ -316,7 +316,7 @@ describe("FJ-H6 · camera refused", () => {
 });
 
 describe("FJ-H5 · a carried balance", () => {
-  it("is collected at the door and is never the rider's", async () => {
+  it("is collected at the door and is never the biker's", async () => {
     const tree = await mount({ status: "en_route_dropoff" }, { ...CASH, previousBalanceUsd: 16.5 });
     await waitFor(tree, "Collect $34.00 cash at the door");
     const text = textOf(tree);

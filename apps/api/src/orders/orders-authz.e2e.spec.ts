@@ -72,7 +72,7 @@ describe("GET /orders/:orderId — HTTP authz (R1 IDOR net)", () => {
     expect(res.status).toBe(401);
   });
 
-  it("403 for an authenticated user who is neither the customer nor the assigned rider (R1 IDOR)", async () => {
+  it("403 for an authenticated user who is neither the customer nor the assigned biker (R1 IDOR)", async () => {
     const res = await request(app.getHttpServer())
       .get(`/orders/${ORDER_ID}`)
       .set("Authorization", bearer(STRANGER_ID));
@@ -91,7 +91,7 @@ describe("GET /orders/:orderId — HTTP authz (R1 IDOR net)", () => {
     expect(res.body).toMatchObject({ id: ORDER_ID, status: "open_for_offers" });
   });
 
-  it("returns the snapshot (non-403) for the assigned rider", async () => {
+  it("returns the snapshot (non-403) for the assigned biker", async () => {
     prisma.order.findUnique.mockResolvedValueOnce({ ...orderRow, riderId: RIDER_ID });
     const res = await request(app.getHttpServer())
       .get(`/orders/${ORDER_ID}`)

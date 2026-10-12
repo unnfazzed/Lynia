@@ -93,7 +93,7 @@ export class MerchantOrderProofService {
       select: { riderId: true, status: true, merchantId: true },
     });
     if (!order) throw new NotFoundException("Order not found");
-    if (order.riderId !== riderId) throw new ForbiddenException("Not the assigned rider");
+    if (order.riderId !== riderId) throw new ForbiddenException("Not the assigned biker");
     return order;
   }
 }

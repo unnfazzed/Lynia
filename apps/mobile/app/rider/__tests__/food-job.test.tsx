@@ -159,7 +159,7 @@ afterEach(() => {
   activeTree = null;
 });
 
-describe("rider food job — B-O8 countdown ticker gating", () => {
+describe("biker food job — B-O8 countdown ticker gating", () => {
   it("starts the 1s clock while the main active-job screen is reached (en_route_dropoff)", async () => {
     mockGetActiveOrder.mockResolvedValue(BASE_ORDER);
     mockGetFoodOrderAsRider.mockResolvedValue(BASE_FOOD_ORDER);

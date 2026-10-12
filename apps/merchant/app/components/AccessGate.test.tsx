@@ -65,7 +65,7 @@ describe("AccessGate", () => {
     expect(replace).toHaveBeenCalledWith("/queue");
   });
 
-  it("lets a rider's hand-over link through with no session", async () => {
+  it("lets a biker's hand-over link through with no session", async () => {
     pathname = "/h";
     await mount();
     expect(screen.getByText("page")).toBeTruthy();

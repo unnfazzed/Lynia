@@ -27,7 +27,7 @@ function harness(opts: { offline?: string[]; claimed?: string[] | null; waiting?
 const point = { lat: -17.83, lng: 31.05 };
 
 describe("RiderNudgeService.nudgeOfflineRiders (owner 2026-10-12, cold start)", () => {
-  it("asks the offline riders near the job, throttled per rider, with the board's count and the go-online line", async () => {
+  it("asks the offline bikers near the job, throttled per biker, with the board's count and the go-online line", async () => {
     const h = harness({ offline: ["r1", "r2", "r3"], claimed: ["r1", "r3"], waiting: 3 });
     await h.service.nudgeOfflineRiders(point, "parcel");
     expect(h.offlineRidersNear).toHaveBeenCalledWith(point.lat, point.lng, RIDER_NUDGE.radiusM, RIDER_NUDGE.maxRiders);

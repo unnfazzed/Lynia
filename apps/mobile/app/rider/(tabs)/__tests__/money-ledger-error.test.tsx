@@ -88,7 +88,7 @@ afterEach(() => {
 });
 
 describe("Money tab · a failed ledger read is not an empty history (LC-D-SIB-1)", () => {
-  it("errored with nothing cached: the L·error rider state, not 'No jobs yet today', and it re-reads by itself", () => {
+  it("errored with nothing cached: the L·error biker state, not 'No jobs yet today', and it re-reads by itself", () => {
     activeTree = renderScreen();
     const text = textOf(activeTree);
     expect(text).toContain("Something went wrong");

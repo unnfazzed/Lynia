@@ -42,7 +42,7 @@ describe("AdminKycReviewService.getKycReview (A-04 duplicate ID)", () => {
             {
               id: "p2",
               firstName: "Banned",
-              lastName: "Rider",
+              lastName: "Biker",
               phone: "+263782000999",
               role: "rider",
               rider: { kycStatus: "verified", accountStatus: "banned" },
@@ -77,7 +77,7 @@ describe("AdminKycReviewService.getKycReview (A-04 duplicate ID)", () => {
     // Phones masked (A-03); a banned rider surfaces its standing so the reviewer catches ban-evasion.
     expect(r.duplicateIdAccounts[0]).toMatchObject({
       id: "p2",
-      name: "Banned Rider",
+      name: "Banned Biker",
       role: "rider",
       accountStatus: "banned",
       kycStatus: "verified",
@@ -273,7 +273,7 @@ describe("AdminKycReviewService.getKycReview — document photo (BUG-HUNT)", () 
     expect(r.photoUrl).toBe("https://signed.example/kyc/r1/photo.jpg?ttl=900");
   });
 
-  it("returns null (not the raw object key) when the rider has no photo yet", async () => {
+  it("returns null (not the raw object key) when the biker has no photo yet", async () => {
     const createReadUrl = vi.fn();
     const prisma = { rider: { findUnique: async () => riderRow({ photoUrl: null }) }, profile: { findMany: async () => [] } };
     const svc = new AdminKycReviewService(prisma as unknown as PrismaService, pii, { createReadUrl } as unknown as StorageAdapter);

@@ -65,7 +65,7 @@ describe("P1 · Check the prescription (Merchant v2, D-77, over Order flow v2's 
     expect(screen.getByText("Amoxicillin 500mg (21 caps)")).toBeTruthy();
     expect((screen.getByRole("img", { name: "Prescription page 1" }) as HTMLImageElement).src).toBe("https://storage.example/rx-1.jpg");
     expect(screen.getByRole("button", { name: "Next page" }).textContent).toBe("1 of 2");
-    expect(screen.getByText("The customer shows the original to the rider")).toBeTruthy();
+    expect(screen.getByText("The customer shows the original to the biker")).toBeTruthy();
     const approve = screen.getByRole("button", { name: "Approve" }) as HTMLButtonElement;
     expect(approve.disabled).toBe(true);
     fireEvent.click(screen.getByRole("checkbox", { name: "Name matches the patient" }));

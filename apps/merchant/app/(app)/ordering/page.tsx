@@ -19,7 +19,7 @@ const SETTINGS: { key: Setting; title: string; body: string }[] = [
   {
     key: "autoAccept",
     title: "Accept orders automatically",
-    body: "New orders go straight to cooking. Confirm each one so a rider is sent.",
+    body: "New orders go straight to cooking. Confirm each one so a biker is sent.",
   },
   {
     key: "showPhoneToCustomers",
@@ -31,7 +31,7 @@ const SETTINGS: { key: Setting; title: string; body: string }[] = [
   {
     key: "freeDelivery",
     title: "Free delivery",
-    body: "Customers pay $0 delivery on new orders. You pay the rider's delivery fee: it comes off the cash for each order.",
+    body: "Customers pay $0 delivery on new orders. You pay the biker's delivery fee: it comes off the cash for each order.",
   },
 ];
 

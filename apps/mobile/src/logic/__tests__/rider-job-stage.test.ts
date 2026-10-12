@@ -1,6 +1,6 @@
 import { AUTO_ADVANCE, parcelStage, parseArrival, parseDeliverOutbox, parseReach, stepFor } from "../rider-job-stage";
 
-describe("parcelStage (Rider v2 A1–A8, ledger D-54)", () => {
+describe("parcelStage (Biker v2 A1–A8, ledger D-54)", () => {
   it.each([
     ["assigned", null, "toPickup"],
     ["confirmed", null, "toPickup"],
@@ -39,7 +39,7 @@ describe("parseArrival", () => {
   });
 });
 
-describe("rider audit: persisted reach wait and delivery outbox", () => {
+describe("biker audit: persisted reach wait and delivery outbox", () => {
   it("parseReach keeps a well-formed mark and rejects junk", () => {
     expect(parseReach(JSON.stringify({ orderId: "o1", startedAt: 1000, calls: 2, wa: 1 }))).toEqual({ orderId: "o1", startedAt: 1000, calls: 2, wa: 1 });
     expect(parseReach(JSON.stringify({ orderId: "o1", startedAt: 1000 }))).toEqual({ orderId: "o1", startedAt: 1000, calls: 0, wa: 0 });

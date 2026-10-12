@@ -41,7 +41,7 @@ describe("GET /orders/:orderId/offers — HTTP authz (R2 IDOR net)", () => {
     expect(res.status).toBe(401);
   });
 
-  it("403 for an authenticated non-owner (R2 IDOR — bid sheet exposes rider PII)", async () => {
+  it("403 for an authenticated non-owner (R2 IDOR — bid sheet exposes biker PII)", async () => {
     const res = await request(app.getHttpServer())
       .get(`/orders/${ORDER_ID}/offers`)
       .set("Authorization", bearer(STRANGER_ID));

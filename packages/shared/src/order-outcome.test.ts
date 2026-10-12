@@ -22,7 +22,7 @@ describe("order outcome — the one shared classifier (U33)", () => {
     expect(cancelReasonParty(null)).toBeNull();
   });
 
-  it("a customer or rider cancel names them; no reason at all is LyniaGo's", () => {
+  it("a customer or biker cancel names them; no reason at all is LyniaGo's", () => {
     expect(customerOrderOutcome({ ...base, cancelledBy: "c1" })).toBe("cancelled_by_you");
     expect(cancelledByOf({ ...base, cancelledBy: "r1" })).toBe("rider");
     expect(customerOrderOutcome({ ...base })).toBe("cancelled_by_lynia");

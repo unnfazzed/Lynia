@@ -3,7 +3,7 @@ import { OFFER_WINDOW_MS } from "./contracts";
 import { OFFER_WINDOW_POLICY, offerWindowEndAfterRaise, offerWindowEndsAt, offerWindowMsForSupply } from "./offer-window";
 
 describe("offerWindowMsForSupply", () => {
-  it("opens a longer window when few riders are online", () => {
+  it("opens a longer window when few bikers are online", () => {
     expect(offerWindowMsForSupply(0)).toBe(OFFER_WINDOW_POLICY.quietWindowMs);
     expect(offerWindowMsForSupply(OFFER_WINDOW_POLICY.quietBelowRiders - 1)).toBe(OFFER_WINDOW_POLICY.quietWindowMs);
   });

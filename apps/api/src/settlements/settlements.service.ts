@@ -176,7 +176,7 @@ export class SettlementsService {
         totalCommission += agg.commission;
         return {
           riderId,
-          name: nameBy.get(riderId) ?? "Unknown rider",
+          name: nameBy.get(riderId) ?? "Unknown biker",
           rides: agg.rides,
           fares: round(agg.fares).toFixed(2),
           // agg.commission is the sum of already-rounded per-ride amounts; round() only cleans float drift.

@@ -46,7 +46,7 @@ describe("jobCommissionBasis — what each job type is charged on", () => {
   });
 });
 
-describe("canCoverJobCommission — a rider can't take a job whose commission is more than their balance", () => {
+describe("canCoverJobCommission — a biker can't take a job whose commission is more than their balance", () => {
   it("free jobs left (0–9 completed) → always", () => {
     expect(canCoverJobCommission({ ratePct: 10, tripsCount: 9, balance: 0, commission: 5 })).toBe(true);
   });
@@ -244,7 +244,7 @@ describe("broadcastRadiusAtMs — nationwide reach (D-99)", () => {
 });
 
 describe("estimatePickupEtaMinutes", () => {
-  it("is the start time for a rider at the pickup (or a bad distance)", () => {
+  it("is the start time for a biker at the pickup (or a bad distance)", () => {
     expect(estimatePickupEtaMinutes(0)).toBe(PICKUP_ETA.startMinutes);
     expect(estimatePickupEtaMinutes(Number.NaN)).toBe(PICKUP_ETA.startMinutes);
   });

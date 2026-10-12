@@ -105,7 +105,7 @@ export default async function KitchenConfirmationsPage() {
       <AutoRefresh intervalMs={15_000} />
       <header className="page">
         <h1>Orders to confirm</h1>
-        <span className="sub">Call each restaurant. A rider is only sent once you confirm.</span>
+        <span className="sub">Call each restaurant. A biker is only sent once you confirm.</span>
         <Conn connected={connected} reason={reason} />
       </header>
 

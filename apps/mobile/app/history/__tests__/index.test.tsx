@@ -89,7 +89,7 @@ describe("history split by side", () => {
     expect(s).toContain("No fare");
   });
 
-  it("rider with no jobs: the summary reads 0 and the list shows 'No jobs this week'", () => {
+  it("biker with no jobs: the summary reads 0 and the list shows 'No jobs this week'", () => {
     mockSide = "rider";
     mockRows = baseRows.filter((r) => !r.id.startsWith("rider-"));
     const t = render();
@@ -153,7 +153,7 @@ describe("MA-L2 / MA-M5: Job history copy and the jobs that didn't pay", () => {
     expect(text(tree)).not.toMatch(/trips/i);
   });
 
-  it("couldn't load with nothing saved: the rider screens' title and the retry line, no 'trips'", () => {
+  it("couldn't load with nothing saved: the biker screens' title and the retry line, no 'trips'", () => {
     mockFeed = { rows: null, showingStale: false, savedAt: null, isFetching: false };
     const t = text(render());
     expect(t).toContain("Something went wrong");

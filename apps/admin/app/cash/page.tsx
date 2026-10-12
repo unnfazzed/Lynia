@@ -45,7 +45,7 @@ export default async function CashPage() {
   const columns: Column<CommissionRiderRow>[] = [
     {
       key: "name",
-      header: "Rider",
+      header: "Biker",
       cell: (r) => (
         <a
           href={r.riderId ? `/riders/${r.riderId}` : "/riders"}
@@ -69,7 +69,7 @@ export default async function CashPage() {
     <main className="content">
       <header className="page">
         <h1>Commission</h1>
-        <span className="sub">Prepaid per-ride — riders pre-fund an account, commission is deducted per ride</span>
+        <span className="sub">Prepaid per-ride — bikers pre-fund an account, commission is deducted per ride</span>
         <Conn connected={connected} reason={reason} />
       </header>
 
@@ -94,13 +94,13 @@ export default async function CashPage() {
         <span>
           {rateIsZero ? (
             <>
-              <b>Commission is {rate} during the launch period.</b> Riders keep the full agreed fare; nothing is
+              <b>Commission is {rate} during the launch period.</b> Bikers keep the full agreed fare; nothing is
               collected yet. The prepaid wallet (top-ups and the per-ride deduction) is live — the figures below
               are informational ride volume at 0%, not money owed.
             </>
           ) : (
             <>
-              <b>Commission is {rate}.</b> The figures below reflect money actually being deducted from riders'
+              <b>Commission is {rate}.</b> The figures below reflect money actually being deducted from bikers'
               prepaid balances, per completed ride.
             </>
           )}
@@ -113,14 +113,14 @@ export default async function CashPage() {
         <KpiCard
           label="Fares delivered"
           value={view ? `$${view.kpis.fares}` : "—"}
-          hint={rateIsZero ? "riders keep this at 0%" : "before commission"}
+          hint={rateIsZero ? "bikers keep this at 0%" : "before commission"}
         />
         <KpiCard label="Commission accrued" value={view ? `$${view.kpis.commission}` : "—"} hint="at the current rate" />
       </section>
 
       <section className="card">
         <div className="block-title">
-          By rider
+          By biker
           <span className="right">{view ? view.periodLabel : "—"}</span>
         </div>
         <DataTable
@@ -132,7 +132,7 @@ export default async function CashPage() {
               <EmptyState
                 icon={<IconBanknote />}
                 title="No rides yet this period"
-                line="Ride volume builds here as riders complete deliveries."
+                line="Ride volume builds here as bikers complete deliveries."
               />
             ) : (
               <EmptyState
@@ -145,8 +145,8 @@ export default async function CashPage() {
         />
         <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: 12 }}>
           {rateIsZero
-            ? "Once the rate turns on, each completed ride will deduct its commission from the rider's pre-funded account; a low balance blocks going online until they top up. Balance, top-ups and the per-ride deduction ledger are already live — only the rate itself is still 0%."
-            : "Each completed ride deducts its commission from the rider's pre-funded account; a low balance blocks going online until they top up."}
+            ? "Once the rate turns on, each completed ride will deduct its commission from the biker's pre-funded account; a low balance blocks going online until they top up. Balance, top-ups and the per-ride deduction ledger are already live — only the rate itself is still 0%."
+            : "Each completed ride deducts its commission from the biker's pre-funded account; a low balance blocks going online until they top up."}
         </div>
       </section>
 

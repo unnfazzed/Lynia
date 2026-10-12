@@ -158,7 +158,7 @@ describe("D4 · ID on another account", () => {
   });
 });
 
-describe("D6 · verified rider", () => {
+describe("D6 · verified biker", () => {
   it("shows the ID from the check read-only, masked but the last three, with ✓ Verified — no field", async () => {
     const t = await render({ ...CUSTOMER, role: "rider", idNumber: "63482913K07", rider: { kycStatus: "verified", bikeReg: null } });
     const s = out(t);

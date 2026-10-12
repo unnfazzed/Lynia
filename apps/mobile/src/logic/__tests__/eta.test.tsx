@@ -6,7 +6,7 @@ const PICKUP = { lat: -17.832, lng: 31.05 }; // ~2 km north of the rider
 const DROPOFF = { lat: -17.9, lng: 31.05 }; // further south
 
 describe("liveEta", () => {
-  it("returns null when there's no rider fix yet", () => {
+  it("returns null when there's no biker fix yet", () => {
     expect(liveEta({ status: "en_route_pickup", rider: null, pickup: PICKUP, dropoff: DROPOFF })).toBeNull();
   });
 

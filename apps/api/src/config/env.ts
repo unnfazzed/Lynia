@@ -496,8 +496,8 @@ export const envSchema = z.object({
       const diditMissing = (name: string, breaks: string): void =>
         reject(name, `Missing ${name}: ${breaks}. Fix: set it (and DIDIT_ENABLED=true in the deploy), or run KYC_MODE=manual until Didit is wired.`);
       if (!env.DIDIT_API_KEY) diditMissing("DIDIT_API_KEY", "KYC_PROVIDER=didit can't create a single verification session");
-      if (!env.DIDIT_WORKFLOW_ID) diditMissing("DIDIT_WORKFLOW_ID", "every Didit session create fails, so no rider can start the ID check");
-      if (!env.DIDIT_WEBHOOK_SECRET) diditMissing("DIDIT_WEBHOOK_SECRET", "every Didit decision webhook is refused (503), so no rider is ever verified");
+      if (!env.DIDIT_WORKFLOW_ID) diditMissing("DIDIT_WORKFLOW_ID", "every Didit session create fails, so no biker can start the ID check");
+      if (!env.DIDIT_WEBHOOK_SECRET) diditMissing("DIDIT_WEBHOOK_SECRET", "every Didit decision webhook is refused (503), so no biker is ever verified");
     }
     // Launch-hygiene guards: scoped to the PRODUCTION tier only. The staging tier (APP_ENV=staging,
     // its own service/DB/secrets — never the live one) legitimately runs the QA bypasses so load

@@ -36,7 +36,7 @@ describe("cancelled sheet: Nothing to pay", () => {
   });
 
   it("LyniaGo cancel with a reason (2.31 specific) says it", () => {
-    const r = render(<CancelledSheet headline={A.cxLynia} reason="The rider reported the pickup was closed." extra={A.cxLyniaGeneric} />);
+    const r = render(<CancelledSheet headline={A.cxLynia} reason="The biker reported the pickup was closed." extra={A.cxLyniaGeneric} />);
     expect(textOf(r)).toContain(A.nothingOwed);
   });
 

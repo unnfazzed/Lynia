@@ -206,7 +206,7 @@ describe("the flow from R3 (?from=flow)", () => {
     expect(screen()).toBe("P13");
   });
 
-  it("B1: blocked notifications → P11's 'Not now' moves on to P13 (the rider is never trapped)", async () => {
+  it("B1: blocked notifications → P11's 'Not now' moves on to P13 (the biker is never trapped)", async () => {
     mockLocGet = GRANTED;
     mockNotifGet = BLOCKED;
     await mount();

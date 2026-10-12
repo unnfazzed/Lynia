@@ -3,14 +3,14 @@ import { fareDelta, shortName, sortOffers, tracker, trackedBookings } from "./bo
 import { merchantBooking } from "../testing/fixtures";
 
 describe("D1 trackers", () => {
-  it("names riders as the handoff does", () => {
+  it("names bikers as the handoff does", () => {
     expect(shortName("Blessing Moyo")).toBe("Blessing M.");
     expect(shortName("Farai")).toBe("Farai");
     expect(shortName(null)).toBeNull();
   });
 
   it("reads finding, coming, picked up and ended bookings", () => {
-    expect(tracker(merchantBooking({ state: "finding", itemsSummary: "Car battery", offerCount: 3 }))).toMatchObject({ icon: "timer", title: "Car battery · 3 offers", sub: "Pick a rider" });
+    expect(tracker(merchantBooking({ state: "finding", itemsSummary: "Car battery", offerCount: 3 }))).toMatchObject({ icon: "timer", title: "Car battery · 3 offers", sub: "Pick a biker" });
     expect(tracker(merchantBooking({ state: "finding", itemsSummary: "Car battery", offerCount: 0 })).sub).toBe("Waiting for offers");
     const rider = { name: "Blessing Moyo", phone: null, bikeReg: null };
     expect(tracker(merchantBooking({ state: "coming", itemsSummary: "Brake pads", rider }))).toMatchObject({ title: "Brake pads · Blessing M.", progress: 2 });
@@ -61,7 +61,7 @@ describe("D4 offers", () => {
   });
   const offers = [offer("Kuda", "3.80", 4), offer("Tendai", "5.00", 3), offer("Farai", "4.20", 6, { preferred: true }), offer("Staff", "1.00", 1, { ownMember: true })];
 
-  it("sorts by best match (own riders on top), cheapest and closest, a teammate always last", () => {
+  it("sorts by best match (own bikers on top), cheapest and closest, a teammate always last", () => {
     expect(sortOffers(offers, "best")[0]!.id).toBe("Farai");
     expect(sortOffers(offers, "cheapest").map((o) => o.id)).toEqual(["Kuda", "Farai", "Tendai", "Staff"]);
     expect(sortOffers(offers, "closest").map((o) => o.id)).toEqual(["Tendai", "Kuda", "Farai", "Staff"]);

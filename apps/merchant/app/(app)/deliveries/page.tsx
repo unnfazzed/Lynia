@@ -111,7 +111,7 @@ export default function DeliveriesPage() {
           {state.status === "error" && <RetryableError message={state.message} onRetry={retry} />}
           {state.status === "unavailable" && (
             <p className="m-sub">
-              <b>Booking riders is on its way.</b> You&apos;ll book LyniaGo riders for your customers from here.
+              <b>Booking bikers is on its way.</b> You&apos;ll book LyniaGo bikers for your customers from here.
             </p>
           )}
 
@@ -139,8 +139,8 @@ export default function DeliveriesPage() {
               >
                 <Icon name="bike" size={30} color="var(--muted)" />
               </div>
-              <b style={{ fontSize: 18 }}>No riders booked yet</b>
-              <p className="m-sub">Tell us where it&apos;s going and what&apos;s in it. Riders nearby offer a fare, and you pick one.</p>
+              <b style={{ fontSize: 18 }}>No bikers booked yet</b>
+              <p className="m-sub">Tell us where it&apos;s going and what&apos;s in it. Bikers nearby offer a fare, and you pick one.</p>
             </div>
           )}
         </div>

@@ -73,7 +73,7 @@ describe("headless fix forwarding bridge", () => {
     expect(stopMock).toHaveBeenCalledWith(task.RIDER_LOCATION_TASK);
   });
 
-  it("forwards to the online (heartbeat) forwarder while the rider is online", () => {
+  it("forwards to the online (heartbeat) forwarder while the biker is online", () => {
     const beats: Array<{ lat: number; lng: number }> = [];
     task.setOnlineFixForwarder((c) => beats.push(c));
 
@@ -94,7 +94,7 @@ describe("headless fix forwarding bridge", () => {
     expect(beats).toEqual([{ lat: -17.85, lng: 31.07 }]);
   });
 
-  it("stops forwarding to the heartbeat once the rider goes offline (the online privacy gate)", () => {
+  it("stops forwarding to the heartbeat once the biker goes offline (the online privacy gate)", () => {
     const beats: Array<{ lat: number; lng: number }> = [];
     task.setOnlineFixForwarder((c) => beats.push(c));
     task.setOnlineFixForwarder(null);
@@ -218,7 +218,7 @@ describe("start/stop races (last intent wins, tie-break = stopped)", () => {
 });
 
 describe("idle-online mode (one task, one service)", () => {
-  it("starts the low online rate: 25 s, no distance filter (a parked rider must still beat), same notification", async () => {
+  it("starts the low online rate: 25 s, no distance filter (a parked biker must still beat), same notification", async () => {
     await task.startRiderOnlineUpdates();
 
     expect(startMock).toHaveBeenCalledTimes(1);
@@ -257,7 +257,7 @@ describe("idle-online mode (one task, one service)", () => {
     expect(stopMock).not.toHaveBeenCalled();
   });
 
-  it("stops the service when the rider goes offline with no job", async () => {
+  it("stops the service when the biker goes offline with no job", async () => {
     await task.startRiderOnlineUpdates();
     await task.stopRiderOnlineUpdates();
 
@@ -306,7 +306,7 @@ describe("idle-online mode (one task, one service)", () => {
     expect(startMock).not.toHaveBeenCalled();
   });
 
-  it("on resume, does nothing when the rider is neither online nor on a job", async () => {
+  it("on resume, does nothing when the biker is neither online nor on a job", async () => {
     await task.resumeRiderBackgroundUpdates();
 
     expect(startMock).not.toHaveBeenCalled();

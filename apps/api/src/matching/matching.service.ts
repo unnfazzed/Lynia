@@ -87,7 +87,7 @@ export class MatchingService {
           where: blockedPairWhere(offer.order.customerId, offer.riderId),
           select: { id: true },
         });
-        if (blocked) throw new ForbiddenException("You've blocked this rider — pick another offer");
+        if (blocked) throw new ForbiddenException("You've blocked this biker — pick another offer");
 
         if (offer.order.status !== "open_for_offers") {
           throw selectConflict("order_closed", "This order is no longer open for offers");
@@ -107,20 +107,20 @@ export class MatchingService {
         // still flagged online) must not be selectable. One shared gate (common/rider-selectable.ts) that
         // `listForOrder` also applies, so such an offer leaves the list too (MJ-RL2).
         if (!riderSelectableNow(offer.rider)) {
-          throw selectConflict("rider_unavailable", "Rider just became unavailable, pick another");
+          throw selectConflict("rider_unavailable", "Biker just became unavailable, pick another");
         }
 
         // C4 soft-lock: a rider owing a merchant collect-and-return cash debt, or mid-doorstep
         // handshake, takes no new jobs until it's settled (N-20/R-05) — same "pick another" shape.
         if (await hasOpenMerchantObligation(tx, offer.riderId)) {
-          throw selectConflict("rider_unavailable", "Rider just became unavailable, pick another");
+          throw selectConflict("rider_unavailable", "Biker just became unavailable, pick another");
         }
 
         // Owner 2026-10-12: the rider's wallet must cover this job's commission (10% of their offered fare,
         // once their free jobs are used). Checked at the bid too; a balance can move in between.
         const owed = jobCommission({ orderType: "parcel", agreedFare: offer.offeredFare, suggestedFare: offer.order.suggestedFare });
         if (!(await ridersWhoCoverCommission(tx, [offer.riderId], owed)).has(offer.riderId)) {
-          throw selectConflict("rider_unavailable", "Rider just became unavailable, pick another");
+          throw selectConflict("rider_unavailable", "Biker just became unavailable, pick another");
         }
 
         // The delivery handover code. ET7: the verifier is its hash; D2 (owner 2026-10-07) also stores it
@@ -197,7 +197,7 @@ export class MatchingService {
         // depends on this ConflictException still propagating; the metric wrapper must NOT swallow it.
         this.metrics.recordMatchSelect(done(), "unavailable");
         // U62: the one case the customer's "taken by another customer" toast is true for.
-        throw selectConflict("rider_taken", "Rider just became unavailable, pick another");
+        throw selectConflict("rider_taken", "Biker just became unavailable, pick another");
       }
       // Map the thrown domain exception to an outcome label, then RE-THROW so the caller still sees it.
       this.metrics.recordMatchSelect(done(), this.selectOutcome(err));

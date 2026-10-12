@@ -55,7 +55,7 @@ export function KycDecision({
         target={name}
         path={path}
         auditInEndpoint
-        triggerLabel="Approve rider"
+        triggerLabel="Approve biker"
         triggerVariant="solid"
         triggerIcon={<IconCheck />}
         disabled={!connected}
@@ -64,7 +64,7 @@ export function KycDecision({
           <span>
             {unfinishedCheck ? (
               <>
-                <b>This rider hasn&apos;t finished the Didit ID check.</b> Approve only if you&apos;ve verified their
+                <b>This biker hasn&apos;t finished the Didit ID check.</b> Approve only if you&apos;ve verified their
                 identity another way, and say how in the note.{" "}
               </>
             ) : null}
@@ -74,9 +74,9 @@ export function KycDecision({
         }
         noteRequired={unfinishedCheck}
         notePlaceholder={
-          unfinishedCheck ? "How you verified this rider without a finished ID check" : undefined
+          unfinishedCheck ? "How you verified this biker without a finished ID check" : undefined
         }
-        confirmLabel={unfinishedCheck ? "Approve without the ID check" : "Approve rider"}
+        confirmLabel={unfinishedCheck ? "Approve without the ID check" : "Approve biker"}
         onConfirm={(r) => decide("verified", null, r.note)}
       />
       <ConfirmModal
@@ -92,12 +92,12 @@ export function KycDecision({
         consequence={
           isResubmit ? (
             <span>
-              This is <b>attempt 2</b> — a decline <b>locks the application</b> and the rider must contact support. No
+              This is <b>attempt 2</b> — a decline <b>locks the application</b> and the biker must contact support. No
               further resubmission is allowed.
             </span>
           ) : (
             <span>
-              The rider sees the reason in the app and can fix and resubmit <b>once</b>. A second decline locks the
+              The biker sees the reason in the app and can fix and resubmit <b>once</b>. A second decline locks the
               application.
             </span>
           )

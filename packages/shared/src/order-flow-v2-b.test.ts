@@ -100,7 +100,7 @@ describe("Order flow v2 wire contracts — additive only", () => {
 });
 
 describe("ORDER_SCHEDULE (BRIEF §12)", () => {
-  it("plans 30-minute slots with a road-inflated delivery leg plus the rider's lead", () => {
+  it("plans 30-minute slots with a road-inflated delivery leg plus the biker's lead", () => {
     expect(ORDER_SCHEDULE.slotMinutes).toBe(30);
     expect(deliveryMinutesForKm(null)).toBe(ORDER_SCHEDULE.defaultDeliveryMinutes);
     // 3.2 km × 1.3 / 22 km/h = 11.35 min → 12, + 5 lead.

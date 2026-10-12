@@ -59,7 +59,7 @@ export class RiderNudgeService {
         collapseKey: "rider:demand_nudge",
       });
     } catch (err) {
-      this.logger.warn(`rider demand nudge failed: ${(err as Error).message}`);
+      this.logger.warn(`biker demand nudge failed: ${(err as Error).message}`);
     }
   }
 

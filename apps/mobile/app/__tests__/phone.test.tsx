@@ -89,7 +89,7 @@ describe("C2 / C3 · Phone", () => {
     expect(mockRequestOtp).not.toHaveBeenCalled();
   });
 
-  it("sends E.164 and carries the rider intent to the code screen", async () => {
+  it("sends E.164 and carries the biker intent to the code screen", async () => {
     mockParams = { intent: "rider" };
     const t = mount();
     typeIn(t, "77 245 1180");

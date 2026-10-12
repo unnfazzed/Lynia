@@ -206,7 +206,7 @@ export default function PrescriptionCheckPage() {
           )}
           <div className="m-rxnote">
             <Icon name="shield-check" size={16} />
-            The customer shows the original to the rider
+            The customer shows the original to the biker
           </div>
           {error && !declining && (
             <div className="m-alert" role="alert">

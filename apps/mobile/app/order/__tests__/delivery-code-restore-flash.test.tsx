@@ -263,7 +263,7 @@ describe("delivery code — D2 (U20 failed read, U04 lockout re-issue)", () => {
     expect(mockRotateDeliveryCode).not.toHaveBeenCalled();
   });
 
-  it("U04: the rider's tries ran out — the code is re-issued ONCE (the explicit rotate) and the new code replaces the dead one", async () => {
+  it("U04: the biker's tries ran out — the code is re-issued ONCE (the explicit rotate) and the new code replaces the dead one", async () => {
     mockGetOrder.mockResolvedValue(assignedOrder({ deliveryOtpAttempts: 5, codeRotatedAt: "2026-10-07T09:00:00.000Z" }));
     mockRotateDeliveryCode.mockResolvedValue({ deliveryCode: "604117" });
 

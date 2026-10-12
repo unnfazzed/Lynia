@@ -35,7 +35,7 @@ describe("deriveMerchantOrderTrack (BRIEF §4)", () => {
     expect(t("requested", "preparing", { autoAccepted: true, kitchenConfirmedAt: null })).toBe("confirmed");
   });
 
-  it("is 'making' from cooking until the rider collects (rider found / at the venue live inside it)", () => {
+  it("is 'making' from cooking until the biker collects (biker found / at the venue live inside it)", () => {
     expect(t("requested", "preparing")).toBe("making");
     expect(t("requested", "preparing", { autoAccepted: true, kitchenConfirmedAt: "2026-10-02T10:00:00Z" })).toBe("making");
     expect(t("requested", "ready_for_pickup")).toBe("making");
@@ -145,7 +145,7 @@ describe("Order flow v2 wire contracts", () => {
     expect(AttachMerchantDoorProofRequest.safeParse({ key: "delivery-proof/r/a.jpg", reason: "lost" }).success).toBe(false);
   });
 
-  it("ratings: the venue chips, and the widened rider chips", () => {
+  it("ratings: the venue chips, and the widened biker chips", () => {
     expect(RateVenueRequest.safeParse({ score: 4, tags: ["tasty", "well_packed"] }).success).toBe(true);
     expect(RateVenueRequest.safeParse({ score: 6 }).success).toBe(false);
     expect(RateVenueRequest.safeParse({ score: 4, tags: ["hot_food"] }).success).toBe(false);

@@ -114,7 +114,7 @@ describe("C4 · Code — the sixth digit verifies", () => {
     expect(mockReplace).toHaveBeenCalledWith("/home");
   });
 
-  it("the C1 rider path goes OTP → the rider side, no priming (D-82 G1)", async () => {
+  it("the C1 biker path goes OTP → the biker side, no priming (D-82 G1)", async () => {
     mockLocalSearchParams = { phone: "+263772451180", deliveryChannel: "whatsapp", intent: "rider" };
     mockVerifyOtp.mockResolvedValue(ok);
     const t = mount({ initialCooldownS: 30 });
@@ -170,8 +170,8 @@ describe("C4 · signing in clears the stack", () => {
 });
 
 // C-3: the saved role is wiped by sign-out; a returning rider must not land in the customer app.
-describe("C4 · a returning rider with no saved role", () => {
-  it("follows the server's role into the rider app", async () => {
+describe("C4 · a returning biker with no saved role", () => {
+  it("follows the server's role into the biker app", async () => {
     mockVerifyOtp.mockResolvedValue({ ...okRes, role: "rider" });
     const t = mount({ initialCooldownS: 30 });
     await type(t, "418210");

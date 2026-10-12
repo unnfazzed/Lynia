@@ -54,7 +54,7 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
-describe("rider top-up screen", () => {
+describe("biker top-up screen", () => {
   it("pops the stack on exit", () => {
     const t = render();
     act(() => t.root.findByProps({ testID: "topup-flow-exit" }).props.onPress());

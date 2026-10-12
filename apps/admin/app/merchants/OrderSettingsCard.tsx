@@ -10,9 +10,9 @@ type Setting = "autoAccept" | "showPhoneToCustomers" | "freeDelivery";
 const COPY: Record<Setting, { label: string; line: string; onConsequence: string; offConsequence: string }> = {
   autoAccept: {
     label: "Accept orders automatically",
-    line: "New orders skip the 3-minute accept. You confirm each one by phone before a rider is sent.",
+    line: "New orders skip the 3-minute accept. You confirm each one by phone before a biker is sent.",
     onConsequence:
-      "New orders go straight to cooking and appear on Orders to confirm. Call the restaurant for each one: no rider is sent until you confirm.",
+      "New orders go straight to cooking and appear on Orders to confirm. Call the restaurant for each one: no biker is sent until you confirm.",
     offConsequence: "New orders wait for the restaurant to accept them in the merchant app again, and are cancelled after 3 minutes without an answer.",
   },
   showPhoneToCustomers: {
@@ -24,9 +24,9 @@ const COPY: Record<Setting, { label: string; line: string; onConsequence: string
   // D-71: free delivery paid by the business.
   freeDelivery: {
     label: "Free delivery",
-    line: "The business pays the rider's delivery fee. Only switch on if the business agreed.",
+    line: "The business pays the biker's delivery fee. Only switch on if the business agreed.",
     onConsequence:
-      "New cash orders show Free delivery and the customer pays $0 delivery. The rider still earns the full fee: it comes off the cash the business gets back for each order.",
+      "New cash orders show Free delivery and the customer pays $0 delivery. The biker still earns the full fee: it comes off the cash the business gets back for each order.",
     offConsequence: "New orders charge the customer the delivery fee again. Orders already placed keep the price they were placed at.",
   },
 };

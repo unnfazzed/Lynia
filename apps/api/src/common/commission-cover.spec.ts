@@ -18,7 +18,7 @@ function db(riders: Record<string, { tripsCount: number; balance?: number }>) {
   } as unknown as PrismaService & { rider: { findMany: ReturnType<typeof vi.fn> } };
 }
 
-describe("jobCommission (owner 2026-10-12: 10% of the rider's fare on every job)", () => {
+describe("jobCommission (owner 2026-10-12: 10% of the biker's fare on every job)", () => {
   it("a parcel pays 10% of its agreed fare, floored at half the suggested fare (WD-012)", () => {
     expect(jobCommission({ orderType: "parcel", agreedFare: 4, suggestedFare: 4 }, 10)).toBe(0.4);
     expect(jobCommission({ orderType: "parcel", agreedFare: 1, suggestedFare: 10 }, 10)).toBe(0.5);
@@ -32,19 +32,19 @@ describe("jobCommission (owner 2026-10-12: 10% of the rider's fare on every job)
   });
 });
 
-describe("ridersWhoCoverCommission — a rider can't take a job whose commission is more than their balance", () => {
-  it("lets through a rider whose balance covers the commission (equal is enough), and drops one it doesn't", async () => {
+describe("ridersWhoCoverCommission — a biker can't take a job whose commission is more than their balance", () => {
+  it("lets through a biker whose balance covers the commission (equal is enough), and drops one it doesn't", async () => {
     const ok = await ridersWhoCoverCommission(db({ a: { tripsCount: 40, balance: 0.4 }, b: { tripsCount: 40, balance: 0.39 } }), ["a", "b"], 0.4, 10);
     expect([...ok]).toEqual(["a"]);
   });
-  it("a never-topped-up rider reads $0 — refused once their free jobs are used", async () => {
+  it("a never-topped-up biker reads $0 — refused once their free jobs are used", async () => {
     expect((await ridersWhoCoverCommission(db({ a: { tripsCount: 10 } }), ["a"], 0.3, 10)).has("a")).toBe(false);
   });
-  it("the first 10 jobs are free: a rider with 0–9 completed jobs takes any job at $0", async () => {
+  it("the first 10 jobs are free: a biker with 0–9 completed jobs takes any job at $0", async () => {
     const ok = await ridersWhoCoverCommission(db({ new: { tripsCount: 0 }, tenth: { tripsCount: 9 } }), ["new", "tenth"], 5, 10);
     expect(ok).toEqual(new Set(["new", "tenth"]));
   });
-  it("checks each rider against their own figure (a parcel's commission follows the rider's own fare)", async () => {
+  it("checks each biker against their own figure (a parcel's commission follows the biker's own fare)", async () => {
     const ok = await ridersWhoCoverCommission(
       db({ cheap: { tripsCount: 40, balance: 0.3 }, dear: { tripsCount: 40, balance: 0.3 } }),
       ["cheap", "dear"],

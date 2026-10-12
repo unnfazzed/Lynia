@@ -120,7 +120,7 @@ describe("PC8 gate (src/push/ask-in-context.ts)", () => {
   });
 });
 
-describe("rider flow steps (README §2B)", () => {
+describe("biker flow steps (README §2B)", () => {
   it("location entry: P1 to ask, P4 approximate, P6 blocked, P7 GPS off, nothing when granted", () => {
     expect(entryScreen("location", { ...ALL, loc: "undetermined" })).toBe("P1");
     expect(entryScreen("location", { ...ALL, loc: "denied" })).toBe("P1");

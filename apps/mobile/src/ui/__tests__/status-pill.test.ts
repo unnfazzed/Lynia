@@ -6,7 +6,7 @@ describe("orderStatusTone (JOURNEY-BUGS: every order status rendered the same ne
     expect(orderStatusTone("completed")).toBe("success");
   });
 
-  it("gives a negative-or-inactive outcome the same muted tone the rider terminal screens already use", () => {
+  it("gives a negative-or-inactive outcome the same muted tone the biker terminal screens already use", () => {
     expect(orderStatusTone("cancelled")).toBe("offline");
     expect(orderStatusTone("undelivered")).toBe("offline");
     expect(orderStatusTone("expired")).toBe("offline");

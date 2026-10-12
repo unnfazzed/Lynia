@@ -14,7 +14,7 @@ const EVENTS = [
 ];
 
 describe("Stepper (plan §5 B4 — shared Stepper, per-type step lists)", () => {
-  it("defaults to the parcel rider labels when jobType is omitted", () => {
+  it("defaults to the parcel biker labels when jobType is omitted", () => {
     const tree = renderSync(<Stepper events={EVENTS} currentStatus="confirmed" view="rider" />);
     const text = textOf(tree);
     expect(text).toContain("Job accepted");
@@ -22,12 +22,12 @@ describe("Stepper (plan §5 B4 — shared Stepper, per-type step lists)", () => 
     expect(text).toContain("Parcel collected");
   });
 
-  it("renders the parcel rider labels explicitly", () => {
+  it("renders the parcel biker labels explicitly", () => {
     const tree = renderSync(<Stepper events={EVENTS} currentStatus="confirmed" view="rider" jobType="parcel" />);
     expect(textOf(tree)).toContain("Parcel collected");
   });
 
-  it("renders distinct food rider labels — dark today (unwired), ready for Lane D5", () => {
+  it("renders distinct food biker labels — dark today (unwired), ready for Lane D5", () => {
     const tree = renderSync(<Stepper events={EVENTS} currentStatus="confirmed" view="rider" jobType="food" />);
     const text = textOf(tree);
     expect(text).toContain("Job accepted");
@@ -44,8 +44,8 @@ describe("Stepper (plan §5 B4 — shared Stepper, per-type step lists)", () => 
   it("renders distinct food customer labels (D3 — the tracker grammar re-labelled, D-03)", () => {
     const tree = renderSync(<Stepper events={EVENTS} currentStatus="confirmed" view="customer" jobType="food" />);
     const text = textOf(tree);
-    expect(text).toContain("Rider secured");
-    expect(text).toContain("Rider at the restaurant");
+    expect(text).toContain("Biker secured");
+    expect(text).toContain("Biker at the restaurant");
     expect(text).not.toContain("Items & note confirmed");
   });
 });
@@ -76,7 +76,7 @@ describe("Stepper — customer food timeline (kit RESTAURANT_STEPS)", () => {
     expect(foodCustomerStepIndex("requested", null)).toBe(0);
   });
 
-  it("hands over to the shared dispatch edges once a rider is secured", () => {
+  it("hands over to the shared dispatch edges once a biker is secured", () => {
     expect(foodCustomerStepIndex("assigned", null)).toBe(2);
     // The kit collapses heading-to / at-the-restaurant into one step.
     expect(foodCustomerStepIndex("confirmed", null)).toBe(3);
@@ -98,9 +98,9 @@ describe("Stepper — customer food timeline (kit RESTAURANT_STEPS)", () => {
       "2",
       "Restaurant accepted",
       "3",
-      "Rider secured",
+      "Biker secured",
       "4",
-      "Rider at the restaurant",
+      "Biker at the restaurant",
       "5",
       "Picked up",
       "6",
@@ -110,7 +110,7 @@ describe("Stepper — customer food timeline (kit RESTAURANT_STEPS)", () => {
     ]);
   });
 
-  it("leaves the parcel and rider timelines on the dispatch model untouched", () => {
+  it("leaves the parcel and biker timelines on the dispatch model untouched", () => {
     const parcel = textOf(renderSync(<Stepper events={EVENTS} currentStatus="confirmed" view="customer" jobType="parcel" />));
     expect(parcel).toContain("Items & note confirmed");
     expect(parcel).not.toContain("Order placed");

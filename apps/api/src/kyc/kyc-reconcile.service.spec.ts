@@ -89,7 +89,7 @@ describe("KycReconcileService.reconcileLostWebhooks (KYC-R26-03)", () => {
     expect(vendorStatuses.map((a) => a.slice(0, 2))).toEqual([["s_ab", "Abandoned"], ["s_exp", "Expired"]]);
   });
 
-  it("leaves a check still in the rider's hands alone", async () => {
+  it("leaves a check still in the biker's hands alone", async () => {
     const { riders, applied, vendorStatuses } = fakeRiders([
       { profileId: "p1", kycRef: "s_ip", kycVendorStatus: null },
       { profileId: "p2", kycRef: "s_rs", kycVendorStatus: null },
@@ -101,7 +101,7 @@ describe("KycReconcileService.reconcileLostWebhooks (KYC-R26-03)", () => {
     expect(vendorStatuses).toEqual([]);
   });
 
-  it("KYC-R26-12: drains a rider stored as In Review before decisions went automatic — declined, not skipped", async () => {
+  it("KYC-R26-12: drains a biker stored as In Review before decisions went automatic — declined, not skipped", async () => {
     const { riders, applied } = fakeRiders([{ profileId: "p3", kycRef: "s_ir", kycVendorStatus: "In Review" }]);
     const vendor = vendorWith({ s_ir: { status: "In Review" } });
     expect(await new KycReconcileService(riders, vendor, DIDIT).reconcileLostWebhooks()).toEqual({ checked: 1, applied: 1 });
@@ -109,7 +109,7 @@ describe("KycReconcileService.reconcileLostWebhooks (KYC-R26-03)", () => {
     expect([ref, status, reason]).toEqual(["s_ir", "failed", "other"]);
   });
 
-  it("refuses a decision whose vendor_data names another rider (KYC-R26-07, shared path)", async () => {
+  it("refuses a decision whose vendor_data names another biker (KYC-R26-07, shared path)", async () => {
     const { riders, applied } = fakeRiders([{ profileId: "p1", kycRef: "sess_1", kycVendorStatus: null }]);
     await new KycReconcileService(riders, vendorWith({ sess_1: { status: "Approved", vendor_data: "p_other" } }), DIDIT).reconcileLostWebhooks();
     expect(applied).toEqual([]);
@@ -126,7 +126,7 @@ describe("KycReconcileService.reconcileLostWebhooks (KYC-R26-03)", () => {
     expect(riders.kycReconcileCandidates).not.toHaveBeenCalled();
   });
 
-  it("never throws: a failing candidate query, a failing rider, a failing vendor", async () => {
+  it("never throws: a failing candidate query, a failing biker, a failing vendor", async () => {
     const broken = fakeRiders([]);
     broken.riders.kycReconcileCandidates.mockRejectedValueOnce(new Error("db down"));
     await expect(new KycReconcileService(broken.riders, vendorWith({}), DIDIT).reconcileLostWebhooks()).resolves.toEqual({ checked: 0, applied: 0 });

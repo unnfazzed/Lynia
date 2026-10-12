@@ -165,7 +165,7 @@ export class AdminController {
   @Get("riders/:profileId/kyc")
   async kycReview(@Param("profileId", ParseUUIDPipe) profileId: string) {
     const review = await this.kycReviewService.getKycReview(profileId);
-    if (!review) throw new NotFoundException("Rider not found");
+    if (!review) throw new NotFoundException("Biker not found");
     return review;
   }
 
@@ -196,7 +196,7 @@ export class AdminController {
   @Get("riders/:profileId")
   async riderDetail(@Param("profileId", ParseUUIDPipe) profileId: string) {
     const rider = await this.ridersService.getRiderDetail(profileId);
-    if (!rider) throw new NotFoundException("Rider not found");
+    if (!rider) throw new NotFoundException("Biker not found");
     return rider;
   }
 

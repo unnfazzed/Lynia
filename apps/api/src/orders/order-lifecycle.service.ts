@@ -242,7 +242,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         select: { status: true, riderId: true, orderType: true },
       });
       if (!order) throw new NotFoundException("Order not found");
-      if (order.riderId !== riderId) throw new ForbiddenException("Not the assigned rider");
+      if (order.riderId !== riderId) throw new ForbiddenException("Not the assigned biker");
       if (order.status !== edge.from) throw new ConflictException(`Order is not ${edge.from}`);
       // A food order is only picked up through the pickup code or the at-the-restaurant "Collected"
       // (FoodOrderService.confirmPickup/confirmCollected) — both open the cash debt the rider owes the
@@ -283,7 +283,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       select: { status: true, riderId: true, items: true },
     });
     if (!order) throw new NotFoundException("Order not found");
-    if (order.riderId !== riderId) throw new ForbiddenException("Not the assigned rider");
+    if (order.riderId !== riderId) throw new ForbiddenException("Not the assigned biker");
     if (order.status !== "en_route_pickup") {
       throw new ConflictException("Items can only be confirmed at the pickup");
     }
@@ -329,7 +329,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       >`SELECT status, rider_id, pickup_photo_key FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
       const o = rows[0];
       if (!o) throw new NotFoundException("Order not found");
-      if (o.rider_id !== riderId) throw new ForbiddenException("Not the assigned rider");
+      if (o.rider_id !== riderId) throw new ForbiddenException("Not the assigned biker");
       if (!PARCEL_PICKUP_PHOTO_STATUSES.includes(o.status as OrderStatus)) {
         throw new ConflictException("A pickup photo can only be added while collecting the parcel");
       }
@@ -382,7 +382,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       >`SELECT status, rider_id, delivery_proof_key FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
       const o = rows[0];
       if (!o) throw new NotFoundException("Order not found");
-      if (o.rider_id !== riderId) throw new ForbiddenException("Not the assigned rider");
+      if (o.rider_id !== riderId) throw new ForbiddenException("Not the assigned biker");
       if (!DELIVERY_PROOF_STATUSES.includes(o.status as OrderStatus)) {
         throw new ConflictException("Proof of drop-off can only be added at the door or right after marking it undelivered");
       }
@@ -435,7 +435,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       >`SELECT status, rider_id, otp_hash, delivery_otp_attempts, order_type, merchant_payment_method, customer_cash_confirmed_at, rider_cash_confirmed_at, items, declared_value, (SELECT phone FROM profiles WHERE profiles.id = orders.customer_id) AS customer_phone, customer_id FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
       const o = rows[0];
       if (!o) throw new NotFoundException("Order not found");
-      if (o.rider_id !== riderId) throw new ForbiddenException("Not the assigned rider");
+      if (o.rider_id !== riderId) throw new ForbiddenException("Not the assigned biker");
       if (o.status !== "en_route_dropoff") throw new ConflictException("Order is not ready for delivery");
       // R-09/R-04 defense in depth: rotateDeliveryCode already refuses to reveal a CASH merchant
       // order's plaintext code before the handshake, so a normal client can never reach this call
@@ -544,7 +544,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         select: { status: true, riderId: true },
       });
       if (!order) throw new NotFoundException("Order not found");
-      if (order.riderId !== riderId) throw new ForbiddenException("Not the assigned rider");
+      if (order.riderId !== riderId) throw new ForbiddenException("Not the assigned biker");
       if (!POST_PICKUP_FOR_UNDELIVERED.has(order.status)) {
         throw new ConflictException("A hand-off can only fail after the parcel is picked up");
       }
@@ -622,7 +622,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
           if (newlyHeld) newlyHeldRiderId = order.riderId;
           if (velocityHold && !rider.onHold) {
             this.logger.warn(
-              `Rider ${order.riderId} auto-held for review: ${undeliveredCount} undelivered / ${completedCount} completed in ${UNDELIVERED_ABUSE.windowDays}d (FRAUD P0-3 velocity)`,
+              `Biker ${order.riderId} auto-held for review: ${undeliveredCount} undelivered / ${completedCount} completed in ${UNDELIVERED_ABUSE.windowDays}d (FRAUD P0-3 velocity)`,
             );
           }
         }
@@ -1199,8 +1199,8 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       if (customerId) {
         // After-send v2 copy ("Rider cancelled (reopened)"); the fare is the clone's own asking price.
         void this.notifications.notifyProfiles([customerId], {
-          title: "Your rider cancelled",
-          body: rebroadcastFare != null ? `We're asking other riders at $${Number(rebroadcastFare).toFixed(2)}.` : "We're asking other riders.",
+          title: "Your biker cancelled",
+          body: rebroadcastFare != null ? `We're asking other bikers at $${Number(rebroadcastFare).toFixed(2)}.` : "We're asking other bikers.",
           data: { orderId: rebroadcastId, kind: "rebroadcast" },
         });
       }

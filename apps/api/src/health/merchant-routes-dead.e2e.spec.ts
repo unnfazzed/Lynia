@@ -491,7 +491,7 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
       expect(noTerms.status).toBe(400);
     });
 
-    it("C5: /merchant/orders/dispatch/offer is a rider action — no MerchantGuard, any authenticated caller gets 200", async () => {
+    it("C5: /merchant/orders/dispatch/offer is a biker action — no MerchantGuard, any authenticated caller gets 200", async () => {
       const noAuth = await request(app.getHttpServer()).get("/merchant/orders/dispatch/offer");
       expect(noAuth.status).toBe(401);
       const res = await request(app.getHttpServer()).get("/merchant/orders/dispatch/offer").set("Authorization", bearer("p1", "customer"));

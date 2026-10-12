@@ -106,7 +106,7 @@ describe("useRiderHeartbeat — foreground", () => {
     await act(async () => tree.unmount());
   });
 
-  it("only a 403 takes the rider offline; two other failures in a row report stale", async () => {
+  it("only a 403 takes the biker offline; two other failures in a row report stale", async () => {
     const onRefused = jest.fn();
     const tree = await mount(true, onRefused);
 
@@ -141,7 +141,7 @@ describe("useRiderHeartbeat — foreground", () => {
 });
 
 describe("useRiderHeartbeat — phone locked (background location task)", () => {
-  it("starts the background task at the online rate the moment the rider is online", async () => {
+  it("starts the background task at the online rate the moment the biker is online", async () => {
     const tree = await mount();
 
     expect(startUpdatesMock).toHaveBeenCalledWith(RIDER_LOCATION_TASK, expect.objectContaining({ timeInterval: 25_000 }));

@@ -171,7 +171,7 @@ describe("KycController.callback", () => {
     }
   });
 
-  it("ignores a non-terminal status without touching the rider", async () => {
+  it("ignores a non-terminal status without touching the biker", async () => {
     const { riders, calls, held } = fakeRiders();
     const raw = JSON.stringify({ session_id: "s_3", status: "In Progress" });
     const res = await ctl(riders, {}).callback(req(raw));
@@ -359,7 +359,7 @@ describe("KycController.callback", () => {
       expect(typed.calls).toEqual([["s_t", "failed"]]);
     });
 
-    it("refuses (200, nothing written) when vendor_data names a different rider than the session's owner", async () => {
+    it("refuses (200, nothing written) when vendor_data names a different biker than the session's owner", async () => {
       const { riders, calls } = fakeRiders();
       const raw = JSON.stringify({ session_id: "s_vd", status: "Approved", vendor_data: "p_someone_else" });
       const res = await ctl(riders, { DIDIT_WEBHOOK_SECRET: undefined }).callback(req(raw));
@@ -367,7 +367,7 @@ describe("KycController.callback", () => {
       expect(calls).toEqual([]);
     });
 
-    it("applies when vendor_data matches the owner, or when no rider holds the session (nothing to flip anyway)", async () => {
+    it("applies when vendor_data matches the owner, or when no biker holds the session (nothing to flip anyway)", async () => {
       const match = fakeRiders();
       await ctl(match.riders, { DIDIT_WEBHOOK_SECRET: undefined }).callback(
         req(JSON.stringify({ session_id: "s_ok", status: "Approved", vendor_data: "p_owner" })),

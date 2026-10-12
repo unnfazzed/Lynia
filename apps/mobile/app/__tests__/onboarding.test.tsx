@@ -64,13 +64,13 @@ describe("C1 · Welcome", () => {
     expect(mockReplace).toHaveBeenCalledWith("/phone");
   });
 
-  it("'Ride with LyniaGo' carries a rider intent into sign-in", () => {
+  it("'Ride with LyniaGo' carries a biker intent into sign-in", () => {
     const tree = renderWelcome();
     pressLabel(tree, "Want to earn? Ride with LyniaGo");
     expect(mockReplace).toHaveBeenCalledWith({ pathname: "/phone", params: { intent: "rider" } });
   });
 
-  it("draws no rider link on the customer-only iPhone app (D-41)", () => {
+  it("draws no biker link on the customer-only iPhone app (D-41)", () => {
     jest.mocked(riderModeAvailable).mockReturnValue(false);
     expect(rendered(renderWelcome())).not.toContain("Ride with LyniaGo");
   });
