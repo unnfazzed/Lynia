@@ -2,7 +2,7 @@
 
 **Goal:** stand up the `apps/merchant` Next.js dashboard at a stable public URL
 (`https://merchant.lyniago.com`), reusing the GCP/ALB topology the API and admin console
-already run on. Parent plan: `docs/plans/2026-07-26-merchant-verticals-plan.md` §2.3 ("own Cloud Run
+already run on. Parent plan: `docs/archive/plans/2026-07-26-merchant-verticals-plan.md` §2.3 ("own Cloud Run
 service + deploy workflow; cannot take down the API") and §5 ("dark launch continuously... launch day
 is a config flip, not a deploy"). This doc is the deploy-wiring piece that plan deferred to P3.
 

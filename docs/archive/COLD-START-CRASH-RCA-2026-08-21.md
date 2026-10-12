@@ -270,7 +270,7 @@ resolves correctly — see §4. It does not construct the module, which is why #
 
 **The gate existed, was explicit, and was rewritten to fit the build that had already shipped.**
 
-`docs/plans/2026-08-20-kyc-in-app-plan.md` required, twice and in strong language, that the New
+`docs/archive/plans/2026-08-20-kyc-in-app-plan.md` required, twice and in strong language, that the New
 Architecture be proven on a device **before a line of KYC code**. When the code landed (`a80e145`)
 the binding condition was *device-green before submission to any track*. Build #31's submission to
 `internal` violated it. The very next commit — `5b63e78`, a docs-only commit whose only purpose was

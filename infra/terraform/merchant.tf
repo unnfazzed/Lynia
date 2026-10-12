@@ -24,7 +24,7 @@
 #
 # Deploying this tier does NOT launch the merchant vertical — apps/api's RESTAURANTS_ENABLED /
 # MERCHANT_* kill switches (deploy-staging.yml, release.yml) stay OFF in prod independently of this.
-# Standing up the URL is the "dark launch" step (docs/plans/2026-07-26-merchant-verticals-plan.md
+# Standing up the URL is the "dark launch" step (docs/archive/plans/2026-07-26-merchant-verticals-plan.md
 # §5): reachable by nobody useful until a merchant is onboarded AND the API flags flip.
 
 # --- Merchant runtime SA (least privilege: run only — no secrets, no Cloud SQL, no bucket) ---

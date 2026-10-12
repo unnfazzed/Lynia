@@ -36,7 +36,7 @@ module.exports = {
     {
       name: "express-no-merchant-coupling",
       comment:
-        "Merchant-vertical one-way boundary (docs/plans/2026-07-26-merchant-verticals-plan.md §2.3 + §0b): " +
+        "Merchant-vertical one-way boundary (docs/archive/plans/2026-07-26-merchant-verticals-plan.md §2.3 + §0b): " +
         "live Express modules (matching/offers/orders + the workers they host) must NEVER depend on merchant " +
         "code — coupling may only point merchant→shared, so a merchant defect cannot reach the Express paths. " +
         "Dormant-by-construction until apps/api/src/merchant exists; it cannot be exercised by a spec import " +

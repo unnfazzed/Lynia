@@ -9,7 +9,7 @@ import { TrackingGateway } from "../tracking/tracking.gateway";
 import { resolveOwnMerchantId } from "./merchant-lookup.util";
 
 /**
- * C4 — food money evidence layer (docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md §5 Lane
+ * C4 — food money evidence layer (docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md §5 Lane
  * C, packages/design/RESTAURANTS-DECISIONS.md §7 revision). Owns three things, each its own small
  * declarative machine (see order-lifecycle.transitions.ts's MERCHANT_DEBT_TRANSITIONS):
  *

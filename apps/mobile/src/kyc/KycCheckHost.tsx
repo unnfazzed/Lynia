@@ -4,7 +4,7 @@
  *
  * Why a WebView and not the native SDK: Route A (the Didit native SDK) requires React Native's New
  * Architecture, and every build carrying that pair died at cold start on a real handset
- * (MOB-BOOT-04, docs/COLD-START-CRASH-RCA-2026-08-21.md). This sheet keeps the whole point of
+ * (MOB-BOOT-04, docs/archive/COLD-START-CRASH-RCA-2026-08-21.md). This sheet keeps the whole point of
  * Route A — no browser hand-off, Didit keeps liveness/capture quality, the HMAC webhook stays the
  * verdict lane — on build #30's proven native surface plus exactly one mature, old-architecture
  * native module (react-native-webview). The verification pixels inside the sheet are Didit's, which

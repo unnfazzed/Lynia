@@ -48,7 +48,7 @@ Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · a
 
 ## Foundation-F codegen adoption — final status (2026-08-12)
 
-The mobile **structural-snapshot codegen** adoption (`docs/plans/2026-08-11-mock-adoption-program.md`)
+The mobile **structural-snapshot codegen** adoption (`docs/archive/plans/2026-08-11-mock-adoption-program.md`)
 ran to its ceiling. **32 mobile views are guardrail-proven congruent** to their mocks
 (`node tools/parity/codegen/cli.mjs check` = 32/32; the structural-snapshot spec asserts each tree ≡
 the mock's). Foundation tooling built across a→e: render-helper/SHELL unwrap, W-KIT member-tag

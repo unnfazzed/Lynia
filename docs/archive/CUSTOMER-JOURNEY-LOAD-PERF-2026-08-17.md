@@ -10,7 +10,7 @@ Scope of this review: the customer journey on the installed internal-track build
 `#781` and the pickup auto-locate `#789`). This is an analysis, not a fix PR — each finding names
 the mechanism, the evidence in the repo, and the fix with its delivery lane (OTA-able JS / API
 deploy / store build / ops-GCP). Prior art it builds on: `docs/PERFORMANCE.md`,
-`docs/MAPS-LOADING-REVIEW-2026-08-16.md`, `docs/SENTRY-TRIAGE-2026-08-17.md`,
+`docs/archive/MAPS-LOADING-REVIEW-2026-08-16.md`, `docs/archive/SENTRY-TRIAGE-2026-08-17.md`,
 `docs/KNOWN_BUGS.md` (`MOB-BOOT-03`, `MOB-MAP-01/02`, SEN-01…04).
 
 ---
@@ -162,7 +162,7 @@ be measured (via the elapsed-time tagging below) before shipping, not assumed:
 
 ### 3.2 The map may also be genuinely failing on this build (ops, not code)
 
-`docs/SENTRY-TRIAGE-2026-08-17.md`: real field events `compose-map-not-loaded` with
+`docs/archive/SENTRY-TRIAGE-2026-08-17.md`: real field events `compose-map-not-loaded` with
 `map_ready=true`. **This is evidence, not proof** — ready-but-never-loaded is *consistent with* an
 Android Maps key rejection (`MOB-MAP-02`), but §3.1 shows slow tile delivery produces the identical
 observed state before `onMapLoaded` fires. Treat key rejection as the leading *hypothesis*: confirm

@@ -19,7 +19,7 @@
 > problem that no longer exists.
 
 **Revision 2 — post /plan-eng-review.** Implements the code-fixable findings of
-`docs/CUSTOMER-JOURNEY-LOAD-PERF-2026-08-17.md` (§7 items 2–3), as revised by the engineering
+`docs/archive/CUSTOMER-JOURNEY-LOAD-PERF-2026-08-17.md` (§7 items 2–3), as revised by the engineering
 review below (4 architecture + 2 code-quality findings folded in) and the outside-voice challenge
 (9 findings; 7 accepted, 2 partially — see the review report). Out of scope, with reasons: the
 Maps-key SHA-1 restriction (§3.2 — ops/GCP, no code); `expo-image` adoption and Maps SDK pre-warm

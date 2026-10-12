@@ -612,7 +612,7 @@ export const ClientMetricEvent = z.enum([
    * would understate the gap; the Paper architecture exposes no compositor-presentation callback,
    * so this remains a LOWER BOUND on what the customer saw, never an overstatement).
    * `boot_home_paint - boot_home` is the redirect→home segment the RCA found unpainted and
-   * unmeasured (docs/CUSTOMER-JOURNEY-LOAD-PERF-2026-08-17.md §1.2). SCOPE CAVEAT: only fires when
+   * unmeasured (docs/archive/CUSTOMER-JOURNEY-LOAD-PERF-2026-08-17.md §1.2). SCOPE CAVEAT: only fires when
    * the boot lands on the customer home — deep-link cold starts (push-tap → order screen) and
    * rider boots never emit it, so read this histogram alongside `boot_home`, not as a universal
    * cold-start number.
@@ -626,7 +626,7 @@ export const ClientMetricEvent = z.enum([
    * thread was at the instant the touch arrived, i.e. how late a JS-driven response WOULD have been.
    * An idle thread reads ~one frame (≈16 ms); a screen mid-poll, mid-socket-push or mid-clock-tick
    * reads far higher, and that is the signal. Sampled 1-in-N on the client (taps are frequent).
-   * See docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §1.2.
+   * See docs/archive/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §1.2.
    */
   "tap_ack",
   /**
@@ -845,7 +845,7 @@ export type CreateTopupRequest = z.infer<typeof CreateTopupRequest>;
 
 // ---------------------------------------------------------------------------
 // Restaurants vertical — merchant domain + menu (C1,
-// docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md §5 Lane C)
+// docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md §5 Lane C)
 // ---------------------------------------------------------------------------
 // Everything here is dormant until RESTAURANTS_ENABLED=true AND (for the customer read API) the
 // merchant's own `pilotEnabled` cohort flag is set — the pre-launch allowlist corridor. Money/pricing
@@ -1317,7 +1317,7 @@ export type RestaurantReopenReminderResponse = z.infer<typeof RestaurantReopenRe
 
 // ---------------------------------------------------------------------------
 // Restaurants vertical — food order lifecycle (C2,
-// docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md §5 Lane C). Dormant behind
+// docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md §5 Lane C). Dormant behind
 // RestaurantsEnabledGuard like every other merchant/restaurants route (C1). Pricing config
 // (RESTAURANTS_PRICING, N-01/N-15) and timing config (RESTAURANTS_TIMING, N-03/N-18) live in
 // ./restaurants-order — the client never computes a total or a deadline, only renders the server's.

@@ -74,30 +74,29 @@ older parts of the status board.
 | [`WEBSITE.md`](./WEBSITE.md) | 🟢 Living (runbook) | lyniago.com, the marketing site: the design handoff shipped as-is on Cloudflare Workers, the CI guard, one-time setup, deploy/verify/rollback. |
 | [`seo/`](./seo/README.md) | 🟢 Living (plan) | Search and AI-visibility plan for lyniago.com in Harare. Phases 0–3 as checklists, the monthly AI-visibility loop, keyword map and targets, ready-to-use drafts, and the open owner decisions. |
 
-## Routine ledgers & reports
+## Routine ledgers, plans & archive
 
-The scheduled Claude routines (`ROUTINES.md` is the canonical spec, `routines/*.md` the live
+The scheduled Claude routines (`ROUTINES.md` is the canonical spec, `routines/*.md` the
 trigger-prompt mirrors) keep their working state here:
 
 - **Ledgers (living):** `KNOWN_BUGS.md` (the shared bug ledger every routine dedupes through),
-  `REFACTOR-LEDGER.md` (hotspot map + debt register), `doc-sync-report.md` + `.last-doc-sync`
-  (the doc-reconciliation routine's latest run, overwritten each run).
-- **Dated reports (one per lane):** `BUG-HUNT-*`, `UX-USABILITY-REVIEW-*`, `DEEP-SWEEP-*`,
-  `WALLET-DATA-AUDIT-*`, `REFACTOR-*`, `PR-HEALTH-REPORT-*`. **Only the most recent report per
-  lane is kept on `main`** (retention rule in `ROUTINES.md`) — older runs live in git history,
-  and their durable findings are already in the ledgers.
-- **Plans (`plans/`):** design/arming/roadmap docs still load-bearing or cited from code — the
-  restaurants+send joint launch plan, merchant verticals plan + design brief + P0 execution
-  report, rider-wallet design + brief, architecture-hardening roadmap (incl. the absorbed
-  competitor-gap appendix), admin-console deployment + arming, identity/POD hardening,
-  status-keyed query audit, biker prepaid commission, DS3 plan, test-APK build plan. Fully
-  executed plans are retired to git history once nothing cites them.
-- **Design notes:** `RF-05-WS-GATEWAY-STATE.md` (the in-flight RF-05 gateway-state extraction —
-  status lives in `REFACTOR-LEDGER.md`).
+  `REFACTOR-LEDGER.md` (hotspot map + debt register), `.last-doc-sync` (the doc-reconciliation
+  routine's marker; its `doc-sync-report.md` is written on its next run).
+- **Dated reports (one per lane):** a routine writes its dated report next to these docs and
+  deletes the lane's previous one in the same PR (retention rule in `ROUTINES.md`). The July and
+  August reports were removed on 2026-10-12; their durable findings are in the ledgers.
+- **Plans (`plans/`):** plans still in progress or cited from code: rider-wallet design + brief,
+  admin-console deployment + arming, merchant-console deployment, identity/POD hardening, biker
+  prepaid commission, DS3 plan, test-APK build plan, GCP→Azure migration, merchant web upgrade,
+  multi-branch owners, restaurant auto-accept, automated E2E routines, customer web app.
+- **Archive (`archive/`):** finished reviews, RCAs and executed plans that code or `CLAUDE.md`
+  still cite for the reasoning behind a choice (tap-responsiveness and cold-start RCAs, the
+  2026-08 UI-kit audits, the low-connectivity program, the restaurants+send launch plan, …).
+  Frozen: not kept current, and not link-checked.
 
-Everything else that was point-in-time (one-off reviews whose findings shipped, executed fix
-plans, superseded snapshots) is pruned from the working tree — `git log --follow docs/<file>`
-recovers any of it.
+Anything that was point-in-time and cited by nothing is deleted; `git log --all -- docs/<file>`
+recovers it. CI (`scripts/check-doc-links.mjs`) fails a PR that leaves a reference to a doc that no
+longer exists.
 
 ## Reading order
 

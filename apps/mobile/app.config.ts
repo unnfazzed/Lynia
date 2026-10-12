@@ -170,7 +170,7 @@ const config: ExpoConfig = {
    * It was turned on (with the Didit native KYC SDK, which requires it) for internal-track build #31,
    * and every build carrying that surface — #31, #32, and #33 (which added the JS-only boot-graph
    * hardening) — dies on a real handset at cold start: green splash, then "LyniaGo keeps stopping".
-   * Build #33 was the discriminator the RCA (docs/COLD-START-CRASH-RCA-2026-08-21.md §8) set up: it
+   * Build #33 was the discriminator the RCA (docs/archive/COLD-START-CRASH-RCA-2026-08-21.md §8) set up: it
    * made every module-scope boot statement non-fatal, so the crash surviving it localises the fault
    * below the JS module graph — in native React-instance/TurboModule-registry creation, exactly the
    * half no CI here can exercise. Per the RCA's recorded decision, this reverts BOTH native changes

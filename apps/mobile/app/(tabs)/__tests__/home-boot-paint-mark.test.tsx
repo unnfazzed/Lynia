@@ -1,5 +1,5 @@
 /**
- * `boot_home_paint` (RCA §1.2/§6, docs/CUSTOMER-JOURNEY-LOAD-PERF-2026-08-17.md): the third
+ * `boot_home_paint` (RCA §1.2/§6, docs/archive/CUSTOMER-JOURNEY-LOAD-PERF-2026-08-17.md): the third
  * cold-start RUM mark — the redirect→home segment `boot_home` never covered. Two properties are
  * pinned, both review decisions:
  *   1. PRESENTED-frame semantics: the mark is enqueued from `runAfterInteractions`, never from the

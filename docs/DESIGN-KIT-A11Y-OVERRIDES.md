@@ -6,7 +6,7 @@ the handful of places where the app deliberately deviates from the kit *to satis
 applying "kit is source of truth" literally would reintroduce a failure. For these, the **kit adopts the
 app's value**, not the other way round.
 
-See `docs/UI-KIT-VS-SHIPPED-VISUAL-AUDIT-2026-08-05.md` §9 for how this category was identified.
+See `docs/archive/UI-KIT-VS-SHIPPED-VISUAL-AUDIT-2026-08-05.md` §9 for how this category was identified.
 
 ---
 

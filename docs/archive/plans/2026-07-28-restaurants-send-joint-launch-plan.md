@@ -5,7 +5,7 @@ Restaurants vertical. Execution runs via the five scheduled **build loops** (§6
 are the lane checklists in §5, ticked in the same PR as the work.
 **Founder decision (2026-07-28):** **Restaurants and Send (parcels) launch at the same time**, in
 one binary, one launch moment. This supersedes the phased go-to-market in
-`docs/plans/2026-07-26-merchant-verticals-plan.md` §0a (Express-first launch, Restaurants
+`docs/archive/plans/2026-07-26-merchant-verticals-plan.md` §0a (Express-first launch, Restaurants
 mid-October) and the design-side reveal mechanics (D-02 is already revised in the design source:
 both tiles from first run, no "new service" moment).
 **Design source of truth:** `packages/design/` as refreshed by the PR that adds this file
@@ -17,7 +17,7 @@ git history); standing engineering guide = `packages/design/HANDOFF.md`.
 **Still binding from the 2026-07-26 plan:** §0b locked architecture decisions, §2 repo strategy
 (trunk + dormant-on-merge PRs, monorepo isolation, dependency-cruiser boundary), §4 test gates,
 §7 money-safety non-negotiables (as amended by §4 below), the status-keyed-query audit
-(`docs/plans/2026-07-27-status-keyed-query-audit.md`), and the sensitive-lane review doctrine in
+(`docs/archive/plans/2026-07-27-status-keyed-query-audit.md`), and the sensitive-lane review doctrine in
 `docs/ROUTINES.md`.
 
 > Where this doc and the code disagree, the code wins — reconcile and flag it.

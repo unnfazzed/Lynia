@@ -1,6 +1,6 @@
 /**
  * C2 (food order lifecycle) — pricing + timing config, as config not constants
- * (docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md §5 Lane C, packages/design/
+ * (docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md §5 Lane C, packages/design/
  * RESTAURANTS-DECISIONS.md). Mirrors the ./pricing.ts pattern (a single named FARE-shaped object +
  * pure functions), so a future tuning pass or per-corridor override touches this file, not a sweep
  * through the service. Money math goes through ./money (roundToCents) — the one arithmetic seam.

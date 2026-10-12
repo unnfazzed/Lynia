@@ -450,7 +450,7 @@ flipping back to Bird Verify later is just re-setting `OTP_CHANNEL=bird-verify`.
 
 ## WhatsApp fallback channel (Cloud API) — status & runbook
 
-_Absorbed from the retired `docs/WHATSAPP-SETUP.md`. Status snapshot **2026-07-13** — Meta-side
+_Absorbed from the retired WhatsApp setup doc. Status snapshot **2026-07-13** — Meta-side
 state may have moved since; the backend integration (`WhatsAppOtpSender`) is complete and
 `whatsapp` is still the code default (`env.ts`), so this path stays armable if Bird ever fails._
 

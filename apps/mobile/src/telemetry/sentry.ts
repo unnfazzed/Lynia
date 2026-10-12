@@ -10,7 +10,7 @@ let enabled = false;
 /**
  * Load the SDK, ONCE, and never let that failure escape.
  *
- * WHY THIS IS NOT A TOP-LEVEL IMPORT ANY MORE (MOB-BOOT-04, docs/COLD-START-CRASH-RCA-2026-08-21.md).
+ * WHY THIS IS NOT A TOP-LEVEL IMPORT ANY MORE (MOB-BOOT-04, docs/archive/COLD-START-CRASH-RCA-2026-08-21.md).
  * `app/_layout.tsx` imports this module at module scope, on purpose, so crash handlers arm before app
  * code runs. But `app/_layout.tsx` is itself evaluated EAGERLY by expo-router while it builds the route
  * tree (`getRoutesCore.js` calls `loadRoute()` for every `_layout`), and the app's only React error
@@ -158,7 +158,7 @@ export function captureException(error: unknown, context?: CaptureContext): void
  * That gap is real: an unhandled Android `AssertionError` arrived from
  * `com.facebook.infer.annotation.Assertions` with no message and no context, and nothing in this app
  * sets a tag, a user, or a breadcrumb anywhere, so there was nothing to reconstruct it from. See
- * `docs/SENTRY-TRIAGE-2026-08-17.md` §2.
+ * `docs/archive/SENTRY-TRIAGE-2026-08-17.md` §2.
  */
 export function addBreadcrumb(message: string, data?: Record<string, unknown>): void {
   if (!enabled || !sentry) return;

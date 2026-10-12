@@ -63,7 +63,7 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
 
 - **Copy-string matching is not parity.** Two 2026-08 audits reported ✅ by grepping copy strings and
   route existence; the pixel audit that followed found **1 of 244 screens matched**
-  (`docs/UI-KIT-VS-SHIPPED-VISUAL-AUDIT-2026-08-05.md`). A screen matches only when structure,
+  (`docs/archive/UI-KIT-VS-SHIPPED-VISUAL-AUDIT-2026-08-05.md`). A screen matches only when structure,
   geometry, colour, type **and** copy match.
 - **The code argues against the design; the code is wrong.** Divergences are defended in comments as
   "the equivalent", "deliberate", "deferred re-architecture". **A code comment justifying a

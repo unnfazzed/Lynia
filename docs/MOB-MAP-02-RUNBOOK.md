@@ -16,7 +16,7 @@ restriction is now applied by Terraform through two dispatchable workflows, not 
 > **Do not confuse this with the transient "map failed to load" card.** That symptom —
 > the failure card appearing and then clearing itself once tiles arrive — was a *false positive*
 > caused by a 9 s `onMapLoaded` deadline on a 600 ms-RTT link, diagnosed in
-> `docs/CUSTOMER-JOURNEY-LOAD-PERF-2026-08-17.md` §3.1 and **fixed in code** (staged 9 s passive line
+> `docs/archive/CUSTOMER-JOURNEY-LOAD-PERF-2026-08-17.md` §3.1 and **fixed in code** (staged 9 s passive line
 > / 22 s actionable card, `apps/mobile/src/ui/ComposeMap.tsx`). MOB-MAP-02 is the *other* half: a card
 > that shows and tiles that never arrive. Fixing the key does not remove the flash, and fixing the
 > flash does not repair a rejected key.
@@ -25,8 +25,8 @@ restriction is now applied by Terraform through two dispatchable workflows, not 
 
 ## What the evidence already rules in and out
 
-Three causes were listed in `docs/MAPS-LOADING-REVIEW-2026-08-16.md` §3. Two facts found on 2026-08-17
-(`docs/SENTRY-TRIAGE-2026-08-17.md`) change that ranking materially — read this before spending time on
+Three causes were listed in `docs/archive/MAPS-LOADING-REVIEW-2026-08-16.md` §3. Two facts found on 2026-08-17
+(`docs/archive/SENTRY-TRIAGE-2026-08-17.md`) change that ranking materially — read this before spending time on
 the wrong one.
 
 **❌ ELIMINATED — "the key never reached the manifest" (was candidate 3).** `apps/mobile/app.config.ts`
@@ -38,7 +38,7 @@ finished is a build whose key was present. **The key IS in the EAS `preview` env
 
 **⚠️ RE-FRAMED — "the Play app-signing SHA-1 was never listed" (was candidate 1, ranked most likely).**
 This cannot be the whole story as originally written. The 2026-08-05 device audit
-(`docs/UI-KIT-VS-SHIPPED-AUDIT-2026-08-05.md` §2.0) records a **photograph of the installed Android
+(`docs/archive/UI-KIT-VS-SHIPPED-AUDIT-2026-08-05.md` §2.0) records a **photograph of the installed Android
 build showing Google tiles for Harare rendering, with the Google attribution baked into the tile
 surface** — and the Play internal track had been live since 2026-08-04 ~10:00 UTC. If the app-signing
 certificate had never been on the allowlist, that build would have been blank too.
@@ -233,7 +233,7 @@ Google tiles for Harare with the attribution baked into the tile surface — til
 key is accepted; a rendered map *frame* is not.
 
 The app also reports itself now: a still-blank map sends `compose-map-not-loaded` to Sentry tagged
-`map_load_signal=onMapLoaded` (`docs/SENTRY-TRIAGE-2026-08-17.md`). No event after a successful send
+`map_load_signal=onMapLoaded` (`docs/archive/SENTRY-TRIAGE-2026-08-17.md`). No event after a successful send
 means the map is drawing.
 
 ## Step 4 — Make it stick (Route B: Terraform, and it runs from a phone)

@@ -196,7 +196,7 @@ without reading those entries first — the Sentry one specifically cannot be co
 ## Ranked backlog (next wins)
 
 > **2026-08-01 — LC program takeover:** several items below are now scheduled checklist items of
-> the Harare low-connectivity program (`docs/plans/2026-08-01-low-connectivity-program.md` §5,
+> the Harare low-connectivity program (`docs/archive/plans/2026-08-01-low-connectivity-program.md` §5,
 > loops `docs/routines/harare-loops.md`) — items 3/4/5/6 and the ALR/PW device-side tails map to
 > lanes A/B/C there. This backlog keeps the ranking; the LC loops burn it down; the weekly
 > performance watch stays the standing owner of server-side latency/cost. Two forward-looking

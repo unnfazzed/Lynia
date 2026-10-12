@@ -1118,7 +1118,7 @@ provider event id.
 
 **Central client reliability policy (C-O2, mobile).** DoorDash lesson 6 ("client reliability policy
 belongs to the contract, not call sites") and lesson 7 (jitter over synchronized retries — see
-`docs/plans/2026-08-01-low-connectivity-program.md` §3). Before this, every mobile network edge
+`docs/archive/plans/2026-08-01-low-connectivity-program.md` §3). Before this, every mobile network edge
 picked its own timeout constant independently (`client.ts` 15s, `uploads.ts` a duplicated "mirrors
 client.ts" 15s, `places.ts` 8s, the feature-flags/version-gate boot checks 10s, the reachability
 probe 5s) and TanStack Query's retry backoff was left at the library's un-jittered default.

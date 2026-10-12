@@ -9,7 +9,7 @@
 # clicking in the console, and on 2026-08-16 that cost a working send-parcel flow:
 # the customer compose map rendered blank on the installed internal-track build,
 # which took address entry down with it (MOB-MAP-01/-02, docs/KNOWN_BUGS.md;
-# docs/MAPS-LOADING-REVIEW-2026-08-16.md). The restriction rules that prevent it are
+# docs/archive/MAPS-LOADING-REVIEW-2026-08-16.md). The restriction rules that prevent it are
 # written down in docs/SECURITY-OPS.md §B and were simply not reflected in the
 # console. A doc nobody re-reads is not a control; this file is.
 #

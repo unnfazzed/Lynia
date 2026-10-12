@@ -3,7 +3,7 @@
 **Owner report (2026-08-19):** *"Review the android app responsiveness. I noticed if I click a button
 it takes time to respond."*
 
-This is a different question from `docs/CUSTOMER-JOURNEY-LOAD-PERF-2026-08-17.md`, which analysed how
+This is a different question from `docs/archive/CUSTOMER-JOURNEY-LOAD-PERF-2026-08-17.md`, which analysed how
 long a screen takes to **load** once it is on its way. This analyses the earlier segment: the gap
 between the finger landing on a control and the app **acknowledging** it. Each finding names the
 mechanism, the evidence in the repo, and the delivery lane.
@@ -16,7 +16,7 @@ records how each fix would have shipped rather than gating it. Finding 3 (the Ne
 deliberately NOT implemented; §5.3 says why and what it would take.
 
 Prior art it builds on and does not re-litigate: `docs/PERFORMANCE.md`,
-`docs/CUSTOMER-JOURNEY-LOAD-PERF-2026-08-17.md` (§1.3 cold-boot request burst, §5.1 signed-URL churn —
+`docs/archive/CUSTOMER-JOURNEY-LOAD-PERF-2026-08-17.md` (§1.3 cold-boot request burst, §5.1 signed-URL churn —
 both still make the *action* slow after the tap), `docs/KNOWN_BUGS.md` (`MOB-BOOT-03`).
 
 ---
@@ -268,7 +268,7 @@ added to that provider. `BootPhaseProvider` (`src/boot/boot-phase.tsx:38`) and `
 
 **None of them measures a tap.** The fleet can currently tell us how fast the server reaches the
 glass and how long a cold start takes, but nothing about the segment the owner is actually reporting.
-`docs/CUSTOMER-JOURNEY-LOAD-PERF-2026-08-17.md` §6 already listed `send_open_glass` as a gap; it was
+`docs/archive/CUSTOMER-JOURNEY-LOAD-PERF-2026-08-17.md` §6 already listed `send_open_glass` as a gap; it was
 never added, while `boot_home_paint` from the same table was.
 
 Two events would close it, both fitting the existing batched-RUM shape and both OTA-able:

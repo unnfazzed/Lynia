@@ -452,7 +452,7 @@ gh secret set TF_PROD_TFVARS < infra/terraform/terraform.tfvars
 
 ## 11. X2 — Restaurants launch-flip rehearsal (run before the go-live flip)
 
-The repeatable checklist for **X2** in `docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §5.
+The repeatable checklist for **X2** in `docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §5.
 Rehearse the flip on staging in **both** flag positions before touching prod, because the flip's whole
 safety story is "flags-off is byte-for-byte the Express product we already run". This section proves
 that claim rather than assuming it.
@@ -587,5 +587,5 @@ keeps being served in full). Code: `apps/api/scripts/backfill-photo-thumbnails.t
 **Where each of these came from:** `docs/DATA-RETENTION.md` (§1–2), `docs/OBSERVABILITY.md` (§3),
 `docs/LOAD-MODEL.md` + `apps/api/load/` (§4), `docs/QA-DEVICE-CHECKLIST.md` (§5), `docs/LAUNCH-READINESS.md`
 scorecard (all), `docs/LAUNCH-DEPLOYMENT-STRATEGY.md` (§8),
-`docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §5 X2 (§11). Nothing here changes app
+`docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §5 X2 (§11). Nothing here changes app
 code — it's the founder-gated execution the agent work prepared.

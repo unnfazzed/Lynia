@@ -13,7 +13,7 @@ Two unresolved issues on the `lynia-mobile` project (14d, all environments):
 
 ### 1.1 What the event actually proves
 
-This event was added on 2026-08-16 (`docs/MAPS-LOADING-REVIEW-2026-08-16.md` §6) so that the next blank
+This event was added on 2026-08-16 (`docs/archive/MAPS-LOADING-REVIEW-2026-08-16.md` §6) so that the next blank
 map would arrive "with a device and a version attached" instead of as a user's description. Its arrival
 is therefore the instrumentation working. Two things follow from it, and only the first was expected.
 

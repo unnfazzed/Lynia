@@ -39,7 +39,7 @@ All eight run **weekly, on Sunday (UTC)** as of 2026-08-04 — see `routine-chai
 
 > **Temporary build loops (2026-07-28): finished.** All five Restaurants + Send lanes completed
 > 2026-07-31 and their triggers no longer exist. `build-loops-restaurants-send.md` is kept as
-> history. See `docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §6.
+> history. See `docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §6.
 
 > **Schedule (all crons) — `routine-chain.md`.** As of 2026-08-04 every routine and LC loop runs
 > once a week on Sunday, on a single hourly grid (one heavy session at a time, one frequency dial).

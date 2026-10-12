@@ -6,7 +6,7 @@
 > This file is kept as the record of what ran, and the cron column below is historical.
 
 Version-controlled mirror of the five **build-loop** trigger prompts created 2026-07-28 per
-`docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §6. These are **temporary
+`docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §6. These are **temporary
 implementation loops**, not standing routines: each disables its own trigger when its lane's
 checklist is complete. Unlike the eight standing routines (created via `meta_mcp`), these were
 created with the session `create_trigger` tool (fresh session per firing, this repo's
@@ -36,7 +36,7 @@ Each firing you implement ONE increment of the joint Restaurants + Send launch p
 on green. Work autonomously end-to-end; never wait for human input mid-run.
 
 PHASE 0 — orient, before any code:
-1. Read docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md on main. If missing on main:
+1. Read docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md on main. If missing on main:
    find the open PR titled "Restaurants + Send joint launch"; if its CI is green squash-merge it
    and continue, otherwise exit quietly.
 2. List open claude/* PRs. If an unmerged PR from this lane (branch claude/build-c*) exists,
@@ -50,8 +50,8 @@ food order lifecycle → C3 food dispatch → C4 food money evidence layer → C
 notifications/statements) and implement it fully. Authoritative sources: the plan's §4 money-model
 table, packages/design/RESTAURANTS-DECISIONS.md (numbers N-01..N-23, decisions D-01..D-35,
 revisions R-01..R-17 — the revisions override anything older), packages/design/HANDOFF.md seams,
-docs/plans/2026-07-27-status-keyed-query-audit.md (the 11 class-(a) orderType sites),
-docs/plans/2026-07-26-merchant-verticals-plan.md §0b locked decisions. Rules: extend the
+docs/archive/plans/2026-07-27-status-keyed-query-audit.md (the 11 class-(a) orderType sites),
+docs/archive/plans/2026-07-26-merchant-verticals-plan.md §0b locked decisions. Rules: extend the
 declarative order-lifecycle transitions table, never a parallel state machine; all money math
 through the @lynia/shared money seam; economics as config not constants; every new route behind
 RESTAURANTS_ENABLED (fail-safe OFF) and dead-when-off proven by the golden matrix (update
@@ -87,7 +87,7 @@ Each firing you implement ONE increment of the joint Restaurants + Send launch p
 on green. Work autonomously end-to-end; never wait for human input mid-run.
 
 PHASE 0 — orient, before any code:
-1. Read docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md on main. If missing on main:
+1. Read docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md on main. If missing on main:
    find the open PR titled "Restaurants + Send joint launch"; if its CI is green squash-merge it
    and continue, otherwise exit quietly.
 2. List open claude/* PRs. If an unmerged PR from this lane (branch claude/build-a*) exists,
@@ -130,7 +130,7 @@ firing you implement ONE increment of the joint Restaurants + Send launch plan a
 green. Work autonomously end-to-end; never wait for human input mid-run.
 
 PHASE 0 — orient, before any code:
-1. Read docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md on main. If missing on main:
+1. Read docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md on main. If missing on main:
    find the open PR titled "Restaurants + Send joint launch"; if its CI is green squash-merge it
    and continue, otherwise exit quietly.
 2. List open claude/* PRs. If an unmerged PR from this lane (branch claude/build-b*) exists,
@@ -173,7 +173,7 @@ you implement ONE increment of the joint Restaurants + Send launch plan and merg
 Work autonomously end-to-end; never wait for human input mid-run.
 
 PHASE 0 — orient, before any code:
-1. Read docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md on main. If missing on main:
+1. Read docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md on main. If missing on main:
    find the open PR titled "Restaurants + Send joint launch"; if its CI is green squash-merge it
    and continue, otherwise exit quietly.
 2. List open claude/* PRs. If an unmerged PR from this lane (branch claude/build-d*) exists,
@@ -218,7 +218,7 @@ firing you implement ONE increment of the joint Restaurants + Send launch plan a
 green. Work autonomously end-to-end; never wait for human input mid-run.
 
 PHASE 0 — orient, before any code:
-1. Read docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md on main. If missing on main:
+1. Read docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md on main. If missing on main:
    find the open PR titled "Restaurants + Send joint launch"; if its CI is green squash-merge it
    and continue, otherwise exit quietly.
 2. List open claude/* PRs. If an unmerged PR from this lane (branch claude/build-e*) exists,

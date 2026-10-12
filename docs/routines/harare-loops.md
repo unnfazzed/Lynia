@@ -1,7 +1,7 @@
 # LC loops — Harare low-connectivity program (temporary)
 
 Version-controlled mirror of the five **LC-loop** trigger prompts created 2026-08-01 per
-`docs/plans/2026-08-01-low-connectivity-program.md` (the program spec + master backlog). These are
+`docs/archive/plans/2026-08-01-low-connectivity-program.md` (the program spec + master backlog). These are
 **temporary audit→optimize loops**, not standing routines: each disables its own trigger when its
 lane's checklist is complete. Like the build loops (and unlike the eight standing routines), they
 were created with the session `create_trigger` tool (fresh session per firing, this repo's
@@ -67,7 +67,7 @@ Work autonomously end-to-end; never wait for human input mid-run.
 CODE IS THE SOURCE OF TRUTH (owner instruction 2026-10-05): the code on current `main` (and, for PR/CI/deploy state, the live GitHub/CI/EAS record) is what the system does; the program doc, backlog, KNOWN_BUGS.md, prior reports and code comments are claims. Before skipping or closing anything as done/fixed/covered, open the code it names and confirm it at file:line — if it is not there it is a fresh finding. Build inventories (bundles, screens, requests, flags) from the tree, not from doc lists. A claim you could not confirm is UNVERIFIED, never done. Where a doc and the code disagree, describe reality from the code and fix the stale doc in the same PR; never change code to match a doc that only described it. Cite file:line / command output for every finding, skip and status change.
 
 PHASE 0 — orient, before any code:
-1. Read docs/plans/2026-08-01-low-connectivity-program.md on main. If missing on main: find the
+1. Read docs/archive/plans/2026-08-01-low-connectivity-program.md on main. If missing on main: find the
    open PR titled "Harare low-connectivity program"; if its CI is green squash-merge it and
    continue, otherwise exit quietly.
 2. List open claude/* PRs. If an unmerged PR from this lane (branch claude/lc-a*) exists, babysit
@@ -124,7 +124,7 @@ increment and merge it on green. Work autonomously end-to-end; never wait for hu
 CODE IS THE SOURCE OF TRUTH (owner instruction 2026-10-05): the code on current `main` (and, for PR/CI/deploy state, the live GitHub/CI/EAS record) is what the system does; the program doc, backlog, KNOWN_BUGS.md, prior reports and code comments are claims. Before skipping or closing anything as done/fixed/covered, open the code it names and confirm it at file:line — if it is not there it is a fresh finding. Build inventories (bundles, screens, requests, flags) from the tree, not from doc lists. A claim you could not confirm is UNVERIFIED, never done. Where a doc and the code disagree, describe reality from the code and fix the stale doc in the same PR; never change code to match a doc that only described it. Cite file:line / command output for every finding, skip and status change.
 
 PHASE 0 — orient, before any code:
-1. Read docs/plans/2026-08-01-low-connectivity-program.md on main. If missing on main: find the
+1. Read docs/archive/plans/2026-08-01-low-connectivity-program.md on main. If missing on main: find the
    open PR titled "Harare low-connectivity program"; if its CI is green squash-merge it and
    continue, otherwise exit quietly.
 2. List open claude/* PRs. If an unmerged PR from this lane (branch claude/lc-b*) exists, babysit
@@ -176,7 +176,7 @@ end-to-end; never wait for human input mid-run.
 CODE IS THE SOURCE OF TRUTH (owner instruction 2026-10-05): the code on current `main` (and, for PR/CI/deploy state, the live GitHub/CI/EAS record) is what the system does; the program doc, backlog, KNOWN_BUGS.md, prior reports and code comments are claims. Before skipping or closing anything as done/fixed/covered, open the code it names and confirm it at file:line — if it is not there it is a fresh finding. Build inventories (bundles, screens, requests, flags) from the tree, not from doc lists. A claim you could not confirm is UNVERIFIED, never done. Where a doc and the code disagree, describe reality from the code and fix the stale doc in the same PR; never change code to match a doc that only described it. Cite file:line / command output for every finding, skip and status change.
 
 PHASE 0 — orient, before any code:
-1. Read docs/plans/2026-08-01-low-connectivity-program.md on main. If missing on main: find the
+1. Read docs/archive/plans/2026-08-01-low-connectivity-program.md on main. If missing on main: find the
    open PR titled "Harare low-connectivity program"; if its CI is green squash-merge it and
    continue, otherwise exit quietly.
 2. List open claude/* PRs. If an unmerged PR from this lane (branch claude/lc-c*) exists, babysit
@@ -227,7 +227,7 @@ green. Work autonomously end-to-end; never wait for human input mid-run.
 CODE IS THE SOURCE OF TRUTH (owner instruction 2026-10-05): the code on current `main` (and, for PR/CI/deploy state, the live GitHub/CI/EAS record) is what the system does; the program doc, backlog, KNOWN_BUGS.md, prior reports and code comments are claims. Before skipping or closing anything as done/fixed/covered, open the code it names and confirm it at file:line — if it is not there it is a fresh finding. Build inventories (bundles, screens, requests, flags) from the tree, not from doc lists. A claim you could not confirm is UNVERIFIED, never done. Where a doc and the code disagree, describe reality from the code and fix the stale doc in the same PR; never change code to match a doc that only described it. Cite file:line / command output for every finding, skip and status change.
 
 PHASE 0 — orient, before any code:
-1. Read docs/plans/2026-08-01-low-connectivity-program.md on main. If missing on main: find the
+1. Read docs/archive/plans/2026-08-01-low-connectivity-program.md on main. If missing on main: find the
    open PR titled "Harare low-connectivity program"; if its CI is green squash-merge it and
    continue, otherwise exit quietly.
 2. List open claude/* PRs. If an unmerged PR from this lane (branch claude/lc-d*) exists, babysit
@@ -259,7 +259,7 @@ enabled:false, record it, reconcile docs/routines/harare-loops.md.
 
 **Status (2026-08-04): Lane D checklist COMPLETE.** Every Day-0 defect (D-D0a–f), audit territory
 (D-T1–D-T5), and optimization item (D-O1–O3) in the program doc §5 Lane D section is checked — see
-`docs/LC-D-REPORT-2026-08-04.md`. Per SELF-DISABLE this trigger should now be disabled, but the
+the final Lane D report (git history). Per SELF-DISABLE this trigger should now be disabled, but the
 firing session that closed out D-O3 had no `list_triggers`/`update_trigger`/`create_trigger` tool
 in its toolset (only session-local `CronCreate`/`CronList`/`CronDelete`, a different in-memory job
 store that can't reach this account-level Routine) and could not disable it directly. **The
@@ -289,7 +289,7 @@ human input mid-run.
 CODE IS THE SOURCE OF TRUTH (owner instruction 2026-10-05): the code on current `main` (and, for PR/CI/deploy state, the live GitHub/CI/EAS record) is what the system does; the program doc, backlog, KNOWN_BUGS.md, prior reports and code comments are claims. Before skipping or closing anything as done/fixed/covered, open the code it names and confirm it at file:line — if it is not there it is a fresh finding. Build inventories (bundles, screens, requests, flags) from the tree, not from doc lists. A claim you could not confirm is UNVERIFIED, never done. Where a doc and the code disagree, describe reality from the code and fix the stale doc in the same PR; never change code to match a doc that only described it. Cite file:line / command output for every finding, skip and status change.
 
 DO, in order:
-1. ORIENT: read docs/plans/2026-08-01-low-connectivity-program.md, docs/routines/harare-loops.md,
+1. ORIENT: read docs/archive/plans/2026-08-01-low-connectivity-program.md, docs/routines/harare-loops.md,
    docs/KNOWN_BUGS.md (LC- rows), docs/APP-SIZE.md, docs/PERFORMANCE.md, the four lanes' latest
    docs/LC-*-REPORT-*.md, and the week's merged + open claude/lc-* PRs.
 2. LOOP HEALTH: for each lane, check its last 7 days of firings actually landed work (merged PRs

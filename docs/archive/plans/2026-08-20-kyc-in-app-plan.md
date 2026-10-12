@@ -14,7 +14,7 @@ UI/backend work. It is a plan — nothing here is implemented yet.
 > **Status update (2026-08-22): Route A is reverted; the shipped path is Route A″ — the hosted flow
 > in an in-app WebView sheet.** Route A shipped (builds #31–#33) and every build carrying the
 > New Architecture + Didit SDK pair died at cold start on a real handset (`MOB-BOOT-04`,
-> `docs/COLD-START-CRASH-RCA-2026-08-21.md`); both native changes were reverted together per RCA
+> `docs/archive/COLD-START-CRASH-RCA-2026-08-21.md`); both native changes were reverted together per RCA
 > §8.2, which briefly restored the browser hand-off this plan exists to kill (#866). The owner's
 > instruction is unchanged — no KYC on the Didit website outside the app, everything in app
 > chrome — so the current implementation keeps Route A's shape with the SDK swapped for a WebView:

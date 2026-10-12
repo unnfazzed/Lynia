@@ -1,7 +1,7 @@
 /**
  * X2 — the launch-flip rehearsal, made executable.
  *
- * The joint launch plan (docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md §5, cross-cutting
+ * The joint launch plan (docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md §5, cross-cutting
  * X2) asks for a STAGING run before the flag flip: "flags ON end-to-end golden pass (cash and wallet
  * food order complete with correct ledger entries; NO_RIDER inside cap; race test parcel-bid vs
  * food-offer), then flags OFF regression (Express golden matrix still green, merchant routes dead)".

@@ -37,7 +37,7 @@ branch `claude/merchant-web-platform-upgrade-oylm53` · product spec: `docs/desi
 | Merchant web | `apps/merchant`, a restaurant-only "kitchen tablet": Orders · Menu · Shop · Hours · Statement, plus `/setup`. Every word is kitchen/food. | `app/components/KitchenNav.tsx` |
 | Person ↔ shop | **1 : 1.** `merchants.owner_profile_id` is `UNIQUE`. One phone runs one shop, and a shop has exactly one login. | `schema.prisma` `Merchant`, migration `0041` |
 | Access check | JWT **role claim** (`role === "merchant"`) on `MerchantGuard` and the kitchen socket. The shop is then looked up by `ownerProfileId` in one shared util. | `merchant.guard.ts`, `merchant-lookup.util.ts`, `tracking.service.ts:260` |
-| Onboarding | **None.** `POST /merchant/become` has zero callers. A merchant has only ever been created by curl. It also flips the caller's `Profile.role` to `merchant` **irreversibly**, which silently breaks that person's customer app. | `docs/RCA-MERCHANT-NOT-SET-UP-2026-08-18.md` §2, C-4 |
+| Onboarding | **None.** `POST /merchant/become` has zero callers. A merchant has only ever been created by curl. It also flips the caller's `Profile.role` to `merchant` **irreversibly**, which silently breaks that person's customer app. | `docs/archive/RCA-MERCHANT-NOT-SET-UP-2026-08-18.md` §2, C-4 |
 | Go-live | `Merchant.pilotEnabled` is the gate the customer API filters on. It has **no writer** except the seed. | RCA §3 |
 | Pickup location | `PATCH /merchant/location` exists. The web app **never calls it**, and `placeOrder` 409s without a location. | catalog map, `merchant.controller.ts:80` |
 | Login | Phone + OTP. `/auth/otp/request` sends over **Bird Verify, WhatsApp-only since 2026-09-01** (D-40 addendum; prod `OTP_CHANNEL=bird-verify`, and the Azure release refuses any non-WhatsApp channel). The merchant copy is channel-neutral ("Enter the code we sent to …"). | `auth/bird-verify.ts`, `release-azure.yml:468`, D-40 |
@@ -514,7 +514,7 @@ entries:
 - **No stashes.** `TODOS.md` has three merchant items: `DispatchDecision` retention, the flag clean-up
   (the Piranha pass on `RESTAURANTS_ENABLED`) and commission settlement. Putting shop bookings behind
   `RESTAURANTS_ENABLED` widens the Piranha pass (F1.4).
-- **Retrospective.** `docs/RCA-MERCHANT-NOT-SET-UP-2026-08-18.md`: no merchant ever self-onboarded,
+- **Retrospective.** `docs/archive/RCA-MERCHANT-NOT-SET-UP-2026-08-18.md`: no merchant ever self-onboarded,
   `become` had no caller and go-live had no writer. The recurring pattern is a self-serve capability
   shipped without its ops counterpart. This plan ships each pair in the same layer: sign-up with the
   go-live switch, bookings with the hold, invites with owner transfer.
@@ -1130,7 +1130,7 @@ The rescue map is in Section 2 (20 codepaths, 0 unrescued except DB-down by desi
 ```
 
 **Stale diagram audit.** The plan's previous §6 diagrams (phone-keyed claim at sign-in, Team before
-bookings) are replaced. The design doc's ASCII is current. `docs/RCA-MERCHANT-NOT-SET-UP-2026-08-18.md`
+bookings) are replaced. The design doc's ASCII is current. `docs/archive/RCA-MERCHANT-NOT-SET-UP-2026-08-18.md`
 is history and stays as written.
 
 ### Implementation Tasks

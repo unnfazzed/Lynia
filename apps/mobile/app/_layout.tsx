@@ -37,7 +37,7 @@ import { isCustomerWebBuild } from "../src/web-build";
 
 /**
  * EVERY STATEMENT IN THIS BLOCK RUNS WHERE NOTHING CAN CATCH IT (MOB-BOOT-04,
- * docs/COLD-START-CRASH-RCA-2026-08-21.md).
+ * docs/archive/COLD-START-CRASH-RCA-2026-08-21.md).
  *
  * expo-router evaluates this file EAGERLY while it builds the route tree — `getRoutes()` calls
  * `loadRoute()` for every `_layout` — and the `Try` boundary that catches render errors for the whole

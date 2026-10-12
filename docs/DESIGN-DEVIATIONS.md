@@ -91,7 +91,7 @@ spacing, colour) so they read as the same product. The happy path stays 100% moc
 - Offline / reconnecting banners, stale-cache headers, degraded-network variants
 - Draft restore ("Draft restored" chip + Clear) on the send composer
 - Keyless address-search fallback ("Address search is unavailable — tap the map to set this pin") —
-  removing it restores the silent-`null` P0 that `docs/UI-KIT-VS-SHIPPED-AUDIT-2026-08-05.md` was
+  removing it restores the silent-`null` P0 that `docs/archive/UI-KIT-VS-SHIPPED-AUDIT-2026-08-05.md` was
   written to fix
 - "Map didn't load" fallback, location-permission-off hints
 - Feature-flag degradations (`getServiceTiles(flag)`, flag-off onboarding and role sets) — the kit has
@@ -1534,7 +1534,7 @@ gallery the source of truth, and the gallery currently draws the browser step. S
 recorded here rather than argued in a code comment.
 
 **The deviation.** The three browser exits are removed. Verification runs inside the app through
-Didit's native SDK (Route A, `docs/plans/2026-08-20-kyc-in-app-plan.md` §3). Concretely:
+Didit's native SDK (Route A, `docs/archive/plans/2026-08-20-kyc-in-app-plan.md` §3). Concretely:
 `kyc_pending` loses its "Continue in browser" action and becomes a wait state with at most a
 *Check status* refresh; `kyc_failed` / `kyc_expired` re-enter the capture step instead of minting a
 session and opening a tab; and `kyc_form`'s consent card drops "You'll finish in your browser" while
@@ -1565,7 +1565,7 @@ unaffected (BH-03).
 > because the upstream sync below is still owed.
 
 Commissioned by the navigation review (N-01, N-02) and the KYC plan (P0-1), with decisions D2/D3/D4
-recorded in `docs/plans/2026-08-20-navigation-fix-forward.md`.
+recorded in `docs/archive/plans/2026-08-20-navigation-fix-forward.md`.
 
 **Added — `RJ kyc_unfinished` (1·3b) and `RJ kyc_cant_start` (1·3c).** `kyc_pending` assumed the happy
 path: it says *"your ID check is with Didit"*, which is false for a rider who backed out of the SDK

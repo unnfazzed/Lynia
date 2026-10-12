@@ -274,7 +274,7 @@ reference to the settlement era):
    the resulting `CommissionConfig.enabled`, so `WALLET_REVEAL=false` stopped hiding anything
    without anyone noticing. Found by the 2026-08-16 flag-retirement routine, ledgered, and
    deleted once an owner ship-or-delete call landed — see `docs/KNOWN_BUGS.md` `FLAG-01` and
-   `docs/FLAG-RETIREMENT-2026-08-16.md`. The wallet is now unconditionally visible with no
+   that day's flag-retirement report (git history). The wallet is now unconditionally visible with no
    server-side visibility switch at all; only the rate (`ratePct`) is still server-driven.
    **Collection-integrity metrics (CEO review OV#2):** the metrics layer also tracks
    declared-fare distribution over time, repeat-pair average-fare trend (does a

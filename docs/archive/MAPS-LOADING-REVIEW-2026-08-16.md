@@ -30,7 +30,7 @@ cannot be set by any means available on the screen. `canSubmit` can never become
 degraded flow, it is a closed one — exactly what was reported.
 
 The Places key being absent was observed, not assumed: the 2026-08-05 device audit
-(`docs/UI-KIT-VS-SHIPPED-AUDIT-2026-08-05.md` §2.0) confirmed `placesEnabled() === false` on the
+(`docs/archive/UI-KIT-VS-SHIPPED-AUDIT-2026-08-05.md` §2.0) confirmed `placesEnabled() === false` on the
 installed build. Nothing in the repo provisions it — `.github/workflows/mobile-ota.yml` passes it from
 a GitHub secret, `eas.json`'s build profiles carry no `env` block, and until this change nothing
 asserted the EAS-side variable existed.

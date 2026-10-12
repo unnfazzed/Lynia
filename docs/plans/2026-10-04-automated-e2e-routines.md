@@ -110,9 +110,9 @@ containers don't share state.
 
 ## 5. Outputs
 
-- `docs/e2e-runs/2026-10-05/J1-rider.md` … `J4-order.md`: one per journey.
-- `docs/e2e-runs/2026-10-05/REVIEW.md`: the gstack review findings, ranked.
-- `docs/e2e-runs/2026-10-05/SUMMARY.md`: pass/fail table, failures with repro, and what the automation
+- `docs/e2e-runs/<date>/J1-rider.md` … `J4-order.md`: one per journey.
+- `docs/e2e-runs/<date>/REVIEW.md`: the gstack review findings, ranked.
+- `docs/e2e-runs/<date>/SUMMARY.md`: pass/fail table, failures with repro, and what the automation
   could not cover.
 - A draft PR containing only these files.
 

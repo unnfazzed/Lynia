@@ -18,7 +18,7 @@ What the code says today (`docs/plans/2026-09-29-merchant-web-upgrade-plan.md` �
 
 - **Nobody can join.** `POST /merchant/become` has zero callers. Every merchant so far was made by a
   developer with curl, and each call flipped that person's `Profile.role` for good. The go-live flag
-  `Merchant.pilotEnabled` has no writer. (`docs/RCA-MERCHANT-NOT-SET-UP-2026-08-18.md`)
+  `Merchant.pilotEnabled` has no writer. (`docs/archive/RCA-MERCHANT-NOT-SET-UP-2026-08-18.md`)
 - **A number LyniaGo has never seen can't sign in on the web.** `verifyOtp` refuses to create a profile
   without an `x-device-id` header. The web sends none, and the API's CORS settings would block it anyway.
 - **One phone is one shop.** `merchants.owner_profile_id` is unique, so there's no second login for the
@@ -39,7 +39,7 @@ Context (not demand):
 - The company's own website already lists "Restaurants, Pharmacies, Retailers, Boutiques, Auto shops,
   Butcheries, Grocers, Online stores" under an "Onboard on WhatsApp" button.
 - The July launch gate "≥5 named, committed CBD pilot merchants onboarded" is still unchecked, two weeks
-  past its Sept 15 tripwire (`docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §7–8).
+  past its Sept 15 tripwire (`docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §7–8).
 - The one checkable signal is how many businesses have messaged "Onboard on WhatsApp". It isn't counted
   yet, so the Assignment counts it.
 

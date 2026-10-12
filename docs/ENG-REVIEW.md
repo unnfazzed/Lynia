@@ -416,7 +416,7 @@ run remain founder actions (runbook in `docs/PILOT-READINESS.md`). **Current sta
 ## 7. Batch-4 build — scale headroom + client RUM (PR #85, 2026-07-01)
 
 > Build pass that closes the P2 scale/observability remainder the earlier reviews (and the
-> `docs/INDRIVE-UX-REVIEW.md` roadmap) consciously deferred — the "smooth-under-load, headroom-as-data-grows"
+> retired inDrive UX review roadmap) consciously deferred — the "smooth-under-load, headroom-as-data-grows"
 > tail. Nothing here changes the offer-loop or lifecycle contracts; each item is a hot-path or
 > operability hardening behind the already-shipped behaviour. Status: **SHIPPED.**
 

@@ -398,7 +398,7 @@ export const envSchema = z.object({
   // surfaces (auth, offer loop, order lifecycle, wallet, tracking, SOS) have NO such switch by design:
   // they cannot be turned off. See docs/ARCHITECTURE.md §Core vs non-core.
   NOTIFICATIONS_FEED_ENABLED: z.enum(["true", "false"]).default("true"),
-  // --- Merchant verticals kill switches (docs/plans/2026-07-26-merchant-verticals-plan.md §0b.3) ---
+  // --- Merchant verticals kill switches (docs/archive/plans/2026-07-26-merchant-verticals-plan.md §0b.3) ---
   // Env-var flags per the eng-review decision 3A: fail-safe OFF by default; cohort gating lives on
   // domain rows (Merchant/Profile), NOT here. Mobile reads these via GET /app/feature-flags (the
   // version-gate precedent) — flipping one is a Cloud Run env update (~1 min revision), the accepted

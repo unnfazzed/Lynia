@@ -61,13 +61,13 @@ interleave on the even hours) and the apply/revert procedure live in `docs/routi
 
 > **Temporary build loops (2026-07-28, not part of the eight): finished.** All five lanes of the
 > joint Restaurants + Send launch completed 2026-07-31 and their triggers no longer exist. Spec:
-> `docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §6; prompt mirrors:
+> `docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md` §6; prompt mirrors:
 > `docs/routines/build-loops-restaurants-send.md`, kept as history.
 
 > **Temporary LC loops (2026-08-01, not part of the eight):** four audit→optimize loops + a steer
 > + a refactoring loop run the **Harare low-connectivity program** (low-end Android Go-class
 > devices, metered prepaid 2G/3G) until their lane checklists complete and they self-disable.
-> Spec: `docs/plans/2026-08-01-low-connectivity-program.md`; prompt mirrors:
+> Spec: `docs/archive/plans/2026-08-01-low-connectivity-program.md`; prompt mirrors:
 > `docs/routines/harare-loops.md`. **As of 2026-08-04 they are weekly too**, interleaved on the
 > Sunday grid's even hours (00 steer, 02 LC-A, 04 LC-B, 06 LC-C, 08 LC-D, 10 LC-R — see
 > `docs/routines/routine-chain.md`). Lane D completed and its trigger is disabled. They follow the
@@ -384,7 +384,7 @@ process failure; the ledger is how the routines stay disjoint.
   data-lifecycle), `DOC-` (documentation-reconciliation CODE_BUG rows, filed OPEN with an owning
   lane), `RF-` (refactoring debt register — lives in `docs/REFACTOR-LEDGER.md`, but defects found
   while refactoring are filed here under the owning lane's prefix), `LC-A`/`LC-B`/`LC-C`/`LC-D`
-  (the temporary Harare low-connectivity loops — see `docs/plans/2026-08-01-low-connectivity-program.md`;
+  (the temporary Harare low-connectivity loops — see `docs/archive/plans/2026-08-01-low-connectivity-program.md`;
   they participate in the dedup protocol like the standing bug-finders while they run). Row
   carries: file:line, severity, status, fixing PR.
 - **Dated report files** (same PR): `docs/BUG-HUNT-<date>.md`, `docs/UX-USABILITY-REVIEW-<date>.md`,
