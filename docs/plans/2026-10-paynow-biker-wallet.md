@@ -1,6 +1,6 @@
 # Plan: Paynow top-ups for the biker wallet — UI flow first
 
-Status: **DRAFT — waiting on the owner's calls in § 6**
+Status: **DRAFT — remaining owner calls in § 6 (copy approval, recording the D2 reversal)**
 Date: 2026-10-12
 Scope: the biker's commission-wallet top-up (`app/wallet/top-up.tsx`, `src/ui/rider/TopUpFlow.tsx`, the
 Money tab's pending notices). This plan covers the **UI flow**. Backend work is listed only where the UI depends on it.
@@ -8,6 +8,12 @@ Money tab's pending notices). This plan covers the **UI flow**. Backend work is 
 > **This reverses an earlier owner call.** `docs/plans/2026-rider-wallet-design.md` Premise 4 / D2 said
 > "No Paynow / aggregator", and the plan was to integrate EcoCash directly. Choosing Paynow now removes the Econet merchant
 > onboarding, which was that build's critical path. Record the reversal there when this plan is approved.
+
+> **Design rule for this feature (owner, 2026-10-12):** *"we are using current design and if current design is not enough we
+> do new screens."* Wherever the drawn Rider v2 top-up (T1–T6) covers a state, the app uses it as drawn. Where it doesn't (the fee
+> lines, "Coming soon", the InnBucks and O'mari approve states), **we build the new screen or element ourselves** from the
+> existing kit (`CentreState`, `CodeBoxes`, `CtaBar`/`CtaButton`, rider-kit `Chips`, tokens). We **don't wait for a design export**.
+> Each new screen or element is recorded in one `docs/DESIGN-DEVIATIONS.md` entry (**D-103**), with its copy, so the guardrails still see it.
 
 ---
 
@@ -146,11 +152,10 @@ Three drawn radio cards: EcoCash, InnBucks, O'mari. The default comes from Setti
   provider chips get the same treatment: InnBucks and O'mari show as disabled chips labelled "Coming soon". The server refuses
   `rail: innbucks|omari` on `POST /wallet/topups` until Phase 2, so an old app build can't open an intent on them either.
 - In Phase 2 the label and the disabled state are removed, and the cards return to the drawn look.
-- "Coming soon" isn't drawn, so it goes into the same **D-102** ledger entry as the fee copy.
-- Paynow also supports **OneMoney** and **cards**, but neither is drawn. Not drawn ⇒ not rendered. Adding them needs a
-  design export (see § 6, Q3).
+- "Coming soon" isn't drawn, so it goes into the same **D-103** ledger entry as the fee copy.
+- Paynow also supports **OneMoney** and **cards**. They're out of scope: the current design is "enough" without them (§ 6, Q3).
 - The sub-line "Approve on your phone" is accurate for EcoCash. For InnBucks it's roughly true: you approve in the InnBucks app. For O'mari it's
-  wrong, because you type a code into Lynia. If T4c ships, ask design for a per-provider sub-line.
+  wrong, because you type a code into Lynia. When T4c ships, we write the per-provider sub-line ourselves (for example O'mari: "Enter the code we text you") and add it to D-103.
 
 ### The biker pays the 2.5% transaction fee (owner decision, 2026-10-12)
 The owner decided the biker absorbs Paynow's fee, and the copy says so. The rules every screen below follows:
@@ -175,8 +180,8 @@ The owner decided the biker absorbs Paynow's fee, and the copy says so. The rule
   `fee` and `charged`.
 - When Paynow confirms a payment, the server checks the paid amount (against `amount` or `charged`, depending on (c)), then credits `amount`.
 
-None of these lines is drawn in the rider-v2 handoff. Per the pixel-parity rules they need a **`docs/DESIGN-DEVIATIONS.md` entry
-(D-102)** recording this owner decision and the exact copy, landed with the build PR. The proposed copy is below.
+None of these lines is drawn in the rider-v2 handoff, so per the design rule above we add them as new elements in the drawn
+screens' own style (muted 13/18 text, tokens only). They're recorded in **D-103** with the exact copy, which lands with the build PR. The proposed copy is below.
 
 ### T2 Amount: one new line
 The big amount stays the amount **to the balance**. Under the quick chips, above the existing `amountHint`, one muted 13/18 line:
@@ -203,7 +208,7 @@ not an email. The server sends the merchant account's email, as Paynow's test mo
 - If the call fails immediately (insufficient balance, an invalid number), the flow goes **straight to T6** and never shows T4. The server marks the intent
   `declined` on Paynow's `status=Error`, and the existing poll picks that up on its first read.
 
-### T4b Approve, InnBucks: **NEW, not drawn yet**
+### T4b Approve, InnBucks: **NEW screen, built from the current kit**
 InnBucks doesn't push a prompt. Paynow returns an **authorisation code**, and the biker approves it inside the InnBucks app.
 The proposed state, inside the same `CentreState` frame as T4 so it reads as the same step:
 - Title "Approve $5.00 in InnBucks".
@@ -217,7 +222,7 @@ The proposed state, inside the same `CentreState` frame as T4 so it reads as the
 - Leaving for InnBucks backgrounds our app. That's fine: the durable marker plus the poll on return (and M10–M12 if the OS
   killed us) already cover it.
 
-### T4c Approve, O'mari: **NEW, not drawn yet**
+### T4c Approve, O'mari: **NEW screen, built from the current kit**
 O'mari sends the biker an **OTP by SMS**, and they type it **into Lynia**:
 - Title "Enter the O'mari code". The body names the SMS and shows Paynow's **`otpreference`**, so the biker can match it to the right
   SMS.
@@ -234,7 +239,7 @@ title and T4c's amounts use `charged`, like T4.
 The drawn copy already fits Paynow's outcomes. T6's `failB` ("The prompt timed out or was declined. Nothing was taken
 from your EcoCash.") stays true, because Paynow only debits on approval.
 For later, if design wants it: a reason-specific T6 line for "Insufficient balance". Paynow returns that reason, and
-`PaymentRailResult.reason` already carries it. It isn't drawn, so it isn't in this plan.
+`PaymentRailResult.reason` already carries it. It would be a new element under the design rule. It isn't needed for Phase 1, so it isn't in this plan.
 
 ### Money tab M10–M12, G14, Settings: no change
 They re-read the intent via the device marker and show its `amount`, which is the credit. A Paynow top-up's ledger row is built
@@ -284,7 +289,7 @@ credited amount.
 11. `TopUpFlow` T2, T3 and T4: the fee line, the split line, `requestCta(charged)` and `waitT(topup.charged)` (§ 3). Keep
     `okB(amount)`.
 12. Rider-kit `Chips`: add a per-item `disabled` (and a "Coming soon" label). Use it in `app/settings/index.tsx:237`.
-13. Copy goes in `src/ui/rider/copy.ts`, behind the D-102 ledger entry.
+13. Copy goes in `src/ui/rider/copy.ts`, behind the D-103 ledger entry.
 
 *QA*
 14. Run the four Paynow test numbers through to T5, slow T5, T6 and immediate T6. Run the § 3 fee-mechanism checks, then one live $5
@@ -292,9 +297,9 @@ credited amount.
 
 In Phase 1, InnBucks and O'mari show on T1 as "Coming soon" and can't be selected (§ 3 T1; owner decision, § 6 Q1).
 
-**Phase 2: InnBucks (T4b) and O'mari (T4c).** This needs a design export first.
-- Get T4b and T4c drawn (and T1's per-provider sub-line), either as a rider-v2 addendum or a small `topup-paynow-v1` handoff.
-  They follow that export verbatim, per the pixel-parity rules.
+**Phase 2: InnBucks (T4b) and O'mari (T4c).** We build these as new screens from the current kit (design rule above); there's no design export to wait for.
+- Build T4b and T4c (and T1's per-provider sub-line) as described in § 3, reusing `CentreState`, `CodeBoxes`, `Countdown` and
+  `CtaBar`. Add their copy to D-103.
 - Contract: `Topup` gains optional `authCode`, `authExpiresAt`, `otpReference`, `otpTriesLeft`. Add `POST /wallet/topups/:id/otp`.
 - `TopUpFlow` branches T4 on `rail`. `useTopUp` gains `submitOtp`.
 - The window must become per intent. Today `createTopup` hardcodes `expiresAt = now + TOPUP_WINDOW_MS` (90 s), and `ApproveProgress`
@@ -322,7 +327,7 @@ hosted-page tokenise step, which is a bigger UX decision.
    built in Phase 2.
 2. ~~**Paynow's fee: who pays it?**~~ **DECIDED (owner, 2026-10-12): the biker pays it, and the copy states the 2.5% fee.**
    See § 3, "The biker pays the 2.5% transaction fee". Still open: confirm the InnBucks and O'mari rates with Paynow, and
-   approve the proposed copy for the D-102 ledger entry.
+   approve the proposed copy for the D-103 ledger entry.
    **The rates** (paynow.co.zw/Home/Fees, read 2026-10-12): **EcoCash 2.5%**, a flat percentage with no fixed part, the same as
    OneMoney and Telecash. Cards are 3.5% + 50c. InnBucks and O'mari aren't listed, so confirm those with Paynow. Paynow's
    page confirms the merchant can absorb the fee, add it on top, or split it.
@@ -334,8 +339,8 @@ hosted-page tokenise step, which is a bigger UX decision.
    *(Superseded by the owner's decision above; kept for the record.)* How Lynia would have absorbed it: set the integration so the merchant pays the fee, request the biker's exact amount, credit the
    **gross** amount Paynow reports as paid (not the net settled to the bank), and book the gross-minus-net difference as a
    processing cost at reconciliation.
-3. **OneMoney and cards.** Add them to T1 (needs a design export), or leave them out? *Recommended:* leave them out for now, because EcoCash
-   dominates the pilot corridor.
+3. ~~**OneMoney and cards.**~~ **Out, following the owner's design rule (2026-10-12):** the current design draws EcoCash, InnBucks
+   and O'mari, which is enough. Adding OneMoney later would be a new T1 card under the same rule.
 4. **Record the reversal of D2** ("no Paynow") in `2026-rider-wallet-design.md` and the ledger.
 5. **Paynow account:** a USD integration ID with EcoCash (plus InnBucks and O'mari for Phase 2) enabled, and the merchant login email for
    `authemail`. The integration keys go into the API's secret store, never into the repo.
