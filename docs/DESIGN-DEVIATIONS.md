@@ -5330,3 +5330,22 @@ every online rider gets the push and the board card for every new order.
   retired, every rider joins the single board room, and venue dispatch reaches the whole country (round 1 still
   offers the nearest 10). The board stays nearest-first.
 - **Upstream:** the kit's out-of-area lines should name the country. The kit is not edited.
+
+## D-100 · The sealed-bag photo at pickup is optional for shops and pharmacies too — APPROVED (owner, 2026-10-12)
+
+**Owner instruction (2026-10-12):** "make pictures optional for shops and pharmacies too." Order flow v2 (D-59,
+BRIEF §9) made the rider's sealed-bag photo a condition of a shop's or pharmacy's pickup; restaurants were
+already optional. Now every venue collects on the pickup code alone.
+
+- **Server.** The pickup no longer checks for the photo (`assertPickupProofIfRequired` and its 409
+  `pickup_photo_required` are gone), and the order read no longer sends `pickupProofRequired`. The contract keeps
+  the field for installed apps, which read an absent flag as "optional".
+- **Rider (RD2b–RD2d).** A shop's or pharmacy's pickup takes the restaurant's layout: "I've collected the order" is
+  the primary button and "Photo of the sealed bag" the ghost one. The camera's shutter no longer waits on "Bag is
+  sealed". The hint under it reads **"Optional"** for a shop or pharmacy (replacing the handoff's "Needed for shops
+  and pharmacies"); a restaurant keeps "Optional for restaurants". A photo that can't upload never holds the
+  pickup; the photo hook keeps re-sending it.
+- **Unchanged.** The photo, when taken, is still attached and shown to the customer and the merchant. The "Bag is
+  sealed" tick, the board card's "Sealed bag · photo at pickup" note and the merchant's S3 checklist stay as drawn.
+  The door photo when the delivery code can't be used is still required.
+- **Upstream:** Order flow v2 should draw the shop pickup without the photo gate. The kit is not edited.

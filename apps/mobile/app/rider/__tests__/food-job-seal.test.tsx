@@ -70,7 +70,6 @@ jest.mock("../../../src/query/use-wallet", () => ({ useWalletConfig: () => ({ co
 jest.mock("../../../src/ui/safety", () => ({ ReportSheet: () => null }));
 
 import RiderFoodJob from "../food-job";
-import { ApiError } from "../../../src/api/client";
 
 async function settle(): Promise<void> {
   await act(async () => {
@@ -225,18 +224,15 @@ const CASH = {
 } as const;
 
 
-describe("RD2a / RD2b · a shop's pickup waits on the sealed-bag photo (Order flow v2, D-59)", () => {
-  it("speaks the shop's words, and the full code leads to the camera with the sealed tick", async () => {
+describe("RD2a / RD2b · a shop's sealed-bag photo is optional (Order flow v2, D-59; D-100)", () => {
+  it("speaks the shop's words, collects on the code alone, and offers the photo with the sealed tick", async () => {
     mockGetActiveOrder.mockResolvedValue({ ...BASE_ORDER, status: "en_route_pickup", customerFirstName: "Rudo" } as OrderSnapshot);
     mockGetFoodOrderAsRider.mockResolvedValue({
       ...BASE_FOOD_ORDER,
       ...CASH,
       status: "en_route_pickup",
-      pickupProofRequired: true,
       venue: { name: "Avondale Fresh", businessType: "shop", shopKind: "grocery", kycVerified: false },
     } as MerchantOrderResponse);
-    // FJ-M3: the code is checked before the photo; a right one answers "photo needed first".
-    mockConfirmFoodPickup.mockRejectedValue(new ApiError(409, "Take a photo of the sealed bag before you collect the order.", "pickup_photo_required"));
     const tree = await render();
     // FJ-L1: a shop's job speaks of the shop, not a kitchen.
     for (let i = 0; i < 20 && !textOf(tree).includes("I'm at the shop"); i++) await settle();
@@ -248,19 +244,23 @@ describe("RD2a / RD2b · a shop's pickup waits on the sealed-bag photo (Order fl
     expect(text).toContain("Ask the shop for the pickup code");
     expect(text).not.toContain("kitchen");
     await typeCode(tree, "Ask the shop for the pickup code", "731604");
+    // The photo is offered, never required: the code collects the order on its own.
     await pressCta(tree, "Photo of the sealed bag");
-    expect(mockConfirmFoodPickup).toHaveBeenCalledWith("order-1", "731604");
     text = textOf(tree);
     expect(text).toContain("Bag is sealed");
     expect(text).toContain("Sticker or stapled receipt across the opening");
-    expect(text).toContain("Needed for shops and pharmacies");
+    expect(text).toContain("Optional");
+    expect(text).not.toContain("Needed for shops and pharmacies");
     const shutterOff = () => tree.root.findAll((n) => n.props.testID === "shutter" && typeof n.props.onPress === "function").some((n) => n.props.disabled === true);
-    expect(shutterOff()).toBe(true);
+    expect(shutterOff()).toBe(false);
     const tick = tree.root.findAll((n) => n.props.accessibilityRole === "checkbox" && n.props.accessibilityLabel === "Bag is sealed" && typeof n.props.onPress === "function")[0]!;
     await act(async () => {
       tick.props.onPress();
     });
     // The tick is told to the server straight away (the bag can be ticked before the photo).
     expect(mockAttachProof).toHaveBeenCalledWith("order-1", { bagSealed: true });
+    expect(mockConfirmFoodPickup).not.toHaveBeenCalled();
+    await pressCta(tree, "I've collected the order");
+    expect(mockConfirmFoodPickup).toHaveBeenCalledWith("order-1", "731604");
   });
 });
