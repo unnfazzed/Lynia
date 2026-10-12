@@ -5229,7 +5229,7 @@ on a sibling state of the same screen.
 - **U62 + MJ-RL2 (C10), the select race.** After Send v2 draws one select-race toast, "{name} was just taken by another
   customer. Pick another rider." (`A.taken`). It is now shown only when that is true (the rider was just assigned
   elsewhere, 409 `rider_taken`, or an older API). A rider who went offline or lost standing, or whose offer closed,
-  reads **"{name} isn't available any more. Pick another rider."** (`orderText.gone`) in the same toast; the drawn
+  reads **"{name} is unavailable. Pick another rider."** (`orderText.gone`) in the same toast; the drawn
   second sentence is kept. A time to choose that ran out shows no toast (nobody is left to pick; the screen moves to
   No rider yet). At the drawn "Choose in 0:00" the order is re-read; Choose stays enabled (the phone clock is not the server's), and a late pick gets the silent `choose_ended` refusal. Offers
   the server would refuse are no longer listed (no new element).
@@ -5238,3 +5238,20 @@ on a sibling state of the same screen.
   the drawn success toast ("Ready time pushed back 5 min · customer told"), since the first tap did land.
 - **Upstream:** order-flow-v2 should draw the N-18 ending and a D5b reason; after-send-v2 should draw the "rider no
   longer available" variant of the select race. Reported upstream; the kit is not edited here.
+
+## D-95 · Merchant: a confirm before a new buyer's code, the staff invite line — APPROVED (owner, 2026-10-12)
+
+**Owner approval (2026-10-12):** *"part A approved .. but on copy do not be wordy, be smart"* (pending list
+2026-10-11 §3). Copy only, through elements the handoff already draws (D6). D-94's app-only rider line was cut in
+the same pass to **"{name} is unavailable. Pick another rider."**
+
+- **MJ-RL6, "Get a new code".** Rotating the code kills the one the buyer already has, so the tap now opens the
+  existing `ConfirmSheet`: **"New code?"** · **"The buyer's old code stops working."** · **Get new code** / Keep. The
+  toast after it reads **"New code · send it to the buyer"**; the card's drawn "Send to buyer" is the next tap.
+- **MJ-RL15, an invite from another business.** Staff work at one business, so a staff member another business
+  invited sees one hint line above the drawn "Leave this business": **"{Business} invited you. Leave this team to
+  join."** Leaving then lands on Join (not "Set up your business") when an invite is waiting. Owners can't leave and
+  never see it. The inviter's side is unchanged on purpose: an invite never reveals that a number works elsewhere
+  (`merchant-team.service.ts`, R2-21), so the owner still gets "Invite ready".
+- **Upstream:** merchant-v2 should draw the new-code confirm and the invited-elsewhere line. The kit is not edited.
+

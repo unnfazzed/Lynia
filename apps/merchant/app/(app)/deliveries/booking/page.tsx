@@ -63,6 +63,7 @@ export default function BookingPage() {
   const [error, setError] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [confirmNoCash, setConfirmNoCash] = useState(false);
+  const [confirmNewCode, setConfirmNewCode] = useState(false);
   const actingRef = useRef(false);
   const retryKey = useRef(newIdempotencyKey());
   const signOutRef = useRef(signOut);
@@ -139,12 +140,8 @@ export default function BookingPage() {
         setState({ status: "ready", booking: res.booking });
         toast(`${shortName(o.rider.name) ?? "Your rider"} is on the way`);
       }),
-    onNewCode: () =>
-      void act("code", () => rotateBookingCode(id), (res) => {
-        rememberCode(id, res.deliveryCode);
-        setCode(res.deliveryCode);
-        toast("New code · the old one stops working");
-      }),
+    // MJ-RL6: a new code kills the buyer's, so it asks first (copy: ledger D-95).
+    onNewCode: () => setConfirmNewCode(true),
     onCancel: () => setConfirmCancel(true),
     onRetry: (fare) => void act("retry", () => retryBooking(id, { proposedFare: fare, idempotencyKey: retryKey.current }), (b) => router.replace(bookingHref(b.id))),
     onCashReturned: () =>
@@ -188,6 +185,25 @@ export default function BookingPage() {
             })
           }
           onCancel={() => setConfirmNoCash(false)}
+        />
+      )}
+
+      {confirmNewCode && booking && (
+        <ConfirmSheet
+          title="New code?"
+          body="The buyer's old code stops working."
+          confirmLabel="Get new code"
+          busy={busy === "code"}
+          error={error}
+          onConfirm={() =>
+            void act("code", () => rotateBookingCode(id), (res) => {
+              setConfirmNewCode(false);
+              rememberCode(id, res.deliveryCode);
+              setCode(res.deliveryCode);
+              toast("New code · send it to the buyer");
+            })
+          }
+          onCancel={() => setConfirmNewCode(false)}
         />
       )}
 

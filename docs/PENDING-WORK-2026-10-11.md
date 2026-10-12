@@ -45,7 +45,7 @@ design export) · Code (Claude can do it now, no decision needed).
   with it (D2), and so are national IDs. A new key makes every stored code unreadable: live orders would need a code
   re-issue. If it ever must rotate, ask for a re-encryption script first.
 
-### 1.4 Approve the two new D-94 lines
+### 1.4 Approve the two new D-94 lines — DONE (approved 2026-10-12; rider line cut to "{name} is unavailable. Pick another rider.")
 - `docs/DESIGN-DEVIATIONS.md` → **D-94** adds two app-only strings:
   - "{name} isn't available any more. Pick another rider." (a rider you chose went offline or was taken)
   - "No answer in time. Nothing was charged." (a pharmacy never answered an item approval, N-18)
@@ -98,12 +98,12 @@ design export) · Code (Claude can do it now, no decision needed).
 
 ## 3. Code Claude can do now (no decision needed, say "go")
 
-### 3.1 MJ-RL6: "Get a new code" kills the buyer's code without warning (low)
+### 3.1 MJ-RL6: "Get a new code" kills the buyer's code without warning (low) — DONE (D-95)
 - **Where:** `apps/merchant/app/(app)/deliveries/booking/page.tsx:364`.
 - **Fix:** a confirm step before rotating: "The buyer's current code stops working. Send them the new one." After
   the rotation, put "Send to buyer" first. The confirm copy is app-only, so it needs a one-line ledger entry.
 
-### 3.2 MJ-RL15: an invite to someone already on another business dead-ends silently (low)
+### 3.2 MJ-RL15: an invite to someone already on another business dead-ends silently (low) — DONE, invitee side (D-95)
 - **Where:** `apps/merchant/app/login/page.tsx:244`.
 - **Fix:** when the invited number already belongs to another business, tell the inviter "They already work at
   another business". Show the invitee an Account line "{Business} invited you. Leave this business to join."
@@ -119,7 +119,7 @@ design export) · Code (Claude can do it now, no decision needed).
 - **Admin pharmacist toggle:** let admin tick "is a pharmacist" for a merchant member, so you don't need each
   pharmacy's login (1.1). Size S: an admin endpoint plus a switch on the admin merchant page, audit-logged.
 - **Play ledger entry:** add build `64ba32d4` / submission `14e31fe5` to `docs/PLAY-STORE-SUBMISSION.md`.
-- **C17 arrival push:** the customer gets no push when the rider actually reaches the door (the early push was
+- **C17 arrival push — already shipped (#1129), nothing to do:** the customer gets no push when the rider actually reaches the door (the early push was
   removed in wave 1). The server stamp `riderAtDropoffAt` now exists, so a push on that stamp ("{rider} is at your
   door") is a small change. Its copy needs approval.
 - **FJ partials from #1112** (rider merchant jobs):
@@ -167,7 +167,7 @@ built").
 
 - [ ] 1.1 Tick a pharmacist on every pharmacy
 - [ ] 1.2 Run `thumbs:backfill -- --apply`
-- [ ] 1.4 Approve D-94 copy
+- [x] 1.4 Approve D-94 copy
 - [ ] 1.5 Keep the closed test running ~14 days, then request production access
 - [ ] 2.1 C18: choose (a) or (b)
 - [ ] 2.2 P26: yes / no / later

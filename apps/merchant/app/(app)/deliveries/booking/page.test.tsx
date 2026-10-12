@@ -153,8 +153,22 @@ describe("D5 · Tracking", () => {
     render(<Page />);
     expect(await screen.findByText("Rider coming to your shop")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Get a new code" }));
+    // MJ-RL6: the buyer's code dies with it, so it asks first.
+    expect(screen.getByText("The buyer's old code stops working.")).toBeTruthy();
+    expect(rotateBookingCode).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Get new code" }));
     expect(await screen.findByLabelText("Buyer's code 1 0 5 3 7 7")).toBeTruthy();
-    expect(await screen.findByText("New code · the old one stops working")).toBeTruthy();
+    expect(await screen.findByText("New code · send it to the buyer")).toBeTruthy();
+  });
+
+  it("MJ-RL6: Keep leaves the buyer's code alone", async () => {
+    vi.mocked(getBooking).mockResolvedValue(merchantBooking({ state: "coming", expiresAt: null, rider: RIDER }));
+    render(<Page />);
+    expect(await screen.findByText("Rider coming to your shop")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Get a new code" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Keep" }).at(-1)!);
+    expect(screen.queryByText("The buyer's old code stops working.")).toBeNull();
+    expect(rotateBookingCode).not.toHaveBeenCalled();
   });
 
   it("K5: Step 3 of 5 while the rider comes, and cancels before pickup behind the confirm sheet", async () => {

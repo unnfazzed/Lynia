@@ -14,7 +14,7 @@ import { useBranches } from "../../lib/branches";
 import { clearBusinessCache, useBusiness } from "../../lib/business";
 import { supportWhatsAppUrl } from "../../lib/config";
 import { firstName, initials, ROLE_LABEL } from "../../lib/team";
-import { getTeam, leaveBusiness } from "../../lib/team-api";
+import { getTeam, leaveBusiness, listMyInvites, noBusinessPath } from "../../lib/team-api";
 import { dayKeyFor } from "../../lib/hours";
 import { listRiders } from "../../lib/riders-api";
 
@@ -36,6 +36,7 @@ export default function AccountPage() {
   const { signOut } = useKitchenConnection();
   const toast = useToast();
   const [pendingInvites, setPendingInvites] = useState(0);
+  const [invitedBy, setInvitedBy] = useState<string | null>(null);
   const [riderCount, setRiderCount] = useState<number | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [busy, setBusy] = useState(false);
@@ -58,6 +59,21 @@ export default function AccountPage() {
     };
   }, [owner]);
 
+  // MJ-RL15: staff work at one business, so an invite from another one can only be taken after Leave.
+  const staff = business?.myRole === "staff";
+  useEffect(() => {
+    if (!staff) return undefined;
+    let alive = true;
+    listMyInvites()
+      .then((r) => {
+        if (alive) setInvitedBy(r.invites.find((i) => i.businessName !== business?.name)?.businessName ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [staff, business?.name]);
+
   useEffect(() => {
     let alive = true;
     listRiders()
@@ -79,7 +95,7 @@ export default function AccountPage() {
       clearBusinessCache();
       getAlarmController().stop();
       toast("You left the business");
-      router.replace("/onboarding");
+      router.replace(await noBusinessPath());
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't leave. Try again.");
       setBusy(false);
@@ -137,7 +153,8 @@ export default function AccountPage() {
             </div>
           </>
         )}
-        {business?.myRole === "staff" && (
+        {staff && invitedBy && <p className="m-hint">{`${invitedBy} invited you. Leave this team to join.`}</p>}
+        {staff && (
           <button type="button" className="m-lnk m-red" onClick={() => setConfirm("leave")}>
             Leave this business
           </button>

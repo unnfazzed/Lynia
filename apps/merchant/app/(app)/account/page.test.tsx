@@ -5,13 +5,15 @@ import AccountPage from "./page";
 import { ToastProvider } from "../../components/m/Toast";
 import { merchantProfile } from "../../testing/fixtures";
 
-const state = vi.hoisted(() => ({ business: null as unknown, branches: [] as unknown[] }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn(), push: vi.fn() }) }));
+const state = vi.hoisted(() => ({ business: null as unknown, branches: [] as unknown[], invites: [] as unknown[], replace: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: state.replace, push: vi.fn() }) }));
 vi.mock("../../lib/business", () => ({ useBusiness: () => state.business, clearBusinessCache: vi.fn() }));
 vi.mock("../../lib/branches", () => ({ useBranches: () => state.branches }));
 vi.mock("../../lib/team-api", () => ({
   getTeam: vi.fn(async () => ({ members: [], invites: [{ id: "i1" }] })),
-  leaveBusiness: vi.fn(),
+  leaveBusiness: vi.fn(async () => ({ ok: true })),
+  listMyInvites: vi.fn(async () => ({ invites: state.invites })),
+  noBusinessPath: vi.fn(async () => (state.invites.length > 0 ? "/join" : "/onboarding")),
 }));
 vi.mock("../../lib/riders-api", () => ({ listRiders: vi.fn(async () => ({ riders: [{}, {}, {}, {}], cap: 20 })) }));
 const signOut = vi.fn();
@@ -22,6 +24,7 @@ vi.mock("../../components/Kitchen", () => ({ Kitchen: ({ children }: { children:
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  state.invites = [];
 });
 
 const ALL_DAY = { open: "08:00", close: "22:00" };
@@ -69,5 +72,24 @@ describe("T3 · Account (Merchant v2, D-77)", () => {
     const link = await screen.findByRole("link", { name: /Help & support/ });
     expect(screen.getByText("HELP")).toBeTruthy();
     expect(decodeURIComponent(link.getAttribute("href")!)).toBe("https://wa.me/263770000000?text=Hi LyniaGo, I need help with Sadza Republic");
+  });
+
+  it("MJ-RL15: staff invited by another business are told to leave first, and Leave takes them to Join", async () => {
+    state.business = merchantProfile({ name: "Sadza Republic", myRole: "staff", hours: WEEK });
+    state.branches = [];
+    state.invites = [{ id: "i9", businessName: "Mama's Kitchen" }];
+    show();
+    expect(await screen.findByText("Mama's Kitchen invited you. Leave this team to join.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Leave this business" }));
+    fireEvent.click(screen.getByRole("button", { name: "Leave" }));
+    await vi.waitFor(() => expect(state.replace).toHaveBeenCalledWith("/join"));
+  });
+
+  it("MJ-RL15: an owner never reads invites (they can't leave)", async () => {
+    state.business = merchantProfile({ myRole: "owner", hours: WEEK });
+    state.invites = [{ id: "i9", businessName: "Mama's Kitchen" }];
+    show();
+    await screen.findByText("1 invite open");
+    expect(screen.queryByText(/invited you/)).toBeNull();
   });
 });

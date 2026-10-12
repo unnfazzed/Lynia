@@ -211,7 +211,7 @@ export const orderText = {
   taken: (name: string): string => `${name} was just taken by another customer. Pick another rider.`,
   /** U62 (C10, ledger D-94 — copy only, in the select-race toast): the rider went offline or their offer
    *  closed, so "taken by another customer" would be untrue. The drawn toast's second sentence, verbatim. */
-  gone: (name: string): string => `${name} isn't available any more. Pick another rider.`,
+  gone: (name: string): string => `${name} is unavailable. Pick another rider.`,
   /** "Arriving at pickup in 6 min" */
   etaPickup: (min: number): string => `Arriving at pickup in ${min} min`,
   /** "Arriving at drop-off in 12 min" */
