@@ -368,3 +368,25 @@ export function broadcastRadiusAtMs(ageMs: number, baseRadiusM: number = BROADCA
   }
   return Math.min(r, BROADCAST.maxRadiusM);
 }
+
+/**
+ * Server-side pickup ETA for a bid (owner, 2026-10-12). Since D-99 a rider anywhere in the country can bid,
+ * and the ETA the rider app sends is a tapped chip (5/10/15/20 min) nothing checks, yet it carries a fifth of
+ * the best-match ranking. The API keeps the larger of the rider's claim and this straight-line estimate, so
+ * the ETA the customer reads (and ranks on) can't be shorter than the distance allows.
+ */
+export const PICKUP_ETA = {
+  /** Average motorbike speed across town, straight-line km per hour (deliberately conservative). */
+  kmPerHour: 25,
+  /** Getting going: gear on, out of the yard. */
+  startMinutes: 2,
+  /** Ceiling on the stored estimate (a full day) — beyond it the number stops meaning anything. */
+  maxMinutes: 24 * 60,
+} as const;
+
+/** Minutes for a rider `distanceM` (straight line) from the pickup to get there. */
+export function estimatePickupEtaMinutes(distanceM: number): number {
+  if (!Number.isFinite(distanceM) || distanceM <= 0) return PICKUP_ETA.startMinutes;
+  const minutes = PICKUP_ETA.startMinutes + Math.ceil((distanceM / 1000 / PICKUP_ETA.kmPerHour) * 60);
+  return Math.min(minutes, PICKUP_ETA.maxMinutes);
+}

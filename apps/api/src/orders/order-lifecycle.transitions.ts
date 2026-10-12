@@ -206,7 +206,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     to: "expired",
     actor: "system",
     guard:
-      "guarded CAS status=open_for_offers AND (no pending offer OR createdAt older than OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS) — an order with pending offers stays choosable through the 15 s grace, and the timer re-runs at its end; same CAS as selection, so a just-selected order no-ops; fired by the offer-window timer / reconciler",
+      "guarded CAS status=open_for_offers AND (window end (offerWindowEndsAt, else createdAt + OFFER_WINDOW_MS) passed with no pending offer OR window end + OFFER_CHOOSE_GRACE_MS passed) — an order with pending offers stays choosable through the 15 s grace, a raise can push the end later, and the timer re-runs at whichever moment is next; same CAS as selection, so a just-selected order no-ops; fired by the offer-window timer / reconciler",
     sideEffect:
       "pending offers→expired; OrderEvent(expired); post-commit emitBidExpired + emitOrderStatus(expired) + notifyOrderExpired; persists expiryNoSupply when zero bids AND nobody online nearby",
     source: "matching.service.ts:expireOrder",

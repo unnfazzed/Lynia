@@ -1,10 +1,11 @@
 import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { BROADCAST, broadcastRadiusAtMs, OFFER_CHOOSE_GRACE_MS, OFFER_WINDOW_MS, type SelectOfferConflictReason } from "@lynia/shared";
+import { BROADCAST, broadcastRadiusAtMs, OFFER_CHOOSE_GRACE_MS, offerWindowEndsAt, type SelectOfferConflictReason } from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush } from "../common/broadcast-policy";
 import { openHandoverCode, sealHandoverCode } from "../common/handover-code";
 import { hasOpenMerchantObligation } from "../common/merchant-debt-lock";
+import { offerWindowEndedBy, offerWindowOpenAt } from "../common/offer-window";
 import { riderSelectableNow, SELECTABLE_RIDER_SELECT } from "../common/rider-selectable";
 import { PiiCryptoService } from "../common/pii-crypto.service";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -67,7 +68,7 @@ export class MatchingService {
             // `pickup` (HEAD) feeds the post-commit order:taken board emit; the expanded rider
             // account-standing fields (origin/main) gate a banned/suspended/held rider at select time.
             // otpHash/otpCipher: U22 — a rider-bail re-broadcast clone carries the trip's code (D2).
-            order: { select: { status: true, customerId: true, pickup: true, createdAt: true, otpHash: true, otpCipher: true } },
+            order: { select: { status: true, customerId: true, pickup: true, createdAt: true, offerWindowEndsAt: true, otpHash: true, otpCipher: true } },
             rider: { select: SELECTABLE_RIDER_SELECT },
           },
         });
@@ -91,10 +92,10 @@ export class MatchingService {
           throw selectConflict("order_closed", "This order is no longer open for offers");
         }
         // After-send v2 choose grace: the offers already on screen stay choosable for
-        // OFFER_CHOOSE_GRACE_MS after the window ends (createdAt + OFFER_WINDOW_MS); past that the
-        // expiry job owns the order even if the status hasn't flipped yet. Also pinned in the CAS below.
-        const chooseCutoff = new Date(Date.now() - OFFER_WINDOW_MS - OFFER_CHOOSE_GRACE_MS);
-        if (offer.order.createdAt && offer.order.createdAt <= chooseCutoff) {
+        // OFFER_CHOOSE_GRACE_MS after the window ends (offerWindowEndsAt); past that the expiry job owns
+        // the order even if the status hasn't flipped yet. Also pinned in the CAS below.
+        const chooseCutoffMs = Date.now() - OFFER_CHOOSE_GRACE_MS;
+        if (offer.order.createdAt && offerWindowEndsAt(offer.order).getTime() <= chooseCutoffMs) {
           throw selectConflict("choose_ended", "This order is no longer open for offers — the time to choose has ended");
         }
         pickupPt = (offer.order.pickup as { point?: { lat: number; lng: number } } | null)?.point;
@@ -142,7 +143,7 @@ export class MatchingService {
           where: {
             id: orderId,
             status: "open_for_offers",
-            createdAt: { gt: chooseCutoff },
+            ...offerWindowOpenAt(chooseCutoffMs),
             ...(keptCode ? { otpHash: offer.order.otpHash } : {}),
           },
           data: {
@@ -213,33 +214,39 @@ export class MatchingService {
    * Offer-window expiry. Runs the SAME guarded CAS as selection (ET1): if a customer already
    * selected, the order is no longer open_for_offers, count is 0, and this no-ops. Idempotent.
    *
-   * After-send v2 choose grace: an order that still has PENDING offers stays open until
-   * createdAt + OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS, so the customer can still pick one of them
-   * (selectOffer allows it until then; makeOffer refuses new bids from the window end). An order with
-   * no pending offer expires as soon as this runs (at the window end, the app goes straight to "No
-   * rider yet"). Both arms sit in the CAS predicate, so a deferral never races a selection. A deferred
-   * call returns `graceEndsAt` so the caller can re-run it once the grace is over.
+   * After-send v2 choose grace: an order that still has PENDING offers stays open until its window end
+   * (offerWindowEndsAt) + OFFER_CHOOSE_GRACE_MS, so the customer can still pick one of them (selectOffer
+   * allows it until then; makeOffer refuses new bids from the window end). An order with no pending offer
+   * expires at the window end (the app goes straight to "No rider yet"). Cold start (owner 2026-10-12): the
+   * end can move LATER after this job was queued — a price raise leaves riders a minute — so neither arm
+   * fires before the stored end. Both arms sit in the CAS predicate, so a deferral never races a selection
+   * or a raise. A deferred call returns `retryAt` so the caller can re-run it then.
    */
-  async expireOrder(orderId: string): Promise<{ expired: boolean; graceEndsAt?: Date }> {
+  async expireOrder(orderId: string): Promise<{ expired: boolean; retryAt?: Date }> {
     const result = await this.prisma.$transaction(async (tx) => {
-      const graceCutoff = new Date(Date.now() - OFFER_WINDOW_MS - OFFER_CHOOSE_GRACE_MS);
+      const now = Date.now();
       const res = await tx.order.updateMany({
         where: {
           id: orderId,
           status: "open_for_offers",
-          OR: [{ createdAt: { lte: graceCutoff } }, { offers: { none: { status: "pending" } } }],
+          OR: [offerWindowEndedBy(now - OFFER_CHOOSE_GRACE_MS), { AND: [offerWindowEndedBy(now), { offers: { none: { status: "pending" } } }] }],
         },
         data: { status: "expired" },
       });
       if (res.count === 0) {
-        // Either it already left open_for_offers (selected / cancelled / expired → plain no-op), or it
-        // is still open with pending offers inside the grace → tell the caller when the grace ends.
+        // Either it already left open_for_offers (selected / cancelled / expired → plain no-op), or it is
+        // still open → tell the caller when to look again: the window end if it hasn't come yet (a raise
+        // moved it), else the end of the choose grace (pending offers are still choosable).
         const stillOpen = await tx.order.findFirst({
           where: { id: orderId, status: "open_for_offers" },
-          select: { createdAt: true },
+          select: { createdAt: true, offerWindowEndsAt: true },
         });
-        const graceEndsAt = stillOpen ? new Date(stillOpen.createdAt.getTime() + OFFER_WINDOW_MS + OFFER_CHOOSE_GRACE_MS) : undefined;
-        return { expired: false as const, hadOffers: false, graceEndsAt };
+        let retryAt: Date | undefined;
+        if (stillOpen) {
+          const end = offerWindowEndsAt(stillOpen).getTime();
+          retryAt = new Date(end > now ? end : end + OFFER_CHOOSE_GRACE_MS);
+        }
+        return { expired: false as const, hadOffers: false, retryAt };
       }
 
       // Did the auction attract ANY bid (any status — a withdrawn/declined offer still means a rider
@@ -289,7 +296,7 @@ export class MatchingService {
       }
       void this.notifications.notifyOrderExpired(orderId, noSupply, result.hadOffers);
     }
-    return result.graceEndsAt ? { expired: false, graceEndsAt: result.graceEndsAt } : { expired: result.expired };
+    return result.retryAt ? { expired: false, retryAt: result.retryAt } : { expired: result.expired };
   }
 
   /**
@@ -325,6 +332,7 @@ export class MatchingService {
           proposedFare: true,
           distanceKm: true,
           createdAt: true,
+          offerWindowEndsAt: true,
         },
       });
       if (!order || order.status !== "open_for_offers") return;
@@ -342,6 +350,7 @@ export class MatchingService {
           proposedFare: order.proposedFare.toString(),
           distanceKm: order.distanceKm,
           createdAt: order.createdAt.toISOString(),
+          expiresAt: offerWindowEndsAt(order).toISOString(),
         });
         this.gateway.emitBoardNewOrderToCells(boardEvent, pt.lat, pt.lng, newRadiusM);
       } catch (err) {
@@ -374,7 +383,7 @@ export class MatchingService {
       // t=150s, long after the window closed at t=90s, so a reconnecting dead-zone rider could tap a dead
       // auction. Size the TTL to the order's ACTUAL remaining life instead. If it's already elapsed, don't
       // push at all — the expiry/reconciler owns closing the order out; a stale broadcast is pure noise.
-      const remainingMs = order.createdAt.getTime() + OFFER_WINDOW_MS - Date.now();
+      const remainingMs = offerWindowEndsAt(order).getTime() - Date.now();
       if (remainingMs <= 0) return;
       // best-effort, never throws, un-awaited — same contract as the create-time fan-out.
       void this.notifications.notifyNewBroadcast(

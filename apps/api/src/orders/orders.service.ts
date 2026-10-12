@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { ACTIVE_RIDE_STATUSES, type CustomerOrderOutcome as SharedCustomerOrderOutcome, customerOrderOutcome as sharedCustomerOrderOutcome, type BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, deriveMerchantOrderTrack, isBusinessBookingAccountPhone, isCodItem, type LatLng, merchantAmountDueUsd, OFFER_WINDOW_MS, OrderStatus, type OrderItem, PHONE_REVEAL_STATUSES, isInServiceArea, quoteFare, roundToCents, serviceTownsLabel, summarizeItems } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, type CustomerOrderOutcome as SharedCustomerOrderOutcome, customerOrderOutcome as sharedCustomerOrderOutcome, type BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, deriveMerchantOrderTrack, isBusinessBookingAccountPhone, isCodItem, type LatLng, merchantAmountDueUsd, offerWindowEndAfterRaise, offerWindowEndsAt, offerWindowMsForSupply, OrderStatus, type OrderItem, PHONE_REVEAL_STATUSES, isInServiceArea, quoteFare, roundToCents, serviceTownsLabel, summarizeItems } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush, maxBroadcastRadiusM } from "../common/broadcast-policy";
 import { MicroCache } from "../common/micro-cache";
@@ -9,12 +9,12 @@ import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService } from "../observability/metrics.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
-import { OfferExpiryService } from "../matching/offer-expiry.service";
+import { jitteredDelayMs, OfferExpiryService } from "../matching/offer-expiry.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingService } from "../tracking/tracking.service";
 import { customerSafeCancelReason } from "./cancel-reason";
-import { buildBoardNewOrderEvent, pickupPoint, publicWaypoint } from "./waypoints";
+import { type BroadcastMeta, buildBoardNewOrderEvent, pickupPoint, publicWaypoint } from "./waypoints";
 
 const REVEAL = new Set<string>(PHONE_REVEAL_STATUSES);
 
@@ -77,6 +77,7 @@ const CREATE_RESPONSE_SELECT = {
   suggestedFare: true,
   distanceKm: true,
   createdAt: true,
+  offerWindowEndsAt: true,
 } satisfies Prisma.OrderSelect;
 type CreateResponseOrder = Prisma.OrderGetPayload<{ select: typeof CREATE_RESPONSE_SELECT }>;
 
@@ -256,6 +257,12 @@ export class OrdersService {
       }
     }
 
+    // 2·b1 supply signal: how many online riders the broadcast reaches, resolved BEFORE the insert so it
+    // also sizes the auction (owner 2026-10-12, cold start): with few riders online a 90 s window closes
+    // before most of them have even seen the push. Best-effort (null = unknown → the normal window).
+    const ridersNearby = await this.countNearbyForPickup(input.pickup as unknown as Prisma.JsonValue);
+    const windowMs = offerWindowMsForSupply(ridersNearby);
+
     let order;
     try {
       order = await this.prisma.order.create({
@@ -277,6 +284,7 @@ export class OrdersService {
           disclaimerVersion: input.disclaimerVersion ?? null,
           disclaimerAcceptedAt: input.disclaimerVersion ? new Date() : null,
           idempotencyKey: input.idempotencyKey ?? null,
+          offerWindowEndsAt: new Date(Date.now() + windowMs),
           status: "open_for_offers",
           events: { create: { status: "open_for_offers" } },
         },
@@ -302,13 +310,9 @@ export class OrdersService {
     // rider fan-out below. Correctness is preserved because reconcileStaleOffers already backstops the
     // window transition off the DB even when this enqueue never lands. A .catch keeps a rejected
     // enqueue from surfacing as an unhandledRejection.
-    void this.expiry.schedule(order.id).catch((err) => {
+    void this.expiry.schedule(order.id, jitteredDelayMs(windowMs)).catch((err) => {
       this.logger.error(`expiry schedule failed for order ${order.id}: ${(err as Error).message}`);
     });
-
-    // 2·b1 supply signal: resolve how many online riders are nearby BEFORE returning, so the auction
-    // opens knowing whether anyone was actually pinged. Best-effort (null = unknown → calm fallback).
-    const ridersNearby = await this.countNearbyForPickup(input.pickup as unknown as Prisma.JsonValue);
 
     // Post-commit, best-effort: push the broadcast to nearby online riders (CONCEPT §3.10 — push is
     // the primary new-order channel for riders, alongside the WS board). Never blocks the create.
@@ -318,6 +322,7 @@ export class OrdersService {
       proposedFare: order.proposedFare.toString(),
       distanceKm: order.distanceKm,
       createdAt: order.createdAt.toISOString(),
+      expiresAt: offerWindowEndsAt(order).toISOString(),
     });
 
     return this.toCreateResponse(order, ridersNearby);
@@ -333,9 +338,9 @@ export class OrdersService {
       proposedFare: order.proposedFare.toString(),
       suggestedFare: order.suggestedFare.toString(),
       distanceKm: order.distanceKm,
-      // Auction countdown: the client renders the window off createdAt + OFFER_WINDOW_MS (the same
-      // window the server schedules expiry against). Status is open_for_offers on create.
-      expiresAt: new Date(order.createdAt.getTime() + OFFER_WINDOW_MS).toISOString(),
+      // Auction countdown: the client renders the window off the stored end (offerWindowEndsAt — the
+      // same end the server schedules expiry against). Status is open_for_offers on create.
+      expiresAt: offerWindowEndsAt(order).toISOString(),
       // 2·b1: online riders within the broadcast radius at broadcast time. null = supply unknown.
       ridersNearby,
     };
@@ -390,10 +395,12 @@ export class OrdersService {
     orderId: string,
     pickup: Prisma.JsonValue,
     dropoff: Prisma.JsonValue,
-    meta: { itemDesc: string; suggestedFare: string; proposedFare: string; distanceKm: number | null; createdAt: string },
+    meta: BroadcastMeta,
     // DS17-01: a MID-window re-announce (a price raise) passes the order's remaining life so the FCM
     // push can't outlive the auction. Omitted on create/announce → notifyNewBroadcast's default TTL.
     ttlSeconds?: number,
+    // A price raise pushes every rider in reach again (announcePriceChange), past the per-order sent set.
+    opts?: { repush?: boolean },
   ): Promise<void> {
     try {
       const pt = pickupPoint(pickup);
@@ -423,7 +430,8 @@ export class OrdersService {
       // ticks (MatchingService.expandBroadcast) so a later ring never re-pings these riders. null =
       // no Redis / Redis error → push everyone found (the ticks then also can't run — same degrade).
       const ids = nearby.map((r) => r.profileId);
-      const claimed = (await this.tracking.claimBroadcastRecipients(orderId, ids)) ?? ids;
+      const fresh = (await this.tracking.claimBroadcastRecipients(orderId, ids)) ?? ids;
+      const claimed = opts?.repush ? ids : fresh;
       if (claimed.length === 0) return;
       // best-effort, never throws, un-awaited.
       const info = { pickup: pt.landmark, fare: meta.proposedFare };
@@ -490,13 +498,23 @@ export class OrdersService {
         proposedFare: true,
         distanceKm: true,
         createdAt: true,
+        offerWindowEndsAt: true,
       },
     });
     if (!order || order.status !== "open_for_offers") return;
+    // A rider-bail clone is born without a window end: size it from supply now, exactly like create()
+    // (a customer resend passes its own, so this only fills a null). CAS on the null so a concurrent
+    // announce can't move an end someone already set.
+    let windowEnd = order.offerWindowEndsAt;
+    if (!windowEnd) {
+      const windowMs = await this.offerWindowMsForPickup(order.pickup);
+      windowEnd = new Date(order.createdAt.getTime() + windowMs);
+      await this.prisma.order.updateMany({ where: { id: order.id, status: "open_for_offers", offerWindowEndsAt: null }, data: { offerWindowEndsAt: windowEnd } });
+    }
     // Fire-and-forget, NOT awaited (F-17), exactly like create(): a Redis outage makes queue.add()
     // buffer forever under `maxRetriesPerRequest: null`, so awaiting it would both hang this call and
     // gate the board announce below behind it. reconcileStaleOffers backstops the window transition.
-    void this.expiry.schedule(order.id).catch((err) => {
+    void this.expiry.schedule(order.id, jitteredDelayMs(Math.max(0, windowEnd.getTime() - Date.now()))).catch((err) => {
       this.logger.error(`expiry schedule failed for order ${order.id}: ${(err as Error).message}`);
     });
     await this.broadcastToNearbyRiders(order.id, order.pickup, order.dropoff, {
@@ -505,14 +523,23 @@ export class OrdersService {
       proposedFare: order.proposedFare.toString(),
       distanceKm: order.distanceKm,
       createdAt: order.createdAt.toISOString(),
+      expiresAt: windowEnd.toISOString(),
     });
+  }
+
+  /** The auction length for a pickup, from how many riders a broadcast there reaches right now
+   *  (offerWindowMsForSupply). Best-effort like the count itself: a geo blip gives the normal window. */
+  async offerWindowMsForPickup(pickup: Prisma.JsonValue): Promise<number> {
+    return offerWindowMsForSupply(await this.countNearbyForPickup(pickup));
   }
 
   /**
    * Customer raises their own fare in place on a still-open parcel auction (the redesigned order
-   * screen's "raise price"). Only `proposedFare` moves: createdAt — and therefore expiresAt and the
-   * scheduled expiry job — is untouched, so the countdown never resets. Strictly upward only; offers
-   * already placed stand at the rider's own bid.
+   * screen's "raise price"). Strictly upward only; offers already placed stand at the rider's own bid,
+   * and a rider who answered the old price may bid again at the new one (`fareRaisedAt`, makeOffer).
+   * Cold start (owner 2026-10-12): the raise leaves riders at least a minute to answer the new price
+   * (offerWindowEndAfterRaise) — the countdown never shortens and never runs past the cap. The expiry
+   * job already queued for the old end finds the window still open and defers to the new end.
    *
    * CAS-guarded like every other order transition: the update is predicated on the order still being
    * open, still this customer's, still inside the window, and the stored fare still below the new one —
@@ -522,7 +549,7 @@ export class OrdersService {
   async raisePrice(orderId: string, customerId: string, proposedFare: number): Promise<{ orderId: string; proposedFare: string }> {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      select: { customerId: true, status: true, orderType: true, proposedFare: true, createdAt: true },
+      select: { customerId: true, status: true, orderType: true, proposedFare: true, createdAt: true, offerWindowEndsAt: true },
     });
     if (!order) throw new NotFoundException("Order not found");
     if (order.customerId !== customerId) throw new ForbiddenException("Not your order");
@@ -530,24 +557,27 @@ export class OrdersService {
     if (order.status !== "open_for_offers" || order.orderType !== "parcel") {
       throw new ConflictException("This order is no longer open for offers");
     }
-    // The window is derived exactly like the snapshot's expiresAt (createdAt + OFFER_WINDOW_MS). Past it
-    // the expiry job / reconciler owns the order even if the status hasn't flipped yet.
-    const windowOpenSince = new Date(Date.now() - OFFER_WINDOW_MS);
-    if (order.createdAt <= windowOpenSince) throw new ConflictException("The offer window has closed");
+    // The window is derived exactly like the snapshot's expiresAt (offerWindowEndsAt). Past it the expiry
+    // job / reconciler owns the order even if the status hasn't flipped yet.
+    const now = Date.now();
+    const currentEnd = offerWindowEndsAt(order);
+    if (currentEnd.getTime() <= now) throw new ConflictException("The offer window has closed");
     const fare = new Prisma.Decimal(proposedFare);
     if (fare.lte(order.proposedFare)) {
       throw new BadRequestException("Your new price must be higher than your current price.");
     }
 
+    // The stored end is pinned in the CAS (null pins "still on the legacy createdAt + 90 s end"), so a raise
+    // racing another raise can't extend from a stale end, and the window-open check above still holds.
     const claimed = await this.prisma.order.updateMany({
       where: {
         id: orderId,
         status: "open_for_offers",
         customerId,
-        createdAt: { gt: windowOpenSince },
+        offerWindowEndsAt: order.offerWindowEndsAt ?? null,
         proposedFare: { lt: fare },
       },
-      data: { proposedFare: fare },
+      data: { proposedFare: fare, fareRaisedAt: new Date(now), offerWindowEndsAt: offerWindowEndAfterRaise(order.createdAt, currentEnd, now) },
     });
     if (claimed.count === 0) throw new ConflictException("Order changed, retry");
 
@@ -564,9 +594,10 @@ export class OrdersService {
    *  - `order:status` to the order room — the customer's tracking client refetches its snapshot on it
    *    (signal-only; the status itself is unchanged), so a second device sees the new fare at once.
    *  - the create-time board + FCM path ({@link broadcastToNearbyRiders}) at the NEW fare, with the FCM
-   *    TTL sized to the order's remaining window (DS17-01). The per-order sent set means only riders not
-   *    already pinged for this order get a push (no re-spam on repeated raises); the board card is
-   *    re-emitted for riders who don't have it yet, and riders who do pick the fare up on their poll.
+   *    TTL sized to the order's remaining window (DS17-01). Cold start (owner 2026-10-12): the push goes
+   *    to EVERY rider in reach, not only those the per-order sent set hasn't seen — with a handful of
+   *    riders online all of them were pinged at create, so a sent-set-filtered raise reached nobody but
+   *    a rider staring at the board. The raise endpoint's own throttle bounds the repeats.
    */
   async announcePriceChange(orderId: string): Promise<void> {
     const order = await this.prisma.order.findUnique({
@@ -581,6 +612,7 @@ export class OrdersService {
         proposedFare: true,
         distanceKm: true,
         createdAt: true,
+        offerWindowEndsAt: true,
       },
     });
     if (!order || order.status !== "open_for_offers") return;
@@ -589,7 +621,8 @@ export class OrdersService {
     } catch (err) {
       this.logger.warn(`status emit failed for order ${order.id}: ${(err as Error).message}`);
     }
-    const remainingMs = order.createdAt.getTime() + OFFER_WINDOW_MS - Date.now();
+    const windowEnd = offerWindowEndsAt(order);
+    const remainingMs = windowEnd.getTime() - Date.now();
     if (remainingMs <= 0) return;
     await this.broadcastToNearbyRiders(
       order.id,
@@ -601,8 +634,10 @@ export class OrdersService {
         proposedFare: order.proposedFare.toString(),
         distanceKm: order.distanceKm,
         createdAt: order.createdAt.toISOString(),
+        expiresAt: windowEnd.toISOString(),
       },
       Math.max(1, Math.ceil(remainingMs / 1000)),
+      { repush: true },
     );
   }
 
@@ -641,6 +676,7 @@ export class OrdersService {
         proposedFare: true,
         distanceKm: true,
         createdAt: true,
+        offerWindowEndsAt: true,
         customer: { select: { firstName: true, phone: true } },
       },
     });
@@ -655,6 +691,8 @@ export class OrdersService {
       proposedFare: o.proposedFare.toString(),
       distanceKm: o.distanceKm,
       createdAt: o.createdAt.toISOString(),
+      // When bidding closes (it is no longer always createdAt + 90 s) — the rider's offer countdown.
+      expiresAt: offerWindowEndsAt(o).toISOString(),
       // Rider v2 (ledger D-54): "Rudo is asking $3.00". The first name only — never the phone.
       customerFirstName: o.customer?.firstName?.trim() || null,
       // Owner 2026-10-01: the board tags every job. A business's booking (its customer of record is the
@@ -686,6 +724,7 @@ export class OrdersService {
         proposed_fare: Prisma.Decimal;
         distance_km: number | null;
         created_at: Date;
+        offer_window_ends_at: Date | null;
         pickup_distance_m: number;
         customer_first_name: string | null;
         customer_phone?: string | null;
@@ -699,6 +738,7 @@ export class OrdersService {
              proposed_fare,
              distance_km,
              created_at,
+             offer_window_ends_at,
              ST_Distance(pickup_geog, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) AS pickup_distance_m,
              (SELECT first_name FROM profiles WHERE profiles.id = orders.customer_id) AS customer_first_name,
              (SELECT phone FROM profiles WHERE profiles.id = orders.customer_id) AS customer_phone
@@ -721,6 +761,7 @@ export class OrdersService {
         proposedFare: o.proposed_fare.toString(),
         distanceKm: o.distance_km,
         createdAt: o.created_at.toISOString(),
+        expiresAt: offerWindowEndsAt({ createdAt: o.created_at, offerWindowEndsAt: o.offer_window_ends_at }).toISOString(),
         customerFirstName: o.customer_first_name?.trim() || null,
         kind: boardKind(o.customer_phone),
       }));
@@ -1057,6 +1098,7 @@ export class OrdersService {
         customerId: true,
         riderId: true,
         createdAt: true,
+        offerWindowEndsAt: true,
         pickup: true,
         dropoff: true,
         items: true,
@@ -1327,10 +1369,7 @@ export class OrdersService {
       events: dedupeEventsByStatus(order.events),
       counterpartyPhone,
       // Auction countdown: present only while the order is still open for offers.
-      expiresAt:
-        order.status === "open_for_offers"
-          ? new Date(order.createdAt.getTime() + OFFER_WINDOW_MS).toISOString()
-          : null,
+      expiresAt: order.status === "open_for_offers" ? offerWindowEndsAt(order).toISOString() : null,
       // 2·b1 supply signal: online riders nearby while open (null otherwise / on a geo miss).
       ridersNearby,
     };
