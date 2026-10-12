@@ -114,16 +114,24 @@ Three drawn radio cards: EcoCash, InnBucks, O'mari, each with the sub-line "Appr
 The owner decided the biker absorbs Paynow's fee, and the copy says so. The rules every screen below follows:
 - **The amount the biker types is what reaches their balance.** `minTopUp` $5 and `maxTopUp` $50 still bound that amount.
 - **The fee is 2.5% of that amount, rounded up to the cent:** $5 → $0.13, $10 → $0.25, $20 → $0.50, $50 → $1.25.
-- **The amount charged is the amount plus the fee:** $5.13 … $51.25. Our server sends that amount to Paynow, so it is the amount on the EcoCash prompt.
+- **The amount charged is the amount plus the fee:** $5.13 … $51.25, and that is the amount on the EcoCash prompt.
+- **Mechanism (owner preference): Paynow's "add fees on top" setting is switched ON.** Our server sends Paynow the amount the biker typed
+  ($5.00), and Paynow adds its own 2.5%. This is simpler than computing the charge ourselves, and Lynia settles exactly $5.00, with no
+  few-cent shortfall. **This must be verified before it's relied on.** Paynow's docs describe the setting for its own checkout page
+  but don't say how it behaves for express checkout (`remotetransaction`). The Phase-1 test-mode run must confirm three things:
+  (a) the fee is added on an express-checkout EcoCash request at all;
+  (b) Paynow's rounding, using an odd amount such as $7.00 → $0.175, matches `topupFee` below;
+  (c) which figure the status update's `amount` carries, $5.00 or $5.13.
+  The `resulturl` check depends on (c). Test numbers show no real USSD prompt, so finish with one live $5 top-up on a real line and
+  check that the prompt reads $5.13.
+  **Fallback** if any of (a)–(c) fails: switch the setting OFF and have our server send the grossed-up amount itself. The copy is the
+  same either way. Never have both on, or the biker pays the fee twice.
 - **The rate is served by the server, never hardcoded.** Add `topupFeePct` to `GET /wallet/config` (`CommissionConfig`), the same way
   `ratePct` is served, and make it per rail, since InnBucks and O'mari rates aren't published yet. One shared helper,
-  `topupFee(amount, pct)` in `@lynia/shared`, is used by the app to preview the fee and by the server to set the charge.
-  The `TopUp` record stores `amount` (credited), `fee` and `charged`.
-- **Paynow's own "add fees on top" setting stays OFF**, so the integration is set to merchant-pays. Otherwise Paynow would add its
-  2.5% on top of our already-grossed-up amount and charge the biker twice. Because Paynow takes its 2.5% from the $5.13, Lynia
-  nets about 0.06% less than the credit, about $0.03 on a $50 top-up. That is the price of the copy reading exactly "2.5%".
-  Grossing up to a true net, $5 → $5.13 but $50 → $51.29, would make the shown fee 2.56% and contradict the copy.
-- When Paynow confirms a payment, the server checks that the paid amount equals `charged`, then credits `amount`.
+  `topupFee(amount, pct)` in `@lynia/shared`, previews the fee in the app. It must match Paynow's own figure, which is what (b) checks.
+  If Paynow ever changes its rate, `topupFeePct` changes with it, or the copy lies. The `TopUp` record stores `amount` (credited),
+  `fee` and `charged`.
+- When Paynow confirms a payment, the server checks the paid amount (against `amount` or `charged`, depending on (c)), then credits `amount`.
 
 None of these lines is drawn in the rider-v2 handoff. Per the pixel-parity rules they need a **`docs/DESIGN-DEVIATIONS.md` entry
 (D-102)** recording this owner decision and the exact copy, landed with the build PR. The proposed copy is below.
