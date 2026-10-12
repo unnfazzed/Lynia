@@ -356,7 +356,8 @@ export default function DocumentsScreen(): React.ReactElement {
 
   const rows = (
     <ListCard testID="documents-rows">
-      <ListRow testID="row-id" icon="id-card" iconTone="ok" title={BD.id} value={idOk ? BD.verified : null} valueOk />
+      {/* The ok tone (and "Verified") only once the ID check passed — an unverified rider's ID row is neutral. */}
+      <ListRow testID="row-id" icon="id-card" iconTone={idOk ? "ok" : "n"} title={BD.id} value={idOk ? BD.verified : null} valueOk />
       {photoRow}
       {plateRow}
     </ListCard>
@@ -395,7 +396,8 @@ export default function DocumentsScreen(): React.ReactElement {
           <>
             <ProgressBars done={progress.done} total={progress.total} />
             {rows}
-            <Text style={{ marginTop: 12, marginHorizontal: 4, fontSize: 13, lineHeight: 18.2, color: tokens.color.muted }}>{BD.optional}</Text>
+            {/* "Optional. You can take jobs now." is only true once the ID is verified. */}
+            {idOk ? <Text style={{ marginTop: 12, marginHorizontal: 4, fontSize: 13, lineHeight: 18.2, color: tokens.color.muted }}>{BD.optional}</Text> : null}
           </>
         )}
       </FirstRunScreen>

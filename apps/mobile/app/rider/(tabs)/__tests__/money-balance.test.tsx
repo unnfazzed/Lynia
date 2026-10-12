@@ -15,6 +15,7 @@ const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: 
 let mockWallet: { wallet: { balance: number } | undefined; isError: boolean } = { wallet: { balance: 0 }, isError: false };
 let mockConfig: { floor: number; ratePct: number; minTopUp: number } = { floor: 2, ratePct: 0, minTopUp: 5 };
 let mockFreeLeft: number | undefined;
+let mockKyc: "verified" | "pending" = "verified";
 let mockMarker: { topupId: string } | null = null;
 const mockGetTopup = jest.fn();
 
@@ -34,7 +35,7 @@ jest.mock("expo-secure-store", () => ({
 jest.mock("../../../../src/api/orders", () => ({ getActiveOrder: async () => null, getHistory: async () => [] }));
 jest.mock("../../../../src/api/food-rider", () => ({ getFoodOrderAsRider: async () => null }));
 jest.mock("../../../../src/api/auth", () => ({
-  getMe: async () => ({ rider: { freeJobs: mockFreeLeft == null ? undefined : { left: mockFreeLeft, total: 5 } } }),
+  getMe: async () => ({ rider: { kycStatus: mockKyc, freeJobs: mockFreeLeft == null ? undefined : { left: mockFreeLeft, total: 5 } } }),
 }));
 jest.mock("../../../../src/api/wallet", () => ({ getTopup: (...a: unknown[]) => mockGetTopup(...a) }));
 jest.mock("../../../../src/auth/session", () => ({
@@ -124,6 +125,21 @@ describe("Money · an unreadable wallet (MA-M6)", () => {
     expect(all).toContain("—");
     expect(all).toContain("Trying again in 20 s");
     expect(all).not.toContain(RF.floorB(2));
+  });
+});
+
+describe("Money · Top up is for verified bikers", () => {
+  afterEach(() => {
+    mockKyc = "verified";
+  });
+  it("a verified biker gets Top up", async () => {
+    const t = await renderScreen();
+    expect(texts(t)).toContain("Top up");
+  });
+  it("an unverified biker gets no Top up (the server would refuse: kyc)", async () => {
+    mockKyc = "pending";
+    const t = await renderScreen();
+    expect(texts(t)).not.toContain("Top up");
   });
 });
 

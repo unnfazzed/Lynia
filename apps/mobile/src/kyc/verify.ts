@@ -26,6 +26,8 @@
  * explodes would escape before any catch and break that contract (RCA §3 #3).
  */
 import type { KycSdkResult } from "../logic/gates";
+import { EVENTS, track } from "../telemetry/events";
+import { addBreadcrumb } from "../telemetry/sentry";
 
 /**
  * The deep link the API's `/kyc/return` landing redirects to (`apps/api/src/kyc/kyc.controller.ts`
@@ -76,6 +78,11 @@ export interface KycLaunchOutcome {
  */
 async function cameraPermissionForSheet(): Promise<boolean> {
   try {
+    // Only the in-app sheet needs the app's own camera grant — with no sheet to present, the browser lane
+    // asks per-site itself, so there is nothing to ask here (and no dialog to pop for nothing).
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const host = require("./KycCheckHost") as typeof import("./KycCheckHost");
+    if (!host.canPresentKycCheck()) return true;
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const ImagePicker = require("expo-image-picker") as typeof import("expo-image-picker");
     const current = await ImagePicker.getCameraPermissionsAsync();
@@ -89,30 +96,63 @@ async function cameraPermissionForSheet(): Promise<boolean> {
 }
 
 /**
+ * Start settling the camera permission the in-app sheet needs NOW, before the become / retry call that
+ * mints the session returns. It used to be asked only after that (paid, sometimes slow) call came back, so
+ * the rider waited on the network and THEN on a permission dialog. The caller starts this alongside the
+ * call and hands the promise to `runKycVerification`. Never rejects. When the sheet can't present, nothing
+ * is asked (the browser lane has its own per-site ask).
+ */
+export function primeKycCamera(): Promise<boolean> {
+  return cameraPermissionForSheet();
+}
+
+export interface KycLaunchOptions {
+  /** The camera permission already being settled (`primeKycCamera`), so the sheet doesn't ask again. */
+  camera?: Promise<boolean>;
+}
+
+/** Funnel analytics + a Sentry breadcrumb for one launch. No credentials, no URLs, no PII. */
+function noteLaunch(lane: "sheet" | "browser" | "none", outcome: KycSdkResult, extra?: Record<string, string>): void {
+  track(EVENTS.kycLaunch, { lane, outcome: outcome ?? null, ...extra });
+  addBreadcrumb("kyc.launch", { lane, outcome, ...extra });
+}
+
+/**
  * Attempt to open a verification check. See the module header for the lane order; the outcome
  * mapping is identical from either lane so the walls read the same however the check was shown.
  */
-export async function runKycVerification(creds: KycLaunchCredentials): Promise<KycLaunchOutcome> {
+export async function runKycVerification(creds: KycLaunchCredentials, opts: KycLaunchOptions = {}): Promise<KycLaunchOutcome> {
   const url = creds.verificationUrl;
   // https only — the URL crosses a trust boundary (server → an embedded/OS browser surface), and
   // anything else (http, a scheme-less string, an intent: URL) is not a vendor verification page we
   // should open.
   if (!url || !url.startsWith("https://")) {
+    noteLaunch("none", "failed", { reason: url ? "bad_url" : "no_url" });
     return { outcome: "failed", sessionUnusable: false };
   }
+  addBreadcrumb("kyc.launch.start");
 
   // Lane 1 — the in-app sheet.
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const host = require("./KycCheckHost") as typeof import("./KycCheckHost");
-    if (host.canPresentKycCheck() && (await cameraPermissionForSheet())) {
-      const pending = host.presentKycCheck({ url });
-      if (pending) {
-        return { outcome: await pending, sessionUnusable: false };
+    if (host.canPresentKycCheck()) {
+      const cameraOk = await (opts.camera ?? cameraPermissionForSheet());
+      if (!cameraOk) {
+        track(EVENTS.kycCameraDenied);
+        addBreadcrumb("kyc.camera_denied");
+      } else {
+        const pending = host.presentKycCheck({ url });
+        if (pending) {
+          const outcome = await pending;
+          noteLaunch("sheet", outcome);
+          return { outcome, sessionUnusable: false };
+        }
       }
     }
   } catch {
     // The sheet is an upgrade, never a wall: any failure here falls through to the browser lane.
+    addBreadcrumb("kyc.sheet_unavailable");
   }
 
   // Lane 2 — the in-app browser tab.
@@ -125,10 +165,13 @@ export async function runKycVerification(creds: KycLaunchCredentials): Promise<K
     const browser = await WebBrowser.openAuthSessionAsync(url, KYC_RETURN_REDIRECT);
     // `success` is the redirect back; `cancel` / `dismiss` / anything else is the rider closing the
     // tab, which is "unfinished", not "failed" — they chose to leave, nothing broke.
-    return { outcome: browser.type === "success" ? "completed" : "cancelled", sessionUnusable: false };
+    const outcome = browser.type === "success" ? "completed" : "cancelled";
+    noteLaunch("browser", outcome);
+    return { outcome, sessionUnusable: false };
   } catch {
     // The browser module is missing or the tab could not open. Same rider-visible truth as before
     // this lane existed: the check never started, and `cant_start` says so.
+    noteLaunch("browser", "failed", { reason: "browser_unavailable" });
     return { outcome: "failed", sessionUnusable: false };
   }
 }

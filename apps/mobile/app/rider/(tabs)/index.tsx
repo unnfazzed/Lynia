@@ -6,7 +6,7 @@ import * as Notifications from "expo-notifications";
 import { useFocusEffect, usePathname, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Linking, Text, useWindowDimensions, View } from "react-native";
-import { ApiError } from "../../../src/api/client";
+import { ApiError, currentProfileId } from "../../../src/api/client";
 import { getMe, type Me } from "../../../src/api/auth";
 import { withdrawOffer } from "../../../src/api/offers";
 import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../../src/api/orders";
@@ -14,12 +14,12 @@ import { getFoodDispatchOffers } from "../../../src/api/food-rider";
 import { getDemandZones } from "../../../src/api/rider-v2";
 import { noteKycLaunched, retryKyc, setOnline } from "../../../src/api/riders";
 import { loadAcknowledgedHandbacks, saveRolePreference } from "../../../src/auth/session";
-import { loadRiderFoodReturn } from "../../../src/auth/device-state";
+import { loadRiderFoodReturn, takeSignupAt } from "../../../src/auth/device-state";
 import { usePrewarmRoutes, type PrewarmRoute } from "../../../src/boot/prewarm-routes";
 import { supportWhatsAppUrl } from "../../../src/config";
 import { KycCheckHost } from "../../../src/kyc/KycCheckHost";
-import { takeKycLaunch } from "../../../src/kyc/launch-hint";
-import { runKycVerification } from "../../../src/kyc/verify";
+import { clearStoredKycLaunch, loadStoredKycLaunch, peekStoredKycLaunch, rememberKycLaunch, storedKycLaunchLoaded, takeKycLaunch } from "../../../src/kyc/launch-hint";
+import { primeKycCamera, runKycVerification } from "../../../src/kyc/verify";
 import {
   freshKycLaunch,
   KYC_COMPLETED_HINT_MS,
@@ -37,7 +37,10 @@ import {
 import { useHomeLocation } from "../../../src/logic/home-location";
 import { useKeepScreenOn } from "../../../src/logic/use-keep-screen-on";
 import { kycScreenFor, parseIsoDay } from "../../../src/logic/kyc-outcome";
-import { markRiderWelcomeSeen, riderWelcomeSeen } from "../../../src/logic/rider-welcome";
+import { markRiderWelcomeSeen, riderWelcomeSeen, riderWelcomeSeenCached } from "../../../src/logic/rider-welcome";
+import { boardPollMs } from "../../../src/logic/board-poll";
+import { isRecentFix, LAST_KNOWN_MAX_ACCURACY_M, LAST_KNOWN_MAX_AGE_MS } from "../../../src/logic/last-known-fix";
+import { EVENTS, track } from "../../../src/telemetry/events";
 import { topUpAtLeast } from "../../../src/logic/topup";
 import { useSettled } from "../../../src/logic/use-settled";
 import { RIDER_PERM_ROUTES, startRiderPermFlow } from "../../../src/logic/rider-perm-flow";
@@ -71,6 +74,8 @@ import { withTimeout } from "../../../src/util";
 // GPS fix bound: a cold fix can hang forever, and the server records a broadcast-eligible position only
 // `if (online && location)` — so race the fix and fall back to the last-known one.
 const LOCATE_TIMEOUT_MS = 9_000;
+/** The cached-position read is a device call too — bounded so it can never hold the fresh fix up. */
+const LAST_KNOWN_READ_TIMEOUT_MS = 2_000;
 /** Transient activation failures retry forever: 15 s, doubling, capped at 2 min (B5). */
 const ACTIVATION_RETRY_MS = 15_000;
 const ACTIVATION_RETRY_MAX_MS = 120_000;
@@ -122,8 +127,10 @@ export default function RiderHome(): React.ReactElement {
   const [activationNudge, setActivationNudge] = useState(0);
   const [loc, setLoc] = useState<{ lat: number; lng: number } | null>(null);
   const [locDenied, setLocDenied] = useState(false);
-  // FR-H1: never asked yet (a C1 "Ride" signup). Not a wall while R3 is held — R3's "Go online" asks (P1).
-  const [locUndetermined, setLocUndetermined] = useState(false);
+  // FR-H1: not granted but still askable (never asked — a C1 "Ride" signup — or denied once). Not a wall while
+  // R3 is held: R3's "Go online" runs the flow, whose P1 explains and asks again (P5 after a second no).
+  // Only a BLOCKED permission (can't ask again) walls past R3.
+  const [locAskable, setLocAskable] = useState(false);
   const [locHint, setLocHint] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast>(null);
@@ -146,18 +153,36 @@ export default function RiderHome(): React.ReactElement {
   // First Run v2 (ledger D-82): the board only READS the permission. The ask is the rider flow's (P1 —
   // from R3's "Go online" or G8's "Turn on"), so no bare OS dialog ever pops over the board or the splash.
   const requestLocation = useCallback(async (): Promise<void> => {
-    const status = (await Location.getForegroundPermissionsAsync().catch(() => null))?.status ?? "denied";
-    setLocUndetermined(status === "undetermined");
+    const perm = await Location.getForegroundPermissionsAsync().catch(() => null);
+    const status = perm?.status ?? "denied";
+    setLocAskable(status !== "granted" && perm?.canAskAgain !== false);
     if (status !== "granted") {
       setLocDenied(true);
       return;
     }
     setLocDenied(false);
+    // Go online on a RECENT cached position at once (≤ 2 min, accurate enough — last-known-fix.ts) instead of
+    // waiting up to LOCATE_TIMEOUT_MS for a fresh fix; the fresh fix below refines it when it lands.
+    let seeded = false;
+    try {
+      const recent = await withTimeout(
+        Location.getLastKnownPositionAsync({ maxAge: LAST_KNOWN_MAX_AGE_MS, requiredAccuracy: LAST_KNOWN_MAX_ACCURACY_M }),
+        LAST_KNOWN_READ_TIMEOUT_MS,
+      );
+      if (recent && isRecentFix(recent, Date.now())) {
+        setLoc({ lat: recent.coords.latitude, lng: recent.coords.longitude });
+        setLocHint(false);
+        seeded = true;
+      }
+    } catch {
+      /* no cached position — wait for the fresh fix */
+    }
     try {
       const p = await withTimeout(Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }), LOCATE_TIMEOUT_MS);
       setLoc({ lat: p.coords.latitude, lng: p.coords.longitude });
       setLocHint(false);
     } catch {
+      if (seeded) return; // the recent cached position stands
       try {
         const last = await Location.getLastKnownPositionAsync();
         if (last) {
@@ -203,7 +228,13 @@ export default function RiderHome(): React.ReactElement {
   // ── Identity / KYC ───────────────────────────────────────────────────────────────────────────────
   // The last ID-check launch on this board (or handed over by Become, R-4 / R-10) and when it landed.
   // A `completed` mark only counts while fresh (gates.ts freshKycLaunch); `failed` holds for the screen.
-  const [kycLaunch, setKycLaunch] = useState<KycLaunchMark | null>(null);
+  // Seeded on the FIRST render (not a focus effect, which ran a frame late and flashed F3): Become's hand-off,
+  // else the completed launch stored on this phone (launch-hint.ts) — so a restart, or a board mounted fresh
+  // minutes after the check, still holds F8 / R2 while the vendor catches up instead of "Finish your ID check".
+  const launchProfileId = qc.getQueryData<Me>(["me"])?.profileId ?? currentProfileId();
+  const [kycLaunch, setKycLaunch] = useState<KycLaunchMark | null>(() => takeKycLaunch() ?? peekStoredKycLaunch(launchProfileId));
+  // Whether the stored mark has been read this process — until it has, an F3 might be a check just finished.
+  const [launchRead, setLaunchRead] = useState(() => storedKycLaunchLoaded());
   const kycLaunchRef = useRef(kycLaunch);
   kycLaunchRef.current = kycLaunch;
   // When this board first saw the current check in flight — the poll's fast window counts from here.
@@ -229,6 +260,15 @@ export default function RiderHome(): React.ReactElement {
   const rider = meQ.data?.rider;
   const forceFreshSession = useRef(false);
   const spentForce = useRef(false);
+  const retryCamera = useRef<Promise<boolean> | null>(null);
+  // A launch on this board: shown now, and stored on the phone (a completed one survives a restart).
+  const setLaunch = useCallback(
+    (mark: KycLaunchMark): void => {
+      setKycLaunch(mark);
+      rememberKycLaunch(mark, qc.getQueryData<Me>(["me"])?.profileId ?? currentProfileId());
+    },
+    [qc],
+  );
   const leaveForCustomer = useCallback((): void => router.replace("/home"), [router]);
   // A completed launch holds the check in flight past F8 while the server can't yet tell it from an
   // unfinished one (gates.ts kycLaunchForGate) — R2, never a false F3.
@@ -246,6 +286,25 @@ export default function RiderHome(): React.ReactElement {
       .map((left) => setTimeout(() => setHintTick((n) => n + 1), left + 50));
     return () => timers.forEach(clearTimeout);
   }, [kycLaunch]);
+  // The stored completed launch (a restart, or a board mounted fresh): read once, never over a newer launch.
+  const meProfileId = meQ.data?.profileId ?? launchProfileId;
+  useEffect(() => {
+    if (!meProfileId) return;
+    let alive = true;
+    void loadStoredKycLaunch(meProfileId).then((m) => {
+      if (!alive) return;
+      if (m) setKycLaunch((prev) => prev ?? m);
+      setLaunchRead(true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [meProfileId]);
+  // `me` moved past pending (verified, declined, expired): the stored mark has served its purpose.
+  const pastPending = rider != null && rider.kycStatus !== "pending";
+  useEffect(() => {
+    if (pastPending) clearStoredKycLaunch();
+  }, [pastPending]);
   // R-4 / R-10: the launch Become a rider just ran, handed over on focus (this board may have been
   // mounted below Become all along). Taken once.
   useFocusEffect(
@@ -258,7 +317,8 @@ export default function RiderHome(): React.ReactElement {
   // takes the board's place once. `null` = still reading the flag (nothing shown, no flash).
   const profileId = meQ.data?.profileId ?? null;
   const verified = rider?.kycStatus === "verified";
-  const [welcomeSeen, setWelcomeSeen] = useState<boolean | null>(null);
+  // Seeded from what this process already read (a remount draws its answer on the first frame).
+  const [welcomeSeen, setWelcomeSeen] = useState<boolean | null>(() => (profileId ? riderWelcomeSeenCached(profileId) : null));
   useEffect(() => {
     if (!profileId || !verified) return;
     let alive = true;
@@ -404,17 +464,24 @@ export default function RiderHome(): React.ReactElement {
     setActivationRetry(0);
     setActivationNudge((n) => n + 1);
   }, []);
+  // The `me` re-read on focus / resume is the KYC refresh path (pending, declined, unverified riders). A
+  // VERIFIED rider's `me` has nothing for it to refresh — a revoked or expired ID is reported by the server's
+  // go-online / heartbeat refusal (reason `kyc`), which re-reads `me` itself — so it isn't re-read each time.
+  const refreshMeUnlessVerified = useCallback((): void => {
+    if (qc.getQueryData<Me>(["me"])?.rider?.kycStatus === "verified") return;
+    void qc.invalidateQueries({ queryKey: ["me"] });
+  }, [qc]);
   useFocusEffect(
     useCallback(() => {
       setServerGate(null);
       reactivate();
-      void qc.invalidateQueries({ queryKey: ["me"] });
-    }, [qc, reactivate]),
+      refreshMeUnlessVerified();
+    }, [reactivate, refreshMeUnlessVerified]),
   );
   useForegroundRefetch(() => {
     setServerGate(null);
     reactivate();
-    void qc.invalidateQueries({ queryKey: ["me"] });
+    refreshMeUnlessVerified();
   });
   // …and the moment the network comes back.
   useEffect(() => onlineManager.subscribe((up) => up && reactivate()), [reactivate]);
@@ -430,12 +497,22 @@ export default function RiderHome(): React.ReactElement {
       setActivationRetry(0);
       setOnlineState(res?.online ?? true);
       setServerGate(null);
+      track(EVENTS.goOnline, { ok: true, with_position: loc != null });
+      // Funnel: sign-up → first time online, once per account on this phone (no stamp ⇒ nothing sent).
+      const pid = qc.getQueryData<Me>(["me"])?.profileId;
+      if (pid && (res?.online ?? true)) {
+        void takeSignupAt(pid).then((at) => {
+          if (at != null) track(EVENTS.firstOnline, { ms_since_signup: Math.max(0, Date.now() - at) });
+        });
+      }
     },
     onError: (e) => {
       const reason = e instanceof ApiError ? onlineGateReason(e) : null;
+      track(EVENTS.goOnline, { ok: false, reason: reason ?? (e instanceof ApiError ? `http_${e.status}` : "network") });
       if (reason) {
         setServerGate(reason);
-        if (reason === "kyc") void qc.invalidateQueries({ queryKey: ["me"] });
+        // The cooldown wall's "Clears at" reads `me` too — and a verified rider's `me` isn't re-read on focus.
+        if (reason === "kyc" || reason === "cooldown") void qc.invalidateQueries({ queryKey: ["me"] });
         return;
       }
       setServerGate(null);
@@ -464,17 +541,19 @@ export default function RiderHome(): React.ReactElement {
     mutationFn: () => {
       const force = forceFreshSession.current;
       if (force) spentForce.current = true;
+      // The sheet's camera permission is settled while the session is minted, not after (verify.ts).
+      retryCamera.current = primeKycCamera();
       return retryKyc(force);
     },
     onSuccess: async (res) => {
       const feedback = resolveKycRetryFeedback(res);
       // No session to open in auto mode: the check couldn't open — F7, the page that says so (D-82).
-      if (feedback.error) setKycLaunch({ outcome: "failed", at: Date.now() });
+      if (feedback.error) setLaunch({ outcome: "failed", at: Date.now() });
       // Manual review has nothing to open by design: say so calmly (the board shows F1 once `me` agrees).
       if (feedback.info) showNotice(feedback.info, "info");
       if (feedback.launch) {
-        const launch = await runKycVerification(feedback.launch);
-        setKycLaunch({ outcome: launch.outcome, at: Date.now() });
+        const launch = await runKycVerification(feedback.launch, { camera: retryCamera.current ?? undefined });
+        setLaunch({ outcome: launch.outcome, at: Date.now() });
         forceFreshSession.current = launch.sessionUnusable && !spentForce.current;
         if (launch.outcome !== "failed") spentForce.current = false;
         // R-4: the retry put the rider back to `pending` server-side (a failed or expired rider included),
@@ -503,7 +582,7 @@ export default function RiderHome(): React.ReactElement {
     // server state (a lock, a decline) still outranks it once `me` is re-read. Never the server's words.
     onError: (e) => {
       if (e instanceof ApiError && isKycRetryRateLimited(e)) setError(KYC_RETRY_TRY_LATER);
-      else setKycLaunch({ outcome: "failed", at: Date.now() });
+      else setLaunch({ outcome: "failed", at: Date.now() });
       void qc.invalidateQueries({ queryKey: ["me"] });
     },
   });
@@ -543,7 +622,7 @@ export default function RiderHome(): React.ReactElement {
     enabled: online,
     // The socket keeps the list live; while it's down — or the last read failed (BD-H4) — re-read every
     // 10 s (J7: "Trying again in 10 s").
-    refetchInterval: (query) => (online ? (board.connected && query.state.status !== "error" ? false : 10_000) : false),
+    refetchInterval: (query) => boardPollMs(online, board.connected, query.state.status === "error", 10_000),
   });
   useEffect(() => {
     if (!online || !loc) return;
@@ -558,7 +637,14 @@ export default function RiderHome(): React.ReactElement {
   // dispatch offer the server is holding for THIS rider. Several orders can ring one rider at once (each
   // round goes to several riders), so each gets its own card (owner 2026-10-12); a new one still rings
   // full screen, and a card opens its own offer.
-  const foodOffersQ = useQuery({ queryKey: ["foodOffers"], queryFn: getFoodDispatchOffers, enabled: online && !!foodOn, refetchInterval: online && foodOn ? 15_000 : false });
+  // The board socket pushes each new offer (`food:offer` → this query is invalidated), so the 15 s poll only
+  // runs while that socket is down or the last read failed — the same gating as the open-jobs read above.
+  const foodOffersQ = useQuery({
+    queryKey: ["foodOffers"],
+    queryFn: getFoodDispatchOffers,
+    enabled: online && !!foodOn,
+    refetchInterval: (query) => boardPollMs(online && !!foodOn, board.connected, query.state.status === "error", 15_000),
+  });
   // Expiry is re-checked on every render (an offer drops off as soon as it runs out, as before); the list
   // itself only changes when the set of live offers does, so `jobs` below stays memoised.
   const liveFoodIds = foodOn ? (foodOffersQ.data ?? []).filter((o) => new Date(o.expiresAt).getTime() > Date.now()).map((o) => o.orderId).join(",") : "";
@@ -706,7 +792,7 @@ export default function RiderHome(): React.ReactElement {
   const { config: walletConfig } = useWalletConfig();
   // R-9: keyed on DATA, not on the query status: a failed re-read keeps the last good `me` (TanStack keeps
   // data on error), so a pending, declined or locked rider stays behind their wall through a 5xx.
-  const gate: GateId | null = meQ.data == null ? null : resolveGate({ kyc: kycGate, server: serverGate, locDenied: locDenied && !(holdForWelcome && locUndetermined) });
+  const gate: GateId | null = meQ.data == null ? null : resolveGate({ kyc: kycGate, server: serverGate, locDenied: locDenied && !(holdForWelcome && locAskable) });
   // G10 "Clears at" (BD-M3): the cooldown's end from /auth/me (absent on an older server). The facts tick
   // each minute, and the wall lifts by itself when the timer ends.
   const coolUntil = rider?.cooldownUntil ? new Date(rider.cooldownUntil) : null;
@@ -939,6 +1025,28 @@ export default function RiderHome(): React.ReactElement {
     </>
   );
 
+  // Funnel analytics: the rider page on screen — R2, R3, F1–F8 and the board all share the `/rider` route.
+  const screenId =
+    kycScreen?.kind === "outcome"
+      ? kycScreen.id
+      : kycScreen?.kind === "r2"
+        ? "R2"
+        : kycScreen?.kind === "become"
+          ? "become"
+          : showWelcome && !gate
+            ? "R3"
+            : gate
+              ? `gate_${gate}`
+              : meQ.data
+                ? "board"
+                : null;
+  useEffect(() => {
+    if (screenId) track(EVENTS.riderScreen, { screen: screenId });
+  }, [screenId]);
+
+  // Still reading this phone's stored launch: an F3 now may be a check the rider just finished (F8 / R2) —
+  // draw nothing for that moment rather than flash "Finish your ID check".
+  if (!launchRead && kycScreen?.kind === "outcome" && kycScreen.id === "F3") return <View testID="rider-reading" style={{ flex: 1, backgroundColor: tokens.color.bg }} />;
   // G1: on the way to R1 — nothing of the board under it.
   if (kycScreen?.kind === "become") return <View testID="rider-to-become" style={{ flex: 1, backgroundColor: tokens.color.bg }} />;
   // F1–F8 (First Run v2, D-82): one full-screen shell, the ✕ its only way out. KycCheckHost presents the ID
@@ -970,6 +1078,8 @@ export default function RiderHome(): React.ReactElement {
       </View>
     );
   }
+  // R2 → R3: the welcome flag is still being read — draw nothing (not a frame of the offline board).
+  if (holdForWelcome && welcomeSeen === null && !gate && !kycScreen) return <View testID="rider-reading" style={{ flex: 1, backgroundColor: tokens.color.bg }} />;
   if (showWelcome && !gate) {
     return (
       <RiderVerified
@@ -978,12 +1088,12 @@ export default function RiderHome(): React.ReactElement {
         freeJobs={rider?.freeJobs && rider.freeJobs.total > 0 ? rider.freeJobs : null}
         // Owner decision D-82 §2 #5: R3's "Go online" starts the rider permission flow (P1…); P13's "Go online"
         // goes online (it runs this callback). A rider who has granted everything goes straight online.
-        onGoOnline={() =>
-          startRiderPermFlow(router, () => {
-            setWelcomeSeen(true);
-            if (profileId) void markRiderWelcomeSeen(profileId);
-          })
-        }
+        onGoOnline={() => {
+          // Stored NOW, not from P13's callback: the flow marks itself done when P13 shows, so an app killed
+          // mid-flow came back to R3 (and its flow again). The in-memory hold stays until P13 goes online.
+          if (profileId) void markRiderWelcomeSeen(profileId);
+          void startRiderPermFlow(router, () => setWelcomeSeen(true));
+        }}
         onPapers={() => router.push("/rider/documents")}
       />
     );

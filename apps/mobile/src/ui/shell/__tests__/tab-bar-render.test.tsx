@@ -199,17 +199,36 @@ describe("useRiderTabBadges", () => {
     expect(out.current?.index).toBeUndefined();
   });
 
-  it("warns on Money below the floor and dots Account until verified", async () => {
+  it("warns on Money below the floor (a verified biker, the floor binding) and dots Account until verified", async () => {
     const { qc, out } = setup("index");
     await settle(() => {
-      qc.setQueryData(["wallet", "config"], { floor: 2 });
+      qc.setQueryData(["wallet", "config"], { floor: 2, ratePct: 10 });
       qc.setQueryData(["wallet", "balance"], { balance: 1.5 });
       qc.setQueryData(["me"], { rider: { kycStatus: "pending" } });
     });
-    expect(out.current).toEqual({ money: { kind: "warn" }, account: { kind: "dot" } });
+    // Unverified: no top-up is possible yet, so no Money warning — just the Account dot.
+    expect(out.current).toEqual({ account: { kind: "dot" } });
+    await settle(() => {
+      qc.setQueryData(["me"], { rider: { kycStatus: "verified" } });
+    });
+    expect(out.current).toEqual({ money: { kind: "warn" } });
     await settle(() => {
       qc.setQueryData(["wallet", "balance"], { balance: 5 });
-      qc.setQueryData(["me"], { rider: { kycStatus: "verified" } });
+    });
+    expect(out.current).toEqual({});
+  });
+
+  it("no Money warning while the free first jobs last, or with commission off — the floor doesn't bind (MA-H2)", async () => {
+    const { qc, out } = setup("index");
+    await settle(() => {
+      qc.setQueryData(["wallet", "config"], { floor: 2, ratePct: 10 });
+      qc.setQueryData(["wallet", "balance"], { balance: 0 });
+      qc.setQueryData(["me"], { rider: { kycStatus: "verified", freeJobs: { left: 3, total: 5 } } });
+    });
+    expect(out.current).toEqual({});
+    await settle(() => {
+      qc.setQueryData(["wallet", "config"], { floor: 2, ratePct: 0 });
+      qc.setQueryData(["me"], { rider: { kycStatus: "verified", freeJobs: { left: 0, total: 5 } } });
     });
     expect(out.current).toEqual({});
   });

@@ -46,7 +46,7 @@ function handshakeToken(): string {
 describe("acquireSocket auth handshake", () => {
   it("a reconnect after the access token rotated sends the NEW token", () => {
     mockLiveToken = "tok-old";
-    const socket = acquireSocket("tok-old");
+    const socket = acquireSocket("tok-old", "tok-old");
     expect(handshakeToken()).toBe("tok-old"); // the first connect
 
     mockLiveToken = "tok-new"; // the refresh path rotated the session while the link was down
@@ -56,7 +56,7 @@ describe("acquireSocket auth handshake", () => {
   });
 
   it("falls back to the acquirer's token when no live session is registered", () => {
-    const socket = acquireSocket("tok");
+    const socket = acquireSocket("tok", "tok");
     expect(handshakeToken()).toBe("tok");
     releaseSocket("tok", socket);
   });
@@ -66,9 +66,9 @@ describe("acquireSocket auth handshake", () => {
 // job — this is the ref-counted multiplex that collapses their three `io()` handshakes into one.
 describe("acquireSocket / releaseSocket", () => {
   it("returns the SAME socket instance to concurrent acquirers of the same token", () => {
-    const a = acquireSocket("tok");
-    const b = acquireSocket("tok");
-    const c = acquireSocket("tok");
+    const a = acquireSocket("tok", "jwt");
+    const b = acquireSocket("tok", "jwt");
+    const c = acquireSocket("tok", "jwt");
     expect(a).toBe(b);
     expect(b).toBe(c);
     expect(mockCreatedSockets).toHaveLength(1); // one io() call, not three
@@ -79,8 +79,8 @@ describe("acquireSocket / releaseSocket", () => {
   });
 
   it("does not disconnect while any acquirer still holds a reference", () => {
-    const socket = acquireSocket("tok");
-    acquireSocket("tok");
+    const socket = acquireSocket("tok", "jwt");
+    acquireSocket("tok", "jwt");
     releaseSocket("tok", socket); // one of two releases
 
     expect(mockCreatedSockets[0]!.disconnect).not.toHaveBeenCalled();
@@ -90,9 +90,9 @@ describe("acquireSocket / releaseSocket", () => {
   });
 
   it("opens a fresh connection once the last release tears the old one down", () => {
-    const first = acquireSocket("tok");
+    const first = acquireSocket("tok", "jwt");
     releaseSocket("tok", first);
-    const second = acquireSocket("tok");
+    const second = acquireSocket("tok", "jwt");
 
     expect(second).not.toBe(first);
     expect(mockCreatedSockets).toHaveLength(2);
@@ -100,9 +100,9 @@ describe("acquireSocket / releaseSocket", () => {
     releaseSocket("tok", second);
   });
 
-  it("keys the shared connection by token — different tokens never share a socket", () => {
-    const a = acquireSocket("tok-a");
-    const b = acquireSocket("tok-b");
+  it("keys the shared connection by identity — different accounts never share a socket", () => {
+    const a = acquireSocket("tok-a", "jwt");
+    const b = acquireSocket("tok-b", "jwt");
 
     expect(a).not.toBe(b);
     expect(mockCreatedSockets).toHaveLength(2);
@@ -112,7 +112,7 @@ describe("acquireSocket / releaseSocket", () => {
   });
 
   it("releasing a socket that doesn't match the tracked entry is a safe no-op", () => {
-    const real = acquireSocket("tok");
+    const real = acquireSocket("tok", "jwt");
     const stray: FakeIoSocket = { on: jest.fn(), disconnect: jest.fn() };
 
     expect(() => releaseSocket("tok", stray as unknown as Parameters<typeof releaseSocket>[1])).not.toThrow();
@@ -123,11 +123,28 @@ describe("acquireSocket / releaseSocket", () => {
   });
 
   it("releasing more times than acquired never goes negative / never double-disconnects", () => {
-    const socket = acquireSocket("tok");
+    const socket = acquireSocket("tok", "jwt");
     releaseSocket("tok", socket);
     expect(mockCreatedSockets[0]!.disconnect).toHaveBeenCalledTimes(1);
 
     releaseSocket("tok", socket); // extra release after the entry is already gone
     expect(mockCreatedSockets[0]!.disconnect).toHaveBeenCalledTimes(1); // still just once
+  });
+});
+
+// The ~15-min access-token rotation used to tear every rider socket down: the map was keyed by token and
+// each hook's effect depended on it. Now the key is the signed-in identity (profile id).
+describe("acquireSocket across a token rotation", () => {
+  it("a rotated token reuses the identity's socket — no second handshake", () => {
+    const a = acquireSocket("profile-1", "jwt-old");
+    const b = acquireSocket("profile-1", "jwt-new");
+    expect(a).toBe(b);
+    expect(mockCreatedSockets).toHaveLength(1);
+    // With no live session registered, the handshake falls back to the NEWEST acquirer's token.
+    expect(handshakeToken()).toBe("jwt-new");
+    releaseSocket("profile-1", a);
+    expect(mockCreatedSockets[0]!.disconnect).not.toHaveBeenCalled();
+    releaseSocket("profile-1", b);
+    expect(mockCreatedSockets[0]!.disconnect).toHaveBeenCalledTimes(1);
   });
 });
