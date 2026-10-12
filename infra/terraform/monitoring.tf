@@ -405,3 +405,65 @@ resource "google_monitoring_alert_policy" "topup_confirm_lag" {
 
   depends_on = [google_project_service.apis]
 }
+
+# --- KYC pipeline (2026-10-12) -------------------------------------------------------------------------
+# Behind var.kyc_alerts_enabled — the series ship with the 2026-10-12 API, and GMP validates metric names at
+# policy-creation time. The Azure stack (infra/azure) has no metric pipeline yet; these are the PromQL
+# definitions to port when it does. TODO(kyc-alerts): wire the Azure equivalent once OTLP metrics land there.
+locals {
+  kyc_alerts = {
+    # Every Didit verdict is being refused at the door: a webhook secret rotated on one side only, a clock
+    # skew past the 300s window, or a deploy without DIDIT_WEBHOOK_SECRET. Riders sit pending until the
+    # lost-webhook reconciler (10-min sweep) catches each one.
+    webhook_rejected = {
+      title = "KYC — Didit webhook deliveries refused"
+      query = "sum(increase(kyc_webhook_rejected_total[30m])) > 5"
+      doc   = "kyc_webhook_rejected_total rose by more than 5 in 30 minutes. `reason` says why: bad_signature (DIDIT_WEBHOOK_SECRET mismatch — re-run `pnpm didit:setup webhook`), stale_timestamp (clock skew or replays), unconfigured (the deploy has no webhook secret). Verdicts still land via the reconciler, up to 10 minutes late."
+    }
+    # Verdicts for sessions no biker holds: a replaced session's late result is normal at a trickle; a run
+    # means the webhook destination is shared with another environment or the workflow misroutes.
+    decision_unmatched = {
+      title = "KYC — Didit decisions matching no biker"
+      query = "sum(increase(kyc_decision_unmatched_total[1h])) > 10"
+      doc   = "kyc_decision_unmatched_total rose by more than 10 in an hour: Didit is deciding sessions no biker holds. Check that the Didit webhook destination points at this environment only, and that kyc_ref values are not being cleared (erasure, retry rotation)."
+    }
+    # A biker has waited hours on a check: neither the webhook nor the reconciler has resolved it.
+    oldest_pending = {
+      title = "KYC — a check pending for over 6 hours"
+      query = "max(kyc_oldest_pending_age_seconds) > 21600"
+      doc   = "kyc_oldest_pending_age_seconds is above 6 hours. The oldest pending ID check has not been resolved by the webhook or the reconciler — look it up in the admin KYC queue (oldest first) and in the Didit console."
+    }
+    # A KYC outcome that reached no device: the rider never hears they were verified, declined or locked.
+    push_undelivered = {
+      title = "KYC — outcome pushes reaching no device"
+      query = "sum(increase(push_undelivered_total{kind=\"account\"}[1h])) > 10"
+      doc   = "push_undelivered_total{kind=\"account\"} rose by more than 10 in an hour: KYC outcome pushes are reaching no device. Check PUSH_PROVIDER=fcm on the deploy (it defaults to noop) and FCM credentials."
+    }
+  }
+}
+
+resource "google_monitoring_alert_policy" "kyc" {
+  for_each = var.kyc_alerts_enabled ? local.kyc_alerts : {}
+
+  display_name = "Lynia ${each.value.title}"
+  combiner     = "OR"
+
+  conditions {
+    display_name = each.value.title
+
+    condition_prometheus_query_language {
+      query               = each.value.query
+      duration            = "0s"
+      evaluation_interval = "300s"
+    }
+  }
+
+  notification_channels = var.alert_notification_channels
+
+  documentation {
+    content   = each.value.doc
+    mime_type = "text/markdown"
+  }
+
+  depends_on = [google_project_service.apis]
+}

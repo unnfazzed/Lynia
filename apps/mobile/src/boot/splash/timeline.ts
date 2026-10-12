@@ -52,6 +52,25 @@ export function isRiderBoot(destination: string | null): boolean {
   return destination === RIDER_DESTINATION;
 }
 
+/**
+ * A boot into `/rider` for a biker who is NOT verified yet (mid-ID-check, declined, never started): the board
+ * there shows an F page or R1, not jobs, so "Getting jobs near you" would be false. It gets the plain splash
+ * and hands off after the session check, like any other non-Home destination.
+ */
+export const RIDER_SETUP_DESTINATION = "/rider#setup";
+
+/**
+ * The destination the splash times itself by. `/rider` stays the rider boot (its steps card) only for a biker
+ * known to be verified — from the `["me"]` already in the cache, else the last-known flag on the device
+ * (`riderVerified`: `undefined` while that read is in flight, `null` when none was ever written). While it is
+ * still being read (a few ms of a keystore read) the boot stays the rider boot: nothing of the card is drawn
+ * before the intro ends ({@link INTRO_MS}), so the answer lands long before either splash could differ.
+ */
+export function splashDestination(destination: string | null, riderVerified: boolean | null | undefined): string | null {
+  if (destination !== RIDER_DESTINATION || riderVerified === undefined) return destination;
+  return riderVerified ? destination : RIDER_SETUP_DESTINATION;
+}
+
 /** When each task resolved (ms since launch), or null while it is still running. */
 export type TaskTimes = Readonly<Record<BootSignal, number | null>>;
 

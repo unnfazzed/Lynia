@@ -8,6 +8,7 @@ import type { OpenOrder, OrderSnapshot } from "../../api/orders";
 import { walletConfigKey, walletKey } from "../../query/use-wallet";
 import { useReduceMotion } from "../useReduceMotion";
 import { TAB_BAR_SPACE, TabBar, type AppTab, type TabBadge } from "./TabBar";
+import { floorApplies } from "../../logic/topup";
 
 /*
  * The tab shells' plumbing for tab bar v1 (`packages/design/handoff/tab-bar-v1/`, ledger D-56): the
@@ -168,7 +169,9 @@ export function useCustomerTabBadges(): Partial<Record<string, TabBadge>> {
 /**
  * Rider:
  * - Jobs `count` — jobs that landed on the board since the rider last had Jobs open; clears on opening it.
- * - Money `warn` — balance below the floor (top-up needed), the same rule the board's top-up gate uses.
+ * - Money `warn` — balance below the floor (top-up needed), the same rule the board's top-up gate and the
+ *   Money tab use: only for a VERIFIED rider (an unverified one can't top up or go online yet) and only
+ *   while the floor actually binds (`floorApplies` — commission on and the free first jobs used up).
  * - Account `dot` — verification (KYC) isn't done.
  */
 export function useRiderTabBadges(active: string | undefined): Partial<Record<string, TabBadge>> {
@@ -185,7 +188,10 @@ export function useRiderTabBadges(active: string | undefined): Partial<Record<st
 
   const out: Partial<Record<string, TabBadge>> = {};
   if (fresh > 0) out.index = { kind: "count", n: fresh };
-  if (wallet && Number(wallet.balance) < (config?.floor ?? 2)) out.money = { kind: "warn" };
+  const verified = me?.rider?.kycStatus === "verified";
+  if (verified && wallet && floorApplies(config?.ratePct ?? 0, me?.rider?.freeJobs?.left) && Number(wallet.balance) < (config?.floor ?? 2)) {
+    out.money = { kind: "warn" };
+  }
   if (me?.rider && me.rider.kycStatus !== "verified") out.account = { kind: "dot" };
   return out;
 }

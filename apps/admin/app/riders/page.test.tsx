@@ -69,3 +69,30 @@ describe("Bikers — KYC queue row", () => {
     expect(screen.getByRole("link", { name: "Review" }).getAttribute("href")).toBe("/riders/r-1/kyc");
   });
 });
+
+describe("Bikers — KYC queue paging (oldest waiting first)", () => {
+  const page = (n: number) => Array.from({ length: n }, (_, i) => ({ ...rider, profileId: `r-${i}`, kycStatus: "pending" }));
+
+  it("a full page offers Next, which asks the API for page 2", async () => {
+    vi.mocked(adminFetchResult).mockResolvedValue({ data: page(100) } as never);
+    render(await RidersPage({ searchParams: Promise.resolve({ kyc: "pending" }) }));
+    expect(adminFetchResult).toHaveBeenCalledWith("/admin/riders?kyc=pending");
+    expect(screen.getByText(/oldest waiting first/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Next →" }).getAttribute("href")).toBe("/riders?kyc=pending&page=2");
+    expect(screen.queryByRole("link", { name: "← Previous" })).toBeNull();
+  });
+
+  it("page 2 is fetched as such and links back; a short page has no Next", async () => {
+    vi.mocked(adminFetchResult).mockResolvedValue({ data: page(3) } as never);
+    render(await RidersPage({ searchParams: Promise.resolve({ kyc: "pending", page: "2" }) }));
+    expect(adminFetchResult).toHaveBeenCalledWith("/admin/riders?kyc=pending&page=2");
+    expect(screen.getByRole("link", { name: "← Previous" }).getAttribute("href")).toBe("/riders?kyc=pending&page=1");
+    expect(screen.queryByRole("link", { name: "Next →" })).toBeNull();
+  });
+
+  it("a short first page shows no pager at all", async () => {
+    vi.mocked(adminFetchResult).mockResolvedValue({ data: page(3) } as never);
+    render(await RidersPage({ searchParams: Promise.resolve({ kyc: "pending" }) }));
+    expect(screen.queryByText(/Page 1/)).toBeNull();
+  });
+});

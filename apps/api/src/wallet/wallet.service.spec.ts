@@ -83,7 +83,7 @@ describe("WalletService.createTopup (server-side clamp)", () => {
     const svc = build(
       {},
       {
-        rider: { findUnique: async () => ({ profileId: "r1" }) },
+        rider: { findUnique: async () => ({ profileId: "r1", kycStatus: "verified" }) },
         topUp: {
           create: async ({ data }: { data: Record<string, unknown> }) => {
             created.push(data);
@@ -105,13 +105,42 @@ describe("WalletService.createTopup (server-side clamp)", () => {
     await expect(svc.createTopup("x", { amount: 10, rail: "ecocash", phone: "0770000000" })).rejects.toThrow(/not a biker/i);
   });
 
+  it.each(["pending", "failed", "expired"])("refuses to START a top-up for a %s (unverified) rider — 403 { reason: kyc }, no intent", async (kycStatus) => {
+    const create = vi.fn();
+    const findFirst = vi.fn();
+    const svc = build({}, { rider: { findUnique: async () => ({ profileId: "r1", kycStatus }) }, topUp: { create, findFirst } });
+    let threw: unknown;
+    try {
+      await svc.createTopup("r1", { amount: 10, rail: "ecocash", phone: "0770000000", idempotencyKey: "k" });
+    } catch (e) {
+      threw = e;
+    }
+    expect((threw as { getStatus: () => number }).getStatus()).toBe(403);
+    expect((threw as { getResponse: () => unknown }).getResponse()).toMatchObject({ reason: "kyc", message: expect.any(String) });
+    expect(create).not.toHaveBeenCalled();
+    expect(findFirst).not.toHaveBeenCalled();
+  });
+
+  it("still lets an unverified rider read their wallet and ledger (only initiation is gated)", async () => {
+    const svc = build(
+      {},
+      {
+        rider: { findUnique: async () => ({ profileId: "r1", kycStatus: "pending" }) },
+        commissionAccount: { findUnique: async () => null },
+        commissionLedger: { findMany: async () => [] },
+      },
+    );
+    await expect(svc.getWallet("r1")).resolves.toBeDefined();
+    await expect(svc.getLedger("r1")).resolves.toBeDefined();
+  });
+
   it("BH-09: a retry with the same idempotency key returns the original pending intent, not a second one", async () => {
     const create = vi.fn();
     const existing = { id: "t1", status: "pending", amount: 10, rail: "ecocash", phone: "0770000000", expiresAt: new Date(), initiatedAt: new Date() };
     const svc = build(
       {},
       {
-        rider: { findUnique: async () => ({ profileId: "r1" }) },
+        rider: { findUnique: async () => ({ profileId: "r1", kycStatus: "verified" }) },
         topUp: { findFirst: async () => existing, create },
       },
     );
@@ -126,7 +155,7 @@ describe("WalletService.createTopup (server-side clamp)", () => {
     const svc = build(
       {},
       {
-        rider: { findUnique: async () => ({ profileId: "r1" }) },
+        rider: { findUnique: async () => ({ profileId: "r1", kycStatus: "verified" }) },
         topUp: {
           findFirst: async () => {
             findFirstCalls += 1;
@@ -151,7 +180,7 @@ describe("WalletService.createTopup (server-side clamp)", () => {
     }));
     const svc = build(
       {},
-      { rider: { findUnique: async () => ({ profileId: "r1" }) }, topUp: { findFirst: async () => null, create } },
+      { rider: { findUnique: async () => ({ profileId: "r1", kycStatus: "verified" }) }, topUp: { findFirst: async () => null, create } },
     );
     await svc.createTopup("r1", { amount: 10, rail: "ecocash", phone: "0770000000" });
     await svc.createTopup("r1", { amount: 10, rail: "ecocash", phone: "0770000000", idempotencyKey: "key-3" });
@@ -501,7 +530,7 @@ describe("WalletService.creditManual (WD-002/WD-003 — atomic audit + idempoten
 
   it("credits the balance and writes the AuditLog row in the SAME transaction (WD-002)", async () => {
     const { calls, tx } = makeTx();
-    const prisma = { rider: { findUnique: async () => ({ profileId: "r1" }) }, $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
+    const prisma = { rider: { findUnique: async () => ({ profileId: "r1", kycStatus: "verified" }) }, $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
     const svc = build({}, prisma);
     const result = await svc.creditManual({ riderId: "r1", amount: 10, rail: "manual", idemKey: "key-1", actorProfileId: "admin-1" });
     expect(result.balance).toBe(10);
@@ -511,7 +540,7 @@ describe("WalletService.creditManual (WD-002/WD-003 — atomic audit + idempoten
 
   it("a retry with the same idempotency key returns the current balance instead of a 500 (WD-003)", async () => {
     const prisma = {
-      rider: { findUnique: async () => ({ profileId: "r1" }) },
+      rider: { findUnique: async () => ({ profileId: "r1", kycStatus: "verified" }) },
       $transaction: async () => {
         throw new Prisma.PrismaClientKnownRequestError("Unique constraint failed on the fields: (`provider_ref`)", {
           code: "P2002",
@@ -526,13 +555,13 @@ describe("WalletService.creditManual (WD-002/WD-003 — atomic audit + idempoten
   });
 
   it("rejects an amount above the manual-credit cap (unrelated to the idempotency path)", async () => {
-    const svc = build({ WALLET_MANUAL_CREDIT_CAP_USD: 50 }, { rider: { findUnique: async () => ({ profileId: "r1" }) } });
+    const svc = build({ WALLET_MANUAL_CREDIT_CAP_USD: 50 }, { rider: { findUnique: async () => ({ profileId: "r1", kycStatus: "verified" }) } });
     await expect(svc.creditManual({ riderId: "r1", amount: 999, rail: "manual", idemKey: "key-1", actorProfileId: "admin-1" })).rejects.toThrow(/between/i);
   });
 
   it("UX18-04: pushes the biker a best-effort 'Wallet credited' notice — previously zero push AND zero feed row", async () => {
     const { tx } = makeTx();
-    const prisma = { rider: { findUnique: async () => ({ profileId: "r1" }) }, $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
+    const prisma = { rider: { findUnique: async () => ({ profileId: "r1", kycStatus: "verified" }) }, $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
     const notified: Array<{ profileIds: string[]; msg: { title: string; body: string } }> = [];
     const notifications = {
       notifyProfiles: async (profileIds: string[], msg: { title: string; body: string }) => {

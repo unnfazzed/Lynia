@@ -51,6 +51,23 @@ describe("DiditKycVendor.sessionStatus (KYC-R26-11)", () => {
   });
 });
 
+describe("DiditKycVendor.sessionRead (item 1)", () => {
+  it("returns the status AND the body it was read from, in ONE call — what the poll hands a decided status on with", async () => {
+    const body = { status: "Declined", id_verifications: [{ warnings: [{ risk: "DOCUMENT_TAMPERED" }] }] };
+    const fetchMock = respond(200, body);
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await new DiditKycVendor(env).sessionRead("sess_1")).toEqual({ status: "Declined", decision: body });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("null on a non-2xx, a missing status or a throw", async () => {
+    vi.stubGlobal("fetch", respond(503));
+    expect(await new DiditKycVendor(env).sessionRead("sess_1")).toBeNull();
+    vi.stubGlobal("fetch", respond(200, {}));
+    expect(await new DiditKycVendor(env).sessionRead("sess_1")).toBeNull();
+  });
+});
+
 describe("DiditKycVendor.sessionDecision (KYC-R26-03)", () => {
   it("returns the decision payload for the reconciler, null on any failure", async () => {
     const body = { status: "Approved", face_matches: [{ score: 97 }] };

@@ -18,7 +18,8 @@ const mockGetMe = jest.fn<Promise<Me>, []>();
 const mockPush = jest.fn();
 const mockReplace = jest.fn();
 
-jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush, replace: mockReplace, back: jest.fn() }), useFocusEffect: () => undefined }));
+const mockDismissAll = jest.fn();
+jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush, replace: mockReplace, dismissAll: mockDismissAll, back: jest.fn() }), useFocusEffect: () => undefined }));
 const mockStoreWrites: Array<[string, string]> = [];
 jest.mock("expo-secure-store", () => ({
   getItemAsync: async () => null,
@@ -185,6 +186,9 @@ describe("customer Account (Biker v2 C6–C11)", () => {
     expect(customer.props.accessibilityState.selected).toBe(true);
     press(tree, "Biker");
     expect(mockReplace).toHaveBeenCalledWith("/rider");
+    // Customer Home is cleared from under the board: Back must not jump sides.
+    expect(mockDismissAll).toHaveBeenCalled();
+    expect(mockDismissAll.mock.invocationCallOrder[0]).toBeLessThan(mockReplace.mock.invocationCallOrder[0]!);
   });
 
   it("draws neither the toggle nor the card while the profile is loading", async () => {

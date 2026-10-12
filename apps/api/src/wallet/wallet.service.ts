@@ -375,7 +375,7 @@ export class WalletService {
    *  [minTopUp, maxTopUp]. The rail prompt is pushed to the phone out of band (the live rail client is
    *  a follow-on — see the PR body); the intent expires after the 90s window, and the rider can retry. */
   async createTopup(riderId: string, body: CreateTopupRequest): Promise<Topup> {
-    await this.assertRider(riderId);
+    await this.assertVerifiedRider(riderId);
     // BH-09: idempotent replay — a client-generated key lets a timeout+retry return the SAME pending
     // intent instead of opening a second one for the same attempt (mirrors OrdersService.create).
     // Checked before any other work so a replay is cheap.
@@ -629,5 +629,19 @@ export class WalletService {
   private async assertRider(riderId: string): Promise<void> {
     const rider = await this.prisma.rider.findUnique({ where: { profileId: riderId }, select: { profileId: true } });
     if (!rider) throw new ForbiddenException("Not a biker");
+  }
+
+  /**
+   * Top-up initiation only: a rider whose ID check hasn't passed can't work, so taking their money for a
+   * float they can't spend would only open a refund. Structured `reason: "kyc"` like the online gate, so
+   * the app can route to the ID check. Reads (wallet, ledger, a top-up poll) and admin credits are not
+   * gated — a rider whose KYC lapsed still sees and keeps what they paid in.
+   */
+  private async assertVerifiedRider(riderId: string): Promise<void> {
+    const rider = await this.prisma.rider.findUnique({ where: { profileId: riderId }, select: { kycStatus: true } });
+    if (!rider) throw new ForbiddenException("Not a biker");
+    if (rider.kycStatus !== "verified") {
+      throw new ForbiddenException({ reason: "kyc", message: "Finish your ID check before you top up." });
+    }
   }
 }

@@ -2,6 +2,7 @@ import { useSegments } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { InteractionManager } from "react-native";
 import { analyticsEnabled, POSTHOG_API_KEY, POSTHOG_HOST } from "../config";
+import { setAnalyticsSink } from "./events";
 
 /** The SDK's shape, as a TYPE only — `typeof import(...)` is erased at compile time, so naming these
  *  costs nothing at runtime and the module stays off the startup graph. */
@@ -28,6 +29,11 @@ function ScreenTracker(): null {
   useEffect(() => {
     posthog.screen(screen);
   }, [posthog, screen]);
+  // The funnel events (events.ts) reach PostHog through this same client, once it is here.
+  useEffect(() => {
+    setAnalyticsSink(posthog as unknown as Parameters<typeof setAnalyticsSink>[0]);
+    return () => setAnalyticsSink(null);
+  }, [posthog]);
   return null;
 }
 

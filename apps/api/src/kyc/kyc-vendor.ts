@@ -42,6 +42,14 @@ export interface KycVendor {
   sessionStatus?(ref: string): Promise<string | null>;
 
   /**
+   * `sessionStatus` and the decision body it was read from, in one call — the read the `/auth/me` poll
+   * makes (KycPendingStateService). OPTIONAL; never throws; null when unreadable. The body exists so a
+   * DECIDED status the poll happens to see first (its webhook late or lost) can be applied through the
+   * reconciler without a second vendor call. PII: the caller hands it straight on and never keeps it.
+   */
+  sessionRead?(ref: string): Promise<{ status: string; decision: unknown } | null>;
+
+  /**
    * KYC-R26-03: the vendor's FULL decision for a session (Didit: `GET /v3/session/{id}/decision/`), or null
    * when it can't be read. OPTIONAL; never throws. Used ONLY by the lost-webhook reconciler
    * (KycReconcileService), which feeds it through the same extraction + applyKycResult path the webhook uses.

@@ -12,6 +12,9 @@ import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { auditData, fmtDate, fmtUntil, reportsFor, round, toTripRow } from "./admin.shared";
 
+/** Rows per page of GET /admin/riders. The admin console relies on a full page meaning "there may be more". */
+export const RIDER_LIST_PAGE_SIZE = 100;
+
 @Injectable()
 export class AdminRidersService {
   private readonly logger = new Logger(AdminRidersService.name);
@@ -25,13 +28,21 @@ export class AdminRidersService {
     private readonly gateway: TrackingGateway,
   ) {}
 
-  /** Rider roster for ops — the KYC review queue when filtered to `pending`. */
-  async listRiders(kyc?: KycStatus, plate?: PlateStatus) {
+  /**
+   * Rider roster for ops — the KYC review queue when filtered to `pending`. Pages of
+   * {@link RIDER_LIST_PAGE_SIZE} (`page` is 1-based; a full page means there may be another).
+   *
+   * The `pending` queue is served OLDEST-WAITING FIRST (updatedAt asc): newest-first put the riders who had
+   * waited longest past the 100-row cut, where nobody ever saw them. Every other view stays newest-first.
+   */
+  async listRiders(kyc?: KycStatus, plate?: PlateStatus, page = 1) {
     const riders = await this.prisma.rider.findMany({
       // First Run v2 E4 (D-82): `plate` = the plate review queue (`checking`).
       where: { ...(kyc ? { kycStatus: kyc } : {}), ...(plate ? { plateStatus: plate } : {}) },
-      orderBy: { updatedAt: "desc" },
-      take: 100,
+      // profileId breaks updatedAt ties so a page boundary never repeats or skips a row.
+      orderBy: [{ updatedAt: kyc === "pending" ? "asc" : "desc" }, { profileId: "asc" }],
+      skip: (Math.max(1, Math.floor(page)) - 1) * RIDER_LIST_PAGE_SIZE,
+      take: RIDER_LIST_PAGE_SIZE,
       select: {
         profileId: true,
         bikeReg: true,

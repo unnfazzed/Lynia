@@ -1,5 +1,6 @@
 import type { NotificationRow } from "../../api/notifications";
 import type { IconName } from "../Icon";
+import { KYC_LOCK_ATTEMPTS } from "../../logic/gates";
 import { N, NF, NX } from "./copy";
 
 /**
@@ -313,7 +314,8 @@ function accountOf(r: NotificationRow): { icon: IconName; tone: Tone; title: str
     case "rider.kyc_approve":
       return { icon: "shield-check", tone: "good", title: N.aVerifiedT, line: N.aVerifiedB };
     case "rider.kyc_decline":
-      return { icon: "id-card", tone: "warn", title: N.aIdT, line: KYC_LINES[r.reason ?? ""] ?? r.message, action: { label: N.tryAgain, to: "/rider/become" } };
+      // Its "Try again" is attached in buildFeed — only to the decline still in force (kycSelfRetryOpen).
+      return { icon: "id-card", tone: "warn", title: N.aIdT, line: KYC_LINES[r.reason ?? ""] ?? r.message };
     case "rider.suspend":
       return { icon: "ban", tone: r.active ? "danger" : "neutral", title: N.aPausedT, line: r.reason === "customer_report" ? N.aPausedB : r.message };
     case "customer.hold":
@@ -337,12 +339,34 @@ function accountOf(r: NotificationRow): { icon: IconName; tone: Tone; title: str
 /** Where tapping a row goes (KB-FEED-SYNTH / BH-18 routing, shared with the old screen). */
 export type Destination = (row: NotificationRow) => string;
 
+/**
+ * Whether the rider can retry their ID check themselves right now: declined, not locked (A-02: two strikes),
+ * and not a decline no retry can fix (under age; an ID already on another account) — those pages offer
+ * WhatsApp only. The feed's "Try again" exists only then: on a locked, final or superseded decline it led
+ * to a retry the server refuses.
+ */
+export function kycSelfRetryOpen(rider: { kycStatus: string; kycAttempts?: number; kycDeclineReason?: string | null } | null | undefined): boolean {
+  if (!rider || rider.kycStatus !== "failed") return false;
+  if ((rider.kycAttempts ?? 0) >= KYC_LOCK_ATTEMPTS) return false;
+  return rider.kycDeclineReason !== "underage" && rider.kycDeclineReason !== "duplicate";
+}
+
+/** The KYC-decline row a "Try again" may go on: the newest one, and only while it isn't marked inactive. */
+function retryableDeclineId(rows: readonly NotificationRow[]): string | null {
+  let newest: NotificationRow | null = null;
+  for (const r of rows) if (r.action === "rider.kyc_decline" && (!newest || r.at > newest.at)) newest = r;
+  return newest && newest.active !== false ? newest.id : null;
+}
+
 /** One single (ungrouped) item: an account, money or safety row, or a pinned danger row. */
-function singleItem(r: NotificationRow, unread: boolean, now: Date, side: Side, dest: Destination): NItem {
+function singleItem(r: NotificationRow, unread: boolean, now: Date, side: Side, dest: Destination, retryId: string | null = null): NItem {
   const base = { key: r.id, ids: [r.id], orderId: r.orderId, unread, time: timeLabel(r.at, now), at: r.at, steps: [], to: dest(r), rider: side === "rider" };
   if (r.type === "account" || (!r.type && !r.orderId)) {
     const a = accountOf(r);
-    return { ...base, icon: a.icon, tone: a.tone, title: a.title, line: a.line, action: a.action };
+    // "Try again" opens the rider side, whose F page owns the right retry (or support) for this decline —
+    // never R1 again, which only re-registers into a 409.
+    const action = retryId !== null && r.id === retryId ? { label: N.tryAgain, to: "/rider" } : a.action;
+    return { ...base, icon: a.icon, tone: a.tone, title: a.title, line: a.line, action };
   }
   if (r.type === "sos") return { ...base, icon: "siren", tone: toneOf(r), title: N.sSosT, line: lineOf(r, side === "rider") };
   if (r.type === "issue") return { ...base, icon: "shield-check", tone: "good", title: N.sResolvedT, line: r.message };
@@ -405,9 +429,18 @@ function orderItem(rows: NotificationRow[], unreadIds: ReadonlySet<string>, now:
  */
 export function buildFeed(
   rows: readonly NotificationRow[],
-  opts: { side: Side; now: Date; unreadIds: ReadonlySet<string>; hidden?: ReadonlySet<string>; dest: Destination },
+  opts: {
+    side: Side;
+    now: Date;
+    unreadIds: ReadonlySet<string>;
+    hidden?: ReadonlySet<string>;
+    dest: Destination;
+    /** {@link kycSelfRetryOpen} for the signed-in rider's current `me` — gates the decline row's "Try again". */
+    kycRetry?: boolean;
+  },
 ): NFeed {
   const { side, now, unreadIds, dest } = opts;
+  const retryId = opts.kycRetry ? retryableDeclineId(rows) : null;
   const hidden = opts.hidden ?? new Set<string>();
   const visible = rows.filter((r) => !hidden.has(r.id));
   const mine = visible.filter((r) => {
@@ -426,7 +459,7 @@ export function buildFeed(
       if (list) list.push(r);
       else byOrder.set(r.orderId!, [r]);
     } else {
-      singles.push(singleItem(r, unreadIds.has(r.id), now, side, dest));
+      singles.push(singleItem(r, unreadIds.has(r.id), now, side, dest, retryId));
     }
   }
   const newestFirst = (a: { at: string }, b: { at: string }): number => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0);

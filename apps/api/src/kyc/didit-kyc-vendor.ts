@@ -98,6 +98,14 @@ export class DiditKycVendor implements KycVendor {
    * anything token-shaped.
    */
   async sessionStatus(ref: string): Promise<string | null> {
+    return (await this.sessionRead(ref))?.status ?? null;
+  }
+
+  /**
+   * The same read as {@link sessionStatus}, handing back the decision body too (see KycVendor.sessionRead).
+   * The body leaves this method only as the return value: nothing here logs or keeps it.
+   */
+  async sessionRead(ref: string): Promise<{ status: string; decision: unknown } | null> {
     const apiKey = this.env.DIDIT_API_KEY;
     if (!apiKey || !ref) return null;
 
@@ -113,12 +121,13 @@ export class DiditKycVendor implements KycVendor {
         return null;
       }
       // KYC-R26-11: the decision body is the rider's full verification record (document fields, face data).
-      // This path exists to read ONE field: `status` is copied out and the parsed body goes out of scope
-      // here — nothing else of it is returned, cached (KycPendingStateService keeps only the derived class)
-      // or logged (the log lines in this method carry the ref and an HTTP status, never the body).
+      // It is never cached (KycPendingStateService keeps only the derived class) or logged (the log lines in
+      // this method carry the ref and an HTTP status, never the body). It is returned only so a DECIDED
+      // status can be applied from this same read (KycReconcileService.reconcileFromPoll), which hands it
+      // to the webhook's extractors and drops it.
       const data = (await res.json()) as { status?: unknown };
       const status = data.status;
-      return typeof status === "string" && status ? status.slice(0, 64) : null;
+      return typeof status === "string" && status ? { status: status.slice(0, 64), decision: data } : null;
     } catch (err) {
       this.logger.debug(`Didit decision read failed: ${err instanceof Error ? err.message : String(err)}`);
       return null;

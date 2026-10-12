@@ -20,11 +20,12 @@ const mockUseRiderBoard = jest.fn();
 const mockSetOnline = jest.fn(async (online: boolean, _loc?: unknown) => ({ online }));
 const mockPush = jest.fn();
 const mockReplace = jest.fn();
+const mockDismissAll = jest.fn();
 const mockWithdrawOffer = jest.fn(async (orderId: string) => ({ orderId, withdrawn: true }));
 let mockPathname = "/rider";
 
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockPush, replace: mockReplace }),
+  useRouter: () => ({ push: mockPush, replace: mockReplace, dismissAll: mockDismissAll }),
   usePathname: () => mockPathname,
   useFocusEffect: (cb: () => void | (() => void)) => {
     const React_ = require("react");
@@ -35,7 +36,13 @@ jest.mock("expo-router", () => ({
 // module-factory mock did NOT reliably restore between tests, and a leaked "permission denied" made
 // every later test think the rider was gated. Reset in afterEach, set by the tests that need them.
 let mockLocPermission: "granted" | "denied" | "undetermined" = "granted";
+/** False = the OS will no longer show the dialog (blocked). */
+let mockLocCanAskAgain = true;
 let mockLocFixFails = false;
+/** A fresh fix that never arrives (a cold GPS indoors). */
+let mockLocFixHangs = false;
+/** The phone's cached position (`getLastKnownPositionAsync`), or null. */
+let mockLastKnown: { timestamp: number; coords: { latitude: number; longitude: number; accuracy?: number } } | null = null;
 let mockWatchCalls = 0;
 let mockWatchCallback: ((p: { coords: { latitude: number; longitude: number } }) => void) | null = null;
 /** OS permission prompts shown, and whether the cold-start splash is still up (S-6). */
@@ -53,13 +60,14 @@ jest.mock("expo-location", () => ({
   getForegroundPermissionsAsync: async () => ({
     status: mockLocPermission,
     granted: mockLocPermission === "granted",
-    canAskAgain: true,
+    canAskAgain: mockLocCanAskAgain,
   }),
   getCurrentPositionAsync: async () => {
+    if (mockLocFixHangs) return new Promise(() => undefined);
     if (mockLocFixFails) throw new Error("location-timeout");
     return { coords: { latitude: -17.83, longitude: 31.05 } };
   },
-  getLastKnownPositionAsync: async () => null,
+  getLastKnownPositionAsync: async () => mockLastKnown,
   // BD-H1: the board follows the rider while online; tests drive a move through `mockWatchCallback`.
   watchPositionAsync: async (_opts: unknown, cb: (p: { coords: { latitude: number; longitude: number } }) => void) => {
     mockWatchCalls += 1;
@@ -69,11 +77,23 @@ jest.mock("expo-location", () => ({
   reverseGeocodeAsync: async () => [],
   Accuracy: { Balanced: 3 },
 }));
-jest.mock("../../../../src/kyc/verify", () => ({ runKycVerification: jest.fn() }));
+jest.mock("../../../../src/kyc/verify", () => ({ runKycVerification: jest.fn(), primeKycCamera: jest.fn(async () => true) }));
+// A real (in-memory) keystore: the stored ID-check launch mark and the R3 welcome set are read back.
+let mockStore: Record<string, string> = {};
 jest.mock("expo-secure-store", () => ({
-  getItemAsync: async () => null,
-  setItemAsync: async () => undefined,
-  deleteItemAsync: async () => undefined,
+  getItemAsync: async (k: string) => mockStore[k] ?? null,
+  setItemAsync: async (k: string, v: string) => {
+    mockStore[k] = v;
+  },
+  deleteItemAsync: async (k: string) => {
+    delete mockStore[k];
+  },
+}));
+// Funnel analytics: what the board reports (screen ids, go-online results), captured.
+const mockTrack = jest.fn();
+jest.mock("../../../../src/telemetry/events", () => ({
+  ...jest.requireActual("../../../../src/telemetry/events"),
+  track: (...a: unknown[]) => mockTrack(...a),
 }));
 jest.mock("../../../../src/api/auth", () => ({
   getMe: () => mockGetMe(),
@@ -134,7 +154,8 @@ import { ApiError } from "../../../../src/api/client";
 import { SENT_OFFERS_KEY } from "../../../../src/query/use-sent-offers";
 import { runKycVerification } from "../../../../src/kyc/verify";
 import { retryKyc } from "../../../../src/api/riders";
-import { recordKycLaunch, takeKycLaunch } from "../../../../src/kyc/launch-hint";
+import { __resetKycLaunchHint, recordKycLaunch, takeKycLaunch } from "../../../../src/kyc/launch-hint";
+import { __resetRiderWelcomeCache } from "../../../../src/logic/rider-welcome";
 import { KY } from "../../../../src/ui/firstrun/copy";
 import { KYC_RETRY_TRY_LATER, resolveKycRetryFeedback } from "../../../../src/logic/gates";
 
@@ -253,8 +274,12 @@ let activeTree: renderer.ReactTestRenderer | null = null;
 let interactions: InteractionControl;
 beforeEach(() => {
   interactions = controlInteractions();
-  // A launch hint left by an earlier test must not leak into this one.
+  // A launch hint (or a stored mark / welcome answer this process read) left by an earlier test must not
+  // leak into this one.
   takeKycLaunch();
+  mockStore = {};
+  __resetKycLaunchHint();
+  __resetRiderWelcomeCache();
   mockUseRiderBoard.mockReturnValue({
     connected: true,
     expiredOrderIds: new Set<string>(),
@@ -268,7 +293,10 @@ afterEach(() => {
   interactions.restore();
   jest.clearAllMocks();
   mockLocPermission = "granted";
+  mockLocCanAskAgain = true;
   mockLocFixFails = false;
+  mockLocFixHangs = false;
+  mockLastKnown = null;
   mockPermissionAsks = 0;
   mockBooting = false;
   mockNotifGranted = true;
@@ -1627,8 +1655,22 @@ describe("biker board — R3 'You're verified' (Calm Mint v2)", () => {
     expect(treeText(activeTree)).not.toContain("Jobs need your location.");
   });
 
-  it("FR-H1: a denied location still walls a biker past R3", async () => {
+  it("a location denied ONCE doesn't replace R3 with the G8 wall — R3's 'Go online' runs P1, which asks again", async () => {
     mockLocPermission = "denied";
+    mockLocCanAskAgain = true;
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 0 }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).toContain("You’re verified");
+    expect(treeText(activeTree)).not.toContain("Turn on location");
+  });
+
+  it("FR-H1: a BLOCKED location (can't ask again) still walls a biker past R3", async () => {
+    mockLocPermission = "denied";
+    mockLocCanAskAgain = false;
     mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 0 }));
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);
@@ -1955,6 +1997,8 @@ describe("biker board — First Run v2 ID-check outcome pages (D-82)", () => {
       p!.props.onPress();
     });
     expect(mockReplace).toHaveBeenCalledWith("/home");
+    // The rider tabs are cleared from under Home (a bare replace left them one Back away).
+    expect(mockDismissAll).toHaveBeenCalled();
   });
 
   it("a duplicate decline is F5's WhatsApp-only page — no Try again (owner 2026-10-06)", async () => {
@@ -2009,6 +2053,27 @@ describe("biker board — First Run v2 ID-check outcome pages (D-82)", () => {
     expect(treeText(activeTree)).toContain("The details are in your notifications.");
     expect(treeText(activeTree)).not.toContain("SMS");
     expect(activeTree.root.findAll((n) => typeof n.type === "string" && typeof n.props.testID === "string" && n.props.testID.startsWith("kyc-outcome-"))).toHaveLength(0);
+  });
+
+  it("a wall's customer bridge switches sides like the Account toggle: offline, then Home with the rider stack cleared", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    mockSetOnline.mockRejectedValueOnce(new ApiError(403, "Your account is suspended", "suspended"));
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    mockDismissAll.mockClear();
+    mockReplace.mockClear();
+    const before = mockSetOnline.mock.calls.length;
+    const bridge = activeTree.root.findAll((n) => n.props.accessibilityLabel === "Order food and send parcels" && typeof n.props.onPress === "function")[0]!;
+    await renderer.act(async () => {
+      bridge.props.onPress();
+    });
+    await settle();
+    expect(mockSetOnline.mock.calls.slice(before).some((c) => c[0] === false)).toBe(true);
+    expect(mockDismissAll).toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledWith("/home");
   });
 });
 
@@ -2288,5 +2353,154 @@ describe("biker board — biker audit fixes (Board & Jobs)", () => {
     expect(first.props.accessibilityActions).toEqual([{ name: "offer", label: "Make an offer" }]);
     act(() => first.props.onAccessibilityAction({ nativeEvent: { actionName: "offer" } }));
     expect(mockPush).toHaveBeenCalledWith(expect.objectContaining({ pathname: "/rider/offer/[jobId]" }));
+  });
+});
+
+/** Rider "get online" fixes (2026-10-12). */
+describe("biker board — getting online (2026-10-12)", () => {
+  const PENDING_UNFINISHED = { kycStatus: "pending" as const, kycMode: "auto" as const, kycPendingState: "unfinished" as const };
+
+  it("a check finished before a restart stays in flight (R2), not F3 — the launch mark is stored on the phone", async () => {
+    // Past F8's 30 s window, inside the hold: the vendor still reads it unfinished.
+    mockStore["lynia.kycLaunchMark"] = JSON.stringify({ profileId: "p1", outcome: "completed", at: Date.now() - 60_000 });
+    mockGetMe.mockResolvedValue(meFixture(PENDING_UNFINISHED));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).toContain("Biker setup");
+    expect(treeText(activeTree)).not.toContain(KY.unfBody);
+  });
+
+  it("Become's hand-off is drawn on the FIRST frame — no one-frame F3 before F8", () => {
+    recordKycLaunch("completed");
+    mockGetMe.mockResolvedValue(meFixture(PENDING_UNFINISHED));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen((qc) => qc.setQueryData(["me"], meFixture(PENDING_UNFINISHED)));
+    // No settle: this is the first commit.
+    expect(treeText(activeTree)).toContain(KY.justBody);
+    expect(treeText(activeTree)).not.toContain(KY.unfBody);
+  });
+
+  it("the stored mark is dropped once `me` moves past pending", async () => {
+    mockStore["lynia.kycLaunchMark"] = JSON.stringify({ profileId: "p1", outcome: "completed", at: Date.now() - 60_000 });
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 20 }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(mockStore["lynia.kycLaunchMark"]).toBeUndefined();
+  });
+
+  it("R3's 'Go online' stores the welcome as seen at once — a kill mid permission flow doesn't bring R3 back", async () => {
+    mockNotifGranted = false; // something is missing, so R3 hands over to the flow (P13 never reached here)
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 0 }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    const tree = activeTree;
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Go online" && typeof n.props.onPress === "function").props.onPress();
+    });
+    await settle();
+    expect(mockPush).toHaveBeenCalledWith("/permissions?from=flow");
+    expect(JSON.parse(mockStore["lynia.riderWelcomed.v1"]!)).toEqual(["p1"]);
+    // The in-memory hold stays until P13: still R3, still not online.
+    expect(treeText(activeTree)).toContain("You’re verified");
+    expect(mockSetOnline).not.toHaveBeenCalled();
+  });
+
+  it("R2 → R3: nothing is drawn while the welcome flag is read — never a frame of the offline board", () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 0 }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen((qc) => qc.setQueryData(["me"], meFixture({ kycStatus: "verified", tripsCount: 0 })));
+    const tree = activeTree;
+    expect(tree.root.findAll((n) => n.props.testID === "rider-board-area")).toHaveLength(0);
+    expect(tree.root.findAll((n) => n.props.testID === "rider-reading").length).toBeGreaterThan(0);
+  });
+
+  it("goes online on a RECENT cached position at once, without waiting for the fresh fix", async () => {
+    mockLocFixHangs = true; // the fresh fix never comes back within the test
+    mockLastKnown = { timestamp: Date.now() - 10_000, coords: { latitude: -17.8, longitude: 31.0, accuracy: 25 } };
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(mockSetOnline).toHaveBeenCalledWith(true, { lat: -17.8, lng: 31.0 });
+  });
+
+  it("a STALE cached position is not used to go online — it waits for the fresh fix", async () => {
+    mockLocFixHangs = true;
+    mockLastKnown = { timestamp: Date.now() - 10 * 60_000, coords: { latitude: -17.8, longitude: 31.0, accuracy: 25 } };
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(mockSetOnline).not.toHaveBeenCalled();
+  });
+
+  it("go-online refused for want of a position, and no fix ever arrives → the GPS wall stays (no retry loop)", async () => {
+    mockLocFixFails = true; // no fresh fix, and no cached one either
+    mockSetOnline.mockRejectedValue(new ApiError(403, "Can't find your location.", "location_required"));
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("o-1")]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).toContain("Can't find your location");
+    expect(cardIds(activeTree)).toEqual([]);
+    expect(mockSetOnline).toHaveBeenCalledTimes(1);
+    expect(mockTrack).toHaveBeenCalledWith("rider_go_online", { ok: false, reason: "location_required" });
+    mockSetOnline.mockReset().mockImplementation(async (online: boolean) => ({ online }));
+  });
+
+  it("a verified biker's focus doesn't re-read `me`; a pending one's does (the KYC refresh path)", async () => {
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    let spy!: jest.SpyInstance;
+    mockGetMe.mockResolvedValue(meFixture());
+    activeTree = renderScreen((qc) => {
+      qc.setQueryData(["me"], meFixture());
+      spy = jest.spyOn(qc, "invalidateQueries");
+    });
+    await settle();
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: ["me"] });
+    act(() => activeTree!.unmount());
+    mockGetMe.mockResolvedValue(meFixture(PENDING_UNFINISHED));
+    activeTree = renderScreen((qc) => {
+      qc.setQueryData(["me"], meFixture(PENDING_UNFINISHED));
+      spy = jest.spyOn(qc, "invalidateQueries");
+    });
+    await settle();
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["me"] });
+  });
+
+  it("funnel analytics: the page on screen is reported by its id (F3, board), and a go-online success", async () => {
+    mockGetMe.mockResolvedValue(meFixture(PENDING_UNFINISHED));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(mockTrack).toHaveBeenCalledWith("rider_screen_shown", { screen: "F3" });
+    act(() => activeTree!.unmount());
+    mockGetMe.mockResolvedValue(meFixture());
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(mockTrack).toHaveBeenCalledWith("rider_screen_shown", { screen: "board" });
+    expect(mockTrack).toHaveBeenCalledWith("rider_go_online", { ok: true, with_position: true });
   });
 });

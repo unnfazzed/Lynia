@@ -5,6 +5,14 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { auditData, fmtDate, reportsFor, round, toTripRow } from "./admin.shared";
 
+/**
+ * The roles whose CUSTOMER side ops can moderate (owner, 2026-10-12): a biker still places orders as a
+ * customer, and becoming one flips `role` to `rider` — so a customer-only filter left their customer
+ * standing (hold, cash-ban) out of reach. Detail + hold / lift / cash-ban lift take both; the directory
+ * stays customers-only (bikers have their own), and admin/merchant profiles are never customers here.
+ */
+const CUSTOMER_SIDE_ROLES: ("customer" | "rider")[] = ["customer", "rider"];
+
 @Injectable()
 export class AdminCustomersService {
   constructor(
@@ -93,11 +101,11 @@ export class AdminCustomersService {
   /**
    * Single customer detail. All the directory fields for one customer plus the recent-orders trail and
    * the flag log — the customer's `Report` rows (times a rider reported them), with `flags` carrying
-   * the same count the directory shows. Returns null when the id isn't a customer profile.
+   * the same count the directory shows. Returns null when the id isn't a customer or rider profile (CUSTOMER_SIDE_ROLES).
    */
   async getCustomerDetail(id: string) {
     const profile = await this.prisma.profile.findFirst({
-      where: { id, role: "customer" },
+      where: { id, role: { in: CUSTOMER_SIDE_ROLES } },
       select: {
         id: true,
         firstName: true,
@@ -192,11 +200,11 @@ export class AdminCustomersService {
   /**
    * S·2: place a customer on hold (blocks new broadcasts) + write the audit row in ONE transaction.
    * Mirrors the rider suspend/lift pattern. Reason required (enforced by the controller's zod body).
-   * 404s when the id isn't a customer profile.
+   * 404s when the id isn't a customer or rider profile (CUSTOMER_SIDE_ROLES).
    */
   async holdCustomer(actor: string, profileId: string, input: { reason: string; note?: string | null }) {
     const result = await this.prisma.$transaction(async (tx) => {
-      const customer = await tx.profile.findFirst({ where: { id: profileId, role: "customer" }, select: { onHold: true } });
+      const customer = await tx.profile.findFirst({ where: { id: profileId, role: { in: CUSTOMER_SIDE_ROLES } }, select: { onHold: true } });
       if (!customer) throw new NotFoundException("Customer not found");
       // LC-D-SIB-2: the CAS below guards on the OBSERVED onHold, which trivially matches when the customer
       // is already held — so a lost-response retry wrote a second `customer.hold` audit row and re-pushed
@@ -205,7 +213,7 @@ export class AdminCustomersService {
       // DS13-04: CAS on the observed onHold (mirrors DS-03) so a concurrent hold/lift can't be silently
       // clobbered between the read and this write. 0 rows ⇒ the row moved under us ⇒ 409.
       const changed = await tx.profile.updateMany({
-        where: { id: profileId, role: "customer", onHold: customer.onHold },
+        where: { id: profileId, role: { in: CUSTOMER_SIDE_ROLES }, onHold: customer.onHold },
         data: { onHold: true, holdReason: input.reason },
       });
       if (changed.count === 0) throw new ConflictException("Customer changed — refresh and try again");
@@ -233,10 +241,10 @@ export class AdminCustomersService {
   }
 
   /** S·2: lift a customer hold → back to active, clearing the reason. Reason optional. Mutation + audit
-   *  in one transaction. 404s when the id isn't a customer. */
+   *  in one transaction. 404s when the id isn't a customer or rider. */
   async liftCustomerHold(actor: string, profileId: string, input: { reason?: string | null; note?: string | null }) {
     const result = await this.prisma.$transaction(async (tx) => {
-      const customer = await tx.profile.findFirst({ where: { id: profileId, role: "customer" }, select: { onHold: true } });
+      const customer = await tx.profile.findFirst({ where: { id: profileId, role: { in: CUSTOMER_SIDE_ROLES } }, select: { onHold: true } });
       if (!customer) throw new NotFoundException("Customer not found");
       // LC-D-SIB-2: lifting a customer who isn't held is a no-op the CAS below would happily match —
       // refuse it so a retry can't double-write `customer.lift` or re-push "Account restored".
@@ -244,7 +252,7 @@ export class AdminCustomersService {
       // DS13-04: CAS on the observed onHold (mirrors DS-03) so a concurrent hold/lift can't be silently
       // clobbered between the read and this write. 0 rows ⇒ the row moved under us ⇒ 409.
       const changed = await tx.profile.updateMany({
-        where: { id: profileId, role: "customer", onHold: customer.onHold },
+        where: { id: profileId, role: { in: CUSTOMER_SIDE_ROLES }, onHold: customer.onHold },
         data: { onHold: false, holdReason: null },
       });
       if (changed.count === 0) throw new ConflictException("Customer changed — refresh and try again");
@@ -271,15 +279,15 @@ export class AdminCustomersService {
    * cash-eligibility; the ban itself is written outside this service (C4), so there is no matching
    * "ban" mutation here to pair it with. CAS on the observed `cashBanned`, mutation + audit in one
    * transaction (mirrors holdCustomer/liftCustomerHold). Reason optional (a lift is reversing a flag,
-   * not applying one). 404s when the id isn't a customer; 409s when they aren't actually cash-banned.
+   * not applying one). 404s when the id isn't a customer or rider; 409s when they aren't actually cash-banned.
    */
   async liftCashBan(actor: string, profileId: string, input: { reason?: string | null; note?: string | null }) {
     const result = await this.prisma.$transaction(async (tx) => {
-      const customer = await tx.profile.findFirst({ where: { id: profileId, role: "customer" }, select: { cashBanned: true } });
+      const customer = await tx.profile.findFirst({ where: { id: profileId, role: { in: CUSTOMER_SIDE_ROLES } }, select: { cashBanned: true } });
       if (!customer) throw new NotFoundException("Customer not found");
       if (!customer.cashBanned) throw new ConflictException("This customer isn't cash-banned");
       const changed = await tx.profile.updateMany({
-        where: { id: profileId, role: "customer", cashBanned: true },
+        where: { id: profileId, role: { in: CUSTOMER_SIDE_ROLES }, cashBanned: true },
         data: { cashBanned: false, cashBanReason: null, cashBannedAt: null },
       });
       if (changed.count === 0) throw new ConflictException("Customer changed — refresh and try again");

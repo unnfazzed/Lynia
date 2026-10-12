@@ -5,6 +5,7 @@ import type { Socket } from "socket.io-client";
 import { useAuth } from "../auth/auth-context";
 import { invalidateRiderJobQueries } from "../query/use-history-feed";
 import { acquireSocket, releaseSocket } from "./socket";
+import { socketIdentity } from "./socket-identity";
 import { createSelfHealGate } from "./self-heal-gate";
 
 /**
@@ -28,7 +29,11 @@ export function useRiderJobSocket(
   onCustomerRecovered?: () => void,
 ): { connected: boolean } {
   const { session } = useAuth();
-  const token = session?.accessToken;
+  // Keyed on the signed-in identity, not the raw token: a ~15-min access-token rotation must not tear
+  // the shared socket down and re-handshake it (the handshake reads the live token — see socket.ts).
+  const identity = socketIdentity(session);
+  const tokenRef = useRef(session?.accessToken);
+  tokenRef.current = session?.accessToken;
   const qc = useQueryClient();
   // Expose connection state so the job screen can show the "live paused" banner (4·b4) when the
   // socket drops mid-job — the job stays saved locally and syncs on reconnect.
@@ -42,7 +47,8 @@ export function useRiderJobSocket(
   recoveredRef.current = onCustomerRecovered;
 
   useEffect(() => {
-    if (!orderId || !token) {
+    const token = tokenRef.current;
+    if (!orderId || !identity || !token) {
       setConnected(false);
       return;
     }
@@ -50,7 +56,7 @@ export function useRiderJobSocket(
     // matching comment. Every listener is a named handler explicitly `.off()`'d in cleanup, and the
     // shared connection is released (not disconnected outright), since board/location may still be
     // holding it.
-    const socket: Socket = acquireSocket(token);
+    const socket: Socket = acquireSocket(identity, token);
     // Background refetch — self-heals a push missed while the socket was down (same discipline as
     // use-order-socket's refetchOrder on connect/connect_error). WD-022: a delivered/cancelled/
     // undelivered transition self-healed here (rather than through the mutation's own onSuccess) must
@@ -76,6 +82,9 @@ export function useRiderJobSocket(
     socket.on("disconnect", onDisconnect);
     socket.on("connect_error", onConnectError);
     socket.on(WS_EVENTS.orderStatus, refetchJob);
+    // The board usually opened (and connected) this shared socket long before the job screen mounts — a
+    // late subscriber gets no "connect" event, so without this the order room was never joined.
+    if (socket.connected) onConnect();
     const onJobCancelled = (raw: unknown) => {
       const parsed = JobCancelledEvent.safeParse(raw);
       if (!parsed.success || parsed.data.orderId !== orderId) return;
@@ -105,9 +114,9 @@ export function useRiderJobSocket(
       socket.off(WS_EVENTS.jobCancelled, onJobCancelled);
       socket.off(WS_EVENTS.presenceStale, onPresenceStale);
       socket.off(WS_EVENTS.presenceRecovered, onPresenceRecovered);
-      releaseSocket(token, socket);
+      releaseSocket(identity, socket);
     };
-  }, [orderId, token, qc]);
+  }, [orderId, identity, qc]);
 
   return { connected };
 }

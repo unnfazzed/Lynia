@@ -1,23 +1,30 @@
 import { tokens } from "@lynia/shared/tokens";
 import { useRouter } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import React, { useEffect, useRef, useState } from "react";
-import { BackHandler, Text } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { AppState, BackHandler, Text } from "react-native";
 import { ApiError } from "../../src/api/client";
-import { getMe, updateProfile } from "../../src/api/auth";
+import { getMe, type Me, updateProfile } from "../../src/api/auth";
 import { becomeRider, noteKycLaunched } from "../../src/api/riders";
+import { useOptionalAuth } from "../../src/auth/auth-context";
 import { saveRolePreference } from "../../src/auth/session";
 import { KycCheckHost } from "../../src/kyc/KycCheckHost";
 import { recordKycLaunch } from "../../src/kyc/launch-hint";
-import { runKycVerification } from "../../src/kyc/verify";
+import { primeKycCamera, runKycVerification } from "../../src/kyc/verify";
+import { withRiderStub } from "../../src/logic/become-state";
 import { KYC_RETRY_TRY_LATER } from "../../src/logic/gates";
 import { clearKycDraft, kycDraftHasContent, loadKycDraft, saveKycDraft } from "../../src/logic/kyc-draft";
+import { replaceClearingStack } from "../../src/logic/nav";
 import { DismissKeyboardArea, useActionError } from "../../src/ui";
 import { PD } from "../../src/ui/firstrun/copy";
 import { OB, RO } from "../../src/ui/onboarding/copy";
 import { Cta, H2, NameFields, OnbScreen, Pad, Sub, VerifiedPhoneRow } from "../../src/ui/onboarding/kit";
 import { RiderIntro } from "../../src/ui/onboarding/rider";
 import { useWalletConfig } from "../../src/query/use-wallet";
+
+/** The name draft is written this long after the last keystroke (an encrypted keystore write per keystroke
+ *  is slow on low-end Android) — the same debounce as profile setup's. */
+const DRAFT_SAVE_DEBOUNCE_MS = 500;
 
 /**
  * Become a rider: Calm Mint v2 R1 "Why ride", then straight to the ID check, then the rider board.
@@ -43,6 +50,7 @@ function becomeErrorMessage(e: unknown): string {
 export default function BecomeRiderScreen(): React.ReactElement {
   const router = useRouter();
   const qc = useQueryClient();
+  const auth = useOptionalAuth();
   // CF-02-SIB-3: same-tick double-submit guard for `submit` below — see the ref's use for why a plain
   // `busy` state boolean isn't enough.
   const submitInFlightRef = useRef(false);
@@ -76,6 +84,9 @@ export default function BecomeRiderScreen(): React.ReactElement {
         setFirstName(d.firstName);
         setLastName(d.lastName);
         setDraftRestored(true);
+        // Rewritten name-only at once (not on the debounce): a pre-D-75 draft's national ID must not outlive
+        // the first visit even if the app is killed within the debounce window.
+        void saveKycDraft({ firstName: d.firstName, lastName: d.lastName });
       } else if (!cancelled && d) {
         void clearKycDraft();
       }
@@ -91,11 +102,42 @@ export default function BecomeRiderScreen(): React.ReactElement {
     if (draftRestored && needName) setStep("name");
   }, [draftRestored, needName]);
 
-  // Persist the draft (on-device keystore only) as the name changes, after initial hydration.
+  // Persist the draft (on-device keystore only) as the name changes, after initial hydration — debounced,
+  // with a pending write flushed when the app goes to the background (the moment before the OS may kill it)
+  // and on unmount; once the rider is registered nothing is written again (app/profile/setup.tsx's pattern).
+  const latestDraft = useRef({ firstName: "", lastName: "" });
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftDone = useRef(false);
+  const flushDraft = useCallback((): void => {
+    if (!draftTimer.current) return;
+    clearTimeout(draftTimer.current);
+    draftTimer.current = null;
+    if (!draftDone.current) void saveKycDraft(latestDraft.current);
+  }, []);
+  const dropDraft = (): void => {
+    draftDone.current = true;
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    draftTimer.current = null;
+    void clearKycDraft();
+  };
   useEffect(() => {
-    if (!hydrated.current) return;
-    void saveKycDraft({ firstName, lastName });
+    if (!hydrated.current || draftDone.current) return;
+    latestDraft.current = { firstName, lastName };
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    draftTimer.current = setTimeout(() => {
+      draftTimer.current = null;
+      if (!draftDone.current) void saveKycDraft(latestDraft.current);
+    }, DRAFT_SAVE_DEBOUNCE_MS);
   }, [firstName, lastName]);
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (st) => {
+      if (st !== "active") flushDraft();
+    });
+    return () => {
+      sub.remove();
+      flushDraft();
+    };
+  }, [flushDraft]);
 
   const namesReady = firstName.trim().length > 0 && lastName.trim().length > 0;
 
@@ -109,6 +151,25 @@ export default function BecomeRiderScreen(): React.ReactElement {
     return () => sub.remove();
   }, [step]);
 
+  // Android back on R1. Reached from the customer side (Account's card) there is a screen to go back to;
+  // on the Ride path (C1 → OTP → here, or the board replacing itself with R1) there is not, and Back used
+  // to close the app — the relaunch then opened R1 again with no way out. With nothing behind, Back leaves
+  // for the customer side, saved as the side the next cold start opens on.
+  useEffect(() => {
+    if (step !== "intro") return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (submitInFlightRef.current) return true;
+      if (router.canGoBack()) {
+        router.back();
+        return true;
+      }
+      void saveRolePreference("customer");
+      replaceClearingStack(router, "/home");
+      return true;
+    });
+    return () => sub.remove();
+  }, [step, router]);
+
   /**
    * Hand over to the board, saved as the side the next cold start opens on (R-5).
    *
@@ -118,13 +179,21 @@ export default function BecomeRiderScreen(): React.ReactElement {
    * the board: the rider permission flow runs after R3 "You're verified", before going online. The board
    * shows the check's outcome from here (F8 while it is sent, R2, F1–F7, R3).
    *
-   * `me` is re-read first, so the board reads the new rider record instead of bouncing a cached customer
-   * `me` (no rider yet) back here.
+   * The board must read the new rider record, never bounce a cached customer `me` (no rider yet) back here.
+   * After a successful register the `["me"]` cache already holds a rider stub (`withRiderStub`), so this
+   * navigates at once and the real `/auth/me` lands in the background (it reads the ID-check vendor and
+   * could hold R1's spinner for seconds). Without a stub (`refetchMe`) `me` is re-read first, as before.
    */
-  const handOver = async (): Promise<void> => {
+  const handOver = async (refetchMe = true): Promise<void> => {
     void saveRolePreference("rider");
-    await qc.refetchQueries({ queryKey: ["me"] }).catch(() => undefined);
-    router.replace("/rider");
+    // The account is a rider now (registered, or the 409 already_rider): the session's role is what the
+    // boot route, the bootstrap's role hint and push routing read, and only C5 ever wrote it.
+    void auth?.updateSession({ role: "rider" });
+    if (refetchMe) await qc.refetchQueries({ queryKey: ["me"] }).catch(() => undefined);
+    else void qc.invalidateQueries({ queryKey: ["me"] });
+    // Cleared, not a bare replace: Become reached from the customer side would otherwise leave customer
+    // Home under the board, one Back away (and its queries running).
+    replaceClearingStack(router, "/rider");
   };
 
   const submit = async (withName: boolean): Promise<void> => {
@@ -138,12 +207,16 @@ export default function BecomeRiderScreen(): React.ReactElement {
     try {
       // C5's own save — the name only (PATCH /auth/me). There is no ID to send: D-75.
       if (withName) await updateProfile({ firstName: firstName.trim(), lastName: lastName.trim() });
+      // The camera the in-app ID-check sheet needs is settled WHILE the session is minted, not after it —
+      // the rider used to wait on the network and only then on the permission dialog.
+      const camera = primeKycCamera();
       const res = await becomeRider({});
       // The rider is registered — the draft has served its purpose.
-      void clearKycDraft();
-      // The account is a rider now: refresh `me` while the check is open, so the board this hands over
-      // to reads the rider record rather than the cached customer one.
-      void qc.invalidateQueries({ queryKey: ["me"] });
+      dropDraft();
+      // The account is a rider now: the `["me"]` cache gets the rider record from this answer, so the board
+      // this hands over to reads a rider at once (the real `/auth/me` is read in the background, below).
+      const stub = withRiderStub(qc.getQueryData<Me>(["me"]), res);
+      if (stub) qc.setQueryData<Me>(["me"], stub);
       // …and the next cold start opens on the rider side, saved BEFORE the check opens: an app killed
       // mid-check (the sheet is minutes of camera work) used to come back to customer Home.
       void saveRolePreference("rider");
@@ -151,26 +224,30 @@ export default function BecomeRiderScreen(): React.ReactElement {
       // falling back to the in-app browser tab when the sheet can't present. `runKycVerification`
       // never throws. Manual review (and the QA stub's instant pass) returns no session to open.
       if (res.sessionToken || res.verificationUrl) {
-        const launch = await runKycVerification({ sessionToken: res.sessionToken, verificationUrl: res.verificationUrl });
+        const launch = await runKycVerification({ sessionToken: res.sessionToken, verificationUrl: res.verificationUrl }, { camera });
         // R-4 / R-10: the board picks the page, so it gets the outcome — "completed" is F8 "Sending your ID"
         // while the vendor catches up, "failed" lands on F7 "Couldn't open the ID check" (with WhatsApp help),
-        // not F3 "Almost there".
-        recordKycLaunch(launch.outcome);
-        if (launch.outcome === "completed") void noteKycLaunched();
+        // not F3 "Almost there". Stored on the device too, so a restart still holds F8 / R2.
+        recordKycLaunch(launch.outcome, Date.now(), me?.profileId ?? undefined);
+        if (launch.outcome === "completed") {
+          void noteKycLaunched();
+          const done = withRiderStub(qc.getQueryData<Me>(["me"]), res, "completed");
+          if (stub && done) qc.setQueryData<Me>(["me"], done);
+        }
       } else if (res.mode === "auto" && res.kycStatus === "pending") {
         // An automated check with no session to open is a check that couldn't open — F7, not a silent
         // hand-over to F3. (Manual review and the QA stub's instant pass have nothing to open by design.)
-        recordKycLaunch("failed");
+        recordKycLaunch("failed", Date.now(), me?.profileId ?? undefined);
       }
       // However it went, the board shows the right page from here: F8 while it is sent, R2 while the
       // automated check runs, R3 once verified, F3 after a cancel, F1 in manual mode (D-82).
-      await handOver();
+      await handOver(!stub);
     } catch (e) {
       // BH-04: a lost-response retry on `becomeRider` hits this exact 409 — the FIRST submit already
       // landed server-side (and since R-10 so does the loser of a double-tap race), so the board
       // re-reads the real (already-registered) state.
       if (e instanceof ApiError && e.code === "already_rider") {
-        void clearKycDraft();
+        dropDraft();
         await handOver();
         return;
       }

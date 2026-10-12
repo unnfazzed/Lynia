@@ -15,6 +15,9 @@ const mockHideAsync = jest.fn(async () => true);
 jest.mock("expo-splash-screen", () => ({ hideAsync: () => mockHideAsync() }));
 const mockScheduleReset = jest.fn();
 jest.mock("../../window-background", () => ({ scheduleWindowBackgroundReset: () => mockScheduleReset() }));
+// The device's last-known "verified biker" flag (only a verified biker's boot is the rider boot).
+let mockRiderVerified: boolean | null = true;
+jest.mock("../../../auth/device-state", () => ({ loadRiderVerifiedHint: () => Promise.resolve(mockRiderVerified) }));
 
 import { BootPhaseProvider, useBootPhase } from "../../boot-phase";
 import { getBootReadiness, reportBootDestination, reportBootReady, reportBootRoute, resetBootReadinessForTest } from "../../boot-readiness";
@@ -98,6 +101,7 @@ beforeEach(() => {
   mountable = [];
   mockHideAsync.mockClear();
   mockScheduleReset.mockClear();
+  mockRiderVerified = true;
   resetBootReadinessForTest();
   resetBootSplashReleaseForTest();
   __resetReachability();
@@ -427,6 +431,25 @@ describe("BootSplash · the biker boot keeps its card (First Run v2 H1/H2, ledge
     advance(400); // the tick is seen, then the cut (no exit into Home)
     expect(released()).toBe(true);
     announce.mockRestore();
+    act(() => tree.unmount());
+  });
+
+  it("a biker still in the ID check gets the plain splash — no 'Getting jobs near you' — and hands off after the session", async () => {
+    mockRiderVerified = false;
+    const tree = mount();
+    // Let the device read land (a promise), as it does within ms on a phone.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // The destination is the session check (reportBootDestination stamps it); the board's reads never land.
+    act(() => reportBootDestination("/rider"));
+    advance(INTRO_MS + 50);
+    expect(card(tree)).toHaveLength(0);
+    expect(texts(tree)).not.toContain(RIDER_STEPS[1]);
+    advance(600);
+    // A rider boot would still be waiting on "Getting jobs near you"; the plain splash has handed off.
+    expect(released()).toBe(true);
     act(() => tree.unmount());
   });
 

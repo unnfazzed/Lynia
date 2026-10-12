@@ -60,7 +60,14 @@ type CounterName =
   | "micro_cache_requests_total"
   | "wallet_integrity_runs_total"
   | "wallet_integrity_drift_total"
-  | "throttle_store_errors_total";
+  | "throttle_store_errors_total"
+  // KYC pipeline observability (kyc.controller / didit-decision / KycReconcileService / RiderService).
+  | "kyc_webhook_rejected_total"
+  | "kyc_decision_unmatched_total"
+  | "kyc_reconcile_applied_total"
+  | "kyc_session_minted_total"
+  | "push_undelivered_total"
+  | "rider_online_without_push_token_total";
 
 /** Fixed label vocabularies — NEVER accept ids/phones/lat-lng/raw-urls as labels (cardinality). */
 export type MatchSelectOutcome = "assigned" | "taken" | "unavailable" | "not_open" | "forbidden" | "error";
@@ -97,6 +104,16 @@ export type WalletIntegrityDrift =
  *  name here, never a dynamic string). The `state` label vocabulary is QUEUE_JOB_STATES
  *  (common/queue-metrics.ts), also closed. */
 export type QueueMetricName = "offer-expiry" | "rating-autoclose";
+
+/** Why the Didit webhook refused a delivery: a bad signature or a stale signed timestamp (401), or no
+ *  webhook secret configured (503). CLOSED vocabulary. */
+export type KycWebhookRejection = "bad_signature" | "stale_timestamp" | "unconfigured";
+/** Where a Didit verdict came from: the signed webhook, the lost-webhook sweep, or the `/auth/me` poll's read. */
+export type KycDecisionSource = "webhook" | "sweep" | "poll";
+/** Which path bought a paid Didit session. CLOSED vocabulary. */
+export type KycMintPath = "become" | "retry";
+/** The push `data.kind` of a push that reached no device. Closed: only the kinds whose loss is counted. */
+export type PushUndeliveredKind = "account";
 
 /** Top-up rails (`TopupRail` in @lynia/shared) — mirrored as a local closed set so the DB value is
  *  bounded at the meter (an unexpected rail collapses to "other", never a new label value). */
@@ -176,6 +193,10 @@ export class MetricsService {
 
   /** True once the queue gauges + their batch callback are bound to the meter (created at most once). */
   private queueGaugesBound = false;
+
+  /** The last oldest-pending-KYC age the reconciler measured (seconds), observed by its gauge; null = none. */
+  private kycOldestPendingAgeSec: number | null = null;
+  private kycGaugeBound = false;
 
   /**
    * Runtime cardinality cap on the client `version` label. `"other"` is always allowed; a known bucket
@@ -408,6 +429,53 @@ export class MetricsService {
    *  code-defined vocabulary, never an id/IP — so any nonzero rate means rate limiting is degraded. */
   recordThrottleStoreError(keyPrefix: string): void {
     this.counter("throttle_store_errors_total").add(1, { key_prefix: keyPrefix });
+  }
+
+  /** The Didit webhook refused a delivery (401 bad signature / stale timestamp, 503 unconfigured). A run of
+   *  these is a secret rotated on one side only, or a misconfigured deploy: every verdict is being lost. */
+  incKycWebhookRejected(reason: KycWebhookRejection): void {
+    this.counter("kyc_webhook_rejected_total").add(1, { reason });
+  }
+
+  /** A terminal Didit verdict whose session no biker holds (never ours, replaced by a retry, or erased). */
+  incKycDecisionUnmatched(source: KycDecisionSource): void {
+    this.counter("kyc_decision_unmatched_total").add(1, { source });
+  }
+
+  /** A verdict the reconciler applied because its webhook never arrived (`sweep`), or that the rider's own
+   *  `/auth/me` poll read first (`poll`). A steady `sweep` rate means webhooks are being lost. */
+  incKycReconcileApplied(source: Exclude<KycDecisionSource, "webhook">): void {
+    this.counter("kyc_reconcile_applied_total").add(1, { source });
+  }
+
+  /** One PAID Didit session minted (vendor.submit succeeded). The vendor bill, as a rate. */
+  incKycSessionMinted(path: KycMintPath): void {
+    this.counter("kyc_session_minted_total").add(1, { path });
+  }
+
+  /** A push that reached no device of its recipient (no registered token, or every send refused). */
+  incPushUndelivered(kind: PushUndeliveredKind): void {
+    this.counter("push_undelivered_total").add(1, { kind });
+  }
+
+  /** A biker went online with no registered push token: they will never hear a job ping. */
+  incRiderOnlineWithoutPushToken(): void {
+    this.counter("rider_online_without_push_token_total").add(1);
+  }
+
+  /**
+   * How long the oldest still-pending KYC check has been waiting (seconds), measured by each reconcile tick
+   * and observed into the `kyc_oldest_pending_age_seconds` gauge. null = no pending check (observes nothing,
+   * so an empty queue never reads as a stale one). Bound lazily, like every other instrument here.
+   */
+  recordKycOldestPendingAge(seconds: number | null): void {
+    this.kycOldestPendingAgeSec = seconds;
+    if (this.kycGaugeBound) return;
+    this.kycGaugeBound = true;
+    const gauge = this.meter().createObservableGauge("kyc_oldest_pending_age_seconds", { unit: "s" });
+    gauge.addCallback((result) => {
+      if (this.kycOldestPendingAgeSec !== null) result.observe(this.kycOldestPendingAgeSec);
+    });
   }
 }
 

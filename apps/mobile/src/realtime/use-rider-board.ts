@@ -7,6 +7,7 @@ import { shouldNoticeTakenOrder } from "../logic/journey";
 import { useAuth } from "../auth/auth-context";
 import { clampGlassSample, enqueue, noteDropped, setActiveRole } from "../telemetry/rum";
 import { acquireSocket, releaseSocket } from "./socket";
+import { socketIdentity } from "./socket-identity";
 import { createSelfHealGate } from "./self-heal-gate";
 
 // B-O12: mirrors the server's own `take: 50` cap on `listOpen`/`GET /orders/open`
@@ -55,7 +56,11 @@ export function useRiderBoard(
   onFoodOffer?: (orderId: string) => void,
 ): { connected: boolean; expiredOrderIds: Set<string>; takenOrderIds: Set<string>; boardTakenNudge: number } {
   const { session } = useAuth();
-  const token = session?.accessToken;
+  // Keyed on the signed-in identity, not the raw token: a ~15-min access-token rotation must not tear
+  // the shared socket down and re-handshake it (the handshake reads the live token — see socket.ts).
+  const identity = socketIdentity(session);
+  const tokenRef = useRef(session?.accessToken);
+  tokenRef.current = session?.accessToken;
   const qc = useQueryClient();
   const [connected, setConnected] = useState(false);
   // Orders whose 90s auction closed with NObody picked (INTERFACE-AUDIT C2) — pushed to every bidder.
@@ -83,7 +88,8 @@ export function useRiderBoard(
   onFoodOfferRef.current = onFoodOffer;
 
   useEffect(() => {
-    if (!online || !token) {
+    const token = tokenRef.current;
+    if (!online || !identity || !token) {
       setConnected(false);
       return;
     }
@@ -92,7 +98,7 @@ export function useRiderBoard(
     // for all three, not one each. Every listener below is registered with a NAMED handler and
     // explicitly `.off()`'d in cleanup (not a blind `disconnect()`), since a bare disconnect would
     // tear the connection down out from under the other hooks still holding a reference to it.
-    const socket: Socket = acquireSocket(token);
+    const socket: Socket = acquireSocket(identity, token);
     socketRef.current = socket;
 
     // Self-heal on (re)connect the way use-order-socket / use-rider-job-socket do: re-scope the board
@@ -123,6 +129,9 @@ export function useRiderBoard(
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
     socket.on("connect_error", onConnectError);
+    // A late subscriber to an ALREADY-connected shared socket (the job/location hooks opened it first)
+    // never sees a "connect" event — join the board now, the way use-order-socket does.
+    if (socket.connected) onConnect();
 
     const onBoardNewOrder = (raw: unknown) => {
       const parsed = BoardNewOrderEvent.safeParse(raw);
@@ -209,9 +218,9 @@ export function useRiderBoard(
       socket.off(WS_EVENTS.bidExpired, onBidExpired);
       socket.off(WS_EVENTS.orderTaken, onOrderTaken);
       socket.off(WS_EVENTS.foodOffer, onFoodOfferEvent);
-      releaseSocket(token, socket);
+      releaseSocket(identity, socket);
     };
-  }, [online, token, qc]);
+  }, [online, identity, qc]);
 
   // When the rider's position changes while already connected, re-subscribe with the new loc so the
   // server re-scopes (leaves old geo rooms, joins the new neighbourhood). No socket teardown.

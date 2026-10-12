@@ -1,11 +1,12 @@
 import { createHmac } from "node:crypto";
 import type { RawBodyRequest } from "@nestjs/common";
 import type { Request } from "express";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
+import type { MetricsService } from "../observability/metrics.service";
 import type { RiderService } from "../riders/rider.service";
 import { canonicalizeDiditBody } from "./didit";
-import { KycController } from "./kyc.controller";
+import { AdminKyc, KycController } from "./kyc.controller";
 
 const SECRET = "whsec_test_0123456789";
 
@@ -485,6 +486,51 @@ describe("KycController.callback", () => {
       };
       await expect(ctl(riders, {}).callback(req(heldV3("s_h9", "In Review", 72)))).rejects.toThrow(/db down/);
     });
+  });
+});
+
+describe("KycController observability (item 13)", () => {
+  const metricsFake = () => ({ incKycWebhookRejected: vi.fn(), incKycDecisionUnmatched: vi.fn() });
+  const withMetrics = (riders: RiderService, env: Partial<Env>, m: ReturnType<typeof metricsFake>) =>
+    new KycController(riders, env as Env, m as unknown as MetricsService);
+
+  it("counts every refusal by why: a bad signature, a stale timestamp (401), no secret configured (503)", async () => {
+    const m = metricsFake();
+    const raw = JSON.stringify({ session_id: "s_1", status: "Approved" });
+    await expect(withMetrics(fakeRiders().riders, { DIDIT_WEBHOOK_SECRET: SECRET }, m).callback(req(raw, { "x-signature": "deadbeef" }))).rejects.toThrow();
+    const stale = String(Math.floor(Date.now() / 1000) - 600);
+    await expect(
+      withMetrics(fakeRiders().riders, { DIDIT_WEBHOOK_SECRET: SECRET }, m).callback(req(raw, { "x-signature-v2": signV2(raw), "x-timestamp": stale })),
+    ).rejects.toThrow();
+    await expect(withMetrics(fakeRiders().riders, { KYC_PROVIDER: "didit" }, m).callback(req(raw))).rejects.toThrow();
+    expect(m.incKycWebhookRejected.mock.calls).toEqual([["bad_signature"], ["stale_timestamp"], ["unconfigured"]]);
+  });
+
+  it("a delivered decision for a session no biker holds is warned and counted; a stale one is not", async () => {
+    const m = metricsFake();
+    const raw = JSON.stringify({ session_id: "s_gone", status: "Declined" });
+    const orphan = { ...fakeRiders(0).riders, kycSessionOwner: async () => null } as unknown as RiderService;
+    expect(await withMetrics(orphan, {}, m).callback(req(raw))).toEqual({ updated: 0 });
+    expect(m.incKycDecisionUnmatched).toHaveBeenCalledWith("webhook");
+    const m2 = metricsFake();
+    await withMetrics(fakeRiders(0).riders, {}, m2).callback(req(raw));
+    expect(m2.incKycDecisionUnmatched).not.toHaveBeenCalled();
+  });
+});
+
+describe("KycController.adminSet — resetAttempts (item 7)", () => {
+  it("passes resetAttempts through on a pending reset", async () => {
+    const adminSetKyc = vi.fn(async () => ({}));
+    const c = ctl({ adminSetKyc } as unknown as RiderService, {});
+    await c.adminSet("00000000-0000-4000-8000-000000000001", { status: "pending", resetAttempts: true, note: "WhatsApp check" }, "admin:ops");
+    expect(adminSetKyc).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000001", "pending", null, "admin:ops", "WhatsApp check", { resetAttempts: true });
+  });
+
+  it("the body schema accepts resetAttempts only with a pending reset", () => {
+    expect(AdminKyc.safeParse({ status: "pending", resetAttempts: true }).success).toBe(true);
+    expect(AdminKyc.safeParse({ status: "verified", resetAttempts: true }).success).toBe(false);
+    expect(AdminKyc.safeParse({ status: "failed", reasonCode: "other", resetAttempts: true }).success).toBe(false);
+    expect(AdminKyc.safeParse({ status: "verified" }).success).toBe(true);
   });
 });
 

@@ -8,6 +8,7 @@ import {
   decideDiditKyc,
   diditEventAt,
   diditTimestampFresh,
+  isDiditDecisionStatus,
   isDiditDocumentExpired,
   extractDiditDocumentExpiry,
   extractDiditDeclineReason,
@@ -37,6 +38,21 @@ describe("mapDiditStatus", () => {
     expect(mapDiditStatus("Resubmitted")).toBe("pending");
     expect(mapDiditStatus("Abandoned")).toBe("pending");
     expect(mapDiditStatus("Not Started")).toBe("pending");
+  });
+
+  it("normalises separators like classifyDiditSession: KYC_EXPIRED is Kyc Expired", () => {
+    expect(mapDiditStatus("KYC_EXPIRED")).toBe("expired");
+    expect(mapDiditStatus("kyc-expired")).toBe("expired");
+    expect(mapDiditStatus(" APPROVED ")).toBe("verified");
+  });
+});
+
+describe("isDiditDecisionStatus (item 1: what the poll's read applies)", () => {
+  it("Approved, Declined, Kyc Expired and In Review decide; everything still open, or dead, does not", () => {
+    for (const s of ["Approved", "Declined", "Kyc Expired", "In Review", "in_review"]) expect(isDiditDecisionStatus(s)).toBe(true);
+    for (const s of ["Not Started", "In Progress", "Awaiting User", "Resubmitted", "Abandoned", "Expired", "", null, undefined]) {
+      expect(isDiditDecisionStatus(s)).toBe(false);
+    }
   });
 });
 

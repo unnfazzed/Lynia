@@ -6,7 +6,7 @@ launch/pilot-readiness audit in this repo. Future sweeps read this first so they
 rediscover known bugs. Status is verified against the code at the time noted, not trusted from
 the source report.
 
-**Last consolidated:** 2026-10-07 (**Merchant journey audit**: 1 blocker, 5 high, 16 medium OPEN; see `docs/e2e-runs/2026-10-07-merchant/REPORT.md` and the entry at the end.) Earlier the same day: (**Rider UI/UX audit**: 65 of 68 findings fixed across #1106–#1109 and #1112; B6, FJ-H2, FJ-H4 open, not selected. See the "Rider UI/UX audit 2026-10-07" entry at the end.)
+**Last consolidated:** 2026-10-12 (**Biker onboarding happy-path review**: 50 findings `ONB-HP-01`..`50` FIXED; see that entry.) Prior: 2026-10-07 (**Merchant journey audit**: 1 blocker, 5 high, 16 medium OPEN; see `docs/e2e-runs/2026-10-07-merchant/REPORT.md` and the entry at the end.) Earlier the same day: (**Rider UI/UX audit**: 65 of 68 findings fixed across #1106–#1109 and #1112; B6, FJ-H2, FJ-H4 open, not selected. See the "Rider UI/UX audit 2026-10-07" entry at the end.)
 Prior: 2026-10-06 (**`MOB-MAP-04` FIXED** — interactive session. The Android map was blank on every
 phone on Android 16 or older: Play signs the app with three certificates (hybrid signing) and the Maps key allowlisted
 only the Android 17+ one. Fixed in GCP with no build; Maps Key Doctor now tests the allowlist, Terraform refuses a
@@ -791,6 +791,76 @@ expired-document decline reuses the existing `id_expired` key ("ID document expi
 Also in this change: the admin KYC review response (`admin-kyc-review.service.ts`) gained `kycHeld` (pending +
 stored status classifies as held, exactly as `/auth/me` derives it) and `kycVendorStatus` (the raw stored Didit
 status, or null).
+
+---
+
+## Biker onboarding happy-path review 2026-10-12 (ONB-HP) — FIXED
+
+Interactive review of the biker path from the splash to the ID check and the first job (owner: "onboarding must be
+short and simple"), including customer → biker switching while KYC is in progress. 50 findings, all fixed in one PR
+with no new design. Each fix has a regression test (API vitest, admin, mobile jest; `rider-onboarding.int.spec.ts`
+is database-backed and runs in CI's `schema` job). Owner decisions taken on the recommended side: returning users
+verify (40), admin attempts reset (42), customer orders stay in the bootstrap (38), admin customer actions cover
+biker accounts (39). **No SMS fallback** (owner, 2026-10-12): an undelivered push is counted
+(`push_undelivered_total{kind}`), nothing else is sent. Left out because they need a drawing or copy: asking for
+notifications before R2, the underage F5 copy, hiding Money while KYC is pending.
+
+| ID | Problem | Fix | Status |
+|---|---|---|---|
+| ONB-HP-01 | Ride intent lost if the app is killed on C2/C4 | Intent saved on the phone at C1 (`saveSignupIntent`), read back by C2/C4/C5 | **FIXED** |
+| ONB-HP-02 | Android Back on C2 closed the app | Back does what the on-screen arrow does | **FIXED** |
+| ONB-HP-03 | C5 said "No ID needed" on the Ride path | Note hidden when intent is rider | **FIXED** |
+| ONB-HP-04 | C5 bounced through the board to reach R1 | `riderEntry()` goes straight to `/rider/become` | **FIXED** |
+| ONB-HP-05 | Splash said "Getting jobs near you" to unverified bikers | Board splash only for a known-verified rider (`loadRiderVerifiedHint`) | **FIXED** |
+| ONB-HP-06 | `session.role` stayed customer after become | Set on become; `session-role-sync` corrects it on every `me` | **FIXED** |
+| ONB-HP-07 | Become accepted a blank first name | 400 `name_required`; names trimmed | **FIXED** |
+| ONB-HP-08 | An admin could become a rider and lose admin | 403 `role_not_allowed` | **FIXED** |
+| ONB-HP-09 | No exit from R1 on the Ride path | Back on R1 saves "customer" and clears to Home | **FIXED** |
+| ONB-HP-10 | A retry could replace a check still in progress | CAS on `kycRef`; 409 `kyc_in_progress` when none attached yet | **FIXED** |
+| ONB-HP-11 | R1 spun while waiting for a `me` refetch | `withRiderStub` seeds the cache; navigate at once | **FIXED** |
+| ONB-HP-12 | Side switches left the other side's stack underneath | `replaceClearingStack` on every switch | **FIXED** |
+| ONB-HP-13 | Browser-fallback return could open a second board | `app/+native-intent.tsx` drops the bare `lynia://` return while running | **FIXED** |
+| ONB-HP-14 | 5/h limit counted failed mints | Route throttle 30/h; 5 paid mints/h counted from audit rows (429 `kyc_mint_limit`) | **FIXED** |
+| ONB-HP-15 | Double-tap retry paid twice | Claim marker before paying | **FIXED** |
+| ONB-HP-16 | Camera permission asked after the server call | `primeKycCamera()` in parallel | **FIXED** |
+| ONB-HP-17 | Half-failed become rollback left a riderless rider | `releaseRiderClaim` in one transaction | **FIXED** |
+| ONB-HP-18 | R1 name draft saved per keystroke | Debounced | **FIXED** |
+| ONB-HP-19 | A lost Didit webhook left the biker waiting 15–80 min | `/auth/me`'s Didit read applies terminal verdicts (single-flight, 60 s cooldown); sweep oldest-first, dead sessions normalised, backoff | **FIXED** |
+| ONB-HP-20 | Kill/✕ after the check showed F3 instead of "Checking" | Launch mark persisted on the phone | **FIXED** |
+| ONB-HP-21 | Push taps didn't switch side / opened a second board | `openDestination` saves the side and uses `dismissTo` | **FIXED** |
+| ONB-HP-22 | Notification "Try again" went to R1 and showed when locked | Routes to `/rider`, only on the newest decline still retryable | **FIXED** |
+| ONB-HP-23 | Verdict push to a biker with no token went unrecorded | `push_undelivered_total{kind}`, `rider_online_without_push_token_total`; no SMS | **FIXED** |
+| ONB-HP-24 | "You can take jobs now" shown to unverified bikers | Gated on verified | **FIXED** |
+| ONB-HP-25 | Money badge warned during free jobs; unverified could top up | Badge follows the free-jobs rule; top-up 403 `kyc` server-side and gated in app | **FIXED** |
+| ONB-HP-26 | Gate "use as customer" didn't save side or go offline | `switchToCustomer` + cleared stack | **FIXED** |
+| ONB-HP-27 | Location-denied-once users walled off R3 | R3 no longer gated by G8 | **FIXED** |
+| ONB-HP-28 | Go-online waited up to 9 s for GPS | Seeded from a last-known fix (≤2 min, ≤200 m) | **FIXED** |
+| ONB-HP-29 | Killing during permissions re-showed R3 | Welcome marked seen on "Go online" | **FIXED** |
+| ONB-HP-30 | One-frame flash of F3 / offline board | Blank frame until state is known | **FIXED** |
+| ONB-HP-31 | Two accounts shared one "seen R3" flag | Stored as a set of profile ids | **FIXED** |
+| ONB-HP-32 | A decline racing go-online left the biker online | Online and heartbeat CAS require `kyc_status='verified'` + cooldown | **FIXED** |
+| ONB-HP-33 | First job got no live updates / no location sent | Board, job and location hooks treat an already-connected socket as connected | **FIXED** |
+| ONB-HP-34 | Biker could be offered/accept their own food order; accept skipped standing | Round excludes `customerId`; accept refuses `own_order`, re-runs `onlineRefusalReason`; P2002 → 409 `one_active_ride` | **FIXED** |
+| ONB-HP-35 | Sockets restarted on every token refresh | Keyed by profile id | **FIXED** |
+| ONB-HP-36 | Board polled while the socket was up | Polls only while it is down | **FIXED** |
+| ONB-HP-37 | Bid refusals had no reason code | `{reason, message}` on every refusal | **FIXED** |
+| ONB-HP-38 | Customer orders vanished from the bootstrap after become | `activeOrders` returned for both roles | **FIXED** |
+| ONB-HP-39 | Admin hold / lift / cash-ban lift skipped rider accounts | `CUSTOMER_SIDE_ROLES = ["customer","rider"]` | **FIXED** |
+| ONB-HP-40 | Returning users (erased account) declined as duplicates | Tombstone-only match verifies, audited `verified_id_returning` | **FIXED** |
+| ONB-HP-41 | Admin KYC panel only acted on pending | Decision panel for failed/expired too | **FIXED** |
+| ONB-HP-42 | Nothing could reset a locked biker | Admin "Reset attempts…" (audited `rider.kyc_reset`) | **FIXED** |
+| ONB-HP-43 | Decline push said "try again" when locked | Handoff "Both tries are used…" copy | **FIXED** |
+| ONB-HP-44 | Expiry and admin reset sent no push | Pushes with handoff copy (`kyc-push-copy.ts`) | **FIXED** |
+| ONB-HP-45 | Review queue showed newest 100 only | Oldest first, paged | **FIXED** |
+| ONB-HP-46 | Funnel not measurable | Per-outcome, launch, permission and go-online events + time to first online | **FIXED** |
+| ONB-HP-47 | No alerts for lost results / stuck pending | KYC counters + gauge; Terraform alerts behind `kyc_alerts_enabled` (default off) | **FIXED** |
+| ONB-HP-48 | No audit for become / paid sessions | `rider.become`, `rider.kyc_session_minted` | **FIXED** |
+| ONB-HP-49 | Stale docs/comments | `PILOT-READINESS.md`, KYC controller/didit/auth comments corrected | **FIXED** |
+| ONB-HP-50 | No database-backed onboarding test | `rider-onboarding.int.spec.ts` | **FIXED** |
+
+**Ops note:** the verdict push only reaches phones if the GitHub Variable `PUSH_PROVIDER=fcm` is set for the Azure
+deploy (`release-azure.yml` defaults to `noop`). **Seen, not fixed here:** `app/rider/job.tsx`, `food-job.tsx` and
+`food-offer.tsx` still `router.replace("/rider")` back to the board (likely stacks a second board; `dismissTo` would fix it).
 
 ---
 

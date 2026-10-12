@@ -21,6 +21,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { pickupPoint, publicWaypoint } from "../orders/waypoints";
 import { RiderNudgeService } from "../tracking/rider-nudge.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { onlineRefusalReason, REFUSAL_MESSAGE } from "../riders/online-gate";
 import { applyReliabilityDelta } from "../riders/reliability";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { DISPATCH_STRATEGY, type DispatchStrategy } from "./dispatch-strategy";
@@ -359,7 +360,9 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     const cooling = await this.coolingDownRiderIds(orderId, nowMs);
     let candidates: Awaited<ReturnType<DispatchStrategy["pickCandidates"]>> = [];
     for (let pass = 0; pass < 3; pass++) {
-      const excluded = [...new Set([...order.dispatchExcludedRiderIds, ...teamIds, ...cooling, ...skipped])];
+      // A biker who ordered this food themselves is never offered the job of delivering it to themselves
+      // (the parcel twin is selectOffer's self-offer refusal).
+      const excluded = [...new Set([...order.dispatchExcludedRiderIds, order.customerId, ...teamIds, ...cooling, ...skipped])];
       const picked = await this.strategy.pickCandidates({ lat: point.lat, lng: point.lng, radiusM, excludeRiderIds: excluded, preferredRiderIds: preferred, limit });
       const covering = await ridersWhoCoverCommission(this.prisma, picked.map((c) => c.riderId), commission);
       candidates = picked.filter((c) => covering.has(c.riderId));
@@ -579,10 +582,10 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
   private async liveOffer(
     orderId: string,
     riderId: string,
-  ): Promise<{ merchantId: string | null; merchantPhase: string | null; roundExpiresAt: Date | null; deliveryFee: Prisma.Decimal | null }> {
+  ): Promise<{ merchantId: string | null; customerId: string; merchantPhase: string | null; roundExpiresAt: Date | null; deliveryFee: Prisma.Decimal | null }> {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, orderType: "merchant" },
-      select: { status: true, merchantId: true, merchantPhase: true, dispatchOfferExpiresAt: true, deliveryFee: true },
+      select: { status: true, merchantId: true, customerId: true, merchantPhase: true, dispatchOfferExpiresAt: true, deliveryFee: true },
     });
     if (!order) throw new NotFoundException("Order not found");
     const offer = await this.prisma.foodDispatchAttempt.findUnique({
@@ -594,6 +597,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     if (offer.expiresAt.getTime() < Date.now()) throw new ConflictException("This offer just expired, pick your next job");
     return {
       merchantId: order.merchantId,
+      customerId: order.customerId,
       merchantPhase: order.merchantPhase ?? null,
       roundExpiresAt: order.dispatchOfferExpiresAt,
       deliveryFee: order.deliveryFee ?? null,
@@ -658,6 +662,21 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
    *  the same way); every other rider on the round is told it's gone. */
   async acceptDispatch(orderId: string, riderId: string): Promise<{ orderId: string; status: "assigned" }> {
     const order = await this.liveOffer(orderId, riderId);
+    // A biker never delivers their own food order (the round already leaves them out; this covers a row
+    // written before that rule, or a crafted request).
+    if (order.customerId === riderId) {
+      throw new ForbiddenException({ reason: "own_order", message: "You can't deliver your own order." });
+    }
+    // The offer was made while the rider was in good standing, but an admin suspend/ban, a reliability
+    // hold, a KYC lapse or a cooldown can land inside the 60s round. Re-run the same online gate the
+    // parcel offer path uses (standing only — the commission check below is its own gate).
+    const standing = await this.prisma.rider.findUnique({
+      where: { profileId: riderId },
+      select: { kycStatus: true, accountStatus: true, onHold: true, cooldownUntil: true },
+    });
+    if (!standing) throw new ForbiddenException("Not a biker");
+    const refusal = onlineRefusalReason(standing);
+    if (refusal) throw new ForbiddenException({ reason: refusal, message: REFUSAL_MESSAGE[refusal] });
     // Owner 2026-10-12: the rider's wallet must cover this job's commission (the round only rang riders
     // who could, but a balance can move between the ring and the tap).
     await assertRiderCoversCommission(this.prisma, riderId, jobCommission({ orderType: "merchant", deliveryFee: order.deliveryFee }));
@@ -700,7 +719,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       if (claimed.count === 0) throw new ConflictException("This offer is no longer live");
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-        throw new ConflictException("You're already on another active job");
+        throw new ConflictException({ reason: "one_active_ride", message: "You're already on another active job" });
       }
       throw err;
     }

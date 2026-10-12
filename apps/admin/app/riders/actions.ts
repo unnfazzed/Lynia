@@ -38,6 +38,22 @@ export async function decideKyc(
 }
 
 /**
+ * Give a biker their ID-check tries back (owner 2026-10-12): `POST /admin/riders/:id/kyc { status: "pending",
+ * resetAttempts: true }`. The endpoint zeroes the attempt counter, clears the decline reason and reopens the
+ * check in one transaction, with its `rider.kyc_reset` audit row (A-01), so <KycDecision> sets
+ * `auditInEndpoint`. The biker gets a "Finish your ID check" push. A refusal comes back as a failed
+ * `KycWriteResult`, like decideKyc.
+ */
+export async function resetKycAttempts(profileId: string, note?: string): Promise<KycWriteResult> {
+  const res = await adminPostResult(`/admin/riders/${profileId}/kyc`, { status: "pending", resetAttempts: true, note: note || null });
+  if (!res.ok) return { ok: false, message: describeAdminPostFailure(res) };
+  revalidatePath(`/riders/${profileId}/kyc`);
+  revalidatePath(`/riders/${profileId}`);
+  revalidatePath("/riders");
+  return { ok: true };
+}
+
+/**
  * Rider account-status mutations (item 1) — suspend / lift / ban via
  * `POST /admin/riders/:id/{suspend|lift|ban}`. The domain half of a <ConfirmModal> confirm (the audit
  * row is already written by submitAdminAction). `action` is the endpoint segment; the body carries the

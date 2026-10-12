@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { classifyDiditSession, type DiditSessionClass } from "./didit";
+import { classifyDiditSession, type DiditSessionClass, isDiditDecisionStatus } from "./didit";
 import type { ServerKycPendingState } from "./kyc-pending-state";
 import { KYC_VENDOR, type KycVendor } from "./kyc-vendor";
 
@@ -24,6 +24,9 @@ export const KYC_PENDING_STATE_TTL_MS = 30_000;
 
 /** Ceiling on cached entries, so a burst of onboarding riders can't grow this map without bound. */
 const MAX_ENTRIES = 5_000;
+
+/** Hears a decided Didit status a pending-state read saw: the session ref, the status, the decision body (PII). */
+export type DecisionReadListener = (ref: string, status: string, decision: unknown) => void;
 
 /** The cached answer: the session's class (held / dead are the R-1 / R-3 refinements of the two states). */
 interface CacheEntry {
@@ -56,6 +59,8 @@ export class KycPendingStateService {
   private readonly cache = new Map<string, CacheEntry>();
   /** Sessions with a call already out — joined rather than duplicated. */
   private readonly inFlight = new Map<string, Promise<DiditSessionClass>>();
+  /** Told about a decided status a read saw (see onDecisionRead). Synchronous; it fires its own work. */
+  private decisionListener?: DecisionReadListener;
 
   constructor(@Inject(KYC_VENDOR) private readonly vendor: KycVendor) {}
 
@@ -73,7 +78,7 @@ export class KycPendingStateService {
    * Both share one cache entry per ref, so it is one vendor call per rider per TTL whichever is asked.
    */
   async read(ref: string | null | undefined): Promise<DiditSessionClass> {
-    if (!ref || (!this.vendor.sessionStatus && !this.vendor.pendingState)) return "unfinished";
+    if (!ref || (!this.vendor.sessionRead && !this.vendor.sessionStatus && !this.vendor.pendingState)) return "unfinished";
 
     const now = Date.now();
     const hit = this.cache.get(ref);
@@ -109,10 +114,31 @@ export class KycPendingStateService {
     this.remember(ref, classifyDiditSession(vendorStatus));
   }
 
+  /**
+   * Register who hears about a DECIDED status this service reads (isDiditDecisionStatus): Approved, Declined,
+   * Kyc Expired, In Review. The poll only ever reads a rider still `pending`, so a decided status here means
+   * its webhook is late or lost — KycReconcileService registers and applies it through the webhook's own
+   * path, from this read's body (no second vendor call). One listener; a later registration replaces it.
+   */
+  onDecisionRead(listener: DecisionReadListener): void {
+    this.decisionListener = listener;
+  }
+
   private async load(ref: string): Promise<DiditSessionClass> {
     let cls: DiditSessionClass = "unfinished";
     try {
-      if (this.vendor.sessionStatus) {
+      if (this.vendor.sessionRead) {
+        const read = await this.vendor.sessionRead(ref);
+        cls = classifyDiditSession(read?.status);
+        // The body goes to the listener and nowhere else: it is not cached (only `cls` is) or logged.
+        if (read && this.decisionListener && isDiditDecisionStatus(read.status)) {
+          try {
+            this.decisionListener(ref, read.status, read.decision);
+          } catch (err) {
+            this.logger.warn(`decision-read listener threw for ${ref}: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+      } else if (this.vendor.sessionStatus) {
         cls = classifyDiditSession(await this.vendor.sessionStatus(ref));
       } else {
         // A vendor with only the two-value read: it can't say held or dead, so it never does.

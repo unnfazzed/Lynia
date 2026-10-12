@@ -19,7 +19,13 @@
 import { openAuthSessionAsync } from "expo-web-browser";
 
 import { canPresentKycCheck, presentKycCheck } from "../KycCheckHost";
-import { runKycVerification } from "../verify";
+import { primeKycCamera, runKycVerification } from "../verify";
+
+const mockTrack = jest.fn();
+jest.mock("../../telemetry/events", () => ({
+  ...jest.requireActual("../../telemetry/events"),
+  track: (...a: unknown[]) => mockTrack(...a),
+}));
 
 jest.mock("expo-web-browser", () => ({ openAuthSessionAsync: jest.fn() }));
 jest.mock("../KycCheckHost", () => ({
@@ -159,5 +165,34 @@ describe("runKycVerification — the browser fallback lane", () => {
     mockPresent.mockReturnValue(Promise.resolve("cancelled"));
     const cancelled = await runKycVerification(CREDS);
     expect(cancelled.sessionUnusable).toBe(false);
+  });
+});
+
+describe("the camera ask runs alongside the session call (primeKycCamera)", () => {
+  it("asks up front when the sheet can present; the launch reuses that answer instead of asking again", async () => {
+    mockCanPresent.mockReturnValue(true);
+    mockPresent.mockReturnValue(Promise.resolve("completed"));
+    ImagePicker.getCameraPermissionsAsync.mockResolvedValue({ granted: false, canAskAgain: true });
+    const camera = primeKycCamera();
+    await expect(camera).resolves.toBe(true);
+    expect(ImagePicker.requestCameraPermissionsAsync).toHaveBeenCalledTimes(1);
+    await runKycVerification(CREDS, { camera });
+    expect(ImagePicker.requestCameraPermissionsAsync).toHaveBeenCalledTimes(1);
+    expect(mockPresent).toHaveBeenCalled();
+  });
+
+  it("asks nothing when there is no sheet to present (the browser lane asks per site)", async () => {
+    mockCanPresent.mockReturnValue(false);
+    await expect(primeKycCamera()).resolves.toBe(true);
+    expect(ImagePicker.getCameraPermissionsAsync).not.toHaveBeenCalled();
+  });
+
+  it("a refused camera still falls back to the browser tab — and is reported", async () => {
+    mockCanPresent.mockReturnValue(true);
+    mockOpen.mockResolvedValue({ type: "success" } as never);
+    await expect(runKycVerification(CREDS, { camera: Promise.resolve(false) })).resolves.toEqual({ outcome: "completed", sessionUnusable: false });
+    expect(mockPresent).not.toHaveBeenCalled();
+    expect(mockTrack).toHaveBeenCalledWith("kyc_camera_denied");
+    expect(mockTrack).toHaveBeenCalledWith("kyc_launch", { lane: "browser", outcome: "completed" });
   });
 });

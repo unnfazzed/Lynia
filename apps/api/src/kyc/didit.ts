@@ -12,11 +12,15 @@ export type RiderKyc = "verified" | "failed" | "pending" | "expired";
  * Approved → verified. Declined → failed. "Kyc Expired" (a previously-verified rider whose national
  * ID has aged out → must re-verify, rider-journey 1·b2) → its own terminal `expired` state, distinct
  * from a verification-time decline. Everything else — including session "Expired" (the hosted URL aged
- * out before the rider finished, so they can simply retry) — stays pending, and the admin
- * manual-review backstop (T7) resolves anything stuck.
+ * out before the rider finished, so they can simply retry) — maps to pending here.
+ *
+ * In Review maps to pending HERE, but that is not the rider's outcome: KYC-R26-12 made the decision fully
+ * automatic, so {@link decideDiditKyc} declines an In Review (nothing waits for a human). Only a session
+ * Didit never finished judging stays pending. Normalised like {@link classifyDiditSession} (case and
+ * `_`/`-`/space runs), so `KYC_EXPIRED` and `Kyc Expired` are one status.
  */
 export function mapDiditStatus(status: string): RiderKyc {
-  switch (status.trim().toLowerCase()) {
+  switch (normDiditStatus(status)) {
     case "approved":
       return "verified";
     case "declined":
@@ -267,6 +271,21 @@ export function extractDiditDeclineReason(payload: unknown): string | null {
 function isDiditInReview(status: string): boolean {
   return status.trim().toLowerCase().replace(/[\s_-]+/g, " ") === "in review";
 }
+
+/**
+ * A status Didit will not move on its own any more, and that decides the rider's check: Approved, Declined,
+ * Kyc Expired, and In Review (declined by decideDiditKyc since KYC-R26-12). What the `/auth/me` poll's vendor
+ * read hands the reconciler to apply when the webhook carrying it is late or lost. Abandoned / session
+ * Expired are dead, not decided: they record a vendor status, which the sweep does on its own schedule.
+ */
+export function isDiditDecisionStatus(status: string | null | undefined): boolean {
+  if (!status) return false;
+  return mapDiditStatus(status) !== "pending" || isDiditInReview(status);
+}
+
+/** The PERSISTED statuses of a dead session (classifyDiditSession `dead`), normalised: what the reconcile
+ *  candidate query compares a stored status against, in SQL, after the same normalisation. */
+export const DIDIT_DEAD_STATUSES_NORMALISED = ["abandoned", "expired", "kyc expired"] as const;
 
 /**
  * D-75 item 2 (IR26-09): is this a result Didit JUDGED that {@link decideDiditKyc} holds for a human? That

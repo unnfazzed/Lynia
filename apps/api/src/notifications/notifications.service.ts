@@ -531,15 +531,20 @@ export class NotificationsService {
   /**
    * Best-effort push to an explicit set of profiles (trust & safety fan-outs — e.g. the SOS
    * counterparty alert). Empty/duplicate ids are handled by `send`. Never throws.
+   *
+   * Resolves to the profiles the provider accepted at least one device for (empty on a failure), so a
+   * caller whose message must not vanish (a KYC outcome — RiderService.notifyKycDecision) can see that it
+   * reached nobody. Callers that don't care ignore it, as before.
    */
   async notifyProfiles(
     profileIds: string[],
     msg: { title: string; body: string; data?: Record<string, string>; collapseKey?: string; silent?: boolean },
-  ): Promise<void> {
+  ): Promise<Set<string>> {
     try {
-      await this.send(profileIds, msg);
+      return await this.send(profileIds, msg);
     } catch (err) {
       this.logger.warn(`notifyProfiles failed: ${(err as Error).message}`);
+      return new Set();
     }
   }
 
@@ -584,7 +589,12 @@ export class NotificationsService {
       // `platform` routes each device to its transport — iOS tokens are raw APNs tokens (PlatformRoutedPush).
       select: { token: true, profileId: true, platform: true },
     });
-    if (tokens.length === 0) return new Set();
+    if (tokens.length === 0) {
+      // Not an error (a customer who never allowed notifications), but never silent either: a caller that
+      // needs the message to land reads the empty set; this line is for whoever greps the log after.
+      this.logger.debug(`push "${msg.data?.kind ?? "untyped"}" reached no device: ${profileIds.length} profile(s), no registered token`);
+      return new Set();
+    }
 
     // One batched provider call (FCM sendEach, chunked ≤500) instead of a per-token round-trip fan-out.
     // Results align with `tokens` order, so a dead token is pruned — and a delivery credited — by position.

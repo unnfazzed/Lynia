@@ -1,3 +1,4 @@
+import { WS_EVENTS } from "@lynia/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, create } from "react-test-renderer";
 import { EARNINGS_SUMMARY_KEY, HISTORY_KEY } from "../../query/use-history-feed";
@@ -10,7 +11,7 @@ jest.mock("../../auth/auth-context", () => ({
 type FakeSocket = {
   on: (event: string, cb: (...args: unknown[]) => void) => FakeSocket;
   off: (event: string, cb: (...args: unknown[]) => void) => FakeSocket;
-  emit: () => FakeSocket;
+  emit: jest.Mock;
   disconnect: () => void;
   trigger: (event: string, ...args: unknown[]) => void;
 };
@@ -26,7 +27,7 @@ function mockCreateFakeSocket(): FakeSocket {
       handlers[event] = (handlers[event] ?? []).filter((h) => h !== cb);
       return socket;
     },
-    emit: () => socket,
+    emit: jest.fn(() => socket),
     disconnect: () => {},
     trigger: (event, ...args) => (handlers[event] ?? []).forEach((cb) => cb(...args)),
   };
@@ -34,11 +35,14 @@ function mockCreateFakeSocket(): FakeSocket {
 }
 
 let mockLastSocket: FakeSocket;
+// When true, the next acquired socket is ALREADY connected — the shared-socket late-subscriber case.
+let mockPreConnected = false;
 // A-O17: the hook now acquires/releases a shared connection instead of creating/disconnecting its
 // own — see use-rider-board.test.tsx's matching comment.
 jest.mock("../socket", () => ({
   acquireSocket: jest.fn(() => {
     mockLastSocket = mockCreateFakeSocket();
+    (mockLastSocket as FakeSocket & { connected?: boolean }).connected = mockPreConnected;
     return mockLastSocket;
   }),
   releaseSocket: jest.fn(),
@@ -245,5 +249,32 @@ describe("useRiderJobSocket customer presence (BH-08)", () => {
       mockLastSocket.trigger("presence:recovered", { orderId: ORDER_5, role: "rider", at: "t" });
     });
     expect(recovered).not.toHaveBeenCalled();
+  });
+});
+
+// Shared-socket late subscriber: the board opened (and connected) the shared socket long before the job
+// screen mounts — the job hook gets no "connect" event and used to never join the order room.
+describe("useRiderJobSocket on an already-connected shared socket", () => {
+  afterEach(() => {
+    mockPreConnected = false;
+  });
+
+  it("emits subscribeOrder immediately and reports connected", () => {
+    mockPreConnected = true;
+    const qc = new QueryClient();
+    let result: { connected: boolean } | undefined;
+    function Capture(): null {
+      result = useRiderJobSocket("order-9", () => {});
+      return null;
+    }
+    act(() => {
+      create(
+        <QueryClientProvider client={qc}>
+          <Capture />
+        </QueryClientProvider>,
+      );
+    });
+    expect(mockLastSocket.emit).toHaveBeenCalledWith(WS_EVENTS.subscribeOrder, { orderId: "order-9" });
+    expect(result?.connected).toBe(true);
   });
 });

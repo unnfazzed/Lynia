@@ -6,7 +6,7 @@ import { adminFetchResult } from "../../../lib/api";
 import type { KycReview } from "../../../lib/adminTypes";
 
 vi.mock("../../../lib/api", () => ({ adminFetchResult: vi.fn() }));
-vi.mock("../../actions", () => ({ decideKyc: vi.fn() }));
+vi.mock("../../actions", () => ({ decideKyc: vi.fn(), resetKycAttempts: vi.fn(async () => ({ ok: true })) }));
 vi.mock("../../../actions/audit", () => ({ submitAdminAction: vi.fn() }));
 
 afterEach(() => {
@@ -183,6 +183,71 @@ describe("KYC review: decided states", () => {
   it("the resubmission warning names the previous decline by its label", async () => {
     await open(review({ attempt: 2, kycAttempts: 1, declineReason: "liveness_failed" }));
     expect(warnbar("Resubmission — attempt 2.")).toContain("Previously declined: Liveness check failed.");
+  });
+});
+
+// Owner 2026-10-12: the decision actions are no longer pending-only, and a locked biker can be given their
+// tries back from the same ConfirmModal pattern.
+describe("KYC review: decisions on a declined / expired biker, and resetting attempts", () => {
+  const button = (name: string) => screen.queryByRole("button", { name });
+
+  it.each(["failed", "expired"] as const)("a %s biker can be approved or reset — not declined again", async (status) => {
+    await open(review({ status, kycAttempts: 1, attempt: 2 }));
+    expect(button("Approve biker")).toBeTruthy();
+    expect(button("Reset attempts…")).toBeTruthy();
+    expect(button("Decline…")).toBeNull();
+  });
+
+  it("a locked biker keeps the actions, and the lock copy points at the reset", async () => {
+    await open(review({ status: "failed", kycAttempts: 2, attempt: 2, locked: true, declineReason: "doc_tampered" }));
+    expect(button("Reset attempts…")).toBeTruthy();
+    expect(warnbar("Locked — two attempts used.")).toContain("until you reset its attempts");
+  });
+
+  it("a verified biker has nothing left to decide", async () => {
+    await open(review({ status: "verified" }));
+    expect(button("Approve biker")).toBeNull();
+    expect(button("Reset attempts…")).toBeNull();
+  });
+
+  it("a pending biker offers the reset only once they've used a try", async () => {
+    await open(review());
+    expect(button("Decline…")).toBeTruthy();
+    expect(button("Reset attempts…")).toBeNull();
+    cleanup();
+    await open(review({ kycAttempts: 1, attempt: 2 }));
+    expect(button("Reset attempts…")).toBeTruthy();
+  });
+
+  it("resetting needs a note and calls the reset action (attempts → 0, reason cleared)", async () => {
+    const { resetKycAttempts } = await import("../../actions");
+    await open(review({ status: "failed", kycAttempts: 2, attempt: 2, locked: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset attempts…" }));
+    expect(screen.getByText(/Their attempts go back to/)).toBeTruthy();
+    const confirm = screen.getByRole("button", { name: "Reset attempts" }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText(/Note/), { target: { value: "Verified on WhatsApp" } });
+    expect(confirm.disabled).toBe(false);
+    fireEvent.click(confirm);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(resetKycAttempts).toHaveBeenCalledWith("r-1", "Verified on WhatsApp");
+  });
+});
+
+describe("KYC review: copy matches how decisions are made now", () => {
+  it("states the one automatic cut (KYC_THRESHOLDS), with no human review band", async () => {
+    await open(review());
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("Decisions are automatic: a face match of 0.6 or more passes, below 0.6 is declined");
+    expect(text).not.toContain("0.85");
+    expect(text).not.toMatch(/needs a human compare/);
+  });
+
+  it("counts tries used, and says fixable declines don't count", async () => {
+    await open(review({ kycAttempts: 1, attempt: 2 }));
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("1 of 2 · fixable declines don't count");
+    expect(text).not.toMatch(/Attempt\s*2 of 2/);
   });
 });
 

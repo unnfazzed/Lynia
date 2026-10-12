@@ -36,6 +36,24 @@ describe("AdminRidersService.listRiders", () => {
     ...over,
   });
 
+  it("item 9: the pending KYC queue is oldest-waiting first and pages 100 at a time; other views stay newest-first", async () => {
+    const seen: Array<{ orderBy: unknown; skip: number; take: number }> = [];
+    const prisma = {
+      rider: { findMany: async (a: { orderBy: unknown; skip: number; take: number }) => (seen.push(a), []) },
+      order: { findMany: async () => [] },
+    };
+    const svc = new AdminRidersService(prisma as unknown as PrismaService, noNotifications, noGateway);
+    await svc.listRiders("pending");
+    await svc.listRiders("pending", undefined, 3);
+    await svc.listRiders("verified");
+    await svc.listRiders(undefined, undefined, 0);
+    expect(seen[0]).toMatchObject({ orderBy: [{ updatedAt: "asc" }, { profileId: "asc" }], skip: 0, take: 100 });
+    expect(seen[1]).toMatchObject({ skip: 200, take: 100 });
+    expect(seen[2]).toMatchObject({ orderBy: [{ updatedAt: "desc" }, { profileId: "asc" }], skip: 0 });
+    // A nonsense page reads as the first.
+    expect(seen[3]).toMatchObject({ skip: 0 });
+  });
+
   it("filters by kyc status and MASKS the phone when the biker isn't on a live order (A-03)", async () => {
     let where: unknown;
     const prisma = {

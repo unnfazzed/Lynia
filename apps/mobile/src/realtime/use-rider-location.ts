@@ -14,6 +14,7 @@ import {
 } from "./background-location-task";
 import { type Fix, PendingFix } from "./location-buffer";
 import { acquireSocket, releaseSocket } from "./socket";
+import { socketIdentity } from "./socket-identity";
 
 /**
  * While the rider has an active job, stream GPS to the order room (ET4) so the customer's tracker
@@ -48,7 +49,11 @@ export function useRiderLocationStream(orderId: string | null): {
   getLastFix: () => { lat: number; lng: number } | null;
 } {
   const { session } = useAuth();
-  const token = session?.accessToken;
+  // Keyed on the signed-in identity, not the raw token: a ~15-min access-token rotation must not tear
+  // the shared socket down and re-handshake it (the handshake reads the live token — see socket.ts).
+  const identity = socketIdentity(session);
+  const tokenRef = useRef(session?.accessToken);
+  tokenRef.current = session?.accessToken;
   const [permissionDenied, setPermissionDenied] = useState(false);
   const lastFix = useRef<{ lat: number; lng: number } | null>(null);
   const getLastFix = useCallback(() => lastFix.current, []);
@@ -56,7 +61,8 @@ export function useRiderLocationStream(orderId: string | null): {
   useEffect(() => {
     setPermissionDenied(false);
     lastFix.current = null;
-    if (!orderId || !token) return;
+    const token = tokenRef.current;
+    if (!orderId || !identity || !token) return;
     let socket: Socket | null = null;
     let sub: Location.LocationSubscription | null = null;
     let cancelled = false;
@@ -84,9 +90,12 @@ export function useRiderLocationStream(orderId: string | null): {
         setPermissionDenied(true);
         return;
       }
-      socket = acquireSocket(token);
+      socket = acquireSocket(identity, token);
       socket.on("connect", onConnect);
       socket.on("disconnect", onDisconnect);
+      // Shared with the board/job hooks, so it is usually connected already — a late subscriber gets
+      // no "connect" event, and without this every fix was buffered forever, never emitted.
+      if (socket.connected) onConnect();
       const send = (fix: Fix): void => {
         lastFix.current = { lat: fix.lat, lng: fix.lng };
         // Connected: emit live. Disconnected: hold only the freshest fix (don't emit, or Socket.IO
@@ -126,10 +135,10 @@ export function useRiderLocationStream(orderId: string | null): {
       if (socket) {
         socket.off("connect", onConnect);
         socket.off("disconnect", onDisconnect);
-        releaseSocket(token, socket);
+        releaseSocket(identity, socket);
       }
     };
-  }, [orderId, token]);
+  }, [orderId, identity]);
 
   return { permissionDenied, getLastFix };
 }

@@ -15,13 +15,14 @@ import { offersKey, orderKey } from "../query/client";
 import { invalidateCustomerOrderHistory } from "../query/use-history-feed";
 import { clampGlassSample, enqueue, noteDropped, setActiveRole } from "../telemetry/rum";
 import { acquireSocket, releaseSocket } from "./socket";
+import { socketIdentity } from "./socket-identity";
 import { createSelfHealGate } from "./self-heal-gate";
 
 /**
  * Live tracking (ET4). Joins the order room, applies "position" pushes to the React Query cache, and
  * refetches the REST snapshot on connect / status change / connect error — the snapshot stays the
  * source of truth, and a dropped WS self-heals via that refetch (the screen also polls during active
- * statuses). Keyed on the access token, so it reconnects only when the token actually rotates.
+ * statuses). Keyed on the signed-in identity, so a token rotation never reconnects it (socket.ts).
  *
  * Exposes `connected` so the tracker can render a "reconnecting" affordance (the map fades a stale
  * rider position instead of dropping it). Refetches never blank the cache — React Query v5 keeps the
@@ -36,7 +37,11 @@ export function useOrderSocket(
   onStatus?: (e: OrderStatusEvent) => void,
 ): { connected: boolean } {
   const { session } = useAuth();
-  const token = session?.accessToken;
+  // Keyed on the signed-in identity, not the raw token: a ~15-min access-token rotation must not tear
+  // the shared socket down and re-handshake it (the handshake reads the live token — see socket.ts).
+  const identity = socketIdentity(session);
+  const tokenRef = useRef(session?.accessToken);
+  tokenRef.current = session?.accessToken;
   const qc = useQueryClient();
   const [connected, setConnected] = useState(false);
   // Hold the latest callbacks in refs so re-subscribing isn't tied to their identity.
@@ -54,14 +59,15 @@ export function useOrderSocket(
   const lastPositionRef = useRef<{ riderId: string | null; lat: number; lng: number; at: string } | null>(null);
 
   useEffect(() => {
-    if (!orderId || !token) return;
+    const token = tokenRef.current;
+    if (!orderId || !identity || !token) return;
     setActiveRole("customer"); // this is the customer tracking surface — label apifetch RUM accordingly
     lastPositionRef.current = null; // a new order/token means a new socket lifetime — don't carry a stale ref across it
     // A-O17: routed through the shared acquire/release primitive for consistency with the rider-side
     // hooks (see use-rider-board.ts) — this screen is normally the only consumer for its token, but
     // sharing when it isn't (customer + rider role on one device) costs nothing and avoids a second
     // divergent socket-lifecycle pattern in the module.
-    const socket: Socket = acquireSocket(token);
+    const socket: Socket = acquireSocket(identity, token);
     // After a refetch settles, re-apply the last known live position if it's still fresher than what
     // just came back over REST — a stale response landing after a fresher push must not roll the
     // rider's pin backward on the map.
@@ -207,9 +213,9 @@ export function useOrderSocket(
       socket.off(WS_EVENTS.presenceRecovered, onPresenceRecovered);
       socket.off(WS_EVENTS.offersChanged, onOffersChanged);
       socket.off(WS_EVENTS.position, onPosition);
-      releaseSocket(token, socket);
+      releaseSocket(identity, socket);
     };
-  }, [orderId, token, qc]);
+  }, [orderId, identity, qc]);
 
   return { connected };
 }

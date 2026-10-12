@@ -5,7 +5,7 @@ import React from "react";
  * without a name sees C5's name step first; and however the check ends, the rider lands on the board.
  */
 import renderer, { act } from "react-test-renderer";
-import { BackHandler } from "react-native";
+import { AppState, BackHandler } from "react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { resolveKycGate, type KycGateRider, type KycSdkResult } from "../../../src/logic/gates";
@@ -16,9 +16,11 @@ const mockReplace = jest.fn();
 let mockSecureStore: Record<string, string> = {};
 
 const mockBack = jest.fn();
+const mockDismissAll = jest.fn();
+let mockCanGoBack = true;
 let mockParams: Record<string, string> = {};
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ replace: mockReplace, back: mockBack, canGoBack: () => true }),
+  useRouter: () => ({ replace: mockReplace, back: mockBack, dismissAll: mockDismissAll, canDismiss: () => mockCanGoBack, canGoBack: () => mockCanGoBack }),
   useLocalSearchParams: () => mockParams,
 }));
 /**
@@ -43,8 +45,14 @@ jest.mock("../../../src/api/riders", () => ({
   completeProfile: (...a: unknown[]) => mockCompleteProfile(...a),
   noteKycLaunched: () => mockNoteLaunched(),
 }));
+const mockUpdateSession = jest.fn(async (_p: unknown) => undefined);
+jest.mock("../../../src/auth/auth-context", () => ({ useOptionalAuth: () => ({ updateSession: (p: unknown) => mockUpdateSession(p) }) }));
 const mockRunKyc = jest.fn();
-jest.mock("../../../src/kyc/verify", () => ({ runKycVerification: (...a: unknown[]) => mockRunKyc(...a) }));
+const mockPrimeCamera = jest.fn(async () => true);
+jest.mock("../../../src/kyc/verify", () => ({
+  runKycVerification: (...a: unknown[]) => mockRunKyc(...a),
+  primeKycCamera: () => mockPrimeCamera(),
+}));
 // A marker in place of the sheet host, so a test can see where it is mounted.
 jest.mock("../../../src/kyc/KycCheckHost", () => ({ KycCheckHost: () => require("react").createElement("KycCheckHostMarker") }));
 let mockMe: Record<string, unknown> = {};
@@ -135,6 +143,8 @@ beforeEach(() => {
   mockWalletConfig = null;
   mockReplace.mockClear();
   mockBack.mockClear();
+  mockDismissAll.mockClear();
+  mockCanGoBack = true;
   mockNoteLaunched.mockClear();
   mockParams = {};
   takeKycLaunch();
@@ -142,6 +152,8 @@ beforeEach(() => {
   mockCompleteProfile.mockReset().mockResolvedValue({});
   mockUpdateProfile.mockReset().mockImplementation(async (body: Record<string, unknown>) => ({ ...mockMe, ...body }));
   mockRunKyc.mockReset().mockResolvedValue({ outcome: "completed", sessionUnusable: false });
+  mockPrimeCamera.mockClear();
+  (jest.requireMock("../../../src/api/auth") as { getMe: jest.Mock }).getMe.mockImplementation(async () => mockMe);
 });
 
 describe("BecomeRiderScreen — R1, no photo step (D-55, D-62)", () => {
@@ -179,7 +191,7 @@ describe("BecomeRiderScreen — no national ID before the check (D-75)", () => {
     const tree = await mount();
     await tapStart(tree);
     expect(mockBecomeRider).toHaveBeenCalledWith({});
-    expect(mockRunKyc).toHaveBeenCalledWith({ sessionToken: "tok", verificationUrl: "https://verify.didit.me/s" });
+    expect(mockRunKyc).toHaveBeenCalledWith({ sessionToken: "tok", verificationUrl: "https://verify.didit.me/s" }, { camera: expect.any(Promise) });
     expect(mockUpdateProfile).not.toHaveBeenCalled();
     expect(mockCompleteProfile).not.toHaveBeenCalled();
     expect(mockReplace).toHaveBeenCalledWith(BOARD);
@@ -295,6 +307,47 @@ describe("BecomeRiderScreen — the name step (legacy accounts without a name), 
     act(() => tree.unmount());
   });
 
+  it("Android back on R1 goes back when there is a screen behind (reached from the customer side)", async () => {
+    mockMe = { ...NAMED };
+    const handlers: (() => boolean | null | undefined)[] = [];
+    const spy = jest.spyOn(BackHandler, "addEventListener").mockImplementation((_e, h) => {
+      handlers.push(h);
+      return { remove: () => void handlers.splice(handlers.indexOf(h), 1) } as never;
+    });
+    const tree = await mount();
+    let consumed: boolean | null | undefined;
+    await act(async () => {
+      consumed = handlers.at(-1)?.();
+    });
+    expect(consumed).toBe(true);
+    expect(mockBack).toHaveBeenCalledTimes(1);
+    expect(mockReplace).not.toHaveBeenCalled();
+    spy.mockRestore();
+    act(() => tree.unmount());
+  });
+
+  it("Android back on R1 with nothing behind (the Ride path) leaves for customer Home, saved, stack cleared — never closes the app", async () => {
+    mockMe = { ...NAMED };
+    mockCanGoBack = false;
+    const handlers: (() => boolean | null | undefined)[] = [];
+    const spy = jest.spyOn(BackHandler, "addEventListener").mockImplementation((_e, h) => {
+      handlers.push(h);
+      return { remove: () => void handlers.splice(handlers.indexOf(h), 1) } as never;
+    });
+    const tree = await mount();
+    let consumed: boolean | null | undefined;
+    await act(async () => {
+      consumed = handlers.at(-1)?.();
+    });
+    await flush();
+    expect(consumed).toBe(true);
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledWith("/home");
+    expect(mockSecureStore["lynia.rolePreference"]).toBe("customer");
+    spy.mockRestore();
+    act(() => tree.unmount());
+  });
+
   it("Start ID check stays off until both names are in, then saves the NAME ONLY and opens the check", async () => {
     mockMe = { ...NAMELESS };
     const tree = await mount();
@@ -314,6 +367,37 @@ describe("BecomeRiderScreen — the name step (legacy accounts without a name), 
     // Registered: the name draft is cleared.
     expect(mockSecureStore[KYC_DRAFT_KEY]).toBeUndefined();
     act(() => tree.unmount());
+  });
+
+  it("the name draft is written once typing pauses — not per keystroke — and flushed when the app backgrounds", async () => {
+    let appStateCb: ((st: string) => void) | null = null;
+    const original = AppState.addEventListener;
+    AppState.addEventListener = ((_e: string, cb: (st: string) => void) => {
+      appStateCb = cb;
+      return { remove: () => undefined };
+    }) as never;
+    mockMe = { ...NAMELESS };
+    const tree = await mount();
+    await tapStart(tree);
+    await type(tree, "First name", "C");
+    await type(tree, "First name", "Ch");
+    await type(tree, "First name", "Chi");
+    // Nothing written mid-typing.
+    expect(mockSecureStore[KYC_DRAFT_KEY]).toBeUndefined();
+    // The app goes to the background: the pending write lands now.
+    await act(async () => {
+      appStateCb?.("background");
+    });
+    await flush();
+    expect(JSON.parse(mockSecureStore[KYC_DRAFT_KEY]!)).toEqual({ firstName: "Chi", lastName: "" });
+    // A pause in typing writes it too.
+    await type(tree, "Surname", "M");
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 600));
+    });
+    expect(JSON.parse(mockSecureStore[KYC_DRAFT_KEY]!)).toEqual({ firstName: "Chi", lastName: "M" });
+    act(() => tree.unmount());
+    AppState.addEventListener = original;
   });
 
   it("an app kill keeps the half-typed name: the draft restores straight onto the name step", async () => {
@@ -426,6 +510,30 @@ describe("BecomeRiderScreen — the hand-over to the board (startup review 2026-
     act(() => tree.unmount());
   });
 
+  it("the hand-over clears the stack under the board and records the biker role in the session", async () => {
+    mockMe = { ...NAMED, idNumber: null };
+    mockUpdateSession.mockClear();
+    mockBecomeRider.mockResolvedValue({ mode: "auto", kycStatus: "verified" });
+    const tree = await mount();
+    await tapStart(tree);
+    expect(mockDismissAll).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith("/rider");
+    expect(mockDismissAll.mock.invocationCallOrder[0]).toBeLessThan(mockReplace.mock.invocationCallOrder[0]!);
+    expect(mockUpdateSession).toHaveBeenCalledWith({ role: "rider" });
+    act(() => tree.unmount());
+  });
+
+  it("the already_rider (409) hand-over records the biker role too", async () => {
+    mockMe = { ...NAMED, idNumber: null };
+    mockUpdateSession.mockClear();
+    mockBecomeRider.mockRejectedValue(new ApiError(409, "already", "already_rider"));
+    const tree = await mount();
+    await tapStart(tree);
+    expect(mockUpdateSession).toHaveBeenCalledWith({ role: "rider" });
+    expect(mockReplace).toHaveBeenCalledWith("/rider");
+    act(() => tree.unmount());
+  });
+
   it("G1: the already_rider path replaces itself with the board too", async () => {
     mockMe = { ...NAMED, idNumber: null };
     mockBecomeRider.mockRejectedValue(new ApiError(409, "You're already a biker", "already_rider"));
@@ -436,13 +544,49 @@ describe("BecomeRiderScreen — the hand-over to the board (startup review 2026-
     act(() => tree.unmount());
   });
 
-  it("R-5: the hand-over saves the biker side for the next cold start, after re-reading `me`", async () => {
+  it("R-5: the hand-over saves the biker side for the next cold start", async () => {
     mockMe = { ...NAMED, idNumber: null };
     const tree = await mount();
-    const refetch = jest.spyOn(qc, "refetchQueries");
     await tapStart(tree);
-    expect(refetch).toHaveBeenCalledWith({ queryKey: ["me"] });
     expect(mockSecureStore["lynia.rolePreference"]).toBe("rider");
+    act(() => tree.unmount());
+  });
+
+  it("R1 spinner: the hand-over doesn't wait on a fresh /auth/me — a biker stub from the become answer is in the cache", async () => {
+    mockMe = { ...NAMED, idNumber: null };
+    mockBecomeRider.mockResolvedValue({ kycStatus: "pending", mode: "auto", sessionToken: "tok", verificationUrl: "https://verify.didit.me/s" });
+    mockRunKyc.mockResolvedValue({ outcome: "completed", sessionUnusable: false });
+    const tree = await mount();
+    // From here on `/auth/me` never answers (the vendor read is slow) — the hand-over must not wait on it.
+    const { getMe } = jest.requireMock("../../../src/api/auth") as { getMe: jest.Mock };
+    getMe.mockImplementation(() => new Promise(() => undefined));
+    await tapStart(tree);
+    // Handed over while `/auth/me` is still out.
+    expect(mockReplace).toHaveBeenCalledWith(BOARD);
+    const cached = qc.getQueryData<{ rider: { kycStatus: string; kycMode: string; kycPendingState: string | null } | null }>(["me"]);
+    expect(cached?.rider).toMatchObject({ kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight" });
+    act(() => tree.unmount());
+  });
+
+  it("the camera permission is settled alongside the become call, and handed to the launch", async () => {
+    mockMe = { ...NAMED, idNumber: null };
+    let answer!: (v: unknown) => void;
+    mockBecomeRider.mockImplementation(() => new Promise((r) => (answer = r)));
+    mockRunKyc.mockResolvedValue({ outcome: "completed", sessionUnusable: false });
+    const tree = await mount();
+    const start = startButton(tree);
+    await act(async () => {
+      start.props.onPress();
+    });
+    await flush();
+    // The become call is still out — the camera ask has already started.
+    expect(mockPrimeCamera).toHaveBeenCalledTimes(1);
+    expect(mockRunKyc).not.toHaveBeenCalled();
+    await act(async () => {
+      answer({ kycStatus: "pending", mode: "auto", sessionToken: "tok", verificationUrl: "https://verify.didit.me/s" });
+    });
+    await flush();
+    expect(mockRunKyc).toHaveBeenCalledWith(expect.anything(), { camera: expect.any(Promise) });
     act(() => tree.unmount());
   });
 

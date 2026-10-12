@@ -6,6 +6,7 @@ import {
   Header,
   Inject,
   Logger,
+  Optional,
   Param,
   ParseUUIDPipe,
   Post,
@@ -24,25 +25,35 @@ import { AdminActor } from "../common/admin-actor.decorator";
 import { ZodBody } from "../common/zod.pipe";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
+import { MetricsService } from "../observability/metrics.service";
 import { RiderService } from "../riders/rider.service";
 import { diditEventAt, diditTimestampFresh, verifyDiditSignature, verifyDiditSignatureV2 } from "./didit";
 import { applyDiditDecision } from "./didit-decision";
+
+/** The 401 a delivery with a stale (or missing) signed timestamp gets — also how the counter tells it apart. */
+const STALE_TIMESTAMP = "Stale webhook timestamp";
 
 // A-02: a decline MUST carry the reason code (recorded on the rider + audit log — a compliance
 // invariant, so it's server-enforced here, not only in the admin ConfirmModal). The admin sends a
 // canonical KycDeclineReason KEY (e.g. `face_mismatch`), which the rider app maps back to copy via
 // KYC_DECLINE_REASON_LABELS; kept a capped free string here (not enum-bound) so the shared list can
 // grow without 400ing an older admin build.
-const AdminKyc = z
+export const AdminKyc = z
   .object({
     status: z.enum(["pending", "verified", "failed", "expired"]),
     reasonCode: z.string().min(1).max(160).optional(),
     // Optional ConfirmModal free-text, recorded on the audit row the decision now writes in-transaction.
     note: z.string().max(2000).nullish(),
+    // Owner 2026-10-12: a `pending` reset may also give the rider their tries back (kycAttempts → 0, the
+    // decline reason cleared), so a locked rider can retry. Only meaningful on a reset.
+    resetAttempts: z.boolean().optional(),
   })
   .superRefine((v, ctx) => {
     if (v.status === "failed" && !v.reasonCode) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["reasonCode"], message: "A decline must record a reason." });
+    }
+    if (v.resetAttempts && v.status !== "pending") {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["resetAttempts"], message: "Attempts can only be reset with a pending reset." });
     }
   });
 
@@ -90,16 +101,33 @@ export class KycController {
   constructor(
     private readonly riders: RiderService,
     @Inject(ENV) private readonly env: Env,
+    // @Global ObservabilityModule, so always injected in the app; optional for the positional spec constructions.
+    @Optional() private readonly metrics?: MetricsService,
   ) {}
 
   /**
    * Didit KYC webhook (status.updated). Verifies the HMAC signature over the raw body, then maps
    * the verification status onto the rider keyed by session_id (== the rider's stored kycRef).
-   * "In Review" and other non-terminal statuses stay pending — the admin backstop resolves them. A held
-   * In Review or review-band approval stores the document number for that review (D-75 item 2).
+   * KYC-R26-12: fully automatic — Approved verifies, Declined and In Review decline (decideDiditKyc), Kyc
+   * Expired expires; only a session Didit never finished judging (Not Started, In Progress, Abandoned,
+   * Expired…) stays pending, with its status recorded. Every refusal (401 / 503) is counted
+   * (`kyc_webhook_rejected_total`): a run of them means verdicts are being lost.
    */
   @Post("kyc/callback")
   async callback(@Req() req: RawBodyRequest<Request>) {
+    try {
+      return await this.handleCallback(req);
+    } catch (err) {
+      if (err instanceof UnauthorizedException) {
+        this.metrics?.incKycWebhookRejected(err.message === STALE_TIMESTAMP ? "stale_timestamp" : "bad_signature");
+      } else if (err instanceof ServiceUnavailableException) {
+        this.metrics?.incKycWebhookRejected("unconfigured");
+      }
+      throw err;
+    }
+  }
+
+  private async handleCallback(req: RawBodyRequest<Request>) {
     const raw = req.rawBody?.toString("utf8") ?? "";
 
     const secret = this.env.DIDIT_WEBHOOK_SECRET;
@@ -148,7 +176,7 @@ export class KycController {
         (!hasBodyTs || diditTimestampFresh(bodyTs as string | number, now)) &&
         (headerTs === undefined || diditTimestampFresh(headerTs, now));
       if (!fresh) {
-        throw new UnauthorizedException("Stale webhook timestamp");
+        throw new UnauthorizedException(STALE_TIMESTAMP);
       }
     }
 
@@ -176,6 +204,7 @@ export class KycController {
       payload,
       eventAt,
       source: "webhook",
+      onUnmatched: () => this.metrics?.incKycDecisionUnmatched("webhook"),
     });
   }
 
@@ -206,7 +235,8 @@ export class KycController {
   }
 
   /** Manual-review backstop (T7): admin sets a rider's KYC status directly. The decision + its audit
-   *  row commit in one transaction (A-01), attributed to the forwarded operator. */
+   *  row commit in one transaction (A-01), attributed to the forwarded operator. `resetAttempts` (with a
+   *  `pending` reset only) also gives the rider their tries back. */
   @Post("admin/riders/:profileId/kyc")
   @UseGuards(JwtAuthGuard, AdminGuard)
   adminSet(
@@ -214,6 +244,8 @@ export class KycController {
     @Body(new ZodBody(AdminKyc)) body: z.infer<typeof AdminKyc>,
     @AdminActor() actor: string,
   ) {
-    return this.riders.adminSetKyc(profileId, body.status, body.reasonCode ?? null, actor, body.note ?? null);
+    return this.riders.adminSetKyc(profileId, body.status, body.reasonCode ?? null, actor, body.note ?? null, {
+      resetAttempts: body.resetAttempts === true,
+    });
   }
 }

@@ -3,10 +3,12 @@ import { tokens } from "@lynia/shared/tokens";
 import React, { useEffect, useState } from "react";
 import { View } from "react-native";
 import { useAuth } from "../src/auth/auth-context";
+import { saveRolePreference } from "../src/auth/device-state";
 import { type StartRole } from "../src/auth/session";
 import { getBootReadiness, reportBootDestination, useBootReadiness } from "../src/boot/boot-readiness";
 import { prewarmBootReads } from "../src/boot/prewarm";
 import { bootRedirectTarget } from "../src/logic/boot-route";
+import { isRiderDestination } from "../src/logic/side-nav";
 import { enqueueBoot } from "../src/telemetry/rum";
 
 export default function Index(): React.ReactElement {
@@ -62,6 +64,9 @@ export default function Index(): React.ReactElement {
     // The splash's session-check task is this decision; the destination tells the splash whether to
     // wait for Home's two tasks or hand off now (src/boot/boot-readiness.ts, ledger D-64).
     reportBootDestination(target);
+    // A cold start opened on the rider side (a push tap into a job, the board) is the rider side from now
+    // on, as a warm tap is (src/logic/side-nav.ts): saved, so the next cold start opens there too.
+    if (isRiderDestination(target)) void saveRolePreference("rider");
   }, [target]);
 
   if (!target) {
