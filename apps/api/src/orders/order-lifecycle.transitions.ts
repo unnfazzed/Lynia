@@ -158,7 +158,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     to: "open_for_offers",
     actor: "customer",
     guard:
-      "customer not on hold (profile.onHold=false) AND, if the caller is a rider, accountStatus not banned/suspended; both pickup and drop-off inside SERVICE_CORRIDOR; idempotencyKey replay returns the prior order instead of a second auction",
+      "customer not on hold (profile.onHold=false) AND, if the caller is a rider, accountStatus not banned/suspended; both pickup and drop-off inside the service area (isInServiceArea: Zimbabwe); idempotencyKey replay returns the prior order instead of a second auction",
     sideEffect:
       "insert order row (status=open_for_offers) + OrderEvent(open_for_offers); schedule offer-window expiry (best-effort); broadcast to nearby riders + WS board push",
     source: "orders.service.ts:create",

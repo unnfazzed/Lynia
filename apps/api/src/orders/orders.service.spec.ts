@@ -549,9 +549,21 @@ describe("OrdersService.create service-corridor gate (Q1)", () => {
     expect(created).toBe(true);
   });
 
-  it("the out-of-area message names the towns we serve", async () => {
+  it("the out-of-area message names where we serve", async () => {
     const s = svc(() => ({}));
-    await expect(s.create({ ...orderInput, dropoff: wp(farPoint) }, "cust-1")).rejects.toThrow(/We deliver across Harare, Chitungwiza, Norton/);
+    await expect(s.create({ ...orderInput, dropoff: wp(farPoint) }, "cust-1")).rejects.toThrow(/We deliver across Zimbabwe/);
+  });
+
+  it("serves all of Zimbabwe: a Mutare pickup to a Chivhu drop-off is allowed (owner 2026-10-12, D-99)", async () => {
+    let created = false;
+    const s = svc(() => {
+      created = true;
+      return { id: "ord-3", status: "open_for_offers", itemDesc: "Documents", proposedFare: { toString: () => "90.00" }, suggestedFare: { toString: () => "90.00" }, distanceKm: 230, createdAt: new Date("2026-10-12T00:00:00Z") };
+    });
+    await expect(
+      s.create({ ...orderInput, pickup: wp({ lat: -18.9707, lng: 32.6709 }), dropoff: wp({ lat: -19.0211, lng: 30.8922 }) }, "cust-1"),
+    ).resolves.toMatchObject({ id: "ord-3" });
+    expect(created).toBe(true);
   });
 
   it("allows an order with both waypoints inside the corridor", async () => {
@@ -1126,7 +1138,7 @@ describe("OrdersService.listOpen", () => {
     expect(JSON.stringify(rows[0])).not.toContain("+263");
   });
 
-  it("geo path shows an order beyond the caller's radius once its broadcast has widened to reach them", async () => {
+  it("geo path shows every open order nationwide, fresh or not (owner 2026-10-12, D-99)", async () => {
     const mkRow = (id: string, createdAt: Date) => ({
       id,
       pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate" },
@@ -1136,19 +1148,19 @@ describe("OrdersService.listOpen", () => {
       proposed_fare: { toString: () => "2.50" },
       distance_km: 1.5,
       created_at: createdAt,
-      // 7 km out: past the 5 km caller radius, inside the 12 km final expansion ring.
-      pickup_distance_m: 7000,
+      // Mutare from Harare: ~230 km, far past the caller's own 5 km.
+      pickup_distance_m: 230_000,
     });
     const queryRaw = vi.fn(async () => [
-      mkRow("o-fresh", new Date()), // t≈0 → reach still 5 km → hidden
-      mkRow("o-widened", new Date(Date.now() - 61_000)), // past the 60 s step → reach 12 km → shown
+      mkRow("o-fresh", new Date()),
+      mkRow("o-older", new Date(Date.now() - 61_000)),
     ]);
     const prisma = { order: { findMany: vi.fn(async () => []) }, $queryRaw: queryRaw };
     const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
 
     const rows = await svc.listOpen(-17.83, 31.05, 5000);
 
-    expect(rows.map((r) => r.id)).toEqual(["o-widened"]);
+    expect(rows.map((r) => r.id)).toEqual(["o-fresh", "o-older"]);
   });
 
   it("without lat/lng falls back to the city-wide findMany path", async () => {

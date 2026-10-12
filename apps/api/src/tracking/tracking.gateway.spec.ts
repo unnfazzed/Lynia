@@ -5,7 +5,7 @@ import type { Env } from "../config/env";
 import type { TokenService } from "../auth/token.service";
 import type { MetricsService } from "../observability/metrics.service";
 import type { TrackingService } from "./tracking.service";
-import { boardCell, boardCellNeighborhood } from "@lynia/shared";
+import { boardCellNeighborhood } from "@lynia/shared";
 import { BOARD_ROOM, boardGeoRoom, merchantQueueRoom, orderRoom } from "./tracking.constants";
 import { POSITION_COALESCE_MS, POSITION_ROOM_TTL_MS, TrackingGateway } from "./tracking.gateway";
 
@@ -98,16 +98,15 @@ describe("TrackingGateway.boardSubscribe", () => {
     expect(client.join).toHaveBeenCalledWith(BOARD_ROOM);
   });
 
-  it("with lat/lng: joins the 9 geo-cell rooms (3×3 neighbourhood), not the city-wide room", async () => {
+  it("with lat/lng: still joins the one nationwide board room, no geo cells (owner 2026-10-12, D-99)", async () => {
     const g = gateway({ isBoardEligible: vi.fn(async () => true) });
     const client = fakeSocket({ sub: "rider-1", role: "rider" });
-    const res = await g.boardSubscribe(client as never, { lat: -17.83, lng: 31.05 });
+    const res = await g.boardSubscribe(client as never, { lat: -18.97, lng: 32.67 }); // Mutare
 
-    const expectedRooms = boardCellNeighborhood(-17.83, 31.05).map(boardGeoRoom);
-    expect(expectedRooms).toHaveLength(9);
-    expect(res).toEqual({ joined: 9 });
-    for (const room of expectedRooms) expect(client.join).toHaveBeenCalledWith(room);
-    expect(client.join).not.toHaveBeenCalledWith(BOARD_ROOM);
+    expect(res).toEqual({ joined: "board" });
+    expect(client.join).toHaveBeenCalledTimes(1);
+    expect(client.join).toHaveBeenCalledWith(BOARD_ROOM);
+    for (const room of boardCellNeighborhood(-18.97, 32.67).map(boardGeoRoom)) expect(client.join).not.toHaveBeenCalledWith(room);
   });
 
   it("re-subscribe on move leaves the prior board rooms before joining the fresh set", async () => {
@@ -672,15 +671,13 @@ describe("TrackingGateway.emitBoardNewOrder", () => {
     createdAt: "2026-06-26T00:00:00Z",
   };
 
-  it("emits board:new-order to the pickup's geo-cell room AND the city-wide BOARD_ROOM", () => {
+  it("emits board:new-order to the nationwide BOARD_ROOM, where every rider is (D-99)", () => {
     const { server, to, emit } = fakeServer();
     const g = gateway();
     g.server = server as never;
     const pickup = payload.pickup.point;
     g.emitBoardNewOrder(payload, pickup.lat, pickup.lng);
-    // Geo-scoped riders are in the pickup cell room; loc-less riders are in BOARD_ROOM. Socket.IO
-    // unions + dedupes the two, so each rider gets exactly one event.
-    expect(to).toHaveBeenCalledWith(boardGeoRoom(boardCell(pickup.lat, pickup.lng)));
+    expect(to).toHaveBeenCalledTimes(1);
     expect(to).toHaveBeenCalledWith(BOARD_ROOM);
     expect(emit).toHaveBeenCalledWith(WS_EVENTS.boardNewOrder, payload);
   });
@@ -693,14 +690,14 @@ describe("TrackingGateway.emitBoardNewOrder", () => {
 });
 
 describe("TrackingGateway.emitBidExpired (C2)", () => {
-  it("signals bid:expired to the BOARD (pickup geo-cell + city-wide), where bidders are — not the order room", () => {
+  it("signals bid:expired to the nationwide BOARD, where bidders are — not the order room", () => {
     const { server, to, emit } = fakeServer();
     const g = gateway();
     g.server = server as never;
     g.emitBidExpired("ord-1", -17.83, 31.05);
     // Bidders live on the board (same distribution as board:new-order), never the order room.
+    expect(to).toHaveBeenCalledTimes(1);
     expect(to).toHaveBeenCalledWith(BOARD_ROOM);
-    expect(to).toHaveBeenCalledWith(boardGeoRoom(boardCell(-17.83, 31.05)));
     expect(to).not.toHaveBeenCalledWith(orderRoom("ord-1"));
     expect(emit).toHaveBeenCalledWith(WS_EVENTS.bidExpired, expect.objectContaining({ orderId: "ord-1" }));
   });

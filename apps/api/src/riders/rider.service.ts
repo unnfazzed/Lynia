@@ -1017,7 +1017,7 @@ export class RiderService {
       const reason = onlineRefusalReason({ ...rider, ...commissionGate });
       if (reason) throw new ForbiddenException({ reason, message: REFUSAL_MESSAGE[reason] });
       // Service area: refuse going online outside it so a rider can't take jobs we can't route; the same
-      // isInServiceArea the customer order-create gate uses (Harare metro + towns).
+      // isInServiceArea the customer order-create gate uses (all of Zimbabwe, D-99).
       // E2E 2026-10-05 FS-7 (owner: "Refuse online without GPS"): going ONLINE requires a position. A
       // missing one used to skip this check, so a rider whose GPS timed out showed "Online" from anywhere
       // and never got a job. Going offline never needs coordinates (this whole block is online-only).

@@ -177,21 +177,21 @@ describe("FoodOrderService.placeOrder", () => {
     await expect(place(null)).rejects.toMatchObject({ status: 404, message: "Restaurant not found" });
   });
 
-  it("rejects a drop-off outside the service area server-side, naming the towns we serve (owner 2026-10-02)", async () => {
+  it("rejects a drop-off outside Zimbabwe server-side, naming where we serve (owner 2026-10-12, D-99)", async () => {
     let created = false;
     const { svc } = build({
       order: { findFirst: async () => null, create: async () => { created = true; return {}; } },
       merchant: { findFirst: async () => ({ id: "m1", location: { point: HARARE_CBD } }) },
       merchantDish: { findMany: async () => [dish()] },
     });
-    // Marondera, ~66 km out — beyond every town disc.
+    // Lusaka, Zambia — outside the country.
     const threw = await svc
-      .placeOrder("c1", "m1", { items: [{ dishId: "d1", quantity: 1 }], dropoff: { point: { lat: -18.185, lng: 31.55 } }, paymentMethod: "cash" } as never)
+      .placeOrder("c1", "m1", { items: [{ dishId: "d1", quantity: 1 }], dropoff: { point: { lat: -15.4167, lng: 28.2833 } }, paymentMethod: "cash" } as never)
       .then(() => null)
       .catch((e: unknown) => e);
     const body = (threw as { getResponse: () => { reason: string; message: string } }).getResponse();
     expect(body.reason).toBe("outside_service_area");
-    expect(body.message).toMatch(/Chitungwiza, Norton, Ruwa/);
+    expect(body.message).toMatch(/We deliver across Zimbabwe/);
     expect(created).toBe(false);
   });
 

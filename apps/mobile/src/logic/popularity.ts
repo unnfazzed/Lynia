@@ -1,5 +1,4 @@
 import type { LatLng } from "@lynia/shared";
-import { isInServiceArea } from "@lynia/shared";
 
 /**
  * Ledger D-72: the "Popular" ranking, client half. The server ranks a list's live venues by their
@@ -64,11 +63,10 @@ export function comparePopularity(a: string, b: string, index: PopularityIndex):
 }
 
 /**
- * Can this venue deliver to the customer? Food orders are refused for a drop-off outside the service
- * area (food-order.service, owner 2026-10-02) and need the venue's own pin; there is no distance cap
- * inside the area. With no customer point yet the answer is "as far as we know, yes".
+ * Can this venue take the customer's order? It needs its own pin, and that is all: browsing has no location
+ * check (owner 2026-10-12, D-99 — "Let them view everything"). The customer's own point is not the drop-off —
+ * someone in Mutare may order for an address in Harare — and checkout checks the address it actually delivers to.
  */
-export function deliversTo(venueLocation: LatLng | null, customer: LatLng | null): boolean {
-  if (!venueLocation) return false;
-  return customer == null || isInServiceArea(customer);
+export function deliversTo(venueLocation: LatLng | null, _customer: LatLng | null): boolean {
+  return venueLocation != null;
 }

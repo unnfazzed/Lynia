@@ -1,4 +1,4 @@
-import { BOARD_CELL_DEG, BROADCAST, boardCell, boardCellsCoveringRadius, broadcastRadiusAtMs } from "@lynia/shared";
+import { BOARD_CELL_DEG, BROADCAST, boardCell, boardCellsCoveringRadius, broadcastRadiusAtMs, NATIONWIDE_REACH_M } from "@lynia/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMs, maxBroadcastRadiusM } from "./broadcast-policy";
 
@@ -10,24 +10,19 @@ afterEach(() => {
   delete process.env[BROADCAST.heartbeatMaxAgeEnv];
 });
 
-describe("broadcastRadiusAtMs — the widening schedule", () => {
-  it("steps 5 km → 8 km at 30 s → 12 km at 60 s (policy BROADCAST.expansion)", () => {
-    expect(broadcastRadiusAtMs(0)).toBe(5_000);
-    expect(broadcastRadiusAtMs(29_999)).toBe(5_000);
-    expect(broadcastRadiusAtMs(30_000)).toBe(8_000);
-    expect(broadcastRadiusAtMs(59_999)).toBe(8_000);
-    expect(broadcastRadiusAtMs(60_000)).toBe(12_000);
-    expect(broadcastRadiusAtMs(10 * 60_000)).toBe(12_000); // monotonic, saturates at the last step
+describe("broadcastRadiusAtMs — nationwide reach (owner 2026-10-12, D-99)", () => {
+  it("reaches all of Zimbabwe from the first second, with nothing left to widen", () => {
+    expect(BROADCAST.expansion).toHaveLength(0);
+    expect(broadcastRadiusAtMs(0)).toBe(NATIONWIDE_REACH_M);
+    expect(broadcastRadiusAtMs(60_000)).toBe(NATIONWIDE_REACH_M);
   });
 
-  it("never exceeds the service corridor, whatever the base override", () => {
-    expect(broadcastRadiusAtMs(60_000, 40_000)).toBe(BROADCAST.maxRadiusM);
-    expect(broadcastRadiusAtMs(0, 40_000)).toBe(BROADCAST.maxRadiusM);
+  it("never exceeds the nationwide cap, whatever the base override", () => {
+    expect(broadcastRadiusAtMs(0, 5_000_000)).toBe(BROADCAST.maxRadiusM);
   });
 
-  it("a base larger than a step wins over that step (the reach never shrinks)", () => {
-    expect(broadcastRadiusAtMs(30_000, 10_000)).toBe(10_000); // 8 km step can't shrink a 10 km base
-    expect(broadcastRadiusAtMs(60_000, 10_000)).toBe(12_000); // but the 12 km step still widens it
+  it("a narrower deploy override still holds (the env lever survives)", () => {
+    expect(broadcastRadiusAtMs(30_000, 10_000)).toBe(10_000);
   });
 });
 
@@ -44,8 +39,8 @@ describe("env resolution (deploy overrides, SOS_POLICY idiom)", () => {
     expect(heartbeatMaxAgeMs()).toBe(60_000);
   });
 
-  it("caps the base override at the service corridor", () => {
-    process.env[BROADCAST.baseRadiusEnv] = "99000";
+  it("caps the base override at the nationwide reach", () => {
+    process.env[BROADCAST.baseRadiusEnv] = "9000000";
     expect(baseBroadcastRadiusM()).toBe(BROADCAST.maxRadiusM);
   });
 
@@ -59,13 +54,12 @@ describe("env resolution (deploy overrides, SOS_POLICY idiom)", () => {
   it("effectiveBroadcastRadiusM derives the radius from the order's age", () => {
     const createdAt = new Date("2026-07-01T00:00:00Z");
     const t0 = createdAt.getTime();
-    expect(effectiveBroadcastRadiusM(createdAt, t0)).toBe(5_000);
-    expect(effectiveBroadcastRadiusM(createdAt, t0 + 45_000)).toBe(8_000);
-    expect(effectiveBroadcastRadiusM(createdAt, t0 + 61_000)).toBe(12_000);
+    expect(effectiveBroadcastRadiusM(createdAt, t0)).toBe(NATIONWIDE_REACH_M);
+    expect(effectiveBroadcastRadiusM(createdAt, t0 + 61_000)).toBe(NATIONWIDE_REACH_M);
   });
 
   it("maxBroadcastRadiusM is the schedule's terminal radius", () => {
-    expect(maxBroadcastRadiusM()).toBe(12_000);
+    expect(maxBroadcastRadiusM()).toBe(NATIONWIDE_REACH_M);
   });
 });
 

@@ -19,7 +19,7 @@ const PICKUP: PickedPoint = { lat: -17.8292, lng: 31.0522 };
 const DROPOFF: PickedPoint = { lat: -17.82, lng: 31.06 };
 const DROPOFF_FAR: PickedPoint = { lat: -17.75, lng: 31.12 };
 // Well outside the 25 km corridor.
-const DROPOFF_OUT: PickedPoint = { lat: -18.3, lng: 31.3 };
+const DROPOFF_OUT: PickedPoint = { lat: -15.4167, lng: 28.2833 }; // Lusaka, Zambia
 
 const mockCreateOrder = jest.fn();
 const mockGetMe = jest.fn();
@@ -128,7 +128,7 @@ jest.mock("../../src/ui/ComposeMap", () => {
         }),
         btn("test-set-drop-out", () => {
           props.onChangeDrop(DROPOFF_OUT);
-          props.onReverseGeocodeDrop?.("Chitungwiza Far");
+          props.onReverseGeocodeDrop?.("Lusaka");
         }),
         React_.createElement(Text, { key: "h", testID: "map-hint" }, props.hint ?? ""),
         React_.createElement(Text, { key: "d", testID: "map-distance" }, props.distanceLabel ?? ""),
@@ -422,7 +422,7 @@ describe("send.tsx — step 1 · Where", () => {
     pressTestId(active, "test-set-pickup");
     pressTestId(active, "test-set-drop-out");
     expect(has(active, "Outside our area")).toBe(true);
-    expect(has(active, "We don't cover that pickup or drop-off yet. We deliver across Harare, Chitungwiza, Norton, Ruwa, Epworth, Domboshava, Mt Hampden and Goromonzi.")).toBe(true);
+    expect(has(active, "We don't cover that pickup or drop-off yet. We deliver across Zimbabwe.")).toBe(true);
     expect(isDisabled(active, "Next")).toBe(true);
     expect(testText(active, "map-distance")).toBe("");
     pressTestId(active, "test-set-drop");
@@ -888,7 +888,7 @@ describe("send.tsx — step 4 · Review and send", () => {
     press(t, "Send to riders");
     await settle();
     expect(has(t, "Couldn't send. Check your data and try again.")).toBe(false);
-    expect(has(t, "We don't cover that pickup or drop-off yet. We deliver across Harare, Chitungwiza, Norton, Ruwa, Epworth, Domboshava, Mt Hampden and Goromonzi.")).toBe(true);
+    expect(has(t, "We don't cover that pickup or drop-off yet. We deliver across Zimbabwe.")).toBe(true);
     expect(isDisabled(t, "Next")).toBe(true);
   });
 

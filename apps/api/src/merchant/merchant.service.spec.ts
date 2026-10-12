@@ -198,9 +198,9 @@ describe("MerchantService.becomeMerchant (L1 self-serve sign-up)", () => {
     await expect(h.s.becomeMerchant("p1", body())).resolves.toMatchObject({ id: "m-new" });
   });
 
-  it("refuses a pin outside the area LyniaGo covers (the Send corridor), before writing anything", async () => {
+  it("refuses a pin outside the area LyniaGo covers (Zimbabwe), before writing anything", async () => {
     const h = harness();
-    const far = { ...PIN, point: { lat: -20.15, lng: 28.58 } }; // Bulawayo
+    const far = { ...PIN, point: { lat: -15.4167, lng: 28.2833 } }; // Lusaka, Zambia
     await expect(h.s.becomeMerchant("p1", body({ location: far }))).rejects.toMatchObject({ status: 400, response: { reason: "outside_service_area" } });
     expect(h.merchant()).toBeUndefined();
   });
