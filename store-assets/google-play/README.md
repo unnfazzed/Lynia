@@ -32,19 +32,20 @@ Regenerate from `../../explorations/store/Play Export Lab.html` (renders every s
 |------|------|---------|------------------------|
 | 1 | `phone-screenshots/01-home.png` | Food, shops and parcels. **One app.** | Home H1 — `calm-mint-v2-2026-10` |
 | 2 | `phone-screenshots/02-order-food.png` | Order from restaurants **in a few taps.** | Menu with cart S5 — `browse-v2` |
-| 3 | `phone-screenshots/03-track-live.png` | Track every order **live, to your door.** | On the way T9 — `order-flow-v2` (v2.1) |
+| 3 | `phone-screenshots/03-track-live.png` | Track every parcel **live, to the door.** | Picked up, to drop-off (state 7) — `after-send-v2` |
 | 4 | `phone-screenshots/04-send-parcel.png` | Send a parcel. **Name your price.** | Step 3 Price — `send-compose-v2` |
 
 1080 × 1920, opaque RGB PNG, 175–620 KB each. Regenerate with
 `node store-assets/google-play/render-shots.mjs` (Playwright + Chromium): it captures each frame at 3×
 from the handoff, crops the status bar, and places it under the caption on the mint (`#E9F8EF`) backdrop.
-Home drops the design-review "NEEDS BACKEND" tag and shows the shipped tile label "Food" (ledger D-65).
+Home drops the design-review "NEEDS BACKEND" tag and shows the shipped tile label "Food" (ledger D-65);
+the parcel-tracking shot shows a package mark where the handoff draws a hatched "photo" placeholder.
 Four shots at 1080 × 1920 keeps large-format promotion eligibility.
 
 Suggested alt text:
 1. LyniaGo Home with Food, Shops, Send and Pharmacy, popular restaurants, and a live order bar.
 2. A restaurant menu with two dishes in the cart and the View cart bar.
-3. Live tracking: the rider on the map, arriving in about 4 minutes, with the order steps.
+3. Live parcel tracking: the rider on the map heading to drop-off, the delivery steps, and the 6-digit delivery code.
 4. Sending a parcel: the customer sets their own price, paid in cash to the rider.
 
 **Store listing → Graphics → 7-inch tablet screenshots**
