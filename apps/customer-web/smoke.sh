@@ -18,6 +18,8 @@ grep -q 'rel="manifest"' <<<"$page" || fail "the Add to Home Screen manifest lin
 grep -q '/_expo/static/js/web/entry-' <<<"$page" || fail "the app bundle is not referenced"
 grep -q 'src="/ios-viewport.js"' <<<"$page" || fail "ios-viewport.js (no zoom on focus) is not loaded"
 grep -q 'input, textarea { min-width: 0; }' <<<"$page" || fail "text fields can overflow the screen (min-width rule missing)"
+grep -q 'src="/phone-frame.js"' <<<"$page" || fail "phone-frame.js (phone column on a wide screen) is not loaded"
+grep -q 'max-width: 480px' <<<"$page" || fail "the page is not held to a phone column on a wide screen"
 grep -q 'rel="preconnect"' <<<"$page" || fail "no API preconnect (finish-build ran without EXPO_PUBLIC_API_URL)"
 
 # One-page app: a deep link is served the same page, not a 404.
@@ -27,6 +29,7 @@ grep -q '<title>LyniaGo</title>' <<<"$deep" || fail "$BASE/send is not the app p
 curl -fsS --max-time 20 -o /dev/null "$BASE/manifest.webmanifest" || fail "manifest.webmanifest is missing"
 curl -fsS --max-time 20 -o /dev/null "$BASE/apple-touch-icon.png" || fail "apple-touch-icon.png is missing"
 curl -fsS --max-time 20 -o /dev/null "$BASE/ios-viewport.js" || fail "ios-viewport.js is missing"
+curl -fsS --max-time 20 -o /dev/null "$BASE/phone-frame.js" || fail "phone-frame.js is missing"
 
 # Offline shell (docs/CUSTOMER-WEB.md § Offline): registered, stamped by finish-build, never cached by HTTP.
 grep -q 'src="/sw-register.js"' <<<"$page" || fail "sw-register.js (offline shell) is not loaded"

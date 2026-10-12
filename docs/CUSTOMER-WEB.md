@@ -22,6 +22,11 @@ Web-only differences from the phone app: ledger D-81 in [`DESIGN-DEVIATIONS.md`]
 - Text fields fit their row: a browser `<input>` keeps a built-in minimum width (~20 characters) that `flex: 1`
   can't shrink, so the phone-number field ran past a 320px screen and focusing it slid the page sideways (any
   browser, Android Chrome included). `finish-build.mjs` adds `input, textarea { min-width: 0 }`.
+- Phone layout on a wide screen (owner, 2026-10-12: "it must still maintain a mobile screen like the merchant
+  app"): above 480px the page is a 480px column centred on `--surface`, edged in `--line`, the merchant app's
+  frame. `public/phone-frame.js` caps the width react-native-web measures (`window.visualViewport`) at 480, so
+  screens sized from `useWindowDimensions` fit the column; `body` is transformed so `position: fixed` sheets and
+  modals stay inside it. Phones (≤ 480px) are unchanged.
 
 ## One-time setup (owner)
 
