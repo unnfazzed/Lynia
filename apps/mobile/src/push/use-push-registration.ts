@@ -1,15 +1,15 @@
 import { useQueryClient } from "@tanstack/react-query";
 import * as Notifications from "expo-notifications";
-import { router, usePathname } from "expo-router";
+import { router, useNavigationContainerRef, usePathname } from "expo-router";
 import { useEffect, useRef } from "react";
 import { AppState, type NativeEventSubscription } from "react-native";
 import type { Session } from "../auth/session";
+import { openDestination, tabsInHistory } from "../logic/side-nav";
 import { subscribeReachability } from "../net/reachability";
 import { setBoundPushToken } from "./bound-token";
 import { subscribePushKick } from "./push-kick";
 import {
   pushDestination,
-  pushOnce,
   registerForPushNotificationsAsync,
   registerRotatedToken,
   unregisterForPushNotificationsAsync,
@@ -183,13 +183,23 @@ export function usePushRegistration(session: Session | null): void {
   // cold-start response itself (via `consumeColdStartResponse` in push.ts) as ONE input to its single
   // boot-navigation decision, closing that race by construction (LC-D-T3).
   const isRider = session?.role === "rider";
+  const navRef = useNavigationContainerRef();
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
       const to = pushDestination(response.notification.request.content.data, isRider);
-      if (to) pushOnce(router, pathnameRef.current, to);
+      // Side-aware (side-nav.ts): a rider destination saves the rider side and never stacks a second
+      // board (or the board over customer Home); anything else is pushed once, as before.
+      if (!to) return;
+      let root: Parameters<typeof tabsInHistory>[0];
+      try {
+        root = navRef.isReady() ? navRef.getRootState() : undefined;
+      } catch {
+        root = undefined;
+      }
+      openDestination(router, { pathname: pathnameRef.current, ...tabsInHistory(root) }, to);
     });
     return () => sub.remove();
-  }, [isRider]);
+  }, [isRider, navRef]);
 
   // Owner instruction (2026-08-16): no screen asks the user to refresh by hand any more, so an
   // account-standing decision has to reach the UI on its own. `kind: "account"` is what the API tags a

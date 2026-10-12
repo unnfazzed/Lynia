@@ -16,9 +16,11 @@ const mockReplace = jest.fn();
 let mockSecureStore: Record<string, string> = {};
 
 const mockBack = jest.fn();
+const mockDismissAll = jest.fn();
+let mockCanGoBack = true;
 let mockParams: Record<string, string> = {};
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ replace: mockReplace, back: mockBack, canGoBack: () => true }),
+  useRouter: () => ({ replace: mockReplace, back: mockBack, dismissAll: mockDismissAll, canDismiss: () => mockCanGoBack, canGoBack: () => mockCanGoBack }),
   useLocalSearchParams: () => mockParams,
 }));
 /**
@@ -43,6 +45,8 @@ jest.mock("../../../src/api/riders", () => ({
   completeProfile: (...a: unknown[]) => mockCompleteProfile(...a),
   noteKycLaunched: () => mockNoteLaunched(),
 }));
+const mockUpdateSession = jest.fn(async (_p: unknown) => undefined);
+jest.mock("../../../src/auth/auth-context", () => ({ useOptionalAuth: () => ({ updateSession: (p: unknown) => mockUpdateSession(p) }) }));
 const mockRunKyc = jest.fn();
 const mockPrimeCamera = jest.fn(async () => true);
 jest.mock("../../../src/kyc/verify", () => ({
@@ -139,6 +143,8 @@ beforeEach(() => {
   mockWalletConfig = null;
   mockReplace.mockClear();
   mockBack.mockClear();
+  mockDismissAll.mockClear();
+  mockCanGoBack = true;
   mockNoteLaunched.mockClear();
   mockParams = {};
   takeKycLaunch();
@@ -297,6 +303,47 @@ describe("BecomeRiderScreen — the name step (legacy accounts without a name), 
     expect(consumed).toBe(true);
     expect(tree.root.findAllByType(RiderIntro)).toHaveLength(1);
     expect(text(tree)).not.toContain("What should bikers call you?");
+    spy.mockRestore();
+    act(() => tree.unmount());
+  });
+
+  it("Android back on R1 goes back when there is a screen behind (reached from the customer side)", async () => {
+    mockMe = { ...NAMED };
+    const handlers: (() => boolean | null | undefined)[] = [];
+    const spy = jest.spyOn(BackHandler, "addEventListener").mockImplementation((_e, h) => {
+      handlers.push(h);
+      return { remove: () => void handlers.splice(handlers.indexOf(h), 1) } as never;
+    });
+    const tree = await mount();
+    let consumed: boolean | null | undefined;
+    await act(async () => {
+      consumed = handlers.at(-1)?.();
+    });
+    expect(consumed).toBe(true);
+    expect(mockBack).toHaveBeenCalledTimes(1);
+    expect(mockReplace).not.toHaveBeenCalled();
+    spy.mockRestore();
+    act(() => tree.unmount());
+  });
+
+  it("Android back on R1 with nothing behind (the Ride path) leaves for customer Home, saved, stack cleared — never closes the app", async () => {
+    mockMe = { ...NAMED };
+    mockCanGoBack = false;
+    const handlers: (() => boolean | null | undefined)[] = [];
+    const spy = jest.spyOn(BackHandler, "addEventListener").mockImplementation((_e, h) => {
+      handlers.push(h);
+      return { remove: () => void handlers.splice(handlers.indexOf(h), 1) } as never;
+    });
+    const tree = await mount();
+    let consumed: boolean | null | undefined;
+    await act(async () => {
+      consumed = handlers.at(-1)?.();
+    });
+    await flush();
+    expect(consumed).toBe(true);
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledWith("/home");
+    expect(mockSecureStore["lynia.rolePreference"]).toBe("customer");
     spy.mockRestore();
     act(() => tree.unmount());
   });
@@ -460,6 +507,30 @@ describe("BecomeRiderScreen — the hand-over to the board (startup review 2026-
     expect(mockReplace).toHaveBeenCalledWith("/rider");
     expect(mockReplace).not.toHaveBeenCalledWith("/permissions?next=/rider");
     expect(mockBack).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("the hand-over clears the stack under the board and records the biker role in the session", async () => {
+    mockMe = { ...NAMED, idNumber: null };
+    mockUpdateSession.mockClear();
+    mockBecomeRider.mockResolvedValue({ mode: "auto", kycStatus: "verified" });
+    const tree = await mount();
+    await tapStart(tree);
+    expect(mockDismissAll).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith("/rider");
+    expect(mockDismissAll.mock.invocationCallOrder[0]).toBeLessThan(mockReplace.mock.invocationCallOrder[0]!);
+    expect(mockUpdateSession).toHaveBeenCalledWith({ role: "rider" });
+    act(() => tree.unmount());
+  });
+
+  it("the already_rider (409) hand-over records the biker role too", async () => {
+    mockMe = { ...NAMED, idNumber: null };
+    mockUpdateSession.mockClear();
+    mockBecomeRider.mockRejectedValue(new ApiError(409, "already", "already_rider"));
+    const tree = await mount();
+    await tapStart(tree);
+    expect(mockUpdateSession).toHaveBeenCalledWith({ role: "rider" });
+    expect(mockReplace).toHaveBeenCalledWith("/rider");
     act(() => tree.unmount());
   });
 

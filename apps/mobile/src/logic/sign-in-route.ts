@@ -33,3 +33,14 @@ export function startRoleFor(chosen: StartRole | null, intent: SignInIntent, ser
 export function signedInDestination(chosen: StartRole | null, intent: SignInIntent = null, serverRole?: string | null): "/rider" | "/home" {
   return startRoleFor(chosen, intent, serverRole) === "customer" ? "/home" : "/rider";
 }
+
+/**
+ * Where the rider side starts for an account that has just signed in or named itself. An account with no
+ * rider record goes straight to R1 (`/rider/become`) instead of mounting the board only for it to replace
+ * itself with R1 (a flash of the board and a wasted round of board reads). The board's own redirect stays
+ * the fallback for every other way in. `hasRider` is the server's word: `role: "rider"` (written in the same
+ * transaction that creates the rider record) or a `rider` on `/auth/me`.
+ */
+export function riderEntry(destination: "/rider" | "/home", hasRider: boolean): "/rider" | "/rider/become" | "/home" {
+  return destination === "/rider" && !hasRider ? "/rider/become" : destination;
+}

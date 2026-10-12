@@ -1,9 +1,10 @@
 import { tokens } from "@lynia/shared/tokens";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
-import { AccessibilityInfo, Keyboard, Linking, Platform, Text, TextInput, View } from "react-native";
+import { AccessibilityInfo, BackHandler, Keyboard, Linking, Platform, Text, TextInput, View } from "react-native";
 import { requestOtp } from "../src/api/auth";
 import { useAuth } from "../src/auth/auth-context";
+import { loadSignupIntent } from "../src/auth/device-state";
 import { PRIVACY_URL, TERMS_URL } from "../src/config";
 import { replaceClearingStack } from "../src/logic/nav";
 import { otpErrorMessage } from "../src/logic/otp";
@@ -31,7 +32,19 @@ export default function PhoneScreen(): React.ReactElement {
   const navigation = useNavigation();
   const { session } = useAuth();
   const params = useLocalSearchParams<{ intent?: string }>();
-  const intent = params.intent === "rider" ? "rider" : undefined;
+  // C1's rider path, from the params or — after an app kill on this screen or C4, which relaunches here
+  // with no params — from the device, where C1 kept it until sign-in completes.
+  const [storedIntent, setStoredIntent] = useState<"rider" | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void loadSignupIntent().then((v) => {
+      if (alive) setStoredIntent(v);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const intent = params.intent === "rider" || storedIntent === "rider" ? "rider" : undefined;
   const [digits, setDigits] = useState("");
   const [busy, setBusy] = useState(false);
   // The C3 validation line: only ever a problem with the number itself.
@@ -85,6 +98,20 @@ export default function PhoneScreen(): React.ReactElement {
     if (prev === "onboarding") router.back();
     else replaceClearingStack(router, "/onboarding");
   };
+
+  // Android Back does what the on-screen arrow does. C1 hands over with a replace, so with nothing behind
+  // this screen the system Back used to close the app. Only while this screen is the focused one: the code
+  // screen is pushed on top of it and has its own Back.
+  const backRef = useRef(back);
+  backRef.current = back;
+  useEffect(() => {
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (navigation.isFocused && !navigation.isFocused()) return false;
+      backRef.current();
+      return true;
+    });
+    return () => sub.remove();
+  }, [navigation]);
 
   return (
     // The phone pad has no return key on iOS: a tap outside the field is the way to put it away.

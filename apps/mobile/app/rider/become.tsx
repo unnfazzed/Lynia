@@ -6,6 +6,7 @@ import { AppState, BackHandler, Text } from "react-native";
 import { ApiError } from "../../src/api/client";
 import { getMe, type Me, updateProfile } from "../../src/api/auth";
 import { becomeRider, noteKycLaunched } from "../../src/api/riders";
+import { useOptionalAuth } from "../../src/auth/auth-context";
 import { saveRolePreference } from "../../src/auth/session";
 import { KycCheckHost } from "../../src/kyc/KycCheckHost";
 import { recordKycLaunch } from "../../src/kyc/launch-hint";
@@ -13,6 +14,7 @@ import { primeKycCamera, runKycVerification } from "../../src/kyc/verify";
 import { withRiderStub } from "../../src/logic/become-state";
 import { KYC_RETRY_TRY_LATER } from "../../src/logic/gates";
 import { clearKycDraft, kycDraftHasContent, loadKycDraft, saveKycDraft } from "../../src/logic/kyc-draft";
+import { replaceClearingStack } from "../../src/logic/nav";
 import { DismissKeyboardArea, useActionError } from "../../src/ui";
 import { PD } from "../../src/ui/firstrun/copy";
 import { OB, RO } from "../../src/ui/onboarding/copy";
@@ -48,6 +50,7 @@ function becomeErrorMessage(e: unknown): string {
 export default function BecomeRiderScreen(): React.ReactElement {
   const router = useRouter();
   const qc = useQueryClient();
+  const auth = useOptionalAuth();
   // CF-02-SIB-3: same-tick double-submit guard for `submit` below — see the ref's use for why a plain
   // `busy` state boolean isn't enough.
   const submitInFlightRef = useRef(false);
@@ -148,6 +151,25 @@ export default function BecomeRiderScreen(): React.ReactElement {
     return () => sub.remove();
   }, [step]);
 
+  // Android back on R1. Reached from the customer side (Account's card) there is a screen to go back to;
+  // on the Ride path (C1 → OTP → here, or the board replacing itself with R1) there is not, and Back used
+  // to close the app — the relaunch then opened R1 again with no way out. With nothing behind, Back leaves
+  // for the customer side, saved as the side the next cold start opens on.
+  useEffect(() => {
+    if (step !== "intro") return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (submitInFlightRef.current) return true;
+      if (router.canGoBack()) {
+        router.back();
+        return true;
+      }
+      void saveRolePreference("customer");
+      replaceClearingStack(router, "/home");
+      return true;
+    });
+    return () => sub.remove();
+  }, [step, router]);
+
   /**
    * Hand over to the board, saved as the side the next cold start opens on (R-5).
    *
@@ -164,9 +186,14 @@ export default function BecomeRiderScreen(): React.ReactElement {
    */
   const handOver = async (refetchMe = true): Promise<void> => {
     void saveRolePreference("rider");
+    // The account is a rider now (registered, or the 409 already_rider): the session's role is what the
+    // boot route, the bootstrap's role hint and push routing read, and only C5 ever wrote it.
+    void auth?.updateSession({ role: "rider" });
     if (refetchMe) await qc.refetchQueries({ queryKey: ["me"] }).catch(() => undefined);
     else void qc.invalidateQueries({ queryKey: ["me"] });
-    router.replace("/rider");
+    // Cleared, not a bare replace: Become reached from the customer side would otherwise leave customer
+    // Home under the board, one Back away (and its queries running).
+    replaceClearingStack(router, "/rider");
   };
 
   const submit = async (withName: boolean): Promise<void> => {

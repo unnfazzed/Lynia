@@ -40,6 +40,9 @@ jest.mock("../../src/auth/session", () => ({
   loadSession: () => Promise.resolve(null),
 }));
 
+const mockSaveRole = jest.fn(async (_r: string) => undefined);
+jest.mock("../../src/auth/device-state", () => ({ saveRolePreference: (r: string) => mockSaveRole(r) }));
+
 // The RUM buffer is dormant until start(), so enqueueBoot is already a no-op here — mocked anyway so a
 // boot-routing test never depends on telemetry internals.
 jest.mock("../../src/telemetry/rum", () => ({ enqueueBoot: jest.fn() }));
@@ -67,6 +70,7 @@ describe("app/index.tsx boot routing", () => {
   beforeEach(() => {
     mockRedirect.mockClear();
     mockConsumeColdStart.mockClear();
+    mockSaveRole.mockClear();
     mockSession = null;
     // The boot reads are memoized for the life of the process (one launch, one read). Forget them
     // between cases so each test drives a FRESH set of deferred promises — without this, case 2 would
@@ -112,6 +116,40 @@ describe("app/index.tsx boot routing", () => {
     // The default customer destination would be /home; the cold-start tap must win instead.
     expect(mockRedirect).toHaveBeenCalledTimes(1);
     expect(mockRedirect).toHaveBeenCalledWith("/order/o1");
+    tree.unmount();
+  });
+
+  it("a cold-start tap into the biker side saves the biker side, as a warm tap does", async () => {
+    mockSession = { role: "rider", needsProfile: false };
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<Index />);
+    });
+    await flush();
+
+    resolveOnboarding(true);
+    resolveRolePref("customer");
+    resolveColdStart({ notification: { request: { content: { data: { kind: "broadcast", orderId: "o1" } } } } });
+    await flush();
+
+    expect(mockRedirect).toHaveBeenCalledWith("/rider");
+    expect(mockSaveRole).toHaveBeenCalledWith("rider");
+    tree.unmount();
+  });
+
+  it("a customer boot saves no side", async () => {
+    mockSession = { role: "customer", needsProfile: false };
+    let tree!: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<Index />);
+    });
+    await flush();
+    resolveOnboarding(true);
+    resolveRolePref("customer");
+    resolveColdStart(null);
+    await flush();
+    expect(mockRedirect).toHaveBeenCalledWith("/home");
+    expect(mockSaveRole).not.toHaveBeenCalled();
     tree.unmount();
   });
 

@@ -20,11 +20,12 @@ const mockUseRiderBoard = jest.fn();
 const mockSetOnline = jest.fn(async (online: boolean, _loc?: unknown) => ({ online }));
 const mockPush = jest.fn();
 const mockReplace = jest.fn();
+const mockDismissAll = jest.fn();
 const mockWithdrawOffer = jest.fn(async (orderId: string) => ({ orderId, withdrawn: true }));
 let mockPathname = "/rider";
 
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockPush, replace: mockReplace }),
+  useRouter: () => ({ push: mockPush, replace: mockReplace, dismissAll: mockDismissAll }),
   usePathname: () => mockPathname,
   useFocusEffect: (cb: () => void | (() => void)) => {
     const React_ = require("react");
@@ -1996,6 +1997,8 @@ describe("biker board — First Run v2 ID-check outcome pages (D-82)", () => {
       p!.props.onPress();
     });
     expect(mockReplace).toHaveBeenCalledWith("/home");
+    // The rider tabs are cleared from under Home (a bare replace left them one Back away).
+    expect(mockDismissAll).toHaveBeenCalled();
   });
 
   it("a duplicate decline is F5's WhatsApp-only page — no Try again (owner 2026-10-06)", async () => {
@@ -2050,6 +2053,27 @@ describe("biker board — First Run v2 ID-check outcome pages (D-82)", () => {
     expect(treeText(activeTree)).toContain("The details are in your notifications.");
     expect(treeText(activeTree)).not.toContain("SMS");
     expect(activeTree.root.findAll((n) => typeof n.type === "string" && typeof n.props.testID === "string" && n.props.testID.startsWith("kyc-outcome-"))).toHaveLength(0);
+  });
+
+  it("a wall's customer bridge switches sides like the Account toggle: offline, then Home with the rider stack cleared", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    mockSetOnline.mockRejectedValueOnce(new ApiError(403, "Your account is suspended", "suspended"));
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    mockDismissAll.mockClear();
+    mockReplace.mockClear();
+    const before = mockSetOnline.mock.calls.length;
+    const bridge = activeTree.root.findAll((n) => n.props.accessibilityLabel === "Order food and send parcels" && typeof n.props.onPress === "function")[0]!;
+    await renderer.act(async () => {
+      bridge.props.onPress();
+    });
+    await settle();
+    expect(mockSetOnline.mock.calls.slice(before).some((c) => c[0] === false)).toBe(true);
+    expect(mockDismissAll).toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledWith("/home");
   });
 });
 

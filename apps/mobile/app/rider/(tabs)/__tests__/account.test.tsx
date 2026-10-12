@@ -19,7 +19,8 @@ const mockSetOnline = jest.fn(async (online: boolean) => ({ online }));
 const mockPush = jest.fn();
 const mockReplace = jest.fn();
 
-jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush, replace: mockReplace }), useFocusEffect: () => undefined }));
+const mockDismissAll = jest.fn();
+jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush, replace: mockReplace, dismissAll: mockDismissAll }), useFocusEffect: () => undefined }));
 const mockStoreWrites: Array<[string, string]> = [];
 jest.mock("expo-secure-store", () => ({
   getItemAsync: async () => null,
@@ -168,6 +169,9 @@ describe("the Customer | Biker toggle (C4 / C5)", () => {
     await settle();
     expect(mockSetOnline).toHaveBeenCalledWith(false);
     expect(mockReplace).toHaveBeenCalledWith("/home");
+    // The rider tabs are cleared from under Home: Back from Home must not jump back to the biker side.
+    expect(mockDismissAll).toHaveBeenCalled();
+    expect(mockDismissAll.mock.invocationCallOrder[0]).toBeLessThan(mockReplace.mock.invocationCallOrder[0]!);
   });
 
   // R-5 (startup review 2026-10-06): the side picked is the side the next cold start opens on.

@@ -5,11 +5,26 @@ import { boundPushToken } from "../bound-token";
 import { usePushRegistration } from "../use-push-registration";
 
 const mockPush = jest.fn();
+const mockNav: string[] = [];
 let mockPathname = "/home";
+// The root stack's route names at tap time (side-nav.ts reads which tab shells are in the history).
+let mockRootRoutes: string[] = ["(tabs)"];
+const mockNavRef = { isReady: () => true, getRootState: () => ({ routes: mockRootRoutes.map((name) => ({ name })) }) };
 jest.mock("expo-router", () => ({
-  router: { push: (to: string) => mockPush(to) },
+  router: {
+    push: (to: string) => {
+      mockNav.push(`push:${to}`);
+      mockPush(to);
+    },
+    replace: (to: string) => mockNav.push(`replace:${to}`),
+    dismissAll: () => mockNav.push("dismissAll"),
+    dismissTo: (to: string) => mockNav.push(`dismissTo:${to}`),
+  },
   usePathname: () => mockPathname,
+  useNavigationContainerRef: () => mockNavRef,
 }));
+const mockSaveRole = jest.fn(async (_r: string) => undefined);
+jest.mock("../../auth/device-state", () => ({ saveRolePreference: (r: string) => mockSaveRole(r) }));
 
 // Capture the warm-tap response listener so tests can fire a notification response at it directly.
 type ResponseListener = (r: { notification: { request: { content: { data: unknown } } } }) => void;
@@ -73,7 +88,7 @@ jest.mock("../push", () => ({
   registerForPushNotificationsAsync: () => mockRegister(),
   registerRotatedToken: (t: string) => mockRegisterRotated(t),
   unregisterForPushNotificationsAsync: (t: string) => mockUnregister(t as never),
-  pushDestination: (data: { orderId?: string }) => (data?.orderId ? `/order/${data.orderId}` : null),
+  pushDestination: (data: { orderId?: string; route?: string }) => data?.route ?? (data?.orderId ? `/order/${data.orderId}` : null),
   pushOnce: (router: { push: (to: string) => void }, currentPathname: string, target: string) => {
     if (currentPathname !== target) router.push(target);
   },
@@ -117,9 +132,69 @@ async function flush(): Promise<void> {
 describe("usePushRegistration warm-tap listener", () => {
   beforeEach(() => {
     mockPush.mockClear();
+    mockNav.length = 0;
+    mockSaveRole.mockClear();
+    mockRootRoutes = ["(tabs)"];
     mockResponseListenerRemove.mockClear();
     responseListener = null;
     mockPathname = "/home";
+  });
+
+  const tap = async (data: unknown): Promise<void> => {
+    act(() => {
+      responseListener?.({ notification: { request: { content: { data } } } });
+    });
+    await flush();
+  };
+
+  it("a biker destination tapped while the biker tabs are already open goes back to them — never a second board", async () => {
+    mockRootRoutes = ["rider/(tabs)", "rider/job"];
+    mockPathname = "/rider/job";
+    let tree!: ReturnType<typeof create>;
+    act(() => {
+      tree = create(<Harness role="rider" />);
+    });
+    await flush();
+    await tap({ route: "/rider" });
+    expect(mockNav).toEqual(["dismissTo:/rider"]);
+    expect(mockSaveRole).toHaveBeenCalledWith("rider");
+    act(() => tree.unmount());
+  });
+
+  it("a biker destination tapped on the customer side saves the biker side and clears customer Home from under it", async () => {
+    let tree!: ReturnType<typeof create>;
+    act(() => {
+      tree = create(<Harness role="rider" />);
+    });
+    await flush();
+    await tap({ route: "/rider" });
+    expect(mockNav).toEqual(["dismissAll", "replace:/rider"]);
+    expect(mockSaveRole).toHaveBeenCalledWith("rider");
+    act(() => tree.unmount());
+  });
+
+  it("a biker job tapped on the customer side lands on the job with the board under it", async () => {
+    let tree!: ReturnType<typeof create>;
+    act(() => {
+      tree = create(<Harness role="rider" />);
+    });
+    await flush();
+    await tap({ route: "/rider/job" });
+    expect(mockNav).toEqual(["dismissAll", "replace:/rider", "push:/rider/job"]);
+    act(() => tree.unmount());
+  });
+
+  it("a biker job tapped from the board is pushed over it", async () => {
+    mockRootRoutes = ["rider/(tabs)"];
+    mockPathname = "/rider";
+    let tree!: ReturnType<typeof create>;
+    act(() => {
+      tree = create(<Harness role="rider" />);
+    });
+    await flush();
+    await tap({ route: "/rider/job" });
+    expect(mockNav).toEqual(["push:/rider/job"]);
+    act(() => tree.unmount());
   });
 
   it("routes a warm tap (app already running) to the pushDestination target", async () => {

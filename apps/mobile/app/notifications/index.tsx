@@ -8,6 +8,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getMe } from "../../src/api/auth";
 import { dismissNotification, getNotificationsFeed, markNotificationsRead, type NotificationRow } from "../../src/api/notifications";
 import { getActiveOrder } from "../../src/api/orders";
+import { saveRolePreference } from "../../src/auth/device-state";
+import { replaceClearingStack } from "../../src/logic/nav";
+import { openDestination } from "../../src/logic/side-nav";
 import { switchToCustomer } from "../../src/logic/switch-to-customer";
 import { becomeStateFor } from "../../src/logic/become-state";
 import { useNow } from "../../src/logic/use-now";
@@ -16,7 +19,7 @@ import { riderModeAvailable } from "../../src/rider-mode";
 import { AppScreen, EmptyState, emptyCopy, useActionError } from "../../src/ui";
 import { N, NF } from "../../src/ui/notifications/copy";
 import { NCard, Day, NRow, OffRow, OtherSide, SkelDay, SkelRow, SwipeRow } from "../../src/ui/notifications/kit";
-import { buildFeed, clockOf, type NItem, type Side } from "../../src/ui/notifications/model";
+import { buildFeed, clockOf, kycSelfRetryOpen, type NItem, type Side } from "../../src/ui/notifications/model";
 import { CtaButton } from "../../src/ui/order/kit";
 import { RToast } from "../../src/ui/rider/board";
 import { RIDER_COPY as R, RF } from "../../src/ui/rider/copy";
@@ -182,7 +185,17 @@ export default function NotificationsScreen(): React.ReactElement {
   const [open, setOpen] = React.useState<Record<string, boolean>>({});
   const [switching, setSwitching] = React.useState(false);
 
-  const feed = buildFeed(rows, { side, now, unreadIds: visitUnread, hidden, dest: notificationRowDestination });
+  const feed = buildFeed(rows, { side, now, unreadIds: visitUnread, hidden, dest: notificationRowDestination, kycRetry: kycSelfRetryOpen(me?.rider) });
+
+  // A row's destination, opened side-aware (side-nav.ts): this screen sits on the side it was opened from
+  // (`side`), so a rider destination from the rider side goes back to the rider tabs instead of stacking a
+  // second board, and from the customer side it saves the rider side and clears customer Home from under it.
+  const openRow = (to: string): void => openDestination(router, { pathname: "/notifications", riderTabsBelow: rider, customerTabsBelow: !rider }, to);
+  // The customer → rider switch (N4's other-side row): saved as the next cold start's side, stack cleared.
+  const toRiderSide = (): void => {
+    void saveRolePreference("rider");
+    replaceClearingStack(router, "/rider");
+  };
 
   const entries: ListEntry[] = [];
   if (notifOff) entries.push({ kind: "off" });
@@ -199,8 +212,8 @@ export default function NotificationsScreen(): React.ReactElement {
           first
           open={!!open[item.key]}
           onToggle={() => setOpen((o) => ({ ...o, [item.key]: !o[item.key] }))}
-          onPress={() => router.push(item.to)}
-          onAction={() => (item.action ? router.push(item.action.to) : undefined)}
+          onPress={() => openRow(item.to)}
+          onAction={() => (item.action ? openRow(item.action.to) : undefined)}
         />
       </SwipeRow>
     ));
@@ -212,7 +225,7 @@ export default function NotificationsScreen(): React.ReactElement {
       case "stale":
         return <Notice icon="wifi-off" text={e.text} />;
       case "other":
-        return <OtherSide rider={rider} sub={e.sub} onPress={() => (rider ? setSwitching(true) : router.replace("/rider"))} />;
+        return <OtherSide rider={rider} sub={e.sub} onPress={() => (rider ? setSwitching(true) : toRiderSide())} />;
       case "pinned":
         return <NCard danger>{rowsOf(e.items)}</NCard>;
       case "day":
@@ -316,7 +329,7 @@ function SwitchToCustomer({ visible, onClose }: { visible: boolean; onClose: () 
     // MA-H3: the same switch as the Account toggle — the side is saved and a failed go-offline is said.
     void switchToCustomer(!!activeJob).then((ok) => (ok ? undefined : fail(R.offFail)));
     onClose();
-    router.replace("/home");
+    replaceClearingStack(router, "/home");
   };
   const backToJob = (): void => {
     onClose();

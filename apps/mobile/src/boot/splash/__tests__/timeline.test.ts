@@ -16,11 +16,32 @@ import {
   nextStepChange,
   pendingTasks,
   riderStepTimes,
+  splashDestination,
   splashDoneAt,
   stepStates,
 } from "../timeline";
 
 const at = (session: number | null, profile: number | null, home: number | null, rider: number | null = null): TaskTimes => ({ session, profile, home, rider });
+
+describe("splashDestination — only a verified biker's boot is the rider boot", () => {
+  it("keeps /rider for a verified biker, and while the flag is still being read", () => {
+    expect(splashDestination("/rider", true)).toBe("/rider");
+    expect(isRiderBoot(splashDestination("/rider", undefined))).toBe(true);
+  });
+
+  it("a biker mid-ID-check (or with no flag on the device) gets the plain splash, waiting on the session only", () => {
+    for (const v of [false, null]) {
+      const d = splashDestination("/rider", v);
+      expect(isRiderBoot(d)).toBe(false);
+      expect(awaitedTasks(d)).toEqual(["session"]);
+    }
+  });
+
+  it("leaves every other destination alone", () => {
+    expect(splashDestination("/home", false)).toBe("/home");
+    expect(splashDestination(null, false)).toBeNull();
+  });
+});
 
 describe("splashDoneAt", () => {
   it("Home waits for all three tasks", () => {

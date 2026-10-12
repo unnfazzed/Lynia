@@ -6,10 +6,11 @@ import { AccessibilityInfo, AppState, Platform, Text, TextInput, View } from "re
 import { requestOtp, verifyOtp } from "../src/api/auth";
 import { ApiError } from "../src/api/client";
 import { useAuth } from "../src/auth/auth-context";
+import { clearSignupIntent, loadSignupIntent } from "../src/auth/device-state";
 import { loadRolePreference, saveRolePreference } from "../src/auth/session";
 import { replaceClearingStack } from "../src/logic/nav";
 import { RESEND_COOLDOWN_S, formatCountdown, otpErrorMessage, otpFailure } from "../src/logic/otp";
-import { parseSignInIntent, signedInDestination, startRoleFor } from "../src/logic/sign-in-route";
+import { parseSignInIntent, riderEntry, signedInDestination, startRoleFor } from "../src/logic/sign-in-route";
 import { useReachability } from "../src/net/use-reachability";
 import { DismissKeyboardArea, Icon, Tappable, useActionError } from "../src/ui";
 import { OB } from "../src/ui/onboarding/copy";
@@ -114,7 +115,7 @@ export default function VerifyScreen({ initialCooldownS = RESEND_COOLDOWN_S, ini
   const { signIn } = useAuth();
   const params = useLocalSearchParams<{ phone?: string; devCode?: string; deliveryChannel?: string; intent?: string }>();
   const phone = typeof params.phone === "string" ? params.phone : "";
-  const intent = parseSignInIntent(params.intent);
+  const paramIntent = parseSignInIntent(params.intent);
   const prefilled = typeof params.devCode === "string" && params.devCode.length > 0;
   const [code, setCode] = useState(prefilled ? (params.devCode as string) : "");
   const [deliveryChannel, setDeliveryChannel] = useState<DeliveryChannel>(asDeliveryChannel(params.deliveryChannel));
@@ -178,6 +179,8 @@ export default function VerifyScreen({ initialCooldownS = RESEND_COOLDOWN_S, ini
     setBusy(true);
     try {
       const res = await verifyOtp(phone, value);
+      // C1's rider path: the params, or the copy C1 kept on the device (an app killed on C2 / C4).
+      const intent = paramIntent ?? (await loadSignupIntent());
       // A brand-new account keeps its C1 rider intent with the session, so an app killed on C5 still
       // finishes as a rider (C-4).
       await signIn({
@@ -189,6 +192,8 @@ export default function VerifyScreen({ initialCooldownS = RESEND_COOLDOWN_S, ini
         needsProfile: res.needsProfile,
         ...(res.needsProfile && intent ? { signupIntent: intent } : {}),
       });
+      // Signed in: the device copy has served its purpose (C5 keeps its own with the session).
+      void clearSignupIntent();
       // Every way out of sign-in clears the stack: Back must never reach the phone screen again (C-1).
       // A brand-new account has no name yet: C5 first, carrying the verified number and the C1 rider
       // intent. That screen routes onward itself once the name is saved.
@@ -200,7 +205,9 @@ export default function VerifyScreen({ initialCooldownS = RESEND_COOLDOWN_S, ini
       // role a sign-out wiped, C-3); otherwise customer, or rider through C1's "Ride with LyniaGo".
       const chosen = await loadRolePreference();
       if (!chosen) void saveRolePreference(startRoleFor(null, intent, res.role));
-      replaceClearingStack(router, signedInDestination(chosen, intent, res.role));
+      // An account with no rider record (the server's role is not "rider") goes straight to R1, not
+      // through a board that would only replace itself with R1.
+      replaceClearingStack(router, riderEntry(signedInDestination(chosen, intent, res.role), res.role === "rider"));
     } catch (e) {
       const failure = otpFailure(e instanceof ApiError ? e : null);
       if (failure === "expired" || failure === "locked") {

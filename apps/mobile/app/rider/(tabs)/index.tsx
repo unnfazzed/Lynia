@@ -36,6 +36,8 @@ import {
 } from "../../../src/logic/gates";
 import { useHomeLocation } from "../../../src/logic/home-location";
 import { useKeepScreenOn } from "../../../src/logic/use-keep-screen-on";
+import { replaceClearingStack } from "../../../src/logic/nav";
+import { switchToCustomer } from "../../../src/logic/switch-to-customer";
 import { kycScreenFor, parseIsoDay } from "../../../src/logic/kyc-outcome";
 import { markRiderWelcomeSeen, riderWelcomeSeen, riderWelcomeSeenCached } from "../../../src/logic/rider-welcome";
 import { boardPollMs } from "../../../src/logic/board-poll";
@@ -269,7 +271,14 @@ export default function RiderHome(): React.ReactElement {
     },
     [qc],
   );
-  const leaveForCustomer = useCallback((): void => router.replace("/home"), [router]);
+  // The gate bridges ("Use LyniaGo as a customer"): the same switch as the Account toggle — the side is
+  // saved and the rider goes offline (online stays only for a job in hand), then customer Home with the
+  // rider stack cleared from under it.
+  const hasActiveJobRef = useRef(false);
+  const leaveForCustomer = useCallback((): void => {
+    void switchToCustomer(hasActiveJobRef.current).then((ok) => (ok ? undefined : setError(R.offFail)));
+    replaceClearingStack(router, "/home");
+  }, [router, setError]);
   // A completed launch holds the check in flight past F8 while the server can't yet tell it from an
   // unfinished one (gates.ts kycLaunchForGate) — R2, never a false F3.
   const kycGate = knownUnverified ? resolveKycGate(rider, kycLaunchForGate(kycLaunch, Date.now(), rider)) : null;
@@ -439,6 +448,7 @@ export default function RiderHome(): React.ReactElement {
   }, [activeJob?.status]);
   const prevHadJobRef = useRef(false);
   const hasActiveJob = activeJob != null;
+  hasActiveJobRef.current = hasActiveJob;
   useEffect(() => {
     if (prevHadJobRef.current && !hasActiveJob) void requestLocation();
     prevHadJobRef.current = hasActiveJob;
@@ -827,7 +837,7 @@ export default function RiderHome(): React.ReactElement {
   // the same page from the server's state (G3).
   const exitToCustomer = useCallback((): void => {
     void saveRolePreference("customer");
-    router.replace("/home");
+    replaceClearingStack(router, "/home");
   }, [router]);
   // G1: no rider record → R1 (`/rider/become`); the "Earn with your bike" interstitial is gone. Only once the
   // mount's re-read of `me` has landed: right after Become a rider registers, a cached customer `me` (no rider

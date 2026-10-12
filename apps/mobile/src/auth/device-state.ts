@@ -497,6 +497,56 @@ export async function loadRolePreference(): Promise<StartRole | null> {
   }
 }
 
+// The C1 rider path ("Ride with LyniaGo") of a device that has not signed in yet. Route params alone lose
+// it when the app is killed on C2 / C4 (a relaunch boots onto /phone with no params), so it is kept here
+// from the C1 tap until sign-in completes; C5 keeps its own copy with the session (`signupIntent`).
+// Cleared by the customer CTA on C1, after sign-in, and by sign-out. Best-effort like the role above.
+const SIGNUP_INTENT_KEY = "lynia.signupIntent";
+
+export async function saveSignupIntent(intent: "rider"): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(SIGNUP_INTENT_KEY, intent);
+  } catch {
+    /* best-effort */
+  }
+}
+export async function loadSignupIntent(): Promise<"rider" | null> {
+  try {
+    return (await SecureStore.getItemAsync(SIGNUP_INTENT_KEY)) === "rider" ? "rider" : null;
+  } catch {
+    return null;
+  }
+}
+export async function clearSignupIntent(): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(SIGNUP_INTENT_KEY);
+  } catch {
+    /* best-effort */
+  }
+}
+
+// The last-known "this account is a verified biker" flag, written whenever `["me"]` loads
+// (src/auth/session-role-sync.ts). The cold-start splash reads it before the board has fetched anything:
+// only a verified rider's boot is "Getting jobs near you" (First Run v2 H1); a rider mid-ID-check gets the
+// plain splash. `null` = never written on this device. Best-effort.
+const RIDER_VERIFIED_KEY = "lynia.riderVerified";
+
+export async function saveRiderVerifiedHint(verified: boolean): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(RIDER_VERIFIED_KEY, verified ? "1" : "0");
+  } catch {
+    /* best-effort */
+  }
+}
+export async function loadRiderVerifiedHint(): Promise<boolean | null> {
+  try {
+    const v = await SecureStore.getItemAsync(RIDER_VERIFIED_KEY);
+    return v === "1" ? true : v === "0" ? false : null;
+  } catch {
+    return null;
+  }
+}
+
 // Whether the first-install onboarding carousel (customer/rider 0·2) has been shown on this device.
 // Persisted so the intro appears exactly once per install, before auth. Best-effort — a read failure
 // just re-shows the carousel once (harmless) and a write failure never traps the hand-off to /phone.
@@ -642,6 +692,8 @@ export async function clearDeviceState(): Promise<void> {
       SecureStore.deleteItemAsync(DRAFT_KEY),
       SecureStore.deleteItemAsync(DISCLAIMER_KEY),
       SecureStore.deleteItemAsync(ROLE_PREF_KEY),
+      SecureStore.deleteItemAsync(SIGNUP_INTENT_KEY),
+      SecureStore.deleteItemAsync(RIDER_VERIFIED_KEY),
       SecureStore.deleteItemAsync(CODE_INDEX_KEY),
       SecureStore.deleteItemAsync(HANDBACK_ACK_KEY),
       // The rider's durable confirmItems-pending marker (a job id + collected item indexes) must not

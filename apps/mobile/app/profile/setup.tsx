@@ -9,7 +9,7 @@ import { useAuth } from "../../src/auth/auth-context";
 import { loadRolePreference, saveRolePreference } from "../../src/auth/session";
 import { replaceClearingStack } from "../../src/logic/nav";
 import { clearProfileDraft, loadProfileDraft, profileDraftHasContent, saveProfileDraft } from "../../src/logic/profile-draft";
-import { parseSignInIntent, signedInDestination, startRoleFor } from "../../src/logic/sign-in-route";
+import { parseSignInIntent, riderEntry, signedInDestination, startRoleFor } from "../../src/logic/sign-in-route";
 import { DismissKeyboardArea, useActionError } from "../../src/ui";
 import { OB } from "../../src/ui/onboarding/copy";
 import { Cta, H2, NameFields, Note, OnbScreen, Pad, Sub, VerifiedPhoneRow } from "../../src/ui/onboarding/kit";
@@ -118,7 +118,9 @@ export default function ProfileSetupScreen(): React.ReactElement {
       const chosen = await loadRolePreference();
       if (!chosen) void saveRolePreference(startRoleFor(null, intent, session?.role));
       // Clear the stack: Back from the app must not return to sign-up (C-1).
-      replaceClearingStack(router, signedInDestination(chosen, intent, session?.role));
+      // A rider sign-up has no rider record yet: straight to R1, not through a board that would only
+      // replace itself with R1.
+      replaceClearingStack(router, riderEntry(signedInDestination(chosen, intent, me.role ?? session?.role), me.role === "rider" || me.rider != null));
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't save your details.");
     } finally {
@@ -137,7 +139,8 @@ export default function ProfileSetupScreen(): React.ReactElement {
           ) : null}
           <NameFields firstName={firstName} lastName={lastName} onFirstName={setFirstName} onLastName={setLastName} onSubmit={() => void submit()} />
           {phone ? <VerifiedPhoneRow phone={phone} /> : null}
-          <Note icon="id-card">{OB.noIdNote}</Note>
+          {/* "No ID needed" is the customer's promise; a biker sign-up's next step IS the ID check (R1). */}
+          {intent !== "rider" ? <Note icon="id-card">{OB.noIdNote}</Note> : null}
         </Pad>
       </OnbScreen>
     </DismissKeyboardArea>

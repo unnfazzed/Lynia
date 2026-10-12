@@ -9,6 +9,7 @@ import { openSupportWhatsApp } from "../../src/config";
 import { saveRolePreference } from "../../src/auth/session";
 import { becomeStateFor } from "../../src/logic/become-state";
 import { useStoredKycLaunch } from "../../src/kyc/launch-hint";
+import { replaceClearingStack } from "../../src/logic/nav";
 import { riderDeclineLabel } from "../../src/logic/gates";
 import { useHomeLocation } from "../../src/logic/home-location";
 import { useNotificationsUnreadCount } from "../../src/query/use-notifications-unread";
@@ -50,7 +51,9 @@ export default function AccountTabScreen(): React.ReactElement {
   // R-5: the side the rider picks is the side the next cold start opens on.
   const toRiderSide = (): void => {
     void saveRolePreference("rider");
-    router.replace("/rider");
+    // Cleared, not a bare replace: customer Home left under the board made Back jump sides (and kept its
+    // queries running).
+    replaceClearingStack(router, "/rider");
   };
 
   return (

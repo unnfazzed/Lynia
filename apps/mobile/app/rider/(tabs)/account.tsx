@@ -7,6 +7,7 @@ import { tokens } from "@lynia/shared/tokens";
 import { getMe } from "../../../src/api/auth";
 import { getActiveOrder } from "../../../src/api/orders";
 import { openSupportWhatsApp } from "../../../src/config";
+import { replaceClearingStack } from "../../../src/logic/nav";
 import { switchToCustomer } from "../../../src/logic/switch-to-customer";
 import { getRiderStanding } from "../../../src/api/rider-v2";
 import { useNotificationsUnreadCount } from "../../../src/query/use-notifications-unread";
@@ -51,7 +52,8 @@ export default function RiderAccountTabScreen(): React.ReactElement {
     // R-5: the side the rider picks is the side the next cold start opens on (saved by the helper).
     void switchToCustomer(!!activeJob).then((ok) => (ok ? undefined : fail(R.offFail)));
     setConfirm(false);
-    router.replace("/home");
+    // Cleared, not a bare replace: the rider tabs left underneath made Back jump sides.
+    replaceClearingStack(router, "/home");
   };
   const backToJob = (): void => {
     setConfirm(false);
