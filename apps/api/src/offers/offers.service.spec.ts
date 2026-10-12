@@ -427,7 +427,9 @@ describe("OffersService.listForOrder", () => {
         findMany: async () => [
           offer("o-ok", { profileId: "r-ok", ...LIVE() }),
           offer("o-off", { profileId: "r-off", ...LIVE({ isOnline: false }) }),
-          offer("o-stale", { profileId: "r-stale", ...LIVE({ lastHeartbeatAt: new Date(Date.now() - 5 * 60_000) }) }),
+          // Bid, then locked the phone: the bid counts as presence (owner 2026-10-12), so it stays.
+          offer("o-locked", { profileId: "r-locked", ...LIVE({ lastHeartbeatAt: new Date(Date.now() - 5 * 60_000) }) }),
+          offer("o-stale", { profileId: "r-stale", ...LIVE({ lastHeartbeatAt: new Date(Date.now() - 20 * 60_000) }) }),
           offer("o-held", { profileId: "r-held", ...LIVE({ onHold: true }) }),
           offer("o-owes", { profileId: "r-owes", ...LIVE() }),
           // On another customer's ride right now: selectOffer would 409 rider_taken on every Choose.
@@ -436,12 +438,12 @@ describe("OffersService.listForOrder", () => {
       },
     });
     const res = await service.listForOrder("order-1", "cust-1");
-    expect(res.map((o) => o.id)).toEqual(["o-ok"]);
+    expect(res.map((o) => o.id)).toEqual(["o-ok", "o-locked"]);
     // Review: ONE batched read over the live riders (no per-offer query), covering an active ride elsewhere
     // (the one_active_ride statuses) and the merchant-debt soft-lock.
     expect(heldQuery).toHaveBeenCalledTimes(1);
     const where = (heldQuery.mock.calls[0] as unknown as [{ where: { riderId: { in: string[] }; OR: Array<Record<string, unknown>> } }])[0].where;
-    expect(where.riderId.in.sort()).toEqual(["r-busy", "r-ok", "r-owes"]);
+    expect(where.riderId.in.sort()).toEqual(["r-busy", "r-locked", "r-ok", "r-owes"]);
     expect(where.OR[0]).toEqual({ status: { in: ["assigned", "confirmed", "en_route_pickup", "picked_up", "en_route_dropoff"] } });
     expect(where.OR).toHaveLength(4);
     // The gate's fields are read for the check only — never sent to the customer.

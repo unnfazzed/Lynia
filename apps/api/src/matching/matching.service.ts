@@ -102,7 +102,7 @@ export class MatchingService {
         pickupPt = (offer.order.pickup as { point?: { lat: number; lng: number } } | null)?.point;
         if (offer.status !== "pending") throw selectConflict("offer_gone", "That offer is no longer available");
 
-        // ET3 liveness (a fresh heartbeat, SELECT_HEARTBEAT_TTL_MS) and the P2-1 account-standing gate: a
+        // ET3 liveness (a heartbeat within selectHeartbeatTtlMs — a bid counts as presence) and the P2-1 account-standing gate: a
         // rider banned/suspended/put on-hold/cooled-down AFTER bidding (e.g. an admin ban while they were
         // still flagged online) must not be selectable. One shared gate (common/rider-selectable.ts) that
         // `listForOrder` also applies, so such an offer leaves the list too (MJ-RL2).

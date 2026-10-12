@@ -1,17 +1,21 @@
 import { onlineRefusalReason } from "../riders/online-gate";
+import { heartbeatMaxAgeMsForPush } from "./broadcast-policy";
 
 /**
- * Rider must have a heartbeat newer than this to be selectable at the moment a customer taps "select"
- * (ET3 liveness). Widened 30s → 60s (KB-HEARTBEAT-MARGIN): the mobile client's heartbeat cadence is 20s
- * with a 15s request timeout, so the old 30s TTL left only a ~10s margin — a single delayed/dropped
- * heartbeat on a flaky connection could make a live, foregrounded rider look stale right at selection
- * time, throwing a spurious "rider just became unavailable" that steers the customer to a worse offer.
- * 60s clears a fully-missed heartbeat cycle (20s + the next 20s + the 15s timeout ≈ 55s) with margin,
- * while still catching a genuinely-gone rider within a minute. Distinct from BR-01's separate 120s
- * ghost-supply-count cutoff (tracking.service) — that counts live supply for the broadcast; this gates
- * one selection moment.
+ * How old a rider's heartbeat may be while their bid is still choosable (ET3 liveness, as amended by the
+ * owner 2026-10-12: "a bid counts as presence"). Every caller of {@link riderSelectableNow} is looking at
+ * one of the rider's own pending offers, and the bid itself came from the app, so the rider was there when
+ * they made it. It used to be 60 s (KB-HEARTBEAT-MARGIN): the foreground heartbeat stops when the phone
+ * locks, so a rider who bid and pocketed the phone dropped off the customer's list a minute later — with a
+ * handful of riders, most bids were gone before the customer chose. The owner declined keeping a location
+ * service running while idle (a new Play foreground-service declaration), so the bid now stays choosable
+ * for as long as a push still reaches the rider (heartbeatMaxAgeMsForPush, 15 min by default, longer than
+ * any auction window). Going offline, losing standing, a debt or another job still removes it at once.
+ * Accepted risk: a rider who walked away without going offline can be chosen; they get the assignment push.
  */
-export const SELECT_HEARTBEAT_TTL_MS = 60_000;
+export function selectHeartbeatTtlMs(): number {
+  return heartbeatMaxAgeMsForPush();
+}
 
 /** The rider fields the select-time gate reads. */
 export interface SelectableRider {
@@ -34,13 +38,13 @@ export const SELECTABLE_RIDER_SELECT = {
 } as const;
 
 /**
- * MJ-RL2 / U62 (C10): the ONE select-time rider gate — online with a fresh heartbeat (ET3), and in good
+ * MJ-RL2 / U62 (C10): the ONE select-time rider gate — online with a heartbeat a push still reaches (ET3), and in good
  * standing (P2-1, the shared online gate). `selectOffer` refuses an offer whose rider fails it, so
  * `listForOrder` uses the same check to keep such an offer off the customer's list. (The merchant
  * cash-obligation soft-lock is the third gate; it needs a read, so callers check it separately.)
  */
 export function riderSelectableNow(rider: SelectableRider, nowMs: number = Date.now()): boolean {
   const hb = rider.lastHeartbeatAt?.getTime() ?? 0;
-  if (!rider.isOnline || nowMs - hb >= SELECT_HEARTBEAT_TTL_MS) return false;
+  if (!rider.isOnline || nowMs - hb >= selectHeartbeatTtlMs()) return false;
   return onlineRefusalReason(rider, new Date(nowMs)) === null;
 }
