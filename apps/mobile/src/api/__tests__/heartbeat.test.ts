@@ -1,4 +1,4 @@
-import { __resetReachability } from "../../net/reachability";
+import { __resetReachability, __setProbeFetch } from "../../net/reachability";
 import { ApiError } from "../client";
 import { sendHeartbeat } from "../riders";
 
@@ -25,6 +25,7 @@ let fetchMock: jest.Mock;
 beforeEach(() => {
   fetchMock = jest.fn();
   global.fetch = fetchMock as unknown as typeof fetch;
+  __setProbeFetch(async () => false); // a failed request's /health confirmation stays off fetchMock
 });
 
 afterEach(() => {

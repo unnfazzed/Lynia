@@ -1,4 +1,4 @@
-import { COMMISSION, freeJobsLeft } from "@lynia/shared";
+import { COMMISSION, freeJobsLeft, NATIONWIDE_REACH_M } from "@lynia/shared";
 import { ConflictException, InternalServerErrorException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
@@ -1324,11 +1324,11 @@ describe("RiderService.setOnline", () => {
     } as unknown as import("../notifications/notifications.service").NotificationsService;
     const s = new RiderService(prisma as unknown as PrismaService, {} as Env, new StubKycVendor(), pii, tracking, gatewayStub, notifications);
 
-    // Inside the Harare corridor so the online gate passes.
+    // Inside Zimbabwe so the online gate passes.
     expect(await s.setOnline("p1", true, { lat: -17.83, lng: 31.05 })).toEqual({ online: true });
     // The drain is fire-and-forget — let the microtask settle, then assert it pinged the waiters.
     await new Promise((r) => setTimeout(r, 0));
-    expect(drainedAt).toEqual({ lat: -17.83, lng: 31.05, radius: 5000 });
+    expect(drainedAt).toEqual({ lat: -17.83, lng: 31.05, radius: NATIONWIDE_REACH_M });
     expect(pushed).toEqual(["cust-1", "cust-2"]);
     // F-18: delivered waiters are cleared from the list; a miss would be left queued.
     expect(cleared).toEqual(["cust-1", "cust-2"]);

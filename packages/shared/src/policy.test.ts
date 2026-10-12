@@ -10,6 +10,7 @@ import {
   BROADCAST,
   STUCK_AFTER_MINUTES,
 } from "./policy";
+import { NATIONWIDE_REACH_M } from "./service-area";
 
 /**
  * Regression anchors for the commission money-math. `perRideCommission` / `commissionBasis` /
@@ -179,21 +180,21 @@ describe("customerRatingCarriesWeight", () => {
   });
 });
 
-describe("broadcastRadiusAtMs — widening schedule", () => {
-  // [ageMs, expectedRadiusM]
-  const cases: [number, number][] = [
-    [0, 5000],
-    [29999, 5000], // just before the first step
-    [30000, 8000], // first step boundary (inclusive)
-    [59999, 8000],
-    [60000, 12000], // second step boundary (inclusive)
-    [120000, 12000], // never exceeds the last scheduled step
-  ];
-  it.each(cases)("broadcastRadiusAtMs(%d) === %d", (age, expected) => {
-    expect(broadcastRadiusAtMs(age)).toBe(expected);
+describe("broadcastRadiusAtMs — nationwide reach (D-99)", () => {
+  it.each([0, 29_999, 30_000, 60_000, 120_000])("broadcastRadiusAtMs(%d) is all of Zimbabwe from the start", (age) => {
+    expect(broadcastRadiusAtMs(age)).toBe(NATIONWIDE_REACH_M);
   });
 
-  it("never exceeds the service-corridor cap", () => {
+  it("has nothing left to widen", () => {
+    expect(BROADCAST.expansion).toHaveLength(0);
+  });
+
+  it("still steps up a narrower base, capped at the nationwide reach", () => {
+    expect(broadcastRadiusAtMs(0, 5_000)).toBe(5_000);
+    expect(broadcastRadiusAtMs(0, 5_000_000)).toBe(BROADCAST.maxRadiusM);
+  });
+
+  it("never exceeds the cap", () => {
     for (let age = 0; age <= 600000; age += 5000) {
       expect(broadcastRadiusAtMs(age)).toBeLessThanOrEqual(BROADCAST.maxRadiusM);
     }

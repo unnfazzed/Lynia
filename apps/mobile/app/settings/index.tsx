@@ -7,7 +7,7 @@ import { Linking, Text, View } from "react-native";
 import { getMe, type Me } from "../../src/api/auth";
 import { setOnline } from "../../src/api/riders";
 import { useAuth } from "../../src/auth/auth-context";
-import { TERMS_URL } from "../../src/config";
+import { PRIVACY_URL, TERMS_URL } from "../../src/config";
 import { bikeDocsProgress, bikeVerified } from "../../src/logic/rider-documents";
 import { RIDER_PERM_ROUTES } from "../../src/logic/rider-perm-flow";
 import { providerName, TOPUP_PROVIDERS, type TopupProviderId, useRiderPrefs } from "../../src/logic/rider-prefs";
@@ -151,7 +151,7 @@ export default function SettingsScreen(): React.ReactElement {
             />
           ) : null}
           <ListRow icon="globe" title={ST.language} value={ST.english} chevron onPress={() => go("/settings/language")} />
-          <ListRow icon="file-text" title={R.sPrivacy} chevron onPress={() => go("/settings/privacy")} />
+          <ListRow icon="file-text" title={R.sPrivacy} chevron onPress={() => void Linking.openURL(PRIVACY_URL)} />
           <ListRow icon="file-text" title={R.sTerms} chevron onPress={() => void Linking.openURL(TERMS_URL)} />
           <ListRow icon="banknote" title={R.sPay} value={R.sPayV} />
         </ListCard>

@@ -5,6 +5,7 @@ import { AccessibilityInfo, Animated, Easing, type LayoutChangeEvent, Pressable,
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Path, Polygon } from "react-native-svg";
 import { probeNow } from "../../net/reachability";
+import { useNetworkTrouble } from "../../net/use-network-trouble";
 import { useReachability } from "../../net/use-reachability";
 import { ArcRing } from "../../ui/ArcSpinner";
 import { Wordmark } from "../../ui/Brand";
@@ -213,6 +214,7 @@ export function BootSplash(): React.ReactElement {
 
   const reduce = useReduceMotionSetting();
   const reachable = useReachability();
+  const networkTrouble = useNetworkTrouble();
   const readiness = useBootReadiness();
   const { reveal, markSplashDrawn } = useBootPhase();
   const release = useBootSplashRelease();
@@ -272,7 +274,9 @@ export function BootSplash(): React.ReactElement {
   // A full exit into Home; anywhere else (or a give-up before the destination is known) is a straight cut.
   const toHome = readiness.destination === "/home";
   const phase: Phase = done ? "done" : offline ? "offline" : loading ? "loading" : "boot";
-  const slow = phase === "loading" && t >= INTRO_MS + SLOW_AFTER_MS;
+  // "Slow network" only on evidence (owner 2026-10-12): a request actually failed or timed out. A long boot
+  // on a good link (a waking server, a slow phone) keeps the orbit going without blaming the network.
+  const slow = phase === "loading" && t >= INTRO_MS + SLOW_AFTER_MS && networkTrouble;
   // The rider's card is on screen while loading and through the cut; offline it keeps its place and
   // swaps its rows for the single offline row (H2c) instead of the dark panel.
   const offlineRow = phase === "offline" && riderBoot;

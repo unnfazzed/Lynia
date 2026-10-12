@@ -19,7 +19,7 @@ jest.mock("../../window-background", () => ({ scheduleWindowBackgroundReset: () 
 import { BootPhaseProvider, useBootPhase } from "../../boot-phase";
 import { getBootReadiness, reportBootDestination, reportBootReady, reportBootRoute, resetBootReadinessForTest } from "../../boot-readiness";
 import { resetBootSplashReleaseForTest } from "../../boot-splash-hold";
-import { __resetReachability, __setProbeFetch, reportReachable, reportUnreachable } from "../../../net/reachability";
+import { __resetReachability, __setProbeFetch, reportReachable, reportRequestFailed, reportUnreachable } from "../../../net/reachability";
 import { BootSplash, stepDoneAnnouncement } from "../BootSplash";
 import { GIVE_UP_MS, INTRO_MS } from "../timeline";
 import { RIDER_OFFLINE, RIDER_STEPS, S } from "../copy";
@@ -317,6 +317,10 @@ describe("BootSplash", () => {
     expect(announce).toHaveBeenCalledWith("Loading LyniaGo");
     expect(S.loading).toBe("Loading LyniaGo");
     advance(4000);
+    expect(hiddenFromA11y(tree, S.slow)).toBe(true); // a long boot alone never blames the network
+    __setProbeFetch(() => new Promise<boolean>(() => {})); // a request failed and /health hangs: real trouble
+    act(() => reportRequestFailed());
+    advance(100);
     expect(hiddenFromA11y(tree, S.slow)).toBe(false); // slow now: the pill is read
     act(() => reportUnreachable());
     advance(100);

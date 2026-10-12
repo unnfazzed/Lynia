@@ -14,6 +14,7 @@ import {
 import { ACTIVE_RIDE_STATUSES, codAmount, customerRatingCarriesWeight, DELIVERY_OTP_MAX_ATTEMPTS, HANDOVER_CODE_MAX_REISSUES, HeldReason, isBusinessBookingAccountPhone, OFFER_WINDOW_MS, RELIABILITY, RIDER_STRIKE_COOLDOWN_MS, roundToCents, UNDELIVERED_ABUSE } from "@lynia/shared";
 import { type OrderStatus, Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
+import { penaltiesSuspended } from "../common/penalties";
 import { applyReliabilityDelta, shouldFlagUndeliveredVelocity, undeliveredPenalty } from "../riders/reliability";
 import { Queue, Worker } from "bullmq";
 import { TokenService } from "../auth/token.service";
@@ -1083,7 +1084,12 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
           },
           -RELIABILITY.PENALTY.prePickupCancel,
         );
-        if (strikes >= CANCEL_STRIKE_LIMIT) {
+        if (strikes >= CANCEL_STRIKE_LIMIT && penaltiesSuspended()) {
+          // Penalty suspension (common/penalties.ts): the strike cycle is still counted (reset at the
+          // limit) and the score still drops, but no cooldown starts and the rider stays online.
+          // `reliability` cannot newly hold while suspended (applyReliabilityDelta never trips).
+          await tx.rider.update({ where: { profileId: order.riderId }, data: { cancelStrikes: 0, ...reliability } });
+        } else if (strikes >= CANCEL_STRIKE_LIMIT) {
           // Hit the limit: reset the counter, force offline, start the cooldown.
           // DS20-03: never SHORTEN an already-active cooldown — take the later of the fresh window and
           // any existing future cooldownUntil a sibling strike axis (dispute-strike, issues.service) set.

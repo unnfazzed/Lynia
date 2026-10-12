@@ -1,4 +1,4 @@
-import { __resetReachability } from "../../net/reachability";
+import { __resetReachability, __setProbeFetch } from "../../net/reachability";
 import type { Session } from "../../auth/session";
 import { STANDARD_TIMEOUT_MS } from "../../net/network-policy";
 import { __resetTokenClock, apiFetch, clearConditionalCache, configureApi } from "../client";
@@ -52,6 +52,7 @@ const apiCalls = () =>
 const refreshCalls = () => fetchMock.mock.calls.filter(([url]) => isRefresh(url as string)).length;
 
 beforeEach(() => {
+  __setProbeFetch(async () => false); // a failed request's /health confirmation stays off fetchMock
   rotations = 0;
   __resetTokenClock();
   jest.spyOn(Date, "now").mockReturnValue(SERVER_NOW_S * 1000);

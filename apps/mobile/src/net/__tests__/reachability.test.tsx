@@ -2,8 +2,11 @@ import { onlineManager } from "@tanstack/react-query";
 import {
   __resetReachability,
   __setProbeFetch,
+  CONFIRM_GAP_MS,
+  isNetworkTroubled,
   isReachable,
   nextProbeDelayMs,
+  reportRequestFailed,
   reportReachable,
   reportUnreachable,
   subscribeReachability,
@@ -82,5 +85,63 @@ describe("reachability store", () => {
     subscribeReachability((r) => seen.push(r));
     await jest.advanceTimersByTimeAsync(60_000); // no lingering probe should fire
     expect(seen).toEqual([]);
+  });
+
+  // Owner 2026-10-12: "the app is blaming low network at booting even if I am well connected".
+  describe("a failed request is confirmed before the app says offline", () => {
+    it("stays online when /health answers — a slow or waking server is not a bad network", async () => {
+      __setProbeFetch(async () => true);
+      const seen: boolean[] = [];
+      subscribeReachability((r) => seen.push(r));
+      reportRequestFailed();
+      expect(isReachable()).toBe(true);
+      expect(isNetworkTroubled()).toBe(true);
+      await jest.advanceTimersByTimeAsync(0);
+      expect(isReachable()).toBe(true);
+      expect(isNetworkTroubled()).toBe(false);
+      expect(onlineManager.isOnline()).toBe(true);
+      expect(seen).toEqual([]);
+    });
+
+    it("stays online after one failed probe if the next one answers", async () => {
+      let calls = 0;
+      __setProbeFetch(async () => ++calls > 1);
+      reportRequestFailed();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(isReachable()).toBe(true);
+      await jest.advanceTimersByTimeAsync(CONFIRM_GAP_MS);
+      expect(isReachable()).toBe(true);
+      expect(isNetworkTroubled()).toBe(false);
+    });
+
+    it("flips offline only after two probes in a row get nothing back", async () => {
+      reportRequestFailed();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(isReachable()).toBe(true);
+      await jest.advanceTimersByTimeAsync(CONFIRM_GAP_MS);
+      expect(isReachable()).toBe(false);
+      expect(onlineManager.isOnline()).toBe(false);
+      __setProbeFetch(async () => true);
+      await jest.advanceTimersByTimeAsync(2_000); // the recovery loop takes over
+      expect(isReachable()).toBe(true);
+    });
+
+    it("a request that answers mid-confirmation cancels it", async () => {
+      reportRequestFailed();
+      reportReachable();
+      await jest.advanceTimersByTimeAsync(CONFIRM_GAP_MS * 3);
+      expect(isReachable()).toBe(true);
+      expect(isNetworkTroubled()).toBe(false);
+    });
+
+    it("concurrent failures run one confirmation, not one each", async () => {
+      const probe = jest.fn(async () => true);
+      __setProbeFetch(probe);
+      reportRequestFailed();
+      reportRequestFailed();
+      reportRequestFailed();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(probe).toHaveBeenCalledTimes(1);
+    });
   });
 });

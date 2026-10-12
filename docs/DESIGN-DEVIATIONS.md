@@ -16,7 +16,7 @@ be reported back to Design) · **PROPOSED** (built in an open PR that waits on t
 screenshot sheet; it becomes APPROVED when the owner approves that PR, which doesn't merge before —
 merchant web upgrade plan §10, OV-11).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-18, D-19, D-23, D-24, D-27, D-29, D-30, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48, D-49, D-50, D-51, D-52, D-53, D-54, D-55, D-77, D-80, D-81, D-98.** D-98 is "Rider" → "Biker" app-wide (2026-10-12): every user-visible "rider" now reads "biker"; code, routes and data keep "rider". D-81 is the customer web app for iPhone users (2026-10-06): the same customer screens in a browser at app.lyniago.com, with a few web-only differences. D-80 is Google Maps on the web (2026-10-06): the merchant web and the planned customer web app draw maps with Google, replacing D-48's OpenStreetMap. D-77 is Merchant v2 (2026-10-04): the owner's merchant-v2 handoff gives kitchens, shops and pharmacies one shell and one five-step order lifecycle, on top of D-48. D-55 is Calm Mint v2 (2026-10-01): the owner's calm-mint-v2 handoff becomes the authority for the customer Home, customer onboarding and the rider's first run; it retires D-28 for Home and moves `--highlight` to #FFD23F. D-54 is Rider v2 (2026-10-01): the owner's rider-v2 handoff becomes the authority for the rider app and for BOTH Account tabs and Settings; it retires D-15, D-16, D-17, D-22, D-25 and D-26. D-53 is the customer order screen redesign (2026-10-01, with its v2 round the same day): the owner's after-send handoff replaces the gallery's separate auction / tracking / delivered / failure screens with one screen — a full-bleed map and a sheet that follows the order's stage. D-52 is the Send a parcel redesign (2026-10-01): the owner's send-compose-v2 handoff replaces the gallery's one-sheet composer with four steps (Where · What · Price · Review), edits addresses inline on the map, and drops landmarks, declared value and the disclaimer; it retires D-14, D-21 and D-31. D-51 is merchant branches (2026-10-01): the branch switcher, Add a branch, and the not-live Orders home. D-50 is restaurant auto-accept (2026-09-30): for restaurants still taking orders by phone, orders skip the accept window and LyniaGo ops confirm them by phone before a rider is sent. D-49 is the terms & conditions page (2026-09-30): one set of terms for customers, riders and businesses, linked from Settings in the app and the merchant sign-in line. D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-18, D-19, D-23, D-24, D-27, D-29, D-30, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48, D-49, D-50, D-51, D-52, D-53, D-54, D-55, D-77, D-80, D-81, D-100.** D-100 is "Rider" → "Biker" app-wide (2026-10-12): every user-visible "rider" now reads "biker"; code, routes and data keep "rider". D-81 is the customer web app for iPhone users (2026-10-06): the same customer screens in a browser at app.lyniago.com, with a few web-only differences. D-80 is Google Maps on the web (2026-10-06): the merchant web and the planned customer web app draw maps with Google, replacing D-48's OpenStreetMap. D-77 is Merchant v2 (2026-10-04): the owner's merchant-v2 handoff gives kitchens, shops and pharmacies one shell and one five-step order lifecycle, on top of D-48. D-55 is Calm Mint v2 (2026-10-01): the owner's calm-mint-v2 handoff becomes the authority for the customer Home, customer onboarding and the rider's first run; it retires D-28 for Home and moves `--highlight` to #FFD23F. D-54 is Rider v2 (2026-10-01): the owner's rider-v2 handoff becomes the authority for the rider app and for BOTH Account tabs and Settings; it retires D-15, D-16, D-17, D-22, D-25 and D-26. D-53 is the customer order screen redesign (2026-10-01, with its v2 round the same day): the owner's after-send handoff replaces the gallery's separate auction / tracking / delivered / failure screens with one screen — a full-bleed map and a sheet that follows the order's stage. D-52 is the Send a parcel redesign (2026-10-01): the owner's send-compose-v2 handoff replaces the gallery's one-sheet composer with four steps (Where · What · Price · Review), edits addresses inline on the map, and drops landmarks, declared value and the disclaimer; it retires D-14, D-21 and D-31. D-51 is merchant branches (2026-10-01): the branch switcher, Add a branch, and the not-live Orders home. D-50 is restaurant auto-accept (2026-09-30): for restaurants still taking orders by phone, orders skip the accept window and LyniaGo ops confirm them by phone before a rider is sent. D-49 is the terms & conditions page (2026-09-30): one set of terms for customers, riders and businesses, linked from Settings in the app and the merchant sign-in line. D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
 merchant web upgrade (L1–L5: sign-up, Book a rider and the shop's shell, Your riders, Team, and the drawn
 restaurant screens), approved by the owner with PR #986 (2026-09-29). D-42 is the lyniago.com marketing website: the design handoff shipped as-is, with four owner-decided launch items (2026-09-28). D-41 is the iPhone app shipping customer-only (2026-09-27). D-40 reopens D-01
 (WhatsApp OTP copy again, now that Bird Verify can deliver over WhatsApp) on an explicit 2026-09-01 user
@@ -5296,9 +5296,44 @@ been read, and asking the reviewer to "compare the two photos" when there was us
 Strings come from the handoff's `copy.ts`, verbatim. Where the HTML and an existing component disagree on a pixel,
 the existing component wins (handoff README). Not drawn, so not built: per-page pharmacist refusal.
 
+## D-98 · Privacy opens the hosted notice; the in-app privacy screen is retired — APPROVED (owner, 2026-10-12)
+
+**Owner instruction (2026-10-12):** "privacy notice still shows outdated UI. Make it link to
+https://api.lyniago.com/legal/privacy .. the delete account that still shows is now under settings no longer
+needed."
+
+- The Settings "Privacy notice" row and the phone screen's "Privacy policy" link open the API-served notice
+  (`PRIVACY_URL` = `${API_URL}/legal/privacy`, apps/mobile/src/config.ts) in the browser, the same way Terms does
+  (D-42 / D-49). That page is the canonical notice; Play's in-app reachability is met by the link.
+- The drawn in-app screen `LJ privacy` (`app/settings/privacy.tsx`: three disclosure cards, "Request a copy of my
+  data", "Delete my account") is deleted. Deletion stays reachable from Settings (`/settings/delete-account`).
+- Parity: `LJ.privacy` moves from `app-targets.mjs` to `parity-status.mjs` as superseded; its fixture and expected
+  file are removed. `/settings/privacy` leaves the signed-out route list.
+
+## D-99 · Nationwide: everyone browses everything, any address in Zimbabwe, every rider sees every order — APPROVED (owner, 2026-10-12)
+
+**Owner approval (2026-10-12):** "As long as someone is in Zimbabwe they will see the restaurants and shops. Don't
+show empty space for people in Chivhu or Mutare. Let them view everything. Some people want to do orders for other
+people while in Mutare but delivery is in Harare. Also Bikers can get any order despite their location. Bikers can
+bid from anywhere. It's up to the user to decide who they want." Clarified in session: browse has no location check at
+all (abroad included); pickup and drop-off may be anywhere in Zimbabwe; merchants may register anywhere in Zimbabwe;
+every online rider gets the push and the board card for every new order.
+
+- **The service area is Zimbabwe** (`packages/shared/src/service-area.ts`): Natural Earth's border plus a 10 km margin,
+  replacing the 2026-10-02 town discs. One rule still covers Send pickup / drop-off, venue delivery addresses, a rider
+  going online and merchant sign-up / branches.
+- **Copy.** Lines that named the towns now read "Zimbabwe": "We deliver across Zimbabwe.", "LyniaGo works in
+  Zimbabwe.", "go online from Zimbabwe". Same strings, same slots, only the place name changes. A mock that lists the
+  towns is superseded on that word only.
+- **Browse** (`deliversTo`, the Home rails): a venue with a pin is shown and ranked wherever the customer is.
+- **Riders.** Broadcast reach is nationwide from t = 0 (`BROADCAST`, `NATIONWIDE_REACH_M`), the 5 → 8 → 12 km widening is
+  retired, every rider joins the single board room, and venue dispatch reaches the whole country (round 1 still
+  offers the nearest 10). The board stays nearest-first.
+- **Upstream:** the kit's out-of-area lines should name the country. The kit is not edited.
+
 ---
 
-## D-98 · "Rider" → "Biker", app-wide — APPROVED (owner, 2026-10-12)
+## D-100 · "Rider" → "Biker", app-wide — APPROVED (owner, 2026-10-12)
 
 **Owner instruction (2026-10-12):** "change app wide wording from RIDER to BIKER". Every user-visible "rider" /
 "riders" (any case) in the mobile app, merchant web, admin, customer web and the API's user-facing copy (push and

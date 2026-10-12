@@ -26,7 +26,7 @@ vi.mock("../../../components/Kitchen", () => ({ Kitchen: ({ children }: { childr
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace, push: vi.fn() }) }));
 // The location block is A4's (its own behaviour is the onboarding page's): stand in with one tap.
 const AVONDALE: SignUpLocation = { point: { lat: -17.8, lng: 31.04 }, address: "Fife Ave, Avondale", source: "gps" };
-const FAR: SignUpLocation = { point: { lat: -20.15, lng: 28.58 }, address: "Bulawayo", source: "search" };
+const FAR: SignUpLocation = { point: { lat: -15.4167, lng: 28.2833 }, address: "Lusaka", source: "search" };
 vi.mock("../../../components/m/LocationField", () => ({
   LocationField: ({ error, onChange }: { error?: string; onChange: (l: SignUpLocation | null) => void }) => (
     <div>

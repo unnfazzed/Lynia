@@ -3,7 +3,7 @@ import { jwtTimes } from "../auth/jwt-exp";
 import { getDeviceId, loadSession, type Session } from "../auth/session";
 import { API_CONFIG_ERROR, API_URL } from "../config";
 import { STANDARD_TIMEOUT_MS } from "../net/network-policy";
-import { reportReachable, reportUnreachable } from "../net/reachability";
+import { reportReachable, reportRequestFailed } from "../net/reachability";
 import { CLIENT_METRICS_PATH, enqueueApiFetch } from "../telemetry/rum";
 import { fetchSignal } from "../net/fetch-signal";
 
@@ -147,12 +147,12 @@ async function fetchWithTimeout(input: string, init: RequestInit): Promise<Fetch
     }
     return { status: res.status, ok: res.ok, headers: res.headers, text };
   } catch (err) {
-    // No response at all (DNS / connection refused / aborted timeout): the network is down or stalled.
-    // Flip the app to offline so React Query stops hammering the dead link and the banner shows, then
-    // let the /health probe drive recovery. Still throws the same friendly ApiError the caller expects.
-    reportUnreachable();
+    // No response at all (DNS / connection refused / aborted timeout). That alone doesn't prove the phone
+    // is offline — a slow or waking server fails the same way on good Wi-Fi — so reachability confirms
+    // with /health before it flips the app offline. Still throws the friendly ApiError the caller expects.
+    reportRequestFailed();
     if (err instanceof Error && err.name === "AbortError") {
-      throw new ApiError(0, "The network is slow — check your connection and try again.");
+      throw new ApiError(0, "This is taking longer than usual — please try again.");
     }
     throw new ApiError(0, "Can't reach LyniaGo — check your connection and try again.");
   } finally {

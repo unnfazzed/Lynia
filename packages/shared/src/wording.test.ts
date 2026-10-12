@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { bikerWording } from "./wording";
 
-describe("bikerWording (D-98)", () => {
+describe("bikerWording (D-100)", () => {
   it("swaps every case of rider/riders for biker/bikers", () => {
     expect(bikerWording("Rider · riders · RIDER · the rider's bike · Riders")).toBe("Biker · bikers · BIKER · the biker's bike · Bikers");
   });

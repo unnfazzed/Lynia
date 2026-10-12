@@ -421,7 +421,7 @@ describe("States", () => {
     expect(pressable(t, "Use this address")!.props.accessibilityState.disabled).toBe(false);
     // Move the draft far outside the corridor.
     const edit = t.root.findAll((n) => typeof n.props.onMove === "function")[0]!;
-    act(() => edit.props.onMove({ lat: -18.5, lng: 31.9 }));
+    act(() => edit.props.onMove({ lat: -15.4167, lng: 28.2833 }));
     all = texts(t);
     expect(all.some((s) => /doesn’t deliver to/.test(s))).toBe(true);
     expect(all).toContain("Pick an address Gava’s Kitchen delivers to");
@@ -828,14 +828,14 @@ describe("Reviewed list 2026-10-07 — Review & place (wave 4, lane B)", () => {
   });
 
   it("U26: a deliver-to outside the area opens R3b on Place instead of placing", async () => {
-    mockHome = { label: "Marondera", point: { lat: -18.5, lng: 31.9 }, area: null };
+    mockHome = { label: "Lusaka", point: { lat: -15.4167, lng: 28.2833 }, area: null };
     const t = render();
     await flush();
     press(t, /^Place order · /);
     await flush();
     expect(mockPlace).not.toHaveBeenCalled();
     const all = texts(t);
-    expect(all.some((s) => s.startsWith("Gava’s Kitchen doesn’t deliver to Marondera."))).toBe(true);
+    expect(all.some((s) => s.startsWith("Gava’s Kitchen doesn’t deliver to Lusaka."))).toBe(true);
     expect(all).toContain("Pick an address Gava’s Kitchen delivers to");
     expect(pressable(t, "Use this address")!.props.accessibilityState.disabled).toBe(true);
   });

@@ -63,6 +63,7 @@ import { PAYMENT_RAIL, type PaymentRail } from "../adapters/payments/payment-rai
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { TokenService } from "../auth/token.service";
 import { openHandoverCode, sealHandoverCode } from "../common/handover-code";
+import { penaltiesSuspended } from "../common/penalties";
 import { PiiCryptoService } from "../common/pii-crypto.service";
 import { pushCopy, PUSH_C, PUSH_C_STILL_WAITING } from "../notifications/merchant-order-push";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -388,7 +389,8 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         message: "Your account is not in good standing.",
       });
     }
-    if (account?.cashBanned && body.paymentMethod === "cash") {
+    // Penalty suspension (common/penalties.ts): a cash ban on record is ignored, not cleared.
+    if (account?.cashBanned && body.paymentMethod === "cash" && !penaltiesSuspended()) {
       // D-48: food is cash on delivery only now, so a cash ban means no food orders — say who to ask.
       throw new ForbiddenException({ reason: "cash_banned", message: "Food orders are cash on delivery, and cash is off for your account. Message LyniaGo on WhatsApp." });
     }

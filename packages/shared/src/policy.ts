@@ -9,6 +9,7 @@
  */
 
 import { percentOf, roundToCents } from "./money";
+import { NATIONWIDE_REACH_M } from "./service-area";
 
 /**
  * Q2 — Rider reliability score. A rider starts at {@link RELIABILITY.START}; events adjust it, and
@@ -92,9 +93,8 @@ export const KYC_THRESHOLDS = {
 
 /**
  * Q1 — Harare's centre and the old pilot disc. **Not the service-area rule any more:** where we serve is
- * `isInServiceArea` (service-area.ts: Harare metro + Chitungwiza, Norton, Ruwa, Epworth, Domboshava,
- * Mt Hampden, Goromonzi — owner 2026-10-02), whose Harare disc reuses this radius. This constant remains the
- * map/search centre and the broadcast hard cap below.
+ * `isInServiceArea` (service-area.ts: all of Zimbabwe — owner 2026-10-12, D-99). This constant remains the
+ * default map/search centre only.
  */
 export const SERVICE_CORRIDOR = {
   centerLat: -17.8292,
@@ -314,25 +314,25 @@ export function customerRatingCarriesWeight(priorCompletedOrders: number): boole
 }
 
 /**
- * Broadcast reach policy — which online riders a new order is announced to, and how that reach
- * widens while the offer window runs. The radius is a pure function of order age
- * ({@link broadcastRadiusAtMs}), NOT persisted state, so the FCM push, the rider board, and the
+ * Broadcast reach policy — which online riders a new order is announced to. The radius is a pure function of
+ * order age ({@link broadcastRadiusAtMs}), NOT persisted state, so the FCM push, the rider board, and the
  * customer-facing supply count all derive the same disc and can never disagree.
  *
- * Expansion steps must sit inside the 90 s offer window (contracts OFFER_WINDOW_MS) — a step at or
- * past the window is never scheduled. `maxRadiusM` is the Q1 service corridor: broadcasting past the
- * area we deliver in would only advertise orders no rider may accept.
+ * **Nationwide (owner, 2026-10-12, ledger D-99):** "Bikers can get any order despite their location. Bikers
+ * can bid from anywhere. It's up to the user to decide who they want." Every online rider in Zimbabwe is
+ * pushed every new order and sees it on the board, nearest first, from the first second — so the base reach
+ * is the whole country and there is nothing left to widen. The 5 → 8 → 12 km widening schedule is retired;
+ * `expansion` stays as the (empty) hook a future narrower reach would use. Steps must sit inside the 90 s
+ * offer window (contracts OFFER_WINDOW_MS) — a step at or past the window is never scheduled.
  */
 export const BROADCAST = {
-  /** Initial broadcast radius (metres) around the pickup at order creation. */
-  baseRadiusM: 5_000,
-  /** Widening schedule: at `atMs` after creation the reach becomes `radiusM` (monotonic). */
-  expansion: [
-    { atMs: 30_000, radiusM: 8_000 },
-    { atMs: 60_000, radiusM: 12_000 },
-  ],
-  /** Hard cap — never broadcast beyond the service corridor. */
-  maxRadiusM: SERVICE_CORRIDOR.radiusKm * 1000,
+  /** Initial broadcast radius (metres) around the pickup at order creation: all of Zimbabwe. */
+  baseRadiusM: NATIONWIDE_REACH_M,
+  /** Widening schedule: at `atMs` after creation the reach becomes `radiusM` (monotonic). Empty: the base
+   *  reach is already nationwide. */
+  expansion: [] as readonly { readonly atMs: number; readonly radiusM: number }[],
+  /** Hard cap — never broadcast beyond the country we serve. */
+  maxRadiusM: NATIONWIDE_REACH_M,
   /**
    * A rider whose last heartbeat is older than this is a ghost (app killed with `isOnline` stuck
    * true) — excluded from broadcast pushes and the supply count. Deliberately looser than matching's
@@ -360,7 +360,7 @@ export const BROADCAST = {
 } as const;
 
 /** Broadcast radius (metres) for an order `ageMs` old — base, stepped up per the expansion
- *  schedule, capped at the service corridor. */
+ *  schedule, capped at {@link BROADCAST.maxRadiusM}. */
 export function broadcastRadiusAtMs(ageMs: number, baseRadiusM: number = BROADCAST.baseRadiusM): number {
   let r = baseRadiusM;
   for (const step of BROADCAST.expansion) {

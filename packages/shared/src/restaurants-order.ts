@@ -6,6 +6,7 @@
  * through the service. Money math goes through ./money (roundToCents) — the one arithmetic seam.
  */
 import { addMoney, fromCents, roundToCents, toCents } from "./money";
+import { NATIONWIDE_REACH_M } from "./service-area";
 
 export const RESTAURANTS_PRICING = {
   /** N-01: $0.80/km, rounded to the nearest $0.50, minimum $1.50. */
@@ -239,8 +240,10 @@ export const RESTAURANTS_DISPATCH = {
   /** N-07: six 60s rounds total (whether or not each finds a rider) is the NO_RIDER cap, about 6:00
    *  end to end. */
   maxAttempts: 6,
-  /** How far from the kitchen a rider can be offered the job (meters). */
-  radiusM: 8000,
+  /** How far from the kitchen a rider can be offered the job (meters): anywhere in Zimbabwe (owner,
+   *  2026-10-12, D-99 — "Bikers can get any order despite their location"). Round 1 still offers the
+   *  nearest {@link RESTAURANTS_DISPATCH.firstRoundSize}; later rounds reach every eligible rider. */
+  radiusM: NATIONWIDE_REACH_M,
   /** Owner decision 2026-10-01 (ledger D-54): the first round offers the job to this many of the best
    *  nearby riders at once (the restaurant's own riders first, then the nearest); every later round
    *  offers it to everyone eligible. The first rider to accept gets it. */

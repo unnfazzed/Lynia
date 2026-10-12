@@ -794,6 +794,15 @@ status, or null).
 
 ---
 
+## False "offline / slow network" flags 2026-10-12 (NET-FF) — FIXED
+
+Owner report: on good Wi-Fi the boot splash said "Slow network" and the rider board opened on "Reconnecting…".
+
+- **NET-FF-1** — one request with no HTTP response (a slow or waking server, one stalled call) flipped the whole app offline. `reportRequestFailed` (`apps/mobile/src/net/reachability.ts`) now confirms with `/health` and flips only after 2 failed probes in a row. The browser's own `offline` event still flips at once.
+- **NET-FF-2** — the splash's "Slow network — still connecting" pill was a 5.3 s timer, not a measurement. It now also needs real network trouble (a failed request nothing has answered since: `useNetworkTrouble`).
+- **NET-FF-3** — the rider board read its socket's handshake (and the go-online call in flight) as "Reconnecting…" from the first frame. It now waits 8 s of a link that stays down (`useSettled`), or for go-online to actually fail.
+- **NET-FF-4** — a timed-out request said "The network is slow". It now says "This is taking longer than usual — please try again."
+
 ## FIXED — latest sweep (BUGHUNT_FINDINGS.md F-01…F-19)
 
 Fixed by PR #192 (`3f15c42`, F-01…F-10) and PR #193 (`f9c2a12`, F-11…F-19). Verified in code.

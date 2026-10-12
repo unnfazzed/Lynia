@@ -1,4 +1,5 @@
 import { COMMISSION, KycStatus, RiderAccountStatus, serviceTownsLabel } from "@lynia/shared";
+import { penaltiesSuspended } from "../common/penalties";
 
 /**
  * The rider online-gate — pure functions, NO Nest/service dependencies. Extracted from rider.service so
@@ -71,8 +72,12 @@ export function onlineRefusalReason(
   if (!canGoOnline(rider.kycStatus)) return "kyc";
   if (rider.accountStatus === RiderAccountStatus.BANNED) return "banned";
   if (rider.accountStatus !== RiderAccountStatus.ACTIVE) return "suspended";
-  if (rider.onHold) return "on_hold";
-  if (rider.cooldownUntil && rider.cooldownUntil > now) return "cooldown";
+  // Penalty suspension (common/penalties.ts): automatic holds and strike cooldowns already on record are
+  // ignored, not cleared. Admin suspend/ban above is untouched (rider onHold is only ever set by the system).
+  if (!penaltiesSuspended()) {
+    if (rider.onHold) return "on_hold";
+    if (rider.cooldownUntil && rider.cooldownUntil > now) return "cooldown";
+  }
   // Prepaid commission floor (design Flow 2): only once commission is switched on AND this call site
   // loaded the balance. Literal guard — at ratePct 0 `commissionActive` is false, so a $0 launch
   // balance below the floor never blocks the pilot.

@@ -24,7 +24,7 @@ describe("sign-up step 2: your business (merchant-mobile A4)", () => {
   });
 
   it("refuses a place outside the area LyniaGo covers", () => {
-    expect(validateDetails({ ...filled, location: { point: { lat: -20.15, lng: 28.58 }, address: "Bulawayo", source: "search" } }).location).toBe(
+    expect(validateDetails({ ...filled, location: { point: { lat: -15.4167, lng: 28.2833 }, address: "Lusaka", source: "search" } }).location).toBe(
       OUTSIDE_AREA_MESSAGE,
     );
   });

@@ -90,7 +90,7 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
   rev 2 export changed the mocks to SMS, so applying it now would *introduce* drift. Help & support
   still routes to WhatsApp in the mocks, and that is correct. Any new copy exception needs a ledger
   entry first.
-  **One standing exception: "rider" reads "biker" app-wide** (owner, 2026-10-12, ledger D-98). The
+  **One standing exception: "rider" reads "biker" app-wide** (owner, 2026-10-12, ledger D-100). The
   handoffs still say "rider"; user-visible copy says "biker" (code, routes and data keep `rider`).
   Verbatim tests compare against `bikerWording(handoff)` from `@lynia/shared`.
 - **Strict mock sizes.** Where a mock draws a control smaller than the old 44px floor, the mock wins;

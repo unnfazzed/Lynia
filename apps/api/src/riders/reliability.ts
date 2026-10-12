@@ -1,4 +1,5 @@
 import { HeldReason, RELIABILITY, UNDELIVERED_ABUSE, UndeliveredReason } from "@lynia/shared";
+import { penaltiesSuspended } from "../common/penalties";
 
 /** The Rider columns the reliability engine reads + writes (Q2). Pure so it unit-tests cleanly and
  *  both order-lifecycle and rider cancel can reuse the exact same maths in-transaction. `heldReason`
@@ -28,7 +29,8 @@ export function applyReliabilityDelta(current: ReliabilityState, delta: number):
   const reliabilityScore = Math.min(RELIABILITY.MAX, Math.max(RELIABILITY.MIN, current.reliabilityScore + delta));
   let onHold = current.onHold;
   let heldReason = current.heldReason;
-  if (reliabilityScore < RELIABILITY.ON_HOLD_BELOW) {
+  // Penalty suspension (common/penalties.ts): the score still moves, but a low score trips no hold.
+  if (reliabilityScore < RELIABILITY.ON_HOLD_BELOW && !penaltiesSuspended()) {
     onHold = true;
     // A score-driven trip. Don't clobber an already-set velocity/fraud hold down to "reliability".
     heldReason = heldReason ?? HeldReason.RELIABILITY;
@@ -69,6 +71,7 @@ export function undeliveredPenalty(reason: string): number {
  * the two counts (the current undelivered already included). `completedCount` is the window denominator.
  */
 export function shouldFlagUndeliveredVelocity(undeliveredCount: number, completedCount: number): boolean {
+  if (penaltiesSuspended()) return false; // common/penalties.ts
   if (undeliveredCount < UNDELIVERED_ABUSE.minCount) return false;
   const total = undeliveredCount + completedCount;
   if (total === 0) return false;
