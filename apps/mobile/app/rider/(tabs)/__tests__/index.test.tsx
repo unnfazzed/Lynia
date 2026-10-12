@@ -119,6 +119,10 @@ jest.mock("../../../../src/realtime/use-foreground-refetch", () => ({
 jest.mock("../../../../src/realtime/use-rider-board", () => ({
   useRiderBoard: (...args: unknown[]) => mockUseRiderBoard(...args),
 }));
+// The heartbeat (and its background location service) has its own suite: use-rider-heartbeat.test.tsx.
+jest.mock("../../../../src/realtime/use-rider-heartbeat", () => ({
+  useRiderHeartbeat: () => ({ stale: false }),
+}));
 jest.mock("../../../../src/net/use-feature-flags", () => ({
   useFeatureFlags: () => ({ merchantDispatchAutoEnabled: mockFoodOn }),
 }));

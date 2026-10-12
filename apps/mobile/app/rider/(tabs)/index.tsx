@@ -12,7 +12,7 @@ import { withdrawOffer } from "../../../src/api/offers";
 import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../../src/api/orders";
 import { getFoodDispatchOffer } from "../../../src/api/food-rider";
 import { getDemandZones } from "../../../src/api/rider-v2";
-import { noteKycLaunched, retryKyc, sendHeartbeat, setOnline } from "../../../src/api/riders";
+import { noteKycLaunched, retryKyc, setOnline } from "../../../src/api/riders";
 import { loadAcknowledgedHandbacks, saveRolePreference } from "../../../src/auth/session";
 import { loadRiderFoodReturn } from "../../../src/auth/device-state";
 import { usePrewarmRoutes, type PrewarmRoute } from "../../../src/boot/prewarm-routes";
@@ -53,6 +53,7 @@ import { useTabTop } from "../../../src/query/use-tab-top";
 import { useWallet, useWalletConfig } from "../../../src/query/use-wallet";
 import { useForegroundRefetch } from "../../../src/realtime/use-foreground-refetch";
 import { useRiderBoard } from "../../../src/realtime/use-rider-board";
+import { useRiderHeartbeat } from "../../../src/realtime/use-rider-heartbeat";
 import { AppScreen, EmptyRow, EmptyState, emptyCopy, fillEmpty, haptic, Icon, type IconName, statusPillLabel, useActionError, useHideTabBar, useTabBarSpace, useToast } from "../../../src/ui";
 import { IdCheckOutcome } from "../../../src/ui/firstrun";
 import { CtaButton, SkeletonOffer, SmBtn } from "../../../src/ui/order/kit";
@@ -514,35 +515,19 @@ export default function RiderHome(): React.ReactElement {
     return () => clearTimeout(t);
   }, [activationRetry]);
 
-  // Heartbeat: only a 403 takes the rider offline; two failed beats show "Reconnecting…".
-  const [beatStale, setBeatStale] = useState(false);
-  useEffect(() => {
-    if (!online) {
-      setBeatStale(false);
-      return;
-    }
-    let failures = 0;
-    const t = setInterval(() => {
-      sendHeartbeat(locRef.current ?? undefined)
-        .then(() => {
-          failures = 0;
-          setBeatStale(false);
-        })
-        .catch((e: unknown) => {
-          if (e instanceof ApiError && e.status === 403) {
-            setOnlineState(false);
-            autoOnlineRef.current = false;
-            const reason = onlineGateReason(e);
-            setServerGate(reason);
-            if (reason === "kyc") void qc.invalidateQueries({ queryKey: ["me"] });
-          } else {
-            failures += 1;
-            if (failures >= 2) setBeatStale(true);
-          }
-        });
-    }, 20_000);
-    return () => clearInterval(t);
-  }, [online, qc]);
+  // Heartbeat: only a 403 takes the rider offline; two failed beats show "Reconnecting…". While online it
+  // also keeps beating with the phone locked (the background location task; see use-rider-heartbeat.ts).
+  const { stale: beatStale } = useRiderHeartbeat(
+    online,
+    () => locRef.current,
+    (e) => {
+      setOnlineState(false);
+      autoOnlineRef.current = false;
+      const reason = onlineGateReason(e);
+      setServerGate(reason);
+      if (reason === "kyc") void qc.invalidateQueries({ queryKey: ["me"] });
+    },
+  );
 
   // ── Open jobs ────────────────────────────────────────────────────────────────────────────────────
   const openQ = useQuery({
