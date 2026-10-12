@@ -5255,3 +5255,21 @@ the same pass to **"{name} is unavailable. Pick another rider."**
   (`merchant-team.service.ts`, R2-21), so the owner still gets "Invite ready".
 - **Upstream:** merchant-v2 should draw the new-code confirm and the invited-elsewhere line. The kit is not edited.
 
+## D-96 · Admin KYC review: one overall verdict row, the Didit link, no queue approve — APPROVED (owner, 2026-10-12)
+
+**Owner approval (2026-10-12):** the ID-verification review ("proceed with all the fixes"). The kit's
+`ui_kits/admin/kyc.html` draws three per-check rows (document · liveness · face match) and a photo compare. The API
+has only Didit's overall verdict, so the console was printing that one verdict three times as if three checks had
+been read, and asking the reviewer to "compare the two photos" when there was usually one or none.
+
+- **One "Overall verdict" row** replaces the three rows, which are not drawn as separate data until the API carries
+  per-check results.
+- **"Open in Didit ↗"** (the rider's Didit session) fills the ID document & liveness box and sits in the checks card:
+  that is where the document, selfie and liveness evidence actually lives.
+- **The queue row offers only "Review".** The kit's inline Approve skipped the review page's warnings (duplicate ID,
+  ID mismatch, unfinished check). Approving now always goes through the review page's confirm.
+- **An unfinished check** (Didit never finished) shows a warnbar and makes the approve note mandatory.
+- **Expired** is its own decided state, not "Declined."
+- **Upstream:** the admin kit should draw per-check rows fed by vendor data, the vendor link and the unfinished-check
+  state. The kit is not edited.
+

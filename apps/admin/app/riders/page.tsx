@@ -5,7 +5,6 @@ import { DataTable, type Column } from "../components/DataTable";
 import { FilterNav } from "../components/FilterNav";
 import { Pill } from "../components/StatusPill";
 import { IconBike } from "../components/icons";
-import { KycApproveButton } from "./KycSubmitButton";
 import { PlateConfirmButton } from "./PlateConfirm";
 
 interface Rider {
@@ -194,8 +193,9 @@ export default async function RidersPage({
   );
 }
 
-/** KYC-queue row action: inline reason-less Approve (KycApproveButton) + a Review link to the
- *  doc-review screen where the reason-coded decline + document compare live. */
+/** KYC-queue row action: a Review link only. There is deliberately no one-click approve here — an
+ *  approval is made on the review screen, through its ConfirmModal, where the duplicate-ID, ID-check
+ *  mismatch, no-national-ID and unfinished-Didit-check warnings are in front of the reviewer. */
 function KycAction({ r }: { r: Rider }) {
   if (r.kycStatus !== "pending") {
     return (
@@ -205,11 +205,8 @@ function KycAction({ r }: { r: Rider }) {
     );
   }
   return (
-    <span style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
-      <KycApproveButton profileId={r.profileId} />
-      <a className="btn ghost" href={`/riders/${r.profileId}/kyc`}>
-        Review
-      </a>
-    </span>
+    <a className="btn ghost" href={`/riders/${r.profileId}/kyc`}>
+      Review
+    </a>
   );
 }

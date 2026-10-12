@@ -7,24 +7,9 @@ import { adminPostResult, describeAdminPostFailure } from "../lib/api";
  * A KYC write's outcome. The failure is RETURNED, not thrown: Next redacts a server action's thrown
  * message in production, and a refused decision has to reach the operator in the API's own words (D-75:
  * "Can't approve: the national ID from this rider's ID check is already on another live account…").
- * Callers re-throw it client-side for <ConfirmModal>, or show it inline.
+ * Callers re-throw it client-side for <ConfirmModal>.
  */
 export type KycWriteResult = { ok: true } | { ok: false; message: string };
-
-/** Approve/decline a rider's KYC from the review queue (the manual T7 backstop). */
-export async function setKyc(formData: FormData): Promise<KycWriteResult> {
-  const profileId = String(formData.get("profileId") ?? "");
-  const status = String(formData.get("status") ?? "");
-  if (!profileId || !(status === "verified" || status === "failed" || status === "pending")) {
-    return { ok: false, message: "That KYC decision isn't valid — reload the page and try again." };
-  }
-
-  // Surface a failed compliance write — silently failing-open on a KYC decision is unacceptable.
-  const res = await adminPostResult(`/admin/riders/${profileId}/kyc`, { status });
-  if (!res.ok) return { ok: false, message: describeAdminPostFailure(res) };
-  revalidatePath("/riders");
-  return { ok: true };
-}
 
 /**
  * A-02 KYC decision write from the doc-review screen. Approve → verified; decline → failed + the

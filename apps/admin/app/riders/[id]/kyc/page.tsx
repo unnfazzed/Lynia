@@ -4,22 +4,35 @@ import type { KycReview } from "../../../lib/adminTypes";
 import { KeyValue } from "../../../components/KeyValue";
 import { Pill } from "../../../components/StatusPill";
 import { KycDecision } from "../../../components/KycDecision";
+import { diditProgressLine, diditSessionUrl, diditUnfinished } from "../../../lib/didit";
+import { kycDeclineLabel } from "../../../lib/reasons";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../../components/states";
 import { IconAlert, IconIdCard } from "../../../components/icons";
 
 /**
- * KYC doc-review screen (kit `kyc.html` detail — admin A-02). Reproduces the ID + selfie document
- * placeholders, the Didit checks panel (face-match vs the 0.85 auto-approve line / 0.6–0.85 needs-
- * review band / liveness), the applicant KeyValue block, and Approve / Decline decisions through
- * <ConfirmModal> (decline reason-coded) → the audit seam + the real KYC write.
+ * KYC doc-review screen (kit `kyc.html` detail — admin A-02). Shows the rider's in-app photo, the ID
+ * document & liveness evidence as a link to the rider's Didit session (Lynia never holds those images),
+ * where the rider is in the Didit check plus the overall verdict, the applicant KeyValue block, and
+ * Approve / Decline decisions through <ConfirmModal> (decline reason-coded) → the audit seam + the real
+ * KYC write. This page is the only place a KYC approval is made: the queue row links here.
  *
  * A-02 lock states: after the first decline the rider gets ONE resubmit (a warnbar flags "attempt 2 —
  * a second decline locks"); after the second decline the application is locked → support only, and
  * the decision actions disappear. Degrades to the offline state when `adminFetch` returns null.
  */
 
-/** Kit's Didit `checkRow`: label + value + pass/needs-review/fail pill. */
-function CheckRow({ label, value, kind }: { label: string; value: string; kind: "good" | "" | "bad" }) {
+/** Kit's Didit `checkRow`: label + value + a status pill. */
+function CheckRow({
+  label,
+  value,
+  kind,
+  pill,
+}: {
+  label: string;
+  value: string;
+  kind: "good" | "" | "bad";
+  pill: string;
+}) {
   return (
     <div
       style={{
@@ -35,8 +48,17 @@ function CheckRow({ label, value, kind }: { label: string; value: string; kind: 
       <span className="mut num" style={{ fontSize: 12 }}>
         {value}
       </span>
-      <Pill kind={kind}>{kind === "good" ? "pass" : kind === "bad" ? "fail" : "needs review"}</Pill>
+      <Pill kind={kind}>{pill}</Pill>
     </div>
+  );
+}
+
+/** "Open in Didit ↗" — the reviewer's evidence for the ID document and liveness. */
+function DiditLink({ kycRef }: { kycRef: string }) {
+  return (
+    <a href={diditSessionUrl(kycRef)} target="_blank" rel="noreferrer" style={{ color: tokens.color.accentText }}>
+      Open in Didit ↗
+    </a>
   );
 }
 
@@ -81,16 +103,18 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
   // lock (attempt 2, still pending). A decline now locks the application.
   const resubmitWarn = r.status === "pending" && r.attempt >= 2;
 
-  // Didit's per-check scores aren't persisted in the pilot — only the overall verdict lands in
-  // `status`. Drive the checks panel off that: a pending review needs a manual compare (needs-review),
-  // verified reads as pass, failed as fail (with the recorded reason surfaced below).
-  const checkKind: "good" | "" | "bad" = r.status === "verified" ? "good" : r.status === "failed" ? "bad" : "";
-  const checkValue =
-    r.status === "pending"
-      ? "score not captured — compare by eye"
-      : r.status === "verified"
-        ? "Didit verdict: verified"
-        : "Didit verdict: failed";
+  // Didit's per-check scores (face match, document, liveness) aren't persisted — only the overall
+  // verdict lands in `status` — so the panel shows that one verdict, not per-check rows it can't back.
+  const verdict = {
+    pending: { kind: "" as const, value: "awaiting a decision", pill: "needs review" },
+    verified: { kind: "good" as const, value: "verified", pill: "pass" },
+    failed: { kind: "bad" as const, value: "declined", pill: "fail" },
+    expired: { kind: "bad" as const, value: "expired", pill: "expired" },
+  }[r.status];
+  // Where the rider is in the Didit check (null from an older API that doesn't report it), and whether
+  // they never finished it — the approval then needs an explicit, noted acknowledgement.
+  const progress = diditProgressLine(r.kycHeld, r.kycVendorStatus);
+  const unfinished = !decided && diditUnfinished(r.kycHeld, r.kycVendorStatus);
 
   return (
     <main className="content">
@@ -116,8 +140,18 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
           <IconAlert />
           <span className="t">
             <b>Resubmission — attempt 2.</b>{" "}
-            {r.declineReason ? `Previously declined: ${r.declineReason}. ` : ""}
+            {r.declineReason ? `Previously declined: ${kycDeclineLabel(r.declineReason)}. ` : ""}
             One resubmit left — a second decline locks the application and the rider must contact support.
+          </span>
+        </div>
+      ) : null}
+
+      {unfinished ? (
+        <div className="warnbar">
+          <IconAlert />
+          <span className="t">
+            <b>ID check not finished.</b> {progress} Didit hasn&apos;t checked this rider&apos;s ID document or
+            liveness, so there&apos;s nothing to compare. Approving needs a note saying how you verified them.
           </span>
         </div>
       ) : null}
@@ -185,18 +219,19 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
         </div>
       ) : null}
 
-      {/* IR26-04 vendor-document dedupe: the ID number Didit VERIFIED disagrees with the number the
-          applicant TYPED — the "typed a fake number, showed a real document" ban-evasion tell. The
+      {/* IR26-04 vendor-document dedupe: the ID number Didit VERIFIED disagrees with the national ID on
+          file — the "real document, someone else's number" ban-evasion tell. Riders no longer type an ID
+          (D-75), so the number on file is one an older signup typed or an earlier check adopted. The
           webhook already held this verify for review; the reviewer resolves it here. */}
       {r.verifiedIdMismatch === true ? (
         <div className="warnbar">
           <IconAlert />
           <span className="t">
-            <b>ID-check document doesn&apos;t match the typed ID.</b> The document number verified by the
-            ID check is different from the national ID this applicant typed (
-            <span className="mono">{r.idNumber ?? "—"}</span>). Compare the Didit document details against
-            the application before deciding — a deliberate mismatch is the shape of a banned identity
-            re-registering under a made-up number.
+            <b>ID check doesn&apos;t match the ID on file.</b> The ID check read{" "}
+            <span className="mono">{r.verifiedIdNumber ?? "a different number"}</span> from the document, but the
+            national ID on file for this account is <span className="mono">{r.idNumber ?? "—"}</span>. Compare the
+            document in Didit against the application before deciding — a mismatch is the shape of a banned
+            identity re-registering under another number.
           </span>
         </div>
       ) : null}
@@ -208,13 +243,12 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
             <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: tokens.space.md }}>
               <div>
                 {r.photoUrl ? (
-                  // The rider's OWN photo, captured in the app at signup ("Your photo" in become.tsx) —
-                  // NOT a scan of the physical national ID card. The ID-card scan and liveness selfie are
+                  // The photo the rider uploaded in the app — NOT a scan of the physical national ID card. The ID-card scan and liveness selfie are
                   // run and held by Didit, surfaced through the automated-checks panel below, never as an
                   // image here. A short-lived signed GCS URL, so a plain <img>, not next/image.
                   <img
                     src={r.photoUrl}
-                    alt="The rider, captured in the app at signup"
+                    alt="The rider, as uploaded in the app"
                     style={{ width: "100%", height: 170, objectFit: "cover", borderRadius: tokens.radius.input, border: `1px solid ${tokens.color.line}` }}
                   />
                 ) : (
@@ -235,11 +269,15 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
                 <div className="doc-ph" style={{ height: 170 }}>
                   ID document &amp; liveness
                   <br />
-                  {/* Honest placeholder: Lynia never receives the ID-card scan or the liveness capture —
-                      Didit runs and holds them. The reviewer relies on the automated-checks panel below
-                      plus the ID number, not an image comparison here. Wiring Didit's session images in is
-                      a separate vendor-integration task. */}
-                  (verified by Didit — see checks below)
+                  {/* Lynia never receives the ID-card scan or the liveness capture — Didit runs and holds
+                      them — so this points the reviewer at the rider's Didit session instead. */}
+                  {r.kycRef ? (
+                    <span style={{ fontFamily: "var(--font-sans)", fontSize: 13 }}>
+                      Held by Didit — <DiditLink kycRef={r.kycRef} />
+                    </span>
+                  ) : (
+                    "(no Didit session on record)"
+                  )}
                 </div>
                 <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: 6 }}>
                   Submitted {new Date(r.submittedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
@@ -250,17 +288,27 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
 
           <section className="card">
             <div className="block-title">Automated checks — Didit</div>
-            <CheckRow label="Selfie ↔ ID face match" value={checkValue} kind={checkKind} />
-            <CheckRow label="Document authenticity" value={checkValue} kind={checkKind} />
-            <CheckRow label="Liveness" value={checkValue} kind={checkKind} />
+            {progress ? (
+              <div style={{ fontSize: 13, padding: "8px 0" }}>
+                <span className="mut">ID check: </span>
+                {progress}
+              </div>
+            ) : null}
+            <CheckRow label="Overall verdict" value={verdict.value} kind={verdict.kind} pill={verdict.pill} />
             <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: 10 }}>
-              Didit auto-approves a face match ≥ 0.85; 0.6–0.85 needs a human compare, below 0.6 auto-declines. The
-              pilot doesn&apos;t persist the per-check scores — confirm the ID number and compare the two photos before
-              deciding.
+              Didit auto-approves a face match ≥ 0.85; 0.6–0.85 needs a human compare, below 0.6 auto-declines.
+              Lynia doesn&apos;t keep the face-match, document or liveness results — confirm the ID number and check
+              them in the rider&apos;s Didit session before deciding.
+              {r.kycRef ? (
+                <>
+                  {" "}
+                  <DiditLink kycRef={r.kycRef} />
+                </>
+              ) : null}
               {r.status === "failed" && r.declineReason ? (
                 <>
                   {" "}
-                  Last decision: <b style={{ color: tokens.color.danger }}>{r.declineReason}</b>.
+                  Last decision: <b style={{ color: tokens.color.danger }}>{kycDeclineLabel(r.declineReason)}</b>.
                 </>
               ) : null}
             </div>
@@ -289,10 +337,15 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
                   <span style={{ color: tokens.color.accentText, fontWeight: 600 }}>
                     ✓ Verified — this rider can go online.
                   </span>
+                ) : r.status === "expired" ? (
+                  <span>
+                    <span style={{ color: tokens.color.danger, fontWeight: 600 }}>Expired.</span>{" "}
+                    <span className="mut">The rider must re-verify before they can go online.</span>
+                  </span>
                 ) : (
                   <span>
                     <span style={{ color: tokens.color.danger, fontWeight: 600 }}>Declined.</span>{" "}
-                    <span className="mut">{r.declineReason ?? ""}</span>
+                    <span className="mut">{r.declineReason ? kycDeclineLabel(r.declineReason) : ""}</span>
                     <div style={{ marginTop: 8, color: tokens.color.muted }}>
                       {r.locked
                         ? "Locked — no further resubmission. Route the rider to support."
@@ -307,7 +360,13 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
                   Approving lets this rider go online immediately. Declining shows them the reason in the app; they can
                   resubmit once before the application locks.
                 </div>
-                <KycDecision profileId={r.id} name={r.name} attempt={r.attempt} connected={connected} />
+                <KycDecision
+                  profileId={r.id}
+                  name={r.name}
+                  attempt={r.attempt}
+                  connected={connected}
+                  unfinishedCheck={unfinished}
+                />
               </>
             )}
             <div style={{ fontSize: 11, color: tokens.color.muted, marginTop: 10 }}>
