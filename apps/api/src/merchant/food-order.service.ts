@@ -74,7 +74,6 @@ import { confirmKitchen, editOrderItems } from "./food-order-ops";
 import { harareWallClock } from "./harare-clock";
 import { CUSTOMER_VISIBLE_RESTAURANT, customerVisibleShop, isDishOutOfStock, notifyFoodQueueChanged, resolveOwnMerchantId } from "./merchant-lookup.util";
 import {
-  assertPickupProofIfRequired,
   PROOF_PHOTO_URL_CACHE_TTL_MS,
   PROOF_READ_URL_TTL_SECONDS,
   proofViews,
@@ -1416,8 +1415,6 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       merchant_delivery_share?: Prisma.Decimal | null;
     },
   ): Promise<void> {
-    // Order flow v2 (BRIEF §9): shops and pharmacies need the sealed-bag photo before pickup completes.
-    await assertPickupProofIfRequired(tx, orderId);
     // merchantPhase: an order collected while its kitchen phase still read `preparing` (an auto-accepted
     // order found early, "Collected" before anyone tapped "Food is ready") leaves the kitchen's machine
     // here, so the board moves it to ON THE WAY instead of keeping a cooking ticket (MJ-RM1).
@@ -2167,7 +2164,7 @@ function keptSubtotalOf(order: Pick<OrderWithItems, "merchantItems">): number {
 
 /**
  * Order flow v2 (ledger D-59) additive response fields — the receipt (D1), the venue, the four-step track
- * (BRIEF §4), the out-of-stock preference (§7), the substitution round (§8), the shop proof rule (§9) and
+ * (BRIEF §4), the out-of-stock preference (§7), the substitution round (§8) and
  * the customer's venue rating (§11). Every key is optional in the contract; an installed app ignores them.
  */
 function orderFlowV2Fields(order: OrderWithItems): Partial<MerchantOrderResponse> {
@@ -2175,7 +2172,6 @@ function orderFlowV2Fields(order: OrderWithItems): Partial<MerchantOrderResponse
     shortId: orderShortId(order.id),
     track: deriveMerchantOrderTrack({ ...order, rxStatus: order.prescription?.status ?? null }),
     outOfStockPref: order.outOfStockPref === "remove" ? "remove" : "ask",
-    pickupProofRequired: order.merchant?.businessType === "shop",
   };
   if (order.merchant?.name) {
     out.venue = { name: order.merchant.name, businessType: order.merchant.businessType, shopKind: order.merchant.shopKind ?? null };

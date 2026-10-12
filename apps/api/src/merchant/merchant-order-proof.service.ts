@@ -20,8 +20,8 @@ import { notifyFoodQueueChanged } from "./merchant-lookup.util";
  * parcel flow's own path — `POST /uploads/pickup-photo` (signed PUT under `pickup/<riderId>/`), then the
  * key is attached here, which reuses {@link OrderLifecycleService.attachPickupPhoto} verbatim (upload
  * verification, row lock, own-namespace check, retake cleanup) and adds the merchant-order extras: when
- * it was taken and the sealed tick. Required for shops (pharmacy included) before pickup completes
- * ({@link assertPickupProofIfRequired}), optional for restaurants.
+ * it was taken and the sealed tick. Optional for every venue (ledger D-100): restaurants, shops and
+ * pharmacies alike complete pickup on the code alone.
  *
  * Door: when the delivery code can't be used, the rider says why, who it was handed to, and photographs
  * where it was left — `POST /uploads/delivery-proof`, then attached here through
@@ -95,25 +95,6 @@ export class MerchantOrderProofService {
     if (!order) throw new NotFoundException("Order not found");
     if (order.riderId !== riderId) throw new ForbiddenException("Not the assigned rider");
     return order;
-  }
-}
-
-/**
- * BRIEF §9: a shop's (pharmacy included) order can't be collected until the rider's photo of the bag is
- * attached. Restaurants: optional, no check. Runs inside the pickup transaction, under the order row lock
- * the pickup paths already hold, so the check and the status change are one decision.
- */
-export async function assertPickupProofIfRequired(tx: Prisma.TransactionClient, orderId: string): Promise<void> {
-  const rows = await tx.$queryRaw<Array<{ pickup_photo_key: string | null; business_type: string | null }>>`
-    SELECT o.pickup_photo_key, m.business_type::text AS business_type
-    FROM orders o LEFT JOIN merchants m ON m.id = o.merchant_id
-    WHERE o.id = ${orderId}::uuid`;
-  const o = rows[0];
-  if (o?.business_type === "shop" && !o.pickup_photo_key) {
-    throw new ConflictException({
-      reason: "pickup_photo_required",
-      message: "Take a photo of the sealed bag before you collect the order.",
-    });
   }
 }
 
