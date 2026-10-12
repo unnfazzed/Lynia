@@ -1,7 +1,7 @@
 import { ForbiddenException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { OFFER_CHOOSE_GRACE_MS, OFFER_WINDOW_MS } from "@lynia/shared";
-import { describe, expect, it, vi } from "vitest";
+import { BROADCAST, OFFER_CHOOSE_GRACE_MS, OFFER_WINDOW_MS } from "@lynia/shared";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { TokenService } from "../auth/token.service";
 import { PiiCryptoService } from "../common/pii-crypto.service";
 import type { Env } from "../config/env";
@@ -472,6 +472,17 @@ describe("MatchingService — the 15 s choose grace after the offer window (afte
 });
 
 describe("MatchingService.expandBroadcast — widening ticks push only the new ring", () => {
+  // D-98 made the reach nationwide, so BROADCAST.expansion ships empty and these ticks are a dormant hook.
+  // Re-arm the old 5 → 8 → 12 km schedule here so the mechanism stays proven if a narrower reach returns.
+  const steps = BROADCAST.expansion as { atMs: number; radiusM: number }[];
+  beforeAll(() => {
+    process.env[BROADCAST.baseRadiusEnv] = "5000";
+    steps.push({ atMs: 30_000, radiusM: 8_000 }, { atMs: 60_000, radiusM: 12_000 });
+  });
+  afterAll(() => {
+    delete process.env[BROADCAST.baseRadiusEnv];
+    steps.length = 0;
+  });
   // A version/variant-valid UUID — the board event's `.strict()` contract parses the id as a uuid.
   const expandOrderId = "33333333-3333-4333-8333-333333333333";
   // DS17-01: createdAt is now load-bearing — expandBroadcast sizes the rebroadcast push TTL to the order's

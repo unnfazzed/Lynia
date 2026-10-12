@@ -183,8 +183,8 @@ export const ACCOUNT_ON_HOLD_COPY: GateCopy = {
 };
 
 /**
- * Optional client-side pre-check (server is authority): is a point inside the service area (Harare metro
- * + the satellite towns)? The same `isInServiceArea` the server enforces, so a match here can't diverge.
+ * Optional client-side pre-check (server is authority): is a point inside the service area (all of
+ * Zimbabwe, D-98)? The same `isInServiceArea` the server enforces, so a match here can't diverge.
  */
 export function isWithinServiceCorridor(point: LatLng): boolean {
   return isInServiceArea(point);

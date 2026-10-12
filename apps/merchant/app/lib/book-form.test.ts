@@ -54,7 +54,7 @@ describe("D2 where and the booking body", () => {
   });
 
   it("refuses a drop-off outside the area LyniaGo covers", () => {
-    expect(validateWhere({ point: { lat: -18.9, lng: 32.6 }, address: "Mutare" }, "779982210").where).toBe("That's outside the area LyniaGo covers for now.");
+    expect(validateWhere({ point: { lat: -15.4167, lng: 28.2833 }, address: "Lusaka" }, "779982210").where).toBe("That's outside the area LyniaGo covers for now.");
   });
 
   it("builds a POST body the API's own contract accepts", () => {

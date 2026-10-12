@@ -606,11 +606,14 @@ What makes the select safe:
 - The expiry path (`expireOrder`) runs the *same* guarded CAS: if a customer already selected, the
   order is no longer `open_for_offers`, so the expiry no-ops. Idempotent by construction.
 
-How the broadcast reaches riders (the widening disc):
+How the broadcast reaches riders (nationwide since ledger D-98, 2026-10-12):
 
 - **The radius is a pure function of order age** — `broadcastRadiusAtMs` on the shared `BROADCAST`
-  policy (`packages/shared/src/policy.ts`): base **5 km** at creation, widening to **8 km at 30 s**
-  and **12 km at 60 s** inside the offer window, capped at the 25 km service corridor. Because every
+  policy (`packages/shared/src/policy.ts`). Since D-98 the base is **all of Zimbabwe**
+  (`NATIONWIDE_REACH_M`) from creation and `BROADCAST.expansion` is empty: every online rider is
+  pushed every order, every rider joins the one `BOARD_ROOM` (no geo-cell rooms), and the REST board
+  lists every open order nearest-first. The widening machinery below is a dormant hook (it was base
+  5 km → 8 km at 30 s → 12 km at 60 s). Because every
   consumer computes the same function, the FCM push, the WS board rooms, the REST board
   (`GET /orders/open`), and the customer-facing `ridersNearby` count can never disagree about the
   disc. The base radius and ghost cutoff are deploy-tunable (`BROADCAST_BASE_RADIUS_M`,

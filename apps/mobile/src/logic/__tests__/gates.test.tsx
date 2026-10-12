@@ -127,18 +127,16 @@ describe("service-corridor gate (Q1)", () => {
     expect(isOutOfServiceArea(null)).toBe(false);
   });
 
-  it("pre-check: a Harare point is inside, a far point is outside", () => {
-    // Harare CBD ≈ the corridor centre → inside.
-    expect(isWithinServiceCorridor({ lat: -17.8292, lng: 31.0522 })).toBe(true);
-    // Bulawayo (~370km away) → outside every town disc.
-    expect(isWithinServiceCorridor({ lat: -20.15, lng: 28.58 })).toBe(false);
+  it("pre-check: a Harare point is inside, a point outside Zimbabwe is outside", () => {
+    expect(isWithinServiceCorridor({ lat: -17.8292, lng: 31.0522 })).toBe(true); // Harare CBD
+    expect(isWithinServiceCorridor({ lat: -15.4167, lng: 28.2833 })).toBe(false); // Lusaka, Zambia
   });
 
-  it("pre-check: the satellite towns are inside (owner 2026-10-02), Marondera is not", () => {
-    expect(isWithinServiceCorridor({ lat: -17.8833, lng: 30.7 })).toBe(true); // Norton, ~38 km out
-    expect(isWithinServiceCorridor({ lat: -18.0127, lng: 31.0756 })).toBe(true); // Chitungwiza
-    expect(isWithinServiceCorridor({ lat: -17.8897, lng: 31.2447 })).toBe(true); // Ruwa
-    expect(isWithinServiceCorridor({ lat: -18.185, lng: 31.55 })).toBe(false); // Marondera
+  it("pre-check: every town in Zimbabwe is inside (owner 2026-10-12, D-98)", () => {
+    expect(isWithinServiceCorridor({ lat: -19.0211, lng: 30.8922 })).toBe(true); // Chivhu
+    expect(isWithinServiceCorridor({ lat: -18.9707, lng: 32.6709 })).toBe(true); // Mutare
+    expect(isWithinServiceCorridor({ lat: -20.15, lng: 28.58 })).toBe(true); // Bulawayo
+    expect(isWithinServiceCorridor({ lat: -18.185, lng: 31.55 })).toBe(true); // Marondera
   });
 });
 

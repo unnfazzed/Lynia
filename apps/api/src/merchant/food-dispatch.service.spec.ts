@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
+import { RESTAURANTS_DISPATCH } from "@lynia/shared";
 import type { Env } from "../config/env";
 import { TokenService } from "../auth/token.service";
 import { PiiCryptoService } from "../common/pii-crypto.service";
@@ -144,7 +145,7 @@ describe("FoodDispatchService.sweepSearch — rounds (owner 2026-10-01: the best
     const { svc, gateway, attemptUpsert, orderUpdateMany, strategy } = world({}, pick(riders));
 
     expect(await svc.sweepSearch()).toEqual({ offered: 1, held: 0 });
-    expect(strategy.pickCandidates).toHaveBeenCalledWith(expect.objectContaining({ limit: 10, radiusM: 8000, excludeRiderIds: [] }));
+    expect(strategy.pickCandidates).toHaveBeenCalledWith(expect.objectContaining({ limit: 10, radiusM: RESTAURANTS_DISPATCH.radiusM, excludeRiderIds: [] }));
     expect(orderUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ id: orderId, status: "requested", dispatchAttempt: 0, noRiderHoldAt: null }),
@@ -155,7 +156,7 @@ describe("FoodDispatchService.sweepSearch — rounds (owner 2026-10-01: the best
     expect(attemptUpsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { orderId_riderId: { orderId, riderId: "r0" } },
-        create: expect.objectContaining({ orderId, riderId: "r0", attemptNumber: 1, radiusM: 8000 }),
+        create: expect.objectContaining({ orderId, riderId: "r0", attemptNumber: 1, radiusM: RESTAURANTS_DISPATCH.radiusM }),
         update: expect.objectContaining({ attemptNumber: 1, outcome: "pending", respondedAt: null }),
       }),
     );

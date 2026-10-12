@@ -5295,3 +5295,25 @@ been read, and asking the reviewer to "compare the two photos" when there was us
 
 Strings come from the handoff's `copy.ts`, verbatim. Where the HTML and an existing component disagree on a pixel,
 the existing component wins (handoff README). Not drawn, so not built: per-page pharmacist refusal.
+
+
+## D-98 · Nationwide: everyone browses everything, any address in Zimbabwe, every rider sees every order — APPROVED (owner, 2026-10-12)
+
+**Owner approval (2026-10-12):** "As long as someone is in Zimbabwe they will see the restaurants and shops. Don't
+show empty space for people in Chivhu or Mutare. Let them view everything. Some people want to do orders for other
+people while in Mutare but delivery is in Harare. Also Bikers can get any order despite their location. Bikers can
+bid from anywhere. It's up to the user to decide who they want." Clarified in session: browse has no location check at
+all (abroad included); pickup and drop-off may be anywhere in Zimbabwe; merchants may register anywhere in Zimbabwe;
+every online rider gets the push and the board card for every new order.
+
+- **The service area is Zimbabwe** (`packages/shared/src/service-area.ts`): Natural Earth's border plus a 10 km margin,
+  replacing the 2026-10-02 town discs. One rule still covers Send pickup / drop-off, venue delivery addresses, a rider
+  going online and merchant sign-up / branches.
+- **Copy.** Lines that named the towns now read "Zimbabwe": "We deliver across Zimbabwe.", "LyniaGo works in
+  Zimbabwe.", "go online from Zimbabwe". Same strings, same slots, only the place name changes. A mock that lists the
+  towns is superseded on that word only.
+- **Browse** (`deliversTo`, the Home rails): a venue with a pin is shown and ranked wherever the customer is.
+- **Riders.** Broadcast reach is nationwide from t = 0 (`BROADCAST`, `NATIONWIDE_REACH_M`), the 5 → 8 → 12 km widening is
+  retired, every rider joins the single board room, and venue dispatch reaches the whole country (round 1 still
+  offers the nearest 10). The board stays nearest-first.
+- **Upstream:** the kit's out-of-area lines should name the country. The kit is not edited.
