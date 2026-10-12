@@ -205,8 +205,9 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
   const floor = config?.floor ?? COMMISSION.lowBalanceBlockBelow;
   const rate = config?.ratePct ?? 0;
   const balance = wallet?.balance ?? 0;
-  // MA-H2: the server's online gate — the floor only binds once commission is on AND the rider's free
-  // first jobs are used up (online-gate.ts). Below it otherwise, the rider still rides: no alarm.
+  // MA-H2: commission only binds once it is on AND the rider's free first jobs are used up. Below the
+  // floor otherwise, the rider still rides: no alarm. With no floor (PR #1154) `belowFloor` never fires:
+  // under $0 is `owes`, under $1 is `low`, and the line states the per-job rule (D-103).
   const gated = floorApplies(rate, me?.rider?.freeJobs?.left);
   // Known unverified (a pending, declined or expired check) → no Top up; while `me` loads it stays drawn.
   const canTopUp = !(me?.rider && me.rider.kycStatus !== "verified");
@@ -214,7 +215,7 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
   const belowFloor = gated && !unreadable && !owes && balance < floor;
   const low = gated && !unreadable && !owes && !belowFloor && balance < floor + 1;
   const danger = owes || belowFloor;
-  const balanceText = owes ? R.owesB : belowFloor ? RF.floorB(floor) : low ? R.lowB : rate > 0 ? RF.balanceB(rate, floor) : R.balanceB0;
+  const balanceText = owes ? R.owesB : belowFloor ? RF.floorB(floor) : low ? R.lowB : rate > 0 ? (floor > 0 ? RF.balanceB(rate, floor) : RF.balanceJobB(rate)) : R.balanceB0;
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>): void => {
     const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;

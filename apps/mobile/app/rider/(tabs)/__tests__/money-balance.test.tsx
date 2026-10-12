@@ -44,7 +44,8 @@ jest.mock("../../../../src/auth/session", () => ({
     mockMarker = null;
   },
 }));
-jest.mock("../../../../src/query/use-history-feed", () => ({ useHistoryFeed: () => ({ rows: [], showingStale: false, isFetching: false, refetch: jest.fn() }) }));
+let mockRows: unknown[] = [];
+jest.mock("../../../../src/query/use-history-feed", () => ({ useHistoryFeed: () => ({ rows: mockRows, showingStale: false, isFetching: false, refetch: jest.fn() }) }));
 jest.mock("../../../../src/query/use-wallet", () => ({
   walletKey: ["wallet"],
   walletLedgerKey: ["walletLedger"],
@@ -54,7 +55,8 @@ jest.mock("../../../../src/query/use-wallet", () => ({
 }));
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { RF } from "../../../../src/ui/rider/copy";
+import { COMMISSION } from "@lynia/shared";
+import { RIDER_COPY as R, RF } from "../../../../src/ui/rider/copy";
 import RiderMoneyTabScreen from "../money";
 
 let tree: renderer.ReactTestRenderer | null = null;
@@ -85,6 +87,7 @@ beforeEach(() => {
   mockWallet = { wallet: { balance: 0 }, isError: false };
   mockConfig = { floor: 2, ratePct: 0, minTopUp: 5 };
   mockFreeLeft = undefined;
+  mockRows = [];
   mockMarker = null;
   mockGetTopup.mockReset();
 });
@@ -112,6 +115,46 @@ describe("Money · the floor follows the server's online gate (MA-H2)", () => {
     mockFreeLeft = 0;
     const t = await renderScreen();
     expect(texts(t)).toContain(RF.floorB(2));
+  });
+});
+
+describe("Money · no floor: the per-job commission rule (PR #1154, D-103)", () => {
+  // The floor model's lines, at any amount: "Below $0.00 you can't take jobs." / "Below the $0.00 floor."
+  const FLOOR_CLAIM = /floor|Below \$/i;
+  beforeEach(() => {
+    mockConfig = { floor: COMMISSION.lowBalanceBlockBelow, ratePct: 10, minTopUp: 5 };
+    mockFreeLeft = 0;
+    // A job closed today, so the line under the balance shows (M9 hides it on an empty day).
+    mockRows = [{ id: "o1", role: "rider", status: "delivered", orderType: "parcel", agreedFare: "3.00", pickup: { landmark: "Avondale" }, dropoff: { landmark: "Borrowdale" }, createdAt: new Date(Date.now() - 60_000).toISOString() }];
+  });
+
+  it("policy has no floor", () => {
+    expect(COMMISSION.lowBalanceBlockBelow).toBe(0);
+  });
+
+  it.each([0, 0.2, 0.99, 5, 40])("a $%s balance never claims a floor", async (balance) => {
+    mockWallet = { wallet: { balance }, isError: false };
+    const t = await renderScreen();
+    expect(texts(t).filter((x) => FLOOR_CLAIM.test(x))).toEqual([]);
+  });
+
+  it("a biker holding $5.00 is told the per-job rule", async () => {
+    mockWallet = { wallet: { balance: 5 }, isError: false };
+    const t = await renderScreen();
+    expect(texts(t)).toContain("10% comes off when a job closes. You can take a job when your balance covers its commission.");
+  });
+
+  it.each([0, 0.2])("a biker holding $%s gets the drawn low line, not the floor alarm", async (balance) => {
+    mockWallet = { wallet: { balance }, isError: false };
+    const t = await renderScreen();
+    expect(texts(t)).toContain(R.lowB);
+    expect(texts(t)).not.toContain(RF.floorB(0));
+  });
+
+  it("a negative balance still owes", async () => {
+    mockWallet = { wallet: { balance: -0.4 }, isError: false };
+    const t = await renderScreen();
+    expect(texts(t)).toContain(R.owesB);
   });
 });
 
