@@ -66,7 +66,7 @@ function pageFor(id: KycOutcomeId, firstName: string | null | undefined, expired
       return {
         tone: "mint",
         icon: "id-card",
-        a: KY.unfA,
+        a: KYF.unfA(firstName),
         b: KYF.unfName(firstName),
         body: KY.unfBody,
         checklist: { step2: "next", label: RO.stepIdTime },

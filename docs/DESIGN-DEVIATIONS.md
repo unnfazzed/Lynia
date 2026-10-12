@@ -1750,6 +1750,12 @@ camera denial), the launch falls back to the in-app browser tab — vendor pixel
 chrome. The API's `GET /kyc/return` landing (brand CTA green, shared tokens) is the branded end of
 that lane for older builds.
 
+**2026-10-12 — the sheet's error state is retired by D-82 F7.** The sheet no longer draws its own
+`kyc_cant_start` error page (that copy and icon belong to the kyc-2026-08 outcome screens D-82
+supersedes). A check that won't load closes the sheet as `failed`, and First Run v2 F7 "Couldn't open
+the ID check" — whose "Try again" reopens a fresh sheet — is the only error the rider sees. The sheet's
+chrome is now header, loading and exit-confirmation only.
+
 **No kit edit was made** for this entry — `packages/design/**` is untouched, so no upstream sync is
 owed. **Retire this entry** if the native SDK re-lands (D-34 then covers its UI again) or if Route B
 (fully Lynia-drawn capture) ships and no vendor-drawn surface remains.

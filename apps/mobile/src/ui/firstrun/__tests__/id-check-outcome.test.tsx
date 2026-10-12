@@ -94,6 +94,17 @@ describe("IdCheckOutcome — one shell for every F page", () => {
     expect(byTestId(tree, "outcome-help")).toHaveLength(0);
   });
 
+  // The handoff draws no nameless F3; without a name the title is "Almost there" alone — no dangling
+  // comma, no empty accent run (and no invented words).
+  it.each([null, "", "   "])("F3 with no first name (%p) reads 'Almost there' — no trailing comma, no empty second part", (firstName) => {
+    const { tree } = mount("F3", { firstName });
+    const title = lines(tree).find((l) => l.startsWith("Almost there"));
+    expect(title).toBe("Almost there");
+    // The title draws no empty accent run inside it.
+    const header = tree.root.findAll((n) => n.type === Text && n.props.accessibilityRole === "header")[0]!;
+    expect(header.findAllByType(Text)).toHaveLength(1);
+  });
+
   it.each([
     ["F4a", `${KY.blurryA} ${KY.blurryB}`, [KY.blurryTip1, KY.blurryTip2, KY.blurryTip3]],
     ["F4b", `${KY.faceA} ${KY.faceB}`, [KY.faceTip1, KY.faceTip2, KY.faceTip3]],

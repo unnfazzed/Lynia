@@ -65,6 +65,8 @@ jest.mock("../../../src/api/wallet", () => ({
 import { ApiError } from "../../../src/api/client";
 import { takeKycLaunch } from "../../../src/kyc/launch-hint";
 import { KYC_DRAFT_KEY } from "../../../src/logic/kyc-draft";
+import { KYC_RETRY_TRY_LATER } from "../../../src/logic/gates";
+import { PD } from "../../../src/ui/firstrun/copy";
 import { RiderIntro } from "../../../src/ui/onboarding/rider";
 import BecomeRiderScreen from "../become";
 
@@ -466,6 +468,68 @@ describe("BecomeRiderScreen — the hand-over to the board (startup review 2026-
     const pending = { kycStatus: "pending" as const, kycMode: "auto" as const, kycAttempts: 0, kycPendingState: "unfinished" as const };
     expect(resolveGate({ kyc: resolveKycGate(pending, mark!.outcome), server: null, locDenied: false })).toBe("cantOpen");
     act(() => tree.unmount());
+  });
+
+  it("an automated check that brings back no session is handed to the board as `failed` (F7), not silently (F3)", async () => {
+    mockMe = { ...NAMED, idNumber: null };
+    mockBecomeRider.mockResolvedValue({ kycStatus: "pending", mode: "auto" });
+    const tree = await mount();
+    await tapStart(tree);
+    expect(mockRunKyc).not.toHaveBeenCalled();
+    expect(takeKycLaunch()).toMatchObject({ outcome: "failed" });
+    expect(mockReplace).toHaveBeenCalledWith(BOARD);
+    act(() => tree.unmount());
+  });
+
+  it("manual review and the QA stub's instant pass have nothing to open — no launch mark is handed over", async () => {
+    for (const res of [{ kycStatus: "pending", mode: "manual" }, { kycStatus: "verified", mode: "auto" }]) {
+      mockMe = { ...NAMED, idNumber: null };
+      mockBecomeRider.mockResolvedValue(res);
+      const tree = await mount();
+      await tapStart(tree);
+      expect(takeKycLaunch()).toBeNull();
+      act(() => tree.unmount());
+    }
+  });
+
+  it("the rider side is saved BEFORE the check opens, so an app killed mid-check reopens on the rider side", async () => {
+    mockMe = { ...NAMED, idNumber: null };
+    let atLaunch: string | undefined;
+    mockRunKyc.mockImplementation(async () => {
+      // Let the fire-and-forget keystore write land, as it would long before a rider finishes the check.
+      await new Promise((r) => setTimeout(r, 0));
+      atLaunch = mockSecureStore["lynia.rolePreference"];
+      return { outcome: "cancelled", sessionUnusable: false };
+    });
+    const tree = await mount();
+    await tapStart(tree);
+    expect(atLaunch).toBe("rider");
+    act(() => tree.unmount());
+  });
+
+  it("a failed start toasts our words, never the server's", async () => {
+    const show = jest.fn();
+    const ui = jest.requireActual("../../../src/ui/Toast") as typeof import("../../../src/ui/Toast");
+    const spy = jest.spyOn(ui, "useActionError").mockReturnValue((m?: string | null) => void (m && show(m)));
+    try {
+      const cases: [ApiError, string][] = [
+        [new ApiError(503, "KYC submit failed: Didit 502"), "Couldn't start rider setup."],
+        [new ApiError(429, "ThrottlerException: Too Many Requests"), KYC_RETRY_TRY_LATER],
+        [new ApiError(409, "This national ID is already linked to another account.", "id_in_use"), `${PD.takenA} ${PD.takenB}. ${PD.takenBody}`],
+      ];
+      for (const [err, said] of cases) {
+        show.mockClear();
+        mockMe = { ...NAMED, idNumber: null };
+        mockBecomeRider.mockRejectedValue(err);
+        const tree = await mount();
+        await tapStart(tree);
+        expect(show).toHaveBeenLastCalledWith(said);
+        expect(mockReplace).not.toHaveBeenCalled();
+        act(() => tree.unmount());
+      }
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("R-10: 'Start ID check' shows busy while it is still reading the account", async () => {

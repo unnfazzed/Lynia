@@ -14,11 +14,10 @@ import React from "react";
 import { Alert, Linking } from "react-native";
 import renderer, { act, type ReactTestRenderer } from "react-test-renderer";
 
-import { SystemState } from "../../ui";
 import { canPresentKycCheck, KycCheckHost, presentKycCheck, resetKycCheckHostForTests } from "../KycCheckHost";
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { WebView: MockWebView } = require("react-native-webview") as { WebView: React.ComponentType };
+const { WebView: MockWebView, __refCalls: refCalls } = require("react-native-webview") as { WebView: React.ComponentType; __refCalls: string[] };
 
 const URL = "https://verify.didit.me/sess_1";
 
@@ -34,6 +33,7 @@ const trees: ReactTestRenderer[] = [];
 beforeEach(() => {
   resetKycCheckHostForTests();
   alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+  refCalls.length = 0;
 });
 afterEach(() => {
   for (const t of trees.splice(0)) {
@@ -177,33 +177,37 @@ describe("KycCheckSheet outcomes", () => {
     expect(tree.root.findAllByType(MockWebView)).toHaveLength(1);
   });
 
-  it("a load error shows the cant_start-voiced error state; Close resolves failed", async () => {
+  // The sheet used to draw its own kyc-2026-08 `kyc_cant_start` page first, and the board then showed F7
+  // on Close — the same fault, told twice. F7 (D-82) is now the only error the rider sees.
+  it("a load error resolves failed at once — no error page of its own (F7 is the one drawn screen)", async () => {
     const { tree, pending } = openSheet();
     act(() => {
-      webViewProps(tree).onError!({} as never);
+      webViewProps(tree).onError!({ nativeEvent: { url: URL } } as never);
     });
-    expect(JSON.stringify(tree.toJSON())).toContain("We couldn't open the ID check");
-    const state = tree.root.findByType(SystemState);
-    expect(state.props.secondary).toBe("Close");
-    act(() => (state.props as { onSecondary: () => void }).onSecondary());
     await expect(pending).resolves.toBe("failed");
+    expect(JSON.stringify(tree.toJSON() ?? "")).not.toContain("We couldn't open the ID check");
+    expect(JSON.stringify(tree.toJSON() ?? "")).not.toContain("usually the camera");
+    expect(tree.root.findAllByType(MockWebView)).toHaveLength(0);
   });
 
-  it("a second presentation over an errored sheet cancels the first and starts fresh (no stale error)", async () => {
+  it("a lynia:// completion redirect that surfaces as a load error is done, not an error", async () => {
+    const { tree, pending } = openSheet();
+    act(() => {
+      webViewProps(tree).onError!({ nativeEvent: { url: "lynia://kyc-done", description: "net::ERR_UNKNOWN_URL_SCHEME" } } as never);
+    });
+    await expect(pending).resolves.toBe("completed");
+  });
+
+  it("a fresh presentation after a failed one loads its own URL (F7's Try again reopens a clean sheet)", async () => {
     const { tree, pending } = openSheet();
     act(() => {
       webViewProps(tree).onError!({} as never);
     });
-    expect(JSON.stringify(tree.toJSON())).toContain("We couldn't open the ID check");
-    // A new check arrives while the errored sheet is still up (e.g. a fresh retry tap).
+    await expect(pending).resolves.toBe("failed");
     let second!: Promise<string>;
     act(() => {
       second = presentKycCheck({ url: "https://verify.didit.me/sess_2" })!;
     });
-    // The first caller is released as cancelled, and the new presentation renders a FRESH sheet —
-    // loading its own URL, not the previous check's error state.
-    await expect(pending).resolves.toBe("cancelled");
-    expect(JSON.stringify(tree.toJSON())).not.toContain("We couldn't open the ID check");
     expect(tree.root.findByType(MockWebView).props.source).toEqual({ uri: "https://verify.didit.me/sess_2" });
     act(() => {
       webViewProps(tree).onShouldStartLoadWithRequest!({ url: "lynia://kyc-done", isTopFrame: true } as never);
@@ -211,20 +215,47 @@ describe("KycCheckSheet outcomes", () => {
     await expect(second).resolves.toBe("completed");
   });
 
-  it("'Try again' from the error state remounts the WebView for a clean retry", () => {
+  it("Android back steps back inside the check while it has history, and only prompts on its first page", () => {
     const { tree } = openSheet();
+    const modal = () => tree.root.findAll((n) => typeof n.props.onRequestClose === "function")[0]!;
     act(() => {
-      webViewProps(tree).onError!({} as never);
+      webViewProps(tree).onNavigationStateChange!({ url: "https://verify.didit.me/sess_1/step-2", canGoBack: true } as never);
     });
-    expect(tree.root.findAllByType(MockWebView)).toHaveLength(0);
-    const state = tree.root.findByType(SystemState);
-    expect(state.props.primary).toBe("Try again");
-    act(() => (state.props as { onPrimary: () => void }).onPrimary());
-    expect(tree.root.findAllByType(MockWebView)).toHaveLength(1);
+    act(() => (modal().props as { onRequestClose: () => void }).onRequestClose());
+    expect(refCalls).toEqual(["goBack"]);
+    expect(alertSpy).not.toHaveBeenCalled();
+    act(() => {
+      webViewProps(tree).onNavigationStateChange!({ url: URL, canGoBack: false } as never);
+    });
+    act(() => (modal().props as { onRequestClose: () => void }).onRequestClose());
+    expect(refCalls).toEqual(["goBack"]);
+    expect(alertSpy).toHaveBeenCalledWith("Leave the ID check?", expect.any(String), expect.any(Array));
   });
 
-  it("a subresource http error does not blank a working flow (main-document only)", () => {
+  it("a server-side redirect to someone else's page is not rendered in the sheet: stopped, stepped back from, opened outside", () => {
+    const openSpy = jest.spyOn(Linking, "openURL").mockResolvedValue(true);
     const { tree } = openSheet();
+    act(() => {
+      webViewProps(tree).onNavigationStateChange!({ url: "https://tracker.example.com/landing", canGoBack: true } as never);
+    });
+    expect(refCalls).toEqual(["stopLoading", "goBack"]);
+    expect(openSpy).toHaveBeenCalledWith("https://tracker.example.com/landing");
+    expect(tree.root.findAllByType(MockWebView)).toHaveLength(1);
+    openSpy.mockRestore();
+  });
+
+  it("…and when the check itself redirected away (nothing to step back to), it resolves failed", async () => {
+    const openSpy = jest.spyOn(Linking, "openURL").mockResolvedValue(true);
+    const { tree, pending } = openSheet();
+    act(() => {
+      webViewProps(tree).onNavigationStateChange!({ url: "https://tracker.example.com/landing", canGoBack: false } as never);
+    });
+    await expect(pending).resolves.toBe("failed");
+    openSpy.mockRestore();
+  });
+
+  it("a subresource http error does not close a working flow (main-document only)", async () => {
+    const { tree, pending } = openSheet();
     act(() => {
       webViewProps(tree).onHttpError!({ nativeEvent: { url: "https://cdn.didit.me/missing.png" } } as never);
     });
@@ -232,6 +263,6 @@ describe("KycCheckSheet outcomes", () => {
     act(() => {
       webViewProps(tree).onHttpError!({ nativeEvent: { url: URL } } as never);
     });
-    expect(JSON.stringify(tree.toJSON())).toContain("We couldn't open the ID check");
+    await expect(pending).resolves.toBe("failed");
   });
 });

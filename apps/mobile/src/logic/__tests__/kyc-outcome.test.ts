@@ -67,6 +67,15 @@ describe("kycScreenFor — server state → First Run v2 page", () => {
     expect(declineVariant("a-reason-a-newer-server-added")).toBe("F4d");
   });
 
+  // An expired document already has its own key (`id_expired` → F4c, "We can't use this document"). A
+  // newer server may tag it under a key this build doesn't know yet (e.g. `doc_expired`): that must still
+  // land on a working decline page with Try again + help — F4d — never a crash or a blank wall.
+  it("an expired-document decline is F4c; an unknown key for it falls back to F4d", () => {
+    expect(declineVariant("id_expired")).toBe("F4c");
+    expect(declineVariant("doc_expired")).toBe("F4d");
+    expect(screen({ kycStatus: "failed", ...auto, kycAttempts: 1, kycDeclineReason: "doc_expired" })).toEqual({ kind: "outcome", id: "F4d" });
+  });
+
   it("F5: both tries used — whatever the reason", () => {
     expect(screen({ kycStatus: "failed", ...auto, kycAttempts: 2, kycDeclineReason: "id_unreadable" })).toEqual({ kind: "outcome", id: "F5" });
   });
