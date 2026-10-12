@@ -110,6 +110,7 @@ const EXTRA_FILES = new Set([
   "robots.txt",
   "sitemap.xml",
   "assets/og-image.png", // README TODO #2, built to its spec (apps/website/og-image/)
+  "email/lyniago-signature-logo-tile.png", // owner 2026-10-12: email-signature logo, hotlinked by mail clients
 ]);
 
 /**

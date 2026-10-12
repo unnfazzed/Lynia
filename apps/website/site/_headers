@@ -25,3 +25,8 @@
 # check-website.mjs fails any PR that edits a file under site/assets/ in place.
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+
+# Email-signature image (owner, 2026-10-12): mail clients hotlink it at this exact URL, so its name
+# never changes. Cached for a year but not immutable, so a replacement still reaches clients.
+/email/*
+  Cache-Control: public, max-age=31536000
