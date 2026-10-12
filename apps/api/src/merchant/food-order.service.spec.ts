@@ -177,7 +177,7 @@ describe("FoodOrderService.placeOrder", () => {
     await expect(place(null)).rejects.toMatchObject({ status: 404, message: "Restaurant not found" });
   });
 
-  it("rejects a drop-off outside Zimbabwe server-side, naming where we serve (owner 2026-10-12, D-98)", async () => {
+  it("rejects a drop-off outside Zimbabwe server-side, naming where we serve (owner 2026-10-12, D-99)", async () => {
     let created = false;
     const { svc } = build({
       order: { findFirst: async () => null, create: async () => { created = true; return {}; } },

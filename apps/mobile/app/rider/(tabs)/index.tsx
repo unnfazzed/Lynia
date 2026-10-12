@@ -25,6 +25,7 @@ import {
   KYC_COMPLETED_HINT_MS,
   KYC_COMPLETED_HOLD_MS,
   KYC_RETRY_TRY_LATER,
+  isKycRetryRateLimited,
   kycLaunchForGate,
   type KycLaunchMark,
   kycPollMs,
@@ -37,6 +38,7 @@ import { useHomeLocation } from "../../../src/logic/home-location";
 import { kycScreenFor, parseIsoDay } from "../../../src/logic/kyc-outcome";
 import { markRiderWelcomeSeen, riderWelcomeSeen } from "../../../src/logic/rider-welcome";
 import { topUpAtLeast } from "../../../src/logic/topup";
+import { useSettled } from "../../../src/logic/use-settled";
 import { RIDER_PERM_ROUTES, startRiderPermFlow } from "../../../src/logic/rider-perm-flow";
 import { RiderLocEmpty, RiderNotifOffRow } from "../../../src/ui/firstrun/RiderPermBoard";
 import { SoftUpdateBanner } from "../../../src/ui/firstrun/SoftUpdateBanner";
@@ -72,6 +74,8 @@ const ACTIVATION_RETRY_MS = 15_000;
 const ACTIVATION_RETRY_MAX_MS = 120_000;
 /** The Undo window on a withdrawn offer (J10); the API call fires after it. */
 const WITHDRAW_UNDO_MS = 5_000;
+/** How long the board's link may stay down before it says "Reconnecting…" (a cold open's socket handshake). */
+const CONN_GRACE_MS = 8_000;
 
 const BOARD_PREWARM: readonly PrewarmRoute[] = ["riderJob", "riderFoodJob"];
 
@@ -490,7 +494,7 @@ export default function RiderHome(): React.ReactElement {
     // connection — is the check not opening: F7, whose "Try again" is this mutation again. A terminal
     // server state (a lock, a decline) still outranks it once `me` is re-read. Never the server's words.
     onError: (e) => {
-      if (e instanceof ApiError && e.status === 429) setError(KYC_RETRY_TRY_LATER);
+      if (e instanceof ApiError && isKycRetryRateLimited(e)) setError(KYC_RETRY_TRY_LATER);
       else setKycLaunch({ outcome: "failed", at: Date.now() });
       void qc.invalidateQueries({ queryKey: ["me"] });
     },
@@ -723,6 +727,11 @@ export default function RiderHome(): React.ReactElement {
     };
   }, [gate, coolUntilMs]);
   const conn = online && board.connected && !beatStale;
+  // Owner 2026-10-12: the board opened on "Reconnecting…" on good Wi-Fi — the live socket and go-online
+  // are still in flight for the first seconds of every open. So the not-connected states only show once
+  // the link has stayed down past a grace period (or go-online has actually failed), and clear at once.
+  const connDown = useSettled(!conn, CONN_GRACE_MS);
+  const goOnlineStuck = useSettled(onlineAllowed && !online, CONN_GRACE_MS);
 
   // ── ID check (First Run v2 F / G, ledger D-82) ───────────────────────────────────────────────────
   const kycScreen = kycScreenFor({ gate, kyc: kycGate, launch: freshKycLaunch(kycLaunch, Date.now()), declineReason: rider?.kycDeclineReason });
@@ -771,7 +780,7 @@ export default function RiderHome(): React.ReactElement {
   const tabSpace = useTabBarSpace();
   const mapShare = areaH > 0 ? Math.min(0.8, Math.max(0.2, (winH * (empty ? 0.56 : 0.5) - (winH - areaH)) / areaH)) : 0.5;
 
-  const banner = <MintTop {...top} online={conn} loc={location.label} />;
+  const banner = <MintTop {...top} online={!connDown} loc={location.label} />;
 
   const gateView = gate ? renderGate(gate) : null;
   function renderGate(g: GateId): React.ReactElement | null {
@@ -850,7 +859,7 @@ export default function RiderHome(): React.ReactElement {
       {notifOff ? <RiderNotifOffRow onTurnOn={() => router.push(RIDER_PERM_ROUTES.notifications as never)} /> : null}
       {/* Empty board: reconnecting shows only in the header's status line (empty-states v2 J4, D-78). */}
       {/* B5: also while the rider is allowed online but going online keeps failing. */}
-      {(online ? !conn : onlineAllowed) && !empty ? <Notice icon="wifi-off" text={R.staleB} /> : null}
+      {(online ? connDown : onlineAllowed && (onlineM.isError || goOnlineStuck)) && !empty ? <Notice icon="wifi-off" text={R.staleB} /> : null}
       {openQ.isError ? <Notice icon="wifi-off" text={R.loadFail} /> : null}
       {locHint ? <Notice icon="map-pin" tone="warn" text={R.gGpsB} /> : null}
       {/* BD-H5: `assigned` too — the way back once "picked you" is closed (or never shown, for food). */}
@@ -918,7 +927,7 @@ export default function RiderHome(): React.ReactElement {
               <SkeletonOffer />
             </>
           ) : null}
-          <View style={{ gap: 10, opacity: online && !conn ? 0.6 : 1 }} onLayout={(e) => (listY.current = e.nativeEvent.layout.y)}>
+          <View style={{ gap: 10, opacity: online && connDown ? 0.6 : 1 }} onLayout={(e) => (listY.current = e.nativeEvent.layout.y)}>
             {jobs.map((j) => (
               <View key={j.id} collapsable={false} onLayout={(e) => cardY.current.set(j.id, e.nativeEvent.layout.y)}>
                 <BoardJobCard job={j} selected={j.id === effectiveSelected} onSelect={() => setSelectedId(j.id)} onOffer={() => offerFor(j)} />

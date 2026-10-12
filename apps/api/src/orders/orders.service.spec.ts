@@ -554,7 +554,7 @@ describe("OrdersService.create service-corridor gate (Q1)", () => {
     await expect(s.create({ ...orderInput, dropoff: wp(farPoint) }, "cust-1")).rejects.toThrow(/We deliver across Zimbabwe/);
   });
 
-  it("serves all of Zimbabwe: a Mutare pickup to a Chivhu drop-off is allowed (owner 2026-10-12, D-98)", async () => {
+  it("serves all of Zimbabwe: a Mutare pickup to a Chivhu drop-off is allowed (owner 2026-10-12, D-99)", async () => {
     let created = false;
     const s = svc(() => {
       created = true;
@@ -1138,7 +1138,7 @@ describe("OrdersService.listOpen", () => {
     expect(JSON.stringify(rows[0])).not.toContain("+263");
   });
 
-  it("geo path shows every open order nationwide, fresh or not (owner 2026-10-12, D-98)", async () => {
+  it("geo path shows every open order nationwide, fresh or not (owner 2026-10-12, D-99)", async () => {
     const mkRow = (id: string, createdAt: Date) => ({
       id,
       pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate" },

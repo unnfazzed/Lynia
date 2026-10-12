@@ -1,5 +1,5 @@
 import { KYC_DECLINE_REASON_LABELS } from "@lynia/shared";
-import { ACCOUNT_ON_HOLD_COPY, freshKycLaunch, KYC_COMPLETED_HOLD_MS, kycLaunchForGate, isAccountOnHold, ONLINE_GATE_COPY, isKycLocked, isOutOfServiceArea, isWithinServiceCorridor, KYC_COMPLETED_HINT_MS, KYC_FAST_POLL_WINDOW_MS, KYC_LOCK_ATTEMPTS, kycDeclineLabel, kycPollMs, onlineGateReason, resolveKycGate, resolveKycRetryFeedback, riderDeclineLabel } from "../gates";
+import { ACCOUNT_ON_HOLD_COPY, freshKycLaunch, KYC_COMPLETED_HOLD_MS, kycLaunchForGate, isAccountOnHold, ONLINE_GATE_COPY, isKycLocked, isOutOfServiceArea, isWithinServiceCorridor, KYC_COMPLETED_HINT_MS, KYC_FAST_POLL_WINDOW_MS, KYC_LOCK_ATTEMPTS, kycDeclineLabel, kycPollMs, onlineGateReason, resolveKycGate, resolveKycRetryFeedback, riderDeclineLabel, isKycRetryRateLimited } from "../gates";
 import { resolveGate } from "../rider-gate";
 
 describe("onlineGateReason (rider online-gate refusal)", () => {
@@ -132,11 +132,24 @@ describe("service-corridor gate (Q1)", () => {
     expect(isWithinServiceCorridor({ lat: -15.4167, lng: 28.2833 })).toBe(false); // Lusaka, Zambia
   });
 
-  it("pre-check: every town in Zimbabwe is inside (owner 2026-10-12, D-98)", () => {
+  it("pre-check: every town in Zimbabwe is inside (owner 2026-10-12, D-99)", () => {
     expect(isWithinServiceCorridor({ lat: -19.0211, lng: 30.8922 })).toBe(true); // Chivhu
     expect(isWithinServiceCorridor({ lat: -18.9707, lng: 32.6709 })).toBe(true); // Mutare
     expect(isWithinServiceCorridor({ lat: -20.15, lng: 28.58 })).toBe(true); // Bulawayo
     expect(isWithinServiceCorridor({ lat: -18.185, lng: 31.55 })).toBe(true); // Marondera
+  });
+});
+
+// KYC-R26-13: the server's daily cap on fixable declines answers 429 `kyc_daily_limit` — the same "try again
+// later" toast as the route throttle, never F7 and never the server's own words.
+describe("isKycRetryRateLimited (KYC-R26-13)", () => {
+  it("the route throttle and the daily cap are both the rate-limit toast; nothing else is", () => {
+    expect(isKycRetryRateLimited({ status: 429, code: null })).toBe(true);
+    expect(isKycRetryRateLimited({ status: 429, code: "kyc_daily_limit", message: "You've tried the ID check a few times today." })).toBe(true);
+    expect(isKycRetryRateLimited({ status: 403, code: null })).toBe(false);
+    expect(isKycRetryRateLimited({ status: 503 })).toBe(false);
+    expect(isKycRetryRateLimited({ status: 0 })).toBe(false);
+    expect(isKycRetryRateLimited(null)).toBe(false);
   });
 });
 

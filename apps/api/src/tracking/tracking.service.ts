@@ -7,6 +7,7 @@ import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { penaltiesSuspended } from "../common/penalties";
 import { onlineRefusalReason } from "../riders/online-gate";
 import { ACTIVE_MEMBERSHIP_ORDER } from "../merchant/merchant-access";
 
@@ -507,7 +508,7 @@ export class TrackingService implements OnModuleDestroy {
           WHERE profile_id = ANY(${ids}::uuid[])
             AND is_online = true
             AND account_status = 'active'
-            AND on_hold = false
+            AND (on_hold = false OR ${penaltiesSuspended()}::boolean)
             AND kyc_status = 'verified'
             AND geog IS NOT NULL
             AND last_heartbeat_at IS NOT NULL
@@ -527,7 +528,7 @@ export class TrackingService implements OnModuleDestroy {
       FROM riders
       WHERE is_online = true
         AND account_status = 'active'
-        AND on_hold = false
+        AND (on_hold = false OR ${penaltiesSuspended()}::boolean)
         AND kyc_status = 'verified'
         AND geog IS NOT NULL
         AND last_heartbeat_at IS NOT NULL

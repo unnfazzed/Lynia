@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, Keyboard, Linking, Platform, Text, TextInput, View } from "react-native";
 import { requestOtp } from "../src/api/auth";
 import { useAuth } from "../src/auth/auth-context";
-import { TERMS_URL } from "../src/config";
+import { PRIVACY_URL, TERMS_URL } from "../src/config";
 import { replaceClearingStack } from "../src/logic/nav";
 import { otpErrorMessage } from "../src/logic/otp";
 import { formatZwNational, zwE164, zwMobileProblem, zwNationalDigits } from "../src/logic/zw-mobile";
@@ -99,7 +99,7 @@ export default function PhoneScreen(): React.ReactElement {
                 {OB.terms}
               </Text>
               {OB.and}
-              <Text accessibilityRole="link" onPress={() => router.push("/settings/privacy")} style={{ fontWeight: tokens.font.weight.bold, color: tokens.color.accentText }}>
+              <Text accessibilityRole="link" onPress={() => void Linking.openURL(PRIVACY_URL)} style={{ fontWeight: tokens.font.weight.bold, color: tokens.color.accentText }}>
                 {OB.privacy}
               </Text>
               .

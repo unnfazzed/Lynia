@@ -296,7 +296,7 @@ export class TrackingGateway
 
   /**
    * A KYC-verified, online rider subscribes to the new-order board (§3.10). The board is nationwide
-   * (owner 2026-10-12, D-98: "Bikers can get any order despite their location"), so every rider joins the
+   * (owner 2026-10-12, D-99: "Bikers can get any order despite their location"), so every rider joins the
    * one BOARD_ROOM wherever they are; a position, if sent, is accepted and ignored. A re-subscribe still
    * leaves every board room first (a socket from an older server may sit in a `board:geo:*` cell room).
    */
@@ -623,7 +623,7 @@ export class TrackingGateway
   }
 
   /**
-   * Push a new (redacted) open order to every rider on the board — the nationwide BOARD_ROOM (D-98), so
+   * Push a new (redacted) open order to every rider on the board — the nationwide BOARD_ROOM (D-99), so
    * the pickup's position no longer narrows the audience. Best-effort; a gateway failure must never
    * affect the order the customer just created.
    */
@@ -639,7 +639,7 @@ export class TrackingGateway
    * as emitBoardNewOrder's geo-cell + BOARD_ROOM union). Best-effort; never throws.
    */
   emitBoardNewOrderToCells(payload: BoardNewOrderEvent, _pickupLat: number, _pickupLng: number, _radiusM: number): void {
-    // D-98: the board is one nationwide room, so a widened reach has no extra cells to cover.
+    // D-99: the board is one nationwide room, so a widened reach has no extra cells to cover.
     this.server?.to(BOARD_ROOM).emit(WS_EVENTS.boardNewOrder, payload);
   }
 
@@ -653,7 +653,7 @@ export class TrackingGateway
    */
   emitBidExpired(orderId: string, _pickupLat?: number, _pickupLng?: number): void {
     const payload: BidExpiredEvent = { orderId, at: new Date().toISOString() };
-    // D-98: every rider who saw the card is in the nationwide BOARD_ROOM, so that is the whole audience.
+    // D-99: every rider who saw the card is in the nationwide BOARD_ROOM, so that is the whole audience.
     this.server?.to(BOARD_ROOM).emit(WS_EVENTS.bidExpired, payload);
   }
 

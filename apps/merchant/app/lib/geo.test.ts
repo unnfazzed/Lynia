@@ -35,7 +35,7 @@ describe("insideServiceArea — the same service area POST /merchant/become chec
     expect(insideServiceArea({ lat: -17.861, lng: 31.036 })).toBe(true);
   });
 
-  it("accepts anywhere in Zimbabwe — Bulawayo, Mutare, Chivhu (owner 2026-10-12, D-98)", () => {
+  it("accepts anywhere in Zimbabwe — Bulawayo, Mutare, Chivhu (owner 2026-10-12, D-99)", () => {
     expect(insideServiceArea({ lat: -20.15, lng: 28.58 })).toBe(true);
     expect(insideServiceArea({ lat: -18.9707, lng: 32.6709 })).toBe(true);
     expect(insideServiceArea({ lat: -19.0211, lng: 30.8922 })).toBe(true);

@@ -10,7 +10,7 @@ afterEach(() => {
   delete process.env[BROADCAST.heartbeatMaxAgeEnv];
 });
 
-describe("broadcastRadiusAtMs — nationwide reach (owner 2026-10-12, D-98)", () => {
+describe("broadcastRadiusAtMs — nationwide reach (owner 2026-10-12, D-99)", () => {
   it("reaches all of Zimbabwe from the first second, with nothing left to widen", () => {
     expect(BROADCAST.expansion).toHaveLength(0);
     expect(broadcastRadiusAtMs(0)).toBe(NATIONWIDE_REACH_M);

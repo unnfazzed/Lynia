@@ -82,7 +82,7 @@ describe("comparePopularity / mergePopularity / rankedVenueMissing", () => {
 });
 
 describe("deliversTo", () => {
-  it("needs only the venue's pin — wherever the customer is browsing from (D-98)", () => {
+  it("needs only the venue's pin — wherever the customer is browsing from (D-99)", () => {
     expect(deliversTo(CUSTOMER, CUSTOMER)).toBe(true);
     expect(deliversTo(CUSTOMER, null)).toBe(true);
     expect(deliversTo(null, CUSTOMER)).toBe(false);
@@ -123,7 +123,7 @@ describe("popularNearYou with a ranking (Home rails)", () => {
     const pinless = venue("pinless", 0, { location: null });
     const idx = ranking(["pinless", 50], ["far", 1]);
     expect(ids(popularNearYou([pinless, near, far], NOW, CUSTOMER, 8, idx))).toEqual(["far", "near", "pinless"]);
-    // Browsing from far away (D-98): the same venues still rank, popular first.
+    // Browsing from far away (D-99): the same venues still rank, popular first.
     const fromAfar = popularNearYou([near, far], NOW, FAR_AWAY, 8, ranking(["near", 1], ["far", 5]));
     expect(ids(fromAfar)).toEqual(["far", "near"]);
   });

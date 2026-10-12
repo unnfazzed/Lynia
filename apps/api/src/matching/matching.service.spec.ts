@@ -472,7 +472,7 @@ describe("MatchingService — the 15 s choose grace after the offer window (afte
 });
 
 describe("MatchingService.expandBroadcast — widening ticks push only the new ring", () => {
-  // D-98 made the reach nationwide, so BROADCAST.expansion ships empty and these ticks are a dormant hook.
+  // D-99 made the reach nationwide, so BROADCAST.expansion ships empty and these ticks are a dormant hook.
   // Re-arm the old 5 → 8 → 12 km schedule here so the mechanism stays proven if a narrower reach returns.
   const steps = BROADCAST.expansion as { atMs: number; radiusM: number }[];
   beforeAll(() => {

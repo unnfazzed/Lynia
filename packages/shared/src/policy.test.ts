@@ -180,7 +180,7 @@ describe("customerRatingCarriesWeight", () => {
   });
 });
 
-describe("broadcastRadiusAtMs — nationwide reach (D-98)", () => {
+describe("broadcastRadiusAtMs — nationwide reach (D-99)", () => {
   it.each([0, 29_999, 30_000, 60_000, 120_000])("broadcastRadiusAtMs(%d) is all of Zimbabwe from the start", (age) => {
     expect(broadcastRadiusAtMs(age)).toBe(NATIONWIDE_REACH_M);
   });

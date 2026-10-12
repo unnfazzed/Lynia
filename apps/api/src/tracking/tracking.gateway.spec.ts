@@ -98,7 +98,7 @@ describe("TrackingGateway.boardSubscribe", () => {
     expect(client.join).toHaveBeenCalledWith(BOARD_ROOM);
   });
 
-  it("with lat/lng: still joins the one nationwide board room, no geo cells (owner 2026-10-12, D-98)", async () => {
+  it("with lat/lng: still joins the one nationwide board room, no geo cells (owner 2026-10-12, D-99)", async () => {
     const g = gateway({ isBoardEligible: vi.fn(async () => true) });
     const client = fakeSocket({ sub: "rider-1", role: "rider" });
     const res = await g.boardSubscribe(client as never, { lat: -18.97, lng: 32.67 }); // Mutare
@@ -671,7 +671,7 @@ describe("TrackingGateway.emitBoardNewOrder", () => {
     createdAt: "2026-06-26T00:00:00Z",
   };
 
-  it("emits board:new-order to the nationwide BOARD_ROOM, where every rider is (D-98)", () => {
+  it("emits board:new-order to the nationwide BOARD_ROOM, where every rider is (D-99)", () => {
     const { server, to, emit } = fakeServer();
     const g = gateway();
     g.server = server as never;

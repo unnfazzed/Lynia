@@ -93,7 +93,7 @@ export const KYC_THRESHOLDS = {
 
 /**
  * Q1 — Harare's centre and the old pilot disc. **Not the service-area rule any more:** where we serve is
- * `isInServiceArea` (service-area.ts: all of Zimbabwe — owner 2026-10-12, D-98). This constant remains the
+ * `isInServiceArea` (service-area.ts: all of Zimbabwe — owner 2026-10-12, D-99). This constant remains the
  * default map/search centre only.
  */
 export const SERVICE_CORRIDOR = {
@@ -318,7 +318,7 @@ export function customerRatingCarriesWeight(priorCompletedOrders: number): boole
  * order age ({@link broadcastRadiusAtMs}), NOT persisted state, so the FCM push, the rider board, and the
  * customer-facing supply count all derive the same disc and can never disagree.
  *
- * **Nationwide (owner, 2026-10-12, ledger D-98):** "Bikers can get any order despite their location. Bikers
+ * **Nationwide (owner, 2026-10-12, ledger D-99):** "Bikers can get any order despite their location. Bikers
  * can bid from anywhere. It's up to the user to decide who they want." Every online rider in Zimbabwe is
  * pushed every new order and sees it on the board, nearest first, from the first second — so the base reach
  * is the whole country and there is nothing left to widen. The 5 → 8 → 12 km widening schedule is retired;

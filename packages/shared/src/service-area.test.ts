@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { isInServiceArea, NATIONWIDE_REACH_M, serviceTownsLabel, ZIMBABWE_BORDER } from "./service-area";
 import { haversineKm } from "./pricing";
 
-describe("service area — all of Zimbabwe (owner 2026-10-12, D-98)", () => {
+describe("service area — all of Zimbabwe (owner 2026-10-12, D-99)", () => {
   const inside: Record<string, { lat: number; lng: number }> = {
     "Harare CBD": { lat: -17.8292, lng: 31.0522 },
     Chitungwiza: { lat: -18.0127, lng: 31.0756 },

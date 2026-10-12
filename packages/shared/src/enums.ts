@@ -200,6 +200,8 @@ export const KycDeclineReason = {
   DUPLICATE: "duplicate",
   /** KYC-R26-12: the ID check read a different national ID number than the one already on the account. */
   ID_MISMATCH: "id_mismatch",
+  /** KYC-R26-13: the document says the rider is under the minimum riding age. Final: no retry can fix it. */
+  UNDERAGE: "underage",
   OTHER: "other",
 } as const;
 export type KycDeclineReason = (typeof KycDeclineReason)[keyof typeof KycDeclineReason];
@@ -214,8 +216,44 @@ export const KYC_DECLINE_REASON_LABELS: Record<KycDeclineReason, string> = {
   name_mismatch: "Name doesn't match registration",
   duplicate: "Already registered on another account",
   id_mismatch: "ID number doesn't match your account",
+  underage: "You must be 18 or older to ride",
   other: "Other (see notes)",
 };
+
+/**
+ * KYC-R26-13 (owner 2026-10-12: "honest mistakes must not lock riders out"): what an AUTOMATIC (vendor) decline
+ * costs the rider against the A-02 two-strike lock. The single source of truth — the API's webhook path
+ * (RiderService.applyKycResult) and its daily retry cap read it, and nothing else may re-derive it.
+ *
+ *   fixable  a retry with a better photo / the right card / more light can pass: NO strike. Bounded instead by
+ *            the daily cap on fresh paid sessions (retryKyc, `kyc_daily_limit`), so it can't run up vendor cost.
+ *   strike   evidence about the identity itself (an altered document, a spoofed face, an ID another account
+ *            holds, a name or number that isn't the account's): +1 strike, two lock (A-02).
+ *   final    nothing the rider can do will change it (under age): locks at once (kycAttempts := max(n, 2)).
+ *
+ * A HUMAN decline (adminSetKyc) is not classified: it always counts one strike, whatever its reason.
+ */
+export type KycDeclineClass = "fixable" | "strike" | "final";
+export const KYC_DECLINE_CLASS: Record<KycDeclineReason, KycDeclineClass> = {
+  id_unreadable: "fixable",
+  face_mismatch: "fixable",
+  id_expired: "fixable",
+  other: "fixable",
+  doc_tampered: "strike",
+  liveness_failed: "strike",
+  duplicate: "strike",
+  id_mismatch: "strike",
+  name_mismatch: "strike",
+  underage: "final",
+};
+
+/** KYC-R26-13: the class of a stored decline reason. Null, absent or a key this build doesn't know (a newer
+ *  server) is `fixable` — an unexplained decline must never cost the rider a strike. */
+export function kycDeclineClass(reason: string | null | undefined): KycDeclineClass {
+  return reason && Object.prototype.hasOwnProperty.call(KYC_DECLINE_CLASS, reason)
+    ? KYC_DECLINE_CLASS[reason as KycDeclineReason]
+    : "fixable";
+}
 
 /** Weekly cash settlement status (A-06). */
 export const SettlementStatus = {

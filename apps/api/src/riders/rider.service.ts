@@ -2,6 +2,8 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   InternalServerErrorException,
@@ -10,7 +12,16 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { Prisma, type Role } from "@prisma/client";
-import { freeJobsLeft, isCommissionActive, isInServiceArea, KycDeclineReason, normalizeNationalId, resolveCommissionRatePct } from "@lynia/shared";
+import {
+  freeJobsLeft,
+  isCommissionActive,
+  isInServiceArea,
+  KYC_DECLINE_CLASS,
+  KycDeclineReason,
+  kycDeclineClass,
+  normalizeNationalId,
+  resolveCommissionRatePct,
+} from "@lynia/shared";
 import { isOwnedUploadKey } from "../adapters/storage/upload-kinds";
 import { UploadVerifier } from "../adapters/storage/upload-verifier";
 import { ENV } from "../config/config.module";
@@ -23,6 +34,7 @@ import { baseBroadcastRadiusM } from "../common/broadcast-policy";
 import { PiiCryptoService } from "../common/pii-crypto.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { penaltiesSuspended } from "../common/penalties";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { TrackingService } from "../tracking/tracking.service";
 import { canGoOnline, onlineRefusalReason, type OnlineRefusal, REFUSAL_MESSAGE } from "./online-gate";
@@ -57,6 +69,33 @@ export const KYC_RESOLVED_BY_SYSTEM = "system";
 
 /** KYC-R26-08: audit actor for the daily sweep that expires a verified rider whose ID document has lapsed. */
 const KYC_ID_EXPIRY_ACTOR = "system:kyc-id-expiry";
+
+/** The audit actor of every vendor (Didit webhook) KYC decision, approve or decline. */
+const KYC_WEBHOOK_ACTOR = "system:kyc-webhook";
+
+/**
+ * KYC-R26-13: a `fixable` vendor decline (KYC_DECLINE_CLASS — a blurry photo, a face the camera didn't match, an
+ * expired card) no longer costs a strike, so the A-02 lock no longer bounds how many paid sessions those
+ * retries buy. This does: at most this many fixable declines in a rolling day before retryKyc stops minting
+ * new sessions (`kyc_daily_limit`, the app's "try again later" toast). Three honest tries a day is generous;
+ * a script retrying a face that isn't theirs spends three sessions a day, not five an hour.
+ */
+export const KYC_DAILY_FIXABLE_DECLINE_LIMIT = 3;
+
+/** KYC-R26-13: the A-02 counter write for a vendor decline with this reason (KYC_DECLINE_CLASS). */
+function declineAttemptsWrite(reason: string | null | undefined, current: number): { kycAttempts?: number | { increment: number } } {
+  switch (kycDeclineClass(reason)) {
+    case "strike":
+      return { kycAttempts: { increment: 1 } };
+    case "final":
+      return { kycAttempts: Math.max(current, 2) };
+    case "fixable":
+      return {};
+  }
+}
+const KYC_DAILY_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+/** KYC-R26-13: the decline reason keys that count toward the daily cap. */
+const FIXABLE_DECLINE_REASONS = (Object.keys(KYC_DECLINE_CLASS) as KycDeclineReason[]).filter((r) => KYC_DECLINE_CLASS[r] === "fixable");
 
 /**
  * D-75: a hand approval refuses, rather than verifying the rider with nothing adopted, when the number
@@ -180,15 +219,20 @@ export class RiderService {
    * and have run the collision count in the same transaction. The live-ID unique index (IR26-05) stays
    * the backstop for a writer that skips the lock: its P2002 aborts the caller's transaction, and each
    * caller maps it.
+   *
+   * KYC-R26-14: `replacing` is the hash of a national ID the account DOES hold, which the webhook replaces with
+   * the document's number (applyKycResult). The CAS is then on that hash instead of the empty slot, so an ID
+   * the rider changed meanwhile is never overwritten: the lost CAS re-reads the slot exactly as above.
    */
   private async adoptVerifiedId(
     tx: Prisma.TransactionClient,
     profileId: string,
     verifiedNumber: string,
+    replacing: string | null = null,
   ): Promise<"adopted" | "same" | "different"> {
     const idNumberHash = this.pii.hashId(verifiedNumber);
     const adopted = await tx.profile.updateMany({
-      where: { id: profileId, idNumberHash: null },
+      where: { id: profileId, idNumberHash: replacing },
       data: { idNumber: this.pii.encryptId(normalizeNationalId(verifiedNumber)), idNumberHash },
     });
     if (adopted.count > 0) return "adopted";
@@ -555,6 +599,43 @@ export class RiderService {
     }
   }
 
+  /**
+   * KYC-R26-13: refuse a fresh PAID session for a rider whose fixable vendor declines (KYC_DECLINE_CLASS) in the
+   * last day reached KYC_DAILY_FIXABLE_DECLINE_LIMIT. Those declines cost no strike any more, so without this
+   * nothing but the route's 5/hour throttle bounded what they spend. Counted from the audit rows the webhook
+   * writes in the same transaction as each decision (applyKycResult: `rider.kyc_decline`, actor
+   * `system:kyc-webhook`, target the profile, reasonCode the decline key; null — an unexplained decline — is
+   * fixable too), so a replayed webhook, which writes nothing, can't inflate it. Human declines (adminSetKyc)
+   * are not counted: they cost a strike instead. The free resume path never reaches here.
+   *
+   * Refused with the throttle's own status and shape (429 `{ statusCode, message }`, throttle.guard), plus a
+   * distinct machine `reason`, so the app's one rate-limit toast (KYC_RETRY_TRY_LATER) covers it unchanged and
+   * a newer client can still tell the two apart.
+   */
+  private async assertUnderKycDailyLimit(profileId: string): Promise<void> {
+    const since = new Date(Date.now() - KYC_DAILY_LIMIT_WINDOW_MS);
+    const fixableDeclines = await this.prisma.auditLog.count({
+      where: {
+        actor: KYC_WEBHOOK_ACTOR,
+        action: "rider.kyc_decline",
+        target: profileId,
+        createdAt: { gte: since },
+        OR: [{ reasonCode: { in: FIXABLE_DECLINE_REASONS } }, { reasonCode: null }],
+      },
+    });
+    if (fixableDeclines >= KYC_DAILY_FIXABLE_DECLINE_LIMIT) {
+      this.logger.warn(`KYC retry for ${profileId} refused: ${fixableDeclines} fixable declines in the last 24h (KYC-R26-13)`);
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.TOO_MANY_REQUESTS,
+          reason: "kyc_daily_limit",
+          message: "You've tried the ID check a few times today. Please try again tomorrow.",
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
   async retryKyc(
     profileId: string,
     opts: { force?: boolean } = {},
@@ -656,6 +737,7 @@ export class RiderService {
         kycStatus: rider.kycStatus,
         kycAttempts: rider.kycAttempts,
       }));
+    let dailyLimitChecked = false;
     if (!forceHonored && rider.kycStatus === "pending" && rider.kycRef && rider.kycSessionToken && rider.kycSessionUrl) {
       // R-1 (startup review 2026-10-06): the resume guard proves a session EXISTS, never that it can
       // still be finished. The app's web lanes can't see expiry (the hosted page renders its own
@@ -684,6 +766,10 @@ export class RiderService {
       // rotation's own CAS below still guards the write. Unlike `force` this is not a client assertion —
       // the vendor said the session is over — so it needs no window: a genuinely dead session always gets
       // its one replacement.
+      // KYC-R26-13: the replacement is paid, so the daily cap applies — checked BEFORE the dead credential is
+      // retired, so a refused rider is left exactly as they were (the cap lifts on its own within a day).
+      await this.assertUnderKycDailyLimit(profileId);
+      dailyLimitChecked = true;
       const retired = await this.prisma.rider.updateMany({
         where: { profileId, kycStatus: "pending", kycRef: rider.kycRef, kycSessionToken: rider.kycSessionToken },
         data: { kycSessionToken: null, kycSessionUrl: null },
@@ -692,6 +778,18 @@ export class RiderService {
         throw new ConflictException("Your ID verification just changed — refresh and try again.");
       }
       this.logger.log(`KYC ${rider.kycRef}: the vendor reports the session dead — minting a replacement instead of resuming it (R-1)`);
+    }
+
+    // KYC-R26-13: every path that reaches here buys a fresh paid session (a declined / expired rider's new
+    // check, a forced or dead-session replacement), so it is where the daily cap on fixable declines bites. A
+    // refused force hands its claim back, as a vendor failure does: the claim bought nothing.
+    if (!dailyLimitChecked) {
+      try {
+        await this.assertUnderKycDailyLimit(profileId);
+      } catch (err) {
+        if (forceHonored) await this.releaseForcedKycReplacement(profileId, rider.kycForcedAt);
+        throw err;
+      }
     }
 
     let submission: Awaited<ReturnType<KycVendor["submit"]>>;
@@ -919,7 +1017,7 @@ export class RiderService {
       const reason = onlineRefusalReason({ ...rider, ...commissionGate });
       if (reason) throw new ForbiddenException({ reason, message: REFUSAL_MESSAGE[reason] });
       // Service area: refuse going online outside it so a rider can't take jobs we can't route; the same
-      // isInServiceArea the customer order-create gate uses (all of Zimbabwe, D-98).
+      // isInServiceArea the customer order-create gate uses (all of Zimbabwe, D-99).
       // E2E 2026-10-05 FS-7 (owner: "Refuse online without GPS"): going ONLINE requires a position. A
       // missing one used to skip this check, so a rider whose GPS timed out showed "Online" from anywhere
       // and never got a job. Going offline never needs coordinates (this whole block is online-only).
@@ -952,7 +1050,7 @@ export class RiderService {
             updated_at = now()
         WHERE profile_id = ${profileId}::uuid
           AND account_status = 'active'
-          AND on_hold = false`;
+          AND (on_hold = false OR ${penaltiesSuspended()}::boolean)`;
       if (claimed === 0) {
         const now = await this.prisma.rider.findUnique({
           where: { profileId },
@@ -1020,7 +1118,7 @@ export class RiderService {
       WHERE profile_id = ${profileId}::uuid
         AND is_online = true
         AND account_status = 'active'
-        AND on_hold = false`;
+        AND (on_hold = false OR ${penaltiesSuspended()}::boolean)`;
     if (claimed === 0) {
       // Not beating: offline (toggled off elsewhere / forced by a demotion) or standing changed.
       // Re-derive the precise refusal exactly like setOnline's CAS-miss path so the app renders the
@@ -1260,9 +1358,22 @@ export class RiderService {
       const idMissing = status === "verified" && !!current && idOnFile === null && docHash === null;
       // D-75: the vendor-verified number becomes the account's national ID when the account has none.
       const needsAdoption = status === "verified" && !!current && idOnFile === null && docHash !== null;
+      // KYC-R26-14 (owner 2026-10-12): a document whose number differs from the national ID the account holds is
+      // most often a typo in the number the rider typed, not a borrowed card — and the vendor has just verified
+      // the card against their face. Declining that as `id_mismatch` (a strike) punished the typo. So the
+      // DOCUMENT's number replaces the account's, exactly as D-75 adopts it onto an empty account, when that is
+      // safe: nothing else holds the number (no docCollision, live or erased), the account isn't flagged as
+      // sharing its current ID (duplicateIdFlag), and the rider isn't verified already (a verified ID is frozen,
+      // DS-11). Anything less keeps the KYC-R26-12 decline. The write is adoptVerifiedId with a CAS on the OLD
+      // hash, under the document number's advisory lock taken above.
+      const needsReplacement =
+        status === "verified" && !!current && docMismatch && !docCollision && current.duplicateIdFlag !== true && current.kycStatus !== "verified";
+      // D-75 / KYC-R26-14: a re-run after the live-ID unique index (IR26-05) refused the adoption or replacement
+      // — another live account holds the number after all — is a collision.
+      const claimBlocked = adoptionBlocked && (needsAdoption || needsReplacement);
       let holdForReview =
         status === "verified" &&
-        (current?.duplicateIdFlag === true || docMismatch || docCollision || (needsAdoption && adoptionBlocked));
+        (current?.duplicateIdFlag === true || (docMismatch && !(needsReplacement && !adoptionBlocked)) || docCollision || claimBlocked);
       if (idMissing) {
         this.logger.warn(`KYC ${kycRef}: verified with no national ID on file and no document number in the decision — verified, audit-flagged verified_id_missing (D-75)`);
       }
@@ -1287,6 +1398,23 @@ export class RiderService {
           this.logger.warn(`KYC ${kycRef}: a national ID landed on the account during the check and does not match the document — held for review (D-75)`);
         }
       }
+      // KYC-R26-14: the replacement. Same predicate as the adoption (verifies in this transaction, newer than the
+      // last decision); `adoption.attempted` arms the same P2002 re-apply, which then declines it as a duplicate.
+      // A lost CAS (the rider changed their ID mid-check) re-reads the slot: the document's number means there is
+      // nothing left to mismatch; any other number is the KYC-R26-12 `id_mismatch` decline, as before.
+      let idReplaced = false;
+      if (needsReplacement && !holdForReview && decisionApplies && current && verifiedDocNumber && idOnFile) {
+        adoption.attempted = true;
+        const replaced = await this.adoptVerifiedId(tx, current.profileId, verifiedDocNumber, idOnFile);
+        if (replaced === "different") {
+          holdForReview = true;
+          this.logger.warn(`KYC ${kycRef}: the national ID changed during the check and does not match the document — declined id_mismatch (KYC-R26-14)`);
+        } else {
+          docMismatch = false;
+          idReplaced = replaced === "adopted";
+          if (idReplaced) this.logger.log(`KYC ${kycRef}: the national ID on file differed from the verified document — replaced with the document's number (KYC-R26-14)`);
+        }
+      }
       // KYC-R26-12 (owner 2026-10-12: "even the In Review to be fully automatic"): a verify that our own
       // one-ID-one-account checks refuse is DECLINED, not held for a human. A national ID already on another
       // account (duplicateIdFlag, a vendor-document collision, an adoption the live-ID index refused) is
@@ -1297,7 +1425,7 @@ export class RiderService {
       // fresh timestamp), so a retry can't count as a second decline.
       const refusedVerify = holdForReview;
       const outcome: "verified" | "failed" | "expired" = refusedVerify ? "failed" : status;
-      const outReason = refusedVerify ? (docMismatch ? KycDeclineReason.ID_MISMATCH : KycDeclineReason.DUPLICATE) : reason;
+      const outReason = refusedVerify ? (docMismatch && !claimBlocked ? KycDeclineReason.ID_MISMATCH : KycDeclineReason.DUPLICATE) : reason;
       if (refusedVerify) {
         holdForReview = false;
         this.logger.warn(`KYC ${kycRef}: approved by the vendor, declined ${outReason} by the one-ID-one-account checks (KYC-R26-12)`);
@@ -1355,7 +1483,15 @@ export class RiderService {
           // out-of-order delivery matches 0 rows (an exact replay has the same eventAt → not `lt` → no
           // match), so it can't double-count. Only a genuinely new decline on a fresh ref (retryKyc mints
           // a new kycRef and clears kycResolvedAt) increments again → the second decline locks at >= 2.
-          ...(outcome === "failed" ? { kycAttempts: { increment: 1 } } : {}),
+          //
+          // KYC-R26-13 (owner 2026-10-12): but only a decline that is evidence about the identity costs a strike.
+          // KYC_DECLINE_CLASS (@lynia/shared) decides: `strike` (tampering, spoofing, a duplicate, a name or ID
+          // number that isn't the account's) +1 as above; `final` (under age) locks at once — max(n, 2), never
+          // lowering a count; `fixable` (blurry, face not matched, expired card, unexplained) costs nothing,
+          // bounded instead by retryKyc's daily cap (assertUnderKycDailyLimit). The KYC-R26-01 repeat guard above
+          // still turns a retried delivery into a no-op before any of this. A human decline (adminSetKyc) is not
+          // classified: it always counts one.
+          ...(outcome === "failed" ? declineAttemptsWrite(outReason, current?.kycAttempts ?? 0) : {}),
           // An expiry (1·b2) is not a decline: reset the A-02 attempt counter so re-verification isn't
           // trapped by an ancient decline the rider already recovered from before they were verified.
           // DS17-03: but ONLY when the rider isn't already locked (kycAttempts < 2). A stale vendor session
@@ -1399,7 +1535,7 @@ export class RiderService {
             .filter(Boolean)
             .join("+");
           await tx.auditLog.create({
-            data: auditData("system:kyc-webhook", "rider.kyc_review_required", rider.profileId, holdReason, null),
+            data: auditData(KYC_WEBHOOK_ACTOR, "rider.kyc_review_required", rider.profileId, holdReason, null),
           });
         }
         // No notifyProfileId: the rider isn't told anything changed — they're still `pending`, same as
@@ -1414,9 +1550,10 @@ export class RiderService {
           // from automated decisions. Same transaction as the status write — never one without the other.
           const action = outcome === "verified" ? "rider.kyc_approve" : "rider.kyc_decline";
           // D-75: an approval with no number to dedupe on is flagged here rather than held (see idMissing).
-          const auditReason = outReason ?? (idMissing ? "verified_id_missing" : null);
+          // KYC-R26-14: a verify that replaced the account's national ID says so (no number, no hash — PII stays out).
+          const auditReason = outReason ?? (idReplaced ? "verified_id_replaced" : idMissing ? "verified_id_missing" : null);
           await tx.auditLog.create({
-            data: auditData("system:kyc-webhook", action, rider.profileId, auditReason, null),
+            data: auditData(KYC_WEBHOOK_ACTOR, action, rider.profileId, auditReason, null),
           });
           resolvedProfileId = rider.profileId;
         }

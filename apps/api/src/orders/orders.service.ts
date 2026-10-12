@@ -27,7 +27,7 @@ const HANDBACK_LOOKBACK_MS = 24 * 60 * 60 * 1_000;
 
 /**
  * Reject an order whose pickup OR drop-off falls outside the service area — all of Zimbabwe
- * (`isInServiceArea`, packages/shared service-area.ts; owner 2026-10-12, D-98). ONE check
+ * (`isInServiceArea`, packages/shared service-area.ts; owner 2026-10-12, D-99). ONE check
  * reused for both waypoints. Throws a clear 4xx that names the towns we serve, so the customer sees
  * "outside our service area" rather than a silent failure downstream.
  */

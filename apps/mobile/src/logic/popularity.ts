@@ -64,7 +64,7 @@ export function comparePopularity(a: string, b: string, index: PopularityIndex):
 
 /**
  * Can this venue take the customer's order? It needs its own pin, and that is all: browsing has no location
- * check (owner 2026-10-12, D-98 — "Let them view everything"). The customer's own point is not the drop-off —
+ * check (owner 2026-10-12, D-99 — "Let them view everything"). The customer's own point is not the drop-off —
  * someone in Mutare may order for an address in Harare — and checkout checks the address it actually delivers to.
  */
 export function deliversTo(venueLocation: LatLng | null, _customer: LatLng | null): boolean {

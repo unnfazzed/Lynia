@@ -119,7 +119,7 @@ describe("U01: a signed-out load at a deep path", () => {
     }
   });
 
-  it.each(["/", "/onboarding", "/phone", "/verify", "/settings/privacy", "/profile/setup", "/force-update", "/permissions"])(
+  it.each(["/", "/onboarding", "/phone", "/verify", "/profile/setup", "/force-update", "/permissions"])(
     "leaves the signed-out route %s alone",
     async (path) => {
       mockPathname = path;

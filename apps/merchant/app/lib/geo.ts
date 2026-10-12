@@ -23,7 +23,7 @@ export function staticMapUrl(center: LatLng, width: number, height: number, key:
   return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
 }
 
-/** The same service-area rule `POST /merchant/become` applies (all of Zimbabwe, D-98,
+/** The same service-area rule `POST /merchant/become` applies (all of Zimbabwe, D-99,
  *  `isInServiceArea` in @lynia/shared), so the form can say so while the pin is still being placed. The API
  *  stays the authority. */
 export function insideServiceArea(point: LatLng): boolean {

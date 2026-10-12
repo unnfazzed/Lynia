@@ -176,7 +176,7 @@ describe("orders.pickup_geog generated column (migration 0006) + listOpenNearby"
     expect(byId.get(bad)).toBe(false);
   });
 
-  it("listOpenNearby returns every open order nearest-first (nationwide, D-98) and skips malformed pickups", async () => {
+  it("listOpenNearby returns every open order nearest-first (nationwide, D-99) and skips malformed pickups", async () => {
     const cust = await makeCustomer();
     const near = await makeOrder(cust, { lat: CENTER.lat + 0.003, lng: CENTER.lng }); // ~0.33 km
     const far = await makeOrder(cust, { lat: CENTER.lat + 0.015, lng: CENTER.lng }); // ~1.66 km
