@@ -56,8 +56,10 @@ export class AppBootstrapController {
       activeOrder: me.role === "rider" ? riderActive : (customerActiveList.find((o) => o.status !== "requested") ?? null),
       // RC.home multi-card alignment: every live customer order, newest first, in the same snapshot
       // shape as /orders/mine/active-orders — the client seeds ["activeCustomerOrders"] from it.
-      // Additive: old clients keep reading `activeOrder`.
-      activeOrders: me.role === "rider" ? [] : customerActiveList,
+      // Additive: old clients keep reading `activeOrder`. Shipped for EVERY role (owner, 2026-10-12): a
+      // customer who became a biker still has their own live orders, and they must not vanish from Home
+      // and the Orders tab just because `activeOrder` now carries the rider's job.
+      activeOrders: customerActiveList,
     };
   }
 }

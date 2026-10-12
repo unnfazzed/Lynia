@@ -93,7 +93,7 @@ describe("RiderService.becomeRider", () => {
   describe("attach-time photo verification (C1 / E8)", () => {
     const livePrisma = () => ({
       rider: { findUnique: async () => null, create: vi.fn(async () => ({})), updateMany: vi.fn(async () => ({ count: 1 })) },
-      profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
+      profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
       $transaction: vi.fn(async (ops: unknown[]) => ops),
     });
     const withVerifier = (prisma: Record<string, unknown>, verify: (key: string, kind: string) => Promise<unknown>, vendor: KycVendor) =>
@@ -148,7 +148,7 @@ describe("RiderService.becomeRider", () => {
     };
     const prisma = {
       rider: { findUnique: async () => null, create: async () => ({}), updateMany: async () => ({ count: 1 }) },
-      profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
+      profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
       $transaction: async () => [],
     };
     const s = svc(prisma, { KYC_MODE: "auto" }, vendor);
@@ -168,7 +168,7 @@ describe("RiderService.becomeRider", () => {
         },
         updateMany: async () => ({ count: 1 }),
       },
-      profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
+      profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
       $transaction: async (ops: unknown[]) => ops,
     };
     const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "stub" }, new StubKycVendor());
@@ -200,7 +200,7 @@ describe("RiderService.becomeRider", () => {
       },
       profile: {
         update: async () => ({}),
-        findUnique: async () => ({ idNumberHash: pii.hashId("63-123456-A-42") }),
+        findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: pii.hashId("63-123456-A-42") }),
         count: async (args: { where: Record<string, unknown> }) => {
           // The BLOCK count is the live one — it must exclude erased tombstones and self.
           expect(args.where).toMatchObject({
@@ -238,7 +238,7 @@ describe("RiderService.becomeRider", () => {
       },
       profile: {
         update: async () => ({}),
-        findUnique: async () => ({ idNumberHash: pii.hashId("63-123456-A-42") }),
+        findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: pii.hashId("63-123456-A-42") }),
         // Live count (has the erased-exclusion NOT clause) → 0; reviewer-flag count (all accounts,
         // incl. tombstones) → 1. DS15-02b keeps the hash on erasure precisely for this signal.
         count: async (args: { where: Record<string, unknown> }) => ("NOT" in args.where ? 0 : 1),
@@ -262,7 +262,7 @@ describe("RiderService.becomeRider", () => {
     const submit = vi.fn(async () => ({ ref: "sess_1", status: "pending" as const, url: "https://verify.didit.me/sess_1", token: "tok" }));
     const prisma = {
       rider: { findUnique: async () => null, create, updateMany: async () => ({ count: 1 }) },
-      profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: null }), count },
+      profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: null }), count },
       $transaction: async (ops: unknown[]) => ops,
     };
     const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, { submit } as unknown as KycVendor);
@@ -280,7 +280,7 @@ describe("RiderService.becomeRider", () => {
     const submit = vi.fn();
     const prisma = {
       rider: { findUnique: async () => null, create: vi.fn() },
-      profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: pii.hashId("63-123456-A-42") }), count: async () => 1 },
+      profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: pii.hashId("63-123456-A-42") }), count: async () => 1 },
       $transaction: async (ops: unknown[]) => ops,
     };
     const s = svc(prisma, { KYC_MODE: "auto" }, { submit } as unknown as KycVendor);
@@ -307,7 +307,7 @@ describe("RiderService.becomeRider", () => {
     };
     const prisma = {
       rider: { findUnique: async () => null, create: async () => ({}), updateMany: async () => ({ count: 1 }) },
-      profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
+      profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
       $transaction: async () => [],
     };
     const s = svc(prisma, { KYC_MODE: "manual" }, vendor);
@@ -319,7 +319,7 @@ describe("RiderService.becomeRider", () => {
     const create = vi.fn(async () => ({}));
     const prisma = {
       rider: { findUnique: async () => null, create },
-      profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
+      profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
       $transaction: async (arg: unknown) => (Array.isArray(arg) ? arg : []),
     };
     const s = svc(prisma, { KYC_MODE: "manual" });
@@ -337,7 +337,7 @@ describe("RiderService.becomeRider", () => {
     });
     const prisma = {
       rider: { findUnique: async () => null, create: async () => ({}), updateMany: async () => ({ count: 1 }) },
-      profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
+      profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
       // The create transaction loses the race and throws a P2002.
       $transaction: async () => { throw p2002; },
     };
@@ -356,7 +356,7 @@ describe("RiderService.becomeRider", () => {
       rider: { findUnique: async () => null, create: async () => { created = true; return {}; }, deleteMany },
       profile: {
         update: async (a: { data: { role: unknown } }) => (roles.push(a.data.role), {}),
-        findUnique: async () => ({ idNumberHash: pii.hashId("63-1-A"), role: "customer" }),
+        findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: pii.hashId("63-1-A"), role: "customer" }),
         count: async () => 0,
       },
       $transaction: async (ops: unknown[]) => ops,
@@ -387,7 +387,7 @@ describe("RiderService.becomeRider", () => {
           create: async () => ({}),
           updateMany: vi.fn(async (a: { data: Record<string, unknown> }) => ((stored = { kycStatus: "pending", ...a.data }), { count: 1 })),
         },
-        profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: null, role: "customer" }), count: async () => 0 },
+        profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: null, role: "customer" }), count: async () => 0 },
         $transaction: vi.fn(async (ops: unknown[]) => {
           if (claimed) throw p2002;
           claimed = true;
@@ -419,7 +419,7 @@ describe("RiderService.becomeRider", () => {
       const live = { kycStatus: "pending", kycRef: "sess_1", kycSessionToken: "tok_1", kycSessionUrl: "https://verify.didit.me/sess_1" };
       const prisma = {
         rider: { findUnique: async () => ({ profileId: "p1", ...live }), create: vi.fn() },
-        profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: null }), count: async () => 0 },
+        profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: null }), count: async () => 0 },
       };
       const s = svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, { submit } as unknown as KycVendor);
       expect(await s.becomeRider("p1", {})).toEqual({ kycStatus: "pending", mode: "auto", verificationUrl: live.kycSessionUrl, sessionToken: "tok_1" });
@@ -3407,7 +3407,7 @@ describe("RiderService — ID-check session lifecycle (startup review 2026-10-06
     const p2002 = new Prisma.PrismaClientKnownRequestError("unique", { code: "P2002", clientVersion: "x" });
     const prisma = {
       rider: { findUnique: async () => null, create: () => ({}) },
-      profile: { update: () => ({}), findUnique: async () => ({ idNumberHash: null }), count: async () => 0 },
+      profile: { update: () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: null }), count: async () => 0 },
       $transaction: async () => {
         throw p2002;
       },

@@ -103,10 +103,11 @@ export class OffersService {
       // cooldown copy is byte-identical to what these branches threw before, so nothing else changes
       // behaviourally; kyc_expired (previously unhandled → "Go online to make offers") now gets its
       // correct "re-verify your ID" copy too. The structured reason stays the contract.
-      if (refusal) throw new ForbiddenException(REFUSAL_MESSAGE[refusal]);
+      // `{ reason, message }` like setOnline's refusal, so the app can branch on the tag, not the copy.
+      if (refusal) throw new ForbiddenException({ reason: refusal, message: REFUSAL_MESSAGE[refusal] });
       // Enforce the online invariant the gating comment claims (was selected but never checked) — an
       // offline rider's offer is un-selectable anyway and just pollutes the customer's list.
-      throw new ForbiddenException("Go online to make offers");
+      throw new ForbiddenException({ reason: "offline", message: "Go online to make offers" });
     }
 
     // C4 soft-lock: a rider owing a merchant collect-and-return cash debt, or mid-doorstep handshake,

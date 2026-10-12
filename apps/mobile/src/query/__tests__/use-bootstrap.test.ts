@@ -63,6 +63,20 @@ describe("seedQueryCacheFromBootstrap", () => {
     expect(qc.getQueryData(["activeJob"])).toBeNull();
     expect(qc.getQueryData(["activeCustomerOrder"])).toBeUndefined();
   });
+
+  it("seeds a biker's own ['activeCustomerOrders'] too, next to their job — their orders stay visible", () => {
+    const qc = new QueryClient();
+    seedQueryCacheFromBootstrap(qc, {
+      minSupportedVersion: "0.0.0",
+      me: riderMe,
+      activeOrder: { id: "job-1" } as never,
+      activeOrders: [{ id: "ord-own" }] as never,
+    });
+    expect(qc.getQueryData(["activeJob"])).toEqual({ id: "job-1" });
+    expect(qc.getQueryData(["activeCustomerOrders"])).toEqual([{ id: "ord-own" }]);
+    // The single customer key still isn't cross-painted with the job.
+    expect(qc.getQueryData(["activeCustomerOrder"])).toBeUndefined();
+  });
 });
 
 describe("fetchBootstrap — inert against an older API", () => {

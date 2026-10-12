@@ -8,9 +8,10 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RiderProfileService, UpdateRiderProfile } from "./rider-profile.service";
 import { RiderService } from "./rider.service";
 
-const CompleteProfile = z.object({
-  firstName: z.string().min(1).max(80),
-  lastName: z.string().min(1).max(80),
+// Trimmed before the length check (parity with PATCH /auth/me): "   " is a blank name, not a 3-char one.
+export const CompleteProfile = z.object({
+  firstName: z.string().trim().min(1).max(80),
+  lastName: z.string().trim().min(1).max(80),
   idNumber: z.string().min(4).max(40),
 });
 const BecomeRider = z.object({

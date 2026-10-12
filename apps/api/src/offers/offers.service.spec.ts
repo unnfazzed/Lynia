@@ -6,6 +6,7 @@ import type { NotificationsService } from "../notifications/notifications.servic
 import type { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
+import { REFUSAL_MESSAGE } from "../riders/online-gate";
 import { OffersService } from "./offers.service";
 
 /** Push is fire-and-forget; a no-op stub keeps these unit tests off the notification path. */
@@ -93,6 +94,21 @@ describe("OffersService.makeOffer", () => {
     });
     await expect(service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/go online/i);
     expect(gateway.emitOffersChanged).not.toHaveBeenCalled();
+  });
+
+  it("gate refusals carry { reason, message } like setOnline — not a bare string", async () => {
+    const order = { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel" }), findFirst: async () => null };
+    const responseFor = async (rider: Record<string, unknown>) => {
+      const { service } = svc({ order, rider: { findUnique: async () => rider } });
+      const err = await service.makeOffer(offerInput, "rider-1").catch((e: unknown) => e);
+      return (err as { getResponse: () => unknown }).getResponse();
+    };
+    expect(await responseFor({ kycStatus: "pending", isOnline: true })).toEqual({ reason: "kyc", message: REFUSAL_MESSAGE.kyc });
+    expect(await responseFor({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: true, cooldownUntil: null })).toMatchObject({ reason: "on_hold" });
+    expect(await responseFor({ kycStatus: "verified", isOnline: false, accountStatus: "active", onHold: false, cooldownUntil: null })).toEqual({
+      reason: "offline",
+      message: "Go online to make offers",
+    });
   });
 
   it("409s on the one-round-per-rider unique violation (P2002)", async () => {

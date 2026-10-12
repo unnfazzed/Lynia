@@ -376,11 +376,24 @@ export class RiderService {
     // bills a paid Didit session.
     const profile = await this.prisma.profile.findUnique({
       where: { id: profileId },
-      // role: what a failed vendor call restores when it hands the rider claim back (KYC-R26-10).
-      select: { idNumberHash: true, role: true },
+      // role: what a failed vendor call restores when it hands the rider claim back (KYC-R26-10), and
+      // the admin refusal below. firstName: the blank-name refusal below.
+      select: { idNumberHash: true, firstName: true, role: true },
     });
     if (!profile) throw new NotFoundException("Profile not found");
     const previousRole = profile.role;
+    // An admin account must never become a rider: the role flip below would replace `admin` with
+    // `rider`, and the console session dies on its next refresh. Merchant staff are left alone — merchant
+    // access reads `merchantMemberships`, not `role`. Refused before vendor.submit, so it bills nothing.
+    if (profile.role === "admin") {
+      throw new ForbiddenException({ reason: "role_not_allowed", message: "This account can't become a biker." });
+    }
+    // R1 asks a nameless account for its name before the check (C5's name step), so a blank name here
+    // is a client that skipped it — refuse rather than create a rider the board and the customer's
+    // tracking card would show with no name.
+    if (!profile.firstName.trim()) {
+      throw new BadRequestException({ reason: "name_required", message: "Add your name before you start your ID check." });
+    }
     if (profile.idNumberHash && (await this.liveDuplicateIdAccountCount(this.prisma, profileId, profile.idNumberHash)) > 0) {
       this.logger.warn(`Biker ${profileId} blocked from onboarding: national ID already on another live account (one-ID-one-account)`);
       throw new ConflictException({
@@ -650,7 +663,7 @@ export class RiderService {
       },
     });
     if (!rider) throw new NotFoundException("Not a biker");
-    if (rider.kycStatus === "verified") throw new ConflictException("Already verified");
+    if (rider.kycStatus === "verified") throw new ConflictException({ reason: "already_verified", message: "Already verified" });
     // R-3: a check HELD for a human (the vendor's In Review, or an approval held in the review band or for
     // an ID collision) is not the rider's move; the app draws no retry on that wall. A retry that still
     // arrives (an older app) resumes the finished session for free when its credentials were kept (E2E
@@ -670,7 +683,7 @@ export class RiderService {
     // application is locked — no third attempt is minted; the rider must contact support. Enforced here
     // for every mode so a manual-mode rider can't loop past the limit either.
     if (rider.kycAttempts >= 2) {
-      throw new ForbiddenException("ID verification is locked after two attempts. Please contact support.");
+      throw new ForbiddenException({ reason: "kyc_locked", message: "ID verification is locked after two attempts. Please contact support." });
     }
     // Manual mode has no vendor to resubmit to — the admin backstop resolves it.
     // BH-03: include `mode` even on this early return so the client can tell "no verificationUrl
@@ -1015,7 +1028,9 @@ export class RiderService {
       // isOnline:true over that fresh decision, re-adding a suspended/held rider to the live-supply
       // plane. Guarding on accountStatus:active + onHold:false makes the two serialize: 0 rows ⇒ the
       // standing changed under us ⇒ refuse, re-deriving the precise reason so the app shows the right
-      // blocked state instead of silently going online.
+      // blocked state instead of silently going online. The CAS also re-asserts KYC (verified) and the
+      // cooldown, the gate's other two standing facts: a KYC lapse or an admin un-verify landing between
+      // the gate read and this write must not put an unverified rider back on the board.
       // KB-HEARTBEAT-MARGIN: stamp the go-online heartbeat with DB now() (not JS new Date()) so every
       // heartbeat writer shares ONE clock domain — recordFix / touchRiderHeartbeat already write now(),
       // and the offer-selection liveness gate (matching.service) judges freshness against these stamps.
@@ -1030,7 +1045,9 @@ export class RiderService {
             updated_at = now()
         WHERE profile_id = ${profileId}::uuid
           AND account_status = 'active'
-          AND (on_hold = false OR ${penaltiesSuspended()}::boolean)`;
+          AND (on_hold = false OR ${penaltiesSuspended()}::boolean)
+          AND kyc_status = 'verified'
+          AND (cooldown_until IS NULL OR cooldown_until <= now() OR ${penaltiesSuspended()}::boolean)`;
       if (claimed === 0) {
         const now = await this.prisma.rider.findUnique({
           where: { profileId },
@@ -1078,7 +1095,8 @@ export class RiderService {
    * deliberately conservative:
    *
    *  - ONE guarded UPDATE refreshes `last_heartbeat_at` only while the rider is STILL online AND in
-   *    good standing (`active` + not on-hold) — the same predicate setOnline's go-online CAS enforces.
+   *    good standing (`active` + not on-hold + KYC verified + no live cooldown) — the same predicate
+   *    setOnline's go-online CAS enforces.
    *    Every mid-shift demotion path (admin suspend/ban, reliability hold, KYC lapse, cancel-limit
    *    cooldown) already forces `is_online = false` + supply eviction at write time, so a demoted
    *    rider matches 0 rows on the next beat and gets the SAME precise 403 refusal the old
@@ -1098,7 +1116,9 @@ export class RiderService {
       WHERE profile_id = ${profileId}::uuid
         AND is_online = true
         AND account_status = 'active'
-        AND (on_hold = false OR ${penaltiesSuspended()}::boolean)`;
+        AND (on_hold = false OR ${penaltiesSuspended()}::boolean)
+        AND kyc_status = 'verified'
+        AND (cooldown_until IS NULL OR cooldown_until <= now() OR ${penaltiesSuspended()}::boolean)`;
     if (claimed === 0) {
       // Not beating: offline (toggled off elsewhere / forced by a demotion) or standing changed.
       // Re-derive the precise refusal exactly like setOnline's CAS-miss path so the app renders the
