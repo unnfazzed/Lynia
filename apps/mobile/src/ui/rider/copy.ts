@@ -531,6 +531,8 @@ export const RF = {
   foodN: (n: number): string => `${n} food`,
   balanceB: (ratePct: number, floor: number): string => `${ratePct}% comes off when a job closes. Below ${usd(floor)} you can't take jobs.`,
   floorB: (floor: number): string => `Below the ${usd(floor)} floor. Top up to keep riding.`,
+  /** Undrawn (owner 2026-10-12, ledger D-104): `balanceB` under the per-job commission rule — no floor. */
+  balanceJobB: (ratePct: number): string => `${ratePct}% comes off when a job closes. You can take a job when your balance covers its commission.`,
   pendingOk: (amt: number): string => `Your ${usd(amt)} top-up went through while the app was closed.`,
   pendingWait: (provider: string, amt: number): string => `Waiting for ${provider} to confirm your ${usd(amt)} top-up…`,
   pendingFail: (amt: number): string => `Your ${usd(amt)} top-up didn't go through. Nothing was taken.`,

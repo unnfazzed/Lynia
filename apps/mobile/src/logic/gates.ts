@@ -69,7 +69,7 @@ export function onlineGateReason(err: GateError | null | undefined): OnlineGateR
   // still lands on the out-of-area gate rather than a bare error.
   if (isOutOfServiceArea(err)) return "out_of_area";
   const m = (err.message ?? "").toLowerCase();
-  // Commission floor block: the server tags `commission_low_balance`; the message sniff ("top up") is a
+  // Per-job commission refusal: the server tags `commission_low_balance`; the message sniff ("top up") is a
   // best-effort bridge for an older binary that only sees the friendly string.
   if (m.includes("top up") || m.includes("commission balance")) return "commission_low_balance";
   if (m.includes("on hold") || m.includes("on-hold") || m.includes("on_hold")) return "on_hold";
@@ -122,13 +122,9 @@ export const ONLINE_GATE_COPY: Record<OnlineGateReason, GateCopy> = {
   },
   // FS-7: the board's existing no-GPS gate copy (Rider v2), not new wording.
   location_required: { title: R.gGpsT, message: R.gGpsB },
-  // Calm, specific, actionable — and explicitly not punitive. The go-online screen deep-links the CTA
-  // into the wallet's top-up flow.
-  commission_low_balance: {
-    title: "Top up to keep riding",
-    message:
-      "Your commission balance is below the floor to go online. This isn't a fine — top up your prepaid balance and you're straight back on.",
-  },
+  // No floor and no go-online refusal any more (PR #1154): the server refuses one job whose commission is
+  // more than the balance. The board's top-up wall copy (Rider v2 G14 under D-102), not new wording.
+  commission_low_balance: { title: R.gTopT, message: R.gTopJobB },
 };
 
 /** Human label for a KYC decline reason, or null when the reason is unknown/absent. */

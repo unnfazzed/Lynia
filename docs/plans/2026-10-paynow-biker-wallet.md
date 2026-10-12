@@ -5,7 +5,7 @@ Date: 2026-10-12
 Scope: the biker's commission-wallet top-up (`app/wallet/top-up.tsx`, `src/ui/rider/TopUpFlow.tsx`, the
 Money tab's pending notices). This plan covers the **UI flow**. Backend work is listed only where the UI depends on it.
 
-> **This reverses an earlier owner call.** `docs/plans/2026-rider-wallet-design.md` Premise 4 / D2 said
+> **This reverses an earlier owner call.** `docs/archive/plans/2026-rider-wallet-design.md` Premise 4 / D2 said
 > "No Paynow / aggregator", and the plan was to integrate EcoCash directly. Choosing Paynow now removes the Econet merchant
 > onboarding, which was that build's critical path. Record the reversal there when this plan is approved.
 

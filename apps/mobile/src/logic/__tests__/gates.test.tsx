@@ -51,9 +51,9 @@ describe("onlineGateReason (biker online-gate refusal)", () => {
   it("maps the commission low-balance block off the code and the friendly message", () => {
     expect(onlineGateReason({ code: "commission_low_balance" })).toBe("commission_low_balance");
     expect(onlineGateReason({ message: "Top up your commission balance to keep riding" })).toBe("commission_low_balance");
-    // Calm, explicitly non-punitive copy (design storyboard: "blocked by a rule, not punished").
-    expect(ONLINE_GATE_COPY.commission_low_balance.title).toBeTruthy();
-    expect(ONLINE_GATE_COPY.commission_low_balance.message.toLowerCase()).toContain("isn't a fine");
+    // No floor (PR #1154): the per-job wall's copy (G14 under D-102), never a floor claim.
+    expect(ONLINE_GATE_COPY.commission_low_balance).toEqual({ title: "Top up to keep riding", message: "Your balance doesn't cover this job's commission. Top up and you can take it straight away." });
+    expect(ONLINE_GATE_COPY.commission_low_balance.message).not.toMatch(/floor/i);
   });
 
   it("keeps banned distinct from suspended (they are different states)", () => {
