@@ -243,7 +243,7 @@ export const PARITY_STATUS = {
   "RJ.kyc_form": { status: "PENDING" }, // KYC form + consent
   "RJ.photo_capture": {
     status: "PENDING",
-    reason: "Not a sign-up step since docs/DESIGN-DEVIATIONS.md D-62 (owner, 2026-10-02): the rider photo is optional and added later from Settings → Bike & documents. The add-photo camera waits on Claude Design (docs/designs/owner-review-2026-10-02/PROMPTS.md, prompt 1); nothing to wire until it lands.",
+    reason: "Not a sign-up step since docs/DESIGN-DEVIATIONS.md D-62 (owner, 2026-10-02): the rider photo is optional and added later from Settings → Bike & documents. The add-photo flow is First Run v2 E2a–E2d (docs/DESIGN-DEVIATIONS.md D-82, app/rider/documents.tsx), which answered docs/designs/owner-review-2026-10-02/PROMPTS.md prompt 1; this gallery mock is not aligned to.",
   }, // Rider photo · capture
   "RJ.photo_preview": {
     status: "PENDING",

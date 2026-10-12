@@ -7,8 +7,8 @@ keeps the current screen (ledger D-60 §5).
 
 | # | Prompt | Replaces in the app | Priority |
 |---|---|---|---|
-| 1 | Rider photo: add it later | The add/change photo flow from Bike & documents (the sign-up photo step was removed, D-62) | Medium |
-| 2 | Orders tab, empty states | `app/(tabs)/orders.tsx` empty card (old `RC orders_empty`) | Medium |
+| 1 | Rider photo: add it later | **Answered** by First Run v2 E2a–E2d (D-82, `app/rider/documents.tsx`) | Done |
+| 2 | Orders tab, empty states | **Answered** by Empty States v2 (D-78, `app/(tabs)/orders.tsx` uses `EmptyState`) | Done |
 | 3 | Send a parcel: when the map won't load | `src/ui/ComposeMap.tsx` "The map didn't load" card inside Send step 1 | Medium |
 
 ---
