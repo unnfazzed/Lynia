@@ -1,4 +1,4 @@
-# Design briefs · 9 screens waiting on a drawing (2026-10-12)
+# Design briefs · 14 screens waiting on a drawing (2026-10-12)
 
 For the designer (Claude Design or a person). Each brief describes a real gap in the shipped apps
 that we can't build until it is drawn. The rule is "not drawn means not built" (owner decision D6).
@@ -26,6 +26,11 @@ that we can't build until it is drawn. The rule is "not drawn means not built" (
 | 07 | [The venue's own note on D3b](07-customer-venue-note.md) | Customer | order-flow-v2 D3b | Low |
 | 08 | [Your code changed](08-customer-code-changed.md) | Customer | after-send-v2 2.14 / CodeCard | Medium |
 | 09 | [Remove a prescription page](09-customer-remove-rx-page.md) | Customer | order-flow-v2 R8b | Medium |
+| 10 | [Before the ID check: tips and documents](10-rider-before-id-check.md) | Rider | first-run-v2 R1 | High: prevents automatic declines |
+| 11 | [Under 18](11-rider-underage.md) | Rider | first-run-v2 F5 | Medium: today shows the wrong screen |
+| 12 | [This ID is on another account](12-rider-duplicate-id.md) | Rider | first-run-v2 F5dup | High: honest number-changers dead-end |
+| 13 | [Your ID expires soon](13-rider-id-expiry-reminder.md) | Rider | first-run-v2 F6 / rider board | Medium: riders go offline with no warning |
+| 14 | [Tried too many times today](14-rider-daily-limit.md) | Rider | first-run-v2 F4a–d | Medium |
 
 ## What to send back
 
