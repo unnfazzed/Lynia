@@ -1,7 +1,7 @@
 import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { ACTIVE_RIDE_STATUSES, type MakeOfferRequest, OFFER_WINDOW_MS } from "@lynia/shared";
-import { hasOpenMerchantObligation, OPEN_MERCHANT_OBLIGATION_OR } from "../common/merchant-debt-lock";
+import { hasOpenMerchantObligation, openMerchantObligationOr } from "../common/merchant-debt-lock";
 import { riderSelectableNow, SELECTABLE_RIDER_SELECT } from "../common/rider-selectable";
 import { NotificationsService } from "../notifications/notifications.service";
 import { MetricsService } from "../observability/metrics.service";
@@ -272,7 +272,7 @@ export class OffersService {
       riderIds.length === 0
         ? []
         : await this.prisma.order.findMany({
-            where: { riderId: { in: riderIds }, OR: [{ status: { in: ACTIVE_RIDE_STATUSES } }, ...OPEN_MERCHANT_OBLIGATION_OR] },
+            where: { riderId: { in: riderIds }, OR: [{ status: { in: ACTIVE_RIDE_STATUSES } }, ...openMerchantObligationOr()] },
             select: { riderId: true },
           });
     const busy = new Set(held.map((h) => h.riderId));

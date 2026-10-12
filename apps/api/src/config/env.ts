@@ -417,6 +417,10 @@ export const envSchema = z.object({
   // ON; "false" is the kill switch: while off, Rx items are not listed and an order containing one is
   // refused. The pharmacist check stays mandatory either way.
   RX_ENABLED: z.enum(["true", "false"]).default("true"),
+  // Penalty suspension (owner 2026-10-12, see common/penalties.ts): unset means SUSPENDED — no
+  // automatic holds, strike cooldowns, merchant cash-debt job lock or customer cash ban, and existing ones
+  // are ignored. "false" switches penalties back on. Read at point of use via penaltiesSuspended().
+  PENALTIES_SUSPENDED: z.enum(["true", "false"]).default("true"),
   // Per-entry cap (USD) on an ops manual credit — an abuse backstop on the admin credit path
   // (design OV-3A). Default $50 (= COMMISSION.maxTopUp).
   WALLET_MANUAL_CREDIT_CAP_USD: z.coerce.number().positive().default(50),

@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { ACTIVE_RIDE_STATUSES } from "@lynia/shared";
+import { penaltiesSuspended } from "../common/penalties";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingService } from "../tracking/tracking.service";
 
@@ -84,7 +85,8 @@ export class NearestRiderDispatchStrategy implements DispatchStrategy {
     // (including frozen), isn't offered a SECOND food job until it settles (N-20/R-05) — same
     // condition as common/merchant-debt-lock.ts's hasOpenMerchantObligation, batched here for the
     // whole candidate list rather than one query per candidate.
-    const owingDebt = await this.prisma.order.findMany({
+    // Penalty suspension (common/penalties.ts): the soft-lock excludes nobody while suspended.
+    const owingDebt = penaltiesSuspended() ? [] : await this.prisma.order.findMany({
       where: {
         riderId: { in: candidateIds },
         OR: [

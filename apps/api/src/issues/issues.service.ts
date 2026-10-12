@@ -9,6 +9,7 @@ import {
   RIDER_STRIKE_LIMIT,
 } from "@lynia/shared";
 import { Prisma } from "@prisma/client";
+import { penaltiesSuspended } from "../common/penalties";
 import { maskPhone } from "../common/phone-mask";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -294,7 +295,10 @@ export class IssuesService {
         // shorten) an already-active cooldown a sibling strike axis (cancel-strike, order-lifecycle) set.
         const rider = await tx.rider.findUnique({ where: { profileId: order.riderId }, select: { disputeStrikes: true, cooldownUntil: true } });
         const strikes = (rider?.disputeStrikes ?? 0) + 1;
-        if (strikes >= RIDER_STRIKE_LIMIT) {
+        if (strikes >= RIDER_STRIKE_LIMIT && penaltiesSuspended()) {
+          // Penalty suspension (common/penalties.ts): the dispute strike is counted, but no cooldown starts.
+          await tx.rider.update({ where: { profileId: order.riderId }, data: { disputeStrikes: 0 } });
+        } else if (strikes >= RIDER_STRIKE_LIMIT) {
           // DS20-03: never SHORTEN an already-active cooldown — take the later of the fresh window and
           // any existing future cooldownUntil the cancel-strike axis may have set on this same column.
           const fresh = new Date(Date.now() + RIDER_STRIKE_COOLDOWN_MS);

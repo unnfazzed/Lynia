@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import type { PrismaService } from "../prisma/prisma.service";
+import { penaltiesSuspended } from "./penalties";
 
 /**
  * C4 soft-lock: a rider who owes a merchant a collect-and-return cash debt (R-01), or is mid-doorstep
@@ -26,7 +27,14 @@ export const OPEN_MERCHANT_OBLIGATION_OR: Prisma.OrderWhereInput[] = [
   { orderType: "parcel", debtStatus: "open", merchantClosedAt: null },
 ];
 
+/** The OR arms to apply right now — none while penalties are suspended (common/penalties.ts). */
+export function openMerchantObligationOr(): Prisma.OrderWhereInput[] {
+  return penaltiesSuspended() ? [] : OPEN_MERCHANT_OBLIGATION_OR;
+}
+
 export async function hasOpenMerchantObligation(prisma: PrismaService | Prisma.TransactionClient, riderId: string): Promise<boolean> {
+  // Penalty suspension: the job lock blocks nothing; the debt itself is still tracked and settled.
+  if (penaltiesSuspended()) return false;
   const stuck = await prisma.order.findFirst({
     where: { riderId, OR: OPEN_MERCHANT_OBLIGATION_OR },
     select: { id: true },

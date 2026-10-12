@@ -34,6 +34,7 @@ import { baseBroadcastRadiusM } from "../common/broadcast-policy";
 import { PiiCryptoService } from "../common/pii-crypto.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { penaltiesSuspended } from "../common/penalties";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { TrackingService } from "../tracking/tracking.service";
 import { canGoOnline, onlineRefusalReason, type OnlineRefusal, REFUSAL_MESSAGE } from "./online-gate";
@@ -1049,7 +1050,7 @@ export class RiderService {
             updated_at = now()
         WHERE profile_id = ${profileId}::uuid
           AND account_status = 'active'
-          AND on_hold = false`;
+          AND (on_hold = false OR ${penaltiesSuspended()}::boolean)`;
       if (claimed === 0) {
         const now = await this.prisma.rider.findUnique({
           where: { profileId },
@@ -1117,7 +1118,7 @@ export class RiderService {
       WHERE profile_id = ${profileId}::uuid
         AND is_online = true
         AND account_status = 'active'
-        AND on_hold = false`;
+        AND (on_hold = false OR ${penaltiesSuspended()}::boolean)`;
     if (claimed === 0) {
       // Not beating: offline (toggled off elsewhere / forced by a demotion) or standing changed.
       // Re-derive the precise refusal exactly like setOnline's CAS-miss path so the app renders the
