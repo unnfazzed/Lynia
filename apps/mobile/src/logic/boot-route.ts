@@ -60,8 +60,7 @@ export function bootRedirectTarget(params: {
  * watch (src/boot/boot-route-watch.tsx) sends it to {@link bootDestination} instead.
  *
  * - `/` is the boot route itself (app/index.tsx makes the decision there).
- * - `/onboarding`, `/phone`, `/verify` are the sign-in flow; `/settings/privacy` is linked from the phone
- *   screen and renders a signed-out variant.
+ * - `/onboarding`, `/phone`, `/verify` are the sign-in flow.
  * - `/profile/setup` comes straight after sign-in (verify.tsx); listed so a session still committing can
  *   never bounce a just-verified account back to the phone screen.
  * - `/force-update`, `/permissions` and `/order-updates` are the update screen and the permission asks.
@@ -72,7 +71,6 @@ export const SIGNED_OUT_ROUTES: readonly string[] = [
   "/onboarding",
   "/phone",
   "/verify",
-  "/settings/privacy",
   "/profile/setup",
   "/force-update",
   "/permissions",

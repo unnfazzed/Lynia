@@ -74,18 +74,17 @@ export const API_CONFIG_ERROR: string | null = (() => {
 /** Socket.IO connects to the same origin as the REST API. */
 export const WS_URL: string = API_URL;
 
-/*
- * No PRIVACY_URL constant: the app never links the API-served `/legal/privacy` page. The Settings
- * row opens the DRAWN in-app notice (`/settings/privacy`, LJ.privacy), and Play Console's "Privacy
- * policy" field is a *listing* value entered by hand from `docs/PLAY-STORE-SUBMISSION.md` — exactly
- * like its `/legal/account-deletion` sibling, which likewise has no constant here. The API still
- * serves both pages (apps/api/src/legal/); only the unused client constant is gone (DC-01).
+/**
+ * The privacy notice, served by the API (apps/api/src/legal/). The Settings "Privacy notice" row and the
+ * phone screen's "Privacy policy" link open this hosted page in the browser, like the terms below; the
+ * old drawn in-app notice (LJ.privacy) is retired and account deletion lives in Settings (owner
+ * instruction 2026-10-12, D-98).
  */
+export const PRIVACY_URL = `${API_URL}/legal/privacy`;
 
 /**
  * The terms & conditions page (one set for customers, riders and businesses), served by the API like
- * the privacy notice. Unlike privacy there is no drawn in-app terms screen, so the Settings row opens
- * the hosted page in the browser (owner instruction 2026-09-30, D-42 / D-49).
+ * the privacy notice. The Settings row opens the hosted page in the browser (owner instruction 2026-09-30, D-42 / D-49).
  */
 export const TERMS_URL = `${API_URL}/legal/terms`;
 
