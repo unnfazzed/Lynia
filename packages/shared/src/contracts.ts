@@ -618,7 +618,7 @@ export const ClientMetricEvent = z.enum([
    * would understate the gap; the Paper architecture exposes no compositor-presentation callback,
    * so this remains a LOWER BOUND on what the customer saw, never an overstatement).
    * `boot_home_paint - boot_home` is the redirect→home segment the RCA found unpainted and
-   * unmeasured (docs/CUSTOMER-JOURNEY-LOAD-PERF-2026-08-17.md §1.2). SCOPE CAVEAT: only fires when
+   * unmeasured (docs/archive/CUSTOMER-JOURNEY-LOAD-PERF-2026-08-17.md §1.2). SCOPE CAVEAT: only fires when
    * the boot lands on the customer home — deep-link cold starts (push-tap → order screen) and
    * rider boots never emit it, so read this histogram alongside `boot_home`, not as a universal
    * cold-start number.
@@ -632,7 +632,7 @@ export const ClientMetricEvent = z.enum([
    * thread was at the instant the touch arrived, i.e. how late a JS-driven response WOULD have been.
    * An idle thread reads ~one frame (≈16 ms); a screen mid-poll, mid-socket-push or mid-clock-tick
    * reads far higher, and that is the signal. Sampled 1-in-N on the client (taps are frequent).
-   * See docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §1.2.
+   * See docs/archive/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §1.2.
    */
   "tap_ack",
   /**
@@ -728,7 +728,7 @@ export const OrderFlagsResponse = z.object({ rxEnabled: z.boolean() });
 export type OrderFlagsResponse = z.infer<typeof OrderFlagsResponse>;
 
 // ---------------------------------------------------------------------------
-// Rider prepaid commission wallet (docs/plans/2026-rider-wallet-design.md)
+// Rider prepaid commission wallet (docs/archive/plans/2026-rider-wallet-design.md)
 // ---------------------------------------------------------------------------
 // A prepaid float a rider tops up; each completed ride debits `perRideCommission(agreedFare)` from it.
 // Ships inert at ratePct 0 (no debits, wallet hidden). Money values on the wire are plain JS numbers
@@ -851,7 +851,7 @@ export type CreateTopupRequest = z.infer<typeof CreateTopupRequest>;
 
 // ---------------------------------------------------------------------------
 // Restaurants vertical — merchant domain + menu (C1,
-// docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md §5 Lane C)
+// docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md §5 Lane C)
 // ---------------------------------------------------------------------------
 // Everything here is dormant until RESTAURANTS_ENABLED=true AND (for the customer read API) the
 // merchant's own `pilotEnabled` cohort flag is set — the pre-launch allowlist corridor. Money/pricing
@@ -872,7 +872,7 @@ export type MerchantHoursWindow = z.infer<typeof MerchantHoursWindow>;
 export const MerchantHours = z.partialRecord(z.enum(DAY_KEYS), MerchantHoursWindow);
 export type MerchantHours = z.infer<typeof MerchantHours>;
 
-/** Merchant web upgrade L1 (docs/plans/2026-09-29-merchant-web-upgrade-plan.md): what a business sells,
+/** Merchant web upgrade L1 (docs/archive/plans/2026-09-29-merchant-web-upgrade-plan.md): what a business sells,
  *  chosen once at sign-up. There is no endpoint that changes it — a wrong pick is a support fix. */
 export const MerchantBusinessType = z.enum(["restaurant", "shop"]);
 export type MerchantBusinessType = z.infer<typeof MerchantBusinessType>;
@@ -1323,7 +1323,7 @@ export type RestaurantReopenReminderResponse = z.infer<typeof RestaurantReopenRe
 
 // ---------------------------------------------------------------------------
 // Restaurants vertical — food order lifecycle (C2,
-// docs/plans/2026-07-28-restaurants-send-joint-launch-plan.md §5 Lane C). Dormant behind
+// docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md §5 Lane C). Dormant behind
 // RestaurantsEnabledGuard like every other merchant/restaurants route (C1). Pricing config
 // (RESTAURANTS_PRICING, N-01/N-15) and timing config (RESTAURANTS_TIMING, N-03/N-18) live in
 // ./restaurants-order — the client never computes a total or a deadline, only renders the server's.
@@ -2198,7 +2198,7 @@ export const MerchantWeekSummaryResponse = z
   .strict();
 export type MerchantWeekSummaryResponse = z.infer<typeof MerchantWeekSummaryResponse>;
 
-/* ── Merchant web upgrade L2: Book a rider (docs/plans/2026-09-29-merchant-web-upgrade-plan.md D9) ──
+/* ── Merchant web upgrade L2: Book a rider (docs/archive/plans/2026-09-29-merchant-web-upgrade-plan.md D9) ──
  * A business books a Send delivery from its own pin. The order's customer of record is the business's
  * booking account (phone `business:<merchantId>`), so every booking is business-wide and the customer
  * app never sees one. These are the merchant-scoped shapes; Send's own contracts are unchanged. */

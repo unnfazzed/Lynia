@@ -7,7 +7,7 @@ import { createRedisClient, REDIS_FAIL_FAST } from "./redis";
 
 /**
  * The ONE shared Redis L2 for every read-through micro-cache (deferred-item D6,
- * docs/plans/2026-08-17-customer-journey-load-perf-fixes.md "NOT in scope" → pulled forward by
+ * docs/archive/plans/2026-08-17-customer-journey-load-perf-fixes.md "NOT in scope" → pulled forward by
  * owner instruction 2026-08-18). Extracted verbatim from OrdersService's private copy so
  * MerchantService's photo-URL cache could share it WITHOUT growing a second lazy Redis client —
  * the second copy was exactly the drift trap the withTimeout dedupe (D1) just closed elsewhere.

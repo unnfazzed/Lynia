@@ -3,7 +3,7 @@
 > Lynia's PII retention schedule and the erasure mechanism, under Zimbabwe's **Cyber and Data
 > Protection Act, 2021** (CDPA — mirrors GDPR): personal data must not be kept longer than necessary
 > for the purpose it was collected (data minimisation), and a data subject has a **right to erasure**.
-> Companion: `docs/SECURITY.md` (data classification), `docs/LAUNCH-READINESS.md` LR8.
+> Companion: `docs/SECURITY.md` (data classification), `docs/archive/LAUNCH-READINESS.md` LR8.
 
 ## Principles
 

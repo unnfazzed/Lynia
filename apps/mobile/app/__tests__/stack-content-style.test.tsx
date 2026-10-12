@@ -1,5 +1,5 @@
 /**
- * RCA §1.2 (docs/CUSTOMER-JOURNEY-LOAD-PERF-2026-08-17.md): the native-stack's default scene
+ * RCA §1.2 (docs/archive/CUSTOMER-JOURNEY-LOAD-PERF-2026-08-17.md): the native-stack's default scene
  * background is WHITE, and it painted the cold-start splash→home gap — the reported green→white
  * flash. The fix is a contentStyle on the root Stack's screenOptions. This pins BOTH halves:
  * the wash is applied, and it is NOT white — `tokens.color.bg` is literally #FFFFFF, so a

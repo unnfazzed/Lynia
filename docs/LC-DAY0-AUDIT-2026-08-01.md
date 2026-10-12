@@ -1,6 +1,6 @@
 # Day-0 audit — Harare low-connectivity program (2026-08-01)
 
-The bootstrap sweep for the program in `docs/plans/2026-08-01-low-connectivity-program.md`. Four
+The bootstrap sweep for the program in `docs/archive/plans/2026-08-01-low-connectivity-program.md`. Four
 surfaces (mobile, API, admin+merchant web, infra/CI read-only) were run through a multi-agent
 loop-until-dry engine: diverse Go-class/2G finder lenses → 3-skeptic adversarial verify (defects
 need ≥2 "real" votes, optimizations need unanimous impact+safety) → sibling-sweep. Finders and
@@ -171,7 +171,7 @@ as the LC-A/LC-B first audit-territory work; the lanes re-run verify before fixi
 ## What the lanes do next
 
 Each confirmed defect above is a `KNOWN_BUGS.md` OPEN row and a first-position checklist item in
-its lane (`docs/plans/2026-08-01-low-connectivity-program.md` §5). The lanes fire from 03:00 UTC
+its lane (`docs/archive/plans/2026-08-01-low-connectivity-program.md` §5). The lanes fire from 03:00 UTC
 (LC-A Mon–Sat), 04:00 (LC-B), 06:00 (LC-C), 07:00 (LC-D), burning these down one increment per
 firing with regression tests, sensitive-lane treatment where flagged, and merge-on-green. The
 Sunday Fable steer re-ranks from the evidence. Infra items (`LC-INF*`) stay OPEN for the founder

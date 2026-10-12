@@ -19,7 +19,7 @@ const ROSTER_PAGE_SIZE = 100;
  * refund-netting or overdue state (those were the old cash-settlement engine, now removed).
  *
  * NEW-2 (docs/KNOWN_BUGS.md): the prepaid wallet itself (balance, top-ups, the per-ride debit ledger)
- * SHIPPED 2026-07-15 (`apps/api/src/wallet/*`, docs/plans/2026-rider-wallet-design.md) — this docstring
+ * SHIPPED 2026-07-15 (`apps/api/src/wallet/*`, docs/archive/plans/2026-rider-wallet-design.md) — this docstring
  * and the page copy below used to say it "is not built" / "is a later build", which went stale the day
  * it shipped. Only the RATE is still 0%; the wallet plumbing is live today.
  */

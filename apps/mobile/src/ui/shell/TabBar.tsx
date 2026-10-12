@@ -400,7 +400,7 @@ export function TabBar({
 }
 
 /**
- * Hoisted out of render (docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.2): the bar is on screen
+ * Hoisted out of render (docs/archive/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.2): the bar is on screen
  * for the whole session and re-renders on every route change, so its static styles are created once.
  * The fill is the glass (`BlurView` under a transparent bar) or, wherever `useGlass` says the handoff's
  * fallback applies, opaque `bg` — never a translucent bar without blur. No shadow (v1.4). The edge is the

@@ -1,6 +1,6 @@
 /**
  * A stable, random per-browser device id, sent as `x-device-id` on `POST /auth/otp/verify` only
- * (merchant web upgrade L1, docs/plans/2026-09-29-merchant-web-upgrade-plan.md D4).
+ * (merchant web upgrade L1, docs/archive/plans/2026-09-29-merchant-web-upgrade-plan.md D4).
  *
  * The API requires one to CREATE an account for a number it has never seen — that's how the per-device
  * sign-up cap works (3 new accounts per device per day, KB-IDENTITY-BINDING). The app always sends one;

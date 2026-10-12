@@ -4,7 +4,7 @@ import TestRenderer, { act } from "react-test-renderer";
 import { prewarmedRoutes, prewarmRoute, usePrewarmRoutes, __resetPrewarmedRoutes, type PrewarmRoute } from "../prewarm-routes";
 
 /**
- * The route prewarm registry (docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.1). expo-router
+ * The route prewarm registry (docs/archive/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.1). expo-router
  * evaluates a route's module graph on the FIRST navigation to it — synchronously, inside the tap
  * handler — which is why the first tap into a screen is the slow one and later taps to the same
  * screen are not. This moves that evaluation into the idle time of the screen that links to it.

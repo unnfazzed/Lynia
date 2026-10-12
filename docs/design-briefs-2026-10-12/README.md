@@ -22,10 +22,10 @@ that we can't build until it is drawn. The rule is "not drawn means not built" (
 | 03 | [Rx check countdown](03-merchant-rx-countdown.md) | Merchant | merchant-v2 P1 | Medium |
 | 04 | [Stay closed today](04-merchant-stay-closed.md) | Merchant | merchant-v2 T4 / K1 top card | Medium |
 | 05 | [Open past midnight (question)](05-merchant-overnight-hours.md) | Merchant | merchant-mobile C5 | Low: say yes or no first |
-| 06 | [Reach the rider after a late cancel](06-customer-cancel-after-pickup.md) | Customer | after-send-v2 18a / 17 | High: the parcel is with a stranger |
-| 07 | [The venue's own note on D3b](07-customer-venue-note.md) | Customer | order-flow-v2 D3b | Low |
-| 08 | [Your code changed](08-customer-code-changed.md) | Customer | after-send-v2 2.14 / CodeCard | Medium |
-| 09 | [Remove a prescription page](09-customer-remove-rx-page.md) | Customer | order-flow-v2 R8b | Medium |
+| 06 | Reach the rider after a late cancel (drawn: `packages/design/handoff/customer-briefs-06-09/`, D-97) | Customer | after-send-v2 18a / 17 | High: the parcel is with a stranger |
+| 07 | The venue's own note on D3b (drawn: `packages/design/handoff/customer-briefs-06-09/`, D-97) | Customer | order-flow-v2 D3b | Low |
+| 08 | Your code changed (drawn: `packages/design/handoff/customer-briefs-06-09/`, D-97) | Customer | after-send-v2 2.14 / CodeCard | Medium |
+| 09 | Remove a prescription page (drawn: `packages/design/handoff/customer-briefs-06-09/`, D-97) | Customer | order-flow-v2 R8b | Medium |
 | 10 | [Before the ID check: tips and documents](10-rider-before-id-check.md) | Rider | first-run-v2 R1 | High: prevents automatic declines |
 | 11 | [Under 18](11-rider-underage.md) | Rider | first-run-v2 F5 | Medium: today shows the wrong screen |
 | 12 | [This ID is on another account](12-rider-duplicate-id.md) | Rider | first-run-v2 F5dup | High: honest number-changers dead-end |

@@ -55,7 +55,7 @@ export class HealthController {
     };
   }
 
-  // Merchant-vertical kill switches (docs/plans/2026-07-26-merchant-verticals-plan.md §0b.3).
+  // Merchant-vertical kill switches (docs/archive/plans/2026-07-26-merchant-verticals-plan.md §0b.3).
   // Public and unauthenticated by the same reasoning as the version gate: the app reads it at cold
   // start BEFORE sign-in, and a dark Restaurants tab must be able to learn it's dark. Server truth
   // is the env flags — flipping one is a Cloud Run env update; with max-age=60 every device

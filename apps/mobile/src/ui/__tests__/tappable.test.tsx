@@ -12,7 +12,7 @@ import { consumeTouch, __resetTapSignal } from "../../telemetry/tap-signal";
 /**
  * The tappable primitive. The behaviour that matters is not "it renders" — it is that pressing a
  * control on ANDROID costs no JavaScript render, which is the entire point of the fix
- * (docs/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §1.2): the platform ripple paints on the UI
+ * (docs/archive/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §1.2): the platform ripple paints on the UI
  * thread from the touch event, so it cannot be delayed by a busy JS thread, whereas a
  * `style={({ pressed }) => …}` press state can be and routinely was.
  */

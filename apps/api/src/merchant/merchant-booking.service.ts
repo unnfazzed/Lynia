@@ -115,7 +115,7 @@ function fullName(p: { firstName: string; lastName: string } | null | undefined)
 }
 
 /**
- * Book a rider (merchant web upgrade L2, docs/plans/2026-09-29-merchant-web-upgrade-plan.md D9). Every
+ * Book a rider (merchant web upgrade L2, docs/archive/plans/2026-09-29-merchant-web-upgrade-plan.md D9). Every
  * booking is a Send order placed by the business's booking account, so Send's own services do the work
  * — create, the offer list, the pick, cancel and code rotation — called AS that account. What this
  * service adds is the business around them:

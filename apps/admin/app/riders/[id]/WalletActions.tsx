@@ -35,7 +35,7 @@ export function WalletCreditButton({ id, name, connected }: { id: string; name: 
 
 /**
  * `commission_freeze` wallet hold — kit `riders.html` lines 226-228 / 256-257, design OV-4A
- * (`docs/plans/2026-rider-wallet-design.md`: "a wallet freeze is a `Rider.heldReason:
+ * (`docs/archive/plans/2026-rider-wallet-design.md`: "a wallet freeze is a `Rider.heldReason:
  * "commission_freeze"` hold — admin-clear-only exactly like the RH-01 `velocity` pattern").
  *
  * ─── WIRING STATUS: BOTH ACTIONS ARE DELIBERATELY DEAD ─────────────────────────────────────────

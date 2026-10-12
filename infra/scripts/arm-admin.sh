@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Arm the admin console (docs/plans/2026-admin-console-arming.md) in ONE run from an authenticated
+# Arm the admin console (docs/archive/plans/2026-admin-console-arming.md) in ONE run from an authenticated
 # shell (GCP Cloud Shell, or anywhere with gcloud + terraform + gh logged in to the right project/repo).
 #
 # It cannot be run from the Claude coding-agent session — that sandbox holds no GCP/DNS credentials by

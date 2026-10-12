@@ -3,7 +3,7 @@
 Status: **phase 1 (server) shipped in PR #999; phase 2 (merchant app screens) built from the 2026-10-01 design export (ledger D-51).**
 Owner decision 2026-09-30: *"option 1 is preferred"* — the minimum viable way to support someone with
 shops in several places. This reverses the "multi-branch owners" line in the *Explicitly not in scope*
-list of `docs/plans/2026-09-29-merchant-web-upgrade-plan.md`.
+list of `docs/archive/plans/2026-09-29-merchant-web-upgrade-plan.md`.
 
 ## The model, in one line
 

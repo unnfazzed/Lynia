@@ -307,7 +307,7 @@ variable "cloudflare_zone_id" {
 
 # --- Admin console tier (admin.tf) — all gated off by default ---
 variable "admin_enabled" {
-  description = "Provision the admin console tier (admin.tf): the lynia-admin serverless NEG + IAP-protected backend + managed cert + runtime SA + ADMIN_API_TOKEN secret, exposed via the existing ALB at admin_domain. Off by default — zero diff until armed. Arming: docs/plans/2026-admin-console-deployment.md Phases 3/5/6."
+  description = "Provision the admin console tier (admin.tf): the lynia-admin serverless NEG + IAP-protected backend + managed cert + runtime SA + ADMIN_API_TOKEN secret, exposed via the existing ALB at admin_domain. Off by default — zero diff until armed. Arming: docs/archive/plans/2026-admin-console-deployment.md Phases 3/5/6."
   type        = bool
   default     = false
 }
@@ -345,7 +345,7 @@ variable "admin_iap_members" {
 
 # --- Merchant dashboard tier (merchant.tf) — all gated off by default ---
 variable "merchant_enabled" {
-  description = "Provision the merchant dashboard tier (merchant.tf): the lynia-merchant serverless NEG + PUBLIC backend (no IAP — see merchant.tf header) + managed cert + runtime SA, exposed via the existing ALB at merchant_domain. Off by default — zero diff until armed. Arming: docs/plans/2026-merchant-console-deployment.md."
+  description = "Provision the merchant dashboard tier (merchant.tf): the lynia-merchant serverless NEG + PUBLIC backend (no IAP — see merchant.tf header) + managed cert + runtime SA, exposed via the existing ALB at merchant_domain. Off by default — zero diff until armed. Arming: docs/archive/plans/2026-merchant-console-deployment.md."
   type        = bool
   default     = false
 }

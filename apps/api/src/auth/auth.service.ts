@@ -727,7 +727,7 @@ export class AuthService {
    *
    * Non-destructive by design: auto-detaching the account on a device change would lock out anyone who
    * reinstalled or changed handsets. The destructive rebind stays deferred — see
-   * docs/plans/2026-identity-and-pod-hardening.md.
+   * docs/archive/plans/2026-identity-and-pod-hardening.md.
    */
   private flagUnrecognisedDevice(
     existing: { id: string; sessions: { deviceId: string | null; createdAt: Date }[] },

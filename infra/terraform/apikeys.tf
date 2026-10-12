@@ -9,7 +9,7 @@
 # clicking in the console, and on 2026-08-16 that cost a working send-parcel flow:
 # the customer compose map rendered blank on the installed internal-track build,
 # which took address entry down with it (MOB-MAP-01/-02, docs/KNOWN_BUGS.md;
-# docs/MAPS-LOADING-REVIEW-2026-08-16.md). The restriction rules that prevent it are
+# docs/archive/MAPS-LOADING-REVIEW-2026-08-16.md). The restriction rules that prevent it are
 # written down in docs/SECURITY-OPS.md §B and were simply not reflected in the
 # console. A doc nobody re-reads is not a control; this file is.
 #
@@ -77,7 +77,7 @@
 #
 # ⚠️ YOU PROBABLY DO NOT NEED THE COMMANDS ABOVE. They are the laptop route, kept because they are
 # what the workflow runs. The supported way to arm this file is dispatchable from a phone and does
-# every step above with the guards attached — docs/MOB-MAP-02-RUNBOOK.md §4:
+# every step above with the guards attached — docs/archive/MOB-MAP-02-RUNBOOK.md §4:
 #
 #   1. Actions -> "GCP Diagnose (read-only)"  ........ prints both KEY_IDs (labelled against `uid`,
 #                                                      which the import path rejects) and both keys'

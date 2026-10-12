@@ -3,7 +3,7 @@ name: Deploy Admin Console (Cloud Run)
 # Builds the admin console (apps/admin) container, pushes it to Artifact Registry, and deploys it to a
 # Cloud Run service (lynia-admin) fronted by the shared external HTTPS ALB with IAP in front
 # (infra/terraform/admin.tf). Companion to release.yml (the API). See
-# docs/plans/2026-admin-console-deployment.md.
+# docs/archive/plans/2026-admin-console-deployment.md.
 #
 # WHY separate from release.yml: the admin console has no DB migrations and does not warrant the API's
 # full canary/autoheal machinery (it is an internal, IAP-gated tool). It gets a boot-gated no-traffic
@@ -20,7 +20,7 @@ name: Deploy Admin Console (Cloud Run)
 #
 # DORMANT UNTIL ARMED. Gated on the repo variable GCP_ADMIN_ENABLED == 'true'; until a maintainer arms
 # it this workflow is a clean no-op and never fails a push. Arming (founder, after terraform apply +
-# IAP setup — docs/plans/2026-admin-console-deployment.md Phases 3/5/6):
+# IAP setup — docs/archive/plans/2026-admin-console-deployment.md Phases 3/5/6):
 #   Variables:
 #     GCP_ADMIN_ENABLED             "true" to arm this workflow
 #     GCP_PROJECT_ID, GCP_REGION, GCP_ARTIFACT_REPO           (shared with release.yml)
@@ -32,7 +32,7 @@ name: Deploy Admin Console (Cloud Run)
 #   Secret Manager (not a repo secret): ADMIN_API_TOKEN — a LONG-LIVED admin JWT (role:"admin",
 #     signed HS256 with JWT_SIGNING_SECRET). NOT a normal login token: signAccess stamps a 15-min
 #     expiry (ACCESS_TTL_SECONDS), which would 401 the console 15 min after arming. Injected via
-#     --set-secrets. See docs/plans/2026-admin-console-arming.md §3 for the mint command.
+#     --set-secrets. See docs/archive/plans/2026-admin-console-arming.md §3 for the mint command.
 
 on:
   push:
@@ -87,7 +87,7 @@ jobs:
             if [ -z "${!v:-}" ]; then missing+=("$v"); fi
           done
           if [ ${#missing[@]} -gt 0 ]; then
-            echo "::error::GCP_ADMIN_ENABLED is true but these repo Variables are unset: ${missing[*]}. See docs/plans/2026-admin-console-deployment.md (arming)." >&2
+            echo "::error::GCP_ADMIN_ENABLED is true but these repo Variables are unset: ${missing[*]}. See docs/archive/plans/2026-admin-console-deployment.md (arming)." >&2
             exit 1
           fi
           echo "Admin deploy config OK."

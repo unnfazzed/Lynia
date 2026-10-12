@@ -104,7 +104,7 @@ describe("mobile Sentry helper (roadmap 1.1 — inert without a DSN)", () => {
   });
 
   /**
-   * MOB-BOOT-04 regression (docs/COLD-START-CRASH-RCA-2026-08-21.md).
+   * MOB-BOOT-04 regression (docs/archive/COLD-START-CRASH-RCA-2026-08-21.md).
    *
    * These pin the ONE property that matters about this module: loading it, and arming it, must never
    * throw. `app/_layout.tsx` imports it at module scope, and expo-router evaluates that file eagerly
