@@ -5,8 +5,8 @@ Calm Mint v2 drew R1–R3. A review of the code on 2026-10-12 found four rider-K
 drawing behind them**. Paste the prompt below into Claude Design, attach the files it lists, and bring the export back
 as `packages/design/handoff/rider-kyc-gaps/`. Until it lands, the app keeps what ships now.
 
-The Didit check's own pages (document capture, selfie) are not in this brief: they are themed through Didit's branding
-settings, see `docs/KYC-DIDIT-BRANDING.md`.
+The check's own pages (document capture, selfie) are not in this brief: they are the vendor's pixels, outside pixel
+parity (ledger D-34 / D-37), and their branding is left as it is (owner, 2026-10-12).
 
 | # | Surface | Code today | What ships now |
 |---|---|---|---|
