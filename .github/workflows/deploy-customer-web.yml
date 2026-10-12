@@ -122,7 +122,7 @@ jobs:
         run: '"$WRANGLER" deploy --config apps/customer-web/wrangler.jsonc'
 
       - name: Smoke — what a visitor gets
-        run: bash apps/customer-web/smoke.sh https://app.lyniago.com
+        run: bash apps/customer-web/smoke.sh https://app.lyniago.com apps/customer-web/dist
 
       - name: Summary
         if: ${{ success() }}

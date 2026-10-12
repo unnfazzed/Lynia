@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# What a visitor to app.lyniago.com gets (docs/CUSTOMER-WEB.md). Usage: smoke.sh https://app.lyniago.com
+# What a visitor to app.lyniago.com gets (docs/CUSTOMER-WEB.md). Usage: smoke.sh https://app.lyniago.com [export dir]
+# With the export dir, it first waits until the site serves THAT build's index.html: right after `wrangler deploy` the
+# edge can still answer with the previous one for a moment (seen 2026-10-12: the new phone-frame.js check failed 1s
+# after a successful upload, and passed against the same URL minutes later).
 set -euo pipefail
-BASE="${1:?usage: smoke.sh <base url>}"
+BASE="${1:?usage: smoke.sh <base url> [export dir]}"
+DIST="${2:-}"
 fail() { echo "::error::$1"; exit 1; }
 
 # A first deploy waits for Cloudflare to issue the certificate: retry for up to ~5 minutes.
@@ -13,6 +17,16 @@ for i in $(seq 1 20); do
   sleep 15
 done
 [ -n "$page" ] || fail "$BASE/ did not answer 200"
+if [ -n "$DIST" ]; then
+  want="$(cat "$DIST/index.html")"
+  for i in $(seq 1 20); do
+    [ "$page" = "$want" ] && break
+    echo "waiting for $BASE to serve the new build ($i/20)…"
+    sleep 15
+    page="$(curl -fsS --max-time 20 -H 'Cache-Control: no-cache' "$BASE/")" || page=""
+  done
+  [ "$page" = "$want" ] || fail "$BASE/ still serves a different index.html than the build just deployed"
+fi
 grep -q '<title>LyniaGo</title>' <<<"$page" || fail "the page title is not LyniaGo"
 grep -q 'rel="manifest"' <<<"$page" || fail "the Add to Home Screen manifest link is missing"
 grep -q '/_expo/static/js/web/entry-' <<<"$page" || fail "the app bundle is not referenced"
