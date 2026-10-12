@@ -12,6 +12,7 @@ import {
 } from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
 import { sealHandoverCode } from "../common/handover-code";
+import { penaltiesSuspended } from "../common/penalties";
 import { PiiCryptoService } from "../common/pii-crypto.service";
 import { CANCEL_STRIKE_LIMIT } from "../orders/order-lifecycle.constants";
 import { pushCopy, PUSH_C, pushMoney, riderJobTemplate } from "../notifications/merchant-order-push";
@@ -771,7 +772,10 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
         },
         -RELIABILITY.PENALTY.prePickupCancel,
       );
-      if (strikes >= CANCEL_STRIKE_LIMIT) {
+      if (strikes >= CANCEL_STRIKE_LIMIT && penaltiesSuspended()) {
+        // Penalty suspension (common/penalties.ts): counted, no cooldown, rider stays online.
+        await tx.rider.update({ where: { profileId: riderId }, data: { cancelStrikes: 0, ...reliability } });
+      } else if (strikes >= CANCEL_STRIKE_LIMIT) {
         const fresh = new Date(Date.now() + RIDER_STRIKE_COOLDOWN_MS);
         const cooldownUntil = rider?.cooldownUntil && rider.cooldownUntil > fresh ? rider.cooldownUntil : fresh;
         await tx.rider.update({

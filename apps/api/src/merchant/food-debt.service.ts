@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit, Optional } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { foodOrderMoney, haversineKm, merchantAmountDueUsd, RESTAURANTS_DEBT, roundToCents } from "@lynia/shared";
+import { penaltiesSuspended } from "../common/penalties";
 import { merchantCustomerCopy, MERCHANT_STATUS_NOTICES, NotificationsService } from "../notifications/notifications.service";
 import { OrderLifecycleService } from "../orders/order-lifecycle.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -385,10 +386,14 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
     if (order.riderCashConfirmedAt) throw new ConflictException("You already confirmed the cash");
     if (order.cashHandshakeFrozenAt) throw new ConflictException("This handshake is frozen — support has been notified");
     await this.lifecycle.markUndelivered(orderId, riderId, "refused");
-    await this.prisma.profile.updateMany({
-      where: { id: order.customerId, cashBanned: false },
-      data: { cashBanned: true, cashBanReason: "Refused or couldn't pay a cash food order", cashBannedAt: new Date() },
-    });
+    // Penalty suspension (common/penalties.ts): the refusal is still recorded on the order (undelivered,
+    // reason "refused"), but the customer is not cash-banned.
+    if (!penaltiesSuspended()) {
+      await this.prisma.profile.updateMany({
+        where: { id: order.customerId, cashBanned: false },
+        data: { cashBanned: true, cashBanReason: "Refused or couldn't pay a cash food order", cashBannedAt: new Date() },
+      });
+    }
     return { orderId, status: "undelivered" };
   }
 
