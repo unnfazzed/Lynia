@@ -4346,7 +4346,7 @@ describe("RiderService — KYC pushes, audit rows and observability (2026-10-12)
       const created: Record<string, unknown>[] = [];
       const prisma: Record<string, unknown> = {
         rider: { findUnique: async () => null, create: async () => ({}), updateMany: async () => ({ count: 1 }) },
-        profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: null, role: "customer" }), count: async () => 0 },
+        profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: null, role: "customer" }), count: async () => 0 },
         auditLog: { create: async (a: { data: Record<string, unknown> }) => (created.push(a.data), a.data), count: async () => 0 },
       };
       prisma.$transaction = async (arg: unknown) => (Array.isArray(arg) ? (ops.push(...arg), arg) : (arg as (tx: unknown) => unknown)(prisma));
@@ -4372,7 +4372,7 @@ describe("RiderService — KYC pushes, audit rows and observability (2026-10-12)
       let txCalls = 0;
       const prisma: Record<string, unknown> = {
         rider: { findUnique: async () => null, create: async () => ({}), ...outside },
-        profile: { update: async () => ({}), findUnique: async () => ({ idNumberHash: null, role: "customer" }), count: async () => 0 },
+        profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: null, role: "customer" }), count: async () => 0 },
         $transaction: async (arg: unknown) => {
           if (Array.isArray(arg)) return arg;
           txCalls++;

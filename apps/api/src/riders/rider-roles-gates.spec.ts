@@ -56,6 +56,7 @@ describe("becomeRider — who may become a biker", () => {
       prisma: {
         rider: { findUnique: async () => null, create },
         profile: { update, findUnique: async () => ({ ...profile, idNumberHash: null }), count: async () => 0 },
+        auditLog: { create: vi.fn(async () => ({})), count: async () => 0 },
         $transaction: async (ops: unknown[]) => ops,
       } as Record<string, unknown>,
     };
