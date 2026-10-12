@@ -11,6 +11,9 @@
 //   6. warms the API connection (preconnect + dns-prefetch to EXPO_PUBLIC_API_URL's origin, the same variable
 //      the export was built with) while the bundle downloads and evaluates (P27), and preloads the Inter fonts
 //      so Home's text doesn't wait for the bundle to ask for them (P38).
+//   7. keeps the phone layout on a wide screen: the page is a 480px column centred on the surface grey (the merchant
+//      app's frame, apps/merchant/app/mobile.css), and public/phone-frame.js caps the width the app measures at 480.
+//      body is transformed so the app's position: fixed sheets and modals sit inside the column, not the window.
 // Usage: EXPO_PUBLIC_API_URL=<api base> node apps/customer-web/finish-build.mjs <export dir>.
 // Idempotent; fails loudly if Expo's index.html no longer has the tags it edits, so a template change can't
 // silently drop them. Tests: node --test apps/customer-web/finish-build.test.mjs
@@ -52,6 +55,12 @@ const fontPreloads = assetFiles
   .sort()
   .map((p) => `<link rel="preload" as="font" type="font/ttf" href="${p}" crossorigin />`);
 
+// Values are the design tokens (packages/design/tokens/colors.css): --surface around the column, --line edges, --bg
+// inside. The edge is a box-shadow so the column keeps its full 480px, the width phone-frame.js reports.
+const PHONE_FRAME_CSS =
+  " @media (min-width: 481px) { html { background: #f6f7f8; }" +
+  " body { max-width: 480px; margin: 0 auto; background: #ffffff; box-shadow: 0 0 0 1px #e2e6ea; transform: translateZ(0); } }";
+
 if (!html.includes(MARK)) {
   // viewport-fit=cover lets the app's safe-area insets (notch, home bar) reach the page.
   const viewport = /<meta name="viewport"[^>]*>/;
@@ -71,8 +80,9 @@ if (!html.includes(MARK)) {
     '<meta name="apple-mobile-web-app-title" content="LyniaGo" />',
     '<meta name="apple-mobile-web-app-status-bar-style" content="default" />',
     '<script src="/ios-viewport.js"></script>',
+    '<script src="/phone-frame.js"></script>',
     '<script src="/sw-register.js" defer></script>',
-    '<style id="lyniago-web">input, textarea { min-width: 0; }</style>',
+    `<style id="lyniago-web">input, textarea { min-width: 0; }${PHONE_FRAME_CSS}</style>`,
   ].join("\n    ");
   if (!html.includes("</head>")) throw new Error("index.html has no </head>");
   html = html.replace("</head>", `    ${head}\n  </head>`);
