@@ -192,12 +192,13 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
   const rows = useMemo(() => history ?? [], [history]);
   const earned = summarise(rows, range, now);
   const today = range === "today" ? earned : summarise(rows, "today", now);
-  const feed = useMemo(() => {
+  const allFeed = useMemo(() => {
     const all = buildMoneyFeed(rows, entries);
     // Fares older than the history we hold would misplace among older wallet pages; cut them there.
     const cut = rows.length >= 50 ? oldestHistoryAt(rows) : null;
-    return filterMoneyFeed(cut ? all.filter((i) => i.kind !== "fare" || i.at >= cut) : all, foodOn ? filter : "all");
-  }, [rows, entries, filter, foodOn]);
+    return cut ? all.filter((i) => i.kind !== "fare" || i.at >= cut) : all;
+  }, [rows, entries]);
+  const feed = useMemo(() => filterMoneyFeed(allFeed, foodOn ? filter : "all"), [allFeed, filter, foodOn]);
   const groups = groupByDay(feed, (i) => i.at, now, R.todayH, R.yesterday);
 
   const floor = config?.floor ?? 2;
@@ -303,7 +304,8 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
         )}
 
         <RLabel style={{ marginTop: 4 }}>{R.history}</RLabel>
-        {foodOn && feed.length > 0 ? (
+        {/* Gated on the unfiltered feed: a filter that matches nothing must keep its way back to All. */}
+        {foodOn && allFeed.length > 0 ? (
           <Chips
             list={[
               { id: "all", label: R.all },
