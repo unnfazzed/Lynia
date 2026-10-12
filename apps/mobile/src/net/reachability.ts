@@ -18,6 +18,14 @@ import { fetchSignal } from "./fetch-signal";
  * and mutations (no hammering a dead link, no cascade of "failed" states), and reconnect auto-resumes
  * and refetches them.
  *
+ * CONFIRM BEFORE BLAMING THE NETWORK (owner, 2026-10-12: "the app is blaming low network at booting even if
+ * I am well connected"). One failed or timed-out request is not proof the phone is offline — a server
+ * waking from idle, one slow endpoint or a stalled socket fails exactly the same way on perfect Wi-Fi. So
+ * a request failure ({@link reportRequestFailed}) only makes the store SUSPECT: it asks `/health` itself,
+ * at once, and flips offline only after {@link CONFIRM_FAILS} probes in a row get nothing back. Any answer
+ * in the meantime clears the suspicion with nothing shown. A definitive signal (the browser's own
+ * `offline` event) still flips at once via {@link reportUnreachable}.
+ *
  * Everything here is framework-free and the timing helper is pure, so the logic is unit-testable
  * on-CI without a device (the app's jest just drives the store with an injected probe + fake timers).
  */
@@ -29,6 +37,19 @@ const listeners = new Set<Listener>();
 let probeTimer: ReturnType<typeof setTimeout> | null = null;
 let probeAttempt = 0;
 let probing = false; // true while a probe fetch is in flight (probeTimer is null during that window)
+// Suspect: a request failed and the confirmation probes are running; the app still reads as reachable.
+let confirming = false;
+let confirmFails = 0;
+let confirmTimer: ReturnType<typeof setTimeout> | null = null;
+// "Network trouble": a request failed and nothing has answered since — suspect OR confirmed offline.
+// Real evidence of a bad link, for UI that would otherwise guess from a clock (the splash's slow pill).
+let troubled = false;
+const troubleListeners = new Set<() => void>();
+
+/** Failed `/health` probes in a row it takes to call a request failure "offline". */
+export const CONFIRM_FAILS = 2;
+/** Gap between confirmation probes — long enough to ride out a momentary blip. */
+export const CONFIRM_GAP_MS = 2_000;
 
 /**
  * Backoff for the `/health` recovery probe: 2s, 4s, 8s, 16s, then capped at 30s. Capped so a long
@@ -58,6 +79,33 @@ function emit(): void {
   for (const fn of listeners) fn(reachable);
 }
 
+/** True while a request failure is unresolved — suspected or confirmed. Shaped for `useSyncExternalStore`. */
+export function isNetworkTroubled(): boolean {
+  return troubled;
+}
+
+export function subscribeNetworkTrouble(fn: () => void): () => void {
+  troubleListeners.add(fn);
+  return () => {
+    troubleListeners.delete(fn);
+  };
+}
+
+function setTroubled(next: boolean): void {
+  if (troubled === next) return;
+  troubled = next;
+  for (const fn of troubleListeners) fn();
+}
+
+function stopConfirming(): void {
+  if (confirmTimer) {
+    clearTimeout(confirmTimer);
+    confirmTimer = null;
+  }
+  confirming = false;
+  confirmFails = 0;
+}
+
 /** Any completed round-trip to the API — even a 4xx/5xx HTTP response — proves we're reachable. */
 export function reportReachable(): void {
   if (probeTimer) {
@@ -65,14 +113,48 @@ export function reportReachable(): void {
     probeTimer = null;
   }
   probeAttempt = 0;
+  stopConfirming();
+  setTroubled(false);
   if (!reachable) {
     reachable = true;
     emit();
   }
 }
 
-/** A network-level failure (no HTTP response at all): DNS, connection refused, or a timed-out request. */
+/**
+ * A request got no HTTP response (DNS, connection refused, a timed-out request). NOT proof of offline —
+ * see the header: confirm with `/health` first, and flip only after {@link CONFIRM_FAILS} misses in a row.
+ */
+export function reportRequestFailed(): void {
+  setTroubled(true);
+  if (!reachable) {
+    scheduleProbe(); // already offline: the recovery loop owns it
+    return;
+  }
+  if (confirming) return;
+  confirming = true;
+  confirmFails = 0;
+  runConfirmProbe();
+}
+
+function runConfirmProbe(): void {
+  confirmTimer = null;
+  void probeFetch(`${API_URL}/health`).then((ok) => {
+    if (!confirming) return; // a request answered meanwhile (reportReachable) or offline was confirmed
+    if (ok) {
+      reportReachable();
+      return;
+    }
+    confirmFails += 1;
+    if (confirmFails >= CONFIRM_FAILS) reportUnreachable();
+    else confirmTimer = setTimeout(runConfirmProbe, CONFIRM_GAP_MS);
+  });
+}
+
+/** Offline, confirmed: the probes kept failing, or the platform itself says there is no network. */
 export function reportUnreachable(): void {
+  stopConfirming();
+  setTroubled(true);
   if (reachable) {
     reachable = false;
     emit();
@@ -151,6 +233,8 @@ export function __resetReachability(): void {
   }
   probeAttempt = 0;
   probing = false;
+  stopConfirming();
+  troubled = false;
   reachable = true;
   onlineManager.setOnline(true);
 }

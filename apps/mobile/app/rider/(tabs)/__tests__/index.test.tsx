@@ -2032,6 +2032,25 @@ describe("rider board — rider audit fixes (Board & Jobs)", () => {
     expect(mockSetOnline).toHaveBeenCalledTimes(2);
   });
 
+  it(
+    "owner 2026-10-12: a board whose socket is still opening does not say \"Reconnecting…\" — only a link that stays down does",
+    async () => {
+      mockUseRiderBoard.mockReturnValue({ connected: false, expiredOrderIds: new Set<string>(), takenOrderIds: new Set<string>(), boardTakenNudge: 0 });
+      mockGetMe.mockResolvedValue(meFixture());
+      mockGetActiveOrder.mockResolvedValue(null);
+      mockGetOpenOrders.mockResolvedValue([openOrderFixture("o-1")]);
+      activeTree = renderScreen();
+      await settle();
+      await settle();
+      // The first seconds of every open: socket handshaking on a good link — no false alarm.
+      expect(treeText(activeTree)).not.toContain("Reconnecting…");
+      await wait(8_100);
+      // Still down past the grace period: now it's real, and the board says so.
+      expect(treeText(activeTree)).toContain("Reconnecting…");
+    },
+    15000,
+  );
+
   it("BD-H1: while online the board follows the rider, and the open-jobs read uses the new position", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
