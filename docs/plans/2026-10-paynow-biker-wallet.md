@@ -73,7 +73,7 @@ The repo was built for a live payment rail to drop in later:
   `StubPaymentRail`. `WalletService.creditFromTopup` is the exactly-once credit path, and nothing calls it yet. That is why
   every top-up today runs down its 90 s and comes back `expired`.
 
-So **for EcoCash, connecting Paynow needs no UI change at all.** A `PaynowRail` behind the seam, plus a `resulturl`
+So **for EcoCash, the approval flow itself needs no UI change.** The only UI change is the fee lines from the owner's decision that the biker pays the fee (§ 3). A `PaynowRail` behind the seam, plus a `resulturl`
 handler that calls `creditFromTopup`, makes T4 → T5 work as drawn. InnBucks and O'mari are the only parts that need new UI.
 
 ---
@@ -110,18 +110,43 @@ Three drawn radio cards: EcoCash, InnBucks, O'mari, each with the sub-line "Appr
 - The sub-line "Approve on your phone" is accurate for EcoCash. For InnBucks it's roughly true: you approve in the InnBucks app. For O'mari it's
   wrong, because you type a code into Lynia. If T4c ships, ask design for a per-provider sub-line.
 
-### T2 Amount: no change
-The amount the biker types is what gets charged **and** what gets credited. That depends on Lynia absorbing Paynow's
-merchant fee (§ 6, Q2). If Lynia passes the fee on instead, T2 needs a drawn "you pay $X, $Y goes to your balance" line, and nothing like that exists today.
+### The biker pays the 2.5% transaction fee (owner decision, 2026-10-12)
+The owner decided the biker absorbs Paynow's fee, and the copy says so. The rules every screen below follows:
+- **The amount the biker types is what reaches their balance.** `minTopUp` $5 and `maxTopUp` $50 still bound that amount.
+- **The fee is 2.5% of that amount, rounded up to the cent:** $5 → $0.13, $10 → $0.25, $20 → $0.50, $50 → $1.25.
+- **The amount charged is the amount plus the fee:** $5.13 … $51.25. Our server sends that amount to Paynow, so it is the amount on the EcoCash prompt.
+- **The rate is served by the server, never hardcoded.** Add `topupFeePct` to `GET /wallet/config` (`CommissionConfig`), the same way
+  `ratePct` is served, and make it per rail, since InnBucks and O'mari rates aren't published yet. One shared helper,
+  `topupFee(amount, pct)` in `@lynia/shared`, is used by the app to preview the fee and by the server to set the charge.
+  The `TopUp` record stores `amount` (credited), `fee` and `charged`.
+- **Paynow's own "add fees on top" setting stays OFF**, so the integration is set to merchant-pays. Otherwise Paynow would add its
+  2.5% on top of our already-grossed-up amount and charge the biker twice. Because Paynow takes its 2.5% from the $5.13, Lynia
+  nets about 0.06% less than the credit, about $0.03 on a $50 top-up. That is the price of the copy reading exactly "2.5%".
+  Grossing up to a true net, $5 → $5.13 but $50 → $51.29, would make the shown fee 2.56% and contradict the copy.
+- When Paynow confirms a payment, the server checks that the paid amount equals `charged`, then credits `amount`.
 
-### T3 Phone: no change
+None of these lines is drawn in the rider-v2 handoff. Per the pixel-parity rules they need a **`docs/DESIGN-DEVIATIONS.md` entry
+(D-102)** recording this owner decision and the exact copy, landed with the build PR. The proposed copy is below.
+
+### T2 Amount: one new line
+The big amount stays the amount **to the balance**. Under the quick chips, above the existing `amountHint`, one muted 13/18 line:
+> **"Transaction fee 2.5%: $0.13. You pay $5.13."**
+
+It updates live as the amount changes, and is hidden while the amount is invalid, just like the chips' selected state.
+
+### T3 Phone: the CTA shows what will be charged
+- The CTA becomes **"Request $5.13"** (`requestCta(charged)`): the amount the EcoCash prompt is about to show.
+- The existing `phoneHint` stays. Above the field, one muted line repeats the split, so the biker sees it at the moment they commit:
+  > **"$5.00 to your balance + $0.13 transaction fee (2.5%)."**
+
 Paynow requires `phone` for every mobile-money method, InnBucks included, so the step stays for all three.
 The server normalises `077…` to the format Paynow expects. The biker never types `+263`.
 **Paynow's `authemail` is required for express checkout, but it is not a field the biker fills in.** Bikers sign up with a phone,
 not an email. The server sends the merchant account's email, as Paynow's test mode requires. **No email field gets added to the UI.**
 
 ### T4 Approve, EcoCash: as drawn, now actually works
-- Title `waitT` ("Approve $5.00 on your phone") and body `waitB` ("Check for the EcoCash prompt or SMS on 077… and enter your PIN").
+- Title `waitT(charged)`: **"Approve $5.13 on your phone"**. It must equal what the EcoCash prompt shows, or the biker will think
+  they're being overcharged. Body `waitB` ("Check for the EcoCash prompt or SMS on 077… and enter your PIN").
 - A 90 s `Countdown` and progress bar. EcoCash's USSD prompt times out within that window, and Paynow's slow test case
   succeeds at 30 s.
 - If the call fails immediately (insufficient balance, an invalid number), the flow goes **straight to T6** and never shows T4. The server marks the intent
@@ -153,6 +178,8 @@ O'mari sends the biker an **OTP by SMS**, and they type it **into Lynia**:
 - A correct code goes to the spinner (T4-style "Confirming…") until the server reports `succeeded`, then T5.
 
 ### T5 Done / T6 Failed: no change
+T5's `okB` keeps the **credited** amount, "$5.00 added. Your balance is $12.60.", because that is what the balance moved by. T4b's
+title and T4c's amounts use `charged`, like T4.
 The drawn copy already fits Paynow's outcomes. T6's `failB` ("The prompt timed out or was declined. Nothing was taken
 from your EcoCash.") stays true, because Paynow only debits on approval.
 For later, if design wants it: a reason-specific T6 line for "Insufficient balance". Paynow returns that reason, and
@@ -160,13 +187,15 @@ For later, if design wants it: a reason-specific T6 line for "Insufficient balan
 
 ### Money tab M10–M12, G14, Settings: no change
 They read the same `pendingTopUp` and `TopupStatus`. A Paynow top-up's ledger row shows `lTop("EcoCash")` with the
-Paynow reference as the receipt `meta`, so the biker can quote it to support.
+Paynow reference as the receipt `meta`, so the biker can quote it to support. The row's amount is the credit (+$5.00). Its
+`meta` adds **"You paid $5.13 (incl. 2.5% fee)"**, so the receipt reconciles with the biker's EcoCash statement. M10–M12 keep the
+credited amount.
 
 ---
 
 ## 4. Phasing (recommended)
 
-**Phase 1: EcoCash through Paynow. Backend only, zero UI change.**
+**Phase 1: EcoCash through Paynow. Backend, plus the fee lines on T2, T3 and T4 (§ 3).**
 1. Write `PaynowRail implements PaymentRail`: `initiate` calls `remotetransaction`, `confirm`/`reconcile` POST the `pollurl` (or `trace`), and every
    outgoing and incoming message is SHA512-hashed. The raw payload is kept, as the seam requires.
 2. Add `POST /webhooks/paynow/result`, which validates the hash, re-polls to confirm, then calls `creditFromTopup` (already exactly-once).
@@ -204,8 +233,9 @@ hosted-page tokenise step, which is a bigger UX decision.
    (b) Hide them on T1 until T4b and T4c are drawn. That also needs a ledger entry, since it removes drawn elements.
    (c) Hold Phase 1 until T4b and T4c are drawn, and ship all three together. *Recommended if design can turn them around quickly;
    otherwise (a).*
-2. **Paynow's fee: who pays it?** *Recommended:* Lynia absorbs it, so "$5 charged = $5 credited" and T2/T3 copy stays
-   true. If the biker pays it, T2 needs a drawn fee line.
+2. ~~**Paynow's fee: who pays it?**~~ **DECIDED (owner, 2026-10-12): the biker pays it, and the copy states the 2.5% fee.**
+   See § 3, "The biker pays the 2.5% transaction fee". Still open: confirm the InnBucks and O'mari rates with Paynow, and
+   approve the proposed copy for the D-102 ledger entry.
    **The rates** (paynow.co.zw/Home/Fees, read 2026-10-12): **EcoCash 2.5%**, a flat percentage with no fixed part, the same as
    OneMoney and Telecash. Cards are 3.5% + 50c. InnBucks and O'mari aren't listed, so confirm those with Paynow. Paynow's
    page confirms the merchant can absorb the fee, add it on top, or split it.
@@ -214,7 +244,7 @@ hosted-page tokenise step, which is a bigger UX decision.
    Against the real policy (`COMMISSION` in `packages/shared/src/policy.ts`, owner 2026-10-12: **10%** of what the biker
    earns, after their first 10 jobs, live rate from `COMMISSION_RATE_PCT`), the effective take is **~9.75%**. A $5 top-up
    (`minTopUp`) covers $50 of biker earnings. `minTopUp` $5 and `maxTopUp` $50 are code constants, and the server clamps to them.
-   How to absorb it: set the integration so the merchant pays the fee, request the biker's exact amount, credit the
+   *(Superseded by the owner's decision above; kept for the record.)* How Lynia would have absorbed it: set the integration so the merchant pays the fee, request the biker's exact amount, credit the
    **gross** amount Paynow reports as paid (not the net settled to the bank), and book the gross-minus-net difference as a
    processing cost at reconciliation.
 3. **OneMoney and cards.** Add them to T1 (needs a design export), or leave them out? *Recommended:* leave them out for now, because EcoCash
