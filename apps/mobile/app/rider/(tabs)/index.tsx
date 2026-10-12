@@ -25,6 +25,7 @@ import {
   KYC_COMPLETED_HINT_MS,
   KYC_COMPLETED_HOLD_MS,
   KYC_RETRY_TRY_LATER,
+  isKycRetryRateLimited,
   kycLaunchForGate,
   type KycLaunchMark,
   kycPollMs,
@@ -490,7 +491,7 @@ export default function RiderHome(): React.ReactElement {
     // connection — is the check not opening: F7, whose "Try again" is this mutation again. A terminal
     // server state (a lock, a decline) still outranks it once `me` is re-read. Never the server's words.
     onError: (e) => {
-      if (e instanceof ApiError && e.status === 429) setError(KYC_RETRY_TRY_LATER);
+      if (e instanceof ApiError && isKycRetryRateLimited(e)) setError(KYC_RETRY_TRY_LATER);
       else setKycLaunch({ outcome: "failed", at: Date.now() });
       void qc.invalidateQueries({ queryKey: ["me"] });
     },
