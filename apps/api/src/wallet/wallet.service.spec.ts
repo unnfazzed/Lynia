@@ -73,7 +73,7 @@ describe("WalletService.getConfig (server-authoritative)", () => {
   });
   it("returns exactly the rate/policy fields — no stray `enabled` (or any other) field survives a future regression", () => {
     const cfg = build().getConfig();
-    expect(Object.keys(cfg).sort()).toEqual(["floor", "freeFirstJobs", "graceCredit", "maxTopUp", "minTopUp", "ratePct"]);
+    expect(Object.keys(cfg).sort()).toEqual(["floor", "freeFirstJobs", "graceCredit", "maxTopUp", "minTopUp", "ratePct", "topupFeePct", "topupRails"]);
   });
 });
 

@@ -466,19 +466,30 @@ export function LRow({ icon, title, meta, amount, text, first }: { icon: IconNam
   );
 }
 
-/** 44px filter chips. Selected: accent-wash + 1.5 accent-text border. */
-export function Chips<T extends string>({ list, value, onChange }: { list: readonly { id: T; label: string }[]; value: T; onChange: (id: T) => void }): React.ReactElement {
+/** 44px filter chips. Selected: accent-wash + 1.5 accent-text border. A `disabled` chip can't be chosen
+ *  and reads "<label> · <note>" in muted ink (ledger D-103: a top-up provider that is "Coming soon"). */
+export function Chips<T extends string>({
+  list,
+  value,
+  onChange,
+}: {
+  list: readonly { id: T; label: string; disabled?: boolean; note?: string }[];
+  value: T;
+  onChange: (id: T) => void;
+}): React.ReactElement {
   return (
     <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
       {list.map((c) => {
-        const on = c.id === value;
+        const on = c.id === value && !c.disabled;
+        const label = c.disabled && c.note ? `${c.label} · ${c.note}` : c.label;
         return (
           <Tappable
             key={c.id}
             onPress={() => onChange(c.id)}
+            disabled={c.disabled}
             accessibilityRole="button"
-            accessibilityState={{ selected: on }}
-            accessibilityLabel={c.label}
+            accessibilityState={{ selected: on, disabled: !!c.disabled }}
+            accessibilityLabel={label}
             style={{
               minHeight: tokens.touchTargetMin,
               justifyContent: "center",
@@ -489,7 +500,7 @@ export function Chips<T extends string>({ list, value, onChange }: { list: reado
               borderColor: on ? tokens.color.accentText : tokens.color.line,
             }}
           >
-            <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.bold, color: on ? tokens.color.accentText : tokens.color.ink }}>{c.label}</Text>
+            <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.bold, color: c.disabled ? tokens.color.muted : on ? tokens.color.accentText : tokens.color.ink }}>{label}</Text>
           </Tappable>
         );
       })}

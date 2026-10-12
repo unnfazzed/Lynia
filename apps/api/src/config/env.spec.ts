@@ -443,3 +443,37 @@ describe("loadEnv — scheduler auth (plan C3)", () => {
     expect(() => loadEnv({ ...base, ...azure, SCHEDULER_PRINCIPAL_ID: "cron-job" })).toThrow(/SCHEDULER_PRINCIPAL_ID/);
   });
 });
+
+describe("Paynow top-up rail settings (docs/plans/2026-10-paynow-biker-wallet.md)", () => {
+  const paynow = {
+    PAYMENT_RAIL: "paynow",
+    PAYNOW_INTEGRATION_ID: "27383",
+    PAYNOW_INTEGRATION_KEY: "11111111-2222-3333-4444-555555555555",
+    PAYNOW_AUTH_EMAIL: "merchant@example.com",
+    PAYNOW_RESULT_URL: "https://api.example.com/webhooks/paynow",
+  };
+
+  it("defaults: the stub rail, Paynow adds the fee, 2.5%, EcoCash only", () => {
+    const env = loadEnv(base);
+    expect(env.PAYMENT_RAIL).toBe("stub");
+    expect(env.PAYNOW_FEE_MODE).toBe("paynow");
+    expect(env.TOPUP_FEE_PCT).toBe(2.5);
+    expect(env.TOPUP_RAILS).toEqual(["ecocash"]);
+  });
+
+  it("boots with PAYMENT_RAIL=paynow and every setting present", () => {
+    expect(loadEnv({ ...base, ...paynow }).PAYMENT_RAIL).toBe("paynow");
+  });
+
+  it.each(["PAYNOW_INTEGRATION_ID", "PAYNOW_INTEGRATION_KEY", "PAYNOW_AUTH_EMAIL", "PAYNOW_RESULT_URL"])(
+    "refuses to boot PAYMENT_RAIL=paynow without %s (a half-wired rail charges bikers it can't hear back from)",
+    (missing) => {
+      expect(() => loadEnv({ ...base, ...paynow, [missing]: "" })).toThrow(new RegExp(missing));
+    },
+  );
+
+  it("parses TOPUP_RAILS as a list and rejects an unknown rail", () => {
+    expect(loadEnv({ ...base, TOPUP_RAILS: "ecocash, innbucks" }).TOPUP_RAILS).toEqual(["ecocash", "innbucks"]);
+    expect(() => loadEnv({ ...base, TOPUP_RAILS: "ecocash,visa" })).toThrow(/Invalid environment configuration/);
+  });
+});

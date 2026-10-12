@@ -12,7 +12,9 @@ import {
   roundToCents,
   subMoney,
   type Topup,
+  TOPUP,
   TOPUP_WINDOW_MS,
+  topupFee,
   type TopupRail,
   type Wallet,
   type WalletEntry,
@@ -20,6 +22,7 @@ import {
   type WalletLedgerPage,
 } from "@lynia/shared";
 import { Prisma } from "@prisma/client";
+import { PAYMENT_RAIL, type PaymentRail, type PaymentRailResult } from "../adapters/payments/payment-rail.interface";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -29,6 +32,38 @@ import { FREE_JOBS_ACTION, FREE_JOBS_COPY, FREE_JOBS_PUSH_KIND, type FreeJobsMil
 
 /** Page size for the ledger history feed. */
 const LEDGER_PAGE_SIZE = 25;
+
+/** The sweep leaves a top-up alone for this long after it starts: the webhook normally answers first. */
+export const TOPUP_RECONCILE_MIN_AGE_MS = 20_000;
+/** A lapsed (`expired`) top-up is still asked about for this long: a slow approval can still pay. */
+export const TOPUP_LATE_PAYMENT_WINDOW_MS = 60 * 60 * 1000;
+/** Nothing older than this is swept at all. */
+export const TOPUP_RECONCILE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * A top-up receipt's meta line: the rail, Paynow's reference (so the biker can quote it to support) and, when
+ * a fee was charged, what they paid ("EcoCash · 1234567 · You paid $5.13 (incl. 2.5% fee)"). Manual credits
+ * keep just their label: their providerRef is an admin idempotency key, not a receipt number.
+ */
+function topupMeta(rail: TopupRail, t: { providerRef: string | null; amount?: Prisma.Decimal; charged?: Prisma.Decimal | null } | null, feePct: number): string {
+  const parts = [RAIL_LABEL[rail]];
+  if (rail === "manual" || !t) return parts[0]!;
+  if (t.providerRef && !t.providerRef.startsWith("stub_")) parts.push(t.providerRef);
+  const amount = t.amount != null ? Number(t.amount) : undefined;
+  const charged = t.charged != null ? Number(t.charged) : undefined;
+  if (amount != null && charged != null && toCentsSafe(charged) > toCentsSafe(amount)) {
+    parts.push(`You paid $${charged.toFixed(2)} (incl. ${feePct}% fee)`);
+  }
+  return parts.join(" · ");
+}
+
+/** What applying a rail's answer to a top-up did. */
+export type TopupSettleOutcome = "credited" | "already_settled" | "declined" | "pending" | "short_paid" | "not_found";
+
+/** Integer cents, for comparing money without float error. */
+function toCentsSafe(usd: number): number {
+  return Math.round(usd * 100);
+}
 
 /** 2dp money round — now the shared money seam (roundToCents ≡ the former local Math.round(n*100)/100).
  *  Balance add/subtract go through addMoney/subMoney (integer cents, exact) rather than float ±. */
@@ -72,7 +107,25 @@ export class WalletService {
     // @Optional for the same reason (ObservabilityModule is @Global): a missing service just skips
     // the topup_confirm_lag_ms record in creditFromTopup.
     @Optional() private readonly metrics?: MetricsService,
+    // The top-up rail (PaymentsModule is @Global). Optional so the positional (env, prisma) unit
+    // constructions stay valid; it is only ever CALLED when PAYMENT_RAIL=paynow.
+    @Optional() @Inject(PAYMENT_RAIL) private readonly rail?: PaymentRail,
   ) {}
+
+  /** The transaction fee (%) the biker pays on a top-up (served to the app, and used for the charge). */
+  get topupFeePct(): number {
+    return this.env.TOPUP_FEE_PCT ?? TOPUP.feePct;
+  }
+
+  /** The rails a biker can top up on now; the rest are "Coming soon". */
+  get topupRails(): Array<Exclude<TopupRail, "manual">> {
+    return this.env.TOPUP_RAILS ?? [...TOPUP.liveRails];
+  }
+
+  /** True when top-ups really charge through Paynow (vs the inert stub). */
+  private get railLive(): boolean {
+    return this.env.PAYMENT_RAIL === "paynow" && this.rail != null;
+  }
 
   /** The resolved live commission rate (%) — the env "flip" value, clamped, or the launch default (0). */
   get ratePct(): number {
@@ -88,6 +141,8 @@ export class WalletService {
       minTopUp: COMMISSION.minTopUp,
       maxTopUp: COMMISSION.maxTopUp,
       freeFirstJobs: COMMISSION.freeFirstJobs,
+      topupFeePct: this.topupFeePct,
+      topupRails: this.topupRails,
     };
   }
 
@@ -111,7 +166,7 @@ export class WalletService {
       where: { riderId },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: LEDGER_PAGE_SIZE + 1,
-      include: { topUp: { select: { rail: true, providerRef: true } } },
+      include: { topUp: { select: { rail: true, providerRef: true, amount: true, charged: true } } },
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
     const hasMore = rows.length > LEDGER_PAGE_SIZE;
@@ -134,7 +189,7 @@ export class WalletService {
     fare: Prisma.Decimal | null;
     note: string | null;
     createdAt: Date;
-    topUp?: { rail: string; providerRef: string | null } | null;
+    topUp?: { rail: string; providerRef: string | null; amount?: Prisma.Decimal; charged?: Prisma.Decimal | null } | null;
   }): WalletEntry {
     const type: WalletEntryType = r.type === "ride_commission" ? "commission" : (r.type as WalletEntryType);
     const rate = num(r.ratePct);
@@ -149,7 +204,7 @@ export class WalletService {
         break;
       case "topup":
         title = "Top-up";
-        meta = rail ? RAIL_LABEL[rail] : "Top-up";
+        meta = rail ? topupMeta(rail, r.topUp ?? null, this.topupFeePct) : "Top-up";
         break;
       case "grace":
         title = "Starting credit";
@@ -371,34 +426,170 @@ export class WalletService {
 
   // ── Top-ups ──
 
-  /** Create a pending top-up intent for a self-serve rail. The amount is clamped server-side to
-   *  [minTopUp, maxTopUp]. The rail prompt is pushed to the phone out of band (the live rail client is
-   *  a follow-on — see the PR body); the intent expires after the 90s window, and the rider can retry. */
+  /** Create a top-up intent for a self-serve rail and, when Paynow is live, charge it.
+   *  The amount (what reaches the balance) is clamped server-side to [minTopUp, maxTopUp]; the biker is
+   *  charged that plus the transaction fee (`charged`). A rail that isn't live yet ("Coming soon") is
+   *  refused. With `PAYMENT_RAIL=stub` no rail is called: the intent expires after the 90 s window, as
+   *  before Paynow. With Paynow, an immediate refusal (insufficient balance, a bad number) comes back
+   *  `declined`, so the app goes straight to "didn't go through"; a transport failure leaves it `pending`
+   *  for the sweep to look up by trace. */
   async createTopup(riderId: string, body: CreateTopupRequest): Promise<Topup> {
     await this.assertVerifiedRider(riderId);
     // BH-09: idempotent replay — a client-generated key lets a timeout+retry return the SAME pending
     // intent instead of opening a second one for the same attempt (mirrors OrdersService.create).
-    // Checked before any other work so a replay is cheap.
+    // Checked before any other work so a replay is cheap, and a replay never charges twice.
     if (body.idempotencyKey) {
       const existing = await this.prisma.topUp.findFirst({ where: { riderId, idempotencyKey: body.idempotencyKey } });
       if (existing) return this.toTopup(existing);
     }
-    const amount = Math.min(COMMISSION.maxTopUp, Math.max(COMMISSION.minTopUp, round2(body.amount)));
-    const expiresAt = new Date(Date.now() + TOPUP_WINDOW_MS);
-    try {
-      const topUp = await this.prisma.topUp.create({
-        data: { riderId, rail: body.rail, amount, phone: body.phone, status: "pending", expiresAt, idempotencyKey: body.idempotencyKey ?? null },
+    if (!this.topupRails.includes(body.rail)) {
+      throw new ForbiddenException({
+        reason: "topup_rail_unavailable",
+        message: `${RAIL_LABEL[body.rail]} is coming soon. Top up with ${this.topupRails.map((r) => RAIL_LABEL[r]).join(" or ")} for now.`,
       });
-      return this.toTopup(topUp);
+    }
+    const amount = Math.min(COMMISSION.maxTopUp, Math.max(COMMISSION.minTopUp, round2(body.amount)));
+    const charged = addMoney(amount, topupFee(amount, this.topupFeePct));
+    const expiresAt = new Date(Date.now() + TOPUP_WINDOW_MS);
+    let topUp;
+    try {
+      topUp = await this.prisma.topUp.create({
+        data: { riderId, rail: body.rail, amount, charged, phone: body.phone, status: "pending", expiresAt, idempotencyKey: body.idempotencyKey ?? null },
+      });
     } catch (err) {
       // A concurrent replay of the same idempotency key raced us and won (P2002 on the partial unique
-      // (rider_id, idempotency_key) index) — return their intent instead of a spurious 5xx.
+      // (rider_id, idempotency_key) index) — return their intent instead of a spurious 5xx. The winner
+      // is the one that charges.
       if (body.idempotencyKey && err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
         const winner = await this.prisma.topUp.findFirst({ where: { riderId, idempotencyKey: body.idempotencyKey } });
         if (winner) return this.toTopup(winner);
       }
       throw err;
     }
+    if (!this.railLive || !this.rail) return this.toTopup(topUp);
+
+    let result: PaymentRailResult;
+    try {
+      result = await this.rail.initiate({
+        topUpId: topUp.id,
+        rail: body.rail,
+        // PAYNOW_FEE_MODE=paynow: Paynow's "add fees on top" adds the fee, so we send the credit.
+        // server: we send the fee-inclusive charge ourselves. Never both (the biker would pay twice).
+        amount: this.env.PAYNOW_FEE_MODE === "server" ? charged : amount,
+        phone: body.phone,
+        idempotencyKey: body.idempotencyKey,
+      });
+    } catch (err) {
+      this.logger.error(`top-up ${topUp.id}: rail initiate failed (${(err as Error).message}); left pending for the sweep`);
+      return this.toTopup(topUp);
+    }
+    if (result.status === "failed") {
+      const declined = await this.declineTopup(topUp.id, result.raw);
+      return this.toTopup(declined ?? topUp);
+    }
+    const updated = await this.prisma.topUp
+      .update({
+        where: { id: topUp.id },
+        data: {
+          ...(result.providerRef ? { providerRef: result.providerRef } : {}),
+          ...(result.pollUrl ? { pollUrl: result.pollUrl } : {}),
+          ...(result.raw !== undefined ? { railPayload: result.raw as Prisma.InputJsonValue } : {}),
+        },
+      })
+      .catch((err: unknown) => {
+        // Never fail the biker's request over bookkeeping: the charge is already on their phone, and the
+        // sweep finds it again by trace.
+        this.logger.error(`top-up ${topUp.id}: couldn't store the rail reference (${(err as Error).message})`);
+        return topUp;
+      });
+    return this.toTopup(updated);
+  }
+
+  /** Mark a top-up `declined` (from `pending`, or a lapsed `expired`). The only writer of `declined`.
+   *  Returns the row, or null if it had already settled. */
+  async declineTopup(topUpId: string, railPayload?: unknown) {
+    const moved = await this.prisma.topUp.updateMany({
+      where: { id: topUpId, status: { in: ["pending", "expired"] } },
+      data: { status: "declined", resolvedAt: new Date(), ...(railPayload !== undefined ? { railPayload: railPayload as Prisma.InputJsonValue } : {}) },
+    });
+    if (moved.count === 0) return null;
+    return this.prisma.topUp.findUnique({ where: { id: topUpId } });
+  }
+
+  /**
+   * Apply what the rail says about a top-up. `confirmed` credits exactly once ({@link creditFromTopup}),
+   * but only when the rail moved at least the amount we credit: a short payment is never credited and is
+   * logged for ops. `failed` declines. `pending` changes nothing. Returns what happened.
+   */
+  async settleTopupFromRail(
+    topUpId: string,
+    result: PaymentRailResult,
+  ): Promise<TopupSettleOutcome> {
+    const topUp = await this.prisma.topUp.findUnique({ where: { id: topUpId } });
+    if (!topUp) return "not_found";
+    if (result.status === "pending") return "pending";
+    if (result.status === "failed") return (await this.declineTopup(topUpId, result.raw)) ? "declined" : "already_settled";
+
+    const credit = round2(Number(topUp.amount));
+    const paid = result.amount;
+    if (paid != null && toCentsSafe(paid) < toCentsSafe(credit)) {
+      this.logger.error(`top-up ${topUpId}: rail reports $${paid.toFixed(2)} paid, less than the $${credit.toFixed(2)} credit — NOT credited, needs ops`);
+      await this.prisma.topUp.update({ where: { id: topUpId }, data: { railPayload: (result.raw ?? null) as Prisma.InputJsonValue } }).catch(() => undefined);
+      return "short_paid";
+    }
+    if (topUp.status === "declined") {
+      // A rail can't pay a charge it already called final; if one ever does, the money moved and we didn't
+      // credit it, so make it loud for ops rather than silently skipping.
+      this.logger.error(`top-up ${topUpId}: rail reports PAID on a declined intent (ref ${result.providerRef ?? "?"}) — needs ops`);
+      return "already_settled";
+    }
+    await this.prisma.topUp
+      .update({
+        where: { id: topUpId },
+        data: {
+          // Paynow's figure replaces our expected total only when it includes a fee: if it reports just the
+          // base amount, the fee-inclusive total we computed at create time stays the receipt's "You paid".
+          ...(paid != null && toCentsSafe(paid) > toCentsSafe(credit) ? { charged: paid } : {}),
+          ...(result.raw !== undefined ? { railPayload: result.raw as Prisma.InputJsonValue } : {}),
+        },
+      })
+      .catch(() => undefined);
+    const credited = await this.creditFromTopup(topUpId, result.providerRef);
+    return credited ? "credited" : "already_settled";
+  }
+
+  /**
+   * Ask the rail about one top-up and apply the answer: the sweep's step, and the webhook's confirmation
+   * re-poll. A still-pending intent whose window has lapsed is moved to `expired` (re-openable: a late
+   * payment still credits). Throws on a rail transport failure; the caller decides whether that matters.
+   */
+  async reconcileTopup(topUpId: string): Promise<TopupSettleOutcome> {
+    if (!this.railLive || !this.rail) return "pending";
+    const topUp = await this.prisma.topUp.findUnique({ where: { id: topUpId } });
+    if (!topUp) return "not_found";
+    if (topUp.status === "confirmed" || topUp.status === "declined") return "already_settled";
+    const result = await this.rail.confirm(topUp.providerRef ?? topUp.id, { pollUrl: topUp.pollUrl ?? undefined, topUpId: topUp.id });
+    const outcome = await this.settleTopupFromRail(topUpId, result);
+    if (outcome === "pending" && topUp.status === "pending" && topUp.expiresAt.getTime() <= Date.now()) {
+      await this.prisma.topUp.updateMany({ where: { id: topUpId, status: "pending" }, data: { status: "expired", resolvedAt: new Date() } });
+    }
+    return outcome;
+  }
+
+  /** Top-ups the sweep should ask the rail about: unsettled, not brand new, and recent enough that a late
+   *  payment is still plausible. Newest first, bounded. */
+  async topupsToReconcile(now: Date, limit: number): Promise<string[]> {
+    const rows = await this.prisma.topUp.findMany({
+      where: {
+        rail: { in: this.topupRails },
+        initiatedAt: { lte: new Date(now.getTime() - TOPUP_RECONCILE_MIN_AGE_MS), gte: new Date(now.getTime() - TOPUP_RECONCILE_MAX_AGE_MS) },
+        OR: [{ status: "pending" }, { status: "expired", initiatedAt: { gte: new Date(now.getTime() - TOPUP_LATE_PAYMENT_WINDOW_MS) } }],
+      },
+      orderBy: { initiatedAt: "desc" },
+      take: limit,
+      select: { id: true },
+    });
+    return rows.map((r) => r.id);
   }
 
   /** Poll a top-up intent. Marks it `expired` if the window elapsed while still pending (so the client
@@ -431,6 +622,7 @@ export class WalletService {
     phone: string | null;
     expiresAt: Date;
     initiatedAt: Date;
+    charged?: Prisma.Decimal | null;
   }): Topup {
     // The DB stores `confirmed`; the wire contract calls a settled top-up `succeeded`.
     const status = (t.status === "confirmed" ? "succeeded" : t.status) as Topup["status"];
@@ -442,6 +634,7 @@ export class WalletService {
       phone: t.phone ?? "",
       expiresAt: t.expiresAt.toISOString(),
       createdAt: t.initiatedAt.toISOString(),
+      ...(t.charged != null ? { charged: round2(Number(t.charged)) } : {}),
     };
   }
 

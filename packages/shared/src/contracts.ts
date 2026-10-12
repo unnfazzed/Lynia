@@ -768,6 +768,10 @@ export const CommissionConfig = z
     maxTopUp: z.number().positive(),
     /** D-70: commission-free first jobs a new rider gets (Calm Mint v2 R1/R3). Optional — older servers omit it. */
     freeFirstJobs: z.number().int().nonnegative().optional(),
+    /** Paynow top-ups: the transaction fee (%) the biker pays on top of a top-up. Optional — older servers omit it. */
+    topupFeePct: z.number().min(0).max(100).optional(),
+    /** The rails a biker can top up on now; the provider step shows the rest as "Coming soon". Optional — older servers omit it. */
+    topupRails: z.array(z.enum(["ecocash", "innbucks", "omari"])).optional(),
   })
   .strict();
 export type CommissionConfig = z.infer<typeof CommissionConfig>;
@@ -828,6 +832,9 @@ export const Topup = z
     phone: z.string(),
     expiresAt: z.string(),
     createdAt: z.string(),
+    /** What the biker is charged: `amount` plus the transaction fee. The rail's own figure once it reports one.
+     *  Optional — older servers omit it. */
+    charged: z.number().optional(),
   })
   .strict();
 export type Topup = z.infer<typeof Topup>;

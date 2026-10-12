@@ -258,3 +258,20 @@ describe("estimatePickupEtaMinutes", () => {
     expect(estimatePickupEtaMinutes(NATIONWIDE_REACH_M)).toBe(PICKUP_ETA.maxMinutes);
   });
 });
+
+describe("topupFee — the transaction fee the biker pays on a Paynow top-up (rounded UP to the cent)", () => {
+  it("2.5% of the drawn amounts", async () => {
+    const { topupFee } = await import("./policy");
+    expect(topupFee(5, 2.5)).toBe(0.13);
+    expect(topupFee(10, 2.5)).toBe(0.25);
+    expect(topupFee(20, 2.5)).toBe(0.5);
+    expect(topupFee(50, 2.5)).toBe(1.25);
+    expect(topupFee(7, 2.5)).toBe(0.18);
+  });
+  it("is 0 for no amount or no fee", async () => {
+    const { topupFee } = await import("./policy");
+    expect(topupFee(0, 2.5)).toBe(0);
+    expect(topupFee(5, 0)).toBe(0);
+    expect(topupFee(Number.NaN, 2.5)).toBe(0);
+  });
+});

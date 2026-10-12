@@ -514,6 +514,11 @@ model TopUp {
   // partial unique index below) instead of opening a second pending intent for the same attempt.
   // Nullable — an old client that doesn't send one just never dedupes.
   idempotencyKey String?     @map("idempotency_key")
+  // Paynow top-ups (migration 0090): the rail's poll URL (server-side only), what the biker is charged
+  // (amount + fee; the rail's own figure once reported) and the untouched last rail message.
+  pollUrl        String?     @map("poll_url")
+  charged        Decimal?    @db.Decimal(10, 2)
+  railPayload    Json?       @map("rail_payload")
 
   ledgerEntry CommissionLedger?
 

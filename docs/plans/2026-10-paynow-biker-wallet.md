@@ -296,6 +296,19 @@ credited amount.
 14. Run the four Paynow test numbers through to T5, slow T5, T6 and immediate T6. Run the § 3 fee-mechanism checks, then one live $5
     top-up. Then ask Paynow to go live.
 
+**Turning Phase 1 on (after the build PR merges).** Nothing changes until all of these are done; the default is
+`PAYMENT_RAIL=stub`, which charges no one.
+1. In Paynow, on the "LyniaGo" 3rd-party integration: make sure it is **USD**, **EcoCash** is enabled, and **"add fees on
+   top" is ON** (`PAYNOW_FEE_MODE=paynow`).
+2. Store the integration key as the secret **`PAYNOW_INTEGRATION_KEY`**: GCP Secret Manager, or Key Vault (`paynow-integration-key`)
+   on Azure. Never in the repo or a Variable.
+3. Set the repo Variables **`PAYNOW_INTEGRATION_ID`**, **`PAYNOW_AUTH_EMAIL`** (the Paynow merchant login email) and
+   **`PAYNOW_RESULT_URL`** (`https://<api-host>/webhooks/paynow`), then **`PAYNOW_ENABLED=true`**, and deploy. The
+   release preflight fails in seconds if any is missing.
+4. In test mode, top up with the four test numbers (§ 1) and check the fee-mechanism questions (§ 3, (a)–(c)) in the
+   Paynow dashboard. If Paynow doesn't add the fee on express checkout, set `PAYNOW_FEE_MODE=server` and turn Paynow's
+   setting OFF. Then ask Paynow to go live, and do one real $5 top-up.
+
 In Phase 1, InnBucks and O'mari show on T1 as "Coming soon" and can't be selected (§ 3 T1; owner decision, § 6 Q1).
 
 **Phase 2: InnBucks (T4b) and O'mari (T4c).** We build these as new screens from the current kit (design rule above); there's no design export to wait for.

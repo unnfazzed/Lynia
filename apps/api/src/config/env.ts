@@ -423,6 +423,35 @@ export const envSchema = z.object({
   // Per-entry cap (USD) on an ops manual credit — an abuse backstop on the admin credit path
   // (design OV-3A). Default $50 (= COMMISSION.maxTopUp).
   WALLET_MANUAL_CREDIT_CAP_USD: z.coerce.number().positive().default(50),
+  // --- Biker top-ups through Paynow (docs/plans/2026-10-paynow-biker-wallet.md) ---
+  // Which payment rail a self-serve top-up charges. `stub` (default) charges nothing: every intent runs
+  // its window down and expires, exactly as before Paynow. `paynow` charges through Paynow express
+  // checkout and needs the PAYNOW_* settings below (a production boot without them fails).
+  PAYMENT_RAIL: z.enum(["stub", "paynow"]).default("stub"),
+  // The "3rd Party Site or Link Profile" integration (a USD integration with EcoCash enabled). The ID is
+  // plain config; the KEY signs every message both ways and is a secret (Secret Manager / Key Vault only).
+  PAYNOW_INTEGRATION_ID: z.preprocess((v) => (v === "" ? undefined : v), z.string().regex(/^\d+$/).optional()),
+  PAYNOW_INTEGRATION_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().min(8).optional()),
+  // Express checkout requires `authemail`; in test mode it must be the merchant account's login email.
+  PAYNOW_AUTH_EMAIL: z.preprocess((v) => (v === "" ? undefined : v), z.string().email().optional()),
+  // Where Paynow POSTs status updates: https://<api-host>/webhooks/paynow.
+  PAYNOW_RESULT_URL: z.preprocess((v) => (v === "" ? undefined : v), z.string().url().optional()),
+  // Paynow requires a return URL even though express checkout never redirects anyone.
+  PAYNOW_RETURN_URL: z.string().url().default("https://lyniago.com"),
+  PAYNOW_BASE_URL: z.string().url().default("https://www.paynow.co.zw"),
+  // Who adds the transaction fee to the charge. `paynow` (owner preference): the integration's "add fees
+  // on top" setting is ON and we send the bare amount. `server`: that setting is OFF and we send amount +
+  // fee ourselves. The fallback if test mode shows Paynow doesn't add the fee on express checkout. NEVER
+  // both: the biker would pay the fee twice.
+  PAYNOW_FEE_MODE: z.enum(["paynow", "server"]).default("paynow"),
+  // The fee (%) the top-up screens show the biker, served in /wallet/config. Must match Paynow's rate.
+  TOPUP_FEE_PCT: z.coerce.number().min(0).max(100).default(2.5),
+  // Comma-separated rails a biker can top up on now; the rest show "Coming soon" and are refused.
+  TOPUP_RAILS: z
+    .string()
+    .default("ecocash")
+    .transform((v) => v.split(",").map((r) => r.trim()).filter(Boolean))
+    .pipe(z.array(z.enum(["ecocash", "innbucks", "omari"]))),
 }).superRefine((env, ctx) => {
   // The boot-guards below fail LOUD in production rather than let the API come up in an insecure or
   // half-configured state. Each stays permissive in dev/test so local work and CI are unaffected.
@@ -455,6 +484,17 @@ export const envSchema = z.object({
     if (env.NODE_ENV === "production" && !env.AZURE_CLIENT_ID) {
       plainConfig("AZURE_CLIENT_ID", "the API can't pick its managed identity, so the user-delegation key fetch and every photo upload fail");
     }
+  }
+
+  // Boot-guard: a Paynow rail with half its wiring missing can't sign, can't hear back, or can't charge.
+  // Checked in every environment (a dead config anywhere), so `PAYMENT_RAIL=paynow` is all-or-nothing.
+  if (env.PAYMENT_RAIL === "paynow") {
+    const paynowMissing = (name: string, breaks: string): void =>
+      reject(name, `Missing ${name}: ${breaks}. Fix: set it (and PAYNOW_ENABLED=true in the deploy), or leave PAYMENT_RAIL=stub.`);
+    if (!env.PAYNOW_INTEGRATION_ID) paynowMissing("PAYNOW_INTEGRATION_ID", "no top-up can be sent to Paynow");
+    if (!env.PAYNOW_INTEGRATION_KEY) paynowMissing("PAYNOW_INTEGRATION_KEY", "no message to or from Paynow can be signed or verified");
+    if (!env.PAYNOW_AUTH_EMAIL) paynowMissing("PAYNOW_AUTH_EMAIL", "Paynow refuses every express-checkout top-up without it");
+    if (!env.PAYNOW_RESULT_URL) paynowMissing("PAYNOW_RESULT_URL", "Paynow can't tell us a top-up was paid");
   }
 
   if (env.NODE_ENV === "production") {

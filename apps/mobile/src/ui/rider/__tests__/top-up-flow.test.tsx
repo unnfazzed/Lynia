@@ -74,7 +74,10 @@ const flush = (): Promise<void> => act(async () => new Promise((resolve) => setT
 const mounted: ReactTestRenderer[] = [];
 const clients: QueryClient[] = [];
 
-function render(minTopUp = 2): ReactTestRenderer {
+function render(
+  minTopUp = 2,
+  opts: { feePct?: number; liveRails?: readonly ("ecocash" | "innbucks" | "omari")[]; defaultProvider?: "ecocash" | "innbucks" | "omari" } = {},
+): ReactTestRenderer {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   clients.push(qc);
   let root!: ReactTestRenderer;
@@ -87,9 +90,11 @@ function render(minTopUp = 2): ReactTestRenderer {
             maxTopUp={50}
             ratePct={10}
             avgFare={3}
-            defaultProvider="ecocash"
+            defaultProvider={opts.defaultProvider ?? "ecocash"}
             defaultPhone="0771234567"
             balance={12.6}
+            feePct={opts.feePct ?? 0}
+            liveRails={opts.liveRails ?? ["ecocash", "innbucks", "omari"]}
             onExit={() => {}}
             onCallSupport={() => {}}
           />
@@ -276,5 +281,66 @@ describe("TopUpFlow — audit fixes", () => {
     const chips = tree.root.findAll((n) => n.props?.accessibilityRole === "button" && typeof n.props.accessibilityLabel === "string" && /^\$\d/.test(n.props.accessibilityLabel) && typeof n.props.onPress === "function");
     const labels = [...new Set(chips.map((n) => n.props.accessibilityLabel as string))];
     expect(labels).toEqual(["$5.00", "$10.00", "$20.00"]);
+  });
+});
+
+describe("Paynow Phase 1 (ledger D-103): the 2.5% fee and the \"Coming soon\" providers", () => {
+  const PHASE1 = { feePct: 2.5, liveRails: ["ecocash"] as const };
+
+  /** The provider cards on T1, by name, with whether each can be chosen and its sub-line. */
+  function providers(tree: ReactTestRenderer): Array<{ label: string; disabled: boolean }> {
+    return tree.root
+      .findAll((n) => n.props?.accessibilityRole === "radio" && typeof n.props.accessibilityLabel === "string")
+      .map((n) => ({ label: n.props.accessibilityLabel as string, disabled: !!n.props.disabled }))
+      .filter((p, i, all) => all.findIndex((q) => q.label === p.label) === i);
+  }
+
+  it("T1: InnBucks and O'mari read \"Coming soon\" and can't be chosen; EcoCash stays as drawn", () => {
+    const tree = render(5, PHASE1);
+    expect(providers(tree)).toEqual([
+      { label: "EcoCash, Approve on your phone", disabled: false },
+      { label: "InnBucks, Coming soon", disabled: true },
+      { label: "O'mari, Coming soon", disabled: true },
+    ]);
+  });
+
+  it("a saved provider that isn't live opens on EcoCash, and the request goes out on EcoCash", async () => {
+    mockCreateTopup.mockResolvedValue(topup({ amount: 5, charged: 5.13 }));
+    mockGetTopup.mockReturnValue(new Promise(() => {}));
+    const tree = render(5, { ...PHASE1, defaultProvider: "innbucks" });
+    await submit(tree);
+    expect(mockCreateTopup).toHaveBeenCalledWith(expect.objectContaining({ rail: "ecocash" }));
+  });
+
+  it("T2 shows the fee and the total; T3 the split and \"Request <total>\" (owner-approved copy)", () => {
+    const tree = render(5, PHASE1);
+    const press = (match: (l: string) => boolean): void => {
+      const b = tree.root.findAll((n) => typeof n.props?.label === "string" && match(n.props.label) && typeof n.props.onPress === "function")[0];
+      act(() => b?.props.onPress());
+    };
+    press((l) => l === "Next");
+    expect(texts(tree)).toContain("Transaction fee 2.5%: $0.13. You pay $5.13.");
+    press((l) => l === "Next");
+    expect(texts(tree)).toContain("$5.00 to your balance + $0.13 transaction fee (2.5%).");
+    expect(tree.root.findAll((n) => n.props?.label === "Request $5.13").length).toBeGreaterThan(0);
+  });
+
+  it("T4 asks the biker to approve the TOTAL — the figure on the EcoCash prompt — and still sends the credit amount", async () => {
+    mockCreateTopup.mockResolvedValue(topup({ amount: 5, charged: 5.13 }));
+    mockGetTopup.mockReturnValue(new Promise(() => {}));
+    const tree = render(5, PHASE1);
+    await submit(tree);
+    expect(mockCreateTopup).toHaveBeenCalledWith(expect.objectContaining({ amount: 5 }));
+    expect(texts(tree)).toContain("Approve $5.13 on your phone");
+  });
+
+  it("T5 names the CREDIT (what reached the balance), not the total", async () => {
+    mockCreateTopup.mockResolvedValue(topup({ amount: 5, charged: 5.13 }));
+    mockGetTopup.mockResolvedValue(topup({ amount: 5, charged: 5.13, status: "succeeded" }));
+    const tree = render(5, PHASE1);
+    await submit(tree);
+    await flush();
+    expect(texts(tree)).toContain("Top-up done");
+    expect(texts(tree)).toMatch(/\$5\.00 added\./);
   });
 });
