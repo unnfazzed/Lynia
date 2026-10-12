@@ -125,10 +125,9 @@ describe("MatchingService.selectOffer — metric wrapper re-throws domain errors
     expect(metrics.recordMatchSelect).toHaveBeenCalledWith(7, "assigned" satisfies MatchSelectOutcome);
   });
 
-  it("KB-HEARTBEAT-MARGIN: a biker heartbeat 45s old is still selectable (widened 30s→60s TTL)", async () => {
-    // 45s exceeds the OLD 30s TTL (would have thrown a spurious "rider just became unavailable") but is
-    // comfortably inside the widened 60s window — a single delayed heartbeat on the 20s cadence no longer
-    // steers the customer off a live rider.
+  it("a bid counts as presence (owner 2026-10-12): a biker who bid and locked the phone 5 min ago is still selectable", async () => {
+    // The foreground heartbeat stops when the phone locks. 5 min is far past the old 60s TTL (which dropped
+    // the bid) but inside the push cutoff the bid is now held to.
     const { service, metrics } = svc({
       offer: {
         findFirst: async () => ({
@@ -138,7 +137,7 @@ describe("MatchingService.selectOffer — metric wrapper re-throws domain errors
           order: { status: "open_for_offers", customerId: "cust" },
           rider: {
             isOnline: true,
-            lastHeartbeatAt: new Date(Date.now() - 45_000),
+            lastHeartbeatAt: new Date(Date.now() - 5 * 60_000),
             kycStatus: "verified",
             accountStatus: "active",
             onHold: false,
@@ -157,8 +156,8 @@ describe("MatchingService.selectOffer — metric wrapper re-throws domain errors
     expect(metrics.recordMatchSelect).toHaveBeenCalledWith(7, "assigned" satisfies MatchSelectOutcome);
   });
 
-  it("KB-HEARTBEAT-MARGIN: a genuinely-gone biker (heartbeat 90s old) is still rejected as unavailable", async () => {
-    // The widened TTL must still catch a real dropout — 90s is past even the 60s window.
+  it("a genuinely-gone biker (no heartbeat for 20 min, past the push cutoff) is still rejected as unavailable", async () => {
+    // Longer than any auction window plus grace, so only a rider silent since before the order existed.
     const { service } = svc({
       offer: {
         findFirst: async () => ({
@@ -168,7 +167,7 @@ describe("MatchingService.selectOffer — metric wrapper re-throws domain errors
           order: { status: "open_for_offers", customerId: "cust" },
           rider: {
             isOnline: true,
-            lastHeartbeatAt: new Date(Date.now() - 90_000),
+            lastHeartbeatAt: new Date(Date.now() - 20 * 60_000),
             kycStatus: "verified",
             accountStatus: "active",
             onHold: false,

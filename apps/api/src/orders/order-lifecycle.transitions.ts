@@ -190,7 +190,7 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     to: "assigned",
     actor: "customer",
     guard:
-      "guarded CAS status=open_for_offers; caller === order.customerId; offer belongs to the order and is status=pending; NOT a self-offer (offer.riderId !== customerId); pair not blocked; rider isOnline AND heartbeat < 60s (ET3) AND account standing OK (onlineRefusalReason); one_active_ride partial-unique blocks a rider already on another ride (ET2)",
+      "guarded CAS status=open_for_offers; caller === order.customerId; offer belongs to the order and is status=pending; NOT a self-offer (offer.riderId !== customerId); pair not blocked; rider isOnline AND heartbeat within the push cutoff (ET3; 15 min — a bid counts as presence, owner 2026-10-12) AND account standing OK (onlineRefusalReason); one_active_ride partial-unique blocks a rider already on another ride (ET2)",
     sideEffect:
       "MONEY: bind agreedFare = offer.offeredFare; set riderId, otpHash + otpCipher (delivery code minted once, hash = verifier, D2 ciphertext so reveal is repeatable; a rider-bail clone's carried code is KEPT, pinned in the CAS — U22), deliveryOtpAttempts=0, deliveryCodeRotatedAt; offer→selected, all other pending offers→declined; OrderEvent(assigned); post-commit notify rider + emitOrderTaken to close the board card",
     compensation:

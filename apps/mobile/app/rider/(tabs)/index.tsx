@@ -35,6 +35,7 @@ import {
   resolveKycRetryFeedback,
 } from "../../../src/logic/gates";
 import { useHomeLocation } from "../../../src/logic/home-location";
+import { useKeepScreenOn } from "../../../src/logic/use-keep-screen-on";
 import { kycScreenFor, parseIsoDay } from "../../../src/logic/kyc-outcome";
 import { markRiderWelcomeSeen, riderWelcomeSeen } from "../../../src/logic/rider-welcome";
 import { topUpAtLeast } from "../../../src/logic/topup";
@@ -363,6 +364,9 @@ export default function RiderHome(): React.ReactElement {
       return () => setFocused(false);
     }, []),
   );
+  // Owner 2026-10-12: an online rider waiting on the board keeps the screen on, so the heartbeat keeps
+  // beating (it stops when the phone locks) and their bids stay fresh. Locking by hand still works.
+  useKeepScreenOn(online && focused);
   const [pickedSeen, setPickedSeen] = useState<string | null>(null);
   const picked = focused && activeJob?.status === "assigned" && activeJob.orderType !== "merchant" && pickedSeen !== activeJob.id ? activeJob : null;
   const prevJobStatus = useRef<string | undefined>(undefined);
@@ -516,8 +520,8 @@ export default function RiderHome(): React.ReactElement {
     return () => clearTimeout(t);
   }, [activationRetry]);
 
-  // Heartbeat: only a 403 takes the rider offline; two failed beats show "Reconnecting…". While online it
-  // also keeps beating with the phone locked (the background location task; see use-rider-heartbeat.ts).
+  // Heartbeat: only a 403 takes the rider offline; two failed beats show "Reconnecting…". Coming back to
+  // the app beats at once (see use-rider-heartbeat.ts).
   const { stale: beatStale } = useRiderHeartbeat(
     online,
     () => locRef.current,

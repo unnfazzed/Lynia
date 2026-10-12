@@ -28,10 +28,9 @@ import { acquireSocket, releaseSocket } from "./socket";
  * The foreground `watchPositionAsync` stream is the primary path, but it silently pauses whenever the
  * app is backgrounded — and the job screen's "Follow route in Google Maps" hand-off backgrounds the app
  * for most of the trip. So alongside it we start the background location task (an Android foreground
- * service; see background-location-task.ts) at the job rate, strictly scoped to the same active-job
- * window: it starts when this effect opens the stream and the same cleanup that closes it ends the job
- * rate, so the job stream is provably off outside assigned→delivered (the service drops back to the
- * heartbeat's low online rate if the rider is still online, or stops). Best-effort by design — if it can't start (iOS without
+ * service; see background-location-task.ts), strictly scoped to the same active-job window: it starts
+ * when this effect opens the stream and is stopped in the same cleanup that closes it, so streaming is
+ * provably off outside assigned→delivered. Best-effort by design — if it can't start (iOS without
  * "always" permission, which we deliberately never request; Expo Go; OEM quirks) we degrade silently to
  * today's foreground-only behaviour, never crash or block the job flow.
  *
@@ -120,9 +119,8 @@ export function useRiderLocationStream(orderId: string | null): {
       // The caller nulls orderId the moment the job leaves the active window, so this cleanup IS the
       // privacy gate for the background task too. Unhook the bridge first — the native stop is async,
       // and a straggler task invocation racing it must be dropped, not misdelivered — then stop the
-      // job rate (internally guarded by hasStartedLocationUpdatesAsync, safe against a concurrent
-      // restart for a new job, and handing back to the online rate when online; see
-      // background-location-task.ts).
+      // updates (internally guarded by hasStartedLocationUpdatesAsync and safe against a concurrent
+      // restart for a new job; see background-location-task.ts).
       setBackgroundFixForwarder(null);
       void stopRiderBackgroundUpdates();
       if (socket) {
