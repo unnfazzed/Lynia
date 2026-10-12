@@ -28,6 +28,13 @@ interface Rider {
 }
 
 const KYC_TABS = ["pending", "verified", "failed", "expired", "all"] as const;
+/** Rows per page of `GET /admin/riders` (AdminRidersService RIDER_LIST_PAGE_SIZE). */
+const PAGE_SIZE = 100;
+/** `?page=` as a 1-based page number; anything else is page 1. */
+function pageParam(raw: string | string[] | undefined): number {
+  const n = typeof raw === "string" ? Number.parseInt(raw, 10) : Number.NaN;
+  return Number.isFinite(n) && n >= 1 ? n : 1;
+}
 /** First Run v2 E4 (D-82): the directory vs the plate review queue (`?plate=checking`). */
 const PLATE_TABS = [
   { value: "all", label: "all bikers" },
@@ -88,7 +95,11 @@ export default async function RidersPage({
   const kycMode = typeof raw === "string" && (KYC_TABS as readonly string[]).includes(raw);
   const kycFilter = kycMode ? (raw as string) : "";
   const query = kycMode && kycFilter !== "all" ? `?kyc=${kycFilter}` : plateMode ? "?plate=checking" : "";
-  const res = await adminFetchResult<Rider[]>(`/admin/riders${query}`);
+  // Pages of PAGE_SIZE (1-based `?page=`). The pending queue comes back oldest-waiting first, so page 1 is
+  // always who has waited longest; a full page means there may be another.
+  const page = pageParam(sp.page);
+  const withPage = (n: number) => `${query}${query ? "&" : "?"}page=${n}`;
+  const res = await adminFetchResult<Rider[]>(`/admin/riders${page > 1 ? withPage(page) : query}`);
   const riders = "data" in res ? res.data : null;
   const reason = "data" in res ? undefined : res.reason;
   const connected = riders !== null;
@@ -183,9 +194,22 @@ export default async function RidersPage({
             )
           }
         />
-        {riders && riders.length >= 100 ? (
-          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 12 }}>
-            Showing the latest 100 bikers — older records aren&apos;t listed. Filter to narrow the view.
+        {riders && (riders.length >= PAGE_SIZE || page > 1) ? (
+          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 12, display: "flex", gap: 12, alignItems: "center" }}>
+            <span>
+              Page {page}
+              {kycFilter === "pending" ? " · oldest waiting first" : ""}
+            </span>
+            {page > 1 ? (
+              <a href={`/riders${withPage(page - 1)}`} style={{ color: "var(--accent-text)", textDecoration: "none" }}>
+                ← Previous
+              </a>
+            ) : null}
+            {riders.length >= PAGE_SIZE ? (
+              <a href={`/riders${withPage(page + 1)}`} style={{ color: "var(--accent-text)", textDecoration: "none" }}>
+                Next →
+              </a>
+            ) : null}
           </div>
         ) : null}
       </section>

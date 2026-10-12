@@ -36,6 +36,20 @@ function makeDeps() {
   return { prisma, push, service };
 }
 
+describe("NotificationsService.notifyProfiles — the delivered set (item 12)", () => {
+  it("resolves to the profiles a device accepted; empty when the profile has no token, or the send fails", async () => {
+    const { prisma, push, service } = makeDeps();
+    prisma.deviceToken.findMany.mockResolvedValueOnce([{ token: "t1", profileId: "p1", platform: "android" }]);
+    expect(await service.notifyProfiles(["p1"], { title: "t", body: "b", data: { kind: "account" } })).toEqual(new Set(["p1"]));
+    // No registered token: nothing sent, and the caller can SEE that nothing landed.
+    expect(await service.notifyProfiles(["p1"], { title: "t", body: "b" })).toEqual(new Set());
+    // A send that throws is swallowed (never throws) but still reads as undelivered.
+    prisma.deviceToken.findMany.mockResolvedValueOnce([{ token: "t1", profileId: "p1", platform: "android" }]);
+    vi.mocked(push.sendEach).mockRejectedValueOnce(new Error("fcm down"));
+    expect(await service.notifyProfiles(["p1"], { title: "t", body: "b" })).toEqual(new Set());
+  });
+});
+
 describe("NotificationsService — token registry", () => {
   it("registers a token, claiming it for the authenticated caller on both create and update", async () => {
     const { prisma, service } = makeDeps();

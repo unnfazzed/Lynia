@@ -307,9 +307,12 @@ Measures the false-reject rate that decides whether real riders can self-onboard
 and reconciled against Didit's v3 API: create-session `POST https://verification.didit.me/v3/session/` with
 `x-api-key` (`apps/api/src/kyc/didit-kyc-vendor.ts`), and a webhook (`/kyc/callback`) that verifies the
 recommended **`X-Signature-V2`** HMAC over the canonical body (with raw `X-Signature` fallback) plus a 300s
-`X-Timestamp` freshness window (`apps/api/src/kyc/didit.ts`). `KYC_PROVIDER` already defaults to `didit`; the
-deploy injects the Didit config **only when `DIDIT_ENABLED=true`**, so launch-safe / QA deploys never
-reference secrets that don't exist yet.
+freshness window on the **signed body `timestamp`** (KYC-R26-06 — the `X-Timestamp` header sits outside the
+HMAC, so it is only checked alongside the body's, never trusted alone; `apps/api/src/kyc/didit.ts`,
+`kyc.controller.ts`). `KYC_PROVIDER` defaults to **`stub`** in `apps/api/src/config/env.ts`; the release
+workflows (`release-azure.yml`) default it to `didit` (`vars.KYC_PROVIDER || 'didit'`), and production refuses
+`stub` with `KYC_MODE=auto` at boot. The deploy injects the Didit config **only when `DIDIT_ENABLED=true`**, so
+launch-safe / QA deploys never reference secrets that don't exist yet.
 
 **One-command path (recommended).** `apps/api/scripts/didit-setup.ts` automates steps 1–3 below — register
 the account, list/pick the workflow, register the webhook — and prints the four values to store:
@@ -389,9 +392,15 @@ onboarding never blocks testing. This is a **test configuration of the productio
 real users yet.
 
 ### Fail-safe model: QA is OPT-IN via repo variables
-The deploy **defaults to launch-safe** (`OTP_CHANNEL=whatsapp`, `KYC_PROVIDER=didit`, `PUSH_PROVIDER=fcm`).
-Test mode turns on **only** when the matching repo Variables are set — a vendor-free, auto-KYC build can
-never reach the public URL by accident.
+The deploy **defaults to launch-safe** for OTP and KYC (`OTP_CHANNEL=whatsapp`, `KYC_PROVIDER=didit`). Test
+mode turns on **only** when the matching repo Variables are set — a vendor-free, auto-KYC build can never reach
+the public URL by accident.
+
+> ⚠️ **Push is the exception: it is OFF unless you turn it on.** `PUSH_PROVIDER` defaults to `noop` in both
+> `apps/api/src/config/env.ts` and `release-azure.yml` (`vars.PUSH_PROVIDER || 'noop'`), so a deploy with no
+> Variable set sends **no pushes at all** — riders never hear their KYC outcome or a job. Set
+> `gh variable set PUSH_PROVIDER --body "fcm"` (with `FCM_PROJECT_ID`) for any real run; pushes that reach
+> no device are counted as `push_undelivered_total{kind}`.
 
 | Variable | Test value | Effect |
 |---|---|---|
@@ -445,7 +454,7 @@ Because QA is opt-in, launch = **clear the variables**, then redeploy:
 ```bash
 gh variable delete OTP_CHANNEL      # back to default: whatsapp
 gh variable delete KYC_PROVIDER     # back to default: didit
-gh variable delete PUSH_PROVIDER    # back to default: fcm
+gh variable set PUSH_PROVIDER --body "fcm"   # NOT delete: the default is noop (no pushes at all)
 gh variable delete OTP_TEST_PHONES  # no code ever returned
 gh workflow run release.yml --ref main
 ```

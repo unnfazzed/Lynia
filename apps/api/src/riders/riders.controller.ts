@@ -44,13 +44,20 @@ const SetOnline = z.object({
  * coming to clear the row (expiry is silent). Only the device can see that, so only the device can
  * say it. Optional and defaulted, so an older client is unaffected.
  *
- * Not a cost hole: the route's 5/hour throttle and the A-02 two-attempt lock both sit in front of the
- * mint, and the client sets this ONLY for an expired session — never for a denied camera or a dropped
- * network, which a new session would not fix anyway.
+ * Not a cost hole: a forced replacement is claimed once per hour, and the service's paid-mint ceiling and
+ * the A-02 two-attempt lock both sit in front of the mint; the client sets this ONLY for an expired session —
+ * never for a denied camera or a dropped network, which a new session would not fix anyway.
  */
 const RetryKyc = z.object({
   force: z.boolean().optional(),
 });
+/**
+ * Requests per hour per biker on the two routes that can buy a Didit session (become, kyc/retry). A flood
+ * guard only — what bounds the spend is in RiderService (claims before every paid call, KYC_PAID_MINT_LIMIT
+ * paid sessions an hour, the daily fixable-decline cap, the A-02 lock), which counts only sessions we paid for.
+ */
+export const KYC_ROUTE_REQUEST_CAP = 30;
+
 // The 20s liveness beat (wave-2 W3): position only, no `online` flag — a beat can never toggle state.
 const Heartbeat = z.object({
   lat: z.number().min(-90).max(90).optional(),
@@ -77,20 +84,23 @@ export class RidersController {
     return this.riders.completeProfile(id, body);
   }
 
-  // DS13-06: throttle parity with kyc/retry below — in auto mode each become mints a fresh PAID Didit
-  // session (vendor.submit), so an unthrottled route lets a parallel burst bill N sessions before the
-  // one-rider-row unique index catches up. 5/hour is generous for a genuine signup while blunting a flood.
-  @Throttle({ limit: 5, windowSec: 3600, keyPrefix: "become" })
+  // DS13-06: a request-flood guard, not the spend bound. The spend is bounded in the service: become claims
+  // the rider row BEFORE its paid vendor call (KYC-R26-10), so one sign-up mints at most one session however
+  // many requests race. The cap used to be 5/hour, and it counted every request — a Didit blip (503s) or a
+  // lost-response replay locked an honest biker out of sign-up for an hour. 30/hour still blunts a script.
+  @Throttle({ limit: KYC_ROUTE_REQUEST_CAP, windowSec: 3600, keyPrefix: "become" })
   @Post("become")
   become(@Body(new ZodBody(BecomeRider)) body: z.infer<typeof BecomeRider>, @CurrentUser() id: string) {
     return this.riders.becomeRider(id, body);
   }
 
   /** Re-run KYC for an existing rider whose check is pending/failed (Didit allows retries). */
-  // F-13: cap resubmits — each auto-mode retry mints a fresh PAID vendor session, so an uncapped route
-  // is both a cost-abuse and a throttle bypass on top of the A-02 two-attempt lock. 5/hour is generous
-  // for a genuine rider re-taking their selfie while blunting a scripted flood.
-  @Throttle({ limit: 5, windowSec: 3600, keyPrefix: "kyc-retry" })
+  // F-13: the PAID retries are capped in the service, where only a session actually bought counts: at most
+  // KYC_PAID_MINT_LIMIT (5) paid sessions an hour per biker, the daily cap on fixable declines, the A-02
+  // lock, and a claim before every paid call so a double tap buys one session. This route cap is only the
+  // request-flood guard. At 5/hour it counted FREE resumes and vendor 503s too, so "Finish verifying" tapped
+  // a few times, or a Didit blip, locked an honest biker out of their own check for an hour.
+  @Throttle({ limit: KYC_ROUTE_REQUEST_CAP, windowSec: 3600, keyPrefix: "kyc-retry" })
   @Post("kyc/retry")
   retryKyc(@Body(new ZodBody(RetryKyc)) body: z.infer<typeof RetryKyc>, @CurrentUser() id: string) {
     return this.riders.retryKyc(id, { force: body.force === true });
