@@ -8,6 +8,13 @@ The page's main jobs:
 - get businesses onboarding through WhatsApp
 - get riders signing up
 
+## Update 2026-10: new app screens + "biker" copy
+- **All 10 screens are redrawn and renamed with a `-2026-10` suffix** (e.g. `step-1-phone-2026-10.webp`, `app-send-2026-10.webp`), because `assets/*` is served with a one-year immutable cache and a changed image must never reuse an old name. The old-named files are deleted. They are from the current app designs: Send Compose v2 step 1, After Send v2 offers and "Biker on the way" (6-digit code card), Splash 1a (no steps card), and the Rider v2 Jobs board with the Tab Bar v1 pill. `step-N-phone` now shows the bare screen with rounded phone-style corners (radius 54) on transparency, with **no phone frame or notch**. The hero collage phones lose their coloured frames too: one CSS block at the end of `<style>` ("hero collage: no phone frames") drops the frame fill, padding and inner ring, and keeps the rounded corners, tilt, position and drop shadow. Claude Code brief: `CLAUDE-CODE-PROMPT-2026-10-screens.md`. Source: `screens-src/Website Screens.html` (it renders every export at its exact size, from the app kits). PNG masters are in `screens-src/png/`.
+- The hero screens also ship at 2× (`app-*-2026-10-2x.webp`, 530×1060) and are wired in with `srcset`.
+- New highlight heights: `step-1-hl-2026-10` 228, `step-2-hl-2026-10` 233, `step-3-hl-2026-10` 234. The `height=""` values in `index.html` are updated.
+- Copy: every visible "rider" now reads "biker" (ledger D-101), per prompt 08. Anchors (`#riders`), class names and file names are unchanged.
+- `reference/LandingPage-reference-offline.html` still shows the old screens. `site/index.html` is the source of truth.
+
 ## What's in this bundle
 ```
 lyniago-website/
