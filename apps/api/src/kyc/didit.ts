@@ -242,6 +242,17 @@ export function extractDiditDeclineReason(payload: unknown): string | null {
   walk(payload, 0);
   if (risks.length === 0) return null;
   const has = (re: RegExp) => risks.some((r) => re.test(r));
+  // KYC-R26-13: under age is checked FIRST. It is the one `final` reason (KYC_DECLINE_CLASS: it locks at once),
+  // and no other finding on the same session changes that a retry can't pass. Because it is final, the match
+  // is deliberately narrow: `AGE` only as a whole `_`-delimited word next to an under / minimum / below /
+  // restriction signal (MINIMUM_AGE, MINIMUM_AGE_NOT_MET, AGE_BELOW_MINIMUM, AGE_RESTRICTION, UNDER_AGE,
+  // UNDERAGE), so the image / page codes that merely contain the letters (LOW_QUALITY_IMAGE, IMAGE_TOO_DARK,
+  // PAGE_MISSING) never read as a rider's age — and an age the vendor merely couldn't read (AGE_NOT_DETECTED,
+  // COULD_NOT_ESTIMATE_AGE) is not a finding that the rider is under age, so it falls through to the rest.
+  const underage = (r: string) =>
+    /UNDER_?AGE|(^|_)(MINIMUM_AGE|AGE_(BELOW|UNDER|RESTRICT|LIMIT|MINIMUM|NOT_MET))|BELOW_(MINIMUM_)?AGE(_|$)/.test(r) &&
+    !/NOT_DETECTED|COULD_NOT|UNABLE|NOT_READ|UNKNOWN/.test(r);
+  if (risks.some(underage)) return KycDeclineReason.UNDERAGE;
   if (has(/DUPLICAT|BLOCKLIST|FRAUD/)) return KycDeclineReason.DUPLICATE;
   if (has(/TAMPER|ALTER|PRINTED|SCREEN_REPLAY|PORTRAIT_REPLACE|INVALID_MRZ|INCONSISTENT|INVALID_VALIDATION/)) return KycDeclineReason.DOC_TAMPERED;
   if (has(/LIVENESS|SPOOF|INJECT|VIRTUAL_CAMERA|SCREEN_CAPTURE|VIDEO_ANOMALY|MULTIPLE_FACES/)) return KycDeclineReason.LIVENESS_FAILED;

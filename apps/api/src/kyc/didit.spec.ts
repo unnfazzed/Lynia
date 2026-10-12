@@ -422,6 +422,25 @@ describe("extractDiditDeclineReason (KYC-R26-12)", () => {
     expect(extractDiditDeclineReason(idv("LOW_FACE_MATCH_SIMILARITY"))).toBe("face_mismatch");
   });
 
+  // KYC-R26-13: under age is the one `final` decline (it locks at once), so it wins over everything — and its
+  // match is narrow, because a false positive would lock an adult out for good.
+  it("maps an under-age warning to `underage`, ahead of every other finding", () => {
+    for (const code of ["MINIMUM_AGE", "MINIMUM_AGE_NOT_MET", "AGE_BELOW_MINIMUM", "AGE_RESTRICTION", "UNDER_AGE", "UNDERAGE_DOCUMENT_HOLDER", "BELOW_MINIMUM_AGE"]) {
+      expect(extractDiditDeclineReason(idv(code))).toBe("underage");
+    }
+    expect(extractDiditDeclineReason(idv("POSSIBLE_DUPLICATED_USER", "DOCUMENT_TAMPERED", "MINIMUM_AGE_NOT_MET"))).toBe("underage");
+  });
+
+  it("never reads an image / page code, or an age it couldn't read, as under age", () => {
+    expect(extractDiditDeclineReason(idv("LOW_QUALITY_IMAGE"))).toBe("id_unreadable");
+    expect(extractDiditDeclineReason(idv("IMAGE_TOO_DARK"))).toBe("id_unreadable");
+    expect(extractDiditDeclineReason(idv("IMAGE_AGE_METADATA"))).toBeNull();
+    expect(extractDiditDeclineReason(idv("PAGE_MISSING"))).toBeNull();
+    expect(extractDiditDeclineReason(idv("BACK_PAGE_NOT_DETECTED"))).toBe("id_unreadable");
+    expect(extractDiditDeclineReason(idv("AGE_NOT_DETECTED"))).toBe("id_unreadable");
+    expect(extractDiditDeclineReason(idv("COULD_NOT_ESTIMATE_AGE"))).toBeNull();
+  });
+
   it("is case-insensitive and accepts a bare string warning", () => {
     expect(extractDiditDeclineReason(idv("document_expired"))).toBe("id_expired");
     expect(extractDiditDeclineReason({ decision: { warnings: ["Liveness_Failed"] } })).toBe("liveness_failed");

@@ -35,7 +35,7 @@ export function parseIsoDay(v: string | null | undefined): Date | null {
 }
 
 /** The decline pages (BRIEF 15: each reason gets its own advice). */
-export type DeclineVariant = "F4a" | "F4b" | "F4c" | "F4d" | "F5dup";
+export type DeclineVariant = "F4a" | "F4b" | "F4c" | "F4d" | "F5" | "F5dup";
 
 /**
  * A decline reason → its F4 page (`KYC_DECLINE_REASON` in @lynia/shared):
@@ -45,6 +45,9 @@ export type DeclineVariant = "F4a" | "F4b" | "F4c" | "F4d" | "F5dup";
  *   id_expired, doc_tampered            F4c "We can't use this document" — "national ID card · not expired"
  *   name_mismatch, id_mismatch, other, ? F4d "We couldn't verify your ID" — "try again, or message us"
  *   duplicate                           F5dup — WhatsApp only: the ID is on another account, a retry can't fix it
+ *   underage                            F5 — KYC-R26-13: a `final` decline; the server locks it at once (attempts
+ *                                       ≥ 2), so the wall is already F5 `locked` — this keeps a stale `declined`
+ *                                       read on the same WhatsApp-only page, never a "Try again" no retry can pass
  *
  * `name_mismatch` goes to F4d, not F4c: the document itself was fine, so "use your national ID card" would be
  * wrong advice; F4d's "message us and we'll help" is the honest route. `id_mismatch` (KYC-R26-12: the check read
@@ -64,6 +67,8 @@ export function declineVariant(reason: KycDeclineReason | string | null | undefi
       return "F4c";
     case "duplicate":
       return "F5dup";
+    case "underage":
+      return "F5";
     case "name_mismatch":
     case "id_mismatch":
     case "other":

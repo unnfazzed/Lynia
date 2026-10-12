@@ -65,8 +65,16 @@ describe("kycScreenFor — server state → First Run v2 page", () => {
   });
 
   it("every shared decline reason maps to one of the four variants", () => {
-    for (const r of Object.values(KycDeclineReason)) expect(["F4a", "F4b", "F4c", "F4d", "F5dup"]).toContain(declineVariant(r));
+    for (const r of Object.values(KycDeclineReason)) expect(["F4a", "F4b", "F4c", "F4d", "F5", "F5dup"]).toContain(declineVariant(r));
     expect(declineVariant("a-reason-a-newer-server-added")).toBe("F4d");
+  });
+
+  // KYC-R26-13: under age is `final` — the server locks it at once, so the wall is F5; a declined read of it
+  // (a stale `me`) lands on the same WhatsApp-only page, never on a Try again no retry can pass.
+  it("an under-age decline is F5, locked or not", () => {
+    expect(declineVariant("underage")).toBe("F5");
+    expect(screen({ kycStatus: "failed", ...auto, kycAttempts: 2, kycDeclineReason: "underage" })).toEqual({ kind: "outcome", id: "F5" });
+    expect(screen({ kycStatus: "failed", ...auto, kycAttempts: 0, kycDeclineReason: "underage" })).toEqual({ kind: "outcome", id: "F5" });
   });
 
   // An expired document already has its own key (`id_expired` → F4c, "We can't use this document"). A

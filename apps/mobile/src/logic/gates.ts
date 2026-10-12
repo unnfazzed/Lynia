@@ -250,6 +250,16 @@ export function resolveKycRetryFeedback(res: {
 export const KYC_RETRY_TRY_LATER = "Couldn't start verification — try again in a moment.";
 
 /**
+ * Whether a failed reopen of the ID check is that one rate-limit toast (KYC_RETRY_TRY_LATER) rather than F7.
+ * Every 429 is: the route's own throttle (F-13), and since KYC-R26-13 the server's daily cap on fixable
+ * declines, a 429 carrying `reason: "kyc_daily_limit"` — the rider has tried a few times today and the next
+ * check needs to wait, not "the check couldn't open". Keyed on the status, so a newer cap code lands the same.
+ */
+export function isKycRetryRateLimited(err: GateError | null | undefined): boolean {
+  return err?.status === 429;
+}
+
+/**
  * The rider's KYC wall, as a tagged state (P0-1 / D8).
  *
  * `not_a_rider` is the pre-onboarding state (no rider record at all); the rest are the walls a rider
