@@ -44,3 +44,23 @@ export function replaceClearingStack<H>(router: ClearingNav<H>, href: H): void {
   if (router.canDismiss?.() !== false) router.dismissAll();
   router.replace(href);
 }
+
+/** The rider tabs' route name on the root stack (`app/rider/(tabs)`, no `app/rider/_layout`). */
+export const RIDER_TABS_ROUTE = "rider/(tabs)";
+
+/** The root-stack subset {@link backToRiderBoard} needs. */
+export interface RiderBoardNav extends ClearingNav<"/rider"> {
+  dismissTo: (href: "/rider") => void;
+}
+
+/**
+ * Leave a rider job / offer screen for the board. Those screens are pushed over the rider tabs, so a
+ * bare `replace("/rider")` swapped the job screen for a SECOND board on top of the first: two boards
+ * mounted (doubled location updates and polling) and Back from the board landed on another board.
+ * When the tabs are already in the history, dismissTo pops back to them. When they aren't (opened
+ * from the customer side, or a cold-start push straight onto the job), the board replaces the stack.
+ */
+export function backToRiderBoard(router: RiderBoardNav, stackRoutes: readonly { name: string }[] | undefined): void {
+  if (stackRoutes?.some((r) => r.name === RIDER_TABS_ROUTE)) router.dismissTo("/rider");
+  else replaceClearingStack(router, "/rider");
+}

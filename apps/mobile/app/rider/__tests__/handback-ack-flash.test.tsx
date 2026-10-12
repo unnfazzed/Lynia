@@ -68,7 +68,8 @@ function cancelledOrder(overrides: Partial<OrderSnapshot> = {}): OrderSnapshot {
 }
 
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace, push: jest.fn(), dismissAll: jest.fn(), dismissTo: jest.fn() }),
+  useNavigation: () => ({ getState: () => undefined }),
   useLocalSearchParams: () => ({}),
 }));
 jest.mock("expo-secure-store", () => ({

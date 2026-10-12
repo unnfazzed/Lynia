@@ -28,6 +28,9 @@ const mockGetActiveOrder = jest.fn<Promise<OrderSnapshot | null>, unknown[]>();
 const mockGetOrder = jest.fn<Promise<OrderSnapshot>, [string]>();
 const mockConfirmDelivery = jest.fn();
 const mockReplace = jest.fn();
+const mockDismissTo = jest.fn();
+const mockDismissAll = jest.fn();
+let mockStackRoutes: { name: string }[] | undefined;
 const mockAdvanceStatus = jest.fn(async (..._args: unknown[]) => ({}));
 
 let secureStore: Record<string, string> = {};
@@ -69,7 +72,8 @@ function baseOrder(overrides: Partial<OrderSnapshot> = {}): OrderSnapshot {
 }
 
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace, push: jest.fn(), dismissTo: mockDismissTo, dismissAll: mockDismissAll }),
+  useNavigation: () => ({ getState: () => (mockStackRoutes ? { routes: mockStackRoutes } : undefined) }),
 }));
 jest.mock("expo-secure-store", () => ({
   getItemAsync: (...args: [string]) => mockGetItemAsync(...args),
@@ -151,6 +155,9 @@ beforeEach(() => {
   mockGetOrder.mockReset();
   mockConfirmDelivery.mockReset();
   mockReplace.mockClear();
+  mockDismissTo.mockClear();
+  mockDismissAll.mockClear();
+  mockStackRoutes = undefined;
   mockSetItemAsync.mockClear();
   mockGetItemAsync.mockClear();
   mockDeleteItemAsync.mockClear();
@@ -238,5 +245,36 @@ describe("Biker v2 parcel job stages (A1 → A2, ledger D-54)", () => {
     expect(collect.props.disabled).toBe(true);
     // The hint says what's missing.
     expect(tree.root.findAll((n) => n.props.hint === "Tick the item and add a photo to continue.").length).toBe(1);
+  });
+});
+
+describe("back to the board does not stack a second board", () => {
+  function pressBack(tree: renderer.ReactTestRenderer): void {
+    const node = tree.root.findAll((n) => n.props.accessibilityLabel === "Back" && typeof n.props.onPress === "function")[0];
+    if (!node) throw new Error("no Back button");
+    act(() => node.props.onPress());
+  }
+
+  it("pops back to the rider tabs when they are already in the history", async () => {
+    secureStore = {};
+    mockStackRoutes = [{ name: "rider/(tabs)" }, { name: "rider/job" }];
+    mockGetActiveOrder.mockResolvedValue(null);
+    const tree = await render();
+    await settle();
+    pressBack(tree);
+    expect(mockDismissTo).toHaveBeenCalledWith("/rider");
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("replaces the whole stack with the board when the rider tabs are not in the history", async () => {
+    secureStore = {};
+    mockStackRoutes = [{ name: "(tabs)" }, { name: "rider/job" }];
+    mockGetActiveOrder.mockResolvedValue(null);
+    const tree = await render();
+    await settle();
+    pressBack(tree);
+    expect(mockDismissTo).not.toHaveBeenCalled();
+    expect(mockDismissAll).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith("/rider");
   });
 });

@@ -22,9 +22,14 @@ let mockParams: { orderId?: string } = {};
 let mockJob: Record<string, unknown> | null = null;
 const mockAccept = jest.fn<Promise<unknown>, [string]>();
 const mockDecline = jest.fn<Promise<unknown>, [string]>();
+const mockReplace = jest.fn();
+const mockDismissTo = jest.fn();
+const mockDismissAll = jest.fn();
+let mockStackRoutes: { name: string }[] | undefined;
 
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  useRouter: () => ({ push: jest.fn(), replace: mockReplace, dismissTo: mockDismissTo, dismissAll: mockDismissAll }),
+  useNavigation: () => ({ getState: () => (mockStackRoutes ? { routes: mockStackRoutes } : undefined) }),
   useLocalSearchParams: () => mockParams,
 }));
 jest.mock("expo-secure-store", () => ({
@@ -105,6 +110,10 @@ beforeEach(() => {
   mockGetOffer.mockReset();
   mockAccept.mockReset();
   mockDecline.mockReset();
+  mockReplace.mockClear();
+  mockDismissTo.mockClear();
+  mockDismissAll.mockClear();
+  mockStackRoutes = undefined;
   // Keep the mutations pending so onSuccess (haptic / nav / invalidate) never fires — we only assert
   // the mutationFn was invoked with the right orderId.
   mockAccept.mockReturnValue(new Promise(() => {}));
@@ -255,5 +264,35 @@ describe("FoodOffer (Biker v2 F1–F4)", () => {
     const text = textOf(await render());
     expect(text).toContain("Prescription order · see the original at the door");
     expect(text).not.toContain("Sealed bag · photo at pickup");
+  });
+});
+
+describe("FoodOffer — back to the board does not stack a second board", () => {
+  it("F4's Back to jobs pops back to the rider tabs when they are already in the history", async () => {
+    mockStackRoutes = [{ name: "rider/(tabs)" }, { name: "rider/food-offer" }];
+    mockGetOffer.mockResolvedValue(offer({ expiresAt: new Date(Date.now() - 1000).toISOString() }));
+    const tree = await render();
+
+    await press(tree, "Back to jobs");
+
+    expect(mockDismissTo).toHaveBeenCalledWith("/rider");
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("a declined offer replaces the whole stack with the board when the rider tabs are not in the history", async () => {
+    mockStackRoutes = [{ name: "rider/food-offer" }];
+    mockDecline.mockResolvedValue({});
+    mockGetOffer.mockResolvedValue(offer());
+    const tree = await render();
+
+    await press(tree, "Not this one");
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockDismissTo).not.toHaveBeenCalled();
+    expect(mockDismissAll).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith("/rider");
   });
 });
