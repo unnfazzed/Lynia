@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, BackHandler, Keyboard, Linking, Platform, Text, TextInput, View } from "react-native";
 import { requestOtp } from "../src/api/auth";
 import { useAuth } from "../src/auth/auth-context";
+import { stashDevCode } from "../src/auth/dev-code-handoff";
 import { loadSignupIntent } from "../src/auth/device-state";
 import { PRIVACY_URL, TERMS_URL } from "../src/config";
 import { replaceClearingStack } from "../src/logic/nav";
@@ -73,9 +74,11 @@ export default function PhoneScreen(): React.ReactElement {
     try {
       const phone = zwE164(digits);
       const res = await requestOtp(phone);
+      // A test code goes to the code screen in memory, never in the URL (src/auth/dev-code-handoff.ts).
+      stashDevCode(phone, res.devCode);
       router.push({
         pathname: "/verify",
-        params: { phone, devCode: res.devCode ?? "", deliveryChannel: res.deliveryChannel, ...(intent ? { intent } : {}) },
+        params: { phone, deliveryChannel: res.deliveryChannel, ...(intent ? { intent } : {}) },
       });
     } catch (e) {
       showFailure(otpErrorMessage(e, "Couldn't send the code. Check your connection."));

@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
 import {
   addMoney,
   COMMISSION,
@@ -73,6 +73,14 @@ function toCentsSafe(usd: number): number {
 /** 2dp money round — now the shared money seam (roundToCents ≡ the former local Math.round(n*100)/100).
  *  Balance add/subtract go through addMoney/subMoney (integer cents, exact) rather than float ±. */
 const round2 = roundToCents;
+
+/** Rolling 24 h total of manual credits one rider may receive (on top of the per-credit cap). Read at the
+ *  point of use; `WALLET_MANUAL_CREDIT_DAILY_CAP_USD` overrides the $100 default. */
+export function manualCreditDailyCapUsd(): number {
+  const n = Number(process.env.WALLET_MANUAL_CREDIT_DAILY_CAP_USD);
+  return Number.isFinite(n) && n > 0 ? n : 100;
+}
+const MANUAL_CREDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** Decimal | null → number | undefined, for the wire shape (contracts type money as plain numbers). */
 function num(d: Prisma.Decimal | number | null | undefined): number | undefined {
@@ -822,6 +830,18 @@ export class WalletService {
         await tx.$executeRaw`INSERT INTO commission_accounts (rider_id) VALUES (${args.riderId}::uuid) ON CONFLICT (rider_id) DO NOTHING`;
         const locked = await tx.$queryRaw<Array<{ balance: string }>>`
           SELECT balance FROM commission_accounts WHERE rider_id = ${args.riderId}::uuid FOR UPDATE`;
+        // Rolling 24 h total per rider, read under the account row lock so two credits can't both pass.
+        const dailyCap = manualCreditDailyCapUsd();
+        const recent = await tx.auditLog.aggregate({
+          where: { target: args.riderId, action: "wallet.credit", createdAt: { gte: new Date(Date.now() - MANUAL_CREDIT_WINDOW_MS) } },
+          _sum: { amount: true },
+        });
+        const creditedToday = Number(recent._sum.amount ?? 0);
+        if (addMoney(creditedToday, amount) > dailyCap) {
+          throw new ConflictException(
+            `This biker has had $${creditedToday.toFixed(2)} in manual credits in the last 24 hours. The limit is $${dailyCap.toFixed(2)}.`,
+          );
+        }
         const balanceAfter = addMoney(Number(locked[0]?.balance ?? 0), amount);
         await tx.commissionLedger.create({
           data: {

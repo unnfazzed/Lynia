@@ -75,11 +75,11 @@ jobs:
       # present, so unprovisioned/test builds still succeed with updates disabled).
       EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: pnpm
@@ -99,9 +99,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Set up EAS CLI
-        uses: expo/expo-github-action@v9
+        uses: expo/expo-github-action@eab7a230208c952974db8c3245cfd78402c7b385 # v9
         with:
-          eas-version: latest
+          eas-version: 24.13.0 # pinned; bump deliberately (was `latest`)
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Build (and submit) via EAS

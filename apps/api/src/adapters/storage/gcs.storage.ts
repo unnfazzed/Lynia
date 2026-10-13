@@ -1,7 +1,7 @@
 import { Storage } from "@google-cloud/storage";
 import { Logger } from "@nestjs/common";
 import { ObjectTooLargeError, type CloudProvider, type ObjectStat, type StorageAdapter, type StoredObject, type UploadTarget } from "./storage.interface";
-import { assertSafeObjectKey } from "./upload-kinds";
+import { assertSafeObjectKey, imageContentTypeFor } from "./upload-kinds";
 
 export interface GcsStorageOptions {
   projectId?: string;
@@ -72,6 +72,9 @@ export class GcsStorage implements StorageAdapter {
         version: "v4",
         action: "read",
         expires: Date.now() + expiresInSeconds * 1000,
+        // Same as the Azure read SAS: always served as an inline image, whatever type the object carries.
+        responseType: imageContentTypeFor(key),
+        responseDisposition: "inline",
       });
     return url;
   }

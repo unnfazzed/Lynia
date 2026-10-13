@@ -29,6 +29,7 @@ const mockRequestOtp = jest.fn(async (_phone: string): Promise<unknown> => ({ de
 jest.mock("../../src/api/auth", () => ({ requestOtp: (...a: unknown[]) => mockRequestOtp(...(a as [string])) }));
 
 import { ApiError } from "../../src/api/client";
+import { clearDevCode, peekDevCode } from "../../src/auth/dev-code-handoff";
 import { ToastProvider } from "../../src/ui";
 import PhoneScreen from "../phone";
 
@@ -103,8 +104,34 @@ describe("C2 / C3 · Phone", () => {
     expect(mockRequestOtp).toHaveBeenCalledWith("+263772451180");
     expect(mockPush).toHaveBeenCalledWith({
       pathname: "/verify",
-      params: { phone: "+263772451180", devCode: "", deliveryChannel: "whatsapp", intent: "rider" },
+      params: { phone: "+263772451180", deliveryChannel: "whatsapp", intent: "rider" },
     });
+  });
+});
+
+// A test code reaches the code screen in memory, never as a route param a link could forge.
+describe("C2 · the test code is not part of the URL", () => {
+  afterEach(() => clearDevCode());
+
+  it("keeps the server's test code in memory, keyed by the number, and leaves it out of the params", async () => {
+    mockRequestOtp.mockResolvedValueOnce({ deliveryChannel: "sms", devCode: "123456" });
+    const t = mount();
+    typeIn(t, "77 245 1180");
+    await send(t);
+    const pushed = mockPush.mock.calls[0]![0] as { params: Record<string, string> };
+    expect(pushed.params).not.toHaveProperty("devCode");
+    expect(JSON.stringify(pushed)).not.toContain("123456");
+    expect(peekDevCode("+263772451180")).toBe("123456");
+    expect(peekDevCode("+263770000000")).toBeNull();
+  });
+
+  it("a send with no test code leaves none behind from an earlier send", async () => {
+    mockRequestOtp.mockResolvedValueOnce({ deliveryChannel: "sms", devCode: "123456" });
+    const t = mount();
+    typeIn(t, "77 245 1180");
+    await send(t);
+    await send(t);
+    expect(peekDevCode("+263772451180")).toBeNull();
   });
 });
 
@@ -120,7 +147,7 @@ describe("C2 · the biker path survives an app kill", () => {
     await send(t);
     expect(mockPush).toHaveBeenCalledWith({
       pathname: "/verify",
-      params: { phone: "+263772451180", devCode: "", deliveryChannel: "whatsapp", intent: "rider" },
+      params: { phone: "+263772451180", deliveryChannel: "whatsapp", intent: "rider" },
     });
   });
 });

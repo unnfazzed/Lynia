@@ -551,7 +551,7 @@ describe("OffersService — the per-job commission check (owner 2026-10-12, rate
     const create = vi.fn();
     const riders = { "rider-1": { tripsCount: 25, balance: 0.2 } };
     const { service } = svc({
-      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel", proposedFare: 2.5, suggestedFare: 2.5 }), findFirst: async () => null },
+      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel", proposedFare: 2.5, suggestedFare: 2.5 }), findFirst: async () => null, findMany: async () => [] },
       rider: { findUnique: async () => RIDER, ...wallets(riders) },
       commissionAccount: accounts(riders),
       offer: { create },
@@ -567,7 +567,7 @@ describe("OffersService — the per-job commission check (owner 2026-10-12, rate
     for (const state of [{ tripsCount: 25, balance: 0.25 }, { tripsCount: 3, balance: 0 }]) {
       const riders = { "rider-1": state };
       const { service } = svc({
-        order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel", proposedFare: 2.5, suggestedFare: 2.5 }), findFirst: async () => null },
+        order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel", proposedFare: 2.5, suggestedFare: 2.5 }), findFirst: async () => null, findMany: async () => [] },
         rider: { findUnique: async () => RIDER, ...wallets(riders) },
         commissionAccount: accounts(riders),
         offer: { create: async () => ({ id: "o1", type: "accept", offeredFare: { toString: () => "2.50" }, etaMinutes: 10, status: "pending" }) },

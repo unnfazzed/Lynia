@@ -496,7 +496,7 @@ describe("FoodDebtService — doorstep failure paths (N-10/R-08), reusing markUn
     );
     const res = await svc.reportNoShow(orderId, "r1");
     expect(res).toEqual({ orderId, status: "undelivered" });
-    expect(markUndelivered).toHaveBeenCalledWith(orderId, "r1", "unreachable");
+    expect(markUndelivered).toHaveBeenCalledWith(orderId, "r1", "unreachable", { venueFlow: true });
   });
 
   it("reportCustomerRefused calls markUndelivered(refused) AND cash-bans the customer (R-08)", async () => {
@@ -515,7 +515,7 @@ describe("FoodDebtService — doorstep failure paths (N-10/R-08), reusing markUn
       { markUndelivered },
     );
     await svc.reportCustomerRefused(orderId, "r1");
-    expect(markUndelivered).toHaveBeenCalledWith(orderId, "r1", "refused");
+    expect(markUndelivered).toHaveBeenCalledWith(orderId, "r1", "refused", { venueFlow: true });
     expect(banned).toMatchObject({ cashBanned: true });
   });
 
@@ -531,7 +531,7 @@ describe("FoodDebtService — doorstep failure paths (N-10/R-08), reusing markUn
     );
     await svc.reportCustomerRefused(orderId, "r1");
     // markUndelivered voids the customer's confirm in its own transaction (order-lifecycle.service.spec).
-    expect(markUndelivered).toHaveBeenCalledWith(orderId, "r1", "refused");
+    expect(markUndelivered).toHaveBeenCalledWith(orderId, "r1", "refused", { venueFlow: true });
     expect(profileUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ cashBanned: true }) }));
   });
 

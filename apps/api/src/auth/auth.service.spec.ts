@@ -157,6 +157,133 @@ describe("AuthService.requestOtp", () => {
   });
 });
 
+describe("AuthService.requestOtp — a refused request spends no send budget", () => {
+  it("a request refused by the per-IP cap leaves the phone's allowance untouched", async () => {
+    const env = { ...baseEnv, OTP_RL_IP_MAX: 2 } as Env;
+    const { svc } = make(env, {});
+    // Fill the IP bucket from another number.
+    for (let i = 0; i < 2; i++) await svc.requestOtp("+263770000601", "5.5.5.5");
+    // Requests for the victim number from that IP are all refused at the IP cap…
+    for (let i = 0; i < 10; i++) {
+      await expect(svc.requestOtp("+263770000602", "5.5.5.5")).rejects.toMatchObject({ status: 429 });
+    }
+    // …and none of them spent the victim's per-phone allowance (5): all five sends still go out from fresh IPs.
+    for (let i = 0; i < 5; i++) {
+      await expect(svc.requestOtp("+263770000602", `6.6.6.${i}`)).resolves.toMatchObject({ sent: true });
+    }
+    await expect(svc.requestOtp("+263770000602", "6.6.6.9")).rejects.toMatchObject({ status: 429, response: { reason: "otp_send_limit" } });
+  });
+
+  it("a request refused by the global cap gives back the phone and IP buckets it charged", async () => {
+    const env = { ...baseEnv, OTP_RL_GLOBAL_MAX: 1 } as Env;
+    const { svc, store } = make(env, {});
+    await svc.requestOtp("+263770000603", "7.7.7.7");
+    await expect(svc.requestOtp("+263770000604", "7.7.7.8")).rejects.toMatchObject({ status: 429 });
+    // The refused request's own buckets are back where they were (a fresh hit reads 1).
+    expect(await store.hit("rl:phone:+263770000604", 3600)).toBe(1);
+    expect(await store.hit("rl:ip:7.7.7.8", 3600)).toBe(1);
+    // And the global counter isn't pushed past its cap by refusals.
+    expect(await store.hit("rl:global", 86400)).toBe(2);
+  });
+});
+
+describe("AuthService.requestOtp — destination country allowlist", () => {
+  it("refuses a number outside the allowed calling codes with a 400, before any budget or send", async () => {
+    const sender = new ConsoleOtpSender();
+    const send = vi.spyOn(sender, "send");
+    const store = new InMemoryOtpStore();
+    const svc = new AuthService(baseEnv, {} as unknown as PrismaService, new TokenService(baseEnv), store, sender, fakeMetrics(), pii, fakeKycPendingState());
+    await expect(svc.requestOtp("+447911123456", "1.1.1.1")).rejects.toMatchObject({ status: 400, message: "Enter a valid phone number" });
+    expect(send).not.toHaveBeenCalled();
+    expect(await store.ttl("rl:phone:+447911123456")).toBeNull();
+    expect(await store.ttl("rl:ip:1.1.1.1")).toBeNull();
+  });
+
+  it("defaults to +263 when the variable is absent, and honours a configured list", async () => {
+    await expect(make(baseEnv, {}).svc.requestOtp("0771234567", "1.1.1.1")).resolves.toMatchObject({ sent: true });
+    const env = { ...baseEnv, OTP_ALLOWED_COUNTRY_CODES: "263, +27" } as Env;
+    const { svc } = make(env, {});
+    await expect(svc.requestOtp("+27821234567", "1.1.1.1")).resolves.toMatchObject({ sent: true });
+    await expect(svc.requestOtp("+263771234567", "1.1.1.1")).resolves.toMatchObject({ sent: true });
+    await expect(svc.requestOtp("+14155551234", "1.1.1.1")).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("an OTP_TEST_PHONES number and a demo number are not refused by the allowlist", async () => {
+    const env = { ...baseEnv, OTP_TEST_PHONES: "+447911000001", DEMO_OTP_PHONE: "+447911000002", DEMO_OTP_CODE: "846201" } as Env;
+    const { svc } = make(env, {});
+    await expect(svc.requestOtp("+447911000001", "1.1.1.1")).resolves.toMatchObject({ sent: true });
+    await expect(svc.requestOtp("+447911000002", "1.1.1.1")).resolves.toMatchObject({ sent: true });
+  });
+});
+
+describe("AuthService.verifyOtp — who may be signed in", () => {
+  const row = (role: string, accountStatus?: string) => ({
+    id: "p9",
+    role,
+    firstName: "Tafadzwa",
+    rider: accountStatus ? { accountStatus } : null,
+  });
+  const prismaFor = (profile: ReturnType<typeof row>) => ({
+    profile: { findUnique: vi.fn(async () => ({ ...profile, sessions: [] })), upsert: vi.fn(async () => profile) },
+    session: { create: vi.fn(async () => ({ id: "s9" })) },
+  });
+
+  it.each([
+    ["banned", "account_banned"],
+    ["suspended", "account_suspended"],
+  ])("a %s rider proves the code but gets a 403 { reason: %s } and no session", async (standing, reason) => {
+    const prisma = prismaFor(row("rider", standing));
+    const { svc, store } = make(baseEnv, prisma);
+    await store.put("+263770000801", tokens.hash("654321"), 300);
+    const err = (await svc.verifyOtp("+263770000801", "654321").catch((e: unknown) => e)) as { getStatus(): number; getResponse(): unknown };
+    expect(err.getStatus()).toBe(403);
+    expect(err.getResponse()).toMatchObject({ reason, message: expect.any(String) });
+    expect(prisma.session.create).not.toHaveBeenCalled();
+  });
+
+  it("the grace retry of the same code is refused for a banned rider too", async () => {
+    const prisma = prismaFor(row("rider", "banned"));
+    const { svc, store } = make(baseEnv, prisma);
+    await store.put("+263770000802", tokens.hash("654321"), 300);
+    await expect(svc.verifyOtp("+263770000802", "654321")).rejects.toMatchObject({ status: 403 });
+    // The code was consumed; the retry takes the grace path and must be refused the same way.
+    expect(await store.get("+263770000802")).toBeNull();
+    const err = (await svc.verifyOtp("+263770000802", "654321").catch((e: unknown) => e)) as { getStatus(): number; getResponse(): unknown };
+    expect(err.getStatus()).toBe(403);
+    expect(err.getResponse()).toMatchObject({ reason: "account_banned" });
+    expect(prisma.session.create).not.toHaveBeenCalled();
+  });
+
+  it("a wrong code for a banned rider is the ordinary 401 — standing isn't revealed without the code", async () => {
+    const { svc, store } = make(baseEnv, prismaFor(row("rider", "banned")));
+    await store.put("+263770000803", tokens.hash("654321"), 300);
+    await expect(svc.verifyOtp("+263770000803", "111111")).rejects.toMatchObject({ status: 401 });
+  });
+
+  it("an active rider still signs in", async () => {
+    const { svc, store } = make(baseEnv, prismaFor(row("rider", "active")));
+    await store.put("+263770000804", tokens.hash("654321"), 300);
+    await expect(svc.verifyOtp("+263770000804", "654321")).resolves.toMatchObject({ profileId: "p9", role: "rider" });
+  });
+
+  it("an admin-role profile is never signed in by phone OTP — main path and grace retry", async () => {
+    const prisma = prismaFor(row("admin"));
+    const { svc, store } = make(baseEnv, prisma);
+    await store.put("+263770000805", tokens.hash("654321"), 300);
+    await expect(svc.verifyOtp("+263770000805", "654321")).rejects.toMatchObject({ status: 403 });
+    await expect(svc.verifyOtp("+263770000805", "654321")).rejects.toMatchObject({ status: 403 });
+    expect(prisma.session.create).not.toHaveBeenCalled();
+  });
+
+  it("the demo number is refused for an admin-role profile too", async () => {
+    const env = { ...baseEnv, DEMO_OTP_PHONE: "+263770000777", DEMO_OTP_CODE: "846201" } as Env;
+    const prisma = prismaFor(row("admin"));
+    const { svc } = make(env, prisma);
+    await expect(svc.verifyOtp("+263770000777", "846201", "ua", "dev-1")).rejects.toMatchObject({ status: 403 });
+    expect(prisma.session.create).not.toHaveBeenCalled();
+  });
+});
+
 describe("AuthService — Play-review demo account (§7.1)", () => {
   const demoEnv = { ...baseEnv, DEMO_OTP_PHONE: "+263770000777", DEMO_OTP_CODE: "846201" } as Env;
   const profileRow = { id: "demo1", role: "customer", firstName: "" };
@@ -1268,6 +1395,15 @@ describe("AuthService.refresh", () => {
     const { token } = t.seed();
     const { svc } = make(baseEnv, t.prisma);
     await expect(svc.refresh(token)).rejects.toThrow(/not active/i);
+  });
+
+  it("never renews a session held by an admin-role profile", async () => {
+    const t = sessionTable();
+    t.profile.role = "admin";
+    const { token } = t.seed();
+    const { svc } = make(baseEnv, t.prisma);
+    await expect(svc.refresh(token)).rejects.toThrow(/not active/i);
+    expect(t.created()).toBe(0);
   });
 
   it("allows refresh for an active biker (standing backstop is not over-broad)", async () => {

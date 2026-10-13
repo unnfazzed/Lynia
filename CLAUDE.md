@@ -10,9 +10,12 @@ sprint-structured skills (Think → Plan → Design → Build → Review → Tes
 (`.claude/hooks/check-gstack.sh`) until gstack is installed:
 
 ```bash
-git clone --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack
-cd ~/.claude/skills/gstack && ./setup --team
+git clone https://github.com/garrytan/gstack.git ~/.claude/skills/gstack
+cd ~/.claude/skills/gstack && git checkout dbf400ec3f1ffb96a429f0d0b29ca932b3d6c6f0 && ./setup
 ```
+
+gstack is pinned to that commit (`GSTACK_SHA` in `.claude/hooks/ensure-gstack.sh`) with self-upgrade
+off; upgrades happen by bumping the pinned SHA in a PR.
 
 Verify it is installed:
 

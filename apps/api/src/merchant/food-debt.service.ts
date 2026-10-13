@@ -366,7 +366,7 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
     if (Date.now() - earliest < RESTAURANTS_DEBT.noShowWindowMs) {
       throw new ConflictException("Keep waiting — the no-show window hasn't elapsed yet");
     }
-    await this.lifecycle.markUndelivered(orderId, riderId, "unreachable");
+    await this.lifecycle.markUndelivered(orderId, riderId, "unreachable", { venueFlow: true });
     return { orderId, status: "undelivered" };
   }
 
@@ -386,7 +386,7 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
     // markUndelivered voids the customer's unresolved confirm in the same transaction as the undelivered CAS.
     if (order.riderCashConfirmedAt) throw new ConflictException("You already confirmed the cash");
     if (order.cashHandshakeFrozenAt) throw new ConflictException("This handshake is frozen — support has been notified");
-    await this.lifecycle.markUndelivered(orderId, riderId, "refused");
+    await this.lifecycle.markUndelivered(orderId, riderId, "refused", { venueFlow: true });
     // Penalty suspension (common/penalties.ts): the refusal is still recorded on the order (undelivered,
     // reason "refused"), but the customer is not cash-banned.
     if (!penaltiesSuspended()) {

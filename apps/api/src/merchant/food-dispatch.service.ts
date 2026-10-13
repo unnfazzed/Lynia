@@ -901,6 +901,11 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       }
     });
 
+    // The dropped rider no longer has access to this order: take their sockets out of its room so the
+    // next rider's position and the order's status stop reaching them.
+    void this.gateway.evictFromOrderRoom(riderId, orderId).catch((err) => {
+      this.logger.warn(`order room eviction failed for biker ${riderId}: ${(err as Error).message}`);
+    });
     if (strikeLimitHit) {
       void this.gateway.evictRiderFromSupply(riderId).catch((err) => {
         this.logger.warn(`evictRiderFromSupply failed for biker ${riderId}: ${(err as Error).message}`);

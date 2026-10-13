@@ -70,6 +70,13 @@ export function isMintedUploadKey(kind: UploadKind, ownerId: string, key: string
   return isOwnedUploadKey(kind, ownerId, key) && MINTED_NAME.test(key.slice(ownNamespace(kind, ownerId).length));
 }
 
+/** The image type a read URL serves a stored key as: `.png` → PNG, anything else (`.jpg`, a `.thumb.jpg`)
+ *  → JPEG. Every stored object is a verified JPEG/PNG photo or its JPEG thumb, so a read never needs
+ *  any other type, whatever Content-Type the uploader set. */
+export function imageContentTypeFor(key: string): "image/png" | "image/jpeg" {
+  return key.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg";
+}
+
 /** Throws unless {@link isSafeObjectKey}: the storage adapters' own guard, for every caller. */
 export function assertSafeObjectKey(key: string): void {
   if (!isSafeObjectKey(key)) throw new UnsafeObjectKeyError(key);

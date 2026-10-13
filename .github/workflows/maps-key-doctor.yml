@@ -68,9 +68,9 @@ jobs:
     name: probe the Maps key
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
 
@@ -85,8 +85,9 @@ jobs:
       - name: Diagnose
         env:
           KEY_SOURCE: ${{ inputs.key_source }}
-          # Read only when key_source is 'eas'.
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          # Read only when key_source is 'eas'. Prefers the read-only robot token EXPO_STATUS_TOKEN and
+          # falls back to EXPO_TOKEN until it exists; EXPO_TOKEN is to move into production-mobile.
+          EXPO_TOKEN: ${{ secrets.EXPO_STATUS_TOKEN || secrets.EXPO_TOKEN }}
           EAS_APP_ID: ${{ vars.EAS_PROJECT_ID }}
           EAS_ENVIRONMENT: ${{ inputs.eas_environment }}
           # Read only when key_source is 'github' — android-test-apk.yml's key, not the build's.

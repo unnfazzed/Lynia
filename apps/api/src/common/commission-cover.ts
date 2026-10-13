@@ -1,5 +1,5 @@
 import { ForbiddenException } from "@nestjs/common";
-import { canCoverJobCommission, COMMISSION_RATE_PCT_ENV, jobCommissionBasis, perRideCommission, resolveCommissionRatePct } from "@lynia/shared";
+import { addMoney, canCoverJobCommission, COMMISSION_RATE_PCT_ENV, freeJobsLeft, jobCommissionBasis, perRideCommission, resolveCommissionRatePct, subMoney } from "@lynia/shared";
 import type { Prisma } from "@prisma/client";
 import type { PrismaService } from "../prisma/prisma.service";
 import { REFUSAL_MESSAGE } from "../riders/online-gate";
@@ -37,14 +37,38 @@ export function jobCommission(
   return basis == null ? 0 : perRideCommission(basis, ratePct);
 }
 
-/** Each rider's completed-job count and wallet balance (a never-touched wallet reads $0). */
-async function walletStates(db: Db, riderIds: string[]): Promise<Map<string, { tripsCount: number; balance: number }>> {
-  const [riders, accounts] = await Promise.all([
+/**
+ * Each rider's completed-job count and wallet balance (a never-touched wallet reads $0), adjusted for
+ * jobs already `delivered` but not yet closed: their commission is only debited at completion
+ * (WalletService.chargeCommission), so it is still owed against the balance, and each of them will use
+ * up one of the rider's free first jobs. Which pending job closes first isn't known, so the free slots
+ * are taken to cover the cheapest ones and the dearest are counted as owed.
+ */
+async function walletStates(db: Db, riderIds: string[], ratePct: number): Promise<Map<string, { tripsCount: number; balance: number }>> {
+  const [riders, accounts, delivered] = await Promise.all([
     db.rider.findMany({ where: { profileId: { in: riderIds } }, select: { profileId: true, tripsCount: true } }),
     db.commissionAccount.findMany({ where: { riderId: { in: riderIds } }, select: { riderId: true, balance: true } }),
+    db.order.findMany({
+      where: { riderId: { in: riderIds }, status: "delivered" },
+      select: { riderId: true, orderType: true, agreedFare: true, suggestedFare: true, deliveryFee: true },
+    }),
   ]);
   const balance = new Map(accounts.map((a) => [a.riderId, Number(a.balance)]));
-  return new Map(riders.map((r) => [r.profileId, { tripsCount: r.tripsCount, balance: balance.get(r.profileId) ?? 0 }]));
+  const pending = new Map<string, number[]>();
+  for (const o of delivered) {
+    if (!o.riderId) continue;
+    const list = pending.get(o.riderId) ?? [];
+    list.push(jobCommission(o, ratePct));
+    pending.set(o.riderId, list);
+  }
+  return new Map(
+    riders.map((r) => {
+      const owedJobs = (pending.get(r.profileId) ?? []).sort((a, b) => b - a);
+      const charged = Math.max(0, owedJobs.length - freeJobsLeft(r.tripsCount));
+      const owed = owedJobs.slice(0, charged).reduce((sum, c) => addMoney(sum, c), 0);
+      return [r.profileId, { tripsCount: r.tripsCount + owedJobs.length, balance: subMoney(balance.get(r.profileId) ?? 0, owed) }];
+    }),
+  );
 }
 
 /**
@@ -59,7 +83,7 @@ export async function ridersWhoCoverCommission(
   ratePct: number = liveCommissionRatePct(),
 ): Promise<Set<string>> {
   if (riderIds.length === 0 || ratePct <= 0) return new Set(riderIds);
-  const states = await walletStates(db, riderIds);
+  const states = await walletStates(db, riderIds, ratePct);
   return new Set(
     riderIds.filter((id) => {
       const s = states.get(id);
