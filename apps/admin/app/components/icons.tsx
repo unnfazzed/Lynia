@@ -62,6 +62,17 @@ export function IconUser(p: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+/** lucide `users` — the People nav item (admin console v2 §4). */
+export function IconUsers(p: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(p)}>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  );
+}
 export function IconAlert(p: SVGProps<SVGSVGElement>) {
   return (
     <svg {...base(p)}>
@@ -160,6 +171,31 @@ export function IconX(p: SVGProps<SVGSVGElement>) {
     <svg {...base(p)}>
       <path d="M18 6 6 18" />
       <path d="m6 6 12 12" />
+    </svg>
+  );
+}
+/** lucide `map-pin` — the Live nav item (admin console v2 PR 7). */
+export function IconMapPin(p: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(p)}>
+      <path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0" />
+      <circle cx="12" cy="10" r="3" />
+    </svg>
+  );
+}
+/** lucide `sliders-horizontal` — the Settings nav item (admin console v2 PR 7). */
+export function IconSliders(p: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(p)}>
+      <path d="M21 4h-7" />
+      <path d="M10 4H3" />
+      <path d="M21 12h-9" />
+      <path d="M8 12H3" />
+      <path d="M21 20h-5" />
+      <path d="M12 20H3" />
+      <path d="M14 2v4" />
+      <path d="M8 10v4" />
+      <path d="M16 18v4" />
     </svg>
   );
 }

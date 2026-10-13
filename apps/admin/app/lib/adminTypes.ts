@@ -793,3 +793,168 @@ export interface TimelinePage {
   rows: TimelineRow[];
   nextCursor: string | null;
 }
+
+/* ── Admin console v2 §4 (PR 5): funnels, stuck lists, Nudge ─────────────────────────────────────── */
+
+export type FunnelKind = "biker" | "customer" | "merchant";
+export type FunnelRange = "today" | "7d" | "30d";
+
+export interface FunnelStep {
+  key: string;
+  label: string;
+  count: number;
+  /** count ÷ cohort, 0–100. */
+  pctOfCohort: number | null;
+  /** count ÷ the previous step's count, 0–100. */
+  conversionPct: number | null;
+  /** Median time from the previous timed step, ms. */
+  medianMs: number | null;
+  timedCount: number;
+  /** Counts are complete only from this Harare day (YYYY-MM-DD). */
+  since: string | null;
+  /** Times are complete only from this Harare day. */
+  timesSince: string | null;
+  /** The stuck list of the people who didn't reach this step. */
+  stuckList: string | null;
+}
+
+/** GET /admin/funnels?kind=&range=. */
+export interface FunnelView {
+  kind: FunnelKind;
+  range: FunnelRange;
+  from: string;
+  to: string;
+  cohort: number;
+  truncated: boolean;
+  steps: FunnelStep[];
+}
+
+export interface StuckRow {
+  id: string;
+  name: string;
+  href: string;
+  profileId: string | null;
+  phone: string | null;
+  since: string;
+  detail: string | null;
+  link: { href: string; label: string } | null;
+  hasPush: boolean;
+  lastNudgeAt: string | null;
+  nudgedToday: boolean;
+}
+
+/** GET /admin/stuck?list=. */
+export interface StuckList {
+  key: string;
+  kind: FunnelKind;
+  title: string;
+  line: string;
+  nudge: boolean;
+  /** The push a Nudge sends from this list. */
+  copy: { title: string; body: string } | null;
+  rows: StuckRow[];
+  count: number;
+  capped: boolean;
+  queue: { href: string; label: string; count: number } | null;
+  note: string | null;
+}
+
+/** GET /admin/stuck?kind=: every list of a side, counts only. */
+export interface StuckSummary {
+  kind: FunnelKind;
+  lists: Array<Omit<StuckList, "rows">>;
+}
+
+/** POST /admin/nudge. */
+export type NudgeResult =
+  | { result: "sent"; at: string }
+  | { result: "not_delivered"; at: string }
+  | { result: "already_sent"; at: string }
+  | { result: "no_push" };
+
+/* ── Admin console v2 §7: live ops (GET /admin/live/orders, /admin/live/fleet, /admin/alerts, /admin/config) ── */
+
+export type LiveBreach = "ok" | "warn" | "breach";
+
+/** One active order in the monitor: its stage, when the stage started, its SLA limit and breach status. */
+export interface LiveOrderRow {
+  id: string;
+  orderType: string;
+  status: string;
+  merchantPhase: string | null;
+  stage: string;
+  stageLabel: string;
+  stageStartedAt: string;
+  limitMs: number;
+  elapsedMs: number;
+  breach: LiveBreach;
+  createdAt: string;
+  customer: { id: string; name: string };
+  rider: { id: string; name: string } | null;
+  merchant: { id: string; name: string } | null;
+}
+
+export interface LiveOrders {
+  generatedAt: string;
+  counts: { total: number; breach: number; warn: number };
+  rows: LiveOrderRow[];
+}
+
+export interface FleetPoint {
+  lat: number;
+  lng: number;
+}
+
+export interface FleetRider {
+  riderId: string;
+  name: string;
+  /** Null when the biker is online but has never sent a position. */
+  position: (FleetPoint & { at: string | null; fresh: boolean }) | null;
+  orderId: string | null;
+}
+
+export interface FleetOrder {
+  orderId: string;
+  orderType: string;
+  status: string;
+  breach: LiveBreach | null;
+  riderId: string | null;
+  pickup: FleetPoint | null;
+  dropoff: FleetPoint | null;
+}
+
+export interface Fleet {
+  generatedAt: string;
+  riders: FleetRider[];
+  orders: FleetOrder[];
+}
+
+/** The alert strip above every page. */
+export interface LiveAlerts {
+  sosPending: number;
+  topupAnomalies: number;
+  kitchenConfirmations: number;
+  merchantApplications: number;
+  ordersBreaching: number;
+}
+
+/** The read-only settings panel. */
+export interface AdminConfig {
+  environment: string;
+  penaltiesSuspended: boolean;
+  commission: { ratePct: number; freeFirstJobs: number; minTopUp: number; maxTopUp: number };
+  topUps: { paymentRail: string; rails: string[]; feePct: number; feeMode: string };
+  wallet: { manualCreditCapUsd: number; reversalCapUsd: number };
+  kyc: { mode: string; provider: string };
+  verticals: {
+    restaurants: boolean;
+    shops: boolean;
+    pharmacy: boolean;
+    prescriptions: boolean;
+    autoDispatch: boolean;
+    merchantWallet: boolean;
+    notificationsFeed: boolean;
+  };
+  gpsRetentionDays: number;
+  sla: Array<{ stage: string; label: string; limitMinutes: number; note: string | null }>;
+}

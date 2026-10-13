@@ -90,6 +90,19 @@ describe("AdminMoneyService.listTopups", () => {
     expect(out.rows[0]!.anomaly).toMatchObject({ kind: "short_paid", paid: 3, resolved: false });
     expect(out.counts.short_paid).toBe(1);
   });
+
+  it("counts every open anomaly for the alert strip (console v2 §7)", async () => {
+    const { prisma } = prismaFor([], [
+      { subjectId: "a", type: "topup.anomaly", data: { kind: "short_paid", paid: 3 } },
+      { subjectId: "b", type: "topup.anomaly", data: { kind: "short_paid", paid: 1 } },
+      { subjectId: "b", type: "topup.anomaly_resolved", data: { kind: "short_paid" } },
+      { subjectId: "c", type: "topup.anomaly", data: { kind: "paid_on_declined", paid: 5 } },
+    ]);
+    // The count stub answers 1 per kind with an open id: short_paid (a) + paid_on_declined (c).
+    expect(await new AdminMoneyService(prisma, walletStub()).openAnomalyCount()).toBe(2);
+    const { prisma: quiet } = prismaFor([], []);
+    expect(await new AdminMoneyService(quiet, walletStub()).openAnomalyCount()).toBe(0);
+  });
 });
 
 describe("AdminMoneyService top-up actions", () => {

@@ -259,6 +259,8 @@ model Profile {
   balanceEntries  CustomerBalanceEntry[]
 
   @@index([idNumberHash])
+  // Admin console v2 §4: the funnels pick each cohort by sign-up time (migration 0103, built concurrently).
+  @@index([createdAt])
   @@map("profiles")
 }
 

@@ -319,6 +319,39 @@ td.mut, .mut { color: var(--muted); }
 .hit-list a:hover b { color: var(--accent-text); }
 .hit-list .mut { font-size: 12px; }
 
+/* Admin console v2 §4 (PR 5, D-106): a funnel strip — KPI tiles in miniature (label, count, hint) with a share-
+   of-cohort meter, each linking to its stuck list. Tokens only; the meter is the accent fill on the surface. */
+.funnel { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: var(--space-sm); }
+.funnel-step { display: flex; flex-direction: column; gap: 2px; height: 100%; padding: var(--space-sm) var(--space-md); border: 1px solid var(--line); border-radius: var(--radius-input); text-decoration: none; color: var(--ink); background: var(--bg); }
+a.funnel-step:hover { background: var(--surface); }
+a.funnel-step:hover .label { color: var(--accent-text); }
+.funnel-step .label { font-size: 12px; font-weight: 600; color: var(--muted); }
+.funnel-step .value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.funnel-step .meter { display: block; height: 4px; border-radius: 999px; background: var(--surface); overflow: hidden; margin: 2px 0; }
+.funnel-step .meter > span { display: block; height: 100%; background: var(--accent); }
+.funnel-step .hint { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.funnel-step .since { font-size: 11px; color: var(--highlight-ink); }
+.funnel.compact { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); }
+.funnel.compact .funnel-step { padding: var(--space-xs) var(--space-sm); }
+.funnel.compact .funnel-step .value { font-size: 16px; }
+.funnel-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-xs) var(--space-sm); font-size: 13px; font-weight: 700; margin: 0 0 var(--space-sm); }
+.funnel-group + .funnel-group { margin-top: var(--space-lg); }
+.funnel-head .mut { font-size: 12px; font-weight: 400; }
+.funnel-head a { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--accent-text); text-decoration: none; }
+.contact-actions { display: inline-flex; flex-wrap: wrap; gap: var(--space-xs); position: relative; z-index: 2; }
+/* One line per stuck row: on a phone the table scrolls sideways inside its card (D-105) instead of wrapping. */
+.stuck-table td { white-space: nowrap; }
+.stuck-table .contact-actions { flex-wrap: nowrap; }
+
+/* Admin console v2 §7 (route (b), D-106): the alert strip above every page and the live map — kit pills,
+   cards and tokens only. */
+.alert-strip { width: 100%; max-width: 1180px; margin: 0 auto; padding: var(--space-md) var(--space-xl) 0; display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+.alert-strip a.kpill { text-decoration: none; font-size: 12px; padding: 4px 12px; }
+.live-map { display: block; width: 100%; height: auto; background: var(--surface); border-radius: var(--radius-input); }
+.live-legend { display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-lg); font-size: 12px; color: var(--muted); margin-top: var(--space-sm); }
+.live-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.live-legend svg { width: 12px; height: 12px; flex: none; }
+
 /* ══════════════════════════════════════════════════════════════════════════
    Phone layout (D-105, owner 2026-10-13). The admin kit draws 1440 only; below
    900px the console is rebuilt from the same primitives and tokens so the owner
@@ -378,6 +411,8 @@ td.mut, .mut { color: var(--muted); }
   .filter-form label { flex: 1 1 140px; }
   .filter-form .field-input { min-width: 0; width: 100%; }
   .hit-list a { min-height: var(--target-min); }
+  .alert-strip { padding: var(--space-md) var(--space-lg) 0; }
+  .alert-strip a.kpill { min-height: var(--target-min); white-space: normal; }
 }
 
 @media (max-width: 640px) {

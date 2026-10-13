@@ -136,6 +136,27 @@ export async function adminPostResult(path: string, body: unknown): Promise<Admi
   }
 }
 
+/** {@link adminPostResult} for an endpoint whose answer the console reads (admin console v2 Nudge: sent,
+ *  already sent, no push). The response body rides on the ok branch; failures are the same shapes. */
+export async function adminPostJson<T>(path: string, body: unknown): Promise<{ ok: true; data: T } | Exclude<AdminPostResult, { ok: true }>> {
+  const b = base();
+  if (!b) return { ok: false, reason: "unconfigured" };
+  try {
+    const res = await fetch(`${b}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+      cache: "no-store",
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(ADMIN_FETCH_TIMEOUT_MS),
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) return { ok: false, reason: "http", status: res.status, message: extractHttpMessage(json) };
+    return { ok: true, data: json as T };
+  } catch {
+    return { ok: false, reason: "unreachable" };
+  }
+}
+
 export async function adminPost(path: string, body: unknown): Promise<boolean> {
   const r = await adminPostResult(path, body);
   return r.ok;

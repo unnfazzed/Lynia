@@ -97,6 +97,12 @@ GPS inside `data` follows `GPS_RETENTION_DAYS`.
 > **Shipped in PR 3:** global search (`GET /admin/search`, `/search`, the box above every page / in the phone menu) and the
 > merged person timeline (`GET /admin/people/:id/timeline`, `GET /admin/merchants/:id/timeline`) on the biker, customer and
 > merchant pages. Funnels, stuck lists and Nudge are PR 5.
+>
+> **Shipped in PR 5:** `GET /admin/funnels`, `GET /admin/stuck`, `POST /admin/nudge` (push only, one per person per list
+> per Harare day, audited as `person.nudge` + a `nudge.sent` event), the **People** page (`/people`: side and range chips,
+> funnel strip, stuck lists with Call / WhatsApp / Nudge) and three compact strips on the Overview. History is rebuilt
+> from existing rows; a step whose data starts with PR 2 says "since 13 Oct". The merchant application stall list links
+> to PR 4's queue. Migration 0103 (`profiles (created_at)`).
 
 One new page, **People**, plus a **global search** in the top bar (phone, name, order id, Paynow reference).
 Every person has one timeline that merges orders, events, audit rows, KYC and top-ups.
@@ -174,6 +180,12 @@ rate, hours open vs scheduled, rating, open debt.
 - **Live map:** bikers online and active orders, from a new admin Socket.IO room. Today the gateway refuses admins and there is no fleet stream; until the room exists, poll `rider:geo`.
 - **Alert strip** at the top: SOS pending, top-up anomalies, kitchen confirmations waiting, applications past SLA.
 - **Config panel, read-only first:** show `PENALTIES_SUSPENDED`, the commission rate, `TOPUP_RAILS`, the fee %, `KYC_MODE` and the vertical switches. All of these are env-only today, so ops can't see what is on.
+
+**Shipped in PR 7:** `/live` (order monitor with per-stage SLA timers, breach first, 20 s refresh; the stages and
+limits live in `apps/api/src/admin/live-ops.ts`) + a polled live map (`GET /admin/live/orders`, `GET /admin/live/fleet`;
+the admin app has no Maps key, so the map is drawn to scale on a plain box, no street tiles); the alert strip on every
+page (`GET /admin/alerts`, cached 15 s); `/config` read-only (`GET /admin/config`, an allowlist, no secrets). The admin
+Socket.IO room is next: the poll covers a pilot fleet, and opening the gateway to admins is a separate change. No migrations.
 
 ---
 

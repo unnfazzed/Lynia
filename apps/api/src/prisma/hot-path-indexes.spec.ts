@@ -37,6 +37,8 @@ const HOT_PATH_INDEXES = [
   { model: "AuditLog", attr: "@@index([target, createdAt])", table: "audit_logs", columns: `"target", "created_at"` },
   // Admin console v2 §6: the platform money panel sums the ledger by day over 7 / 30 days (0102).
   { model: "CommissionLedger", attr: "@@index([createdAt])", table: "commission_ledger", columns: `"created_at"` },
+  // Admin console v2 §4: the funnels pick each cohort by sign-up time (0103).
+  { model: "Profile", attr: "@@index([createdAt])", table: "profiles", columns: `"created_at"` },
 ];
 
 describe("hot-path indexes", () => {

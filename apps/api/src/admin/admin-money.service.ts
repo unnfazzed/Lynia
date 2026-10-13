@@ -138,6 +138,16 @@ export class AdminMoneyService {
     return ids.filter((id) => !closed.has(id));
   }
 
+  /** Top-up anomalies still open, every kind (the console's alert strip). Same rule as the list's chips. */
+  async openAnomalyCount(): Promise<number> {
+    let total = 0;
+    for (const kind of TOPUP_ANOMALY_FILTERS) {
+      const ids = await this.openAnomalyIds(kind);
+      if (ids.length) total += await this.prisma.topUp.count({ where: { id: { in: ids }, status: { not: "confirmed" } } });
+    }
+    return total;
+  }
+
   private async topupCounts(): Promise<Record<TopupFilter, number>> {
     const byStatus = await this.prisma.topUp.groupBy({ by: ["status"], _count: { _all: true } });
     const counts = Object.fromEntries(TOPUP_FILTERS.map((f) => [f, 0])) as Record<TopupFilter, number>;

@@ -5485,6 +5485,13 @@ components, and record them all here. Each also follows D-105 below 900px.
 | 6 | `/cash/owed`: money-owed table with a Call button | `table.data`, quiet button |
 | 6 | `/cash`: chip row (commission / top-ups / money owed) and a Platform money card (7/30-day chips, CSV link, six KPI tiles, ledger-check pill + Run now, by-day table) | subnav chips, card, KPI panel, pills, `table.data` |
 | 6 | Biker page wallet card: four KPI tiles, Detail and By columns, Reverse… and Take off balance… buttons | KPI panel, `table.data`, confirm modal |
+| 5 | `/people`: side chips, range chips, funnel card, stuck-list chips with counts, stuck table (Name, Waiting, Detail, Last nudge, Call / WhatsApp / Nudge) | card, subnav chips, `table.data`, quiet buttons, confirm modal (shows the push text) |
+| 5 | Funnel strip: KPI tiles in miniature (label, count, conversion, median, "since"), with a 4px share-of-cohort meter (`--accent` on `--surface`); compact variant on the Overview's "Happy paths" card | KPI panel, tokens |
+| 5 | "People" nav item (lucide `users`) | sidebar nav item |
+| 7 | `/live`: KPI tiles, order monitor (time-limit pill: Over by / left / On time), Bikers online table, and a to-scale SVG map on a `--surface` box with a legend (no street tiles: the admin app has no maps key) | KPI panel, `table.data`, pills, tokens |
+| 7 | `/config` "Settings": read-only key/value cards (deploy variable under each label), On/Off pills, the time-limit table | card, `.kv`, pills, `table.data` |
+| 7 | Alert strip above every page (hidden when empty): `kpill bad` / `kpill warn` links, ≥ `--target-min` on a phone | pills |
+| 7 | "Live" and "Settings" nav items (lucide `map-pin`, `sliders-horizontal`) | sidebar nav item |
 
 One literal: inputs use 16px text on a phone so iOS doesn't zoom on focus.
 

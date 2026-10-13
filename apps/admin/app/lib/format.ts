@@ -39,6 +39,15 @@ export function timeAgo(iso: string, now: number = Date.now()): string {
   return `${Math.round(hrs / 24)} d ago`;
 }
 
+/** A span of time: "45 s" · "12 min" · "1 h 05 min" (the live monitor's stage clocks). */
+export function fmtDuration(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s} s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} min`;
+  return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min`;
+}
+
 /** "$1,234.50" / "−$3.00". Accepts the API's decimal strings. Null → "—". */
 export function money(v: string | number | null | undefined): string {
   if (v === null || v === undefined || v === "") return "—";
@@ -51,6 +60,23 @@ export function money(v: string | number | null | undefined): string {
 /** "#a1b2c3" — the first 6 characters of a UUID, for display. Links still carry the full id. */
 export function shortId(id: string): string {
   return `#${id.replace(/-/g, "").slice(0, 6)}`;
+}
+
+/** A duration for a funnel median: "45 min", "3 hr", "2 d". Null → "—". */
+export function fmtMedian(ms: number | null | undefined): string {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return "—";
+  const mins = Math.round(ms / 60000);
+  if (mins < 1) return "<1 min";
+  if (mins < 60) return `${mins} min`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 48) return `${hrs} hr`;
+  return `${Math.round(hrs / 24)} d`;
+}
+
+/** A wa.me chat link for an E.164 phone ("+263 77…" → "https://wa.me/26377…"). Null without enough digits. */
+export function whatsappHref(phone: string | null | undefined): string | null {
+  const digits = (phone ?? "").replace(/\D/g, "");
+  return digits.length >= 8 ? `https://wa.me/${digits}` : null;
 }
 
 /** "open_for_offers" → "Open for offers". */

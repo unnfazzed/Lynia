@@ -22,6 +22,20 @@ const row = (id: string, minutesAgo: number, urgent: boolean) => ({
 });
 
 describe("AdminKitchenService", () => {
+  it("counts the call list with the list's own filter (console v2 §7 alert strip)", async () => {
+    let where: Record<string, unknown> | undefined;
+    const prisma = {
+      order: {
+        count: async (args: { where: Record<string, unknown> }) => {
+          where = args.where;
+          return 4;
+        },
+      },
+    } as unknown as PrismaService;
+    expect(await new AdminKitchenService(prisma, gateway).countToConfirm()).toBe(4);
+    expect(where).toMatchObject({ orderType: "merchant", autoAccepted: true, kitchenConfirmedAt: null });
+  });
+
   it("lists unconfirmed auto-accepted orders, urgent first, with both phone numbers", async () => {
     let where: Record<string, unknown> | undefined;
     const prisma = {

@@ -5,6 +5,9 @@ import { KpiCard } from "./components/KpiCard";
 import { StatusPill } from "./components/StatusPill";
 import { IconAlert, IconIdCard, IconCheck, IconInbox } from "./components/icons";
 import { AutoRefresh } from "./components/AutoRefresh";
+import { FilterNav } from "./components/FilterNav";
+import { FunnelStrip } from "./components/FunnelStrip";
+import type { FunnelKind, FunnelRange, FunnelView } from "./lib/adminTypes";
 import { OrderLink } from "./components/links";
 import { money, timeAgo } from "./lib/format";
 
@@ -37,8 +40,30 @@ interface Overview {
   }>;
 }
 
-export default async function OverviewPage() {
-  const res = await adminFetchResult<Overview>("/admin/overview");
+/** Admin console v2 §4: the three happy-path strips under the KPIs, for a chosen range of Harare days. */
+const FUNNELS: Array<{ kind: FunnelKind; title: string }> = [
+  { kind: "biker", title: "Bikers" },
+  { kind: "customer", title: "Customers" },
+  { kind: "merchant", title: "Merchants" },
+];
+const FUNNEL_RANGES: Array<{ value: FunnelRange; label: string }> = [
+  { value: "today", label: "today" },
+  { value: "7d", label: "7 days" },
+  { value: "30d", label: "30 days" },
+];
+
+export default async function OverviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const sp = (await searchParams) ?? {};
+  const range: FunnelRange = FUNNEL_RANGES.some((r) => r.value === sp.range) ? (sp.range as FunnelRange) : "7d";
+  const [res, ...funnelRes] = await Promise.all([
+    adminFetchResult<Overview>("/admin/overview"),
+    ...FUNNELS.map((f) => adminFetchResult<FunnelView>(`/admin/funnels?kind=${f.kind}&range=${range}`)),
+  ]);
+  const funnels = funnelRes.map((r) => ("data" in r ? r.data : null));
   const data = "data" in res ? res.data : null;
   const reason = "data" in res ? undefined : res.reason;
   const connected = data !== null;
@@ -77,6 +102,32 @@ export default async function OverviewPage() {
         <span className="m"><b>{data ? data.attention.openIssues : "—"}</b>open disputes</span>
         <span className="m"><b>{data ? `${data.metrics.pctBroadcastsWithOffer}%` : "—"}</b>broadcasts with an offer</span>
       </section>
+
+      {/* Admin console v2 §4: the three happy paths for the chosen range (D-106); each tile opens its stuck list. */}
+      {funnels.some((f) => f && Array.isArray(f.steps)) ? (
+        <section className="card" style={{ marginBottom: tokens.space.lg }} aria-label="Happy paths">
+          <div className="block-title">
+            Happy paths
+            <a className="right" href={`/people?range=${range}`} style={{ color: tokens.color.accentText, textDecoration: "none", fontWeight: 600 }}>
+              People →
+            </a>
+          </div>
+          <FilterNav items={FUNNEL_RANGES} active={range} hrefFor={(v) => `/?range=${v}`} />
+          {FUNNELS.map((f, i) => {
+            const view = funnels[i];
+            return (
+              <div key={f.kind} className="funnel-group">
+                <div className="funnel-head">
+                  {f.title}
+                  <span className="mut">{view ? `${view.cohort} signed up` : "not available"}</span>
+                  <a href={`/people?kind=${f.kind}&range=${range}`}>Stuck lists</a>
+                </div>
+                {view && Array.isArray(view.steps) ? <FunnelStrip compact kind={f.kind} range={range} steps={view.steps} label={`${f.title} funnel`} /> : null}
+              </div>
+            );
+          })}
+        </section>
+      ) : null}
 
       {/* Needs-attention queue — the operational heart of the overview. */}
       {connected ? (

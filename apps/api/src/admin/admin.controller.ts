@@ -21,15 +21,18 @@ import { AdminAuditService } from "./admin-audit.service";
 import { AdminCustomersService } from "./admin-customers.service";
 import { AdminKitchenService } from "./admin-kitchen.service";
 import { AdminKycReviewService } from "./admin-kyc-review.service";
+import { AdminLiveService } from "./admin-live.service";
 import { AdminMerchantApplicationService, CALL_OUTCOMES } from "./admin-merchant-application.service";
 import { AdminMerchantsService } from "./admin-merchants.service";
 import type { ApplicationAction } from "./merchant-application";
 import { AdminMoneyService, TOPUP_FILTERS, type TopupFilter } from "./admin-money.service";
 import { AdminOrdersService } from "./admin-orders.service";
+import { AdminPeopleService } from "./admin-people.service";
 import { AdminRidersService } from "./admin-riders.service";
 import { AdminSearchService } from "./admin-search.service";
 import { AdminTimelineService } from "./admin-timeline.service";
 import { AdminService } from "./admin.service";
+import { isFunnelKind, isFunnelRange, isStuckListKey, STUCK_LIST_KEYS } from "./people-funnels";
 
 const KYC_VALUES = Object.values(KycStatus) as string[];
 const ORDER_STATUS_VALUES = Object.values(OrderStatus) as string[];
@@ -132,6 +135,14 @@ const WalletReversal = z.object({
   idempotencyKey: z.string().uuid(),
 });
 
+// Admin console v2 §4: push one stuck person their list's fixed nudge (push only, owner decision 6). Reason-coded.
+const Nudge = z.object({
+  profileId: z.string().uuid(),
+  step: z.enum(STUCK_LIST_KEYS),
+  reason: z.string().min(1).max(160),
+  note: z.string().max(2000).nullish(),
+});
+
 /** `?page=` as a 1-based page number (anything else is page 1). */
 function pageOf(page?: string): number {
   const parsed = page != null ? Number.parseInt(page, 10) : Number.NaN;
@@ -158,7 +169,35 @@ export class AdminController {
     private readonly search: AdminSearchService,
     private readonly timeline: AdminTimelineService,
     private readonly application: AdminMerchantApplicationService,
+    private readonly people: AdminPeopleService,
+    private readonly live: AdminLiveService,
   ) {}
+
+  /* ── Admin console v2 PR 5: funnels, stuck lists, Nudge (plan §4) ─────────────────────────────── */
+
+  /** One happy-path funnel for the people who signed up in the range: `kind=biker|customer|merchant` (default
+   *  biker), `range=today|7d|30d` (Harare days, default 7d). Read-only. */
+  @Get("funnels")
+  funnels(@Query("kind") kind?: string, @Query("range") range?: string) {
+    return this.people.funnel(isFunnelKind(kind) ? kind : "biker", isFunnelRange(range) ? range : "7d");
+  }
+
+  /** `?list=<key>`: one stuck list, oldest first. Otherwise `?kind=` (default biker): every list of that kind
+   *  with its count, no rows. Read-only. */
+  @Get("stuck")
+  stuck(@Query("list") list?: string, @Query("kind") kind?: string) {
+    if (list !== undefined) {
+      if (!isStuckListKey(list)) throw new NotFoundException("No such list");
+      return this.people.stuck(list);
+    }
+    return this.people.stuckSummary(isFunnelKind(kind) ? kind : "biker");
+  }
+
+  /** Push the person the fixed copy for one stuck list. One per person per list per Harare day; audited. */
+  @Post("nudge")
+  nudge(@Body(new ZodBody(Nudge)) body: z.infer<typeof Nudge>, @AdminActor() actor: string) {
+    return this.people.nudge(actor, body);
+  }
 
   /* ── Admin console v2 PR 3: audit viewer, global search, timelines (plan §4, §8) ───────────── */
 
@@ -207,6 +246,32 @@ export class AdminController {
     const view = await this.timeline.merchantTimeline(id, cursor);
     if (!view) throw new NotFoundException("Merchant not found");
     return view;
+  }
+
+  /* ── Admin console v2 PR 7: live ops (plan §7). All reads. ─────────────────────────────────────── */
+
+  /** The order monitor: every active order with its stage, the stage's clock, its SLA limit and breach status. */
+  @Get("live/orders")
+  liveOrders() {
+    return this.live.liveOrders();
+  }
+
+  /** The live map, polled: online bikers' last known positions (with freshness) and active orders' pins. */
+  @Get("live/fleet")
+  liveFleet() {
+    return this.live.fleet();
+  }
+
+  /** The alert strip above every console page: one cheap call, cached briefly. */
+  @Get("alerts")
+  alerts() {
+    return this.live.alerts();
+  }
+
+  /** The settings the services run with — an allowlist, never a secret. Read-only. */
+  @Get("config")
+  config() {
+    return this.live.config();
   }
 
   @Get("overview")
