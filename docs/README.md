@@ -72,7 +72,7 @@ trigger-prompt mirrors) keep their working state here:
   deletes the lane's previous one in the same PR (retention rule in `ROUTINES.md`). The July and
   August reports were removed on 2026-10-12; their durable findings are in the ledgers.
 - **Plans (`plans/`):** plans still in progress or describing live behaviour: the GCP→Azure
-  migration (Phase 8 open), multi-branch owners, restaurant auto-accept, the customer web app.
+  migration (Phase 8 open), multi-branch owners, restaurant auto-accept, the customer web app, Paynow top-ups, admin console v2 (draft).
 - **Archive (`archive/`):** finished reviews, RCAs and executed plans that code or `CLAUDE.md`
   still cite for the reasoning behind a choice (tap-responsiveness and cold-start RCAs, the
   2026-08 UI-kit audits, the low-connectivity program, the restaurants+send launch plan, …).
