@@ -5,7 +5,7 @@ import type { NotificationsService } from "../notifications/notifications.servic
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import type { WalletService } from "../wallet/wallet.service";
-import { AdminOrdersService } from "./admin-orders.service";
+import { AdminOrdersService, cancelledByRoleOf } from "./admin-orders.service";
 
 /** Decimal-like stub — Prisma returns Decimal objects whose `.toString()`/`.toFixed()` we serialize. */
 const dec = (s: string) => ({ toString: () => s, toFixed: (_n: number) => s });
@@ -38,6 +38,49 @@ describe("AdminOrdersService.listOrders", () => {
     const rows = await svc.listOrders("cancelled");
     expect(where).toEqual({ status: "cancelled" });
     expect(rows[0]).toMatchObject({ id: "o1", status: "cancelled", proposedFare: "2.50", agreedFare: null, cancelledByRole: "rider", cancelReason: "cannot make it" });
+  });
+
+  // Admin console v2 §3 (fixes plan §2.1 #5): the stored role wins, so a merchant / admin / system cancel
+  // is no longer reported as nobody.
+  it("returns the stored cancelledByRole — merchant, admin and system cancels included", async () => {
+    const row = (id: string, cancelledByRole: string | null, cancelledBy: string | null) => ({
+      id,
+      status: "cancelled",
+      proposedFare: { toString: () => "2.50" },
+      agreedFare: null,
+      distanceKm: 1,
+      customerId: "c1",
+      riderId: "r1",
+      cancelledBy,
+      cancelledByRole,
+      cancelReason: null,
+      createdAt: new Date("2026-10-13T00:00:00Z"),
+    });
+    const prisma = {
+      order: {
+        findMany: async () => [
+          row("a", "merchant", null),
+          row("b", "admin", null),
+          row("c", "system", null),
+          row("d", "customer", "c1"),
+          row("e", null, "r1"), // pre-0091 row: derived from the canceller id
+          row("f", null, null), // pre-0091 non-party cancel: unknown
+        ],
+      },
+    };
+    const svc = new AdminOrdersService(prisma as unknown as PrismaService);
+    const rows = await svc.listOrders("cancelled");
+    expect(rows.map((r) => r.cancelledByRole)).toEqual(["merchant", "admin", "system", "customer", "rider", null]);
+  });
+
+  it.each([
+    [{ cancelledByRole: "merchant", cancelledBy: null, riderId: null, customerId: "c" }, "merchant"],
+    [{ cancelledByRole: "bogus", cancelledBy: "c", riderId: null, customerId: "c" }, "customer"],
+    [{ cancelledByRole: null, cancelledBy: "r", riderId: "r", customerId: "c" }, "rider"],
+    [{ cancelledByRole: null, cancelledBy: "x", riderId: "r", customerId: "c" }, null],
+    [{ cancelledByRole: undefined, cancelledBy: null, riderId: null, customerId: "c" }, null],
+  ])("cancelledByRoleOf(%o) → %s", (o, want) => {
+    expect(cancelledByRoleOf(o)).toBe(want);
   });
 
   // X1: food-order visibility — orderType filter composes with status, and a merchant order carries
@@ -452,6 +495,13 @@ describe("AdminOrdersService mutations (Item 1 — mutation + audit in ONE $tran
     expect(calls.orderEvent!.data).toEqual({ orderId: "o1", status: "cancelled" });
     expect(calls.audit!.data).toMatchObject({ action: "order.cancel", target: "o1", reasonCode: "duplicate order" });
     expect(res).toMatchObject({ id: "o1", status: "cancelled", auditId: "audit-9" });
+  });
+
+  it("cancelOrder stamps who (admin), the stage it was in, and the admin reason code (admin console v2 §3)", async () => {
+    const { prisma, calls } = makeTx();
+    const svc = new AdminOrdersService(prisma as unknown as PrismaService);
+    await svc.cancelOrder("admin-1", "o1", { reason: "fraud" });
+    expect(calls.orderUpdate!.data).toMatchObject({ cancelledByRole: "admin", cancelStage: "assigned", cancelReasonCode: "fraud" });
   });
 
   // Regression: `Order.cancelledBy` is `@db.Uuid` (FK → Profile.id), but behind IAP the admin `actor` is

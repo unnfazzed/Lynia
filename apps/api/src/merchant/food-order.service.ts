@@ -89,6 +89,8 @@ import { carryBalance, customerBalance, openBalance } from "./customer-balance";
 import { OrderScheduleService } from "./order-schedule.service";
 import { PrescriptionService } from "./prescription.service";
 import { venueNoteOf } from "./venue-note";
+import { cancelAttribution } from "../common/cancel-attribution";
+import { domainEvents } from "../common/domain-events";
 
 // D-24 manual rail: the customer needs the shop's OWN payment-receiving number to send mobile
 // money to (never masked — D-17's masking is for a THIRD PARTY's view of the merchant, e.g. a
@@ -655,7 +657,13 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     if (!approve) {
       const claimed = await this.prisma.order.updateMany({
         where: { id: orderId, status: "requested", merchantPhase: "awaiting_item_approval" },
-        data: { status: "cancelled", cancelledAt: new Date(), cancelledBy: customerId, merchantPhase: null },
+        data: {
+          status: "cancelled",
+          cancelledAt: new Date(),
+          cancelledBy: customerId,
+          merchantPhase: null,
+          ...cancelAttribution({ by: "customer", status: "requested", merchantPhase: "awaiting_item_approval", reasonCode: "items_declined" }),
+        },
       });
       if (claimed.count === 0) throw new ConflictException("Order changed, retry");
       await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
@@ -706,7 +714,13 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         // Still held, still riderless: a "Keep searching" or a rider racing the cancel wins.
         ...(noRiderHold ? { noRiderHoldAt: { not: null }, riderId: null } : {}),
       },
-      data: { status: "cancelled", cancelledAt: new Date(), cancelledBy: customerId, merchantPhase: null },
+      data: {
+        status: "cancelled",
+        cancelledAt: new Date(),
+        cancelledBy: customerId,
+        merchantPhase: null,
+        ...cancelAttribution({ by: "customer", status: "requested", merchantPhase: order.merchantPhase, reasonCode: noRiderHold ? "no_rider" : null }),
+      },
     });
     if (claimed.count === 0) throw new ConflictException("Order changed, retry");
     await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
@@ -929,9 +943,18 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
             merchantGoodsTotal,
             merchantDeliveryShare,
             agreedFare,
+            // Admin console v2 §3: when the venue answered (accept time / missed orders).
+            merchantAcceptedAt: new Date(),
           },
         });
         if (claimed.count === 0) throw new ConflictException("Order changed, retry");
+        await domainEvents.merchantPhase(tx, {
+          orderId,
+          merchantId,
+          phase: "accept_partial",
+          actorId: profileId,
+          data: { prepMinutes, unavailableItems: unavailable.size },
+        });
         await tx.merchantOrderItem.updateMany({ where: { orderId, dishId: { in: [...unavailable] } }, data: { available: false } });
         await tx.merchantOrderItem.updateMany({ where: { orderId, dishId: { notIn: [...unavailable] } }, data: { available: true } });
       });
@@ -940,11 +963,13 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       const claimed = await this.prisma.order.updateMany({
         where: { id: orderId, status: "requested", merchantPhase: "awaiting_accept" },
         data: cash
-          ? { merchantPhase: "preparing", prepMinutes, prepStartedAt: new Date() }
-          : { merchantPhase: "awaiting_payment", prepMinutes },
+          ? { merchantPhase: "preparing", prepMinutes, prepStartedAt: new Date(), merchantAcceptedAt: new Date() }
+          : { merchantPhase: "awaiting_payment", prepMinutes, merchantAcceptedAt: new Date() },
       });
       if (claimed.count === 0) throw new ConflictException("Order changed, retry");
       await this.prisma.merchantOrderItem.updateMany({ where: { orderId }, data: { available: true } });
+      // Best-effort (no transaction on this path): the accept above is committed.
+      await domainEvents.merchantPhase(this.prisma, { orderId, merchantId, phase: "accept", actorId: profileId, data: { prepMinutes, cash } });
     }
     this.notifyQueue(merchantId, orderId);
     return this.toResponse(await this.mustFindWithItems(orderId));
@@ -957,10 +982,18 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     const said = note?.trim() || null;
     const claimed = await this.prisma.order.updateMany({
       where: { id: orderId, merchantId, orderType: "merchant", status: "requested", merchantPhase: "awaiting_accept" },
-      data: { status: "cancelled", cancelledAt: new Date(), rejectionReason: reason, merchantPhase: null, cancelReason: said },
+      data: {
+        status: "cancelled",
+        cancelledAt: new Date(),
+        rejectionReason: reason,
+        merchantPhase: null,
+        cancelReason: said,
+        ...cancelAttribution({ by: "merchant", status: "requested", merchantPhase: "awaiting_accept", reasonCode: reason }),
+      },
     });
     if (claimed.count === 0) throw new ConflictException("This order can no longer be rejected");
     await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
+    await domainEvents.merchantPhase(this.prisma, { orderId, merchantId, phase: "reject", actorId: profileId, data: { reason } });
     await this.notifyCancelledCustomer(orderId, reason, said);
     this.notifyQueue(merchantId, orderId);
     return this.toResponse(await this.mustFindWithItems(orderId));
@@ -1003,11 +1036,14 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         dispatchOfferedRiderId: null,
         dispatchOfferExpiresAt: null,
         dispatchNextCheckAt: null,
+        // Cooking (the CAS pins `preparing`), whether or not a rider round had started.
+        ...cancelAttribution({ by: "merchant", status: "requested", merchantPhase: "preparing", reasonCode: reason }),
       },
     });
     if (claimed.count === 0) {
       throw new ConflictException({ reason: "not_cancellable", message: "This order can no longer be cancelled here." });
     }
+    await domainEvents.merchantPhase(this.prisma, { orderId, merchantId, phase: "cancel", actorId: profileId, data: { reason, stage: "preparing" } });
     await this.closeOpenOffers(orderId);
     await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
     await this.notifyCancelledCustomer(orderId, reason, said);
@@ -1074,6 +1110,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       },
     });
     if (claimed.count === 0) throw new ConflictException("Order changed, retry");
+    await domainEvents.merchantPhase(this.prisma, { orderId, merchantId: order.merchantId, phase: "payment_confirmed", actorId: profileId });
     this.notifyQueue(order.merchantId, orderId);
     return this.toResponse(await this.mustFindWithItems(orderId));
   }
@@ -1083,9 +1120,16 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     const merchantId = await this.ownMerchantId(profileId);
     const claimed = await this.prisma.order.updateMany({
       where: { id: orderId, merchantId, orderType: "merchant", status: "requested", merchantPhase: "awaiting_payment" },
-      data: { status: "cancelled", cancelledAt: new Date(), rejectionReason: reason, merchantPhase: null },
+      data: {
+        status: "cancelled",
+        cancelledAt: new Date(),
+        rejectionReason: reason,
+        merchantPhase: null,
+        ...cancelAttribution({ by: "merchant", status: "requested", merchantPhase: "awaiting_payment", reasonCode: reason }),
+      },
     });
     if (claimed.count === 0) throw new ConflictException("This order can't be released");
+    await domainEvents.merchantPhase(this.prisma, { orderId, merchantId, phase: "cancel", actorId: profileId, data: { reason, stage: "awaiting_payment" } });
     await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
     await this.notifyCancelledCustomer(orderId, reason);
     this.notifyQueue(merchantId, orderId);
@@ -1122,9 +1166,12 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         pickupCodeAttempts: 0,
         // A restaurant tapping "Food is ready" plainly knows about the order: that confirms the kitchen.
         ...(order.autoAccepted && !order.kitchenConfirmedAt ? { kitchenConfirmedAt: new Date(), kitchenConfirmedBy: "merchant" } : {}),
+        // An auto-accepted order the kitchen never confirmed: "Food is ready" is also the venue's answer.
+        ...(order.merchantAcceptedAt ? {} : { merchantAcceptedAt: new Date() }),
       },
     });
     if (claimed.count === 0) throw new ConflictException("Order changed, retry");
+    await domainEvents.merchantPhase(this.prisma, { orderId, merchantId: order.merchantId, phase: "ready", actorId: profileId });
     this.notifyQueue(order.merchantId, orderId);
     return this.toResponse(await this.mustFindWithItems(orderId));
   }
@@ -1585,10 +1632,18 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     merchantId: string | null | undefined,
     whereExtra: Prisma.OrderWhereInput,
     reason: StampedRejectionReason,
+    // Admin console v2 §3: the kitchen phase it was cancelled in — the CAS's own phase guard by default.
+    stage: string | null = typeof whereExtra.merchantPhase === "string" ? whereExtra.merchantPhase : null,
   ): Promise<boolean> {
     const claimed = await this.prisma.order.updateMany({
       where: { id: orderId, status: "requested", ...whereExtra },
-      data: { status: "cancelled", cancelledAt: new Date(), rejectionReason: reason, merchantPhase: null },
+      data: {
+        status: "cancelled",
+        cancelledAt: new Date(),
+        rejectionReason: reason,
+        merchantPhase: null,
+        ...cancelAttribution({ by: "system", status: "requested", merchantPhase: stage, reasonCode: reason }),
+      },
     });
     if (claimed.count === 0) return false;
     await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
@@ -1708,7 +1763,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     });
     for (const o of abandoned) {
       try {
-        if (await this.commitStaleCancellation(o.id, o.merchantId, { autoAccepted: true, kitchenConfirmedAt: null }, "kitchen_unconfirmed")) {
+        if (await this.commitStaleCancellation(o.id, o.merchantId, { autoAccepted: true, kitchenConfirmedAt: null }, "kitchen_unconfirmed", "preparing")) {
           cancelled++;
         }
       } catch (err) {

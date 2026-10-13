@@ -493,8 +493,26 @@ describe("AdminMerchantsService — merchant web upgrade L1 (go-live switch + op
     const { svc, writes } = pilotHarness({ id: "m1", businessType: "restaurant", pilotEnabled: false, location: PIN });
     const res = await svc.setPilot("ops@lyniago", "m1", { enabled: true, note: "Called; pin checked on street view" });
     expect(res).toEqual({ id: "m1", pilotEnabled: true, auditId: "audit-1" });
+    // Admin console v2 §3: the first go-live stamps who approved it and when.
+    expect(writes.update).toEqual({ where: { id: "m1" }, data: { pilotEnabled: true, approvedAt: expect.any(Date), approvedBy: "ops@lyniago" } });
+    expect(writes.audit).toMatchObject({
+      actor: "ops@lyniago",
+      action: "merchant.go_live",
+      target: "m1",
+      note: "Called; pin checked on street view",
+      targetType: "merchant",
+      before: { pilotEnabled: false },
+      after: { pilotEnabled: true, approved: true },
+    });
+  });
+
+  it("a later go-live (after a pause) keeps the first approval", async () => {
+    const first = new Date("2026-10-01T08:00:00Z");
+    const { svc, writes } = pilotHarness({ id: "m1", businessType: "restaurant", pilotEnabled: false, location: PIN, approvedAt: first });
+    await svc.setPilot("ops2", "m1", { enabled: true });
     expect(writes.update).toEqual({ where: { id: "m1" }, data: { pilotEnabled: true } });
-    expect(writes.audit).toMatchObject({ actor: "ops@lyniago", action: "merchant.go_live", target: "m1", note: "Called; pin checked on street view" });
+    expect(writes.audit).toMatchObject({ after: { pilotEnabled: true } });
+    expect(writes.audit?.after).not.toHaveProperty("approved");
   });
 
   it("switches a SHOP on through the same checks — customer Shops and Pharmacy are open (D-58)", async () => {

@@ -16,6 +16,7 @@ import { RiderNudgeService } from "../tracking/rider-nudge.service";
 import { TrackingService } from "../tracking/tracking.service";
 import { customerSafeCancelReason } from "./cancel-reason";
 import { type BroadcastMeta, buildBoardNewOrderEvent, pickupPoint, publicWaypoint } from "./waypoints";
+import { domainEvents } from "../common/domain-events";
 
 const REVEAL = new Set<string>(PHONE_REVEAL_STATUSES);
 
@@ -434,14 +435,30 @@ export class OrdersService {
       // backgrounded app, whose foreground heartbeat stopped beating ~120 s after backgrounding — the
       // strict cutoff would wrongly drop that still-online rider from the broadcast audience (Fix 4 /
       // DS13-02). The customer-facing count and the offer gate keep the strict cutoff.
-      const nearby = await this.tracking.nearbyRiders(pt.lat, pt.lng, baseBroadcastRadiusM(), heartbeatMaxAgeMsForPush());
-      if (nearby.length === 0) return;
+      const radiusM = baseBroadcastRadiusM();
+      const nearby = await this.tracking.nearbyRiders(pt.lat, pt.lng, radiusM, heartbeatMaxAgeMsForPush());
+      // Admin console v2 §3: the reach, durably (Redis keeps it 10 minutes). Counts + radius only — no ids, no
+      // GPS. Un-awaited and never rejects, like the rest of this best-effort fan-out.
+      const recordReach = (pushed: number) =>
+        void domainEvents.record(this.prisma, {
+          type: "order.broadcast",
+          actorRole: "system",
+          subjectType: "order",
+          subjectId: orderId,
+          orderId,
+          data: { stage: opts?.repush ? "repush" : "create", radiusM, ridersReached: nearby.length, pushed },
+        });
+      if (nearby.length === 0) {
+        recordReach(0);
+        return;
+      }
       // Claim the recipients in the per-order sent set BEFORE pushing, seeding it for the widening
       // ticks (MatchingService.expandBroadcast) so a later ring never re-pings these riders. null =
       // no Redis / Redis error → push everyone found (the ticks then also can't run — same degrade).
       const ids = nearby.map((r) => r.profileId);
       const fresh = (await this.tracking.claimBroadcastRecipients(orderId, ids)) ?? ids;
       const claimed = opts?.repush ? ids : fresh;
+      recordReach(claimed.length);
       if (claimed.length === 0) return;
       // best-effort, never throws, un-awaited.
       const info = { pickup: pt.landmark, fare: meta.proposedFare };
@@ -590,6 +607,16 @@ export class OrdersService {
       data: { proposedFare: fare, fareRaisedAt: new Date(now), offerWindowEndsAt: offerWindowEndAfterRaise(order.createdAt, currentEnd, now) },
     });
     if (claimed.count === 0) throw new ConflictException("Order changed, retry");
+    // Admin console v2 §3: price discovery (from → to). Best-effort — the raise is already committed.
+    await domainEvents.record(this.prisma, {
+      type: "order.fare_raise",
+      actorId: customerId,
+      actorRole: "customer",
+      subjectType: "order",
+      subjectId: orderId,
+      orderId,
+      data: { from: Number(order.proposedFare), to: Number(fare) },
+    });
 
     // Post-commit, best-effort: refresh watchers + re-ping riders at the new fare. Never fails the raise.
     void this.announcePriceChange(orderId).catch((err) => {

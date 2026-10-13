@@ -59,6 +59,7 @@ import { currentThumbKey, makePhotoThumbnail } from "../adapters/storage/photo-t
 import { MicroCache } from "../common/micro-cache";
 import { MicroCacheL2Provider } from "../common/micro-cache-l2.provider";
 import { maskPhone } from "../common/phone-mask";
+import { type DomainEventData, domainEvents } from "../common/domain-events";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService } from "../observability/metrics.service";
@@ -381,6 +382,10 @@ export class MerchantService {
       data: { hours: body.hours as Prisma.InputJsonValue },
       include: { ownerProfile: { select: { phone: true } } },
     });
+    await this.recordAvailability(merchant.id, profileId, {
+      change: "hours",
+      openDays: body.hours && typeof body.hours === "object" ? Object.keys(body.hours as object).length : 0,
+    });
     return await this.toProfileResponse(updated, merchant);
   }
 
@@ -423,6 +428,10 @@ export class MerchantService {
       data: { closedUntil: body.open ? null : harareStartOfNextDay(new Date()) },
       include: { ownerProfile: { select: { phone: true } } },
     });
+    await this.recordAvailability(merchant.id, profileId, {
+      change: body.open ? "open" : "close",
+      closedUntil: updated.closedUntil ? updated.closedUntil.toISOString() : null,
+    });
     return await this.toProfileResponse(updated, merchant);
   }
 
@@ -449,6 +458,7 @@ export class MerchantService {
       data: { busyMode: body.active },
       include: { ownerProfile: { select: { phone: true } } },
     });
+    await this.recordAvailability(merchant.id, profileId, { change: body.active ? "busy_on" : "busy_off" });
     return await this.toProfileResponse(updated, merchant);
   }
 
@@ -612,7 +622,28 @@ export class MerchantService {
     const merchantId = await this.findOwnMerchantIdOrThrow(profileId);
     await this.findOwnDishOrThrow(merchantId, dishId);
     const updated = await this.prisma.merchantDish.update({ where: { id: dishId }, data: { outOfStockUntil: until } });
+    // Admin console v2 §3: out-of-stock rate. Best-effort (no transaction on this path).
+    await domainEvents.record(this.prisma, {
+      type: "menu.stock",
+      actorId: profileId,
+      actorRole: "merchant",
+      subjectType: "dish",
+      subjectId: dishId,
+      data: { merchantId, outOfStock: until != null, until: until ? until.toISOString() : null },
+    });
     return await this.toDishResponse(updated);
+  }
+
+  /** Admin console v2 §3: open-hours compliance — every open/close/busy/hours edit. Best-effort, after the write. */
+  private recordAvailability(merchantId: string, profileId: string, data: DomainEventData): Promise<void> {
+    return domainEvents.record(this.prisma, {
+      type: "merchant.availability",
+      actorId: profileId,
+      actorRole: "merchant",
+      subjectType: "merchant",
+      subjectId: merchantId,
+      data,
+    });
   }
 
   // --- Customer read API (RESTAURANTS_ENABLED + per-merchant pilotEnabled allowlist) ---

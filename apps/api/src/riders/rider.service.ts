@@ -44,6 +44,7 @@ import { penaltiesSuspended } from "../common/penalties";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { TrackingService } from "../tracking/tracking.service";
 import { canGoOnline, onlineRefusalReason, type OnlineRefusal, REFUSAL_MESSAGE } from "./online-gate";
+import { domainEvents } from "../common/domain-events";
 
 /**
  * How long one forced KYC session replacement lasts before another can be claimed.
@@ -489,6 +490,15 @@ export class RiderService {
         // The biker's own record that they signed up, in the same commit as the claim (actor = themselves,
         // as rider.profile_update). The reason says whether the account carried a typed national ID.
         this.prisma.auditLog.create({ data: auditData(profileId, "rider.become", profileId, profile.idNumberHash ? "id_on_file" : "no_id", null) }),
+        // Admin console v2 §3: the biker funnel's "become biker" step, in the claim's own commit.
+        ...domainEvents.batchOps(this.prisma, {
+          type: "rider.onboarding_step",
+          actorId: profileId,
+          actorRole: "rider",
+          subjectType: "rider",
+          subjectId: profileId,
+          data: { step: "become", kyc: initialKyc },
+        }),
       ]);
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
@@ -729,6 +739,8 @@ export class RiderService {
     } catch (err) {
       this.logger.warn(`Couldn't record the KYC session minted for ${profileId}: ${err instanceof Error ? err.message : String(err)}`);
     }
+    // Admin console v2 §3: the biker funnel's "Didit started" step (one per paid session). Best-effort, as above.
+    await domainEvents.riderStep(this.prisma, profileId, "didit_started", { data: { path } });
   }
 
   /** Both bounds on a paid retry: the daily cap on fixable declines (KYC-R26-13), then the hourly paid-mint ceiling. */
@@ -1147,6 +1159,14 @@ export class RiderService {
           });
           if (res.count === 0) return false;
           await tx.auditLog.create({ data: auditData(KYC_ID_EXPIRY_ACTOR, "rider.kyc_expire", profileId, KycDeclineReason.ID_EXPIRED, null) });
+          await domainEvents.record(tx, {
+            type: "kyc.attempt",
+            actorRole: "system",
+            subjectType: "rider",
+            subjectId: profileId,
+            data: { decision: "expired", reason: KycDeclineReason.ID_EXPIRED, resolvedBy: KYC_RESOLVED_BY_SYSTEM },
+          });
+          await domainEvents.riderOffline(tx, profileId, "id_expired");
           return true;
         });
         if (done) {
@@ -1170,7 +1190,9 @@ export class RiderService {
   ): Promise<{ online: boolean }> {
     const rider = await this.prisma.rider.findUnique({
       where: { profileId },
-      select: { kycStatus: true, accountStatus: true, onHold: true, cooldownUntil: true },
+      // isOnline + lastHeartbeatAt: admin console v2 §3's online/offline events (a real flip only) and the
+      // funnel's first-online step (no heartbeat ever stamped ⇒ this is the rider's first time online).
+      select: { kycStatus: true, accountStatus: true, onHold: true, cooldownUntil: true, isOnline: true, lastHeartbeatAt: true },
     });
     if (!rider) throw new ForbiddenException("Not a biker");
     // Full online-gate (Q2): kyc + account standing + reliability on_hold + cooldown. No wallet minimum
@@ -1234,6 +1256,20 @@ export class RiderService {
         data: { isOnline: false },
       });
     }
+    // Admin console v2 §3: supply hours. Only a real flip records (a repeat toggle is a no-op), best-effort and
+    // un-awaited (no transaction here; the toggle above is already committed). The first go-online ever also
+    // records the funnel's first_online step: no heartbeat had been stamped before this one.
+    if (online !== rider.isOnline) {
+      void domainEvents.record(this.prisma, {
+        type: online ? "rider.online" : "rider.offline",
+        actorId: profileId,
+        actorRole: "rider",
+        subjectType: "rider",
+        subjectId: profileId,
+        ...(online ? {} : { data: { reason: "manual" } }),
+      });
+    }
+    if (online && rider.lastHeartbeatAt == null) void domainEvents.riderStep(this.prisma, profileId, "first_online");
     // Going offline explicitly: drop the rider from the geo index right away (the socket may stay
     // connected, so we can't rely on the disconnect flush). Best-effort — PG's is_online is the
     // authority for nearbyRiders; this just stops a now-offline rider lingering in GEOSEARCH results.
@@ -1709,8 +1745,11 @@ export class RiderService {
       // genuine verified/failed outcome keeps the existing feed-sync + notify behavior. kycRef is unique
       // → at most one rider.
       let resolvedProfileId: string | null = null;
+      // Admin console v2 §3: the rider this decision landed on, for its `kyc.attempt` event below.
+      let attemptProfileId: string | null = null;
       if (res.count > 0 && holdForReview) {
         const rider = await tx.rider.findFirst({ where: { kycRef }, select: { profileId: true } });
+        attemptProfileId = rider?.profileId ?? null;
         if (rider) {
           // The audit reason names every condition that held the verify (IR26-04 widened this beyond
           // the original duplicate_id_flag), so the review trail says WHY without exposing any hash.
@@ -1748,6 +1787,7 @@ export class RiderService {
             data: auditData(KYC_WEBHOOK_ACTOR, action, rider.profileId, auditReason, null),
           });
           resolvedProfileId = rider.profileId;
+          attemptProfileId = rider.profileId;
         }
       }
       // Class-B eviction: a lapse (failed/expired) that actually applied needs the profileId post-commit
@@ -1757,6 +1797,27 @@ export class RiderService {
       if (res.count > 0 && outcome === "expired") {
         const rider = await tx.rider.findFirst({ where: { kycRef }, select: { profileId: true } });
         demotedId = rider?.profileId ?? null;
+        attemptProfileId = demotedId;
+      }
+      // Admin console v2 §3: one `kyc.attempt` per applied vendor decision, in the decision's transaction (a
+      // replay matched 0 rows above and records nothing). No session ref in the event: it is erasable PII.
+      if (res.count > 0 && attemptProfileId) {
+        await domainEvents.record(tx, {
+          type: "kyc.attempt",
+          actorRole: "system",
+          subjectType: "rider",
+          subjectId: attemptProfileId,
+          data: {
+            vendorStatus: vendorOutcome,
+            decision: holdForReview ? "held_for_review" : outcome,
+            reason: outReason ?? null,
+            resolvedBy: "vendor",
+          },
+        });
+        // Only a rider who was verified could have been online; a pending check that fails was never on the road.
+        if ((outcome === "failed" || outcome === "expired") && current?.kycStatus === "verified") {
+          await domainEvents.riderOffline(tx, attemptProfileId, outcome === "expired" ? "id_expired" : "kyc_change");
+        }
       }
       // A decline that leaves the rider LOCKED (the A-02 counter at 2 after declineAttemptsWrite, or the `final`
       // class — under age) is told so: "try again" would send them at a wall.
@@ -2126,6 +2187,23 @@ export class RiderService {
         const auditReason =
           reasonCode ?? (nationalId?.outcome === "missing" ? "verified_id_missing" : resetAttempts ? "attempts_reset" : null);
         await tx.auditLog.create({ data: auditData(actor, action, profileId, auditReason, note ?? null) });
+      }
+      // Admin console v2 §3: the human decision as a `kyc.attempt`, in the decision's transaction.
+      await domainEvents.record(tx, {
+        type: "kyc.attempt",
+        actorId: actor ?? null,
+        actorRole: "admin",
+        subjectType: "rider",
+        subjectId: profileId,
+        data: {
+          decision: status === "pending" ? "reset" : status,
+          reason: reasonCode ?? null,
+          resolvedBy: "admin",
+          ...(resetAttempts ? { attemptsReset: true } : {}),
+        },
+      });
+      if (status !== "verified" && rider.kycStatus === "verified") {
+        await domainEvents.riderOffline(tx, profileId, "kyc_change", { actorId: actor ?? null, actorRole: "admin" });
       }
       return result;
     }).catch((err: unknown) => {

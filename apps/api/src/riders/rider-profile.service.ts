@@ -6,6 +6,7 @@ import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interf
 import { isOwnedUploadKey } from "../adapters/storage/upload-kinds";
 import { UploadVerifier } from "../adapters/storage/upload-verifier";
 import { PrismaService } from "../prisma/prisma.service";
+import { domainEvents } from "../common/domain-events";
 
 /**
  * A bike plate as `POST /riders/become` validates it (trimmed, 3–20 characters), stored upper-case with
@@ -90,6 +91,10 @@ export class RiderProfileService {
         // and new plate go in the note; the photo key does not (it is a storage path, not information).
         const note = changed.includes("bike_reg") ? `bike_reg: ${rider.bikeReg ?? "none"} → ${data.bikeReg}` : null;
         await tx.auditLog.create({ data: auditData(profileId, RIDER_PROFILE_UPDATE_ACTION, profileId, changed.join(","), note) });
+        // Admin console v2 §3: the biker funnel's plate step (never the plate itself — the audit note has it).
+        if (changed.includes("bike_reg")) {
+          await domainEvents.riderStep(tx, profileId, "plate_set", { data: { replaced: rider.bikeReg != null } });
+        }
       });
     }
 

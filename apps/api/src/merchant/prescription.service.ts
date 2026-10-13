@@ -30,6 +30,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { notifyFoodQueueChanged, resolveOwnMerchantId } from "./merchant-lookup.util";
+import { cancelAttribution } from "../common/cancel-attribution";
 
 /** How long a prescription photo read URL lives — long enough to zoom and read, short enough to not leak. */
 export const RX_PHOTO_READ_URL_TTL_SECONDS = 300;
@@ -177,7 +178,13 @@ export class PrescriptionService {
       if (kept.length === 0) {
         const c = await tx.order.updateMany({
           where: { id: orderId, status: "requested", merchantPhase: order.merchantPhase },
-          data: { status: "cancelled", cancelledAt: now, rejectionReason: "rx_declined", merchantPhase: null },
+          data: {
+            status: "cancelled",
+            cancelledAt: now,
+            rejectionReason: "rx_declined",
+            merchantPhase: null,
+            ...cancelAttribution({ by: "merchant", status: "requested", merchantPhase: order.merchantPhase, reasonCode: "rx_declined" }),
+          },
         });
         if (c.count === 0) throw new ConflictException("Order changed, retry");
         await tx.orderEvent.create({ data: { orderId, status: "cancelled" } });

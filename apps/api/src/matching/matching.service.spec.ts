@@ -272,7 +272,14 @@ describe("MatchingService.selectOffer — D2 sealed delivery code, kept across a
 
   function selectHarness(order: Record<string, unknown>) {
     const writes: Array<{ where: Record<string, unknown>; data: Record<string, unknown> }> = [];
+    const events: Array<Record<string, unknown>> = [];
     const tx = {
+      domainEvent: {
+        create: async ({ data }: { data: Record<string, unknown> }) => {
+          events.push(data);
+          return {};
+        },
+      },
       offer: {
         findFirst: async () => ({
           status: "pending",
@@ -296,7 +303,7 @@ describe("MatchingService.selectOffer — D2 sealed delivery code, kept across a
     };
     const prisma = { $transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx) } as unknown as PrismaService;
     const service = new MatchingService(prisma, realTokens, noopNotifications, fakeMetrics(), noopGateway, noopTracking, pii);
-    return { service, writes };
+    return { service, writes, events };
   }
 
   it("a first match mints a code and stores it sealed next to its hash (reveal can show it again)", async () => {
@@ -307,6 +314,23 @@ describe("MatchingService.selectOffer — D2 sealed delivery code, kept across a
     expect(data.otpHash).toBe(realTokens.hash(res.deliveryCode));
     expect(pii.decryptCode(data.otpCipher as string, `delivery:${orderId}`)).toBe(res.deliveryCode);
     expect(data).toMatchObject({ deliveryOtpAttempts: 0, deliveryCodeRotatedAt: expect.any(Date) });
+  });
+
+  it("stamps assignedAt in the assigning CAS and records order.assigned in the same transaction (admin console v2 §3)", async () => {
+    const { service, writes, events } = selectHarness({});
+    await service.selectOffer(orderId, offerId, "cust");
+    expect(writes[0]!.data).toMatchObject({ status: "assigned", assignedAt: expect.any(Date) });
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "order.assigned",
+        actorId: "cust",
+        actorRole: "customer",
+        subjectType: "order",
+        subjectId: orderId,
+        orderId,
+        data: { riderId: "r1", offerId, fare: 2.5, orderType: "parcel" },
+      }),
+    ]);
   });
 
   it("U22: a re-broadcast clone carrying the trip's code keeps it — same code returned, hash/cipher/stamp untouched", async () => {

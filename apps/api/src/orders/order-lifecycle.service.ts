@@ -52,6 +52,8 @@ import { isOwnedUploadKey, type UploadKind } from "../adapters/storage/upload-ki
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import type { FreeJobsMilestone } from "../wallet/free-jobs-reminder";
 import { WalletService } from "../wallet/wallet.service";
+import { cancelAttribution } from "../common/cancel-attribution";
+import { domainEvents } from "../common/domain-events";
 
 // Lifecycle policy constants + shared types now live in ./order-lifecycle.constants (roadmap 3.4).
 // RATING_WINDOW_MS stays re-exported here so existing importers of the service module are unaffected.
@@ -619,7 +621,10 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
               },
             });
           }
-          if (newlyHeld) newlyHeldRiderId = order.riderId;
+          if (newlyHeld) {
+            newlyHeldRiderId = order.riderId;
+            await domainEvents.riderOffline(tx, order.riderId, "reliability_hold", { orderId });
+          }
           if (velocityHold && !rider.onHold) {
             this.logger.warn(
               `Biker ${order.riderId} auto-held for review: ${undeliveredCount} undelivered / ${completedCount} completed in ${UNDELIVERED_ABUSE.windowDays}d (FRAUD P0-3 velocity)`,
@@ -862,6 +867,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
                 ...(newlyHeld ? { isOnline: false } : {}),
               },
             });
+            if (newlyHeld) await domainEvents.riderOffline(tx, order.riderId, "reliability_hold", { orderId });
             // D-79: after the increment, under the rider row lock (the late path counted nothing new).
             if (!late) {
               const milestone = await this.wallet.noteFreeJobsMilestone(tx, order.riderId);
@@ -1051,7 +1057,14 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         // D2 second review F6: pinned on the delivery code read above too, so a rider-bail clone carries the
         // code the customer was actually shown — a re-issue landing in between makes this a retry instead.
         where: { id: orderId, status: order.status, otpHash: order.otpHash },
-        data: { status: "cancelled", cancelledAt: new Date(), cancelledBy: callerId, cancelReason: reason ?? null },
+        data: {
+          status: "cancelled",
+          cancelledAt: new Date(),
+          cancelledBy: callerId,
+          cancelReason: reason ?? null,
+          // Admin console v2 §3: the free-text `reason` stays a note; there is no structured code on this path.
+          ...cancelAttribution({ by: isCustomer ? "customer" : "rider", status: order.status }),
+        },
       });
       if (claimed.count === 0) throw new ConflictException("Order changed, retry");
       await tx.orderEvent.create({ data: { orderId, status: "cancelled" } });
@@ -1103,6 +1116,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
             where: { profileId: order.riderId },
             data: { cancelStrikes: 0, cooldownUntil, isOnline: false, ...reliability },
           });
+          await domainEvents.riderOffline(tx, order.riderId, "cancel_strike_cooldown", { orderId });
           // DS17-02: this is a standing demotion (forced offline), so the rider must also leave the geo +
           // board supply planes — evictRiderFromSupply post-commit, like every other demotion path.
           strikeLimitRiderId = order.riderId;
@@ -1118,6 +1132,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
             where: { profileId: order.riderId },
             data: { cancelStrikes: strikes, ...reliability, ...(newlyHeld ? { isOnline: false } : {}) },
           });
+          if (newlyHeld) await domainEvents.riderOffline(tx, order.riderId, "reliability_hold", { orderId });
         }
         // F-01: the rider bailed on an assigned-but-not-collected job (rider cancels are blocked
         // post-pickup, so it's never collected here) — clone the job back onto the board as a NEW

@@ -11,6 +11,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { auditData, fmtDate, fmtUntil, reportsFor, round, toTripRow } from "./admin.shared";
+import { domainEvents } from "../common/domain-events";
 
 /** Rows per page of GET /admin/riders. The admin console relies on a full page meaning "there may be more". */
 export const RIDER_LIST_PAGE_SIZE = 100;
@@ -224,7 +225,7 @@ export class AdminRidersService {
    */
   async suspendRider(actor: string, profileId: string, input: { reason: string; note?: string | null }) {
     const result = await this.prisma.$transaction(async (tx) => {
-      const rider = await tx.rider.findUnique({ where: { profileId }, select: { accountStatus: true } });
+      const rider = await tx.rider.findUnique({ where: { profileId }, select: { accountStatus: true, isOnline: true } });
       if (!rider) throw new NotFoundException("Biker not found");
       // A permanent ban outranks a suspension and is only undone by a deliberate dedicated action — never
       // downgraded as a side effect. Without this guard, `ban → suspend` silently demotes banned→suspended,
@@ -252,6 +253,7 @@ export class AdminRidersService {
         data: { accountStatus: RiderAccountStatus.SUSPENDED, suspendReason: input.reason, isOnline: false },
       });
       if (changed.count === 0) throw new ConflictException("Biker changed — refresh and try again");
+      if (rider.isOnline) await domainEvents.riderOffline(tx, profileId, "admin_suspend", { actorId: actor, actorRole: "admin" });
       // FRAUD P2-3: revoke every live refresh session in the SAME transaction. JwtAuthGuard only verifies
       // the access-token signature — it never re-reads accountStatus — so without this a suspended rider
       // keeps minting fresh access tokens via /auth/refresh indefinitely (the short access-token TTL is the
@@ -353,7 +355,7 @@ export class AdminRidersService {
    */
   async banRider(actor: string, profileId: string, input: { reason: string; note?: string | null }) {
     const result = await this.prisma.$transaction(async (tx) => {
-      const rider = await tx.rider.findUnique({ where: { profileId }, select: { accountStatus: true } });
+      const rider = await tx.rider.findUnique({ where: { profileId }, select: { accountStatus: true, isOnline: true } });
       if (!rider) throw new NotFoundException("Biker not found");
       // LC-D-SIB-2: refuse re-banning an already-banned rider (see suspendRider) — the observed-status CAS
       // below would otherwise match and double-write the `rider.ban` audit row + re-fire every push.
@@ -367,6 +369,7 @@ export class AdminRidersService {
         data: { accountStatus: RiderAccountStatus.BANNED, suspendReason: input.reason, isOnline: false },
       });
       if (changed.count === 0) throw new ConflictException("Biker changed — refresh and try again");
+      if (rider.isOnline) await domainEvents.riderOffline(tx, profileId, "admin_ban", { actorId: actor, actorRole: "admin" });
       // FRAUD P2-3: revoke every live refresh session in the same transaction (see suspendRider) — a ban
       // must not leave the rider able to renew access tokens indefinitely via /auth/refresh.
       await tx.session.updateMany({ where: { profileId, revokedAt: null }, data: { revokedAt: new Date() } });
@@ -418,6 +421,8 @@ export class AdminRidersService {
         data: { plateStatus: PlateStatus.VERIFIED },
       });
       if (changed.count === 0) throw new ConflictException("The plate changed — refresh and check it again");
+      // Admin console v2 §3: the biker funnel's plate step (no plate in the event — the audit note has it).
+      await domainEvents.riderStep(tx, profileId, "plate_verified", { actorId: actor, actorRole: "admin" });
       const audit = await tx.auditLog.create({
         data: auditData(actor, "rider.plate_verify", profileId, input.reason ?? null, input.note ?? `bike_reg: ${input.plate}`),
         select: { id: true },

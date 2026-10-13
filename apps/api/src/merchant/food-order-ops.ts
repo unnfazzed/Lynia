@@ -14,6 +14,7 @@ import type { NotificationsService } from "../notifications/notifications.servic
 import type { PrismaService } from "../prisma/prisma.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
 import { notifyFoodQueueChanged } from "./merchant-lookup.util";
+import { domainEvents } from "../common/domain-events";
 
 /**
  * Auto-accept (docs/plans/2026-09-30-restaurant-auto-accept.md): the two things both the restaurant
@@ -45,10 +46,20 @@ export async function confirmKitchen(
       status: { in: [...EDITABLE_STATUSES] },
       ...(merchantId ? { merchantId } : {}),
     },
-    data: { kitchenConfirmedAt: new Date(), kitchenConfirmedBy: by },
+    // Admin console v2 §3: an auto-accepted order's "accept" is the kitchen's confirm. A "Food is ready"
+    // that confirmed it first (markReady) already stamped merchantAcceptedAt, and kitchenConfirmedAt guards this.
+    data: { kitchenConfirmedAt: new Date(), kitchenConfirmedBy: by, merchantAcceptedAt: new Date() },
   });
   if (claimed.count === 0) return false;
   const order = await prisma.order.findUnique({ where: { id: orderId }, select: { merchantId: true } });
+  // Best-effort (no transaction here): the confirm above is committed.
+  await domainEvents.merchantPhase(prisma, {
+    orderId,
+    merchantId: order?.merchantId ?? null,
+    phase: "kitchen_confirmed",
+    actorRole: by === "ops" ? "admin" : "merchant",
+    data: { by },
+  });
   notifyFoodQueueChanged(gateway, order?.merchantId, orderId);
   return true;
 }

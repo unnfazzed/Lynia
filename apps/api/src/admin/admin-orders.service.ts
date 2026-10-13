@@ -26,6 +26,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { WalletService } from "../wallet/wallet.service";
 import { auditData, deriveItems, ORDER_TIMELINE, routeOf, STATUS_STEP, STUCK_AFTER_MS } from "./admin.shared";
+import { CANCELLED_BY_ROLES, type CancelledByRole, cancelAttribution } from "../common/cancel-attribution";
 
 // Money math uses the shared money seam directly (subMoney for exact integer-cents fare/commission
 // deltas); the former local round2 helper is gone — nothing here rounds a standalone value any more.
@@ -58,6 +59,19 @@ export type FareProvenance =
     }
   | { kind: "rider_counter"; offeredFare: string; ask: string }
   | { kind: "customer_ask" };
+
+/** The cancelled-by role the Orders list shows: the stored column, else (pre-0091 rows) the canceller id
+ *  matched against the order's parties. */
+export function cancelledByRoleOf(o: {
+  cancelledByRole?: string | null;
+  cancelledBy: string | null;
+  riderId: string | null;
+  customerId: string;
+}): CancelledByRole | null {
+  if (o.cancelledByRole && (CANCELLED_BY_ROLES as readonly string[]).includes(o.cancelledByRole)) return o.cancelledByRole as CancelledByRole;
+  if (o.cancelledBy == null) return null;
+  return o.cancelledBy === o.riderId ? "rider" : o.cancelledBy === o.customerId ? "customer" : null;
+}
 
 @Injectable()
 export class AdminOrdersService {
@@ -96,6 +110,7 @@ export class AdminOrdersService {
         customerId: true,
         riderId: true,
         cancelledBy: true,
+        cancelledByRole: true,
         cancelReason: true,
         createdAt: true,
         pickup: true,
@@ -118,8 +133,10 @@ export class AdminOrdersService {
       agreedFare: o.agreedFare?.toString() ?? null,
       distanceKm: o.distanceKm,
       riderId: o.riderId,
-      // Authoritative role of who cancelled — don't make the UI re-derive it from raw ids.
-      cancelledByRole: o.cancelledBy === o.riderId ? "rider" : o.cancelledBy === o.customerId ? "customer" : null,
+      // Authoritative role of who cancelled — don't make the UI re-derive it from raw ids. Admin console v2
+      // §3: the stored column (customer | rider | merchant | admin | system) on every order cancelled from
+      // migration 0091 on; older rows fall back to matching the canceller id (customer / rider, else null).
+      cancelledByRole: cancelledByRoleOf(o),
       cancelReason: o.cancelReason,
       createdAt: o.createdAt.toISOString(),
     }));
@@ -135,7 +152,7 @@ export class AdminOrdersService {
     const result = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        select: { status: true, riderId: true, collectedAt: true, pickup: true, orderType: true, merchantId: true, customerId: true },
+        select: { status: true, merchantPhase: true, riderId: true, collectedAt: true, pickup: true, orderType: true, merchantId: true, customerId: true },
       });
       if (!order) throw new NotFoundException("Order not found");
       if (TERMINAL_STATUSES.includes(order.status)) {
@@ -160,6 +177,8 @@ export class AdminOrdersService {
           cancelledBy: null,
           cancelReason: input.reason,
           cancelledAt: new Date(),
+          // Admin console v2 §3: an ops cancel, its stage, and the admin reason code.
+          ...cancelAttribution({ by: "admin", status: order.status, merchantPhase: order.merchantPhase, reasonCode: input.reason }),
           // Food orders: leave no kitchen or dispatch state behind on a dead order (the kitchen board and
           // the rider-offer screen key off these), and record why for the customer's cancelled screen.
           // U33 (C8): LyniaGo's own reason, not the venue's `other` — the shared classifier (order-outcome.ts)

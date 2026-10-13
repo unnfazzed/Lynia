@@ -16,6 +16,8 @@ import { PrismaService } from "../prisma/prisma.service";
 import { blockedPairWhere } from "../reports/blocks";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { TrackingService } from "../tracking/tracking.service";
+import { cancelAttribution } from "../common/cancel-attribution";
+import { domainEvents } from "../common/domain-events";
 
 /** U62 + MJ-RL2 (C10): a select refusal with its machine `reason` (additive; the message is unchanged). */
 function selectConflict(reason: SelectOfferConflictReason, message: string): ConflictException {
@@ -158,10 +160,21 @@ export class MatchingService {
             status: "assigned",
             riderId: offer.riderId,
             agreedFare: offer.offeredFare,
+            // Admin console v2 §3: when a rider was put on the order (time-to-assign).
+            assignedAt: new Date(),
             ...codeData,
           },
         });
         if (claimed.count === 0) throw selectConflict("order_closed", "Order was just taken, pick another");
+        await domainEvents.record(tx, {
+          type: "order.assigned",
+          actorId: customerId,
+          actorRole: "customer",
+          subjectType: "order",
+          subjectId: orderId,
+          orderId,
+          data: { riderId: offer.riderId, offerId, fare: Number(offer.offeredFare), orderType: "parcel" },
+        });
 
         await tx.offer.update({ where: { id: offerId }, data: { status: "selected" } });
         await tx.offer.updateMany({
@@ -239,7 +252,8 @@ export class MatchingService {
           status: "open_for_offers",
           OR: [offerWindowEndedBy(now - OFFER_CHOOSE_GRACE_MS), { AND: [offerWindowEndedBy(now), { offers: { none: { status: "pending" } } }] }],
         },
-        data: { status: "expired" },
+        // Admin console v2 §3: a system timeout, closed while open for offers (the funnel's "nobody took it").
+        data: { status: "expired", ...cancelAttribution({ by: "system", status: "open_for_offers" }) },
       });
       if (res.count === 0) {
         // Either it already left open_for_offers (selected / cancelled / expired → plain no-op), or it is
@@ -369,13 +383,27 @@ export class MatchingService {
       // heartbeat cutoff too (heartbeatMaxAgeMsForPush): a backgrounded-but-online rider a wider ring now
       // reaches must still be pushable even though their foreground heartbeat stopped ~120 s ago (Fix 4).
       const nearby = await this.tracking.nearbyRiders(pt.lat, pt.lng, newRadiusM, heartbeatMaxAgeMsForPush());
-      if (nearby.length === 0) return;
+      // Admin console v2 §3: each widening ring's reach, durably (counts + radius only; no ids, no GPS).
+      const recordReach = (pushed: number) =>
+        void domainEvents.record(this.prisma, {
+          type: "order.broadcast",
+          actorRole: "system",
+          subjectType: "order",
+          subjectId: orderId,
+          orderId,
+          data: { stage: "expand", step: stepIndex, radiusM: newRadiusM, ridersReached: nearby.length, pushed },
+        });
+      if (nearby.length === 0) {
+        recordReach(0);
+        return;
+      }
       const ids = nearby.map((r) => r.profileId);
       const claimed =
         (await this.tracking.claimBroadcastRecipients(orderId, ids)) ??
         // Redis unavailable → ring geometry: only riders beyond the previous disc. Worst case a rider
         // who rode outward across the boundary gets one duplicate push — the safe direction.
         nearby.filter((r) => r.distanceM > prevRadiusM).map((r) => r.profileId);
+      recordReach(claimed.length);
       if (claimed.length === 0) return;
       // LM-01: the ONLY status check above (`order.status !== "open_for_offers"`) ran before the two
       // async round-trips just above (nearbyRiders geo lookup + claimBroadcastRecipients) — a customer
