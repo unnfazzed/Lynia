@@ -60,6 +60,8 @@
   --space-xxl: 32px;
   --radius-card: 16px;
   --radius-input: 12px;
+  /* Touch-target floor (packages/design/tokens/spacing.css) — applied only in the phone layout (D-105). */
+  --target-min: 44px;
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
@@ -147,6 +149,9 @@ aside.sidenav {
 a.nav-item[aria-current="page"] .nav-badge { background: var(--bg); color: var(--accent-text); }
 .sidenav .foot { margin-top: auto; padding: 10px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--line); }
 .sidenav .foot b { display: block; font-size: 12px; color: var(--ink); font-weight: 600; }
+/* Phone-only nav disclosure (D-105): the button is absent and the panel is layout-transparent on desktop. */
+.nav-toggle { display: none; }
+.sidenav-panel { display: contents; }
 
 main.content { flex: 1; min-width: 0; padding: var(--space-xl); max-width: 1180px; margin: 0 auto; width: 100%; }
 
@@ -220,7 +225,7 @@ td.mut, .mut { color: var(--muted); }
 .btn:disabled { opacity: 0.5; cursor: default; }
 .btn svg { width: 14px; height: 14px; }
 
-/* Filter chips (32px desktop pointer target — the 44px --target-min rule is mobile-first) */
+/* Filter chips (32px desktop pointer target; the phone layout lifts them to --target-min, D-105) */
 .subnav { display: flex; flex-wrap: wrap; gap: var(--space-sm); margin-bottom: var(--space-md); }
 .subnav a { font-size: 12px; padding: 6px 14px; border-radius: 999px; text-decoration: none; color: var(--muted); border: 1px solid var(--line); cursor: pointer; background: transparent; min-height: 32px; display: inline-flex; align-items: center; }
 .subnav a[aria-current="page"] { color: var(--accent-text); background: var(--accent-wash); border-color: var(--accent-text); font-weight: 600; }
@@ -231,6 +236,8 @@ td.mut, .mut { color: var(--muted); }
 .kv { display: grid; grid-template-columns: 130px 1fr; gap: 6px 12px; font-size: 13px; margin: 0; }
 .kv dt { color: var(--muted); font-size: 12px; padding-top: 1px; }
 .kv dd { margin: 0; }
+.seed-grid { grid-template-columns: 1.6fr 1fr auto; }
+.doc-grid { grid-template-columns: 1.6fr 1fr; }
 .warnbar { display: flex; align-items: flex-start; gap: 10px; background: var(--danger-wash); border-radius: 12px; padding: 12px 14px; font-size: 13px; color: var(--danger); margin-bottom: var(--space-lg); }
 .warnbar svg { width: 16px; height: 16px; flex: none; margin-top: 1px; }
 .warnbar .t { color: var(--ink); }
@@ -284,3 +291,67 @@ td.mut, .mut { color: var(--muted); }
 @media (prefers-reduced-motion: reduce) { .skel { animation: none; opacity: 0.7; } }
 
 .hidden { display: none !important; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Phone layout (D-105, owner 2026-10-13). The admin kit draws 1440 only; below
+   900px the console is rebuilt from the same primitives and tokens so the owner
+   can run it from a phone. Nothing above 900px changes.
+   ══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 900px) {
+  /* Sidebar → sticky top bar: brand + menu button; the nav + foot drop down as a panel. */
+  .shell { flex-direction: column; }
+  aside.sidenav {
+    width: auto; height: auto; z-index: 40;
+    flex-direction: row; align-items: center; gap: var(--space-sm);
+    padding: var(--space-sm) var(--space-lg);
+    border-right: 0; border-bottom: 1px solid var(--line);
+  }
+  .sidenav .brand { padding: 0; }
+  .nav-toggle {
+    display: inline-flex; align-items: center; justify-content: center;
+    margin-left: auto; min-width: var(--target-min); min-height: var(--target-min);
+    border: 1px solid var(--line); border-radius: 999px; background: var(--bg); color: var(--ink);
+    font-size: 20px; cursor: pointer; padding: 0;
+  }
+  .sidenav-panel { display: none; }
+  .sidenav[data-open="true"] .sidenav-panel {
+    display: flex; flex-direction: column; gap: 2px;
+    position: absolute; top: 100%; left: 0; right: 0;
+    background: var(--bg); border-bottom: 1px solid var(--line); box-shadow: var(--shadow-menu);
+    padding: var(--space-sm) var(--space-md) var(--space-md);
+    max-height: 80vh; overflow-y: auto;
+  }
+  .sidenav a.nav-item { min-height: var(--target-min); }
+  .sidenav .foot { margin-top: var(--space-sm); }
+  .sidenav .foot a { display: flex !important; align-items: center; min-height: var(--target-min); margin-top: 0 !important; }
+
+  /* 16px gutters. */
+  main.content { padding: var(--space-lg); }
+
+  /* Tables scroll sideways inside their card; the page never does. */
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Touch targets. */
+  .btn { min-height: var(--target-min); }
+  .subnav a { min-height: var(--target-min); }
+  .reason-list label { min-height: var(--target-min); }
+
+  /* Modal fits a 320px screen. */
+  .modal-wrap { padding: var(--space-lg); }
+  .modal { max-height: calc(100vh - 2 * var(--space-lg)); overflow-y: auto; }
+  .modal .actions { flex-wrap: wrap; }
+
+  .seed-grid, .doc-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  .panels { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* Label over value. */
+  .kv { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .kv dd { margin-bottom: var(--space-sm); overflow-wrap: anywhere; }
+  header.page .conn { margin-left: 0; }
+}
+
+@media (max-width: 400px) {
+  .panels { grid-template-columns: minmax(0, 1fr); }
+}

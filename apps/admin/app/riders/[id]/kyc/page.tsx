@@ -242,7 +242,7 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
         <div style={{ display: "flex", flexDirection: "column", gap: tokens.space.lg }}>
           <section className="card">
             <div className="block-title">Documents</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: tokens.space.md }}>
+            <div className="doc-grid" style={{ display: "grid", gap: tokens.space.md }}>
               <div>
                 {r.photoUrl ? (
                   // The photo the rider uploaded in the app — NOT a scan of the physical national ID card. The ID-card scan and liveness selfie are

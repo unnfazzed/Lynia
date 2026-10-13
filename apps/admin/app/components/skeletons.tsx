@@ -3,19 +3,21 @@
 
 export function SkeletonRows({ cols, rows = 6 }: { cols: number; rows?: number }) {
   return (
-    <table className="data">
-      <tbody>
-        {Array.from({ length: rows }).map((_, r) => (
-          <tr key={r}>
-            {Array.from({ length: cols }).map((_c, c) => (
-              <td key={c}>
-                <span className="skel">{"—".repeat(c === 1 ? 8 : 4)}</span>
-              </td>
-            ))}
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className="table-scroll">
+      <table className="data">
+        <tbody>
+          {Array.from({ length: rows }).map((_, r) => (
+            <tr key={r}>
+              {Array.from({ length: cols }).map((_c, c) => (
+                <td key={c}>
+                  <span className="skel">{"—".repeat(c === 1 ? 8 : 4)}</span>
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

@@ -30,46 +30,50 @@ interface DataTableProps<T> {
 }
 
 export function DataTable<T>({ columns, rows, rowKey, getRowHref, rowLabel, empty }: DataTableProps<T>) {
+  // `.table-scroll`: on a phone the table scrolls sideways inside its card, never the page (D-105).
+  // A plain block on desktop.
   return (
-    <table className="data">
-      <thead>
-        <tr>
-          {columns.map((c) => (
-            <th key={c.key} style={c.align === "right" ? { textAlign: "right" } : undefined}>
-              {c.header}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.length === 0 ? (
+    <div className="table-scroll">
+      <table className="data">
+        <thead>
           <tr>
-            <td colSpan={columns.length} style={{ padding: 0 }}>
-              {empty ?? <div className="empty">Nothing here yet.</div>}
-            </td>
+            {columns.map((c) => (
+              <th key={c.key} style={c.align === "right" ? { textAlign: "right" } : undefined}>
+                {c.header}
+              </th>
+            ))}
           </tr>
-        ) : (
-          rows.map((row) => {
-            const href = getRowHref?.(row);
-            return (
-              <tr key={rowKey(row)} className={href ? "rowlink" : undefined}>
-                {columns.map((c, ci) => (
-                  <td
-                    key={c.key}
-                    className={c.className}
-                    style={c.align === "right" ? { textAlign: "right" } : undefined}
-                  >
-                    {href && ci === 0 ? (
-                      <a className="row-stretch" href={href} aria-label={rowLabel?.(row) ?? "View details"} />
-                    ) : null}
-                    {c.cell(row)}
-                  </td>
-                ))}
-              </tr>
-            );
-          })
-        )}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={columns.length} style={{ padding: 0 }}>
+                {empty ?? <div className="empty">Nothing here yet.</div>}
+              </td>
+            </tr>
+          ) : (
+            rows.map((row) => {
+              const href = getRowHref?.(row);
+              return (
+                <tr key={rowKey(row)} className={href ? "rowlink" : undefined}>
+                  {columns.map((c, ci) => (
+                    <td
+                      key={c.key}
+                      className={c.className}
+                      style={c.align === "right" ? { textAlign: "right" } : undefined}
+                    >
+                      {href && ci === 0 ? (
+                        <a className="row-stretch" href={href} aria-label={rowLabel?.(row) ?? "View details"} />
+                      ) : null}
+                      {c.cell(row)}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })
+          )}
+        </tbody>
+      </table>
+    </div>
   );
 }
