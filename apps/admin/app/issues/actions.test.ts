@@ -62,6 +62,11 @@ describe("resolveIssue (A-05/A-06 dispute resolution)", () => {
     expect(lastCall().body).toEqual({ resolution: "rider_strike", note: "third strike" });
   });
 
+  it("sends the picked reason as reasonCode", async () => {
+    await resolveIssue("i1", "close_no_action", "dup", undefined, "Duplicate issue");
+    expect(lastCall().body).toEqual({ resolution: "close_no_action", note: "dup", reasonCode: "Duplicate issue" });
+  });
+
   it("CANNOT REFUND TWICE: a second resolve of an already-resolved issue (API 409) throws rather than double-refunding", async () => {
     fetchMock.mockResolvedValueOnce(res(200)); // first refund lands
     fetchMock.mockResolvedValueOnce(res(409)); // issue already resolved → backend rejects the replay

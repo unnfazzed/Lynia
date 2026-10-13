@@ -10,12 +10,14 @@ import { IconStore } from "../../components/icons";
 import { GoLiveButton } from "../GoLiveButton";
 import { OrderSettingsCard } from "../OrderSettingsCard";
 import { OwnerTransferButton } from "../OwnerTransferButton";
+import { OrderLink, RecordLink } from "../../components/links";
+import { fmtDateTime, money, shortId } from "../../lib/format";
 
 const DEBT_TYPE_LABEL: Record<MerchantDebtLedgerRow["type"], string> = {
   opened: "Debt opened",
   settled_cash: "Settled — cash returned",
   settled_goods: "Settled — goods returned",
-  written_off: "Written off — biker suspended",
+  written_off: "Written off",
 };
 
 /** Merchant profile (X1): cash rule, pilot status, recent orders, and the full append-only
@@ -66,15 +68,15 @@ export default async function MerchantProfilePage({
   const kind = m.shopKind && m.shopKind in MERCHANT_SHOP_KIND_LABELS ? MERCHANT_SHOP_KIND_LABELS[m.shopKind as MerchantShopKind] : null;
 
   const tripCols: Column<TripRow>[] = [
-    { key: "id", header: "Order", className: "mono", cell: (t) => t.id.slice(0, 8) },
+    { key: "id", header: "Order", cell: (t) => <OrderLink id={t.id} /> },
     { key: "route", header: "Route", cell: (t) => t.route },
     { key: "status", header: "Status", cell: (t) => <StatusPill status={t.status} /> },
-    { key: "fare", header: "Total", className: "num", cell: (t) => `$${t.fare}` },
+    { key: "fare", header: "Total", className: "num", cell: (t) => money(t.fare) },
     { key: "when", header: "When", className: "mut", cell: (t) => t.when },
   ];
 
   const ledgerCols: Column<MerchantDebtLedgerRow>[] = [
-    { key: "at", header: "When", className: "mut", cell: (l) => new Date(l.at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) },
+    { key: "at", header: "When", className: "mut", cell: (l) => fmtDateTime(l.at) },
     { key: "type", header: "Type", cell: (l) => DEBT_TYPE_LABEL[l.type] ?? l.type },
     {
       key: "amount",
@@ -82,28 +84,18 @@ export default async function MerchantProfilePage({
       className: "num",
       cell: (l) => {
         const v = Number(l.amount);
-        return <span style={{ color: v < 0 ? tokens.color.accentText : tokens.color.danger, fontWeight: 600 }}>{v < 0 ? "−" : "+"}${Math.abs(v).toFixed(2)}</span>;
+        return <span style={{ color: v < 0 ? tokens.color.accentText : tokens.color.danger, fontWeight: 600 }}>{v < 0 ? money(v) : `+${money(v)}`}</span>;
       },
     },
     {
       key: "order",
       header: "Order",
-      className: "mono mut",
-      cell: (l) => (
-        <a href={`/orders/${l.orderId}`} style={{ color: tokens.color.accentText }}>
-          {l.orderId.slice(0, 8)}
-        </a>
-      ),
+      cell: (l) => <OrderLink id={l.orderId} />,
     },
     {
       key: "rider",
       header: "Biker",
-      className: "mono mut",
-      cell: (l) => (
-        <a href={`/riders/${l.riderId}`} style={{ color: tokens.color.accentText }}>
-          {l.riderId.slice(0, 8)}
-        </a>
-      ),
+      cell: (l) => <RecordLink href={`/riders/${l.riderId}`}>{l.riderName || shortId(l.riderId)}</RecordLink>,
     },
     { key: "note", header: "Note", className: "mut", cell: (l) => l.note ?? "—" },
   ];
@@ -130,7 +122,7 @@ export default async function MerchantProfilePage({
           <IconStore />
           <span className="t">
             <b>Customers can&apos;t see this {isShop ? "shop" : "restaurant"} yet.</b> Call {m.contactPhone ?? "the owner"}, run the
-            go-live checks in <span className="mono">docs/MERCHANT-GO-LIVE-RUNBOOK.md</span>, then use Go live.
+            go-live checks, then use Go live.
           </span>
         </div>
       ) : null}
@@ -139,9 +131,8 @@ export default async function MerchantProfilePage({
         <div className="warnbar">
           <IconStore />
           <span className="t">
-            <b>${m.openDebtAmount} in open collect-and-return debt</b> across {m.openDebtCount} order
-            {m.openDebtCount > 1 ? "s" : ""}. A biker owing this merchant takes no new jobs until it settles — see the
-            ledger below for which biker and order.
+            <b>{money(m.openDebtAmount)} in open collect-and-return debt</b> across {m.openDebtCount} order
+            {m.openDebtCount > 1 ? "s" : ""}. The ledger below shows which biker and order.
           </span>
         </div>
       ) : null}
@@ -150,7 +141,7 @@ export default async function MerchantProfilePage({
         <KpiCard label="Orders" value={m.orders} hint={`since ${m.joined}`} size={22} />
         <KpiCard
           label="Open debt"
-          value={`$${m.openDebtAmount}`}
+          value={money(m.openDebtAmount)}
           hint={m.openDebtCount > 0 ? `${m.openDebtCount} unsettled` : "none owed"}
           size={22}
         />
@@ -225,11 +216,7 @@ export default async function MerchantProfilePage({
             />
           </section>
           <div style={{ fontSize: 11, color: tokens.color.muted }}>
-            No standing action lives on the merchant itself — a biker who doesn&apos;t return owed cash is suspended
-            from the <a href="/riders" style={{ color: tokens.color.accentText }}>Bikers</a> console (the ledger
-            row below names them); a customer who refuses to pay is cash-banned from their own{" "}
-            <a href="/customers" style={{ color: tokens.color.accentText }}>Customers</a> profile. The business&apos;s
-            bookings are held on its booking account (Book a biker, above).
+            To act on owed cash, open the biker or customer named in the ledger below.
           </div>
         </div>
       </div>

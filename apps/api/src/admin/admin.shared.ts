@@ -18,9 +18,18 @@ export function routeOf(pickup: unknown, dropoff: unknown): string {
   return `${landmark(pickup)} → ${landmark(dropoff)}`;
 }
 
-/** Calendar date (YYYY-MM-DD) for the joined/when columns — stable + testable, no locale/timezone drift. */
+/** Harare is UTC+2 all year (no DST), so the ops day is a fixed 2h shift from UTC. */
+const HARARE_OFFSET_MS = 2 * 60 * 60 * 1000;
+
+/** Calendar date (YYYY-MM-DD) in Harare for the joined/when columns — stable + testable, no locale drift. */
 export function fmtDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  return new Date(d.getTime() + HARARE_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/** Start of the Harare calendar day containing `now` (00:00 Harare = 22:00 UTC the day before). */
+export function harareDayStart(now: Date): Date {
+  const shifted = new Date(now.getTime() + HARARE_OFFSET_MS);
+  return new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()) - HARARE_OFFSET_MS);
 }
 
 /** Compact remaining-time label for a cooldown ("2h 15m" / "40m" / "0m" once elapsed). */

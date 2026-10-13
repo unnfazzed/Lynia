@@ -1,4 +1,5 @@
 import { tokens } from "@lynia/shared";
+import { money } from "../lib/format";
 import { adminFetchResult } from "../lib/api";
 import type { Customer } from "../lib/adminTypes";
 import { DataTable, type Column } from "../components/DataTable";
@@ -43,7 +44,7 @@ export default async function CustomersPage({
     { key: "name", header: "Customer", cell: (c) => c.name },
     { key: "phone", header: "Phone", className: "mono", cell: (c) => c.phoneMasked },
     { key: "orders", header: "Orders", className: "num", cell: (c) => c.orders },
-    { key: "spend", header: "Spend", className: "num", cell: (c) => `$${c.spend}` },
+    { key: "spend", header: "Spend", className: "num", cell: (c) => money(c.spend) },
     {
       key: "cancel",
       header: "Cancel rate",

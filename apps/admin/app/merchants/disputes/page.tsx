@@ -7,6 +7,9 @@ import { Pill } from "../../components/StatusPill";
 import { IconAlert } from "../../components/icons";
 import { ResolveHandshakeButton } from "../ResolveHandshakeButton";
 import { WriteOffDebtButton } from "../WriteOffDebtButton";
+import { AutoRefresh } from "../../components/AutoRefresh";
+import { OrderLink } from "../../components/links";
+import { fmtDateTime, money } from "../../lib/format";
 
 /** Support dispute queue (X1): R-05 frozen doorstep handshakes needing a resolve decision, N-12
  *  refund-overdue visibility (Q6 mocked default — escalation is visibility only; LyniaGo never holds
@@ -20,22 +23,22 @@ export default async function FoodDisputesPage() {
   const connected = disputes !== null;
 
   const handshakeCols: Column<HandshakeDisputeRow>[] = [
-    { key: "order", header: "Order", className: "mono", cell: (d) => d.orderId.slice(0, 8) },
+    { key: "order", header: "Order", cell: (d) => <OrderLink id={d.orderId} /> },
     { key: "merchant", header: "Merchant", cell: (d) => d.merchant },
     { key: "customer", header: "Customer", className: "mut", cell: (d) => d.customer },
     { key: "rider", header: "Biker", className: "mut", cell: (d) => d.rider ?? "—" },
-    { key: "amount", header: "Amount", className: "num", cell: (d) => (d.amount ? `$${d.amount}` : "—") },
+    { key: "amount", header: "Amount", className: "num", cell: (d) => money(d.amount) },
     {
       key: "frozenAt",
       header: "Frozen since",
       className: "mut",
-      cell: (d) => new Date(d.frozenAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }),
+      cell: (d) => fmtDateTime(d.frozenAt),
     },
     { key: "actions", header: "", cell: (d) => <ResolveHandshakeButton orderId={d.orderId} connected={connected} /> },
   ];
 
   const nonReturnCols: Column<NonReturnReportRow>[] = [
-    { key: "order", header: "Order", className: "mono", cell: (d) => d.orderId.slice(0, 8) },
+    { key: "order", header: "Order", cell: (d) => <OrderLink id={d.orderId} /> },
     { key: "merchant", header: "Merchant", cell: (d) => d.merchant },
     {
       key: "rider",
@@ -50,21 +53,21 @@ export default async function FoodDisputesPage() {
           (d.rider ?? "—")
         ),
     },
-    { key: "amount", header: "Owed", className: "num", cell: (d) => (d.amount ? `$${d.amount}` : "—") },
+    { key: "amount", header: "Owed", className: "num", cell: (d) => money(d.amount) },
     {
       key: "reportedAt",
       header: "Reported",
       className: "mut",
-      cell: (d) => new Date(d.reportedAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }),
+      cell: (d) => fmtDateTime(d.reportedAt),
     },
     { key: "actions", header: "", cell: (d) => <WriteOffDebtButton orderId={d.orderId} connected={connected} /> },
   ];
 
   const refundCols: Column<RefundOverdueRow>[] = [
-    { key: "order", header: "Order", className: "mono", cell: (d) => d.orderId.slice(0, 8) },
+    { key: "order", header: "Order", cell: (d) => <OrderLink id={d.orderId} /> },
     { key: "merchant", header: "Merchant", cell: (d) => d.merchant },
     { key: "customer", header: "Customer", className: "mut", cell: (d) => d.customer },
-    { key: "amount", header: "Owed", className: "num", cell: (d) => (d.amount ? `$${d.amount}` : "—") },
+    { key: "amount", header: "Owed", className: "num", cell: (d) => money(d.amount) },
     {
       key: "overdue",
       header: "Status",
@@ -90,11 +93,12 @@ export default async function FoodDisputesPage() {
     <main className="content">
       <header className="page">
         <h1>Food disputes</h1>
-        <span className="sub">R-05 frozen doorstep handshakes, goods or cash not returned, and N-12 refund-overdue orders</span>
+        <span className="sub">Frozen cash handshakes, goods or cash not returned, and overdue refunds</span>
         <Conn connected={connected} reason={reason} />
       </header>
 
       {!connected ? <OfflineBanner reason={reason} /> : null}
+      {connected ? <AutoRefresh intervalMs={60_000} /> : null}
 
       <div className="subnav">
         <a href="/merchants">merchants</a>
@@ -107,9 +111,7 @@ export default async function FoodDisputesPage() {
       <section className="card" style={{ marginBottom: tokens.space.lg }}>
         <div className="block-title">Frozen payment handshakes</div>
         <div style={{ fontSize: 12, color: tokens.color.muted, marginBottom: 10 }}>
-          The customer confirmed paying cash at the door but the biker didn&apos;t confirm within the 2:00 window (or
-          disputed it) — the biker takes no new jobs and the customer&apos;s delivery code stays masked until this is
-          resolved.
+          The customer says they paid cash at the door; the biker didn&apos;t confirm within 2 minutes.
         </div>
         <DataTable
           columns={handshakeCols}
@@ -136,9 +138,8 @@ export default async function FoodDisputesPage() {
       <section className="card" style={{ marginBottom: tokens.space.lg }}>
         <div className="block-title">Goods or cash not returned</div>
         <div style={{ fontSize: 12, color: tokens.color.muted, marginBottom: 10 }}>
-          The merchant reported that the biker didn&apos;t bring the goods or the cash back. Nothing has happened to the
-          biker yet: the debt stays open (the merchant can still confirm it came back) and the biker takes no new jobs
-          until it&apos;s settled. Call both, then write it off here or suspend the biker from their page.
+          The merchant says the biker didn&apos;t bring the goods or cash back. Call both, then write it off or suspend the
+          biker.
         </div>
         <DataTable
           columns={nonReturnCols}
@@ -162,9 +163,7 @@ export default async function FoodDisputesPage() {
       <section className="card">
         <div className="block-title">Refunds past SLA</div>
         <div style={{ fontSize: 12, color: tokens.color.muted, marginBottom: 10 }}>
-          A wallet-paid order that ended without a refund on record — LyniaGo never holds the customer&apos;s money
-          (it pays the merchant&apos;s own rail directly), so this is a visibility flag for support to chase, not an
-          automated payout.
+          A wallet-paid order that ended with no refund on record. LyniaGo never holds the money — chase the merchant.
         </div>
         <DataTable
           columns={refundCols}

@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { addMoney, COMMISSION, jobCommissionBasis, perRideCommission, roundToCents } from "@lynia/shared";
+import { addMoney, COMMISSION, isCommissionActive, jobCommissionBasis, perRideCommission, roundToCents } from "@lynia/shared";
 import { PrismaService } from "../prisma/prisma.service";
 
 /**
@@ -15,7 +15,7 @@ export interface CommissionRiderRow {
   rides: number;
   /** Gross agreed fares on those rides (informational — riders keep this in full at 0%). */
   fares: string;
-  /** Commission that would accrue at the current rate ({@link COMMISSION.ratePct}); $0.00 at 0%. */
+  /** Commission actually charged (the ledger); $0.00 at 0%. Free first-10 jobs add nothing. */
   commission: string;
 }
 
@@ -32,7 +32,7 @@ export interface CommissionOverview {
     rides: number;
     /** Total gross agreed fares delivered in the window. */
     fares: string;
-    /** Total commission accrued at the current rate (10% by default, owner 2026-10-12). */
+    /** Total commission actually charged in the window (the ledger), not a projection. */
     commission: string;
   };
   rows: CommissionRiderRow[];
@@ -146,9 +146,13 @@ export class SettlementsService {
       // non-zero figure, so post-flip the KPI would show accrued commission for an order the ledger never
       // records — reopening the exact console-vs-ledger divergence WD-006 closed, for the null-fare subset.
       // Match the debit path: a null-fare order contributes 0 projected commission.
+      //
+      // Once the rate is live, accrued = the ledger only. A completed job with no row was charged nothing
+      // (one of the biker's free first 10, or completed while the rate was 0%), so projecting it at
+      // today's rate would overstate what was collected. The projection is kept only for the 0% case.
       if (charged != null) {
         agg.commission += -charged;
-      } else if (basis != null) {
+      } else if (basis != null && !isCommissionActive(ratePct)) {
         agg.commission += perRideCommission(basis, ratePct);
       }
       byRider.set(o.riderId, agg);

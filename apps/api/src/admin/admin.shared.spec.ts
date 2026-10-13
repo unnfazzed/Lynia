@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeFunnel, fmtUntil } from "./admin.shared";
+import { computeFunnel, fmtDate, fmtUntil, harareDayStart } from "./admin.shared";
 
 describe("computeFunnel (pilot metrics §8)", () => {
   it("computes the offer-loop funnel", () => {
@@ -21,5 +21,18 @@ describe("fmtUntil", () => {
     expect(fmtUntil(new Date(now + 135 * 60000), now)).toBe("2h 15m");
     expect(fmtUntil(new Date(now + 40 * 60000), now)).toBe("40m");
     expect(fmtUntil(new Date(now - 5 * 60000), now)).toBe("0m");
+  });
+});
+
+describe("Harare dates", () => {
+  it("fmtDate prints the Harare calendar date (22:30 UTC is already tomorrow in Harare)", () => {
+    expect(fmtDate(new Date("2026-10-12T21:59:00Z"))).toBe("2026-10-12");
+    expect(fmtDate(new Date("2026-10-12T22:30:00Z"))).toBe("2026-10-13");
+  });
+
+  it("harareDayStart is 00:00 Harare = 22:00 UTC the day before", () => {
+    expect(harareDayStart(new Date("2026-10-13T08:00:00Z")).toISOString()).toBe("2026-10-12T22:00:00.000Z");
+    expect(harareDayStart(new Date("2026-10-12T23:30:00Z")).toISOString()).toBe("2026-10-12T22:00:00.000Z");
+    expect(harareDayStart(new Date("2026-10-12T21:30:00Z")).toISOString()).toBe("2026-10-11T22:00:00.000Z");
   });
 });

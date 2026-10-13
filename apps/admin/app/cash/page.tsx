@@ -6,6 +6,7 @@ import { KpiCard } from "../components/KpiCard";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../components/states";
 import { IconBanknote } from "../components/icons";
 import { SeedCreditCard } from "./SeedCreditCard";
+import { money } from "../lib/format";
 
 /** `GET /admin/riders` hard-caps at this many rows (`AdminRidersService.listRiders` — `take: 100`).
  *  A full page means the roster is truncated, so anything counted off it is a floor. */
@@ -13,9 +14,9 @@ const ROSTER_PAGE_SIZE = 100;
 
 /**
  * Commission (prepaid per-ride). The revenue model: riders pre-fund a commission account and each
- * completed ride debits a percentage of the amount paid (see @lynia/shared `COMMISSION`). The rate is
- * **0% for the launch period**, so nothing is collected yet — this page is a read-only view of ride
- * volume and the commission that would accrue at the current rate. No weekly billing, record-payment,
+ * completed job after their first 10 debits a percentage of the fare (a food job: its delivery fee; see
+ * @lynia/shared `COMMISSION`). This page is a read-only view of job volume and the commission the
+ * ledger actually charged. No weekly billing, record-payment,
  * refund-netting or overdue state (those were the old cash-settlement engine, now removed).
  *
  * NEW-2 (docs/KNOWN_BUGS.md): the prepaid wallet itself (balance, top-ups, the per-ride debit ledger)
@@ -56,12 +57,12 @@ export default async function CashPage() {
       ),
     },
     { key: "rides", header: "Rides", className: "num", cell: (r) => r.rides },
-    { key: "fares", header: "Fares delivered", className: "num", cell: (r) => `$${r.fares}` },
+    { key: "fares", header: "Fares delivered", className: "num", cell: (r) => money(r.fares) },
     {
       key: "commission",
       header: "Commission",
       className: "num",
-      cell: (r) => <span style={{ fontWeight: 600 }}>${r.commission}</span>,
+      cell: (r) => <span style={{ fontWeight: 600 }}>{money(r.commission)}</span>,
     },
   ];
 
@@ -94,28 +95,26 @@ export default async function CashPage() {
         <span>
           {rateIsZero ? (
             <>
-              <b>Commission is {rate} during the launch period.</b> Bikers keep the full agreed fare; nothing is
-              collected yet. The prepaid wallet (top-ups and the per-ride deduction) is live — the figures below
-              are informational ride volume at 0%, not money owed.
+              <b>Commission is {rate}.</b> Bikers keep the full fare; nothing is collected.
             </>
           ) : (
             <>
-              <b>Commission is {rate}.</b> The figures below reflect money actually being deducted from bikers'
-              prepaid balances, per completed ride.
+              <b>Commission is {rate}</b> per job, after each biker&apos;s first 10 free jobs. Food jobs are charged on
+              the delivery fee.
             </>
           )}
         </span>
       </div>
 
       <section className="panels" style={{ marginBottom: tokens.space.lg }}>
-        <KpiCard label="Commission rate" value={rate} hint="% of the amount paid, per ride" />
+        <KpiCard label="Commission rate" value={rate} hint="per job · first 10 free" />
         <KpiCard label="Rides" value={view ? view.kpis.rides : "—"} hint="completed, this period" />
         <KpiCard
           label="Fares delivered"
-          value={view ? `$${view.kpis.fares}` : "—"}
+          value={view ? money(view.kpis.fares) : "—"}
           hint={rateIsZero ? "bikers keep this at 0%" : "before commission"}
         />
-        <KpiCard label="Commission accrued" value={view ? `$${view.kpis.commission}` : "—"} hint="at the current rate" />
+        <KpiCard label="Commission accrued" value={view ? money(view.kpis.commission) : "—"} hint="actually charged" />
       </section>
 
       <section className="card">
@@ -145,8 +144,8 @@ export default async function CashPage() {
         />
         <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: 12 }}>
           {rateIsZero
-            ? "Once the rate turns on, each completed ride will deduct its commission from the biker's pre-funded account; a low balance blocks going online until they top up. Balance, top-ups and the per-ride deduction ledger are already live — only the rate itself is still 0%."
-            : "Each completed ride deducts its commission from the biker's pre-funded account; a low balance blocks going online until they top up."}
+            ? "Once the rate is on, each job after a biker's first 10 deducts its commission from their balance."
+            : "Each job after a biker's first 10 deducts its commission from their balance. Food jobs: on the delivery fee."}
         </div>
       </section>
 

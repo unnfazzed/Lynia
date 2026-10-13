@@ -1,10 +1,10 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { resolveCommissionRatePct, RESTAURANTS_DEBT } from "@lynia/shared";
+import { addMoney, resolveCommissionRatePct, RESTAURANTS_DEBT } from "@lynia/shared";
 import { heartbeatMaxAgeMs } from "../common/broadcast-policy";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { PrismaService } from "../prisma/prisma.service";
-import { computeFunnel, fmtDate, routeOf, STUCK_AFTER_MS } from "./admin.shared";
+import { computeFunnel, fmtDate, harareDayStart, routeOf, STUCK_AFTER_MS } from "./admin.shared";
 
 /** One day's row from the utilization() raw query, before day formatting. */
 type RawUtilizationRow = {
@@ -83,10 +83,9 @@ export class AdminService {
     // keeps a stale heartbeat, so require a fresh heartbeat here too rather than counting ghosts. The
     // standing axis (suspended/held) is already handled: those paths now flip is_online:false.
     const hbCutoff = new Date(Date.now() - heartbeatMaxAgeMs());
-    // "Today" = since the start of the current UTC day. Simple + deterministic for the pilot; the ops
-    // console labels these figures "today" and they reset at 00:00 UTC (≈02:00 Harare).
+    // "Today" = since 00:00 Harare (UTC+2, no DST) — the day ops actually work in.
     const now = new Date();
-    const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const startOfDay = harareDayStart(now);
     // DS20-01: shared threshold (admin.shared.STUCK_AFTER_MS) so this dashboard aggregate and the
     // per-order detail badge (admin-orders.service) can't drift to different minutes. The dashboard
     // deliberately keys off `order.updatedAt` — one cheap indexed range query, no per-order OrderEvent
@@ -105,7 +104,8 @@ export class AdminService {
       ordersWithOfferRows,
       deliveredToday,
       undeliveredToday,
-      faresTodayAgg,
+      parcelFaresTodayAgg,
+      merchantFaresTodayAgg,
       kycPending,
       openIssues,
       stuckCount,
@@ -148,21 +148,24 @@ export class AdminService {
       // `adjudicateDelivered`'s force-complete of a disputed `undelivered` order all set both together),
       // so this also picks up an adjudicated-delivered order same-day (WD-026) that never got a
       // `deliveredAt` at all.
-      // LC-B-SIB-4: parcel-only, the same universe as "Fares today" beside it (A-9 below). Unscoped, a
-      // merchant order completing today moved "Completed today" + the completion rate while adding $0
-      // to the adjacent fares KPI — two headline figures silently counting different order sets.
-      this.prisma.order.count({ where: { status: "completed", completedAt: { gte: startOfDay }, orderType: "parcel" } }),
+      // LC-B-SIB-4: every order type, the same universe as "Fares today" beside it (which counts a
+      // merchant job's delivery fee), so the two headline figures describe the same orders.
+      this.prisma.order.count({ where: { status: "completed", completedAt: { gte: startOfDay } } }),
       // Mirror: only orders STILL `undelivered` today count toward the failure side of the completion
       // rate — one later adjudicated back to `completed` (WD-026) must stop counting here, even though
-      // its `undeliveredAt` timestamp from the original failed hand-off is never cleared. Parcel-only
-      // like its numerator (LC-B-SIB-4), so the rate is a ratio over one universe.
-      this.prisma.order.count({ where: { status: "undelivered", undeliveredAt: { gte: startOfDay }, orderType: "parcel" } }),
-      // A-9 (status-keyed-query-audit): a merchant order's `agreedFare` is its own goods+delivery
-      // total, not a parcel fare — summing it into "Fares today" would misstate the parcel KPI once a
-      // merchant order can complete (C3/C4). Merchant orders get their own settlement view later.
+      // its `undeliveredAt` timestamp from the original failed hand-off is never cleared. Every order
+      // type, like its numerator (LC-B-SIB-4), so the rate is a ratio over one universe.
+      this.prisma.order.count({ where: { status: "undelivered", undeliveredAt: { gte: startOfDay } } }),
+      // "Fares" = the biker's fare on the job, the same basis as /cash (settlements): a parcel's agreed
+      // fare, a merchant job's delivery fee. A-9: never a merchant order's agreedFare — that is the
+      // customer's goods + delivery total, money the biker only carries.
       this.prisma.order.aggregate({
         _sum: { agreedFare: true },
         where: { status: "completed", completedAt: { gte: startOfDay }, orderType: "parcel" },
+      }),
+      this.prisma.order.aggregate({
+        _sum: { deliveryFee: true },
+        where: { status: "completed", completedAt: { gte: startOfDay }, orderType: "merchant" },
       }),
       // Needs-attention signals.
       this.prisma.rider.count({ where: { kycStatus: "pending" } }),
@@ -190,11 +193,14 @@ export class AdminService {
         expired,
       }),
       // Today's throughput (drives the "Completed today" + "Fares today" headline KPIs) — all three
-      // figures are parcel-only (LC-B-SIB-4), so the adjacent KPIs describe the same orders.
+      // figures cover every order type (LC-B-SIB-4), so the adjacent KPIs describe the same orders.
       today: {
         completed: deliveredToday,
         completionRatePct,
-        fares: (faresTodayAgg._sum.agreedFare ?? 0).toString(),
+        fares: addMoney(
+          Number(parcelFaresTodayAgg._sum.agreedFare ?? 0),
+          Number(merchantFaresTodayAgg._sum.deliveryFee ?? 0),
+        ).toFixed(2),
       },
       // Needs-attention queue signals for the overview (stuck order, open disputes, KYC backlog).
       attention: {

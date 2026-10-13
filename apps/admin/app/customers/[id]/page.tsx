@@ -11,6 +11,8 @@ import { CustomerActions, LiftCashBanAction } from "./CustomerActions";
 import { ReportsCallout } from "../../components/ReportsCallout";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
 import { IconAlert, IconUser } from "../../components/icons";
+import { OrderLink } from "../../components/links";
+import { money } from "../../lib/format";
 
 /** Customer profile (kit `customers.html` detail): masked phone, spend, cancel pattern, rider
  *  reports, and flag / clear / ban actions — each reason-coded through <ConfirmModal>. */
@@ -47,10 +49,10 @@ export default async function CustomerProfilePage({ params }: { params: Promise<
   const connected = true;
 
   const tripCols: Column<TripRow>[] = [
-    { key: "id", header: "Order", className: "mono", cell: (t) => t.id },
+    { key: "id", header: "Order", cell: (t) => <OrderLink id={t.id} /> },
     { key: "route", header: "Route", cell: (t) => t.route },
     { key: "status", header: "Status", cell: (t) => <StatusPill status={t.status} /> },
-    { key: "fare", header: "Fare", className: "num", cell: (t) => `$${t.fare}` },
+    { key: "fare", header: "Fare", className: "num", cell: (t) => money(t.fare) },
     { key: "when", header: "When", className: "mut", cell: (t) => t.when },
   ];
 
@@ -81,7 +83,7 @@ export default async function CustomerProfilePage({ params }: { params: Promise<
 
       <section className="panels" style={{ marginBottom: tokens.space.lg }}>
         <KpiCard label="Orders" value={c.orders} hint={`since ${c.joined}`} size={22} />
-        <KpiCard label="Spend" value={`$${c.spend}`} hint="agreed fares, cash" size={22} />
+        <KpiCard label="Spend" value={money(c.spend)} hint="agreed fares, cash" size={22} />
         <KpiCard label="Cancel rate" value={`${c.cancelRatePct}%`} hint="after a biker accepted" size={22} />
         <KpiCard label="Reports" value={c.flags || 0} hint="from bikers or recipients" size={22} />
       </section>

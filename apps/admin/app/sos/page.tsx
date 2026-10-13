@@ -6,6 +6,8 @@ import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../com
 import { IconAlert, IconCheck } from "../components/icons";
 import { AcknowledgeButton } from "./AcknowledgeButton";
 import { SosAutoRefresh } from "./SosAutoRefresh";
+import { OrderLink, RecordLink } from "../components/links";
+import { fmtDateTime, shortId } from "../lib/format";
 
 /** SOS queue (DS13-05 — feed + acknowledgement). Emergency alerts raised on live trips, pending
  *  ones first (then newest first within each group) so an open alert can never scroll out of view
@@ -13,15 +15,9 @@ import { SosAutoRefresh } from "./SosAutoRefresh";
  *  deep-link to the order at /orders/[id]; a still-pending alert carries an Acknowledge action so
  *  ops can mark it handled. */
 
-/** Format an ISO timestamp as the readable "13 Jul, 14:32" the console uses elsewhere. Includes the
- *  time (not just the date like the KYC page) because SOS urgency turns on minutes, not days. */
-function raisedAt(iso: string): string {
-  return new Date(iso).toLocaleString("en-GB", {
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+/** The raiser's profile page — bikers live under /riders, everyone else under /customers. */
+function raiserHref(s: SosRow): string {
+  return s.raisedByRole === "rider" ? `/riders/${s.raisedByProfileId}` : `/customers/${s.raisedByProfileId}`;
 }
 
 export default async function SosPage() {
@@ -31,14 +27,14 @@ export default async function SosPage() {
   const connected = rows !== null;
 
   const columns: Column<SosRow>[] = [
-    { key: "id", header: "SOS", className: "mono", cell: (s) => s.id },
-    { key: "order", header: "Order", className: "mono", cell: (s) => s.orderId },
+    { key: "id", header: "SOS", className: "mono", cell: (s) => shortId(s.id) },
+    { key: "order", header: "Order", cell: (s) => <OrderLink id={s.orderId} /> },
     {
       key: "by",
       header: "Raised by",
       cell: (s) => (
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-          <span className="mono">{s.raisedByProfileId}</span>
+          <RecordLink href={raiserHref(s)}>{s.raisedByName || shortId(s.raisedByProfileId)}</RecordLink>
           <Pill>{s.raisedByRole === "rider" ? "biker" : s.raisedByRole}</Pill>
         </span>
       ),
@@ -60,13 +56,13 @@ export default async function SosPage() {
           <span className="mut">—</span>
         ),
     },
-    { key: "raised", header: "Raised at", className: "mut", cell: (s) => raisedAt(s.createdAt) },
+    { key: "raised", header: "Raised at", className: "mut", cell: (s) => fmtDateTime(s.createdAt) },
     {
       key: "status",
       header: "Status",
       cell: (s) =>
         s.acknowledgedAt ? (
-          <Pill kind="mut">acknowledged · {raisedAt(s.acknowledgedAt)}</Pill>
+          <Pill kind="mut">acknowledged · {fmtDateTime(s.acknowledgedAt)}</Pill>
         ) : (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
             <Pill kind="bad" dot>
@@ -97,7 +93,7 @@ export default async function SosPage() {
           rows={rows ?? []}
           rowKey={(s) => s.id}
           getRowHref={(s) => `/orders/${s.orderId}`}
-          rowLabel={(s) => `Open order ${s.orderId}`}
+          rowLabel={(s) => `Open order ${shortId(s.orderId)}`}
           empty={
             connected ? (
               <EmptyState

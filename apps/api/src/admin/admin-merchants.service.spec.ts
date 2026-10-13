@@ -77,7 +77,7 @@ describe("AdminMerchantsService.listMerchants + getMerchantDetail (X1)", () => {
       },
       merchantDebtLedger: {
         findMany: async () => [
-          { id: "l1", orderId: "o2", riderId: "r1", type: "opened", amount: dec("8.00"), note: null, actor: "system", createdAt: new Date("2026-07-29T00:00:00Z") },
+          { id: "l1", orderId: "o2", riderId: "r1", rider: { profile: { firstName: "Tendai", lastName: "M" } }, type: "opened", amount: dec("8.00"), note: null, actor: "system", createdAt: new Date("2026-07-29T00:00:00Z") },
           { id: "l2", orderId: "o2", riderId: "r1", type: "written_off", amount: dec("-8.00"), note: "non-return", actor: "m1", createdAt: new Date("2026-07-30T00:00:00Z") },
         ],
       },
@@ -86,8 +86,8 @@ describe("AdminMerchantsService.listMerchants + getMerchantDetail (X1)", () => {
     const d = (await svc.getMerchantDetail("m1"))!;
     expect(d.trail[0]).toMatchObject({ id: "o1", route: "Mama's Kitchen → Borrowdale", fare: "9.50" });
     expect(d.debtLedger).toEqual([
-      { id: "l1", orderId: "o2", riderId: "r1", type: "opened", amount: "8.00", note: null, actor: "system", at: "2026-07-29T00:00:00.000Z" },
-      { id: "l2", orderId: "o2", riderId: "r1", type: "written_off", amount: "-8.00", note: "non-return", actor: "m1", at: "2026-07-30T00:00:00.000Z" },
+      { id: "l1", orderId: "o2", riderId: "r1", riderName: "Tendai M", type: "opened", amount: "8.00", note: null, actor: "system", at: "2026-07-29T00:00:00.000Z" },
+      { id: "l2", orderId: "o2", riderId: "r1", riderName: null, type: "written_off", amount: "-8.00", note: "non-return", actor: "m1", at: "2026-07-30T00:00:00.000Z" },
     ]);
     expect(d.debtLedgerNextCursor).toBeNull();
     expect(d.bookingAccount).toBeNull();

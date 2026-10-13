@@ -5,6 +5,7 @@ import { fromCents, toCents } from "@lynia/shared";
 import type { KitchenConfirmationLine } from "../../lib/adminTypes";
 import { REASONS } from "../../lib/reasons";
 import { ConfirmModal } from "../../components/ConfirmModal";
+import { money } from "../../lib/format";
 import {
   cancelKitchenOrder,
   confirmKitchenOrder,
@@ -15,8 +16,6 @@ import {
 
 /** Most of one line the API accepts (EditMerchantOrderItemsRequest: quantity 0–99). */
 const MAX_QTY = 99;
-
-const money = (usd: number) => `$${usd.toFixed(2)}`;
 
 /**
  * The ops call list's per-order actions (auto-accept, docs/plans/2026-09-30-restaurant-auto-accept.md):

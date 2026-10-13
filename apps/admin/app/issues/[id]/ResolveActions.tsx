@@ -4,6 +4,7 @@ import { IssueResolution } from "@lynia/shared";
 import { REASONS } from "../../lib/reasons";
 import { ConfirmModal } from "../../components/ConfirmModal";
 import { resolveIssue } from "../actions";
+import { shortId } from "../../lib/format";
 
 /**
  * The three dispute resolutions (A-05) as reason-coded <ConfirmModal>s over the audit seam. Each
@@ -50,7 +51,7 @@ export function ResolveActions({
         noteRequired
         notePlaceholder="Required — what was agreed and why."
         confirmLabel="Record refund"
-        onConfirm={(r) => resolveIssue(id, IssueResolution.REFUND, r.note, r.amount)}
+        onConfirm={(r) => resolveIssue(id, IssueResolution.REFUND, r.note, r.amount, r.reasonCode ?? undefined)}
       />
       <ConfirmModal
         action="issue.strike_rider"
@@ -62,12 +63,12 @@ export function ResolveActions({
         danger
         disabled={!connected}
         title={`Give ${rider} a strike?`}
-        consequence="Three strikes trigger an automatic cooldown. Consider a suspension instead if this involves safety or fraud."
+        consequence="Adds a strike to the biker's record. For safety or fraud, suspend instead."
         reasons={REASONS.issueStrike}
         noteRequired
         notePlaceholder="Required — what the biker did and the evidence."
         confirmLabel="Add strike"
-        onConfirm={(r) => resolveIssue(id, IssueResolution.RIDER_STRIKE, r.note)}
+        onConfirm={(r) => resolveIssue(id, IssueResolution.RIDER_STRIKE, r.note, undefined, r.reasonCode ?? undefined)}
       />
       <ConfirmModal
         action="issue.close_no_action"
@@ -77,13 +78,13 @@ export function ResolveActions({
         triggerLabel="Close — no action…"
         triggerVariant="quiet"
         disabled={!connected}
-        title={`Close ${id} with no action?`}
+        title={`Close ${shortId(id)} with no action?`}
         consequence="The reporting party is notified that the issue is closed with no action. It stays on record in the audit log."
         reasons={REASONS.issueClose}
         noteRequired
         notePlaceholder="Required — why no action is warranted."
         confirmLabel="Close issue"
-        onConfirm={(r) => resolveIssue(id, IssueResolution.CLOSE_NO_ACTION, r.note)}
+        onConfirm={(r) => resolveIssue(id, IssueResolution.CLOSE_NO_ACTION, r.note, undefined, r.reasonCode ?? undefined)}
       />
     </div>
   );

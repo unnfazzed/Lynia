@@ -1,5 +1,5 @@
 import { STUCK_AFTER_MINUTES } from "@lynia/shared";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
 import { PrismaService } from "../prisma/prisma.service";
 import { AdminService } from "./admin.service";
@@ -32,7 +32,8 @@ describe("AdminService.overview", () => {
         },
         aggregate: async (args?: { where?: Record<string, unknown> }) => {
           const w = args?.where ?? {};
-          if (w.status === "completed" && w.completedAt) return { _sum: { agreedFare: dec("86.40") } };
+          if (w.status === "completed" && w.completedAt && w.orderType === "parcel") return { _sum: { agreedFare: dec("86.40") } };
+          if (w.status === "completed" && w.completedAt && w.orderType === "merchant") return { _sum: { deliveryFee: dec("3.60") } };
           return { _sum: { agreedFare: null } };
         },
         findFirst: async () => ({ id: "stuck-1" }),
@@ -70,7 +71,8 @@ describe("AdminService.overview", () => {
     const out = await new AdminService(prisma as unknown as PrismaService, envStub("10")).overview();
 
     // Today throughput drives the two headline KPIs the kit design shows.
-    expect(out.today).toEqual({ completed: 9, completionRatePct: 90, fares: "86.40" });
+    // Fares = parcel agreed fares + merchant delivery fees.
+    expect(out.today).toEqual({ completed: 9, completionRatePct: 90, fares: "90.00" });
     // Needs-attention signals for the overview queue.
     expect(out.attention).toEqual({ kycPending: 3, openIssues: 2, stuckOrders: 2, stuckOrderId: "stuck-1" });
     // UX20-02: the live commission rate, resolved from env — the console's needs-attention "Commission
@@ -137,7 +139,7 @@ describe("AdminService.overview", () => {
     };
     const out = await new AdminService(prisma as unknown as PrismaService, envStub()).overview();
     expect(out.today.completionRatePct).toBeNull();
-    expect(out.today.fares).toBe("0");
+    expect(out.today.fares).toBe("0.00");
     expect(out.attention.stuckOrderId).toBeNull();
   });
 
@@ -179,34 +181,38 @@ describe("AdminService.overview", () => {
     const completedToday = seenCountWheres.find((w) => "completedAt" in w);
     expect(completedToday).toMatchObject({ status: "completed" });
     // Same gate on the fares-today aggregate.
-    // A-9 (status-keyed-query-audit): the fares-today aggregate is now parcel-only.
-    expect(seenAggregateWheres).toEqual([{ status: "completed", completedAt: expect.anything(), orderType: "parcel" }]);
+    // A-9: parcel fares on agreedFare, merchant jobs on their delivery fee — both gated on status.
+    expect(seenAggregateWheres).toEqual([
+      { status: "completed", completedAt: expect.anything(), orderType: "parcel" },
+      { status: "completed", completedAt: expect.anything(), orderType: "merchant" },
+    ]);
     // An adjudicated order (status flipped "undelivered" -> "completed", undeliveredAt never cleared)
     // must NOT satisfy the undelivered-today where-clause either.
     const undeliveredToday = seenCountWheres.find((w) => "undeliveredAt" in w);
     expect(undeliveredToday).toMatchObject({ status: "undelivered" });
   });
 
-  // LC-B-SIB-4: "Completed today" (and its completion-rate hint) sit beside the parcel-only "Fares
-  // today" KPI. Unscoped, a merchant order completing today moved the count/rate while adding $0 to the
-  // fares beside it. All three today-figures must cover the same parcel universe.
-  it("scopes completed/undelivered-today to parcel orders, the same universe as fares-today", async () => {
+  // LC-B-SIB-4: "Completed today", its completion rate and "Fares today" cover the same orders — every
+  // type now. A merchant job counts toward the fares on its delivery fee (the biker's fare), never its
+  // goods + delivery agreedFare.
+  it("counts merchant orders in completed/undelivered/fares-today, merchant fares on the delivery fee", async () => {
     const seenCountWheres: Record<string, unknown>[] = [];
-    const seenAggregateWheres: Record<string, unknown>[] = [];
+    const seenAggregates: Array<{ _sum?: Record<string, unknown>; where?: Record<string, unknown> }> = [];
     const prisma = {
       order: {
         groupBy: async () => [],
         count: async (args?: { where?: Record<string, unknown> }) => {
           const w = args?.where ?? {};
           seenCountWheres.push(w);
-          // A merchant order completing today must not reach the count.
-          if (w.status === "completed" && w.completedAt) return w.orderType === "parcel" ? 3 : 4;
-          if (w.status === "undelivered" && w.undeliveredAt) return w.orderType === "parcel" ? 1 : 2;
+          if (w.status === "completed" && w.completedAt) return 7;
+          if (w.status === "undelivered" && w.undeliveredAt) return 3;
           return 0;
         },
-        aggregate: async (args?: { where?: Record<string, unknown> }) => {
-          seenAggregateWheres.push(args?.where ?? {});
-          return { _sum: { agreedFare: dec("30.00") } };
+        aggregate: async (args: { _sum?: Record<string, unknown>; where?: Record<string, unknown> }) => {
+          seenAggregates.push(args);
+          return args.where?.orderType === "merchant"
+            ? { _sum: { deliveryFee: dec("4.50") } }
+            : { _sum: { agreedFare: dec("30.00") } };
         },
         findFirst: async () => null,
         findMany: async () => [],
@@ -219,10 +225,41 @@ describe("AdminService.overview", () => {
 
     const out = await new AdminService(prisma as unknown as PrismaService, envStub()).overview();
 
-    expect(out.today).toEqual({ completed: 3, completionRatePct: 75, fares: "30.00" });
-    const fares = seenAggregateWheres[0];
-    expect(seenCountWheres.find((w) => "completedAt" in w)?.orderType).toBe(fares.orderType);
-    expect(seenCountWheres.find((w) => "undeliveredAt" in w)?.orderType).toBe(fares.orderType);
+    expect(out.today).toEqual({ completed: 7, completionRatePct: 70, fares: "34.50" });
+    expect(seenCountWheres.find((w) => "completedAt" in w)).not.toHaveProperty("orderType");
+    expect(seenCountWheres.find((w) => "undeliveredAt" in w)).not.toHaveProperty("orderType");
+    expect(seenAggregates.find((a) => a.where?.orderType === "merchant")?._sum).toEqual({ deliveryFee: true });
+    expect(seenAggregates.find((a) => a.where?.orderType === "parcel")?._sum).toEqual({ agreedFare: true });
+  });
+
+  it("starts 'today' at 00:00 Harare (22:00 UTC the day before), not UTC midnight", async () => {
+    const seenCountWheres: Record<string, unknown>[] = [];
+    const prisma = {
+      order: {
+        groupBy: async () => [],
+        count: async (args?: { where?: Record<string, unknown> }) => {
+          seenCountWheres.push(args?.where ?? {});
+          return 0;
+        },
+        aggregate: async () => ({ _sum: { agreedFare: null } }),
+        findFirst: async () => null,
+        findMany: async () => [],
+      },
+      offer: { count: async () => 0 },
+      rider: { count: async () => 0 },
+      issue: { count: async () => 0 },
+      $queryRaw: async () => [{ count: 0 }],
+    };
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      // 23:30 UTC on the 12th is 01:30 Harare on the 13th.
+      vi.setSystemTime(new Date("2026-10-12T23:30:00Z"));
+      await new AdminService(prisma as unknown as PrismaService, envStub()).overview();
+    } finally {
+      vi.useRealTimers();
+    }
+    const completed = seenCountWheres.find((w) => "completedAt" in w) as { completedAt: { gte: Date } };
+    expect(completed.completedAt.gte.toISOString()).toBe("2026-10-12T22:00:00.000Z");
   });
 
   // DS20-01: the ops-dashboard stuck-order query and the per-order detail badge (admin-orders.service)

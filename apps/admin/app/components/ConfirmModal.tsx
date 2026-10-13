@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState, useTransition, type ReactNode } from "react";
 import { submitAdminAction } from "../actions/audit";
+import { fmtDayMonth } from "../lib/format";
 
 type TriggerVariant = "ghost" | "danger" | "solid" | "quiet";
 
@@ -391,7 +392,7 @@ export function ConfirmModal(props: ConfirmModalProps) {
 
             <div className="audit">
               Recorded in the audit log as {auditActor} ·{" "}
-              {new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+              {fmtDayMonth(new Date())}
             </div>
           </div>
         </div>
