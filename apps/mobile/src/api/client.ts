@@ -27,6 +27,27 @@ export function currentAccessToken(): string | null {
   return hooks?.getSession()?.accessToken ?? null;
 }
 
+/**
+ * Rotate the session after the realtime server refused its access token (a handshake it disconnected).
+ * Shares the single-flight refresh with apiFetch. "ok": the session now holds a fresh token; "dead": the
+ * refresh endpoint definitively rejected it (or there is no session) and the user is signed out, the
+ * same way the REST path does; "transient": the refresh couldn't be reached, session left intact.
+ */
+export async function renewSessionForSocket(): Promise<"ok" | "dead" | "transient"> {
+  const session = hooks?.getSession();
+  if (!session?.refreshToken) return "dead";
+  let refreshed: Session | null;
+  try {
+    refreshed = await refreshSession(session.refreshToken);
+  } catch {
+    return "transient";
+  }
+  if (refreshed) return "ok";
+  clearConditionalCache();
+  hooks?.onSignOut();
+  return "dead";
+}
+
 /** The account the session holds RIGHT NOW, or null when signed out (or before the AuthProvider registered).
  *  Per-account device drafts (Send a parcel's, U17) key on it and write nothing without it. */
 export function currentProfileId(): string | null {
