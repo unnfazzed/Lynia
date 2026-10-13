@@ -6,9 +6,10 @@ import { FilterNav } from "../components/FilterNav";
 import { StatusPill, Pill } from "../components/StatusPill";
 import { IconPackage } from "../components/icons";
 import { AutoRefresh } from "../components/AutoRefresh";
-import { money, shortId, timeAgo } from "../lib/format";
+import { shortId, timeAgo } from "../lib/format";
 import type { CancelledByRole } from "../lib/adminTypes";
 import { orderNote } from "./note";
+import { orderFare } from "./fare";
 
 interface Order {
   id: string;
@@ -19,6 +20,8 @@ interface Order {
   rider: string | null;
   proposedFare: string;
   agreedFare: string | null;
+  /** A merchant order's delivery fee (admin console v2 §6). Null on a parcel; absent on an older API. */
+  deliveryFee?: string | null;
   distanceKm: number | null;
   riderId: string | null;
   cancelledByRole: CancelledByRole | null;
@@ -68,7 +71,9 @@ export default async function OrdersPage({
     { key: "route", header: "Route / merchant", cell: (o) => (o.orderType === "merchant" ? o.merchant ?? o.route : o.route) },
     { key: "status", header: "Status", cell: (o) => <StatusPill status={o.status} /> },
     { key: "rider", header: "Biker", className: "mut", cell: (o) => o.rider ?? "—" },
-    { key: "fare", header: "Fare", className: "num", cell: (o) => money(o.agreedFare ?? o.proposedFare) },
+    // Admin console v2 §6: the biker's fare. On a food order that is the delivery fee — its agreedFare is the
+    // customer's food + delivery total, which this list has no column for.
+    { key: "fare", header: "Fare", className: "num", cell: orderFare },
     // Distance + Note are kit columns (orders.html `<thead>`: Order · Route · Status · Rider · Fare ·
     // Distance · Note · Created). Both read fields the list response already carries — no extra query.
     { key: "distance", header: "Distance", className: "num", cell: (o) => (o.distanceKm != null ? `${o.distanceKm.toFixed(1)} km` : "—") },

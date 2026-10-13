@@ -144,4 +144,24 @@ describe("WalletIntegrityService.runIntegrityCheck", () => {
     expect(report.violations[0]).toMatchObject({ kind: "free_job_nonzero", ref: "l9" });
     expect(metrics.recordWalletIntegrityDrift).toHaveBeenCalledWith("free_job_nonzero", 1);
   });
+
+  it("admin console v2 §6: records each run's summary (counts only) for the money panel", async () => {
+    const create = vi.fn(async () => ({}));
+    const prisma = {
+      commissionAccount: { findMany: vi.fn().mockResolvedValue([{ riderId: "r1", balance: dec("5.00") }]) },
+      commissionLedger: { groupBy: vi.fn().mockResolvedValue([{ riderId: "r1", _sum: { amount: dec("4.00") } }]), findMany: vi.fn().mockResolvedValue([]) },
+      topUp: { count: vi.fn().mockResolvedValue(2), findMany: vi.fn().mockResolvedValue([]) },
+      domainEvent: { create },
+    } as unknown as PrismaService;
+    const metrics = { recordWalletIntegrityRun: vi.fn(), recordWalletIntegrityDrift: vi.fn() } as unknown as MetricsService;
+    await new WalletIntegrityService(prisma, metrics).runIntegrityCheck();
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        type: "wallet.integrity_check",
+        subjectType: "wallet",
+        subjectId: "platform",
+        data: expect.objectContaining({ ok: false, accountsChecked: 1, confirmedTopUps: 2, totalDrift: 1, balance_mismatch: 1 }),
+      }),
+    });
+  });
 });

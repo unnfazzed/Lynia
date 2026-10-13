@@ -104,6 +104,12 @@ export const REASONS = {
   ],
   walletClearFreeze: ["Investigation closed — no issue", "Dispute resolved", "Deposit reference confirmed"],
 
+  // Admin console v2 §6 (undrawn, route (b)): the top-ups page and the biker statement.
+  topupRepoll: ["The biker says they paid", "Stuck on pending", "Checking before a credit"],
+  topupCreditPaid: ["Paynow shows the payment", "The biker sent proof of payment"],
+  topupResolve: ["Paynow refunded the biker", "Paid back to the biker another way", "Already credited by hand", "Test or duplicate payment"],
+  walletReversal: ["Credited twice", "Credit was a mistake", "Paynow reversed the payment", "Debt agreed with the biker"],
+
   // X1 — merchant vertical admin alignment
   handshakeResolve: [
     "Called both parties — the amount matches, biker was just slow to confirm",

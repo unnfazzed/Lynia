@@ -11,6 +11,7 @@ import { AdminKitchenService } from "./admin-kitchen.service";
 import { AdminKycReviewService } from "./admin-kyc-review.service";
 import { AdminMerchantApplicationService } from "./admin-merchant-application.service";
 import { AdminMerchantsService } from "./admin-merchants.service";
+import { AdminMoneyService } from "./admin-money.service";
 import { AdminOrdersService } from "./admin-orders.service";
 import { AdminRidersService } from "./admin-riders.service";
 import { AdminSearchService } from "./admin-search.service";
@@ -37,6 +38,7 @@ import { AdminService } from "./admin.service";
     AdminAuditReadService,
     AdminSearchService,
     AdminTimelineService,
+    AdminMoneyService,
   ],
 })
 export class AdminModule {}

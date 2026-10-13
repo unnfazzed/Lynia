@@ -1,4 +1,4 @@
-import { Body, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Header, NotFoundException, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
 import {
   EditMerchantOrderItemsRequest,
   KycStatus,
@@ -15,7 +15,7 @@ import { AdminActor } from "../common/admin-actor.decorator";
 import { ZodBody } from "../common/zod.pipe";
 import { SettlementsService } from "../settlements/settlements.service";
 import { SosService } from "../sos/sos.service";
-import { WalletService } from "../wallet/wallet.service";
+import { REVERSAL_CAP_USD, WalletService } from "../wallet/wallet.service";
 import { AdminAuditReadService } from "./admin-audit-read.service";
 import { AdminAuditService } from "./admin-audit.service";
 import { AdminCustomersService } from "./admin-customers.service";
@@ -24,6 +24,7 @@ import { AdminKycReviewService } from "./admin-kyc-review.service";
 import { AdminMerchantApplicationService, CALL_OUTCOMES } from "./admin-merchant-application.service";
 import { AdminMerchantsService } from "./admin-merchants.service";
 import type { ApplicationAction } from "./merchant-application";
+import { AdminMoneyService, TOPUP_FILTERS, type TopupFilter } from "./admin-money.service";
 import { AdminOrdersService } from "./admin-orders.service";
 import { AdminRidersService } from "./admin-riders.service";
 import { AdminSearchService } from "./admin-search.service";
@@ -120,6 +121,23 @@ const WalletCredit = z.object({
   note: z.string().max(2000).nullish(),
 });
 
+// Admin console v2 §6: an admin reversal (a debit against a biker). Capped per action; the note is required
+// (the biker sees it on their receipt); `entryId` optionally names the credit it corrects; the form-open key
+// makes a retry harmless.
+const WalletReversal = z.object({
+  amount: z.number().positive().max(REVERSAL_CAP_USD).multipleOf(0.01),
+  reason: z.string().min(1).max(160),
+  note: z.string().trim().min(1).max(2000),
+  entryId: z.string().uuid().nullish(),
+  idempotencyKey: z.string().uuid(),
+});
+
+/** `?page=` as a 1-based page number (anything else is page 1). */
+function pageOf(page?: string): number {
+  const parsed = page != null ? Number.parseInt(page, 10) : Number.NaN;
+  return Number.isFinite(parsed) && parsed >= 1 ? Math.min(parsed, 10_000) : 1;
+}
+
 @Controller("admin")
 @UseGuards(JwtAuthGuard, AdminGuard)
 export class AdminController {
@@ -139,6 +157,7 @@ export class AdminController {
     private readonly search: AdminSearchService,
     private readonly timeline: AdminTimelineService,
     private readonly application: AdminMerchantApplicationService,
+    private readonly money: AdminMoneyService,
   ) {}
 
   /* ── Admin console v2 PR 3: audit viewer, global search, timelines (plan §4, §8) ───────────── */
@@ -291,7 +310,9 @@ export class AdminController {
     // an unhandled Prisma uuid-cast 500 (same class as the path-param ParseUUIDPipe above).
     @Query("cursor", new ParseUUIDPipe({ optional: true })) cursor?: string,
   ) {
-    return this.ridersService.walletView(profileId, cursor);
+    // Admin console v2 §6: the biker statement — the old wallet view's fields, plus each row's order / top-up,
+    // rate and basis, its actor, and a header (free jobs left, pending commission, last top-up).
+    return this.money.statement(profileId, cursor);
   }
 
   /** Customers directory (D-2). `?filter=active|flagged|banned`; unknown values fall back to all. */
@@ -656,5 +677,76 @@ export class AdminController {
       idemKey: body.idempotencyKey,
       actorProfileId: actor,
     });
+  }
+
+  /* ── Admin console v2 §6: top-ups, money panel, money owed, reversal ───────────────────────────── */
+
+  /** Every top-up intent, newest first, 50 a page. `?filter=` is a status or an open anomaly
+   *  (short_paid | paid_on_declined); unknown values list everything. */
+  @Get("cash/topups")
+  topups(@Query("filter") filter?: string, @Query("page") page?: string) {
+    const f = filter && (TOPUP_FILTERS as readonly string[]).includes(filter) ? (filter as TopupFilter) : undefined;
+    return this.money.listTopups(f, pageOf(page));
+  }
+
+  /** Ask Paynow about one top-up now (the sweep's own path). Reason required; audited. */
+  @Post("topups/:id/repoll")
+  repollTopup(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(ReasonRequired)) body: z.infer<typeof ReasonRequired>,
+    @AdminActor() actor: string,
+  ) {
+    return this.money.repollTopup(actor, id, body);
+  }
+
+  /** Credit what Paynow reported paid on a short-paid / paid-on-declined top-up. Exactly once per top-up. */
+  @Post("topups/:id/credit-paid")
+  creditPaidTopup(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(ReasonRequired)) body: z.infer<typeof ReasonRequired>,
+    @AdminActor() actor: string,
+  ) {
+    return this.money.creditTopupShortfall(actor, id, body);
+  }
+
+  /** Close a top-up anomaly without crediting it. Reason required; audited. */
+  @Post("topups/:id/resolve")
+  resolveTopup(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(ReasonRequired)) body: z.infer<typeof ReasonRequired>,
+    @AdminActor() actor: string,
+  ) {
+    return this.money.resolveTopupAnomaly(actor, id, body);
+  }
+
+  /** The platform money panel by Harare day: `?days=7` (default) or `30`. */
+  @Get("cash/money")
+  moneyPanel(@Query("days") days?: string) {
+    return this.money.moneyPanel(days === "30" ? 30 : 7);
+  }
+
+  /** The same days as CSV. */
+  @Get("cash/money/csv")
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  @Header("Content-Disposition", 'attachment; filename="lynia-money.csv"')
+  moneyCsv(@Query("days") days?: string) {
+    return this.money.moneyCsv(days === "30" ? 30 : 7);
+  }
+
+  /** Bikers with a negative balance (money owed), the longest-owing first. */
+  @Get("cash/owed")
+  owed() {
+    return this.money.owed();
+  }
+
+  /** An admin correction against a biker: a capped `reversal`, reason + note required, audited with the
+   *  before / after balance. */
+  @Post("riders/:id/wallet-reversal")
+  reverseWallet(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(WalletReversal)) body: z.infer<typeof WalletReversal>,
+    @AdminActor() actor: string,
+  ) {
+    return this.money.reverse(actor, id, body);
   }
 }

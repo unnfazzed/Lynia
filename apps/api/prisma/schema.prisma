@@ -145,7 +145,8 @@ enum CommissionEntryType {
   // Fare-adjust delta or ops correction; sign varies. Fare-adjusts append a delta here at the ride's
   // original rate so the one-ride_commission-row-per-order invariant stays absolute (design 4A/OV-1A).
   adjustment
-  // RESERVED — no writer in the wallet-core build (kept so the ledger type set is complete).
+  // An admin correction that takes money off the balance (negative), reason-coded and capped; it may name
+  // the credit it corrects (`reversesId`). Admin console v2 §6.
   reversal
   // A $0 receipt for one of the biker's commission-free first jobs (D-70), written by chargeCommission
   // where a paid job would write its ride_commission row, so the money pages can tell "free" from
@@ -485,6 +486,9 @@ model CommissionLedger {
   note         String?
   // system | an admin profile id — who wrote the row (audit trail).
   actor        String?
+  // Admin console v2 §6 (migration 0101): on an admin `reversal`, the credit row it takes back (null when the
+  // correction names no entry). The reversals naming one entry can never sum past that entry's amount.
+  reversesId   String?             @map("reverses_id") @db.Uuid
   createdAt    DateTime            @default(now()) @map("created_at")
 
   // WD-015: the real UNIQUENESS constraint — exactly one ride_commission row per order, ever — is now a
@@ -497,6 +501,8 @@ model CommissionLedger {
   // orderId and can safely repeat it across multiple corrections on the same order.
   @@index([riderId, orderId, type])
   @@index([riderId, createdAt])
+  // Admin console v2 §6: the platform money panel sums the ledger by day (migration 0102, built concurrently).
+  @@index([createdAt])
   @@map("commission_ledger")
 }
 

@@ -1502,6 +1502,12 @@ authority; this table is a map.
 | `POST /admin/audit-actions` | Admin | Persist a console ConfirmModal audit action (A-01) |
 | `GET /admin/cash/settlements` | Admin | Read-only commission overview (prepaid model) |
 | `POST /admin/riders/:id/wallet-credit` | Admin | Record an off-app rider payment as a wallet credit (audited, idempotent) |
+| `GET /admin/riders/:id/wallet` | Admin | The biker statement: ledger rows with order / top-up / rate / actor, plus balance, free jobs left, pending commission, last top-up |
+| `POST /admin/riders/:id/wallet-reversal` | Admin | Admin correction: a capped `reversal` debit, reason + note required, may name the credit it corrects (audited, idempotent) |
+| `GET /admin/cash/topups` | Admin | Every top-up intent, 50 a page; `?filter=` a status or an open anomaly (`short_paid`, `paid_on_declined`) |
+| `POST /admin/topups/:id/{repoll,credit-paid,resolve}` | Admin | Ask Paynow now · credit what Paynow reported paid (exactly once) · close an anomaly (all reason-coded, audited) |
+| `GET /admin/cash/money` (`/csv`) | Admin | Platform money by Harare day (7 / 30): top-ups, fees, commission, manual credits, reversals; float, receivable, last integrity check |
+| `GET /admin/cash/owed` | Admin | Bikers with a negative balance, longest owing first |
 | `GET /admin/issues` | Admin | Disputes queue, newest first (A-05, `?status=`) |
 | `GET /admin/issues/:id` | Admin | Per-issue detail incl. order evidence + masked phones |
 | `POST /admin/issues/:id/resolve` | Admin | Resolve an issue (refund / rider_strike / close_no_action) |

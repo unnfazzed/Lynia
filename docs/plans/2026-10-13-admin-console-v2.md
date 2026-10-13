@@ -164,6 +164,8 @@ rate, hours open vs scheduled, rating, open debt.
 
 **Owner decision (2026-10-13):** commission stays charged when the job closes. A biker can still stack jobs in the 6h rating window and go briefly negative; the negative-balance list (item 6) shows it.
 
+**Shipped in PR 6:** items 2–6 — `/cash/topups` (Re-poll, Credit what was paid, Mark resolved), the biker statement on the biker page, the platform money panel on `/cash` (7/30 days, CSV, ledger check + Run now), reversals (capped at $50 per action, two-person rule deferred), `/cash/owed`; the Orders list's Fare shows a food order's delivery fee. Migrations 0101–0102.
+
 ---
 
 ## 7. Live ops

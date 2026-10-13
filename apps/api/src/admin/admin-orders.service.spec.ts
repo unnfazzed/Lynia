@@ -98,6 +98,7 @@ describe("AdminOrdersService.listOrders", () => {
               status: "requested",
               proposedFare: { toString: () => "8.00" },
               agreedFare: { toString: () => "8.00" },
+              deliveryFee: { toString: () => "1.50" },
               distanceKm: 1.1,
               customerId: "c1",
               riderId: null,
@@ -116,7 +117,8 @@ describe("AdminOrdersService.listOrders", () => {
     const svc = new AdminOrdersService(prisma as unknown as PrismaService);
     const rows = await svc.listOrders(undefined, "merchant");
     expect(where).toEqual({ orderType: "merchant" });
-    expect(rows[0]).toMatchObject({ id: "o2", orderType: "merchant", merchant: "Mama's Kitchen" });
+    // Admin console v2 §6: the biker's fare on a food order is its delivery fee, not the food total.
+    expect(rows[0]).toMatchObject({ id: "o2", orderType: "merchant", merchant: "Mama's Kitchen", agreedFare: "8.00", deliveryFee: "1.50" });
   });
 
   it("X1: composes status AND orderType filters together", async () => {

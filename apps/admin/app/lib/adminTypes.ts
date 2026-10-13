@@ -600,6 +600,93 @@ export interface WalletLedgerEntry {
   actor: string | null;
   orderId: string | null;
   at: string;
+  /* Admin console v2 §6 (the biker statement). Optional: an older API doesn't send them. */
+  /** The actor's name when it is an admin profile id; otherwise the actor as written ("system", an email). */
+  actorName?: string | null;
+  /** A commission / free-job row's rate (%) and basis (the fare it was worked out on). */
+  ratePct?: string | null;
+  fare?: string | null;
+  /** On a reversal: the credit it took back. On a credit: how much of it has been reversed so far. */
+  reversesId?: string | null;
+  reversed?: string | null;
+  topUp?: { id: string; rail: string; manual: boolean; ref: string | null; charged: string | null; fee: string | null } | null;
+}
+
+/** The biker statement header (admin console v2 §6). */
+export interface StatementSummary {
+  ratePct: number;
+  commissionActive: boolean;
+  tripsCount: number;
+  freeJobsLeft: number;
+  /** Commission still to come on jobs delivered but not yet closed (a projection; "0.00" while the rate is 0%). */
+  pendingCommission: string;
+  pendingJobs: number;
+  lastTopup: { id: string; amount: string; rail: string; manual: boolean; at: string } | null;
+}
+
+/* ── Admin console v2 §6: top-ups, money panel, money owed ── */
+export type TopupFilter = "pending" | "confirmed" | "declined" | "expired" | "short_paid" | "paid_on_declined";
+
+export interface AdminTopupRow {
+  id: string;
+  riderId: string;
+  riderName: string;
+  amount: string;
+  fee: string | null;
+  charged: string | null;
+  rail: string;
+  providerRef: string | null;
+  status: "pending" | "confirmed" | "declined" | "expired";
+  declineReason: string | null;
+  initiatedAt: string;
+  resolvedAt: string | null;
+  credited: string | null;
+  manual: boolean;
+  anomaly: { kind: "short_paid" | "paid_on_declined"; paid: number | null; at: string; resolved: boolean } | null;
+}
+
+export interface AdminTopupsPage {
+  rows: AdminTopupRow[];
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+  counts: Record<TopupFilter, number>;
+}
+
+export interface MoneyDay {
+  day: string;
+  topupsIn: string;
+  fees: string;
+  commission: string;
+  manualCredits: string;
+  reversals: string;
+  freeJobs: number;
+}
+
+export interface MoneyPanel {
+  days: number;
+  ratePct: number;
+  rows: MoneyDay[];
+  totals: Omit<MoneyDay, "day">;
+  float: string;
+  receivable: string;
+  owedCount: number;
+  integrity: { at: string; ok: boolean; totalDrift: number; accountsChecked: number; drift: Record<string, number> } | null;
+}
+
+export interface OwedRow {
+  riderId: string;
+  name: string;
+  phone: string | null;
+  owed: string;
+  negativeSince: string | null;
+  lastJobAt: string | null;
+  lastTopupAt: string | null;
+}
+
+export interface OwedList {
+  rows: OwedRow[];
+  total: string;
 }
 
 export interface WalletView {
@@ -608,6 +695,8 @@ export interface WalletView {
   ledger: WalletLedgerEntry[];
   /** LC-D07: last entry id of this page, for `?cursor=` — present only when older entries exist. */
   nextCursor: string | null;
+  /** Admin console v2 §6: the statement header. Absent on an older API. */
+  summary?: StatementSummary;
   /**
    * The `commission_freeze` wallet hold (design OV-4A: a freeze is a `Rider.heldReason =
    * "commission_freeze"` hold — there is deliberately no `CommissionAccount.status` column).

@@ -19,6 +19,9 @@ import { AdminMerchantsService } from "./admin-merchants.service";
 import { AdminOrdersService } from "./admin-orders.service";
 import { AdminRidersService } from "./admin-riders.service";
 import { AdminService } from "./admin.service";
+import { AdminKitchenService } from "./admin-kitchen.service";
+import { AdminMoneyService } from "./admin-money.service";
+import { WalletService } from "../wallet/wallet.service";
 
 Reflect.defineMetadata(
   "design:paramtypes",
@@ -32,6 +35,9 @@ Reflect.defineMetadata(
     AdminAuditService,
     SettlementsService,
     SosService,
+    WalletService,
+    AdminKitchenService,
+    AdminMoneyService,
   ],
   AdminController,
 );
@@ -42,6 +48,8 @@ const SOS_ID = "22222222-2222-4222-8222-222222222222";
 
 const adminService = { overview: vi.fn(async () => ({ ok: true })) };
 const settlements = {};
+// Admin console v2 §6: the rider wallet route now serves the biker statement.
+const money = { statement: vi.fn(async () => ({ balance: "0.00", ledger: [], nextCursor: null })) };
 const sos = { acknowledge: vi.fn(async (id: string) => ({ id, acknowledgedAt: "2026-07-13T10:00:00.000Z" })) };
 
 describe("GET /admin/overview — HTTP authz (AdminGuard net)", () => {
@@ -58,6 +66,9 @@ describe("GET /admin/overview — HTTP authz (AdminGuard net)", () => {
       { provide: AdminAuditService, useValue: {} },
       { provide: SettlementsService, useValue: settlements },
       { provide: SosService, useValue: sos },
+      { provide: WalletService, useValue: {} },
+      { provide: AdminKitchenService, useValue: {} },
+      { provide: AdminMoneyService, useValue: money },
     ]);
   });
   afterAll(async () => {
@@ -101,6 +112,9 @@ describe("POST /admin/sos/:id/ack — HTTP authz (DS13-06 acknowledge is AdminGu
       { provide: AdminAuditService, useValue: {} },
       { provide: SettlementsService, useValue: settlements },
       { provide: SosService, useValue: sos },
+      { provide: WalletService, useValue: {} },
+      { provide: AdminKitchenService, useValue: {} },
+      { provide: AdminMoneyService, useValue: money },
     ]);
   });
   afterAll(async () => {
@@ -136,7 +150,7 @@ describe("POST /admin/sos/:id/ack — HTTP authz (DS13-06 acknowledge is AdminGu
 // ?debtCursor= reached Prisma and 500'd (the query-param vector the path-param ParseUUIDPipe never covered).
 describe("admin ledger cursors — optional ParseUUIDPipe", () => {
   let app: INestApplication;
-  const riders = { walletView: vi.fn(async () => ({ balance: 0, entries: [] })) };
+  const riders = {};
   const merchants = { getMerchantDetail: vi.fn(async () => ({ id: SOS_ID })) };
 
   beforeAll(async () => {
@@ -150,6 +164,9 @@ describe("admin ledger cursors — optional ParseUUIDPipe", () => {
       { provide: AdminAuditService, useValue: {} },
       { provide: SettlementsService, useValue: settlements },
       { provide: SosService, useValue: sos },
+      { provide: WalletService, useValue: {} },
+      { provide: AdminKitchenService, useValue: {} },
+      { provide: AdminMoneyService, useValue: money },
     ]);
   });
   afterAll(async () => {
@@ -161,7 +178,7 @@ describe("admin ledger cursors — optional ParseUUIDPipe", () => {
       .get(`/admin/riders/${USER_ID}/wallet?cursor=not-a-uuid`)
       .set("Authorization", bearer(ADMIN_ID, "admin"));
     expect(res.status).toBe(400);
-    expect(riders.walletView).not.toHaveBeenCalled();
+    expect(money.statement).not.toHaveBeenCalled();
   });
 
   it("forwards a well-formed rider-wallet cursor", async () => {
@@ -169,7 +186,7 @@ describe("admin ledger cursors — optional ParseUUIDPipe", () => {
       .get(`/admin/riders/${USER_ID}/wallet?cursor=${SOS_ID}`)
       .set("Authorization", bearer(ADMIN_ID, "admin"));
     expect(res.status).toBe(200);
-    expect(riders.walletView).toHaveBeenCalledWith(USER_ID, SOS_ID);
+    expect(money.statement).toHaveBeenCalledWith(USER_ID, SOS_ID);
   });
 
   it("400 (not 500) for a malformed merchant debtCursor; the service is never reached", async () => {

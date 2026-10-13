@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { adminPostResult, describeAdminPostFailure } from "../lib/api";
+import { REVERSAL_CAP } from "../lib/money-labels";
 
 /**
  * A KYC write's outcome. The failure is RETURNED, not thrown: Next redacts a server action's thrown
@@ -134,4 +135,37 @@ export async function creditRiderWallet(
   });
   if (!res.ok) throw new Error(`Failed to credit biker ${profileId}'s wallet: ${describeAdminPostFailure(res)}`);
   revalidatePath(`/riders/${profileId}`);
+}
+
+/**
+ * Admin console v2 §6: a reversal — take money OFF a biker's balance (`POST /admin/riders/:id/wallet-reversal`).
+ * Reason-coded, note required (the biker sees it), capped at {@link REVERSAL_CAP}; `entryId` names the credit
+ * it corrects (the API refuses more than is left of it). The endpoint writes the ledger row and the audit row
+ * (before / after balance) in one transaction. Forwards the form-open key so a retry can't debit twice.
+ * Throws so <ConfirmModal> keeps the dialog open with the reason.
+ */
+export async function reverseRiderWallet(
+  profileId: string,
+  amount: string,
+  reasonCode: string | null,
+  note: string,
+  idempotencyKey: string,
+  entryId?: string | null,
+): Promise<void> {
+  if (!profileId) return;
+  const value = Number(amount);
+  if (!Number.isFinite(value) || value <= 0) throw new Error("Enter the amount to take off.");
+  if (value > REVERSAL_CAP) throw new Error(`One reversal can take off at most $${REVERSAL_CAP.toFixed(2)}.`);
+  if (!note.trim()) throw new Error("Add a note: the biker sees it.");
+  const res = await adminPostResult(`/admin/riders/${profileId}/wallet-reversal`, {
+    amount: Math.round(value * 100) / 100,
+    reason: reasonCode ?? "",
+    note: note.trim(),
+    entryId: entryId ?? null,
+    idempotencyKey: idempotencyKey && idempotencyKey.length > 0 ? idempotencyKey : crypto.randomUUID(),
+  });
+  if (!res.ok) throw new Error(`Couldn't reverse: ${describeAdminPostFailure(res)}`);
+  revalidatePath(`/riders/${profileId}`);
+  revalidatePath("/cash");
+  revalidatePath("/cash/owed");
 }
