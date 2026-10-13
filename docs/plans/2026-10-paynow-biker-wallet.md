@@ -300,8 +300,11 @@ credited amount.
 `PAYMENT_RAIL=stub`, which charges no one.
 1. In Paynow, on the "LyniaGo" 3rd-party integration: make sure it is **USD**, **EcoCash** is enabled, and **"add fees on
    top" is ON** (`PAYNOW_FEE_MODE=paynow`).
-2. Store the integration key as the secret **`PAYNOW_INTEGRATION_KEY`**: GCP Secret Manager, or Key Vault (`paynow-integration-key`)
-   on Azure. Never in the repo or a Variable.
+2. Store the integration key, never in the repo or a Variable. **Azure (production):** with `PAYNOW_ENABLED=true` set, run
+   `bash infra/azure/vendor-secrets.sh` in Cloud Shell. It stores the key in Key Vault as `PAYNOW-INTEGRATION-KEY` and adds it
+   to `AZ_VENDOR_SECRETS`. Then run a production Terraform apply (`terraform-apply-azure.yml`), which mounts it on the API as the
+   container-app secret `paynow-integration-key`. `release-azure.yml` refuses to deploy until that secret exists. **GCP:** the Secret
+   Manager secret `PAYNOW_INTEGRATION_KEY`.
 3. Set the repo Variables **`PAYNOW_INTEGRATION_ID`**, **`PAYNOW_AUTH_EMAIL`** (the Paynow merchant login email) and
    **`PAYNOW_RESULT_URL`** (`https://<api-host>/webhooks/paynow`), then **`PAYNOW_ENABLED=true`**, and deploy. The
    release preflight fails in seconds if any is missing.
