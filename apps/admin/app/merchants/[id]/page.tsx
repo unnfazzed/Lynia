@@ -1,16 +1,19 @@
 import { MERCHANT_SHOP_KIND_LABELS, type MerchantShopKind, tokens } from "@lynia/shared";
 import { adminFetchResult } from "../../lib/api";
-import type { MerchantDebtLedgerRow, MerchantDetail, TripRow } from "../../lib/adminTypes";
+import type { MerchantApplication, MerchantDebtLedgerRow, MerchantDetail, MerchantMetrics, TripRow } from "../../lib/adminTypes";
 import { DataTable, type Column } from "../../components/DataTable";
 import { KpiCard } from "../../components/KpiCard";
 import { KeyValue } from "../../components/KeyValue";
 import { StatusPill, Pill } from "../../components/StatusPill";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
 import { IconStore } from "../../components/icons";
-import { GoLiveButton } from "../GoLiveButton";
+import { ApplicationActionButton, LicenceButtons } from "../ApplicationActions";
+import { ApplicationCard, ApplicationStatusPill, MetricsCard } from "../application-ui";
 import { OrderSettingsCard } from "../OrderSettingsCard";
 import { OwnerTransferButton } from "../OwnerTransferButton";
 import { OrderLink, RecordLink } from "../../components/links";
+import { AuditCard, fetchAuditFor } from "../../components/AuditSection";
+import { fetchTimeline, TimelineCard } from "../../components/Timeline";
 import { fmtDateTime, money, shortId } from "../../lib/format";
 
 const DEBT_TYPE_LABEL: Record<MerchantDebtLedgerRow["type"], string> = {
@@ -20,13 +23,11 @@ const DEBT_TYPE_LABEL: Record<MerchantDebtLedgerRow["type"], string> = {
   written_off: "Written off",
 };
 
-/** Merchant profile (X1): cash rule, pilot status, recent orders, and the full append-only
- *  collect-and-return debt-ledger trail (R-01/R-06/R-07) — the same evidence support needs to answer
- *  "why does this merchant show open debt". The mutations are the go-live switch (merchant web upgrade
- *  L1, restaurants only), with the contact phone and pin ops checks before using it, and the handover to a
- *  new owner (L4, after an identity check) — both in docs/MERCHANT-GO-LIVE-RUNBOOK.md. There is no other merchant-standing mutation (no `accountStatus`
- *  on Merchant) — cash-ban/suspension actions live on the customer (below) and rider (via the existing
- *  Riders console) records this debt ledger already produced. */
+/** Merchant profile (X1): cash rule, recent orders, and the full append-only collect-and-return debt-ledger
+ *  trail (R-01/R-06/R-07). Admin console v2 §5: while the business isn't live, its application card (a
+ *  data-backed checklist and the actions its state allows) sits at the top; a live one can be suspended from
+ *  the header. The performance card and the handover to a new owner (L4) follow. Both reads beside the
+ *  detail are optional: an older API without them simply shows neither card. */
 export default async function MerchantProfilePage({
   params,
   searchParams,
@@ -39,9 +40,17 @@ export default async function MerchantProfilePage({
   const rawDebtCursor = sp.debtCursor;
   // LC-D-T1: `debtCursor` pages further back past the first 30 entries via the "Load older" link below.
   const debtCursor = typeof rawDebtCursor === "string" ? rawDebtCursor : undefined;
-  const res = await adminFetchResult<MerchantDetail>(
-    `/admin/merchants/${id}${debtCursor ? `?debtCursor=${encodeURIComponent(debtCursor)}` : ""}`,
-  );
+  const tlCursor = typeof sp.tlCursor === "string" ? sp.tlCursor : undefined;
+  // Admin console v2 §4 / §5 / §8: application, metrics, timeline and audit rows load alongside the profile, best-effort.
+  const [res, appRes, metricsRes, timeline, audit] = await Promise.all([
+    adminFetchResult<MerchantDetail>(`/admin/merchants/${id}${debtCursor ? `?debtCursor=${encodeURIComponent(debtCursor)}` : ""}`),
+    adminFetchResult<MerchantApplication>(`/admin/merchants/${id}/application`),
+    adminFetchResult<MerchantMetrics>(`/admin/merchants/${id}/metrics`),
+    fetchTimeline(`/admin/merchants/${id}/timeline`, tlCursor),
+    fetchAuditFor(id),
+  ]);
+  const app = "data" in appRes ? appRes.data : null;
+  const metrics = "data" in metricsRes ? metricsRes.data : null;
 
   if (!("data" in res)) {
     const reason = res.reason;
@@ -110,19 +119,32 @@ export default async function MerchantProfilePage({
         <span style={{ display: "flex", gap: 6 }}>
           <Pill kind="mut">{isShop ? (kind ? `shop · ${kind.toLowerCase()}` : "shop") : "restaurant"}</Pill>
           <Pill kind="mut">{m.cashRule === "collect_and_return" ? "collect & return" : "pay upfront"}</Pill>
-          {m.pilotEnabled ? <Pill kind="good">pilot</Pill> : null}
+          {app ? <ApplicationStatusPill status={app.status} /> : m.pilotEnabled ? <Pill kind="good">live</Pill> : null}
         </span>
         <Conn connected={connected} />
         <OwnerTransferButton merchantId={m.id} name={m.name} connected={connected} />
-        <GoLiveButton merchantId={m.id} name={m.name} live={m.pilotEnabled} connected={connected} shop={isShop} pharmacy={m.shopKind === "pharmacy"} />
+        {app?.actions.includes("suspend") ? <ApplicationActionButton merchantId={m.id} name={m.name} action="suspend" connected={connected} /> : null}
       </header>
 
-      {!m.pilotEnabled ? (
+      {app && app.status !== "live" ? <ApplicationCard app={app} name={m.name} connected={connected} /> : null}
+
+      {!app && !m.pilotEnabled ? (
         <div className="warnbar">
           <IconStore />
           <span className="t">
-            <b>Customers can&apos;t see this {isShop ? "shop" : "restaurant"} yet.</b> Call {m.contactPhone ?? "the owner"}, run the
-            go-live checks, then use Go live.
+            <b>Customers can&apos;t see this {isShop ? "shop" : "restaurant"} yet.</b> Call {m.contactPhone ?? "the owner"}.
+          </span>
+        </div>
+      ) : null}
+
+      {app && app.status === "live" && app.checklist.some((r) => r.warning) ? (
+        <div className="warnbar">
+          <IconStore />
+          <span className="t">
+            <b>No verified pharmacy licence.</b> It went live before licences were checked. Record it after the next call.
+          </span>
+          <span style={{ display: "flex", gap: tokens.space.sm, flexWrap: "wrap" }}>
+            <LicenceButtons merchantId={m.id} name={m.name} connected={connected} recorded={!!app.licence} verified={!!app.licence?.verifiedAt} />
           </span>
         </div>
       ) : null}
@@ -147,6 +169,12 @@ export default async function MerchantProfilePage({
         />
         <KpiCard label="Cuisine" value={m.cuisineTags[0] ?? "—"} hint={m.cuisineTags.slice(1).join(", ") || "no tags"} size={22} />
       </section>
+
+      {metrics ? (
+        <div style={{ marginBottom: tokens.space.lg }}>
+          <MetricsCard m={metrics} />
+        </div>
+      ) : null}
 
       <div className="detail-grid">
         <section className="card">
@@ -254,6 +282,14 @@ export default async function MerchantProfilePage({
           </div>
         ) : null}
       </section>
+
+      <TimelineCard
+        page={timeline}
+        cursor={tlCursor}
+        pageHref={(c) => `/merchants/${id}?tlCursor=${encodeURIComponent(c)}`}
+        resetHref={`/merchants/${id}`}
+      />
+      <AuditCard target={id} list={audit} />
     </main>
   );
 }

@@ -12,13 +12,28 @@ import { ReportsCallout } from "../../components/ReportsCallout";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
 import { IconAlert, IconUser } from "../../components/icons";
 import { OrderLink } from "../../components/links";
+import { AuditCard, fetchAuditFor } from "../../components/AuditSection";
+import { fetchTimeline, TimelineCard } from "../../components/Timeline";
 import { money } from "../../lib/format";
 
 /** Customer profile (kit `customers.html` detail): masked phone, spend, cancel pattern, rider
  *  reports, and flag / clear / ban actions — each reason-coded through <ConfirmModal>. */
-export default async function CustomerProfilePage({ params }: { params: Promise<{ id: string }> }) {
+export default async function CustomerProfilePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
   const { id } = await params;
-  const res = await adminFetchResult<CustomerDetail>(`/admin/customers/${id}`);
+  const sp = (await searchParams) ?? {};
+  const tlCursor = typeof sp.tlCursor === "string" ? sp.tlCursor : undefined;
+  // Admin console v2 §4 / §8: the customer-side timeline and the audit rows load alongside, best-effort.
+  const [res, timeline, audit] = await Promise.all([
+    adminFetchResult<CustomerDetail>(`/admin/customers/${id}`),
+    fetchTimeline(`/admin/people/${id}/timeline?as=customer`, tlCursor),
+    fetchAuditFor(id),
+  ]);
   const path = `/customers/${id}`;
 
   if (!("data" in res)) {
@@ -246,6 +261,14 @@ export default async function CustomerProfilePage({ params }: { params: Promise<
           </section>
         </div>
       </div>
+
+      <TimelineCard
+        page={timeline}
+        cursor={tlCursor}
+        pageHref={(next) => `/customers/${id}?tlCursor=${encodeURIComponent(next)}`}
+        resetHref={`/customers/${id}`}
+      />
+      <AuditCard target={id} list={audit} />
     </main>
   );
 }

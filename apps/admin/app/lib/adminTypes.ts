@@ -333,6 +333,10 @@ export interface FoodOrderPanel {
 }
 
 /* ── Merchants (X1) ─────────────────────────────────────────── */
+/** Admin console v2 §5: where a business is in its application (@lynia/shared MERCHANT_APPLICATION_STATUSES). */
+export type MerchantApplicationStatus = "applied" | "reviewing" | "approved" | "live" | "rejected" | "suspended";
+export type MerchantApplicationSla = "ok" | "amber" | "red";
+
 export interface Merchant {
   id: string;
   name: string;
@@ -352,6 +356,75 @@ export interface Merchant {
   openDebtAmount: string;
   openDebtCount: number;
   joined: string;
+  /** Admin console v2 §5. Optional: older API builds omit it. */
+  applicationStatus?: MerchantApplicationStatus;
+  /** Queue rows only (`?status=`): when it signed up, how long it has waited, the SLA and the checklist score. */
+  appliedAt?: string;
+  ageMs?: number;
+  sla?: MerchantApplicationSla | null;
+  score?: { passed: number; total: number };
+}
+
+export type MerchantApplicationAction = "review" | "approve" | "reject" | "go_live" | "suspend" | "resume";
+
+export interface MerchantChecklistRow {
+  key: "location" | "hours" | "owner" | "menu" | "team" | "licence" | "call";
+  label: string;
+  ok: boolean;
+  required: boolean;
+  detail: string;
+  warning?: string;
+}
+
+/** `GET /admin/merchants/:id/application`. */
+export interface MerchantApplication {
+  merchantId: string;
+  status: MerchantApplicationStatus;
+  statusAt: string | null;
+  rejectReason: string | null;
+  appliedAt: string;
+  approvedAt: string | null;
+  sla: MerchantApplicationSla | null;
+  ageMs: number;
+  isPharmacy: boolean;
+  checklist: MerchantChecklistRow[];
+  score: { passed: number; total: number };
+  canApprove: boolean;
+  actions: MerchantApplicationAction[];
+  licence: {
+    licenceNumber: string | null;
+    pharmacistName: string | null;
+    reference: string | null;
+    recordedBy: string;
+    recordedAt: string;
+    verifiedAt: string | null;
+    verifiedBy: string | null;
+  } | null;
+  calls: { id: string; outcome: string | null; note: string | null; at: string }[];
+  history: { step: string; at: string }[];
+}
+
+/** `GET /admin/merchants/:id/metrics` — null wherever there is no data yet. */
+export interface MerchantMetrics {
+  since: string;
+  short: boolean;
+  windowDays: number;
+  orders: number;
+  acceptMedianSeconds: number | null;
+  acceptSample: number;
+  missedPct: number | null;
+  missed: number;
+  prepMedianMinutes: number | null;
+  promisedMedianMinutes: number | null;
+  prepSample: number;
+  outOfStockPct: number | null;
+  outOfStockLines: number;
+  lines: number;
+  hoursOpen: number | null;
+  hoursScheduled: number | null;
+  rating: { avg: number; count: number } | null;
+  openDebtAmount: string;
+  openDebtCount: number;
 }
 
 export interface MerchantDebtLedgerRow {
@@ -510,6 +583,8 @@ export interface NavCounts {
   sosPending: number;
   /** X1: R-05 frozen handshakes + N-12 refund-overdue orders — the /merchants/disputes queue count. */
   foodDisputes: number;
+  /** Admin console v2 §5: merchant applications waiting on ops past the 24h SLA. Optional: older APIs omit it. */
+  merchantApplications?: number;
 }
 
 /* ── Rider prepaid wallet (DOC-16-03 — GET /admin/riders/:id/wallet) ── */
@@ -525,6 +600,93 @@ export interface WalletLedgerEntry {
   actor: string | null;
   orderId: string | null;
   at: string;
+  /* Admin console v2 §6 (the biker statement). Optional: an older API doesn't send them. */
+  /** The actor's name when it is an admin profile id; otherwise the actor as written ("system", an email). */
+  actorName?: string | null;
+  /** A commission / free-job row's rate (%) and basis (the fare it was worked out on). */
+  ratePct?: string | null;
+  fare?: string | null;
+  /** On a reversal: the credit it took back. On a credit: how much of it has been reversed so far. */
+  reversesId?: string | null;
+  reversed?: string | null;
+  topUp?: { id: string; rail: string; manual: boolean; ref: string | null; charged: string | null; fee: string | null } | null;
+}
+
+/** The biker statement header (admin console v2 §6). */
+export interface StatementSummary {
+  ratePct: number;
+  commissionActive: boolean;
+  tripsCount: number;
+  freeJobsLeft: number;
+  /** Commission still to come on jobs delivered but not yet closed (a projection; "0.00" while the rate is 0%). */
+  pendingCommission: string;
+  pendingJobs: number;
+  lastTopup: { id: string; amount: string; rail: string; manual: boolean; at: string } | null;
+}
+
+/* ── Admin console v2 §6: top-ups, money panel, money owed ── */
+export type TopupFilter = "pending" | "confirmed" | "declined" | "expired" | "short_paid" | "paid_on_declined";
+
+export interface AdminTopupRow {
+  id: string;
+  riderId: string;
+  riderName: string;
+  amount: string;
+  fee: string | null;
+  charged: string | null;
+  rail: string;
+  providerRef: string | null;
+  status: "pending" | "confirmed" | "declined" | "expired";
+  declineReason: string | null;
+  initiatedAt: string;
+  resolvedAt: string | null;
+  credited: string | null;
+  manual: boolean;
+  anomaly: { kind: "short_paid" | "paid_on_declined"; paid: number | null; at: string; resolved: boolean } | null;
+}
+
+export interface AdminTopupsPage {
+  rows: AdminTopupRow[];
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+  counts: Record<TopupFilter, number>;
+}
+
+export interface MoneyDay {
+  day: string;
+  topupsIn: string;
+  fees: string;
+  commission: string;
+  manualCredits: string;
+  reversals: string;
+  freeJobs: number;
+}
+
+export interface MoneyPanel {
+  days: number;
+  ratePct: number;
+  rows: MoneyDay[];
+  totals: Omit<MoneyDay, "day">;
+  float: string;
+  receivable: string;
+  owedCount: number;
+  integrity: { at: string; ok: boolean; totalDrift: number; accountsChecked: number; drift: Record<string, number> } | null;
+}
+
+export interface OwedRow {
+  riderId: string;
+  name: string;
+  phone: string | null;
+  owed: string;
+  negativeSince: string | null;
+  lastJobAt: string | null;
+  lastTopupAt: string | null;
+}
+
+export interface OwedList {
+  rows: OwedRow[];
+  total: string;
 }
 
 export interface WalletView {
@@ -533,6 +695,8 @@ export interface WalletView {
   ledger: WalletLedgerEntry[];
   /** LC-D07: last entry id of this page, for `?cursor=` — present only when older entries exist. */
   nextCursor: string | null;
+  /** Admin console v2 §6: the statement header. Absent on an older API. */
+  summary?: StatementSummary;
   /**
    * The `commission_freeze` wallet hold (design OV-4A: a freeze is a `Rider.heldReason =
    * "commission_freeze"` hold — there is deliberately no `CommissionAccount.status` column).
@@ -569,4 +733,63 @@ export interface RiderRosterRow {
   onHold: boolean;
   tripsCount: number;
   cooldownUntil: string | null;
+}
+
+/* ── Audit viewer, search, timelines (admin console v2 PR 3, plan §4 / §8) ─────────────── */
+
+/** What an audit row's `target` names (GET /admin/audit). `other` = a free-text target with no record behind it. */
+export type AuditTargetType = "rider" | "customer" | "order" | "merchant" | "issue" | "sos" | "topup" | "other";
+
+export interface AuditRow {
+  id: string;
+  at: string;
+  actor: { id: string; name: string; href: string | null };
+  action: string;
+  /** Short past-tense label ("Suspended"), server-written. */
+  actionLabel: string;
+  target: { type: AuditTargetType; id: string; label: string; href: string | null };
+  reasonCode: string | null;
+  note: string | null;
+  amount: string | null;
+  before: unknown;
+  after: unknown;
+}
+
+/** GET /admin/audit — newest first; pass `nextCursor` back as `?cursor=` for the next page. */
+export interface AuditList {
+  rows: AuditRow[];
+  nextCursor: string | null;
+}
+
+export interface SearchHit {
+  id: string;
+  label: string;
+  sub: string;
+  href: string;
+}
+
+/** GET /admin/search?q= — capped per group. */
+export interface SearchResults {
+  q: string;
+  tooShort: boolean;
+  total: number;
+  groups: { bikers: SearchHit[]; customers: SearchHit[]; merchants: SearchHit[]; orders: SearchHit[]; topups: SearchHit[] };
+}
+
+export type TimelineKind = "order" | "event" | "kyc" | "audit" | "topup" | "wallet";
+
+export interface TimelineRow {
+  key: string;
+  at: string;
+  kind: TimelineKind;
+  line: string;
+  tone: "good" | "bad" | "mut" | "";
+  ref: { label: string; href: string } | null;
+  by: string | null;
+}
+
+/** GET /admin/people/:id/timeline and /admin/merchants/:id/timeline. */
+export interface TimelinePage {
+  rows: TimelineRow[];
+  nextCursor: string | null;
 }

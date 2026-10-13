@@ -789,7 +789,7 @@ describe("MerchantService customer read API (flag + pilotEnabled allowlist)", ()
       },
     });
     const res = await s.listRestaurants();
-    expect(receivedWhere).toEqual({ pilotEnabled: true, businessType: "restaurant" });
+    expect(receivedWhere).toEqual({ pilotEnabled: true, applicationStatus: { not: "suspended" }, businessType: "restaurant" });
     expect(res.restaurants).toHaveLength(1);
     expect(res.restaurants[0]!.id).toBe("m1");
     // D1 (browse): the raw weekly hours pass through untouched — open/closed is derived client-side.

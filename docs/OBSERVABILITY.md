@@ -32,7 +32,9 @@ Two halves:
 
 The wallet-integrity job calls `POST /admin/wallet/integrity-check`; a drift finding is logged by the API
 as a `wallet_integrity DRIFT …` WARN line. Without a metrics backend, nothing pages on drift itself: only
-a failed or missed job does. Search the logs for that line.
+a failed or missed job does. Search the logs for that line. Each run also records its counts as a
+`wallet.integrity_check` domain event, which the console's Commission page shows ("ledger check"), with a
+Run now button.
 
 **To turn the metrics on**, deploy an OTLP collector the API can reach and set
 `OTEL_EXPORTER_OTLP_ENDPOINT` on the API revision. Neither exists on Azure today: `infra/azure` defines no

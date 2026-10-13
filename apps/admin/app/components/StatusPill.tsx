@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import { enumLabel } from "../lib/format";
 
-export type PillKind = "good" | "bad" | "mut" | "";
+export type PillKind = "good" | "bad" | "warn" | "mut" | "";
 
-/** Generic status chip. `good` = accent wash + accent text; `bad` = danger wash; `mut` = surface. */
+/** Generic status chip. `good` = accent wash + accent text; `bad` = danger wash; `warn` = highlight wash (amber SLA); `mut` = surface. */
 export function Pill({ children, kind = "", dot = false }: { children: ReactNode; kind?: PillKind; dot?: boolean }) {
   return (
     <span className={kind ? `kpill ${kind}` : "kpill"}>

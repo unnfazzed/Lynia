@@ -98,6 +98,8 @@ error. Click into one detail from each list.
 | 4.7 | **Issues** `/issues` | Open/investigating/resolved; a row opens the investigation (evidence, statements, resolution) | |
 | 4.8 | **SOS** `/sos` | Pending-first; a row links to the order; a pending alert shows **Acknowledge** | |
 | 4.9 | **Commission** `/cash` | the live rate (10% after a biker's first 10 jobs, `packages/shared/src/policy.ts`); rides/fares KPIs; by-rider table | |
+| 4.10 | **Search** (top of every page; in the menu on a phone) | A biker's phone in any form (`077…`, `+263 77…`) finds them; a short order id `#a1b2c3` finds the order; exactly one hit opens it directly | |
+| 4.11 | **Audit** `/audit` | Newest first; type chips + Target / By / Action / From–To filters narrow it; **Older →** pages back. Each biker / customer / order / merchant page has an **Audit** card and (bikers, customers, merchants) a **Timeline** | |
 
 ---
 
@@ -198,7 +200,8 @@ This is the launch top-up rail; it moves real balance. It was just hardened for 
 ## 8. Audit-attribution sweep (the compliance gate)
 
 - [ ] **8.1** Pull every audit row you generated this session and confirm **every** `actor` is *your*
-  operator identity, the `action` matches what you did, and destructive actions carry a `reason_code`:
+  operator identity, the `action` matches what you did, and destructive actions carry a `reason_code`
+  (the console's `/audit?actor=<your email>` shows the same rows; the SQL is the source of truth):
   ```sql
   SELECT created_at, actor, action, target, reason_code
   FROM audit_logs

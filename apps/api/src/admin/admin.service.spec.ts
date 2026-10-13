@@ -365,6 +365,7 @@ describe("AdminService.navCounts — X1 foodDisputes badge", () => {
       rider: { count: async () => 0 },
       issue: { count: async () => 0 },
       sosEvent: { count: async () => 0 },
+      merchant: { count: async () => 0 },
       order: {
         count: async (args: { where: Record<string, unknown> }) => {
           counts.push(args.where);
@@ -387,9 +388,33 @@ describe("AdminService.navCounts — X1 foodDisputes badge", () => {
       rider: { count: async () => 0 },
       issue: { count: async () => 0 },
       sosEvent: { count: async () => 0 },
+      merchant: { count: async () => 0 },
       order: { count: async () => 0 },
     };
     const svc = new AdminService(prisma as unknown as PrismaService, envStub());
     expect((await svc.navCounts()).foodDisputes).toBe(0);
+  });
+
+  it("admin console v2 §5: counts merchant applications still waiting on ops past the 24h SLA", async () => {
+    let where: Record<string, unknown> | null = null;
+    const prisma = {
+      rider: { count: async () => 0 },
+      issue: { count: async () => 0 },
+      sosEvent: { count: async () => 0 },
+      order: { count: async () => 0 },
+      merchant: {
+        count: async (args: { where: Record<string, unknown> }) => {
+          where = args.where;
+          return 3;
+        },
+      },
+    };
+    const svc = new AdminService(prisma as unknown as PrismaService, envStub());
+    const before = Date.now();
+    expect((await svc.navCounts()).merchantApplications).toBe(3);
+    const w = where as unknown as { applicationStatus: { in: string[] }; pilotEnabled: boolean; createdAt: { lt: Date } };
+    expect(w.applicationStatus.in).toEqual(["applied", "reviewing"]);
+    expect(w.pilotEnabled).toBe(false);
+    expect(before - w.createdAt.lt.getTime()).toBeGreaterThanOrEqual(24 * 60 * 60 * 1000 - 5);
   });
 });

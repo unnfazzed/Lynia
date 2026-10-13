@@ -41,6 +41,14 @@ describe("Sidebar phone menu (D-105)", () => {
     expect(document.activeElement).toBe(button);
   });
 
+  it("carries the Audit item and the phone copy of the search box (console v2 PR 3)", () => {
+    const { container } = render(<Sidebar />);
+    expect(screen.getByRole("link", { name: "Audit" }).getAttribute("href")).toBe("/audit");
+    const form = container.querySelector("#sidenav-panel form[role='search']");
+    expect(form?.getAttribute("action")).toBe("/search");
+    expect(form?.querySelector("input[name='q']")).not.toBeNull();
+  });
+
   it("closes on a tap outside the bar", () => {
     render(<Sidebar />);
     const button = screen.getByRole("button", { name: "Open menu" });

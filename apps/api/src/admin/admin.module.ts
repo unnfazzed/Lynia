@@ -3,14 +3,19 @@ import { SettlementsModule } from "../settlements/settlements.module";
 import { SosModule } from "../sos/sos.module";
 import { TrackingModule } from "../tracking/tracking.module";
 import { WalletModule } from "../wallet/wallet.module";
+import { AdminAuditReadService } from "./admin-audit-read.service";
 import { AdminAuditService } from "./admin-audit.service";
 import { AdminController } from "./admin.controller";
 import { AdminCustomersService } from "./admin-customers.service";
 import { AdminKitchenService } from "./admin-kitchen.service";
 import { AdminKycReviewService } from "./admin-kyc-review.service";
+import { AdminMerchantApplicationService } from "./admin-merchant-application.service";
 import { AdminMerchantsService } from "./admin-merchants.service";
+import { AdminMoneyService } from "./admin-money.service";
 import { AdminOrdersService } from "./admin-orders.service";
 import { AdminRidersService } from "./admin-riders.service";
+import { AdminSearchService } from "./admin-search.service";
+import { AdminTimelineService } from "./admin-timeline.service";
 import { AdminService } from "./admin.service";
 
 @Module({
@@ -27,8 +32,13 @@ import { AdminService } from "./admin.service";
     AdminKycReviewService,
     AdminCustomersService,
     AdminMerchantsService,
+    AdminMerchantApplicationService,
     AdminKitchenService,
     AdminAuditService,
+    AdminAuditReadService,
+    AdminSearchService,
+    AdminTimelineService,
+    AdminMoneyService,
   ],
 })
 export class AdminModule {}

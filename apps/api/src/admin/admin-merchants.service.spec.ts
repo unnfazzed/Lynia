@@ -470,14 +470,20 @@ describe("AdminMerchantsService — merchant web upgrade L1 (go-live switch + op
   const PIN = { point: { lat: -17.8292, lng: 31.0522 }, landmark: "Next to the rank", contactPhone: "+263771234567" };
 
   /** A fake Prisma for setPilot: `$transaction(cb)` runs against the same fake; writes are recorded. */
-  function pilotHarness(merchant: Record<string, unknown> | null, liveDishes = 1) {
-    const writes: { update?: unknown; audit?: Record<string, unknown> } = {};
+  function pilotHarness(merchant: Record<string, unknown> | null, liveDishes = 1, licenceVerified = false) {
+    const writes: { update?: { where: unknown; data: Record<string, unknown> }; audit?: Record<string, unknown>; events: unknown[] } = { events: [] };
+    const row = merchant ? { applicationStatus: "approved", approvedAt: null, ...merchant } : null;
     const prisma: Record<string, unknown> = {
       merchant: {
-        findUnique: async () => merchant,
-        update: async (args: unknown) => (writes.update = args),
+        findUnique: async () => row,
+        updateMany: async (args: { where: unknown; data: Record<string, unknown> }) => {
+          writes.update = args;
+          return { count: 1 };
+        },
       },
       merchantDish: { count: async () => liveDishes },
+      merchantDocument: { findUnique: async () => (licenceVerified ? { verifiedAt: new Date() } : null) },
+      domainEvent: { create: async (args: unknown) => writes.events.push(args) },
       auditLog: {
         create: async ({ data }: { data: Record<string, unknown> }) => {
           writes.audit = data;
@@ -489,60 +495,57 @@ describe("AdminMerchantsService — merchant web upgrade L1 (go-live switch + op
     return { svc: new AdminMerchantsService(prisma as unknown as PrismaService), writes };
   }
 
-  it("switches a ready restaurant on, with the flip and its audit row in one transaction", async () => {
-    const { svc, writes } = pilotHarness({ id: "m1", businessType: "restaurant", pilotEnabled: false, location: PIN });
+  it("the old switch ON goes live from approved, through the state machine (flip, audit, event in one transaction)", async () => {
+    const { svc, writes } = pilotHarness({ id: "m1", businessType: "restaurant", shopKind: null, pilotEnabled: false, location: PIN });
     const res = await svc.setPilot("ops@lyniago", "m1", { enabled: true, note: "Called; pin checked on street view" });
     expect(res).toEqual({ id: "m1", pilotEnabled: true, auditId: "audit-1" });
-    // Admin console v2 §3: the first go-live stamps who approved it and when.
-    expect(writes.update).toEqual({ where: { id: "m1" }, data: { pilotEnabled: true, approvedAt: expect.any(Date), approvedBy: "ops@lyniago" } });
+    expect(writes.update?.data).toMatchObject({ applicationStatus: "live", pilotEnabled: true });
     expect(writes.audit).toMatchObject({
       actor: "ops@lyniago",
       action: "merchant.go_live",
       target: "m1",
       note: "Called; pin checked on street view",
       targetType: "merchant",
-      before: { pilotEnabled: false },
-      after: { pilotEnabled: true, approved: true },
+      before: { applicationStatus: "approved", pilotEnabled: false },
+      after: { applicationStatus: "live", pilotEnabled: true },
     });
+    expect(writes.events).toHaveLength(1);
   });
 
-  it("a later go-live (after a pause) keeps the first approval", async () => {
-    const first = new Date("2026-10-01T08:00:00Z");
-    const { svc, writes } = pilotHarness({ id: "m1", businessType: "restaurant", pilotEnabled: false, location: PIN, approvedAt: first });
-    await svc.setPilot("ops2", "m1", { enabled: true });
-    expect(writes.update).toEqual({ where: { id: "m1" }, data: { pilotEnabled: true } });
-    expect(writes.audit).toMatchObject({ after: { pilotEnabled: true } });
-    expect(writes.audit?.after).not.toHaveProperty("approved");
+  it("the old switch ON refuses a business that hasn't been approved (no skipping the review)", async () => {
+    const { svc, writes } = pilotHarness({ id: "m1", businessType: "restaurant", shopKind: null, pilotEnabled: false, location: PIN, applicationStatus: "applied" });
+    await expect(svc.setPilot("ops", "m1", { enabled: true })).rejects.toMatchObject({ status: 409, response: { reason: "not_approved" } });
+    expect(writes.update).toBeUndefined();
   });
 
-  it("switches a SHOP on through the same checks — customer Shops and Pharmacy are open (D-58)", async () => {
-    const { svc, writes } = pilotHarness({ id: "m2", businessType: "shop", pilotEnabled: false, location: PIN });
+  it("the old switch ON resumes a suspended business", async () => {
+    const { svc, writes } = pilotHarness({ id: "m2", businessType: "shop", shopKind: "grocery", pilotEnabled: false, location: PIN, applicationStatus: "suspended" });
     await expect(svc.setPilot("ops", "m2", { enabled: true })).resolves.toMatchObject({ pilotEnabled: true });
-    expect(writes.audit).toMatchObject({ action: "merchant.go_live" });
-    const noPin = pilotHarness({ id: "m2", businessType: "shop", pilotEnabled: false, location: null });
+    expect(writes.audit).toMatchObject({ action: "merchant.resume" });
+  });
+
+  it("go-live keeps the pin and live-item checks, for restaurants and shops alike (D-58)", async () => {
+    const noPin = pilotHarness({ id: "m2", businessType: "shop", shopKind: "grocery", pilotEnabled: false, location: null });
     await expect(noPin.svc.setPilot("ops", "m2", { enabled: true })).rejects.toMatchObject({ status: 409, response: { reason: "no_location", message: "This shop has no pickup pin yet." } });
-    const noItems = pilotHarness({ id: "m2", businessType: "shop", pilotEnabled: false, location: PIN }, 0);
+    const noItems = pilotHarness({ id: "m2", businessType: "shop", shopKind: "grocery", pilotEnabled: false, location: PIN }, 0);
     await expect(noItems.svc.setPilot("ops", "m2", { enabled: true })).rejects.toMatchObject({ response: { reason: "no_live_dishes" } });
     expect(noItems.writes.update).toBeUndefined();
-  });
-
-  it("refuses a restaurant with no pickup pin, or with no live (photo'd) dish", async () => {
-    const noPin = pilotHarness({ id: "m1", businessType: "restaurant", pilotEnabled: false, location: null });
-    await expect(noPin.svc.setPilot("ops", "m1", { enabled: true })).rejects.toMatchObject({ response: { reason: "no_location" } });
-    const noDishes = pilotHarness({ id: "m1", businessType: "restaurant", pilotEnabled: false, location: PIN }, 0);
+    const noDishes = pilotHarness({ id: "m1", businessType: "restaurant", shopKind: null, pilotEnabled: false, location: PIN }, 0);
     await expect(noDishes.svc.setPilot("ops", "m1", { enabled: true })).rejects.toMatchObject({ response: { reason: "no_live_dishes" } });
-    expect(noDishes.writes.update).toBeUndefined();
   });
 
-  it("switching off is always allowed and audited as go_dormant", async () => {
-    const { svc, writes } = pilotHarness({ id: "m2", businessType: "shop", pilotEnabled: true, location: null }, 0);
+  it("the old switch OFF suspends a live business", async () => {
+    const { svc, writes } = pilotHarness({ id: "m2", businessType: "shop", shopKind: "grocery", pilotEnabled: true, location: null, applicationStatus: "live" }, 0);
     await expect(svc.setPilot("ops", "m2", { enabled: false })).resolves.toMatchObject({ pilotEnabled: false });
-    expect(writes.audit).toMatchObject({ action: "merchant.go_dormant" });
+    expect(writes.audit).toMatchObject({ action: "merchant.suspend" });
+    expect(writes.update?.data).toMatchObject({ applicationStatus: "suspended", pilotEnabled: false });
   });
 
   it("is idempotent: setting the current value writes nothing", async () => {
-    const { svc, writes } = pilotHarness({ id: "m1", businessType: "restaurant", pilotEnabled: true, location: PIN });
+    const { svc, writes } = pilotHarness({ id: "m1", businessType: "restaurant", shopKind: null, pilotEnabled: true, location: PIN, applicationStatus: "live" });
     await expect(svc.setPilot("ops", "m1", { enabled: true })).resolves.toEqual({ id: "m1", pilotEnabled: true, auditId: null });
+    const off = pilotHarness({ id: "m1", businessType: "restaurant", shopKind: null, pilotEnabled: false, location: PIN, applicationStatus: "applied" });
+    await expect(off.svc.setPilot("ops", "m1", { enabled: false })).resolves.toEqual({ id: "m1", pilotEnabled: false, auditId: null });
     expect(writes.update).toBeUndefined();
     expect(writes.audit).toBeUndefined();
   });

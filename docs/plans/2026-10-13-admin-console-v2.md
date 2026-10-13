@@ -94,6 +94,10 @@ GPS inside `data` follows `GPS_RETENTION_DAYS`.
 
 ## 4. "Find them": the happy paths and the stuck lists
 
+> **Shipped in PR 3:** global search (`GET /admin/search`, `/search`, the box above every page / in the phone menu) and the
+> merged person timeline (`GET /admin/people/:id/timeline`, `GET /admin/merchants/:id/timeline`) on the biker, customer and
+> merchant pages. Funnels, stuck lists and Nudge are PR 5.
+
 One new page, **People**, plus a **global search** in the top bar (phone, name, order id, Paynow reference).
 Every person has one timeline that merges orders, events, audit rows, KYC and top-ups.
 
@@ -112,6 +116,10 @@ days), each bar linking to its stuck list.
 ---
 
 ## 5. Merchant registration → approval
+
+> **Shipped in PR 4:** `Merchant.applicationStatus` (migration 0100, backfilled live/applied), the checklist API,
+> the queue chips with SLA pills and score, Log call / Review / Approve / Reject / Go live / Suspend / Resume,
+> `MerchantDocument` pharmacy licences (record + verify; grandfathered live pharmacies warn), the metrics card.
 
 Today a sign-up just creates a dormant merchant (`pilotEnabled=false`). The only server checks at go-live are "has a
 pin" and "at least one dish that isn't a draft".
@@ -156,6 +164,8 @@ rate, hours open vs scheduled, rating, open debt.
 
 **Owner decision (2026-10-13):** commission stays charged when the job closes. A biker can still stack jobs in the 6h rating window and go briefly negative; the negative-balance list (item 6) shows it.
 
+**Shipped in PR 6:** items 2–6 — `/cash/topups` (Re-poll, Credit what was paid, Mark resolved), the biker statement on the biker page, the platform money panel on `/cash` (7/30 days, CSV, ledger check + Run now), reversals (capped at $50 per action, two-person rule deferred), `/cash/owed`; the Orders list's Fare shows a food order's delivery fee. Migrations 0101–0102.
+
 ---
 
 ## 7. Live ops
@@ -171,6 +181,9 @@ rate, hours open vs scheduled, rating, open debt.
 
 - **Roles:** `ops` (orders, people, KYC, merchants), `finance` (wallet, top-ups, credits, write-offs), `owner` (everything plus config). Map each role to a console identity; the API checks the role for each route.
 - **Audit viewer:** `GET /admin/audit?target=&actor=&action=&from=` and an Audit tab on every person, order and merchant.
+  **Shipped in PR 3:** `GET /admin/audit` (+ `targetType`, `to`, keyset `cursor`; Harare-day `from`/`to`), `/audit`, and an
+  Audit card on the biker, customer, order and merchant pages; indexes `audit_logs (actor, created_at)` and
+  `(target, created_at)` (migrations 0098–0099).
 - **Two-person rule** for credits above $20, reversals, bans and write-offs. Proposed values; the owner sets them.
 
 ---

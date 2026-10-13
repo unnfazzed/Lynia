@@ -106,6 +106,7 @@ export class AdminOrdersService {
         status: true,
         proposedFare: true,
         agreedFare: true,
+        deliveryFee: true,
         distanceKm: true,
         customerId: true,
         riderId: true,
@@ -131,6 +132,9 @@ export class AdminOrdersService {
       rider: o.rider ? `${o.rider.profile.firstName} ${o.rider.profile.lastName}`.trim() : null,
       proposedFare: o.proposedFare.toString(),
       agreedFare: o.agreedFare?.toString() ?? null,
+      // Admin console v2 §6: a merchant order's agreedFare is the customer's food + delivery total; the biker's
+      // fare (and the commission basis) is its delivery fee. Null on a parcel.
+      deliveryFee: o.deliveryFee?.toString() ?? null,
       distanceKm: o.distanceKm,
       riderId: o.riderId,
       // Authoritative role of who cancelled — don't make the UI re-derive it from raw ids. Admin console v2

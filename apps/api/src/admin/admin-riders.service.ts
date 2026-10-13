@@ -106,59 +106,6 @@ export class AdminRidersService {
   }
 
   /**
-   * Ops wallet view for a rider (DOC-16-03): the prepaid commission balance + a page of the recent
-   * append-only ledger, so ops can see a rider's float and reconcile a manual credit from the console.
-   * The credit action itself is `POST riders/:id/wallet-credit` (WalletService.creditManual). Read-only.
-   * A rider with no wallet touch yet has no CommissionAccount row → balance "0.00", empty ledger.
-   *
-   * LC-D07: this used to hard-cap at `take: 20` with no `nextCursor` and no way to page further back —
-   * a rider with >20 lifetime entries (routine for anyone active a few weeks) permanently lost
-   * visibility into older ones, with no on-screen signal anything was missing. Mirrors the cursor
-   * pattern `WalletService.getLedger` already uses for the rider-facing mobile ledger (fetch
-   * PAGE_SIZE+1, slice, cursor = last row's id): fetch one extra row to detect `hasMore` without a
-   * separate count query, cursor-paginate by id (stable under concurrent inserts, unlike an offset).
-   */
-  async walletView(profileId: string, cursor?: string) {
-    const PAGE_SIZE = 20;
-    const [account, rows] = await Promise.all([
-      this.prisma.commissionAccount.findUnique({ where: { riderId: profileId }, select: { balance: true } }),
-      this.prisma.commissionLedger.findMany({
-        where: { riderId: profileId },
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        take: PAGE_SIZE + 1,
-        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-        select: {
-          id: true,
-          type: true,
-          amount: true,
-          balanceAfter: true,
-          note: true,
-          actor: true,
-          orderId: true,
-          createdAt: true,
-        },
-      }),
-    ]);
-    const hasMore = rows.length > PAGE_SIZE;
-    const ledger = hasMore ? rows.slice(0, PAGE_SIZE) : rows;
-    return {
-      // Always 2dp (Decimal(10,2).toString() keeps scale; the no-account fallback is an explicit "0.00").
-      balance: account ? account.balance.toString() : "0.00",
-      ledger: ledger.map((l) => ({
-        id: l.id,
-        type: l.type,
-        amount: l.amount.toString(),
-        balanceAfter: l.balanceAfter.toString(),
-        note: l.note ?? null,
-        actor: l.actor ?? null,
-        orderId: l.orderId ?? null,
-        at: l.createdAt.toISOString(),
-      })),
-      nextCursor: hasMore ? ledger[ledger.length - 1]!.id : null,
-    };
-  }
-
-  /**
    * A rider standing change (suspend/ban) doesn't touch an order they're already assigned to — the
    * lifecycle mutations only check `order.riderId === riderId`, not standing — so a customer whose
    * rider is suspended or banned mid-delivery previously heard nothing about it. Best-effort, post-

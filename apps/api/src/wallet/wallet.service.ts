@@ -82,6 +82,25 @@ export function manualCreditDailyCapUsd(): number {
 }
 const MANUAL_CREDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+/** The most one admin reversal may take off a biker's balance (admin console v2 §6). A larger correction is
+ *  several reasoned reversals; the two-person rule above a limit is deferred (owner decision 4). */
+export const REVERSAL_CAP_USD = 50;
+
+/**
+ * What a payment of `paid` (the fee-inclusive figure Paynow reports, the same one `settleTopupFromRail` stores
+ * as `charged`) is worth on the balance under the top-up fee rule: the largest credit N with
+ * N + topupFee(N) ≤ paid. Integer cents throughout; 0 for a non-positive payment.
+ */
+export function netOfTopupFee(paid: number, feePct: number): number {
+  const paidCents = toCentsSafe(paid);
+  if (!(paidCents > 0)) return 0;
+  const fits = (cents: number) => toCentsSafe(addMoney(cents / 100, topupFee(cents / 100, feePct))) <= paidCents;
+  let n = Math.floor((paidCents * 100) / (100 + Math.max(0, feePct)));
+  while (n > 0 && !fits(n)) n--;
+  while (fits(n + 1) && n + 1 <= paidCents) n++;
+  return n / 100;
+}
+
 /** Decimal | null → number | undefined, for the wire shape (contracts type money as plain numbers). */
 function num(d: Prisma.Decimal | number | null | undefined): number | undefined {
   return d == null ? undefined : Number(d);
@@ -138,6 +157,11 @@ export class WalletService {
   /** True when top-ups really charge through Paynow (vs the inert stub). */
   private get railLive(): boolean {
     return this.env.PAYMENT_RAIL === "paynow" && this.rail != null;
+  }
+
+  /** The same, for the admin console: a Re-poll can only ask Paynow when Paynow is switched on. */
+  get topupRailLive(): boolean {
+    return this.railLive;
   }
 
   /** The resolved live commission rate (%) — the env "flip" value, clamped, or the launch default (0). */
@@ -885,6 +909,204 @@ export class WalletService {
         // The idempotency key was already used — this credit already landed (or is landing in a
         // concurrent request). Return the current balance rather than surfacing a spurious 500.
         return this.getBalanceOnly(args.riderId);
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Admin console v2 §6: ops credits a top-up that Paynow reported as paid but the wallet would not credit on
+   * its own — short-paid (less than the credit asked for) or paid on an intent already declined. It credits
+   * what the payment is worth under the fee rule ({@link netOfTopupFee}) from the figure Paynow reported (the
+   * `topup.anomaly` row), and never more than the credit the biker asked for. That figure is read as
+   * fee-inclusive, the same reading `settleTopupFromRail` gives it when it stores `charged`, so a doubt
+   * resolves in Lynia's favour by at most the fee, never by crediting money that didn't move.
+   *
+   * The same shape as {@link creditFromTopup}: under the top-up's row lock the intent moves to `confirmed` and
+   * gets ONE `topup` ledger row (the unique `topUpId` backs exactly-once), the balance moves under the account
+   * row lock, and the audit row (before / after balance) commits in the same transaction. Idempotent per
+   * top-up: a second call finds it confirmed and returns `alreadyCredited`, crediting nothing.
+   */
+  async creditTopupShortfall(args: {
+    topUpId: string;
+    actorProfileId: string;
+    reasonCode: string;
+    note?: string | null;
+  }): Promise<{ balance: number; credited: number; alreadyCredited: boolean }> {
+    const anomaly = await this.prisma.domainEvent.findFirst({
+      where: { subjectId: args.topUpId, type: "topup.anomaly" },
+      orderBy: { createdAt: "desc" },
+      select: { data: true },
+    });
+    const data = (anomaly?.data ?? null) as { kind?: unknown; paid?: unknown } | null;
+    const paid = typeof data?.paid === "number" && Number.isFinite(data.paid) ? data.paid : null;
+    if (paid == null || !(paid > 0)) {
+      throw new ConflictException("Paynow hasn't reported a payment on this top-up, so there is nothing to credit.");
+    }
+    const feePct = this.topupFeePct;
+    let riderId: string | null = null;
+    const result = await this.prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<Array<{ status: string; rider_id: string; amount: string; rail: string }>>`
+        SELECT status::text AS status, rider_id::text AS rider_id, amount::text AS amount, rail::text AS rail
+        FROM top_ups WHERE id = ${args.topUpId}::uuid FOR UPDATE`;
+      const topUp = rows[0];
+      if (!topUp) throw new NotFoundException("Top-up not found");
+      riderId = topUp.rider_id;
+      const existing = await tx.commissionLedger.findUnique({ where: { topUpId: args.topUpId }, select: { amount: true } });
+      if (topUp.status === "confirmed" || existing) {
+        const account = await tx.commissionAccount.findUnique({ where: { riderId: topUp.rider_id }, select: { balance: true } });
+        return {
+          balance: account ? round2(Number(account.balance)) : 0,
+          credited: existing ? round2(Number(existing.amount)) : 0,
+          alreadyCredited: true,
+        };
+      }
+      const asked = round2(Number(topUp.amount));
+      const credit = Math.min(asked, netOfTopupFee(paid, feePct));
+      if (!(credit > 0)) throw new ConflictException(`$${paid.toFixed(2)} paid is worth nothing after the ${feePct}% fee.`);
+
+      await tx.topUp.update({
+        where: { id: args.topUpId },
+        data: { status: "confirmed", resolvedAt: new Date(), declineReason: null, charged: paid },
+      });
+      await tx.$executeRaw`INSERT INTO commission_accounts (rider_id) VALUES (${topUp.rider_id}::uuid) ON CONFLICT (rider_id) DO NOTHING`;
+      const locked = await tx.$queryRaw<Array<{ balance: string }>>`
+        SELECT balance FROM commission_accounts WHERE rider_id = ${topUp.rider_id}::uuid FOR UPDATE`;
+      const before = Number(locked[0]?.balance ?? 0);
+      const balanceAfter = addMoney(before, credit);
+      const note = `Paynow reported $${paid.toFixed(2)} paid${args.note ? ` · ${args.note}` : ""}`;
+      await tx.commissionLedger.create({
+        data: { riderId: topUp.rider_id, type: "topup", amount: credit, balanceAfter, topUpId: args.topUpId, actor: args.actorProfileId, note },
+      });
+      await tx.commissionAccount.update({ where: { riderId: topUp.rider_id }, data: { balance: balanceAfter } });
+      await tx.auditLog.create({
+        data: {
+          actor: args.actorProfileId,
+          action: "wallet.topup_credit",
+          target: topUp.rider_id,
+          targetType: "rider",
+          reasonCode: args.reasonCode,
+          note: args.note ?? null,
+          amount: credit,
+          balanceAfter,
+          before: { balance: round2(before), topUpId: args.topUpId, topUpStatus: topUp.status },
+          after: { balance: balanceAfter, topUpId: args.topUpId, topUpStatus: "confirmed", paid, credited: credit },
+        },
+      });
+      await this.noteFirstTopup(tx, topUp.rider_id, args.topUpId, topUp.rail, args.actorProfileId);
+      return { balance: balanceAfter, credited: credit, alreadyCredited: false };
+    });
+    if (!result.alreadyCredited && riderId) {
+      void this.notifications?.notifyProfiles([riderId], {
+        title: "Wallet credited",
+        body: `Your top-up of $${result.credited.toFixed(2)} is on your balance now.`,
+        data: { kind: "account" },
+      });
+    }
+    return result;
+  }
+
+  /**
+   * Admin console v2 §6: an admin correction that takes money OFF a biker's balance — a `reversal` ledger row
+   * (negative), reason-coded with a required note (the biker sees it on their receipt). Capped at
+   * {@link REVERSAL_CAP_USD} per action. When it names a ledger entry (`entryId`), that entry must be a credit on
+   * this biker's wallet, and every reversal naming it together can't take back more than it added. The balance
+   * may go below zero: that is money owed (owner decision 3).
+   *
+   * Under the account row lock, like every balance change, with the audit row (before / after balance) in the
+   * same transaction. Idempotent by the form-open key: a retry with the same key writes nothing more.
+   */
+  async reverseEntry(args: {
+    riderId: string;
+    amount: number;
+    reasonCode: string;
+    note: string;
+    entryId?: string | null;
+    idemKey: string;
+    actorProfileId: string;
+  }): Promise<{ balance: number; balanceBefore: number | null; alreadyApplied: boolean }> {
+    await this.assertRider(args.riderId);
+    const amount = round2(args.amount);
+    if (!(amount > 0) || amount > REVERSAL_CAP_USD) {
+      throw new ForbiddenException(`A reversal must be between $0.01 and $${REVERSAL_CAP_USD.toFixed(2)}`);
+    }
+    const note = args.note.trim();
+    if (!note) throw new ForbiddenException("Say why: the note is shown to the biker.");
+    const idemKey = `reversal:${args.idemKey}`;
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
+        const dup = await tx.commissionLedger.findUnique({ where: { idemKey }, select: { balanceAfter: true } });
+        if (dup) return { balance: round2(Number(dup.balanceAfter)), balanceBefore: null, alreadyApplied: true };
+        await tx.$executeRaw`INSERT INTO commission_accounts (rider_id) VALUES (${args.riderId}::uuid) ON CONFLICT (rider_id) DO NOTHING`;
+        const locked = await tx.$queryRaw<Array<{ balance: string }>>`
+          SELECT balance FROM commission_accounts WHERE rider_id = ${args.riderId}::uuid FOR UPDATE`;
+        let orderId: string | null = null;
+        if (args.entryId) {
+          const entry = await tx.commissionLedger.findUnique({
+            where: { id: args.entryId },
+            select: { riderId: true, type: true, amount: true, orderId: true },
+          });
+          if (!entry || entry.riderId !== args.riderId) throw new NotFoundException("That entry isn't on this biker's wallet.");
+          const entryAmount = round2(Number(entry.amount));
+          if (entry.type === "reversal" || !(entryAmount > 0)) throw new ConflictException("Only a credit can be reversed.");
+          // Read under the account row lock: two reversals of one entry can't both pass.
+          const prior = await tx.commissionLedger.aggregate({
+            where: { riderId: args.riderId, type: "reversal", reversesId: args.entryId },
+            _sum: { amount: true },
+          });
+          const left = addMoney(entryAmount, Number(prior._sum.amount ?? 0));
+          if (toCentsSafe(amount) > toCentsSafe(left)) {
+            throw new ConflictException(
+              left > 0 ? `Only $${left.toFixed(2)} of that entry is left to reverse.` : "That entry has already been reversed in full.",
+            );
+          }
+          orderId = entry.orderId;
+        }
+        const before = round2(Number(locked[0]?.balance ?? 0));
+        const balanceAfter = subMoney(before, amount);
+        await tx.commissionLedger.create({
+          data: {
+            riderId: args.riderId,
+            type: "reversal",
+            amount: -amount,
+            balanceAfter,
+            orderId,
+            reversesId: args.entryId ?? null,
+            idemKey,
+            note,
+            actor: args.actorProfileId,
+          },
+        });
+        await tx.commissionAccount.update({ where: { riderId: args.riderId }, data: { balance: balanceAfter } });
+        await tx.auditLog.create({
+          data: {
+            actor: args.actorProfileId,
+            action: "wallet.reversal",
+            target: args.riderId,
+            targetType: "rider",
+            reasonCode: args.reasonCode,
+            note,
+            amount: -amount,
+            balanceAfter,
+            before: { balance: before },
+            after: { balance: balanceAfter, entryId: args.entryId ?? null },
+          },
+        });
+        return { balance: balanceAfter, balanceBefore: before, alreadyApplied: false };
+      });
+      if (!result.alreadyApplied) {
+        void this.notifications?.notifyProfiles([args.riderId], {
+          title: "Wallet corrected",
+          body: `We took $${amount.toFixed(2)} off your balance. Open the app to see why.`,
+          data: { kind: "account" },
+        });
+      }
+      return result;
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        // The same form key raced in a second request and won: that reversal is the one that landed.
+        const w = await this.getBalanceOnly(args.riderId);
+        return { balance: w.balance, balanceBefore: null, alreadyApplied: true };
       }
       throw err;
     }

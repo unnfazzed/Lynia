@@ -10,7 +10,7 @@ import type { RiderDetail } from "../../lib/adminTypes";
  * "Confirm plate…" only while it is waiting on review.
  */
 vi.mock("../../lib/api", () => ({ adminFetchResult: vi.fn(), adminFetch: vi.fn() }));
-vi.mock("../actions", () => ({ mutateRider: vi.fn(), verifyPlate: vi.fn(), creditRiderWallet: vi.fn() }));
+vi.mock("../actions", () => ({ mutateRider: vi.fn(), verifyPlate: vi.fn(), creditRiderWallet: vi.fn(), reverseRiderWallet: vi.fn() }));
 vi.mock("../../actions/audit", () => ({ submitAdminAction: vi.fn() }));
 
 afterEach(() => {
@@ -63,5 +63,52 @@ describe("Biker profile — plate check (D-82)", () => {
     await show(detail({ plateStatus: undefined }));
     expect(screen.queryByText("checking")).toBeNull();
     expect(screen.queryByRole("button", { name: /Confirm plate/ })).toBeNull();
+  });
+});
+
+describe("Biker profile — statement (admin console v2 §6)", () => {
+  const wallet = {
+    balance: "-1.20",
+    nextCursor: null,
+    summary: {
+      ratePct: 10,
+      commissionActive: true,
+      tripsCount: 12,
+      freeJobsLeft: 0,
+      pendingCommission: "0.60",
+      pendingJobs: 2,
+      lastTopup: { id: "t1", amount: "5.00", rail: "ecocash", manual: false, at: "2026-10-12T09:00:00Z" },
+    },
+    ledger: [
+      { id: "l1", type: "ride_commission", amount: "-0.40", balanceAfter: "-1.20", note: null, actor: "system", actorName: "system", orderId: "11111111-2222-3333-4444-555555555555", ratePct: "10.00", fare: "4.00", at: "2026-10-13T09:00:00Z" },
+      { id: "l2", type: "free_job", amount: "0.00", balanceAfter: "-0.80", note: "Free job 10 of 10", actor: "system", actorName: "system", orderId: "22222222-2222-3333-4444-555555555555", ratePct: "10.00", fare: "3.00", at: "2026-10-12T10:00:00Z" },
+      { id: "l3", type: "topup", amount: "5.00", balanceAfter: "-0.80", note: null, actor: "system", actorName: "system", orderId: null, reversed: null, topUp: { id: "t1", rail: "ecocash", manual: false, ref: "1234567", charged: "5.13", fee: "0.13" }, at: "2026-10-12T09:00:00Z" },
+      { id: "l4", type: "topup", amount: "2.00", balanceAfter: "-5.80", note: "launch grace", actor: "a-1", actorName: "Rudo Ops", orderId: null, reversed: "2.00", topUp: { id: "t0", rail: "manual", manual: true, ref: null, charged: null, fee: null }, at: "2026-10-01T09:00:00Z" },
+    ],
+  };
+
+  it("shows the header (balance owed, free jobs left, commission to come, last top-up) and what each row was", async () => {
+    vi.mocked(adminFetchResult).mockResolvedValue({ data: detail() } as never);
+    vi.mocked(adminFetch).mockImplementation((async (path: string) => (path.includes("/wallet") ? wallet : null)) as never);
+    render(await RiderProfilePage({ params: Promise.resolve({ id: "r-1" }), searchParams: Promise.resolve({}) }));
+    expect(screen.getByText("Free jobs left")).toBeTruthy();
+    expect(screen.getByText("2 delivered, not closed yet")).toBeTruthy();
+    expect(screen.getByText("owed")).toBeTruthy();
+    expect(screen.getByText("10% of $4.00")).toBeTruthy();
+    expect(screen.getByText("Free job · 10% of $3.00 waived")).toBeTruthy();
+    expect(screen.getByText("EcoCash · 1234567 · fee $0.13")).toBeTruthy();
+    expect(screen.getByText("Manual credit · $2.00 reversed")).toBeTruthy();
+    expect(screen.getByText("Rudo Ops")).toBeTruthy();
+    // A credit with something left to reverse offers Reverse…; one reversed in full doesn't.
+    expect(screen.getAllByRole("button", { name: "Reverse…" })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Take off balance…" })).toBeTruthy();
+  });
+
+  it("an older API (no summary) keeps the plain ledger and offers no reversal", async () => {
+    vi.mocked(adminFetchResult).mockResolvedValue({ data: detail() } as never);
+    vi.mocked(adminFetch).mockImplementation((async (path: string) => (path.includes("/wallet") ? { ...wallet, summary: undefined } : null)) as never);
+    render(await RiderProfilePage({ params: Promise.resolve({ id: "r-1" }), searchParams: Promise.resolve({}) }));
+    expect(screen.queryByText("Free jobs left")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Reverse|Take off/ })).toBeNull();
   });
 });

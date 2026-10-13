@@ -74,6 +74,20 @@ export async function adminFetchResult<T>(path: string): Promise<AdminResult<T>>
   }
 }
 
+/** A text read (admin console v2 §6: the money CSV), with the same auth, timeout and reasons as the JSON read. */
+export async function adminFetchText(path: string): Promise<{ text: string } | { reason: AdminReason }> {
+  const b = base();
+  if (!b) return { reason: "unconfigured" };
+  try {
+    const res = await fetch(`${b}${path}`, { headers: await authHeaders(), cache: "no-store", signal: AbortSignal.timeout(ADMIN_FETCH_TIMEOUT_MS) });
+    if (res.status === 404) return { reason: "not-implemented" };
+    if (!res.ok) return { reason: "error" };
+    return { text: await res.text() };
+  } catch {
+    return { reason: "unreachable" };
+  }
+}
+
 export async function adminFetch<T>(path: string): Promise<T | null> {
   const r = await adminFetchResult<T>(path);
   return "data" in r ? r.data : null;

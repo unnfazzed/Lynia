@@ -332,6 +332,8 @@ export class MerchantService {
             addedByProfileId: profileId,
           },
         });
+        // Admin console v2 §5: the application starts here (applied, the column default).
+        await domainEvents.merchantApplication(tx, merchant.id, "submitted", { actorId: profileId, actorRole: "merchant", data: { businessType: body.businessType } });
         // "Your name" fills an empty LyniaGo profile (a never-seen number signs up with no name) and
         // never overwrites a name the person already chose in the app.
         if (nameIsEmpty) await tx.profile.update({ where: { id: profileId }, data: splitPersonName(ownerName) });

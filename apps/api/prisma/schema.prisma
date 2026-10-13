@@ -145,7 +145,8 @@ enum CommissionEntryType {
   // Fare-adjust delta or ops correction; sign varies. Fare-adjusts append a delta here at the ride's
   // original rate so the one-ride_commission-row-per-order invariant stays absolute (design 4A/OV-1A).
   adjustment
-  // RESERVED — no writer in the wallet-core build (kept so the ledger type set is complete).
+  // An admin correction that takes money off the balance (negative), reason-coded and capped; it may name
+  // the credit it corrects (`reversesId`). Admin console v2 §6.
   reversal
   // A $0 receipt for one of the biker's commission-free first jobs (D-70), written by chargeCommission
   // where a paid job would write its ride_commission row, so the money pages can tell "free" from
@@ -485,6 +486,9 @@ model CommissionLedger {
   note         String?
   // system | an admin profile id — who wrote the row (audit trail).
   actor        String?
+  // Admin console v2 §6 (migration 0101): on an admin `reversal`, the credit row it takes back (null when the
+  // correction names no entry). The reversals naming one entry can never sum past that entry's amount.
+  reversesId   String?             @map("reverses_id") @db.Uuid
   createdAt    DateTime            @default(now()) @map("created_at")
 
   // WD-015: the real UNIQUENESS constraint — exactly one ride_commission row per order, ever — is now a
@@ -497,6 +501,8 @@ model CommissionLedger {
   // orderId and can safely repeat it across multiple corrections on the same order.
   @@index([riderId, orderId, type])
   @@index([riderId, createdAt])
+  // Admin console v2 §6: the platform money panel sums the ledger by day (migration 0102, built concurrently).
+  @@index([createdAt])
   @@map("commission_ledger")
 }
 
@@ -1114,6 +1120,9 @@ model AuditLog {
   // PW-LC1: the notifications feed reads rows back by `target` (a profile or order id) + `action`, several
   // times per open (migration 0080).
   @@index([target, action])
+  // Admin console v2 §8: the audit viewer pages by actor and by target, newest first (migrations 0098–0099).
+  @@index([actor, createdAt])
+  @@index([target, createdAt])
   @@map("audit_logs")
 }
 
@@ -1180,6 +1189,16 @@ model Merchant {
   // did it. Kept on a later pause/resume. Null for merchants that went live before 0091 or never did.
   approvedAt     DateTime?        @map("approved_at")
   approvedBy     String?          @map("approved_by")
+  // Admin console v2 §5 (migration 0100): where the business is in its application, applied → reviewing →
+  // approved → live, with rejected and suspended on the side. `pilotEnabled` stays the switch every customer
+  // path reads and is true exactly while this is `live` (AdminMerchantApplicationService writes both
+  // together). Backfilled: live where pilotEnabled was on, applied otherwise.
+  applicationStatus     MerchantApplicationStatus @default(applied) @map("application_status")
+  // When applicationStatus last changed (null = never changed since the backfill / sign-up).
+  applicationStatusAt   DateTime?                 @map("application_status_at")
+  // The reject reason code (@lynia/shared MERCHANT_REJECT_REASONS), written for the merchant to read.
+  // Cleared when the application is reopened.
+  applicationReasonCode String?                   @map("application_reason_code")
   // C2: the shop's own pickup point (same Waypoint shape as Order.pickup — {point:{lat,lng},
   // landmark, contactPhone}), set by the merchant before it can take orders. Nullable: onboarding
   // merchants have no location yet, so placeOrder 409s until it's set. Plain JSON for now — C3's
@@ -1203,9 +1222,49 @@ model Merchant {
   bookings        MerchantBooking[]
   preferredRiders MerchantPreferredRider[]
   invites         MerchantInvite[]
+  documents       MerchantDocument[]
 
   @@index([ownerProfileId])
   @@map("merchants")
+}
+
+/// Admin console v2 §5: a merchant's application state (see Merchant.applicationStatus). Lockstep with
+/// @lynia/shared MERCHANT_APPLICATION_STATUSES.
+enum MerchantApplicationStatus {
+  applied
+  reviewing
+  approved
+  live
+  rejected
+  suspended
+}
+
+enum MerchantDocumentKind {
+  pharmacy_licence
+}
+
+/// Admin console v2 §5 (owner decision 5: a pharmacy's licence is checked before it goes live). Ops records
+/// it after the call — the licence number, the pharmacist named on it, and where the copy is (a storage key
+/// or a plain reference: the console has no upload path yet) — then marks it verified. One row per kind per
+/// business; re-recording a different number clears the verification. Every change is also an audit row.
+model MerchantDocument {
+  id             String               @id @default(uuid()) @db.Uuid
+  merchantId     String               @map("merchant_id") @db.Uuid
+  merchant       Merchant             @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  kind           MerchantDocumentKind
+  // A storage key or a plain reference to where the copy is ("WhatsApp photo, 13 Oct"). Optional.
+  reference      String?
+  licenceNumber  String?              @map("licence_number")
+  pharmacistName String?              @map("pharmacist_name")
+  // The admin who recorded it, and who verified it and when (null = not verified yet).
+  recordedBy     String               @map("recorded_by")
+  verifiedAt     DateTime?            @map("verified_at")
+  verifiedBy     String?              @map("verified_by")
+  createdAt      DateTime             @default(now()) @map("created_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
+
+  @@unique([merchantId, kind])
+  @@map("merchant_documents")
 }
 
 enum MerchantBusinessType {

@@ -59,11 +59,20 @@ export interface ConfirmModalProps {
    */
   textField?: { label: string; placeholder?: string; required?: boolean; inputMode?: "text" | "tel" };
 
+  /**
+   * Further text inputs, rendered after `textField` (e.g. a pharmacy licence's number, pharmacist and
+   * reference, admin console v2 §5). Like `textField`, NOT written to the audit row; surfaced to
+   * `onConfirm` as `texts`, in order.
+   */
+  textFields?: readonly { label: string; placeholder?: string; required?: boolean }[];
+
   onConfirm?: (result: {
     reasonCode: string | null;
     note: string;
     amount: string;
     text: string;
+    /** The `textFields` values, in order (empty when there are none). */
+    texts: string[];
     /** Form-open idempotency key — stable across retries of ONE confirmed submit, fresh per modal-open.
      *  A money-moving caller (wallet credit) forwards this so a lost-response retry can't double-apply. */
     idempotencyKey: string;
@@ -90,6 +99,7 @@ export function ConfirmModal(props: ConfirmModalProps) {
     auditActor = "the signed-in admin",
     amount,
     textField,
+    textFields = [],
     onConfirm,
   } = props;
 
@@ -98,6 +108,7 @@ export function ConfirmModal(props: ConfirmModalProps) {
   const [note, setNote] = useState("");
   const [amountVal, setAmountVal] = useState("");
   const [textVal, setTextVal] = useState("");
+  const [textVals, setTextVals] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   // Tracks the actual async lifetime of a confirm submit (set synchronously before the request starts,
@@ -119,6 +130,7 @@ export function ConfirmModal(props: ConfirmModalProps) {
   const amountId = useId();
   const textId = useId();
   const noteId = useId();
+  const textsId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   // Where focus was before the dialog opened — restored on close (WCAG 2.4.3).
   const restoreFocusRef = useRef<HTMLElement | null>(null);
@@ -179,6 +191,7 @@ export function ConfirmModal(props: ConfirmModalProps) {
     setNote("");
     setAmountVal("");
     setTextVal("");
+    setTextVals([]);
     setError(null);
   }
 
@@ -188,7 +201,8 @@ export function ConfirmModal(props: ConfirmModalProps) {
   const noteOk = !noteRequired || note.trim().length > 0;
   const amountOk = !amount?.required || amountVal.trim().length > 0;
   const textOk = !textField?.required || textVal.trim().length > 0;
-  const canConfirm = reasonOk && noteOk && amountOk && textOk && !submitting;
+  const textsOk = textFields.every((f, i) => !f.required || (textVals[i] ?? "").trim().length > 0);
+  const canConfirm = reasonOk && noteOk && amountOk && textOk && textsOk && !submitting;
 
   function confirm() {
     if (!canConfirm) return;
@@ -218,7 +232,14 @@ export function ConfirmModal(props: ConfirmModalProps) {
         if (!auditInEndpoint) await submitAdminAction(fd);
         // Await the caller's domain mutation so a thrown server-action rejection surfaces here instead
         // of escaping unhandled — a failed KYC / settlement / refund write must NOT report success.
-        await onConfirm?.({ reasonCode: reason, note, amount: amountVal, text: textVal, idempotencyKey: formKey });
+        await onConfirm?.({
+          reasonCode: reason,
+          note,
+          amount: amountVal,
+          text: textVal,
+          texts: textFields.map((_, i) => textVals[i] ?? ""),
+          idempotencyKey: formKey,
+        });
         setOpen(false);
         reset();
       } catch (e) {
@@ -340,6 +361,37 @@ export function ConfirmModal(props: ConfirmModalProps) {
                 />
               </>
             ) : null}
+
+            {textFields.map((f, i) => (
+              <div key={f.label}>
+                <label className="field-label" htmlFor={`${textsId}-${i}`}>
+                  {f.label} {f.required ? "— required" : "(optional)"}
+                </label>
+                <input
+                  id={`${textsId}-${i}`}
+                  type="text"
+                  autoComplete="off"
+                  value={textVals[i] ?? ""}
+                  placeholder={f.placeholder}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setTextVals((prev) => {
+                      const next = [...prev];
+                      next[i] = v;
+                      return next;
+                    });
+                  }}
+                  style={{
+                    width: "100%",
+                    border: "1px solid var(--line)",
+                    borderRadius: 12,
+                    fontFamily: "var(--font-sans)",
+                    fontSize: 13,
+                    padding: "10px 12px",
+                  }}
+                />
+              </div>
+            ))}
 
             <label className="field-label" htmlFor={noteId}>
               Note {noteRequired ? "— required" : "(optional)"}

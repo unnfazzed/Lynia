@@ -1,5 +1,13 @@
-import { Body, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
-import { EditMerchantOrderItemsRequest, KycStatus, OrderStatus, OrderType, PlateStatus, TransferMerchantOwnerRequest } from "@lynia/shared";
+import { Body, Controller, Get, Header, NotFoundException, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
+import {
+  EditMerchantOrderItemsRequest,
+  KycStatus,
+  MERCHANT_APPLICATION_STATUSES,
+  OrderStatus,
+  OrderType,
+  PlateStatus,
+  TransferMerchantOwnerRequest,
+} from "@lynia/shared";
 import { z } from "zod";
 import { AdminGuard } from "../auth/admin.guard";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -7,14 +15,20 @@ import { AdminActor } from "../common/admin-actor.decorator";
 import { ZodBody } from "../common/zod.pipe";
 import { SettlementsService } from "../settlements/settlements.service";
 import { SosService } from "../sos/sos.service";
-import { WalletService } from "../wallet/wallet.service";
+import { REVERSAL_CAP_USD, WalletService } from "../wallet/wallet.service";
+import { AdminAuditReadService } from "./admin-audit-read.service";
 import { AdminAuditService } from "./admin-audit.service";
 import { AdminCustomersService } from "./admin-customers.service";
 import { AdminKitchenService } from "./admin-kitchen.service";
 import { AdminKycReviewService } from "./admin-kyc-review.service";
+import { AdminMerchantApplicationService, CALL_OUTCOMES } from "./admin-merchant-application.service";
 import { AdminMerchantsService } from "./admin-merchants.service";
+import type { ApplicationAction } from "./merchant-application";
+import { AdminMoneyService, TOPUP_FILTERS, type TopupFilter } from "./admin-money.service";
 import { AdminOrdersService } from "./admin-orders.service";
 import { AdminRidersService } from "./admin-riders.service";
+import { AdminSearchService } from "./admin-search.service";
+import { AdminTimelineService } from "./admin-timeline.service";
 import { AdminService } from "./admin.service";
 
 const KYC_VALUES = Object.values(KycStatus) as string[];
@@ -61,6 +75,19 @@ const SetMerchantPilot = z
     note: z.string().max(2000).nullish(),
   })
   .strict();
+// Admin console v2 §5: an ops call to an applying business, and a pharmacy's licence as ops recorded it.
+const LogMerchantCall = z.object({
+  outcome: z.enum(CALL_OUTCOMES),
+  note: z.string().max(2000).nullish(),
+});
+const RecordMerchantLicence = z.object({
+  licenceNumber: z.string().trim().min(1).max(60),
+  pharmacistName: z.string().trim().min(1).max(120),
+  reference: z.string().trim().max(300).nullish(),
+  note: z.string().max(2000).nullish(),
+});
+/** The application actions reachable by URL (`POST /admin/merchants/:id/application/:action`). */
+const APPLICATION_ACTIONS: readonly ApplicationAction[] = ["review", "approve", "reject", "go_live", "suspend", "resume"];
 const ReasonOptional = z.object({
   reason: z.string().max(160).nullish(),
   note: z.string().max(2000).nullish(),
@@ -94,6 +121,23 @@ const WalletCredit = z.object({
   note: z.string().max(2000).nullish(),
 });
 
+// Admin console v2 §6: an admin reversal (a debit against a biker). Capped per action; the note is required
+// (the biker sees it on their receipt); `entryId` optionally names the credit it corrects; the form-open key
+// makes a retry harmless.
+const WalletReversal = z.object({
+  amount: z.number().positive().max(REVERSAL_CAP_USD).multipleOf(0.01),
+  reason: z.string().min(1).max(160),
+  note: z.string().trim().min(1).max(2000),
+  entryId: z.string().uuid().nullish(),
+  idempotencyKey: z.string().uuid(),
+});
+
+/** `?page=` as a 1-based page number (anything else is page 1). */
+function pageOf(page?: string): number {
+  const parsed = page != null ? Number.parseInt(page, 10) : Number.NaN;
+  return Number.isFinite(parsed) && parsed >= 1 ? Math.min(parsed, 10_000) : 1;
+}
+
 @Controller("admin")
 @UseGuards(JwtAuthGuard, AdminGuard)
 export class AdminController {
@@ -109,7 +153,61 @@ export class AdminController {
     private readonly sos: SosService,
     private readonly wallet: WalletService,
     private readonly kitchen: AdminKitchenService,
+    private readonly money: AdminMoneyService,
+    private readonly auditRead: AdminAuditReadService,
+    private readonly search: AdminSearchService,
+    private readonly timeline: AdminTimelineService,
+    private readonly application: AdminMerchantApplicationService,
   ) {}
+
+  /* ── Admin console v2 PR 3: audit viewer, global search, timelines (plan §4, §8) ───────────── */
+
+  /**
+   * The audit trail, newest first, keyset-paged (`cursor` from the previous page's `nextCursor`). Filters:
+   * `target` (an id), `targetType` (rider|customer|order|merchant|issue|sos), `actor`, `action` (exact, or a
+   * family with a trailing dot: `rider.`), `from` / `to` (a Harare day `YYYY-MM-DD`, both inclusive, or an ISO
+   * instant), `limit` (default 50, max 100). Read-only.
+   */
+  @Get("audit")
+  auditLog(
+    @Query("target") target?: string,
+    @Query("targetType") targetType?: string,
+    @Query("actor") actor?: string,
+    @Query("action") action?: string,
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+    @Query("cursor") cursor?: string,
+    @Query("limit") limit?: string,
+  ) {
+    return this.auditRead.list({ target, targetType, actor, action, from, to, cursor, limit });
+  }
+
+  /** The console search box: bikers, customers, merchants, orders and top-ups matching `q`, capped per group. */
+  @Get("search")
+  searchAll(@Query("q") q?: string) {
+    return this.search.search(q);
+  }
+
+  /** One person's merged timeline, newest first. `as=customer|rider` picks the side (default: biker if they are one). */
+  @Get("people/:profileId/timeline")
+  async personTimeline(
+    @Param("profileId", ParseUUIDPipe) profileId: string,
+    @Query("cursor") cursor?: string,
+    @Query("as") as?: string,
+  ) {
+    const side = as === "customer" || as === "rider" ? as : undefined;
+    const view = await this.timeline.personTimeline(profileId, cursor, side);
+    if (!view) throw new NotFoundException("Person not found");
+    return view;
+  }
+
+  /** A merchant's timeline: order steps, open/close/busy/hours, stock changes and audit rows. */
+  @Get("merchants/:id/timeline")
+  async merchantTimeline(@Param("id", ParseUUIDPipe) id: string, @Query("cursor") cursor?: string) {
+    const view = await this.timeline.merchantTimeline(id, cursor);
+    if (!view) throw new NotFoundException("Merchant not found");
+    return view;
+  }
 
   @Get("overview")
   overview() {
@@ -212,7 +310,9 @@ export class AdminController {
     // an unhandled Prisma uuid-cast 500 (same class as the path-param ParseUUIDPipe above).
     @Query("cursor", new ParseUUIDPipe({ optional: true })) cursor?: string,
   ) {
-    return this.ridersService.walletView(profileId, cursor);
+    // Admin console v2 §6: the biker statement — the old wallet view's fields, plus each row's order / top-up,
+    // rate and basis, its actor, and a header (free jobs left, pending commission, last top-up).
+    return this.money.statement(profileId, cursor);
   }
 
   /** Customers directory (D-2). `?filter=active|flagged|banned`; unknown values fall back to all. */
@@ -371,8 +471,65 @@ export class AdminController {
    *  `filter=awaiting_go_live` (restaurants not switched on yet — the ops queue) or `filter=shops`
    *  (merchant web upgrade L1). */
   @Get("merchants")
-  merchants(@Query("filter") filter?: string) {
-    return this.merchantsService.listMerchants(filter);
+  merchants(@Query("filter") filter?: string, @Query("status") status?: string) {
+    // Admin console v2 §5: `status` is the application queue; an unknown value is ignored (the directory).
+    const s = (MERCHANT_APPLICATION_STATUSES as readonly string[]).includes(status ?? "") ? (status as (typeof MERCHANT_APPLICATION_STATUSES)[number]) : undefined;
+    return this.merchantsService.listMerchants(filter, s);
+  }
+
+  /** Admin console v2 §5: the application — a data-backed checklist, the licence, calls and the open actions. */
+  @Get("merchants/:id/application")
+  merchantApplication(@Param("id", ParseUUIDPipe) id: string) {
+    return this.application.getApplication(id);
+  }
+
+  /** Admin console v2 §5: accept time, missed orders, prep vs promised, out of stock, hours, rating, debt. */
+  @Get("merchants/:id/metrics")
+  merchantMetrics(@Param("id", ParseUUIDPipe) id: string) {
+    return this.application.getMetrics(id);
+  }
+
+  /** Log an ops call (reached / no answer). Audited; a call that reached someone ticks the checklist. */
+  @Post("merchants/:id/application/call")
+  logMerchantCall(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(LogMerchantCall)) body: z.infer<typeof LogMerchantCall>,
+    @AdminActor() actor: string,
+  ) {
+    return this.application.logCall(actor, id, body);
+  }
+
+  /** Record a pharmacy's licence (number, pharmacist, where the copy is). Clears a verification it changes. */
+  @Post("merchants/:id/application/licence")
+  recordMerchantLicence(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(RecordMerchantLicence)) body: z.infer<typeof RecordMerchantLicence>,
+    @AdminActor() actor: string,
+  ) {
+    return this.application.recordLicence(actor, id, body);
+  }
+
+  /** Mark the recorded pharmacy licence verified. Reason required. */
+  @Post("merchants/:id/application/licence/verify")
+  verifyMerchantLicence(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(ReasonRequired)) body: z.infer<typeof ReasonRequired>,
+    @AdminActor() actor: string,
+  ) {
+    return this.application.verifyLicence(actor, id, body);
+  }
+
+  /** Move an application: review · approve (every required check ✅) · reject (a merchant-readable code) ·
+   *  go_live (from approved) · suspend / resume. Reason required; audited with before/after. */
+  @Post("merchants/:id/application/:action")
+  moveMerchantApplication(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("action") action: string,
+    @Body(new ZodBody(ReasonRequired)) body: z.infer<typeof ReasonRequired>,
+    @AdminActor() actor: string,
+  ) {
+    if (!(APPLICATION_ACTIONS as readonly string[]).includes(action)) throw new NotFoundException("Unknown action");
+    return this.application.transition(actor, id, action as ApplicationAction, body);
   }
 
   /** Merchant detail (X1): profile + recent orders + a page of the merchant's own debt-ledger trail.
@@ -520,5 +677,76 @@ export class AdminController {
       idemKey: body.idempotencyKey,
       actorProfileId: actor,
     });
+  }
+
+  /* ── Admin console v2 §6: top-ups, money panel, money owed, reversal ───────────────────────────── */
+
+  /** Every top-up intent, newest first, 50 a page. `?filter=` is a status or an open anomaly
+   *  (short_paid | paid_on_declined); unknown values list everything. */
+  @Get("cash/topups")
+  topups(@Query("filter") filter?: string, @Query("page") page?: string) {
+    const f = filter && (TOPUP_FILTERS as readonly string[]).includes(filter) ? (filter as TopupFilter) : undefined;
+    return this.money.listTopups(f, pageOf(page));
+  }
+
+  /** Ask Paynow about one top-up now (the sweep's own path). Reason required; audited. */
+  @Post("topups/:id/repoll")
+  repollTopup(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(ReasonRequired)) body: z.infer<typeof ReasonRequired>,
+    @AdminActor() actor: string,
+  ) {
+    return this.money.repollTopup(actor, id, body);
+  }
+
+  /** Credit what Paynow reported paid on a short-paid / paid-on-declined top-up. Exactly once per top-up. */
+  @Post("topups/:id/credit-paid")
+  creditPaidTopup(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(ReasonRequired)) body: z.infer<typeof ReasonRequired>,
+    @AdminActor() actor: string,
+  ) {
+    return this.money.creditTopupShortfall(actor, id, body);
+  }
+
+  /** Close a top-up anomaly without crediting it. Reason required; audited. */
+  @Post("topups/:id/resolve")
+  resolveTopup(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(ReasonRequired)) body: z.infer<typeof ReasonRequired>,
+    @AdminActor() actor: string,
+  ) {
+    return this.money.resolveTopupAnomaly(actor, id, body);
+  }
+
+  /** The platform money panel by Harare day: `?days=7` (default) or `30`. */
+  @Get("cash/money")
+  moneyPanel(@Query("days") days?: string) {
+    return this.money.moneyPanel(days === "30" ? 30 : 7);
+  }
+
+  /** The same days as CSV. */
+  @Get("cash/money/csv")
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  @Header("Content-Disposition", 'attachment; filename="lynia-money.csv"')
+  moneyCsv(@Query("days") days?: string) {
+    return this.money.moneyCsv(days === "30" ? 30 : 7);
+  }
+
+  /** Bikers with a negative balance (money owed), the longest-owing first. */
+  @Get("cash/owed")
+  owed() {
+    return this.money.owed();
+  }
+
+  /** An admin correction against a biker: a capped `reversal`, reason + note required, audited with the
+   *  before / after balance. */
+  @Post("riders/:id/wallet-reversal")
+  reverseWallet(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(WalletReversal)) body: z.infer<typeof WalletReversal>,
+    @AdminActor() actor: string,
+  ) {
+    return this.money.reverse(actor, id, body);
   }
 }

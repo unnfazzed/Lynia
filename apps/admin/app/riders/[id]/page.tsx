@@ -7,10 +7,13 @@ import { KeyValue } from "../../components/KeyValue";
 import { StatusPill, Pill } from "../../components/StatusPill";
 import { RiderActions } from "./RiderActions";
 import { PlateConfirmButton } from "../PlateConfirm";
-import { WalletCreditButton } from "./WalletActions";
+import { WalletCreditButton, WalletReverseButton } from "./WalletActions";
+import { railLabel } from "../../lib/money-labels";
 import { OrderLink } from "../../components/links";
 import { enumLabel, fmtDateTime, money } from "../../lib/format";
 import { ReportsCallout } from "../../components/ReportsCallout";
+import { AuditCard, fetchAuditFor } from "../../components/AuditSection";
+import { fetchTimeline, TimelineCard } from "../../components/Timeline";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle, SubsectionUnavailable } from "../../components/states";
 import { IconAlert, IconBike } from "../../components/icons";
 
@@ -23,6 +26,21 @@ const LEDGER_TYPE_LABEL: Record<WalletLedgerEntry["type"], string> = {
   reversal: "Reversal",
   free_job: "Free job",
 };
+
+/** Admin console v2 §6: what one statement row was — the top-up's rail, Paynow ref and fee; a commission's rate
+ *  and basis; a free job; a reversal of an earlier credit. "—" on an older API that sends none of it. */
+function ledgerDetail(l: WalletLedgerEntry): string {
+  const parts: Array<string | null> = [];
+  if (l.type === "free_job") parts.push(l.ratePct && l.fare ? `Free job · ${Number(l.ratePct)}% of ${money(l.fare)} waived` : "Free job");
+  else if ((l.type === "ride_commission" || l.type === "adjustment") && l.ratePct && l.fare) parts.push(`${Number(l.ratePct)}% of ${money(l.fare)}`);
+  else if (l.topUp) {
+    if (l.topUp.manual) parts.push("Manual credit");
+    else parts.push(railLabel(l.topUp.rail), l.topUp.ref, l.topUp.fee ? `fee ${money(l.topUp.fee)}` : null);
+  } else if (l.type === "reversal" && l.reversesId) parts.push("Reverses an earlier credit");
+  if (l.reversed) parts.push(`${money(l.reversed)} reversed`);
+  const out = parts.filter(Boolean).join(" · ");
+  return out || "—";
+}
 
 /** Rider profile (kit `riders.html` detail): trips, rating, completion, cancel strikes, cooldown,
  *  cash owed, recent trips; suspend / lift / ban actions each reason-coded through <ConfirmModal>. */
@@ -50,6 +68,7 @@ export default async function RiderProfilePage({
   const sp = await searchParams;
   const rawWalletCursor = sp.walletCursor;
   const walletCursor = typeof rawWalletCursor === "string" ? rawWalletCursor : undefined;
+  const tlCursor = typeof sp.tlCursor === "string" ? sp.tlCursor : undefined;
   const res = await adminFetchResult<RiderDetail>(`/admin/riders/${id}`);
 
   if (!("data" in res)) {
@@ -81,19 +100,26 @@ export default async function RiderProfilePage({
   // DOC-16-03: the prepaid-wallet view (balance + a ledger page). Best-effort — null if the endpoint is
   // absent (older API) or unreachable, in which case the wallet card degrades to a "not available" note.
   // LC-D07: `walletCursor` pages further back past the first 20 entries via the "Load older" link below.
-  const wallet = await adminFetch<WalletView>(
-    `/admin/riders/${id}/wallet${walletCursor ? `?cursor=${encodeURIComponent(walletCursor)}` : ""}`,
-  );
+  // Admin console v2 §4 / §8: the timeline and the audit rows load alongside it, each best-effort the same way.
+  const [wallet, timeline, audit] = await Promise.all([
+    adminFetch<WalletView>(`/admin/riders/${id}/wallet${walletCursor ? `?cursor=${encodeURIComponent(walletCursor)}` : ""}`),
+    fetchTimeline(`/admin/people/${id}/timeline?as=rider`, tlCursor),
+    fetchAuditFor(id),
+  ]);
 
   // `commission_freeze` state (design OV-4A). `undefined` today for EVERY rider — no admin read surface
   // reports `Rider.heldReason`, so this is "unknown", never "not frozen" (see `WalletView.frozen`).
   // The frozen branches below are the kit's specified states, ready for the day the API serves the field.
   const walletFrozen = wallet?.frozen;
 
+  // Admin console v2 §6: the biker statement — each row says what it was (order, top-up rail + fee,
+  // commission rate + basis, free job) and who wrote it.
+  const summary = wallet?.summary;
   const ledgerCols: Column<WalletLedgerEntry>[] = [
     { key: "at", header: "When", className: "mut", cell: (l) => fmtDateTime(l.at) },
     { key: "type", header: "Type", cell: (l) => LEDGER_TYPE_LABEL[l.type] ?? enumLabel(l.type) },
     { key: "order", header: "Order", cell: (l) => (l.orderId ? <OrderLink id={l.orderId} /> : "—") },
+    { key: "detail", header: "Detail", className: "mut", cell: ledgerDetail },
     {
       key: "amount",
       header: "Amount",
@@ -104,7 +130,22 @@ export default async function RiderProfilePage({
       },
     },
     { key: "balanceAfter", header: "Balance", className: "num", cell: (l) => money(l.balanceAfter) },
+    { key: "by", header: "By", className: "mut", cell: (l) => l.actorName ?? l.actor ?? "—" },
     { key: "note", header: "Note", className: "mut", cell: (l) => l.note ?? "—" },
+    {
+      key: "reverse",
+      header: "",
+      cell: (l) =>
+        // Only a credit can be reversed, and only while the statement (and so `reversed`) is served.
+        summary && Number(l.amount) > 0 && l.type !== "reversal" ? (
+          <WalletReverseButton
+            id={r.id}
+            name={r.name}
+            connected={connected}
+            entry={{ id: l.id, amount: l.amount, reversed: l.reversed ?? null, label: LEDGER_TYPE_LABEL[l.type] ?? enumLabel(l.type) }}
+          />
+        ) : null,
+    },
   ];
 
   const tripCols: Column<TripRow>[] = [
@@ -216,6 +257,34 @@ export default async function RiderProfilePage({
         </div>
         {!wallet && <SubsectionUnavailable noun="wallet view" />}
 
+        {summary ? (
+          <section className="panels" style={{ marginBottom: tokens.space.md }}>
+            <KpiCard
+              label="Balance"
+              value={<span style={{ color: Number(wallet!.balance) < 0 ? tokens.color.danger : undefined }}>{money(wallet!.balance)}</span>}
+              hint={Number(wallet!.balance) < 0 ? "owed" : "prepaid"}
+              size={22}
+            />
+            <KpiCard label="Free jobs left" value={summary.freeJobsLeft} hint={`${summary.tripsCount} jobs done`} size={22} />
+            <KpiCard
+              label="Commission to come"
+              value={money(summary.pendingCommission)}
+              hint={
+                summary.commissionActive
+                  ? `${summary.pendingJobs} delivered, not closed yet`
+                  : `commission is ${summary.ratePct}%`
+              }
+              size={22}
+            />
+            <KpiCard
+              label="Last top-up"
+              value={summary.lastTopup ? money(summary.lastTopup.amount) : "—"}
+              hint={summary.lastTopup ? `${railLabel(summary.lastTopup.rail)} · ${fmtDateTime(summary.lastTopup.at)}` : "never"}
+              size={22}
+            />
+          </section>
+        ) : null}
+
         {/* Kit riders.html:70 — the frozen-wallet warnbar. */}
         {walletFrozen ? (
           <div className="warnbar">
@@ -241,6 +310,7 @@ export default async function RiderProfilePage({
             {/* Only offer a credit once the balance loaded — crediting blind (wallet view failed) would let
                 ops act without seeing the current balance. */}
             <WalletCreditButton id={r.id} name={r.name} connected={connected && wallet !== null} />
+            {summary ? <WalletReverseButton id={r.id} name={r.name} connected={connected} /> : null}
             {wallet && (
               <span style={{ fontSize: 12, color: tokens.color.muted }}>
                 Each credit is reason-coded and lands on the ledger below.
@@ -354,6 +424,14 @@ export default async function RiderProfilePage({
         </div>
       </div>
 
+      {/* Admin console v2 §4 / §8: everything that happened to this biker, then the ops actions on them. */}
+      <TimelineCard
+        page={timeline}
+        cursor={tlCursor}
+        pageHref={(c) => `/riders/${id}?tlCursor=${encodeURIComponent(c)}`}
+        resetHref={`/riders/${id}`}
+      />
+      <AuditCard target={id} list={audit} />
     </main>
   );
 }

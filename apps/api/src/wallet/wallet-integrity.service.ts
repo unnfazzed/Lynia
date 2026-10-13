@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { MetricsService, type WalletIntegrityDrift } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { domainEvents } from "../common/domain-events";
 
 /** A single completeness violation the integrity sweep found. `ref` is a rider/top-up/ledger id kept
  *  in the structured log for operator lookup — NEVER emitted as a metric label (cardinality). */
@@ -154,6 +155,16 @@ export class WalletIntegrityService {
           `drift=${JSON.stringify(driftByKind)} sample=${JSON.stringify(violations.slice(0, 10))}`,
       );
     }
+
+    // Admin console v2 §6: the money panel shows the last run's result (nightly or "Run now"). Counts only —
+    // the violation refs stay in the log. Best-effort: never fails the sweep.
+    await domainEvents.record(this.prisma, {
+      type: "wallet.integrity_check",
+      actorRole: "system",
+      subjectType: "wallet",
+      subjectId: "platform",
+      data: { ok, accountsChecked: accounts.length, confirmedTopUps, totalDrift, ...driftByKind },
+    });
 
     return {
       ok,

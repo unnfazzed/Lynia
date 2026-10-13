@@ -24,18 +24,23 @@ transfer and lost-number recovery come with L4 (Team).
 
 ## 2. The daily queue
 
-Admin console → **Merchants** → filter **Awaiting go-live**. That lists restaurants not yet switched
-on, newest first, with the landmark and a masked contact phone. The API is
-`GET /admin/merchants?filter=awaiting_go_live`. Restaurants and shops both wait there. The **Shops**
-filter (`?filter=shops`) lists every signed-up shop, live or not.
+Admin console → **Merchants** → chip **applied** (admin console v2 §5). Every business has an application
+state: `applied → reviewing → approved → live`, with `rejected` and `suspended` on the side; there is a chip
+for each. The waiting states list oldest first with the area, the age (amber pill at 24h, red at 48h) and the
+checklist score. The Merchants nav badge counts applications waiting past 24h. The API is
+`GET /admin/merchants?status=applied`. The **shops** chip (`?filter=shops`) lists every signed-up shop.
 
 **Target:** call every new restaurant or shop within **1 business day**. The owner's `/setup` checklist tells
 them to expect that call.
 
 ## 3. The call: what to check before switching a restaurant or shop on
 
-Open the merchant's detail page. It shows the business contact phone in full, because that's the number
-riders are given at pickup, plus the pin.
+Open the merchant's detail page. While the business isn't live, the **Application** card at the top shows
+the checklist, each row ✅/❌ from data (`GET /admin/merchants/:id/application`): pin + landmark, opening
+hours, owner (name, phone verified, terms accepted), menu (categories, dishes, % with photos, drafts, price
+range), team (optional), the pharmacy licence (pharmacies), and the ops call. The page also shows the
+contact phone in full and the pin. After the call, use **Log call** (*Spoke to the business* ticks the call
+row; *No answer* doesn't).
 
 1. **They answer the contact phone.** Riders will call that number at pickup.
 2. **The pin is where they are.** Check it with street view, a photo from the owner, or a visit. A wrong
@@ -44,7 +49,9 @@ riders are given at pickup, plus the pin.
    (a pharmacy is a pharmacy). A wrong type or kind can't be changed in the app; note it and escalate.
    It's a support fix.
    - **A pharmacy** (signs up with the Pharmacy card, D-76): check its pharmacy licence (a photo from the
-     owner, or a visit). Prescription medicine must be marked "Prescription needed", never listed as a
+     owner, or a visit), then **Record licence** (number, the pharmacist on it, where the copy is) and
+     **Mark verified**. A pharmacy can't go live without a verified licence (owner decision 5, 2026-10-13).
+     Pharmacies live before then stay live and show a warning until it is recorded. Prescription medicine must be marked "Prescription needed", never listed as a
      plain item. Switch it off if it isn't. A pharmacy that will take prescriptions needs a pharmacist on
      its team, ticked as pharmacist by the owner (below).
 4. **At least one dish or item has a photo and a price.** The switch enforces this (`no_live_dishes`). A photoless
@@ -52,17 +59,25 @@ riders are given at pickup, plus the pin.
 5. **Opening hours are set.** Without hours the restaurant reads as closed.
 6. **The owner's name is recorded.** Sign-up asks for it, and it shows on the merchant's team.
 
-## 4. Switching on and off
+## 4. Review, approve, go live, suspend
 
-- **On:** merchant detail → **Go live**, with an optional note (what you checked). The API is
-  `POST /admin/merchants/:id/pilot {"enabled": true, "note": "…"}`, and it writes audit row
-  `merchant.go_live` in the same transaction.
-  - The switch refuses `no_location` (no pickup pin) and `no_live_dishes` (no dish or item with a photo).
-  - Setting a value the merchant already has writes nothing.
-- **Off:** the same button, or `{"enabled": false}`, writes audit row `merchant.go_dormant`. It's always
-  allowed. Use it for a restaurant that has stopped answering or closed, or while a complaint is looked
-  into.
-- Both audit actions are reserved, so the free-text audit endpoint can't forge them.
+Each action is on the Application card (Suspend is in the header of a live business), takes a reason, and
+writes an audit row (with before/after) and a `merchant.application` event in the same transaction. The API
+is `POST /admin/merchants/:id/application/<action> {"reason": "…", "note": "…"}`.
+
+- **Start review** (`review`): applied → reviewing. Also reopens a rejected application.
+- **Approve** (`approve`): reviewing → approved, only when every required check is ✅ (`checklist_incomplete`
+  otherwise). Customers still can't see it.
+- **Reject** (`reject`): the reason is a code the business can read (`MERCHANT_REJECT_REASONS` in
+  `@lynia/shared`); it is stored on the merchant.
+- **Go live** (`go_live`): approved → live, turns `pilot_enabled` on. Refuses `no_location`, `no_live_dishes`
+  and, for a pharmacy, `licence_not_verified`.
+- **Suspend / Resume** (`suspend` / `resume`): live ↔ suspended. Suspended hides it from customers and blocks
+  new orders; orders already placed carry on. Resume re-checks the pin and the menu.
+- The old switch `POST /admin/merchants/:id/pilot` still works: on = Go live from approved or Resume, off =
+  Suspend. It refuses a business that isn't approved (`not_approved`).
+- `pilot_enabled` stays the flag every customer path reads; it is on exactly while the state is `live`.
+- Every audit action is reserved, so the free-text audit endpoint can't forge one.
 
 ## 5. Things to know
 
@@ -193,10 +208,10 @@ FROM merchants m
 GROUP BY 1, 2, 3
 ORDER BY 1 DESC;
 
--- Restaurants waiting for their go-live call, oldest first (the 1-business-day target)
-SELECT m.id, m.name, m.created_at, now() - m.created_at AS waiting
+-- Applications waiting on ops, oldest first (the 1-business-day target)
+SELECT m.id, m.name, m.business_type, m.application_status, m.created_at, now() - m.created_at AS waiting
 FROM merchants m
-WHERE m.business_type = 'restaurant' AND m.pilot_enabled = false
+WHERE m.application_status IN ('applied', 'reviewing') AND m.pilot_enabled = false
 ORDER BY m.created_at ASC;
 
 -- Sign-up time for brand-new numbers: account created (code verified) → business created, in minutes.

@@ -135,6 +135,25 @@ export function IconMenu(p: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+/** lucide `search` — the console search box (admin console v2 PR 3). */
+export function IconSearch(p: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(p)}>
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
+    </svg>
+  );
+}
+/** lucide `history` — the Audit nav item (admin console v2 PR 3). */
+export function IconHistory(p: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(p)}>
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
+      <path d="M12 7v5l4 2" />
+    </svg>
+  );
+}
 /** lucide `x` — closes the phone nav disclosure (D-105). */
 export function IconX(p: SVGProps<SVGSVGElement>) {
   return (
