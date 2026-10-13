@@ -85,6 +85,16 @@ export const RESERVED_AUDIT_ACTIONS: ReadonlySet<string> = new Set([
   // the pilotEnabled flip — the only go-live switch; a free-text forgery would read as a real one.
   "merchant.go_live",
   "merchant.go_dormant",
+  // Admin console v2 §5: AdminMerchantApplicationService writes each of these in the same transaction as
+  // the application change it records (MERCHANT_APPLICATION_AUDIT; the admin spec cross-checks the list).
+  "merchant.application_call",
+  "merchant.application_review",
+  "merchant.application_approve",
+  "merchant.application_reject",
+  "merchant.suspend",
+  "merchant.resume",
+  "merchant.licence_record",
+  "merchant.licence_verify",
   // Merchant web upgrade L3 + L4: written by the business's own Riders and Team endpoints, each in the
   // same transaction as its change. The daily limits COUNT `merchant.rider.add` and `merchant.team.invite`
   // rows, so a forged one would also eat a business's allowance for the day. The admin spec cross-checks

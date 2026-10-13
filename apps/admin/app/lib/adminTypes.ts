@@ -333,6 +333,10 @@ export interface FoodOrderPanel {
 }
 
 /* ── Merchants (X1) ─────────────────────────────────────────── */
+/** Admin console v2 §5: where a business is in its application (@lynia/shared MERCHANT_APPLICATION_STATUSES). */
+export type MerchantApplicationStatus = "applied" | "reviewing" | "approved" | "live" | "rejected" | "suspended";
+export type MerchantApplicationSla = "ok" | "amber" | "red";
+
 export interface Merchant {
   id: string;
   name: string;
@@ -352,6 +356,75 @@ export interface Merchant {
   openDebtAmount: string;
   openDebtCount: number;
   joined: string;
+  /** Admin console v2 §5. Optional: older API builds omit it. */
+  applicationStatus?: MerchantApplicationStatus;
+  /** Queue rows only (`?status=`): when it signed up, how long it has waited, the SLA and the checklist score. */
+  appliedAt?: string;
+  ageMs?: number;
+  sla?: MerchantApplicationSla | null;
+  score?: { passed: number; total: number };
+}
+
+export type MerchantApplicationAction = "review" | "approve" | "reject" | "go_live" | "suspend" | "resume";
+
+export interface MerchantChecklistRow {
+  key: "location" | "hours" | "owner" | "menu" | "team" | "licence" | "call";
+  label: string;
+  ok: boolean;
+  required: boolean;
+  detail: string;
+  warning?: string;
+}
+
+/** `GET /admin/merchants/:id/application`. */
+export interface MerchantApplication {
+  merchantId: string;
+  status: MerchantApplicationStatus;
+  statusAt: string | null;
+  rejectReason: string | null;
+  appliedAt: string;
+  approvedAt: string | null;
+  sla: MerchantApplicationSla | null;
+  ageMs: number;
+  isPharmacy: boolean;
+  checklist: MerchantChecklistRow[];
+  score: { passed: number; total: number };
+  canApprove: boolean;
+  actions: MerchantApplicationAction[];
+  licence: {
+    licenceNumber: string | null;
+    pharmacistName: string | null;
+    reference: string | null;
+    recordedBy: string;
+    recordedAt: string;
+    verifiedAt: string | null;
+    verifiedBy: string | null;
+  } | null;
+  calls: { id: string; outcome: string | null; note: string | null; at: string }[];
+  history: { step: string; at: string }[];
+}
+
+/** `GET /admin/merchants/:id/metrics` — null wherever there is no data yet. */
+export interface MerchantMetrics {
+  since: string;
+  short: boolean;
+  windowDays: number;
+  orders: number;
+  acceptMedianSeconds: number | null;
+  acceptSample: number;
+  missedPct: number | null;
+  missed: number;
+  prepMedianMinutes: number | null;
+  promisedMedianMinutes: number | null;
+  prepSample: number;
+  outOfStockPct: number | null;
+  outOfStockLines: number;
+  lines: number;
+  hoursOpen: number | null;
+  hoursScheduled: number | null;
+  rating: { avg: number; count: number } | null;
+  openDebtAmount: string;
+  openDebtCount: number;
 }
 
 export interface MerchantDebtLedgerRow {
@@ -510,6 +583,8 @@ export interface NavCounts {
   sosPending: number;
   /** X1: R-05 frozen handshakes + N-12 refund-overdue orders — the /merchants/disputes queue count. */
   foodDisputes: number;
+  /** Admin console v2 §5: merchant applications waiting on ops past the 24h SLA. Optional: older APIs omit it. */
+  merchantApplications?: number;
 }
 
 /* ── Rider prepaid wallet (DOC-16-03 — GET /admin/riders/:id/wallet) ── */

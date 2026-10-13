@@ -32,6 +32,7 @@ export type DomainEventType =
   | "offer.withdraw"
   | "merchant.phase"
   | "merchant.availability"
+  | "merchant.application"
   | "menu.stock"
   | "topup.anomaly";
 
@@ -50,6 +51,18 @@ export type RiderOnboardingStep =
 
 /** The venue steps `merchant.phase` records (data.phase). */
 export type MerchantPhaseStep = "accept" | "accept_partial" | "kitchen_confirmed" | "reject" | "payment_confirmed" | "ready" | "cancel";
+
+/** The steps of a merchant's application (plan §5) that `merchant.application` records (data.step). */
+export type MerchantApplicationStep =
+  | "submitted"
+  | "called"
+  | "reviewing"
+  | "approved"
+  | "rejected"
+  | "docs_ok"
+  | "live"
+  | "suspended"
+  | "resumed";
 
 /** Why a rider went offline (`rider.offline` data.reason). */
 export type RiderOfflineReason =
@@ -184,6 +197,23 @@ export class DomainEventsService {
       subjectId: args.orderId,
       orderId: args.orderId,
       data: { phase: args.phase, merchantId: args.merchantId, ...args.data },
+    });
+  }
+
+  /** A merchant application step (plan §5) — sugar over {@link record}. `data` carries codes only, never notes. */
+  merchantApplication(
+    db: unknown,
+    merchantId: string,
+    step: MerchantApplicationStep,
+    extra: { actorId?: string | null; actorRole?: DomainActorRole; data?: DomainEventData } = {},
+  ): Promise<void> {
+    return this.record(db, {
+      type: "merchant.application",
+      actorId: extra.actorId ?? null,
+      actorRole: extra.actorRole ?? "admin",
+      subjectType: "merchant",
+      subjectId: merchantId,
+      data: { step, ...extra.data },
     });
   }
 

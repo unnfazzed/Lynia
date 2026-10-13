@@ -177,6 +177,27 @@ describe("FoodOrderService.placeOrder", () => {
     await expect(place(null)).rejects.toMatchObject({ status: 404, message: "Restaurant not found" });
   });
 
+  it("admin console v2 §5: a suspended (or not yet live) business takes no new orders — the existing 404", async () => {
+    let where: Record<string, unknown> | null = null;
+    const { svc } = build({
+      order: { findFirst: async () => null },
+      merchant: {
+        // The venue lookup carries the visibility rule; a suspended row never matches it, so the DB returns null.
+        findFirst: async (args: { where: Record<string, unknown> }) => {
+          where = args.where;
+          return null;
+        },
+        findUnique: async () => ({ businessType: "restaurant", shopKind: null }),
+      },
+    });
+    await expect(
+      svc.placeOrder("c1", "m1", { items: [{ dishId: "d1", quantity: 1 }], dropoff: { point: HARARE_CBD }, paymentMethod: "cash" } as never),
+    ).rejects.toMatchObject({ status: 404, message: "Restaurant not found" });
+    const rules = (where as unknown as { OR: Record<string, unknown>[] }).OR;
+    expect(rules.length).toBeGreaterThan(0);
+    for (const rule of rules) expect(rule).toMatchObject({ pilotEnabled: true, applicationStatus: { not: "suspended" } });
+  });
+
   it("rejects a drop-off outside Zimbabwe server-side, naming where we serve (owner 2026-10-12, D-99)", async () => {
     let created = false;
     const { svc } = build({

@@ -209,6 +209,8 @@ td.mut, .mut { color: var(--muted); }
 .kpill.good { background: var(--accent-wash); border-color: transparent; color: var(--accent-text); }
 .kpill.bad { background: var(--danger-wash); border-color: transparent; color: var(--danger); }
 .kpill.mut { background: var(--surface); border-color: transparent; color: var(--muted); }
+/* Admin console v2 §5: an amber SLA pill (application waiting 24h+), on the kit's highlight tokens. */
+.kpill.warn { background: var(--highlight-wash); border-color: var(--highlight-border); color: var(--highlight-ink); }
 .kpill .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 
 /* ── Buttons ─────────────────────────────────────────────────── */

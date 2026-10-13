@@ -4,7 +4,9 @@ import { businessBookingAccountPhone, normalizePhone, RESTAURANTS_DEBT, type Way
 import { maskPhone } from "../common/phone-mask";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { AdminMerchantApplicationService } from "./admin-merchant-application.service";
 import { auditData, fmtDate, routeOf } from "./admin.shared";
+import { applicationStatusWhere, effectiveApplicationStatus, type ApplicationStatus } from "./merchant-application";
 
 /** D3 (2026-10-07): an admin's write-off of an open food debt, audit-logged in the same transaction. */
 export const DEBT_WRITE_OFF_ACTION = "order.debt_write_off";
@@ -24,7 +26,22 @@ const MERCHANT_DIRECTORY_SELECT = {
   businessType: true,
   shopKind: true,
   location: true,
+  // Admin console v2 §5: the application state (the queue's chips, the detail's application card).
+  applicationStatus: true,
 } as const;
+
+/** The queue columns the checklist score needs on top of the directory's. */
+const MERCHANT_QUEUE_SELECT = {
+  ...MERCHANT_DIRECTORY_SELECT,
+  hours: true,
+  applicationStatusAt: true,
+  applicationReasonCode: true,
+  approvedAt: true,
+  approvedBy: true,
+} as const;
+
+/** The application states the queue keeps oldest first (they wait on ops). */
+const OLDEST_FIRST: readonly ApplicationStatus[] = ["applied", "reviewing", "approved"];
 
 /**
  * X1 — admin alignment for the merchant vertical (docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md
@@ -44,10 +61,8 @@ const MERCHANT_DIRECTORY_SELECT = {
  *     "this WAS frozen" marker — the dispute queue itself excludes it once riderCashConfirmedAt is set,
  *     so no extra write or field is needed to drop it off the queue.
  *
- * Merchant has no `accountStatus`/suspend field in the schema (unlike Rider) — "cash-ban/suspension
- * actions" in the plan's one-liner is the customer cash-ban (R-08, admin-customers.service.ts) and the
- * existing rider suspend/lift console actions — both surfaced here via the debt ledger + dispute queue,
- * not a new merchant-standing state machine (flagged as a scope cut, not silently decided).
+ * Admin console v2 §5: a merchant's standing is its application state (applied → reviewing → approved →
+ * live, rejected, suspended), owned by AdminMerchantApplicationService; this file lists and shows it.
  *
  * Owner decision D3 (2026-10-07, MJ-RH1): a merchant's "It wasn't returned" no longer writes off the debt
  * or suspends the rider by itself. It is a flag (`debtNonReturnReportedAt`) that lands in this dispute
@@ -61,7 +76,13 @@ export class AdminMerchantsService {
     // Optional so unit tests can construct with just Prisma — its module is @Global in the app, so no
     // import wiring is needed to inject this (mirrors admin-customers.service.ts).
     @Optional() private readonly notifications?: NotificationsService,
+    @Optional() private readonly applicationService?: AdminMerchantApplicationService,
   ) {}
+
+  /** The application state machine (injected in the app; built on demand in unit tests). */
+  private get application(): AdminMerchantApplicationService {
+    return this.applicationService ?? new AdminMerchantApplicationService(this.prisma);
+  }
 
   /** Merchant directory: order volume + open-debt total per merchant, batched (mirrors
    *  admin-customers.service.ts's listCustomers aggregation shape). Newest first.
@@ -69,7 +90,10 @@ export class AdminMerchantsService {
    *  Merchant web upgrade L1 (plan 2026-09-29 D5): `filter=awaiting_go_live` is the ops queue —
    *  businesses that signed up and aren't switched on yet; `filter=shops` lists signed-up shops (live or
    *  not), which go live through the same switch (ledger D-58). */
-  async listMerchants(filter?: string) {
+  async listMerchants(filter?: string, status?: ApplicationStatus) {
+    // Admin console v2 §5: `status` is the application queue (one chip per state). Waiting states read
+    // oldest first, with the age, SLA and checklist score on each row.
+    if (status) return this.listApplicationQueue(status);
     const where =
       filter === "awaiting_go_live"
         ? { pilotEnabled: false }
@@ -96,6 +120,29 @@ export class AdminMerchantsService {
     const ordersBy = new Map(orderCounts.map((r) => [r.merchantId, r._count._all]));
     const debtBy = new Map(openDebt.map((r) => [r.merchantId, { amount: r._sum.debtAmount, count: r._count._all }]));
     return merchants.map((m) => this.toMerchant(m, ordersBy.get(m.id) ?? 0, debtBy.get(m.id)));
+  }
+
+  private async listApplicationQueue(status: ApplicationStatus) {
+    const merchants = await this.prisma.merchant.findMany({
+      where: applicationStatusWhere(status),
+      orderBy: { createdAt: OLDEST_FIRST.includes(status) ? "asc" : "desc" },
+      take: 100,
+      select: MERCHANT_QUEUE_SELECT,
+    });
+    const ids = merchants.map((m) => m.id);
+    const [orderCounts, openDebt, queue] = await Promise.all([
+      this.prisma.order.groupBy({ by: ["merchantId"], where: { merchantId: { in: ids } }, _count: { _all: true } }),
+      this.prisma.order.groupBy({
+        by: ["merchantId"],
+        where: { merchantId: { in: ids }, debtStatus: "open", merchantClosedAt: null },
+        _sum: { debtAmount: true },
+        _count: { _all: true },
+      }),
+      this.application.queueRows(merchants),
+    ]);
+    const ordersBy = new Map(orderCounts.map((r) => [r.merchantId, r._count._all]));
+    const debtBy = new Map(openDebt.map((r) => [r.merchantId, { amount: r._sum.debtAmount, count: r._count._all }]));
+    return merchants.map((m) => ({ ...this.toMerchant(m, ordersBy.get(m.id) ?? 0, debtBy.get(m.id)), ...queue.get(m.id) }));
   }
 
   /** Single merchant detail: directory fields + recent orders + a page of the merchant's own
@@ -373,55 +420,28 @@ export class AdminMerchantsService {
   }
 
   /**
-   * The go-live switch (merchant web upgrade L1; RCA-MERCHANT-NOT-SET-UP-2026-08-18 fix #1) — the ONLY
-   * writer of `pilotEnabled`, the flag the customer restaurant, shop and pharmacy lists filter on. The flip and its audit
-   * row are one transaction. Idempotent: setting the current value writes nothing.
-   *
-   * Refused (409) when switching ON a business with no pickup pin (placeOrder would 409 every order,
-   * and a shop's delivery fee can't be quoted) or no live, photo'd dish / item (the menu or catalogue
-   * would be empty). Restaurants and shops go live the same way (ledger D-58); a live shop shows in the
-   * customer Shops or Pharmacy section while that section's flag is on. The rest of the go-live checks
-   * are the ops runbook's human call (docs/MERCHANT-GO-LIVE-RUNBOOK.md) — a pharmacy's licence among them.
-   * Switching OFF is always allowed.
+   * The old go-live switch (merchant web upgrade L1), kept so a console from before admin console v2 §5 still
+   * works during a rollout. It now goes through the application state machine: on = Go live from `approved`
+   * or Resume from `suspended` (with their checks: pin, a live dish or item, a pharmacy's verified licence);
+   * off = Suspend. Anything else is refused (409) rather than skipping the approval. Setting the current
+   * value writes nothing. The customer paths still read `pilotEnabled`, which the state machine writes.
    */
   async setPilot(actor: string, id: string, input: { enabled: boolean; note?: string | null }) {
-    return this.prisma.$transaction(async (tx) => {
-      const merchant = await tx.merchant.findUnique({
-        where: { id },
-        select: { id: true, businessType: true, pilotEnabled: true, location: true, approvedAt: true },
-      });
-      if (!merchant) throw new NotFoundException("Merchant not found");
-      if (merchant.pilotEnabled === input.enabled) return { id, pilotEnabled: merchant.pilotEnabled, auditId: null };
-      if (input.enabled) {
-        const noun = merchant.businessType === "shop" ? "shop" : "restaurant";
-        if (!merchant.location) {
-          throw new ConflictException({ reason: "no_location", message: `This ${noun} has no pickup pin yet.` });
-        }
-        const liveDishes = await tx.merchantDish.count({ where: { merchantId: id, isDraft: false } });
-        if (liveDishes === 0) {
-          throw new ConflictException({
-            reason: "no_live_dishes",
-            message: noun === "shop" ? "This shop has no item with a photo yet — its shop would be empty." : "This restaurant has no dish with a photo yet — its menu would be empty.",
-          });
-        }
+    const merchant = await this.prisma.merchant.findUnique({ where: { id }, select: { id: true, pilotEnabled: true, applicationStatus: true } });
+    if (!merchant) throw new NotFoundException("Merchant not found");
+    const status = effectiveApplicationStatus(merchant);
+    const reason = { reason: input.enabled ? "switch_on" : "switch_off", note: input.note ?? null };
+    if (input.enabled) {
+      if (status === "live") return { id, pilotEnabled: true, auditId: null };
+      if (status !== "approved" && status !== "suspended") {
+        throw new ConflictException({ reason: "not_approved", message: "Approve this business before it goes live." });
       }
-      // Admin console v2 §3: the FIRST go-live stamps who approved it and when; a later pause/resume keeps it.
-      const firstGoLive = input.enabled && merchant.approvedAt == null;
-      await tx.merchant.update({
-        where: { id },
-        data: { pilotEnabled: input.enabled, ...(firstGoLive ? { approvedAt: new Date(), approvedBy: actor } : {}) },
-      });
-      const audit = await tx.auditLog.create({
-        data: {
-          ...auditData(actor, input.enabled ? "merchant.go_live" : "merchant.go_dormant", id, null, input.note ?? null),
-          targetType: "merchant",
-          before: { pilotEnabled: merchant.pilotEnabled },
-          after: { pilotEnabled: input.enabled, ...(firstGoLive ? { approved: true } : {}) },
-        },
-        select: { id: true },
-      });
-      return { id, pilotEnabled: input.enabled, auditId: audit.id };
-    });
+      const res = await this.application.transition(actor, id, status === "approved" ? "go_live" : "resume", reason);
+      return { id, pilotEnabled: res.pilotEnabled, auditId: res.auditId };
+    }
+    if (status !== "live") return { id, pilotEnabled: merchant.pilotEnabled, auditId: null };
+    const res = await this.application.transition(actor, id, "suspend", reason);
+    return { id, pilotEnabled: res.pilotEnabled, auditId: res.auditId };
   }
 
   /**
@@ -523,6 +543,7 @@ export class AdminMerchantsService {
       businessType: string;
       shopKind: string | null;
       location: unknown;
+      applicationStatus?: ApplicationStatus;
     },
     orders: number,
     openDebt?: { amount: { toString: () => string } | null; count: number },
@@ -537,6 +558,7 @@ export class AdminMerchantsService {
       cuisineTags: m.cuisineTags,
       businessType: m.businessType,
       shopKind: m.shopKind,
+      ...(m.applicationStatus ? { applicationStatus: effectiveApplicationStatus({ applicationStatus: m.applicationStatus, pilotEnabled: m.pilotEnabled }) } : {}),
       landmark: location?.landmark ?? null,
       contactPhoneMasked: location?.contactPhone ? maskPhone(location.contactPhone) : null,
       orders,

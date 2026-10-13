@@ -1183,6 +1183,16 @@ model Merchant {
   // did it. Kept on a later pause/resume. Null for merchants that went live before 0091 or never did.
   approvedAt     DateTime?        @map("approved_at")
   approvedBy     String?          @map("approved_by")
+  // Admin console v2 §5 (migration 0100): where the business is in its application, applied → reviewing →
+  // approved → live, with rejected and suspended on the side. `pilotEnabled` stays the switch every customer
+  // path reads and is true exactly while this is `live` (AdminMerchantApplicationService writes both
+  // together). Backfilled: live where pilotEnabled was on, applied otherwise.
+  applicationStatus     MerchantApplicationStatus @default(applied) @map("application_status")
+  // When applicationStatus last changed (null = never changed since the backfill / sign-up).
+  applicationStatusAt   DateTime?                 @map("application_status_at")
+  // The reject reason code (@lynia/shared MERCHANT_REJECT_REASONS), written for the merchant to read.
+  // Cleared when the application is reopened.
+  applicationReasonCode String?                   @map("application_reason_code")
   // C2: the shop's own pickup point (same Waypoint shape as Order.pickup — {point:{lat,lng},
   // landmark, contactPhone}), set by the merchant before it can take orders. Nullable: onboarding
   // merchants have no location yet, so placeOrder 409s until it's set. Plain JSON for now — C3's
@@ -1206,9 +1216,49 @@ model Merchant {
   bookings        MerchantBooking[]
   preferredRiders MerchantPreferredRider[]
   invites         MerchantInvite[]
+  documents       MerchantDocument[]
 
   @@index([ownerProfileId])
   @@map("merchants")
+}
+
+/// Admin console v2 §5: a merchant's application state (see Merchant.applicationStatus). Lockstep with
+/// @lynia/shared MERCHANT_APPLICATION_STATUSES.
+enum MerchantApplicationStatus {
+  applied
+  reviewing
+  approved
+  live
+  rejected
+  suspended
+}
+
+enum MerchantDocumentKind {
+  pharmacy_licence
+}
+
+/// Admin console v2 §5 (owner decision 5: a pharmacy's licence is checked before it goes live). Ops records
+/// it after the call — the licence number, the pharmacist named on it, and where the copy is (a storage key
+/// or a plain reference: the console has no upload path yet) — then marks it verified. One row per kind per
+/// business; re-recording a different number clears the verification. Every change is also an audit row.
+model MerchantDocument {
+  id             String               @id @default(uuid()) @db.Uuid
+  merchantId     String               @map("merchant_id") @db.Uuid
+  merchant       Merchant             @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  kind           MerchantDocumentKind
+  // A storage key or a plain reference to where the copy is ("WhatsApp photo, 13 Oct"). Optional.
+  reference      String?
+  licenceNumber  String?              @map("licence_number")
+  pharmacistName String?              @map("pharmacist_name")
+  // The admin who recorded it, and who verified it and when (null = not verified yet).
+  recordedBy     String               @map("recorded_by")
+  verifiedAt     DateTime?            @map("verified_at")
+  verifiedBy     String?              @map("verified_by")
+  createdAt      DateTime             @default(now()) @map("created_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
+
+  @@unique([merchantId, kind])
+  @@map("merchant_documents")
 }
 
 enum MerchantBusinessType {

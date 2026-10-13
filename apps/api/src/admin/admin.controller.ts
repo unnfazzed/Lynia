@@ -1,5 +1,13 @@
 import { Body, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
-import { EditMerchantOrderItemsRequest, KycStatus, OrderStatus, OrderType, PlateStatus, TransferMerchantOwnerRequest } from "@lynia/shared";
+import {
+  EditMerchantOrderItemsRequest,
+  KycStatus,
+  MERCHANT_APPLICATION_STATUSES,
+  OrderStatus,
+  OrderType,
+  PlateStatus,
+  TransferMerchantOwnerRequest,
+} from "@lynia/shared";
 import { z } from "zod";
 import { AdminGuard } from "../auth/admin.guard";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -13,7 +21,9 @@ import { AdminAuditService } from "./admin-audit.service";
 import { AdminCustomersService } from "./admin-customers.service";
 import { AdminKitchenService } from "./admin-kitchen.service";
 import { AdminKycReviewService } from "./admin-kyc-review.service";
+import { AdminMerchantApplicationService, CALL_OUTCOMES } from "./admin-merchant-application.service";
 import { AdminMerchantsService } from "./admin-merchants.service";
+import type { ApplicationAction } from "./merchant-application";
 import { AdminOrdersService } from "./admin-orders.service";
 import { AdminRidersService } from "./admin-riders.service";
 import { AdminSearchService } from "./admin-search.service";
@@ -64,6 +74,19 @@ const SetMerchantPilot = z
     note: z.string().max(2000).nullish(),
   })
   .strict();
+// Admin console v2 §5: an ops call to an applying business, and a pharmacy's licence as ops recorded it.
+const LogMerchantCall = z.object({
+  outcome: z.enum(CALL_OUTCOMES),
+  note: z.string().max(2000).nullish(),
+});
+const RecordMerchantLicence = z.object({
+  licenceNumber: z.string().trim().min(1).max(60),
+  pharmacistName: z.string().trim().min(1).max(120),
+  reference: z.string().trim().max(300).nullish(),
+  note: z.string().max(2000).nullish(),
+});
+/** The application actions reachable by URL (`POST /admin/merchants/:id/application/:action`). */
+const APPLICATION_ACTIONS: readonly ApplicationAction[] = ["review", "approve", "reject", "go_live", "suspend", "resume"];
 const ReasonOptional = z.object({
   reason: z.string().max(160).nullish(),
   note: z.string().max(2000).nullish(),
@@ -115,6 +138,7 @@ export class AdminController {
     private readonly auditRead: AdminAuditReadService,
     private readonly search: AdminSearchService,
     private readonly timeline: AdminTimelineService,
+    private readonly application: AdminMerchantApplicationService,
   ) {}
 
   /* ── Admin console v2 PR 3: audit viewer, global search, timelines (plan §4, §8) ───────────── */
@@ -426,8 +450,65 @@ export class AdminController {
    *  `filter=awaiting_go_live` (restaurants not switched on yet — the ops queue) or `filter=shops`
    *  (merchant web upgrade L1). */
   @Get("merchants")
-  merchants(@Query("filter") filter?: string) {
-    return this.merchantsService.listMerchants(filter);
+  merchants(@Query("filter") filter?: string, @Query("status") status?: string) {
+    // Admin console v2 §5: `status` is the application queue; an unknown value is ignored (the directory).
+    const s = (MERCHANT_APPLICATION_STATUSES as readonly string[]).includes(status ?? "") ? (status as (typeof MERCHANT_APPLICATION_STATUSES)[number]) : undefined;
+    return this.merchantsService.listMerchants(filter, s);
+  }
+
+  /** Admin console v2 §5: the application — a data-backed checklist, the licence, calls and the open actions. */
+  @Get("merchants/:id/application")
+  merchantApplication(@Param("id", ParseUUIDPipe) id: string) {
+    return this.application.getApplication(id);
+  }
+
+  /** Admin console v2 §5: accept time, missed orders, prep vs promised, out of stock, hours, rating, debt. */
+  @Get("merchants/:id/metrics")
+  merchantMetrics(@Param("id", ParseUUIDPipe) id: string) {
+    return this.application.getMetrics(id);
+  }
+
+  /** Log an ops call (reached / no answer). Audited; a call that reached someone ticks the checklist. */
+  @Post("merchants/:id/application/call")
+  logMerchantCall(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(LogMerchantCall)) body: z.infer<typeof LogMerchantCall>,
+    @AdminActor() actor: string,
+  ) {
+    return this.application.logCall(actor, id, body);
+  }
+
+  /** Record a pharmacy's licence (number, pharmacist, where the copy is). Clears a verification it changes. */
+  @Post("merchants/:id/application/licence")
+  recordMerchantLicence(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(RecordMerchantLicence)) body: z.infer<typeof RecordMerchantLicence>,
+    @AdminActor() actor: string,
+  ) {
+    return this.application.recordLicence(actor, id, body);
+  }
+
+  /** Mark the recorded pharmacy licence verified. Reason required. */
+  @Post("merchants/:id/application/licence/verify")
+  verifyMerchantLicence(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(ReasonRequired)) body: z.infer<typeof ReasonRequired>,
+    @AdminActor() actor: string,
+  ) {
+    return this.application.verifyLicence(actor, id, body);
+  }
+
+  /** Move an application: review · approve (every required check ✅) · reject (a merchant-readable code) ·
+   *  go_live (from approved) · suspend / resume. Reason required; audited with before/after. */
+  @Post("merchants/:id/application/:action")
+  moveMerchantApplication(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("action") action: string,
+    @Body(new ZodBody(ReasonRequired)) body: z.infer<typeof ReasonRequired>,
+    @AdminActor() actor: string,
+  ) {
+    if (!(APPLICATION_ACTIONS as readonly string[]).includes(action)) throw new NotFoundException("Unknown action");
+    return this.application.transition(actor, id, action as ApplicationAction, body);
   }
 
   /** Merchant detail (X1): profile + recent orders + a page of the merchant's own debt-ledger trail.

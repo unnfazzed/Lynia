@@ -3,10 +3,16 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import MerchantProfilePage from "./page";
 import { adminFetchResult } from "../../lib/api";
-import type { MerchantDetail } from "../../lib/adminTypes";
+import type { MerchantApplication, MerchantDetail, MerchantMetrics } from "../../lib/adminTypes";
 
 vi.mock("../../lib/api", () => ({ adminFetchResult: vi.fn(), adminFetch: vi.fn(async () => null) }));
-vi.mock("../actions", () => ({ setMerchantPilot: vi.fn(), setMerchantOrderSettings: vi.fn() }));
+vi.mock("../actions", () => ({
+  setMerchantOrderSettings: vi.fn(),
+  moveMerchantApplication: vi.fn(),
+  logMerchantCall: vi.fn(),
+  recordMerchantLicence: vi.fn(),
+  verifyMerchantLicence: vi.fn(),
+}));
 vi.mock("../../actions/audit", () => ({ submitAdminAction: vi.fn() }));
 
 afterEach(() => {
@@ -41,8 +47,60 @@ function detail(over: Partial<MerchantDetail> = {}): MerchantDetail {
   };
 }
 
-async function open(m: MerchantDetail) {
-  vi.mocked(adminFetchResult).mockResolvedValue({ data: m });
+function application(over: Partial<MerchantApplication> = {}): MerchantApplication {
+  return {
+    merchantId: "m-1",
+    status: "reviewing",
+    statusAt: null,
+    rejectReason: null,
+    appliedAt: "2026-10-10T08:00:00.000Z",
+    approvedAt: null,
+    sla: "red",
+    ageMs: 3 * 24 * 3600 * 1000,
+    isPharmacy: false,
+    checklist: [
+      { key: "location", label: "Pin and landmark", ok: true, required: true, detail: "Opposite Mbare market" },
+      { key: "call", label: "Ops call", ok: false, required: true, detail: "No call logged" },
+    ],
+    score: { passed: 1, total: 2 },
+    canApprove: false,
+    actions: ["reject"],
+    licence: null,
+    calls: [],
+    history: [],
+    ...over,
+  };
+}
+
+const METRICS: MerchantMetrics = {
+  since: "2026-10-13T00:00:00.000Z",
+  short: true,
+  windowDays: 30,
+  orders: 4,
+  acceptMedianSeconds: 120,
+  acceptSample: 2,
+  missedPct: 25,
+  missed: 1,
+  prepMedianMinutes: 17,
+  promisedMedianMinutes: 18,
+  prepSample: 2,
+  outOfStockPct: null,
+  outOfStockLines: 0,
+  lines: 0,
+  hoursOpen: null,
+  hoursScheduled: null,
+  rating: null,
+  openDebtAmount: "0.00",
+  openDebtCount: 0,
+};
+
+/** Serves the detail, and (when given) the application and metrics reads; an older API 404s them. */
+async function open(m: MerchantDetail, extra: { app?: MerchantApplication; metrics?: MerchantMetrics } = {}) {
+  vi.mocked(adminFetchResult).mockImplementation(async (path: string) => {
+    if (path.endsWith("/application")) return extra.app ? { data: extra.app } : { reason: "not-found" };
+    if (path.endsWith("/metrics")) return extra.metrics ? { data: extra.metrics } : { reason: "not-found" };
+    return { data: m };
+  });
   render(await MerchantProfilePage({ params: Promise.resolve({ id: m.id }), searchParams: Promise.resolve({}) }));
 }
 
@@ -86,5 +144,74 @@ describe("Merchant profile: Taking orders (auto-accept)", () => {
     expect(card.textContent).toContain("Free delivery");
     expect(card.textContent).not.toContain("Accept orders automatically");
     expect(screen.getByRole("button", { name: "Turn off…" })).toBeTruthy();
+  });
+});
+
+describe("Merchant profile: the application (admin console v2 §5)", () => {
+  it("while not live, the application card sits at the top with the checklist, score and allowed actions", async () => {
+    await open(detail(), { app: application() });
+    const card = screen.getByRole("region", { name: "Application" });
+    expect(card.textContent).toContain("1/2 checks");
+    expect(card.textContent).toContain("In review");
+    expect(card.textContent).toContain("Opposite Mbare market");
+    expect(card.textContent).toContain("No call logged");
+    expect(card.textContent).toContain("Approve shows once every required check passes.");
+    expect(screen.getByRole("button", { name: "Log call…" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reject…" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Approve…" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Suspend…" })).toBeNull();
+  });
+
+  it("a pharmacy's card offers the licence actions", async () => {
+    await open(detail({ shopKind: "pharmacy" }), {
+      app: application({ isPharmacy: true, licence: { licenceNumber: "PCZ-1", pharmacistName: "R. Dube", reference: null, recordedBy: "ops", recordedAt: "2026-10-12T08:00:00.000Z", verifiedAt: null, verifiedBy: null } }),
+    });
+    expect(screen.getByRole("button", { name: "Edit licence…" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Mark verified…" })).toBeTruthy();
+  });
+
+  it("a rejected application says what the business was told", async () => {
+    await open(detail(), { app: application({ status: "rejected", rejectReason: "outside_area", sla: null, actions: ["review"] }) });
+    expect(screen.getByRole("region", { name: "Application" }).textContent).toContain("Told: Your business is outside the area LyniaGo covers for now.");
+    expect(screen.getByRole("button", { name: "Start review…" })).toBeTruthy();
+  });
+
+  it("a live business has no application card, and can be suspended from the header", async () => {
+    await open(detail({ pilotEnabled: true }), { app: application({ status: "live", sla: null, actions: ["suspend"] }) });
+    expect(screen.queryByRole("region", { name: "Application" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Suspend…" })).toBeTruthy();
+    expect(screen.getByText("Live")).toBeTruthy();
+  });
+
+  it("a live pharmacy without a verified licence is grandfathered: a warning and the licence action, still live", async () => {
+    await open(detail({ pilotEnabled: true, shopKind: "pharmacy" }), {
+      app: application({
+        status: "live",
+        isPharmacy: true,
+        sla: null,
+        actions: ["suspend"],
+        checklist: [{ key: "licence", label: "Pharmacy licence", ok: false, required: true, detail: "Not recorded", warning: "Live before licences were checked. Record and verify it." }],
+      }),
+    });
+    expect(screen.getByText("No verified pharmacy licence.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Record licence…" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Application" })).toBeNull();
+  });
+
+  it("the performance card shows the numbers it has, \"—\" for the rest, and says since when", async () => {
+    await open(detail(), { metrics: METRICS });
+    const card = screen.getByRole("region", { name: "Performance" });
+    expect(card.textContent).toContain("since 13 Oct 2026");
+    expect(card.textContent).toContain("2 min median");
+    expect(card.textContent).toContain("25% (1)");
+    expect(card.textContent).toContain("17 min vs 18 min promised");
+    expect(card.textContent).toContain("—");
+  });
+
+  it("an API without the application read shows the old not-live warning instead", async () => {
+    await open(detail());
+    expect(screen.queryByRole("region", { name: "Application" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Performance" })).toBeNull();
+    expect(screen.getByText("Customers can't see this shop yet.")).toBeTruthy();
   });
 });

@@ -7,7 +7,7 @@ import { adminPostResult, describeAdminPostFailure } from "../../lib/api";
  * Auto-accept (docs/plans/2026-09-30-restaurant-auto-accept.md): the ops call list's writes. Each hits
  * an endpoint that writes its own audit row (A-01) and refreshes the list.
  *
- * Every action RETURNS its failure instead of throwing it, for the same reason as `setMerchantPilot`:
+ * Every action RETURNS its failure instead of throwing it, for the same reason as `moveMerchantApplication` (../actions.ts):
  * Next redacts a server action's thrown message in production, and ops needs the API's own words
  * ("This order is already confirmed or no longer live.").
  */

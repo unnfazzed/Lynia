@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resolveHandshake, setMerchantPilot, transferMerchantOwner, writeOffDebt } from "./actions";
+import { logMerchantCall, moveMerchantApplication, recordMerchantLicence, resolveHandshake, transferMerchantOwner, verifyMerchantLicence, writeOffDebt } from "./actions";
 
 /**
  * X1/R-05: the admin action that releases a frozen doorstep handshake — a rider's job lock and a
@@ -84,34 +84,43 @@ describe("writeOffDebt (D3, 2026-10-07: the only write-off of a food debt)", () 
   });
 });
 
-describe("setMerchantPilot (merchant web upgrade L1: the go-live switch)", () => {
-  it("posts {enabled, note} with the picked reason leading the audit note, then revalidates the profile and the list", async () => {
-    const out = await setMerchantPilot("m-1", true, "Ops call done — every go-live check passed", " spoke to Tendai ");
-
+describe("merchant application actions (admin console v2 §5)", () => {
+  it("moves an application with {reason, note}, then revalidates the profile and the list", async () => {
+    const out = await moveMerchantApplication("m-1", "reject", "outside_area", " Chitungwiza ");
     const c = lastCall();
-    expect(c.url).toBe("https://api.test/admin/merchants/m-1/pilot");
+    expect(c.url).toBe("https://api.test/admin/merchants/m-1/application/reject");
     expect(c.method).toBe("POST");
-    expect(c.body).toEqual({ enabled: true, note: "Ops call done — every go-live check passed — spoke to Tendai" });
+    expect(c.body).toEqual({ reason: "outside_area", note: "Chitungwiza" });
     expect(c.headers["X-Operator"]).toBe("alice@corp.com");
     expect(out).toEqual({ ok: true });
     expect(revalidateMock).toHaveBeenCalledWith("/merchants/m-1");
     expect(revalidateMock).toHaveBeenCalledWith("/merchants");
   });
 
-  it("sends a null note when there is neither a reason nor a note", async () => {
-    await setMerchantPilot("m-1", false, null, "  ");
-    expect(lastCall().body).toEqual({ enabled: false, note: null });
-  });
-
   it("FAILS CLOSED with the API's own words: a refusal is returned (not thrown, which production would redact) and nothing revalidates", async () => {
     fetchMock.mockResolvedValue({
       ok: false,
       status: 409,
-      json: async () => ({ reason: "no_live_dishes", message: "This restaurant has no dish with a photo yet — its menu would be empty." }),
+      json: async () => ({ reason: "checklist_incomplete", message: "Not every check passes yet: Ops call." }),
     });
-    const out = await setMerchantPilot("m-1", true, null, "");
-    expect(out).toEqual({ ok: false, message: "This restaurant has no dish with a photo yet — its menu would be empty." });
+    const out = await moveMerchantApplication("m-1", "approve", "Every check passed", "");
+    expect(out).toEqual({ ok: false, message: "Not every check passes yet: Ops call." });
     expect(revalidateMock).not.toHaveBeenCalled();
+  });
+
+  it("logs a call with its outcome and a null blank note", async () => {
+    await logMerchantCall("m-1", "reached", "  ");
+    expect(lastCall().url).toBe("https://api.test/admin/merchants/m-1/application/call");
+    expect(lastCall().body).toEqual({ outcome: "reached", note: null });
+  });
+
+  it("records and verifies a pharmacy licence", async () => {
+    await recordMerchantLicence("m-1", { licenceNumber: " PCZ-1 ", pharmacistName: "R. Dube", reference: "" }, "");
+    expect(lastCall().url).toBe("https://api.test/admin/merchants/m-1/application/licence");
+    expect(lastCall().body).toEqual({ licenceNumber: "PCZ-1", pharmacistName: "R. Dube", reference: null, note: null });
+    await verifyMerchantLicence("m-1", "Licence seen — number and pharmacist match", "");
+    expect(lastCall().url).toBe("https://api.test/admin/merchants/m-1/application/licence/verify");
+    expect(lastCall().body).toEqual({ reason: "Licence seen — number and pharmacist match", note: null });
   });
 });
 

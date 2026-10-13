@@ -16,10 +16,15 @@ export async function resolveOwnMerchantId(prisma: PrismaService, profileId: str
   return access.merchantId;
 }
 
-/** The customer-facing visibility rule, in one place: an ops-switched-on (`pilotEnabled`) RESTAURANT.
- *  Shops never appear in restaurant reads or take food orders (plan 2026-09-29 D8), even when switched
- *  on: they are listed by their own rule, {@link customerVisibleShop}. */
-export const CUSTOMER_VISIBLE_RESTAURANT = { pilotEnabled: true, businessType: "restaurant" } as const;
+/** Admin console v2 §5: a suspended business is never customer-visible and takes no new orders. Suspend
+ *  turns `pilotEnabled` off too; this is the backstop for the rollout window, when an older API revision's
+ *  go-live switch could turn it back on without knowing about suspensions. */
+export const NOT_SUSPENDED = { applicationStatus: { not: "suspended" } } as const;
+
+/** The customer-facing visibility rule, in one place: an ops-switched-on (`pilotEnabled`), not suspended
+ *  RESTAURANT. Shops never appear in restaurant reads or take food orders (plan 2026-09-29 D8), even when
+ *  switched on: they are listed by their own rule, {@link customerVisibleShop}. */
+export const CUSTOMER_VISIBLE_RESTAURANT = { pilotEnabled: true, ...NOT_SUSPENDED, businessType: "restaurant" } as const;
 
 /** The customer-facing visibility rule for shops (ledger D-58): ops-switched-on (`pilotEnabled`, the
  *  same go-live switch restaurants use) SHOPS, narrowed to the sections that are switched on. Pharmacy
@@ -27,7 +32,7 @@ export const CUSTOMER_VISIBLE_RESTAURANT = { pilotEnabled: true, businessType: "
 export function customerVisibleShop(env: Pick<Env, "SHOPS_ENABLED" | "PHARMACY_ENABLED">, service?: ShopService): Prisma.MerchantWhereInput {
   const shops = env.SHOPS_ENABLED === "true" && service !== "pharmacy";
   const pharmacy = env.PHARMACY_ENABLED === "true" && service !== "shops";
-  const base = { pilotEnabled: true, businessType: "shop" as const };
+  const base = { pilotEnabled: true, ...NOT_SUSPENDED, businessType: "shop" as const };
   if (shops && pharmacy) return { ...base, shopKind: { not: null } };
   if (shops) return { ...base, shopKind: { not: "pharmacy" } };
   if (pharmacy) return { ...base, shopKind: "pharmacy" };

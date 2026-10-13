@@ -107,7 +107,7 @@ describe("Shops & Pharmacy read API (D-58)", () => {
     it("any signed-in customer lists Shops: live shops, every kind but pharmacy", async () => {
       const res = await request(app.getHttpServer()).get(`/shops?service=shops&cursor=${ID}`).set("Authorization", bearer("p1", "customer"));
       expect(res.status).toBe(200);
-      expect(s.calls.at(-1)).toEqual({ fn: "list", where: { pilotEnabled: true, businessType: "shop", shopKind: { not: "pharmacy" } }, arg: ID });
+      expect(s.calls.at(-1)).toEqual({ fn: "list", where: { pilotEnabled: true, applicationStatus: { not: "suspended" }, businessType: "shop", shopKind: { not: "pharmacy" } }, arg: ID });
     });
 
     it("a malformed cursor is a clean 400, never a Prisma uuid-cast 500 (DRS-03)", async () => {
@@ -127,14 +127,14 @@ describe("Shops & Pharmacy read API (D-58)", () => {
     it("a catalogue read is limited to the sections that are on", async () => {
       const res = await request(app.getHttpServer()).get(`/shops/${ID}/catalogue`).set("Authorization", bearer("p1", "customer"));
       expect(res.status).toBe(200);
-      expect(s.calls.at(-1)).toEqual({ fn: "catalogue", where: { pilotEnabled: true, businessType: "shop", shopKind: { not: "pharmacy" } }, arg: ID });
+      expect(s.calls.at(-1)).toEqual({ fn: "catalogue", where: { pilotEnabled: true, applicationStatus: { not: "suspended" }, businessType: "shop", shopKind: { not: "pharmacy" } }, arg: ID });
     });
 
     it("the D-72 ranking reads one section's live shops, cached per section; a switched-off section is 503", async () => {
       const res = await request(app.getHttpServer()).get("/shops/popular?service=shops").set("Authorization", bearer("p1", "customer"));
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ venues: [] });
-      expect(s.calls.at(-1)).toEqual({ fn: "popular", where: { pilotEnabled: true, businessType: "shop", shopKind: { not: "pharmacy" } }, arg: "shops:shops" });
+      expect(s.calls.at(-1)).toEqual({ fn: "popular", where: { pilotEnabled: true, applicationStatus: { not: "suspended" }, businessType: "shop", shopKind: { not: "pharmacy" } }, arg: "shops:shops" });
       expect((await request(app.getHttpServer()).get("/shops/popular?service=pharmacy").set("Authorization", bearer("p1", "customer"))).status).toBe(503);
     });
 
@@ -150,9 +150,9 @@ describe("Shops & Pharmacy read API (D-58)", () => {
     const app = await boot({ SHOPS_ENABLED: "true", PHARMACY_ENABLED: "true" }, s.svc);
     const auth = bearer("p1", "customer");
     expect((await request(app.getHttpServer()).get("/shops?service=pharmacy").set("Authorization", auth)).status).toBe(200);
-    expect(s.calls.at(-1)?.where).toEqual({ pilotEnabled: true, businessType: "shop", shopKind: "pharmacy" });
+    expect(s.calls.at(-1)?.where).toEqual({ pilotEnabled: true, applicationStatus: { not: "suspended" }, businessType: "shop", shopKind: "pharmacy" });
     expect((await request(app.getHttpServer()).get(`/shops/${ID}/catalogue`).set("Authorization", auth)).status).toBe(200);
-    expect(s.calls.at(-1)?.where).toEqual({ pilotEnabled: true, businessType: "shop", shopKind: { not: null } });
+    expect(s.calls.at(-1)?.where).toEqual({ pilotEnabled: true, applicationStatus: { not: "suspended" }, businessType: "shop", shopKind: { not: null } });
     await app.close();
   });
 });

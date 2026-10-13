@@ -117,6 +117,10 @@ days), each bar linking to its stuck list.
 
 ## 5. Merchant registration → approval
 
+> **Shipped in PR 4:** `Merchant.applicationStatus` (migration 0100, backfilled live/applied), the checklist API,
+> the queue chips with SLA pills and score, Log call / Review / Approve / Reject / Go live / Suspend / Resume,
+> `MerchantDocument` pharmacy licences (record + verify; grandfathered live pharmacies warn), the metrics card.
+
 Today a sign-up just creates a dormant merchant (`pilotEnabled=false`). The only server checks at go-live are "has a
 pin" and "at least one dish that isn't a draft".
 

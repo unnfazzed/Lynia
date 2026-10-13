@@ -33,7 +33,8 @@ const NAV: NavEntry[] = [
   { label: "Bikers", href: "/riders", icon: <IconBike />, match: "/riders" },
   { label: "KYC review", href: "/riders?kyc=pending", icon: <IconIdCard />, match: "/kyc", badge: "kycPending" },
   { label: "Customers", href: "/customers", icon: <IconUser />, match: "/customers" },
-  { label: "Merchants", href: "/merchants", icon: <IconStore />, match: "/merchants" },
+  // Admin console v2 §5: the badge counts applications waiting on ops past the 24h SLA.
+  { label: "Merchants", href: "/merchants", icon: <IconStore />, match: "/merchants", badge: "merchantApplications" },
   // Auto-accept: the ops call list — phone each restaurant before a rider is sent.
   { label: "Confirm orders", href: "/merchants/confirm", icon: <IconPhone />, match: "/merchants/confirm" },
   {
@@ -148,7 +149,7 @@ export function Sidebar({
       {/* Primary navigation landmark so a screen reader can jump straight to it. */}
       <nav aria-label="Primary" style={{ display: "contents" }}>
       {NAV.map((n) => {
-        const count = n.badge && counts ? counts[n.badge] : 0;
+        const count = n.badge && counts ? (counts[n.badge] ?? 0) : 0;
         return (
           <a
             key={n.label}

@@ -118,8 +118,18 @@ export const REASONS = {
   ],
   cashBanLift: ["Customer contacted and cleared", "Payment issue resolved", "Ban applied in error"],
   // Merchant web upgrade L1: the go-live switch (docs/MERCHANT-GO-LIVE-RUNBOOK.md).
-  merchantGoLive: ["Ops call done — every go-live check passed", "Switching back on after a pause"],
-  merchantGoDormant: ["The owner asked to pause", "Failed a go-live check", "Quality or safety concern", "Closed or no longer trading"],
+  merchantGoLive: ["Ops call done — every go-live check passed"],
+  // Admin console v2 §5: the merchant application. A call's reason is its outcome (only `reached` ticks
+  // the checklist); reject's are the merchant-readable codes (MERCHANT_REJECT_REASON_LABELS).
+  merchantCall: [
+    { value: "reached", label: "Spoke to the business" },
+    { value: "no_answer", label: "No answer" },
+  ],
+  merchantReview: ["Called — starting the checks", "Reopening after they fixed it"],
+  merchantApprove: ["Every check passed"],
+  merchantSuspend: ["The owner asked to pause", "Quality or safety concern", "Missed too many orders", "Closed or no longer trading"],
+  merchantResume: ["The owner is ready again", "The concern is resolved"],
+  merchantLicenceVerify: ["Licence seen — number and pharmacist match"],
   // Merchant web upgrade L4: support hands a business over after an identity check (runbook §8).
   merchantOwnerTransfer: ["Sold or handed over — both people confirmed", "The owner lost their number — ID checked", "Family takeover — ID checked"],
 } as const;
