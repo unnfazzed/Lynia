@@ -190,6 +190,29 @@ export function isFreeJob(tripsCountAfter: number): boolean {
   return Number.isFinite(tripsCountAfter) && tripsCountAfter >= 1 && tripsCountAfter <= COMMISSION.freeFirstJobs;
 }
 
+/**
+ * Biker wallet top-ups through Paynow (docs/plans/2026-10-paynow-biker-wallet.md, owner 2026-10-12).
+ * The biker pays the transaction fee on top of the amount that reaches their balance, and the copy says so.
+ * Both values are SERVER-served (`CommissionConfig.topupFeePct` / `topupRails`); these are the offline
+ * fallbacks the app reads before `/wallet/config` answers.
+ */
+export const TOPUP = {
+  /** Transaction fee the biker pays on a top-up, as a % of the amount credited (Paynow's EcoCash rate). */
+  feePct: 2.5,
+  /** Rails a biker can top up on now. The others are drawn on the provider step as "Coming soon". */
+  liveRails: ["ecocash"] as const,
+} as const;
+
+/**
+ * The transaction fee on a top-up of `amount`: `feePct`% rounded UP to the cent, so the preview never shows
+ * less than the rail charges ($5 → $0.13, $7 → $0.18, $50 → $1.25). 0 for a non-positive amount or rate.
+ */
+export function topupFee(amount: number, feePct: number): number {
+  if (!Number.isFinite(amount) || !Number.isFinite(feePct) || amount <= 0 || feePct <= 0) return 0;
+  const cents = Math.ceil((Math.round(amount * 100) * feePct) / 100 - 1e-9);
+  return cents / 100;
+}
+
 /** Env var a deploy sets to override {@link COMMISSION.ratePct} at runtime — the "flip" operation. */
 export const COMMISSION_RATE_PCT_ENV = "COMMISSION_RATE_PCT";
 

@@ -1,4 +1,4 @@
-import { COMMISSION, formatPhoneLocal, SOS_POLICY } from "@lynia/shared";
+import { COMMISSION, formatPhoneLocal, SOS_POLICY, TOPUP } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
@@ -62,6 +62,8 @@ export default function TopUpScreen(): React.ReactElement {
           defaultProvider={prefs.topupProvider}
           defaultPhone={prefs.topupPhone ?? (me?.phone ? formatPhoneLocal(me.phone) : "")}
           balance={wallet?.balance ?? null}
+          feePct={config?.topupFeePct ?? TOPUP.feePct}
+          liveRails={config?.topupRails ?? TOPUP.liveRails}
           onExit={exit}
           onCallSupport={() => {
             const uri = telUri(SOS_POLICY.safetyLine);

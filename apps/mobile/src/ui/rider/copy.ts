@@ -276,6 +276,8 @@ export const RIDER_COPY = {
   amount: "Amount (USD)",
   phoneL: "Number for the payment prompt",
   phoneHint: "Prefilled from Settings. Change it if you'd pay from another line.",
+  /** Undrawn (owner 2026-10-12, ledger D-103): T1's sub-line for a provider that isn't live yet (Paynow Phase 1). */
+  comingSoon: "Coming soon",
   okT: "Top-up done",
   backMoney: "Back to Money",
   again: "Top up again",
@@ -544,6 +546,10 @@ export const RF = {
     ratePct > 0 && avgFare != null && avgFare > 0
       ? `Suggested: ${usd(amount)} covers about ${Math.max(1, Math.floor(amount / ((avgFare * ratePct) / 100)))} jobs at ${ratePct}%.`
       : `Suggested: ${usd(amount)}.`,
+  /** Undrawn (owner 2026-10-12, ledger D-103): T2's fee line — the biker pays Paynow's transaction fee on top. */
+  feeLine: (fee: number, charged: number, pct: number): string => `Transaction fee ${pct}%: ${usd(fee)}. You pay ${usd(charged)}.`,
+  /** Undrawn (owner 2026-10-12, ledger D-103): T3's split, above the number, as the biker commits. */
+  feeSplit: (amount: number, fee: number, pct: number): string => `${usd(amount)} to your balance + ${usd(fee)} transaction fee (${pct}%).`,
   requestCta: (amount: number): string => `Request ${usd(amount)}`,
   waitT: (amount: number): string => `Approve ${usd(amount)} on your phone`,
   waitB: (provider: string, phone: string): string => `Check for the ${provider} prompt or SMS on ${phone} and enter your PIN.`,

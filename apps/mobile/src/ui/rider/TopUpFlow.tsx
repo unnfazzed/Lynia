@@ -1,4 +1,4 @@
-import { TOPUP_WINDOW_MS } from "@lynia/shared";
+import { addMoney, TOPUP_WINDOW_MS, topupFee } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import React from "react";
 import { ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
@@ -22,6 +22,11 @@ import { CentreState, Progress, RStepBar } from "./kit";
  * poll, the wallet invalidation and the durable recovery marker; this file does no fetching of its own
  * (the `mobile-ui-no-api` boundary). It renders whichever outcome THE SERVER reports: a success appears
  * only on `succeeded`, i.e. only after something credited the balance.
+ *
+ * Paynow (ledger D-103, owner 2026-10-12): the biker pays the transaction fee on top. The amount they type
+ * is what reaches the balance; T2 shows the fee and the total, T3 the split and "Request <total>", T4
+ * "Approve <total>", the figure the EcoCash prompt shows. A provider that isn't live yet is drawn on T1
+ * as "Coming soon" and can't be chosen.
  */
 const STEPS = [R.tsProvider, R.tsAmount, R.tsPhone, R.tsApprove] as const;
 // The drawn chips. MA-M1: a chip below the server's minimum is hidden (the drawn $2 sits under the $5
@@ -46,6 +51,8 @@ export function TopUpFlow({
   defaultProvider,
   defaultPhone,
   balance,
+  feePct,
+  liveRails,
   onExit,
   onCallSupport,
 }: {
@@ -57,6 +64,10 @@ export function TopUpFlow({
   defaultPhone: string;
   /** The balance after a success, when the wallet read has caught up. */
   balance: number | null;
+  /** The transaction fee (%) the biker pays on top (server-served `topupFeePct`). */
+  feePct: number;
+  /** The providers that are live; the rest are "Coming soon" (server-served `topupRails`). */
+  liveRails: readonly TopupProviderId[];
   onExit: () => void;
   onCallSupport: () => void;
 }): React.ReactElement {
@@ -64,15 +75,19 @@ export function TopUpFlow({
   const narrow = useWindowDimensions().width < 340;
   const startInFlightRef = React.useRef(false);
   const [step, setStep] = React.useState<1 | 2 | 3>(1);
-  const [rail, setRail] = React.useState<TopupProviderId>(defaultProvider);
+  // A saved provider that isn't live yet (InnBucks / O'mari) opens on the first live one instead.
+  const firstLive: TopupProviderId = liveRails[0] ?? "ecocash";
+  const usable = (id: TopupProviderId): TopupProviderId => (liveRails.includes(id) ? id : firstLive);
+  const [rail, setRail] = React.useState<TopupProviderId>(() => usable(defaultProvider));
   const [amountRaw, setAmountRaw] = React.useState("5.00");
   const [phone, setPhone] = React.useState(defaultPhone);
   const [attempt, setAttempt] = React.useState(0);
   // Settings may load after mount; follow it until the rider changes the value themselves.
   const touched = React.useRef({ rail: false, phone: false });
   React.useEffect(() => {
-    if (!touched.current.rail) setRail(defaultProvider);
-  }, [defaultProvider]);
+    if (!touched.current.rail) setRail(usable(defaultProvider));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `usable` is derived from liveRails, listed here.
+  }, [defaultProvider, liveRails]);
   React.useEffect(() => {
     if (!touched.current.phone) setPhone(defaultPhone);
   }, [defaultPhone]);
@@ -82,6 +97,8 @@ export function TopUpFlow({
   const amountError = validateTopupAmount(amountRaw, minTopUp, maxTopUp);
   const amount = Number(amountRaw);
   const amountOk = amountError == null && Number.isFinite(amount) && amount > 0;
+  const fee = amountOk ? topupFee(amount, feePct) : 0;
+  const charged = amountOk ? addMoney(amount, fee) : amount;
   const phoneOk = phone.replace(/\D/g, "").length >= 9;
   const name = providerName(rail);
   const idempotencyKey = React.useMemo(() => uuidV4FromSeed(`topup|${attempt}|${amountRaw}|${phone}|${rail}`), [attempt, amountRaw, phone, rail]);
@@ -103,7 +120,7 @@ export function TopUpFlow({
     return (
       <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
         <Header step={4} onBack={back} />
-        <CentreState spinner title={RF.waitT(topup?.amount ?? amount)} body={RF.waitB(name, phone)}>
+        <CentreState spinner title={RF.waitT(topup?.charged ?? (topup ? addMoney(topup.amount, topupFee(topup.amount, feePct)) : charged))} body={RF.waitB(name, phone)}>
           <View style={{ alignSelf: "stretch", flexDirection: "row", alignItems: "center", gap: 10 }}>
             <Countdown expiresAt={topup?.expiresAt ?? null} />
             <View style={{ flex: 1 }}>
@@ -155,7 +172,9 @@ export function TopUpFlow({
           <>
             <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>{R.provider}</Text>
             {TOPUP_PROVIDERS.map((p) => {
-              const on = p.id === rail;
+              const live = liveRails.includes(p.id);
+              const on = live && p.id === rail;
+              const sub = live ? R.approveOnPhone : R.comingSoon;
               return (
                 <Tappable
                   key={p.id}
@@ -163,9 +182,10 @@ export function TopUpFlow({
                     touched.current.rail = true;
                     setRail(p.id);
                   }}
+                  disabled={!live}
                   accessibilityRole="radio"
-                  accessibilityState={{ selected: on, checked: on }}
-                  accessibilityLabel={`${p.name}, ${R.approveOnPhone}`}
+                  accessibilityState={{ selected: on, checked: on, disabled: !live }}
+                  accessibilityLabel={`${p.name}, ${sub}`}
                   style={{
                     minHeight: 64,
                     flexDirection: "row",
@@ -180,10 +200,10 @@ export function TopUpFlow({
                 >
                   <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: on ? 7 : 2, borderColor: on ? tokens.color.accentText : tokens.color.line, backgroundColor: tokens.color.bg }} />
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 16, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{p.name}</Text>
-                    <Text style={{ fontSize: 12, color: tokens.color.muted }}>{R.approveOnPhone}</Text>
+                    <Text style={{ fontSize: 16, fontWeight: tokens.font.weight.bold, color: live ? tokens.color.ink : tokens.color.muted }}>{p.name}</Text>
+                    <Text style={{ fontSize: 12, color: tokens.color.muted }}>{sub}</Text>
                   </View>
-                  <Icon name="smartphone" size={18} color={tokens.color.muted} />
+                  {live ? <Icon name="smartphone" size={18} color={tokens.color.muted} /> : null}
                 </Tappable>
               );
             })}
@@ -241,9 +261,12 @@ export function TopUpFlow({
                 );
               })}
             </View>
+            {amountOk && fee > 0 ? <Text style={{ fontSize: 13, lineHeight: 18, color: tokens.color.muted }}>{RF.feeLine(fee, charged, feePct)}</Text> : null}
             <Text style={{ fontSize: 13, lineHeight: 18, color: tokens.color.muted }}>{RF.amountHint(amountOk ? amount : 5, ratePct, avgFare)}</Text>
           </>
         ) : (
+          <>
+          {amountOk && fee > 0 ? <Text style={{ fontSize: 13, lineHeight: 18, color: tokens.color.muted }}>{RF.feeSplit(amount, fee, feePct)}</Text> : null}
           <SendField
             label={R.phoneL}
             value={phone}
@@ -258,11 +281,12 @@ export function TopUpFlow({
             hint={R.phoneHint}
             autoFocus
           />
+          </>
         )}
       </ScrollView>
       <CtaBar>
         <CtaButton
-          label={step === 3 ? RF.requestCta(amount) : SEND_COPY.next}
+          label={step === 3 ? RF.requestCta(charged) : SEND_COPY.next}
           onPress={next}
           loading={step === 3 && isStarting}
           disabled={(step === 2 && !amountOk) || (step === 3 && (!phoneOk || !amountOk))}

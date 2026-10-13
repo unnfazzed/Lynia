@@ -205,10 +205,23 @@ jobs:
           BIRD_SMS_FROM: ${{ vars.BIRD_SMS_FROM }}
           LOCAL_SMS_ENABLED: ${{ vars.LOCAL_SMS_ENABLED }}
           LOCAL_SMS_API_URL: ${{ vars.LOCAL_SMS_API_URL }}
+          PAYNOW_ENABLED: ${{ vars.PAYNOW_ENABLED }}
+          PAYNOW_INTEGRATION_ID: ${{ vars.PAYNOW_INTEGRATION_ID }}
+          PAYNOW_AUTH_EMAIL: ${{ vars.PAYNOW_AUTH_EMAIL }}
+          PAYNOW_RESULT_URL: ${{ vars.PAYNOW_RESULT_URL }}
           BIRD_VERIFY_ENABLED: ${{ vars.BIRD_VERIFY_ENABLED }}
         run: |
           set -euo pipefail
           errors=()
+          # Paynow top-ups (docs/plans/2026-10-paynow-biker-wallet.md): the API refuses to boot PAYMENT_RAIL=paynow
+          # with any of its settings missing (config/env.ts), so fail here in seconds instead of at rollout.
+          if [ "$PAYNOW_ENABLED" = "true" ]; then
+            for _v in PAYNOW_INTEGRATION_ID PAYNOW_AUTH_EMAIL PAYNOW_RESULT_URL; do
+              if [ -z "$(printf '%s' "${!_v}" | tr -d '[:space:]')" ]; then
+                errors+=("PAYNOW_ENABLED=true but the $_v repo Variable is empty — the API refuses to boot a half-wired Paynow rail. Set it (and the PAYNOW_INTEGRATION_KEY secret), or set PAYNOW_ENABLED=false.")
+              fi
+            done
+          fi
           if [ "$OTP_CHANNEL" = "console" ]; then
             errors+=("OTP_CHANNEL=console is a dev-only channel and must not be used in production — clear the OTP_CHANNEL repo Variable (defaults to whatsapp) or set it to whatsapp/sms.")
           fi
@@ -466,6 +479,12 @@ jobs:
           BIRD_WEBHOOK_ENABLED: ${{ vars.BIRD_WEBHOOK_ENABLED }}
           LOCAL_SMS_ENABLED: ${{ vars.LOCAL_SMS_ENABLED }}
           LOCAL_SMS_API_URL: ${{ vars.LOCAL_SMS_API_URL }}
+          PAYNOW_ENABLED: ${{ vars.PAYNOW_ENABLED }}
+          PAYNOW_INTEGRATION_ID: ${{ vars.PAYNOW_INTEGRATION_ID }}
+          PAYNOW_AUTH_EMAIL: ${{ vars.PAYNOW_AUTH_EMAIL }}
+          PAYNOW_RESULT_URL: ${{ vars.PAYNOW_RESULT_URL }}
+          PAYNOW_FEE_MODE: ${{ vars.PAYNOW_FEE_MODE }}
+          TOPUP_FEE_PCT: ${{ vars.TOPUP_FEE_PCT }}
           LOCAL_SMS_SENDER_ID: ${{ vars.LOCAL_SMS_SENDER_ID }}
           LOCAL_SMS_ANDROID_HASH: ${{ vars.LOCAL_SMS_ANDROID_HASH }}
           BIRD_VERIFY_ENABLED: ${{ vars.BIRD_VERIFY_ENABLED }}
@@ -593,6 +612,15 @@ jobs:
             secret LOCAL_SMS_API_KEY
           else
             drop LOCAL_SMS_API_URL LOCAL_SMS_SENDER_ID LOCAL_SMS_ANDROID_HASH LOCAL_SMS_API_KEY
+          fi
+          # Paynow biker top-ups (docs/plans/2026-10-paynow-biker-wallet.md): same gate as release.yml.
+          if [ "$PAYNOW_ENABLED" = "true" ]; then
+            SET+=("PAYMENT_RAIL=paynow" "PAYNOW_INTEGRATION_ID=$PAYNOW_INTEGRATION_ID" "PAYNOW_AUTH_EMAIL=$PAYNOW_AUTH_EMAIL" "PAYNOW_RESULT_URL=$PAYNOW_RESULT_URL")
+            opt PAYNOW_FEE_MODE "$PAYNOW_FEE_MODE"
+            opt TOPUP_FEE_PCT "$TOPUP_FEE_PCT"
+            secret PAYNOW_INTEGRATION_KEY
+          else
+            drop PAYMENT_RAIL PAYNOW_INTEGRATION_ID PAYNOW_AUTH_EMAIL PAYNOW_RESULT_URL PAYNOW_FEE_MODE TOPUP_FEE_PCT PAYNOW_INTEGRATION_KEY
           fi
           if [ "$BIRD_VERIFY_ENABLED" = "true" ]; then secret BIRD_VERIFY_API_KEY; else drop BIRD_VERIFY_API_KEY; fi
           # E12: armed at cutover, environment=production-azure so post-cutover errors are separable.

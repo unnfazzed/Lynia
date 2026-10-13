@@ -85,6 +85,9 @@ export interface PaymentRailResult {
   amount?: number;
   /** Human-readable failure/status detail for logs and ops. Never surfaced raw to the rider. */
   reason?: string;
+  /** Where the rail can be asked about this charge later (Paynow's `pollurl`). Server-side only: it is
+   *  persisted on the intent and never sent to the app. */
+  pollUrl?: string;
   /**
    * The untouched vendor payload this result was mapped from. The live client stores this alongside the
    * mapped domain object (roadmap 2.5 raw-payload retention) so a mapping bug is reconstructable and the
@@ -98,6 +101,10 @@ export interface PaymentRailResult {
 export interface PaymentRailLookupOptions {
   /** Per-call deadline override (ms). Omitted ⇒ {@link PAYMENT_RAIL_DEFAULT_TIMEOUT_MS}. */
   timeoutMs?: number;
+  /** The poll URL {@link PaymentRail.initiate} returned, when the rail looks charges up by URL (Paynow). */
+  pollUrl?: string;
+  /** Our `TopUp` id: the rail's fallback lookup key when the poll URL was never received (Paynow trace). */
+  topUpId?: string;
 }
 
 /**

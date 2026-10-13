@@ -5396,6 +5396,29 @@ positive balance, which is false. No handoff draws the per-job case.
 The offline fallback for the floor reads `COMMISSION.lowBalanceBlockBelow`, not the old literal `2`. The owner
 chose this wording (2026-10-12) over reusing the API's `commission_low_balance` message or dropping the body.
 
+## D-103 · Biker top-ups through Paynow: the 2.5% fee lines and "Coming soon" providers (Rider v2 T1–T4) — APPROVED (owner, 2026-10-12)
+
+**Why:** Top-ups now charge through Paynow express checkout (`docs/plans/2026-10-paynow-biker-wallet.md`). The owner
+decided the biker pays Paynow's 2.5% transaction fee on top of the amount that reaches their balance, that the copy
+says so, and that only EcoCash is live in Phase 1, with InnBucks and O'mari shown as "Coming soon". The owner's
+design rule for this feature: *"we are using current design and if current design is not enough we do new
+screens."* Rider v2 draws none of these states, so they are added in the drawn screens' own style (tokens only).
+
+| Element | Drawn (rider-v2 `rv-money.jsx` T1–T4) | Shipped |
+|---|---|---|
+| T1 InnBucks / O'mari cards | selectable, sub-line "Approve on your phone" | same card and position, **not selectable**, name in `--muted`, no smartphone icon, sub-line **"Coming soon"** (`R.comingSoon`). Live rails are server-served (`CommissionConfig.topupRails`); a saved provider that isn't live opens on EcoCash. |
+| T2 Amount | big amount, chips, `amountHint` | plus one muted 13/18 line above the hint: **"Transaction fee 2.5%: $0.13. You pay $5.13."** (`RF.feeLine`). The amount stays what reaches the balance. |
+| T3 Phone | field + `phoneHint`, CTA "Request $5.00" | plus one muted 13/18 line above the field: **"$5.00 to your balance + $0.13 transaction fee (2.5%)."** (`RF.feeSplit`); CTA **"Request $5.13"**, the total the EcoCash prompt shows. |
+| T4 Approve | "Approve $5.00 on your phone" | **"Approve $5.13 on your phone"**: the total, matching the prompt. |
+| T5 Done | "$5.00 added. Your balance is $12.60." | unchanged: names the credit. |
+| Settings › Top-up number sheet | three provider chips | InnBucks / O'mari chips disabled and read "InnBucks · Coming soon". |
+| Money ledger row (server meta) | "Top-up · EcoCash" | "EcoCash · <Paynow reference> · You paid $5.13 (incl. 2.5% fee)" when a fee was charged. |
+| API refusal (old app builds that still offer InnBucks / O'mari) | — | 403 `topup_rail_unavailable`: "InnBucks is coming soon. Top up with EcoCash for now." |
+
+The fee is `TOPUP_FEE_PCT` (default 2.5), served as `CommissionConfig.topupFeePct`, rounded up to the cent
+(`topupFee`, `@lynia/shared`). Copy approved by the owner 2026-10-12. Phase 2 removes the "Coming soon" state when
+InnBucks (T4b) and O'mari (T4c) ship; those new approve screens will extend this entry.
+
 ## D-104 · The Money tab's commission balance line (Rider v2) under the per-job commission rule — APPROVED (owner, 2026-10-12)
 
 **Why:** PR #1154 removed the balance floor (`COMMISSION.lowBalanceBlockBelow` = 0); the server refuses one job

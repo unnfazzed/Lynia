@@ -1,4 +1,6 @@
 import { Module } from "@nestjs/common";
+import { PaynowWebhookController } from "./paynow-webhook.controller";
+import { TopupReconcileService } from "./topup-reconcile.service";
 import { WalletIntegrityController } from "./wallet-integrity.controller";
 import { WalletIntegrityService } from "./wallet-integrity.service";
 import { WalletController } from "./wallet.controller";
@@ -11,10 +13,13 @@ import { WalletService } from "./wallet.service";
  *
  * WalletIntegrityService/Controller add the nightly ledger-completeness sweep (roadmap 1.3) — the
  * AdminOrSchedulerGuard it uses is provided by the @Global AuthModule, so no extra import wiring.
+ *
+ * PaynowWebhookController + TopupReconcileService are the Paynow top-up rail's two ways of hearing back
+ * (docs/plans/2026-10-paynow-biker-wallet.md); PAYMENT_RAIL comes from the @Global PaymentsModule.
  */
 @Module({
-  controllers: [WalletController, WalletIntegrityController],
-  providers: [WalletService, WalletIntegrityService],
+  controllers: [WalletController, WalletIntegrityController, PaynowWebhookController],
+  providers: [WalletService, WalletIntegrityService, TopupReconcileService],
   exports: [WalletService],
 })
 export class WalletModule {}

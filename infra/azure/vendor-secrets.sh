@@ -33,6 +33,7 @@ VENDOR_GROUPS=(
   "LOCAL_SMS_ENABLED|LOCAL_SMS_API_KEY:LOCAL-SMS-API-KEY|local SMS gateway API key"
   "SENTRY_ENABLED|SENTRY_DSN:SENTRY-DSN|Sentry → lynia-api → Client Keys (DSN)"
   "DEMO_ACCOUNT_ENABLED|DEMO_OTP_PHONE:DEMO-OTP-PHONE DEMO_OTP_CODE:DEMO-OTP-CODE|Play review demo login: phone (E.164) + fixed code"
+  "PAYNOW_ENABLED|PAYNOW_INTEGRATION_KEY:PAYNOW-INTEGRATION-KEY|Paynow → Receive Payment Links → the LyniaGo 3rd-party integration → Integration Key"
 )
 
 TMP="$(mktemp -d)"; chmod 700 "$TMP"; trap 'rm -rf "$TMP"' EXIT

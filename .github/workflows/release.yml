@@ -212,10 +212,23 @@ jobs:
           BIRD_SMS_FROM: ${{ vars.BIRD_SMS_FROM }}
           LOCAL_SMS_ENABLED: ${{ vars.LOCAL_SMS_ENABLED }}
           LOCAL_SMS_API_URL: ${{ vars.LOCAL_SMS_API_URL }}
+          PAYNOW_ENABLED: ${{ vars.PAYNOW_ENABLED }}
+          PAYNOW_INTEGRATION_ID: ${{ vars.PAYNOW_INTEGRATION_ID }}
+          PAYNOW_AUTH_EMAIL: ${{ vars.PAYNOW_AUTH_EMAIL }}
+          PAYNOW_RESULT_URL: ${{ vars.PAYNOW_RESULT_URL }}
           BIRD_VERIFY_ENABLED: ${{ vars.BIRD_VERIFY_ENABLED }}
         run: |
           set -euo pipefail
           errors=()
+          # Paynow top-ups (docs/plans/2026-10-paynow-biker-wallet.md): the API refuses to boot PAYMENT_RAIL=paynow
+          # with any of its settings missing (config/env.ts), so fail here in seconds instead of at rollout.
+          if [ "$PAYNOW_ENABLED" = "true" ]; then
+            for _v in PAYNOW_INTEGRATION_ID PAYNOW_AUTH_EMAIL PAYNOW_RESULT_URL; do
+              if [ -z "$(printf '%s' "${!_v}" | tr -d '[:space:]')" ]; then
+                errors+=("PAYNOW_ENABLED=true but the $_v repo Variable is empty — the API refuses to boot a half-wired Paynow rail. Set it (and the PAYNOW_INTEGRATION_KEY secret), or set PAYNOW_ENABLED=false.")
+              fi
+            done
+          fi
           if [ "$OTP_CHANNEL" = "console" ]; then
             errors+=("OTP_CHANNEL=console is a dev-only channel and must not be used in production — clear the OTP_CHANNEL repo Variable (defaults to whatsapp) or set it to whatsapp/sms.")
           fi
@@ -660,6 +673,23 @@ jobs:
               ENV_VARS="${ENV_VARS};LOCAL_SMS_ANDROID_HASH=${{ vars.LOCAL_SMS_ANDROID_HASH }}"
             fi
             SECRETS="${SECRETS},LOCAL_SMS_API_KEY=LOCAL_SMS_API_KEY:latest"
+          fi
+
+          # Paynow biker top-ups (docs/plans/2026-10-paynow-biker-wallet.md) are OPT-IN via PAYNOW_ENABLED=true —
+          # same reason as the others: don't reference PAYNOW_INTEGRATION_KEY before it exists in Secret Manager.
+          # Store the integration key as the PAYNOW_INTEGRATION_KEY secret, set the PAYNOW_INTEGRATION_ID,
+          # PAYNOW_AUTH_EMAIL (the merchant login email) and PAYNOW_RESULT_URL (https://<api-host>/webhooks/paynow)
+          # repo Variables, then flip PAYNOW_ENABLED=true. PAYNOW_FEE_MODE / TOPUP_FEE_PCT are optional overrides
+          # (defaults: Paynow adds the fee on top; 2.5%).
+          if [ "${{ vars.PAYNOW_ENABLED }}" = "true" ]; then
+            ENV_VARS="${ENV_VARS};PAYMENT_RAIL=paynow;PAYNOW_INTEGRATION_ID=${{ vars.PAYNOW_INTEGRATION_ID }};PAYNOW_AUTH_EMAIL=${{ vars.PAYNOW_AUTH_EMAIL }};PAYNOW_RESULT_URL=${{ vars.PAYNOW_RESULT_URL }}"
+            if [ -n "${{ vars.PAYNOW_FEE_MODE }}" ]; then
+              ENV_VARS="${ENV_VARS};PAYNOW_FEE_MODE=${{ vars.PAYNOW_FEE_MODE }}"
+            fi
+            if [ -n "${{ vars.TOPUP_FEE_PCT }}" ]; then
+              ENV_VARS="${ENV_VARS};TOPUP_FEE_PCT=${{ vars.TOPUP_FEE_PCT }}"
+            fi
+            SECRETS="${SECRETS},PAYNOW_INTEGRATION_KEY=PAYNOW_INTEGRATION_KEY:latest"
           fi
 
           # Bird Verify OTP wiring (docs/BIRD-SETUP.md "Bird Verify", docs/DESIGN-DEVIATIONS.md D-40) is

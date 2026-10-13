@@ -1,4 +1,4 @@
-import { formatPhoneDisplay } from "@lynia/shared";
+import { formatPhoneDisplay, TOPUP } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useQuery } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -13,6 +13,7 @@ import { RIDER_PERM_ROUTES } from "../../src/logic/rider-perm-flow";
 import { providerName, TOPUP_PROVIDERS, type TopupProviderId, useRiderPrefs } from "../../src/logic/rider-prefs";
 import { openPhoneSettings, requestNotif, usePermissions } from "../../src/permissions/state";
 import { requestPushRegistration } from "../../src/push/push-kick";
+import { useWalletConfig } from "../../src/query/use-wallet";
 import { riderModeAvailable } from "../../src/rider-mode";
 import { BackHeader, Body, FirstRunScreen, FrSheet, FrSoftPill, IconDot, LargeTitle, ListCard, ListRow, PinnedFooter, SplitTitle, SystemSettingsSteps, Toggle } from "../../src/ui";
 import { PC, PD, RP } from "../../src/ui/firstrun/copy";
@@ -70,6 +71,8 @@ export default function SettingsScreen(): React.ReactElement {
   const [editTopup, setEditTopup] = useState(false);
   const [draftProvider, setDraftProvider] = useState<TopupProviderId>(prefs.topupProvider);
   const [draftPhone, setDraftPhone] = useState("");
+  // Paynow Phase 1 (ledger D-103): only the live providers can be saved; the rest read "Coming soon".
+  const liveRails: readonly TopupProviderId[] = useWalletConfig({ enabled: isRider }).config?.topupRails ?? TOPUP.liveRails;
 
   const phone = me?.phone ? formatPhoneDisplay(me.phone) : "";
   const topupPhone = prefs.topupPhone ?? phone;
@@ -107,7 +110,7 @@ export default function SettingsScreen(): React.ReactElement {
   const location = (): void => (locOn ? openPhoneSettings() : go(RIDER_PERM_ROUTES.location));
 
   const openTopupEdit = (): void => {
-    setDraftProvider(prefs.topupProvider);
+    setDraftProvider(liveRails.includes(prefs.topupProvider) ? prefs.topupProvider : (liveRails[0] ?? "ecocash"));
     setDraftPhone(topupPhone);
     setEditTopup(true);
   };
@@ -234,7 +237,11 @@ export default function SettingsScreen(): React.ReactElement {
           />
         }
       >
-        <Chips list={TOPUP_PROVIDERS.map((p) => ({ id: p.id, label: p.name }))} value={draftProvider} onChange={setDraftProvider} />
+        <Chips
+          list={TOPUP_PROVIDERS.map((p) => ({ id: p.id, label: p.name, disabled: !liveRails.includes(p.id), note: R.comingSoon }))}
+          value={draftProvider}
+          onChange={setDraftProvider}
+        />
         <SendField label={R.phoneL} value={draftPhone} onChangeText={setDraftPhone} keyboardType="phone-pad" autoComplete="tel" />
       </MSheet>
     </>

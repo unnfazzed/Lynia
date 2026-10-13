@@ -15,8 +15,8 @@ export const walletKey = ["wallet", "balance"] as const;
 export const walletLedgerKey = ["wallet", "ledger"] as const;
 
 /** The commission rate + policy. Longer staleTime — it changes only at the flip. */
-export function useWalletConfig(): { config: CommissionConfig | undefined; isLoading: boolean } {
-  const q = useQuery({ queryKey: walletConfigKey, queryFn: getWalletConfig, staleTime: 5 * 60_000 });
+export function useWalletConfig(opts: { enabled?: boolean } = {}): { config: CommissionConfig | undefined; isLoading: boolean } {
+  const q = useQuery({ queryKey: walletConfigKey, queryFn: getWalletConfig, staleTime: 5 * 60_000, enabled: opts.enabled ?? true });
   return { config: q.data, isLoading: q.isLoading };
 }
 
