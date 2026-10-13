@@ -72,12 +72,17 @@ const Page = () => (
   </ToastProvider>
 );
 
-// Open all day every day, so "open" doesn't depend on when the test runs.
+// Open all day every day, and the clock pinned to a local Wednesday noon: the open line reads the
+// device's local time, and "00:00–23:59" is closed in the last minute of the day, so a run at 23:59
+// read "Closed · opens 00:00".
+const NOON = new Date(2026, 8, 30, 12, 0);
 const ALL_DAY = { open: "00:00", close: "23:59" };
 const WEEK = { mon: ALL_DAY, tue: ALL_DAY, wed: ALL_DAY, thu: ALL_DAY, fri: ALL_DAY, sat: ALL_DAY, sun: ALL_DAY };
 const kitchen = (over = {}) => merchantProfile({ name: "Sadza Republic", hours: WEEK, pilotEnabled: true, ...over });
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(NOON);
   poll.orders = [];
   poll.loaded = true;
   poll.error = null;
@@ -92,6 +97,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.clearAllMocks();
   reachable = true;
   bk.bookings = [];
@@ -116,7 +122,7 @@ describe("loading the Orders home", () => {
   });
 
   it("retries a 5xx profile read by itself on a back-off (MJ-RH4) — reachability never flips for a response", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.useFakeTimers({ shouldAdvanceTime: true, now: NOON });
     try {
       vi.mocked(getMyMerchant)
         .mockRejectedValueOnce(new ApiError(503, "Restaurants isn't live on this account yet."))
@@ -188,7 +194,7 @@ describe("a failed queue poll is never a lasting red line (Order flow v2's rule,
   });
 
   it("after it: the board keeps its orders and the failure is said once, in the ink toast", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.useFakeTimers({ shouldAdvanceTime: true, now: NOON });
     try {
       vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
       poll.orders = [merchantOrder({ merchantPhase: "ready_for_pickup", status: "open_for_offers" })];
