@@ -147,6 +147,10 @@ enum CommissionEntryType {
   adjustment
   // RESERVED — no writer in the wallet-core build (kept so the ledger type set is complete).
   reversal
+  // A $0 receipt for one of the biker's commission-free first jobs (D-70), written by chargeCommission
+  // where a paid job would write its ride_commission row, so the money pages can tell "free" from
+  // "never charged". Amount is always 0; at most one per order (partial unique index, migration 0092).
+  free_job
 }
 
 // The rail a top-up came in on. Mobile-money rails push a USSD prompt; `manual` is an ops-recorded credit.
@@ -419,6 +423,9 @@ model Rider {
   // null = not held (or a legacy on_hold row from before this column → score-clearable, as before). See
   // packages/shared/src/policy.ts HeldReason. Kept in lockstep with that shared union.
   heldReason        String?                                @map("held_reason")
+  // Admin console v2 §3: when the rider row was created (become-biker). Migration 0091 backfilled existing
+  // rows from profiles.created_at — APPROXIMATE for those (sign-up, not become-biker); exact from then on.
+  createdAt         DateTime                               @default(now()) @map("created_at")
   updatedAt         DateTime                               @updatedAt @map("updated_at")
 
   orders               Order[]               @relation("riderOrders")
@@ -519,6 +526,9 @@ model TopUp {
   pollUrl        String?     @map("poll_url")
   charged        Decimal?    @db.Decimal(10, 2)
   railPayload    Json?       @map("rail_payload")
+  // Admin console v2 §3 (migration 0091): why a top-up ended declined / expired (the rail's reason code, or
+  // `expired`). Null while pending/confirmed and on older rows.
+  declineReason  String?     @map("decline_reason")
 
   ledgerEntry CommissionLedger?
 
@@ -629,6 +639,16 @@ model Order {
   // profile doesn't block on this reference. See migration 0015.
   cancelledByProfile    Profile?                               @relation("cancelledByOrders", fields: [cancelledBy], references: [id], onDelete: SetNull)
   cancelReason          String?                                @map("cancel_reason")
+  // Admin console v2 §3 (migration 0091): WHO cancelled by role (customer|rider|merchant|admin|system),
+  // the stage it was in (the status, or the merchantPhase for a pre-dispatch merchant order) and a
+  // structured reason code where one exists. cancelReason stays the free-text note. Null on older rows.
+  cancelledByRole       String?                                @map("cancelled_by_role")
+  cancelStage           String?                                @map("cancel_stage")
+  cancelReasonCode      String?                                @map("cancel_reason_code")
+  // When a rider was put on the order (parcel offer accept, merchant dispatch accept), and when the venue
+  // accepted a merchant order. Null on older rows and on orders never assigned / accepted.
+  assignedAt            DateTime?                              @map("assigned_at")
+  merchantAcceptedAt    DateTime?                              @map("merchant_accepted_at")
   // Failed hand-off terminal (INTERFACE-AUDIT C6). Reason enum kept as text (shared UndeliveredReason);
   // deliveryAttempts is the recipient-contact attempt count shown to the customer.
   undeliveredReason     String?                                @map("undelivered_reason")
@@ -874,6 +894,11 @@ model Order {
   // D-72: the "Popular" venue ranking (delivered orders per venue over 30 days) and the merchant's
   // day/week money reads filter on merchant_id + a created_at range (migration 0069).
   @@index([merchantId, createdAt])
+  // Admin console v2 §3: the funnels / stuck lists window orders by created_at, by status and by type
+  // (migrations 0093–0095, CONCURRENTLY).
+  @@index([createdAt])
+  @@index([status, createdAt])
+  @@index([orderType, createdAt])
   @@map("orders")
 }
 
@@ -897,6 +922,7 @@ model Offer {
   @@unique([orderId, riderId])
   @@index([orderId, status])
   @@index([riderId])
+  @@index([createdAt])
   @@map("offers")
 }
 
@@ -912,6 +938,7 @@ model OrderEvent {
   // Composite (order_id, created_at) so the snapshot timeline read (filter order_id, order by
   // created_at asc) is an index-order scan; covers the plain order_id lookups too (E5).
   @@index([orderId, createdAt])
+  @@index([status, createdAt])
   @@map("order_events")
 }
 
@@ -1076,6 +1103,11 @@ model AuditLog {
   // action and on rows written before 0069.
   amount       Decimal? @db.Decimal(10, 2)
   balanceAfter Decimal? @map("balance_after") @db.Decimal(10, 2)
+  // Admin console v2 §3 (migration 0091): what `target` names (rider/order/merchant/…), and a before/after
+  // snapshot of the fields an action changed. Null on rows written before 0091 and by writers not yet moved.
+  targetType String?  @map("target_type")
+  before     Json?
+  after      Json?
   createdAt  DateTime @default(now()) @map("created_at")
 
   @@index([createdAt])
@@ -1144,6 +1176,10 @@ model Merchant {
   // per-merchant gate for the founder's named CBD pilot corridor. Defaults false: dormant until an
   // operator explicitly onboards the shop.
   pilotEnabled   Boolean          @default(false) @map("pilot_enabled")
+  // Admin console v2 §3 (migration 0091): the FIRST go-live (pilotEnabled false → true) and the admin who
+  // did it. Kept on a later pause/resume. Null for merchants that went live before 0091 or never did.
+  approvedAt     DateTime?        @map("approved_at")
+  approvedBy     String?          @map("approved_by")
   // C2: the shop's own pickup point (same Waypoint shape as Order.pickup — {point:{lat,lng},
   // landmark, contactPhone}), set by the merchant before it can take orders. Nullable: onboarding
   // merchants have no location yet, so placeOrder 409s until it's set. Plain JSON for now — C3's
@@ -1627,4 +1663,28 @@ model CustomerBalanceEntry {
   @@index([profileId])
   @@index([appliedOrderId])
   @@map("customer_balance_entries")
+}
+
+// Admin console v2 §3 (docs/plans/2026-10-13-admin-console-v2.md): one append-only table for the
+// transitions the funnels, stuck lists and money pages read (rider online/offline, onboarding steps,
+// KYC attempts, bids, broadcasts, merchant phases, top-up anomalies…). Written best-effort by
+// src/common/domain-events.ts — in the domain change's own transaction where there is one. `data` is
+// small and carries NO GPS and no PII (ids, amounts, codes only), so it sits outside the GPS purge.
+// No foreign keys on purpose: an analytics row must never block (or be cascaded by) a domain write.
+model DomainEvent {
+  id          String   @id @default(uuid()) @db.Uuid
+  type        String
+  actorId     String?  @map("actor_id")
+  // customer | rider | merchant | admin | system
+  actorRole   String?  @map("actor_role")
+  subjectType String   @map("subject_type")
+  subjectId   String   @map("subject_id")
+  orderId     String?  @map("order_id") @db.Uuid
+  data        Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([type, createdAt])
+  @@index([subjectId, createdAt])
+  @@index([orderId])
+  @@map("domain_events")
 }
