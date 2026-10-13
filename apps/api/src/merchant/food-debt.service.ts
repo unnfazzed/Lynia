@@ -7,6 +7,7 @@ import { OrderLifecycleService } from "../orders/order-lifecycle.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { resolveOwnMerchantId } from "./merchant-lookup.util";
+import { cancelAttribution } from "../common/cancel-attribution";
 
 /**
  * C4 — food money evidence layer (docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md §5 Lane
@@ -626,6 +627,8 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
         refundReference: reference,
         refundAmount: amount,
         refundedAt: new Date(),
+        // Admin console v2 §3: the venue refunded a paid wallet order while cooking.
+        ...cancelAttribution({ by: "merchant", status: "requested", merchantPhase: "preparing", reasonCode: "refunded" }),
       },
     });
     if (claimed.count === 0) throw new ConflictException("Order changed, retry");

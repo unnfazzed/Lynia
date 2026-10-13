@@ -17,6 +17,10 @@
  */
 import type { IssueType, IssueStatus, IssueResolution, ReportReason, Role } from "@lynia/shared";
 
+/** Who cancelled an order, by role (GET /admin/orders `cancelledByRole`, admin console v2 §3). Orders
+ *  cancelled before migration 0091 carry only customer / rider (matched from the canceller id) or null. */
+export type CancelledByRole = "customer" | "rider" | "merchant" | "admin" | "system";
+
 /** A compact order/trip row reused in the recent-trips + recent-orders tables. */
 export interface TripRow {
   id: string;
@@ -510,10 +514,11 @@ export interface NavCounts {
 
 /* ── Rider prepaid wallet (DOC-16-03 — GET /admin/riders/:id/wallet) ── */
 /** One append-only commission-ledger row (credit +, debit −). `type` mirrors the API's
- *  CommissionEntryType; `actor` is "system" or the admin profile id that wrote a manual credit. */
+ *  CommissionEntryType; `actor` is "system" or the admin profile id that wrote a manual credit.
+ *  `free_job` (admin console v2 §3) is the $0 receipt for one of the biker's commission-free first jobs. */
 export interface WalletLedgerEntry {
   id: string;
-  type: "ride_commission" | "topup" | "grace" | "adjustment" | "reversal";
+  type: "ride_commission" | "topup" | "grace" | "adjustment" | "reversal" | "free_job";
   amount: string;
   balanceAfter: string;
   note: string | null;

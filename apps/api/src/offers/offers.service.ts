@@ -11,6 +11,7 @@ import { blockedPairWhere } from "../reports/blocks";
 import { onlineRefusalReason } from "../riders/rider.service";
 import { REFUSAL_MESSAGE } from "../riders/online-gate";
 import { TrackingGateway } from "../tracking/tracking.gateway";
+import { domainEvents } from "../common/domain-events";
 
 const WINDOW_CLOSED = "The offer window has closed. This order isn't taking new offers.";
 const ONE_ROUND = "You already responded to this order (one round only)";
@@ -186,15 +187,40 @@ export class OffersService {
         const bid = { type: input.type, offeredFare: input.offeredFare, etaMinutes };
         const prior = await tx.offer.findUnique({
           where: { orderId_riderId: { orderId: input.orderId, riderId } },
-          select: { id: true, status: true, createdAt: true },
+          select: { id: true, status: true, createdAt: true, offeredFare: true, etaMinutes: true },
         });
-        if (!prior) return tx.offer.create({ data: { orderId: input.orderId, riderId, ...bid }, select });
+        // Admin console v2 §3: the bid history, in the bid's own transaction. A re-bid overwrites the offer row,
+        // so this is the only record of the first ask.
+        const bidEvent = (type: "offer.bid" | "offer.rebid", offerId: string) =>
+          domainEvents.record(tx, {
+            type,
+            actorId: riderId,
+            actorRole: "rider",
+            subjectType: "offer",
+            subjectId: offerId,
+            orderId: input.orderId,
+            data: {
+              kind: input.type,
+              fare: input.offeredFare,
+              etaMinutes,
+              ...(type === "offer.rebid" && prior
+                ? { fromFare: Number(prior.offeredFare), fromEtaMinutes: prior.etaMinutes, fromStatus: prior.status }
+                : {}),
+            },
+          });
+        if (!prior) {
+          const created = await tx.offer.create({ data: { orderId: input.orderId, riderId, ...bid }, select });
+          await bidEvent("offer.bid", created.id);
+          return created;
+        }
         // Answering a raise: only an offer from BEFORE the latest raise, and only one still open to change
         // (pending, or withdrawn → `declined` while the order is open). Anything else is the one-round rule.
         const raisedAt = locked[0].fare_raised_at;
         const answersRaise = raisedAt !== null && prior.createdAt < raisedAt && (prior.status === "pending" || prior.status === "declined");
         if (!answersRaise) throw new ConflictException(ONE_ROUND);
-        return tx.offer.update({ where: { id: prior.id }, data: { ...bid, status: "pending", createdAt: new Date() }, select });
+        const rebid = await tx.offer.update({ where: { id: prior.id }, data: { ...bid, status: "pending", createdAt: new Date() }, select });
+        await bidEvent("offer.rebid", rebid.id);
+        return rebid;
       });
       // Post-commit, best-effort: nudge the customer that an offer arrived (§5c).
       void this.notifications.notifyNewOffer(input.orderId, order.customerId);
@@ -256,11 +282,20 @@ export class OffersService {
       if (locked[0].status !== "open_for_offers") throw new ConflictException("The customer has already chosen");
       const offer = await tx.offer.findUnique({
         where: { orderId_riderId: { orderId, riderId } },
-        select: { id: true, status: true },
+        select: { id: true, status: true, offeredFare: true },
       });
       if (!offer) throw new NotFoundException("No offer to withdraw");
       if (offer.status !== "pending") throw new ConflictException("This offer is already closed");
       await tx.offer.update({ where: { id: offer.id }, data: { status: "declined" } });
+      await domainEvents.record(tx, {
+        type: "offer.withdraw",
+        actorId: riderId,
+        actorRole: "rider",
+        subjectType: "offer",
+        subjectId: offer.id,
+        orderId,
+        data: { fare: offer.offeredFare != null ? Number(offer.offeredFare) : null },
+      });
       return { orderId, withdrawn: true as const };
     }).then((res) => {
       this.safeEmitOffersChanged(orderId);

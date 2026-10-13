@@ -27,6 +27,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { isDishOutOfStock, notifyFoodQueueChanged, resolveOwnMerchantId } from "./merchant-lookup.util";
+import { cancelAttribution } from "../common/cancel-attribution";
 
 /**
  * Order flow v2 substitution (BRIEF §8, handoff U1–U5 / M2, ledger D-59).
@@ -314,7 +315,15 @@ export class OrderSubstitutionService implements OnModuleInit, OnModuleDestroy {
         itemsEditedAt: now,
       };
       if (allGone) {
-        data = { status: "cancelled", cancelledAt: now, rejectionReason: "all_out_of_stock", merchantPhase: null, itemsEditedAt: now };
+        data = {
+          status: "cancelled",
+          cancelledAt: now,
+          rejectionReason: "all_out_of_stock",
+          merchantPhase: null,
+          itemsEditedAt: now,
+          // Admin console v2 §3: the venue's proposal removed every line.
+          ...cancelAttribution({ by: "merchant", status: "requested", merchantPhase: order.merchantPhase, reasonCode: "all_out_of_stock" }),
+        };
       } else if (atAccept) {
         data = hasSwaps
           ? { ...data, merchantPhase: "awaiting_item_approval", itemApprovalDeadlineAt: deadlineAt, prepMinutes }
@@ -527,7 +536,20 @@ export class OrderSubstitutionService implements OnModuleInit, OnModuleDestroy {
     let data: Prisma.OrderUpdateManyMutationInput;
     let nextPhase = order.merchantPhase as string | null;
     if (nothingLeft && order.status === "requested") {
-      data = { status: "cancelled", cancelledAt: now, rejectionReason: "all_out_of_stock", merchantPhase: null, itemApprovalDeadlineAt: null };
+      data = {
+        status: "cancelled",
+        cancelledAt: now,
+        rejectionReason: "all_out_of_stock",
+        merchantPhase: null,
+        itemApprovalDeadlineAt: null,
+        // Admin console v2 §3: the customer's answer (or the round timing out) left nothing to send.
+        ...cancelAttribution({
+          by: status === "confirmed" ? "customer" : "system",
+          status: "requested",
+          merchantPhase: order.merchantPhase,
+          reasonCode: "all_out_of_stock",
+        }),
+      };
       nextPhase = null;
     } else {
       data = { merchantGoodsTotal: goods.goodsTotal, merchantDeliveryShare, agreedFare: newTotal, itemsEditedAt: now };

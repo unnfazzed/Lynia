@@ -15,6 +15,7 @@ function build(p: {
   uncredited?: Array<{ id: string; riderId: string; amount: Prisma.Decimal }>;
   missingReceipt?: Array<{ id: string; orderId: string | null }>;
   orphanCredits?: Array<{ id: string; topUpId: string | null }>;
+  nonzeroFree?: Array<{ id: string; orderId: string | null; amount: Prisma.Decimal }>;
 }) {
   const metrics = {
     recordWalletIntegrityRun: vi.fn(),
@@ -29,7 +30,13 @@ function build(p: {
       groupBy: vi.fn().mockResolvedValue(p.sums ?? []),
       findMany: vi.fn((args: { where?: { type?: string } }) =>
         // The receipt sweep filters on type=ride_commission; the orphan sweep filters on topUpId.
-        Promise.resolve(args?.where?.type === "ride_commission" ? (p.missingReceipt ?? []) : (p.orphanCredits ?? [])),
+        Promise.resolve(
+          args?.where?.type === "ride_commission"
+            ? (p.missingReceipt ?? [])
+            : args?.where?.type === "free_job"
+              ? (p.nonzeroFree ?? [])
+              : (p.orphanCredits ?? []),
+        ),
       ),
     },
     topUp: {
@@ -119,5 +126,22 @@ describe("WalletIntegrityService.runIntegrityCheck", () => {
     });
     const report = await svc.runIntegrityCheck();
     expect(report.driftByKind.orphan_topup_credit).toBe(1);
+  });
+
+  it("never treats a $0 free_job receipt as a missing_receipt (the sweep is ride_commission-only)", async () => {
+    const { svc } = build({});
+    const report = await svc.runIntegrityCheck();
+    expect(report.ok).toBe(true);
+    expect(report.driftByKind.missing_receipt).toBe(0);
+    expect(report.driftByKind.free_job_nonzero).toBe(0);
+  });
+
+  it("flags free_job_nonzero when a free_job receipt moved money", async () => {
+    const { svc, metrics } = build({ nonzeroFree: [{ id: "l9", orderId: "o9", amount: dec("-0.30") }] });
+    const report = await svc.runIntegrityCheck();
+    expect(report.ok).toBe(false);
+    expect(report.driftByKind.free_job_nonzero).toBe(1);
+    expect(report.violations[0]).toMatchObject({ kind: "free_job_nonzero", ref: "l9" });
+    expect(metrics.recordWalletIntegrityDrift).toHaveBeenCalledWith("free_job_nonzero", 1);
   });
 });

@@ -1393,6 +1393,53 @@ describe("RiderService.setOnline", () => {
     expect(sql).toContain("on_hold = false");
   });
 
+  it("records rider.online on a real flip, and first_online when no heartbeat was ever stamped (admin console v2 §3)", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const prisma = {
+      rider: {
+        findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false, isOnline: false, lastHeartbeatAt: null }),
+      },
+      $executeRaw: async () => 1,
+      domainEvent: {
+        create: async ({ data }: { data: Record<string, unknown> }) => {
+          events.push(data);
+          return {};
+        },
+      },
+    };
+    await svc(prisma, {}).setOnline("p1", true, HARARE);
+    await new Promise((r) => setImmediate(r)); // the writes are fire-and-forget
+    expect(events.map((e) => [e.type, e.data])).toEqual([
+      ["rider.online", undefined],
+      ["rider.onboarding_step", { step: "first_online" }],
+    ]);
+    // GPS never reaches the event (the go-online position stays in the tracking path).
+    expect(JSON.stringify(events)).not.toContain("-17.83");
+  });
+
+  it("records rider.offline (manual) when an online biker goes offline, and nothing for a repeat toggle", async () => {
+    const run = async (isOnline: boolean) => {
+      const events: Array<Record<string, unknown>> = [];
+      const prisma = {
+        rider: {
+          findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false, isOnline, lastHeartbeatAt: new Date() }),
+          update: async () => ({}),
+        },
+        domainEvent: {
+          create: async ({ data }: { data: Record<string, unknown> }) => {
+            events.push(data);
+            return {};
+          },
+        },
+      };
+      await svc(prisma, {}).setOnline("p1", false);
+      await new Promise((r) => setImmediate(r));
+      return events;
+    };
+    expect((await run(true)).map((e) => [e.type, e.data])).toEqual([["rider.offline", { reason: "manual" }]]);
+    expect(await run(false)).toEqual([]);
+  });
+
   it("refuses to flip online when an admin suspend lands between the gate and the write (CAS = 0 rows)", async () => {
     let threw: unknown;
     // The gate read still sees the rider eligible (advisory), but the guarded write matches 0 rows

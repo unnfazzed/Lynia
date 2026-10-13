@@ -125,3 +125,22 @@ export function IconPhone(p: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+/** lucide `menu` — the phone top bar's nav disclosure (D-105). */
+export function IconMenu(p: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(p)}>
+      <line x1="4" x2="20" y1="6" y2="6" />
+      <line x1="4" x2="20" y1="12" y2="12" />
+      <line x1="4" x2="20" y1="18" y2="18" />
+    </svg>
+  );
+}
+/** lucide `x` — closes the phone nav disclosure (D-105). */
+export function IconX(p: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(p)}>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </svg>
+  );
+}

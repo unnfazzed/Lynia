@@ -459,6 +459,34 @@ describe("FoodOrderService.acceptOrder — D-23 full vs item-level", () => {
     expect(data.prepMinutes).toBe(15);
   });
 
+  it("an accept stamps merchantAcceptedAt in the CAS and records merchant.phase accept (admin console v2 §3)", async () => {
+    let updateArgs: Record<string, unknown> | undefined;
+    const events: Array<Record<string, unknown>> = [];
+    const { svc } = build({
+      merchant: { findUnique: async () => ({ id: "m1", busyMode: false }) },
+      order: {
+        findFirst: async () => baseOrder({ merchantPaymentMethod: "wallet" }),
+        findUnique: async () => baseOrder({ merchantPhase: "awaiting_payment" }),
+        updateMany: async (a: Record<string, unknown>) => {
+          updateArgs = a;
+          return { count: 1 };
+        },
+      },
+      merchantOrderItem: { updateMany: async () => ({ count: 2 }) },
+      domainEvent: {
+        create: async ({ data }: { data: Record<string, unknown> }) => {
+          events.push(data);
+          return {};
+        },
+      },
+    });
+    await svc.acceptOrder("p1", "o1", { prepMinutes: 10 });
+    expect((updateArgs!.data as Record<string, unknown>).merchantAcceptedAt).toBeInstanceOf(Date);
+    expect(events).toEqual([
+      expect.objectContaining({ type: "merchant.phase", actorId: "p1", actorRole: "merchant", orderId: "o1", data: expect.objectContaining({ phase: "accept" }) }),
+    ]);
+  });
+
   it("full accept on a WALLET order goes to awaiting_payment — prep does NOT start (R-17)", async () => {
     let updateArgs: Record<string, unknown> | undefined;
     const { svc } = build({

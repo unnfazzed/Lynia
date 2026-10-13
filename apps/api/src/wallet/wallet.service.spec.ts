@@ -6,6 +6,54 @@ import type { NotificationsService } from "../notifications/notifications.servic
 import type { PrismaService } from "../prisma/prisma.service";
 import { WalletService } from "./wallet.service";
 
+describe("admin console v2 §3 — wallet recording", () => {
+  it("the rider-facing ledger never lists a free_job receipt (not a shared WalletEntryType)", async () => {
+    const findMany = vi.fn(async () => []);
+    const svc = build({}, { commissionLedger: { findMany } });
+    await svc.getLedger("r1");
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { riderId: "r1", type: { not: "free_job" } } }));
+  });
+
+  function creditTx(confirmedCount: number) {
+    const events: Array<Record<string, unknown>> = [];
+    const tx = {
+      topUp: {
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        findUnique: async () => ({ id: "t1", riderId: "r1", amount: new Prisma.Decimal(5), rail: "ecocash", initiatedAt: new Date(), resolvedAt: new Date() }),
+        count: vi.fn(async () => confirmedCount),
+      },
+      $executeRaw: async () => 0,
+      $queryRaw: async () => [{ balance: "0" }],
+      commissionLedger: { create: async () => ({}) },
+      commissionAccount: { update: async () => ({}) },
+      domainEvent: {
+        create: async ({ data }: { data: Record<string, unknown> }) => {
+          events.push(data);
+          return {};
+        },
+      },
+    };
+    const prisma = { $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
+    return { svc: build({}, prisma), tx, events };
+  }
+
+  it("records the biker funnel's first_topup inside the confirming transaction, and clears declineReason", async () => {
+    const { svc, tx, events } = creditTx(1);
+    await svc.creditFromTopup("t1");
+    expect(tx.topUp.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "confirmed", declineReason: null }) }));
+    expect(tx.topUp.count).toHaveBeenCalledWith({ where: { riderId: "r1", status: "confirmed" } });
+    expect(events).toEqual([
+      expect.objectContaining({ type: "rider.onboarding_step", subjectId: "r1", actorRole: "system", data: { step: "first_topup", topUpId: "t1", rail: "ecocash" } }),
+    ]);
+  });
+
+  it("a second confirmed top-up is not a first_topup", async () => {
+    const { svc, events } = creditTx(2);
+    await svc.creditFromTopup("t1");
+    expect(events).toEqual([]);
+  });
+});
+
 /** A tx `rider` stub for a rider past their D-70 commission-free first jobs (the debit applies). */
 const PAST_FREE_JOBS = { findUnique: async () => ({ tripsCount: COMMISSION.freeFirstJobs + 7 }) };
 
@@ -192,6 +240,8 @@ describe("WalletService.chargeCommission (0% is a no-op; shadow accrual still fi
   it("writes NO ledger row at a 0% rate but logs the shadow accrual", async () => {
     const create = vi.fn();
     const tx = {
+      // The job ordinal is read for the biker funnel (admin console v2 §3) at every rate.
+      rider: { findUnique: async () => ({ tripsCount: 50 }) },
       commissionLedger: { create, findFirst: async () => null },
       commissionAccount: { update: vi.fn() },
       $executeRaw: vi.fn(),
@@ -337,16 +387,66 @@ describe("WalletService.chargeCommission — D-70 commission-free first jobs", (
     expect(COMMISSION.freeFirstJobs).toBe(10); // owner 2026-10-12 (was the handoff's drawn "5 of 5 left")
   });
 
-  it("a new biker's 1st…10th completed jobs carry no debit and write no ledger row, even at a live rate and a $0 balance", async () => {
+  it("a new biker's 1st…10th completed jobs carry no debit — only a $0 free_job receipt — even at a live rate and a $0 balance", async () => {
     const svc = build({ COMMISSION_RATE_PCT: 10 });
     for (let job = 1; job <= COMMISSION.freeFirstJobs; job++) {
       const tx = txFor(job);
       await svc.chargeCommission(tx as never, { orderId: `o${job}`, riderId: "r1", agreedFare: 8 });
-      expect(tx.commissionLedger.create).not.toHaveBeenCalled();
+      // Admin console v2 §3: the receipt records the waived charge (rate% of fare) and moves nothing.
+      expect(tx.commissionLedger.create).toHaveBeenCalledOnce();
+      expect(tx.commissionLedger.create).toHaveBeenCalledWith({
+        data: {
+          riderId: "r1",
+          orderId: `o${job}`,
+          type: "free_job",
+          amount: 0,
+          balanceAfter: 0,
+          ratePct: 10,
+          fare: 8,
+          note: `Free job ${job} of ${COMMISSION.freeFirstJobs}`,
+          actor: "system",
+        },
+      });
+      // The balance is never written for a free job.
       expect(tx.commissionAccount.update).not.toHaveBeenCalled();
-      // No account row is even touched — nothing is locked or lazily created for a free job.
-      expect(tx.$executeRaw).not.toHaveBeenCalled();
     }
+  });
+
+  it("the free_job receipt carries the locked balance through unchanged (a biker who already topped up)", async () => {
+    const svc = build({ COMMISSION_RATE_PCT: 10 });
+    const tx = { ...txFor(3), $queryRaw: vi.fn(async () => [{ balance: "12.50" }]) };
+    await svc.chargeCommission(tx as never, { orderId: "o3", riderId: "r1", agreedFare: 8 });
+    expect(tx.commissionLedger.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ type: "free_job", amount: 0, balanceAfter: 12.5 }) }),
+    );
+    expect(tx.commissionAccount.update).not.toHaveBeenCalled();
+  });
+
+  it("a replayed completion writes no second free_job receipt (check-then-insert on its own type)", async () => {
+    const svc = build({ COMMISSION_RATE_PCT: 10 });
+    const findFirst = vi.fn(async () => ({ id: "existing" }));
+    const tx = { ...txFor(2), commissionLedger: { create: vi.fn(), findFirst } };
+    await svc.chargeCommission(tx as never, { orderId: "o2", riderId: "r1", agreedFare: 8 });
+    expect(findFirst).toHaveBeenCalledWith({ where: { riderId: "r1", orderId: "o2", type: "free_job" }, select: { id: true } });
+    expect(tx.commissionLedger.create).not.toHaveBeenCalled();
+  });
+
+  it("records the biker funnel's first_job and job_10 steps in the completion transaction", async () => {
+    const svc = build({ COMMISSION_RATE_PCT: 0 });
+    for (const [job, step] of [
+      [1, "first_job"],
+      [10, "job_10"],
+    ] as const) {
+      const domainEvent = { create: vi.fn() };
+      const tx = { ...txFor(job), domainEvent };
+      await svc.chargeCommission(tx as never, { orderId: `o${job}`, riderId: "r1", agreedFare: 3 });
+      expect(domainEvent.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ type: "rider.onboarding_step", subjectId: "r1", orderId: `o${job}`, data: { step, orderType: "parcel" } }),
+      });
+    }
+    const domainEvent = { create: vi.fn() };
+    await svc.chargeCommission({ ...txFor(2), domainEvent } as never, { orderId: "o2", riderId: "r1", agreedFare: 3 });
+    expect(domainEvent.create).not.toHaveBeenCalled();
   });
 
   it("the 11th completed job is charged normally — the allowance is spent", async () => {
@@ -372,12 +472,13 @@ describe("WalletService.chargeCommission — D-70 commission-free first jobs", (
     expect(tx.commissionLedger.create).toHaveBeenCalled();
   });
 
-  it("at a 0% rate nothing changes — no biker read, no row", async () => {
+  it("at a 0% rate nothing changes — no ledger row, not even a free_job receipt (the job ordinal is still read, for the funnel)", async () => {
     const svc = build({ COMMISSION_RATE_PCT: 0 });
     const tx = txFor(1);
     await svc.chargeCommission(tx as never, { orderId: "o1", riderId: "r1", agreedFare: 3 });
-    expect(tx.rider.findUnique).not.toHaveBeenCalled();
+    expect(tx.rider.findUnique).toHaveBeenCalledOnce();
     expect(tx.commissionLedger.create).not.toHaveBeenCalled();
+    expect(tx.$executeRaw).not.toHaveBeenCalled();
   });
 });
 

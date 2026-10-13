@@ -386,7 +386,10 @@ export class AdminMerchantsService {
    */
   async setPilot(actor: string, id: string, input: { enabled: boolean; note?: string | null }) {
     return this.prisma.$transaction(async (tx) => {
-      const merchant = await tx.merchant.findUnique({ where: { id }, select: { id: true, businessType: true, pilotEnabled: true, location: true } });
+      const merchant = await tx.merchant.findUnique({
+        where: { id },
+        select: { id: true, businessType: true, pilotEnabled: true, location: true, approvedAt: true },
+      });
       if (!merchant) throw new NotFoundException("Merchant not found");
       if (merchant.pilotEnabled === input.enabled) return { id, pilotEnabled: merchant.pilotEnabled, auditId: null };
       if (input.enabled) {
@@ -402,9 +405,19 @@ export class AdminMerchantsService {
           });
         }
       }
-      await tx.merchant.update({ where: { id }, data: { pilotEnabled: input.enabled } });
+      // Admin console v2 §3: the FIRST go-live stamps who approved it and when; a later pause/resume keeps it.
+      const firstGoLive = input.enabled && merchant.approvedAt == null;
+      await tx.merchant.update({
+        where: { id },
+        data: { pilotEnabled: input.enabled, ...(firstGoLive ? { approvedAt: new Date(), approvedBy: actor } : {}) },
+      });
       const audit = await tx.auditLog.create({
-        data: auditData(actor, input.enabled ? "merchant.go_live" : "merchant.go_dormant", id, null, input.note ?? null),
+        data: {
+          ...auditData(actor, input.enabled ? "merchant.go_live" : "merchant.go_dormant", id, null, input.note ?? null),
+          targetType: "merchant",
+          before: { pilotEnabled: merchant.pilotEnabled },
+          after: { pilotEnabled: input.enabled, ...(firstGoLive ? { approved: true } : {}) },
+        },
         select: { id: true },
       });
       return { id, pilotEnabled: input.enabled, auditId: audit.id };

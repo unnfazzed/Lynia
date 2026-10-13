@@ -26,6 +26,12 @@ const HOT_PATH_INDEXES = [
   { model: "AuditLog", attr: "@@index([target, action])", table: "audit_logs", columns: `"target", "action"` },
   // PW-LC2: the merchant queue polls orders by merchant_id every 5s (built by 0071, leading on merchant_id).
   { model: "Order", attr: "@@index([merchantId, createdAt])", table: "orders", columns: `"merchant_id", "created_at"` },
+  // Admin console v2 §3: the funnels / stuck lists window orders, order events and offers by time (0093–0097).
+  { model: "Order", attr: "@@index([createdAt])", table: "orders", columns: `"created_at"` },
+  { model: "Order", attr: "@@index([status, createdAt])", table: "orders", columns: `"status", "created_at"` },
+  { model: "Order", attr: "@@index([orderType, createdAt])", table: "orders", columns: `"order_type", "created_at"` },
+  { model: "OrderEvent", attr: "@@index([status, createdAt])", table: "order_events", columns: `"status", "created_at"` },
+  { model: "Offer", attr: "@@index([createdAt])", table: "offers", columns: `"created_at"` },
 ];
 
 describe("hot-path indexes", () => {

@@ -129,34 +129,36 @@ export default async function OverviewPage() {
           </a>
         </div>
         {data && data.recentOrders.length > 0 ? (
-          <table className="data">
-            <thead>
-              <tr>
-                <th>Order</th>
-                <th>Route</th>
-                <th>Status</th>
-                <th>Biker</th>
-                <th>Fare</th>
-                <th>Created</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.recentOrders.map((o) => (
-                <tr key={o.id} className="rowlink">
-                  <td>
-                    <OrderLink id={o.id} />
-                  </td>
-                  <td>{o.route}</td>
-                  <td>
-                    <StatusPill status={o.status} />
-                  </td>
-                  <td className="mut">{o.rider ?? "—"}</td>
-                  <td className="num">{money(o.agreedFare ?? o.proposedFare)}</td>
-                  <td className="mut num">{timeAgo(o.createdAt)}</td>
+          <div className="table-scroll">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>Order</th>
+                  <th>Route</th>
+                  <th>Status</th>
+                  <th>Biker</th>
+                  <th>Fare</th>
+                  <th>Created</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.recentOrders.map((o) => (
+                  <tr key={o.id} className="rowlink">
+                    <td>
+                      <OrderLink id={o.id} />
+                    </td>
+                    <td>{o.route}</td>
+                    <td>
+                      <StatusPill status={o.status} />
+                    </td>
+                    <td className="mut">{o.rider ?? "—"}</td>
+                    <td className="num">{money(o.agreedFare ?? o.proposedFare)}</td>
+                    <td className="mut num">{timeAgo(o.createdAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : data ? (
           <EmptyState
             icon={<IconInbox />}

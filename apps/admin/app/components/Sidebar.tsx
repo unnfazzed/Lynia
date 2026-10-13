@@ -1,16 +1,20 @@
 "use client";
 
 import { usePathname, useSearchParams } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { NavCounts } from "../lib/adminTypes";
 import { IAP_SIGNOUT_URL } from "../lib/console-auth";
-import { IconAlert, IconBanknote, IconBike, IconIdCard, IconNavigation, IconPackage, IconPhone, IconStore, IconUser } from "./icons";
+import { IconAlert, IconBanknote, IconBike, IconIdCard, IconMenu, IconNavigation, IconPackage, IconPhone, IconStore, IconUser, IconX } from "./icons";
 
 /**
  * 216px ops-console sidebar (kit `shell.js` NAV). Client component so it can mark the active route
  * with `aria-current` via usePathname — the one bit of interactivity the shell needs. Everything
  * else in the shell stays server-rendered. `operator` (the verified IAP identity) + `counts` (attention
  * badges) are passed down from the server layout.
+ *
+ * Phone (D-105): below 900px the sidebar becomes a top bar — brand + a menu button that discloses the
+ * nav + foot as a panel. The button and the open state exist only there (`.nav-toggle` is display:none
+ * and `.sidenav-panel` is display:contents on desktop), so the 1440 kit geometry is untouched.
  */
 interface NavEntry {
   label: string;
@@ -78,8 +82,35 @@ export function Sidebar({
   const search = useSearchParams();
   const kycMode = search.get("kyc") !== null || pathname.endsWith("/kyc");
 
+  // Phone nav disclosure. Escape closes it and hands focus back to the menu button; a route change
+  // closes it too (the panel must not stay over the page the operator just opened).
+  const [open, setOpen] = useState(false);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const asideRef = useRef<HTMLElement>(null);
+  const query = search.toString();
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname, query]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      toggleRef.current?.focus();
+    };
+    const onPointer = (e: PointerEvent) => {
+      if (asideRef.current && e.target instanceof Node && !asideRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPointer);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPointer);
+    };
+  }, [open]);
+
   return (
-    <aside className="sidenav">
+    <aside className="sidenav" ref={asideRef} data-open={open ? "true" : undefined}>
       <div className="brand">
         {/* 28px static mark — crease facets resolve at ≥28px. */}
         <svg width="28" height="28" viewBox="0 0 96 96" aria-hidden="true">
@@ -93,6 +124,20 @@ export function Sidebar({
         </div>
       </div>
 
+      {/* Phone-only (D-105): hidden by CSS above 900px. */}
+      <button
+        ref={toggleRef}
+        type="button"
+        className="nav-toggle"
+        aria-expanded={open}
+        aria-controls="sidenav-panel"
+        aria-label={open ? "Close menu" : "Open menu"}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {open ? <IconX /> : <IconMenu />}
+      </button>
+
+      <div id="sidenav-panel" className="sidenav-panel">
       {/* Primary navigation landmark so a screen reader can jump straight to it. */}
       <nav aria-label="Primary" style={{ display: "contents" }}>
       {NAV.map((n) => {
@@ -129,6 +174,7 @@ export function Sidebar({
             Sign out
           </a>
         ) : null}
+      </div>
       </div>
     </aside>
   );

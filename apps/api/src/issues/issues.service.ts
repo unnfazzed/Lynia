@@ -14,6 +14,7 @@ import { maskPhone } from "../common/phone-mask";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
+import { domainEvents } from "../common/domain-events";
 
 const ISSUE_STATUSES = ["open", "investigating", "resolved"] as const;
 type IssueStatusFilter = (typeof ISSUE_STATUSES)[number];
@@ -314,6 +315,7 @@ export class IssuesService {
             where: { profileId: order.riderId },
             data: { disputeStrikes: 0, cooldownUntil, isOnline: false },
           });
+          await domainEvents.riderOffline(tx, order.riderId, "dispute_strike_cooldown", { orderId: issue.orderId });
           // DS17-02: the strike-limit forced this rider offline — evict them from the geo + board supply
           // planes post-commit, like every other standing demotion.
           strikeLimitRiderId = order.riderId;

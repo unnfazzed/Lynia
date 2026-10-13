@@ -108,7 +108,9 @@ export class SettlementsService {
     const orderIds = orders.map((o) => o.id);
     const ledgerRows = orderIds.length
       ? await this.prisma.commissionLedger.findMany({
-          where: { orderId: { in: orderIds }, type: { in: ["ride_commission", "adjustment"] } },
+          // `free_job` (admin console v2 §3): a $0 receipt for a commission-free first job. Counting it marks
+          // the order as charged at exactly $0 from the ledger, instead of leaving it to the no-row fallback.
+          where: { orderId: { in: orderIds }, type: { in: ["ride_commission", "adjustment", "free_job"] } },
           select: { orderId: true, amount: true },
         })
       : [];

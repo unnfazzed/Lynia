@@ -107,9 +107,9 @@ export function SeedCreditCard({ eligibleCount, rosterCapped }: SeedCreditCardPr
       </div>
 
       <div
+        className="seed-grid"
         style={{
           display: "grid",
-          gridTemplateColumns: "1.6fr 1fr auto",
           gap: tokens.space.md,
           alignItems: "end",
           maxWidth: 680,

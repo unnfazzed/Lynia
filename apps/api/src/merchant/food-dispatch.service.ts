@@ -27,6 +27,8 @@ import { TrackingGateway } from "../tracking/tracking.gateway";
 import { DISPATCH_STRATEGY, type DispatchStrategy } from "./dispatch-strategy";
 import { notifyFoodQueueChanged, resolveOwnMerchantId } from "./merchant-lookup.util";
 import { preferredRiderIds } from "./preferred-riders";
+import { cancelAttribution } from "../common/cancel-attribution";
+import { domainEvents } from "../common/domain-events";
 
 /** Ceiling on the live offers listed to one rider at once (the board's food cards). Each order rings a
  *  rider at most once per round, so this is a guard on the payload, not a product limit. */
@@ -699,6 +701,9 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       otpCipher: sealHandoverCode(this.codeCrypto, "delivery", orderId, deliveryCode),
       deliveryOtpAttempts: 0,
       deliveryCodeRotatedAt: new Date(),
+      // Admin console v2 §3: when a rider was put on the order (time-to-assign). A re-dispatch after a
+      // rider drop stamps the new rider's time.
+      assignedAt: new Date(),
       dispatchOfferedRiderId: null,
       dispatchOfferExpiresAt: null,
       dispatchNextCheckAt: null,
@@ -729,6 +734,16 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     });
     await this.expirePending(orderId, riderId);
     await this.prisma.orderEvent.create({ data: { orderId, status: "assigned" } });
+    // Best-effort (this path has no transaction): the claim above is already committed.
+    await domainEvents.record(this.prisma, {
+      type: "order.assigned",
+      actorId: riderId,
+      actorRole: "rider",
+      subjectType: "order",
+      subjectId: orderId,
+      orderId,
+      data: { riderId, orderType: "merchant", merchantId: order.merchantId ?? null },
+    });
 
     // D-04: "rider secured" is a first-class, pushed event for all three actors. Customer + rider both
     // reach the order's WS room the same way a parcel `assigned` push does; the kitchen tablet now has
@@ -879,6 +894,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
           where: { profileId: riderId },
           data: { cancelStrikes: 0, cooldownUntil, isOnline: false, ...reliability },
         });
+        await domainEvents.riderOffline(tx, riderId, "cancel_strike_cooldown", { orderId });
         strikeLimitHit = true;
       } else {
         await tx.rider.update({ where: { profileId: riderId }, data: { cancelStrikes: strikes, ...reliability } });
@@ -939,7 +955,13 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     const merchantId = await this.ownMerchantId(profileId);
     const claimed = await this.prisma.order.updateMany({
       where: { id: orderId, merchantId, orderType: "merchant", status: "requested", merchantPhase: "ready_for_pickup", noRiderHoldAt: { not: null } },
-      data: { status: "cancelled", cancelledAt: new Date(), rejectionReason: "no_rider", merchantPhase: null },
+      data: {
+        status: "cancelled",
+        cancelledAt: new Date(),
+        rejectionReason: "no_rider",
+        merchantPhase: null,
+        ...cancelAttribution({ by: "merchant", status: "requested", merchantPhase: "ready_for_pickup", reasonCode: "no_rider" }),
+      },
     });
     if (claimed.count === 0) throw new ConflictException("This order isn't waiting on a biker decision");
     await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
