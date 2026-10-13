@@ -69,13 +69,15 @@ const params = (url: string) => new URL(url).searchParams;
 const at = (s: string | null) => Date.parse(s ?? "");
 
 describe("AzureBlobStorage upload SAS (C1 / S4 / E13)", () => {
-  it("is `cw` on one blob, https only, starts 5 min early and expires in 10 min", async () => {
+  it("is create-only `c` on one blob, https only, starts 5 min early and expires in 10 min", async () => {
     const { storage } = harness();
     const target = await storage.createUploadUrl("kyc/rider-1/a.jpg", "image/jpeg", 600, 8 * 1024 * 1024);
     expect(target.key).toBe("kyc/rider-1/a.jpg");
     expect(target.url.startsWith("https://lyniamedia.blob.core.windows.net/media/kyc/rider-1/a.jpg?")).toBe(true);
     const q = params(target.url);
-    expect(q.get("sp")).toBe("cw");
+    // Create-only: no `w`, so once the blob exists (and has been verified at attach) the same SAS cannot
+    // replace it with different bytes, type or size.
+    expect(q.get("sp")).toBe("c");
     expect(q.get("sr")).toBe("b"); // blob-scoped: one path, never the container
     expect(q.get("spr")).toBe("https");
     expect(at(q.get("st"))).toBe(T0 - 5 * MIN);
@@ -105,6 +107,25 @@ describe("AzureBlobStorage read SAS (S4)", () => {
     expect(q.get("sp")).toBe("r");
     expect(q.get("sr")).toBe("b");
     expect(q.get("spr")).toBe("https");
+  });
+
+  it("pins the response Content-Type to the key's image type and the disposition to inline", async () => {
+    const { storage } = harness();
+    const jpg = params(await storage.createReadUrl("pickup/r/a.jpg", 900));
+    expect(jpg.get("rsct")).toBe("image/jpeg");
+    expect(jpg.get("rscd")).toBe("inline");
+    const png = params(await storage.createReadUrl("dish/o/a.png", 900));
+    expect(png.get("rsct")).toBe("image/png");
+    expect(png.get("rscd")).toBe("inline");
+    // The server-made thumb is a JPEG.
+    expect(params(await storage.createReadUrl("dish/o/a.png.thumb.jpg", 900)).get("rsct")).toBe("image/jpeg");
+  });
+
+  it("puts no response-header overrides on an upload SAS", async () => {
+    const { storage } = harness();
+    const q = params((await storage.createUploadUrl("dish/o/a.png", "image/png")).url);
+    expect(q.get("rsct")).toBeNull();
+    expect(q.get("rscd")).toBeNull();
   });
 
   it("caps a KYC / national-ID image read at 5 minutes, whatever the caller asks for", async () => {

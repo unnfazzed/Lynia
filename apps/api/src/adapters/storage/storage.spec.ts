@@ -55,6 +55,14 @@ describe("GcsStorage — real V4 signing", () => {
     expect(url).toContain("storage.googleapis.com/lynia-media/");
     expect(url).toContain("X-Goog-Signature=");
   });
+
+  it("createReadUrl pins the response Content-Type to the key's image type, served inline", async () => {
+    const jpg = new URL(await testGcs().createReadUrl("kyc/rider-1/selfie.jpg")).searchParams;
+    expect(jpg.get("response-content-type")).toBe("image/jpeg");
+    expect(jpg.get("response-content-disposition")).toBe("inline");
+    const png = new URL(await testGcs().createReadUrl("dish/o/a.png")).searchParams;
+    expect(png.get("response-content-type")).toBe("image/png");
+  });
 });
 
 describe("GcsStorage.deleteObject (DS15-03 right-to-erasure purge)", () => {

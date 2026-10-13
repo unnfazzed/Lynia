@@ -534,6 +534,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     orderId: string,
     riderId: string,
     reason: string,
+    opts: { venueFlow?: boolean } = {},
   ): Promise<{ orderId: string; status: "undelivered" }> {
     // Set when an automated hold is newly applied below, so we can pull the rider out of the live geo
     // index after commit (the same eviction setOnline(false) does) — see the isOnline:false note there.
@@ -541,16 +542,24 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        select: { status: true, riderId: true },
+        select: { status: true, riderId: true, orderType: true, riderCashConfirmedAt: true },
       });
       if (!order) throw new NotFoundException("Order not found");
       if (order.riderId !== riderId) throw new ForbiddenException("Not the assigned biker");
+      // A venue order's failed hand-off goes through its own door steps (FoodDebtService: logged calls +
+      // wait for a no-show, the refusal rules), which call in here with `venueFlow`. The generic endpoint
+      // does not take venue orders.
+      if (order.orderType === "merchant" && !opts.venueFlow) {
+        throw new ConflictException("Use the venue order's door steps to report this delivery");
+      }
       if (!POST_PICKUP_FOR_UNDELIVERED.has(order.status)) {
         throw new ConflictException("A hand-off can only fail after the parcel is picked up");
       }
+      // Once the rider has confirmed the cash at the door, the hand-off happened.
+      if (order.riderCashConfirmedAt) throw new ConflictException("You already confirmed the cash");
 
       const claimed = await tx.order.updateMany({
-        where: { id: orderId, status: order.status },
+        where: { id: orderId, status: order.status, riderCashConfirmedAt: null },
         data: {
           status: "undelivered",
           undeliveredReason: reason,

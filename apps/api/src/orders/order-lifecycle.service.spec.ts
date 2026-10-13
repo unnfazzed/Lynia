@@ -1547,6 +1547,29 @@ describe("OrderLifecycleService.markUndelivered", () => {
     await expect(svc.markUndelivered("o1", "other", "unreachable")).rejects.toThrow(/assigned biker/i);
   });
 
+  it("409s a venue order on the generic endpoint — it has its own door steps", async () => {
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const { svc } = build({ order: { findUnique: async () => row({ status: "en_route_dropoff", orderType: "merchant" }), updateMany } });
+    await expect(svc.markUndelivered("o1", "r1", "refused")).rejects.toThrow(/venue order's door steps/i);
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("lets the venue door steps (venueFlow) mark a venue order undelivered", async () => {
+    const { svc } = build({
+      order: { findUnique: async () => row({ status: "en_route_dropoff", orderType: "merchant", riderCashConfirmedAt: null }), updateMany: async () => ({ count: 1 }), count: async () => 0 },
+      orderEvent: { create: async () => ({}) },
+      rider: { findUnique: async () => ({ reliabilityScore: 90, onHold: false, heldReason: null }), update: async () => ({}) },
+    });
+    expect(await svc.markUndelivered("o1", "r1", "unreachable", { venueFlow: true })).toEqual({ orderId: "o1", status: "undelivered" });
+  });
+
+  it("409s once the rider has confirmed the cash at the door, and the CAS requires it unset", async () => {
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const { svc } = build({ order: { findUnique: async () => row({ status: "en_route_dropoff", orderType: "merchant", riderCashConfirmedAt: new Date() }), updateMany } });
+    await expect(svc.markUndelivered("o1", "r1", "refused", { venueFlow: true })).rejects.toThrow(/already confirmed the cash/i);
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
   it("409s before pickup — a hand-off can only fail post-pickup", async () => {
     const { svc } = build({ order: { findUnique: async () => row({ status: "en_route_pickup" }) } });
     await expect(svc.markUndelivered("o1", "r1", "unreachable")).rejects.toThrow(/after the parcel is picked up/i);

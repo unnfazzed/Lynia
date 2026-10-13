@@ -66,4 +66,22 @@ describe("uploadImage", () => {
     await jest.advanceTimersByTimeAsync(uploadTimeoutMs(300_000) + 1);
     await settled;
   });
+
+  /** A PUT that answers `status` at once. */
+  function stubStatus(status: number): void {
+    global.fetch = jest.fn(async (url: string) => {
+      if (url === "file:///photo.jpg") return { blob: async () => ({ size: 1_000 }) };
+      return { ok: status >= 200 && status < 300, status };
+    }) as unknown as typeof fetch;
+  }
+
+  it("treats a 409 as success: the URL is create-only and a retried PUT's first attempt already landed (E13)", async () => {
+    stubStatus(409);
+    await expect(uploadImage("https://storage.example/put", "file:///photo.jpg", { "Content-Type": "image/jpeg" })).resolves.toBeUndefined();
+  });
+
+  it("still fails any other non-ok status", async () => {
+    stubStatus(403);
+    await expect(uploadImage("https://storage.example/put", "file:///photo.jpg", { "Content-Type": "image/jpeg" })).rejects.toThrow("Photo upload failed (403)");
+  });
 });

@@ -154,7 +154,7 @@ jobs:
       APP: ${{ vars.AZ_CONTAINERAPP_API || 'ca-lynia-api' }}
       MIGRATE_JOB: ${{ vars.AZ_MIGRATE_JOB || 'caj-lynia-migrate' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Validate required deploy config
         env:
@@ -334,7 +334,7 @@ jobs:
           echo "Launch-hygiene config OK (OTP_CHANNEL=$OTP_CHANNEL, KYC_PROVIDER=$KYC_PROVIDER, OTP_TEST_PHONES empty${whatsapp_note})."
 
       - name: Azure login (OIDC)
-        uses: azure/login@v3
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID_PRODUCTION }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
@@ -345,7 +345,7 @@ jobs:
         run: az acr login --name "$ACR"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       # Same-image promotion: deploy-staging-azure.yml built, migrated and smoke-tested this exact :sha
       # in the STAGING registry (each environment has its own ACR). `az acr import` copies that digest

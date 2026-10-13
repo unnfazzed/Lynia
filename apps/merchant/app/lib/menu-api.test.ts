@@ -80,3 +80,17 @@ describe("MJ-RL21: a stalled photo PUT ends instead of spinning for minutes", ()
     await expect(uploadPhotoBlob("https://upload", new Blob(["x"]), {}, 20)).rejects.toThrow("The upload timed out — check your connection and try again.");
   });
 });
+
+describe("the upload URL is create-only (E13)", () => {
+  it("treats a 409 (a retried PUT whose first attempt already landed) as success", async () => {
+    const { uploadPhotoBlob } = await import("./menu-api");
+    fetchMock.mockResolvedValue({ ok: false, status: 409 } as Response);
+    await expect(uploadPhotoBlob("https://upload", new Blob(["x"]), {})).resolves.toBeUndefined();
+  });
+
+  it("still fails any other non-ok status", async () => {
+    const { uploadPhotoBlob } = await import("./menu-api");
+    fetchMock.mockResolvedValue({ ok: false, status: 403 } as Response);
+    await expect(uploadPhotoBlob("https://upload", new Blob(["x"]), {})).rejects.toThrow("Photo upload failed (403).");
+  });
+});

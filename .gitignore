@@ -56,3 +56,6 @@ apps/*/CLAUDE.md
 apps/customer-web/dist/
 # The merchant web's static export (apps/merchant, docs/MERCHANT-WEB.md), built in CI.
 apps/merchant/out/
+
+# actionlint is downloaded (checksum-verified) by ci.yml; never commit the binary.
+/actionlint

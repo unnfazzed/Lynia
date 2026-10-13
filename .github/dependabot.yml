@@ -9,6 +9,10 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 2
+    # Supply-chain cooldown: wait a week after a release before proposing it, so a compromised or
+    # yanked version is usually caught upstream first. Security updates are not subject to cooldown.
+    cooldown:
+      default-days: 7
 
   # npm / pnpm workspace — grouped to keep PR volume manageable; security updates always come through.
   - package-ecosystem: npm
@@ -17,6 +21,10 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 10
+    # Supply-chain cooldown: wait a week after a release before proposing it, so a compromised or
+    # yanked version is usually caught upstream first. Security updates are not subject to cooldown.
+    cooldown:
+      default-days: 7
     # Groups take minor/patch only. One major inside a group marks the WHOLE group semver-major, so the
     # auto-merge workflow skips it and every safe patch in it waits too (#1090: vitest 5 held back 12
     # routine bumps). Majors now arrive one PR each. PostHog is also kept out of the group: its
@@ -118,3 +126,7 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    # Supply-chain cooldown: wait a week after a release before proposing it, so a compromised or
+    # yanked version is usually caught upstream first. Security updates are not subject to cooldown.
+    cooldown:
+      default-days: 7

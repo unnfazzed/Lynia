@@ -68,22 +68,22 @@ jobs:
       # as an env value here and gate the step on `env.` instead. Empty when the secret isn't set.
       GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: pnpm
 
       # Expo SDK 54 / RN 0.81 build on JDK 17 (ReactAndroid compiles to Java 17).
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: "17"
 
-      - uses: android-actions/setup-android@v4
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
 
       # pnpm's symlinked store can break RN Gradle autolinking in a monorepo. Force a hoisted layout
       # for THIS build (repo-wide install stays default) so expo prebuild + Gradle resolve react-native
@@ -188,7 +188,7 @@ jobs:
         run: keytool -list -v -keystore "$RUNNER_TEMP/test.keystore" -storepass lyniatest -alias lynia-test | grep -i "SHA1:" || true
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: lynia-test-apk
           path: apps/mobile/android/app/build/outputs/apk/release/*.apk

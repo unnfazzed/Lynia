@@ -172,6 +172,13 @@ resource "azapi_update_resource" "api_sticky" {
 # ============================ Admin + merchant ============================
 
 locals {
+  # Each web app runs as its own identity: admin as `web` (reads ADMIN-API-TOKEN), merchant as
+  # `merchant` (AcrPull only). See identity.tf.
+  web_app_identity = {
+    admin    = azurerm_user_assigned_identity.web.id
+    merchant = azurerm_user_assigned_identity.merchant.id
+  }
+
   admin_auth_secret_kv   = "ADMIN-ENTRA-CLIENT-SECRET${local.kv_suffix}"
   admin_auth_secret_name = "microsoft-provider-authentication-secret"
 
@@ -208,12 +215,12 @@ resource "azurerm_container_app" "web" {
 
   identity {
     type         = "UserAssigned"
-    identity_ids = [azurerm_user_assigned_identity.web.id]
+    identity_ids = [local.web_app_identity[each.key]]
   }
 
   registry {
     server   = local.registry_server
-    identity = azurerm_user_assigned_identity.web.id
+    identity = local.web_app_identity[each.key]
   }
 
   dynamic "secret" {
@@ -223,7 +230,7 @@ resource "azurerm_container_app" "web" {
     )
     content {
       name                = secret.key
-      identity            = azurerm_user_assigned_identity.web.id
+      identity            = local.web_app_identity[each.key]
       key_vault_secret_id = "${local.kv_uri}secrets/${secret.value}"
     }
   }

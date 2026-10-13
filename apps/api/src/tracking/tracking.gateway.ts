@@ -10,6 +10,7 @@ import {
   WebSocketServer,
 } from "@nestjs/websockets";
 import { createAdapter } from "@socket.io/redis-adapter";
+import jwt from "jsonwebtoken";
 import { Server, Socket } from "socket.io";
 import {
   type BidExpiredEvent,
@@ -55,6 +56,10 @@ export const PRESENCE_SCAN_INTERVAL_MS = 30_000;
  *  continuous dark period so a peer instance can't re-emit; the primary re-arm is the explicit release
  *  on recovery, this is just the backstop if the releasing instance dies. */
 export const PRESENCE_STALE_DEDUP_TTL_S = 600;
+
+/** Largest delay `setTimeout` honours (2^31-1 ms); a longer one fires immediately, so the auth-expiry
+ *  timer is clamped to it. Access tokens live minutes, so this is only a guard. */
+const MAX_TIMER_MS = 2_147_483_647;
 
 /**
  * Live tracking (ET4). WS is best-effort PUSH only — GET /orders/:id (lane C) stays the source of
@@ -158,7 +163,36 @@ export class TrackingGateway
       client.data.user = this.tokens.verifyAccess(raw) as SocketUser;
     } catch {
       client.disconnect(true);
+      return;
     }
+    this.scheduleAuthExpiry(client, raw);
+  }
+
+  /**
+   * The socket's authentication lasts only as long as the access token it connected with: once the
+   * token's `exp` passes, the connection is closed, and the client reconnects with a fresh token
+   * (which re-runs handleConnection and every room's own access check on re-subscribe). The token was
+   * verified just above, so its `exp` claim is trusted here. A token without `exp` sets no timer.
+   *
+   * The transport is closed rather than `disconnect(true)`: a server-sent disconnect packet is the one
+   * case Socket.IO clients never retry on their own, whereas a closed transport is retried with the
+   * client's usual backoff, and its handshake reads the current session token.
+   */
+  private scheduleAuthExpiry(client: Socket, token: string): void {
+    const decoded = jwt.decode(token);
+    const exp = decoded && typeof decoded === "object" && typeof decoded.exp === "number" ? decoded.exp : null;
+    if (exp == null) return;
+    const expiresAt = exp * 1000;
+    client.data.authExpiresAt = expiresAt;
+    const timer = setTimeout(
+      () => {
+        if (client.conn) client.conn.close();
+        else client.disconnect(true);
+      },
+      Math.min(Math.max(expiresAt - Date.now(), 0), MAX_TIMER_MS),
+    );
+    timer.unref?.();
+    client.data.authTimer = timer;
   }
 
   /**
@@ -169,6 +203,8 @@ export class TrackingGateway
     // BH-25: drop this socket's board-op serialization chain — it can never outlive the connection, and
     // leaving it would grow the map unboundedly across reconnects on a long-lived instance.
     this.boardOpChain.delete(client.id);
+    const authTimer = client.data?.authTimer as ReturnType<typeof setTimeout> | undefined;
+    if (authTimer) clearTimeout(authTimer);
     // C5 customer-presence: release the customer's rooms first (independent of the rider flush). The
     // last customer socket dropping off an order starts its dark clock; scanPresence escalates it if
     // the ride is still active PRESENCE_ESCALATION_MS later.
@@ -209,6 +245,14 @@ export class TrackingGateway
     const { orderId } = parsed.data;
     if (!(await this.tracking.canAccessOrder(user.sub, orderId))) return { error: "forbidden" };
     await client.join(orderRoom(orderId));
+    // Re-check access AFTER joining (same join-then-read shape as boardSubscribe): evictFromOrderRoom
+    // runs post-commit off a fetchSockets() snapshot, so a subscribe that passed the check above just
+    // before the rider was removed from the order, but joined after the eviction's snapshot, is caught
+    // here. A failed read fails closed.
+    if (!(await this.tracking.canAccessOrder(user.sub, orderId).catch(() => false))) {
+      await client.leave(orderRoom(orderId));
+      return { error: "forbidden" };
+    }
     // C5 customer-presence: mark the subscriber live only when THEY are this order's CUSTOMER (the
     // sender), keyed on the per-order relationship — NOT the global JWT role. `Role` is one enum per
     // account, so a rider-role account that placed THIS delivery as the sender would never get the
@@ -528,6 +572,26 @@ export class TrackingGateway
       }
     } catch (err) {
       this.logger.warn(`merchant queue eviction failed for ${profileId}: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * A rider taken off an order (dropped, unassigned or replaced) stops receiving that order's room —
+   * its `position` and status pushes — now, not at their next reconnect. Room access is checked at
+   * subscribe:order, so the service that removes the rider calls this after its transaction commits.
+   * Same cluster-wide lookup as `evictFromMerchantQueue`; only this order's room is left. Never throws.
+   */
+  async evictFromOrderRoom(profileId: string, orderId: string): Promise<void> {
+    if (!this.server) return;
+    const room = orderRoom(orderId);
+    try {
+      const sockets = await this.server.in(room).fetchSockets();
+      for (const s of sockets) {
+        const sub = (s.data as { user?: SocketUser } | undefined)?.user?.sub;
+        if (sub === profileId) await s.leave(room);
+      }
+    } catch (err) {
+      this.logger.warn(`order room eviction failed for ${profileId} on order ${orderId}: ${(err as Error).message}`);
     }
   }
 

@@ -73,5 +73,7 @@ export async function uploadImage(
     clearTimeout(timer);
     signal?.removeEventListener("abort", cancel);
   }
-  if (!res.ok) throw new Error(`Photo upload failed (${res.status})`);
+  // The upload URL is create-only: a transport retry of a PUT that already landed answers 409 (the blob
+  // exists). The bytes are there, and attach verifies them, so that is a success (E13).
+  if (!res.ok && res.status !== 409) throw new Error(`Photo upload failed (${res.status})`);
 }

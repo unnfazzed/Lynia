@@ -82,6 +82,19 @@ describe("loadEnv — OTP send caps", () => {
   });
 });
 
+describe("loadEnv — OTP destination countries", () => {
+  it("defaults to the launch market and accepts a comma-separated list", () => {
+    expect(loadEnv(base).OTP_ALLOWED_COUNTRY_CODES).toBe("263");
+    expect(loadEnv({ ...base, OTP_ALLOWED_COUNTRY_CODES: "263, +27" }).OTP_ALLOWED_COUNTRY_CODES).toBe("263, +27");
+  });
+
+  it("rejects a malformed list at boot", () => {
+    for (const bad of ["", "263,", "ZW", "2630"]) {
+      expect(() => loadEnv({ ...base, OTP_ALLOWED_COUNTRY_CODES: bad })).toThrow(/Invalid environment configuration/);
+    }
+  });
+});
+
 describe("loadEnv — commission wallet", () => {
   it("has no default commission rate override (COMMISSION_RATE_PCT unset until the flip)", () => {
     const env = loadEnv({ ...base });

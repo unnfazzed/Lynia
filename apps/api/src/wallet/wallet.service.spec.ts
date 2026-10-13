@@ -490,7 +490,7 @@ describe("WalletService.getTopup (WD-007 — no stale status after a failed expi
 });
 
 describe("WalletService.creditManual (WD-002/WD-003 — atomic audit + idempotent retry)", () => {
-  function makeTx() {
+  function makeTx(creditedLast24h = 0) {
     const calls: { topUp: unknown; ledger: unknown; audit: unknown; balanceUpdate: unknown } = {
       topUp: null,
       ledger: null,
@@ -521,6 +521,7 @@ describe("WalletService.creditManual (WD-002/WD-003 — atomic audit + idempoten
           calls.audit = args.data;
           return { id: "audit-1" };
         },
+        aggregate: vi.fn(async () => ({ _sum: { amount: creditedLast24h ? new Prisma.Decimal(creditedLast24h) : null } })),
       },
       $executeRaw: vi.fn(),
       $queryRaw: vi.fn(async () => [{ balance: "0" }]),
@@ -557,6 +558,30 @@ describe("WalletService.creditManual (WD-002/WD-003 — atomic audit + idempoten
   it("rejects an amount above the manual-credit cap (unrelated to the idempotency path)", async () => {
     const svc = build({ WALLET_MANUAL_CREDIT_CAP_USD: 50 }, { rider: { findUnique: async () => ({ profileId: "r1", kycStatus: "verified" }) } });
     await expect(svc.creditManual({ riderId: "r1", amount: 999, rail: "manual", idemKey: "key-1", actorProfileId: "admin-1" })).rejects.toThrow(/between/i);
+  });
+
+  it("refuses (409) a credit that would take the biker past $100 of manual credits in 24 h, and writes nothing", async () => {
+    const { calls, tx } = makeTx(95);
+    const prisma = { rider: { findUnique: async () => ({ profileId: "r1", kycStatus: "verified" }) }, $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
+    const svc = build({}, prisma);
+    await expect(svc.creditManual({ riderId: "r1", amount: 10, rail: "manual", idemKey: "key-1", actorProfileId: "admin-1" })).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringMatching(/\$95\.00 .*last 24 hours.*\$100\.00/),
+    });
+    expect(tx.auditLog.aggregate).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ target: "r1", action: "wallet.credit" }), _sum: { amount: true } }),
+    );
+    expect(calls.ledger).toBeNull();
+    expect(calls.balanceUpdate).toBeNull();
+    expect(calls.audit).toBeNull();
+  });
+
+  it("allows a credit that lands exactly on the 24 h limit", async () => {
+    const { calls, tx } = makeTx(90);
+    const prisma = { rider: { findUnique: async () => ({ profileId: "r1", kycStatus: "verified" }) }, $transaction: async (fn: (t: unknown) => unknown) => fn(tx) };
+    const svc = build({}, prisma);
+    await expect(svc.creditManual({ riderId: "r1", amount: 10, rail: "manual", idemKey: "key-1", actorProfileId: "admin-1" })).resolves.toEqual({ balance: 10 });
+    expect(calls.ledger).not.toBeNull();
   });
 
   it("UX18-04: pushes the biker a best-effort 'Wallet credited' notice — previously zero push AND zero feed row", async () => {
